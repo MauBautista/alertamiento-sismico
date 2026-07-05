@@ -48,8 +48,10 @@
 ### US-06 · Salud de la flota
 **Como** `takab_support` **quiero** ver el estado de cada gabinete (MQTT, SeedLink lag, batería,
 actuadores) **para** mantener la red operativa.
-- La página Flota Edge refleja `device_health_10s`.
-- Un gabinete offline >5 min se marca y (fase 2.8) alerta a operaciones.
+- La página Flota Edge refleja `device_health` ([ANALISIS-00]: la tabla `device_health_10s`
+  se renombró — el muestreo por intervalo de 10 s violaba P5; ahora es por transición + heartbeat).
+- Un gabinete offline >5 min se marca y alerta a operaciones (observabilidad de flota,
+  Fase 2 del roadmap — numeración "2.8" de FASE-0, hoy en `archive/`).
 
 ### US-07 · Prueba de sirena con auditoría
 **Como** `building_admin` **quiero** ejecutar una prueba de sirena en mi edificio
@@ -145,4 +147,5 @@ móviles **para** detener el pánico acústico tras evacuar.
 ### US-20 · Alta de sitios y umbrales
 **Como** `tenant_admin` **quiero** dar de alta sitios y configurar umbrales por tipología
 **para** adaptar el sistema a mis edificios.
-- Cambios de umbral se sincronizan al edge firmados (fase 2.2).
+- Cambios de umbral se sincronizan al edge firmados (T-1.23/T-1.30; la "fase 2.2" era
+  numeración de FASE-0, hoy en `archive/`).

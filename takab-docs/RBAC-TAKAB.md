@@ -41,7 +41,7 @@
 | `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Todos los tenants |
 | `tenant_admin` | Lectura + ack | Lectura | Lectura | Solo sus umbrales | Total | Su tenant |
 | `soc_operator` | **Total** | Lectura | Lectura + crear | — | Lectura | Su tenant |
-| `gov_operator` | Lectura + ack | Lectura | **Total** | — | Lectura | Tenants `gov_shared` |
+| `gov_operator` | Lectura + ack | Lectura | Lectura + export | — | Lectura | Tenants `gov_shared` |
 | `inspector` | Lectura | — | **Total** (firma dictamen) | — | Lectura | Sitios asignados |
 | `building_admin` | Lectura (su sitio) | — | Lectura (su sitio) | — | **Total** | Su(s) sitio(s) |
 | `brigadista` | — | — | — | — | — | (móvil en MVP) |
@@ -52,6 +52,11 @@
 - "Total" en Consola C4I incluye: acuse, solicitar dictamen técnico, reubicar epicentro.
 - `gov_operator`: **solo lectura + acuse**. NO puede silenciar ni probar actuadores de inmuebles
   ajenos (decisión cerrada — controlar la sirena de un tercero es inaceptable).
+  [ANALISIS-00] La celda de Triage decía "Total", lo que contradecía esta misma nota (un "Total"
+  en Triage implicaría crear/firmar); se corrigió a **Lectura + export** (exportar miniSEED/PDF
+  de evidencia sí es coherente con coordinar respuesta). A nivel de datos, RLS solo le da
+  SELECT sobre tenants `gov_shared`; su único write es el acuse vía función dedicada
+  (`gov_ack_incident`, ver `db/schema.sql §8`).
 - `building_admin`: **sí puede ejecutar prueba de sirena** en su sitio; cada prueba queda en
   `audit_log` con su firma (`actor = user:{uuid}`, `verb = siren_test`).
 - `soc_operator`: el alcance lo determina el `tenant_id` del usuario. Un operador empleado por
@@ -92,7 +97,7 @@
 - **Ruta del comando:** la app intenta **LAN primero** (`takab_local_api` del gabinete), pero
   **la nube es obligatoria como camino garantizado** — el brigadista puede estar en LTE sin
   acceso a la LAN del edificio. Flujo nube: `app → AWS IoT Core (comando firmado) → gateway`.
-- **Limitación técnica documentada (ver SPOF-02):** el silencio por software actúa sobre el
+- **Limitación técnica documentada (ver blueprint §4.7 / FASE-0 SPOF-02 en `archive/`):** el silencio por software actúa sobre el
   **patrón de sirena que ejecuta el Pi** tras el evento (los minutos que realmente suenan).
   NO puede silenciar el pulso inicial breve de la rama de hardware paralela SASMEX→sirena
   mientras SASMEX mantenga el contacto cerrado. En la práctica esto cubre >95% del tiempo audible.
@@ -123,11 +128,18 @@ inspector · building_admin · brigadista · security_guard · occupant
   "cognito:groups": ["brigadista"],
   "custom:tenant_id": "uuid-del-tenant",
   "custom:role": "brigadista",
-  "custom:site_scope": ["site-uuid-1", "site-uuid-2"],   // sitios asignados (vacío = todo el tenant)
+  "custom:site_scope": ["site-uuid-1", "site-uuid-2"],   // sitios asignados; "*" = todo el tenant
   "custom:zone_id": "zone-uuid",                          // piso del ocupante (para instrucción binaria)
   "custom:surface": "mobile"                              // 'web' | 'mobile' | 'both'
 }
 ```
+
+> **[ANALISIS-00] Semántica de `site_scope` corregida a default-deny:** antes decía
+> "vacío = todo el tenant", es decir, un usuario creado SIN asignación heredaba acceso a todos
+> los sitios (default-allow). Regla nueva: **vacío o ausente = SIN acceso a sitios**; el alcance
+> de tenant completo se otorga explícitamente con `"*"` (roles admin/soc). Nota de diseño: si un
+> usuario acumula muchos sitios, no inflar el JWT — resolver el alcance server-side contra
+> `user_zone_assignments` y dejar `"*"`/lista corta en el claim.
 
 ### 5.3 Propagación a RLS (PostgreSQL)
 Cada request de la API setea, dentro de la transacción:
@@ -142,6 +154,10 @@ activa la cláusula de visibilidad cruzada solo para tenants `visibility = 'gov_
 ---
 
 ## 6. Tablas nuevas que exige este modelo
+
+> [ANALISIS-00] Snippets ilustrativos — la fuente de verdad del DDL es `db/schema.sql`, que
+> además añade `tenant_id` a `manual_activation_votes` y `life_checkins` (regla de oro 5), el
+> índice `(site_id, created_at)` para la ventana de 30 s, y append-only en `life_checkins`.
 
 ```sql
 -- Asignación usuario ↔ zona/piso (para instrucción binaria EVACÚE vs REPLIÉGUESE)
@@ -227,7 +243,11 @@ Heredados de Fase 0, siguen abiertos:
 1. **T-MINUS countdown** (web y app de ocupante): el WR-1 no entrega tiempo de arribo. MVP muestra
    "ALERTA SÍSMICA · PROTÉJASE" sin número. Pendiente investigar datos enriquecidos CIRES/SSN.
 2. **Magnitud preliminar "M 6.8":** mismo origen. MVP: "ALERTA SASMEX RECIBIDA" sin magnitud.
-3. **NOM-003-SCT** (mockup Triage): confirmado como requisito de cumplimiento real y vinculante
-   por `BLUEPRINT-TECNICO-TAKAB.md §9` — auditoría, evidencia de incidentes y dictámenes nunca
-   se podan por retención. Ya no es un "PENDIENTE"; ver también `TASKS.md T-1.20`.
+3. **Marco normativo de cumplimiento (mockup Triage decía "NOM-003-SCT"): SIGUE PENDIENTE.**
+   [ANALISIS-00] La edición anterior lo daba por "confirmado por BLUEPRINT §9", pero esa
+   confirmación era circular (el blueprint solo lo afirmaba) y la norma citada es de etiquetado
+   de materiales peligrosos en transporte — FASE-0 ya lo había descartado. La regla operativa
+   (auditoría, evidencia y dictámenes inmutables, nunca podados) es requisito TAKAB y NO cambia;
+   el marco legal citable se define con el primer cliente/abogado. Ver blueprint §9 y
+   `ANALISIS-ARQUITECTURA-TAKAB.md` pregunta abierta #1.
 4. **Disparador del pop-up automático de waveform:** propuesta STA/LTA > 3.5 sostenido 2 s.
