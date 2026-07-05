@@ -1,7 +1,7 @@
 .PHONY: dev down lint test fmt api web db install
 
-API_DIR := apps/api
-WEB_DIR := apps/web
+API_DIR := api
+WEB_DIR := web
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"

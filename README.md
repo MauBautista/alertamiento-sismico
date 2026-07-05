@@ -1,18 +1,19 @@
-# TAKAB Technology
+# TAKAB Ailert
 
 Plataforma SaaS multi-tenant de alertamiento sísmico, monitoreo estructural y
-continuidad operativa post-sismo (edge + cloud). Ver `CLAUDE.md` para contexto maestro.
+continuidad operativa post-sismo (edge + cloud). Ver `CLAUDE.md` para contexto maestro y
+`takab-docs/BLUEPRINT-TECNICO-TAKAB.md` para la arquitectura completa.
 
 ## Estructura
 
-- `apps/api` — FastAPI (Python 3.12)
-- `apps/web` — React 18 + TypeScript + Vite
-- `apps/edge` — software del Raspberry Pi 5 (placeholder)
-- `packages/schemas` — contratos compartidos (placeholder)
-- `packages/sdk-ts` — cliente TS generado (placeholder)
+- `edge/` — software del Raspberry Pi 5 (gateway de inteligencia; placeholder)
+- `api/` — FastAPI (Python 3.12)
+- `web/` — React 18 + TypeScript + Vite
+- `shared/schemas` — contratos compartidos (placeholder)
+- `shared/sdk-ts` — cliente TS generado (placeholder)
 - `infra/terraform` — IaC (placeholder)
 - `db/` — `schema.sql` de referencia
-- `docs/` — documentación maestra y planes
+- `takab-docs/` — documentación maestra y planes
 
 ## Desarrollo local
 
@@ -36,4 +37,4 @@ Verifica la API: `curl localhost:8000/health` → `{"status":"ok"}`
 | `make down`  | apaga el compose                          |
 
 > En Windows sin GNU Make/Docker: corre los comandos subyacentes directo
-> (`cd apps/api && pytest`, `cd apps/web && npm run test`, etc.).
+> (`cd api && pytest`, `cd web && npm run test`, etc.).

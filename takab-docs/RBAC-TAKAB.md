@@ -1,4 +1,4 @@
-# TAKAB Technology — Modelo de Control de Acceso (RBAC)
+# TAKAB Ailert — Modelo de Control de Acceso (RBAC)
 **Versión 1.0 · Fuente de verdad de roles, permisos y superficies**
 
 > Este documento es el contexto base para todos los prompts de autenticación, autorización,
@@ -201,7 +201,7 @@ la app valida contra `site_enrollment_codes` → Cognito crea el usuario en el g
 
 Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una protegida por rol:
 
-**Web (`apps/web`):**
+**Web (`web/`):**
 | Ruta | Página (mockup) | Roles con acceso |
 |---|---|---|
 | `/console` | Consola C4I (1) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
@@ -210,7 +210,7 @@ Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una 
 | `/tenants` | Multi-Tenant (4) | superadmin, support(lectura), tenant_admin(solo suyo) |
 | `/building/:siteId` | Dash Edificio | tenant_admin, building_admin, +lectura otros |
 
-**Móvil (`apps/mobile`):**
+**Móvil (`mobile/` — fase posterior, ver `TASKS.md` T-1.31):**
 | Stack de navegación | Pantallas | Roles |
 |---|---|---|
 | Ocupante | Reposo · Crisis · Check-in | `occupant` (y todos como base) |
@@ -227,6 +227,7 @@ Heredados de Fase 0, siguen abiertos:
 1. **T-MINUS countdown** (web y app de ocupante): el WR-1 no entrega tiempo de arribo. MVP muestra
    "ALERTA SÍSMICA · PROTÉJASE" sin número. Pendiente investigar datos enriquecidos CIRES/SSN.
 2. **Magnitud preliminar "M 6.8":** mismo origen. MVP: "ALERTA SASMEX RECIBIDA" sin magnitud.
-3. **NOM-003-SCT** (mockup Triage): es de transporte, no aplica. Sustituir por marco real con
-   el primer cliente.
+3. **NOM-003-SCT** (mockup Triage): confirmado como requisito de cumplimiento real y vinculante
+   por `BLUEPRINT-TECNICO-TAKAB.md §9` — auditoría, evidencia de incidentes y dictámenes nunca
+   se podan por retención. Ya no es un "PENDIENTE"; ver también `TASKS.md T-1.20`.
 4. **Disparador del pop-up automático de waveform:** propuesta STA/LTA > 3.5 sostenido 2 s.
