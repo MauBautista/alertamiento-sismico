@@ -1,0 +1,232 @@
+# TAKAB Technology — Modelo de Control de Acceso (RBAC)
+**Versión 1.0 · Fuente de verdad de roles, permisos y superficies**
+
+> Este documento es el contexto base para todos los prompts de autenticación, autorización,
+> routing y diseño-por-perfil. Toda decisión aquí está cerrada salvo lo marcado como PENDIENTE.
+> Decisiones incorporadas de las sesiones de descubrimiento y del blueprint de app móvil.
+
+---
+
+## 1. Roles del sistema (11)
+
+### Internos de TAKAB
+| Rol | Descripción | Superficie primaria |
+|---|---|---|
+| `takab_superadmin` | Dueño de la plataforma. Gestiona tenants. Ve todo. | Web |
+| `takab_support` | Operadores técnicos de TAKAB. Mantenimiento y diagnóstico de flota. | Web |
+
+### Por tenant (cliente)
+| Rol | Descripción | Superficie primaria |
+|---|---|---|
+| `tenant_admin` | Administra su organización: sitios, usuarios, umbrales. | Web |
+| `soc_operator` | Operador de centro de monitoreo 24/7. **Puede ser servicio TAKAB o rol del propio tenant** — mismo rol, distinto alcance según a qué tenant pertenece el usuario. | Web |
+| `inspector` | Ingeniero estructural. Firma dictámenes de reingreso. | Web + Móvil |
+| `building_admin` | Responsable de un edificio específico. | Web + Móvil |
+| `brigadista` | Personal de respuesta en campo. | **Móvil** (web fase posterior) |
+| `security_guard` | Seguridad/vigilancia del inmueble. | Móvil |
+| `occupant` | Ocupante común del edificio. Rol más numeroso, menor privilegio. | **Móvil only** |
+
+### Gobierno
+| Rol | Descripción | Superficie primaria |
+|---|---|---|
+| `gov_operator` | Protección Civil. Visibilidad cruzada **solo** de tenants marcados `visibility = 'gov_shared'`. | Web |
+
+---
+
+## 2. Matriz de acceso · SOC Web
+
+| Rol | Consola C4I | Flota Edge | Triage | Multi-Tenant | Dash Edificio | Alcance de datos |
+|---|---|---|---|---|---|---|
+| `takab_superadmin` | Total | Total | Total | Total | Total | Toda la plataforma |
+| `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Todos los tenants |
+| `tenant_admin` | Lectura + ack | Lectura | Lectura | Solo sus umbrales | Total | Su tenant |
+| `soc_operator` | **Total** | Lectura | Lectura + crear | — | Lectura | Su tenant |
+| `gov_operator` | Lectura + ack | Lectura | **Total** | — | Lectura | Tenants `gov_shared` |
+| `inspector` | Lectura | — | **Total** (firma dictamen) | — | Lectura | Sitios asignados |
+| `building_admin` | Lectura (su sitio) | — | Lectura (su sitio) | — | **Total** | Su(s) sitio(s) |
+| `brigadista` | — | — | — | — | — | (móvil en MVP) |
+| `security_guard` | — | — | — | — | — | (móvil) |
+| `occupant` | — | — | — | — | — | (móvil only) |
+
+**Notas:**
+- "Total" en Consola C4I incluye: acuse, solicitar dictamen técnico, reubicar epicentro.
+- `gov_operator`: **solo lectura + acuse**. NO puede silenciar ni probar actuadores de inmuebles
+  ajenos (decisión cerrada — controlar la sirena de un tercero es inaceptable).
+- `building_admin`: **sí puede ejecutar prueba de sirena** en su sitio; cada prueba queda en
+  `audit_log` con su firma (`actor = user:{uuid}`, `verb = siren_test`).
+- `soc_operator`: el alcance lo determina el `tenant_id` del usuario. Un operador empleado por
+  TAKAB que presta servicio a un cliente se modela como usuario perteneciente a ese tenant.
+
+---
+
+## 3. Matriz de acceso · App Móvil
+
+| Función móvil | `occupant` | `brigadista` | `security_guard` | `inspector` | `building_admin` |
+|---|---|---|---|---|---|
+| Estado del edificio (verde/alerta) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Directorio emergencia / rutas evacuación | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Pantalla de crisis + instrucción por piso | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check-in de vida (a salvo / necesito ayuda) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dashboard táctico (salud gabinete + actuadores) | — | ✅ | ✅ | Lectura | ✅ |
+| **Silenciar** sirena local | — | ✅ | ✅ | — | ✅ |
+| **Activar** sirena manual (no sísmica) | ✅ *(quórum 2 ocupantes)* | ✅ *(individual)* | ✅ *(individual)* | ✅ *(individual)* | ✅ *(individual)* |
+| Cámara forense (watermark PGA/GPS/hora/ID) | — | ✅ | ✅ | ✅ | — |
+| Formulario de triage de daños | — | ✅ | ✅ | ✅ (firma) | — |
+| Headcount / pase de lista | — | ✅ | ✅ | — | ✅ |
+| Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
+
+---
+
+## 4. Reglas críticas de actuadores (seguridad)
+
+### 4.1 Activación manual de sirena por no-sismo
+- **`occupant`:** requiere **quórum de 2 ocupantes** — dos activaciones independientes en el mismo
+  `site_id` dentro de una ventana de **30 s**. Evita pánico/abuso de un solo usuario.
+  La primera activación queda "pendiente" y notifica; la segunda confirma y dispara.
+- **`brigadista` / `security_guard` / `inspector` / `building_admin`:** **deslizar-para-activar
+  individual**, sin segundo confirmante.
+- Toda activación manual → `incident_actions` + `audit_log` con ID, GPS y timestamp.
+
+### 4.2 Silenciar sirena
+- Roles con permiso: `brigadista`, `security_guard`, `building_admin` (y superiores TAKAB).
+- **Ruta del comando:** la app intenta **LAN primero** (`takab_local_api` del gabinete), pero
+  **la nube es obligatoria como camino garantizado** — el brigadista puede estar en LTE sin
+  acceso a la LAN del edificio. Flujo nube: `app → AWS IoT Core (comando firmado) → gateway`.
+- **Limitación técnica documentada (ver SPOF-02):** el silencio por software actúa sobre el
+  **patrón de sirena que ejecuta el Pi** tras el evento (los minutos que realmente suenan).
+  NO puede silenciar el pulso inicial breve de la rama de hardware paralela SASMEX→sirena
+  mientras SASMEX mantenga el contacto cerrado. En la práctica esto cubre >95% del tiempo audible.
+
+### 4.3 Endurecimiento del control de actuadores por nube ⚠️
+Como ahora se permite **activar** y **silenciar** actuadores desde un teléfono por internet, este
+camino es la superficie más sensible del sistema. Requisitos no negociables:
+1. **Comando firmado** (HMAC/JWT corto) verificado por el gateway antes de ejecutar.
+2. **MFA** obligatorio en el login de roles que pueden activar/silenciar actuadores.
+3. **Rate-limit** por usuario y por sitio (evita activación repetida).
+4. **Idempotencia + nonce** (un comando capturado no puede reenviarse).
+5. **Confirmación de ejecución** del gateway de vuelta a la app (`ack` con estado real del relé).
+
+---
+
+## 5. Mapeo a AWS Cognito y claims del JWT
+
+### 5.1 Grupos de Cognito (uno por rol)
+```
+takab_superadmin · takab_support · tenant_admin · soc_operator · gov_operator
+inspector · building_admin · brigadista · security_guard · occupant
+```
+
+### 5.2 Claims del JWT (custom attributes + token claims)
+```json
+{
+  "sub": "uuid-del-usuario",
+  "cognito:groups": ["brigadista"],
+  "custom:tenant_id": "uuid-del-tenant",
+  "custom:role": "brigadista",
+  "custom:site_scope": ["site-uuid-1", "site-uuid-2"],   // sitios asignados (vacío = todo el tenant)
+  "custom:zone_id": "zone-uuid",                          // piso del ocupante (para instrucción binaria)
+  "custom:surface": "mobile"                              // 'web' | 'mobile' | 'both'
+}
+```
+
+### 5.3 Propagación a RLS (PostgreSQL)
+Cada request de la API setea, dentro de la transacción:
+```sql
+SET LOCAL app.tenant_id = '{custom:tenant_id}';
+SET LOCAL app.role      = '{custom:role}';
+SET LOCAL app.user_id   = '{sub}';
+```
+Las políticas RLS (definidas en el esquema de Fase 0) usan estos valores. El rol `gov_operator`
+activa la cláusula de visibilidad cruzada solo para tenants `visibility = 'gov_shared'`.
+
+---
+
+## 6. Tablas nuevas que exige este modelo
+
+```sql
+-- Asignación usuario ↔ zona/piso (para instrucción binaria EVACÚE vs REPLIÉGUESE)
+CREATE TABLE user_zone_assignments (
+  user_id    uuid NOT NULL,                 -- = Cognito sub
+  tenant_id  uuid NOT NULL REFERENCES tenants,
+  site_id    uuid NOT NULL REFERENCES sites,
+  zone_id    uuid REFERENCES zones,
+  role       text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, site_id)
+);
+
+-- Auto-registro de ocupantes por código de edificio (QR/PIN)
+CREATE TABLE site_enrollment_codes (
+  code        text PRIMARY KEY,             -- impreso como QR/PIN en el edificio
+  tenant_id   uuid NOT NULL REFERENCES tenants,
+  site_id     uuid NOT NULL REFERENCES sites,
+  zone_id     uuid REFERENCES zones,        -- opcional: código por piso
+  grants_role text NOT NULL DEFAULT 'occupant'
+              CHECK (grants_role IN ('occupant')),  -- solo ocupantes por auto-registro
+  expires_at  timestamptz,
+  max_uses    int,
+  uses        int NOT NULL DEFAULT 0,
+  active      boolean NOT NULL DEFAULT true
+);
+
+-- Quórum de activación manual de sirena por ocupantes (ventana 30 s)
+CREATE TABLE manual_activation_votes (
+  vote_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_id    uuid NOT NULL REFERENCES sites,
+  user_id    uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  consumed   boolean NOT NULL DEFAULT false
+);
+
+-- Check-in de vida post-sismo
+CREATE TABLE life_checkins (
+  checkin_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  incident_id uuid REFERENCES incidents,
+  user_id    uuid NOT NULL,
+  site_id    uuid NOT NULL REFERENCES sites,
+  status     text NOT NULL CHECK (status IN ('safe','need_help')),
+  geom       geography(Point,4326),
+  zone_id    uuid REFERENCES zones,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+**Registro de ocupante (auto-registro):** el usuario escanea el QR / teclea el PIN del edificio →
+la app valida contra `site_enrollment_codes` → Cognito crea el usuario en el grupo `occupant` con
+`tenant_id`, `site_id` y `zone_id` heredados del código. Sin carga manual.
+
+---
+
+## 7. Superficies de diseño a separar (el "diseño revuelto")
+
+Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una protegida por rol:
+
+**Web (`apps/web`):**
+| Ruta | Página (mockup) | Roles con acceso |
+|---|---|---|
+| `/console` | Consola C4I (1) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
+| `/fleet` | Flota Edge (2) | superadmin, support, tenant_admin, soc_operator, gov_operator, building_admin |
+| `/triage` | Triage (3) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
+| `/tenants` | Multi-Tenant (4) | superadmin, support(lectura), tenant_admin(solo suyo) |
+| `/building/:siteId` | Dash Edificio | tenant_admin, building_admin, +lectura otros |
+
+**Móvil (`apps/mobile`):**
+| Stack de navegación | Pantallas | Roles |
+|---|---|---|
+| Ocupante | Reposo · Crisis · Check-in | `occupant` (y todos como base) |
+| Táctico | Dashboard gabinete · Control Edge · Triage cámara · Headcount · Dictamen | `brigadista`, `security_guard`, `inspector`, `building_admin` |
+
+Cada pantalla/ruta debe manejar el estado **"sin acceso"** (no solo ocultar el botón: el guard
+del router bloquea la navegación directa por URL/deep-link).
+
+---
+
+## 8. PENDIENTES (no bloquean RBAC, sí bloquean otros prompts)
+
+Heredados de Fase 0, siguen abiertos:
+1. **T-MINUS countdown** (web y app de ocupante): el WR-1 no entrega tiempo de arribo. MVP muestra
+   "ALERTA SÍSMICA · PROTÉJASE" sin número. Pendiente investigar datos enriquecidos CIRES/SSN.
+2. **Magnitud preliminar "M 6.8":** mismo origen. MVP: "ALERTA SASMEX RECIBIDA" sin magnitud.
+3. **NOM-003-SCT** (mockup Triage): es de transporte, no aplica. Sustituir por marco real con
+   el primer cliente.
+4. **Disparador del pop-up automático de waveform:** propuesta STA/LTA > 3.5 sostenido 2 s.

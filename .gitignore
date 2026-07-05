@@ -1,0 +1,45 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+*secrets*
+*credentials*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / web
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Backups / bundles (contenido duplicado)
+files.zip
+Design System/Dashboard Alertamiento Sismico.zip
+
+# Claude Code local settings (config del asistente, no del proyecto)
+.claude/settings.local.json
