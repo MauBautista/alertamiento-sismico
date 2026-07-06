@@ -24,7 +24,8 @@ def mock_pin_factory() -> Iterator[None]:
 
 @pytest.fixture
 def settings() -> EdgeSettings:
-    return load_settings()  # dev_mode=True por defecto
+    # Puerto 0 = efímero: el dashboard LAN no colisiona entre tests ni con servicios reales.
+    return load_settings().model_copy(update={"local_api_port": 0})  # dev_mode=True por defecto
 
 
 @pytest.fixture

@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.13** (`takab_local_api`) — hecho: T-1.2…T-1.12
+**Estado actual:** ▶ siguiente tarea = **T-1.14** (integración E2E) — hecho: T-1.2…T-1.13
 
 ---
 
@@ -223,10 +223,16 @@
 - **Revisión adversarial:** 8 hallazgos corregidos (versión no firmada = downgrade/DoS; rollback
   reabría replay; fail-open). mTLS/X.509 provisioning + transporte de la sync = gate AWS (T-1.15).
 
-### [ ] T-1.13 · `takab_local_api` — dashboard local del edificio
+### [x] T-1.13 · `takab_local_api` — dashboard local del edificio · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.8
 - **Criterios:** accesible en LAN sin internet; muestra estado, último evento, prueba de sirena;
   recibe comando de silencio por LAN.
+- **Servidor** (`edge/takab_edge/local_api`): HTTP mínimo con stdlib `http.server` (sin deps
+  pesadas), en hilo daemon, bind LAN (`local_api_host/port`). `GET /` sirve un dashboard HTML con
+  estados loading/error/**stale** (regla de oro 7) y el banner MVP "ALERTA SÍSMICA · PROTÉJASE";
+  `GET /api/status`; `POST /api/silence` · `/api/siren-test` · `/api/reset`. Verificado con HTTP
+  real por loopback (puerto efímero). Acceso controlado por segmentación de red (LAN física); un
+  PIN/token local queda como mejora futura.
 
 ### [ ] T-1.14 · Simulador de sismo + integración edge end-to-end — **[A10]**
 - **Componente:** tooling/edge · **Depende de:** T-1.5, T-1.8, T-1.9 · **Prioridad: ALTA**

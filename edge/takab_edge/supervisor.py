@@ -125,7 +125,9 @@ class EdgeSupervisor:
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
-        self.local_api = LocalDashboard(self.gpio, self.rules, self.health)
+        self.local_api = LocalDashboard(
+            self.gpio, self.rules, self.health, host=s.local_api_host, port=s.local_api_port
+        )
 
         self._modules: dict[str, EdgeModule] = {
             m.name: m
