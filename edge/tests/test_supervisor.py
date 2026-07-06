@@ -69,3 +69,16 @@ def test_instrumental_event_drives_tier(supervisor):
     assert len(supervisor.buffer) == 1
     # La ruta instrumental debe alertar audiblemente por su cuenta (blueprint §4.5):
     assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is True
+
+
+def test_production_supervisor_wires_real_seedlink_transport(monkeypatch):
+    # En producción (dev_mode=False) el edge DEBE conectar de verdad al Shake.
+    from takab_edge.config import EdgeSettings
+    from takab_edge.seedlink import ObsPySeedLinkTransport
+
+    monkeypatch.setenv("TAKAB_EDGE_HMAC_KEY", "clave-prod-de-prueba")
+    settings = EdgeSettings(dev_mode=False)
+    sup = EdgeSupervisor(settings)
+    sup.build()  # sólo ensambla; no arranca (no conecta)
+    assert isinstance(sup.seedlink._transport, ObsPySeedLinkTransport)
+    assert sup.seedlink._transport.station == settings.seedlink_station_code

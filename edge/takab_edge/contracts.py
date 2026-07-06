@@ -13,7 +13,7 @@ Reglas de oro relevantes (CLAUDE.md §2):
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import uuid4
 
@@ -90,6 +90,20 @@ class WaveformPacket(BaseModel):
     @property
     def npts(self) -> int:
         return len(self.samples)
+
+    @property
+    def endtime(self) -> datetime:
+        """Tiempo de la última muestra (para lag y detección de gaps)."""
+        if not self.samples or self.sample_rate <= 0:
+            return self.starttime
+        return self.starttime + timedelta(seconds=(self.npts - 1) / self.sample_rate)
+
+    @property
+    def next_starttime(self) -> datetime:
+        """Inicio esperado del paquete contiguo siguiente (fin de cobertura)."""
+        if self.sample_rate <= 0:
+            return self.starttime
+        return self.starttime + timedelta(seconds=self.npts / self.sample_rate)
 
 
 class Feature1s(BaseModel):

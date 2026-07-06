@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.4**
+**Estado actual:** ▶ siguiente tarea = **T-1.6** (carril instrumental; **T-1.4** pendiente — runbook, hardware-gated)
 
 ---
 
@@ -79,13 +79,25 @@
 - **Criterios:** con el Pi apagado, el contacto sigue disparando la sirena (relé de potencia en
   paralelo). Documentado en runbook.
 
-### [ ] T-1.5 · `seedlink` — cliente SeedLink → bus local — **[A1]**
+### [x] T-1.5 · `seedlink` — cliente SeedLink → bus local — **[A1]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.2
 - **Criterios:** cliente SeedLink TCP 18000 al Shake; reconexión con backoff y medición de lag;
   cero pérdida al reiniciar el Shake; consume feed simulado 100 sps estable ([ANALISIS-00]: el
   RS4D muestrea a 100 sps, no 200 Hz). Objetivo de lag <1 s sostenido 24 h **contra el
   simulador**; contra hardware real, MEDIR primero — la latencia real de SeedLink del Shake es
   dependencia de proveedor (blueprint §15) y puede ser de varios segundos.
+- **VALIDADO CONTRA HARDWARE REAL** (`AM.R4F74`, ringserver OSOP, accesible en la LAN):
+  **lag mediano ~0.4 s** (min 0.28 / max 0.61) — cierra el gate #3 de latencia y confirma que el
+  presupuesto instrumental **≤2 s es alcanzable**; el fallback UDP datacast **NO hace falta**
+  (pregunta abierta #3 resuelta). **100 sps confirmado**; 4 canales EHZ/ENZ/ENN/ENE. Cliente real
+  vía ObsPy (`SeedLinkConnection`) con reconexión backoff+jitter, dedup por `(canal,starttime)`,
+  detección de gaps y **cero-pérdida por resume de número de secuencia** (validado: el ring
+  reproduce el histórico por seqnum; el resume por *tiempo* NO funciona en este ringserver).
+  Transporte abstracto → `FakeTransport` prueba la lógica sin hardware; el test de hardware se
+  salta si el Shake no es alcanzable (CI). El transporte real se **cablea en el supervisor de
+  producción** (`dev_mode=False`); el simulador RS4D queda para dev. 92 tests verdes.
+  **Pendiente hardware-gated:** soak de 24 h y validación de reinicio físico del Shake; backfill
+  FDSN/S3 para huecos largos = T-1.25.
 
 ### [ ] T-1.6 · `signal` — features 1 s (PGA, PGV, RMS, STA/LTA) — **[A2]**
 - **Componente:** edge · **Depende de:** T-1.5

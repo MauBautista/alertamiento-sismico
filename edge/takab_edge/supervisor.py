@@ -35,7 +35,7 @@ from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
 from takab_edge.rules import RuleEngine, commands_for
 from takab_edge.security import SecurityManager
-from takab_edge.seedlink import SeedLinkClient
+from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 from takab_edge.signal import FeatureExtractor
 
 log = logging.getLogger("takab_edge.supervisor")
@@ -89,12 +89,29 @@ class EdgeSupervisor:
         self._built = False
         self._stop_event = threading.Event()
 
+    def _build_seedlink(self, s: EdgeSettings) -> SeedLinkClient:
+        """En dev usa el simulador RS4D; en producción, el transporte SeedLink real.
+
+        (Los drivers reales de BACnet y cloud se cablean en T-1.9/T-1.11.)
+        """
+        if s.dev_mode:
+            return SeedLinkClient(s, source=self._seedlink_source)
+        transport = ObsPySeedLinkTransport(
+            s.seedlink_host,
+            s.seedlink_port,
+            s.seedlink_network,
+            s.seedlink_station_code,
+            s.seedlink_location,
+            s.seedlink_channels,
+        )
+        return SeedLinkClient(s, transport=transport)
+
     def build(self) -> EdgeSupervisor:
         from simulators.bacnet import BacnetSimulator
 
         s = self.settings
         self.gpio = GpioController(s)
-        self.seedlink = SeedLinkClient(s, source=self._seedlink_source)
+        self.seedlink = self._build_seedlink(s)
         self.signal = FeatureExtractor()
         self.buffer = RingBuffer()
         self.rules = RuleEngine(s.thresholds)

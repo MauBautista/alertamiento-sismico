@@ -71,6 +71,16 @@ class EdgeSettings(BaseSettings):
     seedlink_host: str = "127.0.0.1"
     seedlink_port: int = 18000
     sample_rate: float = 100.0
+    seedlink_network: str = "AM"
+    seedlink_station: str = ""  # vacío → usa `station`
+    seedlink_location: str = "00"
+    seedlink_channels: list[str] = ["EHZ", "ENZ", "ENN", "ENE"]
+    seedlink_backoff_initial_s: float = Field(default=1.0, gt=0)  # >0: evita hot-spin
+    seedlink_backoff_max_s: float = Field(default=30.0, gt=0)
+
+    @property
+    def seedlink_station_code(self) -> str:
+        return self.seedlink_station or self.station
 
     # --- Cloud (AWS IoT Core) ---
     mqtt_endpoint: str = ""
