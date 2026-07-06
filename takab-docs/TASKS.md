@@ -9,7 +9,8 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.14** (integración E2E) — hecho: T-1.2…T-1.13
+**Estado actual:** ▶ **BLOQUE EDGE (A) COMPLETO** (T-1.2…T-1.14). Siguiente doable-sin-AWS = **T-1.16**
+(migraciones DB + RLS vs Postgres local); T-1.15 y T-1.17+ requieren AWS.
 
 ---
 
@@ -234,12 +235,18 @@
   real por loopback (puerto efímero). Acceso controlado por segmentación de red (LAN física); un
   PIN/token local queda como mejora futura.
 
-### [ ] T-1.14 · Simulador de sismo + integración edge end-to-end — **[A10]**
+### [x] T-1.14 · Simulador de sismo + integración edge end-to-end — **[A10]** · COMPLETA · cierra Fase E
 - **Componente:** tooling/edge · **Depende de:** T-1.5, T-1.8, T-1.9 · **Prioridad: ALTA**
 - **Criterios:** inyector SeedLink + generador de eventos permite demo E2E y tests de carga sin
   sismo real; evento simulado → actuación autónoma completa sin nube (**test con la nube
   apagada** — cierra el hito de la Fase E, ver PLAN-MAESTRO §4). Hardware-in-the-loop:
   opcional y hardware-gated (#3), no bloquea el cierre contra simuladores.
+- **Generador de sismo** (`edge/simulators/quake.py`): secuencia multi-canal ruido→P→S que corrobora
+  disparo en ≥2 ejes. **E2E** (`edge/tests/test_e2e.py`, nube APAGADA): sismo instrumental →
+  `evacuate_or_hold` + secuencia completa (sirena+estrobo+gas+ascensor+puerta) sin nube; reflejo
+  SASMEX inmediato; latencia <200 ms; **cero explosión de duplicados** (episodio); ventana miniSEED
+  extraíble para evidencia; carga de 300 paquetes de ruido sin alerta espuria. Hardware-in-the-loop
+  = gate #3.
 
 ---
 
