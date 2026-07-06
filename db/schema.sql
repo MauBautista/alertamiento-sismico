@@ -24,6 +24,18 @@
 --   7. Hypertable `rule_evaluations` (por transición de tier, P5) añadida — la
 --      exigía el blueprint §5.4 y no existía.
 --   Detalle y razones: takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md
+--
+-- [ANALISIS-00] v1.2 · T-1.16 — conflicto TimescaleDB RLS ↔ columnstore/caggs:
+--   TimescaleDB (issue timescale/timescaledb#6827, abierto) NO permite en una misma
+--   hypertable: (a) compresión/columnstore + RLS, ni (b) continuous aggregates + RLS.
+--   Se descubrió al aplicar el schema en TimescaleDB 2.28 (T-1.16). Correcciones:
+--     1. waveform_features_1s (tiene caggs) → SIN RLS y SIN compresión. Aislamiento
+--        por tenant vía la vista security_barrier `waveform_features_1s_secure`
+--        (JOIN a `sites`, que sí tiene RLS+FORCE) + REVOKE de la base a takab_app.
+--     2. device_health / rule_evaluations (sin caggs) → conservan RLS pero PIERDEN
+--        compresión (incompatible con RLS). Retención intacta.
+--     3. El ahorro de almacenamiento se traslada del crudo a los caggs
+--        (site_metrics_1m/1h), que no llevan RLS: se comprimen.
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
@@ -310,13 +322,13 @@ CREATE TABLE waveform_features_1s (
 SELECT create_hypertable('waveform_features_1s','ts', chunk_time_interval => INTERVAL '1 day');
 CREATE INDEX idx_wf_site_ts   ON waveform_features_1s (site_id, ts DESC);
 CREATE INDEX idx_wf_tenant_ts ON waveform_features_1s (tenant_id, ts DESC);
--- [ANALISIS-00] segmentby incluye tenant_id/site_id: las políticas RLS y las queries
--- del SOC filtran por esas columnas; si quedan fuera del segmentby, cada scan sobre
--- chunks comprimidos las descomprime fila a fila.
-ALTER TABLE waveform_features_1s SET (timescaledb.compress,
-       timescaledb.compress_segmentby = 'tenant_id,site_id,sensor_id,channel',
-       timescaledb.compress_orderby   = 'ts DESC');
-SELECT add_compression_policy('waveform_features_1s', INTERVAL '7 days');
+-- [ANALISIS-00 v1.2] waveform_features_1s NO lleva compresión (columnstore) NI RLS:
+-- TimescaleDB prohíbe columnstore sobre una hypertable con RLS y prohíbe crear
+-- continuous aggregates sobre una hypertable con RLS (timescale/timescaledb#6827);
+-- esta tabla tiene ambos (caggs site_metrics_1m/1h). El aislamiento por tenant se
+-- resuelve con la vista security_barrier `waveform_features_1s_secure` (más abajo);
+-- el ahorro de almacenamiento se traslada a la compresión de los caggs. La retención
+-- de la cruda se mantiene.
 SELECT add_retention_policy   ('waveform_features_1s', INTERVAL '24 months');
 
 -- [ANALISIS-00] device_health_10s (muestreo por intervalo de 10 s) violaba P5
@@ -334,10 +346,9 @@ CREATE TABLE device_health (
   PRIMARY KEY (ts, gateway_id)
 );
 SELECT create_hypertable('device_health','ts');
-ALTER TABLE device_health SET (timescaledb.compress,
-       timescaledb.compress_segmentby = 'tenant_id,gateway_id',
-       timescaledb.compress_orderby   = 'ts DESC');
-SELECT add_compression_policy('device_health', INTERVAL '7 days');
+-- [ANALISIS-00 v1.2] device_health conserva RLS (no tiene caggs) pero PIERDE la
+-- compresión: columnstore y RLS son incompatibles en la misma hypertable
+-- (timescale/timescaledb#6827). Se prioriza el aislamiento. Retención intacta.
 SELECT add_retention_policy  ('device_health', INTERVAL '12 months');
 
 -- [ANALISIS-00] Transiciones del motor de reglas (blueprint §5.4, P5: por transición,
@@ -373,6 +384,10 @@ GROUP BY bucket, tenant_id, site_id;
 SELECT add_continuous_aggregate_policy('site_metrics_1m',
   start_offset => INTERVAL '10 minutes', end_offset => INTERVAL '1 minute',
   schedule_interval => INTERVAL '1 minute');
+-- [ANALISIS-00 v1.2] El ahorro de almacenamiento se traslada del crudo al cagg
+-- (los caggs no llevan RLS → sí admiten columnstore).
+ALTER MATERIALIZED VIEW site_metrics_1m SET (timescaledb.compress = true);
+SELECT add_compression_policy('site_metrics_1m', compress_after => INTERVAL '30 days');
 
 -- [ANALISIS-00] Agregado 1h (blueprint §5.4 lo lista; faltaba en v1) para rangos largos
 -- del Triage/históricos sin escanear el crudo de 1 s.
@@ -385,6 +400,19 @@ GROUP BY bucket, tenant_id, site_id;
 SELECT add_continuous_aggregate_policy('site_metrics_1h',
   start_offset => INTERVAL '3 hours', end_offset => INTERVAL '1 hour',
   schedule_interval => INTERVAL '30 minutes');
+ALTER MATERIALIZED VIEW site_metrics_1h SET (timescaledb.compress = true);
+SELECT add_compression_policy('site_metrics_1h', compress_after => INTERVAL '90 days');
+
+-- [ANALISIS-00 v1.2] Vista de aislamiento del crudo. waveform_features_1s no puede
+-- llevar RLS (tiene caggs), así que el acceso multi-tenant de la API pasa por esta
+-- vista: security_barrier + JOIN a `sites` (RLS+FORCE). A takab_app se le concede
+-- SELECT SOLO sobre la vista y se le REVOCA la tabla base (grants en la migración
+-- T-1.16); takab_ingest escribe la base directamente (BYPASSRLS). Semántica definer:
+-- aunque la ejecute el dueño de la vista, `sites` filtra por app.tenant_id de sesión
+-- porque tiene FORCE. gov_operator ve el crudo de tenants gov_shared (herencia de
+-- la política de `sites`), consistente con la matriz de visibilidad de §8.
+CREATE VIEW waveform_features_1s_secure WITH (security_barrier = true) AS
+  SELECT wf.* FROM waveform_features_1s wf JOIN sites s ON s.site_id = wf.site_id;
 
 -- ---------------------------------------------------------------------------
 -- 7. EVIDENCIAS (S3) + AUDIT LOG
@@ -566,15 +594,14 @@ CREATE POLICY evidence_insert ON evidence_objects FOR INSERT
 CREATE POLICY evidence_admin ON evidence_objects FOR INSERT
   WITH CHECK (app_is_takab_internal());
 
--- [ANALISIS-00] Hypertables gestionadas por jobs de TimescaleDB (compresión, retención,
--- refresh de caggs): ENABLE sin FORCE. Razón: esos jobs corren como el OWNER de la tabla;
--- con FORCE el owner queda sujeto a RLS y los jobs verían 0 filas (caggs vacíos, compresión
--- rota). La API sigue 100% restringida: se conecta como `takab_app`, que NUNCA es owner.
--- T-1.16 debe verificar explícitamente jobs + RLS en TimescaleDB real.
-ALTER TABLE waveform_features_1s ENABLE ROW LEVEL SECURITY;
-CREATE POLICY wf_read ON waveform_features_1s FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
--- (escritura solo takab_ingest/BYPASSRLS; la API no inserta features)
+-- [ANALISIS-00] Hypertables con RLS: ENABLE sin FORCE. Razón: los jobs de TimescaleDB
+-- (retención, refresh de caggs) corren como el OWNER; con FORCE el owner queda sujeto a
+-- RLS y los jobs verían 0 filas. La API sigue restringida: se conecta como `takab_app`,
+-- que NUNCA es owner. T-1.16 verifica jobs + RLS en TimescaleDB real.
+-- [ANALISIS-00 v1.2] waveform_features_1s NO lleva RLS: TimescaleDB prohíbe RLS en una
+-- hypertable con continuous aggregates (timescale/timescaledb#6827) y esta los tiene.
+-- Su aislamiento por tenant lo da la vista `waveform_features_1s_secure` (§6) + el
+-- REVOKE de la tabla base a takab_app (migración). Escritura: solo takab_ingest/BYPASSRLS.
 
 ALTER TABLE device_health ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dh_read ON device_health FOR SELECT
