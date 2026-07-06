@@ -41,16 +41,24 @@ class LocalDashboard(EdgeModule):
         snap = self._health.snapshot()
         return {
             "gateway_id": snap.gateway_id,
+            # Distinguir alerta REAL vs. sirena sonando vs. silenciado (regla de oro 7):
             "sasmex_active": self._gpio.sasmex_active,
+            "siren_sounding": self._gpio.siren_sounding,
+            "audible_silenced": self._gpio.audible_silenced,
             "last_tier": decision.tier.value if decision else None,
             "relays": [r.model_dump(mode="json") for r in self._gpio.relay_states()],
             "captured_at": snap.captured_at.isoformat(),
         }
 
     def silence(self) -> None:
-        """Comando de silencio por LAN: inhibe el reflejo a sirena (T-1.3 lo endurece)."""
-        self._gpio.set_reflex_enabled(False)
+        """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""
+        self._gpio.silence_audibles(True)
         log.warning("silencio solicitado por LAN")
+
+    def reset_alert(self) -> None:
+        """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
+        self._gpio.reset()
+        log.warning("alerta cerrada/re-armada por LAN")
 
     def _on_start(self) -> None:
         log.info("dashboard LAN activo (transporte HTTP: T-1.13)")

@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.3**
+**Estado actual:** ▶ siguiente tarea = **T-1.4**
 
 ---
 
@@ -58,7 +58,7 @@
         (verificado por el entry point real `uv run takab-edge`: 11 módulos arrancan en orden
         topológico, transmiten y paran limpio).
 
-### [ ] T-1.3 · `gpio` — WR-1 (contacto seco) → relés locales — **[A4]**
+### [x] T-1.3 · `gpio` — WR-1 (contacto seco) → relés locales — **[A4]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.2 · **Prioridad: ALTA**
 - **Criterios:** cierre del contacto → reflejo SASMEX→sirena **in-process** en <100 ms (medido);
   debounce 50 ms; botón silencio y botón prueba; fail-safe NO/NC configurable por canal;
@@ -66,6 +66,13 @@
   `[SUPUESTO #6 plan-maestro]` módulo consolidado (entrada + relés en un proceso).
   **A validar con hardware (gate #3):** semántica real de contactos del WR-1 (asignación
   alerta/prueba, duración, rebote, latching) — la aceptación final se re-corre con el receptor real.
+- **Cerrada contra simuladores** (gate #3 pendiente de hardware): reflejo con latencia medida
+  (software ≪ presupuesto); debounce 50 ms; **modelo de estado por demandas arbitradas bajo `RLock`**
+  (reflejo/rules/self-test/silencio), corregido en 2 rondas de revisión adversarial; silencio que
+  apaga el audible YA y **re-suena ante alarma nueva** (NFPA-72) sin tocar el estrobo; fail-safe
+  NO/NC/fail-close con `drive_all_safe` durable; 1000 ciclos; proceso mínimo `takab-gpio` (<1 s, sin
+  ObsPy/NumPy). 83 tests verdes. **Pendiente pre-despliegue:** exponer cierre/re-armado y semántica de
+  re-alarma cuando lleguen T-1.12/T-1.13 y el hardware (gate #3).
 
 ### [ ] T-1.4 · Ruta de hardware paralela SASMEX→sirena (SPOF-02)
 - **Componente:** edge/hw · **Depende de:** T-1.3 · **Prioridad: ALTA**

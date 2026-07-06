@@ -37,9 +37,11 @@ class ThresholdBand(BaseModel):
 
 
 class GpioPins(BaseModel):
-    """Asignación BCM de pines (placeholder; se valida con hardware en T-1.3)."""
+    """Asignación BCM de pines (placeholder; la asignación real se valida en gate #3)."""
 
-    wr1_contact: int = 16
+    wr1_contact: int = 16  # entrada: contacto seco de alerta SASMEX (WR-1)
+    silence_button: int = 5  # entrada: botón de silencio (local)
+    test_button: int = 6  # entrada: botón de prueba de sirena (self-test)
     relay_siren: int = 17
     relay_strobe: int = 27
     relay_gas_valve: int = 22
@@ -77,6 +79,10 @@ class EdgeSettings(BaseSettings):
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
     local_api_port: int = 8080
+
+    # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
+    debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
+    siren_test_duration_s: float = 2.0  # duración del self-test del botón de prueba
 
     # --- Perfil de relés, umbrales y pines ---
     failsafe: dict[ActuatorChannel, FailSafeMode] = Field(

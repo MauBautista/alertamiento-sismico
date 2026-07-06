@@ -72,8 +72,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: edge/uv.lock
-      - name: Sincronizar entorno (Python 3.12 + deps)
-        run: uv sync --extra dev
+      - name: Sincronizar entorno (Python 3.12 + deps + grupo dev)
+        run: uv sync
       - name: Lint (ruff)
         run: uv run ruff check .
       - name: Formato (ruff)

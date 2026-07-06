@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from takab_edge.contracts import ActuatorChannel
-
 
 def test_status_reports_gateway_and_relays(supervisor):
     status = supervisor.local_api.status()
@@ -12,7 +10,16 @@ def test_status_reports_gateway_and_relays(supervisor):
     assert "captured_at" in status
 
 
-def test_silence_inhibits_reflex(supervisor):
-    supervisor.local_api.silence()
+def test_lan_silence_stops_the_siren(supervisor):
+    supervisor.gpio.simulate_sasmex(active=True)  # alerta suena
+    assert supervisor.gpio.siren_sounding is True
+    supervisor.local_api.silence()  # silenciar por LAN
+    assert supervisor.gpio.siren_sounding is False
+    assert supervisor.gpio.sasmex_active is True  # la alerta sigue viva
+
+
+def test_lan_reset_clears_latched_alert(supervisor):
     supervisor.gpio.simulate_sasmex(active=True)
-    assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is False
+    supervisor.local_api.reset_alert()
+    assert supervisor.gpio.sasmex_active is False
+    assert supervisor.gpio.siren_sounding is False

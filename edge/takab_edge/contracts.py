@@ -152,7 +152,8 @@ class ActuatorAck(BaseModel):
 
 class RelayState(BaseModel):
     channel: ActuatorChannel
-    energized: bool
+    energized: bool  # estado eléctrico del relé
+    activated: bool = False  # estado lógico de protección (p.ej. gas CERRADO, puerta LIBERADA)
     fail_safe: FailSafeMode
 
 

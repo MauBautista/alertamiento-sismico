@@ -58,7 +58,8 @@ def test_wr1_alert_triggers_reflex_and_test_pulse_does_not(settings):
         wr1.alert()
         assert gpio.relay_state(ActuatorChannel.SIREN).energized is True
 
-        gpio.set_relay(ActuatorChannel.SIREN, False)
+        gpio.reset()  # limpia la alerta enclavada (un deactivate de rules NO la callaría)
+        assert gpio.relay_state(ActuatorChannel.SIREN).energized is False
         wr1.test_pulse()  # heartbeat CIRES → NO actúa (SPOF-03)
         assert gpio.relay_state(ActuatorChannel.SIREN).energized is False
     finally:

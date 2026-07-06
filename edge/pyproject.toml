@@ -16,10 +16,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.3",
-    "ruff>=0.7",
-]
 # Backends de hardware — SOLO en el Raspberry Pi 5 real (no en CI). Ver T-1.3/T-1.9.
 hardware = [
     "lgpio>=0.2",         # backend GPIO nativo del Pi 5 (BCM2712)
@@ -29,8 +25,17 @@ bacnet = [
     "bacpypes3>=0.0.98",
 ]
 
+# Grupo de desarrollo — uv lo instala por defecto en `uv sync`/`uv run` (a diferencia
+# de los extras), evitando que `uv run` desinstale herramientas al re-sincronizar.
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
 [project.scripts]
 takab-edge = "takab_edge.supervisor:main"
+takab-gpio = "takab_edge.gpio.__main__:main"  # proceso mínimo del camino de vida (T-1.3)
 
 [build-system]
 requires = ["hatchling"]

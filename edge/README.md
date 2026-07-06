@@ -42,10 +42,11 @@ colaborativo **no** vive aquí: se correlaciona en la nube (T-1.19).
 Requiere [`uv`](https://docs.astral.sh/uv/). Python 3.12 lo gestiona `uv` (`.python-version`).
 
 ```bash
-uv sync --extra dev                         # entorno + deps (fija Python 3.12)
+uv sync                                      # entorno + deps + grupo dev (fija Python 3.12)
 uv run ruff check . && uv run ruff format --check .   # lint + formato
 GPIOZERO_PIN_FACTORY=mock uv run pytest -q   # tests, sin hardware
 uv run takab-edge                            # levanta el gabinete completo (dev, simuladores)
+uv run takab-gpio                            # SOLO el proceso mínimo del camino de vida (T-1.3)
 ```
 
 En el Pi 5 real, instala el backend de hardware y desactiva el modo dev. En
@@ -53,9 +54,9 @@ producción la clave HMAC de comandos es **obligatoria** (nunca se hardcodea,
 `CLAUDE.md §2.6`); inyéctala desde el entorno / Secrets Manager:
 
 ```bash
-uv sync --extra dev --extra hardware         # + lgpio (GPIO nativo BCM2712)
+uv sync --extra hardware                     # deps + grupo dev + lgpio (GPIO nativo BCM2712)
 export TAKAB_EDGE_HMAC_KEY="$(cat /run/secrets/takab_hmac_key)"
-TAKAB_EDGE_DEV_MODE=false uv run takab-edge
+TAKAB_EDGE_DEV_MODE=false uv run takab-edge   # o `takab-gpio` para el proceso mínimo de vida
 ```
 
 Configuración por entorno con prefijo `TAKAB_EDGE_` (ver `takab_edge/config/settings.py`).

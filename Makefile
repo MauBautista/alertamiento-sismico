@@ -7,7 +7,7 @@ EDGE_DIR := edge
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
 	cd $(WEB_DIR) && npm install
-	cd $(EDGE_DIR) && uv sync --extra dev
+	cd $(EDGE_DIR) && uv sync
 
 db:
 	docker compose up -d db

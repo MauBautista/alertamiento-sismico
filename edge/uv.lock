@@ -1067,12 +1067,14 @@ dependencies = [
 bacnet = [
     { name = "bacpypes3" },
 ]
+hardware = [
+    { name = "lgpio" },
+]
+
+[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
-]
-hardware = [
-    { name = "lgpio" },
 ]
 
 [package.metadata]
@@ -1085,11 +1087,15 @@ requires-dist = [
     { name = "paho-mqtt", specifier = ">=2.1" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.5" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.7" },
     { name = "scipy", specifier = ">=1.11" },
 ]
-provides-extras = ["dev", "hardware", "bacnet"]
+provides-extras = ["hardware", "bacnet"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.7" },
+]
 
 [[package]]
 name = "typing-extensions"

@@ -47,7 +47,10 @@ def test_manager_routes_gas_to_relay_as_primary(gpio):
     manager = ActuatorManager([RelayActuator(gpio), BacnetActuator(BacnetSimulator())])
     ack = manager.execute(_cmd(ActuatorChannel.GAS_VALVE))
     assert ack.detail == "relay"
-    assert gpio.relay_state(ActuatorChannel.GAS_VALVE).energized is True
+    # Gas es fail-close: activar = CERRAR = de-energizar. El canal queda "activado".
+    state = gpio.relay_state(ActuatorChannel.GAS_VALVE)
+    assert state.activated is True
+    assert state.energized is False
 
 
 def test_manager_without_driver_fails_gracefully():
