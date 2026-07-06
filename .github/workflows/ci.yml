@@ -80,3 +80,21 @@ jobs:
         run: uv run ruff format --check .
       - name: Tests (pytest)
         run: uv run pytest -q
+
+  infra:
+    name: infra · terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.7"
+      - name: Formato (terraform fmt)
+        run: terraform fmt -check -recursive infra/terraform
+      - name: Validate bootstrap
+        run: terraform -chdir=infra/terraform/bootstrap init -backend=false && terraform -chdir=infra/terraform/bootstrap validate
+      - name: Validate envs/dev
+        run: terraform -chdir=infra/terraform/envs/dev init -backend=false && terraform -chdir=infra/terraform/envs/dev validate
+      # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
+      # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
+      # hermético; ver infra/terraform/README.md.

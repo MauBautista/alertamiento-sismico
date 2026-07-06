@@ -1,4 +1,4 @@
-.PHONY: dev down lint test fmt api web edge db install
+.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start
 
 API_DIR := api
 WEB_DIR := web
@@ -41,3 +41,22 @@ fmt:
 	cd $(API_DIR) && ruff format . && ruff check --fix .
 	cd $(WEB_DIR) && npm run format
 	cd $(EDGE_DIR) && uv run ruff format . && uv run ruff check --fix .
+
+# --- Infra dev (T-1.15) --------------------------------------------------------
+AWS_PROFILE ?= takab-dev
+TF_DEV := infra/terraform/envs/dev
+
+db-tunnel:
+	@DB_ID=$$(terraform -chdir=$(TF_DEV) output -raw db_instance_id); \
+	DB_IP=$$(terraform -chdir=$(TF_DEV) output -raw db_private_ip); \
+	AWS_PROFILE=$(AWS_PROFILE) aws ssm start-session --region us-east-2 --target "$$DB_ID" \
+		--document-name AWS-StartPortForwardingSessionToRemoteHost \
+		--parameters "{\"host\":[\"$$DB_IP\"],\"portNumber\":[\"5432\"],\"localPortNumber\":[\"5434\"]}"
+
+cloud-stop:
+	@DB_ID=$$(terraform -chdir=$(TF_DEV) output -raw db_instance_id); \
+	AWS_PROFILE=$(AWS_PROFILE) aws ec2 stop-instances --region us-east-2 --instance-ids "$$DB_ID"
+
+cloud-start:
+	@DB_ID=$$(terraform -chdir=$(TF_DEV) output -raw db_instance_id); \
+	AWS_PROFILE=$(AWS_PROFILE) aws ec2 start-instances --region us-east-2 --instance-ids "$$DB_ID"

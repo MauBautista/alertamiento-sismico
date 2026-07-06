@@ -43,3 +43,9 @@ Design System/Dashboard Alertamiento Sismico.zip
 
 # Claude Code local settings (config del asistente, no del proyecto)
 .claude/settings.local.json
+
+# Terraform plans y material sensible de aprovisionamiento
+*.tfplan
+tfplan
+certs-*/
+.env.e2e
