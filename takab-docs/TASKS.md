@@ -253,12 +253,24 @@ T-1.17+) requiere AWS.
 
 ## Bloque C · CLOUD (AWS) — después del edge · Blueprint Fase B
 
-### [ ] T-1.15 · Infra base AWS con Terraform + IoT Core — **[B1]**
+### [x] T-1.15 · Infra base AWS con Terraform + IoT Core — **[B1]** ✅ (commit `55ca197`)
 - **Componente:** infra · **Depende de:** T-1.1
-- **Criterios:** `terraform apply` crea VPC mínima, RDS PostgreSQL (TimescaleDB/PostGIS
-  habilitables), bucket S3 (miniSEED/evidencias), cola SQS, User Pool de Cognito, KMS por tenant,
-  repos ECR, y un Thing de AWS IoT Core de prueba + policy mínima + regla IoT → SQS. Sin
-  credenciales en el código; backend de estado remoto (S3 + DynamoDB lock); `terraform destroy` limpio.
+- **Criterios:** `terraform apply` crea VPC mínima, ~~RDS PostgreSQL~~ la base Postgres
+  (TimescaleDB/PostGIS habilitados), bucket S3 (miniSEED/evidencias), cola SQS, User Pool de
+  Cognito, KMS por tenant, repos ECR, y un Thing de AWS IoT Core de prueba + policy mínima +
+  regla IoT → SQS. Sin credenciales en el código; backend de estado remoto (S3 + DynamoDB lock);
+  `terraform destroy` limpio.
+  ([DECISION 2026-07-06]: **RDS no soporta la extensión `timescaledb`** — verificado contra la
+  lista oficial de extensiones de RDS; y el schema exige compresión + caggs. La DB corre en
+  **EC2 t4g.small con `timescale/timescaledb-ha:pg16`** (idéntico al docker-compose local),
+  EBS cifrado, backups DLM + pg_dump→S3, acceso solo por SSM. "KMS por tenant" = CMK base +
+  mapa `tenant_keys` reservado (KEK por tenant llega con el primer campo sensible — blueprint
+  §8). Lock: tabla DynamoDB creada + `use_lockfile` nativo de S3. Entregado además: 3 colas
+  standard+DLQ (events/telemetry/backfill), fleet policy IoT por thing-name, 5 reglas IoT→SQS
+  con enriquecimiento `meta_principal/meta_topic/meta_ts_iot` (el prefijo `_` lo rechaza el
+  parser SQL de IoT), flota `gw-dev-0001` + 4 sim con cert X.509 + HMAC por gateway en Secrets
+  Manager, rol OIDC CI plan-only, presupuesto $50 con alarma, `verify_infra.sh` 20/20 PASS y
+  ciclo destroy/re-apply probado.)
 
 ### [x] T-1.16 · Esquema de base de datos + migraciones — **[B3]** ✅ (commit `4f20cab`)
 - **Componente:** api / db · **Depende de:** T-1.1
