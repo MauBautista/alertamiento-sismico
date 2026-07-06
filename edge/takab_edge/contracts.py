@@ -196,3 +196,16 @@ class LocalEvent(BaseModel):
     source: AlertSource
     tier: Tier
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class EvidenceObject(BaseModel):
+    """Evidencia inmutable: ventana miniSEED de un evento subida a S3, con sha256.
+
+    Idempotente por (`event_id`, `sha256`): re-subir el mismo contenido = mismo objeto.
+    """
+
+    event_id: str
+    s3_key: str
+    sha256: str
+    size_bytes: int
+    uploaded_at: datetime = Field(default_factory=utcnow)

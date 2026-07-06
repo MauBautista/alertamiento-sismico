@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.11** (`cloud` edge-side) — hecho: T-1.2…T-1.10
+**Estado actual:** ▶ siguiente tarea = **T-1.12** (`config`+`security`) — hecho: T-1.2…T-1.11 (edge-side)
 
 ---
 
@@ -182,8 +182,22 @@
   **heartbeat** periódico (`health_heartbeat_s`) en hilo daemon. Etiquetas UPS de UI. El
   cableado health→nube (publicar snapshots) y el parsing real del cert mTLS son **T-1.11**.
 
-### [ ] T-1.11 · `cloud` (edge-side) — MQTT mTLS + cola offline — **[A8]**
+### [x] T-1.11 · `cloud` (edge-side) — MQTT mTLS + cola offline — **[A8]** · edge-side COMPLETA (runtime AWS = gate T-1.15)
 - **Componente:** edge · **Depende de:** T-1.6, T-1.9, T-1.10
+- **Edge-side** (`edge/takab_edge/cloud`): **cola durable en disco** (`DurableSpool`, un JSON por
+  mensaje con `fsync` de archivo+dir → sobrevive corte de energía; cuarentena de archivos
+  corruptos, no descarte silencioso) + **dedup por identidad lógica** (`tier`/`channel+action`/
+  `sha256` → escalaciones y ACKs/evidencias distintos del mismo evento SÍ salen; cero pérdida/dup) +
+  **transporte MQTT abstracto** (`MqttTransport`; `FakeMqttTransport` en tests, `AwsIotMqttTransport`
+  mTLS/QoS1/last-will = gate AWS) + **reconexión backoff+jitter** en hilo. `publish()` es total:
+  NUNCA lanza/bloquea la actuación (regla de oro 4.2) aun con disco lleno.
+- **Contratos versionados** (`shared/schemas/*.schema.json`, [ANALISIS-00]): generados de los
+  modelos Pydantic (`takab_edge.schemas`), con test anti-drift. **Evidencia** (`takab_edge.evidence`):
+  ventana miniSEED→S3 idempotente por `sha256` (uploader real S3 = gate AWS; fake en tests).
+- **Revisión adversarial:** 7 hallazgos corregidos (dedup que perdía ACKs/evidencia; `publish` que
+  podía lanzar a la vía de actuación y envenenar el dedup; falta de `fsync`/durabilidad; cobertura).
+- **Gate AWS (T-1.15):** conexión real a IoT Core, S3, provisioning mTLS. **Requisito T-1.17:** upsert
+  al tier mayor por `event_id`. Cableado health/ACK→cloud en el supervisor = trivial al tener transporte.
 - **Criterios:** mTLS contra AWS IoT Core (QoS 1); cola durable offline con backfill idempotente
   al reconectar; desconectar WAN 2 h → reconectar con backoff+jitter: cero pérdida, cero
   duplicado (verificado por PK/`event_id`); last-will configurado.

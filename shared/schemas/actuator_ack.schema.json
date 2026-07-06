@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "ActuatorAction": {
+      "enum": [
+        "activate",
+        "deactivate"
+      ],
+      "title": "ActuatorAction",
+      "type": "string"
+    },
+    "ActuatorChannel": {
+      "enum": [
+        "siren",
+        "strobe",
+        "gas_valve",
+        "elevator",
+        "door_retainer"
+      ],
+      "title": "ActuatorChannel",
+      "type": "string"
+    }
+  },
+  "description": "ACK de ejecución con latencia relativa (T+0.42s, blueprint §4.2).",
+  "properties": {
+    "channel": {
+      "$ref": "#/$defs/ActuatorChannel"
+    },
+    "action": {
+      "$ref": "#/$defs/ActuatorAction"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    },
+    "latency_s": {
+      "title": "Latency S",
+      "type": "number"
+    },
+    "executed_at": {
+      "format": "date-time",
+      "title": "Executed At",
+      "type": "string"
+    },
+    "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "action",
+    "event_id",
+    "success",
+    "latency_s"
+  ],
+  "title": "ActuatorAck",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/actuator_ack/v1.0.0",
+  "version": "1.0.0"
+}

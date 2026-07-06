@@ -1,0 +1,58 @@
+{
+  "description": "Features agregadas a 1 s — contrato de salida de `signal` (T-1.6).",
+  "properties": {
+    "station": {
+      "title": "Station",
+      "type": "string"
+    },
+    "channel": {
+      "title": "Channel",
+      "type": "string"
+    },
+    "window_start": {
+      "format": "date-time",
+      "title": "Window Start",
+      "type": "string"
+    },
+    "pga": {
+      "title": "Pga",
+      "type": "number"
+    },
+    "pgv": {
+      "title": "Pgv",
+      "type": "number"
+    },
+    "rms": {
+      "title": "Rms",
+      "type": "number"
+    },
+    "sta_lta": {
+      "title": "Sta Lta",
+      "type": "number"
+    },
+    "clipping": {
+      "default": false,
+      "title": "Clipping",
+      "type": "boolean"
+    },
+    "health_score": {
+      "default": 1.0,
+      "title": "Health Score",
+      "type": "number"
+    }
+  },
+  "required": [
+    "station",
+    "channel",
+    "window_start",
+    "pga",
+    "pgv",
+    "rms",
+    "sta_lta"
+  ],
+  "title": "Feature1s",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/feature_1s/v1.0.0",
+  "version": "1.0.0"
+}

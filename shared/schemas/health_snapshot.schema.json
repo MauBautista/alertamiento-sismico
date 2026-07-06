@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "ActuatorChannel": {
+      "enum": [
+        "siren",
+        "strobe",
+        "gas_valve",
+        "elevator",
+        "door_retainer"
+      ],
+      "title": "ActuatorChannel",
+      "type": "string"
+    },
+    "FailSafeMode": {
+      "description": "Estado seguro por canal ante falla del Pi (SPOF-07, blueprint §4.7).",
+      "enum": [
+        "NO",
+        "NC",
+        "fail_close"
+      ],
+      "title": "FailSafeMode",
+      "type": "string"
+    },
+    "RelayState": {
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/ActuatorChannel"
+        },
+        "energized": {
+          "title": "Energized",
+          "type": "boolean"
+        },
+        "activated": {
+          "default": false,
+          "title": "Activated",
+          "type": "boolean"
+        },
+        "fail_safe": {
+          "$ref": "#/$defs/FailSafeMode"
+        }
+      },
+      "required": [
+        "channel",
+        "energized",
+        "fail_safe"
+      ],
+      "title": "RelayState",
+      "type": "object"
+    },
+    "UpsStatus": {
+      "enum": [
+        "line",
+        "battery",
+        "unknown"
+      ],
+      "title": "UpsStatus",
+      "type": "string"
+    }
+  },
+  "description": "Snapshot de salud del gabinete (T-1.10). Por transición + heartbeat.",
+  "properties": {
+    "gateway_id": {
+      "title": "Gateway Id",
+      "type": "string"
+    },
+    "captured_at": {
+      "format": "date-time",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "ntp_offset_s": {
+      "default": 0.0,
+      "title": "Ntp Offset S",
+      "type": "number"
+    },
+    "seedlink_lag_s": {
+      "default": 0.0,
+      "title": "Seedlink Lag S",
+      "type": "number"
+    },
+    "packet_loss_pct": {
+      "default": 0.0,
+      "title": "Packet Loss Pct",
+      "type": "number"
+    },
+    "ups_status": {
+      "$ref": "#/$defs/UpsStatus",
+      "default": "line"
+    },
+    "battery_pct": {
+      "default": 100.0,
+      "title": "Battery Pct",
+      "type": "number"
+    },
+    "temperature_c": {
+      "default": 0.0,
+      "title": "Temperature C",
+      "type": "number"
+    },
+    "cert_days_remaining": {
+      "default": 365,
+      "title": "Cert Days Remaining",
+      "type": "integer"
+    },
+    "relays": {
+      "items": {
+        "$ref": "#/$defs/RelayState"
+      },
+      "title": "Relays",
+      "type": "array"
+    },
+    "transition_reason": {
+      "default": "heartbeat",
+      "title": "Transition Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "gateway_id"
+  ],
+  "title": "HealthSnapshot",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.0.0",
+  "version": "1.0.0"
+}

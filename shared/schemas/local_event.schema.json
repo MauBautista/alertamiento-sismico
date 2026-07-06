@@ -1,0 +1,63 @@
+{
+  "$defs": {
+    "AlertSource": {
+      "description": "Origen de una detección/evento local (blueprint §4.5).",
+      "enum": [
+        "sasmex",
+        "local_threshold",
+        "manual"
+      ],
+      "title": "AlertSource",
+      "type": "string"
+    },
+    "Tier": {
+      "description": "Tiers deterministas del motor de reglas (blueprint §4.5).",
+      "enum": [
+        "normal",
+        "watch",
+        "restricted",
+        "evacuate_or_hold",
+        "manual_only"
+      ],
+      "title": "Tier",
+      "type": "string"
+    }
+  },
+  "description": "Evento local confirmado — idempotente por `event_id`; cruza a la nube.",
+  "properties": {
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/AlertSource"
+    },
+    "tier": {
+      "$ref": "#/$defs/Tier"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tenant_id",
+    "site_id",
+    "source",
+    "tier"
+  ],
+  "title": "LocalEvent",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/local_event/v1.0.0",
+  "version": "1.0.0"
+}

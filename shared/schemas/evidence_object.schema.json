@@ -1,0 +1,37 @@
+{
+  "description": "Evidencia inmutable: ventana miniSEED de un evento subida a S3, con sha256.\n\nIdempotente por (`event_id`, `sha256`): re-subir el mismo contenido = mismo objeto.",
+  "properties": {
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "s3_key": {
+      "title": "S3 Key",
+      "type": "string"
+    },
+    "sha256": {
+      "title": "Sha256",
+      "type": "string"
+    },
+    "size_bytes": {
+      "title": "Size Bytes",
+      "type": "integer"
+    },
+    "uploaded_at": {
+      "format": "date-time",
+      "title": "Uploaded At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "s3_key",
+    "sha256",
+    "size_bytes"
+  ],
+  "title": "EvidenceObject",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/evidence_object/v1.0.0",
+  "version": "1.0.0"
+}

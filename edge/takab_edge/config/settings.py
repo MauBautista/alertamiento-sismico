@@ -115,6 +115,10 @@ class EdgeSettings(BaseSettings):
     # --- Cloud (AWS IoT Core) ---
     mqtt_endpoint: str = ""
     mqtt_port: int = 8883
+    #: Spool durable de la cola offline (vacío → dir temporal en dev/tests; en el Pi, NVMe).
+    cloud_spool_dir: str = ""
+    cloud_backoff_s: float = Field(default=1.0, gt=0)  # base de reconexión
+    cloud_backoff_max_s: float = Field(default=60.0, gt=0)  # tope del backoff
 
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
