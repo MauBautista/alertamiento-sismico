@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.8** (`rules`) — hecho: T-1.2/1.3/1.4/1.5/1.6/1.7
+**Estado actual:** ▶ siguiente tarea = **T-1.9** (`actuators`) — hecho: T-1.2…T-1.8
 
 ---
 
@@ -135,7 +135,7 @@
   S3 (T-1.11/T-1.25). Verificado con roundtrip ObsPy en `tmp` (7 tests). El tamaño real en GB =
   gate #3. Config `BufferConfig` (root vacío → dir temporal en dev/tests; en el Pi, la ruta NVMe).
 
-### [ ] T-1.8 · `rules` — motor determinista tierizado — **[A5]**
+### [x] T-1.8 · `rules` — motor determinista tierizado — **[A5]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.3, T-1.6
 - **Criterios:** tabla de verdad completa de los 5 tiers (`normal`/`watch`/`restricted`/
   `evacuate_or_hold`/`manual_only`); umbrales configurables por edificio (PGA/PGV, banda cautela
@@ -143,6 +143,16 @@
   §4.3); cada transición de tier queda registrada (contrato de `rule_evaluations`, P5); config
   por archivo firmado; tests exhaustivos de casos borde (clipping, saturación, dropout, doble
   disparo — SASMEX activo + umbral local del mismo sismo = UN evento, no dos).
+- **Motor** (`edge/takab_edge/rules`): tabla **multi-canal** `decide()` con corroboración (≥2
+  canales confiables en disparo → evacuate; 1 → restricted; ≥1 cautela → watch; ninguno → normal;
+  todos muertos → manual_only). **Saturación (clipping) cuenta como DISPARO** (fail-loud: nunca
+  de-escala; sólo `health<0.5` = dropout/muerto se excluye). `RuleEngine` acumula features por
+  canal, **poda stale** (dropout), **dedup de episodio** por **reloj único de recepción** (SASMEX+
+  umbral del mismo sismo comparten `event_id`), mide **latencia** y **loguea por transición**. La
+  **escalación** WATCH→EVACUATE sale del edge (dedup del CloudConnector por `(event_id, tier)`).
+- **Revisión adversarial:** 4 hallazgos corregidos (1 CRÍTICO fail-silent: la saturación de-escalaba
+  el tier). **Requisito para T-1.17 (nube):** el ingest debe hacer **upsert al tier mayor** por
+  `event_id` (no `ON CONFLICT DO NOTHING`), para que la escalación no se congele en el tier bajo.
 
 ### [ ] T-1.9 · `actuators` — interfaz `Actuator` + driver relés + adaptador BACnet/IP — **[A6]**
 - **Componente:** edge · **Depende de:** T-1.8

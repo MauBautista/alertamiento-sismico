@@ -29,7 +29,7 @@ class CloudConnector(EdgeModule):
         self.settings = settings
         self._online = False
         self._queue: deque[tuple[str, str, dict]] = deque()  # (topic, event_id, payload)
-        self._seen: set[tuple[str, str]] = set()  # dedup idempotente (topic, event_id)
+        self._seen: set[tuple] = set()  # dedup idempotente (topic, event_id, tier)
         self._sent = 0
 
     @property
@@ -50,11 +50,18 @@ class CloudConnector(EdgeModule):
             self.flush()
 
     def publish(self, topic: str, payload: BaseModel) -> bool:
-        """Encola/envía un payload. `payload` debe tener `event_id` para idempotencia."""
+        """Encola/envía un payload. `payload` debe tener `event_id` para idempotencia.
+
+        El dedup incluye el `tier` (si existe): una ESCALACIÓN del mismo evento
+        (WATCH→EVACUATE, mismo event_id, tier mayor) NO se deduplica y sí sale del
+        edge; sólo se descartan re-publicaciones idénticas (mismo event_id y tier),
+        p.ej. al reconectar (CLAUDE.md §2.3). La nube hace upsert al tier mayor (T-1.17).
+        """
         event_id = getattr(payload, "event_id", None) or ""
-        key = (topic, event_id)
+        tier = getattr(payload, "tier", None)
+        key = (topic, event_id, tier)
         if event_id and key in self._seen:
-            return True  # ya visto → no duplicar (idempotencia, CLAUDE.md §2.3)
+            return True  # re-publicación idéntica → no duplicar (idempotencia)
         if event_id:
             self._seen.add(key)
         self._queue.append((topic, event_id, payload.model_dump(mode="json")))

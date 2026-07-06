@@ -60,13 +60,13 @@ def test_sasmex_actuates_with_cloud_offline(supervisor):
 
 
 def test_instrumental_event_drives_tier(supervisor):
-    # Sismo local detectado por umbral, SIN SASMEX (no hay reflejo de gpio).
-    packet = RS4DSimulator(station=supervisor.settings.station).packet(
-        "ENZ", datetime.now(UTC), peak_counts=1_000_000.0
-    )
-    supervisor.seedlink.feed(packet)
+    # Sismo local: varios canales sobre disparo (corroboración ≥2), SIN SASMEX.
+    sim = RS4DSimulator(station=supervisor.settings.station)
+    now = datetime.now(UTC)
+    for channel in ("ENZ", "ENN", "ENE"):
+        supervisor.seedlink.feed(sim.packet(channel, now, peak_counts=1_000_000.0))
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
-    assert len(supervisor.buffer) == 1
+    assert len(supervisor.buffer) == 3
     # La ruta instrumental debe alertar audiblemente por su cuenta (blueprint §4.5):
     assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is True
 
