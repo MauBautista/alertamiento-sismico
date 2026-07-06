@@ -264,3 +264,14 @@ def test_concurrent_transitions_keep_state_coherent(gpio):
             desired = gpio._desired_energized(channel)
             assert gpio._energized[channel] == desired, channel
             assert bool(gpio._relays[channel].value) == desired, channel
+
+
+def test_held_alert_contact_seeds_reflex(gpio):
+    # SPOF-02: si el contacto de alerta ya está cerrado al arrancar (alerta sostenida a
+    # través de un reinicio del Pi), no hay flanco nuevo → el reflejo se siembra leyendo
+    # el NIVEL del contacto (lo que `_on_start` invoca), para no quedar mudo en el traspaso.
+    gpio._button.pin.drive_low()  # contacto de alerta cerrado (sostenido)
+    assert gpio._button.is_pressed is True
+    gpio._seed_from_held_contact()
+    assert gpio.sasmex_active is True
+    assert gpio.siren_sounding is True

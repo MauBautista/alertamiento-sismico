@@ -1,0 +1,32 @@
+# TAKAB Ailert — proceso mínimo del camino de vida (WR-1 + relés + reflejo SASMEX→sirena).
+# Es el proceso más crítico del gabinete (T-1.3): sin ObsPy/NumPy, arranca <1 s.
+# Instalar en el Pi 5 real. Ver takab-docs/runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md.
+[Unit]
+Description=TAKAB Ailert — proceso GPIO del camino de vida (SASMEX->sirena)
+Documentation=file:///opt/takab/takab-docs/runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md
+After=network.target time-sync.target
+
+[Service]
+Type=simple
+# El proceso corre en producción (sin simuladores): usa el backend GPIO nativo (lgpio).
+Environment=TAKAB_EDGE_DEV_MODE=false
+# El camino de vida NO consume secretos ni la nube (reglas de oro 1 y 2): el reflejo
+# SASMEX→sirena debe arrancar SIEMPRE. La clave HMAC de comandos remotos la usa el
+# servicio de nube/comandos aparte (supervisor), NUNCA este proceso mínimo.
+WorkingDirectory=/opt/takab/edge
+ExecStart=/opt/takab/edge/.venv/bin/takab-gpio
+
+# El camino de vida se reinicia SIEMPRE y rápido ante cualquier caída (SPOF-02).
+Restart=always
+RestartSec=1
+# Endurecimiento mínimo (proceso auditable; sin escrituras al sistema).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# Watchdog de servicio: complementa al watchdog de hardware BCM2712 (system.conf,
+# RuntimeWatchdogSec=10). Requiere que el proceso emita sd_notify WATCHDOG=1 (pendiente,
+# hardware-gated); hasta entonces, Restart=always cubre las caídas del proceso.
+# WatchdogSec=10
+
+[Install]
+WantedBy=multi-user.target

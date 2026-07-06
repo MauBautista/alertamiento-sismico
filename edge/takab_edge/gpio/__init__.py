@@ -189,6 +189,18 @@ class GpioController(EdgeModule):
         self._test_button = Button(pins.test_button, pull_up=True, bounce_time=bounce_s)
         self._test_button.when_pressed = self._on_test_button
 
+        self._seed_from_held_contact()
+
+    def _seed_from_held_contact(self) -> None:
+        """Siembra el reflejo si el contacto de alerta ya está cerrado al arrancar (SPOF-02).
+
+        Tras un reinicio del Pi durante un evento con contacto latcheado NO habrá un flanco
+        nuevo, así que leemos el NIVEL del contacto para no dejar la sirena muda en el
+        traspaso HW→software. Dirección segura: sonar (el operador puede silenciar).
+        """
+        if self._button is not None and self._button.is_pressed:
+            self._dispatch_sasmex(active=True, is_test=False)
+
     def _on_stop(self) -> None:
         with self._lock:
             if self._test_timer is not None:

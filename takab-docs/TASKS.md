@@ -74,10 +74,19 @@
   ObsPy/NumPy). 83 tests verdes. **Pendiente pre-despliegue:** exponer cierre/re-armado y semántica de
   re-alarma cuando lleguen T-1.12/T-1.13 y el hardware (gate #3).
 
-### [ ] T-1.4 · Ruta de hardware paralela SASMEX→sirena (SPOF-02)
+### [x] T-1.4 · Ruta de hardware paralela SASMEX→sirena (SPOF-02) · RUNBOOK LISTO
 - **Componente:** edge/hw · **Depende de:** T-1.3 · **Prioridad: ALTA**
 - **Criterios:** con el Pi apagado, el contacto sigue disparando la sirena (relé de potencia en
   paralelo). Documentado en runbook.
+- **Runbook:** `takab-docs/runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md` — diseño eléctrico
+  (variante recomendada: fallback con watchdog por **latido de liveness del reflejo**, no del
+  proceso), BOM, alimentación (SPOF-04), coexistencia con el silencio de T-1.3/SPOF-07, y
+  procedimiento de verificación (Pi apagado / colgado total y **parcial** / recuperación con alerta
+  **sostenida** / prueba CIRES con Pi muerto). Unidad `edge/systemd/takab-gpio.service`
+  (Restart=always; sin secreto en el camino de vida). **Verificación física = gate #3** (WR-1 +
+  relé + sirena reales). Revisión adversarial: 4 hallazgos HIGH corregidos, incluido un **fix de
+  código en T-1.3** (`_on_start` siembra el reflejo si el contacto ya está asertado al arrancar, para
+  no dejar la sirena muda en el traspaso HW→software de una alerta sostenida).
 
 ### [x] T-1.5 · `seedlink` — cliente SeedLink → bus local — **[A1]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.2
