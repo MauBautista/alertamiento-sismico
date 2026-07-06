@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.2**
+**Estado actual:** ▶ siguiente tarea = **T-1.3**
 
 ---
 
@@ -39,7 +39,7 @@
 
 ## Bloque B · EDGE (Raspberry Pi 5) — se construye PRIMERO · Blueprint Fase A
 
-### [ ] T-1.2 · Scaffolding `edge/` + simuladores — **[A0]**
+### [x] T-1.2 · Scaffolding `edge/` + simuladores — **[A0]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.1 · **Prioridad: ALTA**
 - **Objetivo:** `edge/` con `uv`, `pyproject.toml`, `supervisor.py`, estructura de módulos
   (`takab_edge/{seedlink,signal,buffer,gpio,rules,actuators,cloud,health,config,security,local_api}`)
@@ -49,12 +49,14 @@
   [PLAN-MAESTRO-01]: `sasmex` → `gpio` consolidado (entrada WR-1 + relés locales + reflejo
   SASMEX→sirena in-process) `[SUPUESTO #6 — confirmar/override; un override = renombrar el módulo]`.
 - **Criterios de aceptación:**
-  - [ ] **Workflow de CI creado desde cero** (`.github/workflows/ci.yml`): jobs `api` + `web` +
-        `edge` corren lint y tests en cada PR/push a main, en verde (criterio heredado de T-1.1
-        — el workflow no existe aún en el repo; `.env.example` ya se creó en la rama
-        `analisis/arquitectura-00`).
-  - [ ] `pytest` verde en CI (job `edge`) sin hardware físico.
-  - [ ] Simuladores permiten levantar el edge completo en dev sin Raspberry Shake ni Pi 5.
+  - [x] **Workflow de CI creado desde cero** (`.github/workflows/ci.yml`): jobs `api` + `web` +
+        `edge` corren lint y tests en cada PR/push a main, en verde (criterio heredado de T-1.1).
+        Los 3 jobs verificados localmente igual que correrán (api: ruff+pytest; web:
+        eslint+prettier+vitest+build; edge: ruff+format+pytest con `GPIOZERO_PIN_FACTORY=mock`).
+  - [x] `pytest` verde en CI (job `edge`) sin hardware físico (60 tests; gpiozero MockFactory).
+  - [x] Simuladores permiten levantar el edge completo en dev sin Raspberry Shake ni Pi 5
+        (verificado por el entry point real `uv run takab-edge`: 11 módulos arrancan en orden
+        topológico, transmiten y paran limpio).
 
 ### [ ] T-1.3 · `gpio` — WR-1 (contacto seco) → relés locales — **[A4]**
 - **Componente:** edge · **Depende de:** T-1.2 · **Prioridad: ALTA**

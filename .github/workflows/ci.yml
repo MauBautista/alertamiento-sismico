@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancela runs superseded del mismo ref (ahorra minutos de CI).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: api · ruff + pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: python -m pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Tests (pytest)
+        run: pytest -q
+
+  web:
+    name: web · eslint + prettier + vitest + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Lint (eslint)
+        run: npm run lint
+      - name: Formato (prettier)
+        run: npm run format:check
+      - name: Tests (vitest)
+        run: npm run test -- --run
+      - name: Build (tsc + vite)
+        run: npm run build
+
+  edge:
+    name: edge · ruff + pytest (sin hardware)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge
+    env:
+      # Sin GPIO físico en CI: gpiozero usa la MockFactory (blueprint §4.4).
+      GPIOZERO_PIN_FACTORY: mock
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: edge/uv.lock
+      - name: Sincronizar entorno (Python 3.12 + deps)
+        run: uv sync --extra dev
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Formato (ruff)
+        run: uv run ruff format --check .
+      - name: Tests (pytest)
+        run: uv run pytest -q

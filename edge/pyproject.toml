@@ -1,0 +1,45 @@
+[project]
+name = "takab-edge"
+version = "0.1.0"
+description = "TAKAB Ailert — gateway de inteligencia del gabinete (Raspberry Pi 5)"
+requires-python = ">=3.12"
+# Núcleo instalable sin hardware (CI x86-64 y Raspberry Pi 5 ARM64). Los backends
+# que exigen hardware físico van en extras (ver [project.optional-dependencies]).
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "obspy>=1.4",         # SeedLink + miniSEED (blueprint §4.3); base del simulador RS4D
+    "gpiozero>=2.0",      # GPIO WR-1 + relés; MockFactory permite dev/CI sin hardware
+    "paho-mqtt>=2.1",     # conector MQTT hacia AWS IoT Core (T-1.11)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+# Backends de hardware — SOLO en el Raspberry Pi 5 real (no en CI). Ver T-1.3/T-1.9.
+hardware = [
+    "lgpio>=0.2",         # backend GPIO nativo del Pi 5 (BCM2712)
+]
+# Driver BACnet/IP real — activable por contrato (T-1.9). El simulador NO lo necesita.
+bacnet = [
+    "bacpypes3>=0.0.98",
+]
+
+[project.scripts]
+takab-edge = "takab_edge.supervisor:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["takab_edge", "simulators"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# El simulador de sismo puede ser lento; los tests unitarios usan trazas cortas.
+filterwarnings = ["ignore::DeprecationWarning"]

@@ -6,7 +6,7 @@ continuidad operativa post-sismo (edge + cloud). Ver `CLAUDE.md` para contexto m
 
 ## Estructura
 
-- `edge/` — software del Raspberry Pi 5 (gateway de inteligencia; placeholder)
+- `edge/` — software del Raspberry Pi 5 (gateway de inteligencia; scaffold + simuladores)
 - `api/` — FastAPI (Python 3.12)
 - `web/` — React 18 + TypeScript + Vite
 - `shared/schemas` — contratos compartidos (placeholder)
@@ -17,7 +17,7 @@ continuidad operativa post-sismo (edge + cloud). Ver `CLAUDE.md` para contexto m
 
 ## Desarrollo local
 
-Requisitos: Docker, Python 3.12, Node 20+, GNU Make.
+Requisitos: Docker, Python 3.12, Node 20+, GNU Make y [`uv`](https://docs.astral.sh/uv/) (para `edge/`).
 
 ```bash
 cp .env.example .env
@@ -31,10 +31,14 @@ Verifica la API: `curl localhost:8000/health` → `{"status":"ok"}`
 | Comando      | Qué hace                                  |
 |--------------|-------------------------------------------|
 | `make dev`   | Postgres + API + web en paralelo          |
-| `make lint`  | ruff + eslint + prettier (check)          |
-| `make test`  | pytest + vitest                           |
-| `make fmt`   | ruff format + prettier write              |
+| `make edge`  | levanta el gabinete edge (dev, simuladores) |
+| `make lint`  | ruff + eslint + prettier + edge (check)   |
+| `make test`  | pytest + vitest + edge (sin hardware)     |
+| `make fmt`   | ruff format + prettier write + edge       |
 | `make down`  | apaga el compose                          |
+
+> El edge (`edge/`) se construye primero (EDGE→CLOUD→FRONTEND). Detalle en
+> `edge/README.md` y `takab-docs/TASKS.md`.
 
 > En Windows sin GNU Make/Docker: corre los comandos subyacentes directo
 > (`cd api && pytest`, `cd web && npm run test`, etc.).
