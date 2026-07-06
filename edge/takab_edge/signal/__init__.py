@@ -1,9 +1,19 @@
 """signal — features agregadas a 1 s (PGA, PGV, RMS, STA/LTA, clipping, health).
 
-Scaffold de T-1.2: cómputo determinista mínimo por ventana para que la cadena
-seedlink→signal→rules funcione en dev. Los features **validados contra ObsPy de
-referencia (error <1%)** y las sensibilidades reales por canal (EHZ velocidad,
-ENx aceleración) son **T-1.6**. Las sensibilidades de abajo son PLACEHOLDER.
+T-1.6: cómputo determinista con **NumPy/SciPy** (blueprint §4.3; el módulo NO
+importa ObsPy → ligero). Los algoritmos se validan contra ObsPy de referencia
+(error <1%) en traza sintética y real:
+- STA/LTA idéntico a `obspy.signal.trigger.classic_sta_lta`.
+- integración/diferenciación idénticas a `Trace.integrate()/differentiate()`.
+
+Por convención SEED, el 2º caracter del canal indica el instrumento: `H`
+(seismometer → velocidad, p.ej. EHZ) o `N` (accelerometer → aceleración, p.ej.
+ENZ). PGA se obtiene de la aceleración; PGV de la velocidad; la que no es nativa
+del canal se deriva por integración/diferenciación.
+
+La escala física depende de las sensibilidades (config, PLACEHOLDER hasta calibrar
+con la respuesta StationXML del RS4D); el algoritmo es correcto con o sin esa
+calibración.
 """
 
 from __future__ import annotations
@@ -11,22 +21,75 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from scipy.integrate import cumulative_trapezoid
 
+from takab_edge.config import SignalConfig
 from takab_edge.contracts import Feature1s, WaveformPacket
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.signal")
 
-# PLACEHOLDER — se reemplazan por la respuesta instrumental real del RS4D en T-1.6.
-_ACCEL_SENSITIVITY_G_PER_COUNT = 1.0e-6
-_VEL_SENSITIVITY_CMS_PER_COUNT = 1.0e-4
-_CLIP_COUNT = 2_000_000  # ~saturación del ADC de 24 bits (placeholder)
-_STA_WINDOW = 20  # muestras (0.2 s a 100 sps)
+_G = 9.80665  # m/s² por g
 
 
-def compute_features(packet: WaveformPacket) -> Feature1s:
-    """Calcula features de 1 s a partir de un paquete de muestras (placeholder T-1.6)."""
-    if not packet.samples:
+def classic_sta_lta(a: np.ndarray, nsta: int, nlta: int) -> np.ndarray:
+    """STA/LTA clásico — idéntico a `obspy.signal.trigger.classic_sta_lta`."""
+    a = np.asarray(a, dtype=np.float64)
+    sta = np.cumsum(a**2)
+    lta = sta.copy()
+    sta[nsta:] = sta[nsta:] - sta[:-nsta]
+    sta /= nsta
+    lta[nlta:] = lta[nlta:] - lta[:-nlta]
+    lta /= nlta
+    sta[: nlta - 1] = 0
+    tiny = np.finfo(0.0).tiny
+    lta[lta < tiny] = tiny
+    return sta / lta
+
+
+def integrate(data: np.ndarray, dt: float) -> np.ndarray:
+    """Integración trapezoidal acumulada — como `Trace.integrate()` (cumtrapz)."""
+    return cumulative_trapezoid(np.asarray(data, dtype=np.float64), dx=dt, initial=0.0)
+
+
+def differentiate(data: np.ndarray, dt: float) -> np.ndarray:
+    """Diferenciación por gradiente — como `Trace.differentiate()` (gradient)."""
+    return np.gradient(np.asarray(data, dtype=np.float64), dt)
+
+
+def is_acceleration(channel: str) -> bool:
+    """True si el canal mide aceleración (código de instrumento SEED `N`/`G`)."""
+    return len(channel) >= 2 and channel[1] in ("N", "G")
+
+
+def _windows(config: SignalConfig, sr: float) -> tuple[int, int]:
+    """Ventanas STA/LTA en muestras; nlta ≥ nsta+1 ≥ 2 (acota el contexto y evita
+    divisiones/gradientes degenerados). Fuente única usada por compute_features y
+    por el contexto rodante para que NO diverjan."""
+    nsta = max(1, int(round(config.sta_seconds * sr)))
+    nlta = max(nsta + 1, int(round(config.lta_seconds * sr)))
+    return nsta, nlta
+
+
+def _health_score(clipping: bool, rms: float) -> float:
+    if rms == 0.0:
+        return 0.0  # canal plano/muerto (dropout)
+    if clipping:
+        return 0.5  # saturación → dato degradado
+    return 1.0
+
+
+def compute_features(
+    packet: WaveformPacket,
+    config: SignalConfig | None = None,
+    preceding: np.ndarray | None = None,
+) -> Feature1s:
+    """Features de 1 s del paquete. `preceding` = muestras previas (contexto STA/LTA)."""
+    config = config or SignalConfig()
+    sr = packet.sample_rate
+    # <2 muestras es degenerado: la diferenciación (np.gradient) exige ≥2 y las
+    # features no tienen sentido en un solo punto → devuelve un snapshot en cero.
+    if len(packet.samples) < 2 or sr <= 0:
         return Feature1s(
             station=packet.station,
             channel=packet.channel,
@@ -38,39 +101,61 @@ def compute_features(packet: WaveformPacket) -> Feature1s:
             health_score=0.0,
         )
 
-    data = np.asarray(packet.samples, dtype=np.float64)
-    demeaned = data - data.mean()
-    peak = float(np.abs(demeaned).max())
-    rms = float(np.sqrt(np.mean(demeaned**2)))
+    raw = np.asarray(packet.samples, dtype=np.float64)
+    demeaned = raw - raw.mean()
+    dt = 1.0 / sr
 
-    # STA/LTA simple (relación de energía ventana corta / ventana larga).
-    lta = rms if rms > 0 else 1.0
-    sta = float(np.sqrt(np.mean(demeaned[-_STA_WINDOW:] ** 2))) if data.size >= _STA_WINDOW else rms
-    sta_lta = sta / lta if lta > 0 else 0.0
+    accel_ch = is_acceleration(packet.channel)
+    sens = (
+        config.accel_sensitivity_ms2_per_count if accel_ch else config.vel_sensitivity_ms_per_count
+    )
+    native = demeaned * sens  # m/s² (accel) o m/s (velocidad)
+    if accel_ch:
+        accel, vel = native, integrate(native, dt)
+    else:
+        vel, accel = native, differentiate(native, dt)
 
-    clipping = bool(np.abs(data).max() >= _CLIP_COUNT)
+    pga = float(np.abs(accel).max()) / _G  # g
+    pgv = float(np.abs(vel).max()) * 100.0  # cm/s
+    rms = float(np.sqrt(np.mean(demeaned**2)))  # counts
 
+    # STA/LTA sobre (contexto + paquete) para que el LTA tenga historia suficiente.
+    if preceding is not None and len(preceding):
+        series = np.concatenate([np.asarray(preceding, dtype=np.float64), raw])
+    else:
+        series = raw
+    series = series - series.mean()
+    nsta, nlta = _windows(config, sr)
+    if len(series) >= nlta:
+        ratio = classic_sta_lta(series, nsta, nlta)
+        sta_lta = float(np.max(ratio[-len(raw) :]))  # pico en la región del paquete nuevo
+    else:
+        sta_lta = 0.0
+
+    clipping = bool(np.abs(raw).max() >= config.clip_count)
     return Feature1s(
         station=packet.station,
         channel=packet.channel,
         window_start=packet.starttime,
-        pga=peak * _ACCEL_SENSITIVITY_G_PER_COUNT,
-        pgv=peak * _VEL_SENSITIVITY_CMS_PER_COUNT,
+        pga=pga,
+        pgv=pgv,
         rms=rms,
         sta_lta=sta_lta,
         clipping=clipping,
-        health_score=0.5 if clipping else 1.0,
+        health_score=_health_score(clipping, rms),
     )
 
 
 class FeatureExtractor(EdgeModule):
-    """Consume `WaveformPacket` y emite `Feature1s` (una por ventana de 1 s)."""
+    """Consume `WaveformPacket` y emite `Feature1s`, con contexto rodante por canal."""
 
     name = "signal"
     depends_on = ("seedlink",)
 
-    def __init__(self) -> None:
+    def __init__(self, config: SignalConfig | None = None) -> None:
         super().__init__()
+        self.config = config or SignalConfig()
+        self._context: dict[str, np.ndarray] = {}
         self._last: Feature1s | None = None
 
     @property
@@ -78,9 +163,25 @@ class FeatureExtractor(EdgeModule):
         return self._last
 
     def process(self, packet: WaveformPacket) -> Feature1s:
-        feature = compute_features(packet)
+        preceding = self._context.get(packet.channel)
+        feature = compute_features(packet, self.config, preceding)
+        self._update_context(packet)
         self._last = feature
         return feature
 
+    def _update_context(self, packet: WaveformPacket) -> None:
+        if len(packet.samples) < 2 or packet.sample_rate <= 0:
+            return
+        raw = np.asarray(packet.samples, dtype=np.float64)
+        prev = self._context.get(packet.channel)
+        buf = raw if prev is None else np.concatenate([prev, raw])
+        # Mismo nlta que compute_features (≥2) → el contexto SIEMPRE se acota.
+        _, nlta = _windows(self.config, packet.sample_rate)
+        self._context[packet.channel] = buf[-nlta:]
+
     def _on_start(self) -> None:
-        log.info("extractor de features activo")
+        log.info(
+            "extractor de features activo (STA/LTA %.1fs/%.1fs)",
+            self.config.sta_seconds,
+            self.config.lta_seconds,
+        )

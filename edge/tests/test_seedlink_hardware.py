@@ -14,7 +14,6 @@ import socket
 import threading
 import time
 from collections.abc import Callable
-from datetime import timedelta
 
 import pytest
 from takab_edge.config import EdgeSettings
@@ -97,6 +96,9 @@ def test_real_shake_backfills_via_seqnum_resume():
 
     transport._resume_seq = resume_seq  # forzar reanudación desde el pasado
     resumed = _run_until_first(transport)
+    # `age_s > 6` prueba el backfill: el paquete reanudado es de ~hace 8 s (no del
+    # presente). El resume por seqnum entrega el paquete siguiente al seqnum pedido
+    # (unos segundos tras `first`), así que no se afina más el offset exacto.
     age_s = (utcnow() - resumed.starttime).total_seconds()
     assert age_s > 6, f"el resume por seqnum no hizo backfill (age={age_s:.1f}s)"
-    assert resumed.starttime <= first.starttime + timedelta(seconds=2)
+    assert resumed.starttime >= first.starttime  # reanuda desde ≥ el punto pedido, no antes

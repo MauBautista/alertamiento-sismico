@@ -4,6 +4,7 @@ from takab_edge.config.settings import (
     DEFAULT_FAILSAFE,
     EdgeSettings,
     GpioPins,
+    SignalConfig,
     ThresholdBand,
     load_settings,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "ConfigStore",
     "EdgeSettings",
     "GpioPins",
+    "SignalConfig",
     "ThresholdBand",
     "load_settings",
 ]

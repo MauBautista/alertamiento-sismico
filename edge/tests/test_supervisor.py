@@ -62,7 +62,7 @@ def test_sasmex_actuates_with_cloud_offline(supervisor):
 def test_instrumental_event_drives_tier(supervisor):
     # Sismo local detectado por umbral, SIN SASMEX (no hay reflejo de gpio).
     packet = RS4DSimulator(station=supervisor.settings.station).packet(
-        "ENZ", datetime.now(UTC), peak_counts=200_000.0
+        "ENZ", datetime.now(UTC), peak_counts=1_000_000.0
     )
     supervisor.seedlink.feed(packet)
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD

@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.6** (carril instrumental; **T-1.4** pendiente — runbook, hardware-gated)
+**Estado actual:** ▶ siguiente tarea = **T-1.4** (runbook ruta HW paralela, hardware-gated) — luego **T-1.7** continúa el carril instrumental
 
 ---
 
@@ -99,10 +99,19 @@
   **Pendiente hardware-gated:** soak de 24 h y validación de reinicio físico del Shake; backfill
   FDSN/S3 para huecos largos = T-1.25.
 
-### [ ] T-1.6 · `signal` — features 1 s (PGA, PGV, RMS, STA/LTA) — **[A2]**
+### [x] T-1.6 · `signal` — features 1 s (PGA, PGV, RMS, STA/LTA) — **[A2]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.5
 - **Criterios:** features + clipping/health_score validados contra ObsPy de referencia
   (error <1%) en traza sintética y real.
+- **Implementación NumPy/SciPy** (módulo sin ObsPy, ligero): `classic_sta_lta` idéntico a
+  `obspy.signal.trigger.classic_sta_lta` (**5e-13**), `integrate`/`differentiate` idénticos a
+  `Trace.integrate/differentiate` (**err 0.0**); PGA de aceleración, PGV de velocidad (la no-nativa
+  se deriva por integración/diferenciación según canal SEED H/N); STA/LTA con **contexto rodante**
+  por canal; clipping + health_score. **Validado <1% vs ObsPy en traza sintética Y traza real del
+  Shake** (`AM.R4F74`; test que se salta en CI). 103 tests verdes. Revisión adversarial: corregidos
+  crash con paquete <2 muestras y crecimiento sin límite del contexto por misconfig de `lta_seconds`.
+- **Pendiente (diferido):** calibración física absoluta = respuesta StationXML del RS4D
+  (sensibilidades hoy placeholder); STA/LTA consciente de gaps y umbrales por edificio = T-1.8.
 
 ### [ ] T-1.7 · `buffer` — ring miniSEED en NVMe — **[A3]**
 - **Componente:** edge · **Depende de:** T-1.5

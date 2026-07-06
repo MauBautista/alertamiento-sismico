@@ -49,6 +49,22 @@ class GpioPins(BaseModel):
     relay_door_retainer: int = 24
 
 
+class SignalConfig(BaseModel):
+    """Parámetros de las features 1 s (T-1.6).
+
+    Las sensibilidades convierten counts→físico; los valores por defecto son
+    PLACEHOLDER — la calibración real proviene de la respuesta instrumental del
+    RS4D (StationXML), un paso de metadata pendiente. El *algoritmo* de las
+    features se valida contra ObsPy (<1%); la escala física depende de estos.
+    """
+
+    vel_sensitivity_ms_per_count: float = 1.0e-9  # geophone EH* (velocidad)
+    accel_sensitivity_ms2_per_count: float = 1.0e-6  # MEMS EN* (aceleración)
+    sta_seconds: float = Field(default=0.5, gt=0)
+    lta_seconds: float = Field(default=5.0, gt=0)
+    clip_count: int = Field(default=8_300_000, gt=0)  # ~±2^23 (ADC 24-bit del RS4D)
+
+
 class EdgeSettings(BaseSettings):
     """Configuración raíz del gabinete."""
 
@@ -100,6 +116,7 @@ class EdgeSettings(BaseSettings):
     )
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
     pins: GpioPins = Field(default_factory=GpioPins)
+    signal: SignalConfig = Field(default_factory=SignalConfig)
 
 
 def load_settings() -> EdgeSettings:

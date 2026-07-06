@@ -112,7 +112,7 @@ class EdgeSupervisor:
         s = self.settings
         self.gpio = GpioController(s)
         self.seedlink = self._build_seedlink(s)
-        self.signal = FeatureExtractor()
+        self.signal = FeatureExtractor(s.signal)
         self.buffer = RingBuffer()
         self.rules = RuleEngine(s.thresholds)
         self.bacnet = BacnetSimulator()
