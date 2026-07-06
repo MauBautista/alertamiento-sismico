@@ -2,6 +2,7 @@
 
 from takab_edge.config.settings import (
     DEFAULT_FAILSAFE,
+    BufferConfig,
     EdgeSettings,
     GpioPins,
     SignalConfig,
@@ -12,6 +13,7 @@ from takab_edge.config.store import ConfigStore
 
 __all__ = [
     "DEFAULT_FAILSAFE",
+    "BufferConfig",
     "ConfigStore",
     "EdgeSettings",
     "GpioPins",

@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.4** (runbook ruta HW paralela, hardware-gated) — luego **T-1.7** continúa el carril instrumental
+**Estado actual:** ▶ siguiente tarea = **T-1.8** (`rules`) — hecho: T-1.2/1.3/1.4/1.5/1.6/1.7
 
 ---
 
@@ -122,12 +122,18 @@
 - **Pendiente (diferido):** calibración física absoluta = respuesta StationXML del RS4D
   (sensibilidades hoy placeholder); STA/LTA consciente de gaps y umbrales por edificio = T-1.8.
 
-### [ ] T-1.7 · `buffer` — ring miniSEED en NVMe — **[A3]**
+### [x] T-1.7 · `buffer` — ring miniSEED en NVMe — **[A3]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.5
 - **Criterios:** ring buffer circular en NVMe con retención 7–14 días (~0.5–4 GB reales a
   100 sps × 4 canales según compresión — [PLAN-MAESTRO-01]: el "~10–16 GB" anterior arrastraba
   la aritmética de 200 Hz; el NVMe de 64 GB da holgura ≥15×; **medir tamaño real con hardware**);
   extrae la ventana miniSEED correcta de un evento confirmado para subir a S3.
+- **Ring en disco** (`edge/takab_edge/buffer`): persiste el waveform crudo como **miniSEED** en
+  archivos por día y canal (`<net>.<sta>.<loc>.<cha>.<YYYYMMDD>.mseed`); **poda circular** por
+  antigüedad (retención, relativa al dato más reciente) y por tamaño (`max_bytes`); **extrae la
+  ventana miniSEED** [start,end] de un evento (todos los canales, cruzando medianoche) para subir a
+  S3 (T-1.11/T-1.25). Verificado con roundtrip ObsPy en `tmp` (7 tests). El tamaño real en GB =
+  gate #3. Config `BufferConfig` (root vacío → dir temporal en dev/tests; en el Pi, la ruta NVMe).
 
 ### [ ] T-1.8 · `rules` — motor determinista tierizado — **[A5]**
 - **Componente:** edge · **Depende de:** T-1.3, T-1.6

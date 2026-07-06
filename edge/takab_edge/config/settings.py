@@ -65,6 +65,20 @@ class SignalConfig(BaseModel):
     clip_count: int = Field(default=8_300_000, gt=0)  # ~±2^23 (ADC 24-bit del RS4D)
 
 
+class BufferConfig(BaseModel):
+    """Ring buffer miniSEED en disco (T-1.7).
+
+    `root` vacío → directorio temporal (dev/tests); en el Pi 5, la ruta del NVMe.
+    Retención 7–14 días (~0.5–4 GB reales a 100 sps × 4 canales — [ANALISIS-00];
+    el tamaño real en GB se mide con hardware, gate #3). `max_bytes` es un tope de
+    seguridad además de la poda por antigüedad.
+    """
+
+    root: str = ""
+    retention_days: int = Field(default=14, gt=0)
+    max_bytes: int = Field(default=8 * 1024**3, gt=0)  # ~8 GB (holgura ≥15× en NVMe de 64 GB)
+
+
 class EdgeSettings(BaseSettings):
     """Configuración raíz del gabinete."""
 
@@ -117,6 +131,7 @@ class EdgeSettings(BaseSettings):
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
     pins: GpioPins = Field(default_factory=GpioPins)
     signal: SignalConfig = Field(default_factory=SignalConfig)
+    buffer: BufferConfig = Field(default_factory=BufferConfig)
 
 
 def load_settings() -> EdgeSettings:
