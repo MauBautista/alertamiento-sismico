@@ -2,52 +2,60 @@
 
 [SUPUESTO plan-maestro-01 #4] Driver primario = **relés fail-safe** del módulo
 `gpio`; el adaptador **BACnet/IP** (gas, ascensores, puertas) vive detrás de la
-MISMA interfaz `Actuator`, activable por contrato. Un override del supuesto sólo
-cambia qué driver es el primario, nunca el motor de reglas.
+MISMA interfaz `Actuator`, **activable por contrato** (`bacnet_channels`). Un override
+del supuesto sólo cambia qué driver es el primario, nunca el motor de reglas.
 
-Scaffold de T-1.2: interfaz + driver de relés funcional (sobre gpio) + adaptador
-BACnet contra el simulador (mock, sin hardware) + ACK con latencia. La secuencia
-extendida y los ACK con timestamps reales son **T-1.9**.
+La **sirena y el estrobo** (alerta audible/visual de vida) van SIEMPRE por relé local
+directo — nunca por BACnet, para no depender de una pasarela de terceros en el camino
+de vida. Cada acción devuelve un `ActuatorAck` con timestamp relativo al comando
+(`T+0.42s`). En dev/tests el adaptador BACnet usa el simulador (mock, sin hardware);
+el driver real (`bacpypes3`/`BAC0`) es el extra ``[bacnet]`` (gate hardware).
 """
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Iterable, Sequence
-from time import perf_counter
 from typing import Protocol, runtime_checkable
 
 from takab_edge.contracts import (
     ActuatorAck,
     ActuatorChannel,
     ActuatorCommand,
+    utcnow,
 )
 from takab_edge.gpio import GpioController
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.actuators")
 
+#: Canales que NUNCA se enrutan a BACnet (vida audible/visual = relé local directo).
+RELAY_ONLY: tuple[ActuatorChannel, ...] = (ActuatorChannel.SIREN, ActuatorChannel.STROBE)
+
+
+def _ack(command: ActuatorCommand, *, success: bool, detail: str) -> ActuatorAck:
+    # Latencia = tiempo desde que `rules` emitió el comando hasta su ejecución (T+X.XXs).
+    latency_s = max(0.0, (utcnow() - command.issued_at).total_seconds())
+    return ActuatorAck(
+        channel=command.channel,
+        action=command.action,
+        event_id=command.event_id,
+        success=success,
+        latency_s=latency_s,
+        detail=detail,
+    )
+
 
 @runtime_checkable
 class Actuator(Protocol):
-    """Contrato único que `rules` consume para accionar un canal."""
+    """Contrato único que `rules`/`ActuatorManager` consumen para accionar un canal."""
 
     channels: tuple[ActuatorChannel, ...]
 
     def execute(self, command: ActuatorCommand) -> ActuatorAck:
         """Ejecuta el comando y devuelve un ACK con latencia medida."""
         ...
-
-
-def _ack(command: ActuatorCommand, started: float, *, success: bool, detail: str) -> ActuatorAck:
-    return ActuatorAck(
-        channel=command.channel,
-        action=command.action,
-        event_id=command.event_id,
-        success=success,
-        latency_s=perf_counter() - started,
-        detail=detail,
-    )
 
 
 class RelayActuator:
@@ -65,17 +73,14 @@ class RelayActuator:
         self._gpio = gpio
 
     def execute(self, command: ActuatorCommand) -> ActuatorAck:
-        started = perf_counter()
         on = command.action == command.action.ACTIVATE
         self._gpio.set_relay(command.channel, on)
-        ack = _ack(command, started, success=True, detail="relay")
-        log.info("relé %s %s (%s)", command.channel.value, command.action.value, ack.relative_label)
-        return ack
+        return _ack(command, success=True, detail="relay")
 
 
 @runtime_checkable
 class BacnetClient(Protocol):
-    """Cliente BACnet/IP mínimo (implementado por el simulador y, en T-1.9, por BAC0)."""
+    """Cliente BACnet/IP mínimo (implementado por el simulador y, en prod, por BAC0)."""
 
     def write_present_value(self, channel: ActuatorChannel, active: bool) -> bool: ...
 
@@ -83,8 +88,8 @@ class BacnetClient(Protocol):
 class BacnetActuator:
     """Adaptador BACnet/IP (gas/ascensores/puertas), detrás de la misma interfaz.
 
-    En dev usa el simulador BACnet (mock). El driver real con `bacpypes3`/`BAC0`
-    es T-1.9 (extra ``[bacnet]``).
+    En dev usa el simulador BACnet (mock). El driver real con `bacpypes3`/`BAC0` es el
+    extra ``[bacnet]`` (gate hardware).
     """
 
     channels = (
@@ -97,41 +102,71 @@ class BacnetActuator:
         self._client = client
 
     def execute(self, command: ActuatorCommand) -> ActuatorAck:
-        started = perf_counter()
         on = command.action == command.action.ACTIVATE
         ok = self._client.write_present_value(command.channel, on)
-        return _ack(command, started, success=ok, detail="bacnet")
+        return _ack(command, success=ok, detail="bacnet")
 
 
 class ActuatorManager(EdgeModule):
-    """Enruta comandos al driver del canal y colecciona ACKs (fuente única para `rules`)."""
+    """Enruta cada comando a su driver (relé por defecto; BACnet por contrato) y colecciona ACKs."""
 
     name = "actuators"
     depends_on = ("gpio",)
 
-    def __init__(self, drivers: Iterable[Actuator]) -> None:
+    def __init__(
+        self,
+        relay: Actuator,
+        bacnet: Actuator | None = None,
+        bacnet_channels: Iterable[ActuatorChannel] = (),
+    ) -> None:
         super().__init__()
-        self._by_channel: dict[ActuatorChannel, Actuator] = {}
-        for driver in drivers:
-            for channel in driver.channels:
-                # El primer driver registrado por canal es el primario (relés).
-                self._by_channel.setdefault(channel, driver)
+        self._relay = relay
+        self._bacnet = bacnet
+        # La sirena/estrobo nunca van por BACnet (vida audible = relé local directo).
+        self._bacnet_channels = {c for c in bacnet_channels if c not in RELAY_ONLY}
+        # Ventana rodante de ACKs (evita crecimiento sin límite en un EVACUATE sostenido).
+        self._acks: deque[ActuatorAck] = deque(maxlen=256)
 
-    def _on_start(self) -> None:
-        log.info("actuadores listos: %s", sorted(c.value for c in self._by_channel))
+    def _driver_for(self, channel: ActuatorChannel) -> Actuator:
+        if self._bacnet is not None and channel in self._bacnet_channels:
+            return self._bacnet
+        return self._relay
 
     def execute(self, command: ActuatorCommand) -> ActuatorAck:
-        driver = self._by_channel.get(command.channel)
-        if driver is None:
-            return ActuatorAck(
-                channel=command.channel,
-                action=command.action,
-                event_id=command.event_id,
-                success=False,
-                latency_s=0.0,
-                detail="sin driver para el canal",
+        # Aislamiento de fallo: un actuador que LANZA (p.ej. BACnet real por timeout) NO
+        # debe abortar la secuencia; devolvemos un ACK fallido y seguimos (best-effort).
+        try:
+            ack = self._driver_for(command.channel).execute(command)
+        except Exception as exc:  # noqa: BLE001 — vida: nunca abortar el resto de la secuencia
+            ack = _ack(command, success=False, detail=f"excepción: {exc}")
+            log.exception("actuador %s lanzó excepción", command.channel.value)
+        self._acks.append(ack)
+        if ack.success:
+            log.info(
+                "actuador %s %s vía %s (%s)",
+                command.channel.value,
+                command.action.value,
+                ack.detail,
+                ack.relative_label,
             )
-        return driver.execute(command)
+        else:
+            log.warning(
+                "actuador %s %s FALLÓ (%s, %s)",
+                command.channel.value,
+                command.action.value,
+                ack.detail,
+                ack.relative_label,
+            )
+        return ack
 
     def execute_sequence(self, commands: Sequence[ActuatorCommand]) -> list[ActuatorAck]:
+        """Ejecuta la secuencia del tier best-effort (cada canal se intenta y se ACKea)."""
         return [self.execute(command) for command in commands]
+
+    @property
+    def last_acks(self) -> list[ActuatorAck]:
+        return list(self._acks)
+
+    def _on_start(self) -> None:
+        bacnet = sorted(c.value for c in self._bacnet_channels) if self._bacnet else []
+        log.info("actuadores listos (BACnet por contrato: %s; resto por relé local)", bacnet or "—")

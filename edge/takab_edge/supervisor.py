@@ -116,7 +116,9 @@ class EdgeSupervisor:
         self.buffer = RingBuffer(s.buffer)
         self.rules = RuleEngine(s.thresholds)
         self.bacnet = BacnetSimulator()
-        self.actuators = ActuatorManager([RelayActuator(self.gpio), BacnetActuator(self.bacnet)])
+        self.actuators = ActuatorManager(
+            RelayActuator(self.gpio), BacnetActuator(self.bacnet), s.bacnet_channels
+        )
         self.cloud = CloudConnector(s)
         self.health = HealthMonitor(s, gpio=self.gpio)
         self.config = ConfigStore(s)
@@ -163,7 +165,12 @@ class EdgeSupervisor:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:
         # en la ruta SASMEX es idempotente con el reflejo in-process de gpio; en la
         # ruta instrumental (umbral, sin SASMEX) es la única alerta audible (§4.5).
-        self.actuators.execute_sequence(commands_for(decision))
+        acks = self.actuators.execute_sequence(commands_for(decision))
+        failed = [ack.channel.value for ack in acks if not ack.success]
+        if failed:
+            # Actuación de vida fallida: avisar de inmediato. La escalación a la nube como
+            # alarma (T-1.11) y el fallback por contrato al relé (T-1.10) van aparte.
+            log.warning("actuación con fallo(s) en %s (event_id=%s)", failed, decision.event_id)
         if decision.tier is Tier.NORMAL:
             return
         # Evento idempotente hacia la nube (offline-first; NO bloquea la actuación).

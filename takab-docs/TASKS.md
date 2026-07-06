@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.9** (`actuators`) — hecho: T-1.2…T-1.8
+**Estado actual:** ▶ siguiente tarea = **T-1.10** (`health`) — hecho: T-1.2…T-1.9
 
 ---
 
@@ -154,7 +154,7 @@
   el tier). **Requisito para T-1.17 (nube):** el ingest debe hacer **upsert al tier mayor** por
   `event_id` (no `ON CONFLICT DO NOTHING`), para que la escalación no se congele en el tier bajo.
 
-### [ ] T-1.9 · `actuators` — interfaz `Actuator` + driver relés + adaptador BACnet/IP — **[A6]**
+### [x] T-1.9 · `actuators` — interfaz `Actuator` + driver relés + adaptador BACnet/IP — **[A6]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.8
 - **Criterios:** interfaz `Actuator` única que consume `rules`; **driver primario = relés
   fail-safe del módulo `gpio`** `[SUPUESTO #4 plan-maestro — confirmar/override]`; adaptador
@@ -162,6 +162,13 @@
   retorno de ascensores/montacargas + liberación de retenedores de puerta), activable por
   contrato; cada acción con ACK de ejecución y timestamp (`T+0.42s`, etc.); mock de simulación
   sin hardware BACnet real. Un override del supuesto solo cambia qué driver es el primario.
+- **Manager** (`edge/takab_edge/actuators`): enruta por contrato (`bacnet_channels`) — relé por
+  defecto [SUPUESTO #4], BACnet para la secuencia extendida; **sirena/estrobo SIEMPRE por relé
+  local** (vida audible, nunca pasarela de terceros). ACK con `T+X.XXs` relativo al `issued_at`.
+  **Aislamiento de fallo:** un driver que lanza NO aborta la secuencia (ACK fallido + continuar,
+  best-effort); ACKs en ventana rodante; el supervisor observa los ACKs y avisa en fallo de vida.
+  Revisión adversarial lean: 3 hallazgos corregidos. Driver BACnet real (bacpypes3/BAC0) = gate
+  hardware; escalación a nube del fallo de actuación = T-1.11.
 
 ### [ ] T-1.10 · `health` — autodiagnóstico del gabinete — **[A7]**
 - **Componente:** edge · **Depende de:** T-1.2

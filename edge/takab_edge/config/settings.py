@@ -132,6 +132,10 @@ class EdgeSettings(BaseSettings):
     pins: GpioPins = Field(default_factory=GpioPins)
     signal: SignalConfig = Field(default_factory=SignalConfig)
     buffer: BufferConfig = Field(default_factory=BufferConfig)
+    #: Canales de la secuencia extendida enrutados a **BACnet/IP** por contrato del sitio
+    #: (gas/ascensores/puertas). Vacío = todo por relé local [SUPUESTO plan-maestro-01 #4].
+    #: La sirena/estrobo NUNCA van por BACnet (vida audible = relé local directo).
+    bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
 
 
 def load_settings() -> EdgeSettings:
