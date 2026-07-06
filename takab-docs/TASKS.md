@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.12** (`config`+`security`) — hecho: T-1.2…T-1.11 (edge-side)
+**Estado actual:** ▶ siguiente tarea = **T-1.13** (`takab_local_api`) — hecho: T-1.2…T-1.12
 
 ---
 
@@ -208,11 +208,20 @@
   la ventana miniSEED extraída por `buffer` (T-1.7) se sube a S3 (URL pre-firmada solicitada
   por MQTT/API) y se registra en `evidence_objects` con `sha256` — idempotente.
 
-### [ ] T-1.12 · `config` + `security` — sync firmada y comandos firmados — **[A9]**
+### [x] T-1.12 · `config` + `security` — sync firmada y comandos firmados — **[A9]** · edge-side COMPLETA (mTLS provisioning = gate T-1.15)
 - **Componente:** edge · **Depende de:** T-1.11
 - **Criterios:** store local de umbrales/reglas/tenant; sincronización desde la nube vía JWT
   firmado (≤60 s), versionada y reversible; mTLS/X.509 por gateway; verificación de comandos
   remotos firmados con nonce (anti-replay); rechaza comando no firmado o repetido.
+- **security** (`edge/takab_edge/security`): comandos firmados HMAC con **nonce de un solo uso**
+  (anti-replay, store podado por expiración) + **ventana temporal corta** (regla de oro 8; rechaza
+  no firmado/expirado/futuro>skew) + firma canónica **length-prefixed** (dominios command/config
+  separados, sin aliasing) + robustez (firma malformada → False, no excepción).
+- **config** (`edge/takab_edge/config/store.py`): `apply_signed_update` **fail-closed** (sin
+  verificador → rechaza), firma que **cubre la versión** (anti-relabeleo), piso **`high_water`**
+  monótono (ni el rollback lo baja → una versión ya vista no se re-aplica), historial reversible.
+- **Revisión adversarial:** 8 hallazgos corregidos (versión no firmada = downgrade/DoS; rollback
+  reabría replay; fail-open). mTLS/X.509 provisioning + transporte de la sync = gate AWS (T-1.15).
 
 ### [ ] T-1.13 · `takab_local_api` — dashboard local del edificio
 - **Componente:** edge · **Depende de:** T-1.8

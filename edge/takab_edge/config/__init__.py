@@ -9,11 +9,12 @@ from takab_edge.config.settings import (
     ThresholdBand,
     load_settings,
 )
-from takab_edge.config.store import ConfigStore
+from takab_edge.config.store import ConfigError, ConfigStore
 
 __all__ = [
     "DEFAULT_FAILSAFE",
     "BufferConfig",
+    "ConfigError",
     "ConfigStore",
     "EdgeSettings",
     "GpioPins",

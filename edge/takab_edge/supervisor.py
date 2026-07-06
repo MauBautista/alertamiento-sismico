@@ -123,8 +123,8 @@ class EdgeSupervisor:
         self.health = HealthMonitor(
             s, gpio=self.gpio, seedlink=self.seedlink, heartbeat_s=s.health_heartbeat_s
         )
-        self.config = ConfigStore(s)
-        self.security = SecurityManager(_resolve_hmac_key(s))
+        self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
+        self.config = ConfigStore(s, security=self.security)
         self.local_api = LocalDashboard(self.gpio, self.rules, self.health)
 
         self._modules: dict[str, EdgeModule] = {

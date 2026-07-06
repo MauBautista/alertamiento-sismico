@@ -119,6 +119,8 @@ class EdgeSettings(BaseSettings):
     cloud_spool_dir: str = ""
     cloud_backoff_s: float = Field(default=1.0, gt=0)  # base de reconexión
     cloud_backoff_max_s: float = Field(default=60.0, gt=0)  # tope del backoff
+    #: Ventana de validez de un comando remoto firmado (regla de oro 8: "JWT corto").
+    command_ttl_s: float = Field(default=30.0, gt=0)
 
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
