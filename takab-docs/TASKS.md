@@ -9,8 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ **BLOQUE EDGE (A) COMPLETO** (T-1.2…T-1.14). Siguiente doable-sin-AWS = **T-1.16**
-(migraciones DB + RLS vs Postgres local); T-1.15 y T-1.17+ requieren AWS.
+**Estado actual:** ▶ **BLOQUE EDGE (A) COMPLETO** (T-1.2…T-1.14) + **T-1.16 COMPLETO**
+(migraciones DB + RLS vs Postgres local, commit `4f20cab`). Todo lo restante (T-1.15,
+T-1.17+) requiere AWS.
 
 ---
 
@@ -259,7 +260,7 @@
   repos ECR, y un Thing de AWS IoT Core de prueba + policy mínima + regla IoT → SQS. Sin
   credenciales en el código; backend de estado remoto (S3 + DynamoDB lock); `terraform destroy` limpio.
 
-### [ ] T-1.16 · Esquema de base de datos + migraciones — **[B3]**
+### [x] T-1.16 · Esquema de base de datos + migraciones — **[B3]** ✅ (commit `4f20cab`)
 - **Componente:** api / db · **Depende de:** T-1.1
   ([ANALISIS-00]: antes dependía de T-1.15/Terraform — innecesario: las migraciones y los tests
   de RLS corren contra el Postgres LOCAL del `docker-compose.yml`; no provisionar AWS para esto.
