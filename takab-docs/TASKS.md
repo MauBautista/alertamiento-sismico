@@ -9,7 +9,7 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ siguiente tarea = **T-1.10** (`health`) — hecho: T-1.2…T-1.9
+**Estado actual:** ▶ siguiente tarea = **T-1.11** (`cloud` edge-side) — hecho: T-1.2…T-1.10
 
 ---
 
@@ -170,11 +170,17 @@
   Revisión adversarial lean: 3 hallazgos corregidos. Driver BACnet real (bacpypes3/BAC0) = gate
   hardware; escalación a nube del fallo de actuación = T-1.11.
 
-### [ ] T-1.10 · `health` — autodiagnóstico del gabinete — **[A7]**
+### [x] T-1.10 · `health` — autodiagnóstico del gabinete — **[A7]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.2
 - **Criterios:** snapshots correctos de NTP offset, lag SeedLink, packet loss, estado UPS
   (`RED ELÉCTRICA %`, `RESPALDO Xh Ym`, `EN BATERÍA`), temperatura y estado de actuadores;
   logging por transición de estado + heartbeat periódico (nunca por intervalo continuo).
+- **Monitor** (`edge/takab_edge/health`): compone `HealthSnapshot` desde `HealthProbes`
+  inyectables (temp del Pi vía `/sys/class/thermal` con fallback; NTP/UPS/cert = gate hardware,
+  default seguro) + lag/packet-loss del `SeedLinkClient` + relés de `gpio`. **Logging por
+  transición DISCRETA** (relés/UPS/umbrales de cert/temp/lag — nunca por drift continuo) +
+  **heartbeat** periódico (`health_heartbeat_s`) en hilo daemon. Etiquetas UPS de UI. El
+  cableado health→nube (publicar snapshots) y el parsing real del cert mTLS son **T-1.11**.
 
 ### [ ] T-1.11 · `cloud` (edge-side) — MQTT mTLS + cola offline — **[A8]**
 - **Componente:** edge · **Depende de:** T-1.6, T-1.9, T-1.10

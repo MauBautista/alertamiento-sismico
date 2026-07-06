@@ -136,6 +136,8 @@ class EdgeSettings(BaseSettings):
     #: (gas/ascensores/puertas). Vacío = todo por relé local [SUPUESTO plan-maestro-01 #4].
     #: La sirena/estrobo NUNCA van por BACnet (vida audible = relé local directo).
     bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
+    #: Periodo del heartbeat de salud (beacon de vida); las transiciones se loguean aparte.
+    health_heartbeat_s: float = Field(default=60.0, gt=0)
 
 
 def load_settings() -> EdgeSettings:

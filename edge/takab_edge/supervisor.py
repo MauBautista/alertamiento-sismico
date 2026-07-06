@@ -120,7 +120,9 @@ class EdgeSupervisor:
             RelayActuator(self.gpio), BacnetActuator(self.bacnet), s.bacnet_channels
         )
         self.cloud = CloudConnector(s)
-        self.health = HealthMonitor(s, gpio=self.gpio)
+        self.health = HealthMonitor(
+            s, gpio=self.gpio, seedlink=self.seedlink, heartbeat_s=s.health_heartbeat_s
+        )
         self.config = ConfigStore(s)
         self.security = SecurityManager(_resolve_hmac_key(s))
         self.local_api = LocalDashboard(self.gpio, self.rules, self.health)
