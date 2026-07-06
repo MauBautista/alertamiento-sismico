@@ -42,8 +42,10 @@ Arquitectura **híbrida edge + cloud**:
    primario y autoritativo.
 2. **Detección local instrumental** del propio sensor (umbral PGA/PGV; tiers `normal`/`watch`/
    `restricted`/`evacuate_or_hold`/`manual_only`).
-3. **Quórum colaborativo:** ≥3 estaciones detectando en ventana de 2–5 s (se correlaciona en la
-   nube; no bloquea la actuación local autónoma).
+3. **Quórum colaborativo:** ≥3 estaciones con **ventana de asociación consciente de la
+   distancia** entre sitios (`|Δt| ≤ dist/v_P + margen` — ver blueprint §4.5; una ventana fija
+   de 2–5 s era físicamente inalcanzable a 90–110 km). Se correlaciona en la nube; no bloquea
+   la actuación local autónoma.
 
 ## 2. Reglas de oro (NO negociables — esto es un sistema donde fallar cuesta vidas)
 
@@ -63,18 +65,20 @@ Arquitectura **híbrida edge + cloud**:
    (dato viejo). Mostrar un dato congelado como si fuera "live" es peor que mostrar "sin datos".
 8. **Control de actuadores por nube = superficie más sensible.** Comando firmado (HMAC/JWT corto)
    + MFA + rate-limit + nonce + ack de ejecución. Sin excepción.
-9. **Sin streaming de forma de onda cruda.** El waveform 200 Hz no se sube en continuo; el
-   miniSEED crudo sube a S3 solo en eventos confirmados.
+9. **Sin streaming de forma de onda cruda.** El waveform crudo (100 sps — el RS4D muestrea a
+   100, no 200 Hz) no se sube en continuo; el miniSEED crudo sube a S3 solo en eventos confirmados.
 10. **Logging por evento, no por intervalo.** Registro por transición de estado + heartbeat
     periódico; nada de logging continuo para `rule_evaluations` o salud de dispositivo.
 11. **Compliance como restricción dura.** Auditoría, evidencia de incidentes y dictámenes nunca
-    se podan por retención (NOM-003-SCT).
+    se podan por retención (requisito propio de TAKAB, garantizado por el schema; el marco
+    normativo citable está por confirmar — ver blueprint §9; la antigua cita "NOM-003-SCT" era
+    una norma de transporte y no aplica).
 
 ## 3. Stack tecnológico (versiones objetivo)
 
 | Capa | Tecnología |
 |---|---|
-| Backend API | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) · Alembic · GraphQL (subscriptions) |
+| Backend API | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) · Alembic · WebSocket nativo para live (GraphQL subscriptions: pos-MVP `[SUPUESTO plan-maestro-01 #5 — confirmar]`) |
 | DB | PostgreSQL 16 · TimescaleDB 2.x · PostGIS 3.x |
 | Cloud | AWS IoT Core · SQS · ECS Fargate · S3 · Cognito · KMS |
 | Edge | Python 3.12 (`uv`) · ObsPy · NumPy/SciPy · aws-iot-device-sdk / paho-mqtt · BAC0/bacpypes3 (BACnet) · gpiozero/lgpio (GPIO) · systemd |
@@ -91,9 +95,11 @@ Arquitectura **híbrida edge + cloud**:
 ```
 takab/
 ├── edge/            # Raspberry Pi 5 — gateway de inteligencia (Python 3.12 · uv)
-│                    #   módulos: seedlink, signal, buffer, sasmex, rules, actuators,
-│                    #   quorum, cloud, health, config, security, supervisor
-├── api/             # backend cloud (FastAPI + GraphQL)
+│                    #   módulos: seedlink, signal, buffer, gpio, rules, actuators,
+│                    #   cloud, health, config, security, local_api, supervisor
+│                    #   (gpio = WR-1 + relés + reflejo SASMEX→sirena consolidado
+│                    #   [SUPUESTO plan-maestro-01 #6]; el quórum vive en la NUBE)
+├── api/             # backend cloud (FastAPI; REST + WS)
 ├── web/             # Consola SOC (React 18 · Vite)
 ├── shared/
 │   ├── schemas/     # contratos compartidos (Pydantic + JSON Schema → tipos TS)
@@ -117,11 +123,16 @@ takab/
 - **`takab-docs/BLUEPRINT-TECNICO-TAKAB.md`** — documento canónico: principios arquitectónicos,
   topología, módulos del edge, capa cloud, roadmap Edge→Cloud→Frontend. Ante cualquier
   ambigüedad de arquitectura, este documento gobierna.
-- **`takab-docs/RBAC-TAKAB.md`** — 11 roles, matrices de acceso web y móvil, mapeo a Cognito,
-  claims del JWT, reglas de actuadores, tablas de auth.
+- **`takab-docs/RBAC-TAKAB.md`** — 10 roles, matrices de acceso web y móvil, mapeo a Cognito,
+  claims del JWT, reglas de actuadores, tablas de auth. (Las identidades máquina — X.509 de
+  gateway, M2M, rol DB de ingesta — no son roles RBAC.)
 - **`db/schema.sql`** — esquema de producción consolidado (aplícalo, no lo reinventes); es la
   fuente de verdad del DDL incluso donde el blueprint describa algo distinto.
 - **`takab-docs/TASKS.md`** — qué construir y en qué orden, con criterios de aceptación.
+- **`takab-docs/PLAN-MAESTRO-TAKAB.md`** — secuencia por fases, hitos, DoD de fase, ruta
+  crítica, decision-gates y supuestos `[SUPUESTO plan-maestro-01]` pendientes de ratificar.
+- **`takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md`** — hallazgos del red-team, changelog de
+  correcciones `[ANALISIS-00]` y preguntas abiertas.
 
 ## 6. Método de trabajo (cómo ejecutamos cada tarea)
 

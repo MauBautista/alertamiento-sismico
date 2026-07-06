@@ -114,7 +114,7 @@ Sitios de referencia (del deck, para fixtures/seed): Planta Cholula (Edif. A/B),
 |---|---|---|
 | Raspberry Shake RS4D | Sensor (velocidad vertical + acelerómetro 3D) | **Solo sensor.** Expone SeedLink en TCP 18000. Shake OS no se modifica. |
 | Raspberry Pi 5 | Gateway de inteligencia | Ejecuta todo el software TAKAB del edge. |
-| NVMe industrial 64 GB | Buffer circular miniSEED | Uso real ~10–16 GB (ring 7–14 días). |
+| NVMe industrial 64 GB | Buffer circular miniSEED | Uso real ~0.5–4 GB a 100 sps × 4 canales (ring 7–14 días); 64 GB = holgura ≥15×. |
 | UPS con monitoreo | Respaldo eléctrico | Reporta `RED ELÉCTRICA %`, `RESPALDO Xh Ym`, modo `EN BATERÍA`. |
 | Receptor SASMEX WR-1 | Alerta temprana regional | Salida relé **dry-contact → GPIO**. Boolean puro. Contacto de **prueba periódica CIRES** monitoreado como heartbeat (§4.7, confirmar semántica en §15). |
 | Relé de potencia en paralelo WR-1→sirena | **Respaldo último de vida** | El dry-contact del WR-1 dispara la sirena por hardware **aunque el Pi esté muerto** (§4.7 / FASE-0 SPOF-02, tarea T-1.4). |
@@ -132,9 +132,9 @@ Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilid
 | `seedlink` | Cliente SeedLink contra RS4D (TCP 18000). Reconexión con backoff, medición de lag. | Paquetes miniSEED por canal (EHZ + ENZ/ENN/ENE, 100 sps). |
 | `signal` | Decodifica miniSEED y calcula features **agregadas a 1 s**: PGA, PGV, RMS, STA/LTA, clipping, health_score. | Registros de feature 1 s. |
 | `buffer` | Ring buffer miniSEED crudo en NVMe (7–14 días). Extrae ventana del evento para subir. | Archivo miniSEED de ventana de evento. |
-| `sasmex` | Escucha el relé WR-1 vía GPIO (boolean). **Canal primario de alertamiento.** | Señal de alerta SASMEX activa. |
-| `rules` | **Motor de reglas determinista.** Evalúa features vs umbrales por edificio (T1 cautela / T2 disparo, PGA y PGV), correlación y gating por salud. Consume `sasmex`. Decide tier/severidad y dispara actuadores. Sin IA. | Decisión tierizada + comandos de actuador + evento local. |
-| `actuators` | Adaptador BACnet/IP. Ejecuta comandos (sirena/gas/ascensores/puertas) y confirma ejecución. | ACK de actuador con timestamp (`T+0.42s`, etc.). |
+| `gpio` | **Proceso mínimo y auditable** `[SUPUESTO plan-maestro-01 #6]`: escucha el relé WR-1 (dry-contact, debounce 50 ms), controla los **relés locales fail-safe** (sirena/estrobo, NO/NC por canal) y ejecuta el **reflejo SASMEX→sirena in-process** (<100 ms, sin cruzar IPC). **Canal primario de alertamiento.** | Señal SASMEX activa + actuación local refleja + estado de relés. |
+| `rules` | **Motor de reglas determinista.** Evalúa features vs umbrales por edificio (T1 cautela / T2 disparo, PGA y PGV), correlación y gating por salud. Consume la señal de `gpio`. Decide tier/severidad y ordena actuación (secuencias no-reflejas). Sin IA. | Decisión tierizada + comandos de actuador + evento local. |
+| `actuators` | Interfaz `Actuator` única para `rules`: driver primario = relés de `gpio` `[SUPUESTO #4]`; adaptador **BACnet/IP** detrás de la misma interfaz (gas/ascensores/puertas), activable por contrato. Confirma ejecución. | ACK de actuador con timestamp (`T+0.42s`, etc.). |
 | `cloud` | Conector MQTT (QoS 1, mTLS) hacia AWS IoT Core. **Cola durable offline** con backfill al reconectar. Recibe comandos remotos firmados. | Publicación de features/eventos/health/ACKs. |
 | `health` | Autodiagnóstico silencioso: NTP offset, lag SeedLink, packet loss, estado UPS, temperatura, estado de actuadores, `cert_days_remaining`. Logging por transición + heartbeat. | Snapshots de salud por evento. |
 | `config` | Store local de umbrales/reglas/tenant. Sincronización desde la nube (JWT firmado, ≤60 s). | Config activa versionada. |
@@ -149,16 +149,16 @@ Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilid
 > el scaffold de T-1.2. Si algún sitio llega a tener varios sensores, la correlación intra-sitio
 > vivirá dentro de `rules` (gating multi-sensor), no en un módulo aparte.
 >
-> **[ANALISIS-00] IPC entre módulos — decisión pendiente de Mauricio (ver ANALISIS, decisión #6):**
-> esta tabla separa `sasmex` (entrada GPIO) de `actuators` (salida), lo que obliga al camino
-> crítico SASMEX→sirena a cruzar IPC entre procesos. FASE-0 (SPOF-02/§1.2) lo resolvía con un
-> único proceso `takab_gpio` mínimo (WR-1 + relés locales, reflejo directo <70 ms) — y la regla
-> de oro 4 de `CLAUDE.md` habla de "el proceso GPIO/actuadores" en singular. Propuesta: fusionar
-> la entrada WR-1 y los relés locales en un proceso `gpio` auditable; `actuators` queda como
-> adaptador BACnet/IP (secuencias no-reflejas). Hasta decidirse, el mecanismo de IPC del camino
-> crítico queda **sin especificar** — no construir T-1.8/T-1.9 sin cerrar esto.
+> **[PLAN-MAESTRO-01] IPC y proceso `gpio` — supuesto ADOPTADO (antes "decisión pendiente"):**
+> se fusionaron la entrada WR-1 y los relés locales en el proceso `gpio` (fila de arriba), como
+> hacía FASE-0 (`takab_gpio`, reflejo <70 ms) y como implica la regla de oro 4 de `CLAUDE.md`
+> ("el proceso GPIO/actuadores", singular). El camino de vida SASMEX→sirena NO cruza IPC.
+> El bus local (mosquitto, tópicos `takab/local/#`) transporta SOLO telemetría y comandos
+> no-reflejos (seedlink→signal→rules→actuators/cloud). `[SUPUESTO #6 — confirmar/override
+> antes de T-1.8; un override reabre el diseño de IPC del camino crítico]`. Trazabilidad: la
+> versión previa separaba `sasmex` y `actuators` sin especificar IPC.
 
-**Regla de oro del edge:** `sasmex` + `signal` → `rules` → `actuators` funciona **sin nube**. `cloud` solo transporta y recibe config/comandos; nunca es prerequisito para actuar.
+**Regla de oro del edge:** `gpio` (+ `signal` → `rules` → `actuators`) funciona **sin nube**, y el reflejo SASMEX→sirena funciona **incluso sin los demás módulos** (proceso autocontenido). `cloud` solo transporta y recibe config/comandos; nunca es prerequisito para actuar.
 
 ## 4.3 Stack técnico del edge
 
@@ -187,9 +187,9 @@ edge/
     seedlink/               # cliente SeedLink + reconexión
     signal/                 # features 1s (PGA, PGV, RMS, STA/LTA)
     buffer/                 # ring buffer miniSEED en NVMe
-    sasmex/                 # listener GPIO WR-1
+    gpio/                   # WR-1 + relés locales + reflejo SASMEX→sirena [SUPUESTO #6]
     rules/                  # motor determinista + esquema de umbrales
-    actuators/              # adaptador BACnet/IP + mock de simulación
+    actuators/              # interfaz Actuator: driver relés + adaptador BACnet/IP + mock
     cloud/                  # conector MQTT + cola offline + backfill
     health/                 # autodiagnóstico
     config/                 # store local + sync firmada
@@ -323,12 +323,11 @@ Claves: `tenant_id` en toda tabla multi-tenant (excepción documentada: `seismic
 - **REST (FastAPI + Pydantic):** ingesta desde edge (mTLS), gestión de sitios/reglas/incidentes, acuse, dictámenes, exportación miniSEED, pruebas de canal.
 - **GraphQL con subscriptions:** para la Consola SOC en vivo. El deck muestra explícitamente `SUBSCRIPTION · GraphQL · LIVE` en incidentes abiertos y forma de onda. Implementar suscripción de incidentes y de estado de sitio sobre WebSocket.
 
-> **[ANALISIS-00] Decisión pendiente de Mauricio (ANALISIS, decisión #5):** para un MVP de 4–8
-> sitios con un único consumidor (nuestra propia consola), mantener DOS superficies de API
-> (REST + GraphQL con subscriptions) duplica contratos, autorización y pruebas; FASE-0 había
-> elegido "WebSocket fan-out" simple (tarea 1.12) y la etiqueta del deck no es spec.
-> Recomendación del análisis: REST + WebSocket nativo en MVP; GraphQL cuando haya consumidores
-> externos o queries compuestas reales. El stack declarado no se cambia hasta que Mauricio decida.
+> **[PLAN-MAESTRO-01] Supuesto ADOPTADO (antes "decisión pendiente"):** MVP = **REST +
+> WebSocket nativo**; GraphQL subscriptions queda pos-MVP `[SUPUESTO #5 — confirmar/override
+> antes de T-1.22]`. Razón: un único consumidor (nuestra consola), dos superficies de API
+> duplican contratos/authz/pruebas; FASE-0 ya había elegido WebSocket fan-out y la etiqueta del
+> deck no es spec. Un override reintroduce GraphQL en T-1.22 sin tocar el edge.
 
 ## 5.6 Cascada de notificaciones (canales secundarios · FAIL-OPEN)
 
@@ -378,7 +377,7 @@ Móvil (fase posterior): acuse, escalamiento, inspección de campo con checklist
 
 ## 8. RBAC y seguridad
 
-`RBAC-TAKAB.md` es la **fuente de verdad**: **11 roles** sobre tres superficies (SOC web, app móvil, interno TAKAB). Restricciones no negociables a implementar:
+`RBAC-TAKAB.md` es la **fuente de verdad**: **10 roles** sobre tres superficies (SOC web, app móvil, interno TAKAB). Las **identidades máquina** (X.509 por gateway, M2M `client_credentials`, rol de DB `takab_ingest`) son identidades de servicio, no roles RBAC. Restricciones no negociables a implementar:
 
 - **`gov_operator` (Protección Civil): solo lectura + acuse.** No opera actuadores.
 - **Activación manual de sirena:** para el rol `occupant` requiere **quórum de dos ocupantes** dentro de **30 s**; los roles operativos (`brigadista`/`security_guard`/`inspector`/`building_admin`) activan **individual** con deslizar-para-activar ([ANALISIS-00]: la redacción anterior generalizaba el quórum a todos — `RBAC-TAKAB.md §4.1` es la fuente de verdad).
@@ -462,20 +461,19 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 | A1 | `seedlink`: cliente contra RS4D, reconexión, medición de lag | Consume feed simulado 100 sps estable |
 | A2 | `signal`: features 1 s (PGA, PGV, RMS, STA/LTA) + clipping/health | Features correctas vs señales de referencia |
 | A3 | `buffer`: ring miniSEED en NVMe + extracción de ventana de evento | Retención 7–14 d; extrae ventana correcta |
-| A4 | `sasmex`: listener GPIO WR-1 (boolean) | Detecta toggle simulado con latencia < objetivo |
+| A4 | `gpio`: WR-1 + relés locales + reflejo SASMEX→sirena [SUPUESTO #6] | Toggle simulado → sirena <100 ms; NO/NC por canal |
 | A5 | `rules`: motor determinista tierizado + umbrales por edificio | Cobertura de todos los tiers y casos borde |
-| A6 | `actuators`: adaptador BACnet/IP + mock + ACKs | Secuencia sirena/gas/ascensores/puertas con ACK |
+| A6 | `actuators`: interfaz Actuator (driver relés [SUPUESTO #4] + adaptador BACnet + mock) + ACKs | Secuencia sirena/gas/ascensores/puertas con ACK |
 | A7 | `health`: autodiagnóstico por transición + heartbeat | Snapshots correctos (NTP, lag, packet loss, UPS) |
 | A8 | `cloud`: MQTT mTLS + **cola offline** + backfill | Sobrevive WAN down y hace backfill idempotente |
 | A9 | `config` + `security`: sync JWT + comandos firmados + nonce | Rechaza comando no firmado/replayed |
 | A10 | Integración edge end-to-end (opcional hardware-in-the-loop) | Evento simulado → actuación autónoma sin nube |
 
-> **[ANALISIS-00] Decisión pendiente de Mauricio (ANALISIS, decisión #4) — alcance de actuadores
-> en MVP:** FASE-0 acotaba el MVP a **sirena + estrobo por relés** y difería BACnet/IP a "solo si
-> un contrato lo exige" (tarea 2.10, prioridad Baja); este blueprint y T-1.9 traen la suite
-> BACnet completa (gas, ascensores, puertas) al MVP. Recomendación del análisis: relés directos
-> con semántica fail-safe NO/NC como actuación primaria del MVP, y BACnet detrás de la misma
-> interfaz de `actuators` cuando un contrato lo pida. A6/T-1.9 no se recortan hasta que decida.
+> **[PLAN-MAESTRO-01] Supuesto ADOPTADO (antes "decisión pendiente") — actuadores del MVP:**
+> actuación primaria = **relés directos fail-safe** (NO/NC/fail-close por canal, en `gpio`);
+> BACnet/IP queda detrás de la misma interfaz `Actuator`, activable por contrato (como acotaba
+> FASE-0: "solo si un contrato lo exige"). `[SUPUESTO #4 — confirmar/override antes de
+> T-1.8/T-1.9; un override solo cambia el driver primario, no el motor de reglas]`.
 
 ### Fase B — CLOUD (AWS) · después del edge
 
@@ -488,7 +486,7 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 | B5 | Dictamen service (registro inmutable §9) + generación de PDF |
 | B6 | Notification orchestrator (cascada + fail-open) |
 | B7 | API REST (FastAPI) + GraphQL subscriptions |
-| B8 | Cognito + RBAC (11 roles) + MFA |
+| B8 | Cognito + RBAC (10 roles) + MFA |
 | B9 | Config sync (≤60 s, JWT) + command service (firmado/MFA/nonce/rate-limit/ACK) |
 | B10 | Audit/compliance inmutable + billing/metering |
 

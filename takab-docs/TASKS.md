@@ -42,10 +42,12 @@
 ### [ ] T-1.2 · Scaffolding `edge/` + simuladores — **[A0]**
 - **Componente:** edge · **Depende de:** T-1.1 · **Prioridad: ALTA**
 - **Objetivo:** `edge/` con `uv`, `pyproject.toml`, `supervisor.py`, estructura de módulos
-  (`takab_edge/{seedlink,signal,buffer,sasmex,rules,actuators,cloud,health,config,security,local_api}`)
+  (`takab_edge/{seedlink,signal,buffer,gpio,rules,actuators,cloud,health,config,security,local_api}`)
   y **simuladores** de RS4D (feed SeedLink sintético 100 sps), WR-1 (toggle GPIO) y BACnet.
   [ANALISIS-00]: se quitó `quorum` del scaffold (el quórum vive en la NUBE, T-1.19 — ver
   blueprint §4.2) y se añadió `local_api` (lo exigen RBAC §4.2 y T-1.13).
+  [PLAN-MAESTRO-01]: `sasmex` → `gpio` consolidado (entrada WR-1 + relés locales + reflejo
+  SASMEX→sirena in-process) `[SUPUESTO #6 — confirmar/override; un override = renombrar el módulo]`.
 - **Criterios de aceptación:**
   - [ ] **Workflow de CI creado desde cero** (`.github/workflows/ci.yml`): jobs `api` + `web` +
         `edge` corren lint y tests en cada PR/push a main, en verde (criterio heredado de T-1.1
@@ -54,11 +56,14 @@
   - [ ] `pytest` verde en CI (job `edge`) sin hardware físico.
   - [ ] Simuladores permiten levantar el edge completo en dev sin Raspberry Shake ni Pi 5.
 
-### [ ] T-1.3 · `sasmex` — WR-1 (contacto seco) → GPIO — **[A4]**
+### [ ] T-1.3 · `gpio` — WR-1 (contacto seco) → relés locales — **[A4]**
 - **Componente:** edge · **Depende de:** T-1.2 · **Prioridad: ALTA**
-- **Criterios:** cierre del contacto → señal de alerta SASMEX activa en <100 ms (medido);
+- **Criterios:** cierre del contacto → reflejo SASMEX→sirena **in-process** en <100 ms (medido);
   debounce 50 ms; botón silencio y botón prueba; fail-safe NO/NC configurable por canal;
   1000 ciclos sin fallo; proceso mínimo, sin deps pesadas, arranca <1 s.
+  `[SUPUESTO #6 plan-maestro]` módulo consolidado (entrada + relés en un proceso).
+  **A validar con hardware (gate #3):** semántica real de contactos del WR-1 (asignación
+  alerta/prueba, duración, rebote, latching) — la aceptación final se re-corre con el receptor real.
 
 ### [ ] T-1.4 · Ruta de hardware paralela SASMEX→sirena (SPOF-02)
 - **Componente:** edge/hw · **Depende de:** T-1.3 · **Prioridad: ALTA**
@@ -80,8 +85,10 @@
 
 ### [ ] T-1.7 · `buffer` — ring miniSEED en NVMe — **[A3]**
 - **Componente:** edge · **Depende de:** T-1.5
-- **Criterios:** ring buffer circular en NVMe con retención 7–14 días (~10–16 GB); extrae la
-  ventana miniSEED correcta de un evento confirmado para subir a S3.
+- **Criterios:** ring buffer circular en NVMe con retención 7–14 días (~0.5–4 GB reales a
+  100 sps × 4 canales según compresión — [PLAN-MAESTRO-01]: el "~10–16 GB" anterior arrastraba
+  la aritmética de 200 Hz; el NVMe de 64 GB da holgura ≥15×; **medir tamaño real con hardware**);
+  extrae la ventana miniSEED correcta de un evento confirmado para subir a S3.
 
 ### [ ] T-1.8 · `rules` — motor determinista tierizado — **[A5]**
 - **Componente:** edge · **Depende de:** T-1.3, T-1.6
@@ -92,11 +99,14 @@
   por archivo firmado; tests exhaustivos de casos borde (clipping, saturación, dropout, doble
   disparo — SASMEX activo + umbral local del mismo sismo = UN evento, no dos).
 
-### [ ] T-1.9 · `actuators` — adaptador BACnet/IP completo — **[A6]**
+### [ ] T-1.9 · `actuators` — interfaz `Actuator` + driver relés + adaptador BACnet/IP — **[A6]**
 - **Componente:** edge · **Depende de:** T-1.8
-- **Criterios:** secuencia sirena + cierre de válvulas de gas + retorno de ascensores/montacargas
-  + liberación de retenedores de puerta, cada uno con ACK de ejecución y timestamp (`T+0.42s`, etc.);
-  mock de simulación sin hardware BACnet real.
+- **Criterios:** interfaz `Actuator` única que consume `rules`; **driver primario = relés
+  fail-safe del módulo `gpio`** `[SUPUESTO #4 plan-maestro — confirmar/override]`; adaptador
+  BACnet/IP detrás de la misma interfaz para la secuencia extendida (cierre de válvulas de gas +
+  retorno de ascensores/montacargas + liberación de retenedores de puerta), activable por
+  contrato; cada acción con ACK de ejecución y timestamp (`T+0.42s`, etc.); mock de simulación
+  sin hardware BACnet real. Un override del supuesto solo cambia qué driver es el primario.
 
 ### [ ] T-1.10 · `health` — autodiagnóstico del gabinete — **[A7]**
 - **Componente:** edge · **Depende de:** T-1.2
@@ -130,7 +140,9 @@
 ### [ ] T-1.14 · Simulador de sismo + integración edge end-to-end — **[A10]**
 - **Componente:** tooling/edge · **Depende de:** T-1.5, T-1.8, T-1.9 · **Prioridad: ALTA**
 - **Criterios:** inyector SeedLink + generador de eventos permite demo E2E y tests de carga sin
-  sismo real; evento simulado → actuación autónoma completa sin nube.
+  sismo real; evento simulado → actuación autónoma completa sin nube (**test con la nube
+  apagada** — cierra el hito de la Fase E, ver PLAN-MAESTRO §4). Hardware-in-the-loop:
+  opcional y hardware-gated (#3), no bloquea el cierre contra simuladores.
 
 ---
 
@@ -171,7 +183,9 @@
 - **Componente:** api / auth · **Depende de:** T-1.15, T-1.16
 - **Objetivo:** login OIDC contra Cognito con MFA; el backend extrae claims y setea
   `app.tenant_id`, `app.role`, `app.user_id` por request para RLS (`RBAC-TAKAB.md §5`).
-- **Criterios:** grupos de Cognito = los 11 roles; claims custom (`tenant_id`, `role`,
+- **Criterios:** grupos de Cognito = los 10 roles de `RBAC-TAKAB.md §1` (las identidades
+  máquina van aparte: X.509/M2M); MFA por grupo según supuesto #7 del PLAN-MAESTRO
+  (occupant sin MFA, todo rol web con MFA); claims custom (`tenant_id`, `role`,
   `site_scope`, `zone_id`, `surface`) en el JWT; dependencia FastAPI valida firma/exp/issuer y
   rechaza tokens inválidos (401); middleware setea variables de sesión Postgres en la
   transacción; endpoint `/me`; tests de autorización por rol (`RBAC-TAKAB.md §2`).
@@ -204,8 +218,10 @@
 - **Componente:** api · **Depende de:** T-1.18
 - **Criterios:** REST (FastAPI + Pydantic) para sites/sensors/incidents/telemetry/dictámenes/
   exportación miniSEED; OpenAPI generado; p95 <200 ms en queries de dashboard con 90 días de
-  datos; GraphQL con subscriptions sobre WebSocket para incidentes y estado de sitio en vivo
-  (update visible en el navegador <2 s desde el edge).
+  datos; **WebSocket nativo** para incidentes y estado de sitio en vivo (update visible en el
+  navegador <2 s desde el edge). `[SUPUESTO #5 plan-maestro — confirmar/override]`: GraphQL
+  subscriptions queda pos-MVP; los endpoints de telemetría JAMÁS exponen los caggs
+  `site_metrics_*` sin JOIN a `sites` (RLS — ver schema §6).
 
 ### [ ] T-1.23 · Config sync + command service firmado — **[B9]**
 - **Componente:** cloud · **Depende de:** T-1.18

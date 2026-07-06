@@ -308,7 +308,7 @@ Formato: descripción · evidencia · impacto · recomendación · **estado**.
    (moverlos a `takab-docs/design/` en una tarea de limpieza; no se movieron para no ensuciar
    este diff). `files.zip` local puede borrarse: su contenido ya está en `archive/`.
 8. `user_zone_assignments` PK `(user_id, site_id)` impide multi-zona por sitio y `role` no tiene
-   CHECK contra los 11 roles → anotado para la fase móvil (no bloquea MVP web).
+   CHECK contra los roles de RBAC §1 → anotado para la fase móvil (no bloquea MVP web).
 9. QR de enrolamiento estático + quórum de 2: dos fotos del QR permiten enrolar remotamente y
    disparar sirena. Mitigan: `max_uses`/`expires_at`/revocación + GPS auditado en la activación.
    Recomendación adicional: geofence del voto (GPS dentro del radio del sitio) al implementar.

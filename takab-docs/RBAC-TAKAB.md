@@ -7,7 +7,13 @@
 
 ---
 
-## 1. Roles del sistema (11)
+## 1. Roles del sistema (10)
+
+> [PLAN-MAESTRO-01] El encabezado decía "(11)" pero esta lista canónica siempre enumeró **10**
+> (2 internos + 7 de tenant + 1 gobierno) — también en el snapshot de junio. Las **identidades
+> máquina** (certificado X.509 por gateway, clientes M2M `client_credentials`, rol de DB
+> `takab_ingest`) son identidades de servicio, **no roles RBAC**, y viven en blueprint §8 y
+> schema §0/§8. `[SUPUESTO — confirmar/override: si faltaba un 11º rol humano, añadirlo aquí.]`
 
 ### Internos de TAKAB
 | Rol | Descripción | Superficie primaria |
@@ -107,6 +113,10 @@ Como ahora se permite **activar** y **silenciar** actuadores desde un teléfono 
 camino es la superficie más sensible del sistema. Requisitos no negociables:
 1. **Comando firmado** (HMAC/JWT corto) verificado por el gateway antes de ejecutar.
 2. **MFA** obligatorio en el login de roles que pueden activar/silenciar actuadores.
+   `[SUPUESTO #7 plan-maestro — confirmar/override]`: **excepción para `occupant`** (se enrola
+   por QR; MFA universal mataría la adopción del botón de pánico). Compensaciones: quórum de 2,
+   rate-limit por usuario y sitio, geofence del voto (GPS dentro del radio del sitio) y
+   auditoría con GPS/ID. Decisión final antes de la fase móvil (T-1.31).
 3. **Rate-limit** por usuario y por sitio (evita activación repetida).
 4. **Idempotencia + nonce** (un comando capturado no puede reenviarse).
 5. **Confirmación de ejecución** del gateway de vuelta a la app (`ack` con estado real del relé).
