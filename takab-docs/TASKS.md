@@ -289,12 +289,21 @@ T-1.17+) requiere AWS.
   verificar en TimescaleDB real que los jobs (compresión/retención/refresh de caggs) conviven
   con RLS en las hypertables (van SIN FORCE por diseño — ver nota `[ANALISIS-00]` del schema §8).
 
-### [ ] T-1.17 · Pipeline de ingesta: IoT Rule → SQS → Timescale — **[B2]**
+### [x] T-1.17 · Pipeline de ingesta: IoT Rule → SQS → Timescale — **[B2]** ✅ (commit `f951403`)
 - **Componente:** cloud · **Depende de:** T-1.15, T-1.16, T-1.11
 - **Criterios:** 20 sitios × 4 canales × 1 msg/s sostenido sin lag de cola; idempotente por PK;
   features 1s → `waveform_features_1s`, eventos confirmados → `incidents` + S3, health →
   `device_health`; los consumidores **validan cada payload contra los JSON Schema de
   `shared/schemas/`** publicados por el edge (T-1.11) y rechazan a DLQ lo que no cumpla.
+  ([DECISION 2026-07-06]: la parte "+ S3" de eventos confirmados (evidencia miniSEED) la
+  entrega **T-1.25** por sus propios criterios; T-1.17 deja el handler del puntero
+  `evidence_objects` fuera de alcance. Enriquecimiento de las IoT Rules = claves `meta_*`
+  (el parser SQL de IoT rechaza `_`); la ingesta las descarta antes de validar. Workers
+  **co-locados** en el EC2 de la DB (default dev, plan §C.1) — imagen única
+  `api/Dockerfile`. Upsert al tier mayor por `event_uuid` verificado E2E real (sismo mTLS
+  watch→critical = 1 incidente). Evidencia G1 en
+  `takab-docs/runbooks/RUNBOOK-load-test-ingesta.md`: 48,000/48,000 features @ 80.2 msg/s
+  × 600 s, colas ≈0, DLQs 0; suplantación → DLQ `unknown principal`.)
 
 ### [ ] T-1.18 · Autenticación y tenancy (Cognito + JWT + RLS) — **[B8]**
 - **Componente:** api / auth · **Depende de:** T-1.15, T-1.16
