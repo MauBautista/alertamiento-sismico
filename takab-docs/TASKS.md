@@ -305,7 +305,7 @@ T-1.17+) requiere AWS.
   `takab-docs/runbooks/RUNBOOK-load-test-ingesta.md`: 48,000/48,000 features @ 80.2 msg/s
   × 600 s, colas ≈0, DLQs 0; suplantación → DLQ `unknown principal`.)
 
-### [ ] T-1.18 · Autenticación y tenancy (Cognito + JWT + RLS) — **[B8]**
+### [x] T-1.18 · Autenticación y tenancy (Cognito + JWT + RLS) — **[B8]** ✅ (commit `30cb4f2`)
 - **Componente:** api / auth · **Depende de:** T-1.15, T-1.16
 - **Objetivo:** login OIDC contra Cognito con MFA; el backend extrae claims y setea
   `app.tenant_id`, `app.role`, `app.user_id` por request para RLS (`RBAC-TAKAB.md §5`).
@@ -315,6 +315,15 @@ T-1.17+) requiere AWS.
   `site_scope`, `zone_id`, `surface`) en el JWT; dependencia FastAPI valida firma/exp/issuer y
   rechaza tokens inválidos (401); middleware setea variables de sesión Postgres en la
   transacción; endpoint `/me`; tests de autorización por rol (`RBAC-TAKAB.md §2`).
+  ([DECISION 2026-07-06]: el "middleware" es una **dependencia FastAPI** `get_tenant_conn`
+  que fija los GUCs con `set_config(...,true)` DENTRO de la transacción (más limpio que
+  middleware HTTP; probado no-bleed en requests async concurrentes). MFA por grupo NO es
+  expresable en Cognito → pool `ON` solo-TOTP en Fase 1; `occupant` (sin MFA) se resuelve
+  en T-1.31 con **pool separado**. Gate #7 ratificado. Se valida el **ID token**
+  (`token_use=='id'`; Cognito solo inyecta `custom:*` ahí). Hallazgo de seguridad corregido
+  [regla de oro 5]: `custom:tenant_id` era auto-escribible → `write_attributes=['name']` en
+  el app client (aplicado al pool real). Verificado E2E vivo contra `us-east-2_WlAWpxvnn`
+  (10 grupos, MFA+TOTP, PKCE, `/me` por rol, 401/403 correctos); suite api 228 passed.)
 
 ### [ ] T-1.19 · Incident engine + quórum de red — **[B4]**
 - **Componente:** cloud · **Depende de:** T-1.17
