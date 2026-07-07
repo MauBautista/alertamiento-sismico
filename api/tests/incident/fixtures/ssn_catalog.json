@@ -1,0 +1,141 @@
+{
+  "_about": "Soft-gate #2 (T-1.19 · G7): catalogo de sismos para validar los parametros del quorum distance-aware (blueprint 4.5) contra eventos del SSN. Consumido por tools/quorum_ssn_validation.py. INFORMA, no bloquea el merge.",
+  "_provenance": {
+    "epicenters_magnitudes_depths": "Eventos REALES de Mexico; epicentro/profundidad/magnitud/tiempo-origen son APROXIMADOS de catalogos publicos (SSN/USGS) de memoria. Verificar contra el catalogo oficial del SSN antes de una calibracion de produccion.",
+    "p_arrivals": "SINTETICOS: los tiempos de arribo P a las estaciones TAKAB NO son picks observados; los deriva la herramienta con un modelo de una capa t = t_origen + hipocentro/v_P_travel. Sirven para probar la GEOMETRIA de asociacion, no para localizar.",
+    "station_coords": "APROXIMADAS: centroide municipal (referencia geografica publica), no la coordenada exacta del edificio. Fuentes de referencia: blueprint 3 (flota: Planta Cholula, Hospital General, Corporativo CDMX, CD Tehuacan, Bodega Atlixco, Planta Zacatlan)."
+  },
+  "_travel_time_model": {
+    "type": "single_layer_hypocentral",
+    "formula": "t_arrival = t_origin + hypot(epicentral_km, depth_km) / v_p_travel_km_s",
+    "v_p_travel_km_s_default": 6.5,
+    "note": "v_P de viaje = v_P de asociacion (6.5 km/s, corteza) por defecto: eso hace que |Dt| entre dos sitios quede acotado por dist_intersitio/v_P (desigualdad triangular), asi que un sismo real SIEMPRE asocia y el margen (3 s) absorbe la heterogeneidad de velocidad y el jitter de reloj. A distancia regional (>~150 km) el primer arribo real seria Pn (~8 km/s); usar 6.5 SOBREESTIMA los Dt diferenciales, luego la validacion es CONSERVADORA. La herramienta acepta --v-p-travel-km-s para experimentar."
+  },
+  "_soft_gate": "Contraste [ANALISIS-00]: la herramienta reporta tambien una ventana FIJA de 5 s (tope de la vieja regla '2-5 s'). A 90-110 km los Dt de arribo son de 10-20 s, por lo que la ventana fija jamas alcanza quorum: por eso se corrigio a distance-aware.",
+  "_derived_p_arrival_s_about": "Cada sismo lleva 'derived_p_arrival_s': arribo P teorico (s tras el tiempo de origen) para 2-3 estaciones de referencia, DERIVADO por tools/quorum_ssn_validation.py con v_P_travel=6.5 km/s. NO son picks observados; se incluyen como referencia legible y guard de regresion (el test cruza estos valores contra el calculo de la herramienta).",
+  "quorum_params_reference": {
+    "source": "rule_sets.config.quorum (blueprint 4.5)",
+    "min_nodes": 3,
+    "assoc": "distance",
+    "v_p_km_s": 6.5,
+    "margin_s": 3,
+    "max_window_s": 30
+  },
+  "reference_stations": [
+    {
+      "id": "planta_cholula",
+      "sensor_id": "RS-CHOLULA-A",
+      "name": "Planta Cholula (Edif. A)",
+      "city": "San Pedro Cholula, Puebla",
+      "lat": 19.063,
+      "lon": -98.305
+    },
+    {
+      "id": "bodega_atlixco",
+      "sensor_id": "RS-ATLIXCO",
+      "name": "Bodega Atlixco",
+      "city": "Atlixco, Puebla",
+      "lat": 18.908,
+      "lon": -98.434
+    },
+    {
+      "id": "cd_tehuacan",
+      "sensor_id": "RS-TEHUACAN",
+      "name": "CD Tehuacan",
+      "city": "Tehuacan, Puebla",
+      "lat": 18.462,
+      "lon": -97.393
+    },
+    {
+      "id": "planta_zacatlan",
+      "sensor_id": "RS-ZACATLAN",
+      "name": "Planta Zacatlan",
+      "city": "Zacatlan, Puebla",
+      "lat": 19.931,
+      "lon": -97.96
+    },
+    {
+      "id": "corporativo_cdmx",
+      "sensor_id": "RS-CDMX-CORP",
+      "name": "Corporativo CDMX",
+      "city": "Ciudad de Mexico (Cuauhtemoc)",
+      "lat": 19.4326,
+      "lon": -99.1332
+    },
+    {
+      "id": "hospital_general",
+      "sensor_id": "RS-CDMX-HGM",
+      "name": "Hospital General",
+      "city": "Ciudad de Mexico (Doctores)",
+      "lat": 19.411,
+      "lon": -99.152
+    }
+  ],
+  "earthquakes": [
+    {
+      "event_id": "SSN-2017-09-19-PUE",
+      "name": "Puebla-Morelos",
+      "real": true,
+      "confidence": "params aproximados (SSN/USGS, de memoria)",
+      "origin_time_utc": "2017-09-19T18:14:39Z",
+      "epicenter": {"lat": 18.4, "lon": -98.72},
+      "depth_km": 57,
+      "magnitude": 7.1,
+      "stations": ["planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx"],
+      "derived_p_arrival_s": {"bodega_atlixco": 13.19, "planta_cholula": 15.83, "corporativo_cdmx": 20.82},
+      "note": "Evento local a la flota (Puebla): los Dt de arribo entre sitios llegan a ~17 s. Es el caso donde la ventana fija de 5 s falla de forma clara."
+    },
+    {
+      "event_id": "SSN-2017-09-08-CHIS",
+      "name": "Tehuantepec (offshore Chiapas)",
+      "real": true,
+      "confidence": "params aproximados (SSN/USGS, de memoria)",
+      "origin_time_utc": "2017-09-08T04:49:19Z",
+      "epicenter": {"lat": 15.02, "lon": -93.9},
+      "depth_km": 45,
+      "magnitude": 8.2,
+      "stations": ["planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx"],
+      "derived_p_arrival_s": {"cd_tehuacan": 82.39, "planta_cholula": 100.1, "corporativo_cdmx": 114.25},
+      "note": "Fuente lejana (~600 km, SE). Estaciones casi equidistantes: los Dt diferenciales caben en la ventana distance-aware (con tope de 30 s)."
+    },
+    {
+      "event_id": "SSN-2020-06-23-OAX",
+      "name": "Oaxaca (La Crucecita)",
+      "real": true,
+      "confidence": "params aproximados (SSN/USGS, de memoria)",
+      "origin_time_utc": "2020-06-23T15:29:03Z",
+      "epicenter": {"lat": 15.78, "lon": -96.12},
+      "depth_km": 20,
+      "magnitude": 7.4,
+      "stations": ["planta_cholula", "bodega_atlixco", "cd_tehuacan", "corporativo_cdmx", "hospital_general"],
+      "derived_p_arrival_s": {"cd_tehuacan": 50.47, "planta_cholula": 66.6, "corporativo_cdmx": 79.54},
+      "note": "Fuente intermedia (~350 km, S). Incluye el par co-localizado Corporativo/Hospital CDMX (~2 km) para ejercitar ventanas pequenas junto a grandes."
+    },
+    {
+      "event_id": "SSN-2022-09-19-MICH",
+      "name": "Michoacan 2022",
+      "real": true,
+      "confidence": "params aproximados (SSN/USGS, de memoria)",
+      "origin_time_utc": "2022-09-19T18:05:09Z",
+      "epicenter": {"lat": 18.29, "lon": -103.29},
+      "depth_km": 15,
+      "magnitude": 7.7,
+      "stations": ["planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx"],
+      "derived_p_arrival_s": {"corporativo_cdmx": 70.11, "planta_cholula": 81.89, "cd_tehuacan": 95.8},
+      "note": "Fuente lejana (~450 km, W). Ancla = Corporativo CDMX (mas cercana al oeste); Dt(CDMX,Tehuacan) ~26 s apura el tope de 30 s pero asocia."
+    },
+    {
+      "event_id": "SSN-1985-09-19-MICH",
+      "name": "Michoacan 1985 (historico)",
+      "real": true,
+      "confidence": "params aproximados (catalogo historico, de memoria)",
+      "origin_time_utc": "1985-09-19T13:17:47Z",
+      "epicenter": {"lat": 18.19, "lon": -102.53},
+      "depth_km": 20,
+      "magnitude": 8.0,
+      "stations": ["planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx"],
+      "derived_p_arrival_s": {"corporativo_cdmx": 59.05, "planta_cholula": 70.17, "cd_tehuacan": 83.6},
+      "note": "Evento historico de referencia (W). Geometria similar a 2022, algo mas cercana."
+    }
+  ]
+}

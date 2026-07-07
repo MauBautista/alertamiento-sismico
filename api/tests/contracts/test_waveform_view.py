@@ -21,8 +21,14 @@ from takab_api.queries.telemetry import select_features
 _SRC = Path(__file__).resolve().parents[2] / "src" / "takab_api"
 # Identificador base cruda NO seguido de ``_secure``.
 _BASE = re.compile(r"waveform_features_1s(?!_secure)")
-# Ruta de escritura del pipeline de ingesta (T-1.17): sí escribe la base cruda.
-_ALLOW = {_SRC / "ingest" / "handlers.py"}
+# Componentes INTERNOS de RED (BYPASSRLS), no la superficie de LECTURA de la API:
+#  - ingest/handlers.py (T-1.17): ruta de ESCRITURA del pipeline.
+#  - incident/engine.py (T-1.19): correlación del quórum: LEE el pico de PGA por
+#    sensor de toda la red. La vista `_secure` corre con el contexto RLS de su owner
+#    (no security_invoker) y devuelve 0 filas en una lectura cross-tenant → el motor
+#    debe leer la base directamente (la hypertable no lleva RLS; el aislamiento de la
+#    API lo da la vista + el REVOKE a takab_app, no aplicable a un lector de red).
+_ALLOW = {_SRC / "ingest" / "handlers.py", _SRC / "incident" / "engine.py"}
 
 
 def test_read_surface_never_names_base_table() -> None:

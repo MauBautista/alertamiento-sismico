@@ -88,3 +88,12 @@ class Settings(BaseSettings):
     # |offset NTP| por encima de esto (ms) → DEGRADADO. Sincronía sana es de pocos
     # a decenas de ms; 100 ms marca reloj a la deriva.
     fleet_ntp_offset_max_ms: float = 100.0
+
+    # --- Quórum de red (T-1.19 · G1) ---
+    # Defaults del quórum distance-aware (blueprint §4.5) usados cuando el
+    # rule_set no trae la clave 'quorum' (rule_sets.config). min_nodes ≥3
+    # estaciones; ventana |Δt| ≤ dist/v_P + margin con tope duro max_window.
+    quorum_min_nodes: int = 3
+    quorum_v_p_km_s: float = 6.5
+    quorum_margin_s: float = 3.0
+    quorum_max_window_s: float = 30.0
