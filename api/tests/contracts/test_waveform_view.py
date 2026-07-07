@@ -28,7 +28,13 @@ _BASE = re.compile(r"waveform_features_1s(?!_secure)")
 #    (no security_invoker) y devuelve 0 filas en una lectura cross-tenant → el motor
 #    debe leer la base directamente (la hypertable no lleva RLS; el aislamiento de la
 #    API lo da la vista + el REVOKE a takab_app, no aplicable a un lector de red).
-_ALLOW = {_SRC / "ingest" / "handlers.py", _SRC / "incident" / "engine.py"}
+#  - dictamen/service.py (T-1.20): pasada del dictamen preliminar en el MISMO
+#    worker BYPASSRLS: lee el pico de PGA con el mismo patrón que el engine.
+_ALLOW = {
+    _SRC / "ingest" / "handlers.py",
+    _SRC / "incident" / "engine.py",
+    _SRC / "dictamen" / "service.py",
+}
 
 
 def test_read_surface_never_names_base_table() -> None:

@@ -192,6 +192,7 @@ class IncidentEngine:
                         break
                     work_conn = self._ensure_work(work_conn)
                     self.run_correlation(work_conn)
+                    self._dictamen_pass(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("engine: DB no disponible; reconecta")
                     self._safe_close(work_conn)
@@ -230,6 +231,15 @@ class IncidentEngine:
                 continue
             if isinstance(payload, dict) and payload.get("t") == "incident":
                 logger.debug("engine: notify incident tenant=%s", payload.get("tenant"))
+
+    def _dictamen_pass(self, work_conn: psycopg.Connection) -> None:
+        """Dictamen preliminar (T-1.20 · B5): post-hoc, tras dar tiempo (settle)
+        a que la correlación corrobore. Comparte el manejo de errores/reconexión
+        del bucle. Import perezoso: dictamen.service usa incident.quorum
+        (ciclo a nivel de módulo)."""
+        from takab_api.dictamen.service import run_dictamen_pass
+
+        run_dictamen_pass(work_conn, self._settings, lookback_s=self._lookback_s)
 
     # ----------------------------------------------------------- correlación
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-import boto3
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -24,6 +23,7 @@ from takab_api.auth.deps import get_session, require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
 from takab_api.queries import exports as q
 from takab_api.routers._common import http_error
+from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get
 from takab_api.schemas.exports import EvidenceList, EvidenceObject, PresignedDownload
 from takab_api.settings import Settings
 
@@ -33,8 +33,6 @@ EXPORT_ROLES: tuple[str, ...] = tuple(
 )
 
 _require_export = require_roles(*EXPORT_ROLES)
-
-_PRESIGN_TTL_S = 300
 
 router = APIRouter()
 
@@ -66,7 +64,7 @@ async def download_evidence(
         raise http_error(404, "evidencia no encontrada")
 
     verb = "export_pdf" if row.kind == "report_pdf" else "export_miniseed"
-    url = _presign(settings, row.s3_key)
+    url = presign_get(settings, row.s3_key)
 
     await conn.execute(
         q.INSERT_AUDIT,
@@ -77,13 +75,4 @@ async def download_evidence(
             "object": f"evidence:{evidence_id}",
         },
     )
-    return PresignedDownload(url=url, expires_in=_PRESIGN_TTL_S)
-
-
-def _presign(settings: Settings, s3_key: str) -> str:
-    client = boto3.client("s3", region_name=settings.aws_region)
-    return client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.evidence_bucket, "Key": s3_key},
-        ExpiresIn=_PRESIGN_TTL_S,
-    )
+    return PresignedDownload(url=url, expires_in=PRESIGN_TTL_S)

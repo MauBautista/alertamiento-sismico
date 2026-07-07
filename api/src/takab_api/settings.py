@@ -97,3 +97,11 @@ class Settings(BaseSettings):
     quorum_v_p_km_s: float = 6.5
     quorum_margin_s: float = 3.0
     quorum_max_window_s: float = 30.0
+
+    # --- Dictamen automático preliminar (T-1.20 · B5) ---
+    # Umbrales de PGA del dictamen (placeholders CALIBRABLES por ingeniería;
+    # override por rule_sets.config.dictamen). settle_s retrasa la emisión para
+    # dar tiempo a la corroboración de red (> tope de ventana del quórum).
+    dictamen_pga_no_inhabit_g: float = 0.25
+    dictamen_pga_monitor_g: float = 0.05
+    dictamen_settle_s: float = 60.0
