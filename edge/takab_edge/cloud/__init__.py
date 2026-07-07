@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import threading
-from collections import OrderedDict, deque
+from collections import Counter, OrderedDict, deque
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -32,6 +32,9 @@ log = logging.getLogger("takab_edge.cloud")
 #: Tope de la ventana de dedup (claves recientes; la nube garantiza exactly-once por PK).
 _SEEN_CAP = 20_000
 
+#: Espera máxima del PUBACK QoS1 del broker (transporte real).
+_PUBACK_TIMEOUT_S = 10.0
+
 
 @runtime_checkable
 class MqttTransport(Protocol):
@@ -39,7 +42,7 @@ class MqttTransport(Protocol):
 
     def connect(self) -> None: ...
     def disconnect(self) -> None: ...
-    def publish(self, topic: str, payload: bytes, qos: int = 1) -> bool: ...
+    def publish(self, topic: str, payload: bytes, qos: int = 1, retain: bool = False) -> bool: ...
     @property
     def connected(self) -> bool: ...
 
@@ -144,26 +147,39 @@ class CloudConnector(EdgeModule):
         settings: EdgeSettings,
         transport: MqttTransport | None = None,
         spool_dir: str | Path | None = None,
+        status_topic: str = "",
+        topic_caps: dict[str, int] | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
         self._transport = transport
+        self._status_topic = status_topic  # vacío → sin beacon de presencia (tests T-1.11)
         self._spool = DurableSpool(spool_dir or settings.cloud_spool_dir or _tmp_spool())
         self._queue: deque[tuple[str, dict]] = deque()  # (spool_name, record)
+        #: Cota por topic de telemetría REPONIBLE (features/health): offline
+        #: prolongado no debe crecer sin límite. Eventos/ACKs no llevan cota.
+        self._topic_caps: dict[str, int] = dict(topic_caps or {})
+        self._topic_counts: Counter[str] = Counter()
+        self._dropped = 0
         self._seen = _BoundedSeen()
         self._sent = 0
         self._lock = threading.RLock()
+        self._flush_lock = threading.Lock()  # un solo drenado a la vez
         self._reconnect_stop = threading.Event()
         self._reconnect_thread: threading.Thread | None = None
         self._backfill()
 
     def _backfill(self) -> None:
         # Recarga la cola durable tras un reinicio (backfill idempotente).
-        for name, record in self._spool.load():
-            key = self._dedup_key(record)
-            if key is not None:
-                self._seen.add(key)
-            self._queue.append((name, record))
+        with self._lock:
+            for name, record in self._spool.load():
+                key = self._dedup_key(record)
+                if key is not None:
+                    self._seen.add(key)
+                self._queue.append((name, record))
+                self._topic_counts[record["topic"]] += 1
+            for topic in self._topic_caps:  # spool heredado sobre la cota → poda
+                self._evict_over_cap(topic)
         if self._queue:
             log.info("backfill: %d mensajes pendientes recargados del spool", len(self._queue))
 
@@ -171,9 +187,10 @@ class CloudConnector(EdgeModule):
     def _dedup_key(record: dict) -> tuple | None:
         """Identidad LÓGICA del mensaje para dedup (no colapsa mensajes distintos).
 
-        Discrimina por tipo de payload: `tier` (eventos), `channel`+`action` (ACKs),
-        `sha256` (evidencia). Distintos ACKs/evidencias del mismo `event_id` tienen
-        discriminador distinto → NO se deduplican (no se pierde telemetría/evidencia).
+        Discrimina por tipo de payload: `tier` (eventos), `channel`+`action`+
+        `success`+`executed_at` (ACKs: dentro de un episodio la transición
+        fallo→éxito de la MISMA actuación es evidencia distinta y debe salir),
+        `sha256` (evidencia). Solo la re-publicación idéntica se deduplica.
         Sin `event_id` (p.ej. heartbeat de salud) → no se deduplica.
         """
         event_id = record.get("event_id") or ""
@@ -184,6 +201,8 @@ class CloudConnector(EdgeModule):
             payload.get("tier"),
             payload.get("channel"),
             payload.get("action"),
+            payload.get("success"),
+            payload.get("executed_at"),
             payload.get("sha256"),
         )
         return (record["topic"], event_id, disc)
@@ -200,6 +219,11 @@ class CloudConnector(EdgeModule):
     def sent(self) -> int:
         return self._sent
 
+    def queued_by_topic(self, topic: str) -> int:
+        """Pendientes de UN topic (separa eventos de la telemetría health/acks/features)."""
+        with self._lock:
+            return self._topic_counts[topic]
+
     def set_online(self, online: bool) -> None:
         """Marca el enlace (tests/dev). En prod lo gestiona el hilo de reconexión."""
         if self._transport is None:
@@ -210,9 +234,23 @@ class CloudConnector(EdgeModule):
             except Exception:  # noqa: BLE001 — el enlace es best-effort, nunca bloquea
                 log.warning("no se pudo conectar el transporte")
                 return
+            self._announce_online()
             self.flush()
         else:
             self._transport.disconnect()
+
+    def _announce_online(self) -> None:
+        """Retained `{"status":"online"}` al conectar — contraparte del LWT offline.
+
+        Beacon best-effort directo al transporte (NO pasa por el spool: la presencia es
+        punto-en-tiempo, encolarla offline no tiene sentido). Nunca propaga errores.
+        """
+        if not self._status_topic or not self.online:
+            return
+        try:
+            self._transport.publish(self._status_topic, b'{"status":"online"}', qos=1, retain=True)
+        except Exception:  # noqa: BLE001 — el beacon jamás bloquea el flush ni la actuación
+            log.warning("no se pudo publicar el estado online en %s", self._status_topic)
 
     def publish(self, topic: str, payload: BaseModel) -> bool:
         """Encola durable + envía si hay enlace. NUNCA lanza/bloquea al llamador.
@@ -239,32 +277,82 @@ class CloudConnector(EdgeModule):
                 log.critical("spool falló al escribir; mensaje sólo en memoria (best-effort)")
                 name = None
             self._queue.append((name, record))
+            self._topic_counts[topic] += 1
             if key is not None:
                 self._seen.add(key)  # SÓLO tras encolar → un fallo de escritura no lo envenena
+            self._evict_over_cap(topic)
         self.flush()
         return True
 
+    def _evict_over_cap(self, topic: str) -> None:
+        """Descarta lo más antiguo de un topic ACOTADO (telemetría reponible).
+
+        Llamar con ``self._lock`` tomado. Los topics sin cota (eventos, ACKs:
+        evidencia de compliance) jamás se descartan.
+        """
+        cap = self._topic_caps.get(topic)
+        if cap is None:
+            return
+        while self._topic_counts[topic] > cap:
+            idx = next(
+                (i for i, (_n, rec) in enumerate(self._queue) if rec["topic"] == topic),
+                None,
+            )
+            if idx is None:  # contador desalineado: re-sincroniza y no insistas
+                self._topic_counts[topic] = sum(
+                    1 for _n, rec in self._queue if rec["topic"] == topic
+                )
+                break
+            name, _rec = self._queue[idx]
+            del self._queue[idx]
+            self._topic_counts[topic] -= 1
+            if name is not None:
+                self._spool.remove(name)
+            self._dropped += 1
+            if self._dropped == 1 or self._dropped % 1000 == 0:
+                log.warning(
+                    "spool acotado: descartado lo más antiguo de %s (%d descartes)",
+                    topic,
+                    self._dropped,
+                )
+
     def flush(self) -> int:
-        """Envía la cola por el transporte si hay enlace; borra del spool al confirmar."""
+        """Envía la cola por el transporte si hay enlace; borra del spool al confirmar.
+
+        Un solo drenado a la vez (lock no bloqueante: si otro hilo ya drena, se
+        retorna de inmediato) y el lock principal se suelta ENTRE mensajes: el
+        backfill de un backlog grande jamás bloquea al hilo SeedLink (la
+        detección local no se ciega justo tras recuperar el enlace).
+        """
         if not self.online:
             return 0
+        if not self._flush_lock.acquire(blocking=False):
+            return 0  # ya hay un drenado en curso; él se lleva la cola
         count = 0
-        with self._lock:
-            while self._queue:
-                name, record = self._queue[0]
+        try:
+            while True:
+                with self._lock:
+                    if not self._queue:
+                        break
+                    name, record = self._queue.popleft()
+                    self._topic_counts[record["topic"]] -= 1
                 payload = json.dumps(record["payload"]).encode()
                 try:
                     ok = self._transport.publish(record["topic"], payload, qos=1)
                 except Exception:  # noqa: BLE001 — fallo de enlace: reintenta luego, no pierdas
                     log.warning("fallo al publicar; se reintentará (%s)", record["topic"])
-                    break
+                    ok = False
                 if not ok:
+                    with self._lock:  # devuelve al FRENTE: orden y durabilidad intactos
+                        self._queue.appendleft((name, record))
+                        self._topic_counts[record["topic"]] += 1
                     break
-                self._queue.popleft()
                 if name is not None:  # (name None = sólo en memoria por fallo de spool)
                     self._spool.remove(name)  # confirmado → ya no es necesario reenviarlo
                 self._sent += 1
                 count += 1
+        finally:
+            self._flush_lock.release()
         return count
 
     def _reconnect_loop(self) -> None:
@@ -280,6 +368,7 @@ class CloudConnector(EdgeModule):
                 self._transport.connect()
                 attempt = 0
                 log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
+                self._announce_online()
                 self.flush()
             except Exception:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
                 attempt += 1
@@ -330,6 +419,7 @@ class AwsIotMqttTransport:
         self._client_id = client_id
         self._status_topic = status_topic
         self._conn = None
+        self._connected = False
 
     def connect(self) -> None:
         from awscrt import mqtt  # import perezoso: solo en el Pi con el SDK instalado
@@ -342,7 +432,7 @@ class AwsIotMqttTransport:
             payload=b'{"status":"offline"}',
             retain=True,
         )
-        self._conn = mqtt_connection_builder.mtls_from_path(
+        conn = mqtt_connection_builder.mtls_from_path(
             endpoint=self._settings.mqtt_endpoint,
             port=self._settings.mqtt_port,
             cert_filepath=self._cert,
@@ -352,25 +442,47 @@ class AwsIotMqttTransport:
             will=will,
             clean_session=False,  # sesión persistente: QoS1 sobrevive reconexiones
             keep_alive_secs=30,
+            on_connection_interrupted=self._on_interrupted,
+            on_connection_resumed=self._on_resumed,
         )
-        self._conn.connect().result()
+        # CONNACK PRIMERO: si falla, NO quedamos "conectados". Asignar antes del
+        # result() hacía connected=True tras un connect fallido → flush borraba
+        # el spool sin haber entregado nada y la reconexión dejaba de reintentar.
+        conn.connect().result()
+        self._conn = conn
+        self._connected = True
 
     def disconnect(self) -> None:
+        self._connected = False
         if self._conn is not None:
             self._conn.disconnect().result()
             self._conn = None
 
-    def publish(self, topic: str, payload: bytes, qos: int = 1) -> bool:
+    def publish(self, topic: str, payload: bytes, qos: int = 1, retain: bool = False) -> bool:
         from awscrt import mqtt
 
-        if self._conn is None:
+        if self._conn is None or not self._connected:
             return False
-        self._conn.publish(topic=topic, payload=payload, qos=mqtt.QoS.AT_LEAST_ONCE)
+        future, _packet_id = self._conn.publish(
+            topic=topic, payload=payload, qos=mqtt.QoS.AT_LEAST_ONCE, retain=retain
+        )
+        # QoS1 real: sin PUBACK no hay confirmación — el spool "cero pérdida"
+        # solo se limpia cuando el broker acusó recibo. Un timeout propaga y el
+        # conector conserva el mensaje para reintento (dedup por PK en la nube).
+        future.result(timeout=_PUBACK_TIMEOUT_S)
         return True
+
+    def _on_interrupted(self, *_args: object, **_kwargs: object) -> None:
+        # awscrt avisa del corte: dejar de confiar en el enlace hasta el resume.
+        self._connected = False
+
+    def _on_resumed(self, *args: object, **kwargs: object) -> None:
+        return_code = kwargs.get("return_code", args[1] if len(args) > 1 else None)
+        self._connected = getattr(return_code, "value", return_code) == 0
 
     @property
     def connected(self) -> bool:
-        return self._conn is not None
+        return self._conn is not None and self._connected
 
 
 def _tmp_spool() -> str:

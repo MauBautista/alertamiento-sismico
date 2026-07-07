@@ -9,6 +9,7 @@ from simulators.rs4d import RS4DSimulator
 from simulators.wr1 import WR1Simulator
 from takab_edge.contracts import ActuatorChannel, Tier
 from takab_edge.evidence import FakeEvidenceUploader, collect_evidence
+from takab_edge.supervisor import EVENTS_TOPIC, FEATURES_TOPIC
 
 FULL_SEQUENCE = (
     ActuatorChannel.SIREN,
@@ -52,14 +53,14 @@ def test_sasmex_reflex_and_sequence_cloud_off(supervisor):
     WR1Simulator(supervisor.gpio).alert()
     assert supervisor.gpio.siren_sounding is True  # reflejo local inmediato (sin nube)
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
-    assert supervisor.cloud.queued == 1
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 1  # UN evento (T-1.17: por topic)
 
 
 def test_no_duplicate_event_explosion_within_episode(supervisor):
     _feed_quake(supervisor)
     # Todo el sismo es UN episodio: los eventos se deduplican por (event_id, tier), así que
     # no hay explosión de duplicados aunque lluevan paquetes (idempotencia, regla de oro 3).
-    assert supervisor.cloud.queued <= 3  # a lo sumo watch/restricted/evacuate
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) <= 3  # a lo sumo watch/restr/evacuate
 
 
 def test_evidence_window_extractable_after_quake(supervisor):
@@ -80,4 +81,5 @@ def test_load_many_noise_packets_no_spurious_alert(supervisor):
     # El ruido de fondo NO dispara alertas espurias; el buffer los guardó todos.
     assert supervisor.rules.last_decision.tier is Tier.NORMAL
     assert len(supervisor.buffer) >= 300
-    assert supervisor.cloud.queued == 0  # sin eventos → nada que encolar
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 0  # sin eventos que encolar
+    assert supervisor.cloud.queued_by_topic(FEATURES_TOPIC) >= 300  # la telemetría SÍ fluye

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from simulators.rs4d import RS4DSimulator
 from simulators.wr1 import WR1Simulator
 from takab_edge.contracts import ActuatorChannel, Tier
-from takab_edge.supervisor import EdgeSupervisor
+from takab_edge.supervisor import ACKS_TOPIC, EVENTS_TOPIC, EdgeSupervisor
 
 ALL_MODULES = {
     "seedlink",
@@ -54,8 +54,10 @@ def test_sasmex_actuates_with_cloud_offline(supervisor):
     # Reflejo local ejecutado sin nube:
     assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is True
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
-    # La nube sólo encola (offline-first); nunca fue prerequisito para actuar:
-    assert supervisor.cloud.queued == 1
+    # La nube sólo encola (offline-first); nunca fue prerequisito para actuar.
+    # (Desde T-1.17 la cola también lleva telemetría: se cuenta POR topic.)
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 1
+    assert supervisor.cloud.queued_by_topic(ACKS_TOPIC) == 5  # secuencia evacuate completa
     assert supervisor.cloud.sent == 0
 
 

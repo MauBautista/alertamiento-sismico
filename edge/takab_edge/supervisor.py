@@ -19,10 +19,11 @@ from collections.abc import Iterator
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.buffer import RingBuffer
-from takab_edge.cloud import CloudConnector
+from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
 from takab_edge.config import ConfigStore, EdgeSettings, load_settings
 from takab_edge.contracts import (
     Feature1s,
+    HealthSnapshot,
     LocalEvent,
     SasmexSignal,
     Tier,
@@ -41,6 +42,9 @@ from takab_edge.signal import FeatureExtractor
 log = logging.getLogger("takab_edge.supervisor")
 
 EVENTS_TOPIC = "takab/events"
+HEALTH_TOPIC = "takab/health"
+ACKS_TOPIC = "takab/acks"
+FEATURES_TOPIC = "takab/features"
 
 
 def _resolve_hmac_key(settings: EdgeSettings) -> bytes:
@@ -83,9 +87,11 @@ class EdgeSupervisor:
         self,
         settings: EdgeSettings,
         seedlink_source: Iterator[WaveformPacket] | None = None,
+        mqtt_transport: MqttTransport | None = None,
     ) -> None:
         self.settings = settings
         self._seedlink_source = seedlink_source
+        self._mqtt_transport = mqtt_transport
         self._built = False
         self._stop_event = threading.Event()
 
@@ -106,6 +112,26 @@ class EdgeSupervisor:
         )
         return SeedLinkClient(s, transport=transport)
 
+    def _build_mqtt_transport(self, s: EdgeSettings) -> MqttTransport | None:
+        """Transporte MQTT: inyectado (tests) > real con endpoint+certs > ninguno (dev/CI).
+
+        Convención fija (T-1.15/T-1.17): client_id = thing name IoT (fallback al serial
+        del gateway) y presencia retained en `takab/status/<thing>`. Sin certs, el
+        conector arranca offline y sólo encola (comportamiento previo, T-1.11).
+        """
+        if self._mqtt_transport is not None:
+            return self._mqtt_transport
+        if s.mqtt_endpoint and s.mqtt_cert_path and s.mqtt_key_path and s.mqtt_ca_path:
+            return AwsIotMqttTransport(
+                s,
+                s.mqtt_cert_path,
+                s.mqtt_key_path,
+                s.mqtt_ca_path,
+                client_id=s.thing_name,
+                status_topic=s.status_topic,
+            )
+        return None
+
     def build(self) -> EdgeSupervisor:
         from simulators.bacnet import BacnetSimulator
 
@@ -119,7 +145,14 @@ class EdgeSupervisor:
         self.actuators = ActuatorManager(
             RelayActuator(self.gpio), BacnetActuator(self.bacnet), s.bacnet_channels
         )
-        self.cloud = CloudConnector(s)
+        self.cloud = CloudConnector(
+            s,
+            transport=self._build_mqtt_transport(s),
+            status_topic=s.status_topic,
+            # Cota SOLO para telemetría reponible: un offline largo no debe agotar
+            # RAM/disco ni volver el backfill de minutos. Eventos/ACKs sin cota.
+            topic_caps={FEATURES_TOPIC: s.cloud_telemetry_cap, HEALTH_TOPIC: s.cloud_telemetry_cap},
+        )
         self.health = HealthMonitor(
             s, gpio=self.gpio, seedlink=self.seedlink, heartbeat_s=s.health_heartbeat_s
         )
@@ -153,12 +186,20 @@ class EdgeSupervisor:
     def _wire(self) -> None:
         self.seedlink.on_packet(self._on_packet)
         self.gpio.on_sasmex(self._on_sasmex)
+        # Salud → nube: transición Y heartbeat (T-1.17 G6; sin event_id → sin dedup).
+        self.health.on_snapshot(self._on_health_snapshot)
 
     def _on_packet(self, packet: WaveformPacket) -> None:
         self.buffer.append(packet)
         feature = self.signal.process(packet)
         decision = self.rules.evaluate_features(feature)
         self._act_and_publish(decision, feature)
+        # Telemetría 1 s → nube DESPUÉS de actuar (sin dedup, como los heartbeats;
+        # publicar jamás bloquea ni condiciona la vía de actuación — §4.2).
+        self.cloud.publish(FEATURES_TOPIC, feature)
+
+    def _on_health_snapshot(self, snapshot: HealthSnapshot) -> None:
+        self.cloud.publish(HEALTH_TOPIC, snapshot)
 
     def _on_sasmex(self, signal: SasmexSignal) -> None:
         decision = self.rules.evaluate_sasmex(signal)
@@ -175,6 +216,9 @@ class EdgeSupervisor:
             # Actuación de vida fallida: avisar de inmediato. La escalación a la nube como
             # alarma (T-1.11) y el fallback por contrato al relé (T-1.10) van aparte.
             log.warning("actuación con fallo(s) en %s (event_id=%s)", failed, decision.event_id)
+        # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
+        for ack in acks:
+            self.cloud.publish(ACKS_TOPIC, ack)
         if decision.tier is Tier.NORMAL:
             return
         # Evento idempotente hacia la nube (offline-first; NO bloquea la actuación).

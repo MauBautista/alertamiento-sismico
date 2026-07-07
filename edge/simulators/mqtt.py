@@ -16,6 +16,7 @@ class FakeMqttTransport:
         self._online = online  # ¿hay WAN? (si no, connect() falla)
         self._connected = False
         self.published: list[tuple[str, dict]] = []
+        self.retained: dict[str, dict] = {}  # último mensaje retained por topic
 
     def connect(self) -> None:
         if not self._online:
@@ -25,10 +26,13 @@ class FakeMqttTransport:
     def disconnect(self) -> None:
         self._connected = False
 
-    def publish(self, topic: str, payload: bytes, qos: int = 1) -> bool:
+    def publish(self, topic: str, payload: bytes, qos: int = 1, retain: bool = False) -> bool:
         if not self._connected:
             return False
-        self.published.append((topic, json.loads(payload)))
+        message = json.loads(payload)
+        self.published.append((topic, message))
+        if retain:
+            self.retained[topic] = message
         return True
 
     @property

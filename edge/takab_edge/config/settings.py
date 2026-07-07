@@ -115,10 +115,30 @@ class EdgeSettings(BaseSettings):
     # --- Cloud (AWS IoT Core) ---
     mqtt_endpoint: str = ""
     mqtt_port: int = 8883
+    #: mTLS X.509 del gateway (T-1.15). Endpoint + los 3 paths activan el transporte real.
+    mqtt_cert_path: str = ""
+    mqtt_key_path: str = ""
+    mqtt_ca_path: str = ""
+    #: Thing name IoT (= client_id MQTT, convención fija); vacío → `gateway_id`.
+    iot_thing: str = ""
     #: Spool durable de la cola offline (vacío → dir temporal en dev/tests; en el Pi, NVMe).
     cloud_spool_dir: str = ""
     cloud_backoff_s: float = Field(default=1.0, gt=0)  # base de reconexión
     cloud_backoff_max_s: float = Field(default=60.0, gt=0)  # tope del backoff
+    #: Tope de mensajes encolados POR TOPIC de telemetría reponible (features/health):
+    #: 48 h offline no deben agotar RAM/inodos del Pi. Eventos/ACKs no llevan cota.
+    cloud_telemetry_cap: int = Field(default=10_000, gt=0)
+
+    @property
+    def thing_name(self) -> str:
+        """Identidad MQTT: thing name IoT o, en su defecto, el serial del gateway."""
+        return self.iot_thing or self.gateway_id
+
+    @property
+    def status_topic(self) -> str:
+        """Topic retained de presencia (LWT offline / online al conectar)."""
+        return f"takab/status/{self.thing_name}"
+
     #: Ventana de validez de un comando remoto firmado (regla de oro 8: "JWT corto").
     command_ttl_s: float = Field(default=30.0, gt=0)
 

@@ -31,6 +31,14 @@ module "database" {
   kms_key_arn       = module.kms.data_key_arn
   db_backups_bucket = module.storage.db_backups_bucket
   instance_type     = var.instance_type
+
+  # Workers de ingesta co-locados en la instancia (default dev — plan §C.1).
+  worker_queue_arns = concat(
+    [for q in module.messaging.queues : q.arn],
+    values(module.messaging.dlq_arns),
+  )
+  worker_ecr_repo_arns = values(module.registry.repository_arns)
+  worker_s3_read_arns  = ["${module.storage.transfer_bucket.arn}/*"]
 }
 
 module "identity" {

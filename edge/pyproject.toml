@@ -24,11 +24,20 @@ hardware = [
 bacnet = [
     "bacpypes3>=0.0.98",
 ]
+# Transporte real hacia AWS IoT Core (T-1.11/T-1.17): provee `awscrt`/`awsiot`, que van
+# detrás de imports perezosos en `cloud.AwsIotMqttTransport`. paho-mqtt sigue como dep
+# del núcleo (no se rompe el lock), pero el transporte de producción es awsiotsdk —
+# instalar SOLO en el Pi con `uv sync --extra aws` (no en CI).
+aws = [
+    "awsiotsdk>=1.22",
+]
 
 # Grupo de desarrollo — uv lo instala por defecto en `uv sync`/`uv run` (a diferencia
 # de los extras), evitando que `uv run` desinstale herramientas al re-sincronizar.
 [dependency-groups]
 dev = [
+    "boto3>=1.34",
+    "jsonschema>=4.23",
     "pytest>=8.3",
     "ruff>=0.7",
 ]

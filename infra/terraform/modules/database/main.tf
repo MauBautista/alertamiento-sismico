@@ -103,6 +103,37 @@ resource "aws_iam_role_policy" "db" {
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
         Resource = var.kms_key_arn
       },
+      # Workers de ingesta co-locados en esta instancia (default dev, plan §C.1):
+      # consumir las colas y publicar a sus DLQ.
+      {
+        Sid    = "WorkerQueues"
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:DeleteMessageBatch",
+          "sqs:SendMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl",
+        ]
+        Resource = var.worker_queue_arns
+      },
+      # Pull de la imagen takab/cloud desde ECR (GetAuthorizationToken exige "*").
+      {
+        Sid      = "EcrAuth"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      {
+        Sid      = "EcrPull"
+        Effect   = "Allow"
+        Action   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"]
+        Resource = var.worker_ecr_repo_arns
+      },
+      # Lectura del bucket transfer: builds dev por S3 hoy; backfill (T-1.25) después.
+      {
+        Sid      = "WorkerTransferRead"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = var.worker_s3_read_arns
+      },
     ]
   })
 }
