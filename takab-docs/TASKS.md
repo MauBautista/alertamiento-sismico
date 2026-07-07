@@ -364,11 +364,23 @@ T-1.17+) requiere AWS.
   de red de la base `waveform_features_1s` (mismo estatus que el engine). Suite api 435 passed;
   smoke vivo del worker OK.)
 
-### [ ] T-1.21 · Notification orchestrator (cascada + fail-open) — **[B6]**
+### [x] T-1.21 · Notification orchestrator (cascada + fail-open) — **[B6]** ✅ (commit `d8b0636`)
 - **Componente:** cloud · **Depende de:** T-1.19
 - **Criterios:** cascada secuencial API Webhook (HMAC) → WhatsApp Business → SMS (≤30 s) →
   correo (DKIM/SPF); en degradado (edge `SIN ENLACE`) dispara todos los canales en paralelo
   (fail-open); alerta crítica → email <10 s.
+  ([DECISION 2026-07-07]: worker propio `python -m takab_api.notify` (LISTEN takab_live +
+  takab_failopen). Migración **0005_notification_jobs** (UNIQUE incident/channel/mode =
+  enqueue idempotente; RLS espejo de incidents solo-lectura de tenant; target sin secretos —
+  el HMAC del webhook se re-resuelve del rule_set al despachar). Cascada escalonada step 10 s
+  (SMS a t0+20 ≤30 s); éxito ⇒ resto `skipped`; fallo ⇒ ADELANTA el siguiente en el mismo
+  pass. **Crítico ⇒ email `parallel` inmediato deadline <10 s** (interpretación ratificada:
+  secuencial puro haría el SLA imposible tras timeouts). Fail-open `trigger='quorum'` ⇒ todos
+  los canales en paralelo. Destinos en `rule_sets.config.notifications`. Providers: webhook
+  httpx + HMAC `X-Takab-Signature`; email **SES sandbox real** vía `NOTIFY_EMAIL_FROM`
+  (DKIM/SPF = TODO de dominio real); WhatsApp/SMS **simulados** (ratificado). Evidencia SLA en
+  `incident_actions kind='notify_sent'` payload {latency_s, deadline_met}, actor
+  `system:notify:<canal>:<modo>`. Suite api 474 passed; smoke vivo del worker OK.)
 
 ### [x] T-1.22 · API REST + WebSocket nativo — **[B7]** ✅ (commit `4c35b16`)
 - **Componente:** api · **Depende de:** T-1.18
