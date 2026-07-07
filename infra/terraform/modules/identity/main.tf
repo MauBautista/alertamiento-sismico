@@ -126,6 +126,14 @@ resource "aws_cognito_user_pool_client" "web" {
   }
 
   prevent_user_existence_errors = "ENABLED"
+
+  # Regla de oro #5: los anchors de tenancy/rol (custom:tenant_id, custom:role,
+  # custom:site_scope, custom:zone_id, custom:surface) son administrados por el
+  # admin (AdminUpdateUserAttributes, que NO se rige por write_attributes), igual
+  # que los grupos. Al declarar write_attributes SIN ningún custom:*, el propio
+  # usuario NO puede reasignarse su tenant vía self-service UpdateUserAttributes:
+  # sin esta lista, el client permitiría escribir todos los atributos mutables.
+  write_attributes = ["name"]
 }
 
 # Identidades verificadas: SES en sandbox solo entrega a destinos verificados.

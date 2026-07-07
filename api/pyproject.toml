@@ -13,6 +13,7 @@ dependencies = [
     "boto3>=1.43.41",
     "jsonschema>=4.26.0",
     "pydantic-settings>=2.14.2",
+    "pyjwt[crypto]>=2.9",
 ]
 
 [project.optional-dependencies]
@@ -32,8 +33,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
     "moto[s3,sqs]>=5.2.2",
+    "pytest-asyncio>=1.4.0",
 ]

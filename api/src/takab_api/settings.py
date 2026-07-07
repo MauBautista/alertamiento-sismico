@@ -50,3 +50,14 @@ class Settings(BaseSettings):
     transfer_bucket: str = ""
 
     registry_ttl_s: float = 30.0
+
+    # Auth (T-1.18): verificación de ID token Cognito. JWKS remoto en prod;
+    # JWKS inline (auth_jwks_json) en dev/tests → sin Cognito real.
+    auth_issuer: str = ""
+    auth_audience: str = ""
+    auth_jwks_url: str = ""
+    auth_jwks_json: str = ""
+    # Clave privada PEM que firma tokens de /dev/token (SOLO dev/test). En prod
+    # queda vacía → el endpoint no puede firmar y, además, no se monta (guardado
+    # por auth_jwks_json vacío en main.create_app).
+    auth_dev_private_key: str = ""

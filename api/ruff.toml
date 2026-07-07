@@ -4,3 +4,8 @@ src = ["src", "tests"]
 
 [lint]
 select = ["E", "F", "I", "UP", "B", "W"]
+
+# El patrón idiomático de FastAPI usa Depends()/Query()/Path() como default de
+# argumento; no es el antipatrón mutable que B008 persigue.
+[lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
