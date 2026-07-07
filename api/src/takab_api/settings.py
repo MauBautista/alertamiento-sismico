@@ -105,3 +105,14 @@ class Settings(BaseSettings):
     dictamen_pga_no_inhabit_g: float = 0.25
     dictamen_pga_monitor_g: float = 0.05
     dictamen_settle_s: float = 60.0
+
+    # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
+    # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).
+    # email_from vacío ⇒ provider de email simulado; con valor ⇒ SES (sandbox
+    # en dev: remitente/destinos verificados; DKIM/SPF = TODO de dominio real).
+    notify_step_s: float = 10.0
+    notify_lookback_s: float = 3600.0
+    notify_webhook_timeout_s: float = 5.0
+    notify_sms_deadline_s: float = 30.0
+    notify_email_critical_deadline_s: float = 10.0
+    notify_email_from: str = ""

@@ -1350,7 +1350,7 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "moto", extras = ["s3", "sqs"], specifier = ">=5.2.2" },
+    { name = "moto", extras = ["s3", "sqs", "ses"], specifier = ">=5.2.2" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]
 

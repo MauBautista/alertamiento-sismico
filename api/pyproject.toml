@@ -41,6 +41,6 @@ markers = [
 
 [dependency-groups]
 dev = [
-    "moto[s3,sqs]>=5.2.2",
+    "moto[s3,sqs,ses]>=5.2.2",
     "pytest-asyncio>=1.4.0",
 ]
