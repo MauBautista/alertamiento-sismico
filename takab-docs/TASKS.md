@@ -349,7 +349,7 @@ T-1.17+) requiere AWS.
   correo (DKIM/SPF); en degradado (edge `SIN ENLACE`) dispara todos los canales en paralelo
   (fail-open); alerta crítica → email <10 s.
 
-### [ ] T-1.22 · API REST + GraphQL subscriptions — **[B7]**
+### [x] T-1.22 · API REST + WebSocket nativo — **[B7]** ✅ (commit `4c35b16`)
 - **Componente:** api · **Depende de:** T-1.18
 - **Criterios:** REST (FastAPI + Pydantic) para sites/sensors/incidents/telemetry/dictámenes/
   exportación miniSEED; OpenAPI generado; p95 <200 ms en queries de dashboard con 90 días de
@@ -357,6 +357,14 @@ T-1.17+) requiere AWS.
   navegador <2 s desde el edge). `[SUPUESTO #5 plan-maestro — confirmar/override]`: GraphQL
   subscriptions queda pos-MVP; los endpoints de telemetría JAMÁS exponen los caggs
   `site_metrics_*` sin JOIN a `sites` (RLS — ver schema §6).
+  ([DECISION 2026-07-06]: **Gate #5 ratificado — REST + WS nativo, SIN GraphQL** (retitulada).
+  WS fan-out = LISTEN/NOTIFY fetch-on-notify (migración `0004_live_notify`): el hub re-consulta
+  la fila con los GUCs del SUSCRIPTOR → RLS es la autoridad de tenancy; los writers de
+  T-1.17/T-1.19 no requieren código. Reglas duras con contract-tests (vista `_secure` y JOIN
+  sites) verificadas. sdk-ts vía `@hey-api/openapi-ts` con drift-gate en CI. Verificado E2E
+  vivo: incidente commit→frame **214 ms** (<2 s), occupant rechazado por authz WS, tenant
+  ajeno aislado. Revisión adversarial: 6 hallazgos WS corregidos. Suite api 330 passed. El
+  frontend que consume esto es T-1.26→T-1.30.)
 
 ### [ ] T-1.23 · Config sync + command service firmado — **[B9]**
 - **Componente:** cloud · **Depende de:** T-1.18
