@@ -325,7 +325,7 @@ T-1.17+) requiere AWS.
   el app client (aplicado al pool real). Verificado E2E vivo contra `us-east-2_WlAWpxvnn`
   (10 grupos, MFA+TOTP, PKCE, `/me` por rol, 401/403 correctos); suite api 228 passed.)
 
-### [ ] T-1.19 · Incident engine + quórum de red — **[B4]**
+### [x] T-1.19 · Incident engine + quórum de red — **[B4]** ✅ (commit `9ce2297`)
 - **Componente:** cloud · **Depende de:** T-1.17
 - **Criterios:** correlación y deduplicación de eventos; corroboración de quórum colaborativo
   (≥3 nodos, **ventana de asociación consciente de distancia**: |Δt_ij| ≤ dist_ij/v_P + margen,
@@ -333,6 +333,16 @@ T-1.17+) requiere AWS.
   inalcanzable entre sitios a 90–110 km, ver blueprint §4.5) sin bloquear la actuación local ya
   ejecutada por el edge; test con tiempos de arribo realistas inter-ciudad; ciclo de vida
   completo del incidente (abierto → acusado → cerrado).
+  ([DECISION 2026-07-07]: worker `python -m takab_api.incident` (LISTEN takab_live + poll 5s,
+  BYPASSRLS). Escritura como takab_ingest; el engine LEE la base `waveform_features_1s` (lector
+  de red cross-tenant, no la superficie de API — allowlisted en el contract-test). La revisión
+  adversarial cazó un bug CRÍTICO: una detección espuria/aislada temprana enmascaraba el quórum
+  de un sismo real (corregido: retirar-ancla-y-reintentar). Soft-gate #2: params (6.5/3/30)
+  asocian ≥3 estaciones en 5/5 sismos SSN reales vs 0/5 con ventana fija 5s — confirma
+  [ANALISIS-00]; epicentros del catálogo aproximados de memoria, verificar vs SSN oficial antes
+  de calibración de producción. `in_review`/`closed` los gestiona el engine; el ack ya es de
+  T-1.18. Verificado E2E vivo: worker correlaciona sismo de 4 estaciones → 1 seismic_event + 4
+  votos + 4 incidentes linkeados (110km asocia a ~17s). Suite api 404 passed.)
 
 ### [ ] T-1.20 · Dictamen service (inmutable) + PDF — **[B5]**
 - **Componente:** cloud · **Depende de:** T-1.19
