@@ -34,6 +34,9 @@ where = ["src"]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "perf: pruebas de rendimiento (p95/EXPLAIN). Excluidas de la suite normal (skip salvo TAKAB_RUN_PERF=1); correr con `-m perf` contra una DB dedicada sembrada.",
+]
 
 [dependency-groups]
 dev = [

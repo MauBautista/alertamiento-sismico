@@ -1,0 +1,3229 @@
+{
+  "components": {
+    "schemas": {
+      "AuthFrame": {
+        "description": "Primer frame obligatorio: autentica el socket con el ID token.",
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "type": {
+            "const": "auth",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "token"
+        ],
+        "title": "AuthFrame",
+        "type": "object"
+      },
+      "DictamenList": {
+        "description": "Cadena de dictámenes de un incidente (más reciente primero).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DictamenOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DictamenList",
+        "type": "object"
+      },
+      "DictamenOut": {
+        "description": "Fila de ``dictamens``: ``signed_by`` NULL = preliminar; cadena vía supersedes.",
+        "properties": {
+          "basis": {
+            "additionalProperties": true,
+            "title": "Basis",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dictamen_id": {
+            "format": "uuid",
+            "title": "Dictamen Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supersedes_dictamen_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Dictamen Id"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dictamen_id",
+          "tenant_id",
+          "incident_id",
+          "status",
+          "basis",
+          "signed_by",
+          "supersedes_dictamen_id",
+          "created_at"
+        ],
+        "title": "DictamenOut",
+        "type": "object"
+      },
+      "DictamenSignIn": {
+        "description": "Firma manual del inspector: estado del dictamen + notas mínimas (basis).",
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DictamenSignIn",
+        "type": "object"
+      },
+      "ErrorFrame": {
+        "description": "Error de protocolo (topic/JSON inválido); no cierra el socket.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorFrame",
+        "type": "object"
+      },
+      "EventDetailOut": {
+        "description": "Detalle de evento: campos del evento + sus votos de quórum.",
+        "properties": {
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "epicenter_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicenter Lat"
+          },
+          "epicenter_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicenter Lon"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "quorum_votes": {
+            "items": {
+              "$ref": "#/components/schemas/QuorumVoteOut"
+            },
+            "title": "Quorum Votes",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "source",
+          "magnitude",
+          "epicenter_lon",
+          "epicenter_lat",
+          "depth_km",
+          "detected_at",
+          "meta",
+          "quorum_votes"
+        ],
+        "title": "EventDetailOut",
+        "type": "object"
+      },
+      "EventPage": {
+        "description": "Página keyset de eventos sísmicos.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SeismicEventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EventPage",
+        "type": "object"
+      },
+      "EvidenceList": {
+        "description": "Lista de evidencias de un incidente (ya filtrada por RLS).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceObject"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EvidenceList",
+        "type": "object"
+      },
+      "EvidenceObject": {
+        "description": "Puntero a un objeto de evidencia en S3 (metadatos; el binario vive en S3).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "s3_key": {
+            "title": "S3 Key",
+            "type": "string"
+          },
+          "sensor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Id"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "ts_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts From"
+          },
+          "ts_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts To"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "kind",
+          "s3_key",
+          "created_at"
+        ],
+        "title": "EvidenceObject",
+        "type": "object"
+      },
+      "FeatureRow": {
+        "description": "Una muestra de features 1 s (no waveform crudo — regla de oro 9).",
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "clipping": {
+            "default": false,
+            "title": "Clipping",
+            "type": "boolean"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Energy"
+          },
+          "pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pga G"
+          },
+          "pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pgv Cms"
+          },
+          "rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rms"
+          },
+          "stalta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stalta"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "channel"
+        ],
+        "title": "FeatureRow",
+        "type": "object"
+      },
+      "FeatureSeries": {
+        "description": "Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).",
+        "properties": {
+          "clipping": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Clipping",
+            "type": "array"
+          },
+          "pga": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Pga",
+            "type": "array"
+          },
+          "pgv": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Pgv",
+            "type": "array"
+          },
+          "stalta": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Stalta",
+            "type": "array"
+          },
+          "ts": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Ts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ts",
+          "pga",
+          "pgv",
+          "stalta",
+          "clipping"
+        ],
+        "title": "FeatureSeries",
+        "type": "object"
+      },
+      "FeaturesFrame": {
+        "description": "Strip columnar de features 1 s de un sitio (poller 1 Hz sobre la vista segura).",
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "features",
+            "default": "features",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "rows"
+        ],
+        "title": "FeaturesFrame",
+        "type": "object"
+      },
+      "GatewayOut": {
+        "description": "Gateway del tenant + estado derivado del último ``device_health``.",
+        "properties": {
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Pct"
+          },
+          "cert_days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cert Days Remaining"
+          },
+          "derived_state": {
+            "title": "Derived State",
+            "type": "string"
+          },
+          "fw_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "has_wr1": {
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "iot_thing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iot Thing"
+          },
+          "last_heartbeat_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat Ts"
+          },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt Ms"
+          },
+          "ntp_offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntp Offset Ms"
+          },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Status"
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag S"
+          },
+          "serial": {
+            "title": "Serial",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gateway_id",
+          "site_id",
+          "serial",
+          "status",
+          "has_wr1",
+          "derived_state"
+        ],
+        "title": "GatewayOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IncidentActionFrame": {
+        "description": "Acción sobre un incidente (ack, siren_on, dictamen, notify_sent…).",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Payload",
+            "type": "object"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "incident_action",
+            "default": "incident_action",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "incident_id",
+          "tenant_id",
+          "ts",
+          "kind",
+          "actor"
+        ],
+        "title": "IncidentActionFrame",
+        "type": "object"
+      },
+      "IncidentActionOut": {
+        "description": "Fila de ``incident_actions`` (timeline append-only del incidente).",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "incident_id",
+          "tenant_id",
+          "ts",
+          "kind",
+          "actor",
+          "payload"
+        ],
+        "title": "IncidentActionOut",
+        "type": "object"
+      },
+      "IncidentFrame": {
+        "description": "Incidente (INSERT/UPDATE) visible para el suscriptor tras RLS.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closed At"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Event Id"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "max_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Pga G"
+          },
+          "max_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Pgv Cms"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          },
+          "type": {
+            "const": "incident",
+            "default": "incident",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "tenant_id",
+          "site_id",
+          "opened_at",
+          "severity",
+          "state",
+          "trigger"
+        ],
+        "title": "IncidentFrame",
+        "type": "object"
+      },
+      "IncidentOut": {
+        "description": "Fila de ``incidents`` visible por RLS (resumen para lista y detalle).",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "event_uuid": {
+            "format": "uuid",
+            "title": "Event Uuid",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "max_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pga G"
+          },
+          "max_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pgv Cms"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "event_uuid",
+          "tenant_id",
+          "site_id",
+          "event_id",
+          "opened_at",
+          "closed_at",
+          "severity",
+          "state",
+          "trigger",
+          "max_pga_g",
+          "max_pgv_cms",
+          "summary"
+        ],
+        "title": "IncidentOut",
+        "type": "object"
+      },
+      "IncidentPage": {
+        "description": "Página keyset de incidentes: ``items`` + cursor opaco de continuación.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IncidentPage",
+        "type": "object"
+      },
+      "MapIncident": {
+        "description": "Incidente abierto (no cerrado) más reciente de un sitio, para el mapa.",
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "severity",
+          "state",
+          "opened_at"
+        ],
+        "title": "MapIncident",
+        "type": "object"
+      },
+      "MapSiteState": {
+        "description": "Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.",
+        "properties": {
+          "criticality": {
+            "title": "Criticality",
+            "type": "string"
+          },
+          "last_bucket": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Bucket"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "max_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pga G"
+          },
+          "max_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pgv Cms"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_incident": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MapIncident"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "tenant_id",
+          "name",
+          "criticality",
+          "lon",
+          "lat",
+          "last_bucket",
+          "max_pga_g",
+          "max_pgv_cms",
+          "open_incident"
+        ],
+        "title": "MapSiteState",
+        "type": "object"
+      },
+      "MapState": {
+        "description": "Snapshot de todos los sitios visibles (RLS) que alimenta el mapa del SOC.",
+        "properties": {
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/MapSiteState"
+            },
+            "title": "Sites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sites"
+        ],
+        "title": "MapState",
+        "type": "object"
+      },
+      "MetricSeries": {
+        "description": "Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.",
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "max_pga_g": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Max Pga G",
+            "type": "array"
+          },
+          "max_pgv_cms": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Max Pgv Cms",
+            "type": "array"
+          },
+          "ts": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Ts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bucket",
+          "ts",
+          "max_pga_g",
+          "max_pgv_cms"
+        ],
+        "title": "MetricSeries",
+        "type": "object"
+      },
+      "PresignedDownload": {
+        "description": "URL GET presignada de vida corta para descargar un objeto de evidencia.",
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_in"
+        ],
+        "title": "PresignedDownload",
+        "type": "object"
+      },
+      "QuorumVoteOut": {
+        "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.",
+        "properties": {
+          "counted": {
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "delta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta S"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "pga_g": {
+            "title": "Pga G",
+            "type": "number"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "sensor_id",
+          "detected_at",
+          "pga_g",
+          "delta_s",
+          "counted"
+        ],
+        "title": "QuorumVoteOut",
+        "type": "object"
+      },
+      "ReadyFrame": {
+        "description": "Confirma que el socket quedó autenticado y listo para suscribirse.",
+        "properties": {
+          "type": {
+            "const": "ready",
+            "default": "ready",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ReadyFrame",
+        "type": "object"
+      },
+      "RuleSetList": {
+        "description": "rule_sets del tenant (activos primero, luego por versión descendente).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSetOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RuleSetList",
+        "type": "object"
+      },
+      "RuleSetOut": {
+        "description": "Fila de ``rule_sets`` visible por RLS (una versión concreta).",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "rule_set_id": {
+            "format": "uuid",
+            "title": "Rule Set Id",
+            "type": "string"
+          },
+          "scope_id": {
+            "format": "uuid",
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule_set_id",
+          "tenant_id",
+          "scope_type",
+          "scope_id",
+          "version",
+          "is_active",
+          "config",
+          "created_by",
+          "created_at"
+        ],
+        "title": "RuleSetOut",
+        "type": "object"
+      },
+      "RuleSetPublishOut": {
+        "description": "Respuesta 202 de publish: intención de sync al edge (real en T-1.23).",
+        "properties": {
+          "rule_set_id": {
+            "format": "uuid",
+            "title": "Rule Set Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending_sync",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule_set_id",
+          "version"
+        ],
+        "title": "RuleSetPublishOut",
+        "type": "object"
+      },
+      "RuleSetPutIn": {
+        "description": "Alta de una NUEVA versión de rule_set para un alcance dado.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "scope_id": {
+            "format": "uuid",
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_type",
+          "scope_id",
+          "config"
+        ],
+        "title": "RuleSetPutIn",
+        "type": "object"
+      },
+      "SeismicEventOut": {
+        "description": "Fila de ``seismic_events`` (dato de red; epicentro aplanado a lon/lat).",
+        "properties": {
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "epicenter_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicenter Lat"
+          },
+          "epicenter_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicenter Lon"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "source",
+          "magnitude",
+          "epicenter_lon",
+          "epicenter_lat",
+          "depth_km",
+          "detected_at",
+          "meta"
+        ],
+        "title": "SeismicEventOut",
+        "type": "object"
+      },
+      "SensorOut": {
+        "description": "Sensor de un sitio (RS4D estructural o de terreno).",
+        "properties": {
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "gateway_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "sensor_id",
+          "site_id",
+          "kind",
+          "model",
+          "channels",
+          "sample_rate",
+          "status"
+        ],
+        "title": "SensorOut",
+        "type": "object"
+      },
+      "SiteDetailOut": {
+        "description": "Detalle de un sitio con sus zonas.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "criticality": {
+            "title": "Criticality",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneOut"
+            },
+            "title": "Zones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "site_id",
+          "tenant_id",
+          "code",
+          "name",
+          "timezone",
+          "criticality",
+          "lat",
+          "lon",
+          "created_at",
+          "zones"
+        ],
+        "title": "SiteDetailOut",
+        "type": "object"
+      },
+      "SiteOut": {
+        "description": "Sitio del tenant. ``geom`` se proyecta a ``lat``/``lon`` (ST_Y/ST_X).",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "criticality": {
+            "title": "Criticality",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "tenant_id",
+          "code",
+          "name",
+          "timezone",
+          "criticality",
+          "lat",
+          "lon",
+          "created_at"
+        ],
+        "title": "SiteOut",
+        "type": "object"
+      },
+      "SiteStateFrame": {
+        "description": "Salud del gabinete: transición de ``device_health`` o de ``rule_evaluations``.\n\n``kind`` discrimina el origen. Los campos específicos de cada origen son\nopcionales (device_health trae métricas de enlace; rule_evaluation trae\ntiers). El aislamiento por tenant lo garantiza la re-consulta RLS del hub.",
+        "properties": {
+          "battery_min_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Battery Min Left"
+          },
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Battery Pct"
+          },
+          "cert_days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cert Days Remaining"
+          },
+          "cpu_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cpu Temp C"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "device_health",
+              "rule_evaluation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mqtt Rtt Ms"
+          },
+          "new_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "New Tier"
+          },
+          "ntp_offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ntp Offset Ms"
+          },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Power Status"
+          },
+          "prev_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prev Tier"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "rule_set_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rule Set Version"
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seedlink Lag S"
+          },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Site Id"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "site_state",
+            "default": "site_state",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "tenant_id",
+          "gateway_id",
+          "ts"
+        ],
+        "title": "SiteStateFrame",
+        "type": "object"
+      },
+      "SubscribeFrame": {
+        "description": "Alta a un topic: ``incidents`` | ``site_state`` | ``features:<site_id>``.",
+        "properties": {
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "type": {
+            "const": "subscribe",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "topic"
+        ],
+        "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "TenantOut": {
+        "description": "Fila de tenant. RLS decide qué filas ve cada rol (ver router/tenants).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "isolation_mode": {
+            "title": "Isolation Mode",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan_code": {
+            "title": "Plan Code",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "vertical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "code",
+          "name",
+          "isolation_mode",
+          "visibility",
+          "status",
+          "plan_code",
+          "created_at"
+        ],
+        "title": "TenantOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ZoneOut": {
+        "description": "Zona (planta/área) de un sitio; el polígono no se expone en el catálogo.",
+        "properties": {
+          "level_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "zone_id": {
+            "format": "uuid",
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone_id",
+          "name"
+        ],
+        "title": "ZoneOut",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "TAKAB API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/events": {
+      "get": {
+        "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.",
+        "operationId": "list_events_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events"
+      }
+    },
+    "/events/{event_id}": {
+      "get": {
+        "description": "Detalle del evento + sus votos de quórum. 404 si el evento no existe.",
+        "operationId": "get_event_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Event"
+      }
+    },
+    "/evidence/{evidence_id}/download": {
+      "post": {
+        "description": "Presigned GET 300 s de un objeto de evidencia + huella en ``audit_log``.",
+        "operationId": "download_evidence_evidence__evidence_id__download_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedDownload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Evidence"
+      }
+    },
+    "/fleet/gateways": {
+      "get": {
+        "description": "Gateways del tenant con su estado derivado del último ``device_health``.",
+        "operationId": "list_gateways_fleet_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayOut"
+                  },
+                  "title": "Response List Gateways Fleet Gateways Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Gateways"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/incidents": {
+      "get": {
+        "description": "Lista incidentes (opened_at desc) con filtros y paginación keyset estable.",
+        "operationId": "list_incidents_incidents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "site_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Incidents"
+      }
+    },
+    "/incidents/{incident_id}": {
+      "get": {
+        "description": "Detalle de un incidente. 404 si no existe o no es visible por RLS.",
+        "operationId": "get_incident_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Incident"
+      }
+    },
+    "/incidents/{incident_id}/ack": {
+      "post": {
+        "description": "Acusa un incidente abierto. 404 si no existe/no visible; 409 si ya no está abierto.",
+        "operationId": "ack_incident_incidents__incident_id__ack_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Ack Incident Incidents  Incident Id  Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Incident"
+      }
+    },
+    "/incidents/{incident_id}/actions": {
+      "get": {
+        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.",
+        "operationId": "list_incident_actions_incidents__incident_id__actions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IncidentActionOut"
+                  },
+                  "title": "Response List Incident Actions Incidents  Incident Id  Actions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Incident Actions"
+      }
+    },
+    "/incidents/{incident_id}/dictamens": {
+      "get": {
+        "description": "Cadena de dictámenes del incidente (más reciente primero). 404 si no visible.",
+        "operationId": "list_dictamens_incidents__incident_id__dictamens_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictamenList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dictamens"
+      },
+      "post": {
+        "description": "Firma un dictamen: inserta fila nueva superseeding la última de la cadena.",
+        "operationId": "sign_dictamen_incidents__incident_id__dictamens_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictamenSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictamenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign Dictamen"
+      }
+    },
+    "/incidents/{incident_id}/evidence": {
+      "get": {
+        "description": "Lista la evidencia de un incidente visible para el tenant (RLS).",
+        "operationId": "list_evidence_incidents__incident_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Evidence"
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.",
+        "operationId": "me_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Me Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me"
+      }
+    },
+    "/rule-sets": {
+      "get": {
+        "description": "rule_sets del tenant (RLS): versiones activas primero.",
+        "operationId": "list_rule_sets_rule_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Rule Sets"
+      },
+      "put": {
+        "description": "Crea una NUEVA versión activa del alcance (version+1) y apaga las previas.",
+        "operationId": "put_rule_set_rule_sets_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetPutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Rule Set"
+      }
+    },
+    "/rule-sets/{rule_set_id}/publish": {
+      "post": {
+        "description": "Marca la intención de sincronizar el rule_set al edge (202 pending_sync).",
+        "operationId": "publish_rule_set_rule_sets__rule_set_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_set_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetPublishOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Rule Set"
+      }
+    },
+    "/sensors": {
+      "get": {
+        "description": "Sensores del sitio ``site_id`` (RLS por tenant).",
+        "operationId": "list_sensors_sensors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SensorOut"
+                  },
+                  "title": "Response List Sensors Sensors Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sensors"
+      }
+    },
+    "/sites": {
+      "get": {
+        "description": "Sitios del tenant (superadmin/support ven todos vía RLS).",
+        "operationId": "list_sites_sites_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SiteOut"
+                  },
+                  "title": "Response List Sites Sites Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sites"
+      }
+    },
+    "/sites/{site_id}": {
+      "get": {
+        "description": "Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).",
+        "operationId": "get_site_sites__site_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Site"
+      }
+    },
+    "/telemetry/map/state": {
+      "get": {
+        "description": "Estado de todos los sitios visibles: última métrica 1m + incidente abierto.",
+        "operationId": "map_state_telemetry_map_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Map State",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/telemetry/sites/{site_id}/features": {
+      "get": {
+        "description": "Strip de features 1 s de un sitio (vista segura). Span máx 2 h, default 10 min.",
+        "operationId": "site_features_telemetry_sites__site_id__features_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureSeries"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Features",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/telemetry/sites/{site_id}/metrics": {
+      "get": {
+        "description": "Máximos por bucket de un sitio (cagg 1m/1h con JOIN sites). Default 24 h.",
+        "operationId": "site_metrics_telemetry_sites__site_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricSeries"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Metrics",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/tenants": {
+      "get": {
+        "description": "Tenants visibles al rol (RLS decide: propia fila o todas si es interno).",
+        "operationId": "list_tenants_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantOut"
+                  },
+                  "title": "Response List Tenants Tenants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tenants"
+      }
+    }
+  }
+}

@@ -61,3 +61,30 @@ class Settings(BaseSettings):
     # queda vacía → el endpoint no puede firmar y, además, no se monta (guardado
     # por auth_jwks_json vacío en main.create_app).
     auth_dev_private_key: str = ""
+
+    # --- WebSocket live (T-1.22 · G3) ---
+    # Ventana para que el cliente mande el primer frame {"type":"auth",...} tras
+    # el upgrade; si se excede, el hub cierra con code 4401.
+    ws_auth_timeout_s: float = 5.0
+    # Tope de pollers de features (1 Hz c/u, uno por sitio) por socket: acota la
+    # carga que un solo cliente autenticado puede generar contra el pool.
+    ws_max_feature_pollers: int = 16
+
+    # --- Flota / fleet-status derivado server-side (T-1.22 · G7) ---
+    # Minutos sin heartbeat en device_health → estado SIN ENLACE (el gateway dejó
+    # de reportar). Debe holgar sobre el espaciado real del heartbeat del edge.
+    sin_enlace_min: float = 5.0
+    # Umbrales de DEGRADADO: con enlace vivo pero alguna métrica fuera de rango.
+    # Batería por debajo de este % → DEGRADADO.
+    fleet_battery_min_pct: float = 80.0
+    # Certificado mTLS que vence dentro de estos días → DEGRADADO (rotar antes).
+    fleet_cert_min_days: int = 30
+    # RTT MQTT al broker por encima de esto (ms) → DEGRADADO. Enlace sano << 500 ms;
+    # margen amplio para no oscilar por picos puntuales.
+    fleet_mqtt_rtt_max_ms: float = 1500.0
+    # Lag de SeedLink por encima de esto (s) → DEGRADADO. Lag normal medido ~0.4 s
+    # (memoria shake-hardware-seedlink); umbral holgado para evitar flapping.
+    fleet_seedlink_lag_max_s: float = 2.0
+    # |offset NTP| por encima de esto (ms) → DEGRADADO. Sincronía sana es de pocos
+    # a decenas de ms; 100 ms marca reloj a la deriva.
+    fleet_ntp_offset_max_ms: float = 100.0
