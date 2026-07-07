@@ -399,11 +399,25 @@ T-1.17+) requiere AWS.
   ajeno aislado. Revisión adversarial: 6 hallazgos WS corregidos. Suite api 330 passed. El
   frontend que consume esto es T-1.26→T-1.30.)
 
-### [ ] T-1.23 · Config sync + command service firmado — **[B9]**
+### [x] T-1.23 · Config sync + command service firmado — **[B9]** ✅ (commit `a3dd53c`)
 - **Componente:** cloud · **Depende de:** T-1.18
 - **Criterios:** publica umbrales/reglas firmados (JWT, ≤60 s) a los edges; comandos remotos de
   actuador firmados con MFA + nonce + rate-limit + ACK de ejecución obligatorio (contraparte
   cloud de **T-1.12**).
+  ([DECISION 2026-07-07]: **HMAC, no JWT** — el edge (T-1.12) pinea HMAC y RBAC §4.3 acepta
+  "HMAC/JWT corto". Paridad byte-idéntica por **vectores compartidos**
+  (`shared/schemas/tests/hmac_vectors.json`, generados con el SecurityManager REAL del edge)
+  consumidos por las suites de AMBOS lados. Contratos `command`/`command_ack`/`config_update`
+  en shared/schemas. Migración **0006** (commands nonce-UNIQUE + gateway_config_state versión
+  monótona + trigger NOTIFY rule_set). `POST /sites/{id}/commands`: roles = acción
+  `siren_test` de la matriz (proxy Fase 1 de actuador; pánico occupant = T-1.31), MFA por pool
+  (gate #7), rate-limit usuario+sitio y sitio, fail-closed sin clave; ack por `takab/acks` con
+  discriminador `kind` (transición solo desde pending; sin ack ⇒ expired por TTL = ack
+  obligatorio). Config sync `python -m takab_api.commands`: LISTEN rule_set + poll 30 s ⇒
+  ≤60 s; payload = `rule_sets.config.edge` (EdgeSettings). Edge: `subscribe()` en
+  MqttTransport + CommandDispatcher (firma/replay/ventana ANTES de tocar nada;
+  `command_enabled=false` default de fábrica ⇒ ack rejected; no-autenticado sin ack). Claves
+  por env/Secrets Manager; per-gateway prod = TODO. Suites api 518 / edge 223 passed.)
 
 ### [ ] T-1.24 · Audit/compliance inmutable + billing/metering — **[B10]**
 - **Componente:** cloud · **Depende de:** T-1.16
