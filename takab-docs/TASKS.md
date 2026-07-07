@@ -419,10 +419,22 @@ T-1.17+) requiere AWS.
   `command_enabled=false` default de fábrica ⇒ ack rejected; no-autenticado sin ack). Claves
   por env/Secrets Manager; per-gateway prod = TODO. Suites api 518 / edge 223 passed.)
 
-### [ ] T-1.24 · Audit/compliance inmutable + billing/metering — **[B10]**
+### [x] T-1.24 · Audit/compliance inmutable + billing/metering — **[B10]** ✅ (commit `ab398a4`)
 - **Componente:** cloud · **Depende de:** T-1.16
 - **Criterios:** `audit_log` inmutable sin poda por retención; medidores por tenant (sitios
   activos, mensajes, GB, incidentes) para facturación.
+  ([DECISION 2026-07-07]: `takab_api.audit` = ÚNICO escritor de audit_log (front sync psycopg
+  + async SQLAlchemy); contract-test single-writer lo veta en CI (cazó 3 escritores inline no
+  contemplados: lifecycle, rule_sets publish, incidents_ack). Contract-test de compliance §9:
+  por tabla (audit_log/incident_actions/dictamens/evidence_objects/life_checkins) no-hypertable
+  + sin job retention/compression + trigger append-only presente. Migración **0007**:
+  `billing_meters_daily` (PK tenant+día, tenant solo-lectura, escribe takab_ingest). Pasada
+  `python -m takab_api.billing [--day]` (one-shot, default ayer UTC): active_sites = sitios con
+  telemetría; messages = features + device_health + incident_actions; gb_approx = messages ×
+  bytes/fila estimados (APROX row-count×avg, calibrar con pg_column_size); incidents = abiertos
+  del día. UPSERT idempotente (re-run tras backfill tardío actualiza). Scheduling dev =
+  cron/`make billing`; AWS = EventBridge→ECS TODO prod. El config sync ahora audita
+  `config_published`. Suite api 559 passed.)
 
 ### [x] T-1.25 · Backfill por S3 (anti-thundering-herd) ✅ (commit `241b64f`)
 - **Componente:** edge+cloud · **Depende de:** T-1.11, T-1.17
