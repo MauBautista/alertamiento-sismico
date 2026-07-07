@@ -424,11 +424,25 @@ T-1.17+) requiere AWS.
 - **Criterios:** `audit_log` inmutable sin poda por retención; medidores por tenant (sitios
   activos, mensajes, GB, incidentes) para facturación.
 
-### [ ] T-1.25 · Backfill por S3 (anti-thundering-herd)
+### [x] T-1.25 · Backfill por S3 (anti-thundering-herd) ✅ (commit `241b64f`)
 - **Componente:** edge+cloud · **Depende de:** T-1.11, T-1.17
 - **Criterios:** cola de 6 h se ingiere completa e idempotente vía S3 + URL pre-firmada;
   regla FASE-0 capa 4: cola offline >15 min de datos → ruta S3, <15 min → MQTT por lotes;
   cubre también la subida de evidencia miniSEED de eventos ocurridos durante la desconexión.
+  ([DECISION 2026-07-07]: flujo request→grant→PUT — el edge pide por
+  `takab/backfill/request/<thing>` (contrato `backfill_request` generado anti-drift), el grant
+  service verifica principal==thing y responde presigned PUT con **key canónica de la NUBE**
+  (`backfill/{thing}/{from}_{to}.ndjson.gz` transfer; `evidence/{tenant}/{event_uuid}/{sha}.mseed`
+  evidence — **v1.1.0**: supersede `evidence/{event_id}/…` de T-1.11). Worker
+  `python -m takab_api.backfill`: NDJSON del spool por `ingest.handlers` VERBATIM (RETRY
+  intra-objeto para dependencias fuera de orden); evidencia verificada por sha256 REAL y
+  linkeada por `event_uuid`. Anti-thundering-herd: jitter 0–120 s + 1 objeto/gateway + fallback
+  a MQTT si grant/PUT fallan (cooldown; nada se atora; solape inocuo por dedup PK). Evidencia
+  offline: pendientes durables (tier evacuate/restricted, ventana −60 s/+120 s) suben al
+  reconectar. Infra: IoT rule request→q-backfill + notificación bucket evidence (validate OK;
+  **apply + smoke presigned-PUT vs S3 real con SSE-KMS = gate AWS pendiente**). Criterio 6 h
+  verificado literal: 86 400 features completas e idempotentes (~57 s; gate
+  `TAKAB_SLOW_TESTS=1`). Suites api 535 / edge 233 passed; frontera 14:59/15:01 testeada.)
 
 ---
 
