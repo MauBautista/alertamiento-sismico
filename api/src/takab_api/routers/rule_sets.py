@@ -13,6 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
@@ -87,12 +88,13 @@ async def publish_rule_set(
     if row is None:
         raise http_error(404, "rule_set no encontrado")
 
-    audit_stmt, audit_params = q.insert_publish_audit(
-        tenant_id=str(row["tenant_id"]),
+    await audit_async(
+        conn,
+        tenant_id=row["tenant_id"],
         actor=f"user:{claims.sub}",
-        rule_set_id=str(rule_set_id),
-        version=row["version"],
+        verb="rule_set_publish",
+        obj=f"rule_set:{rule_set_id}",
+        meta={"version": row["version"], "status": "pending_sync"},
     )
-    await conn.execute(audit_stmt, audit_params)
     response.status_code = 202
     return RuleSetPublishOut(rule_set_id=rule_set_id, version=row["version"])

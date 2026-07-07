@@ -40,23 +40,6 @@ def deactivate_scope(scope_type: str, scope_id: str) -> tuple[TextClause, dict[s
     return text(sql), {"st": scope_type, "sid": scope_id}
 
 
-def insert_publish_audit(
-    *, tenant_id: str, actor: str, rule_set_id: str, version: int
-) -> tuple[TextClause, dict[str, Any]]:
-    """Deja la intención de publicación en ``audit_log`` (sync real = T-1.23)."""
-    sql = (
-        "INSERT INTO audit_log (tenant_id, actor, verb, object, meta) "
-        "VALUES (CAST(:tenant AS uuid), :actor, 'rule_set_publish', :object, "
-        "CAST(:meta AS jsonb))"
-    )
-    return text(sql), {
-        "tenant": tenant_id,
-        "actor": actor,
-        "object": f"rule_set:{rule_set_id}",
-        "meta": f'{{"version": {version}, "status": "pending_sync"}}',
-    }
-
-
 def insert_new_version(
     *,
     tenant_id: str,

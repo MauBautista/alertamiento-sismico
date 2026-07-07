@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from psycopg.types.json import Jsonb
 
+from takab_api.audit import audit
 from takab_api.incident.transitions import validate_transition
 
 if TYPE_CHECKING:
@@ -44,11 +45,6 @@ WHERE incident_id = %(id)s
 _ACTION_SQL = """
 INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
 VALUES (%(id)s, %(tenant)s, %(kind)s, %(actor)s, %(payload)s)
-"""
-
-_AUDIT_SQL = """
-INSERT INTO audit_log (tenant_id, actor, verb, object)
-VALUES (%(tenant)s, %(actor)s, %(verb)s, %(object)s)
 """
 
 
@@ -84,14 +80,12 @@ def transition_incident(
             "payload": Jsonb({"from": current, "to": new_state}),
         },
     )
-    conn.execute(
-        _AUDIT_SQL,
-        {
-            "tenant": tenant_id,
-            "actor": actor,
-            "verb": kind,
-            "object": f"incident:{incident_id}",
-        },
+    audit(
+        conn,
+        tenant_id=str(tenant_id),
+        actor=actor,
+        verb=kind,
+        obj=f"incident:{incident_id}",
     )
     return new_state
 

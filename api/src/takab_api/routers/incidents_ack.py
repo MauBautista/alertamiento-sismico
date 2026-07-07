@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
@@ -93,10 +94,10 @@ async def _tenant_ack(conn: AsyncConnection, incident_id: UUID, claims: Claims) 
         ),
         {"id": incident_id, "tenant": tenant_id, "actor": actor},
     )
-    await conn.execute(
-        text(
-            "INSERT INTO audit_log (tenant_id, actor, verb, object) "
-            "VALUES (:tenant, :actor, 'ack', :object)"
-        ),
-        {"tenant": tenant_id, "actor": actor, "object": f"incident:{incident_id}"},
+    await audit_async(
+        conn,
+        tenant_id=tenant_id,
+        actor=actor,
+        verb="ack",
+        obj=f"incident:{incident_id}",
     )

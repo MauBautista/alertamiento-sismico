@@ -18,6 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
@@ -66,13 +67,11 @@ async def download_evidence(
     verb = "export_pdf" if row.kind == "report_pdf" else "export_miniseed"
     url = presign_get(settings, row.s3_key)
 
-    await conn.execute(
-        q.INSERT_AUDIT,
-        {
-            "tenant_id": row.tenant_id,
-            "actor": f"user:{claims.sub}",
-            "verb": verb,
-            "object": f"evidence:{evidence_id}",
-        },
+    await audit_async(
+        conn,
+        tenant_id=row.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb=verb,
+        obj=f"evidence:{evidence_id}",
     )
     return PresignedDownload(url=url, expires_in=PRESIGN_TTL_S)

@@ -1,4 +1,4 @@
-.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start
+.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing
 
 API_DIR := api
 WEB_DIR := web
@@ -23,6 +23,11 @@ edge:
 
 dev: db
 	$(MAKE) -j2 api web
+
+# Metering diario (T-1.24): default = ayer UTC; DAY=YYYY-MM-DD para re-computar.
+# Scheduling dev = cron con este target; AWS = EventBridge->ECS run-task (prod).
+billing:
+	cd $(API_DIR) && uv run python -m takab_api.billing $(if $(DAY),--day $(DAY),)
 
 down:
 	docker compose down

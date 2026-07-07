@@ -435,11 +435,6 @@ UPDATE commands
  WHERE command_id = %(command_id)s AND status = 'pending'
 """
 
-_COMMAND_AUDIT_SQL = """
-INSERT INTO audit_log (tenant_id, actor, verb, object)
-VALUES (%s, %s, %s, %s)
-"""
-
 
 def handle_command_ack(
     conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
@@ -487,14 +482,12 @@ def handle_command_ack(
             ),
         },
     )
-    conn.execute(
-        _COMMAND_AUDIT_SQL,
-        (
-            tenant_id,
-            f"edge:{ctx.gateway_serial}",
-            f"command_{new_status}",
-            f"command:{command_id}",
-        ),
+    audit(
+        conn,
+        tenant_id=str(tenant_id),
+        actor=f"edge:{ctx.gateway_serial}",
+        verb=f"command_{new_status}",
+        obj=f"command:{command_id}",
     )
     return OK
 

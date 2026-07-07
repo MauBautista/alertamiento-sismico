@@ -131,3 +131,8 @@ class Settings(BaseSettings):
     # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se
     # re-solicita; el edge serializa un objeto por gateway).
     backfill_presign_ttl_s: float = 900.0
+
+    # --- Billing/metering (T-1.24 · B10) ---
+    # Bytes promedio por fila ingerida para gb_approx (APROXIMACIÓN
+    # row-count×avg del plan maestro; calibrar con pg_column_size real).
+    billing_row_bytes_estimate: float = 150.0

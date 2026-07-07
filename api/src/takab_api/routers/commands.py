@@ -23,13 +23,13 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
 from takab_api.commands.publisher import CommandPublisher, IotDataPublisher, PublishError
 from takab_api.commands.signing import canonical_payload, sign_command
 from takab_api.queries import commands as q
-from takab_api.queries.exports import INSERT_AUDIT
 from takab_api.routers._common import http_error
 from takab_api.schemas.commands import ACTIONS, CHANNELS, CommandIn, CommandList, CommandOut
 from takab_api.settings import Settings
@@ -127,14 +127,12 @@ async def issue_command(
         # fantasma de un comando que jamás salió.
         raise http_error(502, "no se pudo publicar el comando al gateway") from exc
 
-    await conn.execute(
-        INSERT_AUDIT,
-        {
-            "tenant_id": site.tenant_id,
-            "actor": f"user:{claims.sub}",
-            "verb": "command_issued",
-            "object": f"command:{row['command_id']}",
-        },
+    await audit_async(
+        conn,
+        tenant_id=site.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="command_issued",
+        obj=f"command:{row['command_id']}",
     )
     return CommandOut(**dict(row))
 

@@ -19,13 +19,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.dictamen.pdf import build_report_lines, render_pdf
 from takab_api.queries import dictamens as dictamens_q
 from takab_api.queries import events as events_q
 from takab_api.queries import reports as q
-from takab_api.queries.exports import INSERT_AUDIT
 from takab_api.routers._common import http_error
 from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get, put_object
 from takab_api.routers.exports import EXPORT_ROLES
@@ -78,14 +78,12 @@ async def generate_report(
         sha256=sha256,
     )
     evidence_id = (await conn.execute(ev_stmt, ev_params)).scalar_one()
-    await conn.execute(
-        INSERT_AUDIT,
-        {
-            "tenant_id": incident["tenant_id"],
-            "actor": f"user:{claims.sub}",
-            "verb": "export_pdf",
-            "object": f"evidence:{evidence_id}",
-        },
+    await audit_async(
+        conn,
+        tenant_id=incident["tenant_id"],
+        actor=f"user:{claims.sub}",
+        verb="export_pdf",
+        obj=f"evidence:{evidence_id}",
     )
     return ReportOut(
         evidence_id=evidence_id, url=presign_get(settings, key), expires_in=PRESIGN_TTL_S

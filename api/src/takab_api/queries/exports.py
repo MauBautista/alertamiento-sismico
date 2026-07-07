@@ -21,9 +21,3 @@ GET_EVIDENCE = text(
     "SELECT evidence_id, tenant_id, kind, s3_key FROM evidence_objects "
     "WHERE evidence_id = :evidence_id"
 )
-
-# Huella de auditoría del export (verb export_miniseed|export_pdf).
-INSERT_AUDIT = text(
-    "INSERT INTO audit_log (tenant_id, actor, verb, object) "
-    "VALUES (:tenant_id, :actor, :verb, :object)"
-)

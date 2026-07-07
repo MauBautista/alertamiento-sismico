@@ -30,10 +30,13 @@ _BASE = re.compile(r"waveform_features_1s(?!_secure)")
 #    API lo da la vista + el REVOKE a takab_app, no aplicable a un lector de red).
 #  - dictamen/service.py (T-1.20): pasada del dictamen preliminar en el MISMO
 #    worker BYPASSRLS: lee el pico de PGA con el mismo patrón que el engine.
+#  - billing/meters.py (T-1.24): agregación cross-tenant de conteos (pasada
+#    one-shot como takab_ingest); jamás expone filas crudas a la API.
 _ALLOW = {
     _SRC / "ingest" / "handlers.py",
     _SRC / "incident" / "engine.py",
     _SRC / "dictamen" / "service.py",
+    _SRC / "billing" / "meters.py",
 }
 
 

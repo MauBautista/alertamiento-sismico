@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 
 import psycopg
 
+from takab_api.audit import audit
 from takab_api.commands.publisher import CommandPublisher, PublishError
 from takab_api.commands.signing import canonical_payload, sign_config
 from takab_api.settings import Settings
@@ -128,6 +129,15 @@ def run_config_sync_pass(
                 "sig": signature,
                 "now": now,
             },
+        )
+        # Huella de compliance (T-1.24): qué config firmada salió a qué gateway.
+        audit(
+            conn,
+            tenant_id=str(row["tenant_id"]),
+            actor="system:config_sync",
+            verb="config_published",
+            obj=f"gateway:{row['gateway_id']}",
+            meta={"version": version, "sig": signature[:16]},
         )
         published.append(str(row["gateway_id"]))
         logger.info("config sync: gw %s → v%d (%s)", row["gateway_id"], version, row["iot_thing"])
