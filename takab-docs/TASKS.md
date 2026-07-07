@@ -344,7 +344,7 @@ T-1.17+) requiere AWS.
   T-1.18. Verificado E2E vivo: worker correlaciona sismo de 4 estaciones → 1 seismic_event + 4
   votos + 4 incidentes linkeados (110km asocia a ~17s). Suite api 404 passed.)
 
-### [ ] T-1.20 · Dictamen service (inmutable) + PDF — **[B5]**
+### [x] T-1.20 · Dictamen service (inmutable) + PDF — **[B5]** ✅ (commit `5a7cad5`)
 - **Componente:** cloud · **Depende de:** T-1.19
 - **Criterios:** dictamen automático preliminar (`NO HABITAR · INSPECCIÓN` /
   `HABITAR · MONITOREO` / `OPERACIÓN NORMAL`) según severidad/PGA + regla de nodos; registro
@@ -352,6 +352,17 @@ T-1.17+) requiere AWS.
   nueva con `supersedes_dictamen_id`), nunca podado por retención ([ANALISIS-00]: la etiqueta
   "NOM-003" era una cita normativa errónea — blueprint §9); exportación PDF + miniSEED por
   incidente.
+  ([DECISION 2026-07-07]: pasada en el MISMO worker `python -m takab_api.incident`, tras la
+  correlación y con settle 60 s (> tope de ventana del quórum) para dictaminar ya corroborado;
+  quórum aún más tardío ⇒ corrección versionada (fila nueva `supersedes`). Regla de nodos solo
+  ELEVA (`normal_operation`→`inhabit_monitor`), jamás degrada; cabeza FIRMADA jamás se corrige
+  sola. Umbrales PGA 0.25g/0.05g = placeholders CALIBRABLES por ingeniería (override
+  `rule_sets.config.dictamen`, degradación grácil por campo). PDF con fpdf2 vía
+  `POST /incidents/{id}/report` (export MENOS gov_operator: generar = INSERT de evidencia con
+  tenant_id ajeno que su RLS rechaza); evidence_objects `report_pdf` + sha256 + audit +
+  presigned 300 s; miniSEED ya expuesto por T-1.22. dictamen/service.py allowlisted como lector
+  de red de la base `waveform_features_1s` (mismo estatus que el engine). Suite api 435 passed;
+  smoke vivo del worker OK.)
 
 ### [ ] T-1.21 · Notification orchestrator (cascada + fail-open) — **[B6]**
 - **Componente:** cloud · **Depende de:** T-1.19
