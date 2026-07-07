@@ -16,8 +16,10 @@ import os
 import signal as _signal
 import threading
 from collections.abc import Iterator
+from datetime import timedelta
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
+from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
 from takab_edge.config import ConfigStore, EdgeSettings, load_settings
@@ -29,6 +31,7 @@ from takab_edge.contracts import (
     Tier,
     TierDecision,
     WaveformPacket,
+    utcnow,
 )
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.gpio import GpioController
@@ -162,6 +165,9 @@ class EdgeSupervisor:
         self.dispatch = CommandDispatcher(
             s, self.security, self.config, self.actuators, self.cloud, acks_topic=ACKS_TOPIC
         )
+        # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
+        # (router del flush, on_online, suscripción al grant).
+        self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
         self.local_api = LocalDashboard(
             self.gpio, self.rules, self.health, host=s.local_api_host, port=s.local_api_port
         )
@@ -180,6 +186,7 @@ class EdgeSupervisor:
                 self.config,
                 self.security,
                 self.dispatch,
+                self.backfill,
                 self.local_api,
             )
         }
@@ -239,6 +246,15 @@ class EdgeSupervisor:
             tier=decision.tier,
         )
         self.cloud.publish(EVENTS_TOPIC, event)
+        # Evidencia miniSEED del evento (T-1.25): se ENCOLA durable y se sube
+        # cuando la ventana está completa y hay enlace (offline ⇒ al reconectar).
+        if decision.tier in (Tier.EVACUATE_OR_HOLD, Tier.RESTRICTED):
+            now = utcnow()
+            self.backfill.queue_evidence(
+                decision.event_id,
+                now - timedelta(seconds=self.settings.evidence_pre_s),
+                now + timedelta(seconds=self.settings.evidence_post_s),
+            )
 
     # --- Ciclo de vida ---
     def modules(self) -> list[EdgeModule]:

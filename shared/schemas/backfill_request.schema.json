@@ -1,0 +1,58 @@
+{
+  "description": "Solicitud de URL pre-firmada para backfill/evidencia (T-1.25).\n\nEl edge la publica en ``takab/backfill/request/<thing>``; la nube verifica\nque el thing del topic sea el principal X.509 y responde un\n``backfill_grant`` por ``takab/backfill/grant/<thing>`` con la KEY CANÓNICA\n(autoridad de la nube) y la URL PUT pre-firmada.",
+  "properties": {
+    "kind": {
+      "const": "backfill_request",
+      "default": "backfill_request",
+      "title": "Kind",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "backfill",
+        "evidence"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "ts_from": {
+      "format": "date-time",
+      "title": "Ts From",
+      "type": "string"
+    },
+    "ts_to": {
+      "format": "date-time",
+      "title": "Ts To",
+      "type": "string"
+    },
+    "lines": {
+      "default": 0,
+      "title": "Lines",
+      "type": "integer"
+    },
+    "event_id": {
+      "default": "",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "sha256": {
+      "default": "",
+      "title": "Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mode",
+    "ts_from",
+    "ts_to"
+  ],
+  "title": "BackfillRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/backfill_request/v1.0.0",
+  "version": "1.0.0"
+}

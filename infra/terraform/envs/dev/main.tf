@@ -59,6 +59,7 @@ module "iot_core" {
   region          = data.aws_region.current.region
   events_queue    = module.messaging.queues["events"]
   telemetry_queue = module.messaging.queues["telemetry"]
+  backfill_queue  = module.messaging.queues["backfill"]
 }
 
 module "iot_gateway" {

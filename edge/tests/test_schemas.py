@@ -28,5 +28,6 @@ def test_all_contract_families_are_exported():
         "health_snapshot",
         "actuator_ack",
         "command_ack",
+        "backfill_request",
         "evidence_object",
     }

@@ -20,6 +20,7 @@ import os
 import threading
 from collections import Counter, OrderedDict, deque
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -35,6 +36,14 @@ _SEEN_CAP = 20_000
 
 #: Espera máxima del PUBACK QoS1 del broker (transporte real).
 _PUBACK_TIMEOUT_S = 10.0
+
+
+@runtime_checkable
+class _BackfillRouter(Protocol):
+    """Decide la ruta del spool (T-1.25): S3 en bloque o MQTT (flush normal)."""
+
+    def should_take(self, connector: CloudConnector) -> bool: ...
+    def kick(self) -> None: ...
 
 
 @runtime_checkable
@@ -173,6 +182,11 @@ class CloudConnector(EdgeModule):
         # (re)aplican al transporte en cada conexión (la sesión MQTT puede
         # perderlas tras un corte largo; re-suscribir es idempotente).
         self._subscriptions: dict[str, Callable[[str, bytes], None]] = {}
+        # Router de backfill (T-1.25, regla FASE-0 capa 4): si decide la ruta
+        # S3, flush() NO drena por MQTT (el manager sube el spool en bloque).
+        self._backfill_router: _BackfillRouter | None = None
+        # Callbacks al (re)establecer enlace (evidencia pendiente, etc.).
+        self._online_callbacks: list[Callable[[], None]] = []
         self._backfill()
 
     def _backfill(self) -> None:
@@ -242,9 +256,75 @@ class CloudConnector(EdgeModule):
                 return
             self._announce_online()
             self._apply_subscriptions()
+            self._fire_online()
             self.flush()
         else:
             self._transport.disconnect()
+
+    # ------------------------------------------------- backfill S3 (T-1.25)
+
+    def set_backfill_router(self, router: _BackfillRouter) -> None:
+        """Inyecta el decisor de ruta del spool (regla FASE-0 capa 4)."""
+        self._backfill_router = router
+
+    def on_online(self, callback: Callable[[], None]) -> None:
+        """Registra un callback que corre tras (re)establecer el enlace."""
+        self._online_callbacks.append(callback)
+
+    def _fire_online(self) -> None:
+        for callback in self._online_callbacks:
+            try:
+                callback()
+            except Exception:  # noqa: BLE001 — un hook jamás rompe la reconexión
+                log.exception("callback on_online falló")
+
+    def spool_span_s(self, now: datetime | None = None) -> float:
+        """Antigüedad (s) del registro MÁS VIEJO del spool; 0.0 si está vacío.
+
+        Los registros previos a T-1.25 (sin ``spooled_at``) cuentan como
+        frescos: en el peor caso salen por MQTT, que era la ruta original.
+        """
+        now = now or datetime.now(UTC)
+        with self._lock:
+            oldest: datetime | None = None
+            for _name, record in self._queue:
+                raw = record.get("spooled_at")
+                if not raw:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(raw)
+                except ValueError:
+                    continue
+                if oldest is None or ts < oldest:
+                    oldest = ts
+        if oldest is None:
+            return 0.0
+        return max(0.0, (now - oldest).total_seconds())
+
+    def peek_spool(self) -> list[tuple[str | None, dict]]:
+        """Copia (nombre, registro) de la cola, en orden (para serializar NDJSON)."""
+        with self._lock:
+            return list(self._queue)
+
+    def drop_spool(self, names: list[str | None]) -> int:
+        """Retira del spool los registros confirmados por la ruta S3 (por nombre).
+
+        Solo se retiran los que SIGUEN en la cola (un flush concurrente pudo
+        haberlos enviado ya; la nube deduplica por PK de todos modos).
+        """
+        wanted = {n for n in names if n is not None}
+        removed = 0
+        with self._lock:
+            kept: deque[tuple[str | None, dict]] = deque()
+            for name, record in self._queue:
+                if name in wanted:
+                    self._topic_counts[record["topic"]] -= 1
+                    self._spool.remove(name)
+                    removed += 1
+                else:
+                    kept.append((name, record))
+            self._queue = kept
+        return removed
 
     def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> None:
         """Registra un consumidor nube→edge; se aplica ya si hay enlace.
@@ -278,6 +358,20 @@ class CloudConnector(EdgeModule):
         except Exception:  # noqa: BLE001 — el beacon jamás bloquea el flush ni la actuación
             log.warning("no se pudo publicar el estado online en %s", self._status_topic)
 
+    def publish_direct(self, topic: str, payload: BaseModel) -> bool:
+        """Publica DIRECTO al transporte, sin spool (mensajes punto-en-tiempo:
+        requests de backfill T-1.25, como el beacon de presencia). Best-effort:
+        False si no hay enlace o el broker no confirmó; nunca lanza."""
+        if not self.online:
+            return False
+        try:
+            return self._transport.publish(
+                topic, json.dumps(payload.model_dump(mode="json")).encode(), qos=1
+            )
+        except Exception:  # noqa: BLE001 — best-effort: el llamador decide el fallback
+            log.warning("publish_direct falló (%s)", topic)
+            return False
+
     def publish(self, topic: str, payload: BaseModel) -> bool:
         """Encola durable + envía si hay enlace. NUNCA lanza/bloquea al llamador.
 
@@ -290,6 +384,8 @@ class CloudConnector(EdgeModule):
             "topic": topic,
             "event_id": getattr(payload, "event_id", None) or "",
             "payload": payload.model_dump(mode="json"),
+            # Edad del spool (T-1.25): decide la ruta S3 vs MQTT al reconectar.
+            "spooled_at": datetime.now(UTC).isoformat(),
         }
         key = self._dedup_key(record)
         with self._lock:
@@ -352,6 +448,12 @@ class CloudConnector(EdgeModule):
         """
         if not self.online:
             return 0
+        # Regla FASE-0 capa 4 (T-1.25): un spool con >umbral de datos va por S3
+        # en bloque (el manager lo sube); MQTT no drena mientras tanto. Si la
+        # ruta S3 falla, el router deja de tomar la cola y esto vuelve a drenar.
+        if self._backfill_router is not None and self._backfill_router.should_take(self):
+            self._backfill_router.kick()
+            return 0
         if not self._flush_lock.acquire(blocking=False):
             return 0  # ya hay un drenado en curso; él se lleva la cola
         count = 0
@@ -396,6 +498,7 @@ class CloudConnector(EdgeModule):
                 log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
                 self._announce_online()
                 self._apply_subscriptions()
+                self._fire_online()
                 self.flush()
             except Exception:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
                 attempt += 1

@@ -110,6 +110,7 @@ resource "aws_iam_role_policy" "rules" {
         Resource = [
           var.events_queue.arn,
           var.telemetry_queue.arn,
+          var.backfill_queue.arn,
         ]
       },
       {
@@ -132,6 +133,8 @@ locals {
     takab_dev_status    = { topic = "takab/status/+", queue_url = var.events_queue.url }
     takab_dev_telemetry = { topic = "takab/features", queue_url = var.telemetry_queue.url }
     takab_dev_health    = { topic = "takab/health", queue_url = var.telemetry_queue.url }
+    # T-1.25: requests de backfill/evidencia -> grant service (worker backfill).
+    takab_dev_backfill = { topic = "takab/backfill/request/+", queue_url = var.backfill_queue.url }
   }
 }
 

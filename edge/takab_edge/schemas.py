@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from takab_edge.contracts import (
     ActuatorAck,
+    BackfillRequest,
     CommandAck,
     EvidenceObject,
     Feature1s,
@@ -37,6 +38,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "health_snapshot": HealthSnapshot,
     "actuator_ack": ActuatorAck,
     "command_ack": CommandAck,  # T-1.23: ack de comando remoto (takab/acks)
+    "backfill_request": BackfillRequest,  # T-1.25: solicitud de URL pre-firmada
     "evidence_object": EvidenceObject,
 }
 

@@ -156,6 +156,29 @@ class EdgeSettings(BaseSettings):
         """Topic de config firmada nube→edge (T-1.23)."""
         return f"takab/cfg/{self.thing_name}"
 
+    # --- backfill por S3 (T-1.25; regla FASE-0 capa 4) ---
+    #: Umbral de la ruta S3: spool con MÁS de esto (s) de datos → S3; si no, MQTT.
+    backfill_threshold_s: float = Field(default=900.0, gt=0)  # 15 min
+    #: Jitter máximo antes del request (anti-thundering-herd tras apagón regional).
+    backfill_jitter_max_s: float = Field(default=120.0, ge=0)
+    #: Espera máxima del grant; vencida ⇒ fallback a MQTT (los datos no se atoran).
+    backfill_grant_timeout_s: float = Field(default=30.0, gt=0)
+
+    @property
+    def backfill_request_topic(self) -> str:
+        """Topic de solicitud de URL pre-firmada edge→nube (T-1.25)."""
+        return f"takab/backfill/request/{self.thing_name}"
+
+    @property
+    def backfill_grant_topic(self) -> str:
+        """Topic del grant pre-firmado nube→edge (T-1.25)."""
+        return f"takab/backfill/grant/{self.thing_name}"
+
+    #: Ventana de evidencia miniSEED alrededor del evento confirmado (T-1.25):
+    #: pre-roll y post-roll en segundos (se sube cuando la ventana está completa).
+    evidence_pre_s: float = Field(default=60.0, ge=0)
+    evidence_post_s: float = Field(default=120.0, ge=0)
+
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
     local_api_port: int = 8080

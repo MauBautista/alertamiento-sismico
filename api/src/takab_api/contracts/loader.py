@@ -23,6 +23,7 @@ KINDS = (
     "health_snapshot",
     "actuator_ack",
     "command_ack",
+    "backfill_request",
     "waveform_packet",
     "evidence_object",
 )
@@ -61,6 +62,9 @@ def kind_for_topic(topic: str) -> str:
         return _TOPIC_KIND[topic]
     if topic.startswith("takab/status/") and len(topic) > len("takab/status/"):
         return "status"
+    prefix = "takab/backfill/request/"
+    if topic.startswith(prefix) and len(topic) > len(prefix):
+        return "backfill_request"
     raise ContractError(f"topic sin contrato conocido: {topic!r}")
 
 

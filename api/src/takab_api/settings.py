@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     queue_url_backfill: str = ""
     dlq_url_events: str = ""
     dlq_url_telemetry: str = ""
+    dlq_url_backfill: str = ""
 
     evidence_bucket: str = ""
     transfer_bucket: str = ""
@@ -125,3 +126,8 @@ class Settings(BaseSettings):
     command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
     command_rate_user_site_per_min: int = 6
     command_rate_site_per_min: int = 12
+
+    # --- Backfill por S3 (T-1.25) ---
+    # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se
+    # re-solicita; el edge serializa un objeto por gateway).
+    backfill_presign_ttl_s: float = 900.0

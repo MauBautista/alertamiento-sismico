@@ -113,6 +113,19 @@ resource "aws_s3_bucket_notification" "transfer" {
   }
 }
 
+# T-1.25: la evidencia miniSEED subida por presigned PUT se registra en
+# evidence_objects via el worker de backfill (verifica sha256 y linkea el
+# incidente por event_uuid). La queue policy por cuenta ya lo permite.
+resource "aws_s3_bucket_notification" "evidence" {
+  bucket = aws_s3_bucket.this["evidence"].id
+
+  queue {
+    queue_arn     = var.backfill_queue_arn
+    events        = ["s3:ObjectCreated:*"]
+    filter_prefix = "evidence/"
+  }
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "db_backups" {
   bucket = aws_s3_bucket.this["db_backups"].id
 

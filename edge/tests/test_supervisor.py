@@ -25,11 +25,12 @@ ALL_MODULES = {
     "config",
     "security",
     "dispatch",  # T-1.23: consumidor de comandos/config firmados
+    "backfill",  # T-1.25: ruta S3 del spool + evidencia offline
     "local_api",
 }
 
 
-def test_build_registers_all_twelve_modules(supervisor):
+def test_build_registers_all_modules(supervisor):
     assert {m.name for m in supervisor.modules()} == ALL_MODULES
 
 

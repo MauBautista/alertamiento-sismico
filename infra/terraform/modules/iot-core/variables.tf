@@ -19,3 +19,10 @@ variable "telemetry_queue" {
     arn = string
   })
 }
+
+variable "backfill_queue" {
+  type = object({
+    url = string
+    arn = string
+  })
+}
