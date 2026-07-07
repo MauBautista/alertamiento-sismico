@@ -24,11 +24,12 @@ ALL_MODULES = {
     "health",
     "config",
     "security",
+    "dispatch",  # T-1.23: consumidor de comandos/config firmados
     "local_api",
 }
 
 
-def test_build_registers_all_eleven_modules(supervisor):
+def test_build_registers_all_twelve_modules(supervisor):
     assert {m.name for m in supervisor.modules()} == ALL_MODULES
 
 

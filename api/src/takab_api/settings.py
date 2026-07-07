@@ -116,3 +116,12 @@ class Settings(BaseSettings):
     notify_sms_deadline_s: float = 30.0
     notify_email_critical_deadline_s: float = 10.0
     notify_email_from: str = ""
+
+    # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
+    # Clave HMAC compartida con el edge (TAKAB_EDGE_HMAC_KEY): SOLO por env/
+    # Secrets Manager, vacía = fail-closed (503 en comandos, sync no publica).
+    # Prod per-gateway (resolver por gateway vía Secrets Manager) = TODO T-1.26+.
+    command_hmac_key: str = ""
+    command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
+    command_rate_user_site_per_min: int = 6
+    command_rate_site_per_min: int = 12

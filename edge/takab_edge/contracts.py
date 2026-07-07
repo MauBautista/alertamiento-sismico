@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -162,6 +163,22 @@ class ActuatorAck(BaseModel):
     def relative_label(self) -> str:
         """Etiqueta legible tipo ``T+0.42s`` para UI/telemetría."""
         return f"T+{self.latency_s:.2f}s"
+
+
+class CommandAck(BaseModel):
+    """ACK de un comando remoto firmado (T-1.23). Viaja por ``takab/acks``: el
+    campo ``kind`` es el discriminador frente a ``ActuatorAck`` (contrato
+    ``command_ack.schema.json``); la nube transiciona ``commands.status``."""
+
+    kind: Literal["command_ack"] = "command_ack"
+    command_id: str
+    nonce: str
+    channel: ActuatorChannel
+    action: ActuatorAction
+    success: bool
+    latency_s: float = 0.0
+    executed_at: datetime = Field(default_factory=utcnow)
+    detail: str = ""
 
 
 class RelayState(BaseModel):

@@ -7,6 +7,7 @@ probar la cola durable, el backfill idempotente y la reconexión sin hardware ni
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 
 class FakeMqttTransport:
@@ -17,6 +18,7 @@ class FakeMqttTransport:
         self._connected = False
         self.published: list[tuple[str, dict]] = []
         self.retained: dict[str, dict] = {}  # último mensaje retained por topic
+        self.subscriptions: dict[str, Callable[[str, bytes], None]] = {}
 
     def connect(self) -> None:
         if not self._online:
@@ -35,11 +37,23 @@ class FakeMqttTransport:
             self.retained[topic] = message
         return True
 
+    def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> bool:
+        if not self._connected:
+            return False
+        self.subscriptions[topic] = callback
+        return True
+
     @property
     def connected(self) -> bool:
         return self._connected
 
     # --- Helpers de test ---
+    def deliver(self, topic: str, payload: bytes) -> None:
+        """Simula un mensaje entrante del broker hacia el suscriptor del topic."""
+        callback = self.subscriptions.get(topic)
+        if callback is not None:
+            callback(topic, payload)
+
     def go_offline(self) -> None:
         """Simula caída de WAN: se desconecta y falla el próximo connect()."""
         self._connected = False

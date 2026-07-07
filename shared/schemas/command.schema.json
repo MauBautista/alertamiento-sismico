@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "ActuatorAction": {
+      "enum": ["activate", "deactivate"],
+      "title": "ActuatorAction",
+      "type": "string"
+    },
+    "ActuatorChannel": {
+      "enum": ["siren", "strobe", "gas_valve", "elevator", "door_retainer"],
+      "title": "ActuatorChannel",
+      "type": "string"
+    }
+  },
+  "description": "Comando remoto de actuador firmado, nube→edge por takab/cmd/<thing> (T-1.23). sig = HMAC-SHA256 hex sobre el framing length-prefixed (dominio 'command', nonce, ts, payload canónico json sort_keys sin espacios) — vectores en tests/hmac_vectors.json.",
+  "properties": {
+    "kind": {
+      "const": "command",
+      "title": "Kind"
+    },
+    "command_id": {
+      "title": "Command Id",
+      "type": "string"
+    },
+    "nonce": {
+      "minLength": 16,
+      "title": "Nonce",
+      "type": "string"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    },
+    "payload": {
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/ActuatorChannel"
+        },
+        "action": {
+          "$ref": "#/$defs/ActuatorAction"
+        },
+        "event_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "title": "Event Id"
+        }
+      },
+      "required": ["channel", "action"],
+      "title": "Payload",
+      "type": "object"
+    },
+    "sig": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sig",
+      "type": "string"
+    }
+  },
+  "required": ["kind", "command_id", "nonce", "ts", "payload", "sig"],
+  "title": "Command",
+  "type": "object"
+}

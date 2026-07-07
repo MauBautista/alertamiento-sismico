@@ -54,7 +54,8 @@ def _auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
 # ellas; tenants/sites/sensors se dejan sembrados (idempotentes) como en auth.
 _TRUNCATE_WRITTEN = text(
     "TRUNCATE seismic_events, incidents, incident_actions, dictamens, "
-    "evidence_objects, quorum_votes, rule_sets, audit_log CASCADE"
+    "evidence_objects, quorum_votes, rule_sets, audit_log, "
+    "commands, gateway_config_state CASCADE"
 )
 
 

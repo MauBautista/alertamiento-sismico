@@ -30,6 +30,7 @@ from takab_edge.contracts import (
     TierDecision,
     WaveformPacket,
 )
+from takab_edge.dispatch import CommandDispatcher
 from takab_edge.gpio import GpioController
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
@@ -158,6 +159,9 @@ class EdgeSupervisor:
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
+        self.dispatch = CommandDispatcher(
+            s, self.security, self.config, self.actuators, self.cloud, acks_topic=ACKS_TOPIC
+        )
         self.local_api = LocalDashboard(
             self.gpio, self.rules, self.health, host=s.local_api_host, port=s.local_api_port
         )
@@ -175,6 +179,7 @@ class EdgeSupervisor:
                 self.health,
                 self.config,
                 self.security,
+                self.dispatch,
                 self.local_api,
             )
         }
@@ -188,6 +193,10 @@ class EdgeSupervisor:
         self.gpio.on_sasmex(self._on_sasmex)
         # Salud → nube: transición Y heartbeat (T-1.17 G6; sin event_id → sin dedup).
         self.health.on_snapshot(self._on_health_snapshot)
+        # Comandos/config firmados nube→edge (T-1.23): el conector (re)suscribe
+        # en cada conexión; el dispatcher verifica TODO antes de tocar nada.
+        self.cloud.subscribe(self.settings.command_topic, self.dispatch.on_command)
+        self.cloud.subscribe(self.settings.config_topic, self.dispatch.on_config)
 
     def _on_packet(self, packet: WaveformPacket) -> None:
         self.buffer.append(packet)

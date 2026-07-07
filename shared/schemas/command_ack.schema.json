@@ -1,0 +1,77 @@
+{
+  "$defs": {
+    "ActuatorAction": {
+      "enum": [
+        "activate",
+        "deactivate"
+      ],
+      "title": "ActuatorAction",
+      "type": "string"
+    },
+    "ActuatorChannel": {
+      "enum": [
+        "siren",
+        "strobe",
+        "gas_valve",
+        "elevator",
+        "door_retainer"
+      ],
+      "title": "ActuatorChannel",
+      "type": "string"
+    }
+  },
+  "description": "ACK de un comando remoto firmado (T-1.23). Viaja por ``takab/acks``: el\ncampo ``kind`` es el discriminador frente a ``ActuatorAck`` (contrato\n``command_ack.schema.json``); la nube transiciona ``commands.status``.",
+  "properties": {
+    "kind": {
+      "const": "command_ack",
+      "default": "command_ack",
+      "title": "Kind",
+      "type": "string"
+    },
+    "command_id": {
+      "title": "Command Id",
+      "type": "string"
+    },
+    "nonce": {
+      "title": "Nonce",
+      "type": "string"
+    },
+    "channel": {
+      "$ref": "#/$defs/ActuatorChannel"
+    },
+    "action": {
+      "$ref": "#/$defs/ActuatorAction"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    },
+    "latency_s": {
+      "default": 0.0,
+      "title": "Latency S",
+      "type": "number"
+    },
+    "executed_at": {
+      "format": "date-time",
+      "title": "Executed At",
+      "type": "string"
+    },
+    "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_id",
+    "nonce",
+    "channel",
+    "action",
+    "success"
+  ],
+  "title": "CommandAck",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/command_ack/v1.0.0",
+  "version": "1.0.0"
+}

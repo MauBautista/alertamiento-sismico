@@ -1,0 +1,64 @@
+{
+  "_comment": "Vectores HMAC compartidos edge<->nube (T-1.23). Generados con el SecurityManager REAL del edge (framing length-prefixed 8B big-endian, dominios 'command'/'config', HMAC-SHA256 hexdigest). La clave NO es un secreto: existe solo para fijar el framing en ambos lados. payload canonico = json.dumps(separators=(',',':'), sort_keys=True).",
+  "key_hex": "3734366236325f636c6176655f64655f766563746f7265735f6e6f5f736563726574615f30303031",
+  "command": [
+    {
+      "name": "siren_activate",
+      "nonce": "0f8b5c7e2a1d4e3f9c6b8a7d5e4f3a2b",
+      "ts": "2026-07-07T12:00:00+00:00",
+      "payload": {
+        "channel": "siren",
+        "action": "activate",
+        "event_id": "EVT-20260707-1200-abc123"
+      },
+      "payload_canonical_hex": "7b22616374696f6e223a226163746976617465222c226368616e6e656c223a22736972656e222c226576656e745f6964223a224556542d32303236303730372d313230302d616263313233227d",
+      "sig": "78fddadf76230cb41235cae728a3ed79ed87e6759ec5b4eac93eb6fb96f706e4"
+    },
+    {
+      "name": "gas_close_no_event",
+      "nonce": "aabbccddeeff00112233445566778899",
+      "ts": "2026-07-07T12:00:30.500000+00:00",
+      "payload": {
+        "channel": "gas_valve",
+        "action": "activate",
+        "event_id": null
+      },
+      "payload_canonical_hex": "7b22616374696f6e223a226163746976617465222c226368616e6e656c223a226761735f76616c7665222c226576656e745f6964223a6e756c6c7d",
+      "sig": "58b28ceb1b92ad58c4c8f91ff5b149cdcd2355bdec4b022bbd2efbb208eeace3"
+    },
+    {
+      "name": "siren_deactivate_unicode",
+      "nonce": "99887766554433221100ffeeddccbbaa",
+      "ts": "2026-12-31T23:59:59+00:00",
+      "payload": {
+        "channel": "siren",
+        "action": "deactivate",
+        "detail": "silenciar · prueba"
+      },
+      "payload_canonical_hex": "7b22616374696f6e223a2264656163746976617465222c226368616e6e656c223a22736972656e222c2264657461696c223a2273696c656e63696172205c753030623720707275656261227d",
+      "sig": "7712cc6317b8145bd7f4058844380ff9d008ec9e91bf37cad76daac0cb34da24"
+    }
+  ],
+  "config": [
+    {
+      "name": "v1_minimal",
+      "version": 1,
+      "payload": {
+        "dev_mode": true
+      },
+      "payload_canonical_hex": "7b226465765f6d6f6465223a747275657d",
+      "sig": "5091cf974ac93aa79837aaf95c6d1386468e9de196f06386b686016451cacc3d"
+    },
+    {
+      "name": "v7_thresholds",
+      "version": 7,
+      "payload": {
+        "command_ttl_s": 30.0,
+        "dev_mode": true,
+        "site_code": "CHL-A"
+      },
+      "payload_canonical_hex": "7b22636f6d6d616e645f74746c5f73223a33302e302c226465765f6d6f6465223a747275652c22736974655f636f6465223a2243484c2d41227d",
+      "sig": "aaf54bb4bd9b7ec707f48f5a6046b8617f2f5f11d5fceaacfd7710bd4c46cced"
+    }
+  ]
+}

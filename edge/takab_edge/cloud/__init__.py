@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 from collections import Counter, OrderedDict, deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -43,6 +44,7 @@ class MqttTransport(Protocol):
     def connect(self) -> None: ...
     def disconnect(self) -> None: ...
     def publish(self, topic: str, payload: bytes, qos: int = 1, retain: bool = False) -> bool: ...
+    def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> bool: ...
     @property
     def connected(self) -> bool: ...
 
@@ -167,6 +169,10 @@ class CloudConnector(EdgeModule):
         self._flush_lock = threading.Lock()  # un solo drenado a la vez
         self._reconnect_stop = threading.Event()
         self._reconnect_thread: threading.Thread | None = None
+        # Suscripciones nube→edge (cmd/cfg, T-1.23): se registran aquí y se
+        # (re)aplican al transporte en cada conexión (la sesión MQTT puede
+        # perderlas tras un corte largo; re-suscribir es idempotente).
+        self._subscriptions: dict[str, Callable[[str, bytes], None]] = {}
         self._backfill()
 
     def _backfill(self) -> None:
@@ -235,9 +241,29 @@ class CloudConnector(EdgeModule):
                 log.warning("no se pudo conectar el transporte")
                 return
             self._announce_online()
+            self._apply_subscriptions()
             self.flush()
         else:
             self._transport.disconnect()
+
+    def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> None:
+        """Registra un consumidor nube→edge; se aplica ya si hay enlace.
+
+        El callback corre en el hilo del transporte y NUNCA debe lanzar hacia
+        aquí (el dispatcher atrapa todo): un mensaje malformado jamás tira el
+        enlace ni la actuación local.
+        """
+        self._subscriptions[topic] = callback
+        if self.online:
+            self._apply_subscriptions()
+
+    def _apply_subscriptions(self) -> None:
+        """(Re)aplica las suscripciones registradas al transporte (best-effort)."""
+        for topic, callback in self._subscriptions.items():
+            try:
+                self._transport.subscribe(topic, callback)
+            except Exception:  # noqa: BLE001 — sin suscripción no hay cmd/cfg, pero el edge vive
+                log.warning("no se pudo suscribir a %s; reintento en la próxima conexión", topic)
 
     def _announce_online(self) -> None:
         """Retained `{"status":"online"}` al conectar — contraparte del LWT offline.
@@ -369,6 +395,7 @@ class CloudConnector(EdgeModule):
                 attempt = 0
                 log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
                 self._announce_online()
+                self._apply_subscriptions()
                 self.flush()
             except Exception:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
                 attempt += 1
@@ -469,6 +496,22 @@ class AwsIotMqttTransport:
         # QoS1 real: sin PUBACK no hay confirmación — el spool "cero pérdida"
         # solo se limpia cuando el broker acusó recibo. Un timeout propaga y el
         # conector conserva el mensaje para reintento (dedup por PK en la nube).
+        future.result(timeout=_PUBACK_TIMEOUT_S)
+        return True
+
+    def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> bool:
+        """Suscripción QoS1 (cmd/cfg nube→edge). El wrapper aísla la firma awscrt."""
+        from awscrt import mqtt
+
+        if self._conn is None or not self._connected:
+            return False
+
+        def _on_message(topic: str, payload: bytes, **_kwargs: object) -> None:
+            callback(topic, payload)
+
+        future, _packet_id = self._conn.subscribe(
+            topic=topic, qos=mqtt.QoS.AT_LEAST_ONCE, callback=_on_message
+        )
         future.result(timeout=_PUBACK_TIMEOUT_S)
         return True
 

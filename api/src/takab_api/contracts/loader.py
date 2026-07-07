@@ -22,12 +22,14 @@ KINDS = (
     "local_event",
     "health_snapshot",
     "actuator_ack",
+    "command_ack",
     "waveform_packet",
     "evidence_object",
 )
 
 # Topic MQTT → clase de contrato. `takab/status/+` (LWT) no tiene schema en
-# archivo; se valida inline en `validate`.
+# archivo; se valida inline en `validate`. `takab/acks` transporta DOS
+# contratos (ActuatorAck y CommandAck, T-1.23): ver ``discriminate``.
 _TOPIC_KIND = {
     "takab/events": "local_event",
     "takab/features": "feature_1s",
@@ -60,6 +62,22 @@ def kind_for_topic(topic: str) -> str:
     if topic.startswith("takab/status/") and len(topic) > len("takab/status/"):
         return "status"
     raise ContractError(f"topic sin contrato conocido: {topic!r}")
+
+
+def discriminate(kind: str, payload: object) -> str:
+    """Refina la clase por el discriminador del payload (T-1.23).
+
+    ``takab/acks`` transporta ``ActuatorAck`` (histórico, sin ``kind``) y
+    ``CommandAck`` (``kind: "command_ack"``): el campo decide el contrato a
+    validar y el handler que lo procesa.
+    """
+    if (
+        kind == "actuator_ack"
+        and isinstance(payload, dict)
+        and payload.get("kind") == "command_ack"
+    ):
+        return "command_ack"
+    return kind
 
 
 def validate(kind: str, payload: object) -> None:

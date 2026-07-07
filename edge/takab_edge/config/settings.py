@@ -141,6 +141,20 @@ class EdgeSettings(BaseSettings):
 
     #: Ventana de validez de un comando remoto firmado (regla de oro 8: "JWT corto").
     command_ttl_s: float = Field(default=30.0, gt=0)
+    #: Ejecución de comandos remotos de actuador: APAGADA por defecto por gateway
+    #: (regla de oro 8: la superficie más sensible se habilita explícitamente).
+    #: Un comando firmado válido con esto en False se RECHAZA con ack 'rejected'.
+    command_enabled: bool = False
+
+    @property
+    def command_topic(self) -> str:
+        """Topic de comandos firmados nube→edge (T-1.23)."""
+        return f"takab/cmd/{self.thing_name}"
+
+    @property
+    def config_topic(self) -> str:
+        """Topic de config firmada nube→edge (T-1.23)."""
+        return f"takab/cfg/{self.thing_name}"
 
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño

@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from takab_api.health import router as health_router
+from takab_api.routers.commands import router as commands_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
@@ -53,6 +54,9 @@ def create_app() -> FastAPI:
     app.include_router(telemetry_router)
     app.include_router(exports_router)
     app.include_router(reports_router)
+
+    # Comandos remotos de actuador firmados (B9, regla de oro 8).
+    app.include_router(commands_router)
 
     # Canal live WebSocket ``/ws`` (B4).
     app.include_router(ws_router)

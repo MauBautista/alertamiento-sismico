@@ -421,6 +421,85 @@ def handle_actuator_ack(
 
 
 # --------------------------------------------------------------------------
+# command_ack → commands.status (T-1.23: ACK de ejecución obligatorio)
+# --------------------------------------------------------------------------
+
+_COMMAND_BY_NONCE_SQL = """
+SELECT command_id, tenant_id, gateway_id, status FROM commands WHERE nonce = %s
+"""
+
+# Transición SOLO desde pending (re-entrega SQS = no-op idempotente).
+_COMMAND_ACK_SQL = """
+UPDATE commands
+   SET status = %(status)s, ack = %(ack)s
+ WHERE command_id = %(command_id)s AND status = 'pending'
+"""
+
+_COMMAND_AUDIT_SQL = """
+INSERT INTO audit_log (tenant_id, actor, verb, object)
+VALUES (%s, %s, %s, %s)
+"""
+
+
+def handle_command_ack(
+    conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
+) -> HandlerResult:
+    """CommandAck → transición de ``commands`` (pending→acked/rejected) por nonce.
+
+    El ack DEBE venir del MISMO gateway al que se emitió el comando (identidad
+    X.509 del principal, no falsificable); un nonce desconocido se rechaza con
+    huella de auditoría. SQS standard reentrega: un comando ya no-pending es
+    no-op (idempotente). El 'expired' lo pone el worker por TTL — aquí un ack
+    tardío sobre expired NO revive el comando.
+    """
+    nonce = payload.get("nonce")
+    if not isinstance(nonce, str) or not nonce:
+        return reject("command_ack: sin nonce")
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(_COMMAND_BY_NONCE_SQL, (nonce,))
+        row = cur.fetchone()
+    if row is None:
+        reason = f"command_ack: nonce desconocido ({nonce[:16]}…)"
+        _audit_reject(conn, ctx, meta, "command_ack", reason)
+        return reject(reason)
+    command_id, tenant_id, gateway_id, status = row
+    if gateway_id != ctx.gateway_id or tenant_id != ctx.tenant_id:
+        reason = f"command_ack: gateway/tenant no coincide (comando {command_id})"
+        _audit_reject(conn, ctx, meta, "command_ack", reason)
+        return reject(reason)
+    if status != "pending":
+        return OK  # re-entrega o ack tardío: no-op idempotente (nunca revive)
+    new_status = "acked" if payload.get("success") else "rejected"
+    conn.execute(
+        _COMMAND_ACK_SQL,
+        {
+            "status": new_status,
+            "command_id": command_id,
+            "ack": Jsonb(
+                {
+                    "channel": payload["channel"],
+                    "action": payload["action"],
+                    "success": payload["success"],
+                    "latency_s": payload.get("latency_s", 0.0),
+                    "executed_at": payload.get("executed_at"),
+                    "detail": payload.get("detail", ""),
+                }
+            ),
+        },
+    )
+    conn.execute(
+        _COMMAND_AUDIT_SQL,
+        (
+            tenant_id,
+            f"edge:{ctx.gateway_serial}",
+            f"command_{new_status}",
+            f"command:{command_id}",
+        ),
+    )
+    return OK
+
+
+# --------------------------------------------------------------------------
 # status (LWT) → gateways.status + device_health(reason='transition')
 # --------------------------------------------------------------------------
 
@@ -469,5 +548,6 @@ HANDLERS: dict[str, Handler] = {
     "local_event": handle_local_event,
     "health_snapshot": handle_health_snapshot,
     "actuator_ack": handle_actuator_ack,
+    "command_ack": handle_command_ack,
     "status": handle_status,
 }

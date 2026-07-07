@@ -20,12 +20,13 @@ def test_committed_schema_matches_model(name):
 
 
 def test_all_contract_families_are_exported():
-    # features / eventos / health / ACK / waveform — los payloads que cruzan edge→nube.
+    # features / eventos / health / ACKs / waveform — los payloads que cruzan edge→nube.
     assert set(MODELS) == {
         "waveform_packet",
         "feature_1s",
         "local_event",
         "health_snapshot",
         "actuator_ack",
+        "command_ack",
         "evidence_object",
     }

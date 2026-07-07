@@ -33,7 +33,7 @@ from typing import Any
 import boto3
 import psycopg
 
-from takab_api.contracts.loader import ContractError, kind_for_topic, validate
+from takab_api.contracts.loader import ContractError, discriminate, kind_for_topic, validate
 from takab_api.contracts.meta import Meta, split_meta
 from takab_api.db import pool
 from takab_api.settings import Settings
@@ -218,7 +218,8 @@ class SqsConsumer:
         if not meta.topic:
             return REJECT, "sin meta_topic", meta, False
         try:
-            kind = kind_for_topic(meta.topic)
+            # discriminate: takab/acks transporta ActuatorAck Y CommandAck (T-1.23).
+            kind = discriminate(kind_for_topic(meta.topic), payload)
             validate(kind, payload)
         except ContractError as exc:
             return REJECT, str(exc), meta, False

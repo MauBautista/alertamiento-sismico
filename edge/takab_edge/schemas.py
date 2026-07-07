@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from takab_edge.contracts import (
     ActuatorAck,
+    CommandAck,
     EvidenceObject,
     Feature1s,
     HealthSnapshot,
@@ -35,6 +36,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "local_event": LocalEvent,
     "health_snapshot": HealthSnapshot,
     "actuator_ack": ActuatorAck,
+    "command_ack": CommandAck,  # T-1.23: ack de comando remoto (takab/acks)
     "evidence_object": EvidenceObject,
 }
 

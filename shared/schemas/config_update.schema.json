@@ -1,0 +1,26 @@
+{
+  "description": "Config firmada nube→edge por takab/cfg/<thing> (T-1.23). payload = documento EdgeSettings (parcial valida con defaults del contrato del edge); sig = HMAC-SHA256 hex (dominio 'config', version, payload canónico). La versión es MONÓTONA por gateway (gateway_config_state); el edge rechaza cualquier versión ya vista (anti-replay, T-1.12).",
+  "properties": {
+    "kind": {
+      "const": "config_update",
+      "title": "Kind"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "payload": {
+      "title": "Payload",
+      "type": "object"
+    },
+    "sig": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sig",
+      "type": "string"
+    }
+  },
+  "required": ["kind", "version", "payload", "sig"],
+  "title": "ConfigUpdate",
+  "type": "object"
+}
