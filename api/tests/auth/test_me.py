@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 import auth_utils as au
-from takab_api.auth.matrix import allowed_actions, allowed_routes
+from takab_api.auth.matrix import ACTIONS, allowed_actions, allowed_routes
 
 ALL_ROLES = [
     "takab_superadmin",
@@ -53,6 +53,32 @@ async def test_site_scope_csv_is_sorted_list(client) -> None:
     resp = await client.get("/me", headers=au.bearer(token))
     assert resp.status_code == 200
     assert resp.json()["site_scope"] == sorted([au.DB_SITE_PRIV, au.DB_SITE_PRIV2])
+
+
+async def test_me_openapi_publishes_typed_response(client) -> None:
+    """El 200 de /me se publica tipado (MeResponse) para el sdk-ts (T-1.26).
+
+    Sin ``response_model`` el OpenAPI emite un objeto libre y el cliente TS
+    generado queda como ``{[key: string]: unknown}`` — inservible para guards.
+    """
+    resp = await client.get("/openapi.json")
+    assert resp.status_code == 200
+    spec = resp.json()
+    media = spec["paths"]["/me"]["get"]["responses"]["200"]["content"]["application/json"]
+    assert media["schema"].get("$ref") == "#/components/schemas/MeResponse"
+    me_props = spec["components"]["schemas"]["MeResponse"]["properties"]
+    assert set(me_props) == {
+        "sub",
+        "tenant_id",
+        "role",
+        "site_scope",
+        "surface",
+        "allowed_routes",
+        "allowed_actions",
+    }
+    # allowed_actions con claves fijas (espejo de matrix.ACTIONS), no dict libre.
+    action_props = spec["components"]["schemas"]["MeActions"]["properties"]
+    assert set(action_props) == set(ACTIONS)
 
 
 async def test_me_without_token_is_401(client) -> None:

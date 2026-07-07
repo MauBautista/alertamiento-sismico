@@ -21,6 +21,161 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "CommandIn": {
+        "description": "Solicitud de comando remoto de actuador.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          }
+        },
+        "required": [
+          "channel",
+          "action"
+        ],
+        "title": "CommandIn",
+        "type": "object"
+      },
+      "CommandList": {
+        "description": "Comandos recientes de un sitio (más reciente primero).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommandOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CommandList",
+        "type": "object"
+      },
+      "CommandOut": {
+        "description": "Fila de ``commands``: nonce anti-replay + ciclo pending→acked/rejected/expired.",
+        "properties": {
+          "ack": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack"
+          },
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "issued_by": {
+            "format": "uuid",
+            "title": "Issued By",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "tenant_id",
+          "site_id",
+          "gateway_id",
+          "issued_by",
+          "channel",
+          "action",
+          "event_id",
+          "nonce",
+          "issued_at",
+          "expires_at",
+          "status",
+          "ack",
+          "error"
+        ],
+        "title": "CommandOut",
+        "type": "object"
+      },
       "DictamenList": {
         "description": "Cadena de dictámenes de un incidente (más reciente primero).",
         "properties": {
@@ -1207,6 +1362,97 @@
         "title": "MapState",
         "type": "object"
       },
+      "MeActions": {
+        "description": "Acciones sensibles del SOC web (espejo de ``matrix.ACTIONS``, default-deny).",
+        "properties": {
+          "ack_incident": {
+            "title": "Ack Incident",
+            "type": "boolean"
+          },
+          "edit_thresholds": {
+            "title": "Edit Thresholds",
+            "type": "boolean"
+          },
+          "export": {
+            "title": "Export",
+            "type": "boolean"
+          },
+          "sign_dictamen": {
+            "title": "Sign Dictamen",
+            "type": "boolean"
+          },
+          "siren_test": {
+            "title": "Siren Test",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ack_incident",
+          "sign_dictamen",
+          "export",
+          "edit_thresholds",
+          "siren_test"
+        ],
+        "title": "MeActions",
+        "type": "object"
+      },
+      "MeResponse": {
+        "description": "Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).\n\n``site_scope``: ``\"*\"`` = todo el tenant; lista ordenada de sitios en otro\ncaso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.",
+        "properties": {
+          "allowed_actions": {
+            "$ref": "#/components/schemas/MeActions"
+          },
+          "allowed_routes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Routes",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_scope": {
+            "anyOf": [
+              {
+                "const": "*",
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Site Scope"
+          },
+          "sub": {
+            "title": "Sub",
+            "type": "string"
+          },
+          "surface": {
+            "title": "Surface",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sub",
+          "tenant_id",
+          "role",
+          "site_scope",
+          "surface",
+          "allowed_routes",
+          "allowed_actions"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
       "MetricSeries": {
         "description": "Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.",
         "properties": {
@@ -1338,6 +1584,31 @@
           }
         },
         "title": "ReadyFrame",
+        "type": "object"
+      },
+      "ReportOut": {
+        "description": "Evidencia ``report_pdf`` recién generada + presigned GET de descarga.",
+        "properties": {
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "url",
+          "expires_in"
+        ],
+        "title": "ReportOut",
         "type": "object"
       },
       "RuleSetList": {
@@ -2769,6 +3040,47 @@
         "summary": "List Evidence"
       }
     },
+    "/incidents/{incident_id}/report": {
+      "post": {
+        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.",
+        "operationId": "generate_report_incidents__incident_id__report_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Report"
+      }
+    },
     "/me": {
       "get": {
         "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.",
@@ -2778,9 +3090,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Me Me Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MeResponse"
                 }
               }
             },
@@ -2994,6 +3304,96 @@
           }
         },
         "summary": "Get Site"
+      }
+    },
+    "/sites/{site_id}/commands": {
+      "get": {
+        "description": "Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).",
+        "operationId": "list_commands_sites__site_id__commands_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Commands"
+      },
+      "post": {
+        "description": "Emite un comando firmado al gateway del sitio y lo registra ``pending``.",
+        "operationId": "issue_command_sites__site_id__commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Command"
       }
     },
     "/telemetry/map/state": {

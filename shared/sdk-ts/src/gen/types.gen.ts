@@ -9,6 +9,44 @@ export type AuthFrame = {
 };
 
 /**
+ * Solicitud de comando remoto de actuador.
+ */
+export type CommandIn = {
+    action: string;
+    channel: string;
+    event_id?: string | null;
+};
+
+/**
+ * Comandos recientes de un sitio (más reciente primero).
+ */
+export type CommandList = {
+    items: Array<CommandOut>;
+};
+
+/**
+ * Fila de ``commands``: nonce anti-replay + ciclo pending→acked/rejected/expired.
+ */
+export type CommandOut = {
+    ack: {
+        [key: string]: unknown;
+    } | null;
+    action: string;
+    channel: string;
+    command_id: string;
+    error: string | null;
+    event_id: string | null;
+    expires_at: string;
+    gateway_id: string;
+    issued_at: string;
+    issued_by: string;
+    nonce: string;
+    site_id: string;
+    status: string;
+    tenant_id: string;
+};
+
+/**
  * Cadena de dictámenes de un incidente (más reciente primero).
  */
 export type DictamenList = {
@@ -266,6 +304,33 @@ export type MapState = {
 };
 
 /**
+ * Acciones sensibles del SOC web (espejo de ``matrix.ACTIONS``, default-deny).
+ */
+export type MeActions = {
+    ack_incident: boolean;
+    edit_thresholds: boolean;
+    export: boolean;
+    sign_dictamen: boolean;
+    siren_test: boolean;
+};
+
+/**
+ * Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).
+ *
+ * ``site_scope``: ``"*"`` = todo el tenant; lista ordenada de sitios en otro
+ * caso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.
+ */
+export type MeResponse = {
+    allowed_actions: MeActions;
+    allowed_routes: Array<string>;
+    role: string;
+    site_scope: '*' | Array<string>;
+    sub: string;
+    surface: string;
+    tenant_id: string;
+};
+
+/**
  * Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.
  */
 export type MetricSeries = {
@@ -300,6 +365,15 @@ export type QuorumVoteOut = {
  */
 export type ReadyFrame = {
     type?: 'ready';
+};
+
+/**
+ * Evidencia ``report_pdf`` recién generada + presigned GET de descarga.
+ */
+export type ReportOut = {
+    evidence_id: string;
+    expires_in: number;
+    url: string;
 };
 
 /**
@@ -797,6 +871,33 @@ export type ListEvidenceIncidentsIncidentIdEvidenceGetResponses = {
 
 export type ListEvidenceIncidentsIncidentIdEvidenceGetResponse = ListEvidenceIncidentsIncidentIdEvidenceGetResponses[keyof ListEvidenceIncidentsIncidentIdEvidenceGetResponses];
 
+export type GenerateReportIncidentsIncidentIdReportPostData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/report';
+};
+
+export type GenerateReportIncidentsIncidentIdReportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GenerateReportIncidentsIncidentIdReportPostError = GenerateReportIncidentsIncidentIdReportPostErrors[keyof GenerateReportIncidentsIncidentIdReportPostErrors];
+
+export type GenerateReportIncidentsIncidentIdReportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ReportOut;
+};
+
+export type GenerateReportIncidentsIncidentIdReportPostResponse = GenerateReportIncidentsIncidentIdReportPostResponses[keyof GenerateReportIncidentsIncidentIdReportPostResponses];
+
 export type MeMeGetData = {
     body?: never;
     path?: never;
@@ -808,9 +909,7 @@ export type MeMeGetResponses = {
     /**
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MeResponse;
 };
 
 export type MeMeGetResponse = MeMeGetResponses[keyof MeMeGetResponses];
@@ -952,6 +1051,60 @@ export type GetSiteSitesSiteIdGetResponses = {
 };
 
 export type GetSiteSitesSiteIdGetResponse = GetSiteSitesSiteIdGetResponses[keyof GetSiteSitesSiteIdGetResponses];
+
+export type ListCommandsSitesSiteIdCommandsGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/commands';
+};
+
+export type ListCommandsSitesSiteIdCommandsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCommandsSitesSiteIdCommandsGetError = ListCommandsSitesSiteIdCommandsGetErrors[keyof ListCommandsSitesSiteIdCommandsGetErrors];
+
+export type ListCommandsSitesSiteIdCommandsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CommandList;
+};
+
+export type ListCommandsSitesSiteIdCommandsGetResponse = ListCommandsSitesSiteIdCommandsGetResponses[keyof ListCommandsSitesSiteIdCommandsGetResponses];
+
+export type IssueCommandSitesSiteIdCommandsPostData = {
+    body: CommandIn;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/commands';
+};
+
+export type IssueCommandSitesSiteIdCommandsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IssueCommandSitesSiteIdCommandsPostError = IssueCommandSitesSiteIdCommandsPostErrors[keyof IssueCommandSitesSiteIdCommandsPostErrors];
+
+export type IssueCommandSitesSiteIdCommandsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: CommandOut;
+};
+
+export type IssueCommandSitesSiteIdCommandsPostResponse = IssueCommandSitesSiteIdCommandsPostResponses[keyof IssueCommandSitesSiteIdCommandsPostResponses];
 
 export type MapStateTelemetryMapStateGetData = {
     body?: never;

@@ -2,34 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 
 from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.auth.deps import get_claims
 from takab_api.auth.matrix import allowed_actions, allowed_routes
+from takab_api.schemas.me import MeActions, MeResponse
 
 router = APIRouter()
 
 
-@router.get("/me")
-def me(claims: Claims = Depends(get_claims)) -> dict[str, Any]:
+@router.get("/me", response_model=MeResponse)
+def me(claims: Claims = Depends(get_claims)) -> MeResponse:
     """Perfil del portador del token: qué ve y qué puede hacer en el SOC web.
 
     ``site_scope`` sale como ``"*"`` (todo el tenant) o lista ordenada de sitios
     (posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.
     """
+    site_scope: Literal["*"] | list[str]
     if claims.site_scope is ALL_SITES:
-        site_scope: Any = "*"
+        site_scope = "*"
     else:
         site_scope = sorted(claims.site_scope)
-    return {
-        "sub": claims.sub,
-        "tenant_id": claims.tenant_id,
-        "role": claims.role,
-        "site_scope": site_scope,
-        "surface": claims.surface,
-        "allowed_routes": allowed_routes(claims.role),
-        "allowed_actions": allowed_actions(claims.role),
-    }
+    return MeResponse(
+        sub=claims.sub,
+        tenant_id=claims.tenant_id,
+        role=claims.role,
+        site_scope=site_scope,
+        surface=claims.surface,
+        allowed_routes=allowed_routes(claims.role),
+        allowed_actions=MeActions(**allowed_actions(claims.role)),
+    )
