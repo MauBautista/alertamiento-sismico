@@ -73,6 +73,16 @@ def test_waveform_base_table_denied_to_app(seeded: psycopg.Connection) -> None:
         seeded.execute("SELECT count(*) FROM waveform_features_1s").fetchone()
 
 
+@pytest.mark.parametrize("cagg", ["site_metrics_1m", "site_metrics_1h"])
+def test_cagg_base_denied_to_app(seeded: psycopg.Connection, cagg: str) -> None:
+    # Los caggs no llevan RLS: sin el REVOKE, un tenant leería las métricas de
+    # TODOS (hallazgo CRÍTICO de la auditoría pre-frontend). takab_app solo puede
+    # leerlos por la vista *_secure (JOIN sites con RLS).
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(f"SELECT count(*) FROM {cagg}").fetchone()  # noqa: S608
+
+
 def test_ingest_bypasses_rls(seeded: psycopg.Connection) -> None:
     # takab_ingest (BYPASSRLS) ve todos los tenants: escribe series ya etiquetadas.
     use(seeded, "takab_ingest")

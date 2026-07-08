@@ -373,8 +373,10 @@ CREATE TRIGGER trg_rule_evaluations_append_only
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
 
 -- [ANALISIS-00] Los continuous aggregates NO soportan RLS en TimescaleDB.
--- REGLA DURA para la API: jamás exponer site_metrics_* directo; siempre JOIN a
--- `sites` (con RLS activa) como en la consulta del mapa SOC de FASE-0.
+-- El aislamiento por tenant lo dan las vistas `site_metrics_1{m,h}_secure` (más
+-- abajo): security_barrier + JOIN a `sites` (RLS+FORCE), con SELECT concedido solo
+-- sobre la vista y REVOCADO sobre el cagg base a takab_app (migración 0008). La API
+-- lee por `*_secure`; el cagg base solo lo lee takab_ingest/BYPASSRLS.
 CREATE MATERIALIZED VIEW site_metrics_1m
 WITH (timescaledb.continuous) AS
 SELECT time_bucket('1 minute', ts) AS bucket, tenant_id, site_id,
@@ -413,6 +415,15 @@ SELECT add_compression_policy('site_metrics_1h', compress_after => INTERVAL '90 
 -- la política de `sites`), consistente con la matriz de visibilidad de §8.
 CREATE VIEW waveform_features_1s_secure WITH (security_barrier = true) AS
   SELECT wf.* FROM waveform_features_1s wf JOIN sites s ON s.site_id = wf.site_id;
+
+-- Vistas de aislamiento de los caggs (mismo patrón que el crudo): security_barrier
+-- + JOIN a `sites` (RLS+FORCE). El SELECT sobre el cagg base se REVOCA a takab_app y
+-- se concede solo sobre estas vistas (migración 0008). Owner takab_migrator
+-- (NO-superusuario) para que el FORCE RLS de `sites` sujete la lectura.
+CREATE VIEW site_metrics_1m_secure WITH (security_barrier = true) AS
+  SELECT m.* FROM site_metrics_1m m JOIN sites s ON s.site_id = m.site_id;
+CREATE VIEW site_metrics_1h_secure WITH (security_barrier = true) AS
+  SELECT m.* FROM site_metrics_1h m JOIN sites s ON s.site_id = m.site_id;
 
 -- ---------------------------------------------------------------------------
 -- 7. EVIDENCIAS (S3) + AUDIT LOG

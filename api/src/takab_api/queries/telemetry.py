@@ -4,9 +4,12 @@ contract-tests estáticos y runtime (``tests/contracts/``):
 1. Las features crudas se leen SOLO por la vista ``waveform_features_1s_secure``
    (security_barrier + JOIN a ``sites`` con RLS+FORCE). La hypertable base cruda
    NO se nombra aquí — ``takab_app`` ni siquiera tiene grant sobre ella.
-2. Los continuous aggregates ``site_metrics_1m|1h`` NO llevan RLS; por eso todo
-   statement que los toque incluye ``JOIN sites`` en el MISMO string — el JOIN a
-   ``sites`` (RLS) ES el filtro de tenant. Nunca se exponen sueltos.
+2. Los continuous aggregates ``site_metrics_1{m,h}`` NO llevan RLS; se leen SOLO
+   por las vistas ``site_metrics_1{m,h}_secure`` (security_barrier + JOIN a
+   ``sites``). El cagg base NO se nombra aquí — ni en esta doc: el contract-test
+   escanea TODO literal, docstrings incluidos — y ``takab_app`` tiene el SELECT
+   revocado sobre él (migración 0008; auditoría pre-frontend). El JOIN a
+   ``sites`` (RLS) dentro de la vista ES el filtro de tenant.
 """
 
 from __future__ import annotations
@@ -47,13 +50,12 @@ def select_features(
     return text(sql), params
 
 
-# Un string COMPLETO por bucket: cada uno menciona su cagg Y su ``JOIN sites`` en
-# el mismo literal (el contract-test estático lo exige token a token). El JOIN a
-# sites (RLS) es lo que restringe las filas del cagg al tenant del request.
+# Se lee por la vista ``*_secure`` (el JOIN a sites con RLS vive DENTRO de la
+# vista); el cagg base tiene el SELECT revocado a takab_app (migración 0008).
 _METRICS_SQL: dict[str, str] = {
     "1m": (
         "SELECT m.bucket, m.max_pga_g, m.max_pgv_cms "
-        "FROM site_metrics_1m m JOIN sites s ON s.site_id = m.site_id "
+        "FROM site_metrics_1m_secure m "
         "WHERE m.site_id = CAST(:site_id AS uuid) "
         "AND m.bucket >= CAST(:from_ts AS timestamptz) "
         "AND m.bucket <  CAST(:to_ts AS timestamptz) "
@@ -61,7 +63,7 @@ _METRICS_SQL: dict[str, str] = {
     ),
     "1h": (
         "SELECT m.bucket, m.max_pga_g, m.max_pgv_cms "
-        "FROM site_metrics_1h m JOIN sites s ON s.site_id = m.site_id "
+        "FROM site_metrics_1h_secure m "
         "WHERE m.site_id = CAST(:site_id AS uuid) "
         "AND m.bucket >= CAST(:from_ts AS timestamptz) "
         "AND m.bucket <  CAST(:to_ts AS timestamptz) "
@@ -85,9 +87,8 @@ def select_metrics(
 
 
 # Estado del mapa: sitios (RLS) + última métrica 1m por sitio + incidente abierto
-# por sitio, en UNA sola query. El cagg del LATERAL lleva su propio ``JOIN sites``
-# (redundante con la correlación a ``s`` ya filtrado por RLS, pero es defensa en
-# profundidad y cumple la regla dura literalmente: el cagg jamás sin JOIN sites).
+# por sitio, en UNA sola query. El LATERAL lee la vista ``*_secure`` (el filtro de
+# tenant por sites vive dentro de la vista); el cagg base no se nombra.
 _MAP_STATE_SQL = """
 SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        ST_X(s.geom::geometry) AS lon, ST_Y(s.geom::geometry) AS lat,
@@ -101,7 +102,7 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
 FROM sites s
 LEFT JOIN LATERAL (
     SELECT m.bucket, m.max_pga_g, m.max_pgv_cms
-    FROM site_metrics_1m m JOIN sites s2 ON s2.site_id = m.site_id
+    FROM site_metrics_1m_secure m
     WHERE m.site_id = s.site_id
     ORDER BY m.bucket DESC
     LIMIT 1

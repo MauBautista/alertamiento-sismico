@@ -1,9 +1,10 @@
-"""Contract-test: los caggs ``site_metrics_1m|1h`` SIEMPRE con JOIN sites (G2).
+"""Contract-test: los caggs ``site_metrics_1m|1h`` solo por la vista ``*_secure``.
 
-Estático: en ``queries/*.py`` todo string literal que mencione un cagg debe
-co-ocurrir con ``JOIN sites`` en el MISMO literal (el JOIN a ``sites`` con RLS es
-el ÚNICO filtro de tenant — los caggs no llevan RLS). Se escanean literales de
-Python vía AST (los comentarios no cuentan; el SQL sí).
+Estático (espejo de ``test_waveform_view``): en ``queries/*.py`` NINGÚN literal
+nombra el cagg BASE (``site_metrics_1[mh]`` no seguido de ``_secure``) — la
+superficie de lectura pasa siempre por las vistas ``*_secure`` (security_barrier
++ JOIN a ``sites`` con RLS). El cagg base tiene el SELECT revocado a takab_app
+(migración 0008), así que un ``SELECT`` directo ni siquiera tendría permiso.
 
 Runtime: ejecutando el builder por ``get_tenant_conn``, el tenant A no ve las
 métricas de B, y ``gov_operator`` solo ve las de tenants ``gov_shared``.
@@ -20,19 +21,22 @@ from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.queries.telemetry import select_metrics
 
 _QUERIES = Path(__file__).resolve().parents[2] / "src" / "takab_api" / "queries"
-_CAGG = re.compile(r"site_metrics_1[mh]")
+# cagg BASE = ``site_metrics_1m|1h`` NO seguido de ``_secure``.
+_BASE_CAGG = re.compile(r"site_metrics_1[mh](?!_secure)")
 
 
-def test_caggs_never_selected_without_join_sites() -> None:
+def test_base_caggs_never_named_in_read_surface() -> None:
     offenders: list[str] = []
     for py in _QUERIES.glob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                literal = node.value
-                if _CAGG.search(literal) and "join sites" not in literal.lower():
-                    offenders.append(f"{py.name}:{node.lineno} -> {literal[:60]!r}")
-    assert not offenders, f"cagg sin JOIN sites en el mismo statement: {offenders}"
+                if _BASE_CAGG.search(node.value):
+                    offenders.append(f"{py.name}:{node.lineno} -> {node.value[:60]!r}")
+    assert not offenders, (
+        f"cagg base (sin RLS) nombrado en la superficie de lectura: {offenders} — "
+        "usar la vista *_secure"
+    )
 
 
 def _range() -> tuple[str, str]:
