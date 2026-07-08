@@ -488,7 +488,7 @@ T-1.17+) requiere AWS.
   aceptado por `/me` real (allowed_routes correctas), silent renew `prompt=none`, logout mata
   la sesión. Quirk documentado: tras logout Cognito clásico redirige a `/login` en vez de
   `error=login_required` (oidc-client-ts verá timeout de signinSilent ⇒ ruta a login, ya
-  contemplada). **[DECISION propuesta 2026-07-08 — ratificar]** Topología CORS prod: MISMO
+  contemplada). **[DECISION 2026-07-08 — RATIFICADA]** Topología CORS prod: MISMO
   ORIGEN tras CloudFront (S3 estático + behavior `/api/*`→API y `/ws` WebSocket al mismo
   dominio); la API sigue SIN CORSMiddleware. Razones: el front ya llama rutas relativas
   `/api` (paridad dev/prod con el proxy Vite), cero preflights de latencia, superficie mínima
