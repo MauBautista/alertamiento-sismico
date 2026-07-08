@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import psycopg
@@ -20,7 +21,7 @@ import pytest
 
 API_DIR = Path(__file__).resolve().parents[1]
 
-DEFAULT_URL = "postgresql+psycopg://takab:takab_dev@localhost:5432/takab"
+DEFAULT_URL = "postgresql+psycopg://takab:takab_dev@localhost:5433/takab"
 
 # Roles de conexión permitidos en el helper `use` (allowlist → no inyección en SET ROLE).
 DB_ROLES = frozenset({"takab_app", "takab_ingest", "takab_migrator"})
@@ -58,7 +59,7 @@ def _migrated() -> None:
     env = {**os.environ}
     env.setdefault("DATABASE_URL", DEFAULT_URL)
     subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=API_DIR,
         check=True,
         capture_output=True,

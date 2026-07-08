@@ -20,6 +20,24 @@ jobs:
     defaults:
       run:
         working-directory: api
+    services:
+      db:
+        # Misma imagen que docker-compose y el EC2 dev (TimescaleDB + PostGIS);
+        # la suite exige DB viva (el conftest aplica `alembic upgrade head`).
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_USER: takab
+          POSTGRES_PASSWORD: takab_dev
+          POSTGRES_DB: takab
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U takab -d takab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
