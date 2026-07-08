@@ -56,6 +56,14 @@ resource "aws_iot_policy" "fleet" {
         ]
       },
       {
+        # La presencia del gateway es RETENIDA (LWT offline + online al conectar,
+        # T-1.17): un CONNECT con will retenido exige iot:RetainPublish o el broker
+        # lo corta (AWS_ERROR_MQTT_UNEXPECTED_HANGUP — visto en el Pi 5 real).
+        Effect   = "Allow"
+        Action   = "iot:RetainPublish"
+        Resource = "${local.iot_arn}:topic/takab/status/${local.thing_name}"
+      },
+      {
         Effect = "Allow"
         Action = "iot:Subscribe"
         Resource = [
