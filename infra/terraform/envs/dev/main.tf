@@ -38,7 +38,18 @@ module "database" {
     values(module.messaging.dlq_arns),
   )
   worker_ecr_repo_arns = values(module.registry.repository_arns)
-  worker_s3_read_arns  = ["${module.storage.transfer_bucket.arn}/*"]
+  worker_s3_read_arns = [
+    "${module.storage.transfer_bucket.arn}/*",
+    "${module.storage.evidence_bucket.arn}/*", # ingesta de evidencia (sha256 real)
+  ]
+  # Grant service co-locado (T-1.25): prefijos presignables + topic del grant.
+  worker_s3_presign_put_arns = [
+    "${module.storage.transfer_bucket.arn}/backfill/*",
+    "${module.storage.evidence_bucket.arn}/evidence/*",
+  ]
+  worker_grant_topic_arns = [
+    "arn:aws:iot:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:topic/takab/backfill/grant/*",
+  ]
 }
 
 module "identity" {

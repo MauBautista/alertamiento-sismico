@@ -38,3 +38,16 @@ variable "worker_s3_read_arns" {
   type    = list(string)
   default = []
 }
+
+# Grant service del backfill (T-1.25) co-locado: keys que el rol puede
+# PRE-FIRMAR para PUT (un presigned URL solo vale si el firmante tiene
+# s3:PutObject al ejecutarse) y topics de grant hacia el edge.
+variable "worker_s3_presign_put_arns" {
+  type    = list(string)
+  default = []
+}
+
+variable "worker_grant_topic_arns" {
+  type    = list(string)
+  default = []
+}

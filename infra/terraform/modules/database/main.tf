@@ -134,6 +134,23 @@ resource "aws_iam_role_policy" "db" {
         Action   = ["s3:GetObject"]
         Resource = var.worker_s3_read_arns
       },
+      # Grant service del backfill (T-1.25) co-locado: los presigned PUT se
+      # firman con ESTE rol — sin s3:PutObject en los prefijos presignados el
+      # edge recibe 403 al subir (el smoke local firmaba con credenciales dev
+      # y ocultaba el hueco). Acotado a los prefijos canónicos del grant.
+      {
+        Sid      = "WorkerPresignPut"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = var.worker_s3_presign_put_arns
+      },
+      # Respuesta del grant al edge vía iot-data (takab/backfill/grant/<thing>).
+      {
+        Sid      = "WorkerGrantPublish"
+        Effect   = "Allow"
+        Action   = ["iot:Publish"]
+        Resource = var.worker_grant_topic_arns
+      },
     ]
   })
 }
