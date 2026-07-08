@@ -1,0 +1,40 @@
+# TAKAB Ailert — supervisor completo del gabinete (T-1.2..T-1.14 + cloud T-1.17/23/25).
+# Módulos: gpio, seedlink, signal, buffer, rules, actuators, cloud, health, security,
+# config, dispatch, backfill, local_api — arranque en orden topológico, watchdog interno.
+#
+# PROPIEDAD DE PINES (pre gate #3): este proceso instancia su PROPIO GpioController
+# (reflejo SASMEX→sirena in-process, regla de oro 1), así que NO puede convivir con
+# takab-gpio.service — ambos reclaman los mismos pines BCM. `Conflicts=` lo hace
+# imposible por construcción. Cuando llegue el hardware WR-1/relés (gate #3) se decide
+# la topología final: supervisor único vs proceso mínimo takab-gpio + supervisor sin gpio.
+[Unit]
+Description=TAKAB Ailert — supervisor del gabinete (edge completo)
+Documentation=file:///opt/takab/takab-docs/BLUEPRINT-TECNICO-TAKAB.md
+After=network-online.target time-sync.target
+Wants=network-online.target
+Conflicts=takab-gpio.service
+
+[Service]
+Type=simple
+# Producción: GPIO nativo (lgpio), SeedLink real al Shake y transporte mTLS a IoT Core.
+Environment=TAKAB_EDGE_DEV_MODE=false
+# Identidad, certs, HMAC y SeedLink vienen de /etc/takab/edge.env (provision_gateway.sh;
+# NUNCA en git). El spool offline vive en /var/lib/takab/spool (ReadWritePaths).
+EnvironmentFile=/etc/takab/edge.env
+WorkingDirectory=/opt/takab/edge
+ExecStart=/opt/takab/edge/.venv/bin/takab-edge
+
+Restart=always
+RestartSec=2
+
+# Endurecimiento (paridad con takab-gpio.service): sin escrituras fuera del spool.
+# PrivateTmp: /tmp propio y escribible (ProtectSystem=strict deja el global de solo
+# lectura y stdlib/obspy usan tempfile como fallback).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/takab
+
+[Install]
+WantedBy=multi-user.target
