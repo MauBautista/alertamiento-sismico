@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router";
 
+import FleetPage from "../features/fleet/FleetPage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
 import BuildingPage from "../pages/BuildingPage";
 import LoginPage from "../pages/LoginPage";
@@ -31,7 +32,7 @@ export const routes: RouteObject[] = [
             path: "/fleet",
             element: (
               <RouteGuard routeKey="/fleet">
-                <PlaceholderPage title="FLOTA EDGE" taskRef="T-1.28" />
+                <FleetPage />
               </RouteGuard>
             ),
           },

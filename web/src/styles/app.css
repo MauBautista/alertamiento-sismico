@@ -137,6 +137,15 @@ a.soc-btn {
   white-space: nowrap;
 }
 
+/* Flota (T-1.28): caption de honestidad bajo la sección de actuadores. */
+.fleet-card__derived {
+  margin-top: 6px;
+  color: var(--tk-fg-3);
+  font-family: var(--tk-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
 /* Panel de login dev (solo con VITE_DEV_TOKEN_ENABLED). */
 .soc-dev-panel {
   display: grid;

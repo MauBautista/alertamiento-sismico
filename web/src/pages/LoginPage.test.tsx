@@ -65,7 +65,9 @@ describe("LoginPage", () => {
     seedAuthenticated(ME_FIXTURES.soc_operator);
     const router = renderRoutesAt("/", { returnTo: "/fleet" });
     expect(router.state.location.pathname).toBe("/fleet");
-    expect(screen.getByRole("heading", { name: "FLOTA EDGE" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Flota Edge y Estado de Gabinetes" }),
+    ).toBeInTheDocument();
   });
 
   it("rol mobile-only autenticado ⇒ pantalla sin superficie web", () => {

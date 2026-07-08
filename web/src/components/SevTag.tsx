@@ -1,13 +1,9 @@
 import { AlertOctagon, AlertTriangle, CheckCircle2, Eye } from "lucide-react";
-import type { ComponentType } from "react";
 
 /** Severidades del CHECK de ``incidents.severity`` (db/schema.sql), menor→mayor. */
 export type Severity = "info" | "watch" | "warning" | "critical";
 
-const SEV: Record<
-  Severity,
-  { cls: string; label: string; Icon: ComponentType<{ size?: number }> }
-> = {
+const SEV: Record<Severity, { cls: string; label: string; Icon: typeof AlertOctagon }> = {
   critical: { cls: "soc-sev soc-sev--red", label: "CRÍTICO", Icon: AlertOctagon },
   warning: { cls: "soc-sev soc-sev--warn", label: "ADVERTENCIA", Icon: AlertTriangle },
   watch: { cls: "soc-sev soc-sev--warn", label: "VIGILANCIA", Icon: Eye },

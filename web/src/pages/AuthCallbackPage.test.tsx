@@ -19,7 +19,9 @@ describe("AuthCallbackPage", () => {
 
     const router = renderRoutesAt("/auth/callback");
 
-    expect(await screen.findByRole("heading", { name: "FLOTA EDGE" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Flota Edge y Estado de Gabinetes" }),
+    ).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/fleet");
     expect(completeCognitoCallback).toHaveBeenCalledTimes(1);
   });
