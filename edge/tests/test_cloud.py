@@ -272,3 +272,26 @@ def test_reconnect_thread_flushes_on_start(settings, tmp_path):
         assert cloud.queued == 0
     finally:
         cloud.stop()
+
+
+def test_reconnect_loop_logs_connection_failure(settings, tmp_path, caplog):
+    """Un connect() fallido debe dejar la CAUSA en el log (WARNING), no tragarse la
+    excepción: un gabinete sin enlace por un rechazo del broker (p. ej. política IoT)
+    era indistinguible de una WAN caída — costó una hora de diagnóstico en el Pi real."""
+    import logging
+    import time
+
+    transport = FakeMqttTransport(online=False)  # connect() lanza ConnectionError
+    cloud = CloudConnector(settings, transport=transport, spool_dir=str(tmp_path))
+    with caplog.at_level(logging.WARNING, logger="takab_edge.cloud"):
+        cloud.start()
+        try:
+            for _ in range(150):
+                if any("WAN offline" in r.getMessage() for r in caplog.records):
+                    break
+                time.sleep(0.02)
+        finally:
+            cloud.stop()
+    failures = [r for r in caplog.records if "WAN offline" in r.getMessage()]
+    assert failures, "la causa del fallo de conexión debe ser visible en el log"
+    assert all(r.levelno == logging.WARNING for r in failures)

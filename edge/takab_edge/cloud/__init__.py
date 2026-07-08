@@ -500,10 +500,18 @@ class CloudConnector(EdgeModule):
                 self._apply_subscriptions()
                 self._fire_online()
                 self.flush()
-            except Exception:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
+            except Exception as exc:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
                 attempt += 1
                 delay = min(base * (2**attempt), self.settings.cloud_backoff_max_s)
                 jitter = delay * 0.1 * ((attempt % 5) / 5.0)  # 0–10% determinista
+                # La CAUSA debe ser visible: un rechazo del broker (política IoT,
+                # certs) es indistinguible de una WAN caída si se traga en silencio.
+                log.warning(
+                    "conexión cloud falló (intento %d, reintento en %.0fs): %s",
+                    attempt,
+                    delay + jitter,
+                    exc,
+                )
                 self._reconnect_stop.wait(delay + jitter)
 
     def _on_start(self) -> None:
