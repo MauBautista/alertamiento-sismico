@@ -11,6 +11,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        ws: true, // upgrade del WS live (/api/ws → :8000/ws)
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },

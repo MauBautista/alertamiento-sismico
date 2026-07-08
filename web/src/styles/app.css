@@ -93,6 +93,50 @@ a.soc-btn {
   margin: 0;
 }
 
+/* StateFrame (T-1.27/T-1.28): materializa los 4 estados obligatorios de todo
+ * panel; en stale el dato sigue visible pero SIEMPRE bajo el banner ámbar. */
+.soc-stateframe {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+.soc-stateframe--status {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--tk-space-3);
+  height: 100%;
+  min-height: 120px;
+  padding: var(--tk-space-4);
+  color: var(--tk-fg-3);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-sm);
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.soc-stateframe__error {
+  color: var(--tk-status-critical);
+}
+
+.soc-stateframe__stale {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 4px 12px;
+  background: var(--tk-status-warning);
+  color: var(--tk-navy-900);
+  border-radius: var(--tk-radius-sm);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
 /* Panel de login dev (solo con VITE_DEV_TOKEN_ENABLED). */
 .soc-dev-panel {
   display: grid;
