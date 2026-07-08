@@ -49,3 +49,6 @@ Design System/Dashboard Alertamiento Sismico.zip
 tfplan
 certs-*/
 .env.e2e
+
+# graphify (grafo de conocimiento local, salida de tooling)
+graphify-out/
