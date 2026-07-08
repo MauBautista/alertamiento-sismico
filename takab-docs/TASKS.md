@@ -460,12 +460,27 @@ T-1.17+) requiere AWS.
 
 ## Bloque D · FRONTEND — sobre la nube existente · Blueprint Fase C
 
-### [ ] T-1.26 · Guards de routing + shell de navegación
+### [x] T-1.26 · Guards de routing + shell de navegación ✅ (commits `8c0ace5` + `2f9631b`)
 - **Componente:** web · **Depende de:** T-1.18
 - **Objetivo:** separar el diseño en rutas protegidas por rol (`RBAC-TAKAB.md §7`).
 - **Criterios:** rutas `/console`, `/fleet`, `/triage`, `/tenants`, `/building/:siteId` montadas;
   guard por rol bloquea navegación directa por URL (no solo oculta el botón); navegación armada
   según el rol del JWT; estado "sin acceso" implementado; login/logout Cognito end-to-end.
+  ([DECISION 2026-07-07]: guards y nav **100% server-driven** por `allowed_routes` de `/me`
+  (`matrix.py` autoritativo; clave paramétrica = `/building`) — cero matriz de roles en el
+  front. react-router v7 library mode; sesión zustand + oidc-client-ts (code+PKCE, silent
+  renew, sessionStorage) con bypass local `POST /dev/token`; logout Cognito = redirect manual
+  al `/logout` del Hosted UI (el pool no publica end_session_endpoint). Denegación IN-PLACE
+  ("SIN ACCESO" con URL intacta); `allowed_routes: []` (roles móviles) ⇒ pantalla sin
+  superficie web. Contrato: `MeResponse` tipado end-to-end (response_model + regen sdk-ts;
+  se corrigió drift de openapi.json arrastrado desde T-1.22 — commands+report no publicados);
+  `@hey-api/client-fetch` fijado en ^0.10.2 (0.11+ re-indexa TData[keyof TData] y rompe el
+  tipado con openapi-ts 0.64). Dev: proxy Vite `/api`→:8000 (la API no monta CORS). Suites:
+  web 96 passed (incluye matriz 10 roles × 5 URLs de bloqueo por URL directa), api 562 passed,
+  E2E local dev-token→/me→guards verificado contra la API real. **Gate AWS pendiente** (próxima
+  sesión con credenciales): smoke del Hosted UI real (usuario+TOTP, callback/logout, silent
+  renew) y decisión de topología prod para CORS (mismo origen tras CloudFront vs
+  CORSMiddleware) — se suman a los gates arrastrados de T-1.25.)
 
 ### [ ] T-1.27 · Consola C4I — Live Wall — **[C1]**
 - **Componente:** web · **Depende de:** T-1.26, T-1.22
