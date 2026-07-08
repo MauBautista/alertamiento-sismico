@@ -32,6 +32,9 @@ describe("LoginPage", () => {
   });
 
   it("sin VITE_DEV_TOKEN_ENABLED no hay panel dev", () => {
+    // Explícito (no ambiental): un web/.env local con la flag en true no debe
+    // volver este test flaky — se aísla del entorno.
+    vi.stubEnv("VITE_DEV_TOKEN_ENABLED", "");
     renderRoutesAt("/");
     expect(screen.queryByText(/LOGIN DEV/)).not.toBeInTheDocument();
   });

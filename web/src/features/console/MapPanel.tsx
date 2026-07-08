@@ -18,6 +18,19 @@ const DEFAULT_CENTER: [number, number] = [-98.2, 19.04];
 const DEFAULT_ZOOM = 8.5;
 const PULSE_PERIOD_MS = 1_600;
 
+/**
+ * Fotograma del pulso a partir del tiempo transcurrido (ms). El timestamp de
+ * requestAnimationFrame puede ser MARGINALMENTE anterior al `start` capturado
+ * (vsync del frame previo), lo que daría un delta negativo y una opacidad > 1
+ * que MapLibre RECHAZA (validación estricta 0..1). Se clampa el delta a >= 0 y
+ * la opacidad queda garantizada en (0,1]. Motion lineal (sin bounce).
+ */
+export function pulseAt(deltaMs: number): { radius: number; strokeOpacity: number } {
+  const elapsed = deltaMs > 0 ? deltaMs : 0;
+  const phase = (elapsed % PULSE_PERIOD_MS) / PULSE_PERIOD_MS; // [0, 1)
+  return { radius: 15 + phase * 45, strokeOpacity: 1 - phase };
+}
+
 export const SEVERITY_COLOR: Record<string, string> = {
   critical: "#FF5252",
   warning: "#FFC107",
@@ -164,9 +177,9 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
 
       const start = performance.now();
       const loop = (t: number) => {
-        const phase = ((t - start) % PULSE_PERIOD_MS) / PULSE_PERIOD_MS; // 0..1 lineal
-        map.setPaintProperty("pulse", "circle-radius", 15 + phase * 45);
-        map.setPaintProperty("pulse", "circle-stroke-opacity", 1 - phase);
+        const { radius, strokeOpacity } = pulseAt(t - start);
+        map.setPaintProperty("pulse", "circle-radius", radius);
+        map.setPaintProperty("pulse", "circle-stroke-opacity", strokeOpacity);
         raf = requestAnimationFrame(loop);
       };
       raf = requestAnimationFrame(loop);

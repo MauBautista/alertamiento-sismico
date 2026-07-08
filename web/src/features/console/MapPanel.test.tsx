@@ -22,7 +22,12 @@ const mocks = vi.hoisted(() => {
 vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
-import MapPanel, { criticalFeatures, siteSeverity, sitesToFeatureCollection } from "./MapPanel";
+import MapPanel, {
+  criticalFeatures,
+  pulseAt,
+  siteSeverity,
+  sitesToFeatureCollection,
+} from "./MapPanel";
 
 function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
   return {
@@ -47,6 +52,27 @@ const CRITICAL = site("crit", {
     state: "open",
     opened_at: "2026-07-08T10:00:00Z",
   },
+});
+
+describe("pulseAt (puro) — opacidad SIEMPRE válida para MapLibre (0..1)", () => {
+  it("delta negativo del rAF (vsync previo al start) no produce opacidad > 1", () => {
+    // Regresión del bug cazado por el smoke de navegador: 1 - phase daba
+    // 1.0021… y MapLibre rechaza >1. El delta se clampa a 0.
+    const p = pulseAt(-2.1);
+    expect(p.strokeOpacity).toBeLessThanOrEqual(1);
+    expect(p.strokeOpacity).toBe(1);
+    expect(p.radius).toBe(15);
+  });
+
+  it("barrido de un periodo completo se mantiene en rango", () => {
+    for (let d = 0; d <= 1600; d += 37) {
+      const { radius, strokeOpacity } = pulseAt(d);
+      expect(strokeOpacity).toBeGreaterThanOrEqual(0);
+      expect(strokeOpacity).toBeLessThanOrEqual(1);
+      expect(radius).toBeGreaterThanOrEqual(15);
+      expect(radius).toBeLessThanOrEqual(60);
+    }
+  });
 });
 
 describe("builders del mapa (puros)", () => {
