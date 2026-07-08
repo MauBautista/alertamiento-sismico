@@ -201,6 +201,13 @@ resource "aws_instance" "db" {
 
   # user_data lee los secretos en el primer boot: deben existir antes.
   depends_on = [aws_secretsmanager_secret_version.db]
+
+  # La AMI most_recent solo aplica al primer boot: una AMI nueva NO debe forzar
+  # replace de la instancia (destruiria la DB y los workers co-locados). Para
+  # actualizar la AMI a proposito: terraform taint / -replace explicito.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 resource "aws_volume_attachment" "data" {
