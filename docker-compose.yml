@@ -7,7 +7,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-takab_dev}
       POSTGRES_DB: ${POSTGRES_DB:-takab}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # 5433: el 5432 del host suele estar ocupado por el Postgres del sistema
+      # y es el default de la app (api/src/takab_api/settings.py).
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - takab_pgdata:/home/postgres/pgdata/data
     healthcheck:
