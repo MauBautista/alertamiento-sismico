@@ -452,7 +452,11 @@ T-1.17+) requiere AWS.
   a MQTT si grant/PUT fallan (cooldown; nada se atora; solape inocuo por dedup PK). Evidencia
   offline: pendientes durables (tier evacuate/restricted, ventana −60 s/+120 s) suben al
   reconectar. Infra: IoT rule request→q-backfill + notificación bucket evidence (validate OK;
-  **apply + smoke presigned-PUT vs S3 real con SSE-KMS = gate AWS pendiente**). Criterio 6 h
+  **gate AWS CERRADO 2026-07-08**: apply dirigido de regla+policy+notificación y smoke E2E
+  real gw-sim-0001 — request MQTT mTLS→grant→presigned PUT 200→objeto `SSE aws:kms` con la
+  llave del proyecto→ingesta 3/3 filas idempotentes en la DB cloud, DLQ 0. El pin
+  `ignore_changes=[ami]` en modules/database evita que el drift de AMI proponga replace
+  del EC2 de la DB). Criterio 6 h
   verificado literal: 86 400 features completas e idempotentes (~57 s; gate
   `TAKAB_SLOW_TESTS=1`). Suites api 535 / edge 233 passed; frontera 14:59/15:01 testeada.)
 
@@ -477,10 +481,19 @@ T-1.17+) requiere AWS.
   `@hey-api/client-fetch` fijado en ^0.10.2 (0.11+ re-indexa TData[keyof TData] y rompe el
   tipado con openapi-ts 0.64). Dev: proxy Vite `/api`→:8000 (la API no monta CORS). Suites:
   web 96 passed (incluye matriz 10 roles × 5 URLs de bloqueo por URL directa), api 562 passed,
-  E2E local dev-token→/me→guards verificado contra la API real. **Gate AWS pendiente** (próxima
-  sesión con credenciales): smoke del Hosted UI real (usuario+TOTP, callback/logout, silent
-  renew) y decisión de topología prod para CORS (mismo origen tras CloudFront vs
-  CORSMiddleware) — se suman a los gates arrastrados de T-1.25.)
+  E2E local dev-token→/me→guards verificado contra la API real. **Gate AWS CERRADO
+  2026-07-08**: smoke del Hosted UI real en verde end-to-end — usuario dev `tenant_admin`
+  (credenciales+TOTP SOLO en Secrets Manager `takab/dev/console/dev-tenant-admin`),
+  enrolamiento TOTP vía `/mfa/register` Y re-login vía `/mfa`, callback code+PKCE, ID token
+  aceptado por `/me` real (allowed_routes correctas), silent renew `prompt=none`, logout mata
+  la sesión. Quirk documentado: tras logout Cognito clásico redirige a `/login` en vez de
+  `error=login_required` (oidc-client-ts verá timeout de signinSilent ⇒ ruta a login, ya
+  contemplada). **[DECISION propuesta 2026-07-08 — ratificar]** Topología CORS prod: MISMO
+  ORIGEN tras CloudFront (S3 estático + behavior `/api/*`→API y `/ws` WebSocket al mismo
+  dominio); la API sigue SIN CORSMiddleware. Razones: el front ya llama rutas relativas
+  `/api` (paridad dev/prod con el proxy Vite), cero preflights de latencia, superficie mínima
+  (regla de oro: no abrir orígenes), WS same-origin y un solo dominio en los callbacks de
+  Cognito. CORSMiddleware queda como plan B solo si el hosting separa dominios.)
 
 ### [ ] T-1.27 · Consola C4I — Live Wall — **[C1]**
 - **Componente:** web · **Depende de:** T-1.26, T-1.22
