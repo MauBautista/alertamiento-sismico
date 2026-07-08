@@ -11,6 +11,8 @@ export interface AppEnv {
     scopes: string;
   };
   devTokenEnabled: boolean;
+  /** CCTV ONVIF de la consola (T-1.27 criterio #2): placeholder tras flag, off en MVP. */
+  featureCctv: boolean;
 }
 
 function read(name: keyof ImportMetaEnv, fallback = ""): string {
@@ -31,5 +33,6 @@ export function getEnv(): AppEnv {
       scopes: read("VITE_COGNITO_SCOPES", "openid email profile"),
     },
     devTokenEnabled: read("VITE_DEV_TOKEN_ENABLED") === "true",
+    featureCctv: read("VITE_FEATURE_CCTV") === "true",
   };
 }

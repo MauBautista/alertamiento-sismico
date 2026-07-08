@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router";
 
+import ConsolePage from "../features/console/ConsolePage";
 import FleetPage from "../features/fleet/FleetPage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
 import BuildingPage from "../pages/BuildingPage";
@@ -24,7 +25,7 @@ export const routes: RouteObject[] = [
             path: "/console",
             element: (
               <RouteGuard routeKey="/console">
-                <PlaceholderPage title="CONSOLA C4I" taskRef="T-1.27" />
+                <ConsolePage />
               </RouteGuard>
             ),
           },

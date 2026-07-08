@@ -1,0 +1,218 @@
+// Mapa GIS real del live wall (T-1.27): MapLibre GL sobre OpenFreeMap dark.
+// Desviación RATIFICADA: mapa vectorial real, no el SVG esquemático del mock.
+//
+// Los sitios vienen de /telemetry/map/state (verdad server-side): color por
+// severidad del incidente abierto (o criticidad OK). Alrededor de los sitios
+// con incidente crítico se pintan anillos de intensidad (bandas MMI) + un
+// pulso animado por rAF (motion lineal, sin bounce — design system).
+
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { useEffect, useRef } from "react";
+
+import type { MapSiteState } from "@takab/sdk";
+
+export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+/** Centro por defecto: Puebla (flota dev); el mapa hace fit a los sitios. */
+const DEFAULT_CENTER: [number, number] = [-98.2, 19.04];
+const DEFAULT_ZOOM = 8.5;
+const PULSE_PERIOD_MS = 1_600;
+
+export const SEVERITY_COLOR: Record<string, string> = {
+  critical: "#FF5252",
+  warning: "#FFC107",
+  watch: "#FFC107",
+  info: "#00E676",
+  ok: "#00E676",
+};
+
+/** Severidad efectiva del sitio en el mapa (incidente abierto manda). */
+export function siteSeverity(site: MapSiteState): string {
+  return site.open_incident?.severity ?? "ok";
+}
+
+type FeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: Record<string, unknown>;
+  }>;
+};
+
+/** GeoJSON de sitios para la capa de círculos (color y radio por severidad). */
+export function sitesToFeatureCollection(sites: MapSiteState[]): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: sites.map((site) => {
+      const severity = siteSeverity(site);
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [site.lon, site.lat] },
+        properties: {
+          site_id: site.site_id,
+          name: site.name,
+          severity,
+          color: SEVERITY_COLOR[severity] ?? SEVERITY_COLOR.warning,
+          critical: severity === "critical",
+        },
+      };
+    }),
+  };
+}
+
+/** Solo los sitios con incidente crítico (fuente de anillos MMI + pulso). */
+export function criticalFeatures(sites: MapSiteState[]): FeatureCollection {
+  return sitesToFeatureCollection(sites.filter((s) => siteSeverity(s) === "critical"));
+}
+
+export interface MapPanelProps {
+  sites: MapSiteState[];
+  onSelectSite: (siteId: string) => void;
+}
+
+export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const loadedRef = useRef(false);
+  const sitesRef = useRef(sites);
+  sitesRef.current = sites;
+  const onSelectRef = useRef(onSelectSite);
+  onSelectRef.current = onSelectSite;
+
+  // Init una sola vez; datos y handlers via refs (sin re-crear el mapa).
+  useEffect(() => {
+    if (containerRef.current === null) return undefined;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE_URL,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      attributionControl: { compact: true },
+    });
+    mapRef.current = map;
+    let raf = 0;
+
+    map.on("load", () => {
+      loadedRef.current = true;
+      map.addSource("sites", { type: "geojson", data: sitesToFeatureCollection(sitesRef.current) });
+      map.addSource("critical", { type: "geojson", data: criticalFeatures(sitesRef.current) });
+
+      // Bandas MMI estáticas alrededor del epicentro operativo (sitio crítico).
+      map.addLayer({
+        id: "mmi-severa",
+        type: "circle",
+        source: "critical",
+        paint: {
+          "circle-radius": 55,
+          "circle-color": "rgba(255,82,82,0.16)",
+          "circle-stroke-color": "#FF5252",
+          "circle-stroke-width": 1.4,
+        },
+      });
+      map.addLayer({
+        id: "mmi-alta",
+        type: "circle",
+        source: "critical",
+        paint: {
+          "circle-radius": 100,
+          "circle-color": "rgba(255,193,7,0.07)",
+          "circle-stroke-color": "#FFC107",
+          "circle-stroke-width": 1,
+        },
+      });
+      // Pulso animado (rAF, easing lineal).
+      map.addLayer({
+        id: "pulse",
+        type: "circle",
+        source: "critical",
+        paint: {
+          "circle-radius": 15,
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-color": "#FF5252",
+          "circle-stroke-width": 1.2,
+        },
+      });
+      // Halo + núcleo de cada sitio.
+      map.addLayer({
+        id: "site-halo",
+        type: "circle",
+        source: "sites",
+        paint: {
+          "circle-radius": ["case", ["get", "critical"], 16, 12],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.18,
+        },
+      });
+      map.addLayer({
+        id: "site-core",
+        type: "circle",
+        source: "sites",
+        paint: {
+          "circle-radius": ["case", ["get", "critical"], 7, 5],
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "#0d2034",
+          "circle-stroke-width": 1.5,
+        },
+      });
+
+      map.on("click", "site-core", (event) => {
+        const feature = event.features?.[0];
+        const siteId = feature?.properties?.["site_id"];
+        if (typeof siteId === "string") onSelectRef.current(siteId);
+      });
+
+      const start = performance.now();
+      const loop = (t: number) => {
+        const phase = ((t - start) % PULSE_PERIOD_MS) / PULSE_PERIOD_MS; // 0..1 lineal
+        map.setPaintProperty("pulse", "circle-radius", 15 + phase * 45);
+        map.setPaintProperty("pulse", "circle-stroke-opacity", 1 - phase);
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      loadedRef.current = false;
+      mapRef.current = null;
+      map.remove();
+    };
+  }, []);
+
+  // Datos nuevos → setData (sin recrear capas).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null || !loadedRef.current) return;
+    (map.getSource("sites") as maplibregl.GeoJSONSource | undefined)?.setData(
+      sitesToFeatureCollection(sites),
+    );
+    (map.getSource("critical") as maplibregl.GeoJSONSource | undefined)?.setData(
+      criticalFeatures(sites),
+    );
+  }, [sites]);
+
+  return (
+    <div className="soc-map" data-testid="map-panel">
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+
+      <div className="soc-map__legend">
+        <div className="soc-map__legend-title">INTENSIDAD MMI</div>
+        <div className="soc-map__legend-row">
+          <span className="soc-map__sw" style={{ background: "#FF5252" }} /> Alta
+        </div>
+        <div className="soc-map__legend-row">
+          <span className="soc-map__sw" style={{ background: "#FFC107" }} /> Moderada
+        </div>
+        <div className="soc-map__legend-row">
+          <span className="soc-map__sw" style={{ background: "#00E676" }} /> Sitios OK
+        </div>
+      </div>
+
+      <div className="soc-map__attribution">
+        <span>◐ MapLibre GL · OpenFreeMap</span>
+        <span>Map data © OpenStreetMap · Sensórica Raspberry Shake® RS4D</span>
+      </div>
+    </div>
+  );
+}

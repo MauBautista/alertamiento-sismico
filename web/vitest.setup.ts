@@ -9,3 +9,13 @@ import { transferableAbortController } from "node:util";
 const nodeController = transferableAbortController();
 globalThis.AbortController = nodeController.constructor as typeof AbortController;
 globalThis.AbortSignal = nodeController.signal.constructor as typeof AbortSignal;
+
+// maplibre-gl (T-1.27) registra su worker con URL.createObjectURL AL IMPORTARSE;
+// jsdom no lo implementa. Stub inerte: los tests del mapa mockean maplibre-gl,
+// pero cualquier import transitivo (routes → ConsolePage) no debe reventar.
+if (typeof window.URL.createObjectURL === "undefined") {
+  Object.defineProperty(window.URL, "createObjectURL", {
+    value: () => "blob:vitest-stub",
+    writable: true,
+  });
+}

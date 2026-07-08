@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_COGNITO_POST_LOGOUT_URI?: string;
   readonly VITE_COGNITO_SCOPES?: string;
   readonly VITE_DEV_TOKEN_ENABLED?: string;
+  readonly VITE_FEATURE_CCTV?: string;
 }
 
 interface ImportMeta {

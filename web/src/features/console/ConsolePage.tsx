@@ -1,0 +1,175 @@
+// Consola C4I · Live Wall (T-1.27, mockup 1 con desviaciones ratificadas).
+//
+// ConsolePage crea el LiveSocket de la sesión (auth-first sobre /ws, T-1.22) y
+// monta el wall: mapa MMI real (MapLibre) + banner MVP + cola de incidentes en
+// vivo + detalle del sitio enfocado. Los 4 estados obligatorios (regla de
+// oro 7) los materializa StateFrame sobre el snapshot del mapa (la fuente
+// que define si el wall puede pintar).
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
+import { useQueryClient } from "@tanstack/react-query";
+
+import StateFrame from "../../components/StateFrame";
+import { getEnv } from "../../app/env";
+import { useSessionStore } from "../../auth/session.store";
+import { useNow } from "../../lib/useNow";
+import { LiveSocket, liveWsUrl } from "../../lib/ws";
+import AlertBanner from "./AlertBanner";
+import DetailPanel from "./DetailPanel";
+import IncidentTable from "./IncidentTable";
+import MapPanel from "./MapPanel";
+import { LiveSocketContext } from "./socket";
+import { useAutoPopup } from "./useAutoPopup";
+import { useIncidentActions } from "./useIncidentActions";
+import { useLiveIncidents } from "./useLiveIncidents";
+import { useMapState } from "./useMapState";
+import { useSiteFeatures } from "./useSiteFeatures";
+import { useSiteSoh } from "./useSiteSoh";
+
+/** Sin snapshot fresco del mapa tras esto (poll 30 s) el wall es DATOS RETENIDOS. */
+export const CONSOLE_STALE_MS = 90_000;
+
+function coordsLabel(lat: number, lon: number): string {
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(4)}°${ns} · ${Math.abs(lon).toFixed(4)}°${ew}`;
+}
+
+function ConsoleWall() {
+  const me = useSessionStore((s) => s.me);
+  const now = useNow(1000);
+  const queryClient = useQueryClient();
+  const incidents = useLiveIncidents();
+  const map = useMapState();
+
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  // Sitio enfocado: selección explícita, o el del incidente más severo.
+  const focusSiteId = selectedSiteId ?? incidents.incidents[0]?.site_id ?? null;
+  const features = useSiteFeatures(focusSiteId);
+  const soh = useSiteSoh(focusSiteId);
+  const focusIncident = incidents.incidents.find((i) => i.site_id === focusSiteId) ?? null;
+  const actions = useIncidentActions(focusIncident?.incident_id ?? null);
+
+  // Pop-up automático por anomalía sostenida (criterio #4).
+  const openDetail = useCallback((siteId: string) => {
+    setSelectedSiteId(siteId);
+    setDetailOpen(true);
+  }, []);
+  useAutoPopup(focusSiteId, features.points, openDetail);
+
+  const siteById = useMemo(() => new Map(map.sites.map((s) => [s.site_id, s])), [map.sites]);
+  const siteInfoOf = useCallback(
+    (siteId: string) => {
+      const site = siteById.get(siteId);
+      return site ? { name: site.name, coords: coordsLabel(site.lat, site.lon) } : null;
+    },
+    [siteById],
+  );
+
+  const critical = incidents.incidents.find((i) => i.severity === "critical") ?? null;
+  const focusSite = focusSiteId !== null ? (siteById.get(focusSiteId) ?? null) : null;
+
+  const staleSince =
+    !map.loading &&
+    !map.error &&
+    map.dataUpdatedAt > 0 &&
+    now - map.dataUpdatedAt > CONSOLE_STALE_MS
+      ? map.dataUpdatedAt
+      : null;
+
+  const canAck = me?.allowed_actions.ack_incident === true;
+  const onAck = useCallback(
+    (incidentId: string) => {
+      void (async () => {
+        await ackIncidentIncidentsIncidentIdAckPost({ path: { incident_id: incidentId } });
+        await queryClient.invalidateQueries({ queryKey: ["incidents", "open"] });
+        await queryClient.invalidateQueries({ queryKey: ["incident", incidentId, "actions"] });
+      })();
+    },
+    [queryClient],
+  );
+
+  return (
+    <div className="soc-shell" data-screen-label="01 Consola C4I · Live Wall">
+      <h1 className="soc-vh">CONSOLA C4I</h1>
+      <main className="soc-main">
+        <StateFrame
+          label="CONSOLA C4I"
+          loading={map.loading || incidents.loading}
+          error={map.error ?? incidents.error}
+          onRetry={() => {
+            map.refetch();
+            incidents.refetch();
+          }}
+          empty={map.sites.length === 0}
+          emptyText="SIN SITIOS VISIBLES EN EL TENANT"
+          staleSince={staleSince}
+        >
+          <div className="soc-stage">
+            <MapPanel sites={map.sites} onSelectSite={openDetail} />
+            <AlertBanner
+              incident={critical}
+              siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
+            />
+          </div>
+          <IncidentTable
+            incidents={incidents.incidents}
+            siteInfoOf={siteInfoOf}
+            nowMs={now}
+            liveStatus={incidents.liveStatus}
+            operatorLabel={me ? `${me.role.toUpperCase()} · ${me.sub.slice(0, 8)}` : "—"}
+            selectedId={focusIncident?.incident_id ?? null}
+            onSelect={(incident) => openDetail(incident.site_id)}
+            canAck={canAck}
+            onAck={onAck}
+          />
+        </StateFrame>
+      </main>
+      {detailOpen && focusSiteId !== null && (
+        <DetailPanel
+          site={{
+            site_id: focusSiteId,
+            name: focusSite?.name ?? `SITIO ${focusSiteId.slice(0, 8)}`,
+            coords: focusSite ? coordsLabel(focusSite.lat, focusSite.lon) : null,
+          }}
+          features={features}
+          soh={soh}
+          actions={actions}
+          nowMs={now}
+          cctvEnabled={getEnv().featureCctv}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Página /console: dueña del LiveSocket (conecta al montar, cierra al salir). */
+export default function ConsolePage() {
+  const socket = useMemo(
+    () =>
+      new LiveSocket({
+        url: liveWsUrl(getEnv().apiBaseUrl),
+        getToken: () => useSessionStore.getState().idToken,
+        onUnauthorized: () => {
+          void useSessionStore.getState().logout();
+        },
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    socket.connect();
+    return () => socket.close();
+  }, [socket]);
+
+  return (
+    <LiveSocketContext.Provider value={socket}>
+      <ConsoleWall />
+    </LiveSocketContext.Provider>
+  );
+}
