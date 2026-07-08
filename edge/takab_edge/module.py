@@ -20,6 +20,12 @@ class EdgeModule(ABC):
     name: str = "module"
     #: Nombres de módulos que deben iniciar antes que éste.
     depends_on: tuple[str, ...] = ()
+    #: ¿Módulo del camino de vida? Si un módulo `critical` no arranca, el gabinete
+    #: NO puede proteger: el supervisor propaga el fallo (systemd reinicia) en vez
+    #: de correr mudo. Uno NO crítico que falla se aísla y el gabinete sigue en
+    #: modo degradado (blueprint §4.2: el reflejo SASMEX vive aunque el resto no
+    #: arranque). Default: no crítico.
+    critical: bool = False
 
     def __init__(self) -> None:
         self._running = False

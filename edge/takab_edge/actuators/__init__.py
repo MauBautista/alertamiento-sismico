@@ -112,6 +112,7 @@ class ActuatorManager(EdgeModule):
 
     name = "actuators"
     depends_on = ("gpio",)
+    critical = True  # driver de relés/BACnet que toca sirena/gas/puertas; fail-fast
 
     def __init__(
         self,

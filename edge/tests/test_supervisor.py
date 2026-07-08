@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from simulators.rs4d import RS4DSimulator
 from simulators.wr1 import WR1Simulator
-from takab_edge.contracts import ActuatorChannel, Tier
+from takab_edge.contracts import ActuatorChannel, AlertSource, Tier, TierDecision
 from takab_edge.supervisor import ACKS_TOPIC, EVENTS_TOPIC, EdgeSupervisor
 
 ALL_MODULES = {
@@ -47,6 +48,103 @@ def test_all_modules_running_then_stopped(settings):
     assert all(m.running for m in sup.modules())
     sup.stop()
     assert not any(m.running for m in sup.modules())
+
+
+def _boom() -> None:
+    raise RuntimeError("fallo de arranque simulado")
+
+
+def test_noncritical_start_failure_keeps_life_path(settings, monkeypatch):
+    """El dashboard LAN (no crítico) con el puerto ocupado NO tumba el gabinete:
+    el reflejo SASMEX y la actuación siguen arriba (regla de oro 2)."""
+    sup = EdgeSupervisor(settings, seedlink_source=None)
+    sup.build()
+    monkeypatch.setattr(sup.local_api, "_on_start", _boom)
+
+    sup.start()  # NO propaga: el módulo no-crítico se aísla
+
+    assert sup.gpio.running, "el reflejo SASMEX debe seguir vivo"
+    assert sup.rules.running and sup.actuators.running, "el camino de actuación sigue"
+    assert not sup.local_api.running, "el módulo que falló queda sin arrancar"
+    sup.stop()
+
+
+def test_critical_start_failure_propagates(settings, monkeypatch):
+    """Un módulo del camino de vida (gpio) que no arranca hace fail-fast: el
+    gabinete crashea (systemd reinicia) en vez de correr mudo."""
+    sup = EdgeSupervisor(settings, seedlink_source=None)
+    sup.build()
+    monkeypatch.setattr(sup.gpio, "_on_start", _boom)
+
+    with pytest.raises(RuntimeError):
+        sup.start()
+
+
+def test_life_path_modules_are_marked_critical(settings):
+    """El núcleo de actuación (gpio/rules/actuators) es crítico; la coordinación no."""
+    sup = EdgeSupervisor(settings, seedlink_source=None)
+    sup.build()
+    critical = {m.name for m in sup.modules() if m.critical}
+    assert critical == {"gpio", "rules", "actuators"}
+    assert not sup.cloud.critical and not sup.local_api.critical
+
+
+def test_disk_full_does_not_blind_detection(settings, monkeypatch):
+    """Un buffer.append que lanza OSError (disco lleno) no debe impedir que las
+    reglas evalúen el paquete: la detección va antes que la persistencia."""
+    sup = EdgeSupervisor(settings, seedlink_source=None)
+    sup.build()
+    sup.start()
+
+    def _disk_full(_packet):
+        raise OSError("ENOSPC: sin espacio en disco")
+
+    monkeypatch.setattr(sup.buffer, "append", _disk_full)
+    seen = {"rules": False}
+    real_eval = sup.rules.evaluate_features
+
+    def _spy(feature):
+        seen["rules"] = True
+        return real_eval(feature)
+
+    monkeypatch.setattr(sup.rules, "evaluate_features", _spy)
+
+    packet = next(
+        RS4DSimulator(station=settings.station, sample_rate=settings.sample_rate).stream(
+            channel="EHZ"
+        )
+    )
+    sup._on_packet(packet)  # NO debe propagar el OSError
+
+    assert seen["rules"], "las reglas evaluaron el paquete pese al disco lleno"
+    sup.stop()
+
+
+def test_disk_full_on_evidence_does_not_break_actuation(settings, monkeypatch):
+    """queue_evidence que lanza OSError tras un EVACUATE no debe romper el hilo:
+    los actuadores ya dispararon; la evidencia es best-effort."""
+    sup = EdgeSupervisor(settings, seedlink_source=None)
+    sup.build()
+    sup.start()
+
+    def _disk_full(*_a, **_k):
+        raise OSError("ENOSPC")
+
+    monkeypatch.setattr(sup.backfill, "queue_evidence", _disk_full)
+    fired = {"n": 0}
+    real_exec = sup.actuators.execute_sequence
+
+    def _spy(commands):
+        fired["n"] += 1
+        return real_exec(commands)
+
+    monkeypatch.setattr(sup.actuators, "execute_sequence", _spy)
+
+    decision = TierDecision(tier=Tier.EVACUATE_OR_HOLD, source=AlertSource.THRESHOLD)
+    sup._act_and_publish(decision, None)  # NO debe propagar el OSError
+
+    assert fired["n"] == 1, "la secuencia de actuación se ejecutó antes de la evidencia"
+    sup.stop()
 
 
 def test_sasmex_actuates_with_cloud_offline(supervisor):

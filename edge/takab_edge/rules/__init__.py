@@ -139,6 +139,7 @@ class RuleEngine(EdgeModule):
 
     name = "rules"
     depends_on = ("gpio", "signal")
+    critical = True  # decisión de tier determinista (umbral→actuador); fail-fast
 
     def __init__(
         self,

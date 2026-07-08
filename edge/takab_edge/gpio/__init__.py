@@ -97,6 +97,7 @@ class GpioController(EdgeModule):
     """
 
     name = "gpio"
+    critical = True  # WR-1 + relés = el reflejo de vida; su fallo debe fail-fast
 
     def __init__(self, settings: EdgeSettings) -> None:
         super().__init__()

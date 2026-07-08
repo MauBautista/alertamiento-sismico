@@ -206,10 +206,17 @@ class EdgeSupervisor:
         self.cloud.subscribe(self.settings.config_topic, self.dispatch.on_config)
 
     def _on_packet(self, packet: WaveformPacket) -> None:
-        self.buffer.append(packet)
+        # Detección y actuación PRIMERO: el camino umbral→actuador (regla de oro 1/2)
+        # jamás depende de I/O de disco. La persistencia del waveform crudo (para la
+        # evidencia) va DESPUÉS y best-effort — un disco lleno (ENOSPC) no debe cegar
+        # la detección ni enmascararse como una desconexión de SeedLink.
         feature = self.signal.process(packet)
         decision = self.rules.evaluate_features(feature)
         self._act_and_publish(decision, feature)
+        try:
+            self.buffer.append(packet)
+        except OSError:
+            log.exception("buffer.append falló (¿disco lleno?); la detección continúa")
         # Telemetría 1 s → nube DESPUÉS de actuar (sin dedup, como los heartbeats;
         # publicar jamás bloquea ni condiciona la vía de actuación — §4.2).
         self.cloud.publish(FEATURES_TOPIC, feature)
@@ -248,13 +255,18 @@ class EdgeSupervisor:
         self.cloud.publish(EVENTS_TOPIC, event)
         # Evidencia miniSEED del evento (T-1.25): se ENCOLA durable y se sube
         # cuando la ventana está completa y hay enlace (offline ⇒ al reconectar).
+        # Best-effort: los actuadores YA dispararon; un fallo de disco al encolar la
+        # evidencia jamás debe propagar al hilo de detección (mismo I/O que el buffer).
         if decision.tier in (Tier.EVACUATE_OR_HOLD, Tier.RESTRICTED):
             now = utcnow()
-            self.backfill.queue_evidence(
-                decision.event_id,
-                now - timedelta(seconds=self.settings.evidence_pre_s),
-                now + timedelta(seconds=self.settings.evidence_post_s),
-            )
+            try:
+                self.backfill.queue_evidence(
+                    decision.event_id,
+                    now - timedelta(seconds=self.settings.evidence_pre_s),
+                    now + timedelta(seconds=self.settings.evidence_post_s),
+                )
+            except OSError:
+                log.exception("queue_evidence falló (¿disco lleno?); la actuación ya ocurrió")
 
     # --- Ciclo de vida ---
     def modules(self) -> list[EdgeModule]:
@@ -263,9 +275,23 @@ class EdgeSupervisor:
     def start(self) -> None:
         if not self._built:
             self.build()
+        # Aislamiento por módulo (blueprint §4.2, regla de oro 2): un módulo NO
+        # crítico que falla al arrancar (p.ej. el dashboard LAN con el puerto
+        # ocupado) NO debe tumbar el gabinete — el camino de vida sigue arriba en
+        # modo degradado. Un módulo `critical` que falla SÍ propaga: un gabinete
+        # que no puede accionar debe crashear ruidoso (systemd reinicia), no correr
+        # mudo. Espeja el aislamiento de `stop()`.
+        started = 0
         for module in self.modules():
-            module.start()
-        log.info("gabinete arrancado (%d módulos)", len(self._modules))
+            try:
+                module.start()
+                started += 1
+            except Exception:
+                if module.critical:
+                    log.critical("módulo CRÍTICO %s no arrancó; se propaga", module.name)
+                    raise
+                log.exception("módulo no-crítico %s no arrancó; el gabinete sigue", module.name)
+        log.info("gabinete arrancado (%d/%d módulos)", started, len(self._modules))
 
     def stop(self) -> None:
         for module in reversed(self.modules()):
