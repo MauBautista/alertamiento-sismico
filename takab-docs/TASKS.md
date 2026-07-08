@@ -495,7 +495,7 @@ T-1.17+) requiere AWS.
   (regla de oro: no abrir orígenes), WS same-origin y un solo dominio en los callbacks de
   Cognito. CORSMiddleware queda como plan B solo si el hosting separa dominios.)
 
-### [ ] T-1.27 · Consola C4I — Live Wall — **[C1]**
+### [x] T-1.27 · Consola C4I — Live Wall — **[C1]** ✅ (commits `bf69067` base + `9e0de5d` ws.ts + `23d0533` consola + `877234e` fix pulso)
 - **Componente:** web · **Depende de:** T-1.26, T-1.22
 - **Criterios:** réplica fiel del mockup 1 (mapa MapLibre con intensidad MMI, incidentes abiertos
   en vivo vía suscripción — GraphQL o WS según decisión #5 del ANALISIS, detalle de sitio con
@@ -504,6 +504,24 @@ T-1.17+) requiere AWS.
   como opcional; exigirla aquí contradecía eso); carga 10 min de features <1 s; pop-up
   automático al detectar anomalía (STA/LTA > 3.5 sostenido 2 s); banner MVP "ALERTA SÍSMICA ·
   PROTÉJASE" (sin magnitud ni T-MINUS); estados loading/error/empty/stale en todo componente.
+  ([DECISION 2026-07-08 · gate #5 = WS nativo] `lib/ws.ts` LiveSocket (auth-first→ready→subscribe,
+  backoff 1–30 s + re-subscribe, 4401⇒logout, staleness por topic) sobre el `/ws` de T-1.22 con
+  los shapes tipados del SDK (cero shapes inventados). `features/console/`: hooks
+  (useLiveIncidents REST+upsert idempotente, useMapState fetch-on-notify throttled, useSiteFeatures
+  backfill 10 min + rolling 600 s, useSiteSoh, useIncidentActions, useAutoPopup con latch) +
+  paneles (MapPanel MapLibre real OpenFreeMap dark con bandas MMI + pulso rAF; AlertBanner MVP;
+  IncidentTable live con acuse two-step gateado por `allowed_actions.ack_incident`; DetailPanel
+  con strip honesto de features 1 s + SOH real + traza de ACKs; CCTV tras `VITE_FEATURE_CCTV`,
+  off en MVP). **Desviaciones ratificadas** (plan maestro §B.3): sin magnitud/T-MINUS (WR-1 es
+  booleano), "FEATURES 1 s · PROCESAMIENTO EDGE" (no waveform crudo 100 sps, regla de oro 9),
+  identidad real de sesión (no selector de turno), "WS · LIVE" (no GraphQL).
+  **Verificación:** suite web **197** + lint + build; **E2E de cable vs API real** (dev-token +
+  NOTIFY 0004 + poller + RLS): incidente commit→frame **36 ms** (< 2 s), features STA/LTA>3.5
+  entregadas por el poller (dato del auto-popup), banner con severity=critical, GET features
+  10 min = **8 ms** (< 1 s, 602 muestras). **Smoke de navegador real** (Playwright + chromium
+  SwiftShader) 6/6: login dev → /console monta, MapLibre inicializa, banner MVP visible, 2º
+  incidente aparece EN VIVO por WS sin recargar, **cero errores de runtime** — que cazó y cerró
+  un bug real de MapPanel (opacidad del pulso > 1 por delta negativo del rAF, `877234e`).)
 
 ### [x] T-1.28 · Flota Edge — Gabinetes — **[C2]** ✅ (commits `bf69067` + `29814a0`)
 - **Componente:** web · **Depende de:** T-1.26
