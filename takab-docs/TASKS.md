@@ -492,11 +492,28 @@ T-1.17+) requiere AWS.
   automático al detectar anomalía (STA/LTA > 3.5 sostenido 2 s); banner MVP "ALERTA SÍSMICA ·
   PROTÉJASE" (sin magnitud ni T-MINUS); estados loading/error/empty/stale en todo componente.
 
-### [ ] T-1.28 · Flota Edge — Gabinetes — **[C2]**
+### [x] T-1.28 · Flota Edge — Gabinetes — **[C2]** ✅ (commits `bf69067` + `29814a0`)
 - **Componente:** web · **Depende de:** T-1.26
 - **Criterios:** inventario de gateways (MQTT lag, SeedLink lag, UPS %, actuadores armados);
   estados `OPERATIVO`/`DEGRADADO`/`SIN ENLACE` calculados de `device_health`; autodiagnóstico
   silencioso visible.
+  ([DECISION 2026-07-08]: la UI pinta `derived_state` del servidor tal cual
+  (`schemas.fleet.derive_fleet_state` = verdad única) y NO recalcula umbrales — por eso los
+  pills MQTT/SeedLink muestran valor crudo y solo marcan crit en SIN ENLACE (el server no
+  expone qué métrica degrada; exponerlo sería extensión futura de /fleet/gateways).
+  **Actuadores armados**: no hay estado vivo de relays en nube — se derivan de
+  `rule_sets.config.relays` (config activa site→tenant) con estado ARMADO si el enlace vive
+  (el supervisor edge trata actuadores como módulo crítico fail-fast ⇒ proceso vivo = reglas
+  armadas) y S/D en SIN ENLACE; nunca se inventa "FALLA"; caption "CONFIG ACTIVA · ESTADO
+  DERIVADO DEL ENLACE". **Autodiagnóstico**: visible y deshabilitado — el vocabulario del
+  Command Service es solo `activate|deactivate`; requiere acción `self_test` (extensión de
+  T-1.23) + contrato edge. Sin autonomía de batería (battery_min_left no viaja en GatewayOut).
+  Base compartida en `bf69067`: StateFrame (4 estados + banner DATOS RETENIDOS, gate
+  `expectFourStates`), ConfirmButton two-step, SevTag, react-query 5 + maplibre-gl instalados,
+  proxy Vite con `ws: true`. Flota: poll 30 s, stale a 90 s, empty/error/retry propios;
+  /sites y /rule-sets degradan sin tumbar la página. Suites: web 145 passed; E2E local contra
+  API real (dev-token tenant_admin → /fleet/gateways: OPERATIVO line/100% y DEGRADADO
+  battery/72% desde device_health sembrado, RLS solo tenant propio).)
 
 ### [ ] T-1.29 · Triage Estructural — Historial — **[C3]**
 - **Componente:** web · **Depende de:** T-1.20
