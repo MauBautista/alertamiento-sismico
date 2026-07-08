@@ -1,0 +1,126 @@
+/* Capa de aplicación (T-1.26): pantallas de estado y glue que el design system
+ * vendored no cubre. Tokens en colors_and_type.css; base SOC en soc.css. */
+
+/* Pill sin telemetría: estado neutral explícito — nunca fingir CONECTADO
+ * (regla de oro #7; el heartbeat real llega en T-1.27). */
+.soc-pill--idle {
+  background: var(--tk-surface-2);
+  color: var(--tk-fg-3);
+}
+
+/* Zona usuario (rol + logout) al extremo derecho del topbar. */
+.soc-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Los tabs del design system eran <button>; como NavLink (anchor) necesitan esto. */
+a.soc-nav__tab {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+a.soc-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pantallas de estado (login, splash, error, sin acceso, 404). */
+.soc-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--tk-surface-0);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  text-align: center;
+  padding: var(--tk-space-6);
+}
+
+.soc-screen__panel {
+  display: grid;
+  gap: var(--tk-space-4);
+  justify-items: center;
+  width: min(420px, 100%);
+  padding: var(--tk-space-7);
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-lg);
+  box-shadow: var(--tk-shadow-card);
+}
+
+.soc-screen__logo {
+  width: 220px;
+  max-width: 100%;
+}
+
+.soc-screen__title {
+  font-size: var(--tk-text-xl);
+  letter-spacing: var(--tk-tracking-wide);
+  margin: 0;
+}
+
+.soc-screen__sub {
+  color: var(--tk-fg-3);
+  font-size: var(--tk-text-sm);
+  margin: 0;
+}
+
+.soc-screen__error {
+  color: var(--tk-status-critical);
+  font-size: var(--tk-text-sm);
+  margin: 0;
+}
+
+/* Placeholder de pantalla en construcción (T-1.27→T-1.30). */
+.soc-placeholder {
+  display: grid;
+  gap: var(--tk-space-3);
+  justify-items: center;
+  text-align: center;
+  padding: var(--tk-space-8) var(--tk-space-6);
+  color: var(--tk-fg-1);
+}
+
+.soc-placeholder h1 {
+  font-size: var(--tk-text-2xl);
+  letter-spacing: var(--tk-tracking-wide);
+  margin: 0;
+}
+
+/* Panel de login dev (solo con VITE_DEV_TOKEN_ENABLED). */
+.soc-dev-panel {
+  display: grid;
+  gap: var(--tk-space-3);
+  width: 100%;
+  padding-top: var(--tk-space-4);
+  border-top: 1px dashed var(--tk-border);
+}
+
+.soc-dev-panel label {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  font-size: var(--tk-text-xs);
+  color: var(--tk-fg-3);
+}
+
+.soc-dev-panel .soc-select {
+  width: 100%;
+}
+
+.soc-input {
+  width: 100%;
+  background: var(--tk-surface-2);
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-sm);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-sm);
+  padding: 8px 10px;
+}
