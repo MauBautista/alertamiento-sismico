@@ -1,3 +1,7 @@
 dist
 node_modules
 coverage
+# CSS vendored del design system (copias verbatim; no formatear para diffs limpios)
+src/styles/colors_and_type.css
+src/styles/soc.css
+src/styles/soc-tabs.css

@@ -13,8 +13,13 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@takab/sdk": "file:../shared/sdk-ts",
+    "lucide-react": "^1.23.0",
+    "oidc-client-ts": "^3.5.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router": "^7.18.1",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

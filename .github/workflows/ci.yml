@@ -75,7 +75,15 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            shared/sdk-ts/package-lock.json
+      # @takab/sdk entra como symlink file: → sus deps de runtime
+      # (@hey-api/client-fetch) resuelven por realpath contra
+      # shared/sdk-ts/node_modules, que debe estar poblado.
+      - name: Instalar dependencias (sdk)
+        run: npm ci
+        working-directory: shared/sdk-ts
       - name: Instalar dependencias
         run: npm ci
       - name: Lint (eslint)
