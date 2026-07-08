@@ -460,7 +460,7 @@ T-1.17+) requiere AWS.
 
 ## Bloque D · FRONTEND — sobre la nube existente · Blueprint Fase C
 
-### [x] T-1.26 · Guards de routing + shell de navegación ✅ (commits `8c0ace5` + `2f9631b`)
+### [x] T-1.26 · Guards de routing + shell de navegación ✅ (commits `a802e71` + `8c0ace5` + `2f9631b`)
 - **Componente:** web · **Depende de:** T-1.18
 - **Objetivo:** separar el diseño en rutas protegidas por rol (`RBAC-TAKAB.md §7`).
 - **Criterios:** rutas `/console`, `/fleet`, `/triage`, `/tenants`, `/building/:siteId` montadas;
