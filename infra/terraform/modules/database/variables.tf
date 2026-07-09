@@ -51,3 +51,11 @@ variable "worker_grant_topic_arns" {
   type    = list(string)
   default = []
 }
+
+# Secretos ADICIONALES que la instancia puede leer (T-1.37): la clave HMAC del
+# gabinete que la nube usa para firmar comandos de actuador. Acotado a ARNs
+# explicitos: el rol nunca recibe secretsmanager:GetSecretValue sobre "*".
+variable "worker_secret_arns" {
+  type    = list(string)
+  default = []
+}

@@ -15,6 +15,10 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pyjwt[crypto]>=2.9",
     "fpdf2>=2.8.7",
+    # RUNTIME, no dev: `notify/providers.py` lo importa a nivel de módulo para el canal
+    # webhook. Estaba solo en el extra `dev`, así que el worker `notify` moría al
+    # arrancar en cualquier despliegue real (descubierto ejecutando la imagen, T-1.37).
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

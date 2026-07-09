@@ -1,5 +1,5 @@
 .PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing \
-        demo-fase1 demo-db
+        demo-fase1 demo-db cloud-images cloud-deploy
 
 API_DIR := api
 WEB_DIR := web
@@ -81,3 +81,37 @@ cloud-stop:
 cloud-start:
 	@DB_ID=$$(terraform -chdir=$(TF_DEV) output -raw db_instance_id); \
 	AWS_PROFILE=$(AWS_PROFILE) aws ec2 start-instances --region us-east-2 --instance-ids "$$DB_ID"
+
+# --- Despliegue de la nube co-locada (T-1.37) ---------------------------------
+# `cloud-images` construye y sube; `cloud-deploy` copia los artefactos al EC2 por SSM
+# y levanta compose. Idempotentes: repetirlos no rompe nada. Runbook completo y
+# precondiciones en deploy/cloud/README.md.
+#
+# OJO: `terraform apply` con instance_type nuevo PARA la instancia (la DB cae unos
+# minutos y el gabinete acumula spool). Eso NO lo hace este target: es una decisión
+# humana, no un efecto colateral de desplegar.
+AWS_REGION ?= us-east-2
+CLOUD_TAG  ?= $(shell git rev-parse --short HEAD)
+
+cloud-images:
+	@ACC=$$(AWS_PROFILE=$(AWS_PROFILE) aws sts get-caller-identity --query Account --output text); \
+	REG="$$ACC.dkr.ecr.$(AWS_REGION).amazonaws.com"; \
+	AWS_PROFILE=$(AWS_PROFILE) aws ecr get-login-password --region $(AWS_REGION) \
+		| docker login --username AWS --password-stdin "$$REG"; \
+	AUTH=$$(terraform -chdir=$(TF_DEV) output -raw issuer); \
+	CID=$$(terraform -chdir=$(TF_DEV) output -raw client_id); \
+	DOM=$$(terraform -chdir=$(TF_DEV) output -raw hosted_ui_domain); \
+	URL=$$(terraform -chdir=$(TF_DEV) output -raw console_url); \
+	docker build -f api/Dockerfile -t "$$REG/takab/cloud:$(CLOUD_TAG)" .; \
+	docker build -f deploy/cloud/console.Dockerfile -t "$$REG/takab/console:$(CLOUD_TAG)" \
+		--build-arg VITE_COGNITO_AUTHORITY="$$AUTH" \
+		--build-arg VITE_COGNITO_CLIENT_ID="$$CID" \
+		--build-arg VITE_COGNITO_DOMAIN="$$DOM" \
+		--build-arg VITE_COGNITO_REDIRECT_URI="$$URL/auth/callback" \
+		--build-arg VITE_COGNITO_POST_LOGOUT_URI="$$URL/" .; \
+	docker push "$$REG/takab/cloud:$(CLOUD_TAG)"; \
+	docker push "$$REG/takab/console:$(CLOUD_TAG)"
+
+cloud-deploy:
+	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
+		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh

@@ -1,0 +1,42 @@
+# Caddy: TLS + consola SOC + proxy a la API (T-1.37).
+#
+# El certificado lo emite Let's Encrypt sobre sslip.io (el host resuelve a la IP
+# elástica sin necesidad de Route53 ni dominio propio). El desafío HTTP-01 exige el
+# puerto 80 abierto al mundo; el 443 queda restringido por el security group.
+{
+	email {$TAKAB_ACME_EMAIL}
+}
+
+{$TAKAB_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# REST y WebSocket comparten prefijo: `liveWsUrl("/api")` produce
+	# `wss://host/api/ws`, y Caddy promueve el upgrade solo. `handle_path` QUITA
+	# el `/api` antes de reenviar, así que FastAPI ve sus rutas tal cual (`/ws`,
+	# `/sites`, …) y no hace falta root_path.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		root * /srv
+		# SPA: cualquier ruta desconocida la resuelve el router de React.
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Cabeceras de endurecimiento. Sin `unsafe-eval`: MapLibre no lo necesita.
+	# `connect-src` incluye wss: para el canal live y el CDN de teselas.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

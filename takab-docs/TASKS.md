@@ -792,16 +792,36 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > no manda `tenant_id` (lo hereda del sitio) ni `iot_thing` (lo emite Terraform), y un sensor sin
 > procedencia se crea con `calibration_source = null` — SIN CALIBRAR, que es la verdad.
 
-### [ ] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7]**
+### [~] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7] CÓDIGO LISTO · APPLY PENDIENTE**
 - **Componente:** infra · **Depende de:** T-1.32…T-1.36
 - **Objetivo:** que la nube corra en la nube. Hoy Terraform tiene DB, IoT Core, SQS, S3, Cognito,
   ECR y KMS, pero **cero cómputo**: la API, el consumer y la web corren en la laptop.
 - **Criterios de aceptación:**
-  - [ ] `instance_type` = `t4g.medium` ([DECISION 2026-07-09]: 2 GiB no alcanzan; el OOM-killer
+  - [x] `instance_type` = `t4g.medium` ([DECISION 2026-07-09]: 2 GiB no alcanzan; el OOM-killer
         mataría a Postgres. +$12.26/mes ⇒ total ~$42–47/mes, bajo el budget de $50).
-  - [ ] `docker-compose` en el EC2 con la imagen ECR existente + Caddy/TLS sobre sslip.io.
-  - [ ] La API usa el DSN `takab_app` (RLS forzada); los workers, `takab_ingest` (BYPASSRLS).
+  - [x] `docker-compose` en el EC2 con la imagen ECR existente + Caddy/TLS sobre sslip.io.
+  - [x] La API usa el DSN `takab_app` (RLS forzada); los workers, `takab_ingest` (BYPASSRLS).
         Mezclarlos es cruce de tenants (regla de oro 5).
-  - [ ] Secretos de Secrets Manager a tmpfs `/run/takab/*.env`. Cero secretos en git.
-  - [ ] `/dev/token` apagado en la nube. SG `takab-dev-web` separado y desconectable.
-  - [ ] `make cloud-deploy` existe y es idempotente.
+  - [x] Secretos de Secrets Manager a tmpfs `/run/takab/*.env`. Cero secretos en git.
+  - [x] `/dev/token` apagado en la nube. SG `takab-dev-web` separado y desconectable.
+  - [x] `make cloud-deploy` existe y es idempotente.
+  - [ ] **`terraform apply` + `make cloud-deploy` ejecutados contra AWS.** ⟵ requiere ventana:
+        cambiar `instance_type` PARA la instancia (la DB cae minutos; el gabinete acumula spool).
+
+> **CÓDIGO LISTO, NO APLICADO.** Verificado sin tocar AWS: `terraform validate` + `fmt` OK, el
+> Caddyfile pasa `caddy validate` real, el compose pasa `docker compose config`, y **la imagen se
+> construyó y se ejecutó**: los 6 entrypoints (`ingest`/`incident`/`notify`/`commands`/`billing`/
+> `backfill`) importan y `alembic heads` resuelve. Ejecutar la imagen destapó **dos bugs que la
+> suite no podía ver**: (1) `python -m alembic -c api/alembic.ini` falla porque `script_location =
+> migrations` se resuelve contra el **CWD**, no contra el `.ini` ⇒ el deploy corre con
+> `--workdir /takab/api`; (2) **`notify/providers.py` importa `httpx` a nivel de módulo pero
+> `httpx` vivía solo en el extra `dev`** ⇒ el worker moría con `ModuleNotFoundError` en cualquier
+> despliegue real. Se movió a `[project] dependencies` y se añadió el contract-test
+> `tests/contracts/test_runtime_deps.py`, que compara los imports de tercero de `src/takab_api`
+> contra las dependencias declaradas: el CI se detiene en vez de la producción.
+> **Desviaciones:** T-1.26 ratificó "mismo origen tras CloudFront" — Caddy conserva el invariante
+> (mismo origen ⇒ sin CORS, y `wss://host/api/ws` por la misma regla) y cambia el mecanismo.
+> La clave HMAC de comandos es UNA sola (`Settings.command_hmac_key`) mientras Terraform emite una
+> POR gabinete: la nube carga la del real (`gw-dev-0001`) y los simulados rechazarían la firma;
+> sin secreto, el servicio arranca **fail-closed** (503) en vez de con clave vacía. AL2023 no trae
+> el plugin `compose`: el deploy lo instala. Runbook: `deploy/cloud/README.md`.

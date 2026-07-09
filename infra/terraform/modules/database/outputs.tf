@@ -17,3 +17,9 @@ output "secret_arns" {
 output "db_endpoint" {
   value = "${aws_instance.db.private_ip}:5432"
 }
+
+# ENI primaria: el SG web (modulo `serve`) se adjunta aqui, no a la instancia, para
+# poder desconectar el acceso publico sin recrear la maquina.
+output "primary_network_interface_id" {
+  value = aws_instance.db.primary_network_interface_id
+}

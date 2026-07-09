@@ -1,7 +1,54 @@
 variable "instance_type" {
-  description = "Tipo de instancia EC2 para la DB Timescale."
+  description = <<-EOT
+    Tipo de instancia EC2 para la DB Timescale + la nube co-locada (T-1.37).
+
+    [DECISION 2026-07-09] t4g.small (2 GiB) NO alcanza: TimescaleDB-HA + API + 2 ingest
+    + motor de incidentes + notify + comandos + Caddy consumen ~1.6 GiB en reposo, y en
+    un pico de ingesta el OOM-killer mata al proceso de mayor RSS, que es Postgres. En
+    un sistema donde fallar cuesta vidas eso no es un riesgo aceptable.
+    Delta: +$12.26/mes (us-east-2). Total del entorno dev: ~$42-47/mes, bajo el budget.
+  EOT
   type        = string
-  default     = "t4g.small"
+  default     = "t4g.medium"
+}
+
+variable "serve_enabled" {
+  description = <<-EOT
+    Publica la consola SOC en internet (IP elastica + SG web + TLS por Let's Encrypt).
+    `false` = nada escucha fuera de la VPC. Es el default: exponer un SOC es una
+    decision explicita, no un efecto colateral de `terraform apply`.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "web_allowed_cidrs" {
+  description = <<-EOT
+    CIDRs con acceso al 443 de la consola. Vacio = inalcanzable (default seguro).
+    El 80 va abierto al mundo por obligacion del desafio HTTP-01 de ACME.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "acme_email" {
+  description = "Contacto de Let's Encrypt (avisos de expiracion del certificado)."
+  type        = string
+  default     = "mauriciobaujim@gmail.com"
+}
+
+variable "command_hmac_gateway" {
+  description = <<-EOT
+    Gabinete cuya clave HMAC comparte la nube para firmar comandos de actuador.
+
+    [LIMITACION CONOCIDA] `Settings.command_hmac_key` es UNA clave compartida, pero
+    Terraform emite una distinta por gabinete. La nube carga la del gabinete real; los
+    simulados rechazarian la firma. Resolver por gateway es el TODO que ya anota
+    `api/src/takab_api/settings.py`. Preferimos un fallo de verificacion honesto a una
+    clave que nadie pinche.
+  EOT
+  type        = string
+  default     = "gw-dev-0001"
 }
 
 variable "gateway_fleet" {

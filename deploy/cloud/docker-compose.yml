@@ -1,0 +1,119 @@
+# Topología cloud co-locada en el EC2 de la DB (T-1.37).
+#
+# [DECISION 2026-07-09] No hay ECS Fargate ni ALB: el entorno dev cabe entero en la
+# instancia que ya sostiene TimescaleDB, y un ALB solo costaría ~$18/mes por hacer lo
+# que Caddy hace gratis. La instancia sube a `t4g.medium` (4 GiB) porque en 2 GiB el
+# OOM-killer mataría al proceso de mayor RSS —Postgres— en un pico de ingesta.
+#
+# ═══ INVARIANTE DE TENANCY (regla de oro 5) ═══════════════════════════════════════
+# La API usa el DSN de `takab_app` (RLS FORZADA) y los workers el de `takab_ingest`
+# (BYPASSRLS, porque escriben filas de todos los tenants). Mezclarlos sería un cruce
+# de tenants silencioso: la API serviría datos ajenos sin que ninguna política lo
+# detuviera. Por eso son DOS archivos de entorno distintos, no uno con un override.
+#
+# Los `.env` de secretos viven en tmpfs (`/run/takab`, ver takab-secrets.service):
+# se materializan desde Secrets Manager en cada arranque y mueren con la máquina.
+# Nunca tocan el disco ni git (regla de oro 6).
+#
+# `network_mode: host` porque el contenedor de Postgres ya publica en el host y
+# duplicar redes de Docker aquí solo añadiría saltos y NAT.
+
+name: takab-cloud
+
+x-cloud-image: &cloud-image
+  image: ${TAKAB_CLOUD_IMAGE:?falta TAKAB_CLOUD_IMAGE (repo ECR + tag)}
+  restart: unless-stopped
+  network_mode: host
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  # --- API REST + WebSocket ---------------------------------------------------
+  # Escucha SOLO en loopback: la única puerta a internet es Caddy.
+  # `/dev/token` queda apagado por omisión de TAKAB_API_AUTH_JWKS_JSON — el
+  # endpoint ni siquiera se monta (main.create_app lo condiciona a ese valor).
+  api:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-app.env
+    entrypoint: ["uvicorn"]
+    command:
+      - takab_api.main:app
+      - --host=127.0.0.1
+      - --port=8000
+      - --proxy-headers
+      - --forwarded-allow-ips=127.0.0.1
+
+  # --- Consumidores de SQS -----------------------------------------------------
+  ingest-events:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    command: ["--queue=events"]
+
+  ingest-telemetry:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    command: ["--queue=telemetry"]
+
+  # --- Motor de incidentes (quórum colaborativo, correlación en nube) ----------
+  incident-engine:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    entrypoint: ["python", "-m", "takab_api.incident"]
+    command: []
+
+  # --- Cascada de notificación -------------------------------------------------
+  notify:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    entrypoint: ["python", "-m", "takab_api.notify"]
+    command: []
+
+  # --- Comandos de actuador + config sync firmados -----------------------------
+  # Superficie más sensible del sistema (regla de oro 8). Sin `command_hmac_key` el
+  # servicio es FAIL-CLOSED: la API responde 503 y el sync no publica. La clave la
+  # inyecta takab-secrets.service desde el secreto del gabinete real.
+  commands:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+      - /run/takab/command-hmac.env
+    entrypoint: ["python", "-m", "takab_api.commands"]
+    command: []
+
+  # --- Consola SOC + TLS --------------------------------------------------------
+  # Caddy termina TLS (Let's Encrypt sobre sslip.io) y sirve `web/dist`. El mismo
+  # origen cubre REST y WebSocket: `liveWsUrl("/api")` ⇒ `wss://host/api/ws`, así que
+  # una sola regla `/api/*` basta y no hay CORS que configurar.
+  #
+  # [DESVIACIÓN de T-1.26] Se ratificó "mismo origen tras CloudFront". Caddy en el
+  # EC2 conserva el INVARIANTE (mismo origen) y cambia el mecanismo. CloudFront sigue
+  # siendo el destino cuando haya dominio propio.
+  console:
+    image: ${TAKAB_CONSOLE_IMAGE:?falta TAKAB_CONSOLE_IMAGE (repo ECR + tag)}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      TAKAB_PUBLIC_HOST: ${TAKAB_PUBLIC_HOST:?falta TAKAB_PUBLIC_HOST (ej. 3-14-15-92.sslip.io)}
+      TAKAB_ACME_EMAIL: ${TAKAB_ACME_EMAIL:?falta TAKAB_ACME_EMAIL}
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy-data:
+  caddy-config:

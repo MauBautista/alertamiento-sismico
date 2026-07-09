@@ -50,6 +50,10 @@ module "database" {
   worker_grant_topic_arns = [
     "arn:aws:iot:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:topic/takab/backfill/grant/*",
   ]
+
+  # Clave HMAC que la nube comparte con el gabinete para firmar comandos de actuador
+  # (T-1.37). ARN explicito: el rol nunca recibe GetSecretValue sobre "*".
+  worker_secret_arns = [module.iot_gateway[var.command_hmac_gateway].secret_arn]
 }
 
 module "identity" {
@@ -57,6 +61,23 @@ module "identity" {
 
   account_id          = data.aws_caller_identity.current.account_id
   ses_verified_emails = var.ses_verified_emails
+
+  # El callback de localhost se conserva SIEMPRE (modules/identity): el `make dev`
+  # local debe seguir funcionando aunque la consola este publicada.
+  extra_callback_urls = var.serve_enabled ? ["${module.serve.console_url}/auth/callback"] : []
+  extra_logout_urls   = var.serve_enabled ? ["${module.serve.console_url}/"] : []
+}
+
+# Exposicion publica de la consola (T-1.37). SG separado y adjunto a la ENI: se puede
+# desconectar sin recrear la instancia ni tocar la base de datos.
+module "serve" {
+  source = "../../modules/serve"
+
+  enabled              = var.serve_enabled
+  vpc_id               = module.network.vpc_id
+  instance_id          = module.database.instance_id
+  network_interface_id = module.database.primary_network_interface_id
+  allowed_cidrs        = var.web_allowed_cidrs
 }
 
 module "registry" {

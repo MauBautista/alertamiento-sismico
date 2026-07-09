@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "db" {
         Sid      = "ReadDbSecrets"
         Effect   = "Allow"
         Action   = "secretsmanager:GetSecretValue"
-        Resource = [for s in aws_secretsmanager_secret.db : s.arn]
+        Resource = concat([for s in aws_secretsmanager_secret.db : s.arn], var.worker_secret_arns)
       },
       {
         Sid      = "PutBackups"

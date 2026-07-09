@@ -57,3 +57,24 @@ output "ecr_repo_urls" {
 output "ci_role_arn" {
   value = module.ci_oidc.role_arn
 }
+
+# --- Consola SOC publicada (T-1.37) -------------------------------------------
+output "console_url" {
+  value = module.serve.console_url
+}
+
+output "console_public_host" {
+  value = module.serve.public_host
+}
+
+output "acme_email" {
+  value = var.acme_email
+}
+
+output "aws_region" {
+  value = data.aws_region.current.region
+}
+
+output "command_hmac_gateway" {
+  value = var.command_hmac_gateway
+}

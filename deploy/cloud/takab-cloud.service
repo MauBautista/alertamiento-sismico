@@ -1,0 +1,15 @@
+[Unit]
+Description=TAKAB · API + workers + consola SOC (docker compose)
+After=takab-secrets.service
+Requires=takab-secrets.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/takab/cloud
+EnvironmentFile=/etc/takab/deploy.env
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+
+[Install]
+WantedBy=multi-user.target

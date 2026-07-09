@@ -106,8 +106,8 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
-  callback_urls                        = ["http://localhost:5173/auth/callback"]
-  logout_urls                          = ["http://localhost:5173/"]
+  callback_urls                        = concat(["http://localhost:5173/auth/callback"], var.extra_callback_urls)
+  logout_urls                          = concat(["http://localhost:5173/"], var.extra_logout_urls)
   supported_identity_providers         = ["COGNITO"]
 
   explicit_auth_flows = [
