@@ -213,6 +213,34 @@ async def test_gateway_without_edge_config_never_syncs(seed: None) -> None:
     assert body["in_sync"] is False
 
 
+async def test_gateway_without_any_active_rule_set_is_200_not_500(seed: None) -> None:
+    """Sin rule_set activo el LEFT JOIN deja ``rs.config`` NULL y ``NULL ? 'edge'``
+    es NULL (jsonb_exists es STRICT), no false: sin COALESCE el bool no-opcional de
+    Pydantic reventaba con un 500 en el endpoint que promete 200 + PENDIENTE.
+
+    Es un estado alcanzable: ``rule_sets.is_active`` nace en false y nada garantiza
+    que un gateway recién aprovisionado tenga un rule_set activo.
+    """
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text("UPDATE rule_sets SET is_active = false WHERE tenant_id = :t"), {"t": T_A}
+        )
+
+    # Con estado publicado (in_sync sería TRUE AND NULL AND … = NULL sin COALESCE).
+    resp = await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["has_edge_config"] is False
+    assert body["in_sync"] is False
+    assert body["version"] == 7  # el gabinete sigue con su config vieja
+
+    # Y sin estado publicado tampoco explota.
+    never = await _get(GW_NEVER, au.make_token("soc_operator", tenant=T_A))
+    assert never.status_code == 200
+    assert never.json()["has_edge_config"] is False
+    assert never.json()["in_sync"] is False
+
+
 async def test_retired_gateway_is_not_syncable(seed: None) -> None:
     """El worker excluye status='retired' e iot_thing NULL; la UI no debe prometer sync."""
     body = (await _get(GW_RETIRED, au.make_token("soc_operator", tenant=T_A))).json()

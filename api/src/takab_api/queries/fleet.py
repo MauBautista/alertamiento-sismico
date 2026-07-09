@@ -50,15 +50,19 @@ async def list_gateways_with_health(conn: AsyncConnection) -> Sequence[Row]:
 # del predicado de publicación del worker y no una segunda opinión.
 _CONFIG_STATE = text(
     """
+    -- COALESCE obligatorio: sin rule_set activo el LEFT JOIN deja rs.config NULL, y
+    -- `NULL::jsonb ? 'edge'` es NULL (jsonb_exists es STRICT), no false. Ese NULL
+    -- reventaría los bool no-opcionales de GatewayConfigStateOut con un 500 en un
+    -- endpoint que promete 200 + PENDIENTE.
     SELECT g.gateway_id,
            st.version,
            st.published_at,
            st.sig,
-           (rs.config ? 'edge')                       AS has_edge_config,
+           COALESCE(rs.config ? 'edge', false)        AS has_edge_config,
            (g.status <> 'retired' AND g.iot_thing IS NOT NULL) AS is_syncable,
-           (st.gateway_id IS NOT NULL
+           COALESCE(st.gateway_id IS NOT NULL
             AND rs.config ? 'edge'
-            AND st.payload IS NOT DISTINCT FROM rs.config->'edge') AS in_sync
+            AND st.payload IS NOT DISTINCT FROM rs.config->'edge', false) AS in_sync
     FROM gateways g
     LEFT JOIN LATERAL (
         SELECT r.config
