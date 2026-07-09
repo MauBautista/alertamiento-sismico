@@ -464,6 +464,10 @@ T-1.17+) requiere AWS.
 
 ## Bloque D · FRONTEND — sobre la nube existente · Blueprint Fase C
 
+> **Bloque D COMPLETO (2026-07-08)**: T-1.26 → T-1.30 en verde. Las 5 rutas del SOC
+> (`/console`, `/fleet`, `/triage`, `/tenants`, `/building`) montan páginas reales; no queda
+> ningún placeholder. T-1.31 (móvil) sigue diferida fuera de Fase 1.
+
 ### [x] T-1.26 · Guards de routing + shell de navegación ✅ (commits `a802e71` + `8c0ace5` + `2f9631b`)
 - **Componente:** web · **Depende de:** T-1.18
 - **Objetivo:** separar el diseño en rutas protegidas por rol (`RBAC-TAKAB.md §7`).
@@ -546,16 +550,86 @@ T-1.17+) requiere AWS.
   API real (dev-token tenant_admin → /fleet/gateways: OPERATIVO line/100% y DEGRADADO
   battery/72% desde device_health sembrado, RLS solo tenant propio).)
 
-### [ ] T-1.29 · Triage Estructural — Historial — **[C3]**
+### [x] T-1.29 · Triage Estructural — Historial — **[C3]** ✅ (commits `8df2fab` + `02add96` + `faa4f73` + `fceb7f9`)
 - **Componente:** web · **Depende de:** T-1.20
 - **Criterios:** evidencia de cumplimiento (auditoría/dictámenes inmutables — blueprint §9;
   [ANALISIS-00]: la etiqueta "NOM-003-SCT" era errónea), historial de eventos, dictamen
   preliminar, regla de quórum con offsets por nodo, exportar miniSEED + PDF.
+  ([DECISION 2026-07-08]: `features/triage/` compone `/incidents` (por sitio: PGA/PGV/
+  severidad/estado) + `/events` (magnitud, epicentro, `meta.node_count`) + `/sites`; ningún
+  endpoint devuelve la fila del mockup, que confundía evento con incidente. Filtro de
+  severidad y búsqueda por prefijo de `event_id` los hace el SERVIDOR. Offsets por nodo =
+  `quorum_votes[].delta_s` de `/events/{id}`, VERBATIM; ancla = el `delta_s` menor. Dictamen =
+  cadena append-only de `/incidents/{id}/dictamens` (`signed_by IS NULL` ⇒ PRELIMINAR); firma
+  con ConfirmButton. Evidencia = `/incidents/{id}/evidence` (miniSEED) + `/incidents/{id}/report`
+  (PDF); bitácora visible = `incident_actions` (§9), porque `audit_log` NO tiene endpoint de
+  lectura (deuda backend anotada).
+  **El veredicto del quórum es un HECHO DEL SERVIDOR** (`source='local_quorum'`, que el motor
+  sólo escribe al alcanzarlo), no una comparación del cliente contra `min_nodes`: el motor
+  prefiere el rule_set de SITIO y usa la versión vigente en su momento, así que recalcularlo
+  contradecía al propio motor sobre eventos históricos. `min_nodes` se muestra como contexto.
+  **Correcciones de contrato que destapó la tarea** (`8df2fab`): `dictamens.py` hardcodeaba
+  `SIGN_ROLES=(inspector,superadmin)` mientras `matrix.py` reserva la firma al inspector — el
+  servidor aceptaba una firma que la consola negaba (superadmin POST ⇒ 201, ahora 403); y
+  `allowed_actions.export` cubría DESCARGAR y GENERAR, así que gov_operator (export=true, sin
+  permiso de report) habría visto un botón PDF condenado al 403 ⇒ se separa `generate_report`.
+  `roles_with_action()` es ahora la única forma de traducir la matriz a roles.
+  Además (`02add96`) `GET /fleet/gateways/{id}/config-state` hace observable el sync firmado, y
+  (`faa4f73`) `COALESCE` cierra un 500 real: `NULL::jsonb ? 'edge'` es NULL, no false.
+  **Desviaciones honestas:** sin cita normativa (§9 retiró NOM-003-SCT; marco citable por
+  confirmar); sin traza MiniWaveform ni "CANAL Z · 200 Hz" (RS4D = 100 sps, regla de oro 9) →
+  se enlaza el miniSEED archivado y sin fila `kind='miniseed'` el botón se deshabilita CON
+  motivo; sin "Firmado HSM" (`signed_by` es un uuid Cognito); sin "EXPORTAR LOTE" ni selector
+  de rango (`/incidents` no filtra por fecha); nodos por `sensor_id` corto (no hay resolver a
+  código de estación) y epicentro en coordenadas (no hay geocodificación inversa); magnitud del
+  catálogo post-hoc, jamás preliminar (§14).
+  **Regla de oro 7 al extremo:** cada recurso (cadena, bitácora, evidencia, evento) lleva SU
+  loading/error. Colapsarlos hacía que un panel afirmara "0 OBJETOS", "0 ACCIONES REGISTRADAS"
+  o "SIN EVENTO ASOCIADO" con la petición en vuelo o fallada. Seis hallazgos así los cazó la
+  revisión adversarial; todos tienen regresión.
+  **Verificación:** web 283 passed (84 de triage) + lint + build; api 577 passed;
+  **E2E de cable vs API real 46/46** (offsets 0.00/1.42/3.07 s, cabeza preliminar, superadmin
+  firma ⇒ 403, gov PDF ⇒ 403, inspector firma ⇒ 201 y la cadena CRECE, PDF sin bucket ⇒ 503);
+  **smoke de navegador 25/25** junto con T-1.30, cero errores de runtime.)
 
-### [ ] T-1.30 · Matriz Multi-Tenant — Umbrales — **[C4]**
+### [x] T-1.30 · Matriz Multi-Tenant — Umbrales — **[C4]** ✅ (commits `aa6f815` + `995a84a`)
 - **Componente:** web · **Depende de:** T-1.23
 - **Criterios:** aislamiento visible (lógico vs dedicado), umbrales por tipo de instalación,
   cascada de notificación configurable, sync firmada al edge.
+  ([DECISION 2026-07-08]: aislamiento = `tenants.isolation_mode` (CHECK 'logical'|'dedicated')
+  pintado tal cual; RLS decide las filas. Umbrales → `config.edge.thresholds`, la ÚNICA rama que
+  el worker publica al gabinete: **cuatro** sliders (cautela + disparo × PGA/PGV), porque ése es
+  el `ThresholdBand` real del edge; una clave ausente se rotula "DEFAULT DEL EDGE" (es lo que el
+  gabinete aplicaría). Cascada: los canales y sus DESTINOS se configuran (`config.notifications`);
+  el ORDEN (webhook→whatsapp→sms→email) y los tiempos son fijos en el servidor y se muestran, no
+  se editan; canal sin destino ⇒ INCOMPLETO (justo lo que `resolve_destinations` omitiría).
+  Sync firmada: `PUT` → `publish` (202 `pending_sync`) → poll de `config-state`; la consola sólo
+  dice "CONFIG FIRMADA APLICADA" con esa evidencia, nunca por haber pulsado el botón.
+  **Tres agujeros de seguridad/integridad que destapó la tarea** (`aa6f815`, todos sobre la config
+  que ARMA sirena y gas): (1) **cruce de tenants en la escritura** — el INSERT fijaba
+  `tenant_id=claims.tenant_id` y el alcance venía del cuerpo, así que un rol interno podía apagar
+  los rule_sets de un tenant ajeno e insertar una fila con SU tenant y el scope del ajeno; el
+  worker resuelve POR ALCANCE, así que los gabinetes del ajeno la habrían aplicado siendo
+  invisible para su admin (RLS) ⇒ ahora 403/404; (2) **el `secret` del webhook viajaba al
+  navegador** en `GET /rule-sets` ⇒ se redacta al leer y el servidor lo reinyecta al escribir, de
+  modo que guardar un umbral no rompa la firma HMAC del cliente ni deshabilitar/re-habilitar el
+  canal la destruya; (3) **lost update** — el PUT reemplaza el blob entero ⇒ `base_version` con
+  409 (antes un segundo escritor revertía en silencio `relays.siren`).
+  **Desviaciones honestas:** fuera "AISLAMIENTO DE DATOS" (schema por tenant / AES-256 / llaves
+  KMS: afirmaciones de infra sin respaldo de API); fuera "NUEVO" (no hay `POST /tenants`) y la
+  cuenta de usuarios (no hay endpoint; los sitios salen de `/sites` y sin datos se muestra S/D);
+  `tenants.vertical` (texto libre, nullable) es el tipo de instalación, pero los umbrales se
+  guardan por SCOPE de rule_set ⇒ las bandas §4.5 son pista estática, no agrupación; el canal
+  real es `webhook`, no `api`; no se promete "≤60s firmado JWT" (es HMAC y lo entrega el worker).
+  Un superadmin viendo OTRO tenant es SÓLO LECTURA con motivo visible. Se muestra la HUELLA de la
+  config firmada, no `gateway_config_state.version` (cuenta ENTREGAS por gateway y no es
+  comparable con `rule_sets.version`). Una publicación ajena no pisa la edición sin guardar.
+  Se elimina `PlaceholderPage`: ya no queda ninguna ruta sin implementar.
+  **Verificación:** web 372 passed (89 de tenants) + lint + build; api 586 passed;
+  **E2E de cable vs API real 29/29** (RLS de /tenants; el secret ausente del GET pero intacto en
+  la DB tras dos PUT; base_version vieja ⇒ 409 con `relays` intactos; alcance ajeno ⇒ 403;
+  publish ⇒ 202; config-state PENDIENTE → SINCRONIZADO con sólo la huella sha256);
+  **smoke de navegador real 25/25**, cero errores de runtime.)
 
 ### [ ] T-1.31 · App móvil (fase posterior) — **[C5]**
 - **Componente:** mobile · **Depende de:** T-1.22, T-1.26 · **Diferida — no iniciar en Fase 1.**
