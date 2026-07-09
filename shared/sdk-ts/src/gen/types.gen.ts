@@ -310,6 +310,7 @@ export type MeActions = {
     ack_incident: boolean;
     edit_thresholds: boolean;
     export: boolean;
+    generate_report: boolean;
     sign_dictamen: boolean;
     siren_test: boolean;
 };

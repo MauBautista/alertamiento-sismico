@@ -5,9 +5,11 @@ dictámenes + quórum con offsets + deslinde §1), lo sube al bucket de evidenci
 lo registra como ``evidence_objects kind='report_pdf'`` (sha256) con huella en
 ``audit_log`` y responde con la URL presignada de descarga.
 
-Roles: los de export (RBAC §2) MENOS ``gov_operator`` — gov descarga evidencia
-ya existente (``exports``), pero generar evidencia inserta una fila con el
-``tenant_id`` del incidente ajeno, que su propia RLS rechaza por diseño.
+Roles: los de la acción ``generate_report`` en la matriz (superadmin, inspector).
+Es un subconjunto estricto de ``export``: gov_operator descarga evidencia ya
+existente (``exports``), pero GENERARLA inserta una fila con el ``tenant_id`` del
+incidente ajeno, que su propia RLS rechaza por diseño. La acción va separada para
+que la consola no le pinte un botón condenado al 403 (regla de oro 7).
 """
 
 from __future__ import annotations
@@ -22,17 +24,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles
+from takab_api.auth.matrix import roles_with_action
 from takab_api.dictamen.pdf import build_report_lines, render_pdf
 from takab_api.queries import dictamens as dictamens_q
 from takab_api.queries import events as events_q
 from takab_api.queries import reports as q
 from takab_api.routers._common import http_error
 from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get, put_object
-from takab_api.routers.exports import EXPORT_ROLES
 from takab_api.schemas.reports import ReportOut
 from takab_api.settings import Settings
 
-REPORT_ROLES: tuple[str, ...] = tuple(r for r in EXPORT_ROLES if r != "gov_operator")
+# Fuente única: roles con acción generate_report en la matriz (espejo de RBAC §2).
+REPORT_ROLES: tuple[str, ...] = roles_with_action("generate_report")
 
 _require_report = require_roles(*REPORT_ROLES)
 

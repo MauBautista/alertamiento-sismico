@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles, require_web_surface
-from takab_api.auth.matrix import ROLE_ACTION_MATRIX
+from takab_api.auth.matrix import roles_with_action
 from takab_api.queries import exports as q
 from takab_api.routers._common import http_error
 from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get
@@ -29,9 +29,7 @@ from takab_api.schemas.exports import EvidenceList, EvidenceObject, PresignedDow
 from takab_api.settings import Settings
 
 # Fuente única: roles con acción export en la matriz (espejo de RBAC §2).
-EXPORT_ROLES: tuple[str, ...] = tuple(
-    sorted(r for r, actions in ROLE_ACTION_MATRIX.items() if actions["export"])
-)
+EXPORT_ROLES: tuple[str, ...] = roles_with_action("export")
 
 _require_export = require_roles(*EXPORT_ROLES)
 

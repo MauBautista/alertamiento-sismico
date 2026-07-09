@@ -13,6 +13,7 @@ class MeActions(BaseModel):
     ack_incident: bool
     sign_dictamen: bool
     export: bool
+    generate_report: bool
     edit_thresholds: bool
     siren_test: bool
 

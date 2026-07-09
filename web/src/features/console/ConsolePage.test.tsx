@@ -136,6 +136,7 @@ describe("ConsolePage", () => {
           ack_incident: true,
           edit_thresholds: true,
           export: true,
+          generate_report: false,
           sign_dictamen: false,
           siren_test: true,
         },

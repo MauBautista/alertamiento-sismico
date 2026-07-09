@@ -60,15 +60,19 @@ def test_allowed_routes_are_ordered() -> None:
     assert allowed_routes("takab_superadmin") == list(COLS)
 
 
+DENY_ALL = {
+    "ack_incident": False,
+    "sign_dictamen": False,
+    "export": False,
+    "generate_report": False,
+    "edit_thresholds": False,
+    "siren_test": False,
+}
+
+
 def test_unknown_role_denied() -> None:
     assert allowed_routes("ghost") == []
-    assert allowed_actions("ghost") == {
-        "ack_incident": False,
-        "sign_dictamen": False,
-        "export": False,
-        "edit_thresholds": False,
-        "siren_test": False,
-    }
+    assert allowed_actions("ghost") == DENY_ALL
 
 
 def test_action_anchors_from_rbac() -> None:
@@ -81,6 +85,26 @@ def test_action_anchors_from_rbac() -> None:
     assert allowed_actions("building_admin")["siren_test"] is True
 
 
+def test_sign_dictamen_is_inspector_only() -> None:
+    """Acto profesional del inspector: el "Total" de §2 NO lo concede (decisión
+    de seguridad documentada en matrix.py). ``routers/dictamens`` deriva de aquí."""
+    can_sign = {r for r in RBAC_SECTION_2 if allowed_actions(r)["sign_dictamen"]}
+    assert can_sign == {"inspector"}
+
+
+def test_generate_report_is_distinct_from_export() -> None:
+    """``export`` = descargar evidencia ya archivada (miniSEED). ``generate_report``
+    = CREAR evidencia nueva (PDF) en el tenant. gov_operator lee y descarga
+    evidencia ajena (gov_shared) pero no escribe filas en un tenant que no es suyo,
+    así que tiene export sin generate_report. Un solo flag para ambos haría que la
+    consola le pintara un botón que siempre da 403 (regla de oro 7)."""
+    can_export = {r for r in RBAC_SECTION_2 if allowed_actions(r)["export"]}
+    can_report = {r for r in RBAC_SECTION_2 if allowed_actions(r)["generate_report"]}
+    assert can_export == {"takab_superadmin", "gov_operator", "inspector"}
+    assert can_report == {"takab_superadmin", "inspector"}
+    assert can_report < can_export
+
+
 def test_ack_incident_roles() -> None:
     can_ack = {r for r in RBAC_SECTION_2 if allowed_actions(r)["ack_incident"]}
     assert can_ack == {"takab_superadmin", "tenant_admin", "soc_operator", "gov_operator"}
@@ -88,10 +112,4 @@ def test_ack_incident_roles() -> None:
 
 def test_mobile_only_roles_have_no_actions() -> None:
     for role in MOBILE_ONLY:
-        assert allowed_actions(role) == {
-            "ack_incident": False,
-            "sign_dictamen": False,
-            "export": False,
-            "edit_thresholds": False,
-            "siren_test": False,
-        }
+        assert allowed_actions(role) == DENY_ALL

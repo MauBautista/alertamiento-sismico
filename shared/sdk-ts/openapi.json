@@ -1377,6 +1377,10 @@
             "title": "Export",
             "type": "boolean"
           },
+          "generate_report": {
+            "title": "Generate Report",
+            "type": "boolean"
+          },
           "sign_dictamen": {
             "title": "Sign Dictamen",
             "type": "boolean"
@@ -1390,6 +1394,7 @@
           "ack_incident",
           "sign_dictamen",
           "export",
+          "generate_report",
           "edit_thresholds",
           "siren_test"
         ],

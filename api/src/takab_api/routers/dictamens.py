@@ -1,9 +1,13 @@
 """Routers de dictámenes (T-1.22 · B2): cadena de versiones + firma del inspector.
 
 Lectura = quienes tienen Triage en RBAC §2 (matriz de rutas). La firma es un acto
-profesional del inspector; RBAC §2 da además "Total" en Triage al superadmin, que la
-política ``dictamens_admin`` (DDL) también habilita a insertar. Firmar = INSERTAR una
-fila nueva que supersede la última de la cadena (nunca UPDATE; trigger append-only).
+profesional del inspector: ``SIGN_ROLES`` se DERIVA de ``matrix.ROLE_ACTION_MATRIX``
+(``sign_dictamen``), que no se la concede al superadmin pese a su "Total" en Triage §2.
+La política ``dictamens_admin`` (DDL) sigue permitiendo el INSERT a la identidad interna
+para soporte/operación de DB, pero la API no expone la firma a ese rol.
+
+Firmar = INSERTAR una fila nueva que supersede la última de la cadena (nunca UPDATE;
+trigger append-only).
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
-from takab_api.auth.matrix import ROLE_ROUTE_MATRIX, TRIAGE
+from takab_api.auth.matrix import ROLE_ROUTE_MATRIX, TRIAGE, roles_with_action
 from takab_api.queries import dictamens as q
 from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.dictamens import (
@@ -31,8 +35,9 @@ TRIAGE_ROLES: tuple[str, ...] = tuple(
     sorted(r for r, routes in ROLE_ROUTE_MATRIX.items() if TRIAGE in routes)
 )
 
-# Firma del dictamen: inspector (acto profesional) + superadmin ("Total" en Triage §2).
-SIGN_ROLES: tuple[str, ...] = ("inspector", "takab_superadmin")
+# Firma del dictamen: derivada de la matriz (acto profesional del inspector). El
+# "Total" de superadmin en Triage §2 concede LECTURA, no firma.
+SIGN_ROLES: tuple[str, ...] = roles_with_action("sign_dictamen")
 
 _require_triage = require_roles(*TRIAGE_ROLES)
 _require_sign = require_roles(*SIGN_ROLES)

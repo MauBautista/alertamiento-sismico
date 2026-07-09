@@ -101,3 +101,21 @@ async def test_invalid_status_is_400(client, make_incident) -> None:
         headers=_tok("inspector"),
     )
     assert resp.status_code == 400
+
+
+async def test_superadmin_cannot_sign_dictamen(client, make_incident) -> None:
+    """La firma es un acto profesional del inspector: ``SIGN_ROLES`` se deriva de
+    ``matrix.ROLE_ACTION_MATRIX['sign_dictamen']``, que NO se la concede al
+    superadmin pese a su "Total" en Triage §2. Antes el router la hardcodeaba y
+    aceptaba una firma que la matriz —y por tanto la consola— negaba."""
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    resp = await client.post(
+        f"/incidents/{iid}/dictamens",
+        json={"status": "restricted"},
+        headers=_tok("takab_superadmin"),
+    )
+    assert resp.status_code == 403
+
+    # Pero sí lee la cadena (tiene /triage).
+    chain = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("takab_superadmin"))
+    assert chain.status_code == 200

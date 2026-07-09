@@ -11,6 +11,7 @@ export const ACTIONS_NONE: MeActions = {
   ack_incident: false,
   sign_dictamen: false,
   export: false,
+  generate_report: false,
   edit_thresholds: false,
   siren_test: false,
 };
@@ -52,6 +53,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
   takab_superadmin: me("takab_superadmin", ALL_ROUTES, {
     ack_incident: true,
     export: true,
+    generate_report: true,
     edit_thresholds: true,
     siren_test: true,
   }),
@@ -71,6 +73,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
   inspector: me("inspector", ["/console", "/triage", "/building"], {
     sign_dictamen: true,
     export: true,
+    generate_report: true,
   }),
   building_admin: me("building_admin", ["/console", "/triage", "/building"], {
     siren_test: true,
