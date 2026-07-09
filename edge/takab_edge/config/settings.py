@@ -56,6 +56,12 @@ class SignalConfig(BaseModel):
     PLACEHOLDER — la calibración real proviene de la respuesta instrumental del
     RS4D (StationXML), un paso de metadata pendiente. El *algoritmo* de las
     features se valida contra ObsPy (<1%); la escala física depende de estos.
+
+    [T-1.33] Mientras sigan siendo placeholder, la nube NO presenta estos valores como
+    magnitudes físicas: la consola pinta unidades relativas salvo que el sensor declare
+    su ``sensors.calibration_source`` en la DB. Al sustituir estos números por los del
+    StationXML, hay que declarar la fuente en ese campo — si no, la UI seguirá (con
+    razón) diciendo SIN CALIBRAR.
     """
 
     vel_sensitivity_ms_per_count: float = 1.0e-9  # geophone EH* (velocidad)

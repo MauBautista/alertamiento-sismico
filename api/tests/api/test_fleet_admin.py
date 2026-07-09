@@ -350,6 +350,24 @@ async def test_sensor_invalid_kind_is_rejected(seed: None) -> None:
     assert resp.status_code == 422
 
 
+async def test_sensor_starts_uncalibrated_and_calibrates_by_naming_its_source(seed: None) -> None:
+    """``calibrated`` es derivado, no un booleano suelto: se gana nombrando la fuente."""
+    created = (await _post("/sensors", _sensor_body(), _tok("tenant_admin"))).json()
+    assert created["calibrated"] is False
+    assert created["calibration_source"] is None
+
+    updated = await _put(
+        f"/sensors/{created['sensor_id']}",
+        _sensor_body(
+            calibration_source="stationxml:AM.R4F74.2026-07-09",
+            base_row_version=created["row_version"],
+        ),
+        _tok("tenant_admin"),
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["calibrated"] is True
+
+
 async def test_sensor_retire_keeps_the_row(seed: None) -> None:
     sid = (await _post("/sensors", _sensor_body(), _tok("tenant_admin"))).json()["sensor_id"]
     resp = await _delete(f"/sensors/{sid}", _tok("tenant_admin"))

@@ -21,6 +21,7 @@ const SERIES: FeatureSeries = {
   pgv: [0.1, 0.2],
   stalta: [1.0, 1.1],
   clipping: [false, false],
+  calibrated: false,
 };
 
 describe("seriesToPoints / appendRows (puro)", () => {

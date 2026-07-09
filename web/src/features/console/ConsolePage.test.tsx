@@ -97,6 +97,7 @@ function featuresData(over: Partial<SiteFeaturesData> = {}): SiteFeaturesData {
   return {
     points: [],
     latest: null,
+    calibrated: false,
     loading: false,
     error: null,
     lastFrameAt: null,

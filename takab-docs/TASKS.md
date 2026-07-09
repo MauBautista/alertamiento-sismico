@@ -706,17 +706,30 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > invisible**: `DEV_TENANT_DEFAULT` apuntaba a un tenant SIN sitios, así que `/console` caía en el
 > estado `empty`; ahora es una constante exportada y anclada por test al tenant de `dev_fleet.sql`.
 
-### [ ] T-1.33 · Honestidad de calibración PGA/PGV — **[C2/C3]**
-- **Componente:** api + web · **Depende de:** T-1.32
+### [x] T-1.33 · Honestidad de calibración PGA/PGV — **[C2/C3] COMPLETA**
+- **Componente:** api + web + edge · **Depende de:** T-1.32
 - **Objetivo:** dejar de presentar como `g` y `cm/s` absolutos unos números escalados con las
   sensibilidades PLACEHOLDER de `edge/takab_edge/config/settings.py` (`SignalConfig`), a la espera
   del StationXML del RS4D (T-1.6 diferido). Mostrar un dato sin calibrar como si fuera físico es
   exactamente lo que prohíbe la regla de oro 7.
 - **Criterios de aceptación:**
-  - [ ] `sensors.metadata.calibrated` (default `false`) → `SensorOut.calibrated`.
-  - [ ] El snapshot de features expone `calibrated` del sitio (true solo si TODOS sus sensores
+  - [x] Migración `0010`: `sensors.calibration_source text` → `SensorOut.calibrated` derivado.
+  - [x] El snapshot de features expone `calibrated` del sitio (true solo si TODOS sus sensores
         activos lo están).
-  - [ ] La web usa `unitsFor(calibrated)` → `g`/`cm/s` vs `rel.`, y pinta `SIN CALIBRAR`.
+  - [x] La web usa `unitsFor(calibrated)` → `g`/`cm/s` vs `rel.`, y pinta `SIN CALIBRAR`.
+
+> **COMPLETA.** api **615 passed**, web **380 passed**, edge **239 passed**, lint/build limpios.
+> **Decisión de diseño:** NO existe un booleano `calibrated` escribible — sería una afirmación que
+> nadie respalda. Existe `sensors.calibration_source` (`'stationxml:AM.R4F74.2026-07-09'`) y
+> `calibrated := (calibration_source IS NOT NULL)`, derivado en la DB. Para declararte calibrado
+> tienes que **nombrar la procedencia de la respuesta instrumental**. Un sitio está calibrado solo
+> si lo están TODOS sus sensores ACTIVOS (`bool_and`): mezclar en un mismo strip un canal anclado y
+> otro sin anclar produce una cifra sin significado físico. `bool_and` sobre cero filas devuelve
+> NULL ⇒ default-deny (sitio sin sensores = sin calibrar). En la web, `unitsFor(undefined)` también
+> devuelve `rel.`: un backend viejo o un snapshot a medio cargar nunca inventan una `g`. El
+> docstring de `SignalConfig` ahora apunta a la columna, para que quien sustituya las sensibilidades
+> por las del StationXML sepa que además debe declarar la fuente o la UI seguirá —con razón—
+> diciendo SIN CALIBRAR.
 
 ### [ ] T-1.34 · Strip multicanal + vista histórica — **[C3]**
 - **Componente:** web · **Depende de:** T-1.33 · Responde a **US-03** sin violar la regla de oro 9.

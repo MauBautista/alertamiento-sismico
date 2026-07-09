@@ -8,6 +8,8 @@ import { Activity, Cpu, ToggleRight, Video, X } from "lucide-react";
 
 import StateFrame from "../../components/StateFrame";
 import { utcClock } from "../../lib/time";
+import NotCalibratedBadge from "../telemetry/NotCalibratedBadge";
+import { unitsFor } from "../telemetry/calibration";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { SiteFeaturesData } from "./useSiteFeatures";
 import FeatureStrip from "./FeatureStrip";
@@ -66,6 +68,8 @@ export default function DetailPanel({
       ? (features.lastFrameAt ?? features.points[features.points.length - 1].ts)
       : null;
   const latest = features.latest;
+  // Sin `calibration_source` en los sensores del sitio, PGA/PGV son relativos (T-1.33).
+  const units = unitsFor(features.calibrated);
 
   return (
     <aside className="soc-detail" data-testid="detail-panel">
@@ -114,16 +118,17 @@ export default function DetailPanel({
               <div className="soc-readout__label">PGA</div>
               <div className="soc-readout__value">
                 {latest?.pga?.toFixed(3) ?? "—"}
-                <span className="unit">g</span>
+                <span className="unit">{units.pga}</span>
               </div>
             </div>
             <div>
               <div className="soc-readout__label">PGV</div>
               <div className="soc-readout__value">
                 {latest?.pgv?.toFixed(1) ?? "—"}
-                <span className="unit">cm/s</span>
+                <span className="unit">{units.pgv}</span>
               </div>
             </div>
+            <NotCalibratedBadge calibrated={features.calibrated} />
           </div>
           <div className="soc-soh">
             <SohBadge

@@ -35,6 +35,10 @@ class SensorOut(BaseModel):
     mount: str | None = None
     lat: float | None = None
     lon: float | None = None
+    calibration_source: str | None = None
+    #: Derivado en la DB: ``calibration_source IS NOT NULL``. Sin él, PGA/PGV son
+    #: relativos (las sensibilidades del edge son placeholder) y la UI debe decirlo.
+    calibrated: bool
     status: str
     row_version: str
 
@@ -55,6 +59,9 @@ class _SensorWrite(BaseModel):
     mount: SensorMount | None = None
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    #: Procedencia de la respuesta instrumental, p. ej. ``stationxml:AM.R4F74``.
+    #: Nombrarla es lo que convierte el PGA en una magnitud física declarable.
+    calibration_source: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def _coords_together(self) -> _SensorWrite:

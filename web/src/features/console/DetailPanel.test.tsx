@@ -19,6 +19,7 @@ function features(over: Partial<SiteFeaturesData> = {}): SiteFeaturesData {
   return {
     points: [point(NOW - 2000, 0.01), point(NOW - 1000, 0.02)],
     latest: point(NOW - 1000, 0.02),
+    calibrated: false,
     loading: false,
     error: null,
     lastFrameAt: NOW - 1000,
@@ -85,6 +86,28 @@ describe("DetailPanel", () => {
     expect(screen.getAllByText(/FEATURES 1 s/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/200 Hz/)).toBeNull(); // sin framing de waveform crudo
     expect(screen.getByTestId("features-live-pill")).toHaveTextContent("LIVE");
+  });
+
+  it("sin calibrar: unidades relativas y aviso, nunca 'g' ni 'cm/s'", () => {
+    // El edge escala counts con sensibilidades placeholder (T-1.6 diferida). Pintar
+    // 'g' aquí sería inventarse una magnitud física (regla de oro 7).
+    renderPanel({ features: features({ calibrated: false }) });
+    expect(screen.getByTestId("not-calibrated-badge")).toBeInTheDocument();
+    expect(screen.getAllByText("rel.")).toHaveLength(2); // PGA y PGV
+    expect(screen.queryByText("g")).toBeNull();
+    expect(screen.queryByText("cm/s")).toBeNull();
+  });
+
+  it("calibrado: unidades físicas y sin aviso", () => {
+    renderPanel({ features: features({ calibrated: true }) });
+    expect(screen.queryByTestId("not-calibrated-badge")).toBeNull();
+    expect(screen.getByText("g")).toBeInTheDocument();
+    expect(screen.getByText("cm/s")).toBeInTheDocument();
+  });
+
+  it("con el flag aún sin cargar tampoco se promete física", () => {
+    renderPanel({ features: features({ calibrated: undefined }) });
+    expect(screen.getByTestId("not-calibrated-badge")).toBeInTheDocument();
   });
 
   it("traza de actuadores con ACK del edge y timestamp", () => {

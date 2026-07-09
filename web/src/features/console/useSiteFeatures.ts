@@ -69,6 +69,9 @@ export interface SiteFeaturesData {
   points: FeaturePoint[];
   /** Última muestra (readouts PGA/PGV y clipping del detalle). */
   latest: FeaturePoint | null;
+  /** ¿Los valores son `g`/`cm/s` de verdad? Sin snapshot todavía ⇒ `undefined`
+   *  y `unitsFor` cae del lado seguro (T-1.33). */
+  calibrated: boolean | undefined;
   loading: boolean;
   error: string | null;
   /** Epoch ms del último frame live del topic del sitio (staleness). */
@@ -115,6 +118,7 @@ export function useSiteFeatures(siteId: string | null): SiteFeaturesData {
   return {
     points,
     latest: points.length > 0 ? points[points.length - 1] : null,
+    calibrated: query.data?.calibrated,
     loading: siteId !== null && query.isPending,
     error: query.data === undefined && query.error ? query.error.message : null,
     lastFrameAt: siteId !== null ? (socket?.lastFrameAt(featuresTopic(siteId)) ?? null) : null,

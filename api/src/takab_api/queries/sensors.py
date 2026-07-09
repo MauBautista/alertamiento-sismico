@@ -16,6 +16,7 @@ _COLS = (
     "sensor_id, site_id, gateway_id, zone_id, kind, model, serial, "
     "channels, sample_rate, mount, "
     "ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lon, "
+    "calibration_source, (calibration_source IS NOT NULL) AS calibrated, "
     "status, xmin::text AS row_version"
 )
 
@@ -34,16 +35,17 @@ _GET_TENANT = text("SELECT tenant_id FROM sensors WHERE sensor_id = :id")
 
 _INSERT = text(
     "INSERT INTO sensors (tenant_id, site_id, gateway_id, zone_id, kind, model, serial, "
-    "channels, sample_rate, mount, geom) "
+    "channels, sample_rate, mount, geom, calibration_source) "
     "VALUES (CAST(:tenant_id AS uuid), :site_id, :gateway_id, :zone_id, :kind, :model, "
-    f":serial, :channels, :sample_rate, :mount, {_GEOM}) "
+    f":serial, :channels, :sample_rate, :mount, {_GEOM}, :calibration_source) "
     f"RETURNING {_COLS}"
 )
 
 _UPDATE = text(
     "UPDATE sensors SET site_id = :site_id, gateway_id = :gateway_id, zone_id = :zone_id, "
     "kind = :kind, model = :model, serial = :serial, channels = :channels, "
-    f"sample_rate = :sample_rate, mount = :mount, geom = {_GEOM}, status = :status "
+    f"sample_rate = :sample_rate, mount = :mount, geom = {_GEOM}, status = :status, "
+    "calibration_source = :calibration_source "
     "WHERE sensor_id = :id "
     "  AND (CAST(:base_row_version AS text) IS NULL "
     "       OR xmin::text = CAST(:base_row_version AS text)) "

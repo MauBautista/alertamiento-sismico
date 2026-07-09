@@ -54,6 +54,7 @@ _WRITE_FIELDS = (
     "mount",
     "lat",
     "lon",
+    "calibration_source",
 )
 
 

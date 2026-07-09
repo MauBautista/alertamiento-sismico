@@ -139,6 +139,11 @@ CREATE TABLE sensors (
   mount       text CHECK (mount IN ('concrete_column','steel','floor','buried')),
   geom        geography(Point,4326),
   status      text NOT NULL DEFAULT 'active',
+  -- [T-1.33] Procedencia de la respuesta instrumental (p.ej. 'stationxml:AM.R4F74').
+  -- calibrated := (calibration_source IS NOT NULL). No hay booleano suelto que pueda
+  -- mentir: para declararte calibrado tienes que nombrar la fuente. Mientras sea NULL,
+  -- PGA/PGV son RELATIVOS (las sensibilidades del edge son placeholder) y la UI lo dice.
+  calibration_source text,
   metadata    jsonb NOT NULL DEFAULT '{}'
 );
 CREATE INDEX idx_sensors_site ON sensors (site_id);

@@ -15,22 +15,34 @@ from pydantic import BaseModel
 
 
 class FeatureSeries(BaseModel):
-    """Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps)."""
+    """Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).
+
+    ``calibrated`` es falso mientras algún sensor activo del sitio no declare su
+    ``calibration_source``. Con él en falso, ``pga``/``pgv`` NO son ``g`` ni ``cm/s``:
+    son cuentas escaladas por las sensibilidades placeholder del edge. La consola
+    pinta unidades relativas — un número físico inventado es peor que ninguno.
+    """
 
     ts: list[datetime]
     pga: list[float | None]
     pgv: list[float | None]
     stalta: list[float | None]
     clipping: list[bool]
+    calibrated: bool
 
 
 class MetricSeries(BaseModel):
-    """Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos."""
+    """Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.
+
+    Los nombres ``max_pga_g``/``max_pgv_cms`` vienen del cagg y se conservan por
+    compatibilidad; su unidad real depende de ``calibrated`` (ver ``FeatureSeries``).
+    """
 
     bucket: str
     ts: list[datetime]
     max_pga_g: list[float | None]
     max_pgv_cms: list[float | None]
+    calibrated: bool
 
 
 class MapIncident(BaseModel):

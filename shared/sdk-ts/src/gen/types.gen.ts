@@ -148,8 +148,14 @@ export type FeatureRow = {
 
 /**
  * Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).
+ *
+ * ``calibrated`` es falso mientras algún sensor activo del sitio no declare su
+ * ``calibration_source``. Con él en falso, ``pga``/``pgv`` NO son ``g`` ni ``cm/s``:
+ * son cuentas escaladas por las sensibilidades placeholder del edge. La consola
+ * pinta unidades relativas — un número físico inventado es peor que ninguno.
  */
 export type FeatureSeries = {
+    calibrated: boolean;
     clipping: Array<boolean>;
     pga: Array<number | null>;
     pgv: Array<number | null>;
@@ -418,9 +424,13 @@ export type MeResponse = {
 
 /**
  * Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.
+ *
+ * Los nombres ``max_pga_g``/``max_pgv_cms`` vienen del cagg y se conservan por
+ * compatibilidad; su unidad real depende de ``calibrated`` (ver ``FeatureSeries``).
  */
 export type MetricSeries = {
     bucket: string;
+    calibrated: boolean;
     max_pga_g: Array<number | null>;
     max_pgv_cms: Array<number | null>;
     ts: Array<string>;
@@ -533,6 +543,7 @@ export type SeismicEventOut = {
  * Alta de sensor. El tenant lo hereda del sitio padre; ``serial`` es único GLOBAL.
  */
 export type SensorCreate = {
+    calibration_source?: string | null;
     channels?: Array<string>;
     gateway_id?: string | null;
     kind: 'structural' | 'ground';
@@ -550,6 +561,8 @@ export type SensorCreate = {
  * Sensor de un sitio (RS4D estructural o de terreno).
  */
 export type SensorOut = {
+    calibrated: boolean;
+    calibration_source?: string | null;
     channels: Array<string>;
     gateway_id?: string | null;
     kind: string;
@@ -571,6 +584,7 @@ export type SensorOut = {
  */
 export type SensorUpdate = {
     base_row_version?: string | null;
+    calibration_source?: string | null;
     channels?: Array<string>;
     gateway_id?: string | null;
     kind: 'structural' | 'ground';

@@ -36,7 +36,7 @@ async def test_features_columnar_default_window(client, seed) -> None:
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert set(body) == {"ts", "pga", "pgv", "stalta", "clipping"}
+    assert set(body) == {"ts", "pga", "pgv", "stalta", "clipping", "calibrated"}
     # 3 puntos sembrados (now-30/60/90 s), dentro de los últimos 10 min por defecto.
     assert len(body["ts"]) == 3
     assert all(abs(v - 0.10) < 0.01 for v in body["pga"])

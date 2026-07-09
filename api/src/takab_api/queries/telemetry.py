@@ -122,3 +122,18 @@ ORDER BY s.name ASC, s.site_id ASC
 def select_map_state() -> tuple[TextClause, dict[str, Any]]:
     """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``)."""
     return text(_MAP_STATE_SQL), {}
+
+
+# Un sitio está calibrado solo si TODOS sus sensores activos declaran de dónde salió su
+# respuesta instrumental. ``bool_and`` sobre cero filas devuelve NULL (sitio sin
+# sensores) — el router lo trata como NO calibrado: default-deny también aquí.
+_SITE_CALIBRATED_SQL = """
+SELECT bool_and(calibration_source IS NOT NULL) AS calibrated
+FROM sensors
+WHERE site_id = CAST(:site_id AS uuid) AND status = 'active'
+"""
+
+
+def select_site_calibrated(*, site_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """¿Están calibrados TODOS los sensores activos del sitio? (RLS sobre ``sensors``)."""
+    return text(_SITE_CALIBRATED_SQL), {"site_id": site_id}

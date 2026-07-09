@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX
-from takab_api.queries.telemetry import select_features, select_map_state, select_metrics
+from takab_api.queries.telemetry import (
+    select_features,
+    select_map_state,
+    select_metrics,
+    select_site_calibrated,
+)
 from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.telemetry import (
     FeatureSeries,
@@ -42,6 +47,17 @@ _BUCKET_1H_SPAN_S = 7 * 24 * 3600  # spans > 7 días → bucket 1h por defecto
 _BUCKETS = ("1m", "1h")
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
+
+
+async def _site_calibrated(conn: AsyncConnection, site_id: UUID) -> bool:
+    """¿Puede el SOC pintar 'g' y 'cm/s' para este sitio, o solo unidades relativas?
+
+    Default-deny: un sitio sin sensores visibles (RLS) o con alguno sin
+    ``calibration_source`` cuenta como NO calibrado. ``bool_and`` sobre cero filas
+    devuelve NULL, que aquí colapsa a ``False``.
+    """
+    stmt, params = select_site_calibrated(site_id=str(site_id))
+    return bool((await conn.execute(stmt, params)).scalar())
 
 
 def _parse_ts(value: str) -> datetime:
@@ -134,6 +150,7 @@ async def site_features(
         pgv=[r.pgv_cms for r in rows],
         stalta=[r.stalta for r in rows],
         clipping=[r.clipping for r in rows],
+        calibrated=await _site_calibrated(conn, site_id),
     )
 
 
@@ -161,4 +178,5 @@ async def site_metrics(
         ts=[r.bucket for r in rows],
         max_pga_g=[r.max_pga_g for r in rows],
         max_pgv_cms=[r.max_pgv_cms for r in rows],
+        calibrated=await _site_calibrated(conn, site_id),
     )

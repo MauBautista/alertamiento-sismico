@@ -616,8 +616,12 @@
         "type": "object"
       },
       "FeatureSeries": {
-        "description": "Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).",
+        "description": "Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).\n\n``calibrated`` es falso mientras algún sensor activo del sitio no declare su\n``calibration_source``. Con él en falso, ``pga``/``pgv`` NO son ``g`` ni ``cm/s``:\nson cuentas escaladas por las sensibilidades placeholder del edge. La consola\npinta unidades relativas — un número físico inventado es peor que ninguno.",
         "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
           "clipping": {
             "items": {
               "type": "boolean"
@@ -681,7 +685,8 @@
           "pga",
           "pgv",
           "stalta",
-          "clipping"
+          "clipping",
+          "calibrated"
         ],
         "title": "FeatureSeries",
         "type": "object"
@@ -1753,11 +1758,15 @@
         "type": "object"
       },
       "MetricSeries": {
-        "description": "Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.",
+        "description": "Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.\n\nLos nombres ``max_pga_g``/``max_pgv_cms`` vienen del cagg y se conservan por\ncompatibilidad; su unidad real depende de ``calibrated`` (ver ``FeatureSeries``).",
         "properties": {
           "bucket": {
             "title": "Bucket",
             "type": "string"
+          },
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
           },
           "max_pga_g": {
             "items": {
@@ -1800,7 +1809,8 @@
           "bucket",
           "ts",
           "max_pga_g",
-          "max_pgv_cms"
+          "max_pgv_cms",
+          "calibrated"
         ],
         "title": "MetricSeries",
         "type": "object"
@@ -2139,6 +2149,18 @@
         "additionalProperties": false,
         "description": "Alta de sensor. El tenant lo hereda del sitio padre; ``serial`` es único GLOBAL.",
         "properties": {
+          "calibration_source": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Source"
+          },
           "channels": {
             "items": {
               "type": "string"
@@ -2264,6 +2286,21 @@
       "SensorOut": {
         "description": "Sensor de un sitio (RS4D estructural o de terreno).",
         "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "calibration_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Source"
+          },
           "channels": {
             "items": {
               "type": "string"
@@ -2377,6 +2414,7 @@
           "model",
           "channels",
           "sample_rate",
+          "calibrated",
           "status",
           "row_version"
         ],
@@ -2397,6 +2435,18 @@
               }
             ],
             "title": "Base Row Version"
+          },
+          "calibration_source": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Source"
           },
           "channels": {
             "items": {
