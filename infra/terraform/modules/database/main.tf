@@ -144,12 +144,14 @@ resource "aws_iam_role_policy" "db" {
         Action   = ["s3:PutObject"]
         Resource = var.worker_s3_presign_put_arns
       },
-      # Respuesta del grant al edge vía iot-data (takab/backfill/grant/<thing>).
+      # Publicaciones nube→edge vía iot-data: grants de backfill, comandos de
+      # actuador (takab/cmd/*) y config sync (takab/cfg/*). Sin cmd/cfg, la API
+      # firmaría bien y aun así el publish daría AccessDenied (GAP-4 · T-1.38).
       {
-        Sid      = "WorkerGrantPublish"
+        Sid      = "WorkerIotPublish"
         Effect   = "Allow"
         Action   = ["iot:Publish"]
-        Resource = var.worker_grant_topic_arns
+        Resource = var.worker_iot_publish_topic_arns
       },
     ]
   })

@@ -30,16 +30,22 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
 - **`/dev/token` está apagado en la nube.** `cloud.env` omite
   `TAKAB_API_AUTH_JWKS_JSON`, y `main.create_app` condiciona el router a ese valor: el
   endpoint ni se monta. La nube solo acepta Cognito.
-- **La clave HMAC de comandos es UNA sola** (`Settings.command_hmac_key`), pero Terraform
-  emite una **por gabinete**. La nube carga la del gabinete real (`command_hmac_gateway`,
-  default `gw-dev-0001`); los simulados **rechazarían la firma**. Resolver por gateway es
-  el TODO que ya anota `settings.py`. Si el secreto no existe, el servicio arranca
-  **fail-closed** (503 en la API, el sync no publica) en vez de con una clave vacía.
+- **La clave HMAC de comandos se resuelve POR GABINETE** (T-1.38): la API y el config
+  sync firman con la clave del gateway **destino**, leída en runtime de Secrets Manager
+  (`takab/dev/gateway-hmac/<thing>`, campo `hmac_key`, cache 300 s) con el rol de la
+  instancia. El secreto HMAC vive **separado** del secreto del certificado: IAM no
+  filtra campos JSON y el rol de la nube jamás debe poder leer claves privadas mTLS.
+  Sin clave resoluble para un gateway: **fail-closed** (503 en la API; el sync lo salta
+  sin quemar versión). Ya no existe `command-hmac.env` ni clave compartida alguna.
 - El puerto **80 va abierto al mundo** porque el desafío HTTP-01 de ACME lo exige y sale
   de IPs que no se pueden enumerar. Caddy solo responde el reto ahí y redirige a 443.
-- `dlq_url_*` no se inyectan: `messaging` solo exporta los ARN de las DLQ, y el consumer
-  las alcanza por la *redrive policy* de la cola. Si algún día hace falta drenarlas desde
-  la app, hay que exportar sus URLs.
+- Las URLs de las DLQ **sí se inyectan** (`TAKAB_API_DLQ_URL_*`): los consumidores las
+  exigen al arrancar — los REJECT explícitos se envían por URL; el redrive de SQS va por
+  ARN y no depende de esto (GAP-1 · T-1.38).
+- El deploy **siembra la flota dev en la DB de la nube** (`db/seeds/dev_fleet.sql`,
+  idempotente) justo después de las migraciones: sin filas en `gateways`/`sensors` la
+  ingesta rechazaría todo mensaje del gabinete real por "unknown principal" → DLQ
+  (GAP-3 · T-1.38).
 
 ---
 
@@ -86,7 +92,9 @@ make cloud-deploy
 ```
 
 Por SSM (no hay SSH): copia el compose y las unidades systemd, materializa los secretos a
-tmpfs, **corre las migraciones como `takab_migrator`** y levanta la topología. Idempotente.
+tmpfs, **corre las migraciones como `takab_migrator`**, **siembra la flota dev**
+(idempotente, superusuario por socket local del contenedor de la DB) y levanta la
+topología. Idempotente de punta a punta.
 
 ### 4. Verificar
 

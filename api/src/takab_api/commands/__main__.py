@@ -6,8 +6,11 @@ la MISMA imagen ("un build, muchos commands")::
 
     python -m takab_api.commands [--poll-interval 30.0]
 
-La clave HMAC llega por ``TAKAB_API_COMMAND_HMAC_KEY`` (Secrets Manager en
-cloud); sin clave el worker corre fail-closed (solo expira comandos).
+La clave HMAC se resuelve POR GABINETE (T-1.38): ``TAKAB_API_COMMAND_HMAC_SECRET_PREFIX``
+apunta a Secrets Manager ``{prefix}/{iot_thing}`` (cloud, rol de instancia) o
+``TAKAB_API_COMMAND_HMAC_KEYS_JSON`` trae un mapa inline (dev/tests). Un gateway
+sin clave resoluble se salta fail-closed; sin config alguna, el worker solo
+expira comandos.
 """
 
 from __future__ import annotations

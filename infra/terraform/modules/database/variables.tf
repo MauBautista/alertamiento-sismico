@@ -41,13 +41,15 @@ variable "worker_s3_read_arns" {
 
 # Grant service del backfill (T-1.25) co-locado: keys que el rol puede
 # PRE-FIRMAR para PUT (un presigned URL solo vale si el firmante tiene
-# s3:PutObject al ejecutarse) y topics de grant hacia el edge.
+# s3:PutObject al ejecutarse).
 variable "worker_s3_presign_put_arns" {
   type    = list(string)
   default = []
 }
 
-variable "worker_grant_topic_arns" {
+# Topics MQTT que la nube publica hacia el edge: grants de backfill (T-1.25),
+# comandos de actuador takab/cmd/* y config sync takab/cfg/* (T-1.38).
+variable "worker_iot_publish_topic_arns" {
   type    = list(string)
   default = []
 }

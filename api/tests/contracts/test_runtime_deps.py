@@ -26,6 +26,7 @@ _SRC = _API_ROOT / "src" / "takab_api"
 # pyproject, llegan por fastapi y boto3. Anotarlas aquí documenta esa apuesta en vez
 # de dejarla implícita.
 _MODULE_TO_DIST: dict[str, str] = {
+    "anyio": "fastapi",  # transitiva de starlette (to_thread en routers/commands)
     "boto3": "boto3",
     "botocore": "boto3",  # transitiva de boto3
     "fastapi": "fastapi",

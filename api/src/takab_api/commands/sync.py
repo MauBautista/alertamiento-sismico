@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 import psycopg
 
 from takab_api.audit import audit
+from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher, PublishError
 from takab_api.commands.signing import canonical_payload, sign_config
 from takab_api.settings import Settings
@@ -79,29 +80,32 @@ def run_config_sync_pass(
     conn: psycopg.Connection,
     settings: Settings,
     publisher: CommandPublisher,
+    keys: CommandKeyProvider,
     *,
     now: datetime | None = None,
 ) -> list[str]:
     """Publica la config firmada pendiente; expira comandos sin ack (TTL).
 
     Devuelve los ``gateway_id`` (str) publicados en esta pasada. Un COMMIT al
-    final si hubo escrituras. Fail-closed: sin clave HMAC no se publica nada.
+    final si hubo escrituras. Fail-closed POR GATEWAY (T-1.38): un candidato
+    sin clave resoluble se salta SIN quemar versión y entra cuando su clave
+    exista (provisión tardía / rotación) — jamás se firma con una compartida.
     """
     now = now or datetime.now(tz=UTC)
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (_SYNC_LOCK_KEY,))
     expired = conn.execute(_EXPIRE_COMMANDS_SQL, {"now": now}).rowcount
 
-    if not settings.command_hmac_key:
-        logger.warning("config sync: sin clave HMAC configurada (fail-closed, no publica)")
-        _finish(conn, wrote=expired > 0)
-        return []
-
-    key = settings.command_hmac_key.encode()
     published: list[str] = []
     for row in conn.execute(_CANDIDATES_SQL).fetchall():
         edge_config = row["edge_config"]
         if not isinstance(edge_config, dict):
             logger.warning("config sync: config.edge no es objeto (gw %s)", row["gateway_id"])
+            continue
+        key = keys.key_for(row["iot_thing"])
+        if key is None:
+            logger.warning(
+                "config sync: sin clave HMAC para %s (fail-closed, skip)", row["iot_thing"]
+            )
             continue
         version = (row["state_version"] or 0) + 1
         body = canonical_payload(edge_config)

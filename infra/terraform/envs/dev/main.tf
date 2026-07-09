@@ -1,6 +1,16 @@
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
+locals {
+  # Prefijo de los secretos HMAC de comandos, UNO por gabinete (T-1.38). El rol
+  # de la instancia recibe GetSecretValue por WILDCARD de este prefijo: tras el
+  # split cert/HMAC el prefijo contiene exactamente la clase de secretos que la
+  # nube necesita (jamas claves privadas mTLS) y un gateway nuevo es comandable
+  # sin re-aplicar IAM. El * final tambien cubre el sufijo aleatorio que
+  # Secrets Manager anade al ARN.
+  gateway_hmac_prefix = "takab/dev/gateway-hmac"
+}
+
 module "network" {
   source = "../../modules/network"
 }
@@ -47,13 +57,17 @@ module "database" {
     "${module.storage.transfer_bucket.arn}/backfill/*",
     "${module.storage.evidence_bucket.arn}/evidence/*",
   ]
-  worker_grant_topic_arns = [
+  worker_iot_publish_topic_arns = [
     "arn:aws:iot:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:topic/takab/backfill/grant/*",
+    "arn:aws:iot:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:topic/takab/cmd/*",
+    "arn:aws:iot:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:topic/takab/cfg/*",
   ]
 
-  # Clave HMAC que la nube comparte con el gabinete para firmar comandos de actuador
-  # (T-1.37). ARN explicito: el rol nunca recibe GetSecretValue sobre "*".
-  worker_secret_arns = [module.iot_gateway[var.command_hmac_gateway].secret_arn]
+  # Claves HMAC de comandos POR GABINETE (T-1.38): wildcard del prefijo
+  # DEDICADO (no "*"), ver la nota de locals.gateway_hmac_prefix.
+  worker_secret_arns = [
+    "arn:aws:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:${local.gateway_hmac_prefix}/*",
+  ]
 }
 
 module "identity" {
@@ -98,10 +112,11 @@ module "iot_gateway" {
   source   = "../../modules/iot-gateway"
   for_each = toset(var.gateway_fleet)
 
-  thing_name        = each.value
-  thing_type_name   = module.iot_core.thing_type_name
-  thing_group_name  = module.iot_core.thing_group_name
-  fleet_policy_name = module.iot_core.fleet_policy_name
+  thing_name         = each.value
+  thing_type_name    = module.iot_core.thing_type_name
+  thing_group_name   = module.iot_core.thing_group_name
+  fleet_policy_name  = module.iot_core.fleet_policy_name
+  hmac_secret_prefix = local.gateway_hmac_prefix
 }
 
 module "ci_oidc" {

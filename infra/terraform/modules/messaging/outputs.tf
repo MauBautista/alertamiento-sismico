@@ -14,3 +14,10 @@ output "queues" {
 output "dlq_arns" {
   value = { for k, q in aws_sqs_queue.dlq : k => q.arn }
 }
+
+# Los consumidores EXIGEN estas URLs al arrancar (ingest/__main__ hace
+# SystemExit sin ellas): los REJECT explicitos se envian por URL. El redrive
+# de SQS va por ARN y no depende de esto.
+output "dlq_urls" {
+  value = { for k, q in aws_sqs_queue.dlq : k => q.url }
+}

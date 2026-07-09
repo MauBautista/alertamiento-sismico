@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import psycopg
 
+from takab_api.commands.keys import CommandKeyProvider, build_key_provider
 from takab_api.commands.publisher import CommandPublisher, IotDataPublisher
 from takab_api.commands.sync import run_config_sync_pass
 from takab_api.db import pool
@@ -37,11 +38,15 @@ class ConfigSyncWorker:
         *,
         poll_s: float = 30.0,  # respaldo del NOTIFY: garantiza el SLA ≤60 s
         publisher: CommandPublisher | None = None,
+        key_provider: CommandKeyProvider | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._settings = settings
         self._poll_s = poll_s
         self._publisher = publisher if publisher is not None else IotDataPublisher(settings)
+        # Vive lo que el worker: el cache TTL de claves per-gateway (T-1.38)
+        # amortiza los GetSecretValue entre pasadas.
+        self._keys = key_provider if key_provider is not None else build_key_provider(settings)
         self._stop = threading.Event()
 
     def run(self) -> None:
@@ -56,7 +61,7 @@ class ConfigSyncWorker:
                     if self._stop.is_set():
                         break
                     work_conn = self._ensure_work(work_conn)
-                    run_config_sync_pass(work_conn, self._settings, self._publisher)
+                    run_config_sync_pass(work_conn, self._settings, self._publisher, self._keys)
                 except psycopg.OperationalError:
                     logger.exception("config sync: DB no disponible; reconecta")
                     self._safe_close(work_conn)

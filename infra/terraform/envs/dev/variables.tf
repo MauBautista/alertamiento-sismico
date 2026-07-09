@@ -37,20 +37,6 @@ variable "acme_email" {
   default     = "mauriciobaujim@gmail.com"
 }
 
-variable "command_hmac_gateway" {
-  description = <<-EOT
-    Gabinete cuya clave HMAC comparte la nube para firmar comandos de actuador.
-
-    [LIMITACION CONOCIDA] `Settings.command_hmac_key` es UNA clave compartida, pero
-    Terraform emite una distinta por gabinete. La nube carga la del gabinete real; los
-    simulados rechazarian la firma. Resolver por gateway es el TODO que ya anota
-    `api/src/takab_api/settings.py`. Preferimos un fallo de verificacion honesto a una
-    clave que nadie pinche.
-  EOT
-  type        = string
-  default     = "gw-dev-0001"
-}
-
 variable "gateway_fleet" {
   description = "Things IoT a aprovisionar (1 gateway real + 4 simulados)."
   type        = list(string)

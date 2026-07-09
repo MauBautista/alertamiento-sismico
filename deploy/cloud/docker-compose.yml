@@ -80,15 +80,17 @@ services:
     command: []
 
   # --- Comandos de actuador + config sync firmados -----------------------------
-  # Superficie más sensible del sistema (regla de oro 8). Sin `command_hmac_key` el
-  # servicio es FAIL-CLOSED: la API responde 503 y el sync no publica. La clave la
-  # inyecta takab-secrets.service desde el secreto del gabinete real.
+  # Superficie más sensible del sistema (regla de oro 8). La clave HMAC se resuelve
+  # POR GABINETE en runtime (T-1.38): Secrets Manager "{prefix}/{iot_thing}" con el
+  # rol de instancia (IMDS funciona porque el netns es host). El prefijo viaja en
+  # cloud.env — no es secreto. Sin clave resoluble para un gateway: FAIL-CLOSED
+  # (la API responde 503; el sync lo salta sin quemar versión). El mismo mecanismo
+  # aplica al servicio `api`, que es quien emite los comandos interactivos.
   commands:
     <<: *cloud-image
     env_file:
       - /etc/takab/cloud.env
       - /run/takab/db-ingest.env
-      - /run/takab/command-hmac.env
     entrypoint: ["python", "-m", "takab_api.commands"]
     command: []
 

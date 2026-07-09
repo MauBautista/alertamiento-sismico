@@ -75,6 +75,12 @@ output "aws_region" {
   value = data.aws_region.current.region
 }
 
-output "command_hmac_gateway" {
-  value = var.command_hmac_gateway
+# La nube resuelve la clave HMAC POR GABINETE contra "{prefix}/{iot_thing}"
+# (T-1.38); deploy.sh lo inyecta como TAKAB_API_COMMAND_HMAC_SECRET_PREFIX.
+output "command_hmac_secret_prefix" {
+  value = local.gateway_hmac_prefix
+}
+
+output "dlq_urls" {
+  value = module.messaging.dlq_urls
 }

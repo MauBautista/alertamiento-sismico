@@ -823,5 +823,49 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > (mismo origen ⇒ sin CORS, y `wss://host/api/ws` por la misma regla) y cambia el mecanismo.
 > La clave HMAC de comandos es UNA sola (`Settings.command_hmac_key`) mientras Terraform emite una
 > POR gabinete: la nube carga la del real (`gw-dev-0001`) y los simulados rechazarían la firma;
-> sin secreto, el servicio arranca **fail-closed** (503) en vez de con clave vacía. AL2023 no trae
+> sin secreto, el servicio arranca **fail-closed** (503) en vez de con clave vacía
+> **[LIMITACIÓN CERRADA en T-1.38: resolución por gabinete]**. AL2023 no trae
 > el plugin `compose`: el deploy lo instala. Runbook: `deploy/cloud/README.md`.
+
+---
+
+# Fase 1.6 · Verdad operativa (cierre de fallos, 2026-07-09)
+
+> Cierra TODO lo documentado como abierto que se puede cerrar con los accesos reales (Pi 5,
+> Shake, AWS): los 4 GAPs del despliegue, la clave HMAC por gabinete, las sondas de salud en
+> stub, la calibración física, la semántica del WR-1, el PIN del panel local, el rol CI y la
+> validación del quórum contra el SSN. Lo que exige terceros (WhatsApp/SMS/SES prod, app móvil,
+> relés físicos) queda documentado como diferido, no fingido.
+
+### [x] T-1.38 · Reparar el despliegue (GAP-1..4) + clave HMAC por gabinete — **[B9/B7] COMPLETADA (2026-07-09)**
+- **Componente:** api + infra + deploy · **Depende de:** T-1.37
+- **Objetivo:** que el primer `cloud-deploy` real no muera al arrancar, y que la firma de un
+  comando LIGUE al gabinete destino (HIGH #23 de la auditoría pre-frontend).
+- **Criterios de aceptación:**
+  - [x] **GAP-1:** Terraform exporta `dlq_urls` y `deploy.sh` inyecta `TAKAB_API_DLQ_URL_*`
+        (los consumidores hacen `SystemExit` sin ellas — backfill incluido).
+  - [x] **GAP-2:** el servicio `api` puede emitir comandos (ya no existe `command-hmac.env`;
+        el prefijo del secreto viaja en `cloud.env`, que montan todos).
+  - [x] **GAP-3:** el deploy siembra `db/seeds/dev_fleet.sql` en la DB de la nube (idempotente,
+        superusuario por socket local del contenedor — cero secretos materializados).
+  - [x] **GAP-4:** el rol EC2 puede `iot:Publish` a `takab/cmd/*` y `takab/cfg/*`
+        (Sid `WorkerIotPublish`; antes solo `backfill/grant/*` ⇒ AccessDenied).
+  - [x] **HMAC por gabinete:** `commands/keys.py` con `StaticKeyProvider` (dev/tests,
+        `TAKAB_API_COMMAND_HMAC_KEYS_JSON`) y `SecretsManagerKeyProvider` (prod, cache TTL 300 s,
+        cache negativa 30 s, transitorios sin cachear). `issue_command` y el config sync firman
+        con la clave del gateway DESTINO; sin clave resoluble ⇒ 503 / skip sin quemar versión.
+        `Settings.command_hmac_key` **eliminada**: no existe fallback a clave compartida.
+  - [x] Secreto HMAC **separado** del secreto del certificado (`takab/dev/gateway-hmac/<thing>`):
+        IAM no filtra campos JSON; el wildcard del prefijo jamás expone claves privadas mTLS.
+  - [x] Tests: `test_keys.py` (cache/rotación/negativa/transitorios), router (503 por gateway sin
+        clave; dos gabinetes firman con claves distintas), sync mixed-fleet. **api 636 passed.**
+  - [x] `terraform validate` + `plan` limpio: 10 recursos nuevos (secreto+versión × 5), policy
+        actualizada, **cero replaces** de la instancia.
+
+> La decisión de diseño que importa: **separar el secreto**. `takab/dev/gateway/<thing>` contiene
+> `cert_pem + private_key`; darle a la nube `GetSecretValue` por wildcard ahí habría regalado la
+> identidad mTLS de toda la flota si la instancia se compromete. El secreto nuevo solo lleva
+> `{thing_name, hmac_key}` y reutiliza la MISMA `random_password`, así que el `edge.env` ya
+> instalado en `gw-dev-0001` sigue siendo válido sin re-provisionar. `provision_gateway.sh` ahora
+> baja dos secretos. Rotación: la nube converge en ≤300 s (TTL del cache) sin reiniciar procesos;
+> el edge sí exige re-provisión (ventana fail-visible: rejected/expired, nunca silenciosa).

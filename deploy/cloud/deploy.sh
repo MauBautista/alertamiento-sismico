@@ -21,7 +21,6 @@ REGISTRY="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 INSTANCE_ID="$(tf db_instance_id)"
 PUBLIC_HOST="$(tf console_public_host)"
 ACME_EMAIL="$(tf acme_email)"
-HMAC_GATEWAY="$(tf command_hmac_gateway)"
 
 if [ -z "$PUBLIC_HOST" ]; then
   echo "ERROR: la consola no está publicada. Aplica con -var serve_enabled=true" >&2
@@ -39,6 +38,13 @@ TAKAB_API_AUTH_JWKS_URL=$(tf issuer)/.well-known/jwks.json
 TAKAB_API_QUEUE_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
 TAKAB_API_QUEUE_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')
 TAKAB_API_QUEUE_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["backfill"])')
+# GAP-1 (T-1.38): los consumidores EXIGEN las URLs de DLQ al arrancar (SystemExit).
+TAKAB_API_DLQ_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json dlq_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
+TAKAB_API_DLQ_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json dlq_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')
+TAKAB_API_DLQ_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json dlq_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["backfill"])')
+# T-1.38: la clave HMAC de comandos se resuelve POR GABINETE en runtime; esto es
+# solo el prefijo del secreto (no es secreto en sí).
+TAKAB_API_COMMAND_HMAC_SECRET_PREFIX=$(tf command_hmac_secret_prefix)
 TAKAB_API_EVIDENCE_BUCKET=$(tf evidence_bucket)
 TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 EOF
@@ -79,6 +85,7 @@ echo '$(b64 deploy/cloud/docker-compose.yml)'   | base64 -d > /opt/takab/cloud/d
 echo '$(b64 deploy/cloud/takab-secrets.sh)'     | base64 -d > /opt/takab/cloud/takab-secrets.sh
 echo '$(b64 deploy/cloud/takab-secrets.service)'| base64 -d > /etc/systemd/system/takab-secrets.service
 echo '$(b64 deploy/cloud/takab-cloud.service)'  | base64 -d > /etc/systemd/system/takab-cloud.service
+echo '$(b64 db/seeds/dev_fleet.sql)'            | base64 -d > /opt/takab/cloud/dev_fleet.sql
 chmod 0755 /opt/takab/cloud/takab-secrets.sh
 
 umask 077
@@ -91,8 +98,6 @@ DEPLOYENV
 umask 022
 
 sed -i "s|^Environment=AWS_REGION=.*|Environment=AWS_REGION=${AWS_REGION}|" /etc/systemd/system/takab-secrets.service
-grep -q TAKAB_HMAC_GATEWAY /etc/systemd/system/takab-secrets.service \
-  || sed -i "/^Environment=AWS_REGION=/a Environment=TAKAB_HMAC_GATEWAY=${HMAC_GATEWAY}" /etc/systemd/system/takab-secrets.service
 
 systemctl daemon-reload
 systemctl enable --now takab-secrets.service
@@ -109,6 +114,14 @@ aws ecr get-login-password --region ${AWS_REGION} \
 docker run --rm --network host --workdir /takab/api \\
   --env-file /run/takab/db-migrator.env \\
   --entrypoint python ${REGISTRY}/takab/cloud:${CLOUD_TAG} -m alembic upgrade head
+
+# Flota en la DB de la nube (GAP-3 · T-1.38): sin filas en gateways/sensors la
+# ingesta rechaza TODO por "unknown principal" → DLQ. El seed es idempotente
+# (UUIDs fijos + ON CONFLICT DO NOTHING) y corre como superusuario POR SOCKET
+# LOCAL del contenedor de la DB (auth trust interna): cero secretos
+# materializados para este paso, y el superusuario ignora RLS FORCE.
+docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
+  </opt/takab/cloud/dev_fleet.sql >/dev/null
 
 systemctl enable takab-cloud.service
 systemctl restart takab-cloud.service

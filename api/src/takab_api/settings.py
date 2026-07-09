@@ -119,10 +119,17 @@ class Settings(BaseSettings):
     notify_email_from: str = ""
 
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
-    # Clave HMAC compartida con el edge (TAKAB_EDGE_HMAC_KEY): SOLO por env/
-    # Secrets Manager, vacía = fail-closed (503 en comandos, sync no publica).
-    # Prod per-gateway (resolver por gateway vía Secrets Manager) = TODO T-1.26+.
-    command_hmac_key: str = ""
+    # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
+    # clave del gateway DESTINO, jamás una compartida de flota.
+    #  - command_hmac_secret_prefix (prod): Secrets Manager "{prefix}/{iot_thing}"
+    #    (campo hmac_key), leído con el rol de instancia + cache TTL.
+    #  - command_hmac_keys_json (dev/tests): mapa inline {"iot_thing": "clave"},
+    #    patrón auth_jwks_json — sin AWS. Gana sobre el prefijo.
+    # Ambos vacíos ⇒ ninguna clave resoluble ⇒ fail-closed (503 / sync no publica).
+    command_hmac_secret_prefix: str = ""
+    command_hmac_keys_json: str = ""
+    command_hmac_cache_ttl_s: float = 300.0  # rotación visible sin reinicio
+    command_hmac_negative_ttl_s: float = 30.0  # thing sin secreto: no martillear SM
     command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
     command_rate_user_site_per_min: int = 6
     command_rate_site_per_min: int = 12

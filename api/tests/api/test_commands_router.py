@@ -1,7 +1,8 @@
 """Command service HTTP (T-1.23 · B9): emitir/listar comandos firmados.
 
 Patrón del conftest de B2 (client/app, tenants A/B/G). El publisher IoT se
-sustituye por un fake vía dependency override; la clave HMAC va por env.
+sustituye por un fake vía dependency override; las claves HMAC van por env
+como mapa inline PER-GATEWAY (T-1.38): cada iot_thing firma con LA SUYA.
 """
 
 from __future__ import annotations
@@ -26,6 +27,12 @@ pytestmark = pytest.mark.asyncio
 KEY = "clave-router-test"
 GW_PRIV = "7c300000-0000-0000-0000-0000000000c3"
 THING = "gw-cmd-test-a"
+
+# Segundo gabinete comandable del MISMO tenant, con clave DISTINTA (T-1.38).
+KEY_B = "clave-router-test-b"
+SITE_B3 = "7c300000-0000-0000-0000-00000000015b"
+GW_B3 = "7c300000-0000-0000-0000-0000000001c4"
+THING_B = "gw-cmd-test-b"
 
 
 class _FakePublisher:
@@ -53,8 +60,10 @@ def app(publisher: _FakePublisher) -> FastAPI:
 
 
 @pytest.fixture(autouse=True)
-def _hmac_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TAKAB_API_COMMAND_HMAC_KEY", KEY)
+def _hmac_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mapa inline per-gateway (T-1.38): claves deterministas sin AWS."""
+    monkeypatch.delenv("TAKAB_API_COMMAND_HMAC_SECRET_PREFIX", raising=False)
+    monkeypatch.setenv("TAKAB_API_COMMAND_HMAC_KEYS_JSON", json.dumps({THING: KEY, THING_B: KEY_B}))
 
 
 @pytest.fixture
@@ -70,6 +79,34 @@ async def gateway(base_data) -> str:
             {"g": GW_PRIV, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "thing": THING},
         )
     return GW_PRIV
+
+
+@pytest.fixture
+async def gateway_b(base_data) -> str:
+    """Segundo gabinete comandable (tenant A, sitio propio) con clave DISTINTA.
+
+    Sitio nuevo a propósito: DB_SITE_PRIV2 debe seguir SIN gateway para que
+    test_site_without_gateway_is_409 no dependa del orden de ejecución.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES "
+                "(:s, :t, 'S-CMD-B3', 'Sitio cmd B3', "
+                "ST_SetSRID(ST_MakePoint(-98.20, 19.04), 4326)::geography) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"s": SITE_B3, "t": au.DB_TENANT_PRIV},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, iot_thing) "
+                "VALUES (:g, :t, :s, 'SER-CMD-B3', :thing) ON CONFLICT DO NOTHING"
+            ),
+            {"g": GW_B3, "t": au.DB_TENANT_PRIV, "s": SITE_B3, "thing": THING_B},
+        )
+    return SITE_B3
 
 
 def _body(channel: str = "siren", action: str = "activate") -> dict:
@@ -163,13 +200,64 @@ async def test_site_without_gateway_is_409(client, base_data) -> None:
     assert r.status_code == 409
 
 
-async def test_without_hmac_key_is_503_fail_closed(client, gateway, monkeypatch) -> None:
-    monkeypatch.delenv("TAKAB_API_COMMAND_HMAC_KEY", raising=False)
+async def test_without_any_key_config_is_503_fail_closed(client, gateway, monkeypatch) -> None:
+    """Sin mapa inline NI prefijo de Secrets Manager: nada resoluble ⇒ 503."""
+    monkeypatch.delenv("TAKAB_API_COMMAND_HMAC_KEYS_JSON", raising=False)
+    monkeypatch.delenv("TAKAB_API_COMMAND_HMAC_SECRET_PREFIX", raising=False)
     tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
         f"/sites/{au.DB_SITE_PRIV}/commands", json=_body(), headers=au.bearer(tok)
     )
     assert r.status_code == 503
+
+
+async def test_gateway_without_key_is_503_and_nothing_leaks(
+    client, gateway, publisher: _FakePublisher, monkeypatch
+) -> None:
+    """Fail-closed POR GATEWAY: su thing no está en el mapa ⇒ 503, sin publish ni fila."""
+    monkeypatch.setenv("TAKAB_API_COMMAND_HMAC_KEYS_JSON", json.dumps({"otro-thing": "x"}))
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
+    r = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands", json=_body(), headers=au.bearer(tok)
+    )
+    assert r.status_code == 503
+    assert publisher.published == []
+    engine = get_engine()
+    async with engine.begin() as conn:
+        count = (
+            await conn.execute(
+                text("SELECT count(*) FROM commands WHERE site_id = :s"),
+                {"s": au.DB_SITE_PRIV},
+            )
+        ).scalar_one()
+    assert count == 0  # el 503 ocurre ANTES del insert: sin pending fantasma
+
+
+async def test_each_gateway_signs_with_its_own_key(
+    client, gateway, gateway_b, publisher: _FakePublisher
+) -> None:
+    """Dos gabinetes del mismo tenant: cada envelope verifica SOLO con su clave."""
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
+    r1 = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands", json=_body(), headers=au.bearer(tok)
+    )
+    r2 = await client.post(f"/sites/{SITE_B3}/commands", json=_body(), headers=au.bearer(tok))
+    assert r1.status_code == 201, r1.text
+    assert r2.status_code == 201, r2.text
+
+    by_topic = dict(publisher.published)
+    env_a = by_topic[f"takab/cmd/{THING}"]
+    env_b = by_topic[f"takab/cmd/{THING_B}"]
+    assert env_a["sig"] == sign_command(
+        KEY.encode(), canonical_payload(env_a["payload"]), env_a["nonce"], env_a["ts"]
+    )
+    assert env_b["sig"] == sign_command(
+        KEY_B.encode(), canonical_payload(env_b["payload"]), env_b["nonce"], env_b["ts"]
+    )
+    # La clave de A NO verifica el comando de B: la firma liga al gateway (T-1.38).
+    assert env_b["sig"] != sign_command(
+        KEY.encode(), canonical_payload(env_b["payload"]), env_b["nonce"], env_b["ts"]
+    )
 
 
 async def test_invalid_channel_is_400(client, gateway) -> None:

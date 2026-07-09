@@ -11,7 +11,8 @@ Superficie MÁS sensible del sistema (regla de oro 8 / RBAC §4.3). No negociabl
 
 Roles: acción ``siren_test`` de la matriz RBAC ([DECISION]: proxy Fase 1 de
 "puede comandar actuadores"; §2 no define acción más fina — el pánico móvil de
-``occupant`` con quórum/geofence es de T-1.31). Fail-closed sin clave HMAC.
+``occupant`` con quórum/geofence es de T-1.31). Fail-closed POR GATEWAY: la
+firma usa la clave de ESE gabinete (T-1.38); sin clave resoluble ⇒ 503.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import anyio
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -27,6 +29,11 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX
+from takab_api.commands.keys import (
+    CommandKeyProvider,
+    SecretsManagerKeyProvider,
+    build_key_provider,
+)
 from takab_api.commands.publisher import CommandPublisher, IotDataPublisher, PublishError
 from takab_api.commands.signing import canonical_payload, sign_command
 from takab_api.queries import commands as q
@@ -51,6 +58,24 @@ def get_publisher() -> CommandPublisher:
     return IotDataPublisher(Settings())
 
 
+# Provider de Secrets Manager process-wide: el TTL del cache de claves solo
+# sirve si el provider sobrevive al request. El Static (dev/tests) se
+# construye por request: es barato y respeta monkeypatch.setenv.
+_sm_provider: SecretsManagerKeyProvider | None = None
+
+
+def get_key_provider() -> CommandKeyProvider:
+    """Resuelve claves HMAC por gateway (T-1.38); overrideable en tests."""
+    settings = Settings()
+    if not settings.command_hmac_keys_json and settings.command_hmac_secret_prefix:
+        global _sm_provider
+        prefix = settings.command_hmac_secret_prefix.rstrip("/")
+        if _sm_provider is None or _sm_provider.prefix != prefix:
+            _sm_provider = SecretsManagerKeyProvider(settings)
+        return _sm_provider
+    return build_key_provider(settings)
+
+
 @router.post("/sites/{site_id}/commands", response_model=CommandOut, status_code=201)
 async def issue_command(
     site_id: UUID,
@@ -58,11 +83,10 @@ async def issue_command(
     claims: Claims = Depends(_require_command),
     conn: AsyncConnection = Depends(get_session),
     publisher: CommandPublisher = Depends(get_publisher),
+    keys: CommandKeyProvider = Depends(get_key_provider),
 ) -> CommandOut:
     """Emite un comando firmado al gateway del sitio y lo registra ``pending``."""
     settings = Settings()
-    if not settings.command_hmac_key:
-        raise http_error(503, "clave HMAC de comandos no configurada")  # fail-closed
     if body.channel not in CHANNELS or body.action not in ACTIONS:
         raise http_error(400, "channel/action inválidos")
     scope = scope_filter(claims)
@@ -92,12 +116,17 @@ async def issue_command(
     if gateway is None:
         raise http_error(409, "el sitio no tiene gateway comandable (iot_thing)")
 
+    # Fail-closed POR GATEWAY (T-1.38): la firma usa la clave de ESTE gabinete;
+    # sin clave resoluble no se firma nada — jamás se degrada a una compartida.
+    # key_for puede tocar Secrets Manager (bloqueante) ⇒ thread pool.
+    key = await anyio.to_thread.run_sync(keys.key_for, gateway.iot_thing)
+    if key is None:
+        raise http_error(503, f"sin clave HMAC para el gateway {gateway.iot_thing}")
+
     nonce = uuid4().hex
     ts_iso = now.isoformat()
     payload = {"channel": body.channel, "action": body.action, "event_id": body.event_id}
-    signature = sign_command(
-        settings.command_hmac_key.encode(), canonical_payload(payload), nonce, ts_iso
-    )
+    signature = sign_command(key, canonical_payload(payload), nonce, ts_iso)
     stmt, params = q.insert_command(
         tenant_id=str(site.tenant_id),
         site_id=str(site_id),

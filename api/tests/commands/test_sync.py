@@ -17,6 +17,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from takab_api.commands.keys import StaticKeyProvider
 from takab_api.commands.publisher import PublishError
 from takab_api.commands.signing import canonical_payload, sign_config
 from takab_api.commands.sync import run_config_sync_pass
@@ -121,8 +122,13 @@ def _cleanup(conn: psycopg.Connection, tenant: str) -> None:
         conn.rollback()
 
 
-def _settings(key: str = KEY) -> Settings:
-    return Settings(command_hmac_key=key)
+def _settings() -> Settings:
+    return Settings()
+
+
+def _keys(scenario: _Scenario, key: str = KEY) -> StaticKeyProvider:
+    """Clave per-gateway (T-1.38): solo el thing del escenario firma con KEY."""
+    return StaticKeyProvider({scenario.thing: key})
 
 
 def test_activation_publishes_signed_v1(scenario: _Scenario) -> None:
@@ -130,7 +136,7 @@ def test_activation_publishes_signed_v1(scenario: _Scenario) -> None:
     scenario.activate_rule_set({"edge": EDGE_DOC})
     publisher = _FakePublisher()
 
-    published = run_config_sync_pass(scenario.conn, _settings(), publisher)
+    published = run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
 
     assert scenario.gateway in published
     mine = scenario.mine(publisher)
@@ -149,8 +155,8 @@ def test_rerun_without_change_is_idempotent(scenario: _Scenario) -> None:
     scenario.seed_gateway()
     scenario.activate_rule_set({"edge": EDGE_DOC})
     publisher = _FakePublisher()
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
     assert len(scenario.mine(publisher)) == 1
     assert scenario.state()["version"] == 1
 
@@ -159,11 +165,11 @@ def test_config_change_bumps_monotonic_version(scenario: _Scenario) -> None:
     scenario.seed_gateway()
     scenario.activate_rule_set({"edge": EDGE_DOC})
     publisher = _FakePublisher()
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
 
     new_doc = {**EDGE_DOC, "command_ttl_s": 20.0}
     scenario.activate_rule_set({"edge": new_doc}, version=2)
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
 
     mine = scenario.mine(publisher)
     assert [p["version"] for _t, p in mine] == [1, 2]
@@ -175,7 +181,7 @@ def test_ruleset_without_edge_key_publishes_nothing(scenario: _Scenario) -> None
     scenario.seed_gateway()
     scenario.activate_rule_set({"quorum": {"min_nodes": 3}})
     publisher = _FakePublisher()
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
     assert scenario.mine(publisher) == []
     assert scenario.state() is None
 
@@ -188,17 +194,55 @@ def test_gateway_without_thing_is_skipped(scenario: _Scenario) -> None:
     scenario.conn.commit()
     scenario.activate_rule_set({"edge": EDGE_DOC})
     publisher = _FakePublisher()
-    run_config_sync_pass(scenario.conn, _settings(), publisher)
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
     assert publisher.published == [] or scenario.state() is None
 
 
-def test_no_key_is_fail_closed(scenario: _Scenario) -> None:
+def test_gateway_without_key_is_fail_closed(scenario: _Scenario) -> None:
+    """Sin clave PARA ESE gateway (T-1.38): no publica ni quema versión."""
     scenario.seed_gateway()
     scenario.activate_rule_set({"edge": EDGE_DOC})
     publisher = _FakePublisher()
-    published = run_config_sync_pass(scenario.conn, _settings(key=""), publisher)
+    published = run_config_sync_pass(scenario.conn, _settings(), publisher, StaticKeyProvider({}))
     assert published == []
     assert scenario.mine(publisher) == []
+    assert scenario.state() is None
+
+
+def test_mixed_fleet_signs_only_gateways_with_key(scenario: _Scenario) -> None:
+    """Per-gateway (T-1.38): publica solo a quien tiene clave; el resto entra
+    cuando la suya aparece (provisión tardía), con SU clave y versión propia."""
+    scenario.seed_gateway()
+    site2, gw2 = str(uuid.uuid4()), str(uuid.uuid4())
+    thing2 = f"gw-sync2-{gw2[:8]}"
+    scenario.conn.execute(
+        "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES "
+        "(%s,%s,%s,'S2', ST_SetSRID(ST_MakePoint(-100.8,11.8),4326)::geography)",
+        (site2, scenario.tenant, f"CS2-{site2[:8]}"),
+    )
+    scenario.conn.execute(
+        "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, iot_thing) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (gw2, scenario.tenant, site2, f"SER2-{gw2[:8]}", thing2),
+    )
+    scenario.conn.commit()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+
+    publisher = _FakePublisher()
+    published = run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    assert published == [scenario.gateway]
+    assert f"takab/cfg/{thing2}" not in [t for t, _ in publisher.published]
+    st2 = scenario.conn.execute(
+        "SELECT 1 FROM gateway_config_state WHERE gateway_id = %s", (gw2,)
+    ).fetchone()
+    assert st2 is None  # el candidato sin clave no quema versión
+
+    both = StaticKeyProvider({scenario.thing: KEY, thing2: "clave-2"})
+    published2 = run_config_sync_pass(scenario.conn, _settings(), publisher, both)
+    assert published2 == [gw2]  # solo el pendiente; el otro ya estaba al día
+    env2 = next(p for t, p in publisher.published if t == f"takab/cfg/{thing2}")
+    assert env2["version"] == 1
+    assert env2["sig"] == sign_config(b"clave-2", canonical_payload(EDGE_DOC), 1)
 
 
 def test_publish_failure_keeps_candidate_for_retry(scenario: _Scenario) -> None:
@@ -206,11 +250,13 @@ def test_publish_failure_keeps_candidate_for_retry(scenario: _Scenario) -> None:
     scenario.seed_gateway()
     scenario.activate_rule_set({"edge": EDGE_DOC})
     failing = _FakePublisher(fail=True)
-    assert run_config_sync_pass(scenario.conn, _settings(), failing) == []
+    assert run_config_sync_pass(scenario.conn, _settings(), failing, _keys(scenario)) == []
     assert scenario.state() is None
 
     ok = _FakePublisher()
-    assert run_config_sync_pass(scenario.conn, _settings(), ok) == [scenario.gateway]
+    assert run_config_sync_pass(scenario.conn, _settings(), ok, _keys(scenario)) == [
+        scenario.gateway
+    ]
     assert scenario.mine(ok)[0][1]["version"] == 1
 
 
@@ -224,6 +270,7 @@ def test_expires_stale_pending_commands(scenario: _Scenario) -> None:
         (scenario.tenant, scenario.site, scenario.gateway, str(uuid.uuid4())),
     )
     scenario.conn.commit()
-    run_config_sync_pass(scenario.conn, _settings(), _FakePublisher())
+    # La expiración corre aunque NINGÚN gateway tenga clave (independiente de firma).
+    run_config_sync_pass(scenario.conn, _settings(), _FakePublisher(), StaticKeyProvider({}))
     row = scenario.conn.execute("SELECT status FROM commands WHERE nonce = 'n-sync-exp'").fetchone()
     assert row["status"] == "expired"

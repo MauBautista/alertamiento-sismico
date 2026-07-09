@@ -24,10 +24,18 @@ umask 077
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Dos secretos desde T-1.38: el del certificado (cert+key mTLS, prefijo que la
+# nube JAMAS puede leer) y el HMAC de comandos (prefijo gateway-hmac, el que la
+# nube resuelve por gabinete en runtime).
 aws secretsmanager get-secret-value \
   --secret-id "takab/dev/gateway/$THING" \
   --query SecretString --output text \
   --profile "$PROFILE" --region "$REGION" >"$TMP/secret.json"
+
+aws secretsmanager get-secret-value \
+  --secret-id "takab/dev/gateway-hmac/$THING" \
+  --query SecretString --output text \
+  --profile "$PROFILE" --region "$REGION" >"$TMP/hmac.json"
 
 python3 - "$TMP" <<'PY'
 import json
@@ -38,7 +46,8 @@ tmp = pathlib.Path(sys.argv[1])
 data = json.loads((tmp / "secret.json").read_text())
 (tmp / "cert.pem").write_text(data["cert_pem"])
 (tmp / "key.pem").write_text(data["private_key"])
-(tmp / "hmac.key").write_text(data["hmac_key"])
+hmac = json.loads((tmp / "hmac.json").read_text())
+(tmp / "hmac.key").write_text(hmac["hmac_key"])
 PY
 
 curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA1.pem -o "$TMP/ca.pem"
