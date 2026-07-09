@@ -2,12 +2,12 @@ import type { RouteObject } from "react-router";
 
 import ConsolePage from "../features/console/ConsolePage";
 import FleetPage from "../features/fleet/FleetPage";
+import TenantsPage from "../features/tenants/TenantsPage";
 import TriagePage from "../features/triage/TriagePage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
 import BuildingPage from "../pages/BuildingPage";
 import LoginPage from "../pages/LoginPage";
 import NotFoundPage from "../pages/NotFoundPage";
-import PlaceholderPage from "../pages/PlaceholderPage";
 import AppShell from "../shell/AppShell";
 import RequireSession from "./RequireSession";
 import RouteGuard from "./RouteGuard";
@@ -50,7 +50,7 @@ export const routes: RouteObject[] = [
             path: "/tenants",
             element: (
               <RouteGuard routeKey="/tenants">
-                <PlaceholderPage title="MULTI-TENANT" taskRef="T-1.30" />
+                <TenantsPage />
               </RouteGuard>
             ),
           },
