@@ -123,6 +123,12 @@ docker run --rm --network host --workdir /takab/api \\
 docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
   </opt/takab/cloud/dev_fleet.sql >/dev/null
 
+# Workers ad-hoc del smoke del 2026-07-08 (imagen takab-cloud:t125, lanzados a
+# mano por SSM, sin systemd): fuera. El stack compose los sustituye; dejarlos
+# vivos serían dos consumidores con CÓDIGO DISTINTO peleando por las mismas
+# colas — descubierto en D0 de T-1.39 (las colas "vacías" eran ellos drenando).
+docker rm -f takab-worker-events takab-worker-telemetry takab-worker-backfill 2>/dev/null || true
+
 systemctl enable takab-cloud.service
 systemctl restart takab-cloud.service
 sleep 5
