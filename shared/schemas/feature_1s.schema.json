@@ -53,6 +53,6 @@
   "title": "Feature1s",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/feature_1s/v1.0.0",
-  "version": "1.0.0"
+  "$id": "https://takab.mx/schemas/feature_1s/v1.1.0",
+  "version": "1.1.0"
 }

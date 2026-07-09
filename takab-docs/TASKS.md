@@ -869,3 +869,31 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > instalado en `gw-dev-0001` sigue siendo válido sin re-provisionar. `provision_gateway.sh` ahora
 > baja dos secretos. Rotación: la nube converge en ≤300 s (TTL del cache) sin reiniciar procesos;
 > el edge sí exige re-provisión (ventana fail-visible: rejected/expired, nunca silenciosa).
+
+### [~] T-1.40 · Salud honesta del edge — **[B4/C7] CÓDIGO LISTO · DESPLIEGUE tras T-1.39**
+- **Componente:** edge + api + web · **Depende de:** T-1.10 (stubs), T-1.39 (para verificar en nube)
+- **Objetivo:** que `/fleet` deje de mentir. `HostProbes` devolvía NTP=0.0, UPS «RED ELÉCTRICA
+  100%» y cert=365 fijos; `mqtt_rtt_ms` era NULL en toda fila. La batería era un invento.
+- **Criterios de aceptación:**
+  - [x] **NTP real:** `chronyc -c tracking` con fallback `timedatectl timesync-status` (el Pi usa
+        systemd-timesyncd — verificado; `show-timesync` NO expone el offset, se parsea la salida
+        humana con LC_ALL=C). Sin fuente ⇒ `None`.
+  - [x] **Cert real:** `openssl x509 -enddate` sobre `TAKAB_EDGE_MQTT_CERT_PATH` (el cert de AWS
+        IoT vence 2049-12-31 ⇒ ~8 500 días: número grande pero HONESTO). Ilegible ⇒ `None`.
+  - [x] **UPS honesta:** NUT (`upsc`) → sysfs `power_supply` → sin hardware ⇒
+        `UNKNOWN + battery None` (la UI pinta «UPS · S/D» y «—», no 100%).
+  - [x] **RTT MQTT real:** tiempo hasta el PUBACK QoS1 medido en `AwsIotMqttTransport.publish`
+        → `CloudConnector.mqtt_rtt_ms` → snapshot → `device_health.mqtt_rtt_ms` (dejaba NULL).
+  - [x] **Contrato honesto v1.1.0:** `HealthSnapshot` con ntp/battery/cert nullable +
+        `mqtt_rtt_ms`; schemas compartidos regenerados; la ingesta persiste None como NULL.
+  - [x] **Ninguna sonda mata el heartbeat** (backlog #28): `_safe()` por sonda + try/except en
+        `_heartbeat_loop`; sondas con timeout de 2 s.
+  - [x] **`degrade_reasons` server-side** (backlog de T-1.28): `fleet_degrade_reasons()` es la
+        MISMA verdad que `derive_fleet_state` (que ahora la llama); pills en `SiteCard`.
+        «Sin dato» JAMÁS degrada: no tener UPS no es estar en batería.
+  - [x] **Deploy del edge versionado:** `deploy/edge/deploy.sh` (rsync + uv sync + unidades +
+        restart + verificación) — antes era un rsync manual sin versionar.
+  - [x] Suites: edge 250 · api 641 · web 448, lint/format/build limpios.
+  - [ ] **Desplegado y verificado EN LA NUBE** (`/fleet` con NTP/cert/RTT reales y UPS S/D)
+        ⟵ tras el `terraform apply` de T-1.39 (primero nube, después edge — el orden importa
+        por el contrato).

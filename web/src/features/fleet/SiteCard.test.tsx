@@ -93,6 +93,31 @@ describe("SiteCard", () => {
     expect(screen.getByText("EN BATERÍA")).toBeInTheDocument();
   });
 
+  it("DEGRADADO con degrade_reasons ⇒ pills server-derived con QUÉ degrada (T-1.40)", () => {
+    render(
+      <SiteCard
+        cabinet={cabinet(
+          {},
+          {
+            derived_state: "DEGRADADO",
+            ntp_offset_ms: 180,
+            cert_days_remaining: 12,
+            degrade_reasons: ["CERT 12d", "NTP +180ms"],
+          },
+        )}
+      />,
+    );
+    expect(screen.getByText("CERT 12d")).toBeInTheDocument();
+    expect(screen.getByText("NTP +180ms")).toBeInTheDocument();
+  });
+
+  it("OPERATIVO jamás pinta razones aunque el campo venga (defensa en la UI)", () => {
+    const { container } = render(
+      <SiteCard cabinet={cabinet({}, { degrade_reasons: ["CERT 12d"] })} />,
+    );
+    expect(container.querySelector(".fleet-card__reasons")).toBeNull();
+  });
+
   it("un derived_state desconocido JAMÁS pinta ok", () => {
     const { container } = render(<SiteCard cabinet={cabinet({}, { derived_state: "???" })} />);
     expect(container.querySelector(".soc-pill--ok")).toBeNull();

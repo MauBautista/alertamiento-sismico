@@ -1,24 +1,29 @@
 """health — autodiagnóstico del gabinete (snapshots por transición + heartbeat).
 
-T-1.10: compone un `HealthSnapshot` con NTP offset, lag SeedLink, packet loss, estado
-UPS (`RED ELÉCTRICA %` / `RESPALDO Xh Ym` / `EN BATERÍA`), temperatura, `cert_days_
-remaining` y estado de relés. **Logging por transición** de estado discreto (nunca por
-intervalo continuo, regla de oro 10) + **heartbeat periódico** como beacon de vida.
+T-1.10/T-1.40: compone un `HealthSnapshot` con NTP offset, lag SeedLink, packet loss,
+RTT MQTT, estado UPS, temperatura, `cert_days_remaining` y estado de relés. **Logging
+por transición** de estado discreto (nunca por intervalo continuo, regla de oro 10) +
+**heartbeat periódico** como beacon de vida.
 
-Las fuentes del SO/hardware se leen por `HealthProbes` (inyectables): la temperatura
-del Pi sale de `/sys/class/thermal` con degradación graceful; NTP (chrony), UPS (NUT) y
-el vencimiento del cert mTLS tienen impl real con hardware (gate #3) y aquí van por
-defecto seguro. Los tests inyectan probes deterministas.
+Las fuentes del SO/hardware se leen por `HealthProbes` (inyectables). Desde T-1.40 los
+probes son REALES con degradación honesta: NTP sale de chrony o systemd-timesyncd, el
+vencimiento del cert mTLS de `openssl x509`, y la UPS de NUT o sysfs. **Cuando una
+fuente no existe, el campo es `None` («sin dato») — jamás un número optimista inventado
+(regla de oro 7).** Ninguna sonda lanza: el hilo del heartbeat no muere por I/O.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import re
+import subprocess
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
@@ -33,18 +38,29 @@ TEMP_WARN_C = 80.0
 LAG_WARN_S = 2.0
 
 _THERMAL = Path("/sys/class/thermal/thermal_zone0/temp")
+_POWER_SUPPLY = Path("/sys/class/power_supply")
+
+#: Tope de espera de una sonda externa: una herramienta colgada no congela el heartbeat.
+_RUN_TIMEOUT_S = 2.0
+
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
 class UpsReading:
-    status: UpsStatus = UpsStatus.LINE
-    battery_pct: float = 100.0
+    """Lectura de UPS. Los defaults son la verdad sin hardware: estado DESCONOCIDO
+    y batería `None` («sin dato») — el 100% optimista de antes era una mentira."""
+
+    status: UpsStatus = UpsStatus.UNKNOWN
+    battery_pct: float | None = None
     runtime_s: float | None = None  # autonomía restante (None = desconocida / en red)
 
 
 def ups_label(reading: UpsReading) -> str:
-    """Etiqueta de UI del UPS: `RED ELÉCTRICA %` / `RESPALDO Xh Ym` / `EN BATERÍA`."""
+    """Etiqueta de UI del UPS: `RED ELÉCTRICA [%]` / `RESPALDO Xh Ym` / `EN BATERÍA`."""
     if reading.status is UpsStatus.LINE:
+        if reading.battery_pct is None:
+            return "RED ELÉCTRICA"
         return f"RED ELÉCTRICA {reading.battery_pct:.0f}%"
     if reading.status is UpsStatus.BATTERY:
         if reading.runtime_s is not None:
@@ -55,19 +71,103 @@ def ups_label(reading: UpsReading) -> str:
 
 
 class HealthProbes(Protocol):
-    """Fuentes de métricas del host (impl real = hardware; mock en tests)."""
+    """Fuentes de métricas del host (impl real = SO/hardware; fake en tests).
+
+    ``None`` significa «sin dato»: la fuente no existe o no respondió. La nube
+    lo presenta como S/D; nunca se sustituye por un default optimista.
+    """
 
     def temperature_c(self) -> float: ...
-    def ntp_offset_s(self) -> float: ...
+    def ntp_offset_s(self) -> float | None: ...
     def ups(self) -> UpsReading: ...
-    def cert_days_remaining(self) -> int: ...
+    def cert_days_remaining(self) -> int | None: ...
+
+
+def _run_cmd(cmd: list[str]) -> str | None:
+    """stdout del comando, o ``None`` si no existe/falla/expira. Jamás lanza."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=_RUN_TIMEOUT_S,
+            env={**os.environ, "LC_ALL": "C"},  # parsers dependen del formato inglés
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def _parse_chrony_offset(csv_text: str) -> float | None:
+    """Offset (s) del `chronyc -c tracking` (CSV): campo 5 = offset actual del sistema."""
+    try:
+        return float(csv_text.split(",")[4])
+    except (IndexError, ValueError):
+        return None
+
+
+_TIMESYNC_OFFSET = re.compile(r"^\s*Offset:\s*([+-]?[0-9.]+)(us|ms|s)\s*$", re.MULTILINE)
+_UNIT_S = {"us": 1e-6, "ms": 1e-3, "s": 1.0}
+
+
+def _parse_timesync_offset(text: str) -> float | None:
+    """Offset (s) de `timedatectl timesync-status` — línea `Offset: +800us`.
+
+    `timedatectl show-timesync` (machine-readable) NO expone el offset, así que
+    se parsea la salida humana con LC_ALL=C (verificado en el Pi 5 real).
+    """
+    match = _TIMESYNC_OFFSET.search(text)
+    if match is None:
+        return None
+    try:
+        return float(match.group(1)) * _UNIT_S[match.group(2)]
+    except ValueError:
+        return None
+
+
+def _parse_cert_days(enddate: str, *, now: datetime | None = None) -> int | None:
+    """Días restantes del `openssl x509 -enddate -noout`: `notAfter=Dec 31 23:59:59 2049 GMT`."""
+    value = enddate.strip().split("=", 1)[-1].strip()
+    try:
+        not_after = datetime.strptime(value, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    now = now or datetime.now(UTC)
+    return (not_after - now).days
+
+
+def _to_float(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text().strip()
+    except (OSError, ValueError):
+        return None
 
 
 class HostProbes:
-    """Impl real con degradación graceful; NTP/UPS/cert reales son gate hardware."""
+    """Sondas reales del host (T-1.40), con degradación honesta a ``None``.
 
-    def __init__(self, settings: EdgeSettings) -> None:
+    El ejecutor de comandos es inyectable (``run``) para tests deterministas.
+    Contrato: ninguna sonda lanza — toda falla degrada a «sin dato».
+    """
+
+    def __init__(
+        self,
+        settings: EdgeSettings,
+        run: Callable[[list[str]], str | None] = _run_cmd,
+    ) -> None:
         self._settings = settings
+        self._run = run
 
     def temperature_c(self) -> float:
         try:
@@ -75,14 +175,81 @@ class HostProbes:
         except (OSError, ValueError):
             return 0.0  # no es un Pi (dev/CI) o el sysfs no está disponible
 
-    def ntp_offset_s(self) -> float:
-        return 0.0  # real: `chronyc tracking` (gate hardware)
+    def ntp_offset_s(self) -> float | None:
+        """Offset del reloj vs NTP: chrony si está activo; si no, systemd-timesyncd."""
+        out = self._run(["chronyc", "-c", "tracking"])
+        if out:
+            offset = _parse_chrony_offset(out)
+            if offset is not None:
+                return offset
+        out = self._run(["timedatectl", "timesync-status"])
+        if out:
+            return _parse_timesync_offset(out)
+        return None
 
     def ups(self) -> UpsReading:
-        return UpsReading()  # real: NUT/apcupsd o señal GPIO del UPS (gate hardware)
+        """UPS por NUT (`upsc`) o sysfs; sin hardware ⇒ DESCONOCIDO + batería None."""
+        reading = self._ups_nut()
+        if reading is not None:
+            return reading
+        reading = self._ups_sysfs()
+        if reading is not None:
+            return reading
+        return UpsReading()  # sin UPS visible: se dice «sin dato», no se inventa 100%
 
-    def cert_days_remaining(self) -> int:
-        return 365  # real: vencimiento del cert mTLS (T-1.11, con `cryptography`)
+    def cert_days_remaining(self) -> int | None:
+        """Vencimiento real del cert mTLS del gateway (el de AWS IoT vence en 2049)."""
+        path = self._settings.mqtt_cert_path
+        if not path:
+            return None
+        out = self._run(["openssl", "x509", "-enddate", "-noout", "-in", path])
+        if not out:
+            return None
+        return _parse_cert_days(out)
+
+    def _ups_nut(self) -> UpsReading | None:
+        names = self._run(["upsc", "-l"])
+        if not names or not names.strip():
+            return None
+        name = names.strip().splitlines()[0].strip()
+        out = self._run(["upsc", name])
+        if not out:
+            return None
+        kv: dict[str, str] = {}
+        for line in out.splitlines():
+            key, _, value = line.partition(":")
+            kv[key.strip()] = value.strip()
+        raw_status = kv.get("ups.status", "")
+        if raw_status.startswith("OL"):
+            status = UpsStatus.LINE
+        elif raw_status.startswith("OB"):
+            status = UpsStatus.BATTERY
+        else:
+            status = UpsStatus.UNKNOWN
+        return UpsReading(
+            status, _to_float(kv.get("battery.charge")), _to_float(kv.get("battery.runtime"))
+        )
+
+    def _ups_sysfs(self) -> UpsReading | None:
+        try:
+            supplies = sorted(_POWER_SUPPLY.iterdir())
+        except OSError:
+            return None
+        battery: float | None = None
+        online: str | None = None
+        for supply in supplies:
+            kind = _read_text(supply / "type")
+            if kind == "Battery" and battery is None:
+                battery = _to_float(_read_text(supply / "capacity"))
+            elif kind in ("Mains", "UPS") and online is None:
+                online = _read_text(supply / "online")
+        if battery is None and online is None:
+            return None  # el Pi 5 pelón no expone nada aquí (verificado)
+        if online is not None:
+            status = UpsStatus.LINE if online == "1" else UpsStatus.BATTERY
+        else:
+            status = UpsStatus.UNKNOWN
+        return UpsReading(status, battery, None)
 
 
 class HealthMonitor(EdgeModule):
@@ -97,6 +264,7 @@ class HealthMonitor(EdgeModule):
         gpio: GpioController | None = None,
         seedlink: object | None = None,
         probes: HealthProbes | None = None,
+        cloud: object | None = None,
         heartbeat_s: float = 60.0,
     ) -> None:
         super().__init__()
@@ -104,6 +272,7 @@ class HealthMonitor(EdgeModule):
         self._gpio = gpio
         self._seedlink = seedlink
         self._probes = probes or HostProbes(settings)
+        self._cloud = cloud
         self._heartbeat_s = heartbeat_s
         self._callbacks: list[Callable[[HealthSnapshot], None]] = []
         self._last_key: tuple | None = None
@@ -131,18 +300,35 @@ class HealthMonitor(EdgeModule):
         lag = getattr(self._seedlink, "last_lag_s", None) if self._seedlink else None
         return lag or 0.0
 
+    def _mqtt_rtt_ms(self) -> float | None:
+        """RTT del último PUBACK QoS1 medido por el conector cloud (None sin dato)."""
+        if self._cloud is None:
+            return None
+        rtt = getattr(self._cloud, "mqtt_rtt_ms", None)
+        return float(rtt) if rtt is not None else None
+
+    @staticmethod
+    def _safe(probe: Callable[[], _T], default: _T) -> _T:
+        """Una sonda rota degrada a su default — jamás mata el hilo del heartbeat."""
+        try:
+            return probe()
+        except Exception:  # noqa: BLE001 — contrato: el latido sobrevive a cualquier sonda
+            log.warning("sonda de salud falló; se reporta sin dato", exc_info=True)
+            return default
+
     def snapshot(self, transition_reason: str = "heartbeat") -> HealthSnapshot:
         relays = self._relay_states()
-        ups = self._probes.ups()
+        ups = self._safe(self._probes.ups, UpsReading())
         snap = HealthSnapshot(
             gateway_id=self.settings.gateway_id,
-            ntp_offset_s=self._probes.ntp_offset_s(),
+            ntp_offset_s=self._safe(self._probes.ntp_offset_s, None),
             seedlink_lag_s=self._seedlink_lag_s(),
             packet_loss_pct=self._packet_loss_pct(),
+            mqtt_rtt_ms=self._safe(self._mqtt_rtt_ms, None),
             ups_status=ups.status,
             battery_pct=ups.battery_pct,
-            temperature_c=self._probes.temperature_c(),
-            cert_days_remaining=self._probes.cert_days_remaining(),
+            temperature_c=self._safe(self._probes.temperature_c, 0.0),
+            cert_days_remaining=self._safe(self._probes.cert_days_remaining, None),
             relays=relays,
             transition_reason=transition_reason,
         )
@@ -157,25 +343,31 @@ class HealthMonitor(EdgeModule):
         key = (
             tuple((r.channel, r.energized) for r in snap.relays),
             snap.ups_status,
-            snap.cert_days_remaining < CERT_WARN_DAYS,
+            snap.cert_days_remaining is not None and snap.cert_days_remaining < CERT_WARN_DAYS,
             snap.temperature_c > TEMP_WARN_C,
             snap.seedlink_lag_s > LAG_WARN_S,
         )
         if key != self._last_key:
+            cert_txt = (
+                f"{snap.cert_days_remaining}d" if snap.cert_days_remaining is not None else "s/d"
+            )
             log.info(
-                "transición de salud (%s): %s · temp=%.1f°C · lag=%.2fs · cert=%dd · loss=%.1f%%",
+                "transición de salud (%s): %s · temp=%.1f°C · lag=%.2fs · cert=%s · loss=%.1f%%",
                 reason,
                 ups_label(UpsReading(snap.ups_status, snap.battery_pct)),
                 snap.temperature_c,
                 snap.seedlink_lag_s,
-                snap.cert_days_remaining,
+                cert_txt,
                 snap.packet_loss_pct,
             )
             self._last_key = key
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.wait(self._heartbeat_s):
-            self.snapshot("heartbeat")
+            try:
+                self.snapshot("heartbeat")
+            except Exception:  # noqa: BLE001 — el latido jamás muere (backlog #28)
+                log.exception("heartbeat de salud falló; se reintenta el próximo ciclo")
 
     def _on_start(self) -> None:
         self._stop.clear()

@@ -77,12 +77,20 @@ def test_snapshot_without_gpio_is_empty(settings):
 # --- Composición desde probes/seedlink ---
 
 
+class _FakeCloud:
+    def __init__(self, rtt=None):
+        self.mqtt_rtt_ms = rtt
+
+
 def test_snapshot_composes_from_probes_and_seedlink(settings):
     probes = _FakeProbes(
         temp=42.0, ntp=0.02, ups=UpsReading(UpsStatus.BATTERY, 55.0, 3600), cert=12
     )
     monitor = HealthMonitor(
-        settings, seedlink=_FakeSeedlink(lag=0.4, seen=995, gaps=5), probes=probes
+        settings,
+        seedlink=_FakeSeedlink(lag=0.4, seen=995, gaps=5),
+        probes=probes,
+        cloud=_FakeCloud(rtt=87.0),
     )
     snap = monitor.snapshot("test")
     assert snap.temperature_c == 42.0
@@ -91,13 +99,64 @@ def test_snapshot_composes_from_probes_and_seedlink(settings):
     assert snap.battery_pct == 55.0
     assert snap.cert_days_remaining == 12
     assert snap.seedlink_lag_s == 0.4
+    assert snap.mqtt_rtt_ms == 87.0
     assert snap.packet_loss_pct == pytest.approx(0.5)  # 5 / (995 + 5) * 100
+
+
+def test_snapshot_without_sources_is_honestly_none(settings):
+    """Sin UPS/NTP/cert/cloud: los campos son None («sin dato»), no inventos (T-1.40)."""
+
+    class _NoSources:
+        def temperature_c(self):
+            return 0.0
+
+        def ntp_offset_s(self):
+            return None
+
+        def ups(self):
+            return UpsReading()  # UNKNOWN + batería None
+
+        def cert_days_remaining(self):
+            return None
+
+    snap = HealthMonitor(settings, probes=_NoSources()).snapshot()
+    assert snap.ntp_offset_s is None
+    assert snap.battery_pct is None
+    assert snap.cert_days_remaining is None
+    assert snap.mqtt_rtt_ms is None
+    assert snap.ups_status is UpsStatus.UNKNOWN
+
+
+def test_snapshot_survives_raising_probes(settings, caplog):
+    """Una sonda que LANZA degrada a «sin dato»; el heartbeat no muere (backlog #28)."""
+
+    class _Broken:
+        def temperature_c(self):
+            raise OSError("sysfs roto")
+
+        def ntp_offset_s(self):
+            raise RuntimeError("boom")
+
+        def ups(self):
+            raise ValueError("upsd caído")
+
+        def cert_days_remaining(self):
+            raise OSError("cert ilegible")
+
+    with caplog.at_level(logging.WARNING, logger="takab_edge.health"):
+        snap = HealthMonitor(settings, probes=_Broken()).snapshot()
+    assert snap.temperature_c == 0.0
+    assert snap.ntp_offset_s is None
+    assert snap.ups_status is UpsStatus.UNKNOWN
+    assert snap.cert_days_remaining is None
 
 
 def test_ups_label_variants():
     assert ups_label(UpsReading(UpsStatus.LINE, 100.0)) == "RED ELÉCTRICA 100%"
+    assert ups_label(UpsReading(UpsStatus.LINE, None)) == "RED ELÉCTRICA"
     assert "RESPALDO 1h 0m" in ups_label(UpsReading(UpsStatus.BATTERY, 50.0, 3600))
     assert ups_label(UpsReading(UpsStatus.BATTERY, 50.0)) == "EN BATERÍA"
+    assert ups_label(UpsReading()) == "UPS DESCONOCIDO"  # sin hardware: sin dato
 
 
 def test_packet_loss_zero_without_seedlink(settings):

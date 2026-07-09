@@ -49,6 +49,16 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
         </div>
       </header>
 
+      {gw.derived_state === "DEGRADADO" && (gw.degrade_reasons?.length ?? 0) > 0 && (
+        <div className="fleet-card__reasons" aria-label="métricas degradadas">
+          {(gw.degrade_reasons ?? []).map((reason) => (
+            <span key={reason} className="fleet-card__reason">
+              {reason}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="fleet-card__links">
         <LinkPill
           kind={linkKind}

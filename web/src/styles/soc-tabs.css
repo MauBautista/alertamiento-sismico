@@ -1195,3 +1195,21 @@
 .fleet__formactions { display: flex; gap: 8px; margin-top: 4px; }
 .fleet__checkbox { flex-direction: row !important; align-items: center; gap: 8px; }
 .fleet__checkbox input { width: auto; }
+
+/* Razones de degradación server-derived (T-1.40): QUÉ métrica degrada, como pills. */
+.fleet-card__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.fleet-card__reason {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--tk-status-warning);
+  border: 1px solid var(--tk-status-warning-15);
+  background: var(--tk-status-warning-08);
+}

@@ -212,17 +212,24 @@ class RelayState(BaseModel):
 
 
 class HealthSnapshot(BaseModel):
-    """Snapshot de salud del gabinete (T-1.10). Por transición + heartbeat."""
+    """Snapshot de salud del gabinete (T-1.10; honesto desde T-1.40).
+
+    Los campos de sonda son OPCIONALES: ``None`` = «sin dato» (no hay UPS, no
+    hay fuente NTP, cert ilegible) y la nube lo muestra como S/D. Un valor
+    presente es una MEDICIÓN — nunca el default optimista de antes (100% de
+    batería, 365 días de cert, offset 0.0), que era mentira (regla de oro 7).
+    """
 
     gateway_id: str
     captured_at: datetime = Field(default_factory=utcnow)
-    ntp_offset_s: float = 0.0
+    ntp_offset_s: float | None = None
     seedlink_lag_s: float = 0.0
     packet_loss_pct: float = 0.0
-    ups_status: UpsStatus = UpsStatus.LINE
-    battery_pct: float = 100.0
+    mqtt_rtt_ms: float | None = None
+    ups_status: UpsStatus = UpsStatus.UNKNOWN
+    battery_pct: float | None = None
     temperature_c: float = 0.0
-    cert_days_remaining: int = 365
+    cert_days_remaining: int | None = None
     relays: list[RelayState] = Field(default_factory=list)
     transition_reason: str = "heartbeat"
 

@@ -57,7 +57,7 @@
       "type": "string"
     }
   },
-  "description": "Snapshot de salud del gabinete (T-1.10). Por transición + heartbeat.",
+  "description": "Snapshot de salud del gabinete (T-1.10; honesto desde T-1.40).\n\nLos campos de sonda son OPCIONALES: ``None`` = «sin dato» (no hay UPS, no\nhay fuente NTP, cert ilegible) y la nube lo muestra como S/D. Un valor\npresente es una MEDICIÓN — nunca el default optimista de antes (100% de\nbatería, 365 días de cert, offset 0.0), que era mentira (regla de oro 7).",
   "properties": {
     "gateway_id": {
       "title": "Gateway Id",
@@ -69,9 +69,16 @@
       "type": "string"
     },
     "ntp_offset_s": {
-      "default": 0.0,
-      "title": "Ntp Offset S",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ntp Offset S"
     },
     "seedlink_lag_s": {
       "default": 0.0,
@@ -83,14 +90,33 @@
       "title": "Packet Loss Pct",
       "type": "number"
     },
+    "mqtt_rtt_ms": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mqtt Rtt Ms"
+    },
     "ups_status": {
       "$ref": "#/$defs/UpsStatus",
-      "default": "line"
+      "default": "unknown"
     },
     "battery_pct": {
-      "default": 100.0,
-      "title": "Battery Pct",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Battery Pct"
     },
     "temperature_c": {
       "default": 0.0,
@@ -98,9 +124,16 @@
       "type": "number"
     },
     "cert_days_remaining": {
-      "default": 365,
-      "title": "Cert Days Remaining",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cert Days Remaining"
     },
     "relays": {
       "items": {
@@ -121,6 +154,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.0.0",
-  "version": "1.0.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.1.0",
+  "version": "1.1.0"
 }

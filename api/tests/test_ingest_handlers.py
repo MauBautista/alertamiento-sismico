@@ -330,7 +330,7 @@ def test_event_of_secondary_served_site_accepted_and_attributed(fleet_multi, ctx
 
 
 def test_health_happy_path_converts_units(fleet, ctx, meta) -> None:
-    assert handle_health_snapshot(fleet, _health(), meta, ctx).is_ok
+    assert handle_health_snapshot(fleet, _health(mqtt_rtt_ms=42.5), meta, ctx).is_ok
     row = fleet.execute(
         "SELECT ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, cpu_temp_c, "
         "power_status, battery_pct, cert_days_remaining, mqtt_rtt_ms, battery_min_left "
@@ -346,7 +346,24 @@ def test_health_happy_path_converts_units(fleet, ctx, meta) -> None:
     assert row[7] == "battery"  # ups_status → power_status
     assert row[8] == pytest.approx(87.5)
     assert row[9] == 300
-    assert row[10] is None and row[11] is None  # el edge no las manda → NULL
+    assert row[10] == pytest.approx(42.5)  # RTT del PUBACK real (T-1.40)
+    assert row[11] is None  # battery_min_left sigue sin fuente edge → NULL
+
+
+def test_health_honest_none_fields_persist_as_null(fleet, ctx, meta) -> None:
+    """Contrato honesto (T-1.40): «sin dato» viaja como None y aterriza NULL —
+    nunca se rellena con un default optimista en la ingesta."""
+    payload = _health(
+        ntp_offset_s=None, battery_pct=None, cert_days_remaining=None, ups_status="unknown"
+    )
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    row = fleet.execute(
+        "SELECT ntp_offset_ms, mqtt_rtt_ms, battery_pct, cert_days_remaining, power_status "
+        "FROM device_health WHERE gateway_id = %s",
+        (GW,),
+    ).fetchone()
+    assert row[0] is None and row[1] is None and row[2] is None and row[3] is None
+    assert row[4] == "unknown"
 
 
 def test_health_default_reason_is_heartbeat(fleet, ctx, meta) -> None:

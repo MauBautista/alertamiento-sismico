@@ -34,12 +34,14 @@ from takab_api.routers._common import (
     tenant_of_parent_site,
 )
 from takab_api.schemas.fleet import (
+    DEGRADADO,
     GatewayConfigStateOut,
     GatewayCreate,
     GatewayOut,
     GatewayRowOut,
     GatewayUpdate,
     derive_fleet_state,
+    fleet_degrade_reasons,
     sig_fingerprint,
 )
 from takab_api.settings import Settings
@@ -119,6 +121,25 @@ async def list_gateways(
             seedlink_lag_max_s=s.fleet_seedlink_lag_max_s,
             ntp_offset_max_ms=s.fleet_ntp_offset_max_ms,
         )
+        # Las razones solo aplican a DEGRADADO: en SIN ENLACE el problema es el
+        # silencio, no una métrica; en OPERATIVO son vacías por definición.
+        reasons = (
+            fleet_degrade_reasons(
+                power_status=m["power_status"],
+                battery_pct=m["battery_pct"],
+                cert_days_remaining=m["cert_days_remaining"],
+                mqtt_rtt_ms=m["mqtt_rtt_ms"],
+                seedlink_lag_s=m["seedlink_lag_s"],
+                ntp_offset_ms=m["ntp_offset_ms"],
+                battery_min_pct=s.fleet_battery_min_pct,
+                cert_min_days=s.fleet_cert_min_days,
+                mqtt_rtt_max_ms=s.fleet_mqtt_rtt_max_ms,
+                seedlink_lag_max_s=s.fleet_seedlink_lag_max_s,
+                ntp_offset_max_ms=s.fleet_ntp_offset_max_ms,
+            )
+            if state == DEGRADADO
+            else []
+        )
         out.append(
             GatewayOut(
                 gateway_id=m["gateway_id"],
@@ -131,6 +152,7 @@ async def list_gateways(
                 installed_at=m["installed_at"],
                 row_version=m["row_version"],
                 derived_state=state,
+                degrade_reasons=reasons,
                 last_heartbeat_ts=m["health_ts"],
                 power_status=m["power_status"],
                 battery_pct=m["battery_pct"],

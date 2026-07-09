@@ -23,6 +23,7 @@ from takab_api.schemas.fleet import (
     OPERATIVO,
     SIN_ENLACE,
     derive_fleet_state,
+    fleet_degrade_reasons,
 )
 
 T_A = "81111111-1111-1111-1111-111111111111"  # private
@@ -108,6 +109,51 @@ def test_derive_degradado_per_metric(over: dict[str, object]) -> None:
 def test_derive_stale_beats_degraded() -> None:
     # Sin enlace domina aunque además haya métricas malas.
     assert _derive(age_s=None, power_status="battery") == SIN_ENLACE
+
+
+# ---- unit puro: fleet_degrade_reasons (QUÉ degrada, T-1.40) -------------------
+
+
+def _reasons(**over: object) -> list[str]:
+    args: dict[str, object] = {**_HEALTHY, **_THRESHOLDS}
+    args.pop("sin_enlace_s")  # las razones no conocen la edad: eso es SIN ENLACE
+    args.update(over)
+    return fleet_degrade_reasons(**args)  # type: ignore[arg-type]
+
+
+def test_reasons_empty_when_healthy() -> None:
+    assert _reasons() == []
+
+
+def test_reasons_name_each_metric() -> None:
+    assert _reasons(power_status="battery") == ["EN BATERÍA"]
+    assert _reasons(battery_pct=79.0) == ["BATERÍA 79%"]
+    assert _reasons(cert_days_remaining=29) == ["CERT 29d"]
+    assert _reasons(mqtt_rtt_ms=1600.0) == ["MQTT 1600ms"]
+    assert _reasons(seedlink_lag_s=2.5) == ["SEEDLINK 2.5s"]
+    assert _reasons(ntp_offset_ms=-150.0) == ["NTP -150ms"]
+
+
+def test_reasons_none_never_degrades() -> None:
+    """«Sin dato» (contrato honesto T-1.40) no es una degradación: no tener UPS
+    no equivale a estar en batería."""
+    assert (
+        _reasons(
+            power_status=None,
+            battery_pct=None,
+            cert_days_remaining=None,
+            mqtt_rtt_ms=None,
+            seedlink_lag_s=None,
+            ntp_offset_ms=None,
+        )
+        == []
+    )
+
+
+def test_reasons_stack_and_match_derive() -> None:
+    over = {"power_status": "battery", "battery_pct": 50.0}
+    assert _reasons(**over) == ["EN BATERÍA", "BATERÍA 50%"]
+    assert _derive(**over) == DEGRADADO  # misma verdad: razones ⇔ DEGRADADO
 
 
 # ---- endpoint: estados derivados + RLS + autz -------------------------------
@@ -238,6 +284,11 @@ async def test_states_derived_server_side(seed: None) -> None:
         "GW-OFF": SIN_ENLACE,
         "GW-NONE": SIN_ENLACE,
     }
+    # QUÉ degrada viaja server-side (T-1.40): pills, no adivinanzas del operador.
+    reasons = {g["serial"]: g["degrade_reasons"] for g in resp.json()}
+    assert reasons["GW-DEG"] == ["EN BATERÍA"]
+    assert reasons["GW-OP"] == []
+    assert reasons["GW-OFF"] == []  # SIN ENLACE: el problema es el silencio
 
 
 async def test_rls_tenant_a_does_not_see_b_gateway(seed: None) -> None:

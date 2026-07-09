@@ -286,9 +286,9 @@ def handle_local_event(
 
 _HEALTH_SQL = """
 INSERT INTO device_health
-  (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms,
+  (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
    cpu_temp_c, power_status, battery_pct, cert_days_remaining)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
@@ -301,8 +301,10 @@ def handle_health_snapshot(
     Mapeos: captured_at→ts, ntp_offset_s×1000→ntp_offset_ms, ups_status→
     power_status, temperature_c→cpu_temp_c, transition_reason→reason
     ('heartbeat' literal ⇒ heartbeat; cualquier otra razón ⇒ transition —
-    default del contrato: 'heartbeat'). Sin columna destino: packet_loss_pct,
-    relays. Sin fuente edge: mqtt_rtt_ms, battery_min_left (NULL).
+    default del contrato: 'heartbeat'). Desde T-1.40 el contrato es honesto:
+    ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
+    persisten como NULL — la flota pinta S/D, no un invento. Sin columna
+    destino: packet_loss_pct, relays. Sin fuente edge: battery_min_left.
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "health_snapshot")) is not None:
         return rej
@@ -322,6 +324,7 @@ def handle_health_snapshot(
             reason,
             payload.get("seedlink_lag_s"),
             None if ntp_s is None else ntp_s * 1000.0,
+            payload.get("mqtt_rtt_ms"),
             payload.get("temperature_c"),
             payload.get("ups_status"),
             payload.get("battery_pct"),

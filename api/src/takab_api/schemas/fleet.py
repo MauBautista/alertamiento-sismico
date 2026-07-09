@@ -42,18 +42,62 @@ def derive_fleet_state(
       que ``sin_enlace_s`` (el gateway dejó de reportar).
     - ``DEGRADADO``: con enlace vivo pero alguna métrica fuera de rango.
     - ``OPERATIVO``: con enlace y todas las métricas sanas.
+
+    Una métrica ``None`` («sin dato», contrato honesto de T-1.40) NUNCA degrada:
+    no tener UPS no es lo mismo que estar en batería.
     """
     if age_s is None or age_s > sin_enlace_s:
         return SIN_ENLACE
-    degraded = (
-        power_status == "battery"
-        or (battery_pct is not None and battery_pct < battery_min_pct)
-        or (cert_days_remaining is not None and cert_days_remaining < cert_min_days)
-        or (mqtt_rtt_ms is not None and mqtt_rtt_ms > mqtt_rtt_max_ms)
-        or (seedlink_lag_s is not None and seedlink_lag_s > seedlink_lag_max_s)
-        or (ntp_offset_ms is not None and abs(ntp_offset_ms) > ntp_offset_max_ms)
+    reasons = fleet_degrade_reasons(
+        power_status=power_status,
+        battery_pct=battery_pct,
+        cert_days_remaining=cert_days_remaining,
+        mqtt_rtt_ms=mqtt_rtt_ms,
+        seedlink_lag_s=seedlink_lag_s,
+        ntp_offset_ms=ntp_offset_ms,
+        battery_min_pct=battery_min_pct,
+        cert_min_days=cert_min_days,
+        mqtt_rtt_max_ms=mqtt_rtt_max_ms,
+        seedlink_lag_max_s=seedlink_lag_max_s,
+        ntp_offset_max_ms=ntp_offset_max_ms,
     )
-    return DEGRADADO if degraded else OPERATIVO
+    return DEGRADADO if reasons else OPERATIVO
+
+
+def fleet_degrade_reasons(
+    *,
+    power_status: str | None,
+    battery_pct: float | None,
+    cert_days_remaining: int | None,
+    mqtt_rtt_ms: float | None,
+    seedlink_lag_s: float | None,
+    ntp_offset_ms: float | None,
+    battery_min_pct: float,
+    cert_min_days: int,
+    mqtt_rtt_max_ms: float,
+    seedlink_lag_max_s: float,
+    ntp_offset_max_ms: float,
+) -> list[str]:
+    """QUÉ métrica degrada, en el idioma de la UI (T-1.40, backlog de T-1.28).
+
+    Es la MISMA verdad que ``derive_fleet_state`` (que la llama): si esta lista
+    no está vacía, el estado es DEGRADADO. La UI pinta cada razón como pill en
+    vez de dejar al operador adivinar cuál de seis métricas se salió de rango.
+    """
+    reasons: list[str] = []
+    if power_status == "battery":
+        reasons.append("EN BATERÍA")
+    if battery_pct is not None and battery_pct < battery_min_pct:
+        reasons.append(f"BATERÍA {battery_pct:.0f}%")
+    if cert_days_remaining is not None and cert_days_remaining < cert_min_days:
+        reasons.append(f"CERT {cert_days_remaining}d")
+    if mqtt_rtt_ms is not None and mqtt_rtt_ms > mqtt_rtt_max_ms:
+        reasons.append(f"MQTT {mqtt_rtt_ms:.0f}ms")
+    if seedlink_lag_s is not None and seedlink_lag_s > seedlink_lag_max_s:
+        reasons.append(f"SEEDLINK {seedlink_lag_s:.1f}s")
+    if ntp_offset_ms is not None and abs(ntp_offset_ms) > ntp_offset_max_ms:
+        reasons.append(f"NTP {ntp_offset_ms:+.0f}ms")
+    return reasons
 
 
 def sig_fingerprint(sig: str | None) -> str | None:
@@ -107,6 +151,9 @@ class GatewayOut(BaseModel):
     installed_at: datetime | None = None
     row_version: str
     derived_state: str
+    # QUÉ degrada (vacía salvo en DEGRADADO): pills de la UI, misma verdad que
+    # derive_fleet_state (T-1.40).
+    degrade_reasons: list[str] = []
     last_heartbeat_ts: datetime | None = None
     power_status: str | None = None
     battery_pct: float | None = None

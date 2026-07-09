@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import threading
+import time
 from collections import Counter, OrderedDict, deque
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -238,6 +239,15 @@ class CloudConnector(EdgeModule):
     @property
     def sent(self) -> int:
         return self._sent
+
+    @property
+    def mqtt_rtt_ms(self) -> float | None:
+        """RTT del último PUBACK QoS1 (ms), medido por el transporte real (T-1.40).
+
+        ``None`` = sin dato: no hay transporte, aún no se publicó nada, o el
+        transporte (fake de tests) no lo expone. La salud lo reporta tal cual.
+        """
+        return getattr(self._transport, "last_puback_rtt_ms", None)
 
     def queued_by_topic(self, topic: str) -> int:
         """Pendientes de UN topic (separa eventos de la telemetría health/acks/features)."""
@@ -558,6 +568,8 @@ class AwsIotMqttTransport:
         self._status_topic = status_topic
         self._conn = None
         self._connected = False
+        #: RTT del último PUBACK (ms) — la sonda de salud lo reporta (T-1.40).
+        self.last_puback_rtt_ms: float | None = None
 
     def connect(self) -> None:
         from awscrt import mqtt  # import perezoso: solo en el Pi con el SDK instalado
@@ -607,7 +619,11 @@ class AwsIotMqttTransport:
         # QoS1 real: sin PUBACK no hay confirmación — el spool "cero pérdida"
         # solo se limpia cuando el broker acusó recibo. Un timeout propaga y el
         # conector conserva el mensaje para reintento (dedup por PK en la nube).
+        # El tiempo hasta el PUBACK es el RTT real del enlace: la salud lo
+        # reporta en vez del NULL de siempre (T-1.40).
+        start = time.monotonic()
         future.result(timeout=_PUBACK_TIMEOUT_S)
+        self.last_puback_rtt_ms = (time.monotonic() - start) * 1000.0
         return True
 
     def subscribe(self, topic: str, callback: Callable[[str, bytes], None]) -> bool:

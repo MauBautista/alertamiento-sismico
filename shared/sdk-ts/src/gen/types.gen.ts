@@ -235,6 +235,7 @@ export type GatewayCreate = {
 export type GatewayOut = {
     battery_pct?: number | null;
     cert_days_remaining?: number | null;
+    degrade_reasons?: Array<string>;
     derived_state: string;
     fw_version?: string | null;
     gateway_id: string;

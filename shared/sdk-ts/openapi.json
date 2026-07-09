@@ -949,6 +949,14 @@
             ],
             "title": "Cert Days Remaining"
           },
+          "degrade_reasons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Degrade Reasons",
+            "type": "array"
+          },
           "derived_state": {
             "title": "Derived State",
             "type": "string"

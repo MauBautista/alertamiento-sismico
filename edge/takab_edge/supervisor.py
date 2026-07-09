@@ -158,7 +158,11 @@ class EdgeSupervisor:
             topic_caps={FEATURES_TOPIC: s.cloud_telemetry_cap, HEALTH_TOPIC: s.cloud_telemetry_cap},
         )
         self.health = HealthMonitor(
-            s, gpio=self.gpio, seedlink=self.seedlink, heartbeat_s=s.health_heartbeat_s
+            s,
+            gpio=self.gpio,
+            seedlink=self.seedlink,
+            cloud=self.cloud,  # RTT del PUBACK real en el heartbeat (T-1.40)
+            heartbeat_s=s.health_heartbeat_s,
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
