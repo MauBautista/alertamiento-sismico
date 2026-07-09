@@ -110,3 +110,157 @@ async def test_invalid_scope_type_is_400(client, base_data) -> None:
         headers=_tok("tenant_admin"),
     )
     assert resp.status_code == 400
+
+
+# ---- cruce de tenants en la escritura (hallazgo al construir T-1.30) ---------
+
+
+async def test_superadmin_cannot_write_a_rule_set_for_another_tenants_scope(
+    client, base_data
+) -> None:
+    """El INSERT fija ``tenant_id = claims.tenant_id`` mientras el alcance lo elige el
+    cuerpo. Un rol interno (bypassa RLS por ``rule_sets_admin``) podía así:
+
+    1. apagar los rule_sets ACTIVOS del tenant ajeno (``deactivate_scope`` sólo
+       filtraba por alcance), y
+    2. insertar una fila con SU ``tenant_id`` y el ``scope_id`` del ajeno.
+
+    El worker de sync resuelve el rule_set POR ALCANCE (``commands/sync.py``
+    ``scope_id = g.tenant_id``), sin comparar ``tenant_id``: los gabinetes del tenant
+    ajeno habrían aplicado una config que su propio admin ya no podía ni ver (RLS la
+    filtra por ``tenant_id``). Umbrales = disparo de sirena y gas: no es cosmético.
+    """
+    resp = await client.put(
+        "/rule-sets",
+        json={"scope_type": "tenant", "scope_id": au.DB_TENANT_PRIV2, "config": {"x": 1}},
+        headers=_tok("takab_superadmin", tenant=au.DB_TENANT_PRIV),
+    )
+    assert resp.status_code == 403, resp.text
+
+    # Y el alcance de SITIO ajeno tampoco.
+    site_resp = await client.put(
+        "/rule-sets",
+        json={"scope_type": "site", "scope_id": au.DB_SITE_PRIV2, "config": {"x": 1}},
+        headers=_tok("takab_superadmin", tenant=au.DB_TENANT_PRIV),
+    )
+    assert site_resp.status_code == 403, site_resp.text
+
+
+async def test_superadmin_still_writes_its_own_tenant_scope(client, base_data) -> None:
+    """El cierre no rompe el caso legítimo: el alcance propio se sigue escribiendo."""
+    resp = await client.put(
+        "/rule-sets",
+        json={"scope_type": "tenant", "scope_id": au.DB_TENANT_PRIV, "config": {"x": 1}},
+        headers=_tok("takab_superadmin", tenant=au.DB_TENANT_PRIV),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["tenant_id"] == au.DB_TENANT_PRIV
+    assert resp.json()["scope_id"] == au.DB_TENANT_PRIV
+
+
+async def test_put_unknown_scope_is_404(client, base_data) -> None:
+    resp = await client.put(
+        "/rule-sets",
+        json={"scope_type": "site", "scope_id": str(uuid4()), "config": {}},
+        headers=_tok("tenant_admin"),
+    )
+    assert resp.status_code == 404, resp.text
+
+
+# ---- el secret del webhook nunca sale, y nunca se pierde (hallazgos T-1.30) --
+
+_WEBHOOK = {"notifications": {"webhook": {"url": "https://ops.example/hook", "secret": "hmac-key"}}}
+
+
+async def _put_tenant(client, config: dict, base_version: int | None = None, role="tenant_admin"):
+    body: dict = {"scope_type": "tenant", "scope_id": au.DB_TENANT_PRIV, "config": config}
+    if base_version is not None:
+        body["base_version"] = base_version
+    return await client.put("/rule-sets", json=body, headers=_tok(role))
+
+
+async def _raw_config(scope_id: str) -> dict:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT config FROM rule_sets WHERE scope_id = CAST(:s AS uuid) "
+                    "AND is_active ORDER BY version DESC LIMIT 1"
+                ),
+                {"s": scope_id},
+            )
+        ).first()
+    return row.config
+
+
+async def test_get_rule_sets_redacts_the_webhook_secret(client, base_data) -> None:
+    """El secret firma el webhook del cliente (``notify/providers``). Devolverlo en
+    GET /rule-sets lo metía en el navegador, la caché de react-query y el DevTools de
+    cualquier superadmin — que además ve TODOS los tenants."""
+    created = await _put_tenant(client, _WEBHOOK)
+    assert created.status_code == 201, created.text
+    assert "hmac-key" not in created.text
+
+    listed = await client.get("/rule-sets", headers=_tok("tenant_admin"))
+    assert listed.status_code == 200
+    assert "hmac-key" not in listed.text
+
+    # …pero en la DB sigue ahí, intacto: el worker lo re-resuelve al despachar.
+    assert (await _raw_config(au.DB_TENANT_PRIV))["notifications"]["webhook"][
+        "secret"
+    ] == "hmac-key"
+
+
+async def test_put_without_secret_preserves_the_stored_one(client, base_data) -> None:
+    """El cliente ya no ve el secret, así que no puede reenviarlo. Si el PUT no lo
+    trae, se conserva el vigente: de otro modo guardar un umbral rompería en silencio
+    la firma HMAC del webhook del cliente."""
+    await _put_tenant(client, _WEBHOOK)
+
+    # El front reenvía la config SIN secret (nunca lo recibió).
+    resp = await _put_tenant(
+        client, {"notifications": {"webhook": {"url": "https://ops.example/hook"}}}
+    )
+    assert resp.status_code == 201, resp.text
+    assert (await _raw_config(au.DB_TENANT_PRIV))["notifications"]["webhook"][
+        "secret"
+    ] == "hmac-key"
+
+
+async def test_disabling_the_webhook_drops_its_secret(client, base_data) -> None:
+    """Quitar el canal SÍ borra su secret (es la intención explícita del operador)."""
+    await _put_tenant(client, _WEBHOOK)
+    await _put_tenant(client, {"notifications": {}})
+    assert "webhook" not in (await _raw_config(au.DB_TENANT_PRIV))["notifications"]
+
+
+async def test_stale_base_version_is_409_not_a_lost_update(client, base_data) -> None:
+    """PUT reemplaza el blob ENTERO del alcance. Sin control de concurrencia, un
+    segundo escritor con una copia vieja revertía en silencio claves que su pantalla
+    ni muestra (p. ej. ``relays.siren``, que arma la sirena)."""
+    v1 = await _put_tenant(client, {"relays": {"siren": "NO"}, "edge": {}})
+    assert v1.status_code == 201
+    version = v1.json()["version"]
+
+    # Otro actor publica encima.
+    v2 = await _put_tenant(client, {"relays": {"siren": "YES"}, "edge": {}})
+    assert v2.status_code == 201
+
+    # El primero guarda con su base vieja ⇒ 409, no un lost update.
+    stale = await _put_tenant(client, {"relays": {"siren": "NO"}, "edge": {}}, base_version=version)
+    assert stale.status_code == 409, stale.text
+    assert (await _raw_config(au.DB_TENANT_PRIV))["relays"]["siren"] == "YES"
+
+
+async def test_correct_base_version_is_accepted(client, base_data) -> None:
+    v1 = await _put_tenant(client, {"edge": {}})
+    ok = await _put_tenant(client, {"edge": {"x": 1}}, base_version=v1.json()["version"])
+    assert ok.status_code == 201, ok.text
+
+
+async def test_base_version_on_a_scope_without_rule_set_is_409(client, base_data) -> None:
+    """Decir "venía de la v3" cuando el alcance no tiene ninguna activa es una
+    premisa falsa: se rechaza en vez de crear la v1 a ciegas."""
+    resp = await _put_tenant(client, {"edge": {}}, base_version=3)
+    assert resp.status_code == 409, resp.text

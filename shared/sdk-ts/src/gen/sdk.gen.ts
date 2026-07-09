@@ -194,7 +194,7 @@ export const meMeGet = <ThrowOnError extends boolean = false>(options?: Options<
 
 /**
  * List Rule Sets
- * rule_sets del tenant (RLS): versiones activas primero.
+ * rule_sets del tenant (RLS): versiones activas primero. Secretos redactados.
  */
 export const listRuleSetsRuleSetsGet = <ThrowOnError extends boolean = false>(options?: Options<ListRuleSetsRuleSetsGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<ListRuleSetsRuleSetsGetResponse, unknown, ThrowOnError>({
@@ -206,6 +206,12 @@ export const listRuleSetsRuleSetsGet = <ThrowOnError extends boolean = false>(op
 /**
  * Put Rule Set
  * Crea una NUEVA versión activa del alcance (version+1) y apaga las previas.
+ *
+ * El alcance DEBE pertenecer al tenant del token: la fila nueva se inserta con
+ * ``tenant_id = claims.tenant_id`` mientras el ``scope_id`` lo elige el cuerpo, así
+ * que un alcance ajeno produciría un rule_set con el tenant de A y el alcance de B
+ * — invisible para B (RLS filtra por ``tenant_id``) pero aplicado a sus gabinetes
+ * por el worker de sync, que resuelve por alcance. 403 (o 404 si RLS lo oculta).
  */
 export const putRuleSetRuleSetsPut = <ThrowOnError extends boolean = false>(options: Options<PutRuleSetRuleSetsPutData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).put<PutRuleSetRuleSetsPutResponse, PutRuleSetRuleSetsPutError, ThrowOnError>({

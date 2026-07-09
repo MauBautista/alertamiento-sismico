@@ -31,13 +31,56 @@ def select_rule_set(rule_set_id: str) -> tuple[TextClause, dict[str, Any]]:
     return text(sql), {"id": rule_set_id}
 
 
-def deactivate_scope(scope_type: str, scope_id: str) -> tuple[TextClause, dict[str, Any]]:
-    """Apaga las versiones activas del alcance antes de insertar la nueva."""
+# Tabla dueña de cada alcance: de ahí sale el tenant_id REAL del scope.
+_SCOPE_OWNER = {
+    "tenant": ("tenants", "tenant_id"),
+    "site": ("sites", "site_id"),
+    "sensor": ("sensors", "sensor_id"),
+}
+
+
+def select_scope_tenant(scope_type: str, scope_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """``tenant_id`` dueño del alcance. Sin fila ⇒ el alcance no existe (o RLS lo oculta).
+
+    El INSERT fija ``tenant_id = claims.tenant_id`` pero el alcance lo elige el cuerpo:
+    sin este chequeo una fila podía quedar con el tenant de A y el alcance de B, y el
+    worker de sync (que resuelve por alcance, no por tenant) se la habría entregado a
+    los gabinetes de B.
+    """
+    table, pk = _SCOPE_OWNER[scope_type]
+    sql = f"SELECT tenant_id FROM {table} WHERE {pk} = CAST(:sid AS uuid)"
+    return text(sql), {"sid": scope_id}
+
+
+def select_active_scope(scope_type: str, scope_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """Versión ACTIVA del alcance (``version`` + ``config``). ``None`` si no hay.
+
+    Base del control de concurrencia optimista y de la conservación de secretos:
+    ``PUT`` reemplaza el blob entero, así que hay que saber contra qué se escribe.
+    """
     sql = (
-        "UPDATE rule_sets SET is_active = false "
-        "WHERE scope_type = :st AND scope_id = CAST(:sid AS uuid) AND is_active = true"
+        "SELECT version, config FROM rule_sets "
+        "WHERE scope_type = :st AND scope_id = CAST(:sid AS uuid) AND is_active = true "
+        "ORDER BY version DESC LIMIT 1"
     )
     return text(sql), {"st": scope_type, "sid": scope_id}
+
+
+def deactivate_scope(
+    scope_type: str, scope_id: str, tenant_id: str
+) -> tuple[TextClause, dict[str, Any]]:
+    """Apaga las versiones activas del alcance antes de insertar la nueva.
+
+    El filtro por ``tenant_id`` es defensa en profundidad: los roles internos
+    (``rule_sets_admin``) bypasean RLS y sin él podían apagar los rule_sets activos
+    de un tenant ajeno.
+    """
+    sql = (
+        "UPDATE rule_sets SET is_active = false "
+        "WHERE scope_type = :st AND scope_id = CAST(:sid AS uuid) "
+        "AND tenant_id = CAST(:tenant AS uuid) AND is_active = true"
+    )
+    return text(sql), {"st": scope_type, "sid": scope_id, "tenant": tenant_id}
 
 
 def insert_new_version(

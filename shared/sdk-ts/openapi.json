@@ -1790,8 +1790,19 @@
         "type": "object"
       },
       "RuleSetPutIn": {
-        "description": "Alta de una NUEVA versión de rule_set para un alcance dado.",
+        "description": "Alta de una NUEVA versión de rule_set para un alcance dado.\n\n``base_version``: versión activa sobre la que el cliente construyó ``config``.\nComo el PUT reemplaza el blob ENTERO, sin esto un segundo escritor con una copia\nvieja revierte en silencio claves que su pantalla ni muestra (``relays``,\n``quorum``…). Si no coincide con la activa ⇒ 409. Omitirla = escritura a ciegas\n(se acepta por compatibilidad con clientes que no la envían).",
         "properties": {
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -3212,7 +3223,7 @@
     },
     "/rule-sets": {
       "get": {
-        "description": "rule_sets del tenant (RLS): versiones activas primero.",
+        "description": "rule_sets del tenant (RLS): versiones activas primero. Secretos redactados.",
         "operationId": "list_rule_sets_rule_sets_get",
         "responses": {
           "200": {
@@ -3229,7 +3240,7 @@
         "summary": "List Rule Sets"
       },
       "put": {
-        "description": "Crea una NUEVA versión activa del alcance (version+1) y apaga las previas.",
+        "description": "Crea una NUEVA versión activa del alcance (version+1) y apaga las previas.\n\nEl alcance DEBE pertenecer al tenant del token: la fila nueva se inserta con\n``tenant_id = claims.tenant_id`` mientras el ``scope_id`` lo elige el cuerpo, así\nque un alcance ajeno produciría un rule_set con el tenant de A y el alcance de B\n— invisible para B (RLS filtra por ``tenant_id``) pero aplicado a sus gabinetes\npor el worker de sync, que resuelve por alcance. 403 (o 404 si RLS lo oculta).",
         "operationId": "put_rule_set_rule_sets_put",
         "requestBody": {
           "content": {

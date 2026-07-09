@@ -438,8 +438,15 @@ export type RuleSetPublishOut = {
 
 /**
  * Alta de una NUEVA versión de rule_set para un alcance dado.
+ *
+ * ``base_version``: versión activa sobre la que el cliente construyó ``config``.
+ * Como el PUT reemplaza el blob ENTERO, sin esto un segundo escritor con una copia
+ * vieja revierte en silencio claves que su pantalla ni muestra (``relays``,
+ * ``quorum``…). Si no coincide con la activa ⇒ 409. Omitirla = escritura a ciegas
+ * (se acepta por compatibilidad con clientes que no la envían).
  */
 export type RuleSetPutIn = {
+    base_version?: number | null;
     config: {
         [key: string]: unknown;
     };
