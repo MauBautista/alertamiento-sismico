@@ -638,9 +638,28 @@ T-1.17+) requiere AWS.
 
 ---
 
-## Hito de salida Fase 1
+## Hito de salida Fase 1 — ✅ ACREDITADO (2026-07-08)
 Demo en vivo con 3 gabinetes: prueba SASMEX dispara actuadores y aparece en el SOC; sismo
 simulado en 3 estaciones activa quórum; corte de internet no detiene la protección local.
+
+> **ACREDITADO.** `make demo-fase1` = **35/35 asserts en verde**, determinista en 5 corridas
+> consecutivas. Runbook: `takab-docs/runbooks/RUNBOOK-demo-fase1-tres-gabinetes.md`.
+> ([DECISION 2026-07-08]: demo LOCAL reproducible — 3 `EdgeSupervisor` REALES en procesos
+> separados (`gpio`/`rules`/`actuators` de verdad, relés mock) + el `SqsConsumer` REAL + el
+> `IncidentEngine` REAL + el SOC observado por el mismo `NOTIFY takab_live` del hub WS. **Único
+> tramo sustituido: IoT Core + SQS** (`demo/spool.py`, con visibility-timeout y redrive a DLQ
+> propios porque el consumer real depende de ellos). Evidencia medida: **C1** reflejo software
+> 0.037 ms, 5/5 relés, incidente en el SOC en ~150 ms (<2 s); **C2** el motor forma
+> `seismic_events source='local_quorum'` con 3 `quorum_votes` de 3 sensores distintos y offsets
+> en ventana (+ fail-open real de sitios sin enlace); **C3** actuación 5/5 sin nube, `sent` no
+> avanza, spool durable crece y drena al reconectar, e **idempotencia real** por RE-ENTREGA del
+> `LocalEvent` archivado byte-idéntico ⇒ el handler hace `ON CONFLICT (event_uuid)` y sigue 1
+> incidente. **Confirmación en HARDWARE real (Pi 5 `gw-dev-0001`)**: corte de WAN reversible
+> (nft, sólo egress a tcp/8883, watchdog auto-revert) — servicio `active`, spool 0→93→0, cero
+> pérdida. **Gate #3 sigue abierto**: relés MOCK; la latencia física <100 ms NO se acredita
+> (no hay WR-1/relés/sirena/válvula cableados; riesgo de disparo real = nulo). Revisión
+> adversarial de 4 lentes: 16 hallazgos, 12 refutados, **4 asserts tautológicos corregidos**
+> para que el harness sea honesto — cada assert que pasa observa un hecho real.)
 
 > Fuera de alcance explícito de este ciclo (T-MINUS, magnitud preliminar, streaming continuo de
 > waveform, IA en ruta determinista, mini-ShakeMap, modificar Shake OS): ver

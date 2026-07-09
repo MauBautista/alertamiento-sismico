@@ -1,4 +1,5 @@
-.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing
+.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing \
+        demo-fase1 demo-db
 
 API_DIR := api
 WEB_DIR := web
@@ -28,6 +29,21 @@ dev: db
 # Scheduling dev = cron con este target; AWS = EventBridge->ECS run-task (prod).
 billing:
 	cd $(API_DIR) && uv run python -m takab_api.billing $(if $(DAY),--day $(DAY),)
+
+# --- Hito de salida Fase 1: demo en vivo con 3 gabinetes ---------------------
+# `demo-db` deja la DB local lista (migrada + flota sembrada). OJO: alembic lee la
+# env BARE `DATABASE_URL`, mientras la API y los workers leen `TAKAB_API_DATABASE_URL`.
+DEMO_DSN := postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab
+
+demo-db: db
+	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
+	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
+	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/dev_fleet.sql
+
+# Levanta 3 EdgeSupervisor reales + el consumer real + el motor de quórum real y
+# acredita los 3 criterios con evidencia medible. Falla ruidosamente si alguno cae.
+demo-fase1: demo-db
+	cd $(API_DIR) && uv run python ../demo/run.py
 
 down:
 	docker compose down
