@@ -188,6 +188,10 @@ class EdgeSettings(BaseSettings):
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
     local_api_port: int = 8080
+    #: PIN de las ACCIONES del panel LAN (T-1.43, header X-Takab-Pin). Vacío +
+    #: dev_mode ⇒ abierto (tests/demo); vacío en PRODUCCIÓN ⇒ POST 403
+    #: fail-closed hasta provisionarlo (provision_gateway.sh lo genera).
+    local_api_pin: str = ""
 
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)

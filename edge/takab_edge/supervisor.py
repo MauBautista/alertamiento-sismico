@@ -173,7 +173,13 @@ class EdgeSupervisor:
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
         self.local_api = LocalDashboard(
-            self.gpio, self.rules, self.health, host=s.local_api_host, port=s.local_api_port
+            self.gpio,
+            self.rules,
+            self.health,
+            host=s.local_api_host,
+            port=s.local_api_port,
+            pin=s.local_api_pin,
+            dev_mode=s.dev_mode,
         )
 
         self._modules: dict[str, EdgeModule] = {

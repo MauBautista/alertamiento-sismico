@@ -909,3 +909,21 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] Los jobs de PR no necesitan AWS (corren tests herméticos) — verificado en `ci.yml`.
   - [x] `terraform validate` + plan: 1 cambio in-place, cero recursos nuevos.
   - [ ] Aplicado ⟵ viaja en el `terraform apply` de la ventana de T-1.39.
+
+### [~] T-1.43 · PIN en el panel local del gabinete — **[B8] CÓDIGO LISTO · DESPLIEGUE con T-1.40**
+- **Componente:** edge · **Cierra:** #35 del backlog (local_api sin auth)
+- **Objetivo:** `POST /api/{silence,siren-test,reset}` se aceptaban sin autenticar; la única
+  barrera para silenciar la sirena de un edificio era estar en su LAN.
+- **Criterios de aceptación:**
+  - [x] Las ACCIONES exigen `X-Takab-Pin` (comparación constant-time); la LECTURA (GET) sigue
+        abierta — es el panel del guardia.
+  - [x] Lockout: 5 PINs erróneos ⇒ 429 por 60 s (ni el correcto entra). Header AUSENTE no
+        cuenta como intento (es la página preguntando).
+  - [x] Sin PIN configurado: `dev_mode` abierto (tests/demo); **producción 403 fail-closed**.
+  - [x] La página pide el PIN una vez y lo retiene SOLO en memoria JS (CLAUDE.md §8: nada de
+        localStorage); mensajes claros para 401/403/429.
+  - [x] `provision_gateway.sh` genera un PIN de 6 dígitos, lo instala en `edge.env` y lo
+        imprime UNA vez (esa impresión ES la entrega al responsable del edificio).
+  - [x] Autorización ANTES de tocar GPIO; el camino físico WR-1→sirena no se toca (regla 1).
+  - [x] Suite edge 256 passed (7 tests nuevos de PIN).
+  - [ ] Desplegado al Pi y verificado con el navegador ⟵ va junto al deploy de T-1.40.

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Baja las credenciales de un gateway (cert mTLS + clave HMAC) desde Secrets
 # Manager y las instala en local o en el dispositivo via SSH.
-# Nunca imprime secretos a stdout.
+# Nunca imprime secretos a stdout — con UNA excepción deliberada: el PIN del
+# panel LAN (T-1.43) se imprime al final porque imprimirlo ES la vía de entrega
+# al responsable del edificio (no existe en Secrets Manager ni en otro canal).
 #
 # Uso: provision_gateway.sh <thing_name> [ssh_host]
 #   sin ssh_host: escribe ./certs-<thing_name>/{cert.pem,key.pem,ca.pem,edge.env}
@@ -53,8 +55,14 @@ PY
 curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA1.pem -o "$TMP/ca.pem"
 
 MQTT_ENDPOINT="$(terraform -chdir="$TF_DIR" output -raw iot_endpoint)"
-printf 'TAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\n' \
-  "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" >"$TMP/edge.env"
+
+# PIN del panel LAN (T-1.43): 6 dígitos aleatorios. Se imprime UNA vez al final
+# — es la vía de entrega al responsable del edificio; sin él, las acciones del
+# panel quedan 403 fail-closed en producción.
+LOCAL_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**6):06d}")')"
+
+printf 'TAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
+  "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env"
 
 if [ -z "$SSH_HOST" ]; then
   OUT_DIR="./certs-$THING"
@@ -72,3 +80,5 @@ else
   ssh "$SSH_HOST" 'sudo tee /etc/takab/edge.env >/dev/null && sudo chmod 600 /etc/takab/edge.env' <"$TMP/edge.env"
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
 fi
+
+echo "PIN del panel local de $THING: $LOCAL_PIN — entrégalo al responsable del edificio"

@@ -3,14 +3,21 @@
 T-1.13: servidor HTTP mínimo (stdlib `http.server`, sin dependencias pesadas) accesible
 en la LAN del edificio SIN internet (RBAC §4.2: fallback cuando la WAN está caída). Muestra
 estado, último evento y estado de relés; permite **prueba de sirena** y **silencio por LAN**.
-El acceso lo controla la segmentación de red del gabinete (LAN física del edificio).
+
+T-1.43: las ACCIONES (POST) exigen un PIN (`X-Takab-Pin`, comparación constant-time,
+lockout tras 5 PINs erróneos) — la segmentación de red dejó de ser la única barrera para
+silenciar la sirena de un edificio. La LECTURA (GET) sigue abierta en la LAN: es el panel
+del guardia. Sin PIN configurado: `dev_mode` queda abierto (tests/demo); producción
+responde 403 fail-closed hasta que `provision_gateway.sh` instale uno.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from takab_edge.gpio import GpioController
@@ -19,6 +26,10 @@ from takab_edge.module import EdgeModule
 from takab_edge.rules import RuleEngine
 
 log = logging.getLogger("takab_edge.local_api")
+
+#: Lockout del PIN: tras N erróneos, las acciones se bloquean este tiempo.
+_PIN_MAX_FAILURES = 5
+_PIN_LOCKOUT_S = 60.0
 
 _INDEX_HTML = """<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
@@ -38,6 +49,7 @@ _INDEX_HTML = """<!doctype html>
    border-radius:.4rem;font-weight:700;cursor:pointer}
  .silence{background:#ca8a04}.test{background:#2563eb;color:#fff}
  .reset{background:#334155;color:#fff}
+ #msg{margin-top:.5rem;font-weight:700;color:#fbbf24;min-height:1.2em}
 </style></head><body>
 <header>TAKAB Ailert · <span id="gw">—</span></header>
 <div id="banner">ALERTA SÍSMICA · PROTÉJASE</div>
@@ -47,9 +59,32 @@ _INDEX_HTML = """<!doctype html>
  <button class="silence" onclick="cmd('silence')">Silenciar audibles</button>
  <button class="test" onclick="cmd('siren-test')">Probar sirena</button>
  <button class="reset" onclick="cmd('reset')">Cerrar alerta</button>
+ <div id="msg"></div>
 </main>
 <script>
- async function cmd(name){ try{ await fetch('/api/'+name,{method:'POST'}); refresh(); }catch(e){} }
+ // El PIN vive SOLO en memoria de la página (CLAUDE.md §8: nada de localStorage).
+ let pin = null;
+ function send(name){
+   const h = pin ? {'X-Takab-Pin': pin} : {};
+   return fetch('/api/'+name,{method:'POST',headers:h});
+ }
+ async function cmd(name){
+   const m = document.getElementById('msg');
+   try{
+     let r = await send(name);
+     if(r.status===401){
+       const entered = window.prompt('PIN del gabinete');
+       if(entered===null || entered===''){ return; }
+       pin = entered;
+       r = await send(name);
+       if(r.status===401){ pin=null; m.textContent='PIN INCORRECTO'; }
+     }
+     if(r.status===403){ m.textContent='SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS'; }
+     else if(r.status===429){ m.textContent='BLOQUEADO POR INTENTOS · ESPERA 60 s'; }
+     else if(r.ok){ m.textContent=''; }
+     refresh();
+   }catch(e){}
+ }
  function row(k,v){ return '<div class="row"><span>'+k+'</span><b>'+v+'</b></div>'; }
  async function refresh(){
    const el=document.getElementById('state');
@@ -101,6 +136,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if action is None:
             self._send(404, json.dumps({"error": "not found"}))
             return
+        # Autorización ANTES de tocar GPIO (T-1.43): silenciar la sirena de un
+        # edificio no puede depender solo de estar en la misma LAN.
+        code = dashboard.authorize_action(self.headers.get("X-Takab-Pin"))
+        if code != 200:
+            self._send(code, json.dumps({"error": "pin"}))
+            return
         action()
         self._send(200, json.dumps({"ok": True}))
 
@@ -130,6 +171,8 @@ class LocalDashboard(EdgeModule):
         health: HealthMonitor,
         host: str = "0.0.0.0",  # noqa: S104 — LAN del gabinete por diseño
         port: int = 8080,
+        pin: str = "",
+        dev_mode: bool = True,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -137,8 +180,40 @@ class LocalDashboard(EdgeModule):
         self._health = health
         self._host = host
         self._port = port
+        self._pin = pin
+        self._dev_mode = dev_mode
+        self._auth_lock = threading.Lock()
+        self._auth_failures = 0
+        self._locked_until = 0.0
         self._server: _DashboardServer | None = None
         self._thread: threading.Thread | None = None
+
+    def authorize_action(self, provided: str | None) -> int:
+        """Autoriza un POST del panel (T-1.43). Devuelve el status HTTP.
+
+        - 200: PIN correcto, o sin PIN configurado en ``dev_mode``.
+        - 401: sin header (sondeo de la página — NO cuenta para el lockout) o
+          PIN erróneo (SÍ cuenta; comparación constant-time).
+        - 403: producción sin PIN provisionado — fail-closed hasta que
+          ``provision_gateway.sh`` instale uno.
+        - 429: lockout activo (5 PINs erróneos ⇒ 60 s bloqueado).
+        """
+        if not self._pin:
+            return 200 if self._dev_mode else 403
+        with self._auth_lock:
+            if self._locked_until > time.monotonic():
+                return 429
+            if provided is None:
+                return 401  # la página pregunta el PIN; no es un intento fallido
+            if hmac.compare_digest(provided.encode(), self._pin.encode()):
+                self._auth_failures = 0
+                return 200
+            self._auth_failures += 1
+            if self._auth_failures >= _PIN_MAX_FAILURES:
+                self._auth_failures = 0
+                self._locked_until = time.monotonic() + _PIN_LOCKOUT_S
+                log.warning("panel LAN: lockout por PIN erróneo (%.0f s)", _PIN_LOCKOUT_S)
+            return 401
 
     def status(self) -> dict:
         """Snapshot para el dashboard LAN (loading/error/empty/stale los maneja la UI)."""
