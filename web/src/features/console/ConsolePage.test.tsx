@@ -139,6 +139,7 @@ describe("ConsolePage", () => {
           generate_report: false,
           sign_dictamen: false,
           siren_test: true,
+          manage_fleet: true,
         },
       },
     });

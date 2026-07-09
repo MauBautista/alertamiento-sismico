@@ -193,6 +193,25 @@ export type GatewayConfigStateOut = {
 };
 
 /**
+ * Alta de gabinete. NO hay ``tenant_id``: se hereda del sitio (y RLS lo valida).
+ *
+ * La API **no llama a AWS**. Escribe la fila con ``status='provisioned'`` e
+ * ``iot_thing`` nulo salvo que el operador ya conozca el thing creado por Terraform
+ * (``infra/scripts/provision_gateway.sh``). Sin ``iot_thing`` el gabinete no es
+ * sincronizable, y la consola lo dice: PENDIENTE DE APROVISIONAR. Un endpoint HTTP
+ * que pudiera emitir certificados X.509 sería una superficie de ataque contra la
+ * identidad de los gabinetes.
+ */
+export type GatewayCreate = {
+    fw_version?: string | null;
+    has_wr1?: boolean;
+    installed_at?: string | null;
+    iot_thing?: string | null;
+    serial: string;
+    site_id: string;
+};
+
+/**
  * Gateway del tenant + estado derivado del último ``device_health``.
  */
 export type GatewayOut = {
@@ -208,10 +227,49 @@ export type GatewayOut = {
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
     power_status?: string | null;
+    row_version: string;
     seedlink_lag_s?: number | null;
     serial: string;
     site_id: string;
     status: string;
+};
+
+/**
+ * Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).
+ *
+ * Sin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último
+ * ``device_health``, y un gabinete recién dado de alta todavía no tiene ninguno.
+ * Inventarle "OPERATIVO" sería exactamente la clase de dato falso que prohíbe la
+ * regla de oro 7.
+ */
+export type GatewayRowOut = {
+    fw_version?: string | null;
+    gateway_id: string;
+    has_wr1: boolean;
+    installed_at?: string | null;
+    iot_thing?: string | null;
+    row_version: string;
+    serial: string;
+    site_id: string;
+    status: string;
+    tenant_id: string;
+};
+
+/**
+ * Edición de gabinete. ``status`` no aparece a propósito.
+ *
+ * ``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y
+ * ``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera "online"
+ * haría que la Flota Edge mintiera sobre un gabinete muerto.
+ */
+export type GatewayUpdate = {
+    base_row_version?: string | null;
+    fw_version?: string | null;
+    has_wr1?: boolean;
+    installed_at?: string | null;
+    iot_thing?: string | null;
+    serial: string;
+    site_id: string;
 };
 
 export type HttpValidationError = {
@@ -337,6 +395,7 @@ export type MeActions = {
     edit_thresholds: boolean;
     export: boolean;
     generate_report: boolean;
+    manage_fleet: boolean;
     sign_dictamen: boolean;
     siren_test: boolean;
 };
@@ -471,20 +530,74 @@ export type SeismicEventOut = {
 };
 
 /**
+ * Alta de sensor. El tenant lo hereda del sitio padre; ``serial`` es único GLOBAL.
+ */
+export type SensorCreate = {
+    channels?: Array<string>;
+    gateway_id?: string | null;
+    kind: 'structural' | 'ground';
+    lat?: number | null;
+    lon?: number | null;
+    model: string;
+    mount?: ('concrete_column' | 'steel' | 'floor' | 'buried') | null;
+    sample_rate?: number;
+    serial?: string | null;
+    site_id: string;
+    zone_id?: string | null;
+};
+
+/**
  * Sensor de un sitio (RS4D estructural o de terreno).
  */
 export type SensorOut = {
     channels: Array<string>;
     gateway_id?: string | null;
     kind: string;
+    lat?: number | null;
+    lon?: number | null;
     model: string;
     mount?: string | null;
+    row_version: string;
     sample_rate: number;
     sensor_id: string;
     serial?: string | null;
     site_id: string;
     status: string;
     zone_id?: string | null;
+};
+
+/**
+ * Edición de sensor: reemplaza el cuerpo entero, con bloqueo optimista.
+ */
+export type SensorUpdate = {
+    base_row_version?: string | null;
+    channels?: Array<string>;
+    gateway_id?: string | null;
+    kind: 'structural' | 'ground';
+    lat?: number | null;
+    lon?: number | null;
+    model: string;
+    mount?: ('concrete_column' | 'steel' | 'floor' | 'buried') | null;
+    sample_rate?: number;
+    serial?: string | null;
+    site_id: string;
+    status?: 'active' | 'retired';
+    zone_id?: string | null;
+};
+
+/**
+ * Alta de sitio. ``tenant_id`` SOLO lo aceptan los roles internos TAKAB.
+ */
+export type SiteCreate = {
+    address?: string | null;
+    building_type?: string | null;
+    code: string;
+    criticality?: 'low' | 'medium' | 'high' | 'critical';
+    lat: number;
+    lon: number;
+    name: string;
+    tenant_id?: string | null;
+    timezone?: string;
 };
 
 /**
@@ -499,7 +612,9 @@ export type SiteDetailOut = {
     lat: number;
     lon: number;
     name: string;
+    row_version: string;
     site_id: string;
+    status: string;
     tenant_id: string;
     timezone: string;
     zones: Array<ZoneOut>;
@@ -517,7 +632,9 @@ export type SiteOut = {
     lat: number;
     lon: number;
     name: string;
+    row_version: string;
     site_id: string;
+    status: string;
     tenant_id: string;
     timezone: string;
 };
@@ -548,6 +665,26 @@ export type SiteStateFrame = {
     tenant_id: string;
     ts: string;
     type?: 'site_state';
+};
+
+/**
+ * Edición de sitio: reemplaza el cuerpo entero (como ``PUT /rule-sets``).
+ *
+ * ``tenant_id`` no aparece a propósito: un sitio no se muda de tenant. Mover su
+ * ubicación sí es posible — y es exactamente por eso que la edición exige
+ * ``base_row_version``: la geometría reencuadra la ventana de quórum.
+ */
+export type SiteUpdate = {
+    address?: string | null;
+    base_row_version?: string | null;
+    building_type?: string | null;
+    code: string;
+    criticality?: 'low' | 'medium' | 'high' | 'critical';
+    lat: number;
+    lon: number;
+    name: string;
+    status?: 'active' | 'retired';
+    timezone?: string;
 };
 
 /**
@@ -691,6 +828,85 @@ export type ListGatewaysFleetGatewaysGetResponses = {
 
 export type ListGatewaysFleetGatewaysGetResponse = ListGatewaysFleetGatewaysGetResponses[keyof ListGatewaysFleetGatewaysGetResponses];
 
+export type CreateGatewayFleetGatewaysPostData = {
+    body: GatewayCreate;
+    path?: never;
+    query?: never;
+    url: '/fleet/gateways';
+};
+
+export type CreateGatewayFleetGatewaysPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateGatewayFleetGatewaysPostError = CreateGatewayFleetGatewaysPostErrors[keyof CreateGatewayFleetGatewaysPostErrors];
+
+export type CreateGatewayFleetGatewaysPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: GatewayRowOut;
+};
+
+export type CreateGatewayFleetGatewaysPostResponse = CreateGatewayFleetGatewaysPostResponses[keyof CreateGatewayFleetGatewaysPostResponses];
+
+export type RetireGatewayFleetGatewaysGatewayIdDeleteData = {
+    body?: never;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}';
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdDeleteError = RetireGatewayFleetGatewaysGatewayIdDeleteErrors[keyof RetireGatewayFleetGatewaysGatewayIdDeleteErrors];
+
+export type RetireGatewayFleetGatewaysGatewayIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayRowOut;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdDeleteResponse = RetireGatewayFleetGatewaysGatewayIdDeleteResponses[keyof RetireGatewayFleetGatewaysGatewayIdDeleteResponses];
+
+export type UpdateGatewayFleetGatewaysGatewayIdPutData = {
+    body: GatewayUpdate;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}';
+};
+
+export type UpdateGatewayFleetGatewaysGatewayIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateGatewayFleetGatewaysGatewayIdPutError = UpdateGatewayFleetGatewaysGatewayIdPutErrors[keyof UpdateGatewayFleetGatewaysGatewayIdPutErrors];
+
+export type UpdateGatewayFleetGatewaysGatewayIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayRowOut;
+};
+
+export type UpdateGatewayFleetGatewaysGatewayIdPutResponse = UpdateGatewayFleetGatewaysGatewayIdPutResponses[keyof UpdateGatewayFleetGatewaysGatewayIdPutResponses];
+
 export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetData = {
     body?: never;
     path: {
@@ -717,6 +933,33 @@ export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses =
 };
 
 export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponse = GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses[keyof GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses];
+
+export type RestoreGatewayFleetGatewaysGatewayIdRestorePostData = {
+    body?: never;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}/restore';
+};
+
+export type RestoreGatewayFleetGatewaysGatewayIdRestorePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestoreGatewayFleetGatewaysGatewayIdRestorePostError = RestoreGatewayFleetGatewaysGatewayIdRestorePostErrors[keyof RestoreGatewayFleetGatewaysGatewayIdRestorePostErrors];
+
+export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayRowOut;
+};
+
+export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponse = RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses[keyof RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses];
 
 export type HealthHealthGetData = {
     body?: never;
@@ -1070,12 +1313,102 @@ export type ListSensorsSensorsGetResponses = {
 
 export type ListSensorsSensorsGetResponse = ListSensorsSensorsGetResponses[keyof ListSensorsSensorsGetResponses];
 
+export type CreateSensorSensorsPostData = {
+    body: SensorCreate;
+    path?: never;
+    query?: never;
+    url: '/sensors';
+};
+
+export type CreateSensorSensorsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSensorSensorsPostError = CreateSensorSensorsPostErrors[keyof CreateSensorSensorsPostErrors];
+
+export type CreateSensorSensorsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SensorOut;
+};
+
+export type CreateSensorSensorsPostResponse = CreateSensorSensorsPostResponses[keyof CreateSensorSensorsPostResponses];
+
+export type RetireSensorSensorsSensorIdDeleteData = {
+    body?: never;
+    path: {
+        sensor_id: string;
+    };
+    query?: never;
+    url: '/sensors/{sensor_id}';
+};
+
+export type RetireSensorSensorsSensorIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireSensorSensorsSensorIdDeleteError = RetireSensorSensorsSensorIdDeleteErrors[keyof RetireSensorSensorsSensorIdDeleteErrors];
+
+export type RetireSensorSensorsSensorIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: SensorOut;
+};
+
+export type RetireSensorSensorsSensorIdDeleteResponse = RetireSensorSensorsSensorIdDeleteResponses[keyof RetireSensorSensorsSensorIdDeleteResponses];
+
+export type UpdateSensorSensorsSensorIdPutData = {
+    body: SensorUpdate;
+    path: {
+        sensor_id: string;
+    };
+    query?: never;
+    url: '/sensors/{sensor_id}';
+};
+
+export type UpdateSensorSensorsSensorIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSensorSensorsSensorIdPutError = UpdateSensorSensorsSensorIdPutErrors[keyof UpdateSensorSensorsSensorIdPutErrors];
+
+export type UpdateSensorSensorsSensorIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SensorOut;
+};
+
+export type UpdateSensorSensorsSensorIdPutResponse = UpdateSensorSensorsSensorIdPutResponses[keyof UpdateSensorSensorsSensorIdPutResponses];
+
 export type ListSitesSitesGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        include_retired?: boolean;
+    };
     url: '/sites';
 };
+
+export type ListSitesSitesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListSitesSitesGetError = ListSitesSitesGetErrors[keyof ListSitesSitesGetErrors];
 
 export type ListSitesSitesGetResponses = {
     /**
@@ -1085,6 +1418,58 @@ export type ListSitesSitesGetResponses = {
 };
 
 export type ListSitesSitesGetResponse = ListSitesSitesGetResponses[keyof ListSitesSitesGetResponses];
+
+export type CreateSiteSitesPostData = {
+    body: SiteCreate;
+    path?: never;
+    query?: never;
+    url: '/sites';
+};
+
+export type CreateSiteSitesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSiteSitesPostError = CreateSiteSitesPostErrors[keyof CreateSiteSitesPostErrors];
+
+export type CreateSiteSitesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SiteOut;
+};
+
+export type CreateSiteSitesPostResponse = CreateSiteSitesPostResponses[keyof CreateSiteSitesPostResponses];
+
+export type RetireSiteSitesSiteIdDeleteData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}';
+};
+
+export type RetireSiteSitesSiteIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireSiteSitesSiteIdDeleteError = RetireSiteSitesSiteIdDeleteErrors[keyof RetireSiteSitesSiteIdDeleteErrors];
+
+export type RetireSiteSitesSiteIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: SiteOut;
+};
+
+export type RetireSiteSitesSiteIdDeleteResponse = RetireSiteSitesSiteIdDeleteResponses[keyof RetireSiteSitesSiteIdDeleteResponses];
 
 export type GetSiteSitesSiteIdGetData = {
     body?: never;
@@ -1112,6 +1497,33 @@ export type GetSiteSitesSiteIdGetResponses = {
 };
 
 export type GetSiteSitesSiteIdGetResponse = GetSiteSitesSiteIdGetResponses[keyof GetSiteSitesSiteIdGetResponses];
+
+export type UpdateSiteSitesSiteIdPutData = {
+    body: SiteUpdate;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}';
+};
+
+export type UpdateSiteSitesSiteIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSiteSitesSiteIdPutError = UpdateSiteSitesSiteIdPutErrors[keyof UpdateSiteSitesSiteIdPutErrors];
+
+export type UpdateSiteSitesSiteIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SiteOut;
+};
+
+export type UpdateSiteSitesSiteIdPutResponse = UpdateSiteSitesSiteIdPutResponses[keyof UpdateSiteSitesSiteIdPutResponses];
 
 export type ListCommandsSitesSiteIdCommandsGetData = {
     body?: never;

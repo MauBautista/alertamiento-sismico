@@ -23,6 +23,7 @@ function cabinet(id: string, state: string): FleetCabinet {
       status: "active",
       has_wr1: true,
       installed_at: null,
+      row_version: "1",
       derived_state: state,
       last_heartbeat_ts: null,
       power_status: "line",

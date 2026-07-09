@@ -10,6 +10,7 @@ tenant → un tenant nunca ve la flota de otro.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from uuid import UUID
 
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 _LIST = text(
     """
     SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.iot_thing,
-           g.status, g.has_wr1, g.installed_at,
+           g.status, g.has_wr1, g.installed_at, g.xmin::text AS row_version,
            h.ts AS health_ts, h.power_status,
            h.battery_pct::float8       AS battery_pct,
            h.cert_days_remaining,
@@ -82,3 +83,61 @@ _CONFIG_STATE = text(
 async def get_config_state(conn: AsyncConnection, gateway_id: str) -> Row | None:
     """Estado del config firmado del gateway. ``None`` si RLS no lo deja verlo."""
     return (await conn.execute(_CONFIG_STATE, {"gateway_id": gateway_id})).first()
+
+
+# --- Administración de gabinetes (T-1.32) ------------------------------------
+# El ``tenant_id`` no es parámetro del cuerpo: lo hereda del sitio padre, que el
+# router ya validó contra los claims. ``xmin::text`` es el testigo de concurrencia.
+
+_ROW_COLS = (
+    "gateway_id, tenant_id, site_id, serial, fw_version, iot_thing, "
+    "status, has_wr1, installed_at, xmin::text AS row_version"
+)
+
+_GET_ROW = text(f"SELECT {_ROW_COLS} FROM gateways WHERE gateway_id = :id")
+
+# Alta SIEMPRE en 'provisioned': el gabinete no está online hasta que su primer
+# heartbeat lo demuestre. La API no crea certificados X.509 (eso es Terraform).
+_INSERT = text(
+    "INSERT INTO gateways (tenant_id, site_id, serial, fw_version, iot_thing, "
+    "status, has_wr1, installed_at) "
+    "VALUES (CAST(:tenant_id AS uuid), :site_id, :serial, :fw_version, :iot_thing, "
+    "'provisioned', :has_wr1, :installed_at) "
+    f"RETURNING {_ROW_COLS}"
+)
+
+_UPDATE = text(
+    "UPDATE gateways SET site_id = :site_id, serial = :serial, fw_version = :fw_version, "
+    "iot_thing = :iot_thing, has_wr1 = :has_wr1, installed_at = :installed_at "
+    "WHERE gateway_id = :id "
+    "  AND (CAST(:base_row_version AS text) IS NULL "
+    "       OR xmin::text = CAST(:base_row_version AS text)) "
+    f"RETURNING {_ROW_COLS}"
+)
+
+_SET_STATUS = text(
+    f"UPDATE gateways SET status = :status WHERE gateway_id = :id RETURNING {_ROW_COLS}"
+)
+
+
+async def get_gateway_row(conn: AsyncConnection, gateway_id: UUID) -> Row | None:
+    """Fila cruda del gateway, o ``None`` si RLS no lo deja verla."""
+    return (await conn.execute(_GET_ROW, {"id": gateway_id})).first()
+
+
+async def insert_gateway(conn: AsyncConnection, *, tenant_id: str, values: dict) -> Row:
+    """Inserta el gabinete en 'provisioned'. ``serial``/``iot_thing`` son únicos GLOBALES."""
+    return (await conn.execute(_INSERT, {**values, "tenant_id": tenant_id})).one()
+
+
+async def update_gateway(
+    conn: AsyncConnection, *, gateway_id: UUID, values: dict, base_row_version: str | None
+) -> Row | None:
+    """Reemplaza el gabinete. ``None`` = otro escritor ganó la carrera (⇒ 409)."""
+    params = {**values, "id": gateway_id, "base_row_version": base_row_version}
+    return (await conn.execute(_UPDATE, params)).first()
+
+
+async def set_gateway_status(conn: AsyncConnection, gateway_id: UUID, status: str) -> Row | None:
+    """Fija ``status`` (solo 'retired' o 'provisioned' desde la API). Idempotente."""
+    return (await conn.execute(_SET_STATUS, {"id": gateway_id, "status": status})).first()

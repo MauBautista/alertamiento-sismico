@@ -664,3 +664,95 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > Fuera de alcance explícito de este ciclo (T-MINUS, magnitud preliminar, streaming continuo de
 > waveform, IA en ruta determinista, mini-ShakeMap, modificar Shake OS): ver
 > `BLUEPRINT-TECNICO-TAKAB.md §14`.
+
+---
+
+# Fase 1.5 · Operabilidad (auditoría final, 2026-07-09)
+
+> Auditoría de las tres capas contra `CLAUDE.md`, `USER-STORIES.md` y el blueprint. El mapa, el
+> strip sísmico y la consola YA existían; lo que faltaba de verdad era poder **dar de alta
+> estaciones**, tener el **cómputo en la nube** y no **mentir sobre la calibración**.
+
+### [x] T-1.32 · CRUD de flota: sitios, gateways y sensores — **[C2] COMPLETA**
+- **Componente:** api · **Depende de:** T-1.22, T-1.30 · Cierra la mitad de escritura de **US-20**.
+- **Objetivo:** que un `tenant_admin` cree, mueva y retire estaciones desde el SOC, en vez de
+  sembrarlas por SQL (`db/seeds/dev_fleet.sql`).
+- **Criterios de aceptación:**
+  - [x] Acción `manage_fleet` en `auth/matrix.py` → `takab_superadmin` + `tenant_admin`.
+        `takab_support` **no** la recibe ([DECISION 2026-07-09]: gana el código sobre §2 del RBAC;
+        soporte lee la flota, no mueve la geometría de un sitio ajeno).
+  - [x] Migración `0009` añade `sites.status` (`active|retired`). `gateways`/`sensors` ya lo tienen.
+  - [x] `POST/PUT/DELETE` en `/sites`, `/fleet/gateways`, `/sensors`. `DELETE` = retiro lógico.
+  - [x] El `tenant_id` sale SIEMPRE de los claims; para `takab_superadmin` es explícito y validado.
+        Motivo: `sites_admin` tiene `WITH CHECK (app_is_takab_internal())` **sin filtro de tenant**.
+  - [x] Bloqueo optimista por `xmin::text`; `base_row_version` viejo ⇒ 409. Serial duplicado ⇒ 409.
+  - [x] `audit_async` en cada mutación. Alta de gateway **sin llamadas a AWS** (`status='provisioned'`).
+  - [x] Test de cruce de tenants en ESCRITURA ⇒ 403. `soc_operator` ⇒ 403.
+
+> **COMPLETA.** api **608 passed** (baseline 586, +22), web **373 passed**, ruff/eslint/prettier
+> limpios, `vite build` OK. Además del CRUD, la tarea destapó y cerró **dos fugas de tenancy que la
+> DB no habría detenido**: (1) las políticas `sites_admin`/`gateways_admin`/`sensors_admin` llevan
+> `WITH CHECK (app_is_takab_internal())` **sin filtro de tenant** ⇒ el `tenant_id` de un alta jamás
+> se toma del cuerpo (`resolve_write_tenant`); un superadmin debe nombrarlo explícitamente o recibe
+> 400. (2) Las **FK de PostgreSQL no comparan `tenant_id`** ⇒ un `site_id`/`gateway_id`/`zone_id`
+> ajeno en el cuerpo habría colgado hardware de un cliente en el edificio de otro
+> (`tenant_of_parent_site` + `require_same_tenant`); es el mismo patrón que cerró T-1.30 en
+> `rule_sets`. **Desviaciones honestas:** el alta de gabinete **no llama a AWS** (los certs X.509 son
+> de Terraform) y nace en `provisioned` con `iot_thing` nulo — sin heartbeat no se puede afirmar
+> "online" (regla de oro 7); `GatewayUpdate` **no acepta `status`** porque `online/degraded/offline`
+> los deriva el heartbeat, no un formulario; `restore` devuelve a `provisioned`, nunca a `online`.
+> `GET /telemetry/map/state` y `GET /sites` ahora filtran `status='active'` (retirar un sitio lo
+> saca del mapa; `?include_retired=true` lo recupera). También se formaliza el fix del **mapa
+> invisible**: `DEV_TENANT_DEFAULT` apuntaba a un tenant SIN sitios, así que `/console` caía en el
+> estado `empty`; ahora es una constante exportada y anclada por test al tenant de `dev_fleet.sql`.
+
+### [ ] T-1.33 · Honestidad de calibración PGA/PGV — **[C2/C3]**
+- **Componente:** api + web · **Depende de:** T-1.32
+- **Objetivo:** dejar de presentar como `g` y `cm/s` absolutos unos números escalados con las
+  sensibilidades PLACEHOLDER de `edge/takab_edge/config/settings.py` (`SignalConfig`), a la espera
+  del StationXML del RS4D (T-1.6 diferido). Mostrar un dato sin calibrar como si fuera físico es
+  exactamente lo que prohíbe la regla de oro 7.
+- **Criterios de aceptación:**
+  - [ ] `sensors.metadata.calibrated` (default `false`) → `SensorOut.calibrated`.
+  - [ ] El snapshot de features expone `calibrated` del sitio (true solo si TODOS sus sensores
+        activos lo están).
+  - [ ] La web usa `unitsFor(calibrated)` → `g`/`cm/s` vs `rel.`, y pinta `SIN CALIBRAR`.
+
+### [ ] T-1.34 · Strip multicanal + vista histórica — **[C3]**
+- **Componente:** web · **Depende de:** T-1.33 · Responde a **US-03** sin violar la regla de oro 9.
+- **Criterios de aceptación:**
+  - [ ] `MultiChannelStrip` pinta EHZ/ENZ/ENN/ENE con eje temporal.
+  - [ ] `HistoryChart` sobre `site_metrics_1m`/`_1h`, presets 1h/6h/24h/7d (el preset conmuta el cagg).
+  - [ ] Sin waveform crudo. Sin librería de gráficas. Los 4 estados obligatorios.
+
+### [ ] T-1.35 · Completar `/building/:siteId` — **[C5]**
+- **Componente:** web · **Depende de:** T-1.34 · Última página placeholder del árbol.
+- **Nota de alcance:** es la vista del **staff con sesión** (`building_admin`, `inspector`, roles
+  SOC). **No** es la pantalla del ocupante: `occupant`/`brigadista`/`security_guard` tienen
+  `allowed_routes = []` y su superficie es la app móvil (T-1.31). Según **US-05**, la interfaz del
+  ocupante es la **sirena**.
+- **Criterios de aceptación:**
+  - [ ] Estado del sitio, incidentes del sitio, strip multicanal, salud del gabinete, dictamen.
+  - [ ] Prueba de sirena solo si `me.allowed_actions.siren_test`, y no afirma que sonó hasta
+        recibir el `command_ack` del edge (regla de oro 8).
+
+### [ ] T-1.36 · UI de alta de estaciones con selector de punto en el mapa — **[C5]**
+- **Componente:** web · **Depende de:** T-1.32
+- **Criterios de aceptación:**
+  - [ ] Sub-superficie bajo `/fleet` (no una ruta nueva ⇒ no cambia `allowed_routes`).
+  - [ ] `MapPointPicker` con marcador arrastrable, componente nuevo (no sobrecargar `MapPanel`).
+  - [ ] Los controles de escritura solo se pintan si `me.allowed_actions.manage_fleet`.
+
+### [ ] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7]**
+- **Componente:** infra · **Depende de:** T-1.32…T-1.36
+- **Objetivo:** que la nube corra en la nube. Hoy Terraform tiene DB, IoT Core, SQS, S3, Cognito,
+  ECR y KMS, pero **cero cómputo**: la API, el consumer y la web corren en la laptop.
+- **Criterios de aceptación:**
+  - [ ] `instance_type` = `t4g.medium` ([DECISION 2026-07-09]: 2 GiB no alcanzan; el OOM-killer
+        mataría a Postgres. +$12.26/mes ⇒ total ~$42–47/mes, bajo el budget de $50).
+  - [ ] `docker-compose` en el EC2 con la imagen ECR existente + Caddy/TLS sobre sslip.io.
+  - [ ] La API usa el DSN `takab_app` (RLS forzada); los workers, `takab_ingest` (BYPASSRLS).
+        Mezclarlos es cruce de tenants (regla de oro 5).
+  - [ ] Secretos de Secrets Manager a tmpfs `/run/takab/*.env`. Cero secretos en git.
+  - [ ] `/dev/token` apagado en la nube. SG `takab-dev-web` separado y desconectable.
+  - [ ] `make cloud-deploy` existe y es idempotente.

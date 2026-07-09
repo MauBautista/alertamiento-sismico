@@ -16,6 +16,7 @@ class MeActions(BaseModel):
     generate_report: bool
     edit_thresholds: bool
     siren_test: bool
+    manage_fleet: bool
 
 
 class MeResponse(BaseModel):

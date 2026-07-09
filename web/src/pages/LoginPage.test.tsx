@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetSessionStoreForTests, useSessionStore } from "../auth/session.store";
 import { ME_FIXTURES } from "../test-utils/meFixtures";
 import { renderRoutesAt, seedAuthenticated } from "../test-utils/renderRoutes";
+import { DEV_TENANT_DEFAULT } from "./LoginPage";
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -27,8 +28,14 @@ describe("LoginPage", () => {
 
     expect(loginDev).toHaveBeenCalledWith({
       role: "gov_operator",
-      tenant_id: "11111111-1111-1111-1111-111111111111",
+      tenant_id: DEV_TENANT_DEFAULT,
     });
+  });
+
+  it("el tenant dev por defecto es el de la flota sembrada", () => {
+    // Un tenant sin sitios deja `/console` en el estado `empty` y el mapa no aparece.
+    // El valor debe seguir al de `db/seeds/dev_fleet.sql`.
+    expect(DEV_TENANT_DEFAULT).toBe("d0000000-0000-0000-0000-000000000001");
   });
 
   it("sin VITE_DEV_TOKEN_ENABLED no hay panel dev", () => {

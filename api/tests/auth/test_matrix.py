@@ -67,6 +67,7 @@ DENY_ALL = {
     "generate_report": False,
     "edit_thresholds": False,
     "siren_test": False,
+    "manage_fleet": False,
 }
 
 
@@ -103,6 +104,20 @@ def test_generate_report_is_distinct_from_export() -> None:
     assert can_export == {"takab_superadmin", "gov_operator", "inspector"}
     assert can_report == {"takab_superadmin", "inspector"}
     assert can_report < can_export
+
+
+def test_manage_fleet_excludes_takab_support() -> None:
+    """§2 da "Total" a ``takab_support`` en Flota Edge, pero el código NO le concede
+    ``manage_fleet`` ([DECISION 2026-07-09], documentada en matrix.py y RBAC-TAKAB.md).
+
+    Mover la ubicación de una estación reencuadra la ventana de asociación del quórum
+    (``|Δt| ≤ dist/v_P + margen``): es un acto de dueño del tenant, no de soporte.
+    """
+    can_manage = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_fleet"]}
+    assert can_manage == {"takab_superadmin", "tenant_admin"}
+    assert allowed_actions("takab_support")["manage_fleet"] is False
+    # Y sigue viendo /fleet: la divergencia es de escritura, no de lectura.
+    assert FLEET in ROLE_ROUTE_MATRIX["takab_support"]
 
 
 def test_ack_incident_roles() -> None:

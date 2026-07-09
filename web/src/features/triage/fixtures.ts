@@ -45,6 +45,8 @@ export function aSite(over: Partial<SiteOut> = {}): SiteOut {
     lat: 19.06,
     lon: -98.3,
     timezone: "America/Mexico_City",
+    status: "active",
+    row_version: "1",
     created_at: "2026-01-01T00:00:00Z",
     ...over,
   };

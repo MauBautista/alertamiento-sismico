@@ -24,6 +24,7 @@ const GW_OK: GatewayOut = {
   status: "active",
   has_wr1: true,
   installed_at: null,
+  row_version: "1",
   derived_state: "OPERATIVO",
   last_heartbeat_ts: "2026-07-08T10:41:00Z",
   power_status: "line",
@@ -57,6 +58,8 @@ const SITES: SiteOut[] = [
     lat: 19.06,
     lon: -98.3,
     timezone: "America/Mexico_City",
+    status: "active",
+    row_version: "1",
     created_at: "2026-01-01T00:00:00Z",
   },
 ];

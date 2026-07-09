@@ -12,7 +12,7 @@ import hashlib
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 # Estados posibles (strings de UI en español, tal cual los pinta el SOC).
 OPERATIVO = "OPERATIVO"
@@ -105,6 +105,7 @@ class GatewayOut(BaseModel):
     status: str
     has_wr1: bool
     installed_at: datetime | None = None
+    row_version: str
     derived_state: str
     last_heartbeat_ts: datetime | None = None
     power_status: str | None = None
@@ -113,3 +114,64 @@ class GatewayOut(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
     ntp_offset_ms: float | None = None
+
+
+class GatewayRowOut(BaseModel):
+    """Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).
+
+    Sin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último
+    ``device_health``, y un gabinete recién dado de alta todavía no tiene ninguno.
+    Inventarle "OPERATIVO" sería exactamente la clase de dato falso que prohíbe la
+    regla de oro 7.
+    """
+
+    gateway_id: UUID
+    tenant_id: UUID
+    site_id: UUID
+    serial: str
+    fw_version: str | None = None
+    iot_thing: str | None = None
+    status: str
+    has_wr1: bool
+    installed_at: datetime | None = None
+    row_version: str
+
+
+class GatewayCreate(BaseModel):
+    """Alta de gabinete. NO hay ``tenant_id``: se hereda del sitio (y RLS lo valida).
+
+    La API **no llama a AWS**. Escribe la fila con ``status='provisioned'`` e
+    ``iot_thing`` nulo salvo que el operador ya conozca el thing creado por Terraform
+    (``infra/scripts/provision_gateway.sh``). Sin ``iot_thing`` el gabinete no es
+    sincronizable, y la consola lo dice: PENDIENTE DE APROVISIONAR. Un endpoint HTTP
+    que pudiera emitir certificados X.509 sería una superficie de ataque contra la
+    identidad de los gabinetes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    site_id: UUID
+    serial: str = Field(min_length=1, max_length=64)
+    fw_version: str | None = Field(default=None, max_length=32)
+    iot_thing: str | None = Field(default=None, max_length=128)
+    has_wr1: bool = True
+    installed_at: datetime | None = None
+
+
+class GatewayUpdate(BaseModel):
+    """Edición de gabinete. ``status`` no aparece a propósito.
+
+    ``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y
+    ``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera "online"
+    haría que la Flota Edge mintiera sobre un gabinete muerto.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    site_id: UUID
+    serial: str = Field(min_length=1, max_length=64)
+    fw_version: str | None = Field(default=None, max_length=32)
+    iot_thing: str | None = Field(default=None, max_length=128)
+    has_wr1: bool = True
+    installed_at: datetime | None = None
+    base_row_version: str | None = None

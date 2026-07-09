@@ -15,6 +15,7 @@ const GW: GatewayOut = {
   status: "active",
   has_wr1: true,
   installed_at: null,
+  row_version: "1",
   derived_state: "OPERATIVO",
   last_heartbeat_ts: "2026-07-08T10:41:00Z",
   power_status: "line",

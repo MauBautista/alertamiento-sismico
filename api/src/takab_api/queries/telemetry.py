@@ -114,6 +114,7 @@ LEFT JOIN LATERAL (
     ORDER BY i.opened_at DESC
     LIMIT 1
 ) li ON true
+WHERE s.status = 'active'
 ORDER BY s.name ASC, s.site_id ASC
 """
 

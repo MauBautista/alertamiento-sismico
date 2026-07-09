@@ -67,6 +67,13 @@
   `audit_log` con su firma (`actor = user:{uuid}`, `verb = siren_test`).
 - `soc_operator`: el alcance lo determina el `tenant_id` del usuario. Un operador empleado por
   TAKAB que presta servicio a un cliente se modela como usuario perteneciente a ese tenant.
+- **[DECISION 2026-07-09 · T-1.32] La celda "Total" de `takab_support` en Flota Edge es de
+  LECTURA, no de escritura.** Al introducir la acción `manage_fleet` (alta/edición/retiro de
+  sitios, gabinetes y sensores), soporte **no** la recibe: solo `takab_superadmin` y
+  `tenant_admin`. Motivo: mover la ubicación de una estación reencuadra la ventana de asociación
+  del quórum (`|Δt| ≤ dist/v_P + margen`, blueprint §4.5), y eso es un acto de dueño del tenant,
+  no de soporte. La verdad ejecutable vive en `api/src/takab_api/auth/matrix.py`; el test
+  `tests/auth/test_matrix.py::test_manage_fleet_excludes_takab_support` la ancla.
 
 ---
 

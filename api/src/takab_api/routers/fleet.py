@@ -3,11 +3,15 @@
 - ``GET /fleet/gateways`` — inventario con ``OPERATIVO|DEGRADADO|SIN ENLACE``.
 - ``GET /fleet/gateways/{id}/config-state`` — qué config firmada tiene realmente el
   gabinete, para que la Matriz Multi-Tenant distinga PENDIENTE de SINCRONIZADO.
+- ``POST/PUT/DELETE /fleet/gateways`` — administración del inventario (T-1.32).
 
 Autz (RBAC §2 · columna Flota Edge): superficie web + rol con acceso a /fleet
 (superadmin/support Total; tenant_admin/soc_operator/gov_operator Lectura). Tanto el
 estado de flota (``schemas.fleet.derive_fleet_state``) como ``in_sync`` (mismo
 predicado que ``commands/sync.py``) se derivan server-side: la UI solo pinta.
+
+La escritura exige además la acción ``manage_fleet`` (superadmin + tenant_admin), y el
+``tenant_id`` del gabinete se hereda del sitio padre: nunca viaja en el cuerpo.
 """
 
 from __future__ import annotations
@@ -15,15 +19,26 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
+from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles, require_web_surface
-from takab_api.auth.matrix import FLEET, ROLE_ROUTE_MATRIX
+from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
 from takab_api.queries import fleet as q
-from takab_api.routers._common import http_error, read_session
+from takab_api.routers._common import (
+    http_error,
+    integrity_error,
+    read_session,
+    tenant_of_parent_site,
+)
 from takab_api.schemas.fleet import (
     GatewayConfigStateOut,
+    GatewayCreate,
     GatewayOut,
+    GatewayRowOut,
+    GatewayUpdate,
     derive_fleet_state,
     sig_fingerprint,
 )
@@ -34,9 +49,21 @@ _FLEET_ROLES: tuple[str, ...] = tuple(
     sorted(r for r, routes in ROLE_ROUTE_MATRIX.items() if FLEET in routes)
 )
 
+_MANAGE_FLEET_ROLES: tuple[str, ...] = tuple(
+    sorted(r for r, a in ROLE_ACTION_MATRIX.items() if a["manage_fleet"])
+)
+
+_require_manage = require_roles(*_MANAGE_FLEET_ROLES)
+
 router = APIRouter(
     dependencies=[Depends(require_web_surface), Depends(require_roles(*_FLEET_ROLES))]
 )
+
+_WRITE_FIELDS = ("site_id", "serial", "fw_version", "iot_thing", "has_wr1", "installed_at")
+
+
+def _row_out(row) -> GatewayRowOut:
+    return GatewayRowOut(**dict(row._mapping))
 
 
 @router.get(
@@ -102,6 +129,7 @@ async def list_gateways(
                 status=m["status"],
                 has_wr1=m["has_wr1"],
                 installed_at=m["installed_at"],
+                row_version=m["row_version"],
                 derived_state=state,
                 last_heartbeat_ts=m["health_ts"],
                 power_status=m["power_status"],
@@ -113,3 +141,129 @@ async def list_gateways(
             )
         )
     return out
+
+
+# --- Administración del inventario (T-1.32) ----------------------------------
+
+
+@router.post("/fleet/gateways", response_model=GatewayRowOut, status_code=201)
+async def create_gateway(
+    body: GatewayCreate,
+    claims: Claims = Depends(_require_manage),
+    conn: AsyncConnection = Depends(read_session),
+) -> GatewayRowOut:
+    """Da de alta un gabinete en ``provisioned``. Cero llamadas a AWS.
+
+    ``serial`` e ``iot_thing`` son únicos GLOBALES (no por tenant): un serial repetido
+    devuelve 409. Sin ``iot_thing`` el gabinete no es sincronizable y la consola lo
+    muestra como PENDIENTE DE APROVISIONAR — que es la verdad hasta que Terraform emita
+    su certificado.
+    """
+    tenant_id = await tenant_of_parent_site(conn, claims, body.site_id)
+    values = {f: getattr(body, f) for f in _WRITE_FIELDS}
+    try:
+        row = await q.insert_gateway(conn, tenant_id=tenant_id, values=values)
+    except IntegrityError as exc:
+        raise integrity_error(exc) from exc
+
+    await audit_async(
+        conn,
+        tenant_id=tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="gateway_create",
+        obj=f"gateway:{row.gateway_id}",
+        meta={"serial": body.serial, "site_id": str(body.site_id)},
+    )
+    return _row_out(row)
+
+
+@router.put("/fleet/gateways/{gateway_id}", response_model=GatewayRowOut)
+async def update_gateway(
+    gateway_id: UUID,
+    body: GatewayUpdate,
+    claims: Claims = Depends(_require_manage),
+    conn: AsyncConnection = Depends(read_session),
+) -> GatewayRowOut:
+    """Reemplaza el gabinete. ``base_row_version`` viejo ⇒ 409.
+
+    El sitio destino debe ser del mismo tenant que el gabinete: mudarlo a un sitio ajeno
+    haría que su telemetría (y sus actuadores) quedaran bajo otro tenant.
+    """
+    current = await q.get_gateway_row(conn, gateway_id)
+    if current is None:
+        raise http_error(404, "gateway no encontrado")
+
+    site_tenant = await tenant_of_parent_site(conn, claims, body.site_id)
+    if site_tenant != str(current.tenant_id):
+        raise http_error(403, "el sitio destino pertenece a otro tenant")
+
+    values = {f: getattr(body, f) for f in _WRITE_FIELDS}
+    try:
+        row = await q.update_gateway(
+            conn, gateway_id=gateway_id, values=values, base_row_version=body.base_row_version
+        )
+    except IntegrityError as exc:
+        raise integrity_error(exc) from exc
+    if row is None:
+        raise http_error(409, "el gateway cambió en el servidor; recarga y reintenta")
+
+    await audit_async(
+        conn,
+        tenant_id=row.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="gateway_update",
+        obj=f"gateway:{gateway_id}",
+        meta={"serial": body.serial, "site_id": str(body.site_id)},
+    )
+    return _row_out(row)
+
+
+@router.delete("/fleet/gateways/{gateway_id}", response_model=GatewayRowOut)
+async def retire_gateway(
+    gateway_id: UUID,
+    claims: Claims = Depends(_require_manage),
+    conn: AsyncConnection = Depends(read_session),
+) -> GatewayRowOut:
+    """Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable."""
+    if await q.get_gateway_row(conn, gateway_id) is None:
+        raise http_error(404, "gateway no encontrado")
+    row = await q.set_gateway_status(conn, gateway_id, "retired")
+    if row is None:
+        raise http_error(403, "sin permiso para retirar este gateway")
+
+    await audit_async(
+        conn,
+        tenant_id=row.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="gateway_retire",
+        obj=f"gateway:{gateway_id}",
+        meta={"serial": row.serial},
+    )
+    return _row_out(row)
+
+
+@router.post("/fleet/gateways/{gateway_id}/restore", response_model=GatewayRowOut)
+async def restore_gateway(
+    gateway_id: UUID,
+    claims: Claims = Depends(_require_manage),
+    conn: AsyncConnection = Depends(read_session),
+) -> GatewayRowOut:
+    """Deshace un retiro: vuelve a ``provisioned``, NO a ``online``.
+
+    El estado vivo lo demuestra el siguiente heartbeat; la API no puede afirmarlo.
+    """
+    if await q.get_gateway_row(conn, gateway_id) is None:
+        raise http_error(404, "gateway no encontrado")
+    row = await q.set_gateway_status(conn, gateway_id, "provisioned")
+    if row is None:
+        raise http_error(403, "sin permiso para restaurar este gateway")
+
+    await audit_async(
+        conn,
+        tenant_id=row.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="gateway_restore",
+        obj=f"gateway:{gateway_id}",
+        meta={"serial": row.serial},
+    )
+    return _row_out(row)

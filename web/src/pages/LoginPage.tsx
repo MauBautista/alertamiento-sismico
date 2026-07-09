@@ -24,7 +24,13 @@ const DEV_ROLES = [
   "occupant",
 ];
 
-const DEV_TENANT_DEFAULT = "11111111-1111-1111-1111-111111111111";
+/** Tenant de la flota sembrada por `db/seeds/dev_fleet.sql` (21 sitios con `geom`).
+ *
+ * Tiene que ser ESTE y no otro: entrando con un tenant sin sitios, `/console` cae en
+ * el estado `empty` de `StateFrame` ("SIN SITIOS VISIBLES EN EL TENANT") y el mapa no
+ * se pinta. El mapa está bien; lo que faltaba eran los datos. El test importa esta
+ * constante para que no vuelva a divergir del seed. */
+export const DEV_TENANT_DEFAULT = "d0000000-0000-0000-0000-000000000001";
 
 function DevLoginPanel() {
   const loginDev = useSessionStore((s) => s.loginDev);

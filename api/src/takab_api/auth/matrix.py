@@ -26,6 +26,12 @@ Acciones (derivadas de §2 + notas §4):
 - ``edit_thresholds`` ← administra umbrales (§1/§2: tenant_admin) + dueño de plataforma.
 - ``siren_test``    ← Dash Edificio == Total (dueño del sitio); §2 lo concede
   explícitamente a building_admin y lo niega a gov_operator.
+- ``manage_fleet``  ← alta/edición/retiro de sitios, gabinetes y sensores (T-1.32).
+  [DECISION 2026-07-09] §2 da "Total" en Flota Edge a ``takab_support``, pero aquí NO
+  recibe la acción: soporte lee la flota, no mueve la geometría de un sitio ajeno.
+  Gana el código sobre el documento; la divergencia queda anotada en RBAC-TAKAB.md §2.
+  Escribir la ubicación de una estación reencuadra el quórum (la ventana de asociación
+  depende de la distancia entre sitios): es una acción de dueño, no de soporte.
 
 Esta tabla es la fuente ÚNICA: ``routers/dictamens`` deriva de ella ``SIGN_ROLES``,
 ``routers/exports`` deriva ``EXPORT_ROLES`` y ``routers/reports`` deriva
@@ -65,6 +71,7 @@ ACTIONS: tuple[str, ...] = (
     "generate_report",
     "edit_thresholds",
     "siren_test",
+    "manage_fleet",
 )
 
 
@@ -76,6 +83,7 @@ def _actions(
     generate_report: bool = False,
     edit_thresholds: bool = False,
     siren_test: bool = False,
+    manage_fleet: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -84,6 +92,7 @@ def _actions(
         "generate_report": generate_report,
         "edit_thresholds": edit_thresholds,
         "siren_test": siren_test,
+        "manage_fleet": manage_fleet,
     }
 
 
@@ -94,9 +103,12 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         generate_report=True,
         edit_thresholds=True,
         siren_test=True,
+        manage_fleet=True,
     ),
     "takab_support": _actions(),
-    "tenant_admin": _actions(ack_incident=True, edit_thresholds=True, siren_test=True),
+    "tenant_admin": _actions(
+        ack_incident=True, edit_thresholds=True, siren_test=True, manage_fleet=True
+    ),
     "soc_operator": _actions(ack_incident=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True),

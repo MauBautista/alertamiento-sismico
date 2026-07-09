@@ -87,11 +87,15 @@ CREATE TABLE sites (
   geom          geography(Point,4326) NOT NULL,
   address       text,
   building_type text,
+  -- [T-1.32] Retiro lógico: un sitio nunca se borra (evidencia y auditoría de sus
+  -- incidentes lo referencian; regla de oro 11).
+  status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active','retired')),
   created_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, code)
 );
 CREATE INDEX idx_sites_geom   ON sites USING GIST (geom);
 CREATE INDEX idx_sites_tenant ON sites (tenant_id);
+CREATE INDEX idx_sites_active ON sites (tenant_id) WHERE status = 'active';
 
 CREATE TABLE zones (
   zone_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),

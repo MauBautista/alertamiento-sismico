@@ -779,6 +779,70 @@
         "title": "GatewayConfigStateOut",
         "type": "object"
       },
+      "GatewayCreate": {
+        "additionalProperties": false,
+        "description": "Alta de gabinete. NO hay ``tenant_id``: se hereda del sitio (y RLS lo valida).\n\nLa API **no llama a AWS**. Escribe la fila con ``status='provisioned'`` e\n``iot_thing`` nulo salvo que el operador ya conozca el thing creado por Terraform\n(``infra/scripts/provision_gateway.sh``). Sin ``iot_thing`` el gabinete no es\nsincronizable, y la consola lo dice: PENDIENTE DE APROVISIONAR. Un endpoint HTTP\nque pudiera emitir certificados X.509 sería una superficie de ataque contra la\nidentidad de los gabinetes.",
+        "properties": {
+          "fw_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
+          },
+          "has_wr1": {
+            "default": true,
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "iot_thing": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iot Thing"
+          },
+          "serial": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Serial",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "serial"
+        ],
+        "title": "GatewayCreate",
+        "type": "object"
+      },
       "GatewayOut": {
         "description": "Gateway del tenant + estado derivado del último ``device_health``.",
         "properties": {
@@ -896,6 +960,10 @@
             ],
             "title": "Power Status"
           },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
           "seedlink_lag_s": {
             "anyOf": [
               {
@@ -927,9 +995,166 @@
           "serial",
           "status",
           "has_wr1",
+          "row_version",
           "derived_state"
         ],
         "title": "GatewayOut",
+        "type": "object"
+      },
+      "GatewayRowOut": {
+        "description": "Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).\n\nSin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último\n``device_health``, y un gabinete recién dado de alta todavía no tiene ninguno.\nInventarle \"OPERATIVO\" sería exactamente la clase de dato falso que prohíbe la\nregla de oro 7.",
+        "properties": {
+          "fw_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "has_wr1": {
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "iot_thing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iot Thing"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
+          "serial": {
+            "title": "Serial",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gateway_id",
+          "tenant_id",
+          "site_id",
+          "serial",
+          "status",
+          "has_wr1",
+          "row_version"
+        ],
+        "title": "GatewayRowOut",
+        "type": "object"
+      },
+      "GatewayUpdate": {
+        "additionalProperties": false,
+        "description": "Edición de gabinete. ``status`` no aparece a propósito.\n\n``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y\n``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera \"online\"\nharía que la Flota Edge mintiera sobre un gabinete muerto.",
+        "properties": {
+          "base_row_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Row Version"
+          },
+          "fw_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
+          },
+          "has_wr1": {
+            "default": true,
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "iot_thing": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iot Thing"
+          },
+          "serial": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Serial",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "serial"
+        ],
+        "title": "GatewayUpdate",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1445,6 +1670,10 @@
             "title": "Generate Report",
             "type": "boolean"
           },
+          "manage_fleet": {
+            "title": "Manage Fleet",
+            "type": "boolean"
+          },
           "sign_dictamen": {
             "title": "Sign Dictamen",
             "type": "boolean"
@@ -1460,7 +1689,8 @@
           "export",
           "generate_report",
           "edit_thresholds",
-          "siren_test"
+          "siren_test",
+          "manage_fleet"
         ],
         "title": "MeActions",
         "type": "object"
@@ -1905,6 +2135,132 @@
         "title": "SeismicEventOut",
         "type": "object"
       },
+      "SensorCreate": {
+        "additionalProperties": false,
+        "description": "Alta de sensor. El tenant lo hereda del sitio padre; ``serial`` es único GLOBAL.",
+        "properties": {
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Channels",
+            "type": "array"
+          },
+          "gateway_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Id"
+          },
+          "kind": {
+            "enum": [
+              "structural",
+              "ground"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "model": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "enum": [
+                  "concrete_column",
+                  "steel",
+                  "floor",
+                  "buried"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount"
+          },
+          "sample_rate": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "site_id",
+          "kind",
+          "model"
+        ],
+        "title": "SensorCreate",
+        "type": "object"
+      },
       "SensorOut": {
         "description": "Sensor de un sitio (RS4D estructural o de terreno).",
         "properties": {
@@ -1931,6 +2287,28 @@
             "title": "Kind",
             "type": "string"
           },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -1945,6 +2323,10 @@
               }
             ],
             "title": "Mount"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
           },
           "sample_rate": {
             "title": "Sample Rate",
@@ -1995,9 +2377,246 @@
           "model",
           "channels",
           "sample_rate",
-          "status"
+          "status",
+          "row_version"
         ],
         "title": "SensorOut",
+        "type": "object"
+      },
+      "SensorUpdate": {
+        "additionalProperties": false,
+        "description": "Edición de sensor: reemplaza el cuerpo entero, con bloqueo optimista.",
+        "properties": {
+          "base_row_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Row Version"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Channels",
+            "type": "array"
+          },
+          "gateway_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Id"
+          },
+          "kind": {
+            "enum": [
+              "structural",
+              "ground"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "model": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "enum": [
+                  "concrete_column",
+                  "steel",
+                  "floor",
+                  "buried"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount"
+          },
+          "sample_rate": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "retired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "site_id",
+          "kind",
+          "model"
+        ],
+        "title": "SensorUpdate",
+        "type": "object"
+      },
+      "SiteCreate": {
+        "additionalProperties": false,
+        "description": "Alta de sitio. ``tenant_id`` SOLO lo aceptan los roles internos TAKAB.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "criticality": {
+            "default": "medium",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Criticality",
+            "type": "string"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "timezone": {
+            "default": "America/Mexico_City",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "lat",
+          "lon"
+        ],
+        "title": "SiteCreate",
         "type": "object"
       },
       "SiteDetailOut": {
@@ -2050,9 +2669,17 @@
             "title": "Name",
             "type": "string"
           },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
             "type": "string"
           },
           "tenant_id": {
@@ -2081,6 +2708,8 @@
           "criticality",
           "lat",
           "lon",
+          "status",
+          "row_version",
           "created_at",
           "zones"
         ],
@@ -2137,9 +2766,17 @@
             "title": "Name",
             "type": "string"
           },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
             "type": "string"
           },
           "tenant_id": {
@@ -2161,6 +2798,8 @@
           "criticality",
           "lat",
           "lon",
+          "status",
+          "row_version",
           "created_at"
         ],
         "title": "SiteOut",
@@ -2363,6 +3002,104 @@
           "ts"
         ],
         "title": "SiteStateFrame",
+        "type": "object"
+      },
+      "SiteUpdate": {
+        "additionalProperties": false,
+        "description": "Edición de sitio: reemplaza el cuerpo entero (como ``PUT /rule-sets``).\n\n``tenant_id`` no aparece a propósito: un sitio no se muda de tenant. Mover su\nubicación sí es posible — y es exactamente por eso que la edición exige\n``base_row_version``: la geometría reencuadra la ventana de quórum.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "base_row_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Row Version"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "criticality": {
+            "default": "medium",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Criticality",
+            "type": "string"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "retired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "America/Mexico_City",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "lat",
+          "lon"
+        ],
+        "title": "SiteUpdate",
         "type": "object"
       },
       "SubscribeFrame": {
@@ -2707,6 +3444,133 @@
           }
         },
         "summary": "List Gateways"
+      },
+      "post": {
+        "description": "Da de alta un gabinete en ``provisioned``. Cero llamadas a AWS.\n\n``serial`` e ``iot_thing`` son únicos GLOBALES (no por tenant): un serial repetido\ndevuelve 409. Sin ``iot_thing`` el gabinete no es sincronizable y la consola lo\nmuestra como PENDIENTE DE APROVISIONAR — que es la verdad hasta que Terraform emita\nsu certificado.",
+        "operationId": "create_gateway_fleet_gateways_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Gateway"
+      }
+    },
+    "/fleet/gateways/{gateway_id}": {
+      "delete": {
+        "description": "Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable.",
+        "operationId": "retire_gateway_fleet_gateways__gateway_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Gateway"
+      },
+      "put": {
+        "description": "Reemplaza el gabinete. ``base_row_version`` viejo ⇒ 409.\n\nEl sitio destino debe ser del mismo tenant que el gabinete: mudarlo a un sitio ajeno\nharía que su telemetría (y sus actuadores) quedaran bajo otro tenant.",
+        "operationId": "update_gateway_fleet_gateways__gateway_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Gateway"
       }
     },
     "/fleet/gateways/{gateway_id}/config-state": {
@@ -2748,6 +3612,47 @@
           }
         },
         "summary": "Get Gateway Config State"
+      }
+    },
+    "/fleet/gateways/{gateway_id}/restore": {
+      "post": {
+        "description": "Deshace un retiro: vuelve a ``provisioned``, NO a ``online``.\n\nEl estado vivo lo demuestra el siguiente heartbeat; la API no puede afirmarlo.",
+        "operationId": "restore_gateway_fleet_gateways__gateway_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Gateway"
       }
     },
     "/health": {
@@ -3361,12 +4266,151 @@
           }
         },
         "summary": "List Sensors"
+      },
+      "post": {
+        "description": "Da de alta un sensor. Sin ``lat``/``lon`` hereda la ubicación del sitio en el mapa.",
+        "operationId": "create_sensor_sensors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sensor"
+      }
+    },
+    "/sensors/{sensor_id}": {
+      "delete": {
+        "description": "Retiro lógico (idempotente). Sus features históricas siguen siendo consultables.",
+        "operationId": "retire_sensor_sensors__sensor_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sensor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Sensor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Sensor"
+      },
+      "put": {
+        "description": "Reemplaza el sensor. ``base_row_version`` viejo ⇒ 409.",
+        "operationId": "update_sensor_sensors__sensor_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sensor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Sensor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Sensor"
       }
     },
     "/sites": {
       "get": {
-        "description": "Sitios del tenant (superadmin/support ven todos vía RLS).",
+        "description": "Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.",
         "operationId": "list_sites_sites_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3381,12 +4425,98 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Sites"
+      },
+      "post": {
+        "description": "Da de alta un sitio con su ubicación. ``code`` es único DENTRO del tenant ⇒ 409.",
+        "operationId": "create_site_sites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Site"
       }
     },
     "/sites/{site_id}": {
+      "delete": {
+        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.",
+        "operationId": "retire_site_sites__site_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Site"
+      },
       "get": {
         "description": "Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).",
         "operationId": "get_site_sites__site_id__get",
@@ -3425,6 +4555,55 @@
           }
         },
         "summary": "Get Site"
+      },
+      "put": {
+        "description": "Reemplaza el sitio. ``base_row_version`` viejo ⇒ 409 (lost update).\n\nMover un sitio cambia la distancia entre estaciones, y con ella la ventana de\nasociación del quórum (``|Δt| ≤ dist/v_P + margen``). Un guardado ciego que\nrevirtiera en silencio la posición de una estación degradaría la correlación\nsin que nadie se enterara: por eso la carrera se resuelve con un 409, no con el\núltimo que escriba.",
+        "operationId": "update_site_sites__site_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Site"
       }
     },
     "/sites/{site_id}/commands": {
