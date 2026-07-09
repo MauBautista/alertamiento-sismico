@@ -518,7 +518,10 @@ body {
 .soc-sismograma { width: 100%; height: 80px; display: block; }
 .soc-sismograma__readout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* La 3ª columna es la insignia SIN CALIBRAR (T-1.33): va pegada a los readouts
+     que califica, no perdida en una cabecera. */
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
   gap: 10px;
   margin-top: 10px;
   padding-top: 10px;
@@ -689,4 +692,52 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* STRIP MULTICANAL E HISTORIAL (T-1.34) --------------------------------------- */
+/* Cada canal tiene su propia escala vertical: geófono (velocidad) y acelerómetro
+   no comparten unidad, y un eje común aplastaría uno de los dos. */
+.soc-traces { display: flex; flex-direction: column; gap: 6px; }
+.soc-trace { display: grid; grid-template-columns: 116px 1fr; align-items: center; gap: 8px; }
+.soc-trace .soc-sismograma { height: 54px; }
+.soc-trace__label {
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-2);
+}
+.soc-trace__scale { font-size: 9px; opacity: 0.7; }
+.soc-timeaxis { width: 100%; height: 16px; display: block; margin-left: 124px; }
+
+.soc-history { margin-top: 12px; }
+.soc-history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-2);
+}
+.soc-history__presets { display: flex; gap: 4px; }
+.soc-chip {
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--tk-border);
+  background: transparent;
+  color: var(--tk-fg-2);
+  cursor: pointer;
+}
+.soc-chip--on { border-color: var(--tk-cyan); color: var(--tk-cyan); background: var(--tk-cyan-15); }
+.soc-history__chart { width: 100%; height: 120px; display: block; margin-top: 6px; }
+.soc-history__foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--tk-fg-2);
+  opacity: 0.75;
 }

@@ -31,6 +31,28 @@ class FeatureSeries(BaseModel):
     calibrated: bool
 
 
+class ChannelSeries(BaseModel):
+    """Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro)."""
+
+    channel: str
+    ts: list[datetime]
+    pga: list[float | None]
+    pgv: list[float | None]
+    stalta: list[float | None]
+    clipping: list[bool]
+
+
+class MultiChannelFeatures(BaseModel):
+    """Strip multicanal (T-1.34). Sigue siendo features 1 s, NO waveform 100 sps.
+
+    Los canales llegan ordenados alfabéticamente y solo aparecen los que tienen datos
+    en el rango: un canal muerto se ve por su ausencia, no por una línea plana falsa.
+    """
+
+    channels: list[ChannelSeries]
+    calibrated: bool
+
+
 class MetricSeries(BaseModel):
     """Máximos por bucket (1m o 1h) de un sitio, para rangos medios y largos.
 

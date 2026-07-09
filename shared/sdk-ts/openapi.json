@@ -21,6 +21,82 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "ChannelSeries": {
+        "description": "Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).",
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "clipping": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Clipping",
+            "type": "array"
+          },
+          "pga": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Pga",
+            "type": "array"
+          },
+          "pgv": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Pgv",
+            "type": "array"
+          },
+          "stalta": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Stalta",
+            "type": "array"
+          },
+          "ts": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Ts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "channel",
+          "ts",
+          "pga",
+          "pgv",
+          "stalta",
+          "clipping"
+        ],
+        "title": "ChannelSeries",
+        "type": "object"
+      },
       "CommandIn": {
         "description": "Solicitud de comando remoto de actuador.",
         "properties": {
@@ -1813,6 +1889,28 @@
           "calibrated"
         ],
         "title": "MetricSeries",
+        "type": "object"
+      },
+      "MultiChannelFeatures": {
+        "description": "Strip multicanal (T-1.34). Sigue siendo features 1 s, NO waveform 100 sps.\n\nLos canales llegan ordenados alfabéticamente y solo aparecen los que tienen datos\nen el rango: un canal muerto se ve por su ausencia, no por una línea plana falsa.",
+        "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelSeries"
+            },
+            "title": "Channels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels",
+          "calibrated"
+        ],
+        "title": "MultiChannelFeatures",
         "type": "object"
       },
       "PresignedDownload": {
@@ -4855,6 +4953,82 @@
           }
         },
         "summary": "Site Features",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/telemetry/sites/{site_id}/features/by-channel": {
+      "get": {
+        "description": "Features 1 s por canal SEED (EHZ + EN[ZNE]). Mismo límite de 2 h que el strip.\n\nUna sola query agrupada en memoria: los canales de un sitio son 4, y pedirlos por\nseparado multiplicaría por cuatro los planes de consulta sobre la vista segura.",
+        "operationId": "site_features_by_channel_telemetry_sites__site_id__features_by_channel_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiChannelFeatures"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Features By Channel",
         "tags": [
           "telemetry"
         ]

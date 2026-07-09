@@ -5,7 +5,7 @@ import FleetPage from "../features/fleet/FleetPage";
 import TenantsPage from "../features/tenants/TenantsPage";
 import TriagePage from "../features/triage/TriagePage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
-import BuildingPage from "../pages/BuildingPage";
+import BuildingPage from "../features/building/BuildingPage";
 import LoginPage from "../pages/LoginPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import AppShell from "../shell/AppShell";

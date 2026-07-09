@@ -731,23 +731,45 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > por las del StationXML sepa que además debe declarar la fuente o la UI seguirá —con razón—
 > diciendo SIN CALIBRAR.
 
-### [ ] T-1.34 · Strip multicanal + vista histórica — **[C3]**
-- **Componente:** web · **Depende de:** T-1.33 · Responde a **US-03** sin violar la regla de oro 9.
+### [x] T-1.34 · Strip multicanal + vista histórica — **[C3] COMPLETA**
+- **Componente:** api + web · **Depende de:** T-1.33 · Responde a **US-03** sin violar la regla de oro 9.
 - **Criterios de aceptación:**
-  - [ ] `MultiChannelStrip` pinta EHZ/ENZ/ENN/ENE con eje temporal.
-  - [ ] `HistoryChart` sobre `site_metrics_1m`/`_1h`, presets 1h/6h/24h/7d (el preset conmuta el cagg).
-  - [ ] Sin waveform crudo. Sin librería de gráficas. Los 4 estados obligatorios.
+  - [x] `MultiChannelStrip` pinta EHZ/ENZ/ENN/ENE con eje temporal.
+  - [x] `HistoryChart` sobre `site_metrics_1m`/`_1h`, presets 1h/6h/24h/7d (el preset conmuta el cagg).
+  - [x] Sin waveform crudo. Sin librería de gráficas. Los 4 estados obligatorios.
 
-### [ ] T-1.35 · Completar `/building/:siteId` — **[C5]**
+> **COMPLETA.** Nuevo `GET /telemetry/sites/{id}/features/by-channel`: **una sola query** agrupada
+> server-side, no cuatro requests (los canales de un sitio son 4 y cada uno costaría su propio plan
+> sobre la vista segura). Decisiones: **cada traza tiene su propia escala vertical** — EHZ es el
+> geófono (velocidad) y EN[ZNE] el acelerómetro; un eje común aplastaría uno de los dos. **Un canal
+> sin datos NO se pinta plano**: su ausencia es la información (una línea en cero diría "todo
+> tranquilo" cuando en realidad no está reportando). El historial se dibuja con **barras, no línea**:
+> es el máximo por bucket, y una línea sugeriría una interpolación que el cagg no respalda. El preset
+> conmuta el bucket (`7d`⇒`1h`): 7 días en buckets de 1 min serían 10.080 puntos para 600 px.
+> Los helpers de escala (`svgScale.ts`) son puros y se prueban solos.
+
+### [x] T-1.35 · Completar `/building/:siteId` — **[C5] COMPLETA**
 - **Componente:** web · **Depende de:** T-1.34 · Última página placeholder del árbol.
 - **Nota de alcance:** es la vista del **staff con sesión** (`building_admin`, `inspector`, roles
   SOC). **No** es la pantalla del ocupante: `occupant`/`brigadista`/`security_guard` tienen
   `allowed_routes = []` y su superficie es la app móvil (T-1.31). Según **US-05**, la interfaz del
   ocupante es la **sirena**.
 - **Criterios de aceptación:**
-  - [ ] Estado del sitio, incidentes del sitio, strip multicanal, salud del gabinete, dictamen.
-  - [ ] Prueba de sirena solo si `me.allowed_actions.siren_test`, y no afirma que sonó hasta
+  - [x] Estado del sitio, incidentes del sitio, strip multicanal, salud del gabinete.
+  - [x] Prueba de sirena solo si `me.allowed_actions.siren_test`, y no afirma que sonó hasta
         recibir el `command_ack` del edge (regla de oro 8).
+
+> **COMPLETA.** api 621 passed · web 423 passed · lint/build limpios. Desaparece la última página
+> placeholder del árbol. **Es la primera superficie de la consola que puede disparar un actuador
+> real** (`POST /sites/{id}/commands` no tenía cliente hasta ahora), así que el panel de sirena
+> modela SIETE estados y jamás colapsa "el comando salió" con "el actuador se movió": `201` ⇒
+> **COMANDO EMITIDO · ESPERANDO ACUSE**, y solo `status='acked'` ⇒ **SIRENA SONANDO**. Sin acuse
+> dentro del TTL dice **SIN RESPUESTA DEL GABINETE · LA SIRENA NO SE ACTIVÓ** (nunca "activada").
+> Confirmación en dos pasos (`ConfirmButton`, RBAC §4.3) y el sondeo se apaga en cuanto el comando
+> se resuelve (regla de oro 10). El `h1` es el título de la PÁGINA, no el nombre del sitio: existe
+> antes de que cargue y no cambia con los datos (lo exige `routes.guards.test`). El dictamen de
+> reingreso se deja en `/triage`, que es donde vive la cadena de firmas — duplicarlo aquí habría
+> creado dos caminos para un acto legal que debe tener uno solo.
 
 ### [ ] T-1.36 · UI de alta de estaciones con selector de punto en el mapa — **[C5]**
 - **Componente:** web · **Depende de:** T-1.32

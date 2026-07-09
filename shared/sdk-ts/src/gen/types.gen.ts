@@ -9,6 +9,18 @@ export type AuthFrame = {
 };
 
 /**
+ * Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).
+ */
+export type ChannelSeries = {
+    channel: string;
+    clipping: Array<boolean>;
+    pga: Array<number | null>;
+    pgv: Array<number | null>;
+    stalta: Array<number | null>;
+    ts: Array<string>;
+};
+
+/**
  * Solicitud de comando remoto de actuador.
  */
 export type CommandIn = {
@@ -434,6 +446,17 @@ export type MetricSeries = {
     max_pga_g: Array<number | null>;
     max_pgv_cms: Array<number | null>;
     ts: Array<string>;
+};
+
+/**
+ * Strip multicanal (T-1.34). Sigue siendo features 1 s, NO waveform 100 sps.
+ *
+ * Los canales llegan ordenados alfabéticamente y solo aparecen los que tienen datos
+ * en el rango: un canal muerto se ve por su ausencia, no por una línea plana falsa.
+ */
+export type MultiChannelFeatures = {
+    calibrated: boolean;
+    channels: Array<ChannelSeries>;
 };
 
 /**
@@ -1639,6 +1662,36 @@ export type SiteFeaturesTelemetrySitesSiteIdFeaturesGetResponses = {
 };
 
 export type SiteFeaturesTelemetrySitesSiteIdFeaturesGetResponse = SiteFeaturesTelemetrySitesSiteIdFeaturesGetResponses[keyof SiteFeaturesTelemetrySitesSiteIdFeaturesGetResponses];
+
+export type SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: {
+        from?: string | null;
+        to?: string | null;
+    };
+    url: '/telemetry/sites/{site_id}/features/by-channel';
+};
+
+export type SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetError = SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetErrors[keyof SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetErrors];
+
+export type SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MultiChannelFeatures;
+};
+
+export type SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetResponse = SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetResponses[keyof SiteFeaturesByChannelTelemetrySitesSiteIdFeaturesByChannelGetResponses];
 
 export type SiteMetricsTelemetrySitesSiteIdMetricsGetData = {
     body?: never;

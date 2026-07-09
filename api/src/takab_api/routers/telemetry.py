@@ -19,17 +19,20 @@ from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX
 from takab_api.queries.telemetry import (
     select_features,
+    select_features_by_channel,
     select_map_state,
     select_metrics,
     select_site_calibrated,
 )
 from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.telemetry import (
+    ChannelSeries,
     FeatureSeries,
     MapIncident,
     MapSiteState,
     MapState,
     MetricSeries,
+    MultiChannelFeatures,
 )
 
 # Roles con acceso a Consola C4I (RBAC §2) = fuente única desde la matriz de rutas.
@@ -150,6 +153,46 @@ async def site_features(
         pgv=[r.pgv_cms for r in rows],
         stalta=[r.stalta for r in rows],
         clipping=[r.clipping for r in rows],
+        calibrated=await _site_calibrated(conn, site_id),
+    )
+
+
+@router.get("/sites/{site_id}/features/by-channel", response_model=MultiChannelFeatures)
+async def site_features_by_channel(
+    site_id: UUID,
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    _claims: Claims = Depends(_require_console),
+    conn: AsyncConnection = Depends(read_session),
+) -> MultiChannelFeatures:
+    """Features 1 s por canal SEED (EHZ + EN[ZNE]). Mismo límite de 2 h que el strip.
+
+    Una sola query agrupada en memoria: los canales de un sitio son 4, y pedirlos por
+    separado multiplicaría por cuatro los planes de consulta sobre la vista segura.
+    """
+    from_ts, to_ts = _resolve_range(from_, to, default_span_s=_DEFAULT_FEATURES_SPAN_S)
+    if (to_ts - from_ts).total_seconds() > _MAX_FEATURES_SPAN_S:
+        raise http_error(422, "rango de features excede el máximo de 2 h")
+
+    stmt, params = select_features_by_channel(
+        site_id=str(site_id), from_ts=from_ts.isoformat(), to_ts=to_ts.isoformat()
+    )
+    rows = (await conn.execute(stmt, params)).all()
+
+    grouped: dict[str, ChannelSeries] = {}
+    for r in rows:
+        series = grouped.get(r.channel)
+        if series is None:
+            series = ChannelSeries(channel=r.channel, ts=[], pga=[], pgv=[], stalta=[], clipping=[])
+            grouped[r.channel] = series
+        series.ts.append(r.ts)
+        series.pga.append(r.pga_g)
+        series.pgv.append(r.pgv_cms)
+        series.stalta.append(r.stalta)
+        series.clipping.append(r.clipping)
+
+    return MultiChannelFeatures(
+        channels=[grouped[c] for c in sorted(grouped)],
         calibrated=await _site_calibrated(conn, site_id),
     )
 

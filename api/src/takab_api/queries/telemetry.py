@@ -50,6 +50,26 @@ def select_features(
     return text(sql), params
 
 
+# Mismo rango, pero SIN colapsar los canales: el strip multicanal (T-1.34) pinta EHZ
+# (geófono) y ENZ/ENN/ENE (acelerómetro) por separado. Una sola ida y vuelta: agrupar
+# 4 canales en el cliente es más barato que 4 requests con 4 planes de consulta.
+_CHANNEL_COLS = "channel, ts, pga_g, pgv_cms, stalta, clipping"
+
+
+def select_features_by_channel(
+    *, site_id: str, from_ts: str, to_ts: str
+) -> tuple[TextClause, dict[str, Any]]:
+    """Features 1 s de un sitio agrupables por canal (vista segura, orden estable)."""
+    sql = (
+        f"SELECT {_CHANNEL_COLS} FROM waveform_features_1s_secure "
+        "WHERE site_id = CAST(:site_id AS uuid) "
+        "  AND ts >= CAST(:from_ts AS timestamptz) "
+        "  AND ts <  CAST(:to_ts AS timestamptz) "
+        "ORDER BY channel ASC, ts ASC"
+    )
+    return text(sql), {"site_id": site_id, "from_ts": from_ts, "to_ts": to_ts}
+
+
 # Se lee por la vista ``*_secure`` (el JOIN a sites con RLS vive DENTRO de la
 # vista); el cagg base tiene el SELECT revocado a takab_app (migración 0008).
 _METRICS_SQL: dict[str, str] = {
