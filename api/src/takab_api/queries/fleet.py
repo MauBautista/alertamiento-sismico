@@ -42,3 +42,39 @@ _LIST = text(
 async def list_gateways_with_health(conn: AsyncConnection) -> Sequence[Row]:
     """Gateways del tenant + su último heartbeat (RLS por tenant en ambas tablas)."""
     return (await conn.execute(_LIST)).all()
+
+
+# Estado del sync firmado de UN gateway. El rule_set se resuelve EXACTAMENTE como
+# en ``commands/sync.py`` (scope site preferente sobre tenant, versión más alta,
+# LIMIT 1 ANTES de exigir el bloque 'edge'), para que ``in_sync`` sea la negación
+# del predicado de publicación del worker y no una segunda opinión.
+_CONFIG_STATE = text(
+    """
+    SELECT g.gateway_id,
+           st.version,
+           st.published_at,
+           st.sig,
+           (rs.config ? 'edge')                       AS has_edge_config,
+           (g.status <> 'retired' AND g.iot_thing IS NOT NULL) AS is_syncable,
+           (st.gateway_id IS NOT NULL
+            AND rs.config ? 'edge'
+            AND st.payload IS NOT DISTINCT FROM rs.config->'edge') AS in_sync
+    FROM gateways g
+    LEFT JOIN LATERAL (
+        SELECT r.config
+        FROM rule_sets r
+        WHERE r.is_active
+          AND ( (r.scope_type = 'site'   AND r.scope_id = g.site_id)
+             OR (r.scope_type = 'tenant' AND r.scope_id = g.tenant_id) )
+        ORDER BY (r.scope_type = 'site') DESC, r.version DESC
+        LIMIT 1
+    ) rs ON true
+    LEFT JOIN gateway_config_state st ON st.gateway_id = g.gateway_id
+    WHERE g.gateway_id = :gateway_id
+    """
+)
+
+
+async def get_config_state(conn: AsyncConnection, gateway_id: str) -> Row | None:
+    """Estado del config firmado del gateway. ``None`` si RLS no lo deja verlo."""
+    return (await conn.execute(_CONFIG_STATE, {"gateway_id": gateway_id})).first()

@@ -167,6 +167,32 @@ export type FeaturesFrame = {
 };
 
 /**
+ * Estado del config firmado que el gateway tiene REALMENTE (T-1.30 · C4).
+ *
+ * ``publish`` solo registra la intención (202 ``pending_sync``); quien firma y
+ * entrega es el worker de T-1.23. Este modelo es lo único que autoriza a la
+ * consola a decir "SINCRONIZADO" en vez de "PENDIENTE".
+ *
+ * - ``in_sync``: el payload publicado coincide con ``config.edge`` del rule_set
+ * activo. Es la negación del predicado de publicación del worker.
+ * - ``has_edge_config``: el rule_set activo trae bloque ``edge``. Si es falso el
+ * worker no publicará nunca — pintar PENDIENTE para siempre sería mentir.
+ * - ``is_syncable``: gateway no retirado y con ``iot_thing`` (el worker lo excluye
+ * en caso contrario).
+ * - ``version``/``published_at``: los del último documento firmado; ``None`` si
+ * nunca se publicó.
+ */
+export type GatewayConfigStateOut = {
+    gateway_id: string;
+    has_edge_config: boolean;
+    in_sync: boolean;
+    is_syncable: boolean;
+    published_at?: string | null;
+    sig_fingerprint?: string | null;
+    version?: number | null;
+};
+
+/**
  * Gateway del tenant + estado derivado del último ``device_health``.
  */
 export type GatewayOut = {
@@ -657,6 +683,33 @@ export type ListGatewaysFleetGatewaysGetResponses = {
 };
 
 export type ListGatewaysFleetGatewaysGetResponse = ListGatewaysFleetGatewaysGetResponses[keyof ListGatewaysFleetGatewaysGetResponses];
+
+export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetData = {
+    body?: never;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}/config-state';
+};
+
+export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetError = GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetErrors[keyof GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetErrors];
+
+export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayConfigStateOut;
+};
+
+export type GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponse = GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses[keyof GetGatewayConfigStateFleetGatewaysGatewayIdConfigStateGetResponses];
 
 export type HealthHealthGetData = {
     body?: never;

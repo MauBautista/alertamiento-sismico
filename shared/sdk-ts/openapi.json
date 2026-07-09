@@ -715,6 +715,70 @@
         "title": "FeaturesFrame",
         "type": "object"
       },
+      "GatewayConfigStateOut": {
+        "description": "Estado del config firmado que el gateway tiene REALMENTE (T-1.30 · C4).\n\n``publish`` solo registra la intención (202 ``pending_sync``); quien firma y\nentrega es el worker de T-1.23. Este modelo es lo único que autoriza a la\nconsola a decir \"SINCRONIZADO\" en vez de \"PENDIENTE\".\n\n- ``in_sync``: el payload publicado coincide con ``config.edge`` del rule_set\n  activo. Es la negación del predicado de publicación del worker.\n- ``has_edge_config``: el rule_set activo trae bloque ``edge``. Si es falso el\n  worker no publicará nunca — pintar PENDIENTE para siempre sería mentir.\n- ``is_syncable``: gateway no retirado y con ``iot_thing`` (el worker lo excluye\n  en caso contrario).\n- ``version``/``published_at``: los del último documento firmado; ``None`` si\n  nunca se publicó.",
+        "properties": {
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "has_edge_config": {
+            "title": "Has Edge Config",
+            "type": "boolean"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "is_syncable": {
+            "title": "Is Syncable",
+            "type": "boolean"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "sig_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sig Fingerprint"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "gateway_id",
+          "in_sync",
+          "has_edge_config",
+          "is_syncable"
+        ],
+        "title": "GatewayConfigStateOut",
+        "type": "object"
+      },
       "GatewayOut": {
         "description": "Gateway del tenant + estado derivado del último ``device_health``.",
         "properties": {
@@ -2632,6 +2696,47 @@
           }
         },
         "summary": "List Gateways"
+      }
+    },
+    "/fleet/gateways/{gateway_id}/config-state": {
+      "get": {
+        "description": "Config firmada que el gabinete tiene REALMENTE. 404 si RLS no lo deja verlo.\n\nNunca publicado ⇒ 200 con ``version=null, in_sync=false``: la consola pinta\nPENDIENTE, no un error.",
+        "operationId": "get_gateway_config_state_fleet_gateways__gateway_id__config_state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayConfigStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gateway Config State"
       }
     },
     "/health": {
