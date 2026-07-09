@@ -927,3 +927,24 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] Autorización ANTES de tocar GPIO; el camino físico WR-1→sirena no se toca (regla 1).
   - [x] Suite edge 256 passed (7 tests nuevos de PIN).
   - [ ] Desplegado al Pi y verificado con el navegador ⟵ va junto al deploy de T-1.40.
+
+### [x] T-1.46 · Validación del quórum contra el catálogo oficial — **[C·G1] COMPLETADA (2026-07-09)**
+- **Componente:** api (tools+tests) + docs · **Cierra:** pregunta abierta #2 de `ANALISIS §4`
+- **Objetivo:** v_P=6.5 km/s, margen=3 s y tope=30 s se fijaron "de memoria". Contrastarlos con
+  el catálogo OFICIAL antes de cualquier calibración de producción.
+- **Criterios de aceptación:**
+  - [x] Catálogo v2 (`tests/incident/fixtures/ssn_catalog.json`): 13 sismos reales con
+        **procedencia por evento** — 5 con valores oficiales transcritos de Reportes Especiales
+        del SSN (19S, Tehuantepec, Crucecita, Acapulco, Michoacán-22), 8 con solución USGS FDSN
+        (el SSN no expone API ni reportes pre-2010), 5 intraslab bajo Puebla de 48–80 km.
+  - [x] **Gemelos SSN/USGS** del 19S y Tehuantepec (difieren 28–36 km): el quórum asocia bajo
+        AMBAS soluciones ⇒ robusto a la incertidumbre de localización entre catálogos.
+  - [x] Barrido de velocidad de primer arribo 5.5/6.0/6.5/8.0 km/s: **13/13 sismos con quórum
+        en todo el barrido** (la herramienta reusa `quorum.correlate` real, no re-implementa).
+  - [x] Banda de la pregunta (≤110 km): TODA estación asocia incluso a Pg=5.5 (peor holgura
+        +0.27 s). Limitación honesta documentada para pares >110 km (margen 4–5 s vía
+        `rule_sets.config.quorum` si se quiere asociación por-estación garantizada).
+  - [x] La estación real AM.R4F74 (coordenada FDSN exacta) entra en la geometría.
+  - [x] Regresión anclada: barrido + banda ≤110 km + procedencia obligatoria (12 tests).
+  - [x] Anexo `ANALISIS-ARQUITECTURA-TAKAB.md §4-bis` con metodología, números y veredicto;
+        la pregunta #2 queda marcada **[RESUELTA]**. **Parámetros RATIFICADOS, sin cambios.**

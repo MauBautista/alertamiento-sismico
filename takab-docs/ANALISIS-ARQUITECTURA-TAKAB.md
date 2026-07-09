@@ -348,6 +348,11 @@ Nada movido ni borrado sin nota; `main` intacto; sin merge.
    detecciones) y ventana consciente de distancia (v_P 6.5 km/s, margen 3 s, tope 30 s).
    Validar parámetros con 3–5 sismos históricos del catálogo SSN sobre las coordenadas reales
    de los sitios.
+   **[RESUELTA · T-1.46 · 2026-07-09] Parámetros RATIFICADOS contra el catálogo oficial** —
+   13 sismos reales (5 con valores oficiales de Reportes Especiales del SSN, 8 con solución
+   USGS, incluidos gemelos SSN/USGS del 19S y Tehuantepec), 13/13 alcanzan quórum bajo un
+   barrido de velocidad de primer arribo 5.5–8.0 km/s. Ver el anexo §4-bis abajo; evidencia
+   ejecutable en `api/tools/quorum_ssn_validation.py` + `api/tests/incident/`.
 3. **Dependencias de proveedor (Raspberry Shake / CIRES) — bloquean congelar §4.1–§4.5:**
    latencia real de SeedLink (decide si el camino instrumental ≤2 s es honesto y si se
    reconsidera el UDP datacast hoy prohibido); confirmación de 100 sps en las unidades
@@ -368,6 +373,50 @@ Nada movido ni borrado sin nota; `main` intacto; sin merge.
 9. **Política de IA para Fase 3** (M13): decidir desde ahora que el clasificador jamás suprime
    disparos (solo degrada notificaciones `watch` o corre en shadow mode), o replantear la regla
    de oro 1 explícitamente llegado el momento.
+
+### 4-bis. Anexo T-1.46 · Validación del quórum contra catálogo oficial (2026-07-09)
+
+**Pregunta:** ¿la ventana `|Δt| ≤ dist/v_P + margen` (v_P=6.5 km/s, margen=3 s, tope=30 s,
+min_nodes=3) asocia sismos REALES entre sitios separados 90–110 km, sin abrirse de más?
+Los parámetros se habían fijado "de memoria"; esto los contrasta con el catálogo oficial.
+
+**Datos.** `api/tests/incident/fixtures/ssn_catalog.json` v2: 13 eventos con procedencia por
+evento — 5 con parámetros **oficiales del SSN** transcritos de sus Reportes Especiales el
+2026-07-09 (19S-2017 M7.1 18.40/-98.72/57 km; Tehuantepec-2017 M8.2 14.761/-94.103/45.9 km;
+Crucecita-2020 M7.4 —magnitud actualizada por el propio SSN de 7.5 a 7.4— 15.784/-96.120/22.6 km;
+Acapulco-2021 M7.1 16.82/-99.78/10 km; Michoacán-2022 M7.7 18.24/-103.29/15 km), 8 con solución
+USGS FDSN (el SSN no publica reportes pre-2010 ni expone API de catálogo), incluidos 5 intraslab
+bajo Puebla-Guerrero de 48–80 km de profundidad (Tehuacán-1999 M7.0/70 km, Jolalpan-2000
+M5.9/80 km, etc.). El 19S y Tehuantepec entran DOS veces (solución SSN y USGS, que difieren
+28–36 km): robustez a la incertidumbre de localización entre catálogos. Geometría: 7 sitios
+(la estación real AM.R4F74 con su coordenada FDSN exacta + 6 centroides de la flota de
+referencia del blueprint §3), con pares inter-sitio de 22 a 212 km.
+
+**Método.** `api/tools/quorum_ssn_validation.py` reutiliza la MISMA `quorum.correlate` del
+motor (no re-implementa); los arribos P son sintéticos (modelo de una capa
+`t = hipocentro/v_viaje`) y la velocidad de VIAJE se barre en 5.5/6.0/6.5/8.0 km/s — de Pg
+crustal lenta a Pn de manto — mientras la de ASOCIACIÓN queda fija en 6.5: si asocia en los
+extremos del barrido, asocia con los primeros arribos reales.
+
+**Resultados.**
+- **13/13 sismos alcanzan quórum (≥3 estaciones) en TODO el barrido**, ambos gemelos incluidos.
+- Banda de la pregunta (**pares ≤110 km**): TODA estación asocia incluso a Pg=5.5 km/s;
+  peor holgura medida **+0.27 s** (a 6.0 km/s: +1.81 s).
+- Pares 110–150 km: a 5.5 km/s la holgura se agota en el caso patológico (−0.74 s): una
+  estación individual puede quedar fuera sin romper el quórum (las cercanas asocian).
+- Pares >150 km: domina el **tope de 30 s por diseño** (anti fail-open cross-tenant); a
+  ≥176 km la ventana pre-tope ya excede 30 s y el tope la captura. Peor holgura −7.6 s a
+  5.5 km/s. Comportamiento esperado y deseado.
+- Contraste histórico: la vieja ventana fija de 5 s solo habría dado quórum en 6/13 (los de
+  campo lejano, donde el frente llega casi plano); en los cercanos —los que importan para
+  Puebla— jamás. Confirma [ANALISIS-00].
+
+**Veredicto.** v_P=6.5 / margen=3 s / tope=30 s / min_nodes=3 **RATIFICADOS** para flotas
+metropolitanas (pares ≤110 km). Limitación documentada: una flota con pares >110 km que
+quiera asociación por-estación garantizada bajo propagación lenta debe subir `margin_s` a
+4–5 s vía `rule_sets.config.quorum` (el tenant puede; el tope duro de 60 s lo impide abrir
+de más). Regresión anclada en `api/tests/incident/test_ssn_validation.py` (barrido de
+velocidades + banda ≤110 km).
 
 ### Propuestas que requieren tu aprobación sobre `CLAUDE.md` (no editado — fuera de mi autoridad)
 - Línea 66 (regla de oro 9): "El waveform 200 Hz" → "El waveform crudo (100 sps)".

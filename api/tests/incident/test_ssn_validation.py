@@ -38,14 +38,30 @@ TOOL = _load_tool()
 def test_catalog_is_well_formed() -> None:
     data = json.loads(_CATALOG.read_text(encoding="utf-8"))
     quakes = data["earthquakes"]
-    assert 3 <= len(quakes) <= 5
+    assert 12 <= len(quakes) <= 20  # catalogo v2 (T-1.46): oficial + gemelos
     station_ids = {s["id"] for s in data["reference_stations"]}
     assert len(station_ids) == len(data["reference_stations"])  # ids unicos
+    assert "estacion_real_r4f74" in station_ids  # la unica coordenada exacta
     for q in quakes:
         assert q["stations"], q["event_id"]
         assert set(q["stations"]) <= station_ids  # sin estaciones colgadas
         assert -120 < q["epicenter"]["lon"] < -85
         assert 10 < q["epicenter"]["lat"] < 33  # dentro de Mexico
+        assert q["source"], q["event_id"]  # procedencia OBLIGATORIA (T-1.46)
+
+
+def test_catalog_has_official_ssn_flagships_and_twins() -> None:
+    """v2 (T-1.46): los 5 flagships llevan valores OFICIALES del SSN y el 19S/
+    Tehuantepec aparecen tambien con la solucion USGS (robustez a catalogo)."""
+    data = json.loads(_CATALOG.read_text(encoding="utf-8"))
+    ids = {q["event_id"] for q in data["earthquakes"]}
+    assert {"SSN-2017-09-19-PUE", "USGS-2017-09-19-PUE"} <= ids
+    assert {"SSN-2017-09-08-TEHU", "USGS-2017-09-08-TEHU"} <= ids
+    ssn_19s = next(q for q in data["earthquakes"] if q["event_id"] == "SSN-2017-09-19-PUE")
+    # Valores oficiales del Reporte Especial del SSN (transcritos 2026-07-09).
+    assert ssn_19s["epicenter"] == {"lat": 18.4, "lon": -98.72}
+    assert ssn_19s["depth_km"] == 57
+    assert "Reporte Especial" in ssn_19s["source"]
 
 
 def test_tool_runs_and_all_quakes_reach_quorum() -> None:
@@ -100,3 +116,24 @@ def test_tighter_window_can_break_quorum() -> None:
     # quorum de algun sismo -> la herramienta detecta y devolveria exit !=0.
     v = TOOL.run_validation(_CATALOG, overrides={"margin_s": 0.0, "max_window_s": 5.0})
     assert not v.all_quorum
+
+
+@pytest.mark.parametrize("v_travel", [5.5, 6.0, 8.0])
+def test_quorum_holds_across_first_arrival_velocities(v_travel: float) -> None:
+    """Barrido T-1.46: la velocidad de VIAJE (primeros arribos reales, Pg
+    crustal lenta a Pn de manto) se mueve; la de ASOCIACION queda en 6.5.
+    Si el quorum aguanta en los extremos, aguanta con la propagacion real."""
+    v = TOOL.run_validation(_CATALOG, v_p_travel=v_travel)
+    assert v.all_quorum, f"v_viaje={v_travel}: algun sismo perdio el quorum"
+
+
+def test_pairs_within_110km_always_associate_even_at_slow_pg() -> None:
+    """La banda de la pregunta abierta #2 (90-110 km): a Pg=5.5 km/s TODA
+    estacion a <=110 km del ancla asocia (peor holgura medida: +0.27 s).
+    Mas alla de 110 km la asociacion por-estacion puede fallar en el caso
+    patologico sin romper el quorum — documentado en ANALISIS 4-bis."""
+    v = TOOL.run_validation(_CATALOG, v_p_travel=5.5)
+    for r in v.results:
+        for row in r.rows:
+            if 0 < row.dist_to_anchor_km <= 110:
+                assert row.assoc_daw, (r.event_id, row.station_id, row.delta_anchor_s)
