@@ -948,3 +948,29 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] Regresión anclada: barrido + banda ≤110 km + procedencia obligatoria (12 tests).
   - [x] Anexo `ANALISIS-ARQUITECTURA-TAKAB.md §4-bis` con metodología, números y veredicto;
         la pregunta #2 queda marcada **[RESUELTA]**. **Parámetros RATIFICADOS, sin cambios.**
+
+### [x] T-1.45 · Higiene y reconciliación documental — **COMPLETADA (2026-07-09)**
+- **Componente:** db + api(tests) + docs · **Cierra:** #25, #26, #45 y supuestos #4/#6/roles
+- **Criterios de aceptación:**
+  - [x] **`db/schema.sql` reconciliado a CERO drift** contra `alembic upgrade head` (diff
+        sistemático de catálogos sobre DBs gemelas: columnas, índices, constraints y políticas
+        RLS). Faltaban 4 tablas completas de la era 0005–0007 (`commands`,
+        `gateway_config_state`, `notification_jobs`, `billing_meters_daily`) con sus RLS/GRANTs
+        y 2 índices únicos de idempotencia — transcritos fieles de pg_dump.
+  - [x] **Anti-drift downlink (#25):** `tests/contracts/test_downlink_contracts.py` construye
+        los sobres `command`/`config_update`/`backfill_grant` EXACTAMENTE como los emite el
+        código real de la nube y los valida contra los schemas publicados (que eran artesanales
+        y nada pinneaba). Incluye el negativo: sin firma NO valida.
+  - [x] **Artefactos de diseño (#45):** `SOC Console.html`, `SOC*.css`, `jsx/`,
+        `design-system/` y `Design System/` movidos de la raíz a `takab-docs/design/` (56
+        renames; README de procedencia; el `.zip` interno sigue en `.gitignore`).
+  - [x] **Ratificaciones (PLAN-MAESTRO §3):** SUPUESTO **#4** (relés fail-safe primario) y
+        **#6** (proceso gpio consolidado) pasan a RATIFICADOS — implementados de facto y
+        acreditados en el hito; la nota **10-vs-11 roles** queda resuelta en 10 (las
+        identidades máquina no son roles RBAC). El soft-gate #2 queda CERRADO por T-1.46.
+  - [x] El patrón #28 (hilo del heartbeat muere por I/O) quedó cerrado en T-1.40 (`_safe()` +
+        try/except del loop) — verificado ahí, no re-trabajado aquí.
+  - [x] **Diferidos que exigen terceros (documentados, no fingidos):** WhatsApp/SMS reales
+        (Meta Business/agregador), SES fuera de sandbox (dominio+DKIM/SPF), billing por
+        EventBridge→ECS (no hay ECS), app móvil T-1.31, CCTV ONVIF, endpoint de lectura de
+        `audit_log`, `self_test` de gabinete, relés/latencia física del gate #3.

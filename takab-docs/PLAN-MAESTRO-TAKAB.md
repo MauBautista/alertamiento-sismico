@@ -56,12 +56,13 @@ El análisis dejó ~13 residuos menores entre documentos. Esta rama los corrige 
 | R13 | `CLAUDE.md` §3 stack | "GraphQL (subscriptions)" sin matiz | GraphQL pos-MVP; REST+WS en MVP [SUPUESTO #5] |
 | R14 | Blueprint §4.1 (hardware) | NVMe "uso real ~10–16 GB" | ~0.5–4 GB a 100 sps (cazado por el grep de verificación de esta rama) |
 
-**Reconciliación 10-vs-11 roles** `[SUPUESTO plan-maestro-01 — confirmar/override]`: la lista
+**Reconciliación 10-vs-11 roles** `[RATIFICADO 2026-07-09 · T-1.45]`: la lista
 canónica de `RBAC-TAKAB.md §1/§5.1` siempre enumeró 10 (2 internos TAKAB + 7 de tenant + 1
-gobierno) — también en el snapshot de junio. Se corrige el conteo a 10 y se documenta que las
+gobierno) — también en el snapshot de junio. El conteo queda en **10** y las
 **identidades máquina** (certificado X.509 por gateway, M2M `client_credentials`, rol de DB
-`takab_ingest`) son identidades de servicio, **no roles RBAC**. Si el 11º era un rol humano
-planeado (¿auditor externo?), se añade a RBAC y se revierte el número.
+`takab_ingest`) son identidades de servicio, **no roles RBAC**. No existía un 11º rol humano
+planeado: toda la Fase 1 (matriz `matrix.py`, Cognito, tests E2E de T-1.30) se construyó y se
+acreditó con 10 sin que faltara ninguno.
 
 ---
 
@@ -70,11 +71,11 @@ planeado (¿auditor externo?), se añade a RBAC y se revierte el número.
 | Decisión (ANALISIS §4) | Estado adoptado | Gate — qué NO empieza sin cerrarla |
 |---|---|---|
 | #1 Marco normativo de compliance | Pregunta abierta. La inmutabilidad ya es estructural (schema §7/§8) — **no bloquea** | Soft-gate: wording final de la pantalla Triage (T-1.29) y material comercial |
-| #2 Quórum en NUBE + ventana distance-aware | Adoptado y ya en docs (v_P 6.5 km/s, margen 3 s, tope 30 s, en `rule_sets.config`) | Soft-gate T-1.19: validar parámetros contra 3–5 sismos del catálogo SSN (tarea paralela; el código lee config, no constantes) |
+| #2 Quórum en NUBE + ventana distance-aware | Adoptado y ya en docs (v_P 6.5 km/s, margen 3 s, tope 30 s, en `rule_sets.config`). **Soft-gate CERRADO (T-1.46, 2026-07-09): parámetros RATIFICADOS contra 13 sismos con valores oficiales SSN/USGS** — ver `ANALISIS §4-bis` | ~~Soft-gate T-1.19~~ cerrado; regresión anclada en `api/tests/incident/test_ssn_validation.py` |
 | #3 Datos de proveedor (SeedLink real, semántica WR-1, 100 sps) | **Los simuladores desbloquean todo el edge.** Tareas marcadas "a validar con hardware" en TASKS: T-1.3, T-1.4, T-1.5, T-1.7, T-1.14 | Hard-gate SOLO para aceptación con hardware real y para congelar el SLA instrumental (§4.3). No frena ninguna implementación |
-| #4 Actuadores del MVP | `[SUPUESTO]` **Relés fail-safe primero** (NO/NC/fail-close por canal); BACnet detrás de la misma interfaz `Actuator`, activable por contrato | Cerrar antes de **T-1.8/T-1.9** (contrato rules→actuador). Override tardío = cambiar driver, no motor |
+| #4 Actuadores del MVP | `[RATIFICADO 2026-07-09 · T-1.45]` **Relés fail-safe primero** (NO/NC/fail-close por canal); BACnet detrás de la misma interfaz `Actuator`, activable por contrato. Implementado así de facto en T-1.8/T-1.9 y acreditado en el hito de Fase 1; ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (el contrato rules→actuador se congeló en T-1.8 bajo este diseño) |
 | #5 API en vivo | `[SUPUESTO]` **REST + WebSocket nativo** en MVP; GraphQL subscriptions pos-MVP | Antes de **T-1.22**. No toca el edge |
-| #6 Proceso `gpio` consolidado | `[SUPUESTO]` un solo proceso mínimo: WR-1 in + relés out + **reflejo SASMEX→sirena in-process** (<100 ms); `actuators` = adaptador BACnet aparte; bus local (mosquitto) SOLO telemetría | T-1.2 scaffoldea según el supuesto (un rename si hay override); el contrato se congela en **T-1.8** |
+| #6 Proceso `gpio` consolidado | `[RATIFICADO 2026-07-09 · T-1.45]` un solo proceso mínimo: WR-1 in + relés out + **reflejo SASMEX→sirena in-process** (<100 ms); `actuators` = adaptador BACnet aparte. Implementado así de facto (el `takab-edge.service` en producción documenta la propiedad de pines con `Conflicts=takab-gpio.service`); ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (contrato congelado en T-1.8) |
 | #7 MFA del `occupant` | `[SUPUESTO]` occupant **sin MFA**, compensado con quórum de 2 + rate-limit + geofence + auditoría; MFA obligatorio para todo rol web | Decisión final antes de la fase móvil (T-1.31); T-1.18 configura MFA por grupo con este default |
 | #8 Feed externo CIRES/SSN | Pregunta abierta; el fail-open ya está definido con corroboración interna de la red | Soft-gate T-1.21 (lo mejora, no lo bloquea) |
 | #9 IA (Fase 3) | Política del plan: **shadow-mode only; jamás suprime disparos** (regla de oro 1 intacta) | Gate de Fase 3 — fuera de este plan |

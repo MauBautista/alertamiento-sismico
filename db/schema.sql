@@ -696,3 +696,128 @@ CREATE POLICY tenants_read ON tenants FOR SELECT
          OR (app_role() = 'gov_operator' AND visibility = 'gov_shared'));
 CREATE POLICY tenants_admin ON tenants FOR ALL
   USING (app_role() = 'takab_superadmin') WITH CHECK (app_role() = 'takab_superadmin');
+
+-- ---------------------------------------------------------------------------
+-- Fase C (migraciones 0005–0007): comandos firmados, config sync, cascada de
+-- notificación y billing. [T-1.45] Reconciliación: estas tablas nacieron en
+-- Alembic y este archivo —fuente de verdad del DDL— las había perdido; el
+-- diff sistemático de catálogos (alembic head vs schema.sql sobre DBs
+-- gemelas) volvió a CERO drift al añadirlas. DDL transcrito fiel de pg_dump.
+-- ---------------------------------------------------------------------------
+
+-- Comandos remotos de actuador (T-1.23 · regla de oro 8): la superficie más
+-- sensible. pending → acked/rejected (ack del edge) o expired (TTL). El nonce
+-- es UNIQUE: anti-replay del lado nube (el edge además guarda nonces vistos).
+CREATE TABLE commands (
+  command_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  site_id     uuid NOT NULL REFERENCES sites(site_id),
+  gateway_id  uuid NOT NULL REFERENCES gateways(gateway_id),
+  issued_by   uuid NOT NULL,
+  channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer')),
+  action      text NOT NULL CHECK (action IN ('activate','deactivate')),
+  event_id    text,
+  nonce       text NOT NULL UNIQUE,
+  issued_at   timestamptz NOT NULL DEFAULT now(),
+  expires_at  timestamptz NOT NULL,
+  status      text NOT NULL DEFAULT 'pending'
+              CHECK (status IN ('pending','acked','rejected','expired')),
+  ack         jsonb,
+  error       text
+);
+CREATE INDEX idx_commands_site    ON commands (site_id, issued_at DESC);
+CREATE INDEX idx_commands_rate    ON commands (issued_by, site_id, issued_at DESC);
+CREATE INDEX idx_commands_pending ON commands (expires_at) WHERE status = 'pending';
+GRANT SELECT, INSERT, UPDATE ON commands TO takab_app;    -- la API emite y lista
+GRANT SELECT, INSERT, UPDATE ON commands TO takab_ingest; -- el ack transiciona el estado
+
+ALTER TABLE commands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commands FORCE  ROW LEVEL SECURITY;
+CREATE POLICY commands_read  ON commands FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY commands_write ON commands FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY commands_admin ON commands FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- Config firmada que cada gateway tiene REALMENTE (T-1.23): versión MONÓTONA
+-- por gabinete; el worker de sync solo publica cuando el payload difiere.
+CREATE TABLE gateway_config_state (
+  gateway_id   uuid PRIMARY KEY REFERENCES gateways(gateway_id),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  version      integer NOT NULL,
+  payload      jsonb NOT NULL,
+  sig          text NOT NULL,
+  published_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT ON gateway_config_state TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON gateway_config_state TO takab_ingest;
+
+ALTER TABLE gateway_config_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gateway_config_state FORCE  ROW LEVEL SECURITY;
+CREATE POLICY gateway_config_state_read ON gateway_config_state FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY gateway_config_state_admin ON gateway_config_state FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- Cascada de notificación (T-1.21 · blueprint §5.6): un job por (incidente,
+-- canal, modo) — UNIQUE = idempotencia del orquestador ante re-entregas.
+CREATE TABLE notification_jobs (
+  job_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  incident_id uuid NOT NULL REFERENCES incidents(incident_id) ON DELETE RESTRICT,
+  channel     text NOT NULL CHECK (channel IN ('webhook','whatsapp','sms','email')),
+  mode        text NOT NULL CHECK (mode IN ('cascade','parallel')),
+  position    integer NOT NULL DEFAULT 0,
+  status      text NOT NULL DEFAULT 'pending'
+              CHECK (status IN ('pending','sent','failed','skipped')),
+  target      jsonb NOT NULL DEFAULT '{}',
+  due_at      timestamptz NOT NULL,
+  deadline_at timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  sent_at     timestamptz,
+  error       text,
+  UNIQUE (incident_id, channel, mode)
+);
+CREATE INDEX idx_notification_jobs_due    ON notification_jobs (due_at) WHERE status = 'pending';
+CREATE INDEX idx_notification_jobs_tenant ON notification_jobs (tenant_id, created_at DESC);
+GRANT SELECT ON notification_jobs TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON notification_jobs TO takab_ingest;
+
+ALTER TABLE notification_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_jobs FORCE  ROW LEVEL SECURITY;
+CREATE POLICY notification_jobs_read ON notification_jobs FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id));
+CREATE POLICY notification_jobs_admin ON notification_jobs FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- Metering diario para billing (T-1.24): agregado por tenant/día; gb_approx
+-- es row-count×avg (APROXIMACIÓN documentada; calibrar con pg_column_size).
+CREATE TABLE billing_meters_daily (
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  day          date NOT NULL,
+  active_sites integer NOT NULL DEFAULT 0,
+  messages     bigint  NOT NULL DEFAULT 0,
+  gb_approx    numeric NOT NULL DEFAULT 0,
+  incidents    integer NOT NULL DEFAULT 0,
+  computed_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, day)
+);
+GRANT SELECT ON billing_meters_daily TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON billing_meters_daily TO takab_ingest;
+
+ALTER TABLE billing_meters_daily ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_meters_daily FORCE  ROW LEVEL SECURITY;
+CREATE POLICY billing_meters_read ON billing_meters_daily FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY billing_meters_admin ON billing_meters_daily FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- Índices de idempotencia de la Fase C sobre tablas pre-existentes: el ACK de
+-- actuador y la evidencia re-entregados por SQS no deben duplicar filas.
+CREATE UNIQUE INDEX uq_incident_actions_ack
+  ON incident_actions (incident_id, kind, actor, ts);
+CREATE UNIQUE INDEX uq_evidence_incident_sha256
+  ON evidence_objects (incident_id, sha256) WHERE sha256 IS NOT NULL;

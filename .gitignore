@@ -39,7 +39,7 @@ Thumbs.db
 
 # Backups / bundles (contenido duplicado)
 files.zip
-Design System/Dashboard Alertamiento Sismico.zip
+takab-docs/design/Design System/Dashboard Alertamiento Sismico.zip
 
 # Claude Code local settings (config del asistente, no del proyecto)
 .claude/settings.local.json
