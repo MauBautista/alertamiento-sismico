@@ -2,6 +2,7 @@ import type { RouteObject } from "react-router";
 
 import ConsolePage from "../features/console/ConsolePage";
 import FleetPage from "../features/fleet/FleetPage";
+import TriagePage from "../features/triage/TriagePage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
 import BuildingPage from "../pages/BuildingPage";
 import LoginPage from "../pages/LoginPage";
@@ -41,7 +42,7 @@ export const routes: RouteObject[] = [
             path: "/triage",
             element: (
               <RouteGuard routeKey="/triage">
-                <PlaceholderPage title="TRIAGE" taskRef="T-1.29" />
+                <TriagePage />
               </RouteGuard>
             ),
           },
