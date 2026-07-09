@@ -1,5 +1,6 @@
 import StateFrame from "../../components/StateFrame";
 import { useNow } from "../../lib/useNow";
+import FleetAdmin from "./FleetAdmin";
 import SiteCard from "./SiteCard";
 import { FLEET_STALE_MS, useFleet } from "./useFleet";
 import type { FleetCabinet } from "./useFleet";
@@ -69,6 +70,11 @@ export default function FleetPage() {
           ))}
         </div>
       </StateFrame>
+
+      {/* FUERA del StateFrame a propósito: un tenant sin gabinetes cae en el estado
+          `empty`, y ahí es precisamente cuando hace falta poder crear la primera
+          estación. Enterrar el alta dentro del marco la haría inalcanzable. */}
+      <FleetAdmin />
     </section>
   );
 }

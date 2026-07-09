@@ -771,12 +771,26 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > reingreso se deja en `/triage`, que es donde vive la cadena de firmas — duplicarlo aquí habría
 > creado dos caminos para un acto legal que debe tener uno solo.
 
-### [ ] T-1.36 · UI de alta de estaciones con selector de punto en el mapa — **[C5]**
+### [x] T-1.36 · UI de alta de estaciones con selector de punto en el mapa — **[C5] COMPLETA**
 - **Componente:** web · **Depende de:** T-1.32
 - **Criterios de aceptación:**
-  - [ ] Sub-superficie bajo `/fleet` (no una ruta nueva ⇒ no cambia `allowed_routes`).
-  - [ ] `MapPointPicker` con marcador arrastrable, componente nuevo (no sobrecargar `MapPanel`).
-  - [ ] Los controles de escritura solo se pintan si `me.allowed_actions.manage_fleet`.
+  - [x] Sub-superficie bajo `/fleet` (no una ruta nueva ⇒ no cambia `allowed_routes`).
+  - [x] `MapPointPicker` con marcador arrastrable, componente nuevo (no sobrecargar `MapPanel`).
+  - [x] Los controles de escritura solo se pintan si `me.allowed_actions.manage_fleet`.
+
+> **COMPLETA.** web **446 passed** · lint/build limpios. `FleetAdmin` va **fuera** del `StateFrame`
+> de la flota: un tenant sin gabinetes cae en el estado `empty`, y es justo ahí donde hace falta
+> poder crear la primera estación — enterrar el alta dentro del marco la habría hecho inalcanzable.
+> La compuerta `manage_fleet` está **separada del panel**: quien no administra la flota no monta ni
+> un `useQuery` (no se pide `/sites`, no existe el botón). `MapPointPicker` acepta arrastre Y clic
+> (arrastrar un marcador de 20 px sobre una azotea es peor que apuntar) y no muta estado interno: la
+> prop `value` manda, así que el formulario y el mapa nunca discrepan. El mapa se crea UNA vez
+> (encuadre inicial en una ref): recrearlo en cada arrastre perdería el zoom del operador.
+> `parseLatLonPair` acepta el orden HUMANO (`lat, lon`, el de Google Maps) y devuelve el de la
+> máquina (`lon, lat`); un par invertido se **rechaza** en vez de plantar la estación en el mar. Los
+> 409 llegan al operador en castellano y accionables, no como "algo salió mal". El alta de hardware
+> no manda `tenant_id` (lo hereda del sitio) ni `iot_thing` (lo emite Terraform), y un sensor sin
+> procedencia se crea con `calibration_source = null` — SIN CALIBRAR, que es la verdad.
 
 ### [ ] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7]**
 - **Componente:** infra · **Depende de:** T-1.32…T-1.36

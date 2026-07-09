@@ -1124,3 +1124,74 @@
   border-bottom: 1px solid var(--tk-border);
 }
 .bld__table td { padding: 7px 8px; border-bottom: 1px solid var(--tk-border); }
+
+/* ADMINISTRACIÓN DE ESTACIONES (T-1.36) --------------------------------------- */
+.fleet__admin {
+  margin-top: 16px;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  background: var(--tk-navy-800);
+  padding: 14px;
+}
+.fleet__adminhd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.fleet__adminhd h2 {
+  font-family: var(--tk-font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--tk-fg-2);
+  margin: 0;
+}
+.fleet__admintable { width: 100%; border-collapse: collapse; font-size: 11px; }
+.fleet__admintable th {
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--tk-border);
+}
+.fleet__admintable td { padding: 7px 8px; border-bottom: 1px solid var(--tk-border); }
+.fleet__rowactions { display: flex; gap: 6px; justify-content: flex-end; }
+
+.fleet__form { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+.fleet__formtitle {
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  margin: 0 0 4px;
+  color: var(--tk-fg-1);
+}
+.fleet__form label { display: flex; flex-direction: column; gap: 4px; }
+.fleet__form label > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.fleet__form input,
+.fleet__form select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.fleet__coords {
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fleet__coords legend { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); padding: 0 4px; }
+.fleet__hint { font-size: 10px; color: var(--tk-fg-3); margin: 0; }
+.fleet__picker { display: flex; flex-direction: column; gap: 6px; }
+.fleet__pickermap {
+  height: 260px;
+  border-radius: var(--tk-radius-md);
+  overflow: hidden;
+  border: 1px solid var(--tk-border);
+}
+.fleet__pickercoords { font-size: 10px; color: var(--tk-fg-2); margin: 0; }
+.fleet__formactions { display: flex; gap: 8px; margin-top: 4px; }
+.fleet__checkbox { flex-direction: row !important; align-items: center; gap: 8px; }
+.fleet__checkbox input { width: auto; }
