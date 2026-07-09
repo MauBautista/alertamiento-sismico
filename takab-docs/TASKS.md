@@ -897,3 +897,15 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [ ] **Desplegado y verificado EN LA NUBE** (`/fleet` con NTP/cert/RTT reales y UPS S/D)
         ⟵ tras el `terraform apply` de T-1.39 (primero nube, después edge — el orden importa
         por el contrato).
+
+### [~] T-1.44 · Endurecer el rol CI OIDC — **[infra] CÓDIGO LISTO · viaja en el apply de T-1.39**
+- **Componente:** infra · **Cierra:** HIGH #24 de la auditoría pre-frontend
+- **Objetivo:** `takab-ci-plan` era asumible desde **cualquier ref** (`repo:...:*` con
+  `StringLike`) con ReadOnlyAccess + lectura del tfstate — y ningún workflow legítimo lo usa
+  siquiera (el paso plan-only de `ci.yml` sigue en TODO). Superficie de exfiltración pura.
+- **Criterios de aceptación:**
+  - [x] Trust policy anclado EXACTO a `repo:MauBautista/alertamiento-sismico:ref:refs/heads/main`
+        con `StringEquals` (sin comodines en la superficie más federada de la cuenta).
+  - [x] Los jobs de PR no necesitan AWS (corren tests herméticos) — verificado en `ci.yml`.
+  - [x] `terraform validate` + plan: 1 cambio in-place, cero recursos nuevos.
+  - [ ] Aplicado ⟵ viaja en el `terraform apply` de la ventana de T-1.39.

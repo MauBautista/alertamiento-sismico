@@ -23,6 +23,13 @@ resource "aws_iam_openid_connect_provider" "github" {
 resource "aws_iam_role" "ci_plan" {
   name = "takab-ci-plan"
 
+  # [T-1.44 · HIGH #24 de la auditoría] El sub se ancla EXACTO a main. Con el
+  # `repo:...:*` anterior, cualquier ref —incluido el run de un PR malicioso—
+  # podia asumir un rol con ReadOnlyAccess + lectura del tfstate (que contiene
+  # material sensible) sin que ningun workflow legitimo lo usara siquiera: el
+  # paso plan-only sigue siendo un TODO en ci.yml. Los jobs de PR corren tests
+  # hermeticos y NO necesitan AWS. StringEquals, no StringLike: sin comodines
+  # en la superficie mas federada de la cuenta.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -32,9 +39,7 @@ resource "aws_iam_role" "ci_plan" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        }
-        StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:*"
+          "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:ref:refs/heads/main"
         }
       }
     }]
