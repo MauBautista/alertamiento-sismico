@@ -224,8 +224,15 @@ resource "aws_instance" "db" {
   # La AMI most_recent solo aplica al primer boot: una AMI nueva NO debe forzar
   # replace de la instancia (destruiria la DB y los workers co-locados). Para
   # actualizar la AMI a proposito: terraform taint / -replace explicito.
+  #
+  # vpc_security_group_ids se IGNORA porque el modulo serve adjunta el SG web
+  # por ENI (aws_network_interface_sg_attachment, para poder desconectarlo sin
+  # tocar la instancia). Sin esto, cada plan "corrige" la lista de la instancia
+  # y ARRANCA el SG web de la ENI — paso en el apply de T-1.39 y dejo la
+  # consola sin 80/443. Es el patron documentado del propio provider: con
+  # attachments por ENI, la lista de SGs de la instancia no se gestiona aqui.
   lifecycle {
-    ignore_changes = [ami]
+    ignore_changes = [ami, vpc_security_group_ids]
   }
 }
 
