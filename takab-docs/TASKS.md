@@ -1164,23 +1164,33 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] **Suite web: 467 passed** (448 + 19 nuevos: store 8, provider 4, OperatorMenu 6,
         Topbar reescrito) · tsc/eslint/prettier limpios · `vite build` OK.
 
-### [ ] T-1.50 · Web: Consola C4I completa (mapa, BMS, relés, CCTV, detalle)
+### [x] T-1.50 · Web: Consola C4I completa (mapa, BMS, relés, CCTV, detalle) — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.49 (orden de merge del CSS)
 - **Criterios de aceptación:**
-  - [ ] **Fix de layout que destraba el mapa**: `StateFrame` con prop `className`; la consola
-        opta por `.soc-wall` (grid `minmax(0,1fr) auto`); `.soc-stateframe` base pierde
-        `height:100%`; `.soc-stage{min-height:280px}`; contrato DOM anti-regresión en tests.
-  - [ ] Mapa robusto: fallo de tiles remotos ⇒ `setStyle(FALLBACK_STYLE)` inline (fondo navy,
-        las capas GeoJSON de sitios SIGUEN pintando) + badge "SIN MAPA BASE · SITIOS EN
-        VIVO"; `map.resize()` vía ResizeObserver compartido (`lib/maplibre.ts`).
-  - [ ] BMS agrupado por canal (último estado + hora + ×N, expandible a la traza completa
-        auditada) — `features/console/bms.ts` puro con tests.
-  - [ ] Card INCIDENTE en el detalle: trigger etiquetado (SASMEX/UMBRAL LOCAL/QUÓRUM/MANUAL),
-        evento asociado o "SIN EVENTO SÍSMICO ASOCIADO", estado+edad, PGA/PGV máx ("—"
-        honesto), último acuse. SIN magnitud preliminar NI countdown (§14).
-  - [ ] Card RELÉS DEL GABINETE reutilizando `RelayGrid` de fleet (caché compartida por
-        queryKey); CCTV SIEMPRE visible con empty-state "SIN CÁMARA CONFIGURADA · PENDIENTE
-        DE HARDWARE"; PGA de tabla muestra `<0.001g` en vez de "0.000g".
+  - [x] **Fix de layout que destraba el mapa** (causa raíz del "no hay mapa"): `StateFrame`
+        con prop `className` aplicada en LOS 4 estados; la consola opta por `.soc-wall`
+        (grid `minmax(0,1fr) auto` dentro del wrapper); `.soc-stateframe` base pierde
+        `height:100%`; `.soc-stage{min-height:280px}` de cinturón; contrato DOM
+        anti-regresión (`.soc-stateframe.soc-wall` + `.soc-stage`) — jsdom no hace layout
+        y 448 tests jamás vieron el colapso.
+  - [x] Mapa robusto: estilo remoto irrecuperable (solo si el inicial NUNCA cargó; un tile
+        suelto mid-sesión no borra el mapa base) ⇒ `setStyle(FALLBACK_STYLE)` 100 % local
+        (las capas GeoJSON de sitios SIGUEN pintando) + badge "◐ SIN MAPA BASE · SITIOS EN
+        VIVO"; `style.load` re-cuelga capas (guard anti doble-add) y el pulso rAF lleva
+        guard de capa; `observeMapResize` compartido (`lib/maplibre.ts`) + stub de
+        ResizeObserver en vitest.setup.
+  - [x] BMS agrupado por canal (último estado + hora + ×N, orden por recencia, expandible
+        con aria-expanded a la traza completa auditada) — `features/console/bms.ts` puro;
+        kinds desconocidos degradan sin reventar.
+  - [x] Card INCIDENTE en el detalle: trigger etiquetado (SASMEX/UMBRAL LOCAL EDGE/QUÓRUM
+        CLOUD/MANUAL), evento o "SIN EVENTO SÍSMICO ASOCIADO", estado+edad, PGA/PGV máx
+        ("—" honesto), último acuse con actor. SIN magnitud NI countdown (anclado por test).
+  - [x] Card RELÉS DEL GABINETE vía `useSiteRelays` (MISMAS queryKeys que useFleet ⇒ caché
+        compartida, cero fetches extra) con estados honestos; CCTV SIEMPRE visible con
+        empty-state "SIN CÁMARA CONFIGURADA · PENDIENTE DE HARDWARE"; PGA de tabla:
+        `formatPga` — `<0.001g` para picos reales diminutos, `0.000g` solo si es cero MEDIDO.
+> **ESTADO.** web 488 passed (+21) · tsc/eslint/prettier/build OK. Smoke visual de las 5
+> páginas queda amarrado al deploy de cierre de fase (checklist del runbook).
 
 ### [ ] T-1.51 · Web: botones del operador vivos (epicentro + dictamen)
 - **Componente:** web · **Depende de:** T-1.48 (SDK) + T-1.50

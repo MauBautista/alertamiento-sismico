@@ -1,28 +1,39 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
 
 const mocks = vi.hoisted(() => {
   const handlers = new Map<string, (event?: unknown) => void>();
+  const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
   const map = {
     on: vi.fn((event: string, layerOrCb: unknown, cb?: (event?: unknown) => void) => {
       if (typeof layerOrCb === "function") handlers.set(event, layerOrCb as () => void);
       else if (cb) handlers.set(`${event}:${layerOrCb as string}`, cb);
     }),
-    addSource: vi.fn(),
+    addSource: vi.fn((id: string) => {
+      sources.set(id, { setData: vi.fn() });
+    }),
     addLayer: vi.fn(),
-    getSource: vi.fn(() => ({ setData: vi.fn() })),
+    getSource: vi.fn((id: string) => sources.get(id)),
+    getLayer: vi.fn(() => undefined),
+    // setStyle borra el estilo previo: las sources desaparecen hasta que el
+    // siguiente style.load las re-agregue (semántica real de MapLibre).
+    setStyle: vi.fn(() => {
+      sources.clear();
+    }),
     setPaintProperty: vi.fn(),
+    resize: vi.fn(),
     remove: vi.fn(),
   };
-  return { handlers, map, Map: vi.fn(() => map) };
+  return { handlers, sources, map, Map: vi.fn(() => map) };
 });
 
 vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 import MapPanel, {
+  FALLBACK_STYLE,
   criticalFeatures,
   pulseAt,
   siteSeverity,
@@ -91,13 +102,21 @@ describe("builders del mapa (puros)", () => {
 });
 
 describe("MapPanel", () => {
-  it("crea el mapa, agrega capas al load y despacha el clic en site-core", () => {
+  beforeEach(() => {
+    mocks.handlers.clear();
+    mocks.sources.clear();
+    vi.clearAllMocks();
+  });
+
+  it("crea el mapa, agrega capas al style.load y despacha el clic en site-core", () => {
     const onSelectSite = vi.fn();
     render(<MapPanel sites={[CRITICAL]} onSelectSite={onSelectSite} />);
     expect(mocks.Map).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("map-panel")).toBeInTheDocument();
 
-    mocks.handlers.get("load")?.();
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
     expect(mocks.map.addSource).toHaveBeenCalledWith("sites", expect.anything());
     expect(mocks.map.addSource).toHaveBeenCalledWith("critical", expect.anything());
     expect(mocks.map.addLayer).toHaveBeenCalled();
@@ -106,5 +125,50 @@ describe("MapPanel", () => {
       features: [{ properties: { site_id: "crit" } }],
     });
     expect(onSelectSite).toHaveBeenCalledWith("crit");
+  });
+
+  it("estilo remoto caído ⇒ degrada al estilo LOCAL, re-cuelga las capas y lo declara", () => {
+    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+
+    act(() => {
+      mocks.handlers.get("error")?.(); // el estilo inicial nunca cargó
+    });
+    expect(mocks.map.setStyle).toHaveBeenCalledWith(FALLBACK_STYLE);
+    expect(screen.getByTestId("map-degraded")).toHaveTextContent("SIN MAPA BASE");
+
+    // el style.load del fallback re-agrega sources/capas: los sitios siguen vivos
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    expect(mocks.map.addSource).toHaveBeenCalledWith("sites", expect.anything());
+  });
+
+  it("un error DESPUÉS de cargar (tile suelto) NO borra el mapa base ya renderizado", () => {
+    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+      mocks.handlers.get("error")?.();
+    });
+    expect(mocks.map.setStyle).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("map-degraded")).toBeNull();
+  });
+
+  it("re-dimensionar el contenedor dispara map.resize() (canvas jamás en 0×0)", () => {
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(<MapPanel sites={[]} onSelectSite={vi.fn()} />);
+      // NO se dispara style.load: el pulso (rAF recursivo) no debe arrancar aquí.
+      (
+        globalThis as unknown as { __triggerResizeObservers: () => void }
+      ).__triggerResizeObservers();
+      expect(mocks.map.resize).toHaveBeenCalled();
+    } finally {
+      rafSpy.mockRestore();
+    }
   });
 });

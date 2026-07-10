@@ -42,6 +42,15 @@ function age(openedAt: string, nowMs: number): string {
   return s < 120 ? `T+${String(s).padStart(2, "0")}s` : `T+${Math.floor(s / 60)}min`;
 }
 
+/** PGA de la fila (T-1.50): un pico real diminuto (piso MEMS ~0.001 g) no debe
+ * imprimirse como "0.000g" — parecería un cero medido. Bajo el medio milésimo
+ * se muestra `<0.001g`; null sigue siendo "—" (sin medición). */
+export function formatPga(pga: number | null): string {
+  if (pga === null) return "—";
+  if (pga > 0 && pga < 0.0005) return "<0.001g";
+  return `${pga.toFixed(3)}g`;
+}
+
 export default function IncidentTable({
   incidents,
   siteInfoOf,
@@ -118,7 +127,7 @@ export default function IncidentTable({
                   {site?.coords ?? "—"}
                 </td>
                 <td className={`soc-mono ${incident.severity !== "info" ? "soc-table__pga" : ""}`}>
-                  {incident.max_pga_g === null ? "—" : `${incident.max_pga_g.toFixed(3)}g`}
+                  {formatPga(incident.max_pga_g)}
                 </td>
                 <td className="soc-mono">{utcClock(Date.parse(incident.opened_at))} UTC</td>
                 <td className="soc-mono" style={{ color: "var(--tk-fg-3)" }}>

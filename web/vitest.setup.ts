@@ -19,3 +19,28 @@ if (typeof window.URL.createObjectURL === "undefined") {
     writable: true,
   });
 }
+
+// jsdom tampoco trae ResizeObserver (T-1.50: observeMapResize de mapa/picker).
+// Stub con registro global para que los tests disparen resizes a demanda.
+type ResizeCallback = (entries: unknown[], observer: unknown) => void;
+const resizeObservers = new Set<ResizeCallback>();
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverStub {
+    private readonly cb: ResizeCallback;
+    constructor(cb: ResizeCallback) {
+      this.cb = cb;
+      resizeObservers.add(cb);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {
+      resizeObservers.delete(this.cb);
+    }
+  }
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+  (globalThis as Record<string, unknown>).__triggerResizeObservers = () => {
+    for (const cb of resizeObservers) {
+      cb([], undefined);
+    }
+  };
+}

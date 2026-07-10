@@ -94,10 +94,13 @@ a.soc-btn {
 }
 
 /* StateFrame (T-1.27/T-1.28): materializa los 4 estados obligatorios de todo
- * panel; en stale el dato sigue visible pero SIEMPRE bajo el banner ámbar. */
+ * panel; en stale el dato sigue visible pero SIEMPRE bajo el banner ámbar.
+ * [T-1.50] SIN height:100% en la base: como flex/grid item forzaba a los
+ * dueños a pelear con su layout (el wall perdía el mapa por colapso a 0 y la
+ * flota encimaba tarjetas sobre la tabla admin). El layout es del DUEÑO vía
+ * la prop className (p.ej. `.soc-wall` en la consola). */
 .soc-stateframe {
   position: relative;
-  height: 100%;
   min-height: 0;
 }
 

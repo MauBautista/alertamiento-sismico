@@ -15,7 +15,21 @@ export interface StateFrameProps {
    * null/undefined = fresco. El umbral lo decide el dueño del dato.
    */
   staleSince?: number | null;
+  /**
+   * Clase(s) de layout del DUEÑO aplicadas al wrapper en TODOS los estados
+   * (T-1.50). El caso que motivó esto: el grid del live wall
+   * (`.soc-main { grid-template-rows: minmax(0,1fr) auto }`) esperaba a
+   * `.soc-stage`/`.soc-incidents` como items directos, pero este wrapper los
+   * envolvía y `.soc-stage` (solo hijos absolutos) colapsaba a altura 0 — el
+   * mapa existía e "invisible". jsdom no hace layout: solo un contrato DOM
+   * puede vigilarlo.
+   */
+  className?: string;
   children: ReactNode;
+}
+
+function cls(base: string, extra?: string): string {
+  return extra ? `${base} ${extra}` : base;
 }
 
 /**
@@ -32,18 +46,27 @@ export default function StateFrame({
   empty,
   emptyText,
   staleSince,
+  className,
   children,
 }: StateFrameProps) {
   if (loading) {
     return (
-      <div className="soc-stateframe soc-stateframe--status" data-state="loading" aria-busy="true">
+      <div
+        className={cls("soc-stateframe soc-stateframe--status", className)}
+        data-state="loading"
+        aria-busy="true"
+      >
         <span>CARGANDO · {label}…</span>
       </div>
     );
   }
   if (error) {
     return (
-      <div className="soc-stateframe soc-stateframe--status" data-state="error" role="alert">
+      <div
+        className={cls("soc-stateframe soc-stateframe--status", className)}
+        data-state="error"
+        role="alert"
+      >
         <span className="soc-stateframe__error">{error}</span>
         {onRetry && (
           <button type="button" className="soc-btn soc-btn--secondary" onClick={onRetry}>
@@ -55,14 +78,14 @@ export default function StateFrame({
   }
   if (empty) {
     return (
-      <div className="soc-stateframe soc-stateframe--status" data-state="empty">
+      <div className={cls("soc-stateframe soc-stateframe--status", className)} data-state="empty">
         <span>{emptyText ?? `SIN DATOS · ${label}`}</span>
       </div>
     );
   }
   const stale = staleSince !== null && staleSince !== undefined;
   return (
-    <div className="soc-stateframe" data-state={stale ? "stale" : "ready"}>
+    <div className={cls("soc-stateframe", className)} data-state={stale ? "stale" : "ready"}>
       {stale && (
         <div className="soc-stateframe__stale" role="status">
           DATOS RETENIDOS · {utcClock(staleSince)} UTC

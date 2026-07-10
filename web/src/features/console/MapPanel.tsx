@@ -8,11 +8,25 @@
 
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { MapSiteState } from "@takab/sdk";
 
+import { observeMapResize } from "../../lib/maplibre";
+
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+
+/** Estilo de EMERGENCIA 100% local (T-1.50): si los tiles remotos no llegan
+ * (sin internet, CDN caído), el mapa base degrada a fondo navy PERO las capas
+ * GeoJSON de sitios siguen pintando — las estaciones jamás desaparecen. El
+ * badge "SIN MAPA BASE" declara la degradación (regla de oro 7). */
+export const FALLBACK_STYLE = {
+  version: 8 as const,
+  name: "takab-fallback",
+  sources: {},
+  layers: [{ id: "bg", type: "background" as const, paint: { "background-color": "#0d2034" } }],
+};
+
 /** Centro por defecto: Puebla (flota dev); el mapa hace fit a los sitios. */
 const DEFAULT_CENTER: [number, number] = [-98.2, 19.04];
 const DEFAULT_ZOOM = 8.5;
@@ -88,6 +102,8 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
+  const degradedRef = useRef(false);
+  const [degraded, setDegraded] = useState(false);
   const sitesRef = useRef(sites);
   sitesRef.current = sites;
   const onSelectRef = useRef(onSelectSite);
@@ -105,9 +121,25 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
     });
     mapRef.current = map;
     let raf = 0;
+    // El contenedor puede asentarse DESPUÉS del constructor (grid del wall):
+    // sin resize el canvas queda medido en 0×0 aunque el CSS ya esté bien.
+    const stopResize = observeMapResize(map, containerRef.current);
 
-    map.on("load", () => {
+    // Estilo remoto irrecuperable ⇒ degradar a estilo local. Solo aplica si el
+    // estilo inicial NUNCA cargó (un tile suelto fallando mid-sesión no borra
+    // el mapa base ya renderizado).
+    map.on("error", () => {
+      if (loadedRef.current || degradedRef.current) return;
+      degradedRef.current = true;
+      setDegraded(true);
+      map.setStyle(FALLBACK_STYLE as unknown as maplibregl.StyleSpecification);
+    });
+
+    // `style.load` dispara para el estilo inicial Y tras setStyle(FALLBACK):
+    // en ambos casos hay que (re)colgar sources/capas del wall.
+    map.on("style.load", () => {
       loadedRef.current = true;
+      if (map.getSource("sites") !== undefined) return;
       map.addSource("sites", { type: "geojson", data: sitesToFeatureCollection(sitesRef.current) });
       map.addSource("critical", { type: "geojson", data: criticalFeatures(sitesRef.current) });
 
@@ -175,11 +207,15 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
         if (typeof siteId === "string") onSelectRef.current(siteId);
       });
 
+      if (raf !== 0) return; // el loop del pulso ya corre (re-add tras fallback)
       const start = performance.now();
       const loop = (t: number) => {
-        const { radius, strokeOpacity } = pulseAt(t - start);
-        map.setPaintProperty("pulse", "circle-radius", radius);
-        map.setPaintProperty("pulse", "circle-stroke-opacity", strokeOpacity);
+        // Entre setStyle(FALLBACK) y su style.load la capa no existe: guard.
+        if (map.getLayer("pulse") !== undefined) {
+          const { radius, strokeOpacity } = pulseAt(t - start);
+          map.setPaintProperty("pulse", "circle-radius", radius);
+          map.setPaintProperty("pulse", "circle-stroke-opacity", strokeOpacity);
+        }
         raf = requestAnimationFrame(loop);
       };
       raf = requestAnimationFrame(loop);
@@ -187,6 +223,7 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
 
     return () => {
       cancelAnimationFrame(raf);
+      stopResize();
       loadedRef.current = false;
       mapRef.current = null;
       map.remove();
@@ -208,6 +245,12 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
   return (
     <div className="soc-map" data-testid="map-panel">
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+
+      {degraded && (
+        <div className="soc-map__degraded" data-testid="map-degraded" role="status">
+          ◐ SIN MAPA BASE · TILES NO DISPONIBLES · SITIOS EN VIVO
+        </div>
+      )}
 
       <div className="soc-map__legend">
         <div className="soc-map__legend-title">INTENSIDAD MMI</div>

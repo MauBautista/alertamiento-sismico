@@ -13,7 +13,6 @@ import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 
 import StateFrame from "../../components/StateFrame";
-import { getEnv } from "../../app/env";
 import { useSessionStore } from "../../auth/session.store";
 import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
@@ -26,6 +25,7 @@ import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useMapState } from "./useMapState";
 import { useSiteFeatures } from "./useSiteFeatures";
+import { useSiteRelays } from "./useSiteRelays";
 import { useSiteSoh } from "./useSiteSoh";
 
 /** Sin snapshot fresco del mapa tras esto (poll 30 s) el wall es DATOS RETENIDOS. */
@@ -52,6 +52,7 @@ function ConsoleWall() {
   const focusSiteId = selectedSiteId ?? incidents.incidents[0]?.site_id ?? null;
   const features = useSiteFeatures(focusSiteId);
   const soh = useSiteSoh(focusSiteId);
+  const relays = useSiteRelays(focusSiteId);
   const focusIncident = incidents.incidents.find((i) => i.site_id === focusSiteId) ?? null;
   const actions = useIncidentActions(focusIncident?.incident_id ?? null);
 
@@ -100,6 +101,7 @@ function ConsoleWall() {
       <main className="soc-main">
         <StateFrame
           label="CONSOLA C4I"
+          className="soc-wall"
           loading={map.loading || incidents.loading}
           error={map.error ?? incidents.error}
           onRetry={() => {
@@ -145,8 +147,9 @@ function ConsoleWall() {
           features={features}
           soh={soh}
           actions={actions}
+          incident={focusIncident}
+          relays={relays}
           nowMs={now}
-          cctvEnabled={getEnv().featureCctv}
           onClose={() => setDetailOpen(false)}
         />
       )}

@@ -87,3 +87,14 @@ describe("IncidentTable", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 });
+
+describe("formatPga (T-1.50)", () => {
+  it("null = sin medición; un pico real diminuto jamás se imprime como 0.000g", async () => {
+    const { formatPga } = await import("./IncidentTable");
+    expect(formatPga(null)).toBe("—");
+    expect(formatPga(0.0004)).toBe("<0.001g");
+    expect(formatPga(0.001)).toBe("0.001g");
+    expect(formatPga(0.567)).toBe("0.567g");
+    expect(formatPga(0)).toBe("0.000g"); // cero MEDIDO sí es cero
+  });
+});

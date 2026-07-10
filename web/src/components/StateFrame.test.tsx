@@ -69,3 +69,25 @@ describe("StateFrame", () => {
     expect(container.querySelector('[data-state="loading"]')).not.toBeNull();
   });
 });
+
+describe("StateFrame className (T-1.50)", () => {
+  it("aplica la clase de layout del dueño en ready y stale", () => {
+    const ready = render(frame({ className: "soc-wall" }));
+    expect(ready.container.querySelector(".soc-stateframe.soc-wall")).not.toBeNull();
+    ready.unmount();
+
+    const stale = render(frame({ className: "soc-wall", staleSince: 1_700_000_000_000 }));
+    expect(stale.container.querySelector('.soc-wall[data-state="stale"]')).not.toBeNull();
+    stale.unmount();
+  });
+
+  it("también en los estados de status (layout estable del grid dueño)", () => {
+    const loading = render(frame({ className: "soc-wall", loading: true }));
+    expect(loading.container.querySelector('.soc-wall[data-state="loading"]')).not.toBeNull();
+    loading.unmount();
+
+    const empty = render(frame({ className: "soc-wall", empty: true }));
+    expect(empty.container.querySelector('.soc-wall[data-state="empty"]')).not.toBeNull();
+    empty.unmount();
+  });
+});

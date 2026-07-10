@@ -1,12 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SiteStateFrame } from "@takab/sdk";
+import type { IncidentActionOut, SiteStateFrame } from "@takab/sdk";
 
 import { expectFourStates, type UiState } from "../../test-utils/states";
-import DetailPanel, { FEATURES_STALE_MS } from "./DetailPanel";
+import DetailPanel, { FEATURES_STALE_MS, ageLabel } from "./DetailPanel";
+import type { LiveIncident } from "./useLiveIncidents";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { FeaturePoint, SiteFeaturesData } from "./useSiteFeatures";
+import type { SiteRelaysData } from "./useSiteRelays";
 
 const NOW = Date.parse("2026-07-08T10:41:35Z");
 const SITE = { site_id: "s-1", name: "Planta Cholula", coords: "19.0633°N · 98.3014°W" };
@@ -28,25 +30,44 @@ function features(over: Partial<SiteFeaturesData> = {}): SiteFeaturesData {
   };
 }
 
+function action(over: Partial<IncidentActionOut> = {}): IncidentActionOut {
+  return {
+    action_id: `a-${Math.random().toString(36).slice(2, 8)}`,
+    incident_id: "i-1",
+    tenant_id: "t-1",
+    ts: "2026-07-08T10:41:31Z",
+    kind: "siren_on",
+    actor: "edge:gw-dev-0001",
+    payload: {},
+    ...over,
+  } as IncidentActionOut;
+}
+
 function actions(over: Partial<IncidentActionsData> = {}): IncidentActionsData {
   return {
-    actions: [
-      {
-        action_id: "a-1",
-        incident_id: "i-1",
-        tenant_id: "t-1",
-        ts: "2026-07-08T10:41:31Z",
-        kind: "siren_on",
-        actor: "edge:gw-dev-0001",
-        payload: {},
-      },
-    ],
+    actions: [action({ action_id: "a-1" })],
     loading: false,
     error: null,
     refetch: vi.fn(),
     ...over,
   };
 }
+
+const INCIDENT: LiveIncident = {
+  incident_id: "i-1",
+  tenant_id: "t-1",
+  site_id: "s-1",
+  event_id: null,
+  opened_at: "2026-07-08T10:38:35Z",
+  closed_at: null,
+  severity: "critical",
+  state: "open",
+  trigger: "sasmex",
+  max_pga_g: null,
+  max_pgv_cms: null,
+};
+
+const NO_RELAYS: SiteRelaysData = { relays: null, loading: false };
 
 const SOH: SiteStateFrame = {
   type: "site_state",
@@ -67,8 +88,9 @@ function renderPanel(over: Partial<Parameters<typeof DetailPanel>[0]> = {}) {
       features={features()}
       soh={SOH}
       actions={actions()}
+      incident={INCIDENT}
+      relays={NO_RELAYS}
       nowMs={NOW}
-      cctvEnabled={false}
       onClose={onClose}
       {...over}
     />,
@@ -89,8 +111,8 @@ describe("DetailPanel", () => {
   });
 
   it("sin calibrar: unidades relativas y aviso, nunca 'g' ni 'cm/s'", () => {
-    // El edge escala counts con sensibilidades placeholder (T-1.6 diferida). Pintar
-    // 'g' aquí sería inventarse una magnitud física (regla de oro 7).
+    // Solo el readout de features promete física; la card del incidente usa
+    // unidades del backend (numeric g) — aquí el incidente va sin picos.
     renderPanel({ features: features({ calibrated: false }) });
     expect(screen.getByTestId("not-calibrated-badge")).toBeInTheDocument();
     expect(screen.getAllByText("rel.")).toHaveLength(2); // PGA y PGV
@@ -110,24 +132,99 @@ describe("DetailPanel", () => {
     expect(screen.getByTestId("not-calibrated-badge")).toBeInTheDocument();
   });
 
-  it("traza de actuadores con ACK del edge y timestamp", () => {
+  // ---- Card INCIDENTE (T-1.50) -------------------------------------------
+  it("card del incidente: trigger etiquetado, evento honesto y edad — sin magnitud", () => {
     renderPanel();
-    expect(screen.getByText("SIREN ON")).toBeInTheDocument();
+    const card = screen.getByTestId("incident-card");
+    expect(within(card).getByText("SASMEX")).toBeInTheDocument();
+    expect(within(card).getByText("SIN EVENTO SÍSMICO ASOCIADO")).toBeInTheDocument();
+    expect(within(card).getByText(/OPEN · T\+3min/)).toBeInTheDocument();
+    expect(within(card).getByText(/— · —/)).toBeInTheDocument(); // PGA/PGV sin datos
+    expect(within(card).getByText("SIN ACUSE")).toBeInTheDocument();
+    expect(within(card).queryByText(/M \d/)).toBeNull(); // §14: sin magnitud
+  });
+
+  it("card del incidente: con evento y picos reales los muestra; acuse con actor", () => {
+    renderPanel({
+      incident: {
+        ...INCIDENT,
+        event_id: "EVT-MAN-1a2b3c4d",
+        max_pga_g: 0.567,
+        max_pgv_cms: 12.3,
+      },
+      actions: actions({
+        actions: [
+          action({ action_id: "a-1", kind: "siren_on", ts: "2026-07-08T10:39:00Z" }),
+          action({ action_id: "a-2", kind: "ack", actor: "user:abc", ts: "2026-07-08T10:40:00Z" }),
+        ],
+      }),
+    });
+    const card = screen.getByTestId("incident-card");
+    expect(within(card).getByText("EVT-MAN-1a2b3c4d")).toBeInTheDocument();
+    expect(within(card).getByText(/0\.567 g · 12\.3 cm\/s/)).toBeInTheDocument();
+    expect(within(card).getByText(/USER:ABC · 10:40:00 UTC/)).toBeInTheDocument();
+  });
+
+  it("sin incidente abierto la card lo declara (empty honesto)", () => {
+    renderPanel({ incident: null });
+    expect(screen.getByText("SIN INCIDENTE ABIERTO EN EL SITIO")).toBeInTheDocument();
+  });
+
+  // ---- BMS agrupado (T-1.50) ----------------------------------------------
+  it("BMS agrupa por canal: una fila con último estado y ×N; expandir da la traza", () => {
+    renderPanel({
+      actions: actions({
+        actions: [
+          action({ action_id: "a-1", kind: "siren_on", ts: "2026-07-08T10:39:00Z" }),
+          action({ action_id: "a-2", kind: "siren_on", ts: "2026-07-08T10:41:00Z" }),
+          action({ action_id: "a-3", kind: "gas_valve_close", ts: "2026-07-08T10:39:30Z" }),
+        ],
+      }),
+    });
+    expect(screen.getByText("SIRENA")).toBeInTheDocument();
+    expect(screen.getByText("×2")).toBeInTheDocument();
     expect(screen.getByText("ACTIVADA")).toBeInTheDocument();
-    expect(screen.getByText(/EDGE:GW-DEV-0001 · 10:41:31 UTC/)).toBeInTheDocument();
+    expect(screen.getByText("VÁLVULAS DE GAS")).toBeInTheDocument();
+    // la hora mostrada es la de la acción MÁS RECIENTE del grupo
+    expect(screen.getByText(/EDGE:GW-DEV-0001 · 10:41:00 UTC/)).toBeInTheDocument();
+
+    const groupBtn = screen.getByRole("button", { name: /SIRENA/ });
+    expect(groupBtn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(groupBtn);
+    expect(groupBtn).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/10:39:00 UTC · EDGE:GW-DEV-0001/)).toBeInTheDocument();
+  });
+
+  // ---- Relés (T-1.50) ------------------------------------------------------
+  it("relés del gabinete: pinta la config activa o el estado honesto", () => {
+    renderPanel({
+      relays: {
+        loading: false,
+        relays: [{ key: "siren", label: "SIRENA", wiring: "NO", armed: true }],
+      },
+    });
+    const card = screen.getByTestId("relays-card");
+    expect(within(card).getByText("ARMADO")).toBeInTheDocument();
+  });
+
+  it("relés no visibles ⇒ mensaje honesto, jamás estados inventados", () => {
+    renderPanel({ relays: NO_RELAYS });
+    expect(screen.getByText(/CONFIG DE RELÉS NO VISIBLE/)).toBeInTheDocument();
+  });
+
+  // ---- CCTV (T-1.50) -------------------------------------------------------
+  it("CCTV SIEMPRE visible con empty-state honesto (ahí VA la cámara)", () => {
+    renderPanel();
+    expect(screen.getByTestId("cctv-empty")).toHaveTextContent(
+      "SIN CÁMARA CONFIGURADA · PENDIENTE DE HARDWARE",
+    );
+    expect(screen.getByText(/CCTV ONVIF/)).toBeInTheDocument();
   });
 
   it("sin SOH muestra S/D (jamás inventa salud) y sin live el pill lo dice", () => {
     renderPanel({ soh: null, features: features({ lastFrameAt: NOW - FEATURES_STALE_MS - 1 }) });
     expect(screen.getAllByText("S/D").length).toBeGreaterThan(0);
     expect(screen.getByTestId("features-live-pill")).toHaveTextContent("SIN LIVE");
-  });
-
-  it("CCTV solo existe tras la feature flag (criterio #2)", () => {
-    renderPanel();
-    expect(screen.queryByTestId("cctv-placeholder")).toBeNull();
-    renderPanel({ cctvEnabled: true });
-    expect(screen.getByTestId("cctv-placeholder")).toBeInTheDocument();
   });
 
   it("cerrar despacha onClose", () => {
@@ -149,10 +246,18 @@ describe("DetailPanel", () => {
         features={features(byState[state])}
         soh={SOH}
         actions={actions()}
+        incident={INCIDENT}
+        relays={NO_RELAYS}
         nowMs={NOW}
-        cctvEnabled={false}
         onClose={vi.fn()}
       />
     ));
+  });
+});
+
+describe("ageLabel", () => {
+  it("segundos bajo 2 min, minutos después", () => {
+    expect(ageLabel("2026-07-08T10:41:00Z", Date.parse("2026-07-08T10:41:45Z"))).toBe("T+45s");
+    expect(ageLabel("2026-07-08T10:00:00Z", Date.parse("2026-07-08T10:41:45Z"))).toBe("T+41min");
   });
 });

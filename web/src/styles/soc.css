@@ -37,6 +37,17 @@ body {
   min-width: 0;
   min-height: 0;
 }
+/* [T-1.50] El StateFrame del wall es el ÚNICO grid item de .soc-main: esta
+ * clase (prop className del StateFrame) reproduce dentro del wrapper el grid
+ * que .soc-main esperaba dar a .soc-stage/.soc-incidents. Sin ella, .soc-stage
+ * (solo hijos absolutos) colapsaba a altura 0 y el mapa era invisible. */
+.soc-wall {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
+}
 
 /* =====================================================================
    TOPBAR
@@ -152,7 +163,9 @@ body {
    ===================================================================== */
 .soc-stage {
   position: relative;
-  min-height: 0;
+  /* [T-1.50] cinturón anti-colapso: sus hijos son absolutos (mapa/banner) y
+   * sin altura mínima un layout roto lo deja en 0 px — mapa invisible. */
+  min-height: 280px;
   border-radius: var(--tk-radius-md);
   overflow: hidden;
   border: 1px solid var(--tk-border);
@@ -771,3 +784,41 @@ body {
 .soc-user__caption {
   margin: 0; font: 400 11px var(--tk-font-mono); color: var(--tk-fg-3);
 }
+
+/* ==== T-1.50 · Consola: badge de mapa degradado, card de incidente y BMS
+   agrupado ================================================================ */
+.soc-map__degraded {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 5; padding: 4px 12px; border-radius: var(--tk-radius-sm);
+  background: var(--tk-status-warning-15); color: var(--tk-status-warning);
+  border: 1px solid var(--tk-status-warning);
+  font: 700 10px var(--tk-font-mono); letter-spacing: 0.08em; white-space: nowrap;
+}
+
+.soc-incident-facts { display: grid; gap: 8px; padding: 4px 0; }
+.soc-fact { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.soc-fact__label {
+  font: 500 10px var(--tk-font-ui); letter-spacing: 0.06em; color: var(--tk-fg-3);
+  text-transform: uppercase; white-space: nowrap;
+}
+.soc-fact__value { font: 600 12px var(--tk-font-ui); color: var(--tk-fg-1); text-align: right; }
+.soc-fact__value--mono {
+  font-family: var(--tk-font-mono); font-weight: 500; font-variant-numeric: tabular-nums;
+}
+
+.soc-bms__group { border-bottom: 1px solid var(--tk-border); }
+.soc-bms__group:last-child { border-bottom: none; }
+.soc-bms__row--btn {
+  width: 100%; background: transparent; border: none; cursor: pointer;
+  text-align: left; color: inherit; font: inherit;
+}
+.soc-bms__row--btn:hover { background: var(--tk-cyan-08); }
+.soc-bms__count { color: var(--tk-fg-3); font-family: var(--tk-font-mono); font-size: 10px; }
+.soc-bms__meta {
+  font-size: 10px; color: var(--tk-fg-3); font-family: var(--tk-font-mono);
+  letter-spacing: 0.04em; margin-top: 2px;
+}
+.soc-bms__chev { color: var(--tk-fg-3); transition: transform var(--tk-dur-fast) var(--tk-ease); }
+.soc-bms__chev.is-open { transform: rotate(180deg); }
+.soc-bms__trace { list-style: none; margin: 0; padding: 0 0 8px 30px; display: grid; gap: 4px; }
+.soc-bms__trace-row { border-left: 1px solid var(--tk-border-strong); padding-left: 8px; }

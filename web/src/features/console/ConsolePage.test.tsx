@@ -205,3 +205,22 @@ describe("ConsolePage", () => {
     });
   });
 });
+
+describe("contrato DOM del layout del wall (T-1.50)", () => {
+  it("el StateFrame del wall lleva .soc-wall — sin ella .soc-stage colapsa a 0 y el mapa desaparece", () => {
+    resetSessionStoreForTests();
+    useSessionStore.setState({ status: "authenticated", idToken: "tok" });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData());
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue({
+      actions: [],
+      loading: false,
+      error: null,
+      refetch: () => undefined,
+    });
+    const { container } = render(page());
+    expect(container.querySelector(".soc-stateframe.soc-wall")).not.toBeNull();
+    expect(container.querySelector(".soc-stage")).not.toBeNull();
+  });
+});

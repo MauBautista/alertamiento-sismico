@@ -1,30 +1,43 @@
-// Detalle del sitio (T-1.27): strip de features live + readouts + SOH + traza
-// de actuadores con ACKs del edge. Desviación RATIFICADA: el caption es
-// honesto — "FEATURES 1 s · PROCESAMIENTO EDGE" (el RS4D muestrea 100 sps y el
-// crudo NO se sube en continuo, regla de oro 9). CCTV ONVIF = placeholder
-// detrás de VITE_FEATURE_CCTV (criterio #2, no bloquea).
+// Detalle del sitio (T-1.27, ampliado en T-1.50): strip de features live +
+// readouts + SOH + card del INCIDENTE (trigger/evento/edad) + BMS AGRUPADO por
+// actuador (último estado + traza expandible) + relés del gabinete + CCTV.
+// Desviación RATIFICADA: el caption es honesto — "FEATURES 1 s · PROCESAMIENTO
+// EDGE" (el RS4D muestrea 100 sps y el crudo NO se sube en continuo, regla de
+// oro 9). La card CCTV es SIEMPRE visible con empty-state honesto: ahí VA la
+// cámara ONVIF cuando exista el hardware (diferido documentado).
 
-import { Activity, Cpu, ToggleRight, Video, X } from "lucide-react";
+import { Activity, AlertTriangle, ChevronDown, Cpu, ToggleRight, Video, X } from "lucide-react";
+import { useState } from "react";
 
 import StateFrame from "../../components/StateFrame";
 import { utcClock } from "../../lib/time";
 import NotCalibratedBadge from "../telemetry/NotCalibratedBadge";
 import { unitsFor } from "../telemetry/calibration";
+import RelayGrid from "../fleet/RelayGrid";
+import { groupActions } from "./bms";
+import type { LiveIncident } from "./useLiveIncidents";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { SiteFeaturesData } from "./useSiteFeatures";
+import type { SiteRelaysData } from "./useSiteRelays";
 import FeatureStrip from "./FeatureStrip";
 import type { SiteStateFrame } from "@takab/sdk";
 
 /** Sin frame de features tras esto (live 1 Hz) el strip pasa a DATOS RETENIDOS. */
 export const FEATURES_STALE_MS = 15_000;
 
-const ACTION_STATE: Record<string, { state: string; kind: "critical" | "warning" | "ok" }> = {
-  siren_on: { state: "ACTIVADA", kind: "critical" },
-  gas_valve_close: { state: "CERRADAS", kind: "warning" },
-  elevator_recall: { state: "RETORNADOS", kind: "warning" },
-  door_release: { state: "LIBERADOS", kind: "ok" },
-  ack: { state: "ACUSADO", kind: "ok" },
+/** Etiqueta honesta del canal de disparo (incidents.trigger del schema). */
+export const TRIGGER_LABEL: Record<string, string> = {
+  sasmex: "SASMEX",
+  local_threshold: "UMBRAL LOCAL EDGE",
+  quorum: "QUÓRUM CLOUD",
+  manual: "MANUAL",
 };
+
+/** Edad del incidente estilo wall: T+Xs / T+Xmin. */
+export function ageLabel(openedAtIso: string, nowMs: number): string {
+  const seconds = Math.max(0, Math.floor((nowMs - Date.parse(openedAtIso)) / 1000));
+  return seconds < 120 ? `T+${seconds}s` : `T+${Math.floor(seconds / 60)}min`;
+}
 
 export interface DetailSite {
   site_id: string;
@@ -37,8 +50,11 @@ export interface DetailPanelProps {
   features: SiteFeaturesData;
   soh: SiteStateFrame | null;
   actions: IncidentActionsData;
+  /** Incidente enfocado del sitio (null = sin incidente abierto). */
+  incident: LiveIncident | null;
+  /** Relés del gabinete del sitio (config activa; null = no visible). */
+  relays: SiteRelaysData;
   nowMs: number;
-  cctvEnabled: boolean;
   onClose: () => void;
 }
 
@@ -57,10 +73,22 @@ export default function DetailPanel({
   features,
   soh,
   actions,
+  incident,
+  relays,
   nowMs,
-  cctvEnabled,
   onClose,
 }: DetailPanelProps) {
+  const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
+  const toggleKind = (kind: string) =>
+    setExpandedKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  const lastAck = actions.actions
+    .filter((a) => a.kind === "ack")
+    .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))[0];
   const liveFresh =
     features.lastFrameAt !== null && nowMs - features.lastFrameAt < FEATURES_STALE_MS;
   const staleSince =
@@ -156,7 +184,63 @@ export default function DetailPanel({
         </StateFrame>
       </div>
 
-      {/* Actuadores y acciones (ACKs reales) =========================== */}
+      {/* Incidente enfocado (T-1.50): trigger/evento/edad — sin magnitud ni
+          countdown (blueprint §14) ===================================== */}
+      <div className="soc-card" data-testid="incident-card">
+        <div className="soc-card__hd">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertTriangle size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
+              Incidente
+            </div>
+            <div className="soc-card__sub">CANAL DE DISPARO · EVENTO · ESTADO</div>
+          </div>
+        </div>
+        {incident === null ? (
+          <div className="soc-stateframe soc-stateframe--status" data-state="empty">
+            <span>SIN INCIDENTE ABIERTO EN EL SITIO</span>
+          </div>
+        ) : (
+          <div className="soc-incident-facts">
+            <div className="soc-fact">
+              <span className="soc-fact__label">TRIGGER</span>
+              <span className="soc-fact__value">
+                {TRIGGER_LABEL[incident.trigger] ?? incident.trigger.toUpperCase()}
+              </span>
+            </div>
+            <div className="soc-fact">
+              <span className="soc-fact__label">EVENTO</span>
+              <span className="soc-fact__value soc-fact__value--mono">
+                {incident.event_id ?? "SIN EVENTO SÍSMICO ASOCIADO"}
+              </span>
+            </div>
+            <div className="soc-fact">
+              <span className="soc-fact__label">ESTADO · EDAD</span>
+              <span className="soc-fact__value">
+                {incident.state.toUpperCase()} · {ageLabel(incident.opened_at, nowMs)}
+              </span>
+            </div>
+            <div className="soc-fact">
+              <span className="soc-fact__label">PGA MÁX · PGV MÁX</span>
+              <span className="soc-fact__value soc-fact__value--mono">
+                {incident.max_pga_g !== null ? `${incident.max_pga_g.toFixed(3)} g` : "—"}
+                {" · "}
+                {incident.max_pgv_cms !== null ? `${incident.max_pgv_cms.toFixed(1)} cm/s` : "—"}
+              </span>
+            </div>
+            <div className="soc-fact">
+              <span className="soc-fact__label">ÚLTIMO ACUSE</span>
+              <span className="soc-fact__value soc-fact__value--mono">
+                {lastAck
+                  ? `${lastAck.actor.toUpperCase()} · ${utcClock(Date.parse(lastAck.ts))} UTC`
+                  : "SIN ACUSE"}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Actuadores y acciones (ACKs reales), AGRUPADOS por canal ======= */}
       <div className="soc-card">
         <div className="soc-card__hd">
           <div>
@@ -164,7 +248,7 @@ export default function DetailPanel({
               <ToggleRight size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
               Automatización y Actuadores (BMS)
             </div>
-            <div className="soc-card__sub">TRAZA DEL INCIDENTE · ACKS EDGE+CLOUD</div>
+            <div className="soc-card__sub">ÚLTIMO ESTADO POR CANAL · TRAZA EXPANDIBLE</div>
           </div>
           <span className="soc-bacnet">⬢ BACnet®</span>
         </div>
@@ -177,33 +261,46 @@ export default function DetailPanel({
           emptyText="SIN ACCIONES REGISTRADAS (SIN INCIDENTE ABIERTO EN EL SITIO)"
         >
           <div className="soc-bms">
-            {actions.actions.map((action) => {
-              const mapped = ACTION_STATE[action.kind] ?? {
-                state: action.kind.toUpperCase(),
-                kind: "ok" as const,
-              };
+            {groupActions(actions.actions).map((group) => {
+              const expanded = expandedKinds.has(group.kind);
               return (
-                <div className="soc-bms__row" key={action.action_id}>
-                  <span className={`soc-check soc-check--${mapped.kind}`} />
-                  <span>
-                    <div className="soc-bms__label">
-                      {action.kind.replaceAll("_", " ").toUpperCase()}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: "var(--tk-fg-3)",
-                        fontFamily: "var(--tk-font-mono)",
-                        letterSpacing: "0.04em",
-                        marginTop: 2,
-                      }}
-                    >
-                      {action.actor.toUpperCase()} · {utcClock(Date.parse(action.ts))} UTC
-                    </div>
-                  </span>
-                  <span className={`soc-bms__state soc-bms__state--${mapped.kind}`}>
-                    {mapped.state}
-                  </span>
+                <div className="soc-bms__group" key={group.kind}>
+                  <button
+                    type="button"
+                    className="soc-bms__row soc-bms__row--btn"
+                    aria-expanded={expanded}
+                    onClick={() => toggleKind(group.kind)}
+                  >
+                    <span className={`soc-check soc-check--${group.view.kind}`} />
+                    <span>
+                      <div className="soc-bms__label">
+                        {group.label}
+                        {group.count > 1 && <span className="soc-bms__count"> ×{group.count}</span>}
+                      </div>
+                      <div className="soc-bms__meta">
+                        {group.last.actor.toUpperCase()} · {utcClock(Date.parse(group.last.ts))} UTC
+                      </div>
+                    </span>
+                    <span className={`soc-bms__state soc-bms__state--${group.view.kind}`}>
+                      {group.view.state}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      aria-hidden
+                      className={`soc-bms__chev${expanded ? " is-open" : ""}`}
+                    />
+                  </button>
+                  {expanded && (
+                    <ol className="soc-bms__trace">
+                      {group.trace.map((action) => (
+                        <li key={action.action_id} className="soc-bms__trace-row">
+                          <span className="soc-bms__meta">
+                            {utcClock(Date.parse(action.ts))} UTC · {action.actor.toUpperCase()}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </div>
               );
             })}
@@ -211,24 +308,49 @@ export default function DetailPanel({
         </StateFrame>
       </div>
 
-      {/* CCTV ONVIF (flag off en MVP — criterio #2) ==================== */}
-      {cctvEnabled && (
-        <div className="soc-card">
-          <div className="soc-card__hd">
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Video size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-                Verificación Visual · CCTV ONVIF
-              </div>
-              <div className="soc-card__sub">PROFILE S · PENDIENTE DE INTEGRACIÓN</div>
+      {/* Relés del gabinete (config activa; caché compartida con /fleet) = */}
+      <div className="soc-card" data-testid="relays-card">
+        <div className="soc-card__hd">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Cpu size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
+              Relés del Gabinete
             </div>
-            <span className="soc-bacnet">⬢ ONVIF</span>
-          </div>
-          <div className="soc-cctv" data-testid="cctv-placeholder">
-            <div className="soc-edge-tag">PLACEHOLDER · SIN FUENTE RTSP CONFIGURADA</div>
+            <div className="soc-card__sub">CONFIG ACTIVA DE RELAYS · ARMADO POR ENLACE</div>
           </div>
         </div>
-      )}
+        {relays.loading ? (
+          <div className="soc-stateframe soc-stateframe--status" data-state="loading" aria-busy>
+            <span>CARGANDO · RELÉS…</span>
+          </div>
+        ) : relays.relays === null ? (
+          <div className="soc-stateframe soc-stateframe--status" data-state="empty">
+            <span>CONFIG DE RELÉS NO VISIBLE (SIN RULE_SET O SIN ENLACE)</span>
+          </div>
+        ) : (
+          <RelayGrid relays={relays.relays} />
+        )}
+      </div>
+
+      {/* CCTV ONVIF (T-1.50): SIEMPRE visible — aquí VA la cámara cuando
+          exista el hardware. Empty-state honesto, jamás video fingido. ==== */}
+      <div className="soc-card">
+        <div className="soc-card__hd">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Video size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
+              Verificación Visual · CCTV ONVIF
+            </div>
+            <div className="soc-card__sub">
+              PROFILE S · RTSP/H.264 · CONTEO DE PERSONAS (FUTURO)
+            </div>
+          </div>
+          <span className="soc-bacnet">⬢ ONVIF</span>
+        </div>
+        <div className="soc-cctv" data-testid="cctv-empty">
+          <div className="soc-edge-tag">SIN CÁMARA CONFIGURADA · PENDIENTE DE HARDWARE</div>
+        </div>
+      </div>
     </aside>
   );
 }
