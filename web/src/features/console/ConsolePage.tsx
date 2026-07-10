@@ -1,12 +1,13 @@
 // Consola C4I · Live Wall (T-1.27, mockup 1 con desviaciones ratificadas).
 //
-// ConsolePage crea el LiveSocket de la sesión (auth-first sobre /ws, T-1.22) y
-// monta el wall: mapa MMI real (MapLibre) + banner MVP + cola de incidentes en
-// vivo + detalle del sitio enfocado. Los 4 estados obligatorios (regla de
-// oro 7) los materializa StateFrame sobre el snapshot del mapa (la fuente
-// que define si el wall puede pintar).
+// El LiveSocket lo posee AppShell desde T-1.49 (topbar viva en todas las
+// páginas); la consola lo consume por contexto. El wall: mapa MMI real
+// (MapLibre) + banner MVP + cola de incidentes en vivo + detalle del sitio
+// enfocado. Los 4 estados obligatorios (regla de oro 7) los materializa
+// StateFrame sobre el snapshot del mapa (la fuente que define si el wall
+// puede pintar).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,13 +15,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import StateFrame from "../../components/StateFrame";
 import { getEnv } from "../../app/env";
 import { useSessionStore } from "../../auth/session.store";
+import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
-import { LiveSocket, liveWsUrl } from "../../lib/ws";
 import AlertBanner from "./AlertBanner";
 import DetailPanel from "./DetailPanel";
 import IncidentTable from "./IncidentTable";
 import MapPanel from "./MapPanel";
-import { LiveSocketContext } from "./socket";
 import { useAutoPopup } from "./useAutoPopup";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
@@ -39,6 +39,7 @@ function coordsLabel(lat: number, lon: number): string {
 
 function ConsoleWall() {
   const me = useSessionStore((s) => s.me);
+  const profile = useProfile();
   const now = useNow(1000);
   const queryClient = useQueryClient();
   const incidents = useLiveIncidents();
@@ -121,7 +122,12 @@ function ConsoleWall() {
             siteInfoOf={siteInfoOf}
             nowMs={now}
             liveStatus={incidents.liveStatus}
-            operatorLabel={me ? `${me.role.toUpperCase()} · ${me.sub.slice(0, 8)}` : "—"}
+            operatorLabel={
+              me
+                ? (profile.data?.display_name?.toUpperCase() ??
+                  `${me.role.toUpperCase()} · ${me.sub.slice(0, 8)}`)
+                : "—"
+            }
             selectedId={focusIncident?.incident_id ?? null}
             onSelect={(incident) => openDetail(incident.site_id)}
             canAck={canAck}
@@ -148,28 +154,7 @@ function ConsoleWall() {
   );
 }
 
-/** Página /console: dueña del LiveSocket (conecta al montar, cierra al salir). */
+/** Página /console: consume el LiveSocket del shell (dueño: AppShell, T-1.49). */
 export default function ConsolePage() {
-  const socket = useMemo(
-    () =>
-      new LiveSocket({
-        url: liveWsUrl(getEnv().apiBaseUrl),
-        getToken: () => useSessionStore.getState().idToken,
-        onUnauthorized: () => {
-          void useSessionStore.getState().logout();
-        },
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    socket.connect();
-    return () => socket.close();
-  }, [socket]);
-
-  return (
-    <LiveSocketContext.Provider value={socket}>
-      <ConsoleWall />
-    </LiveSocketContext.Provider>
-  );
+  return <ConsoleWall />;
 }

@@ -741,3 +741,33 @@ body {
   color: var(--tk-fg-2);
   opacity: 0.75;
 }
+
+/* ==== Menú del operador (T-1.49): nombre editable + logout en la topbar ==== */
+.soc-user { position: relative; }
+.soc-user__btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  padding: 4px 8px; color: var(--tk-fg-2); cursor: pointer;
+}
+.soc-user__btn:hover { border-color: var(--tk-border-strong); color: var(--tk-fg-1); }
+.soc-user__btn[aria-expanded="true"] { border-color: var(--tk-cyan); color: var(--tk-cyan); }
+.soc-user__menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: var(--tk-z-modal);
+  min-width: 260px; padding: 12px; display: grid; gap: 8px;
+  background: var(--tk-surface-2); border: 1px solid var(--tk-border-strong);
+  border-radius: 6px; box-shadow: var(--tk-shadow-modal);
+}
+.soc-user__input {
+  width: 100%; padding: 6px 8px; border-radius: 4px;
+  background: var(--tk-surface-0); border: 1px solid var(--tk-border-strong);
+  color: var(--tk-fg-1); font: 500 13px var(--tk-font-ui);
+}
+.soc-user__input:focus { outline: none; box-shadow: var(--tk-focus-ring); }
+.soc-user__row { display: flex; gap: 8px; justify-content: space-between; }
+.soc-user__error {
+  margin: 0; font: 500 11px var(--tk-font-ui); letter-spacing: 0.04em;
+  color: var(--tk-status-critical);
+}
+.soc-user__caption {
+  margin: 0; font: 400 11px var(--tk-font-mono); color: var(--tk-fg-3);
+}

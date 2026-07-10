@@ -7,10 +7,10 @@
 // es la SIRENA, no un navegador; y la página local del gabinete es el panel del
 // guardia, no una vista pública.
 //
-// La página es dueña de su LiveSocket (igual que ConsolePage): la salud del gabinete
-// llega por frames `site_state`, no por poll.
+// El LiveSocket lo posee AppShell desde T-1.49; esta página lo consume por
+// contexto (la salud del gabinete llega por frames `site_state`, no por poll).
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useParams } from "react-router";
 
 import { getSiteSitesSiteIdGet } from "@takab/sdk";
@@ -18,11 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import StateFrame from "../../components/StateFrame";
 import SevTag from "../../components/SevTag";
-import { getEnv } from "../../app/env";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
-import { LiveSocket, liveWsUrl } from "../../lib/ws";
-import { LiveSocketContext } from "../console/socket";
 import { useSiteSoh } from "../console/useSiteSoh";
 import HistoryChart from "../telemetry/HistoryChart";
 import MultiChannelStrip from "../telemetry/MultiChannelStrip";
@@ -190,26 +187,9 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
   );
 }
 
-/** Página /building/:siteId — dueña del LiveSocket (conecta al montar, cierra al salir). */
+/** Página /building/:siteId — consume el LiveSocket del shell (dueño: AppShell). */
 export default function BuildingPage() {
   const { siteId } = useParams<"siteId">();
-
-  const socket = useMemo(
-    () =>
-      new LiveSocket({
-        url: liveWsUrl(getEnv().apiBaseUrl),
-        getToken: () => useSessionStore.getState().idToken,
-        onUnauthorized: () => {
-          void useSessionStore.getState().logout();
-        },
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    socket.connect();
-    return () => socket.close();
-  }, [socket]);
 
   if (siteId === undefined) {
     return (
@@ -220,9 +200,5 @@ export default function BuildingPage() {
     );
   }
 
-  return (
-    <LiveSocketContext.Provider value={socket}>
-      <BuildingDashboard siteId={siteId} />
-    </LiveSocketContext.Provider>
-  );
+  return <BuildingDashboard siteId={siteId} />;
 }

@@ -1,10 +1,13 @@
-import { Cpu, LogOut } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
 
 import logoTakab from "../assets/LogoTakab2.png";
 import { useSessionStore } from "../auth/session.store";
+import { edgeMqttView, useLiveHealthStore } from "../live/liveHealth.store";
+import { useNow } from "../lib/useNow";
 import { navTabsFor } from "./navItems";
+import OperatorMenu from "./OperatorMenu";
 
 /** Reloj SOC. CST fijo vía America/Mexico_City (México abolió el DST en 2022). */
 function formatClock(now: Date): { utc: string; cst: string; date: string } {
@@ -22,11 +25,29 @@ function formatClock(now: Date): { utc: string; cst: string; date: string } {
   };
 }
 
+/** Pill del estado del canal live (T-1.49): icono+label, nunca solo color. */
+function systemPill(status: "connecting" | "ready" | "closed"): {
+  className: string;
+  label: string;
+} {
+  switch (status) {
+    case "ready":
+      return { className: "soc-pill soc-pill--ok", label: "CONECTADO" };
+    case "connecting":
+      return { className: "soc-pill soc-pill--warn", label: "CONECTANDO…" };
+    default:
+      return { className: "soc-pill soc-pill--crit", label: "DESCONECTADO" };
+  }
+}
+
 /** Port de Design System/jsx/Topbar.jsx sobre NavLink + allowed_routes del server. */
 export default function Topbar() {
   const me = useSessionStore((s) => s.me);
-  const logout = useSessionStore((s) => s.logout);
+  const liveStatus = useLiveHealthStore((s) => s.status);
+  const heartbeats = useLiveHealthStore((s) => s.heartbeats);
   const [now, setNow] = useState(() => new Date());
+  // Tick lento para re-evaluar staleness del heartbeat sin re-render por frame.
+  const nowMs = useNow(5000);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -35,6 +56,8 @@ export default function Topbar() {
 
   const clock = formatClock(now);
   const tabs = navTabsFor(me?.allowed_routes ?? []);
+  const system = systemPill(liveStatus);
+  const mqtt = edgeMqttView(heartbeats, nowMs);
 
   return (
     <header className="soc-topbar">
@@ -42,15 +65,20 @@ export default function Topbar() {
         <img src={logoTakab} alt="TAKAB TECHNOLOGY" className="soc-brand__logo" />
       </div>
 
-      {/* La telemetría real llega en T-1.27: estado neutral explícito ("SIN
-          DATOS"), nunca CONECTADO fingido (regla de oro #7). */}
+      {/* Telemetría VIVA (T-1.49): estado del canal /ws + RTT MQTT del último
+          heartbeat del edge. Sin heartbeat fresco (90 s) ⇒ S/D — jamás un
+          número viejo congelado como fresco (regla de oro 7). */}
       <div className="soc-system">
         <span className="soc-meta">SISTEMA OPERATIVO</span>
-        <span className="soc-pill soc-pill--idle">
-          <span className="soc-dot" /> SIN DATOS
+        <span className={system.className} data-testid="system-pill">
+          <span className="soc-dot" /> {system.label}
         </span>
-        <span className="soc-pill soc-pill--idle">
-          <Cpu size={12} /> EDGE · MQTT · SIN DATOS
+        <span
+          className={mqtt.rttMs !== null ? "soc-pill soc-pill--edge" : "soc-pill soc-pill--idle"}
+          data-testid="mqtt-pill"
+        >
+          <Cpu size={12} />
+          {mqtt.rttMs !== null ? `EDGE · MQTT ${mqtt.rttMs.toFixed(2)} ms` : "EDGE · MQTT · S/D"}
         </span>
       </div>
 
@@ -80,17 +108,7 @@ export default function Topbar() {
         <span>{clock.date}</span>
       </div>
 
-      <div className="soc-user">
-        <span className="soc-meta">{me?.role ?? ""}</span>
-        <button
-          type="button"
-          className="soc-icon-btn"
-          aria-label="Cerrar sesión"
-          onClick={() => void logout()}
-        >
-          <LogOut size={14} />
-        </button>
-      </div>
+      <OperatorMenu />
     </header>
   );
 }

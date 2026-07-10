@@ -1,4 +1,6 @@
-// Stub de LiveSocketLike para tests de la consola: emite frames a demanda.
+// Stub de LiveSocketLike para tests: emite frames a demanda. Implementa
+// también ConnectableLiveSocket para poder inyectarse al LiveSocketProvider
+// del shell vía LiveSocketFactoryContext (renderRoutes).
 
 import type { ReactElement } from "react";
 import { createElement } from "react";
@@ -6,13 +8,24 @@ import { createElement } from "react";
 import type { ServerFrame } from "@takab/sdk";
 
 import { LiveSocketContext, type LiveSocketLike } from "../features/console/socket";
+import type { ConnectableLiveSocket } from "../live/socket";
 import type { LiveStatus } from "../lib/ws";
 
-export class FakeLiveSocket implements LiveSocketLike {
+export class FakeLiveSocket implements LiveSocketLike, ConnectableLiveSocket {
   status: LiveStatus = "ready";
+  connectCalls = 0;
+  closeCalls = 0;
   private readonly listeners = new Map<string, Set<(frame: ServerFrame) => void>>();
   private readonly statusListeners = new Set<(status: LiveStatus) => void>();
   private readonly lastFrame = new Map<string, number>();
+
+  connect(): void {
+    this.connectCalls += 1;
+  }
+
+  close(): void {
+    this.closeCalls += 1;
+  }
 
   subscribe(topic: string, listener: (frame: ServerFrame) => void): () => void {
     const set = this.listeners.get(topic) ?? new Set();

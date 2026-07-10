@@ -35,9 +35,11 @@ vi.mock("./useSiteFeatures", () => ({ useSiteFeatures: mocks.useSiteFeatures }))
 vi.mock("./useIncidentActions", () => ({ useIncidentActions: mocks.useIncidentActions }));
 vi.mock("./useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
 vi.mock("./MapPanel", () => ({ default: mocks.MapPanel }));
-vi.mock("../../lib/ws", () => ({
-  LiveSocket: vi.fn(() => ({ connect: vi.fn(), close: vi.fn() })),
-  liveWsUrl: () => "ws://test/api/ws",
+// T-1.49: el socket vive en AppShell — la página ya no toca lib/ws. El perfil
+// del operador se mockea (la etiqueta cae al rol+sub sin display_name).
+vi.mock("../../auth/useProfile", () => ({
+  useProfile: () => ({ data: undefined }),
+  useProfileMutation: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
 }));
 
 import ConsolePage from "./ConsolePage";

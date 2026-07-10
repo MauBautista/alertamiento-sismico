@@ -1139,22 +1139,30 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > del single-writer de audit_log sigue en verde (la función definer NO audita — audita el
 > router). Los frames WS de reubicación/solicitud salen gratis por los triggers NOTIFY de 0004.
 
-### [ ] T-1.49 · Web: socket compartido, topbar viva y perfil de operador
+### [x] T-1.49 · Web: socket compartido, topbar viva y perfil de operador — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.48 (solo `/me/profile`)
 - **Criterios de aceptación:**
-  - [ ] `web/src/live/`: provider del `LiveSocket` a nivel AppShell (conecta solo con
-        idToken; factory inyectable para tests) + store zustand de salud
-        (`site_state` → heartbeats por gateway; staleness 90 s); `features/console/socket.ts`
-        queda como re-export (ningún hook consumidor cambia).
-  - [ ] Topbar viva en TODAS las páginas: `● CONECTADO/CONECTANDO…/DESCONECTADO` (icono+label)
-        y `EDGE · MQTT x.xx ms` del último heartbeat o `· S/D` si stale — jamás congela un
-        número viejo como fresco.
-  - [ ] Menú de operador: `display_name ?? role`, edición inline (PUT /me/profile),
-        caption `role · sub8`, logout dentro; `applyMe()` sin re-boot de sesión; el footer de
-        IncidentTable refleja el nombre.
-  - [ ] ConsolePage/BuildingPage consumen el socket del shell (dejan de poseer el suyo);
-        `renderRoutes` inyecta FakeLiveSocket (cero WebSocket reales en jsdom); suite web
-        completa verde.
+  - [x] `web/src/live/`: `LiveSocketProvider` a nivel AppShell (conecta SOLO con idToken,
+        cierra al perder sesión, idempotente en StrictMode; `LiveSocketFactoryContext`
+        inyectable para tests) + `liveHealth.store` zustand (UNA suscripción a `site_state`
+        → último heartbeat de device_health por gateway con hora de LLEGADA local;
+        `edgeMqttView()` pura con staleness 90 s y peor-RTT multi-gabinete);
+        `features/console/socket.ts` quedó como re-export — ningún hook consumidor cambió.
+  - [x] Topbar viva en TODAS las páginas (también /fleet y /triage, que no tenían WS):
+        `● CONECTADO/CONECTANDO…/DESCONECTADO` (icono+label, tokens semánticos) y
+        `EDGE · MQTT x.xx ms` del último heartbeat o `· S/D` si stale/ausente — un heartbeat
+        fresco SIN rtt medido también es S/D, jamás un 0 inventado.
+  - [x] `OperatorMenu`: `display_name ?? role` (fallback honesto), edición inline con
+        normalización de espacios (PUT /me/profile vía `useProfile`/`useProfileMutation`,
+        caché compartido por query key), caption `role · sub8`, logout dentro del menú,
+        error con `role=alert`. El pie de IncidentTable muestra el nombre (misma query).
+        (El `applyMe()` planeado se volvió innecesario: el perfil vive en TanStack Query,
+        no en el session store.)
+  - [x] ConsolePage/BuildingPage consumen el socket del shell (dejaron de poseer el suyo);
+        `renderRoutesAt` inyecta `FakeLiveSocket` por la factory (cero WebSocket reales en
+        jsdom) y lo devuelve para emitir frames en tests de rutas.
+  - [x] **Suite web: 467 passed** (448 + 19 nuevos: store 8, provider 4, OperatorMenu 6,
+        Topbar reescrito) · tsc/eslint/prettier limpios · `vite build` OK.
 
 ### [ ] T-1.50 · Web: Consola C4I completa (mapa, BMS, relés, CCTV, detalle)
 - **Componente:** web · **Depende de:** T-1.49 (orden de merge del CSS)
