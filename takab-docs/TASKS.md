@@ -1260,17 +1260,23 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         suite edge completa verde; verificación manual en el Pi real (curl + navegador +
         corte de Shake + stop/start del servicio + ≤2 publicaciones health en 60 s).
 
-### [ ] T-1.54 · Web: Flota sin solapes + Multi-Tenant editable
+### [x] T-1.54 · Web: Flota sin solapes + Multi-Tenant editable — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.50 (mismo cambio CSS base)
 - **Criterios de aceptación:**
-  - [ ] `.fleet` scrollea (overflow-y auto); `.fleet__admin` y `.fleet__pickermap` con
-        stacking context propio (position/isolation); `MapPointPicker` con
-        `observeMapResize` + `map.resize()` post-init; contrato DOM anti-solape con 21
-        gabinetes; flota de 1 (KPIs 1/1/0/0) y flota vacía sin crash; verificación manual
-        1366×768 y 1920×1080.
-  - [ ] TenantsPage: el empty de UMBRALES solo aplica si `!canEdit`; con `edit_thresholds` y
-        sin rule_set ⇒ editor sembrado con defaults + banner "SIN RULE_SET ACTIVO · AJUSTA Y
-        PUBLICA v1" (el camino `baseVersion:null` ya existe); tests de los 3 casos.
+  - [x] `.fleet{overflow-y:auto}` (la página scrollea dentro de su fila 1fr — con 20+
+        tarjetas el grid desbordaba con overflow visible ENCIMA de la tabla admin: el
+        solape reportado); `.fleet__admin` y `.fleet__pickermap` con stacking context
+        propio (`position:relative; isolation:isolate`); `MapPointPicker` con
+        `observeMapResize` compartido (el form aparece por swap y el canvas quedaba mal
+        medido); contrato DOM anti-solape con 21 gabinetes (grid ANTES de admin en el
+        flujo, `.soc-wall` exclusiva de la consola); flota de 1 = KPIs 1/1/0/0 y una
+        tarjeta. Verificación visual 1366×768/1920×1080 amarrada al smoke del deploy.
+  - [x] TenantsPage: el empty de UMBRALES solo aplica si `!canEdit`; con `edit_thresholds`
+        del tenant propio y sin rule_set ⇒ editor sembrado con defaults del edge + banner
+        "SIN RULE_SET ACTIVO … AJUSTA Y PUBLICA v1" (el camino `baseVersion:null` ya
+        existía, estaba enterrado tras el empty); 3 casos anclados por test (support sin
+        acción = empty; admin propio = banner+editor; rule_set real = sliders con valores).
+> **ESTADO.** web 518 passed (+4) · tsc/eslint/prettier/build OK.
 
 ### Diferidos de la Fase 1.7 (documentados, NO fingidos)
 - **CCTV ONVIF real + conteo de personas/aforo**: requiere hardware de cámara (Profile S,

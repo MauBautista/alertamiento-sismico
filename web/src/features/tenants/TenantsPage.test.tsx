@@ -215,10 +215,25 @@ describe("TenantsPage · umbrales del edge", () => {
     expect(screen.queryByText(/PGA · banda de disparo · DEFAULT DEL EDGE/)).toBeNull();
   });
 
-  it("sin rule_set activo lo dice, y no finge umbrales del tenant", () => {
+  it("sin rule_set activo y SIN edit_thresholds: empty honesto, sin editor (T-1.54)", () => {
+    seedRole("takab_support"); // ve /tenants pero no edita umbrales
     mocks.useTenants.mockReturnValue(tenantsData({ ruleSets: [] }));
     render(<TenantsPage />);
     expect(screen.getByText(/NO TIENE RULE_SET ACTIVO/)).toBeTruthy();
+    expect(screen.queryByTestId("create-v1-banner")).toBeNull();
+  });
+
+  it("sin rule_set activo CON edit_thresholds: editor sembrado con defaults + banner de crear v1 (T-1.54)", () => {
+    // tenant_admin del tenant propio: el camino de creación (baseVersion:null)
+    // existía pero quedaba enterrado tras el empty.
+    mocks.useTenants.mockReturnValue(tenantsData({ ruleSets: [] }));
+    render(<TenantsPage />);
+    expect(screen.getByTestId("create-v1-banner")).toHaveTextContent("AJUSTA Y PUBLICA v1");
+    expect(screen.getByLabelText(/PGA · banda de disparo/)).toBeTruthy(); // editor visible
+    expect(screen.getByText(/PGA · banda de disparo · DEFAULT DEL EDGE/)).toBeTruthy();
+    expect(
+      screen.queryByText(/NO TIENE RULE_SET ACTIVO · EL GABINETE APLICA SUS DEFAULTS$/),
+    ).toBeNull();
   });
 
   it("si /rule-sets falla se reporta como error, no como 'sin umbrales'", () => {

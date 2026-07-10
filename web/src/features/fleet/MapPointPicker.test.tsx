@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     on: vi.fn((event: string, cb: (event?: unknown) => void) => {
       mapHandlers.set(event, cb);
     }),
+    resize: vi.fn(),
     remove: vi.fn(),
   };
   return {
@@ -74,5 +75,25 @@ describe("MapPointPicker", () => {
     render(<MapPointPicker value={START} onChange={vi.fn()} disabled />);
     expect(mocks.Marker).toHaveBeenLastCalledWith(expect.objectContaining({ draggable: false }));
     expect(mocks.mapHandlers.has("click")).toBe(false);
+  });
+});
+
+describe("MapPointPicker · resize (T-1.54)", () => {
+  it("cuando el contenedor toma su tamaño real, el mapa se re-mide (canvas nunca 0×0)", () => {
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(<MapPointPicker value={START} onChange={vi.fn()} />);
+      (
+        globalThis as unknown as { __triggerResizeObservers: () => void }
+      ).__triggerResizeObservers();
+      expect(mocks.map.resize).toHaveBeenCalled();
+    } finally {
+      rafSpy.mockRestore();
+    }
   });
 });

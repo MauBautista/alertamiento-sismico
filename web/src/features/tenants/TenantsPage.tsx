@@ -311,10 +311,19 @@ export default function TenantsPage() {
                 loading={data.ruleSets === undefined && data.ruleSetsError === null}
                 error={data.ruleSetsError}
                 onRetry={data.refetch}
-                empty={data.ruleSets !== undefined && ruleSet === null}
+                /* [T-1.54] El empty aplica SOLO a quien no puede editar: con
+                   edit_thresholds el editor (ya sembrado con defaults del edge
+                   y publish con baseVersion:null) permite CREAR la v1 — el
+                   camino existía pero estaba enterrado tras el empty. */
+                empty={data.ruleSets !== undefined && ruleSet === null && !canEdit}
                 emptyText="ESTE TENANT NO TIENE RULE_SET ACTIVO · EL GABINETE APLICA SUS DEFAULTS"
                 staleSince={null}
               >
+                {ruleSet === null && canEdit && (
+                  <p className="mt__create-banner" role="note" data-testid="create-v1-banner">
+                    SIN RULE_SET ACTIVO · EL GABINETE APLICA SUS DEFAULTS — AJUSTA Y PUBLICA v1
+                  </p>
+                )}
                 <div className="soc-card">
                   <div className="soc-card__hd">
                     <div>

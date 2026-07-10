@@ -154,6 +154,10 @@
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  /* [T-1.54] La página scrollea DENTRO de su fila 1fr del shell: con 20+
+   * tarjetas el grid desbordaba con overflow visible y se pintaba ENCIMA de
+   * la tabla admin (el solape reportado con la flota sim). */
+  overflow-y: auto;
 }
 .fleet__hd {
   display: flex;
@@ -1132,6 +1136,10 @@
   border-radius: var(--tk-radius-md);
   background: var(--tk-navy-800);
   padding: 14px;
+  /* [T-1.54] aislamiento de pintado: el contenido del grid de tarjetas jamás
+   * puede sangrar a través de esta sección (solape reportado 2026-07-10). */
+  position: relative;
+  isolation: isolate;
 }
 .fleet__adminhd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .fleet__adminhd h2 {
@@ -1190,6 +1198,10 @@
   border-radius: var(--tk-radius-md);
   overflow: hidden;
   border: 1px solid var(--tk-border);
+  /* [T-1.54] stacking context PROPIO: el canvas absoluto de MapLibre queda
+   * contenido aquí y no compite con las tarjetas del grid de arriba. */
+  position: relative;
+  isolation: isolate;
 }
 .fleet__pickercoords { font-size: 10px; color: var(--tk-fg-2); margin: 0; }
 .fleet__formactions { display: flex; gap: 8px; margin-top: 4px; }
@@ -1267,3 +1279,13 @@
 
 /* 5 tiles (T-1.52: entra DURACIÓN): fluyen sin romperse. */
 .triage-detail__metrics { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); }
+
+/* [T-1.54] banner de creación de la v1 del rule_set */
+.mt__create-banner {
+  margin: 0 0 10px; padding: 8px 10px;
+  border: 1px solid var(--tk-cyan);
+  background: var(--tk-cyan-08);
+  border-radius: var(--tk-radius-sm);
+  color: var(--tk-cyan);
+  font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em;
+}

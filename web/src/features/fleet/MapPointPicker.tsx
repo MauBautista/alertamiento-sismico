@@ -11,6 +11,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
 
+import { observeMapResize } from "../../lib/maplibre";
 import { MAP_STYLE_URL } from "../console/MapPanel";
 import { formatPoint, roundPoint } from "./geo";
 import type { LonLat } from "./geo";
@@ -45,6 +46,11 @@ export default function MapPointPicker({ value, onChange, disabled = false }: Ma
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    // [T-1.54] El form aparece por swap tabla↔form: el layout se asienta
+    // DESPUÉS del constructor y el canvas quedaba mal medido (marcador
+    // desalineado / mapa cortado). El observer lo corrige en cuanto el
+    // contenedor toma su tamaño real.
+    const stopResize = observeMapResize(map, containerRef.current);
 
     const marker = new maplibregl.Marker({ draggable: !disabled, color: "#00BFFF" })
       .setLngLat([start.lon, start.lat])
@@ -65,6 +71,7 @@ export default function MapPointPicker({ value, onChange, disabled = false }: Ma
     }
 
     return () => {
+      stopResize();
       markerRef.current = null;
       mapRef.current = null;
       map.remove();
