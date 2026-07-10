@@ -13,16 +13,20 @@ Environment=TAKAB_EDGE_DEV_MODE=false
 # El camino de vida NO consume secretos ni la nube (reglas de oro 1 y 2): el reflejo
 # SASMEX→sirena debe arrancar SIEMPRE. La clave HMAC de comandos remotos la usa el
 # servicio de nube/comandos aparte (supervisor), NUNCA este proceso mínimo.
-WorkingDirectory=/opt/takab/edge
+# CWD escribible: lgpio crea .lgd-nfy* en el directorio de trabajo y /opt es
+# de solo lectura bajo ProtectSystem=strict (misma trampa que takab-edge).
+WorkingDirectory=/var/lib/takab
 ExecStart=/opt/takab/edge/.venv/bin/takab-gpio
 
 # El camino de vida se reinicia SIEMPRE y rápido ante cualquier caída (SPOF-02).
 Restart=always
 RestartSec=1
-# Endurecimiento mínimo (proceso auditable; sin escrituras al sistema).
+# Endurecimiento mínimo (proceso auditable; sin escrituras al sistema salvo
+# /var/lib/takab, que además es el CWD que lgpio necesita escribible).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/var/lib/takab
 # Watchdog de servicio: complementa al watchdog de hardware BCM2712 (system.conf,
 # RuntimeWatchdogSec=10). Requiere que el proceso emita sd_notify WATCHDOG=1 (pendiente,
 # hardware-gated); hasta entonces, Restart=always cubre las caídas del proceso.

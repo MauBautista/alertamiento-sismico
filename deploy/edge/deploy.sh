@@ -30,8 +30,16 @@ rsync -az --delete "$ROOT/shared/schemas/" "$HOST:/opt/takab/shared/schemas/"
 echo "→ dependencias + unidades + reinicio en ${HOST}"
 ssh "$HOST" '
 set -euo pipefail
+# SSH no interactivo no carga el PATH de login: uv vive en ~/.local/bin.
+export PATH="$HOME/.local/bin:$PATH"
 cd /opt/takab/edge
-uv sync --extra hardware --quiet
+# takab-edge corre como root y deja __pycache__ de root DENTRO del venv; sin
+# esto, el uv sync del usuario falla con Permission denied en cada deploy.
+[ -d .venv ] && sudo chown -R "$USER":"$USER" .venv
+# AMBOS extras del Pi real: `hardware` (lgpio) y `aws` (awsiotsdk/awscrt, el
+# transporte mTLS a IoT Core). Sincronizar solo uno hace que uv PODE el otro:
+# el primer deploy real podó awsiotsdk y dejó al gabinete offline spooleando.
+uv sync --extra hardware --extra aws --quiet
 sudo install -m 0644 systemd/takab-edge.service systemd/takab-gpio.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl restart takab-edge

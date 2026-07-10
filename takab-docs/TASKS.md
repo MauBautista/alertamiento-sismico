@@ -805,8 +805,8 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] Secretos de Secrets Manager a tmpfs `/run/takab/*.env`. Cero secretos en git.
   - [x] `/dev/token` apagado en la nube. SG `takab-dev-web` separado y desconectable.
   - [x] `make cloud-deploy` existe y es idempotente.
-  - [ ] **`terraform apply` + `make cloud-deploy` ejecutados contra AWS.** ⟵ requiere ventana:
-        cambiar `instance_type` PARA la instancia (la DB cae minutos; el gabinete acumula spool).
+  - [x] **`terraform apply` + `make cloud-deploy` ejecutados contra AWS** (2026-07-09, ventana
+        de T-1.39: instancia en t4g.medium, EIP `16.58.11.196`, stack completo desplegado).
 
 > **CÓDIGO LISTO, NO APLICADO.** Verificado sin tocar AWS: `terraform validate` + `fmt` OK, el
 > Caddyfile pasa `caddy validate` real, el compose pasa `docker compose config`, y **la imagen se
@@ -870,7 +870,26 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > baja dos secretos. Rotación: la nube converge en ≤300 s (TTL del cache) sin reiniciar procesos;
 > el edge sí exige re-provisión (ventana fail-visible: rejected/expired, nunca silenciosa).
 
-### [~] T-1.40 · Salud honesta del edge — **[B4/C7] CÓDIGO LISTO · DESPLIEGUE tras T-1.39**
+### [x] T-1.39 · Desplegar la nube al EC2 (ejecución) — **COMPLETADA (2026-07-09)**
+- **Componente:** infra + deploy · **Ejecuta:** el pendiente de T-1.37 con los fixes de T-1.38
+- **Resultado:** la nube corre EN LA NUBE. `https://16-58-11-196.sslip.io` con TLS real de
+  Let's Encrypt (HTTP/2), consola servida, `/api/health` ok, `/dev/token` ausente (404), auth
+  exigida (401). Migraciones a head `0010`, flota sembrada (5 gateways), ingesta consumiendo
+  con lag ~50 ms, colas en 0, DLQs estables. Los 3 workers ad-hoc del smoke del 07-08
+  (imagen `t125` — eran ELLOS quienes "vaciaban" las colas) quedaron retirados.
+- **Lo que el primer deploy real destapó (todo corregido y committeado):**
+  - El shorthand `--parameters commands="[json]"` del AWS CLI NO decodifica `\n` ⇒ el script
+    SSM llegaba roto. Ahora va como JSON completo vía `file://`.
+  - El repo ECR `takab/console` nunca existió ⇒ creado + importado al estado.
+  - Las imágenes se construían en la arquitectura del host ⇒ `make cloud-images` ahora es
+    `--platform linux/arm64` SIEMPRE (el EC2 es Graviton), con la etapa node de la consola en
+    `$BUILDPLATFORM` (dist/ no tiene arquitectura) y `set -e` (un build roto ya no sigue al push).
+  - El apply externo arrancó el SG web de la ENI (flapping `aws_network_interface_sg_attachment`
+    vs `vpc_security_group_ids`) ⇒ re-adjuntado + `ignore_changes` (patrón del provider).
+- **Pendiente diferido:** prueba de sirena viva `pending→acked` — el gabinete real corre con
+  `command_enabled=False` (decisión del dueño); se ejerce en la sesión del WR-1 (T-1.42).
+
+### [x] T-1.40 · Salud honesta del edge — **[B4/C7] COMPLETADA Y EN PRODUCCIÓN (2026-07-09)**
 - **Componente:** edge + api + web · **Depende de:** T-1.10 (stubs), T-1.39 (para verificar en nube)
 - **Objetivo:** que `/fleet` deje de mentir. `HostProbes` devolvía NTP=0.0, UPS «RED ELÉCTRICA
   100%» y cert=365 fijos; `mqtt_rtt_ms` era NULL en toda fila. La batería era un invento.
@@ -894,9 +913,21 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] **Deploy del edge versionado:** `deploy/edge/deploy.sh` (rsync + uv sync + unidades +
         restart + verificación) — antes era un rsync manual sin versionar.
   - [x] Suites: edge 250 · api 641 · web 448, lint/format/build limpios.
-  - [ ] **Desplegado y verificado EN LA NUBE** (`/fleet` con NTP/cert/RTT reales y UPS S/D)
-        ⟵ tras el `terraform apply` de T-1.39 (primero nube, después edge — el orden importa
-        por el contrato).
+  - [x] **Desplegado y verificado EN LA NUBE** (heartbeat real en `device_health`:
+        `ntp_offset_ms=-0.216` medido, `mqtt_rtt_ms=77.2` del PUBACK, `power_status=unknown`
+        con `battery_pct=NULL` (no hay UPS y SE DICE), `cert=8575d` — el real de 2049).
+
+> **El deploy al Pi destapó una trampa del camino de vida:** lgpio crea su FIFO `.lgd-nfy*`
+> en el CWD; con `ProtectSystem=strict` y `WorkingDirectory=/opt/takab/edge` (solo lectura)
+> `LGPIOFactory` fallaba al instanciarse y gpiozero caía EN SILENCIO al backend `native`
+> (sysfs), que en Pi 5 muere con EINVAL ⇒ **crash-loop del supervisor**. Nunca se había visto
+> porque el proceso llevaba vivo desde ANTES del endurecimiento: este fue el primer restart
+> real bajo strict. Reproducido y validado con `systemd-run`; fix: `WorkingDirectory=
+> /var/lib/takab` en ambas unidades (takab-gpio además carecía de `ReadWritePaths`). Segunda
+> trampa: `uv sync --extra hardware` a secas PODA el extra `aws` (awsiotsdk/awscrt) — el
+> primer sync lo dejó a medio borrar y el gabinete quedó offline spooleando; el deploy ahora
+> sincroniza AMBOS extras y se apropia del venv (el servicio root deja `__pycache__` que
+> rompía el sync del usuario). El spool (614 mensajes) drenó al reconectar: cero pérdida.
 
 ### [~] T-1.44 · Endurecer el rol CI OIDC — **[infra] CÓDIGO LISTO · viaja en el apply de T-1.39**
 - **Componente:** infra · **Cierra:** HIGH #24 de la auditoría pre-frontend
@@ -926,7 +957,29 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         imprime UNA vez (esa impresión ES la entrega al responsable del edificio).
   - [x] Autorización ANTES de tocar GPIO; el camino físico WR-1→sirena no se toca (regla 1).
   - [x] Suite edge 256 passed (7 tests nuevos de PIN).
-  - [ ] Desplegado al Pi y verificado con el navegador ⟵ va junto al deploy de T-1.40.
+  - [x] Desplegado al Pi y verificado EN EL GABINETE REAL: GET 200 abierto; POST sin PIN 401,
+        PIN erróneo 401, PIN correcto 200. El PIN quedó en `/etc/takab/edge.env` (entregado a
+        Mauricio por el canal de la sesión).
+
+### [x] T-1.41 · Calibración física de AM.R4F74 — **COMPLETADA (2026-07-09) · salda T-1.6**
+- **Componente:** edge (env) + db + docs
+- **Criterios de aceptación:**
+  - [x] Sensibilidades REALES en `/etc/takab/edge.env` del Pi (del StationXML FDSN, Scale
+        constante en todas las épocas): `VEL=2.5021894e-9 (m/s)/count` (EHZ 399 650 000 M/S) y
+        `ACCEL=2.6007802e-6 (m/s²)/count` (EN* 384 500 M/S²). Aplicadas por APPEND idempotente
+        — jamás re-corriendo provision (que SOBREESCRIBE edge.env).
+  - [x] `sensors.calibration_source` declarado para R4F74 con fuente citable y la caveat de
+        honestidad («sensibilidad plana @5 Hz, sin deconvolución de respuesta completa»),
+        vía el DSN `takab_app` (RLS forzada) + el escritor canónico de auditoría
+        (`audit_log`: `sensor_update` + `site_update` por `system:t141-calibracion`).
+  - [x] Coordenadas REALES del sitio (época FDSN vigente 2026-07-05→): 19.0450, −98.1522
+        (antes: centro aproximado de Puebla).
+  - [x] **Validación física:** con el edificio en reposo, los canales MEMS reportan
+        0.6–1.1 mg — exactamente el piso de ruido esperado del RS4D. La consola muestra
+        `g`/`cm/s` SIN el badge «SIN CALIBRAR» para el sitio real; los SIM siguen sin calibrar
+        (que es la verdad).
+  - [ ] Prueba de excitación coordinada (golpe suave junto al sensor ⇒ pico visible en el
+        strip) ⟵ se hace junto con la sesión del WR-1 (T-1.42, requiere a Mauricio).
 
 ### [x] T-1.46 · Validación del quórum contra el catálogo oficial — **[C·G1] COMPLETADA (2026-07-09)**
 - **Componente:** api (tools+tests) + docs · **Cierra:** pregunta abierta #2 de `ANALISIS §4`

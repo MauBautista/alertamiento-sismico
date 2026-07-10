@@ -21,7 +21,14 @@ Environment=TAKAB_EDGE_DEV_MODE=false
 # Identidad, certs, HMAC y SeedLink vienen de /etc/takab/edge.env (provision_gateway.sh;
 # NUNCA en git). El spool offline vive en /var/lib/takab/spool (ReadWritePaths).
 EnvironmentFile=/etc/takab/edge.env
-WorkingDirectory=/opt/takab/edge
+# CWD ESCRIBIBLE obligatorio: lgpio crea su FIFO de notificaciones (.lgd-nfy*)
+# en el directorio de trabajo. Con ProtectSystem=strict, /opt queda de solo
+# lectura ⇒ LGPIOFactory falla al instanciarse y gpiozero cae EN SILENCIO al
+# backend `native` (sysfs), que en Pi 5 muere con EINVAL ⇒ crash-loop del
+# camino de vida. Pasó en el PRIMER restart real bajo strict (T-1.40): el
+# proceso anterior había arrancado antes del endurecimiento. Reproducido y
+# validado con systemd-run. /var/lib/takab ya es ReadWritePaths.
+WorkingDirectory=/var/lib/takab
 ExecStart=/opt/takab/edge/.venv/bin/takab-edge
 
 Restart=always
