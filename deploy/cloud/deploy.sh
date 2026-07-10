@@ -138,12 +138,21 @@ EOF
 
 echo "→ desplegando ${CLOUD_TAG} a ${INSTANCE_ID} (${PUBLIC_HOST})"
 
+# Los parámetros van como JSON COMPLETO vía file:// — el shorthand
+# `commands="[...]"` del CLI NO decodifica los \n del JSON y el script llegaba
+# al EC2 como UNA línea con \n literales (syntax error en la primera línea).
+# Descubierto en el primer deploy real de T-1.39.
+PARAMS_FILE="$(mktemp)"
+trap 'rm -f "$PARAMS_FILE"' EXIT
+python3 -c 'import json,sys; print(json.dumps({"commands": [sys.stdin.read()]}))' \
+  <<<"$REMOTE_SCRIPT" >"$PARAMS_FILE"
+
 CMD_ID=$(aws ssm send-command \
   --profile "$AWS_PROFILE" --region "$AWS_REGION" \
   --instance-ids "$INSTANCE_ID" \
   --document-name AWS-RunShellScript \
   --comment "takab cloud deploy ${CLOUD_TAG}" \
-  --parameters commands="$(python3 -c 'import json,sys;print(json.dumps([sys.stdin.read()]))' <<<"$REMOTE_SCRIPT")" \
+  --parameters "file://$PARAMS_FILE" \
   --query Command.CommandId --output text)
 
 echo "→ comando SSM ${CMD_ID}; esperando…"

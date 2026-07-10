@@ -10,7 +10,11 @@ terraform {
 }
 
 resource "aws_ecr_repository" "this" {
-  for_each = toset(["takab/cloud", "takab/fleet-sim"])
+  # takab/console (T-1.39): la consola SOC va en su propia imagen (Caddy+dist).
+  # cloud-images la empuja desde T-1.37, pero el repo nunca se creó — el primer
+  # push real lo destapó. Creado por CLI + terraform import (el apply lo corre
+  # el humano en este entorno).
+  for_each = toset(["takab/cloud", "takab/console", "takab/fleet-sim"])
 
   name                 = each.value
   image_tag_mutability = "MUTABLE"

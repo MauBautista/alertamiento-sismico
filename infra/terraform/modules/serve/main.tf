@@ -39,12 +39,12 @@ resource "aws_security_group" "web" {
   tags = { Name = "takab-dev-web" }
 }
 
-# ACME HTTP-01: el validador de Let's Encrypt no tiene rango fijo.
+# ACME HTTP-01: el validador de Lets Encrypt no tiene rango fijo.
 resource "aws_vpc_security_group_ingress_rule" "acme" {
   count = var.enabled ? 1 : 0
 
   security_group_id = aws_security_group.web[0].id
-  description       = "ACME HTTP-01 (Let's Encrypt)"
+  description       = "ACME HTTP-01 (Lets Encrypt)"
   from_port         = 80
   to_port           = 80
   ip_protocol       = "tcp"
