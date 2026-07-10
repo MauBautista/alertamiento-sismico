@@ -15,6 +15,8 @@ import QuorumNodes from "./QuorumNodes";
 import {
   SIGNABLE_STATUS,
   chainHead,
+  durationOf,
+  insufficientData,
   isCorroborated,
   isPreliminary,
   magnitudeOf,
@@ -140,6 +142,102 @@ export default function TriageDetail({
         </div>
       </header>
 
+      {/* HECHOS del incidente/evento (T-1.52): PGA/PGV/duración/profundidad,
+          quórum y evidencia NO dependen de que exista dictamen — antes vivían
+          dentro del gate y un incidente sin dictamen parecía "sin datos". */}
+      <div className="triage-detail__metrics">
+        <Metric
+          label="PGA MÁX"
+          value={inc.max_pga_g === null ? "—" : inc.max_pga_g.toFixed(3)}
+          unit={inc.max_pga_g === null ? undefined : "g"}
+        />
+        <Metric
+          label="PGV MÁX"
+          value={inc.max_pgv_cms === null ? "—" : inc.max_pgv_cms.toFixed(1)}
+          unit={inc.max_pgv_cms === null ? undefined : "cm/s"}
+        />
+        <Metric label="DURACIÓN DEL INCIDENTE" value={durationOf(inc)} />
+        <Metric
+          label="PROFUNDIDAD"
+          value={row.event?.depth_km == null ? "—" : String(row.event.depth_km)}
+          unit={row.event?.depth_km == null ? undefined : "km"}
+        />
+        <Metric label="NODOS" value={row.nodeCount === null ? "—" : String(row.nodeCount)} />
+      </div>
+
+      <QuorumNodes
+        view={quorum}
+        eventState={eventStateOf(row, event)}
+        eventError={event.error}
+        corroborated={isCorroborated(event.data)}
+        minNodes={minNodes}
+        onRetry={detail.refetch}
+      />
+
+      <div className="soc-card">
+        <div className="soc-card__hd">
+          <div>
+            <div>Evidencia archivada</div>
+            <div className="soc-card__sub">
+              INMUTABLE · SIN PODA POR RETENCIÓN · SÓLO EVENTOS CONFIRMADOS
+            </div>
+          </div>
+          <span className="soc-bacnet">⬢ {countOf(evidence)} OBJETOS</span>
+        </div>
+        <StateFrame
+          label="EVIDENCIA"
+          loading={evidence.loading}
+          error={evidence.error}
+          onRetry={detail.refetch}
+          empty={evidence.data?.length === 0}
+          emptyText="SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE"
+          staleSince={null}
+        >
+          {miniseed === null ? (
+            <p className="soc-meta">
+              SIN miniSEED ARCHIVADO · el waveform crudo no se transmite en continuo
+            </p>
+          ) : (
+            miniseed.sha256 && (
+              <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
+            )
+          )}
+        </StateFrame>
+      </div>
+
+      {detail.exportError && (
+        <p className="soc-meta" role="alert">
+          {detail.exportError}
+        </p>
+      )}
+
+      <footer className="triage-detail__actions">
+        <button
+          type="button"
+          className="soc-btn soc-btn--secondary"
+          disabled={!canExport || evidenceUnknown || miniseed === null || detail.downloadPending}
+          title={miniseedTitle}
+          onClick={() => miniseed && detail.downloadEvidence(miniseed.evidence_id)}
+        >
+          <FileDown size={13} aria-hidden /> EXPORTAR miniSEED
+        </button>
+        <button
+          type="button"
+          className="soc-btn soc-btn--primary"
+          disabled={!canGenerateReport || head === null || detail.pdfPending}
+          title={
+            !canGenerateReport
+              ? "Requiere la acción generate_report"
+              : head === null
+                ? "Sin dictamen que imprimir"
+                : undefined
+          }
+          onClick={() => detail.generatePdf()}
+        >
+          <Printer size={13} aria-hidden /> DICTAMEN PDF
+        </button>
+      </footer>
+
       <StateFrame
         label="DICTAMEN"
         loading={dictamens.loading}
@@ -159,93 +257,11 @@ export default function TriageDetail({
               </div>
             </div>
 
-            <div className="triage-detail__metrics">
-              <Metric
-                label="PGA MÁX"
-                value={inc.max_pga_g === null ? "—" : inc.max_pga_g.toFixed(3)}
-                unit={inc.max_pga_g === null ? undefined : "g"}
-              />
-              <Metric
-                label="PGV MÁX"
-                value={inc.max_pgv_cms === null ? "—" : inc.max_pgv_cms.toFixed(1)}
-                unit={inc.max_pgv_cms === null ? undefined : "cm/s"}
-              />
-              <Metric
-                label="PROFUNDIDAD"
-                value={row.event?.depth_km == null ? "—" : String(row.event.depth_km)}
-                unit={row.event?.depth_km == null ? undefined : "km"}
-              />
-              <Metric label="NODOS" value={row.nodeCount === null ? "—" : String(row.nodeCount)} />
-            </div>
-
-            <QuorumNodes
-              view={quorum}
-              eventState={eventStateOf(row, event)}
-              eventError={event.error}
-              corroborated={isCorroborated(event.data)}
-              minNodes={minNodes}
-              onRetry={detail.refetch}
-            />
-
-            <div className="soc-card">
-              <div className="soc-card__hd">
-                <div>
-                  <div>Evidencia archivada</div>
-                  <div className="soc-card__sub">
-                    INMUTABLE · SIN PODA POR RETENCIÓN · SÓLO EVENTOS CONFIRMADOS
-                  </div>
-                </div>
-                <span className="soc-bacnet">⬢ {countOf(evidence)} OBJETOS</span>
-              </div>
-              <StateFrame
-                label="EVIDENCIA"
-                loading={evidence.loading}
-                error={evidence.error}
-                onRetry={detail.refetch}
-                empty={evidence.data?.length === 0}
-                emptyText="SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE"
-                staleSince={null}
-              >
-                {miniseed === null ? (
-                  <p className="soc-meta">
-                    SIN miniSEED ARCHIVADO · el waveform crudo no se transmite en continuo
-                  </p>
-                ) : (
-                  miniseed.sha256 && (
-                    <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
-                  )
-                )}
-              </StateFrame>
-            </div>
-
-            {detail.exportError && (
-              <p className="soc-meta" role="alert">
-                {detail.exportError}
+            {isPreliminary(head) && insufficientData(head) && (
+              <p className="triage-detail__insufficient" role="note">
+                SIN EVIDENCIA INSTRUMENTAL — DICTAMEN POR SEVERIDAD DE ALERTA (basis v2)
               </p>
             )}
-
-            <footer className="triage-detail__actions">
-              <button
-                type="button"
-                className="soc-btn soc-btn--secondary"
-                disabled={
-                  !canExport || evidenceUnknown || miniseed === null || detail.downloadPending
-                }
-                title={miniseedTitle}
-                onClick={() => miniseed && detail.downloadEvidence(miniseed.evidence_id)}
-              >
-                <FileDown size={13} aria-hidden /> EXPORTAR miniSEED
-              </button>
-              <button
-                type="button"
-                className="soc-btn soc-btn--primary"
-                disabled={!canGenerateReport || detail.pdfPending}
-                title={!canGenerateReport ? "Requiere la acción generate_report" : undefined}
-                onClick={() => detail.generatePdf()}
-              >
-                <Printer size={13} aria-hidden /> DICTAMEN PDF
-              </button>
-            </footer>
 
             <div className="soc-card">
               <div className="soc-card__hd">

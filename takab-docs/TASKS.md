@@ -1213,18 +1213,24 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > flujo dictamen 1, TriagePage deep-link 3) · tsc/eslint/prettier/build OK. TriagePage y
 > ConsolePage ahora usan hooks de router: sus tests montan MemoryRouter.
 
-### [ ] T-1.52 · Web: Triage con catálogo de referencia y tiles reales
+### [x] T-1.52 · Web: Triage con catálogo de referencia y tiles reales — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.48 (SDK)
 - **Criterios de aceptación:**
-  - [ ] `CatalogPanel` bajo el historial: "CATÁLOGO DE REFERENCIA · SSN/USGS", sub "NO SON
-        INCIDENTES DEL TENANT", fila con M/fecha UTC/profundidad/región/fuente por evento;
-        StateFrame propio (si falla no tumba el historial); staleTime 24 h. (La magnitud aquí
-        es dato ratificado de catálogo histórico, NO magnitud preliminar — no viola §14.)
-  - [ ] `TriageDetail`: tiles PGA/PGV/PROFUNDIDAD/NODOS + QuorumNodes + evidencia FUERA del
-        gate del dictamen (los hechos del incidente no dependen de que exista dictamen);
-        tile DURACIÓN = `closed_at − opened_at` rotulada "duración del incidente" ("EN
-        CURSO" si abierto); rotulado honesto desde basis v2 (`insufficient_data` ⇒ "sin
-        evidencia instrumental — dictamen por severidad de alerta").
+  - [x] `CatalogPanel` bajo el historial (colapsable, colapsado por defecto): "CATÁLOGO DE
+        REFERENCIA · SSN/USGS" + badge REFERENCIA + sub "NO SON INCIDENTES DEL TENANT";
+        fila con M/fecha UTC/profundidad/epicentro/fuente (el `source_ref` completo va en
+        el title); sin SevTag ni estados de incidente — no se disfraza; StateFrame propio
+        (si falla no tumba el historial, vacío = instrucción de seed); staleTime 24 h.
+        (La magnitud es dato ratificado de catálogo histórico, NO preliminar — §14 intacto.)
+  - [x] `TriageDetail`: tiles PGA/PGV/DURACIÓN/PROFUNDIDAD/NODOS + QuorumNodes + evidencia
+        + EXPORTAR miniSEED movidos FUERA del gate del dictamen (los hechos del incidente
+        no dependen de que exista dictamen; antes un incidente sin dictamen parecía "sin
+        datos"); DICTAMEN PDF ahora exige un dictamen que imprimir (title honesto); tile
+        DURACIÓN = `durationOf` rotulada "DURACIÓN DEL INCIDENTE" ("EN CURSO" si abierto —
+        jamás un fin inventado); rotulado basis v2: `insufficientData(head)` ⇒ "SIN
+        EVIDENCIA INSTRUMENTAL — DICTAMEN POR SEVERIDAD DE ALERTA" (claves pre-v2 ⇒ false).
+> **ESTADO.** web 514 passed (+10: CatalogPanel 4, useCatalog 2, model durationOf/
+> insufficientData 2, TriagePage hechos/basis 2) · tsc/eslint/prettier/build OK.
 
 ### [ ] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi)
 - **Componente:** edge (+1 docstring api) · **Depende de:** — (independiente)

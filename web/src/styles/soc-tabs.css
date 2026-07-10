@@ -1213,3 +1213,57 @@
   border: 1px solid var(--tk-status-warning-15);
   background: var(--tk-status-warning-08);
 }
+
+/* ==== T-1.52 · Catálogo de referencia + rotulado basis v2 ================== */
+.triage-catalog {
+  margin-top: 12px;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  background: var(--tk-surface-1);
+}
+.triage-catalog__hd {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.triage-catalog__hd:hover { background: var(--tk-cyan-08); }
+.triage-catalog__title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 11px var(--tk-font-ui); letter-spacing: 0.10em; color: var(--tk-fg-1);
+}
+.triage-catalog__badge {
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--tk-border-strong);
+  font: 700 9px var(--tk-font-ui); letter-spacing: 0.10em; color: var(--tk-fg-3);
+}
+.triage-catalog__sub {
+  font: 500 10px var(--tk-font-ui); letter-spacing: 0.06em; color: var(--tk-fg-3);
+}
+.triage-catalog__chev { color: var(--tk-fg-3); transition: transform var(--tk-dur-fast) var(--tk-ease); }
+.triage-catalog__chev.is-open { transform: rotate(180deg); }
+.triage-catalog__table { margin: 0 12px 12px; width: calc(100% - 24px); }
+.triage-catalog__mag { font-weight: 700; }
+.triage-catalog__src {
+  font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em;
+  color: var(--tk-cyan); cursor: help;
+}
+
+.triage-detail__insufficient {
+  margin: 8px 0 0; padding: 8px 10px;
+  border: 1px solid var(--tk-status-warning);
+  background: var(--tk-status-warning-08);
+  border-radius: var(--tk-radius-sm);
+  color: var(--tk-status-warning);
+  font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em;
+}
+
+/* 5 tiles (T-1.52: entra DURACIÓN): fluyen sin romperse. */
+.triage-detail__metrics { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); }

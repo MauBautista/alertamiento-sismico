@@ -22,13 +22,19 @@ import type { TriageData } from "./useTriage";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } from "@takab/sdk";
 
-const mocks = vi.hoisted(() => ({ useTriage: vi.fn(), useIncidentDetail: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  useTriage: vi.fn(),
+  useIncidentDetail: vi.fn(),
+  useCatalog: vi.fn(() => ({ items: [], loading: false, error: null, refetch: () => undefined })),
+}));
 
 vi.mock("./useTriage", () => ({
   useTriage: mocks.useTriage,
   TRIAGE_STALE_MS: 120_000,
 }));
 vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDetail }));
+// CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
+vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 
 const ROWS = buildRows([anIncident()], [anEvent()], [aSite()]);
 
@@ -298,5 +304,44 @@ describe("TriagePage · deep-link ?incident= (T-1.51)", () => {
   it("sin query param no cambia el comportamiento (más reciente seleccionada)", () => {
     render(pageAt("/triage"));
     expect(screen.queryByText(/NO ESTÁ EN LA PÁGINA CARGADA/)).toBeNull();
+  });
+});
+
+describe("TriagePage · hechos fuera del gate del dictamen (T-1.52)", () => {
+  it("SIN dictamen los tiles de hechos siguen visibles (PGA/DURACIÓN/…): el empty es solo del dictamen", () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    mocks.useTriage.mockReturnValue(triageData());
+    mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res<DictamenOut[]>([]) }));
+    render(pageAt());
+    expect(screen.getByText("SIN DICTAMEN REGISTRADO PARA ESTE INCIDENTE")).toBeInTheDocument();
+    expect(screen.getByText("PGA MÁX")).toBeInTheDocument();
+    expect(screen.getByText("DURACIÓN DEL INCIDENTE")).toBeInTheDocument();
+    expect(screen.getByText("EN CURSO")).toBeInTheDocument(); // abierto: sin fin inventado
+    expect(screen.getByText("PROFUNDIDAD")).toBeInTheDocument();
+  });
+
+  it("dictamen preliminar con basis v2 insuficiente: rotulado honesto visible", () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    mocks.useTriage.mockReturnValue(triageData());
+    mocks.useIncidentDetail.mockReturnValue(
+      detailData({
+        dictamens: res<DictamenOut[]>([
+          {
+            dictamen_id: "d-1",
+            tenant_id: "t-1",
+            incident_id: ROWS[0].incident.incident_id,
+            status: "no_inhabit_inspect",
+            basis: {
+              evidence: { insufficient_data: true, pga_source: "none" },
+            },
+            signed_by: null,
+            supersedes_dictamen_id: null,
+            created_at: "2026-07-08T10:45:00Z",
+          } as DictamenOut,
+        ]),
+      }),
+    );
+    render(pageAt());
+    expect(screen.getByRole("note")).toHaveTextContent("SIN EVIDENCIA INSTRUMENTAL");
   });
 });

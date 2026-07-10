@@ -217,3 +217,39 @@ export function magnitudeOf(event: SeismicEventOut | null): string {
     ? "—"
     : `M ${event.magnitude.toFixed(1)}`;
 }
+
+/**
+ * Duración del INCIDENTE (T-1.52): `closed_at − opened_at`, rotulada así — NO
+ * es "duración del sismo" (no existe medición instrumental de sacudida;
+ * derivarla de STA/LTA sin calibrar sería inventar física). Abierto ⇒ EN CURSO.
+ */
+export function durationOf(incident: { opened_at: string; closed_at: string | null }): string {
+  if (incident.closed_at === null) {
+    return "EN CURSO";
+  }
+  const seconds = Math.max(
+    0,
+    Math.round((Date.parse(incident.closed_at) - Date.parse(incident.opened_at)) / 1000),
+  );
+  if (seconds < 120) {
+    return `${seconds} s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return minutes < 120 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
+}
+
+/**
+ * basis v2 del dictamen automático (T-1.48): sin medición NI corroboración el
+ * veredicto se sostiene solo en la severidad de la alerta — la UI lo rotula en
+ * vez de fingir evidencia instrumental. Claves ausentes (dictámenes previos a
+ * basis v2) ⇒ false: no se acusa insuficiencia que el basis no declaró.
+ */
+export function insufficientData(dictamen: DictamenOut | null): boolean {
+  if (dictamen === null) {
+    return false;
+  }
+  const basis = dictamen.basis as Record<string, unknown> | null | undefined;
+  const evidence =
+    basis && typeof basis === "object" ? (basis["evidence"] as Record<string, unknown>) : null;
+  return evidence !== null && evidence !== undefined && evidence["insufficient_data"] === true;
+}

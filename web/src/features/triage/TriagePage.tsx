@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
+import CatalogPanel from "./CatalogPanel";
 import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
 import { TRIAGE_STALE_MS, useTriage } from "./useTriage";
@@ -144,6 +145,7 @@ export default function TriagePage() {
               onSelect={setSelected}
             />
           </StateFrame>
+          <CatalogPanel />
         </div>
 
         {current && (

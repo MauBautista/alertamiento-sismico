@@ -13,6 +13,8 @@ import {
   miniseedOf,
   quorumView,
   verdictOf,
+  durationOf,
+  insufficientData,
 } from "./model";
 import { anEvent, anIncident, aSite } from "./fixtures";
 
@@ -239,5 +241,42 @@ describe("SeismicEventOut.meta contract", () => {
   it("meta es un dict opaco: un node_count no numérico no se cuela", () => {
     const evt: SeismicEventOut = anEvent({ meta: { node_count: "tres" } });
     expect(buildRows([anIncident({ event_id: evt.event_id })], [evt], [])[0].nodeCount).toBeNull();
+  });
+});
+
+describe("durationOf (T-1.52)", () => {
+  it("cerrado: humaniza s/min/h; abierto: EN CURSO (jamás inventa un fin)", () => {
+    expect(
+      durationOf({ opened_at: "2026-07-10T03:14:00Z", closed_at: "2026-07-10T03:14:48Z" }),
+    ).toBe("48 s");
+    expect(
+      durationOf({ opened_at: "2026-07-10T03:14:00Z", closed_at: "2026-07-10T03:26:00Z" }),
+    ).toBe("12 min");
+    expect(
+      durationOf({ opened_at: "2026-07-10T03:00:00Z", closed_at: "2026-07-10T06:00:00Z" }),
+    ).toBe("3 h");
+    expect(durationOf({ opened_at: "2026-07-10T03:14:00Z", closed_at: null })).toBe("EN CURSO");
+  });
+});
+
+describe("insufficientData (T-1.52 · basis v2)", () => {
+  it("true SOLO si el basis lo declara; claves ausentes (pre-v2) ⇒ false", () => {
+    const base = {
+      dictamen_id: "d",
+      tenant_id: "t",
+      incident_id: "i",
+      status: "no_inhabit_inspect",
+      signed_by: null,
+      supersedes_dictamen_id: null,
+      created_at: "2026-07-10T03:15:00Z",
+    };
+    expect(
+      insufficientData({ ...base, basis: { evidence: { insufficient_data: true } } } as never),
+    ).toBe(true);
+    expect(
+      insufficientData({ ...base, basis: { evidence: { insufficient_data: false } } } as never),
+    ).toBe(false);
+    expect(insufficientData({ ...base, basis: {} } as never)).toBe(false);
+    expect(insufficientData(null)).toBe(false);
   });
 });
