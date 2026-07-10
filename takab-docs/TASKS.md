@@ -978,8 +978,21 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         0.6–1.1 mg — exactamente el piso de ruido esperado del RS4D. La consola muestra
         `g`/`cm/s` SIN el badge «SIN CALIBRAR» para el sitio real; los SIM siguen sin calibrar
         (que es la verdad).
-  - [ ] Prueba de excitación coordinada (golpe suave junto al sensor ⇒ pico visible en el
-        strip) ⟵ se hace junto con la sesión del WR-1 (T-1.42, requiere a Mauricio).
+  - [x] **Prueba de excitación EJECUTADA con movimiento real** (Mauricio movió el Shake,
+        2026-07-10 03:14–03:31 UTC): pico de **PGA 0.567 g en ENZ** (0.30 ENN / 0.26 ENE),
+        STA/LTA saturado en 10.0 (umbral 3.5). El camino determinista completo disparó:
+        tier → `evacuate_or_hold`, secuencia de actuación entera (`siren/strobe/gas_valve/
+        elevator/door_retainer activate vía relay T+0.00s`, sin nube ni IA), desescalada
+        limpia a `normal` al cesar el movimiento, y **4 incidentes `local_threshold`
+        critical en la nube** con la cadena de acks de compliance completa
+        (`incident_actions` por `edge:gw-dev-0001`). Los valores en reposo (0.6–1.1 mg) y
+        en excitación (0.57 g) son físicamente coherentes: calibración VALIDADA.
+
+> Nota para T-1.42: a las 03:17:13 UTC apareció un incidente `trigger=sasmex` SIN WR-1
+> cableado (Mauricio intentó el cableado ese día sin terminarlo). Un cable colgante o un
+> roce en el pin 36 cerró GPIO16→GND >50 ms: exactamente la clase de semántica
+> (rebote/duración/falsos positivos del contacto) que la sesión del WR-1 debe medir antes
+> de dar por buena la entrada SASMEX física.
 
 ### [x] T-1.46 · Validación del quórum contra el catálogo oficial — **[C·G1] COMPLETADA (2026-07-09)**
 - **Componente:** api (tools+tests) + docs · **Cierra:** pregunta abierta #2 de `ANALISIS §4`
