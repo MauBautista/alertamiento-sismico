@@ -173,3 +173,32 @@ def test_compute_features_pga_on_velocity_matches_obspy():
     tr.differentiate()
     pga_ref = float(np.abs(tr.data).max()) / 9.80665
     assert abs(feature.pga - pga_ref) / pga_ref < 0.01
+
+
+# --- live_by_channel (T-1.53, panel LAN) -------------------------------------
+
+
+def test_live_by_channel_tracks_multiple_channels():
+    from takab_edge.signal import FeatureExtractor
+
+    ex = FeatureExtractor()
+    ex.process(WaveformPacket(station="R4F74", channel="EHZ", starttime=START, samples=[0, 5] * 50))
+    ex.process(WaveformPacket(station="R4F74", channel="ENZ", starttime=START, samples=[0, 7] * 50))
+
+    live = ex.live_by_channel()
+    assert set(live) == {"EHZ", "ENZ"}
+    feature, received_at = live["ENZ"]
+    assert feature.channel == "ENZ"
+    assert received_at.tzinfo is not None  # reloj de pared UTC del Pi, no del Shake
+    # `.last` sigue funcionando (contrato previo intacto)
+    assert ex.last is not None and ex.last.channel == "ENZ"
+
+
+def test_live_by_channel_returns_copy():
+    from takab_edge.signal import FeatureExtractor
+
+    ex = FeatureExtractor()
+    ex.process(WaveformPacket(station="R4F74", channel="EHZ", starttime=START, samples=[0, 5] * 50))
+    snapshot = ex.live_by_channel()
+    snapshot.clear()  # mutar la copia no toca el estado interno
+    assert set(ex.live_by_channel()) == {"EHZ"}

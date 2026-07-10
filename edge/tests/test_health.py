@@ -12,11 +12,12 @@ from takab_edge.health import HealthMonitor, UpsReading, ups_label
 
 
 class _FakeProbes:
-    def __init__(self, temp=25.0, ntp=0.01, ups=None, cert=365):
+    def __init__(self, temp=25.0, ntp=0.01, ups=None, cert=365, disk=42.0):
         self._temp = temp
         self._ntp = ntp
         self._ups = ups or UpsReading()
         self._cert = cert
+        self._disk = disk
 
     def temperature_c(self):
         return self._temp
@@ -26,6 +27,9 @@ class _FakeProbes:
 
     def ups(self):
         return self._ups
+
+    def disk_used_pct(self):
+        return self._disk
 
     def cert_days_remaining(self):
         return self._cert
@@ -191,3 +195,43 @@ def test_heartbeat_thread_emits_periodic_snapshots(settings):
     finally:
         monitor.stop()
     assert len(seen) >= 3
+
+
+# --- cache last_snapshot + sonda de disco (T-1.53, panel LAN) ------------------
+
+
+def test_last_snapshot_cached_without_side_effects(settings):
+    calls = []
+    monitor = HealthMonitor(settings, probes=_FakeProbes())
+    monitor.on_snapshot(calls.append)
+
+    assert monitor.last_snapshot is None  # sin medición todavía: sin dato
+    snap = monitor.snapshot("startup")
+    assert monitor.last_snapshot is snap
+    assert len(calls) == 1
+    # Leer la propiedad N veces NO dispara callbacks ni sondas (regresión del
+    # bug: el panel LAN publicaba un health a la nube en cada GET).
+    for _ in range(10):
+        assert monitor.last_snapshot is snap
+    assert len(calls) == 1
+
+
+def test_disk_probe_reports_pct(settings, tmp_path):
+    from takab_edge.health import HostProbes
+
+    settings = settings.model_copy(update={"health_disk_path": str(tmp_path)})
+    pct = HostProbes(settings).disk_used_pct()
+    assert pct is not None
+    assert 0.0 <= pct <= 100.0
+
+
+def test_disk_probe_missing_path_is_none(settings):
+    from takab_edge.health import HostProbes
+
+    settings = settings.model_copy(update={"health_disk_path": "/no/existe/takab"})
+    assert HostProbes(settings).disk_used_pct() is None  # sin dato, jamás lanza
+
+
+def test_snapshot_includes_disk_used_pct(settings):
+    snap = HealthMonitor(settings, probes=_FakeProbes(disk=42.0)).snapshot()
+    assert snap.disk_used_pct == 42.0

@@ -1,14 +1,31 @@
-"""local_api — dashboard/control local del edificio (LAN, sin internet).
+"""local_api — mini-consola local del inmueble (LAN, sin internet).
 
 T-1.13: servidor HTTP mínimo (stdlib `http.server`, sin dependencias pesadas) accesible
-en la LAN del edificio SIN internet (RBAC §4.2: fallback cuando la WAN está caída). Muestra
-estado, último evento y estado de relés; permite **prueba de sirena** y **silencio por LAN**.
+en la LAN del edificio SIN internet (RBAC §4.2: fallback cuando la WAN está caída).
 
 T-1.43: las ACCIONES (POST) exigen un PIN (`X-Takab-Pin`, comparación constant-time,
 lockout tras 5 PINs erróneos) — la segmentación de red dejó de ser la única barrera para
 silenciar la sirena de un edificio. La LECTURA (GET) sigue abierta en la LAN: es el panel
 del guardia. Sin PIN configurado: `dev_mode` queda abierto (tests/demo); producción
 responde 403 fail-closed hasta que `provision_gateway.sh` instale uno.
+
+T-1.53: de panel mínimo a MINI-CONSOLA del inmueble (decisión de Mauricio 2026-07-10):
+PGA/PGV en vivo por canal (`signal.live_by_channel`), salud completa del gabinete,
+estado del enlace a nube ("SIN ENLACE — PROTECCIÓN LOCAL ACTIVA": aislado ≠ desprotegido)
+y últimos eventos locales. Dos reglas de diseño duras:
+
+- **`status()` JAMÁS ejecuta sondas ni publica.** Antes llamaba `health.snapshot()`,
+  que lanza subprocesos (chronyc/upsc/openssl, hasta 2 s c/u) Y dispara los callbacks
+  cableados a `cloud.publish` — cada GET del panel publicaba un health a la nube
+  (~30/min con el poll de 2 s en vez del heartbeat de 60 s). Ahora lee el CACHE
+  (`health.last_snapshot`) y declara su edad; la UI la rotula.
+- **Secciones DEFENSIVAS**: un módulo caído degrada su sección a `null` y el GET
+  responde 200 con lo que sí hay — el panel del guardia no muere porque una pieza
+  no-crítica falle (misma doctrina que el aislamiento del supervisor).
+
+El HTML vive como recurso empaquetado (`index.html`, cero build, cero CDN: la LAN no
+tiene internet) y el JS hace polling con `setTimeout` encadenado y backoff — sin SSE:
+con ThreadingHTTPServer un stream retiene un hilo por kiosco y no aporta nada a 1 Hz.
 """
 
 from __future__ import annotations
@@ -18,8 +35,12 @@ import json
 import logging
 import threading
 import time
+from collections import deque
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
 
+from takab_edge.contracts import utcnow
 from takab_edge.gpio import GpioController
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
@@ -31,97 +52,56 @@ log = logging.getLogger("takab_edge.local_api")
 _PIN_MAX_FAILURES = 5
 _PIN_LOCKOUT_S = 60.0
 
-_INDEX_HTML = """<!doctype html>
-<html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TAKAB Ailert — Gabinete</title>
-<style>
- body{font-family:system-ui,sans-serif;margin:0;background:#0b0f14;color:#e6edf3}
- header{padding:1rem;font-weight:700}
- #banner{padding:1rem;text-align:center;font-size:1.4rem;font-weight:800;display:none}
- #banner.alert{display:block;background:#b91c1c;color:#fff;animation:blink 1s step-start infinite}
- @keyframes blink{50%{opacity:.55}}
- main{padding:1rem;max-width:640px;margin:0 auto}
- .row{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #22303c}
- .state{padding:.6rem;border-radius:.4rem;margin:.5rem 0}
- .stale{background:#78350f}.error{background:#7f1d1d}.loading{opacity:.6}
- button{padding:.7rem 1rem;margin:.3rem .3rem 0 0;border:0;
-   border-radius:.4rem;font-weight:700;cursor:pointer}
- .silence{background:#ca8a04}.test{background:#2563eb;color:#fff}
- .reset{background:#334155;color:#fff}
- #msg{margin-top:.5rem;font-weight:700;color:#fbbf24;min-height:1.2em}
-</style></head><body>
-<header>TAKAB Ailert · <span id="gw">—</span></header>
-<div id="banner">ALERTA SÍSMICA · PROTÉJASE</div>
-<main>
- <div id="state" class="state loading">Cargando…</div>
- <div id="rows"></div>
- <button class="silence" onclick="cmd('silence')">Silenciar audibles</button>
- <button class="test" onclick="cmd('siren-test')">Probar sirena</button>
- <button class="reset" onclick="cmd('reset')">Cerrar alerta</button>
- <div id="msg"></div>
-</main>
-<script>
- // El PIN vive SOLO en memoria de la página (CLAUDE.md §8: nada de localStorage).
- let pin = null;
- function send(name){
-   const h = pin ? {'X-Takab-Pin': pin} : {};
-   return fetch('/api/'+name,{method:'POST',headers:h});
- }
- async function cmd(name){
-   const m = document.getElementById('msg');
-   try{
-     let r = await send(name);
-     if(r.status===401){
-       const entered = window.prompt('PIN del gabinete');
-       if(entered===null || entered===''){ return; }
-       pin = entered;
-       r = await send(name);
-       if(r.status===401){ pin=null; m.textContent='PIN INCORRECTO'; }
-     }
-     if(r.status===403){ m.textContent='SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS'; }
-     else if(r.status===429){ m.textContent='BLOQUEADO POR INTENTOS · ESPERA 60 s'; }
-     else if(r.ok){ m.textContent=''; }
-     refresh();
-   }catch(e){}
- }
- function row(k,v){ return '<div class="row"><span>'+k+'</span><b>'+v+'</b></div>'; }
- async function refresh(){
-   const el=document.getElementById('state');
-   try{
-     const r=await fetch('/api/status'); if(!r.ok) throw 0;
-     const s=await r.json();
-     document.getElementById('gw').textContent=s.gateway_id;
-     const alert = s.sasmex_active || s.last_tier==='evacuate_or_hold';
-     document.getElementById('banner').className = alert ? 'alert' : '';
-     const age=(Date.now()-Date.parse(s.captured_at))/1000;
-     el.className='state'+(age>10?' stale':'');
-     el.textContent = age>10 ? ('DATO VIEJO ('+age.toFixed(0)+'s)') : 'En línea';
-     document.getElementById('rows').innerHTML =
-       row('Tier', s.last_tier||'normal')+row('SASMEX activo', s.sasmex_active)+
-       row('Sirena sonando', s.siren_sounding)+row('Audibles silenciados', s.audible_silenced);
-   }catch(e){ el.className='state error'; el.textContent='SIN CONEXIÓN con el gabinete'; }
- }
- refresh(); setInterval(refresh,2000);
-</script></body></html>
-"""
+#: Sin feature nueva tras esto, el canal se declara "SIN SEÑAL" en la UI.
+_SIGNAL_STALE_S = 5.0
+
+#: Tope de acciones LAN recordadas para la lista de eventos del panel.
+_ACTIONS_MAX = 16
+#: Tope de filas de la lista de eventos servida por /api/status.
+_EVENTS_MAX = 10
+
+# Fallback si el recurso index.html faltara (instalación rota): el panel sigue
+# siendo operable vía /api/status y las acciones; jamás un 500 por el HTML.
+_FALLBACK_HTML = (
+    "<!doctype html><meta charset='utf-8'><title>TAKAB Ailert</title>"
+    "<p>Panel sin index.html empaquetado; usa /api/status.</p>"
+)
+
+
+def _load_index_html() -> str:
+    try:
+        return resources.files("takab_edge.local_api").joinpath("index.html").read_text("utf-8")
+    except OSError:
+        log.error("index.html del panel LAN no encontrado; se sirve el fallback")
+        return _FALLBACK_HTML
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
+    # keep-alive: un hilo por kiosco en vez de hilo por request (menos churn).
+    protocol_version = "HTTP/1.1"
+
     def _send(self, code: int, body: str, content_type: str = "application/json") -> None:
         data = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        if content_type.startswith("application/json"):
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
     def do_GET(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
         if self.path in ("/", "/index.html"):
-            self._send(200, _INDEX_HTML, "text/html; charset=utf-8")
+            self._send(200, dashboard.index_html, "text/html; charset=utf-8")
         elif self.path == "/api/status":
-            self._send(200, json.dumps(dashboard.status()))
+            # El GET del guardia no puede reventar por un módulo caído: status()
+            # ya es defensivo por sección; esto es el último cinturón.
+            try:
+                self._send(200, json.dumps(dashboard.status()))
+            except Exception:  # noqa: BLE001 — panel no-crítico, jamás traceback al socket
+                log.exception("status() del panel LAN falló")
+                self._send(500, json.dumps({"error": "status"}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -153,16 +133,16 @@ class _DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], dashboard: LocalDashboard) -> None:
+    def __init__(self, address: tuple[int, int], dashboard: LocalDashboard) -> None:
         self.dashboard = dashboard
         super().__init__(address, _DashboardHandler)
 
 
 class LocalDashboard(EdgeModule):
-    """Expone estado del gabinete y acepta prueba de sirena / silencio por LAN (HTTP)."""
+    """Mini-consola LAN del inmueble: estado vivo + acciones con PIN (T-1.53)."""
 
     name = "local_api"
-    depends_on = ("gpio", "rules", "health")
+    depends_on = ("gpio", "rules", "health", "signal", "cloud")
 
     def __init__(
         self,
@@ -173,11 +153,22 @@ class LocalDashboard(EdgeModule):
         port: int = 8080,
         pin: str = "",
         dev_mode: bool = True,
+        *,
+        signal: object | None = None,
+        cloud: object | None = None,
+        gateway_id: str = "",
+        site_name: str = "",
+        refresh_ms: int = 1000,
     ) -> None:
         super().__init__()
         self._gpio = gpio
         self._rules = rules
         self._health = health
+        self._signal = signal
+        self._cloud = cloud
+        self._gateway_id = gateway_id
+        self._site_name = site_name
+        self._refresh_ms = refresh_ms
         self._host = host
         self._port = port
         self._pin = pin
@@ -187,6 +178,12 @@ class LocalDashboard(EdgeModule):
         self._locked_until = 0.0
         self._server: _DashboardServer | None = None
         self._thread: threading.Thread | None = None
+        self._started_at: datetime | None = None
+        # Acciones LAN recordadas para la lista de eventos (append desde los
+        # hilos HTTP; lectura desde status()): lock propio.
+        self._actions: deque[dict] = deque(maxlen=_ACTIONS_MAX)
+        self._actions_lock = threading.Lock()
+        self.index_html = _load_index_html()
 
     def authorize_action(self, provided: str | None) -> int:
         """Autoriza un POST del panel (T-1.43). Devuelve el status HTTP.
@@ -215,34 +212,140 @@ class LocalDashboard(EdgeModule):
                 log.warning("panel LAN: lockout por PIN erróneo (%.0f s)", _PIN_LOCKOUT_S)
             return 401
 
-    def status(self) -> dict:
-        """Snapshot para el dashboard LAN (loading/error/empty/stale los maneja la UI)."""
-        decision = self._rules.last_decision
-        snap = self._health.snapshot()
+    # ------------------------------------------------------------- secciones
+    # Cada sección es defensiva: un módulo roto ⇒ null, jamás un 500 del panel.
+
+    def _signal_section(self, now: datetime) -> dict | None:
+        try:
+            live = self._signal.live_by_channel() if self._signal is not None else None
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: sección signal falló", exc_info=True)
+            return None
+        if live is None:
+            return None
+        channels: dict[str, dict] = {}
+        last_received: datetime | None = None
+        for channel, (feature, received_at) in sorted(live.items()):
+            channels[channel] = {
+                "pga_g": feature.pga,
+                "pgv_cms": feature.pgv,
+                "rms": feature.rms,
+                "sta_lta": feature.sta_lta,
+                "clipping": feature.clipping,
+                "health_score": feature.health_score,
+                "window_start": feature.window_start.isoformat(),
+                "received_at": received_at.isoformat(),
+                "age_s": max(0.0, (now - received_at).total_seconds()),
+            }
+            if last_received is None or received_at > last_received:
+                last_received = received_at
         return {
-            "gateway_id": snap.gateway_id,
+            "channels": channels,
+            "last_received_at": last_received.isoformat() if last_received else None,
+            "stale_after_s": _SIGNAL_STALE_S,
+        }
+
+    def _health_section(self, now: datetime) -> dict | None:
+        try:
+            snap = self._health.last_snapshot
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: sección health falló", exc_info=True)
+            return None
+        if snap is None:
+            return None
+        return {
+            "ntp_offset_s": snap.ntp_offset_s,
+            "seedlink_lag_s": snap.seedlink_lag_s,
+            "packet_loss_pct": snap.packet_loss_pct,
+            "mqtt_rtt_ms": snap.mqtt_rtt_ms,
+            "ups_status": snap.ups_status.value,
+            "battery_pct": snap.battery_pct,
+            "temperature_c": snap.temperature_c,
+            "cert_days_remaining": snap.cert_days_remaining,
+            "disk_used_pct": snap.disk_used_pct,
+            "captured_at": snap.captured_at.isoformat(),
+            "age_s": max(0.0, (now - snap.captured_at).total_seconds()),
+        }
+
+    def _cloud_section(self) -> dict:
+        try:
+            if self._cloud is None:
+                return {"online": False, "mqtt_rtt_ms": None, "queued": None}
+            rtt = getattr(self._cloud, "mqtt_rtt_ms", None)
+            return {
+                "online": bool(getattr(self._cloud, "online", False)),
+                "mqtt_rtt_ms": float(rtt) if rtt is not None else None,
+                "queued": int(getattr(self._cloud, "queued", 0)),
+            }
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: sección cloud falló", exc_info=True)
+            return {"online": False, "mqtt_rtt_ms": None, "queued": None}
+
+    def _events_section(self) -> list[dict]:
+        try:
+            transitions = self._rules.recent_transitions(_EVENTS_MAX)
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: transiciones no disponibles", exc_info=True)
+            transitions = []
+        with self._actions_lock:
+            actions = list(self._actions)
+        merged = transitions + actions
+        merged.sort(key=lambda item: item.get("at", ""), reverse=True)
+        return merged[:_EVENTS_MAX]
+
+    def _record_action(self, action: str) -> None:
+        with self._actions_lock:
+            self._actions.append({"at": utcnow().isoformat(), "action": action, "via": "lan"})
+
+    def status(self) -> dict:
+        """Snapshot para la mini-consola LAN (los 4 estados los rotula la UI)."""
+        now = utcnow()
+        try:
+            decision = self._rules.last_decision
+            last_tier = decision.tier.value if decision else None
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: last_decision no disponible", exc_info=True)
+            last_tier = None
+        health = self._health_section(now)
+        uptime = (now - self._started_at).total_seconds() if self._started_at else None
+        return {
+            # Identidad VIVA (settings), no del snapshot: sobrevive a health caído.
+            "gateway_id": self._gateway_id
+            or (self._health.last_snapshot.gateway_id if self._health.last_snapshot else ""),
+            "site_name": self._site_name,
+            "now": now.isoformat(),
+            "uptime_s": uptime,
+            "refresh_ms": self._refresh_ms,
             # Distinguir alerta REAL vs. sirena sonando vs. silenciado (regla de oro 7):
             "sasmex_active": self._gpio.sasmex_active,
             "siren_sounding": self._gpio.siren_sounding,
             "audible_silenced": self._gpio.audible_silenced,
-            "last_tier": decision.tier.value if decision else None,
+            "last_tier": last_tier,
             "relays": [r.model_dump(mode="json") for r in self._gpio.relay_states()],
-            "captured_at": snap.captured_at.isoformat(),
+            # Compat con el panel previo: hora del último dato de salud (o ahora).
+            "captured_at": (health or {}).get("captured_at", now.isoformat()),
+            "signal": self._signal_section(now),
+            "health": health,
+            "cloud": self._cloud_section(),
+            "events": self._events_section(),
         }
 
     def silence(self) -> None:
         """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""
         self._gpio.silence_audibles(True)
+        self._record_action("silence")
         log.warning("silencio solicitado por LAN")
 
     def run_siren_test(self) -> None:
         """Prueba de sirena por LAN (self-test acotado, no es una alerta real)."""
         self._gpio.run_siren_test()
+        self._record_action("siren_test")
         log.warning("prueba de sirena solicitada por LAN")
 
     def reset_alert(self) -> None:
         """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
         self._gpio.reset()
+        self._record_action("reset")
         log.warning("alerta cerrada/re-armada por LAN")
 
     @property
@@ -251,13 +354,14 @@ class LocalDashboard(EdgeModule):
         return self._server.server_address if self._server else None
 
     def _on_start(self) -> None:
+        self._started_at = utcnow()
         self._server = _DashboardServer((self._host, self._port), self)
         self._thread = threading.Thread(
             target=self._server.serve_forever, name="local-api", daemon=True
         )
         self._thread.start()
         host, port = self._server.server_address
-        log.info("dashboard LAN en http://%s:%d (sin internet)", host, port)
+        log.info("mini-consola LAN en http://%s:%d (sin internet)", host, port)
 
     def _on_stop(self) -> None:
         if self._server is not None:

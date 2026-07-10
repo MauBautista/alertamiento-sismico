@@ -214,3 +214,35 @@ def test_tier_transition_logged_once_per_change(caplog):
         )
     transitions = [r for r in caplog.records if "transición de tier" in r.getMessage()]
     assert len(transitions) == 2  # None→normal y normal→restricted; el normal repetido NO re-loguea
+
+
+# --- recent_transitions (T-1.53, panel LAN) ----------------------------------
+
+
+def test_recent_transitions_records_tier_changes():
+    engine = RuleEngine(ThresholdBand())
+    engine.evaluate_features(_feature(pga=0.001))  # arranque: None→normal (honesto)
+    engine.evaluate_features(_feature(pga=0.5))  # normal→evacuate/trip
+    engine.evaluate_features(_feature(pga=0.5))  # mismo tier: NO registra
+
+    transitions = engine.recent_transitions()
+    assert len(transitions) == 2
+    newest = transitions[0]  # más recientes primero
+    assert newest["from_tier"] == "normal"
+    assert newest["source"] == "local_threshold"
+    assert newest["pga"] == 0.5  # instrumental: el PGA es una medición
+    assert transitions[1]["from_tier"] is None  # boot
+
+
+def test_recent_transitions_bounded_and_sasmex_source():
+    engine = RuleEngine(ThresholdBand())
+    for i in range(40):  # alterna tiers para forzar >32 transiciones
+        engine.evaluate_features(_feature(pga=0.5 if i % 2 else 0.001))
+    assert len(engine.recent_transitions(limit=50)) <= 32  # ring acotado
+
+    engine2 = RuleEngine(ThresholdBand())
+    engine2.evaluate_sasmex(SasmexSignal(active=True))
+    latest = engine2.recent_transitions()[0]
+    assert latest["source"] == "sasmex"
+    assert latest["pga"] is None  # SASMEX es booleano: su severidad no es medición
+    assert latest["to_tier"] == "evacuate_or_hold"

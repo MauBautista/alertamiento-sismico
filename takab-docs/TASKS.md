@@ -1232,33 +1232,51 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **ESTADO.** web 514 passed (+10: CatalogPanel 4, useCatalog 2, model durationOf/
 > insufficientData 2, TriagePage hechos/basis 2) · tsc/eslint/prettier/build OK.
 
-### [ ] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi)
+### [~] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi) — **CÓDIGO LISTO Y VERDE (2026-07-10); verificación en el Pi real pendiente (con Mauricio)**
 - **Componente:** edge (+1 docstring api) · **Depende de:** — (independiente)
 - **Criterios de aceptación:**
-  - [ ] **Fix del bug latente**: `HealthMonitor` cachea `last_snapshot` y el panel NUNCA llama
-        `snapshot()` — hoy cada GET `/api/status` lanza sondas (subprocesos) y PUBLICA un
-        health snapshot a la nube (~30/min con el poll de 2 s). Test de regresión
-        `test_status_does_not_publish_health`.
-  - [ ] `signal.live_by_channel()` (Feature1s + received_at por canal, bajo lock);
-        ring buffer de transiciones de tier en `RuleEngine._emit` (deque 32 + lock, fuentes
-        instrumental Y sasmex); deque de acciones LAN en el panel.
-  - [ ] Sonda de disco `disk_used_pct` (shutil.disk_usage, None si falla) →
-        `HealthSnapshot` + schema compartido **1.2.0** (aditivo; el ingest de la nube lo
-        ignora — docstring actualizado); anti-drift de schemas verde.
-  - [ ] `status()` por secciones DEFENSIVAS (módulo caído ⇒ sección null, GET 200):
-        now/site_name/uptime/refresh_ms, signal por canal (stale ⇒ "SIN SEÑAL DEL SENSOR"),
-        health del cache con edad, cloud {online, mqtt_rtt_ms, queued} ("SIN ENLACE —
-        PROTECCIÓN LOCAL ACTIVA" en UI), events (transiciones+acciones, cap 10).
-  - [ ] `index.html` como recurso empaquetado (importlib.resources, cero build, cero
-        CDN/Google Fonts — test anti-recursos-externos): kiosk una página con tokens TAKAB
-        en hex, tier hero clamp(40px,9vw,72px), PGA/PGV por canal ~1 Hz, actuadores + 3
-        acciones con PIN (flujo T-1.43 INTACTO — su suite es el guardián), salud con S/D,
-        eventos "DESDE EL ARRANQUE"; banner "ALERTA SÍSMICA · PROTÉJASE" (sin countdown ni
-        magnitud, §14); polling setTimeout encadenado con backoff 1→2→5 s.
-  - [ ] Settings nuevos (`site_name`, `local_api_refresh_ms`, `health_disk_path`) con
-        defaults; supervisor pasa signal/cloud/identidad al panel; ~18 tests nuevos primero;
-        suite edge completa verde; verificación manual en el Pi real (curl + navegador +
-        corte de Shake + stop/start del servicio + ≤2 publicaciones health en 60 s).
+  - [x] **Fix del bug latente**: `HealthMonitor` cachea `last_snapshot` (propiedad SIN side
+        effects) y el panel NUNCA llama `snapshot()` — antes cada GET `/api/status` lanzaba
+        las sondas (subprocesos chronyc/upsc/openssl) y PUBLICABA un health a la nube
+        (~30/min con el poll de 2 s en vez del heartbeat de 60 s). Regresión anclada:
+        `test_status_does_not_publish_health` (10 GETs ⇒ 0 publicaciones).
+  - [x] `signal.live_by_channel()` (Feature1s + hora de LLEGADA por canal, bajo lock —
+        window_start es reloj del Shake y no sirve para staleness; copia defensiva);
+        ring de transiciones en `RuleEngine._emit` (deque 32 + lock — dos hilos escriben:
+        seedlink y callback gpio; fuentes instrumental Y sasmex, con PGA solo si es
+        medición); deque de acciones LAN (`silence/siren_test/reset · via lan`).
+  - [x] Sonda de disco `disk_used_pct` (shutil.disk_usage sobre `health_disk_path`, None
+        si falla; probes pre-T-1.53 sin el método degradan a «sin dato» vía getattr) →
+        `HealthSnapshot` + schemas compartidos **1.2.0** (ADITIVO, changelog en schemas.py;
+        el ingest de la nube lo ignora — docstring actualizado; suite api 723 sigue verde);
+        anti-drift verde; el wheel de hatchling INCLUYE `local_api/index.html` (verificado).
+  - [x] `status()` por secciones DEFENSIVAS (módulo roto ⇒ sección null y GET 200 — anclado
+        por test con `last_decision`/`last_snapshot` reventando): identidad VIVA desde
+        settings, now/site_name/uptime/refresh_ms, `signal` por canal con age_s y
+        stale_after_s=5, `health` del cache con edad declarada, `cloud`
+        {online, mqtt_rtt_ms, queued} y `events` (transiciones+acciones, desc, cap 10).
+  - [x] `index.html` como recurso empaquetado (importlib.resources, cargado 1 vez, fallback
+        honesto si falta; cero build, CERO recursos externos — test lo veta junto con
+        countdown/T-MINUS §14): kiosk una página con tokens TAKAB en hex, pills de enlace
+        nube ("SIN ENLACE — PROTECCIÓN LOCAL ACTIVA · N EN COLA") y conexión del panel
+        (EN VIVO/DATO RETENIDO/SIN CONEXIÓN), tier hero clamp(40px,9vw,72px) con
+        icono+label, PGA mono 4 decimales por canal + chip CLIP + "SIN SEÑAL DEL SENSOR"
+        si todo está stale, relés + 3 acciones con PIN (flujo T-1.43 INTACTO — su suite es
+        el guardián), salud con S/D y umbrales ámbar (cert <30 d, disco >90 %), eventos
+        "DESDE EL ARRANQUE · uptime"; banner "ALERTA SÍSMICA · PROTÉJASE"; polling
+        setTimeout ENCADENADO con backoff 1→2→5 s (SSE rechazado: un stream retiene un
+        hilo por kiosco en ThreadingHTTPServer y no aporta a 1 Hz); keep-alive HTTP/1.1.
+  - [x] Settings nuevos (`site_name`, `local_api_refresh_ms` >249, `health_disk_path`) con
+        defaults anclados por test; supervisor pasa signal/cloud/gateway_id/site_name/
+        refresh al panel (verificado por comportamiento); **suite edge: 273 passed**
+        (256 + 17 nuevos) · ruff limpio.
+  - [ ] **Verificación en el Pi real** (con Mauricio, en el cierre de fase): deploy
+        (`ssh takab-pi5`: git pull + `uv sync --extra hardware --extra aws` + restart +
+        `TAKAB_EDGE_SITE_NAME="Sitio Dev Puebla"` en edge.env) → `curl /api/status | jq`
+        (4 canales con PGA ~piso MEMS, disco numérico, nube true) → navegador LAN: PGA
+        ~1 Hz; desconectar el Shake ⇒ "SIN SEÑAL" ≤5 s; `systemctl stop/start` ⇒
+        auto-recuperación; POST sin PIN = 401/403; con el panel abierto 60 s ⇒ ≤2
+        publicaciones en takab/health; DevTools sin requests fuera de la LAN.
 
 ### [x] T-1.54 · Web: Flota sin solapes + Multi-Tenant editable — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.50 (mismo cambio CSS base)

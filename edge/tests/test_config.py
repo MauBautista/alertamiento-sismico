@@ -103,3 +103,13 @@ def test_rollback_does_not_reopen_replay_window():
     with pytest.raises(ConfigError):
         store.apply_signed_update(bad_raw, bad_sig, 2)
     assert store.current().tenant_id == "buena"
+
+
+def test_local_panel_settings_defaults():
+    """T-1.53: settings nuevos de la mini-consola LAN con defaults sensatos."""
+    from takab_edge.config import load_settings
+
+    s = load_settings()
+    assert s.site_name == ""  # vacío ⇒ el panel muestra el gateway_id
+    assert s.local_api_refresh_ms == 1000
+    assert s.health_disk_path == "/"

@@ -19,12 +19,14 @@ calibración.
 from __future__ import annotations
 
 import logging
+import threading
+from datetime import datetime
 
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
 
 from takab_edge.config import SignalConfig
-from takab_edge.contracts import Feature1s, WaveformPacket
+from takab_edge.contracts import Feature1s, WaveformPacket, utcnow
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.signal")
@@ -157,16 +159,32 @@ class FeatureExtractor(EdgeModule):
         self.config = config or SignalConfig()
         self._context: dict[str, np.ndarray] = {}
         self._last: Feature1s | None = None
+        # [T-1.53] Última feature POR CANAL + hora de RECEPCIÓN (reloj de pared
+        # del Pi): el panel local mide staleness contra esto — window_start es
+        # el reloj de datos del Shake y no sirve para detectar "sin señal".
+        self._by_channel: dict[str, tuple[Feature1s, datetime]] = {}
+        self._live_lock = threading.Lock()
 
     @property
     def last(self) -> Feature1s | None:
         return self._last
+
+    def live_by_channel(self) -> dict[str, tuple[Feature1s, datetime]]:
+        """Copia del último `Feature1s` por canal con su hora de llegada.
+
+        Para el panel LAN (T-1.53): lectura barata desde los hilos HTTP sin
+        tocar el camino caliente (el lock solo protege el dict, nanosegundos).
+        """
+        with self._live_lock:
+            return dict(self._by_channel)
 
     def process(self, packet: WaveformPacket) -> Feature1s:
         preceding = self._context.get(packet.channel)
         feature = compute_features(packet, self.config, preceding)
         self._update_context(packet)
         self._last = feature
+        with self._live_lock:
+            self._by_channel[packet.channel] = (feature, utcnow())
         return feature
 
     def _update_context(self, packet: WaveformPacket) -> None:

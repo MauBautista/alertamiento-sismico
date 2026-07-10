@@ -180,6 +180,12 @@ class EdgeSupervisor:
             port=s.local_api_port,
             pin=s.local_api_pin,
             dev_mode=s.dev_mode,
+            # T-1.53: mini-consola — PGA vivo, enlace a nube e identidad viva.
+            signal=self.signal,
+            cloud=self.cloud,
+            gateway_id=s.gateway_id,
+            site_name=s.site_name,
+            refresh_ms=s.local_api_refresh_ms,
         )
 
         self._modules: dict[str, EdgeModule] = {

@@ -72,6 +72,6 @@
   "title": "CommandAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/command_ack/v1.1.0",
-  "version": "1.1.0"
+  "$id": "https://takab.mx/schemas/command_ack/v1.2.0",
+  "version": "1.2.0"
 }

@@ -135,6 +135,18 @@
       "default": null,
       "title": "Cert Days Remaining"
     },
+    "disk_used_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Disk Used Pct"
+    },
     "relays": {
       "items": {
         "$ref": "#/$defs/RelayState"
@@ -154,6 +166,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.1.0",
-  "version": "1.1.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.2.0",
+  "version": "1.2.0"
 }

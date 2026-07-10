@@ -184,3 +184,17 @@ def test_production_supervisor_wires_real_seedlink_transport(monkeypatch):
     sup.build()  # sólo ensambla; no arranca (no conecta)
     assert isinstance(sup.seedlink._transport, ObsPySeedLinkTransport)
     assert sup.seedlink._transport.station == settings.seedlink_station_code
+
+
+def test_local_api_wired_with_signal_and_cloud(supervisor):
+    """T-1.53: el supervisor cablea signal/cloud/identidad a la mini-consola —
+    verificado por COMPORTAMIENTO: un paquete procesado aparece en status()."""
+    from takab_edge.contracts import WaveformPacket, utcnow
+
+    supervisor.signal.process(
+        WaveformPacket(station="R4F74", channel="EHZ", starttime=utcnow(), samples=[0, 3] * 50)
+    )
+    status = supervisor.local_api.status()
+    assert "EHZ" in status["signal"]["channels"]
+    assert status["site_name"] == supervisor.settings.site_name
+    assert status["cloud"] is not None

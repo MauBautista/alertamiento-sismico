@@ -176,3 +176,98 @@ def test_production_without_pin_is_fail_closed(supervisor):
         assert status == 200  # la lectura del guardia sigue viva
     finally:
         dash.stop()
+
+
+# --- Mini-consola (T-1.53): status enriquecido, honesto y defensivo ------------
+
+
+def test_status_does_not_publish_health(supervisor):
+    """REGRESIÓN del bug: cada GET ejecutaba las sondas Y publicaba a la nube."""
+    published = []
+    supervisor.health.on_snapshot(published.append)
+    for _ in range(10):
+        supervisor.local_api.status()
+    assert published == []  # el panel lee el CACHE; solo el heartbeat publica
+
+
+def test_status_includes_signal_per_channel(supervisor):
+    from takab_edge.contracts import WaveformPacket, utcnow
+
+    for channel, amp in (("EHZ", 5), ("ENZ", 7)):
+        supervisor.signal.process(
+            WaveformPacket(
+                station="R4F74", channel=channel, starttime=utcnow(), samples=[0, amp] * 50
+            )
+        )
+    status = supervisor.local_api.status()
+    channels = status["signal"]["channels"]
+    assert set(channels) == {"EHZ", "ENZ"}
+    ch = channels["ENZ"]
+    assert {"pga_g", "pgv_cms", "clipping", "age_s", "received_at"} <= set(ch)
+    assert ch["age_s"] >= 0.0
+    assert status["signal"]["stale_after_s"] == 5.0
+
+
+def test_status_without_features_is_honest(supervisor):
+    status = supervisor.local_api.status()
+    assert status["signal"]["channels"] == {}
+    assert status["signal"]["last_received_at"] is None  # "SIN SEÑAL", no un invento
+
+
+def test_status_includes_health_cloud_and_identity(supervisor):
+    status = supervisor.local_api.status()
+    # salud del CACHE (el _on_start del monitor tomó el snapshot de arranque)
+    assert status["health"] is not None
+    assert "disk_used_pct" in status["health"]
+    assert status["health"]["age_s"] >= 0.0
+    # enlace a nube: en dev sin transporte no hay conexión — se dice tal cual
+    assert status["cloud"]["online"] is False
+    assert isinstance(status["cloud"]["queued"], int)
+    # identidad viva desde settings (no depende del snapshot)
+    assert status["gateway_id"] == supervisor.settings.gateway_id
+    assert status["uptime_s"] >= 0.0
+    assert status["refresh_ms"] == supervisor.settings.local_api_refresh_ms
+
+
+def test_status_survives_broken_modules(supervisor, monkeypatch):
+    """El panel del guardia NO muere porque un módulo no-crítico falle."""
+
+    class _Roto:
+        def __get__(self, *_):
+            raise RuntimeError("kaput")
+
+    monkeypatch.setattr(type(supervisor.rules), "last_decision", _Roto())
+    monkeypatch.setattr(type(supervisor.health), "last_snapshot", _Roto())
+    code, body = _get(supervisor.local_api, "/api/status")
+    assert code == 200
+    payload = json.loads(body)
+    assert payload["last_tier"] is None
+    assert payload["health"] is None
+
+
+def test_events_merge_transitions_and_lan_actions(supervisor):
+    from takab_edge.contracts import SasmexSignal
+
+    supervisor.rules.evaluate_sasmex(SasmexSignal(active=True))
+    assert _post(supervisor.local_api, "/api/siren-test") == 200
+    events = supervisor.local_api.status()["events"]
+    assert len(events) <= 10
+    kinds = {e.get("action") or e.get("to_tier") for e in events}
+    assert "siren_test" in kinds  # acción LAN registrada
+    assert "evacuate_or_hold" in kinds  # transición SASMEX registrada
+    # más recientes primero
+    ats = [e["at"] for e in events]
+    assert ats == sorted(ats, reverse=True)
+
+
+def test_index_has_no_external_resources(supervisor):
+    """La LAN no tiene internet: el HTML no puede referenciar NADA externo."""
+    code, body = _get(supervisor.local_api, "/")
+    assert code == 200
+    html = body.decode()
+    assert "ALERTA S" in html and "PROTÉJASE" in html  # banner MVP intacto
+    for forbidden in ("googleapis", "cdn.", "https://", "http://"):
+        assert forbidden not in html, f"recurso externo en el panel: {forbidden}"
+    # sin countdown ni magnitud preliminar (blueprint §14)
+    assert "T-MINUS" not in html
+    assert "countdown" not in html.lower()

@@ -304,7 +304,8 @@ def handle_health_snapshot(
     default del contrato: 'heartbeat'). Desde T-1.40 el contrato es honesto:
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
     persisten como NULL — la flota pinta S/D, no un invento. Sin columna
-    destino: packet_loss_pct, relays. Sin fuente edge: battery_min_left.
+    destino: packet_loss_pct, relays, disk_used_pct (T-1.53, consumo local del
+    panel LAN). Sin fuente edge: battery_min_left.
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "health_snapshot")) is not None:
         return rej

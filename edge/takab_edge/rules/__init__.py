@@ -16,6 +16,8 @@ firmada en T-1.12).
 from __future__ import annotations
 
 import logging
+import threading
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from time import perf_counter
@@ -36,6 +38,9 @@ from takab_edge.contracts import (
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.rules")
+
+#: Tope del ring de transiciones del panel LAN (T-1.53).
+_TRANSITIONS_MAX = 32
 
 #: Secuencia de actuación por tier. `evacuate_or_hold` incluye la **sirena general**
 #: (blueprint §4.5): en la ruta SASMEX es idempotente con el reflejo in-process de
@@ -161,6 +166,13 @@ class RuleEngine(EdgeModule):
         self._last_latency_s: float | None = None
         self._event_id: str | None = None
         self._episode_end: datetime | None = None
+        # [T-1.53] Últimas transiciones de tier para el panel LAN. Dos hilos
+        # escriben aquí (seedlink→evaluate_features y callback gpio→
+        # evaluate_sasmex) y los hilos HTTP leen: lock obligatorio. En memoria
+        # a propósito (la nube persiste los LocalEvent; el panel declara
+        # "desde el arranque").
+        self._transitions: deque[dict] = deque(maxlen=_TRANSITIONS_MAX)
+        self._transitions_lock = threading.Lock()
 
     @property
     def last_decision(self) -> TierDecision | None:
@@ -170,6 +182,12 @@ class RuleEngine(EdgeModule):
     def last_latency_s(self) -> float | None:
         """Latencia medida cruce-de-umbral→decisión (presupuesto §4.3 <200 ms)."""
         return self._last_latency_s
+
+    def recent_transitions(self, limit: int = 10) -> list[dict]:
+        """Últimas transiciones de tier (más recientes primero) para el panel LAN."""
+        with self._transitions_lock:
+            items = list(self._transitions)
+        return list(reversed(items))[:limit]
 
     def evaluate_features(self, feature: Feature1s) -> TierDecision:
         started = perf_counter()
@@ -220,6 +238,20 @@ class RuleEngine(EdgeModule):
                 tier.value,
                 "; ".join(reasons) or "-",
             )
+            with self._transitions_lock:
+                self._transitions.append(
+                    {
+                        "at": self._clock().isoformat(),
+                        "from_tier": self._last_tier.value if self._last_tier else None,
+                        "to_tier": tier.value,
+                        "source": source.value,
+                        "event_id": event_id,
+                        # severidad = PGA pico SOLO si la fuente es instrumental;
+                        # SASMEX es booleano y su 1.0 no es una medición.
+                        "pga": severity if source is AlertSource.THRESHOLD else None,
+                        "reasons": list(reasons),
+                    }
+                )
             self._last_tier = tier
         self._last_decision = decision
         return decision

@@ -31,7 +31,10 @@ from takab_edge.contracts import (
 #: 1.1.0 (T-1.40): health_snapshot honesto — ntp_offset_s/battery_pct/
 #: cert_days_remaining nullable («sin dato»), + mqtt_rtt_ms, ups_status default
 #: unknown. Aditivo/relajante: un payload 1.0.0 sigue validando contra 1.1.0.
-SCHEMA_VERSION = "1.1.0"
+#: 1.2.0 (T-1.53): health_snapshot + disk_used_pct nullable (panel LAN). ADITIVO:
+#: el ingest de la nube ignora la clave (sin columna destino) y un payload 1.1.0
+#: sigue validando contra 1.2.0.
+SCHEMA_VERSION = "1.2.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

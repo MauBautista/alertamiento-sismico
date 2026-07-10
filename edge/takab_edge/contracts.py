@@ -230,6 +230,10 @@ class HealthSnapshot(BaseModel):
     battery_pct: float | None = None
     temperature_c: float = 0.0
     cert_days_remaining: int | None = None
+    # [T-1.53] % de disco usado (shutil.disk_usage) — None = sin dato (regla de
+    # oro 7). ADITIVO (schema 1.2.0): el ingest de la nube lo ignora (sin
+    # columna destino), el panel LAN lo muestra.
+    disk_used_pct: float | None = None
     relays: list[RelayState] = Field(default_factory=list)
     transition_reason: str = "heartbeat"
 

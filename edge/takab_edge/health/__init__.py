@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import subprocess
 import threading
 from collections.abc import Callable
@@ -44,6 +45,11 @@ _POWER_SUPPLY = Path("/sys/class/power_supply")
 _RUN_TIMEOUT_S = 2.0
 
 _T = TypeVar("_T")
+
+
+def _no_disk() -> float | None:
+    """Sonda de disco ausente (probes pre-T-1.53): «sin dato»."""
+    return None
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,7 @@ class HealthProbes(Protocol):
     def ntp_offset_s(self) -> float | None: ...
     def ups(self) -> UpsReading: ...
     def cert_days_remaining(self) -> int | None: ...
+    def disk_used_pct(self) -> float | None: ...
 
 
 def _run_cmd(cmd: list[str]) -> str | None:
@@ -207,6 +214,22 @@ class HostProbes:
             return None
         return _parse_cert_days(out)
 
+    def disk_used_pct(self) -> float | None:
+        """Uso del disco donde vive el buffer/evidencia ([T-1.53], panel LAN).
+
+        ``shutil.disk_usage`` sobre ``health_disk_path`` (default ``/``: en el
+        Pi real cubre el NVMe de /var/lib/takab). Ruta inexistente ⇒ ``None``
+        («sin dato»), jamás lanza. El disco lleno ya se maneja defensivo en el
+        supervisor (ENOSPC no ciega la detección); esto es solo visibilidad.
+        """
+        try:
+            usage = shutil.disk_usage(self._settings.health_disk_path)
+        except (OSError, ValueError):
+            return None
+        if usage.total <= 0:
+            return None
+        return usage.used / usage.total * 100.0
+
     def _ups_nut(self) -> UpsReading | None:
         names = self._run(["upsc", "-l"])
         if not names or not names.strip():
@@ -275,6 +298,7 @@ class HealthMonitor(EdgeModule):
         self._cloud = cloud
         self._heartbeat_s = heartbeat_s
         self._callbacks: list[Callable[[HealthSnapshot], None]] = []
+        self._last_snapshot: HealthSnapshot | None = None
         self._last_key: tuple | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -282,6 +306,18 @@ class HealthMonitor(EdgeModule):
     def on_snapshot(self, callback: Callable[[HealthSnapshot], None]) -> None:
         """Registra un consumidor de snapshots (p.ej. publicar a la nube, T-1.11)."""
         self._callbacks.append(callback)
+
+    @property
+    def last_snapshot(self) -> HealthSnapshot | None:
+        """Último snapshot MEDIDO (heartbeat/transición), SIN side effects.
+
+        [T-1.53] El panel LAN lee de aquí: llamar ``snapshot()`` por request
+        ejecutaba las sondas (subprocesos con timeout de 2 s) Y disparaba los
+        callbacks — cada GET del panel publicaba un health a la nube (~30/min
+        con el poll de 2 s en vez del heartbeat de 60 s). La edad del dato la
+        declara la UI ("salud medida hace Ns"), jamás se finge frescura.
+        """
+        return self._last_snapshot
 
     def _relay_states(self) -> list[RelayState]:
         if self._gpio is not None and self._gpio.running:
@@ -329,9 +365,13 @@ class HealthMonitor(EdgeModule):
             battery_pct=ups.battery_pct,
             temperature_c=self._safe(self._probes.temperature_c, 0.0),
             cert_days_remaining=self._safe(self._probes.cert_days_remaining, None),
+            # getattr: sondas previas a T-1.53 (fakes/impl externas) pueden no
+            # traer disk_used_pct — ausencia = «sin dato», no un crash.
+            disk_used_pct=self._safe(getattr(self._probes, "disk_used_pct", _no_disk), None),
             relays=relays,
             transition_reason=transition_reason,
         )
+        self._last_snapshot = snap
         self._log_transition(snap, transition_reason)
         for callback in self._callbacks:
             callback(snap)

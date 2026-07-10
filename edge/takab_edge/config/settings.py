@@ -188,6 +188,11 @@ class EdgeSettings(BaseSettings):
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
     local_api_port: int = 8080
+    #: Nombre del sitio que muestra la mini-consola LAN (T-1.53). Vacío ⇒ se
+    #: muestra el gateway_id. En el Pi real: TAKAB_EDGE_SITE_NAME="Sitio Dev Puebla".
+    site_name: str = ""
+    #: Cadencia (ms) del poll del panel LAN; viaja EN el payload de /api/status.
+    local_api_refresh_ms: int = Field(default=1000, gt=249)
     #: PIN de las ACCIONES del panel LAN (T-1.43, header X-Takab-Pin). Vacío +
     #: dev_mode ⇒ abierto (tests/demo); vacío en PRODUCCIÓN ⇒ POST 403
     #: fail-closed hasta provisionarlo (provision_gateway.sh lo genera).
@@ -211,6 +216,8 @@ class EdgeSettings(BaseSettings):
     bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
     #: Periodo del heartbeat de salud (beacon de vida); las transiciones se loguean aparte.
     health_heartbeat_s: float = Field(default=60.0, gt=0)
+    #: Punto de montaje que reporta la sonda de disco del panel (T-1.53).
+    health_disk_path: str = "/"
 
 
 def load_settings() -> EdgeSettings:

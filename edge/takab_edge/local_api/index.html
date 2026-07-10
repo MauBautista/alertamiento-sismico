@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAKAB Ailert — Gabinete</title>
+<style>
+/* Mini-consola LAN (T-1.53). Familia visual TAKAB con tokens EN HEX inline:
+   la LAN no tiene internet — CERO fuentes/CSS/JS externos (test lo ancla).
+   system-ui para UI; monospace del sistema con tabular-nums para datos. */
+:root{
+  --s0:#0E2336; --s1:#122B44; --s2:#18324E; --s3:#1F3D5C;
+  --fg1:#F0F2F5; --fg2:#B8C2CE; --fg3:#6F7E8F;
+  --cyan:#00BFFF; --ok:#00E676; --warn:#FFC107; --crit:#FF5252;
+  --border:rgba(240,242,245,.08); --border2:rgba(240,242,245,.16);
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--s0);color:var(--fg1);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 18px;background:var(--s1);border-bottom:1px solid var(--border)}
+.brand{font-weight:800;letter-spacing:.06em}
+.brand small{display:block;font-weight:500;color:var(--fg3);
+  font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+.pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
+  font-size:11px;font-weight:700;letter-spacing:.08em;white-space:nowrap}
+.pill.ok{background:rgba(0,230,118,.15);color:var(--ok)}
+.pill.warn{background:rgba(255,193,7,.18);color:var(--warn)}
+.pill.crit{background:rgba(255,82,82,.18);color:var(--crit)}
+.pill.idle{background:rgba(240,242,245,.08);color:var(--fg3)}
+.dot{width:8px;height:8px;border-radius:999px;background:currentColor}
+#banner{display:none;padding:16px;text-align:center;font-weight:800;
+  font-size:clamp(22px,4.5vw,40px);letter-spacing:.04em;
+  background:#7B1818;color:#fff;border-bottom:2px solid var(--crit)}
+#banner.on{display:block;animation:blink 1s step-start infinite}
+@keyframes blink{50%{opacity:.6}}
+main{max-width:1100px;margin:0 auto;padding:14px;display:grid;gap:14px}
+.card{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:14px}
+.card h2{margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:.12em;
+  color:var(--fg3);text-transform:uppercase}
+.card .sub{font-size:10px;color:var(--fg3);letter-spacing:.04em;
+  font-family:var(--mono);margin-bottom:10px}
+#tier{font-weight:800;line-height:1.05;font-size:clamp(40px,9vw,72px);letter-spacing:-.01em}
+#tier.ok{color:var(--ok)} #tier.warn{color:var(--warn)} #tier.crit{color:var(--crit)}
+#tiersub{margin-top:8px;color:var(--fg2);font-family:var(--mono);font-size:13px}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.ch{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:10px}
+.ch .name{font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.06em;
+  display:flex;justify-content:space-between}
+.ch .pga{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;
+  font-size:clamp(24px,4vw,36px);line-height:1.1}
+.ch .pga .unit{font-size:13px;color:var(--fg3);font-weight:500}
+.ch .meta{font-family:var(--mono);font-size:11px;color:var(--fg3);margin-top:4px}
+.clip{color:var(--crit);font-weight:700}
+.rows{display:grid;gap:0}
+.row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+  border-bottom:1px solid var(--border);font-size:13px}
+.row:last-child{border-bottom:none}
+.row b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+.sd{color:var(--fg3)}
+.warn-t{color:var(--warn)} .crit-t{color:var(--crit)} .ok-t{color:var(--ok)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{padding:12px 16px;border:0;border-radius:6px;font-weight:800;cursor:pointer;
+  letter-spacing:.06em;font-size:13px}
+.silence{background:var(--warn);color:#0E2336}
+.test{background:var(--cyan);color:#0E2336}
+.reset{background:#334155;color:#fff}
+#msg{margin-top:8px;font-weight:700;color:var(--warn);min-height:1.2em;
+  font-family:var(--mono);font-size:12px}
+#events li{font-family:var(--mono);font-size:12.5px;color:var(--fg2);
+  padding:5px 0;border-bottom:1px solid var(--border);list-style:none}
+#events{margin:0;padding:0}
+.stateline{padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;
+  font-weight:700;letter-spacing:.06em;margin-bottom:10px;display:none}
+.stateline.show{display:block}
+.stateline.stale{background:rgba(255,193,7,.18);color:var(--warn)}
+.stateline.err{background:rgba(255,82,82,.18);color:var(--crit)}
+footer{padding:10px 18px;color:var(--fg3);font-family:var(--mono);font-size:10.5px}
+</style></head><body>
+<header>
+  <div class="brand">TAKAB AILERT · <span id="site">—</span>
+    <small id="gw">—</small></div>
+  <div class="pills">
+    <span id="cloudpill" class="pill idle"><span class="dot"></span> ENLACE NUBE · S/D</span>
+    <span id="connpill" class="pill idle"><span class="dot"></span> CONECTANDO…</span>
+  </div>
+</header>
+
+<div id="banner">ALERTA SÍSMICA · PROTÉJASE</div>
+
+<main>
+  <div id="stateline" class="stateline"></div>
+
+  <section class="card">
+    <h2>Estado del sitio</h2>
+    <div id="tier" class="ok">—</div>
+    <div id="tiersub">—</div>
+  </section>
+
+  <section class="card">
+    <h2>Sensores en vivo</h2>
+    <div class="sub">PGA/PGV POR CANAL · FEATURES 1 s · PROCESAMIENTO EDGE</div>
+    <div id="signalstate" class="stateline"></div>
+    <div id="channels" class="grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>Actuadores del gabinete</h2>
+    <div class="sub">RELÉS + ACCIONES CON PIN (T-1.43)</div>
+    <div id="relays" class="rows"></div>
+    <div class="btns">
+      <button class="silence" onclick="cmd('silence')">SILENCIAR AUDIBLES</button>
+      <button class="test" onclick="cmd('siren-test')">PROBAR SIRENA</button>
+      <button class="reset" onclick="cmd('reset')">CERRAR ALERTA</button>
+    </div>
+    <div id="msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Salud del gabinete</h2>
+    <div class="sub" id="healthage">SALUD · S/D</div>
+    <div id="health" class="rows"></div>
+  </section>
+
+  <section class="card">
+    <h2>Eventos recientes</h2>
+    <div class="sub" id="uptime">DESDE EL ARRANQUE</div>
+    <ul id="events"></ul>
+  </section>
+</main>
+<footer>Mini-consola LAN del gabinete · lectura abierta en la red local · acciones con PIN ·
+sin internet requerido</footer>
+
+<script>
+// El PIN vive SOLO en memoria de la página (CLAUDE.md §8: nada de localStorage).
+let pin = null;
+let refreshMs = 1000;
+let failures = 0;
+let lastGood = null;
+
+function el(id){ return document.getElementById(id); }
+function send(name){
+  const h = pin ? {'X-Takab-Pin': pin} : {};
+  return fetch('/api/'+name,{method:'POST',headers:h});
+}
+async function cmd(name){
+  const m = el('msg');
+  try{
+    let r = await send(name);
+    if(r.status===401){
+      const entered = window.prompt('PIN del gabinete');
+      if(entered===null || entered===''){ return; }
+      pin = entered;
+      r = await send(name);
+      if(r.status===401){ pin=null; m.textContent='PIN INCORRECTO'; }
+    }
+    if(r.status===403){ m.textContent='SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS'; }
+    else if(r.status===429){ m.textContent='BLOQUEADO POR INTENTOS · ESPERA 60 s'; }
+    else if(r.ok){ m.textContent=''; }
+    tick();
+  }catch(e){}
+}
+
+const TIERS = {
+  normal:        {cls:'ok',   txt:'✓ NORMAL · SIN ALERTA'},
+  watch:         {cls:'warn', txt:'▲ VIGILANCIA'},
+  restricted:    {cls:'crit', txt:'■ ACCESO RESTRINGIDO'},
+  evacuate_or_hold:{cls:'crit', txt:'■ EVACUAR / RESGUARDO'},
+  manual_only:   {cls:'warn', txt:'⚠ MODO MANUAL — SENSORES DEGRADADOS'},
+};
+function pill(node, cls, txt){ node.className='pill '+cls;
+  node.innerHTML='<span class="dot"></span> '+txt; }
+function row(k,v,cls){ return '<div class="row"><span>'+k+'</span><b class="'+(cls||'')+'">'
+  +v+'</b></div>'; }
+function num(v,dec,unit,warnAt,critAt){
+  if(v===null||v===undefined) return '<span class="sd">S/D</span>';
+  let cls='';
+  if(critAt!==undefined && v>=critAt) cls='crit-t';
+  else if(warnAt!==undefined && v>=warnAt) cls='warn-t';
+  return '<span class="'+cls+'">'+v.toFixed(dec)+(unit?' '+unit:'')+'</span>';
+}
+function hhmmss(iso){ try{ return iso.slice(11,19)+' UTC'; }catch(e){ return '—'; } }
+
+function render(s){
+  el('site').textContent = s.site_name || s.gateway_id || '—';
+  el('gw').textContent = s.gateway_id || '';
+  refreshMs = s.refresh_ms || 1000;
+
+  // Enlace a nube: aislado ≠ desprotegido (doctrina edge-first).
+  const c = s.cloud || {};
+  if(c.online){ pill(el('cloudpill'),'ok','ENLACE NUBE · CONECTADO'); }
+  else{ pill(el('cloudpill'),'warn','SIN ENLACE — PROTECCIÓN LOCAL ACTIVA'
+    +(c.queued? ' · '+c.queued+' EN COLA':'')); }
+
+  // Banner + tier hero (SIN cuenta regresiva ni magnitud — blueprint §14).
+  const alertOn = s.sasmex_active || s.last_tier==='evacuate_or_hold';
+  el('banner').className = alertOn ? 'on' : '';
+  const t = TIERS[s.last_tier] || {cls:'ok', txt:'—'};
+  el('tier').className = t.cls; el('tier').textContent = t.txt;
+  el('tiersub').textContent =
+    'SIRENA: '+(s.siren_sounding?'SONANDO':(s.audible_silenced?'SILENCIADA':'EN REPOSO'))
+    +' · SASMEX: '+(s.sasmex_active?'ACTIVO':'NO');
+
+  // Sensores por canal (staleness honesta contra la hora de LLEGADA).
+  const sig = s.signal;
+  const chBox = el('channels'); const sigState = el('signalstate');
+  if(!sig || Object.keys(sig.channels||{}).length===0){
+    chBox.innerHTML='';
+    sigState.className='stateline err show';
+    sigState.textContent='SIN SEÑAL DEL SENSOR · SIN FEATURES RECIBIDAS';
+  } else {
+    const stale = Object.values(sig.channels).every(ch => ch.age_s > sig.stale_after_s);
+    if(stale){
+      sigState.className='stateline stale show';
+      sigState.textContent='SIN SEÑAL DEL SENSOR · ÚLTIMO DATO '+hhmmss(sig.last_received_at||'');
+    } else { sigState.className='stateline'; }
+    chBox.innerHTML = Object.entries(sig.channels).map(([name,ch]) =>
+      '<div class="ch"><div class="name"><span>'+name+'</span>'
+      +(ch.clipping?'<span class="clip">CLIP</span>':'')
+      +'</div><div class="pga">'+ch.pga_g.toFixed(4)+' <span class="unit">g</span></div>'
+      +'<div class="meta">PGV '+ch.pgv_cms.toFixed(2)+' cm/s · STA/LTA '
+      +ch.sta_lta.toFixed(1)+' · hace '+ch.age_s.toFixed(0)+' s</div></div>'
+    ).join('');
+  }
+
+  // Relés.
+  el('relays').innerHTML = (s.relays||[]).map(r =>
+    row(r.channel.toUpperCase().replaceAll('_',' '),
+        (r.activated?'ACTIVADO':(r.energized?'ENERGIZADO':'REPOSO'))
+        +' <span class="sd">· fail-safe '+r.fail_safe+'</span>',
+        r.activated?'crit-t':'')
+  ).join('') || '<div class="row"><span>Relés</span><b class="sd">S/D</b></div>';
+
+  // Salud (edad declarada; S/D jamás un número inventado).
+  const h = s.health;
+  if(!h){
+    el('healthage').textContent='SALUD · SIN SNAPSHOT TODAVÍA';
+    el('health').innerHTML='';
+  } else {
+    el('healthage').textContent='SALUD MEDIDA HACE '+h.age_s.toFixed(0)+' s';
+    el('health').innerHTML =
+      row('NTP offset', h.ntp_offset_s===null?'<span class="sd">S/D</span>'
+        :(h.ntp_offset_s*1000).toFixed(1)+' ms')
+      +row('Lag SeedLink', num(h.seedlink_lag_s,2,'s',2,10))
+      +row('Pérdida de paquetes', num(h.packet_loss_pct,1,'%',1,10))
+      +row('RTT MQTT', h.mqtt_rtt_ms===null?'<span class="sd">S/D</span>'
+        :h.mqtt_rtt_ms.toFixed(1)+' ms')
+      +row('UPS', h.ups_status.toUpperCase()
+        +(h.battery_pct!==null?' · '+h.battery_pct.toFixed(0)+'%':''),
+        h.ups_status==='battery'?'warn-t':'')
+      +row('Temperatura', num(h.temperature_c,1,'°C',70,80))
+      +row('Cert mTLS', h.cert_days_remaining===null?'<span class="sd">S/D</span>'
+        :'<span class="'+(h.cert_days_remaining<30?'warn-t':'')+'">'
+         +h.cert_days_remaining+' días</span>')
+      +row('Disco', h.disk_used_pct===null?'<span class="sd">S/D</span>'
+        :'<span class="'+(h.disk_used_pct>90?'warn-t':'')+'">'
+         +h.disk_used_pct.toFixed(0)+'% usado</span>');
+  }
+
+  // Eventos (desde el arranque — honesto: la nube guarda el historial completo).
+  el('uptime').textContent = 'DESDE EL ARRANQUE'
+    +(s.uptime_s!==null&&s.uptime_s!==undefined?
+      ' · UPTIME '+Math.floor(s.uptime_s/3600)+'h '
+      +Math.floor((s.uptime_s%3600)/60)+'m':'');
+  const ev = (s.events||[]).map(e => {
+    if(e.action){ return '<li>'+hhmmss(e.at)+' — '
+      +e.action.toUpperCase().replaceAll('_',' ')+' · VÍA LAN</li>'; }
+    return '<li>'+hhmmss(e.at)+' — '+(e.from_tier||'—').toUpperCase()+' → '
+      +e.to_tier.toUpperCase()+' · '+e.source.toUpperCase()
+      +(e.pga!==null&&e.pga!==undefined?' · PGA '+e.pga.toFixed(3)+' g':'')+'</li>';
+  }).join('');
+  el('events').innerHTML = ev || '<li class="sd">Sin eventos desde el arranque</li>';
+}
+
+// Poll con setTimeout ENCADENADO (no setInterval: no se encima si el Pi tarda)
+// y backoff 1→2→5 s en fallo. Estados de conexión del PANEL, separados de la
+// edad de la salud (que es del heartbeat del gabinete).
+async function tick(){
+  const line = el('stateline');
+  try{
+    const r = await fetch('/api/status'); if(!r.ok) throw 0;
+    render(await r.json());
+    failures = 0; lastGood = Date.now();
+    pill(el('connpill'),'ok','PANEL EN VIVO');
+    line.className='stateline';
+  }catch(e){
+    failures += 1;
+    if(failures >= 3){
+      pill(el('connpill'),'crit','SIN CONEXIÓN CON EL GABINETE');
+      line.className='stateline err show';
+      line.textContent='SIN CONEXIÓN CON EL GABINETE · REINTENTANDO…';
+    } else if(lastGood){
+      pill(el('connpill'),'warn','DATO RETENIDO');
+      line.className='stateline stale show';
+      line.textContent='DATO RETENIDO DESDE '+new Date(lastGood).toISOString().slice(11,19)+' UTC';
+    }
+  }
+  const delay = failures===0 ? refreshMs : Math.min(5000, 1000*Math.pow(2,failures-1));
+  setTimeout(tick, delay);
+}
+tick();
+</script></body></html>
