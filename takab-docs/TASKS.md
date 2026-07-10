@@ -988,11 +988,34 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         (`incident_actions` por `edge:gw-dev-0001`). Los valores en reposo (0.6–1.1 mg) y
         en excitación (0.57 g) son físicamente coherentes: calibración VALIDADA.
 
-> Nota para T-1.42: a las 03:17:13 UTC apareció un incidente `trigger=sasmex` SIN WR-1
-> cableado (Mauricio intentó el cableado ese día sin terminarlo). Un cable colgante o un
-> roce en el pin 36 cerró GPIO16→GND >50 ms: exactamente la clase de semántica
-> (rebote/duración/falsos positivos del contacto) que la sesión del WR-1 debe medir antes
-> de dar por buena la entrada SASMEX física.
+> **CORRECCIÓN (confirmada por Mauricio):** el incidente `trigger=sasmex` de las 03:17 UTC
+> NO fue espurio — fue su prueba DELIBERADA con un botón físico en los puertos GPIO donde
+> irá el radio SASMEX. Ver T-1.42: esa pulsación validó la entrada física completa.
+
+### [~] T-1.42 · Semántica real del WR-1 — **ENTRADA FÍSICA VALIDADA (botón) · falta el radio**
+- **Componente:** edge + hardware · **Avanza:** gate #3 (parte software/entrada)
+- **Lo VALIDADO con el botón físico de Mauricio en GPIO16/GND (2026-07-10 03:17 UTC,
+  7 pulsaciones medidas del journal):**
+  - [x] Cableado y polaridad confirmados: BCM16 (pin 36) con pull-up, activo-bajo, retorno
+        a GND (pin 34). Cada cierre real registró EXACTAMENTE una activación.
+  - [x] **Reflejo SASMEX→sirena in-process: 0.10–0.33 ms medidos** — el presupuesto del
+        gate #3 es <100 ms; la parte software queda 300× por debajo (la latencia del RELÉ
+        físico sigue pendiente de hardware).
+  - [x] Debounce de 50 ms: pulsaciones humanas (~100–420 ms de cierre) pasan limpias, sin
+        dobles disparos.
+  - [x] E2E completo del canal primario: cierre → `tier normal → evacuate_or_hold (alerta
+        SASMEX (WR-1) — canal primario)` → secuencia de actuación → **incidente
+        `trigger=sasmex` en la nube** → desescalada al abrir el contacto.
+  - [x] Bonus (sacudida 03:19): confirmación multi-sensor instrumental observada en vivo —
+        `restricted (1 sensor)` → `evacuate_or_hold (confirmado por 2: ENE+ENN)`.
+- **Lo que QUEDA (necesita el radio WR-1 real):**
+  - [ ] Semántica del contacto del RADIO: ¿cierre sostenido durante toda la alerta o pulso?
+        ¿separa alerta de prueba periódica CIRES? ¿duración típica?
+  - [ ] **Decisión de diseño que la prueba destapó:** hoy el tier SIGUE AL NIVEL del
+        contacto y desescala ~0.2 s después de abrirse. Con un cierre sostenido del WR-1
+        eso es correcto; si el radio PULSA, haría falta retención mínima (latch temporal)
+        del `evacuate_or_hold` — decidir con la semántica real medida.
+  - [ ] Gate #3 físico: latencia contacto→RELÉ→sirena real <100 ms (necesita relés).
 
 ### [x] T-1.46 · Validación del quórum contra el catálogo oficial — **[C·G1] COMPLETADA (2026-07-09)**
 - **Componente:** api (tools+tests) + docs · **Cierra:** pregunta abierta #2 de `ANALISIS §4`
