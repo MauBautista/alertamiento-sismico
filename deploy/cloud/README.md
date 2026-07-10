@@ -53,8 +53,11 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
 
 1. Perfil SSO activo: `aws sso login --profile takab-dev`.
 2. Conocer tu IP pública: `curl -s ifconfig.me`.
-3. Docker con `buildx` para `linux/arm64` (el EC2 es Graviton). Si construyes desde
-   x86, añade `--platform linux/arm64` a los `docker build` de `make cloud-images`.
+3. Docker con emulación arm64 (el EC2 es Graviton; `make cloud-images` ya construye
+   `--platform linux/arm64` SIEMPRE). Una sola vez en un host x86:
+   `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
+   La etapa node de la consola corre nativa (`$BUILDPLATFORM`): `dist/` no tiene
+   arquitectura, solo las capas de Caddy son arm64.
 
 ## Secuencia
 

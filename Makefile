@@ -93,8 +93,14 @@ cloud-start:
 AWS_REGION ?= us-east-2
 CLOUD_TAG  ?= $(shell git rev-parse --short HEAD)
 
+# `--platform linux/arm64` SIEMPRE: el EC2 es Graviton y una imagen x86 muere
+# en el pull con "no matching manifest" (descubierto en el primer deploy real;
+# antes era una nota manual del README, que es como se olvidan las cosas).
+# Cross-build desde x86 requiere binfmt una vez:
+#   docker run --privileged --rm tonistiigi/binfmt --install arm64
 cloud-images:
-	@ACC=$$(AWS_PROFILE=$(AWS_PROFILE) aws sts get-caller-identity --query Account --output text); \
+	@set -e; \
+	ACC=$$(AWS_PROFILE=$(AWS_PROFILE) aws sts get-caller-identity --query Account --output text); \
 	REG="$$ACC.dkr.ecr.$(AWS_REGION).amazonaws.com"; \
 	AWS_PROFILE=$(AWS_PROFILE) aws ecr get-login-password --region $(AWS_REGION) \
 		| docker login --username AWS --password-stdin "$$REG"; \
@@ -102,8 +108,8 @@ cloud-images:
 	CID=$$(terraform -chdir=$(TF_DEV) output -raw client_id); \
 	DOM=$$(terraform -chdir=$(TF_DEV) output -raw hosted_ui_domain); \
 	URL=$$(terraform -chdir=$(TF_DEV) output -raw console_url); \
-	docker build -f api/Dockerfile -t "$$REG/takab/cloud:$(CLOUD_TAG)" .; \
-	docker build -f deploy/cloud/console.Dockerfile -t "$$REG/takab/console:$(CLOUD_TAG)" \
+	docker build --platform linux/arm64 -f api/Dockerfile -t "$$REG/takab/cloud:$(CLOUD_TAG)" .; \
+	docker build --platform linux/arm64 -f deploy/cloud/console.Dockerfile -t "$$REG/takab/console:$(CLOUD_TAG)" \
 		--build-arg VITE_COGNITO_AUTHORITY="$$AUTH" \
 		--build-arg VITE_COGNITO_CLIENT_ID="$$CID" \
 		--build-arg VITE_COGNITO_DOMAIN="$$DOM" \

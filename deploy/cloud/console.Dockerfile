@@ -5,8 +5,12 @@
 # sin CORS, sin preflight y con el WebSocket saliendo por `wss://host/api/ws`.
 #
 # `VITE_DEV_TOKEN_ENABLED` NO se define: el panel de login dev no existe en la nube.
+#
+# La etapa de build corre en la plataforma del HOST ($BUILDPLATFORM): `dist/` es
+# JS/CSS independiente de arquitectura, así que node+vite no pagan la emulación
+# QEMU al cross-compilar para el EC2 Graviton — solo la etapa final de Caddy es arm64.
 
-FROM node:22-slim AS build
+FROM --platform=$BUILDPLATFORM node:22-slim AS build
 
 WORKDIR /repo
 
