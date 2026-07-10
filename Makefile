@@ -49,6 +49,18 @@ demo-db: db
 demo-fase1: demo-db
 	cd $(API_DIR) && uv run python ../demo/run.py
 
+# --- SOC local interactivo (Fase 1.7) ------------------------------------------
+# Todo el stack en local para RECORRER la consola antes de desplegar: DB sembrada,
+# API con /dev/token (JWKS inline de dev), worker de incidentes/dictamen, web dev
+# server y UN gabinete real simulado (gw-dev-0001, panel LAN en :8080) con bridge
+# al Postgres local. Estímulos: curl -X POST :9100/quake | /sasmex | /wan/off.
+# Login en http://localhost:5173 → "token de desarrollo" (rol soc_operator o
+# tenant_admin, tenant tenant-dev). Ctrl+C apaga todo.
+soc-local: demo-db
+	cd $(API_DIR) && uv run python scripts/dev_auth_env.py
+	@test -f web/.env || (cp web/.env.example web/.env && echo "web/.env creado desde el example")
+	bash demo/soc_local.sh
+
 down:
 	docker compose down
 

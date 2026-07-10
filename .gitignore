@@ -52,3 +52,6 @@ certs-*/
 
 # graphify (grafo de conocimiento local, salida de tooling)
 graphify-out/
+
+# SOC local interactivo (make soc-local): spool/buffer/logs efímeros
+.local-soc/

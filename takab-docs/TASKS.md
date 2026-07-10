@@ -1074,6 +1074,15 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > LOCAL del Pi (no una vista cloud con rol nuevo); (2) purga TOTAL del entorno desplegado
 > (flota sim + TODOS los incidentes de prueba, incluidos los del botón WR-1) con arranque
 > limpio del historial; `audit_log` se conserva íntegro.
+>
+> **Verificación local ANTES del deploy: `make soc-local`** — DB sembrada + API con
+> `/dev/token` (JWKS de dev por `api/scripts/dev_auth_env.py`, gitignored) + worker de
+> incidentes/dictamen + web (:5173) + UN gabinete real simulado con la identidad de la
+> flota (gw-dev-0001; panel LAN en :8080) y bridge al Postgres local. Estímulos:
+> `curl -X POST :9100/quake | /sasmex | /sasmex/clear | /wan/off`. Verificado E2E el
+> 2026-07-10: quake → incidente crítico → backfill PGA 0.0848 g → dictamen basis v2
+> (`pga_source=features`) → reubicar epicentro (EVT-MAN determinista) → dictamen-request
+> 201/409 → panel LAN con 4 canales vivos y silencio por LAN.
 
 ### [~] T-1.47 · Datos reales: split de seeds, rule_set v1 y runbook de purga — **CÓDIGO LISTO (2026-07-10); ejecución del runbook en EC2 pendiente (manual, Mauricio)**
 - **Componente:** db + demo + deploy · **Depende de:** —
