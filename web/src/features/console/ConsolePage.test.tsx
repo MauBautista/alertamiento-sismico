@@ -141,6 +141,8 @@ describe("ConsolePage", () => {
           sign_dictamen: false,
           siren_test: true,
           manage_fleet: true,
+          relocate_epicenter: true,
+          request_dictamen: true,
         },
       },
     });

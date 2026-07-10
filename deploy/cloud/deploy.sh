@@ -86,6 +86,7 @@ echo '$(b64 deploy/cloud/takab-secrets.sh)'     | base64 -d > /opt/takab/cloud/t
 echo '$(b64 deploy/cloud/takab-secrets.service)'| base64 -d > /etc/systemd/system/takab-secrets.service
 echo '$(b64 deploy/cloud/takab-cloud.service)'  | base64 -d > /etc/systemd/system/takab-cloud.service
 echo '$(b64 db/seeds/prod_fleet.sql)'           | base64 -d > /opt/takab/cloud/prod_fleet.sql
+echo '$(b64 db/seeds/reference_earthquakes.sql)'| base64 -d > /opt/takab/cloud/reference_earthquakes.sql
 chmod 0755 /opt/takab/cloud/takab-secrets.sh
 
 umask 077
@@ -124,6 +125,9 @@ docker run --rm --network host --workdir /takab/api \\
 # locales y aplicarla aquí desharía la purga de datos sim de la nube.
 docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
   </opt/takab/cloud/prod_fleet.sql >/dev/null
+# Catálogo de referencia SSN/USGS (T-1.48; global, idempotente).
+docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
+  </opt/takab/cloud/reference_earthquakes.sql >/dev/null
 
 # Workers ad-hoc del smoke del 2026-07-08 (imagen takab-cloud:t125, lanzados a
 # mano por SSM, sin systemd): fuera. El stack compose los sustituye; dejarlos

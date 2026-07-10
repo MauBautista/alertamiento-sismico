@@ -68,6 +68,8 @@ DENY_ALL = {
     "edit_thresholds": False,
     "siren_test": False,
     "manage_fleet": False,
+    "relocate_epicenter": False,
+    "request_dictamen": False,
 }
 
 
@@ -123,6 +125,23 @@ def test_manage_fleet_excludes_takab_support() -> None:
 def test_ack_incident_roles() -> None:
     can_ack = {r for r in RBAC_SECTION_2 if allowed_actions(r)["ack_incident"]}
     assert can_ack == {"takab_superadmin", "tenant_admin", "soc_operator", "gov_operator"}
+
+
+def test_relocate_epicenter_is_tenant_operator_action() -> None:
+    """[T-1.48] Reubicar el epicentro reescribe un dato de RED compartido
+    (seismic_events): acto de operador del tenant + dueño de plataforma. Ni gov
+    (solo lectura+acuse) ni inspector (juzga, no edita la física del evento)."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["relocate_epicenter"]}
+    assert can == {"takab_superadmin", "tenant_admin", "soc_operator"}
+
+
+def test_request_dictamen_excludes_gov() -> None:
+    """[T-1.48] ``ack_incident`` menos gov: la RLS ``actions_insert`` impide a
+    gov_operator insertar en incident_actions — concederle la acción pintaría
+    un botón que siempre da 403 (regla de oro 7). Divergencia anotada en
+    RBAC-TAKAB.md §2."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["request_dictamen"]}
+    assert can == {"takab_superadmin", "tenant_admin", "soc_operator"}
 
 
 def test_mobile_only_roles_have_no_actions() -> None:

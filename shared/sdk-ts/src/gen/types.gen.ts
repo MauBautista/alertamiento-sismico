@@ -9,6 +9,30 @@ export type AuthFrame = {
 };
 
 /**
+ * Lista completa (13 sismos ratificados; sin paginación).
+ */
+export type CatalogEarthquakeList = {
+    items: Array<CatalogEarthquakeOut>;
+};
+
+/**
+ * Sismo del catálogo de referencia (global, solo lectura).
+ */
+export type CatalogEarthquakeOut = {
+    catalog_key: string;
+    depth_km: number | null;
+    lat: number;
+    lon: number;
+    magnitude: number;
+    notes: string | null;
+    origin_time: string;
+    place: string;
+    ref_id: string;
+    source: string;
+    source_ref: string;
+};
+
+/**
  * Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).
  */
 export type ChannelSeries = {
@@ -82,11 +106,39 @@ export type DictamenOut = {
 };
 
 /**
+ * Cuerpo de POST /incidents/{id}/dictamen-request (T-1.48).
+ */
+export type DictamenRequestIn = {
+    note?: string | null;
+};
+
+/**
  * Firma manual del inspector: estado del dictamen + notas mínimas (basis).
  */
 export type DictamenSignIn = {
     notes?: string | null;
     status: string;
+};
+
+/**
+ * Cuerpo de POST /incidents/{id}/epicenter (T-1.48). Bounds duros aquí;
+ * la función SECURITY DEFINER los re-valida (defensa en profundidad).
+ */
+export type EpicenterRelocateIn = {
+    lat: number;
+    lon: number;
+    note?: string | null;
+};
+
+/**
+ * Resultado de la reubicación: evento afectado/creado + punto previo.
+ */
+export type EpicenterRelocateOut = {
+    created_event: boolean;
+    epicenter: LonLat;
+    event_id: string;
+    incident_id: string;
+    previous: LonLat | null;
 };
 
 /**
@@ -374,6 +426,14 @@ export type IncidentPage = {
 };
 
 /**
+ * Punto geográfico plano (lon/lat WGS84).
+ */
+export type LonLat = {
+    lat: number;
+    lon: number;
+};
+
+/**
  * Incidente abierto (no cerrado) más reciente de un sitio, para el mapa.
  */
 export type MapIncident = {
@@ -415,6 +475,8 @@ export type MeActions = {
     export: boolean;
     generate_report: boolean;
     manage_fleet: boolean;
+    relocate_epicenter: boolean;
+    request_dictamen: boolean;
     sign_dictamen: boolean;
     siren_test: boolean;
 };
@@ -466,6 +528,24 @@ export type MultiChannelFeatures = {
 export type PresignedDownload = {
     expires_in: number;
     url: string;
+};
+
+/**
+ * Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null
+ * (200, no 404): "sin nombre configurado" es un estado normal, no un error.
+ */
+export type ProfileOut = {
+    display_name: string | null;
+    updated_at: string | null;
+    user_sub: string;
+};
+
+/**
+ * Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de
+ * espacios internos) ANTES de validar longitud — "   " no es un nombre.
+ */
+export type ProfilePutIn = {
+    display_name: string;
 };
 
 /**
@@ -766,6 +846,22 @@ export type ZoneOut = {
     name: string;
     zone_id: string;
 };
+
+export type ListReferenceEarthquakesCatalogEarthquakesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/catalog/earthquakes';
+};
+
+export type ListReferenceEarthquakesCatalogEarthquakesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CatalogEarthquakeList;
+};
+
+export type ListReferenceEarthquakesCatalogEarthquakesGetResponse = ListReferenceEarthquakesCatalogEarthquakesGetResponses[keyof ListReferenceEarthquakesCatalogEarthquakesGetResponses];
 
 export type ListEventsEventsGetData = {
     body?: never;
@@ -1132,6 +1228,33 @@ export type ListIncidentActionsIncidentsIncidentIdActionsGetResponses = {
 
 export type ListIncidentActionsIncidentsIncidentIdActionsGetResponse = ListIncidentActionsIncidentsIncidentIdActionsGetResponses[keyof ListIncidentActionsIncidentsIncidentIdActionsGetResponses];
 
+export type RequestDictamenIncidentsIncidentIdDictamenRequestPostData = {
+    body: DictamenRequestIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/dictamen-request';
+};
+
+export type RequestDictamenIncidentsIncidentIdDictamenRequestPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RequestDictamenIncidentsIncidentIdDictamenRequestPostError = RequestDictamenIncidentsIncidentIdDictamenRequestPostErrors[keyof RequestDictamenIncidentsIncidentIdDictamenRequestPostErrors];
+
+export type RequestDictamenIncidentsIncidentIdDictamenRequestPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: IncidentActionOut;
+};
+
+export type RequestDictamenIncidentsIncidentIdDictamenRequestPostResponse = RequestDictamenIncidentsIncidentIdDictamenRequestPostResponses[keyof RequestDictamenIncidentsIncidentIdDictamenRequestPostResponses];
+
 export type ListDictamensIncidentsIncidentIdDictamensGetData = {
     body?: never;
     path: {
@@ -1185,6 +1308,33 @@ export type SignDictamenIncidentsIncidentIdDictamensPostResponses = {
 };
 
 export type SignDictamenIncidentsIncidentIdDictamensPostResponse = SignDictamenIncidentsIncidentIdDictamensPostResponses[keyof SignDictamenIncidentsIncidentIdDictamensPostResponses];
+
+export type RelocateEpicenterIncidentsIncidentIdEpicenterPostData = {
+    body: EpicenterRelocateIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/epicenter';
+};
+
+export type RelocateEpicenterIncidentsIncidentIdEpicenterPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RelocateEpicenterIncidentsIncidentIdEpicenterPostError = RelocateEpicenterIncidentsIncidentIdEpicenterPostErrors[keyof RelocateEpicenterIncidentsIncidentIdEpicenterPostErrors];
+
+export type RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EpicenterRelocateOut;
+};
+
+export type RelocateEpicenterIncidentsIncidentIdEpicenterPostResponse = RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses[keyof RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses];
 
 export type ListEvidenceIncidentsIncidentIdEvidenceGetData = {
     body?: never;
@@ -1255,6 +1405,47 @@ export type MeMeGetResponses = {
 };
 
 export type MeMeGetResponse = MeMeGetResponses[keyof MeMeGetResponses];
+
+export type GetProfileMeProfileGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/profile';
+};
+
+export type GetProfileMeProfileGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfileOut;
+};
+
+export type GetProfileMeProfileGetResponse = GetProfileMeProfileGetResponses[keyof GetProfileMeProfileGetResponses];
+
+export type PutProfileMeProfilePutData = {
+    body: ProfilePutIn;
+    path?: never;
+    query?: never;
+    url: '/me/profile';
+};
+
+export type PutProfileMeProfilePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutProfileMeProfilePutError = PutProfileMeProfilePutErrors[keyof PutProfileMeProfilePutErrors];
+
+export type PutProfileMeProfilePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfileOut;
+};
+
+export type PutProfileMeProfilePutResponse = PutProfileMeProfilePutResponses[keyof PutProfileMeProfilePutResponses];
 
 export type ListRuleSetsRuleSetsGetData = {
     body?: never;

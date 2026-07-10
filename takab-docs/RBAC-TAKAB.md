@@ -74,6 +74,19 @@
   del quórum (`|Δt| ≤ dist/v_P + margen`, blueprint §4.5), y eso es un acto de dueño del tenant,
   no de soporte. La verdad ejecutable vive en `api/src/takab_api/auth/matrix.py`; el test
   `tests/auth/test_matrix.py::test_manage_fleet_excludes_takab_support` la ancla.
+- **[DECISION 2026-07-10 · T-1.48] Acciones nuevas de la Consola C4I (extensión de §2,
+  no listadas en la matriz original):**
+  - `relocate_epicenter` (botón REUBICAR EPICENTRO) = `takab_superadmin`, `tenant_admin`,
+    `soc_operator`. Reescribe un dato de RED compartido (`seismic_events.epicenter`, vía
+    función SECURITY DEFINER `relocate_incident_epicenter` con el punto previo preservado en
+    `meta.manual_override`): acto de operador del tenant. Ni gov (solo lectura+acuse) ni
+    inspector (juzga el dictamen, no edita la física del evento).
+  - `request_dictamen` (botón SOLICITAR DICTAMEN TÉCNICO) = los mismos tres. Es
+    `ack_incident` MENOS `gov_operator`: la política RLS `actions_insert` le impide a gov
+    insertar en `incident_actions`, y concederle la acción pintaría un botón que siempre
+    da 403 (regla de oro 7).
+  Anclas: `tests/auth/test_matrix.py::test_relocate_epicenter_is_tenant_operator_action` y
+  `::test_request_dictamen_excludes_gov`.
 
 ---
 

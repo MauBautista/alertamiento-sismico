@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     dictamen_pga_no_inhabit_g: float = 0.25
     dictamen_pga_monitor_g: float = 0.05
     dictamen_settle_s: float = 60.0
+    # Ventana ASIMÉTRICA del pico de PGA del dictamen (T-1.48): en un incidente
+    # SASMEX la sacudida llega DESPUÉS de la alerta (ese es el punto de la
+    # alerta temprana) — el ±5 s simétrico perdía el pico. Solo afecta la
+    # EVIDENCIA del dictamen; la ventana de asociación del quórum NO se toca.
+    dictamen_pga_window_pre_s: float = 5.0
+    dictamen_pga_window_post_s: float = 180.0
 
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
     # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).

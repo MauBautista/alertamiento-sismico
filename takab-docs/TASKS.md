@@ -1101,30 +1101,43 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [ ] **Ejecución real en el EC2** (tras desplegar el split): backup → script → re-seed →
         smoke de consola (solo Sitio Dev Puebla; Multi-Tenant con rule_set v1).
 
-### [ ] T-1.48 · API: migración 0011, endpoints de operador y dictamen con datos
+### [x] T-1.48 · API: migración 0011, endpoints de operador y dictamen con datos — **COMPLETADA (2026-07-10)**
 - **Componente:** api + db + shared/sdk-ts · **Depende de:** — (paralelo a T-1.47)
 - **Criterios de aceptación:**
-  - [ ] Migración `0011_soc_polish` + `db/schema.sql` a CERO drift: `app_user_id()`,
-        `user_profiles` (RLS FORCE, self-write), `reference_earthquakes` (global, solo
-        lectura autenticada, sin escritura vía API), `relocate_incident_epicenter()`
-        SECURITY DEFINER (precedente `gov_ack_incident`).
-  - [ ] Endpoints: `GET/PUT /me/profile` (GET /me intacto, sin DB); `POST
-        /incidents/{id}/epicenter` (con evento → UPDATE epicenter + `meta.manual_override`;
-        sin evento → crea `EVT-MAN-…` determinista source='manual' y linkea) + acción
-        `epicenter_relocate` en timeline; `POST /incidents/{id}/dictamen-request` (201
-        IncidentActionOut, 409 si hay solicitud pendiente sin dictamen firmado posterior);
-        `GET /catalog/earthquakes` (13 sismos SSN/USGS sembrados de
-        `db/seeds/reference_earthquakes.sql`, transcritos del catálogo ratificado T-1.46).
-  - [ ] Matriz: acciones `relocate_epicenter` (soc_operator/tenant_admin/superadmin) y
-        `request_dictamen` (ídem; gov excluido por RLS `actions_insert`) + `MeActions` +
-        `auth/test_matrix.py` + nota en `RBAC-TAKAB.md`.
-  - [ ] Dictamen con datos: ventana asimétrica del pass (`pre 5 s / post 180 s` — la sacudida
-        SASMEX llega DESPUÉS de la alerta); **backfill monotónico** de
-        `incidents.max_pga_g/max_pgv_cms` (GREATEST, NOTIFY solo si mejora); basis v2 con
-        `evidence.pga_source ∈ {features,incident,none}` + `evidence.insufficient_data`;
-        el mapeo determinista del veredicto NO cambia.
-  - [ ] OpenAPI exportado + SDK TS regenerado UNA vez (drift-gate CI verde); pytest completo
-        verde (baseline + ~35-40 nuevos); `alembic upgrade head` + `downgrade -1` limpios.
+  - [x] Migración `0011_soc_polish` + `db/schema.sql` a CERO drift: `app_user_id()`,
+        `user_profiles` (RLS FORCE, self-write; gov edita SU nombre — excepción documentada),
+        `reference_earthquakes` (global, solo lectura autenticada, sin escritura vía API),
+        `relocate_incident_epicenter()` SECURITY DEFINER dueña takab_ingest (precedente
+        `gov_ack_incident`; parámetros de retorno `r_*` anti-ambigüedad plpgsql).
+        `upgrade head` + `downgrade -1` verificados.
+  - [x] Endpoints: `GET/PUT /me/profile` (GET /me intacto, sin DB; normaliza espacios; 422
+        vacío/>80; auditado); `POST /incidents/{id}/epicenter` (con evento → UPDATE epicenter
+        + `meta.manual_override` con el punto previo; sin evento → `EVT-MAN-<md5[:8]>`
+        determinista source='manual' magnitude NULL y linkea; re-POST no duplica) + acción
+        `epicenter_relocate` en timeline + audit; `POST /incidents/{id}/dictamen-request`
+        (201 IncidentActionOut, **409** con solicitud pendiente sin dictamen firmado
+        posterior, re-solicitable tras la firma); `GET /catalog/earthquakes` (13 sismos
+        SSN/USGS en `db/seeds/reference_earthquakes.sql`, transcripción fiel del catálogo
+        ratificado T-1.46; sembrado por demo-db y deploy.sh).
+  - [x] Matriz: `relocate_epicenter` y `request_dictamen` = superadmin/tenant_admin/
+        soc_operator (gov e inspector fuera — anclado por tests; divergencia documentada en
+        `RBAC-TAKAB.md §2 [DECISION 2026-07-10]`); `MeActions` +2 campos; espejo
+        `web/src/test-utils/meFixtures.ts` sincronizado en el mismo commit.
+  - [x] Dictamen con datos: ventana asimétrica (`dictamen_pga_window_pre_s=5` /
+        `post_s=180` — la sacudida SASMEX llega DESPUÉS de la alerta y el ±5 s la perdía);
+        **backfill monotónico** de `incidents.max_pga_g/max_pgv_cms` (GREATEST por campo,
+        jamás 0 fabricado sobre NULL, UPDATE solo si mejora ⇒ sin spam NOTIFY; aplica
+        incluso con cabeza firmada — la telemetría es un hecho, el juicio no se toca);
+        basis v2 aditivo: `evidence.pga_source ∈ {features,incident,none}` +
+        `evidence.insufficient_data`. El mapeo determinista del veredicto NO cambió
+        (tests previos de rules intactos).
+  - [x] OpenAPI exportado + SDK TS regenerado UNA vez (`tsc --noEmit` limpio; web 448 tests
+        verdes con el SDK nuevo); **pytest api: 723 passed** (baseline 670 + 53 nuevos:
+        14 de migración, 7 de dictamen, 8 perfil, 7 epicentro, 6 dictamen-request, 5
+        catálogo, 2 matriz, ajustes); ruff limpio.
+> **ESTADO.** El worker de incidentes gana el backfill sin tocar su ciclo; el contract-test
+> del single-writer de audit_log sigue en verde (la función definer NO audita — audita el
+> router). Los frames WS de reubicación/solicitud salen gratis por los triggers NOTIFY de 0004.
 
 ### [ ] T-1.49 · Web: socket compartido, topbar viva y perfil de operador
 - **Componente:** web · **Depende de:** T-1.48 (solo `/me/profile`)

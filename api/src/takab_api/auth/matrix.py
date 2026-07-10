@@ -64,6 +64,12 @@ ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
 }
 
 # Acciones sensibles del SOC web.
+# [T-1.48] ``relocate_epicenter``/``request_dictamen`` — extensiones de la
+# Consola C4I (§2 no las lista; anotadas en RBAC-TAKAB.md §2 como divergencia
+# documentada): reubicar el epicentro reescribe un dato de RED compartido
+# (acto de operador del tenant, jamás de gov/inspector) y solicitar dictamen
+# inserta en el timeline (la RLS ``actions_insert`` excluye a gov_operator, así
+# que concedérsela pintaría un botón que siempre da 403 — regla de oro 7).
 ACTIONS: tuple[str, ...] = (
     "ack_incident",
     "sign_dictamen",
@@ -72,6 +78,8 @@ ACTIONS: tuple[str, ...] = (
     "edit_thresholds",
     "siren_test",
     "manage_fleet",
+    "relocate_epicenter",
+    "request_dictamen",
 )
 
 
@@ -84,6 +92,8 @@ def _actions(
     edit_thresholds: bool = False,
     siren_test: bool = False,
     manage_fleet: bool = False,
+    relocate_epicenter: bool = False,
+    request_dictamen: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -93,6 +103,8 @@ def _actions(
         "edit_thresholds": edit_thresholds,
         "siren_test": siren_test,
         "manage_fleet": manage_fleet,
+        "relocate_epicenter": relocate_epicenter,
+        "request_dictamen": request_dictamen,
     }
 
 
@@ -104,12 +116,19 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         edit_thresholds=True,
         siren_test=True,
         manage_fleet=True,
+        relocate_epicenter=True,
+        request_dictamen=True,
     ),
     "takab_support": _actions(),
     "tenant_admin": _actions(
-        ack_incident=True, edit_thresholds=True, siren_test=True, manage_fleet=True
+        ack_incident=True,
+        edit_thresholds=True,
+        siren_test=True,
+        manage_fleet=True,
+        relocate_epicenter=True,
+        request_dictamen=True,
     ),
-    "soc_operator": _actions(ack_incident=True),
+    "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True),
     "inspector": _actions(sign_dictamen=True, export=True, generate_report=True),

@@ -15,6 +15,8 @@ export const ACTIONS_NONE: MeActions = {
   edit_thresholds: false,
   siren_test: false,
   manage_fleet: false,
+  relocate_epicenter: false,
+  request_dictamen: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
@@ -58,6 +60,8 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     edit_thresholds: true,
     siren_test: true,
     manage_fleet: true,
+    relocate_epicenter: true,
+    request_dictamen: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
   takab_support: me("takab_support", ALL_ROUTES),
@@ -66,9 +70,13 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     edit_thresholds: true,
     siren_test: true,
     manage_fleet: true,
+    relocate_epicenter: true,
+    request_dictamen: true,
   }),
   soc_operator: me("soc_operator", ["/console", "/fleet", "/triage", "/building"], {
     ack_incident: true,
+    relocate_epicenter: true,
+    request_dictamen: true,
   }),
   gov_operator: me("gov_operator", ["/console", "/fleet", "/triage", "/building"], {
     ack_incident: true,

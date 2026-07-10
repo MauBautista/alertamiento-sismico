@@ -302,3 +302,124 @@ def test_rule_set_config_overrides_thresholds(scenario: _Scenario) -> None:
     _run(scenario.conn)
     rows = scenario.dictamens(seeded["incident"])
     assert rows and rows[0]["status"] == "normal_operation"  # 0.10 < 0.2 configurado
+
+
+# ---------------------------------------------------- backfill + basis v2 (T-1.48)
+
+
+def _incident_peaks(scenario: _Scenario, incident_id: str) -> tuple[float | None, float | None]:
+    row = scenario.conn.execute(
+        "SELECT max_pga_g::float8 AS pga, max_pgv_cms::float8 AS pgv "
+        "FROM incidents WHERE incident_id = %s",
+        (incident_id,),
+    ).fetchone()
+    return row["pga"], row["pgv"]
+
+
+def test_backfill_populates_incident_peaks(scenario: _Scenario) -> None:
+    """El ingest no puebla max_pga_g; la pasada lo backfillea desde features."""
+    ids = scenario.seed_incident(pga_g=0.08)
+    scenario.conn.execute(
+        "UPDATE waveform_features_1s SET pgv_cms = 3.5 WHERE sensor_id = %s",
+        (ids["sensor"],),
+    )
+    scenario.conn.commit()
+    _run(scenario.conn)
+    pga, pgv = _incident_peaks(scenario, ids["incident"])
+    assert pga == pytest.approx(0.08)
+    assert pgv == pytest.approx(3.5)
+
+
+def test_backfill_is_monotonic_and_never_fabricates(scenario: _Scenario) -> None:
+    """GREATEST: no degrada un pico mayor preexistente; un pico ausente jamás
+    escribe 0 sobre NULL (regla de oro 7)."""
+    ids = scenario.seed_incident(pga_g=0.05)  # feature 0.05, sin pgv
+    scenario.conn.execute(
+        "UPDATE incidents SET max_pga_g = 0.20 WHERE incident_id = %s",
+        (ids["incident"],),
+    )
+    scenario.conn.commit()
+    _run(scenario.conn)
+    pga, pgv = _incident_peaks(scenario, ids["incident"])
+    assert pga == pytest.approx(0.20)  # no degradó
+    assert pgv is None  # sin pico medido ⇒ sigue NULL, no 0 fabricado
+
+
+def test_backfill_rerun_writes_nothing_new(scenario: _Scenario) -> None:
+    """Re-run sin datos nuevos: cero UPDATEs (sin frames NOTIFY repetidos)."""
+    ids = scenario.seed_incident(pga_g=0.08)
+    _run(scenario.conn)
+    first = _incident_peaks(scenario, ids["incident"])
+    # el segundo run no debe re-escribir (rowcount 0 ⇒ rollback de la pasada)
+    _run(scenario.conn)
+    assert _incident_peaks(scenario, ids["incident"]) == first
+
+
+def test_backfill_applies_even_with_signed_head(scenario: _Scenario) -> None:
+    """El pico medido es un hecho: se backfillea aunque el inspector ya firmó
+    (lo firmado es el JUICIO, no la telemetría). No se emite dictamen nuevo."""
+    ids = scenario.seed_incident(pga_g=0.06)
+    created = _run(scenario.conn)
+    assert len(created) == 1
+    scenario.sign_head(ids["incident"], created[0], "inhabit_monitor")
+    # pico tardío mayor, dentro de la ventana post
+    scenario.conn.execute(
+        "INSERT INTO waveform_features_1s (ts, tenant_id, site_id, sensor_id, channel, pga_g) "
+        "VALUES (%s,%s,%s,%s,'ENZ',0.30)",
+        (BASE + timedelta(seconds=120), scenario.tenant, ids["site"], ids["sensor"]),
+    )
+    scenario.conn.commit()
+    created2 = _run(scenario.conn)
+    assert created2 == []  # cabeza firmada: sin dictamen nuevo
+    pga, _ = _incident_peaks(scenario, ids["incident"])
+    assert pga == pytest.approx(0.30)
+
+
+def test_late_sasmex_peak_enters_post_window(scenario: _Scenario) -> None:
+    """La sacudida SASMEX llega DESPUÉS de la alerta: un pico a +120 s debe
+    contar como evidencia (ventana asimétrica pre 5 s / post 180 s)."""
+    ids = scenario.seed_incident(severity="warning", pga_g=None)  # sin feature inicial
+    scenario.conn.execute(
+        "INSERT INTO waveform_features_1s (ts, tenant_id, site_id, sensor_id, channel, pga_g) "
+        "VALUES (%s,%s,%s,%s,'ENZ',0.30)",
+        (BASE + timedelta(seconds=120), scenario.tenant, ids["site"], ids["sensor"]),
+    )
+    scenario.conn.commit()
+    _run(scenario.conn)
+    rows = scenario.dictamens(ids["incident"])
+    assert len(rows) == 1
+    assert rows[0]["status"] == "no_inhabit_inspect"  # 0.30 ≥ 0.25
+    ev = rows[0]["basis"]["evidence"]
+    assert ev["pga_source"] == "features"
+    assert ev["insufficient_data"] is False
+    pga, _ = _incident_peaks(scenario, ids["incident"])
+    assert pga == pytest.approx(0.30)
+
+
+def test_basis_v2_insufficient_data_without_any_evidence(scenario: _Scenario) -> None:
+    """Sin features, sin max_pga_g y sin nodos: el basis lo declara — el
+    veredicto se sostiene solo en la severidad de la alerta."""
+    ids = scenario.seed_incident(severity="critical", pga_g=None)
+    _run(scenario.conn)
+    rows = scenario.dictamens(ids["incident"])
+    assert len(rows) == 1
+    assert rows[0]["status"] == "no_inhabit_inspect"  # fail-safe por severidad
+    ev = rows[0]["basis"]["evidence"]
+    assert ev["pga_source"] == "none"
+    assert ev["insufficient_data"] is True
+
+
+def test_basis_v2_pga_source_incident_when_no_features(scenario: _Scenario) -> None:
+    """Con max_pga_g preexistente y sin features en ventana: source=incident."""
+    ids = scenario.seed_incident(pga_g=None)
+    scenario.conn.execute(
+        "UPDATE incidents SET max_pga_g = 0.07 WHERE incident_id = %s",
+        (ids["incident"],),
+    )
+    scenario.conn.commit()
+    _run(scenario.conn)
+    rows = scenario.dictamens(ids["incident"])
+    ev = rows[0]["basis"]["evidence"]
+    assert ev["pga_source"] == "incident"
+    assert ev["pga_g"] == pytest.approx(0.07)
+    assert ev["insufficient_data"] is False

@@ -39,7 +39,12 @@ class DictamenParams:
 
 @dataclass(frozen=True)
 class EvalInput:
-    """Evidencia instrumental mínima de un incidente para dictaminar."""
+    """Evidencia instrumental mínima de un incidente para dictaminar.
+
+    ``pga_source`` (basis v2): de dónde salió el pico — ``features`` (ventana
+    de features del sensor), ``incident`` (max_pga_g preexistente) o ``none``
+    (sin medición). La UI/PDF lo usan para rotular la honestidad del dictamen.
+    """
 
     severity: str
     pga_g: float | None
@@ -47,6 +52,7 @@ class EvalInput:
     quorum_min_nodes: int
     trigger: str
     event_id: str | None
+    pga_source: str = "none"
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,11 @@ def evaluate(inp: EvalInput, params: DictamenParams) -> Decision:
             "corroborated": corroborated,
             "event_id": inp.event_id,
             "trigger": inp.trigger,
+            # basis v2 (T-1.48, ADITIVO): sin medición NI corroboración, el
+            # veredicto se sostiene solo en la severidad de la alerta — la UI
+            # y el PDF lo rotulan en vez de fingir evidencia instrumental.
+            "pga_source": inp.pga_source,
+            "insufficient_data": inp.pga_g is None and inp.node_count == 0,
         },
         "params": {
             "pga_no_inhabit_g": params.pga_no_inhabit_g,

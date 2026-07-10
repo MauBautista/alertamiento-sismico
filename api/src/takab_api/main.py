@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from takab_api.health import router as health_router
+from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.events import router as events_router
@@ -13,6 +14,7 @@ from takab_api.routers.exports import router as exports_router
 from takab_api.routers.fleet import router as fleet_router
 from takab_api.routers.incidents import router as incidents_router
 from takab_api.routers.incidents_ack import router as incidents_ack_router
+from takab_api.routers.incidents_ops import router as incidents_ops_router
 from takab_api.routers.me import router as me_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
@@ -49,6 +51,10 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(dictamens_router)
     app.include_router(rule_sets_router)
+
+    # Operaciones del operador + catálogo de referencia (Fase 1.7 · T-1.48).
+    app.include_router(incidents_ops_router)
+    app.include_router(catalog_router)
 
     # Telemetría (B3), exportación de evidencia (B4) y reporte PDF (B5).
     app.include_router(telemetry_router)

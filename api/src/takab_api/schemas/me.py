@@ -1,10 +1,13 @@
-"""Modelo de respuesta de GET /me — identidad para los guards del SOC web (T-1.26)."""
+"""Modelos de GET /me (identidad, T-1.26) y /me/profile (presentación, T-1.48)."""
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class MeActions(BaseModel):
@@ -17,6 +20,8 @@ class MeActions(BaseModel):
     edit_thresholds: bool
     siren_test: bool
     manage_fleet: bool
+    relocate_epicenter: bool
+    request_dictamen: bool
 
 
 class MeResponse(BaseModel):
@@ -33,3 +38,29 @@ class MeResponse(BaseModel):
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions
+
+
+class ProfileOut(BaseModel):
+    """Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null
+    (200, no 404): "sin nombre configurado" es un estado normal, no un error."""
+
+    user_sub: UUID
+    display_name: str | None
+    updated_at: datetime | None
+
+
+class ProfilePutIn(BaseModel):
+    """Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de
+    espacios internos) ANTES de validar longitud — "   " no es un nombre."""
+
+    display_name: str
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        v = re.sub(r"\s+", " ", v).strip()
+        if not v:
+            raise ValueError("display_name vacío")
+        if len(v) > 80:
+            raise ValueError("display_name supera 80 caracteres")
+        return v

@@ -42,6 +42,7 @@ demo-db: db
 	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
 	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/prod_fleet.sql
 	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/sim_fleet.sql
+	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/reference_earthquakes.sql
 
 # Levanta 3 EdgeSupervisor reales + el consumer real + el motor de quórum real y
 # acredita los 3 criterios con evidencia medible. Falla ruidosamente si alguno cae.

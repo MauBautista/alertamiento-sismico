@@ -21,6 +21,103 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "CatalogEarthquakeList": {
+        "description": "Lista completa (13 sismos ratificados; sin paginación).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEarthquakeOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CatalogEarthquakeList",
+        "type": "object"
+      },
+      "CatalogEarthquakeOut": {
+        "description": "Sismo del catálogo de referencia (global, solo lectura).",
+        "properties": {
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "magnitude": {
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "origin_time": {
+            "format": "date-time",
+            "title": "Origin Time",
+            "type": "string"
+          },
+          "place": {
+            "title": "Place",
+            "type": "string"
+          },
+          "ref_id": {
+            "format": "uuid",
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_ref": {
+            "title": "Source Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref_id",
+          "catalog_key",
+          "origin_time",
+          "magnitude",
+          "place",
+          "lat",
+          "lon",
+          "depth_km",
+          "source",
+          "source_ref",
+          "notes"
+        ],
+        "title": "CatalogEarthquakeOut",
+        "type": "object"
+      },
       "ChannelSeries": {
         "description": "Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).",
         "properties": {
@@ -339,6 +436,25 @@
         "title": "DictamenOut",
         "type": "object"
       },
+      "DictamenRequestIn": {
+        "description": "Cuerpo de POST /incidents/{id}/dictamen-request (T-1.48).",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "DictamenRequestIn",
+        "type": "object"
+      },
       "DictamenSignIn": {
         "description": "Firma manual del inspector: estado del dictamen + notas mínimas (basis).",
         "properties": {
@@ -362,6 +478,81 @@
           "status"
         ],
         "title": "DictamenSignIn",
+        "type": "object"
+      },
+      "EpicenterRelocateIn": {
+        "description": "Cuerpo de POST /incidents/{id}/epicenter (T-1.48). Bounds duros aquí;\nla función SECURITY DEFINER los re-valida (defensa en profundidad).",
+        "properties": {
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "lon",
+          "lat"
+        ],
+        "title": "EpicenterRelocateIn",
+        "type": "object"
+      },
+      "EpicenterRelocateOut": {
+        "description": "Resultado de la reubicación: evento afectado/creado + punto previo.",
+        "properties": {
+          "created_event": {
+            "title": "Created Event",
+            "type": "boolean"
+          },
+          "epicenter": {
+            "$ref": "#/components/schemas/LonLat"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LonLat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "incident_id",
+          "event_id",
+          "created_event",
+          "epicenter",
+          "previous"
+        ],
+        "title": "EpicenterRelocateOut",
         "type": "object"
       },
       "ErrorFrame": {
@@ -1603,6 +1794,25 @@
         "title": "IncidentPage",
         "type": "object"
       },
+      "LonLat": {
+        "description": "Punto geográfico plano (lon/lat WGS84).",
+        "properties": {
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lon",
+          "lat"
+        ],
+        "title": "LonLat",
+        "type": "object"
+      },
       "MapIncident": {
         "description": "Incidente abierto (no cerrado) más reciente de un sitio, para el mapa.",
         "properties": {
@@ -1763,6 +1973,14 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "relocate_epicenter": {
+            "title": "Relocate Epicenter",
+            "type": "boolean"
+          },
+          "request_dictamen": {
+            "title": "Request Dictamen",
+            "type": "boolean"
+          },
           "sign_dictamen": {
             "title": "Sign Dictamen",
             "type": "boolean"
@@ -1779,7 +1997,9 @@
           "generate_report",
           "edit_thresholds",
           "siren_test",
-          "manage_fleet"
+          "manage_fleet",
+          "relocate_epicenter",
+          "request_dictamen"
         ],
         "title": "MeActions",
         "type": "object"
@@ -1938,6 +2158,60 @@
           "expires_in"
         ],
         "title": "PresignedDownload",
+        "type": "object"
+      },
+      "ProfileOut": {
+        "description": "Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null\n(200, no 404): \"sin nombre configurado\" es un estado normal, no un error.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_sub": {
+            "format": "uuid",
+            "title": "User Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_sub",
+          "display_name",
+          "updated_at"
+        ],
+        "title": "ProfileOut",
+        "type": "object"
+      },
+      "ProfilePutIn": {
+        "description": "Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de\nespacios internos) ANTES de validar longitud — \"   \" no es un nombre.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "ProfilePutIn",
         "type": "object"
       },
       "QuorumVoteOut": {
@@ -3419,6 +3693,25 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/catalog/earthquakes": {
+      "get": {
+        "description": "Sismos de referencia, más recientes primero.",
+        "operationId": "list_reference_earthquakes_catalog_earthquakes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogEarthquakeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Reference Earthquakes"
+      }
+    },
     "/events": {
       "get": {
         "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.",
@@ -4091,6 +4384,57 @@
         "summary": "List Incident Actions"
       }
     },
+    "/incidents/{incident_id}/dictamen-request": {
+      "post": {
+        "description": "Solicita dictamen técnico: acción auditada en el timeline del incidente.",
+        "operationId": "request_dictamen_incidents__incident_id__dictamen_request_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictamenRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Dictamen"
+      }
+    },
     "/incidents/{incident_id}/dictamens": {
       "get": {
         "description": "Cadena de dictámenes del incidente (más reciente primero). 404 si no visible.",
@@ -4179,6 +4523,57 @@
           }
         },
         "summary": "Sign Dictamen"
+      }
+    },
+    "/incidents/{incident_id}/epicenter": {
+      "post": {
+        "description": "Reubica el epicentro del incidente (creando evento manual si no había).",
+        "operationId": "relocate_epicenter_incidents__incident_id__epicenter_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpicenterRelocateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpicenterRelocateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Relocate Epicenter"
       }
     },
     "/incidents/{incident_id}/evidence": {
@@ -4280,6 +4675,62 @@
           }
         },
         "summary": "Me"
+      }
+    },
+    "/me/profile": {
+      "get": {
+        "description": "Perfil de presentación del portador. Sin fila = campos null (200).",
+        "operationId": "get_profile_me_profile_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Profile"
+      },
+      "put": {
+        "description": "Upsert del nombre PROPIO (RLS self-write acota la fila). Auditado.",
+        "operationId": "put_profile_me_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Profile"
       }
     },
     "/rule-sets": {

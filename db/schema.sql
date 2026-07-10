@@ -821,3 +821,77 @@ CREATE UNIQUE INDEX uq_incident_actions_ack
   ON incident_actions (incident_id, kind, actor, ts);
 CREATE UNIQUE INDEX uq_evidence_incident_sha256
   ON evidence_objects (incident_id, sha256) WHERE sha256 IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Fase 1.7 (migración 0011 · T-1.48): perfil de operador, catálogo de
+-- referencia y reubicación de epicentro.
+-- ---------------------------------------------------------------------------
+
+-- Sub del portador del token (GUC por transacción, lo fija la sesión API).
+CREATE FUNCTION app_user_id() RETURNS uuid
+  LANGUAGE sql STABLE AS
+  $$ SELECT nullif(current_setting('app.user_id', true), '')::uuid $$;
+
+-- Nombre de operador editable. La identidad sigue siendo Cognito (/me no toca
+-- DB); esto es SOLO presentación. Lectura tenant-wide (resolver actores en
+-- timelines); escritura EXCLUSIVA de la fila propia. Excepción documentada al
+-- patrón anti-gov: gov_operator también edita SU nombre (dato personal, no
+-- escribe nada ajeno).
+CREATE TABLE user_profiles (
+  user_sub     uuid PRIMARY KEY,                     -- Cognito sub (≡ dictamens.signed_by)
+  tenant_id    uuid NOT NULL REFERENCES tenants,
+  display_name text NOT NULL CHECK (char_length(display_name) BETWEEN 1 AND 80),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_user_profiles_tenant ON user_profiles (tenant_id);
+GRANT SELECT, INSERT, UPDATE ON user_profiles TO takab_app;
+
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles FORCE  ROW LEVEL SECURITY;
+CREATE POLICY user_profiles_read ON user_profiles FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY user_profiles_self_write ON user_profiles FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+CREATE POLICY user_profiles_admin ON user_profiles FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- Catálogo GLOBAL de sismos relevantes reales (SSN/USGS; transcritos del
+-- catálogo ratificado T-1.46 vía db/seeds/reference_earthquakes.sql).
+-- [EXCEPCIÓN DOCUMENTADA] a "tenant_id en toda tabla": dato científico público,
+-- misma familia que seismic_events/quorum_votes. Lectura: cualquier rol
+-- autenticado. Escritura: NADIE vía API (sin política) — solo seeds/migrator.
+-- La magnitud aquí es dato de catálogo histórico oficial, NO "magnitud
+-- preliminar" en vivo (blueprint §14 sigue intacto).
+CREATE TABLE reference_earthquakes (
+  ref_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  catalog_key text NOT NULL UNIQUE,                  -- 'SSN-2017-09-19-PUE' (idempotencia seed)
+  origin_time timestamptz NOT NULL,
+  magnitude   numeric NOT NULL,
+  place       text NOT NULL,
+  epicenter   geography(Point,4326) NOT NULL,
+  depth_km    numeric,
+  source      text NOT NULL CHECK (source IN ('SSN','USGS')),
+  source_ref  text NOT NULL,                         -- cita textual (reporte/consulta FDSN)
+  notes       text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
+GRANT SELECT ON reference_earthquakes TO takab_app;
+
+ALTER TABLE reference_earthquakes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reference_earthquakes FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
+  USING (app_role() IS NOT NULL);
+
+-- Reubicación de epicentro: función SECURITY DEFINER
+-- `relocate_incident_epicenter(incident_id, lon, lat)` (dueña takab_ingest,
+-- migración 0011 — mismo precedente que gov_ack_incident: seismic_events es
+-- dato de RED sin tenant_id y una política RLS tenant-scoped de UPDATE abriría
+-- el evento compartido a cualquier tenant linkeado). Guardas de rol
+-- (soc_operator/tenant_admin/superadmin), tenant del incidente y rango; punto
+-- previo preservado en meta.manual_override; sin evento crea EVT-MAN-<md5[:8]>
+-- determinista source='manual' con magnitude NULL. El audit lo escribe el
+-- ROUTER vía audit.py (single-writer).
+GRANT SELECT, INSERT, UPDATE ON seismic_events TO takab_ingest;
+GRANT SELECT, UPDATE ON incidents TO takab_ingest;

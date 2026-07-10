@@ -30,15 +30,15 @@ from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.dictamen")
 
-# Ventana ±s alrededor de opened_at donde se busca el pico de PGA (espejo del
-# engine de correlación).
-_PGA_WINDOW_S = 5.0
 # Advisory lock propio (≠ engine): serializa pasadas de dictamen concurrentes.
 _DICTAMEN_LOCK_KEY = 0x7A4B_1120
 
-# Candidatos: incidentes de la ventana [since, cutoff] con su pico de PGA
-# (sensor estructural preferente, features ±_PGA_WINDOW_S), sus votos de quórum
-# y la CABEZA de su cadena de dictámenes (la fila que ninguna otra supersede).
+# Candidatos: incidentes de la ventana [since, cutoff] con su pico de PGA/PGV
+# (sensor estructural preferente, ventana ASIMÉTRICA pre/post — la sacudida
+# SASMEX llega DESPUÉS de la alerta), sus votos de quórum y la CABEZA de su
+# cadena de dictámenes (la fila que ninguna otra supersede). Los picos de
+# features y el valor preexistente del incidente van SEPARADOS: de ahí sale
+# ``pga_source`` (basis v2) y el backfill monotónico.
 # Se lee la hypertable BASE de features: lector interno de RED (BYPASSRLS),
 # igual que el engine de correlación (allowlisted en el contract-test).
 _CANDIDATES_SQL = """
@@ -49,7 +49,10 @@ SELECT i.incident_id,
        i.severity,
        i.trigger,
        i.opened_at,
-       COALESCE(wf.peak_pga, i.max_pga_g)::float8 AS pga_g,
+       wf.peak_pga::float8   AS feat_pga,
+       wf.peak_pgv::float8   AS feat_pgv,
+       i.max_pga_g::float8   AS inc_pga,
+       i.max_pgv_cms::float8 AS inc_pgv,
        COALESCE(nv.node_count, 0)::int AS node_count,
        head.dictamen_id AS head_id,
        head.status      AS head_status,
@@ -63,11 +66,11 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) s ON true
 LEFT JOIN LATERAL (
-  SELECT MAX(wf1.pga_g) AS peak_pga
+  SELECT MAX(wf1.pga_g) AS peak_pga, MAX(wf1.pgv_cms) AS peak_pgv
   FROM waveform_features_1s wf1
   WHERE wf1.sensor_id = s.sensor_id
-    AND wf1.ts BETWEEN i.opened_at - make_interval(secs => %(pga_win)s)
-                   AND i.opened_at + make_interval(secs => %(pga_win)s)
+    AND wf1.ts BETWEEN i.opened_at - make_interval(secs => %(pga_pre)s)
+                   AND i.opened_at + make_interval(secs => %(pga_post)s)
 ) wf ON true
 LEFT JOIN LATERAL (
   SELECT COUNT(*) AS node_count
@@ -112,6 +115,24 @@ INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
 VALUES (%(incident)s, %(tenant)s, 'dictamen', 'system', %(payload)s::jsonb)
 """
 
+# Backfill MONOTÓNICO de los picos medidos hacia el incidente (T-1.48): el
+# ingest no puebla max_pga_g/max_pgv_cms y la consola los lee de ahí. GREATEST
+# = nunca degrada (espejo de G3); el WHERE evita UPDATEs sin mejora (el trigger
+# NOTIFY de 0004 dispararía frames repetidos al hub WS). Cada campo se trata
+# por separado: un pico ausente JAMÁS escribe un 0 fabricado sobre NULL.
+_BACKFILL_SQL = """
+UPDATE incidents SET
+  max_pga_g = CASE WHEN %(pga)s::float8 IS NOT NULL
+                   THEN GREATEST(COALESCE(max_pga_g, 0), %(pga)s::float8)
+                   ELSE max_pga_g END,
+  max_pgv_cms = CASE WHEN %(pgv)s::float8 IS NOT NULL
+                     THEN GREATEST(COALESCE(max_pgv_cms, 0), %(pgv)s::float8)
+                     ELSE max_pgv_cms END
+WHERE incident_id = %(incident)s
+  AND ( (%(pga)s::float8 IS NOT NULL AND COALESCE(max_pga_g, -1) < %(pga)s::float8)
+     OR (%(pgv)s::float8 IS NOT NULL AND COALESCE(max_pgv_cms, -1) < %(pgv)s::float8) )
+"""
+
 
 def run_dictamen_pass(
     conn: psycopg.Connection,
@@ -133,13 +154,39 @@ def run_dictamen_pass(
 
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (_DICTAMEN_LOCK_KEY,))
     rows = conn.execute(
-        _CANDIDATES_SQL, {"since": since, "cutoff": cutoff, "pga_win": _PGA_WINDOW_S}
+        _CANDIDATES_SQL,
+        {
+            "since": since,
+            "cutoff": cutoff,
+            "pga_pre": settings.dictamen_pga_window_pre_s,
+            "pga_post": settings.dictamen_pga_window_post_s,
+        },
     ).fetchall()
 
     created: list[str] = []
+    backfilled = 0
     for row in rows:
+        # Backfill de picos medidos (hecho factual, independiente del dictamen
+        # e incluso de una cabeza firmada): la consola lee incident.max_pga_g.
+        cur = conn.execute(
+            _BACKFILL_SQL,
+            {
+                "incident": row["incident_id"],
+                "pga": row["feat_pga"],
+                "pgv": row["feat_pgv"],
+            },
+        )
+        backfilled += cur.rowcount
+
         if row["head_signed_by"] is not None:
             continue  # el juicio del inspector manda
+        # Pico efectivo + procedencia (basis v2): features > incidente > nada.
+        if row["feat_pga"] is not None:
+            pga_g, pga_source = row["feat_pga"], "features"
+        elif row["inc_pga"] is not None:
+            pga_g, pga_source = row["inc_pga"], "incident"
+        else:
+            pga_g, pga_source = None, "none"
         config_row = conn.execute(
             _RULESET_SQL, {"site": row["site_id"], "tenant": row["tenant_id"]}
         ).fetchone()
@@ -147,11 +194,12 @@ def run_dictamen_pass(
         decision = evaluate(
             EvalInput(
                 severity=row["severity"],
-                pga_g=row["pga_g"],
+                pga_g=pga_g,
                 node_count=row["node_count"],
                 quorum_min_nodes=resolve_quorum_params(config, settings).min_nodes,
                 trigger=row["trigger"],
                 event_id=row["event_id"],
+                pga_source=pga_source,
             ),
             resolve_params(config, settings),
         )
@@ -191,7 +239,7 @@ def run_dictamen_pass(
             " (corrección)" if row["head_id"] else "",
         )
 
-    if created:
+    if created or backfilled:
         conn.commit()
     else:
         conn.rollback()
