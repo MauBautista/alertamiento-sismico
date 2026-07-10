@@ -3,7 +3,8 @@
 Recorre el pipeline completo del consumer — enriquecimiento ``meta_*`` de la
 IoT Rule → split → validación de schema → resolución de identidad en registro →
 handler → commit → delete/DLQ — contra la flota dev de la convención fija
-(UUIDs de ``db/seeds/dev_fleet.sql``). Los handlers corren como ``takab_ingest``
+(UUIDs de ``db/seeds/prod_fleet.sql`` + ``sim_fleet.sql``). Los handlers corren
+como ``takab_ingest``
 (BYPASSRLS), igual que el worker real; las filas commiteadas usan event_id/ts
 frescos por corrida para no chocar entre ejecuciones.
 """
@@ -28,9 +29,9 @@ from takab_api.settings import Settings
 
 REGION = "us-east-2"
 THING = "gw-dev-0001"  # meta_principal = thing name = gateways.iot_thing
-SIM_THING = "gw-sim-0001"  # gateway sim: atiende VARIOS sitios (dev_fleet.sql)
+SIM_THING = "gw-sim-0001"  # gateway sim: atiende VARIOS sitios (sim_fleet.sql)
 
-# UUIDs fijos de la flota dev (db/seeds/dev_fleet.sql, sufijo 00 = dev).
+# UUIDs fijos de la flota (db/seeds/prod_fleet.sql + sim_fleet.sql, sufijo 00 = dev).
 TENANT = "d0000000-0000-0000-0000-000000000001"
 SITE = "d1000000-0000-0000-0000-000000000000"
 GW = "d2000000-0000-0000-0000-000000000000"

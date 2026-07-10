@@ -42,10 +42,11 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
 - Las URLs de las DLQ **sí se inyectan** (`TAKAB_API_DLQ_URL_*`): los consumidores las
   exigen al arrancar — los REJECT explícitos se envían por URL; el redrive de SQS va por
   ARN y no depende de esto (GAP-1 · T-1.38).
-- El deploy **siembra la flota dev en la DB de la nube** (`db/seeds/dev_fleet.sql`,
+- El deploy **siembra SOLO la flota real en la DB de la nube** (`db/seeds/prod_fleet.sql`,
   idempotente) justo después de las migraciones: sin filas en `gateways`/`sensors` la
   ingesta rechazaría todo mensaje del gabinete real por "unknown principal" → DLQ
-  (GAP-3 · T-1.38).
+  (GAP-3 · T-1.38). La flota sim (`db/seeds/sim_fleet.sql`) es EXCLUSIVA de entornos
+  locales: aplicarla aquí desharía la purga de datos sim de T-1.47.
 
 ---
 

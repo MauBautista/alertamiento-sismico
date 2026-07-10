@@ -55,7 +55,7 @@ CHANNELS = ("siren", "strobe", "gas_valve", "elevator", "door_retainer")
 
 @dataclass(frozen=True)
 class Gab:
-    """Un gabinete. Los sitios son los sembrados por ``db/seeds/dev_fleet.sql``."""
+    """Un gabinete. Los sitios son los sembrados por ``db/seeds/sim_fleet.sql``."""
 
     thing: str
     site: str
@@ -110,11 +110,32 @@ def _sql(conn: psycopg.Connection, query: str, params: dict | None = None) -> li
         return cur.fetchall()
 
 
+_LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _assert_local_db(conn: psycopg.Connection) -> None:
+    """El TRUNCATE de la demo jamás debe alcanzar una DB remota (T-1.47).
+
+    ``conn.info.host`` es el host REAL de la conexión (no el DSN de entrada):
+    TCP → hostname/IP; socket UNIX → ruta del directorio (local por definición).
+    La flota desplegada comparte convención con la demo: un descuido de DSN
+    apuntando al EC2 borraría los incidentes reales.
+    """
+    host = conn.info.host
+    if host and not host.startswith("/") and host not in _LOCAL_DB_HOSTS:
+        raise RuntimeError(
+            f"reset_state: la conexión apunta a '{host}', que no es localhost — "
+            "la pizarra limpia TRUNCATEa tablas de datos y NUNCA debe correr "
+            "contra una DB remota. Aborto sin tocar nada."
+        )
+
+
 def reset_state(conn: psycopg.Connection) -> None:
     """Pizarra limpia entre criterios. Sólo tablas de datos, nunca el registro.
 
     TRUNCATE (no DELETE): `incident_actions` es append-only por trigger.
     """
+    _assert_local_db(conn)
     conn.execute(
         "TRUNCATE seismic_events, incidents, incident_actions, quorum_votes, "
         "waveform_features_1s, device_health CASCADE"

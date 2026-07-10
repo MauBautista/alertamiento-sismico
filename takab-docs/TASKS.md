@@ -1063,3 +1063,177 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         (Meta Business/agregador), SES fuera de sandbox (dominio+DKIM/SPF), billing por
         EventBridge→ECS (no hay ECS), app móvil T-1.31, CCTV ONVIF, endpoint de lectura de
         `audit_log`, `self_test` de gabinete, relés/latencia física del gate #3.
+
+---
+
+## Fase 1.7 · Pulido SOC con datos reales + panel local del inmueble
+
+> Origen: revisión de las 4 pantallas desplegadas (`vistas_v1/*.png`, 2026-07-10) contra el
+> design system (`takab-docs/design/`). Diagnóstico y plan completo en la sesión del
+> 2026-07-10. Decisiones ratificadas por Mauricio: (1) la vista del inmueble es el PANEL
+> LOCAL del Pi (no una vista cloud con rol nuevo); (2) purga TOTAL del entorno desplegado
+> (flota sim + TODOS los incidentes de prueba, incluidos los del botón WR-1) con arranque
+> limpio del historial; `audit_log` se conserva íntegro.
+
+### [~] T-1.47 · Datos reales: split de seeds, rule_set v1 y runbook de purga — **CÓDIGO LISTO (2026-07-10); ejecución del runbook en EC2 pendiente (manual, Mauricio)**
+- **Componente:** db + demo + deploy · **Depende de:** —
+- **Objetivo:** que el entorno desplegado contenga SOLO la estación real y que ningún deploy
+  futuro pueda resucitar datos sim; runbook seguro para purgar lo existente.
+- **Criterios de aceptación:**
+  - [x] `db/seeds/dev_fleet.sql` PARTIDO: `prod_fleet.sql` (tenant + site-dev + gw-dev-0001 +
+        R4F74 con `calibration_source='stationxml:AM.R4F74'` + **rule_set v1** scope tenant,
+        espejo exacto de los defaults de Settings, **sin clave `edge`** ⇒ el worker de sync
+        firmada no publica nada al gabinete) y `sim_fleet.sql` (20 sitios/4 gateways/20
+        sensores, EXCLUSIVO local).
+  - [x] `make demo-db` aplica prod+sim (verificado: 20 sitios sim restaurados); el deploy
+        (`deploy/cloud/deploy.sh`) embebe y aplica SOLO `prod_fleet.sql`.
+  - [x] Guardia anti-TRUNCATE-remoto en `demo/run.py reset_state()` (`RuntimeError` si el host
+        no es loopback/socket) + `demo/tests/test_reset_guard.py` (8 tests) colectados por la
+        suite del api (`testpaths += ../demo/tests`).
+  - [x] Runbook `db/maintenance/2026-07-10_purge_sim_fleet_and_test_incidents.sql` + README:
+        transacción única superusuario con `session_replication_role=replica` (triggers
+        append-only incluidos los chunks de hypertables + sin tormenta NOTIFY), guardia
+        anti-flota-real, conteos y checks de orfandad embebidos, refresh de caggs + VACUUM
+        post-commit, backup `pg_dump` + CSV de llaves S3 obligatorios ANTES.
+  - [x] **Ensayado contra la DB local**: purga aplicada (flota sim fuera, fixtures ajenos
+        intactos), re-run = 21×`DELETE 0` (idempotente), `make demo-db` restaura.
+  - [x] Suite api verde tras el split (670 passed, 3 skipped) · ruff limpio.
+  - [ ] **Ejecución real en el EC2** (tras desplegar el split): backup → script → re-seed →
+        smoke de consola (solo Sitio Dev Puebla; Multi-Tenant con rule_set v1).
+
+### [ ] T-1.48 · API: migración 0011, endpoints de operador y dictamen con datos
+- **Componente:** api + db + shared/sdk-ts · **Depende de:** — (paralelo a T-1.47)
+- **Criterios de aceptación:**
+  - [ ] Migración `0011_soc_polish` + `db/schema.sql` a CERO drift: `app_user_id()`,
+        `user_profiles` (RLS FORCE, self-write), `reference_earthquakes` (global, solo
+        lectura autenticada, sin escritura vía API), `relocate_incident_epicenter()`
+        SECURITY DEFINER (precedente `gov_ack_incident`).
+  - [ ] Endpoints: `GET/PUT /me/profile` (GET /me intacto, sin DB); `POST
+        /incidents/{id}/epicenter` (con evento → UPDATE epicenter + `meta.manual_override`;
+        sin evento → crea `EVT-MAN-…` determinista source='manual' y linkea) + acción
+        `epicenter_relocate` en timeline; `POST /incidents/{id}/dictamen-request` (201
+        IncidentActionOut, 409 si hay solicitud pendiente sin dictamen firmado posterior);
+        `GET /catalog/earthquakes` (13 sismos SSN/USGS sembrados de
+        `db/seeds/reference_earthquakes.sql`, transcritos del catálogo ratificado T-1.46).
+  - [ ] Matriz: acciones `relocate_epicenter` (soc_operator/tenant_admin/superadmin) y
+        `request_dictamen` (ídem; gov excluido por RLS `actions_insert`) + `MeActions` +
+        `auth/test_matrix.py` + nota en `RBAC-TAKAB.md`.
+  - [ ] Dictamen con datos: ventana asimétrica del pass (`pre 5 s / post 180 s` — la sacudida
+        SASMEX llega DESPUÉS de la alerta); **backfill monotónico** de
+        `incidents.max_pga_g/max_pgv_cms` (GREATEST, NOTIFY solo si mejora); basis v2 con
+        `evidence.pga_source ∈ {features,incident,none}` + `evidence.insufficient_data`;
+        el mapeo determinista del veredicto NO cambia.
+  - [ ] OpenAPI exportado + SDK TS regenerado UNA vez (drift-gate CI verde); pytest completo
+        verde (baseline + ~35-40 nuevos); `alembic upgrade head` + `downgrade -1` limpios.
+
+### [ ] T-1.49 · Web: socket compartido, topbar viva y perfil de operador
+- **Componente:** web · **Depende de:** T-1.48 (solo `/me/profile`)
+- **Criterios de aceptación:**
+  - [ ] `web/src/live/`: provider del `LiveSocket` a nivel AppShell (conecta solo con
+        idToken; factory inyectable para tests) + store zustand de salud
+        (`site_state` → heartbeats por gateway; staleness 90 s); `features/console/socket.ts`
+        queda como re-export (ningún hook consumidor cambia).
+  - [ ] Topbar viva en TODAS las páginas: `● CONECTADO/CONECTANDO…/DESCONECTADO` (icono+label)
+        y `EDGE · MQTT x.xx ms` del último heartbeat o `· S/D` si stale — jamás congela un
+        número viejo como fresco.
+  - [ ] Menú de operador: `display_name ?? role`, edición inline (PUT /me/profile),
+        caption `role · sub8`, logout dentro; `applyMe()` sin re-boot de sesión; el footer de
+        IncidentTable refleja el nombre.
+  - [ ] ConsolePage/BuildingPage consumen el socket del shell (dejan de poseer el suyo);
+        `renderRoutes` inyecta FakeLiveSocket (cero WebSocket reales en jsdom); suite web
+        completa verde.
+
+### [ ] T-1.50 · Web: Consola C4I completa (mapa, BMS, relés, CCTV, detalle)
+- **Componente:** web · **Depende de:** T-1.49 (orden de merge del CSS)
+- **Criterios de aceptación:**
+  - [ ] **Fix de layout que destraba el mapa**: `StateFrame` con prop `className`; la consola
+        opta por `.soc-wall` (grid `minmax(0,1fr) auto`); `.soc-stateframe` base pierde
+        `height:100%`; `.soc-stage{min-height:280px}`; contrato DOM anti-regresión en tests.
+  - [ ] Mapa robusto: fallo de tiles remotos ⇒ `setStyle(FALLBACK_STYLE)` inline (fondo navy,
+        las capas GeoJSON de sitios SIGUEN pintando) + badge "SIN MAPA BASE · SITIOS EN
+        VIVO"; `map.resize()` vía ResizeObserver compartido (`lib/maplibre.ts`).
+  - [ ] BMS agrupado por canal (último estado + hora + ×N, expandible a la traza completa
+        auditada) — `features/console/bms.ts` puro con tests.
+  - [ ] Card INCIDENTE en el detalle: trigger etiquetado (SASMEX/UMBRAL LOCAL/QUÓRUM/MANUAL),
+        evento asociado o "SIN EVENTO SÍSMICO ASOCIADO", estado+edad, PGA/PGV máx ("—"
+        honesto), último acuse. SIN magnitud preliminar NI countdown (§14).
+  - [ ] Card RELÉS DEL GABINETE reutilizando `RelayGrid` de fleet (caché compartida por
+        queryKey); CCTV SIEMPRE visible con empty-state "SIN CÁMARA CONFIGURADA · PENDIENTE
+        DE HARDWARE"; PGA de tabla muestra `<0.001g` en vez de "0.000g".
+
+### [ ] T-1.51 · Web: botones del operador vivos (epicentro + dictamen)
+- **Componente:** web · **Depende de:** T-1.48 (SDK) + T-1.50
+- **Criterios de aceptación:**
+  - [ ] `components/Modal.tsx` accesible (aria-modal, Esc, foco) + `EpicenterModal` que
+        REUTILIZA `MapPointPicker` (marcador arrastrable; con evento inicia en su epicentro;
+        sin evento avisa "SE CREARÁ EVENTO source=manual"); confirmación dos pasos; errores
+        403/409 inline; invalidaciones de incidents/mapState/events/actions.
+  - [ ] SOLICITAR DICTAMEN TÉCNICO: mutation + feedback + `navigate("/triage?incident=<id>")`;
+        TriagePage preselecciona por query param (aviso si está fuera de la página cargada).
+  - [ ] Los botones se habilitan por `me.allowed_actions` (matriz, no roles hardcodeados);
+        deshabilitados llevan `title` explicativo.
+
+### [ ] T-1.52 · Web: Triage con catálogo de referencia y tiles reales
+- **Componente:** web · **Depende de:** T-1.48 (SDK)
+- **Criterios de aceptación:**
+  - [ ] `CatalogPanel` bajo el historial: "CATÁLOGO DE REFERENCIA · SSN/USGS", sub "NO SON
+        INCIDENTES DEL TENANT", fila con M/fecha UTC/profundidad/región/fuente por evento;
+        StateFrame propio (si falla no tumba el historial); staleTime 24 h. (La magnitud aquí
+        es dato ratificado de catálogo histórico, NO magnitud preliminar — no viola §14.)
+  - [ ] `TriageDetail`: tiles PGA/PGV/PROFUNDIDAD/NODOS + QuorumNodes + evidencia FUERA del
+        gate del dictamen (los hechos del incidente no dependen de que exista dictamen);
+        tile DURACIÓN = `closed_at − opened_at` rotulada "duración del incidente" ("EN
+        CURSO" si abierto); rotulado honesto desde basis v2 (`insufficient_data` ⇒ "sin
+        evidencia instrumental — dictamen por severidad de alerta").
+
+### [ ] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi)
+- **Componente:** edge (+1 docstring api) · **Depende de:** — (independiente)
+- **Criterios de aceptación:**
+  - [ ] **Fix del bug latente**: `HealthMonitor` cachea `last_snapshot` y el panel NUNCA llama
+        `snapshot()` — hoy cada GET `/api/status` lanza sondas (subprocesos) y PUBLICA un
+        health snapshot a la nube (~30/min con el poll de 2 s). Test de regresión
+        `test_status_does_not_publish_health`.
+  - [ ] `signal.live_by_channel()` (Feature1s + received_at por canal, bajo lock);
+        ring buffer de transiciones de tier en `RuleEngine._emit` (deque 32 + lock, fuentes
+        instrumental Y sasmex); deque de acciones LAN en el panel.
+  - [ ] Sonda de disco `disk_used_pct` (shutil.disk_usage, None si falla) →
+        `HealthSnapshot` + schema compartido **1.2.0** (aditivo; el ingest de la nube lo
+        ignora — docstring actualizado); anti-drift de schemas verde.
+  - [ ] `status()` por secciones DEFENSIVAS (módulo caído ⇒ sección null, GET 200):
+        now/site_name/uptime/refresh_ms, signal por canal (stale ⇒ "SIN SEÑAL DEL SENSOR"),
+        health del cache con edad, cloud {online, mqtt_rtt_ms, queued} ("SIN ENLACE —
+        PROTECCIÓN LOCAL ACTIVA" en UI), events (transiciones+acciones, cap 10).
+  - [ ] `index.html` como recurso empaquetado (importlib.resources, cero build, cero
+        CDN/Google Fonts — test anti-recursos-externos): kiosk una página con tokens TAKAB
+        en hex, tier hero clamp(40px,9vw,72px), PGA/PGV por canal ~1 Hz, actuadores + 3
+        acciones con PIN (flujo T-1.43 INTACTO — su suite es el guardián), salud con S/D,
+        eventos "DESDE EL ARRANQUE"; banner "ALERTA SÍSMICA · PROTÉJASE" (sin countdown ni
+        magnitud, §14); polling setTimeout encadenado con backoff 1→2→5 s.
+  - [ ] Settings nuevos (`site_name`, `local_api_refresh_ms`, `health_disk_path`) con
+        defaults; supervisor pasa signal/cloud/identidad al panel; ~18 tests nuevos primero;
+        suite edge completa verde; verificación manual en el Pi real (curl + navegador +
+        corte de Shake + stop/start del servicio + ≤2 publicaciones health en 60 s).
+
+### [ ] T-1.54 · Web: Flota sin solapes + Multi-Tenant editable
+- **Componente:** web · **Depende de:** T-1.50 (mismo cambio CSS base)
+- **Criterios de aceptación:**
+  - [ ] `.fleet` scrollea (overflow-y auto); `.fleet__admin` y `.fleet__pickermap` con
+        stacking context propio (position/isolation); `MapPointPicker` con
+        `observeMapResize` + `map.resize()` post-init; contrato DOM anti-solape con 21
+        gabinetes; flota de 1 (KPIs 1/1/0/0) y flota vacía sin crash; verificación manual
+        1366×768 y 1920×1080.
+  - [ ] TenantsPage: el empty de UMBRALES solo aplica si `!canEdit`; con `edit_thresholds` y
+        sin rule_set ⇒ editor sembrado con defaults + banner "SIN RULE_SET ACTIVO · AJUSTA Y
+        PUBLICA v1" (el camino `baseVersion:null` ya existe); tests de los 3 casos.
+
+### Diferidos de la Fase 1.7 (documentados, NO fingidos)
+- **CCTV ONVIF real + conteo de personas/aforo**: requiere hardware de cámara (Profile S,
+  RTSP/H.264). El conteo de personas es requisito NUEVO de Mauricio (2026-07-10; no estaba
+  en el blueprint) — diseñar como módulo edge futuro + bookmark por incidente. Mientras, el
+  panel CCTV de la consola es una sección honesta vacía ("SIN CÁMARA CONFIGURADA").
+- **Duración instrumental de sacudida** (STA/LTA sostenido sobre features): exige calibrar
+  umbral con ingeniería; hoy se muestra la duración del INCIDENTE, rotulada como tal.
+- **Paginación/rango de fechas del historial de incidentes** (cursor keyset previsto en el
+  endpoint; la UI migraría a useInfiniteQuery).
+- **Notificación al inspector en dictamen-request** (el `kind='dictamen_request'` queda
+  estable desde ya; el worker de notify puede recogerlo después).

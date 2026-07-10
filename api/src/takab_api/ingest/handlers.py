@@ -6,7 +6,7 @@ validado contra ``shared/schemas/`` y SIN claves ``meta_*`` — y devuelve un
 también construye el ``GatewayCtx`` desde el registro vía ``meta_principal``).
 
 Regla de identidad (cross-check payload↔registro, db/schema.sql §1–§2 y
-db/seeds/dev_fleet.sql): los IDs que viajan en el payload del edge son los
+db/seeds/prod_fleet.sql + sim_fleet.sql): los IDs que viajan en el payload del edge son los
 CÓDIGOS/SERIALES legibles, no UUIDs —
   * ``payload.tenant_id``  ≡ ``tenants.code``     (p.ej. 'tenant-dev')
   * ``payload.site_id``    ≡ ``sites.code``       (p.ej. 'site-dev')
@@ -192,7 +192,7 @@ def handle_feature_1s(
     except ValueError as exc:
         return reject(f"feature_1s: window_start inválido ({exc})")
     # Atribución al sitio del SENSOR (sensors.site_id), no al del gateway:
-    # los gateways sim atienden 5 sitios (dev_fleet.sql).
+    # los gateways sim atienden 5 sitios (sim_fleet.sql).
     sensor = ctx.sensors[payload["station"]]
     conn.execute(
         _FEATURE_SQL,

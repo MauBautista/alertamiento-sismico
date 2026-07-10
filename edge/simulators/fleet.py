@@ -39,7 +39,7 @@ from takab_edge.contracts import (
     new_event_id,
 )
 
-# Convención de flota dev (FIJA — ver seed db/seeds/dev_fleet.sql)
+# Convención de flota dev (FIJA — ver seeds db/seeds/prod_fleet.sql + sim_fleet.sql)
 TENANT_ID = "tenant-dev"
 MAX_SITES = 20
 STATIONS_PER_GATEWAY = 5

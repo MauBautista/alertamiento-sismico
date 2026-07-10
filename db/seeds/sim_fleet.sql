@@ -1,40 +1,28 @@
 -- ============================================================================
--- TAKAB · Seed de flota DEV (convención fija, T-1.17) — IDEMPOTENTE
+-- TAKAB · Seed de flota SIM (T-1.47) — SOLO ENTORNOS LOCALES · IDEMPOTENTE
 --
--- Aplicar con psql como superusuario o rol BYPASSRLS (RLS FORCE en las tablas):
---   psql "$DSN" -f db/seeds/dev_fleet.sql
--- Re-aplicable N veces: todo INSERT lleva ON CONFLICT DO NOTHING.
+-- ⚠️  ESTE ARCHIVO JAMÁS SE APLICA AL ENTORNO DESPLEGADO. La purga de T-1.47
+--     eliminó los datos sim de la nube y deploy/cloud/deploy.sh siembra
+--     únicamente db/seeds/prod_fleet.sql. Este seed existe para la demo del
+--     hito (make demo-fase1) y el desarrollo local.
 --
--- Convención de flota (NO cambiar; los payloads del edge la referencian):
---   tenant  : 'tenant-dev'
---   sitios  : 'site-dev' (real, Puebla) + 'site-sim-001'..'site-sim-020'
---             (sim 001-010 alrededor de Puebla, 011-020 alrededor de CDMX)
---   gateways: 'gw-dev-0001' (site-dev) + 'gw-sim-0001'..'gw-sim-0004'
---             (iot_thing = serial = thing name IoT)
---   sensores: 'R4F74' en site-dev; 'SIM001'..'SIM020' uno por sitio sim,
---             repartidos 5 por gateway sim EN ORDEN:
+-- Requiere db/seeds/prod_fleet.sql aplicado ANTES (crea el tenant); si falta,
+-- los FKs fallan ruidosamente — a propósito.
+--
+-- Convención (UUIDs FIJOS; demo/run.py referencia gw-sim-0001/2/3 y SIM001/006/011):
+--   sitios  : 'site-sim-001'..'site-sim-020'  d1000000-…-0001..0020
+--             (001-010 alrededor de Puebla, 011-020 alrededor de CDMX)
+--   gateways: 'gw-sim-0001'..'gw-sim-0004'    d2000000-…-0001..0004
+--   sensores: 'SIM001'..'SIM020'              d3000000-…-0001..0020
+--             repartidos 5 por gateway EN ORDEN:
 --               gw-sim-0001 → SIM001..SIM005   gw-sim-0002 → SIM006..SIM010
 --               gw-sim-0003 → SIM011..SIM015   gw-sim-0004 → SIM016..SIM020
---
--- UUIDs FIJOS por familia (literales, estables entre entornos):
---   tenant   d0000000-…-000000000001
---   sites    d1000000-…-0000000000NN  (00 = site-dev; 01..20 = site-sim-0NN)
---   gateways d2000000-…-0000000000NN  (00 = gw-dev-0001; 01..04 = gw-sim-000N)
---   sensors  d3000000-…-0000000000NN  (00 = R4F74;      01..20 = SIMNNN)
 -- ============================================================================
 
 BEGIN;
 
--- --- Tenant ------------------------------------------------------------------
-INSERT INTO tenants (tenant_id, code, name, vertical) VALUES
-  ('d0000000-0000-0000-0000-000000000001', 'tenant-dev', 'TAKAB Dev', 'dev')
-ON CONFLICT DO NOTHING;
-
--- --- Sitios (geom = geography(Point,4326); lon/lat variados Puebla/CDMX) ------
+-- --- Sitios sim ----------------------------------------------------------------
 INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES
-  ('d1000000-0000-0000-0000-000000000000', 'd0000000-0000-0000-0000-000000000001',
-   'site-dev',     'Sitio Dev Puebla',
-   ST_SetSRID(ST_MakePoint(-98.2063, 19.0414), 4326)::geography),
   ('d1000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
    'site-sim-001', 'Sitio Sim 001 Puebla',
    ST_SetSRID(ST_MakePoint(-98.2200, 19.0500), 4326)::geography),
@@ -97,11 +85,8 @@ INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES
    ST_SetSRID(ST_MakePoint(-99.0700, 19.4200), 4326)::geography)
 ON CONFLICT DO NOTHING;
 
--- --- Gateways (iot_thing = serial = thing name IoT; site_id = primer sitio del
---     bloque que atiende; el mapeo sensor→gateway vive en sensors.gateway_id) ---
+-- --- Gateways sim (site_id = primer sitio del bloque que atiende) ---------------
 INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, iot_thing, status) VALUES
-  ('d2000000-0000-0000-0000-000000000000', 'd0000000-0000-0000-0000-000000000001',
-   'd1000000-0000-0000-0000-000000000000', 'gw-dev-0001', 'gw-dev-0001', 'provisioned'),
   ('d2000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
    'd1000000-0000-0000-0000-000000000001', 'gw-sim-0001', 'gw-sim-0001', 'provisioned'),
   ('d2000000-0000-0000-0000-000000000002', 'd0000000-0000-0000-0000-000000000001',
@@ -112,12 +97,9 @@ INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, iot_thing, status)
    'd1000000-0000-0000-0000-000000000016', 'gw-sim-0004', 'gw-sim-0004', 'provisioned')
 ON CONFLICT DO NOTHING;
 
--- --- Sensores (serial = estación de Feature1s; channels/sample_rate = defaults
---     del DDL: {EHZ,ENZ,ENN,ENE} @ 100 sps) -----------------------------------
+-- --- Sensores sim (channels/sample_rate = defaults del DDL; SIN calibración:
+--     PGA/PGV relativos, la UI lo rotula — regla de oro 7) ----------------------
 INSERT INTO sensors (sensor_id, tenant_id, site_id, gateway_id, kind, model, serial) VALUES
-  ('d3000000-0000-0000-0000-000000000000', 'd0000000-0000-0000-0000-000000000001',
-   'd1000000-0000-0000-0000-000000000000', 'd2000000-0000-0000-0000-000000000000',
-   'structural', 'RS4D', 'R4F74'),
   ('d3000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
    'd1000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001',
    'structural', 'RS4D', 'SIM001'),

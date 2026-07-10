@@ -1,7 +1,7 @@
 """Handlers de ingesta (T-1.17, fase B): mapeos, idempotencia, escalada, identidad.
 
 Flota mínima de la convención dev creada con SQL directo (UUIDs alineados a
-db/seeds/dev_fleet.sql); los handlers corren como takab_ingest (BYPASSRLS),
+db/seeds/prod_fleet.sql + sim_fleet.sql); los handlers corren como takab_ingest (BYPASSRLS),
 igual que el worker real.
 """
 
@@ -29,7 +29,7 @@ from takab_api.ingest.handlers import (
     handle_status,
 )
 
-# UUIDs fijos de la familia del seed (db/seeds/dev_fleet.sql, sufijo 00 = dev).
+# UUIDs fijos de la familia del seed (db/seeds/prod_fleet.sql + sim_fleet.sql, sufijo 00 = dev).
 TENANT = "d0000000-0000-0000-0000-000000000001"
 SITE = "d1000000-0000-0000-0000-000000000000"
 GW = "d2000000-0000-0000-0000-000000000000"
