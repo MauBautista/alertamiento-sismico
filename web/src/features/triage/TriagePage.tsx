@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
@@ -41,6 +42,27 @@ export default function TriagePage() {
   const triage = useTriage({ severity, q });
   const me = useSessionStore((s) => s.me);
   const now = useNow(5000);
+
+  // T-1.51: deep-link ?incident=<id> desde la consola (SOLICITAR DICTAMEN):
+  // preselecciona esa fila UNA vez cuando el historial carga. Si no está en la
+  // página cargada se avisa (el endpoint pagina a 50) y se cae a la más reciente.
+  const [searchParams] = useSearchParams();
+  const wantedIncident = searchParams.get("incident");
+  const appliedDeepLink = useRef(false);
+  const deepLinkMiss =
+    wantedIncident !== null &&
+    triage.rows.length > 0 &&
+    !triage.rows.some((r) => r.incident.incident_id === wantedIncident);
+  useEffect(() => {
+    if (appliedDeepLink.current || wantedIncident === null || triage.rows.length === 0) {
+      return;
+    }
+    appliedDeepLink.current = true;
+    const row = triage.rows.find((r) => r.incident.incident_id === wantedIncident);
+    if (row !== undefined) {
+      setSelected(row);
+    }
+  }, [wantedIncident, triage.rows]);
 
   // La selección sobrevive a un refetch: se re-resuelve por id contra las filas.
   const current =
@@ -101,6 +123,11 @@ export default function TriagePage() {
             <span className="soc-meta">
               {triage.rows.length} INCIDENTES CARGADOS · MÁS RECIENTES PRIMERO
             </span>
+            {deepLinkMiss && (
+              <span className="soc-meta triage__deeplink-miss" role="status">
+                EL INCIDENTE SOLICITADO NO ESTÁ EN LA PÁGINA CARGADA
+              </span>
+            )}
           </div>
           <StateFrame
             label="HISTORIAL"

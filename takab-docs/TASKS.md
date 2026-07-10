@@ -1192,17 +1192,26 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **ESTADO.** web 488 passed (+21) · tsc/eslint/prettier/build OK. Smoke visual de las 5
 > páginas queda amarrado al deploy de cierre de fase (checklist del runbook).
 
-### [ ] T-1.51 · Web: botones del operador vivos (epicentro + dictamen)
+### [x] T-1.51 · Web: botones del operador vivos (epicentro + dictamen) — **COMPLETADA (2026-07-10)**
 - **Componente:** web · **Depende de:** T-1.48 (SDK) + T-1.50
 - **Criterios de aceptación:**
-  - [ ] `components/Modal.tsx` accesible (aria-modal, Esc, foco) + `EpicenterModal` que
-        REUTILIZA `MapPointPicker` (marcador arrastrable; con evento inicia en su epicentro;
-        sin evento avisa "SE CREARÁ EVENTO source=manual"); confirmación dos pasos; errores
-        403/409 inline; invalidaciones de incidents/mapState/events/actions.
-  - [ ] SOLICITAR DICTAMEN TÉCNICO: mutation + feedback + `navigate("/triage?incident=<id>")`;
-        TriagePage preselecciona por query param (aviso si está fuera de la página cargada).
-  - [ ] Los botones se habilitan por `me.allowed_actions` (matriz, no roles hardcodeados);
-        deshabilitados llevan `title` explicativo.
+  - [x] `components/Modal.tsx` accesible (role=dialog, aria-modal, Esc, foco inicial) —
+        primer modal real del árbol — + `EpicenterModal` que REUTILIZA `MapPointPicker`
+        (marcador arrastrable + clic para colocar + lat,lon manual); con evento linkeado
+        inicia en su epicentro actual y anuncia "EL PUNTO PREVIO QUEDA AUDITADO"; sin
+        evento avisa "SE CREARÁ UN EVENTO source=manual (SIN MAGNITUD)"; confirmación en
+        dos pasos (ConfirmButton); error inline `role=alert` con el modal abierto;
+        invalidaciones de incidents/mapState/events/event/actions (`useEpicenter`).
+  - [x] SOLICITAR DICTAMEN TÉCNICO: two-step en el footer → POST dictamen-request →
+        `navigate("/triage?incident=<id>")`; el 409 ("solicitud pendiente") se muestra tal
+        cual; TriagePage preselecciona por query param UNA vez (aviso honesto "EL INCIDENTE
+        SOLICITADO NO ESTÁ EN LA PÁGINA CARGADA" si el keyset de 50 no lo trae).
+  - [x] Gates por `me.allowed_actions.relocate_epicenter/request_dictamen` (matriz
+        server-driven, jamás roles hardcodeados); deshabilitados llevan `title` explicativo
+        ("tu rol no tiene esta acción" / "selecciona un incidente").
+> **ESTADO.** web 504 passed (+16: Modal 3, EpicenterModal 5, IncidentTable +4, ConsolePage
+> flujo dictamen 1, TriagePage deep-link 3) · tsc/eslint/prettier/build OK. TriagePage y
+> ConsolePage ahora usan hooks de router: sus tests montan MemoryRouter.
 
 ### [ ] T-1.52 · Web: Triage con catálogo de referencia y tiles reales
 - **Componente:** web · **Depende de:** T-1.48 (SDK)

@@ -6,7 +6,18 @@ import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { expectFourStates } from "../../test-utils/states";
 import { anEvent, anIncident, aSite } from "./fixtures";
 import { buildRows } from "./model";
+import { MemoryRouter } from "react-router";
+
 import TriagePage from "./TriagePage";
+
+/** TriagePage usa useSearchParams (deep-link T-1.51): requiere Router. */
+function pageAt(path = "/triage") {
+  return (
+    <MemoryRouter initialEntries={[path]}>
+      <TriagePage />
+    </MemoryRouter>
+  );
+}
 import type { TriageData } from "./useTriage";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } from "@takab/sdk";
@@ -83,7 +94,7 @@ describe("TriagePage · regla de oro 7", () => {
           dataUpdatedAt: state === "stale" ? Date.now() - 200_000 : Date.now(),
         }),
       );
-      return <TriagePage />;
+      return pageAt();
     });
   });
 });
@@ -91,45 +102,45 @@ describe("TriagePage · regla de oro 7", () => {
 describe("TriagePage", () => {
   it("no cita ninguna norma: la etiqueta NOM-003-SCT del mockup era errónea", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.queryByText(/NOM-003/i)).toBeNull();
     expect(screen.getByText(/EVIDENCIA INMUTABLE/)).toBeTruthy();
   });
 
   it("no ofrece exportación por lotes (no existe endpoint)", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.queryByText(/EXPORTAR LOTE/i)).toBeNull();
   });
 
   it("no ofrece selector de rango: /incidents no filtra por fecha", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.queryByText(/ÚLT\. 7 DÍAS/)).toBeNull();
     expect(screen.queryByText(/ÚLT\. 90 DÍAS/)).toBeNull();
   });
 
   it("el buscador dice que busca por prefijo de event_id, no por epicentro", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.getByLabelText(/prefijo de EVENT_ID/i)).toBeTruthy();
   });
 
   it("muestra la cuenta de lo realmente cargado", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.getByText(/1 INCIDENTES CARGADOS/)).toBeTruthy();
   });
 
   it("selecciona la primera fila por defecto y monta el detalle", () => {
     mocks.useTriage.mockReturnValue(triageData());
-    render(<TriagePage />);
+    render(pageAt());
     expect(mocks.useIncidentDetail).toHaveBeenCalledWith(ROWS[0].incident.incident_id, "evt-1");
   });
 
   it("sin filas no pide detalle de nada", () => {
     mocks.useTriage.mockReturnValue(triageData({ rows: [] }));
-    render(<TriagePage />);
+    render(pageAt());
     expect(mocks.useIncidentDetail).toHaveBeenCalledWith(null, null);
   });
 });
@@ -139,7 +150,7 @@ describe("TriagePage · gates de allowed_actions (server-driven)", () => {
     seedRole("inspector");
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res([{ ...DICTAMEN }]) }));
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.getByRole("button", { name: /FIRMAR DICTAMEN/ }).hasAttribute("disabled")).toBe(
       false,
     );
@@ -152,7 +163,7 @@ describe("TriagePage · gates de allowed_actions (server-driven)", () => {
     seedRole("gov_operator");
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res([{ ...DICTAMEN }]) }));
-    render(<TriagePage />);
+    render(pageAt());
     const pdf = screen.getByRole("button", { name: /DICTAMEN PDF/ });
     expect(pdf.hasAttribute("disabled")).toBe(true);
     expect(pdf.getAttribute("title")).toMatch(/generate_report/);
@@ -162,7 +173,7 @@ describe("TriagePage · gates de allowed_actions (server-driven)", () => {
     seedRole("takab_superadmin");
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res([{ ...DICTAMEN }]) }));
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.getByRole("button", { name: /FIRMAR DICTAMEN/ }).hasAttribute("disabled")).toBe(
       true,
     );
@@ -172,7 +183,7 @@ describe("TriagePage · gates de allowed_actions (server-driven)", () => {
     seedRole("soc_operator");
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res([{ ...DICTAMEN }]) }));
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.getByRole("button", { name: /EXPORTAR miniSEED/ }).hasAttribute("disabled")).toBe(
       true,
     );
@@ -199,7 +210,7 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
   function renderWith(over: Partial<IncidentDetailData>) {
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: HEAD, ...over }));
-    return render(<TriagePage />);
+    return render(pageAt());
   }
 
   it("evidencia en vuelo: no dice '0 OBJETOS' ni 'SIN miniSEED'", () => {
@@ -237,7 +248,7 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     mocks.useIncidentDetail.mockReturnValue(
       detailData({ dictamens: res<DictamenOut[]>(undefined, { loading: true }) }),
     );
-    render(<TriagePage />);
+    render(pageAt());
     expect(screen.queryByText("SIN DICTAMEN")).toBeNull();
     expect(screen.getByText(/CARGANDO DICTAMEN/)).toBeTruthy();
   });
@@ -248,5 +259,44 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     });
     expect(screen.queryByText(/SIN EVENTO SÍSMICO ASOCIADO/)).toBeNull();
     expect(screen.queryByText(/CUÓRUM CUMPLIDO/)).toBeNull();
+  });
+});
+
+describe("TriagePage · deep-link ?incident= (T-1.51)", () => {
+  const TWO_ROWS = buildRows(
+    [
+      anIncident(), // 1111… (más reciente primero en el fixture)
+      anIncident({
+        incident_id: "99999999-9999-9999-9999-999999999999",
+        opened_at: "2026-07-08T09:00:00Z",
+      }),
+    ],
+    [anEvent()],
+    [aSite()],
+  );
+
+  beforeEach(() => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    mocks.useTriage.mockReturnValue(triageData({ rows: TWO_ROWS }));
+    mocks.useIncidentDetail.mockReturnValue(detailData());
+  });
+
+  it("preselecciona el incidente del query param (no el más reciente)", () => {
+    render(pageAt("/triage?incident=99999999-9999-9999-9999-999999999999"));
+    // la fila del deep-link (abierta 09:00) queda seleccionada, NO la más reciente
+    const selectedRow = document.querySelector('[aria-selected="true"]');
+    expect(selectedRow?.textContent).toContain("09:00");
+  });
+
+  it("incidente fuera de la página cargada: aviso honesto y cae a la más reciente", () => {
+    render(pageAt("/triage?incident=zzzzzzzz-0000-0000-0000-000000000000"));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "EL INCIDENTE SOLICITADO NO ESTÁ EN LA PÁGINA CARGADA",
+    );
+  });
+
+  it("sin query param no cambia el comportamiento (más reciente seleccionada)", () => {
+    render(pageAt("/triage"));
+    expect(screen.queryByText(/NO ESTÁ EN LA PÁGINA CARGADA/)).toBeNull();
   });
 });

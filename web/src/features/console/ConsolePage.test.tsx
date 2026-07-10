@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
@@ -14,6 +15,9 @@ import type { SiteFeaturesData } from "./useSiteFeatures";
 
 const mocks = vi.hoisted(() => ({
   ackIncidentIncidentsIncidentIdAckPost: vi.fn(),
+  requestDictamenIncidentsIncidentIdDictamenRequestPost: vi.fn(),
+  relocateEpicenterIncidentsIncidentIdEpicenterPost: vi.fn(),
+  getEventEventsEventIdGet: vi.fn(),
   useLiveIncidents: vi.fn(),
   useMapState: vi.fn(),
   useSiteFeatures: vi.fn(),
@@ -28,6 +32,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@takab/sdk", () => ({
   ackIncidentIncidentsIncidentIdAckPost: mocks.ackIncidentIncidentsIncidentIdAckPost,
+  requestDictamenIncidentsIncidentIdDictamenRequestPost:
+    mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost,
+  relocateEpicenterIncidentsIncidentIdEpicenterPost:
+    mocks.relocateEpicenterIncidentsIncidentIdEpicenterPost,
+  getEventEventsEventIdGet: mocks.getEventEventsEventIdGet,
 }));
 vi.mock("./useLiveIncidents", () => ({ useLiveIncidents: mocks.useLiveIncidents }));
 vi.mock("./useMapState", () => ({ useMapState: mocks.useMapState }));
@@ -114,10 +123,13 @@ function actionsData(over: Partial<IncidentActionsData> = {}): IncidentActionsDa
 
 function page(): ReactElement {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // MemoryRouter: ConsolePage usa useNavigate (T-1.51, flujo de dictamen).
   return (
-    <QueryClientProvider client={client}>
-      <ConsolePage />
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={["/console"]}>
+      <QueryClientProvider client={client}>
+        <ConsolePage />
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -222,5 +234,62 @@ describe("contrato DOM del layout del wall (T-1.50)", () => {
     const { container } = render(page());
     expect(container.querySelector(".soc-stateframe.soc-wall")).not.toBeNull();
     expect(container.querySelector(".soc-stage")).not.toBeNull();
+  });
+});
+
+describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
+  it("two-step → POST → navega a /triage con el incidente preseleccionado", async () => {
+    resetSessionStoreForTests();
+    useSessionStore.setState({
+      status: "authenticated",
+      idToken: "tok",
+      me: {
+        sub: "abcdef12-3456",
+        role: "soc_operator",
+        tenant_id: "t-1",
+        surface: "web",
+        site_scope: "*",
+        allowed_routes: ["/console", "/triage"],
+        allowed_actions: {
+          ack_incident: true,
+          edit_thresholds: false,
+          export: false,
+          generate_report: false,
+          sign_dictamen: false,
+          siren_test: false,
+          manage_fleet: false,
+          relocate_epicenter: true,
+          request_dictamen: true,
+        },
+      },
+    });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData());
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+    mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost.mockResolvedValue({
+      data: { action_id: "a-9", incident_id: "i-1", kind: "dictamen_request" },
+      response: { status: 201 },
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter initialEntries={["/console"]}>
+        <QueryClientProvider client={client}>
+          <Routes>
+            <Route path="/console" element={<ConsolePage />} />
+            <Route path="/triage" element={<div data-testid="triage-probe" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN TÉCNICO/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA SOLICITAR/ }));
+
+    expect(await screen.findByTestId("triage-probe")).toBeInTheDocument();
+    expect(mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { incident_id: "i-1" } }),
+    );
   });
 });

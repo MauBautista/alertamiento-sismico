@@ -35,6 +35,19 @@ export interface IncidentTableProps {
   /** allowed_actions.ack_incident del /me (server-driven, default-deny). */
   canAck: boolean;
   onAck: (incidentId: string) => void;
+  /** allowed_actions.relocate_epicenter (T-1.51). */
+  canRelocate: boolean;
+  onRelocate: (incidentId: string) => void;
+  /** allowed_actions.request_dictamen (T-1.51). */
+  canRequestDictamen: boolean;
+  onRequestDictamen: (incidentId: string) => void;
+}
+
+/** Explica el gate del botón (regla de oro 7: un disabled mudo no informa). */
+function gateTitle(allowed: boolean, selected: boolean): string | undefined {
+  if (!allowed) return "Tu rol no tiene esta acción (allowed_actions)";
+  if (!selected) return "Selecciona un incidente primero";
+  return undefined;
 }
 
 function age(openedAt: string, nowMs: number): string {
@@ -61,6 +74,10 @@ export default function IncidentTable({
   onSelect,
   canAck,
   onAck,
+  canRelocate,
+  onRelocate,
+  canRequestDictamen,
+  onRequestDictamen,
 }: IncidentTableProps) {
   const live = liveStatus === "ready";
   return (
@@ -150,18 +167,36 @@ export default function IncidentTable({
           </span>
         </div>
         <div className="soc-incidents__actions">
-          <ConfirmButton
-            icon={<MapPin size={13} aria-hidden />}
-            label="REUBICAR EPICENTRO"
-            variant="secondary"
-            disabled
-          />
-          <ConfirmButton
-            icon={<FileSearch size={13} aria-hidden />}
-            label="SOLICITAR DICTAMEN TÉCNICO"
-            variant="secondary"
-            disabled
-          />
+          {/* T-1.51: gates por allowed_actions (matriz server-driven, jamás
+              roles hardcodeados). Reubicar abre modal (la confirmación vive
+              dentro); solicitar dictamen es two-step aquí mismo. */}
+          <span title={gateTitle(canRelocate, selectedId !== null)}>
+            <button
+              type="button"
+              className="soc-confirm soc-confirm--secondary"
+              disabled={!canRelocate || selectedId === null}
+              onClick={() => {
+                if (selectedId !== null) onRelocate(selectedId);
+              }}
+            >
+              <span className="soc-confirm__row">
+                <MapPin size={13} aria-hidden />
+                <span>REUBICAR EPICENTRO</span>
+              </span>
+            </button>
+          </span>
+          <span title={gateTitle(canRequestDictamen, selectedId !== null)}>
+            <ConfirmButton
+              icon={<FileSearch size={13} aria-hidden />}
+              label="SOLICITAR DICTAMEN TÉCNICO"
+              armedLabel="CLIC DE NUEVO PARA SOLICITAR"
+              variant="secondary"
+              disabled={!canRequestDictamen || selectedId === null}
+              onConfirm={() => {
+                if (selectedId !== null) onRequestDictamen(selectedId);
+              }}
+            />
+          </span>
           <ConfirmButton
             icon={<CheckCircle2 size={13} aria-hidden />}
             label="CONFIRMAR ACUSE"

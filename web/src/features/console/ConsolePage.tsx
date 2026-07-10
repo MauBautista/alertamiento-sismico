@@ -8,6 +8,7 @@
 // puede pintar).
 
 import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,9 +19,11 @@ import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
 import AlertBanner from "./AlertBanner";
 import DetailPanel from "./DetailPanel";
+import EpicenterModal from "./EpicenterModal";
 import IncidentTable from "./IncidentTable";
 import MapPanel from "./MapPanel";
 import { useAutoPopup } from "./useAutoPopup";
+import { useDictamenRequest } from "./useDictamenRequest";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useMapState } from "./useMapState";
@@ -95,6 +98,29 @@ function ConsoleWall() {
     [queryClient],
   );
 
+  // T-1.51: botones del operador — gates de la matriz (allowed_actions).
+  const navigate = useNavigate();
+  const dictamenRequest = useDictamenRequest();
+  const [epicenterFor, setEpicenterFor] = useState<string | null>(null);
+  const canRelocate = me?.allowed_actions.relocate_epicenter === true;
+  const canRequestDictamen = me?.allowed_actions.request_dictamen === true;
+  const onRequestDictamen = useCallback(
+    (incidentId: string) => {
+      // La solicitud aterriza en el timeline; el flujo del dictamen vive en
+      // Triage — se navega con el incidente preseleccionado.
+      dictamenRequest.mutate(incidentId, {
+        onSuccess: () => void navigate(`/triage?incident=${incidentId}`),
+      });
+    },
+    [dictamenRequest, navigate],
+  );
+  const epicenterIncident =
+    epicenterFor !== null
+      ? (incidents.incidents.find((i) => i.incident_id === epicenterFor) ?? null)
+      : null;
+  const epicenterSite =
+    epicenterIncident !== null ? (siteById.get(epicenterIncident.site_id) ?? null) : null;
+
   return (
     <div className="soc-shell" data-screen-label="01 Consola C4I · Live Wall">
       <h1 className="soc-vh">CONSOLA C4I</h1>
@@ -134,9 +160,31 @@ function ConsoleWall() {
             onSelect={(incident) => openDetail(incident.site_id)}
             canAck={canAck}
             onAck={onAck}
+            canRelocate={canRelocate}
+            onRelocate={setEpicenterFor}
+            canRequestDictamen={canRequestDictamen}
+            onRequestDictamen={onRequestDictamen}
           />
         </StateFrame>
+        {dictamenRequest.isError && (
+          <p className="soc-user__error" role="alert">
+            {dictamenRequest.error instanceof Error
+              ? dictamenRequest.error.message.toUpperCase()
+              : "NO SE PUDO SOLICITAR EL DICTAMEN"}
+          </p>
+        )}
       </main>
+      {epicenterIncident !== null && (
+        <EpicenterModal
+          incident={epicenterIncident}
+          site={
+            epicenterSite
+              ? { name: epicenterSite.name, lat: epicenterSite.lat, lon: epicenterSite.lon }
+              : null
+          }
+          onClose={() => setEpicenterFor(null)}
+        />
+      )}
       {detailOpen && focusSiteId !== null && (
         <DetailPanel
           site={{

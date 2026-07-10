@@ -26,6 +26,8 @@ function incident(id: string, over: Partial<LiveIncident> = {}): LiveIncident {
 function renderTable(over: Partial<Parameters<typeof IncidentTable>[0]> = {}) {
   const onAck = vi.fn();
   const onSelect = vi.fn();
+  const onRelocate = vi.fn();
+  const onRequestDictamen = vi.fn();
   render(
     <IncidentTable
       incidents={[incident("a")]}
@@ -37,10 +39,14 @@ function renderTable(over: Partial<Parameters<typeof IncidentTable>[0]> = {}) {
       onSelect={onSelect}
       canAck
       onAck={onAck}
+      canRelocate
+      onRelocate={onRelocate}
+      canRequestDictamen
+      onRequestDictamen={onRequestDictamen}
       {...over}
     />,
   );
-  return { onAck, onSelect };
+  return { onAck, onSelect, onRelocate, onRequestDictamen };
 }
 
 describe("IncidentTable", () => {
@@ -85,6 +91,47 @@ describe("IncidentTable", () => {
     renderTable();
     expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · SOC");
     expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  // ---- T-1.51: botones del operador vivos ---------------------------------
+  it("REUBICAR EPICENTRO se habilita con permiso + selección y despacha", () => {
+    const { onRelocate } = renderTable({ selectedId: "a" });
+    fireEvent.click(screen.getByRole("button", { name: /REUBICAR EPICENTRO/ }));
+    expect(onRelocate).toHaveBeenCalledWith("a");
+  });
+
+  it("SOLICITAR DICTAMEN es two-step y despacha con la fila seleccionada", () => {
+    const { onRequestDictamen } = renderTable({ selectedId: "a" });
+    fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN TÉCNICO/ }));
+    expect(onRequestDictamen).not.toHaveBeenCalled(); // armado, aún no dispara
+    fireEvent.click(screen.getByRole("button", { name: /CLIC DE NUEVO PARA SOLICITAR/ }));
+    expect(onRequestDictamen).toHaveBeenCalledWith("a");
+  });
+
+  it("sin permiso los botones quedan deshabilitados CON explicación (title)", () => {
+    const { onRelocate } = renderTable({
+      canRelocate: false,
+      canRequestDictamen: false,
+      selectedId: "a",
+    });
+    const relocate = screen.getByRole("button", { name: /REUBICAR EPICENTRO/ });
+    expect(relocate).toBeDisabled();
+    expect(relocate.closest("span")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Tu rol no tiene esta acción"),
+    );
+    fireEvent.click(relocate);
+    expect(onRelocate).not.toHaveBeenCalled();
+  });
+
+  it("con permiso pero sin selección: deshabilitado y el title lo dice", () => {
+    renderTable({ selectedId: null });
+    const relocate = screen.getByRole("button", { name: /REUBICAR EPICENTRO/ });
+    expect(relocate).toBeDisabled();
+    expect(relocate.closest("span")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Selecciona un incidente"),
+    );
   });
 });
 
