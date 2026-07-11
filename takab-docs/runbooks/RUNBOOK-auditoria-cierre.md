@@ -31,8 +31,10 @@ Formato de cada ítem:
 **¿"Terminado Fase 1 piloto"? Sí en lo funcional, con 4 asteriscos que impiden declararla
 cerrada hoy:**
 
-1. **La rama `main` remota está en ROJO y 21 commits (toda la Fase 1.7) nunca se subieron a
-   GitHub** — la nube viva (tag `2ca20fb`) corre código que jamás pasó CI (hallazgo A-1).
+1. ~~**La rama `main` remota está en ROJO y 21 commits (toda la Fase 1.7) nunca se subieron a
+   GitHub**~~ — **REMEDIADO el mismo día (2026-07-11):** push `9361e27..6973ba2` (22 commits) y
+   run 29163887613 = **5/5 jobs en verde**. Queda de A-1 solo adoptar la regla de proceso
+   ("solo se despliega desde main pusheado y verde").
 2. **`make demo-fase1` ya NO acredita el hito en HEAD**: 33 OK · 2 FALLOS deterministas
    (acreditado 36/36 el 2026-07-08; regresión de Fase 1.7 en los asserts intermedios de C2)
    (hallazgo A-3).
@@ -369,13 +371,18 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
   - **web: 525 passed (55 archivos)** en 18 s; `npm run build` OK (tsc + vite 5.6 s; warning de
     chunks > 500 kB — B-6).
   - **edge: 273 passed** en 65 s (coincide exacto con el baseline documentado).
-- **Resultado CI remota: FAIL → hallazgo A-1.** Última corrida en `main` remota =
-  run 29066872312 (commit 9361e27, 2026-07-10): job `api · ruff + pytest` **failure** —
-  `alembic upgrade head` exit 1 en la DB fresca del CI ⇒ **650 errors** ("1 skipped,
-  2 deselected, 650 errors in 22.73s"); los otros 4 jobs (sdk-ts, web, edge, infra) verdes.
-  **`git log origin/main..main` = 21 commits sin subir** — TODA la Fase 1.7 (incluido el fix de
-  idempotencia 715ee36 y el tag desplegado 2ca20fb). La nube viva corre código que nunca pasó
-  CI en GitHub.
+- **Resultado CI remota (al momento de la auditoría): FAIL → hallazgo A-1.** Última corrida en
+  `main` remota = run 29066872312 (commit 9361e27, 2026-07-10): job `api · ruff + pytest`
+  **failure** — `alembic upgrade head` exit 1 en la DB fresca del CI ⇒ **650 errors**
+  ("1 skipped, 2 deselected, 650 errors in 22.73s"); los otros 4 jobs (sdk-ts, web, edge,
+  infra) verdes. **`git log origin/main..main` = 21 commits sin subir** — TODA la Fase 1.7
+  (incluido el fix de idempotencia 715ee36 y el tag desplegado 2ca20fb). La nube viva corría
+  código que nunca pasó CI en GitHub.
+- **Remediación ejecutada (2026-07-11, mismo día):** `git push origin main`
+  (`9361e27..6973ba2`, 22 commits: los 21 + este runbook) → run **29163887613** sobre `6973ba2`
+  = **conclusion success, 5/5 jobs verdes** (api, sdk-ts, web, edge, infra). `origin/main` ==
+  `main`, 0 pendientes. El fix de idempotencia quedó así validado también en la DB fresca del
+  CI remoto. Pendiente de A-1: solo la regla de proceso de deploy.
 - Notas de exactitud: `make test` corre `pytest -q` SIN `-m "not perf"` — difiere del CI (B-1);
   `demo/tests/test_spool.py` no corre en `make test` ni en CI (B-2); los subconjuntos
   multi-archivo de `tests/api` no son estables por doble fixture `client`
@@ -459,7 +466,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 
 | # | Hallazgo | Evidencia | Tarea propuesta |
 |---|---|---|---|
-| A-1 | **`main` remota en ROJO + 21 commits sin push**: la nube viva (2ca20fb) corre código que nunca pasó CI en GitHub; el fix de idempotencia (715ee36) solo existe local | `gh run view 29066872312` → job api failure, 650 errors por `alembic upgrade head` exit 1; `git log origin/main..main` = 21 | `git push origin main`, verificar 5 jobs verdes, y adoptar la regla "solo se despliega desde main pusheado y verde" (documentarla en el runbook de deploy) |
+| A-1 | **REMEDIADO 2026-07-11 (mismo día):** `main` remota estaba en ROJO con 21 commits sin push; se subieron (`9361e27..6973ba2`) y el run **29163887613** dio **5/5 jobs verdes**. | `gh run view 29066872312` (rojo, 650 errors) → `gh run view 29163887613` (success) | ÚNICO pendiente: adoptar y documentar la regla "solo se despliega desde main pusheado y verde" en el runbook de deploy (`deploy/cloud/README.md`) |
 | A-2 | **GPIO sin fail-loud explícito**: en prod nadie fija ni asierta `LGPIOFactory`; un fallo de lgpio distinto al CWD caería en silencio a `native` | `gpio/__init__.py:78-88,157-159`; mitigación solo operacional (`takab-edge.service:24-31`, `critical=True`) | En `_on_start` de producción: `Device.pin_factory = LGPIOFactory()` explícita y `raise` ruidoso si no se puede instanciar; test unitario del contrato + verificación en G-01 |
 | A-3 | **`make demo-fase1` ya no acredita el hito**: 33 OK · 2 FALLOS deterministas (era 36/36 el 2026-07-08) | asserts intermedios de C2 `demo/run.py:317-325` (sin-corroborar=[] y trigger); outcomes verdes; 2 corridas idénticas | Diagnosticar si es visibilidad transaccional post-`drain()` (carrera lectura-tras-escritura) o cambio de semántica de T-1.47/T-1.48; corregir demo o pipeline según corresponda y RE-ACREDITAR 3 corridas |
 | A-4 | **Cero paginado a humanos**: sin CloudWatch alarms ni SNS; gabinete caído/batería/DLQ/5xx = solo color en la UI | grep `metric_alarm\|sns_topic` en infra = exit 1; `fail_open.py:103` solo con quórum | Terraform: SNS topic on-call + alarmas mínimas (gateway offline > 5 min por LWT/heartbeat, DLQ > 0 por 5 min, 5xx de la API, disco/CPU del EC2, batería < umbral) |
@@ -534,3 +541,5 @@ Además de resolver §11, para que TAKAB Ailert sea un producto comercial comple
   `/api/health` → `{"status":"ok"}`.
 - CI remota main: run 29066872312 = api FAILURE (650 errors) · 4 jobs verdes · **21 commits sin
   push**.
+- Remediación A-1 (mismo día): push `9361e27..6973ba2` → run **29163887613 = success, 5/5 jobs
+  verdes**; `origin/main` sincronizado con `main`.
