@@ -106,15 +106,54 @@ systemctl enable --now takab-secrets.service
 aws ecr get-login-password --region ${AWS_REGION} \
   | docker login --username AWS --password-stdin ${REGISTRY}
 
+# Privilegios que la 0011 necesita y que takab_migrator NO PUEDE darse a sí mismo.
+# Van por el socket local como postgres — el mismo canal de superusuario que ya
+# usan los seeds. Los dos son idempotentes.
+#
+# La 0011 cede la propiedad de la función SECURITY DEFINER
+# \`relocate_incident_epicenter\` a takab_ingest, para que un operador de consola
+# pueda reubicar un epicentro SIN tener permiso de escritura directo sobre
+# seismic_events. Para ceder una propiedad, Postgres exige DOS cosas:
+#
+#   1. Ser MIEMBRO del rol destino (poder hacerle SET ROLE). takab_migrator no lo
+#      era ⇒ "must be able to SET ROLE takab_ingest".
+#   2. Que el NUEVO DUEÑO tenga CREATE en el esquema del objeto. takab_ingest no lo
+#      tenía ⇒ "permission denied for schema public".
+#
+# Por eso la Fase 1.7 nunca llegó a la nube: el despliegue abortaba aquí y la base
+# se quedaba en 0010. En local no se veía porque allí alembic conecta como el
+# superusuario de la base y puede ceder lo que quiera — la divergencia clásica que
+# solo aparece contra el modelo de roles real.
+#
+# El CREATE es una necesidad de la MIGRACIÓN, no del runtime: se concede para esta
+# ventana y se revoca justo después (el ingestor no crea objetos en producción).
+docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
+  -c "GRANT takab_ingest TO takab_migrator;" \\
+  -c "GRANT CREATE ON SCHEMA public TO takab_ingest;" >/dev/null
+
 # Migraciones ANTES de levantar la API: un esquema viejo con código nuevo es un 500
 # en cada request. Corre como takab_migrator (dueño del DDL), no como takab_app.
 #
 # \`--workdir /takab/api\` NO es cosmético: alembic.ini declara \`script_location =
 # migrations\`, que Alembic resuelve contra el CWD (no contra el .ini). Desde /takab
 # buscaría /takab/migrations y no encontraría nada.
+#
+# El rc se captura en vez de dejar que \`set -e\` aborte: el REVOKE de abajo tiene
+# que cerrarse SIEMPRE, también si la migración falla. El fallo se propaga después.
+MIGRATION_RC=0
 docker run --rm --network host --workdir /takab/api \\
   --env-file /run/takab/db-migrator.env \\
-  --entrypoint python ${REGISTRY}/takab/cloud:${CLOUD_TAG} -m alembic upgrade head
+  --entrypoint python ${REGISTRY}/takab/cloud:${CLOUD_TAG} -m alembic upgrade head \\
+  || MIGRATION_RC=\$?
+
+# Cerrar la ventana: el ingestor vuelve a no poder crear objetos en public.
+docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
+  -c "REVOKE CREATE ON SCHEMA public FROM takab_ingest;" >/dev/null
+
+if [ "\$MIGRATION_RC" -ne 0 ]; then
+  echo "alembic upgrade head FALLÓ (rc=\$MIGRATION_RC) — la API no se toca" >&2
+  exit "\$MIGRATION_RC"
+fi
 
 # Flota en la DB de la nube (GAP-3 · T-1.38): sin filas en gateways/sensors la
 # ingesta rechaza TODO por "unknown principal" → DLQ. El seed es idempotente
