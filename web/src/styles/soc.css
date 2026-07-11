@@ -52,10 +52,18 @@ body {
 /* =====================================================================
    TOPBAR
    ===================================================================== */
+/* 5 columnas para 5 hijos: marca · sistema · nav · reloj · menú de operador.
+ * Con 4 columnas el menú de operador (que trae el botón SALIR) caía a una
+ * SEGUNDA fila implícita y, como la topbar mide 64px con overflow visible, se
+ * pintaba ENCIMA del título de cada página — en todas las rutas y todos los
+ * roles. Ese era el "no hay botón de cerrar sesión": sí existe, pero aterrizaba
+ * fuera de la barra. minmax(0,1fr) deja que la columna de sistema ceda ancho en
+ * pantallas angostas en vez de desbordar la barra. */
 .soc-topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  gap: 32px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: 64px;
+  gap: 24px;
   align-items: center;
   padding: 0 24px;
   background: var(--tk-navy-800);
@@ -86,7 +94,7 @@ body {
   color: var(--tk-fg-3);
   margin-top: 4px;
 }
-.soc-system { display: flex; align-items: center; gap: 14px; }
+.soc-system { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .soc-nav { display: flex; gap: 4px; }
 .soc-nav__tab {
   background: transparent; border: none;
