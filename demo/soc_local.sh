@@ -16,6 +16,14 @@ set -a
 # shellcheck disable=SC1091
 . "$ROOT/.env.dev-auth"
 TAKAB_API_DATABASE_URL="${TAKAB_API_DATABASE_URL:-postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab}"
+
+# Evidencia contra el MinIO de docker-compose: sin esto la API no tiene bucket
+# y el botón DICTAMEN PDF muere en 503. El endpoint es 127.0.0.1 (no `minio`)
+# porque el presigned URL lo abre el NAVEGADOR, no el contenedor.
+TAKAB_API_EVIDENCE_BUCKET="${TAKAB_API_EVIDENCE_BUCKET:-takab-dev-evidence}"
+TAKAB_API_S3_ENDPOINT_URL="${TAKAB_API_S3_ENDPOINT_URL:-http://127.0.0.1:9000}"
+AWS_ACCESS_KEY_ID="${MINIO_ROOT_USER:-takab}"
+AWS_SECRET_ACCESS_KEY="${MINIO_ROOT_PASSWORD:-takab_dev_secret}"
 set +a
 
 PIDS=()

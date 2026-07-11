@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     evidence_bucket: str = ""
     transfer_bucket: str = ""
 
+    # Seam de S3 (ver routers/_s3.py). Vacío = AWS real (producción). Apuntado a
+    # un S3 local compatible (MinIO de docker-compose) permite GENERAR y DESCARGAR
+    # el PDF de evidencia en desarrollo, sin credenciales de AWS.
+    s3_endpoint_url: str = ""
+
     registry_ttl_s: float = 30.0
 
     # Auth (T-1.18): verificación de ID token Cognito. JWKS remoto en prod;
