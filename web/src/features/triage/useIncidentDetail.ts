@@ -12,7 +12,7 @@ import {
 } from "@takab/sdk";
 import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } from "@takab/sdk";
 
-import { openDownload } from "../../lib/download";
+import { openPendingDownload, type PendingDownload } from "../../lib/download";
 
 class DetailRequestError extends Error {
   constructor(resource: string, status: number) {
@@ -148,34 +148,49 @@ export function useIncidentDetail(
     },
   });
 
+  // La pestaña se RESERVA en el gesto del usuario (ver lib/download.ts) y viaja
+  // como variable de la mutación: la URL presignada no existe hasta que el
+  // servidor responde, y abrirla entonces llega tarde al popup blocker.
   const pdfMutation = useMutation({
-    mutationFn: async () => {
-      const { data, response } = await generateReportIncidentsIncidentIdReportPost({
-        path: { incident_id: incidentId as string },
-      });
-      if (data === undefined) {
-        throw new DetailRequestError("POST /incidents/{id}/report", response.status);
+    mutationFn: async (pending: PendingDownload) => {
+      try {
+        const { data, response } = await generateReportIncidentsIncidentIdReportPost({
+          path: { incident_id: incidentId as string },
+        });
+        if (data === undefined) {
+          throw new DetailRequestError("POST /incidents/{id}/report", response.status);
+        }
+        return data;
+      } catch (err) {
+        // Cualquier fallo (503 sin bucket, red caída): cerrar la pestaña que se
+        // reservó, o el operador se queda con un `about:blank` huérfano delante.
+        pending.cancel();
+        throw err;
       }
-      return data;
     },
-    onSuccess: (data) => {
-      openDownload(data.url);
+    onSuccess: (data, pending) => {
+      pending.resolve(data.url);
       // El PDF queda registrado como evidencia inmutable: la lista cambió.
       void qc.invalidateQueries({ queryKey: ["evidence", incidentId] });
     },
   });
 
   const downloadMutation = useMutation({
-    mutationFn: async (evidenceId: string) => {
-      const { data, response } = await downloadEvidenceEvidenceEvidenceIdDownloadPost({
-        path: { evidence_id: evidenceId },
-      });
-      if (data === undefined) {
-        throw new DetailRequestError("POST /evidence/{id}/download", response.status);
+    mutationFn: async (vars: { evidenceId: string; pending: PendingDownload }) => {
+      try {
+        const { data, response } = await downloadEvidenceEvidenceEvidenceIdDownloadPost({
+          path: { evidence_id: vars.evidenceId },
+        });
+        if (data === undefined) {
+          throw new DetailRequestError("POST /evidence/{id}/download", response.status);
+        }
+        return data;
+      } catch (err) {
+        vars.pending.cancel();
+        throw err;
       }
-      return data;
     },
-    onSuccess: (data) => openDownload(data.url),
+    onSuccess: (data, vars) => vars.pending.resolve(data.url),
   });
 
   const exportError = pdfMutation.error?.message ?? downloadMutation.error?.message ?? null;
@@ -201,9 +216,12 @@ export function useIncidentDetail(
     sign: (status, notes) => signMutation.mutate({ status, notes }),
     signing: signMutation.isPending,
     signError: signMutation.error?.message ?? null,
-    generatePdf: () => pdfMutation.mutate(),
+    // `openPendingDownload()` corre AQUÍ, sincrónicamente dentro del onClick:
+    // es lo único que el navegador acepta como "el usuario pidió esta ventana".
+    generatePdf: () => pdfMutation.mutate(openPendingDownload()),
     pdfPending: pdfMutation.isPending,
-    downloadEvidence: (id) => downloadMutation.mutate(id),
+    downloadEvidence: (id) =>
+      downloadMutation.mutate({ evidenceId: id, pending: openPendingDownload() }),
     downloadPending: downloadMutation.isPending,
     exportError,
   };

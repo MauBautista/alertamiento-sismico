@@ -13,11 +13,16 @@ const mocks = vi.hoisted(() => ({
   signDictamenIncidentsIncidentIdDictamensPost: vi.fn(),
   generateReportIncidentsIncidentIdReportPost: vi.fn(),
   downloadEvidenceEvidenceEvidenceIdDownloadPost: vi.fn(),
-  openDownload: vi.fn(),
+  // La pestaña se RESERVA en el gesto y se navega cuando llega la URL.
+  resolve: vi.fn(),
+  cancel: vi.fn(),
+  openPendingDownload: vi.fn(),
 }));
 
 vi.mock("@takab/sdk", () => mocks);
-vi.mock("../../lib/download", () => ({ openDownload: mocks.openDownload }));
+vi.mock("../../lib/download", () => ({
+  openPendingDownload: mocks.openPendingDownload,
+}));
 
 const OK = (data: unknown) => ({ data, response: { status: 200 } });
 const FAIL = (status: number) => ({ data: undefined, response: { status } });
@@ -42,6 +47,11 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.openPendingDownload.mockReturnValue({
+    opened: true,
+    resolve: mocks.resolve,
+    cancel: mocks.cancel,
+  });
   mocks.listDictamensIncidentsIncidentIdDictamensGet.mockResolvedValue(OK({ items: [DICTAMEN] }));
   mocks.listIncidentActionsIncidentsIncidentIdActionsGet.mockResolvedValue(OK([]));
   mocks.listEvidenceIncidentsIncidentIdEvidenceGet.mockResolvedValue(OK({ items: [] }));
@@ -108,16 +118,18 @@ describe("useIncidentDetail", () => {
     expect(result.current.dictamens.error).toBeNull();
   });
 
-  it("el PDF abre la URL presignada y revalida la evidencia", async () => {
+  it("el PDF navega la pestaña RESERVADA en el gesto (el popup blocker no llega a verla)", async () => {
     mocks.generateReportIncidentsIncidentIdReportPost.mockResolvedValue(
       OK({ evidence_id: "e-1", url: "https://s3/report.pdf?sig=x", expires_in: 300 }),
     );
     const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.generatePdf());
-    await waitFor(() =>
-      expect(mocks.openDownload).toHaveBeenCalledWith("https://s3/report.pdf?sig=x"),
-    );
+    // La pestaña se reserva ANTES de que salga la petición: si se abriera en el
+    // onSuccess, el navegador ya habría consumido la activación del usuario.
+    expect(mocks.openPendingDownload).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.resolve).toHaveBeenCalledWith("https://s3/report.pdf?sig=x"));
+    expect(mocks.cancel).not.toHaveBeenCalled();
   });
 
   it("descargar evidencia abre su presigned GET", async () => {
@@ -132,16 +144,17 @@ describe("useIncidentDetail", () => {
         path: { evidence_id: "e-9" },
       }),
     );
-    expect(mocks.openDownload).toHaveBeenCalledWith("https://s3/eq.mseed?sig=y");
+    await waitFor(() => expect(mocks.resolve).toHaveBeenCalledWith("https://s3/eq.mseed?sig=y"));
   });
 
-  it("un 503 al exportar (sin bucket) se reporta y no abre nada", async () => {
+  it("un 503 al exportar se reporta y CIERRA la pestaña reservada (sin about:blank huérfano)", async () => {
     mocks.generateReportIncidentsIncidentIdReportPost.mockResolvedValue(FAIL(503));
     const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.generatePdf());
     await waitFor(() => expect(result.current.exportError).toMatch(/503/));
-    expect(mocks.openDownload).not.toHaveBeenCalled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalled());
   });
 });
 
