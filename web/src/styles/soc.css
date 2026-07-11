@@ -37,6 +37,30 @@ body {
   min-width: 0;
   min-height: 0;
 }
+
+/* =====================================================================
+   COLUMNAS FLEX SCROLLEABLES — invariante compartida
+   =====================================================================
+   Toda columna flex con `overflow-y: auto` de este shell tiene la misma
+   trampa: sus hijos conservan `flex-shrink: 1`, así que cuando el contenido
+   no cabe el navegador NO scrollea — primero ENCOGE a los hijos. Y el que más
+   cede es el StateFrame, porque su `min-height: 0` lo deja llegar hasta altura
+   CERO; su contenido (overflow visible) sigue pintándose a tamaño natural y
+   aterriza ENCIMA del hermano de abajo. Así se veía el solape de la flota:
+   el grid de gabinetes sobre la tabla "ESTACIONES DEL TENANT". Los hermanos
+   con `min-height: auto` (una tabla, una card) se salvan solos; por eso el bug
+   parecía aleatorio y por eso `.soc-incidents` ya traía su parche suelto.
+
+   Fijando los hijos a su altura natural, el sobrante va al scroll del
+   contenedor — que es justo lo que el `overflow-y: auto` pedía. */
+.soc-detail > *,
+.soc-tabpage > *,
+.fleet > *,
+.triage-detail > *,
+.mt__detail > *,
+.bld > * {
+  flex-shrink: 0;
+}
 /* [T-1.50] El StateFrame del wall es el ÚNICO grid item de .soc-main: esta
  * clase (prop className del StateFrame) reproduce dentro del wrapper el grid
  * que .soc-main esperaba dar a .soc-stage/.soc-incidents. Sin ella, .soc-stage

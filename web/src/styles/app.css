@@ -104,12 +104,19 @@ a.soc-btn {
   min-height: 0;
 }
 
+/* SIN height:100% — creaba un bucle de altura porcentual dentro de una card de
+ * altura automática: la card se medía con el status en su min-height (120px),
+ * el status se estiraba luego al 100% de esa altura ya definida (177px) y el
+ * contenido acababa siendo MÁS ALTO que la card de la que se dedujo, así que
+ * desbordaba (se veía en las cards de quórum y evidencia del triage). No hace
+ * falta: como item de un flex/grid el status ya se estira solo (align-self:
+ * stretch), y el único dueño que pasa layout propio (`.soc-wall` en la consola)
+ * trae su height:100%. En una card de altura automática, min-height basta. */
 .soc-stateframe--status {
   display: grid;
   place-items: center;
   align-content: center;
   gap: var(--tk-space-3);
-  height: 100%;
   min-height: 120px;
   padding: var(--tk-space-4);
   color: var(--tk-fg-3);

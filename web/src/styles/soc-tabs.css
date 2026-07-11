@@ -159,6 +159,9 @@
    * la tabla admin (el solape reportado con la flota sim). */
   overflow-y: auto;
 }
+/* El solape de la flota NO se arregla aquí sino en la invariante compartida de
+ * los contenedores scrolleables (soc.css · "COLUMNAS FLEX SCROLLEABLES"): el
+ * StateFrame se encogía a 0 y su grid se pintaba encima de la tabla admin. */
 .fleet__hd {
   display: flex;
   justify-content: space-between;
