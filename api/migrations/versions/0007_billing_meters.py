@@ -27,7 +27,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _UP = """
-CREATE TABLE billing_meters_daily (
+CREATE TABLE IF NOT EXISTS billing_meters_daily (
   tenant_id    uuid NOT NULL REFERENCES tenants,
   day          date NOT NULL,
   active_sites int    NOT NULL DEFAULT 0,
@@ -40,8 +40,10 @@ CREATE TABLE billing_meters_daily (
 
 ALTER TABLE billing_meters_daily ENABLE ROW LEVEL SECURITY;
 ALTER TABLE billing_meters_daily FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS billing_meters_read ON billing_meters_daily;
 CREATE POLICY billing_meters_read ON billing_meters_daily FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+DROP POLICY IF EXISTS billing_meters_admin ON billing_meters_daily;
 CREATE POLICY billing_meters_admin ON billing_meters_daily FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
@@ -62,6 +64,13 @@ def _exec(sql: str) -> None:
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS: 0001 aplica `db/schema.sql`, el DDL CONSOLIDADO y fuente de
+    # verdad (CLAUDE.md §5), que desde T-1.45 ("schema.sql a cero drift", 137edc4)
+    # YA trae estos objetos. Sobre una base nueva la cadena los creaba dos veces y
+    # `alembic upgrade head` moría con DuplicateTable: ninguna base nueva (CI, una
+    # región nueva, un dev) podía provisionarse desde migraciones. Sobre una base ya
+    # migrada esto es un no-op. Invariante: toda migración posterior a 0001 tiene que
+    # ser idempotente, porque 0001 ya deja el esquema en su estado FINAL.
     _exec(_UP)
 
 

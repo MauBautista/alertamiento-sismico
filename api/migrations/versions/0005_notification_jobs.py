@@ -28,7 +28,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _UP = """
-CREATE TABLE notification_jobs (
+CREATE TABLE IF NOT EXISTS notification_jobs (
   job_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants,
   incident_id uuid NOT NULL REFERENCES incidents ON DELETE RESTRICT,
@@ -46,16 +46,18 @@ CREATE TABLE notification_jobs (
   UNIQUE (incident_id, channel, mode)
 );
 
-CREATE INDEX idx_notification_jobs_due
+CREATE INDEX IF NOT EXISTS idx_notification_jobs_due
   ON notification_jobs (due_at) WHERE status = 'pending';
-CREATE INDEX idx_notification_jobs_tenant
+CREATE INDEX IF NOT EXISTS idx_notification_jobs_tenant
   ON notification_jobs (tenant_id, created_at DESC);
 
 ALTER TABLE notification_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_jobs FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS notification_jobs_read ON notification_jobs;
 CREATE POLICY notification_jobs_read ON notification_jobs FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
          OR app_gov_can_see(tenant_id));
+DROP POLICY IF EXISTS notification_jobs_admin ON notification_jobs;
 CREATE POLICY notification_jobs_admin ON notification_jobs FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
@@ -76,6 +78,13 @@ def _exec(sql: str) -> None:
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS: 0001 aplica `db/schema.sql`, el DDL CONSOLIDADO y fuente de
+    # verdad (CLAUDE.md §5), que desde T-1.45 ("schema.sql a cero drift", 137edc4)
+    # YA trae estos objetos. Sobre una base nueva la cadena los creaba dos veces y
+    # `alembic upgrade head` moría con DuplicateTable: ninguna base nueva (CI, una
+    # región nueva, un dev) podía provisionarse desde migraciones. Sobre una base ya
+    # migrada esto es un no-op. Invariante: toda migración posterior a 0001 tiene que
+    # ser idempotente, porque 0001 ya deja el esquema en su estado FINAL.
     _exec(_UP)
 
 

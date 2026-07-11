@@ -33,13 +33,21 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Como en 0001: los objetos se crean bajo takab_migrator (dueño de las
     # tablas), de modo que `downgrade base` (DROP OWNED) también los barre.
+    #
+    # IF NOT EXISTS porque 0001 aplica `db/schema.sql`, que es el DDL CONSOLIDADO
+    # (la fuente de verdad, CLAUDE.md §5) y desde T-1.45 ("schema.sql a cero
+    # drift", 137edc4) ya trae estos dos índices. Sobre una base nueva la cadena
+    # los creaba dos veces y `alembic upgrade head` moría con DuplicateTable, así
+    # que NINGUNA base nueva podía provisionarse desde migraciones. Sobre una base
+    # ya migrada esto es un no-op (alembic no re-corre 0002). El downgrade ya era
+    # tolerante (DROP INDEX IF EXISTS); el upgrade ahora es simétrico.
     op.execute("SET ROLE takab_migrator")
     op.execute(
-        "CREATE UNIQUE INDEX uq_incident_actions_ack "
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_incident_actions_ack "
         "ON incident_actions (incident_id, kind, actor, ts)"
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_evidence_incident_sha256 "
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_incident_sha256 "
         "ON evidence_objects (incident_id, sha256) WHERE sha256 IS NOT NULL"
     )
     op.execute("RESET ROLE")

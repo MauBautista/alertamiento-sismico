@@ -49,27 +49,30 @@ CREATE OR REPLACE FUNCTION app_user_id() RETURNS uuid
 """
 
 _USER_PROFILES = """
-CREATE TABLE user_profiles (
+CREATE TABLE IF NOT EXISTS user_profiles (
   user_sub     uuid PRIMARY KEY,
   tenant_id    uuid NOT NULL REFERENCES tenants,
   display_name text NOT NULL CHECK (char_length(display_name) BETWEEN 1 AND 80),
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_user_profiles_tenant ON user_profiles (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_tenant ON user_profiles (tenant_id);
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS user_profiles_read ON user_profiles;
 CREATE POLICY user_profiles_read ON user_profiles FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+DROP POLICY IF EXISTS user_profiles_self_write ON user_profiles;
 CREATE POLICY user_profiles_self_write ON user_profiles FOR ALL
   USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
   WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+DROP POLICY IF EXISTS user_profiles_admin ON user_profiles;
 CREATE POLICY user_profiles_admin ON user_profiles FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 GRANT SELECT, INSERT, UPDATE ON user_profiles TO takab_app;
 """
 
 _REFERENCE_EARTHQUAKES = """
-CREATE TABLE reference_earthquakes (
+CREATE TABLE IF NOT EXISTS reference_earthquakes (
   ref_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   catalog_key text NOT NULL UNIQUE,
   origin_time timestamptz NOT NULL,
@@ -82,9 +85,10 @@ CREATE TABLE reference_earthquakes (
   notes       text,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
+CREATE INDEX IF NOT EXISTS idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
 ALTER TABLE reference_earthquakes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reference_earthquakes FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ref_eq_read ON reference_earthquakes;
 CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
   USING (app_role() IS NOT NULL);
 GRANT SELECT ON reference_earthquakes TO takab_app;
@@ -184,6 +188,13 @@ def _exec(sql: str) -> None:
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS: 0001 aplica `db/schema.sql`, el DDL CONSOLIDADO y fuente de
+    # verdad (CLAUDE.md §5), que desde T-1.45 ("schema.sql a cero drift", 137edc4)
+    # YA trae estos objetos. Sobre una base nueva la cadena los creaba dos veces y
+    # `alembic upgrade head` moría con DuplicateTable: ninguna base nueva (CI, una
+    # región nueva, un dev) podía provisionarse desde migraciones. Sobre una base ya
+    # migrada esto es un no-op. Invariante: toda migración posterior a 0001 tiene que
+    # ser idempotente, porque 0001 ya deja el esquema en su estado FINAL.
     _exec(_APP_USER_ID)
     _exec(_USER_PROFILES)
     _exec(_REFERENCE_EARTHQUAKES)

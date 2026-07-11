@@ -30,7 +30,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _UP = """
-CREATE TABLE commands (
+CREATE TABLE IF NOT EXISTS commands (
   command_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants,
   site_id     uuid NOT NULL REFERENCES sites,
@@ -49,21 +49,24 @@ CREATE TABLE commands (
   error       text
 );
 
-CREATE INDEX idx_commands_site ON commands (site_id, issued_at DESC);
-CREATE INDEX idx_commands_pending ON commands (expires_at) WHERE status = 'pending';
-CREATE INDEX idx_commands_rate ON commands (issued_by, site_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_commands_site ON commands (site_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_commands_pending ON commands (expires_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_commands_rate ON commands (issued_by, site_id, issued_at DESC);
 
 ALTER TABLE commands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commands FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS commands_read ON commands;
 CREATE POLICY commands_read ON commands FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+DROP POLICY IF EXISTS commands_write ON commands;
 CREATE POLICY commands_write ON commands FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+DROP POLICY IF EXISTS commands_admin ON commands;
 CREATE POLICY commands_admin ON commands FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
-CREATE TABLE gateway_config_state (
+CREATE TABLE IF NOT EXISTS gateway_config_state (
   gateway_id   uuid PRIMARY KEY REFERENCES gateways,
   tenant_id    uuid NOT NULL REFERENCES tenants,
   version      int  NOT NULL,
@@ -74,8 +77,10 @@ CREATE TABLE gateway_config_state (
 
 ALTER TABLE gateway_config_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gateway_config_state FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gateway_config_state_read ON gateway_config_state;
 CREATE POLICY gateway_config_state_read ON gateway_config_state FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+DROP POLICY IF EXISTS gateway_config_state_admin ON gateway_config_state;
 CREATE POLICY gateway_config_state_admin ON gateway_config_state FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
@@ -113,6 +118,13 @@ def _exec(sql: str) -> None:
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS: 0001 aplica `db/schema.sql`, el DDL CONSOLIDADO y fuente de
+    # verdad (CLAUDE.md §5), que desde T-1.45 ("schema.sql a cero drift", 137edc4)
+    # YA trae estos objetos. Sobre una base nueva la cadena los creaba dos veces y
+    # `alembic upgrade head` moría con DuplicateTable: ninguna base nueva (CI, una
+    # región nueva, un dev) podía provisionarse desde migraciones. Sobre una base ya
+    # migrada esto es un no-op. Invariante: toda migración posterior a 0001 tiene que
+    # ser idempotente, porque 0001 ya deja el esquema en su estado FINAL.
     _exec(_UP)
 
 
