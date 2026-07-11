@@ -119,8 +119,8 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        li.severity    AS severity,
        li.state       AS state,
        li.opened_at   AS opened_at,
-       li.max_pga_g   AS inc_pga_g,
-       li.max_pgv_cms AS inc_pgv_cms,
+       li.felt_pga_g   AS inc_pga_g,
+       li.felt_pgv_cms AS inc_pgv_cms,
        cal.calibrated AS calibrated,
        th.pga_watch_g   AS pga_watch_g,
        th.pga_trip_g    AS pga_trip_g,
@@ -135,9 +135,31 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) lm ON true
 LEFT JOIN LATERAL (
-    -- El pico del INCIDENTE es lo que el edificio llegó a sentir en el evento;
-    -- el bucket de 1m de arriba es solo lo que está sintiendo AHORA.
-    SELECT i.incident_id, i.severity, i.state, i.opened_at, i.max_pga_g, i.max_pgv_cms
+    -- Lo que el edificio LLEGÓ A SENTIR en este incidente = el PICO medido desde
+    -- que abrió, no lo que mide ahora. El bucket de 1m de arriba es el "ahora", y
+    -- para cuando el operador mira la sacudida ya pasó: usarlo aquí pintaría de
+    -- verde un inmueble que se movió 0.567 g (visto en la nube: incidentes por
+    -- `local_threshold` con el pico real a NULL y el minuto vivo en ruido de fondo).
+    --
+    -- `incidents.max_pga_g` es la verdad autoritativa PERO solo la rellena el pase
+    -- de dictamen: mientras no corra, viene NULL. Así que se toma el mayor de los
+    -- dos hechos medidos. GREATEST ignora los NULL (solo da NULL si TODO es NULL,
+    -- y entonces `felt` sale `unknown` — que es lo correcto: no sabemos qué sintió).
+    --
+    -- El margen hacia atrás NO es un fudge: el bucket de 1 minuto que contiene el
+    -- disparo EMPIEZA antes de que el incidente se abra (03:17:00 vs 03:17:13), y
+    -- el edge tarda en subirlo. Sin él se pierde justo el minuto que causó el trip.
+    SELECT i.incident_id, i.severity, i.state, i.opened_at,
+           GREATEST(i.max_pga_g, (
+               SELECT max(m.max_pga_g) FROM site_metrics_1m_secure m
+                WHERE m.site_id = i.site_id
+                  AND m.bucket >= i.opened_at - interval '2 minutes'
+           )) AS felt_pga_g,
+           GREATEST(i.max_pgv_cms, (
+               SELECT max(m.max_pgv_cms) FROM site_metrics_1m_secure m
+                WHERE m.site_id = i.site_id
+                  AND m.bucket >= i.opened_at - interval '2 minutes'
+           )) AS felt_pgv_cms
     FROM incidents i
     WHERE i.site_id = s.site_id AND i.state <> 'closed'
     ORDER BY i.opened_at DESC

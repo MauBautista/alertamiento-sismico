@@ -99,13 +99,21 @@ def _resolve_bucket(bucket: str | None, from_ts: datetime, to_ts: datetime) -> s
 def _map_site(r: Any) -> MapSiteState:
     """Fila del mapa → estado del sitio, con la sacudida MEDIDA ya clasificada.
 
-    El pico del incidente abierto manda sobre el bucket de 1 minuto: durante un
-    evento importa lo que el edificio LLEGÓ a sentir, no lo que siente ahora (que
-    para cuando el operador mira ya volvió a cero).
+    CON incidente abierto, `felt` es el PICO de su ventana (lo que el edificio
+    llegó a sentir). SIN incidente, es el último minuto (lo que siente ahora).
+
+    Y con incidente abierto NO se cae al último minuto: la sacudida ya pasó y ese
+    bucket está en ruido de fondo, así que caer ahí pintaría de VERDE —"no se
+    movió"— un inmueble que acaba de sacudirse. Visto en la nube con datos reales:
+    Sitio Dev Puebla, incidente por `local_threshold`, pico medido 0.567 g (9× su
+    umbral de disparo) y el minuto vivo en 0.0014 g. Sin pico ⇒ `unknown` (gris):
+    no sabemos qué sintió, y eso no es lo mismo que decir que no sintió nada.
     """
     thresholds = thresholds_from_row(r.pga_watch_g, r.pga_trip_g, r.pgv_watch_cms, r.pgv_trip_cms)
-    pga = r.inc_pga_g if r.inc_pga_g is not None else r.max_pga_g
-    pgv = r.inc_pgv_cms if r.inc_pgv_cms is not None else r.max_pgv_cms
+    if r.incident_id is not None:
+        pga, pgv = r.inc_pga_g, r.inc_pgv_cms
+    else:
+        pga, pgv = r.max_pga_g, r.max_pgv_cms
     return MapSiteState(
         site_id=r.site_id,
         tenant_id=r.tenant_id,

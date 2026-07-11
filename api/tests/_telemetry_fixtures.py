@@ -35,13 +35,22 @@ T_AGENCY = "89999999-9999-9999-9999-999999999999"  # agencia gov (no es tenant c
 S_A = "8a000000-0000-0000-0000-0000000000a1"
 S_B = "8b000000-0000-0000-0000-0000000000b1"
 S_G = "8c000000-0000-0000-0000-0000000000c1"
+#: Sitio que SACUDIÓ fuerte y ya se calmó, con el pico del incidente aún sin
+#: rellenar. Es el escenario que el mapa pintaba mal (ver test_map_state_*).
+S_SHOOK = "8a100000-0000-0000-0000-0000000000a2"
 
 SENSOR_A = "8d000000-0000-0000-0000-0000000000d1"
 SENSOR_B = "8e000000-0000-0000-0000-0000000000e1"
 SENSOR_G = "8f000000-0000-0000-0000-0000000000f1"
+SENSOR_SHOOK = "8d100000-0000-0000-0000-0000000000d2"
 
 _MINE = (T_PRIV_A, T_PRIV_B, T_GOV)
-_SITES = ((S_A, T_PRIV_A, SENSOR_A), (S_B, T_PRIV_B, SENSOR_B), (S_G, T_GOV, SENSOR_G))
+_SITES = (
+    (S_A, T_PRIV_A, SENSOR_A),
+    (S_B, T_PRIV_B, SENSOR_B),
+    (S_G, T_GOV, SENSOR_G),
+    (S_SHOOK, T_PRIV_A, SENSOR_SHOOK),
+)
 
 _GEOM = "ST_SetSRID(ST_MakePoint(-99.13, 19.43), 4326)::geography"
 
@@ -115,6 +124,18 @@ def _seed(conn: psycopg.Connection) -> SeedIds:
                     "%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                     (str(offset), tid, sid, sensor, pga, pga * 10, pga * 20, clip),
                 )
+        # S_SHOOK: SACUDIÓ fuerte hace 20 min (0.50 g) y AHORA está en calma
+        # (0.001 g). Es el escenario que el mapa pintaba de VERDE — "no se movió" —
+        # porque miraba el último minuto en vez del pico de la ventana del incidente.
+        for offset, pga in ((1200, 0.50), (30, 0.001)):
+            cur.execute(
+                "INSERT INTO waveform_features_1s (ts, tenant_id, site_id, sensor_id, "
+                "channel, pga_g, pgv_cms, stalta, clipping) VALUES "
+                "(now() - (%s || ' seconds')::interval, %s, %s, %s, 'EHZ', "
+                "%s, %s, %s, false) ON CONFLICT DO NOTHING",
+                (str(offset), T_PRIV_A, S_SHOOK, SENSOR_SHOOK, pga, pga * 10, pga * 20),
+            )
+
         # Un incidente ABIERTO por sitio (alimenta el open_incident del mapa).
         for sid, tid in ((S_A, T_PRIV_A), (S_B, T_PRIV_B), (S_G, T_GOV)):
             cur.execute(
@@ -124,6 +145,16 @@ def _seed(conn: psycopg.Connection) -> SeedIds:
                 "'open', 'sasmex')",
                 (tid, sid),
             )
+        # El de S_SHOOK abrió CUANDO sacudió, y su `max_pga_g` sigue NULL: solo lo
+        # rellena el pase de dictamen, que aún no ha corrido. Exactamente el estado
+        # en que estaban los incidentes reales de la nube.
+        cur.execute(
+            "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, "
+            "opened_at, severity, state, trigger) VALUES "
+            "(gen_random_uuid(), gen_random_uuid(), %s, %s, now() - interval '20 minutes', "
+            "'critical', 'open', 'local_threshold')",
+            (T_PRIV_A, S_SHOOK),
+        )
         _refresh(cur)
     return SeedIds()
 

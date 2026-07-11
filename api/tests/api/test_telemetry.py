@@ -19,6 +19,7 @@ import auth_utils as au
 from _telemetry_fixtures import (  # noqa: F401  (fixtures cargadas por nombre)
     S_A,
     S_B,
+    S_SHOOK,
     T_PRIV_A,
     T_PRIV_B,
     client,
@@ -144,6 +145,32 @@ async def test_map_state_reports_shaking_MEASURED_not_alert_severity(client, see
     assert site["open_incident"]["severity"] == "warning"  # el canal de alerta dice esto…
     assert site["felt"] == "trip"  # …y el edificio dice esto otro
     assert site["felt_pga_g"] == pytest.approx(0.10, abs=0.01)
+
+
+async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(client, seed) -> None:
+    """Un edificio que sacudió y ya se calmó NO puede pintarse de verde.
+
+    Regresión de un fallo cazado contra la nube con datos reales: Sitio Dev Puebla
+    tenía un incidente abierto por `local_threshold` —o sea, disparado por SU PROPIO
+    sensor—, con un pico medido de 0.567 g (9× su umbral) y `incidents.max_pga_g`
+    todavía en NULL, porque ese campo solo lo rellena el pase de dictamen. El mapa
+    caía entonces al último bucket de 1 minuto, que para cuando el operador mira ya
+    está en ruido de fondo (0.0014 g), y pintaba el inmueble de VERDE: "no se movió".
+
+    Con incidente abierto, `felt` tiene que ser el PICO de su ventana, no la calma
+    posterior. S_SHOOK reproduce ese estado: 0.50 g hace 20 min, 0.001 g ahora.
+    """
+    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    assert r.status_code == 200, r.text
+    site = {s["site_id"]: s for s in r.json()["sites"]}[S_SHOOK]
+
+    assert site["felt"] == "trip", "la sacudida pasada manda sobre la calma de ahora"
+    assert site["felt_pga_g"] == pytest.approx(0.50, abs=0.01)
+    # El pico de la ventana nunca puede quedar POR DEBAJO de la lectura viva: si eso
+    # pasara, el mapa estaría enseñando algo más suave de lo que el edificio sintió.
+    # (No se asserta el valor exacto del bucket vivo: cuándo materializa TimescaleDB
+    # el minuto en curso es asunto suyo, y atarlo aquí hace el test frágil.)
+    assert site["felt_pga_g"] >= site["max_pga_g"]
 
 
 async def test_map_state_declares_uncalibrated_sites(client, seed) -> None:
