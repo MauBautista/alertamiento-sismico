@@ -4,7 +4,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sdk = vi.hoisted(() => ({
   listGatewaysFleetGatewaysGet: vi.fn(),
@@ -13,7 +13,18 @@ const sdk = vi.hoisted(() => ({
 }));
 vi.mock("@takab/sdk", () => sdk);
 
+import { resetSessionStoreForTests } from "../../auth/session.store";
+import { ME_FIXTURES } from "../../test-utils/meFixtures";
+import { seedAuthenticated } from "../../test-utils/renderRoutes";
 import { useSiteRelays } from "./useSiteRelays";
+
+beforeEach(() => {
+  resetSessionStoreForTests();
+  vi.clearAllMocks();
+  // La card de relés vive en la consola, pero el inventario que la alimenta es
+  // de la flota: sin un rol con /fleet la query ni se dispara.
+  seedAuthenticated(ME_FIXTURES.takab_superadmin);
+});
 
 const GW = {
   gateway_id: "g-1",

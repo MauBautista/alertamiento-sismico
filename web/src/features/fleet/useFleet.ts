@@ -8,6 +8,8 @@ import {
 } from "@takab/sdk";
 import type { GatewayOut, RuleSetOut, SiteOut } from "@takab/sdk";
 
+import { useSessionStore } from "../../auth/session.store";
+
 /** Cadencia del inventario; los heartbeats de device_health son por transición
  * + latido periódico, no hay nada que ganar refrescando más rápido. */
 export const FLEET_REFETCH_MS = 30_000;
@@ -138,10 +140,18 @@ export function buildCabinets(
  * tumbar la página si fallan.
  */
 export function useFleet(): FleetData {
+  // /fleet/gateways exige permiso de flota. FleetPage ya vive detrás del
+  // RouteGuard, pero useSiteRelays monta este hook en la CONSOLA, donde
+  // inspector y building_admin sí entran y no pueden leer la flota: sin este
+  // gate cada carga de /console les disparaba un 403 (la misma matriz del
+  // server que guarda la ruta decide aquí, cero matriz local).
+  const canReadFleet = useSessionStore((s) => s.me?.allowed_routes.includes("/fleet") ?? false);
+
   const gateways = useQuery({
     queryKey: ["fleet", "gateways"],
     queryFn: fetchGateways,
     refetchInterval: FLEET_REFETCH_MS,
+    enabled: canReadFleet,
   });
   const sites = useQuery({
     queryKey: ["sites"],
@@ -161,7 +171,10 @@ export function useFleet(): FleetData {
 
   return {
     cabinets,
-    loading: gateways.isPending,
+    // Con `enabled:false` la query se queda en `isPending` para siempre (nunca
+    // corre): sin este guard el rol sin permiso vería un spinner eterno en vez
+    // de la card de relés "no visible".
+    loading: canReadFleet && gateways.isPending,
     error: gateways.data === undefined && gateways.error ? gateways.error.message : null,
     dataUpdatedAt: gateways.dataUpdatedAt,
     refetch: () => {

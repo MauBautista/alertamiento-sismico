@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GatewayOut, RuleSetOut, SiteOut } from "@takab/sdk";
 
+import { resetSessionStoreForTests } from "../../auth/session.store";
+import { ME_FIXTURES } from "../../test-utils/meFixtures";
+import { seedAuthenticated } from "../../test-utils/renderRoutes";
 import { useFleet } from "./useFleet";
 
 const mocks = vi.hoisted(() => ({
@@ -98,7 +101,10 @@ function arrange({
   gateways = [GW_OK, GW_OFFLINE] as GatewayOut[] | number,
   sites = SITES as SiteOut[] | number,
   ruleSets = [ruleSet({})] as RuleSetOut[] | number,
+  /** Rol en sesión: /fleet/gateways solo se pide si su matriz lo permite. */
+  role = "takab_superadmin" as keyof typeof ME_FIXTURES,
 } = {}) {
+  seedAuthenticated(ME_FIXTURES[role]);
   mocks.listGatewaysFleetGatewaysGet.mockResolvedValue(
     typeof gateways === "number" ? fail(gateways) : ok(gateways),
   );
@@ -108,6 +114,11 @@ function arrange({
   );
   return renderHook(() => useFleet(), { wrapper: makeWrapper() });
 }
+
+beforeEach(() => {
+  resetSessionStoreForTests();
+  vi.clearAllMocks();
+});
 
 async function settled(result: { current: ReturnType<typeof useFleet> }) {
   await waitFor(() => {
@@ -124,6 +135,19 @@ describe("useFleet", () => {
     });
     expect(result.current.cabinets.map((c) => c.gateway.gateway_id)).toEqual(["g-1", "g-2"]);
     expect(result.current.cabinets[0].siteCode).toBe("CHL-A");
+  });
+
+  // El rol sin /fleet en su matriz (inspector, building_admin) SÍ entra a la
+  // consola, y ahí useSiteRelays monta este hook: sin gate, cada carga de
+  // /console le disparaba un 403 contra /fleet/gateways.
+  it("rol sin /fleet: no pide el inventario y no se queda cargando", async () => {
+    const { result } = arrange({ role: "inspector" });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(mocks.listGatewaysFleetGatewaysGet).not.toHaveBeenCalled();
+    expect(result.current.cabinets).toEqual([]);
+    expect(result.current.error).toBeNull();
   });
 
   it("si /sites falla usa un fallback identificable y NO tumba la página", async () => {
