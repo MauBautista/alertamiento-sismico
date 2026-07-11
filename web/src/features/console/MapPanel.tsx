@@ -2,9 +2,13 @@
 // Desviación RATIFICADA: mapa vectorial real, no el SVG esquemático del mock.
 //
 // Los sitios vienen de /telemetry/map/state (verdad server-side): color por
-// severidad del incidente abierto (o criticidad OK). Alrededor de los sitios
-// con incidente crítico se pintan anillos de intensidad (bandas MMI) + un
-// pulso animado por rAF (motion lineal, sin bounce — design system).
+// severidad del incidente abierto (o criticidad OK). Los sitios con incidente
+// crítico llevan un pulso animado por rAF (motion lineal, sin bounce — design
+// system) como beacon del marcador.
+//
+// Este mapa NO dibuja intensidad sísmica: no hay isosistas, ni bandas MMI, ni
+// radio de "dónde se sintió". Ese es el mini-ShakeMap del BLUEPRINT §14 (fase
+// futura). Ver el comentario en la carga de capas.
 
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -143,30 +147,22 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
       map.addSource("sites", { type: "geojson", data: sitesToFeatureCollection(sitesRef.current) });
       map.addSource("critical", { type: "geojson", data: criticalFeatures(sitesRef.current) });
 
-      // Bandas MMI estáticas alrededor del epicentro operativo (sitio crítico).
-      map.addLayer({
-        id: "mmi-severa",
-        type: "circle",
-        source: "critical",
-        paint: {
-          "circle-radius": 55,
-          "circle-color": "rgba(255,82,82,0.16)",
-          "circle-stroke-color": "#FF5252",
-          "circle-stroke-width": 1.4,
-        },
-      });
-      map.addLayer({
-        id: "mmi-alta",
-        type: "circle",
-        source: "critical",
-        paint: {
-          "circle-radius": 100,
-          "circle-color": "rgba(255,193,7,0.07)",
-          "circle-stroke-color": "#FFC107",
-          "circle-stroke-width": 1,
-        },
-      });
-      // Pulso animado (rAF, easing lineal).
+      // NO hay bandas MMI. Aquí vivían dos anillos ("mmi-severa" 55px y
+      // "mmi-alta" 100px) rotulados INTENSIDAD MMI que no estaban conectados a
+      // ningún dato: eran constantes. Y como `circle-radius` de MapLibre es en
+      // PÍXELES DE PANTALLA, el mismo anillo afirmaba ~22 km de radio en zoom
+      // 8.5 y ~1 km en zoom 13 — la banda cambiaba de significado físico con
+      // cada rueda del ratón. Dibujar una isosista honesta exige una intensidad
+      // real, y hoy no existe: `seismic_events.magnitude` es NULL (el WR-1 solo
+      // entrega un booleano) y el PGA de un sensor sin calibrar es RELATIVO, no
+      // físico (db/schema.sql §sensors). Mostrar un radio inventado como si
+      // fuera el área donde se sintió el sismo es exactamente lo que prohíbe la
+      // regla de oro 7. El mapa de intensidades es el mini-ShakeMap del
+      // BLUEPRINT §14 — fase futura, no este ciclo.
+
+      // Pulso animado (rAF, easing lineal). Es un BEACON del marcador (atrae la
+      // vista al sitio crítico), no una afirmación geográfica: por eso sí es
+      // correcto que viva en píxeles y no escale con el zoom.
       map.addLayer({
         id: "pulse",
         type: "circle",
@@ -252,16 +248,20 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
         </div>
       )}
 
+      {/* La leyenda declara lo que el color SIGNIFICA de verdad: la severidad
+          del incidente abierto en cada sitio (`/telemetry/map/state`). Antes
+          decía "INTENSIDAD MMI", que prometía una escala de intensidad sísmica
+          que el sistema no calcula en ningún lado. */}
       <div className="soc-map__legend">
-        <div className="soc-map__legend-title">INTENSIDAD MMI</div>
+        <div className="soc-map__legend-title">SEVERIDAD DEL SITIO</div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#FF5252" }} /> Alta
+          <span className="soc-map__sw" style={{ background: "#FF5252" }} /> Crítico
         </div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#FFC107" }} /> Moderada
+          <span className="soc-map__sw" style={{ background: "#FFC107" }} /> Advertencia
         </div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#00E676" }} /> Sitios OK
+          <span className="soc-map__sw" style={{ background: "#00E676" }} /> Sin incidente
         </div>
       </div>
 

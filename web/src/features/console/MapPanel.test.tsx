@@ -127,6 +127,27 @@ describe("MapPanel", () => {
     expect(onSelectSite).toHaveBeenCalledWith("crit");
   });
 
+  // Aquí vivían "mmi-severa" (55px) y "mmi-alta" (100px), rotuladas INTENSIDAD
+  // MMI y conectadas a NADA. Como `circle-radius` de MapLibre es en PÍXELES DE
+  // PANTALLA, el mismo anillo afirmaba ~22 km de radio en zoom 8.5 y ~1 km en
+  // zoom 13: la banda cambiaba de significado físico con cada zoom. Sin
+  // magnitud (NULL) ni PGA calibrado no hay isosista honesta que dibujar, así
+  // que no se dibuja ninguna (regla de oro 7). El mapa de intensidades es el
+  // mini-ShakeMap del BLUEPRINT §14 — fase futura.
+  it("NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente", () => {
+    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+
+    const layerIds: string[] = mocks.map.addLayer.mock.calls.map(
+      (call) => (call[0] as { id: string }).id,
+    );
+    expect(layerIds.some((id) => id.startsWith("mmi"))).toBe(false);
+    expect(screen.queryByText(/INTENSIDAD MMI/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/SEVERIDAD DEL SITIO/i)).toBeInTheDocument();
+  });
+
   it("estilo remoto caído ⇒ degrada al estilo LOCAL, re-cuelga las capas y lo declara", () => {
     render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
 
