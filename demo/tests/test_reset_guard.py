@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from demo.run import reset_state  # noqa: E402
+from demo.run import _assert_exclusive_db, reset_state  # noqa: E402
 
 
 @dataclass
@@ -58,3 +58,50 @@ def test_reset_state_permite_db_local(host: str | None) -> None:
     reset_state(conn)  # type: ignore[arg-type]
     assert conn.committed is True
     assert any("TRUNCATE" in sql for sql in conn.executed)
+
+
+# --- Guardia de exclusividad (lección A-3 de la auditoría de cierre) -----------
+# Un worker residente (`make soc-local` deja `python -m takab_api.incident` vivo,
+# sin puerto que lo delate) correlaciona y dispara fail-open ANTES de que C2
+# consulte: 33 OK · 2 FALLOS sin pista del porqué. La demo debe abortar RUIDOSO
+# si la DB tiene otros clientes, ANTES de arrancar un solo criterio.
+
+
+class _FakeCursor:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    def execute(self, sql: str, params: dict | None = None) -> None:
+        self.sql = sql
+
+    def fetchall(self) -> list[tuple]:
+        return self._rows
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+class _FakeConnActivity:
+    """Superficie mínima de ``psycopg.Connection`` que toca ``_assert_exclusive_db``."""
+
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    def cursor(self) -> _FakeCursor:
+        return _FakeCursor(self._rows)
+
+
+def test_db_con_cliente_foraneo_aborta_y_lo_delata() -> None:
+    """Otro 'client backend' en la DB ⇒ RuntimeError que nombra pid y proceso."""
+    foraneo = (4242, "takab", "", "idle", "SELECT ... FROM incidents ...")
+    with pytest.raises(RuntimeError, match="soc-local") as exc:
+        _assert_exclusive_db(_FakeConnActivity([foraneo]))  # type: ignore[arg-type]
+    assert "4242" in str(exc.value)
+
+
+def test_db_en_exclusiva_procede() -> None:
+    """Cero clientes ajenos ⇒ la acreditación arranca como siempre."""
+    _assert_exclusive_db(_FakeConnActivity([]))  # type: ignore[arg-type]

@@ -1,8 +1,19 @@
 # RUNBOOK · Hito de salida Fase 1 — demo en vivo con 3 gabinetes
 
-> **Estado: ACREDITADO (2026-07-08).** `make demo-fase1` = 36/36 asserts en verde, en 3
-> corridas consecutivas. Confirmación en hardware real (Pi 5 `gw-dev-0001`): corte de WAN
-> reversible, protección local intacta, cero pérdida al reconectar.
+> **Estado: RE-ACREDITADO (2026-07-11).** `make demo-fase1` = **35/35 asserts en verde, en 3
+> corridas consecutivas**. (Acreditación original 2026-07-08; su "36/36" fue un error de
+> transcripción — el harness imprime 35 y sus asserts no han cambiado desde entonces.)
+> Confirmación en hardware real (Pi 5 `gw-dev-0001`): corte de WAN reversible, protección
+> local intacta, cero pérdida al reconectar.
+>
+> **Guardia de exclusividad (lección A-3 de la auditoría de cierre):** la acreditación exige
+> la DB local SIN otros clientes. Un worker residente — p.ej. el `python -m takab_api.incident`
+> que deja vivo un `make soc-local` mal apagado (no escucha en ningún puerto que lo delate) —
+> correlaciona y dispara fail-open por su cuenta ANTES de que C2 consulte ⇒ **33 OK · 2 FALLOS
+> falsos** que parecen regresión del pipeline. Desde 2026-07-11 la demo revisa
+> `pg_stat_activity` con su PRIMERA conexión y ABORTA ruidosa si hay cualquier otro
+> `client backend` (`demo/run.py::_assert_exclusive_db`, tests en
+> `demo/tests/test_reset_guard.py`).
 
 El hito (TASKS.md) pide: *"Demo en vivo con 3 gabinetes: prueba SASMEX dispara actuadores y
 aparece en el SOC; sismo simulado en 3 estaciones activa quórum; corte de internet no detiene

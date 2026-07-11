@@ -35,9 +35,12 @@ cerrada hoy:**
    GitHub**~~ — **REMEDIADO el mismo día (2026-07-11):** push `9361e27..6973ba2` (22 commits) y
    run 29163887613 = **5/5 jobs en verde**. Queda de A-1 solo adoptar la regla de proceso
    ("solo se despliega desde main pusheado y verde").
-2. **`make demo-fase1` ya NO acredita el hito en HEAD**: 33 OK · 2 FALLOS deterministas
-   (acreditado 36/36 el 2026-07-08; regresión de Fase 1.7 en los asserts intermedios de C2)
-   (hallazgo A-3).
+2. ~~**`make demo-fase1` ya NO acredita el hito en HEAD**~~ — **REMEDIADO (2026-07-11):** el
+   diagnóstico de "regresión de Fase 1.7" era INCORRECTO. Los 2 fallos eran contaminación de un
+   worker `takab_api.incident` residente (de un `make soc-local` mal apagado) que correlacionaba
+   por su cuenta durante la auditoría. En entorno limpio la demo acredita **35/35 ×3 corridas**;
+   se añadió guardia fail-loud de exclusividad de DB (`demo/run.py::_assert_exclusive_db`).
+   Ver hallazgo A-3.
 3. **Los gates #3 físicos siguen abiertos** (soak 24 h, restart del Shake, semántica del radio
    WR-1, latencia real de relé) — §10.
 4. **Nadie es paginado cuando un gabinete cae**: cero alarmas CloudWatch, cero SNS (hallazgo A-4).
@@ -217,13 +220,23 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
     fail-open todo en paralelo `:88`).
   - En vivo (soc-local): `POST :9100/quake` → 200 y **2 incidentes `critical`/`local_threshold`
     visibles por `GET /incidents` en < 6 s**.
-  - **`make demo-fase1` HOY = HITO NO ACREDITADO: 33 OK · 2 FALLOS**, deterministas (2 corridas
-    idénticas). Fallan los 2 asserts INTERMEDIOS de C2 (`demo/run.py:317-321` — espera 3
-    incidentes sin corroborar y obtiene `[]`; `:322-325` — `trigger == 'local_threshold'`),
-    con pizarra limpia entre criterios (TRUNCATE, `run.py:134-140`); los asserts de OUTCOME del
-    mismo criterio pasan (evento `local_quorum` con node_count=3, offsets +0.00/+0.10/+0.23 s,
-    3 incidentes linkeados, fail-open de 7 sitios). Acreditado 36/36 el 2026-07-08
-    (`RUNBOOK-demo-fase1-tres-gabinetes.md:3`) ⇒ regresión introducida por Fase 1.7.
+  - **`make demo-fase1` al momento de la auditoría = HITO NO ACREDITADO: 33 OK · 2 FALLOS**,
+    deterministas (2 corridas idénticas). Fallaban los 2 asserts INTERMEDIOS de C2
+    (`demo/run.py:317-321` — espera 3 incidentes sin corroborar y obtiene `[]`; `:322-325` —
+    `trigger == 'local_threshold'`); los asserts de OUTCOME del mismo criterio pasaban.
+  - **Diagnóstico y remediación (2026-07-11, post-auditoría):** la atribución inicial
+    ("regresión de Fase 1.7") era INCORRECTA. Causa raíz REPRODUCIDA en ambos sentidos: un
+    worker `python -m takab_api.incident` residente (dejado por un `make soc-local` mal
+    apagado; no escucha en ningún puerto) correlacionaba y disparaba fail-open ANTES de que C2
+    consultara — los 3 incidentes amanecían linkeados (`[]` en el primer assert) y los
+    sintéticos `trigger='quorum'` rompían el segundo. En entorno limpio (cero `client backend`
+    ajenos en `pg_stat_activity`): **35 OK · 0 FALLOS**; con worker inyectado a propósito:
+    33 · 2 idéntico a la auditoría. Fix fail-loud: `demo/run.py::_assert_exclusive_db` aborta
+    la acreditación si la DB tiene otros clientes (tests `demo/tests/test_reset_guard.py`,
+    10 passed) — verificado: con worker vivo la demo aborta ANTES del primer criterio.
+    **RE-ACREDITADO: 35/35 × 3 corridas consecutivas.** (El "36/36" del runbook de la demo era
+    un error de transcripción; el conteo real del harness es 35 y sus asserts no cambiaron
+    desde la acreditación original.)
   - Cascada: el worker `python -m takab_api.notify` NO corre en soc-local (por diseño del
     script); en la nube está declarado (`deploy/cloud/docker-compose.yml:74-79`). Canales
     REALES hoy: webhook con firma HMAC y email SES sandbox; **SMS y WhatsApp SIMULADOS**
@@ -468,7 +481,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 |---|---|---|---|
 | A-1 | **REMEDIADO 2026-07-11 (mismo día):** `main` remota estaba en ROJO con 21 commits sin push; se subieron (`9361e27..6973ba2`) y el run **29163887613** dio **5/5 jobs verdes**. | `gh run view 29066872312` (rojo, 650 errors) → `gh run view 29163887613` (success) | ÚNICO pendiente: adoptar y documentar la regla "solo se despliega desde main pusheado y verde" en el runbook de deploy (`deploy/cloud/README.md`) |
 | A-2 | **GPIO sin fail-loud explícito**: en prod nadie fija ni asierta `LGPIOFactory`; un fallo de lgpio distinto al CWD caería en silencio a `native` | `gpio/__init__.py:78-88,157-159`; mitigación solo operacional (`takab-edge.service:24-31`, `critical=True`) | En `_on_start` de producción: `Device.pin_factory = LGPIOFactory()` explícita y `raise` ruidoso si no se puede instanciar; test unitario del contrato + verificación en G-01 |
-| A-3 | **`make demo-fase1` ya no acredita el hito**: 33 OK · 2 FALLOS deterministas (era 36/36 el 2026-07-08) | asserts intermedios de C2 `demo/run.py:317-325` (sin-corroborar=[] y trigger); outcomes verdes; 2 corridas idénticas | Diagnosticar si es visibilidad transaccional post-`drain()` (carrera lectura-tras-escritura) o cambio de semántica de T-1.47/T-1.48; corregir demo o pipeline según corresponda y RE-ACREDITAR 3 corridas |
+| A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
 | A-4 | **Cero paginado a humanos**: sin CloudWatch alarms ni SNS; gabinete caído/batería/DLQ/5xx = solo color en la UI | grep `metric_alarm\|sns_topic` en infra = exit 1; `fail_open.py:103` solo con quórum | Terraform: SNS topic on-call + alarmas mínimas (gateway offline > 5 min por LWT/heartbeat, DLQ > 0 por 5 min, 5xx de la API, disco/CPU del EC2, batería < umbral) |
 | A-5 | **Backup sin restore probado ni RPO/RTO** (solo snapshots EBS diarios, retain 7) | `database/main.tf:268-288`; sin runbook de restore en `takab-docs/runbooks/` | Runbook backup/restore + prueba real de restauración (G-09), PITR con archivado WAL (p.ej. WAL-G a S3), declarar RPO/RTO |
 | A-6 | **Audio de voceo (simulacro/sismo) INEXISTENTE** — solicitado en esta auditoría; el Pi 5 ni siquiera tiene jack 3.5 mm | grep audio en repo = exit 1; sirena = relé seco (`contracts.py:54`) | Nueva tarea edge `audio`: (1) BOM: DAC USB o HAT I2S + amplificador + bocina de intemperie; (2) módulo `edge/takab_edge/audio` FUERA del camino crítico (el relé JAMÁS espera al audio); (3) assets versionados con sha256 — mensaje de SISMO claramente distinto al de SIMULACRO; (4) disparo determinista subordinado a `rules`/reflejo + botón drill en panel LAN con PIN; (5) autotest periódico de bocina con reporte al heartbeat; (6) systemd hardening igual que takab-gpio |
@@ -543,3 +556,7 @@ Además de resolver §11, para que TAKAB Ailert sea un producto comercial comple
   push**.
 - Remediación A-1 (mismo día): push `9361e27..6973ba2` → run **29163887613 = success, 5/5 jobs
   verdes**; `origin/main` sincronizado con `main`.
+- Remediación A-3 (mismo día): causa raíz = worker residente (NO regresión); reproducida en
+  ambos sentidos (limpio 35/35 · con worker 33/2); guardia `_assert_exclusive_db` + 2 tests
+  (10 passed en `demo/tests/test_reset_guard.py`); guard verificado abortando con worker vivo;
+  **RE-ACREDITADO 35/35 × 3 corridas consecutivas**.

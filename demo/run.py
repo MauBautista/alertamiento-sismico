@@ -130,6 +130,39 @@ def _assert_local_db(conn: psycopg.Connection) -> None:
         )
 
 
+def _assert_exclusive_db(conn: psycopg.Connection) -> None:
+    """La acreditación exige la DB para la demo SOLA (lección A-3 de la auditoría).
+
+    Un worker residente — p.ej. el `python -m takab_api.incident` que deja vivo un
+    `make soc-local` mal apagado (no escucha en ningún puerto que lo delate) —
+    correlaciona y dispara fail-open ANTES de que los asserts intermedios de C2
+    consulten: los 3 incidentes amanecen ya linkeados y aparecen sintéticos
+    `trigger='quorum'` ⇒ 33 OK · 2 FALLOS deterministas sin pista del porqué.
+    Fail-loud: cualquier 'client backend' ajeno conectado a la DB aborta la
+    acreditación ANTES de arrancar un solo criterio. Se llama con la PRIMERA
+    conexión de la demo, cuando cualquier otro cliente es, por definición, ajeno.
+    """
+    rows = _sql(
+        conn,
+        "SELECT pid, usename, coalesce(application_name, ''), state, "
+        "left(coalesce(query, ''), 80) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+        "AND backend_type = 'client backend'",
+    )
+    if rows:
+        detalle = "\n".join(
+            f"    pid={pid} user={user} app={app!r} state={state} query={query!r}"
+            for pid, user, app, state, query in rows
+        )
+        raise RuntimeError(
+            "demo-fase1: la DB tiene OTROS clientes conectados y la acreditación "
+            "exige exclusividad — un worker externo correlacionaría por su cuenta y "
+            "contaminaría los asserts de C2 (RUNBOOK-auditoria-cierre, hallazgo A-3). "
+            "¿Quedó vivo `make soc-local`? Apaga estos procesos y reintenta:\n"
+            f"{detalle}"
+        )
+
+
 def reset_state(conn: psycopg.Connection) -> None:
     """Pizarra limpia entre criterios. Sólo tablas de datos, nunca el registro.
 
@@ -495,6 +528,7 @@ def main() -> int:
 
     settings = Settings(database_url=DSN)
     conn = psycopg.connect(DSN, autocommit=False)
+    _assert_exclusive_db(conn)  # antes de abrir bridge/soc/fleet: todo otro cliente es ajeno
     reset_state(conn)
 
     fleet = Fleet(_WORK)
