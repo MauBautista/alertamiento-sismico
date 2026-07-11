@@ -139,7 +139,7 @@ function ConsoleWall() {
           staleSince={staleSince}
         >
           <div className="soc-stage">
-            <MapPanel sites={map.sites} onSelectSite={openDetail} />
+            <MapPanel sites={map.sites} epicenters={map.epicenters} onSelectSite={openDetail} />
             <AlertBanner
               incident={critical}
               siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}

@@ -33,11 +33,12 @@ vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 import MapPanel, {
+  epicentersToFeatureCollection,
   FALLBACK_STYLE,
-  criticalFeatures,
+  FELT_COLOR,
   pulseAt,
-  siteSeverity,
   sitesToFeatureCollection,
+  trippedFeatures,
 } from "./MapPanel";
 
 function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
@@ -52,11 +53,18 @@ function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
     max_pga_g: null,
     max_pgv_cms: null,
     open_incident: null,
+    felt: "unknown",
+    felt_pga_g: null,
+    felt_pgv_cms: null,
+    calibrated: true,
     ...over,
   };
 }
 
+/** Edificio que REALMENTE disparó: midió por encima de su umbral. */
 const CRITICAL = site("crit", {
+  felt: "trip",
+  felt_pga_g: 0.12,
   open_incident: {
     incident_id: "i-1",
     severity: "critical",
@@ -87,17 +95,74 @@ describe("pulseAt (puro) — opacidad SIEMPRE válida para MapLibre (0..1)", () 
 });
 
 describe("builders del mapa (puros)", () => {
-  it("severidad efectiva: incidente abierto manda; sin incidente = ok", () => {
-    expect(siteSeverity(site("a"))).toBe("ok");
-    expect(siteSeverity(CRITICAL)).toBe("critical");
+  it("el color es la SACUDIDA MEDIDA, no la severidad de la alerta", () => {
+    // El caso que motiva todo esto: SASMEX abre el incidente en `critical`, pero
+    // el edificio no llegó a moverse (`felt: normal`). El punto NO puede ir rojo:
+    // el aviso es del canal de alerta, no una medida de este inmueble.
+    const avisadoPeroQuieto = site("a", {
+      felt: "normal",
+      open_incident: {
+        incident_id: "i-1",
+        severity: "critical",
+        state: "open",
+        opened_at: "2026-07-08T10:00:00Z",
+      },
+    });
+    const fc = sitesToFeatureCollection([avisadoPeroQuieto]);
+    expect(fc.features[0].properties).toMatchObject({
+      color: FELT_COLOR.normal,
+      felt: "normal",
+      tripped: false,
+    });
   });
 
-  it("GeoJSON con color y flag critical por sitio", () => {
-    const fc = sitesToFeatureCollection([site("a"), CRITICAL]);
-    expect(fc.features).toHaveLength(2);
-    expect(fc.features[0].properties).toMatchObject({ color: "#00E676", critical: false });
-    expect(fc.features[1].properties).toMatchObject({ color: "#FF5252", critical: true });
-    expect(criticalFeatures([site("a"), CRITICAL]).features).toHaveLength(1);
+  it("sin dato es GRIS, jamás verde: 'no reportó' no es 'no se movió'", () => {
+    const fc = sitesToFeatureCollection([site("a", { felt: "unknown" })]);
+    expect(fc.features[0].properties).toMatchObject({ color: FELT_COLOR.unknown });
+    expect(FELT_COLOR.unknown).not.toBe(FELT_COLOR.normal);
+  });
+
+  it("el pulso marca a los que SUPERARON SU UMBRAL DE DISPARO", () => {
+    const tripped = site("t", { felt: "trip" });
+    const fc = sitesToFeatureCollection([site("a", { felt: "normal" }), tripped]);
+    expect(fc.features[1].properties).toMatchObject({ color: FELT_COLOR.trip, tripped: true });
+    expect(trippedFeatures([site("a", { felt: "normal" }), tripped]).features).toHaveLength(1);
+  });
+
+  it("el sitio sin calibrar se marca: su PGA es RELATIVO, no una intensidad física", () => {
+    const fc = sitesToFeatureCollection([
+      site("a", { calibrated: false }),
+      site("b", { calibrated: true }),
+    ]);
+    expect(fc.features[0].properties).toMatchObject({ calibrated: false });
+    expect(fc.features[1].properties).toMatchObject({ calibrated: true });
+  });
+
+  it("el epicentro es un punto PROPIO, con la magnitud solo si existe", () => {
+    const fc = epicentersToFeatureCollection([
+      {
+        event_id: "e-1",
+        source: "ssn",
+        lon: -99.1,
+        lat: 16.8,
+        magnitude: 7.1,
+        depth_km: 20,
+        detected_at: "2026-07-08T10:00:00Z",
+      },
+      {
+        event_id: "e-2",
+        source: "manual",
+        lon: -98.2,
+        lat: 19.0,
+        magnitude: null,
+        depth_km: null,
+        detected_at: "2026-07-08T10:00:00Z",
+      },
+    ]);
+    expect(fc.features[0].geometry.coordinates).toEqual([-99.1, 16.8]);
+    expect(fc.features[0].properties).toMatchObject({ label: "M 7.1" });
+    // Sin magnitud NO se inventa un número: se rotula el evento.
+    expect(fc.features[1].properties).toMatchObject({ label: "EPICENTRO" });
   });
 });
 
@@ -110,7 +175,7 @@ describe("MapPanel", () => {
 
   it("crea el mapa, agrega capas al style.load y despacha el clic en site-core", () => {
     const onSelectSite = vi.fn();
-    render(<MapPanel sites={[CRITICAL]} onSelectSite={onSelectSite} />);
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={onSelectSite} />);
     expect(mocks.Map).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("map-panel")).toBeInTheDocument();
 
@@ -118,13 +183,51 @@ describe("MapPanel", () => {
       mocks.handlers.get("style.load")?.();
     });
     expect(mocks.map.addSource).toHaveBeenCalledWith("sites", expect.anything());
-    expect(mocks.map.addSource).toHaveBeenCalledWith("critical", expect.anything());
+    expect(mocks.map.addSource).toHaveBeenCalledWith("tripped", expect.anything());
+    expect(mocks.map.addSource).toHaveBeenCalledWith("epicenters", expect.anything());
     expect(mocks.map.addLayer).toHaveBeenCalled();
 
     mocks.handlers.get("click:site-core")?.({
       features: [{ properties: { site_id: "crit" } }],
     });
     expect(onSelectSite).toHaveBeenCalledWith("crit");
+  });
+
+  it("el EPICENTRO es su propia capa, separada de los edificios", () => {
+    render(
+      <MapPanel
+        sites={[CRITICAL]}
+        epicenters={[
+          {
+            event_id: "e-1",
+            source: "ssn",
+            lon: -99.1,
+            lat: 16.8,
+            magnitude: 7.1,
+            depth_km: 20,
+            detected_at: "2026-07-08T10:00:00Z",
+          },
+        ]}
+        onSelectSite={vi.fn()}
+      />,
+    );
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const layers: Array<{ id: string; source: string }> = mocks.map.addLayer.mock.calls.map(
+      (call) => call[0] as { id: string; source: string },
+    );
+    const epi = layers.filter((l) => l.source === "epicenters");
+    expect(epi.length).toBeGreaterThan(0);
+    // El epicentro NUNCA sale de la fuente de edificios: no es un edificio.
+    expect(epi.every((l) => l.source !== "sites")).toBe(true);
+    // Y con un epicentro localizado NO se declara su ausencia.
+    expect(screen.queryByTestId("map-no-epicenter")).toBeNull();
+  });
+
+  it("sin epicentro localizado lo DECLARA, en vez de plantarlo sobre el edificio", () => {
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+    expect(screen.getByTestId("map-no-epicenter")).toHaveTextContent("SIN EPICENTRO LOCALIZADO");
   });
 
   // Aquí vivían "mmi-severa" (55px) y "mmi-alta" (100px), rotuladas INTENSIDAD
@@ -135,7 +238,7 @@ describe("MapPanel", () => {
   // que no se dibuja ninguna (regla de oro 7). El mapa de intensidades es el
   // mini-ShakeMap del BLUEPRINT §14 — fase futura.
   it("NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente", () => {
-    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
     act(() => {
       mocks.handlers.get("style.load")?.();
     });
@@ -145,11 +248,12 @@ describe("MapPanel", () => {
     );
     expect(layerIds.some((id) => id.startsWith("mmi"))).toBe(false);
     expect(screen.queryByText(/INTENSIDAD MMI/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/SEVERIDAD DEL SITIO/i)).toBeInTheDocument();
+    // La leyenda dice lo que el color ES: lo que midió el edificio.
+    expect(screen.getByText(/SACUDIDA MEDIDA EN EL EDIFICIO/i)).toBeInTheDocument();
   });
 
   it("estilo remoto caído ⇒ degrada al estilo LOCAL, re-cuelga las capas y lo declara", () => {
-    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
 
     act(() => {
       mocks.handlers.get("error")?.(); // el estilo inicial nunca cargó
@@ -165,7 +269,7 @@ describe("MapPanel", () => {
   });
 
   it("un error DESPUÉS de cargar (tile suelto) NO borra el mapa base ya renderizado", () => {
-    render(<MapPanel sites={[CRITICAL]} onSelectSite={vi.fn()} />);
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
     act(() => {
       mocks.handlers.get("style.load")?.();
       mocks.handlers.get("error")?.();
@@ -182,7 +286,7 @@ describe("MapPanel", () => {
         return 0;
       });
     try {
-      render(<MapPanel sites={[]} onSelectSite={vi.fn()} />);
+      render(<MapPanel sites={[]} epicenters={[]} onSelectSite={vi.fn()} />);
       // NO se dispara style.load: el pulso (rAF recursivo) no debe arrancar aquí.
       (
         globalThis as unknown as { __triggerResizeObservers: () => void }

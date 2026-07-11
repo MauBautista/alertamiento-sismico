@@ -64,6 +64,10 @@ const SITE: MapSiteState = {
   max_pga_g: 0.15,
   max_pgv_cms: 4.2,
   open_incident: null,
+  felt: "unknown",
+  felt_pga_g: null,
+  felt_pgv_cms: null,
+  calibrated: true,
 };
 
 const INCIDENT: LiveIncident = {
@@ -96,6 +100,7 @@ function incidentsData(over: Partial<LiveIncidentsData> = {}): LiveIncidentsData
 function mapData(over: Partial<MapStateData> = {}): MapStateData {
   return {
     sites: [SITE],
+    epicenters: [],
     loading: false,
     error: null,
     dataUpdatedAt: Date.now(),

@@ -118,7 +118,14 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        li.incident_id AS incident_id,
        li.severity    AS severity,
        li.state       AS state,
-       li.opened_at   AS opened_at
+       li.opened_at   AS opened_at,
+       li.max_pga_g   AS inc_pga_g,
+       li.max_pgv_cms AS inc_pgv_cms,
+       cal.calibrated AS calibrated,
+       th.pga_watch_g   AS pga_watch_g,
+       th.pga_trip_g    AS pga_trip_g,
+       th.pgv_watch_cms AS pgv_watch_cms,
+       th.pgv_trip_cms  AS pgv_trip_cms
 FROM sites s
 LEFT JOIN LATERAL (
     SELECT m.bucket, m.max_pga_g, m.max_pgv_cms
@@ -128,12 +135,38 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) lm ON true
 LEFT JOIN LATERAL (
-    SELECT i.incident_id, i.severity, i.state, i.opened_at
+    -- El pico del INCIDENTE es lo que el edificio llegó a sentir en el evento;
+    -- el bucket de 1m de arriba es solo lo que está sintiendo AHORA.
+    SELECT i.incident_id, i.severity, i.state, i.opened_at, i.max_pga_g, i.max_pgv_cms
     FROM incidents i
     WHERE i.site_id = s.site_id AND i.state <> 'closed'
     ORDER BY i.opened_at DESC
     LIMIT 1
 ) li ON true
+LEFT JOIN LATERAL (
+    -- Calibrado solo si TODOS los sensores activos declaran su fuente de
+    -- respuesta. Sin sensores, bool_and da NULL ⇒ el router lo lee como NO
+    -- calibrado (default-deny). Mismo criterio que `select_site_calibrated`.
+    SELECT bool_and(sn.calibration_source IS NOT NULL) AS calibrated
+    FROM sensors sn
+    WHERE sn.site_id = s.site_id AND sn.status = 'active'
+) cal ON true
+LEFT JOIN LATERAL (
+    -- Los MISMOS umbrales que arman los actuadores en el edge: el color del mapa
+    -- y la decisión de disparo tienen que contar la misma historia. Scope de
+    -- sitio manda sobre el de tenant. Si no hay rule_set (o RLS lo oculta), sale
+    -- NULL y el router cae a los default del edge.
+    SELECT (rs.config->'edge'->'thresholds'->>'pga_watch_g')::float   AS pga_watch_g,
+           (rs.config->'edge'->'thresholds'->>'pga_trip_g')::float    AS pga_trip_g,
+           (rs.config->'edge'->'thresholds'->>'pgv_watch_cms')::float AS pgv_watch_cms,
+           (rs.config->'edge'->'thresholds'->>'pgv_trip_cms')::float  AS pgv_trip_cms
+    FROM rule_sets rs
+    WHERE rs.is_active
+      AND ((rs.scope_type = 'site'   AND rs.scope_id = s.site_id)
+        OR (rs.scope_type = 'tenant' AND rs.scope_id = s.tenant_id))
+    ORDER BY (rs.scope_type = 'site') DESC, rs.version DESC
+    LIMIT 1
+) th ON true
 WHERE s.status = 'active'
 ORDER BY s.name ASC, s.site_id ASC
 """
@@ -142,6 +175,32 @@ ORDER BY s.name ASC, s.site_id ASC
 def select_map_state() -> tuple[TextClause, dict[str, Any]]:
     """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``)."""
     return text(_MAP_STATE_SQL), {}
+
+
+# Epicentros de los eventos que tienen incidente ABIERTO. `seismic_events` es de
+# alcance RED (no lleva tenant_id — excepción documentada en db/schema.sql), así que
+# el aislamiento se consigue ENTRANDO por `incidents`, que sí tiene RLS: solo se ven
+# los epicentros de eventos que golpearon a un sitio visible para quien pregunta.
+_MAP_EPICENTERS_SQL = """
+SELECT DISTINCT
+       e.event_id    AS event_id,
+       e.source      AS source,
+       ST_X(e.epicenter::geometry) AS lon,
+       ST_Y(e.epicenter::geometry) AS lat,
+       e.magnitude   AS magnitude,
+       e.depth_km    AS depth_km,
+       e.detected_at AS detected_at
+FROM seismic_events e
+JOIN incidents i ON i.event_id = e.event_id
+WHERE i.state <> 'closed'
+  AND e.epicenter IS NOT NULL
+ORDER BY e.detected_at DESC
+"""
+
+
+def select_map_epicenters() -> tuple[TextClause, dict[str, Any]]:
+    """Epicentros de los eventos con incidente abierto (aislados vía RLS de ``incidents``)."""
+    return text(_MAP_EPICENTERS_SQL), {}
 
 
 # Un sitio está calibrado solo si TODOS sus sensores activos declaran de dónde salió su

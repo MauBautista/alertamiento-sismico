@@ -9,6 +9,7 @@ resuelve la DB: features por la vista segura, métricas por ``JOIN sites`` (RLS)
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -17,9 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX
+from takab_api.felt import felt_band, thresholds_from_row
 from takab_api.queries.telemetry import (
     select_features,
     select_features_by_channel,
+    select_map_epicenters,
     select_map_state,
     select_metrics,
     select_site_calibrated,
@@ -28,6 +31,7 @@ from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.telemetry import (
     ChannelSeries,
     FeatureSeries,
+    MapEpicenter,
     MapIncident,
     MapSiteState,
     MapState,
@@ -92,39 +96,67 @@ def _resolve_bucket(bucket: str | None, from_ts: datetime, to_ts: datetime) -> s
     return "1h" if (to_ts - from_ts).total_seconds() > _BUCKET_1H_SPAN_S else "1m"
 
 
+def _map_site(r: Any) -> MapSiteState:
+    """Fila del mapa → estado del sitio, con la sacudida MEDIDA ya clasificada.
+
+    El pico del incidente abierto manda sobre el bucket de 1 minuto: durante un
+    evento importa lo que el edificio LLEGÓ a sentir, no lo que siente ahora (que
+    para cuando el operador mira ya volvió a cero).
+    """
+    thresholds = thresholds_from_row(r.pga_watch_g, r.pga_trip_g, r.pgv_watch_cms, r.pgv_trip_cms)
+    pga = r.inc_pga_g if r.inc_pga_g is not None else r.max_pga_g
+    pgv = r.inc_pgv_cms if r.inc_pgv_cms is not None else r.max_pgv_cms
+    return MapSiteState(
+        site_id=r.site_id,
+        tenant_id=r.tenant_id,
+        name=r.name,
+        criticality=r.criticality,
+        lon=r.lon,
+        lat=r.lat,
+        last_bucket=r.last_bucket,
+        max_pga_g=r.max_pga_g,
+        max_pgv_cms=r.max_pgv_cms,
+        open_incident=(
+            MapIncident(
+                incident_id=r.incident_id,
+                severity=r.severity,
+                state=r.state,
+                opened_at=r.opened_at,
+            )
+            if r.incident_id is not None
+            else None
+        ),
+        felt=felt_band(pga, pgv, thresholds),
+        felt_pga_g=pga,
+        felt_pgv_cms=pgv,
+        # bool_and sobre cero sensores da NULL ⇒ NO calibrado (default-deny).
+        calibrated=bool(r.calibrated),
+    )
+
+
 @router.get("/map/state", response_model=MapState)
 async def map_state(
     _claims: Claims = Depends(_require_console),
     conn: AsyncConnection = Depends(read_session),
 ) -> MapState:
-    """Estado de todos los sitios visibles: última métrica 1m + incidente abierto."""
+    """Estado de todos los sitios visibles: sacudida medida + incidente + epicentros."""
     stmt, params = select_map_state()
-    rows = (await conn.execute(stmt, params)).all()
-    sites = [
-        MapSiteState(
-            site_id=r.site_id,
-            tenant_id=r.tenant_id,
-            name=r.name,
-            criticality=r.criticality,
+    sites = [_map_site(r) for r in (await conn.execute(stmt, params)).all()]
+
+    ep_stmt, ep_params = select_map_epicenters()
+    epicenters = [
+        MapEpicenter(
+            event_id=r.event_id,
+            source=r.source,
             lon=r.lon,
             lat=r.lat,
-            last_bucket=r.last_bucket,
-            max_pga_g=r.max_pga_g,
-            max_pgv_cms=r.max_pgv_cms,
-            open_incident=(
-                MapIncident(
-                    incident_id=r.incident_id,
-                    severity=r.severity,
-                    state=r.state,
-                    opened_at=r.opened_at,
-                )
-                if r.incident_id is not None
-                else None
-            ),
+            magnitude=r.magnitude,
+            depth_km=r.depth_km,
+            detected_at=r.detected_at,
         )
-        for r in rows
+        for r in (await conn.execute(ep_stmt, ep_params)).all()
     ]
-    return MapState(sites=sites)
+    return MapState(sites=sites, epicenters=epicenters)
 
 
 @router.get("/sites/{site_id}/features", response_model=FeatureSeries)

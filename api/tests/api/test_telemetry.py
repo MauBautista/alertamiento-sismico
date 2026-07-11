@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 import auth_utils as au
 from _telemetry_fixtures import (  # noqa: F401  (fixtures cargadas por nombre)
     S_A,
@@ -124,6 +126,42 @@ async def test_map_state_has_site_with_open_incident(client, seed) -> None:
     assert site["max_pga_g"] is not None
     # Aislamiento: el sitio de B (private) no aparece para A.
     assert S_B not in sites
+
+
+async def test_map_state_reports_shaking_MEASURED_not_alert_severity(client, seed) -> None:
+    """El mapa pinta lo que el EDIFICIO sintió, no el nivel de la alerta.
+
+    El seed abre el incidente con `trigger='sasmex'` y `severity='warning'`, pero el
+    sensor del sitio midió 0.10 g — por encima del umbral de disparo (0.060 g). Son
+    dos hechos distintos y el mapa debe exponer los dos por separado: la severidad
+    viene del canal de alerta (SASMEX es un booleano, no mide nada de lo que pasa
+    aquí) y `felt` viene del acelerógrafo del inmueble.
+    """
+    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    assert r.status_code == 200, r.text
+    site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
+
+    assert site["open_incident"]["severity"] == "warning"  # el canal de alerta dice esto…
+    assert site["felt"] == "trip"  # …y el edificio dice esto otro
+    assert site["felt_pga_g"] == pytest.approx(0.10, abs=0.01)
+
+
+async def test_map_state_declares_uncalibrated_sites(client, seed) -> None:
+    """Sin fuente de calibración el PGA es RELATIVO: la UI no puede llamarlo intensidad."""
+    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
+    # El seed inserta sensores sin `calibration_source`.
+    assert site["calibrated"] is False
+
+
+async def test_map_state_has_no_epicenter_when_no_event_locates_one(client, seed) -> None:
+    """Sin evento localizado NO se inventa un epicentro (y NUNCA es el edificio).
+
+    El seed abre incidentes sin `event_id`, así que no hay sismo localizado: la lista
+    sale vacía y el mapa lo declara, en vez de plantar el epicentro sobre el inmueble.
+    """
+    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    assert r.json()["epicenters"] == []
 
 
 async def test_mobile_only_role_forbidden(client, seed) -> None:

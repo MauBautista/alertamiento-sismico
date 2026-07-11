@@ -1,20 +1,25 @@
 // Mapa GIS real del live wall (T-1.27): MapLibre GL sobre OpenFreeMap dark.
 // Desviación RATIFICADA: mapa vectorial real, no el SVG esquemático del mock.
 //
-// Los sitios vienen de /telemetry/map/state (verdad server-side): color por
-// severidad del incidente abierto (o criticidad OK). Los sitios con incidente
-// crítico llevan un pulso animado por rAF (motion lineal, sin bounce — design
-// system) como beacon del marcador.
+// Qué pinta este mapa, y qué NO (todo viene derivado de /telemetry/map/state):
 //
-// Este mapa NO dibuja intensidad sísmica: no hay isosistas, ni bandas MMI, ni
-// radio de "dónde se sintió". Ese es el mini-ShakeMap del BLUEPRINT §14 (fase
-// futura). Ver el comentario en la carga de capas.
+//  · Cada punto es un EDIFICIO, coloreado por la SACUDIDA QUE ÉL MIDIÓ (`felt`),
+//    clasificada con los umbrales de su propio rule_set — los mismos que arman
+//    sus actuadores. NO es la severidad de la alerta: una alerta SASMEX abre el
+//    incidente en `critical` sin medir nada de lo que pasa aquí (el WR-1 es un
+//    booleano), y pintar el inmueble de rojo por eso diría algo falso sobre él.
+//  · El EPICENTRO va en su propia capa, con otra forma y otro color: es dónde se
+//    ORIGINÓ el sismo y no es ningún edificio. Sin evento localizado no se dibuja
+//    y la leyenda lo declara — no se planta un punto inventado.
+//  · NO hay intensidad sísmica interpolada: ni isosistas, ni bandas MMI, ni radio
+//    de "hasta dónde se sintió". Eso es el mini-ShakeMap del BLUEPRINT §14 (fase
+//    futura). Ver el comentario en la carga de capas.
 
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
-import type { MapSiteState } from "@takab/sdk";
+import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import { observeMapResize } from "../../lib/maplibre";
 
@@ -49,17 +54,23 @@ export function pulseAt(deltaMs: number): { radius: number; strokeOpacity: numbe
   return { radius: 15 + phase * 45, strokeOpacity: 1 - phase };
 }
 
-export const SEVERITY_COLOR: Record<string, string> = {
-  critical: "#FF5252",
-  warning: "#FFC107",
-  watch: "#FFC107",
-  info: "#00E676",
-  ok: "#00E676",
+/** Color por SACUDIDA MEDIDA en el inmueble (`felt`), no por severidad de la
+ * alerta. Un aviso SASMEX abre el incidente en `critical` sin haber medido nada
+ * de lo que pasa AQUÍ (el WR-1 es un booleano): pintar el edificio de rojo por
+ * eso afirmaría algo falso sobre él. `unknown` (sin dato) es GRIS y jamás verde:
+ * "no reportó" no es "no se movió" (regla de oro 7). */
+export const FELT_COLOR: Record<string, string> = {
+  trip: "#FF5252", // superó el umbral de DISPARO de su rule_set
+  watch: "#FFC107", // superó el de cautela
+  normal: "#00E676", // midió, y por debajo de cautela
+  unknown: "#7A8DA6", // no hay medida: ausencia de dato
 };
 
-/** Severidad efectiva del sitio en el mapa (incidente abierto manda). */
-export function siteSeverity(site: MapSiteState): string {
-  return site.open_incident?.severity ?? "ok";
+export const EPICENTER_COLOR = "#E040FB";
+
+/** Banda de sacudida medida del sitio (la deriva el server; el default es honesto). */
+export function siteFelt(site: MapSiteState): string {
+  return site.felt ?? "unknown";
 }
 
 type FeatureCollection = {
@@ -71,38 +82,60 @@ type FeatureCollection = {
   }>;
 };
 
-/** GeoJSON de sitios para la capa de círculos (color y radio por severidad). */
+/** GeoJSON de los EDIFICIOS, coloreados por lo que cada uno sintió. */
 export function sitesToFeatureCollection(sites: MapSiteState[]): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: sites.map((site) => {
-      const severity = siteSeverity(site);
+      const felt = siteFelt(site);
       return {
         type: "Feature",
         geometry: { type: "Point", coordinates: [site.lon, site.lat] },
         properties: {
           site_id: site.site_id,
           name: site.name,
-          severity,
-          color: SEVERITY_COLOR[severity] ?? SEVERITY_COLOR.warning,
-          critical: severity === "critical",
+          felt,
+          color: FELT_COLOR[felt] ?? FELT_COLOR.unknown,
+          // El halo y el pulso marcan al que SINTIÓ el disparo.
+          tripped: felt === "trip",
+          // Sin calibrar el PGA es RELATIVO: el borde punteado lo declara y la
+          // UI no puede llamarlo una intensidad física.
+          calibrated: site.calibrated === true,
         },
       };
     }),
   };
 }
 
-/** Solo los sitios con incidente crítico (fuente de anillos MMI + pulso). */
-export function criticalFeatures(sites: MapSiteState[]): FeatureCollection {
-  return sitesToFeatureCollection(sites.filter((s) => siteSeverity(s) === "critical"));
+/** Los edificios que superaron su umbral de disparo (fuente del pulso). */
+export function trippedFeatures(sites: MapSiteState[]): FeatureCollection {
+  return sitesToFeatureCollection(sites.filter((s) => siteFelt(s) === "trip"));
+}
+
+/** GeoJSON del EPICENTRO: dónde se originó el sismo. NUNCA es un edificio. */
+export function epicentersToFeatureCollection(epicenters: MapEpicenter[]): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: epicenters.map((e) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [e.lon, e.lat] },
+      properties: {
+        event_id: e.event_id,
+        // La magnitud es opcional a propósito: el WR-1 no la entrega y muchos
+        // eventos no la tienen. Sin ella se rotula el evento, no un número falso.
+        label: e.magnitude !== null ? `M ${e.magnitude.toFixed(1)}` : "EPICENTRO",
+      },
+    })),
+  };
 }
 
 export interface MapPanelProps {
   sites: MapSiteState[];
+  epicenters: MapEpicenter[];
   onSelectSite: (siteId: string) => void;
 }
 
-export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
+export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
@@ -110,6 +143,8 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
   const [degraded, setDegraded] = useState(false);
   const sitesRef = useRef(sites);
   sitesRef.current = sites;
+  const epicentersRef = useRef(epicenters);
+  epicentersRef.current = epicenters;
   const onSelectRef = useRef(onSelectSite);
   onSelectRef.current = onSelectSite;
 
@@ -145,7 +180,11 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
       loadedRef.current = true;
       if (map.getSource("sites") !== undefined) return;
       map.addSource("sites", { type: "geojson", data: sitesToFeatureCollection(sitesRef.current) });
-      map.addSource("critical", { type: "geojson", data: criticalFeatures(sitesRef.current) });
+      map.addSource("tripped", { type: "geojson", data: trippedFeatures(sitesRef.current) });
+      map.addSource("epicenters", {
+        type: "geojson",
+        data: epicentersToFeatureCollection(epicentersRef.current),
+      });
 
       // NO hay bandas MMI. Aquí vivían dos anillos ("mmi-severa" 55px y
       // "mmi-alta" 100px) rotulados INTENSIDAD MMI que no estaban conectados a
@@ -160,27 +199,27 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
       // regla de oro 7. El mapa de intensidades es el mini-ShakeMap del
       // BLUEPRINT §14 — fase futura, no este ciclo.
 
-      // Pulso animado (rAF, easing lineal). Es un BEACON del marcador (atrae la
-      // vista al sitio crítico), no una afirmación geográfica: por eso sí es
-      // correcto que viva en píxeles y no escale con el zoom.
+      // Pulso animado (rAF, easing lineal). Es un BEACON del marcador del
+      // edificio que DISPARÓ (atrae la vista), no una afirmación geográfica: por
+      // eso sí es correcto que viva en píxeles y no escale con el zoom.
       map.addLayer({
         id: "pulse",
         type: "circle",
-        source: "critical",
+        source: "tripped",
         paint: {
           "circle-radius": 15,
           "circle-color": "rgba(0,0,0,0)",
-          "circle-stroke-color": "#FF5252",
+          "circle-stroke-color": FELT_COLOR.trip,
           "circle-stroke-width": 1.2,
         },
       });
-      // Halo + núcleo de cada sitio.
+      // Halo + núcleo de cada EDIFICIO, coloreados por lo que ESE inmueble midió.
       map.addLayer({
         id: "site-halo",
         type: "circle",
         source: "sites",
         paint: {
-          "circle-radius": ["case", ["get", "critical"], 16, 12],
+          "circle-radius": ["case", ["get", "tripped"], 16, 12],
           "circle-color": ["get", "color"],
           "circle-opacity": 0.18,
         },
@@ -190,10 +229,58 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
         type: "circle",
         source: "sites",
         paint: {
-          "circle-radius": ["case", ["get", "critical"], 7, 5],
+          "circle-radius": ["case", ["get", "tripped"], 7, 5],
           "circle-color": ["get", "color"],
-          "circle-stroke-color": "#0d2034",
-          "circle-stroke-width": 1.5,
+          // Borde punteado no se puede en `circle`: el sitio SIN CALIBRAR se
+          // declara con un anillo tenue en vez del contorno sólido del navy —
+          // su PGA es relativo y no puede leerse como una intensidad física.
+          "circle-stroke-color": ["case", ["get", "calibrated"], "#0d2034", "#FFFFFF"],
+          "circle-stroke-width": ["case", ["get", "calibrated"], 1.5, 1],
+          "circle-stroke-opacity": ["case", ["get", "calibrated"], 1, 0.55],
+        },
+      });
+
+      // EPICENTRO: dónde se ORIGINÓ el sismo. Va por encima de los edificios y
+      // con otra forma (cruz + rótulo) para que jamás se confunda con uno.
+      map.addLayer({
+        id: "epicenter-halo",
+        type: "circle",
+        source: "epicenters",
+        paint: {
+          "circle-radius": 14,
+          "circle-color": EPICENTER_COLOR,
+          "circle-opacity": 0.15,
+          "circle-stroke-color": EPICENTER_COLOR,
+          "circle-stroke-width": 1,
+        },
+      });
+      map.addLayer({
+        id: "epicenter-mark",
+        type: "symbol",
+        source: "epicenters",
+        layout: {
+          "text-field": "✳",
+          "text-size": 20,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: { "text-color": EPICENTER_COLOR },
+      });
+      map.addLayer({
+        id: "epicenter-label",
+        type: "symbol",
+        source: "epicenters",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 11,
+          "text-offset": [0, 1.5],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": EPICENTER_COLOR,
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.5,
         },
       });
 
@@ -233,10 +320,15 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
     (map.getSource("sites") as maplibregl.GeoJSONSource | undefined)?.setData(
       sitesToFeatureCollection(sites),
     );
-    (map.getSource("critical") as maplibregl.GeoJSONSource | undefined)?.setData(
-      criticalFeatures(sites),
+    (map.getSource("tripped") as maplibregl.GeoJSONSource | undefined)?.setData(
+      trippedFeatures(sites),
     );
-  }, [sites]);
+    (map.getSource("epicenters") as maplibregl.GeoJSONSource | undefined)?.setData(
+      epicentersToFeatureCollection(epicenters),
+    );
+  }, [sites, epicenters]);
+
+  const anyUncalibrated = sites.some((s) => s.calibrated !== true);
 
   return (
     <div className="soc-map" data-testid="map-panel">
@@ -248,21 +340,38 @@ export default function MapPanel({ sites, onSelectSite }: MapPanelProps) {
         </div>
       )}
 
-      {/* La leyenda declara lo que el color SIGNIFICA de verdad: la severidad
-          del incidente abierto en cada sitio (`/telemetry/map/state`). Antes
-          decía "INTENSIDAD MMI", que prometía una escala de intensidad sísmica
-          que el sistema no calcula en ningún lado. */}
+      {/* El color de cada punto es la SACUDIDA QUE MIDIÓ ESE EDIFICIO, no la
+          severidad de la alerta ni la magnitud del sismo: son cosas distintas y
+          el mapa dice cuál está mostrando. Las bandas son las del rule_set que
+          arma los actuadores, así que el color y el disparo hablan el mismo
+          idioma. El epicentro va aparte porque NO es un edificio. */}
       <div className="soc-map__legend">
-        <div className="soc-map__legend-title">SEVERIDAD DEL SITIO</div>
+        <div className="soc-map__legend-title">SACUDIDA MEDIDA EN EL EDIFICIO</div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#FF5252" }} /> Crítico
+          <span className="soc-map__sw" style={{ background: FELT_COLOR.trip }} /> Superó disparo
         </div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#FFC107" }} /> Advertencia
+          <span className="soc-map__sw" style={{ background: FELT_COLOR.watch }} /> Superó cautela
         </div>
         <div className="soc-map__legend-row">
-          <span className="soc-map__sw" style={{ background: "#00E676" }} /> Sin incidente
+          <span className="soc-map__sw" style={{ background: FELT_COLOR.normal }} /> Bajo umbral
         </div>
+        <div className="soc-map__legend-row">
+          <span className="soc-map__sw" style={{ background: FELT_COLOR.unknown }} /> Sin dato
+        </div>
+        <div className="soc-map__legend-row">
+          <span className="soc-map__sw" style={{ background: EPICENTER_COLOR }} /> Epicentro
+        </div>
+        {epicenters.length === 0 && (
+          <div className="soc-map__legend-note" data-testid="map-no-epicenter">
+            SIN EPICENTRO LOCALIZADO
+          </div>
+        )}
+        {anyUncalibrated && (
+          <div className="soc-map__legend-note" data-testid="map-uncalibrated">
+            ○ SIN CALIBRAR · PGA RELATIVO
+          </div>
+        )}
       </div>
 
       <div className="soc-map__attribution">

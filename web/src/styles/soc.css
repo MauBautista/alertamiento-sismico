@@ -241,6 +241,17 @@ body {
 }
 .soc-map__legend-row { display: flex; align-items: center; gap: 8px; }
 .soc-map__sw { width: 10px; height: 10px; border-radius: 2px; }
+/* Salvedades del mapa (sin epicentro localizado, sensores sin calibrar): el dato
+ * que FALTA se declara, no se rellena con una suposición (regla de oro 7). */
+.soc-map__legend-note {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--tk-border);
+  font-family: var(--tk-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
 
 .soc-map__attribution {
   position: absolute; bottom: 6px; left: 12px; right: 12px;

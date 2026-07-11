@@ -27,6 +27,10 @@ const SITE: MapSiteState = {
   max_pga_g: 0.05,
   max_pgv_cms: 1.1,
   open_incident: null,
+  felt: "unknown",
+  felt_pga_g: null,
+  felt_pgv_cms: null,
+  calibrated: true,
 };
 
 function makeWrapper(socket: FakeLiveSocket) {

@@ -1813,6 +1813,65 @@
         "title": "LonLat",
         "type": "object"
       },
+      "MapEpicenter": {
+        "description": "Dónde se ORIGINÓ el sismo. No es ningún edificio.\n\nSale de ``seismic_events.epicenter``: catálogo SSN/USGS, motor de quórum o\nreubicación manual del operador. Un incidente puede no tener evento asociado\n(una alerta SASMEX sola no dice dónde fue), y un evento puede no tener\nepicentro conocido: en ambos casos NO aparece aquí y el mapa lo DECLARA en\nvez de inventar un punto.",
+        "properties": {
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "source",
+          "lon",
+          "lat",
+          "magnitude",
+          "depth_km",
+          "detected_at"
+        ],
+        "title": "MapEpicenter",
+        "type": "object"
+      },
       "MapIncident": {
         "description": "Incidente abierto (no cerrado) más reciente de un sitio, para el mapa.",
         "properties": {
@@ -1847,9 +1906,39 @@
       "MapSiteState": {
         "description": "Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.",
         "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
           "criticality": {
             "title": "Criticality",
             "type": "string"
+          },
+          "felt": {
+            "title": "Felt",
+            "type": "string"
+          },
+          "felt_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Felt Pga G"
+          },
+          "felt_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Felt Pgv Cms"
           },
           "last_bucket": {
             "anyOf": [
@@ -1928,7 +2017,11 @@
           "last_bucket",
           "max_pga_g",
           "max_pgv_cms",
-          "open_incident"
+          "open_incident",
+          "felt",
+          "felt_pga_g",
+          "felt_pgv_cms",
+          "calibrated"
         ],
         "title": "MapSiteState",
         "type": "object"
@@ -1936,6 +2029,13 @@
       "MapState": {
         "description": "Snapshot de todos los sitios visibles (RLS) que alimenta el mapa del SOC.",
         "properties": {
+          "epicenters": {
+            "items": {
+              "$ref": "#/components/schemas/MapEpicenter"
+            },
+            "title": "Epicenters",
+            "type": "array"
+          },
           "sites": {
             "items": {
               "$ref": "#/components/schemas/MapSiteState"
@@ -1945,7 +2045,8 @@
           }
         },
         "required": [
-          "sites"
+          "sites",
+          "epicenters"
         ],
         "title": "MapState",
         "type": "object"
@@ -5305,7 +5406,7 @@
     },
     "/telemetry/map/state": {
       "get": {
-        "description": "Estado de todos los sitios visibles: última métrica 1m + incidente abierto.",
+        "description": "Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.",
         "operationId": "map_state_telemetry_map_state_get",
         "responses": {
           "200": {

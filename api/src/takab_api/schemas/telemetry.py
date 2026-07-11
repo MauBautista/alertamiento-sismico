@@ -76,6 +76,25 @@ class MapIncident(BaseModel):
     opened_at: datetime
 
 
+class MapEpicenter(BaseModel):
+    """Dónde se ORIGINÓ el sismo. No es ningún edificio.
+
+    Sale de ``seismic_events.epicenter``: catálogo SSN/USGS, motor de quórum o
+    reubicación manual del operador. Un incidente puede no tener evento asociado
+    (una alerta SASMEX sola no dice dónde fue), y un evento puede no tener
+    epicentro conocido: en ambos casos NO aparece aquí y el mapa lo DECLARA en
+    vez de inventar un punto.
+    """
+
+    event_id: str
+    source: str
+    lon: float
+    lat: float
+    magnitude: float | None
+    depth_km: float | None
+    detected_at: datetime
+
+
 class MapSiteState(BaseModel):
     """Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto."""
 
@@ -90,8 +109,22 @@ class MapSiteState(BaseModel):
     max_pgv_cms: float | None
     open_incident: MapIncident | None
 
+    # Lo que este EDIFICIO sintió, medido por su propio sensor y clasificado con
+    # los umbrales de su rule_set (`felt.py`). NO es la severidad del incidente:
+    # una alerta SASMEX abre `critical` aunque el inmueble no se haya movido.
+    # `unknown` = el sitio no reportó nada; jamás significa "no se movió".
+    felt: str
+    felt_pga_g: float | None
+    felt_pgv_cms: float | None
+    #: False ⇒ PGA/PGV son RELATIVOS, no unidades físicas: la UI no puede
+    #: presentarlos como una intensidad real (db/schema.sql §sensors).
+    calibrated: bool
+
 
 class MapState(BaseModel):
     """Snapshot de todos los sitios visibles (RLS) que alimenta el mapa del SOC."""
 
     sites: list[MapSiteState]
+    #: Epicentros de los eventos con incidente abierto. Vacío = no se conoce
+    #: ninguno; el mapa lo dice, no lo supone.
+    epicenters: list[MapEpicenter]

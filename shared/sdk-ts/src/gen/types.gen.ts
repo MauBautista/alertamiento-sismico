@@ -434,6 +434,25 @@ export type LonLat = {
 };
 
 /**
+ * Dónde se ORIGINÓ el sismo. No es ningún edificio.
+ *
+ * Sale de ``seismic_events.epicenter``: catálogo SSN/USGS, motor de quórum o
+ * reubicación manual del operador. Un incidente puede no tener evento asociado
+ * (una alerta SASMEX sola no dice dónde fue), y un evento puede no tener
+ * epicentro conocido: en ambos casos NO aparece aquí y el mapa lo DECLARA en
+ * vez de inventar un punto.
+ */
+export type MapEpicenter = {
+    depth_km: number | null;
+    detected_at: string;
+    event_id: string;
+    lat: number;
+    lon: number;
+    magnitude: number | null;
+    source: string;
+};
+
+/**
  * Incidente abierto (no cerrado) más reciente de un sitio, para el mapa.
  */
 export type MapIncident = {
@@ -447,7 +466,11 @@ export type MapIncident = {
  * Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.
  */
 export type MapSiteState = {
+    calibrated: boolean;
     criticality: string;
+    felt: string;
+    felt_pga_g: number | null;
+    felt_pgv_cms: number | null;
     last_bucket: string | null;
     lat: number;
     lon: number;
@@ -463,6 +486,7 @@ export type MapSiteState = {
  * Snapshot de todos los sitios visibles (RLS) que alimenta el mapa del SOC.
  */
 export type MapState = {
+    epicenters: Array<MapEpicenter>;
     sites: Array<MapSiteState>;
 };
 

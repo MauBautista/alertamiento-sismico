@@ -513,7 +513,7 @@ export const issueCommandSitesSiteIdCommandsPost = <ThrowOnError extends boolean
 
 /**
  * Map State
- * Estado de todos los sitios visibles: última métrica 1m + incidente abierto.
+ * Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.
  */
 export const mapStateTelemetryMapStateGet = <ThrowOnError extends boolean = false>(options?: Options<MapStateTelemetryMapStateGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<MapStateTelemetryMapStateGetResponse, unknown, ThrowOnError>({

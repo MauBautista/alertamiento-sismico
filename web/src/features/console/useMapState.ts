@@ -9,23 +9,30 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { mapStateTelemetryMapStateGet, TOPIC_INCIDENTS, TOPIC_SITE_STATE } from "@takab/sdk";
-import type { MapSiteState } from "@takab/sdk";
+import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import { useLiveSocket } from "./socket";
 
 export const MAP_REFETCH_MS = 30_000;
 export const MAP_INVALIDATE_THROTTLE_MS = 5_000;
 
-async function fetchMapState(): Promise<MapSiteState[]> {
+interface MapSnapshot {
+  sites: MapSiteState[];
+  epicenters: MapEpicenter[];
+}
+
+async function fetchMapState(): Promise<MapSnapshot> {
   const { data, response } = await mapStateTelemetryMapStateGet();
   if (data === undefined) {
     throw new Error(`GET /telemetry/map/state falló (${response.status})`);
   }
-  return data.sites;
+  return { sites: data.sites, epicenters: data.epicenters };
 }
 
 export interface MapStateData {
   sites: MapSiteState[];
+  /** Dónde se ORIGINÓ el sismo. Vacío = no hay ninguno localizado (no es el edificio). */
+  epicenters: MapEpicenter[];
   loading: boolean;
   error: string | null;
   dataUpdatedAt: number;
@@ -59,7 +66,8 @@ export function useMapState(): MapStateData {
   }, [socket, queryClient]);
 
   return {
-    sites: query.data ?? [],
+    sites: query.data?.sites ?? [],
+    epicenters: query.data?.epicenters ?? [],
     loading: query.isPending,
     error: query.data === undefined && query.error ? query.error.message : null,
     dataUpdatedAt: query.dataUpdatedAt,
