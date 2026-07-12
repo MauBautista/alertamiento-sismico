@@ -398,12 +398,20 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 
 ### [x] O3 · Backup de Timescale y restore probado (RPO/RTO)
 - **Cómo verificar:** `grep -n "aws_dlm_lifecycle_policy" infra/terraform/modules/database/main.tf`.
-- **Resultado:** **FAIL → hallazgo A-5.** Solo snapshots EBS por DLM: diarios 03:00 UTC,
-  retención 7 (`modules/database/main.tf:268-288`; DB = Timescale en EC2 autogestionado por
-  decisión `:166-167` — RDS no soporta la extensión). **Sin PITR/WAL, sin restore jamás
-  probado, sin RPO/RTO declarados, sin runbook de restauración** (no existe en
-  `takab-docs/runbooks/`).
-- `[ ]` **GATE-DESPLIEGUE G-09:** restore real desde snapshot + medir RPO/RTO y publicarlos.
+- **Resultado (al momento de la auditoría):** **FAIL → hallazgo A-5.** Snapshots EBS por DLM
+  diarios 03:00 UTC retención 7 (`modules/database/main.tf:268-292`; DB = Timescale en EC2
+  autogestionado por decisión `:166-167`). **Corrección post-auditoría:** el grep de O3 se
+  quedó corto — TAMBIÉN existía un `pg_dump -Fc` diario 08:00 UTC a S3 con KMS y expiración
+  60 d (`user_data.sh.tpl:103-104`, `storage/main.tf:129-144`), que esta auditoría no vio.
+  Lo que sí era cierto y sigue pendiente de gate: **sin PITR/WAL, sin restore jamás probado**.
+- **Remediación documental (2026-07-11):** `takab-docs/runbooks/RUNBOOK-backup-restore-db.md`
+  — inventario honesto de AMBOS mecanismos, **RPO actual declarado ≤ 24 h** (dos puntos/día) y
+  RTO NO MEDIDO con objetivos propuestos a ratificar (RPO ≤ 15 min con PITR, RTO ≤ 60 min),
+  procedimiento A (restore lógico a base lateral + swap reversible), procedimiento B (restore
+  físico desde snapshot), checklist de integridad (append-only, Timescale, RLS) y plan PITR
+  con WAL-G. El registro §6 de ese runbook queda SIN marcar hasta ejecutar la restauración.
+- `[ ]` **GATE-DESPLIEGUE G-09:** ejecutar los procedimientos A y B del runbook de backup,
+  medir RTO real y llenar su registro §6.
 
 ## 8. BLOQUE 6 · CI y diferidos
 
@@ -517,7 +525,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | A-2 | **REMEDIADO EN CÓDIGO 2026-07-11:** `ensure_prod_pin_factory()` fija `LGPIOFactory` explícita en prod y truena con remediación si no puede (jamás auto-selección a `native`); env/factory previa se respetan con warning (vía de tests). 7 tests nuevos (lgpio falso), suite edge 280 verde | `gpio/__init__.py` (guard + wire en `_on_start`), `edge/tests/test_pin_factory.py`, comentarios systemd actualizados | Pendiente SOLO el gate físico G-01: reboot real y journal con "pin factory de producción fijada" (el lgpio real no existe en el equipo de dev) |
 | A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
 | A-4 | **CÓDIGO LISTO 2026-07-11 · APPLY PENDIENTE:** módulo `observability` (SNS on-call + alarmas DLQ/instancia/reglas-IoT/gabinete-offline vía LWT→métrica `Takab/Fleet`); `terraform validate` Success | `modules/observability/*`, `modules/iot-core/main.tf` (2 reglas status→métrica + IAM acotado por namespace), `envs/dev/main.tf` | GATE-DESPLIEGUE: `terraform apply` + confirmar email SNS + probar par ALARM→OK con `cloud-stop/start`. Rebanada futura: batería y 5xx de la API (métricas desde la app) |
-| A-5 | **Backup sin restore probado ni RPO/RTO** (solo snapshots EBS diarios, retain 7) | `database/main.tf:268-288`; sin runbook de restore en `takab-docs/runbooks/` | Runbook backup/restore + prueba real de restauración (G-09), PITR con archivado WAL (p.ej. WAL-G a S3), declarar RPO/RTO |
+| A-5 | **REMEDIADO DOCUMENTAL 2026-07-11:** `RUNBOOK-backup-restore-db.md` con inventario real (snapshots DLM 03:00 + `pg_dump` 08:00 a S3 que la auditoría no había visto), **RPO ≤ 24 h declarado**, RTO por medir, procedimientos A/B y plan PITR WAL-G | `takab-docs/runbooks/RUNBOOK-backup-restore-db.md`; `user_data.sh.tpl:103-104` | GATE-DESPLIEGUE G-09: ejecutar restore real (A y B), medir RTO, llenar registro §6; después, tarea PITR (WAL-G) para RPO ≤ 15 min |
 | A-6 | **Audio de voceo (simulacro/sismo) INEXISTENTE** — solicitado en esta auditoría; el Pi 5 ni siquiera tiene jack 3.5 mm | grep audio en repo = exit 1; sirena = relé seco (`contracts.py:54`) | Nueva tarea edge `audio`: (1) BOM: DAC USB o HAT I2S + amplificador + bocina de intemperie; (2) módulo `edge/takab_edge/audio` FUERA del camino crítico (el relé JAMÁS espera al audio); (3) assets versionados con sha256 — mensaje de SISMO claramente distinto al de SIMULACRO; (4) disparo determinista subordinado a `rules`/reflejo + botón drill en panel LAN con PIN; (5) autotest periódico de bocina con reporte al heartbeat; (6) systemd hardening igual que takab-gpio |
 
 ### MEDIO
