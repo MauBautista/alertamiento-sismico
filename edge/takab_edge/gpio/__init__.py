@@ -27,6 +27,7 @@ La polaridad eléctrica real de cada relé se re-valida con hardware (**gate #3*
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from time import perf_counter
@@ -79,13 +80,73 @@ def ensure_dev_pin_factory() -> None:
     """En dev/CI usa la MockFactory de gpiozero (sin hardware físico).
 
     Idempotente: no reemplaza una MockFactory ya activa. En el Pi 5 real
-    (``dev_mode=False``) NO se llama y gpiozero elige el backend nativo (lgpio).
+    (``dev_mode=False``) se llama a :func:`ensure_prod_pin_factory`, que fija
+    LGPIOFactory EXPLÍCITA o truena — jamás auto-selección de backend.
     """
     from gpiozero import Device
     from gpiozero.pins.mock import MockFactory
 
     if not isinstance(Device.pin_factory, MockFactory):
         Device.pin_factory = MockFactory()
+
+
+def ensure_prod_pin_factory() -> None:
+    """Producción: LGPIOFactory EXPLÍCITA o tronar — jamás auto-selección (A-2).
+
+    Lección de 9361e27: si ``LGPIOFactory`` no puede instanciarse (p.ej. no puede
+    crear su FIFO ``.lgd-nfy*`` porque el CWD es de solo lectura bajo
+    ``ProtectSystem=strict``), la auto-selección de gpiozero cae EN SILENCIO al
+    backend ``native`` (sysfs), que en Pi 5 muere con EINVAL — o peor, medio
+    funciona. Este módulo es el camino de vida (``critical=True``): un backend
+    equivocado debe tirar el arranque, no callarse.
+
+    Contrato:
+    - ``GPIOZERO_PIN_FACTORY`` explícita ⇒ se respeta con warning (gpiozero ya
+      truena por sí solo si ese nombre no carga; es la vía de tests/CI).
+    - Factory ya fijada en el proceso ⇒ se respeta con warning (harness de
+      pruebas). En un proceso fresco de producción SIEMPRE es ``None``.
+    - Proceso fresco (sin env, factory ``None``) ⇒ ``LGPIOFactory()`` explícita;
+      cualquier fallo ⇒ ``RuntimeError`` ruidoso con la remediación.
+    """
+    from gpiozero import Device
+
+    override = os.environ.get("GPIOZERO_PIN_FACTORY")
+    if override:
+        log.warning(
+            "GPIOZERO_PIN_FACTORY=%r fija la pin factory por env; se respeta "
+            "(gpiozero truena solo si ese backend no carga)",
+            override,
+        )
+        return
+    if Device.pin_factory is not None:
+        actual = type(Device.pin_factory).__name__
+        if actual != "LGPIOFactory":
+            log.warning(
+                "pin factory ya fijada a %s antes de gpio._on_start; se respeta "
+                "(esperado solo en harness de pruebas — en el Pi arranca en None)",
+                actual,
+            )
+        return
+    try:
+        from gpiozero.pins.lgpio import LGPIOFactory
+    except Exception as exc:
+        raise RuntimeError(
+            "gpio: no se pudo importar gpiozero.pins.lgpio y en producción el "
+            "camino de vida exige lgpio EXPLÍCITO (sin fallback silencioso a "
+            "native/sysfs). ¿El deploy corrió `uv sync --extra hardware --extra "
+            "aws`? (lección 9361e27: `--extra hardware` a secas poda paquetes)"
+        ) from exc
+    try:
+        Device.pin_factory = LGPIOFactory()
+    except Exception as exc:
+        raise RuntimeError(
+            "gpio: LGPIOFactory no pudo instanciarse y NO se permite caer a "
+            "native/sysfs. Causa típica (9361e27): no puede crear su FIFO "
+            ".lgd-nfy* porque el CWD es de solo lectura — la unidad systemd debe "
+            "tener WorkingDirectory=/var/lib/takab (escribible) bajo "
+            "ProtectSystem=strict. Revisa también permisos de /dev/gpiochip*."
+        ) from exc
+    log.info("pin factory de producción fijada: LGPIOFactory (lgpio)")
 
 
 class GpioController(EdgeModule):
@@ -157,6 +218,8 @@ class GpioController(EdgeModule):
     def _on_start(self) -> None:
         if self.settings.dev_mode:
             ensure_dev_pin_factory()
+        else:
+            ensure_prod_pin_factory()
 
         from gpiozero import Button, DigitalOutputDevice
 

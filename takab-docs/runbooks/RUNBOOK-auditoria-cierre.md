@@ -98,7 +98,17 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 - **Evidencia:** salida del grep (solo hits de MockFactory-dev y el comentario "cae EN SILENCIO"
   en `takab-edge.service:26`); validación del fix original solo manual con `systemd-run`
   (`takab-docs/TASKS.md:925`).
-- `[ ]` **GATE-HW G-01:** reinicio en frío en cada Pi con verificación del backend activo.
+- **Remediación en código (2026-07-11):** `ensure_prod_pin_factory()` en
+  `edge/takab_edge/gpio/__init__.py` — con `dev_mode=False`, proceso fresco (factory `None`) y
+  sin `GPIOZERO_PIN_FACTORY`, fija `LGPIOFactory()` EXPLÍCITA y lanza `RuntimeError` con la
+  remediación (extras de uv / WorkingDirectory) ante cualquier fallo — jamás auto-selección.
+  Env explícita o factory previa (harness de tests) se respetan con warning. Cubre supervisor
+  Y proceso mínimo (ambos pasan por `GpioController._on_start`; `critical=True` ⇒ systemd ve el
+  fallo). Contrato verificado con 7 tests unitarios (`edge/tests/test_pin_factory.py`, con
+  módulo lgpio FALSO — este equipo no tiene lgpio); suite edge 280 passed. **La instanciación
+  del lgpio REAL y el arranque tras reboot siguen siendo hardware-gated.**
+- `[ ]` **GATE-HW G-01:** reinicio en frío en cada Pi con verificación del backend activo
+  (journal debe mostrar "pin factory de producción fijada: LGPIOFactory").
 
 ### [x] L2 · SPOF-02 (SASMEX→sirena por hardware con el Pi muerto)
 - **Cómo verificar:** existencia y estado de `takab-docs/runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md`.
@@ -480,7 +490,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | # | Hallazgo | Evidencia | Tarea propuesta |
 |---|---|---|---|
 | A-1 | **REMEDIADO 2026-07-11 (mismo día):** `main` remota estaba en ROJO con 21 commits sin push; se subieron (`9361e27..6973ba2`) y el run **29163887613** dio **5/5 jobs verdes**. | `gh run view 29066872312` (rojo, 650 errors) → `gh run view 29163887613` (success) | ÚNICO pendiente: adoptar y documentar la regla "solo se despliega desde main pusheado y verde" en el runbook de deploy (`deploy/cloud/README.md`) |
-| A-2 | **GPIO sin fail-loud explícito**: en prod nadie fija ni asierta `LGPIOFactory`; un fallo de lgpio distinto al CWD caería en silencio a `native` | `gpio/__init__.py:78-88,157-159`; mitigación solo operacional (`takab-edge.service:24-31`, `critical=True`) | En `_on_start` de producción: `Device.pin_factory = LGPIOFactory()` explícita y `raise` ruidoso si no se puede instanciar; test unitario del contrato + verificación en G-01 |
+| A-2 | **REMEDIADO EN CÓDIGO 2026-07-11:** `ensure_prod_pin_factory()` fija `LGPIOFactory` explícita en prod y truena con remediación si no puede (jamás auto-selección a `native`); env/factory previa se respetan con warning (vía de tests). 7 tests nuevos (lgpio falso), suite edge 280 verde | `gpio/__init__.py` (guard + wire en `_on_start`), `edge/tests/test_pin_factory.py`, comentarios systemd actualizados | Pendiente SOLO el gate físico G-01: reboot real y journal con "pin factory de producción fijada" (el lgpio real no existe en el equipo de dev) |
 | A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
 | A-4 | **Cero paginado a humanos**: sin CloudWatch alarms ni SNS; gabinete caído/batería/DLQ/5xx = solo color en la UI | grep `metric_alarm\|sns_topic` en infra = exit 1; `fail_open.py:103` solo con quórum | Terraform: SNS topic on-call + alarmas mínimas (gateway offline > 5 min por LWT/heartbeat, DLQ > 0 por 5 min, 5xx de la API, disco/CPU del EC2, batería < umbral) |
 | A-5 | **Backup sin restore probado ni RPO/RTO** (solo snapshots EBS diarios, retain 7) | `database/main.tf:268-288`; sin runbook de restore en `takab-docs/runbooks/` | Runbook backup/restore + prueba real de restauración (G-09), PITR con archivado WAL (p.ej. WAL-G a S3), declarar RPO/RTO |
@@ -560,3 +570,7 @@ Además de resolver §11, para que TAKAB Ailert sea un producto comercial comple
   ambos sentidos (limpio 35/35 · con worker 33/2); guardia `_assert_exclusive_db` + 2 tests
   (10 passed en `demo/tests/test_reset_guard.py`); guard verificado abortando con worker vivo;
   **RE-ACREDITADO 35/35 × 3 corridas consecutivas**.
+- Remediación A-2 (mismo día, en código): `ensure_prod_pin_factory()` — lgpio explícito o
+  RuntimeError en prod, sin auto-selección; 7 tests unitarios con lgpio falso; **suite edge
+  280 passed** + ruff/format limpios. Gate físico G-01 sigue SIN marcar (lgpio real + reboot
+  en el Pi).

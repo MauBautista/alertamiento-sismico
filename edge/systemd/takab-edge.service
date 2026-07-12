@@ -23,11 +23,15 @@ Environment=TAKAB_EDGE_DEV_MODE=false
 EnvironmentFile=/etc/takab/edge.env
 # CWD ESCRIBIBLE obligatorio: lgpio crea su FIFO de notificaciones (.lgd-nfy*)
 # en el directorio de trabajo. Con ProtectSystem=strict, /opt queda de solo
-# lectura ⇒ LGPIOFactory falla al instanciarse y gpiozero cae EN SILENCIO al
+# lectura ⇒ LGPIOFactory falla al instanciarse y gpiozero caía EN SILENCIO al
 # backend `native` (sysfs), que en Pi 5 muere con EINVAL ⇒ crash-loop del
 # camino de vida. Pasó en el PRIMER restart real bajo strict (T-1.40): el
 # proceso anterior había arrancado antes del endurecimiento. Reproducido y
 # validado con systemd-run. /var/lib/takab ya es ReadWritePaths.
+# Desde A-2 (auditoría de cierre) el fallback silencioso quedó VETADO en código:
+# gpio fija LGPIOFactory EXPLÍCITA y truena con la remediación si no puede
+# (takab_edge/gpio/ensure_prod_pin_factory) — este WorkingDirectory sigue siendo
+# la condición para que lgpio SÍ instancie.
 WorkingDirectory=/var/lib/takab
 ExecStart=/opt/takab/edge/.venv/bin/takab-edge
 
