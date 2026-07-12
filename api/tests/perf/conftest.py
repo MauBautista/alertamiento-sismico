@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from _telemetry_fixtures import (  # noqa: F401
     _ts_env,
-    client,
     telemetry_app,
+    telemetry_client,
     ts_engine,
 )

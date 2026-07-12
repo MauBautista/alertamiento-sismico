@@ -18,9 +18,9 @@ from _telemetry_fixtures import (  # noqa: F401  (fixtures cargadas por nombre)
     T_PRIV_A,
     T_PRIV_B,
     _dsn,
-    client,
     seed,
     telemetry_app,
+    telemetry_client,
     ts_engine,
 )
 
@@ -42,9 +42,9 @@ def _seed_channels(*channels: str) -> None:
             )
 
 
-async def test_groups_by_channel_in_a_single_request(client, seed) -> None:
+async def test_groups_by_channel_in_a_single_request(telemetry_client, seed) -> None:
     _seed_channels("ENZ", "ENN", "ENE")
-    r = await client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
+    r = await telemetry_client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
     assert r.status_code == 200, r.text
     body = r.json()
 
@@ -59,21 +59,21 @@ async def test_groups_by_channel_in_a_single_request(client, seed) -> None:
     assert ehz["clipping"] == [True, False, False]
 
 
-async def test_absent_channel_is_absent_not_flat(client, seed) -> None:
+async def test_absent_channel_is_absent_not_flat(telemetry_client, seed) -> None:
     """Un canal sin datos NO aparece. Una traza plana en cero sería un sensor mintiendo
     'todo tranquilo' cuando en realidad no está reportando."""
-    r = await client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
+    r = await telemetry_client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
     assert [c["channel"] for c in r.json()["channels"]] == ["EHZ"]
 
 
-async def test_carries_the_calibration_flag(client, seed) -> None:
+async def test_carries_the_calibration_flag(telemetry_client, seed) -> None:
     assert (
-        await client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
+        await telemetry_client.get(f"/telemetry/sites/{S_A}/features/by-channel", headers=_auth())
     ).json()["calibrated"] is False
 
 
-async def test_span_over_two_hours_rejected(client, seed) -> None:
-    r = await client.get(
+async def test_span_over_two_hours_rejected(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features/by-channel",
         params={"from": "2026-07-01T00:00:00Z", "to": "2026-07-01T03:00:00Z"},
         headers=_auth(),
@@ -81,15 +81,15 @@ async def test_span_over_two_hours_rejected(client, seed) -> None:
     assert r.status_code == 422
 
 
-async def test_cross_tenant_site_returns_no_channels(client, seed) -> None:
+async def test_cross_tenant_site_returns_no_channels(telemetry_client, seed) -> None:
     """RLS (por la vista segura) tapa las features de B: cero canales, nunca un 500."""
-    r = await client.get(f"/telemetry/sites/{S_B}/features/by-channel", headers=_auth())
+    r = await telemetry_client.get(f"/telemetry/sites/{S_B}/features/by-channel", headers=_auth())
     assert r.status_code == 200
     assert r.json()["channels"] == []
 
 
-async def test_mobile_only_role_forbidden(client, seed) -> None:
-    r = await client.get(
+async def test_mobile_only_role_forbidden(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features/by-channel",
         headers=au.bearer(
             au.make_token("occupant", tenant=T_PRIV_A, site_scope="*", surface="mobile")

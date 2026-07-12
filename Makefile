@@ -69,8 +69,11 @@ lint:
 	cd $(WEB_DIR) && npm run lint && npm run format:check
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
 
+# Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de
+# api (B-2) — sus imports son takab_api + psycopg, sin dependencia del edge.
 test:
-	cd $(API_DIR) && pytest -q
+	cd $(API_DIR) && pytest -q -m "not perf"
+	cd $(API_DIR) && uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q
 

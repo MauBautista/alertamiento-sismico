@@ -52,6 +52,11 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
 
 ## Precondiciones
 
+0. **Deploy SOLO desde `main` pusheado con CI verde** (regla A-1 de la auditoría de
+   cierre). Verificar antes de tocar nada: `git status` limpio sobre `main`,
+   `git log origin/main..main` vacío y los checks del último commit en verde
+   (`gh run list --branch main -L 1`). Lo que se despliega debe ser EXACTAMENTE lo
+   que el repositorio y el CI vieron — nunca un árbol local con cambios sin subir.
 1. Perfil SSO activo: `aws sso login --profile takab-dev`.
 2. Conocer tu IP pública: `curl -s ifconfig.me`.
 3. Docker con emulación arm64 (el EC2 es Graviton; `make cloud-images` ya construye

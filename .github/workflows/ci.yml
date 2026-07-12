@@ -51,6 +51,10 @@ jobs:
         run: ruff format --check .
       - name: Tests (pytest)
         run: pytest -q -m "not perf"
+      - name: Tests de la demo (spool + guardas de reset)
+        # B-2: el sustituto de IoT Core/SQS de la demo es parte del contrato de
+        # acreditación; sus imports (takab_api + psycopg) viven en este venv.
+        run: pytest -q ../demo/tests
       - name: Drift gate · OpenAPI (sdk-ts)
         # El contrato volcado debe coincidir con el commiteado. Si cambia la API
         # sin regenerar shared/sdk-ts/openapi.json, esto falla.

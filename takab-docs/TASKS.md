@@ -1068,7 +1068,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 
 ## Fase 1.7 · Pulido SOC con datos reales + panel local del inmueble
 
-> Origen: revisión de las 4 pantallas desplegadas (`vistas_v1/*.png`, 2026-07-10) contra el
+> Origen: revisión de las 4 pantallas desplegadas (`takab-docs/design/vistas_v1/*.png`, 2026-07-10) contra el
 > design system (`takab-docs/design/`). Diagnóstico y plan completo en la sesión del
 > 2026-07-10. Decisiones ratificadas por Mauricio: (1) la vista del inmueble es el PANEL
 > LOCAL del Pi (no una vista cloud con rol nuevo); (2) purga TOTAL del entorno desplegado
@@ -1316,3 +1316,124 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   endpoint; la UI migraría a useInfiniteQuery).
 - **Notificación al inspector en dictamen-request** (el `kind='dictamen_request'` queda
   estable desde ya; el worker de notify puede recogerlo después).
+
+---
+
+## Fase 1.8 · Software de operación y costo
+
+> Origen: plan de siguientes fases (2026-07-12) sobre el inventario de pendientes
+> post-auditoría. Decisiones de Mauricio: (1) toda la Fase 1.8 es software implementable
+> YA (sin hardware ni terceros); (2) el batcheo de telemetría es ESCALONADO POR TIER
+> (batch ~10 s en `normal`, flush inmediato + 1 Hz en `watch`+); (3) la app móvil es
+> Fase 2; (4) el hardware (bocina/DAC, cámara ONVIF, relés/sirena, radio WR-1) viene en
+> camino ⇒ los gates físicos son la Fase 1.9. Orden: T-1.55 → T-1.56 → T-1.57 → T-1.58 →
+> T-1.59 → T-1.60 → T-1.61 (la T-1.61 es independiente y puede adelantarse). Migraciones:
+> 0012 (T-1.57) → 0013 (T-1.59) → 0014 (T-1.60) → 0015 (T-1.61), todas idempotentes y
+> reflejadas en `db/schema.sql` en el mismo commit.
+
+### [x] T-1.55 · Tooling/CI: deudas de raíz (B-3, B-1, B-2, B-5, M-7, A-1) — **COMPLETA (2026-07-12)**
+- **Componente:** tooling/CI · **Depende de:** —
+- **Objetivo:** estabilizar la base de tests y hacer verdaderas dos promesas viejas
+  (Playwright en el stack; regla de deploy de la auditoría).
+- Criterios de aceptación:
+  - [x] **B-3 (raíz):** la fixture `client` de `api/tests/_telemetry_fixtures.py` se
+        renombra `telemetry_client` (+ docstring del porqué) y sus 5 importadores se
+        actualizan. Verificado: `pytest tests/api` (191) y archivos sueltos pasan igual
+        que la suite completa; `tests/contracts` 30 ✓; `tests/perf` colecta.
+  - [x] **B-1:** `make test` corre `pytest -q -m "not perf"` (paridad exacta con ci.yml).
+  - [x] **B-2:** `demo/tests` (spool + guardas de reset) corre en el job api del CI y en
+        `make test` con el venv de api (22 ✓; imports = takab_api + psycopg).
+  - [x] **B-5:** las 4 capturas viven en `takab-docs/design/vistas_v1/` (typo
+        `Multi-Tanant`→`Multi-Tenant` corregido) y están trackeadas; referencia en este
+        doc actualizada.
+  - [x] **M-7:** `web/playwright.config.ts` + `web/e2e/smoke.spec.ts` committeados
+        (`npm run e2e`); vitest EXCLUYE `e2e/`; tsconfig los typechequea. **Smoke verificado
+        EN VIVO** contra `make soc-local`: login dev superadmin + las 5 pantallas montan su
+        `data-screen-label` (1 passed, 5.8 s). Sin job de CI a propósito (stack pesado);
+        mejora futura anotada: job `workflow_dispatch` no-bloqueante.
+  - [x] **A-1:** `deploy/cloud/README.md` §Precondiciones exige deploy SOLO desde `main`
+        pusheado con CI verde (comandos de verificación incluidos).
+> **ESTADO.** api 743 passed (not perf) · demo 22 · web 525 · e2e 1 · ruff/eslint/
+> prettier/tsc/build OK.
+
+### [ ] T-1.56 · Batcheo escalonado por tier de features edge→nube
+- **Componente:** edge + api + infra · **Depende de:** — · **Decisión:** escalonado por tier
+- **Objetivo:** ~97% menos publishes/SQS en reposo (hoy ~178k msgs/día del gateway real)
+  sin tocar jamás la detección/actuación ni el panel LAN (1 Hz in-process).
+- Diseño: módulo `FeatureBatcher` (`edge/takab_edge/telemetry/`, no-crítico,
+  `depends_on=("cloud",)`); supervisor llama `telemetry.submit(feature, tier)` y
+  `notify_tier()` en `_on_sasmex`; topic nuevo `takab/features/batch` (contrato
+  `feature_batch` v1.3.0, 1..256 features) + regla IoT propia → misma telemetry_queue;
+  `handle_feature_batch` = split idempotente en la misma transacción; settings
+  `cloud_features_batch_{enabled,s,max}` (kill-switch env); cota del topic derivada
+  `cap // batch_max`. Secuencia de deploy OBLIGATORIA: terraform → api → edge.
+- Criterios de aceptación:
+  - [ ] Test ancla: 40 submits en tier normal ⇒ 1 publish batch (vs 40).
+  - [ ] Escalación (features O SASMEX) ⇒ flush del acumulado ANTES del primer 1 Hz;
+        des-escalación vuelve a batchear; `stop()` limpio ⇒ acumulado al spool durable.
+  - [ ] Re-entrega del mismo batch ⇒ 0 duplicados (PK ts/sensor_id/channel); batch
+        parcialmente inválido ⇒ válidas commiteadas + original a DLQ + audit.
+  - [ ] La nube acepta AMBOS formatos indefinidamente; la ruta S3/backfill ingiere
+        batches del spool sin tocar objects.py (test).
+  - [ ] Kill-switch `TAKAB_EDGE_CLOUD_FEATURES_BATCH_ENABLED=false` ⇒ camino 1 Hz exacto.
+  - [ ] Contrato 1.3.0 aditivo regenerado + anti-drift verde; regla IoT lista para apply.
+
+### [ ] T-1.57 · API: `GET /audit` + rango de fechas en `GET /incidents`
+- **Componente:** api + db · **Depende de:** — (SDK se regenera UNA vez aquí)
+- La RLS de `audit_log` YA existe (schema.sql `audit_read`); migración 0012 = solo índice
+  keyset `(ts DESC, audit_id DESC)` (+`(tenant_id, ts DESC)`). Acción `read_audit`
+  (superadmin/support/tenant_admin/gov_operator). Router keyset patrón `list_incidents`;
+  filtros actor/verb exactos, object prefijo, from/to. `queries/audit.py` SOLO SELECT
+  (single-writer intacto). `/incidents` gana `from`/`to` sobre `opened_at`. UI de
+  auditoría DIFERIDA (SDK listo para una tabla futura en /tenants).
+- Criterios: RLS por rol (NULL-tenant solo internos) · 403 sin acción · keyset estable ·
+  cursor corrupto 400 · `to<=from` 422 · from/to combinable con state/severity/cursor ·
+  0012 re-aplicable · drift-gates verdes con UNA regeneración.
+
+### [ ] T-1.58 · Web: historial con fechas + infinite scroll, M-6, B-4, B-6
+- **Componente:** web · **Depende de:** T-1.57 (SDK)
+- Historial Triage → `useInfiniteQuery` (next_cursor) + date-pickers + botón "CARGAR MÁS"
+  explícito. M-6: card de relés con StateFrame 4 estados (error de /fleet ≠ empty; roles
+  sin /fleet NO es error). B-4: subtítulo de BuildingPage con estados. B-6: manualChunks
+  (maplibre, vendor-react) ⇒ build sin warning >500 kB.
+- Criterios: CARGAR MÁS anexa sin duplicar y desaparece sin cursor · fechas acotan la
+  query · 4 estados anclados por test en relés y building · build sin warning.
+
+### [ ] T-1.59 · `self_test` de gabinete (cierra M-2; extensión de T-1.23)
+- **Componente:** edge + api + web + db · **Depende de:** T-1.56 (SCHEMA_VERSION serial)
+- Canal `system` + acción `self_test` en el MISMO envelope HMAC (schemas v1.4.0, vector
+  nuevo en hmac_vectors.json; migración 0013 = CHECKs de commands). Matriz: superadmin/
+  tenant_admin/building_admin (espejo de siren_test; soc_operator DENEGADO documentado).
+  Edge: `gpio.run_cabinet_self_test` — rechaza con alerta viva; pulsa relés NO audibles
+  vía `_apply` con readback; la sirena SOLO lectura; dispatch en hilo corto + ack
+  `results` por relé + health del CACHE. Ingesta guarda `results`. Web: botón SiteCard
+  vivo + chips por relé (4 estados).
+- Criterios: E2E comando→pulso→ack→chips · sirena JAMÁS energizada (test) · rechazo con
+  SASMEX/demanda viva · matriz celda a celda · 0013 re-aplicable.
+
+### [ ] T-1.60 · Modo SIMULACRO institucional E2E (cierra M-1)
+- **Componente:** api + edge + web + db · **Depende de:** T-1.59 (canal system + refactor)
+- Tablas `drills`/`drill_sites` (0014, RLS tenant; gov LEE — evidencia para PC), JAMÁS
+  `incidents`. Acuse por sitio DERIVADO por JOIN a commands. Refactor:
+  `issue_signed_command()` a `commands/service.py` (regla de oro 8 sin duplicar).
+  Comandos firmados `drill_start`/`drill_stop` (event_id = DRILL-<id>). Edge:
+  `DrillController` no-crítico — CERO relés (test), voceo solo con audio_enabled, LO REAL
+  GANA (abort por SASMEX real o tier ≥ restricted, visible en ambas superficies). Panel
+  local: banner "🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL". Web: DrillBanner + modal +
+  registro (poll 10 s; WS anotado como mejora).
+- Criterios: POST /drills → firmado a N sitios → acuses en el registro · banner NO-real
+  en LAN y SOC · alerta real durante drill ⇒ reflejo intacto + abort visible · CERO
+  filas en incidents/actions/dictamens (E2E) · 0014 re-aplicable.
+
+### [ ] T-1.61 · Notificación al inspector en `dictamen_request` (independiente)
+- **Componente:** api · **Depende de:** — (el wake por NOTIFY de 0004 ya existe)
+- Migración 0015: `notification_jobs.action_id` + 2 índices únicos parciales (1 job por
+  acción; la clave vieja queda para jobs de incidente). ENQUEUE: acciones
+  `dictamen_request` sin job y sin dictamen firmado posterior (espejo de
+  `_PENDING_REQUEST_SQL`). Destino: lista NUEVA `config.notifications.inspector_emails`
+  (separación de audiencias; sin lista ⇒ warning y skip). Mensaje con solicitante + link
+  `{notify_web_base_url}/triage?incident={id}`. Actor del timeline
+  `system:notify:email:parallel:{action_id}`.
+- Criterios: dictamen-request ⇒ email ≤2 s (E2E simulado) con link · 1 job exacto por
+  action_id ante re-runs · firmado posterior NO notifica · cascada de incidentes intacta
+  (suite previa sin tocar) · 0015 re-aplicable.

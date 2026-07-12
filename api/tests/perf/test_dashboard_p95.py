@@ -71,19 +71,19 @@ def _p95(samples: list[float]) -> float:
     return ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
 
 
-async def _measure(client, url: str, headers: dict[str, str]) -> float:
+async def _measure(telemetry_client, url: str, headers: dict[str, str]) -> float:
     for _ in range(_WARMUP):
-        assert (await client.get(url, headers=headers)).status_code == 200
+        assert (await telemetry_client.get(url, headers=headers)).status_code == 200
     samples: list[float] = []
     for _ in range(_HOT_REQUESTS):
         start = time.perf_counter()
-        resp = await client.get(url, headers=headers)
+        resp = await telemetry_client.get(url, headers=headers)
         samples.append(time.perf_counter() - start)
         assert resp.status_code == 200, resp.text
     return _p95(samples)
 
 
-async def test_dashboard_queries_p95_under_budget(client, perf_seed) -> None:
+async def test_dashboard_queries_p95_under_budget(telemetry_client, perf_seed) -> None:
     tenant = perf_seed.tenant_ids[0]
     site = perf_seed.dense_site_id
     headers = au.bearer(au.make_token("soc_operator", tenant=tenant, site_scope="*", surface="web"))
@@ -99,14 +99,14 @@ async def test_dashboard_queries_p95_under_budget(client, perf_seed) -> None:
         "metrics-24h-1m": f"/telemetry/sites/{site}/metrics?bucket=1m&from={d1}&to={to}",
         "features-10min": f"/telemetry/sites/{site}/features",
     }
-    results = {name: await _measure(client, url, headers) for name, url in urls.items()}
+    results = {name: await _measure(telemetry_client, url, headers) for name, url in urls.items()}
     for name, p95 in results.items():
         print(f"p95 {name}: {p95 * 1000:.1f} ms")  # noqa: T201 — informe de perf
     slow = {n: round(p * 1000, 1) for n, p in results.items() if p >= _P95_BUDGET_S}
     assert not slow, f"p95 sobre presupuesto (200 ms): {slow}"
 
 
-async def test_90d_query_scans_cagg_not_raw_hypertable(client, perf_seed) -> None:
+async def test_90d_query_scans_cagg_not_raw_hypertable(telemetry_client, perf_seed) -> None:
     tenant = perf_seed.tenant_ids[0]
     site = perf_seed.dense_site_id
     now = datetime.now(UTC)

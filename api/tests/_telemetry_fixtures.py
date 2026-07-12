@@ -212,7 +212,13 @@ def telemetry_app() -> FastAPI:
 
 
 @pytest.fixture
-async def client(ts_engine, telemetry_app: FastAPI):
-    """Cliente HTTP ASGI; ``ts_engine`` garantiza limpieza + dispose del engine."""
+async def telemetry_client(ts_engine, telemetry_app: FastAPI):
+    """Cliente HTTP ASGI; ``ts_engine`` garantiza limpieza + dispose del engine.
+
+    Nombre ÚNICO a propósito (B-3): llamarse ``client`` colisionaba con las
+    fixtures homónimas de ``tests/api/conftest.py`` y ``tests/auth/conftest.py``
+    según qué conftest quedara más cerca, y los subsets (``pytest tests/api`` o
+    un archivo suelto) resolvían una fixture distinta que la suite completa.
+    """
     async with au.client_for(telemetry_app) as c:
         yield c

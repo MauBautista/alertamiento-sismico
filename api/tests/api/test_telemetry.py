@@ -22,9 +22,9 @@ from _telemetry_fixtures import (  # noqa: F401  (fixtures cargadas por nombre)
     S_SHOOK,
     T_PRIV_A,
     T_PRIV_B,
-    client,
     seed,
     telemetry_app,
+    telemetry_client,
     ts_engine,
 )
 
@@ -33,8 +33,8 @@ def _auth(role: str, tenant: str) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*", surface="web"))
 
 
-async def test_features_columnar_default_window(client, seed) -> None:
-    r = await client.get(
+async def test_features_columnar_default_window(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features", headers=_auth("soc_operator", T_PRIV_A)
     )
     assert r.status_code == 200, r.text
@@ -47,12 +47,12 @@ async def test_features_columnar_default_window(client, seed) -> None:
     assert True in body["clipping"]
 
 
-async def test_features_channel_filter(client, seed) -> None:
-    r_ehz = await client.get(
+async def test_features_channel_filter(telemetry_client, seed) -> None:
+    r_ehz = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?channel=EHZ",
         headers=_auth("soc_operator", T_PRIV_A),
     )
-    r_enz = await client.get(
+    r_enz = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?channel=ENZ",
         headers=_auth("soc_operator", T_PRIV_A),
     )
@@ -60,10 +60,10 @@ async def test_features_channel_filter(client, seed) -> None:
     assert r_enz.json()["ts"] == []  # solo se sembró EHZ
 
 
-async def test_features_span_over_2h_rejected(client, seed) -> None:
+async def test_features_span_over_2h_rejected(telemetry_client, seed) -> None:
     now = datetime.now(UTC)
     # params= deja que httpx percent-encode el '+' del offset (como un cliente real).
-    r = await client.get(
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features",
         params={"from": (now - timedelta(hours=3)).isoformat(), "to": now.isoformat()},
         headers=_auth("soc_operator", T_PRIV_A),
@@ -72,25 +72,27 @@ async def test_features_span_over_2h_rejected(client, seed) -> None:
     assert "2 h" in r.json()["detail"]
 
 
-async def test_features_bad_timestamp_rejected(client, seed) -> None:
-    r = await client.get(
+async def test_features_bad_timestamp_rejected(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?from=not-a-date",
         headers=_auth("soc_operator", T_PRIV_A),
     )
     assert r.status_code == 422
 
 
-async def test_features_cross_tenant_is_empty(client, seed) -> None:
+async def test_features_cross_tenant_is_empty(telemetry_client, seed) -> None:
     # Tenant A pide el sitio de B: RLS (vía la vista) devuelve cero filas, no fuga.
-    r = await client.get(
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_B}/features", headers=_auth("soc_operator", T_PRIV_A)
     )
     assert r.status_code == 200
     assert r.json()["ts"] == []
 
 
-async def test_metrics_default_bucket_1m(client, seed) -> None:
-    r = await client.get(f"/telemetry/sites/{S_A}/metrics", headers=_auth("soc_operator", T_PRIV_A))
+async def test_metrics_default_bucket_1m(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
+        f"/telemetry/sites/{S_A}/metrics", headers=_auth("soc_operator", T_PRIV_A)
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["bucket"] == "1m"  # span 24 h por defecto ⇒ 1m
@@ -98,8 +100,8 @@ async def test_metrics_default_bucket_1m(client, seed) -> None:
     assert body["max_pga_g"]
 
 
-async def test_metrics_bucket_1h_explicit(client, seed) -> None:
-    r = await client.get(
+async def test_metrics_bucket_1h_explicit(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/metrics?bucket=1h",
         headers=_auth("soc_operator", T_PRIV_A),
     )
@@ -107,16 +109,16 @@ async def test_metrics_bucket_1h_explicit(client, seed) -> None:
     assert r.json()["bucket"] == "1h"
 
 
-async def test_metrics_invalid_bucket_rejected(client, seed) -> None:
-    r = await client.get(
+async def test_metrics_invalid_bucket_rejected(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/metrics?bucket=5m",
         headers=_auth("soc_operator", T_PRIV_A),
     )
     assert r.status_code == 422
 
 
-async def test_map_state_has_site_with_open_incident(client, seed) -> None:
-    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+async def test_map_state_has_site_with_open_incident(telemetry_client, seed) -> None:
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
     assert r.status_code == 200, r.text
     sites = {s["site_id"]: s for s in r.json()["sites"]}
     assert S_A in sites
@@ -129,7 +131,9 @@ async def test_map_state_has_site_with_open_incident(client, seed) -> None:
     assert S_B not in sites
 
 
-async def test_map_state_reports_shaking_MEASURED_not_alert_severity(client, seed) -> None:
+async def test_map_state_reports_shaking_MEASURED_not_alert_severity(
+    telemetry_client, seed
+) -> None:
     """El mapa pinta lo que el EDIFICIO sintió, no el nivel de la alerta.
 
     El seed abre el incidente con `trigger='sasmex'` y `severity='warning'`, pero el
@@ -138,7 +142,7 @@ async def test_map_state_reports_shaking_MEASURED_not_alert_severity(client, see
     viene del canal de alerta (SASMEX es un booleano, no mide nada de lo que pasa
     aquí) y `felt` viene del acelerógrafo del inmueble.
     """
-    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
     assert r.status_code == 200, r.text
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
 
@@ -147,7 +151,9 @@ async def test_map_state_reports_shaking_MEASURED_not_alert_severity(client, see
     assert site["felt_pga_g"] == pytest.approx(0.10, abs=0.01)
 
 
-async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(client, seed) -> None:
+async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(
+    telemetry_client, seed
+) -> None:
     """Un edificio que sacudió y ya se calmó NO puede pintarse de verde.
 
     Regresión de un fallo cazado contra la nube con datos reales: Sitio Dev Puebla
@@ -160,7 +166,7 @@ async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(cli
     Con incidente abierto, `felt` tiene que ser el PICO de su ventana, no la calma
     posterior. S_SHOOK reproduce ese estado: 0.50 g hace 20 min, 0.001 g ahora.
     """
-    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
     assert r.status_code == 200, r.text
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_SHOOK]
 
@@ -173,26 +179,26 @@ async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(cli
     assert site["felt_pga_g"] >= site["max_pga_g"]
 
 
-async def test_map_state_declares_uncalibrated_sites(client, seed) -> None:
+async def test_map_state_declares_uncalibrated_sites(telemetry_client, seed) -> None:
     """Sin fuente de calibración el PGA es RELATIVO: la UI no puede llamarlo intensidad."""
-    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
     # El seed inserta sensores sin `calibration_source`.
     assert site["calibrated"] is False
 
 
-async def test_map_state_has_no_epicenter_when_no_event_locates_one(client, seed) -> None:
+async def test_map_state_has_no_epicenter_when_no_event_locates_one(telemetry_client, seed) -> None:
     """Sin evento localizado NO se inventa un epicentro (y NUNCA es el edificio).
 
     El seed abre incidentes sin `event_id`, así que no hay sismo localizado: la lista
     sale vacía y el mapa lo declara, en vez de plantar el epicentro sobre el inmueble.
     """
-    r = await client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
     assert r.json()["epicenters"] == []
 
 
-async def test_mobile_only_role_forbidden(client, seed) -> None:
-    r = await client.get(
+async def test_mobile_only_role_forbidden(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features",
         headers=au.bearer(
             au.make_token("occupant", tenant=T_PRIV_A, site_scope="*", surface="mobile")
@@ -201,6 +207,6 @@ async def test_mobile_only_role_forbidden(client, seed) -> None:
     assert r.status_code == 403
 
 
-async def test_missing_token_unauthorized(client, seed) -> None:
-    r = await client.get(f"/telemetry/sites/{S_A}/features")
+async def test_missing_token_unauthorized(telemetry_client, seed) -> None:
+    r = await telemetry_client.get(f"/telemetry/sites/{S_A}/features")
     assert r.status_code == 401

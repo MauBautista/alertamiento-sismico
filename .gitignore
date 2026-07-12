@@ -55,3 +55,7 @@ graphify-out/
 
 # SOC local interactivo (make soc-local): spool/buffer/logs efímeros
 .local-soc/
+
+# Playwright (M-7): artefactos de ejecución del smoke local
+web/test-results/
+web/playwright-report/
