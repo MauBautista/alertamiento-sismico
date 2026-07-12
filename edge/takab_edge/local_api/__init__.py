@@ -111,6 +111,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             "/api/silence": dashboard.silence,
             "/api/siren-test": dashboard.run_siren_test,
             "/api/reset": dashboard.reset_alert,
+            "/api/drill-audio": dashboard.drill_audio,
         }
         action = actions.get(self.path)
         if action is None:
@@ -159,6 +160,7 @@ class LocalDashboard(EdgeModule):
         gateway_id: str = "",
         site_name: str = "",
         refresh_ms: int = 1000,
+        audio: object | None = None,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -166,6 +168,7 @@ class LocalDashboard(EdgeModule):
         self._health = health
         self._signal = signal
         self._cloud = cloud
+        self._audio = audio
         self._gateway_id = gateway_id
         self._site_name = site_name
         self._refresh_ms = refresh_ms
@@ -327,8 +330,19 @@ class LocalDashboard(EdgeModule):
             "signal": self._signal_section(now),
             "health": health,
             "cloud": self._cloud_section(),
+            "audio": self._audio_section(),
             "events": self._events_section(),
         }
+
+    def _audio_section(self) -> dict | None:
+        """Voceo (A-6): la UI solo muestra el botón de drill si está habilitado."""
+        try:
+            if self._audio is None:
+                return None
+            return {"enabled": bool(self._audio.enabled), "sounding": bool(self._audio.sounding)}
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: sección de audio no disponible", exc_info=True)
+            return None
 
     def silence(self) -> None:
         """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""
@@ -345,8 +359,23 @@ class LocalDashboard(EdgeModule):
     def reset_alert(self) -> None:
         """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
         self._gpio.reset()
+        if self._audio is not None:
+            # La alerta terminó: la voz también se calla (A-6).
+            try:
+                self._audio.stop_playback()
+            except Exception:  # noqa: BLE001 — advisory
+                log.exception("audio.stop_playback() en reset falló (aislado)")
         self._record_action("reset")
         log.warning("alerta cerrada/re-armada por LAN")
+
+    def drill_audio(self) -> None:
+        """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés."""
+        if self._audio is None:
+            log.warning("drill de voceo solicitado sin módulo de audio")
+            return
+        self._audio.play_simulacro()
+        self._record_action("drill_audio")
+        log.warning("voceo de SIMULACRO solicitado por LAN")
 
     @property
     def address(self) -> tuple[str, int] | None:

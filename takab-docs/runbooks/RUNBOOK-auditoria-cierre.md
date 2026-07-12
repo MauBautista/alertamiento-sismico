@@ -491,14 +491,29 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 
 ### [x] F4 · Audio de simulacro y de sismo por la salida del Pi 5 cerebro
 - **Cómo verificar:** `grep -rniE "aplay|alsa|pyaudio|sounddevice|simpleaudio|playsound|\.wav|\.mp3|espeak|pyttsx" edge/`
-- **Resultado:** **FAIL — NO EXISTE → hallazgo A-6 (funcionalidad solicitada).** El grep
-  devuelve exit=1 (cero hits reales en todo el repo). No hay módulo de audio en edge (módulos:
-  gpio, seedlink, signal, buffer, rules, actuators, cloud, health, security, config, dispatch,
-  backfill, local_api); la "sirena" es SIEMPRE un relé seco (`ActuatorChannel.SIREN`,
-  `contracts.py:54`; sirena jamás por BACnet, `actuators/__init__.py:33-34`); el blueprint no
-  menciona audio/voceo. **Nota de hardware:** el Raspberry Pi 5 NO trae jack de 3.5 mm — la
-  salida de audio requiere HDMI, DAC USB o HAT I2S + amplificador + bocina, nada de lo cual
-  está en el BOM. Especificación de la tarea propuesta: §11 A-6.
+- **Resultado (al momento de la auditoría):** **FAIL — NO EXISTÍA → hallazgo A-6.** El grep
+  devolvía exit=1 (cero hits reales en todo el repo). La "sirena" es SIEMPRE un relé seco
+  (`ActuatorChannel.SIREN`, `contracts.py:54`; jamás por BACnet, `actuators/__init__.py:33-34`).
+  **Nota de hardware:** el Raspberry Pi 5 NO trae jack de 3.5 mm — la salida de audio requiere
+  HDMI, DAC USB o HAT I2S + amplificador + bocina, nada de lo cual está en el BOM.
+- **Remediación en SOFTWARE (2026-07-11):** nuevo módulo `edge/takab_edge/audio` —
+  `AudioNotifier` (EdgeModule `critical=False`, `depends_on=("gpio",)`) con backend `aplay`
+  real (subproceso, sin deps pesadas — regla de oro 4) y backend simulado para dev/tests.
+  Contrato verificado con 13 tests (`edge/tests/test_audio.py`; suite edge **293 passed**):
+  - **Jamás en el camino crítico**: se dispara DESPUÉS de actuar los relés
+    (`supervisor._act_and_publish`) y todo fallo se aísla (backend roto no propaga).
+  - **Apagado por default** (`audio_enabled=False`): en el Pi real NADA cambia hasta
+    encenderlo por gabinete cuando exista el hardware.
+  - **Subordinado al silencio**: `gpio.on_silence` (observer nuevo, aislado) detiene el voceo
+    con el botón físico o el panel; CERRAR ALERTA también lo calla.
+  - **Sismo ≠ simulacro**: assets distintos, con ruta+sha256 logueados al arrancar; habilitado
+    sin assets = no arranca (fail-loud, módulo aislado).
+  - **Drill del panel LAN** con PIN (`POST /api/drill-audio`); el botón "SIMULACRO DE VOCEO"
+    solo aparece si `status.audio.enabled` — sin botones muertos.
+- `[ ]` **GATE-HW (A-6):** comprar/instalar DAC USB o HAT I2S + amplificador + bocina; grabar
+  los dos mensajes reales (voz de sismo ≠ voz de simulacro); configurar
+  `TAKAB_EDGE_AUDIO_ENABLED=true` + rutas en `/etc/takab/edge.env`; verificar audible en el
+  inmueble: drill desde el panel, sismo simulado, silencio físico lo calla.
 
 ## 10. Registro de gates HW/despliegue (llenar presencialmente — SIN marcar)
 
@@ -526,7 +541,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
 | A-4 | **CÓDIGO LISTO 2026-07-11 · APPLY PENDIENTE:** módulo `observability` (SNS on-call + alarmas DLQ/instancia/reglas-IoT/gabinete-offline vía LWT→métrica `Takab/Fleet`); `terraform validate` Success | `modules/observability/*`, `modules/iot-core/main.tf` (2 reglas status→métrica + IAM acotado por namespace), `envs/dev/main.tf` | GATE-DESPLIEGUE: `terraform apply` + confirmar email SNS + probar par ALARM→OK con `cloud-stop/start`. Rebanada futura: batería y 5xx de la API (métricas desde la app) |
 | A-5 | **REMEDIADO DOCUMENTAL 2026-07-11:** `RUNBOOK-backup-restore-db.md` con inventario real (snapshots DLM 03:00 + `pg_dump` 08:00 a S3 que la auditoría no había visto), **RPO ≤ 24 h declarado**, RTO por medir, procedimientos A/B y plan PITR WAL-G | `takab-docs/runbooks/RUNBOOK-backup-restore-db.md`; `user_data.sh.tpl:103-104` | GATE-DESPLIEGUE G-09: ejecutar restore real (A y B), medir RTO, llenar registro §6; después, tarea PITR (WAL-G) para RPO ≤ 15 min |
-| A-6 | **Audio de voceo (simulacro/sismo) INEXISTENTE** — solicitado en esta auditoría; el Pi 5 ni siquiera tiene jack 3.5 mm | grep audio en repo = exit 1; sirena = relé seco (`contracts.py:54`) | Nueva tarea edge `audio`: (1) BOM: DAC USB o HAT I2S + amplificador + bocina de intemperie; (2) módulo `edge/takab_edge/audio` FUERA del camino crítico (el relé JAMÁS espera al audio); (3) assets versionados con sha256 — mensaje de SISMO claramente distinto al de SIMULACRO; (4) disparo determinista subordinado a `rules`/reflejo + botón drill en panel LAN con PIN; (5) autotest periódico de bocina con reporte al heartbeat; (6) systemd hardening igual que takab-gpio |
+| A-6 | **REMEDIADO EN SOFTWARE 2026-07-11:** módulo `edge/takab_edge/audio` implementado con TDD (13 tests; edge 293 verde) — advisory tras los relés, apagado por default, subordinado al silencio, assets sismo≠simulacro con sha256, drill con PIN en panel LAN (botón solo si habilitado) | `edge/takab_edge/audio/__init__.py`, `tests/test_audio.py`, hook en `supervisor._act_and_publish`, `gpio.on_silence`, `/api/drill-audio` | GATE-HW: BOM (DAC USB/HAT I2S + ampli + bocina), grabar los 2 mensajes reales, `TAKAB_EDGE_AUDIO_ENABLED=true` en el gabinete y prueba audible presencial. Futuro: autotest periódico de bocina al heartbeat |
 
 ### MEDIO
 
@@ -606,3 +621,12 @@ Además de resolver §11, para que TAKAB Ailert sea un producto comercial comple
   RuntimeError en prod, sin auto-selección; 7 tests unitarios con lgpio falso; **suite edge
   280 passed** + ruff/format limpios. Gate físico G-01 sigue SIN marcar (lgpio real + reboot
   en el Pi).
+- Remediación A-4 (mismo día, en código): módulo terraform `observability` (SNS on-call +
+  alarmas DLQ/EC2/IoT-errors/gabinete-offline) + 2 reglas IoT status→métrica; `terraform
+  fmt/validate` = Success. Apply + confirmación del email = GATE-DESPLIEGUE.
+- Remediación A-5 (mismo día, documental): `RUNBOOK-backup-restore-db.md` — inventario real
+  (snapshots DLM + pg_dump 08:00 que la auditoría no había visto), RPO ≤ 24 h declarado,
+  procedimientos A/B, plan PITR. Restore real = G-09 sin marcar.
+- Remediación A-6 (mismo día, en software): módulo `edge/takab_edge/audio` con TDD — 13 tests
+  nuevos, **suite edge 293 passed**, ruff/format limpios; apagado por default. Hardware
+  (DAC/ampli/bocina + assets de voz reales + prueba audible) = GATE-HW sin marcar.

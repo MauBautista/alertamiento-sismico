@@ -27,6 +27,7 @@ ALL_MODULES = {
     "security",
     "dispatch",  # T-1.23: consumidor de comandos/config firmados
     "backfill",  # T-1.25: ruta S3 del spool + evidencia offline
+    "audio",  # A-6: voceo advisory (deshabilitado por default; gate de hardware)
     "local_api",
 }
 

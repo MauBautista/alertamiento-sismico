@@ -165,6 +165,7 @@ class GpioController(EdgeModule):
         self.settings = settings
         self._lock = threading.RLock()
         self._sasmex_callbacks: list[SasmexCallback] = []
+        self._silence_callbacks: list[Callable[[bool], None]] = []
         self._button = None  # gpiozero.Button (WR-1)
         self._silence_button = None
         self._test_button = None
@@ -186,6 +187,14 @@ class GpioController(EdgeModule):
         """Registra un callback no-reflejo (rules evalúa; cloud publica)."""
         self._sasmex_callbacks.append(callback)
 
+    def on_silence(self, callback: Callable[[bool], None]) -> None:
+        """Observer del silencio (A-6: el voceo debe callarse con la sirena).
+
+        Se invoca DESPUÉS de recalcular los relés y FUERA del lock; cada callback
+        se aísla — un observer roto jamás toca el camino de vida.
+        """
+        self._silence_callbacks.append(callback)
+
     def silence_audibles(self, silenced: bool = True) -> None:
         """Silencio/re-armado del operador: apaga/reactiva los canales AUDIBLES.
 
@@ -199,6 +208,11 @@ class GpioController(EdgeModule):
             for channel in AUDIBLE_CHANNELS:
                 self._apply(channel)
         log.warning("audibles %s", "SILENCIADOS" if silenced else "RE-ARMADOS")
+        for callback in list(self._silence_callbacks):
+            try:
+                callback(silenced)
+            except Exception:  # noqa: BLE001 — observer advisory, jamás al camino de vida
+                log.exception("observer de silencio falló (aislado)")
 
     @property
     def audible_silenced(self) -> bool:

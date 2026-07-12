@@ -198,6 +198,17 @@ class EdgeSettings(BaseSettings):
     #: fail-closed hasta provisionarlo (provision_gateway.sh lo genera).
     local_api_pin: str = ""
 
+    # --- audio de voceo (A-6; canal ADVISORY — la sirena de RELÉ es la primaria) ---
+    #: El voceo arranca DESHABILITADO: se enciende por gabinete cuando el hardware
+    #: de audio (DAC/amplificador/bocina; el Pi 5 no trae jack) exista físicamente.
+    audio_enabled: bool = False
+    #: Dispositivo ALSA para ``aplay -D`` (p.ej. "default", "hw:1,0" con DAC USB).
+    audio_device: str = "default"
+    #: Mensajes hablados: DEBEN ser dos audios claramente DISTINTOS (sismo real vs
+    #: simulacro). Con audio_enabled=true, ambos archivos deben existir al arrancar.
+    audio_sismo_path: str = ""
+    audio_simulacro_path: str = ""
+
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
     siren_test_duration_s: float = 2.0  # duración del self-test del botón de prueba

@@ -19,6 +19,7 @@ from collections.abc import Iterator
 from datetime import timedelta
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
+from takab_edge.audio import AudioNotifier
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
@@ -172,6 +173,9 @@ class EdgeSupervisor:
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
+        # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
+        # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
+        self.audio = AudioNotifier(s, gpio=self.gpio)
         self.local_api = LocalDashboard(
             self.gpio,
             self.rules,
@@ -186,6 +190,7 @@ class EdgeSupervisor:
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
+            audio=self.audio,
         )
 
         self._modules: dict[str, EdgeModule] = {
@@ -203,6 +208,7 @@ class EdgeSupervisor:
                 self.security,
                 self.dispatch,
                 self.backfill,
+                self.audio,
                 self.local_api,
             )
         }
@@ -255,6 +261,9 @@ class EdgeSupervisor:
             # Actuación de vida fallida: avisar de inmediato. La escalación a la nube como
             # alarma (T-1.11) y el fallback por contrato al relé (T-1.10) van aparte.
             log.warning("actuación con fallo(s) en %s (event_id=%s)", failed, decision.event_id)
+        # Voceo ADVISORY (A-6) tras actuar los relés: nunca antes, nunca bloqueante,
+        # y sus fallos se aíslan dentro del propio módulo.
+        self.audio.on_tier(decision)
         # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
         for ack in acks:
             self.cloud.publish(ACKS_TOPIC, ack)
