@@ -19,6 +19,7 @@ SCHEMAS_DIR = Path(__file__).resolve().parents[4] / "shared" / "schemas"
 
 KINDS = (
     "feature_1s",
+    "feature_batch",  # T-1.56: lote de features de tier normal
     "local_event",
     "health_snapshot",
     "actuator_ack",
@@ -34,6 +35,9 @@ KINDS = (
 _TOPIC_KIND = {
     "takab/events": "local_event",
     "takab/features": "feature_1s",
+    # T-1.56: el filtro exacto de la regla IoT de takab/features NO matchea el
+    # sub-topic (sin comodines); el batch tiene regla propia → la misma cola.
+    "takab/features/batch": "feature_batch",
     "takab/health": "health_snapshot",
     "takab/acks": "actuator_ack",
 }
@@ -47,7 +51,7 @@ class ContractError(Exception):
 
 @cache
 def _validators() -> dict[str, Draft202012Validator]:
-    """Carga los 6 schemas una sola vez por proceso."""
+    """Carga los schemas de KINDS una sola vez por proceso."""
     validators: dict[str, Draft202012Validator] = {}
     for kind in KINDS:
         schema = json.loads((SCHEMAS_DIR / f"{kind}.schema.json").read_text())

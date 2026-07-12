@@ -150,7 +150,10 @@ locals {
     takab_dev_acks      = { topic = "takab/acks", queue_url = var.events_queue.url }
     takab_dev_status    = { topic = "takab/status/+", queue_url = var.events_queue.url }
     takab_dev_telemetry = { topic = "takab/features", queue_url = var.telemetry_queue.url }
-    takab_dev_health    = { topic = "takab/health", queue_url = var.telemetry_queue.url }
+    # T-1.56: lote de features de tier normal. El filtro exacto de takab/features
+    # NO matchea el sub-topic (sin comodines): regla propia, MISMA cola.
+    takab_dev_features_batch = { topic = "takab/features/batch", queue_url = var.telemetry_queue.url }
+    takab_dev_health         = { topic = "takab/health", queue_url = var.telemetry_queue.url }
     # T-1.25: requests de backfill/evidencia -> grant service (worker backfill).
     takab_dev_backfill = { topic = "takab/backfill/request/+", queue_url = var.backfill_queue.url }
   }

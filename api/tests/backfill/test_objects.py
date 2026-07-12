@@ -185,6 +185,21 @@ def _feature_line(sc: _Scenario, second: int) -> dict:
     }
 
 
+def _batch_line(sc: _Scenario, seconds: tuple[int, ...]) -> dict:
+    """Registro batch (T-1.56) tal como lo spoolea el edge; la ruta S3 resuelve
+    el kind por el `topic` del registro, sin tocar objects.py."""
+    return {
+        "topic": "takab/features/batch",
+        "event_id": "",
+        "payload": {
+            "gateway_id": sc.thing,
+            "features": [_feature_line(sc, s)["payload"] for s in seconds],
+            "batched_at": (TS0 + timedelta(seconds=max(seconds) + 1)).isoformat(),
+        },
+        "spooled_at": (TS0 + timedelta(seconds=max(seconds) + 2)).isoformat(),
+    }
+
+
 def _event_line(sc: _Scenario, event_hex: str) -> dict:
     return {
         "topic": "takab/events",
@@ -255,6 +270,22 @@ def test_ndjson_object_ingests_completely(scenario: _Scenario) -> None:
     assert got["features"] == 3
     assert got["incidents"] == 1
     assert got["actions"] == 1
+
+
+def test_ndjson_with_batch_records_ingests_their_features(scenario: _Scenario) -> None:
+    """T-1.56: un spool con lotes viaja por la ruta S3 y aterriza feature a feature."""
+    lines = [
+        _batch_line(scenario, (0, 1, 2)),
+        _feature_line(scenario, 10),  # conviven ambos formatos en el mismo objeto
+    ]
+    key = f"backfill/{scenario.thing}/batch.ndjson.gz"
+    s3 = _FakeS3()
+    s3.put(BUCKET_TRANSFER, key, _ndjson_gz(lines))
+
+    result = _process(scenario, s3, BUCKET_TRANSFER, key)
+
+    assert result.outcome is Outcome.OK, result.reason
+    assert scenario.counts()["features"] == 4  # 3 del lote + 1 suelto
 
 
 def test_reprocess_is_zero_deltas(scenario: _Scenario) -> None:

@@ -121,6 +121,24 @@ class Feature1s(BaseModel):
     health_score: float = 1.0
 
 
+class FeatureBatch(BaseModel):
+    """Lote de Feature1s de tier `normal` (T-1.56 · batcheo escalonado por tier).
+
+    Solo TELEMETRÍA REPONIBLE: en reposo el gateway acumula ~10 s de features y
+    publica 1 mensaje (≈97% menos publishes/SQS); al escalar a `watch`+ se hace
+    flush inmediato y se vuelve al 1 Hz individual (`feature_1s`). La detección
+    y la actuación JAMÁS pasan por aquí. ``max_length=256`` ≈ 64 KB « 128 KB
+    (tope de publish de AWS IoT). Sin ``event_id`` ⇒ sin dedup de spool (como
+    los features sueltos); la idempotencia real es la PK ``(ts, sensor_id,
+    channel)`` de la nube.
+    """
+
+    kind: Literal["feature_batch"] = "feature_batch"
+    gateway_id: str
+    features: list[Feature1s] = Field(min_length=1, max_length=256)
+    batched_at: datetime = Field(default_factory=utcnow)
+
+
 class SasmexSignal(BaseModel):
     """Estado del contacto seco del WR-1 — canal primario (blueprint §4.5)."""
 

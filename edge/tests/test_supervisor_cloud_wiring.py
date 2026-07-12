@@ -21,6 +21,7 @@ from takab_edge.supervisor import (
     HEALTH_TOPIC,
     EdgeSupervisor,
 )
+from takab_edge.telemetry import FEATURES_BATCH_TOPIC
 
 QUAKE_START = datetime(2026, 7, 6, 12, 0, 0, tzinfo=UTC)
 
@@ -85,15 +86,49 @@ def test_health_snapshots_transition_and_heartbeat(online_supervisor):
     )
 
 
-def test_features_flow_to_cloud(online_supervisor):
+def test_features_de_tier_normal_se_acumulan_y_salen_en_lote(online_supervisor):
+    """T-1.56: el ruido de fondo (tier normal) NO publica 1 Hz — se batchea."""
     sup, transport = online_supervisor
     sim = RS4DSimulator(station=sup.settings.station)
     stream = sim.stream(channel="EHZ")
     for _ in range(5):
         sup.seedlink.feed(next(stream))
-    feats = _payloads(transport, FEATURES_TOPIC)
-    assert len(feats) == 5  # cada Feature1s sale, sin dedup (no llevan event_id)
+    assert _payloads(transport, FEATURES_TOPIC) == []  # nada individual en reposo
+    assert sup.telemetry.pending == 5
+    sup.telemetry.flush_pending()
+    batches = _payloads(transport, FEATURES_BATCH_TOPIC)
+    assert len(batches) == 1  # 5 features → UN publish (ancla del costo)
+    assert batches[0]["gateway_id"] == sup.settings.gateway_id
+    feats = batches[0]["features"]
+    assert len(feats) == 5
     assert all(f["channel"] == "EHZ" and f["station"] == sup.settings.station for f in feats)
+
+
+def test_escalacion_drena_el_lote_antes_del_1hz(online_supervisor):
+    """El contexto pre-evento acumulado sale ANTES del primer feature individual."""
+    sup, transport = online_supervisor
+    sim = RS4DSimulator(station=sup.settings.station)
+    stream = sim.stream(channel="EHZ")
+    for _ in range(3):
+        sup.seedlink.feed(next(stream))  # reposo → se acumulan
+    assert sup.telemetry.pending == 3
+    _feed_quake(sup)  # escala el tier → flush + 1 Hz individual
+    topics = [t for t, _p in transport.published if t in (FEATURES_TOPIC, FEATURES_BATCH_TOPIC)]
+    assert FEATURES_BATCH_TOPIC in topics and FEATURES_TOPIC in topics
+    assert topics.index(FEATURES_BATCH_TOPIC) < topics.index(FEATURES_TOPIC)
+
+
+def test_sasmex_drena_el_acumulado_sin_feature(online_supervisor):
+    """La escalación por gpio (WR-1) también dispara el flush del lote."""
+    sup, transport = online_supervisor
+    sim = RS4DSimulator(station=sup.settings.station)
+    stream = sim.stream(channel="EHZ")
+    for _ in range(4):
+        sup.seedlink.feed(next(stream))
+    assert sup.telemetry.pending == 4
+    sup.gpio.simulate_sasmex(True)
+    assert _wait(lambda: _payloads(transport, FEATURES_BATCH_TOPIC))
+    assert sup.telemetry.pending == 0
 
 
 def test_retained_online_published_on_connect(online_supervisor):
@@ -127,12 +162,18 @@ def test_build_real_transport_from_settings(settings, monkeypatch):
 
 def test_cloud_telemetry_topics_capped_from_settings(settings):
     """features/health llevan cota (48 h offline no agotan RAM/disco del Pi);
-    eventos y ACKs — evidencia — quedan SIN cota."""
+    eventos y ACKs — evidencia — quedan SIN cota. El topic batch (T-1.56) lleva
+    cota DERIVADA (cap // batch_max): misma cota en features-equivalentes."""
     sup = EdgeSupervisor(
-        settings.model_copy(update={"cloud_telemetry_cap": 7}), seedlink_source=None
+        settings.model_copy(update={"cloud_telemetry_cap": 7, "cloud_features_batch_max": 3}),
+        seedlink_source=None,
     )
     sup.build()
-    assert sup.cloud._topic_caps == {FEATURES_TOPIC: 7, HEALTH_TOPIC: 7}
+    assert sup.cloud._topic_caps == {
+        FEATURES_TOPIC: 7,
+        HEALTH_TOPIC: 7,
+        FEATURES_BATCH_TOPIC: 2,  # 7 // 3
+    }
     assert EVENTS_TOPIC not in sup.cloud._topic_caps
     assert ACKS_TOPIC not in sup.cloud._topic_caps
 

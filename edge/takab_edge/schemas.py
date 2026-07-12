@@ -22,6 +22,7 @@ from takab_edge.contracts import (
     CommandAck,
     EvidenceObject,
     Feature1s,
+    FeatureBatch,
     HealthSnapshot,
     LocalEvent,
     WaveformPacket,
@@ -34,12 +35,16 @@ from takab_edge.contracts import (
 #: 1.2.0 (T-1.53): health_snapshot + disk_used_pct nullable (panel LAN). ADITIVO:
 #: el ingest de la nube ignora la clave (sin columna destino) y un payload 1.1.0
 #: sigue validando contra 1.2.0.
-SCHEMA_VERSION = "1.2.0"
+#: 1.3.0 (T-1.56): + feature_batch (batcheo escalonado por tier, topic
+#: takab/features/batch). ADITIVO: familia nueva; todo payload 1.2.0 sigue
+#: validando y la nube acepta feature_1s suelto indefinidamente.
+SCHEMA_VERSION = "1.3.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
     "waveform_packet": WaveformPacket,
     "feature_1s": Feature1s,
+    "feature_batch": FeatureBatch,  # T-1.56: lote de tier normal (takab/features/batch)
     "local_event": LocalEvent,
     "health_snapshot": HealthSnapshot,
     "actuator_ack": ActuatorAck,

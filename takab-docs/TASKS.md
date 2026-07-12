@@ -1356,7 +1356,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **ESTADO.** api 743 passed (not perf) · demo 22 · web 525 · e2e 1 · ruff/eslint/
 > prettier/tsc/build OK.
 
-### [ ] T-1.56 · Batcheo escalonado por tier de features edge→nube
+### [~] T-1.56 · Batcheo escalonado por tier de features edge→nube — **CÓDIGO COMPLETO (2026-07-12); despliegue pendiente (terraform → api → edge)**
 - **Componente:** edge + api + infra · **Depende de:** — · **Decisión:** escalonado por tier
 - **Objetivo:** ~97% menos publishes/SQS en reposo (hoy ~178k msgs/día del gateway real)
   sin tocar jamás la detección/actuación ni el panel LAN (1 Hz in-process).
@@ -1368,15 +1368,25 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   `cloud_features_batch_{enabled,s,max}` (kill-switch env); cota del topic derivada
   `cap // batch_max`. Secuencia de deploy OBLIGATORIA: terraform → api → edge.
 - Criterios de aceptación:
-  - [ ] Test ancla: 40 submits en tier normal ⇒ 1 publish batch (vs 40).
-  - [ ] Escalación (features O SASMEX) ⇒ flush del acumulado ANTES del primer 1 Hz;
-        des-escalación vuelve a batchear; `stop()` limpio ⇒ acumulado al spool durable.
-  - [ ] Re-entrega del mismo batch ⇒ 0 duplicados (PK ts/sensor_id/channel); batch
-        parcialmente inválido ⇒ válidas commiteadas + original a DLQ + audit.
-  - [ ] La nube acepta AMBOS formatos indefinidamente; la ruta S3/backfill ingiere
-        batches del spool sin tocar objects.py (test).
-  - [ ] Kill-switch `TAKAB_EDGE_CLOUD_FEATURES_BATCH_ENABLED=false` ⇒ camino 1 Hz exacto.
-  - [ ] Contrato 1.3.0 aditivo regenerado + anti-drift verde; regla IoT lista para apply.
+  - [x] Test ancla: 40 submits en tier normal ⇒ 1 publish batch (vs 40) —
+        `test_tier_normal_40_features_un_solo_publish`.
+  - [x] Escalación (features O SASMEX) ⇒ flush del acumulado ANTES del primer 1 Hz
+        (orden anclado en unit + wiring); des-escalación vuelve a batchear; `stop()`
+        limpio ⇒ acumulado al spool durable (test offline).
+  - [x] Re-entrega del mismo batch ⇒ 0 duplicados (PK ts/sensor_id/channel); batch
+        parcialmente inválido ⇒ válidas commiteadas + original a DLQ + audit
+        (`handler_ran=True` ⇒ commit, semántica existente del consumer).
+  - [x] La nube acepta AMBOS formatos indefinidamente (feature_1s intacto, fleet sim
+        sin cambios); la ruta S3/backfill ingiere batches del spool sin tocar
+        objects.py (`test_ndjson_with_batch_records_ingests_their_features`).
+  - [x] Kill-switch `TAKAB_EDGE_CLOUD_FEATURES_BATCH_ENABLED=false` ⇒ camino 1 Hz
+        exacto (ni el timer arranca).
+  - [x] Contrato 1.3.0 aditivo regenerado (9 schemas) + anti-drift verde + loader
+        con topic nuevo; regla IoT `takab_dev_features_batch` en Terraform.
+  - [ ] **Despliegue** (manual, EN ORDEN): 1) `terraform apply` (regla inerte),
+        2) deploy api, 3) rollout edge al Pi. Verificar en CloudWatch que
+        `NumberOfMessagesSent` de `takab-dev-q-telemetry` cae de ~178k/día a <10k/día.
+> **ESTADO.** api 754 (+11) · demo 22 · edge 308 (+35) · ruff limpio ambos lados.
 
 ### [ ] T-1.57 · API: `GET /audit` + rango de fechas en `GET /incidents`
 - **Componente:** api + db · **Depende de:** — (SDK se regenera UNA vez aquí)

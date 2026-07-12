@@ -24,6 +24,7 @@ def test_all_contract_families_are_exported():
     assert set(MODELS) == {
         "waveform_packet",
         "feature_1s",
+        "feature_batch",  # T-1.56: lote de tier normal
         "local_event",
         "health_snapshot",
         "actuator_ack",

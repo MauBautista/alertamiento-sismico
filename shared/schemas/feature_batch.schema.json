@@ -1,0 +1,95 @@
+{
+  "$defs": {
+    "Feature1s": {
+      "description": "Features agregadas a 1 s — contrato de salida de `signal` (T-1.6).",
+      "properties": {
+        "station": {
+          "title": "Station",
+          "type": "string"
+        },
+        "channel": {
+          "title": "Channel",
+          "type": "string"
+        },
+        "window_start": {
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        },
+        "pga": {
+          "title": "Pga",
+          "type": "number"
+        },
+        "pgv": {
+          "title": "Pgv",
+          "type": "number"
+        },
+        "rms": {
+          "title": "Rms",
+          "type": "number"
+        },
+        "sta_lta": {
+          "title": "Sta Lta",
+          "type": "number"
+        },
+        "clipping": {
+          "default": false,
+          "title": "Clipping",
+          "type": "boolean"
+        },
+        "health_score": {
+          "default": 1.0,
+          "title": "Health Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "station",
+        "channel",
+        "window_start",
+        "pga",
+        "pgv",
+        "rms",
+        "sta_lta"
+      ],
+      "title": "Feature1s",
+      "type": "object"
+    }
+  },
+  "description": "Lote de Feature1s de tier `normal` (T-1.56 · batcheo escalonado por tier).\n\nSolo TELEMETRÍA REPONIBLE: en reposo el gateway acumula ~10 s de features y\npublica 1 mensaje (≈97% menos publishes/SQS); al escalar a `watch`+ se hace\nflush inmediato y se vuelve al 1 Hz individual (`feature_1s`). La detección\ny la actuación JAMÁS pasan por aquí. ``max_length=256`` ≈ 64 KB « 128 KB\n(tope de publish de AWS IoT). Sin ``event_id`` ⇒ sin dedup de spool (como\nlos features sueltos); la idempotencia real es la PK ``(ts, sensor_id,\nchannel)`` de la nube.",
+  "properties": {
+    "kind": {
+      "const": "feature_batch",
+      "default": "feature_batch",
+      "title": "Kind",
+      "type": "string"
+    },
+    "gateway_id": {
+      "title": "Gateway Id",
+      "type": "string"
+    },
+    "features": {
+      "items": {
+        "$ref": "#/$defs/Feature1s"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Features",
+      "type": "array"
+    },
+    "batched_at": {
+      "format": "date-time",
+      "title": "Batched At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "gateway_id",
+    "features"
+  ],
+  "title": "FeatureBatch",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/feature_batch/v1.3.0",
+  "version": "1.3.0"
+}

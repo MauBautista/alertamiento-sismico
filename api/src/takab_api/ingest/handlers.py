@@ -178,6 +178,40 @@ ON CONFLICT (ts, sensor_id, channel) DO NOTHING
 """
 
 
+def _insert_feature(conn: psycopg.Connection, feature: dict, ctx: GatewayCtx) -> str | None:
+    """UN Feature1s → fila idempotente; devuelve la razón del rechazo o None.
+
+    Compartido por ``handle_feature_1s`` (1 Hz) y ``handle_feature_batch``
+    (T-1.56): mismo mapeo, misma PK ``(ts, sensor_id, channel)``.
+    """
+    station = feature.get("station")
+    sensor = ctx.sensors.get(station)
+    if sensor is None:
+        return f"station desconocida para el gateway: {station!r}"
+    try:
+        ts = _dt(feature["window_start"])
+    except ValueError as exc:
+        return f"window_start inválido ({exc})"
+    # Atribución al sitio del SENSOR (sensors.site_id), no al del gateway:
+    # los gateways sim atienden 5 sitios (sim_fleet.sql).
+    conn.execute(
+        _FEATURE_SQL,
+        (
+            ts,
+            ctx.tenant_id,
+            sensor.site_id,
+            sensor.sensor_id,
+            feature["channel"],
+            feature["pga"],
+            feature["pgv"],
+            feature["rms"],
+            feature["sta_lta"],
+            feature.get("clipping", False),
+        ),
+    )
+    return None
+
+
 def handle_feature_1s(
     conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
 ) -> HandlerResult:
@@ -187,28 +221,33 @@ def handle_feature_1s(
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "feature_1s")) is not None:
         return rej
-    try:
-        ts = _dt(payload["window_start"])
-    except ValueError as exc:
-        return reject(f"feature_1s: window_start inválido ({exc})")
-    # Atribución al sitio del SENSOR (sensors.site_id), no al del gateway:
-    # los gateways sim atienden 5 sitios (sim_fleet.sql).
-    sensor = ctx.sensors[payload["station"]]
-    conn.execute(
-        _FEATURE_SQL,
-        (
-            ts,
-            ctx.tenant_id,
-            sensor.site_id,
-            sensor.sensor_id,
-            payload["channel"],
-            payload["pga"],
-            payload["pgv"],
-            payload["rms"],
-            payload["sta_lta"],
-            payload.get("clipping", False),
-        ),
-    )
+    if (reason := _insert_feature(conn, payload, ctx)) is not None:
+        return reject(f"feature_1s: {reason}")
+    return OK
+
+
+def handle_feature_batch(
+    conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
+) -> HandlerResult:
+    """FeatureBatch (T-1.56) → N filas idempotentes en la MISMA transacción.
+
+    Lote parcialmente inválido: las features válidas SE INSERTAN y se devuelve
+    REJECT con la razón — el consumer commitea lo escrito (``handler_ran=True``)
+    y manda el original a la DLQ (evidencia forense completa, cero pérdida de
+    las buenas; el reproceso es idempotente por PK).
+    """
+    if (rej := _identity_reject(conn, payload, meta, ctx, "feature_batch")) is not None:
+        return rej
+    features = payload["features"]
+    bad: list[str] = []
+    for i, feature in enumerate(features):
+        if (reason := _insert_feature(conn, feature, ctx)) is not None:
+            bad.append(f"[{i}] {reason}")
+    if bad:
+        detail = "; ".join(bad[:5])
+        reason = f"feature_batch: {len(bad)}/{len(features)} inválidas: {detail}"
+        _audit_reject(conn, ctx, meta, "feature_batch", reason)
+        return reject(reason)
     return OK
 
 
@@ -542,6 +581,7 @@ Handler = Callable[[psycopg.Connection, dict, Meta, GatewayCtx], HandlerResult]
 
 HANDLERS: dict[str, Handler] = {
     "feature_1s": handle_feature_1s,
+    "feature_batch": handle_feature_batch,  # T-1.56: lote de tier normal
     "local_event": handle_local_event,
     "health_snapshot": handle_health_snapshot,
     "actuator_ack": handle_actuator_ack,

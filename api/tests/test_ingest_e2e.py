@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import psycopg
@@ -234,6 +234,43 @@ def test_feature_1s_ends_as_waveform_row(fleet, sqs, queues, consumer):
     tenant_id, site_id, channel, pga_g = rows[0]
     assert (tenant_id, site_id, channel) == (uuid.UUID(TENANT), uuid.UUID(SITE), "ENZ")
     assert pga_g == pytest.approx(0.0021)
+    assert _n_messages(sqs, queues[0]) == 0 and _n_messages(sqs, queues[1]) == 0
+
+
+def test_feature_batch_ends_as_n_waveform_rows(fleet, sqs, queues, consumer):
+    """T-1.56: 1 mensaje batch (1 request SQS) → N filas idempotentes."""
+    ts = datetime.now(tz=UTC).replace(microsecond=0)
+    features = [
+        {
+            "station": "R4F74",
+            "channel": ch,
+            "window_start": (ts + timedelta(seconds=i)).isoformat(),
+            "pga": 0.001 * (i + 1),
+            "pgv": 0.01,
+            "rms": 0.0007,
+            "sta_lta": 1.1,
+        }
+        for i, ch in ((0, "ENZ"), (1, "ENZ"), (1, "EHZ"))
+    ]
+    body = _enriched(
+        {
+            "gateway_id": "gw-dev-0001",
+            "features": features,
+            "batched_at": datetime.now(tz=UTC).isoformat(),
+        },
+        "takab/features/batch",
+    )
+    sqs.send_message(QueueUrl=queues[0], MessageBody=body)
+
+    stats = consumer.process_once()
+
+    assert stats["n_ok"] == 1 and stats["n_reject"] == 0 and stats["n_retry"] == 0
+    with psycopg.connect(_dsn()) as check:
+        n = check.execute(
+            "SELECT count(*) FROM waveform_features_1s WHERE sensor_id = %s AND ts = ANY(%s)",
+            (SENSOR, [ts, ts + timedelta(seconds=1)]),
+        ).fetchone()[0]
+    assert n == 3  # (ts, ENZ) + (ts+1, ENZ) + (ts+1, EHZ)
     assert _n_messages(sqs, queues[0]) == 0 and _n_messages(sqs, queues[1]) == 0
 
 

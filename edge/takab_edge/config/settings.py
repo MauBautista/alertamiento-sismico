@@ -134,6 +134,17 @@ class EdgeSettings(BaseSettings):
     #: Tope de mensajes encolados POR TOPIC de telemetría reponible (features/health):
     #: 48 h offline no deben agotar RAM/inodos del Pi. Eventos/ACKs no llevan cota.
     cloud_telemetry_cap: int = Field(default=10_000, gt=0)
+    #: [T-1.56] Batcheo escalonado por tier de la telemetría de features — SOLO la
+    #: publicación (la detección/actuación jamás pasa por aquí; el panel LAN sigue
+    #: leyendo in-process a 1 Hz). En tier `normal` se acumula y se publica 1 mensaje
+    #: batch cada `cloud_features_batch_s`; al escalar a `watch`+ se hace flush
+    #: inmediato y se vuelve al 1 Hz individual. `enabled=False` = kill-switch
+    #: operativo: passthrough 1 Hz exacto (camino previo a T-1.56).
+    cloud_features_batch_enabled: bool = True
+    cloud_features_batch_s: float = Field(default=10.0, gt=0)
+    #: Features por mensaje batch. le=256 = maxItems del contrato `feature_batch`
+    #: (~64 KB « 128 KB del publish de IoT); el default 64 ≈ 16 KB.
+    cloud_features_batch_max: int = Field(default=64, gt=0, le=256)
 
     @property
     def thing_name(self) -> str:

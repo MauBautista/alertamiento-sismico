@@ -43,6 +43,7 @@ from takab_edge.rules import RuleEngine, commands_for
 from takab_edge.security import SecurityManager
 from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 from takab_edge.signal import FeatureExtractor
+from takab_edge.telemetry import FEATURES_BATCH_TOPIC, FeatureBatcher
 
 log = logging.getLogger("takab_edge.supervisor")
 
@@ -156,8 +157,17 @@ class EdgeSupervisor:
             status_topic=s.status_topic,
             # Cota SOLO para telemetría reponible: un offline largo no debe agotar
             # RAM/disco ni volver el backfill de minutos. Eventos/ACKs sin cota.
-            topic_caps={FEATURES_TOPIC: s.cloud_telemetry_cap, HEALTH_TOPIC: s.cloud_telemetry_cap},
+            # El topic batch (T-1.56) usa una cota DERIVADA (cap // batch_max):
+            # un registro batch vale hasta batch_max features — misma cota en
+            # features-equivalentes, sin perilla nueva.
+            topic_caps={
+                FEATURES_TOPIC: s.cloud_telemetry_cap,
+                HEALTH_TOPIC: s.cloud_telemetry_cap,
+                FEATURES_BATCH_TOPIC: max(1, s.cloud_telemetry_cap // s.cloud_features_batch_max),
+            },
         )
+        # Batcheo escalonado por tier (T-1.56): SOLO publicación de features.
+        self.telemetry = FeatureBatcher(s, cloud=self.cloud)
         self.health = HealthMonitor(
             s,
             gpio=self.gpio,
@@ -203,6 +213,7 @@ class EdgeSupervisor:
                 self.rules,
                 self.actuators,
                 self.cloud,
+                self.telemetry,
                 self.health,
                 self.config,
                 self.security,
@@ -241,7 +252,8 @@ class EdgeSupervisor:
             log.exception("buffer.append falló (¿disco lleno?); la detección continúa")
         # Telemetría 1 s → nube DESPUÉS de actuar (sin dedup, como los heartbeats;
         # publicar jamás bloquea ni condiciona la vía de actuación — §4.2).
-        self.cloud.publish(FEATURES_TOPIC, feature)
+        # T-1.56: el batcher decide la ruta por tier (normal → lote; watch+ → 1 Hz).
+        self.telemetry.submit(feature, decision.tier)
 
     def _on_health_snapshot(self, snapshot: HealthSnapshot) -> None:
         self.cloud.publish(HEALTH_TOPIC, snapshot)
@@ -250,6 +262,9 @@ class EdgeSupervisor:
         decision = self.rules.evaluate_sasmex(signal)
         if decision is not None:
             self._act_and_publish(decision, None)
+            # T-1.56: la escalación por SASMEX no pasa por _on_packet — drenar el
+            # acumulado YA para que el contexto pre-evento llegue antes que el 1 Hz.
+            self.telemetry.notify_tier(decision.tier)
 
     def _act_and_publish(self, decision: TierDecision, feature: Feature1s | None) -> None:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:

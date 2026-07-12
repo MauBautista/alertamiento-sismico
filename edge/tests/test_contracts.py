@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from takab_edge.contracts import (
     ActuatorAck,
     ActuatorAction,
@@ -53,3 +54,27 @@ def test_all_five_tiers_present():
         "evacuate_or_hold",
         "manual_only",
     }
+
+
+def test_feature_batch_exige_1_a_256_features():
+    """T-1.56: lote nunca vacío y ≤256 (≈64 KB « 128 KB, tope de publish de IoT)."""
+    from pydantic import ValidationError
+    from takab_edge.contracts import Feature1s, FeatureBatch
+
+    def feat() -> Feature1s:
+        return Feature1s(
+            station="R4F74",
+            channel="EHZ",
+            window_start=utcnow(),
+            pga=0.001,
+            pgv=0.01,
+            rms=0.5,
+            sta_lta=1.0,
+        )
+
+    with pytest.raises(ValidationError):
+        FeatureBatch(gateway_id="gw-dev-0001", features=[])
+    with pytest.raises(ValidationError):
+        FeatureBatch(gateway_id="gw-dev-0001", features=[feat() for _ in range(257)])
+    ok = FeatureBatch(gateway_id="gw-dev-0001", features=[feat()])
+    assert ok.kind == "feature_batch" and len(ok.features) == 1

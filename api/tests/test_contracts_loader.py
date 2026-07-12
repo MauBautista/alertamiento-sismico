@@ -93,6 +93,7 @@ def test_unknown_kind_rejected() -> None:
     [
         ("takab/events", "local_event"),
         ("takab/features", "feature_1s"),
+        ("takab/features/batch", "feature_batch"),  # T-1.56
         ("takab/health", "health_snapshot"),
         ("takab/acks", "actuator_ack"),
         ("takab/status/gw-x", "status"),
@@ -101,6 +102,18 @@ def test_unknown_kind_rejected() -> None:
 )
 def test_kind_for_topic_total(topic: str, kind: str) -> None:
     assert kind_for_topic(topic) == kind
+
+
+def test_feature_batch_rechaza_lote_vacio_y_features_invalidas() -> None:
+    """T-1.56: minItems=1 y cada elemento valida como Feature1s completo."""
+    schema = _schema("feature_batch")
+    payload = _minimal_instance(schema, schema.get("$defs", {}))
+    payload["features"] = []
+    with pytest.raises(ContractError, match="features"):
+        validate("feature_batch", payload)
+    payload["features"] = [{"station": "R4F74"}]  # sin channel/window_start/pga…
+    with pytest.raises(ContractError):
+        validate("feature_batch", payload)
 
 
 @pytest.mark.parametrize("topic", ["takab/nope", "otra/cosa", "takab/status/", ""])

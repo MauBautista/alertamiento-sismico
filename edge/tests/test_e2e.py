@@ -10,6 +10,7 @@ from simulators.wr1 import WR1Simulator
 from takab_edge.contracts import ActuatorChannel, Tier
 from takab_edge.evidence import FakeEvidenceUploader, collect_evidence
 from takab_edge.supervisor import EVENTS_TOPIC, FEATURES_TOPIC
+from takab_edge.telemetry import FEATURES_BATCH_TOPIC
 
 FULL_SEQUENCE = (
     ActuatorChannel.SIREN,
@@ -82,4 +83,10 @@ def test_load_many_noise_packets_no_spurious_alert(supervisor):
     assert supervisor.rules.last_decision.tier is Tier.NORMAL
     assert len(supervisor.buffer) >= 300
     assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 0  # sin eventos que encolar
-    assert supervisor.cloud.queued_by_topic(FEATURES_TOPIC) >= 300  # la telemetría SÍ fluye
+    # T-1.56: en tier normal la telemetría fluye BATCHEADA — 300 features son
+    # unos pocos lotes encolados + el resto acumulado en el batcher, no 300 publishes.
+    assert supervisor.cloud.queued_by_topic(FEATURES_TOPIC) == 0
+    batch_max = supervisor.settings.cloud_features_batch_max
+    queued_batches = supervisor.cloud.queued_by_topic(FEATURES_BATCH_TOPIC)
+    assert queued_batches >= 300 // batch_max
+    assert queued_batches * batch_max + supervisor.telemetry.pending >= 300

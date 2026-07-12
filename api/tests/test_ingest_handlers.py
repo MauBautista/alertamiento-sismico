@@ -24,6 +24,7 @@ from takab_api.ingest.handlers import (
     check_identity,
     handle_actuator_ack,
     handle_feature_1s,
+    handle_feature_batch,
     handle_health_snapshot,
     handle_local_event,
     handle_status,
@@ -243,6 +244,73 @@ def test_feature_attributed_to_sensor_site_not_gateway_site(fleet_multi, ctx_mul
         (SENSOR_B,),
     ).fetchone()
     assert (str(row[0]), str(row[1])) == (SITE_B, SENSOR_B)  # NO el sitio del gateway
+
+
+# --------------------------------------------------------------------------
+# feature_batch → N × waveform_features_1s (T-1.56)
+# --------------------------------------------------------------------------
+
+
+def _batch(features: list[dict], **over: object) -> dict:
+    base = {
+        "gateway_id": "gw-dev-0001",
+        "features": features,
+        "batched_at": "2026-07-06T10:00:10+00:00",
+    }
+    base.update(over)
+    return base
+
+
+def _three_features() -> list[dict]:
+    return [
+        _feature(window_start=f"2026-07-06T10:00:0{i}+00:00", channel=ch)
+        for i, ch in ((0, "ENZ"), (1, "ENZ"), (1, "EHZ"))
+    ]
+
+
+def test_batch_inserta_n_filas_en_la_misma_transaccion(fleet, ctx, meta) -> None:
+    assert handle_feature_batch(fleet, _batch(_three_features()), meta, ctx).is_ok
+    assert _count(fleet, "SELECT count(*) FROM waveform_features_1s") == 3
+
+
+def test_batch_reentrega_identica_cero_duplicados(fleet, ctx, meta) -> None:
+    """SQS at-least-once / QoS1: el MISMO lote dos veces ⇒ N filas, no 2N."""
+    payload = _batch(_three_features())
+    assert handle_feature_batch(fleet, payload, meta, ctx).is_ok
+    assert handle_feature_batch(fleet, payload, meta, ctx).is_ok
+    assert _count(fleet, "SELECT count(*) FROM waveform_features_1s") == 3
+
+
+def test_batch_gateway_mismatch_rechaza_y_audita(fleet, ctx, meta) -> None:
+    res = handle_feature_batch(fleet, _batch(_three_features(), gateway_id="gw-x"), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "gateway mismatch" in res.reason
+    assert _count(fleet, "SELECT count(*) FROM waveform_features_1s") == 0
+    assert _audit_rejects(fleet) == 1
+
+
+def test_batch_parcialmente_invalido_inserta_validas_y_rechaza(fleet, ctx, meta) -> None:
+    """1 station desconocida entre 3: las 2 buenas SE ESCRIBEN (el consumer
+    commitea en REJECT con handler_ran=True) y el original va a DLQ con razón."""
+    features = _three_features()
+    features[1]["station"] = "SIM099"
+    res = handle_feature_batch(fleet, _batch(features), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "1/3" in res.reason and "SIM099" in res.reason
+    assert _count(fleet, "SELECT count(*) FROM waveform_features_1s") == 2
+    assert _audit_rejects(fleet) == 1
+
+
+def test_batch_atribuye_cada_feature_al_sitio_de_su_sensor(fleet_multi, ctx_multi, meta) -> None:
+    features = [
+        _feature(window_start="2026-07-06T10:00:00+00:00"),
+        _feature(window_start="2026-07-06T10:00:00+00:00", station="SIMB02"),
+    ]
+    assert handle_feature_batch(fleet_multi, _batch(features), meta, ctx_multi).is_ok
+    rows = fleet_multi.execute(
+        "SELECT sensor_id::text, site_id::text FROM waveform_features_1s ORDER BY sensor_id"
+    ).fetchall()
+    assert sorted(rows) == sorted([(SENSOR, SITE), (SENSOR_B, SITE_B)])
 
 
 # --------------------------------------------------------------------------
