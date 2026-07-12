@@ -21,3 +21,8 @@ output "dlq_arns" {
 output "dlq_urls" {
   value = { for k, q in aws_sqs_queue.dlq : k => q.url }
 }
+
+# A-4: las alarmas de profundidad dimensionan por QueueName.
+output "dlq_names" {
+  value = { for k, q in aws_sqs_queue.dlq : k => q.name }
+}

@@ -125,3 +125,16 @@ module "ci_oidc" {
   state_bucket_arn = "arn:aws:s3:::takab-tfstate-${data.aws_caller_identity.current.account_id}"
   lock_table_arn   = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/takab-tflock"
 }
+
+# Observabilidad hacia HUMANOS (A-4 de la auditoria de cierre): SNS on-call +
+# alarmas de DLQ, instancia co-locada, errores de reglas IoT y gabinete real
+# SIN ENLACE. Costo: centavos/mes (SNS email gratis; ~10 alarmas estandar).
+module "observability" {
+  source = "../../modules/observability"
+
+  ops_alert_email           = var.ops_alert_email
+  dlq_names                 = module.messaging.dlq_names
+  instance_id               = module.database.instance_id
+  iot_rule_errors_log_group = module.iot_core.rule_errors_log_group_name
+  paged_gateways            = var.paged_gateways
+}

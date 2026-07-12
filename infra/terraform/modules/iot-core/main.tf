@@ -129,6 +129,16 @@ resource "aws_iam_role_policy" "rules" {
           "${aws_cloudwatch_log_group.rule_errors.arn}:*",
         ]
       },
+      {
+        # A-4: la regla de presencia publica la metrica de flota. PutMetricData
+        # no admite recurso especifico; se acota por namespace.
+        Effect   = "Allow"
+        Action   = "cloudwatch:PutMetricData"
+        Resource = "*"
+        Condition = {
+          StringEquals = { "cloudwatch:namespace" = "Takab/Fleet" }
+        }
+      },
     ]
   })
 }
@@ -171,5 +181,44 @@ resource "aws_iot_topic_rule" "this" {
   }
 
   # IoT valida los permisos del rol al crear la regla: evita la carrera con IAM.
+  depends_on = [aws_iam_role_policy.rules]
+}
+
+# --- Presencia -> metrica CloudWatch (A-4: gabinete SIN ENLACE pagina) -----------
+# El LWT retenido en takab/status/<thing> ya viaja a SQS (regla takab_dev_status);
+# estas DOS reglas ademas lo convierten en datapoints de la metrica Takab/Fleet
+# (metric_name = nombre del thing) para alarmar desconexiones sin instrumentar la
+# aplicacion. Dos reglas con WHERE y valor LITERAL (nada de CASE en templates):
+# lo aburrido es lo que no se rompe.
+locals {
+  status_metric_rules = {
+    takab_dev_status_metric_offline = { status = "offline", value = "0" }
+    takab_dev_status_metric_online  = { status = "online", value = "1" }
+  }
+}
+
+resource "aws_iot_topic_rule" "gateway_status_metric" {
+  for_each = local.status_metric_rules
+
+  name        = each.key
+  enabled     = true
+  sql         = "SELECT status FROM 'takab/status/+' WHERE status = '${each.value.status}'"
+  sql_version = "2016-03-23"
+
+  cloudwatch_metric {
+    metric_name      = "$${topic(3)}"
+    metric_namespace = "Takab/Fleet"
+    metric_unit      = "None"
+    metric_value     = each.value.value
+    role_arn         = aws_iam_role.rules.arn
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = aws_cloudwatch_log_group.rule_errors.name
+      role_arn       = aws_iam_role.rules.arn
+    }
+  }
+
   depends_on = [aws_iam_role_policy.rules]
 }

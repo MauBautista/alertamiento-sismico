@@ -43,7 +43,11 @@ cerrada hoy:**
    Ver hallazgo A-3.
 3. **Los gates #3 físicos siguen abiertos** (soak 24 h, restart del Shake, semántica del radio
    WR-1, latencia real de relé) — §10.
-4. **Nadie es paginado cuando un gabinete cae**: cero alarmas CloudWatch, cero SNS (hallazgo A-4).
+4. ~~**Nadie es paginado cuando un gabinete cae**~~ — **CÓDIGO LISTO (2026-07-11), APPLY
+   PENDIENTE:** módulo `infra/terraform/modules/observability` (SNS on-call + alarmas de DLQ,
+   instancia, errores de reglas IoT y gabinete real SIN ENLACE vía LWT→métrica). `terraform
+   validate` verde; falta `terraform apply` (Mauricio) + confirmar la suscripción de email
+   (hallazgo A-4).
 
 **Para "flota de producción" falta, en orden:** A-1 (push + CI verde), A-3 (re-acreditar el
 hito), A-2 (fail-loud de la pin factory), A-4 (alarmas a humanos), A-5 (restore probado +
@@ -356,13 +360,33 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 ### [x] O1 · Alarma a humano cuando un gabinete cae / batería baja
 - **Cómo verificar:** `grep -rn "aws_cloudwatch_metric_alarm\|aws_sns_topic" infra/terraform --include='*.tf'`
 - **Criterio:** existe paginado con umbral de tiempo, no solo un color en la UI.
-- **Resultado:** **FAIL → hallazgo A-4.** El grep devuelve **cero recursos** (exit=1): no hay
-  ninguna alarma CloudWatch ni ningún topic SNS en toda la infra. La detección existe solo como
-  estado derivado para la UI (OPERATIVO/DEGRADADO/SIN ENLACE, umbral 5 min —
+- **Resultado (al momento de la auditoría):** **FAIL → hallazgo A-4.** El grep devolvía **cero
+  recursos** (exit=1): ni una alarma CloudWatch ni un topic SNS en toda la infra. La detección
+  existía solo como estado derivado para la UI (OPERATIVO/DEGRADADO/SIN ENLACE, umbral 5 min —
   `routers/fleet.py:109`) y el fail-open abre incidente sintético SOLO si un evento de quórum
   confirma sismo en rango (`incident/fail_open.py:103,174`). Un gabinete offline o con batería
-  baja SIN sismo **no notifica a nadie**. El único correo automatizado es el presupuesto de
+  baja SIN sismo **no notificaba a nadie**. El único correo automatizado era el presupuesto de
   costos (`envs/dev/budget.tf:1-20`).
+- **Remediación en código (2026-07-11) — APPLY PENDIENTE (GATE-DESPLIEGUE):** nuevo módulo
+  `infra/terraform/modules/observability` cableado en `envs/dev/main.tf`:
+  - `aws_sns_topic` `takab-dev-ops-alerts` + suscripción email (`var.ops_alert_email`;
+    **requiere confirmación manual del correo tras el apply**).
+  - Alarmas: DLQ > 0 por cola (`ApproximateNumberOfMessagesVisible`, 5 min), instancia
+    co-locada (`StatusCheckFailed` con missing=breaching — parar la nube pagina a propósito —
+    y CPU > 90 % 15 min), errores de reglas IoT (metric filter sobre el log group del
+    error_action) y **gabinete real SIN ENLACE**: dos reglas IoT nuevas
+    (`takab_dev_status_metric_offline/online`, `modules/iot-core/main.tf`) convierten el LWT
+    retenido `{"status":"online"|"offline"}` en métrica `Takab/Fleet` (metric_name = thing) —
+    alarma por thing en `var.paged_gateways` (default `["gw-dev-0001"]`; los `gw-sim-*` NO
+    paginan: viven apagados por diseño).
+  - Verificación: `terraform fmt -check` + `init -backend=false` + `validate` = **Success**
+    (idéntico al job infra del CI). El comportamiento real de alarmas/SNS solo se acredita
+    tras el apply — sin marcar.
+  - Rebanada restante documentada: batería por gabinete y 5xx de la API requieren publicar
+    métricas desde la aplicación (device_health/Caddy) — tarea futura de A-4.
+- `[ ]` **GATE-DESPLIEGUE (A-4):** `terraform apply` (Mauricio, con `!`), confirmar la
+  suscripción SNS del correo, y probar UNA alarma real (p. ej. `make cloud-stop`/`cloud-start`
+  debe producir el par ALARM→OK de `takab-dev-ec2-status-check`).
 
 ### [x] O2 · Load-test de ingesta vs SLOs
 - **Cómo verificar:** `takab-docs/runbooks/RUNBOOK-load-test-ingesta.md`.
@@ -492,7 +516,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | A-1 | **REMEDIADO 2026-07-11 (mismo día):** `main` remota estaba en ROJO con 21 commits sin push; se subieron (`9361e27..6973ba2`) y el run **29163887613** dio **5/5 jobs verdes**. | `gh run view 29066872312` (rojo, 650 errors) → `gh run view 29163887613` (success) | ÚNICO pendiente: adoptar y documentar la regla "solo se despliega desde main pusheado y verde" en el runbook de deploy (`deploy/cloud/README.md`) |
 | A-2 | **REMEDIADO EN CÓDIGO 2026-07-11:** `ensure_prod_pin_factory()` fija `LGPIOFactory` explícita en prod y truena con remediación si no puede (jamás auto-selección a `native`); env/factory previa se respetan con warning (vía de tests). 7 tests nuevos (lgpio falso), suite edge 280 verde | `gpio/__init__.py` (guard + wire en `_on_start`), `edge/tests/test_pin_factory.py`, comentarios systemd actualizados | Pendiente SOLO el gate físico G-01: reboot real y journal con "pin factory de producción fijada" (el lgpio real no existe en el equipo de dev) |
 | A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
-| A-4 | **Cero paginado a humanos**: sin CloudWatch alarms ni SNS; gabinete caído/batería/DLQ/5xx = solo color en la UI | grep `metric_alarm\|sns_topic` en infra = exit 1; `fail_open.py:103` solo con quórum | Terraform: SNS topic on-call + alarmas mínimas (gateway offline > 5 min por LWT/heartbeat, DLQ > 0 por 5 min, 5xx de la API, disco/CPU del EC2, batería < umbral) |
+| A-4 | **CÓDIGO LISTO 2026-07-11 · APPLY PENDIENTE:** módulo `observability` (SNS on-call + alarmas DLQ/instancia/reglas-IoT/gabinete-offline vía LWT→métrica `Takab/Fleet`); `terraform validate` Success | `modules/observability/*`, `modules/iot-core/main.tf` (2 reglas status→métrica + IAM acotado por namespace), `envs/dev/main.tf` | GATE-DESPLIEGUE: `terraform apply` + confirmar email SNS + probar par ALARM→OK con `cloud-stop/start`. Rebanada futura: batería y 5xx de la API (métricas desde la app) |
 | A-5 | **Backup sin restore probado ni RPO/RTO** (solo snapshots EBS diarios, retain 7) | `database/main.tf:268-288`; sin runbook de restore en `takab-docs/runbooks/` | Runbook backup/restore + prueba real de restauración (G-09), PITR con archivado WAL (p.ej. WAL-G a S3), declarar RPO/RTO |
 | A-6 | **Audio de voceo (simulacro/sismo) INEXISTENTE** — solicitado en esta auditoría; el Pi 5 ni siquiera tiene jack 3.5 mm | grep audio en repo = exit 1; sirena = relé seco (`contracts.py:54`) | Nueva tarea edge `audio`: (1) BOM: DAC USB o HAT I2S + amplificador + bocina de intemperie; (2) módulo `edge/takab_edge/audio` FUERA del camino crítico (el relé JAMÁS espera al audio); (3) assets versionados con sha256 — mensaje de SISMO claramente distinto al de SIMULACRO; (4) disparo determinista subordinado a `rules`/reflejo + botón drill en panel LAN con PIN; (5) autotest periódico de bocina con reporte al heartbeat; (6) systemd hardening igual que takab-gpio |
 

@@ -52,3 +52,22 @@ variable "ses_verified_emails" {
   type    = list(string)
   default = ["mauriciobaujim@gmail.com"]
 }
+
+variable "ops_alert_email" {
+  description = <<-EOT
+    Correo de on-call operativo (A-4): recibe las alarmas de DLQ, instancia,
+    errores de reglas IoT y gabinete SIN ENLACE. La suscripcion SNS llega por
+    email y hay que CONFIRMARLA manualmente tras el apply.
+  EOT
+  type        = string
+  default     = "mauriciobaujim@gmail.com"
+}
+
+variable "paged_gateways" {
+  description = <<-EOT
+    Things cuyo LWT offline pagina a un humano. SOLO los gateways reales: los
+    gw-sim-* viven apagados por diseno y paginarian ruido permanente.
+  EOT
+  type        = list(string)
+  default     = ["gw-dev-0001"]
+}

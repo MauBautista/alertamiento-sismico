@@ -13,3 +13,7 @@ output "fleet_policy_name" {
 output "iot_endpoint" {
   value = data.aws_iot_endpoint.data_ats.endpoint_address
 }
+
+output "rule_errors_log_group_name" {
+  value = aws_cloudwatch_log_group.rule_errors.name
+}
