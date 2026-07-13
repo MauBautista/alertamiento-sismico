@@ -311,3 +311,137 @@ def test_rerun_after_send_does_not_resend(scenario: _Scenario) -> None:
 
     assert len(providers["webhook"].sent) == 1
     assert len(scenario.notify_actions(iid)) == 1
+
+
+# --- T-1.61 · Notificación al inspector en dictamen_request ---------------------
+
+INSPECTOR_CONFIG = {
+    "notifications": {
+        **NOTIF_CONFIG["notifications"],
+        "inspector_emails": ["inspector@example.mx", "perito@example.mx"],
+    }
+}
+
+
+def _seed_action(
+    scenario: _Scenario,
+    incident_id: str,
+    *,
+    ts: datetime,
+    requested_by: str = "op-ana",
+    note: str | None = "urge dictamen",
+) -> str:
+    import json as _json
+
+    action = str(uuid.uuid4())
+    scenario.conn.execute(
+        "INSERT INTO incident_actions (action_id, incident_id, tenant_id, ts, kind, "
+        "actor, payload) VALUES (%s,%s,%s,%s,'dictamen_request',%s,%s::jsonb)",
+        (
+            action,
+            incident_id,
+            scenario.tenant,
+            ts,
+            f"user:{requested_by}",
+            _json.dumps({"requested_by": requested_by, "note": note}),
+        ),
+    )
+    scenario.conn.commit()
+    return action
+
+
+def _seed_signed_dictamen(scenario: _Scenario, incident_id: str, *, created_at: datetime) -> None:
+    scenario.conn.execute(
+        "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by, created_at) "
+        "VALUES (%s,%s,'inhabit_monitor','{}'::jsonb,%s,%s)",
+        (scenario.tenant, incident_id, str(uuid.uuid4()), created_at),
+    )
+    scenario.conn.commit()
+
+
+def _action_jobs(scenario: _Scenario, action_id: str) -> list[dict]:
+    return scenario.conn.execute(
+        "SELECT channel, mode, status, target FROM notification_jobs WHERE action_id = %s",
+        (action_id,),
+    ).fetchall()
+
+
+def _old_incident(scenario: _Scenario) -> str:
+    """Incidente FUERA del lookback: su cascada no participa (aísla la acción)."""
+    return scenario.seed_incident(opened_at=BASE - timedelta(days=2))
+
+
+def test_dictamen_request_envia_email_al_inspector_con_link(scenario: _Scenario) -> None:
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_action(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    run_notify_pass(
+        scenario.conn,
+        Settings(notify_web_base_url="https://soc.example.mx/"),
+        providers,
+        now=BASE,
+    )
+    jobs = _action_jobs(scenario, action)
+    assert len(jobs) == 1 and jobs[0]["status"] == "sent"
+    assert jobs[0]["target"]["to"] == ["inspector@example.mx", "perito@example.mx"]
+    assert len(providers["email"].sent) == 1
+    _target, message = providers["email"].sent[0]
+    assert message["kind"] == "dictamen_request"
+    assert "Solicitud de dictamen" in message["headline"]
+    assert message["requested_by"] == "op-ana"
+    assert message["note"] == "urge dictamen"
+    assert message["link"] == f"https://soc.example.mx/triage?incident={incident}"
+
+
+def test_re_run_no_duplica_el_correo(scenario: _Scenario) -> None:
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_action(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))
+    assert len(_action_jobs(scenario, action)) == 1
+    assert len(providers["email"].sent) == 1
+
+
+def test_solicitud_ya_firmada_no_notifica(scenario: _Scenario) -> None:
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_action(scenario, incident, ts=BASE - timedelta(minutes=10))
+    _seed_signed_dictamen(scenario, incident, created_at=BASE - timedelta(minutes=5))
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    assert _action_jobs(scenario, action) == []
+    assert providers["email"].sent == []
+
+
+def test_sin_inspector_emails_se_omite_con_gracia(scenario: _Scenario) -> None:
+    scenario.seed_config(NOTIF_CONFIG)  # sin inspector_emails
+    incident = _old_incident(scenario)
+    action = _seed_action(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    assert _action_jobs(scenario, action) == []
+    assert providers["email"].sent == []
+
+
+def test_convive_con_el_email_del_incidente_en_el_mismo_pass(scenario: _Scenario) -> None:
+    """El job del inspector NO colisiona con la cascada del MISMO incidente:
+    ni en notification_jobs (índices parciales 0014) ni en el timeline
+    (actor con sufijo de action_id)."""
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = scenario.seed_incident(
+        severity="critical", opened_at=BASE
+    )  # cascada + email crítico
+    action = _seed_action(scenario, incident, ts=BASE)
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    inspector_jobs = _action_jobs(scenario, action)
+    assert len(inspector_jobs) == 1 and inspector_jobs[0]["status"] == "sent"
+    # El email crítico del incidente TAMBIÉN salió (paralelo, mismo canal).
+    kinds = [m.get("kind") for _t, m in providers["email"].sent]
+    assert kinds.count("dictamen_request") == 1
+    assert len(providers["email"].sent) >= 2
+    # Dos notify_sent del mismo incidente/pass sin colisión de unique.
+    assert len(scenario.notify_actions(incident)) >= 2

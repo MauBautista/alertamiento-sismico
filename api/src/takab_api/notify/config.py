@@ -52,3 +52,24 @@ def resolve_destinations(config: dict | None) -> dict[str, dict]:
             logger.warning("notifications.email inválido (sin destinatarios) → omitido")
 
     return out
+
+
+def resolve_inspector_emails(config: dict | None) -> list[str]:
+    """Correos del INSPECTOR (``notifications.inspector_emails``, T-1.61).
+
+    Lista SEPARADA de ``notifications.email`` a propósito: aquel es el ops del
+    tenant (cascada de incidentes); este es la audiencia profesional de las
+    solicitudes de dictamen. Sin lista válida ⇒ [] (el orquestador loguea y
+    omite — degradación grácil, jamás inventa destinatarios).
+    """
+    raw = config.get("notifications") if isinstance(config, dict) else None
+    if not isinstance(raw, dict):
+        return []
+    emails = raw.get("inspector_emails")
+    if isinstance(emails, str) and emails:
+        return [emails]
+    if isinstance(emails, list) and all(isinstance(x, str) and x for x in emails):
+        return list(emails)
+    if emails is not None:
+        logger.warning("notifications.inspector_emails inválido → omitido")
+    return []

@@ -784,8 +784,16 @@ CREATE TABLE notification_jobs (
   created_at  timestamptz NOT NULL DEFAULT now(),
   sent_at     timestamptz,
   error       text,
-  UNIQUE (incident_id, channel, mode)
+  -- [T-1.61] Job disparado por una ACCIÓN (dictamen_request → inspector);
+  -- NULL = job de incidente (cascada/paralelo clásicos).
+  action_id   uuid REFERENCES incident_actions(action_id)
 );
+-- [T-1.61] Unicidad dividida (0014): la clave original solo para jobs de
+-- incidente; 1 job por acción y canal para los de acción (re-runs no duplican).
+CREATE UNIQUE INDEX uq_notification_jobs_incident
+  ON notification_jobs (incident_id, channel, mode) WHERE action_id IS NULL;
+CREATE UNIQUE INDEX uq_notification_jobs_action
+  ON notification_jobs (action_id, channel) WHERE action_id IS NOT NULL;
 CREATE INDEX idx_notification_jobs_due    ON notification_jobs (due_at) WHERE status = 'pending';
 CREATE INDEX idx_notification_jobs_tenant ON notification_jobs (tenant_id, created_at DESC);
 GRANT SELECT ON notification_jobs TO takab_app;

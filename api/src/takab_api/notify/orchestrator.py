@@ -26,7 +26,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 
-from takab_api.notify.config import resolve_destinations
+from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import NotifyError, NotifyProvider
 from takab_api.settings import Settings
@@ -64,17 +64,52 @@ INSERT INTO notification_jobs
   (tenant_id, incident_id, channel, mode, position, target, due_at, deadline_at)
 VALUES (%(tenant)s, %(incident)s, %(channel)s, %(mode)s, %(position)s,
         %(target)s::jsonb, %(due_at)s, %(deadline_at)s)
-ON CONFLICT (incident_id, channel, mode) DO NOTHING
+ON CONFLICT (incident_id, channel, mode) WHERE action_id IS NULL DO NOTHING
+"""
+
+# [T-1.61] Solicitudes de dictamen SIN job y SIN dictamen firmado posterior —
+# espejo del _PENDING_REQUEST_SQL de incidents_ops.py (409): una solicitud ya
+# satisfecha no molesta al inspector.
+_DICTAMEN_REQUESTS_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'dictamen_request'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM dictamens d
+    WHERE d.incident_id = a.incident_id
+      AND d.signed_by IS NOT NULL
+      AND d.created_at > a.ts
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# 1 job por (action_id, channel) — índice único parcial de 0014: los re-runs
+# del pass y las re-entregas NOTIFY no duplican el correo del inspector.
+_INSERT_ACTION_JOB_SQL = """
+INSERT INTO notification_jobs
+  (tenant_id, incident_id, channel, mode, position, target, due_at, action_id)
+VALUES (%(tenant)s, %(incident)s, 'email', 'parallel', 0,
+        %(target)s::jsonb, %(due_at)s, %(action)s)
+ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
 """
 
 _DUE_JOBS_SQL = """
 SELECT j.job_id, j.tenant_id, j.incident_id, j.channel, j.mode, j.position,
-       j.target, j.due_at, j.deadline_at,
+       j.target, j.due_at, j.deadline_at, j.action_id,
        i.severity, i.trigger, i.state, i.opened_at, i.event_id, i.site_id,
-       s.name AS site_name, s.code AS site_code
+       s.name AS site_name, s.code AS site_code,
+       a.actor AS action_actor, a.payload AS action_payload
 FROM notification_jobs j
 JOIN incidents i ON i.incident_id = j.incident_id
 JOIN sites s ON s.site_id = i.site_id
+LEFT JOIN incident_actions a ON a.action_id = j.action_id
 WHERE j.status = 'pending' AND j.due_at <= %(now)s
 ORDER BY j.due_at, j.position, j.job_id
 """
@@ -139,7 +174,10 @@ def run_notify_pass(
     counts = {"enqueued": 0, "sent": 0, "failed": 0, "skipped": 0}
 
     counts["enqueued"] = _enqueue(conn, settings, config_cache, now=now, lookback_s=lookback)
-    _dispatch(conn, providers, config_cache, counts, now=now)
+    counts["enqueued"] += _enqueue_dictamen_requests(
+        conn, config_cache, now=now, lookback_s=lookback
+    )
+    _dispatch(conn, providers, config_cache, counts, now=now, base_url=settings.notify_web_base_url)
 
     if any(counts.values()):
         conn.commit()
@@ -193,6 +231,44 @@ def _enqueue(
     return inserted
 
 
+def _enqueue_dictamen_requests(
+    conn: psycopg.Connection,
+    config_cache: dict,
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-1.61] Un email al inspector por cada ``dictamen_request`` sin atender.
+
+    El wake sale gratis: el trigger NOTIFY de 0004 ya cubre el INSERT en
+    ``incident_actions`` y el worker ya escucha ``takab_live``.
+    """
+    rows = conn.execute(
+        _DICTAMEN_REQUESTS_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        emails = resolve_inspector_emails(_config_for(conn, config_cache, row))
+        if not emails:
+            logger.warning(
+                "dictamen_request %s sin notifications.inspector_emails: se omite",
+                row["action_id"],
+            )
+            continue
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": emails}),
+                "due_at": row["ts"],  # vence YA: paralelo, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
 def _dispatch(
     conn: psycopg.Connection,
     providers: dict[str, NotifyProvider],
@@ -200,6 +276,7 @@ def _dispatch(
     counts: dict[str, int],
     *,
     now: datetime,
+    base_url: str = "",
 ) -> None:
     # Bucle hasta agotar: cada job procesado sale de 'pending', y un fallo
     # puede ADELANTAR el siguiente cascade a `now` → re-select hasta vacío.
@@ -208,7 +285,7 @@ def _dispatch(
         if not rows:
             return
         for row in rows:
-            _dispatch_one(conn, providers, config_cache, counts, row, now=now)
+            _dispatch_one(conn, providers, config_cache, counts, row, now=now, base_url=base_url)
 
 
 def _dispatch_one(
@@ -219,6 +296,7 @@ def _dispatch_one(
     row: dict,
     *,
     now: datetime,
+    base_url: str = "",
 ) -> None:
     incident_id = row["incident_id"]
     if row["mode"] == "cascade":
@@ -242,7 +320,7 @@ def _dispatch_one(
             target["secret"] = secret
 
     try:
-        provider.send(target, _message(row))
+        provider.send(target, _message(row, base_url=base_url))
     except NotifyError as exc:
         _fail(conn, counts, row, str(exc), now=now)
         return
@@ -254,12 +332,16 @@ def _dispatch_one(
         ).rowcount
     latency_s = (now - row["opened_at"]).total_seconds()
     deadline_met = row["deadline_at"] is None or now <= row["deadline_at"]
+    # [T-1.61] Actor único por acción: un email de incidente y uno de dictamen
+    # en el MISMO pass comparten el ts de transacción — con actor plano
+    # colisionarían contra uq_incident_actions_ack.
+    actor_suffix = f":{row['action_id']}" if row.get("action_id") else ""
     conn.execute(
         _ACTION_SQL,
         {
             "incident": incident_id,
             "tenant": row["tenant_id"],
-            "actor": f"system:notify:{row['channel']}:{row['mode']}",
+            "actor": f"system:notify:{row['channel']}:{row['mode']}{actor_suffix}",
             "payload": json.dumps(
                 {
                     "job_id": str(row["job_id"]),
@@ -314,9 +396,14 @@ def _config_for(conn: psycopg.Connection, cache: dict, row: dict) -> dict | None
     return cache[key]
 
 
-def _message(row: dict) -> dict:
-    """Payload de notificación (MVP §8: sin T-MINUS ni magnitud preliminar)."""
-    return {
+def _message(row: dict, *, base_url: str = "") -> dict:
+    """Payload de notificación (MVP §8: sin T-MINUS ni magnitud preliminar).
+
+    [T-1.61] Un job con ``action_id`` es una SOLICITUD DE DICTAMEN al
+    inspector: headline propio, quién la pidió, su nota y el link directo al
+    Triage (si hay base pública configurada).
+    """
+    message = {
         "source": "takab-ailert",
         "incident_id": str(row["incident_id"]),
         "site_id": str(row["site_id"]),
@@ -329,3 +416,12 @@ def _message(row: dict) -> dict:
         "event_id": row["event_id"],
         "headline": f"TAKAB Ailert · Incidente {row['severity']} · {row['site_name']}",
     }
+    if row.get("action_id"):
+        payload = row.get("action_payload") or {}
+        message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
+        message["kind"] = "dictamen_request"
+        message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
+        message["note"] = payload.get("note")
+        if base_url:
+            message["link"] = f"{base_url.rstrip('/')}/triage?incident={row['incident_id']}"
+    return message

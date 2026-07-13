@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     notify_sms_deadline_s: float = 30.0
     notify_email_critical_deadline_s: float = 10.0
     notify_email_from: str = ""
+    #: [T-1.61] Base pública de la consola para links en notificaciones
+    #: (p.ej. https://16-58-11-196.sslip.io). Vacío ⇒ el mensaje va sin link.
+    notify_web_base_url: str = ""
 
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la

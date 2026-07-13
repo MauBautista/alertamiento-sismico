@@ -1327,8 +1327,8 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > (batch ~10 s en `normal`, flush inmediato + 1 Hz en `watch`+); (3) la app móvil es
 > Fase 2; (4) el hardware (bocina/DAC, cámara ONVIF, relés/sirena, radio WR-1) viene en
 > camino ⇒ los gates físicos son la Fase 1.9. Orden: T-1.55 → T-1.56 → T-1.57 → T-1.58 →
-> T-1.59 → T-1.60 → T-1.61 (la T-1.61 es independiente y puede adelantarse). Migraciones:
-> 0012 (T-1.57) → 0013 (T-1.59) → 0014 (T-1.60) → 0015 (T-1.61), todas idempotentes y
+> T-1.59 → T-1.61 → T-1.60 (la T-1.61, independiente, se ADELANTÓ). Migraciones:
+> 0012 (T-1.57) → 0013 (T-1.59) → 0014 (T-1.61) → 0015 (T-1.60), todas idempotentes y
 > reflejadas en `db/schema.sql` en el mismo commit.
 
 ### [x] T-1.55 · Tooling/CI: deudas de raíz (B-3, B-1, B-2, B-5, M-7, A-1) — **COMPLETA (2026-07-12)**
@@ -1454,15 +1454,21 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   en LAN y SOC · alerta real durante drill ⇒ reflejo intacto + abort visible · CERO
   filas en incidents/actions/dictamens (E2E) · 0014 re-aplicable.
 
-### [ ] T-1.61 · Notificación al inspector en `dictamen_request` (independiente)
-- **Componente:** api · **Depende de:** — (el wake por NOTIFY de 0004 ya existe)
-- Migración 0015: `notification_jobs.action_id` + 2 índices únicos parciales (1 job por
-  acción; la clave vieja queda para jobs de incidente). ENQUEUE: acciones
-  `dictamen_request` sin job y sin dictamen firmado posterior (espejo de
-  `_PENDING_REQUEST_SQL`). Destino: lista NUEVA `config.notifications.inspector_emails`
-  (separación de audiencias; sin lista ⇒ warning y skip). Mensaje con solicitante + link
-  `{notify_web_base_url}/triage?incident={id}`. Actor del timeline
-  `system:notify:email:parallel:{action_id}`.
-- Criterios: dictamen-request ⇒ email ≤2 s (E2E simulado) con link · 1 job exacto por
-  action_id ante re-runs · firmado posterior NO notifica · cascada de incidentes intacta
-  (suite previa sin tocar) · 0015 re-aplicable.
+### [x] T-1.61 · Notificación al inspector en `dictamen_request` — **COMPLETA (2026-07-12; adelantada a T-1.60 ⇒ su migración es la 0014)**
+- **Componente:** api · **Depende de:** — (el wake por NOTIFY de 0004 ya existía)
+- **Migración 0014** (idempotente, down/up verificado): `notification_jobs.action_id`
+  + 2 índices únicos parciales — la clave original `WHERE action_id IS NULL` (jobs de
+  incidente; el ON CONFLICT del orquestador apunta al índice parcial) y
+  `(action_id, channel)` (1 job por acción). `db/schema.sql` refleja el estado final.
+- ENQUEUE nueva `_enqueue_dictamen_requests`: acciones sin job y sin dictamen firmado
+  posterior (espejo de `_PENDING_REQUEST_SQL`); job `email/parallel/due_at=a.ts`.
+  Destino: lista NUEVA `notifications.inspector_emails` (`resolve_inspector_emails`;
+  sin lista ⇒ warning y skip). Mensaje bifurcado: headline "Solicitud de dictamen ·
+  {site}", `requested_by`, `note` y link `{notify_web_base_url}/triage?incident={id}`
+  (setting nuevo; vacío ⇒ sin link). Actor del timeline con sufijo `:{action_id}`.
+- Criterios verificados por test: email con solicitante/nota/link (E2E provider
+  simulado) · 1 job exacto por action_id ante re-runs · firmado posterior NO notifica ·
+  sin inspector_emails se omite con gracia · convivencia con la cascada del MISMO
+  incidente en el mismo pass (jobs + timeline sin colisión) · suite previa intacta
+  (38/38) · 0014 re-aplicable.
+> **ESTADO.** api 781 (+5) · ruff limpio.
