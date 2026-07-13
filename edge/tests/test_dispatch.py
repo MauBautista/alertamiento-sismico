@@ -271,6 +271,73 @@ def test_activate_on_system_channel_rejected() -> None:
     assert actuators.executed == []
 
 
+class _FakeDrill:
+    def __init__(self) -> None:
+        self.started: list[tuple[str, float]] = []
+        self.ended: list[str] = []
+        self.start_result: tuple[bool, str] = (True, "simulacro iniciado")
+
+    def start_drill(self, drill_id: str, duration_s: float) -> tuple[bool, str]:
+        self.started.append((drill_id, duration_s))
+        return self.start_result
+
+    def end_drill(self, drill_id: str | None = None, reason: str = "") -> bool:
+        self.ended.append(drill_id or "")
+        return True
+
+
+def _drill_dispatcher():
+    settings = EdgeSettings(dev_mode=True, command_enabled=True)
+    security = SecurityManager(KEY, clock=lambda: NOW)
+    signer = SecurityManager(KEY, clock=lambda: NOW)
+    config_store = ConfigStore(settings, security=security)
+    actuators = _FakeActuators()
+    cloud = _FakeCloud()
+    drill = _FakeDrill()
+    dispatcher = CommandDispatcher(settings, security, config_store, actuators, cloud, drill=drill)
+    return dispatcher, signer, cloud, actuators, drill
+
+
+def test_signed_drill_start_reaches_controller_with_duration() -> None:
+    dispatcher, signer, cloud, actuators, drill = _drill_dispatcher()
+    payload = {
+        "channel": "system",
+        "action": "drill_start",
+        "event_id": "DRILL-abc",
+        "duration_s": 120,
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr1", NOW))
+    assert drill.started == [("DRILL-abc", 120.0)]
+    acks = _acks(cloud)
+    assert acks[0]["success"] is True and acks[0]["action"] == "drill_start"
+    assert actuators.executed == []  # cero relés
+
+
+def test_drill_start_rejected_by_live_alert_acks_reason() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    drill.start_result = (False, "alerta SASMEX real en curso; simulacro rechazado")
+    payload = {"channel": "system", "action": "drill_start", "event_id": "DRILL-x"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr2", NOW))
+    acks = _acks(cloud)
+    assert acks[0]["success"] is False and "SASMEX" in acks[0]["detail"]
+
+
+def test_signed_drill_stop_is_idempotent_ack() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    payload = {"channel": "system", "action": "drill_stop", "event_id": "DRILL-abc"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr3", NOW))
+    assert drill.ended == ["DRILL-abc"]
+    assert _acks(cloud)[0]["success"] is True
+
+
+def test_drill_on_actuator_channel_rejected() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    payload = {"channel": "siren", "action": "drill_start", "event_id": "DRILL-x"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr4", NOW))
+    assert drill.started == []
+    assert _acks(cloud)[0]["success"] is False
+
+
 def test_self_test_rejected_when_command_disabled() -> None:
     dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=False)
     payload = {"channel": "system", "action": "self_test", "event_id": None}

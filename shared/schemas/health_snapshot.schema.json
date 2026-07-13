@@ -167,6 +167,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.4.0",
-  "version": "1.4.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.5.0",
+  "version": "1.5.0"
 }

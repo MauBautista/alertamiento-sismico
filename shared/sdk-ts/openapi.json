@@ -1,6 +1,26 @@
 {
   "components": {
     "schemas": {
+      "ActiveDrillOut": {
+        "description": "El drill vivo del tenant (o null): la consola pinta el banner NO-real.",
+        "properties": {
+          "drill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DrillOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "drill"
+        ],
+        "title": "ActiveDrillOut",
+        "type": "object"
+      },
       "AuditPage": {
         "properties": {
           "items": {
@@ -560,6 +580,215 @@
           "status"
         ],
         "title": "DictamenSignIn",
+        "type": "object"
+      },
+      "DrillCreateIn": {
+        "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).",
+        "properties": {
+          "duration_s": {
+            "default": 300,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "site_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Ids"
+          }
+        },
+        "title": "DrillCreateIn",
+        "type": "object"
+      },
+      "DrillList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DrillOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DrillList",
+        "type": "object"
+      },
+      "DrillOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "drill_id": {
+            "format": "uuid",
+            "title": "Drill Id",
+            "type": "string"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "initiated_by": {
+            "format": "uuid",
+            "title": "Initiated By",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/DrillSiteOut"
+            },
+            "title": "Sites",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "drill_id",
+          "tenant_id",
+          "initiated_by",
+          "note",
+          "duration_s",
+          "started_at",
+          "stopped_at",
+          "stop_reason",
+          "active",
+          "sites"
+        ],
+        "title": "DrillOut",
+        "type": "object"
+      },
+      "DrillSiteOut": {
+        "description": "Participación de UN sitio: el acuse se DERIVA del comando firmado.",
+        "properties": {
+          "ack": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "command_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Status"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "command_id",
+          "command_status",
+          "ack"
+        ],
+        "title": "DrillSiteOut",
         "type": "object"
       },
       "EpicenterRelocateIn": {
@@ -2140,6 +2369,10 @@
             "title": "Ack Incident",
             "type": "boolean"
           },
+          "drill_start": {
+            "title": "Drill Start",
+            "type": "boolean"
+          },
           "edit_thresholds": {
             "title": "Edit Thresholds",
             "type": "boolean"
@@ -2192,7 +2425,8 @@
           "relocate_epicenter",
           "request_dictamen",
           "read_audit",
-          "self_test"
+          "self_test",
+          "drill_start"
         ],
         "title": "MeActions",
         "type": "object"
@@ -4046,6 +4280,122 @@
           }
         },
         "summary": "List Reference Earthquakes"
+      }
+    },
+    "/drills": {
+      "get": {
+        "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).",
+        "operationId": "list_drills_drills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Drills"
+      },
+      "post": {
+        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.",
+        "operationId": "start_drill_drills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrillCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Drill"
+      }
+    },
+    "/drills/active": {
+      "get": {
+        "description": "El drill vivo del tenant (banner de la consola). Cualquier rol web lo ve.",
+        "operationId": "active_drill_drills_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveDrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Active Drill"
+      }
+    },
+    "/drills/{drill_id}/stop": {
+      "post": {
+        "description": "Termina el simulacro antes de la ventana y avisa a los gabinetes.",
+        "operationId": "stop_drill_drills__drill_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Drill"
       }
     },
     "/events": {

@@ -92,6 +92,10 @@ ACTIONS: tuple[str, ...] = (
     # del sitio), NO de lectura. soc_operator queda DENEGADO por default: opera
     # incidentes, no mantenimiento del gabinete (divergencia anotada en RBAC §2).
     "self_test",
+    # [T-1.60] Simulacro institucional (POST /drills): acto ADMINISTRATIVO del
+    # tenant (banner NO-real + voceo en N sitios) — superadmin/tenant_admin.
+    # El voceo local del inmueble ya lo cubre el panel LAN con PIN.
+    "drill_start",
 )
 
 
@@ -108,6 +112,7 @@ def _actions(
     request_dictamen: bool = False,
     read_audit: bool = False,
     self_test: bool = False,
+    drill_start: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -121,6 +126,7 @@ def _actions(
         "request_dictamen": request_dictamen,
         "read_audit": read_audit,
         "self_test": self_test,
+        "drill_start": drill_start,
     }
 
 
@@ -136,6 +142,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         request_dictamen=True,
         read_audit=True,
         self_test=True,
+        drill_start=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -147,6 +154,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         request_dictamen=True,
         read_audit=True,
         self_test=True,
+        drill_start=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.

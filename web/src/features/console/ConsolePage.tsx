@@ -20,6 +20,7 @@ import { useNow } from "../../lib/useNow";
 import AlertBanner from "./AlertBanner";
 import DetailPanel from "./DetailPanel";
 import EpicenterModal from "./EpicenterModal";
+import DrillBanner from "./DrillBanner";
 import IncidentTable from "./IncidentTable";
 import MapPanel from "./MapPanel";
 import { useAutoPopup } from "./useAutoPopup";
@@ -125,6 +126,9 @@ function ConsoleWall() {
     <div className="soc-shell" data-screen-label="01 Consola C4I · Live Wall">
       <h1 className="soc-vh">CONSOLA C4I</h1>
       <main className="soc-main">
+        {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
+            incidente vivo se degrada a badge (lo real domina también visualmente). */}
+        <DrillBanner hasLiveIncident={critical !== null} />
         <StateFrame
           label="CONSOLA C4I"
           className="soc-wall"

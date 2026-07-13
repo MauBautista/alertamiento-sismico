@@ -4,7 +4,9 @@
       "enum": [
         "activate",
         "deactivate",
-        "self_test"
+        "self_test",
+        "drill_start",
+        "drill_stop"
       ],
       "title": "ActuatorAction",
       "type": "string"
@@ -63,6 +65,6 @@
   "title": "ActuatorAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/actuator_ack/v1.4.0",
-  "version": "1.4.0"
+  "$id": "https://takab.mx/schemas/actuator_ack/v1.5.0",
+  "version": "1.5.0"
 }

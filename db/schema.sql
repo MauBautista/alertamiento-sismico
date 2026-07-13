@@ -720,8 +720,10 @@ CREATE TABLE commands (
   issued_by   uuid NOT NULL,
   -- [T-1.59] 'system'/'self_test': autodiagnóstico del gabinete (0013). El
   -- router exige el cruce self_test ⇔ system; el edge pulsa relés NO audibles.
+  -- [T-1.60] 'drill_start'/'drill_stop' (0015): simulacro institucional — SOLO
+  -- se emiten vía /drills (el endpoint público de comandos no los acepta).
   channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer','system')),
-  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test')),
+  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test','drill_start','drill_stop')),
   event_id    text,
   nonce       text NOT NULL UNIQUE,
   issued_at   timestamptz NOT NULL DEFAULT now(),
@@ -805,6 +807,55 @@ CREATE POLICY notification_jobs_read ON notification_jobs FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
          OR app_gov_can_see(tenant_id));
 CREATE POLICY notification_jobs_admin ON notification_jobs FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- [T-1.60] Simulacro institucional (0015): registro propio — un drill JAMÁS
+-- toca incidents. El acuse por sitio se DERIVA por JOIN a commands; el estado
+-- 'active' es derivado (stopped_at IS NULL AND now() < started_at + duration_s).
+-- Gov LEE (evidencia para Protección Civil) pero no escribe.
+CREATE TABLE drills (
+  drill_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  initiated_by uuid NOT NULL,
+  note         text,
+  duration_s   integer NOT NULL CHECK (duration_s BETWEEN 30 AND 3600),
+  started_at   timestamptz NOT NULL DEFAULT now(),
+  stopped_at   timestamptz,
+  stop_reason  text
+);
+CREATE INDEX idx_drills_tenant ON drills (tenant_id, started_at DESC);
+
+CREATE TABLE drill_sites (
+  drill_id   uuid NOT NULL REFERENCES drills(drill_id),
+  site_id    uuid NOT NULL REFERENCES sites(site_id),
+  tenant_id  uuid NOT NULL REFERENCES tenants(tenant_id),
+  command_id uuid REFERENCES commands(command_id),  -- NULL = sitio sin gateway comandable
+  PRIMARY KEY (drill_id, site_id)
+);
+
+GRANT SELECT, INSERT, UPDATE ON drills TO takab_app;
+GRANT SELECT, INSERT ON drill_sites TO takab_app;
+GRANT SELECT ON drills, drill_sites TO takab_ingest;
+
+ALTER TABLE drills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drills FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drills_read ON drills FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id));
+CREATE POLICY drills_write ON drills FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drills_admin ON drills FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+ALTER TABLE drill_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drill_sites FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drill_sites_read ON drill_sites FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id));
+CREATE POLICY drill_sites_write ON drill_sites FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drill_sites_admin ON drill_sites FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
 -- Metering diario para billing (T-1.24): agregado por tenant/día; gb_approx

@@ -1440,19 +1440,41 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   celda a celda · cruce 400/roles 403/rate-limit reutilizado · 0013 re-aplicable.
 > **ESTADO.** api 776 (+10) · edge 323 (+15) · web 538 (+3) · ruff/eslint/tsc/build OK.
 
-### [ ] T-1.60 · Modo SIMULACRO institucional E2E (cierra M-1)
-- **Componente:** api + edge + web + db · **Depende de:** T-1.59 (canal system + refactor)
-- Tablas `drills`/`drill_sites` (0014, RLS tenant; gov LEE — evidencia para PC), JAMÁS
-  `incidents`. Acuse por sitio DERIVADO por JOIN a commands. Refactor:
-  `issue_signed_command()` a `commands/service.py` (regla de oro 8 sin duplicar).
-  Comandos firmados `drill_start`/`drill_stop` (event_id = DRILL-<id>). Edge:
-  `DrillController` no-crítico — CERO relés (test), voceo solo con audio_enabled, LO REAL
-  GANA (abort por SASMEX real o tier ≥ restricted, visible en ambas superficies). Panel
-  local: banner "🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL". Web: DrillBanner + modal +
-  registro (poll 10 s; WS anotado como mejora).
-- Criterios: POST /drills → firmado a N sitios → acuses en el registro · banner NO-real
-  en LAN y SOC · alerta real durante drill ⇒ reflejo intacto + abort visible · CERO
-  filas en incidents/actions/dictamens (E2E) · 0014 re-aplicable.
+### [x] T-1.60 · Modo SIMULACRO institucional E2E (cierra M-1) — **COMPLETA (2026-07-12; su migración es la 0015)**
+- **Componente:** api + edge + web + db · **Depende de:** T-1.59 (canal system)
+- **Datos:** tablas `drills`/`drill_sites` (migración 0015, idempotente y verificada
+  down/up; RLS con tenant_id; **gov LEE** el registro — evidencia para Protección Civil
+  — y no escribe), JAMÁS `incidents`. Acuse por sitio DERIVADO por JOIN a `commands`;
+  estado `active` derivado (sin worker de cierre). CHECK de `commands.action` ampliado
+  con drill_start/drill_stop (schemas edge v1.5.0 + vector HMAC `drill_start_with_duration`
+  — la firma cubre `duration_s` dentro del payload canónico).
+- **Refactor regla-de-oro-8:** `issue_signed_command()` extraído a
+  `commands/service.py` — /commands y /drills emiten por la MISMA superficie
+  (rate-limit + clave por gateway fail-closed + nonce + TTL + publish + audit).
+- **API:** `POST /drills` (matriz `drill_start` = superadmin/tenant_admin, anclada;
+  emisión best-effort POR SITIO — un gabinete sin clave queda registrado con
+  command_id NULL), `GET /drills` y `GET /drills/active` para roles de CONSOLA (el
+  banner lo ven todos; RLS acota), `POST /drills/{id}/stop` idempotente que publica
+  `drill_stop` a los sitios que recibieron el start. Los drills NO pasan por el
+  endpoint público de comandos (sus acciones no están en `ACTIONS`).
+- **Edge:** módulo `drill/` (`DrillController`, no-crítico, observador puro): banner
+  en el panel LAN (sección `drill` del status + banner ámbar SIN parpadeo "🔶
+  SIMULACRO — ESTO NO ES UNA ALERTA REAL"; la alerta real SIEMPRE pinta encima),
+  voceo `play_simulacro()` solo con audio habilitado, fin por ventana/stop firmado.
+  **LO REAL GANA:** rechaza el arranque con SASMEX enclavado; un SASMEX real
+  (no pulso CIRES) o tier ≥ restricted lo ABORTAN visiblemente cortando el voceo —
+  test ancla: la sirena del reflejo sigue sonando y CERO relés cambian por el drill.
+- **Web:** `DrillBanner` en la consola (rotulado NO-real, sitios y hora de fin UTC;
+  con incidente vivo se degrada a badge — precedencia visual de lo real), botón
+  INICIAR/TERMINAR solo con `drill_start`; `useActiveDrill` (poll 10 s; push WS
+  anotado como mejora futura).
+- Criterios verificados por test: POST /drills → drill_start firmado por sitio con
+  duración en el payload → registro con acuse derivado · CERO filas en
+  incidents/actions/dictamens (E2E) · abort por SASMEX y por tier con reflejo intacto ·
+  pulso de prueba CIRES NO aborta · roles 403 · gov lee · stop idempotente + drill_stop
+  publicado · banner/badge/gates web · 0015 re-aplicable.
+> **ESTADO.** api 793 (+12) · edge 340 (+17) · web 542 (+7) · demo 22 ·
+> ruff/eslint/tsc/build limpios en los tres lados.
 
 ### [x] T-1.61 · Notificación al inspector en `dictamen_request` — **COMPLETA (2026-07-12; adelantada a T-1.60 ⇒ su migración es la 0014)**
 - **Componente:** api · **Depende de:** — (el wake por NOTIFY de 0004 ya existía)

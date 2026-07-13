@@ -49,6 +49,19 @@
       },
       "payload_canonical_hex": "7b22616374696f6e223a2273656c665f74657374222c226368616e6e656c223a2273797374656d222c226576656e745f6964223a6e756c6c7d",
       "sig": "9c16d1d8de46d1de9232c1d06ab66f548204775ff609cb475f3b35d29caf6f06"
+    },
+    {
+      "name": "drill_start_with_duration",
+      "nonce": "d0111a57a97ed0111a57a97ed0111a57",
+      "ts": "2026-07-12T13:00:00+00:00",
+      "payload": {
+        "channel": "system",
+        "action": "drill_start",
+        "event_id": "DRILL-0a1b2c3d",
+        "duration_s": 300
+      },
+      "payload_canonical_hex": "7b22616374696f6e223a226472696c6c5f7374617274222c226368616e6e656c223a2273797374656d222c226475726174696f6e5f73223a3330302c226576656e745f6964223a224452494c4c2d3061316232633364227d",
+      "sig": "3c8fb067916f57debfc5fae4e5ea57f9640f719c519a502bf89e988882e47f56"
     }
   ],
   "config": [

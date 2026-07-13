@@ -35,6 +35,7 @@ from takab_edge.contracts import (
     utcnow,
 )
 from takab_edge.dispatch import CommandDispatcher
+from takab_edge.drill import DrillController
 from takab_edge.gpio import GpioController
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
@@ -177,6 +178,13 @@ class EdgeSupervisor:
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
+        # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
+        # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
+        self.audio = AudioNotifier(s, gpio=self.gpio)
+        # Simulacro institucional (T-1.60): observador puro — banner + voceo,
+        # CERO relés; lo real (SASMEX o tier instrumental) lo aborta. Se crea
+        # ANTES que dispatch (que le enruta drill_start/drill_stop).
+        self.drill = DrillController(s, gpio=self.gpio, audio=self.audio)
         self.dispatch = CommandDispatcher(
             s,
             self.security,
@@ -186,13 +194,12 @@ class EdgeSupervisor:
             acks_topic=ACKS_TOPIC,
             # T-1.59: salud CACHEADA para el ack del self_test (jamás sondas).
             health=self.health,
+            # T-1.60: ramas drill_start/drill_stop del canal system.
+            drill=self.drill,
         )
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
-        # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
-        # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
-        self.audio = AudioNotifier(s, gpio=self.gpio)
         self.local_api = LocalDashboard(
             self.gpio,
             self.rules,
@@ -208,6 +215,7 @@ class EdgeSupervisor:
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
             audio=self.audio,
+            drill=self.drill,
         )
 
         self._modules: dict[str, EdgeModule] = {
@@ -227,6 +235,7 @@ class EdgeSupervisor:
                 self.dispatch,
                 self.backfill,
                 self.audio,
+                self.drill,
                 self.local_api,
             )
         }
@@ -238,6 +247,8 @@ class EdgeSupervisor:
     def _wire(self) -> None:
         self.seedlink.on_packet(self._on_packet)
         self.gpio.on_sasmex(self._on_sasmex)
+        # T-1.60: un SASMEX real aborta el simulacro (observador aislado en gpio).
+        self.gpio.on_sasmex(self.drill.on_sasmex)
         # Salud → nube: transición Y heartbeat (T-1.17 G6; sin event_id → sin dedup).
         self.health.on_snapshot(self._on_health_snapshot)
         # Comandos/config firmados nube→edge (T-1.23): el conector (re)suscribe
@@ -286,6 +297,8 @@ class EdgeSupervisor:
         # Voceo ADVISORY (A-6) tras actuar los relés: nunca antes, nunca bloqueante,
         # y sus fallos se aíslan dentro del propio módulo.
         self.audio.on_tier(decision)
+        # T-1.60: un tier instrumental de protección aborta el simulacro en curso.
+        self.drill.on_tier(decision)
         # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
         for ack in acks:
             self.cloud.publish(ACKS_TOPIC, ack)

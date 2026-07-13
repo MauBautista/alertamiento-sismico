@@ -55,7 +55,8 @@ def _auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
 _TRUNCATE_WRITTEN = text(
     "TRUNCATE seismic_events, incidents, incident_actions, dictamens, "
     "evidence_objects, quorum_votes, rule_sets, audit_log, "
-    "commands, gateway_config_state, user_profiles, reference_earthquakes CASCADE"
+    "commands, gateway_config_state, user_profiles, reference_earthquakes, "
+    "drills, drill_sites CASCADE"
 )
 
 

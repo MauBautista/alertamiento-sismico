@@ -41,7 +41,9 @@ from takab_edge.contracts import (
 #: 1.4.0 (T-1.59): ActuatorChannel + `system`, ActuatorAction + `self_test`,
 #: CommandAck + `results` nullable (autodiagnóstico del gabinete). ADITIVO:
 #: enums ampliados y clave opcional — payloads 1.3.0 siguen validando.
-SCHEMA_VERSION = "1.4.0"
+#: 1.5.0 (T-1.60): ActuatorAction + `drill_start`/`drill_stop` (simulacro
+#: institucional por canal `system`). ADITIVO.
+SCHEMA_VERSION = "1.5.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

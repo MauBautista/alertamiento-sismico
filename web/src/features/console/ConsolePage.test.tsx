@@ -43,6 +43,17 @@ vi.mock("./useMapState", () => ({ useMapState: mocks.useMapState }));
 vi.mock("./useSiteFeatures", () => ({ useSiteFeatures: mocks.useSiteFeatures }));
 vi.mock("./useIncidentActions", () => ({ useIncidentActions: mocks.useIncidentActions }));
 vi.mock("./useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
+// T-1.60: el banner del drill usa react-query + SDK — stub inerte aquí.
+vi.mock("./useActiveDrill", () => ({
+  useActiveDrill: () => ({
+    drill: null,
+    loading: false,
+    start: () => undefined,
+    stop: () => undefined,
+    pending: false,
+    error: null,
+  }),
+}));
 vi.mock("./MapPanel", () => ({ default: mocks.MapPanel }));
 // T-1.49: el socket vive en AppShell — la página ya no toca lib/ws. El perfil
 // del operador se mockea (la etiqueta cae al rol+sub sin display_name).
@@ -164,6 +175,7 @@ describe("ConsolePage", () => {
           request_dictamen: true,
           read_audit: false,
           self_test: false,
+          drill_start: false,
         },
       },
     });
@@ -269,6 +281,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           request_dictamen: true,
           read_audit: false,
           self_test: false,
+          drill_start: false,
         },
       },
     });

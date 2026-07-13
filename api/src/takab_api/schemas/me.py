@@ -24,6 +24,7 @@ class MeActions(BaseModel):
     request_dictamen: bool
     read_audit: bool
     self_test: bool
+    drill_start: bool
 
 
 class MeResponse(BaseModel):

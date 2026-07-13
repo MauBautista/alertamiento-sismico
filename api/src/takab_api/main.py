@@ -10,6 +10,7 @@ from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.dictamens import router as dictamens_router
+from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
 from takab_api.routers.fleet import router as fleet_router
@@ -59,6 +60,9 @@ def create_app() -> FastAPI:
 
     # Audit trail, solo lectura (Fase 1.8 · T-1.57).
     app.include_router(audit_router)
+
+    # Simulacro institucional (Fase 1.8 · T-1.60).
+    app.include_router(drills_router)
 
     # Telemetría (B3), exportación de evidencia (B4) y reporte PDF (B5).
     app.include_router(telemetry_router)

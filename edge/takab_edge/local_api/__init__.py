@@ -161,6 +161,7 @@ class LocalDashboard(EdgeModule):
         site_name: str = "",
         refresh_ms: int = 1000,
         audio: object | None = None,
+        drill: object | None = None,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -169,6 +170,7 @@ class LocalDashboard(EdgeModule):
         self._signal = signal
         self._cloud = cloud
         self._audio = audio
+        self._drill = drill
         self._gateway_id = gateway_id
         self._site_name = site_name
         self._refresh_ms = refresh_ms
@@ -284,6 +286,16 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: sección cloud falló", exc_info=True)
             return {"online": False, "mqtt_rtt_ms": None, "queued": None}
 
+    def _drill_section(self) -> dict | None:
+        """[T-1.60] Estado del simulacro: banner NO-real y aborto visible."""
+        if self._drill is None:
+            return None
+        try:
+            return self._drill.status()
+        except Exception:  # noqa: BLE001 — sección defensiva
+            log.exception("panel: sección drill falló")
+            return None
+
     def _events_section(self) -> list[dict]:
         try:
             transitions = self._rules.recent_transitions(_EVENTS_MAX)
@@ -330,6 +342,7 @@ class LocalDashboard(EdgeModule):
             "signal": self._signal_section(now),
             "health": health,
             "cloud": self._cloud_section(),
+            "drill": self._drill_section(),
             "audio": self._audio_section(),
             "events": self._events_section(),
         }

@@ -72,6 +72,7 @@ DENY_ALL = {
     "request_dictamen": False,
     "read_audit": False,
     "self_test": False,
+    "drill_start": False,
 }
 
 
@@ -163,6 +164,14 @@ def test_self_test_is_owner_maintenance_action() -> None:
     assert can == {"takab_superadmin", "tenant_admin", "building_admin"}
     siren = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_test"]}
     assert can == siren  # mismo círculo de confianza que la prueba de sirena
+
+
+def test_drill_start_is_institutional_admin_action() -> None:
+    """[T-1.60] Iniciar un simulacro es un acto ADMINISTRATIVO del tenant
+    (banner NO-real + voceo en N sitios): superadmin/tenant_admin. Ni gov
+    (lectura del registro por RLS) ni operadores/inspectores."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
 
 
 def test_mobile_only_roles_have_no_actions() -> None:

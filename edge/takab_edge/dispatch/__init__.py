@@ -64,6 +64,7 @@ class CommandDispatcher(EdgeModule):
         cloud: CloudConnector,
         acks_topic: str = "takab/acks",
         health=None,
+        drill=None,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -75,6 +76,8 @@ class CommandDispatcher(EdgeModule):
         # [T-1.59] Solo para adjuntar la salud CACHEADA al ack del self_test —
         # jamás se ejecutan sondas desde aquí (lección del panel local).
         self._health = health
+        # [T-1.60] Controlador de simulacros (observador; cero relés).
+        self._drill = drill
 
     # ------------------------------------------------------------- comandos
 
@@ -133,6 +136,28 @@ class CommandDispatcher(EdgeModule):
                 daemon=True,
             )
             worker.start()
+            return
+        # [T-1.60] Simulacro institucional: banner NO-real + voceo; cero relés.
+        if action in (ActuatorAction.DRILL_START, ActuatorAction.DRILL_STOP):
+            if channel is not ActuatorChannel.SYSTEM:
+                self._ack(command_id, nonce, channel, action, False, "drill exige canal system")
+                return
+            if self._drill is None:
+                self._ack(command_id, nonce, channel, action, False, "sin controlador de drill")
+                return
+            drill_id = str(payload.get("event_id") or f"CMD-{command_id}")
+            if action is ActuatorAction.DRILL_START:
+                duration = payload.get("duration_s") or 300
+                try:
+                    ok, reason = self._drill.start_drill(drill_id, float(duration))
+                except (TypeError, ValueError):
+                    ok, reason = False, f"duration_s inválido: {duration!r}"
+                self._ack(command_id, nonce, channel, action, ok, reason)
+            else:
+                ended = self._drill.end_drill(drill_id, reason="drill_stop firmado")
+                # Idempotente: parar un drill ya terminado es un no-op acked.
+                detail = "simulacro terminado" if ended else "sin simulacro activo (no-op)"
+                self._ack(command_id, nonce, channel, action, True, detail)
             return
         if channel is ActuatorChannel.SYSTEM:
             self._ack(

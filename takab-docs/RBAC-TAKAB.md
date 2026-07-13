@@ -102,6 +102,13 @@
   gabinete. Viaja por el MISMO envelope firmado del Command Service (canal lógico
   `system`, cruce `self_test ⇔ system` forzado por el router). Ancla:
   `tests/auth/test_matrix.py::test_self_test_is_owner_maintenance_action`.
+- **[DECISION 2026-07-12 · T-1.60] `drill_start` (simulacro institucional, extensión de
+  §2):** acto ADMINISTRATIVO del tenant = `takab_superadmin`, `tenant_admin` (banner
+  NO-real + voceo en N sitios vía `POST /drills`; cero relés — jamás via el endpoint
+  público de comandos). La LECTURA del registro (`GET /drills`) es de CONSOLA: gov lo ve
+  como evidencia para Protección Civil (RLS `drills_read` con `app_gov_can_see`), sin
+  escribir. Un SASMEX real o un tier ≥ restricted ABORTAN el drill en el edge. Ancla:
+  `tests/auth/test_matrix.py::test_drill_start_is_institutional_admin_action`.
 
 ---
 

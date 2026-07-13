@@ -75,6 +75,10 @@ class ActuatorAction(StrEnum):
     #: [T-1.59] Autodiagnóstico del gabinete (canal `system`): pulsa los relés NO
     #: audibles con readback; la sirena JAMÁS se energiza en un self-test.
     SELF_TEST = "self_test"
+    #: [T-1.60] Simulacro institucional (canal `system`): banner NO-real + voceo
+    #: de simulacro si hay audio. CERO relés; una alerta real lo ABORTA.
+    DRILL_START = "drill_start"
+    DRILL_STOP = "drill_stop"
 
 
 class UpsStatus(StrEnum):

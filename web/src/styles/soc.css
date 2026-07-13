@@ -912,3 +912,18 @@ body {
 .soc-epicenter__actions { display: flex; justify-content: flex-end; }
 
 .triage__deeplink-miss { color: var(--tk-status-warning); }
+
+/* T-1.60: banner del SIMULACRO — ámbar, sin parpadeo: jamás se confunde con la
+   alerta real (que sí parpadea en rojo y siempre pinta encima). */
+.soc-drill {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+}
+.soc-drill--on {
+  background: rgba(255, 193, 7, 0.14);
+  border: 1px solid var(--tk-amber, #ffc107);
+  color: var(--tk-amber, #ffc107);
+}
+.soc-drill--idle { justify-content: flex-end; padding: 0 0 6px; }
