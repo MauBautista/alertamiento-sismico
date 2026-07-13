@@ -49,6 +49,10 @@ resource "aws_iot_policy" "fleet" {
         Resource = [
           "${local.iot_arn}:topic/takab/events",
           "${local.iot_arn}:topic/takab/features",
+          # T-1.56: el lote de tier normal. Sin esta línea el broker DESCONECTA
+          # al gabinete en cada publish del batch (política exacta, sin comodines)
+          # — visto en producción el 2026-07-12: flapping cada 10 s.
+          "${local.iot_arn}:topic/takab/features/batch",
           "${local.iot_arn}:topic/takab/health",
           "${local.iot_arn}:topic/takab/acks",
           "${local.iot_arn}:topic/takab/status/${local.thing_name}",
