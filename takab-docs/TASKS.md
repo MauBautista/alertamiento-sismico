@@ -1419,17 +1419,26 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   fechas → RFC3339 del server · 4 estados anclados en relés y building · build limpio.
 > **ESTADO.** web 535 (+10) · tsc/eslint/prettier/build OK.
 
-### [ ] T-1.59 · `self_test` de gabinete (cierra M-2; extensión de T-1.23)
+### [x] T-1.59 · `self_test` de gabinete (cierra M-2; extensión de T-1.23) — **COMPLETA (2026-07-12)**
 - **Componente:** edge + api + web + db · **Depende de:** T-1.56 (SCHEMA_VERSION serial)
-- Canal `system` + acción `self_test` en el MISMO envelope HMAC (schemas v1.4.0, vector
-  nuevo en hmac_vectors.json; migración 0013 = CHECKs de commands). Matriz: superadmin/
-  tenant_admin/building_admin (espejo de siren_test; soc_operator DENEGADO documentado).
-  Edge: `gpio.run_cabinet_self_test` — rechaza con alerta viva; pulsa relés NO audibles
-  vía `_apply` con readback; la sirena SOLO lectura; dispatch en hilo corto + ack
-  `results` por relé + health del CACHE. Ingesta guarda `results`. Web: botón SiteCard
-  vivo + chips por relé (4 estados).
-- Criterios: E2E comando→pulso→ack→chips · sirena JAMÁS energizada (test) · rechazo con
-  SASMEX/demanda viva · matriz celda a celda · 0013 re-aplicable.
+- Canal `system` + acción `self_test` en el MISMO envelope HMAC (schemas v1.4.0 aditivo,
+  `CommandAck.results` nullable; vector `cabinet_self_test` en hmac_vectors.json —
+  verificado por los tests de firma de AMBOS lados; migración 0013 = CHECKs de commands,
+  down/up verificado). Matriz: superadmin/tenant_admin/building_admin (mismo círculo que
+  siren_test, anclado; soc_operator DENEGADO — nota en RBAC §2); el router valida el
+  cruce `self_test ⇔ system` (400) y la guardia por-acción (403).
+  Edge: `gpio.run_cabinet_self_test` — RECHAZA con SASMEX/demanda/safed vivos; pulsa los
+  relés NO audibles con ida a estado de protección por modo y REGRESO por `_apply`
+  (recálculo desde demandas), readback en ambas transiciones; la sirena SOLO lectura
+  (test espía: cero llamadas eléctricas). Dispatch: rama SELF_TEST en hilo corto + ack
+  `results` (relés + salud del CACHE — jamás sondas). Ingesta guarda `results` en el
+  jsonb `ack`. Web: botón de SiteCard vivo (gate por matriz + sin-enlace deshabilitado
+  con motivo), `useSelfTest` (POST + poll hasta resolver) y chips por relé del ack
+  (GAS ✓ / ELEVATOR ✗ / SIREN LECTURA).
+- Criterios verificados: E2E comando→pulso→ack→chips (api 201 + edge ack results + web
+  chips) · sirena JAMÁS energizada (espía) · rechazo con alerta viva (3 casos) · matriz
+  celda a celda · cruce 400/roles 403/rate-limit reutilizado · 0013 re-aplicable.
+> **ESTADO.** api 776 (+10) · edge 323 (+15) · web 538 (+3) · ruff/eslint/tsc/build OK.
 
 ### [ ] T-1.60 · Modo SIMULACRO institucional E2E (cierra M-1)
 - **Componente:** api + edge + web + db · **Depende de:** T-1.59 (canal system + refactor)

@@ -131,3 +131,41 @@ def test_late_ack_does_not_revive_expired(seeded: psycopg.Connection) -> None:
     result = handle_command_ack(seeded, _payload(success=True), META, _ctx())
     assert result.is_ok  # no-op idempotente, sin DLQ
     assert _status(seeded, command_id) == "expired"
+
+
+def test_self_test_ack_persists_results(seeded: psycopg.Connection) -> None:
+    """[T-1.59] El ack del autodiagnóstico guarda `results` (por relé + salud
+    del cache) en el jsonb `ack` — es lo que la consola pinta como chips."""
+    seeded.execute("RESET ROLE")
+    row = seeded.execute(
+        "INSERT INTO commands (tenant_id, site_id, gateway_id, issued_by, channel, "
+        "action, nonce, expires_at) "
+        "VALUES (%s,%s,%s,%s,'system','self_test','n-st-0001', "
+        "now() + interval '30 seconds') RETURNING command_id",
+        (TENANT_A, SITE_A, GW_A, USER),
+    ).fetchone()
+    command_id = str(row[0])
+    use(seeded, "takab_ingest")
+    payload = {
+        "kind": "command_ack",
+        "command_id": command_id,
+        "nonce": "n-st-0001",
+        "channel": "system",
+        "action": "self_test",
+        "success": True,
+        "latency_s": 1.6,
+        "executed_at": "2026-07-12T12:00:02+00:00",
+        "detail": "self-test completado",
+        "results": {
+            "relays": {"gas_valve": {"pulsed": True, "readback_ok": True}},
+            "health": {"ups_status": "line"},
+        },
+    }
+    result = handle_command_ack(seeded, payload, META, _ctx())
+    assert result.is_ok
+    assert _status(seeded, command_id) == "acked"
+    ack = seeded.execute(
+        "SELECT ack FROM commands WHERE command_id = %s", (command_id,)
+    ).fetchone()[0]
+    assert ack["results"]["relays"]["gas_valve"]["readback_ok"] is True
+    assert ack["results"]["health"]["ups_status"] == "line"

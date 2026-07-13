@@ -142,3 +142,43 @@ def test_execute_sequence_isolates_a_raising_driver(gpio):
     assert len(acks) == 2
     assert acks[0].success is False and "excepción" in acks[0].detail
     assert acks[1].success is True  # el gas se accionó pese al fallo del ascensor
+
+
+def test_cabinet_self_test_delegates_to_relay_driver(manager_rig=None):
+    """T-1.59: el manager delega el autodiagnóstico al driver de relés (gpio);
+    BACnet no participa jamás (pasarela de terceros fuera del self-test)."""
+    from takab_edge.actuators import ActuatorManager
+
+    class _RelayWithTest:
+        channels = ()
+        calls = 0
+
+        def execute(self, command):
+            raise AssertionError("self-test jamás pasa por execute()")
+
+        def cabinet_self_test(self):
+            type(self).calls += 1
+            return {"ok": True, "reason": None, "relays": {}}
+
+    class _BacnetBoom:
+        channels = ()
+
+        def execute(self, command):
+            raise AssertionError("BACnet no participa en el self-test")
+
+    manager = ActuatorManager(_RelayWithTest(), _BacnetBoom(), bacnet_channels=())
+    result = manager.cabinet_self_test()
+    assert result["ok"] is True and _RelayWithTest.calls == 1
+
+
+def test_cabinet_self_test_without_capable_driver_is_honest():
+    from takab_edge.actuators import ActuatorManager
+
+    class _RelayPlain:
+        channels = ()
+
+        def execute(self, command):
+            raise AssertionError("no debe ejecutarse")
+
+    result = ActuatorManager(_RelayPlain()).cabinet_self_test()
+    assert result["ok"] is False and "sin autodiagnóstico" in result["reason"]

@@ -300,3 +300,57 @@ async def test_list_commands_shows_recent(client, gateway, publisher) -> None:
     assert r.status_code == 200
     items = r.json()["items"]
     assert len(items) == 1 and items[0]["status"] == "pending"
+
+
+# --- self_test (T-1.59): canal system + guardia por-acción ------------------------
+
+
+async def test_self_test_issues_on_system_channel(client, gateway, publisher) -> None:
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
+    r = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands",
+        json={"channel": "system", "action": "self_test", "event_id": None},
+        headers=au.bearer(tok),
+    )
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert (row["channel"], row["action"], row["status"]) == ("system", "self_test", "pending")
+    # El envelope firmado salió al topic del gateway, como cualquier comando.
+    assert len(publisher.published) == 1
+    envelope = publisher.published[0][1]
+    assert envelope["payload"] == {"channel": "system", "action": "self_test", "event_id": None}
+
+
+@pytest.mark.parametrize(
+    ("channel", "action"),
+    [("siren", "self_test"), ("system", "activate"), ("system", "deactivate")],
+)
+async def test_self_test_channel_action_cross_is_400(client, gateway, channel, action) -> None:
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
+    r = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands",
+        json={"channel": channel, "action": action, "event_id": None},
+        headers=au.bearer(tok),
+    )
+    assert r.status_code == 400
+
+
+async def test_soc_operator_cannot_self_test(client, gateway) -> None:
+    """soc_operator opera incidentes, no mantenimiento del gabinete (matriz)."""
+    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)
+    r = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands",
+        json={"channel": "system", "action": "self_test", "event_id": None},
+        headers=au.bearer(tok),
+    )
+    assert r.status_code == 403
+
+
+async def test_building_admin_can_self_test_but_not_actuate(client, gateway, publisher) -> None:
+    tok = au.make_token("building_admin", tenant=au.DB_TENANT_PRIV)
+    st = await client.post(
+        f"/sites/{au.DB_SITE_PRIV}/commands",
+        json={"channel": "system", "action": "self_test", "event_id": None},
+        headers=au.bearer(tok),
+    )
+    assert st.status_code == 201

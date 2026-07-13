@@ -521,6 +521,9 @@ def handle_command_ack(
                     "latency_s": payload.get("latency_s", 0.0),
                     "executed_at": payload.get("executed_at"),
                     "detail": payload.get("detail", ""),
+                    # [T-1.59] Resultados del self_test (por relé + salud del
+                    # cache); None en acks de activate/deactivate.
+                    "results": payload.get("results"),
                 }
             ),
         },

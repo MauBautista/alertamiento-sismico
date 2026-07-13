@@ -6,7 +6,8 @@
         "strobe",
         "gas_valve",
         "elevator",
-        "door_retainer"
+        "door_retainer",
+        "system"
       ],
       "title": "ActuatorChannel",
       "type": "string"
@@ -166,6 +167,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.3.0",
-  "version": "1.3.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.4.0",
+  "version": "1.4.0"
 }

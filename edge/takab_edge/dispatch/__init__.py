@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -62,6 +63,7 @@ class CommandDispatcher(EdgeModule):
         actuators: ActuatorManager,
         cloud: CloudConnector,
         acks_topic: str = "takab/acks",
+        health=None,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -70,6 +72,9 @@ class CommandDispatcher(EdgeModule):
         self._actuators = actuators
         self._cloud = cloud
         self._acks_topic = acks_topic
+        # [T-1.59] Solo para adjuntar la salud CACHEADA al ack del self_test —
+        # jamás se ejecutan sondas desde aquí (lección del panel local).
+        self._health = health
 
     # ------------------------------------------------------------- comandos
 
@@ -115,6 +120,26 @@ class CommandDispatcher(EdgeModule):
             self._ack(command_id, nonce, channel, action, False, "command_enabled=false")
             return
 
+        # [T-1.59] self_test: recorrido de relés NO audibles en un hilo corto
+        # (~1.6 s; el hilo del broker jamás se bloquea) + ack con `results`.
+        if action is ActuatorAction.SELF_TEST:
+            if channel is not ActuatorChannel.SYSTEM:
+                self._ack(command_id, nonce, channel, action, False, "self_test exige canal system")
+                return
+            worker = threading.Thread(
+                target=self._run_self_test,
+                args=(command_id, nonce),
+                name="cabinet-self-test",
+                daemon=True,
+            )
+            worker.start()
+            return
+        if channel is ActuatorChannel.SYSTEM:
+            self._ack(
+                command_id, nonce, channel, action, False, "canal system solo admite self_test"
+            )
+            return
+
         started = utcnow()
         command = ActuatorCommand(
             channel=channel,
@@ -133,6 +158,37 @@ class CommandDispatcher(EdgeModule):
             latency_s=max(result.latency_s, latency),
         )
 
+    def _run_self_test(self, command_id: str, nonce: str) -> None:
+        """Corre el autodiagnóstico y ACKea con resultados. JAMÁS lanza (hilo propio)."""
+        started = utcnow()
+        try:
+            outcome = self._actuators.cabinet_self_test()
+        except Exception as exc:  # noqa: BLE001 — un test roto no tira el dispatcher
+            log.exception("self-test lanzó excepción")
+            outcome = {"ok": False, "reason": f"excepción: {exc}", "relays": {}}
+        results: dict = {"relays": outcome.get("relays", {})}
+        snapshot = getattr(self._health, "last_snapshot", None)
+        if snapshot is not None:
+            # Salud DEL CACHE (el heartbeat ya la midió): sin subprocesos aquí.
+            results["health"] = {
+                "ups_status": snapshot.ups_status.value,
+                "ntp_offset_s": snapshot.ntp_offset_s,
+                "cert_days_remaining": snapshot.cert_days_remaining,
+                "disk_used_pct": snapshot.disk_used_pct,
+                "captured_at": snapshot.captured_at.isoformat(),
+            }
+        latency = (utcnow() - started).total_seconds()
+        self._ack(
+            command_id,
+            nonce,
+            ActuatorChannel.SYSTEM,
+            ActuatorAction.SELF_TEST,
+            bool(outcome.get("ok")),
+            outcome.get("reason") or "self-test completado",
+            latency_s=latency,
+            results=results,
+        )
+
     def _ack(
         self,
         command_id: str,
@@ -142,6 +198,7 @@ class CommandDispatcher(EdgeModule):
         success: bool,
         detail: str,
         latency_s: float = 0.0,
+        results: dict | None = None,
     ) -> None:
         ack = CommandAck(
             command_id=command_id,
@@ -151,6 +208,7 @@ class CommandDispatcher(EdgeModule):
             success=success,
             latency_s=latency_s,
             detail=detail,
+            results=results,
         )
         self._cloud.publish(self._acks_topic, ack)
         log.info(

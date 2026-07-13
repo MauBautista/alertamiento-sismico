@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
-from takab_api.auth.matrix import ROLE_ACTION_MATRIX
+from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions
 from takab_api.commands.keys import (
     CommandKeyProvider,
     SecretsManagerKeyProvider,
@@ -41,9 +41,15 @@ from takab_api.routers._common import http_error
 from takab_api.schemas.commands import ACTIONS, CHANNELS, CommandIn, CommandList, CommandOut
 from takab_api.settings import Settings
 
-# Fuente única: roles con acción de actuador en la matriz (espejo de RBAC §2).
+# Fuente única: roles con ALGUNA acción de comando en la matriz (espejo de RBAC
+# §2). La guardia fina por-acción vive en el handler ([T-1.59]): siren_test para
+# activate/deactivate, self_test para el autodiagnóstico.
 COMMAND_ROLES: tuple[str, ...] = tuple(
-    sorted(r for r, actions in ROLE_ACTION_MATRIX.items() if actions["siren_test"])
+    sorted(
+        r
+        for r, actions in ROLE_ACTION_MATRIX.items()
+        if actions["siren_test"] or actions.get("self_test")
+    )
 )
 
 _require_command = require_roles(*COMMAND_ROLES)
@@ -89,6 +95,15 @@ async def issue_command(
     settings = Settings()
     if body.channel not in CHANNELS or body.action not in ACTIONS:
         raise http_error(400, "channel/action inválidos")
+    # [T-1.59] Cruce canal/acción: self_test ⇔ system, sin excepciones — un
+    # self_test sobre un actuador real (o un activate sobre `system`) es 400.
+    if (body.action == "self_test") != (body.channel == "system"):
+        raise http_error(400, "self_test exige canal system (y solo self_test usa system)")
+    # Guardia POR-ACCIÓN (default-deny): siren_test cubre los actuadores reales;
+    # self_test es acción propia (superadmin/tenant_admin/building_admin).
+    required_action = "self_test" if body.action == "self_test" else "siren_test"
+    if not allowed_actions(claims.role).get(required_action):
+        raise http_error(403, f"rol sin la acción {required_action}")
     scope = scope_filter(claims)
     if scope is not None and str(site_id) not in scope:
         raise http_error(403, "sitio fuera del alcance del usuario")

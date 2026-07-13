@@ -87,6 +87,11 @@ ACTIONS: tuple[str, ...] = (
     "relocate_epicenter",
     "request_dictamen",
     "read_audit",
+    # [T-1.59] Autodiagnóstico del gabinete (canal system): pulsa relés de gas/
+    # puertas (NO audibles) con readback — espejo de siren_test (acción de dueño
+    # del sitio), NO de lectura. soc_operator queda DENEGADO por default: opera
+    # incidentes, no mantenimiento del gabinete (divergencia anotada en RBAC §2).
+    "self_test",
 )
 
 
@@ -102,6 +107,7 @@ def _actions(
     relocate_epicenter: bool = False,
     request_dictamen: bool = False,
     read_audit: bool = False,
+    self_test: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -114,6 +120,7 @@ def _actions(
         "relocate_epicenter": relocate_epicenter,
         "request_dictamen": request_dictamen,
         "read_audit": read_audit,
+        "self_test": self_test,
     }
 
 
@@ -128,6 +135,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         relocate_epicenter=True,
         request_dictamen=True,
         read_audit=True,
+        self_test=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -138,12 +146,13 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         relocate_epicenter=True,
         request_dictamen=True,
         read_audit=True,
+        self_test=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
     "inspector": _actions(sign_dictamen=True, export=True, generate_report=True),
-    "building_admin": _actions(siren_test=True),
+    "building_admin": _actions(siren_test=True, self_test=True),
     "brigadista": _actions(),
     "security_guard": _actions(),
     "occupant": _actions(),

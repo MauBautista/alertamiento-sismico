@@ -38,7 +38,10 @@ from takab_edge.contracts import (
 #: 1.3.0 (T-1.56): + feature_batch (batcheo escalonado por tier, topic
 #: takab/features/batch). ADITIVO: familia nueva; todo payload 1.2.0 sigue
 #: validando y la nube acepta feature_1s suelto indefinidamente.
-SCHEMA_VERSION = "1.3.0"
+#: 1.4.0 (T-1.59): ActuatorChannel + `system`, ActuatorAction + `self_test`,
+#: CommandAck + `results` nullable (autodiagnóstico del gabinete). ADITIVO:
+#: enums ampliados y clave opcional — payloads 1.3.0 siguen validando.
+SCHEMA_VERSION = "1.4.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

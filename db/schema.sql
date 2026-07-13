@@ -718,8 +718,10 @@ CREATE TABLE commands (
   site_id     uuid NOT NULL REFERENCES sites(site_id),
   gateway_id  uuid NOT NULL REFERENCES gateways(gateway_id),
   issued_by   uuid NOT NULL,
-  channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer')),
-  action      text NOT NULL CHECK (action IN ('activate','deactivate')),
+  -- [T-1.59] 'system'/'self_test': autodiagnóstico del gabinete (0013). El
+  -- router exige el cruce self_test ⇔ system; el edge pulsa relés NO audibles.
+  channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer','system')),
+  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test')),
   event_id    text,
   nonce       text NOT NULL UNIQUE,
   issued_at   timestamptz NOT NULL DEFAULT now(),

@@ -23,6 +23,7 @@ class MeActions(BaseModel):
     relocate_epicenter: bool
     request_dictamen: bool
     read_audit: bool
+    self_test: bool
 
 
 class MeResponse(BaseModel):

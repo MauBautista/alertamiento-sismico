@@ -2168,6 +2168,10 @@
             "title": "Request Dictamen",
             "type": "boolean"
           },
+          "self_test": {
+            "title": "Self Test",
+            "type": "boolean"
+          },
           "sign_dictamen": {
             "title": "Sign Dictamen",
             "type": "boolean"
@@ -2187,7 +2191,8 @@
           "manage_fleet",
           "relocate_epicenter",
           "request_dictamen",
-          "read_audit"
+          "read_audit",
+          "self_test"
         ],
         "title": "MeActions",
         "type": "object"

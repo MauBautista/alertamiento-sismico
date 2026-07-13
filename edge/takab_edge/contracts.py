@@ -56,6 +56,9 @@ class ActuatorChannel(StrEnum):
     GAS_VALVE = "gas_valve"
     ELEVATOR = "elevator"
     DOOR_RETAINER = "door_retainer"
+    #: [T-1.59] Canal LÓGICO de comandos de sistema (self_test): no es un relé —
+    #: jamás entra a LOCAL_RELAY_CHANNELS/REFLEX_CHANNELS ni al modelo de demandas.
+    SYSTEM = "system"
 
 
 class FailSafeMode(StrEnum):
@@ -69,6 +72,9 @@ class FailSafeMode(StrEnum):
 class ActuatorAction(StrEnum):
     ACTIVATE = "activate"
     DEACTIVATE = "deactivate"
+    #: [T-1.59] Autodiagnóstico del gabinete (canal `system`): pulsa los relés NO
+    #: audibles con readback; la sirena JAMÁS se energiza en un self-test.
+    SELF_TEST = "self_test"
 
 
 class UpsStatus(StrEnum):
@@ -220,6 +226,9 @@ class CommandAck(BaseModel):
     latency_s: float = 0.0
     executed_at: datetime = Field(default_factory=utcnow)
     detail: str = ""
+    #: [T-1.59] Resultados estructurados del self_test (por relé + salud del
+    #: cache); None en acks de activate/deactivate. ADITIVO (schema 1.4.0).
+    results: dict | None = None
 
 
 class RelayState(BaseModel):

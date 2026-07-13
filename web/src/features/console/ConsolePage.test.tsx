@@ -163,6 +163,7 @@ describe("ConsolePage", () => {
           relocate_epicenter: true,
           request_dictamen: true,
           read_audit: false,
+          self_test: false,
         },
       },
     });
@@ -267,6 +268,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           relocate_epicenter: true,
           request_dictamen: true,
           read_audit: false,
+          self_test: false,
         },
       },
     });

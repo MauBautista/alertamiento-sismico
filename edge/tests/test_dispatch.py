@@ -38,6 +38,16 @@ class _FakeActuators:
 
     def __init__(self) -> None:
         self.executed: list[ActuatorCommand] = []
+        self.self_tests = 0
+        self.self_test_result: dict = {
+            "ok": True,
+            "reason": None,
+            "relays": {"gas_valve": {"pulsed": True, "readback_ok": True}},
+        }
+
+    def cabinet_self_test(self) -> dict:
+        self.self_tests += 1
+        return self.self_test_result
 
     def execute(self, command: ActuatorCommand) -> ActuatorAck:
         self.executed.append(command)
@@ -204,3 +214,67 @@ def test_config_malformed_never_raises() -> None:
     for raw in (b"", b"{}", b'{"version":"x","payload":{},"sig":"y"}'):
         dispatcher.on_config("takab/cfg/gw-test", raw)
     assert store.version == 0
+
+
+# --- self_test (T-1.59): canal system, hilo corto, ack con results ---------------
+
+
+def _wait_acks(cloud, n: int, timeout_s: float = 2.0) -> list[dict]:
+    import time as _time
+
+    deadline = _time.monotonic() + timeout_s
+    while _time.monotonic() < deadline:
+        acks = _acks(cloud)
+        if len(acks) >= n:
+            return acks
+        _time.sleep(0.01)
+    return _acks(cloud)
+
+
+def test_signed_self_test_runs_and_acks_with_results() -> None:
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=True)
+    payload = {"channel": "system", "action": "self_test", "event_id": None}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-st1", NOW))
+    acks = _wait_acks(cloud, 1)
+    assert len(acks) == 1 and actuators.self_tests == 1
+    ack = acks[0]
+    assert ack["channel"] == "system" and ack["action"] == "self_test"
+    assert ack["success"] is True
+    assert ack["results"]["relays"]["gas_valve"]["readback_ok"] is True
+    assert actuators.executed == []  # jamás pasa por execute() de actuadores
+
+
+def test_self_test_failure_reports_reason() -> None:
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=True)
+    actuators.self_test_result = {"ok": False, "reason": "alerta viva", "relays": {}}
+    payload = {"channel": "system", "action": "self_test", "event_id": None}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-st2", NOW))
+    acks = _wait_acks(cloud, 1)
+    assert acks[0]["success"] is False and "alerta viva" in acks[0]["detail"]
+
+
+def test_self_test_on_actuator_channel_rejected() -> None:
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=True)
+    payload = {"channel": "siren", "action": "self_test", "event_id": None}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-st3", NOW))
+    acks = _acks(cloud)
+    assert len(acks) == 1 and acks[0]["success"] is False
+    assert "system" in acks[0]["detail"] and actuators.self_tests == 0
+
+
+def test_activate_on_system_channel_rejected() -> None:
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=True)
+    payload = {"channel": "system", "action": "activate", "event_id": None}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-st4", NOW))
+    acks = _acks(cloud)
+    assert len(acks) == 1 and acks[0]["success"] is False
+    assert actuators.executed == []
+
+
+def test_self_test_rejected_when_command_disabled() -> None:
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(command_enabled=False)
+    payload = {"channel": "system", "action": "self_test", "event_id": None}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-st5", NOW))
+    acks = _acks(cloud)
+    assert len(acks) == 1 and acks[0]["success"] is False
+    assert "command_enabled" in acks[0]["detail"] and actuators.self_tests == 0

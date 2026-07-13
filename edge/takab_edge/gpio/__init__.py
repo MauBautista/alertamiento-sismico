@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable
 from time import perf_counter
 
@@ -360,6 +361,81 @@ class GpioController(EdgeModule):
         with self._lock:
             self._siren_test_active = False
             self._apply(ActuatorChannel.SIREN)  # vuelve al estado que exija la protección vigente
+
+    def run_cabinet_self_test(
+        self, pulse_s: float | None = None, gap_s: float | None = None
+    ) -> dict:
+        """Autodiagnóstico del gabinete (T-1.59/M-2): recorrido de relés NO audibles.
+
+        Vive aquí — el dueño del modelo de demandas — porque es el ÚNICO lugar
+        donde pulsar un relé no puede pisar una protección: se RECHAZA en seco si
+        hay SASMEX enclavado, cualquier demanda de `rules` o estado seguro
+        forzado, y el regreso de cada pulso es un ``_apply`` (el recálculo desde
+        las demandas, respetando NO/NC/fail_close), jamás un estado recordado.
+        La sirena NUNCA se energiza: solo se reporta su estado eléctrico.
+
+        Devuelve ``{"ok", "reason", "relays": {canal: {pulsed, readback_ok,
+        fail_safe, energized}}}`` — el readback compara ``relay.value`` de
+        gpiozero contra el objetivo tras CADA transición (ida y regreso).
+        """
+        pulse = pulse_s if pulse_s is not None else self.settings.self_test_pulse_ms / 1000.0
+        gap = gap_s if gap_s is not None else self.settings.self_test_gap_ms / 1000.0
+        results: dict[str, dict] = {}
+        for channel in LOCAL_RELAY_CHANNELS:
+            mode = self._failsafe(channel)
+            if channel in AUDIBLE_CHANNELS:
+                # Solo LECTURA: un autodiagnóstico jamás hace sonar la sirena.
+                state = self.relay_state(channel)
+                results[channel.value] = {
+                    "pulsed": False,
+                    "readback_ok": True,
+                    "fail_safe": mode.value,
+                    "energized": state.energized,
+                }
+                continue
+            with self._lock:
+                if self._sasmex_latched or self._safed or any(self._rules_demand.values()):
+                    return {
+                        "ok": False,
+                        "reason": "alerta o protección viva; self-test rechazado",
+                        "relays": results,
+                    }
+                relay = self._relays.get(channel)
+                if relay is None:
+                    results[channel.value] = {
+                        "pulsed": False,
+                        "readback_ok": False,
+                        "fail_safe": mode.value,
+                        "energized": None,
+                    }
+                    continue
+                # Ida: estado de protección DEL MODO (polaridad respetada)…
+                target = active_energized(mode)
+                relay.on() if target else relay.off()
+                went_ok = bool(relay.value) == target
+            time.sleep(pulse)  # fuera del lock: el reflejo SASMEX jamás espera al test
+            with self._lock:
+                # …regreso por RECÁLCULO: si una alerta llegó a media prueba, el
+                # _apply materializa la protección vigente, no un estado viejo.
+                self._apply(channel)
+                back_ok = bool(relay.value) == self._energized[channel]
+                energized = self._energized[channel]
+            results[channel.value] = {
+                "pulsed": True,
+                "readback_ok": went_ok and back_ok,
+                "fail_safe": mode.value,
+                "energized": energized,
+            }
+            time.sleep(gap)
+        failed = [c for c, r in results.items() if not r["readback_ok"]]
+        ok = not failed
+        reason = None if ok else f"readback falló en: {', '.join(failed)}"
+        log.warning(
+            "self-test de gabinete: %s (%s)",
+            "OK" if ok else "FALLO",
+            reason or f"{len(results)} relés verificados",
+        )
+        return {"ok": ok, "reason": reason, "relays": results}
 
     # --- Relés: demandas de `rules` (capa lógica) + recálculo (capa eléctrica) ---
     def activate(self, channel: ActuatorChannel) -> None:

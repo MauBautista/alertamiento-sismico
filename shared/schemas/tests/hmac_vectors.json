@@ -37,6 +37,18 @@
       },
       "payload_canonical_hex": "7b22616374696f6e223a2264656163746976617465222c226368616e6e656c223a22736972656e222c2264657461696c223a2273696c656e63696172205c753030623720707275656261227d",
       "sig": "7712cc6317b8145bd7f4058844380ff9d008ec9e91bf37cad76daac0cb34da24"
+    },
+    {
+      "name": "cabinet_self_test",
+      "nonce": "5e1f7e57b10ca81e5e1f7e57b10ca81e",
+      "ts": "2026-07-12T12:00:00+00:00",
+      "payload": {
+        "channel": "system",
+        "action": "self_test",
+        "event_id": null
+      },
+      "payload_canonical_hex": "7b22616374696f6e223a2273656c665f74657374222c226368616e6e656c223a2273797374656d222c226576656e745f6964223a6e756c6c7d",
+      "sig": "9c16d1d8de46d1de9232c1d06ab66f548204775ff609cb475f3b35d29caf6f06"
     }
   ],
   "config": [

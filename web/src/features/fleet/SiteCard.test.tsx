@@ -1,10 +1,37 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GatewayOut } from "@takab/sdk";
 
+// T-1.59: SiteCard monta useSelfTest (react-query + SDK) — se mockean SOLO las
+// dos funciones de comandos; el resto del módulo no se usa en esta card.
+const sdk = vi.hoisted(() => ({
+  issueCommandSitesSiteIdCommandsPost: vi.fn(),
+  listCommandsSitesSiteIdCommandsGet: vi.fn(),
+}));
+vi.mock("@takab/sdk", () => sdk);
+
+import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
+import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import SiteCard from "./SiteCard";
 import type { FleetCabinet } from "./useFleet";
+
+/** Render con QueryClient limpio (useSelfTest lo exige); sesión opcional aparte. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+beforeEach(() => {
+  resetSessionStoreForTests();
+  vi.clearAllMocks();
+  sdk.listCommandsSitesSiteIdCommandsGet.mockResolvedValue({
+    data: { items: [] },
+    response: { status: 200 },
+  });
+});
 
 const GW: GatewayOut = {
   gateway_id: "g-1",
@@ -139,11 +166,74 @@ describe("SiteCard", () => {
     expect(screen.getByText("ARMADOS · CONFIG DE RELAYS NO VISIBLE")).toBeInTheDocument();
   });
 
-  it("autodiagnóstico silencioso: visible pero deshabilitado con la razón", () => {
+  it("autodiagnóstico: sin la acción self_test queda deshabilitado con la razón", () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
     render(<SiteCard cabinet={cabinet()} />);
     const btn = screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ });
     expect(btn).toBeDisabled();
     expect(btn).toHaveAttribute("title", expect.stringContaining("self_test"));
+  });
+
+  it("autodiagnóstico (T-1.59): tenant_admin lo dispara y llega el POST system/self_test", async () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    sdk.issueCommandSitesSiteIdCommandsPost.mockResolvedValue({
+      data: { command_id: "c-st-1", status: "pending" },
+      response: { status: 201 },
+    });
+    render(<SiteCard cabinet={cabinet()} />);
+    const btn = screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ });
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(sdk.issueCommandSitesSiteIdCommandsPost).toHaveBeenCalledWith({
+        path: { site_id: "s-1" },
+        body: { channel: "system", action: "self_test" },
+      }),
+    );
+  });
+
+  it("autodiagnóstico: SIN ENLACE queda deshabilitado (el comando expiraría por TTL)", () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    render(<SiteCard cabinet={cabinet({}, { derived_state: "SIN ENLACE" })} />);
+    const btn = screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", expect.stringContaining("TTL"));
+  });
+
+  it("autodiagnóstico: el ack del edge pinta chips por relé (jamás inventados)", async () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    sdk.issueCommandSitesSiteIdCommandsPost.mockResolvedValue({
+      data: { command_id: "c-st-2", status: "pending" },
+      response: { status: 201 },
+    });
+    sdk.listCommandsSitesSiteIdCommandsGet.mockResolvedValue({
+      data: {
+        items: [
+          {
+            command_id: "c-st-2",
+            status: "acked",
+            ack: {
+              detail: "self-test completado",
+              results: {
+                relays: {
+                  gas_valve: { pulsed: true, readback_ok: true },
+                  elevator: { pulsed: true, readback_ok: false },
+                  siren: { pulsed: false, readback_ok: true },
+                },
+              },
+            },
+            error: null,
+          },
+        ],
+      },
+      response: { status: 200 },
+    });
+    render(<SiteCard cabinet={cabinet()} />);
+    fireEvent.click(screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ }));
+    const result = await screen.findByTestId("selftest-result");
+    expect(result).toHaveTextContent("GAS_VALVE ✓");
+    expect(result).toHaveTextContent("ELEVATOR ✗");
+    expect(result).toHaveTextContent("SIREN LECTURA"); // la sirena solo se lee
   });
 
   it("footer con fw y último heartbeat en UTC", () => {

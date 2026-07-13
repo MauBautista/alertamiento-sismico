@@ -71,6 +71,7 @@ DENY_ALL = {
     "relocate_epicenter": False,
     "request_dictamen": False,
     "read_audit": False,
+    "self_test": False,
 }
 
 
@@ -152,6 +153,16 @@ def test_read_audit_is_read_only_oversight() -> None:
     supervisan la auditoría — la generan."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["read_audit"]}
     assert can == {"takab_superadmin", "takab_support", "tenant_admin", "gov_operator"}
+
+
+def test_self_test_is_owner_maintenance_action() -> None:
+    """[T-1.59] Autodiagnóstico del gabinete = espejo de siren_test (acción de
+    dueño del sitio): pulsa gas/puertas con readback. soc_operator DENEGADO —
+    opera incidentes, no mantenimiento (divergencia anotada en RBAC §2)."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["self_test"]}
+    assert can == {"takab_superadmin", "tenant_admin", "building_admin"}
+    siren = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_test"]}
+    assert can == siren  # mismo círculo de confianza que la prueba de sirena
 
 
 def test_mobile_only_roles_have_no_actions() -> None:

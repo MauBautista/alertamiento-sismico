@@ -525,6 +525,7 @@ export type MeActions = {
     read_audit: boolean;
     relocate_epicenter: boolean;
     request_dictamen: boolean;
+    self_test: boolean;
     sign_dictamen: boolean;
     siren_test: boolean;
 };

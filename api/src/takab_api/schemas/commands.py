@@ -8,9 +8,10 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-# Espejo de los enums del edge (shared/schemas/command.schema.json).
-CHANNELS = frozenset({"siren", "strobe", "gas_valve", "elevator", "door_retainer"})
-ACTIONS = frozenset({"activate", "deactivate"})
+# Espejo de los enums del edge (shared/schemas/command_ack.schema.json v1.4.0).
+# `system`/`self_test` (T-1.59) van SIEMPRE juntos: el router valida el cruce.
+CHANNELS = frozenset({"siren", "strobe", "gas_valve", "elevator", "door_retainer", "system"})
+ACTIONS = frozenset({"activate", "deactivate", "self_test"})
 
 
 class CommandIn(BaseModel):

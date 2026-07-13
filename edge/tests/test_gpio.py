@@ -275,3 +275,65 @@ def test_held_alert_contact_seeds_reflex(gpio):
     gpio._seed_from_held_contact()
     assert gpio.sasmex_active is True
     assert gpio.siren_sounding is True
+
+
+# --- Autodiagnóstico del gabinete (T-1.59 / M-2) --------------------------------
+
+
+def test_self_test_pulsa_no_audibles_con_readback_y_restaura(gpio):
+    before = {c: gpio.relay_state(c).energized for c in LOCAL_RELAY_CHANNELS}
+    result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is True and result["reason"] is None
+    for channel in ("strobe", "gas_valve", "elevator", "door_retainer"):
+        relay = result["relays"][channel]
+        assert relay["pulsed"] is True and relay["readback_ok"] is True
+    # La sirena SOLO se lee, jamás se pulsa.
+    assert result["relays"]["siren"]["pulsed"] is False
+    # Todo regresó al estado que exige el modelo de demandas (reposo).
+    after = {c: gpio.relay_state(c).energized for c in LOCAL_RELAY_CHANNELS}
+    assert after == before
+
+
+def test_self_test_jamas_energiza_la_sirena(gpio):
+    """El relé de la sirena no cambia eléctricamente en NINGÚN momento del test."""
+    siren = gpio._relays[ActuatorChannel.SIREN]
+    transitions: list[bool] = []
+    original_on, original_off = siren.on, siren.off
+
+    def spy_on():
+        transitions.append(True)
+        original_on()
+
+    def spy_off():
+        transitions.append(False)
+        original_off()
+
+    siren.on, siren.off = spy_on, spy_off
+    try:
+        result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
+    finally:
+        siren.on, siren.off = original_on, original_off
+    assert result["ok"] is True
+    assert transitions == []  # cero llamadas eléctricas a la sirena
+    assert gpio.relay_state(ActuatorChannel.SIREN).energized is False
+
+
+def test_self_test_rechaza_con_alerta_sasmex_viva(gpio):
+    gpio.simulate_sasmex(active=True)
+    result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is False
+    assert "alerta" in result["reason"]
+    # La protección sigue intacta: la sirena sigue sonando.
+    assert gpio.relay_state(ActuatorChannel.SIREN).energized is True
+
+
+def test_self_test_rechaza_con_demanda_de_rules(gpio):
+    gpio.activate(ActuatorChannel.GAS_VALVE)  # protección instrumental viva
+    result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is False and "alerta" in result["reason"]
+
+
+def test_self_test_rechaza_en_estado_seguro_forzado(gpio):
+    gpio.drive_all_safe()
+    result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is False

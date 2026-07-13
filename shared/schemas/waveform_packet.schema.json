@@ -46,6 +46,6 @@
   "title": "WaveformPacket",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/waveform_packet/v1.3.0",
-  "version": "1.3.0"
+  "$id": "https://takab.mx/schemas/waveform_packet/v1.4.0",
+  "version": "1.4.0"
 }

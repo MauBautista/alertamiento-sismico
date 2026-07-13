@@ -178,7 +178,14 @@ class EdgeSupervisor:
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
         self.dispatch = CommandDispatcher(
-            s, self.security, self.config, self.actuators, self.cloud, acks_topic=ACKS_TOPIC
+            s,
+            self.security,
+            self.config,
+            self.actuators,
+            self.cloud,
+            acks_topic=ACKS_TOPIC,
+            # T-1.59: salud CACHEADA para el ack del self_test (jamás sondas).
+            health=self.health,
         )
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).

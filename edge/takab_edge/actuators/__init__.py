@@ -77,6 +77,11 @@ class RelayActuator:
         self._gpio.set_relay(command.channel, on)
         return _ack(command, success=True, detail="relay")
 
+    def cabinet_self_test(self) -> dict:
+        """Recorrido de relés NO audibles (T-1.59) — delega en gpio, el dueño
+        del modelo de demandas."""
+        return self._gpio.run_cabinet_self_test()
+
 
 @runtime_checkable
 class BacnetClient(Protocol):
@@ -163,6 +168,14 @@ class ActuatorManager(EdgeModule):
     def execute_sequence(self, commands: Sequence[ActuatorCommand]) -> list[ActuatorAck]:
         """Ejecuta la secuencia del tier best-effort (cada canal se intenta y se ACKea)."""
         return [self.execute(command) for command in commands]
+
+    def cabinet_self_test(self) -> dict:
+        """Autodiagnóstico del gabinete (T-1.59): SOLO relés locales — BACnet no
+        participa (un self-test jamás toca una pasarela de terceros)."""
+        runner = getattr(self._relay, "cabinet_self_test", None)
+        if runner is None:
+            return {"ok": False, "reason": "driver de relés sin autodiagnóstico", "relays": {}}
+        return runner()
 
     @property
     def last_acks(self) -> list[ActuatorAck]:

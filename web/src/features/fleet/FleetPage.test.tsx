@@ -1,7 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// T-1.59: SiteCard monta useSelfTest (react-query) — todo render lleva provider.
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 import { resetSessionStoreForTests } from "../../auth/session.store";
 import { ME_FIXTURES } from "../../test-utils/meFixtures";
@@ -70,7 +77,13 @@ describe("FleetPage", () => {
           dataUpdatedAt: state === "stale" ? Date.now() - 100_000 : Date.now(),
         }),
       );
-      return <FleetPage />;
+      // expectFourStates renderiza por su cuenta: el provider viaja en el JSX.
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      return (
+        <QueryClientProvider client={client}>
+          <FleetPage />
+        </QueryClientProvider>
+      );
     });
   });
 

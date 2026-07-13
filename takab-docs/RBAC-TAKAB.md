@@ -95,6 +95,13 @@
   reciben: ellos GENERAN auditoría, no la supervisan. Escritura: inexistente por diseño
   (único escritor `takab_api.audit`, tabla append-only). Ancla:
   `tests/auth/test_matrix.py::test_read_audit_is_read_only_oversight`.
+- **[DECISION 2026-07-12 · T-1.59] `self_test` (autodiagnóstico del gabinete, extensión de
+  §2):** mismo círculo que `siren_test` — `takab_superadmin`, `tenant_admin`,
+  `building_admin` (acción de DUEÑO del sitio: pulsa relés de gas/puertas con readback;
+  la sirena jamás suena). `soc_operator` DENEGADO: opera incidentes, no mantenimiento del
+  gabinete. Viaja por el MISMO envelope firmado del Command Service (canal lógico
+  `system`, cruce `self_test ⇔ system` forzado por el router). Ancla:
+  `tests/auth/test_matrix.py::test_self_test_is_owner_maintenance_action`.
 
 ---
 

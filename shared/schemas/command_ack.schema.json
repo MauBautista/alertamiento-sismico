@@ -3,7 +3,8 @@
     "ActuatorAction": {
       "enum": [
         "activate",
-        "deactivate"
+        "deactivate",
+        "self_test"
       ],
       "title": "ActuatorAction",
       "type": "string"
@@ -14,7 +15,8 @@
         "strobe",
         "gas_valve",
         "elevator",
-        "door_retainer"
+        "door_retainer",
+        "system"
       ],
       "title": "ActuatorChannel",
       "type": "string"
@@ -60,6 +62,19 @@
       "default": "",
       "title": "Detail",
       "type": "string"
+    },
+    "results": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Results"
     }
   },
   "required": [
@@ -72,6 +87,6 @@
   "title": "CommandAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/command_ack/v1.3.0",
-  "version": "1.3.0"
+  "$id": "https://takab.mx/schemas/command_ack/v1.4.0",
+  "version": "1.4.0"
 }
