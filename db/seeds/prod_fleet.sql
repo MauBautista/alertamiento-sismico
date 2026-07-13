@@ -65,7 +65,8 @@ INSERT INTO rule_sets (rule_set_id, tenant_id, scope_type, scope_id, version,
    'd0000000-0000-0000-0000-000000000001', 1, true,
    '{"quorum":   {"min_nodes": 3, "assoc": "distance", "v_p_km_s": 6.5,
                   "margin_s": 3, "max_window_s": 30},
-     "dictamen": {"pga_no_inhabit_g": 0.25, "pga_monitor_g": 0.05}}'::jsonb)
+     "dictamen": {"pga_no_inhabit_g": 0.25, "pga_monitor_g": 0.05},
+     "notifications": {"inspector_emails": ["mauriciobaujim@gmail.com"]}}'::jsonb)
 ON CONFLICT DO NOTHING;
 
 COMMIT;

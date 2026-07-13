@@ -47,6 +47,11 @@ TAKAB_API_DLQ_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json dlq_urls | 
 TAKAB_API_COMMAND_HMAC_SECRET_PREFIX=$(tf command_hmac_secret_prefix)
 TAKAB_API_EVIDENCE_BUCKET=$(tf evidence_bucket)
 TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
+# T-1.61: sin email_from el provider de email es SIMULADO (no envía). Remitente =
+# identidad SES verificada (sandbox: variables.tf ses_verified_emails); el link
+# del correo al inspector apunta a la consola publicada.
+TAKAB_API_NOTIFY_EMAIL_FROM=mauriciobaujim@gmail.com
+TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
 EOF
 )
 
