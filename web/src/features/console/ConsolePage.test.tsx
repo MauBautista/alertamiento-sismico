@@ -162,6 +162,7 @@ describe("ConsolePage", () => {
           manage_fleet: true,
           relocate_epicenter: true,
           request_dictamen: true,
+          read_audit: false,
         },
       },
     });
@@ -265,6 +266,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           manage_fleet: false,
           relocate_epicenter: true,
           request_dictamen: true,
+          read_audit: false,
         },
       },
     });

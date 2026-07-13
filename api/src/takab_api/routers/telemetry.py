@@ -27,7 +27,7 @@ from takab_api.queries.telemetry import (
     select_metrics,
     select_site_calibrated,
 )
-from takab_api.routers._common import http_error, read_session
+from takab_api.routers._common import http_error, parse_ts, read_session
 from takab_api.schemas.telemetry import (
     ChannelSeries,
     FeatureSeries,
@@ -67,13 +67,9 @@ async def _site_calibrated(conn: AsyncConnection, site_id: UUID) -> bool:
     return bool((await conn.execute(stmt, params)).scalar())
 
 
-def _parse_ts(value: str) -> datetime:
-    """RFC3339 → datetime aware (UTC si viene naïve). 422 si no parsea."""
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise http_error(422, f"timestamp inválido (usa RFC3339): {value!r}") from exc
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+# [T-1.57] El parser vive en routers._common (lo comparten incidents/audit);
+# alias local para no tocar llamadores ni tests de este router.
+_parse_ts = parse_ts
 
 
 def _resolve_range(

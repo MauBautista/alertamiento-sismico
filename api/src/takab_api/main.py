@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from takab_api.health import router as health_router
+from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.dictamens import router as dictamens_router
@@ -55,6 +56,9 @@ def create_app() -> FastAPI:
     # Operaciones del operador + catálogo de referencia (Fase 1.7 · T-1.48).
     app.include_router(incidents_ops_router)
     app.include_router(catalog_router)
+
+    # Audit trail, solo lectura (Fase 1.8 · T-1.57).
+    app.include_router(audit_router)
 
     # Telemetría (B3), exportación de evidencia (B4) y reporte PDF (B5).
     app.include_router(telemetry_router)

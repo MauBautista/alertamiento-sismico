@@ -1388,17 +1388,22 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
         `NumberOfMessagesSent` de `takab-dev-q-telemetry` cae de ~178k/día a <10k/día.
 > **ESTADO.** api 754 (+11) · demo 22 · edge 308 (+35) · ruff limpio ambos lados.
 
-### [ ] T-1.57 · API: `GET /audit` + rango de fechas en `GET /incidents`
-- **Componente:** api + db · **Depende de:** — (SDK se regenera UNA vez aquí)
-- La RLS de `audit_log` YA existe (schema.sql `audit_read`); migración 0012 = solo índice
-  keyset `(ts DESC, audit_id DESC)` (+`(tenant_id, ts DESC)`). Acción `read_audit`
-  (superadmin/support/tenant_admin/gov_operator). Router keyset patrón `list_incidents`;
-  filtros actor/verb exactos, object prefijo, from/to. `queries/audit.py` SOLO SELECT
-  (single-writer intacto). `/incidents` gana `from`/`to` sobre `opened_at`. UI de
-  auditoría DIFERIDA (SDK listo para una tabla futura en /tenants).
-- Criterios: RLS por rol (NULL-tenant solo internos) · 403 sin acción · keyset estable ·
-  cursor corrupto 400 · `to<=from` 422 · from/to combinable con state/severity/cursor ·
-  0012 re-aplicable · drift-gates verdes con UNA regeneración.
+### [x] T-1.57 · API: `GET /audit` + rango de fechas en `GET /incidents` — **COMPLETA (2026-07-12)**
+- **Componente:** api + db · **Depende de:** — (SDK regenerado UNA vez aquí)
+- La RLS de `audit_log` YA existía (schema.sql `audit_read`); migración 0012 = solo
+  índices keyset `(ts DESC, audit_id DESC)` + `(tenant_id, ts DESC)`. Acción nueva
+  `read_audit` (superadmin/support/tenant_admin/gov_operator — nota en RBAC §2;
+  operadores/inspectores GENERAN auditoría, no la supervisan) + campo en `MeActions` y
+  `meFixtures`. `routers/audit.py` keyset patrón exacto de `list_incidents`; filtros
+  actor/verb exactos, object prefijo, from/to (`parse_range_filters` en `_common`, y
+  `parse_ts` movida ahí desde telemetry con alias local). `queries/audit.py` SOLO SELECT
+  (single-writer intacto). `/incidents` ganó `from`/`to` semiabierto sobre `opened_at`,
+  combinable con state/severity/cursor. UI de auditoría DIFERIDA (SDK listo).
+- Criterios verificados: RLS por rol (tenant propio; NULL-tenant solo internos) · 403
+  sin acción · 401 sin token · keyset estable ante inserciones · cursor corrupto 400 ·
+  `to<=from` 422 · rango+cursor sin huecos · 0012 down/up/re-up verificado (0→2 índices,
+  re-aplicable) · drift-gates verdes con UNA regeneración.
+> **ESTADO.** api 766 (+12) · web 525 (fixtures read_audit) · tsc/build/ruff limpios.
 
 ### [ ] T-1.58 · Web: historial con fechas + infinite scroll, M-6, B-4, B-6
 - **Componente:** web · **Depende de:** T-1.57 (SDK)

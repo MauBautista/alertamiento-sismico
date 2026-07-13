@@ -87,6 +87,14 @@
     da 403 (regla de oro 7).
   Anclas: `tests/auth/test_matrix.py::test_relocate_epicenter_is_tenant_operator_action` y
   `::test_request_dictamen_excludes_gov`.
+- **[DECISION 2026-07-12 · T-1.57] `read_audit` (GET /audit, extensión de §2):** lectura
+  PURA del audit trail = `takab_superadmin`, `takab_support` (operación de plataforma),
+  `tenant_admin` (su tenant) y `gov_operator` (evidencia de protección civil). La RLS
+  `audit_read` acota QUÉ filas (tenant propio o interno; `tenant_id NULL` = plataforma,
+  solo internos); la acción decide QUIÉN entra al endpoint. Operadores/inspectores no la
+  reciben: ellos GENERAN auditoría, no la supervisan. Escritura: inexistente por diseño
+  (único escritor `takab_api.audit`, tabla append-only). Ancla:
+  `tests/auth/test_matrix.py::test_read_audit_is_read_only_oversight`.
 
 ---
 

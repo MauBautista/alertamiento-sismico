@@ -7,6 +7,7 @@ estable ante inserciones y sin OFFSET. El cursor opaco (``routers._common``) lle
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import TextClause, text
@@ -23,6 +24,8 @@ def select_incidents(
     severity: str | None,
     site_id: str | None,
     q: str | None,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
     cursor_opened_at: str | None,
     cursor_id: str | None,
     limit: int,
@@ -43,6 +46,14 @@ def select_incidents(
         # Prefijo del id textual del evento sísmico (p.ej. 'EVT-20260510').
         where.append("starts_with(event_id, :q)")
         params["q"] = q
+    # [T-1.57] Rango de fechas sobre opened_at (semiabierto [from, to) — combinable
+    # con el cursor: ambos acotan y el keyset sigue siendo estable).
+    if from_ts is not None:
+        where.append("opened_at >= :from_ts")
+        params["from_ts"] = from_ts
+    if to_ts is not None:
+        where.append("opened_at < :to_ts")
+        params["to_ts"] = to_ts
     if cursor_opened_at is not None and cursor_id is not None:
         where.append(
             "(opened_at, incident_id) < (CAST(:cur_ts AS timestamptz), CAST(:cur_id AS uuid))"

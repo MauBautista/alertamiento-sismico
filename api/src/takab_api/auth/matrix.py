@@ -70,6 +70,12 @@ ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
 # (acto de operador del tenant, jamás de gov/inspector) y solicitar dictamen
 # inserta en el timeline (la RLS ``actions_insert`` excluye a gov_operator, así
 # que concedérsela pintaría un botón que siempre da 403 — regla de oro 7).
+# [T-1.57] ``read_audit`` — lectura de ``audit_log`` (GET /audit). Lectura PURA:
+# la RLS ``audit_read`` ya acota (tenant propio o interno; filas con tenant NULL
+# solo internos), la matriz decide QUIÉN ve el botón/endpoint. Se concede a
+# superadmin/support (operación de plataforma), tenant_admin (su propio tenant)
+# y gov_operator (evidencia de protección civil, solo lectura). Divergencia
+# anotada en RBAC-TAKAB.md §2 (la tabla original no listaba esta columna).
 ACTIONS: tuple[str, ...] = (
     "ack_incident",
     "sign_dictamen",
@@ -80,6 +86,7 @@ ACTIONS: tuple[str, ...] = (
     "manage_fleet",
     "relocate_epicenter",
     "request_dictamen",
+    "read_audit",
 )
 
 
@@ -94,6 +101,7 @@ def _actions(
     manage_fleet: bool = False,
     relocate_epicenter: bool = False,
     request_dictamen: bool = False,
+    read_audit: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -105,6 +113,7 @@ def _actions(
         "manage_fleet": manage_fleet,
         "relocate_epicenter": relocate_epicenter,
         "request_dictamen": request_dictamen,
+        "read_audit": read_audit,
     }
 
 
@@ -118,8 +127,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manage_fleet=True,
         relocate_epicenter=True,
         request_dictamen=True,
+        read_audit=True,
     ),
-    "takab_support": _actions(),
+    "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
         ack_incident=True,
         edit_thresholds=True,
@@ -127,10 +137,11 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manage_fleet=True,
         relocate_epicenter=True,
         request_dictamen=True,
+        read_audit=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
-    "gov_operator": _actions(ack_incident=True, export=True),
+    "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
     "inspector": _actions(sign_dictamen=True, export=True, generate_report=True),
     "building_admin": _actions(siren_test=True),
     "brigadista": _actions(),

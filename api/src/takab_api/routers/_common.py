@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -60,6 +61,31 @@ def http_error(status_code: int, detail: str) -> HTTPException:
     Uniforma el shape de error de toda la API; FastAPI serializa ``detail`` a JSON.
     """
     return HTTPException(status_code=status_code, detail=detail)
+
+
+def parse_ts(value: str) -> datetime:
+    """RFC3339 → datetime aware (UTC si viene naïve). 422 si no parsea.
+
+    [T-1.57] Movida desde ``routers/telemetry.py`` (re-export allá): los filtros
+    ``from``/``to`` de las listas (incidents, audit) usan el mismo parser.
+    """
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise http_error(422, f"timestamp inválido (usa RFC3339): {value!r}") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def parse_range_filters(
+    from_: str | None, to: str | None
+) -> tuple[datetime | None, datetime | None]:
+    """``from``/``to`` OPCIONALES de una lista (sin rango default, a diferencia de
+    ``telemetry._resolve_range``). 422 si ``to <= from``."""
+    from_ts = parse_ts(from_) if from_ else None
+    to_ts = parse_ts(to) if to else None
+    if from_ts is not None and to_ts is not None and to_ts <= from_ts:
+        raise http_error(422, "rango inválido: 'to' debe ser posterior a 'from'")
+    return from_ts, to_ts
 
 
 def clamp_limit(limit: int | None) -> int:

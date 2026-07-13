@@ -22,6 +22,7 @@ class MeActions(BaseModel):
     manage_fleet: bool
     relocate_epicenter: bool
     request_dictamen: bool
+    read_audit: bool
 
 
 class MeResponse(BaseModel):

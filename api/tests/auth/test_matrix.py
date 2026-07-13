@@ -70,6 +70,7 @@ DENY_ALL = {
     "manage_fleet": False,
     "relocate_epicenter": False,
     "request_dictamen": False,
+    "read_audit": False,
 }
 
 
@@ -142,6 +143,15 @@ def test_request_dictamen_excludes_gov() -> None:
     RBAC-TAKAB.md §2."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["request_dictamen"]}
     assert can == {"takab_superadmin", "tenant_admin", "soc_operator"}
+
+
+def test_read_audit_is_read_only_oversight() -> None:
+    """[T-1.57] Lectura PURA del audit trail: plataforma (superadmin/support),
+    dueño del tenant (tenant_admin) y protección civil (gov_operator; la RLS
+    ``audit_read`` lo acota a tenants visibles). Los operadores/inspectores no
+    supervisan la auditoría — la generan."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["read_audit"]}
+    assert can == {"takab_superadmin", "takab_support", "tenant_admin", "gov_operator"}
 
 
 def test_mobile_only_roles_have_no_actions() -> None:

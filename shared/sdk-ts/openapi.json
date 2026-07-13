@@ -1,6 +1,88 @@
 {
   "components": {
     "schemas": {
+      "AuditPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
+      "AuditRowOut": {
+        "description": "Fila de ``audit_log`` tal cual (append-only; jamás se edita).\n\n``tenant_id`` NULL = evento de plataforma (solo visible para roles internos,\nRLS ``audit_read``).",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "integer"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "object": {
+            "title": "Object",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "verb": {
+            "title": "Verb",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_id",
+          "ts",
+          "tenant_id",
+          "actor",
+          "verb",
+          "object",
+          "meta"
+        ],
+        "title": "AuditRowOut",
+        "type": "object"
+      },
       "AuthFrame": {
         "description": "Primer frame obligatorio: autentica el socket con el ID token.",
         "properties": {
@@ -2074,6 +2156,10 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "read_audit": {
+            "title": "Read Audit",
+            "type": "boolean"
+          },
           "relocate_epicenter": {
             "title": "Relocate Epicenter",
             "type": "boolean"
@@ -2100,7 +2186,8 @@
           "siren_test",
           "manage_fleet",
           "relocate_epicenter",
-          "request_dictamen"
+          "request_dictamen",
+          "read_audit"
         ],
         "title": "MeActions",
         "type": "object"
@@ -3794,6 +3881,149 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/audit": {
+      "get": {
+        "description": "Audit trail (ts desc) con filtros exactos (actor/verb), prefijo (object)\ny rango de fechas; paginación keyset estable.",
+        "operationId": "list_audit_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verb",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verb"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit"
+      }
+    },
     "/catalog/earthquakes": {
       "get": {
         "description": "Sismos de referencia, más recientes primero.",
@@ -4229,7 +4459,7 @@
     },
     "/incidents": {
       "get": {
-        "description": "Lista incidentes (opened_at desc) con filtros y paginación keyset estable.",
+        "description": "Lista incidentes (opened_at desc) con filtros, rango de fechas (T-1.57)\ny paginación keyset estable.",
         "operationId": "list_incidents_incidents_get",
         "parameters": [
           {
@@ -4294,6 +4524,38 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
             }
           },
           {

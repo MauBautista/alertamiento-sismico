@@ -20,6 +20,7 @@ from takab_api.routers._common import (
     decode_cursor,
     encode_cursor,
     http_error,
+    parse_range_filters,
     read_session,
 )
 from takab_api.schemas.incidents import IncidentActionOut, IncidentOut, IncidentPage
@@ -44,14 +45,18 @@ async def list_incidents(
     severity: str | None = Query(None),
     site_id: str | None = Query(None),
     q_prefix: str | None = Query(None, alias="q"),
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
     cursor: str | None = Query(None),
     limit: int | None = Query(None),
 ) -> IncidentPage:
-    """Lista incidentes (opened_at desc) con filtros y paginación keyset estable."""
+    """Lista incidentes (opened_at desc) con filtros, rango de fechas (T-1.57)
+    y paginación keyset estable."""
     if state is not None and state not in _VALID_STATE:
         raise http_error(400, "state inválido")
     if severity is not None and severity not in _VALID_SEVERITY:
         raise http_error(400, "severity inválido")
+    from_ts, to_ts = parse_range_filters(from_, to)
 
     size = clamp_limit(limit)
     cur_ts, cur_id = (None, None)
@@ -63,6 +68,8 @@ async def list_incidents(
         severity=severity,
         site_id=site_id,
         q=q_prefix,
+        from_ts=from_ts,
+        to_ts=to_ts,
         cursor_opened_at=cur_ts,
         cursor_id=cur_id,
         limit=size + 1,

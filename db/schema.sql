@@ -466,6 +466,10 @@ REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC;
 CREATE TRIGGER trg_audit_log_append_only
   BEFORE UPDATE OR DELETE ON audit_log
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+-- [T-1.57] Lectura keyset de GET /audit (0012): orden exacto del cursor y
+-- acceso por tenant (la RLS audit_read filtra por tenant_id).
+CREATE INDEX idx_audit_log_ts_id ON audit_log (ts DESC, audit_id DESC);
+CREATE INDEX idx_audit_log_tenant_ts ON audit_log (tenant_id, ts DESC);
 
 -- ---------------------------------------------------------------------------
 -- 8. ROW-LEVEL SECURITY ([ANALISIS-00] sección reescrita — v1 solo cubría 3 tablas,

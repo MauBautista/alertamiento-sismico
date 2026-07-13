@@ -49,6 +49,67 @@ async def test_list_keyset_pages_are_stable(client, make_incident) -> None:
     assert seen[0] == ids[-1]
 
 
+async def test_list_filters_by_date_range(client, make_incident) -> None:
+    """[T-1.57] from/to acotan por opened_at (semiabierto [from, to)) y son
+    combinables con los filtros y el cursor existentes."""
+    ids = []
+    for i in range(4):
+        ids.append(
+            await make_incident(
+                au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_BASE + timedelta(hours=i)
+            )
+        )
+
+    ranged = await client.get(
+        "/incidents",
+        params={
+            "from": (_BASE + timedelta(hours=1)).isoformat(),
+            "to": (_BASE + timedelta(hours=3)).isoformat(),
+        },
+        headers=_token(),
+    )
+    assert ranged.status_code == 200
+    got = [it["incident_id"] for it in ranged.json()["items"]]
+    assert got == [ids[2], ids[1]]  # h+2 y h+1, desc; h+3 queda FUERA (to exclusivo)
+
+    combined = await client.get(
+        "/incidents",
+        params={
+            "from": _BASE.isoformat(),
+            "to": (_BASE + timedelta(hours=4)).isoformat(),
+            "state": "open",
+            "limit": 2,
+        },
+        headers=_token(),
+    )
+    body = combined.json()
+    assert len(body["items"]) == 2 and body["next_cursor"]
+    rest = await client.get(
+        "/incidents",
+        params={
+            "from": _BASE.isoformat(),
+            "to": (_BASE + timedelta(hours=4)).isoformat(),
+            "state": "open",
+            "cursor": body["next_cursor"],
+        },
+        headers=_token(),
+    )
+    seen = [it["incident_id"] for it in body["items"] + rest.json()["items"]]
+    assert len(seen) == len(set(seen)) == 4  # cursor + rango conviven sin huecos
+
+
+async def test_list_invalid_date_range_422(client, make_incident) -> None:
+    await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    same = await client.get(
+        "/incidents",
+        params={"from": _BASE.isoformat(), "to": _BASE.isoformat()},
+        headers=_token(),
+    )
+    assert same.status_code == 422
+    garbage = await client.get("/incidents", params={"from": "ayer"}, headers=_token())
+    assert garbage.status_code == 422
+
+
 async def test_detail_and_missing_is_404(client, make_incident) -> None:
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, severity="critical")
     ok = await client.get(f"/incidents/{iid}", headers=_token())
