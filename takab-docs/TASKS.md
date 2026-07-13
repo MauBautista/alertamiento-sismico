@@ -1405,14 +1405,19 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   re-aplicable) · drift-gates verdes con UNA regeneración.
 > **ESTADO.** api 766 (+12) · web 525 (fixtures read_audit) · tsc/build/ruff limpios.
 
-### [ ] T-1.58 · Web: historial con fechas + infinite scroll, M-6, B-4, B-6
+### [x] T-1.58 · Web: historial con fechas + infinite scroll, M-6, B-4, B-6 — **COMPLETA (2026-07-12)**
 - **Componente:** web · **Depende de:** T-1.57 (SDK)
-- Historial Triage → `useInfiniteQuery` (next_cursor) + date-pickers + botón "CARGAR MÁS"
-  explícito. M-6: card de relés con StateFrame 4 estados (error de /fleet ≠ empty; roles
-  sin /fleet NO es error). B-4: subtítulo de BuildingPage con estados. B-6: manualChunks
-  (maplibre, vendor-react) ⇒ build sin warning >500 kB.
-- Criterios: CARGAR MÁS anexa sin duplicar y desaparece sin cursor · fechas acotan la
-  query · 4 estados anclados por test en relés y building · build sin warning.
+- Historial Triage → `useInfiniteQuery` sobre `next_cursor` (primer infinite del repo;
+  cambiar un filtro reinicia la paginación por queryKey) + date-pickers `from`/`to`
+  (medianoche LOCAL; `to` viaja EXCLUSIVO como día+1) + botón "CARGAR MÁS" explícito que
+  desaparece sin cursor. M-6: card de relés con StateFrame 4 estados — un 500 de /fleet
+  pinta error+reintento (≠ "CONFIG NO VISIBLE"); rol sin /fleet queda en empty honesto
+  (error null, la query ni corre); staleness "DATOS RETENIDOS". B-4: subtítulo de
+  BuildingPage con estados (SITIO NO DISPONIBLE + REINTENTAR real). B-6: manualChunks
+  (maplibre ~1 MB aislado y cacheable, vendor-react; app ~275 kB) ⇒ build sin warning.
+- Criterios verificados por test: loadMore anexa sin duplicar con el cursor correcto ·
+  fechas → RFC3339 del server · 4 estados anclados en relés y building · build limpio.
+> **ESTADO.** web 535 (+10) · tsc/eslint/prettier/build OK.
 
 ### [ ] T-1.59 · `self_test` de gabinete (cierra M-2; extensión de T-1.23)
 - **Componente:** edge + api + web + db · **Depende de:** T-1.56 (SCHEMA_VERSION serial)

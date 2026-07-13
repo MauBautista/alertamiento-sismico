@@ -25,9 +25,9 @@ const SEVERITIES: { id: string | null; lbl: string }[] = [
  * T-1.29 · Triage Estructural e Historial (mockup 3, TriageHistory.jsx).
  *
  * Desviaciones honestas ratificadas frente al mockup:
- * - Sin selector de rango (7d/30d/90d/1y): `GET /incidents` no acepta rango de
- *   fechas. Filtrarlo en cliente sólo tocaría la página ya cargada e insinuaría que
- *   el servidor filtró. Se muestra la cuenta de lo realmente cargado.
+ * - Rango de fechas REAL del servidor (T-1.57/58: `GET /incidents?from&to`) con
+ *   date-pickers, en vez de los presets 7d/30d/90d del mockup. La cuenta muestra
+ *   lo realmente cargado y "CARGAR MÁS" pagina por keyset (`next_cursor`).
  * - Sin "EXPORTAR LOTE": no existe endpoint de exportación por lotes.
  * - El buscador filtra por PREFIJO de `event_id` — es lo único que el servidor
  *   sabe buscar (`q`); no busca por epicentro.
@@ -38,9 +38,11 @@ const SEVERITIES: { id: string | null; lbl: string }[] = [
 export default function TriagePage() {
   const [severity, setSeverity] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [from, setFrom] = useState<string | null>(null);
+  const [to, setTo] = useState<string | null>(null);
   const [selected, setSelected] = useState<TriageRow | null>(null);
 
-  const triage = useTriage({ severity, q });
+  const triage = useTriage({ severity, q, from, to });
   const me = useSessionStore((s) => s.me);
   const now = useNow(5000);
 
@@ -102,6 +104,23 @@ export default function TriagePage() {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
+          <div className="triage__dates">
+            <input
+              type="date"
+              aria-label="Desde (fecha de apertura)"
+              value={from ?? ""}
+              max={to ?? undefined}
+              onChange={(e) => setFrom(e.target.value || null)}
+            />
+            <span aria-hidden>—</span>
+            <input
+              type="date"
+              aria-label="Hasta (fecha de apertura)"
+              value={to ?? ""}
+              min={from ?? undefined}
+              onChange={(e) => setTo(e.target.value || null)}
+            />
+          </div>
           <div className="triage__segment">
             {SEVERITIES.map((o) => (
               <button
@@ -145,6 +164,16 @@ export default function TriagePage() {
               onSelect={setSelected}
             />
           </StateFrame>
+          {triage.hasMore && (
+            <button
+              type="button"
+              className="soc-btn soc-btn--secondary triage__more"
+              onClick={triage.loadMore}
+              disabled={triage.loadingMore}
+            >
+              {triage.loadingMore ? "CARGANDO MÁS…" : "CARGAR MÁS"}
+            </button>
+          )}
           <CatalogPanel />
         </div>
 

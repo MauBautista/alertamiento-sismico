@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import {
@@ -7,7 +7,7 @@ import {
   listRuleSetsRuleSetsGet,
   listSitesSitesGet,
 } from "@takab/sdk";
-import type { IncidentOut, RuleSetOut, SeismicEventOut, SiteOut } from "@takab/sdk";
+import type { IncidentPage, RuleSetOut, SeismicEventOut, SiteOut } from "@takab/sdk";
 
 import { activeConfigFor, buildRows, minNodesFrom } from "./model";
 import type { TriageRow } from "./model";
@@ -15,7 +15,7 @@ import type { TriageRow } from "./model";
 /** El historial es post-evento: no hay nada que refrescar cada segundo. */
 export const TRIAGE_STALE_MS = 120_000;
 
-/** Página del historial. El servidor pagina por keyset; el triage no pagina aún. */
+/** Tamaño de página del keyset del servidor (T-1.58: el triage YA pagina). */
 export const HISTORY_LIMIT = 50;
 
 export interface TriageFilters {
@@ -23,6 +23,9 @@ export interface TriageFilters {
   severity: string | null;
   /** Prefijo de event_id — es lo ÚNICO que el servidor sabe buscar (`q`). */
   q: string;
+  /** yyyy-mm-dd del date picker (día LOCAL); null = sin acotar (T-1.57/58). */
+  from: string | null;
+  to: string | null;
 }
 
 class TriageRequestError extends Error {
@@ -32,18 +35,36 @@ class TriageRequestError extends Error {
   }
 }
 
-async function fetchIncidents(filters: TriageFilters): Promise<IncidentOut[]> {
+/** Medianoche LOCAL del día del picker → RFC3339 (el server compara opened_at). */
+function dayStartIso(day: string): string {
+  return new Date(`${day}T00:00:00`).toISOString();
+}
+
+/** Cota EXCLUSIVA del server para incluir el día `to` completo: día siguiente. */
+function nextDayIso(day: string): string {
+  const d = new Date(`${day}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+async function fetchIncidentsPage(
+  filters: TriageFilters,
+  cursor: string | null,
+): Promise<IncidentPage> {
   const { data, response } = await listIncidentsIncidentsGet({
     query: {
       severity: filters.severity,
       q: filters.q.trim() === "" ? null : filters.q.trim(),
+      from: filters.from ? dayStartIso(filters.from) : null,
+      to: filters.to ? nextDayIso(filters.to) : null,
+      cursor,
       limit: HISTORY_LIMIT,
     },
   });
   if (data === undefined) {
     throw new TriageRequestError("/incidents", response.status);
   }
-  return data.items;
+  return data;
 }
 
 async function fetchEvents(): Promise<SeismicEventOut[]> {
@@ -79,6 +100,10 @@ export interface TriageData {
   error: string | null;
   dataUpdatedAt: number;
   refetch: () => void;
+  /** Paginación keyset (T-1.58): ¿hay más páginas en el servidor? */
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMore: () => void;
 }
 
 /**
@@ -86,13 +111,26 @@ export interface TriageData {
  * con `/events` (magnitud, epicentro, nodos) y `/sites`. Ningún endpoint devuelve
  * la fila del mockup, que confundía evento con incidente.
  *
+ * T-1.58: paginación keyset real (`useInfiniteQuery` sobre `next_cursor`) + rango
+ * de fechas del servidor (`from`/`to` de T-1.57). Cambiar cualquier filtro reinicia
+ * la paginación (queryKey nueva).
+ *
  * `/events`, `/sites` y `/rule-sets` degradan sin tumbar la página: sin ellos la
  * tabla pierde contexto, no el historial.
  */
 export function useTriage(filters: TriageFilters): TriageData {
-  const incidents = useQuery({
-    queryKey: ["incidents", "history", filters.severity, filters.q.trim()],
-    queryFn: () => fetchIncidents(filters),
+  const incidents = useInfiniteQuery({
+    queryKey: [
+      "incidents",
+      "history",
+      filters.severity,
+      filters.q.trim(),
+      filters.from,
+      filters.to,
+    ],
+    queryFn: ({ pageParam }) => fetchIncidentsPage(filters, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor ?? null,
     staleTime: TRIAGE_STALE_MS,
   });
   const events = useQuery({
@@ -107,9 +145,13 @@ export function useTriage(filters: TriageFilters): TriageData {
     staleTime: 300_000,
   });
 
+  const incidentItems = useMemo(
+    () => incidents.data?.pages.flatMap((p) => p.items),
+    [incidents.data],
+  );
   const rows = useMemo(
-    () => buildRows(incidents.data, events.data, sites.data),
-    [incidents.data, events.data, sites.data],
+    () => buildRows(incidentItems, events.data, sites.data),
+    [incidentItems, events.data, sites.data],
   );
 
   const minNodesFor = useCallback(
@@ -125,6 +167,11 @@ export function useTriage(filters: TriageFilters): TriageData {
     dataUpdatedAt: incidents.dataUpdatedAt,
     refetch: () => {
       void incidents.refetch();
+    },
+    hasMore: incidents.hasNextPage,
+    loadingMore: incidents.isFetchingNextPage,
+    loadMore: () => {
+      void incidents.fetchNextPage();
     },
   };
 }

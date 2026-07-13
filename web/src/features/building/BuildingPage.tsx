@@ -69,7 +69,25 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
         {/* El h1 es el título de la PÁGINA: existe antes de que el sitio cargue y no
             cambia con los datos. El nombre del edificio va debajo. */}
         <h1 className="bld__title">DASHBOARD EDIFICIO</h1>
-        <p className="bld__name">{site.data?.name ?? "CARGANDO SITIO…"}</p>
+        {/* B-4 (T-1.58): el subtítulo distingue "cargando" de "falló" — un GET
+            /sites/{id} caído no puede quedarse en "CARGANDO…" eterno. */}
+        <p className="bld__name">
+          {site.data?.name ??
+            (site.isError ? (
+              <>
+                SITIO NO DISPONIBLE{" "}
+                <button
+                  type="button"
+                  className="soc-btn soc-btn--secondary"
+                  onClick={() => void site.refetch()}
+                >
+                  REINTENTAR
+                </button>
+              </>
+            ) : (
+              "CARGANDO SITIO…"
+            ))}
+        </p>
         <p className="bld__sub soc-mono">
           <span>{siteId}</span>
           {site.data && (

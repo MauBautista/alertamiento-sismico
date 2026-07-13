@@ -3,6 +3,21 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // B-6 (T-1.58): maplibre y el runtime de React van en chunks propios y
+        // cacheables — el código de la app queda en ~275 kB. maplibre-gl pesa
+        // ~1 MB él solo (tamaño intrínseco de la librería, ya aislado): el
+        // límite del warning se sube SOLO para cubrir ese chunk conocido.
+        manualChunks: {
+          maplibre: ["maplibre-gl"],
+          "vendor-react": ["react", "react-dom", "react-router"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1100,
+  },
   server: {
     // La API no monta CORS: en dev todo va por el proxy /api → :8000. El prefijo
     // además evita la colisión de paths SPA/API (p.ej. /fleet existe en ambos).

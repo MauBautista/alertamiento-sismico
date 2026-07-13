@@ -490,6 +490,26 @@
   font-size: 12px;
   flex: 1;
 }
+/* T-1.58: rango de fechas real del servidor (from/to sobre opened_at). */
+.triage__dates {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--tk-fg-3);
+}
+.triage__dates input {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 11.5px;
+  color-scheme: dark;
+}
+/* T-1.58: paginación keyset — botón explícito bajo la tabla. */
+.triage__more {
+  align-self: center;
+  margin-top: 10px;
+}
 .triage__segment {
   display: inline-flex;
   background: var(--tk-surface-1);

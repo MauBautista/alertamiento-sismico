@@ -67,7 +67,13 @@ const INCIDENT: LiveIncident = {
   max_pgv_cms: null,
 };
 
-const NO_RELAYS: SiteRelaysData = { relays: null, loading: false };
+const NO_RELAYS: SiteRelaysData = {
+  relays: null,
+  loading: false,
+  error: null,
+  dataUpdatedAt: Date.now(),
+  refetch: () => undefined,
+};
 
 const SOH: SiteStateFrame = {
   type: "site_state",
@@ -199,7 +205,7 @@ describe("DetailPanel", () => {
   it("relés del gabinete: pinta la config activa o el estado honesto", () => {
     renderPanel({
       relays: {
-        loading: false,
+        ...NO_RELAYS,
         relays: [{ key: "siren", label: "SIRENA", wiring: "NO", armed: true }],
       },
     });
@@ -210,6 +216,30 @@ describe("DetailPanel", () => {
   it("relés no visibles ⇒ mensaje honesto, jamás estados inventados", () => {
     renderPanel({ relays: NO_RELAYS });
     expect(screen.getByText(/CONFIG DE RELÉS NO VISIBLE/)).toBeInTheDocument();
+  });
+
+  it("M-6: un 500 de /fleet NO es 'config no visible' — es error con reintento", () => {
+    const refetch = vi.fn();
+    renderPanel({
+      relays: { ...NO_RELAYS, error: "GET /fleet/gateways falló (500)", refetch },
+    });
+    const card = screen.getByTestId("relays-card");
+    expect(within(card).queryByText(/CONFIG DE RELÉS NO VISIBLE/)).toBeNull();
+    expect(within(card).getByText(/falló \(500\)/)).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("button", { name: /REINTENTAR/i }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("M-6: flota vieja se rotula stale, no se pinta como fresca", () => {
+    renderPanel({
+      relays: {
+        ...NO_RELAYS,
+        relays: [{ key: "siren", label: "SIRENA", wiring: "NO", armed: true }],
+        dataUpdatedAt: Date.now() - 10 * 60_000,
+      },
+    });
+    const card = screen.getByTestId("relays-card");
+    expect(within(card).getByText(/DATOS RETENIDOS/)).toBeInTheDocument();
   });
 
   // ---- CCTV (T-1.50) -------------------------------------------------------

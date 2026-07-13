@@ -79,6 +79,31 @@ describe("useSiteRelays", () => {
     expect(result.current.relays).toBeNull();
   });
 
+  it("M-6: un fallo de /fleet/gateways se PROPAGA como error (≠ empty)", async () => {
+    sdk.listGatewaysFleetGatewaysGet.mockResolvedValue({
+      data: undefined,
+      response: { status: 500 },
+    });
+    sdk.listSitesSitesGet.mockResolvedValue({ data: [], response: { status: 200 } });
+    sdk.listRuleSetsRuleSetsGet.mockResolvedValue({
+      data: { items: [] },
+      response: { status: 200 },
+    });
+    const { result } = renderHook(() => useSiteRelays("s-1"), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.error).toMatch(/500/));
+    expect(result.current.relays).toBeNull();
+  });
+
+  it("M-6: un rol SIN /fleet queda en empty honesto (error null), no en error", async () => {
+    seedAuthenticated(ME_FIXTURES.inspector); // sin ruta /fleet: la query ni corre
+    const { result } = renderHook(() => useSiteRelays("s-1"), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBeNull();
+    expect(result.current.relays).toBeNull();
+    expect(sdk.listGatewaysFleetGatewaysGet).not.toHaveBeenCalled();
+  });
+
   it("siteId null ⇒ null sin reventar", () => {
     sdk.listGatewaysFleetGatewaysGet.mockResolvedValue({ data: [], response: { status: 200 } });
     sdk.listSitesSitesGet.mockResolvedValue({ data: [], response: { status: 200 } });

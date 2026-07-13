@@ -18,7 +18,7 @@ import { groupActions } from "./bms";
 import type { LiveIncident } from "./useLiveIncidents";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { SiteFeaturesData } from "./useSiteFeatures";
-import type { SiteRelaysData } from "./useSiteRelays";
+import { RELAYS_STALE_MS, type SiteRelaysData } from "./useSiteRelays";
 import FeatureStrip from "./FeatureStrip";
 import type { SiteStateFrame } from "@takab/sdk";
 
@@ -319,17 +319,27 @@ export default function DetailPanel({
             <div className="soc-card__sub">CONFIG ACTIVA DE RELAYS · ARMADO POR ENLACE</div>
           </div>
         </div>
-        {relays.loading ? (
-          <div className="soc-stateframe soc-stateframe--status" data-state="loading" aria-busy>
-            <span>CARGANDO · RELÉS…</span>
-          </div>
-        ) : relays.relays === null ? (
-          <div className="soc-stateframe soc-stateframe--status" data-state="empty">
-            <span>CONFIG DE RELÉS NO VISIBLE (SIN RULE_SET O SIN ENLACE)</span>
-          </div>
-        ) : (
-          <RelayGrid relays={relays.relays} />
-        )}
+        {/* M-6 (T-1.58): 4 estados — un 500 de /fleet/gateways NO es "config no
+            visible"; el empty queda para lo genuinamente invisible (sin rule_set,
+            sin gateway del sitio o rol sin /fleet, donde error llega null). */}
+        <StateFrame
+          label="RELÉS"
+          loading={relays.loading}
+          error={relays.error}
+          onRetry={relays.refetch}
+          empty={relays.relays === null}
+          emptyText="CONFIG DE RELÉS NO VISIBLE (SIN RULE_SET O SIN ENLACE)"
+          staleSince={
+            !relays.loading &&
+            !relays.error &&
+            relays.dataUpdatedAt > 0 &&
+            Date.now() - relays.dataUpdatedAt > RELAYS_STALE_MS
+              ? relays.dataUpdatedAt
+              : null
+          }
+        >
+          <RelayGrid relays={relays.relays ?? []} />
+        </StateFrame>
       </div>
 
       {/* CCTV ONVIF (T-1.50): SIEMPRE visible — aquí VA la cámara cuando

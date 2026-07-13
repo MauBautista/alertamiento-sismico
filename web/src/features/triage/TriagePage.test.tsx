@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSessionStore } from "../../auth/session.store";
@@ -46,6 +46,9 @@ function triageData(over: Partial<TriageData> = {}): TriageData {
     error: null,
     dataUpdatedAt: Date.now(),
     refetch: vi.fn(),
+    hasMore: false,
+    loadingMore: false,
+    loadMore: vi.fn(),
     ...over,
   };
 }
@@ -119,11 +122,41 @@ describe("TriagePage", () => {
     expect(screen.queryByText(/EXPORTAR LOTE/i)).toBeNull();
   });
 
-  it("no ofrece selector de rango: /incidents no filtra por fecha", () => {
+  it("rango de fechas REAL del servidor: los pickers emiten from/to al hook (T-1.58)", () => {
     mocks.useTriage.mockReturnValue(triageData());
     render(pageAt());
+    const desde = screen.getByLabelText(/Desde/) as HTMLInputElement;
+    const hasta = screen.getByLabelText(/Hasta/) as HTMLInputElement;
+    fireEvent.change(desde, { target: { value: "2026-07-01" } });
+    expect(mocks.useTriage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ from: "2026-07-01", to: null }),
+    );
+    fireEvent.change(hasta, { target: { value: "2026-07-10" } });
+    expect(mocks.useTriage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ from: "2026-07-01", to: "2026-07-10" }),
+    );
+    // Sin presets falsos del mockup: el rango es el que el server filtra.
     expect(screen.queryByText(/ÚLT\. 7 DÍAS/)).toBeNull();
-    expect(screen.queryByText(/ÚLT\. 90 DÍAS/)).toBeNull();
+  });
+
+  it("CARGAR MÁS solo existe si el servidor tiene más páginas, y pide la siguiente", () => {
+    const loadMore = vi.fn();
+    mocks.useTriage.mockReturnValue(triageData({ hasMore: true, loadMore }));
+    render(pageAt());
+    const btn = screen.getByRole("button", { name: "CARGAR MÁS" });
+    fireEvent.click(btn);
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin next_cursor no hay botón; cargando más queda deshabilitado y lo dice", () => {
+    mocks.useTriage.mockReturnValue(triageData({ hasMore: false }));
+    const { unmount } = render(pageAt());
+    expect(screen.queryByRole("button", { name: /CARGAR MÁS/ })).toBeNull();
+    unmount();
+    mocks.useTriage.mockReturnValue(triageData({ hasMore: true, loadingMore: true }));
+    render(pageAt());
+    const btn = screen.getByRole("button", { name: /CARGANDO MÁS…/ });
+    expect(btn.hasAttribute("disabled")).toBe(true);
   });
 
   it("el buscador dice que busca por prefijo de event_id, no por epicentro", () => {

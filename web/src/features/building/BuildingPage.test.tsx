@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetSessionStoreForTests } from "../../auth/session.store";
@@ -29,6 +29,12 @@ vi.mock("./useSiteIncidents", () => ({
 }));
 vi.mock("./useSirenTest", () => ({ useSirenTest: mocks.useSirenTest }));
 vi.mock("../console/useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
+// B-4 (T-1.58): el subtítulo depende de GET /sites/{id} — se mockea SOLO esa
+// función del SDK (el resto del módulo sigue real).
+vi.mock("@takab/sdk", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@takab/sdk")>()),
+  getSiteSitesSiteIdGet: mocks.getSite,
+}));
 
 const CHANNELS = {
   channels: [
@@ -109,6 +115,27 @@ describe("BuildingPage", () => {
     expect(screen.getByTestId("incidents-card")).toBeInTheDocument();
     expect(screen.getByTestId("multi-channel-strip")).toBeInTheDocument();
     expect(screen.getByTestId("history-chart")).toBeInTheDocument();
+  });
+
+  it("B-4: el subtítulo distingue cargar de fallar, con reintento real", async () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    mocks.getSite.mockResolvedValue({ data: undefined, response: { status: 500 } });
+    renderRoutesAt("/building/s-1");
+    expect(await screen.findByText(/SITIO NO DISPONIBLE/)).toBeInTheDocument();
+    expect(screen.queryByText(/CARGANDO SITIO…/)).toBeNull();
+    const calls = mocks.getSite.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR" }));
+    await waitFor(() => expect(mocks.getSite.mock.calls.length).toBeGreaterThan(calls));
+  });
+
+  it("B-4: con el sitio cargado pinta su nombre (no el placeholder)", async () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    mocks.getSite.mockResolvedValue({
+      data: { site_id: "s-1", name: "Planta Cholula", code: "CHO", lat: 19.06, lon: -98.3 },
+      response: { status: 200 },
+    });
+    renderRoutesAt("/building/s-1");
+    expect(await screen.findByText("Planta Cholula")).toBeInTheDocument();
   });
 
   it("sin frame de salud muestra S/D, nunca una salud inventada", () => {
