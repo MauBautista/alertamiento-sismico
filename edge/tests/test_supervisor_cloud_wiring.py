@@ -96,6 +96,10 @@ def test_features_de_tier_normal_se_acumulan_y_salen_en_lote(online_supervisor):
     assert _payloads(transport, FEATURES_TOPIC) == []  # nada individual en reposo
     assert sup.telemetry.pending == 5
     sup.telemetry.flush_pending()
+    # El publish NO es síncrono: sale por el hilo del CloudConnector. Aser­tar de
+    # inmediato pasaba en local y fallaba en CI (máquina lenta) — flake real, visto
+    # el 2026-07-14. Los tests hermanos ya esperaban; este se había saltado el _wait.
+    assert _wait(lambda: _payloads(transport, FEATURES_BATCH_TOPIC))
     batches = _payloads(transport, FEATURES_BATCH_TOPIC)
     assert len(batches) == 1  # 5 features → UN publish (ancla del costo)
     assert batches[0]["gateway_id"] == sup.settings.gateway_id
@@ -113,8 +117,13 @@ def test_escalacion_drena_el_lote_antes_del_1hz(online_supervisor):
         sup.seedlink.feed(next(stream))  # reposo → se acumulan
     assert sup.telemetry.pending == 3
     _feed_quake(sup)  # escala el tier → flush + 1 Hz individual
-    topics = [t for t, _p in transport.published if t in (FEATURES_TOPIC, FEATURES_BATCH_TOPIC)]
-    assert FEATURES_BATCH_TOPIC in topics and FEATURES_TOPIC in topics
+
+    def _topics() -> list[str]:
+        return [t for t, _p in transport.published if t in (FEATURES_TOPIC, FEATURES_BATCH_TOPIC)]
+
+    # Igual que arriba: el publish viaja por el hilo del cloud, hay que esperarlo.
+    assert _wait(lambda: FEATURES_BATCH_TOPIC in _topics() and FEATURES_TOPIC in _topics())
+    topics = _topics()
     assert topics.index(FEATURES_BATCH_TOPIC) < topics.index(FEATURES_TOPIC)
 
 
