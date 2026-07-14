@@ -1559,3 +1559,14 @@ mentía en la nube. Ninguno era lo que parecía.
   que se olvida es el **grupo**: sin él `claims.py` rechaza con `role not in groups` (401)
   aunque el `custom:role` sea correcto. Contraseñas a Secrets Manager, impresas una vez.
   MFA TOTP obligatorio del pool ⇒ cada perfil enrola authenticator en su primer login.
+
+> **ESTADO 1.8.1 — DESPLEGADA Y VERIFICADA EN PRODUCCIÓN (2026-07-14, tag `9d16056`).**
+> `terraform apply` (Sid `WorkerSesSend`) + identidad SES verificada + `cloud-deploy`
+> (alembic **0016**, 7 contenedores) + `cloud-users` (6 perfiles con grupo y claims).
+> **El correo de dictamen que llevaba horas atascado SALIÓ de verdad** tras reencolarlo
+> (`notify sent email/parallel`, `status=sent`, cero error) — la primera vez que un correo
+> de la aplicación llega desde la nube. Typo de la cascada corregido en el rule_set vivo.
+> El bundle servido por la consola dice `VITE_DEV_TOKEN_ENABLED:"false"`: la pantalla de
+> login ya solo ofrece Cognito. api 797 · web 543 · edge 336 · e2e 2 · CI verde.
+> Nuevo fichero LOCAL (gitignored) `infra/terraform/envs/dev/local.auto.tfvars`: fija
+> `serve_enabled=true` y el CIDR, para que un `apply` a secas no destruya la consola.
