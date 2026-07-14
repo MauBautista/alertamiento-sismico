@@ -130,6 +130,40 @@ def test_lag_is_measured():
     assert 0.0 < client.last_lag_s < 1.5
 
 
+def test_lag_crece_cuando_el_stream_muere(monkeypatch):
+    """[T-1.65] El lag se CONGELABA en el instante del último paquete.
+
+    Con el Shake fuera de la red (14/07/2026: 9 h) el heartbeat siguió publicando
+    "1.24 s" y la nube pintó el gabinete OPERATIVO — el sistema estuvo ciego y nadie
+    se enteró. El lag debe medir la ANTIGÜEDAD del dato, y crecer sin límite.
+    """
+    import takab_edge.seedlink as seedlink_mod
+
+    client = SeedLinkClient(_settings(), transport=None, source=None)
+    client.ingest(_pkt_lagging(0.5))
+    recien = client.last_lag_s
+    assert recien is not None and 0.4 < recien < 1.5  # dato fresco
+
+    real_utcnow = seedlink_mod.utcnow
+    monkeypatch.setattr(  # el sensor enmudece: pasa una hora sin un solo paquete
+        seedlink_mod, "utcnow", lambda: real_utcnow() + timedelta(hours=1)
+    )
+    muerto = client.last_lag_s
+    assert muerto is not None and muerto > 3600.0  # crece; JAMÁS se queda en 0.5 s
+
+
+def test_sin_paquetes_el_lag_cuenta_desde_el_arranque():
+    """Un gabinete que nunca vio el sensor tampoco puede reportar 0 s de lag."""
+    client = SeedLinkClient(_settings(), transport=None, source=None)
+    assert client.last_lag_s is None  # ni arrancado: sin dato es None, no 0.0
+    client.start()
+    try:
+        assert client.last_lag_s is not None
+        assert client.last_lag_s >= 0.0  # empieza a contar desde el arranque
+    finally:
+        client.stop()
+
+
 def test_no_thread_without_transport_or_source():
     client = SeedLinkClient(_settings(), source=None, transport=None)
     client.start()

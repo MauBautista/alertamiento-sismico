@@ -80,7 +80,8 @@ class SeedLinkClient(EdgeModule):
         self._reconnects = 0
         self._duplicates = 0
         self._gaps = 0
-        self._last_lag_s: float | None = None
+        self._last_packet_end: datetime | None = None
+        self._started_at: datetime | None = None
         self._backoff = settings.seedlink_backoff_initial_s
         self._last_end: dict[str, datetime] = {}
         self._recent: deque[tuple[str, datetime]] = deque(maxlen=_DEDUP_WINDOW)
@@ -126,7 +127,7 @@ class SeedLinkClient(EdgeModule):
                 log.warning("gap en %s: %.2fs", packet.channel, gap_s)
 
         self._last_end[packet.channel] = packet.next_starttime
-        self._last_lag_s = (utcnow() - packet.endtime).total_seconds()
+        self._last_packet_end = packet.endtime  # el lag se DERIVA de aquí al consultar
         self._backoff = self.settings.seedlink_backoff_initial_s  # datos → resetea backoff
         self._remember(key)
         self.feed(packet)
@@ -156,11 +157,25 @@ class SeedLinkClient(EdgeModule):
 
     @property
     def last_lag_s(self) -> float | None:
-        return self._last_lag_s
+        """Antigüedad del dato MÁS RECIENTE, calculada AL CONSULTAR (no al recibir).
+
+        Antes se congelaba en el instante del último paquete. El 14/07/2026 el Shake
+        estuvo 9 h fuera de la red y el heartbeat siguió publicando `1.24 s`: la nube
+        pintó el gabinete OPERATIVO y NADIE se enteró de que el sistema estaba ciego.
+        Un dato viejo disfrazado de vivo es peor que no tener dato (regla de oro 7).
+
+        Ahora CRECE sin límite mientras no entren muestras — que es exactamente la
+        señal que el SOC necesita— y la nube lo degrada sola (`derive_fleet_state`).
+        Sin ningún paquete todavía, se mide desde el arranque del módulo: un gabinete
+        que jamás vio el sensor tampoco puede reportar 0 s de lag.
+        """
+        ref = self._last_packet_end or self._started_at
+        return None if ref is None else (utcnow() - ref).total_seconds()
 
     # --- Ciclo de vida ---
     def _on_start(self) -> None:
         self._stop.clear()
+        self._started_at = utcnow()  # referencia del lag mientras no llegue el 1er paquete
         if self._transport is not None:
             self._thread = threading.Thread(
                 target=self._run_transport, name="seedlink", daemon=True

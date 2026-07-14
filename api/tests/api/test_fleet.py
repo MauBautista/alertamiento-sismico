@@ -55,7 +55,7 @@ _THRESHOLDS = {
     "battery_min_pct": 80.0,
     "cert_min_days": 30,
     "mqtt_rtt_max_ms": 1500.0,
-    "seedlink_lag_max_s": 2.0,
+    "seedlink_lag_max_s": 15.0,  # espejo de settings (T-1.65: lag = ANTIGÜEDAD del dato)
     "ntp_offset_max_ms": 100.0,
 }
 _HEALTHY = {
@@ -97,7 +97,7 @@ def test_derive_sin_enlace_when_stale() -> None:
         {"battery_pct": 79.0},
         {"cert_days_remaining": 29},
         {"mqtt_rtt_ms": 1500.1},
-        {"seedlink_lag_s": 2.1},
+        {"seedlink_lag_s": 15.1},
         {"ntp_offset_ms": 100.1},
         {"ntp_offset_ms": -100.1},  # el offset se compara en valor absoluto
     ],
@@ -130,7 +130,7 @@ def test_reasons_name_each_metric() -> None:
     assert _reasons(battery_pct=79.0) == ["BATERÍA 79%"]
     assert _reasons(cert_days_remaining=29) == ["CERT 29d"]
     assert _reasons(mqtt_rtt_ms=1600.0) == ["MQTT 1600ms"]
-    assert _reasons(seedlink_lag_s=2.5) == ["SEEDLINK 2.5s"]
+    assert _reasons(seedlink_lag_s=25.5) == ["SEEDLINK 25.5s"]
     assert _reasons(ntp_offset_ms=-150.0) == ["NTP -150ms"]
 
 

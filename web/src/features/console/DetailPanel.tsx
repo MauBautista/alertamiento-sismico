@@ -174,7 +174,11 @@ export default function DetailPanel({
             <SohBadge
               label="LAG SEEDLINK"
               value={soh?.seedlink_lag_s != null ? `${soh.seedlink_lag_s.toFixed(1)} s` : "S/D"}
-              ok={soh?.seedlink_lag_s != null && soh.seedlink_lag_s < 5}
+              // [T-1.65] El lag es la ANTIGÜEDAD del dato, no la latencia del último
+              // paquete: entre registros miniSEED sube hasta ~7 s con el sensor SANO.
+              // Espeja el umbral del servidor (fleet_seedlink_lag_max_s = 15 s), que es
+              // quien decide DEGRADADO; con 5 s este badge se pondría rojo sin motivo.
+              ok={soh?.seedlink_lag_s != null && soh.seedlink_lag_s < 15}
             />
           </div>
           <div className="soc-edge-tag">

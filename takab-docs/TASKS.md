@@ -1570,3 +1570,31 @@ mentía en la nube. Ninguno era lo que parecía.
 > login ya solo ofrece Cognito. api 797 · web 543 · edge 336 · e2e 2 · CI verde.
 > Nuevo fichero LOCAL (gitignored) `infra/terraform/envs/dev/local.auto.tfvars`: fija
 > `serve_enabled=true` y el CIDR, para que un `apply` a secas no destruya la consola.
+
+### [x] T-1.65 · El lag de SeedLink era un dato congelado disfrazado de vivo — **COMPLETA (2026-07-14)**
+- **Componente:** edge · api · web · **Depende de:** —
+- **Cómo se descubrió:** verificando el despliegue de la 1.8.1 (`revisa que todo funcione`).
+  El gabinete latía cada minuto y la nube lo pintaba **OPERATIVO**… pero el último feature
+  en la base era de **9 horas antes**: el Raspberry Shake llevaba toda la mañana fuera de
+  la red (`No route to host`, ARP INCOMPLETE) y **el sistema estaba ciego sin que nadie lo
+  supiera**.
+- **Causa raíz:** `SeedLinkClient._last_lag_s` se calculaba **al recibir** un paquete
+  (`utcnow() - packet.endtime`) y jamás se recalculaba. Con el stream muerto, el heartbeat
+  seguía publicando el último valor bueno (`1.24 s`) **para siempre**. Un dato viejo
+  presentado como vivo — exactamente lo que prohíbe la regla de oro 7 — y el motivo de que
+  la caída fuera invisible: `derive_fleet_state` YA sabía degradar por lag, pero recibía
+  una mentira.
+- **Fix:** `last_lag_s` pasa a ser la **antigüedad del dato más reciente**, calculada AL
+  CONSULTAR: crece sin límite si no entran muestras (y, sin ningún paquete aún, cuenta
+  desde el arranque del módulo — un gabinete que nunca vio el sensor tampoco reporta 0 s).
+- **Umbrales realineados a la nueva semántica:** entre registro y registro el valor sube
+  hasta la duración del propio registro miniSEED (~7 s como techo a 100 sps), así que los
+  2 s de antes harían parpadear un stream SANO. `LAG_WARN_S` (edge) y
+  `fleet_seedlink_lag_max_s` (nube) → **15 s**; el badge de la consola espeja ese número
+  (tenía un `< 5` hardcodeado). No retrasa nada: al primer heartbeat sin datos el lag ya
+  vale ≥60 s.
+- Criterios verificados por test: el lag CRECE con el stream muerto (reloj inyectado: >1 h
+  ⇒ >3600 s, jamás congelado en 0.5 s) · sin paquetes cuenta desde el arranque · `None`
+  antes de arrancar (sin dato ≠ 0.0) · la flota degrada con lag > umbral y el espejo de
+  tests de la API sigue el default.
+> **ESTADO.** edge 338 (+2) · api 797 · web 543 · ruff/eslint/tsc limpios.

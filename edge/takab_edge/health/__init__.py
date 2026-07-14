@@ -36,7 +36,13 @@ log = logging.getLogger("takab_edge.health")
 #: Umbrales de transición discreta (evitan logging por drift de valores continuos).
 CERT_WARN_DAYS = 30
 TEMP_WARN_C = 80.0
-LAG_WARN_S = 2.0
+#: `seedlink_lag_s` mide la ANTIGÜEDAD del dato más reciente (T-1.65), no la latencia
+#: del último paquete: entre registro y registro el valor sube hasta la duración del
+#: propio registro miniSEED (512 B steim2 @100 sps ⇒ hasta ~7 s de datos). Con 2.0 s
+#: —el umbral de cuando el valor se congelaba— un stream SANO oscilaría por encima y
+#: el gabinete parpadearía DEGRADADO. 15 s deja margen y no retrasa nada: un sensor
+#: mudo se detecta igual en el primer heartbeat (≤60 s), donde el lag ya vale ≥60 s.
+LAG_WARN_S = 15.0
 
 _THERMAL = Path("/sys/class/thermal/thermal_zone0/temp")
 _POWER_SUPPLY = Path("/sys/class/power_supply")

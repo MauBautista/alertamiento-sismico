@@ -88,9 +88,14 @@ class Settings(BaseSettings):
     # RTT MQTT al broker por encima de esto (ms) → DEGRADADO. Enlace sano << 500 ms;
     # margen amplio para no oscilar por picos puntuales.
     fleet_mqtt_rtt_max_ms: float = 1500.0
-    # Lag de SeedLink por encima de esto (s) → DEGRADADO. Lag normal medido ~0.4 s
-    # (memoria shake-hardware-seedlink); umbral holgado para evitar flapping.
-    fleet_seedlink_lag_max_s: float = 2.0
+    # Lag de SeedLink por encima de esto (s) → DEGRADADO. [T-1.65] El edge ya no manda
+    # la latencia del último paquete (que se CONGELABA con el sensor muerto: el Shake
+    # estuvo 9 h fuera de la red publicando "1.24 s" y la flota se veía OPERATIVA) sino
+    # la ANTIGÜEDAD del dato más reciente, que crece sin límite si el stream muere. Ese
+    # valor sube entre registro y registro hasta la duración del propio registro
+    # miniSEED (~7 s como techo a 100 sps), así que 2.0 s haría parpadear un stream
+    # sano. 15 s no retrasa la detección: al primer heartbeat sin datos el lag vale ≥60 s.
+    fleet_seedlink_lag_max_s: float = 15.0
     # |offset NTP| por encima de esto (ms) → DEGRADADO. Sincronía sana es de pocos
     # a decenas de ms; 100 ms marca reloj a la deriva.
     fleet_ntp_offset_max_ms: float = 100.0
