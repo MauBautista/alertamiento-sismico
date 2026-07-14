@@ -223,6 +223,9 @@ class EdgeSettings(BaseSettings):
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
     siren_test_duration_s: float = 2.0  # duración del self-test del botón de prueba
+    #: [T-1.67] Prueba LOCAL de actuación: cuánto SOSTIENE la sirena+estrobo (para
+    #: oírlos/verlos) mientras gas/ascensor/puertas hacen su pulso de verificación.
+    actuation_test_hold_s: float = 5.0
     #: [T-1.59] Autodiagnóstico remoto (self_test): pulso por relé NO audible y
     #: pausa entre relés. ~4 relés × (pulso+pausa) ≈ 1.6 s por recorrido.
     self_test_pulse_ms: int = Field(default=250, gt=0)

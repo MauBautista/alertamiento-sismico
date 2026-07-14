@@ -337,3 +337,72 @@ def test_self_test_rechaza_en_estado_seguro_forzado(gpio):
     gpio.drive_all_safe()
     result = gpio.run_cabinet_self_test(pulse_s=0.01, gap_s=0.0)
     assert result["ok"] is False
+
+
+# --- Prueba LOCAL de actuación (T-1.67) --------------------------------------
+# Ejercicio completo del gabinete disparado en LOCAL (panel LAN), SIN alertar al
+# sistema: sirena+estrobo SUENAN/se ven, gas/ascensor/puertas hacen PULSO de
+# verificación. Jamás publica evento ni abre incidente (eso es cloud-side, atado
+# a que se disparen los callbacks SASMEX — que aquí NO se tocan).
+
+
+def test_prueba_local_sostiene_audibles_y_pulsa_protectores(gpio):
+    before = {c: gpio.relay_state(c).energized for c in LOCAL_RELAY_CHANNELS}
+    result = gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is True and result["reason"] is None
+    # Sirena + estrobo SOSTENIDOS (se oyen/ven durante la prueba).
+    for channel in ("siren", "strobe"):
+        assert result["relays"][channel]["held"] is True
+        assert result["relays"][channel]["readback_ok"] is True
+    assert gpio.siren_sounding is True
+    assert gpio.relay_state(ActuatorChannel.STROBE).energized is True
+    # Gas/ascensor/puertas: PULSO de verificación con readback, ya de regreso a seguro.
+    for channel in ("gas_valve", "elevator", "door_retainer"):
+        assert result["relays"][channel]["pulsed"] is True
+        assert result["relays"][channel]["readback_ok"] is True
+    for channel in (
+        ActuatorChannel.GAS_VALVE,
+        ActuatorChannel.ELEVATOR,
+        ActuatorChannel.DOOR_RETAINER,
+    ):
+        assert gpio.relay_state(channel).energized == before[channel]
+    gpio.reset()
+
+
+def test_prueba_local_no_es_alerta_fantasma(gpio):
+    """Suena la sirena pero NO es una alerta SASMEX (regla de oro 7)."""
+    gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    assert gpio.siren_sounding is True
+    assert gpio.sasmex_active is False
+    gpio.reset()
+
+
+def test_prueba_local_jamas_dispara_callbacks_sasmex(gpio):
+    """La garantía de aislamiento: sin callbacks SASMEX no hay rules→cloud→incidente."""
+    disparos: list[SasmexSignal] = []
+    gpio.on_sasmex(disparos.append)
+    gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    assert disparos == []  # NADA se propaga: la prueba es puramente in-process
+    gpio.reset()
+
+
+def test_prueba_local_rechazada_con_alerta_viva(gpio):
+    gpio.simulate_sasmex(active=True)
+    result = gpio.run_local_actuation_test(hold_s=1, pulse_s=0.01, gap_s=0.0)
+    assert result["ok"] is False and "alerta" in result["reason"]
+    assert gpio.relay_state(ActuatorChannel.SIREN).energized is True  # protección intacta
+
+
+def test_fin_de_prueba_local_jamas_silencia_alerta_viva(gpio):
+    gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    gpio.simulate_sasmex(active=True)  # alerta real durante la prueba
+    gpio._end_actuation_test()  # el temporizador vence
+    assert gpio.siren_sounding is True  # la alerta real GANA
+
+
+def test_fin_de_prueba_local_apaga_audibles_sin_alerta(gpio):
+    gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    assert gpio.siren_sounding is True
+    gpio._end_actuation_test()
+    assert gpio.siren_sounding is False
+    assert gpio.relay_state(ActuatorChannel.STROBE).energized is False

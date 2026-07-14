@@ -1616,3 +1616,43 @@ mentía en la nube. Ninguno era lo que parecía.
   del registro miniSEED a 100 sps). 120 s deja fuera cualquier hipo de reconexión y sigue avisando
   en minutos. La política IAM del rol de reglas se amplía al namespace nuevo (`Takab/Fleet` +
   `Takab/Sensor`) — sin esa línea, la regla escribe métricas al vacío.
+
+---
+
+## Fase 1.9 · Hardware — arranque del WR-1 (SASMEX)
+
+Mauricio recibió el receptor **WR-1**. Decisión de cableado (2026-07-14): tiene 2 salidas de
+relevador — **Relevador 1 = Advertencia General (multi-riesgo)** y **Relevador 2 = Alerta
+Sísmica Oficial (sismos mayores)**. **Solo se conecta el Relevador 2** al pin del Pi. Eso
+RESUELVE de raíz el riesgo de la prueba periódica de CIRES: los avisos multi-riesgo y el
+heartbeat viven en el Relevador 1, que no se cablea, así que el contacto que entra al gabinete
+solo cierra ante una alerta sísmica real. El reflejo SASMEX→sirena de T-1.3 (pin BCM 16,
+enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
+
+### [x] T-1.67 · Prueba LOCAL de actuación (ejercitar el gabinete sin alertar al sistema) — **COMPLETA (2026-07-14)**
+- **Componente:** edge · **Depende de:** —
+- **Necesidad (Mauricio):** poder probar EN LOCAL, desde el gabinete, que la sirena suena y que
+  gas/ascensor/puertas responden, **sin** que se dispare el sistema entero (sin incidente en la
+  nube, sin cascada de notificaciones). El proyecto está en pruebas, sin estaciones reales.
+- **El hueco (inventario):** existían piezas fragmentadas — `run_siren_test` (local, solo sirena),
+  `run_cabinet_self_test` (gas/ascensor/puertas con readback pero **excluye la sirena** y solo por
+  comando firmado de la NUBE), y `drill` (cero relés). Ninguna hacía, desde el gabinete, sonar la
+  sirena Y ejercitar los actuadores sin publicar a `takab/events`.
+- **Diseño:** demanda acotada nueva en `gpio` (`_actuation_test_active`, hermana de
+  `_siren_test_active`). Sirena+estrobo (`REFLEX_CHANNELS`) se **SOSTIENEN** unos segundos
+  (`actuation_test_hold_s=5.0`) para oírlos/verlos; gas/ascensor/puertas hacen **PULSO** de
+  verificación con readback (patrón del self-test), no disruptivo. Aislamiento por construcción:
+  llama al `gpio` directo, **jamás invoca los callbacks SASMEX** (que son la única vía a
+  rules→cloud→incidente), así que no publica evento ni notifica. Mismo guard de rechazo que el
+  self-test (alerta/protección/safe viva ⇒ rechazado) y **una alerta real a media prueba GANA**
+  por recálculo del modelo de demandas.
+- **Panel LAN:** botón "PROBAR ACTUADORES" (PIN, no en botón físico), endpoint
+  `POST /api/actuator-test`, banner propio cian "🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL"
+  (la alerta real pinta encima), y chips de resultado por relé (SUENA/VE ✓ · PULSO ✓).
+- **Aislamiento vs. cloud verificado E2E**: durante la prueba `siren_sounding=True` pero
+  `sasmex_active=False` y cero publicación de evento; gas/ascensor/puertas regresan a seguro; el
+  sostén vence y la sirena se apaga sola.
+- Criterios por test (edge): sostiene audibles + pulsa protectores con readback · no es alerta
+  fantasma · **jamás dispara callbacks SASMEX** (garantía de aislamiento) · rechazada con alerta
+  viva · el fin de la prueba jamás calla una alerta real · endpoint PIN-gated · resultado en status.
+> **ESTADO.** edge 351 (+8) · ruff limpio. (El test de hardware del Shake real se salta en CI.)

@@ -176,12 +176,14 @@ class GpioController(EdgeModule):
         self._sasmex_latched = False  # alerta SASMEX real asertada (enclavada)
         self._audible_silenced = False  # operador silenció los canales audibles
         self._siren_test_active = False  # self-test del operador energizando la sirena
+        self._actuation_test_active = False  # prueba LOCAL: sirena+estrobo sostenidos (T-1.67)
         self._rules_demand: dict[ActuatorChannel, bool] = {}  # protección ordenada por `rules`
         self._safed = (
             False  # estado seguro forzado (drive_all_safe): todo de-energizado hasta reset()
         )
         self._last_reflex_latency_s: float | None = None
         self._test_timer: threading.Timer | None = None
+        self._actuation_test_timer: threading.Timer | None = None
 
     # --- Observadores + silencio ---
     def on_sasmex(self, callback: SasmexCallback) -> None:
@@ -218,6 +220,11 @@ class GpioController(EdgeModule):
     @property
     def audible_silenced(self) -> bool:
         return self._audible_silenced
+
+    @property
+    def actuation_test_active(self) -> bool:
+        """True mientras una prueba LOCAL sostiene la sirena/estrobo (T-1.67)."""
+        return self._actuation_test_active
 
     @property
     def last_reflex_latency_s(self) -> float | None:
@@ -282,9 +289,11 @@ class GpioController(EdgeModule):
 
     def _on_stop(self) -> None:
         with self._lock:
-            if self._test_timer is not None:
-                self._test_timer.cancel()
-                self._test_timer = None
+            for attr in ("_test_timer", "_actuation_test_timer"):
+                timer = getattr(self, attr)
+                if timer is not None:
+                    timer.cancel()
+                    setattr(self, attr, None)
             # Parada limpia → todo a estado seguro (de-energizado) antes de soltar pines.
             self.drive_all_safe()
             for device in (self._button, self._silence_button, self._test_button):
@@ -437,6 +446,114 @@ class GpioController(EdgeModule):
         )
         return {"ok": ok, "reason": reason, "relays": results}
 
+    def run_local_actuation_test(
+        self,
+        hold_s: float | None = None,
+        pulse_s: float | None = None,
+        gap_s: float | None = None,
+    ) -> dict:
+        """Prueba LOCAL de actuación (T-1.67): ejercita el gabinete SIN alertar al sistema.
+
+        Los canales del reflejo (sirena + estrobo) se SOSTIENEN unos segundos —para
+        oírlos/verlos— mientras gas/ascensor/puertas hacen un PULSO breve con readback
+        (verificar que responden sin cortar el gas ni retener el ascensor de verdad).
+
+        A diferencia de una alerta real, es puramente in-process: NO invoca los
+        callbacks SASMEX, así que NO llega a `rules`, NO publica a `takab/events` y
+        NO abre incidente ni dispara la cascada de notificaciones. Se RECHAZA en seco
+        si hay una alerta o protección viva, y una alerta real que llegue a media
+        prueba GANA por recálculo (nunca compite con el camino de vida).
+
+        Devuelve ``{"ok", "reason", "relays": {canal: {...}}}`` — los sostenidos con
+        ``held``/``readback_ok``; los pulsados con ``pulsed``/``readback_ok`` (ida+regreso).
+        """
+        hold = hold_s if hold_s is not None else self.settings.actuation_test_hold_s
+        pulse = pulse_s if pulse_s is not None else self.settings.self_test_pulse_ms / 1000.0
+        gap = gap_s if gap_s is not None else self.settings.self_test_gap_ms / 1000.0
+        results: dict[str, dict] = {}
+
+        # 1) Guard + arranque del sostenimiento de sirena+estrobo (bajo lock).
+        with self._lock:
+            if self._sasmex_latched or self._safed or any(self._rules_demand.values()):
+                return {
+                    "ok": False,
+                    "reason": "alerta o protección viva; prueba local rechazada",
+                    "relays": {},
+                }
+            self._audible_silenced = False  # que la sirena suene de verdad
+            self._actuation_test_active = True
+            for channel in REFLEX_CHANNELS:
+                self._apply(channel)
+                relay = self._relays.get(channel)
+                target = active_energized(self._failsafe(channel))
+                results[channel.value] = {
+                    "held": True,
+                    "readback_ok": relay is not None and bool(relay.value) == target,
+                    "fail_safe": self._failsafe(channel).value,
+                    "energized": self._energized[channel],
+                }
+            if self._actuation_test_timer is not None:
+                self._actuation_test_timer.cancel()
+            timer = threading.Timer(hold, self._end_actuation_test)
+            timer.daemon = True
+            self._actuation_test_timer = timer
+        timer.start()
+
+        # 2) Pulso de verificación de los protectores (gas/ascensor/puertas), MISMO
+        #    patrón que el self-test: ida a protección, readback, regreso por _apply.
+        for channel in LOCAL_RELAY_CHANNELS:
+            if channel in REFLEX_CHANNELS:
+                continue  # sostenidos arriba, no se pulsan
+            mode = self._failsafe(channel)
+            with self._lock:
+                if self._sasmex_latched or self._safed:
+                    break  # alerta real a media prueba: se aborta el pulso (la real gana)
+                relay = self._relays.get(channel)
+                if relay is None:
+                    results[channel.value] = {
+                        "pulsed": False,
+                        "readback_ok": False,
+                        "fail_safe": mode.value,
+                        "energized": None,
+                    }
+                    continue
+                target = active_energized(mode)
+                relay.on() if target else relay.off()
+                went_ok = bool(relay.value) == target
+            time.sleep(pulse)  # fuera del lock: el reflejo SASMEX jamás espera al test
+            with self._lock:
+                self._apply(channel)  # regreso por RECÁLCULO (respeta una alerta que haya llegado)
+                back_ok = bool(relay.value) == self._energized[channel]
+                energized = self._energized[channel]
+            results[channel.value] = {
+                "pulsed": True,
+                "readback_ok": went_ok and back_ok,
+                "fail_safe": mode.value,
+                "energized": energized,
+            }
+            time.sleep(gap)
+
+        failed = [c for c, r in results.items() if not r["readback_ok"]]
+        ok = not failed
+        reason = None if ok else f"readback falló en: {', '.join(failed)}"
+        log.warning(
+            "prueba local de actuación: %s (%s)",
+            "OK" if ok else "FALLO",
+            reason or f"{len(results)} canales — NO es alerta real",
+        )
+        return {"ok": ok, "reason": reason, "relays": results}
+
+    def _end_actuation_test(self) -> None:
+        """Fin del sostenimiento de la prueba local: recalcula sirena+estrobo.
+
+        Si una alerta real llegó durante la prueba, el recálculo la respeta (los
+        canales siguen energizados); sin alerta, vuelven a reposo.
+        """
+        with self._lock:
+            self._actuation_test_active = False
+            for channel in REFLEX_CHANNELS:
+                self._apply(channel)
+
     # --- Relés: demandas de `rules` (capa lógica) + recálculo (capa eléctrica) ---
     def activate(self, channel: ActuatorChannel) -> None:
         """Ordena la PROTECCIÓN (emergencia) del canal desde `rules`/`actuators`."""
@@ -478,11 +595,14 @@ class GpioController(EdgeModule):
             self._sasmex_latched = False
             self._audible_silenced = False
             self._siren_test_active = False
+            self._actuation_test_active = False
             self._safed = False
             self._rules_demand.clear()
-            if self._test_timer is not None:
-                self._test_timer.cancel()
-                self._test_timer = None
+            for attr in ("_test_timer", "_actuation_test_timer"):
+                timer = getattr(self, attr)
+                if timer is not None:
+                    timer.cancel()
+                    setattr(self, attr, None)
             for channel in LOCAL_RELAY_CHANNELS:
                 self._apply(channel)
 
@@ -496,10 +616,17 @@ class GpioController(EdgeModule):
         if self._safed:
             return False  # estado seguro forzado: todo de-energizado hasta reset()
         demand = self._alert_demand(channel)
+        # La prueba local (T-1.67) SOSTIENE los canales del reflejo (sirena+estrobo);
+        # es una demanda más, así que una alerta real que llegue a media prueba se
+        # SUMA (jamás baja la protección) y el fin de la prueba NUNCA calla lo que
+        # una alerta viva exige (mismo modelo que el self-test de sirena).
+        test_hold = self._actuation_test_active and channel in REFLEX_CHANNELS
         if channel in AUDIBLE_CHANNELS:
-            protective = (demand and not self._audible_silenced) or self._siren_test_active
+            protective = (
+                (demand and not self._audible_silenced) or self._siren_test_active or test_hold
+            )
         else:
-            protective = demand  # visuales/fail-safe: el silencio no los toca
+            protective = demand or test_hold  # visuales/fail-safe: el silencio no los toca
         mode = self._failsafe(channel)
         return active_energized(mode) if protective else normal_energized(mode)
 

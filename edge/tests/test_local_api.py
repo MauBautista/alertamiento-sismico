@@ -91,6 +91,39 @@ def test_http_reset_command(supervisor):
     assert supervisor.gpio.sasmex_active is False
 
 
+# --- Prueba LOCAL de actuación por LAN (T-1.67) ------------------------------
+# El comportamiento eléctrico completo se prueba en test_gpio.py; aquí solo el
+# CABLEADO del panel: endpoint, PIN, y que el resultado aflore en status().
+
+_CANNED_ACTUATION = {
+    "ok": True,
+    "reason": None,
+    "relays": {
+        "siren": {"held": True, "readback_ok": True},
+        "gas_valve": {"pulsed": True, "readback_ok": True},
+    },
+}
+
+
+def test_lan_actuator_test_surfaces_results_in_status(supervisor, monkeypatch):
+    monkeypatch.setattr(supervisor.gpio, "run_local_actuation_test", lambda: _CANNED_ACTUATION)
+    supervisor.local_api.run_actuator_test()
+    section = supervisor.local_api.status()["actuation_test"]
+    assert section["results"] == _CANNED_ACTUATION
+    assert "active" in section
+
+
+def test_http_actuator_test_command(supervisor, monkeypatch):
+    monkeypatch.setattr(supervisor.gpio, "run_local_actuation_test", lambda: _CANNED_ACTUATION)
+    assert _post(supervisor.local_api, "/api/actuator-test") == 200
+
+
+def test_actuator_test_is_pin_gated(pinned, supervisor, monkeypatch):
+    monkeypatch.setattr(supervisor.gpio, "run_local_actuation_test", lambda: _CANNED_ACTUATION)
+    assert _post(pinned, "/api/actuator-test") == 401  # sin PIN no ejercita nada
+    assert _post(pinned, "/api/actuator-test", pin="424242") == 200
+
+
 def test_http_unknown_route_is_404(supervisor):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(_url(supervisor.local_api, "/nope"), timeout=5)

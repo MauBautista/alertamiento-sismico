@@ -110,6 +110,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         actions = {
             "/api/silence": dashboard.silence,
             "/api/siren-test": dashboard.run_siren_test,
+            "/api/actuator-test": dashboard.run_actuator_test,
             "/api/reset": dashboard.reset_alert,
             "/api/drill-audio": dashboard.drill_audio,
         }
@@ -188,6 +189,7 @@ class LocalDashboard(EdgeModule):
         # hilos HTTP; lectura desde status()): lock propio.
         self._actions: deque[dict] = deque(maxlen=_ACTIONS_MAX)
         self._actions_lock = threading.Lock()
+        self._last_actuation_test: dict | None = None  # T-1.67: resultado por relé
         self.index_html = _load_index_html()
 
     def authorize_action(self, provided: str | None) -> int:
@@ -343,9 +345,21 @@ class LocalDashboard(EdgeModule):
             "health": health,
             "cloud": self._cloud_section(),
             "drill": self._drill_section(),
+            "actuation_test": self._actuation_test_section(),
             "audio": self._audio_section(),
             "events": self._events_section(),
         }
+
+    def _actuation_test_section(self) -> dict:
+        """Prueba local de actuación (T-1.67): banner mientras sostiene + resultado."""
+        try:
+            active = bool(self._gpio.actuation_test_active)
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: estado de prueba de actuación no disponible", exc_info=True)
+            active = False
+        with self._actions_lock:
+            results = self._last_actuation_test
+        return {"active": active, "results": results}
 
     def _audio_section(self) -> dict | None:
         """Voceo (A-6): la UI solo muestra el botón de drill si está habilitado."""
@@ -368,6 +382,22 @@ class LocalDashboard(EdgeModule):
         self._gpio.run_siren_test()
         self._record_action("siren_test")
         log.warning("prueba de sirena solicitada por LAN")
+
+    def run_actuator_test(self) -> None:
+        """Prueba LOCAL de actuación por LAN (T-1.67): ejercita TODO el gabinete.
+
+        Sirena+estrobo suenan/se ven; gas/ascensor/puertas hacen su pulso de
+        verificación. NO es una alerta real: no publica evento ni abre incidente
+        (el gpio jamás dispara los callbacks SASMEX). Corre síncrono en el hilo
+        de ESTE request (el servidor es multihilo; el reflejo nunca lo espera);
+        el pulso dura ~1 s y la sirena sigue sonando hasta que vence el sostén.
+        El resultado por relé aflora en ``status()`` para que el panel lo pinte.
+        """
+        result = self._gpio.run_local_actuation_test()
+        with self._actions_lock:
+            self._last_actuation_test = result
+        self._record_action("actuator_test")
+        log.warning("prueba local de actuación por LAN (NO es alerta real)")
 
     def reset_alert(self) -> None:
         """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
