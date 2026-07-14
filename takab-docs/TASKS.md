@@ -1494,3 +1494,68 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   incidente en el mismo pass (jobs + timeline sin colisión) · suite previa intacta
   (38/38) · 0014 re-aplicable.
 > **ESTADO.** api 781 (+5) · ruff limpio.
+
+---
+
+## Fase 1.8.1 · Los tres fallos que destapó el uso real (2026-07-14)
+
+Los tres se diagnosticaron **contra producción**, no por inspección: el correo del
+inspector no llegaba, el control de simulacro se comía el mapa y el botón LOGIN DEV
+mentía en la nube. Ninguno era lo que parecía.
+
+### [x] T-1.62 · El correo sale de verdad (IAM SES + reintentos + la fuga de config) — **COMPLETA (2026-07-14)**
+- **Componente:** infra · api · web · **Depende de:** T-1.61
+- **Causa raíz (evidencia viva):** el job del dictamen SÍ se creaba y moría al enviarse
+  con `ses: AccessDenied` — **el rol IAM de la instancia nunca tuvo `ses:SendEmail`**
+  (cero `ses:` en todo el Terraform). El hueco estuvo tapado un mes porque los avisos
+  que sí llegan (gabinete caído, alarmas) los manda **SNS**, con permiso propio. Además
+  la identidad SES estaba **sin verificar** (el correo confirmado era el de SNS, otro
+  distinto) y la cuenta sigue en **sandbox** (emisor y destinatario verificados).
+- **Infra:** Sid `WorkerSesSend` en `aws_iam_role_policy.db`. El ARN se CONSTRUYE en
+  `envs/dev` (no se lee de `module.identity`: `identity → serve → database` ya es una
+  cadena y el output cerraría el ciclo). Lista vacía ⇒ sin statement.
+- **Migración 0016** (idempotente, down/up verificado): `notification_jobs.attempts`.
+  Un fallo de proveedor era una **lápida** — `failed` para siempre, re-encolado ciego al
+  estado y 409 impidiendo re-pedir el dictamen: un AccessDenied dejó un incidente real
+  sin correo y sin retorno. Ahora `_fail` decide por *quién queda detrás*: un salto de
+  cascada CON siguiente canal muere en el acto y escala (semántica de T-1.21 intacta:
+  reintentar ahí retrasaría llegar al humano); un job paralelo o el ÚLTIMO salto —la
+  única voz que queda— reintenta con backoff 30 s / 2 min hasta `notify_max_attempts`.
+- **Honestidad:** `build_providers` grita si cae al provider SIMULADO (marcaba los jobs
+  como `sent` sin enviar nada — así se perdieron correos el 13/07 sin dejar rastro).
+- **Web:** `patchChannels` reescribía `config.notifications` entero y **borraba
+  `inspector_emails`** al guardar cualquier canal en Multi-Tenant: el correo se apagaba
+  solo, sin rastro en la BD. Ahora preserva las claves que la pantalla no gestiona.
+- Criterios verificados por test: reintento con backoff y entrega al 2º intento ·
+  agotamiento ⇒ `failed` con `attempts=3` · la cascada con escalado NO reintenta · el
+  último salto SÍ · `inspector_emails` sobrevive a un guardado de canales · 0016
+  re-aplicable · `terraform plan` = 1 change, 0 destroy.
+
+### [x] T-1.63 · El mapa recupera su alto (el simulacro deja de robarlo) — **COMPLETA (2026-07-14)**
+- **Componente:** web · **Depende de:** T-1.60
+- **Causa raíz:** `.soc-main` es `grid-template-rows: minmax(0,1fr) auto` y desde T-1.60
+  tiene 3 hijos: el `DrillBanner` cayó en la fila elástica y el wall quedó en la fila
+  `auto` ⇒ `.soc-stage` colapsaba a su piso `min-height: 280px`. El CSS del drill ya era
+  compacto; lo roto era el layout.
+- **TRAMPA:** `.soc-main` la usan DOS elementos — el `<main>` del `AppShell` (envuelve
+  TODAS las rutas) y el `<main>` interno de la consola. Cambiar la regla compartida a
+  flex dejó la página entera sin alto (se vio en el navegador, no en jsdom). El fix va
+  acotado a `.soc-shell > .soc-main`.
+- **Regresión de verdad:** el smoke Playwright mide el `boundingBox` real —
+  `.soc-stage > 400 px` y la tira del drill `< 60 px`. jsdom no calcula alturas: este bug
+  era invisible para vitest por construcción. Medido tras el fix: mapa 633 px, tira 34 px.
+
+### [x] T-1.64 · Login: apagar la puerta falsa y abrir las de verdad — **COMPLETA (2026-07-14)**
+- **Componente:** deploy · infra · **Depende de:** —
+- **Causa raíz:** la API hace lo correcto (`/dev/token` solo se monta con `auth_jwks_json`;
+  en la nube el 404 es honesto). El bug era del **build**: sin `.dockerignore`, `COPY web web`
+  metía el `web/.env` LOCAL y gitignored (`VITE_DEV_TOKEN_ENABLED=true`) en la imagen de
+  producción. **La imagen dependía de un archivo del laptop.** Al taparlo apareció el
+  segundo: el `tsc` del web resolvía `@hey-api/client-fetch` desde el `node_modules` del
+  laptop copiado con `shared/sdk-ts` — ahora el SDK instala sus deps DENTRO de la imagen.
+- **Verificado en el bundle**, no de palabra: `VITE_DEV_TOKEN_ENABLED:"false"`.
+- **`make cloud-users`** (`infra/scripts/seed_console_users.sh`): alta idempotente de los
+  6 perfiles web en Cognito. El rol viaja en el TOKEN (no hay tabla `users`), y el paso
+  que se olvida es el **grupo**: sin él `claims.py` rechaza con `role not in groups` (401)
+  aunque el `custom:role` sea correcto. Contraseñas a Secrets Manager, impresas una vez.
+  MFA TOTP obligatorio del pool ⇒ cada perfil enrola authenticator en su primer login.

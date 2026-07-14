@@ -9,8 +9,12 @@ Dos fases por pasada, bajo un advisory lock propio (serializa instancias):
    - cascada ya satisfecha (algún cascade 'sent' del incidente) ⇒ ``skipped``;
    - éxito ⇒ ``sent`` + ``incident_actions kind='notify_sent'`` (canal, modo,
      latencia vs t0 y cumplimiento del deadline — evidencia del SLA);
-   - fallo ⇒ ``failed`` + el SIGUIENTE cascade pendiente se ADELANTA a ``now``
-     (escala ya; con proveedor sano el SMS sale en el mismo pass ≤30 s).
+   - fallo CON escalado posible ⇒ ``failed`` + el SIGUIENTE cascade pendiente se
+     ADELANTA a ``now`` (escala ya; con proveedor sano el SMS sale en el mismo
+     pass ≤30 s);
+   - fallo SIN nadie detrás (job paralelo o último salto de la cascada) ⇒ sigue
+     ``pending`` con ``attempts+1`` y ``due_at`` aplazado (backoff 30 s / 2 min,
+     T-1.62): es la única voz que le queda al incidente, no se tira a la basura.
    El éxito de un cascade marca ``skipped`` el resto de su cascada. Los jobs
    ``parallel`` son independientes (fail-open y email crítico no se skipean).
 
@@ -35,6 +39,11 @@ logger = logging.getLogger("takab_api.notify")
 
 # Advisory lock propio (≠ engine 0x…1119, ≠ dictamen 0x…1120).
 _NOTIFY_LOCK_KEY = 0x7A4B_1121
+
+# [T-1.62] Espera entre envíos de un mismo job (el intento N usa el índice N-1).
+# Corto al principio (un AccessDenied recién arreglado entrega en 30 s) y largo
+# después (un proveedor caído no se martillea).
+_BACKOFF_S = (30.0, 120.0, 600.0)
 
 _NEW_INCIDENTS_SQL = """
 SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_at
@@ -102,7 +111,7 @@ ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
 
 _DUE_JOBS_SQL = """
 SELECT j.job_id, j.tenant_id, j.incident_id, j.channel, j.mode, j.position,
-       j.target, j.due_at, j.deadline_at, j.action_id,
+       j.target, j.due_at, j.deadline_at, j.action_id, j.attempts,
        i.severity, i.trigger, i.state, i.opened_at, i.event_id, i.site_id,
        s.name AS site_name, s.code AS site_code,
        a.actor AS action_actor, a.payload AS action_payload
@@ -131,7 +140,16 @@ WHERE job_id = %(job)s
 """
 
 _MARK_FAILED_SQL = """
-UPDATE notification_jobs SET status = 'failed', error = %(error)s
+UPDATE notification_jobs SET status = 'failed', error = %(error)s, attempts = %(attempts)s
+WHERE job_id = %(job)s
+"""
+
+# [T-1.62] El job sigue 'pending': solo suma el intento, guarda el motivo y se
+# aplaza. `_dispatch` no lo re-selecciona en esta pasada (due_at > now, y `now`
+# es fijo por pass) — nada de bucles calientes.
+_RETRY_SQL = """
+UPDATE notification_jobs
+SET attempts = %(attempts)s, due_at = %(due_at)s, error = %(error)s
 WHERE job_id = %(job)s
 """
 
@@ -164,20 +182,20 @@ def run_notify_pass(
     now: datetime | None = None,
     lookback_s: float | None = None,
 ) -> dict[str, int]:
-    """Encola y despacha; devuelve contadores {enqueued, sent, failed, skipped}.
+    """Encola y despacha; devuelve {enqueued, sent, failed, skipped, retried}.
     Un COMMIT al final si hubo escrituras; si no, ROLLBACK (solo lectura)."""
     now = now or datetime.now(tz=UTC)
     lookback = settings.notify_lookback_s if lookback_s is None else lookback_s
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (_NOTIFY_LOCK_KEY,))
 
     config_cache: dict[tuple[str, str], dict | None] = {}
-    counts = {"enqueued": 0, "sent": 0, "failed": 0, "skipped": 0}
+    counts = {"enqueued": 0, "sent": 0, "failed": 0, "skipped": 0, "retried": 0}
 
     counts["enqueued"] = _enqueue(conn, settings, config_cache, now=now, lookback_s=lookback)
     counts["enqueued"] += _enqueue_dictamen_requests(
         conn, config_cache, now=now, lookback_s=lookback
     )
-    _dispatch(conn, providers, config_cache, counts, now=now, base_url=settings.notify_web_base_url)
+    _dispatch(conn, settings, providers, config_cache, counts, now=now)
 
     if any(counts.values()):
         conn.commit()
@@ -271,33 +289,36 @@ def _enqueue_dictamen_requests(
 
 def _dispatch(
     conn: psycopg.Connection,
+    settings: Settings,
     providers: dict[str, NotifyProvider],
     config_cache: dict,
     counts: dict[str, int],
     *,
     now: datetime,
-    base_url: str = "",
 ) -> None:
-    # Bucle hasta agotar: cada job procesado sale de 'pending', y un fallo
-    # puede ADELANTAR el siguiente cascade a `now` → re-select hasta vacío.
+    # Bucle hasta agotar: cada job procesado sale de 'pending' o se aplaza a
+    # futuro (reintento), y un fallo puede ADELANTAR el siguiente cascade a
+    # `now` → re-select hasta vacío. `now` fijo ⇒ un reintento nunca reentra.
     while True:
         rows = conn.execute(_DUE_JOBS_SQL, {"now": now}).fetchall()
         if not rows:
             return
         for row in rows:
-            _dispatch_one(conn, providers, config_cache, counts, row, now=now, base_url=base_url)
+            _dispatch_one(conn, settings, providers, config_cache, counts, row, now=now)
 
 
 def _dispatch_one(
     conn: psycopg.Connection,
+    settings: Settings,
     providers: dict[str, NotifyProvider],
     config_cache: dict,
     counts: dict[str, int],
     row: dict,
     *,
     now: datetime,
-    base_url: str = "",
 ) -> None:
+    base_url = settings.notify_web_base_url
+    max_attempts = settings.notify_max_attempts
     incident_id = row["incident_id"]
     if row["mode"] == "cascade":
         satisfied = conn.execute(_CASCADE_SATISFIED_SQL, {"incident": incident_id}).fetchone()
@@ -308,7 +329,7 @@ def _dispatch_one(
 
     provider = providers.get(row["channel"])
     if provider is None:  # canal sin provider cableado: cuenta como fallo
-        _fail(conn, counts, row, "provider no configurado", now=now)
+        _fail(conn, counts, row, "provider no configurado", now=now, max_attempts=max_attempts)
         return
 
     target = dict(row["target"])
@@ -322,7 +343,7 @@ def _dispatch_one(
     try:
         provider.send(target, _message(row, base_url=base_url))
     except NotifyError as exc:
-        _fail(conn, counts, row, str(exc), now=now)
+        _fail(conn, counts, row, str(exc), now=now, max_attempts=max_attempts)
         return
 
     conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
@@ -365,20 +386,66 @@ def _dispatch_one(
 
 
 def _fail(
-    conn: psycopg.Connection, counts: dict[str, int], row: dict, error: str, *, now: datetime
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    error: str,
+    *,
+    now: datetime,
+    max_attempts: int,
 ) -> None:
-    conn.execute(_MARK_FAILED_SQL, {"job": row["job_id"], "error": error[:500]})
+    """Fallo de un envío. Dos desenlaces, y el criterio es *quién queda detrás*.
+
+    Si es un salto de cascada CON siguiente canal, muere en el acto y adelanta al
+    de atrás (reintentarlo retrasaría llegar al humano: eso es la cascada).
+    Si no hay a quién escalar —job paralelo, o el último salto—, este envío es la
+    única voz que queda: se reintenta con backoff hasta agotar los intentos. Antes
+    se convertía en lápida, y un AccessDenied de SES bastó para dejar un dictamen
+    real sin correo y sin forma de re-pedirlo (T-1.62).
+    """
+    escalated = 0
     if row["mode"] == "cascade":
-        conn.execute(
+        escalated = conn.execute(
             _ADVANCE_NEXT_SQL,
             {"incident": row["incident_id"], "position": row["position"], "now": now},
+        ).rowcount
+
+    attempts = (row["attempts"] or 0) + 1
+    if not escalated and attempts < max_attempts:
+        backoff = _BACKOFF_S[min(attempts, len(_BACKOFF_S)) - 1]
+        conn.execute(
+            _RETRY_SQL,
+            {
+                "job": row["job_id"],
+                "attempts": attempts,
+                "due_at": now + timedelta(seconds=backoff),
+                "error": error[:500],
+            },
         )
+        counts["retried"] += 1
+        logger.warning(
+            "notify retry %s/%s incidente %s (intento %d/%d, en %.0fs): %s",
+            row["channel"],
+            row["mode"],
+            row["incident_id"],
+            attempts,
+            max_attempts,
+            backoff,
+            error,
+        )
+        return
+
+    conn.execute(
+        _MARK_FAILED_SQL, {"job": row["job_id"], "error": error[:500], "attempts": attempts}
+    )
     counts["failed"] += 1
     logger.warning(
-        "notify failed %s/%s incidente %s: %s",
+        "notify failed %s/%s incidente %s (intento %d/%d): %s",
         row["channel"],
         row["mode"],
         row["incident_id"],
+        attempts,
+        max_attempts,
         error,
     )
 

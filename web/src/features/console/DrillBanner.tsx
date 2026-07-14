@@ -17,9 +17,10 @@ export default function DrillBanner({ hasLiveIncident }: { hasLiveIncident: bool
     if (!canStart) return null;
     return (
       <div className="soc-drill soc-drill--idle" data-testid="drill-idle">
+        {/* En reposo, un botón fantasma en una tira: el alto es del mapa. */}
         <button
           type="button"
-          className="soc-btn soc-btn--secondary"
+          className="soc-btn soc-btn--ghost"
           disabled={pending}
           onClick={() => start(300)}
           title="Banner NO-real + voceo en todos los gabinetes del tenant; cero relés"

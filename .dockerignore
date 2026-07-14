@@ -1,0 +1,24 @@
+# Contexto de build de las imágenes de la nube (console.Dockerfile / cloud.Dockerfile).
+#
+# [T-1.62] Existe por un incidente real: sin .dockerignore, `COPY web web` metía el
+# `web/.env` LOCAL (gitignored, con VITE_DEV_TOKEN_ENABLED=true) dentro de la imagen
+# de producción. Vite carga `.env` también en modo production, así que la consola
+# desplegada mostraba el panel "LOGIN DEV" — una puerta que la API jamás monta en la
+# nube (404). La imagen dependía de un archivo del laptop de quien hacía el build:
+# ningún build debe depender de lo que NO está en git.
+web/.env
+web/.env.*
+!web/.env.example
+
+# Ruido y pesos muertos del contexto (los builds instalan sus propias deps).
+**/node_modules
+web/dist
+web/test-results
+web/playwright-report
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.venv
+**/.venv
+graphify-out
+.git

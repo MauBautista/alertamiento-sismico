@@ -1,0 +1,321 @@
+/* ==========================================================================
+   TAKAB TECHNOLOGY — Design Tokens
+   Seismic early-warning + structural monitoring platform
+   Dark-mode native. Operator-grade. Data is the hero.
+   ========================================================================== */
+
+/* ---- Web fonts ---------------------------------------------------------- */
+/* Geist — local variable font (brand-supplied) */
+@font-face {
+  font-family: 'Geist';
+  src: url('./fonts/Geist_wght_.ttf') format('truetype-variations'),
+       url('./fonts/Geist_wght_.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+/* JetBrains Mono via Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* Aero Sans-Serif is BRAND-ONLY (logo wordmark, hero section headers).
+   No exact public match — closest substitution = Saira Condensed (geometric,
+   slightly condensed, all-caps friendly). FLAGGED in README. */
+@import url('https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&display=swap');
+
+:root {
+  /* =====================================================================
+     COLOR — DARK SURFACES (default / native)
+     ===================================================================== */
+  --tk-navy-900:        #0E2336; /* deepest panel — modal scrims, footers */
+  --tk-navy-800:        #122B44; /* page background, dark mode root */
+  --tk-navy-700:        #1A3E62; /* PRIMARY — Deep Navy, brand surface */
+  --tk-navy-600:        #244E78; /* hovered surface, raised card */
+  --tk-navy-500:        #345E89; /* divider on dark, inactive icon */
+  --tk-navy-400:        #4D7BA5; /* meta text on navy */
+
+  /* =====================================================================
+     COLOR — LIGHT SURFACES (reports, kiosk light mode)
+     Never pure white. #F0F2F5 reduced metallic.
+     ===================================================================== */
+  --tk-light-100:       #F0F2F5; /* SECONDARY — UI Light Gray */
+  --tk-light-200:       #E3E7EC;
+  --tk-light-300:       #C9D0D8;
+  --tk-light-400:       #8A95A3;
+
+  /* =====================================================================
+     COLOR — INTERACTIVE ACCENT (10% — strict, do not overuse)
+     ===================================================================== */
+  --tk-cyan:            #00BFFF; /* Tech Cyan — links, CTAs, active state */
+  --tk-cyan-hover:      #33CCFF;
+  --tk-cyan-press:      #009ACC;
+  --tk-cyan-15:         rgba(0, 191, 255, 0.15);  /* subtle accent fill */
+  --tk-cyan-08:         rgba(0, 191, 255, 0.08);
+
+  /* =====================================================================
+     SEMANTIC ALERT COLORS — non-negotiable
+     Always paired with icon + label. Never color-alone.
+     ===================================================================== */
+  --tk-status-normal:   #00E676; /* Safe / connected / OK */
+  --tk-status-warning:  #FFC107; /* Amber — caution, monitoring */
+  --tk-status-critical: #FF5252; /* Red — alarm, evacuation */
+
+  /* Tinted semantic surfaces (15% / 8% fills for callout cards) */
+  --tk-status-normal-15:   rgba(0, 230, 118, 0.15);
+  --tk-status-normal-08:   rgba(0, 230, 118, 0.08);
+  --tk-status-warning-15:  rgba(255, 193, 7, 0.18);
+  --tk-status-warning-08:  rgba(255, 193, 7, 0.08);
+  --tk-status-critical-15: rgba(255, 82, 82, 0.18);
+  --tk-status-critical-08: rgba(255, 82, 82, 0.08);
+
+  /* =====================================================================
+     FOREGROUND / TEXT
+     ===================================================================== */
+  --tk-fg-1:            #F0F2F5; /* primary text on dark */
+  --tk-fg-2:            #B8C2CE; /* secondary text on dark */
+  --tk-fg-3:            #6F7E8F; /* tertiary / meta */
+  --tk-fg-disabled:     #4A5765;
+
+  --tk-fg-on-light-1:   #1A3E62; /* primary text on light */
+  --tk-fg-on-light-2:   #4D5C6F;
+  --tk-fg-on-light-3:   #8A95A3;
+
+  /* =====================================================================
+     BORDERS / DIVIDERS
+     ===================================================================== */
+  --tk-border:            rgba(240, 242, 245, 0.08);
+  --tk-border-strong:     rgba(240, 242, 245, 0.16);
+  --tk-border-cyan:       #00BFFF; /* active card border, 1px */
+  --tk-border-on-light:   #C9D0D8;
+
+  /* =====================================================================
+     SURFACES (dark mode)
+     ===================================================================== */
+  --tk-surface-0:       #0E2336; /* app background */
+  --tk-surface-1:       #122B44; /* card */
+  --tk-surface-2:       #18324E; /* raised */
+  --tk-surface-3:       #1F3D5C; /* elevated panel */
+  --tk-surface-overlay: rgba(14, 35, 54, 0.92); /* modal scrim */
+
+  /* =====================================================================
+     TYPOGRAPHY — families
+     ===================================================================== */
+  --tk-font-brand:  'Saira Condensed', 'Aero Sans-Serif', 'Bebas Neue', system-ui, sans-serif;
+  --tk-font-ui:     'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --tk-font-mono:   'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* =====================================================================
+     TYPOGRAPHY — scale (1920 dashboard / desktop)
+     ===================================================================== */
+  --tk-text-xs:   11px;  /* meta, tags */
+  --tk-text-sm:   13px;  /* secondary UI */
+  --tk-text-base: 14px;  /* body */
+  --tk-text-md:   16px;  /* primary UI labels */
+  --tk-text-lg:   18px;  /* card titles */
+  --tk-text-xl:   22px;  /* section header */
+  --tk-text-2xl:  28px;  /* page header */
+  --tk-text-3xl:  40px;  /* data hero (M 6.8) */
+  --tk-text-4xl:  56px;  /* alert magnitude / countdown */
+  --tk-text-5xl:  72px;  /* full-screen alert */
+
+  /* =====================================================================
+     TRACKING
+     ===================================================================== */
+  --tk-tracking-tight:  -0.02em; /* Geist headers */
+  --tk-tracking-normal:  0;       /* Geist body */
+  --tk-tracking-wide:    0.04em; /* small caps tags / nav */
+  --tk-tracking-mono:    0;      /* JetBrains Mono — never tracked */
+
+  /* =====================================================================
+     LINE HEIGHTS
+     ===================================================================== */
+  --tk-leading-tight:  1.1;
+  --tk-leading-snug:   1.25;
+  --tk-leading-normal: 1.45;
+  --tk-leading-data:   1.0;  /* numerical readouts */
+
+  /* =====================================================================
+     SPACING — 8pt scale
+     ===================================================================== */
+  --tk-space-0:  0;
+  --tk-space-1:  4px;
+  --tk-space-2:  8px;
+  --tk-space-3:  12px;
+  --tk-space-4:  16px;
+  --tk-space-5:  24px;
+  --tk-space-6:  32px;
+  --tk-space-7:  48px;
+  --tk-space-8:  64px;
+
+  /* =====================================================================
+     RADII — angular & precise
+     ===================================================================== */
+  --tk-radius-none:  0;     /* map overlays, full-bleed data */
+  --tk-radius-sm:    4px;   /* tags, badges, chips */
+  --tk-radius-md:    6px;   /* cards, containers */
+  --tk-radius-lg:    8px;   /* primary cards, modals */
+  --tk-radius-pill:  999px; /* status pills (CONECTADO, ACTIVADA) */
+
+  /* =====================================================================
+     ELEVATION — minimal. No fluffy material shadows.
+     Use 1px borders + cyan accent borders on active. Soft halo only on
+     critical alerts to draw the eye.
+     ===================================================================== */
+  --tk-shadow-none:     none;
+  --tk-shadow-card:     0 1px 0 rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--tk-border);
+  --tk-shadow-active:   inset 0 0 0 1px var(--tk-cyan), 0 0 0 1px var(--tk-cyan-15);
+  --tk-shadow-critical: 0 0 0 1px var(--tk-status-critical), 0 0 24px -6px rgba(255, 82, 82, 0.45);
+  --tk-shadow-warning:  0 0 0 1px var(--tk-status-warning), 0 0 16px -8px rgba(255, 193, 7, 0.35);
+  --tk-shadow-modal:    0 24px 48px -16px rgba(0, 0, 0, 0.65);
+
+  /* =====================================================================
+     FOCUS — Tech-Cyan, always visible, 2px
+     ===================================================================== */
+  --tk-focus-ring: 0 0 0 2px var(--tk-navy-900), 0 0 0 4px var(--tk-cyan);
+
+  /* =====================================================================
+     MOTION — fast, mechanical, no bounce
+     ===================================================================== */
+  --tk-ease:        cubic-bezier(0.2, 0.0, 0.2, 1);
+  --tk-ease-data:   linear;
+  --tk-dur-fast:    120ms;
+  --tk-dur-base:    180ms;
+  --tk-dur-slow:    280ms;
+
+  /* =====================================================================
+     LAYOUT
+     ===================================================================== */
+  --tk-grid-cols:    12;
+  --tk-grid-gutter:  24px;
+  --tk-sidebar-w:    240px;
+  --tk-detail-w:     360px;
+
+  /* =====================================================================
+     Z-INDEX
+     ===================================================================== */
+  --tk-z-nav:     50;
+  --tk-z-sticky:  100;
+  --tk-z-modal:   500;
+  --tk-z-toast:   700;
+  --tk-z-alert:   900; /* critical alert overlay */
+}
+
+/* ==========================================================================
+   SEMANTIC TYPE STYLES
+   Reach for these in markup; they encode the rules above.
+   ========================================================================== */
+
+.tk-display,
+.tk-h1 {
+  font-family: var(--tk-font-brand);
+  font-weight: 600;
+  font-size: var(--tk-text-3xl);
+  line-height: var(--tk-leading-tight);
+  letter-spacing: var(--tk-tracking-tight);
+  text-transform: uppercase;
+  color: var(--tk-fg-1);
+}
+
+.tk-h2 {
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: var(--tk-text-2xl);
+  line-height: var(--tk-leading-snug);
+  letter-spacing: var(--tk-tracking-tight);
+  color: var(--tk-fg-1);
+}
+
+.tk-h3 {
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: var(--tk-text-xl);
+  line-height: var(--tk-leading-snug);
+  letter-spacing: var(--tk-tracking-tight);
+  color: var(--tk-fg-1);
+}
+
+.tk-h4 {
+  font-family: var(--tk-font-ui);
+  font-weight: 500;
+  font-size: var(--tk-text-lg);
+  line-height: var(--tk-leading-snug);
+  color: var(--tk-fg-1);
+}
+
+.tk-body {
+  font-family: var(--tk-font-ui);
+  font-weight: 400;
+  font-size: var(--tk-text-base);
+  line-height: var(--tk-leading-normal);
+  color: var(--tk-fg-1);
+}
+
+.tk-body-sm {
+  font-family: var(--tk-font-ui);
+  font-weight: 400;
+  font-size: var(--tk-text-sm);
+  line-height: var(--tk-leading-normal);
+  color: var(--tk-fg-2);
+}
+
+.tk-meta {
+  font-family: var(--tk-font-ui);
+  font-weight: 500;
+  font-size: var(--tk-text-xs);
+  letter-spacing: var(--tk-tracking-wide);
+  text-transform: uppercase;
+  color: var(--tk-fg-3);
+}
+
+.tk-label {
+  font-family: var(--tk-font-ui);
+  font-weight: 500;
+  font-size: var(--tk-text-sm);
+  letter-spacing: var(--tk-tracking-wide);
+  text-transform: uppercase;
+  color: var(--tk-fg-2);
+}
+
+/* DATA — JetBrains Mono; the platform's signature voice */
+.tk-data {
+  font-family: var(--tk-font-mono);
+  font-weight: 400;
+  font-size: var(--tk-text-base);
+  line-height: var(--tk-leading-data);
+  letter-spacing: var(--tk-tracking-mono);
+  color: var(--tk-fg-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-data-lg {
+  font-family: var(--tk-font-mono);
+  font-weight: 700;
+  font-size: var(--tk-text-3xl);
+  line-height: var(--tk-leading-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-fg-1);
+}
+
+.tk-data-hero {
+  font-family: var(--tk-font-mono);
+  font-weight: 700;
+  font-size: var(--tk-text-4xl);
+  line-height: var(--tk-leading-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-fg-1);
+}
+
+.tk-data-sm {
+  font-family: var(--tk-font-mono);
+  font-weight: 400;
+  font-size: var(--tk-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-fg-2);
+}
+
+.tk-link {
+  color: var(--tk-cyan);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--tk-dur-fast) var(--tk-ease);
+}
+.tk-link:hover { border-bottom-color: var(--tk-cyan); }

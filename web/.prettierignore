@@ -1,6 +1,9 @@
 dist
 node_modules
 coverage
+# Artefactos de Playwright (regenerados en cada `npm run e2e`; gitignored)
+test-results
+playwright-report
 # CSS vendored del design system (copias verbatim; no formatear para diffs limpios)
 src/styles/colors_and_type.css
 src/styles/soc.css

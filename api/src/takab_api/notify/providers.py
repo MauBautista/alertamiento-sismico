@@ -117,6 +117,13 @@ def build_providers(settings) -> dict[str, NotifyProvider]:
     if settings.notify_email_from:
         email = SesEmailProvider(sender=settings.notify_email_from, region=settings.aws_region)
     else:
+        # [T-1.62] El simulado marca los jobs como 'sent' SIN enviar nada: en la
+        # nube eso es una mentira silenciosa (pasó el 13/07 — correos "enviados"
+        # que nadie recibió). Si falta el remitente, que se grite.
+        logger.warning(
+            "TAKAB_API_NOTIFY_EMAIL_FROM vacío: canal email SIMULADO — los jobs se "
+            "marcarán 'sent' sin enviar correo alguno. En la nube esto es un fallo."
+        )
         email = SimulatedProvider("email")
     return {
         "webhook": WebhookProvider(timeout_s=settings.notify_webhook_timeout_s),

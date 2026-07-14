@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAKAB · App Móvil · Alertamiento Sísmico</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:,">
+<style>
+  /* Canvas-level styling — the design_canvas component handles the warm
+     gray default, but we override to the brand navy so phones don't look
+     marooned against beige. */
+  html, body { background: #07182a; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + Babel (pinned) -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Lucide icons (currentColor stroke-only set; see design system) -->
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<!-- Design canvas wrapper + phone shell + screens -->
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="screens/Phone.jsx"></script>
+<script type="text/babel" src="screens/Profile1.jsx"></script>
+<script type="text/babel" src="screens/Profile2.jsx"></script>
+
+<script type="text/babel">
+  // =====================================================================
+  // APP ROOT — every phone screen mounted as a DCArtboard inside two
+  // DCSections grouped by user profile. Pan + zoom + reorder are wired
+  // by the design canvas itself.
+  // =====================================================================
+  const PHONE_W = 390;
+  const PHONE_H = 844;
+
+  const App = () => {
+    // Refresh Lucide whenever the canvas re-renders so newly-mounted
+    // <i data-lucide=…> elements get their SVGs.
+    React.useEffect(() => {
+      const refresh = () => window.lucide && window.lucide.createIcons();
+      refresh();
+      const t = setInterval(refresh, 600);
+      return () => clearInterval(t);
+    }, []);
+
+    return (
+      <DesignCanvas
+        title="TAKAB · Aplicación Móvil"
+        subtitle="Complemento del SOC de alertamiento sísmico · 12 pantallas · 2 perfiles"
+      >
+        {/* ============================================================
+            PROFILE 1 — Personal del Inmueble (Ocupante)
+            Five screens: rest → crisis (evac) → crisis (shelter)
+                          → post-event check-in → reingreso bloqueado
+            ============================================================ */}
+        <DCSection
+          id="ocupante"
+          title="Perfil 1 · Personal del Inmueble"
+          subtitle="OCUPANTE · supervivencia y reducción de pánico · interfaz de un toque, textos gigantes"
+        >
+          <DCArtboard id="o-reposo" label="1.1 · Modo Reposo" width={PHONE_W} height={PHONE_H}>
+            <OcupanteReposo />
+          </DCArtboard>
+          <DCArtboard id="o-evac" label="1.2 · Crisis · Evacúe (pisos bajos)" width={PHONE_W} height={PHONE_H}>
+            <OcupanteCrisisEvac />
+          </DCArtboard>
+          <DCArtboard id="o-replie" label="1.3 · Crisis · Repliéguese (pisos altos)" width={PHONE_W} height={PHONE_H}>
+            <OcupanteCrisisReplie />
+          </DCArtboard>
+          <DCArtboard id="o-checkin" label="1.4 · Post-sismo · Check-in de vida" width={PHONE_W} height={PHONE_H}>
+            <OcupanteCheckin />
+          </DCArtboard>
+          <DCArtboard id="o-bloqueo" label="1.5 · Bloqueo de reingreso" width={PHONE_W} height={PHONE_H}>
+            <OcupanteBloqueo />
+          </DCArtboard>
+        </DCSection>
+
+        {/* ============================================================
+            PROFILE 2 — Brigadista / Personal de Seguridad
+            Seven screens: tactical dashboard, control remoto,
+            forensic camera, damage form, async sync, headcount,
+            re-entry certificate.
+            ============================================================ */}
+        <DCSection
+          id="brigadista"
+          title="Perfil 2 · Brigadista / Personal de Seguridad"
+          subtitle="TÁCTICO · conciencia situacional, evaluación de daños, control local — complemento del Triage SOC"
+        >
+          <DCArtboard id="b-panel" label="2.1 · Dashboard Táctico (gabinete + BMS)" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaPanel />
+          </DCArtboard>
+          <DCArtboard id="b-control" label="2.2 · Control Remoto Edge (2 pasos)" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaControlRemoto />
+          </DCArtboard>
+          <DCArtboard id="b-camara" label="2.3 · Cámara forense · marca de agua" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaCamara />
+          </DCArtboard>
+          <DCArtboard id="b-form" label="2.4 · Formulario rápido de daños" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaFormulario />
+          </DCArtboard>
+          <DCArtboard id="b-sync" label="2.5 · Sincronización offline-first" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaSync />
+          </DCArtboard>
+          <DCArtboard id="b-headcount" label="2.6 · Headcount · pase de lista" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaHeadcount />
+          </DCArtboard>
+          <DCArtboard id="b-dictamen" label="2.7 · Dictamen de reingreso (PDF)" width={PHONE_W} height={PHONE_H}>
+            <BrigadistaDictamen />
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+  };
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

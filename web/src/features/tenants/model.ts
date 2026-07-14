@@ -168,13 +168,22 @@ export function readChannels(config: Record<string, unknown> | undefined): Chann
  * Un canal deshabilitado se ELIMINA de `notifications` (así es como
  * `resolve_destinations` entiende "no configurado") y el servidor descarta su
  * secret con él: es la intención explícita del operador.
+ *
+ * [T-1.62] Esta pantalla escribe SOLO los cuatro canales de la cascada. Arrancar
+ * con `next = {}` reescribía `notifications` entero y BORRABA lo que no conoce
+ * — `inspector_emails` (T-1.61) desaparecía al guardar cualquier canal, y el
+ * correo del inspector se apagaba sin dejar rastro en la BD. Se parte de lo
+ * vigente y solo se reescriben las claves propias, igual que `patchThresholds`.
  */
 export function patchChannels(
   config: Record<string, unknown> | undefined,
   drafts: ChannelDraft[],
 ): Record<string, unknown> {
   const base = { ...(config ?? {}) };
-  const next: Record<string, unknown> = {};
+  const next: Record<string, unknown> = { ...(asRecord(base["notifications"]) ?? {}) };
+  for (const key of CASCADE_ORDER) {
+    delete next[key]; // los canales se reconstruyen desde los drafts (sin secret)
+  }
 
   for (const draft of drafts) {
     if (!draft.enabled) {

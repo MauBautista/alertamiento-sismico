@@ -788,7 +788,12 @@ CREATE TABLE notification_jobs (
   error       text,
   -- [T-1.61] Job disparado por una ACCIÓN (dictamen_request → inspector);
   -- NULL = job de incidente (cascada/paralelo clásicos).
-  action_id   uuid REFERENCES incident_actions(action_id)
+  action_id   uuid REFERENCES incident_actions(action_id),
+  -- [T-1.62] Envíos ya intentados. Un fallo del proveedor era una lápida
+  -- (failed para siempre, sin reintento y con el 409 bloqueando la re-solicitud):
+  -- un AccessDenied de SES dejó un dictamen real sin correo. Reintento con
+  -- backoff SOLO para quien no tiene a quién escalar (0016).
+  attempts    integer NOT NULL DEFAULT 0
 );
 -- [T-1.61] Unicidad dividida (0014): la clave original solo para jobs de
 -- incidente; 1 job por acción y canal para los de acción (re-runs no duplican).

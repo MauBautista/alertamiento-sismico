@@ -82,8 +82,23 @@ terraform apply \
 
 `instance_type` ya tiene `t4g.medium` como default committeado.
 
+> ⚠️ **Los dos `-var` NO son opcionales.** `terraform apply` a secas usa el default
+> `serve_enabled=false` y **destruye la IP elástica y el SG web**: la consola desaparece
+> de internet (y vuelve con OTRA IP, que además hay que re-autorizar en Cognito). Si el
+> plan dice `aws_eip.web[0] will be destroyed`, te faltan las variables.
+
 Terraform añadirá el `https://<ip>.sslip.io/auth/callback` a los callbacks de Cognito;
 el de `localhost:5173` **se conserva**, así que `make dev` local sigue funcionando.
+
+**Correo (T-1.62).** El envío por SES necesita DOS cosas independientes, y tener una sin
+la otra falla en silencio:
+1. **Permiso IAM** — lo da este `apply` (Sid `WorkerSesSend`). Sin él: `AccessDenied` y el
+   job de notificación muere. Los avisos de CloudWatch **seguirían llegando** (los manda
+   SNS, con permiso propio): no sirven para dar por bueno el correo de la app.
+2. **Identidad verificada** — el `apply` la CREA pero no la verifica. Hay que clicar el
+   correo de AWS (`aws ses verify-email-identity --email-address <correo>` lo reenvía; el
+   link caduca en 24 h) y confirmar con `aws sesv2 get-email-identity`. La cuenta está en
+   **sandbox**: remitente **y** destinatario deben ser identidades verificadas.
 
 ### 2. Construir y subir las imágenes
 
@@ -138,3 +153,22 @@ free -m   # headroom de RAM; el motivo de subir a t4g.medium
 
 Si Caddy no consigue certificado: revisa que el 80 esté abierto al mundo en el SG web y
 que `<ip>.sslip.io` resuelva a la IP elástica (`dig +short <ip>.sslip.io`).
+
+## Usuarios de consola (perfiles por rol)
+
+```bash
+AWS_PROFILE=takab-dev make cloud-users          # los 6 roles web
+AWS_PROFILE=takab-dev make cloud-users ROLES="inspector soc_operator"
+```
+
+Crea/actualiza un usuario Cognito por rol (`<tu-correo>+<rol>@…`, plus-addressing: todos
+caen en tu bandeja), lo mete en **su grupo** —sin el grupo `claims.py` rechaza el token con
+`role not in groups` (401) aunque el `custom:role` esté bien— y guarda las contraseñas en
+Secrets Manager (`takab/dev/console/users`), imprimiéndolas una vez.
+
+**Cero filas en la base:** el rol de consola vive en el TOKEN, no hay tabla `users`. El pool
+exige **MFA TOTP**, así que cada perfil enrola su authenticator en el primer login.
+
+> El panel "LOGIN DEV" **no existe en la nube** y no debe existir: `/dev/token` forja claims
+> arbitrarios. La API solo lo monta con `TAKAB_API_AUTH_JWKS_JSON` (dev). Si algún día vuelve
+> a aparecer en producción, es que el build volvió a colar un `web/.env` (ver `.dockerignore`).

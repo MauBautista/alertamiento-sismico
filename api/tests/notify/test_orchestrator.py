@@ -97,8 +97,8 @@ class _Scenario:
 
     def jobs(self, incident_id: str) -> list[dict]:
         return self.conn.execute(
-            "SELECT channel, mode, position, status, due_at, deadline_at, sent_at, "
-            "target, error FROM notification_jobs WHERE incident_id = %s "
+            "SELECT channel, mode, position, status, attempts, due_at, deadline_at, "
+            "sent_at, target, error FROM notification_jobs WHERE incident_id = %s "
             "ORDER BY mode, position, channel",
             (incident_id,),
         ).fetchall()
@@ -169,8 +169,11 @@ def test_enqueue_normal_cascade(scenario: _Scenario) -> None:
     assert [j["position"] for j in cascade] == [0, 1, 2, 3]
     assert not [j for j in jobs if j["mode"] == "parallel"]
     assert scenario.job(iid, "sms")["deadline_at"] == BASE + timedelta(seconds=30)
-    # Con todos los canales caídos, la cascada INTENTÓ todos (nunca calla).
-    assert all(j["status"] == "failed" for j in cascade)
+    # Con todos los canales caídos, la cascada INTENTÓ todos (nunca calla). Los
+    # tres primeros mueren ya (tenían a quién escalar); el ÚLTIMO salto no tiene
+    # a nadie detrás y queda en reintento (T-1.62) en vez de convertirse en lápida.
+    assert [j["status"] for j in cascade] == ["failed", "failed", "failed", "pending"]
+    assert scenario.job(iid, "email")["attempts"] == 1
 
 
 def test_enqueue_is_idempotent(scenario: _Scenario) -> None:
@@ -294,9 +297,94 @@ def test_failopen_one_channel_down_does_not_block_others(scenario: _Scenario) ->
     providers = _providers(webhook=True)
     _run(scenario, providers, now=BASE)
 
-    assert scenario.job(iid, "webhook", mode="parallel")["status"] == "failed"
+    # Un job paralelo no tiene a quién escalar: reintenta (T-1.62), no muere.
+    down = scenario.job(iid, "webhook", mode="parallel")
+    assert down["status"] == "pending"
+    assert down["attempts"] == 1
     for ch in ("whatsapp", "sms", "email"):
         assert scenario.job(iid, ch, mode="parallel")["status"] == "sent"
+
+
+# -------------------------------------------------------------- reintentos
+# [T-1.62] Un fallo de proveedor era una LÁPIDA: el job quedaba 'failed' para
+# siempre, el re-encolado lo daba por atendido y el 409 de dictamen-request
+# impedía volver a pedirlo. Un AccessDenied de SES dejó un incidente real sin
+# correo. Ahora: el que NO tiene a quién escalar reintenta con backoff.
+
+
+def test_email_paralelo_reintenta_con_backoff(scenario: _Scenario) -> None:
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _providers(email=True)
+    _run(scenario, providers, now=BASE)
+
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "pending"  # vivo, no lápida
+    assert par["attempts"] == 1
+    assert par["due_at"] == BASE + timedelta(seconds=30)
+    assert par["error"] == "fallo simulado"  # el motivo queda registrado
+    assert par["sent_at"] is None
+
+    providers["email"].fail = False  # el proveedor vuelve en sí
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))
+
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "sent"
+    assert par["sent_at"] == BASE + timedelta(seconds=30)
+    assert len(providers["email"].sent) == 1
+    # El SLA se reporta con honestidad: el reintento llegó tarde al deadline.
+    payload = next(
+        a["payload"] for a in scenario.notify_actions(iid) if a["payload"]["channel"] == "email"
+    )
+    assert payload["deadline_met"] is False
+
+
+def test_reintentos_se_agotan_y_marcan_failed(scenario: _Scenario) -> None:
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _providers(email=True)
+
+    _run(scenario, providers, now=BASE)  # intento 1 → +30 s
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))  # intento 2 → +2 min
+    par = scenario.job(iid, "email", mode="parallel")
+    assert (par["status"], par["attempts"]) == ("pending", 2)
+    assert par["due_at"] == BASE + timedelta(seconds=150)
+
+    _run(scenario, providers, now=BASE + timedelta(seconds=150))  # intento 3: agotado
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "failed"
+    assert par["attempts"] == 3
+    assert par["error"] == "fallo simulado"
+    assert len(providers["email"].sent) == 0
+
+
+def test_cascada_con_escalado_no_reintenta(scenario: _Scenario) -> None:
+    """Reintentar un salto de cascada retrasaría llegar al humano: si hay a quién
+    escalar, el fallo es inmediato y definitivo (semántica intacta de T-1.21)."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _providers(webhook=True), now=BASE)
+
+    down = scenario.job(iid, "webhook")
+    assert down["status"] == "failed"  # jamás 'pending': el whatsapp ya salió
+    assert down["attempts"] == 1
+    assert scenario.job(iid, "whatsapp")["status"] == "sent"
+
+
+def test_ultimo_salto_de_cascada_reintenta_y_entrega(scenario: _Scenario) -> None:
+    """Con TODA la cascada caída, el último salto es la única voz que queda: se
+    reintenta hasta entregar en vez de dejar el incidente en silencio."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True, sms=True, email=True)
+    _run(scenario, providers, now=BASE)
+    assert scenario.job(iid, "email")["status"] == "pending"
+
+    providers["email"].fail = False
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))
+
+    assert scenario.job(iid, "email")["status"] == "sent"
+    assert len(providers["email"].sent) == 1
 
 
 # ------------------------------------------------------------- idempotencia

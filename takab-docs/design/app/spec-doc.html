@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAKAB · App Móvil · Especificación de Diseño</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<style>doc-page:not(:defined){visibility:hidden}</style>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--tk-font-ui); }
+
+  doc-page h1, doc-page h2, doc-page h3, doc-page p, doc-page li { color: var(--tk-fg-on-light-1); }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    min-height: 8.5in;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    break-after: page;
+  }
+  .cover__brand { display: flex; align-items: center; gap: 12px; }
+  .cover__logo { width: 30px; height: 30px; color: var(--tk-navy-700); }
+  .cover__brand-name { font-family: var(--tk-font-brand); font-weight: 600; font-size: 15px; letter-spacing: 0.12em; color: var(--tk-navy-700); }
+  .cover__brand-tag { font-family: var(--tk-font-brand); font-weight: 500; font-size: 9px; letter-spacing: 0.20em; color: var(--tk-fg-on-light-3); margin-top: 2px; }
+  .cover__mid { margin: 80px 0; }
+  .cover__eyebrow {
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--tk-cyan-press); font-weight: 700; margin-bottom: 14px;
+  }
+  .cover__title {
+    font-family: var(--tk-font-brand);
+    font-size: 44px; font-weight: 700; line-height: 1.05;
+    letter-spacing: 0.01em; text-transform: uppercase; color: var(--tk-navy-700);
+    max-width: 8in;
+  }
+  .cover__sub { font-size: 15px; color: var(--tk-fg-on-light-2); margin-top: 18px; max-width: 5.6in; line-height: 1.5; }
+  .cover__meta {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    padding-top: 20px; border-top: 1px solid var(--tk-border-on-light);
+    font-family: var(--tk-font-mono);
+  }
+  .cover__meta dt { font-size: 9px; letter-spacing: 0.12em; color: var(--tk-fg-on-light-3); text-transform: uppercase; }
+  .cover__meta dd { font-size: 12px; color: var(--tk-fg-on-light-1); margin: 4px 0 0; }
+
+  /* ---------- Section intro ---------- */
+  .profile-intro { break-before: page; break-after: avoid; }
+  .profile-intro__tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;
+    padding: 5px 12px; border-radius: 999px; margin-bottom: 14px;
+  }
+  .profile-intro__tag--ocupante { background: rgba(0,230,118,0.14); color: #0a7a3e; }
+  .profile-intro__tag--brigadista { background: rgba(0,191,255,0.14); color: var(--tk-cyan-press); }
+  .profile-intro h2 {
+    font-family: var(--tk-font-brand); font-size: 30px; text-transform: uppercase;
+    letter-spacing: 0.01em; margin: 0 0 10px;
+  }
+  .profile-intro__directive {
+    font-size: 13px; color: var(--tk-fg-on-light-2); line-height: 1.6; max-width: 6.4in;
+    padding: 14px 16px; border-left: 3px solid var(--tk-navy-500); background: var(--tk-light-100);
+    break-inside: avoid;
+  }
+  .profile-intro__directive strong { color: var(--tk-fg-on-light-1); }
+
+  /* ---------- Screen spec block ---------- */
+  .screen {
+    display: grid;
+    grid-template-columns: 2.55in 1fr;
+    gap: 0.35in;
+    align-items: start;
+    padding: 0.3in 0;
+    border-bottom: 1px solid var(--tk-border-on-light);
+    break-inside: avoid;
+  }
+  .screen:last-of-type { border-bottom: none; }
+  .screen__figure {
+    background: #07182a;
+    border-radius: 14px;
+    padding: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .screen__figure img { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .screen__num {
+    font-family: var(--tk-font-mono); font-size: 11px; color: var(--tk-cyan-press);
+    letter-spacing: 0.08em; font-weight: 700;
+  }
+  .screen__title { font-size: 17px; font-weight: 600; margin: 4px 0 10px; color: var(--tk-fg-on-light-1); }
+  .screen__body p { font-size: 12px; line-height: 1.6; color: var(--tk-fg-on-light-2); margin: 0 0 10px; }
+  .screen__list { margin: 0 0 10px; padding-left: 18px; }
+  .screen__list li { font-size: 12px; line-height: 1.55; color: var(--tk-fg-on-light-2); margin-bottom: 4px; }
+  .screen__list li strong { color: var(--tk-fg-on-light-1); }
+  .screen__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag {
+    font-family: var(--tk-font-mono); font-size: 9.5px; letter-spacing: 0.04em;
+    padding: 3px 8px; border-radius: 4px; background: var(--tk-light-200); color: var(--tk-fg-on-light-2);
+  }
+  .tag--crit { background: rgba(255,82,82,0.14); color: #b02020; }
+  .tag--warn { background: rgba(255,193,7,0.18); color: #8a6400; }
+  .tag--ok { background: rgba(0,230,118,0.16); color: #0a7a3e; }
+  .tag--cyan { background: rgba(0,191,255,0.16); color: var(--tk-cyan-press); }
+
+  /* running header/footer */
+  .doc-header, .doc-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--tk-font-mono); font-size: 9px; color: var(--tk-fg-on-light-3);
+    letter-spacing: 0.06em;
+  }
+  .doc-header { padding-bottom: 8px; border-bottom: 1px solid var(--tk-border-on-light); }
+  .doc-footer { padding-top: 8px; border-top: 1px solid var(--tk-border-on-light); }
+</style>
+</head>
+<body>
+
+<doc-page size="letter" orientation="portrait" margin="0.65in">
+
+  <div slot="header" class="doc-header">
+    <span>TAKAB TECHNOLOGY</span>
+    <span>APP MÓVIL · COMPLEMENTO SOC ALERTAMIENTO SÍSMICO</span>
+  </div>
+  <div slot="footer" class="doc-footer">
+    <span>CONFIDENCIAL · USO INTERNO</span>
+    <span>14 MAY 2026 · CDMX</span>
+  </div>
+
+  <!-- ================= COVER ================= -->
+  <section class="cover">
+    <div class="cover__brand">
+      <svg class="cover__logo" viewBox="0 0 100 100" fill="currentColor">
+        <path d="M 18 12 L 32 12 L 32 88 L 18 88 Z"/>
+        <path d="M 32 50 L 78 12 L 96 12 L 50 50 Z"/>
+        <path d="M 32 50 L 78 88 L 96 88 L 50 50 Z"/>
+      </svg>
+      <div>
+        <div class="cover__brand-name">TAKAB</div>
+        <div class="cover__brand-tag">TECHNOLOGY</div>
+      </div>
+    </div>
+
+    <div class="cover__mid">
+      <div class="cover__eyebrow">Especificación de diseño · Aplicación móvil</div>
+      <h1 class="cover__title">Complemento móvil del SOC de alertamiento sísmico</h1>
+      <p class="cover__sub">
+        Blueprint funcional de 12 pantallas para dos perfiles de usuario: el Personal
+        del Inmueble (herramienta de supervivencia y reducción de pánico) y el
+        Brigadista / Seguridad (herramienta de operación, triage y control local),
+        conectado directamente con la consola web del SOC.
+      </p>
+    </div>
+
+    <dl class="cover__meta">
+      <div><dt>Documento</dt><dd>Blueprint funcional · v1</dd></div>
+      <div><dt>Perfiles</dt><dd>Ocupante · Brigadista</dd></div>
+      <div><dt>Pantallas</dt><dd>12 · iOS / Android</dd></div>
+    </dl>
+  </section>
+
+  <!-- ================= PROFILE 1 — OCUPANTE ================= -->
+  <section class="profile-intro">
+    <span class="profile-intro__tag profile-intro__tag--ocupante">Perfil 1 · Personal del Inmueble</span>
+    <h2>Herramienta de supervivencia</h2>
+    <div class="profile-intro__directive">
+      <strong>Directiva de diseño:</strong> cero carga cognitiva. Interfaz de un solo
+      toque. Textos gigantes. Cada pantalla resuelve una sola decisión — nunca compite
+      por la atención del ocupante durante un evento sísmico.
+    </div>
+  </section>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/o1-reposo.png" alt="Modo reposo"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 1.1</div>
+      <div class="screen__title">Modo reposo · día a día</div>
+      <p>Vista por defecto cuando no hay alerta activa.</p>
+      <ul class="screen__list">
+        <li><strong>Indicador de estado verde</strong> — banner grande "Edificio: [Planta] · SEGURO".</li>
+        <li><strong>Directorio de emergencia</strong> — acceso directo a brigadistas de su piso y llamada con un toque.</li>
+        <li><strong>Historial de simulacros</strong> — próximo simulacro programado y resultado del último.</li>
+        <li>Enlaces a ruta de evacuación (PDF/imagen del piso) y manual operativo.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--ok">ESTADO VERDE</span><span class="tag">SASMEX ENLAZADO</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/o2-crisis-evacue.png" alt="Crisis evacúe"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 1.2 · CRISIS</div>
+      <div class="screen__title">T-Minus · "Evacúe ahora" (pisos bajos)</div>
+      <p>Pantalla roja de toma total, disparada por Critical Alert (iOS) / Canal de Alta
+      Prioridad (Android) — se salta "No Molestar" y el silencio del teléfono, y emite
+      el sonido oficial de alerta sísmica.</p>
+      <ul class="screen__list">
+        <li><strong>Cronómetro T-Minus</strong> gigante con la cuenta regresiva hasta la llegada de la onda S.</li>
+        <li><strong>Instrucción binaria</strong> según el piso registrado del usuario: plantas bajas ven "EVACÚE AHORA" con la ruta de salida asignada.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--crit">CRITICAL ALERT</span><span class="tag tag--crit">ROJO</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/o3-crisis-repliegue.png" alt="Crisis repliéguese"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 1.3 · CRISIS</div>
+      <div class="screen__title">T-Minus · "Repliéguese" (pisos altos)</div>
+      <p>Misma estructura binaria que 1.2, variante ámbar: pisos altos (ej. piso 10) reciben
+      la instrucción de repliegue a zona de seguridad interior en vez de evacuar,
+      dado el tiempo insuficiente para bajar por escaleras.</p>
+      <ul class="screen__list">
+        <li>Referencia directa a la zona de seguridad asignada y advertencia de alejarse de cristales.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--warn">CRITICAL ALERT</span><span class="tag tag--warn">ÁMBAR</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/o4-checkin.png" alt="Check-in de vida"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 1.4 · POST-SISMO</div>
+      <div class="screen__title">Check-in de vida</div>
+      <p>Tras concluir el movimiento, la pantalla cambia automáticamente a un botón de
+      estado binario — la única acción disponible.</p>
+      <ul class="screen__list">
+        <li><strong>Botón verde "Estoy a salvo"</strong> — confirma que el ocupante está fuera del edificio o en zona segura.</li>
+        <li><strong>Botón rojo "Necesito ayuda"</strong> — envía la última ubicación GPS conocida o el piso asignado al SOC y a los brigadistas.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--ok">GPS</span><span class="tag">1 TOQUE</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/o5-bloqueo.png" alt="Bloqueo de reingreso"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 1.5 · POST-SISMO</div>
+      <div class="screen__title">Bloqueo de reingreso</div>
+      <p>Letrero rojo persistente: "Reingreso Prohibido · Evaluación Estructural en curso",
+      con línea de tiempo del proceso de inspección.</p>
+      <ul class="screen__list">
+        <li>Se mantiene hasta que Protección Civil o el Jefe de Brigada liberen el edificio desde la consola web del SOC.</li>
+        <li>Muestra el punto de reunión asignado mientras dura la espera.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--crit">BLOQUEO ACTIVO</span><span class="tag tag--cyan">SINCRONIZADO CON SOC</span></div>
+    </div>
+  </div>
+
+  <!-- ================= PROFILE 2 — BRIGADISTA ================= -->
+  <section class="profile-intro">
+    <span class="profile-intro__tag profile-intro__tag--brigadista">Perfil 2 · Brigadistas y Personal de Seguridad</span>
+    <h2>Herramienta de operación y triage</h2>
+    <div class="profile-intro__directive">
+      <strong>Directiva de diseño:</strong> conciencia situacional y recopilación
+      forense de datos. Se conecta directamente con la pestaña de Triage Estructural
+      de la consola SOC — cada reporte generado aquí alimenta esa vista.
+    </div>
+  </section>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b1-panel.png" alt="Dashboard táctico"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.1</div>
+      <div class="screen__title">Dashboard táctico local</div>
+      <p>Pantalla principal del brigadista: salud del gabinete TAKAB en tiempo real y
+      checklist de actuadores automáticos.</p>
+      <ul class="screen__list">
+        <li><strong>Gabinete</strong> — batería UPS, conexión MQTT, estado del sensor RS4D.</li>
+        <li><strong>Actuadores BMS</strong> — confirmación visual: sirenas activas, válvulas de gas cerradas, retenedores de puerta liberados.</li>
+        <li><strong>Control remoto Edge</strong> — deslizar para silenciar sirena local o disparo manual.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--cyan">MQTT</span><span class="tag">RS4D</span><span class="tag tag--warn">BMS</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b2-control-remoto.png" alt="Control remoto Edge"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.2</div>
+      <div class="screen__title">Control remoto Edge · confirmación en 2 pasos</div>
+      <p>Acciones críticas (silenciar sirena, disparo manual) requieren confirmación
+      explícita y "deslizar para activar" — nunca un toque accidental.</p>
+      <ul class="screen__list">
+        <li>Checklist previo: edificio evacuado confirmado, headcount completo.</li>
+        <li>Toda acción queda registrada y firmada con el token del operador.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--crit">2 PASOS</span><span class="tag tag--cyan">FIRMA HSM</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b3-camara.png" alt="Cámara forense"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.3</div>
+      <div class="screen__title">Cámara forense integrada</div>
+      <p>Captura fotográfica de grietas, daños en columnas o fugas con marca de agua
+      inalterable horneada al pixel.</p>
+      <ul class="screen__list">
+        <li>Marca de agua: <strong>hora exacta, coordenadas GPS, nivel de PGA</strong> registrado por el gabinete en ese momento, e <strong>ID del brigadista</strong>.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--cyan">GPS</span><span class="tag">PGA</span><span class="tag tag--crit">MARCA INALTERABLE</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b4-formulario.png" alt="Formulario de daños"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.4</div>
+      <div class="screen__title">Formulario rápido de daños</div>
+      <p>Categorías marcables ligadas a la evidencia fotográfica y GPS de la pantalla anterior.</p>
+      <ul class="screen__list">
+        <li>Daño estructural (columnas / muros de carga)</li>
+        <li>Daño no estructural (plafones / cristales)</li>
+        <li>Fuga quirúrgica / gas / agua</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--crit">CRÍTICO</span><span class="tag tag--warn">MEDIO</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b5-sync.png" alt="Sincronización offline-first"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.5</div>
+      <div class="screen__title">Sincronización asíncrona · offline-first</div>
+      <p>Si el WiFi o los datos celulares están caídos, la app guarda fotos y reportes
+      localmente y los dispara automáticamente a AWS en cuanto el teléfono recupera señal.</p>
+      <ul class="screen__list">
+        <li>Cola visible con estado por elemento: pendiente, listo para subir, sincronizado.</li>
+        <li>Datos cifrados localmente hasta la sincronización — cadena de custodia preservada.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag">OFFLINE-FIRST</span><span class="tag tag--cyan">AES-256</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b6-headcount.png" alt="Headcount"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.6</div>
+      <div class="screen__title">Headcount · pase de lista</div>
+      <p>Cruza los "check-ins de vida" del personal del inmueble con el roster asignado
+      a cada brigadista.</p>
+      <ul class="screen__list">
+        <li><strong>Filtro "No reportados"</strong> — muestra de inmediato quiénes no han presionado "Estoy a salvo", con marcación directa desde la app.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--crit">NO REPORTADOS</span><span class="tag">LLAMADA DIRECTA</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen__figure"><img src="shots/b7-dictamen.png" alt="Dictamen de reingreso"></div>
+    <div class="screen__body">
+      <div class="screen__num">PANTALLA 2.7</div>
+      <div class="screen__title">Recepción de dictamen de reingreso</div>
+      <p>Cuando el SOC principal (Protección Civil / ingeniero a cargo) firma el dictamen
+      electrónico en la consola web, el brigadista recibe el certificado digital (PDF)
+      con la orden oficial "Edificio Aprobado para Reingreso".</p>
+      <ul class="screen__list">
+        <li>Habilita al brigadista a dar la indicación verbal y desactivar las alarmas.</li>
+      </ul>
+      <div class="screen__tags"><span class="tag tag--ok">HABITAR</span><span class="tag tag--cyan">FIRMA HSM</span></div>
+    </div>
+  </div>
+
+</doc-page>
+
+<script src="doc-page.js"></script>
+</body>
+</html>

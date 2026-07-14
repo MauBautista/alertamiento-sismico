@@ -329,6 +329,23 @@ describe("patchChannels · escribe notifications sin filtrar el secret", () => {
     expect(out["quorum"]).toEqual({ min_nodes: 3 });
   });
 
+  it("NO borra las claves de notifications que esta pantalla no gestiona", () => {
+    // inspector_emails (T-1.61) vive en notifications y no tiene tarjeta en la UI:
+    // reescribir el objeto entero apagaba el correo del inspector en silencio.
+    const out = patchChannels(
+      {
+        notifications: {
+          email: { to: ["viejo@x.mx"] },
+          inspector_emails: ["perito@takab.mx"],
+        },
+      },
+      drafts(),
+    );
+    const notif = out["notifications"] as Record<string, unknown>;
+    expect(notif["inspector_emails"]).toEqual(["perito@takab.mx"]);
+    expect(notif["email"]).toEqual({ to: ["a@b.c", "d@e.f"] }); // el canal sí se reescribe
+  });
+
   it("deshabilitar y re-habilitar el webhook no puede perder el secret: el cliente no lo maneja", () => {
     const off = patchChannels({ notifications: { webhook: { url: "https://x" } } }, [
       { key: "webhook", enabled: false, destination: "" },

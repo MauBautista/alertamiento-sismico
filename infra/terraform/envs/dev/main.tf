@@ -68,6 +68,17 @@ module "database" {
   worker_secret_arns = [
     "arn:aws:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:${local.gateway_hmac_prefix}/*",
   ]
+
+  # [T-1.62] Envio de correo del worker notify (SES). El ARN se CONSTRUYE aqui en
+  # vez de leerlo de module.identity a proposito: identity -> serve -> database ya
+  # es una cadena, y tomar el output cerraria el ciclo. Mismo patron que los topics
+  # de IoT de arriba. La identidad verificada NO concede envio: sin este grant el
+  # notify recibe AccessDenied y el job del dictamen muere (visto en produccion el
+  # 2026-07-14; los correos de SNS seguian llegando y tapaban el hueco).
+  notify_ses_identity_arns = [
+    for email in var.ses_verified_emails :
+    "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${email}"
+  ]
 }
 
 module "identity" {

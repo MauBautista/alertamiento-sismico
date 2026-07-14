@@ -1,4 +1,4 @@
-.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing \
+.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing cloud-users \
         demo-fase1 demo-db cloud-images cloud-deploy
 
 API_DIR := api
@@ -140,3 +140,9 @@ cloud-images:
 cloud-deploy:
 	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh
+
+# Usuarios de consola en Cognito (T-1.62): un perfil por rol web, con su grupo
+# (sin grupo el login da 401) y su contraseña en Secrets Manager. Idempotente.
+# Cada usuario enrola MFA TOTP en su primer login: el pool lo exige a todos.
+cloud-users:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_console_users.sh $(ROLES)

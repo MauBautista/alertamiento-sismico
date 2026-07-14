@@ -61,3 +61,10 @@ variable "worker_secret_arns" {
   type    = list(string)
   default = []
 }
+
+# Identidades SES desde las que el worker notify puede enviar correo (T-1.62).
+# Vacio = sin permiso de envio (el provider de email caeria en AccessDenied).
+variable "notify_ses_identity_arns" {
+  type    = list(string)
+  default = []
+}

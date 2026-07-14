@@ -84,7 +84,7 @@ resource "aws_iam_role_policy" "db" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid      = "ReadDbSecrets"
         Effect   = "Allow"
@@ -153,7 +153,21 @@ resource "aws_iam_role_policy" "db" {
         Action   = ["iot:Publish"]
         Resource = var.worker_iot_publish_topic_arns
       },
-    ]
+      ],
+      # Worker notify co-locado (T-1.62): envio de correo por SES. Una identidad
+      # VERIFICADA no concede envio — son dos cosas distintas, y el hueco estuvo
+      # tapado porque los avisos de CloudWatch los manda SNS (permiso propio) y
+      # SI llegaban. Sin este grant: AccessDenied, el job muere y el inspector
+      # jamas recibe la solicitud de dictamen (visto en produccion el 2026-07-14).
+      # Lista vacia ⇒ sin statement (una Resource vacia seria IAM invalido).
+      length(var.notify_ses_identity_arns) > 0 ? [
+        {
+          Sid      = "WorkerSesSend"
+          Effect   = "Allow"
+          Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+          Resource = var.notify_ses_identity_arns
+        },
+    ] : [])
   })
 }
 

@@ -36,3 +36,26 @@ test("login dev y las 5 pantallas cargan", async ({ page }) => {
     ).toBeVisible();
   }
 });
+
+// [T-1.62] Regresión de layout que jsdom NO puede ver (no calcula alturas): el
+// control de simulacro de T-1.60 caía en la fila elástica de .soc-main y dejaba
+// el mapa clavado en su piso de 280 px. Solo un navegador real lo caza.
+test("el mapa se queda el alto: el simulacro es una tira, no un panel", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/");
+  await page.getByLabel("ROL").selectOption("takab_superadmin"); // tiene drill_start
+  await page.getByRole("button", { name: "ENTRAR COMO ROL" }).click();
+  // El login ya aterriza en /console; navegar antes de que monte tira la sesión.
+  await expect(page.locator('[data-screen-label="01 Consola C4I · Live Wall"]')).toBeVisible();
+
+  const drill = page.getByTestId("drill-idle");
+  await expect(drill).toBeVisible();
+  const drillBox = await drill.boundingBox();
+  const stageBox = await page.locator(".soc-stage").boundingBox();
+
+  expect(drillBox!.height, "el control en reposo debe ser una tira").toBeLessThan(60);
+  expect(
+    stageBox!.height,
+    "el mapa está en su piso de 280 px: algo le robó el alto",
+  ).toBeGreaterThan(400);
+});

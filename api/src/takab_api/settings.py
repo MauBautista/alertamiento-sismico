@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     #: [T-1.61] Base pública de la consola para links en notificaciones
     #: (p.ej. https://16-58-11-196.sslip.io). Vacío ⇒ el mensaje va sin link.
     notify_web_base_url: str = ""
+    #: [T-1.62] Envíos totales por job antes de darlo por perdido (backoff
+    #: 30 s / 2 min entre ellos). Solo aplica a quien no tiene a quién escalar:
+    #: un salto de cascada con siguiente canal falla en el acto, como siempre.
+    notify_max_attempts: int = 3
 
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
