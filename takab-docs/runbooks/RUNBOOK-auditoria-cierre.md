@@ -384,9 +384,18 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
     tras el apply — sin marcar.
   - Rebanada restante documentada: batería por gabinete y 5xx de la API requieren publicar
     métricas desde la aplicación (device_health/Caddy) — tarea futura de A-4.
-- `[ ]` **GATE-DESPLIEGUE (A-4):** `terraform apply` (Mauricio, con `!`), confirmar la
-  suscripción SNS del correo, y probar UNA alarma real (p. ej. `make cloud-stop`/`cloud-start`
-  debe producir el par ALARM→OK de `takab-dev-ec2-status-check`).
+- `[x]` **GATE-DESPLIEGUE (A-4) CERRADO (2026-07-13/14):** apply hecho y suscripción SNS
+  confirmada por Mauricio.
+- **AGUJERO QUE ESTAS ALARMAS NO CUBRÍAN — cerrado en T-1.66 (2026-07-14):** todas vigilan la
+  INFRA (gabinete conectado, DLQ, instancia), ninguna vigilaba que el **sismógrafo tuviera
+  datos**. El 14/07 el Raspberry Shake estuvo **15 h fuera de la red**: el Pi seguía latiendo,
+  `gateway_offline` nunca disparó (había enlace) y la consola pintaba **OPERATIVO** — el sitio
+  estuvo ciego y nadie se enteró. Se descubrió por casualidad, comparando el último feature de
+  la base con el reloj. Remediado con la alarma **`takab-dev-sensor-mudo-<thing>`**: regla IoT
+  `takab_dev_seedlink_lag_metric` (`SELECT * FROM 'takab/health'` → métrica `Takab/Sensor`,
+  metric_name = `clientid()`) + alarma > 120 s de antigüedad del dato → SNS. Requisito previo:
+  T-1.65 (el edge congelaba `seedlink_lag_s` en el último paquete: la métrica habría mentido
+  igual que la UI).
 
 ### [x] O2 · Load-test de ingesta vs SLOs
 - **Cómo verificar:** `takab-docs/runbooks/RUNBOOK-load-test-ingesta.md`.

@@ -136,11 +136,12 @@ resource "aws_iam_role_policy" "rules" {
       {
         # A-4: la regla de presencia publica la metrica de flota. PutMetricData
         # no admite recurso especifico; se acota por namespace.
+        # T-1.66: + Takab/Sensor (lag de SeedLink → alarma de sensor MUDO).
         Effect   = "Allow"
         Action   = "cloudwatch:PutMetricData"
         Resource = "*"
         Condition = {
-          StringEquals = { "cloudwatch:namespace" = "Takab/Fleet" }
+          StringEquals = { "cloudwatch:namespace" = ["Takab/Fleet", "Takab/Sensor"] }
         }
       },
     ]
@@ -202,6 +203,38 @@ locals {
     takab_dev_status_metric_offline = { status = "offline", value = "0" }
     takab_dev_status_metric_online  = { status = "online", value = "1" }
   }
+}
+
+# --- Sensor MUDO -> metrica CloudWatch (T-1.66) ----------------------------------
+# El caso que se nos escapo el 14/07/2026: el Raspberry Shake estuvo 15 h fuera de
+# la red, el Pi siguio latiendo y la flota se veia OPERATIVA. La alarma de presencia
+# NO lo cubre (el gabinete SI tenia enlace) y nadie se entero de que el sistema
+# estaba ciego. El heartbeat ya trae `seedlink_lag_s` = antiguedad del dato mas
+# reciente (T-1.65: crece sin limite si el stream muere), asi que se convierte en
+# metrica sin instrumentar la aplicacion — mismo truco que la presencia.
+# metric_name = clientid() = nombre del thing (el gateway conecta con su ThingName).
+resource "aws_iot_topic_rule" "seedlink_lag_metric" {
+  name        = "takab_dev_seedlink_lag_metric"
+  enabled     = true
+  sql         = "SELECT * FROM 'takab/health'"
+  sql_version = "2016-03-23"
+
+  cloudwatch_metric {
+    metric_name      = "$${clientid()}"
+    metric_namespace = "Takab/Sensor"
+    metric_unit      = "Seconds"
+    metric_value     = "$${seedlink_lag_s}"
+    role_arn         = aws_iam_role.rules.arn
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = aws_cloudwatch_log_group.rule_errors.name
+      role_arn       = aws_iam_role.rules.arn
+    }
+  }
+
+  depends_on = [aws_iam_role_policy.rules]
 }
 
 resource "aws_iot_topic_rule" "gateway_status_metric" {

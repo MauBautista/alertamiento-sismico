@@ -128,6 +128,34 @@ resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
 # missing=notBreaching ⇒ la alarma pagina en la transicion a offline y vuelve a
 # OK sola; el estado sostenido vive en la UI de flota (derive_fleet_state).
 # Solo los gateways REALES paginan: los gw-sim-* viven apagados por diseno.
+# --- Sensor MUDO: gabinete VIVO pero sin datos del sismografo (T-1.66) ------------
+# El agujero que costo 15 h de ceguera el 14/07/2026: el Shake fuera de la red, el Pi
+# latiendo cada minuto y la flota "OPERATIVA". `gateway_offline` no lo ve (hay enlace)
+# y la UI solo lo mostraba a quien mirase la pantalla. Un sismografo mudo es la
+# perdida TOTAL de la deteccion local: es exactamente lo que tiene que despertar a
+# alguien de madrugada.
+#
+# `seedlink_lag_s` es la ANTIGUEDAD del dato mas reciente (T-1.65). Un stream sano no
+# pasa de ~8 s (duracion del registro miniSEED a 100 sps), asi que 120 s es inequivoco
+# y deja fuera cualquier hipo de reconexion. missing=notBreaching: si cae el gabinete
+# ENTERO, quien pagina es `gateway_offline` — cada alarma dice UNA cosa.
+resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
+  for_each = toset(var.paged_gateways)
+
+  alarm_name          = "takab-dev-sensor-mudo-${each.value}"
+  alarm_description   = "El gabinete ${each.value} TIENE ENLACE pero su sismografo lleva >120 s sin entregar muestras: SIN DETECCION LOCAL, el sitio esta ciego. Revisar el Raspberry Shake (alimentacion, cable de red, puerto del switch): el Pi 5 reconecta solo en cuanto vuelva a la LAN."
+  namespace           = "Takab/Sensor"
+  metric_name         = each.value
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 120
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 

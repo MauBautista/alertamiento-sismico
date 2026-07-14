@@ -1598,3 +1598,21 @@ mentía en la nube. Ninguno era lo que parecía.
   antes de arrancar (sin dato ≠ 0.0) · la flota degrada con lag > umbral y el espejo de
   tests de la API sigue el default.
 > **ESTADO.** edge 338 (+2) · api 797 · web 543 · ruff/eslint/tsc limpios.
+
+### [x] T-1.66 · Alarma de SENSOR MUDO: el correo que nadie recibió — **COMPLETA (2026-07-14)**
+- **Componente:** infra · **Depende de:** T-1.65 (sin el lag honesto, la métrica mentiría igual)
+- **El agujero:** las alarmas de A-4 vigilan la INFRA —gabinete conectado, DLQ, instancia, reglas
+  IoT— pero **ninguna vigilaba que el sismógrafo tuviera datos**. Con el Shake 15 h fuera de la
+  red, el Pi seguía latiendo: `gateway_offline` no disparó (había enlace), ningún incidente se
+  abrió (no hay sismo que detectar cuando estás ciego) y la consola decía OPERATIVO. **La única
+  forma de enterarse era mirar la pantalla y sospechar.**
+- **Fix (cero código de aplicación, mismo truco que la presencia):** regla IoT
+  `takab_dev_seedlink_lag_metric` — `SELECT * FROM 'takab/health'` → `cloudwatch_metric` en el
+  namespace `Takab/Sensor`, `metric_name = ${clientid()}` (= nombre del thing),
+  `metric_value = ${seedlink_lag_s}`. Alarma `takab-dev-sensor-mudo-<thing>` (Maximum 5 min,
+  **> 120 s**) → topic SNS de on-call ya confirmado. `treat_missing_data = notBreaching`: si cae
+  el gabinete ENTERO pagina `gateway_offline` — cada alarma dice UNA cosa.
+- **Por qué 120 s:** el lag es la antigüedad del dato; un stream sano no pasa de ~8 s (duración
+  del registro miniSEED a 100 sps). 120 s deja fuera cualquier hipo de reconexión y sigue avisando
+  en minutos. La política IAM del rol de reglas se amplía al namespace nuevo (`Takab/Fleet` +
+  `Takab/Sensor`) — sin esa línea, la regla escribe métricas al vacío.
