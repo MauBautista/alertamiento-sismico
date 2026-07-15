@@ -2404,6 +2404,10 @@
             "title": "Manage Tenants",
             "type": "boolean"
           },
+          "manage_visibility": {
+            "title": "Manage Visibility",
+            "type": "boolean"
+          },
           "read_audit": {
             "title": "Read Audit",
             "type": "boolean"
@@ -2442,7 +2446,8 @@
           "read_audit",
           "self_test",
           "drill_start",
-          "manage_tenants"
+          "manage_tenants",
+          "manage_visibility"
         ],
         "title": "MeActions",
         "type": "object"
@@ -4147,6 +4152,116 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VisibilityGrantCreate": {
+        "additionalProperties": false,
+        "description": "Alta/actualización (upsert) de un grant. ``target`` es exactamente uno de:\nun cliente específico (``target_tenant_id``) o TODOS (``target_all``).",
+        "properties": {
+          "can_view_data": {
+            "default": false,
+            "title": "Can View Data",
+            "type": "boolean"
+          },
+          "can_view_metadata": {
+            "default": false,
+            "title": "Can View Metadata",
+            "type": "boolean"
+          },
+          "grantee_tenant_id": {
+            "format": "uuid",
+            "title": "Grantee Tenant Id",
+            "type": "string"
+          },
+          "target_all": {
+            "default": false,
+            "title": "Target All",
+            "type": "boolean"
+          },
+          "target_tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tenant Id"
+          }
+        },
+        "required": [
+          "grantee_tenant_id"
+        ],
+        "title": "VisibilityGrantCreate",
+        "type": "object"
+      },
+      "VisibilityGrantOut": {
+        "description": "Fila de grant. RLS: el grantee ve los suyos; el superadmin todos.",
+        "properties": {
+          "can_view_data": {
+            "title": "Can View Data",
+            "type": "boolean"
+          },
+          "can_view_metadata": {
+            "title": "Can View Metadata",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "grant_id": {
+            "format": "uuid",
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "grantee_tenant_id": {
+            "format": "uuid",
+            "title": "Grantee Tenant Id",
+            "type": "string"
+          },
+          "target_all": {
+            "title": "Target All",
+            "type": "boolean"
+          },
+          "target_tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tenant Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant_id",
+          "grantee_tenant_id",
+          "target_tenant_id",
+          "target_all",
+          "can_view_metadata",
+          "can_view_data",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "VisibilityGrantOut",
         "type": "object"
       },
       "ZoneOut": {
@@ -6429,6 +6544,129 @@
           }
         },
         "summary": "Create Tenant"
+      }
+    },
+    "/visibility-grants": {
+      "get": {
+        "description": "Lista los grants (el superadmin ve todos). ``grantee_tenant_id`` filtra un cliente.",
+        "operationId": "list_visibility_grants_visibility_grants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "grantee_tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grantee Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VisibilityGrantOut"
+                  },
+                  "title": "Response List Visibility Grants Visibility Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Visibility Grants"
+      },
+      "post": {
+        "description": "Concede (o actualiza) visibilidad del grantee sobre un cliente o TODOS.\n\nUn tenant inexistente choca contra la FK (400); la forma inválida (target doble/\nvacío, auto-grant, grant vacío) la rechaza el schema (422) antes de la DB.",
+        "operationId": "upsert_visibility_grant_visibility_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityGrantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibilityGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Visibility Grant"
+      }
+    },
+    "/visibility-grants/{grant_id}": {
+      "delete": {
+        "description": "Revoca un grant. El revoke es dinámico: aplica en la siguiente consulta del grantee.",
+        "operationId": "revoke_visibility_grant_visibility_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Visibility Grant"
       }
     }
   }

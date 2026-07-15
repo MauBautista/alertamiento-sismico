@@ -26,6 +26,7 @@ class MeActions(BaseModel):
     self_test: bool
     drill_start: bool
     manage_tenants: bool
+    manage_visibility: bool
 
 
 class MeResponse(BaseModel):

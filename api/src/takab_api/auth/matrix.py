@@ -102,6 +102,11 @@ ACTIONS: tuple[str, ...] = (
     # ``tenants_admin`` ya exige app_role='takab_superadmin'; la matriz decide quién ve
     # el botón (regla de oro 7: sin botón que siempre daría 403).
     "manage_tenants",
+    # [T-1.73] Visibilidad configurable entre clientes (conceder/revocar grants de
+    # lectura cruzada): acto del DUEÑO de la plataforma — SOLO takab_superadmin. Toca
+    # la frontera de aislamiento multi-tenant; ni tenant_admin ni support amplían la
+    # visibilidad de un cliente sobre otro. La RLS ``vg_admin`` ya exige superadmin.
+    "manage_visibility",
 )
 
 
@@ -120,6 +125,7 @@ def _actions(
     self_test: bool = False,
     drill_start: bool = False,
     manage_tenants: bool = False,
+    manage_visibility: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -135,6 +141,7 @@ def _actions(
         "self_test": self_test,
         "drill_start": drill_start,
         "manage_tenants": manage_tenants,
+        "manage_visibility": manage_visibility,
     }
 
 
@@ -152,6 +159,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         self_test=True,
         drill_start=True,
         manage_tenants=True,
+        manage_visibility=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(

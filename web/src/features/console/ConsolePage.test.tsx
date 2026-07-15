@@ -177,6 +177,7 @@ describe("ConsolePage", () => {
           self_test: false,
           drill_start: false,
           manage_tenants: false,
+          manage_visibility: false,
         },
       },
     });
@@ -284,6 +285,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           self_test: false,
           drill_start: false,
           manage_tenants: false,
+          manage_visibility: false,
         },
       },
     });

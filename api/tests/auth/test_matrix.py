@@ -74,6 +74,7 @@ DENY_ALL = {
     "self_test": False,
     "drill_start": False,
     "manage_tenants": False,
+    "manage_visibility": False,
 }
 
 
@@ -180,6 +181,13 @@ def test_manage_tenants_is_superadmin_only() -> None:
     Solo takab_superadmin: tenant_admin no da de alta OTROS clientes; support lee la
     plataforma, no la provisiona. La RLS ``tenants_admin`` ya exige superadmin."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_tenants"]}
+    assert can == {"takab_superadmin"}
+
+
+def test_manage_visibility_is_superadmin_only() -> None:
+    """[T-1.73] Conceder/revocar visibilidad entre clientes toca la frontera de
+    aislamiento multi-tenant: SOLO takab_superadmin. La RLS ``vg_admin`` lo exige igual."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_visibility"]}
     assert can == {"takab_superadmin"}
 
 

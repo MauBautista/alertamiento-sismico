@@ -572,6 +572,7 @@ export type MeActions = {
     generate_report: boolean;
     manage_fleet: boolean;
     manage_tenants: boolean;
+    manage_visibility: boolean;
     read_audit: boolean;
     relocate_epicenter: boolean;
     request_dictamen: boolean;
@@ -950,6 +951,33 @@ export type ValidationError = {
     loc: Array<string | number>;
     msg: string;
     type: string;
+};
+
+/**
+ * Alta/actualización (upsert) de un grant. ``target`` es exactamente uno de:
+ * un cliente específico (``target_tenant_id``) o TODOS (``target_all``).
+ */
+export type VisibilityGrantCreate = {
+    can_view_data?: boolean;
+    can_view_metadata?: boolean;
+    grantee_tenant_id: string;
+    target_all?: boolean;
+    target_tenant_id?: string | null;
+};
+
+/**
+ * Fila de grant. RLS: el grantee ve los suyos; el superadmin todos.
+ */
+export type VisibilityGrantOut = {
+    can_view_data: boolean;
+    can_view_metadata: boolean;
+    created_at: string;
+    created_by: string;
+    grant_id: string;
+    grantee_tenant_id: string;
+    target_all: boolean;
+    target_tenant_id: string | null;
+    updated_at: string;
 };
 
 /**
@@ -2189,6 +2217,85 @@ export type CreateTenantTenantsPostResponses = {
 };
 
 export type CreateTenantTenantsPostResponse = CreateTenantTenantsPostResponses[keyof CreateTenantTenantsPostResponses];
+
+export type ListVisibilityGrantsVisibilityGrantsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        grantee_tenant_id?: string | null;
+    };
+    url: '/visibility-grants';
+};
+
+export type ListVisibilityGrantsVisibilityGrantsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListVisibilityGrantsVisibilityGrantsGetError = ListVisibilityGrantsVisibilityGrantsGetErrors[keyof ListVisibilityGrantsVisibilityGrantsGetErrors];
+
+export type ListVisibilityGrantsVisibilityGrantsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<VisibilityGrantOut>;
+};
+
+export type ListVisibilityGrantsVisibilityGrantsGetResponse = ListVisibilityGrantsVisibilityGrantsGetResponses[keyof ListVisibilityGrantsVisibilityGrantsGetResponses];
+
+export type UpsertVisibilityGrantVisibilityGrantsPostData = {
+    body: VisibilityGrantCreate;
+    path?: never;
+    query?: never;
+    url: '/visibility-grants';
+};
+
+export type UpsertVisibilityGrantVisibilityGrantsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpsertVisibilityGrantVisibilityGrantsPostError = UpsertVisibilityGrantVisibilityGrantsPostErrors[keyof UpsertVisibilityGrantVisibilityGrantsPostErrors];
+
+export type UpsertVisibilityGrantVisibilityGrantsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: VisibilityGrantOut;
+};
+
+export type UpsertVisibilityGrantVisibilityGrantsPostResponse = UpsertVisibilityGrantVisibilityGrantsPostResponses[keyof UpsertVisibilityGrantVisibilityGrantsPostResponses];
+
+export type RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteData = {
+    body?: never;
+    path: {
+        grant_id: string;
+    };
+    query?: never;
+    url: '/visibility-grants/{grant_id}';
+};
+
+export type RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteError = RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteErrors[keyof RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteErrors];
+
+export type RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteResponse = RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteResponses[keyof RevokeVisibilityGrantVisibilityGrantsGrantIdDeleteResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
