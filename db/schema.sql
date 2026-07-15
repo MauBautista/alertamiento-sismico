@@ -510,6 +510,86 @@ CREATE FUNCTION app_gov_can_see(t uuid) RETURNS boolean
        AND EXISTS (SELECT 1 FROM tenants x
                    WHERE x.tenant_id = t AND x.visibility = 'gov_shared') $$;
 
+-- ---------------------------------------------------------------------------
+-- [T-1.73] Visibilidad configurable entre clientes.
+-- El superadmin concede, por cliente (grantee), ver METADATOS (que EXISTEN las
+-- estaciones) y/o DATOS en vivo (formas de onda, métricas, salud, incidentes) de
+-- otro tenant (o de TODOS). Default-deny: sin fila de grant, cero acceso extra.
+-- NUNCA concede escritura (las políticas *_write/*_admin no se tocan). superadmin/
+-- support/gov mantienen su visibilidad; esto SOLO añade ramas de LECTURA.
+-- ---------------------------------------------------------------------------
+CREATE TABLE visibility_grants (
+  grant_id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  grantee_tenant_id uuid NOT NULL REFERENCES tenants ON DELETE CASCADE,
+  target_tenant_id  uuid REFERENCES tenants ON DELETE CASCADE,  -- NULL sii target_all
+  target_all        boolean NOT NULL DEFAULT false,             -- 'TODOS los clientes'
+  can_view_metadata boolean NOT NULL DEFAULT false,
+  can_view_data     boolean NOT NULL DEFAULT false,
+  created_by        uuid NOT NULL,                              -- sub del superadmin (auditoría)
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  -- exactamente uno de {target específico, TODOS}; sin auto-grant; sin grant vacío.
+  CONSTRAINT vg_target_shape CHECK (
+    (target_all AND target_tenant_id IS NULL) OR
+    (NOT target_all AND target_tenant_id IS NOT NULL)),
+  CONSTRAINT vg_no_self CHECK (target_all OR grantee_tenant_id <> target_tenant_id),
+  CONSTRAINT vg_nonempty CHECK (can_view_metadata OR can_view_data)
+);
+-- una fila por (grantee, target específico) y una fila TODOS por grantee (upsert).
+CREATE UNIQUE INDEX uq_vg_specific ON visibility_grants (grantee_tenant_id, target_tenant_id)
+  WHERE NOT target_all;
+CREATE UNIQUE INDEX uq_vg_all ON visibility_grants (grantee_tenant_id) WHERE target_all;
+CREATE INDEX idx_vg_grantee ON visibility_grants (grantee_tenant_id);  -- hot path de los helpers
+
+ALTER TABLE visibility_grants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE visibility_grants FORCE  ROW LEVEL SECURITY;
+-- El grantee ve SUS grants (qué le compartieron); los internos TAKAB ven todo.
+CREATE POLICY vg_read  ON visibility_grants FOR SELECT
+  USING (grantee_tenant_id = app_tenant_id() OR app_is_takab_internal());
+-- Conceder/revocar es acto del DUEÑO de la plataforma (misma llave que tenants_admin).
+CREATE POLICY vg_admin ON visibility_grants FOR ALL
+  USING (app_role() = 'takab_superadmin') WITH CHECK (app_role() = 'takab_superadmin');
+GRANT SELECT, INSERT, UPDATE, DELETE ON visibility_grants TO takab_app;
+
+-- "el grantee puede ver que EXISTEN las estaciones de t" — implícito por CUALQUIER grant
+-- (ver datos ⊇ ver que existe). SECURITY DEFINER + search_path fijo igual que
+-- app_gov_can_see: Postgres valida el privilegio sobre visibility_grants al planear la
+-- política aunque el OR no llegue a evaluarse. app_tenant_id() sigue siendo el de la
+-- sesión (DEFINER cambia el rol, no los GUCs).
+CREATE FUNCTION app_can_view_meta(t uuid) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS
+  $$ SELECT EXISTS (SELECT 1 FROM visibility_grants g
+                     WHERE g.grantee_tenant_id = app_tenant_id()
+                       AND (g.can_view_metadata OR g.can_view_data)
+                       AND (g.target_all OR g.target_tenant_id = t)) $$;
+
+-- "el grantee puede ver los DATOS en vivo de t" — estrictamente can_view_data.
+CREATE FUNCTION app_can_view_data(t uuid) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS
+  $$ SELECT EXISTS (SELECT 1 FROM visibility_grants g
+                     WHERE g.grantee_tenant_id = app_tenant_id()
+                       AND g.can_view_data
+                       AND (g.target_all OR g.target_tenant_id = t)) $$;
+
+-- [T-1.73] Las vistas seguras (creadas arriba SIN WHERE) se REDEFINEN aquí, ya con los
+-- helpers disponibles, para gatear los DATOS por su cuenta. CLAVE (crux metadata≠datos):
+-- como aíslan por JOIN sites y sites_read se amplía abajo con app_can_view_meta, un grant
+-- de SOLO-metadatos haría casar el JOIN → sin este WHERE filtraría formas de onda. El
+-- WHERE re-estrecha al eje de DATOS. CREATE OR REPLACE preserva owner (takab_migrator) y
+-- grants; el SELECT (columnas) no cambia, solo se añade el WHERE.
+CREATE OR REPLACE VIEW waveform_features_1s_secure WITH (security_barrier = true) AS
+  SELECT wf.* FROM waveform_features_1s wf JOIN sites s ON s.site_id = wf.site_id
+  WHERE s.tenant_id = app_tenant_id() OR app_is_takab_internal()
+     OR app_gov_can_see(s.tenant_id) OR app_can_view_data(s.tenant_id);
+CREATE OR REPLACE VIEW site_metrics_1m_secure WITH (security_barrier = true) AS
+  SELECT m.* FROM site_metrics_1m m JOIN sites s ON s.site_id = m.site_id
+  WHERE s.tenant_id = app_tenant_id() OR app_is_takab_internal()
+     OR app_gov_can_see(s.tenant_id) OR app_can_view_data(s.tenant_id);
+CREATE OR REPLACE VIEW site_metrics_1h_secure WITH (security_barrier = true) AS
+  SELECT m.* FROM site_metrics_1h m JOIN sites s ON s.site_id = m.site_id
+  WHERE s.tenant_id = app_tenant_id() OR app_is_takab_internal()
+     OR app_gov_can_see(s.tenant_id) OR app_can_view_data(s.tenant_id);
+
 -- ---- tablas visibles a gov_operator (C4I/Flota/Triage de tenants gov_shared) ----
 -- sites, zones, gateways, sensors, incidents, incident_actions, dictamens,
 -- evidence_objects, waveform_features_1s, device_health, rule_evaluations
@@ -517,7 +597,8 @@ CREATE FUNCTION app_gov_can_see(t uuid) RETURNS boolean
 ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sites FORCE  ROW LEVEL SECURITY;
 CREATE POLICY sites_read  ON sites FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_meta(tenant_id));   -- [T-1.73] grant de metadatos
 CREATE POLICY sites_write ON sites FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
@@ -527,7 +608,8 @@ CREATE POLICY sites_admin ON sites FOR ALL
 ALTER TABLE zones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zones FORCE  ROW LEVEL SECURITY;
 CREATE POLICY zones_read  ON zones FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_meta(tenant_id));   -- [T-1.73] grant de metadatos
 CREATE POLICY zones_write ON zones FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
@@ -537,7 +619,8 @@ CREATE POLICY zones_admin ON zones FOR ALL
 ALTER TABLE gateways ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gateways FORCE  ROW LEVEL SECURITY;
 CREATE POLICY gateways_read  ON gateways FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_meta(tenant_id));   -- [T-1.73] grant de metadatos
 CREATE POLICY gateways_write ON gateways FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
@@ -547,7 +630,8 @@ CREATE POLICY gateways_admin ON gateways FOR ALL
 ALTER TABLE sensors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sensors FORCE  ROW LEVEL SECURITY;
 CREATE POLICY sensors_read  ON sensors FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_meta(tenant_id));   -- [T-1.73] grant de metadatos
 CREATE POLICY sensors_write ON sensors FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
@@ -578,7 +662,8 @@ CREATE POLICY rule_sets_admin ON rule_sets FOR ALL
 ALTER TABLE incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incidents FORCE  ROW LEVEL SECURITY;
 CREATE POLICY incidents_read  ON incidents FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_data(tenant_id));   -- [T-1.73] grant de datos
 CREATE POLICY incidents_write ON incidents FOR ALL
   USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
@@ -593,7 +678,8 @@ CREATE POLICY incidents_admin ON incidents FOR ALL
 ALTER TABLE incident_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident_actions FORCE  ROW LEVEL SECURITY;
 CREATE POLICY actions_read ON incident_actions FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_data(tenant_id));   -- [T-1.73] grant de datos (timeline del incidente)
 CREATE POLICY actions_insert ON incident_actions FOR INSERT
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 CREATE POLICY actions_admin ON incident_actions FOR INSERT
@@ -629,11 +715,13 @@ CREATE POLICY evidence_admin ON evidence_objects FOR INSERT
 
 ALTER TABLE device_health ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dh_read ON device_health FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_data(tenant_id));   -- [T-1.73] grant de datos (salud del gabinete)
 
 ALTER TABLE rule_evaluations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY re_read ON rule_evaluations FOR SELECT
-  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id)
+         OR app_can_view_data(tenant_id));   -- [T-1.73] grant de datos
 
 -- ---- datos de red (excepción documentada; lectura para todo usuario autenticado) ----
 ALTER TABLE seismic_events ENABLE ROW LEVEL SECURITY;
@@ -697,7 +785,8 @@ ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenants_read ON tenants FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
-         OR (app_role() = 'gov_operator' AND visibility = 'gov_shared'));
+         OR (app_role() = 'gov_operator' AND visibility = 'gov_shared')
+         OR app_can_view_meta(tenant_id));   -- [T-1.73] resolver el nombre del cliente compartido
 CREATE POLICY tenants_admin ON tenants FOR ALL
   USING (app_role() = 'takab_superadmin') WITH CHECK (app_role() = 'takab_superadmin');
 
