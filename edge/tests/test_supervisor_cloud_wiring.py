@@ -140,6 +140,25 @@ def test_sasmex_drena_el_acumulado_sin_feature(online_supervisor):
     assert sup.telemetry.pending == 0
 
 
+def test_modo_prueba_protege_local_sin_publicar_a_la_nube(online_supervisor):
+    """[T-1.69] Modo prueba del WR-1: el reflejo suena en LOCAL pero la nube NO
+    recibe evento (sin incidente, sin correo). Así se prueba el WR-1 sin ruido."""
+    sup, transport = online_supervisor
+    sup.gpio.arm_test_mode(100.0)
+    sup.gpio.simulate_sasmex(active=True)  # WR-1 en prueba: reflejo + rules (síncrono)
+    assert sup.gpio.siren_sounding is True  # protección LOCAL intacta (la sirena suena)
+    time.sleep(0.5)  # margen para cualquier publish asíncrono
+    assert _payloads(transport, EVENTS_TOPIC) == []  # sin evento ⇒ sin incidente ⇒ sin correo
+    assert _payloads(transport, ACKS_TOPIC) == []
+
+
+def test_al_expirar_el_modo_prueba_vuelve_a_publicar(online_supervisor):
+    sup, transport = online_supervisor
+    sup.gpio.arm_test_mode(0.0)  # ventana nula ⇒ ya expirado
+    sup.gpio.simulate_sasmex(active=True)
+    assert _wait(lambda: _payloads(transport, EVENTS_TOPIC))  # vuelve a alertar a la nube
+
+
 def test_retained_online_published_on_connect(online_supervisor):
     sup, transport = online_supervisor
     topic = sup.settings.status_topic

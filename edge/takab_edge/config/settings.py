@@ -231,6 +231,11 @@ class EdgeSettings(BaseSettings):
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
     siren_test_duration_s: float = 2.0  # duración del self-test del botón de prueba
+    #: [T-1.69] Modo prueba del WR-1: ventana (s) en la que un disparo (SASMEX real o
+    #: instrumental) protege en LOCAL igual que siempre (reflejo+sirena+actuadores) pero
+    #: NO se publica a la nube (sin incidente ni notificación). Auto-expira: corto a
+    #: propósito — dejarlo armado silenciaría a la nube ante una alerta REAL.
+    sasmex_test_window_s: float = 120.0
     #: [T-1.67] Prueba LOCAL de actuación: cuánto SOSTIENE la sirena+estrobo (para
     #: oírlos/verlos) mientras gas/ascensor/puertas hacen su pulso de verificación.
     actuation_test_hold_s: float = 5.0

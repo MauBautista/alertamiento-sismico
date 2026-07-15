@@ -299,6 +299,18 @@ class EdgeSupervisor:
         self.audio.on_tier(decision)
         # T-1.60: un tier instrumental de protección aborta el simulacro en curso.
         self.drill.on_tier(decision)
+        # [T-1.69] Modo prueba del WR-1: la protección LOCAL ya ocurrió (relés +
+        # reflejo + voceo); se SUPRIME todo lo que va a la nube (acks + evento +
+        # evidencia) para probar el WR-1 sin abrir incidente ni notificar. La
+        # ventana auto-expira: ante una alerta REAL, el local protege igual.
+        if self.gpio.test_mode_active:
+            log.warning(
+                "MODO PRUEBA WR-1: actuación LOCAL ejecutada, NADA publicado a la nube "
+                "(tier=%s, %.0fs restantes)",
+                decision.tier.value,
+                self.gpio.test_mode_remaining_s,
+            )
+            return
         # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
         for ack in acks:
             self.cloud.publish(ACKS_TOPIC, ack)

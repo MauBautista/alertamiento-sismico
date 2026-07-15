@@ -184,6 +184,7 @@ class GpioController(EdgeModule):
         self._last_reflex_latency_s: float | None = None
         self._test_timer: threading.Timer | None = None
         self._actuation_test_timer: threading.Timer | None = None
+        self._test_mode_until = 0.0  # [T-1.69] deadline monotónico del modo prueba WR-1
 
     # --- Observadores + silencio ---
     def on_sasmex(self, callback: SasmexCallback) -> None:
@@ -225,6 +226,37 @@ class GpioController(EdgeModule):
     def actuation_test_active(self) -> bool:
         """True mientras una prueba LOCAL sostiene la sirena/estrobo (T-1.67)."""
         return self._actuation_test_active
+
+    # --- Modo prueba del WR-1 (T-1.69): la nube NO recibe alertas, el local SÍ ---
+    def arm_test_mode(self, window_s: float | None = None) -> float:
+        """Arma la ventana de prueba del WR-1. Devuelve los segundos que durará.
+
+        Durante la ventana el gabinete protege en LOCAL exactamente igual (el reflejo
+        y los actuadores actúan), pero el supervisor NO publica el evento a la nube:
+        ni incidente ni notificación. Auto-expira (ventana corta) porque dejarlo
+        armado silenciaría a la nube ante una alerta REAL. gpio solo guarda el estado;
+        la supresión de la publicación vive en el supervisor.
+        """
+        window = window_s if window_s is not None else self.settings.sasmex_test_window_s
+        self._test_mode_until = time.monotonic() + window
+        log.warning(
+            "MODO PRUEBA WR-1 ARMADO %.0fs: protección LOCAL intacta; la nube NO "
+            "recibirá alertas (sin incidente ni notificación) hasta que expire.",
+            window,
+        )
+        return window
+
+    def disarm_test_mode(self) -> None:
+        self._test_mode_until = 0.0
+        log.warning("MODO PRUEBA WR-1 DESARMADO: la nube vuelve a recibir alertas.")
+
+    @property
+    def test_mode_active(self) -> bool:
+        return time.monotonic() < self._test_mode_until
+
+    @property
+    def test_mode_remaining_s(self) -> float:
+        return max(0.0, self._test_mode_until - time.monotonic())
 
     @property
     def last_reflex_latency_s(self) -> float | None:

@@ -1681,3 +1681,27 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > **ESTADO.** edge 361 (+6). El asset viaja por rsync (deploy.sh no excluye .wav) y en el wheel
 > (hatchling incluye los datos de `takab_edge/`). Falta: activar en el Pi (`audio_siren_enabled=true`)
 > y probar en vivo por el jack. GPIO del WR-1: pin 16 (default) listo, el reflejo ya escucha ahí.
+
+### [x] T-1.69 · Modo prueba del WR-1 (probar el contacto sin alertar a la nube) — **COMPLETA (2026-07-14)**
+- **Componente:** edge · **Depende de:** —
+- **Necesidad (Mauricio):** al probar el WR-1 real (cerrar el Relevador 2) el gabinete abre un
+  incidente crítico en la nube y manda correos (confirmado el 2026-07-14: incidente `d438fc9d`
+  trigger=sasmex + 2 correos). Para probar el WR-1 repetidamente hace falta hacerlo SIN ese ruido.
+- **Diseño:** ventana corta y **auto-expirable** (`sasmex_test_window_s=120`), armable por el panel
+  LAN (toggle, PIN). Durante la ventana el gabinete **protege en LOCAL exactamente igual** — el
+  reflejo SASMEX suena la sirena, los actuadores actúan, el voceo/audio también — pero el supervisor
+  **SUPRIME todo lo que va a la nube** (acks + evento + evidencia) en `_act_and_publish`, justo
+  DESPUÉS de la actuación local y ANTES de publicar. Sin evento ⇒ sin incidente ⇒ sin notificación.
+  La bandera vive en `gpio` (objeto compartido por supervisor y panel); `test_mode_active` es una
+  comparación de reloj monotónico (sin hilo). **Auto-expira a propósito**: dejarlo armado silenciaría
+  a la nube ante una alerta REAL — la protección local siempre queda intacta, solo la coordinación en
+  la nube se calla por ≤120 s, y el panel lo grita.
+- **Panel LAN:** botón toggle "MODO PRUEBA WR-1 / SALIR", banner violeta SIEMPRE visible mientras
+  esté armado (aun bajo alerta real, porque el operador DEBE saber que la nube no recibe alertas) con
+  cuenta atrás; `POST /api/test-mode`.
+- Criterios por test: arma/activo/desarma + auto-expira · el reflejo local NO se altera (la sirena
+  suena en prueba) · el supervisor NO publica evento ni acks en modo prueba · al expirar vuelve a
+  publicar · endpoint toggle PIN-gated + estado en status.
+> **ESTADO.** edge 362 (+7). Incidentes de prueba de hoy (`d438fc9d` sasmex, `ef2053d3` local_threshold)
+> CERRADOS. **HITO: el camino primario WR-1→GPIO→reflejo→nube VALIDADO con hardware real** (reflejo
+> 6.65 ms, incidente trigger=sasmex, 2 correos). Falta G-04 (latencia física contacto→relé→sirena).

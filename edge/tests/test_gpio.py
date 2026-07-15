@@ -406,3 +406,32 @@ def test_fin_de_prueba_local_apaga_audibles_sin_alerta(gpio):
     gpio._end_actuation_test()
     assert gpio.siren_sounding is False
     assert gpio.relay_state(ActuatorChannel.STROBE).energized is False
+
+
+# --- Modo prueba del WR-1 (T-1.69) -------------------------------------------
+# Ventana corta y auto-expirable: el gabinete protege en LOCAL igual (reflejo)
+# pero el supervisor NO publica a la nube. gpio solo GUARDA la bandera; la
+# supresión de la publicación vive en el supervisor (test aparte).
+
+
+def test_modo_prueba_se_arma_activo_y_se_desarma(gpio):
+    assert gpio.test_mode_active is False
+    gpio.arm_test_mode(100.0)
+    assert gpio.test_mode_active is True
+    assert 0.0 < gpio.test_mode_remaining_s <= 100.0
+    gpio.disarm_test_mode()
+    assert gpio.test_mode_active is False
+    assert gpio.test_mode_remaining_s == 0.0
+
+
+def test_modo_prueba_expira_solo(gpio):
+    gpio.arm_test_mode(0.0)  # ventana nula ⇒ ya vencido
+    assert gpio.test_mode_active is False
+
+
+def test_modo_prueba_no_altera_el_reflejo(gpio):
+    """En modo prueba el WR-1 SIGUE sonando la sirena en local (confirma el cableado)."""
+    gpio.arm_test_mode(100.0)
+    gpio.simulate_sasmex(active=True)
+    assert gpio.siren_sounding is True  # protección local intacta
+    assert gpio.sasmex_active is True

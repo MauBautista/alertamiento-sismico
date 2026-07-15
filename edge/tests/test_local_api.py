@@ -124,6 +124,26 @@ def test_actuator_test_is_pin_gated(pinned, supervisor, monkeypatch):
     assert _post(pinned, "/api/actuator-test", pin="424242") == 200
 
 
+# --- Modo prueba del WR-1 por LAN (T-1.69): toggle armar/desarmar ------------
+
+
+def test_test_mode_toggle_y_status(supervisor):
+    assert supervisor.local_api.status()["test_mode"]["active"] is False
+    assert _post(supervisor.local_api, "/api/test-mode") == 200  # arma
+    assert supervisor.gpio.test_mode_active is True
+    section = supervisor.local_api.status()["test_mode"]
+    assert section["active"] is True and section["remaining_s"] > 0
+    assert _post(supervisor.local_api, "/api/test-mode") == 200  # segundo toque desarma
+    assert supervisor.gpio.test_mode_active is False
+
+
+def test_test_mode_is_pin_gated(pinned, supervisor):
+    assert _post(pinned, "/api/test-mode") == 401  # sin PIN no arma
+    assert supervisor.gpio.test_mode_active is False
+    assert _post(pinned, "/api/test-mode", pin="424242") == 200
+    assert supervisor.gpio.test_mode_active is True
+
+
 def test_http_unknown_route_is_404(supervisor):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(_url(supervisor.local_api, "/nope"), timeout=5)

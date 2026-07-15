@@ -111,6 +111,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             "/api/silence": dashboard.silence,
             "/api/siren-test": dashboard.run_siren_test,
             "/api/actuator-test": dashboard.run_actuator_test,
+            "/api/test-mode": dashboard.toggle_test_mode,
             "/api/reset": dashboard.reset_alert,
             "/api/drill-audio": dashboard.drill_audio,
         }
@@ -346,9 +347,21 @@ class LocalDashboard(EdgeModule):
             "cloud": self._cloud_section(),
             "drill": self._drill_section(),
             "actuation_test": self._actuation_test_section(),
+            "test_mode": self._test_mode_section(),
             "audio": self._audio_section(),
             "events": self._events_section(),
         }
+
+    def _test_mode_section(self) -> dict:
+        """Modo prueba del WR-1 (T-1.69): banner + cuenta atrás mientras la nube está muda."""
+        try:
+            return {
+                "active": bool(self._gpio.test_mode_active),
+                "remaining_s": round(self._gpio.test_mode_remaining_s, 1),
+            }
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: estado de modo prueba no disponible", exc_info=True)
+            return {"active": False, "remaining_s": 0.0}
 
     def _actuation_test_section(self) -> dict:
         """Prueba local de actuación (T-1.67): banner mientras sostiene + resultado."""
@@ -398,6 +411,21 @@ class LocalDashboard(EdgeModule):
             self._last_actuation_test = result
         self._record_action("actuator_test")
         log.warning("prueba local de actuación por LAN (NO es alerta real)")
+
+    def toggle_test_mode(self) -> None:
+        """Modo prueba del WR-1 por LAN (T-1.69): arma/desarma la ventana.
+
+        Armado: un disparo (WR-1 real o instrumental) protege en LOCAL igual que
+        siempre, pero NO se publica a la nube (sin incidente ni notificación). Es
+        un toggle: el primer toque arma (ventana corta auto-expirable), el segundo
+        desarma. Sirve para probar el WR-1 sin generar ruido en producción.
+        """
+        if self._gpio.test_mode_active:
+            self._gpio.disarm_test_mode()
+            self._record_action("test_mode_off")
+        else:
+            self._gpio.arm_test_mode()
+            self._record_action("test_mode_on")
 
     def reset_alert(self) -> None:
         """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
