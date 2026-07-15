@@ -7,6 +7,7 @@ import { useNow } from "../../lib/useNow";
 import NotificationChannels from "./NotificationChannels";
 import SyncFooter from "./SyncFooter";
 import ThresholdSlider from "./ThresholdSlider";
+import VisibilityCard from "./VisibilityCard";
 import {
   REFERENCE_BANDS,
   THRESHOLD_KEYS,
@@ -123,6 +124,7 @@ export default function TenantsPage() {
   // Alta de clientes (T-1.72): SOLO el superadmin (la acción la da matrix.py; el
   // servidor la exige igual). El botón/formulario no se pintan si no la tiene (regla 7).
   const canManageTenants = me?.allowed_actions.manage_tenants === true;
+  const canManageVisibility = me?.allowed_actions.manage_visibility === true;
   const createTenant = useCreateTenant();
   const [creating, setCreating] = useState(false);
   const [newTenant, setNewTenant] = useState({
@@ -491,6 +493,10 @@ export default function TenantsPage() {
                   onReset={reset}
                 />
               </StateFrame>
+
+              {canManageVisibility && (
+                <VisibilityCard grantee={selected} allTenants={data.tenants} />
+              )}
             </div>
           )}
         </div>

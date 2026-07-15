@@ -26,6 +26,8 @@ vi.mock("./useTenants", () => ({
   TENANTS_STALE_MS: 120_000,
 }));
 vi.mock("./useRuleSetPublish", () => ({ useRuleSetPublish: mocks.useRuleSetPublish }));
+// Stub: aísla el gating de la tarjeta de su lógica (probada en VisibilityCard.test).
+vi.mock("./VisibilityCard", () => ({ default: () => "VISIBILITY_CARD_STUB" }));
 
 const TENANT: TenantOut = {
   tenant_id: TENANT_ID, // el tenant de la sesión: es el único editable
@@ -253,6 +255,19 @@ describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => 
     expect(screen.getByRole("button", { name: /CREAR CLIENTE/ }).hasAttribute("disabled")).toBe(
       true,
     );
+  });
+});
+
+describe("TenantsPage · visibilidad configurable (T-1.73, solo manage_visibility)", () => {
+  it("el superadmin ve la tarjeta de visibilidad en el detalle", () => {
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    expect(screen.getByText("VISIBILITY_CARD_STUB")).toBeTruthy();
+  });
+
+  it("tenant_admin (sin manage_visibility) NO ve la tarjeta", () => {
+    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    expect(screen.queryByText("VISIBILITY_CARD_STUB")).toBeNull();
   });
 });
 
