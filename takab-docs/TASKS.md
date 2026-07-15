@@ -1754,7 +1754,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > 409 en code dup; auditado). Web: botón "NUEVO CLIENTE" en /tenants gateado + formulario +
 > `useCreateTenant`. SDK regenerado. api tenants 13✓ + matrix✓; web 548✓; ruff/eslint/build limpios.
 
-### [ ] T-1.73 · Visibilidad configurable (RLS) — la pieza sensible
+### [x] T-1.73 · Visibilidad configurable (RLS) — **COMPLETA (2026-07-15)**
 - **Componente:** db (migración `0017` idempotente) + api + web
 - Tabla `visibility_grants` (grantee→target|all × {ver_metadatos, ver_datos}); helpers SECURITY
   DEFINER `app_can_view_meta/data`; ampliar políticas `*_read` (metadatos: sites/zones/gateways/
@@ -1762,3 +1762,10 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - Acción `manage_visibility` (solo superadmin); router `visibility.py` POST/GET/DELETE; card en
   `/tenants`. Default-deny preservado; superadmin/gov sin regresión; un grant nunca da escritura.
 - Tests de cruce de tenants: default-deny, metadata≠datos, revoke, sin regresión.
+> **ESTADO.** `126ba06` (db) + `99e9722` (api) + `8fc2588` (web). Tabla `visibility_grants` +
+> helpers SECURITY DEFINER `app_can_view_meta/data` + 9 políticas `*_read` ampliadas + vistas
+> `*_secure` con WHERE de datos (crux metadata≠datos con test dedicado). Migración `0017`
+> idempotente y reversible, segura para `takab_migrator`. Acción `manage_visibility` (solo
+> superadmin) + router `/visibility-grants` (POST upsert/GET/DELETE, auditado). Web: `VisibilityCard`
+> en /tenants gateada. db RLS 11✓ (+ base intacta), api completo 815✓ + router 12✓, web 557✓.
+> **Fase 1.10 COMPLETA** (T-1.70…T-1.73). Rama `feat/fase-1.10-red-multiestacion` lista para PR.
