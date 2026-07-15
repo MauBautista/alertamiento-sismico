@@ -1725,7 +1725,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   + certs); identidad/SeedLink/calibración se **agregan** aparte (re-provisionar los borra — T-1.41).
 > **ESTADO.** Doc creado, sin secretos. Responde textualmente las preguntas operativas de Mauricio.
 
-### [ ] T-1.71 · Regla de 3 estaciones VISIBLE + umbral local afinable
+### [x] T-1.71 · Regla de 3 estaciones VISIBLE + umbral local afinable — **COMPLETA (2026-07-15)**
 - **Componente:** api + web (nube, no bloqueante) · edge (umbral autónomo)
 - **A (nube — ya existe → configurar + mostrar):** confirmar `min_nodes=3`; exponer la
   **corroboración por estaciones** en incidente/epicentro (de `quorum_votes`/`seismic_events`):
@@ -1735,6 +1735,12 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   mantener ≥2 canales para sirena. Validar vs piso de ruido (0.6–1.1 mg). **Decision-gate hardware.**
 - **Invariantes:** la sirena local NUNCA espera a la nube; SASMEX intacto; sin IA en el disparo;
   `edge/tests/test_e2e.py` (autónomo, cloud off) debe seguir verde.
+> **ESTADO.** `00eccf6` (edge) + `fd06733` (api,web). Edge: `ConfigStore.add_apply_listener` +
+> `RuleEngine.apply_thresholds` (rebind atómico) — umbral por sitio aplicado en vivo, SASMEX inmune
+> (test lo fija). Nube: `map/state` expone `meta.node_count` por epicentro → mapa "… · N est."; pill
+> de triage "CONFIRMADO · N estaciones". SDK regenerado. edge 366✓ (test_seedlink_hardware se salta
+> en CI), api telemetry 16✓, web 544✓, ruff/eslint/build limpios. Pendiente opcional: guard de
+> persistencia (descartado por ahora — camino crítico mínimo) y G-04 (validación física de umbrales).
 
 ### [ ] T-1.72 · Alta de clientes (tenants): API + UI superadmin-only
 - **Componente:** api + web
