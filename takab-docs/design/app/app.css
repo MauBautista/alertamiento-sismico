@@ -551,6 +551,52 @@ body {
     radial-gradient(ellipse at center top, rgba(255,193,7,0.18) 0%, transparent 60%);
 }
 .crisis--amber .crisis__count { text-shadow: 0 0 28px rgba(255, 193, 7, 0.55); }
+/* NOTE: .crisis__count/.crisis__count-unit quedan reservados para el feature flag
+   ALERT_SOURCE_CARRIES_ETA (spec §2.1-A): si una fuente futura transporta ETA por dato,
+   el campo se activa sin tocar el layout. Hoy ninguna pantalla los usa. */
+
+/* Instruction-first (spec §2.1-A): la instrucción ES la pantalla; el dato temporal
+   es el T+ transcurrido (ascendente, real y verificable), nunca una cuenta regresiva. */
+.crisis__action--hero { margin-top: 14px; }
+.crisis__instruction--hero { font-size: 76px; line-height: 0.92; }
+.crisis__elapsed {
+  margin-top: auto;
+  width: 100%;
+  text-align: center;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+.crisis__tplus {
+  font-family: var(--tk-font-mono);
+  font-size: 54px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  margin: 6px 0 2px;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 24px rgba(255, 82, 82, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.crisis__tplus .unit { font-size: 26px; margin-left: 2px; }
+.crisis__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  font-family: var(--tk-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 240, 240, 0.85);
+  text-transform: uppercase;
+}
+.crisis--amber .crisis__tplus { text-shadow: 0 0 24px rgba(255, 193, 7, 0.5); }
+.crisis--amber .crisis__source {
+  border-color: rgba(255, 193, 7, 0.30);
+  color: rgba(255, 240, 200, 0.85);
+}
 
 /* =====================================================================
    CHECK-IN SCREEN — post-event vital sign

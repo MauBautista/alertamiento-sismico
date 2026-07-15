@@ -27,14 +27,14 @@ const BrigadistaPanel = () => (
         <div className="statcell__sub statcell__sub--ok">▲ 48 min autonomía</div>
       </div>
       <div className="statcell statcell--ok">
-        <div className="statcell__lbl">MQTT · uptime</div>
-        <div className="statcell__val">99.94<span style={{ fontSize: 13, color: 'var(--tk-fg-3)' }}>%</span></div>
-        <div className="statcell__sub statcell__sub--ok">● 14d sin caídas</div>
+        <div className="statcell__lbl">MQTT · RTT</div>
+        <div className="statcell__val">77<span style={{ fontSize: 13, color: 'var(--tk-fg-3)' }}>ms</span></div>
+        <div className="statcell__sub statcell__sub--ok">● NTP −0.2 ms</div>
       </div>
       <div className="statcell">
         <div className="statcell__lbl">RS4D · sensor</div>
         <div className="statcell__val" style={{ color: 'var(--tk-status-normal)' }}>LIVE</div>
-        <div className="statcell__sub">200 Hz · 3 canales</div>
+        <div className="statcell__sub">100 sps · 4 canales</div>
       </div>
       <div className="statcell statcell--warn">
         <div className="statcell__lbl">Temp. interior</div>
@@ -76,8 +76,9 @@ const BrigadistaPanel = () => (
         <span className="pill pill--ok">LIBRES</span>
       </div>
       <div className="bms-row">
+        {/* lucide no tiene "elevator" (slot vacío en el diseño original) */}
         <div className="bms-row__icon bms-row__icon--warn">
-          <i data-lucide="elevator" width="14" height="14" />
+          <i data-lucide="arrow-up-down" width="14" height="14" />
         </div>
         <div>
           <div className="bms-row__label">Elevadores · llamada PB</div>
@@ -200,7 +201,7 @@ const BrigadistaControlRemoto = () => (
       fontSize: 10, color: 'var(--tk-fg-3)', textAlign: 'center',
       fontFamily: 'var(--tk-font-mono)', letterSpacing: '0.04em', marginTop: 4,
     }}>
-      OPERADOR: M.RODRÍGUEZ · TOKEN HSM VÁLIDO 02:41
+      OPERADOR: M.RODRÍGUEZ · FIRMA HW · NONCE VÁLIDO 02:41
     </div>
   </Phone>
 );
@@ -283,7 +284,7 @@ const BrigadistaCamara = () => (
           </div>
           <div className="cam__wm-stamp">
             <i data-lucide="shield-check" width="11" height="11" />
-            HSM
+            SHA-256
           </div>
         </div>
       </div>
@@ -456,7 +457,7 @@ const BrigadistaSync = () => (
     <div className="card" style={{ padding: 14 }}>
       <div className="card__hd" style={{ marginBottom: 6 }}>
         <div className="card__title" style={{ fontSize: 12 }}>Subida automática</div>
-        <span className="card__sub">14.6 MB en cola</span>
+        <span className="card__sub">12.8 MB en cola</span>
       </div>
       <div className="sync-bar">
         <div className="sync-bar__track">
@@ -497,18 +498,24 @@ const BrigadistaSync = () => (
         </div>
         <span className="sync-row__state pill pill--warn">PEND</span>
       </div>
+      {/* La cola solo contiene lo que el TELÉFONO produce (fotos, reportes,
+          check-ins, headcount). El miniSEED del sensor sube edge→S3 en eventos
+          confirmados y jamás pasa por el móvil (spec §1 / regla de oro 9). */}
       <div className="sync-row">
         <div className="sync-row__thumb">
           <svg viewBox="0 0 40 40" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%' }}>
             <rect x="0" y="0" width="40" height="40" fill="#3a3633" />
-            <path d="M 4 20 L 12 16 L 20 22 L 28 14 L 36 24" stroke="#00BFFF" strokeWidth="1.2" fill="none" />
+            <circle cx="14" cy="15" r="5" fill="none" stroke="#00BFFF" strokeWidth="1.5" />
+            <path d="M 11 15 L 13.5 17.5 L 18 12.5" stroke="#00BFFF" strokeWidth="1.5" fill="none" />
+            <rect x="8" y="26" width="24" height="2" fill="#0a0907" />
+            <rect x="8" y="31" width="18" height="2" fill="#0a0907" />
           </svg>
         </div>
         <div>
-          <div className="sync-row__name">SEISMO_RS4D_1435.miniSEED</div>
-          <div className="sync-row__meta">200 Hz · 60 s · 1.8 MB</div>
+          <div className="sync-row__name">CHECKIN_DELEGADO_P10-22.json</div>
+          <div className="sync-row__meta">Verificado en persona · 0.8 KB</div>
         </div>
-        <span className="sync-row__state pill pill--cyan">LISTO</span>
+        <span className="sync-row__state pill pill--warn">PEND</span>
       </div>
       <div className="sync-row">
         <div className="sync-row__thumb">
@@ -637,8 +644,10 @@ const BrigadistaHeadcount = () => (
       </div>
     </div>
 
+    {/* Sin envío de mensajes de texto: ese canal no existe en la plataforma
+        (stub simulado). La notificación a no reportados es push clase OPS. */}
     <button className="btn btn--ghost btn--block">
-      <i data-lucide="message-square" width="14" height="14" /> Enviar SMS masivo a no reportados
+      <i data-lucide="bell-ring" width="14" height="14" /> Notificar a no reportados · push
     </button>
   </Phone>
 );
@@ -659,7 +668,7 @@ const BrigadistaDictamen = () => (
 
     <div className="cert">
       <div className="cert__seal">
-        SELLO<br />HSM<br />VÁLIDO
+        FIRMA<br />DIGITAL<br />VÁLIDA
       </div>
       <div className="cert__eyebrow">
         <i data-lucide="shield-check" width="11" height="11" /> Protección Civil
@@ -688,7 +697,7 @@ const BrigadistaDictamen = () => (
 
       <div className="cert__sig">
         <i data-lucide="fingerprint" width="14" height="14" style={{ color: 'var(--tk-status-normal)' }} />
-        FIRMADO HSM · 15:24:08 CST · CADENA DE CUSTODIA OK
+        FIRMA DIGITAL · INSPECTOR · 15:24:08 CST
       </div>
     </div>
 
@@ -701,10 +710,11 @@ const BrigadistaDictamen = () => (
         FOLIO DCT-26-05-0017 · 14 MAY 2026 · 15:24 CST
       </div>
       <div style={{ marginBottom: 10 }}>
-        Visto y revisado el evento sísmico de magnitud M&nbsp;6.8 con epicentro
-        en Puebla, el cual provocó un PGA local de 0.150g sobre el inmueble,
-        y habiendo concluido la inspección estructural por piso bajo la norma
-        NOM-003-SCT, se determina lo siguiente:
+        Visto y revisado el evento sísmico EVT-20260514-1435 (magnitud oficial
+        del catálogo SSN, publicada posterior al evento), el cual provocó un
+        PGA local medido de 0.150g sobre el inmueble, y habiendo concluido la
+        inspección estructural por piso bajo el marco normativo configurado
+        del cliente, se determina lo siguiente:
       </div>
       <div className="pdf-thumb__line" style={{ width: '88%' }} />
       <div className="pdf-thumb__line" style={{ width: '76%' }} />

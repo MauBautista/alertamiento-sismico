@@ -22,12 +22,15 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
-<!-- Lucide icons (currentColor stroke-only set; see design system) -->
-<script src="https://unpkg.com/lucide@latest"></script>
+<!-- Lucide icons (currentColor stroke-only set; see design system).
+     Pineado para reproducibilidad de shots (tools/regen-shots.mjs sirve estos
+     mismos archivos desde vendor/ sin tocar la red). -->
+<script src="https://unpkg.com/lucide@1.24.0/dist/umd/lucide.min.js"></script>
 
 <!-- Design canvas wrapper + phone shell + screens -->
 <script type="text/babel" src="design-canvas.jsx"></script>
 <script type="text/babel" src="screens/Phone.jsx"></script>
+<script type="text/babel" src="screens/Profile0.jsx"></script>
 <script type="text/babel" src="screens/Profile1.jsx"></script>
 <script type="text/babel" src="screens/Profile2.jsx"></script>
 
@@ -53,12 +56,35 @@
     return (
       <DesignCanvas
         title="TAKAB · Aplicación Móvil"
-        subtitle="Complemento del SOC de alertamiento sísmico · 12 pantallas · 2 perfiles"
+        subtitle="Complemento del SOC de alertamiento sísmico · 21 pantallas · acceso + 2 perfiles · spec v2 (§2.1 aplicada)"
       >
         {/* ============================================================
+            PROFILE 0 — Acceso y onboarding (spec v2 §7 · SE AGREGA)
+            Login → permisos de alerta → privacidad → enrolamiento.
+            ============================================================ */}
+        <DCSection
+          id="acceso"
+          title="Acceso y Onboarding"
+          subtitle="LOGIN · PERMISOS · PRIVACIDAD · ENROLAMIENTO — el estado degradado de permisos es imposible de ignorar"
+        >
+          <DCArtboard id="a-login" label="0.1 · Login (Cognito · PKCE)" width={PHONE_W} height={PHONE_H}>
+            <AccesoLogin />
+          </DCArtboard>
+          <DCArtboard id="a-permisos" label="0.2 · Permisos de alerta (degradado)" width={PHONE_W} height={PHONE_H}>
+            <AccesoPermisos />
+          </DCArtboard>
+          <DCArtboard id="a-privacidad" label="0.3 · Aviso de privacidad (LFPDPPP)" width={PHONE_W} height={PHONE_H}>
+            <AccesoPrivacidad />
+          </DCArtboard>
+          <DCArtboard id="a-enrolamiento" label="0.4 · Enrolamiento por código" width={PHONE_W} height={PHONE_H}>
+            <AccesoEnrolamiento />
+          </DCArtboard>
+        </DCSection>
+        {/* ============================================================
             PROFILE 1 — Personal del Inmueble (Ocupante)
-            Five screens: rest → crisis (evac) → crisis (shelter)
-                          → post-event check-in → reingreso bloqueado
+            Ten artboards: rest (+ drill variant) → crisis (evac/shelter,
+            instruction-first §2.1-A) → check-in → reingreso bloqueado
+            → rutas → directorio → cuenta → pánico por quórum-de-2.
             ============================================================ */}
         <DCSection
           id="ocupante"
@@ -68,10 +94,13 @@
           <DCArtboard id="o-reposo" label="1.1 · Modo Reposo" width={PHONE_W} height={PHONE_H}>
             <OcupanteReposo />
           </DCArtboard>
-          <DCArtboard id="o-evac" label="1.2 · Crisis · Evacúe (pisos bajos)" width={PHONE_W} height={PHONE_H}>
+          <DCArtboard id="o-simulacro" label="1.1-bis · Reposo · SIMULACRO en curso" width={PHONE_W} height={PHONE_H}>
+            <OcupanteReposoSimulacro />
+          </DCArtboard>
+          <DCArtboard id="o-evac" label="1.2 · Crisis · Evacúe (instruction-first)" width={PHONE_W} height={PHONE_H}>
             <OcupanteCrisisEvac />
           </DCArtboard>
-          <DCArtboard id="o-replie" label="1.3 · Crisis · Repliéguese (pisos altos)" width={PHONE_W} height={PHONE_H}>
+          <DCArtboard id="o-replie" label="1.3 · Crisis · Repliéguese (instruction-first)" width={PHONE_W} height={PHONE_H}>
             <OcupanteCrisisReplie />
           </DCArtboard>
           <DCArtboard id="o-checkin" label="1.4 · Post-sismo · Check-in de vida" width={PHONE_W} height={PHONE_H}>
@@ -79,6 +108,18 @@
           </DCArtboard>
           <DCArtboard id="o-bloqueo" label="1.5 · Bloqueo de reingreso" width={PHONE_W} height={PHONE_H}>
             <OcupanteBloqueo />
+          </DCArtboard>
+          <DCArtboard id="o-rutas" label="1.6 · Rutas y puntos de reunión" width={PHONE_W} height={PHONE_H}>
+            <OcupanteRutas />
+          </DCArtboard>
+          <DCArtboard id="o-directorio" label="1.7 · Directorio" width={PHONE_W} height={PHONE_H}>
+            <OcupanteDirectorio />
+          </DCArtboard>
+          <DCArtboard id="o-cuenta" label="1.8 · Cuenta (compartida con Perfil 2)" width={PHONE_W} height={PHONE_H}>
+            <OcupanteCuenta />
+          </DCArtboard>
+          <DCArtboard id="o-panico" label="1.9 · Pánico por quórum-de-2" width={PHONE_W} height={PHONE_H}>
+            <OcupantePanico />
           </DCArtboard>
         </DCSection>
 
