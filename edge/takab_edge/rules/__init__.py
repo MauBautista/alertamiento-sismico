@@ -189,6 +189,22 @@ class RuleEngine(EdgeModule):
             items = list(self._transitions)
         return list(reversed(items))[:limit]
 
+    def apply_thresholds(self, thresholds: ThresholdBand) -> None:
+        """Adopta EN VIVO una banda de umbral nueva (config por sitio, T-1.71).
+
+        Rebind atómico (CPython) de un objeto ya validado por `ConfigStore`:
+        `decide()` lee `self.thresholds` fresco en cada ventana, así que la
+        siguiente evaluación usa la banda nueva sin reconstruir el motor. NO toca
+        el camino SASMEX (`evaluate_sasmex` ignora umbrales) ni lanza a mitad de
+        stream (módulo crítico): la banda llega ya validada.
+        """
+        self.thresholds = thresholds
+        log.info(
+            "umbrales aplicados en vivo (disparo PGA=%.3fg, PGV=%.1f cm/s)",
+            thresholds.pga_trip_g,
+            thresholds.pgv_trip_cms,
+        )
+
     def evaluate_features(self, feature: Feature1s) -> TierDecision:
         started = perf_counter()
         self._features[feature.channel] = feature

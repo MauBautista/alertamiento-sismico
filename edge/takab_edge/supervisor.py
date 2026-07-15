@@ -178,6 +178,11 @@ class EdgeSupervisor:
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
         self.config = ConfigStore(s, security=self.security)
+        # T-1.71: umbral por sitio aplicado EN VIVO. Al llegar una config firmada
+        # (o un rollback), el motor de reglas adopta la banda nueva en la próxima
+        # ventana, sin reconstruirse. El camino SASMEX es inmune (evaluate_sasmex
+        # ignora umbrales) y la actuación local nunca depende de la nube.
+        self.config.add_apply_listener(lambda cfg: self.rules.apply_thresholds(cfg.thresholds))
         # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
         # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
         self.audio = AudioNotifier(s, gpio=self.gpio)
