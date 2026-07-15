@@ -1742,13 +1742,17 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > en CI), api telemetry 16✓, web 544✓, ruff/eslint/build limpios. Pendiente opcional: guard de
 > persistencia (descartado por ahora — camino crítico mínimo) y G-04 (validación física de umbrales).
 
-### [ ] T-1.72 · Alta de clientes (tenants): API + UI superadmin-only
+### [x] T-1.72 · Alta de clientes (tenants): API + UI superadmin-only — **COMPLETA (2026-07-15)**
 - **Componente:** api + web
 - `POST /tenants` (+ `PATCH` opcional), acción nueva `manage_tenants` **solo `takab_superadmin`**;
   extender `routers/tenants.py` (hoy solo GET) + `queries/tenants.py` + schema `TenantCreate`;
   `code` único ⇒ 409; auditar. RLS ya lo permite (`tenants_admin`, `db/schema.sql:701`).
 - Web: reponer botón "NUEVO" en `TenantsPage.tsx` gated por `me.allowed_actions.manage_tenants`.
 - Tests: crea (superadmin) · 403 (otros) · 409 (code dup) · parity de matriz.
+> **ESTADO.** `8a65035`. Acción `manage_tenants` (solo superadmin) en matrix.py + MeActions +
+> meFixtures + ancla en test_matrix. `POST /tenants` (TenantCreate; visibility/status por default;
+> 409 en code dup; auditado). Web: botón "NUEVO CLIENTE" en /tenants gateado + formulario +
+> `useCreateTenant`. SDK regenerado. api tenants 13✓ + matrix✓; web 548✓; ruff/eslint/build limpios.
 
 ### [ ] T-1.73 · Visibilidad configurable (RLS) — la pieza sensible
 - **Componente:** db (migración `0017` idempotente) + api + web
