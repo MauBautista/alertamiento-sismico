@@ -109,3 +109,62 @@ async def test_unauthenticated_rejected() -> None:
     async with au.client_for(_app()) as c:
         resp = await c.get("/tenants")
     assert resp.status_code == 401
+
+
+# --- Alta de clientes (T-1.72): POST /tenants, solo takab_superadmin ---
+
+
+async def _post(token: str, body: dict):
+    async with au.client_for(_app()) as c:
+        return await c.post("/tenants", headers=au.bearer(token), json=body)
+
+
+async def _delete_by_code(code: str) -> None:
+    # audit_log no tiene FK a tenants (y es append-only): basta con borrar el tenant.
+    async with get_engine().begin() as conn:
+        await conn.execute(text("DELETE FROM tenants WHERE code = :c"), {"c": code})
+
+
+async def test_superadmin_creates_tenant(seed: None) -> None:
+    code = "B1TEN_NEW"
+    try:
+        resp = await _post(
+            au.make_token("takab_superadmin", tenant=T_A),
+            {"code": code, "name": "Hospital Nuevo", "vertical": "salud"},
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["code"] == code
+        assert body["name"] == "Hospital Nuevo"
+        assert body["visibility"] == "private"  # default del schema, no del cuerpo
+        assert body["status"] == "active"
+        assert body["plan_code"] == "mvp"
+        assert body["isolation_mode"] == "logical"
+    finally:
+        await _delete_by_code(code)
+
+
+@pytest.mark.parametrize("role", ["tenant_admin", "takab_support"])
+async def test_non_superadmin_cannot_create_tenant(seed: None, role: str) -> None:
+    # Ambos llegan a /tenants (lo leen), pero crear es SOLO del superadmin ⇒ 403.
+    resp = await _post(
+        au.make_token(role, tenant=T_A),
+        {"code": "B1TEN_X", "name": "no debe crearse"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_create_duplicate_code_is_409(seed: None) -> None:
+    resp = await _post(
+        au.make_token("takab_superadmin", tenant=T_A),
+        {"code": "B1TEN_A", "name": "colisión"},  # ya sembrado
+    )
+    assert resp.status_code == 409
+
+
+async def test_create_bad_isolation_mode_is_422(seed: None) -> None:
+    resp = await _post(
+        au.make_token("takab_superadmin", tenant=T_A),
+        {"code": "B1TEN_Z", "name": "z", "isolation_mode": "quantum"},
+    )
+    assert resp.status_code == 422

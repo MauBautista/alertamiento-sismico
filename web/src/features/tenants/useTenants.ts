@@ -1,14 +1,22 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
+  createTenantTenantsPost,
   getGatewayConfigStateFleetGatewaysGatewayIdConfigStateGet,
   listGatewaysFleetGatewaysGet,
   listRuleSetsRuleSetsGet,
   listSitesSitesGet,
   listTenantsTenantsGet,
 } from "@takab/sdk";
-import type { GatewayConfigStateOut, GatewayOut, RuleSetOut, SiteOut, TenantOut } from "@takab/sdk";
+import type {
+  GatewayConfigStateOut,
+  GatewayOut,
+  RuleSetOut,
+  SiteOut,
+  TenantCreate,
+  TenantOut,
+} from "@takab/sdk";
 
 /** El config-state cambia cuando el worker de sync publica: ≤60 s por contrato. */
 export const SYNC_POLL_MS = 10_000;
@@ -173,5 +181,43 @@ export function useTenantGateways(tenantId: string | null): {
     gatewayIds,
     loading: gateways.isPending || sites.isPending,
     error: gateways.error ? gateways.error.message : null,
+  };
+}
+
+export interface CreateTenantState {
+  /** Dispara el alta; el resultado se observa por `createdId`/`error`. */
+  create: (body: TenantCreate) => void;
+  pending: boolean;
+  error: string | null;
+  /** `tenant_id` del cliente recién creado (para seleccionarlo), o null. */
+  createdId: string | null;
+  reset: () => void;
+}
+
+/**
+ * Alta de un cliente (T-1.72). Solo el superadmin llega aquí (el botón se gatea con
+ * `manage_tenants`); el servidor la restringe igual. Al crear, invalida `["tenants"]`
+ * para que el catálogo se refresque sin recargar la página.
+ */
+export function useCreateTenant(): CreateTenantState {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async (body: TenantCreate): Promise<TenantOut> => {
+      const { data, response } = await createTenantTenantsPost({ body });
+      if (data === undefined) {
+        throw new TenantsRequestError("/tenants", response.status);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["tenants"] });
+    },
+  });
+  return {
+    create: (body) => mutation.mutate(body),
+    pending: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
+    createdId: mutation.data?.tenant_id ?? null,
+    reset: mutation.reset,
   };
 }

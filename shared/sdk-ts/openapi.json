@@ -2400,6 +2400,10 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "manage_tenants": {
+            "title": "Manage Tenants",
+            "type": "boolean"
+          },
           "read_audit": {
             "title": "Read Audit",
             "type": "boolean"
@@ -2437,7 +2441,8 @@
           "request_dictamen",
           "read_audit",
           "self_test",
-          "drill_start"
+          "drill_start",
+          "manage_tenants"
         ],
         "title": "MeActions",
         "type": "object"
@@ -3988,6 +3993,58 @@
           "topic"
         ],
         "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "TenantCreate": {
+        "additionalProperties": false,
+        "description": "Alta de un cliente (T-1.72). Solo ``takab_superadmin`` (acción ``manage_tenants``).\n\n``visibility`` y ``status`` NO se aceptan aquí: nacen con los defaults del schema\n(``private``/``active``). Compartir con gobierno (``gov_shared``) es una decisión\naparte; la visibilidad configurable entre clientes vive en T-1.73.",
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "isolation_mode": {
+            "default": "logical",
+            "enum": [
+              "logical",
+              "dedicated"
+            ],
+            "title": "Isolation Mode",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "plan_code": {
+            "default": "mvp",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Plan Code",
+            "type": "string"
+          },
+          "vertical": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "TenantCreate",
         "type": "object"
       },
       "TenantOut": {
@@ -6335,6 +6392,43 @@
           }
         },
         "summary": "List Tenants"
+      },
+      "post": {
+        "description": "Da de alta un cliente. ``code`` es único global ⇒ 409. Solo takab_superadmin.\n\nLa escritura la autoriza la RLS ``tenants_admin`` (app_role='takab_superadmin');\nel endpoint la restringe además con la acción ``manage_tenants`` para no pintar el\nbotón a roles que la DB rechazaría (regla de oro 7).",
+        "operationId": "create_tenant_tenants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tenant"
       }
     }
   }

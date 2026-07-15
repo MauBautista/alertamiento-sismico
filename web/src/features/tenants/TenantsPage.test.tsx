@@ -7,7 +7,7 @@ import { useSessionStore } from "../../auth/session.store";
 import { ME_FIXTURES, TENANT_ID } from "../../test-utils/meFixtures";
 import { expectFourStates } from "../../test-utils/states";
 import TenantsPage from "./TenantsPage";
-import type { TenantsData, TenantSyncData } from "./useTenants";
+import type { CreateTenantState, TenantsData, TenantSyncData } from "./useTenants";
 import type { PublishState } from "./useRuleSetPublish";
 
 const mocks = vi.hoisted(() => ({
@@ -15,12 +15,14 @@ const mocks = vi.hoisted(() => ({
   useTenantSync: vi.fn(),
   useTenantGateways: vi.fn(),
   useRuleSetPublish: vi.fn(),
+  useCreateTenant: vi.fn(),
 }));
 
 vi.mock("./useTenants", () => ({
   useTenants: mocks.useTenants,
   useTenantSync: mocks.useTenantSync,
   useTenantGateways: mocks.useTenantGateways,
+  useCreateTenant: mocks.useCreateTenant,
   TENANTS_STALE_MS: 120_000,
 }));
 vi.mock("./useRuleSetPublish", () => ({ useRuleSetPublish: mocks.useRuleSetPublish }));
@@ -115,6 +117,10 @@ function publishState(over: Partial<PublishState> = {}): PublishState {
   };
 }
 
+function createState(over: Partial<CreateTenantState> = {}): CreateTenantState {
+  return { create: vi.fn(), pending: false, error: null, createdId: null, reset: vi.fn(), ...over };
+}
+
 function cfg(over: Partial<GatewayConfigStateOut> = {}): GatewayConfigStateOut {
   return {
     gateway_id: "g-1",
@@ -145,6 +151,7 @@ beforeEach(() => {
   mocks.useTenantSync.mockReturnValue(syncData());
   mocks.useTenantGateways.mockReturnValue({ gatewayIds: [], loading: false, error: null });
   mocks.useRuleSetPublish.mockReturnValue(publishState());
+  mocks.useCreateTenant.mockReturnValue(createState());
 });
 
 describe("TenantsPage · regla de oro 7", () => {
@@ -177,9 +184,9 @@ describe("TenantsPage · aislamiento visible (dato real, no infra inventada)", (
     expect(screen.queryByText(/Llaves KMS/i)).toBeNull();
   });
 
-  it("no ofrece crear tenants (no existe POST /tenants)", () => {
-    render(<TenantsPage />);
-    expect(screen.queryByRole("button", { name: /NUEVO/ })).toBeNull();
+  it("tenant_admin (sin manage_tenants) no ve el botón de alta de clientes", () => {
+    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    expect(screen.queryByRole("button", { name: /NUEVO CLIENTE/ })).toBeNull();
   });
 
   it("no inventa una cuenta de usuarios (no hay endpoint)", () => {
@@ -196,6 +203,56 @@ describe("TenantsPage · aislamiento visible (dato real, no infra inventada)", (
   it("vertical nulo ⇒ SIN CLASIFICAR", () => {
     render(<TenantsPage />);
     expect(screen.getAllByText(/SIN CLASIFICAR/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => {
+  it("el superadmin ve el botón NUEVO CLIENTE y abre el formulario", () => {
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
+    expect(screen.getByTestId("tenant-create-form")).toBeTruthy();
+  });
+
+  it("enviar el formulario crea el cliente con el cuerpo tecleado", () => {
+    const create = vi.fn();
+    mocks.useCreateTenant.mockReturnValue(createState({ create }));
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
+
+    fireEvent.change(screen.getByLabelText(/Código único/), { target: { value: "HOSP-1" } });
+    fireEvent.change(screen.getByLabelText(/Nombre/), { target: { value: "Hospital Uno" } });
+    fireEvent.change(screen.getByLabelText(/Vertical/), { target: { value: "salud" } });
+    fireEvent.click(screen.getByRole("button", { name: /CREAR CLIENTE/ }));
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({
+      code: "HOSP-1",
+      name: "Hospital Uno",
+      vertical: "salud",
+      plan_code: "mvp",
+      isolation_mode: "logical",
+    });
+  });
+
+  it("un error del servidor (p.ej. code duplicado) se muestra, no se traga", () => {
+    mocks.useCreateTenant.mockReturnValue(
+      createState({ error: "ya existe un registro con ese identificador único" }),
+    );
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
+    expect(screen.getByText(/identificador único/)).toBeTruthy();
+  });
+
+  it("sin código o nombre el botón CREAR queda deshabilitado", () => {
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
+    expect(screen.getByRole("button", { name: /CREAR CLIENTE/ }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 });
 

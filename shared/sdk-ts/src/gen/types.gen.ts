@@ -571,6 +571,7 @@ export type MeActions = {
     export: boolean;
     generate_report: boolean;
     manage_fleet: boolean;
+    manage_tenants: boolean;
     read_audit: boolean;
     relocate_epicenter: boolean;
     request_dictamen: boolean;
@@ -909,6 +910,21 @@ export type SiteUpdate = {
 export type SubscribeFrame = {
     topic: string;
     type: 'subscribe';
+};
+
+/**
+ * Alta de un cliente (T-1.72). Solo ``takab_superadmin`` (acción ``manage_tenants``).
+ *
+ * ``visibility`` y ``status`` NO se aceptan aquí: nacen con los defaults del schema
+ * (``private``/``active``). Compartir con gobierno (``gov_shared``) es una decisión
+ * aparte; la visibilidad configurable entre clientes vive en T-1.73.
+ */
+export type TenantCreate = {
+    code: string;
+    isolation_mode?: 'logical' | 'dedicated';
+    name: string;
+    plan_code?: string;
+    vertical?: string | null;
 };
 
 /**
@@ -2148,6 +2164,31 @@ export type ListTenantsTenantsGetResponses = {
 };
 
 export type ListTenantsTenantsGetResponse = ListTenantsTenantsGetResponses[keyof ListTenantsTenantsGetResponses];
+
+export type CreateTenantTenantsPostData = {
+    body: TenantCreate;
+    path?: never;
+    query?: never;
+    url: '/tenants';
+};
+
+export type CreateTenantTenantsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTenantTenantsPostError = CreateTenantTenantsPostErrors[keyof CreateTenantTenantsPostErrors];
+
+export type CreateTenantTenantsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: TenantOut;
+};
+
+export type CreateTenantTenantsPostResponse = CreateTenantTenantsPostResponses[keyof CreateTenantTenantsPostResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
