@@ -157,6 +157,7 @@ async def map_state(
             magnitude=r.magnitude,
             depth_km=r.depth_km,
             detected_at=r.detected_at,
+            node_count=r.node_count,
         )
         for r in (await conn.execute(ep_stmt, ep_params)).all()
     ]

@@ -211,7 +211,11 @@ SELECT DISTINCT
        ST_Y(e.epicenter::geometry) AS lat,
        e.magnitude   AS magnitude,
        e.depth_km    AS depth_km,
-       e.detected_at AS detected_at
+       e.detected_at AS detected_at,
+       -- Corroboración: cuántas estaciones formaron el evento por quórum (T-1.71).
+       -- Solo los eventos `local_quorum` llevan `meta.node_count`; los demás (sasmex/
+       -- externo) devuelven NULL y la UI no inventa una cuenta.
+       (e.meta->>'node_count')::int AS node_count
 FROM seismic_events e
 JOIN incidents i ON i.event_id = e.event_id
 WHERE i.state <> 'closed'

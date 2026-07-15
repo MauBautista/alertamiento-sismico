@@ -197,6 +197,51 @@ async def test_map_state_has_no_epicenter_when_no_event_locates_one(telemetry_cl
     assert r.json()["epicenters"] == []
 
 
+async def test_map_state_epicenter_reports_node_count(telemetry_client, seed) -> None:
+    """El epicentro del mapa expone cuántas estaciones corroboraron (quórum, T-1.71).
+
+    Un evento formado por quórum lleva ``meta.node_count``; el mapa lo surfacea en el
+    propio epicentro para que el operador vea "N estaciones". Un evento sin esa marca
+    (sasmex/externo) devuelve ``node_count`` nulo — la UI no inventa la cuenta.
+
+    ``seismic_events`` NO lo limpia el teardown (es dato de RED), así que el evento y su
+    incidente ligado se borran aquí en un ``finally``.
+    """
+    import json
+
+    import psycopg
+
+    from _telemetry_fixtures import _dsn
+
+    evt = "EVT-QUORUM-MAP-1"
+    with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO seismic_events (event_id, source, epicenter, detected_at, meta) "
+            "VALUES (%s, 'local_quorum', "
+            "ST_SetSRID(ST_MakePoint(-98.20, 19.00), 4326)::geography, now(), %s::jsonb)",
+            (evt, json.dumps({"node_count": 3})),
+        )
+        cur.execute(
+            "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, event_id, "
+            "opened_at, severity, state, trigger) VALUES "
+            "(gen_random_uuid(), gen_random_uuid(), %s, %s, %s, now(), 'critical', 'open', "
+            "'quorum')",
+            (T_PRIV_A, S_A, evt),
+        )
+    try:
+        r = await telemetry_client.get(
+            "/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A)
+        )
+        assert r.status_code == 200, r.text
+        eps = {e["event_id"]: e for e in r.json()["epicenters"]}
+        assert evt in eps, "el epicentro del evento con incidente abierto debe aparecer"
+        assert eps[evt]["node_count"] == 3
+    finally:
+        with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM incidents WHERE event_id = %s", (evt,))
+            cur.execute("DELETE FROM seismic_events WHERE event_id = %s", (evt,))
+
+
 async def test_mobile_only_role_forbidden(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features",

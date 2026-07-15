@@ -2166,6 +2166,17 @@
             ],
             "title": "Magnitude"
           },
+          "node_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Count"
+          },
           "source": {
             "title": "Source",
             "type": "string"

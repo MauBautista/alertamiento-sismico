@@ -59,12 +59,12 @@ export default function QuorumNodes({
         </div>
         {eventState === "ready" && corroborated && (
           <span className="soc-pill soc-pill--ok" style={{ fontSize: 9 }}>
-            <Check size={11} aria-hidden /> CUÓRUM CUMPLIDO · {view.countedNodes} NODOS
+            <Check size={11} aria-hidden /> CONFIRMADO · {view.countedNodes} estaciones
           </span>
         )}
         {eventState === "ready" && !corroborated && (
           <span className="soc-pill soc-pill--warn" style={{ fontSize: 9 }}>
-            EVENTO NO FORMADO POR QUÓRUM
+            SIN CORROBORAR POR QUÓRUM
           </span>
         )}
       </div>

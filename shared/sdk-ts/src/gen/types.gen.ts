@@ -519,6 +519,7 @@ export type MapEpicenter = {
     lat: number;
     lon: number;
     magnitude: number | null;
+    node_count?: number | null;
     source: string;
 };
 

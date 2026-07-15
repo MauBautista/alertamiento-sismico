@@ -67,22 +67,22 @@ describe("QuorumNodes · offsets", () => {
 });
 
 describe("QuorumNodes · el veredicto es un hecho del servidor, no del cliente", () => {
-  it("corroborated ⇒ CUÓRUM CUMPLIDO con la cuenta real de nodos", () => {
+  it("corroborated ⇒ CONFIRMADO con la cuenta real de estaciones", () => {
     render(<QuorumNodes {...props({ corroborated: true })} />);
-    expect(screen.getByText(/CUÓRUM CUMPLIDO · 2 NODOS/)).toBeTruthy();
+    expect(screen.getByText(/CONFIRMADO · 2 estaciones/)).toBeTruthy();
   });
 
   it("evento de otra fuente (sasmex/manual) NO se anuncia como quórum", () => {
     render(<QuorumNodes {...props({ corroborated: false })} />);
-    expect(screen.queryByText(/CUÓRUM CUMPLIDO/)).toBeNull();
-    expect(screen.getByText(/EVENTO NO FORMADO POR QUÓRUM/)).toBeTruthy();
+    expect(screen.queryByText(/CONFIRMADO/)).toBeNull();
+    expect(screen.getByText(/SIN CORROBORAR POR QUÓRUM/)).toBeTruthy();
   });
 
   it("NO compara countedNodes contra min_nodes: 2 nodos con mínimo 3 sigue siendo CUMPLIDO si el motor formó el evento", () => {
     // El motor prefiere el rule_set de SITIO y usa la versión vigente en su momento;
     // recalcular aquí produciría un "2/3 NODOS" que contradice al propio motor.
     render(<QuorumNodes {...props({ corroborated: true, minNodes: 3 })} />);
-    expect(screen.getByText(/CUÓRUM CUMPLIDO/)).toBeTruthy();
+    expect(screen.getByText(/CONFIRMADO/)).toBeTruthy();
     expect(screen.queryByText(/2\/3/)).toBeNull();
   });
 
@@ -101,7 +101,7 @@ describe("QuorumNodes · regla de oro 7 (los 4 estados del evento)", () => {
   it("incidente sin evento asociado: lo dice, y NO pinta veredicto alguno", () => {
     render(<QuorumNodes {...props({ eventState: "absent", view: quorumView([]) })} />);
     expect(screen.getByText(/SIN EVENTO SÍSMICO ASOCIADO/)).toBeTruthy();
-    expect(screen.queryByText(/CUÓRUM CUMPLIDO/)).toBeNull();
+    expect(screen.queryByText(/CONFIRMADO/)).toBeNull();
     expect(screen.queryByText(/EVENTO NO FORMADO POR QUÓRUM/)).toBeNull();
   });
 
@@ -111,7 +111,7 @@ describe("QuorumNodes · regla de oro 7 (los 4 estados del evento)", () => {
     );
     expect(container.querySelector('[data-state="loading"]')).not.toBeNull();
     expect(screen.queryByText(/SIN EVENTO SÍSMICO ASOCIADO/)).toBeNull();
-    expect(screen.queryByText(/CUÓRUM CUMPLIDO/)).toBeNull();
+    expect(screen.queryByText(/CONFIRMADO/)).toBeNull();
   });
 
   it("evento FALLIDO se reporta como error, jamás como 'sin evento'", () => {
@@ -127,7 +127,7 @@ describe("QuorumNodes · regla de oro 7 (los 4 estados del evento)", () => {
     expect(container.querySelector('[data-state="error"]')).not.toBeNull();
     expect(screen.getByRole("alert").textContent).toMatch(/500/);
     expect(screen.queryByText(/SIN EVENTO SÍSMICO ASOCIADO/)).toBeNull();
-    expect(screen.queryByText(/CUÓRUM CUMPLIDO/)).toBeNull();
+    expect(screen.queryByText(/CONFIRMADO/)).toBeNull();
   });
 
   it("evento cargado pero sin votos lo dice (empty), no lo confunde con error", () => {
