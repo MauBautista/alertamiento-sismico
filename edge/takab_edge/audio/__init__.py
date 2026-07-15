@@ -38,6 +38,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("takab_edge.audio")
 
+#: [T-1.68] Cada cuánto el watcher concilia la sirena por audio con
+#: ``gpio.siren_sounding``. 50 ms ⇒ arranque casi inmediato y hueco de bucle
+#: imperceptible (la sirena de RELÉ es la primaria; esto es advisory).
+_SIREN_POLL_S = 0.05
+
 
 class AudioBackend(Protocol):
     """Superficie mínima de reproducción: un archivo a la vez."""
@@ -129,21 +134,37 @@ class AudioNotifier(EdgeModule):
         settings: EdgeSettings,
         gpio: GpioController,
         backend: AudioBackend | None = None,
+        siren_backend: AudioBackend | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
         self._gpio = gpio
-        if backend is None:
-            backend = (
+
+        def _default_backend() -> AudioBackend:
+            return (
                 SimulatedAudioBackend()
                 if settings.dev_mode
                 else AplayBackend(settings.audio_device)
             )
-        self._backend = backend
+
+        self._backend = backend if backend is not None else _default_backend()
+        # [T-1.68] La sirena por audio usa un backend PROPIO (no corta el voceo, ni
+        # el voceo a ella: con `default`/dmix ambos se mezclan en el mismo jack).
+        self._siren_backend = siren_backend if siren_backend is not None else _default_backend()
+        self._siren_path = settings.audio_siren_path or str(
+            Path(__file__).parent / "assets" / "siren.wav"
+        )
+        self._siren_stop = threading.Event()
+        self._siren_thread: threading.Thread | None = None
 
     @property
     def enabled(self) -> bool:
         return self.settings.audio_enabled
+
+    @property
+    def siren_enabled(self) -> bool:
+        """[T-1.68] Sirena por el jack 3.5 mm — toggle propio, aparte del voceo."""
+        return self.settings.audio_siren_enabled
 
     @property
     def sounding(self) -> bool:
@@ -153,6 +174,12 @@ class AudioNotifier(EdgeModule):
             return False
 
     def _on_start(self) -> None:
+        # Voceo y sirena por audio son INDEPENDIENTES (T-1.68): el voceo exige WAVs
+        # grabados (A-6, aún apagado); la sirena arranca con su asset empaquetado.
+        self._start_voice()
+        self._start_siren()
+
+    def _start_voice(self) -> None:
         if not self.enabled:
             log.info("voceo por audio DESHABILITADO (audio_enabled=false; gate de hardware A-6)")
             return
@@ -172,8 +199,62 @@ class AudioNotifier(EdgeModule):
         # El silencio (botón físico o panel) calla TAMBIÉN la voz, no solo la sirena.
         self._gpio.on_silence(self._on_silence)
 
+    def _start_siren(self) -> None:
+        """[T-1.68] Sirena por el jack: watcher que sigue ``gpio.siren_sounding``."""
+        if not self.siren_enabled:
+            log.info("sirena por audio DESHABILITADA (audio_siren_enabled=false)")
+            return
+        p = Path(self._siren_path)
+        if not p.is_file():
+            raise RuntimeError(
+                f"audio: el asset de la sirena no existe ({self._siren_path!r}) y "
+                "audio_siren_enabled=true — configura TAKAB_EDGE_AUDIO_SIREN_PATH o apágala. "
+                "El módulo es no-crítico: la sirena de RELÉ sigue siendo la primaria."
+            )
+        log.info(
+            "sirena por audio: %s sha256=%s",
+            self._siren_path,
+            hashlib.sha256(p.read_bytes()).hexdigest(),
+        )
+        self._siren_stop.clear()
+        self._siren_thread = threading.Thread(
+            target=self._siren_watch_loop, name="audio-siren", daemon=True
+        )
+        self._siren_thread.start()
+
+    def _siren_watch_loop(self) -> None:
+        while not self._siren_stop.wait(_SIREN_POLL_S):
+            self._reconcile_siren()
+
+    def _reconcile_siren(self) -> None:
+        """Enciende/apaga el WAV de la sirena según suene la sirena de relé.
+
+        `gpio.siren_sounding` ya integra silencio y reset, así que un solo poll
+        cubre el reflejo real, la prueba de sirena y la de actuación, y calla al
+        silenciar. Advisory: cualquier fallo se aísla, jamás toca el camino de vida.
+        """
+        if not self.siren_enabled:
+            return
+        try:
+            should = self._gpio.siren_sounding
+            playing = self._siren_backend.playing is not None
+            if should and not playing:
+                self._siren_backend.play(self._siren_path)
+            elif not should and playing:
+                self._siren_backend.stop()
+        except Exception:  # noqa: BLE001 — advisory: jamás propaga al camino de vida
+            log.exception("sirena por audio: reconciliación falló (aislada)")
+
     def _on_stop(self) -> None:
         self.stop_playback()
+        self._siren_stop.set()
+        if self._siren_thread is not None:
+            self._siren_thread.join(timeout=2.0)
+            self._siren_thread = None
+        try:
+            self._siren_backend.stop()
+        except Exception:  # noqa: BLE001 — advisory
+            log.exception("audio: parada de la sirena por audio falló (aislada)")
 
     # ------------------------------------------------------------------ disparo
     def on_tier(self, decision: TierDecision) -> None:

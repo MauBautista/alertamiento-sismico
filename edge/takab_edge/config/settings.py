@@ -210,15 +210,23 @@ class EdgeSettings(BaseSettings):
     local_api_pin: str = ""
 
     # --- audio de voceo (A-6; canal ADVISORY — la sirena de RELÉ es la primaria) ---
-    #: El voceo arranca DESHABILITADO: se enciende por gabinete cuando el hardware
-    #: de audio (DAC/amplificador/bocina; el Pi 5 no trae jack) exista físicamente.
+    #: El voceo hablado arranca DESHABILITADO: exige dos WAVs grabados (sismo vs
+    #: simulacro) que se enciende por gabinete cuando existan. (El "cerebro" real es
+    #: un Pi 4 CON jack 3.5 mm; un Pi 5 no lo trae y exigiría DAC USB o HAT I2S.)
     audio_enabled: bool = False
-    #: Dispositivo ALSA para ``aplay -D`` (p.ej. "default", "hw:1,0" con DAC USB).
+    #: Dispositivo ALSA para ``aplay -D`` (p.ej. "default" = jack 3.5 mm del Pi 4).
     audio_device: str = "default"
     #: Mensajes hablados: DEBEN ser dos audios claramente DISTINTOS (sismo real vs
     #: simulacro). Con audio_enabled=true, ambos archivos deben existir al arrancar.
     audio_sismo_path: str = ""
     audio_simulacro_path: str = ""
+    #: [T-1.68] Sirena por AUDIO (jack 3.5 mm): toggle PROPIO, independiente del
+    #: voceo. Con el asset sintetizado empaquetado, se enciende SIN grabar nada —
+    #: cuando suena la sirena (`gpio.siren_sounding`), se reproduce el WAV en bucle
+    #: por el jack. Sigue siendo ADVISORY: la sirena de RELÉ es y será la primaria.
+    audio_siren_enabled: bool = False
+    #: WAV de la sirena; vacío ⇒ el asset empaquetado (takab_edge/audio/assets/siren.wav).
+    audio_siren_path: str = ""
 
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)

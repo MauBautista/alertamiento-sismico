@@ -137,6 +137,84 @@ def test_backend_roto_no_propaga(audio_settings, gpio) -> None:  # noqa: ANN001
     notifier.on_tier(_evacuate())  # tampoco
 
 
+# --- Sirena por AUDIO (T-1.68): el sonido de la sirena sale por el jack 3.5 mm --
+# Toggle PROPIO (audio_siren_enabled), independiente del voceo. Sigue el estado
+# `gpio.siren_sounding` (reflejo real, prueba de sirena o prueba de actuación) y
+# se calla al silenciar/resetear — un solo poll cubre todos los casos.
+
+
+@pytest.fixture
+def siren_cfg(settings, tmp_path):  # noqa: ANN001
+    wav = tmp_path / "siren.wav"
+    wav.write_bytes(b"RIFF-siren-fake-wav")
+    return settings.model_copy(update={"audio_siren_enabled": True, "audio_siren_path": str(wav)})
+
+
+def _siren_notifier(cfg, gpio):  # noqa: ANN001
+    siren = SimulatedAudioBackend()
+    notifier = AudioNotifier(cfg, gpio=gpio, backend=SimulatedAudioBackend(), siren_backend=siren)
+    notifier.start()
+    return notifier, siren
+
+
+def test_sirena_por_audio_sigue_el_estado_de_la_sirena(siren_cfg, gpio) -> None:  # noqa: ANN001
+    notifier, siren = _siren_notifier(siren_cfg, gpio)
+    gpio.simulate_sasmex(active=True)  # sirena SONANDO
+    notifier._reconcile_siren()
+    assert siren.playing == siren_cfg.audio_siren_path
+    gpio.silence_audibles(True)  # el operador silencia
+    notifier._reconcile_siren()
+    assert siren.playing is None  # la sirena por audio se calla con la de relé
+
+
+def test_prueba_de_actuacion_suena_por_audio(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """La prueba LOCAL de actuación (T-1.67) también hace sonar la sirena por el jack."""
+    notifier, siren = _siren_notifier(siren_cfg, gpio)
+    gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
+    notifier._reconcile_siren()
+    assert siren.playing == siren_cfg.audio_siren_path
+    gpio.reset()
+
+
+def test_sirena_por_audio_deshabilitada_no_suena(settings, gpio) -> None:  # noqa: ANN001
+    notifier, siren = _siren_notifier(settings, gpio)  # audio_siren_enabled=False (default)
+    gpio.simulate_sasmex(active=True)
+    notifier._reconcile_siren()
+    assert siren.plays == []
+
+
+def test_sirena_por_audio_asset_faltante_truena_al_arrancar(settings, gpio, tmp_path) -> None:  # noqa: ANN001
+    cfg = settings.model_copy(
+        update={"audio_siren_enabled": True, "audio_siren_path": str(tmp_path / "no.wav")}
+    )
+    notifier = AudioNotifier(cfg, gpio=gpio, siren_backend=SimulatedAudioBackend())
+    with pytest.raises(RuntimeError, match="sirena"):
+        notifier.start()
+
+
+def test_sirena_por_audio_backend_roto_no_propaga(siren_cfg, gpio) -> None:  # noqa: ANN001
+    class _Explota(SimulatedAudioBackend):
+        def play(self, path: str) -> None:
+            raise OSError("aplay no existe")
+
+    notifier = AudioNotifier(siren_cfg, gpio=gpio, siren_backend=_Explota())
+    notifier.start()
+    gpio.simulate_sasmex(active=True)
+    notifier._reconcile_siren()  # advisory: jamás propaga al camino de vida
+
+
+def test_watcher_arranca_la_sirena_en_segundo_plano(siren_cfg, gpio) -> None:  # noqa: ANN001
+    import time
+
+    notifier, siren = _siren_notifier(siren_cfg, gpio)
+    gpio.simulate_sasmex(active=True)
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and siren.playing is None:
+        time.sleep(0.02)
+    assert siren.playing == siren_cfg.audio_siren_path  # el hilo watcher la levantó solo
+    notifier.stop()
+
+
 class _RulesStub:
     last_decision = None
 

@@ -1656,3 +1656,28 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   fantasma · **jamás dispara callbacks SASMEX** (garantía de aislamiento) · rechazada con alerta
   viva · el fin de la prueba jamás calla una alerta real · endpoint PIN-gated · resultado en status.
 > **ESTADO.** edge 351 (+8) · ruff limpio. (El test de hardware del Shake real se salta en CI.)
+
+### [x] T-1.68 · Sirena por AUDIO (jack 3.5 mm del cerebro) — **COMPLETA (2026-07-14)**
+- **Componente:** edge · **Depende de:** T-1.67 (la prueba de actuación es una de las vías que la hace sonar)
+- **CORRECCIÓN DE HARDWARE:** el "cerebro" NO es un Pi 5 — es un **Raspberry Pi 4 Model B Rev 1.5**
+  (verificado contra `/proc/device-tree/model`; todo el proyecto lo documentaba mal). El Pi 4 **SÍ
+  trae jack 3.5 mm y funciona** (`speaker-test` reprodujo tono; jack al 96%). La petición de sacar
+  la sirena por el jack es directamente viable, sin DAC ni adaptador.
+- **Necesidad (Mauricio):** que el SONIDO de la sirena salga por el jack 3.5 mm del cerebro. Hoy la
+  sirena es solo relé (canal `SIREN` → pin 17); el módulo `audio` (A-6) solo hacía voceo hablado.
+- **Diseño:** toggle PROPIO `audio_siren_enabled`, **independiente del voceo** (`audio_enabled`, que
+  aún necesita los WAVs grabados de A-6). Con el asset sintetizado empaquetado
+  (`takab_edge/audio/assets/siren.wav`, hi-lo 960/770 Hz, bordes en cruce por cero → loop sin clics,
+  regenerable con `edge/scripts/gen_siren.py`), se enciende SIN grabar nada. El `AudioNotifier` gana
+  un backend PROPIO para la sirena (no corta el voceo; con `default`/dmix ambos se mezclan) y un hilo
+  watcher que cada 50 ms concilia con **`gpio.siren_sounding`**: suena ⇒ reproduce el WAV en bucle;
+  deja de sonar ⇒ para. Un solo poll cubre el reflejo SASMEX real, la prueba de sirena y la de
+  actuación (T-1.67), y se calla al silenciar/resetear. Sigue ADVISORY: cae aislado, la sirena de
+  RELÉ es y será la primaria; jamás toca el camino de vida.
+- Criterios por test (edge): la sirena por audio sigue el estado (suena con la alerta, calla al
+  silenciar) · la prueba de actuación la hace sonar · deshabilitada por default no suena · asset
+  faltante + habilitada ⇒ no arranca (fail-loud) · backend roto no propaga · el watcher la levanta
+  en segundo plano.
+> **ESTADO.** edge 361 (+6). El asset viaja por rsync (deploy.sh no excluye .wav) y en el wheel
+> (hatchling incluye los datos de `takab_edge/`). Falta: activar en el Pi (`audio_siren_enabled=true`)
+> y probar en vivo por el jack. GPIO del WR-1: pin 16 (default) listo, el reflejo ya escucha ahí.
