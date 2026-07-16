@@ -1856,9 +1856,10 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > (`mfa=OPTIONAL` + TOTP, único grupo `occupant`, mismos custom attributes), domain propio,
 > client `takab-mobile-occupants` (PKCE por deep link `takab://auth/callback`, refresh 90 días)
 > y client `takab-mobile-tactical` sobre el pool principal intacto (refresh 24 h); outputs en
-> módulo y envs/dev; `fmt`+`validate` verdes. **⚠ `terraform apply` PENDIENTE (lo corre
-> Mauricio)** — hasta entonces los `EXPO_PUBLIC_*` no existen y el login declara "pool sin
-> configurar". **App:** `mobile/` con Expo SDK 57 (RN 0.86 · React 19), expo-router con grupos
+> módulo y envs/dev; `fmt`+`validate` verdes. **✅ `terraform apply` EJECUTADO por Mauricio
+> (2026-07-16): 5 added / 0 changed / 0 destroyed** — pool `us-east-2_P818WYSql` VIVO
+> (discovery OIDC responde); `EXPO_PUBLIC_*` reales en `mobile/.env` local (gitignored).
+> **App:** `mobile/` con Expo SDK 57 (RN 0.86 · React 19), expo-router con grupos
 > `(occupant)`/`(brigadista)` y guards + `denied` explícito; `gateFor(/me)` default-deny
 > (tests), sesión SOLO en SecureStore con purga de payload corrupto (tests), config dual-pool
 > declarativa (tests), `useAuth` PKCE + `bootstrapSession` (offline conserva sesión cacheada
