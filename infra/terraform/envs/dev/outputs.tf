@@ -106,3 +106,13 @@ output "command_hmac_secret_prefix" {
 output "dlq_urls" {
   value = module.messaging.dlq_urls
 }
+
+# --- Push móvil (T-2.04) ------------------------------------------------------
+
+output "push_apns_application_arn" {
+  value = module.push.apns_application_arn
+}
+
+output "push_fcm_application_arn" {
+  value = module.push.fcm_application_arn
+}

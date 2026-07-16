@@ -71,3 +71,28 @@ variable "paged_gateways" {
   type        = list(string)
   default     = ["gw-dev-0001"]
 }
+
+# --- Push móvil (T-2.04) — credenciales de las platform applications de SNS.
+# Vacías ⇒ push DESHABILITADO (la API usa el provider simulado, que grita).
+# La llave APNs (.p8) llega con la cuenta de Apple aprobada (GATE-STORE).
+variable "push_apns_signing_key" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "push_apns_signing_key_id" {
+  type    = string
+  default = ""
+}
+
+variable "push_apns_team_id" {
+  type    = string
+  default = ""
+}
+
+variable "push_fcm_service_account_json" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
