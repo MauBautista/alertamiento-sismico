@@ -42,7 +42,19 @@
         }
       ],
       "expo-secure-store",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Su ubicación se envía ÚNICAMENTE si pide ayuda en un check-in de emergencia y dio su consentimiento."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

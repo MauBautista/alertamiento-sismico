@@ -45,6 +45,11 @@ export function CrisisWatcher() {
   useEffect(() => {
     if (state === "alert_active" && pathname !== "/crisis") {
       router.push("/crisis");
+      return;
+    }
+    // [T-2.06] Sacudida concluida sin check-in propio ⇒ toma de pantalla 1.4.
+    if (state === "checkin_pending" && pathname !== "/checkin") {
+      router.push("/checkin");
     }
   }, [state, pathname, router]);
 

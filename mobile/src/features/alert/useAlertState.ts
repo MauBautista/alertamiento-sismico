@@ -9,6 +9,9 @@ import {
 } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import { hasLocalCheckin } from "@/offline/queue";
+import { useQueueStore } from "@/offline/queue.store";
+
 import { type AlertState, deriveAlertState } from "./machine";
 
 export const MOBILE_STATE_KEY = "mobile-state";
@@ -59,7 +62,13 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
     refetchInterval: CRISIS_POLL_MS,
   });
 
-  const hasOwnCheckin = (checkins.data?.length ?? 0) > 0;
+  // [T-2.06] El check-in ENCOLADO en este dispositivo cuenta como propio
+  // (existe y viajará — el servidor deduplica por checkin_id); uno "failed"
+  // NO cuenta: jamás aterrizó y el usuario debe poder reintentar.
+  const queueItems = useQueueStore((s) => s.items);
+  const hasOwnCheckin =
+    (checkins.data?.length ?? 0) > 0 ||
+    (incidentId != null && hasLocalCheckin(queueItems, incidentId));
   const state = mobileState.data
     ? deriveAlertState(mobileState.data.phase, hasOwnCheckin)
     : null;

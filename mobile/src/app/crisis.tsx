@@ -38,8 +38,11 @@ export default function Crisis() {
   if (status !== "authenticated") {
     return <Redirect href="/" />;
   }
-  // La fase del SERVIDOR dejó de ser alerta: salir (check-in/bloqueo los
-  // enrutan las tareas T-2.06/T-2.07 desde el inicio).
+  // La fase del SERVIDOR dejó de ser alerta: la sacudida concluida pasa al
+  // check-in de vida (1.4); lo demás regresa al inicio.
+  if (state === "checkin_pending" || state === "reentry_blocked") {
+    return <Redirect href="/checkin" />;
+  }
   if (state !== null && state !== "alert_active") {
     return <Redirect href="/" />;
   }
