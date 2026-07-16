@@ -1,8 +1,8 @@
-// Pantalla 1.4: dos botones gigantes con transparencia de qué se enviará y
-// estado posterior HONESTO (guardado local ≠ recibido por el servidor).
+// Pantalla 1.4: dos botones gigantes con transparencia de qué se enviará.
+// (El estado posterior vive en 1.5 — features/reentry, con su timeline.)
 import { fireEvent, render } from "@testing-library/react-native";
 
-import { CheckinStatusView, CheckinView } from "./CheckinView";
+import { CheckinView } from "./CheckinView";
 
 describe("CheckinView", () => {
   it("dos botones gigantes; el toque reporta el estado correcto", async () => {
@@ -42,17 +42,3 @@ describe("CheckinView", () => {
   });
 });
 
-describe("CheckinStatusView — la verdad de dónde está el dato", () => {
-  it("pendiente local ⇒ GUARDADO EN ESTE DISPOSITIVO (jamás finge envío)", async () => {
-    const view = await render(<CheckinStatusView localState="pending" serverConfirmed={false} />);
-    expect(view.getByTestId("checkin-status")).toHaveTextContent("GUARDADO EN ESTE DISPOSITIVO");
-    expect(view.getByText(/se enviará AUTOMÁTICAMENTE en cuanto haya red/)).toBeTruthy();
-  });
-
-  it("synced o confirmado por el servidor ⇒ RECIBIDO POR EL SERVIDOR", async () => {
-    const synced = await render(<CheckinStatusView localState="synced" serverConfirmed={false} />);
-    expect(synced.getByTestId("checkin-status")).toHaveTextContent("RECIBIDO POR EL SERVIDOR");
-    const server = await render(<CheckinStatusView localState={null} serverConfirmed={true} />);
-    expect(server.getByTestId("checkin-status")).toHaveTextContent("RECIBIDO POR EL SERVIDOR");
-  });
-});

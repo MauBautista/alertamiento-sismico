@@ -3,7 +3,6 @@
 // GPS, el encolado y el estado derivado viven en la ruta.
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import type { QueueItemState } from "@/offline/queue";
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
 import { whatWillBeSent } from "./payload";
@@ -67,34 +66,6 @@ export function CheckinView(props: {
   );
 }
 
-/** Estado POSTERIOR al check-in: la verdad de dónde está el dato, sin fingir.
- *  serverConfirmed = el backend ya lo devolvió en /checkins (scope=me). */
-export function CheckinStatusView(props: {
-  localState: QueueItemState | null;
-  serverConfirmed: boolean;
-}) {
-  const synced = props.serverConfirmed || props.localState === "synced";
-  return (
-    <View style={styles.wrap}>
-      <Text style={styles.eyebrow}>CHECK-IN REGISTRADO</Text>
-      <View style={[styles.statusCard, synced ? styles.cardOk : styles.cardPending]}>
-        <Text style={styles.statusTitle} testID="checkin-status">
-          {synced ? "RECIBIDO POR EL SERVIDOR" : "GUARDADO EN ESTE DISPOSITIVO"}
-        </Text>
-        <Text style={styles.statusBody}>
-          {synced
-            ? "El personal de emergencia ya cuenta con su estado."
-            : "Sin conexión por ahora: se enviará AUTOMÁTICAMENTE en cuanto haya red. No cierre su sesión."}
-        </Text>
-      </View>
-      <Text style={styles.sub}>
-        Permanezca en el punto de reunión. El reingreso al inmueble se autoriza únicamente desde
-        el centro de mando (recibirá la liberación en esta app).
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: palette.bg, padding: space[5], paddingTop: 72, gap: space[3] },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
@@ -115,15 +86,4 @@ const styles = StyleSheet.create({
   btnCaptionDark: { color: palette.bg, fontSize: fontSize.xs, textAlign: "center", opacity: 0.85 },
   btnCaptionLight: { color: palette.fg, fontSize: fontSize.xs, textAlign: "center", opacity: 0.9 },
   dim: { opacity: 0.5 },
-  statusCard: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: space[4],
-    gap: space[2],
-    marginTop: space[3],
-  },
-  cardOk: { borderColor: palette.ok, backgroundColor: palette.card },
-  cardPending: { borderColor: palette.warn, backgroundColor: palette.card },
-  statusTitle: { color: palette.fg, fontSize: fontSize.md, fontWeight: "700", letterSpacing: 1 },
-  statusBody: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
 });

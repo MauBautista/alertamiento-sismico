@@ -26,6 +26,12 @@ export type AlertSnapshot = {
   hasOwnCheckin: boolean;
   refetch: () => void;
   dataUpdatedAt: number;
+  /** [T-2.07] Para el contrato StateFrame: cargando SIN datos. */
+  loading: boolean;
+  /** Error SIN datos que mostrar (con datos viejos habla `stale`). */
+  error: string | null;
+  /** Hay datos pero la última consulta FALLÓ: lo mostrado es viejo. */
+  stale: boolean;
 };
 
 export function useAlertState(siteId: string | null): AlertSnapshot {
@@ -81,5 +87,11 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
       void mobileState.refetch();
     },
     dataUpdatedAt: mobileState.dataUpdatedAt,
+    loading: siteId != null && mobileState.isLoading && mobileState.data === undefined,
+    error:
+      mobileState.isError && mobileState.data === undefined
+        ? "No se pudo consultar el estado del sitio."
+        : null,
+    stale: mobileState.isError && mobileState.data !== undefined,
   };
 }

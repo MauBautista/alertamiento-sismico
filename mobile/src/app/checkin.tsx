@@ -8,9 +8,11 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
-import { CheckinStatusView, CheckinView } from "@/features/checkin/CheckinView";
+import { CheckinView } from "@/features/checkin/CheckinView";
 import { captureLocation } from "@/features/checkin/location";
 import { buildCheckinPayload } from "@/features/checkin/payload";
+import { ReentryBlockedView } from "@/features/reentry/ReentryBlockedView";
+import { reentryTimeline } from "@/features/reentry/timeline";
 import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
 import { getGpsConsent } from "@/services/onboarding";
@@ -62,10 +64,19 @@ export default function Checkin() {
     queueItems.filter((i) => i.payload.incident_id === incident.incident_id).at(-1) ?? null;
 
   if (hasOwnCheckin) {
+    // 1.5 · Bloqueo de reingreso: timeline derivada de los datos del servidor;
+    // se libera SOLO cuando la fase cambia a reentry_approved (redirect arriba).
     return (
-      <CheckinStatusView
-        localState={localItem?.state ?? null}
-        serverConfirmed={localItem === null || localItem.state === "synced"}
+      <ReentryBlockedView
+        assemblyPoint={data?.assembly_point ?? null}
+        complianceLabels={data?.compliance_labels ?? {}}
+        timeline={reentryTimeline({
+          openedAt: incident.opened_at,
+          hasOwnCheckin,
+          checkinSynced: localItem === null || localItem.state === "synced",
+          dictamenStatus: data?.reentry.dictamen_status ?? null,
+          dictamenSigned: data?.reentry.dictamen_signed ?? false,
+        })}
       />
     );
   }
