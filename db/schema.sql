@@ -880,7 +880,8 @@ CREATE TABLE notification_jobs (
   job_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
   incident_id uuid NOT NULL REFERENCES incidents(incident_id) ON DELETE RESTRICT,
-  channel     text NOT NULL CHECK (channel IN ('webhook','whatsapp','sms','email')),
+  -- [T-2.04] 'push' = despertador móvil (SNS platform endpoints), job paralelo.
+  channel     text NOT NULL CHECK (channel IN ('webhook','whatsapp','sms','email','push')),
   mode        text NOT NULL CHECK (mode IN ('cascade','parallel')),
   position    integer NOT NULL DEFAULT 0,
   status      text NOT NULL DEFAULT 'pending'
@@ -1053,6 +1054,10 @@ CREATE TABLE push_tokens (
   platform      text NOT NULL CHECK (platform IN ('ios','android')),
   token         text NOT NULL UNIQUE,
   site_id       uuid REFERENCES sites,
+  -- [T-2.04] Endpoint de SNS cacheado por el worker (se crea al primer envío);
+  -- NULL = aún sin mapear. El worker también REVOCA (revoked_at) los endpoints
+  -- que SNS reporta deshabilitados.
+  endpoint_arn  text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   last_seen_at  timestamptz NOT NULL DEFAULT now(),
   revoked_at    timestamptz
@@ -1060,7 +1065,8 @@ CREATE TABLE push_tokens (
 CREATE INDEX idx_push_tokens_user ON push_tokens (user_sub);
 CREATE INDEX idx_push_tokens_site ON push_tokens (site_id) WHERE revoked_at IS NULL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON push_tokens TO takab_app;
-GRANT SELECT ON push_tokens TO takab_ingest;  -- el worker de notify resuelve destinos
+-- el worker de notify resuelve destinos, sella endpoint_arn y revoca muertos
+GRANT SELECT, UPDATE ON push_tokens TO takab_ingest;
 
 ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_tokens FORCE  ROW LEVEL SECURITY;
