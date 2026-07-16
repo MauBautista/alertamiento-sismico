@@ -1946,7 +1946,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > trámite), credenciales APNs/FCM reales, bypass DND en dispositivos; push OPS de dictamen se
 > cablea en T-2.12; sonido oficial empaquetado en T-2.05.
 
-### [ ] T-2.05 · Máquina de estados de crisis + pantallas 1.2/1.3
+### [x] T-2.05 · Máquina de estados de crisis + pantallas 1.2/1.3
 - **Componente:** mobile
 - Estado único determinista (spec §4.1): la fase la sirve `mobile-state.phase`; la push
   despierta y el REST reconstruye; instrucción por `zones.evac_policy`; contador T+ ascendente;
@@ -1956,6 +1956,36 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   flag `ALERT_SOURCE_CARRIES_ETA=false`; ningún camino local produce `REENTRY_APPROVED`.
 - Test de integración: los modos de prueba del gabinete (T-1.67/T-1.69) no generan incidente ⇒
   la máquina no sale de `IDLE` (garantía server-side; cero lógica local de "modo prueba").
+
+> **ESTADO (2026-07-16): COMPLETA.** **API:** `mobile-state.incident` ahora porta el dato
+> INSTRUMENTAL real — `max_pga_g` (PGA MEDIDO del evento, jamás magnitud) + `node_count`
+> (estaciones corroborantes) — mismo origen que el Triage; SDK regenerado sin drift.
+> **Máquina (`mobile/src/features/alert/machine.ts`):** `deriveAlertState(phase, hasOwnCheckin)`
+> PURA de 2 argumentos — `reentry_approved` SOLO puede venir de la fase del servidor (test
+> recorre todos los caminos locales); `ALERT_SOURCE_CARRIES_ETA=false` (§2.1-A: el WR-1 entrega
+> un booleano — el hueco de ETA ni se renderiza); `elapsedSeconds` con clamp a 0 (sesgo de reloj
+> del dispositivo jamás pinta cronómetro fantasma; timestamp corrupto ⇒ 0, no NaN) y
+> `formatElapsed` SIEMPRE `T+`. **Fuentes (`source.ts`):** etiqueta por `trigger` real —
+> SASMEX sin números (el único dígito permitido es "WR-1"), local `PGA 0.15g MEDIDO` (mg bajo
+> 0.01g — piso MEMS honesto), quórum `CONFIRMADO · N ESTACIONES`; trigger desconocido se muestra
+> CRUDO. **Pantallas 1.2/1.3 (`CrisisView` + ruta `/crisis`):** takeover instruction-first
+> (EVACÚE AHORA rojo / REPLIÉGUESE ámbar por `zones.evac_policy`; sin política ⇒ PROTÉJASE
+> banner MVP — el teléfono NO adivina), sin gesto de regreso (`gestureEnabled:false`), la salida
+> la decide la fase (`Redirect` cuando el servidor deja `alert_active`); spinner "VERIFICANDO
+> ALERTA CON EL SERVIDOR…" si la push llegó antes que el REST. **Watcher (`CrisisWatcher`):**
+> push CRISIS ⇒ invalida `mobile-state` y navega; polling honesto 30 s reposo / 5 s crisis.
+> **Sonido:** loop `expo-audio` con `playsInSilentMode` — **placeholder `siren.wav` del edge;
+> el tono SASMEX oficial requiere licenciamiento (pendiente físico, como el entitlement)**.
+> **Trampa de migraciones cerrada (0018/0019 reestructuradas):** el dueño histórico de las
+> tablas varía por base (en el dev local `user_profiles`/`notification_jobs`/`life_checkins`
+> son del superusuario de conexión; en `takab_test` lo es `drills`) ⇒ TODO DDL sobre tablas
+> PREEXISTENTES corre como USUARIO DE CONEXIÓN (superusuario local / `takab_migrator` dueño en
+> nube) y `SET ROLE takab_migrator` queda SOLO para objetos nuevos; validado incremental
+> (dev 0017→0019), cadena fresca y round-trip de downgrade. **Rezagos de T-2.03 saneados en
+> web:** fixtures `DrillOut.scheduled_at` + las 9 acciones móviles en `MeActions` (el build de
+> web estaba roto en silencio; vitest no typechequea). Check-in (1.4) llega en T-2.06 y el
+> bloqueo de reingreso (1.5) en T-2.07 — `checkin_pending`/`reentry_blocked` ya derivan hoy.
+> **api 860✓ · web 576✓ (build+eslint+prettier limpios) · mobile 66✓ (tsc+expo lint limpios).**
 
 ### [ ] T-2.06 · Cola offline cifrada + check-in de vida (1.4)
 - **Componente:** mobile + api
