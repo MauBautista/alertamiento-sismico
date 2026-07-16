@@ -259,6 +259,10 @@ export const ackIncidentIncidentsIncidentIdAckPost = <ThrowOnError extends boole
 /**
  * List Incident Actions
  * Timeline append-only del incidente. 404 si el incidente no es visible.
+ *
+ * [T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):
+ * el táctico queda además acotado a su ``site_scope`` default-deny — fuera de
+ * alcance recibe el MISMO 404 (sin filtración de existencia).
  */
 export const listIncidentActionsIncidentsIncidentIdActionsGet = <ThrowOnError extends boolean = false>(options: Options<ListIncidentActionsIncidentsIncidentIdActionsGetData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<ListIncidentActionsIncidentsIncidentIdActionsGetResponse, ListIncidentActionsIncidentsIncidentIdActionsGetError, ThrowOnError>({

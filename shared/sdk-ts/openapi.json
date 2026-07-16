@@ -2519,6 +2519,19 @@
             "title": "Payload",
             "type": "object"
           },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Site Id"
+          },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
@@ -3163,6 +3176,10 @@
             "title": "Manual Activate",
             "type": "boolean"
           },
+          "panel_read": {
+            "title": "Panel Read",
+            "type": "boolean"
+          },
           "panic_vote": {
             "title": "Panic Vote",
             "type": "boolean"
@@ -3223,7 +3240,8 @@
           "manual_activate",
           "enrollment_manage",
           "panic_vote",
-          "dictamen_read"
+          "dictamen_read",
+          "panel_read"
         ],
         "title": "MeActions",
         "type": "object"
@@ -3498,6 +3516,39 @@
             ],
             "title": "Age S"
           },
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Pct"
+          },
+          "cert_days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cert Days Remaining"
+          },
+          "cpu_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Temp C"
+          },
           "has_wr1": {
             "title": "Has Wr1",
             "type": "boolean"
@@ -3513,6 +3564,50 @@
               }
             ],
             "title": "Heartbeat At"
+          },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt Ms"
+          },
+          "ntp_offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntp Offset Ms"
+          },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Status"
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag S"
           },
           "status": {
             "title": "Status",
@@ -6798,7 +6893,7 @@
     },
     "/incidents/{incident_id}/actions": {
       "get": {
-        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.",
+        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.\n\n[T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):\nel táctico queda además acotado a su ``site_scope`` default-deny — fuera de\nalcance recibe el MISMO 404 (sin filtración de existencia).",
         "operationId": "list_incident_actions_incidents__incident_id__actions_get",
         "parameters": [
           {

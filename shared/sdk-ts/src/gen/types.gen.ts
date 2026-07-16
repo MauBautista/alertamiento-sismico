@@ -563,6 +563,7 @@ export type IncidentActionFrame = {
     payload?: {
         [key: string]: unknown;
     };
+    site_id?: string | null;
     tenant_id: string;
     ts: string;
     type?: 'incident_action';
@@ -717,6 +718,7 @@ export type MeActions = {
     manage_tenants: boolean;
     manage_visibility: boolean;
     manual_activate: boolean;
+    panel_read: boolean;
     panic_vote: boolean;
     read_audit: boolean;
     relocate_epicenter: boolean;
@@ -797,8 +799,15 @@ export type MobileReentryOut = {
  */
 export type MobileSiteHealthOut = {
     age_s: number | null;
+    battery_pct?: number | null;
+    cert_days_remaining?: number | null;
+    cpu_temp_c?: number | null;
     has_wr1: boolean;
     heartbeat_at: string | null;
+    mqtt_rtt_ms?: number | null;
+    ntp_offset_ms?: number | null;
+    power_status?: string | null;
+    seedlink_lag_s?: number | null;
     status: string;
 };
 
