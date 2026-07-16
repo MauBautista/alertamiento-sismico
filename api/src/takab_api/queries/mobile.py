@@ -195,6 +195,38 @@ LAST_DRILL_FOR_SITE = text(
     "ORDER BY d.started_at DESC LIMIT 1"
 )
 
+# --- salud del sitio + directorio (T-2.07 · 1.1/1.7) -----------------------------------
+
+# Último heartbeat por gabinete ACTIVO del sitio (patrón LATERAL de fleet.py);
+# la edad usa now() de la transacción, jamás el reloj del teléfono.
+SITE_HEALTH = text(
+    "SELECT g.gateway_id, g.has_wr1, h.ts AS health_ts, h.power_status, "
+    "h.battery_pct::float8 AS battery_pct, h.cert_days_remaining, "
+    "h.mqtt_rtt_ms::float8 AS mqtt_rtt_ms, h.seedlink_lag_s::float8 AS seedlink_lag_s, "
+    "h.ntp_offset_ms::float8 AS ntp_offset_ms, "
+    "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s "
+    "FROM gateways g "
+    "LEFT JOIN LATERAL ("
+    "  SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining, "
+    "         dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms "
+    "  FROM device_health dh WHERE dh.gateway_id = g.gateway_id "
+    "  ORDER BY dh.ts DESC LIMIT 1"
+    ") h ON true "
+    "WHERE g.site_id = CAST(:site AS uuid) AND g.status <> 'retired'"
+)
+
+# Roster PÚBLICO del sitio: contactos de emergencia (jamás occupants). El RLS
+# acota el tenant; el alcance del sitio lo valida assert_site_access antes.
+SITE_DIRECTORY = text(
+    "SELECT a.user_id, p.display_name, a.role, a.zone_id, z.name AS zone_name, p.phone "
+    "FROM user_zone_assignments a "
+    "JOIN user_profiles p ON p.user_sub = a.user_id "
+    "LEFT JOIN zones z ON z.zone_id = a.zone_id "
+    "WHERE a.site_id = CAST(:site AS uuid) "
+    "AND a.role IN ('brigadista','security_guard','building_admin') "
+    "ORDER BY z.name NULLS LAST, p.display_name"
+)
+
 # --- check-ins ------------------------------------------------------------------------
 
 # [T-2.06] checkin_id lo puede traer la COLA OFFLINE del dispositivo: el replay

@@ -323,6 +323,147 @@ async def test_checkin_propio_delegado_y_cruces(base_data, make_incident) -> Non
         ).status_code == 403
 
 
+GW_PRIV = "70000000-0000-0000-0000-00000000ee01"
+
+
+async def _cleanup_gateway() -> None:
+    """gateways/device_health NO están en el TRUNCATE de la suite (portan seeds
+    globales de OTROS tenants): este test limpia los gabinetes de SU sitio —
+    residuos de otros archivos de test que también siembran ahí — para que el
+    escenario "sitio sin gabinete" sea real en cualquier orden/rerun."""
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "DELETE FROM device_health WHERE gateway_id IN "
+                "(SELECT gateway_id FROM gateways WHERE site_id = :s)"
+            ),
+            {"s": au.DB_SITE_PRIV},
+        )
+        await conn.execute(text("DELETE FROM gateways WHERE site_id = :s"), {"s": au.DB_SITE_PRIV})
+
+
+async def _seed_gateway(has_wr1: bool) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, has_wr1) "
+                "VALUES (:g, :t, :s, 'GW-MOB-1', :wr1) "
+                "ON CONFLICT (gateway_id) DO UPDATE SET has_wr1 = :wr1"
+            ),
+            {"g": GW_PRIV, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "wr1": has_wr1},
+        )
+
+
+async def _heartbeat(power_status: str, battery_pct: float | None) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO device_health (ts, tenant_id, gateway_id, reason, "
+                "power_status, battery_pct) "
+                "VALUES (now(), :t, :g, 'heartbeat', :power, :batt)"
+            ),
+            {"t": au.DB_TENANT_PRIV, "g": GW_PRIV, "power": power_status, "batt": battery_pct},
+        )
+
+
+@pytest.fixture
+async def gw_sandbox(base_data):
+    """Sitio PRIV sin gabinetes al ENTRAR y sin residuos al SALIR (los tests de
+    ingest cuentan filas de device_health — un heartbeat huérfano los rompe)."""
+    await _cleanup_gateway()
+    yield
+    await _cleanup_gateway()
+
+
+@pytest.mark.anyio
+async def test_mobile_state_site_health_honesto(gw_sandbox) -> None:
+    """T-2.07 · 1.1: el banner del edificio sale del MISMO derivador que la
+    Flota Edge (verdad única `derive_fleet_state`), jamás calculado en el
+    teléfono. Sin heartbeat ⇒ SIN ENLACE (no se finge); fresco ⇒ OPERATIVO;
+    en batería ⇒ DEGRADADO. `has_wr1` es el hardware DECLARADO del gabinete
+    (no existe supervisión de línea del WR-1 — solo Relevador 2 cableado)."""
+    await _seed_zone_and_code()
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+
+        # sitio sin gabinete: SIN ENLACE honesto, sin heartbeat, sin WR-1
+        r0 = await client.get(url, headers=au.bearer(_occ()))
+        assert r0.status_code == 200
+        sh0 = r0.json()["site_health"]
+        assert sh0 == {
+            "status": "SIN ENLACE",
+            "heartbeat_at": None,
+            "age_s": None,
+            "has_wr1": False,
+        }
+
+        # gabinete con WR-1 y heartbeat fresco en la pared ⇒ OPERATIVO
+        await _seed_gateway(has_wr1=True)
+        await _heartbeat("mains", 100.0)
+        sh1 = (await client.get(url, headers=au.bearer(_occ()))).json()["site_health"]
+        assert sh1["status"] == "OPERATIVO"
+        assert sh1["has_wr1"] is True
+        assert sh1["heartbeat_at"] is not None
+        assert sh1["age_s"] < 60
+
+        # en batería ⇒ DEGRADADO (mismo umbral que la consola)
+        await _heartbeat("on_battery", 50.0)
+        sh2 = (await client.get(url, headers=au.bearer(_occ()))).json()["site_health"]
+        assert sh2["status"] == "DEGRADADO"
+
+
+@pytest.mark.anyio
+async def test_directorio_del_sitio(base_data) -> None:
+    """T-2.07 · 1.7: roster PÚBLICO del sitio — brigadistas/seguridad con
+    nombre, zona y teléfono (llamada de un toque). El occupant enrolado lo ve;
+    los occupants NO se listan (no son contactos de emergencia); cruce de
+    tenants = el MISMO 404; sitio sin contactos = [] honesto."""
+    await _seed_zone_and_code()
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO user_profiles (user_sub, tenant_id, display_name, phone) "
+                "VALUES (:u, :t, 'Brigada Uno', '+525511112222')"
+            ),
+            {"u": BRIG_USER, "t": au.DB_TENANT_PRIV},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO user_zone_assignments (user_id, tenant_id, site_id, zone_id, role) "
+                "VALUES (:u, :t, :s, :z, 'brigadista')"
+            ),
+            {"u": BRIG_USER, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "z": ZONE_PRIV},
+        )
+    url = f"/sites/{au.DB_SITE_PRIV}/directory"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())  # el enrolamiento crea la uza del occupant
+
+        r = await client.get(url, headers=au.bearer(_occ()))
+        assert r.status_code == 200
+        entries = r.json()
+        assert [e["role"] for e in entries] == ["brigadista"]  # occupant fuera
+        assert entries[0]["display_name"] == "Brigada Uno"
+        assert entries[0]["phone"] == "+525511112222"
+        assert entries[0]["zone_name"] == "P10-A"
+
+        # cruce de tenants: el MISMO 404 (sin filtración de existencia)
+        cross = await client.get(
+            url, headers=au.bearer(_occ(user_id=OCC_USER_2, tenant=au.DB_TENANT_PRIV2))
+        )
+        assert cross.status_code == 404
+
+        # sin contactos ⇒ [] honesto (jamás inventa filas)
+        engine2 = get_engine()
+        async with engine2.begin() as conn:
+            await conn.execute(text("DELETE FROM user_zone_assignments WHERE role = 'brigadista'"))
+        assert (await client.get(url, headers=au.bearer(_occ()))).json() == []
+
+
 @pytest.mark.anyio
 async def test_checkin_replay_offline_es_idempotente(base_data, make_incident) -> None:
     """T-2.06 · La cola offline REINTENTA: el mismo ``checkin_id`` de cliente

@@ -1024,6 +1024,68 @@
         "title": "DictamenSignIn",
         "type": "object"
       },
+      "DirectoryEntryOut": {
+        "description": "[T-2.07 · 1.7] Contacto de emergencia del sitio (roster público:\nbrigadistas/seguridad/administración con teléfono de un toque).",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "role",
+          "zone_id",
+          "zone_name",
+          "phone"
+        ],
+        "title": "DirectoryEntryOut",
+        "type": "object"
+      },
       "DrillCreateIn": {
         "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).\n\n[T-2.03·D4c] Con ``scheduled_at`` (futuro) la fila es AGENDA informativa\n(\"próximo simulacro\" de la app): sin comandos y jamás ``active`` — ejecutar\na esa hora sigue siendo un acto del operador.",
         "properties": {
@@ -3422,6 +3484,50 @@
         "title": "MobileReentryOut",
         "type": "object"
       },
+      "MobileSiteHealthOut": {
+        "description": "[T-2.07 · 1.1] Salud del gabinete del sitio para el banner del edificio.\n\n``status`` sale del MISMO derivador que la Flota Edge de consola\n(``derive_fleet_state`` — verdad única, mismos umbrales); con varios\ngabinetes gana el PEOR. ``has_wr1`` es el hardware DECLARADO en el alta del\ngabinete: el WR-1 no expone supervisión de línea (solo el Relevador 2 está\ncableado — fase 1.9), así que \"SASMEX ENLAZADO\" honesto = WR-1 instalado y\ngabinete reportando; jamás un estado del enlace que nadie mide.",
+        "properties": {
+          "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age S"
+          },
+          "has_wr1": {
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "heartbeat_at",
+          "age_s",
+          "has_wr1"
+        ],
+        "title": "MobileSiteHealthOut",
+        "type": "object"
+      },
       "MobileStateOut": {
         "description": "Estado consolidado por sitio para la app (spec §5).\n\nDerivación de ``phase`` (documentada; el servidor es la autoridad):\n- sin incidente abierto → ``idle``\n- incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``\n- incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento\n  terminado; el reingreso queda BLOQUEADO durante la evaluación — la app\n  muestra check-in o bloqueo según su propio check-in)\n- dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →\n  ``reentry_approved`` (hasta que el incidente cierre → idle)\nLos ingredientes crudos (incident/state, latest_tier, reentry) viajan junto\na la derivación.",
         "properties": {
@@ -3494,6 +3600,9 @@
             "title": "Server Ts",
             "type": "string"
           },
+          "site_health": {
+            "$ref": "#/components/schemas/MobileSiteHealthOut"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
@@ -3515,7 +3624,8 @@
           "reentry",
           "assembly_point",
           "compliance_labels",
-          "drill"
+          "drill",
+          "site_health"
         ],
         "title": "MobileStateOut",
         "type": "object"
@@ -8216,6 +8326,51 @@
           }
         },
         "summary": "Issue Command"
+      }
+    },
+    "/sites/{site_id}/directory": {
+      "get": {
+        "description": "[T-2.07 · 1.7] Directorio de emergencia del sitio: brigadistas,\nseguridad y administración con teléfono de un toque. Es el roster PÚBLICO\ndel inmueble (publicación deliberada dentro del sitio — no audita por\nlectura, regla de logging por evento); los occupants jamás se listan.",
+        "operationId": "site_directory_sites__site_id__directory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryEntryOut"
+                  },
+                  "title": "Response Site Directory Sites  Site Id  Directory Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Directory"
       }
     },
     "/sites/{site_id}/drills": {

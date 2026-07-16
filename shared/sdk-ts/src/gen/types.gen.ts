@@ -230,6 +230,19 @@ export type DictamenSignIn = {
 };
 
 /**
+ * [T-2.07 · 1.7] Contacto de emergencia del sitio (roster público:
+ * brigadistas/seguridad/administración con teléfono de un toque).
+ */
+export type DirectoryEntryOut = {
+    display_name: string;
+    phone: string | null;
+    role: string;
+    user_id: string;
+    zone_id: string | null;
+    zone_name: string | null;
+};
+
+/**
  * Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con
  * gateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).
  *
@@ -773,6 +786,23 @@ export type MobileReentryOut = {
 };
 
 /**
+ * [T-2.07 · 1.1] Salud del gabinete del sitio para el banner del edificio.
+ *
+ * ``status`` sale del MISMO derivador que la Flota Edge de consola
+ * (``derive_fleet_state`` — verdad única, mismos umbrales); con varios
+ * gabinetes gana el PEOR. ``has_wr1`` es el hardware DECLARADO en el alta del
+ * gabinete: el WR-1 no expone supervisión de línea (solo el Relevador 2 está
+ * cableado — fase 1.9), así que "SASMEX ENLAZADO" honesto = WR-1 instalado y
+ * gabinete reportando; jamás un estado del enlace que nadie mide.
+ */
+export type MobileSiteHealthOut = {
+    age_s: number | null;
+    has_wr1: boolean;
+    heartbeat_at: string | null;
+    status: string;
+};
+
+/**
  * Estado consolidado por sitio para la app (spec §5).
  *
  * Derivación de ``phase`` (documentada; el servidor es la autoridad):
@@ -798,6 +828,7 @@ export type MobileStateOut = {
     phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved';
     reentry: MobileReentryOut;
     server_ts: string;
+    site_health: MobileSiteHealthOut;
     site_id: string;
     site_name: string;
 };
@@ -2697,6 +2728,33 @@ export type IssueCommandSitesSiteIdCommandsPostResponses = {
 };
 
 export type IssueCommandSitesSiteIdCommandsPostResponse = IssueCommandSitesSiteIdCommandsPostResponses[keyof IssueCommandSitesSiteIdCommandsPostResponses];
+
+export type SiteDirectorySitesSiteIdDirectoryGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/directory';
+};
+
+export type SiteDirectorySitesSiteIdDirectoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SiteDirectorySitesSiteIdDirectoryGetError = SiteDirectorySitesSiteIdDirectoryGetErrors[keyof SiteDirectorySitesSiteIdDirectoryGetErrors];
+
+export type SiteDirectorySitesSiteIdDirectoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<DirectoryEntryOut>;
+};
+
+export type SiteDirectorySitesSiteIdDirectoryGetResponse = SiteDirectorySitesSiteIdDirectoryGetResponses[keyof SiteDirectorySitesSiteIdDirectoryGetResponses];
 
 export type SiteDrillsSitesSiteIdDrillsGetData = {
     body?: never;

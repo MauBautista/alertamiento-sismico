@@ -158,6 +158,36 @@ class MobileReentryOut(BaseModel):
     dictamen_signed: bool
 
 
+class MobileSiteHealthOut(BaseModel):
+    """[T-2.07 · 1.1] Salud del gabinete del sitio para el banner del edificio.
+
+    ``status`` sale del MISMO derivador que la Flota Edge de consola
+    (``derive_fleet_state`` — verdad única, mismos umbrales); con varios
+    gabinetes gana el PEOR. ``has_wr1`` es el hardware DECLARADO en el alta del
+    gabinete: el WR-1 no expone supervisión de línea (solo el Relevador 2 está
+    cableado — fase 1.9), así que "SASMEX ENLAZADO" honesto = WR-1 instalado y
+    gabinete reportando; jamás un estado del enlace que nadie mide.
+    """
+
+    #: OPERATIVO | DEGRADADO | SIN ENLACE (strings de schemas.fleet).
+    status: str
+    heartbeat_at: datetime | None
+    age_s: float | None
+    has_wr1: bool
+
+
+class DirectoryEntryOut(BaseModel):
+    """[T-2.07 · 1.7] Contacto de emergencia del sitio (roster público:
+    brigadistas/seguridad/administración con teléfono de un toque)."""
+
+    user_id: UUID
+    display_name: str
+    role: str
+    zone_id: UUID | None
+    zone_name: str | None
+    phone: str | None
+
+
 class MobileStateOut(BaseModel):
     """Estado consolidado por sitio para la app (spec §5).
 
@@ -186,6 +216,8 @@ class MobileStateOut(BaseModel):
     #: configurados TODAVÍA (GATE-LEGAL) — la app no muestra literal alguno.
     compliance_labels: dict[str, str]
     drill: MobileDrillOut
+    #: [T-2.07] Banner del edificio (1.1) — verdad única de Flota Edge.
+    site_health: MobileSiteHealthOut
 
 
 # --- check-ins (life_checkins) --------------------------------------------------

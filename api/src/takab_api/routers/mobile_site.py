@@ -30,12 +30,15 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
+from takab_api.schemas.fleet import DEGRADADO, OPERATIVO, SIN_ENLACE, derive_fleet_state
 from takab_api.schemas.mobile import (
+    DirectoryEntryOut,
     EnrollmentCodeIn,
     EnrollmentCodeOut,
     MobileDrillOut,
     MobileIncidentOut,
     MobileReentryOut,
+    MobileSiteHealthOut,
     MobileStateOut,
     MobileZoneOut,
     Phase,
@@ -55,6 +58,48 @@ router = APIRouter()
 
 # Dictamen HABITABLE: libera el reingreso (spec §7 · 2.7 "HABITAR").
 _HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
+
+
+async def _site_health(
+    conn: AsyncConnection, site_id: UUID, settings: Settings
+) -> MobileSiteHealthOut:
+    """Salud agregada del sitio: cada gabinete se deriva con la verdad única de
+    Flota (`derive_fleet_state`, mismos umbrales) y gana el PEOR. Sin gabinetes
+    ⇒ SIN ENLACE honesto (no hay quién proteja el edificio)."""
+    rows = (await conn.execute(q.SITE_HEALTH, {"site": str(site_id)})).all()
+    worst = SIN_ENLACE
+    heartbeat_at = None
+    age_s: float | None = None
+    has_wr1 = False
+    rank = {OPERATIVO: 0, DEGRADADO: 1, SIN_ENLACE: 2}
+    if rows:
+        states = []
+        for r in rows:
+            has_wr1 = has_wr1 or bool(r.has_wr1)
+            states.append(
+                derive_fleet_state(
+                    age_s=r.age_s,
+                    power_status=r.power_status,
+                    battery_pct=r.battery_pct,
+                    cert_days_remaining=r.cert_days_remaining,
+                    mqtt_rtt_ms=r.mqtt_rtt_ms,
+                    seedlink_lag_s=r.seedlink_lag_s,
+                    ntp_offset_ms=r.ntp_offset_ms,
+                    sin_enlace_s=settings.sin_enlace_min * 60.0,
+                    battery_min_pct=settings.fleet_battery_min_pct,
+                    cert_min_days=settings.fleet_cert_min_days,
+                    mqtt_rtt_max_ms=settings.fleet_mqtt_rtt_max_ms,
+                    seedlink_lag_max_s=settings.fleet_seedlink_lag_max_s,
+                    ntp_offset_max_ms=settings.fleet_ntp_offset_max_ms,
+                )
+            )
+            if r.health_ts is not None and (heartbeat_at is None or r.health_ts > heartbeat_at):
+                heartbeat_at = r.health_ts
+                age_s = r.age_s
+        worst = max(states, key=lambda s: rank[s])
+    return MobileSiteHealthOut(
+        status=worst, heartbeat_at=heartbeat_at, age_s=age_s, has_wr1=has_wr1
+    )
 
 
 def _asset_out(row: Any, settings: Settings) -> SiteAssetOut:
@@ -156,7 +201,23 @@ async def mobile_state(
             last_started_at=last_row.started_at if last_row else None,
             last_note=last_row.note if last_row else None,
         ),
+        site_health=await _site_health(conn, site_id, settings),
     )
+
+
+@router.get("/sites/{site_id}/directory", response_model=list[DirectoryEntryOut])
+async def site_directory(
+    site_id: UUID,
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> list[DirectoryEntryOut]:
+    """[T-2.07 · 1.7] Directorio de emergencia del sitio: brigadistas,
+    seguridad y administración con teléfono de un toque. Es el roster PÚBLICO
+    del inmueble (publicación deliberada dentro del sitio — no audita por
+    lectura, regla de logging por evento); los occupants jamás se listan."""
+    await q.assert_site_access(conn, claims, site_id)
+    rows = (await conn.execute(q.SITE_DIRECTORY, {"site": str(site_id)})).all()
+    return [DirectoryEntryOut(**dict(r._mapping)) for r in rows]
 
 
 @router.get("/sites/{site_id}/assets", response_model=list[SiteAssetOut])
