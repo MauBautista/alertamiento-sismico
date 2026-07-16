@@ -29,6 +29,7 @@ const DRILL = {
   initiated_by: "u-1",
   note: null,
   duration_s: 300,
+  scheduled_at: null,
   started_at: "2026-07-12T18:00:00Z",
   stopped_at: null,
   stop_reason: null,

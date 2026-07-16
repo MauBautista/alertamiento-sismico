@@ -178,6 +178,16 @@ describe("ConsolePage", () => {
           drill_start: false,
           manage_tenants: false,
           manage_visibility: false,
+          // Acciones de la superficie móvil (T-2.03): inertes en la consola.
+          checkin_submit: false,
+          damage_report_submit: false,
+          dictamen_read: false,
+          enrollment_manage: false,
+          evidence_upload: false,
+          manual_activate: false,
+          panic_vote: false,
+          roster_read: false,
+          siren_silence: false,
         },
       },
     });
@@ -286,6 +296,16 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           drill_start: false,
           manage_tenants: false,
           manage_visibility: false,
+          // Acciones de la superficie móvil (T-2.03): inertes en la consola.
+          checkin_submit: false,
+          damage_report_submit: false,
+          dictamen_read: false,
+          enrollment_manage: false,
+          evidence_upload: false,
+          manual_activate: false,
+          panic_vote: false,
+          roster_read: false,
+          siren_silence: false,
         },
       },
     });
