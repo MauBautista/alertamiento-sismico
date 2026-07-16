@@ -56,7 +56,12 @@ _TRUNCATE_WRITTEN = text(
     "TRUNCATE seismic_events, incidents, incident_actions, dictamens, "
     "evidence_objects, quorum_votes, rule_sets, audit_log, "
     "commands, gateway_config_state, user_profiles, reference_earthquakes, "
-    "drills, drill_sites CASCADE"
+    "drills, drill_sites, "
+    # [T-2.03] superficie móvil (life_checkins/damage_reports son append-only:
+    # DELETE lo veta el trigger, TRUNCATE no — mismo criterio que arriba).
+    "life_checkins, user_zone_assignments, site_enrollment_codes, "
+    "manual_activation_votes, push_tokens, device_keys, damage_reports, "
+    "compliance_labels, site_assets, rule_evaluations CASCADE"
 )
 
 

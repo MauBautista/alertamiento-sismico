@@ -59,7 +59,18 @@ _INSERT_DRILL = text(
     "INSERT INTO drills (tenant_id, initiated_by, note, duration_s) "
     "VALUES (CAST(:tenant AS uuid), CAST(:user_id AS uuid), :note, :duration) "
     "RETURNING drill_id, tenant_id, initiated_by, note, duration_s, started_at, "
-    "stopped_at, stop_reason"
+    "stopped_at, stop_reason, scheduled_at"
+)
+
+# [T-2.03·D4c] Fila de AGENDA: anuncio del "próximo simulacro" para la app.
+# JAMÁS emite comandos ni deriva `active` — ejecutar el simulacro a esa hora
+# sigue siendo un acto del operador (LO REAL GANA queda intacto).
+_INSERT_DRILL_AGENDA = text(
+    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s, scheduled_at) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:user_id AS uuid), :note, :duration, "
+    ":scheduled_at) "
+    "RETURNING drill_id, tenant_id, initiated_by, note, duration_s, started_at, "
+    "stopped_at, stop_reason, scheduled_at"
 )
 
 _INSERT_DRILL_SITE = text(
@@ -69,18 +80,21 @@ _INSERT_DRILL_SITE = text(
 )
 
 # active = DERIVADO: sin fin manual y dentro de la ventana (sin worker de cierre).
+# Las filas de AGENDA (scheduled_at, T-2.03·D4c) jamás derivan activo.
 _SELECT_DRILLS = text(
     "SELECT d.drill_id, d.tenant_id, d.initiated_by, d.note, d.duration_s, "
-    "d.started_at, d.stopped_at, d.stop_reason, "
-    "(d.stopped_at IS NULL AND now() < d.started_at + make_interval(secs => d.duration_s)) "
+    "d.started_at, d.stopped_at, d.stop_reason, d.scheduled_at, "
+    "(d.scheduled_at IS NULL AND d.stopped_at IS NULL "
+    "AND now() < d.started_at + make_interval(secs => d.duration_s)) "
     "AS active "
     "FROM drills d ORDER BY d.started_at DESC LIMIT :limit"
 )
 
 _SELECT_DRILL = text(
     "SELECT d.drill_id, d.tenant_id, d.initiated_by, d.note, d.duration_s, "
-    "d.started_at, d.stopped_at, d.stop_reason, "
-    "(d.stopped_at IS NULL AND now() < d.started_at + make_interval(secs => d.duration_s)) "
+    "d.started_at, d.stopped_at, d.stop_reason, d.scheduled_at, "
+    "(d.scheduled_at IS NULL AND d.stopped_at IS NULL "
+    "AND now() < d.started_at + make_interval(secs => d.duration_s)) "
     "AS active "
     "FROM drills d WHERE d.drill_id = CAST(:drill AS uuid)"
 )
@@ -132,7 +146,40 @@ async def start_drill(
     publisher: CommandPublisher = Depends(get_publisher),
     keys: CommandKeyProvider = Depends(get_key_provider),
 ) -> DrillOut:
-    """Inicia el simulacro: 1 comando firmado `drill_start` por sitio."""
+    """Inicia el simulacro: 1 comando firmado `drill_start` por sitio.
+
+    [T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del "próximo
+    simulacro" para la app): sin comandos, sin banner, jamás ``active``.
+    """
+    if body.scheduled_at is not None:
+        if body.scheduled_at <= datetime.now(tz=UTC):
+            raise http_error(422, "scheduled_at debe ser futuro")
+        agenda = (
+            (
+                await conn.execute(
+                    _INSERT_DRILL_AGENDA,
+                    {
+                        "tenant": claims.tenant_id,
+                        "user_id": claims.sub,
+                        "note": body.note,
+                        "duration": body.duration_s,
+                        "scheduled_at": body.scheduled_at,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+        await audit_async(
+            conn,
+            tenant_id=claims.tenant_id,
+            actor=f"user:{claims.sub}",
+            verb="drill_scheduled",
+            obj=f"drill:{agenda['drill_id']}",
+            meta={"scheduled_at": body.scheduled_at.isoformat()},
+        )
+        return _drill_out({**dict(agenda), "active": False}, [])
+
     settings = Settings()
     commandable = (await conn.execute(_COMMANDABLE_SITES)).mappings().all()
     by_id = {row["site_id"]: row for row in commandable}

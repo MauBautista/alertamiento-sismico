@@ -1,0 +1,439 @@
+"""T-2.03 · Núcleo móvil: enrolamiento, push/device, mobile-state, check-ins,
+roster y daños — con los invariantes de seguridad de la spec §5/§8:
+
+- R2: el alcance del occupant se resuelve SERVER-SIDE (enrolado o 404).
+- Cruce de tenants DEBE fallar (RLS + mismo 404, sin filtración).
+- Check-in delegado ≠ propio (via/verified_by) y solo con ``roster_read``.
+- La derivación de ``phase`` usa datos REALES (incidente + tier + dictamen).
+- Filas de AGENDA de drills jamás derivan activo (LO REAL GANA).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import text
+
+import auth_utils as au
+from takab_api.auth import deps
+from takab_api.db.engine import get_engine
+from takab_api.main import create_app
+
+ZONE_PRIV = "7d000000-0000-0000-0000-0000000000d1"
+OCC_USER = "70000000-0000-0000-0000-00000000aa01"
+OCC_USER_2 = "70000000-0000-0000-0000-00000000aa02"
+BRIG_USER = "70000000-0000-0000-0000-00000000bb01"
+
+
+@pytest.fixture(autouse=True)
+def _occupants_pool(monkeypatch: pytest.MonkeyPatch):
+    """Habilita el pool de ocupantes encima del entorno base (_auth_env)."""
+    au.occupants_env(monkeypatch)
+    deps._reset_caches()
+    yield
+    deps._reset_caches()
+
+
+def _occ(user_id: str = OCC_USER, tenant: str = au.DB_TENANT_PRIV) -> str:
+    return au.occupant_token(tenant=tenant, user_id=user_id)
+
+
+def _brig(site_scope: str = au.DB_SITE_PRIV) -> str:
+    return au.make_token(
+        "brigadista",
+        tenant=au.DB_TENANT_PRIV,
+        user_id=BRIG_USER,
+        surface="mobile",
+        site_scope=site_scope,
+    )
+
+
+async def _seed_zone_and_code(code: str = "CODE-P10", **code_over) -> None:
+    """Zona (shelter) + código de alta vigente en el sitio PRIV."""
+    engine = get_engine()
+    params = {
+        "zone": ZONE_PRIV,
+        "tenant": au.DB_TENANT_PRIV,
+        "site": au.DB_SITE_PRIV,
+        "code": code,
+        "expires_at": code_over.get("expires_at"),
+        "max_uses": code_over.get("max_uses"),
+        "active": code_over.get("active", True),
+    }
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO zones (zone_id, tenant_id, site_id, name, level_code, evac_policy) "
+                "VALUES (:zone, :tenant, :site, 'P10-A', 'P10', 'shelter') "
+                "ON CONFLICT (zone_id) DO NOTHING"
+            ),
+            params,
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO site_enrollment_codes "
+                "(code, tenant_id, site_id, zone_id, expires_at, max_uses, active) "
+                "VALUES (:code, :tenant, :site, :zone, :expires_at, :max_uses, :active)"
+            ),
+            params,
+        )
+
+
+async def _enroll(client, token: str, code: str = "CODE-P10"):
+    return await client.post("/me/enrollment", json={"code": code}, headers=au.bearer(token))
+
+
+@pytest.mark.anyio
+async def test_enrolamiento_y_alcance_r2(base_data) -> None:
+    """El occupant sin enrolar NO ve el sitio (404); tras consumir el código ve
+    mobile-state con su zona/política. Un código vencido da el MISMO 404."""
+    await _seed_zone_and_code()
+    await _seed_zone_and_code(code="CODE-DEAD", expires_at=datetime.now(UTC) - timedelta(days=1))
+    async with au.client_for(create_app()) as client:
+        # sin enrolar: el sitio "no existe" para él (R2, sin filtración)
+        resp = await client.get(f"/sites/{au.DB_SITE_PRIV}/mobile-state", headers=au.bearer(_occ()))
+        assert resp.status_code == 404
+
+        assert (await _enroll(client, _occ(), "CODE-DEAD")).status_code == 404
+        resp = await _enroll(client, _occ())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["zone_name"] == "P10-A"
+        assert body["evac_policy"] == "shelter"
+
+        resp = await client.get(f"/sites/{au.DB_SITE_PRIV}/mobile-state", headers=au.bearer(_occ()))
+        assert resp.status_code == 200
+        state = resp.json()
+        assert state["phase"] == "idle"
+        assert state["my_zone"]["evac_policy"] == "shelter"
+        assert state["incident"] is None
+
+
+@pytest.mark.anyio
+async def test_enrolamiento_cross_tenant_es_404(base_data) -> None:
+    """Un código de OTRO tenant no existe para esta sesión (RLS)."""
+    await _seed_zone_and_code()
+    other = _occ(user_id=OCC_USER_2, tenant=au.DB_TENANT_PRIV2)
+    async with au.client_for(create_app()) as client:
+        assert (await _enroll(client, other)).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_codigo_agotado_es_404_y_no_incrementa(base_data) -> None:
+    await _seed_zone_and_code(max_uses=1)
+    async with au.client_for(create_app()) as client:
+        assert (await _enroll(client, _occ())).status_code == 200
+        assert (await _enroll(client, _occ(OCC_USER_2))).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_push_tokens_ciclo_completo_y_superficie(base_data) -> None:
+    """Upsert por token (re-registro revive), lista propia, revocación; una
+    superficie web pura queda fuera (403)."""
+    async with au.client_for(create_app()) as client:
+        headers = au.bearer(_occ())
+        body = {"platform": "android", "token": "fcm-token-1"}
+        first = await client.post("/me/push-tokens", json=body, headers=headers)
+        assert first.status_code == 201
+        again = await client.post("/me/push-tokens", json=body, headers=headers)
+        assert again.status_code == 201
+        assert again.json()["push_token_id"] == first.json()["push_token_id"]
+
+        listed = await client.get("/me/push-tokens", headers=headers)
+        assert [t["token"] for t in listed.json()] == ["fcm-token-1"]
+
+        gone = await client.delete(
+            f"/me/push-tokens/{first.json()['push_token_id']}", headers=headers
+        )
+        assert gone.status_code == 204
+        assert (await client.get("/me/push-tokens", headers=headers)).json() == []
+
+        web = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
+        resp = await client.post("/me/push-tokens", json=body, headers=au.bearer(web))
+        assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_device_key_valida_pem(base_data) -> None:
+    async with au.client_for(create_app()) as client:
+        headers = au.bearer(_brig())
+        bad = await client.post(
+            "/me/device-keys",
+            json={"platform": "ios", "public_key": "no-es-pem" * 20},
+            headers=headers,
+        )
+        assert bad.status_code == 422
+        pem = (
+            "-----BEGIN PUBLIC KEY-----\n"
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfake0000000000000000000000\n"
+            "-----END PUBLIC KEY-----"
+        )
+        ok = await client.post(
+            "/me/device-keys", json={"platform": "ios", "public_key": pem}, headers=headers
+        )
+        assert ok.status_code == 201
+        assert (await client.get("/me/device-keys", headers=headers)).json()[0]["platform"] == "ios"
+
+
+async def _seed_tier(new_tier: str, ts_offset_s: int = 0) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO rule_evaluations (ts, tenant_id, site_id, gateway_id, "
+                "prev_tier, new_tier) VALUES (:ts, :t, :s, :g, 'normal', :tier)"
+            ),
+            {
+                "ts": datetime.now(UTC) + timedelta(seconds=ts_offset_s),
+                "t": au.DB_TENANT_PRIV,
+                "s": au.DB_SITE_PRIV,
+                "g": str(uuid.uuid4()),
+                "tier": new_tier,
+            },
+        )
+
+
+async def _seed_dictamen(incident_id: str, *, status: str, signed: bool) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by) "
+                "VALUES (:t, :i, :st, '{}'::jsonb, :by)"
+            ),
+            {
+                "t": au.DB_TENANT_PRIV,
+                "i": incident_id,
+                "st": status,
+                "by": str(uuid.uuid4()) if signed else None,
+            },
+        )
+
+
+@pytest.mark.anyio
+async def test_phase_se_deriva_de_datos_reales(base_data, make_incident) -> None:
+    """alert_active (tier ≠ normal) → shaking_concluded (tier normal) →
+    reentry_approved SOLO con dictamen FIRMADO habitable."""
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+
+        await _seed_tier("evacuate_or_hold")
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "alert_active"
+        assert state["reentry"]["blocked"] is True
+
+        await _seed_tier("normal", ts_offset_s=1)
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "shaking_concluded"
+
+        # dictamen preliminar SIN firma: no libera
+        await _seed_dictamen(incident_id, status="inhabit_monitor", signed=False)
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "shaking_concluded"
+        assert state["reentry"]["dictamen_signed"] is False
+
+        await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True)
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "reentry_approved"
+        assert state["reentry"]["blocked"] is False
+
+
+@pytest.mark.anyio
+async def test_drills_agenda_no_deriva_activo(base_data) -> None:
+    """Una fila con scheduled_at es ANUNCIO: aparece como próximo, jamás activa."""
+    await _seed_zone_and_code()
+    engine = get_engine()
+    future = datetime.now(UTC) + timedelta(days=3)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO drills (tenant_id, initiated_by, note, duration_s, scheduled_at) "
+                "VALUES (:t, :by, 'Simulacro nacional', 300, :at)"
+            ),
+            {"t": au.DB_TENANT_PRIV, "by": str(uuid.uuid4()), "at": future},
+        )
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        resp = await client.get(f"/sites/{au.DB_SITE_PRIV}/drills", headers=au.bearer(_occ()))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["active"] is False
+        assert body["next_scheduled_at"] is not None
+
+
+@pytest.mark.anyio
+async def test_checkin_propio_delegado_y_cruces(base_data, make_incident) -> None:
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/incidents/{incident_id}/checkins"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+
+        # propio (occupant): via=self, sin verified_by
+        own = await client.post(
+            url,
+            json={"status": "safe", "ts_device": datetime.now(UTC).isoformat()},
+            headers=au.bearer(_occ()),
+        )
+        assert own.status_code == 201
+        assert own.json()["via"] == "self"
+        assert own.json()["verified_by"] is None
+
+        # delegado (brigadista con roster_read): distinguible en datos
+        delegated = await client.post(
+            url,
+            json={"status": "safe", "subject_user_id": OCC_USER_2},
+            headers=au.bearer(_brig()),
+        )
+        assert delegated.status_code == 201
+        assert delegated.json()["via"] == "delegated"
+        assert delegated.json()["verified_by"] == BRIG_USER
+        assert delegated.json()["user_id"] == OCC_USER_2
+
+        # un occupant NO puede delegar (marca a terceros)
+        forged = await client.post(
+            url,
+            json={"status": "safe", "subject_user_id": OCC_USER_2},
+            headers=au.bearer(_occ()),
+        )
+        assert forged.status_code == 403
+
+        # scope=me reconstruye SOLO lo propio
+        mine = await client.get(url, headers=au.bearer(_occ()))
+        assert [c["user_id"] for c in mine.json()] == [OCC_USER]
+
+        # cruce de tenants: occupant de B sobre incidente de A ⇒ 404
+        cross = await client.post(
+            url,
+            json={"status": "safe"},
+            headers=au.bearer(_occ(user_id=OCC_USER_2, tenant=au.DB_TENANT_PRIV2)),
+        )
+        assert cross.status_code == 404
+
+        # gov_operator jamás escribe check-ins (sin acción checkin_submit)
+        gov = au.make_token("gov_operator", tenant=au.DB_TENANT_GOV, surface="both")
+        assert (
+            await client.post(url, json={"status": "safe"}, headers=au.bearer(gov))
+        ).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_roster_cuenta_y_gatea(base_data, make_incident) -> None:
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO user_profiles (user_sub, tenant_id, display_name, phone) "
+                "VALUES (:u, :t, 'María Reyes', '+525512848211')"
+            ),
+            {"u": OCC_USER, "t": au.DB_TENANT_PRIV},
+        )
+        for user in (OCC_USER, OCC_USER_2):
+            await conn.execute(
+                text(
+                    "INSERT INTO user_zone_assignments "
+                    "(user_id, tenant_id, site_id, zone_id, role) "
+                    "VALUES (:u, :t, :s, :z, 'occupant') ON CONFLICT DO NOTHING"
+                ),
+                {"u": user, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "z": ZONE_PRIV},
+            )
+    async with au.client_for(create_app()) as client:
+        await client.post(
+            f"/incidents/{incident_id}/checkins",
+            json={"status": "safe"},
+            headers=au.bearer(_occ()),
+        )
+        resp = await client.get(f"/incidents/{incident_id}/roster", headers=au.bearer(_brig()))
+        assert resp.status_code == 200
+        roster = resp.json()
+        assert roster["total"] == 2
+        assert roster["safe"] == 1
+        assert roster["unreported"] == 1
+        named = next(e for e in roster["entries"] if e["user_id"] == OCC_USER)
+        assert named["display_name"] == "María Reyes"
+        assert named["phone"] == "+525512848211"
+        assert named["checkin"]["via"] == "self"
+
+        # el occupant NO ve el roster (PII de terceros)
+        assert (
+            await client.get(f"/incidents/{incident_id}/roster", headers=au.bearer(_occ()))
+        ).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_damage_report_deriva_prioridad_y_llega_a_consola(base_data, make_incident) -> None:
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/incidents/{incident_id}/damage-reports"
+    async with au.client_for(create_app()) as client:
+        created = await client.post(
+            url,
+            json={
+                "categories": [
+                    {"key": "structural", "severity": "critical"},
+                    {"key": "people_trapped", "severity": "critical"},
+                ],
+                "notes": "columna NE con grieta",
+            },
+            headers=au.bearer(_brig()),
+        )
+        assert created.status_code == 201
+        assert created.json()["people_at_risk"] is True
+
+        # la consola (soc_operator del tenant) LEE el reporte para Triage
+        soc = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
+        listed = await client.get(url, headers=au.bearer(soc))
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+
+        # el occupant no reporta daños (sin acción damage_report_submit)
+        assert (
+            await client.post(
+                url,
+                json={"categories": [{"key": "gas_leak", "severity": "low"}]},
+                headers=au.bearer(_occ()),
+            )
+        ).status_code == 403
+
+        # categoría desconocida: 422 del schema, jamás llega a la DB
+        assert (
+            await client.post(
+                url,
+                json={"categories": [{"key": "aliens", "severity": "low"}]},
+                headers=au.bearer(_brig()),
+            )
+        ).status_code == 422
+
+
+@pytest.mark.anyio
+async def test_enrollment_codes_gestion(base_data) -> None:
+    """building_admin administra códigos; el occupant no (403)."""
+    admin = au.make_token(
+        "building_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
+    )
+    base = f"/sites/{au.DB_SITE_PRIV}/enrollment-codes"
+    async with au.client_for(create_app()) as client:
+        created = await client.post(
+            base, json={"code": "NUEVO-01", "max_uses": 10}, headers=au.bearer(admin)
+        )
+        assert created.status_code == 201
+        assert created.json()["grants_role"] == "occupant"
+
+        listed = await client.get(base, headers=au.bearer(admin))
+        assert [c["code"] for c in listed.json()] == ["NUEVO-01"]
+
+        assert (
+            await client.post(base, json={"code": "X-1"}, headers=au.bearer(_occ()))
+        ).status_code == 403
+
+        gone = await client.delete(f"{base}/NUEVO-01", headers=au.bearer(admin))
+        assert gone.status_code == 204
+        assert (await client.get(base, headers=au.bearer(admin))).json()[0]["active"] is False

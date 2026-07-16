@@ -45,6 +45,20 @@ def presign_get(settings: Settings, s3_key: str) -> str:
     )
 
 
+def presign_put(settings: Settings, s3_key: str, *, content_type: str | None = None) -> str:
+    """URL PUT presignada (subida directa del cliente) sobre el bucket de evidencia.
+
+    [T-2.03] La app móvil sube assets/evidencia SIN credenciales AWS: el backend
+    firma la intención de subida (regla de oro 6) con TTL corto.
+    """
+    params: dict[str, Any] = {"Bucket": settings.evidence_bucket, "Key": s3_key}
+    if content_type:
+        params["ContentType"] = content_type
+    return s3_client(settings).generate_presigned_url(
+        "put_object", Params=params, ExpiresIn=PRESIGN_TTL_S
+    )
+
+
 def put_object(settings: Settings, s3_key: str, body: bytes, *, content_type: str) -> None:
     """Sube un objeto al bucket de evidencia."""
     s3_client(settings).put_object(

@@ -75,7 +75,29 @@ DENY_ALL = {
     "drill_start": False,
     "manage_tenants": False,
     "manage_visibility": False,
+    "checkin_submit": False,
+    "roster_read": False,
+    "damage_report_submit": False,
+    "evidence_upload": False,
+    "siren_silence": False,
+    "manual_activate": False,
+    "enrollment_manage": False,
+    "panic_vote": False,
+    "dictamen_read": False,
 }
+
+# [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
+MOBILE_ACTIONS = (
+    "checkin_submit",
+    "roster_read",
+    "damage_report_submit",
+    "evidence_upload",
+    "siren_silence",
+    "manual_activate",
+    "enrollment_manage",
+    "panic_vote",
+    "dictamen_read",
+)
 
 
 def test_unknown_role_denied() -> None:
@@ -191,6 +213,79 @@ def test_manage_visibility_is_superadmin_only() -> None:
     assert can == {"takab_superadmin"}
 
 
-def test_mobile_only_roles_have_no_actions() -> None:
+def test_mobile_roles_have_only_mobile_actions() -> None:
+    """[T-2.03] Los roles móviles dejaron de ser placeholders, pero sus acciones
+    son EXCLUSIVAMENTE de campo: ninguna acción del SOC web se les concede."""
     for role in MOBILE_ONLY:
-        assert allowed_actions(role) == DENY_ALL
+        granted = {a for a, ok in allowed_actions(role).items() if ok}
+        assert granted, role  # ya no están vacíos
+        assert granted <= set(MOBILE_ACTIONS), (role, granted - set(MOBILE_ACTIONS))
+
+
+def test_occupant_field_actions_are_minimal() -> None:
+    """[T-2.03] occupant = SOLO su check-in y su voto de pánico (quórum 2/30 s;
+    RBAC §4: jamás deslizar-para-activar individual)."""
+    granted = {a for a, ok in allowed_actions("occupant").items() if ok}
+    assert granted == {"checkin_submit", "panic_vote"}
+
+
+# Copiado A MANO de RBAC-TAKAB.md §3 (matriz móvil), fila por fila, para las
+# funciones que YA tienen acción ejecutable en T-2.03. (Las filas de solo
+# lectura — estado del edificio, crisis, dashboard — no gatean por acción.)
+RBAC_SECTION_3 = {
+    #                 checkin roster  damage  evid.  silence activate dict_read
+    "occupant": (True, False, False, False, False, False, False),
+    "brigadista": (True, True, True, True, True, True, True),
+    "security_guard": (True, True, True, True, True, True, True),
+    "inspector": (True, False, True, True, False, True, True),
+    "building_admin": (True, True, False, False, True, True, True),
+}
+_S3_COLS = (
+    "checkin_submit",
+    "roster_read",
+    "damage_report_submit",
+    "evidence_upload",
+    "siren_silence",
+    "manual_activate",
+    "dictamen_read",
+)
+
+
+def test_mobile_actions_match_rbac_section_3() -> None:
+    """[T-2.03] La matriz móvil del código es idéntica a RBAC-TAKAB.md §3,
+    celda a celda (misma disciplina que §2 para la web)."""
+    for role, cells in RBAC_SECTION_3.items():
+        acts = allowed_actions(role)
+        for col, expected in zip(_S3_COLS, cells, strict=True):
+            assert acts[col] is expected, (role, col)
+
+
+def test_panic_vote_is_occupant_only() -> None:
+    """[T-2.03] El voto de pánico es del occupant (quórum de 2); los tácticos ya
+    tienen ``manual_activate`` individual — dárselo duplicaría el camino."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["panic_vote"]}
+    assert can == {"occupant"}
+
+
+def test_siren_silence_excludes_inspector() -> None:
+    """[T-2.03] RBAC §4: silenciar = brigadista/security_guard/building_admin.
+    El inspector evalúa la estructura; no opera la sirena."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_silence"]}
+    assert can == {"brigadista", "security_guard", "building_admin"}
+
+
+def test_enrollment_manage_is_admin_circle() -> None:
+    """[T-2.03] Administrar códigos de alta = dueño del sitio/tenant/plataforma;
+    jamás un rol de campo ni gov."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["enrollment_manage"]}
+    assert can == {"takab_superadmin", "tenant_admin", "building_admin"}
+
+
+def test_platform_roles_have_no_field_actions() -> None:
+    """[T-2.03] Las acciones de CAMPO exigen presencia con identidad de roster:
+    superadmin/support/soc/gov NO las reciben (un "Total" de plataforma no pasa
+    lista ni silencia sirenas desde un escritorio)."""
+    field_only = set(MOBILE_ACTIONS) - {"enrollment_manage"}
+    for role in ("takab_superadmin", "takab_support", "soc_operator", "gov_operator"):
+        granted = {a for a, ok in allowed_actions(role).items() if ok}
+        assert granted.isdisjoint(field_only), (role, granted & field_only)

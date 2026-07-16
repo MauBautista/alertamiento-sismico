@@ -51,3 +51,19 @@ def select_jwks(settings: Any) -> JWKSProvider:
     if settings.auth_jwks_json:
         return StaticJWKS(settings.auth_jwks_json)
     return RemoteJWKS(settings.auth_jwks_url)
+
+
+def select_jwks_occupants(settings: Any, main: JWKSProvider) -> JWKSProvider | None:
+    """Proveedor JWKS del pool de OCUPANTES (T-2.03); ``None`` si está deshabilitado.
+
+    Con issuer configurado pero sin JWKS propio, reutiliza el del pool principal
+    (dev/test firman ambos pools con la misma clave de sesión). En prod cada pool
+    tiene su ``auth_occupants_jwks_url``.
+    """
+    if not getattr(settings, "auth_occupants_issuer", ""):
+        return None
+    if settings.auth_occupants_jwks_json:
+        return StaticJWKS(settings.auth_occupants_jwks_json)
+    if settings.auth_occupants_jwks_url:
+        return RemoteJWKS(settings.auth_occupants_jwks_url)
+    return main

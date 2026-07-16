@@ -84,12 +84,25 @@ async def test_other_user_profile_stays_own(client) -> None:
     assert r.json()["display_name"] is None
 
 
-async def test_mobile_surface_is_rejected(client) -> None:
-    hdr = au.bearer(au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="mobile"))
-    r = await client.get("/me/profile", headers=hdr)
-    assert r.status_code == 403
-    r2 = await client.put("/me/profile", headers=hdr, json={"display_name": "X"})
-    assert r2.status_code == 403
+async def test_mobile_surface_edits_own_profile(client) -> None:
+    """[T-2.03] El perfil dejó de ser web-only: la pantalla Cuenta de la app
+    (1.8) lee/edita nombre y teléfono PROPIOS (R4: dar el teléfono ES el
+    consentimiento de aparecer en el roster; null lo retira)."""
+    hdr = au.bearer(au.make_token("brigadista", tenant=au.DB_TENANT_PRIV, surface="mobile"))
+    r = await client.put(
+        "/me/profile", headers=hdr, json={"display_name": "Brig Uno", "phone": "+52 55 1284-8211"}
+    )
+    assert r.status_code == 200
+    assert r.json()["phone"] == "+525512848211"  # normalizado (sin espacios/guiones)
+
+    r2 = await client.put("/me/profile", headers=hdr, json={"display_name": "Brig Uno"})
+    assert r2.status_code == 200
+    assert r2.json()["phone"] is None  # retiró el consentimiento
+
+    bad = await client.put(
+        "/me/profile", headers=hdr, json={"display_name": "X", "phone": "no-es-num"}
+    )
+    assert bad.status_code == 422
 
 
 async def test_gov_operator_edits_own_name(client) -> None:

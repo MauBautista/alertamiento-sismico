@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # queda vacía → el endpoint no puede firmar y, además, no se monta (guardado
     # por auth_jwks_json vacío en main.create_app).
     auth_dev_private_key: str = ""
+    # [T-2.03] Pool de OCUPANTES (decisión #7, T-2.02): segundo issuer verificable
+    # con ancla pool→rol (un token de este pool SOLO puede portar role=occupant; uno
+    # del pool principal JAMÁS occupant). issuer vacío ⇒ pool deshabilitado y el
+    # comportamiento single-issuer queda intacto. Si el JWKS propio queda vacío se
+    # reutiliza el del pool principal (conveniencia dev/test: misma clave de firma).
+    auth_occupants_issuer: str = ""
+    auth_occupants_audience: str = ""
+    auth_occupants_jwks_url: str = ""
+    auth_occupants_jwks_json: str = ""
 
     # --- WebSocket live (T-1.22 · G3) ---
     # Ventana para que el cliente mande el primer frame {"type":"auth",...} tras

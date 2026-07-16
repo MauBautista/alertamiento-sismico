@@ -27,8 +27,8 @@ class AuthError(Exception):
         self.reason = reason
 
 
-def decode_verify(token: str, settings: Any, jwks: JWKSProvider) -> dict[str, Any]:
-    """Devuelve los claims verificados o lanza ``AuthError`` 401."""
+def _decode(token: str, *, issuer: str, audience: str, jwks: JWKSProvider) -> dict[str, Any]:
+    """Verificación DURA contra una config concreta de pool (firma/iss/aud/exp)."""
     try:
         header = jwt.get_unverified_header(token)
     except jwt.PyJWTError as exc:
@@ -51,8 +51,8 @@ def decode_verify(token: str, settings: Any, jwks: JWKSProvider) -> dict[str, An
             token,
             key,
             algorithms=[_ALG],
-            issuer=settings.auth_issuer,
-            audience=settings.auth_audience,
+            issuer=issuer,
+            audience=audience,
             leeway=0,
             options={"require": ["exp", "iat"]},
         )
@@ -73,3 +73,38 @@ def decode_verify(token: str, settings: Any, jwks: JWKSProvider) -> dict[str, An
         raise AuthError("token_use is not id")
 
     return claims
+
+
+def decode_verify(token: str, settings: Any, jwks: JWKSProvider) -> dict[str, Any]:
+    """Devuelve los claims verificados contra el pool PRINCIPAL o lanza 401."""
+    return _decode(token, issuer=settings.auth_issuer, audience=settings.auth_audience, jwks=jwks)
+
+
+def decode_verify_any(
+    token: str,
+    settings: Any,
+    jwks_main: JWKSProvider,
+    jwks_occupants: JWKSProvider | None,
+) -> tuple[dict[str, Any], str]:
+    """``(claims, pool)`` con ``pool ∈ {'main','occupants'}`` — dual-issuer T-2.03.
+
+    El ``iss`` SIN verificar solo ENRUTA a la config del pool; la verificación
+    dura (firma/iss/aud/exp/token_use) ocurre contra esa config. Con el pool de
+    ocupantes deshabilitado (issuer vacío) el comportamiento single-issuer queda
+    intacto. El ancla pool→rol vive en ``deps.get_claims`` (necesita ``Claims``).
+    """
+    occ_issuer = getattr(settings, "auth_occupants_issuer", "") or ""
+    if occ_issuer and jwks_occupants is not None:
+        try:
+            unverified = jwt.decode(token, options={"verify_signature": False})
+        except jwt.PyJWTError as exc:
+            raise AuthError("malformed token") from exc
+        if unverified.get("iss") == occ_issuer:
+            claims = _decode(
+                token,
+                issuer=occ_issuer,
+                audience=settings.auth_occupants_audience,
+                jwks=jwks_occupants,
+            )
+            return claims, "occupants"
+    return decode_verify(token, settings, jwks_main), "main"

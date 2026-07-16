@@ -18,6 +18,9 @@ from takab_api.routers.incidents import router as incidents_router
 from takab_api.routers.incidents_ack import router as incidents_ack_router
 from takab_api.routers.incidents_ops import router as incidents_ops_router
 from takab_api.routers.me import router as me_router
+from takab_api.routers.mobile_incident import router as mobile_incident_router
+from takab_api.routers.mobile_me import router as mobile_me_router
+from takab_api.routers.mobile_site import router as mobile_site_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
 from takab_api.routers.sensors import router as sensors_router
@@ -74,6 +77,11 @@ def create_app() -> FastAPI:
 
     # Comandos remotos de actuador firmados (B9, regla de oro 8).
     app.include_router(commands_router)
+
+    # Superficie MÓVIL (Fase 2 · T-2.03): portador, sitio e incidente.
+    app.include_router(mobile_me_router)
+    app.include_router(mobile_site_router)
+    app.include_router(mobile_incident_router)
 
     # Canal live WebSocket ``/ws`` (B4).
     app.include_router(ws_router)

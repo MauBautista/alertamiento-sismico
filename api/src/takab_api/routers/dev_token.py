@@ -25,7 +25,12 @@ router = APIRouter()
 
 
 class DevTokenRequest(BaseModel):
-    """Claims mínimos para forjar un ID token de prueba."""
+    """Claims mínimos para forjar un ID token de prueba.
+
+    [T-2.03] ``pool``: ``None`` = automático (``occupant`` → pool de ocupantes si
+    está configurado; el resto → principal). El ancla pool→rol de ``get_claims``
+    rechaza cruces, así que el default hace lo correcto sin pensar.
+    """
 
     role: str
     tenant_id: str
@@ -35,6 +40,7 @@ class DevTokenRequest(BaseModel):
     sub: str | None = None
     groups: list[str] | None = None
     expires_in: int = Field(default=3600, gt=0, le=86400)
+    pool: str | None = Field(default=None, pattern="^(main|occupants)$")
 
 
 class DevTokenResponse(BaseModel):
@@ -56,11 +62,19 @@ def dev_token(body: DevTokenRequest) -> DevTokenResponse:
     if not settings.auth_dev_private_key:
         raise HTTPException(status_code=503, detail="clave de firma dev no configurada")
 
+    pool = body.pool or ("occupants" if body.role == "occupant" else "main")
+    if pool == "occupants":
+        if not settings.auth_occupants_issuer:
+            raise HTTPException(status_code=503, detail="pool de ocupantes no configurado")
+        issuer, audience = settings.auth_occupants_issuer, settings.auth_occupants_audience
+    else:
+        issuer, audience = settings.auth_issuer, settings.auth_audience
+
     now = int(time.time())
     claims: dict[str, Any] = {
         "sub": body.sub or str(uuid.uuid4()),
-        "iss": settings.auth_issuer,
-        "aud": settings.auth_audience,
+        "iss": issuer,
+        "aud": audience,
         "token_use": "id",
         "iat": now,
         "nbf": now,
