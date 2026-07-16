@@ -101,6 +101,7 @@ async def mobile_state(
             state=incident_row.state,
             opened_at=incident_row.opened_at,
             node_count=incident_row.node_count,
+            max_pga_g=incident_row.max_pga_g,
         )
         dictamen_row = (
             await conn.execute(q.LATEST_DICTAMEN, {"incident": str(incident_row.incident_id)})

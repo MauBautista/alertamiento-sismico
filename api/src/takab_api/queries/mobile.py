@@ -144,7 +144,7 @@ DEACTIVATE_CODE = text(
 # --- mobile-state (ingredientes de la derivación de phase) ---------------------------
 
 OPEN_INCIDENT = text(
-    "SELECT i.incident_id, i.trigger, i.severity, i.state, i.opened_at, "
+    "SELECT i.incident_id, i.trigger, i.severity, i.state, i.opened_at, i.max_pga_g, "
     "(e.meta->>'node_count')::int AS node_count "
     "FROM incidents i LEFT JOIN seismic_events e ON e.event_id = i.event_id "
     "WHERE i.site_id = CAST(:site AS uuid) AND i.state <> 'closed' "

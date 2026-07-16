@@ -114,6 +114,10 @@ class MobileIncidentOut(BaseModel):
     #: Estaciones que corroboraron el evento regional (meta.node_count del
     #: evento; None si la fuente no es de red). Mismo dato que el pill de Triage.
     node_count: int | None
+    #: [T-2.05] PGA instrumental MEDIDO por el gabinete (incidents.max_pga_g) —
+    #: la etiqueta de fuente "DETECCIÓN LOCAL" lo muestra; None si aún no hay
+    #: medición. JAMÁS es magnitud (§2.1-A: la magnitud solo post-evento, SSN).
+    max_pga_g: float | None
 
 
 class MobileZoneOut(BaseModel):

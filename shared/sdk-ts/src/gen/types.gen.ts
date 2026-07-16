@@ -757,6 +757,7 @@ export type MobileDrillOut = {
 
 export type MobileIncidentOut = {
     incident_id: string;
+    max_pga_g: number | null;
     node_count: number | null;
     opened_at: string;
     severity: string;

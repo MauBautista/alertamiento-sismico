@@ -3328,6 +3328,17 @@
             "title": "Incident Id",
             "type": "string"
           },
+          "max_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pga G"
+          },
           "node_count": {
             "anyOf": [
               {
@@ -3363,7 +3374,8 @@
           "severity",
           "state",
           "opened_at",
-          "node_count"
+          "node_count",
+          "max_pga_g"
         ],
         "title": "MobileIncidentOut",
         "type": "object"
