@@ -1868,7 +1868,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > monorepo, `.gitignore` CNG. **Job `mobile` en CI** (eslint+tsc+jest, patrón file: del job
 > web). jest 18/18 ✓ · tsc ✓ · eslint ✓. README con envs/entitlements; AGENTS.md del árbol.
 
-### [ ] T-2.03 · DB + API móvil núcleo (migración 0018 sobre el DDL latente)
+### [x] T-2.03 · DB + API móvil núcleo (migración 0018 sobre el DDL latente) — **COMPLETA (2026-07-16)**
 - **Componente:** db + api + shared (SDK)
 - Migración `0018` **idempotente** + `db/schema.sql` consolidado (invariante T-1.45): deltas
   `life_checkins` (+`ts_device`, +`via self|delegated`, +`verified_by`), `zones.evac_policy`
@@ -1890,6 +1890,27 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   `user_zone_assignments` (cache corto), sin escribir claims por admin API.
 - Todo mutador audita vía el escritor único (`audit.py`); tests de cruce de tenants DEBEN
   fallar; SDK regenerado (drift gate verde).
+> **ESTADO.** **DB:** migración `0018_mobile_core` idempotente, validada en cadena incremental
+> Y fresca (la 0001 aplica el schema nuevo y la 0018 re-afirma); deltas + 5 tablas nuevas con
+> RLS default-deny (`pt_self`/`dk_self` = SOLO fila propia); **GRANTs del DDL latente que
+> FALTABAN** (uza/sec/mav/lc — política sin privilegio era inservible). Trampa nueva: `drills`
+> es del usuario de conexión (la 0015 no usó SET ROLE) ⇒ su ALTER corre fuera del bloque
+> migrator. **Auth:** dual-issuer con ancla pool→rol en `get_claims` (cruce en cualquier
+> dirección ⇒ 401), retrocompatible (pool de ocupantes deshabilitado = single-issuer intacto);
+> `require_mobile_surface`; `/dev/token` enruta occupant→pool de ocupantes; `/me/profile` dejó
+> de ser web-only y suma `phone` (R4: darlo ES el consentimiento; null lo retira; PII fuera del
+> audit). **Matriz:** 9 acciones móviles con paridad EJECUTABLE contra RBAC §3
+> (`test_mobile_actions_match_rbac_section_3`, celda a celda — corrigió 2 concesiones mías:
+> inspector sin roster, building_admin sin forense); MeActions + meFixtures espejados.
+> **Routers:** `mobile_me` (push-tokens upsert-revive, device-keys PEM, enrolamiento atómico con
+> 404 uniforme), `mobile_site` (mobile-state con `phase` derivada de datos REALES —
+> incidente+`rule_evaluations`+dictamen firmado habitable—, assets presignados GET/PUT seam
+> MinIO, enrollment-codes, drills por sitio), `mobile_incident` (check-ins self/delegated
+> distinguibles, roster con contadores + audit de PII, damage-reports con `people_at_risk`
+> derivado); drills gana AGENDA (`scheduled_at`: anuncio que JAMÁS deriva activo — LO REAL
+> GANA). R2 implementada: `assert_site_access` (occupant enrolado o 404). **api 851✓ · auth
+> 116✓ · mobile_core 11✓ · web 576✓ · sdk tsc✓ · mobile 18✓ · ruff limpio · SDK regenerado.** Pendiente T-2.10: verificación criptográfica de la firma de intención (hoy se
+> ALMACENA, sin fingir validación).
 
 ### [ ] T-2.04 · Push: infraestructura + onboarding de permisos — `GATE-STORE`
 - **Componente:** api + mobile + infra

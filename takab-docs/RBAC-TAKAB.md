@@ -128,6 +128,15 @@
 | Headcount / pase de lista | — | ✅ | ✅ | — | ✅ |
 | Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
 
+> **[T-2.03] Esta matriz es EJECUTABLE:** las celdas con acción se materializan en
+> `api/src/takab_api/auth/matrix.py` (`checkin_submit`, `roster_read`,
+> `damage_report_submit`, `evidence_upload`, `siren_silence`, `manual_activate`,
+> `enrollment_manage`, `panic_vote`, `dictamen_read`) y el parity test
+> `tests/auth/test_matrix.py::test_mobile_actions_match_rbac_section_3` compara el
+> código contra esta tabla celda a celda — si divergen, CI falla (misma disciplina
+> que §2 para la web). El voto de pánico del occupant (quórum 2/30 s) es la acción
+> `panic_vote`; su endpoint llega en T-2.13.
+
 ---
 
 ## 4. Reglas críticas de actuadores (seguridad)
