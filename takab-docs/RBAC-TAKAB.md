@@ -155,10 +155,17 @@ Como ahora se permite **activar** y **silenciar** actuadores desde un teléfono 
 camino es la superficie más sensible del sistema. Requisitos no negociables:
 1. **Comando firmado** (HMAC/JWT corto) verificado por el gateway antes de ejecutar.
 2. **MFA** obligatorio en el login de roles que pueden activar/silenciar actuadores.
-   `[SUPUESTO #7 plan-maestro — confirmar/override]`: **excepción para `occupant`** (se enrola
-   por QR; MFA universal mataría la adopción del botón de pánico). Compensaciones: quórum de 2,
-   rate-limit por usuario y sitio, geofence del voto (GPS dentro del radio del sitio) y
-   auditoría con GPS/ID. Decisión final antes de la fase móvil (T-1.31).
+   **[RESUELTO 2026-07-15 · T-2.00, decisión de Mauricio]** (era `[SUPUESTO #7 plan-maestro]`):
+   `occupant` con **login simple SIN MFA obligatorio y MFA OPCIONAL** (opt-in TOTP desde la
+   pantalla Cuenta de la app). Implementación: **pool de Cognito separado para ocupantes** con
+   `mfa_configuration = OPTIONAL` — Cognito no permite MFA por grupo, y poner el pool único en
+   OPTIONAL dejaría a un brigadista declinar su TOTP (ver `takab-docs/specs/cognito-pool-v1.md`
+   §5.2). El pool táctico/web queda `ON` intacto ⇒ este requisito #2 sigue garantizado para
+   todo rol con actuadores. Compensaciones del perfil sin MFA: quórum de 2, rate-limit por
+   usuario y sitio, auditoría con ID (+GPS solo con consentimiento) y enrolamiento por código
+   acotado al sitio. El **geofence del voto pasa a best-effort**: un voto CON GPS claramente
+   fuera del radio del sitio se descarta; sin GPS (permiso denegado — LFPDPPP lo hace opcional)
+   el voto cuenta, porque un gate duro por GPS sería inexigible.
 3. **Rate-limit** por usuario y por sitio (evita activación repetida).
 4. **Idempotencia + nonce** (un comando capturado no puede reenviarse).
 5. **Confirmación de ejecución** del gateway de vuelta a la app (`ack` con estado real del relé).

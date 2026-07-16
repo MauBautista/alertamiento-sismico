@@ -1793,7 +1793,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > de Critical Alerts a Apple se resuelven en T-2.00 ANTES de escribir código de producto.
 > Método (spec §12): una tarea por sesión, DoD completo por tarea.
 
-### [ ] T-2.00 · Decisiones de arranque + entitlements — `GATE-DECISIONS`
+### [x] T-2.00 · Decisiones de arranque + entitlements — `GATE-DECISIONS` — **COMPLETA (2026-07-15)**
 - **Componente:** docs · **Bloquea:** todo el resto de la fase.
 - Resolver y registrar: **decisión #7** del PLAN-MAESTRO (MFA de `occupant`; supuesto vigente:
   sin MFA, compensado por quórum + rate-limit + auditoría); **solicitar a Apple el entitlement
@@ -1802,6 +1802,20 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   infraestructura); ratificar **R1–R10** (spec §14.5), en particular R2 (enrolamiento vs
   `site_scope` default-deny) y R7 (lectura del dictamen por el táctico).
 - No auto-verificable en repo: registrar el resultado en la spec (§14.5) y en esta sección.
+> **ESTADO.** Las 4 resoluciones registradas en spec §14.5 (+§6/§8/§11), PLAN-MAESTRO gate #7
+> `[RATIFICADO]`, RBAC §4.3 nota 2 y `specs/cognito-pool-v1.md` §5.2:
+> **(1) Decisión #7 — de Mauricio:** occupant con **login simple SIN MFA obligatorio y MFA
+> OPCIONAL** (opt-in TOTP desde 1.8 Cuenta). Implementación: **pool de ocupantes separado**
+> `mfa=OPTIONAL` (Cognito no da MFA por grupo; OPTIONAL en el pool único dejaría a un táctico
+> declinar TOTP). El pool táctico (`mfa=ON`, verificado en `identity/main.tf:42`) NO se toca ⇒
+> el MFA de quien toca actuadores sigue garantizado. Split en T-2.02; dual-issuer en T-2.03.
+> **(2) Entitlement Critical Alerts:** solicitud **INICIADA por Mauricio ante Apple
+> (2026-07-15)**; aprobación pendiente bajo `GATE-STORE`; fallback `time-sensitive` vigente.
+> **(3) Emisor push: SNS platform endpoints** (payload crudo passthrough; feedback de tokens
+> muertos; cláusula de reversión a FCM v1/APNs directo si el spike de T-2.04 topa un campo que
+> SNS no transporte). **(4) R1–R10 ratificados** — R2=(b) scope móvil server-side contra
+> `user_zone_assignments`; R7=acción `dictamen_read`; geofence del pánico = best-effort (voto
+> con GPS fuera de radio se descarta, sin GPS cuenta); R3 sigue bajo `GATE-LEGAL`.
 
 ### [ ] T-2.01 · `shared/design-tokens/` + reconciliación documentada
 - **Componente:** shared + web
@@ -1822,6 +1836,9 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   rol horneada en UI.
 - Cognito Hosted UI + código + PKCE (patrón oidc de la consola); tokens en Keychain/Keystore;
   sesión de larga vida del `occupant` (spec §8). `@takab/sdk` por `file:../shared/sdk-ts`.
+- **Consecuencia de la decisión #7 (T-2.00):** crear el **pool de ocupantes** (`mfa=OPTIONAL`,
+  único grupo `occupant`) + app client móvil en `infra/terraform/modules/identity`; la app
+  enruta el login por perfil (occupant → pool simple con MFA opt-in; tácticos → pool `ON`).
 - `mobile/README.md`: módulos que exigen prebuild + entitlements pendientes (`GATE-STORE`).
 
 ### [ ] T-2.03 · DB + API móvil núcleo (migración 0018 sobre el DDL latente)
@@ -1840,12 +1857,17 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - Acciones nuevas en `api/src/takab_api/auth/matrix.py` (patrón `roles_with_action` + parity
   test extendido): `checkin_submit`, `roster_read`, `damage_report_submit`, `evidence_upload`,
   `siren_silence`, `manual_activate`, `enrollment_manage`, `panic_vote`, `dictamen_read` (R7).
+- **Dual-issuer (decisión #7):** `claims.py` valida ambos pools y **ancla pool→rol** (token del
+  pool de ocupantes ⇒ solo `occupant`; del pool táctico ⇒ nunca `occupant` en superficie móvil)
+  ⇒ 401 en cruce, con tests. R2 ratificado = (b): scope móvil server-side contra
+  `user_zone_assignments` (cache corto), sin escribir claims por admin API.
 - Todo mutador audita vía el escritor único (`audit.py`); tests de cruce de tenants DEBEN
-  fallar; SDK regenerado (drift gate verde). Implementar R2 según lo ratificado en T-2.00.
+  fallar; SDK regenerado (drift gate verde).
 
 ### [ ] T-2.04 · Push: infraestructura + onboarding de permisos — `GATE-STORE`
 - **Componente:** api + mobile + infra
-- Registro/rotación en `/me/push-tokens`; emisor según T-2.00; dos clases JAMÁS mezcladas:
+- Registro/rotación en `/me/push-tokens`; **emisor: SNS platform endpoints (T-2.00)** — spike
+  inicial de campos APNs con cláusula de reversión (spec §6); dos clases JAMÁS mezcladas:
   `CRISIS` (Critical Alerts iOS / canal `seismic_alert` IMPORTANCE_HIGH + bypass DND Android)
   y `OPS`; payload mínimo `{type, site_id, incident_id, phase}` sin datos sensibles.
 - Integración con la cascada notify FAIL-OPEN existente; la push es **best-effort** — la
@@ -1955,7 +1977,8 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - UI 1.9: botón mantener-presionado + estado "1 de 2 · expira en N s"; texto claro de que NO
   es la alerta sísmica (emergencia del inmueble: incendio, intrusión…).
 - Tests: 1 voto JAMÁS activa; 2 votos del MISMO usuario JAMÁS activan; 2 usuarios distintos en
-  ventana ⇒ comando + audit; fuera de ventana ⇒ nada.
+  ventana ⇒ comando + audit; fuera de ventana ⇒ nada; voto CON GPS fuera del radio del sitio ⇒
+  descartado (**geofence best-effort**, RBAC §4.3); voto SIN GPS ⇒ cuenta.
 
 ### [ ] T-2.14 · E2E + hardening + runbook de cierre de fase
 - **Componente:** mobile + docs

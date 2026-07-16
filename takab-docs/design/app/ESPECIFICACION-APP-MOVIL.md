@@ -179,7 +179,7 @@ un `GET /tenants/{tenant_id}/compliance-labels` de administración es opcional y
 | Estado local | Zustand | Paridad con la consola |
 | Navegación | React Navigation (stack + tabs por perfil) | Estándar |
 | Storage seguro | Keychain/Keystore vía `expo-secure-store` para tokens y llaves; **SQLite cifrado (SQLCipher u op-sqlite + cifrado) para la cola offline** | §2.1-B y §4.2 |
-| Push | FCM (Android) + APNs (iOS); el emisor backend se decide en T-2.00 (§6) | Hoy NO existe infra push |
+| Push | FCM (Android) + APNs (iOS) **vía SNS platform endpoints** (decidido en T-2.00; §6) | AWS-nativo (Terraform/IAM existentes), feedback de tokens muertos gestionado, payload crudo para Critical Alerts/canales |
 | Mapas | Ninguno en v2.0 — ninguna pantalla lo exige; no agregar especulativamente | Peso de bundle |
 | Cámara | `expo-camera` + composición de marca de agua en pixel (§7 · 2.3) | |
 | Monorepo | **`mobile/` en la raíz** (junto a `edge/`, `api/`, `web/`); tokens en **`shared/design-tokens/`**; SDK en `shared/sdk-ts/`. Consumo por dependencia `file:` (patrón ya probado web↔sdk). **SE CAMBIA vs PROMPT:** no se crean `apps/` ni `packages/` — no existen workspaces en el repo (D2) | Convención real del repo |
@@ -347,8 +347,17 @@ hoy tienen rutas y acciones VACÍAS (default-deny) — estas acciones son su pri
 **Estado real:** hoy NO existe infraestructura push (cero FCM/APNs/token en `api/src`). La
 cascada de notificaciones (`python -m takab_api.notify`) es FAIL-OPEN con correo SES real y
 webhook HMAC real; SNS se usa SOLO para alarmas de infraestructura (gabinete caído, sensor
-mudo), no para notificar usuarios. La push móvil es infraestructura NUEVA (T-2.04) y la
-elección de emisor (SNS platform endpoints vs FCM/APNs directo) se decide en T-2.00.
+mudo), no para notificar usuarios. La push móvil es infraestructura NUEVA (T-2.04).
+
+**Emisor DECIDIDO (T-2.00, 2026-07-15): SNS platform endpoints.** Una platform application por
+OS (credenciales APNs/FCM en Secrets Manager vía Terraform), un endpoint por dispositivo mapeado
+desde `push_tokens` (token ↔ endpoint ARN), **payload crudo passthrough** (estructura `json`)
+para controlar `sound.critical`/`interruption-level` (iOS) y el canal `seismic_alert` (Android),
+y feedback de tokens muertos gestionado por SNS (endpoint deshabilitado ⇒ revocación en
+`push_tokens`). Racional: AWS-nativo (IAM/Terraform/worker notify ya existen) y menos código
+propio de entrega. **Cláusula de reversión:** el primer spike de T-2.04 valida que los campos
+APNs requeridos pasen por SNS; si alguno no pasa, se cambia a FCM v1 + APNs JWT directos sin
+tocar el contrato `/me/push-tokens`.
 
 Diseño (se conserva del PROMPT):
 - **iOS:** APNs con **Critical Alerts** (`sound.critical`) para alertas sísmicas — se salta No
@@ -477,7 +486,11 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 #### 1.8 Cuenta (tab Cuenta, compartida con Perfil 2 — SE AGREGA)
 - `display_name` (`GET/PUT /me/profile`), rol y zona, estado de permisos (enlace a 0.2), aviso
   de privacidad (0.3), consentimiento GPS revocable, cerrar sesión.
-- **Aceptación:** revocar consentimiento GPS aquí → el siguiente "necesito ayuda" envía zona.
+- **Seguridad de la cuenta (decisión #7):** fila "Verificación en dos pasos — OPCIONAL" para que
+  el `occupant` active TOTP (opt-in del pool de ocupantes, flujo de asociación de Cognito). Los
+  roles tácticos NO ven esta fila: su MFA es obligatorio a nivel de pool, no hay nada que optar.
+- **Aceptación:** revocar consentimiento GPS aquí → el siguiente "necesito ayuda" envía zona;
+  activar el TOTP opcional exige re-autenticación y queda auditado.
 
 #### 1.9 Pánico por quórum-de-2 (D4a — SE AGREGA)
 - Botón grande "SOLICITAR ACTIVACIÓN DE ALARMA" (emergencia NO sísmica del edificio). Texto
@@ -591,8 +604,16 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 
 ## 8. Seguridad y privacidad
 
-- **AuthN:** Cognito (mismos User Pools que la consola), Hosted UI + PKCE, refresh seguro en
-  Keychain/Keystore. Sesiones de ocupante de larga vida; acciones tácticas re-verifican token.
+- **AuthN — DOS pools de Cognito (decisión #7 RESUELTA en T-2.00, 2026-07-15):** Cognito no
+  permite MFA por grupo, y un pool único en OPTIONAL dejaría a un táctico declinar su TOTP
+  (`takab-docs/specs/cognito-pool-v1.md` §5.2). Por decisión de Mauricio: el `occupant` tiene
+  **login simple (email + contraseña) SIN MFA obligatorio, con MFA OPCIONAL opt-in** (TOTP desde
+  1.8 Cuenta) en un **pool de ocupantes nuevo** (`mfa=OPTIONAL`, único grupo `occupant`, se crea
+  en T-2.02); los roles tácticos siguen en el pool EXISTENTE (`mfa=ON`, no negociable — RBAC
+  §4.3). Ambos pools: Hosted UI + código + PKCE; refresh seguro en Keychain/Keystore; sesión de
+  ocupante de larga vida; acciones tácticas re-verifican token vigente. La API valida **ambos
+  issuers** y **ancla pool→rol** (T-2.03): un token del pool de ocupantes solo puede portar
+  `custom:role=occupant`; uno del pool táctico jamás `occupant` en superficie móvil ⇒ 401.
 - **AuthZ — roles canónicos (RBAC-TAKAB.md §1/§3, `matrix.py`):** superficie móvil =
   **`occupant`** (móvil-only), **`brigadista`**, **`security_guard`** (móvil), más
   **`inspector`** y **`building_admin`** (web+móvil, D4d).
@@ -605,9 +626,10 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
   cada acción vía la matriz (nunca confíes en la UI) y `/me` sirve `allowed_actions`.
 - **Actuadores por rol (RBAC §4):** `occupant` solo puede iniciar la sirena NO-sísmica por
   **quórum de 2 en 30 s** (1.9); los tácticos usan deslizar-para-activar individual; silenciar =
-  `brigadista`/`security_guard`/`building_admin`. **MFA del occupant = decisión #7 del
-  PLAN-MAESTRO** (supuesto vigente: sin MFA, compensado con quórum + rate-limit + auditoría) —
-  se ratifica en T-2.00 ANTES de codificar.
+  `brigadista`/`security_guard`/`building_admin`. **MFA del occupant: decisión #7 RESUELTA
+  (T-2.00)** — sin MFA obligatorio, MFA opcional; compensaciones: quórum + rate-limit +
+  auditoría + enrolamiento acotado al sitio; **geofence best-effort** (voto con GPS claramente
+  fuera del radio del sitio se descarta; sin GPS cuenta — la ubicación es opcional por LFPDPPP).
 - **LFPDPPP:** GPS solo con consentimiento explícito registrado (0.3); el check-in de ayuda
   funciona sin GPS (zona). Roster y check-ins son datos personales: RLS estricta, sin exposición
   cross-tenant. Tensión `life_checkins` append-only vs derechos ARCO → minimización (`geom`
@@ -661,9 +683,11 @@ cada commit; sin stubs silenciosos (todo placeholder falla ruidosamente o se rep
 
 ## 11. Marcadores GATE (no auto-verificables en repo)
 
-- **`GATE-DECISIONS`** (T-2.00, ANTES de codificar): decisión #7 del PLAN-MAESTRO (MFA
-  occupant); solicitud del entitlement Critical Alerts a Apple (lead-time de semanas); elección
-  de emisor push; ratificación de R1–R10 (§14.5).
+- **`GATE-DECISIONS` — CUMPLIDO (T-2.00, 2026-07-15):** decisión #7 RESUELTA (occupant con
+  login simple, MFA opcional, pool separado — §8); **solicitud del entitlement Critical Alerts
+  INICIADA por Mauricio ante Apple** (la aprobación queda bajo `GATE-STORE`; fallback
+  `time-sensitive` vigente); emisor push decidido (SNS platform endpoints, §6); R1–R10
+  ratificados (§14.5).
 - **`GATE-STORE`:** entitlement Critical Alerts aprobado; publicación TestFlight/Play Internal;
   bypass DND verificado en dispositivos físicos.
 - **`GATE-HW`:** silenciado de sirena end-to-end contra gabinete físico con alerta activa
@@ -781,30 +805,44 @@ Los términos de esta tabla solo pueden aparecer en este documento en líneas qu
 | SE CAMBIA — roles "brigade" / "security_lead" | §4/§8 del PROMPT | Canónicos: `brigadista` / `security_guard` |
 | SE CAMBIA — "Pi 5" | §0 del PROMPT (y blueprint desactualizado) | Raspberry Pi 4 Model B Rev 1.5 (T-1.68) |
 
-### 14.5 Riesgos y decisiones abiertas (se ratifican en T-2.00 / se resuelven en T-2.03)
+### 14.5 Riesgos y decisiones — RATIFICADOS EN T-2.00 (2026-07-15)
 
-- **R1 · floor policy:** recomendado `zones.evac_policy` (la zona ya tiene `level_code` y está
+**Resoluciones de arranque (T-2.00, `GATE-DECISIONS` cumplido):**
+
+| Decisión | Resolución |
+|---|---|
+| **#7 MFA del occupant** (PLAN-MAESTRO §3) | **Decisión de Mauricio:** login simple SIN MFA obligatorio, **MFA OPCIONAL** opt-in (TOTP desde 1.8). Implementación: **pool de ocupantes separado** `mfa=OPTIONAL` (Cognito no da MFA por grupo; un pool único en OPTIONAL dejaría a un táctico declinar TOTP — `specs/cognito-pool-v1.md` §5.2). El pool táctico queda `ON` intacto. Split en T-2.02; dual-issuer + ancla pool→rol en T-2.03 |
+| **Entitlement Critical Alerts** | **Solicitud INICIADA por Mauricio ante Apple (2026-07-15).** Aprobación pendiente bajo `GATE-STORE`; fallback `time-sensitive` vigente (§6) |
+| **Emisor push** | **SNS platform endpoints** con payload crudo passthrough (§6); cláusula de reversión a FCM v1 + APNs directo si el spike de T-2.04 encuentra un campo que SNS no transporte |
+| **Geofence del voto de pánico** | **Best-effort, no gate duro:** voto CON GPS claramente fuera del radio del sitio ⇒ descartado; voto SIN GPS cuenta (la ubicación es opcional por LFPDPPP y un gate duro sería inexigible). Compensación principal = enrolamiento acotado al sitio + quórum + rate-limit (RBAC §4.3 actualizado) |
+
+**Riesgos R1–R10 (todos ratificados; implementación donde se indica):**
+
+- **R1 · floor policy — RATIFICADO:** `zones.evac_policy` (la zona ya tiene `level_code` y está
   cableada a claims/check-ins/enrolamiento; el mockup 1.1 ya habla el idioma de zonas).
-  Alternativa `building_floors` solo si una zona ≠ un piso en clientes reales.
-- **R2 · enrolamiento vs site_scope default-deny:** `POST /me/enrollment` debe (a) escribir
-  claims en Cognito vía admin API (poder nuevo del backend) o (b) resolver el scope efectivo
-  desde `user_zone_assignments` por request para superficie móvil (sin tocar claims; diverge
-  del modelo actual). Elegir explícitamente en T-2.00; la recomendación inicial es (b) con
-  cache corto, porque no acopla el enrolamiento a la consistencia eventual de Cognito.
-- **R3 · LFPDPPP vs append-only:** `life_checkins` prohíbe UPDATE/DELETE por trigger y `geom`
-  es PII → minimización (geom solo en `need_help`), base legal de evidencia de incidente, y
-  pseudonimización post-retención vía proceso de migración. `GATE-LEGAL`.
-- **R4 · teléfonos del roster:** `user_profiles` no tiene teléfono; la llamada de un toque exige
-  la columna nueva (PII + consentimiento) o un directorio administrado por `building_admin`.
-- **R5 · push best-effort:** la cascada es FAIL-OPEN y la push no es garantía de entrega; la
-  spec y el onboarding lo comunican — la vida la protege la sirena del edge.
-- **R6 · WS móvil:** tokens móviles de larga vida sobre el socket C4I → allowlist topic×rol
-  default-deny + check de `custom:surface` + `site_scope`; `occupant` fuera del WS.
-- **R7 · lectura del dictamen por el táctico:** `export`/`generate_report` no incluyen
-  `brigadista` → acción nueva `dictamen_read` o entrega push+presigned. Decidir en T-2.03.
-- **R8 · spec-doc*.html:** derivan del PROMPT y ya se corrigieron; llevan banner "derivado — no
-  editar a mano". Evaluar deprecarlos cuando la spec v2 tenga su propio export.
-- **R9 · estructura:** decidido D2 (`mobile/` + `shared/design-tokens/`); no introducir
-  workspaces en esta fase.
-- **R10 · entitlement Critical Alerts:** lead-time de Apple ⇒ se solicita en T-2.00; fallback
-  `time-sensitive` ya diseñado (§6).
+  `building_floors` solo si un cliente real separa zona ≠ piso. Implementa T-2.03.
+- **R2 · enrolamiento vs site_scope default-deny — RATIFICADO (opción b):** el scope efectivo de
+  la superficie móvil se resuelve **server-side por request** contra `user_zone_assignments`
+  (cache corto), sin escribir claims vía admin API — no acopla el enrolamiento a la consistencia
+  eventual de Cognito y `cognito-pool-v1.md` §3.1 ya recomendaba resolver server-side cuando el
+  claim no alcanza. El claim `custom:site_scope` queda como está para la web. Implementa T-2.03.
+- **R3 · LFPDPPP vs append-only — RATIFICADO (queda bajo `GATE-LEGAL`):** minimización (`geom`
+  solo en `need_help` y solo con consentimiento), base legal = evidencia de incidente,
+  pseudonimización post-retención vía proceso de migración. La revisión legal del aviso sigue
+  abierta en `GATE-LEGAL`.
+- **R4 · teléfonos del roster — RATIFICADO:** columna nueva `user_profiles.phone` (PII, con
+  consentimiento registrado); la carga/curaduría del directorio la administra `building_admin`.
+  Implementa T-2.03.
+- **R5 · push best-effort — RATIFICADO:** la push jamás se presenta como garantía; la vida la
+  protege la sirena del edge. El onboarding (0.2) lo dice textualmente.
+- **R6 · WS móvil — RATIFICADO:** allowlist topic×rol default-deny + `custom:surface` +
+  `site_scope`; `occupant` fuera del WS. Implementa T-2.08.
+- **R7 · lectura del dictamen por el táctico — RATIFICADO:** acción nueva **`dictamen_read`**
+  (tácticos: `brigadista`, `security_guard`, `building_admin`, `inspector`) para leer/descargar
+  el PDF existente vía presigned; la entrega llega además por push OPS. `generate_report` no se
+  amplía (generar sigue siendo de `inspector`/superadmin). Implementa T-2.03/T-2.12.
+- **R8 · spec-doc*.html — RATIFICADO:** corregidos y con banner "derivado — no editar a mano";
+  se evalúa deprecarlos al cierre de la fase.
+- **R9 · estructura — RATIFICADO:** D2 (`mobile/` + `shared/design-tokens/`); sin workspaces.
+- **R10 · entitlement Critical Alerts — RESUELTO EN CURSO:** solicitud iniciada (ver tabla);
+  `GATE-STORE` verifica la aprobación y el bypass DND real en dispositivos físicos.

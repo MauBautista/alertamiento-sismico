@@ -130,8 +130,9 @@ activar/silenciar actuadores (RBAC §4.3: `brigadista`, `security_guard`, `build
 
 ### 5.2 El hueco: `occupant` sin MFA y la limitación de Cognito
 
-RBAC §4.3 nota 2 y `[SUPUESTO #7]` piden **excepción de MFA para `occupant`** (se enrola por QR;
-MFA universal mataría la adopción del botón de pánico). Pero **Cognito configura MFA a nivel de
+RBAC §4.3 nota 2 y la decisión #7 del PLAN-MAESTRO (**RATIFICADA en T-2.00, 2026-07-15**) piden
+**excepción de MFA para `occupant`** (se enrola por código; MFA universal mataría la adopción
+del botón de pánico). Pero **Cognito configura MFA a nivel de
 pool, no por grupo**: solo hay tres estados globales — `OFF`, `OPTIONAL`, `ON`. No existe
 "MFA obligatorio para el grupo X, exento para el grupo Y".
 
@@ -143,16 +144,22 @@ Por qué el patrón `OPTIONAL` + preferencia de usuario **NO** resuelve el hueco
   ya no se puede *garantizar* MFA en los roles privilegiados.
 - La "preferencia de MFA" solo elige el método cuando el usuario ya tiene MFA; no lo fuerza.
 
-**Decisión (resuelta en T-1.31, fase móvil):** dos pools separados.
+**Decisión RATIFICADA (2026-07-15 · T-2.00, Mauricio):** dos pools separados; el de ocupantes
+con **`OPTIONAL`** — login simple (email + contraseña) y **MFA opt-in** (TOTP) activable desde
+la pantalla Cuenta de la app. No `OFF`: el opt-in debe ser posible.
 
 | Pool | MFA | Roles | Superficie |
 |---|---|---|---|
-| `takab-dev` (este) | `ON` (TOTP) | los 9 roles no-occupant | web |
-| pool de ocupantes (T-1.31) | `OFF`/`OPTIONAL` | `occupant` | móvil |
+| `takab-dev` (este) | `ON` (TOTP) — **no se toca** | los 9 roles no-occupant | web + móvil táctico |
+| pool de ocupantes (T-2.02) | **`OPTIONAL`** (opt-in TOTP) | `occupant` (único grupo) | móvil |
 
-Compensaciones para el pool sin-MFA (RBAC §4.1/§4.3): quórum de 2 ocupantes, rate-limit por
-usuario/sitio, geofence del voto (GPS en el radio del sitio) y auditoría con GPS/ID. **En este
-ciclo (T-1.18, web) el pool queda `ON` y no se toca**; el split es trabajo de T-1.31.
+Compensaciones para el perfil sin-MFA (RBAC §4.1/§4.3, actualizadas en T-2.00): quórum de 2
+ocupantes, rate-limit por usuario/sitio, auditoría con ID (+GPS solo con consentimiento) y
+enrolamiento por código acotado al sitio; **geofence best-effort** (un voto CON GPS fuera del
+radio se descarta; sin GPS cuenta — LFPDPPP hace la ubicación opcional). El split se ejecuta en
+**T-2.02** (Terraform, módulo `identity`); la API valida **ambos issuers** y ancla pool→rol
+(token del pool de ocupantes ⇒ solo `occupant`; del pool táctico ⇒ nunca `occupant` móvil) en
+**T-2.03** (`claims.py`).
 
 ---
 
