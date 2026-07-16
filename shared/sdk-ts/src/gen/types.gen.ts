@@ -75,6 +75,33 @@ export type ChannelSeries = {
 };
 
 /**
+ * Check-in de vida. ``subject_user_id`` SOLO para el check-in DELEGADO del
+ * headcount (táctico marca "verificado en persona"); requiere ``roster_read``.
+ */
+export type CheckinIn = {
+    location?: [
+        number,
+        number
+    ] | null;
+    status: 'safe' | 'need_help';
+    subject_user_id?: string | null;
+    ts_device?: string | null;
+    zone_id?: string | null;
+};
+
+export type CheckinOut = {
+    checkin_id: string;
+    created_at: string;
+    incident_id: string;
+    site_id: string;
+    status: string;
+    ts_device: string | null;
+    user_id: string;
+    verified_by: string | null;
+    via: string;
+};
+
+/**
  * Solicitud de comando remoto de actuador.
  */
 export type CommandIn = {
@@ -110,6 +137,57 @@ export type CommandOut = {
     site_id: string;
     status: string;
     tenant_id: string;
+};
+
+export type DamageCategoryIn = {
+    key: string;
+    note?: string | null;
+    severity: string;
+};
+
+export type DamageReportIn = {
+    categories: Array<DamageCategoryIn>;
+    evidence_ids?: Array<string>;
+    intent_key_id?: string | null;
+    intent_signature?: string | null;
+    notes?: string | null;
+    ts_device?: string | null;
+    zone_id?: string | null;
+};
+
+export type DamageReportOut = {
+    categories: Array<{
+        [key: string]: unknown;
+    }>;
+    created_at: string;
+    evidence_ids: Array<string>;
+    incident_id: string;
+    notes: string | null;
+    people_at_risk: boolean;
+    report_id: string;
+    site_id: string;
+    ts_device: string | null;
+    user_sub: string;
+    zone_id: string | null;
+};
+
+/**
+ * Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación
+ * criptográfica de intenciones llega en T-2.09; aquí solo se registra.
+ */
+export type DeviceKeyIn = {
+    attestation?: {
+        [key: string]: unknown;
+    };
+    platform: 'ios' | 'android';
+    public_key: string;
+};
+
+export type DeviceKeyOut = {
+    created_at: string;
+    key_id: string;
+    platform: string;
+    revoked_at: string | null;
 };
 
 /**
@@ -153,10 +231,15 @@ export type DictamenSignIn = {
 /**
  * Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con
  * gateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).
+ *
+ * [T-2.03·D4c] Con ``scheduled_at`` (futuro) la fila es AGENDA informativa
+ * ("próximo simulacro" de la app): sin comandos y jamás ``active`` — ejecutar
+ * a esa hora sigue siendo un acto del operador.
  */
 export type DrillCreateIn = {
     duration_s?: number;
     note?: string | null;
+    scheduled_at?: string | null;
     site_ids?: Array<string> | null;
 };
 
@@ -170,6 +253,7 @@ export type DrillOut = {
     duration_s: number;
     initiated_by: string;
     note: string | null;
+    scheduled_at: string | null;
     sites: Array<DrillSiteOut>;
     started_at: string;
     stop_reason: string | null;
@@ -188,6 +272,43 @@ export type DrillSiteOut = {
     command_status: string | null;
     site_id: string;
     site_name: string | null;
+};
+
+/**
+ * Alta de un código de enrolamiento (acción ``enrollment_manage``).
+ */
+export type EnrollmentCodeIn = {
+    code: string;
+    expires_at?: string | null;
+    max_uses?: number | null;
+    zone_id?: string | null;
+};
+
+export type EnrollmentCodeOut = {
+    active: boolean;
+    code: string;
+    expires_at: string | null;
+    grants_role: string;
+    max_uses: number | null;
+    site_id: string;
+    uses: number;
+    zone_id: string | null;
+};
+
+export type EnrollmentIn = {
+    code: string;
+};
+
+/**
+ * Resultado del alta: a qué sitio/zona quedó vinculado el portador.
+ */
+export type EnrollmentOut = {
+    evac_policy: string | null;
+    role: string;
+    site_id: string;
+    site_name: string;
+    zone_id: string | null;
+    zone_name: string | null;
 };
 
 /**
@@ -562,22 +683,34 @@ export type MapState = {
 };
 
 /**
- * Acciones sensibles del SOC web (espejo de ``matrix.ACTIONS``, default-deny).
+ * Acciones sensibles (espejo de ``matrix.ACTIONS``, default-deny).
+ *
+ * Desde T-2.03 incluye la superficie MÓVIL: la app deriva su UI de estos
+ * booleanos (server-driven), igual que la consola.
  */
 export type MeActions = {
     ack_incident: boolean;
+    checkin_submit: boolean;
+    damage_report_submit: boolean;
+    dictamen_read: boolean;
     drill_start: boolean;
     edit_thresholds: boolean;
+    enrollment_manage: boolean;
+    evidence_upload: boolean;
     export: boolean;
     generate_report: boolean;
     manage_fleet: boolean;
     manage_tenants: boolean;
     manage_visibility: boolean;
+    manual_activate: boolean;
+    panic_vote: boolean;
     read_audit: boolean;
     relocate_epicenter: boolean;
     request_dictamen: boolean;
+    roster_read: boolean;
     self_test: boolean;
     sign_dictamen: boolean;
+    siren_silence: boolean;
     siren_test: boolean;
 };
 
@@ -612,6 +745,69 @@ export type MetricSeries = {
 };
 
 /**
+ * Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —
+ * informativa, JAMÁS auto-arranca) y último ejecutado.
+ */
+export type MobileDrillOut = {
+    active: boolean;
+    last_note: string | null;
+    last_started_at: string | null;
+    next_scheduled_at: string | null;
+};
+
+export type MobileIncidentOut = {
+    incident_id: string;
+    node_count: number | null;
+    opened_at: string;
+    severity: string;
+    state: string;
+    trigger: string;
+};
+
+export type MobileReentryOut = {
+    blocked: boolean;
+    dictamen_signed: boolean;
+    dictamen_status: string | null;
+};
+
+/**
+ * Estado consolidado por sitio para la app (spec §5).
+ *
+ * Derivación de ``phase`` (documentada; el servidor es la autoridad):
+ * - sin incidente abierto → ``idle``
+ * - incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``
+ * - incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento
+ * terminado; el reingreso queda BLOQUEADO durante la evaluación — la app
+ * muestra check-in o bloqueo según su propio check-in)
+ * - dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →
+ * ``reentry_approved`` (hasta que el incidente cierre → idle)
+ * Los ingredientes crudos (incident/state, latest_tier, reentry) viajan junto
+ * a la derivación.
+ */
+export type MobileStateOut = {
+    assembly_point: SiteAssetOut | null;
+    compliance_labels: {
+        [key: string]: string;
+    };
+    drill: MobileDrillOut;
+    incident: MobileIncidentOut | null;
+    latest_tier: string | null;
+    my_zone: MobileZoneOut | null;
+    phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved';
+    reentry: MobileReentryOut;
+    server_ts: string;
+    site_id: string;
+    site_name: string;
+};
+
+export type MobileZoneOut = {
+    evac_policy: string | null;
+    level_code: string | null;
+    name: string;
+    zone_id: string;
+};
+
+/**
  * Strip multicanal (T-1.34). Sigue siendo features 1 s, NO waveform 100 sps.
  *
  * Los canales llegan ordenados alfabéticamente y solo aparecen los que tienen datos
@@ -633,9 +829,13 @@ export type PresignedDownload = {
 /**
  * Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null
  * (200, no 404): "sin nombre configurado" es un estado normal, no un error.
+ *
+ * [T-2.03·R4] ``phone``: PII con consentimiento — alimenta la llamada de un
+ * toque del roster (headcount 2.6).
  */
 export type ProfileOut = {
     display_name: string | null;
+    phone: string | null;
     updated_at: string | null;
     user_sub: string;
 };
@@ -643,9 +843,32 @@ export type ProfileOut = {
 /**
  * Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de
  * espacios internos) ANTES de validar longitud — "   " no es un nombre.
+ *
+ * [T-2.03·R4] ``phone`` opcional (E.164 laxo): proporcionarlo ES el
+ * consentimiento de aparecer en el roster; ``null`` lo retira.
  */
 export type ProfilePutIn = {
     display_name: string;
+    phone?: string | null;
+};
+
+/**
+ * Registro/rotación de token FCM/APNs (upsert por ``token``).
+ */
+export type PushTokenIn = {
+    platform: 'ios' | 'android';
+    site_id?: string | null;
+    token: string;
+};
+
+export type PushTokenOut = {
+    created_at: string;
+    last_seen_at: string;
+    platform: string;
+    push_token_id: string;
+    revoked_at: string | null;
+    site_id: string | null;
+    token: string;
 };
 
 /**
@@ -674,6 +897,32 @@ export type ReportOut = {
     evidence_id: string;
     expires_in: number;
     url: string;
+};
+
+export type RosterCheckin = {
+    created_at: string;
+    status: string;
+    ts_device: string | null;
+    via: string;
+};
+
+export type RosterEntry = {
+    checkin: RosterCheckin | null;
+    display_name: string | null;
+    phone: string | null;
+    user_id: string;
+    zone_id: string | null;
+    zone_name: string | null;
+};
+
+export type RosterOut = {
+    entries: Array<RosterEntry>;
+    incident_id: string;
+    need_help: number;
+    safe: number;
+    site_id: string;
+    total: number;
+    unreported: number;
 };
 
 /**
@@ -801,6 +1050,31 @@ export type SensorUpdate = {
     site_id: string;
     status?: 'active' | 'retired';
     zone_id?: string | null;
+};
+
+export type SiteAssetCreateIn = {
+    content_type?: string | null;
+    description?: string | null;
+    kind: 'evac_route' | 'assembly_point' | 'manual';
+    title: string;
+    with_file?: boolean;
+    zone_id?: string | null;
+};
+
+export type SiteAssetCreateOut = {
+    asset: SiteAssetOut;
+    upload_url: string | null;
+};
+
+export type SiteAssetOut = {
+    asset_id: string;
+    content_type: string | null;
+    description: string | null;
+    kind: string;
+    title: string;
+    updated_at: string;
+    url: string | null;
+    zone_id: string | null;
 };
 
 /**
@@ -1489,6 +1763,116 @@ export type ListIncidentActionsIncidentsIncidentIdActionsGetResponses = {
 
 export type ListIncidentActionsIncidentsIncidentIdActionsGetResponse = ListIncidentActionsIncidentsIncidentIdActionsGetResponses[keyof ListIncidentActionsIncidentsIncidentIdActionsGetResponses];
 
+export type ListMyCheckinsIncidentsIncidentIdCheckinsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: {
+        scope?: string;
+    };
+    url: '/incidents/{incident_id}/checkins';
+};
+
+export type ListMyCheckinsIncidentsIncidentIdCheckinsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListMyCheckinsIncidentsIncidentIdCheckinsGetError = ListMyCheckinsIncidentsIncidentIdCheckinsGetErrors[keyof ListMyCheckinsIncidentsIncidentIdCheckinsGetErrors];
+
+export type ListMyCheckinsIncidentsIncidentIdCheckinsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<CheckinOut>;
+};
+
+export type ListMyCheckinsIncidentsIncidentIdCheckinsGetResponse = ListMyCheckinsIncidentsIncidentIdCheckinsGetResponses[keyof ListMyCheckinsIncidentsIncidentIdCheckinsGetResponses];
+
+export type SubmitCheckinIncidentsIncidentIdCheckinsPostData = {
+    body: CheckinIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/checkins';
+};
+
+export type SubmitCheckinIncidentsIncidentIdCheckinsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitCheckinIncidentsIncidentIdCheckinsPostError = SubmitCheckinIncidentsIncidentIdCheckinsPostErrors[keyof SubmitCheckinIncidentsIncidentIdCheckinsPostErrors];
+
+export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: CheckinOut;
+};
+
+export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponse = SubmitCheckinIncidentsIncidentIdCheckinsPostResponses[keyof SubmitCheckinIncidentsIncidentIdCheckinsPostResponses];
+
+export type ListDamageReportsIncidentsIncidentIdDamageReportsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/damage-reports';
+};
+
+export type ListDamageReportsIncidentsIncidentIdDamageReportsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDamageReportsIncidentsIncidentIdDamageReportsGetError = ListDamageReportsIncidentsIncidentIdDamageReportsGetErrors[keyof ListDamageReportsIncidentsIncidentIdDamageReportsGetErrors];
+
+export type ListDamageReportsIncidentsIncidentIdDamageReportsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<DamageReportOut>;
+};
+
+export type ListDamageReportsIncidentsIncidentIdDamageReportsGetResponse = ListDamageReportsIncidentsIncidentIdDamageReportsGetResponses[keyof ListDamageReportsIncidentsIncidentIdDamageReportsGetResponses];
+
+export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostData = {
+    body: DamageReportIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/damage-reports';
+};
+
+export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostError = SubmitDamageReportIncidentsIncidentIdDamageReportsPostErrors[keyof SubmitDamageReportIncidentsIncidentIdDamageReportsPostErrors];
+
+export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DamageReportOut;
+};
+
+export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponse = SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses[keyof SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses];
+
 export type RequestDictamenIncidentsIncidentIdDictamenRequestPostData = {
     body: DictamenRequestIn;
     path: {
@@ -1651,6 +2035,33 @@ export type GenerateReportIncidentsIncidentIdReportPostResponses = {
 
 export type GenerateReportIncidentsIncidentIdReportPostResponse = GenerateReportIncidentsIncidentIdReportPostResponses[keyof GenerateReportIncidentsIncidentIdReportPostResponses];
 
+export type IncidentRosterIncidentsIncidentIdRosterGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/roster';
+};
+
+export type IncidentRosterIncidentsIncidentIdRosterGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentRosterIncidentsIncidentIdRosterGetError = IncidentRosterIncidentsIncidentIdRosterGetErrors[keyof IncidentRosterIncidentsIncidentIdRosterGetErrors];
+
+export type IncidentRosterIncidentsIncidentIdRosterGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RosterOut;
+};
+
+export type IncidentRosterIncidentsIncidentIdRosterGetResponse = IncidentRosterIncidentsIncidentIdRosterGetResponses[keyof IncidentRosterIncidentsIncidentIdRosterGetResponses];
+
 export type MeMeGetData = {
     body?: never;
     path?: never;
@@ -1666,6 +2077,72 @@ export type MeMeGetResponses = {
 };
 
 export type MeMeGetResponse = MeMeGetResponses[keyof MeMeGetResponses];
+
+export type ListDeviceKeysMeDeviceKeysGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/device-keys';
+};
+
+export type ListDeviceKeysMeDeviceKeysGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<DeviceKeyOut>;
+};
+
+export type ListDeviceKeysMeDeviceKeysGetResponse = ListDeviceKeysMeDeviceKeysGetResponses[keyof ListDeviceKeysMeDeviceKeysGetResponses];
+
+export type RegisterDeviceKeyMeDeviceKeysPostData = {
+    body: DeviceKeyIn;
+    path?: never;
+    query?: never;
+    url: '/me/device-keys';
+};
+
+export type RegisterDeviceKeyMeDeviceKeysPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegisterDeviceKeyMeDeviceKeysPostError = RegisterDeviceKeyMeDeviceKeysPostErrors[keyof RegisterDeviceKeyMeDeviceKeysPostErrors];
+
+export type RegisterDeviceKeyMeDeviceKeysPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DeviceKeyOut;
+};
+
+export type RegisterDeviceKeyMeDeviceKeysPostResponse = RegisterDeviceKeyMeDeviceKeysPostResponses[keyof RegisterDeviceKeyMeDeviceKeysPostResponses];
+
+export type EnrollMeEnrollmentPostData = {
+    body: EnrollmentIn;
+    path?: never;
+    query?: never;
+    url: '/me/enrollment';
+};
+
+export type EnrollMeEnrollmentPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type EnrollMeEnrollmentPostError = EnrollMeEnrollmentPostErrors[keyof EnrollMeEnrollmentPostErrors];
+
+export type EnrollMeEnrollmentPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EnrollmentOut;
+};
+
+export type EnrollMeEnrollmentPostResponse = EnrollMeEnrollmentPostResponses[keyof EnrollMeEnrollmentPostResponses];
 
 export type GetProfileMeProfileGetData = {
     body?: never;
@@ -1707,6 +2184,74 @@ export type PutProfileMeProfilePutResponses = {
 };
 
 export type PutProfileMeProfilePutResponse = PutProfileMeProfilePutResponses[keyof PutProfileMeProfilePutResponses];
+
+export type ListPushTokensMePushTokensGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/push-tokens';
+};
+
+export type ListPushTokensMePushTokensGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<PushTokenOut>;
+};
+
+export type ListPushTokensMePushTokensGetResponse = ListPushTokensMePushTokensGetResponses[keyof ListPushTokensMePushTokensGetResponses];
+
+export type RegisterPushTokenMePushTokensPostData = {
+    body: PushTokenIn;
+    path?: never;
+    query?: never;
+    url: '/me/push-tokens';
+};
+
+export type RegisterPushTokenMePushTokensPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegisterPushTokenMePushTokensPostError = RegisterPushTokenMePushTokensPostErrors[keyof RegisterPushTokenMePushTokensPostErrors];
+
+export type RegisterPushTokenMePushTokensPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: PushTokenOut;
+};
+
+export type RegisterPushTokenMePushTokensPostResponse = RegisterPushTokenMePushTokensPostResponses[keyof RegisterPushTokenMePushTokensPostResponses];
+
+export type RevokePushTokenMePushTokensPushTokenIdDeleteData = {
+    body?: never;
+    path: {
+        push_token_id: string;
+    };
+    query?: never;
+    url: '/me/push-tokens/{push_token_id}';
+};
+
+export type RevokePushTokenMePushTokensPushTokenIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokePushTokenMePushTokensPushTokenIdDeleteError = RevokePushTokenMePushTokensPushTokenIdDeleteErrors[keyof RevokePushTokenMePushTokensPushTokenIdDeleteErrors];
+
+export type RevokePushTokenMePushTokensPushTokenIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RevokePushTokenMePushTokensPushTokenIdDeleteResponse = RevokePushTokenMePushTokensPushTokenIdDeleteResponses[keyof RevokePushTokenMePushTokensPushTokenIdDeleteResponses];
 
 export type ListRuleSetsRuleSetsGetData = {
     body?: never;
@@ -2015,6 +2560,88 @@ export type UpdateSiteSitesSiteIdPutResponses = {
 
 export type UpdateSiteSitesSiteIdPutResponse = UpdateSiteSitesSiteIdPutResponses[keyof UpdateSiteSitesSiteIdPutResponses];
 
+export type ListSiteAssetsSitesSiteIdAssetsGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/assets';
+};
+
+export type ListSiteAssetsSitesSiteIdAssetsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListSiteAssetsSitesSiteIdAssetsGetError = ListSiteAssetsSitesSiteIdAssetsGetErrors[keyof ListSiteAssetsSitesSiteIdAssetsGetErrors];
+
+export type ListSiteAssetsSitesSiteIdAssetsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<SiteAssetOut>;
+};
+
+export type ListSiteAssetsSitesSiteIdAssetsGetResponse = ListSiteAssetsSitesSiteIdAssetsGetResponses[keyof ListSiteAssetsSitesSiteIdAssetsGetResponses];
+
+export type CreateSiteAssetSitesSiteIdAssetsPostData = {
+    body: SiteAssetCreateIn;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/assets';
+};
+
+export type CreateSiteAssetSitesSiteIdAssetsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSiteAssetSitesSiteIdAssetsPostError = CreateSiteAssetSitesSiteIdAssetsPostErrors[keyof CreateSiteAssetSitesSiteIdAssetsPostErrors];
+
+export type CreateSiteAssetSitesSiteIdAssetsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SiteAssetCreateOut;
+};
+
+export type CreateSiteAssetSitesSiteIdAssetsPostResponse = CreateSiteAssetSitesSiteIdAssetsPostResponses[keyof CreateSiteAssetSitesSiteIdAssetsPostResponses];
+
+export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteData = {
+    body?: never;
+    path: {
+        site_id: string;
+        asset_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/assets/{asset_id}';
+};
+
+export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteError = DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteErrors[keyof DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteErrors];
+
+export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponse = DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses[keyof DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses];
+
 export type ListCommandsSitesSiteIdCommandsGetData = {
     body?: never;
     path: {
@@ -2068,6 +2695,142 @@ export type IssueCommandSitesSiteIdCommandsPostResponses = {
 };
 
 export type IssueCommandSitesSiteIdCommandsPostResponse = IssueCommandSitesSiteIdCommandsPostResponses[keyof IssueCommandSitesSiteIdCommandsPostResponses];
+
+export type SiteDrillsSitesSiteIdDrillsGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/drills';
+};
+
+export type SiteDrillsSitesSiteIdDrillsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SiteDrillsSitesSiteIdDrillsGetError = SiteDrillsSitesSiteIdDrillsGetErrors[keyof SiteDrillsSitesSiteIdDrillsGetErrors];
+
+export type SiteDrillsSitesSiteIdDrillsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MobileDrillOut;
+};
+
+export type SiteDrillsSitesSiteIdDrillsGetResponse = SiteDrillsSitesSiteIdDrillsGetResponses[keyof SiteDrillsSitesSiteIdDrillsGetResponses];
+
+export type ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/enrollment-codes';
+};
+
+export type ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetError = ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetErrors[keyof ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetErrors];
+
+export type ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<EnrollmentCodeOut>;
+};
+
+export type ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetResponse = ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetResponses[keyof ListEnrollmentCodesSitesSiteIdEnrollmentCodesGetResponses];
+
+export type CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostData = {
+    body: EnrollmentCodeIn;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/enrollment-codes';
+};
+
+export type CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostError = CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostErrors[keyof CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostErrors];
+
+export type CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EnrollmentCodeOut;
+};
+
+export type CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostResponse = CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostResponses[keyof CreateEnrollmentCodeSitesSiteIdEnrollmentCodesPostResponses];
+
+export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteData = {
+    body?: never;
+    path: {
+        site_id: string;
+        code: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/enrollment-codes/{code}';
+};
+
+export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteError = DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteErrors[keyof DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteErrors];
+
+export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponse = DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses[keyof DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses];
+
+export type MobileStateSitesSiteIdMobileStateGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/mobile-state';
+};
+
+export type MobileStateSitesSiteIdMobileStateGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MobileStateSitesSiteIdMobileStateGetError = MobileStateSitesSiteIdMobileStateGetErrors[keyof MobileStateSitesSiteIdMobileStateGetErrors];
+
+export type MobileStateSitesSiteIdMobileStateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MobileStateOut;
+};
+
+export type MobileStateSitesSiteIdMobileStateGetResponse = MobileStateSitesSiteIdMobileStateGetResponses[keyof MobileStateSitesSiteIdMobileStateGetResponses];
 
 export type MapStateTelemetryMapStateGetData = {
     body?: never;
