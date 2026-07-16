@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # queda vacía → el endpoint no puede firmar y, además, no se monta (guardado
     # por auth_jwks_json vacío en main.create_app).
     auth_dev_private_key: str = ""
+    # [T-2.04] Push móvil (SNS platform endpoints, decisión T-2.00). ARNs de las
+    # platform applications creadas por infra/terraform/modules/push (vacíos ⇒
+    # provider SIMULADO que grita — patrón T-1.62; la llave APNs llega con el
+    # entitlement de Apple, GATE-STORE).
+    push_apns_application_arn: str = ""
+    push_fcm_application_arn: str = ""
+
     # [T-2.03] Pool de OCUPANTES (decisión #7, T-2.02): segundo issuer verificable
     # con ancla pool→rol (un token de este pool SOLO puede portar role=occupant; uno
     # del pool principal JAMÁS occupant). issuer vacío ⇒ pool deshabilitado y el

@@ -113,6 +113,10 @@ class SimulatedProvider:
 
 def build_providers(settings) -> dict[str, NotifyProvider]:
     """Providers por canal según Settings (SES si hay remitente; si no, simulado)."""
+    # Import tardío: push.py importa boto3/dataclasses propios y este módulo se
+    # importa desde tests puros del plan — sin ciclo y sin costo si no se usa.
+    from takab_api.notify.push import build_push_provider
+
     email: NotifyProvider
     if settings.notify_email_from:
         email = SesEmailProvider(sender=settings.notify_email_from, region=settings.aws_region)
@@ -130,4 +134,7 @@ def build_providers(settings) -> dict[str, NotifyProvider]:
         "whatsapp": SimulatedProvider("whatsapp"),
         "sms": SimulatedProvider("sms"),
         "email": email,
+        # [T-2.04] El canal push usa deliver() (lote + resultado por dispositivo);
+        # el orquestador lo despacha por una rama propia, no por send().
+        "push": build_push_provider(settings),  # type: ignore[dict-item]
     }

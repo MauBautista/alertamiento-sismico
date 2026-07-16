@@ -85,11 +85,20 @@ def plan_jobs(
         clean.pop("secret", None)  # jamás persistir secretos en el job
         return clean
 
+    # [T-2.04] La push móvil NO es un salto de la cascada (no es fallback: es el
+    # despertador de la app) — va SIEMPRE en paralelo a t0, clase CRISIS. Es
+    # best-effort: la vida la protege la sirena del edge (R5).
+    push = (
+        [JobSpec("push", "parallel", 0, t0, None, _target("push"))]
+        if "push" in destinations
+        else []
+    )
+
     if trigger == "quorum":  # fail-open: sitio SIN ENLACE cubierto por la red
         return [
             JobSpec(ch, "parallel", pos, t0, _deadline(ch, "parallel"), _target(ch))
             for pos, ch in enumerate(configured)
-        ]
+        ] + push
 
     jobs = [
         JobSpec(
@@ -106,4 +115,4 @@ def plan_jobs(
         jobs.append(
             JobSpec("email", "parallel", 0, t0, _deadline("email", "parallel"), _target("email"))
         )
-    return jobs
+    return jobs + push

@@ -33,6 +33,7 @@ import psycopg
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import NotifyError, NotifyProvider
+from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -173,6 +174,31 @@ INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
 VALUES (%(incident)s, %(tenant)s, 'notify_sent', %(actor)s, %(payload)s::jsonb)
 """
 
+# --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
+_PUSH_EXISTS_SQL = """
+SELECT 1 FROM push_tokens
+WHERE site_id = %(site)s AND revoked_at IS NULL
+LIMIT 1
+"""
+
+_PUSH_DEVICES_SQL = """
+SELECT push_token_id, token, platform, endpoint_arn
+FROM push_tokens
+WHERE site_id = %(site)s AND revoked_at IS NULL
+ORDER BY created_at
+"""
+
+_SET_ENDPOINT_ARN_SQL = """
+UPDATE push_tokens SET endpoint_arn = %(arn)s WHERE push_token_id = %(id)s
+"""
+
+# Endpoint deshabilitado (token rotado / app desinstalada): revocación honesta —
+# el dispositivo vivo re-registra su token nuevo vía el upsert de /me/push-tokens.
+_REVOKE_PUSH_TOKEN_SQL = """
+UPDATE push_tokens SET revoked_at = %(now)s
+WHERE push_token_id = %(id)s AND revoked_at IS NULL
+"""
+
 
 def run_notify_pass(
     conn: psycopg.Connection,
@@ -222,6 +248,13 @@ def _enqueue(
     inserted = 0
     for row in rows:
         destinations = resolve_destinations(_config_for(conn, config_cache, row))
+        # [T-2.04] Push CRISIS si el sitio tiene dispositivos registrados: el
+        # target solo lleva el site_id (la lista de dispositivos se resuelve
+        # FRESCA al despachar, como el secret del webhook). Un tenant sin
+        # cascada pero con app instalada igual despierta teléfonos.
+        has_devices = conn.execute(_PUSH_EXISTS_SQL, {"site": row["site_id"]}).fetchone()
+        if has_devices is not None:
+            destinations = {**destinations, "push": {"site_id": str(row["site_id"])}}
         if not destinations:
             continue  # tenant sin cascada configurada: nada que encolar
         specs = plan_jobs(
@@ -332,6 +365,10 @@ def _dispatch_one(
         _fail(conn, counts, row, "provider no configurado", now=now, max_attempts=max_attempts)
         return
 
+    if row["channel"] == "push":
+        _dispatch_push(conn, counts, row, provider, now=now, max_attempts=max_attempts)
+        return
+
     target = dict(row["target"])
     if row["channel"] == "webhook":
         # El secret vive en el rule_set, jamás en el job: se re-resuelve aquí.
@@ -382,6 +419,93 @@ def _dispatch_one(
         incident_id,
         latency_s,
         "OK" if deadline_met else "VENCIDO",
+    )
+
+
+def _dispatch_push(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    provider,
+    *,
+    now: datetime,
+    max_attempts: int,
+) -> None:
+    """[T-2.04] Rama propia del canal push (lote por dispositivo + limpieza).
+
+    El provider expone ``deliver()`` (resultado POR dispositivo) en vez de
+    ``send()``: hay que sellar los endpoint ARN recién creados y REVOCAR los
+    muertos. ≥1 entrega = sent (best-effort, R5); 0 entregas con dispositivos
+    vivos = fallo → backoff (es un job paralelo: única voz push del incidente).
+    """
+    site_id = str((row["target"] or {}).get("site_id") or row["site_id"])
+    devices = [
+        PushDevice(
+            push_token_id=str(r["push_token_id"]),
+            token=r["token"],
+            platform=r["platform"],
+            endpoint_arn=r["endpoint_arn"],
+        )
+        for r in conn.execute(_PUSH_DEVICES_SQL, {"site": site_id}).fetchall()
+    ]
+    if not devices:
+        _fail(
+            conn,
+            counts,
+            row,
+            "sin dispositivos activos para el sitio",
+            now=now,
+            max_attempts=max_attempts,
+        )
+        return
+
+    payload = build_push_payload(
+        push_class=PUSH_CLASS_CRISIS,
+        site_id=site_id,
+        incident_id=str(row["incident_id"]),
+        phase="alert_active",
+    )
+    outcome = provider.deliver(devices, payload)
+
+    for token_id, arn in outcome.created_arns.items():
+        conn.execute(_SET_ENDPOINT_ARN_SQL, {"id": token_id, "arn": arn})
+    for token_id in outcome.disabled_ids:
+        conn.execute(_REVOKE_PUSH_TOKEN_SQL, {"id": token_id, "now": now})
+
+    if outcome.delivered == 0:
+        error = "; ".join(outcome.errors) or "todos los endpoints deshabilitados"
+        _fail(conn, counts, row, error[:500], now=now, max_attempts=max_attempts)
+        return
+
+    conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
+    latency_s = (now - row["opened_at"]).total_seconds()
+    conn.execute(
+        _ACTION_SQL,
+        {
+            "incident": row["incident_id"],
+            "tenant": row["tenant_id"],
+            "actor": f"system:notify:push:{row['mode']}",
+            "payload": json.dumps(
+                {
+                    "job_id": str(row["job_id"]),
+                    "channel": "push",
+                    "mode": row["mode"],
+                    "class": PUSH_CLASS_CRISIS,
+                    "latency_s": latency_s,
+                    "devices_delivered": outcome.delivered,
+                    "devices_revoked": len(outcome.disabled_ids),
+                }
+            ),
+        },
+    )
+    counts["sent"] += 1
+    logger.info(
+        "notify sent push/%s incidente %s (%d dispositivo(s), %d revocado(s), latencia %.1fs)",
+        row["mode"],
+        row["incident_id"],
+        outcome.delivered,
+        len(outcome.disabled_ids),
+        latency_s,
     )
 
 
