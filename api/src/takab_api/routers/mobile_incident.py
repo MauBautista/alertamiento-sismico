@@ -17,7 +17,7 @@ import json
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -75,11 +75,16 @@ async def _incident_in_scope(conn: AsyncConnection, claims: Claims, incident_id:
 async def submit_checkin(
     incident_id: UUID,
     body: CheckinIn,
+    response: Response,
     claims: Claims = Depends(_require_checkin),
     conn: AsyncConnection = Depends(get_session),
 ) -> CheckinOut:
     """Check-in de vida. DEBE funcionar encolado offline y sincronizar después
     (la app manda ``ts_device``; el servidor sella ``created_at``).
+
+    [T-2.06] Idempotente ante replays de la cola offline: el mismo
+    ``checkin_id`` de cliente devuelve 200 con LA MISMA fila (jamás duplica);
+    un id ajeno (otro portador u otro incidente) ⇒ 409 sin fuga.
 
     Delegado (``subject_user_id`` ≠ portador): SOLO roles con ``roster_read``
     (el brigadista marca "verificado en persona"); queda ``via='delegated'`` +
@@ -98,6 +103,7 @@ async def submit_checkin(
             await conn.execute(
                 q.INSERT_CHECKIN,
                 {
+                    "checkin_id": str(body.checkin_id) if body.checkin_id else None,
                     "tenant": str(incident.tenant_id),
                     "incident": str(incident_id),
                     "subject": subject,
@@ -114,6 +120,24 @@ async def submit_checkin(
         ).first()
     except IntegrityError as exc:
         raise integrity_error(exc) from exc
+
+    if row is None:
+        # ON CONFLICT DO NOTHING: replay del mismo portador ⇒ la fila original
+        # (200, sin audit — es el MISMO evento); id ajeno ⇒ 409.
+        row = (
+            await conn.execute(
+                q.CHECKIN_REPLAY,
+                {
+                    "checkin_id": str(body.checkin_id),
+                    "incident": str(incident_id),
+                    "subject": subject,
+                },
+            )
+        ).first()
+        if row is None:
+            raise http_error(409, "checkin_id en conflicto con otro registro")
+        response.status_code = 200
+        return CheckinOut(**dict(row._mapping))
 
     await audit_async(
         conn,

@@ -324,6 +324,51 @@ async def test_checkin_propio_delegado_y_cruces(base_data, make_incident) -> Non
 
 
 @pytest.mark.anyio
+async def test_checkin_replay_offline_es_idempotente(base_data, make_incident) -> None:
+    """T-2.06 · La cola offline REINTENTA: el mismo ``checkin_id`` de cliente
+    jamás duplica (regla de oro 3 — idempotencia en todo dato que cruza).
+
+    - 1er envío ⇒ 201, fila nueva con el id del dispositivo.
+    - Replay exacto (red que murió tras aterrizar) ⇒ 200 con LA MISMA fila.
+    - El mismo id desde OTRO portador ⇒ 409 y JAMÁS la fila ajena.
+    """
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/incidents/{incident_id}/checkins"
+    cid = str(uuid.uuid4())
+    body = {
+        "checkin_id": cid,
+        "status": "need_help",
+        "ts_device": datetime.now(UTC).isoformat(),
+        "location": [-99.13, 19.43],
+    }
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+
+        first = await client.post(url, json=body, headers=au.bearer(_occ()))
+        assert first.status_code == 201
+        assert first.json()["checkin_id"] == cid
+
+        replay = await client.post(url, json=body, headers=au.bearer(_occ()))
+        assert replay.status_code == 200
+        assert replay.json()["checkin_id"] == cid
+        assert replay.json()["created_at"] == first.json()["created_at"]
+
+        # scope=me: UNA sola fila — el replay no duplicó nada
+        mine = await client.get(url, headers=au.bearer(_occ()))
+        assert [c["checkin_id"] for c in mine.json()] == [cid]
+
+        # el mismo id desde OTRO portador: conflicto explícito, sin fuga
+        await _enroll(client, _occ(user_id=OCC_USER_2))
+        thief = await client.post(
+            url,
+            json={"checkin_id": cid, "status": "safe"},
+            headers=au.bearer(_occ(user_id=OCC_USER_2)),
+        )
+        assert thief.status_code == 409
+
+
+@pytest.mark.anyio
 async def test_roster_cuenta_y_gatea(base_data, make_incident) -> None:
     await _seed_zone_and_code()
     incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)

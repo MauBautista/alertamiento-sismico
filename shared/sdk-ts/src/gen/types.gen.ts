@@ -79,6 +79,7 @@ export type ChannelSeries = {
  * headcount (táctico marca "verificado en persona"); requiere ``roster_read``.
  */
 export type CheckinIn = {
+    checkin_id?: string | null;
     location?: [
         number,
         number

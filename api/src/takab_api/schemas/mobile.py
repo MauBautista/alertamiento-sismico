@@ -195,6 +195,10 @@ class CheckinIn(BaseModel):
     """Check-in de vida. ``subject_user_id`` SOLO para el check-in DELEGADO del
     headcount (táctico marca "verificado en persona"); requiere ``roster_read``."""
 
+    #: [T-2.06] Id generado por la COLA OFFLINE del dispositivo: el reintento
+    #: tras una red que murió a medias replica el MISMO id y el servidor
+    #: deduplica (regla de oro 3). Sin id ⇒ el servidor genera uno.
+    checkin_id: UUID | None = None
     status: Literal["safe", "need_help"]
     zone_id: UUID | None = None
     #: GPS opcional (LFPDPPP): solo viaja con consentimiento y solo aporta en

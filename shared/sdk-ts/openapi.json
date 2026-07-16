@@ -299,6 +299,18 @@
       "CheckinIn": {
         "description": "Check-in de vida. ``subject_user_id`` SOLO para el check-in DELEGADO del\nheadcount (táctico marca \"verificado en persona\"); requiere ``roster_read``.",
         "properties": {
+          "checkin_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkin Id"
+          },
           "location": {
             "anyOf": [
               {
@@ -6775,7 +6787,7 @@
         "summary": "List My Checkins"
       },
       "post": {
-        "description": "Check-in de vida. DEBE funcionar encolado offline y sincronizar después\n(la app manda ``ts_device``; el servidor sella ``created_at``).\n\nDelegado (``subject_user_id`` ≠ portador): SOLO roles con ``roster_read``\n(el brigadista marca \"verificado en persona\"); queda ``via='delegated'`` +\n``verified_by`` — distinguible del check-in propio en datos (spec 2.6).",
+        "description": "Check-in de vida. DEBE funcionar encolado offline y sincronizar después\n(la app manda ``ts_device``; el servidor sella ``created_at``).\n\n[T-2.06] Idempotente ante replays de la cola offline: el mismo\n``checkin_id`` de cliente devuelve 200 con LA MISMA fila (jamás duplica);\nun id ajeno (otro portador u otro incidente) ⇒ 409 sin fuga.\n\nDelegado (``subject_user_id`` ≠ portador): SOLO roles con ``roster_read``\n(el brigadista marca \"verificado en persona\"); queda ``via='delegated'`` +\n``verified_by`` — distinguible del check-in propio en datos (spec 2.6).",
         "operationId": "submit_checkin_incidents__incident_id__checkins_post",
         "parameters": [
           {

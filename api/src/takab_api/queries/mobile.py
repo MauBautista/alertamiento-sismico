@@ -197,17 +197,31 @@ LAST_DRILL_FOR_SITE = text(
 
 # --- check-ins ------------------------------------------------------------------------
 
+# [T-2.06] checkin_id lo puede traer la COLA OFFLINE del dispositivo: el replay
+# del mismo id no inserta (DO NOTHING ⇒ RETURNING vacío) y el router devuelve la
+# fila original vía CHECKIN_REPLAY. La tabla es append-only: jamás DO UPDATE.
 INSERT_CHECKIN = text(
-    "INSERT INTO life_checkins (tenant_id, incident_id, user_id, site_id, status, "
+    "INSERT INTO life_checkins (checkin_id, tenant_id, incident_id, user_id, site_id, status, "
     "geom, zone_id, ts_device, via, verified_by) "
-    "VALUES (CAST(:tenant AS uuid), CAST(:incident AS uuid), CAST(:subject AS uuid), "
+    "VALUES (COALESCE(CAST(:checkin_id AS uuid), gen_random_uuid()), "
+    "CAST(:tenant AS uuid), CAST(:incident AS uuid), CAST(:subject AS uuid), "
     "CAST(:site AS uuid), :status, "
     "CASE WHEN CAST(:lon AS float8) IS NULL THEN NULL "
     "ELSE ST_SetSRID(ST_MakePoint(CAST(:lon AS float8), CAST(:lat AS float8)), 4326)"
     "::geography END, "
     "CAST(:zone AS uuid), :ts_device, :via, CAST(:verified_by AS uuid)) "
+    "ON CONFLICT (checkin_id) DO NOTHING "
     "RETURNING checkin_id, incident_id, user_id, site_id, status, via, verified_by, "
     "ts_device, created_at"
+)
+
+# Replay legítimo = MISMO incidente y MISMO portador; un id ajeno no devuelve
+# nada (⇒ 409 en el router) — jamás la fila de otro usuario.
+CHECKIN_REPLAY = text(
+    "SELECT checkin_id, incident_id, user_id, site_id, status, via, verified_by, "
+    "ts_device, created_at FROM life_checkins "
+    "WHERE checkin_id = CAST(:checkin_id AS uuid) "
+    "AND incident_id = CAST(:incident AS uuid) AND user_id = CAST(:subject AS uuid)"
 )
 
 MY_CHECKINS = text(

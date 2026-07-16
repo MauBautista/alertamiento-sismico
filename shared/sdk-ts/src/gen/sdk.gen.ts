@@ -285,6 +285,10 @@ export const listMyCheckinsIncidentsIncidentIdCheckinsGet = <ThrowOnError extend
  * Check-in de vida. DEBE funcionar encolado offline y sincronizar después
  * (la app manda ``ts_device``; el servidor sella ``created_at``).
  *
+ * [T-2.06] Idempotente ante replays de la cola offline: el mismo
+ * ``checkin_id`` de cliente devuelve 200 con LA MISMA fila (jamás duplica);
+ * un id ajeno (otro portador u otro incidente) ⇒ 409 sin fuga.
+ *
  * Delegado (``subject_user_id`` ≠ portador): SOLO roles con ``roster_read``
  * (el brigadista marca "verificado en persona"); queda ``via='delegated'`` +
  * ``verified_by`` — distinguible del check-in propio en datos (spec 2.6).
