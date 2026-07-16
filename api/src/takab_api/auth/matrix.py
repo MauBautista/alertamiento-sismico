@@ -133,6 +133,11 @@ ACTIONS: tuple[str, ...] = (
     # ``dictamen_read`` (R7) — leer/descargar el PDF de dictamen EXISTENTE en móvil
     # (no lo genera: generate_report sigue siendo inspector/superadmin).
     "dictamen_read",
+    # [T-2.08] ``panel_read`` — dashboard táctico 2.1 (RBAC §3: "Dashboard táctico
+    # (salud gabinete + actuadores)"): traza BMS del incidente + canal live en móvil.
+    # El occupant NO lo recibe (§3 da "—"): su superficie es crisis/check-in, no la
+    # operación del gabinete. Gatea GET /incidents/{id}/actions en superficie móvil.
+    "panel_read",
 )
 
 
@@ -161,6 +166,7 @@ def _actions(
     enrollment_manage: bool = False,
     panic_vote: bool = False,
     dictamen_read: bool = False,
+    panel_read: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -186,6 +192,7 @@ def _actions(
         "enrollment_manage": enrollment_manage,
         "panic_vote": panic_vote,
         "dictamen_read": dictamen_read,
+        "panel_read": panel_read,
     }
 
 
@@ -237,6 +244,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         evidence_upload=True,
         manual_activate=True,
         dictamen_read=True,
+        panel_read=True,
     ),
     # [T-2.03] building_admin (RBAC §3): headcount y silenciar SÍ; forense NO
     # (§3 da "—" en cámara/formulario — administra el inmueble, no lo peritea).
@@ -249,6 +257,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manual_activate=True,
         enrollment_manage=True,
         dictamen_read=True,
+        panel_read=True,
     ),
     # [T-2.03] Tácticos de campo (RBAC §4): deslizar-para-activar individual,
     # silenciar = retirada de demanda, forense y headcount.
@@ -260,6 +269,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         siren_silence=True,
         manual_activate=True,
         dictamen_read=True,
+        panel_read=True,
     ),
     "security_guard": _actions(
         checkin_submit=True,
@@ -269,6 +279,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         siren_silence=True,
         manual_activate=True,
         dictamen_read=True,
+        panel_read=True,
     ),
     # [T-2.03] occupant: SOLO su check-in y su voto de pánico (quórum 2/30 s).
     "occupant": _actions(checkin_submit=True, panic_vote=True),

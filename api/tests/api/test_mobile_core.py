@@ -390,16 +390,16 @@ async def test_mobile_state_site_health_honesto(gw_sandbox) -> None:
     async with au.client_for(create_app()) as client:
         await _enroll(client, _occ())
 
-        # sitio sin gabinete: SIN ENLACE honesto, sin heartbeat, sin WR-1
+        # sitio sin gabinete: SIN ENLACE honesto, sin heartbeat, sin WR-1 y
+        # TODAS las métricas del panel en None (S/D — jamás ceros inventados)
         r0 = await client.get(url, headers=au.bearer(_occ()))
         assert r0.status_code == 200
         sh0 = r0.json()["site_health"]
-        assert sh0 == {
-            "status": "SIN ENLACE",
-            "heartbeat_at": None,
-            "age_s": None,
-            "has_wr1": False,
-        }
+        assert sh0["status"] == "SIN ENLACE"
+        assert sh0["heartbeat_at"] is None
+        assert sh0["has_wr1"] is False
+        for metric in ("mqtt_rtt_ms", "power_status", "battery_pct", "cpu_temp_c"):
+            assert sh0[metric] is None
 
         # gabinete con WR-1 y heartbeat fresco en la pared ⇒ OPERATIVO
         await _seed_gateway(has_wr1=True)
@@ -507,6 +507,26 @@ async def test_checkin_replay_offline_es_idempotente(base_data, make_incident) -
             headers=au.bearer(_occ(user_id=OCC_USER_2)),
         )
         assert thief.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_traza_bms_para_dashboard_tactico(base_data, make_incident) -> None:
+    """T-2.08 · ``panel_read`` (RBAC §3: Dashboard táctico): el brigadista lee
+    la traza del incidente DE SU SITIO por el MISMO endpoint que la consola
+    (cero SQL divergente); fuera de su ``site_scope`` recibe el MISMO 404; el
+    occupant jamás entra (403 — §3 da "—" en dashboard)."""
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/incidents/{incident_id}/actions"
+    async with au.client_for(create_app()) as client:
+        ok = await client.get(url, headers=au.bearer(_brig()))
+        assert ok.status_code == 200
+        assert isinstance(ok.json(), list)
+
+        fuera = await client.get(url, headers=au.bearer(_brig(site_scope=str(uuid.uuid4()))))
+        assert fuera.status_code == 404
+
+        occ = await client.get(url, headers=au.bearer(_occ()))
+        assert occ.status_code == 403
 
 
 @pytest.mark.anyio

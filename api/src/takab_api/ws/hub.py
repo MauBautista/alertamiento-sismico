@@ -31,7 +31,7 @@ from uuid import UUID
 from sqlalchemy import text
 from starlette.websockets import WebSocket
 
-from takab_api.auth.claims import Claims
+from takab_api.auth.claims import Claims, scope_filter
 from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
@@ -54,17 +54,24 @@ _SQL_INCIDENT = text(
     "severity, state, trigger, max_pga_g, max_pgv_cms "
     "FROM incidents WHERE incident_id = :id"
 )
+# [T-2.08] La acción viaja con el site_id de su incidente: la entrega se acota
+# por site_scope del suscriptor (tácticos móviles con alcance de un sitio).
 _SQL_ACTION = text(
-    "SELECT action_id, incident_id, tenant_id, ts, kind, actor, payload "
-    "FROM incident_actions WHERE action_id = :id"
+    "SELECT a.action_id, a.incident_id, a.tenant_id, i.site_id, a.ts, a.kind, "
+    "a.actor, a.payload "
+    "FROM incident_actions a JOIN incidents i ON i.incident_id = a.incident_id "
+    "WHERE a.action_id = :id"
 )
 # device_health/rule_evaluations tienen PK compuesto (ts, gateway_id) y el NOTIFY
 # no trae ts: re-consultamos la transición más reciente del gateway (RLS aplica).
+# [T-2.08] + site_id del gateway (mismo motivo que _SQL_ACTION).
 _SQL_DEVICE_HEALTH = text(
-    "SELECT ts, tenant_id, gateway_id, reason, mqtt_rtt_ms, seedlink_lag_s, "
-    "ntp_offset_ms, cpu_temp_c, power_status, battery_pct, battery_min_left, "
-    "cert_days_remaining FROM device_health "
-    "WHERE gateway_id = :gw AND reason = 'transition' ORDER BY ts DESC LIMIT 1"
+    "SELECT dh.ts, dh.tenant_id, dh.gateway_id, g.site_id, dh.reason, "
+    "dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.cpu_temp_c, "
+    "dh.power_status, dh.battery_pct, dh.battery_min_left, dh.cert_days_remaining "
+    "FROM device_health dh JOIN gateways g ON g.gateway_id = dh.gateway_id "
+    "WHERE dh.gateway_id = :gw AND dh.reason = 'transition' "
+    "ORDER BY dh.ts DESC LIMIT 1"
 )
 _SQL_RULE_EVAL = text(
     "SELECT ts, tenant_id, site_id, gateway_id, prev_tier, new_tier, rule_set_version "
@@ -204,6 +211,11 @@ class Hub:
             if frame is None:
                 continue
             for s in members:
+                # [T-2.08] site_scope default-deny en la ENTREGA: un suscriptor
+                # acotado (p.ej. brigadista de un sitio) no recibe frames de
+                # otros sitios de su tenant. scope None = sin filtro ("*").
+                if not _frame_in_scope(s.claims, frame):
+                    continue
                 await self._send(s, frame)
 
     async def _build_frame(
@@ -258,6 +270,20 @@ class Hub:
                 await sub.ws.send_json(frame)
             except Exception:  # noqa: BLE001 - socket muerto: lo damos de baja
                 await self.unregister(sub)
+
+
+def _frame_in_scope(claims: Claims, frame: dict[str, Any]) -> bool:
+    """True si el frame cae dentro del ``site_scope`` del suscriptor.
+
+    Sin filtro (scope "*" → None) todo pasa. Con filtro, el frame debe traer
+    ``site_id`` y estar en el alcance — un frame SIN sitio para un suscriptor
+    acotado se descarta (default-deny, jamás "por si acaso").
+    """
+    allowed = scope_filter(claims)
+    if allowed is None:
+        return True
+    site_id = frame.get("site_id")
+    return site_id is not None and str(site_id) in allowed
 
 
 def _can_maybe_see(claims: Claims, tenant: Any, visibility: str) -> bool:

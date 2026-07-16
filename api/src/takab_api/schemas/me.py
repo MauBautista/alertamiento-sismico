@@ -40,6 +40,8 @@ class MeActions(BaseModel):
     enrollment_manage: bool
     panic_vote: bool
     dictamen_read: bool
+    #: [T-2.08] Dashboard táctico 2.1 (RBAC §3): traza BMS + canal live móvil.
+    panel_read: bool
 
 
 class MeResponse(BaseModel):

@@ -84,6 +84,7 @@ DENY_ALL = {
     "enrollment_manage": False,
     "panic_vote": False,
     "dictamen_read": False,
+    "panel_read": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -97,6 +98,8 @@ MOBILE_ACTIONS = (
     "enrollment_manage",
     "panic_vote",
     "dictamen_read",
+    # [T-2.08] Dashboard táctico 2.1 (RBAC §3: salud gabinete + actuadores).
+    "panel_read",
 )
 
 
@@ -230,15 +233,17 @@ def test_occupant_field_actions_are_minimal() -> None:
 
 
 # Copiado A MANO de RBAC-TAKAB.md §3 (matriz móvil), fila por fila, para las
-# funciones que YA tienen acción ejecutable en T-2.03. (Las filas de solo
-# lectura — estado del edificio, crisis, dashboard — no gatean por acción.)
+# funciones que YA tienen acción ejecutable. (Las filas de solo lectura —
+# estado del edificio, crisis — no gatean por acción; el DASHBOARD TÁCTICO sí
+# desde T-2.08: ``panel_read`` espeja la fila "Dashboard táctico (salud
+# gabinete + actuadores)" — occupant "—", inspector "Lectura".)
 RBAC_SECTION_3 = {
-    #                 checkin roster  damage  evid.  silence activate dict_read
-    "occupant": (True, False, False, False, False, False, False),
-    "brigadista": (True, True, True, True, True, True, True),
-    "security_guard": (True, True, True, True, True, True, True),
-    "inspector": (True, False, True, True, False, True, True),
-    "building_admin": (True, True, False, False, True, True, True),
+    #                 checkin roster  damage  evid.  silence activate dict_read panel
+    "occupant": (True, False, False, False, False, False, False, False),
+    "brigadista": (True, True, True, True, True, True, True, True),
+    "security_guard": (True, True, True, True, True, True, True, True),
+    "inspector": (True, False, True, True, False, True, True, True),
+    "building_admin": (True, True, False, False, True, True, True, True),
 }
 _S3_COLS = (
     "checkin_submit",
@@ -248,6 +253,7 @@ _S3_COLS = (
     "siren_silence",
     "manual_activate",
     "dictamen_read",
+    "panel_read",
 )
 
 

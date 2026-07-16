@@ -77,6 +77,9 @@ class IncidentActionFrame(BaseModel):
     action_id: UUID
     incident_id: UUID
     tenant_id: UUID
+    #: [T-2.08] Sitio del incidente: permite acotar la entrega por site_scope
+    #: (tácticos móviles) y enrutar el frame en clientes multi-sitio.
+    site_id: UUID | None = None
     ts: datetime
     kind: str
     actor: str

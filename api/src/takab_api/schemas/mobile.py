@@ -174,6 +174,16 @@ class MobileSiteHealthOut(BaseModel):
     heartbeat_at: datetime | None
     age_s: float | None
     has_wr1: bool
+    #: [T-2.08] Métricas del heartbeat MÁS RECIENTE del sitio (dashboard 2.1):
+    #: mismo payload que la consola de flota; None = sin dato (la app pinta
+    #: "S/D", jamás un 0 inventado — contrato honesto T-1.40).
+    mqtt_rtt_ms: float | None = None
+    seedlink_lag_s: float | None = None
+    ntp_offset_ms: float | None = None
+    cpu_temp_c: float | None = None
+    power_status: str | None = None
+    battery_pct: float | None = None
+    cert_days_remaining: int | None = None
 
 
 class DirectoryEntryOut(BaseModel):

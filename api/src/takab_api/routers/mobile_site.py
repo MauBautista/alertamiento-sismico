@@ -71,6 +71,7 @@ async def _site_health(
     heartbeat_at = None
     age_s: float | None = None
     has_wr1 = False
+    freshest: Any = None  # métricas del heartbeat más reciente (dashboard 2.1)
     rank = {OPERATIVO: 0, DEGRADADO: 1, SIN_ENLACE: 2}
     if rows:
         states = []
@@ -96,9 +97,20 @@ async def _site_health(
             if r.health_ts is not None and (heartbeat_at is None or r.health_ts > heartbeat_at):
                 heartbeat_at = r.health_ts
                 age_s = r.age_s
+                freshest = r
         worst = max(states, key=lambda s: rank[s])
     return MobileSiteHealthOut(
-        status=worst, heartbeat_at=heartbeat_at, age_s=age_s, has_wr1=has_wr1
+        status=worst,
+        heartbeat_at=heartbeat_at,
+        age_s=age_s,
+        has_wr1=has_wr1,
+        mqtt_rtt_ms=freshest.mqtt_rtt_ms if freshest is not None else None,
+        seedlink_lag_s=freshest.seedlink_lag_s if freshest is not None else None,
+        ntp_offset_ms=freshest.ntp_offset_ms if freshest is not None else None,
+        cpu_temp_c=freshest.cpu_temp_c if freshest is not None else None,
+        power_status=freshest.power_status if freshest is not None else None,
+        battery_pct=freshest.battery_pct if freshest is not None else None,
+        cert_days_remaining=freshest.cert_days_remaining if freshest is not None else None,
     )
 
 
