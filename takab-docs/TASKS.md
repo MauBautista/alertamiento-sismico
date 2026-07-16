@@ -1912,7 +1912,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > 116✓ · mobile_core 11✓ · web 576✓ · sdk tsc✓ · mobile 18✓ · ruff limpio · SDK regenerado.** Pendiente T-2.10: verificación criptográfica de la firma de intención (hoy se
 > ALMACENA, sin fingir validación).
 
-### [ ] T-2.04 · Push: infraestructura + onboarding de permisos — `GATE-STORE`
+### [x] T-2.04 · Push: infraestructura + onboarding de permisos — `GATE-STORE` — **COMPLETA (2026-07-16)**
 - **Componente:** api + mobile + infra
 - Registro/rotación en `/me/push-tokens`; **emisor: SNS platform endpoints (T-2.00)** — spike
   inicial de campos APNs con cláusula de reversión (spec §6); dos clases JAMÁS mezcladas:
@@ -1922,6 +1922,29 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   protección de vida es la sirena del edge (así se comunica en onboarding, R5).
 - Pantallas 0.1–0.4 (login, permisos con estado rojo imposible de ignorar, aviso de privacidad,
   enrolamiento por código). Verificación física de bypass DND/Critical Alerts = `GATE-STORE`.
+> **ESTADO.** **Infra:** módulo `push/` con platform applications APNs/FCM **condicionales a
+> credenciales reales** (vacías ⇒ no se crean; la .p8 llega con la aprobación de Apple —
+> GATE-STORE) + política IAM SNS acotada al rol de la instancia; outputs para
+> `TAKAB_API_PUSH_*_APPLICATION_ARN`; fmt+validate ✓ (**apply pendiente, sin efecto hasta tener
+> credenciales**). **DB:** 0019 `push_tokens.endpoint_arn` (cache del endpoint SNS) + UPDATE a
+> `takab_ingest` + el CHECK de `notification_jobs.channel` admite `'push'` (trampa: el CHECK
+> viejo reventaba el INSERT). **API:** `notify/push.py` — payloads por clase (CRISIS:
+> `interruption-level time-sensitive` base pre-entitlement + `sound.critical` listo, canal
+> Android `seismic_alert`; OPS normal; texto visible GENÉRICO — cero PII en lockscreen);
+> `SnsPushProvider` (endpoint por dispositivo con sellado de ARN; `EndpointDisabled` ⇒
+> REVOCACIÓN honesta del token) + simulado que grita (patrón T-1.62). Cascada: job `push`
+> **parallel** a t0 (clase CRISIS al abrir incidente), encolado SOLO si el sitio tiene
+> dispositivos (nada de 'sent' vacíos), targeting FRESCO al despachar (patrón del secret del
+> webhook), `incident_action notify_sent` con `devices_delivered/revoked`; 0 entregas ⇒ backoff
+> (única voz push). **Móvil:** `services/push.ts` (canales Android MAX+bypassDnd, permisos con
+> `allowCriticalAlerts`, token NATIVO → `/me/push-tokens`), `alertability.ts` (derivación PURA:
+> blocked/degraded/ok — jamás optimismo), onboarding 0.2/0.3/0.4 cableados (permisos con rojo
+> imposible de ignorar re-verificado al volver de background; privacidad con consentimiento GPS
+> revocable; enrolamiento consumiendo `POST /me/enrollment`), gate en `index` + registro
+> best-effort al autenticar. **api 860✓ (+9 push, moto) · mobile 30✓ (+12) · tsc/lint/ruff
+> limpios · OpenAPI sin drift.** Pendiente físico `GATE-STORE`: entitlement de Apple (en
+> trámite), credenciales APNs/FCM reales, bypass DND en dispositivos; push OPS de dictamen se
+> cablea en T-2.12; sonido oficial empaquetado en T-2.05.
 
 ### [ ] T-2.05 · Máquina de estados de crisis + pantallas 1.2/1.3
 - **Componente:** mobile
