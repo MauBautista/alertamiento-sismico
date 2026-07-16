@@ -103,6 +103,9 @@ CREATE TABLE zones (
   site_id    uuid NOT NULL REFERENCES sites ON DELETE CASCADE,
   name       text NOT NULL,
   level_code text,
+  -- [T-2.03·R1] Instrucción binaria de crisis POR ZONA (spec móvil §4.1):
+  -- evacuate|shelter. NULL = sin política definida (la app lo declara, no inventa).
+  evac_policy text CHECK (evac_policy IS NULL OR evac_policy IN ('evacuate','shelter')),
   zone_geom  geometry(Polygon,4326)
 );
 CREATE INDEX idx_zones_site ON zones (site_id);
@@ -306,6 +309,12 @@ CREATE TABLE life_checkins (
   user_id     uuid NOT NULL,
   site_id     uuid NOT NULL REFERENCES sites,
   status      text NOT NULL CHECK (status IN ('safe','need_help')),
+  -- [T-2.03] ts_device viaja junto al ts del servidor (honestidad de tiempos);
+  -- el check-in DELEGADO del headcount (brigadista marca "verificado en persona")
+  -- es distinguible del propio: via='delegated' + verified_by = sub del táctico.
+  ts_device   timestamptz,
+  via         text NOT NULL DEFAULT 'self' CHECK (via IN ('self','delegated')),
+  verified_by uuid,
   geom        geography(Point,4326),                 -- PII de ubicación → LFPDPPP (§9)
   zone_id     uuid REFERENCES zones,
   created_at  timestamptz NOT NULL DEFAULT now()
@@ -772,6 +781,13 @@ CREATE POLICY lc_read ON life_checkins FOR SELECT
 CREATE POLICY lc_insert ON life_checkins FOR INSERT
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 
+-- [T-2.03] Privilegios del DDL latente móvil (las políticas de arriba existían,
+-- pero sin GRANT takab_app no podía tocar las tablas).
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_zone_assignments TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON site_enrollment_codes TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON manual_activation_votes TO takab_app;
+GRANT SELECT, INSERT ON life_checkins TO takab_app;
+
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE  ROW LEVEL SECURITY;
 CREATE POLICY audit_read ON audit_log FOR SELECT
@@ -915,7 +931,10 @@ CREATE TABLE drills (
   duration_s   integer NOT NULL CHECK (duration_s BETWEEN 30 AND 3600),
   started_at   timestamptz NOT NULL DEFAULT now(),
   stopped_at   timestamptz,
-  stop_reason  text
+  stop_reason  text,
+  -- [T-2.03·D4c] AGENDA informativa ("próximo simulacro" de la app): una fila con
+  -- scheduled_at es ANUNCIO, jamás deriva `active` ni emite comandos — LO REAL GANA.
+  scheduled_at timestamptz
 );
 CREATE INDEX idx_drills_tenant ON drills (tenant_id, started_at DESC);
 
@@ -1000,6 +1019,9 @@ CREATE TABLE user_profiles (
   user_sub     uuid PRIMARY KEY,                     -- Cognito sub (≡ dictamens.signed_by)
   tenant_id    uuid NOT NULL REFERENCES tenants,
   display_name text NOT NULL CHECK (char_length(display_name) BETWEEN 1 AND 80),
+  -- [T-2.03·R4] Teléfono para la llamada de un toque del roster (PII, con
+  -- consentimiento registrado; lo cura building_admin/tenant_admin).
+  phone        text,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_user_profiles_tenant ON user_profiles (tenant_id);
@@ -1013,6 +1035,130 @@ CREATE POLICY user_profiles_self_write ON user_profiles FOR ALL
   USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
   WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
 CREATE POLICY user_profiles_admin ON user_profiles FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- ---------------------------------------------------------------------------
+-- SUPERFICIE MÓVIL (T-2.03 · Fase 2, spec §5/§5.1)
+-- push_tokens/device_keys = PII de dispositivo: SOLO la fila propia
+-- (app_user_id()) + *_admin interno; sin rama gov. damage_reports es EVIDENCIA
+-- (append-only, lectura con rama gov como incidents). compliance_labels: los
+-- strings normativos se SIRVEN por tenant (§2.1-C; escritura interna hasta
+-- ratificar el marco citable — GATE-LEGAL). site_assets: rutas/punto de
+-- reunión/manual cacheables offline.
+-- ---------------------------------------------------------------------------
+CREATE TABLE push_tokens (
+  push_token_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     uuid NOT NULL REFERENCES tenants,
+  user_sub      uuid NOT NULL,
+  platform      text NOT NULL CHECK (platform IN ('ios','android')),
+  token         text NOT NULL UNIQUE,
+  site_id       uuid REFERENCES sites,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now(),
+  revoked_at    timestamptz
+);
+CREATE INDEX idx_push_tokens_user ON push_tokens (user_sub);
+CREATE INDEX idx_push_tokens_site ON push_tokens (site_id) WHERE revoked_at IS NULL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON push_tokens TO takab_app;
+GRANT SELECT ON push_tokens TO takab_ingest;  -- el worker de notify resuelve destinos
+
+ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_tokens FORCE  ROW LEVEL SECURITY;
+CREATE POLICY pt_self ON push_tokens FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+CREATE POLICY pt_admin ON push_tokens FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE TABLE device_keys (
+  key_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES tenants,
+  user_sub    uuid NOT NULL,
+  platform    text NOT NULL CHECK (platform IN ('ios','android')),
+  public_key  text NOT NULL,               -- SPKI PEM (P-256 de Secure Enclave/Keystore)
+  attestation jsonb NOT NULL DEFAULT '{}',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  revoked_at  timestamptz
+);
+CREATE INDEX idx_device_keys_user ON device_keys (user_sub) WHERE revoked_at IS NULL;
+GRANT SELECT, INSERT, UPDATE ON device_keys TO takab_app;
+
+ALTER TABLE device_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_keys FORCE  ROW LEVEL SECURITY;
+CREATE POLICY dk_self ON device_keys FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+CREATE POLICY dk_admin ON device_keys FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE TABLE damage_reports (
+  report_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id        uuid NOT NULL REFERENCES tenants,
+  incident_id      uuid NOT NULL REFERENCES incidents,
+  site_id          uuid NOT NULL REFERENCES sites,
+  zone_id          uuid REFERENCES zones,
+  user_sub         uuid NOT NULL,
+  categories       jsonb NOT NULL,          -- [{key, severity, note?}]
+  people_at_risk   boolean NOT NULL DEFAULT false,
+  notes            text,
+  evidence_ids     uuid[] NOT NULL DEFAULT '{}',
+  intent_key_id    uuid,                    -- firma de intención (verificación e2e: T-2.10)
+  intent_signature text,
+  ts_device        timestamptz,
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_damage_reports_incident ON damage_reports (incident_id, created_at DESC);
+CREATE TRIGGER trg_damage_reports_append_only
+  BEFORE UPDATE OR DELETE ON damage_reports
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+GRANT SELECT, INSERT ON damage_reports TO takab_app;
+
+ALTER TABLE damage_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE damage_reports FORCE  ROW LEVEL SECURITY;
+CREATE POLICY dr_read ON damage_reports FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+CREATE POLICY dr_insert ON damage_reports FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+
+CREATE TABLE compliance_labels (
+  tenant_id  uuid PRIMARY KEY REFERENCES tenants,
+  labels     jsonb NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid
+);
+GRANT SELECT, INSERT, UPDATE ON compliance_labels TO takab_app;
+
+ALTER TABLE compliance_labels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance_labels FORCE  ROW LEVEL SECURITY;
+CREATE POLICY cl_read ON compliance_labels FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal() OR app_gov_can_see(tenant_id));
+CREATE POLICY cl_admin ON compliance_labels FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE TABLE site_assets (
+  asset_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants,
+  site_id      uuid NOT NULL REFERENCES sites,
+  zone_id      uuid REFERENCES zones,
+  kind         text NOT NULL CHECK (kind IN ('evac_route','assembly_point','manual')),
+  title        text NOT NULL,
+  description  text,
+  s3_key       text,                        -- NULL = asset textual (p.ej. punto de reunión)
+  content_type text,
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  updated_by   uuid
+);
+CREATE INDEX idx_site_assets_site ON site_assets (site_id, kind);
+GRANT SELECT, INSERT, UPDATE, DELETE ON site_assets TO takab_app;
+
+ALTER TABLE site_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_assets FORCE  ROW LEVEL SECURITY;
+CREATE POLICY sa_read ON site_assets FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY sa_write ON site_assets FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY sa_admin ON site_assets FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
 -- Catálogo GLOBAL de sismos relevantes reales (SSN/USGS; transcritos del
