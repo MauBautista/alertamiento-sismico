@@ -22,6 +22,28 @@ output "issuer" {
   value = module.identity.issuer
 }
 
+# --- Superficie móvil (T-2.02 · decisión #7) --------------------------------
+
+output "mobile_tactical_client_id" {
+  value = module.identity.mobile_tactical_client_id
+}
+
+output "occupants_user_pool_id" {
+  value = module.identity.occupants_user_pool_id
+}
+
+output "occupants_client_id" {
+  value = module.identity.occupants_client_id
+}
+
+output "occupants_hosted_ui_domain" {
+  value = module.identity.occupants_hosted_ui_domain
+}
+
+output "occupants_issuer" {
+  value = module.identity.occupants_issuer
+}
+
 output "evidence_bucket" {
   value = module.storage.evidence_bucket.name
 }
