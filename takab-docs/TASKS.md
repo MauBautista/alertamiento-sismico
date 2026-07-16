@@ -1840,7 +1840,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > 557) · eslint limpio · vite build OK · tokens presentes en el bundle.** La copia del canvas
 > queda como artefacto congelado; un token nuevo aterriza primero en `tokens.json`.
 
-### [ ] T-2.02 · Scaffold `mobile/` (Expo prebuild + auth + SDK)
+### [x] T-2.02 · Scaffold `mobile/` (Expo prebuild + auth + SDK) — **COMPLETA (2026-07-15)**
 - **Componente:** mobile
 - Expo SDK con dev client/prebuild (NO Expo Go); TypeScript estricto; TanStack Query + Zustand;
   React Navigation con **perfil server-driven** por `/me` (`allowed_routes`/`allowed_actions`,
@@ -1852,6 +1852,20 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   único grupo `occupant`) + app client móvil en `infra/terraform/modules/identity`; la app
   enruta el login por perfil (occupant → pool simple con MFA opt-in; tácticos → pool `ON`).
 - `mobile/README.md`: módulos que exigen prebuild + entitlements pendientes (`GATE-STORE`).
+> **ESTADO.** **Infra:** módulo `identity` extendido — pool `takab-dev-occupants`
+> (`mfa=OPTIONAL` + TOTP, único grupo `occupant`, mismos custom attributes), domain propio,
+> client `takab-mobile-occupants` (PKCE por deep link `takab://auth/callback`, refresh 90 días)
+> y client `takab-mobile-tactical` sobre el pool principal intacto (refresh 24 h); outputs en
+> módulo y envs/dev; `fmt`+`validate` verdes. **⚠ `terraform apply` PENDIENTE (lo corre
+> Mauricio)** — hasta entonces los `EXPO_PUBLIC_*` no existen y el login declara "pool sin
+> configurar". **App:** `mobile/` con Expo SDK 57 (RN 0.86 · React 19), expo-router con grupos
+> `(occupant)`/`(brigadista)` y guards + `denied` explícito; `gateFor(/me)` default-deny
+> (tests), sesión SOLO en SecureStore con purga de payload corrupto (tests), config dual-pool
+> declarativa (tests), `useAuth` PKCE + `bootstrapSession` (offline conserva sesión cacheada
+> con `me=null`), SDK espejo de la consola (Bearer + solo 401 expulsa), tema desde
+> `@takab/design-tokens`, 9 placeholders honestos con su tarea, Metro con watchFolders del
+> monorepo, `.gitignore` CNG. **Job `mobile` en CI** (eslint+tsc+jest, patrón file: del job
+> web). jest 18/18 ✓ · tsc ✓ · eslint ✓. README con envs/entitlements; AGENTS.md del árbol.
 
 ### [ ] T-2.03 · DB + API móvil núcleo (migración 0018 sobre el DDL latente)
 - **Componente:** db + api + shared (SDK)
