@@ -57,29 +57,6 @@ _UP = f"""
 SET ROLE takab_migrator;
 
 -- ---------------------------------------------------------------------------
--- Deltas sobre DDL existente
--- ---------------------------------------------------------------------------
-ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS ts_device   timestamptz;
-ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS via         text NOT NULL DEFAULT 'self';
-ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS verified_by uuid;
-ALTER TABLE life_checkins DROP CONSTRAINT IF EXISTS life_checkins_via_check;
-ALTER TABLE life_checkins ADD CONSTRAINT life_checkins_via_check
-  CHECK (via IN ('self','delegated'));
-
-ALTER TABLE zones ADD COLUMN IF NOT EXISTS evac_policy text;
-ALTER TABLE zones DROP CONSTRAINT IF EXISTS zones_evac_policy_check;
-ALTER TABLE zones ADD CONSTRAINT zones_evac_policy_check
-  CHECK (evac_policy IS NULL OR evac_policy IN ('evacuate','shelter'));
-
-ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS phone text;
-
--- GRANTs que faltaban para el DDL latente (política sin privilegio = inservible).
-GRANT SELECT, INSERT, UPDATE, DELETE ON user_zone_assignments TO takab_app;
-GRANT SELECT, INSERT, UPDATE ON site_enrollment_codes TO takab_app;
-GRANT SELECT, INSERT, UPDATE ON manual_activation_votes TO takab_app;
-GRANT SELECT, INSERT ON life_checkins TO takab_app;
-
--- ---------------------------------------------------------------------------
 -- push_tokens — registro FCM/APNs por dispositivo (T-2.04 lo consume)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS push_tokens (
@@ -221,35 +198,46 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON site_assets TO takab_app;
 RESET ROLE;
 """
 
-# ``drills`` se creó en la 0015 SIN ``SET ROLE`` → localmente su dueño es el
-# usuario de conexión (superusuario), NO takab_migrator (trampa conocida:
-# "local migra como superusuario, la nube como takab_migrator"). Este delta
-# corre como usuario de conexión: dueño en nube (migrator) y superusuario en
-# local pueden ALTER; bajo SET ROLE migrator el local revienta con
-# InsufficientPrivilege.
-_UP_DRILLS_AS_CONNECTION_USER = """
+# TODO delta sobre tablas PREEXISTENTES corre como USUARIO DE CONEXIÓN (sin
+# SET ROLE): el dueño histórico varía por base (en el dev local
+# ``user_profiles``/``drills``/``life_checkins`` pertenecen al superusuario de
+# conexión; en ``takab_test`` es ``drills``; en cadena fresca todo es de
+# ``takab_migrator``). Bajo ``SET ROLE takab_migrator`` cualquier tabla que no
+# le pertenezca revienta con InsufficientPrivilege. El usuario de conexión
+# funciona en TODOS los casos: superusuario en local, ``takab_migrator``
+# (dueño de todo) en la nube.
+_UP_PREEXISTING_AS_CONNECTION_USER = """
+-- Deltas sobre DDL existente
+ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS ts_device   timestamptz;
+ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS via         text NOT NULL DEFAULT 'self';
+ALTER TABLE life_checkins ADD COLUMN IF NOT EXISTS verified_by uuid;
+ALTER TABLE life_checkins DROP CONSTRAINT IF EXISTS life_checkins_via_check;
+ALTER TABLE life_checkins ADD CONSTRAINT life_checkins_via_check
+  CHECK (via IN ('self','delegated'));
+
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS evac_policy text;
+ALTER TABLE zones DROP CONSTRAINT IF EXISTS zones_evac_policy_check;
+ALTER TABLE zones ADD CONSTRAINT zones_evac_policy_check
+  CHECK (evac_policy IS NULL OR evac_policy IN ('evacuate','shelter'));
+
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS phone text;
+
 ALTER TABLE drills ADD COLUMN IF NOT EXISTS scheduled_at timestamptz;
+
+-- GRANTs que faltaban para el DDL latente (política sin privilegio = inservible).
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_zone_assignments TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON site_enrollment_codes TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON manual_activation_votes TO takab_app;
+GRANT SELECT, INSERT ON life_checkins TO takab_app;
 """
 
-_DOWN_DRILLS_AS_CONNECTION_USER = """
-ALTER TABLE drills DROP COLUMN IF EXISTS scheduled_at;
-"""
-
-# Reverso: suelta tablas nuevas, columnas añadidas y GRANTs que esta migración
-# introdujo. Los GRANTs latentes se revocan (vuelven al estado 0017).
-_DOWN = """
-SET ROLE takab_migrator;
-
-DROP TABLE IF EXISTS site_assets;
-DROP TABLE IF EXISTS compliance_labels;
-DROP TABLE IF EXISTS damage_reports;
-DROP TABLE IF EXISTS device_keys;
-DROP TABLE IF EXISTS push_tokens;
-
+_DOWN_PREEXISTING_AS_CONNECTION_USER = """
 REVOKE ALL ON user_zone_assignments FROM takab_app;
 REVOKE ALL ON site_enrollment_codes FROM takab_app;
 REVOKE ALL ON manual_activation_votes FROM takab_app;
 REVOKE ALL ON life_checkins FROM takab_app;
+
+ALTER TABLE drills DROP COLUMN IF EXISTS scheduled_at;
 
 ALTER TABLE user_profiles DROP COLUMN IF EXISTS phone;
 ALTER TABLE zones DROP CONSTRAINT IF EXISTS zones_evac_policy_check;
@@ -258,6 +246,17 @@ ALTER TABLE life_checkins DROP CONSTRAINT IF EXISTS life_checkins_via_check;
 ALTER TABLE life_checkins DROP COLUMN IF EXISTS verified_by;
 ALTER TABLE life_checkins DROP COLUMN IF EXISTS via;
 ALTER TABLE life_checkins DROP COLUMN IF EXISTS ts_device;
+"""
+
+# Reverso de las tablas NUEVAS (las creó SET ROLE ⇒ las dueña takab_migrator).
+_DOWN = """
+SET ROLE takab_migrator;
+
+DROP TABLE IF EXISTS site_assets;
+DROP TABLE IF EXISTS compliance_labels;
+DROP TABLE IF EXISTS damage_reports;
+DROP TABLE IF EXISTS device_keys;
+DROP TABLE IF EXISTS push_tokens;
 
 RESET ROLE;
 """
@@ -271,10 +270,10 @@ def _exec(sql: str) -> None:
 
 
 def upgrade() -> None:
+    _exec(_UP_PREEXISTING_AS_CONNECTION_USER)
     _exec(_UP)
-    _exec(_UP_DRILLS_AS_CONNECTION_USER)
 
 
 def downgrade() -> None:
-    _exec(_DOWN_DRILLS_AS_CONNECTION_USER)
     _exec(_DOWN)
+    _exec(_DOWN_PREEXISTING_AS_CONNECTION_USER)
