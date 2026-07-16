@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { setWatchedSite } from "@/services/mySite";
 import { markOnboardingDone } from "@/services/onboarding";
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
@@ -23,6 +24,8 @@ export default function Enrolamiento() {
       try {
         const res = await enrollMeEnrollmentPost({ body: { code: code.trim() } });
         if (res.data) {
+          // El sitio enrolado es el que este dispositivo VIGILA (mobile-state).
+          await setWatchedSite(String(res.data.site_id));
           setResult(res.data);
         } else {
           setError("Código inválido, vencido o agotado. Pida uno nuevo a su administrador.");

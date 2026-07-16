@@ -8,6 +8,7 @@ import { useEffect } from "react";
 
 import { useSessionStore } from "@/auth/session.store";
 import { bootstrapSession } from "@/auth/useAuth";
+import { CrisisWatcher } from "@/features/alert/CrisisWatcher";
 import { registerDeviceForPush } from "@/services/push";
 import { configureApiClient } from "@/services/sdk";
 import { palette } from "@/ui/theme";
@@ -35,12 +36,17 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <StatusBar style="light" />
+      <CrisisWatcher />
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: palette.bg },
         }}
-      />
+      >
+        {/* Toma total: sin gesto de regreso mientras la alerta esté activa
+            (la salida la decide la fase del servidor — spec §7 · 1.2). */}
+        <Stack.Screen name="crisis" options={{ gestureEnabled: false }} />
+      </Stack>
     </QueryClientProvider>
   );
 }
