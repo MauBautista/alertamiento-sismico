@@ -1987,7 +1987,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > bloqueo de reingreso (1.5) en T-2.07 — `checkin_pending`/`reentry_blocked` ya derivan hoy.
 > **api 860✓ · web 576✓ (build+eslint+prettier limpios) · mobile 66✓ (tsc+expo lint limpios).**
 
-### [ ] T-2.06 · Cola offline cifrada + check-in de vida (1.4)
+### [x] T-2.06 · Cola offline cifrada + check-in de vida (1.4)
 - **Componente:** mobile + api
 - SQLite cifrado (verificar el cifrado real antes de rotular "AES-256"); elementos con estado
   `{pending, uploading, synced, failed}`; nada se borra hasta `synced` + 24 h; reintentos con
@@ -1996,6 +1996,34 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   no, zona asignada; se muestra qué se enviará); `ts_device` + `ts_server` persistidos.
 - Aceptación E2E: modo avión → check-in `pending` → red → `synced` → el roster del táctico lo
   refleja vía WS en <2 s.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API idempotente ante replays (regla de oro 3):**
+> `CheckinIn.checkin_id` lo genera la COLA del dispositivo; `INSERT … ON CONFLICT (checkin_id)
+> DO NOTHING` + replay del MISMO portador/incidente ⇒ **200 con la fila original** (sin audit —
+> es el mismo evento); un id ajeno ⇒ **409 sin fuga** (test `test_checkin_replay_offline_es_
+> idempotente`); la tabla sigue append-only (jamás DO UPDATE). **Cola (`mobile/src/offline/`):**
+> lógica PURA (`queue.ts`: transiciones, `isDue`, retención SOLO `synced+24h`,
+> `recoverInterrupted` — un `uploading` interrumpido vuelve a `pending` al hidratar porque el
+> replay es seguro); backoff exponencial ±50% jitter con techo 5 min (`backoff.ts`); huella
+> SHA-256 del payload CANÓNICO al capturar (`custody.ts`); persistencia SQLite con **SQLCipher
+> VERIFICADO en runtime** (`PRAGMA cipher_version` tras `PRAGMA key` con llave de 32 bytes en
+> SecureStore; sin SQLCipher —p.ej. Expo Go— el estado queda `{active:false}` y JAMÁS se rotula
+> AES-256 sin comprobarlo); motor `drainQueue` (candado reentrante, orden de captura, respeta
+> `next_attempt_at`; 4xx de contrato ⇒ `failed` VISIBLE sin reintento; red/5xx/429/401 ⇒
+> retry) + `OfflineSyncGate` (hidrata al autenticar, drena en foreground/red-recuperada/tic 15 s).
+> **1.4:** dos botones gigantes con TRANSPARENCIA previa (`whatWillBeSent`: qué viaja
+> exactamente); **GPS SOLO need_help+consentimiento** (`buildCheckinPayload` puro — el test
+> FALLA si alguien relaja la regla; "estoy bien" jamás manda GPS ni con fix a la mano); captura
+> best-effort 5 s ⇒ degrada a zona asignada declarándolo; `ts_device` sellado AL TOQUE;
+> `CheckinStatusView` honesto (GUARDADO EN ESTE DISPOSITIVO ≠ RECIBIDO POR EL SERVIDOR);
+> `hasOwnCheckin` = servidor ∪ cola local (`failed` NO cuenta — debe poder reintentar);
+> watcher + `/crisis` enrutan `checkin_pending` → `/checkin` (takeover sin gesto de regreso).
+> **E2E:** modo avión→pending→red→synced con el MISMO checkin_id cubierto en jest
+> (`sync.test.ts`) y el roster lo refleja al aterrizar (tests api); el reflejo "vía WS <2 s"
+> pertenece a T-2.08 (WS móvil táctico). Trampas nuevas: RTL v14 — `fireEvent` TAMBIÉN es
+> async (un press sin await deja act() abierto y envenena el resto de la suite);
+> `no-require-imports` ⇒ carga perezosa del módulo nativo con `import()` dinámico.
+> **api 861✓ · web 576✓ · mobile 95✓ (tsc+lint limpios) · SDK sin drift.**
 
 ### [ ] T-2.07 · Pantallas de ocupante: 1.1, 1.5, 1.6–1.8 + variante SIMULACRO
 - **Componente:** mobile
