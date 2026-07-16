@@ -2025,7 +2025,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > `no-require-imports` ⇒ carga perezosa del módulo nativo con `import()` dinámico.
 > **api 861✓ · web 576✓ · mobile 95✓ (tsc+lint limpios) · SDK sin drift.**
 
-### [ ] T-2.07 · Pantallas de ocupante: 1.1, 1.5, 1.6–1.8 + variante SIMULACRO
+### [x] T-2.07 · Pantallas de ocupante: 1.1, 1.5, 1.6–1.8 + variante SIMULACRO
 - **Componente:** mobile
 - 1.1 reposo: estado del sitio honesto por `mobile-state` (nunca calculado local); badge
   "SASMEX ENLAZADO" solo con enlace WR-1 real; próximo simulacro (`scheduled_at`) + último
@@ -2036,6 +2036,42 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   revocable, logout).
 - Los 4 estados obligatorios en cada componente (contrato `StateFrame`:
   loading>error>empty>stale, banner "DATOS RETENIDOS"); "datos de hace X min" sin red.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API (+2):** `mobile-state.site_health` — el banner del
+> edificio sale del MISMO derivador que Flota Edge (`derive_fleet_state`, verdad única y
+> mismos umbrales de settings; con varios gabinetes gana el PEOR; sitio sin gabinete ⇒
+> SIN ENLACE honesto) + `GET /sites/{id}/directory` (roster PÚBLICO: brigadista/seguridad/
+> administración desde `user_zone_assignments` ⋈ `user_profiles`, occupants JAMÁS listados,
+> publicación deliberada ⇒ sin audit por lectura). **Matiz de honestidad del badge SASMEX:**
+> el WR-1 NO expone supervisión de línea (solo el Relevador 2 está cableado — fase 1.9) ⇒ el
+> chip verificable es `has_wr1` (hardware declarado) ∧ gabinete reportando, rotulado
+> "SASMEX WR-1 · GABINETE ENLAZADO"; jamás un estado del enlace que nadie mide. **Infra
+> móvil:** `StateFrame` RN (prioridad loading>error>empty>contenido+stale, banner "DATOS
+> RETENIDOS · hace X min" con tic interno de 30 s) + `useCachedQuery` (respuesta buena ⇒
+> caché cifrada `doc_cache` en la MISMA sqlite del offline —`db.ts` compartida—; sin red ⇒
+> copia con edad; sin red NI copia ⇒ error declarado, jamás spinner infinito). **1.1**
+> (`HomeView`): SEGURO/DEGRADADO/SIN ENLACE, chip WR-1, zona+política, franja ámbar
+> SIMULACRO sobre contenido NORMAL (test: jamás pantalla de crisis — el drill no crea
+> incidente), agenda próximo/último (`sin programar`/`sin registro` — no inventa),
+> brigadistas de MI zona con `tel:`. **1.5** (`ReentryBlockedView` + `reentryTimeline` pura):
+> letrero rojo persistente, timeline derivada del servidor (evento→sacudida→su check-in
+> [guardado≠recibido]→dictamen→reingreso; test recorre TODAS las combinaciones y "Reingreso
+> autorizado" JAMÁS sale done — la liberación es solo `reentry_approved` del backend), punto
+> de reunión, `compliance_labels` (vacío ⇒ NADA normativo, GATE-LEGAL); sustituye al
+> `CheckinStatusView` de T-2.06 en `/checkin`. **1.6:** lista cacheada + descarga de binarios
+> a documentos (`File.downloadFileAsync`, badge DISPONIBLE OFFLINE = `File.exists` verificado,
+> abrir vía share sheet); sin URL ⇒ "SIN COPIA OFFLINE" declarado. **1.7:** agrupado por zona,
+> LLAMAR un toque, sin teléfono ⇒ se declara (sin botón roto). **1.8:** perfil GET/PUT
+> (nombre obligatorio CHECK 1-80), consentimiento GPS revocable con efecto declarado (revocar
+> ⇒ el siguiente auxilio manda zona — garantizado por `buildCheckinPayload`, test T-2.06),
+> fila TOTP OPCIONAL SOLO occupant (decisión #7; flujo de asociación → T-2.14), enlaces a
+> permisos/privacidad/vincular, logout. Trampas nuevas: `renderHook` de RTL v14 también es
+> async; react-hooks v6 `purity` veta `Date.now()` en render (⇒ tic con `useState(()=>…)` +
+> interval, o `dataUpdatedAt`); el formulario de cuenta es estado DERIVADO (sin setState en
+> effect); `toHaveTextContent(string)` exige match EXACTO (usar regex). Test nuevo del api con
+> `gw_sandbox` (limpia gateways/device_health del sitio al entrar Y salir — los tests de
+> ingest cuentan filas y un heartbeat huérfano los rompe).
+> **api 863✓ · web 576✓ · mobile 125✓ (tsc+expo lint limpios) · SDK sin drift.**
 
 ### [ ] T-2.08 · WS móvil (allowlist topic×rol) + dashboard táctico 2.1
 - **Componente:** api + shared + mobile
