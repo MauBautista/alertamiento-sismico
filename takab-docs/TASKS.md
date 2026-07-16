@@ -2073,7 +2073,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > ingest cuentan filas y un heartbeat huérfano los rompe).
 > **api 863✓ · web 576✓ · mobile 125✓ (tsc+expo lint limpios) · SDK sin drift.**
 
-### [ ] T-2.08 · WS móvil (allowlist topic×rol) + dashboard táctico 2.1
+### [x] T-2.08 · WS móvil (allowlist topic×rol) + dashboard táctico 2.1
 - **Componente:** api + shared + mobile
 - `/ws`: autorización por **allowlist topic×rol default-deny** (hoy el handshake solo admite
   roles de consola): tácticos con `site_state`, `features:<site_id>` e `incidents`, siempre
@@ -2085,6 +2085,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   lag SeedLink, temperatura, cert); **features de 1 s** (pga/pgv/rms/stalta — NO waveform,
   regla de oro 9); actuadores BMS con el estado recalculado del arbitraje. Aceptación: mismo
   payload que la consola, sin transformaciones divergentes.
+
+> **ESTADO (2026-07-16): COMPLETA.** **WS allowlist default-deny:** mapa `_TOPIC_ALLOWLIST`
+> (topic-familia → roles) — consola C4I ∪ tácticos móviles (`brigadista`/`security_guard` con
+> surface móvil verificada); un topic sin entrada niega a TODOS; **occupant se cierra 4401 en
+> el HANDSHAKE** (sin sockets ociosos; el test viejo de "error por suscripción" se reescribió
+> a este contrato). **`site_scope` en la ENTREGA:** los frames de `device_health` e
+> `incident_action` ahora viajan con `site_id` (JOIN a gateways/incidents en el hub; campo
+> ADITIVO en el protocolo) y `_frame_in_scope` descarta en el fan-out lo que quede fuera del
+> alcance del suscriptor (default-deny: frame sin sitio para token acotado NO pasa) — también
+> corrige a los tokens de consola acotados. **Acción nueva `panel_read`** (espejo EJECUTABLE de
+> RBAC §3 "Dashboard táctico (salud gabinete + actuadores)": occupant "—", inspector Lectura):
+> gatea `GET /incidents/{id}/actions`, que se movió a un router consola∪panel — MISMO endpoint
+> y MISMA query para ambas superficies; el táctico queda acotado a su `site_scope` con el MISMO
+> 404. Paridad §3 + fixtures web/mobile actualizados. **Shared:** `LiveSocket` → `@takab/sdk`
+> (`live.ts`, corre en navegador y RN — WebSocket global) y `groupActions`/BMS → `bms.ts`
+> (criterio 2.1: cero transformaciones divergentes); `web/lib/ws.ts` y `console/bms.ts` quedan
+> como re-export (solo `liveWsUrl` sigue en web por `window`); el mock de ConsolePage pasó a
+> PARCIAL (`importOriginal`). **mobile-state.site_health** ganó las métricas del heartbeat más
+> reciente (RTT/lag/NTP/CPU/UPS/cert — el REST de flota/telemetría es consola-only y el WS solo
+> notifica TRANSICIONES: sin esto el panel no tendría snapshot inicial honesto). **2.1
+> (`(brigadista)/panel.tsx` + `features/panel/`):** salud con "S/D" (UPS unknown/null JAMÁS
+> 0% — test), `applyHealthFrame` puro (solo un frame MÁS nuevo actualiza; el status NUNCA se
+> recalcula local — verdad única del servidor), strip de features 1 s por canal (pga/pgv/rms/
+> stalta, "ESPERANDO DATOS…" declarado, nota "sin forma de onda"), traza BMS = REST
+> (`panel_read`) + frames live fusionados con `mergeAction` (dedupe por `action_id`, filtro por
+> incidente) y agrupados con la `groupActions` COMPARTIDA; pill LIVE/RECONECTANDO/SIN CANAL.
+> **api 866✓ · web 576✓ · mobile 133✓ (tsc+lint limpios) · SDK sin drift.**
 
 ### [ ] T-2.09 · Firma respaldada por hardware + control remoto 2.2 — `GATE-HW`
 - **Componente:** api + mobile
