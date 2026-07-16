@@ -118,7 +118,9 @@ describe("VisibilityCard", () => {
   });
 
   it("un error del servidor se muestra, no se traga", () => {
-    mocks.useVisibilityMutations.mockReturnValue(visMut({ error: "/visibility-grants falló (400)" }));
+    mocks.useVisibilityMutations.mockReturnValue(
+      visMut({ error: "/visibility-grants falló (400)" }),
+    );
     render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
     expect(screen.getByRole("alert").textContent).toMatch(/falló \(400\)/);
   });

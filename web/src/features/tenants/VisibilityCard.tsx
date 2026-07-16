@@ -27,7 +27,7 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
 
   const others = allTenants.filter((t) => t.tenant_id !== grantee.tenant_id);
   const targetName = (id: string | null, all: boolean): string =>
-    all ? "TODOS los clientes" : (others.find((t) => t.tenant_id === id)?.name ?? (id ?? "—"));
+    all ? "TODOS los clientes" : (others.find((t) => t.tenant_id === id)?.name ?? id ?? "—");
 
   const invalid = target === "" || (!meta && !live);
 
@@ -67,7 +67,9 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
         <ul className="vis-grants">
           {data.grants.map((g) => (
             <li key={g.grant_id} className="vis-grant" data-testid="visibility-grant">
-              <span className="vis-grant__target">→ {targetName(g.target_tenant_id, g.target_all)}</span>
+              <span className="vis-grant__target">
+                → {targetName(g.target_tenant_id, g.target_all)}
+              </span>
               <span className="soc-meta">
                 {g.can_view_metadata && "METADATOS"}
                 {g.can_view_metadata && g.can_view_data && " + "}
@@ -100,8 +102,8 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
           </select>
         </label>
         <label className="vis-form__check">
-          <input type="checkbox" checked={meta} onChange={(e) => setMeta(e.target.checked)} /> Ver que
-          existen (metadatos)
+          <input type="checkbox" checked={meta} onChange={(e) => setMeta(e.target.checked)} /> Ver
+          que existen (metadatos)
         </label>
         <label className="vis-form__check">
           <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Ver
