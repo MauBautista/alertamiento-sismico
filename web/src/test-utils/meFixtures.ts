@@ -32,6 +32,7 @@ export const ACTIONS_NONE: MeActions = {
   enrollment_manage: false,
   panic_vote: false,
   dictamen_read: false,
+  panel_read: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
@@ -117,6 +118,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     evidence_upload: true,
     manual_activate: true,
     dictamen_read: true,
+    panel_read: true,
   }),
   building_admin: me("building_admin", ["/console", "/triage", "/building"], {
     siren_test: true,
@@ -127,6 +129,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     manual_activate: true,
     enrollment_manage: true,
     dictamen_read: true,
+    panel_read: true,
   }),
   // [T-2.03] Roles móviles: acciones de CAMPO (la web los sigue mandando a
   // MobileOnlyScreen; el espejo refleja matrix.py completo).
@@ -141,6 +144,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
       siren_silence: true,
       manual_activate: true,
       dictamen_read: true,
+      panel_read: true,
     },
     "mobile",
   ),
@@ -155,6 +159,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
       siren_silence: true,
       manual_activate: true,
       dictamen_read: true,
+      panel_read: true,
     },
     "mobile",
   ),

@@ -30,7 +30,10 @@ const mocks = vi.hoisted(() => ({
   )),
 }));
 
-vi.mock("@takab/sdk", () => ({
+// [T-2.08] Mock PARCIAL: bms/groupActions ahora también sale de @takab/sdk
+// (compartido con el móvil) y el DetailPanel lo usa de verdad.
+vi.mock("@takab/sdk", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@takab/sdk")>()),
   ackIncidentIncidentsIncidentIdAckPost: mocks.ackIncidentIncidentsIncidentIdAckPost,
   requestDictamenIncidentsIncidentIdDictamenRequestPost:
     mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost,
@@ -179,6 +182,7 @@ describe("ConsolePage", () => {
           manage_tenants: false,
           manage_visibility: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
+          panel_read: false,
           checkin_submit: false,
           damage_report_submit: false,
           dictamen_read: false,
@@ -297,6 +301,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           manage_tenants: false,
           manage_visibility: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
+          panel_read: false,
           checkin_submit: false,
           damage_report_submit: false,
           dictamen_read: false,
