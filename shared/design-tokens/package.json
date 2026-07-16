@@ -1,0 +1,12 @@
+{
+  "name": "@takab/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design tokens TAKAB — única fuente de verdad: CSS vars para la consola web + objeto TS para React Native (spec móvil §9, T-2.01)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "gen": "node scripts/gen-css.mjs",
+    "check": "node scripts/gen-css.mjs --check"
+  }
+}

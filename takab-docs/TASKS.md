@@ -1817,7 +1817,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > `user_zone_assignments`; R7=acción `dictamen_read`; geofence del pánico = best-effort (voto
 > con GPS fuera de radio se descarta, sin GPS cuenta); R3 sigue bajo `GATE-LEGAL`.
 
-### [ ] T-2.01 · `shared/design-tokens/` + reconciliación documentada
+### [x] T-2.01 · `shared/design-tokens/` + reconciliación documentada — **COMPLETA (2026-07-15)**
 - **Componente:** shared + web
 - Extraer los tokens `--tk-*` — **idénticos** entre `web/src/styles/colors_and_type.css` y
   `takab-docs/design/app/colors_and_type.css` (verificado 2026-07-15) — a
@@ -1827,6 +1827,18 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - Crear `takab-docs/design/DESIGN-TOKENS-RECONCILIATION.md` documentando la identidad (cero
   conflictos de valor) y el mapeo 1:1.
 - La consola migra por **alias sin cambio visual** (tests/Playwright existentes como guardia).
+> **ESTADO.** Paquete `@takab/design-tokens` creado: `tokens.json` (96 vars, fuente única) →
+> `css/tokens.css` GENERADO (`gen-css.mjs`, determinista, con `--check` como drift gate) +
+> `src/index.ts` (`cssVariables` exacto, `tokens` estructurado para RN, `toNumber`, contratos
+> `INCIDENT_SEVERITY`/`DERIVED_STATE_PILL`/`KIND_COLOR`; regla desconocido⇒ámbar). Consola
+> migrada: dep `file:` + `fs.allow`, `main.tsx` importa el css del paquete ANTES de los estilos
+> locales, `colors_and_type.css` quedó solo con fuentes + clases de tipo, y `SevTag`/`SiteCard`
+> consumen el contrato del paquete (clases/labels intactos, sus tests lo fijan). Guardias:
+> `web/src/designTokens.test.ts` (19 tests: paridad css≡json, drift gate, ANCLAS con los
+> valores pre-migración, contratos congelados). Reconciliación documentada (identidad, cero
+> conflictos): `takab-docs/design/DESIGN-TOKENS-RECONCILIATION.md`. **web 576/576 ✓ (antes
+> 557) · eslint limpio · vite build OK · tokens presentes en el bundle.** La copia del canvas
+> queda como artefacto congelado; un token nuevo aterriza primero en `tokens.json`.
 
 ### [ ] T-2.02 · Scaffold `mobile/` (Expo prebuild + auth + SDK)
 - **Componente:** mobile

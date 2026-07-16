@@ -1,0 +1,105 @@
+/* ==========================================================================
+   TAKAB TECHNOLOGY — Design Tokens (CSS custom properties)
+   GENERADO por scripts/gen-css.mjs a partir de tokens.json — NO EDITAR A MANO.
+   Fuente de verdad: @takab/design-tokens/tokens.json (regen: npm run gen).
+   Las @font-face y los @import de fuentes viven en cada app (rutas de assets).
+   ========================================================================== */
+
+:root {
+  --tk-navy-900: #0E2336;
+  --tk-navy-800: #122B44;
+  --tk-navy-700: #1A3E62;
+  --tk-navy-600: #244E78;
+  --tk-navy-500: #345E89;
+  --tk-navy-400: #4D7BA5;
+  --tk-light-100: #F0F2F5;
+  --tk-light-200: #E3E7EC;
+  --tk-light-300: #C9D0D8;
+  --tk-light-400: #8A95A3;
+  --tk-cyan: #00BFFF;
+  --tk-cyan-hover: #33CCFF;
+  --tk-cyan-press: #009ACC;
+  --tk-cyan-15: rgba(0, 191, 255, 0.15);
+  --tk-cyan-08: rgba(0, 191, 255, 0.08);
+  --tk-status-normal: #00E676;
+  --tk-status-warning: #FFC107;
+  --tk-status-critical: #FF5252;
+  --tk-status-normal-15: rgba(0, 230, 118, 0.15);
+  --tk-status-normal-08: rgba(0, 230, 118, 0.08);
+  --tk-status-warning-15: rgba(255, 193, 7, 0.18);
+  --tk-status-warning-08: rgba(255, 193, 7, 0.08);
+  --tk-status-critical-15: rgba(255, 82, 82, 0.18);
+  --tk-status-critical-08: rgba(255, 82, 82, 0.08);
+  --tk-fg-1: #F0F2F5;
+  --tk-fg-2: #B8C2CE;
+  --tk-fg-3: #6F7E8F;
+  --tk-fg-disabled: #4A5765;
+  --tk-fg-on-light-1: #1A3E62;
+  --tk-fg-on-light-2: #4D5C6F;
+  --tk-fg-on-light-3: #8A95A3;
+  --tk-border: rgba(240, 242, 245, 0.08);
+  --tk-border-strong: rgba(240, 242, 245, 0.16);
+  --tk-border-cyan: #00BFFF;
+  --tk-border-on-light: #C9D0D8;
+  --tk-surface-0: #0E2336;
+  --tk-surface-1: #122B44;
+  --tk-surface-2: #18324E;
+  --tk-surface-3: #1F3D5C;
+  --tk-surface-overlay: rgba(14, 35, 54, 0.92);
+  --tk-font-brand: 'Saira Condensed', 'Aero Sans-Serif', 'Bebas Neue', system-ui, sans-serif;
+  --tk-font-ui: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --tk-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --tk-text-xs: 11px;
+  --tk-text-sm: 13px;
+  --tk-text-base: 14px;
+  --tk-text-md: 16px;
+  --tk-text-lg: 18px;
+  --tk-text-xl: 22px;
+  --tk-text-2xl: 28px;
+  --tk-text-3xl: 40px;
+  --tk-text-4xl: 56px;
+  --tk-text-5xl: 72px;
+  --tk-tracking-tight: -0.02em;
+  --tk-tracking-normal: 0;
+  --tk-tracking-wide: 0.04em;
+  --tk-tracking-mono: 0;
+  --tk-leading-tight: 1.1;
+  --tk-leading-snug: 1.25;
+  --tk-leading-normal: 1.45;
+  --tk-leading-data: 1.0;
+  --tk-space-0: 0;
+  --tk-space-1: 4px;
+  --tk-space-2: 8px;
+  --tk-space-3: 12px;
+  --tk-space-4: 16px;
+  --tk-space-5: 24px;
+  --tk-space-6: 32px;
+  --tk-space-7: 48px;
+  --tk-space-8: 64px;
+  --tk-radius-none: 0;
+  --tk-radius-sm: 4px;
+  --tk-radius-md: 6px;
+  --tk-radius-lg: 8px;
+  --tk-radius-pill: 999px;
+  --tk-shadow-none: none;
+  --tk-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--tk-border);
+  --tk-shadow-active: inset 0 0 0 1px var(--tk-cyan), 0 0 0 1px var(--tk-cyan-15);
+  --tk-shadow-critical: 0 0 0 1px var(--tk-status-critical), 0 0 24px -6px rgba(255, 82, 82, 0.45);
+  --tk-shadow-warning: 0 0 0 1px var(--tk-status-warning), 0 0 16px -8px rgba(255, 193, 7, 0.35);
+  --tk-shadow-modal: 0 24px 48px -16px rgba(0, 0, 0, 0.65);
+  --tk-focus-ring: 0 0 0 2px var(--tk-navy-900), 0 0 0 4px var(--tk-cyan);
+  --tk-ease: cubic-bezier(0.2, 0.0, 0.2, 1);
+  --tk-ease-data: linear;
+  --tk-dur-fast: 120ms;
+  --tk-dur-base: 180ms;
+  --tk-dur-slow: 280ms;
+  --tk-grid-cols: 12;
+  --tk-grid-gutter: 24px;
+  --tk-sidebar-w: 240px;
+  --tk-detail-w: 360px;
+  --tk-z-nav: 50;
+  --tk-z-sticky: 100;
+  --tk-z-modal: 500;
+  --tk-z-toast: 700;
+  --tk-z-alert: 900;
+}
