@@ -50,6 +50,7 @@ export default function Inicio() {
           // render puro — sin Date.now() en el cuerpo (react-hooks/purity).
           nowMs={dataUpdatedAt}
           onOpenDirectorio={() => router.push("/(occupant)/directorio")}
+          onOpenPanic={() => router.push("/panic")}
           onOpenRutas={() => router.push("/(occupant)/rutas")}
         />
       ) : null}

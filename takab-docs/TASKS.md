@@ -2261,7 +2261,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > para el push físico; el push OPS es informativo, jamás CRISIS: reingreso aprobado no es
 > alerta).
 
-### [ ] T-2.13 · Pánico de occupant por quórum-de-2 (1.9)
+### [x] T-2.13 · Pánico de occupant por quórum-de-2 (1.9)
 - **Componente:** api + mobile
 - `POST /sites/{id}/manual-activation-votes` sobre la tabla LATENTE `manual_activation_votes`
   (índice `site_id+created_at DESC` ya existe); quórum = **2 votos de usuarios distintos en
@@ -2272,6 +2272,22 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - Tests: 1 voto JAMÁS activa; 2 votos del MISMO usuario JAMÁS activan; 2 usuarios distintos en
   ventana ⇒ comando + audit; fuera de ventana ⇒ nada; voto CON GPS fuera del radio del sitio ⇒
   descartado (**geofence best-effort**, RBAC §4.3); voto SIN GPS ⇒ cuenta.
+
+> **ESTADO (2026-07-17): COMPLETA.** **API** (`POST /sites/{id}/manual-activation-votes` en el
+> router de comandos, gated `panic_vote` = SOLO occupant): R2 (occupant enrolado o 404) →
+> rate-limit por usuario (`panic_vote_rate_per_min`) → **geofence best-effort** con
+> `ST_DWithin(site.geom, punto, radio)` (True dentro/False fuera/None sin GPS): fuera ⇒
+> `discarded` SIN insertar; sin GPS ⇒ cuenta → INSERT del voto → **quórum = 2 usuarios
+> DISTINTOS con voto NO consumido en la ventana de 30 s** ⇒ `issue_signed_command` (sirena,
+> activate, `source=panic_quorum`) por el pipeline HMAC EXISTENTE (la nube firma, el teléfono
+> jamás) + `CONSUME_PANIC_VOTES` (un solo disparo). TODO voto audita. Los 7 invariantes
+> probados (1 voto no activa; 2 del mismo usuario no; 2 distintos ⇒ comando+audit+consumed;
+> fuera de ventana no; GPS fuera de radio descartado; sin GPS cuenta; solo occupant vota).
+> **Móvil (1.9)**: ruta `/panic` (occupant) con `PanicButton` mantener-presionado (barra ~1.5 s,
+> evita disparos accidentales), `panicView` puro (copy con el DISCLAIMER "NO es la alerta
+> sísmica · emergencia del inmueble · requiere 2ª persona"; estados contado/activado/descartado;
+> `windowRemaining` cuenta atrás), GPS adjunto solo con consentimiento; enlace desde Home (1.1).
+> **api 893 · web 584 · mobile 190 (tsc+lint limpios) · SDK sin drift.**
 
 ### [ ] T-2.14 · E2E + hardening + runbook de cierre de fase
 - **Componente:** mobile + docs

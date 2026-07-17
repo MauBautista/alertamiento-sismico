@@ -35,6 +35,7 @@ export function HomeView(props: {
   nowMs: number;
   onOpenRutas: () => void;
   onOpenDirectorio: () => void;
+  onOpenPanic?: () => void;
 }) {
   const { data } = props;
   const banner = healthBanner(data.site_health, props.nowMs);
@@ -144,6 +145,17 @@ export function HomeView(props: {
       <Pressable accessibilityRole="button" onPress={props.onOpenRutas} style={styles.routesBtn}>
         <Text style={styles.routesText}>RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →</Text>
       </Pressable>
+
+      {props.onOpenPanic ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={props.onOpenPanic}
+          style={styles.panicBtn}
+          testID="open-panic"
+        >
+          <Text style={styles.panicText}>ALARMA DEL INMUEBLE (NO SÍSMICA) →</Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -217,4 +229,11 @@ const styles = StyleSheet.create({
     padding: space[4],
   },
   routesText: { color: palette.cyan, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
+  panicBtn: {
+    borderColor: palette.crit,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: space[4],
+  },
+  panicText: { color: palette.crit, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
 });
