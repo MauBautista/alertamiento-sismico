@@ -25,6 +25,8 @@ class MeActions(BaseModel):
     read_audit: bool
     self_test: bool
     drill_start: bool
+    manage_tenants: bool
+    manage_visibility: bool
 
 
 class MeResponse(BaseModel):

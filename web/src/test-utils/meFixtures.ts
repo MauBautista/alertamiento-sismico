@@ -20,6 +20,8 @@ export const ACTIONS_NONE: MeActions = {
   read_audit: false,
   self_test: false,
   drill_start: false,
+  manage_tenants: false,
+  manage_visibility: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
@@ -68,6 +70,8 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     read_audit: true,
     self_test: true,
     drill_start: true,
+    manage_tenants: true,
+    manage_visibility: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
   takab_support: me("takab_support", ALL_ROUTES, { read_audit: true }),

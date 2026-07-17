@@ -1705,3 +1705,67 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > **ESTADO.** edge 362 (+7). Incidentes de prueba de hoy (`d438fc9d` sasmex, `ef2053d3` local_threshold)
 > CERRADOS. **HITO: el camino primario WR-1→GPIO→reflejo→nube VALIDADO con hardware real** (reflejo
 > 6.65 ms, incidente trigger=sasmex, 2 correos). Falta G-04 (latencia física contacto→relé→sirena).
+
+## Fase 1.10 · Red multi-estación, alta de clientes y visibilidad (T-1.70…T-1.73)
+
+> Origen: Mauricio pidió (2026-07-14) la "regla de 3 estaciones", el paso a paso de alta de una
+> estación (Pi↔Shake→nube), calibración/procedencia, alta de clientes y visibilidad configurable.
+> **Decisión de seguridad ratificada:** el quórum de 3 estaciones corrige el **evento regional +
+> notificaciones** (nube) y se **muestra** en la consola; **jamás** gatea la sirena local (regla de
+> oro §2.1/§2.2). Plan aprobado: `~/.claude/plans/ya-confirmamos-que-cuando-linear-wreath.md`.
+
+### [x] T-1.70 · Runbook de alta de estación + realidad multi-tenant — **COMPLETA (2026-07-15)**
+- **Componente:** docs
+- **Entregable:** `takab-docs/RUNBOOK-ALTA-DE-ESTACION.md` — paso a paso Pi↔Shake→nube; **serial
+  (inventario) ≠ iot_thing (lo que vincula a la nube, lo crea Terraform)**; quién puede
+  (`manage_fleet` = superadmin+tenant_admin); calibración + **procedencia** (StationXML/RESP FDSN
+  de la red AM; sensibilidades al `edge.env` + `PUT /sensors` `calibration_source`); multi-tenant
+  HOY (SQL) y modelo de visibilidad ACTUAL (fijo por rol).
+- **Gotcha documentado:** `provision_gateway.sh` **sobrescribe** `edge.env` (solo HMAC/endpoint/PIN
+  + certs); identidad/SeedLink/calibración se **agregan** aparte (re-provisionar los borra — T-1.41).
+> **ESTADO.** Doc creado, sin secretos. Responde textualmente las preguntas operativas de Mauricio.
+
+### [x] T-1.71 · Regla de 3 estaciones VISIBLE + umbral local afinable — **COMPLETA (2026-07-15)**
+- **Componente:** api + web (nube, no bloqueante) · edge (umbral autónomo)
+- **A (nube — ya existe → configurar + mostrar):** confirmar `min_nodes=3`; exponer la
+  **corroboración por estaciones** en incidente/epicentro (de `quorum_votes`/`seismic_events`):
+  "SIN corroborar · 1 estación" vs "CONFIRMADO · 3 estaciones".
+- **B (edge — afinar falsos positivos CON CUIDADO):** `ThresholdBand` configurable por sitio vía
+  `rule_sets.config->'edge'` (config-sync existente); guard de persistencia opcional (N ventanas 1s);
+  mantener ≥2 canales para sirena. Validar vs piso de ruido (0.6–1.1 mg). **Decision-gate hardware.**
+- **Invariantes:** la sirena local NUNCA espera a la nube; SASMEX intacto; sin IA en el disparo;
+  `edge/tests/test_e2e.py` (autónomo, cloud off) debe seguir verde.
+> **ESTADO.** `00eccf6` (edge) + `fd06733` (api,web). Edge: `ConfigStore.add_apply_listener` +
+> `RuleEngine.apply_thresholds` (rebind atómico) — umbral por sitio aplicado en vivo, SASMEX inmune
+> (test lo fija). Nube: `map/state` expone `meta.node_count` por epicentro → mapa "… · N est."; pill
+> de triage "CONFIRMADO · N estaciones". SDK regenerado. edge 366✓ (test_seedlink_hardware se salta
+> en CI), api telemetry 16✓, web 544✓, ruff/eslint/build limpios. Pendiente opcional: guard de
+> persistencia (descartado por ahora — camino crítico mínimo) y G-04 (validación física de umbrales).
+
+### [x] T-1.72 · Alta de clientes (tenants): API + UI superadmin-only — **COMPLETA (2026-07-15)**
+- **Componente:** api + web
+- `POST /tenants` (+ `PATCH` opcional), acción nueva `manage_tenants` **solo `takab_superadmin`**;
+  extender `routers/tenants.py` (hoy solo GET) + `queries/tenants.py` + schema `TenantCreate`;
+  `code` único ⇒ 409; auditar. RLS ya lo permite (`tenants_admin`, `db/schema.sql:701`).
+- Web: reponer botón "NUEVO" en `TenantsPage.tsx` gated por `me.allowed_actions.manage_tenants`.
+- Tests: crea (superadmin) · 403 (otros) · 409 (code dup) · parity de matriz.
+> **ESTADO.** `8a65035`. Acción `manage_tenants` (solo superadmin) en matrix.py + MeActions +
+> meFixtures + ancla en test_matrix. `POST /tenants` (TenantCreate; visibility/status por default;
+> 409 en code dup; auditado). Web: botón "NUEVO CLIENTE" en /tenants gateado + formulario +
+> `useCreateTenant`. SDK regenerado. api tenants 13✓ + matrix✓; web 548✓; ruff/eslint/build limpios.
+
+### [x] T-1.73 · Visibilidad configurable (RLS) — **COMPLETA (2026-07-15)**
+- **Componente:** db (migración `0017` idempotente) + api + web
+- Tabla `visibility_grants` (grantee→target|all × {ver_metadatos, ver_datos}); helpers SECURITY
+  DEFINER `app_can_view_meta/data`; ampliar políticas `*_read` (metadatos: sites/zones/gateways/
+  sensors/tenants) y el **WHERE de las vistas `*_secure`** (datos) — **crux: metadata ≠ datos**.
+- Acción `manage_visibility` (solo superadmin); router `visibility.py` POST/GET/DELETE; card en
+  `/tenants`. Default-deny preservado; superadmin/gov sin regresión; un grant nunca da escritura.
+- Tests de cruce de tenants: default-deny, metadata≠datos, revoke, sin regresión.
+> **ESTADO.** `126ba06` (db) + `99e9722` (api) + `8fc2588` (web). Tabla `visibility_grants` +
+> helpers SECURITY DEFINER `app_can_view_meta/data` + 9 políticas `*_read` ampliadas + vistas
+> `*_secure` con WHERE de datos (crux metadata≠datos con test dedicado). Migración `0017`
+> idempotente y reversible, segura para `takab_migrator`. Acción `manage_visibility` (solo
+> superadmin) + router `/visibility-grants` (POST upsert/GET/DELETE, auditado). Web: `VisibilityCard`
+> en /tenants gateada. db RLS 11✓ (+ base intacta), api completo 815✓ + router 12✓, web 557✓.
+> **Fase 1.10 COMPLETA** (T-1.70…T-1.73). Rama `feat/fase-1.10-red-multiestacion` lista para PR.

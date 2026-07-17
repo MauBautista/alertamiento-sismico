@@ -7,6 +7,7 @@ import { useNow } from "../../lib/useNow";
 import NotificationChannels from "./NotificationChannels";
 import SyncFooter from "./SyncFooter";
 import ThresholdSlider from "./ThresholdSlider";
+import VisibilityCard from "./VisibilityCard";
 import {
   REFERENCE_BANDS,
   THRESHOLD_KEYS,
@@ -26,7 +27,13 @@ import {
 } from "./model";
 import type { ChannelDraft, ThresholdBand, ThresholdKey } from "./model";
 import { useRuleSetPublish } from "./useRuleSetPublish";
-import { TENANTS_STALE_MS, useTenantGateways, useTenantSync, useTenants } from "./useTenants";
+import {
+  TENANTS_STALE_MS,
+  useCreateTenant,
+  useTenantGateways,
+  useTenantSync,
+  useTenants,
+} from "./useTenants";
 
 const SLIDERS: {
   key: ThresholdKey;
@@ -113,6 +120,34 @@ export default function TenantsPage() {
 
   const selected = data.tenants.find((t) => t.tenant_id === selectedId) ?? data.tenants[0] ?? null;
   const tenantId = selected?.tenant_id ?? null;
+
+  // Alta de clientes (T-1.72): SOLO el superadmin (la acción la da matrix.py; el
+  // servidor la exige igual). El botón/formulario no se pintan si no la tiene (regla 7).
+  const canManageTenants = me?.allowed_actions.manage_tenants === true;
+  const canManageVisibility = me?.allowed_actions.manage_visibility === true;
+  const createTenant = useCreateTenant();
+  const [creating, setCreating] = useState(false);
+  const [newTenant, setNewTenant] = useState({
+    code: "",
+    name: "",
+    vertical: "",
+    plan_code: "mvp",
+    isolation_mode: "logical" as "logical" | "dedicated",
+  });
+
+  // Al crearse, selecciona el cliente nuevo, cierra el formulario y limpia el borrador.
+  useEffect(() => {
+    if (createTenant.createdId === null) {
+      return;
+    }
+    setSelectedId(createTenant.createdId);
+    setCreating(false);
+    setNewTenant({ code: "", name: "", vertical: "", plan_code: "mvp", isolation_mode: "logical" });
+    createTenant.reset();
+    // `createTenant` cambia de identidad cada render y sólo se usa aquí para cerrar el
+    // alta; reaccionamos únicamente a createdId (mismo criterio de deps que el efecto
+    // de siembra de abajo).
+  }, [createTenant.createdId]);
 
   /**
    * `PUT /rule-sets` inserta la fila con `tenant_id = claims.tenant_id` mientras el
@@ -259,7 +294,88 @@ export default function TenantsPage() {
           <nav className="mt__list" aria-label="Tenants">
             <div className="mt__list-hd">
               <span className="soc-meta">{data.tenants.length} TENANT(S) VISIBLES</span>
+              {canManageTenants && (
+                <button
+                  type="button"
+                  className="mt__new-btn"
+                  onClick={() => setCreating((v) => !v)}
+                  aria-expanded={creating}
+                >
+                  {creating ? "CANCELAR" : "+ NUEVO CLIENTE"}
+                </button>
+              )}
             </div>
+            {creating && canManageTenants && (
+              <form
+                className="mt__new-form"
+                data-testid="tenant-create-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  createTenant.create({
+                    code: newTenant.code.trim(),
+                    name: newTenant.name.trim(),
+                    vertical: newTenant.vertical.trim() || null,
+                    plan_code: newTenant.plan_code.trim() || "mvp",
+                    isolation_mode: newTenant.isolation_mode,
+                  });
+                }}
+              >
+                <label className="mt__new-field">
+                  <span>Código único</span>
+                  <input
+                    value={newTenant.code}
+                    onChange={(e) => setNewTenant((f) => ({ ...f, code: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="mt__new-field">
+                  <span>Nombre</span>
+                  <input
+                    value={newTenant.name}
+                    onChange={(e) => setNewTenant((f) => ({ ...f, name: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="mt__new-field">
+                  <span>Vertical (opcional)</span>
+                  <input
+                    value={newTenant.vertical}
+                    onChange={(e) => setNewTenant((f) => ({ ...f, vertical: e.target.value }))}
+                  />
+                </label>
+                <label className="mt__new-field">
+                  <span>Aislamiento</span>
+                  <select
+                    value={newTenant.isolation_mode}
+                    onChange={(e) =>
+                      setNewTenant((f) => ({
+                        ...f,
+                        isolation_mode: e.target.value as "logical" | "dedicated",
+                      }))
+                    }
+                  >
+                    <option value="logical">Lógico (RLS)</option>
+                    <option value="dedicated">Dedicado</option>
+                  </select>
+                </label>
+                {createTenant.error !== null && (
+                  <p className="mt__new-error" role="alert">
+                    {createTenant.error}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  className="mt__new-submit"
+                  disabled={
+                    createTenant.pending ||
+                    newTenant.code.trim() === "" ||
+                    newTenant.name.trim() === ""
+                  }
+                >
+                  {createTenant.pending ? "CREANDO…" : "CREAR CLIENTE"}
+                </button>
+              </form>
+            )}
             {data.tenants.map((t) => {
               const sites = siteCountOf(data.sites, t.tenant_id);
               return (
@@ -377,6 +493,10 @@ export default function TenantsPage() {
                   onReset={reset}
                 />
               </StateFrame>
+
+              {canManageVisibility && (
+                <VisibilityCard grantee={selected} allTenants={data.tenants} />
+              )}
             </div>
           )}
         </div>

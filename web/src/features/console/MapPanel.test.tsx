@@ -164,6 +164,35 @@ describe("builders del mapa (puros)", () => {
     // Sin magnitud NO se inventa un número: se rotula el evento.
     expect(fc.features[1].properties).toMatchObject({ label: "EPICENTRO" });
   });
+
+  it("el epicentro corroborado muestra CUÁNTAS estaciones lo formaron (quórum, T-1.71)", () => {
+    const fc = epicentersToFeatureCollection([
+      {
+        event_id: "e-q",
+        source: "local_quorum",
+        lon: -98.2,
+        lat: 19.0,
+        magnitude: null,
+        depth_km: null,
+        detected_at: "2026-07-08T10:00:00Z",
+        node_count: 3,
+      },
+      {
+        event_id: "e-cat",
+        source: "ssn",
+        lon: -99.1,
+        lat: 16.8,
+        magnitude: 5.4,
+        depth_km: 20,
+        detected_at: "2026-07-08T10:00:00Z",
+        node_count: null,
+      },
+    ]);
+    // Quórum sin magnitud: rotula la CORROBORACIÓN, no un número inventado.
+    expect(fc.features[0].properties).toMatchObject({ label: "EPICENTRO · 3 est.", node_count: 3 });
+    // Evento de catálogo sin node_count: no se inventa una cuenta de estaciones.
+    expect(fc.features[1].properties).toMatchObject({ label: "M 5.4" });
+  });
 });
 
 describe("MapPanel", () => {

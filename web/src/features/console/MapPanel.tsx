@@ -116,16 +116,19 @@ export function trippedFeatures(sites: MapSiteState[]): FeatureCollection {
 export function epicentersToFeatureCollection(epicenters: MapEpicenter[]): FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: epicenters.map((e) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [e.lon, e.lat] },
-      properties: {
-        event_id: e.event_id,
-        // La magnitud es opcional a propósito: el WR-1 no la entrega y muchos
-        // eventos no la tienen. Sin ella se rotula el evento, no un número falso.
-        label: e.magnitude !== null ? `M ${e.magnitude.toFixed(1)}` : "EPICENTRO",
-      },
-    })),
+    features: epicenters.map((e) => {
+      // La magnitud es opcional a propósito: el WR-1 no la entrega y muchos eventos
+      // no la tienen. Sin ella se rotula el evento, no un número falso.
+      const base = e.magnitude !== null ? `M ${e.magnitude.toFixed(1)}` : "EPICENTRO";
+      // Corroboración (T-1.71): N estaciones que formaron el evento por quórum. Solo
+      // `local_quorum` la trae (`meta.node_count`); sin ella se rotula solo el evento.
+      const label = e.node_count != null ? `${base} · ${e.node_count} est.` : base;
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [e.lon, e.lat] },
+        properties: { event_id: e.event_id, node_count: e.node_count ?? null, label },
+      };
+    }),
   };
 }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from collections.abc import Callable
 
 from takab_edge.config.settings import EdgeSettings
 from takab_edge.module import EdgeModule
@@ -36,6 +37,7 @@ class ConfigStore(EdgeModule):
         # veta re-aplicar cualquier versión ya vista, incluida una revertida.
         self._high_water = 0
         self._history: deque[tuple[int, EdgeSettings]] = deque(maxlen=max_history)
+        self._apply_listeners: list[Callable[[EdgeSettings], None]] = []
 
     @property
     def version(self) -> int:
@@ -44,6 +46,20 @@ class ConfigStore(EdgeModule):
     def current(self) -> EdgeSettings:
         """Configuración activa (los módulos leen de aquí)."""
         return self.settings
+
+    def add_apply_listener(self, listener: Callable[[EdgeSettings], None]) -> None:
+        """Registra un observador de la config activa (T-1.71).
+
+        Se invoca con la config vigente tras aplicar una actualización firmada y
+        tras un rollback, para que módulos vivos (p.ej. el motor de reglas y sus
+        umbrales) adopten la config nueva sin reconstruirse. Un listener NO debe
+        lanzar: la config ya viene validada por `apply_signed_update`.
+        """
+        self._apply_listeners.append(listener)
+
+    def _notify_listeners(self) -> None:
+        for listener in self._apply_listeners:
+            listener(self.settings)
 
     def apply_signed_update(self, raw: bytes, signature: str, version: int) -> int:
         """Verifica la firma (que cubre la versión) + frescura y aplica; guarda para rollback.
@@ -64,6 +80,7 @@ class ConfigStore(EdgeModule):
         self._version = version
         self._high_water = version
         log.info("config actualizada a v%d", version)
+        self._notify_listeners()
         return version
 
     def rollback(self) -> int:
@@ -74,6 +91,7 @@ class ConfigStore(EdgeModule):
         log.warning(
             "config revertida a v%d (high_water sigue en v%d)", self._version, self._high_water
         )
+        self._notify_listeners()
         return self._version
 
     def _on_start(self) -> None:

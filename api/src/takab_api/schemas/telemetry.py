@@ -93,6 +93,9 @@ class MapEpicenter(BaseModel):
     magnitude: float | None
     depth_km: float | None
     detected_at: datetime
+    #: Estaciones que corroboraron el evento por quórum (T-1.71). Solo lo llevan los
+    #: eventos ``local_quorum`` (``meta.node_count``); ``None`` en los demás.
+    node_count: int | None = None
 
 
 class MapSiteState(BaseModel):

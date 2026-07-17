@@ -73,6 +73,8 @@ DENY_ALL = {
     "read_audit": False,
     "self_test": False,
     "drill_start": False,
+    "manage_tenants": False,
+    "manage_visibility": False,
 }
 
 
@@ -172,6 +174,21 @@ def test_drill_start_is_institutional_admin_action() -> None:
     (lectura del registro por RLS) ni operadores/inspectores."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
     assert can == {"takab_superadmin", "tenant_admin"}
+
+
+def test_manage_tenants_is_superadmin_only() -> None:
+    """[T-1.72] Alta de clientes (POST /tenants) = acto del DUEÑO de la plataforma.
+    Solo takab_superadmin: tenant_admin no da de alta OTROS clientes; support lee la
+    plataforma, no la provisiona. La RLS ``tenants_admin`` ya exige superadmin."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_tenants"]}
+    assert can == {"takab_superadmin"}
+
+
+def test_manage_visibility_is_superadmin_only() -> None:
+    """[T-1.73] Conceder/revocar visibilidad entre clientes toca la frontera de
+    aislamiento multi-tenant: SOLO takab_superadmin. La RLS ``vg_admin`` lo exige igual."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_visibility"]}
+    assert can == {"takab_superadmin"}
 
 
 def test_mobile_only_roles_have_no_actions() -> None:
