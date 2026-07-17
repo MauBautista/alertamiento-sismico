@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Harness de captura para tools/regen-shots.mjs — renderiza UNA pantalla
+     (?screen=<NombreComponente>) fuera del canvas pan/zoom, a tamaño natural
+     390×844, para screenshot determinista del elemento #shot.
+     No usa la red para código: react/babel/lucide salen de ../vendor/. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TAKAB · shot harness</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="../app.css">
+<style>
+  html, body { margin: 0; background: transparent; }
+  /* Campo navy alrededor del teléfono (mismo look de los shots del deck). */
+  #shot { display: inline-block; padding: 32px; background: #07182a; }
+  /* La sombra larga del bezel se recortaría en el borde del PNG: fuera. */
+  #shot .phone { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); }
+</style>
+</head>
+<body>
+<div id="shot"><div id="root"></div></div>
+
+<script src="../vendor/react.development.js"></script>
+<script src="../vendor/react-dom.development.js"></script>
+<script src="../vendor/babel.min.js"></script>
+<script src="../vendor/lucide.min.js"></script>
+
+<script type="text/babel" src="../screens/Phone.jsx"></script>
+<script type="text/babel" src="../screens/Profile0.jsx"></script>
+<script type="text/babel" src="../screens/Profile1.jsx"></script>
+<script type="text/babel" src="../screens/Profile2.jsx"></script>
+
+<script type="text/babel">
+  const name = new URLSearchParams(location.search).get('screen');
+  const Comp = window[name];
+  window.__shotError = null;
+  window.__shotPendingIcons = [];
+
+  if (!Comp) {
+    window.__shotError = 'pantalla desconocida: ' + name;
+    window.__shotReady = true;
+  } else {
+    ReactDOM.createRoot(document.getElementById('root')).render(<Comp />);
+    // createRoot es ASÍNCRONO: hay que esperar a que el .phone exista antes
+    // de correr lucide.createIcons() — si no, el loop ve un DOM vacío, marca
+    // listo y los íconos jamás se resuelven. Luego itera hasta que no queden
+    // <i data-lucide> pendientes; los que no resuelvan (nombre inexistente)
+    // se reportan en __shotPendingIcons en vez de colgar la captura.
+    let frames = 0;
+    const settle = () => {
+      frames += 1;
+      const mounted = document.querySelector('#root .phone');
+      if (mounted && window.lucide) window.lucide.createIcons();
+      const pending = mounted ? [...document.querySelectorAll('i[data-lucide]')] : [];
+      const done = mounted && pending.length === 0;
+      if (!done && frames < 300) return requestAnimationFrame(settle);
+      window.__shotPendingIcons = pending.map((el) => el.getAttribute('data-lucide'));
+      document.fonts.ready.then(() => { window.__shotReady = true; });
+    };
+    requestAnimationFrame(settle);
+  }
+</script>
+</body>
+</html>

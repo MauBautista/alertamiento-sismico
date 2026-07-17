@@ -23,3 +23,9 @@ output "db_endpoint" {
 output "primary_network_interface_id" {
   value = aws_instance.db.primary_network_interface_id
 }
+
+# [T-2.04] Rol IAM de la instancia (la API/worker corre aquí en dev): el módulo
+# `push` le adjunta los permisos de SNS platform endpoints.
+output "instance_role_name" {
+  value = aws_iam_role.db.name
+}

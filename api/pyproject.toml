@@ -14,6 +14,10 @@ dependencies = [
     "jsonschema>=4.26.0",
     "pydantic-settings>=2.14.2",
     "pyjwt[crypto]>=2.9",
+    # [T-2.09] Verificación de firmas de INTENCIÓN (device_keys, EC/RSA).
+    # Ya venía por pyjwt[crypto]; se declara directa porque commands/intent.py
+    # la importa a nivel de módulo.
+    "cryptography>=43",
     "fpdf2>=2.8.7",
     # RUNTIME, no dev: `notify/providers.py` lo importa a nivel de módulo para el canal
     # webhook. Estaba solo en el extra `dev`, así que el worker `notify` moría al

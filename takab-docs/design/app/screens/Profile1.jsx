@@ -102,26 +102,22 @@ const OcupanteReposo = () => (
 );
 
 // =====================================================================
-// SCREEN 1.2 — Crisis: T-MINUS · EVACÚE AHORA (lower floors)
-// Full-screen takeover. Critical alert push has just fired.
+// SCREEN 1.2 — Crisis: EVACÚE AHORA (zonas con evac_policy = evacuate)
+// Full-screen takeover, instruction-first (spec §2.1-A). El WR-1 entrega
+// un booleano: sin magnitud, sin epicentro, sin cuenta regresiva. El dato
+// temporal honesto es el T+ transcurrido desde la recepción de la alerta.
 // =====================================================================
 const OcupanteCrisisEvac = () => (
   <Phone profile="ocupante" hideChrome={true}>
     <div className="crisis">
       <div className="crisis__strip">
         <div className="crisis__strip-eyebrow">● Alerta sísmica activa</div>
-        <div className="crisis__strip-title">SASMEX · M 6.8 · Puebla</div>
+        <div className="crisis__strip-title">Alerta Sísmica SASMEX</div>
       </div>
       <div className="crisis__body">
-        <div className="crisis__t-eyebrow">T-Minus · Llegada de onda S</div>
-        <div className="crisis__count">
-          15<span style={{ fontSize: 60, marginLeft: 4 }}>s</span>
-        </div>
-        <div className="crisis__count-unit">Tiempo de reacción</div>
-
-        <div className="crisis__action">
+        <div className="crisis__action crisis__action--hero">
           <div className="crisis__action-eyebrow">— SU INSTRUCCIÓN —</div>
-          <div className="crisis__instruction">
+          <div className="crisis__instruction crisis__instruction--hero">
             Evacúe<br />ahora
           </div>
           <div className="crisis__detail">
@@ -132,6 +128,16 @@ const OcupanteCrisisEvac = () => (
             <i data-lucide="building-2" width="14" height="14" /> Piso 02 · Salida planta baja
           </div>
         </div>
+
+        <div className="crisis__elapsed">
+          <div className="crisis__t-eyebrow">Tiempo transcurrido desde la alerta</div>
+          <div className="crisis__tplus">
+            T+04<span className="unit">s</span>
+          </div>
+          <div className="crisis__source">
+            <i data-lucide="radio-tower" width="12" height="12" /> Fuente · SASMEX WR-1
+          </div>
+        </div>
       </div>
     </div>
     <span className="home-indicator" />
@@ -139,27 +145,21 @@ const OcupanteCrisisEvac = () => (
 );
 
 // =====================================================================
-// SCREEN 1.3 — Crisis: T-MINUS · REPLIÉGUESE (upper floors, amber)
-// Same blueprint, different binary instruction. Upper-floor occupants
-// shelter in place rather than evacuate during a sub-minute warning.
+// SCREEN 1.3 — Crisis: REPLIÉGUESE (zonas con evac_policy = shelter, ámbar)
+// Same instruction-first blueprint as 1.2 (spec §2.1-A). Upper-floor
+// occupants shelter in place rather than evacuate.
 // =====================================================================
 const OcupanteCrisisReplie = () => (
   <Phone profile="ocupante" hideChrome={true}>
     <div className="crisis crisis--amber">
       <div className="crisis__strip">
         <div className="crisis__strip-eyebrow">● Alerta sísmica activa</div>
-        <div className="crisis__strip-title">SASMEX · M 6.8 · Puebla</div>
+        <div className="crisis__strip-title">Alerta Sísmica SASMEX</div>
       </div>
       <div className="crisis__body">
-        <div className="crisis__t-eyebrow" style={{ color: 'rgba(255,220,150,0.7)' }}>T-Minus · Llegada de onda S</div>
-        <div className="crisis__count" style={{ textShadow: '0 0 28px rgba(255,193,7,0.5)' }}>
-          15<span style={{ fontSize: 60, marginLeft: 4 }}>s</span>
-        </div>
-        <div className="crisis__count-unit" style={{ color: 'rgba(255,220,150,0.85)' }}>Tiempo de reacción</div>
-
-        <div className="crisis__action">
+        <div className="crisis__action crisis__action--hero">
           <div className="crisis__action-eyebrow" style={{ color: 'rgba(255,220,150,0.7)' }}>— SU INSTRUCCIÓN —</div>
-          <div className="crisis__instruction crisis__instruction--amber">
+          <div className="crisis__instruction crisis__instruction--hero crisis__instruction--amber" style={{ fontSize: 58 }}>
             Repliéguese
           </div>
           <div className="crisis__detail" style={{ color: 'rgba(255,240,200,0.85)' }}>
@@ -168,6 +168,16 @@ const OcupanteCrisisReplie = () => (
           </div>
           <div className="crisis__floor" style={{ borderColor: 'rgba(255,193,7,0.30)', color: 'rgba(255,240,200,0.85)' }}>
             <i data-lucide="building-2" width="14" height="14" /> Piso 10 · Núcleo estructural
+          </div>
+        </div>
+
+        <div className="crisis__elapsed" style={{ borderTopColor: 'rgba(255,193,7,0.18)' }}>
+          <div className="crisis__t-eyebrow" style={{ color: 'rgba(255,220,150,0.7)' }}>Tiempo transcurrido desde la alerta</div>
+          <div className="crisis__tplus">
+            T+04<span className="unit">s</span>
+          </div>
+          <div className="crisis__source">
+            <i data-lucide="radio-tower" width="12" height="12" /> Fuente · SASMEX WR-1
           </div>
         </div>
       </div>
@@ -259,7 +269,7 @@ const OcupanteBloqueo = () => (
         <div className="reing__step">
           <div className="marker" />
           <div className="reing__step__main">
-            <div className="reing__step__title">Dictamen Protección Civil</div>
+            <div className="reing__step__title">Dictamen técnico · inspector</div>
             <div className="reing__step__meta">Pendiente</div>
           </div>
         </div>

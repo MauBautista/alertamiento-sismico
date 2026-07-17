@@ -20,6 +20,11 @@ from takab_api.settings import Settings
 
 ISSUER = "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_TESTPOOL"
 AUDIENCE = "test-client-id"
+# [T-2.03] Pool de OCUPANTES (decisión #7): segundo issuer con ancla pool→rol.
+# En tests ambos pools firman con la MISMA clave de sesión (igual que el seam
+# de settings: sin JWKS propio se reutiliza el del pool principal).
+OCC_ISSUER = "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_TESTOCCS"
+OCC_AUDIENCE = "test-occupants-client-id"
 KID = "test-key"
 TENANT_A = "11111111-1111-1111-1111-111111111111"  # claim de token (no se commitea)
 
@@ -113,6 +118,23 @@ def make_token(role: str, *, key: rsa.RSAPrivateKey = _KEY, kid: str = KID, **ov
     """ID token RS256 válido (kid=test-key), con overrides de claims."""
     claims = _base_claims(role, **over)
     return jwt.encode(claims, key, algorithm="RS256", headers={"kid": kid})
+
+
+def occupant_token(**over: Any) -> str:
+    """[T-2.03] Token de ``occupant`` emitido por el POOL DE OCUPANTES (ancla
+    pool→rol): iss/aud del segundo pool + superficie móvil por default."""
+    over.setdefault("issuer", OCC_ISSUER)
+    over.setdefault("audience", OCC_AUDIENCE)
+    over.setdefault("surface", "mobile")
+    over.setdefault("site_scope", "")  # default-deny real: el scope móvil es server-side (R2)
+    return make_token("occupant", **over)
+
+
+def occupants_env(monkeypatch: Any) -> None:
+    """Habilita el pool de ocupantes en el entorno del app bajo test (el JWKS
+    propio queda vacío ⇒ reutiliza el del principal, misma clave de firma)."""
+    monkeypatch.setenv("TAKAB_API_AUTH_OCCUPANTS_ISSUER", OCC_ISSUER)
+    monkeypatch.setenv("TAKAB_API_AUTH_OCCUPANTS_AUDIENCE", OCC_AUDIENCE)
 
 
 def expired_token(role: str = "soc_operator", **over: Any) -> str:

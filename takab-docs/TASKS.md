@@ -635,6 +635,11 @@ T-1.17+) requiere AWS.
 - **Componente:** mobile · **Depende de:** T-1.22, T-1.26 · **Diferida — no iniciar en Fase 1.**
 - **Criterios (referencia futura):** acuse, escalamiento, inspección de campo con
   checklist/fotos/firma, check-in de vida, offline-first.
+> **REACTIVADA COMO FASE 2 (2026-07-15).** No se ejecuta como T-1.31: el alcance vive en
+> `## Fase 2 · App móvil (T-2.00…T-2.14)` al final de este documento, con spec canónica
+> `takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md`. Sus criterios de referencia quedan
+> cubiertos por T-2.05/T-2.06 (crisis + check-in), T-2.10 (inspección de campo con
+> checklist/fotos/firma) y T-2.06/T-2.11 (offline-first).
 
 ---
 
@@ -1769,3 +1774,546 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > superadmin) + router `/visibility-grants` (POST upsert/GET/DELETE, auditado). Web: `VisibilityCard`
 > en /tenants gateada. db RLS 11✓ (+ base intacta), api completo 815✓ + router 12✓, web 557✓.
 > **Fase 1.10 COMPLETA** (T-1.70…T-1.73). Rama `feat/fase-1.10-red-multiestacion` lista para PR.
+
+## Fase 2 · App móvil (T-2.00…T-2.14)
+
+> Origen: Mauricio pidió (2026-07-15) arrancar la app móvil reconciliando la spec original
+> (`takab-docs/design/app/PROMPT Especificación.md`, 2026-07-11, ahora SUPERSEDED) contra la
+> Fase 1.10 cerrada. **Spec canónica:** `takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md`
+> (v2.0 — matriz SE QUEDA/SE CAMBIA/SE ELIMINA/SE AGREGA en §14; canvas corregido y shots
+> regenerados con `takab-docs/design/app/tools/regen-shots.mjs`). Plan aprobado:
+> `~/.claude/plans/vamos-a-empezar-a-enumerated-fiddle.md`.
+> **Decisiones ratificadas D1–D4 (2026-07-15):** D1 nueva spec canónica (el PROMPT queda como
+> histórico); D2 código en `mobile/` + tokens en `shared/design-tokens/` (sin `apps/` ni
+> `packages/`, patrón `file:` del SDK); D3 canvas corregido Y ampliado (21 artboards); D4 entran
+> las 4 features — pánico quórum-de-2, banner de simulacro, próximo simulacro programado (agenda
+> informativa `drills.scheduled_at`, **sin auto-arranque**: "LO REAL GANA" intacto) y superficie
+> móvil para inspector/building_admin (perfil táctico server-driven, sin pantallas dedicadas).
+> **Gates pre-código (PLAN-MAESTRO):** decisión #7 (MFA occupant) y la solicitud del entitlement
+> de Critical Alerts a Apple se resuelven en T-2.00 ANTES de escribir código de producto.
+> Método (spec §12): una tarea por sesión, DoD completo por tarea.
+
+### [x] T-2.00 · Decisiones de arranque + entitlements — `GATE-DECISIONS` — **COMPLETA (2026-07-15)**
+- **Componente:** docs · **Bloquea:** todo el resto de la fase.
+- Resolver y registrar: **decisión #7** del PLAN-MAESTRO (MFA de `occupant`; supuesto vigente:
+  sin MFA, compensado por quórum + rate-limit + auditoría); **solicitar a Apple el entitlement
+  de Critical Alerts** (lead-time de semanas; fallback `time-sensitive` ya diseñado en spec §6);
+  elegir emisor push (SNS platform endpoints vs FCM/APNs directo — hoy SNS es solo alarmas de
+  infraestructura); ratificar **R1–R10** (spec §14.5), en particular R2 (enrolamiento vs
+  `site_scope` default-deny) y R7 (lectura del dictamen por el táctico).
+- No auto-verificable en repo: registrar el resultado en la spec (§14.5) y en esta sección.
+> **ESTADO.** Las 4 resoluciones registradas en spec §14.5 (+§6/§8/§11), PLAN-MAESTRO gate #7
+> `[RATIFICADO]`, RBAC §4.3 nota 2 y `specs/cognito-pool-v1.md` §5.2:
+> **(1) Decisión #7 — de Mauricio:** occupant con **login simple SIN MFA obligatorio y MFA
+> OPCIONAL** (opt-in TOTP desde 1.8 Cuenta). Implementación: **pool de ocupantes separado**
+> `mfa=OPTIONAL` (Cognito no da MFA por grupo; OPTIONAL en el pool único dejaría a un táctico
+> declinar TOTP). El pool táctico (`mfa=ON`, verificado en `identity/main.tf:42`) NO se toca ⇒
+> el MFA de quien toca actuadores sigue garantizado. Split en T-2.02; dual-issuer en T-2.03.
+> **(2) Entitlement Critical Alerts:** solicitud **INICIADA por Mauricio ante Apple
+> (2026-07-15)**; aprobación pendiente bajo `GATE-STORE`; fallback `time-sensitive` vigente.
+> **(3) Emisor push: SNS platform endpoints** (payload crudo passthrough; feedback de tokens
+> muertos; cláusula de reversión a FCM v1/APNs directo si el spike de T-2.04 topa un campo que
+> SNS no transporte). **(4) R1–R10 ratificados** — R2=(b) scope móvil server-side contra
+> `user_zone_assignments`; R7=acción `dictamen_read`; geofence del pánico = best-effort (voto
+> con GPS fuera de radio se descarta, sin GPS cuenta); R3 sigue bajo `GATE-LEGAL`.
+
+### [x] T-2.01 · `shared/design-tokens/` + reconciliación documentada — **COMPLETA (2026-07-15)**
+- **Componente:** shared + web
+- Extraer los tokens `--tk-*` — **idénticos** entre `web/src/styles/colors_and_type.css` y
+  `takab-docs/design/app/colors_and_type.css` (verificado 2026-07-15) — a
+  `shared/design-tokens/`: fuente JSON/TS → export CSS vars (consola) + objeto TS (React
+  Native); consumo por `file:` como el SDK. Incluir el contrato semántico etiqueta→color
+  (SevTag / STATE_PILL / severidades) para que ambas plataformas resuelvan igual.
+- Crear `takab-docs/design/DESIGN-TOKENS-RECONCILIATION.md` documentando la identidad (cero
+  conflictos de valor) y el mapeo 1:1.
+- La consola migra por **alias sin cambio visual** (tests/Playwright existentes como guardia).
+> **ESTADO.** Paquete `@takab/design-tokens` creado: `tokens.json` (96 vars, fuente única) →
+> `css/tokens.css` GENERADO (`gen-css.mjs`, determinista, con `--check` como drift gate) +
+> `src/index.ts` (`cssVariables` exacto, `tokens` estructurado para RN, `toNumber`, contratos
+> `INCIDENT_SEVERITY`/`DERIVED_STATE_PILL`/`KIND_COLOR`; regla desconocido⇒ámbar). Consola
+> migrada: dep `file:` + `fs.allow`, `main.tsx` importa el css del paquete ANTES de los estilos
+> locales, `colors_and_type.css` quedó solo con fuentes + clases de tipo, y `SevTag`/`SiteCard`
+> consumen el contrato del paquete (clases/labels intactos, sus tests lo fijan). Guardias:
+> `web/src/designTokens.test.ts` (19 tests: paridad css≡json, drift gate, ANCLAS con los
+> valores pre-migración, contratos congelados). Reconciliación documentada (identidad, cero
+> conflictos): `takab-docs/design/DESIGN-TOKENS-RECONCILIATION.md`. **web 576/576 ✓ (antes
+> 557) · eslint limpio · vite build OK · tokens presentes en el bundle.** La copia del canvas
+> queda como artefacto congelado; un token nuevo aterriza primero en `tokens.json`.
+
+### [x] T-2.02 · Scaffold `mobile/` (Expo prebuild + auth + SDK) — **COMPLETA (2026-07-15)**
+- **Componente:** mobile
+- Expo SDK con dev client/prebuild (NO Expo Go); TypeScript estricto; TanStack Query + Zustand;
+  React Navigation con **perfil server-driven** por `/me` (`allowed_routes`/`allowed_actions`,
+  default-deny) — cubre D4d (inspector/building_admin entran al perfil táctico) sin lógica de
+  rol horneada en UI.
+- Cognito Hosted UI + código + PKCE (patrón oidc de la consola); tokens en Keychain/Keystore;
+  sesión de larga vida del `occupant` (spec §8). `@takab/sdk` por `file:../shared/sdk-ts`.
+- **Consecuencia de la decisión #7 (T-2.00):** crear el **pool de ocupantes** (`mfa=OPTIONAL`,
+  único grupo `occupant`) + app client móvil en `infra/terraform/modules/identity`; la app
+  enruta el login por perfil (occupant → pool simple con MFA opt-in; tácticos → pool `ON`).
+- `mobile/README.md`: módulos que exigen prebuild + entitlements pendientes (`GATE-STORE`).
+> **ESTADO.** **Infra:** módulo `identity` extendido — pool `takab-dev-occupants`
+> (`mfa=OPTIONAL` + TOTP, único grupo `occupant`, mismos custom attributes), domain propio,
+> client `takab-mobile-occupants` (PKCE por deep link `takab://auth/callback`, refresh 90 días)
+> y client `takab-mobile-tactical` sobre el pool principal intacto (refresh 24 h); outputs en
+> módulo y envs/dev; `fmt`+`validate` verdes. **✅ `terraform apply` EJECUTADO por Mauricio
+> (2026-07-16): 5 added / 0 changed / 0 destroyed** — pool `us-east-2_P818WYSql` VIVO
+> (discovery OIDC responde); `EXPO_PUBLIC_*` reales en `mobile/.env` local (gitignored).
+> **App:** `mobile/` con Expo SDK 57 (RN 0.86 · React 19), expo-router con grupos
+> `(occupant)`/`(brigadista)` y guards + `denied` explícito; `gateFor(/me)` default-deny
+> (tests), sesión SOLO en SecureStore con purga de payload corrupto (tests), config dual-pool
+> declarativa (tests), `useAuth` PKCE + `bootstrapSession` (offline conserva sesión cacheada
+> con `me=null`), SDK espejo de la consola (Bearer + solo 401 expulsa), tema desde
+> `@takab/design-tokens`, 9 placeholders honestos con su tarea, Metro con watchFolders del
+> monorepo, `.gitignore` CNG. **Job `mobile` en CI** (eslint+tsc+jest, patrón file: del job
+> web). jest 18/18 ✓ · tsc ✓ · eslint ✓. README con envs/entitlements; AGENTS.md del árbol.
+
+### [x] T-2.03 · DB + API móvil núcleo (migración 0018 sobre el DDL latente) — **COMPLETA (2026-07-16)**
+- **Componente:** db + api + shared (SDK)
+- Migración `0018` **idempotente** + `db/schema.sql` consolidado (invariante T-1.45): deltas
+  `life_checkins` (+`ts_device`, +`via self|delegated`, +`verified_by`), `zones.evac_policy`
+  (`evacuate|shelter` — R1), `user_profiles.phone` (R4, PII con consentimiento),
+  `drills.scheduled_at` (D4c, agenda informativa), hash declarado-en-captura en
+  `evidence_objects` si falta; tablas nuevas `push_tokens`, `device_keys`, `damage_reports`,
+  `compliance_labels`, `site_assets` — todas con `tenant_id` + RLS default-deny (patrón 0017).
+- Endpoints de la spec §5 (sin prefijo de versión): `/me/enrollment`,
+  `/sites/{id}/enrollment-codes`, `/sites/{id}/mobile-state` (con `phase`, compliance_labels,
+  drill activo/próximo, assets), `/incidents/{id}/checkins` (+GET `scope=me`),
+  `/incidents/{id}/roster`, `/incidents/{id}/damage-reports` (+GET para Triage web),
+  `/sites/{id}/assets`, `/me/push-tokens`, `/me/device-keys`, `/sites/{id}/drills`.
+- Acciones nuevas en `api/src/takab_api/auth/matrix.py` (patrón `roles_with_action` + parity
+  test extendido): `checkin_submit`, `roster_read`, `damage_report_submit`, `evidence_upload`,
+  `siren_silence`, `manual_activate`, `enrollment_manage`, `panic_vote`, `dictamen_read` (R7).
+- **Dual-issuer (decisión #7):** `claims.py` valida ambos pools y **ancla pool→rol** (token del
+  pool de ocupantes ⇒ solo `occupant`; del pool táctico ⇒ nunca `occupant` en superficie móvil)
+  ⇒ 401 en cruce, con tests. R2 ratificado = (b): scope móvil server-side contra
+  `user_zone_assignments` (cache corto), sin escribir claims por admin API.
+- Todo mutador audita vía el escritor único (`audit.py`); tests de cruce de tenants DEBEN
+  fallar; SDK regenerado (drift gate verde).
+> **ESTADO.** **DB:** migración `0018_mobile_core` idempotente, validada en cadena incremental
+> Y fresca (la 0001 aplica el schema nuevo y la 0018 re-afirma); deltas + 5 tablas nuevas con
+> RLS default-deny (`pt_self`/`dk_self` = SOLO fila propia); **GRANTs del DDL latente que
+> FALTABAN** (uza/sec/mav/lc — política sin privilegio era inservible). Trampa nueva: `drills`
+> es del usuario de conexión (la 0015 no usó SET ROLE) ⇒ su ALTER corre fuera del bloque
+> migrator. **Auth:** dual-issuer con ancla pool→rol en `get_claims` (cruce en cualquier
+> dirección ⇒ 401), retrocompatible (pool de ocupantes deshabilitado = single-issuer intacto);
+> `require_mobile_surface`; `/dev/token` enruta occupant→pool de ocupantes; `/me/profile` dejó
+> de ser web-only y suma `phone` (R4: darlo ES el consentimiento; null lo retira; PII fuera del
+> audit). **Matriz:** 9 acciones móviles con paridad EJECUTABLE contra RBAC §3
+> (`test_mobile_actions_match_rbac_section_3`, celda a celda — corrigió 2 concesiones mías:
+> inspector sin roster, building_admin sin forense); MeActions + meFixtures espejados.
+> **Routers:** `mobile_me` (push-tokens upsert-revive, device-keys PEM, enrolamiento atómico con
+> 404 uniforme), `mobile_site` (mobile-state con `phase` derivada de datos REALES —
+> incidente+`rule_evaluations`+dictamen firmado habitable—, assets presignados GET/PUT seam
+> MinIO, enrollment-codes, drills por sitio), `mobile_incident` (check-ins self/delegated
+> distinguibles, roster con contadores + audit de PII, damage-reports con `people_at_risk`
+> derivado); drills gana AGENDA (`scheduled_at`: anuncio que JAMÁS deriva activo — LO REAL
+> GANA). R2 implementada: `assert_site_access` (occupant enrolado o 404). **api 851✓ · auth
+> 116✓ · mobile_core 11✓ · web 576✓ · sdk tsc✓ · mobile 18✓ · ruff limpio · SDK regenerado.** Pendiente T-2.10: verificación criptográfica de la firma de intención (hoy se
+> ALMACENA, sin fingir validación).
+
+### [x] T-2.04 · Push: infraestructura + onboarding de permisos — `GATE-STORE` — **COMPLETA (2026-07-16)**
+- **Componente:** api + mobile + infra
+- Registro/rotación en `/me/push-tokens`; **emisor: SNS platform endpoints (T-2.00)** — spike
+  inicial de campos APNs con cláusula de reversión (spec §6); dos clases JAMÁS mezcladas:
+  `CRISIS` (Critical Alerts iOS / canal `seismic_alert` IMPORTANCE_HIGH + bypass DND Android)
+  y `OPS`; payload mínimo `{type, site_id, incident_id, phase}` sin datos sensibles.
+- Integración con la cascada notify FAIL-OPEN existente; la push es **best-effort** — la
+  protección de vida es la sirena del edge (así se comunica en onboarding, R5).
+- Pantallas 0.1–0.4 (login, permisos con estado rojo imposible de ignorar, aviso de privacidad,
+  enrolamiento por código). Verificación física de bypass DND/Critical Alerts = `GATE-STORE`.
+> **ESTADO.** **Infra:** módulo `push/` con platform applications APNs/FCM **condicionales a
+> credenciales reales** (vacías ⇒ no se crean; la .p8 llega con la aprobación de Apple —
+> GATE-STORE) + política IAM SNS acotada al rol de la instancia; outputs para
+> `TAKAB_API_PUSH_*_APPLICATION_ARN`; fmt+validate ✓ (**apply pendiente, sin efecto hasta tener
+> credenciales**). **DB:** 0019 `push_tokens.endpoint_arn` (cache del endpoint SNS) + UPDATE a
+> `takab_ingest` + el CHECK de `notification_jobs.channel` admite `'push'` (trampa: el CHECK
+> viejo reventaba el INSERT). **API:** `notify/push.py` — payloads por clase (CRISIS:
+> `interruption-level time-sensitive` base pre-entitlement + `sound.critical` listo, canal
+> Android `seismic_alert`; OPS normal; texto visible GENÉRICO — cero PII en lockscreen);
+> `SnsPushProvider` (endpoint por dispositivo con sellado de ARN; `EndpointDisabled` ⇒
+> REVOCACIÓN honesta del token) + simulado que grita (patrón T-1.62). Cascada: job `push`
+> **parallel** a t0 (clase CRISIS al abrir incidente), encolado SOLO si el sitio tiene
+> dispositivos (nada de 'sent' vacíos), targeting FRESCO al despachar (patrón del secret del
+> webhook), `incident_action notify_sent` con `devices_delivered/revoked`; 0 entregas ⇒ backoff
+> (única voz push). **Móvil:** `services/push.ts` (canales Android MAX+bypassDnd, permisos con
+> `allowCriticalAlerts`, token NATIVO → `/me/push-tokens`), `alertability.ts` (derivación PURA:
+> blocked/degraded/ok — jamás optimismo), onboarding 0.2/0.3/0.4 cableados (permisos con rojo
+> imposible de ignorar re-verificado al volver de background; privacidad con consentimiento GPS
+> revocable; enrolamiento consumiendo `POST /me/enrollment`), gate en `index` + registro
+> best-effort al autenticar. **api 860✓ (+9 push, moto) · mobile 30✓ (+12) · tsc/lint/ruff
+> limpios · OpenAPI sin drift.** Pendiente físico `GATE-STORE`: entitlement de Apple (en
+> trámite), credenciales APNs/FCM reales, bypass DND en dispositivos; push OPS de dictamen se
+> cablea en T-2.12; sonido oficial empaquetado en T-2.05.
+
+### [x] T-2.05 · Máquina de estados de crisis + pantallas 1.2/1.3
+- **Componente:** mobile
+- Estado único determinista (spec §4.1): la fase la sirve `mobile-state.phase`; la push
+  despierta y el REST reconstruye; instrucción por `zones.evac_policy`; contador T+ ascendente;
+  fuentes reales del payload (`sasmex_wr1` booleano / detección local con PGA instrumental /
+  quórum "CONFIRMADO · N estaciones" con `meta.node_count`).
+- **Tests de honestidad:** snapshot que FALLA si aparece magnitud/ETA con `source: sasmex_wr1`;
+  flag `ALERT_SOURCE_CARRIES_ETA=false`; ningún camino local produce `REENTRY_APPROVED`.
+- Test de integración: los modos de prueba del gabinete (T-1.67/T-1.69) no generan incidente ⇒
+  la máquina no sale de `IDLE` (garantía server-side; cero lógica local de "modo prueba").
+
+> **ESTADO (2026-07-16): COMPLETA.** **API:** `mobile-state.incident` ahora porta el dato
+> INSTRUMENTAL real — `max_pga_g` (PGA MEDIDO del evento, jamás magnitud) + `node_count`
+> (estaciones corroborantes) — mismo origen que el Triage; SDK regenerado sin drift.
+> **Máquina (`mobile/src/features/alert/machine.ts`):** `deriveAlertState(phase, hasOwnCheckin)`
+> PURA de 2 argumentos — `reentry_approved` SOLO puede venir de la fase del servidor (test
+> recorre todos los caminos locales); `ALERT_SOURCE_CARRIES_ETA=false` (§2.1-A: el WR-1 entrega
+> un booleano — el hueco de ETA ni se renderiza); `elapsedSeconds` con clamp a 0 (sesgo de reloj
+> del dispositivo jamás pinta cronómetro fantasma; timestamp corrupto ⇒ 0, no NaN) y
+> `formatElapsed` SIEMPRE `T+`. **Fuentes (`source.ts`):** etiqueta por `trigger` real —
+> SASMEX sin números (el único dígito permitido es "WR-1"), local `PGA 0.15g MEDIDO` (mg bajo
+> 0.01g — piso MEMS honesto), quórum `CONFIRMADO · N ESTACIONES`; trigger desconocido se muestra
+> CRUDO. **Pantallas 1.2/1.3 (`CrisisView` + ruta `/crisis`):** takeover instruction-first
+> (EVACÚE AHORA rojo / REPLIÉGUESE ámbar por `zones.evac_policy`; sin política ⇒ PROTÉJASE
+> banner MVP — el teléfono NO adivina), sin gesto de regreso (`gestureEnabled:false`), la salida
+> la decide la fase (`Redirect` cuando el servidor deja `alert_active`); spinner "VERIFICANDO
+> ALERTA CON EL SERVIDOR…" si la push llegó antes que el REST. **Watcher (`CrisisWatcher`):**
+> push CRISIS ⇒ invalida `mobile-state` y navega; polling honesto 30 s reposo / 5 s crisis.
+> **Sonido:** loop `expo-audio` con `playsInSilentMode` — **placeholder `siren.wav` del edge;
+> el tono SASMEX oficial requiere licenciamiento (pendiente físico, como el entitlement)**.
+> **Trampa de migraciones cerrada (0018/0019 reestructuradas):** el dueño histórico de las
+> tablas varía por base (en el dev local `user_profiles`/`notification_jobs`/`life_checkins`
+> son del superusuario de conexión; en `takab_test` lo es `drills`) ⇒ TODO DDL sobre tablas
+> PREEXISTENTES corre como USUARIO DE CONEXIÓN (superusuario local / `takab_migrator` dueño en
+> nube) y `SET ROLE takab_migrator` queda SOLO para objetos nuevos; validado incremental
+> (dev 0017→0019), cadena fresca y round-trip de downgrade. **Rezagos de T-2.03 saneados en
+> web:** fixtures `DrillOut.scheduled_at` + las 9 acciones móviles en `MeActions` (el build de
+> web estaba roto en silencio; vitest no typechequea). Check-in (1.4) llega en T-2.06 y el
+> bloqueo de reingreso (1.5) en T-2.07 — `checkin_pending`/`reentry_blocked` ya derivan hoy.
+> **api 860✓ · web 576✓ (build+eslint+prettier limpios) · mobile 66✓ (tsc+expo lint limpios).**
+
+### [x] T-2.06 · Cola offline cifrada + check-in de vida (1.4)
+- **Componente:** mobile + api
+- SQLite cifrado (verificar el cifrado real antes de rotular "AES-256"); elementos con estado
+  `{pending, uploading, synced, failed}`; nada se borra hasta `synced` + 24 h; reintentos con
+  backoff + jitter; hash SHA-256 de blobs en captura (cadena de custodia, spec §4.2).
+- Check-in 1.4: dos botones gigantes; `need_help` adjunta GPS **solo con consentimiento** (si
+  no, zona asignada; se muestra qué se enviará); `ts_device` + `ts_server` persistidos.
+- Aceptación E2E: modo avión → check-in `pending` → red → `synced` → el roster del táctico lo
+  refleja vía WS en <2 s.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API idempotente ante replays (regla de oro 3):**
+> `CheckinIn.checkin_id` lo genera la COLA del dispositivo; `INSERT … ON CONFLICT (checkin_id)
+> DO NOTHING` + replay del MISMO portador/incidente ⇒ **200 con la fila original** (sin audit —
+> es el mismo evento); un id ajeno ⇒ **409 sin fuga** (test `test_checkin_replay_offline_es_
+> idempotente`); la tabla sigue append-only (jamás DO UPDATE). **Cola (`mobile/src/offline/`):**
+> lógica PURA (`queue.ts`: transiciones, `isDue`, retención SOLO `synced+24h`,
+> `recoverInterrupted` — un `uploading` interrumpido vuelve a `pending` al hidratar porque el
+> replay es seguro); backoff exponencial ±50% jitter con techo 5 min (`backoff.ts`); huella
+> SHA-256 del payload CANÓNICO al capturar (`custody.ts`); persistencia SQLite con **SQLCipher
+> VERIFICADO en runtime** (`PRAGMA cipher_version` tras `PRAGMA key` con llave de 32 bytes en
+> SecureStore; sin SQLCipher —p.ej. Expo Go— el estado queda `{active:false}` y JAMÁS se rotula
+> AES-256 sin comprobarlo); motor `drainQueue` (candado reentrante, orden de captura, respeta
+> `next_attempt_at`; 4xx de contrato ⇒ `failed` VISIBLE sin reintento; red/5xx/429/401 ⇒
+> retry) + `OfflineSyncGate` (hidrata al autenticar, drena en foreground/red-recuperada/tic 15 s).
+> **1.4:** dos botones gigantes con TRANSPARENCIA previa (`whatWillBeSent`: qué viaja
+> exactamente); **GPS SOLO need_help+consentimiento** (`buildCheckinPayload` puro — el test
+> FALLA si alguien relaja la regla; "estoy bien" jamás manda GPS ni con fix a la mano); captura
+> best-effort 5 s ⇒ degrada a zona asignada declarándolo; `ts_device` sellado AL TOQUE;
+> `CheckinStatusView` honesto (GUARDADO EN ESTE DISPOSITIVO ≠ RECIBIDO POR EL SERVIDOR);
+> `hasOwnCheckin` = servidor ∪ cola local (`failed` NO cuenta — debe poder reintentar);
+> watcher + `/crisis` enrutan `checkin_pending` → `/checkin` (takeover sin gesto de regreso).
+> **E2E:** modo avión→pending→red→synced con el MISMO checkin_id cubierto en jest
+> (`sync.test.ts`) y el roster lo refleja al aterrizar (tests api); el reflejo "vía WS <2 s"
+> pertenece a T-2.08 (WS móvil táctico). Trampas nuevas: RTL v14 — `fireEvent` TAMBIÉN es
+> async (un press sin await deja act() abierto y envenena el resto de la suite);
+> `no-require-imports` ⇒ carga perezosa del módulo nativo con `import()` dinámico.
+> **api 861✓ · web 576✓ · mobile 95✓ (tsc+lint limpios) · SDK sin drift.**
+
+### [x] T-2.07 · Pantallas de ocupante: 1.1, 1.5, 1.6–1.8 + variante SIMULACRO
+- **Componente:** mobile
+- 1.1 reposo: estado del sitio honesto por `mobile-state` (nunca calculado local); badge
+  "SASMEX ENLAZADO" solo con enlace WR-1 real; próximo simulacro (`scheduled_at`) + último
+  resultado; **variante SIMULACRO** ámbar con drill activo — un drill JAMÁS dispara pantallas
+  de crisis. 1.5 bloqueo: timeline por `incident_actions`; libera solo con `reentry_approved`;
+  strings normativos desde `compliance_labels`. 1.6 rutas (assets S3 cacheados offline),
+  1.7 directorio (llamada de un toque), 1.8 cuenta (permisos, privacidad, consentimiento GPS
+  revocable, logout).
+- Los 4 estados obligatorios en cada componente (contrato `StateFrame`:
+  loading>error>empty>stale, banner "DATOS RETENIDOS"); "datos de hace X min" sin red.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API (+2):** `mobile-state.site_health` — el banner del
+> edificio sale del MISMO derivador que Flota Edge (`derive_fleet_state`, verdad única y
+> mismos umbrales de settings; con varios gabinetes gana el PEOR; sitio sin gabinete ⇒
+> SIN ENLACE honesto) + `GET /sites/{id}/directory` (roster PÚBLICO: brigadista/seguridad/
+> administración desde `user_zone_assignments` ⋈ `user_profiles`, occupants JAMÁS listados,
+> publicación deliberada ⇒ sin audit por lectura). **Matiz de honestidad del badge SASMEX:**
+> el WR-1 NO expone supervisión de línea (solo el Relevador 2 está cableado — fase 1.9) ⇒ el
+> chip verificable es `has_wr1` (hardware declarado) ∧ gabinete reportando, rotulado
+> "SASMEX WR-1 · GABINETE ENLAZADO"; jamás un estado del enlace que nadie mide. **Infra
+> móvil:** `StateFrame` RN (prioridad loading>error>empty>contenido+stale, banner "DATOS
+> RETENIDOS · hace X min" con tic interno de 30 s) + `useCachedQuery` (respuesta buena ⇒
+> caché cifrada `doc_cache` en la MISMA sqlite del offline —`db.ts` compartida—; sin red ⇒
+> copia con edad; sin red NI copia ⇒ error declarado, jamás spinner infinito). **1.1**
+> (`HomeView`): SEGURO/DEGRADADO/SIN ENLACE, chip WR-1, zona+política, franja ámbar
+> SIMULACRO sobre contenido NORMAL (test: jamás pantalla de crisis — el drill no crea
+> incidente), agenda próximo/último (`sin programar`/`sin registro` — no inventa),
+> brigadistas de MI zona con `tel:`. **1.5** (`ReentryBlockedView` + `reentryTimeline` pura):
+> letrero rojo persistente, timeline derivada del servidor (evento→sacudida→su check-in
+> [guardado≠recibido]→dictamen→reingreso; test recorre TODAS las combinaciones y "Reingreso
+> autorizado" JAMÁS sale done — la liberación es solo `reentry_approved` del backend), punto
+> de reunión, `compliance_labels` (vacío ⇒ NADA normativo, GATE-LEGAL); sustituye al
+> `CheckinStatusView` de T-2.06 en `/checkin`. **1.6:** lista cacheada + descarga de binarios
+> a documentos (`File.downloadFileAsync`, badge DISPONIBLE OFFLINE = `File.exists` verificado,
+> abrir vía share sheet); sin URL ⇒ "SIN COPIA OFFLINE" declarado. **1.7:** agrupado por zona,
+> LLAMAR un toque, sin teléfono ⇒ se declara (sin botón roto). **1.8:** perfil GET/PUT
+> (nombre obligatorio CHECK 1-80), consentimiento GPS revocable con efecto declarado (revocar
+> ⇒ el siguiente auxilio manda zona — garantizado por `buildCheckinPayload`, test T-2.06),
+> fila TOTP OPCIONAL SOLO occupant (decisión #7; flujo de asociación → T-2.14), enlaces a
+> permisos/privacidad/vincular, logout. Trampas nuevas: `renderHook` de RTL v14 también es
+> async; react-hooks v6 `purity` veta `Date.now()` en render (⇒ tic con `useState(()=>…)` +
+> interval, o `dataUpdatedAt`); el formulario de cuenta es estado DERIVADO (sin setState en
+> effect); `toHaveTextContent(string)` exige match EXACTO (usar regex). Test nuevo del api con
+> `gw_sandbox` (limpia gateways/device_health del sitio al entrar Y salir — los tests de
+> ingest cuentan filas y un heartbeat huérfano los rompe).
+> **api 863✓ · web 576✓ · mobile 125✓ (tsc+expo lint limpios) · SDK sin drift.**
+
+### [x] T-2.08 · WS móvil (allowlist topic×rol) + dashboard táctico 2.1
+- **Componente:** api + shared + mobile
+- `/ws`: autorización por **allowlist topic×rol default-deny** (hoy el handshake solo admite
+  roles de consola): tácticos con `site_state`, `features:<site_id>` e `incidents`, siempre
+  acotados a `site_scope` + `custom:surface`; **`occupant` queda FUERA del WS** (push + REST).
+  Tests de default-deny (occupant rechazado; topic no permitido rechazado).
+- Extraer `LiveSocket` (reconexión backoff 1–30 s + jitter, re-subscribe, staleness por topic)
+  de `web/src/lib/ws.ts` a `shared/sdk-ts`; la web migra al compartido sin cambio de conducta.
+- 2.1: salud `device_health` real (UPS `unknown/null` → "S/D", jamás 0%; RTT MQTT, offset NTP,
+  lag SeedLink, temperatura, cert); **features de 1 s** (pga/pgv/rms/stalta — NO waveform,
+  regla de oro 9); actuadores BMS con el estado recalculado del arbitraje. Aceptación: mismo
+  payload que la consola, sin transformaciones divergentes.
+
+> **ESTADO (2026-07-16): COMPLETA.** **WS allowlist default-deny:** mapa `_TOPIC_ALLOWLIST`
+> (topic-familia → roles) — consola C4I ∪ tácticos móviles (`brigadista`/`security_guard` con
+> surface móvil verificada); un topic sin entrada niega a TODOS; **occupant se cierra 4401 en
+> el HANDSHAKE** (sin sockets ociosos; el test viejo de "error por suscripción" se reescribió
+> a este contrato). **`site_scope` en la ENTREGA:** los frames de `device_health` e
+> `incident_action` ahora viajan con `site_id` (JOIN a gateways/incidents en el hub; campo
+> ADITIVO en el protocolo) y `_frame_in_scope` descarta en el fan-out lo que quede fuera del
+> alcance del suscriptor (default-deny: frame sin sitio para token acotado NO pasa) — también
+> corrige a los tokens de consola acotados. **Acción nueva `panel_read`** (espejo EJECUTABLE de
+> RBAC §3 "Dashboard táctico (salud gabinete + actuadores)": occupant "—", inspector Lectura):
+> gatea `GET /incidents/{id}/actions`, que se movió a un router consola∪panel — MISMO endpoint
+> y MISMA query para ambas superficies; el táctico queda acotado a su `site_scope` con el MISMO
+> 404. Paridad §3 + fixtures web/mobile actualizados. **Shared:** `LiveSocket` → `@takab/sdk`
+> (`live.ts`, corre en navegador y RN — WebSocket global) y `groupActions`/BMS → `bms.ts`
+> (criterio 2.1: cero transformaciones divergentes); `web/lib/ws.ts` y `console/bms.ts` quedan
+> como re-export (solo `liveWsUrl` sigue en web por `window`); el mock de ConsolePage pasó a
+> PARCIAL (`importOriginal`). **mobile-state.site_health** ganó las métricas del heartbeat más
+> reciente (RTT/lag/NTP/CPU/UPS/cert — el REST de flota/telemetría es consola-only y el WS solo
+> notifica TRANSICIONES: sin esto el panel no tendría snapshot inicial honesto). **2.1
+> (`(brigadista)/panel.tsx` + `features/panel/`):** salud con "S/D" (UPS unknown/null JAMÁS
+> 0% — test), `applyHealthFrame` puro (solo un frame MÁS nuevo actualiza; el status NUNCA se
+> recalcula local — verdad única del servidor), strip de features 1 s por canal (pga/pgv/rms/
+> stalta, "ESPERANDO DATOS…" declarado, nota "sin forma de onda"), traza BMS = REST
+> (`panel_read`) + frames live fusionados con `mergeAction` (dedupe por `action_id`, filtro por
+> incidente) y agrupados con la `groupActions` COMPARTIDA; pill LIVE/RECONECTANDO/SIN CANAL.
+> **api 866✓ · web 576✓ · mobile 133✓ (tsc+lint limpios) · SDK sin drift.**
+
+### [x] T-2.09 · Firma respaldada por hardware + control remoto 2.2 — `GATE-HW`
+- **Componente:** api + mobile
+- Llave por operador en Secure Enclave / Android Keystore (no exportable), registrada vía
+  `/me/device-keys`; las acciones críticas firman la **intención** `{key_id, signature, nonce
+  del servidor, TTL corto}`; el backend la valida y construye el comando por el pipeline
+  EXISTENTE (`POST /sites/{id}/commands`: HMAC por gateway fail-closed, nonce UNIQUE,
+  rate-limit doble 60 s, ack obligatorio `pending→acked/rejected/expired`) — la nube firma el
+  comando ejecutable, el teléfono jamás.
+- Flujo 2 pasos: precondiciones con estado real prellenado (headcount cerrado) → deslizar para
+  activar. "Silenciar" = retirada de la demanda del canal manual: si la alerta vigente mantiene
+  la sirena, la UI explica el estado real del ack en vez de fingir éxito.
+- Tests: replay de nonce rechazado; gating por `siren_silence`/`manual_activate`; audit con
+  hash de la intención. Verificación física contra gabinete con alerta activa = `GATE-HW`.
+
+> **ESTADO (2026-07-16): COMPLETA (código; `GATE-HW` físico pendiente).** **API
+> (`commands/intent.py`):** el teléfono firma una INTENCIÓN
+> `takab-intent-v1:key_id:site:channel:action:nonce`, NUNCA el comando. Nonce STATELESS
+> (HMAC del servidor sobre `sub|site|exp|rand`, TTL 90 s, atado a operador+sitio) emitido por
+> `POST /sites/{id}/command-nonce` justo antes del deslizamiento; su UN-SOLO-USO no necesita
+> tabla porque viaja como `commands.nonce` (UNIQUE) del comando emitido ⇒ **el replay revienta
+> en el INSERT (409)**. `intent_signature_valid` verifica contra `device_keys` (P-256/ECDSA y
+> RSA PKCS#1v15, ambas SHA-256 — cubre Secure Enclave y Android Keystore). Ruta TÁCTICA en
+> `issue_command`: quien no porta `siren_test` o es surface móvil entra por
+> `manual_activate`(activate)/`siren_silence`(deactivate), **solo canal siren**, intención
+> OBLIGATORIA; FAIL-CLOSED sin `command_intent_secret` (503); reusa el pipeline existente
+> (HMAC por gateway, rate-limit, TTL, ack) con `nonce_override`+`audit_meta` (hash de la firma
+> en `audit_log`). Acción nueva de matriz **NO** hizo falta: se apoya en `manual_activate`/
+> `siren_silence` de T-2.08. **Móvil:** `security/deviceKey.ts` (react-native-biometrics:
+> `createKeys` en hardware no exportable → PEM → `/me/device-keys`, `key_id` en SecureStore,
+> re-genera si la llave murió en el HW; `createSignature` con prompt biométrico),
+> `security/intent.ts` (canónico ESPEJO EXACTO del servidor — test de paridad),
+> `features/control/service.ts` (nonce→firma→POST, traduce 409/429/503/403 a mensajes
+> honestos), `ackState.ts` (silenciar con alerta vigente ⇒ "SU DEMANDA SE RETIRÓ · LA SIRENA
+> SIGUE ACTIVA", jamás finge éxito), `preconditions.ts` (estado REAL prellenado, no checkbox
+> ciego), `ControlSheet.tsx` (2 pasos: checklist → deslizar-para-activar) enlazada desde el
+> panel táctico 2.1 gated por `allowed_actions`. **api 873 · web 576 · mobile 150 (tsc+lint
+> limpios) · SDK sin drift.** TRAMPAS: `audit_log.object` (no `obj`); `gateways`/`sites` NO se
+> truncan ⇒ los tests de comandos usan SITE dedicado con delete-then-insert; `cryptography`
+> declarada directa + registrada en el contrato `test_runtime_deps`; jest hoisting exige
+> prefijo `mock` en las refs de `jest.mock`; react-hooks/purity veta `Animated.Value`/
+> `PanResponder` creados con `useRef(new …)` en render ⇒ `useState(()=>…)` + `useMemo`.
+> **`GATE-HW` (físico, PENDIENTE):** verificación en dispositivo real (biometría + attestation)
+> y prueba contra un gabinete con alerta activa (silenciar NO apaga; el ack trae el relé
+> recalculado). El tono oficial SASMEX y credenciales store siguen en sus gates previos.
+
+### [x] T-2.10 · Cámara forense 2.3 + formulario de daños 2.4
+- **Componente:** mobile + api + web (Triage)
+- Marca de agua **horneada en el pixel** (fecha-hora del dispositivo + offset NTP del último
+  sync, GPS, PGA del gabinete o "PGA: pendiente de sync" — nunca inventado, ID del operador);
+  sello "SHA-256"; hash calculado en captura; JSON de metadatos firmado; las fotos jamás van a
+  la galería del sistema.
+- 2.4: categorías con severidad; "personas atrapadas/heridas" = frente de cola + notificación
+  inmediata al SOC (cascada OPS); payload firmado → `damage_reports` + evidencias por el
+  pipeline presigned EXISTENTE.
+- Aceptación: un reporte móvil aparece en Triage de la consola con evidencias y hashes
+  verificados; alterar un byte del blob tras la captura invalida la verificación (test).
+
+> **ESTADO (2026-07-16): COMPLETA (código; `GATE-HW` de captura física en dispositivo).**
+> **API:** `POST /incidents/{id}/evidence` (evidence_upload) registra la foto en
+> `evidence_objects` (kind=photo, sha256 declarado en captura, `s3_key` con prefijo por tenant)
+> y devuelve un **PUT presignado** (el móvil sube sin credenciales AWS); `POST
+> /evidence/{id}/verify` **re-hashea el objeto subido y lo confronta con lo declarado** —
+> alterar un byte ⇒ `verified=false` (criterio de aceptación, probado con moto subiendo bytes
+> reales) — táctico acotado a `site_scope`. `people_at_risk` (categoría `people_trapped`)
+> escribe un `incident_action` `damage_people_at_risk` que el orchestrator OPS convierte en
+> **email INMEDIATO al SOC** (nuevo pass `_enqueue_people_at_risk`, espejo del dictamen pero sin
+> dedup por "atendido" — una vida en riesgo se notifica siempre; idempotente por
+> `(action_id, channel)`). Cierra el diferido de T-2.03. **Móvil:** `forensic/watermark.ts`
+> (PURO: líneas horneadas con "PGA: pendiente de sync" honesto cuando no hay dato del gabinete;
+> sello "SHA-256", jamás siglas de HW inexistente), `forensic/fileHash.ts` (SHA-256 de los
+> BYTES crudos — coincide con el server), `forensic/capture.ts` (view-shot compone la marca en
+> el bitmap → archivo PRIVADO, jamás galería), `services/evidence.ts` (registro + PUT),
+> `damage/categories.ts` (people_trapped = prioridad máxima, frente de cola) + `DamageForm`
+> (2.4, severidad por categoría, banner urgente) + ruta `/camera` (2.3, expo-camera). **Web:**
+> `StructuralTriage` en el detalle de Triage — reportes de daños ordenados (personas en riesgo
+> al frente), categorías/severidad, y **verificación de hash por evidencia** bajo demanda
+> (HASH VERIFICADO / HASH ALTERADO / NO SE PUDO VERIFICAR — nunca finge integridad). **api 879 ·
+> web 584 · mobile 167 (tsc+lint limpios) · SDK sin drift.** TRAMPAS: `File.bytes()` es ASYNC
+> en SDK 57 (await); `Crypto.digest` sobre BufferSource para bytes crudos; el mock de `@takab/
+> sdk` de TriagePage no cubría los endpoints nuevos ⇒ stub de `useDamageReports`; `evidence_
+> objects`/`gateways` no se truncan (los tests limpian lo suyo). **`GATE-HW`:** captura real con
+> cámara + attestation en dispositivo (biometría de firma sigue en T-2.09). Offset NTP del
+> último sync y adjuntar el PGA real al sincronizar ⇒ afinado en T-2.11 (sync 2.5).
+
+### [x] T-2.11 · Sync UI 2.5 + headcount 2.6
+- **Componente:** mobile + api
+- 2.5: cola visible (estado por elemento, progreso, reintento manual, tamaño pendiente); solo
+  contiene lo que el teléfono produce (sin miniSEED — sube edge→S3); badge de cifrado solo si
+  es literalmente cierto.
+- 2.6: roster (`/incidents/{id}/roster`) cruzado con check-ins vía WS (<2 s); contadores a
+  salvo / ayuda / sin reporte; filtro "no reportados" + llamada de un toque
+  (`user_profiles.phone`); marcación "verificado en persona" = check-in **delegado**
+  (`via='delegated'`, `verified_by`) distinguible del propio; "Notificar a no reportados" =
+  push OPS (no existe canal de mensajes de texto); **cierre de headcount = acción firmada**
+  (precondición del paso 1 de 2.2).
+
+> **ESTADO (2026-07-16): COMPLETA.** **API — roster live <2 s:** migración 0020 extiende
+> `takab_notify()` con el tipo `checkin` + trigger AFTER INSERT en `life_checkins` (payload
+> MÍNIMO sin PII `{t:'checkin',tenant,site,incident_id}`); el hub lo mapea al topic `incidents`
+> y arma un `RosterSignalFrame` DIRECTO del payload (sin re-consulta — es solo invalidación, la
+> PII vive en el REST gated `roster_read`); acotado por `site_scope` en la entrega (T-2.08).
+> SDK ws.ts +`roster`. **Endpoints de headcount:** `POST .../headcount/close` (roster_read) =
+> acción firmada `headcount_closed` — la firma de intención (§2.1-B, verificada contra
+> `device_keys` sobre el canónico `takab-headcount-v1`) es OPCIONAL; devuelve el conteo de no
+> reportados. `POST .../headcount/notify-unreported` (roster_read) escribe `headcount_notify` y
+> el orchestrator lo convierte en **push clase OPS** (nuevo pass `_enqueue_headcount_notify`;
+> `_dispatch_push` ahora es CLASS-AWARE — la clase la fija el job, default CRISIS retrocompat;
+> el actor de `notify_sent` incluye `action_id` para no colisionar con el push CRISIS del mismo
+> incidente en un pass). **Móvil 2.5 (`sync` tab):** cola visible con estado por elemento,
+> contadores, tamaño pendiente, reintento manual (`retryFailed`+drainQueue), banner offline
+> (expo-network) y **badge de cifrado honesto** (afirma AES-256 SOLO si SQLCipher se verificó);
+> `syncView` puro. **Móvil 2.6 (`lista` tab):** roster + contadores del servidor, filtro "no
+> reportados" por defecto + llamada de un toque, "verificado en persona" = check-in DELEGADO
+> (subject_user_id ⇒ via='delegated'), refresco live por el frame `roster`/incidente del WS
+> (<2 s), notificar-a-no-reportados y cerrar-headcount (habilitado solo si todos contabilizados);
+> `rosterView` puro. **api 883 · web 584 · mobile 179 (tsc+lint limpios) · SDK sin drift ·
+> migración validada (fresca + round-trip + incremental dev).** TRAMPA: dos push del MISMO
+> incidente en un pass colisionaban en `uq_incident_actions_ack` (actor+ts) ⇒ el actor lleva
+> `action_id`. La firma de hardware del cierre queda OPCIONAL en el cliente (el flujo biométrico
+> completo reusa T-2.09; el gabinete físico es GATE-HW).
+
+### [x] T-2.12 · Dictamen 2.7 + liberación de reingreso
+- **Componente:** api + mobile
+- Push OPS al firmarse el dictamen en consola (firma = rol `inspector`); el PDF es el artefacto
+  EXISTENTE de `/incidents/{id}/report` entregado según R7 (`dictamen_read` o push+presigned) —
+  no generar un PDF paralelo; folio, firmante, vigencia; cacheado offline.
+- "Notificar pisos" = evento backend → fase `reentry_approved` → push de cambio de fase que
+  libera las pantallas 1.5; jamás acción local.
+- Aceptación en staging: consola-firma → push → PDF visible → ocupantes liberados.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API:** `sign_dictamen` (inspector) ahora, cuando la
+> firma es HABITABLE (normal_operation|inhabit_monitor), deja un `incident_action`
+> `dictamen_signed` (una firma restringida NO lo deja); el orchestrator lo convierte en **push
+> clase OPS de cambio de fase** (`_enqueue_push_for_actions` compartido con headcount) que
+> despierta la app → re-lee mobile-state (reentry_approved) → libera 1.5. `GET
+> /incidents/{id}/dictamen` (R7 `dictamen_read`) devuelve el certificado (folio=dictamen_id,
+> firmante, fecha, habitable) + el **MISMO** PDF presignado del `report_pdf` existente (jamás
+> genera uno paralelo); sin PDF ⇒ `pdf_url=null` honesto; el occupant no tiene `dictamen_read`
+> (403). **Móvil:** `certificateView` puro + `DictamenCertificate` (folio/firmante/vigencia,
+> sello "FIRMA DIGITAL · INSPECTOR" — §2.1-B, sin siglas de HW; PDF cacheado offline vía
+> `File.downloadFileAsync`, sin PDF se declara). Ruta `/dictamen` (táctico) enlazada desde el
+> panel 2.1 cuando hay dictamen firmado. **Liberación del occupant:** banner "REINGRESO
+> AUTORIZADO" en Home (1.1) cuando `phase==reentry_approved` (la salida de 1.5 ya la hacía la
+> máquina de crisis de T-2.05). **api 886 · web 584 · mobile 185 (tsc+lint limpios) · SDK sin
+> drift.** El flujo consola-firma→push→PDF→liberación es verificable en staging (GATE-STORE
+> para el push físico; el push OPS es informativo, jamás CRISIS: reingreso aprobado no es
+> alerta).
+
+### [x] T-2.13 · Pánico de occupant por quórum-de-2 (1.9)
+- **Componente:** api + mobile
+- `POST /sites/{id}/manual-activation-votes` sobre la tabla LATENTE `manual_activation_votes`
+  (índice `site_id+created_at DESC` ya existe); quórum = **2 votos de usuarios distintos en
+  30 s** ⇒ comando de sirena por el pipeline existente + votos `consumed`; acción `panic_vote`
+  (solo `occupant`); rate-limit por usuario; todo voto audita.
+- UI 1.9: botón mantener-presionado + estado "1 de 2 · expira en N s"; texto claro de que NO
+  es la alerta sísmica (emergencia del inmueble: incendio, intrusión…).
+- Tests: 1 voto JAMÁS activa; 2 votos del MISMO usuario JAMÁS activan; 2 usuarios distintos en
+  ventana ⇒ comando + audit; fuera de ventana ⇒ nada; voto CON GPS fuera del radio del sitio ⇒
+  descartado (**geofence best-effort**, RBAC §4.3); voto SIN GPS ⇒ cuenta.
+
+> **ESTADO (2026-07-17): COMPLETA.** **API** (`POST /sites/{id}/manual-activation-votes` en el
+> router de comandos, gated `panic_vote` = SOLO occupant): R2 (occupant enrolado o 404) →
+> rate-limit por usuario (`panic_vote_rate_per_min`) → **geofence best-effort** con
+> `ST_DWithin(site.geom, punto, radio)` (True dentro/False fuera/None sin GPS): fuera ⇒
+> `discarded` SIN insertar; sin GPS ⇒ cuenta → INSERT del voto → **quórum = 2 usuarios
+> DISTINTOS con voto NO consumido en la ventana de 30 s** ⇒ `issue_signed_command` (sirena,
+> activate, `source=panic_quorum`) por el pipeline HMAC EXISTENTE (la nube firma, el teléfono
+> jamás) + `CONSUME_PANIC_VOTES` (un solo disparo). TODO voto audita. Los 7 invariantes
+> probados (1 voto no activa; 2 del mismo usuario no; 2 distintos ⇒ comando+audit+consumed;
+> fuera de ventana no; GPS fuera de radio descartado; sin GPS cuenta; solo occupant vota).
+> **Móvil (1.9)**: ruta `/panic` (occupant) con `PanicButton` mantener-presionado (barra ~1.5 s,
+> evita disparos accidentales), `panicView` puro (copy con el DISCLAIMER "NO es la alerta
+> sísmica · emergencia del inmueble · requiere 2ª persona"; estados contado/activado/descartado;
+> `windowRemaining` cuenta atrás), GPS adjunto solo con consentimiento; enlace desde Home (1.1).
+> **api 893 · web 584 · mobile 190 (tsc+lint limpios) · SDK sin drift.**
+
+### [x] T-2.14 · E2E + hardening + runbook de cierre de fase
+- **Componente:** mobile + docs
+- E2E (Maestro preferido, o Detox): crisis→check-in→sync; táctico foto→formulario→sync→Triage;
+  dictamen→liberación; pánico 2/30 s; TODOS los flujos offline de la spec §4.2 en modo avión.
+- Hardening: certificate pinning + rotación documentada; sin secretos en el bundle; lint/tests
+  con cero warnings; sin stubs silenciosos (disciplina de auditoría de honestidad).
+- Runbook de cierre con GATEs no auto-verificables: `GATE-DECISIONS`, `GATE-STORE`, `GATE-HW`
+  (incluye verificar contra hardware que los modos de prueba del gabinete no alertan móviles)
+  y `GATE-LEGAL` (aviso LFPDPPP + `compliance_labels` con el marco normativo correcto —
+  pregunta abierta #1 del ANALISIS).
+
+> **ESTADO (2026-07-17): COMPLETA (código+docs; los GATEs físicos quedan escritos sin marcar).**
+> **E2E Maestro** (`mobile/.maestro/`): 5 flujos de los caminos §4.2 — crisis→check-in→sync,
+> foto forense→daños→Triage, dictamen→liberación, pánico quórum-de-2, offline en modo avión —
+> + subflujos de login (occupant/táctico) y README. Corren contra un development build en
+> dispositivo (evidencia ejecutable de `GATE-HW`, incluye verificar que los modos de prueba del
+> gabinete NO alertan móviles). **Hardening:** cero `<Pending>` (última cuenta táctica ahora usa
+> `AccountScreen` compartida — sin fila TOTP para el táctico); `.env` gitignored y sin secretos
+> en `src` (solo `EXPO_PUBLIC_*` estáticos); badge de cifrado honesto; lint/tests con CERO
+> warnings; la superficie sensible jamás confía en el cliente. **Certificate pinning:** decisión
+> de ingeniería documentada (pin al SPKI del intermedio Let's Encrypt + backup del root vía
+> expo-build-properties, NO al leaf que rota; rotación con dos pines conviviendo; verificación
+> con mitmproxy) — el pin real es `GATE-HW` (no se hornean pines de producción en el repo de
+> features). **Runbook** `takab-docs/runbooks/RUNBOOK-cierre-fase2.md` con la matriz pantalla→
+> tarea→evidencia y los 4 GATEs (`DECISIONS`: entitlement Apple en trámite; `STORE`: credenciales
+> APNs/FCM + apply + tono SASMEX licenciado; `HW`: biometría/attestation/cámara/pinning/E2E;
+> `LEGAL`: marco normativo — pregunta abierta #1 — + `compliance_labels` + aviso LFPDPPP).
+> **api 893 · web 584 · mobile 190 · SDK sin drift.**

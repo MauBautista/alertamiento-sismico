@@ -1,5 +1,5 @@
 .PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing cloud-users \
-        demo-fase1 demo-db cloud-images cloud-deploy
+        cloud-mobile-users demo-fase1 demo-db cloud-images cloud-deploy
 
 API_DIR := api
 WEB_DIR := web
@@ -146,3 +146,9 @@ cloud-deploy:
 # Cada usuario enrola MFA TOTP en su primer login: el pool lo exige a todos.
 cloud-users:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_console_users.sh $(ROLES)
+
+# Usuarios MÓVILES (occupant/brigadista). Pool DISTINTO por rol y surface=mobile:
+# los de `cloud-users` son surface=web y NO entran a la app. Siembra además la
+# zona y el código de enrolamiento (el occupant sin asignación ve 404, R2).
+cloud-mobile-users:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_mobile_users.sh $(ROLES)

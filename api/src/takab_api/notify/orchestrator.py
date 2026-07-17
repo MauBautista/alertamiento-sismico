@@ -33,6 +33,7 @@ import psycopg
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import NotifyError, NotifyProvider
+from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -109,12 +110,74 @@ VALUES (%(tenant)s, %(incident)s, 'email', 'parallel', 0,
 ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
 """
 
+# [T-2.10] Reportes de daños con PERSONAS EN RIESGO sin notificar todavía —
+# prioridad máxima (2.4): el SOC recibe un email INMEDIATO. Mismo patrón que
+# dictamen_request pero SIN dedup por "ya atendido": una vida en riesgo se
+# notifica siempre (el índice único (action_id, channel) evita duplicados).
+_PEOPLE_AT_RISK_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'damage_people_at_risk'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# [T-2.11] "Notificar a no reportados" (2.6): cada ``headcount_notify`` sin job
+# ⇒ un push clase OPS a los dispositivos del sitio. Mismo patrón de acción.
+_HEADCOUNT_NOTIFY_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'headcount_notify'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# [T-2.12] Dictamen HABITABLE firmado (2.7): cada ``dictamen_signed`` sin job ⇒
+# push OPS de CAMBIO DE FASE a los dispositivos del sitio — despierta la app,
+# que re-lee mobile-state (reentry_approved) y libera las pantallas 1.5.
+_DICTAMEN_SIGNED_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'dictamen_signed'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# 1 push por (action_id, channel): el índice único parcial de 0014 (action) lo
+# hace idempotente. El target lleva site_id + clase OPS (el _dispatch_push
+# resuelve los dispositivos del sitio FRESCOS y sella/revoca endpoints).
+_INSERT_PUSH_ACTION_JOB_SQL = """
+INSERT INTO notification_jobs
+  (tenant_id, incident_id, channel, mode, position, target, due_at, action_id)
+VALUES (%(tenant)s, %(incident)s, 'push', 'parallel', 0,
+        %(target)s::jsonb, %(due_at)s, %(action)s)
+ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
+"""
+
 _DUE_JOBS_SQL = """
 SELECT j.job_id, j.tenant_id, j.incident_id, j.channel, j.mode, j.position,
        j.target, j.due_at, j.deadline_at, j.action_id, j.attempts,
        i.severity, i.trigger, i.state, i.opened_at, i.event_id, i.site_id,
        s.name AS site_name, s.code AS site_code,
-       a.actor AS action_actor, a.payload AS action_payload
+       a.kind AS action_kind, a.actor AS action_actor, a.payload AS action_payload
 FROM notification_jobs j
 JOIN incidents i ON i.incident_id = j.incident_id
 JOIN sites s ON s.site_id = i.site_id
@@ -173,6 +236,31 @@ INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
 VALUES (%(incident)s, %(tenant)s, 'notify_sent', %(actor)s, %(payload)s::jsonb)
 """
 
+# --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
+_PUSH_EXISTS_SQL = """
+SELECT 1 FROM push_tokens
+WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
+LIMIT 1
+"""
+
+_PUSH_DEVICES_SQL = """
+SELECT push_token_id, token, platform, endpoint_arn
+FROM push_tokens
+WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
+ORDER BY created_at
+"""
+
+_SET_ENDPOINT_ARN_SQL = """
+UPDATE push_tokens SET endpoint_arn = %(arn)s WHERE push_token_id = %(id)s
+"""
+
+# Endpoint deshabilitado (token rotado / app desinstalada): revocación honesta —
+# el dispositivo vivo re-registra su token nuevo vía el upsert de /me/push-tokens.
+_REVOKE_PUSH_TOKEN_SQL = """
+UPDATE push_tokens SET revoked_at = %(now)s
+WHERE push_token_id = %(id)s AND revoked_at IS NULL
+"""
+
 
 def run_notify_pass(
     conn: psycopg.Connection,
@@ -194,6 +282,13 @@ def run_notify_pass(
     counts["enqueued"] = _enqueue(conn, settings, config_cache, now=now, lookback_s=lookback)
     counts["enqueued"] += _enqueue_dictamen_requests(
         conn, config_cache, now=now, lookback_s=lookback
+    )
+    counts["enqueued"] += _enqueue_people_at_risk(conn, config_cache, now=now, lookback_s=lookback)
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn, _HEADCOUNT_NOTIFY_SQL, now=now, lookback_s=lookback
+    )
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn, _DICTAMEN_SIGNED_SQL, now=now, lookback_s=lookback
     )
     _dispatch(conn, settings, providers, config_cache, counts, now=now)
 
@@ -222,6 +317,15 @@ def _enqueue(
     inserted = 0
     for row in rows:
         destinations = resolve_destinations(_config_for(conn, config_cache, row))
+        # [T-2.04] Push CRISIS si el sitio tiene dispositivos registrados: el
+        # target solo lleva el site_id (la lista de dispositivos se resuelve
+        # FRESCA al despachar, como el secret del webhook). Un tenant sin
+        # cascada pero con app instalada igual despierta teléfonos.
+        has_devices = conn.execute(
+            _PUSH_EXISTS_SQL, {"site": row["site_id"], "tenant": row["tenant_id"]}
+        ).fetchone()
+        if has_devices is not None:
+            destinations = {**destinations, "push": {"site_id": str(row["site_id"])}}
         if not destinations:
             continue  # tenant sin cascada configurada: nada que encolar
         specs = plan_jobs(
@@ -287,6 +391,65 @@ def _enqueue_dictamen_requests(
     return inserted
 
 
+def _enqueue_people_at_risk(
+    conn: psycopg.Connection,
+    config_cache: dict,
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-2.10] Un email INMEDIATO al SOC por cada reporte con personas en
+    riesgo. Reusa el destino operativo (``notifications.inspector_emails``) y
+    el mismo INSERT idempotente por acción que el dictamen."""
+    rows = conn.execute(
+        _PEOPLE_AT_RISK_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        emails = resolve_inspector_emails(_config_for(conn, config_cache, row))
+        if not emails:
+            logger.warning(
+                "damage_people_at_risk %s sin notifications.inspector_emails: se omite",
+                row["action_id"],
+            )
+            continue
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": emails}),
+                "due_at": row["ts"],  # vence YA: prioridad máxima, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _enqueue_push_for_actions(
+    conn: psycopg.Connection, sql: str, *, now: datetime, lookback_s: float
+) -> int:
+    """[T-2.11/2.12] Un push OPS por cada acción reciente sin job (headcount o
+    dictamen firmado). El push va a los dispositivos del sitio (best-effort R5);
+    el índice único (action_id, channel) evita duplicados entre passes."""
+    rows = conn.execute(sql, {"since": now - timedelta(seconds=lookback_s), "now": now}).fetchall()
+    inserted = 0
+    for row in rows:
+        result = conn.execute(
+            _INSERT_PUSH_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"site_id": str(row["site_id"]), "push_class": "OPS"}),
+                "due_at": row["ts"],  # vence YA (paralelo)
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
 def _dispatch(
     conn: psycopg.Connection,
     settings: Settings,
@@ -330,6 +493,10 @@ def _dispatch_one(
     provider = providers.get(row["channel"])
     if provider is None:  # canal sin provider cableado: cuenta como fallo
         _fail(conn, counts, row, "provider no configurado", now=now, max_attempts=max_attempts)
+        return
+
+    if row["channel"] == "push":
+        _dispatch_push(conn, counts, row, provider, now=now, max_attempts=max_attempts)
         return
 
     target = dict(row["target"])
@@ -382,6 +549,107 @@ def _dispatch_one(
         incident_id,
         latency_s,
         "OK" if deadline_met else "VENCIDO",
+    )
+
+
+def _dispatch_push(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    provider,
+    *,
+    now: datetime,
+    max_attempts: int,
+) -> None:
+    """[T-2.04] Rama propia del canal push (lote por dispositivo + limpieza).
+
+    El provider expone ``deliver()`` (resultado POR dispositivo) en vez de
+    ``send()``: hay que sellar los endpoint ARN recién creados y REVOCAR los
+    muertos. ≥1 entrega = sent (best-effort, R5); 0 entregas con dispositivos
+    vivos = fallo → backoff (es un job paralelo: única voz push del incidente).
+    """
+    site_id = str((row["target"] or {}).get("site_id") or row["site_id"])
+    devices = [
+        PushDevice(
+            push_token_id=str(r["push_token_id"]),
+            token=r["token"],
+            platform=r["platform"],
+            endpoint_arn=r["endpoint_arn"],
+        )
+        for r in conn.execute(
+            _PUSH_DEVICES_SQL, {"site": site_id, "tenant": row["tenant_id"]}
+        ).fetchall()
+    ]
+    if not devices:
+        _fail(
+            conn,
+            counts,
+            row,
+            "sin dispositivos activos para el sitio",
+            now=now,
+            max_attempts=max_attempts,
+        )
+        return
+
+    # [T-2.11] La clase del push la fija el job (CRISIS al abrir incidente;
+    # OPS para el "notificar a no reportados" del headcount). Default CRISIS por
+    # retrocompatibilidad con los jobs de T-2.04.
+    push_class = str((row["target"] or {}).get("push_class") or PUSH_CLASS_CRISIS)
+    phase = "alert_active" if push_class == PUSH_CLASS_CRISIS else "headcount"
+    payload = build_push_payload(
+        push_class=push_class,
+        site_id=site_id,
+        incident_id=str(row["incident_id"]),
+        phase=phase,
+    )
+    outcome = provider.deliver(devices, payload)
+
+    for token_id, arn in outcome.created_arns.items():
+        conn.execute(_SET_ENDPOINT_ARN_SQL, {"id": token_id, "arn": arn})
+    for token_id in outcome.disabled_ids:
+        conn.execute(_REVOKE_PUSH_TOKEN_SQL, {"id": token_id, "now": now})
+
+    if outcome.delivered == 0:
+        error = "; ".join(outcome.errors) or "todos los endpoints deshabilitados"
+        _fail(conn, counts, row, error[:500], now=now, max_attempts=max_attempts)
+        return
+
+    conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
+    latency_s = (now - row["opened_at"]).total_seconds()
+    # [T-2.11] El actor distingue por action_id cuando lo hay: dos push del
+    # MISMO incidente en un pass (CRISIS al abrir + OPS del headcount) escriben
+    # su notify_sent sin colisionar en uq_incident_actions_ack (incident, kind,
+    # actor, ts). Sin action_id (CRISIS) el actor queda como en T-2.04.
+    actor = f"system:notify:push:{row['mode']}"
+    if row.get("action_id"):
+        actor = f"{actor}:{row['action_id']}"
+    conn.execute(
+        _ACTION_SQL,
+        {
+            "incident": row["incident_id"],
+            "tenant": row["tenant_id"],
+            "actor": actor,
+            "payload": json.dumps(
+                {
+                    "job_id": str(row["job_id"]),
+                    "channel": "push",
+                    "mode": row["mode"],
+                    "class": push_class,
+                    "latency_s": latency_s,
+                    "devices_delivered": outcome.delivered,
+                    "devices_revoked": len(outcome.disabled_ids),
+                }
+            ),
+        },
+    )
+    counts["sent"] += 1
+    logger.info(
+        "notify sent push/%s incidente %s (%d dispositivo(s), %d revocado(s), latencia %.1fs)",
+        row["mode"],
+        row["incident_id"],
+        outcome.delivered,
+        len(outcome.disabled_ids),
+        latency_s,
     )
 
 
@@ -485,10 +753,18 @@ def _message(row: dict, *, base_url: str = "") -> dict:
     }
     if row.get("action_id"):
         payload = row.get("action_payload") or {}
-        message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
-        message["kind"] = "dictamen_request"
-        message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
-        message["note"] = payload.get("note")
+        kind = row.get("action_kind")
+        if kind == "damage_people_at_risk":
+            # [T-2.10] Prioridad máxima: el SOC ve al frente "personas en riesgo".
+            message["headline"] = f"TAKAB Ailert · PERSONAS EN RIESGO · {row['site_name']}"
+            message["kind"] = "damage_people_at_risk"
+            message["reported_by"] = row.get("action_actor")
+            message["report_id"] = payload.get("report_id")
+        else:
+            message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
+            message["kind"] = "dictamen_request"
+            message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
+            message["note"] = payload.get("note")
         if base_url:
             message["link"] = f"{base_url.rstrip('/')}/triage?incident={row['incident_id']}"
     return message

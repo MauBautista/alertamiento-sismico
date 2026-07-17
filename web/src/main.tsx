@@ -1,3 +1,6 @@
+// Tokens del design system PRIMERO (fuente única @takab/design-tokens, T-2.01);
+// colors_and_type.css conserva solo fuentes locales + clases de tipo semánticas.
+import "@takab/design-tokens/css/tokens.css";
 import "./styles/colors_and_type.css";
 import "./styles/soc.css";
 import "./styles/soc-tabs.css";

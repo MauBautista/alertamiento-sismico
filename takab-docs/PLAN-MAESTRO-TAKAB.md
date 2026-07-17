@@ -76,7 +76,7 @@ acreditó con 10 sin que faltara ninguno.
 | #4 Actuadores del MVP | `[RATIFICADO 2026-07-09 · T-1.45]` **Relés fail-safe primero** (NO/NC/fail-close por canal); BACnet detrás de la misma interfaz `Actuator`, activable por contrato. Implementado así de facto en T-1.8/T-1.9 y acreditado en el hito de Fase 1; ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (el contrato rules→actuador se congeló en T-1.8 bajo este diseño) |
 | #5 API en vivo | `[SUPUESTO]` **REST + WebSocket nativo** en MVP; GraphQL subscriptions pos-MVP | Antes de **T-1.22**. No toca el edge |
 | #6 Proceso `gpio` consolidado | `[RATIFICADO 2026-07-09 · T-1.45]` un solo proceso mínimo: WR-1 in + relés out + **reflejo SASMEX→sirena in-process** (<100 ms); `actuators` = adaptador BACnet aparte. Implementado así de facto (el `takab-edge.service` en producción documenta la propiedad de pines con `Conflicts=takab-gpio.service`); ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (contrato congelado en T-1.8) |
-| #7 MFA del `occupant` | `[SUPUESTO]` occupant **sin MFA**, compensado con quórum de 2 + rate-limit + geofence + auditoría; MFA obligatorio para todo rol web | Decisión final antes de la fase móvil (T-1.31); T-1.18 configura MFA por grupo con este default |
+| #7 MFA del `occupant` | `[RATIFICADO 2026-07-15 · T-2.00, decisión de Mauricio]` occupant con **login simple, SIN MFA obligatorio y MFA OPCIONAL** (opt-in TOTP desde la app). Implementación: **pool de ocupantes separado** `mfa=OPTIONAL` (Cognito no da MFA por grupo — `specs/cognito-pool-v1.md §5.2`); el pool táctico/web queda `ON` intacto (MFA garantizado para roles con actuadores). Compensaciones vigentes: quórum de 2 + rate-limit + auditoría + enrolamiento acotado al sitio; **geofence best-effort** (voto con GPS fuera de radio se descarta; sin GPS cuenta — RBAC §4.3) | Gate cumplido (2026-07-15): el split de pools se ejecuta en T-2.02; la validación dual-issuer en T-2.03 |
 | #8 Feed externo CIRES/SSN | Pregunta abierta; el fail-open ya está definido con corroboración interna de la red | Soft-gate T-1.21 (lo mejora, no lo bloquea) |
 | #9 IA (Fase 3) | Política del plan: **shadow-mode only; jamás suprime disparos** (regla de oro 1 intacta) | Gate de Fase 3 — fuera de este plan |
 
@@ -163,7 +163,7 @@ cuentas/credenciales **durante** la Fase E); semántica WR-1 (afecta aceptación
 | Jobs de TimescaleDB (compresión/caggs) vs RLS | Hypertables sin FORCE por diseño (schema §8); test explícito del job | T-1.16 |
 | Fuga cross-tenant por caggs (sin RLS posible) | Regla dura "JOIN a `sites`" + test de contrato de API que lo verifique | T-1.22 |
 | Parámetros de quórum sin validar | Validación con catálogo SSN, paralela y pequeña, antes de cerrar T-1.19 | T-1.19 |
-| Botón de pánico: fricción MFA vs abuso de QR | Supuesto #7 + geofence + `max_uses`/expiración/revocación; decisión final pre-móvil | T-1.31 |
+| Botón de pánico: fricción MFA vs abuso de QR | **Decisión #7 RATIFICADA (2026-07-15 · T-2.00):** login simple + MFA opcional (pool de ocupantes `OPTIONAL`); quórum de 2 + rate-limit + `max_uses`/expiración/revocación + **geofence best-effort** (RBAC §4.3) | Resuelto — implementación en T-2.02/T-2.03/T-2.13 |
 | Critical Alerts iOS requiere entitlement de Apple | Solicitarlo al INICIO de la fase móvil (semanas de trámite) | T-1.31 |
 | Bus factor 1 + un solo juego de hardware | Simuladores como ciudadanos de primera clase; HIL opcional; runbooks desde T-1.4 | Transversal |
 

@@ -1,0 +1,36 @@
+# E2E · Offline-first (spec §4.2): captura + formulario en MODO AVIÓN → sync
+# automática al reconectar, con estados visibles en cada paso.
+appId: com.takab.ailert
+env:
+  TACTICO_EMAIL: ${TACTICO_EMAIL}
+  TACTICO_PASSWORD: ${TACTICO_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-tactico.yaml
+
+# Cortar la red (modo avión). Maestro no controla el radio del SO: se usa el
+# hook de plataforma (Android: `- setAirplaneMode: true`) donde esté disponible.
+- setAirplaneMode:
+    enabled: true
+
+# Levantar un check-in delegado desde el headcount (queda PENDIENTE en la cola).
+- tapOn: "LISTA"
+- tapOn:
+    id: "verify-.*"      # marca "verificado en persona" del primer no reportado
+
+# La cola muestra el elemento PENDIENTE (sin fingir envío).
+- tapOn: "SYNC"
+- assertVisible:
+    id: "offline-banner"
+- assertVisible:
+    text: "MODO OFFLINE.*"
+- assertVisible:
+    text: ".*PENDIENTE.*"
+
+# Reconectar ⇒ drena automáticamente y el elemento pasa a SINCRONIZADO.
+- setAirplaneMode:
+    enabled: false
+- assertVisible:
+    text: ".*SINCRONIZADO.*"
+    timeout: 30000

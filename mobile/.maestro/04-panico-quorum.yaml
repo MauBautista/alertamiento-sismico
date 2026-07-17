@@ -1,0 +1,27 @@
+# E2E · Pánico por quórum-de-2 (occupant). Requiere DOS occupants del mismo
+# sitio (este flujo cubre el primer voto; el 2º se dispara desde otro
+# dispositivo/sesión en la corrida de aceptación).
+appId: com.takab.ailert
+env:
+  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
+  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- tapOn: "ALARMA DEL INMUEBLE (NO SÍSMICA) →"
+
+# El disclaimer DEBE dejar claro que NO es la alerta sísmica.
+- assertVisible:
+    text: ".*NO es la alerta sísmica.*"
+- assertVisible:
+    text: ".*segunda persona.*"
+
+# Mantener presionado ~1.5 s para confirmar el voto.
+- longPressOn: "MANTENGA PRESIONADO PARA CONFIRMAR"
+- assertVisible:
+    text: "1 DE 2 CONFIRMACIONES"
+- assertVisible:
+    text: "Expira en.*s"
+# El segundo voto (otro usuario) activa la sirena — se verifica en la corrida
+# de aceptación con dos dispositivos.

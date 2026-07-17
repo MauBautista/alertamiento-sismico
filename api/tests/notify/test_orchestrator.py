@@ -533,3 +533,62 @@ def test_convive_con_el_email_del_incidente_en_el_mismo_pass(scenario: _Scenario
     assert len(providers["email"].sent) >= 2
     # Dos notify_sent del mismo incidente/pass sin colisión de unique.
     assert len(scenario.notify_actions(incident)) >= 2
+
+
+# --- T-2.10 · Notificación al SOC en personas en riesgo (daños 2.4) --------------
+
+
+def _seed_people_at_risk(
+    scenario: _Scenario, incident_id: str, *, ts: datetime, report_id: str | None = None
+) -> str:
+    import json as _json
+
+    action = str(uuid.uuid4())
+    scenario.conn.execute(
+        "INSERT INTO incident_actions (action_id, incident_id, tenant_id, ts, kind, "
+        "actor, payload) VALUES (%s,%s,%s,%s,'damage_people_at_risk',%s,%s::jsonb)",
+        (
+            action,
+            incident_id,
+            scenario.tenant,
+            ts,
+            "user:brigada-uno",
+            _json.dumps({"report_id": report_id or str(uuid.uuid4())}),
+        ),
+    )
+    scenario.conn.commit()
+    return action
+
+
+def test_personas_en_riesgo_notifica_al_soc_de_inmediato(scenario: _Scenario) -> None:
+    """[T-2.10] Un reporte con personas en riesgo dispara un email INMEDIATO al
+    SOC (headline propio); reusa el destino operativo inspector_emails."""
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_people_at_risk(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    run_notify_pass(
+        scenario.conn,
+        Settings(notify_web_base_url="https://soc.example.mx/"),
+        providers,
+        now=BASE,
+    )
+    jobs = _action_jobs(scenario, action)
+    assert len(jobs) == 1 and jobs[0]["status"] == "sent"
+    assert jobs[0]["target"]["to"] == ["inspector@example.mx", "perito@example.mx"]
+    _target, message = providers["email"].sent[0]
+    assert message["kind"] == "damage_people_at_risk"
+    assert "PERSONAS EN RIESGO" in message["headline"]
+    assert message["link"] == f"https://soc.example.mx/triage?incident={incident}"
+
+
+def test_personas_en_riesgo_no_duplica_el_correo(scenario: _Scenario) -> None:
+    """Prioridad máxima pero idempotente: dos passes ⇒ un solo email."""
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_people_at_risk(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))
+    assert len(_action_jobs(scenario, action)) == 1
+    assert len(providers["email"].sent) == 1

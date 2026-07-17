@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "TAKAB Ailert",
+    "slug": "takab-ailert",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "takab",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.takab.ailert",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Se usa su huella o Face ID para firmar de forma segura los comandos de actuadores (activar/silenciar la sirena) desde este dispositivo."
+      }
+    },
+    "android": {
+      "package": "com.takab.ailert",
+      "adaptiveIcon": {
+        "backgroundColor": "#0E2336",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#0E2336"
+        }
+      ],
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0E2336",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      "expo-secure-store",
+      "expo-audio",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Su ubicación se envía ÚNICAMENTE si pide ayuda en un check-in de emergencia y dio su consentimiento."
+        }
+      ],
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La cámara se usa para levantar evidencia forense de daños con marca de agua e integridad SHA-256."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

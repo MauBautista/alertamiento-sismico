@@ -4,3 +4,6 @@
 export * from './gen';
 export { client } from './gen/client.gen';
 export * from './ws';
+// [T-2.08] Canal live compartido (web + móvil) y agrupación BMS de consola.
+export * from './live';
+export * from './bms';

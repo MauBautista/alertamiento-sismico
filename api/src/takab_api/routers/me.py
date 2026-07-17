@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import ALL_SITES, Claims
-from takab_api.auth.deps import get_claims, get_session, require_web_surface
+from takab_api.auth.deps import get_claims, get_session
 from takab_api.auth.matrix import allowed_actions, allowed_routes
 from takab_api.schemas.me import MeActions, MeResponse, ProfileOut, ProfilePutIn
 
@@ -47,44 +47,60 @@ def me(claims: Claims = Depends(get_claims)) -> MeResponse:
 
 
 _SELECT_PROFILE = text(
-    "SELECT user_sub, display_name, updated_at FROM user_profiles "
+    "SELECT user_sub, display_name, phone, updated_at FROM user_profiles "
     "WHERE user_sub = CAST(:sub AS uuid)"
 )
 
 _UPSERT_PROFILE = text(
-    "INSERT INTO user_profiles (user_sub, tenant_id, display_name) "
-    "VALUES (CAST(:sub AS uuid), CAST(:tenant AS uuid), :name) "
+    "INSERT INTO user_profiles (user_sub, tenant_id, display_name, phone) "
+    "VALUES (CAST(:sub AS uuid), CAST(:tenant AS uuid), :name, :phone) "
     "ON CONFLICT (user_sub) DO UPDATE "
-    "SET display_name = EXCLUDED.display_name, updated_at = now() "
-    "RETURNING user_sub, display_name, updated_at"
+    "SET display_name = EXCLUDED.display_name, phone = EXCLUDED.phone, updated_at = now() "
+    "RETURNING user_sub, display_name, phone, updated_at"
 )
 
 
+# [T-2.03] El perfil también es de la app móvil (pantalla 1.8 Cuenta): basta el
+# token verificado — no exige superficie web (era web-only cuando el móvil no
+# existía). RLS self-write sigue acotando la fila al portador.
 @router.get("/me/profile", response_model=ProfileOut)
 async def get_profile(
-    claims: Claims = Depends(require_web_surface),
+    claims: Claims = Depends(get_claims),
     conn: AsyncConnection = Depends(get_session),
 ) -> ProfileOut:
     """Perfil de presentación del portador. Sin fila = campos null (200)."""
     row = (await conn.execute(_SELECT_PROFILE, {"sub": claims.sub})).first()
     if row is None:
-        return ProfileOut(user_sub=claims.sub, display_name=None, updated_at=None)
+        return ProfileOut(user_sub=claims.sub, display_name=None, phone=None, updated_at=None)
     return ProfileOut(
-        user_sub=row.user_sub, display_name=row.display_name, updated_at=row.updated_at
+        user_sub=row.user_sub,
+        display_name=row.display_name,
+        phone=row.phone,
+        updated_at=row.updated_at,
     )
 
 
 @router.put("/me/profile", response_model=ProfileOut)
 async def put_profile(
     body: ProfilePutIn,
-    claims: Claims = Depends(require_web_surface),
+    claims: Claims = Depends(get_claims),
     conn: AsyncConnection = Depends(get_session),
 ) -> ProfileOut:
-    """Upsert del nombre PROPIO (RLS self-write acota la fila). Auditado."""
+    """Upsert del nombre (y teléfono, R4) PROPIOS. Auditado.
+
+    El teléfono es PII con consentimiento: proporcionarlo AQUÍ es el
+    consentimiento (aparece en el roster del headcount para la llamada de un
+    toque); ``phone=null`` lo retira.
+    """
     row = (
         await conn.execute(
             _UPSERT_PROFILE,
-            {"sub": claims.sub, "tenant": claims.tenant_id, "name": body.display_name},
+            {
+                "sub": claims.sub,
+                "tenant": claims.tenant_id,
+                "name": body.display_name,
+                "phone": body.phone,
+            },
         )
     ).first()
     await audit_async(
@@ -93,8 +109,12 @@ async def put_profile(
         actor=f"user:{claims.sub}",
         verb="profile_update",
         obj=f"user:{claims.sub}",
-        meta={"display_name": body.display_name},
+        # El teléfono NO viaja al audit (PII); solo si se fijó o retiró.
+        meta={"display_name": body.display_name, "phone_set": body.phone is not None},
     )
     return ProfileOut(
-        user_sub=row.user_sub, display_name=row.display_name, updated_at=row.updated_at
+        user_sub=row.user_sub,
+        display_name=row.display_name,
+        phone=row.phone,
+        updated_at=row.updated_at,
     )

@@ -296,6 +296,167 @@
         "title": "ChannelSeries",
         "type": "object"
       },
+      "CheckinIn": {
+        "description": "Check-in de vida. ``subject_user_id`` SOLO para el check-in DELEGADO del\nheadcount (táctico marca \"verificado en persona\"); requiere ``roster_read``.",
+        "properties": {
+          "checkin_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkin Id"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "status": {
+            "enum": [
+              "safe",
+              "need_help"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Id"
+          },
+          "ts_device": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts Device"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CheckinIn",
+        "type": "object"
+      },
+      "CheckinOut": {
+        "properties": {
+          "checkin_id": {
+            "format": "uuid",
+            "title": "Checkin Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ts_device": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts Device"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
+          },
+          "via": {
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkin_id",
+          "incident_id",
+          "user_id",
+          "site_id",
+          "status",
+          "via",
+          "verified_by",
+          "ts_device",
+          "created_at"
+        ],
+        "title": "CheckinOut",
+        "type": "object"
+      },
       "CommandIn": {
         "description": "Solicitud de comando remoto de actuador.",
         "properties": {
@@ -317,6 +478,16 @@
               }
             ],
             "title": "Event Id"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandIntentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -324,6 +495,35 @@
           "action"
         ],
         "title": "CommandIn",
+        "type": "object"
+      },
+      "CommandIntentIn": {
+        "description": "[T-2.09] Intención firmada con la llave de hardware del operador\n(spec §2.1-B): el backend la valida contra ``device_keys`` y el nonce\nemitido por el servidor; el teléfono jamás firma el comando ejecutable.",
+        "properties": {
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 4096,
+            "minLength": 16,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "nonce",
+          "signature"
+        ],
+        "title": "CommandIntentIn",
         "type": "object"
       },
       "CommandList": {
@@ -341,6 +541,31 @@
           "items"
         ],
         "title": "CommandList",
+        "type": "object"
+      },
+      "CommandNonceOut": {
+        "description": "[T-2.09] Nonce de intención: se solicita justo antes del deslizamiento.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "ttl_s": {
+            "title": "Ttl S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "nonce",
+          "expires_at",
+          "ttl_s"
+        ],
+        "title": "CommandNonceOut",
         "type": "object"
       },
       "CommandOut": {
@@ -449,6 +674,287 @@
           "error"
         ],
         "title": "CommandOut",
+        "type": "object"
+      },
+      "DamageCategoryIn": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "severity"
+        ],
+        "title": "DamageCategoryIn",
+        "type": "object"
+      },
+      "DamageReportIn": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/DamageCategoryIn"
+            },
+            "minItems": 1,
+            "title": "Categories",
+            "type": "array"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "intent_key_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent Key Id"
+          },
+          "intent_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent Signature"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "ts_device": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts Device"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "categories"
+        ],
+        "title": "DamageReportIn",
+        "type": "object"
+      },
+      "DamageReportOut": {
+        "properties": {
+          "categories": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "people_at_risk": {
+            "title": "People At Risk",
+            "type": "boolean"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "ts_device": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts Device"
+          },
+          "user_sub": {
+            "format": "uuid",
+            "title": "User Sub",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "report_id",
+          "incident_id",
+          "site_id",
+          "zone_id",
+          "user_sub",
+          "categories",
+          "people_at_risk",
+          "notes",
+          "evidence_ids",
+          "ts_device",
+          "created_at"
+        ],
+        "title": "DamageReportOut",
+        "type": "object"
+      },
+      "DeviceKeyIn": {
+        "description": "Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación\ncriptográfica de intenciones llega en T-2.09; aquí solo se registra.",
+        "properties": {
+          "attestation": {
+            "additionalProperties": true,
+            "title": "Attestation",
+            "type": "object"
+          },
+          "platform": {
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "title": "Platform",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 8192,
+            "minLength": 64,
+            "title": "Public Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "public_key"
+        ],
+        "title": "DeviceKeyIn",
+        "type": "object"
+      },
+      "DeviceKeyOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "key_id",
+          "platform",
+          "created_at",
+          "revoked_at"
+        ],
+        "title": "DeviceKeyOut",
         "type": "object"
       },
       "DictamenList": {
@@ -582,8 +1088,70 @@
         "title": "DictamenSignIn",
         "type": "object"
       },
+      "DirectoryEntryOut": {
+        "description": "[T-2.07 · 1.7] Contacto de emergencia del sitio (roster público:\nbrigadistas/seguridad/administración con teléfono de un toque).",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "role",
+          "zone_id",
+          "zone_name",
+          "phone"
+        ],
+        "title": "DirectoryEntryOut",
+        "type": "object"
+      },
       "DrillCreateIn": {
-        "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).",
+        "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).\n\n[T-2.03·D4c] Con ``scheduled_at`` (futuro) la fila es AGENDA informativa\n(\"próximo simulacro\" de la app): sin comandos y jamás ``active`` — ejecutar\na esa hora sigue siendo un acto del operador.",
         "properties": {
           "duration_s": {
             "default": 300,
@@ -603,6 +1171,18 @@
               }
             ],
             "title": "Note"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
           },
           "site_ids": {
             "anyOf": [
@@ -670,6 +1250,18 @@
             ],
             "title": "Note"
           },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
           "sites": {
             "items": {
               "$ref": "#/components/schemas/DrillSiteOut"
@@ -720,6 +1312,7 @@
           "started_at",
           "stopped_at",
           "stop_reason",
+          "scheduled_at",
           "active",
           "sites"
         ],
@@ -789,6 +1382,208 @@
           "ack"
         ],
         "title": "DrillSiteOut",
+        "type": "object"
+      },
+      "EnrollmentCodeIn": {
+        "description": "Alta de un código de enrolamiento (acción ``enrollment_manage``).",
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 4,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "max_uses": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "EnrollmentCodeIn",
+        "type": "object"
+      },
+      "EnrollmentCodeOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grants_role": {
+            "title": "Grants Role",
+            "type": "string"
+          },
+          "max_uses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "uses": {
+            "title": "Uses",
+            "type": "integer"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "code",
+          "site_id",
+          "zone_id",
+          "grants_role",
+          "expires_at",
+          "max_uses",
+          "uses",
+          "active"
+        ],
+        "title": "EnrollmentCodeOut",
+        "type": "object"
+      },
+      "EnrollmentIn": {
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "EnrollmentIn",
+        "type": "object"
+      },
+      "EnrollmentOut": {
+        "description": "Resultado del alta: a qué sitio/zona quedó vinculado el portador.",
+        "properties": {
+          "evac_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evac Policy"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "zone_id",
+          "zone_name",
+          "evac_policy",
+          "role"
+        ],
+        "title": "EnrollmentOut",
         "type": "object"
       },
       "EpicenterRelocateIn": {
@@ -1106,6 +1901,111 @@
           "created_at"
         ],
         "title": "EvidenceObject",
+        "type": "object"
+      },
+      "EvidenceRegisterIn": {
+        "description": "[T-2.10] Registro de una foto forense: el móvil declara el SHA-256 del\narchivo FINAL (marca de agua ya horneada) calculado en captura (§4.2); el\nbackend firma el PUT y guarda la huella para verificarla después.",
+        "properties": {
+          "content_type": {
+            "default": "image/jpeg",
+            "maxLength": 120,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "ts_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts From"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "title": "EvidenceRegisterIn",
+        "type": "object"
+      },
+      "EvidenceRegisterOut": {
+        "properties": {
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "upload_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Url"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "upload_url"
+        ],
+        "title": "EvidenceRegisterOut",
+        "type": "object"
+      },
+      "EvidenceVerifyOut": {
+        "description": "[T-2.10] Resultado de re-hashear el objeto subido contra lo declarado.",
+        "properties": {
+          "actual_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Sha256"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expected_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Sha256"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "verified",
+          "expected_sha256",
+          "actual_sha256"
+        ],
+        "title": "EvidenceVerifyOut",
         "type": "object"
       },
       "FeatureRow": {
@@ -1761,6 +2661,73 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeadcountActionOut": {
+        "description": "Acción de headcount registrada en el timeline (cierre o notificación).",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "signed": {
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "unreported": {
+            "title": "Unreported",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action_id",
+          "incident_id",
+          "kind",
+          "unreported",
+          "signed"
+        ],
+        "title": "HeadcountActionOut",
+        "type": "object"
+      },
+      "HeadcountCloseIn": {
+        "description": "[T-2.11] Cierre de headcount = ACCIÓN FIRMADA (precondición del paso 1\nde 2.2). La firma de intención (§2.1-B) es OPCIONAL: si viene, se verifica\ncontra ``device_keys`` sobre el canónico ``takab-headcount-v1``.",
+        "properties": {
+          "key_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
+          }
+        },
+        "title": "HeadcountCloseIn",
+        "type": "object"
+      },
       "IncidentActionFrame": {
         "description": "Acción sobre un incidente (ack, siren_on, dictamen, notify_sent…).",
         "properties": {
@@ -1787,6 +2754,19 @@
             "default": {},
             "title": "Payload",
             "type": "object"
+          },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Site Id"
           },
           "tenant_id": {
             "format": "uuid",
@@ -2374,10 +3354,22 @@
         "type": "object"
       },
       "MeActions": {
-        "description": "Acciones sensibles del SOC web (espejo de ``matrix.ACTIONS``, default-deny).",
+        "description": "Acciones sensibles (espejo de ``matrix.ACTIONS``, default-deny).\n\nDesde T-2.03 incluye la superficie MÓVIL: la app deriva su UI de estos\nbooleanos (server-driven), igual que la consola.",
         "properties": {
           "ack_incident": {
             "title": "Ack Incident",
+            "type": "boolean"
+          },
+          "checkin_submit": {
+            "title": "Checkin Submit",
+            "type": "boolean"
+          },
+          "damage_report_submit": {
+            "title": "Damage Report Submit",
+            "type": "boolean"
+          },
+          "dictamen_read": {
+            "title": "Dictamen Read",
             "type": "boolean"
           },
           "drill_start": {
@@ -2386,6 +3378,14 @@
           },
           "edit_thresholds": {
             "title": "Edit Thresholds",
+            "type": "boolean"
+          },
+          "enrollment_manage": {
+            "title": "Enrollment Manage",
+            "type": "boolean"
+          },
+          "evidence_upload": {
+            "title": "Evidence Upload",
             "type": "boolean"
           },
           "export": {
@@ -2408,6 +3408,18 @@
             "title": "Manage Visibility",
             "type": "boolean"
           },
+          "manual_activate": {
+            "title": "Manual Activate",
+            "type": "boolean"
+          },
+          "panel_read": {
+            "title": "Panel Read",
+            "type": "boolean"
+          },
+          "panic_vote": {
+            "title": "Panic Vote",
+            "type": "boolean"
+          },
           "read_audit": {
             "title": "Read Audit",
             "type": "boolean"
@@ -2420,12 +3432,20 @@
             "title": "Request Dictamen",
             "type": "boolean"
           },
+          "roster_read": {
+            "title": "Roster Read",
+            "type": "boolean"
+          },
           "self_test": {
             "title": "Self Test",
             "type": "boolean"
           },
           "sign_dictamen": {
             "title": "Sign Dictamen",
+            "type": "boolean"
+          },
+          "siren_silence": {
+            "title": "Siren Silence",
             "type": "boolean"
           },
           "siren_test": {
@@ -2447,7 +3467,17 @@
           "self_test",
           "drill_start",
           "manage_tenants",
-          "manage_visibility"
+          "manage_visibility",
+          "checkin_submit",
+          "roster_read",
+          "damage_report_submit",
+          "evidence_upload",
+          "siren_silence",
+          "manual_activate",
+          "enrollment_manage",
+          "panic_vote",
+          "dictamen_read",
+          "panel_read"
         ],
         "title": "MeActions",
         "type": "object"
@@ -2567,6 +3597,501 @@
         "title": "MetricSeries",
         "type": "object"
       },
+      "MobileDictamenOut": {
+        "description": "[T-2.12 · 2.7] Certificado de reingreso para el móvil: metadatos del\ndictamen FIRMADO + PDF presignado (el MISMO artefacto que genera la consola,\nentregado por ``dictamen_read``; jamás un PDF paralelo).",
+        "properties": {
+          "folio": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folio"
+          },
+          "habitable": {
+            "title": "Habitable",
+            "type": "boolean"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "signed": {
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "incident_id",
+          "signed",
+          "folio",
+          "status",
+          "signed_by",
+          "signed_at",
+          "habitable",
+          "pdf_url"
+        ],
+        "title": "MobileDictamenOut",
+        "type": "object"
+      },
+      "MobileDrillOut": {
+        "description": "Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —\ninformativa, JAMÁS auto-arranca) y último ejecutado.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "last_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Note"
+          },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          },
+          "next_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Scheduled At"
+          }
+        },
+        "required": [
+          "active",
+          "next_scheduled_at",
+          "last_started_at",
+          "last_note"
+        ],
+        "title": "MobileDrillOut",
+        "type": "object"
+      },
+      "MobileIncidentOut": {
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "max_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pga G"
+          },
+          "node_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Count"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "trigger",
+          "severity",
+          "state",
+          "opened_at",
+          "node_count",
+          "max_pga_g"
+        ],
+        "title": "MobileIncidentOut",
+        "type": "object"
+      },
+      "MobileReentryOut": {
+        "properties": {
+          "blocked": {
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "dictamen_signed": {
+            "title": "Dictamen Signed",
+            "type": "boolean"
+          },
+          "dictamen_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dictamen Status"
+          }
+        },
+        "required": [
+          "blocked",
+          "dictamen_status",
+          "dictamen_signed"
+        ],
+        "title": "MobileReentryOut",
+        "type": "object"
+      },
+      "MobileSiteHealthOut": {
+        "description": "[T-2.07 · 1.1] Salud del gabinete del sitio para el banner del edificio.\n\n``status`` sale del MISMO derivador que la Flota Edge de consola\n(``derive_fleet_state`` — verdad única, mismos umbrales); con varios\ngabinetes gana el PEOR. ``has_wr1`` es el hardware DECLARADO en el alta del\ngabinete: el WR-1 no expone supervisión de línea (solo el Relevador 2 está\ncableado — fase 1.9), así que \"SASMEX ENLAZADO\" honesto = WR-1 instalado y\ngabinete reportando; jamás un estado del enlace que nadie mide.",
+        "properties": {
+          "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age S"
+          },
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Pct"
+          },
+          "cert_days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cert Days Remaining"
+          },
+          "cpu_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Temp C"
+          },
+          "has_wr1": {
+            "title": "Has Wr1",
+            "type": "boolean"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt Ms"
+          },
+          "ntp_offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntp Offset Ms"
+          },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Status"
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag S"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "heartbeat_at",
+          "age_s",
+          "has_wr1"
+        ],
+        "title": "MobileSiteHealthOut",
+        "type": "object"
+      },
+      "MobileStateOut": {
+        "description": "Estado consolidado por sitio para la app (spec §5).\n\nDerivación de ``phase`` (documentada; el servidor es la autoridad):\n- sin incidente abierto → ``idle``\n- incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``\n- incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento\n  terminado; el reingreso queda BLOQUEADO durante la evaluación — la app\n  muestra check-in o bloqueo según su propio check-in)\n- dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →\n  ``reentry_approved`` (hasta que el incidente cierre → idle)\nLos ingredientes crudos (incident/state, latest_tier, reentry) viajan junto\na la derivación.",
+        "properties": {
+          "assembly_point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteAssetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compliance_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Compliance Labels",
+            "type": "object"
+          },
+          "drill": {
+            "$ref": "#/components/schemas/MobileDrillOut"
+          },
+          "incident": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MobileIncidentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Tier"
+          },
+          "my_zone": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MobileZoneOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "alert_active",
+              "shaking_concluded",
+              "reentry_approved"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "reentry": {
+            "$ref": "#/components/schemas/MobileReentryOut"
+          },
+          "server_ts": {
+            "format": "date-time",
+            "title": "Server Ts",
+            "type": "string"
+          },
+          "site_health": {
+            "$ref": "#/components/schemas/MobileSiteHealthOut"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "server_ts",
+          "phase",
+          "incident",
+          "latest_tier",
+          "my_zone",
+          "reentry",
+          "assembly_point",
+          "compliance_labels",
+          "drill",
+          "site_health"
+        ],
+        "title": "MobileStateOut",
+        "type": "object"
+      },
+      "MobileZoneOut": {
+        "properties": {
+          "evac_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evac Policy"
+          },
+          "level_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "zone_id": {
+            "format": "uuid",
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone_id",
+          "name",
+          "level_code",
+          "evac_policy"
+        ],
+        "title": "MobileZoneOut",
+        "type": "object"
+      },
       "MultiChannelFeatures": {
         "description": "Strip multicanal (T-1.34). Sigue siendo features 1 s, NO waveform 100 sps.\n\nLos canales llegan ordenados alfabéticamente y solo aparecen los que tienen datos\nen el rango: un canal muerto se ve por su ausencia, no por una línea plana falsa.",
         "properties": {
@@ -2589,6 +4114,63 @@
         "title": "MultiChannelFeatures",
         "type": "object"
       },
+      "PanicVoteIn": {
+        "description": "[T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional\n(geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin\nGPS cuenta (LFPDPPP + RBAC §4.3).",
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          }
+        },
+        "title": "PanicVoteIn",
+        "type": "object"
+      },
+      "PanicVoteOut": {
+        "description": "Resultado del voto: contado, descartado (geofence) o quórum activado.",
+        "properties": {
+          "distinct_voters": {
+            "title": "Distinct Voters",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "window_s": {
+            "title": "Window S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "distinct_voters",
+          "remaining",
+          "window_s"
+        ],
+        "title": "PanicVoteOut",
+        "type": "object"
+      },
       "PresignedDownload": {
         "description": "URL GET presignada de vida corta para descargar un objeto de evidencia.",
         "properties": {
@@ -2609,7 +4191,7 @@
         "type": "object"
       },
       "ProfileOut": {
-        "description": "Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null\n(200, no 404): \"sin nombre configurado\" es un estado normal, no un error.",
+        "description": "Perfil de presentación del operador (T-1.48). Sin fila ⇒ campos null\n(200, no 404): \"sin nombre configurado\" es un estado normal, no un error.\n\n[T-2.03·R4] ``phone``: PII con consentimiento — alimenta la llamada de un\ntoque del roster (headcount 2.6).",
         "properties": {
           "display_name": {
             "anyOf": [
@@ -2621,6 +4203,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           },
           "updated_at": {
             "anyOf": [
@@ -2643,23 +4236,134 @@
         "required": [
           "user_sub",
           "display_name",
+          "phone",
           "updated_at"
         ],
         "title": "ProfileOut",
         "type": "object"
       },
       "ProfilePutIn": {
-        "description": "Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de\nespacios internos) ANTES de validar longitud — \"   \" no es un nombre.",
+        "description": "Cuerpo de PUT /me/profile: el nombre se normaliza (trim + colapso de\nespacios internos) ANTES de validar longitud — \"   \" no es un nombre.\n\n[T-2.03·R4] ``phone`` opcional (E.164 laxo): proporcionarlo ES el\nconsentimiento de aparecer en el roster; ``null`` lo retira.",
         "properties": {
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           }
         },
         "required": [
           "display_name"
         ],
         "title": "ProfilePutIn",
+        "type": "object"
+      },
+      "PushTokenIn": {
+        "description": "Registro/rotación de token FCM/APNs (upsert por ``token``).",
+        "properties": {
+          "platform": {
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "title": "Platform",
+            "type": "string"
+          },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Id"
+          },
+          "token": {
+            "maxLength": 4096,
+            "minLength": 8,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "title": "PushTokenIn",
+        "type": "object"
+      },
+      "PushTokenOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "push_token_id": {
+            "format": "uuid",
+            "title": "Push Token Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Id"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "push_token_id",
+          "platform",
+          "token",
+          "site_id",
+          "created_at",
+          "last_seen_at",
+          "revoked_at"
+        ],
+        "title": "PushTokenOut",
         "type": "object"
       },
       "QuorumVoteOut": {
@@ -2746,6 +4450,198 @@
           "expires_in"
         ],
         "title": "ReportOut",
+        "type": "object"
+      },
+      "RosterCheckin": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ts_device": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts Device"
+          },
+          "via": {
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "via",
+          "created_at",
+          "ts_device"
+        ],
+        "title": "RosterCheckin",
+        "type": "object"
+      },
+      "RosterEntry": {
+        "properties": {
+          "checkin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RosterCheckin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "phone",
+          "zone_id",
+          "zone_name",
+          "checkin"
+        ],
+        "title": "RosterEntry",
+        "type": "object"
+      },
+      "RosterOut": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RosterEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "need_help": {
+            "title": "Need Help",
+            "type": "integer"
+          },
+          "safe": {
+            "title": "Safe",
+            "type": "integer"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unreported": {
+            "title": "Unreported",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "incident_id",
+          "site_id",
+          "total",
+          "safe",
+          "need_help",
+          "unreported",
+          "entries"
+        ],
+        "title": "RosterOut",
+        "type": "object"
+      },
+      "RosterSignalFrame": {
+        "description": "[T-2.11] Señal de que el roster de un incidente cambió (un check-in\naterrizó). Es SOLO una invalidación — sin PII: el cliente re-consulta\n``/roster`` (gated ``roster_read``). El headcount 2.6 refresca en <2 s.",
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "roster",
+            "default": "roster",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "site_id",
+          "incident_id"
+        ],
+        "title": "RosterSignalFrame",
         "type": "object"
       },
       "RuleSetList": {
@@ -3405,6 +5301,175 @@
           "model"
         ],
         "title": "SensorUpdate",
+        "type": "object"
+      },
+      "SiteAssetCreateIn": {
+        "properties": {
+          "content_type": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "enum": [
+              "evac_route",
+              "assembly_point",
+              "manual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "with_file": {
+            "default": false,
+            "title": "With File",
+            "type": "boolean"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "SiteAssetCreateIn",
+        "type": "object"
+      },
+      "SiteAssetCreateOut": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/SiteAssetOut"
+          },
+          "upload_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Url"
+          }
+        },
+        "required": [
+          "asset",
+          "upload_url"
+        ],
+        "title": "SiteAssetCreateOut",
+        "type": "object"
+      },
+      "SiteAssetOut": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "required": [
+          "asset_id",
+          "kind",
+          "title",
+          "description",
+          "zone_id",
+          "content_type",
+          "url",
+          "updated_at"
+        ],
+        "title": "SiteAssetOut",
         "type": "object"
       },
       "SiteCreate": {
@@ -4484,7 +6549,7 @@
         "summary": "List Drills"
       },
       "post": {
-        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.",
+        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.\n\n[T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del \"próximo\nsimulacro\" para la app): sin comandos, sin banner, jamás ``active``.",
         "operationId": "start_drill_drills_post",
         "requestBody": {
           "content": {
@@ -4739,6 +6804,47 @@
           }
         },
         "summary": "Download Evidence"
+      }
+    },
+    "/evidence/{evidence_id}/verify": {
+      "post": {
+        "description": "[T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la\nhuella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.\nLo consumen Triage (consola) y los tácticos que revisan su propia evidencia.",
+        "operationId": "verify_evidence_evidence__evidence_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceVerifyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Evidence"
       }
     },
     "/fleet/gateways": {
@@ -5242,7 +7348,7 @@
     },
     "/incidents/{incident_id}/actions": {
       "get": {
-        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.",
+        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.\n\n[T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):\nel táctico queda además acotado a su ``site_scope`` default-deny — fuera de\nalcance recibe el MISMO 404 (sin filtración de existencia).",
         "operationId": "list_incident_actions_incidents__incident_id__actions_get",
         "parameters": [
           {
@@ -5283,6 +7389,246 @@
           }
         },
         "summary": "List Incident Actions"
+      }
+    },
+    "/incidents/{incident_id}/checkins": {
+      "get": {
+        "description": "Check-ins PROPIOS del portador en el incidente (reconstrucción de la\nmáquina de estados al abrir la app). El roster completo vive en /roster\n(gated aparte: es PII de terceros).",
+        "operationId": "list_my_checkins_incidents__incident_id__checkins_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "me",
+              "pattern": "^me$",
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CheckinOut"
+                  },
+                  "title": "Response List My Checkins Incidents  Incident Id  Checkins Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List My Checkins"
+      },
+      "post": {
+        "description": "Check-in de vida. DEBE funcionar encolado offline y sincronizar después\n(la app manda ``ts_device``; el servidor sella ``created_at``).\n\n[T-2.06] Idempotente ante replays de la cola offline: el mismo\n``checkin_id`` de cliente devuelve 200 con LA MISMA fila (jamás duplica);\nun id ajeno (otro portador u otro incidente) ⇒ 409 sin fuga.\n\nDelegado (``subject_user_id`` ≠ portador): SOLO roles con ``roster_read``\n(el brigadista marca \"verificado en persona\"); queda ``via='delegated'`` +\n``verified_by`` — distinguible del check-in propio en datos (spec 2.6).",
+        "operationId": "submit_checkin_incidents__incident_id__checkins_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckinIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Checkin"
+      }
+    },
+    "/incidents/{incident_id}/damage-reports": {
+      "get": {
+        "description": "Reportes del incidente (Triage de la consola + tácticos en campo).",
+        "operationId": "list_damage_reports_incidents__incident_id__damage_reports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DamageReportOut"
+                  },
+                  "title": "Response List Damage Reports Incidents  Incident Id  Damage Reports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Damage Reports"
+      },
+      "post": {
+        "description": "Reporte de daños (2.4) → alimenta Triage. ``people_at_risk`` se DERIVA de\nla categoría ``people_trapped`` (prioridad máxima). [T-2.10] Con personas en\nriesgo, se registra un ``incident_action`` que el orchestrator OPS convierte\nen notificación INMEDIATA al SOC (email por la cascada existente).",
+        "operationId": "submit_damage_report_incidents__incident_id__damage_reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DamageReportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DamageReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Damage Report"
+      }
+    },
+    "/incidents/{incident_id}/dictamen": {
+      "get": {
+        "description": "[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos\ndel dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF.",
+        "operationId": "read_dictamen_incidents__incident_id__dictamen_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDictamenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Dictamen"
       }
     },
     "/incidents/{incident_id}/dictamen-request": {
@@ -5516,6 +7862,147 @@
           }
         },
         "summary": "List Evidence"
+      },
+      "post": {
+        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.",
+        "operationId": "register_evidence_incidents__incident_id__evidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceRegisterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRegisterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Evidence"
+      }
+    },
+    "/incidents/{incident_id}/headcount/close": {
+      "post": {
+        "description": "[T-2.11 · 2.6] Cierra el headcount (todos contabilizados) como ACCIÓN\nFIRMADA — precondición del paso 1 de 2.2. La firma de intención es opcional;\nsi viene, se verifica contra ``device_keys`` (§2.1-B) y se sella su huella.",
+        "operationId": "close_headcount_incidents__incident_id__headcount_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeadcountCloseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadcountActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Headcount"
+      }
+    },
+    "/incidents/{incident_id}/headcount/notify-unreported": {
+      "post": {
+        "description": "[T-2.11 · 2.6] \"Notificar a no reportados\" = push clase OPS (no hay canal\nde SMS). Registra un ``incident_action headcount_notify``; el orchestrator lo\nconvierte en un push OPS a los dispositivos del sitio (best-effort).",
+        "operationId": "notify_unreported_incidents__incident_id__headcount_notify_unreported_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadcountActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notify Unreported"
       }
     },
     "/incidents/{incident_id}/report": {
@@ -5559,6 +8046,47 @@
         "summary": "Generate Report"
       }
     },
+    "/incidents/{incident_id}/roster": {
+      "get": {
+        "description": "Roster del sitio del incidente × último check-in por persona (2.6).\n\nLectura de PII (nombres/teléfonos): queda en ``audit_log`` quién la pidió.",
+        "operationId": "incident_roster_incidents__incident_id__roster_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Roster"
+      }
+    },
     "/me": {
       "get": {
         "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.",
@@ -5576,6 +8104,104 @@
           }
         },
         "summary": "Me"
+      }
+    },
+    "/me/device-keys": {
+      "get": {
+        "operationId": "list_device_keys_me_device_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceKeyOut"
+                  },
+                  "title": "Response List Device Keys Me Device Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Device Keys"
+      },
+      "post": {
+        "description": "Registra la llave pública del dispositivo. El material privado JAMÁS\nsale del Secure Enclave/Keystore; aquí solo llega el SPKI público.",
+        "operationId": "register_device_key_me_device_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceKeyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Device Key"
+      }
+    },
+    "/me/enrollment": {
+      "post": {
+        "description": "Consume un código de alta y vincula al portador con el sitio/zona.\n\nEl consumo es ATÓMICO (UPDATE condicional): un código expirado, agotado o\ninactivo devuelve el MISMO 404 que uno inexistente — no se filtra cuál era\nel problema ni la existencia de códigos ajenos (RLS ya oculta otros tenants).",
+        "operationId": "enroll_me_enrollment_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll"
       }
     },
     "/me/profile": {
@@ -5597,7 +8223,7 @@
         "summary": "Get Profile"
       },
       "put": {
-        "description": "Upsert del nombre PROPIO (RLS self-write acota la fila). Auditado.",
+        "description": "Upsert del nombre (y teléfono, R4) PROPIOS. Auditado.\n\nEl teléfono es PII con consentimiento: proporcionarlo AQUÍ es el\nconsentimiento (aparece en el roster del headcount para la llamada de un\ntoque); ``phone=null`` lo retira.",
         "operationId": "put_profile_me_profile_put",
         "requestBody": {
           "content": {
@@ -5632,6 +8258,99 @@
           }
         },
         "summary": "Put Profile"
+      }
+    },
+    "/me/push-tokens": {
+      "get": {
+        "description": "Tokens vivos del portador (la política ``pt_self`` acota las filas).",
+        "operationId": "list_push_tokens_me_push_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PushTokenOut"
+                  },
+                  "title": "Response List Push Tokens Me Push Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Push Tokens"
+      },
+      "post": {
+        "description": "Upsert por ``token``: re-registrar un token existente lo revive y sella\n``last_seen_at`` (rotación de FCM/APNs sin filas fantasma).",
+        "operationId": "register_push_token_me_push_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushTokenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Push Token"
+      }
+    },
+    "/me/push-tokens/{push_token_id}": {
+      "delete": {
+        "operationId": "revoke_push_token_me_push_tokens__push_token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "push_token_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Push Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Push Token"
       }
     },
     "/rule-sets": {
@@ -6114,9 +8833,187 @@
         "summary": "Update Site"
       }
     },
+    "/sites/{site_id}/assets": {
+      "get": {
+        "description": "Assets del sitio con URL presignada de descarga (cacheables offline).",
+        "operationId": "list_site_assets_sites__site_id__assets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SiteAssetOut"
+                  },
+                  "title": "Response List Site Assets Sites  Site Id  Assets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Site Assets"
+      },
+      "post": {
+        "description": "Registra un asset; con ``with_file`` devuelve además la URL PUT presignada\n(la subida es directa del cliente a S3 — sin credenciales AWS en la app).",
+        "operationId": "create_site_asset_sites__site_id__assets_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteAssetCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteAssetCreateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Site Asset"
+      }
+    },
+    "/sites/{site_id}/assets/{asset_id}": {
+      "delete": {
+        "operationId": "delete_site_asset_sites__site_id__assets__asset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Site Asset"
+      }
+    },
+    "/sites/{site_id}/command-nonce": {
+      "post": {
+        "description": "[T-2.09] Nonce de intención (TTL corto, atado a operador+sitio): el\nteléfono lo solicita JUSTO antes del deslizamiento (spec 2.2) y lo firma\ndentro de la intención. Solo roles con acciones tácticas de campo.",
+        "operationId": "issue_command_nonce_sites__site_id__command_nonce_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandNonceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Command Nonce"
+      }
+    },
     "/sites/{site_id}/commands": {
       "get": {
-        "description": "Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).",
+        "description": "Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).\n\n[T-2.09] Con ``site_scope`` acotado (táctico móvil que espera su ack) el\nsitio fuera de alcance es 403 — mismo default-deny que la emisión.",
         "operationId": "list_commands_sites__site_id__commands_get",
         "parameters": [
           {
@@ -6202,6 +9099,320 @@
           }
         },
         "summary": "Issue Command"
+      }
+    },
+    "/sites/{site_id}/directory": {
+      "get": {
+        "description": "[T-2.07 · 1.7] Directorio de emergencia del sitio: brigadistas,\nseguridad y administración con teléfono de un toque. Es el roster PÚBLICO\ndel inmueble (publicación deliberada dentro del sitio — no audita por\nlectura, regla de logging por evento); los occupants jamás se listan.",
+        "operationId": "site_directory_sites__site_id__directory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryEntryOut"
+                  },
+                  "title": "Response Site Directory Sites  Site Id  Directory Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Directory"
+      }
+    },
+    "/sites/{site_id}/drills": {
+      "get": {
+        "description": "Simulacros del sitio para la card de 1.1: activo + próximo + último.",
+        "operationId": "site_drills_sites__site_id__drills_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Drills"
+      }
+    },
+    "/sites/{site_id}/enrollment-codes": {
+      "get": {
+        "operationId": "list_enrollment_codes_sites__site_id__enrollment_codes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentCodeOut"
+                  },
+                  "title": "Response List Enrollment Codes Sites  Site Id  Enrollment Codes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Enrollment Codes"
+      },
+      "post": {
+        "description": "Alta de un código de enrolamiento (siempre ``grants_role='occupant'``,\nCHECK de DB). Vigencia/usos acotan el abuso (RBAC §4.1).",
+        "operationId": "create_enrollment_code_sites__site_id__enrollment_codes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentCodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCodeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Enrollment Code"
+      }
+    },
+    "/sites/{site_id}/enrollment-codes/{code}": {
+      "delete": {
+        "description": "Desactiva (no borra: el historial de usos es auditable).",
+        "operationId": "deactivate_enrollment_code_sites__site_id__enrollment_codes__code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deactivate Enrollment Code"
+      }
+    },
+    "/sites/{site_id}/manual-activation-votes": {
+      "post": {
+        "description": "[T-2.13 · 1.9] Voto de pánico del occupant (emergencia NO sísmica del\ninmueble). Quórum = 2 votos de usuarios DISTINTOS en la ventana ⇒ sirena por\nel pipeline HMAC existente + votos ``consumed``. Un voto JAMÁS activa; dos\ndel MISMO usuario JAMÁS activan. Geofence best-effort (GPS fuera de radio se\ndescarta; sin GPS cuenta). Rate-limit por usuario; TODO voto audita.",
+        "operationId": "panic_vote_sites__site_id__manual_activation_votes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PanicVoteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanicVoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Panic Vote"
+      }
+    },
+    "/sites/{site_id}/mobile-state": {
+      "get": {
+        "description": "Estado consolidado del sitio para la app (push = despertador; ESTO es la\nverdad). Derivación de ``phase`` documentada en el schema.",
+        "operationId": "mobile_state_sites__site_id__mobile_state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mobile State"
       }
     },
     "/telemetry/map/state": {

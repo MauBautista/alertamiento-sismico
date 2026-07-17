@@ -1,3 +1,4 @@
+import { DERIVED_STATE_PILL, UNKNOWN_DERIVED_STATE_KIND } from "@takab/design-tokens";
 import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
 
 import { useSessionStore } from "../../auth/session.store";
@@ -8,13 +9,6 @@ import UpsGauge from "./UpsGauge";
 import { useSelfTest } from "./useSelfTest";
 import type { FleetCabinet } from "./useFleet";
 
-/** derived_state (server) → tono del pill. Desconocido ⇒ ámbar, nunca ok. */
-const STATE_PILL: Record<string, "ok" | "warn" | "crit"> = {
-  OPERATIVO: "ok",
-  DEGRADADO: "warn",
-  "SIN ENLACE": "crit",
-};
-
 /** Tarjeta de gabinete: pinta el estado YA derivado por el servidor (G7). */
 export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
   const gw = cabinet.gateway;
@@ -22,7 +16,9 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
   // T-1.59: autodiagnóstico remoto — gate por matriz (self_test), no por rol.
   const canSelfTest = useSessionStore((s) => s.me?.allowed_actions.self_test === true);
   const selfTest = useSelfTest(gw.site_id);
-  const pill = STATE_PILL[gw.derived_state] ?? "warn";
+  // Contrato semántico derived_state→tono en @takab/design-tokens (T-2.01);
+  // desconocido ⇒ ámbar, nunca ok.
+  const pill = DERIVED_STATE_PILL[gw.derived_state] ?? UNKNOWN_DERIVED_STATE_KIND;
   const linkKind = offline ? "crit" : "ok";
   const mqttValue = offline
     ? "— sin enlace —"

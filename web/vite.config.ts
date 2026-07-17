@@ -30,8 +30,9 @@ export default defineConfig({
       },
     },
     fs: {
-      // @takab/sdk entra como symlink file: y Vite resuelve por realpath.
-      allow: [".", "../shared/sdk-ts"],
+      // @takab/sdk y @takab/design-tokens entran como symlink file: y Vite
+      // resuelve por realpath.
+      allow: [".", "../shared/sdk-ts", "../shared/design-tokens"],
     },
   },
   test: {

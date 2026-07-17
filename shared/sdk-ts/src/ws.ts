@@ -12,6 +12,7 @@ import type {
   IncidentActionFrame,
   IncidentFrame,
   ReadyFrame,
+  RosterSignalFrame,
   SiteStateFrame,
   SubscribeFrame,
 } from './gen';
@@ -23,7 +24,8 @@ export type ServerFrame =
   | IncidentFrame
   | IncidentActionFrame
   | SiteStateFrame
-  | FeaturesFrame;
+  | FeaturesFrame
+  | RosterSignalFrame;
 
 // Discriminantes validos (el servidor siempre setea `type`).
 export type ServerFrameType = NonNullable<ServerFrame['type']>;
@@ -35,6 +37,7 @@ const SERVER_FRAME_TYPES: ReadonlySet<string> = new Set<ServerFrameType>([
   'incident_action',
   'site_state',
   'features',
+  'roster',
 ]);
 
 // Topics de suscripcion.

@@ -107,6 +107,37 @@ ACTIONS: tuple[str, ...] = (
     # la frontera de aislamiento multi-tenant; ni tenant_admin ni support amplían la
     # visibilidad de un cliente sobre otro. La RLS ``vg_admin`` ya exige superadmin.
     "manage_visibility",
+    # [T-2.03] SUPERFICIE MÓVIL (spec móvil §5/§8 + RBAC §3/§4). Los roles móviles
+    # dejan de ser placeholders vacíos: estas son acciones de CAMPO (persona presente
+    # en el inmueble con identidad de roster), por eso los roles de plataforma/SOC
+    # NO las reciben — un superadmin sin asignación de zona no "pasa lista".
+    # ``checkin_submit`` — check-in de vida (propio; delegado para tácticos).
+    "checkin_submit",
+    # ``roster_read`` — roster + estado de check-in por persona (PII: auditada).
+    "roster_read",
+    # ``damage_report_submit`` — formulario de daños → Triage (evidencia).
+    "damage_report_submit",
+    # ``evidence_upload`` — subir evidencia forense (fotos) al incidente (T-2.10).
+    "evidence_upload",
+    # ``siren_silence`` — retirar la demanda manual de sirena (RBAC §4: brigadista/
+    # security_guard/building_admin; inspector NO silencia). Pipeline HMAC intacto.
+    "siren_silence",
+    # ``manual_activate`` — disparo manual deslizar-para-activar (RBAC §4: tácticos
+    # individuales; el occupant SOLO por quórum-de-2 → panic_vote).
+    "manual_activate",
+    # ``enrollment_manage`` — administrar códigos de alta de ocupantes por sitio.
+    "enrollment_manage",
+    # ``panic_vote`` — voto de activación NO sísmica del occupant (quórum 2/30 s;
+    # un voto JAMÁS activa). SOLO occupant: los tácticos ya tienen manual_activate.
+    "panic_vote",
+    # ``dictamen_read`` (R7) — leer/descargar el PDF de dictamen EXISTENTE en móvil
+    # (no lo genera: generate_report sigue siendo inspector/superadmin).
+    "dictamen_read",
+    # [T-2.08] ``panel_read`` — dashboard táctico 2.1 (RBAC §3: "Dashboard táctico
+    # (salud gabinete + actuadores)"): traza BMS del incidente + canal live en móvil.
+    # El occupant NO lo recibe (§3 da "—"): su superficie es crisis/check-in, no la
+    # operación del gabinete. Gatea GET /incidents/{id}/actions en superficie móvil.
+    "panel_read",
 )
 
 
@@ -126,6 +157,16 @@ def _actions(
     drill_start: bool = False,
     manage_tenants: bool = False,
     manage_visibility: bool = False,
+    checkin_submit: bool = False,
+    roster_read: bool = False,
+    damage_report_submit: bool = False,
+    evidence_upload: bool = False,
+    siren_silence: bool = False,
+    manual_activate: bool = False,
+    enrollment_manage: bool = False,
+    panic_vote: bool = False,
+    dictamen_read: bool = False,
+    panel_read: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -142,6 +183,16 @@ def _actions(
         "drill_start": drill_start,
         "manage_tenants": manage_tenants,
         "manage_visibility": manage_visibility,
+        "checkin_submit": checkin_submit,
+        "roster_read": roster_read,
+        "damage_report_submit": damage_report_submit,
+        "evidence_upload": evidence_upload,
+        "siren_silence": siren_silence,
+        "manual_activate": manual_activate,
+        "enrollment_manage": enrollment_manage,
+        "panic_vote": panic_vote,
+        "dictamen_read": dictamen_read,
+        "panel_read": panel_read,
     }
 
 
@@ -160,6 +211,10 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         drill_start=True,
         manage_tenants=True,
         manage_visibility=True,
+        # [T-2.03] Administra el alta de ocupantes; las acciones de CAMPO
+        # (check-in/roster/daños/silenciar) NO — exigen presencia con identidad
+        # de roster en el inmueble, no "Total" de plataforma.
+        enrollment_manage=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -172,15 +227,62 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         read_audit=True,
         self_test=True,
         drill_start=True,
+        enrollment_manage=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
-    "inspector": _actions(sign_dictamen=True, export=True, generate_report=True),
-    "building_admin": _actions(siren_test=True, self_test=True),
-    "brigadista": _actions(),
-    "security_guard": _actions(),
-    "occupant": _actions(),
+    # [T-2.03] inspector en móvil (RBAC §3, celda a celda): forense (cámara +
+    # formulario, que además FIRMA) y disparo individual; SIN headcount (§3 da
+    # "—" en pase de lista) y SIN silenciar (§3/§4).
+    "inspector": _actions(
+        sign_dictamen=True,
+        export=True,
+        generate_report=True,
+        checkin_submit=True,
+        damage_report_submit=True,
+        evidence_upload=True,
+        manual_activate=True,
+        dictamen_read=True,
+        panel_read=True,
+    ),
+    # [T-2.03] building_admin (RBAC §3): headcount y silenciar SÍ; forense NO
+    # (§3 da "—" en cámara/formulario — administra el inmueble, no lo peritea).
+    "building_admin": _actions(
+        siren_test=True,
+        self_test=True,
+        checkin_submit=True,
+        roster_read=True,
+        siren_silence=True,
+        manual_activate=True,
+        enrollment_manage=True,
+        dictamen_read=True,
+        panel_read=True,
+    ),
+    # [T-2.03] Tácticos de campo (RBAC §4): deslizar-para-activar individual,
+    # silenciar = retirada de demanda, forense y headcount.
+    "brigadista": _actions(
+        checkin_submit=True,
+        roster_read=True,
+        damage_report_submit=True,
+        evidence_upload=True,
+        siren_silence=True,
+        manual_activate=True,
+        dictamen_read=True,
+        panel_read=True,
+    ),
+    "security_guard": _actions(
+        checkin_submit=True,
+        roster_read=True,
+        damage_report_submit=True,
+        evidence_upload=True,
+        siren_silence=True,
+        manual_activate=True,
+        dictamen_read=True,
+        panel_read=True,
+    ),
+    # [T-2.03] occupant: SOLO su check-in y su voto de pánico (quórum 2/30 s).
+    "occupant": _actions(checkin_submit=True, panic_vote=True),
 }
 
 

@@ -1,4 +1,7 @@
 <!doctype html>
+<!-- DERIVADO de ESPECIFICACION-APP-MOVIL.md (spec canónica) — no editar a mano.
+     Correcciones §2.1 aplicadas 2026-07-15: crisis instruction-first, firma HW, marco
+     normativo por tenant. Ante conflicto, gana la spec canónica. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -187,12 +190,12 @@
     <div class="screen__figure"><img src="shots/o2-crisis-evacue.png" alt="Crisis evacúe"></div>
     <div class="screen__body">
       <div class="screen__num">PANTALLA 1.2 · CRISIS</div>
-      <div class="screen__title">T-Minus · "Evacúe ahora" (pisos bajos)</div>
+      <div class="screen__title">Crisis · "Evacúe ahora" (zonas de evacuación)</div>
       <p>Pantalla roja de toma total, disparada por Critical Alert (iOS) / Canal de Alta
       Prioridad (Android) — se salta "No Molestar" y el silencio del teléfono, y emite
       el sonido oficial de alerta sísmica.</p>
       <ul class="screen__list">
-        <li><strong>Cronómetro T-Minus</strong> gigante con la cuenta regresiva hasta la llegada de la onda S.</li>
+        <li><strong>Instrucción gigante</strong> (instruction-first) + contador <strong>T+ ascendente</strong> desde la recepción de la alerta + fuente del evento etiquetada. Sin magnitud ni tiempos estimados: el WR-1 entrega un booleano (spec §2.1-A).</li>
         <li><strong>Instrucción binaria</strong> según el piso registrado del usuario: plantas bajas ven "EVACÚE AHORA" con la ruta de salida asignada.</li>
       </ul>
       <div class="screen__tags"><span class="tag tag--crit">CRITICAL ALERT</span><span class="tag tag--crit">ROJO</span></div>
@@ -203,7 +206,7 @@
     <div class="screen__figure"><img src="shots/o3-crisis-repliegue.png" alt="Crisis repliéguese"></div>
     <div class="screen__body">
       <div class="screen__num">PANTALLA 1.3 · CRISIS</div>
-      <div class="screen__title">T-Minus · "Repliéguese" (pisos altos)</div>
+      <div class="screen__title">Crisis · "Repliéguese" (zonas de repliegue)</div>
       <p>Misma estructura binaria que 1.2, variante ámbar: pisos altos (ej. piso 10) reciben
       la instrucción de repliegue a zona de seguridad interior en vez de evacuar,
       dado el tiempo insuficiente para bajar por escaleras.</p>
@@ -282,7 +285,7 @@
         <li>Checklist previo: edificio evacuado confirmado, headcount completo.</li>
         <li>Toda acción queda registrada y firmada con el token del operador.</li>
       </ul>
-      <div class="screen__tags"><span class="tag tag--crit">2 PASOS</span><span class="tag tag--cyan">FIRMA HSM</span></div>
+      <div class="screen__tags"><span class="tag tag--crit">2 PASOS</span><span class="tag tag--cyan">FIRMA HW</span></div>
     </div>
   </div>
 
@@ -355,7 +358,7 @@
       <ul class="screen__list">
         <li>Habilita al brigadista a dar la indicación verbal y desactivar las alarmas.</li>
       </ul>
-      <div class="screen__tags"><span class="tag tag--ok">HABITAR</span><span class="tag tag--cyan">FIRMA HSM</span></div>
+      <div class="screen__tags"><span class="tag tag--ok">HABITAR</span><span class="tag tag--cyan">FIRMA HW</span></div>
     </div>
   </div>
 

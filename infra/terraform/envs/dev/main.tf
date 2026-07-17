@@ -93,6 +93,19 @@ module "identity" {
   extra_logout_urls   = var.serve_enabled ? ["${module.serve.console_url}/"] : []
 }
 
+# Push móvil (T-2.04): SNS platform applications APNs/FCM, condicionales a que
+# existan credenciales reales (sin ellas la API queda en provider simulado).
+module "push" {
+  source = "../../modules/push"
+
+  env                      = "dev"
+  apns_signing_key         = var.push_apns_signing_key
+  apns_signing_key_id      = var.push_apns_signing_key_id
+  apns_team_id             = var.push_apns_team_id
+  fcm_service_account_json = var.push_fcm_service_account_json
+  worker_role_name         = module.database.instance_role_name
+}
+
 # Exposicion publica de la consola (T-1.37). SG separado y adjunto a la ENI: se puede
 # desconectar sin recrear la instancia ni tocar la base de datos.
 module "serve" {

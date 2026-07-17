@@ -77,6 +77,9 @@ class IncidentActionFrame(BaseModel):
     action_id: UUID
     incident_id: UUID
     tenant_id: UUID
+    #: [T-2.08] Sitio del incidente: permite acotar la entrega por site_scope
+    #: (tácticos móviles) y enrutar el frame en clientes multi-sitio.
+    site_id: UUID | None = None
     ts: datetime
     kind: str
     actor: str
@@ -132,3 +135,14 @@ class FeaturesFrame(BaseModel):
     type: Literal["features"] = "features"
     site_id: UUID
     rows: list[FeatureRow]
+
+
+class RosterSignalFrame(BaseModel):
+    """[T-2.11] Señal de que el roster de un incidente cambió (un check-in
+    aterrizó). Es SOLO una invalidación — sin PII: el cliente re-consulta
+    ``/roster`` (gated ``roster_read``). El headcount 2.6 refresca en <2 s."""
+
+    type: Literal["roster"] = "roster"
+    tenant_id: UUID
+    site_id: UUID
+    incident_id: UUID

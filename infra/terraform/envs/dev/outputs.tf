@@ -22,6 +22,28 @@ output "issuer" {
   value = module.identity.issuer
 }
 
+# --- Superficie móvil (T-2.02 · decisión #7) --------------------------------
+
+output "mobile_tactical_client_id" {
+  value = module.identity.mobile_tactical_client_id
+}
+
+output "occupants_user_pool_id" {
+  value = module.identity.occupants_user_pool_id
+}
+
+output "occupants_client_id" {
+  value = module.identity.occupants_client_id
+}
+
+output "occupants_hosted_ui_domain" {
+  value = module.identity.occupants_hosted_ui_domain
+}
+
+output "occupants_issuer" {
+  value = module.identity.occupants_issuer
+}
+
 output "evidence_bucket" {
   value = module.storage.evidence_bucket.name
 }
@@ -83,4 +105,16 @@ output "command_hmac_secret_prefix" {
 
 output "dlq_urls" {
   value = module.messaging.dlq_urls
+}
+
+# --- Push móvil (T-2.04) ------------------------------------------------------
+
+output "push_apns_application_arn" {
+  value     = module.push.apns_application_arn
+  sensitive = true
+}
+
+output "push_fcm_application_arn" {
+  value     = module.push.fcm_application_arn
+  sensitive = true
 }

@@ -36,10 +36,23 @@ router = APIRouter()
 
 _WS_AUTH_FAILED = 4401
 
-# Roles con Consola C4I (RBAC §2) = únicos autorizados en el canal live; espejo
-# del gate ``require_roles(*CONSOLE_ROLES)`` de los routers REST de telemetría e
-# incidentes. Los roles móvil-only quedan fuera (celda "—" → sin CONSOLE).
+# Roles con Consola C4I (RBAC §2): autorizados en el canal live desde T-1.22.
 _CONSOLE_ROLES = frozenset(r for r, routes in ROLE_ROUTE_MATRIX.items() if CONSOLE in routes)
+
+# [T-2.08] Allowlist topic×rol DEFAULT-DENY (spec móvil §5.3). Los tácticos
+# móvil-only entran al canal live para el dashboard 2.1 (RBAC §3 ``panel_read``)
+# con los MISMOS topics de la consola, acotados a su site_scope en la entrega
+# (hub) y con surface móvil verificada. El ``occupant`` queda FUERA del WS por
+# construcción (push despertador + REST verdad): su token se cierra en el
+# handshake — no hay sockets ociosos esperando topics que jamás tendrán.
+_TACTICAL_WS_ROLES = frozenset({"brigadista", "security_guard"})
+_LIVE_ROLES = _CONSOLE_ROLES | _TACTICAL_WS_ROLES
+_TOPIC_ALLOWLIST: dict[str, frozenset[str]] = {
+    p.TOPIC_INCIDENTS: _LIVE_ROLES,
+    p.TOPIC_SITE_STATE: _LIVE_ROLES,
+    p.TOPIC_FEATURES_PREFIX: _LIVE_ROLES,
+}
+_MOBILE_SURFACES = frozenset({"mobile", "both"})
 
 
 @router.websocket("/ws")
@@ -60,6 +73,13 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         await _close(websocket, _WS_AUTH_FAILED)
         return
     claims, exp = authed
+
+    # [T-2.08] Default-deny en el handshake: un rol sin NINGÚN topic posible
+    # (occupant) se cierra aquí mismo — el canal live no mantiene sockets que
+    # jamás podrán suscribirse (spec §5.3: occupant = push + REST).
+    if claims.role not in _LIVE_ROLES:
+        await _close(websocket, _WS_AUTH_FAILED)
+        return
 
     await websocket.send_json(p.ReadyFrame().model_dump())
     sub = hub.register(websocket, claims)
@@ -134,12 +154,18 @@ async def _handle(websocket: WebSocket, sub: Any, raw: str) -> None:
 def _authz_denial(sub: Any, topic: str) -> str | None:
     """``None`` si la suscripción está autorizada; si no, el motivo del rechazo.
 
-    Gate de rol (Consola C4I) para todo topic + ``site_scope`` default-deny y
-    tope de pollers para ``features:<site_id>``. Espeja el authz del REST.
+    [T-2.08] Allowlist topic×rol DEFAULT-DENY: el rol debe estar en la lista
+    del topic (un topic sin entrada niega a todos). Tácticos móviles además
+    exigen surface móvil. ``features:<site_id>`` respeta el ``site_scope``
+    default-deny y el tope de pollers. Espeja el authz del REST.
     """
     claims: Claims = sub.claims
-    if claims.role not in _CONSOLE_ROLES:
-        return "rol sin acceso al canal live"
+    family = p.TOPIC_FEATURES_PREFIX if topic.startswith(p.TOPIC_FEATURES_PREFIX) else topic
+    allowed_roles = _TOPIC_ALLOWLIST.get(family, frozenset())
+    if claims.role not in allowed_roles:
+        return "rol sin acceso al topic"
+    if claims.role in _TACTICAL_WS_ROLES and claims.surface not in _MOBILE_SURFACES:
+        return "superficie sin canal live"
     if topic.startswith(p.TOPIC_FEATURES_PREFIX):
         site_id = topic[len(p.TOPIC_FEATURES_PREFIX) :]
         allowed = scope_filter(claims)  # None = ALL_SITES (sin filtro)

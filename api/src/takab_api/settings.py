@@ -67,6 +67,22 @@ class Settings(BaseSettings):
     # queda vacía → el endpoint no puede firmar y, además, no se monta (guardado
     # por auth_jwks_json vacío en main.create_app).
     auth_dev_private_key: str = ""
+    # [T-2.04] Push móvil (SNS platform endpoints, decisión T-2.00). ARNs de las
+    # platform applications creadas por infra/terraform/modules/push (vacíos ⇒
+    # provider SIMULADO que grita — patrón T-1.62; la llave APNs llega con el
+    # entitlement de Apple, GATE-STORE).
+    push_apns_application_arn: str = ""
+    push_fcm_application_arn: str = ""
+
+    # [T-2.03] Pool de OCUPANTES (decisión #7, T-2.02): segundo issuer verificable
+    # con ancla pool→rol (un token de este pool SOLO puede portar role=occupant; uno
+    # del pool principal JAMÁS occupant). issuer vacío ⇒ pool deshabilitado y el
+    # comportamiento single-issuer queda intacto. Si el JWKS propio queda vacío se
+    # reutiliza el del pool principal (conveniencia dev/test: misma clave de firma).
+    auth_occupants_issuer: str = ""
+    auth_occupants_audience: str = ""
+    auth_occupants_jwks_url: str = ""
+    auth_occupants_jwks_json: str = ""
 
     # --- WebSocket live (T-1.22 · G3) ---
     # Ventana para que el cliente mande el primer frame {"type":"auth",...} tras
@@ -156,6 +172,18 @@ class Settings(BaseSettings):
     command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
     command_rate_user_site_per_min: int = 6
     command_rate_site_per_min: int = 12
+    # [T-2.09] Intención firmada del móvil (RBAC §4.3): secreto HMAC de los
+    # nonces de intención (FAIL-CLOSED: vacío = la ruta táctica responde 503,
+    # jamás comandos sin intención verificable) + TTL corto del nonce.
+    command_intent_secret: str = ""
+    command_intent_ttl_s: float = 90.0
+    # [T-2.13] Pánico del occupant por quórum-de-2 (1.9 · RBAC §4.3): ventana de
+    # asociación (2 votos de usuarios DISTINTOS dentro de estos segundos ⇒
+    # sirena), radio del geofence best-effort (voto con GPS fuera se descarta;
+    # sin GPS cuenta) y rate-limit por usuario para no martillear.
+    panic_quorum_window_s: float = 30.0
+    panic_geofence_radius_m: float = 500.0
+    panic_vote_rate_per_min: int = 4
 
     # --- Backfill por S3 (T-1.25) ---
     # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se

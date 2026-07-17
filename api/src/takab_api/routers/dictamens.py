@@ -22,6 +22,7 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import ROLE_ROUTE_MATRIX, TRIAGE, roles_with_action
 from takab_api.queries import dictamens as q
+from takab_api.queries import mobile as mobile_q
 from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.dictamens import (
     DICTAMEN_STATUS,
@@ -29,6 +30,9 @@ from takab_api.schemas.dictamens import (
     DictamenOut,
     DictamenSignIn,
 )
+
+# Dictamen HABITABLE: firma que libera el reingreso (spec §7 · 2.7).
+_HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
 
 # Roles con Triage (celda ≠ "—" en RBAC §2), derivados de la matriz de rutas.
 TRIAGE_ROLES: tuple[str, ...] = tuple(
@@ -101,4 +105,20 @@ async def sign_dictamen(
         supersedes=supersedes,
     )
     created = (await conn.execute(ins_stmt, ins_params)).mappings().one()
+
+    # [T-2.12] Dictamen HABITABLE firmado ⇒ acción en el timeline: el
+    # orchestrator la convierte en push OPS de cambio de fase que libera las
+    # pantallas 1.5 del ocupante (reentry_approved lo deriva mobile-state).
+    if body.status in _HABITABLE:
+        await conn.execute(
+            mobile_q.INSERT_DICTAMEN_SIGNED_ACTION,
+            {
+                "incident": str(incident_id),
+                "tenant": tenant_id,
+                "actor": f"user:{claims.sub}",
+                "payload": json.dumps(
+                    {"status": body.status, "folio": str(created["dictamen_id"])}
+                ),
+            },
+        )
     return DictamenOut(**dict(created))

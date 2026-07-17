@@ -45,6 +45,32 @@ def presign_get(settings: Settings, s3_key: str) -> str:
     )
 
 
+def read_object(settings: Settings, s3_key: str) -> bytes | None:
+    """Lee el objeto COMPLETO del bucket de evidencia (verificación de hash,
+    T-2.10). ``None`` si no existe. Se usa server-side: alterar un byte del blob
+    tras la captura cambia su SHA-256 y la verificación falla."""
+    client = s3_client(settings)
+    try:
+        resp = client.get_object(Bucket=settings.evidence_bucket, Key=s3_key)
+    except client.exceptions.NoSuchKey:
+        return None
+    return resp["Body"].read()
+
+
+def presign_put(settings: Settings, s3_key: str, *, content_type: str | None = None) -> str:
+    """URL PUT presignada (subida directa del cliente) sobre el bucket de evidencia.
+
+    [T-2.03] La app móvil sube assets/evidencia SIN credenciales AWS: el backend
+    firma la intención de subida (regla de oro 6) con TTL corto.
+    """
+    params: dict[str, Any] = {"Bucket": settings.evidence_bucket, "Key": s3_key}
+    if content_type:
+        params["ContentType"] = content_type
+    return s3_client(settings).generate_presigned_url(
+        "put_object", Params=params, ExpiresIn=PRESIGN_TTL_S
+    )
+
+
 def put_object(settings: Settings, s3_key: str, body: bytes, *, content_type: str) -> None:
     """Sube un objeto al bucket de evidencia."""
     s3_client(settings).put_object(

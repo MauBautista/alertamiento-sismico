@@ -128,6 +128,15 @@
 | Headcount / pase de lista | — | ✅ | ✅ | — | ✅ |
 | Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
 
+> **[T-2.03] Esta matriz es EJECUTABLE:** las celdas con acción se materializan en
+> `api/src/takab_api/auth/matrix.py` (`checkin_submit`, `roster_read`,
+> `damage_report_submit`, `evidence_upload`, `siren_silence`, `manual_activate`,
+> `enrollment_manage`, `panic_vote`, `dictamen_read`) y el parity test
+> `tests/auth/test_matrix.py::test_mobile_actions_match_rbac_section_3` compara el
+> código contra esta tabla celda a celda — si divergen, CI falla (misma disciplina
+> que §2 para la web). El voto de pánico del occupant (quórum 2/30 s) es la acción
+> `panic_vote`; su endpoint llega en T-2.13.
+
 ---
 
 ## 4. Reglas críticas de actuadores (seguridad)
@@ -155,10 +164,17 @@ Como ahora se permite **activar** y **silenciar** actuadores desde un teléfono 
 camino es la superficie más sensible del sistema. Requisitos no negociables:
 1. **Comando firmado** (HMAC/JWT corto) verificado por el gateway antes de ejecutar.
 2. **MFA** obligatorio en el login de roles que pueden activar/silenciar actuadores.
-   `[SUPUESTO #7 plan-maestro — confirmar/override]`: **excepción para `occupant`** (se enrola
-   por QR; MFA universal mataría la adopción del botón de pánico). Compensaciones: quórum de 2,
-   rate-limit por usuario y sitio, geofence del voto (GPS dentro del radio del sitio) y
-   auditoría con GPS/ID. Decisión final antes de la fase móvil (T-1.31).
+   **[RESUELTO 2026-07-15 · T-2.00, decisión de Mauricio]** (era `[SUPUESTO #7 plan-maestro]`):
+   `occupant` con **login simple SIN MFA obligatorio y MFA OPCIONAL** (opt-in TOTP desde la
+   pantalla Cuenta de la app). Implementación: **pool de Cognito separado para ocupantes** con
+   `mfa_configuration = OPTIONAL` — Cognito no permite MFA por grupo, y poner el pool único en
+   OPTIONAL dejaría a un brigadista declinar su TOTP (ver `takab-docs/specs/cognito-pool-v1.md`
+   §5.2). El pool táctico/web queda `ON` intacto ⇒ este requisito #2 sigue garantizado para
+   todo rol con actuadores. Compensaciones del perfil sin MFA: quórum de 2, rate-limit por
+   usuario y sitio, auditoría con ID (+GPS solo con consentimiento) y enrolamiento por código
+   acotado al sitio. El **geofence del voto pasa a best-effort**: un voto CON GPS claramente
+   fuera del radio del sitio se descarta; sin GPS (permiso denegado — LFPDPPP lo hace opcional)
+   el voto cuenta, porque un gate duro por GPS sería inexigible.
 3. **Rate-limit** por usuario y por sitio (evita activación repetida).
 4. **Idempotencia + nonce** (un comando capturado no puede reenviarse).
 5. **Confirmación de ejecución** del gateway de vuelta a la app (`ack` con estado real del relé).

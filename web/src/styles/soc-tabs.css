@@ -1312,3 +1312,26 @@
   color: var(--tk-cyan);
   font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em;
 }
+
+/* [T-2.10] Triage estructural: reportes de daños del móvil con verificación. */
+.structural { margin-top: 14px; border-top: 1px solid var(--tk-border); padding-top: 10px; }
+.structural__title { font: 600 10px var(--tk-font-mono); letter-spacing: 0.08em; color: var(--tk-fg-3); margin: 0 0 8px; }
+.structural__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.structural-card { border: 1px solid var(--tk-border); border-radius: 8px; padding: 8px; background: var(--tk-surface-1); }
+.structural-card--urgent { border-color: var(--tk-status-critical); }
+.structural-card__urgent { font: 700 10px var(--tk-font-mono); letter-spacing: 0.06em; color: var(--tk-status-critical); margin-bottom: 6px; }
+.structural-card__cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.structural-cat { font: 600 10px var(--tk-font-mono); border: 1px solid var(--tk-border); border-radius: 999px; padding: 1px 6px; color: var(--tk-fg-2); }
+.structural-cat--critical { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.structural-cat--high { color: var(--tk-status-warning); }
+.structural-card__notes { color: var(--tk-fg-2); font-size: 12px; margin: 6px 0 4px; }
+.structural-card__meta { color: var(--tk-fg-3); font: 500 10px var(--tk-font-mono); }
+.structural-card__evidence { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.structural-card__noevidence { color: var(--tk-fg-3); font-size: 11px; margin-top: 6px; }
+.structural-verify { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--tk-border); border-radius: 6px; background: var(--tk-surface-2); padding: 3px 8px; cursor: pointer; }
+.structural-verify:disabled { opacity: 0.6; cursor: default; }
+.structural-verify__id { font: 600 10px var(--tk-font-mono); color: var(--tk-fg-2); }
+.structural-verify__state { font: 700 10px var(--tk-font-mono); letter-spacing: 0.04em; }
+.structural-verify--ok .structural-verify__state { color: var(--tk-status-normal); }
+.structural-verify--crit .structural-verify__state { color: var(--tk-status-critical); }
+.structural-verify--muted .structural-verify__state { color: var(--tk-cyan); }

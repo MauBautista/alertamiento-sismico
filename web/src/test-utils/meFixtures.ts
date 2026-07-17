@@ -22,6 +22,17 @@ export const ACTIONS_NONE: MeActions = {
   drill_start: false,
   manage_tenants: false,
   manage_visibility: false,
+  // [T-2.03] superficie móvil (la consola no las usa; el espejo debe estar completo)
+  checkin_submit: false,
+  roster_read: false,
+  damage_report_submit: false,
+  evidence_upload: false,
+  siren_silence: false,
+  manual_activate: false,
+  enrollment_manage: false,
+  panic_vote: false,
+  dictamen_read: false,
+  panel_read: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
@@ -72,6 +83,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     drill_start: true,
     manage_tenants: true,
     manage_visibility: true,
+    enrollment_manage: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
   takab_support: me("takab_support", ALL_ROUTES, { read_audit: true }),
@@ -85,6 +97,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     read_audit: true,
     self_test: true,
     drill_start: true,
+    enrollment_manage: true,
   }),
   soc_operator: me("soc_operator", ["/console", "/fleet", "/triage", "/building"], {
     ack_incident: true,
@@ -100,12 +113,55 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     sign_dictamen: true,
     export: true,
     generate_report: true,
+    checkin_submit: true,
+    damage_report_submit: true,
+    evidence_upload: true,
+    manual_activate: true,
+    dictamen_read: true,
+    panel_read: true,
   }),
   building_admin: me("building_admin", ["/console", "/triage", "/building"], {
     siren_test: true,
     self_test: true,
+    checkin_submit: true,
+    roster_read: true,
+    siren_silence: true,
+    manual_activate: true,
+    enrollment_manage: true,
+    dictamen_read: true,
+    panel_read: true,
   }),
-  brigadista: me("brigadista", [], {}, "mobile"),
-  security_guard: me("security_guard", [], {}, "mobile"),
-  occupant: me("occupant", [], {}, "mobile"),
+  // [T-2.03] Roles móviles: acciones de CAMPO (la web los sigue mandando a
+  // MobileOnlyScreen; el espejo refleja matrix.py completo).
+  brigadista: me(
+    "brigadista",
+    [],
+    {
+      checkin_submit: true,
+      roster_read: true,
+      damage_report_submit: true,
+      evidence_upload: true,
+      siren_silence: true,
+      manual_activate: true,
+      dictamen_read: true,
+      panel_read: true,
+    },
+    "mobile",
+  ),
+  security_guard: me(
+    "security_guard",
+    [],
+    {
+      checkin_submit: true,
+      roster_read: true,
+      damage_report_submit: true,
+      evidence_upload: true,
+      siren_silence: true,
+      manual_activate: true,
+      dictamen_read: true,
+      panel_read: true,
+    },
+    "mobile",
+  ),
+  occupant: me("occupant", [], { checkin_submit: true, panic_vote: true }, "mobile"),
 };
