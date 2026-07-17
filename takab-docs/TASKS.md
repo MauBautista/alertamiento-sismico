@@ -2234,7 +2234,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > `action_id`. La firma de hardware del cierre queda OPCIONAL en el cliente (el flujo biométrico
 > completo reusa T-2.09; el gabinete físico es GATE-HW).
 
-### [ ] T-2.12 · Dictamen 2.7 + liberación de reingreso
+### [x] T-2.12 · Dictamen 2.7 + liberación de reingreso
 - **Componente:** api + mobile
 - Push OPS al firmarse el dictamen en consola (firma = rol `inspector`); el PDF es el artefacto
   EXISTENTE de `/incidents/{id}/report` entregado según R7 (`dictamen_read` o push+presigned) —
@@ -2242,6 +2242,24 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - "Notificar pisos" = evento backend → fase `reentry_approved` → push de cambio de fase que
   libera las pantallas 1.5; jamás acción local.
 - Aceptación en staging: consola-firma → push → PDF visible → ocupantes liberados.
+
+> **ESTADO (2026-07-16): COMPLETA.** **API:** `sign_dictamen` (inspector) ahora, cuando la
+> firma es HABITABLE (normal_operation|inhabit_monitor), deja un `incident_action`
+> `dictamen_signed` (una firma restringida NO lo deja); el orchestrator lo convierte en **push
+> clase OPS de cambio de fase** (`_enqueue_push_for_actions` compartido con headcount) que
+> despierta la app → re-lee mobile-state (reentry_approved) → libera 1.5. `GET
+> /incidents/{id}/dictamen` (R7 `dictamen_read`) devuelve el certificado (folio=dictamen_id,
+> firmante, fecha, habitable) + el **MISMO** PDF presignado del `report_pdf` existente (jamás
+> genera uno paralelo); sin PDF ⇒ `pdf_url=null` honesto; el occupant no tiene `dictamen_read`
+> (403). **Móvil:** `certificateView` puro + `DictamenCertificate` (folio/firmante/vigencia,
+> sello "FIRMA DIGITAL · INSPECTOR" — §2.1-B, sin siglas de HW; PDF cacheado offline vía
+> `File.downloadFileAsync`, sin PDF se declara). Ruta `/dictamen` (táctico) enlazada desde el
+> panel 2.1 cuando hay dictamen firmado. **Liberación del occupant:** banner "REINGRESO
+> AUTORIZADO" en Home (1.1) cuando `phase==reentry_approved` (la salida de 1.5 ya la hacía la
+> máquina de crisis de T-2.05). **api 886 · web 584 · mobile 185 (tsc+lint limpios) · SDK sin
+> drift.** El flujo consola-firma→push→PDF→liberación es verificable en staging (GATE-STORE
+> para el push físico; el push OPS es informativo, jamás CRISIS: reingreso aprobado no es
+> alerta).
 
 ### [ ] T-2.13 · Pánico de occupant por quórum-de-2 (1.9)
 - **Componente:** api + mobile

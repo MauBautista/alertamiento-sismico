@@ -43,6 +43,15 @@ export function HomeView(props: {
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <Text style={styles.eyebrow}>{data.site_name.toUpperCase()}</Text>
 
+      {data.phase === "reentry_approved" ? (
+        <View style={styles.reentryBanner} testID="reentry-banner">
+          <Text style={styles.reentryText}>
+            REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el reingreso al
+            inmueble.
+          </Text>
+        </View>
+      ) : null}
+
       {data.drill.active ? (
         <View style={styles.drillBanner} testID="drill-banner">
           <Text style={styles.drillText}>SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL</Text>
@@ -150,6 +159,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
   },
   drillText: { color: palette.bg, fontSize: fontSize.sm, fontWeight: "800", letterSpacing: 1 },
+  reentryBanner: {
+    backgroundColor: palette.ok,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+  },
+  reentryText: { color: palette.bg, fontSize: fontSize.sm, fontWeight: "800", lineHeight: 18 },
   statusCard: {
     backgroundColor: palette.card,
     borderWidth: 1,

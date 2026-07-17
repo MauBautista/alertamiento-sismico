@@ -51,6 +51,9 @@ export function PanelView(props: {
   canSilence?: boolean;
   onActivate?: () => void;
   onSilence?: () => void;
+  /** [T-2.12] Hay dictamen firmado ⇒ enlace al certificado de reingreso (2.7). */
+  dictamenSigned?: boolean;
+  onOpenDictamen?: () => void;
 }) {
   const h = props.health;
   return (
@@ -110,6 +113,17 @@ export function PanelView(props: {
           </>
         )}
       </View>
+
+      {props.dictamenSigned ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={props.onOpenDictamen}
+          style={styles.dictamenBtn}
+          testID="open-dictamen"
+        >
+          <Text style={styles.dictamenText}>VER DICTAMEN DE REINGRESO (2.7) →</Text>
+        </Pressable>
+      ) : null}
 
       {props.canActivate || props.canSilence ? (
         <View style={styles.card}>
@@ -210,4 +224,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   controlText: { fontWeight: "800", fontSize: fontSize.sm, letterSpacing: 1 },
+  dictamenBtn: {
+    borderColor: palette.ok,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[3],
+    alignItems: "center",
+  },
+  dictamenText: { color: palette.ok, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
 });

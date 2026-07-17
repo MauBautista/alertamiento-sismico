@@ -14,6 +14,7 @@ import {
   type SiteStateFrame,
 } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, View } from "react-native";
 
@@ -31,6 +32,7 @@ import { StateFrame } from "@/ui/StateFrame";
 import { space } from "@/ui/theme";
 
 export default function Panel() {
+  const router = useRouter();
   const siteId = useWatchedSiteId();
   const { data, loading, error, stale, dataUpdatedAt } = useAlertState(siteId);
   const incidentId = data?.incident?.incident_id ?? null;
@@ -179,6 +181,7 @@ export default function Panel() {
           <PanelView
             canActivate={canActivate}
             canSilence={canSilence}
+            dictamenSigned={data.reentry?.dictamen_signed === true}
             featuresAtMs={featuresAtMs}
             groups={groups}
             health={health}
@@ -189,6 +192,7 @@ export default function Panel() {
             live={live}
             nowMs={nowMs}
             onActivate={() => openControl("activate")}
+            onOpenDictamen={() => router.push("/dictamen")}
             onSilence={() => openControl("deactivate")}
             siteName={data.site_name}
             tier={data.latest_tier}
