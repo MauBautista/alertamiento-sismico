@@ -256,8 +256,6 @@ CONSUME_PANIC_VOTES = text(
     "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
 )
 
-SITE_TENANT = text("SELECT tenant_id FROM sites WHERE site_id = CAST(:site AS uuid)")
-
 # --- salud del sitio + directorio (T-2.07 · 1.1/1.7) -----------------------------------
 
 # Último heartbeat por gabinete ACTIVO del sitio (patrón LATERAL de fleet.py);

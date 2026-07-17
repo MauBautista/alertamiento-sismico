@@ -27,6 +27,7 @@ ZONE_PRIV = "7d000000-0000-0000-0000-0000000000d1"
 OCC_USER = "70000000-0000-0000-0000-00000000aa01"
 OCC_USER_2 = "70000000-0000-0000-0000-00000000aa02"
 BRIG_USER = "70000000-0000-0000-0000-00000000bb01"
+SITE_PRIV_B = "7a000000-0000-0000-0000-0000000000a2"  # 2º sitio del MISMO tenant PRIV
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +86,22 @@ async def _seed_zone_and_code(code: str = "CODE-P10", **code_over) -> None:
 
 async def _enroll(client, token: str, code: str = "CODE-P10"):
     return await client.post("/me/enrollment", json={"code": code}, headers=au.bearer(token))
+
+
+async def _seed_second_priv_site() -> None:
+    """2º sitio en el MISMO tenant PRIV: para probar el cruce ENTRE sitios de un
+    tenant (RLS no lo frena — lo frena ``site_scope``)."""
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO sites (site_id, tenant_id, code, name, geom) "
+                "VALUES (:sid, :tid, 'B2SA2', 'Sitio A2', "
+                "ST_SetSRID(ST_MakePoint(-99.14,19.44),4326)::geography) "
+                "ON CONFLICT (site_id) DO NOTHING"
+            ),
+            {"sid": SITE_PRIV_B, "tid": au.DB_TENANT_PRIV},
+        )
 
 
 @pytest.mark.anyio
@@ -155,6 +172,32 @@ async def test_push_tokens_ciclo_completo_y_superficie(base_data) -> None:
         web = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
         resp = await client.post("/me/push-tokens", json=body, headers=au.bearer(web))
         assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_push_token_site_ajeno_es_404_aislamiento_tenant(base_data) -> None:
+    """[Auditoría F2 · ALTA] Un token NO puede registrarse contra el sitio de OTRO
+    tenant. Sin este check el dispositivo recibiría sus push CRISIS/OPS (rompe la
+    regla oro #5). El occupant solo enrola SU sitio ⇒ el ajeno "no existe" (404)."""
+    await _seed_zone_and_code()
+    async with au.client_for(create_app()) as client:
+        assert (await _enroll(client, _occ())).status_code == 200
+        headers = au.bearer(_occ())
+        # su propio sitio (enrolado): se acepta y queda targeteado
+        mine = await client.post(
+            "/me/push-tokens",
+            json={"platform": "android", "token": "fcm-mine", "site_id": au.DB_SITE_PRIV},
+            headers=headers,
+        )
+        assert mine.status_code == 201
+        assert mine.json()["site_id"] == au.DB_SITE_PRIV
+        # el sitio de OTRO tenant: 404 (no enrolado ahí, sin filtración de existencia)
+        foreign = await client.post(
+            "/me/push-tokens",
+            json={"platform": "android", "token": "fcm-foreign", "site_id": au.DB_SITE_PRIV2},
+            headers=headers,
+        )
+        assert foreign.status_code == 404
 
 
 @pytest.mark.anyio
@@ -831,3 +874,29 @@ async def test_enrollment_codes_gestion(base_data) -> None:
         gone = await client.delete(f"{base}/NUEVO-01", headers=au.bearer(admin))
         assert gone.status_code == 204
         assert (await client.get(base, headers=au.bearer(admin))).json()[0]["active"] is False
+
+
+@pytest.mark.anyio
+async def test_enrollment_code_cross_site_mismo_tenant_es_403(base_data) -> None:
+    """[Auditoría F2 · MEDIA] Un building_admin acotado a un sitio NO puede crear
+    códigos en OTRO sitio del MISMO tenant: RLS no lo frena (mismo tenant), lo
+    frena ``site_scope``. Antes usaba ``site_or_404`` (solo tenant) ⇒ cruzaba."""
+    await _seed_second_priv_site()
+    scoped = au.make_token(
+        "building_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
+    )
+    async with au.client_for(create_app()) as client:
+        # su sitio (dentro del scope): 201
+        ok = await client.post(
+            f"/sites/{au.DB_SITE_PRIV}/enrollment-codes",
+            json={"code": "SCOPED-OK"},
+            headers=au.bearer(scoped),
+        )
+        assert ok.status_code == 201
+        # 2º sitio del MISMO tenant, fuera de su scope: 403 (ya no 201)
+        denied = await client.post(
+            f"/sites/{SITE_PRIV_B}/enrollment-codes",
+            json={"code": "SCOPED-NO"},
+            headers=au.bearer(scoped),
+        )
+        assert denied.status_code == 403

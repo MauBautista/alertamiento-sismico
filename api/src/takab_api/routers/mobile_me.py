@@ -44,6 +44,11 @@ async def register_push_token(
 ) -> PushTokenOut:
     """Upsert por ``token``: re-registrar un token existente lo revive y sella
     ``last_seen_at`` (rotación de FCM/APNs sin filas fantasma)."""
+    # Aislamiento multi-tenant (regla oro #5): el sitio del token debe estar en
+    # el alcance del portador. Sin este check, un dispositivo podría registrarse
+    # con el UUID del sitio de OTRO tenant y recibir sus push CRISIS/OPS.
+    if body.site_id is not None:
+        await q.assert_site_access(conn, claims, body.site_id)
     row = (
         await conn.execute(
             q.UPSERT_PUSH_TOKEN,

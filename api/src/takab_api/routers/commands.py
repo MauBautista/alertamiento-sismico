@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
-from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions
+from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions, roles_with_action
 from takab_api.commands.intent import (
     canonical_intent,
     intent_sha256,
@@ -269,9 +269,7 @@ async def list_commands(
     return CommandList(items=[CommandOut(**dict(r)) for r in rows])
 
 
-_PANIC_ROLES: tuple[str, ...] = tuple(
-    sorted(r for r, acts in ROLE_ACTION_MATRIX.items() if acts.get("panic_vote"))
-)
+_PANIC_ROLES: tuple[str, ...] = roles_with_action("panic_vote")
 _require_panic = require_roles(*_PANIC_ROLES)
 
 
@@ -291,7 +289,10 @@ async def panic_vote(
     descarta; sin GPS cuenta). Rate-limit por usuario; TODO voto audita."""
     settings = Settings()
     # R2: el occupant debe estar ENROLADO en el sitio (o 404, sin filtración).
-    await mobile_q.assert_site_access(conn, claims, site_id)
+    # El sitio ya trae su tenant ⇒ el audit del voto lo lleva REAL (visible para
+    # el admin del tenant), no NULL.
+    site = await mobile_q.assert_site_access(conn, claims, site_id)
+    tenant_id = str(site.tenant_id)
     now = datetime.now(tz=UTC)
     window_start = now - timedelta(seconds=settings.panic_quorum_window_s)
 
@@ -321,7 +322,7 @@ async def panic_vote(
 
     await audit_async(
         conn,
-        tenant_id=None,
+        tenant_id=tenant_id,
         actor=f"user:{claims.sub}",
         verb="panic_vote",
         obj=f"site:{site_id}",
@@ -337,10 +338,9 @@ async def panic_vote(
             window_s=settings.panic_quorum_window_s,
         )
 
-    tenant_id = (await conn.execute(mobile_q.SITE_TENANT, {"site": str(site_id)})).scalar_one()
     await conn.execute(
         mobile_q.INSERT_PANIC_VOTE,
-        {"tenant": str(tenant_id), "site": str(site_id), "sub": claims.sub},
+        {"tenant": tenant_id, "site": str(site_id), "sub": claims.sub},
     )
 
     voters = (
@@ -367,7 +367,7 @@ async def panic_vote(
         keys=keys,
         claims=claims,
         site_id=site_id,
-        tenant_id=str(tenant_id),
+        tenant_id=tenant_id,
         channel="siren",
         action="activate",
         event_id=None,

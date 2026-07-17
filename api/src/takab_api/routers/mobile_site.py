@@ -254,7 +254,7 @@ async def create_site_asset(
 ) -> SiteAssetCreateOut:
     """Registra un asset; con ``with_file`` devuelve además la URL PUT presignada
     (la subida es directa del cliente a S3 — sin credenciales AWS en la app)."""
-    site = await q.site_or_404(conn, site_id)
+    site = await q.assert_site_access(conn, claims, site_id)
     settings = Settings()
 
     s3_key: str | None = None
@@ -303,7 +303,7 @@ async def delete_site_asset(
     claims: Claims = Depends(_require_fleet),
     conn: AsyncConnection = Depends(get_session),
 ) -> None:
-    site = await q.site_or_404(conn, site_id)
+    site = await q.assert_site_access(conn, claims, site_id)
     row = (await conn.execute(q.DELETE_ASSET, {"id": str(asset_id), "site": str(site_id)})).first()
     if row is None:
         raise http_error(404, "asset no encontrado")
@@ -326,7 +326,7 @@ async def create_enrollment_code(
 ) -> EnrollmentCodeOut:
     """Alta de un código de enrolamiento (siempre ``grants_role='occupant'``,
     CHECK de DB). Vigencia/usos acotan el abuso (RBAC §4.1)."""
-    site = await q.site_or_404(conn, site_id)
+    site = await q.assert_site_access(conn, claims, site_id)
     try:
         row = (
             await conn.execute(
@@ -360,7 +360,7 @@ async def list_enrollment_codes(
     claims: Claims = Depends(_require_enrollment_admin),
     conn: AsyncConnection = Depends(get_session),
 ) -> list[EnrollmentCodeOut]:
-    await q.site_or_404(conn, site_id)
+    await q.assert_site_access(conn, claims, site_id)
     rows = (await conn.execute(q.LIST_CODES, {"site": str(site_id)})).all()
     return [EnrollmentCodeOut(**dict(r._mapping)) for r in rows]
 
@@ -373,7 +373,7 @@ async def deactivate_enrollment_code(
     conn: AsyncConnection = Depends(get_session),
 ) -> None:
     """Desactiva (no borra: el historial de usos es auditable)."""
-    site = await q.site_or_404(conn, site_id)
+    site = await q.assert_site_access(conn, claims, site_id)
     row = (await conn.execute(q.DEACTIVATE_CODE, {"code": code, "site": str(site_id)})).first()
     if row is None:
         raise http_error(404, "código no encontrado")

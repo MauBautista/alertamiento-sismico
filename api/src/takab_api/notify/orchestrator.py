@@ -239,14 +239,14 @@ VALUES (%(incident)s, %(tenant)s, 'notify_sent', %(actor)s, %(payload)s::jsonb)
 # --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
 _PUSH_EXISTS_SQL = """
 SELECT 1 FROM push_tokens
-WHERE site_id = %(site)s AND revoked_at IS NULL
+WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
 LIMIT 1
 """
 
 _PUSH_DEVICES_SQL = """
 SELECT push_token_id, token, platform, endpoint_arn
 FROM push_tokens
-WHERE site_id = %(site)s AND revoked_at IS NULL
+WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
 ORDER BY created_at
 """
 
@@ -321,7 +321,9 @@ def _enqueue(
         # target solo lleva el site_id (la lista de dispositivos se resuelve
         # FRESCA al despachar, como el secret del webhook). Un tenant sin
         # cascada pero con app instalada igual despierta teléfonos.
-        has_devices = conn.execute(_PUSH_EXISTS_SQL, {"site": row["site_id"]}).fetchone()
+        has_devices = conn.execute(
+            _PUSH_EXISTS_SQL, {"site": row["site_id"], "tenant": row["tenant_id"]}
+        ).fetchone()
         if has_devices is not None:
             destinations = {**destinations, "push": {"site_id": str(row["site_id"])}}
         if not destinations:
@@ -574,7 +576,9 @@ def _dispatch_push(
             platform=r["platform"],
             endpoint_arn=r["endpoint_arn"],
         )
-        for r in conn.execute(_PUSH_DEVICES_SQL, {"site": site_id}).fetchall()
+        for r in conn.execute(
+            _PUSH_DEVICES_SQL, {"site": site_id, "tenant": row["tenant_id"]}
+        ).fetchall()
     ]
     if not devices:
         _fail(
