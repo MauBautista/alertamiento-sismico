@@ -91,7 +91,9 @@ export default function Dictamen() {
       }
       error={dictamen.isError && !dictamen.data ? "No se pudo cargar el dictamen." : null}
       loading={dictamen.isLoading && incidentId !== null}
-      staleSinceMs={null}
+      staleSinceMs={
+        dictamen.data != null && dictamen.failureCount > 0 ? dictamen.dataUpdatedAt : null
+      }
     >
       {cert ? (
         <DictamenCertificate

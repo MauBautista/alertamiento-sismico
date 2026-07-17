@@ -28,6 +28,7 @@ export default function Sync() {
   const items = useQueueStore((s) => s.items);
   const encryption = useQueueStore((s) => s.encryption);
   const apply = useQueueStore((s) => s.apply);
+  const hydrated = useQueueStore((s) => s.hydrated);
   const [online, setOnline] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -92,7 +93,9 @@ export default function Sync() {
         </Pressable>
       ) : null}
 
-      {items.length === 0 ? (
+      {!hydrated ? (
+        <Text style={styles.empty}>Cargando su cola local cifrada…</Text>
+      ) : items.length === 0 ? (
         <Text style={styles.empty}>Nada por sincronizar. Todo lo que capture aparecerá aquí.</Text>
       ) : (
         items

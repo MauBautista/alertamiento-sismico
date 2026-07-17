@@ -33,6 +33,7 @@ export default function Panic() {
   const [busy, setBusy] = useState(false);
   const [votedAt, setVotedAt] = useState<number | null>(null);
   const [remaining, setRemaining] = useState(0);
+  const [windowS, setWindowS] = useState(30);
   const [gpsConsent, setGpsConsent] = useState(false);
 
   useEffect(() => {
@@ -48,9 +49,12 @@ export default function Panic() {
     if (votedAt === null || status?.phase !== "counted") {
       return;
     }
-    const tick = setInterval(() => setRemaining(windowRemaining(votedAt, 30, Date.now())), 1000);
+    const tick = setInterval(
+      () => setRemaining(windowRemaining(votedAt, windowS, Date.now())),
+      1000,
+    );
     return () => clearInterval(tick);
-  }, [votedAt, status?.phase]);
+  }, [votedAt, status?.phase, windowS]);
 
   if (!authed) {
     return <Redirect href="/" />;
@@ -78,6 +82,7 @@ export default function Panic() {
         if (st.phase === "counted") {
           setVotedAt(Date.now());
           setRemaining(res.data.window_s);
+          setWindowS(res.data.window_s);
         }
       } else {
         setStatus({

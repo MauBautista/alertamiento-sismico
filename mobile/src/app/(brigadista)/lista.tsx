@@ -31,6 +31,9 @@ export default function Lista() {
   const roster = useQuery({
     queryKey: ["roster", incidentId],
     enabled: incidentId != null,
+    // Piso de frescura (vida): aunque el WS calle o caiga, el pase de lista se
+    // re-consulta solo; el WS sigue siendo el camino primario (<2 s).
+    refetchInterval: 15_000,
     queryFn: async () => {
       const res = await incidentRosterIncidentsIncidentIdRosterGet({
         path: { incident_id: incidentId as string },
@@ -118,7 +121,7 @@ export default function Lista() {
       emptyText="Sin incidente activo en su sitio: no hay pase de lista que llevar."
       error={roster.isError && !roster.data ? "No se pudo cargar el roster." : null}
       loading={(stateLoading && incidentId === null) || (roster.isLoading && incidentId !== null)}
-      staleSinceMs={null}
+      staleSinceMs={roster.data != null && roster.failureCount > 0 ? roster.dataUpdatedAt : null}
     >
       {roster.data ? (
         <HeadcountView
