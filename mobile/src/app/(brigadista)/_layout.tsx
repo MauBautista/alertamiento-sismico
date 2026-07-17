@@ -47,6 +47,15 @@ export default function BrigadistaLayout() {
         }}
       />
       <Tabs.Screen
+        name="sync"
+        options={{
+          title: "SYNC",
+          tabBarIcon: ({ color, size }) => (
+            <Feather color={color} name="refresh-cw" size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="cuenta"
         options={{
           title: "CUENTA",

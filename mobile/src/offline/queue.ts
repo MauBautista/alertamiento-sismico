@@ -102,6 +102,15 @@ export function recoverInterrupted(item: QueueItem): QueueItem {
   return { ...item, state: "pending", next_attempt_at: 0 };
 }
 
+/** [T-2.11] Reintento MANUAL de un item fallido (2.5): vuelve a pending
+ *  elegible ya, sin sumar intento (el usuario decide reintentar). */
+export function retryFailed(item: QueueItem): QueueItem {
+  if (item.state !== "failed") {
+    return item;
+  }
+  return { ...item, state: "pending", next_attempt_at: 0, last_error: null };
+}
+
 /** SOLO lo sincronizado hace 24 h+ se poda; pending/uploading/failed JAMÁS. */
 export function shouldPurge(item: QueueItem, now: number): boolean {
   return (
