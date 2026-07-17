@@ -128,6 +128,33 @@ WHERE a.kind = 'damage_people_at_risk'
 ORDER BY a.ts, a.action_id
 """
 
+# [T-2.11] "Notificar a no reportados" (2.6): cada ``headcount_notify`` sin job
+# ⇒ un push clase OPS a los dispositivos del sitio. Mismo patrón de acción.
+_HEADCOUNT_NOTIFY_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'headcount_notify'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# 1 push por (action_id, channel): el índice único parcial de 0014 (action) lo
+# hace idempotente. El target lleva site_id + clase OPS (el _dispatch_push
+# resuelve los dispositivos del sitio FRESCOS y sella/revoca endpoints).
+_INSERT_PUSH_ACTION_JOB_SQL = """
+INSERT INTO notification_jobs
+  (tenant_id, incident_id, channel, mode, position, target, due_at, action_id)
+VALUES (%(tenant)s, %(incident)s, 'push', 'parallel', 0,
+        %(target)s::jsonb, %(due_at)s, %(action)s)
+ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
+"""
+
 _DUE_JOBS_SQL = """
 SELECT j.job_id, j.tenant_id, j.incident_id, j.channel, j.mode, j.position,
        j.target, j.due_at, j.deadline_at, j.action_id, j.attempts,
@@ -240,6 +267,7 @@ def run_notify_pass(
         conn, config_cache, now=now, lookback_s=lookback
     )
     counts["enqueued"] += _enqueue_people_at_risk(conn, config_cache, now=now, lookback_s=lookback)
+    counts["enqueued"] += _enqueue_headcount_notify(conn, now=now, lookback_s=lookback)
     _dispatch(conn, settings, providers, config_cache, counts, now=now)
 
     if any(counts.values()):
@@ -368,6 +396,29 @@ def _enqueue_people_at_risk(
                 "incident": row["incident_id"],
                 "target": json.dumps({"to": emails}),
                 "due_at": row["ts"],  # vence YA: prioridad máxima, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _enqueue_headcount_notify(conn: psycopg.Connection, *, now: datetime, lookback_s: float) -> int:
+    """[T-2.11] Un push OPS por cada ``headcount_notify`` sin job todavía. El
+    push va a los dispositivos del sitio (best-effort R5); el índice único
+    (action_id, channel) evita duplicados entre passes."""
+    rows = conn.execute(
+        _HEADCOUNT_NOTIFY_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        result = conn.execute(
+            _INSERT_PUSH_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"site_id": str(row["site_id"]), "push_class": "OPS"}),
+                "due_at": row["ts"],  # vence YA (paralelo)
                 "action": row["action_id"],
             },
         )
@@ -514,11 +565,16 @@ def _dispatch_push(
         )
         return
 
+    # [T-2.11] La clase del push la fija el job (CRISIS al abrir incidente;
+    # OPS para el "notificar a no reportados" del headcount). Default CRISIS por
+    # retrocompatibilidad con los jobs de T-2.04.
+    push_class = str((row["target"] or {}).get("push_class") or PUSH_CLASS_CRISIS)
+    phase = "alert_active" if push_class == PUSH_CLASS_CRISIS else "headcount"
     payload = build_push_payload(
-        push_class=PUSH_CLASS_CRISIS,
+        push_class=push_class,
         site_id=site_id,
         incident_id=str(row["incident_id"]),
-        phase="alert_active",
+        phase=phase,
     )
     outcome = provider.deliver(devices, payload)
 
@@ -534,18 +590,25 @@ def _dispatch_push(
 
     conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
     latency_s = (now - row["opened_at"]).total_seconds()
+    # [T-2.11] El actor distingue por action_id cuando lo hay: dos push del
+    # MISMO incidente en un pass (CRISIS al abrir + OPS del headcount) escriben
+    # su notify_sent sin colisionar en uq_incident_actions_ack (incident, kind,
+    # actor, ts). Sin action_id (CRISIS) el actor queda como en T-2.04.
+    actor = f"system:notify:push:{row['mode']}"
+    if row.get("action_id"):
+        actor = f"{actor}:{row['action_id']}"
     conn.execute(
         _ACTION_SQL,
         {
             "incident": row["incident_id"],
             "tenant": row["tenant_id"],
-            "actor": f"system:notify:push:{row['mode']}",
+            "actor": actor,
             "payload": json.dumps(
                 {
                     "job_id": str(row["job_id"]),
                     "channel": "push",
                     "mode": row["mode"],
-                    "class": PUSH_CLASS_CRISIS,
+                    "class": push_class,
                     "latency_s": latency_s,
                     "devices_delivered": outcome.delivered,
                     "devices_revoked": len(outcome.disabled_ids),

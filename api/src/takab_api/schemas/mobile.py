@@ -301,6 +301,25 @@ class RosterOut(BaseModel):
     entries: list[RosterEntry]
 
 
+class HeadcountCloseIn(BaseModel):
+    """[T-2.11] Cierre de headcount = ACCIÓN FIRMADA (precondición del paso 1
+    de 2.2). La firma de intención (§2.1-B) es OPCIONAL: si viene, se verifica
+    contra ``device_keys`` sobre el canónico ``takab-headcount-v1``."""
+
+    key_id: UUID | None = None
+    signature: str | None = Field(default=None, max_length=4096)
+
+
+class HeadcountActionOut(BaseModel):
+    """Acción de headcount registrada en el timeline (cierre o notificación)."""
+
+    action_id: UUID
+    incident_id: UUID
+    kind: str
+    unreported: int
+    signed: bool
+
+
 # --- damage reports (2.4) --------------------------------------------------------
 
 DAMAGE_CATEGORY_KEYS = frozenset(

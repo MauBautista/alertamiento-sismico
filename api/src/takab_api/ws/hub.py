@@ -47,6 +47,9 @@ _TOPIC_BY_TYPE: dict[str, str] = {
     "incident_action": p.TOPIC_INCIDENTS,
     "device_health": p.TOPIC_SITE_STATE,
     "rule_evaluation": p.TOPIC_SITE_STATE,
+    # [T-2.11] La señal de check-in llega por el topic incidents (el headcount
+    # táctico ya está suscrito ahí); el frame es una invalidación sin PII.
+    "checkin": p.TOPIC_INCIDENTS,
 }
 
 _SQL_INCIDENT = text(
@@ -222,6 +225,18 @@ class Hub:
         self, ctx: SessionCtx, t: str, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Re-consulta la fila con los GUCs del suscriptor y arma el frame tipado."""
+        if t == "checkin":
+            # [T-2.11] El frame es una señal SIN PII (solo ids): se arma del
+            # payload, sin re-consulta. El prefiltro de tenant y el site_scope
+            # de la entrega (T-2.08) ya lo acotan; la PII vive en el REST.
+            tenant = payload.get("tenant")
+            site = payload.get("site")
+            incident = payload.get("incident_id")
+            if tenant is None or site is None or incident is None:
+                return None
+            return p.RosterSignalFrame(
+                tenant_id=_uuid(tenant), site_id=_uuid(site), incident_id=_uuid(incident)
+            ).model_dump(mode="json")
         async with get_tenant_conn(ctx) as conn:
             if t == "incident":
                 row = (await conn.execute(_SQL_INCIDENT, {"id": _uuid(payload.get("id"))})).first()

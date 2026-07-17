@@ -600,6 +600,27 @@ export type HttpValidationError = {
 };
 
 /**
+ * Acción de headcount registrada en el timeline (cierre o notificación).
+ */
+export type HeadcountActionOut = {
+    action_id: string;
+    incident_id: string;
+    kind: string;
+    signed: boolean;
+    unreported: number;
+};
+
+/**
+ * [T-2.11] Cierre de headcount = ACCIÓN FIRMADA (precondición del paso 1
+ * de 2.2). La firma de intención (§2.1-B) es OPCIONAL: si viene, se verifica
+ * contra ``device_keys`` sobre el canónico ``takab-headcount-v1``.
+ */
+export type HeadcountCloseIn = {
+    key_id?: string | null;
+    signature?: string | null;
+};
+
+/**
  * Acción sobre un incidente (ack, siren_on, dictamen, notify_sent…).
  */
 export type IncidentActionFrame = {
@@ -1012,6 +1033,18 @@ export type RosterOut = {
     site_id: string;
     total: number;
     unreported: number;
+};
+
+/**
+ * [T-2.11] Señal de que el roster de un incidente cambió (un check-in
+ * aterrizó). Es SOLO una invalidación — sin PII: el cliente re-consulta
+ * ``/roster`` (gated ``roster_read``). El headcount 2.6 refresca en <2 s.
+ */
+export type RosterSignalFrame = {
+    incident_id: string;
+    site_id: string;
+    tenant_id: string;
+    type?: 'roster';
 };
 
 /**
@@ -2150,6 +2183,60 @@ export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponses = {
 };
 
 export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponse = RegisterEvidenceIncidentsIncidentIdEvidencePostResponses[keyof RegisterEvidenceIncidentsIncidentIdEvidencePostResponses];
+
+export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostData = {
+    body: HeadcountCloseIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/headcount/close';
+};
+
+export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostError = CloseHeadcountIncidentsIncidentIdHeadcountClosePostErrors[keyof CloseHeadcountIncidentsIncidentIdHeadcountClosePostErrors];
+
+export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: HeadcountActionOut;
+};
+
+export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostResponse = CloseHeadcountIncidentsIncidentIdHeadcountClosePostResponses[keyof CloseHeadcountIncidentsIncidentIdHeadcountClosePostResponses];
+
+export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/headcount/notify-unreported';
+};
+
+export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostError = NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostErrors[keyof NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostErrors];
+
+export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: HeadcountActionOut;
+};
+
+export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponse = NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses[keyof NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses];
 
 export type GenerateReportIncidentsIncidentIdReportPostData = {
     body?: never;

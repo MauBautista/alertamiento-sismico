@@ -2661,6 +2661,73 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeadcountActionOut": {
+        "description": "Acción de headcount registrada en el timeline (cierre o notificación).",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "signed": {
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "unreported": {
+            "title": "Unreported",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action_id",
+          "incident_id",
+          "kind",
+          "unreported",
+          "signed"
+        ],
+        "title": "HeadcountActionOut",
+        "type": "object"
+      },
+      "HeadcountCloseIn": {
+        "description": "[T-2.11] Cierre de headcount = ACCIÓN FIRMADA (precondición del paso 1\nde 2.2). La firma de intención (§2.1-B) es OPCIONAL: si viene, se verifica\ncontra ``device_keys`` sobre el canónico ``takab-headcount-v1``.",
+        "properties": {
+          "key_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
+          }
+        },
+        "title": "HeadcountCloseIn",
+        "type": "object"
+      },
       "IncidentActionFrame": {
         "description": "Acción sobre un incidente (ack, siren_on, dictamen, notify_sent…).",
         "properties": {
@@ -4397,6 +4464,39 @@
           "entries"
         ],
         "title": "RosterOut",
+        "type": "object"
+      },
+      "RosterSignalFrame": {
+        "description": "[T-2.11] Señal de que el roster de un incidente cambió (un check-in\naterrizó). Es SOLO una invalidación — sin PII: el cliente re-consulta\n``/roster`` (gated ``roster_read``). El headcount 2.6 refresca en <2 s.",
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "roster",
+            "default": "roster",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "site_id",
+          "incident_id"
+        ],
+        "title": "RosterSignalFrame",
         "type": "object"
       },
       "RuleSetList": {
@@ -7625,6 +7725,98 @@
           }
         },
         "summary": "Register Evidence"
+      }
+    },
+    "/incidents/{incident_id}/headcount/close": {
+      "post": {
+        "description": "[T-2.11 · 2.6] Cierra el headcount (todos contabilizados) como ACCIÓN\nFIRMADA — precondición del paso 1 de 2.2. La firma de intención es opcional;\nsi viene, se verifica contra ``device_keys`` (§2.1-B) y se sella su huella.",
+        "operationId": "close_headcount_incidents__incident_id__headcount_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeadcountCloseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadcountActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Headcount"
+      }
+    },
+    "/incidents/{incident_id}/headcount/notify-unreported": {
+      "post": {
+        "description": "[T-2.11 · 2.6] \"Notificar a no reportados\" = push clase OPS (no hay canal\nde SMS). Registra un ``incident_action headcount_notify``; el orchestrator lo\nconvierte en un push OPS a los dispositivos del sitio (best-effort).",
+        "operationId": "notify_unreported_incidents__incident_id__headcount_notify_unreported_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadcountActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notify Unreported"
       }
     },
     "/incidents/{incident_id}/report": {

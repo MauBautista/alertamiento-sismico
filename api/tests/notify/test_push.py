@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import psycopg
@@ -320,3 +320,64 @@ def test_endpoint_muerto_revoca_token_y_reintenta(scenario) -> None:
     )
     assert job["status"] == "pending"
     assert job["attempts"] == 1
+
+
+def _seed_headcount_notify(s, incident: str, *, ts: datetime = BASE) -> str:
+    """[T-2.11] Acción headcount_notify que el orchestrator convierte en push OPS."""
+    action = str(uuid.uuid4())
+    s["conn"].execute(
+        "INSERT INTO incident_actions (action_id, incident_id, tenant_id, ts, kind, "
+        "actor, payload) VALUES (%s,%s,%s,%s,'headcount_notify',%s,%s::jsonb)",
+        (action, incident, s["tenant"], ts, "user:brigada", json.dumps({"unreported": 3})),
+    )
+    s["conn"].commit()
+    return action
+
+
+def test_headcount_notify_despacha_push_clase_ops(scenario) -> None:
+    """[T-2.11] "Notificar a no reportados" ⇒ push clase OPS a los dispositivos
+    del sitio (jamás CRISIS: no es una alerta sísmica)."""
+    token_id = _seed_device(scenario)
+    incident = _seed_incident(scenario)
+    action = _seed_headcount_notify(scenario, incident)
+    push = _FakePushProvider()
+    push.next_outcome = PushOutcome(delivered=1, created_arns={token_id: "arn:ep/ops"})
+
+    counts = run_notify_pass(scenario["conn"], Settings(), _providers(push), now=BASE)
+    # el push de headcount se despachó (+ el push CRISIS del incidente abierto)
+    assert counts["sent"] >= 1
+    ops_calls = [p for _d, p in push.calls if json.loads(p["default"])["class"] == "OPS"]
+    assert len(ops_calls) == 1, [json.loads(p["default"])["class"] for _d, p in push.calls]
+    assert json.loads(ops_calls[0]["default"])["phase"] == "headcount"
+
+    job = (
+        scenario["conn"]
+        .execute(
+            "SELECT status FROM notification_jobs WHERE action_id = %s AND channel='push'",
+            (action,),
+        )
+        .fetchone()
+    )
+    assert job["status"] == "sent"
+
+
+def test_headcount_notify_no_duplica_push(scenario) -> None:
+    """Idempotente por (action_id, channel): dos passes ⇒ un solo push OPS."""
+    _seed_device(scenario)
+    incident = _seed_incident(scenario)
+    action = _seed_headcount_notify(scenario, incident)
+    push = _FakePushProvider()
+    push.next_outcome = PushOutcome(delivered=1)
+    run_notify_pass(scenario["conn"], Settings(), _providers(push), now=BASE)
+    run_notify_pass(
+        scenario["conn"], Settings(), _providers(push), now=BASE + timedelta(seconds=30)
+    )
+    jobs = (
+        scenario["conn"]
+        .execute(
+            "SELECT count(*) AS n FROM notification_jobs WHERE action_id = %s",
+            (action,),
+        )
+        .fetchone()
+    )
+    assert jobs["n"] == 1

@@ -27,6 +27,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
+from takab_api.commands.intent import canonical_intent, intent_sha256, intent_signature_valid
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_put, read_object
@@ -39,6 +40,8 @@ from takab_api.schemas.mobile import (
     EvidenceRegisterIn,
     EvidenceRegisterOut,
     EvidenceVerifyOut,
+    HeadcountActionOut,
+    HeadcountCloseIn,
     RosterCheckin,
     RosterEntry,
     RosterOut,
@@ -240,6 +243,124 @@ async def incident_roster(
         need_help=need_help,
         unreported=unreported,
         entries=entries,
+    )
+
+
+async def _unreported_count(conn: AsyncConnection, incident_id: UUID, site_id: Any) -> int:
+    return (
+        await conn.execute(
+            q.ROSTER_UNREPORTED_COUNT, {"incident": str(incident_id), "site": str(site_id)}
+        )
+    ).scalar_one()
+
+
+@router.post("/incidents/{incident_id}/headcount/close", response_model=HeadcountActionOut)
+async def close_headcount(
+    incident_id: UUID,
+    body: HeadcountCloseIn,
+    claims: Claims = Depends(_require_roster),
+    conn: AsyncConnection = Depends(get_session),
+) -> HeadcountActionOut:
+    """[T-2.11 · 2.6] Cierra el headcount (todos contabilizados) como ACCIÓN
+    FIRMADA — precondición del paso 1 de 2.2. La firma de intención es opcional;
+    si viene, se verifica contra ``device_keys`` (§2.1-B) y se sella su huella."""
+    incident = await _incident_in_scope(conn, claims, incident_id)
+    signed = False
+    if body.key_id is not None or body.signature is not None:
+        if body.key_id is None or body.signature is None:
+            raise http_error(400, "firma incompleta: key_id y signature van juntos")
+        key_row = (
+            await conn.execute(
+                q.HEADCOUNT_DEVICE_KEY, {"key_id": str(body.key_id), "sub": claims.sub}
+            )
+        ).first()
+        if key_row is None:
+            raise http_error(403, "llave de dispositivo no registrada o revocada")
+        message = canonical_intent(
+            key_id=str(body.key_id),
+            site_id=str(incident.site_id),
+            channel="headcount",
+            action="close",
+            nonce=str(incident_id),
+        )
+        if not intent_signature_valid(key_row.public_key, body.signature, message):
+            raise http_error(403, "firma de cierre inválida")
+        signed = True
+
+    unreported = await _unreported_count(conn, incident_id, incident.site_id)
+    meta = {"unreported": unreported, "signed": signed}
+    if signed and body.signature is not None:
+        meta["intent_key_id"] = str(body.key_id)
+        meta["intent_sha256"] = intent_sha256(body.signature)
+    row = (
+        await conn.execute(
+            q.INSERT_HEADCOUNT_ACTION,
+            {
+                "incident": str(incident_id),
+                "tenant": str(incident.tenant_id),
+                "kind": "headcount_closed",
+                "actor": f"user:{claims.sub}",
+                "payload": json.dumps(meta),
+            },
+        )
+    ).first()
+    await audit_async(
+        conn,
+        tenant_id=str(incident.tenant_id),
+        actor=f"user:{claims.sub}",
+        verb="headcount_closed",
+        obj=f"incident:{incident_id}",
+        meta=meta,
+    )
+    return HeadcountActionOut(
+        action_id=row.action_id,
+        incident_id=incident_id,
+        kind="headcount_closed",
+        unreported=unreported,
+        signed=signed,
+    )
+
+
+@router.post(
+    "/incidents/{incident_id}/headcount/notify-unreported", response_model=HeadcountActionOut
+)
+async def notify_unreported(
+    incident_id: UUID,
+    claims: Claims = Depends(_require_roster),
+    conn: AsyncConnection = Depends(get_session),
+) -> HeadcountActionOut:
+    """[T-2.11 · 2.6] "Notificar a no reportados" = push clase OPS (no hay canal
+    de SMS). Registra un ``incident_action headcount_notify``; el orchestrator lo
+    convierte en un push OPS a los dispositivos del sitio (best-effort)."""
+    incident = await _incident_in_scope(conn, claims, incident_id)
+    unreported = await _unreported_count(conn, incident_id, incident.site_id)
+    meta = {"unreported": unreported, "requested_by": claims.sub}
+    row = (
+        await conn.execute(
+            q.INSERT_HEADCOUNT_ACTION,
+            {
+                "incident": str(incident_id),
+                "tenant": str(incident.tenant_id),
+                "kind": "headcount_notify",
+                "actor": f"user:{claims.sub}",
+                "payload": json.dumps(meta),
+            },
+        )
+    ).first()
+    await audit_async(
+        conn,
+        tenant_id=str(incident.tenant_id),
+        actor=f"user:{claims.sub}",
+        verb="headcount_notify",
+        obj=f"incident:{incident_id}",
+        meta=meta,
+    )
+    return HeadcountActionOut(
+        action_id=row.action_id,
+        incident_id=incident_id,
+        kind="headcount_notify",
+        unreported=unreported,
+        signed=False,
     )
 
 

@@ -255,6 +255,30 @@ INSERT_PEOPLE_AT_RISK_ACTION = text(
     ":actor, CAST(:payload AS jsonb))"
 )
 
+# [T-2.11] Acción de headcount (cierre firmado o notificar-a-no-reportados);
+# ``kind`` lo fija el router. Devuelve el action_id para el reporte al cliente.
+INSERT_HEADCOUNT_ACTION = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "VALUES (CAST(:incident AS uuid), CAST(:tenant AS uuid), :kind, :actor, "
+    "CAST(:payload AS jsonb)) RETURNING action_id"
+)
+
+# Conteo de "no reportados" del sitio (asignados sin ningún check-in en el
+# incidente). Mismo LATERAL que el roster; solo el agregado.
+ROSTER_UNREPORTED_COUNT = text(
+    "SELECT count(*) FROM user_zone_assignments a "
+    "WHERE a.site_id = CAST(:site AS uuid) AND NOT EXISTS ("
+    "  SELECT 1 FROM life_checkins c "
+    "  WHERE c.incident_id = CAST(:incident AS uuid) AND c.user_id = a.user_id)"
+)
+
+# Llave de hardware del PROPIO táctico, vigente (verificación del cierre firmado).
+HEADCOUNT_DEVICE_KEY = text(
+    "SELECT public_key FROM device_keys "
+    "WHERE key_id = CAST(:key_id AS uuid) AND user_sub = CAST(:sub AS uuid) "
+    "AND revoked_at IS NULL"
+)
+
 # --- check-ins ------------------------------------------------------------------------
 
 # [T-2.06] checkin_id lo puede traer la COLA OFFLINE del dispositivo: el replay

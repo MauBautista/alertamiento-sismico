@@ -43,6 +43,7 @@ function topicOf(frame: ServerFrame): string | null {
   switch (frame.type) {
     case 'incident':
     case 'incident_action':
+    case 'roster':
       return TOPIC_INCIDENTS;
     case 'site_state':
       return TOPIC_SITE_STATE;

@@ -10,9 +10,11 @@ roster y daños — con los invariantes de seguridad de la spec §5/§8:
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import psycopg
 import pytest
 from sqlalchemy import text
 
@@ -572,6 +574,114 @@ async def test_roster_cuenta_y_gatea(base_data, make_incident) -> None:
         assert (
             await client.get(f"/incidents/{incident_id}/roster", headers=au.bearer(_occ()))
         ).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_headcount_cierre_y_notificacion(base_data, make_incident) -> None:
+    """T-2.11 · 2.6: cerrar headcount = acción firmada (headcount_closed) con el
+    conteo de no reportados; notificar-a-no-reportados registra headcount_notify
+    (el orchestrator lo convierte en push OPS). Solo roles con roster_read."""
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        for user in (OCC_USER, OCC_USER_2):
+            await conn.execute(
+                text(
+                    "INSERT INTO user_zone_assignments "
+                    "(user_id, tenant_id, site_id, zone_id, role) "
+                    "VALUES (:u, :t, :s, :z, 'occupant') ON CONFLICT DO NOTHING"
+                ),
+                {"u": user, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "z": ZONE_PRIV},
+            )
+    async with au.client_for(create_app()) as client:
+        # un occupant reporta ⇒ 1 no reportado
+        await client.post(
+            f"/incidents/{incident_id}/checkins",
+            json={"status": "safe"},
+            headers=au.bearer(_occ()),
+        )
+        close = await client.post(
+            f"/incidents/{incident_id}/headcount/close", json={}, headers=au.bearer(_brig())
+        )
+        assert close.status_code == 200
+        assert close.json()["kind"] == "headcount_closed"
+        assert close.json()["unreported"] == 1
+        assert close.json()["signed"] is False
+
+        notify = await client.post(
+            f"/incidents/{incident_id}/headcount/notify-unreported", headers=au.bearer(_brig())
+        )
+        assert notify.status_code == 200
+        assert notify.json()["kind"] == "headcount_notify"
+        assert notify.json()["unreported"] == 1
+
+        # firma incompleta ⇒ 400 (key_id y signature van juntos)
+        bad = await client.post(
+            f"/incidents/{incident_id}/headcount/close",
+            json={"signature": "x" * 40},
+            headers=au.bearer(_brig()),
+        )
+        assert bad.status_code == 400
+
+        # el occupant no cierra headcount (sin roster_read)
+        assert (
+            await client.post(
+                f"/incidents/{incident_id}/headcount/close", json={}, headers=au.bearer(_occ())
+            )
+        ).status_code == 403
+
+    # las acciones quedaron en el timeline para el orchestrator
+    async with engine.begin() as conn:
+        kinds = (
+            await conn.execute(
+                text(
+                    "SELECT kind FROM incident_actions WHERE incident_id = :i "
+                    "AND kind IN ('headcount_closed','headcount_notify') ORDER BY kind"
+                ),
+                {"i": incident_id},
+            )
+        ).all()
+    assert [k.kind for k in kinds] == ["headcount_closed", "headcount_notify"]
+
+
+@pytest.mark.anyio
+async def test_checkin_emite_notify_live(base_data, make_incident) -> None:
+    """T-2.11 · 2.6: cada check-in dispara NOTIFY en takab_live (señal de roster)
+    para que el headcount táctico refresque en <2 s. Se escucha el canal."""
+    import asyncio
+    import json as _json
+
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    # conexión de escucha cruda (LISTEN no pasa por SQLAlchemy)
+    dsn = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://")
+    listener = await asyncio.to_thread(psycopg.connect, dsn, autocommit=True)
+    try:
+        await asyncio.to_thread(listener.execute, "LISTEN takab_live")
+        async with au.client_for(create_app()) as client:
+            await _enroll(client, _occ())
+            r = await client.post(
+                f"/incidents/{incident_id}/checkins",
+                json={"status": "safe"},
+                headers=au.bearer(_occ()),
+            )
+            assert r.status_code == 201
+
+        def _drain() -> list[dict]:
+            got = []
+            for note in listener.notifies(timeout=3.0):
+                got.append(_json.loads(note.payload))
+                break
+            return got
+
+        notifies = await asyncio.to_thread(_drain)
+    finally:
+        await asyncio.to_thread(listener.close)
+
+    checkin_signals = [n for n in notifies if n.get("t") == "checkin"]
+    assert checkin_signals, f"sin señal de check-in: {notifies}"
+    assert checkin_signals[0]["incident_id"] == str(incident_id)
 
 
 @pytest.mark.anyio

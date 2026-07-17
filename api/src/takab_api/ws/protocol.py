@@ -135,3 +135,14 @@ class FeaturesFrame(BaseModel):
     type: Literal["features"] = "features"
     site_id: UUID
     rows: list[FeatureRow]
+
+
+class RosterSignalFrame(BaseModel):
+    """[T-2.11] Señal de que el roster de un incidente cambió (un check-in
+    aterrizó). Es SOLO una invalidación — sin PII: el cliente re-consulta
+    ``/roster`` (gated ``roster_read``). El headcount 2.6 refresca en <2 s."""
+
+    type: Literal["roster"] = "roster"
+    tenant_id: UUID
+    site_id: UUID
+    incident_id: UUID
