@@ -12,6 +12,7 @@ import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import QuorumNodes from "./QuorumNodes";
+import StructuralTriage from "./StructuralTriage";
 import {
   SIGNABLE_STATUS,
   chainHead,
@@ -305,6 +306,9 @@ export default function TriageDetail({
               {actions.error && " (bitácora no disponible)"}
               {head.signed_by && ` · firmó ${head.signed_by.slice(0, 8)}`}
             </div>
+
+            {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash. */}
+            <StructuralTriage incidentId={inc.incident_id} />
           </>
         )}
       </StateFrame>

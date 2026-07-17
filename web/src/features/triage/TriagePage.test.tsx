@@ -35,6 +35,12 @@ vi.mock("./useTriage", () => ({
 vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDetail }));
 // CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
 vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
+// [T-2.10] El Triage Estructural tiene su propio suite (StructuralTriage.test);
+// aquí se stubbea para no tocar el SDK ni react-query.
+vi.mock("./useDamageReports", () => ({
+  useDamageReports: () => ({ reports: [], loading: false, error: null }),
+  useVerifyEvidence: () => ({ mutate: vi.fn() }),
+}));
 
 const ROWS = buildRows([anIncident()], [anEvent()], [aSite()]);
 

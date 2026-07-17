@@ -2158,7 +2158,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > y prueba contra un gabinete con alerta activa (silenciar NO apaga; el ack trae el relé
 > recalculado). El tono oficial SASMEX y credenciales store siguen en sus gates previos.
 
-### [ ] T-2.10 · Cámara forense 2.3 + formulario de daños 2.4
+### [x] T-2.10 · Cámara forense 2.3 + formulario de daños 2.4
 - **Componente:** mobile + api + web (Triage)
 - Marca de agua **horneada en el pixel** (fecha-hora del dispositivo + offset NTP del último
   sync, GPS, PGA del gabinete o "PGA: pendiente de sync" — nunca inventado, ID del operador);
@@ -2169,6 +2169,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   pipeline presigned EXISTENTE.
 - Aceptación: un reporte móvil aparece en Triage de la consola con evidencias y hashes
   verificados; alterar un byte del blob tras la captura invalida la verificación (test).
+
+> **ESTADO (2026-07-16): COMPLETA (código; `GATE-HW` de captura física en dispositivo).**
+> **API:** `POST /incidents/{id}/evidence` (evidence_upload) registra la foto en
+> `evidence_objects` (kind=photo, sha256 declarado en captura, `s3_key` con prefijo por tenant)
+> y devuelve un **PUT presignado** (el móvil sube sin credenciales AWS); `POST
+> /evidence/{id}/verify` **re-hashea el objeto subido y lo confronta con lo declarado** —
+> alterar un byte ⇒ `verified=false` (criterio de aceptación, probado con moto subiendo bytes
+> reales) — táctico acotado a `site_scope`. `people_at_risk` (categoría `people_trapped`)
+> escribe un `incident_action` `damage_people_at_risk` que el orchestrator OPS convierte en
+> **email INMEDIATO al SOC** (nuevo pass `_enqueue_people_at_risk`, espejo del dictamen pero sin
+> dedup por "atendido" — una vida en riesgo se notifica siempre; idempotente por
+> `(action_id, channel)`). Cierra el diferido de T-2.03. **Móvil:** `forensic/watermark.ts`
+> (PURO: líneas horneadas con "PGA: pendiente de sync" honesto cuando no hay dato del gabinete;
+> sello "SHA-256", jamás siglas de HW inexistente), `forensic/fileHash.ts` (SHA-256 de los
+> BYTES crudos — coincide con el server), `forensic/capture.ts` (view-shot compone la marca en
+> el bitmap → archivo PRIVADO, jamás galería), `services/evidence.ts` (registro + PUT),
+> `damage/categories.ts` (people_trapped = prioridad máxima, frente de cola) + `DamageForm`
+> (2.4, severidad por categoría, banner urgente) + ruta `/camera` (2.3, expo-camera). **Web:**
+> `StructuralTriage` en el detalle de Triage — reportes de daños ordenados (personas en riesgo
+> al frente), categorías/severidad, y **verificación de hash por evidencia** bajo demanda
+> (HASH VERIFICADO / HASH ALTERADO / NO SE PUDO VERIFICAR — nunca finge integridad). **api 879 ·
+> web 584 · mobile 167 (tsc+lint limpios) · SDK sin drift.** TRAMPAS: `File.bytes()` es ASYNC
+> en SDK 57 (await); `Crypto.digest` sobre BufferSource para bytes crudos; el mock de `@takab/
+> sdk` de TriagePage no cubría los endpoints nuevos ⇒ stub de `useDamageReports`; `evidence_
+> objects`/`gateways` no se truncan (los tests limpian lo suyo). **`GATE-HW`:** captura real con
+> cámara + attestation en dispositivo (biometría de firma sigue en T-2.09). Offset NTP del
+> último sync y adjuntar el PGA real al sincronizar ⇒ afinado en T-2.11 (sync 2.5).
 
 ### [ ] T-2.11 · Sync UI 2.5 + headcount 2.6
 - **Componente:** mobile + api
