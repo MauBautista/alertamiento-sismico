@@ -220,6 +220,44 @@ LAST_DRILL_FOR_SITE = text(
     "ORDER BY d.started_at DESC LIMIT 1"
 )
 
+# --- pánico por quórum-de-2 (1.9, T-2.13) ----------------------------------------------
+
+# Geofence best-effort: ¿el punto del voto cae dentro del radio del sitio? Con
+# GPS null devuelve NULL ⇒ el router lo trata como "sin GPS: cuenta".
+PANIC_IN_RADIUS = text(
+    "SELECT CASE WHEN CAST(:lon AS float8) IS NULL THEN NULL ELSE "
+    "ST_DWithin(s.geom, ST_SetSRID(ST_MakePoint(CAST(:lon AS float8), "
+    "CAST(:lat AS float8)), 4326)::geography, CAST(:radius AS float8)) END "
+    "FROM sites s WHERE s.site_id = CAST(:site AS uuid)"
+)
+
+# Rate-limit por usuario: votos de ESTE usuario en el sitio desde :since.
+PANIC_USER_RATE = text(
+    "SELECT count(*) FROM manual_activation_votes "
+    "WHERE site_id = CAST(:site AS uuid) AND user_id = CAST(:sub AS uuid) "
+    "AND created_at >= :since"
+)
+
+INSERT_PANIC_VOTE = text(
+    "INSERT INTO manual_activation_votes (tenant_id, site_id, user_id) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:site AS uuid), CAST(:sub AS uuid)) "
+    "RETURNING vote_id, created_at"
+)
+
+# Usuarios DISTINTOS con voto NO consumido en la ventana (el quórum los cuenta).
+PANIC_DISTINCT_VOTERS = text(
+    "SELECT array_agg(DISTINCT user_id) AS users FROM manual_activation_votes "
+    "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
+)
+
+# Consume los votos de la ventana (un solo disparo por quórum).
+CONSUME_PANIC_VOTES = text(
+    "UPDATE manual_activation_votes SET consumed = true "
+    "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
+)
+
+SITE_TENANT = text("SELECT tenant_id FROM sites WHERE site_id = CAST(:site AS uuid)")
+
 # --- salud del sitio + directorio (T-2.07 · 1.1/1.7) -----------------------------------
 
 # Último heartbeat por gabinete ACTIVO del sitio (patrón LATERAL de fleet.py);

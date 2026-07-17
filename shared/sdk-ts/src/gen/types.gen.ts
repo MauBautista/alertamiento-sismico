@@ -945,6 +945,28 @@ export type MultiChannelFeatures = {
 };
 
 /**
+ * [T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional
+ * (geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin
+ * GPS cuenta (LFPDPPP + RBAC §4.3).
+ */
+export type PanicVoteIn = {
+    location?: [
+        number,
+        number
+    ] | null;
+};
+
+/**
+ * Resultado del voto: contado, descartado (geofence) o quórum activado.
+ */
+export type PanicVoteOut = {
+    distinct_voters: number;
+    remaining: number;
+    status: string;
+    window_s: number;
+};
+
+/**
  * URL GET presignada de vida corta para descargar un objeto de evidencia.
  */
 export type PresignedDownload = {
@@ -3131,6 +3153,33 @@ export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponse
 };
 
 export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponse = DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses[keyof DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses];
+
+export type PanicVoteSitesSiteIdManualActivationVotesPostData = {
+    body: PanicVoteIn;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/manual-activation-votes';
+};
+
+export type PanicVoteSitesSiteIdManualActivationVotesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PanicVoteSitesSiteIdManualActivationVotesPostError = PanicVoteSitesSiteIdManualActivationVotesPostErrors[keyof PanicVoteSitesSiteIdManualActivationVotesPostErrors];
+
+export type PanicVoteSitesSiteIdManualActivationVotesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PanicVoteOut;
+};
+
+export type PanicVoteSitesSiteIdManualActivationVotesPostResponse = PanicVoteSitesSiteIdManualActivationVotesPostResponses[keyof PanicVoteSitesSiteIdManualActivationVotesPostResponses];
 
 export type MobileStateSitesSiteIdMobileStateGetData = {
     body?: never;

@@ -4114,6 +4114,63 @@
         "title": "MultiChannelFeatures",
         "type": "object"
       },
+      "PanicVoteIn": {
+        "description": "[T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional\n(geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin\nGPS cuenta (LFPDPPP + RBAC §4.3).",
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          }
+        },
+        "title": "PanicVoteIn",
+        "type": "object"
+      },
+      "PanicVoteOut": {
+        "description": "Resultado del voto: contado, descartado (geofence) o quórum activado.",
+        "properties": {
+          "distinct_voters": {
+            "title": "Distinct Voters",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "window_s": {
+            "title": "Window S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "distinct_voters",
+          "remaining",
+          "window_s"
+        ],
+        "title": "PanicVoteOut",
+        "type": "object"
+      },
       "PresignedDownload": {
         "description": "URL GET presignada de vida corta para descargar un objeto de evidencia.",
         "properties": {
@@ -9264,6 +9321,57 @@
           }
         },
         "summary": "Deactivate Enrollment Code"
+      }
+    },
+    "/sites/{site_id}/manual-activation-votes": {
+      "post": {
+        "description": "[T-2.13 · 1.9] Voto de pánico del occupant (emergencia NO sísmica del\ninmueble). Quórum = 2 votos de usuarios DISTINTOS en la ventana ⇒ sirena por\nel pipeline HMAC existente + votos ``consumed``. Un voto JAMÁS activa; dos\ndel MISMO usuario JAMÁS activan. Geofence best-effort (GPS fuera de radio se\ndescarta; sin GPS cuenta). Rate-limit por usuario; TODO voto audita.",
+        "operationId": "panic_vote_sites__site_id__manual_activation_votes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PanicVoteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PanicVoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Panic Vote"
       }
     },
     "/sites/{site_id}/mobile-state": {

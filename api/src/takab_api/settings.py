@@ -177,6 +177,13 @@ class Settings(BaseSettings):
     # jamás comandos sin intención verificable) + TTL corto del nonce.
     command_intent_secret: str = ""
     command_intent_ttl_s: float = 90.0
+    # [T-2.13] Pánico del occupant por quórum-de-2 (1.9 · RBAC §4.3): ventana de
+    # asociación (2 votos de usuarios DISTINTOS dentro de estos segundos ⇒
+    # sirena), radio del geofence best-effort (voto con GPS fuera se descarta;
+    # sin GPS cuenta) y rate-limit por usuario para no martillear.
+    panic_quorum_window_s: float = 30.0
+    panic_geofence_radius_m: float = 500.0
+    panic_vote_rate_per_min: int = 4
 
     # --- Backfill por S3 (T-1.25) ---
     # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se

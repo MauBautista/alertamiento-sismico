@@ -17,13 +17,14 @@ firma usa la clave de ESE gabinete (T-1.38); sin clave resoluble ⇒ 503.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions
@@ -42,6 +43,7 @@ from takab_api.commands.keys import (
 from takab_api.commands.publisher import CommandPublisher, IotDataPublisher
 from takab_api.commands.service import issue_signed_command
 from takab_api.queries import commands as q
+from takab_api.queries import mobile as mobile_q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.schemas.commands import (
     ACTIONS,
@@ -50,6 +52,8 @@ from takab_api.schemas.commands import (
     CommandList,
     CommandNonceOut,
     CommandOut,
+    PanicVoteIn,
+    PanicVoteOut,
 )
 from takab_api.settings import Settings
 
@@ -263,3 +267,117 @@ async def list_commands(
         (await conn.execute(q.LIST_COMMANDS, {"site_id": site_id, "limit": 100})).mappings().all()
     )
     return CommandList(items=[CommandOut(**dict(r)) for r in rows])
+
+
+_PANIC_ROLES: tuple[str, ...] = tuple(
+    sorted(r for r, acts in ROLE_ACTION_MATRIX.items() if acts.get("panic_vote"))
+)
+_require_panic = require_roles(*_PANIC_ROLES)
+
+
+@router.post("/sites/{site_id}/manual-activation-votes", response_model=PanicVoteOut)
+async def panic_vote(
+    site_id: UUID,
+    body: PanicVoteIn,
+    claims: Claims = Depends(_require_panic),
+    conn: AsyncConnection = Depends(get_session),
+    publisher: CommandPublisher = Depends(get_publisher),
+    keys: CommandKeyProvider = Depends(get_key_provider),
+) -> PanicVoteOut:
+    """[T-2.13 · 1.9] Voto de pánico del occupant (emergencia NO sísmica del
+    inmueble). Quórum = 2 votos de usuarios DISTINTOS en la ventana ⇒ sirena por
+    el pipeline HMAC existente + votos ``consumed``. Un voto JAMÁS activa; dos
+    del MISMO usuario JAMÁS activan. Geofence best-effort (GPS fuera de radio se
+    descarta; sin GPS cuenta). Rate-limit por usuario; TODO voto audita."""
+    settings = Settings()
+    # R2: el occupant debe estar ENROLADO en el sitio (o 404, sin filtración).
+    await mobile_q.assert_site_access(conn, claims, site_id)
+    now = datetime.now(tz=UTC)
+    window_start = now - timedelta(seconds=settings.panic_quorum_window_s)
+
+    # Rate-limit por usuario (no martillear el quórum).
+    recent = (
+        await conn.execute(
+            mobile_q.PANIC_USER_RATE,
+            {"site": str(site_id), "sub": claims.sub, "since": now - timedelta(seconds=60)},
+        )
+    ).scalar_one()
+    if recent >= settings.panic_vote_rate_per_min:
+        raise http_error(429, "demasiados votos; espere un momento")
+
+    lon, lat = body.location if body.location is not None else (None, None)
+    # Geofence best-effort: True dentro, False fuera, None sin GPS (cuenta).
+    in_radius = (
+        await conn.execute(
+            mobile_q.PANIC_IN_RADIUS,
+            {
+                "site": str(site_id),
+                "lon": lon,
+                "lat": lat,
+                "radius": settings.panic_geofence_radius_m,
+            },
+        )
+    ).scalar_one()
+
+    await audit_async(
+        conn,
+        tenant_id=None,
+        actor=f"user:{claims.sub}",
+        verb="panic_vote",
+        obj=f"site:{site_id}",
+        meta={"with_gps": body.location is not None, "in_radius": in_radius},
+    )
+
+    if in_radius is False:
+        # Voto CON GPS fuera del radio: se descarta (RBAC §4.3 geofence).
+        return PanicVoteOut(
+            status="discarded",
+            distinct_voters=0,
+            remaining=2,
+            window_s=settings.panic_quorum_window_s,
+        )
+
+    tenant_id = (await conn.execute(mobile_q.SITE_TENANT, {"site": str(site_id)})).scalar_one()
+    await conn.execute(
+        mobile_q.INSERT_PANIC_VOTE,
+        {"tenant": str(tenant_id), "site": str(site_id), "sub": claims.sub},
+    )
+
+    voters = (
+        await conn.execute(
+            mobile_q.PANIC_DISTINCT_VOTERS, {"site": str(site_id), "since": window_start}
+        )
+    ).scalar_one()
+    distinct = len(voters) if voters is not None else 0
+
+    if distinct < 2:
+        return PanicVoteOut(
+            status="counted",
+            distinct_voters=distinct,
+            remaining=2 - distinct,
+            window_s=settings.panic_quorum_window_s,
+        )
+
+    # Quórum alcanzado: dispara la sirena por el pipeline firmado y consume los
+    # votos (un solo disparo). La nube firma el comando; el teléfono jamás.
+    await issue_signed_command(
+        conn,
+        settings=settings,
+        publisher=publisher,
+        keys=keys,
+        claims=claims,
+        site_id=site_id,
+        tenant_id=str(tenant_id),
+        channel="siren",
+        action="activate",
+        event_id=None,
+        payload_extra={"source": "panic_quorum"},
+        audit_meta={"source": "panic_quorum", "voters": distinct},
+    )
+    await conn.execute(mobile_q.CONSUME_PANIC_VOTES, {"site": str(site_id), "since": window_start})
+    return PanicVoteOut(
+        status="activated",
+        distinct_voters=distinct,
+        remaining=0,
+        window_s=settings.panic_quorum_window_s,
+    )

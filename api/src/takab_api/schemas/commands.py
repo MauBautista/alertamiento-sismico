@@ -44,6 +44,26 @@ class CommandNonceOut(BaseModel):
     ttl_s: float
 
 
+class PanicVoteIn(BaseModel):
+    """[T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional
+    (geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin
+    GPS cuenta (LFPDPPP + RBAC §4.3)."""
+
+    location: tuple[float, float] | None = None
+
+
+class PanicVoteOut(BaseModel):
+    """Resultado del voto: contado, descartado (geofence) o quórum activado."""
+
+    #: counted | discarded | activated
+    status: str
+    #: usuarios DISTINTOS con voto vivo en la ventana (0 si descartado).
+    distinct_voters: int
+    #: votos que faltan para el quórum (0 si ya se activó o se descartó).
+    remaining: int
+    window_s: float
+
+
 class CommandOut(BaseModel):
     """Fila de ``commands``: nonce anti-replay + ciclo pending→acked/rejected/expired."""
 
