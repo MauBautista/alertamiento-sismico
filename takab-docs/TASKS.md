@@ -2113,7 +2113,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > incidente) y agrupados con la `groupActions` COMPARTIDA; pill LIVE/RECONECTANDO/SIN CANAL.
 > **api 866✓ · web 576✓ · mobile 133✓ (tsc+lint limpios) · SDK sin drift.**
 
-### [ ] T-2.09 · Firma respaldada por hardware + control remoto 2.2 — `GATE-HW`
+### [x] T-2.09 · Firma respaldada por hardware + control remoto 2.2 — `GATE-HW`
 - **Componente:** api + mobile
 - Llave por operador en Secure Enclave / Android Keystore (no exportable), registrada vía
   `/me/device-keys`; las acciones críticas firman la **intención** `{key_id, signature, nonce
@@ -2126,6 +2126,37 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   la sirena, la UI explica el estado real del ack en vez de fingir éxito.
 - Tests: replay de nonce rechazado; gating por `siren_silence`/`manual_activate`; audit con
   hash de la intención. Verificación física contra gabinete con alerta activa = `GATE-HW`.
+
+> **ESTADO (2026-07-16): COMPLETA (código; `GATE-HW` físico pendiente).** **API
+> (`commands/intent.py`):** el teléfono firma una INTENCIÓN
+> `takab-intent-v1:key_id:site:channel:action:nonce`, NUNCA el comando. Nonce STATELESS
+> (HMAC del servidor sobre `sub|site|exp|rand`, TTL 90 s, atado a operador+sitio) emitido por
+> `POST /sites/{id}/command-nonce` justo antes del deslizamiento; su UN-SOLO-USO no necesita
+> tabla porque viaja como `commands.nonce` (UNIQUE) del comando emitido ⇒ **el replay revienta
+> en el INSERT (409)**. `intent_signature_valid` verifica contra `device_keys` (P-256/ECDSA y
+> RSA PKCS#1v15, ambas SHA-256 — cubre Secure Enclave y Android Keystore). Ruta TÁCTICA en
+> `issue_command`: quien no porta `siren_test` o es surface móvil entra por
+> `manual_activate`(activate)/`siren_silence`(deactivate), **solo canal siren**, intención
+> OBLIGATORIA; FAIL-CLOSED sin `command_intent_secret` (503); reusa el pipeline existente
+> (HMAC por gateway, rate-limit, TTL, ack) con `nonce_override`+`audit_meta` (hash de la firma
+> en `audit_log`). Acción nueva de matriz **NO** hizo falta: se apoya en `manual_activate`/
+> `siren_silence` de T-2.08. **Móvil:** `security/deviceKey.ts` (react-native-biometrics:
+> `createKeys` en hardware no exportable → PEM → `/me/device-keys`, `key_id` en SecureStore,
+> re-genera si la llave murió en el HW; `createSignature` con prompt biométrico),
+> `security/intent.ts` (canónico ESPEJO EXACTO del servidor — test de paridad),
+> `features/control/service.ts` (nonce→firma→POST, traduce 409/429/503/403 a mensajes
+> honestos), `ackState.ts` (silenciar con alerta vigente ⇒ "SU DEMANDA SE RETIRÓ · LA SIRENA
+> SIGUE ACTIVA", jamás finge éxito), `preconditions.ts` (estado REAL prellenado, no checkbox
+> ciego), `ControlSheet.tsx` (2 pasos: checklist → deslizar-para-activar) enlazada desde el
+> panel táctico 2.1 gated por `allowed_actions`. **api 873 · web 576 · mobile 150 (tsc+lint
+> limpios) · SDK sin drift.** TRAMPAS: `audit_log.object` (no `obj`); `gateways`/`sites` NO se
+> truncan ⇒ los tests de comandos usan SITE dedicado con delete-then-insert; `cryptography`
+> declarada directa + registrada en el contrato `test_runtime_deps`; jest hoisting exige
+> prefijo `mock` en las refs de `jest.mock`; react-hooks/purity veta `Animated.Value`/
+> `PanResponder` creados con `useRef(new …)` en render ⇒ `useState(()=>…)` + `useMemo`.
+> **`GATE-HW` (físico, PENDIENTE):** verificación en dispositivo real (biometría + attestation)
+> y prueba contra un gabinete con alerta activa (silenciar NO apaga; el ack trae el relé
+> recalculado). El tono oficial SASMEX y credenciales store siguen en sus gates previos.
 
 ### [ ] T-2.10 · Cámara forense 2.3 + formulario de daños 2.4
 - **Componente:** mobile + api + web (Triage)
