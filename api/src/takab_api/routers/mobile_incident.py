@@ -114,6 +114,12 @@ async def submit_checkin(
     delegated = subject != claims.sub
     if delegated and claims.role not in _ROSTER_ROLES:
         raise http_error(403, "el check-in delegado requiere rol de headcount")
+    # El sujeto de un check-in DELEGADO debe estar ASIGNADO al sitio (en el
+    # roster): el brigadista marca-a-salvo a quien pertenece al inmueble, no a un
+    # UUID cualquiera. Mismo 404 que R2 (no revela si el usuario existe en otro
+    # sitio). [Endurecimiento auditoría F2, ratificado por Mauricio.]
+    if delegated and await q.my_assignment(conn, subject, incident.site_id) is None:
+        raise http_error(404, "la persona no está en el roster de este sitio")
 
     lon, lat = body.location if body.location is not None else (None, None)
     try:

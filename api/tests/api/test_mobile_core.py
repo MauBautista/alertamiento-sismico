@@ -319,6 +319,7 @@ async def test_checkin_propio_delegado_y_cruces(base_data, make_incident) -> Non
     url = f"/incidents/{incident_id}/checkins"
     async with au.client_for(create_app()) as client:
         await _enroll(client, _occ())
+        await _enroll(client, _occ(OCC_USER_2))  # OCC_USER_2 también en el roster
 
         # propio (occupant): via=self, sin verified_by
         own = await client.post(
@@ -340,6 +341,14 @@ async def test_checkin_propio_delegado_y_cruces(base_data, make_incident) -> Non
         assert delegated.json()["via"] == "delegated"
         assert delegated.json()["verified_by"] == BRIG_USER
         assert delegated.json()["user_id"] == OCC_USER_2
+
+        # delegado sobre alguien NO asignado al sitio: 404 (no está en el roster)
+        stranger = await client.post(
+            url,
+            json={"status": "safe", "subject_user_id": str(uuid.uuid4())},
+            headers=au.bearer(_brig()),
+        )
+        assert stranger.status_code == 404
 
         # un occupant NO puede delegar (marca a terceros)
         forged = await client.post(
