@@ -42,6 +42,7 @@ from takab_api.schemas.mobile import (
     EvidenceVerifyOut,
     HeadcountActionOut,
     HeadcountCloseIn,
+    MobileDictamenOut,
     RosterCheckin,
     RosterEntry,
     RosterOut,
@@ -52,6 +53,7 @@ _CHECKIN_ROLES = roles_with_action("checkin_submit")
 _ROSTER_ROLES = roles_with_action("roster_read")
 _DAMAGE_ROLES = roles_with_action("damage_report_submit")
 _EVIDENCE_ROLES = roles_with_action("evidence_upload")
+_DICTAMEN_READ_ROLES = roles_with_action("dictamen_read")
 # La consola (Triage) LEE los reportes de daños; los tácticos también ven los suyos.
 _DAMAGE_READ_ROLES = tuple(sorted(set(CONSOLE_ROLES) | set(_DAMAGE_ROLES)))
 
@@ -60,6 +62,10 @@ _require_roster = require_roles(*_ROSTER_ROLES)
 _require_damage = require_roles(*_DAMAGE_ROLES)
 _require_damage_read = require_roles(*_DAMAGE_READ_ROLES)
 _require_evidence = require_roles(*_EVIDENCE_ROLES)
+_require_dictamen_read = require_roles(*_DICTAMEN_READ_ROLES)
+
+# Dictamen HABITABLE: libera el reingreso (spec §7 · 2.7 "HABITAR").
+_HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
 
 router = APIRouter()
 
@@ -361,6 +367,54 @@ async def notify_unreported(
         kind="headcount_notify",
         unreported=unreported,
         signed=False,
+    )
+
+
+@router.get("/incidents/{incident_id}/dictamen", response_model=MobileDictamenOut)
+async def read_dictamen(
+    incident_id: UUID,
+    claims: Claims = Depends(_require_dictamen_read),
+    conn: AsyncConnection = Depends(get_session),
+) -> MobileDictamenOut:
+    """[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos
+    del dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF."""
+    incident = await _incident_in_scope(conn, claims, incident_id)
+    row = (await conn.execute(q.LATEST_SIGNED_DICTAMEN, {"incident": str(incident_id)})).first()
+    if row is None:
+        return MobileDictamenOut(
+            incident_id=incident_id,
+            signed=False,
+            folio=None,
+            status=None,
+            signed_by=None,
+            signed_at=None,
+            habitable=False,
+            pdf_url=None,
+        )
+    settings = Settings()
+    pdf_url: str | None = None
+    if settings.evidence_bucket:
+        pdf_row = (await conn.execute(q.LATEST_REPORT_PDF, {"incident": str(incident_id)})).first()
+        if pdf_row is not None:
+            from takab_api.routers._s3 import presign_get
+
+            pdf_url = presign_get(settings, pdf_row.s3_key)
+    await audit_async(
+        conn,
+        tenant_id=str(incident.tenant_id),
+        actor=f"user:{claims.sub}",
+        verb="dictamen_read",
+        obj=f"incident:{incident_id}",
+    )
+    return MobileDictamenOut(
+        incident_id=incident_id,
+        signed=True,
+        folio=row.dictamen_id,
+        status=row.status,
+        signed_by=row.signed_by,
+        signed_at=row.created_at,
+        habitable=row.status in _HABITABLE,
+        pdf_url=pdf_url,
     )
 
 

@@ -829,6 +829,22 @@ export type MetricSeries = {
 };
 
 /**
+ * [T-2.12 · 2.7] Certificado de reingreso para el móvil: metadatos del
+ * dictamen FIRMADO + PDF presignado (el MISMO artefacto que genera la consola,
+ * entregado por ``dictamen_read``; jamás un PDF paralelo).
+ */
+export type MobileDictamenOut = {
+    folio: string | null;
+    habitable: boolean;
+    incident_id: string;
+    pdf_url: string | null;
+    signed: boolean;
+    signed_at: string | null;
+    signed_by: string | null;
+    status: string | null;
+};
+
+/**
  * Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —
  * informativa, JAMÁS auto-arranca) y último ejecutado.
  */
@@ -2021,6 +2037,33 @@ export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses = {
 };
 
 export type SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponse = SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses[keyof SubmitDamageReportIncidentsIncidentIdDamageReportsPostResponses];
+
+export type ReadDictamenIncidentsIncidentIdDictamenGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/dictamen';
+};
+
+export type ReadDictamenIncidentsIncidentIdDictamenGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDictamenIncidentsIncidentIdDictamenGetError = ReadDictamenIncidentsIncidentIdDictamenGetErrors[keyof ReadDictamenIncidentsIncidentIdDictamenGetErrors];
+
+export type ReadDictamenIncidentsIncidentIdDictamenGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MobileDictamenOut;
+};
+
+export type ReadDictamenIncidentsIncidentIdDictamenGetResponse = ReadDictamenIncidentsIncidentIdDictamenGetResponses[keyof ReadDictamenIncidentsIncidentIdDictamenGetResponses];
 
 export type RequestDictamenIncidentsIncidentIdDictamenRequestPostData = {
     body: DictamenRequestIn;

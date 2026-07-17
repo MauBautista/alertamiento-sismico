@@ -577,6 +577,69 @@ async def test_roster_cuenta_y_gatea(base_data, make_incident) -> None:
 
 
 @pytest.mark.anyio
+async def test_lee_dictamen_para_reingreso(base_data, make_incident) -> None:
+    """T-2.12 · 2.7: el táctico lee el certificado (dictamen_read) — metadatos
+    del dictamen firmado + habitable; sin PDF generado ⇒ pdf_url None (honesto,
+    no finge). El occupant NO lo lee (sin dictamen_read)."""
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    async with au.client_for(create_app()) as client:
+        # sin firma todavía
+        r0 = await client.get(f"/incidents/{incident_id}/dictamen", headers=au.bearer(_brig()))
+        assert r0.status_code == 200
+        assert r0.json()["signed"] is False
+        assert r0.json()["habitable"] is False
+
+        await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True)
+        r1 = await client.get(f"/incidents/{incident_id}/dictamen", headers=au.bearer(_brig()))
+        body = r1.json()
+        assert body["signed"] is True
+        assert body["habitable"] is True
+        assert body["folio"] is not None
+        assert body["pdf_url"] is None  # sin bucket/PDF: se declara, no se inventa
+
+        # el occupant no tiene dictamen_read
+        assert (
+            await client.get(f"/incidents/{incident_id}/dictamen", headers=au.bearer(_occ()))
+        ).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_firma_habitable_deja_accion_para_push(base_data, make_incident) -> None:
+    """T-2.12: firmar un dictamen HABITABLE en consola deja un incident_action
+    ``dictamen_signed`` que el orchestrator convierte en push OPS de fase; una
+    firma NO habitable (restricted) no lo deja."""
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    async with au.client_for(create_app()) as client:
+        insp = au.make_token("inspector", tenant=au.DB_TENANT_PRIV, surface="web")
+        ok = await client.post(
+            f"/incidents/{incident_id}/dictamens",
+            json={"status": "inhabit_monitor"},
+            headers=au.bearer(insp),
+        )
+        assert ok.status_code == 201, ok.text
+        bad = await client.post(
+            f"/incidents/{incident_id}/dictamens",
+            json={"status": "restricted"},
+            headers=au.bearer(insp),
+        )
+        assert bad.status_code == 201
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        kinds = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM incident_actions WHERE incident_id = :i "
+                    "AND kind = 'dictamen_signed'"
+                ),
+                {"i": incident_id},
+            )
+        ).scalar_one()
+    assert kinds == 1  # solo la firma habitable dejó acción
+
+
+@pytest.mark.anyio
 async def test_headcount_cierre_y_notificacion(base_data, make_incident) -> None:
     """T-2.11 · 2.6: cerrar headcount = acción firmada (headcount_closed) con el
     conteo de no reportados; notificar-a-no-reportados registra headcount_notify

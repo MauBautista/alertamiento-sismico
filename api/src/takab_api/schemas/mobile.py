@@ -320,6 +320,25 @@ class HeadcountActionOut(BaseModel):
     signed: bool
 
 
+class MobileDictamenOut(BaseModel):
+    """[T-2.12 · 2.7] Certificado de reingreso para el móvil: metadatos del
+    dictamen FIRMADO + PDF presignado (el MISMO artefacto que genera la consola,
+    entregado por ``dictamen_read``; jamás un PDF paralelo)."""
+
+    incident_id: UUID
+    #: Hay dictamen firmado en este incidente.
+    signed: bool
+    #: Folio del certificado (dictamen_id) — None si aún no hay firma.
+    folio: UUID | None
+    status: str | None
+    signed_by: UUID | None
+    signed_at: datetime | None
+    #: normal_operation|inhabit_monitor ⇒ edificio habitable (libera 1.5).
+    habitable: bool
+    #: PDF presignado del reporte (None si aún no se generó o sin bucket).
+    pdf_url: str | None
+
+
 # --- damage reports (2.4) --------------------------------------------------------
 
 DAMAGE_CATEGORY_KEYS = frozenset(

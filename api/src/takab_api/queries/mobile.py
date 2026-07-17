@@ -161,6 +161,31 @@ LATEST_DICTAMEN = text(
     "WHERE incident_id = CAST(:incident AS uuid) ORDER BY created_at DESC LIMIT 1"
 )
 
+# [T-2.12] Dictamen FIRMADO más reciente del incidente (2.7): folio, firmante,
+# estado y fecha. La vigencia/certificado los deriva el móvil del estado.
+LATEST_SIGNED_DICTAMEN = text(
+    "SELECT dictamen_id, status, signed_by, created_at FROM dictamens "
+    "WHERE incident_id = CAST(:incident AS uuid) AND signed_by IS NOT NULL "
+    "ORDER BY created_at DESC LIMIT 1"
+)
+
+# [T-2.12] Último PDF de reporte (evidence kind=report_pdf) del incidente — el
+# certificado que el táctico DESCARGA (dictamen_read); jamás se genera aquí un
+# PDF paralelo (el artefacto lo crea la consola en /incidents/{id}/report).
+LATEST_REPORT_PDF = text(
+    "SELECT s3_key FROM evidence_objects "
+    "WHERE incident_id = CAST(:incident AS uuid) AND kind = 'report_pdf' "
+    "ORDER BY created_at DESC LIMIT 1"
+)
+
+# [T-2.12] Timeline: dictamen HABITABLE firmado ⇒ el orchestrator empuja el push
+# OPS de cambio de fase que libera las pantallas 1.5.
+INSERT_DICTAMEN_SIGNED_ACTION = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "VALUES (CAST(:incident AS uuid), CAST(:tenant AS uuid), 'dictamen_signed', "
+    ":actor, CAST(:payload AS jsonb))"
+)
+
 COMPLIANCE_LABELS = text(
     "SELECT labels FROM compliance_labels WHERE tenant_id = CAST(:tenant AS uuid)"
 )

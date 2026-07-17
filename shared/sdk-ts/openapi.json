@@ -3597,6 +3597,94 @@
         "title": "MetricSeries",
         "type": "object"
       },
+      "MobileDictamenOut": {
+        "description": "[T-2.12 · 2.7] Certificado de reingreso para el móvil: metadatos del\ndictamen FIRMADO + PDF presignado (el MISMO artefacto que genera la consola,\nentregado por ``dictamen_read``; jamás un PDF paralelo).",
+        "properties": {
+          "folio": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folio"
+          },
+          "habitable": {
+            "title": "Habitable",
+            "type": "boolean"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "signed": {
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "signed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed At"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "incident_id",
+          "signed",
+          "folio",
+          "status",
+          "signed_by",
+          "signed_at",
+          "habitable",
+          "pdf_url"
+        ],
+        "title": "MobileDictamenOut",
+        "type": "object"
+      },
       "MobileDrillOut": {
         "description": "Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —\ninformativa, JAMÁS auto-arranca) y último ejecutado.",
         "properties": {
@@ -7443,6 +7531,47 @@
           }
         },
         "summary": "Submit Damage Report"
+      }
+    },
+    "/incidents/{incident_id}/dictamen": {
+      "get": {
+        "description": "[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos\ndel dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF.",
+        "operationId": "read_dictamen_incidents__incident_id__dictamen_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDictamenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Dictamen"
       }
     },
     "/incidents/{incident_id}/dictamen-request": {

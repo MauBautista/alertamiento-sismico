@@ -144,6 +144,23 @@ WHERE a.kind = 'headcount_notify'
 ORDER BY a.ts, a.action_id
 """
 
+# [T-2.12] Dictamen HABITABLE firmado (2.7): cada ``dictamen_signed`` sin job ⇒
+# push OPS de CAMBIO DE FASE a los dispositivos del sitio — despierta la app,
+# que re-lee mobile-state (reentry_approved) y libera las pantallas 1.5.
+_DICTAMEN_SIGNED_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'dictamen_signed'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
 # 1 push por (action_id, channel): el índice único parcial de 0014 (action) lo
 # hace idempotente. El target lleva site_id + clase OPS (el _dispatch_push
 # resuelve los dispositivos del sitio FRESCOS y sella/revoca endpoints).
@@ -267,7 +284,12 @@ def run_notify_pass(
         conn, config_cache, now=now, lookback_s=lookback
     )
     counts["enqueued"] += _enqueue_people_at_risk(conn, config_cache, now=now, lookback_s=lookback)
-    counts["enqueued"] += _enqueue_headcount_notify(conn, now=now, lookback_s=lookback)
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn, _HEADCOUNT_NOTIFY_SQL, now=now, lookback_s=lookback
+    )
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn, _DICTAMEN_SIGNED_SQL, now=now, lookback_s=lookback
+    )
     _dispatch(conn, settings, providers, config_cache, counts, now=now)
 
     if any(counts.values()):
@@ -403,13 +425,13 @@ def _enqueue_people_at_risk(
     return inserted
 
 
-def _enqueue_headcount_notify(conn: psycopg.Connection, *, now: datetime, lookback_s: float) -> int:
-    """[T-2.11] Un push OPS por cada ``headcount_notify`` sin job todavía. El
-    push va a los dispositivos del sitio (best-effort R5); el índice único
-    (action_id, channel) evita duplicados entre passes."""
-    rows = conn.execute(
-        _HEADCOUNT_NOTIFY_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
-    ).fetchall()
+def _enqueue_push_for_actions(
+    conn: psycopg.Connection, sql: str, *, now: datetime, lookback_s: float
+) -> int:
+    """[T-2.11/2.12] Un push OPS por cada acción reciente sin job (headcount o
+    dictamen firmado). El push va a los dispositivos del sitio (best-effort R5);
+    el índice único (action_id, channel) evita duplicados entre passes."""
+    rows = conn.execute(sql, {"since": now - timedelta(seconds=lookback_s), "now": now}).fetchall()
     inserted = 0
     for row in rows:
         result = conn.execute(

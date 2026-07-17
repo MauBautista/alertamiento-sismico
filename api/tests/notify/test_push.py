@@ -381,3 +381,45 @@ def test_headcount_notify_no_duplica_push(scenario) -> None:
         .fetchone()
     )
     assert jobs["n"] == 1
+
+
+def _seed_dictamen_signed(s, incident: str, *, ts: datetime = BASE) -> str:
+    """[T-2.12] Firma habitable ⇒ el orchestrator empuja un push OPS de fase."""
+    action = str(uuid.uuid4())
+    s["conn"].execute(
+        "INSERT INTO incident_actions (action_id, incident_id, tenant_id, ts, kind, "
+        "actor, payload) VALUES (%s,%s,%s,%s,'dictamen_signed',%s,%s::jsonb)",
+        (
+            action,
+            incident,
+            s["tenant"],
+            ts,
+            "user:inspector",
+            json.dumps({"status": "inhabit_monitor"}),
+        ),
+    )
+    s["conn"].commit()
+    return action
+
+
+def test_dictamen_firmado_despacha_push_clase_ops(scenario) -> None:
+    """[T-2.12] Dictamen habitable firmado ⇒ push OPS de cambio de fase (jamás
+    CRISIS: reingreso aprobado es buena noticia, no una alerta)."""
+    token_id = _seed_device(scenario)
+    incident = _seed_incident(scenario)
+    action = _seed_dictamen_signed(scenario, incident)
+    push = _FakePushProvider()
+    push.next_outcome = PushOutcome(delivered=1, created_arns={token_id: "arn:ep/rz"})
+
+    run_notify_pass(scenario["conn"], Settings(), _providers(push), now=BASE)
+    ops = [p for _d, p in push.calls if json.loads(p["default"])["class"] == "OPS"]
+    assert len(ops) == 1
+    job = (
+        scenario["conn"]
+        .execute(
+            "SELECT status FROM notification_jobs WHERE action_id = %s AND channel='push'",
+            (action,),
+        )
+        .fetchone()
+    )
+    assert job["status"] == "sent"
