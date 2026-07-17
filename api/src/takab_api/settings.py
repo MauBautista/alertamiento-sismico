@@ -172,6 +172,11 @@ class Settings(BaseSettings):
     command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
     command_rate_user_site_per_min: int = 6
     command_rate_site_per_min: int = 12
+    # [T-2.09] Intención firmada del móvil (RBAC §4.3): secreto HMAC de los
+    # nonces de intención (FAIL-CLOSED: vacío = la ruta táctica responde 503,
+    # jamás comandos sin intención verificable) + TTL corto del nonce.
+    command_intent_secret: str = ""
+    command_intent_ttl_s: float = 90.0
 
     # --- Backfill por S3 (T-1.25) ---
     # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se

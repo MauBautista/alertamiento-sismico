@@ -478,6 +478,16 @@
               }
             ],
             "title": "Event Id"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandIntentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -485,6 +495,35 @@
           "action"
         ],
         "title": "CommandIn",
+        "type": "object"
+      },
+      "CommandIntentIn": {
+        "description": "[T-2.09] Intención firmada con la llave de hardware del operador\n(spec §2.1-B): el backend la valida contra ``device_keys`` y el nonce\nemitido por el servidor; el teléfono jamás firma el comando ejecutable.",
+        "properties": {
+          "key_id": {
+            "format": "uuid",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 4096,
+            "minLength": 16,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "nonce",
+          "signature"
+        ],
+        "title": "CommandIntentIn",
         "type": "object"
       },
       "CommandList": {
@@ -502,6 +541,31 @@
           "items"
         ],
         "title": "CommandList",
+        "type": "object"
+      },
+      "CommandNonceOut": {
+        "description": "[T-2.09] Nonce de intención: se solicita justo antes del deslizamiento.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "ttl_s": {
+            "title": "Ttl S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "nonce",
+          "expires_at",
+          "ttl_s"
+        ],
+        "title": "CommandNonceOut",
         "type": "object"
       },
       "CommandOut": {
@@ -8333,9 +8397,50 @@
         "summary": "Delete Site Asset"
       }
     },
+    "/sites/{site_id}/command-nonce": {
+      "post": {
+        "description": "[T-2.09] Nonce de intención (TTL corto, atado a operador+sitio): el\nteléfono lo solicita JUSTO antes del deslizamiento (spec 2.2) y lo firma\ndentro de la intención. Solo roles con acciones tácticas de campo.",
+        "operationId": "issue_command_nonce_sites__site_id__command_nonce_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandNonceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Command Nonce"
+      }
+    },
     "/sites/{site_id}/commands": {
       "get": {
-        "description": "Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).",
+        "description": "Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).\n\n[T-2.09] Con ``site_scope`` acotado (táctico móvil que espera su ack) el\nsitio fuera de alcance es 403 — mismo default-deny que la emisión.",
         "operationId": "list_commands_sites__site_id__commands_get",
         "parameters": [
           {

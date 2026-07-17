@@ -109,6 +109,18 @@ export type CommandIn = {
     action: string;
     channel: string;
     event_id?: string | null;
+    intent?: CommandIntentIn | null;
+};
+
+/**
+ * [T-2.09] Intención firmada con la llave de hardware del operador
+ * (spec §2.1-B): el backend la valida contra ``device_keys`` y el nonce
+ * emitido por el servidor; el teléfono jamás firma el comando ejecutable.
+ */
+export type CommandIntentIn = {
+    key_id: string;
+    nonce: string;
+    signature: string;
 };
 
 /**
@@ -116,6 +128,15 @@ export type CommandIn = {
  */
 export type CommandList = {
     items: Array<CommandOut>;
+};
+
+/**
+ * [T-2.09] Nonce de intención: se solicita justo antes del deslizamiento.
+ */
+export type CommandNonceOut = {
+    expires_at: string;
+    nonce: string;
+    ttl_s: number;
 };
 
 /**
@@ -2683,6 +2704,33 @@ export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses = {
 };
 
 export type DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponse = DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses[keyof DeleteSiteAssetSitesSiteIdAssetsAssetIdDeleteResponses];
+
+export type IssueCommandNonceSitesSiteIdCommandNoncePostData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/command-nonce';
+};
+
+export type IssueCommandNonceSitesSiteIdCommandNoncePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IssueCommandNonceSitesSiteIdCommandNoncePostError = IssueCommandNonceSitesSiteIdCommandNoncePostErrors[keyof IssueCommandNonceSitesSiteIdCommandNoncePostErrors];
+
+export type IssueCommandNonceSitesSiteIdCommandNoncePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: CommandNonceOut;
+};
+
+export type IssueCommandNonceSitesSiteIdCommandNoncePostResponse = IssueCommandNonceSitesSiteIdCommandNoncePostResponses[keyof IssueCommandNonceSitesSiteIdCommandNoncePostResponses];
 
 export type ListCommandsSitesSiteIdCommandsGetData = {
     body?: never;

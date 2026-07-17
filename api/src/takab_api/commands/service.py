@@ -43,6 +43,8 @@ async def issue_signed_command(
     event_id: str | None,
     payload_extra: dict[str, Any] | None = None,
     now: datetime | None = None,
+    nonce_override: str | None = None,
+    audit_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Firma, registra ``pending``, publica y audita UN comando. Devuelve la fila.
 
@@ -76,7 +78,9 @@ async def issue_signed_command(
     if key is None:
         raise http_error(503, f"sin clave HMAC para el gateway {gateway.iot_thing}")
 
-    nonce = uuid4().hex
+    # [T-2.09] La intención firmada aporta SU nonce (emitido por el servidor):
+    # commands.nonce UNIQUE convierte cualquier replay en violación de insert.
+    nonce = nonce_override or uuid4().hex
     ts_iso = now.isoformat()
     payload: dict[str, Any] = {"channel": channel, "action": action, "event_id": event_id}
     if payload_extra:
@@ -117,5 +121,6 @@ async def issue_signed_command(
         actor=f"user:{claims.sub}",
         verb="command_issued",
         obj=f"command:{row['command_id']}",
+        meta=audit_meta,
     )
     return dict(row)

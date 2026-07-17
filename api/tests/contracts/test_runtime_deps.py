@@ -29,6 +29,9 @@ _MODULE_TO_DIST: dict[str, str] = {
     "anyio": "fastapi",  # transitiva de starlette (to_thread en routers/commands)
     "boto3": "boto3",
     "botocore": "boto3",  # transitiva de boto3
+    # [T-2.09] verificación de firmas de intención (device_keys, EC/RSA); venía
+    # por pyjwt[crypto] pero commands/intent.py la importa directa.
+    "cryptography": "cryptography",
     "fastapi": "fastapi",
     "fpdf": "fpdf2",
     "httpx": "httpx",

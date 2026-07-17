@@ -17,6 +17,18 @@ _COLS = (
 # Sitio visible para el tenant (RLS) → 404 sin fuga si no.
 SELECT_SITE = text("SELECT site_id, tenant_id FROM sites WHERE site_id = :site_id")
 
+# [T-2.09] Replay temprano de la intención (el UNIQUE del insert es el backstop).
+NONCE_EXISTS = text("SELECT 1 FROM commands WHERE nonce = :nonce")
+
+# [T-2.09] Llave de hardware del PROPIO operador, vigente (RLS acota además
+# por tenant; el filtro user_sub hace explícito que jamás se firma con llave
+# ajena, y revoked_at excluye llaves dadas de baja).
+DEVICE_KEY = text(
+    "SELECT public_key FROM device_keys "
+    "WHERE key_id = CAST(:key_id AS uuid) AND user_sub = CAST(:sub AS uuid) "
+    "AND revoked_at IS NULL"
+)
+
 # Gateway comandable del sitio: con thing IoT y no retirado; online preferente.
 SELECT_GATEWAY = text(
     "SELECT gateway_id, iot_thing FROM gateways "
