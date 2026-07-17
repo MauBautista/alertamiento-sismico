@@ -110,9 +110,11 @@ output "dlq_urls" {
 # --- Push móvil (T-2.04) ------------------------------------------------------
 
 output "push_apns_application_arn" {
-  value = module.push.apns_application_arn
+  value     = module.push.apns_application_arn
+  sensitive = true
 }
 
 output "push_fcm_application_arn" {
-  value = module.push.fcm_application_arn
+  value     = module.push.fcm_application_arn
+  sensitive = true
 }
