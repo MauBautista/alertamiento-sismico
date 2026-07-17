@@ -1,5 +1,5 @@
 .PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing cloud-users \
-        cloud-mobile-users demo-fase1 demo-db cloud-images cloud-deploy
+        cloud-mobile-users cloud-staging-incident demo-fase1 demo-db cloud-images cloud-deploy
 
 API_DIR := api
 WEB_DIR := web
@@ -152,3 +152,9 @@ cloud-users:
 # zona y el código de enrolamiento (el occupant sin asignación ve 404, R2).
 cloud-mobile-users:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_mobile_users.sh $(ROLES)
+
+# Incidente de staging para los E2E móviles (GATE-HW): abre/conduce un incidente
+# controlable en el sitio piloto. PHASE=crisis|conclude|reentry|roster|reset|status
+# (default crisis). Siembra por SQL vía túnel SSM; no hay POST /incidents.
+cloud-staging-incident:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_staging_incident.sh $(PHASE)
