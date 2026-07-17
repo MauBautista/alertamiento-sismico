@@ -2197,7 +2197,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > cámara + attestation en dispositivo (biometría de firma sigue en T-2.09). Offset NTP del
 > último sync y adjuntar el PGA real al sincronizar ⇒ afinado en T-2.11 (sync 2.5).
 
-### [ ] T-2.11 · Sync UI 2.5 + headcount 2.6
+### [x] T-2.11 · Sync UI 2.5 + headcount 2.6
 - **Componente:** mobile + api
 - 2.5: cola visible (estado por elemento, progreso, reintento manual, tamaño pendiente); solo
   contiene lo que el teléfono produce (sin miniSEED — sube edge→S3); badge de cifrado solo si
@@ -2208,6 +2208,31 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   (`via='delegated'`, `verified_by`) distinguible del propio; "Notificar a no reportados" =
   push OPS (no existe canal de mensajes de texto); **cierre de headcount = acción firmada**
   (precondición del paso 1 de 2.2).
+
+> **ESTADO (2026-07-16): COMPLETA.** **API — roster live <2 s:** migración 0020 extiende
+> `takab_notify()` con el tipo `checkin` + trigger AFTER INSERT en `life_checkins` (payload
+> MÍNIMO sin PII `{t:'checkin',tenant,site,incident_id}`); el hub lo mapea al topic `incidents`
+> y arma un `RosterSignalFrame` DIRECTO del payload (sin re-consulta — es solo invalidación, la
+> PII vive en el REST gated `roster_read`); acotado por `site_scope` en la entrega (T-2.08).
+> SDK ws.ts +`roster`. **Endpoints de headcount:** `POST .../headcount/close` (roster_read) =
+> acción firmada `headcount_closed` — la firma de intención (§2.1-B, verificada contra
+> `device_keys` sobre el canónico `takab-headcount-v1`) es OPCIONAL; devuelve el conteo de no
+> reportados. `POST .../headcount/notify-unreported` (roster_read) escribe `headcount_notify` y
+> el orchestrator lo convierte en **push clase OPS** (nuevo pass `_enqueue_headcount_notify`;
+> `_dispatch_push` ahora es CLASS-AWARE — la clase la fija el job, default CRISIS retrocompat;
+> el actor de `notify_sent` incluye `action_id` para no colisionar con el push CRISIS del mismo
+> incidente en un pass). **Móvil 2.5 (`sync` tab):** cola visible con estado por elemento,
+> contadores, tamaño pendiente, reintento manual (`retryFailed`+drainQueue), banner offline
+> (expo-network) y **badge de cifrado honesto** (afirma AES-256 SOLO si SQLCipher se verificó);
+> `syncView` puro. **Móvil 2.6 (`lista` tab):** roster + contadores del servidor, filtro "no
+> reportados" por defecto + llamada de un toque, "verificado en persona" = check-in DELEGADO
+> (subject_user_id ⇒ via='delegated'), refresco live por el frame `roster`/incidente del WS
+> (<2 s), notificar-a-no-reportados y cerrar-headcount (habilitado solo si todos contabilizados);
+> `rosterView` puro. **api 883 · web 584 · mobile 179 (tsc+lint limpios) · SDK sin drift ·
+> migración validada (fresca + round-trip + incremental dev).** TRAMPA: dos push del MISMO
+> incidente en un pass colisionaban en `uq_incident_actions_ack` (actor+ts) ⇒ el actor lleva
+> `action_id`. La firma de hardware del cierre queda OPCIONAL en el cliente (el flujo biométrico
+> completo reusa T-2.09; el gabinete físico es GATE-HW).
 
 ### [ ] T-2.12 · Dictamen 2.7 + liberación de reingreso
 - **Componente:** api + mobile
