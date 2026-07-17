@@ -227,6 +227,34 @@ SITE_DIRECTORY = text(
     "ORDER BY z.name NULLS LAST, p.display_name"
 )
 
+# --- evidencia forense (cámara 2.3, T-2.10) --------------------------------------------
+
+# Registra la foto forense en evidence_objects (append-only): kind=photo con el
+# SHA-256 declarado en captura y el s3_key generado por el servidor.
+INSERT_EVIDENCE = text(
+    "INSERT INTO evidence_objects "
+    "(tenant_id, incident_id, kind, s3_key, sha256, ts_from) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:incident AS uuid), 'photo', :s3_key, "
+    ":sha256, :ts_from) "
+    "RETURNING evidence_id"
+)
+
+# Para la verificación: s3_key + huella declarada + incidente/tenant (RLS ya
+# acota el tenant; el router valida además el alcance del sitio).
+EVIDENCE_FOR_VERIFY = text(
+    "SELECT e.evidence_id, e.s3_key, e.sha256, e.tenant_id, e.incident_id, i.site_id "
+    "FROM evidence_objects e JOIN incidents i ON i.incident_id = e.incident_id "
+    "WHERE e.evidence_id = CAST(:evidence AS uuid) AND e.kind = 'photo'"
+)
+
+# Timeline: marca "personas en riesgo" para que el orchestrator OPS notifique
+# al SOC de inmediato (espejo del dictamen_request — T-2.10).
+INSERT_PEOPLE_AT_RISK_ACTION = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "VALUES (CAST(:incident AS uuid), CAST(:tenant AS uuid), 'damage_people_at_risk', "
+    ":actor, CAST(:payload AS jsonb))"
+)
+
 # --- check-ins ------------------------------------------------------------------------
 
 # [T-2.06] checkin_id lo puede traer la COLA OFFLINE del dispositivo: el replay

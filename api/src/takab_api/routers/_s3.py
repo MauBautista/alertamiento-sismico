@@ -45,6 +45,18 @@ def presign_get(settings: Settings, s3_key: str) -> str:
     )
 
 
+def read_object(settings: Settings, s3_key: str) -> bytes | None:
+    """Lee el objeto COMPLETO del bucket de evidencia (verificación de hash,
+    T-2.10). ``None`` si no existe. Se usa server-side: alterar un byte del blob
+    tras la captura cambia su SHA-256 y la verificación falla."""
+    client = s3_client(settings)
+    try:
+        resp = client.get_object(Bucket=settings.evidence_bucket, Key=s3_key)
+    except client.exceptions.NoSuchKey:
+        return None
+    return resp["Body"].read()
+
+
 def presign_put(settings: Settings, s3_key: str, *, content_type: str | None = None) -> str:
     """URL PUT presignada (subida directa del cliente) sobre el bucket de evidencia.
 

@@ -423,6 +423,32 @@ export type EvidenceObject = {
 };
 
 /**
+ * [T-2.10] Registro de una foto forense: el móvil declara el SHA-256 del
+ * archivo FINAL (marca de agua ya horneada) calculado en captura (§4.2); el
+ * backend firma el PUT y guarda la huella para verificarla después.
+ */
+export type EvidenceRegisterIn = {
+    content_type?: string;
+    sha256: string;
+    ts_from?: string | null;
+};
+
+export type EvidenceRegisterOut = {
+    evidence_id: string;
+    upload_url: string | null;
+};
+
+/**
+ * [T-2.10] Resultado de re-hashear el objeto subido contra lo declarado.
+ */
+export type EvidenceVerifyOut = {
+    actual_sha256: string | null;
+    evidence_id: string;
+    expected_sha256: string | null;
+    verified: boolean;
+};
+
+/**
  * Una muestra de features 1 s (no waveform crudo — regla de oro 9).
  */
 export type FeatureRow = {
@@ -1542,6 +1568,33 @@ export type DownloadEvidenceEvidenceEvidenceIdDownloadPostResponses = {
 
 export type DownloadEvidenceEvidenceEvidenceIdDownloadPostResponse = DownloadEvidenceEvidenceEvidenceIdDownloadPostResponses[keyof DownloadEvidenceEvidenceEvidenceIdDownloadPostResponses];
 
+export type VerifyEvidenceEvidenceEvidenceIdVerifyPostData = {
+    body?: never;
+    path: {
+        evidence_id: string;
+    };
+    query?: never;
+    url: '/evidence/{evidence_id}/verify';
+};
+
+export type VerifyEvidenceEvidenceEvidenceIdVerifyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VerifyEvidenceEvidenceEvidenceIdVerifyPostError = VerifyEvidenceEvidenceEvidenceIdVerifyPostErrors[keyof VerifyEvidenceEvidenceEvidenceIdVerifyPostErrors];
+
+export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EvidenceVerifyOut;
+};
+
+export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponse = VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses[keyof VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses];
+
 export type ListGatewaysFleetGatewaysGetData = {
     body?: never;
     path?: never;
@@ -2070,6 +2123,33 @@ export type ListEvidenceIncidentsIncidentIdEvidenceGetResponses = {
 };
 
 export type ListEvidenceIncidentsIncidentIdEvidenceGetResponse = ListEvidenceIncidentsIncidentIdEvidenceGetResponses[keyof ListEvidenceIncidentsIncidentIdEvidenceGetResponses];
+
+export type RegisterEvidenceIncidentsIncidentIdEvidencePostData = {
+    body: EvidenceRegisterIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/evidence';
+};
+
+export type RegisterEvidenceIncidentsIncidentIdEvidencePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegisterEvidenceIncidentsIncidentIdEvidencePostError = RegisterEvidenceIncidentsIncidentIdEvidencePostErrors[keyof RegisterEvidenceIncidentsIncidentIdEvidencePostErrors];
+
+export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EvidenceRegisterOut;
+};
+
+export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponse = RegisterEvidenceIncidentsIncidentIdEvidencePostResponses[keyof RegisterEvidenceIncidentsIncidentIdEvidencePostResponses];
 
 export type GenerateReportIncidentsIncidentIdReportPostData = {
     body?: never;

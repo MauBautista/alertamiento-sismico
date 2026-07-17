@@ -110,12 +110,30 @@ VALUES (%(tenant)s, %(incident)s, 'email', 'parallel', 0,
 ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
 """
 
+# [T-2.10] Reportes de daños con PERSONAS EN RIESGO sin notificar todavía —
+# prioridad máxima (2.4): el SOC recibe un email INMEDIATO. Mismo patrón que
+# dictamen_request pero SIN dedup por "ya atendido": una vida en riesgo se
+# notifica siempre (el índice único (action_id, channel) evita duplicados).
+_PEOPLE_AT_RISK_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'damage_people_at_risk'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
 _DUE_JOBS_SQL = """
 SELECT j.job_id, j.tenant_id, j.incident_id, j.channel, j.mode, j.position,
        j.target, j.due_at, j.deadline_at, j.action_id, j.attempts,
        i.severity, i.trigger, i.state, i.opened_at, i.event_id, i.site_id,
        s.name AS site_name, s.code AS site_code,
-       a.actor AS action_actor, a.payload AS action_payload
+       a.kind AS action_kind, a.actor AS action_actor, a.payload AS action_payload
 FROM notification_jobs j
 JOIN incidents i ON i.incident_id = j.incident_id
 JOIN sites s ON s.site_id = i.site_id
@@ -221,6 +239,7 @@ def run_notify_pass(
     counts["enqueued"] += _enqueue_dictamen_requests(
         conn, config_cache, now=now, lookback_s=lookback
     )
+    counts["enqueued"] += _enqueue_people_at_risk(conn, config_cache, now=now, lookback_s=lookback)
     _dispatch(conn, settings, providers, config_cache, counts, now=now)
 
     if any(counts.values()):
@@ -313,6 +332,42 @@ def _enqueue_dictamen_requests(
                 "incident": row["incident_id"],
                 "target": json.dumps({"to": emails}),
                 "due_at": row["ts"],  # vence YA: paralelo, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _enqueue_people_at_risk(
+    conn: psycopg.Connection,
+    config_cache: dict,
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-2.10] Un email INMEDIATO al SOC por cada reporte con personas en
+    riesgo. Reusa el destino operativo (``notifications.inspector_emails``) y
+    el mismo INSERT idempotente por acción que el dictamen."""
+    rows = conn.execute(
+        _PEOPLE_AT_RISK_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        emails = resolve_inspector_emails(_config_for(conn, config_cache, row))
+        if not emails:
+            logger.warning(
+                "damage_people_at_risk %s sin notifications.inspector_emails: se omite",
+                row["action_id"],
+            )
+            continue
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": emails}),
+                "due_at": row["ts"],  # vence YA: prioridad máxima, sin cascada
                 "action": row["action_id"],
             },
         )
@@ -609,10 +664,18 @@ def _message(row: dict, *, base_url: str = "") -> dict:
     }
     if row.get("action_id"):
         payload = row.get("action_payload") or {}
-        message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
-        message["kind"] = "dictamen_request"
-        message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
-        message["note"] = payload.get("note")
+        kind = row.get("action_kind")
+        if kind == "damage_people_at_risk":
+            # [T-2.10] Prioridad máxima: el SOC ve al frente "personas en riesgo".
+            message["headline"] = f"TAKAB Ailert · PERSONAS EN RIESGO · {row['site_name']}"
+            message["kind"] = "damage_people_at_risk"
+            message["reported_by"] = row.get("action_actor")
+            message["report_id"] = payload.get("report_id")
+        else:
+            message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
+            message["kind"] = "dictamen_request"
+            message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
+            message["note"] = payload.get("note")
         if base_url:
             message["link"] = f"{base_url.rstrip('/')}/triage?incident={row['incident_id']}"
     return message

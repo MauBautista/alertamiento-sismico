@@ -594,6 +594,21 @@ async def test_damage_report_deriva_prioridad_y_llega_a_consola(base_data, make_
         assert created.status_code == 201
         assert created.json()["people_at_risk"] is True
 
+        # [T-2.10] personas en riesgo ⇒ acción en el timeline para que el
+        # orchestrator OPS notifique al SOC de inmediato.
+        engine = get_engine()
+        async with engine.begin() as conn:
+            kinds = (
+                await conn.execute(
+                    text(
+                        "SELECT kind FROM incident_actions WHERE incident_id = :i "
+                        "AND kind = 'damage_people_at_risk'"
+                    ),
+                    {"i": incident_id},
+                )
+            ).all()
+        assert len(kinds) == 1
+
         # la consola (soc_operator del tenant) LEE el reporte para Triage
         soc = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
         listed = await client.get(url, headers=au.bearer(soc))

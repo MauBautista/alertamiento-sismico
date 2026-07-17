@@ -1903,6 +1903,111 @@
         "title": "EvidenceObject",
         "type": "object"
       },
+      "EvidenceRegisterIn": {
+        "description": "[T-2.10] Registro de una foto forense: el móvil declara el SHA-256 del\narchivo FINAL (marca de agua ya horneada) calculado en captura (§4.2); el\nbackend firma el PUT y guarda la huella para verificarla después.",
+        "properties": {
+          "content_type": {
+            "default": "image/jpeg",
+            "maxLength": 120,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "ts_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts From"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "title": "EvidenceRegisterIn",
+        "type": "object"
+      },
+      "EvidenceRegisterOut": {
+        "properties": {
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "upload_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Url"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "upload_url"
+        ],
+        "title": "EvidenceRegisterOut",
+        "type": "object"
+      },
+      "EvidenceVerifyOut": {
+        "description": "[T-2.10] Resultado de re-hashear el objeto subido contra lo declarado.",
+        "properties": {
+          "actual_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Sha256"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expected_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Sha256"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "verified",
+          "expected_sha256",
+          "actual_sha256"
+        ],
+        "title": "EvidenceVerifyOut",
+        "type": "object"
+      },
       "FeatureRow": {
         "description": "Una muestra de features 1 s (no waveform crudo — regla de oro 9).",
         "properties": {
@@ -6456,6 +6561,47 @@
         "summary": "Download Evidence"
       }
     },
+    "/evidence/{evidence_id}/verify": {
+      "post": {
+        "description": "[T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la\nhuella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.\nLo consumen Triage (consola) y los tácticos que revisan su propia evidencia.",
+        "operationId": "verify_evidence_evidence__evidence_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceVerifyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Evidence"
+      }
+    },
     "/fleet/gateways": {
       "get": {
         "description": "Gateways del tenant con su estado derivado del último ``device_health``.",
@@ -7150,7 +7296,7 @@
         "summary": "List Damage Reports"
       },
       "post": {
-        "description": "Reporte de daños (2.4) → alimenta Triage. ``people_at_risk`` se DERIVA de\nla categoría ``people_trapped`` (prioridad máxima; la notificación inmediata\nal SOC se cablea con la push en T-2.10 — sin fingirla aquí).",
+        "description": "Reporte de daños (2.4) → alimenta Triage. ``people_at_risk`` se DERIVA de\nla categoría ``people_trapped`` (prioridad máxima). [T-2.10] Con personas en\nriesgo, se registra un ``incident_action`` que el orchestrator OPS convierte\nen notificación INMEDIATA al SOC (email por la cascada existente).",
         "operationId": "submit_damage_report_incidents__incident_id__damage_reports_post",
         "parameters": [
           {
@@ -7430,6 +7576,55 @@
           }
         },
         "summary": "List Evidence"
+      },
+      "post": {
+        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.",
+        "operationId": "register_evidence_incidents__incident_id__evidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceRegisterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRegisterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Evidence"
       }
     },
     "/incidents/{incident_id}/report": {

@@ -362,6 +362,36 @@ class DamageReportOut(BaseModel):
     created_at: datetime
 
 
+# --- evidencia forense (cámara 2.3) ---------------------------------------------
+
+
+class EvidenceRegisterIn(BaseModel):
+    """[T-2.10] Registro de una foto forense: el móvil declara el SHA-256 del
+    archivo FINAL (marca de agua ya horneada) calculado en captura (§4.2); el
+    backend firma el PUT y guarda la huella para verificarla después."""
+
+    #: SHA-256 hex (64) del archivo final — la verificación server-side lo
+    #: confronta contra el objeto realmente subido (alterar un byte ⇒ falla).
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    content_type: str = Field(default="image/jpeg", max_length=120)
+    ts_from: datetime | None = None
+
+
+class EvidenceRegisterOut(BaseModel):
+    evidence_id: UUID
+    #: PUT presignado (subida directa sin credenciales AWS); None sin bucket.
+    upload_url: str | None
+
+
+class EvidenceVerifyOut(BaseModel):
+    """[T-2.10] Resultado de re-hashear el objeto subido contra lo declarado."""
+
+    evidence_id: UUID
+    verified: bool
+    expected_sha256: str | None
+    actual_sha256: str | None
+
+
 # --- assets (gestión) -------------------------------------------------------------
 
 
