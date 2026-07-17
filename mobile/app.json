@@ -61,7 +61,13 @@
           "locationWhenInUsePermission": "Su ubicación se envía ÚNICAMENTE si pide ayuda en un check-in de emergencia y dio su consentimiento."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La cámara se usa para levantar evidencia forense de daños con marca de agua e integridad SHA-256."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
