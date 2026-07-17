@@ -1,0 +1,19 @@
+# E2E · Dictamen firmado en consola → push → certificado → reingreso liberado.
+# Precondición: un inspector firma un dictamen HABITABLE en la consola web
+# ANTES o DURANTE este flujo (el push despierta la app).
+appId: com.takab.ailert
+env:
+  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
+  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+
+# El occupant estaba en bloqueo de reingreso (1.5); al firmarse el dictamen
+# habitable, mobile-state pasa a reentry_approved y Home lo declara.
+- assertVisible:
+    id: "reentry-banner"
+    timeout: 60000        # espera el push + re-lectura de mobile-state
+- assertVisible:
+    text: ".*REINGRESO AUTORIZADO.*"

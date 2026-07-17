@@ -1,0 +1,29 @@
+# E2E · Crisis → check-in de vida → cola de sync (occupant).
+# Precondición: incidente ACTIVO en el sitio del occupant (staging).
+appId: com.takab.ailert
+env:
+  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
+  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+
+# 1.2/1.3 · Toma total de crisis: instrucción gigante, SIN magnitud/ETA.
+- assertVisible:
+    text: ".*(EVACÚE|REPLIÉGUESE|PROTÉJASE).*"
+- assertNotVisible: "magnitud"
+- assertNotVisible:
+    text: "M ?[0-9]"          # jamás magnitud preliminar (§2.1-A)
+- assertVisible:
+    text: "T\\+.*"            # contador ASCENDENTE
+
+# El servidor concluye la sacudida ⇒ 1.4 check-in de vida.
+- assertVisible: "¿Se encuentra bien?"
+- tapOn: "ESTOY BIEN"
+- assertVisible:
+    text: ".*(GUARDADO EN ESTE DISPOSITIVO|RECIBIDO POR EL SERVIDOR).*"
+
+# 2.5 · La cola de sync refleja el check-in.
+- tapOn: "CUENTA"          # navegación de respaldo a tabs; ajustar si aplica
+- assertVisible: "SINCRONIZACIÓN.*"

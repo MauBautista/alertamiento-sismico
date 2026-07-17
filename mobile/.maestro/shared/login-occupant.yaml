@@ -1,0 +1,17 @@
+# Subflujo · login del occupant (Hosted UI del pool de ocupantes, PKCE).
+appId: com.takab.ailert
+---
+- tapOn:
+    text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
+- extendedWaitUntil:
+    visible: "Email"
+    timeout: 20000
+- tapOn: "Email"
+- inputText: ${OCCUPANT_EMAIL}
+- tapOn: "Password"
+- inputText: ${OCCUPANT_PASSWORD}
+- tapOn:
+    text: ".*(Sign in|Iniciar sesión).*"
+- extendedWaitUntil:
+    notVisible: "Password"
+    timeout: 20000

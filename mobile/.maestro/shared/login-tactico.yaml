@@ -1,0 +1,19 @@
+# Subflujo · login del táctico (pool con MFA obligatorio: pide TOTP).
+appId: com.takab.ailert
+---
+- tapOn:
+    text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
+- extendedWaitUntil:
+    visible: "Email"
+    timeout: 20000
+- tapOn: "Email"
+- inputText: ${TACTICO_EMAIL}
+- tapOn: "Password"
+- inputText: ${TACTICO_PASSWORD}
+- tapOn:
+    text: ".*(Sign in|Iniciar sesión).*"
+# MFA obligatorio del pool táctico (RBAC §4.3): el TOTP se ingresa a mano en la
+# corrida de aceptación (Maestro no genera el código; usar `maestro --env TOTP`).
+- extendedWaitUntil:
+    notVisible: "Password"
+    timeout: 40000

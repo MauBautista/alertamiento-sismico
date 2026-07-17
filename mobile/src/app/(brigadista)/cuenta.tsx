@@ -1,12 +1,7 @@
-import { Pending } from "@/ui/Pending";
+// 1.8 · Cuenta del táctico — misma pantalla compartida (sin fila TOTP: el MFA
+// del brigadista/security_guard es obligatorio a nivel de pool, no opcional).
+import { AccountScreen } from "@/features/account/AccountScreen";
 
 export default function Cuenta() {
-  return (
-    <Pending
-      screen="1.8 (compartida)"
-      title="Cuenta"
-      task="T-2.07"
-      note="Misma pantalla que el ocupante; los tácticos NO ven la fila de MFA opcional (su MFA es obligatorio a nivel de pool)."
-    />
-  );
+  return <AccountScreen />;
 }

@@ -1,0 +1,27 @@
+# E2E · Táctico: cámara forense → formulario de daños → llega a Triage.
+# Precondición: incidente ACTIVO; el táctico enrolado con dictamen_read/damage.
+appId: com.takab.ailert
+env:
+  TACTICO_EMAIL: ${TACTICO_EMAIL}
+  TACTICO_PASSWORD: ${TACTICO_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-tactico.yaml
+
+# 2.4 · Formulario de daños con foto forense (2.3).
+- tapOn: "TRIAGE"
+- assertVisible: "REPORTE RÁPIDO DE DAÑOS"
+- tapOn:
+    id: "cat-people_trapped"
+- assertVisible:
+    text: ".*PERSONAS EN RIESGO · PRIORIDAD MÁXIMA.*"
+- tapOn: "CÁMARA FORENSE"
+# Cámara: capturar y usar (la marca de agua se hornea en el pixel).
+- tapOn: "CAPTURAR"
+- tapOn: "USAR ESTA FOTO"
+- assertVisible:
+    text: ".*1 foto\\(s\\).*"
+- tapOn: "ENVIAR REPORTE"
+# La verificación de que aparece en Triage de la consola con hash verificado
+# se hace en la web (StructuralTriage) durante la corrida de aceptación.

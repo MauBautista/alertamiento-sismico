@@ -2289,7 +2289,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > `windowRemaining` cuenta atrás), GPS adjunto solo con consentimiento; enlace desde Home (1.1).
 > **api 893 · web 584 · mobile 190 (tsc+lint limpios) · SDK sin drift.**
 
-### [ ] T-2.14 · E2E + hardening + runbook de cierre de fase
+### [x] T-2.14 · E2E + hardening + runbook de cierre de fase
 - **Componente:** mobile + docs
 - E2E (Maestro preferido, o Detox): crisis→check-in→sync; táctico foto→formulario→sync→Triage;
   dictamen→liberación; pánico 2/30 s; TODOS los flujos offline de la spec §4.2 en modo avión.
@@ -2299,3 +2299,21 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   (incluye verificar contra hardware que los modos de prueba del gabinete no alertan móviles)
   y `GATE-LEGAL` (aviso LFPDPPP + `compliance_labels` con el marco normativo correcto —
   pregunta abierta #1 del ANALISIS).
+
+> **ESTADO (2026-07-17): COMPLETA (código+docs; los GATEs físicos quedan escritos sin marcar).**
+> **E2E Maestro** (`mobile/.maestro/`): 5 flujos de los caminos §4.2 — crisis→check-in→sync,
+> foto forense→daños→Triage, dictamen→liberación, pánico quórum-de-2, offline en modo avión —
+> + subflujos de login (occupant/táctico) y README. Corren contra un development build en
+> dispositivo (evidencia ejecutable de `GATE-HW`, incluye verificar que los modos de prueba del
+> gabinete NO alertan móviles). **Hardening:** cero `<Pending>` (última cuenta táctica ahora usa
+> `AccountScreen` compartida — sin fila TOTP para el táctico); `.env` gitignored y sin secretos
+> en `src` (solo `EXPO_PUBLIC_*` estáticos); badge de cifrado honesto; lint/tests con CERO
+> warnings; la superficie sensible jamás confía en el cliente. **Certificate pinning:** decisión
+> de ingeniería documentada (pin al SPKI del intermedio Let's Encrypt + backup del root vía
+> expo-build-properties, NO al leaf que rota; rotación con dos pines conviviendo; verificación
+> con mitmproxy) — el pin real es `GATE-HW` (no se hornean pines de producción en el repo de
+> features). **Runbook** `takab-docs/runbooks/RUNBOOK-cierre-fase2.md` con la matriz pantalla→
+> tarea→evidencia y los 4 GATEs (`DECISIONS`: entitlement Apple en trámite; `STORE`: credenciales
+> APNs/FCM + apply + tono SASMEX licenciado; `HW`: biometría/attestation/cámara/pinning/E2E;
+> `LEGAL`: marco normativo — pregunta abierta #1 — + `compliance_labels` + aviso LFPDPPP).
+> **api 893 · web 584 · mobile 190 · SDK sin drift.**
