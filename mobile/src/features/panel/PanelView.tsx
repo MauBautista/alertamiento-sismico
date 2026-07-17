@@ -3,7 +3,7 @@
 // @takab/sdk — cero transformaciones divergentes). Features de 1 s: pga/pgv/
 // rms/stalta — JAMÁS forma de onda (regla de oro 9).
 import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { timeAgoLabel } from "@/ui/timeAgo";
 import { fontSize, palette, radius, space } from "@/ui/theme";
@@ -45,6 +45,12 @@ export function PanelView(props: {
   groups: ActuatorGroup[];
   incidentOpen: boolean;
   nowMs: number;
+  /** [T-2.09] Controles tácticos server-driven (allowed_actions); ausentes
+   *  si el rol no los porta — jamás un botón que siempre daría 403. */
+  canActivate?: boolean;
+  canSilence?: boolean;
+  onActivate?: () => void;
+  onSilence?: () => void;
 }) {
   const h = props.health;
   return (
@@ -104,6 +110,36 @@ export function PanelView(props: {
           </>
         )}
       </View>
+
+      {props.canActivate || props.canSilence ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>CONTROL REMOTO · SIRENA</Text>
+          <View style={styles.controlRow}>
+            {props.canActivate ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onActivate}
+                style={[styles.controlBtn, { borderColor: palette.crit }]}
+                testID="ctl-activate"
+              >
+                <Text style={[styles.controlText, { color: palette.crit }]}>
+                  ACTIVAR SIRENA
+                </Text>
+              </Pressable>
+            ) : null}
+            {props.canSilence ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onSilence}
+                style={[styles.controlBtn, { borderColor: palette.warn }]}
+                testID="ctl-silence"
+              >
+                <Text style={[styles.controlText, { color: palette.warn }]}>SILENCIAR</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>ACTUADORES BMS · ARBITRAJE</Text>
@@ -165,4 +201,13 @@ const styles = StyleSheet.create({
   bmsRight: { flexDirection: "row", alignItems: "center", gap: space[1] },
   bmsState: { fontSize: fontSize.sm, fontWeight: "800", letterSpacing: 1 },
   bmsCount: { color: palette.fg3, fontSize: fontSize.xs },
+  controlRow: { flexDirection: "row", gap: space[2] },
+  controlBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[3],
+    alignItems: "center",
+  },
+  controlText: { fontWeight: "800", fontSize: fontSize.sm, letterSpacing: 1 },
 });

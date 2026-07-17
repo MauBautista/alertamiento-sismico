@@ -8,20 +8,27 @@ import {
   TOPIC_INCIDENTS,
   TOPIC_SITE_STATE,
   groupActions,
+  type CommandOut,
   type FeatureRow,
   type IncidentActionOut,
   type SiteStateFrame,
 } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { Modal, View } from "react-native";
 
+import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
+import { ControlSheet } from "@/features/control/ControlSheet";
+import { preconditionsFor } from "@/features/control/preconditions";
+import { executeTacticalCommand, type TacticalAction } from "@/features/control/service";
 import { mergeAction } from "@/features/panel/actions";
 import { applyHealthFrame } from "@/features/panel/health";
 import { PanelView, type LivePill } from "@/features/panel/PanelView";
 import { getLiveSocket } from "@/live/socket";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+import { space } from "@/ui/theme";
 
 export default function Panel() {
   const siteId = useWatchedSiteId();
@@ -122,6 +129,43 @@ export default function Panel() {
     [data, healthFrame],
   );
 
+  // [T-2.09] Control táctico 2.2 server-driven por allowed_actions.
+  const actions = useSessionStore((s) => s.me?.allowed_actions);
+  const canActivate = actions?.manual_activate === true;
+  const canSilence = actions?.siren_silence === true;
+  const [control, setControl] = useState<TacticalAction | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<CommandOut | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
+
+  // La sirena "activa" para el preflight de silenciar sale de la traza BMS.
+  const sirenActive = groups.some(
+    (g) => g.kind === "siren_on" && g.view.state === "ACTIVADA",
+  );
+
+  const openControl = (action: TacticalAction) => {
+    setControl(action);
+    setResult(null);
+    setControlError(null);
+  };
+
+  const confirmControl = () => {
+    if (control === null || siteId === null) {
+      return;
+    }
+    setBusy(true);
+    setControlError(null);
+    void (async () => {
+      const out = await executeTacticalCommand({ siteId, action: control });
+      setBusy(false);
+      if (out.ok) {
+        setResult(out.command);
+      } else {
+        setControlError(out.reason);
+      }
+    })();
+  };
+
   return (
     <StateFrame
       empty={siteId === null}
@@ -131,20 +175,55 @@ export default function Panel() {
       staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
     >
       {data !== null && health !== null ? (
-        <PanelView
-          featuresAtMs={featuresAtMs}
-          groups={groups}
-          health={health}
-          incidentOpen={incidentId !== null}
-          latestByChannel={[...latestByChannel.values()].sort((a, b) =>
-            a.channel.localeCompare(b.channel),
-          )}
-          live={live}
-          nowMs={nowMs}
-          siteName={data.site_name}
-          tier={data.latest_tier}
-        />
+        <>
+          <PanelView
+            canActivate={canActivate}
+            canSilence={canSilence}
+            featuresAtMs={featuresAtMs}
+            groups={groups}
+            health={health}
+            incidentOpen={incidentId !== null}
+            latestByChannel={[...latestByChannel.values()].sort((a, b) =>
+              a.channel.localeCompare(b.channel),
+            )}
+            live={live}
+            nowMs={nowMs}
+            onActivate={() => openControl("activate")}
+            onSilence={() => openControl("deactivate")}
+            siteName={data.site_name}
+            tier={data.latest_tier}
+          />
+          <Modal
+            animationType="slide"
+            onRequestClose={() => setControl(null)}
+            transparent
+            visible={control !== null}
+          >
+            <View style={modalStyles.backdrop}>
+              {control !== null ? (
+                <ControlSheet
+                  action={control}
+                  busy={busy}
+                  error={controlError}
+                  onClose={() => setControl(null)}
+                  onConfirm={confirmControl}
+                  preconditions={preconditionsFor(control, data, { sirenActive })}
+                  result={result}
+                />
+              ) : null}
+            </View>
+          </Modal>
+        </>
       ) : null}
     </StateFrame>
   );
 }
+
+const modalStyles = {
+  backdrop: {
+    flex: 1,
+    justifyContent: "flex-end" as const,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    padding: space[3],
+  },
+};
