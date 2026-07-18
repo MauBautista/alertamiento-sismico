@@ -8,11 +8,45 @@ import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
 
 import { discoveryFor, POOLS, poolConfigured, REDIRECT_URI } from "./config";
-import { gateFor } from "./profileGate";
+import { clearPendingAuth, setPendingAuth } from "./pendingAuth";
+import { gateFor, type ProfileGroup } from "./profileGate";
 import { clearSession, loadSession, saveSession } from "./secureTokens";
 import { useSessionStore } from "./session.store";
 
 WebBrowser.maybeCompleteAuthSession();
+
+// Un authorization code es de un solo uso. En Android el hook (WebBrowser) y la
+// ruta /auth/callback (deep link) podrían intentar canjearlo ambos: registramos
+// los codes ya consumidos para que el segundo camino sea un no-op idempotente.
+const consumedCodes = new Set<string>();
+
+/** Canjea el authorization code por tokens (PKCE) y resuelve la sesión vía /me.
+ * Compartido por el hook (iOS: el WebBrowser intercepta el redirect) y por la
+ * ruta /auth/callback (Android: el redirect llega como deep link a expo-router). */
+export async function exchangeAndResolve(
+  profile: ProfileGroup,
+  code: string,
+  codeVerifier: string,
+): Promise<void> {
+  if (consumedCodes.has(code)) {
+    return; // ya canjeado por el otro camino
+  }
+  consumedCodes.add(code);
+  const pool = POOLS[profile];
+  const tokens = await AuthSession.exchangeCodeAsync(
+    {
+      clientId: pool.clientId,
+      code,
+      redirectUri: REDIRECT_URI,
+      extraParams: { code_verifier: codeVerifier },
+    },
+    discoveryFor(pool),
+  );
+  if (!tokens.idToken) {
+    throw new Error("el intercambio no devolvió id_token");
+  }
+  await resolveSessionFromMe(tokens.idToken, tokens.refreshToken);
+}
 
 /** Consulta /me con el token dado, aplica el gate default-deny y fija el
  * estado de sesión (+persistencia segura). Lanza si /me no responde. */
@@ -22,7 +56,16 @@ async function resolveSessionFromMe(idToken: string, refreshToken?: string): Pro
   useSessionStore.setState({ idToken });
   const res = await meMeGet();
   if (!res.data) {
-    throw new Error("no se pudo verificar la sesión (/me)");
+    // Superficie honesta del fallo: status + motivo del backend (`{detail}`),
+    // no un mensaje genérico. Un 401 aquí suele ser el token rechazado por la
+    // API (p.ej. audience del cliente móvil no aceptada); un 5xx/redde caída.
+    const status = res.response?.status;
+    const detail =
+      res.error && typeof res.error === "object" && "detail" in res.error
+        ? String((res.error as { detail?: unknown }).detail)
+        : null;
+    const suffix = [status ? `HTTP ${status}` : null, detail].filter(Boolean).join(" · ");
+    throw new Error(`no se pudo verificar la sesión (/me${suffix ? ` — ${suffix}` : ""})`);
   }
   const gate = gateFor(res.data);
   if (!gate.allowed) {
@@ -114,19 +157,9 @@ export function useLogin(profile: "occupant" | "tactical"): LoginController {
     }
     void (async () => {
       try {
-        const tokens = await AuthSession.exchangeCodeAsync(
-          {
-            clientId: pool.clientId,
-            code: response.params.code,
-            redirectUri: REDIRECT_URI,
-            extraParams: { code_verifier: request.codeVerifier ?? "" },
-          },
-          discovery,
-        );
-        if (!tokens.idToken) {
-          throw new Error("el intercambio no devolvió id_token");
-        }
-        await resolveSessionFromMe(tokens.idToken, tokens.refreshToken);
+        // iOS intercepta el redirect aquí ⇒ la ruta /auth/callback no correrá.
+        clearPendingAuth();
+        await exchangeAndResolve(profile, response.params.code, request.codeVerifier ?? "");
       } catch (err) {
         setExchangeError(err instanceof Error ? err.message : String(err));
       }
@@ -140,6 +173,11 @@ export function useLogin(profile: "occupant" | "tactical"): LoginController {
     error: exchangeError ?? providerError,
     promptAsync: () => {
       setExchangeError(null);
+      // Android: el redirect llega como deep link a /auth/callback, que necesita
+      // el verifier + state para canjear el code (el hook no los verá).
+      if (request?.codeVerifier) {
+        setPendingAuth({ profile, codeVerifier: request.codeVerifier, state: request.state });
+      }
       void promptAsync();
     },
   };
