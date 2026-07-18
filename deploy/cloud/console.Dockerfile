@@ -24,10 +24,18 @@ WORKDIR /repo
 COPY shared/sdk-ts/package.json shared/sdk-ts/package-lock.json shared/sdk-ts/
 RUN cd shared/sdk-ts && npm ci
 
+# @takab/design-tokens (T-2.01): TS crudo, SIN dependencias ni lock ni build
+# (`main`/`types` = src/index.ts). Su package.json debe existir antes del `npm ci`
+# del web para que resuelva el `file:../shared/design-tokens`; el árbol completo
+# se copia más abajo para que tsc/vite lean el source. Sin esto la consola no
+# compila (TS2307: Cannot find module '@takab/design-tokens').
+COPY shared/design-tokens/package.json shared/design-tokens/
+
 COPY web/package.json web/package-lock.json web/
 RUN cd web && npm ci
 
 COPY shared/sdk-ts shared/sdk-ts
+COPY shared/design-tokens shared/design-tokens
 COPY web web
 
 ARG VITE_COGNITO_AUTHORITY=""
