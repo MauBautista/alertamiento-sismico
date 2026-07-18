@@ -27,7 +27,18 @@ class AuthError(Exception):
         self.reason = reason
 
 
-def _decode(token: str, *, issuer: str, audience: str, jwks: JWKSProvider) -> dict[str, Any]:
+def _parse_aud(value: str) -> str | list[str]:
+    """Audiences aceptados para un pool. Coma-separado ⇒ lista: el pool principal
+    lo comparten el cliente WEB y el MÓVIL (``aud`` distinto por cliente), y PyJWT
+    valida OK si el ``aud`` del token coincide con CUALQUIERA de la lista. Un valor
+    único (o vacío) se pasa tal cual ⇒ comportamiento idéntico al histórico."""
+    parts = [a.strip() for a in value.split(",") if a.strip()]
+    return parts if len(parts) > 1 else value
+
+
+def _decode(
+    token: str, *, issuer: str, audience: str | list[str], jwks: JWKSProvider
+) -> dict[str, Any]:
     """Verificación DURA contra una config concreta de pool (firma/iss/aud/exp)."""
     try:
         header = jwt.get_unverified_header(token)
@@ -77,7 +88,9 @@ def _decode(token: str, *, issuer: str, audience: str, jwks: JWKSProvider) -> di
 
 def decode_verify(token: str, settings: Any, jwks: JWKSProvider) -> dict[str, Any]:
     """Devuelve los claims verificados contra el pool PRINCIPAL o lanza 401."""
-    return _decode(token, issuer=settings.auth_issuer, audience=settings.auth_audience, jwks=jwks)
+    return _decode(
+        token, issuer=settings.auth_issuer, audience=_parse_aud(settings.auth_audience), jwks=jwks
+    )
 
 
 def decode_verify_any(
@@ -103,7 +116,7 @@ def decode_verify_any(
             claims = _decode(
                 token,
                 issuer=occ_issuer,
-                audience=settings.auth_occupants_audience,
+                audience=_parse_aud(settings.auth_occupants_audience),
                 jwks=jwks_occupants,
             )
             return claims, "occupants"

@@ -33,7 +33,9 @@ CLOUD_ENV=$(
   cat <<EOF
 TAKAB_API_AWS_REGION=${AWS_REGION}
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
-TAKAB_API_AUTH_AUDIENCE=$(tf client_id)
+# Audience = pool principal compartido por el cliente WEB y el MÓVIL táctico:
+# coma-separado ⇒ la API acepta el `aud` de cualquiera (tokens.py:_parse_aud).
+TAKAB_API_AUTH_AUDIENCE=$(tf client_id),$(tf mobile_tactical_client_id)
 TAKAB_API_AUTH_JWKS_URL=$(tf issuer)/.well-known/jwks.json
 TAKAB_API_QUEUE_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
 TAKAB_API_QUEUE_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')
