@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab"
     aws_region: str = "us-east-2"
 
+    # SHA corto del commit con el que se construyó la imagen; lo inyecta
+    # deploy/cloud/deploy.sh. Se expone en /health para poder responder "qué está
+    # desplegado" sin abrir una sesión SSM contra la instancia.
+    build_sha: str = "unknown"
+
     queue_url_events: str = ""
     queue_url_telemetry: str = ""
     queue_url_backfill: str = ""

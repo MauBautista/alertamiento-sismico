@@ -227,6 +227,7 @@ export const restoreGatewayFleetGatewaysGatewayIdRestorePost = <ThrowOnError ext
 
 /**
  * Health
+ * Salud del servicio y commit desplegado.
  */
 export const healthHealthGet = <ThrowOnError extends boolean = false>(options?: Options<HealthHealthGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<HealthHealthGetResponse, unknown, ThrowOnError>({
