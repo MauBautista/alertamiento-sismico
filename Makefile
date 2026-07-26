@@ -1,14 +1,19 @@
-.PHONY: dev down lint test fmt api web edge db install db-tunnel cloud-stop cloud-start billing cloud-users \
-        cloud-mobile-users cloud-staging-incident demo-fase1 demo-db cloud-images cloud-deploy
+.PHONY: dev down lint test fmt drift api web edge mobile db install db-tunnel cloud-stop cloud-start \
+        billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
+        cloud-images cloud-deploy
 
 API_DIR := api
 WEB_DIR := web
 EDGE_DIR := edge
+MOBILE_DIR := mobile
+SDK_DIR := shared/sdk-ts
+TOKENS_DIR := shared/design-tokens
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
 	cd $(WEB_DIR) && npm install
 	cd $(EDGE_DIR) && uv sync
+	cd $(MOBILE_DIR) && npm install
 
 db:
 	docker compose up -d db
@@ -21,6 +26,11 @@ web:
 
 edge:
 	cd $(EDGE_DIR) && uv run takab-edge
+
+# ufw bloquea el 8081 ⇒ el QR de `expo start` no conecta; para device real usa
+# REACT_NATIVE_PACKAGER_HOSTNAME=localhost npx expo run:android (túnel adb).
+mobile:
+	cd $(MOBILE_DIR) && npx expo start
 
 dev: db
 	$(MAKE) -j2 api web
@@ -64,10 +74,14 @@ soc-local: demo-db
 down:
 	docker compose down
 
+# Paridad con ci.yml, incluido `mobile`: el job existe en CI desde T-2.00 pero el
+# Makefile lo ignoraba, y por ahí se coló un merge en rojo (main, 2026-07-18).
+# `ruff format --check` de api también faltaba: CI lo corre, make no.
 lint:
-	cd $(API_DIR) && ruff check .
+	cd $(API_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(WEB_DIR) && npm run lint && npm run format:check
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
+	cd $(MOBILE_DIR) && npx expo lint && npm run typecheck
 
 # Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de
 # api (B-2) — sus imports son takab_api + psycopg, sin dependencia del edge.
@@ -76,6 +90,18 @@ test:
 	cd $(API_DIR) && uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q
+	cd $(MOBILE_DIR) && npm test
+
+# Gates de drift: el contrato y los tipos generados deben coincidir con lo
+# commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo
+# invocaba nadie (ni CI ni make) pese a estar escrito como gate.
+drift:
+	cd $(API_DIR) && uv run python scripts/export_openapi.py
+	git diff --exit-code $(SDK_DIR)/openapi.json
+	cd $(SDK_DIR) && npm run generate
+	git diff --exit-code $(SDK_DIR)/src/gen
+	cd $(SDK_DIR) && npm run check
+	cd $(TOKENS_DIR) && npm run check
 
 fmt:
 	cd $(API_DIR) && ruff format . && ruff check --fix .
