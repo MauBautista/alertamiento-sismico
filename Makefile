@@ -1,6 +1,6 @@
 .PHONY: dev down lint test fmt drift api web edge mobile db install db-tunnel cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
-        cloud-images cloud-deploy
+        cloud-images cloud-deploy cloud-allow-my-ip
 
 API_DIR := api
 WEB_DIR := web
@@ -170,6 +170,12 @@ cloud-deploy:
 # Usuarios de consola en Cognito (T-1.62): un perfil por rol web, con su grupo
 # (sin grupo el login da 401) y su contraseña en Secrets Manager. Idempotente.
 # Cada usuario enrola MFA TOTP en su primer login: el pool lo exige a todos.
+# La IP doméstica es dinámica: cada rotación deja la consola inalcanzable. Este
+# target la reabre y, de paso, limpia las reglas manuales que harían fallar el
+# siguiente `terraform apply` por duplicada. MODE=--status|--revoke.
+cloud-allow-my-ip:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/allow_my_ip.sh $(MODE)
+
 cloud-users:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_console_users.sh $(ROLES)
 
