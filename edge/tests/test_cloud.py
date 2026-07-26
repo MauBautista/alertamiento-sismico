@@ -274,6 +274,60 @@ def test_reconnect_thread_flushes_on_start(settings, tmp_path):
         cloud.stop()
 
 
+def test_backoff_acotado_no_desborda_tras_miles_de_intentos():
+    """El backoff NUNCA debe desbordar por muchos intentos que acumule.
+
+    Bug real (gw-dev-0001, 2026-07-25 02:37): con `base * 2**attempt` y `attempt`
+    sin tope, el intento ~1024 (≈17 h de WAN caída) lanzaba
+    `OverflowError: int too large to convert to float` DENTRO del `except`, matando
+    el hilo de reconexión. El gabinete quedó mudo hacia la nube 41 h — con 3 296
+    mensajes en el spool — hasta que alguien lo miró. El camino SASMEX→sirena siguió
+    intacto (es local y determinista), pero la nube no supo nada.
+    """
+    from takab_edge.cloud import _backoff_delay
+
+    assert _backoff_delay(1.0, 0, 60.0) == 1.0  # primer intento = base
+    assert _backoff_delay(1.0, 3, 60.0) == 8.0  # crece exponencialmente
+    assert _backoff_delay(1.0, 10, 60.0) == 60.0  # y se topa en el máximo
+    for attempt in (1_023, 1_024, 10_000, 1_000_000):  # el rango que mató al hilo
+        delay = _backoff_delay(1.0, attempt, 60.0)
+        assert delay == 60.0, f"intento {attempt} debe seguir topado, no desbordar"
+
+
+def test_hilo_de_reconexion_sobrevive_a_una_excepcion_inesperada(settings, tmp_path):
+    """El hilo de reconexión NO puede morir: si muere, el gabinete queda mudo hacia la
+    nube PARA SIEMPRE y en silencio, hasta un reinicio manual. Es exactamente lo que
+    pasó en el Pi real con el OverflowError del backoff."""
+    import time
+
+    fast = settings.model_copy(update={"cloud_backoff_s": 0.02})
+    transport = FakeMqttTransport()
+    cloud = CloudConnector(fast, transport=transport, spool_dir=str(tmp_path))
+    cloud.set_online(True)  # enlace arriba ⇒ el hilo entra por la rama `if self.online`
+    calls: list[int] = []
+    real_flush = cloud.flush
+
+    def flush_que_revienta_una_vez() -> int:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("fallo inesperado dentro del hilo")
+        return real_flush()
+
+    cloud.flush = flush_que_revienta_una_vez  # type: ignore[method-assign]
+    cloud.start()
+    try:
+        for _ in range(200):  # el hilo debe seguir iterando tras la excepción
+            if len(calls) >= 2:
+                break
+            time.sleep(0.02)
+        assert len(calls) >= 2, "el hilo murió con la primera excepción inesperada"
+        assert cloud._reconnect_thread is not None
+        assert cloud._reconnect_thread.is_alive()
+    finally:
+        cloud.flush = real_flush  # type: ignore[method-assign]
+        cloud.stop()
+
+
 def test_reconnect_loop_logs_connection_failure(settings, tmp_path, caplog):
     """Un connect() fallido debe dejar la CAUSA en el log (WARNING), no tragarse la
     excepción: un gabinete sin enlace por un rechazo del broker (p. ej. política IoT)
