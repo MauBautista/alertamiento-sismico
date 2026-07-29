@@ -38,6 +38,24 @@ _SEEN_CAP = 20_000
 #: Espera máxima del PUBACK QoS1 del broker (transporte real).
 _PUBACK_TIMEOUT_S = 10.0
 
+#: Tope del EXPONENTE del backoff. `2**32 · base` ya excede cualquier
+#: `cloud_backoff_max_s` realista, así que saturar aquí no cambia el backoff efectivo
+#: — solo impide que el exponente crezca sin límite (ver `_backoff_delay`).
+_BACKOFF_EXP_CAP = 32
+
+
+def _backoff_delay(base: float, attempt: int, max_s: float) -> float:
+    """Backoff exponencial ACOTADO, en segundos.
+
+    El exponente se satura a propósito: con `2**attempt` libre, una WAN caída el
+    tiempo suficiente (~1024 intentos ≈ 17 h con el tope de 60 s) produce un entero
+    de 309 dígitos y `base * (2**attempt)` lanza `OverflowError: int too large to
+    convert to float`. Ese error se disparaba DENTRO del `except` del hilo de
+    reconexión, así que mataba al hilo: el gabinete quedaba mudo hacia la nube para
+    siempre, en silencio, hasta un reinicio manual (gw-dev-0001, 2026-07-25).
+    """
+    return min(base * (2 ** min(attempt, _BACKOFF_EXP_CAP)), max_s)
+
 
 @runtime_checkable
 class _BackfillRouter(Protocol):
@@ -498,31 +516,38 @@ class CloudConnector(EdgeModule):
         attempt = 0
         base = self.settings.cloud_backoff_s
         while not self._reconnect_stop.is_set():
-            if self.online:
-                self.flush()
-                self._reconnect_stop.wait(base)
-                continue
+            # Red de seguridad: este hilo NO puede morir. Si muere, el gabinete queda
+            # mudo hacia la nube en silencio hasta un reinicio manual — pasó en
+            # producción con un OverflowError del backoff (ver `_backoff_delay`).
             try:
-                self._transport.connect()
-                attempt = 0
-                log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
-                self._announce_online()
-                self._apply_subscriptions()
-                self._fire_online()
-                self.flush()
-            except Exception as exc:  # noqa: BLE001 — sin enlace: espera con backoff y reintenta
-                attempt += 1
-                delay = min(base * (2**attempt), self.settings.cloud_backoff_max_s)
-                jitter = delay * 0.1 * ((attempt % 5) / 5.0)  # 0–10% determinista
-                # La CAUSA debe ser visible: un rechazo del broker (política IoT,
-                # certs) es indistinguible de una WAN caída si se traga en silencio.
-                log.warning(
-                    "conexión cloud falló (intento %d, reintento en %.0fs): %s",
-                    attempt,
-                    delay + jitter,
-                    exc,
-                )
-                self._reconnect_stop.wait(delay + jitter)
+                if self.online:
+                    self.flush()
+                    self._reconnect_stop.wait(base)
+                    continue
+                try:
+                    self._transport.connect()
+                    attempt = 0
+                    log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
+                    self._announce_online()
+                    self._apply_subscriptions()
+                    self._fire_online()
+                    self.flush()
+                except Exception as exc:  # noqa: BLE001 — sin enlace: backoff y reintenta
+                    attempt += 1
+                    delay = _backoff_delay(base, attempt, self.settings.cloud_backoff_max_s)
+                    jitter = delay * 0.1 * ((attempt % 5) / 5.0)  # 0–10% determinista
+                    # La CAUSA debe ser visible: un rechazo del broker (política IoT,
+                    # certs) es indistinguible de una WAN caída si se traga en silencio.
+                    log.warning(
+                        "conexión cloud falló (intento %d, reintento en %.0fs): %s",
+                        attempt,
+                        delay + jitter,
+                        exc,
+                    )
+                    self._reconnect_stop.wait(delay + jitter)
+            except Exception:  # noqa: BLE001 — cualquier fallo inesperado: log y sigue vivo
+                log.exception("fallo inesperado en el hilo de reconexión; reintento en %.0fs", base)
+                self._reconnect_stop.wait(base)
 
     def _on_start(self) -> None:
         endpoint = self.settings.mqtt_endpoint or "<sin definir>"
