@@ -1,4 +1,4 @@
-.PHONY: dev down lint test fmt drift api web edge mobile db install db-tunnel cloud-stop cloud-start \
+.PHONY: dev down lint test test-db fmt drift api web edge mobile db install db-tunnel cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
         cloud-images cloud-deploy cloud-allow-my-ip
 
@@ -8,6 +8,9 @@ EDGE_DIR := edge
 MOBILE_DIR := mobile
 SDK_DIR := shared/sdk-ts
 TOKENS_DIR := shared/design-tokens
+# Los tests de este módulo son plan-only (credenciales falsas, sin red): corren en
+# `make test` como cualquier otra suite, no necesitan sesión de AWS.
+TF_OBSERVABILITY := infra/terraform/modules/observability
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
@@ -47,6 +50,19 @@ DEMO_DSN := postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab
 
 # Seeds partidos (T-1.47): prod = flota real + rule_set v1 (lo ÚNICO que ve la
 # nube); sim = 20 sitios/4 gateways de la demo, EXCLUSIVO de entornos locales.
+# La suite de api EXIGE una base SIN el seed de desarrollo: contra `takab` (la que siembra
+# `demo-db`) el tenant de la demo choca con el de los fixtures y salen fallos FALSOS —
+# 12 failed + 90 errors que no tienen nada que ver con el código. CI nunca lo sufre porque
+# su Postgres es un contenedor recién creado en cada corrida; en local hay que reproducir
+# esa condición a mano, y por eso `make test` depende de `test-db`.
+TEST_DSN := postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab_test
+
+test-db: db
+	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
+	@docker compose exec -T db psql -U takab -d postgres -tAc \
+	  "select 1 from pg_database where datname='takab_test'" | grep -q 1 \
+	  || docker compose exec -T db createdb -U takab takab_test
+
 demo-db: db
 	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
 	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
@@ -85,12 +101,13 @@ lint:
 
 # Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de
 # api (B-2) — sus imports son takab_api + psycopg, sin dependencia del edge.
-test:
-	cd $(API_DIR) && pytest -q -m "not perf"
-	cd $(API_DIR) && uv run pytest -q ../demo/tests
+test: test-db
+	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q -m "not perf"
+	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q
 	cd $(MOBILE_DIR) && npm test
+	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
 # commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo

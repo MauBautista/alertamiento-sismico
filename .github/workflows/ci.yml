@@ -181,7 +181,7 @@ jobs:
         run: npm test
 
   infra:
-    name: infra · terraform fmt + validate
+    name: infra · terraform fmt + validate + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -194,6 +194,11 @@ jobs:
         run: terraform -chdir=infra/terraform/bootstrap init -backend=false && terraform -chdir=infra/terraform/bootstrap validate
       - name: Validate envs/dev
         run: terraform -chdir=infra/terraform/envs/dev init -backend=false && terraform -chdir=infra/terraform/envs/dev validate
+      # `validate` NO mira la semántica: una alarma con el `treat_missing_data` equivocado
+      # pasa fmt y validate y aun así miente en producción. Estos tests son plan-only
+      # (credenciales falsas, sin red) y por eso el job sigue siendo hermético.
+      - name: Test de semántica de alarmas (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/observability init -backend=false && terraform -chdir=infra/terraform/modules/observability test
       # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
       # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
       # hermético; ver infra/terraform/README.md.
