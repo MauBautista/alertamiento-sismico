@@ -100,6 +100,13 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             shared/sdk-ts/package-lock.json
+      # Gate de drift de design-tokens: `css/tokens.css` se GENERA de `tokens.json`
+      # (salida determinista, comparación byte a byte). Sin este paso, la consola y
+      # la app móvil pueden pintar colores distintos sin que nada lo detecte — el
+      # gate existía desde T-2.01 pero no lo invocaba nadie. Sin dependencias: node puro.
+      - name: Drift gate · design-tokens
+        run: npm run check
+        working-directory: shared/design-tokens
       # @takab/sdk entra como symlink file: → sus deps de runtime
       # (@hey-api/client-fetch) resuelven por realpath contra
       # shared/sdk-ts/node_modules, que debe estar poblado.

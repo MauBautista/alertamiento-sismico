@@ -7081,6 +7081,7 @@
     },
     "/health": {
       "get": {
+        "description": "Salud del servicio y commit desplegado.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
