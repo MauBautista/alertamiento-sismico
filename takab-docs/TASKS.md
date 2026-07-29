@@ -9,9 +9,17 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual:** ▶ **BLOQUE EDGE (A) COMPLETO** (T-1.2…T-1.14) + **T-1.16 COMPLETO**
-(migraciones DB + RLS vs Postgres local, commit `4f20cab`). Todo lo restante (T-1.15,
-T-1.17+) requiere AWS.
+**Estado actual (2026-07-29):** ▶ **Fase 2.1 · `T-2.15`…`T-2.23`** — habilitar los datos que el
+gabinete mide y no publica, para rediseñar el panel local del inmueble. **0 de 9 empezadas.**
+
+Todo lo anterior está construido y mergeado a `main`: Bloques A/B/C/D (T-1.1…T-1.30) + Fases 1.5,
+1.6, 1.7, 1.8, 1.8.1, 1.9, 1.10 (T-1.32…T-1.73) + **Fase 2 · App móvil completa** (T-2.00…T-2.14).
+**82 de 97 tareas `[x]`** (5 `[~]` · 10 `[ ]`), CI verde, ~1 765 tests. La nube corre `8bad0b3` con
+alembic `0020`.
+
+Lo que falta **no es mayormente código**: son los gates físicos (relés en MOCK, gate #3 / G-04 sin
+acreditar, sin UPS), el marco normativo sin confirmar (`GATE-LEGAL`) y credenciales de terceros
+(`GATE-STORE`). Ver §10 de `runbooks/RUNBOOK-auditoria-cierre.md` y `runbooks/RUNBOOK-cierre-fase2.md`.
 
 ---
 
@@ -797,7 +805,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > no manda `tenant_id` (lo hereda del sitio) ni `iot_thing` (lo emite Terraform), y un sensor sin
 > procedencia se crea con `calibration_source = null` — SIN CALIBRAR, que es la verdad.
 
-### [~] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7] CÓDIGO LISTO · APPLY PENDIENTE**
+### [x] T-1.37 · Desplegar API + workers + consola en el EC2 — **[B7] COMPLETA · aplicada en la ventana de T-1.39**
 - **Componente:** infra · **Depende de:** T-1.32…T-1.36
 - **Objetivo:** que la nube corra en la nube. Hoy Terraform tiene DB, IoT Core, SQS, S3, Cognito,
   ECR y KMS, pero **cero cómputo**: la API, el consumer y la web corren en la laptop.
@@ -813,7 +821,11 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] **`terraform apply` + `make cloud-deploy` ejecutados contra AWS** (2026-07-09, ventana
         de T-1.39: instancia en t4g.medium, EIP `16.58.11.196`, stack completo desplegado).
 
-> **CÓDIGO LISTO, NO APLICADO.** Verificado sin tocar AWS: `terraform validate` + `fmt` OK, el
+> **APLICADA (2026-07-09), en la ventana de T-1.39.** El texto de abajo es el registro de la
+> verificación *previa* al apply, cuando la tarea todavía estaba en `[~]`; se conserva porque
+> documenta cómo se validó el stack sin tocar AWS. La nube lleva viva desde entonces.
+>
+> **Verificación previa, sin tocar AWS:** `terraform validate` + `fmt` OK, el
 > Caddyfile pasa `caddy validate` real, el compose pasa `docker compose config`, y **la imagen se
 > construyó y se ejecutó**: los 6 entrypoints (`ingest`/`incident`/`notify`/`commands`/`billing`/
 > `backfill`) importan y `alembic heads` resuelve. Ejecutar la imagen destapó **dos bugs que la
@@ -946,7 +958,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
   - [x] `terraform validate` + plan: 1 cambio in-place, cero recursos nuevos.
   - [ ] Aplicado ⟵ viaja en el `terraform apply` de la ventana de T-1.39.
 
-### [~] T-1.43 · PIN en el panel local del gabinete — **[B8] CÓDIGO LISTO · DESPLIEGUE con T-1.40**
+### [x] T-1.43 · PIN en el panel local del gabinete — **[B8] COMPLETA · desplegada y verificada en el gabinete real**
 - **Componente:** edge · **Cierra:** #35 del backlog (local_api sin auth)
 - **Objetivo:** `POST /api/{silence,siren-test,reset}` se aceptaban sin autenticar; la única
   barrera para silenciar la sirena de un edificio era estar en su LAN.
@@ -2317,3 +2329,281 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > APNs/FCM + apply + tono SASMEX licenciado; `HW`: biometría/attestation/cámara/pinning/E2E;
 > `LEGAL`: marco normativo — pregunta abierta #1 — + `compliance_labels` + aviso LFPDPPP).
 > **api 893 · web 584 · mobile 190 · SDK sin drift.**
+
+---
+
+## Registro de hotfixes de operación continua (2026-07-25 … 2026-07-29)
+
+> No son tareas planificadas: son fallos que destapó tener el sistema corriendo semanas seguidas, y
+> se arreglaron en caliente. Se anotan aquí porque `CLAUDE.md §6` exige que nada aterrice en `main`
+> sin registro, y porque los tres cambian invariantes que otras tareas dan por ciertos.
+
+- **[x] El hilo de reconexión a la nube MORÍA por desborde del backoff** (`737dd73`, PR #8).
+  Tras ~1024 intentos (17 h sin WAN) el cálculo del backoff desbordaba y el hilo `cloud-reconnect`
+  moría: el gabinete quedaba **sin publicar EN SILENCIO** — 41 h, 3 300 mensajes en el spool
+  (2026-07-25). El spool y la protección local funcionaron; lo que falló fue volver.
+  *Al diagnosticar el journal del edge, filtra `grep -v takab_edge.seedlink` o el ruido lo tapa todo.*
+
+- **[x] La alarma de gabinete offline mandaba un "TODO BIEN" FALSO** (`ea9d549` + `5204713` +
+  `d9ee0a2`, PRs #10/#11). Disparaba con el LWT y **se auto-declaraba OK ~15 min después**; pasó en
+  los 5 cortes de julio-2026 (24, 27 ×2, 28) y el del 28-jul mintió >15 h.
+  La causa: `Takab/Fleet/<gateway_id>` es una métrica **por evento** (1 al conectar, 0 al perder el
+  enlace) y entre transiciones **no hay datapoints nunca**, así que `treat_missing_data` lo decide
+  todo. El latch correcto es **`ignore`**, no `missing` — trampa del nombre: `missing` NO retiene
+  (verificado en vivo con `set-alarm-state`: CloudWatch devuelve la alarma a `INSUFFICIENT_DATA` en
+  ~1 min). Y aun con `ignore` hace falta `insufficient_data_actions`, o una alarma recién creada se
+  queda muda para siempre: «no sé nada de este gabinete» es tan accionable como «está caído»
+  (regla de oro 7). La alarma `sensor-mudo` de T-1.66 **sigue en `notBreaching` a propósito** — es
+  una métrica continua, no de estado, y cada alarma dice UNA cosa.
+  - [ ] **`terraform apply` PENDIENTE.** El fix está en `main` y **no está vivo**: la alarma sigue
+        mintiendo en cada corte hasta que se aplique.
+
+- **[x] `make` no cubría `mobile/` ⇒ `main` estuvo en rojo 8 días** (`398a9e4` + `b7ddf50`, PR #9).
+  El timeout de jest era el **costo del primer render** (~3 s de 5), no un test colgado. Ahora
+  `make test`/`make lint` cubren mobile, existe `make drift` (3 gates) y CI verifica design-tokens.
+
+---
+
+## Fase 2.1 · Los datos que el panel del gabinete todavía no produce (T-2.15…T-2.23)
+
+> **Origen (2026-07-29).** Mauricio pidió rediseñar la pantalla local del gabinete para que
+> muestre **ondas de movimiento en vivo por canal, un mapa con la estación y su información, y
+> toda la estadística de los movimientos**. La spec de diseño está en
+> `takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md` y se entrega a Claude Design;
+> su §5 lista los **ocho prerrequisitos P-1…P-8** que esta fase implementa. Las tareas de abajo
+> son 1:1 con esos identificadores.
+>
+> **El diagnóstico:** el panel actual (`edge/takab_edge/local_api/index.html`, 371 L) es 100 %
+> numérico y **el backend no produce los datos** para nada de lo pedido. Verificado contra el
+> código el 2026-07-29:
+> - **No hay historia de muestras.** `FeatureExtractor` guarda solo el ÚLTIMO `Feature1s` por canal
+>   (`_by_channel`) y un `_context` privado acotado a `nlta` (~5 s). El `RingBuffer` miniSEED
+>   existe pero está **en disco** y `supervisor.py` **ni se lo pasa al `LocalDashboard`**. No hay
+>   endpoint de waveform.
+> - **El gabinete no sabe dónde está.** Cero `lat`/`lon` en `config/settings.py` y en
+>   `contracts.py`. Tampoco conoce estaciones vecinas (el quórum vive en la nube, [ANALISIS-00]).
+> - **Cinco métricas ya medidas nunca salen del proceso:** umbrales vigentes, latencia del reflejo,
+>   latencia del motor de reglas, contadores de SeedLink y autonomía del UPS.
+>
+> **Agrupación práctica.** T-2.16, T-2.17, T-2.18 y T-2.21 son todas de la misma forma —
+> *exponer en `/api/status` lo que ya vive en memoria* — y pueden aterrizar en un mismo PR con un
+> solo ciclo de DoD. T-2.15, T-2.19, T-2.20 y T-2.22 sí son trabajo independiente.
+>
+> **Alcance de esquema.** T-2.16/17/18/21 tocan **solo `/api/status`** (contrato del panel, no
+> viaja a la nube) ⇒ sin cambio en `shared/schemas`. **T-2.22 SÍ toca `HealthSnapshot`**, que es
+> contrato compartido con la ingesta ⇒ cambio **ADITIVO** y bump de versión, igual que hizo
+> `disk_used_pct` en T-1.53. **CORRECCIÓN al verificar el código:** el archivo es
+> `shared/schemas/health_snapshot.schema.json` y va en **1.5.0**, no 1.2.0; y `SCHEMA_VERSION`
+> (`edge/takab_edge/schemas.py:47`) es **global** — un bump reescribe los 9 schemas.
+>
+> **T-2.23 cierra la fase (decisión de Mauricio, 2026-07-29).** T-2.15…T-2.22 producen datos que
+> **ningún cliente consume**: sin T-2.23 la fase termina con ocho tareas verdes y cero cambio
+> visible en el inmueble. El rediseño del panel entra en el alcance.
+>
+> **El contrato de los campos nuevos está CONGELADO** en la **§5.1 de la spec de diseño** — claves
+> exactas, unidades y semántica de `null` — porque los entregables visuales los produce Claude
+> Design y no puede dibujar contra un contrato inventado. Implementar con nombres distintos rompe
+> el diseño: si hay que desviarse, se actualiza la §5.1 primero.
+>
+> **Invariantes que ninguna de estas tareas puede romper** (`CLAUDE.md §2`, blueprint §2):
+> el camino de actuación sigue siendo determinista y no depende de nada de esto · `status()`
+> **jamás** ejecuta sondas ni publica · toda sección nueva es **defensiva** (módulo roto ⇒ `null`
+> y GET 200, nunca 500) · `null` = «sin dato» y se pinta `S/D`, jamás un valor optimista ·
+> logging por evento, no por intervalo · nada de recursos externos ni `localStorage` en el panel.
+
+### [ ] T-2.15 · Ring de muestras en RAM + endpoint incremental de forma de onda — `P-1`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §6 (las ondas en vivo)
+- **El hueco:** las muestras crudas (`WaveformPacket.samples: list[int]`, counts del ADC 24-bit)
+  cruzan `seedlink → signal → buffer` y **nunca llegan a `local_api`**. Lo único graficable hoy
+  sería un sparkline de features a 1 Hz, que es una envolvente, no un sismograma.
+- **Diseño:** `WaveformRing` en `signal/`, alimentado desde el **mismo punto donde ya se decodifica
+  el paquete** para calcular features (sin decodificar dos veces, sin hilo nuevo). Retiene **60 s a
+  100 sps por canal**: 4 × 6 000 muestras `int32` ≈ 96 KB — irrelevante para el Pi 4. **El ring
+  guarda resolución completa; la decimación se hace al servir**, no al almacenar.
+- **Endpoint:** `GET /api/waveform?since=<cursor>&channels=<lista>&max_points=<n>` — **lectura
+  abierta** como `/api/status` (es el panel del guardia). Devuelve por canal las muestras nuevas
+  desde el cursor + el cursor siguiente + `sample_rate` efectivo y el factor de decimación
+  aplicado. A 1 Hz eso son ~50 muestras × 4 canales ≈ 2 KB por petición.
+- **Decimación honesta:** envolvente **min/max por bucket**, no submuestreo ingenuo — el
+  submuestreo se salta el pico y dibuja un sismo más chico del que fue. La respuesta **declara**
+  el factor y el `sample_rate` resultante para que la UI lo rotule (spec §6.4).
+- **Hueco de cursor:** si el `since` que manda el cliente ya se cayó del ring (pestaña dormida,
+  reconexión), responder la ventana completa con `reset: true` — el cliente redibuja en vez de
+  empalmar dos tramos discontinuos como si fueran continuos.
+- **Criterios de aceptación:**
+  - [ ] El ring conserva 60 s por canal y descarta lo viejo sin crecer sin límite (tope por
+        muestras, no por tiempo de reloj).
+  - [ ] Alimentarlo **no** agrega hilos ni bloquea el camino de features (mismo lock/estructura
+        que `live_by_channel()`; copia defensiva al servir).
+  - [ ] La decimación min/max **preserva el pico**: un test con un impulso de una sola muestra
+        sigue mostrando esa amplitud tras decimar.
+  - [ ] Peticiones incrementales consecutivas reconstruyen la señal sin huecos ni duplicados.
+  - [ ] `since` caducado ⇒ ventana completa + `reset: true`.
+  - [ ] Módulo `signal` caído ⇒ **200** con carga vacía, nunca 500.
+  - [ ] El endpoint **no** publica nada a la nube ni ejecuta sondas (regresión hermana de
+        `test_status_does_not_publish_health`).
+  - [ ] Sin streaming continuo a la nube: esto es **solo** LAN (blueprint P6, regla de oro 9).
+
+### [ ] T-2.16 · Exponer los umbrales vigentes y la versión de config — `P-2`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.1 (proximidad al disparo)
+- **El hueco:** `ThresholdBand` (`pga_watch_g=0.040`, `pga_trip_g=0.060`, `pgv_watch_cms=2.0`,
+  `pgv_trip_cms=4.0` por defecto, perfil hospital) vive en el gabinete y **no sale en
+  `/api/status`** ⇒ hoy es imposible pintar cuánto falta para disparar, ni las líneas de umbral
+  sobre las trazas de T-2.15.
+- **TRAMPA (T-1.71):** los umbrales se aplican **EN VIVO** desde la nube
+  (`ConfigStore.add_apply_listener` → `RuleEngine.apply_thresholds`). Hay que exponer **los que
+  el motor tiene vigentes**, no los de `EdgeSettings` estáticos — si no, tras una actualización
+  el panel pinta una línea de umbral que ya no es la que dispara.
+- **Criterios de aceptación:**
+  - [ ] `/api/status` incluye los 4 umbrales vigentes + `config_version`.
+  - [ ] Tras un `apply_signed_update` que cambie umbrales, el siguiente GET ya refleja los nuevos.
+  - [ ] `rules` caído ⇒ sección `null`, GET 200.
+
+### [ ] T-2.17 · Exponer las latencias de la cadena crítica — `P-3`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.4
+- **El hueco:** `gpio.last_reflex_latency_s` (latencia medida SASMEX→relé; **6.65 ms** con hardware
+  real en T-1.69) y `rules.last_latency_s` **ya se miden y no se exponen**. Es el dato de oro del
+  gabinete: la prueba viva de que responde.
+- **Criterios de aceptación:**
+  - [ ] `/api/status` incluye ambas latencias, en segundos, con sus presupuestos declarados
+        (reflejo p95 < 100 ms · reglas p95 < 200 ms) para que la UI las pinte **contra** el
+        presupuesto, no en el vacío.
+  - [ ] Sin medición todavía ⇒ `null` (la UI pinta `S/D`). **Jamás un `0.0` fabricado**, que se
+        leería como "instantáneo".
+
+### [ ] T-2.18 · Exponer los contadores del flujo SeedLink — `P-4`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.3
+- **El hueco:** `SeedLinkClient` expone `packets_seen`, `reconnects`, `duplicates` y `gaps` como
+  propiedades públicas. Al panel solo llega `last_lag_s` (vía `health.seedlink_lag_s`) y `gaps`
+  indirectamente dentro de `packet_loss_pct`. Un técnico en sitio no puede distinguir "el enlace
+  al Shake se cae y se levanta" de "el Shake manda con huecos".
+- **Contexto que lo justifica:** el sistema estuvo **15 h ciego** (T-1.65/66) con la consola
+  diciendo OPERATIVO. Estos cuatro contadores son la evidencia de degradación temprana.
+- **Criterios de aceptación:**
+  - [ ] Los 4 contadores en `/api/status`, rotulables como acumulados **DESDE EL ARRANQUE**.
+  - [ ] Sin cliente SeedLink (dev/simulador) ⇒ sección `null`, GET 200.
+
+### [ ] T-2.19 · Agregador rodante de sacudida — `P-5`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.2 (histórico de sacudida)
+- **El hueco:** no existe ninguna agregación temporal en el edge. El panel no puede decir "el
+  máximo de hoy fue X" ni "el ruido de fondo va subiendo".
+- **Diseño:** agregador **en RAM** en `signal/`: PGA/PGV máximo por hora (24 buckets rodantes) y
+  máximo de 24 h por canal, conteo de eventos por tier, y tendencia del ruido de fondo contra el
+  piso conocido del sensor (**0.6–1.1 mg** medidos en T-1.41). 24 × 4 canales es trivial en
+  memoria.
+- **NO es logging por intervalo** (regla de oro 10): es un agregado en memoria que **no se publica
+  ni se persiste**. Nada nuevo viaja a la nube — la nube ya tiene sus continuous aggregates
+  (`site_metrics_1m` / `site_metrics_1h`).
+- **Criterios de aceptación:**
+  - [ ] Máximos por hora y 24 h por canal, conteo de eventos por tier, tendencia de ruido.
+  - [ ] Los buckets rotan por tiempo y no crecen sin límite.
+  - [ ] Se pierde al reiniciar **a propósito** y se rotula **DESDE EL ARRANQUE** hasta acumular
+        24 h — sin fingir una continuidad que el gabinete no tiene.
+  - [ ] Cero publicaciones nuevas a la nube (test de regresión).
+
+### [ ] T-2.20 · Coordenadas del sitio (y vecinos opcionales) — `P-6`
+- **Componente:** edge (+ config sync) · **Depende de:** — · **Habilita:** spec §7 (el mapa)
+- **El hueco (el más sorprendente):** **el gabinete literalmente no sabe dónde está.** No hay
+  latitud ni longitud en `config/settings.py` ni en `contracts.py`. Sin esto no hay mapa de
+  ninguna clase.
+- **TRAMPA MORTAL (RUNBOOK-ALTA §4):** `provision_gateway.sh` **SOBRESCRIBE**
+  `/etc/takab/edge.env` y solo reescribe tres líneas + certs. Coordenadas puestas a mano en
+  `edge.env` **se pierden al re-aprovisionar**, igual que ya pasa con identidad, SeedLink y
+  calibración.
+- **Diseño CORREGIDO (verificado contra el código el 2026-07-29):** el diseño original de esta
+  tarea —entregarlas *por* el sync firmado— **las borra**. `ConfigStore.apply_signed_update` hace
+  `EdgeSettings.model_validate_json` (`config/store.py:77`) = **reemplazo total**, y la nube publica
+  documentos **parciales por diseño** (`api/src/takab_api/commands/sync.py:14`): un sync que solo
+  traiga `thresholds` deja `site_lat` en `None`. Hoy el daño está contenido solo porque el único
+  listener consume `cfg.thresholds`. El diseño correcto es al revés:
+  1. **Fuente de verdad = `edge.env`** (`site_lat`/`site_lon` en `EdgeSettings`), servido desde el
+     objeto vivo que el dashboard ya recibe — sobrevive reinicios sin WAN gratis.
+  2. **Overlay del sync firmado con merge de solo-no-nulos** («last known good»): un config parcial
+     **nunca** puede poner la ubicación en `None`.
+  3. **Caché en disco estrecha** (`/var/lib/takab/site_location.json`), escrita solo al aprender una
+     ubicación no-nula y **leída una vez al arrancar**, jamás desde `status()`. Deliberadamente
+     **no** un caché general del `ConfigStore`: persistir config firmada obligaría a persistir el
+     `_high_water` (`config/store.py:36-37`) o un reinicio reabriría la ventana anti-replay — y
+     cachear umbrales sí tendría impacto en la actuación. La ubicación no dispara nada.
+  4. **Arreglar `provision_gateway.sh` para que preserve.** Hoy `:63` compone `edge.env` con un
+     `printf` de 3 líneas y `:78` lo instala con `tee` ⇒ **truncado**: se pierden identidad,
+     SeedLink, rutas de cert **y calibración**. Pasa a un **merge idempotente** que reemplaza solo
+     las claves gestionadas. Extraerlo a un helper testeable (`infra/scripts/lib/merge_env.py`) es
+     lo que vuelve verificable **en CI, sin el Pi**, el criterio de abajo — hoy no hay ningún test
+     de `infra/scripts/`. Esto **también salva a T-2.21**: `calibration_source` vive en el mismo
+     archivo que se trunca.
+- **Vecinos:** lista opcional de estaciones cercanas servida por la misma config, **puramente
+  informativa**. Invariante: el quórum se correlaciona en la nube y **JAMÁS** gatea la sirena local
+  (blueprint §4.5, SPOF-01, ratificado en Fase 1.10).
+- **Criterios de aceptación:**
+  - [ ] `site_lat` / `site_lon` como `float|None` en la config del gabinete y en `/api/status`.
+  - [ ] Sin provisionar ⇒ `null` y el panel muestra `SIN UBICACIÓN PROVISIONADA`. **Jamás un punto
+        inventado ni un centro por defecto.**
+  - [ ] Sobreviven a un reinicio sin WAN (caché en disco).
+  - [ ] Un re-aprovisionamiento **no** las borra (o el runbook documenta el paso de restitución).
+  - [ ] Los vecinos, si existen, no participan de ninguna decisión de actuación (test).
+
+### [ ] T-2.21 · Bandera de calibración instrumental — `P-7`
+- **Componente:** edge · **Depende de:** — · **Habilita:** spec §6.4 y §8 (honestidad de unidades)
+- **El hueco:** los defaults de `SignalConfig` (`vel_sensitivity_ms_per_count=1.0e-9`,
+  `accel_sensitivity_ms2_per_count=1.0e-6`) son **marcadores de posición**; las reales de AM.R4F74
+  son `2.5021894e-9` y `2.6007802e-6` (T-1.41). El edge **no declara** cuál está usando, así que el
+  panel no puede saber si `0.15 g` es una magnitud física o un número relativo.
+- **Diseño:** `calibration_source: str = ""` en `SignalConfig`, poblado en el aprovisionamiento
+  junto con las sensibilidades — **espejo exacto del contrato de la nube**, donde
+  `calibrated := (sensors.calibration_source IS NOT NULL)` y no existe checkbox de "calibrado".
+- **Criterios de aceptación:**
+  - [ ] `/api/status` expone `calibrated` (bool) y su procedencia.
+  - [ ] Vacío ⇒ `calibrated=false` ⇒ el panel rotula **`SIN CALIBRAR`** y usa unidades relativas
+        (`rel.`) en vez de `g` y `cm/s`, igual que ya hace la consola web.
+  - [ ] Default-deny: ausencia de procedencia **nunca** se interpreta como calibrado.
+
+### [ ] T-2.22 · Autonomía restante del UPS en el snapshot de salud — `P-8`
+- **Componente:** edge + shared/schemas · **Depende de:** — · **Habilita:** spec §8.3
+- **El hueco:** `UpsReading` **ya mide** `runtime_s` (autonomía restante) y `HealthSnapshot`
+  **lo pierde**: nunca llega al panel ni a la nube. Existe hasta un `ups_label()` que compone
+  `EN BATERÍA · RESPALDO 1h 20m`, y solo se usa para logs.
+- **Alcance de esquema:** `HealthSnapshot` es contrato **compartido** con la ingesta ⇒ el cambio es
+  **ADITIVO** con bump de versión, mismo patrón que `disk_used_pct` en T-1.53. Un consumidor viejo
+  no puede romperse por este campo.
+- **Criterios de aceptación:**
+  - [ ] `ups_runtime_s: float|None` en `HealthSnapshot`, en `/api/status` y en `shared/schemas`
+        (aditivo, versión bumpeada).
+  - [ ] UPS ausente o sin reportar autonomía ⇒ `null` ⇒ `S/D`. Nunca un número optimista.
+  - [ ] La ingesta de la nube acepta el campo nuevo sin romper mensajes sin él (test).
+  - [ ] **El dato aterriza en la nube:** `battery_min_left` deja de ser siempre `NULL`. La columna
+        **ya existe** (`db/schema.sql:362`) y ya viaja `ws/hub.py:74` → `ws/protocol.py:111` →
+        `sdk-ts/src/gen/types.gen.ts:1302` ⇒ **cero DDL, cero Alembic, cero regeneración de SDK**:
+        son 2 líneas en `api/.../ingest/handlers.py:327-375` (`int(round(runtime/60))`) y actualizar
+        `api/tests/test_ingest_handlers.py:404-418`, que hoy afirma `row[11] is None`.
+
+### [ ] T-2.23 · Implementar el panel rediseñado — cierra la Fase 2.1
+- **Componente:** edge · **Depende de:** T-2.15…T-2.22 **y de los entregables §13 de la spec**
+- **Por qué existe:** es la única tarea de la fase que produce algo **visible en el inmueble**. Las
+  ocho anteriores habilitan datos; esta los pinta. Sin ella, la fase cierra en verde y el guardia
+  sigue viendo el mismo panel numérico de 371 líneas de T-1.53.
+- **Entrada:** los 7 entregables de la §13 de
+  `takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md`, producidos por Claude Design:
+  los 3 modos de densidad con sus breakpoints, los 10 estados completos, el sismograma multicanal
+  con sus marcas, el mapa esquemático con degradación sin coordenadas, los 4 bloques de estadística,
+  la decisión tipográfica justificada y la barra de acciones con flujo de PIN.
+- **Alcance:** reescribir `edge/takab_edge/local_api/index.html` consumiendo `/api/status` y
+  `/api/waveform` **según la §5.1 congelada**. Un solo archivo, sin build, sin dependencias — el
+  panel se sirve desde el Pi y tiene que funcionar sin internet, para siempre.
+- **Invariantes de §9 que el código NO puede renegociar:** la jerarquía de banners y su precedencia
+  exacta · los rótulos de tier literales · los 4 estados obligatorios de UI (`loading`/`error`/
+  `empty`/`stale`) · `null` se pinta `S/D`, nunca un valor optimista · dato retenido se rotula como
+  retenido (regla de oro 7).
+- **Criterios de aceptación:**
+  - [ ] Los 3 modos de densidad (MURO / CONSOLA / CAMPO) responden a sus breakpoints.
+  - [ ] Los 10 estados de §13.2 se pueden forzar y se ven íntegros, incluido **arranque en frío con
+        `signal`, `health`, `shake_history` y `seedlink` en `null` simultáneamente**.
+  - [ ] El sismograma pinta 4 trazas con umbral, saturación, marca SASMEX y tier; `encoding:
+        "minmax"` se dibuja como **banda**, no como línea; `gap_before` corta el trazo.
+  - [ ] `calibrated: false` ⇒ **`SIN CALIBRAR`** y unidades `rel.` en ondas, estadística y umbrales.
+  - [ ] `site_lat`/`site_lon` en `null` ⇒ `SIN UBICACIÓN PROVISIONADA`, sin punto inventado.
+  - [ ] `test_index_has_no_external_resources` extendido: sigue vetando CDN/`https://`/T-MINUS y
+        **además** `localStorage`/`sessionStorage`.
+  - [ ] Un solo tick de polling secuencial a 1 Hz para los dos endpoints (no dos bucles paralelos:
+        el servidor HTTP del Pi es de hilos y se duplicarían los hilos retenidos por pantalla).
+  - [ ] DevTools sin una sola petición fuera de la LAN.
