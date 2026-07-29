@@ -157,23 +157,28 @@ resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
 }
 
 # `Takab/Fleet/<gateway_id>` es una metrica POR EVENTO: escribe 1 al conectar y 0 al
-# perder el enlace (LWT). Entre transiciones NO hay datapoints, y de ahi sale la
-# eleccion de `missing`, que es la unica correcta de las tres:
+# perder el enlace (LWT). Entre transiciones NO hay datapoints NUNCA, ni sano ni caido,
+# asi que el valor de `treat_missing_data` decide TODO. Los cuatro, segun la tabla oficial
+# de AWS para el caso "todos los datapoints ausentes" (`- - - - -`):
 #
-#   notBreaching -> el silencio se lee como SALUD. La alarma disparaba con el 0 del LWT
-#                   y ~15 min despues se auto-declaraba OK, mandando un correo de "todo
-#                   bien" con el gabinete muerto. Ocurrio en los 5 cortes de julio-2026
-#                   (24, 27 x2, 28); el del 28-jul mintio durante >15 h. Es peor que no
-#                   tener alarma: viola la regla de oro 7 (dato viejo presentado como vivo).
-#   breaching    -> alarmaria SIEMPRE, tambien con el gabinete sano, porque un gabinete
-#                   sano tampoco emite datapoints entre transiciones.
-#   missing      -> RETIENE el ultimo estado conocido: tras un 0 se queda en ALARMA hasta
-#                   que llegue un 1 real. La alarma se vuelve un latch que sigue al ultimo
-#                   evento, que es justo la semantica de una metrica de estado.
+#   notBreaching -> OK. El silencio se lee como SALUD. Era el valor original: la alarma
+#                   disparaba con el 0 del LWT y ~15 min despues se auto-declaraba OK,
+#                   mandando un correo de "todo bien" con el gabinete muerto. Ocurrio en
+#                   los 5 cortes de julio-2026 (24, 27 x2, 28); el del 28-jul mintio >15 h.
+#   breaching    -> ALARM. Alarmaria SIEMPRE, tambien con el gabinete sano, porque un
+#                   gabinete sano tampoco emite datapoints entre transiciones.
+#   missing      -> INSUFFICIENT_DATA. Se probo el 29-jul-2026 y NO retiene: forzamos la
+#                   alarma a ALARM y CloudWatch la devolvio a INSUFFICIENT_DATA en ~1 min.
+#   ignore       -> "The current alarm state is maintained" (literal de la doc de AWS).
+#                   ESTE es el latch que queremos: tras un 0 se queda en ALARMA hasta que
+#                   llegue un 1 real. Es la semantica de una metrica de ESTADO.
 #
-# Limite conocido: esto depende de que el LWT LLEGUE. Si IoT Core no lo publicara, no hay
-# datapoint y `missing` retendria OK. La cobertura de ese caso (ausencia de heartbeat) es
-# la siguiente rebanada de A-4, no este fix.
+# Y aun con `ignore` hace falta `insufficient_data_actions`: una alarma sin historia que
+# retener (recien creada, o reevaluada tras un cambio de config, como paso el 29-jul)
+# arranca en INSUFFICIENT_DATA y con `ignore` se quedaria ahi PARA SIEMPRE, muda. En un
+# sistema donde fallar cuesta vidas, "no se nada de este gabinete" es tan accionable como
+# "esta caido" — regla de oro 7. Eso cubre ademas el caso de que el LWT NO llegue, sin
+# depender de el.
 resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 
@@ -186,7 +191,9 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "LessThanThreshold"
-  treat_missing_data  = "missing"
-  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
-  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "ignore"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
