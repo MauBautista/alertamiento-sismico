@@ -171,9 +171,16 @@ resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
 #                   que llegue un 1 real. La alarma se vuelve un latch que sigue al ultimo
 #                   evento, que es justo la semantica de una metrica de estado.
 #
-# Limite conocido: esto depende de que el LWT LLEGUE. Si IoT Core no lo publicara, no hay
-# datapoint y `missing` retendria OK. La cobertura de ese caso (ausencia de heartbeat) es
-# la siguiente rebanada de A-4, no este fix.
+# `missing` sola no basta, y lo demostro el propio apply del 29-jul-2026: al cambiar la
+# configuracion CloudWatch reevalua SIN estado previo que retener, la alarma cayo en
+# INSUFFICIENT_DATA y ahi se quedo MUDA con el gabinete 17 h caido. Se paso de una alarma
+# que MENTIA a una que CALLA. Por eso `insufficient_data_actions` tambien pagina: en un
+# sistema donde fallar cuesta vidas, "no se nada de este gabinete" es tan accionable como
+# "esta caido", y es justo lo que pide la regla de oro 7.
+#
+# No genera ruido: con `missing`, un gabinete sano retiene OK entre transiciones, asi que
+# INSUFFICIENT_DATA solo aparece cuando de verdad no hay historia que retener. Eso cubre
+# ademas el caso que quedaba abierto — que el LWT NO llegue — sin depender de el.
 resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 
@@ -187,6 +194,8 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   threshold           = 1
   comparison_operator = "LessThanThreshold"
   treat_missing_data  = "missing"
-  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
-  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
