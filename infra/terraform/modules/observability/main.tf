@@ -156,11 +156,29 @@ resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
 
+# `Takab/Fleet/<gateway_id>` es una metrica POR EVENTO: escribe 1 al conectar y 0 al
+# perder el enlace (LWT). Entre transiciones NO hay datapoints, y de ahi sale la
+# eleccion de `missing`, que es la unica correcta de las tres:
+#
+#   notBreaching -> el silencio se lee como SALUD. La alarma disparaba con el 0 del LWT
+#                   y ~15 min despues se auto-declaraba OK, mandando un correo de "todo
+#                   bien" con el gabinete muerto. Ocurrio en los 5 cortes de julio-2026
+#                   (24, 27 x2, 28); el del 28-jul mintio durante >15 h. Es peor que no
+#                   tener alarma: viola la regla de oro 7 (dato viejo presentado como vivo).
+#   breaching    -> alarmaria SIEMPRE, tambien con el gabinete sano, porque un gabinete
+#                   sano tampoco emite datapoints entre transiciones.
+#   missing      -> RETIENE el ultimo estado conocido: tras un 0 se queda en ALARMA hasta
+#                   que llegue un 1 real. La alarma se vuelve un latch que sigue al ultimo
+#                   evento, que es justo la semantica de una metrica de estado.
+#
+# Limite conocido: esto depende de que el LWT LLEGUE. Si IoT Core no lo publicara, no hay
+# datapoint y `missing` retendria OK. La cobertura de ese caso (ausencia de heartbeat) es
+# la siguiente rebanada de A-4, no este fix.
 resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 
   alarm_name          = "takab-dev-gateway-offline-${each.value}"
-  alarm_description   = "El gabinete ${each.value} publico su LWT (SIN ENLACE): perdio conexion con IoT Core. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo."
+  alarm_description   = "El gabinete ${each.value} publico su LWT (SIN ENLACE): perdio conexion con IoT Core. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo. Esta alarma NO se cura sola: seguira en ALARMA hasta que el gabinete reconecte de verdad."
   namespace           = "Takab/Fleet"
   metric_name         = each.value
   statistic           = "Minimum"
@@ -168,7 +186,7 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "LessThanThreshold"
-  treat_missing_data  = "notBreaching"
+  treat_missing_data  = "missing"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
