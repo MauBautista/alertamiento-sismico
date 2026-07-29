@@ -59,3 +59,6 @@ graphify-out/
 # Playwright (M-7): artefactos de ejecución del smoke local
 web/test-results/
 web/playwright-report/
+
+# Cotización / BOM del gabinete: material comercial y de compras, no del producto
+cotizacion/

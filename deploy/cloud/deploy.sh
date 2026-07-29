@@ -32,6 +32,9 @@ fi
 CLOUD_ENV=$(
   cat <<EOF
 TAKAB_API_AWS_REGION=${AWS_REGION}
+# Commit desplegado: CLOUD_TAG ya es \`git rev-parse --short HEAD\`. Se expone en
+# GET /health para poder responder "que esta vivo" sin abrir una sesion SSM.
+TAKAB_API_BUILD_SHA=${CLOUD_TAG}
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).
