@@ -61,24 +61,47 @@ MQTT_ENDPOINT="$(terraform -chdir="$TF_DIR" output -raw iot_endpoint)"
 # panel quedan 403 fail-closed en producción.
 LOCAL_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**6):06d}")')"
 
+# Estas son las UNICAS tres claves que el aprovisionamiento gobierna. Un gabinete
+# en operacion tiene muchas mas (estacion, host de SeedLink, rutas de certificados,
+# calibracion MEDIDA del sensor, nombre del sitio), puestas al instalarlo. Por eso
+# lo de abajo FUSIONA en vez de sobrescribir: instalar con `sudo tee` a secas
+# borraba esas otras claves y dejaba el gabinete sin sensor y sin calibracion.
 printf 'TAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
-  "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env"
+  "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env.managed"
 
 if [ -z "$SSH_HOST" ]; then
   OUT_DIR="./certs-$THING"
   mkdir -p "$OUT_DIR"
+  # `--existing` puede apuntar a un archivo inexistente: merge_env.py lo trata
+  # como "no hay nada previo que conservar".
+  if [ -f "$OUT_DIR/edge.env" ]; then cp "$OUT_DIR/edge.env" "$TMP/edge.env.existing"; fi
+  python3 "$ROOT/infra/scripts/merge_env.py" \
+    --managed "$TMP/edge.env.managed" \
+    --existing "$TMP/edge.env.existing" \
+    --out "$TMP/edge.env"
   for f in cert.pem key.pem ca.pem edge.env; do
     cp "$TMP/$f" "$OUT_DIR/$f"
     chmod 600 "$OUT_DIR/$f"
   done
   echo "credenciales de $THING escritas en $OUT_DIR/ (no versionar)"
 else
+  # El edge.env que ya viva en el gabinete manda sobre todo lo que no generamos aqui.
+  ssh "$SSH_HOST" 'sudo cat /etc/takab/edge.env 2>/dev/null || true' >"$TMP/edge.env.existing"
+  python3 "$ROOT/infra/scripts/merge_env.py" \
+    --managed "$TMP/edge.env.managed" \
+    --existing "$TMP/edge.env.existing" \
+    --out "$TMP/edge.env"
+
   ssh "$SSH_HOST" 'sudo mkdir -p /etc/takab/certs'
   for f in cert.pem key.pem ca.pem; do
     ssh "$SSH_HOST" "sudo tee /etc/takab/certs/$f >/dev/null && sudo chmod 600 /etc/takab/certs/$f" <"$TMP/$f"
   done
+  # Respaldo fechado ANTES de tocar nada: si la fusion se equivoca, el estado
+  # anterior sigue en el dispositivo y se restaura con un `cp`.
+  ssh "$SSH_HOST" 'test -f /etc/takab/edge.env && sudo cp -a /etc/takab/edge.env "/etc/takab/edge.env.bak-$(date +%Y%m%d-%H%M%S)" || true'
   ssh "$SSH_HOST" 'sudo tee /etc/takab/edge.env >/dev/null && sudo chmod 600 /etc/takab/edge.env' <"$TMP/edge.env"
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
+  echo "reinicia el servicio para que tome las claves nuevas: ssh $SSH_HOST 'sudo systemctl restart takab-edge'"
 fi
 
 echo "PIN del panel local de $THING: $LOCAL_PIN — entrégalo al responsable del edificio"
