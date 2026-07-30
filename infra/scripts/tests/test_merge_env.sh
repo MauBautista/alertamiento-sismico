@@ -81,6 +81,21 @@ esac
 echo "== el archivo resultante nace en 0600 =="
 check "permisos" "600" "$(stat -c '%a' "$TMP/out3")"
 
+echo "== el aprovisionamiento escribe la IDENTIDAD del gabinete =="
+# Por qué se comprueba aquí: `gateway_id` NO estaba en el edge.env del Pi. El gabinete
+# se identificaba con el DEFAULT horneado en settings.py ("gw-dev-0001"), que coincidía
+# por casualidad con el nombre del primer gabinete real. La segunda estación habría
+# publicado como la primera: datos atribuidos al sitio y al tenant equivocados, y
+# colisión de client-id MQTT. La identidad tiene que nacer del aprovisionamiento.
+PROV="$HERE/../provision_gateway.sh"
+for clave in TAKAB_EDGE_GATEWAY_ID TAKAB_EDGE_DEV_MODE TAKAB_EDGE_HMAC_KEY TAKAB_EDGE_MQTT_ENDPOINT TAKAB_EDGE_LOCAL_API_PIN; do
+  if grep -q "$clave=%s\|$clave=false" "$PROV"; then
+    ok "provision_gateway.sh escribe $clave"
+  else
+    fallo "provision_gateway.sh NO escribe $clave"
+  fi
+done
+
 if [ "$fallos" -ne 0 ]; then
   printf '\n%d prueba(s) FALLARON\n' "$fallos" >&2
   exit 1
