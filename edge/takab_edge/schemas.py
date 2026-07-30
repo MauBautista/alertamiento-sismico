@@ -43,7 +43,11 @@ from takab_edge.contracts import (
 #: enums ampliados y clave opcional — payloads 1.3.0 siguen validando.
 #: 1.5.0 (T-1.60): ActuatorAction + `drill_start`/`drill_stop` (simulacro
 #: institucional por canal `system`). ADITIVO.
-SCHEMA_VERSION = "1.5.0"
+#: 1.6.0 (T-1.74): HealthSnapshot + `fw_version` — el gabinete DECLARA qué código
+#: corre en vez de que alguien lo anote en `gateways.fw_version`. ADITIVO: clave
+#: opcional, un payload 1.5.0 sigue validando y la nube trata su ausencia como
+#: «sin dato» (no pisa lo que ya tenga).
+SCHEMA_VERSION = "1.6.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

@@ -447,6 +447,46 @@ def test_health_double_run_is_idempotent(fleet, ctx, meta) -> None:
     assert _count(fleet, "SELECT count(*) FROM device_health") == 1
 
 
+def _fw(fleet) -> str | None:
+    return fleet.execute("SELECT fw_version FROM gateways WHERE gateway_id = %s", (GW,)).fetchone()[
+        0
+    ]
+
+
+def test_health_persiste_la_version_que_declara_el_gabinete(fleet, ctx, meta) -> None:
+    """`gateways.fw_version` se llenaba A MANO y se habría quedado obsoleto en el
+    siguiente despliegue. Ahora lo declara el propio gabinete en su heartbeat."""
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    assert _fw(fleet) == "737dd73"
+
+
+def test_health_actualiza_la_version_al_desplegar(fleet, ctx, meta) -> None:
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health(fw_version="86ea606")
+    payload["captured_at"] = "2026-07-06T10:01:03+00:00"  # otro ts: fila nueva
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "86ea606"
+
+
+def test_health_sin_version_no_pisa_la_conocida(fleet, ctx, meta) -> None:
+    """«No sé» JAMÁS borra un dato bueno. Un gabinete con un deploy a medias, o uno
+    viejo con contrato 1.5.0, no puede dejar la ficha de la flota en blanco
+    (regla de oro 7: mejor un dato ausente que uno degradado sin avisar)."""
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health()  # sin la clave: contrato viejo o deploy sin marcar
+    payload["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "737dd73"
+
+
+def test_health_version_absurda_se_rechaza_sin_tumbar_la_ingesta(fleet, ctx, meta) -> None:
+    """El edge ya acota el valor, pero la ingesta no confía en el dispositivo:
+    un payload manipulado no escribe basura en la ficha ni rompe el heartbeat."""
+    assert handle_health_snapshot(fleet, _health(fw_version="x" * 200), meta, ctx).is_ok
+    assert _fw(fleet) is None
+    assert _count(fleet, "SELECT count(*) FROM device_health") == 1
+
+
 def test_health_gateway_mismatch_rejected_and_audited(fleet, ctx, meta) -> None:
     res = handle_health_snapshot(fleet, _health(gateway_id="gw-evil"), meta, ctx)
     assert res.outcome is Outcome.REJECT

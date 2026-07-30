@@ -18,6 +18,15 @@ set -euo pipefail
 HOST="${1:-takab-pi5}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# SHA que se esta desplegando. `--dirty` es deliberado: si el arbol tiene cambios sin
+# commitear, lo que corre en el gabinete NO es ese commit y la ficha de la flota debe
+# decirlo en vez de fingir limpieza.
+FW_VERSION="$(git -C "$ROOT" describe --always --dirty --abbrev=7)"
+echo "→ versión a desplegar: ${FW_VERSION}"
+case "$FW_VERSION" in
+*-dirty) echo "  OJO: árbol sucio; el gabinete reportará '${FW_VERSION}' (no es un commit reproducible)" ;;
+esac
+
 echo "→ sincronizando edge/ y shared/schemas/ a ${HOST}:/opt/takab"
 rsync -az --delete \
   --exclude '.venv' \
@@ -26,6 +35,13 @@ rsync -az --delete \
   --exclude '.ruff_cache' \
   "$ROOT/edge/" "$HOST:/opt/takab/edge/"
 rsync -az --delete "$ROOT/shared/schemas/" "$HOST:/opt/takab/shared/schemas/"
+
+# DESPUES del rsync: `--delete` sobre edge/ lo borraria si se escribiera antes. El edge
+# lo lee en cada heartbeat y lo publica; la nube lo persiste en `gateways.fw_version`.
+# Sin esto la version se anota A MANO y se queda obsoleta en silencio en el siguiente
+# despliegue — que es exactamente lo que paso hasta el 2026-07-30.
+echo "→ marcando la versión desplegada (FW_VERSION=${FW_VERSION})"
+printf '%s\n' "$FW_VERSION" | ssh "$HOST" 'cat > /opt/takab/edge/FW_VERSION'
 
 echo "→ dependencias + unidades + reinicio en ${HOST}"
 ssh "$HOST" '

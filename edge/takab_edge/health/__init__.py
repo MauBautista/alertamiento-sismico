@@ -30,6 +30,7 @@ from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
 from takab_edge.gpio import GpioController
 from takab_edge.module import EdgeModule
+from takab_edge.version import fw_version
 
 log = logging.getLogger("takab_edge.health")
 
@@ -374,6 +375,10 @@ class HealthMonitor(EdgeModule):
             # getattr: sondas previas a T-1.53 (fakes/impl externas) pueden no
             # traer disk_used_pct — ausencia = «sin dato», no un crash.
             disk_used_pct=self._safe(getattr(self._probes, "disk_used_pct", _no_disk), None),
+            # Se lee en CADA snapshot y no una vez al arrancar: si alguien despliega
+            # sin reiniciar, el heartbeat siguiente ya dice la verdad. Es una lectura
+            # de un archivo diminuto, y `fw_version()` nunca lanza.
+            fw_version=fw_version(),
             relays=relays,
             transition_reason=transition_reason,
         )
