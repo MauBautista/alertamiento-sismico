@@ -1738,8 +1738,13 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   (`manage_fleet` = superadmin+tenant_admin); calibración + **procedencia** (StationXML/RESP FDSN
   de la red AM; sensibilidades al `edge.env` + `PUT /sensors` `calibration_source`); multi-tenant
   HOY (SQL) y modelo de visibilidad ACTUAL (fijo por rol).
-- **Gotcha documentado:** `provision_gateway.sh` **sobrescribe** `edge.env` (solo HMAC/endpoint/PIN
-  + certs); identidad/SeedLink/calibración se **agregan** aparte (re-provisionar los borra — T-1.41).
+- **Gotcha documentado:** `provision_gateway.sh` **sobrescribía** `edge.env` (solo HMAC/endpoint/PIN
+  + certs); identidad/SeedLink/calibración se **agregaban** aparte, así que re-provisionar los
+  borraba (T-1.41).
+  > **CORREGIDO (2026-07-30, PR #13+#14):** el script ahora **fusiona** en vez de sobrescribir
+  > (`infra/scripts/merge_env.py`) y **escribe la identidad** (`TAKAB_EDGE_GATEWAY_ID`, `DEV_MODE=false`),
+  > que tampoco estaba en el archivo — el gabinete se identificaba con el default horneado del
+  > código. Ver el registro de hotfixes al final de este documento.
 > **ESTADO.** Doc creado, sin secretos. Responde textualmente las preguntas operativas de Mauricio.
 
 ### [x] T-1.71 · Regla de 3 estaciones VISIBLE + umbral local afinable — **COMPLETA (2026-07-15)**
@@ -2332,11 +2337,16 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 
 ---
 
-## Registro de hotfixes de operación continua (2026-07-25 … 2026-07-29)
+## Registro de hotfixes de operación continua (2026-07-25 … 2026-07-30)
 
 > No son tareas planificadas: son fallos que destapó tener el sistema corriendo semanas seguidas, y
 > se arreglaron en caliente. Se anotan aquí porque `CLAUDE.md §6` exige que nada aterrice en `main`
-> sin registro, y porque los tres cambian invariantes que otras tareas dan por ciertos.
+> sin registro, y porque varios cambian invariantes que otras tareas dan por ciertos.
+>
+> **Hilo conductor de casi todos:** un dato que MIENTE es peor que uno ausente (regla de oro 7).
+> La alarma que decía "todo bien", la que se trabó diciendo "caído", la ficha de flota con un SHA
+> que iba a quedarse obsoleto, y un test que asertaba sobre una muestra al azar — los cuatro
+> presentaban como cierto algo que no habían medido.
 
 - **[x] El hilo de reconexión a la nube MORÍA por desborde del backoff** (`737dd73`, PR #8).
   Tras ~1024 intentos (17 h sin WAN) el cálculo del backoff desbordaba y el hilo `cloud-reconnect`
@@ -2355,12 +2365,98 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   queda muda para siempre: «no sé nada de este gabinete» es tan accionable como «está caído»
   (regla de oro 7). La alarma `sensor-mudo` de T-1.66 **sigue en `notBreaching` a propósito** — es
   una métrica continua, no de estado, y cada alarma dice UNA cosa.
-  - [ ] **`terraform apply` PENDIENTE.** El fix está en `main` y **no está vivo**: la alarma sigue
-        mintiendo en cada corte hasta que se aplique.
+  - [x] **Aplicado (2026-07-30)** — y el `apply` destapó que **`ignore` tampoco servía**: ver abajo.
+
+- **[x] `ignore` se TRABÓ diciendo "caído" 4 h con el gabinete sano ⇒ la alarma de presencia NO
+  puede vivir sobre una métrica por evento** (`3fa29bb`, PR #12). Al volver el gabinete el 30-jul,
+  el `0` del LWT y el `1` de la reconexión cayeron **en el mismo minuto**: `Minimum` sobre la
+  ventana de 5 min se quedó con el `0` y, sin datapoints nuevos, `ignore` lo congeló. La mentira
+  inversa, igual de inútil — y una alarma trabada es como se aprende a ignorarlas.
+  **Se agotaron los cuatro valores de `treat_missing_data` contra producción y cada uno falló
+  distinto** (`notBreaching` mintió · `missing` quedó muda · `ignore` se trabó · `breaching`
+  alarmaría siempre). La raíz no era el parámetro: un desconectar+reconectar dentro de una misma
+  ventana es **ambiguo por construcción** y CloudWatch no sabe expresar "el último valor".
+  **Fix:** `gateway_offline` pasa a vigilar la **AUSENCIA del heartbeat** — `SampleCount` de
+  `Takab/Sensor` (que ya llega 1/min) con `breaching`, 2 periodos de 5 min. Sobre una métrica
+  PERIÓDICA el silencio significa una sola cosa, y la alarma **vuelve a OK sola**: no puede mentir
+  ni trabarse. Coste aceptado: detección en ~10 min en vez de ~1 — irrelevante, porque esto NO está
+  en el camino de actuación (SASMEX→sirena es local y determinista, reglas de oro 1 y 2).
+  *Verificado en vivo:* forzada a ALARMA con el gabinete sano, se curó sola en 50 s (con `ignore`
+  se quedaba trabada); y el reinicio del edge del 30-jul **no la disparó**, cuando con el diseño
+  por LWT habría dado un falso positivo por una operación de mantenimiento rutinaria.
+  Las reglas IoT que publican `Takab/Fleet` **se conservan por su valor forense** — son el registro
+  de cuándo cayó y volvió cada gabinete, y fueron lo que permitió ver que los dos datapoints
+  compartían minuto.
+  - **Técnica reutilizable:** `set-alarm-state` + observar 2 min verifica un latch **sin esperar al
+    siguiente corte real**. Es lo que convirtió cada iteración de "creo que ya quedó" en un dato.
+  - **`terraform fmt`/`validate` NO miran semántica:** una alarma mentirosa los pasa sin despeinarse.
+    Por eso el PR trae los primeros **tests de terraform** del repo (`.tftest.hcl`, plan-only con
+    credenciales falsas ⇒ CI sigue hermético) que fijan qué significa el silencio en cada alarma.
 
 - **[x] `make` no cubría `mobile/` ⇒ `main` estuvo en rojo 8 días** (`398a9e4` + `b7ddf50`, PR #9).
   El timeout de jest era el **costo del primer render** (~3 s de 5), no un test colgado. Ahora
   `make test`/`make lint` cubren mobile, existe `make drift` (3 gates) y CI verifica design-tokens.
+  Se descubrió además que `make test` **no corría en una máquina limpia**: usaba `pytest` pelado (no
+  está en el PATH; la línea siguiente ya usaba `uv run`) y apuntaba la suite de api a `takab`, cuya
+  semilla de desarrollo produce **12 failed + 90 errors FALSOS**. Nuevo target `test-db` que crea
+  `takab_test`; CI nunca lo sufrió porque su Postgres nace vacío en cada corrida.
+
+- **[x] Re-aprovisionar un gabinete le BORRABA la configuración** (`eb6cf99`, PR #13). Cierra el
+  gotcha que T-1.70 solo documentaba. `provision_gateway.sh` instalaba el `edge.env` con `sudo tee`,
+  que **sobrescribe el archivo entero**, y solo genera 3 claves — pero `gw-dev-0001` tenía 15: la
+  estación, el host de SeedLink, las rutas de los certificados y **las dos calibraciones MEDIDAS**.
+  Correrlo sobre el gabinete vivo lo habría dejado **sin sensor y sin calibración**, y el
+  `RUNBOOK-ALTA-DE-ESTACION.md` manda correr justamente ese script: el arma estaba cargada dentro de
+  un procedimiento documentado. Ahora **fusiona** (`infra/scripts/merge_env.py`, con tests): actualiza
+  solo lo suyo, conserva el resto con comentarios y orden, y deja respaldo fechado en el dispositivo.
+  Regla del merge: *no decide qué configuración es correcta; lo que no entiende, no lo toca.*
+  *Verificado en seco contra el `edge.env` REAL del Pi: 15 claves antes → 15 después (3 actualizadas,
+  12 conservadas por nombre). Con el comportamiento anterior habrían quedado 3.*
+
+- **[x] La IDENTIDAD del gabinete salía de un default horneado** (`e0099e4`, PR #14).
+  `TAKAB_EDGE_GATEWAY_ID` **no estaba** en el `edge.env`: el gabinete se identificaba con
+  `settings.py:100` (`gateway_id: str = "gw-dev-0001"`), que coincide **por casualidad** con el
+  nombre del primer gabinete real. La **segunda estación** habría arrancado publicando como la
+  primera — mismo client-id MQTT (`iot_thing or gateway_id`) y telemetría atribuida al sitio y al
+  **TENANT equivocados** (regla de oro 5). No se ve hasta que hay dos gabinetes, y para entonces los
+  datos ya están cruzados. El aprovisionamiento ya recibía el `thing_name`; ahora lo escribe, junto
+  con `DEV_MODE=false` (su default es `true`, y un gabinete de campo que lo herede corre en modo
+  desarrollo sin que nadie lo note).
+
+- **[x] `gateways.fw_version` se anotaba A MANO ⇒ iba a pudrirse en silencio** (`67d7f1d`, PR #15).
+  Se llenó una vez (`737dd73`) y **desde el siguiente despliegue habría mentido**, porque nadie lo
+  actualizaba. Mismo agujero que `/api/health` cerró para la nube, y se cierra igual: haciendo que
+  el sistema lo **DECLARE**. `deploy/edge/deploy.sh` escribe el SHA en `edge/FW_VERSION` (después del
+  rsync: `--delete` lo borraría antes; `--dirty` deliberado) → el edge lo lee en **cada** snapshot y
+  lo publica → la ingesta lo persiste con `IS DISTINCT FROM` (no escribe fila si no cambió, y llega
+  1/min: regla de oro 10). **Invariante: un `None` NO pisa lo conocido** — un contrato viejo o un
+  deploy a medias no pueden dejar la ficha en blanco. La ingesta valida el valor (≤64): no confía en
+  el dispositivo. Contrato **1.6.0 ADITIVO**. `edge/FW_VERSION` va a `.gitignore` (commitearlo haría
+  que el rsync empujara un SHA viejo).
+  *Verificado end-to-end contra hardware real: `737dd73` → `f3ac4fe` **solo**, sin SQL.*
+  **Trampa: el ciclo necesita LAS DOS mitades desplegadas.** Con el edge en `f3ac4fe` y la nube aún
+  en `8bad0b3`, el heartbeat llevaba la clave y la nube la ignoraba en silencio (aditivo ⇒ no rompe).
+  Un `curl /api/health` lo destapó en una petición.
+
+- **[x] El test de lag del Shake asertaba sobre una muestra AL AZAR** (`ee62325`, PR #16).
+  `last_lag_s < 3.0` tomado justo tras conectar: el valor oscila en **diente de sierra**, así que el
+  test era flaky por construcción — 0.44 s y 5.86 s en la MISMA máquina con minutos de diferencia.
+  Llevaba meses sin delatarse porque el test se salta si el Shake no es alcanzable, y el sensor
+  estuvo caído. La primera hipótesis (artefacto de medir por WiFi) resultó **falsa**: fallaba también
+  EN el Pi. Medido antes de tocar nada, 1 muestra/s: gabinete `min 0.32 · mediana 1.31 · max 2.35`;
+  laptop `min 0.27-0.49 · mediana 1.51 · max 2.95`. **El MÍNIMO es estable y casi idéntico desde
+  ambos puntos** ⇒ el problema era el estadístico, no el punto de vista. Ahora se asierta el mínimo
+  de una ventana de 20 s (que es lo que el gate #3 pregunta: *cuán fresco llega a estar el dato*) y
+  se imprimen min/mediana/max siempre, para que un fallo futuro traiga ya la distribución.
+  `health/__init__.py` ya lo sabía desde T-1.65 (`LAG_WARN_S = 15`); el test se había quedado atrás.
+
+- **[x] Redespliegue de la nube a Fase 2** (`8bad0b3` → `f3ac4fe`, 2026-07-29/30). La nube corría
+  `9d16056`/alembic `0016` del 14-jul — **82 commits y 4 migraciones atrás**: toda la Fase 1.10 y la
+  superficie móvil estaban en `main` pero **no vivas** (de ahí el 401 del `/me` móvil). Aplicadas
+  `0017`→`0020`. Runbook: `takab-docs/runbooks/RUNBOOK-redeploy-fase2.md`.
+  **Y se cerró la razón por la que nadie lo notó:** `/api/health` ahora declara el commit desplegado
+  (`TAKAB_API_BUILD_SHA`, inyectado desde `CLOUD_TAG`), así que "¿qué corre en producción?" es un
+  `curl` y no una expedición por SSM. Se pagó solo el mismo día, dos veces.
 
 ---
 
