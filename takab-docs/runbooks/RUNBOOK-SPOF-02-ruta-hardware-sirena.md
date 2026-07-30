@@ -1,7 +1,7 @@
 # RUNBOOK — SPOF-02: Ruta de hardware paralela WR-1 → sirena
 
 > **Tarea:** T-1.4 (`edge/hw`) · **Depende de:** T-1.3 (`gpio`) · **Prioridad: ALTA**
-> **Criterio de aceptación:** con el Raspberry Pi 5 apagado o colgado, el contacto del WR-1
+> **Criterio de aceptación:** con el Raspberry Pi 4 apagado o colgado, el contacto del WR-1
 > **sigue disparando la sirena** (relé de potencia en paralelo). Documentado en este runbook.
 > **Estado:** diseño y procedimiento **listos**; la **verificación física es hardware-gated**
 > (gate #3 — requiere el receptor WR-1, el relé de potencia, la sirena y el arnés reales).
@@ -14,7 +14,7 @@
 
 ## 1. Problema (SPOF-02)
 
-El Pi 5 es un punto único de falla del camino de vida: si el proceso se cuelga, el kernel se
+El Pi 4 es un punto único de falla del camino de vida: si el proceso se cuelga, el kernel se
 bloquea o el Pi muere, el **reflejo software SASMEX→sirena** de T-1.3 (`gpio`) deja de accionar
 el relé. Sin mitigación, un Pi muerto = sin sirena ante una alerta SASMEX real.
 
@@ -112,7 +112,7 @@ el mero fallo del Pi.
   WR-1 (receptor SASMEX)
    └─ contacto seco de ALERTA ─────────────┐
                                            │            ┌──────────────┐
-   Pi 5 GPIO keep-alive (latido ~1Hz) ──▶ [ Monoestable ]──▶ bobina K_wd
+   Pi 4 GPIO keep-alive (latido ~1Hz) ──▶ [ Monoestable ]──▶ bobina K_wd
                                            │  retrig. t_wd │            │
                                            │            └──────────────┘
                                            │                   │ contacto NC de K_wd
@@ -225,7 +225,7 @@ Registrar cada prueba en la tabla del §8.
 
 ## 9. Mitigaciones complementarias de SPOF-02 (b, c, d)
 
-- **(b) Watchdog de hardware BCM2712** — reinicia el Pi si el kernel/systemd se cuelga:
+- **(b) Watchdog de hardware BCM2711** — reinicia el Pi si el kernel/systemd se cuelga:
   - `/boot/firmware/config.txt`: `dtparam=watchdog=on`
   - `/etc/systemd/system.conf.d/watchdog.conf`: `RuntimeWatchdogSec=10` · `RebootWatchdogSec=15`
   - Unidad del proceso de vida con reinicio automático: ver `edge/systemd/takab-gpio.service`.
