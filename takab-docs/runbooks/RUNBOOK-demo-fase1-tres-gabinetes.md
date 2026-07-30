@@ -3,7 +3,7 @@
 > **Estado: RE-ACREDITADO (2026-07-11).** `make demo-fase1` = **35/35 asserts en verde, en 3
 > corridas consecutivas**. (Acreditación original 2026-07-08; su "36/36" fue un error de
 > transcripción — el harness imprime 35 y sus asserts no han cambiado desde entonces.)
-> Confirmación en hardware real (Pi 5 `gw-dev-0001`): corte de WAN reversible, protección
+> Confirmación en hardware real (Pi 4 `gw-dev-0001`): corte de WAN reversible, protección
 > local intacta, cero pérdida al reconectar.
 >
 > **Guardia de exclusividad (lección A-3 de la auditoría de cierre):** la acreditación exige
@@ -101,9 +101,9 @@ inspección.
 
 ---
 
-## Confirmación en hardware real (Pi 5 `gw-dev-0001`)
+## Confirmación en hardware real (Pi 4 `gw-dev-0001`)
 
-El criterio C3 se confirmó además sobre el gabinete real (Pi 5 + Shake RS4D), sin pararlo ni
+El criterio C3 se confirmó además sobre el gabinete real (Pi 4 + Shake RS4D), sin pararlo ni
 tocar la actuación. Es reversible y deja el Pi intacto.
 
 ```bash

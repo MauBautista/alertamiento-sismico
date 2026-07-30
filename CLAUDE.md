@@ -11,7 +11,7 @@
 ## 0. Reglas de ejecución (prioridad máxima)
 
 1. **Orden de trabajo = EDGE PRIMERO, luego CLOUD, luego FRONTEND.** Se construye completa la
-   inteligencia del gabinete (Raspberry Pi 5) antes de tocar la nube. La nube se construye sobre
+   inteligencia del gabinete (Raspberry Pi 4) antes de tocar la nube. La nube se construye sobre
    contratos ya validados en el edge. El frontend consume la nube ya existente. Ver
    `takab-docs/BLUEPRINT-TECNICO-TAKAB.md §13`.
 2. **No auto-atribución en el control de versiones.** Los commits **no** deben incluir a
@@ -31,14 +31,17 @@ empresas (hospitales, universidades, industria, corporativos) en México.
 
 Arquitectura **híbrida edge + cloud**:
 - **Edge (gabinete por edificio):** 2 placas — un **Raspberry Shake** (sensor sísmico puro, su
-  Shake OS NO se toca) + un **Raspberry Pi 5** que es el cerebro (lee SeedLink del Shake, recibe
-  SASMEX por GPIO, dispara actuadores BACnet/IP —sirena, cierre de válvulas de gas, retorno de
-  ascensores, retenedores de puerta—, corre reglas, sincroniza a la nube).
+  Shake OS NO se toca) + un **Raspberry Pi 4 Model B** que es el cerebro (lee SeedLink del Shake,
+  recibe SASMEX por GPIO, dispara actuadores BACnet/IP —sirena, cierre de válvulas de gas, retorno
+  de ascensores, retenedores de puerta—, corre reglas, sincroniza a la nube).
+  > **Pi 4, no Pi 5.** Verificado en la unidad real (`Raspberry Pi 4 Model B Rev 1.5`, SoC
+  > BCM2711). Estos documentos decían "Pi 5" hasta el 2026-07-30; el host se llama `takab-pi5`
+  > por razones históricas y de ahí venía la confusión. **No re-corregir a Pi 5.**
 - **Cloud (AWS):** AWS IoT Core (MQTT/mTLS) → SQS → ECS Fargate → PostgreSQL/TimescaleDB/PostGIS
   + S3. Consola web SOC, app móvil (fase posterior), notificaciones.
 
 **Fuentes de alertamiento (en orden):**
-1. **SASMEX** vía receptor **WR-1**, salida de **contacto seco** → GPIO del Pi 5 (boolean). Canal
+1. **SASMEX** vía receptor **WR-1**, salida de **contacto seco** → GPIO del Pi 4 (boolean). Canal
    primario y autoritativo.
 2. **Detección local instrumental** del propio sensor (umbral PGA/PGV; tiers `normal`/`watch`/
    `restricted`/`evacuate_or_hold`/`manual_only`).
@@ -94,7 +97,7 @@ Arquitectura **híbrida edge + cloud**:
 
 ```
 takab/
-├── edge/            # Raspberry Pi 5 — gateway de inteligencia (Python 3.12 · uv)
+├── edge/            # Raspberry Pi 4 — gateway de inteligencia (Python 3.12 · uv)
 │                    #   módulos: seedlink, signal, buffer, gpio, rules, actuators,
 │                    #   cloud, health, config, security, local_api, supervisor
 │                    #   (gpio = WR-1 + relés + reflejo SASMEX→sirena consolidado
@@ -115,7 +118,7 @@ takab/
 └── .github/workflows/               # CI: jobs api + web + edge
 ```
 
-> El **Pi 5 se construye primero** (edge), luego la nube, luego el frontend — ver
+> El **Pi 4 se construye primero** (edge), luego la nube, luego el frontend — ver
 > `takab-docs/BLUEPRINT-TECNICO-TAKAB.md §13` para el roadmap detallado por work package.
 
 ## 5. Documentos de referencia (léelos cuando la tarea lo requiera)
