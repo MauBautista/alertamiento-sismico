@@ -199,6 +199,10 @@ jobs:
       # (credenciales falsas, sin red) y por eso el job sigue siendo hermético.
       - name: Test de semántica de alarmas (plan-only, sin AWS)
         run: terraform -chdir=infra/terraform/modules/observability init -backend=false && terraform -chdir=infra/terraform/modules/observability test
+      # Re-aprovisionar un gabinete NO puede borrarle la configuración. Sin este test
+      # el único aviso sería un gabinete real quedándose sin sensor.
+      - name: Test de fusión del edge.env (provisión no destructiva)
+        run: bash infra/scripts/tests/test_merge_env.sh
       # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
       # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
       # hermético; ver infra/terraform/README.md.
