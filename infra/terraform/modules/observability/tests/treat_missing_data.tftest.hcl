@@ -38,13 +38,35 @@ variables {
 run "el_silencio_significa_lo_correcto_en_cada_alarma" {
   command = plan
 
-  # POR EVENTO: `Takab/Fleet/<gw>` solo escribe 1 al conectar y 0 al perder el enlace (LWT).
-  # Entre transiciones NO hay datapoints, asi que ni `breaching` (alarmaria siempre, tambien
-  # con el gabinete sano), ni `notBreaching` (se auto-cura y miente), ni `missing`
-  # (INSUFFICIENT_DATA, verificado en vivo) sirven: debe RETENER, y eso es `ignore`.
+  # PRESENCIA = ausencia de heartbeat. `gateway_offline` NO puede vivir sobre `Takab/Fleet`
+  # (metrica POR EVENTO: solo LWT online/offline): un desconectar+reconectar dentro de la
+  # misma ventana es AMBIGUO por construccion y ninguna combinacion de statistic y
+  # treat_missing_data lo resuelve. Se probaron las cuatro en produccion, en este orden:
+  #
+  #   notBreaching -> mintio "todo bien" en los 5 cortes de julio-2026.
+  #   missing      -> INSUFFICIENT_DATA y MUDA (no retiene, pese al nombre).
+  #   ignore       -> retiene... y el 30-jul se quedo TRABADA en ALARMA 4 h con el gabinete
+  #                   sano: el 0 del LWT y el 1 de la reconexion cayeron en el MISMO minuto,
+  #                   `Minimum` se quedo con el 0 y sin datapoints nuevos nunca se solto.
+  #   breaching    -> alarmaria siempre (un gabinete sano tampoco emite entre transiciones).
+  #
+  # La metrica correcta ya existia: `Takab/Sensor/<gw>` se publica en CADA heartbeat (1/min,
+  # regla `takab_dev_seedlink_lag_metric`). Su PRESENCIA es la senal de vida, con independencia
+  # de su VALOR — que es lo que vigila `sensor_mute`. Dos alarmas sobre la misma metrica,
+  # cada una mirando una cosa distinta.
   assert {
-    condition     = aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].treat_missing_data == "ignore"
-    error_message = "gateway_offline debe usar 'ignore', el UNICO que mantiene el estado: su metrica es POR EVENTO. 'missing' NO retiene (lleva a INSUFFICIENT_DATA) por mas que el nombre lo sugiera."
+    condition = (
+      aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].namespace == "Takab/Sensor"
+      && aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].statistic == "SampleCount"
+    )
+    error_message = "gateway_offline debe vigilar la PRESENCIA del heartbeat (SampleCount de Takab/Sensor), no la metrica de eventos Takab/Fleet: un desconectar+reconectar en la misma ventana la traba (paso el 30-jul-2026)."
+  }
+
+  # Metrica PERIODICA cuya ausencia ES la falla ⇒ el silencio alarma. Y como la alarma
+  # vuelve a OK sola en cuanto reaparecen muestras, no puede quedarse trabada.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].treat_missing_data == "breaching"
+    error_message = "gateway_offline debe usar 'breaching': sobre una metrica PERIODICA la ausencia de datapoints ES la caida del gabinete."
   }
 
   # PERIODICA (~1 muestra/min con el heartbeat) y su ausencia ya la cubre `gateway_offline`:
@@ -60,15 +82,20 @@ run "el_silencio_significa_lo_correcto_en_cada_alarma" {
     error_message = "ec2_status debe seguir en 'breaching': la ausencia de metricas ES la caida de la instancia."
   }
 
-  # El umbral y la ventana son parte del contrato: `Minimum < 1` sobre 1 periodo de 5 min
-  # es lo que convierte el 0 del LWT en una pagina inmediata.
+  # La ventana es parte del contrato: `SampleCount < 1` durante 2 periodos de 5 min = 10 min
+  # sin UN solo heartbeat, cuando llegan 1/min. Diez ausencias seguidas no son un hipo de red.
+  # Se sacrifica deteccion rapida (el LWT avisaba en ~1 min) a cambio de que la alarma NO
+  # pueda mentir ni trabarse. Es aceptable porque esto no esta en el camino de actuacion:
+  # SASMEX->sirena es local y determinista (reglas de oro 1 y 2), esta alarma solo sirve
+  # para que un humano vaya a ver el gabinete.
   assert {
     condition = (
       aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].comparison_operator == "LessThanThreshold"
       && aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].threshold == 1
-      && aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].evaluation_periods == 1
+      && aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].evaluation_periods == 2
+      && aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].period == 300
     )
-    error_message = "gateway_offline debe paginar con el PRIMER 0 del LWT (Minimum < 1, 1 periodo); subir evaluation_periods la volveria ciega a la unica muestra que emite."
+    error_message = "gateway_offline debe alarmar tras 2 periodos de 5 min sin ningun heartbeat (SampleCount < 1)."
   }
 }
 
