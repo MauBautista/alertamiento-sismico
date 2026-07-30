@@ -331,6 +331,27 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
+#: `IS DISTINCT FROM` ⇒ el UPDATE no escribe fila cuando la version no cambio, que es
+#: el 99.99% de los heartbeats (llega 1/min por gabinete). Registro por TRANSICION, no
+#: por intervalo (regla de oro 10).
+_FW_VERSION_SQL = """
+UPDATE gateways SET fw_version = %s
+WHERE gateway_id = %s AND fw_version IS DISTINCT FROM %s
+"""
+
+#: Un SHA corto o una etiqueta. La ingesta NO confia en el dispositivo: un payload
+#: manipulado no puede escribir un parrafo en la ficha de la flota.
+_FW_VERSION_MAX_LEN = 64
+
+
+def _fw_version(payload: dict) -> str | None:
+    """Version declarada por el gabinete, o None si no la declara o es absurda."""
+    crudo = payload.get("fw_version")
+    if not isinstance(crudo, str):
+        return None
+    version = crudo.strip()
+    return version if version and len(version) <= _FW_VERSION_MAX_LEN else None
+
 
 def handle_health_snapshot(
     conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
@@ -371,6 +392,11 @@ def handle_health_snapshot(
             payload.get("cert_days_remaining"),
         ),
     )
+    # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se
+    # llenaba a mano y se quedaba obsoleta en silencio en el siguiente despliegue.
+    # Un None NO pisa lo conocido: «no se» jamas borra un dato bueno (regla de oro 7).
+    if (version := _fw_version(payload)) is not None:
+        conn.execute(_FW_VERSION_SQL, (version, ctx.gateway_id, version))
     return OK
 
 

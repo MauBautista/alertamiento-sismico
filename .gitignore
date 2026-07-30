@@ -62,3 +62,9 @@ web/playwright-report/
 
 # Cotización / BOM del gabinete: material comercial y de compras, no del producto
 cotizacion/
+
+# Marca de versión que escribe deploy/edge/deploy.sh en el gabinete. Es un artefacto
+# DEL DESPLIEGUE, no del repo: commitearla haría que el rsync empujara un SHA viejo
+# y el gabinete reportaría una versión que no corre — justo lo que este mecanismo
+# existe para impedir.
+edge/FW_VERSION

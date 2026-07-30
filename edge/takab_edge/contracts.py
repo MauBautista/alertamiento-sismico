@@ -265,6 +265,12 @@ class HealthSnapshot(BaseModel):
     # oro 7). ADITIVO (schema 1.2.0): el ingest de la nube lo ignora (sin
     # columna destino), el panel LAN lo muestra.
     disk_used_pct: float | None = None
+    # [T-1.74] SHA corto del código desplegado, leído de `FW_VERSION` (lo escribe
+    # `deploy/edge/deploy.sh`). ADITIVO (schema 1.6.0). `None` = «este gabinete no
+    # sabe qué versión corre» — el caso normal en desarrollo local. La nube lo
+    # persiste en `gateways.fw_version` y NUNCA pisa lo que ya tenga con un None:
+    # ese campo se llenaba a mano y se habría quedado obsoleto en silencio.
+    fw_version: str | None = None
     relays: list[RelayState] = Field(default_factory=list)
     transition_reason: str = "heartbeat"
 

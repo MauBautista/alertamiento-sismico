@@ -235,3 +235,20 @@ def test_disk_probe_missing_path_is_none(settings):
 def test_snapshot_includes_disk_used_pct(settings):
     snap = HealthMonitor(settings, probes=_FakeProbes(disk=42.0)).snapshot()
     assert snap.disk_used_pct == 42.0
+
+
+def test_el_heartbeat_declara_la_version_desplegada(settings, monkeypatch):
+    """El gabinete PUBLICA qué código corre; la nube deja de depender de que
+    alguien lo anote a mano (`gateways.fw_version` se llenaba a mano y se habría
+    quedado obsoleto en el siguiente despliegue)."""
+    monkeypatch.setattr("takab_edge.health.fw_version", lambda: "737dd73")
+    snap = HealthMonitor(settings, probes=_FakeProbes()).snapshot()
+    assert snap.fw_version == "737dd73"
+
+
+def test_sin_marca_de_despliegue_el_heartbeat_dice_sin_dato(settings, monkeypatch):
+    """En local nadie corrió el deploy: la versión es None, NUNCA un valor inventado.
+    La nube distingue «no sé» de un SHA y no pisa lo que ya tenga (regla de oro 7)."""
+    monkeypatch.setattr("takab_edge.health.fw_version", lambda: None)
+    snap = HealthMonitor(settings, probes=_FakeProbes()).snapshot()
+    assert snap.fw_version is None
