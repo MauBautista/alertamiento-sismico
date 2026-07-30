@@ -61,13 +61,24 @@ MQTT_ENDPOINT="$(terraform -chdir="$TF_DIR" output -raw iot_endpoint)"
 # panel quedan 403 fail-closed en producción.
 LOCAL_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**6):06d}")')"
 
-# Estas son las UNICAS tres claves que el aprovisionamiento gobierna. Un gabinete
-# en operacion tiene muchas mas (estacion, host de SeedLink, rutas de certificados,
+# Estas son las UNICAS claves que el aprovisionamiento gobierna. Un gabinete en
+# operacion tiene muchas mas (estacion, host de SeedLink, rutas de certificados,
 # calibracion MEDIDA del sensor, nombre del sitio), puestas al instalarlo. Por eso
 # lo de abajo FUSIONA en vez de sobrescribir: instalar con `sudo tee` a secas
 # borraba esas otras claves y dejaba el gabinete sin sensor y sin calibracion.
-printf 'TAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
-  "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env.managed"
+#
+# `GATEWAY_ID` es la IDENTIDAD y por eso nace aqui, no a mano: `settings.py` tiene el
+# default "gw-dev-0001", que coincidia por CASUALIDAD con el nombre del primer gabinete
+# real — asi que gw-dev-0001 llevaba meses funcionando sin tener la clave en su
+# edge.env. La segunda estacion habria arrancado publicando como la primera: mismo
+# client-id MQTT y datos atribuidos al sitio y al tenant equivocados. El thing_name ya
+# lo recibe este script como argumento; escribirlo cuesta una linea.
+#
+# `DEV_MODE=false` por la misma razon: el default es `true` y un gabinete de campo que
+# lo herede corre en modo desarrollo sin que nadie lo note. Si estamos bajando
+# credenciales REALES de Secrets Manager, esto no es un entorno de desarrollo.
+printf 'TAKAB_EDGE_GATEWAY_ID=%s\nTAKAB_EDGE_DEV_MODE=false\nTAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
+  "$THING" "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env.managed"
 
 if [ -z "$SSH_HOST" ]; then
   OUT_DIR="./certs-$THING"
