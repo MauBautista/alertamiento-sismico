@@ -192,12 +192,19 @@ resource "aws_iot_topic_rule" "this" {
   depends_on = [aws_iam_role_policy.rules]
 }
 
-# --- Presencia -> metrica CloudWatch (A-4: gabinete SIN ENLACE pagina) -----------
+# --- Presencia -> metrica CloudWatch (Takab/Fleet) --------------------------------
 # El LWT retenido en takab/status/<thing> ya viaja a SQS (regla takab_dev_status);
-# estas DOS reglas ademas lo convierten en datapoints de la metrica Takab/Fleet
-# (metric_name = nombre del thing) para alarmar desconexiones sin instrumentar la
-# aplicacion. Dos reglas con WHERE y valor LITERAL (nada de CASE en templates):
-# lo aburrido es lo que no se rompe.
+# estas DOS reglas ademas lo convierten en datapoints 0/1 de la metrica Takab/Fleet
+# (metric_name = nombre del thing). Dos reglas con WHERE y valor LITERAL (nada de
+# CASE en templates): lo aburrido es lo que no se rompe.
+#
+# OJO: esta metrica ya NO alimenta ninguna alarma. Se intento y no puede: es POR
+# EVENTO, y un desconectar+reconectar dentro de una misma ventana es ambiguo por
+# construccion (ver el bloque de `gateway_offline` en modules/observability). La
+# alarma de presencia vigila la AUSENCIA del heartbeat en Takab/Sensor.
+# Se conserva por su valor FORENSE: es el registro exacto de cuando cayo y cuando
+# volvio cada gabinete, y fue lo que permitio diagnosticar el 30-jul-2026 que los
+# dos datapoints habian caido en el mismo minuto.
 locals {
   status_metric_rules = {
     takab_dev_status_metric_offline = { status = "offline", value = "0" }

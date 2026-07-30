@@ -121,13 +121,6 @@ resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   depends_on = [aws_cloudwatch_log_metric_filter.iot_rule_errors]
 }
 
-# --- Gabinete SIN ENLACE (LWT retenido -> metrica Takab/Fleet, ver iot-core) ------
-# El LWT publica {"status":"offline"} al caer la conexion y "online" al volver;
-# la regla takab_dev_status_metric_* lo convierte en un datapoint 0/1 con el
-# nombre del thing. Son eventos ESPORADICOS (no un heartbeat de metrica):
-# missing=notBreaching ⇒ la alarma pagina en la transicion a offline y vuelve a
-# OK sola; el estado sostenido vive en la UI de flota (derive_fleet_state).
-# Solo los gateways REALES paginan: los gw-sim-* viven apagados por diseno.
 # --- Sensor MUDO: gabinete VIVO pero sin datos del sismografo (T-1.66) ------------
 # El agujero que costo 15 h de ceguera el 14/07/2026: el Shake fuera de la red, el Pi
 # latiendo cada minuto y la flota "OPERATIVA". `gateway_offline` no lo ve (hay enlace)
@@ -156,43 +149,53 @@ resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
 
-# `Takab/Fleet/<gateway_id>` es una metrica POR EVENTO: escribe 1 al conectar y 0 al
-# perder el enlace (LWT). Entre transiciones NO hay datapoints NUNCA, ni sano ni caido,
-# asi que el valor de `treat_missing_data` decide TODO. Los cuatro, segun la tabla oficial
-# de AWS para el caso "todos los datapoints ausentes" (`- - - - -`):
+# PRESENCIA DEL GABINETE = "¿sigue llegando su heartbeat?".
 #
-#   notBreaching -> OK. El silencio se lee como SALUD. Era el valor original: la alarma
-#                   disparaba con el 0 del LWT y ~15 min despues se auto-declaraba OK,
-#                   mandando un correo de "todo bien" con el gabinete muerto. Ocurrio en
-#                   los 5 cortes de julio-2026 (24, 27 x2, 28); el del 28-jul mintio >15 h.
-#   breaching    -> ALARM. Alarmaria SIEMPRE, tambien con el gabinete sano, porque un
-#                   gabinete sano tampoco emite datapoints entre transiciones.
-#   missing      -> INSUFFICIENT_DATA. Se probo el 29-jul-2026 y NO retiene: forzamos la
-#                   alarma a ALARM y CloudWatch la devolvio a INSUFFICIENT_DATA en ~1 min.
-#   ignore       -> "The current alarm state is maintained" (literal de la doc de AWS).
-#                   ESTE es el latch que queremos: tras un 0 se queda en ALARMA hasta que
-#                   llegue un 1 real. Es la semantica de una metrica de ESTADO.
+# Esta alarma vivio sobre `Takab/Fleet` (metrica POR EVENTO: 1 al conectar, 0 al perder el
+# enlace via LWT) y NUNCA pudo funcionar bien ahi. Se agotaron los cuatro valores de
+# `treat_missing_data` contra produccion, en este orden, y cada uno fallo distinto:
 #
-# Y aun con `ignore` hace falta `insufficient_data_actions`: una alarma sin historia que
-# retener (recien creada, o reevaluada tras un cambio de config, como paso el 29-jul)
-# arranca en INSUFFICIENT_DATA y con `ignore` se quedaria ahi PARA SIEMPRE, muda. En un
-# sistema donde fallar cuesta vidas, "no se nada de este gabinete" es tan accionable como
-# "esta caido" — regla de oro 7. Eso cubre ademas el caso de que el LWT NO llegue, sin
-# depender de el.
+#   notBreaching -> el silencio se lee como SALUD. Disparaba con el 0 del LWT y ~15 min
+#                   despues se auto-declaraba OK: correo de "todo bien" con el gabinete
+#                   muerto. Los 5 cortes de julio-2026 (24, 27 x2, 28); el del 28 mintio >15 h.
+#   missing      -> INSUFFICIENT_DATA y MUDA. NO retiene el estado pese al nombre
+#                   (verificado: se forzo ALARM y volvio a INSUFFICIENT_DATA en ~1 min).
+#   ignore       -> retiene, pero por eso mismo se TRABA: el 30-jul el 0 del LWT y el 1 de
+#                   la reconexion cayeron en el MISMO minuto, `Minimum` se quedo con el 0
+#                   y sin datapoints nuevos la alarma paso 4 h gritando "caido" con el
+#                   gabinete sano. La mentira inversa, igual de inutil.
+#   breaching    -> alarmaria SIEMPRE: un gabinete sano tampoco emite entre transiciones.
+#
+# La raiz no es el parametro: un desconectar+reconectar dentro de una misma ventana es
+# AMBIGUO por construccion, y CloudWatch no sabe expresar "el ultimo valor".
+#
+# La metrica correcta ya existia. `Takab/Sensor/<gw>` se publica en CADA heartbeat (1/min,
+# regla `takab_dev_seedlink_lag_metric`): su PRESENCIA es la senal de vida, con independencia
+# de su VALOR — que es justo lo que vigila `sensor_mute`. Dos alarmas sobre la misma metrica,
+# cada una mirando una cosa distinta. Sobre una metrica PERIODICA el silencio SI significa
+# una sola cosa, `breaching` es correcto, y la alarma vuelve a OK sola en cuanto reaparecen
+# muestras: no puede mentir ni trabarse.
+#
+# Coste aceptado: deteccion en ~10 min en vez de ~1 min. Esta alarma NO esta en el camino de
+# actuacion (SASMEX->sirena es local y determinista, reglas de oro 1 y 2); solo sirve para
+# que un humano vaya a ver el gabinete, y para eso 10 minutos son lo mismo que uno.
 resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 
   alarm_name          = "takab-dev-gateway-offline-${each.value}"
-  alarm_description   = "El gabinete ${each.value} publico su LWT (SIN ENLACE): perdio conexion con IoT Core. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo. Esta alarma NO se cura sola: seguira en ALARMA hasta que el gabinete reconecte de verdad."
-  namespace           = "Takab/Fleet"
+  alarm_description   = "El gabinete ${each.value} lleva >10 min sin enviar un solo heartbeat (llegan 1/min): perdio el enlace con IoT Core, se quedo sin energia o se colgo. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo. Vuelve a OK sola en cuanto reaparezcan los heartbeats."
+  namespace           = "Takab/Sensor"
   metric_name         = each.value
-  statistic           = "Minimum"
+  statistic           = "SampleCount"
   period              = 300
-  evaluation_periods  = 1
+  evaluation_periods  = 2
   threshold           = 1
   comparison_operator = "LessThanThreshold"
-  treat_missing_data  = "ignore"
+  treat_missing_data  = "breaching"
 
+  # `insufficient_data_actions` tambien pagina: con `breaching` este estado no deberia ser
+  # de reposo, pero si alguna vez la alarma se queda ahi, "no se nada de este gabinete" es
+  # tan accionable como "esta caido" (regla de oro 7). Callar nunca es la opcion segura.
   alarm_actions             = [aws_sns_topic.ops_alerts.arn]
   ok_actions                = [aws_sns_topic.ops_alerts.arn]
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
