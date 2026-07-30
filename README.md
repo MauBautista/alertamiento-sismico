@@ -90,8 +90,9 @@ Dos placas: un **Raspberry Shake RS4D** (sensor sísmico; su Shake OS no se toca
 **Raspberry Pi 4 Model B** que es el cerebro — lee SeedLink del Shake, recibe SASMEX por GPIO desde
 el receptor **WR-1** (contacto seco), dispara actuadores y sincroniza con la nube.
 
-> El host se llama `takab-pi5` por razones históricas; el hardware verificado es un Pi 4 Model B
-> Rev 1.5. `CLAUDE.md` y el blueprint todavía dicen "Pi 5" — pendiente de reconciliar.
+> El host se llama `takab-pi5` por razones históricas; el hardware verificado es un **Pi 4 Model B
+> Rev 1.5** (SoC BCM2711), leído de `/proc/device-tree/model` en la unidad real. Toda la
+> documentación viva se corrigió el 2026-07-30. **No re-corregir a Pi 5.**
 
 ---
 
