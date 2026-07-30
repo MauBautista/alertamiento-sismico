@@ -1,0 +1,46 @@
+{
+  "fuente": "Servicio Sismológico Nacional (SSN), Instituto de Geofísica, UNAM",
+  "aviso": "Datos de libre uso conforme al Aviso Legal del SSN. Instantánea del catálogo; no es un flujo en tiempo real.",
+  "capturado": "2026-05-17T08:11:22-06:00",
+  "zona_horaria": "Tiempo del centro de México",
+  "replicas_nota": "Hasta las 08:00 h del 17/mayo/2026 el SSN reporta 877 réplicas del sismo M 5.6 de Pinotepa Nacional, Oaxaca (4/mayo/2026); la mayor de M 4.1.",
+  "eventos": [
+    { "m": 4.0, "fecha": "2026-05-17", "hora": "08:11:22", "lat": 16.623, "lon": -93.275, "prof": 214.2, "loc": "19 km al SURESTE de OCOZOCOAUTLA, CHIS." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "04:50:38", "lat": 18.976, "lon": -96.135, "prof": 10.5, "loc": "11 km al SUR de EL TEJAR, VER." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "04:44:56", "lat": 16.448, "lon": -94.352, "prof": 4.4, "loc": "51 km al ESTE de UNION HIDALGO, OAX." },
+    { "m": 3.2, "fecha": "2026-05-17", "hora": "04:39:36", "lat": 18.929, "lon": -104.145, "prof": 13.3, "loc": "19 km al OESTE de CD DE ARMERIA, COL." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "04:35:20", "lat": 16.731, "lon": -94.907, "prof": 24.8, "loc": "21 km al SURESTE de MATIAS ROMERO, OAX." },
+    { "m": 4.0, "fecha": "2026-05-17", "hora": "04:32:52", "lat": 17.422, "lon": -94.955, "prof": 11.6, "loc": "51 km al SUR de SAYULA DE ALEMAN, VER." },
+    { "m": 3.6, "fecha": "2026-05-17", "hora": "04:26:22", "lat": 17.319, "lon": -101.401, "prof": 2.0, "loc": "28 km al SUROESTE de PETATLAN, GRO." },
+    { "m": 3.6, "fecha": "2026-05-17", "hora": "04:21:14", "lat": 16.673, "lon": -98.387, "prof": 10.6, "loc": "2 km al SURESTE de OMETEPEC, GRO." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "03:41:52", "lat": 17.537, "lon": -95.779, "prof": 101.7, "loc": "60 km al SUROESTE de ISLA, VER." },
+    { "m": 3.7, "fecha": "2026-05-17", "hora": "03:35:44", "lat": 16.556, "lon": -99.496, "prof": 5.3, "loc": "29 km al SUROESTE de SAN MARCOS, GRO." },
+    { "m": 2.9, "fecha": "2026-05-17", "hora": "03:34:57", "lat": 16.823, "lon": -99.401, "prof": 13.4, "loc": "3 km al NOROESTE de SAN MARCOS, GRO." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "03:30:02", "lat": 15.949, "lon": -97.674, "prof": 16.1, "loc": "27 km al SUROESTE de RIO GRANDE, OAX." },
+    { "m": 3.9, "fecha": "2026-05-17", "hora": "03:27:08", "lat": 14.803, "lon": -92.371, "prof": 74.2, "loc": "17 km al SUROESTE de TAPACHULA, CHIS." },
+    { "m": 3.5, "fecha": "2026-05-17", "hora": "03:26:13", "lat": 16.648, "lon": -99.573, "prof": 15.9, "loc": "25 km al SUROESTE de SAN MARCOS, GRO." },
+    { "m": 3.8, "fecha": "2026-05-17", "hora": "03:03:27", "lat": 16.33, "lon": -98.625, "prof": 15.0, "loc": "46 km al SUROESTE de OMETEPEC, GRO." },
+    { "m": 3.3, "fecha": "2026-05-17", "hora": "02:58:37", "lat": 16.795, "lon": -98.305, "prof": 31.8, "loc": "16 km al NORESTE de OMETEPEC, GRO." },
+    { "m": 3.3, "fecha": "2026-05-17", "hora": "02:46:21", "lat": 16.775, "lon": -94.173, "prof": 131.3, "loc": "49 km al OESTE de CINTALAPA, CHIS." },
+    { "m": 3.1, "fecha": "2026-05-17", "hora": "02:42:37", "lat": 16.596, "lon": -98.376, "prof": 3.6, "loc": "10 km al SURESTE de OMETEPEC, GRO." },
+    { "m": 3.0, "fecha": "2026-05-17", "hora": "02:38:55", "lat": 16.304, "lon": -98.318, "prof": 8.7, "loc": "29 km al OESTE de PINOTEPA NACIONAL, OAX." },
+    { "m": 3.2, "fecha": "2026-05-17", "hora": "02:36:55", "lat": 17.036, "lon": -99.951, "prof": 29.7, "loc": "15 km al ESTE de COYUCA DE BENITEZ, GRO." }
+  ],
+  "estaciones_red": [
+    { "id": "AM.R4F74", "rol": "local", "lat": 19.0414, "lon": -98.2063, "sitio": "Sitio Dev Puebla" },
+    { "id": "AM.R7B21", "rol": "vecina", "lat": 19.063, "lon": -98.306, "sitio": "Cholula" },
+    { "id": "AM.RA13C", "rol": "vecina", "lat": 19.043, "lon": -98.038, "sitio": "Amozoc" },
+    { "id": "AM.R9F02", "rol": "vecina", "lat": 18.906, "lon": -98.431, "sitio": "Atlixco" },
+    { "id": "AM.RC581", "rol": "vecina", "lat": 18.462, "lon": -97.392, "sitio": "Tehuacán" }
+  ],
+  "referencias": [
+    { "n": "CDMX", "lat": 19.4326, "lon": -99.1332 },
+    { "n": "Veracruz", "lat": 19.1738, "lon": -96.1342 },
+    { "n": "Acapulco", "lat": 16.8531, "lon": -99.8237 },
+    { "n": "Oaxaca", "lat": 17.0732, "lon": -96.7266 },
+    { "n": "Ometepec", "lat": 16.6853, "lon": -98.4266 },
+    { "n": "Tuxtla Gtz.", "lat": 16.7531, "lon": -93.1156 },
+    { "n": "Tapachula", "lat": 14.9031, "lon": -92.2578 },
+    { "n": "Manzanillo", "lat": 19.0522, "lon": -104.3158 }
+  ]
+}

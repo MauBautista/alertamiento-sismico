@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'Geist';src:url('./fonts/Geist_wght_.ttf') format('truetype-variations'),url('./fonts/Geist_wght_.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:block}
+@keyframes tk-blink{0%,49%{opacity:1}50%,100%{opacity:0.35}}
+@keyframes tk-pulse{0%{opacity:1;transform:scale(1)}70%{opacity:0.25;transform:scale(2.2)}100%{opacity:0;transform:scale(2.4)}}
+html,body{margin:0;padding:0;background:#0E2336}
+body{font-family:'Geist',system-ui,sans-serif;color:#F0F2F5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#00BFFF;text-decoration:none;border-bottom:1px solid transparent}
+a:hover{border-bottom-color:#00BFFF}
+button{font-family:inherit}
+input{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;flex-direction:column;background:#0E2336">
+
+  <sc-if value="{{ showHarness }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;align-items:center;gap:20px;padding:0 16px;height:40px;background:#08171f;border-bottom:1px solid rgba(240,242,245,0.16);flex:0 0 auto">
+    <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.14em;text-transform:uppercase;color:#6F7E8F">Maqueta · controles de demostración · no forman parte del panel</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.12em;color:#6F7E8F">ESCENA</span>
+      <sc-for list="{{ sceneBtns }}" as="b" hint-placeholder-count="7">
+        <button onClick="{{ b.on }}" style="cursor:pointer;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }};font:700 10px/1 'Geist',system-ui;letter-spacing:0.08em;padding:6px 9px;border-radius:4px">{{ b.label }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.12em;color:#6F7E8F">MODO</span>
+      <sc-for list="{{ modeBtns }}" as="b" hint-placeholder-count="3">
+        <button onClick="{{ b.on }}" style="cursor:pointer;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }};font:700 10px/1 'Geist',system-ui;letter-spacing:0.08em;padding:6px 9px;border-radius:4px">{{ b.label }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.12em;color:#6F7E8F">VARIANTE ONDAS + MAPA</span>
+      <sc-for list="{{ varBtns }}" as="b" hint-placeholder-count="2">
+        <button onClick="{{ b.on }}" style="cursor:pointer;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }};font:700 10px/1 'Geist',system-ui;letter-spacing:0.08em;padding:6px 9px;border-radius:4px">{{ b.label }}</button>
+      </sc-for>
+    </div>
+    <span style="margin-left:auto;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">PIN de demostración 604915</span>
+  </div>
+  </sc-if>
+
+  <div style="flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow-x:auto">
+
+    <div style="flex:0 0 auto;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:#122B44;border-bottom:1px solid rgba(240,242,245,0.08)">
+      <img src="assets/logo-isotype.svg" alt="Takab" style="height:24px;width:auto;display:block" />
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="font:600 13px/1 'Geist',system-ui;letter-spacing:0.06em;text-transform:uppercase;color:#F0F2F5">Takab Ailert · Panel local del gabinete</span>
+        <span style="font:400 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ gatewayId }} · {{ station }} · LAN del inmueble</span>
+      </div>
+      <div style="width:1px;height:28px;background:rgba(240,242,245,0.08)"></div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#6F7E8F">Sitio</span>
+        <span style="font:500 14px/1 'Geist',system-ui;color:#F0F2F5">{{ siteName }}</span>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <span style="display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;background:{{ liveBg }};border:1px solid {{ liveColor }}">
+          <span style="position:relative;width:8px;height:8px;border-radius:999px;background:{{ liveColor }}">
+            <span style="position:absolute;inset:0;border-radius:999px;background:{{ liveColor }};animation:tk-pulse 1s linear infinite"></span>
+          </span>
+          <span style="font:700 11px/1 'Geist',system-ui;letter-spacing:0.10em;color:{{ liveColor }}">{{ liveLabel }}</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;background:{{ cloudBg }};border:1px solid {{ cloudColor }}">
+          <span style="width:8px;height:8px;border-radius:999px;background:{{ cloudColor }}"></span>
+          <span style="font:700 11px/1 'Geist',system-ui;letter-spacing:0.10em;color:{{ cloudColor }}">{{ cloudLabel }}</span>
+        </span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+          <span style="font:700 16px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;color:#F0F2F5">{{ clockUTC }}</span>
+          <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">RTC DS3231 · CADENCIA {{ cadence }}</span>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ showWr1 }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid #7C4DFF">
+        <span style="font:700 13px/1 'Geist',system-ui;letter-spacing:0.10em;color:#B79CFF">MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
+        <span style="font:700 13px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ wr1Remaining }}</span>
+        <span style="font:400 12px/1 'Geist',system-ui;color:#B8C2CE">La protección local sigue armada · la ventana expira sola</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showAlert }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:18px;padding:14px 20px;background:#FF5252;animation:tk-blink 900ms steps(2,end) infinite">
+        <span style="font:700 28px/1 'Geist',system-ui;letter-spacing:-0.01em;color:#0E2336">ALERTA SÍSMICA · PROTÉJASE</span>
+        <span style="font:600 13px/1.3 'Geist',system-ui;color:rgba(14,35,54,0.85);max-width:520px">Alejarse de ventanas · no usar ascensores · seguir la ruta de evacuación señalizada</span>
+        <span style="margin-left:auto;font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#0E2336">FUENTE {{ alertSource }} · ENCLAVADA {{ alertSince }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showAmber }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid #FFC107">
+        <span style="font:700 15px/1 'Geist',system-ui;letter-spacing:0.06em;color:#FFC107">{{ amberText }}</span>
+        <span style="font:400 12px/1 'Geist',system-ui;color:#B8C2CE">{{ amberSub }}</span>
+        <span style="margin-left:auto;font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#FFC107">{{ amberMeta }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showCyan }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(0,191,255,0.15);border-bottom:1px solid #00BFFF">
+        <span style="font:700 15px/1 'Geist',system-ui;letter-spacing:0.06em;color:#00BFFF">PRUEBA DE ACTUADORES — NO ES ALERTA REAL</span>
+        <span style="font:400 12px/1 'Geist',system-ui;color:#B8C2CE">Sirena y estrobo sostenidos · gas, ascensores y puertas en pulso de verificación con lectura de retorno</span>
+        <span style="margin-left:auto;font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ cyanMeta }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isConsola }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1 1 auto;min-height:0;min-width:1280px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;padding:12px">
+
+      <div style="display:grid;grid-template-rows:auto minmax(240px,1fr) auto;gap:12px;min-height:0;min-width:0">
+
+        <div style="display:flex;align-items:stretch;gap:0;background:#122B44;border:1px solid rgba(240,242,245,0.08);border-left:4px solid {{ tierColor }};border-radius:8px;overflow:hidden">
+          <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px;min-width:340px">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#6F7E8F">Estado del inmueble</span>
+            <span style="font:700 28px/1 'Geist',system-ui;letter-spacing:-0.01em;color:{{ tierColor }}">{{ tierLabel }}</span>
+            <span style="font:400 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ tierSub }}</span>
+          </div>
+          <div style="flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-left:1px solid rgba(240,242,245,0.08)">
+            <sc-for list="{{ relays }}" as="r" hint-placeholder-count="5">
+              <div style="padding:12px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid rgba(240,242,245,0.06);background:{{ r.bg }}">
+                <span style="font:600 10px/1 'Geist',system-ui;letter-spacing:0.12em;color:#6F7E8F">{{ r.label }}</span>
+                <span style="font:700 15px/1 'Geist',system-ui;letter-spacing:0.04em;color:{{ r.color }}">{{ r.logic }}</span>
+                <span style="font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ r.elec }}<br />fail-safe {{ r.failsafe }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid rgba(240,242,245,0.08)">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Movimiento del suelo · 4 canales · ventana 60 s</span>
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ decimNote }}</span>
+            <span style="padding:3px 8px;border-radius:4px;background:rgba(255,193,7,0.18);font:700 10px/1 'Geist',system-ui;letter-spacing:0.10em;color:#FFC107;white-space:nowrap">SIN CALIBRAR · UNIDADES rel.</span>
+            <span style="margin-left:auto;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ variantNote }}</span>
+          </div>
+          <div style="flex:1 1 auto;position:relative;min-height:0;background:#0E2336">
+            <canvas ref="{{ refWaveMain }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none">
+              <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="4">
+                <div style="flex:{{ ln.grow }} 1 0;position:relative;border-top:1px solid rgba(240,242,245,0.06)">
+                  <div style="position:absolute;left:10px;top:7px;display:flex;align-items:baseline;gap:8px">
+                    <span style="font:700 13px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ ln.color }}">{{ ln.ch }}</span>
+                    <span style="font:500 10px/1 'Geist',system-ui;letter-spacing:0.08em;color:#6F7E8F">{{ ln.unit }}</span>
+                    <span style="font:400 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ ln.peak }}</span>
+                  </div>
+                  <div style="position:absolute;right:10px;top:7px;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ ln.scale }}</div>
+                  <div style="position:absolute;left:10px;bottom:6px;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ ln.noteColor }}">{{ ln.note }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:7px 16px;border-top:1px solid rgba(240,242,245,0.08)">
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">−60 s</span>
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">−45</span>
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">−30</span>
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">−15</span>
+            <div style="display:flex;align-items:center;gap:14px">
+              <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 'Geist',system-ui;letter-spacing:0.06em;color:#6F7E8F"><span style="width:14px;height:0;border-top:1px dashed #FFC107"></span>CAUTELA</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 'Geist',system-ui;letter-spacing:0.06em;color:#6F7E8F"><span style="width:14px;height:0;border-top:1px dashed #FF5252"></span>DISPARO</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 'Geist',system-ui;letter-spacing:0.06em;color:#6F7E8F"><span style="width:1px;height:10px;background:#00BFFF"></span>SASMEX</span>
+              <span style="font:700 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">AHORA</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+
+          <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:11px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Proximidad al disparo</span>
+              <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">perfil hospital</span>
+            </div>
+            <sc-for list="{{ bars }}" as="b" hint-placeholder-count="2">
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font:500 11px/1 'Geist',system-ui;letter-spacing:0.06em;color:#6F7E8F">{{ b.label }}</span>
+                  <span style="font:700 15px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;color:{{ b.color }}">{{ b.value }}</span>
+                  <span style="margin-left:auto;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ b.pct }}</span>
+                </div>
+                <div style="position:relative;height:10px;background:#0E2336;border:1px solid rgba(240,242,245,0.08)">
+                  <div style="position:absolute;left:0;top:0;bottom:0;width:{{ b.fill }};background:{{ b.color }}"></div>
+                  <div style="position:absolute;top:-2px;bottom:-2px;left:{{ b.watchAt }};width:1px;background:#FFC107"></div>
+                  <div style="position:absolute;top:-2px;bottom:-2px;left:{{ b.tripAt }};width:1px;background:#FF5252"></div>
+                </div>
+                <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">{{ b.scale }}</span>
+              </div>
+            </sc-for>
+            <span style="font:400 10px/1.4 'Geist',system-ui;color:#6F7E8F">El piso de ruido en reposo es 0.6–1.1 mg: el disparo está 60× por encima. En reposo esta barra debe verse vacía.</span>
+          </div>
+
+          <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:11px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Histórico de sacudida</span>
+              <span style="padding:2px 6px;border-radius:4px;background:rgba(240,242,245,0.06);font:700 9px/1.4 'Geist',system-ui;letter-spacing:0.10em;color:#6F7E8F">DESDE EL ARRANQUE · {{ uptime }}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <span style="font:500 10px/1 'Geist',system-ui;letter-spacing:0.08em;color:#6F7E8F">PGA MÁX · 1 h</span>
+                <span style="font:700 20px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ pgaHour }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <span style="font:500 10px/1 'Geist',system-ui;letter-spacing:0.08em;color:#6F7E8F">PGA MÁX · 24 h</span>
+                <span style="font:700 20px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ pga24 }}</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ histRows }}" as="h" hint-placeholder-count="3">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE">{{ h.label }}</span>
+                  <span style="flex:1 1 auto;height:1px;background:rgba(240,242,245,0.08)"></span>
+                  <span style="font:400 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ h.color }}">{{ h.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:11px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Latencias de la cadena crítica</span>
+              <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">medidas · contra presupuesto</span>
+            </div>
+            <sc-for list="{{ latencies }}" as="l" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font:500 11px/1 'Geist',system-ui;letter-spacing:0.04em;color:#B8C2CE">{{ l.label }}</span>
+                  <span style="margin-left:auto;font:700 14px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ l.color }}">{{ l.value }}</span>
+                  <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">/ {{ l.budget }}</span>
+                </div>
+                <div style="position:relative;height:5px;background:#0E2336;border:1px solid rgba(240,242,245,0.08)">
+                  <div style="position:absolute;left:0;top:0;bottom:0;width:{{ l.fill }};background:{{ l.color }}"></div>
+                </div>
+              </div>
+            </sc-for>
+            <span style="font:400 10px/1.4 'Geist',system-ui;color:#6F7E8F">El reflejo SASMEX → relé es una rama de hardware: sigue cerrando aunque el software del Pi esté caído.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-rows:minmax(300px,1fr) auto auto;gap:12px;min-height:0">
+
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(240,242,245,0.08)">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Estación y dirección de sacudida</span>
+            <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ roseVariantNote }}</span>
+            <button onClick="{{ openMap }}" style="margin-left:auto;cursor:pointer;padding:6px 11px;border-radius:4px;border:1px solid rgba(0,191,255,0.45);background:rgba(0,191,255,0.08)" style-hover="background:rgba(0,191,255,0.15)">
+              <span style="font:700 10px/1 'Geist',system-ui;letter-spacing:0.10em;color:#00BFFF">AMPLIAR MAPA REGIONAL</span>
+            </button>
+          </div>
+          <div style="flex:1 1 auto;position:relative;min-height:0;background:#0E2336">
+            <canvas ref="{{ refRose }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+            <div style="position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:4px;pointer-events:none">
+              <span style="font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ station }}</span>
+              <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ siteName }} · {{ gatewayId }}</span>
+              <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ coordsColor }}">{{ coordsLabel }}</span>
+            </div>
+            <div style="position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;pointer-events:none">
+              <sc-for list="{{ roseAxes }}" as="a" hint-placeholder-count="3">
+                <div style="display:flex;align-items:baseline;gap:7px">
+                  <span style="font:500 10px/1 'Geist',system-ui;letter-spacing:0.10em;color:#6F7E8F">{{ a.label }}</span>
+                  <span style="font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ a.color }}">{{ a.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(240,242,245,0.08);display:flex;flex-direction:column;gap:5px">
+            <span style="font:400 10px/1.4 'Geist',system-ui;color:#6F7E8F">{{ quorumNote }}</span>
+            <span style="font:400 10px/1.4 'Geist',system-ui;color:#8A97A6">El quórum entre estaciones corrige y confirma en la nube. Nunca condiciona la sirena local: el gabinete actúa solo, de inmediato.</span>
+          </div>
+        </div>
+
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Salud y calidad de la señal</span>
+            <span style="margin-left:auto;padding:3px 8px;border-radius:4px;background:{{ healthAgeBg }};font:700 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ healthAgeColor }}">{{ healthAge }}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">
+            <sc-for list="{{ healthRows }}" as="h" hint-placeholder-count="10">
+              <div style="display:flex;align-items:baseline;gap:7px">
+                <span style="width:7px;height:7px;border-radius:999px;background:{{ h.color }};flex:0 0 auto"></span>
+                <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE">{{ h.label }}</span>
+                <span style="flex:1 1 auto;height:1px;background:rgba(240,242,245,0.06)"></span>
+                <span style="font:400 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ h.color }}">{{ h.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:9px;max-height:250px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:4px">
+            <sc-for list="{{ regTabs }}" as="t" hint-placeholder-count="2">
+              <button onClick="{{ t.on }}" style="cursor:pointer;padding:6px 10px;border:none;border-bottom:2px solid {{ t.bd }};background:{{ t.bg }};font:700 10px/1 'Geist',system-ui;letter-spacing:0.10em;text-transform:uppercase;color:{{ t.fg }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ isTabLocal }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:6px;overflow:hidden">
+              <span style="font:700 9px/1.4 'Geist',system-ui;letter-spacing:0.10em;color:#8A97A6">DESDE EL ARRANQUE · VOLÁTIL EN RAM</span>
+              <sc-for list="{{ events }}" as="e" hint-placeholder-count="5">
+                <div style="display:flex;align-items:baseline;gap:9px">
+                  <span style="font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F;flex:0 0 auto">{{ e.at }}</span>
+                  <span style="width:6px;height:6px;border-radius:999px;background:{{ e.color }};flex:0 0 auto"></span>
+                  <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE">{{ e.text }}</span>
+                  <span style="margin-left:auto;font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6;flex:0 0 auto">{{ e.meta }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ isTabSsn }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:5px;overflow:hidden">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 9px/1.4 'Geist',system-ui;letter-spacing:0.10em;color:{{ ssnMetaColor }}">{{ ssnMeta }}</span>
+                <span style="margin-left:auto;font:700 9px/1.4 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ ssnNearest }}</span>
+              </div>
+              <sc-for list="{{ ssnRows }}" as="r" hint-placeholder-count="6">
+                <button onClick="{{ r.on }}" style="cursor:pointer;display:flex;align-items:baseline;gap:8px;padding:3px 4px;border:none;background:{{ r.bg }};text-align:left;width:100%" style-hover="background:rgba(240,242,245,0.05)">
+                  <span style="font:700 11px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ r.color }};flex:0 0 auto">{{ r.mag }}</span>
+                  <span style="font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F;flex:0 0 auto">{{ r.when }}</span>
+                  <span style="font:400 10px/1.3 'Geist',system-ui;color:#B8C2CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.loc }}</span>
+                  <span style="margin-left:auto;font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6;flex:0 0 auto">{{ r.dist }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isMuro }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1 1 auto;min-height:640px;display:grid;grid-template-rows:auto minmax(300px,1fr) auto auto;gap:16px;padding:20px">
+        <div style="display:flex;align-items:center;gap:28px;padding:20px 24px;background:#122B44;border:1px solid rgba(240,242,245,0.08);border-left:6px solid {{ tierColor }};border-radius:8px">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <span style="font:700 72px/1 'Geist',system-ui;letter-spacing:-0.02em;color:{{ tierColor }}">{{ tierLabel }}</span>
+            <span style="font:400 28px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ tierSub }}</span>
+          </div>
+          <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+            <span style="font:700 40px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ clockUTC }}</span>
+            <span style="font:600 18px/1 'Geist',system-ui;letter-spacing:0.10em;color:{{ liveColor }}">{{ liveLabel }}</span>
+            <span style="font:600 16px/1 'Geist',system-ui;letter-spacing:0.10em;color:{{ cloudColor }}">{{ cloudLabel }}</span>
+          </div>
+        </div>
+        <div style="position:relative;min-height:0;background:#0E2336;border:1px solid rgba(240,242,245,0.08);border-radius:8px;overflow:hidden">
+          <canvas ref="{{ refWaveMuro }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none">
+            <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="4">
+              <div style="flex:{{ ln.grow }} 1 0;position:relative;border-top:1px solid rgba(240,242,245,0.06)">
+                <div style="position:absolute;left:16px;top:10px;display:flex;align-items:baseline;gap:12px">
+                  <span style="font:700 22px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ ln.color }}">{{ ln.ch }}</span>
+                  <span style="font:500 14px/1 'Geist',system-ui;letter-spacing:0.08em;color:#6F7E8F">{{ ln.unit }}</span>
+                  <span style="font:400 18px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ ln.peak }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;align-items:stretch;gap:12px;padding:14px 18px;background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px">
+          <div style="display:flex;flex-direction:column;gap:8px;min-width:300px">
+            <span style="font:600 14px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#6F7E8F">Sismicidad regional · SSN</span>
+            <span style="font:700 22px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ ssnNearest }}</span>
+            <span style="font:600 12px/1.3 'Geist',system-ui;letter-spacing:0.06em;color:{{ ssnMetaColor }}">{{ ssnMeta }}</span>
+          </div>
+          <div style="flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;border-left:1px solid rgba(240,242,245,0.08);padding-left:18px">
+            <sc-for list="{{ ssnTop3 }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:6px;border-left:3px solid {{ r.color }};padding-left:12px">
+                <span style="font:700 26px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ r.color }}">{{ r.mag }}</span>
+                <span style="font:400 14px/1.3 'Geist',system-ui;color:#B8C2CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.loc }}</span>
+                <span style="font:400 13px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">{{ r.when }} · {{ r.dist }} · prof {{ r.depth }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;align-items:stretch;gap:12px">
+          <sc-for list="{{ relays }}" as="r" hint-placeholder-count="5">
+            <div style="flex:1 1 0;padding:14px 16px;background:{{ r.bg }};border:1px solid rgba(240,242,245,0.08);border-radius:8px;display:flex;flex-direction:column;gap:8px">
+              <span style="font:600 14px/1 'Geist',system-ui;letter-spacing:0.12em;color:#6F7E8F">{{ r.label }}</span>
+              <span style="font:700 28px/1 'Geist',system-ui;letter-spacing:0.02em;color:{{ r.color }}">{{ r.logic }}</span>
+              <span style="font:400 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ r.elec }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCampo }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1 1 auto;display:flex;flex-direction:column;gap:12px;padding:12px;max-width:520px;width:100%;margin:0 auto">
+        <div style="padding:14px;background:#122B44;border:1px solid rgba(240,242,245,0.08);border-left:4px solid {{ tierColor }};border-radius:8px;display:flex;flex-direction:column;gap:8px">
+          <span style="font:700 28px/1 'Geist',system-ui;letter-spacing:-0.01em;color:{{ tierColor }}">{{ tierLabel }}</span>
+          <span style="font:400 13px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ tierSub }}</span>
+        </div>
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Pruebas de instalación</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <sc-for list="{{ actions }}" as="a" hint-placeholder-count="5">
+              <button onClick="{{ a.on }}" style="cursor:pointer;min-height:56px;padding:12px 14px;border-radius:4px;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};font:700 12px/1.3 'Geist',system-ui;letter-spacing:0.08em;text-transform:uppercase;text-align:left;display:flex;flex-direction:column;gap:5px">
+                <span>{{ a.label }}</span>
+                <span style="font:400 10px/1.2 'Geist',system-ui;letter-spacing:0.04em;text-transform:none;opacity:0.75">{{ a.sub }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="password" inputMode="numeric" maxLength="6" placeholder="PIN 6 dígitos" value="{{ pin }}" onChange="{{ onPin }}" style="flex:1 1 auto;min-height:48px;padding:0 14px;background:#0E2336;border:1px solid rgba(240,242,245,0.16);border-radius:4px;color:#F0F2F5;font:700 18px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:0.3em" />
+            <span style="font:700 11px/1.3 'Geist',system-ui;letter-spacing:0.08em;color:{{ pinMsgColor }};max-width:150px">{{ pinMsg }}</span>
+          </div>
+        </div>
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:10px 14px;border-bottom:1px solid rgba(240,242,245,0.08);display:flex;align-items:center;gap:8px">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Ondas · 60 s</span>
+            <span style="margin-left:auto;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ decimNote }}</span>
+          </div>
+          <div style="position:relative;height:260px;background:#0E2336">
+            <canvas ref="{{ refWaveCampo }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none">
+              <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="4">
+                <div style="flex:{{ ln.grow }} 1 0;position:relative;border-top:1px solid rgba(240,242,245,0.06)">
+                  <div style="position:absolute;left:8px;top:5px;display:flex;align-items:baseline;gap:7px">
+                    <span style="font:700 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ ln.color }}">{{ ln.ch }}</span>
+                    <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#B8C2CE">{{ ln.peak }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Relés</span>
+          <sc-for list="{{ relays }}" as="r" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:10px;min-height:44px;padding:0 10px;background:{{ r.bg }};border:1px solid rgba(240,242,245,0.06);border-radius:4px">
+              <span style="font:600 12px/1 'Geist',system-ui;letter-spacing:0.10em;color:#B8C2CE;min-width:110px">{{ r.label }}</span>
+              <span style="font:700 13px/1 'Geist',system-ui;letter-spacing:0.04em;color:{{ r.color }}">{{ r.logic }}</span>
+              <span style="margin-left:auto;font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ r.elec }} · {{ r.failsafe }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Sismicidad regional · SSN</span>
+            <button onClick="{{ openMap }}" style="margin-left:auto;cursor:pointer;min-height:44px;padding:0 14px;border-radius:4px;border:1px solid rgba(0,191,255,0.45);background:rgba(0,191,255,0.08);font:700 11px/1 'Geist',system-ui;letter-spacing:0.10em;color:#00BFFF">AMPLIAR MAPA REGIONAL</button>
+          </div>
+          <span style="font:700 10px/1.4 'Geist',system-ui;letter-spacing:0.08em;color:{{ ssnMetaColor }}">{{ ssnMeta }}</span>
+          <span style="font:700 12px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ ssnNearest }}</span>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ ssnRows }}" as="r" hint-placeholder-count="8">
+              <button onClick="{{ r.on }}" style="cursor:pointer;display:flex;align-items:baseline;gap:9px;min-height:44px;padding:6px 8px;border:none;border-left:2px solid {{ r.color }};background:{{ r.bg }};text-align:left;width:100%">
+                <span style="font:700 13px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ r.color }};flex:0 0 auto">{{ r.mag }}</span>
+                <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.loc }}</span>
+                <span style="margin-left:auto;font:700 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF;flex:0 0 auto">{{ r.dist }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <span style="font:400 11px/1.5 'Geist',system-ui;color:#8A97A6">{{ ssnSource }}</span>
+        </div>
+        <div style="background:#122B44;border:1px solid rgba(240,242,245,0.08);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Salud · {{ healthAge }}</span>
+          <sc-for list="{{ healthRows }}" as="h" hint-placeholder-count="10">
+            <div style="display:flex;align-items:baseline;gap:7px">
+              <span style="width:7px;height:7px;border-radius:999px;background:{{ h.color }};flex:0 0 auto"></span>
+              <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE">{{ h.label }}</span>
+              <span style="flex:1 1 auto;height:1px;background:rgba(240,242,245,0.06)"></span>
+              <span style="font:400 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ h.color }}">{{ h.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showActionBar }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 16px;background:#122B44;border-top:1px solid rgba(240,242,245,0.16)">
+        <span style="font:600 10px/1.3 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#6F7E8F;max-width:104px">Acciones · exigen PIN</span>
+        <sc-for list="{{ actions }}" as="a" hint-placeholder-count="5">
+          <button onClick="{{ a.on }}" style="cursor:pointer;padding:9px 16px;border-radius:4px;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};font:700 11px/1.3 'Geist',system-ui;letter-spacing:0.10em;text-transform:uppercase;display:flex;flex-direction:column;gap:3px;align-items:flex-start">
+            <span>{{ a.label }}</span>
+            <span style="font:400 9px/1.2 'Geist',system-ui;letter-spacing:0.04em;text-transform:none;opacity:0.72">{{ a.sub }}</span>
+          </button>
+        </sc-for>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span style="font:700 10px/1.3 'Geist',system-ui;letter-spacing:0.08em;color:{{ pinMsgColor }};max-width:210px;text-align:right">{{ pinMsg }}</span>
+          <input type="password" inputMode="numeric" maxLength="6" placeholder="PIN" value="{{ pin }}" onChange="{{ onPin }}" style="width:132px;padding:9px 12px;background:#0E2336;border:1px solid rgba(240,242,245,0.16);border-radius:4px;color:#F0F2F5;font:700 14px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:0.28em" />
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ expandMap }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:800;background:rgba(14,35,54,0.92);display:flex;align-items:stretch;padding:24px">
+      <div style="flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 420px;background:#122B44;border:1px solid rgba(240,242,245,0.16);border-radius:8px;box-shadow:0 24px 48px -16px rgba(0,0,0,0.65);overflow:hidden">
+        <div style="display:flex;flex-direction:column;min-width:0">
+          <div style="flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;column-gap:14px;row-gap:10px;padding:14px 18px;border-bottom:1px solid rgba(240,242,245,0.08)">
+            <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 12px/1 'Geist',system-ui;letter-spacing:0.10em;text-transform:uppercase;color:#F0F2F5">Mapa regional</span>
+            <div style="display:flex;flex:0 0 auto;align-items:center;gap:6px;margin-left:auto">
+              <sc-for list="{{ scopeBtns }}" as="b" hint-placeholder-count="2">
+                <button onClick="{{ b.on }}" style="cursor:pointer;padding:8px 12px;border-radius:4px;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }};font:700 10px/1 'Geist',system-ui;letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap">{{ b.label }}</button>
+              </sc-for>
+            </div>
+            <button onClick="{{ closeMap }}" style="flex:0 0 auto;cursor:pointer;padding:9px 16px;border-radius:4px;border:1px solid rgba(240,242,245,0.16);background:transparent;font:700 11px/1 'Geist',system-ui;letter-spacing:0.10em;text-transform:uppercase;color:#B8C2CE" style-hover="background:rgba(0,191,255,0.08)">Cerrar mapa</button>
+          </div>
+          <div style="flex:1 1 auto;position:relative;min-height:0;background:#0E2336">
+            <canvas ref="{{ refMapBig }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;border-left:1px solid rgba(240,242,245,0.08);min-height:0">
+          <div style="flex:0 0 auto;padding:14px 16px;border-bottom:1px solid rgba(240,242,245,0.08);display:flex;flex-direction:column;gap:9px">
+            <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Estaciones de la red</span>
+            <sc-for list="{{ stationRows }}" as="st" hint-placeholder-count="5">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <span style="width:7px;height:7px;border-radius:999px;background:{{ st.color }};flex:0 0 auto"></span>
+                <span style="font:700 11px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5;flex:0 0 auto">{{ st.id }}</span>
+                <span style="font:400 11px/1.3 'Geist',system-ui;color:#B8C2CE">{{ st.sitio }}</span>
+                <span style="margin-left:auto;font:400 10px/1.3 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6;flex:0 0 auto">{{ st.dist }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1 1 auto;display:flex;flex-direction:column;min-height:0">
+            <div style="flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:14px 16px 8px">
+              <span style="font:600 11px/1 'Geist',system-ui;letter-spacing:0.12em;text-transform:uppercase;color:#B8C2CE">Últimos sismos detectados</span>
+              <span style="font:700 11px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ ssnCount }}</span>
+            </div>
+            <div style="flex:1 1 auto;overflow-y:auto;padding:0 16px 14px;display:flex;flex-direction:column;gap:2px">
+              <sc-for list="{{ ssnRows }}" as="r" hint-placeholder-count="20">
+                <button onClick="{{ r.on }}" style="cursor:pointer;display:flex;flex-direction:column;gap:4px;padding:8px;border:none;border-left:2px solid {{ r.color }};background:{{ r.bg }};text-align:left;width:100%" style-hover="background:rgba(240,242,245,0.05)">
+                  <div style="display:flex;align-items:baseline;gap:8px;width:100%">
+                    <span style="font:700 14px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:{{ r.color }}">{{ r.mag }}</span>
+                    <span style="font:400 11px/1 'Geist',system-ui;color:#B8C2CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.loc }}</span>
+                  </div>
+                  <div style="display:flex;align-items:baseline;gap:10px;width:100%">
+                    <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6F7E8F">{{ r.date }} {{ r.when }}</span>
+                    <span style="font:400 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#8A97A6">prof {{ r.depth }}</span>
+                    <span style="margin-left:auto;font:700 10px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#00BFFF">{{ r.dist }}</span>
+                  </div>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;padding:12px 16px;border-top:1px solid rgba(240,242,245,0.08);display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:16px;row-gap:6px">
+              <span style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;font:400 10px/1.3 'Geist',system-ui;letter-spacing:0.06em;color:#8A97A6"><span style="width:8px;height:8px;flex:0 0 auto;background:#F0F2F5"></span>Esta estación</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;font:400 10px/1.3 'Geist',system-ui;letter-spacing:0.06em;color:#8A97A6"><span style="width:8px;height:8px;flex:0 0 auto;border-radius:999px;background:#00E676"></span>Vecinas</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;font:400 10px/1.3 'Geist',system-ui;letter-spacing:0.06em;color:#8A97A6"><span style="width:9px;height:9px;flex:0 0 auto;border-radius:999px;border:1.4px solid #FFD700"></span>Epicentro · área ∝ M</span>
+            </div>
+            <span style="font:700 10px/1.4 'Geist',system-ui;letter-spacing:0.08em;color:{{ ssnMetaColor }}">{{ ssnMeta }}</span>
+            <span style="font:400 11px/1.5 'Geist',system-ui;color:#8A97A6;text-wrap:pretty">{{ ssnSource }} · proyección equirectangular local, coordenadas reales sin geometría dibujada.</span>
+            <span style="font:400 10px/1.4 'Geist',system-ui;color:#8A97A6">{{ ssnNote }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:950},&quot;siteName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sitio Dev Puebla&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Identidad del gabinete&quot;},&quot;gatewayId&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;gw-dev-0001&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Identidad del gabinete&quot;},&quot;station&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;AM.R4F74&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Identidad del gabinete&quot;},&quot;initialMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;muro&quot;,&quot;consola&quot;,&quot;campo&quot;],&quot;default&quot;:&quot;consola&quot;,&quot;tsType&quot;:&quot;'muro'|'consola'|'campo'&quot;,&quot;section&quot;:&quot;Presentación&quot;},&quot;initialVariant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;A&quot;,&quot;B&quot;],&quot;default&quot;:&quot;A&quot;,&quot;tsType&quot;:&quot;'A'|'B'&quot;,&quot;section&quot;:&quot;Presentación&quot;},&quot;showHarness&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Presentación&quot;}}">
+class Component extends DCLogic {
+  state = {
+    scene: 'reposo', mode: 'consola', variant: 'A', tick: 0,
+    pin: '', pinMsg: 'El PIN se pide de nuevo al recargar · nunca se guarda', pinKind: 'meta',
+    expandMap: false, regTab: 'local', ssn: null, ssnErr: false, sel: null, mapScope: 'regional',
+    attempts: 0, lockUntil: 0, armed: null, armedAt: 0,
+    wr1Until: 0, silenced: false, testUntil: 0, log: []
+  };
+
+  /* Inicializados antes del primer render: renderVals corre ANTES de componentDidMount. */
+  metrics = {}; peakHold = {}; canv = {}; markers = [];
+  CH = ['EHZ', 'ENZ', 'ENN', 'ENE'];
+  N = 3000;
+  PIN = '604915';
+  TH = { pga_watch: 0.040, pga_trip: 0.060, pgv_watch: 2.0, pgv_trip: 4.0 };
+  C = { fg1: '#F0F2F5', fg2: '#B8C2CE', fg3: '#6F7E8F', fg4: '#8A97A6', cyan: '#00BFFF', geo: '#7CE7FF', ok: '#00E676', warn: '#FFC107', crit: '#FF5252' };
+
+  componentDidMount() { try { this.mount(); } catch (err) { console.error('panel mount', (err && err.stack) || err); } }
+  mount() {
+    this.buf = {}; this.clip = {};
+    this.CH.forEach(c => { this.buf[c] = new Float32Array(this.N); this.clip[c] = new Uint8Array(this.N); });
+    /* this.canv NO se reinicia aquí: React adjunta los refs antes de componentDidMount. */
+    this.head = 0; this.markers = []; this.t0 = performance.now() / 1000;
+    this.lastS = this.t0; this.sceneT0 = this.t0; this.metrics = {}; this.peakHold = {};
+    for (let i = 0; i < this.N; i++) {
+      const t = this.t0 - 60 + i * 0.02;
+      const w = (f, ph) => Math.sin(2 * Math.PI * f * t + ph);
+      const r = () => (Math.random() - 0.5) * 2;
+      const g = 0.55 * w(3.1, 0) + 0.3 * w(7.4, 1.1) + 0.15 * r();
+      const h2 = 0.5 * w(2.6, 0.7) + 0.32 * w(6.1, 2.2) + 0.18 * r();
+      const k = 0.48 * w(2.9, 1.9) + 0.34 * w(8.3, 0.4) + 0.18 * r();
+      this.buf.EHZ[i] = 0.022 * g; this.buf.ENZ[i] = 0.0010 * g;
+      this.buf.ENN[i] = 0.00074 * h2; this.buf.ENE[i] = 0.00066 * k;
+    }
+    this.computeMetrics();
+    window.addEventListener('resize', this.autoMode);
+    const p = this.props || {};
+    if (p.initialMode && p.initialMode !== this.state.mode) { this.userMode = true; this.setState({ mode: p.initialMode }); }
+    if (p.initialVariant && p.initialVariant !== this.state.variant) this.setState({ variant: p.initialVariant });
+    this.dead = false; this.lastFrame = 0;
+    this.raf = requestAnimationFrame(this.loop);
+    this.iv = setInterval(() => { this.computeMetrics(); this.setState(s => ({ tick: s.tick + 1 })); }, 1000);
+    this.wd = setInterval(this.pump, 250);
+    fetch('data/ssn-sismos.json')
+      .then(r => r.json())
+      .then(d => this.setState({ ssn: d }))
+      .catch(() => this.setState({ ssnErr: true }));
+  }
+
+  /* ---------- geografía ---------- */
+  SITE = { lat: 19.0414, lon: -98.2063 };
+  haversine(a, b) {
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+  bearing(a, b) {
+    const rad = Math.PI / 180;
+    const y = Math.sin((b.lon - a.lon) * rad) * Math.cos(b.lat * rad);
+    const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lon - a.lon) * rad);
+    const d = (Math.atan2(y, x) / rad + 360) % 360;
+    return ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round(d / 22.5) % 16];
+  }
+  magColor(m) { const C = this.C; return m >= 6 ? C.crit : m >= 4.5 ? C.warn : m >= 3.5 ? '#FFD700' : C.ok; }
+  ssnEvents() {
+    const d = this.state.ssn; if (!d) return [];
+    return d.eventos.map((e, i) => {
+      const km = this.haversine(this.SITE, e);
+      return Object.assign({}, e, { km, rumbo: this.bearing(this.SITE, e), i });
+    });
+  }
+  /* Mapa geográfico: proyección equirectangular local, sin geometría dibujada a mano. */
+  drawGeoMap(el) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return;
+    const W = Math.floor(w * dpr), H = Math.floor(h * dpr);
+    if (el.width !== W || el.height !== H) { el.width = W; el.height = H; }
+    const x = el.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, w, h);
+    const d = this.state.ssn, C = this.C;
+    if (!d) { x.fillStyle = C.warn; x.font = "700 12px 'Geist',system-ui"; x.fillText(this.state.ssnErr ? 'CATÁLOGO SSN NO DISPONIBLE · SIN DATOS EN CACHÉ' : 'CARGANDO CATÁLOGO SSN…', 16, 24); return; }
+    const local = this.state.mapScope === 'local';
+    const RADIO_LOCAL = 60; // km — la extensión de la red del inmueble
+    const allEvs = this.ssnEvents();
+    const evs = local ? allEvs.filter(e => e.km <= RADIO_LOCAL) : allEvs;
+    const allSta = d.estaciones_red;
+    const sta = local ? allSta.filter(st => this.haversine(this.SITE, st) <= RADIO_LOCAL) : allSta;
+    const refs = local ? d.referencias.filter(r => this.haversine(this.SITE, r) <= RADIO_LOCAL) : d.referencias;
+    const kx = Math.cos(this.SITE.lat * Math.PI / 180);
+    /* La extensión se ajusta al alcance elegido: sin el conmutador, un catálogo de 1300 km
+       aplasta una red de 28 km hasta hacerla ilegible. */
+    let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    const fit = p => { const px = p.lon * kx, py = -p.lat; if (px < minX) minX = px; if (px > maxX) maxX = px; if (py < minY) minY = py; if (py > maxY) maxY = py; };
+    (local ? sta.concat(refs, evs) : evs.concat(sta, refs)).forEach(fit);
+    fit(this.SITE);
+    if (local) {
+      /* El ajuste local sigue la extensión REAL de la red (~28 km), no el radio nominal:
+         forzar ±60 km comprimía las vecinas más cercanas hasta hacerlas ilegibles. */
+      const mx = (maxX - minX) * 0.12 || 0.05, my = (maxY - minY) * 0.12 || 0.05;
+      minX -= mx; maxX += mx; minY -= my; maxY += my;
+    }
+    const pad = 46;
+    const sc = Math.min((w - pad * 2) / (maxX - minX), (h - pad * 2) / (maxY - minY));
+    const ox = (w - (maxX - minX) * sc) / 2 - minX * sc, oy = (h - (maxY - minY) * sc) / 2 - minY * sc;
+    const P = p => [p.lon * kx * sc + ox, -p.lat * sc + oy];
+    const kmPerDeg = 111.32;
+    const S = P(this.SITE);
+    // retícula: el paso se elige por separación en píxeles, no por grado fijo
+    x.font = "400 9px 'JetBrains Mono',monospace";
+    const step = (min, perDeg) => [1, 2, 5, 10, 20].find(v => v * perDeg >= min) || 20;
+    const gut = 34; // gutter inferior reservado para el pie de canvas
+    const latStep = step(30, sc), lonStep = step(46, sc * kx);
+    for (let lat = Math.ceil(-maxY / latStep) * latStep; lat <= -minY; lat += latStep) {
+      const y = P({ lat, lon: this.SITE.lon })[1];
+      x.strokeStyle = 'rgba(240,242,245,0.05)'; x.beginPath(); x.moveTo(0, y); x.lineTo(w, y); x.stroke();
+      if (y > 14 && y < h - gut) { x.fillStyle = '#6F7E8F'; x.fillText(lat + '° N', 4, y - 3); }
+    }
+    const lonLabelY = h - gut + 12;
+    for (let lon = Math.ceil((minX / kx) / lonStep) * lonStep; lon <= maxX / kx; lon += lonStep) {
+      const px = P({ lat: this.SITE.lat, lon })[0];
+      x.strokeStyle = 'rgba(240,242,245,0.05)'; x.beginPath(); x.moveTo(px, 0); x.lineTo(px, h - gut); x.stroke();
+      if (px > 4 && px < w - 40) { x.fillStyle = '#6F7E8F'; x.fillText(Math.abs(lon) + '° O', px + 3, lonLabelY); }
+    }
+    // anillos de distancia desde el sitio
+    (local ? [5, 10, 25, 50] : [100, 200, 400, 800]).forEach(km => {
+      const r = km / kmPerDeg * sc;
+      if (r < 12) return;
+      x.beginPath(); x.arc(S[0], S[1], r, 0, Math.PI * 2);
+      x.strokeStyle = 'rgba(0,191,255,0.16)'; x.setLineDash([3, 5]); x.lineWidth = 1; x.stroke(); x.setLineDash([]);
+      /* Radial a 45° hacia abajo-derecha: deja libre el canal superior del rótulo de alcance. */
+      x.fillStyle = '#8A97A6'; x.font = "400 9px 'JetBrains Mono',monospace";
+      const d45 = Math.SQRT1_2;
+      x.fillText(km + ' km', S[0] + r * d45 + 4, S[1] + r * d45 + 10);
+    });
+    // referencias urbanas (coordenadas reales, sin geometría inventada).
+    // Los rótulos se encolan: se colocan al final, con la prioridad más baja.
+    const refQueue = [];
+    refs.forEach(r => {
+      const p = P(r);
+      x.fillStyle = '#6F7E8F'; x.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
+      refQueue.push({ n: r.n, p });
+    });
+    // epicentros SSN
+    evs.forEach(e => {
+      const p = P(e), col = this.magColor(e.m), r = 3 + (e.m - 2.5) * 2.4;
+      x.beginPath(); x.arc(p[0], p[1], r, 0, Math.PI * 2);
+      x.fillStyle = col; x.globalAlpha = 0.22; x.fill(); x.globalAlpha = 1;
+      x.strokeStyle = col; x.lineWidth = 1.4; x.stroke();
+      if (this.state.sel === e.i) {
+        x.beginPath(); x.arc(p[0], p[1], r + 5, 0, Math.PI * 2); x.strokeStyle = C.fg1; x.lineWidth = 1; x.stroke();
+        x.globalAlpha = 0.4; x.beginPath(); x.moveTo(S[0], S[1]); x.lineTo(p[0], p[1]); x.strokeStyle = C.cyan; x.stroke(); x.globalAlpha = 1;
+        x.fillStyle = C.fg1; x.font = "700 11px 'JetBrains Mono',monospace";
+        const txt = 'M ' + e.m.toFixed(1) + ' · ' + Math.round(e.km) + ' km';
+        const tw = x.measureText(txt).width;
+        let lx = p[0] + r + 8, ly = p[1] - 6;
+        if (lx + tw > w - 6) lx = p[0] - r - 8 - tw;
+        if (lx < 6) lx = Math.min(Math.max(6, p[0] - tw / 2), w - tw - 6);
+        if (ly < 14) ly = p[1] + r + 16;
+        if (ly > h - gut) ly = p[1] - r - 8;
+        x.fillText(txt, lx, ly);
+      }
+    });
+    // red del inmueble · rótulos con nivel de detalle: si no caben, se agrupan
+    const placed = [];
+    let hidden = 0;
+    /* El rótulo de racimo es el elemento de menor prioridad: reserva su caja ANTES
+       de colocar los identificadores de estación, así nunca se pintan encima. */
+    x.font = "700 10px 'Geist',system-ui";
+    const cluW = x.measureText('+9 vecinas · ver lista').width;
+    const cluBox = { x0: S[0] + 11, y0: S[1] + 8, x1: S[0] + 15 + cluW, y1: S[1] + 22 };
+    placed.push(cluBox);
+    x.font = "700 10px 'JetBrains Mono',monospace";
+    sta.forEach(s => {
+      const p = P(s), self = s.rol === 'local';
+      if (self) {
+        x.strokeStyle = C.cyan; x.lineWidth = 1.4;
+        x.beginPath(); x.arc(p[0], p[1], 9, 0, Math.PI * 2); x.stroke();
+        x.fillStyle = C.fg1; x.fillRect(p[0] - 3.5, p[1] - 3.5, 7, 7);
+      } else {
+        x.fillStyle = C.ok; x.beginPath(); x.arc(p[0], p[1], 3.5, 0, Math.PI * 2); x.fill();
+        x.globalAlpha = 0.22; x.strokeStyle = C.ok; x.lineWidth = 1;
+        x.beginPath(); x.moveTo(S[0], S[1]); x.lineTo(p[0], p[1]); x.stroke(); x.globalAlpha = 1;
+      }
+      const tw = x.measureText(s.id).width;
+      let lx = p[0] + (self ? 13 : 7), ly = p[1] + 3;
+      if (lx + tw > w - 6) lx = p[0] - (self ? 13 : 7) - tw;
+      const box = { x0: lx - 2, y0: ly - 10, x1: lx + tw + 2, y1: ly + 3 };
+      const hit = placed.some(q => !(box.x1 < q.x0 || box.x0 > q.x1 || box.y1 < q.y0 || box.y0 > q.y1));
+      if (hit && !self) { hidden++; return; }
+      placed.push(box);
+      x.fillStyle = self ? C.fg1 : '#8A97A6';
+      x.fillText(s.id, lx, ly);
+    });
+    if (hidden) {
+      x.fillStyle = C.ok; x.font = "700 10px 'Geist',system-ui";
+      x.fillText('+' + hidden + ' vecinas · ver lista', cluBox.x0 + 2, cluBox.y1 - 4);
+    }
+    // rótulos de referencia: misma guarda de borde y de ocupación que los identificadores
+    x.font = "400 10px 'Geist',system-ui"; x.fillStyle = '#8A97A6';
+    refQueue.forEach(q => {
+      const tw = x.measureText(q.n).width;
+      let lx = q.p[0] + 5;
+      if (lx + tw > w - 6) lx = q.p[0] - 5 - tw;
+      if (lx < 6) return;
+      const ly = q.p[1] + 3;
+      if (ly < 14 || ly > h - gut) return;
+      const box = { x0: lx - 2, y0: ly - 10, x1: lx + tw + 2, y1: ly + 3 };
+      if (placed.some(z => !(box.x1 < z.x0 || box.x0 > z.x1 || box.y1 < z.y0 || box.y0 > z.y1))) return;
+      placed.push(box);
+      x.fillText(q.n, lx, ly);
+    });
+    // rótulo de alcance
+    x.fillStyle = '#8A97A6'; x.font = "700 10px 'Geist',system-ui";
+    x.fillText(local
+      ? 'ALCANCE RED LOCAL · RADIO ' + RADIO_LOCAL + ' km · ' + sta.length + ' DE ' + allSta.length + ' ESTACIONES'
+      : 'ALCANCE REGIONAL · CATÁLOGO COMPLETO · ' + allSta.length + ' ESTACIONES', 12, 18);
+    if (local && evs.length === 0) {
+      x.fillStyle = '#8A97A6'; x.font = "400 11px 'Geist',system-ui";
+      x.fillText('Sin epicentros del catálogo dentro del radio local', 12, 36);
+    }
+  }
+  componentWillUnmount() {
+    this.dead = true;
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0; clearInterval(this.iv); clearInterval(this.wd); this.iv = 0; this.wd = 0;
+    window.removeEventListener('resize', this.autoMode);
+  }
+  /* Breakpoints declarados: <1024 px → CAMPO · 1024–1919 px → CONSOLA · ≥1920 px → CONSOLA (MURO se fuerza a mano) */
+  autoMode = () => { if (this.userMode) return; const w = window.innerWidth; const m = w < 1024 ? 'campo' : 'consola'; if (m !== this.state.mode) this.setState({ mode: m }); };
+
+  loop = () => {
+    this.raf = 0;
+    if (this.dead) return;
+    this.lastFrame = performance.now();
+    try { this.sample(); this.drawAll(); }
+    catch (err) { console.error('panel draw', (err && err.stack) || err); }
+    this.raf = requestAnimationFrame(this.loop);
+  };
+  /* Watchdog: si la cadena de rAF se corta (remonte, pestaña oculta, excepción externa) se re-arma. */
+  pump = () => {
+    if (this.dead) return;
+    if (performance.now() - (this.lastFrame || 0) < 400) return;
+    /* rAF puede estar suspendido (iframe sin pintar, pestaña oculta): se dibuja desde el temporizador. */
+    this.lastFrame = performance.now();
+    try { this.sample(); this.drawAll(); } catch (err) { console.error('panel draw', (err && err.stack) || err); }
+    if (!this.raf) this.raf = requestAnimationFrame(this.loop);
+  };
+
+  /* ---------- simulación de señal ---------- */
+  amp(el) {
+    const sc = this.state.scene;
+    if (sc === 'vigilancia') return { a: 0.030 * (0.55 + 0.45 * Math.sin(el / 5.5)), v: 1.4 };
+    if (sc === 'alerta') {
+      const p = ((el % 48) + 48) % 48 - 3;
+      if (p < 0) return { a: 0.0012, v: 0.03 };
+      const P = 0.10 * Math.exp(-Math.pow((p - 1.1) / 1.2, 2));
+      const S = p > 2.2 ? 0.60 * Math.exp(-Math.pow((p - 6.0) / 5.2, 2)) + 0.09 * Math.exp(-(p - 6) / 14) : 0;
+      const a = Math.max(0.0012, P + Math.max(0, S));
+      return { a, v: a * 12 };
+    }
+    return { a: 0.0010, v: 0.022 };
+  }
+  sample() {
+    if (this.state.scene === 'sin_senal') { this.lastS = performance.now() / 1000; return; }
+    const now = performance.now() / 1000;
+    let n = Math.floor((now - this.lastS) * 50);
+    if (n <= 0) return;
+    if (n > 120) n = 120;
+    for (let i = 0; i < n; i++) {
+      this.lastS += 0.02;
+      const el = this.lastS - this.sceneT0;
+      const A = this.amp(el);
+      const t = this.lastS;
+      const w = (f, ph) => Math.sin(2 * Math.PI * f * t + ph);
+      const r = () => (Math.random() - 0.5) * 2;
+      const g = 0.55 * w(3.1, 0) + 0.3 * w(7.4, 1.1) + 0.15 * r();
+      const h = 0.5 * w(2.6, 0.7) + 0.32 * w(6.1, 2.2) + 0.18 * r();
+      const k = 0.48 * w(2.9, 1.9) + 0.34 * w(8.3, 0.4) + 0.18 * r();
+      const vals = { EHZ: A.v * g, ENZ: A.a * g, ENN: A.a * 0.74 * h, ENE: A.a * 0.66 * k };
+      this.CH.forEach(c => {
+        let v = vals[c];
+        let cl = 0;
+        const lim = c === 'EHZ' ? 12 : 0.55;
+        if (Math.abs(v) >= lim) { v = Math.sign(v) * lim; cl = 1; }
+        this.buf[c][this.head] = v; this.clip[c][this.head] = cl;
+      });
+      this.head = (this.head + 1) % this.N;
+      if (this.state.scene === 'alerta') {
+        const p = ((el % 48) + 48) % 48;
+        if (p >= 3 && p < 3.02 && !this.markers.some(m => Math.abs(m.t - this.lastS) < 1)) {
+          this.markers.push({ t: this.lastS, kind: 'sasmex' });
+          this.markers.push({ t: this.lastS + 0.4, kind: 'tier' });
+        }
+      }
+      this.markers = this.markers.filter(m => m.t > this.lastS - 62);
+    }
+  }
+  win(c) { const o = new Float32Array(this.N); for (let i = 0; i < this.N; i++) o[i] = this.buf[c][(this.head + i) % this.N]; return o; }
+  computeMetrics() {
+    const dead = this.state.scene === 'sin_senal';
+    this.CH.forEach(c => {
+      if (dead) { this.metrics[c] = null; return; }
+      const w = this.win(c); let pk = 0, sq = 0, sta = 0, lta = 0, clip = 0;
+      for (let i = 0; i < this.N; i++) {
+        const a = Math.abs(w[i]); if (a > pk) pk = a; sq += w[i] * w[i];
+        if (i >= this.N - 50) sta += a; if (i >= this.N - 500) lta += a;
+        if (this.clip[c][i]) clip = 1;
+      }
+      const rms = Math.sqrt(sq / this.N);
+      const acc = c[1] === 'N';
+      this.metrics[c] = {
+        pga: acc ? pk : pk / 39, pgv: acc ? pk * 39 : pk, rms, clip,
+        sta_lta: Math.min(10, (sta / 50) / Math.max(1e-9, lta / 500)),
+        health: clip ? 0.5 : (rms === 0 ? 0 : 1.0), acc
+      };
+      const ph = this.peakHold[c] || 0;
+      this.peakHold[c] = Math.max(pk, ph * 0.94);
+    });
+  }
+
+  /* ---------- dibujo ---------- */
+  ref = (k) => {
+    this.refs2 = this.refs2 || {};
+    if (!this.refs2[k]) this.refs2[k] = (el) => { if (el && el.isConnected !== false) this.canv[k] = el; else delete this.canv[k]; };
+    return this.refs2[k];
+  };
+  laneGrow() { return this.state.variant === 'A' ? [1, 1, 1, 1] : [1, 3, 1, 1]; }
+  scaleFor(c) {
+    const m = this.metrics[c];
+    const floor = c === 'EHZ' ? 0.10 : 0.012;
+    const pk = m ? Math.max(m.acc ? m.pga : m.pgv, this.peakHold[c] || 0) : 0;
+    return Math.max(floor, pk * 1.35);
+  }
+  drawAll() {
+    Object.keys(this.canv).forEach(k => {
+      const el = this.canv[k];
+      if (!el || !el.isConnected) { delete this.canv[k]; return; }
+      try { this.drawWave(el, k); } catch (e) { /* un canvas roto no debe detener el resto */ }
+    });
+  }
+  drawWave(el, key) {
+    if (key === 'rose') return this.drawRose(el);
+    if (key === 'mapbig') return this.drawGeoMap(el);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = el.clientWidth, h = el.clientHeight;
+    if (!w || !h) return;
+    const W = Math.floor(w * dpr), H = Math.floor(h * dpr);
+    if (el.width !== W || el.height !== H) { el.width = W; el.height = H; }
+    const x = el.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, w, h);
+    const grow = this.laneGrow(), tot = grow.reduce((a, b) => a + b, 0);
+    const dead = this.state.scene === 'sin_senal';
+    const V = this.state.variant;
+    let y0 = 0;
+    this.CH.forEach((c, i) => {
+      const lh = h * grow[i] / tot, mid = y0 + lh / 2, half = lh / 2 - 6;
+      x.strokeStyle = 'rgba(240,242,245,0.06)'; x.lineWidth = 1;
+      for (let g = 1; g < 4; g++) { const gx = w * g / 4; x.beginPath(); x.moveTo(gx, y0); x.lineTo(gx, y0 + lh); x.stroke(); }
+      x.strokeStyle = 'rgba(240,242,245,0.10)';
+      x.beginPath(); x.moveTo(0, mid); x.lineTo(w, mid); x.stroke();
+      if (dead) {
+        x.strokeStyle = 'rgba(255,193,7,0.35)'; x.setLineDash([3, 5]);
+        x.beginPath(); x.moveTo(0, mid); x.lineTo(w, mid); x.stroke(); x.setLineDash([]);
+        y0 += lh; return;
+      }
+      const sc = this.scaleFor(c);
+      const acc = c[1] === 'N';
+      const wv = this.win(c);
+      const cl = new Uint8Array(this.N); for (let j = 0; j < this.N; j++) cl[j] = this.clip[c][(this.head + j) % this.N];
+      // umbrales
+      if (acc) {
+        [[this.TH.pga_watch, this.C.warn], [this.TH.pga_trip, this.C.crit]].forEach(([tv, col]) => {
+          const yy = Math.min(half, tv / sc * half);
+          x.strokeStyle = col; x.globalAlpha = yy >= half ? 0.35 : 0.75; x.setLineDash([4, 4]); x.lineWidth = 1;
+          x.beginPath(); x.moveTo(0, mid - yy); x.lineTo(w, mid - yy); x.moveTo(0, mid + yy); x.lineTo(w, mid + yy); x.stroke();
+          x.setLineDash([]); x.globalAlpha = 1;
+        });
+      }
+      const col = acc ? this.C.cyan : this.C.geo;
+      const per = this.N / w;
+      if (V === 'A') {
+        x.strokeStyle = col; x.lineWidth = 1.3; x.lineCap = 'round'; x.beginPath();
+        for (let px = 0; px < w; px++) {
+          let mn = 1e9, mx = -1e9;
+          for (let j = Math.floor(px * per); j < Math.floor((px + 1) * per); j++) { const v = wv[j]; if (v < mn) mn = v; if (v > mx) mx = v; }
+          if (mn > mx) continue;
+          const ya = mid - Math.max(-half, Math.min(half, mx / sc * half));
+          const yb = mid - Math.max(-half, Math.min(half, mn / sc * half));
+          x.moveTo(px + 0.5, ya); x.lineTo(px + 0.5, yb === ya ? yb + 0.6 : yb);
+        }
+        x.stroke();
+      } else {
+        const up = [], dn = [];
+        for (let px = 0; px < w; px++) {
+          let mn = 1e9, mx = -1e9;
+          for (let j = Math.floor(px * per); j < Math.floor((px + 1) * per); j++) { const v = wv[j]; if (v < mn) mn = v; if (v > mx) mx = v; }
+          if (mn > mx) { mn = 0; mx = 0; }
+          up.push([px, mid - Math.max(-half, Math.min(half, mx / sc * half))]);
+          dn.push([px, mid - Math.max(-half, Math.min(half, mn / sc * half))]);
+        }
+        x.beginPath(); up.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]));
+        for (let k = dn.length - 1; k >= 0; k--) x.lineTo(dn[k][0], dn[k][1]);
+        x.closePath(); x.fillStyle = col; x.globalAlpha = 0.30; x.fill(); x.globalAlpha = 1;
+        x.strokeStyle = col; x.lineWidth = 1.2; x.beginPath();
+        up.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.stroke();
+        const ph = Math.min(half, (this.peakHold[c] || 0) / sc * half);
+        x.strokeStyle = col; x.globalAlpha = 0.5; x.setLineDash([2, 6]);
+        x.beginPath(); x.moveTo(0, mid - ph); x.lineTo(w, mid - ph); x.moveTo(0, mid + ph); x.lineTo(w, mid + ph); x.stroke();
+        x.setLineDash([]); x.globalAlpha = 1;
+      }
+      // ticks de saturación
+      x.fillStyle = this.C.crit;
+      for (let px = 0; px < w; px++) {
+        let any = 0;
+        for (let j = Math.floor(px * per); j < Math.floor((px + 1) * per); j++) if (cl[j]) { any = 1; break; }
+        if (any) x.fillRect(px, y0 + 1, 1, 5);
+      }
+      y0 += lh;
+    });
+    // marcas verticales
+    this.markers.forEach(m => {
+      const age = this.lastS - m.t; if (age < 0 || age > 60) return;
+      const px = w * (1 - age / 60);
+      x.strokeStyle = m.kind === 'sasmex' ? this.C.cyan : this.C.crit;
+      x.lineWidth = m.kind === 'sasmex' ? 1.5 : 1;
+      if (m.kind === 'tier') x.setLineDash([3, 3]);
+      x.beginPath(); x.moveTo(px, 0); x.lineTo(px, h); x.stroke(); x.setLineDash([]);
+      x.fillStyle = m.kind === 'sasmex' ? this.C.cyan : this.C.crit;
+      x.font = "700 9px 'JetBrains Mono',monospace";
+      x.fillText(m.kind === 'sasmex' ? 'SASMEX' : 'TIER', Math.min(w - 44, px + 3), 12);
+    });
+  }
+  drawRose(el) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return;
+    const W = Math.floor(w * dpr), H = Math.floor(h * dpr);
+    if (el.width !== W || el.height !== H) { el.width = W; el.height = H; }
+    const x = el.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, w, h);
+    const V = this.state.variant, dead = this.state.scene === 'sin_senal';
+    const cx = V === 'A' ? w / 2 : w * 0.40, cy = h / 2 + 6, R = Math.min(w, h) * 0.36;
+    const mN = this.metrics.ENN, mE = this.metrics.ENE, mZ = this.metrics.ENZ;
+    const sc = Math.max(0.006, this.TH.pga_trip * 1.15, (mZ ? mZ.pga : 0) * 1.2);
+    const vn = dead || !mN ? 0 : Math.abs(this.buf.ENN[(this.head - 1 + this.N) % this.N]);
+    const ve = dead || !mE ? 0 : Math.abs(this.buf.ENE[(this.head - 1 + this.N) % this.N]);
+    const vz = dead || !mZ ? 0 : Math.abs(this.buf.ENZ[(this.head - 1 + this.N) % this.N]);
+    // anillos
+    const rings = V === 'A' ? [0.34, 0.62, 0.86, 1] : [0.55, 1];
+    x.font = "400 9px 'JetBrains Mono',monospace";
+    rings.forEach((f, i) => {
+      x.beginPath(); x.arc(cx, cy, R * f, 0, Math.PI * 2);
+      x.strokeStyle = 'rgba(240,242,245,0.10)'; x.lineWidth = 1; x.stroke();
+      if (V === 'A') { x.fillStyle = '#8A97A6'; x.fillText([5, 10, 25, 50][i] + ' km', cx + 4, cy - R * f - 3); }
+    });
+    // ejes N-S E-O
+    x.strokeStyle = 'rgba(240,242,245,0.14)';
+    x.beginPath(); x.moveTo(cx - R, cy); x.lineTo(cx + R, cy); x.moveTo(cx, cy - R); x.lineTo(cx, cy + R); x.stroke();
+    x.fillStyle = '#6F7E8F'; x.font = "600 10px 'Geist',system-ui";
+    x.fillText('N', cx - 3, cy - R - 8); x.fillText('S', cx - 3, cy + R + 16);
+    x.fillText('E', cx + R + 6, cy + 4); x.fillText('O', cx - R - 16, cy + 4);
+    if (V === 'A') {
+      // estaciones vecinas
+      [[0.75, -0.55, this.C.ok, 'AM.R7B21'], [-0.62, 0.48, this.C.ok, 'AM.RA13C'], [0.30, 0.88, this.C.warn, 'AM.R9F02']].forEach(([fx, fy, col, nm]) => {
+        const px = cx + fx * R, py = cy + fy * R;
+        x.beginPath(); x.arc(px, py, 4, 0, Math.PI * 2); x.fillStyle = col; x.fill();
+        x.globalAlpha = 0.25; x.beginPath(); x.moveTo(cx, cy); x.lineTo(px, py); x.strokeStyle = col; x.stroke(); x.globalAlpha = 1;
+        x.fillStyle = '#6F7E8F'; x.font = "400 9px 'JetBrains Mono',monospace"; x.fillText(nm, px + 7, py + 3);
+      });
+    }
+    // vector horizontal resultante
+    const gx = Math.min(1, ve / sc), gy = Math.min(1, vn / sc);
+    const sgnE = Math.sign(this.buf.ENE[(this.head - 1 + this.N) % this.N] || 1);
+    const sgnN = Math.sign(this.buf.ENN[(this.head - 1 + this.N) % this.N] || 1);
+    if (!dead) {
+      const tx = cx + sgnE * gx * R * 0.92, ty = cy - sgnN * gy * R * 0.92;
+      x.strokeStyle = this.C.cyan; x.lineWidth = 2;
+      x.beginPath(); x.moveTo(cx, cy); x.lineTo(tx, ty); x.stroke();
+      x.beginPath(); x.arc(tx, ty, 3.5, 0, Math.PI * 2); x.fillStyle = this.C.cyan; x.fill();
+      // barra vertical Z
+      const bx = V === 'A' ? w - 30 : w - 54, bw = V === 'A' ? 12 : 22;
+      const bh = R * 1.6, by = cy + bh / 2;
+      x.strokeStyle = 'rgba(240,242,245,0.12)'; x.strokeRect(bx - bw / 2, by - bh, bw, bh);
+      const fz = Math.min(1, vz / sc) * bh;
+      x.fillStyle = vz > this.TH.pga_trip ? this.C.crit : vz > this.TH.pga_watch ? this.C.warn : this.C.cyan;
+      x.fillRect(bx - bw / 2 + 1, by - fz, bw - 2, fz);
+      x.fillStyle = '#6F7E8F'; x.font = "600 9px 'Geist',system-ui"; x.fillText('Z', bx - 3, by + 12);
+      const ty2 = by - Math.min(1, this.TH.pga_trip / sc) * bh;
+      x.strokeStyle = this.C.crit; x.setLineDash([3, 3]); x.beginPath(); x.moveTo(bx - bw / 2 - 4, ty2); x.lineTo(bx + bw / 2 + 4, ty2); x.stroke(); x.setLineDash([]);
+    }
+    // sitio
+    x.fillStyle = dead ? this.C.warn : this.C.fg1;
+    x.fillRect(cx - 4, cy - 4, 8, 8);
+    x.strokeStyle = dead ? this.C.warn : this.C.cyan; x.lineWidth = 1;
+    x.beginPath(); x.arc(cx, cy, 11, 0, Math.PI * 2); x.stroke();
+    if (dead) { x.fillStyle = this.C.warn; x.font = "700 11px 'Geist',system-ui"; x.fillText('SIN SEÑAL DEL SENSOR', cx - 62, cy + R + 34); }
+  }
+
+  /* ---------- escenas ---------- */
+  setScene = (s) => () => {
+    this.sceneT0 = performance.now() / 1000; this.markers = []; this.peakHold = {};
+    this.setState({ scene: s, silenced: false, armed: null }, () => this.computeMetrics());
+  };
+  fmtG(v) { if (v == null) return 'S/D'; if (v === 0) return '0.000 g'; if (v < 0.001) return '<0.001 g'; return v.toFixed(3) + ' g'; }
+  fmtV(v) { if (v == null) return 'S/D'; if (v < 0.01) return '<0.01 cm/s'; return v.toFixed(2) + ' cm/s'; }
+  clock(off) {
+    const d = new Date(Date.now() + (off || 0));
+    const p = n => String(n).padStart(2, '0');
+    return p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + ' UTC';
+  }
+  push(action) { this.setState(s => ({ log: [{ at: this.clock(), action }].concat(s.log).slice(0, 6) })); }
+  gate = (label, fn, twoStep) => () => {
+    const now = Date.now();
+    if (now < this.state.lockUntil) { this.setState({ pinMsg: 'BLOQUEADO POR INTENTOS · ESPERA ' + Math.ceil((this.state.lockUntil - now) / 1000) + ' s', pinKind: 'crit' }); return; }
+    if (this.state.pin.length !== 6) { this.setState({ pinMsg: 'CAPTURE EL PIN DE 6 DÍGITOS', pinKind: 'warn' }); return; }
+    if (this.state.pin !== this.PIN) {
+      const a = this.state.attempts + 1;
+      if (a >= 5) { this.setState({ attempts: 0, lockUntil: now + 60000, pinMsg: 'BLOQUEADO POR INTENTOS · ESPERA 60 s', pinKind: 'crit', pin: '' }); return; }
+      this.setState({ attempts: a, pinMsg: 'PIN INCORRECTO · INTENTO ' + a + '/5', pinKind: 'crit' }); return;
+    }
+    if (twoStep && this.state.armed !== label) { this.setState({ armed: label, armedAt: now, pinMsg: 'CLIC NUEVAMENTE PARA CONFIRMAR', pinKind: 'warn' }); return; }
+    this.setState({ armed: null, pinMsg: 'ORDEN ACEPTADA · ' + label, pinKind: 'ok' });
+    fn();
+  };
+  actionList() {
+    const s = this.state, C = this.C, now = Date.now();
+    const wr1 = s.wr1Until > now;
+    const btn = (label, sub, on, kind) => ({
+      label, sub, on,
+      bg: kind === 'p' ? C.cyan : kind === 'd' ? C.crit : 'transparent',
+      fg: kind === 'p' || kind === 'd' ? '#0E2336' : C.fg2,
+      bd: kind === 'p' ? C.cyan : kind === 'd' ? C.crit : 'rgba(240,242,245,0.16)'
+    });
+    const out = [];
+    const sounding = this.sirenSounding();
+    if (sounding) out.push(btn('Silenciar audibles', s.silenced ? 'ya silenciado' : 'no calla la rama de hardware', this.gate('SILENCIAR AUDIBLES', () => { this.setState({ silenced: true }); this.push('silence'); }), 'p'));
+    if (s.scene === 'alerta') out.push(btn('Cerrar alerta', 'libera el enclave', this.gate('CERRAR ALERTA', () => { this.push('reset'); this.setScene('reposo')(); }, true), 'd'));
+    out.push(btn('Probar sirena', 'suena 2 s', this.gate('PROBAR SIRENA', () => this.push('siren_test')), 'g'));
+    out.push(btn(s.armed === 'PROBAR ACTUADORES' ? 'Clic nuevamente para confirmar' : 'Probar actuadores', s.armed === 'PROBAR ACTUADORES' ? 'orden bajo verificación humana · 5 s para cancelar' : 'sostiene sirena+estrobo · pulso en gas, ascensores, puertas', this.gate('PROBAR ACTUADORES', () => this.setScene('prueba_actuadores')(), true), s.armed === 'PROBAR ACTUADORES' ? 'd' : 'g'));
+    out.push(btn(wr1 ? 'Salir de prueba WR-1' : 'Modo prueba WR-1', wr1 ? 'la nube vuelve a recibir' : 'ventana de 120 s · la nube no recibe', this.gate('MODO PRUEBA WR-1', () => { this.setState({ wr1Until: wr1 ? 0 : Date.now() + 120000 }); this.push(wr1 ? 'test_mode_off' : 'test_mode_on'); }), 'g'));
+    if (s.scene !== 'sin_senal') out.push(btn('Simulacro de voceo', 'módulo de audio habilitado', this.gate('SIMULACRO DE VOCEO', () => { this.push('drill_audio'); this.setScene('simulacro')(); }), 'g'));
+    return out;
+  }
+  sirenSounding() {
+    const s = this.state;
+    if (s.silenced) return false;
+    return s.scene === 'alerta' || s.scene === 'prueba_actuadores' || s.scene === 'simulacro';
+  }
+  relayList() {
+    const s = this.state.scene, C = this.C;
+    const on = { alerta: ['siren', 'strobe', 'gas', 'elev', 'door'], prueba_actuadores: ['siren', 'strobe', 'gas', 'elev', 'door'], simulacro: ['siren', 'strobe'] }[s] || [];
+    const defs = [
+      { id: 'siren', label: 'SIRENA', fs: 'NO' }, { id: 'strobe', label: 'ESTROBO', fs: 'NO' },
+      { id: 'gas', label: 'GAS', fs: 'fail_close' }, { id: 'elev', label: 'ASCENSORES', fs: 'NO' },
+      { id: 'door', label: 'PUERTAS', fs: 'NC' }
+    ];
+    return defs.map(d => {
+      let act = on.indexOf(d.id) >= 0;
+      if (d.id === 'siren' && act && this.state.silenced) act = false;
+      const inverted = d.fs === 'fail_close' || d.fs === 'NC';
+      const energized = inverted ? !act : act;
+      const pulsed = s === 'prueba_actuadores' && ['gas', 'elev', 'door'].indexOf(d.id) >= 0;
+      return {
+        label: d.label, failsafe: d.fs,
+        logic: act ? 'ACTIVADO' : 'REPOSO',
+        color: act ? (s === 'prueba_actuadores' ? C.cyan : C.crit) : C.fg2,
+        elec: (energized ? 'ENERGIZADO' : 'DESENERGIZADO') + (pulsed ? ' · pulso, retorno OK' : ''),
+        bg: act ? (s === 'prueba_actuadores' ? 'rgba(0,191,255,0.08)' : 'rgba(255,82,82,0.08)') : 'transparent'
+      };
+    });
+  }
+  tierOf() {
+    const s = this.state.scene, C = this.C;
+    if (s === 'alerta') return { label: '■ EVACUAR / RESGUARDO', color: C.crit };
+    if (s === 'vigilancia') return { label: '▲ VIGILANCIA', color: C.warn };
+    if (s === 'sin_senal') return { label: '⚠ MODO MANUAL — SENSORES DEGRADADOS', color: C.warn };
+    return { label: '✓ NORMAL · SIN ALERTA', color: C.ok };
+  }
+  healthOf() {
+    const s = this.state.scene, C = this.C;
+    const dead = s === 'sin_senal', off = s === 'sin_nube';
+    const col = (v, a, r) => v >= r ? C.crit : v >= a ? C.warn : C.ok;
+    const lag = dead ? 54200 : 0.42;
+    const loss = dead ? 100 : 0.2;
+    return [
+      { label: 'Retraso del sensor', value: dead ? '54 200 s' : lag.toFixed(2) + ' s', color: col(lag, 2, 10) },
+      { label: 'Pérdida de paquetes', value: loss.toFixed(1) + ' %', color: col(loss, 1, 10) },
+      { label: 'Huecos del flujo', value: dead ? '1 abierto' : '0', color: dead ? C.crit : C.ok },
+      { label: 'Reconexiones SeedLink', value: dead ? '18' : '2', color: dead ? C.warn : C.fg2 },
+      { label: 'Paquetes vistos', value: dead ? '0 en 15 h' : '1 284 902', color: dead ? C.crit : C.fg2 },
+      { label: 'Duplicados', value: '0', color: C.ok },
+      { label: 'Desfase de reloj NTP', value: off ? '±2 ppm sin NTP' : '+3.1 ms', color: off ? C.warn : C.ok },
+      { label: 'Temperatura del SoC', value: '58.4 °C', color: C.ok },
+      { label: 'UPS', value: 'line · 100 % · 41 min', color: C.ok },
+      { label: 'Disco (buffer 11 d)', value: '62 %', color: C.ok },
+      { label: 'Certificado mTLS', value: off ? '18 d' : '213 d', color: off ? C.warn : C.ok },
+      { label: 'Enlace nube', value: off ? 'sin enlace · 47 en cola' : 'conectado · 84 ms', color: off ? C.warn : C.ok }
+    ];
+  }
+  eventsOf() {
+    const s = this.state.scene, C = this.C;
+    const base = {
+      alerta: [
+        { at: this.clock(-4000), text: 'normal → evacuate_or_hold · fuente sasmex', meta: 'pga S/D', color: C.crit },
+        { at: this.clock(-4000), text: 'reflejo SASMEX → relé', meta: '6.65 ms', color: C.cyan },
+        { at: this.clock(-3800), text: 'los cinco actuadores acusaron ejecución', meta: 'T+0.42 s', color: C.crit }
+      ],
+      vigilancia: [{ at: this.clock(-32000), text: 'normal → watch · fuente local_threshold', meta: 'pga 0.031 g', color: C.warn }],
+      prueba_actuadores: [{ at: this.clock(-6000), text: 'actuator_test · lectura de retorno OK en 5/5', meta: 'via lan', color: C.cyan }],
+      simulacro: [{ at: this.clock(-11000), text: 'drill_audio · simulacro iniciado', meta: 'via lan', color: C.warn }],
+      sin_senal: [{ at: this.clock(-54200000), text: 'última feature recibida del sensor', meta: 'hace 15 h 03 m', color: C.crit }],
+      sin_nube: [{ at: this.clock(-92000), text: 'enlace mqtt perdido · protección local activa', meta: '47 en cola', color: C.warn }]
+    }[s] || [];
+    const mine = this.state.log.map(l => ({ at: l.at, text: l.action + ' · desde el panel', meta: 'via lan', color: C.cyan }));
+    const out = mine.concat(base, [{ at: this.clock(-4200000), text: 'arranque del gabinete · autodiagnóstico OK', meta: 'boot', color: C.fg3 }]);
+    return out.slice(0, 8);
+  }
+
+  renderVals() {
+    if (this.buf && !this.wd) { this.dead = false; this.wd = setInterval(this.pump, 250); this.pump(); }
+    const s = this.state, C = this.C, now = Date.now();
+    const dead = s.scene === 'sin_senal', off = s.scene === 'sin_nube';
+    const tier = this.tierOf();
+    const wr1 = s.wr1Until > now;
+    const mk = (label, on, active) => ({ label, on, bg: active ? C.cyan : 'transparent', fg: active ? '#0E2336' : '#B8C2CE', bd: active ? C.cyan : 'rgba(240,242,245,0.16)' });
+    const grows = this.laneGrow();
+    const lanes = this.CH.map((c, i) => {
+      const m = this.metrics[c], acc = c[1] === 'N', sc = this.scaleFor(c);
+      const compact = s.variant === 'B' && grows[i] < 3;
+      const note = dead ? 'SIN SEÑAL DEL SENSOR · SIN FEATURES RECIBIDAS'
+        : (m && m.clip ? 'SATURACIÓN DEL ADC · EL CANAL ESTÁ TOPADO, NO MIDIENDO'
+          : (m ? 'rms ' + Math.round(m.rms * 2.4e6) + ' counts · salud ' + m.health.toFixed(1) : 'S/D'));
+      const short = dead ? 'SIN SEÑAL' : (m && m.clip ? 'SATURADO' : (m ? 'salud ' + m.health.toFixed(1) : 'S/D'));
+      let peak = m ? (acc ? this.fmtG(m.pga) : this.fmtV(m.pgv)) + ' · STA/LTA ' + m.sta_lta.toFixed(1) : 'S/D';
+      if (compact) peak = peak + ' · ' + short;
+      return {
+        ch: c, grow: grows[i], color: acc ? C.cyan : C.geo,
+        unit: compact ? (acc ? 'g rel.' : 'cm/s rel.') : (acc ? 'aceleración · g rel.' : 'velocidad · cm/s rel.'),
+        peak,
+        scale: '± ' + (acc ? sc.toFixed(3) + ' g' : sc.toFixed(2) + ' cm/s') + ' · piso de escala fijo',
+        note: compact ? '' : note,
+        noteColor: dead ? C.warn : (m && m.clip ? C.crit : '#8A97A6')
+      };
+    });
+    const mz = this.metrics.ENZ || null, mn2 = this.metrics.ENN || null, me2 = this.metrics.ENE || null;
+    const nos = dead || !mz;
+    const bars = [
+      (() => { const v = nos ? null : mz.pga; const f = v == null ? 0 : Math.min(1, v / (this.TH.pga_trip * 1.6)); return { label: 'PGA ENZ', value: this.fmtG(v), pct: v == null ? 'S/D' : Math.round(v / this.TH.pga_trip * 100) + ' % del disparo', fill: (f * 100).toFixed(1) + '%', watchAt: (this.TH.pga_watch / (this.TH.pga_trip * 1.6) * 100) + '%', tripAt: (1 / 1.6 * 100) + '%', color: v == null ? C.warn : v >= this.TH.pga_trip ? C.crit : v >= this.TH.pga_watch ? C.warn : C.ok, scale: 'cautela 0.040 g · disparo 0.060 g' }; })(),
+      (() => { const v = nos ? null : mz.pgv; const f = v == null ? 0 : Math.min(1, v / (this.TH.pgv_trip * 1.6)); return { label: 'PGV ENZ', value: this.fmtV(v), pct: v == null ? 'S/D' : Math.round(v / this.TH.pgv_trip * 100) + ' % del disparo', fill: (f * 100).toFixed(1) + '%', watchAt: (this.TH.pgv_watch / (this.TH.pgv_trip * 1.6) * 100) + '%', tripAt: (1 / 1.6 * 100) + '%', color: v == null ? C.warn : v >= this.TH.pgv_trip ? C.crit : v >= this.TH.pgv_watch ? C.warn : C.ok, scale: 'cautela 2.0 cm/s · disparo 4.0 cm/s' }; })()
+    ];
+    const upS = Math.floor((now / 1000) - (this.t0 || 0)) + 14520;
+    const uptime = Math.floor(upS / 3600) + ' h ' + String(Math.floor(upS % 3600 / 60)).padStart(2, '0') + ' m';
+    const pinColor = { crit: C.crit, warn: C.warn, ok: C.ok, meta: '#6F7E8F' }[s.pinKind];
+    const armedLeft = s.armed ? Math.max(0, 5 - Math.floor((now - s.armedAt) / 1000)) : 0;
+    return {
+      sceneBtns: [['Reposo', 'reposo'], ['Vigilancia', 'vigilancia'], ['Alerta real', 'alerta'], ['Simulacro', 'simulacro'], ['Prueba actuadores', 'prueba_actuadores'], ['Sin señal', 'sin_senal'], ['Sin nube', 'sin_nube']].map(([l, id]) => mk(l, this.setScene(id), s.scene === id)),
+      modeBtns: [['Muro', 'muro'], ['Consola', 'consola'], ['Campo', 'campo']].map(([l, id]) => mk(l, () => { this.userMode = true; this.setState({ mode: id }); }, s.mode === id)),
+      varBtns: [['A · trazas', 'A'], ['B · envolvente', 'B']].map(([l, id]) => mk(l, () => this.setState({ variant: id }), s.variant === id)),
+      isConsola: s.mode === 'consola', isMuro: s.mode === 'muro', isCampo: s.mode === 'campo',
+      showActionBar: s.mode !== 'muro' && s.mode !== 'campo',
+      showHarness: (this.props || {}).showHarness !== false,
+      siteName: (this.props || {}).siteName || 'Sitio Dev Puebla',
+      gatewayId: (this.props || {}).gatewayId || 'gw-dev-0001',
+      station: (this.props || {}).station || 'AM.R4F74',
+      clockUTC: this.clock(), cadence: '1000 ms',
+      liveLabel: dead ? 'DATO RETENIDO 14:22:07 UTC' : 'PANEL EN VIVO',
+      liveColor: dead ? C.warn : C.ok,
+      liveBg: dead ? 'rgba(255,193,7,0.18)' : 'rgba(0,230,118,0.08)',
+      cloudLabel: off ? 'SIN ENLACE — PROTECCIÓN LOCAL ACTIVA · 47 EN COLA' : 'ENLACE NUBE · CONECTADO',
+      cloudColor: off ? C.warn : C.ok,
+      cloudBg: off ? 'rgba(255,193,7,0.18)' : 'rgba(0,230,118,0.08)',
+      showAlert: s.scene === 'alerta',
+      alertSource: 'SASMEX WR-1 · RELEVADOR 2', alertSince: this.clock(-4000),
+      showAmber: s.scene === 'simulacro' && s.scene !== 'alerta',
+      amberText: 'SIMULACRO — ESTO NO ES UNA ALERTA REAL',
+      amberSub: 'Voceo de simulacro en curso · sirena y estrobo activos por guion · aborta solo si entra una alerta real',
+      amberMeta: 'DRILL-2026-0729-03 · 04:12 / 08:00',
+      showCyan: s.scene === 'prueba_actuadores',
+      cyanMeta: 'T+03.8 s DE 05.0 s',
+      showWr1: wr1, wr1Remaining: Math.ceil((s.wr1Until - now) / 1000) + ' s RESTANTES',
+      tierLabel: tier.label, tierColor: tier.color,
+      tierSub: 'SIRENA: ' + (this.sirenSounding() ? 'SONANDO' : s.silenced ? 'SILENCIADA' : 'EN REPOSO') + ' · SASMEX: ' + (s.scene === 'alerta' ? 'ACTIVO' : 'NO') + ' · TIER ' + (s.scene === 'alerta' ? 'evacuate_or_hold' : s.scene === 'vigilancia' ? 'watch' : dead ? 'manual_only' : 'normal'),
+      relays: this.relayList(),
+      lanes, decimNote: '100 sps del sensor · decimado a 50 sps en pantalla · declarado',
+      variantNote: s.variant === 'A' ? 'variante A · trazas min/máx por píxel' : 'variante B · envolvente rellena + retención de pico',
+      roseVariantNote: s.variant === 'A' ? 'variante A · plano de estación con vecinas' : 'variante B · instrumento de ejes',
+      refWaveMain: this.ref('main'), refWaveMuro: this.ref('muro'), refWaveCampo: this.ref('campo'), refRose: this.ref('rose'),
+      coordsLabel: '19.0414° N · 98.2063° W · aprovisionado',
+      coordsColor: '#6F7E8F',
+      roseAxes: [
+        { label: 'EJE Z', value: nos ? 'S/D' : this.fmtG(mz.pga), color: nos ? C.warn : C.cyan },
+        { label: 'EJE N-S', value: nos || !mn2 ? 'S/D' : this.fmtG(mn2.pga), color: nos ? C.warn : C.cyan },
+        { label: 'EJE E-O', value: nos || !me2 ? 'S/D' : this.fmtG(me2.pga), color: nos ? C.warn : C.cyan }
+      ],
+      quorumNote: off ? 'Corroboración regional no disponible sin enlace · 3 vecinas en último estado conocido' : (s.variant === 'A' ? '3 estaciones vecinas en corroboración · quórum regional ≥3 requiere la nube' : 'Vector horizontal resultante ENN/ENE y magnitud vertical ENZ contra el umbral de disparo'),
+      pgaHour: nos ? 'S/D' : (s.scene === 'alerta' ? '0.567 g' : '0.004 g'),
+      pga24: nos ? 'S/D' : (s.scene === 'alerta' ? '0.567 g' : '0.011 g'),
+      histRows: [
+        { label: 'Eventos watch / restricted / evacuar', value: s.scene === 'alerta' ? '4 / 1 / 1' : '4 / 1 / 0', color: C.fg1 },
+        { label: 'Último evento significativo', value: s.scene === 'alerta' ? this.clock(-4000) + ' · 0.567 g' : '11:02:41 UTC · 0.011 g', color: C.fg1 },
+        { label: 'Ruido de fondo ahora', value: nos ? 'S/D' : (mz.rms * 1000).toFixed(2) + ' mg', color: nos ? C.warn : C.ok },
+        { label: 'Piso conocido del sensor', value: '0.6 – 1.1 mg', color: C.fg3 }
+      ],
+      latencies: [
+        { label: 'Reflejo SASMEX → relé', value: '6.65 ms', budget: 'p95 < 100 ms', fill: '6.7%', color: C.ok },
+        { label: 'Cruce de umbral → actuación', value: '118 ms', budget: 'p95 < 200 ms', fill: '59%', color: C.ok },
+        { label: 'Suelo → actuación', value: '1.42 s', budget: '≤ 2 s', fill: '71%', color: C.ok },
+        { label: 'RTT a la nube', value: off ? 'S/D · 47 en cola' : '84 ms', budget: 'informativo', fill: off ? '0%' : '18%', color: off ? C.warn : C.ok }
+      ],
+      healthRows: this.healthOf(),
+      healthAge: dead ? 'DIAGNÓSTICO DE HACE 4 m 12 s' : 'DIAGNÓSTICO DE HACE 38 s',
+      healthAgeColor: dead ? C.warn : '#6F7E8F',
+      healthAgeBg: dead ? 'rgba(255,193,7,0.18)' : 'rgba(240,242,245,0.06)',
+      events: this.eventsOf(),
+      expandMap: s.expandMap,
+      openMap: () => this.setState({ expandMap: true }),
+      closeMap: () => this.setState({ expandMap: false, sel: null }),
+      refMapBig: this.ref('mapbig'),
+      scopeBtns: [['Red local · 60 km', 'local'], ['Regional', 'regional']].map(([l, id]) => ({
+        label: l, on: () => this.setState({ mapScope: id }),
+        bg: s.mapScope === id ? C.cyan : 'transparent',
+        fg: s.mapScope === id ? '#0E2336' : '#B8C2CE',
+        bd: s.mapScope === id ? C.cyan : 'rgba(240,242,245,0.16)'
+      })),
+      regTabs: [['Bitácora local', 'local'], ['Sismicidad SSN', 'ssn']].map(([l, id]) => ({
+        label: l, on: () => this.setState({ regTab: id }),
+        bg: s.regTab === id ? 'rgba(0,191,255,0.15)' : 'transparent',
+        fg: s.regTab === id ? C.cyan : '#6F7E8F',
+        bd: s.regTab === id ? C.cyan : 'transparent'
+      })),
+      isTabLocal: s.regTab === 'local', isTabSsn: s.regTab === 'ssn',
+      ssnRows: this.ssnEvents().slice(0, 20).map(e => ({
+        mag: 'M ' + e.m.toFixed(1), color: this.magColor(e.m),
+        loc: e.loc, when: e.hora, date: e.fecha,
+        dist: Math.round(e.km) + ' km ' + e.rumbo,
+        depth: e.prof.toFixed(1) + ' km',
+        on: () => this.setState({ sel: e.i, expandMap: true }),
+        bg: s.sel === e.i ? 'rgba(0,191,255,0.08)' : 'transparent'
+      })),
+      ssnTop3: this.ssnEvents().slice(0, 3).map(e => ({
+        mag: 'M ' + e.m.toFixed(1), color: this.magColor(e.m), loc: e.loc,
+        when: e.hora, dist: Math.round(e.km) + ' km ' + e.rumbo, depth: e.prof.toFixed(1) + ' km'
+      })),
+      ssnCount: this.state.ssn ? String(this.state.ssn.eventos.length) : '—',
+      ssnMeta: this.state.ssn
+        ? 'INSTANTÁNEA DEL CATÁLOGO · ' + this.state.ssn.capturado.slice(0, 16).replace('T', ' ') + ' HORA DEL CENTRO'
+        : (s.ssnErr ? 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ' : 'CARGANDO…'),
+      ssnMetaColor: this.state.ssn ? '#8A97A6' : C.warn,
+      ssnSource: 'Fuente: Servicio Sismológico Nacional (SSN) · Instituto de Geofísica, UNAM · datos de libre uso',
+      ssnNote: this.state.ssn ? this.state.ssn.replicas_nota : '',
+      ssnNearest: (() => {
+        const e = this.ssnEvents().slice().sort((a, b) => a.km - b.km)[0];
+        return e ? 'MÁS CERCANO: M ' + e.m.toFixed(1) + ' A ' + Math.round(e.km) + ' km ' + e.rumbo : 'S/D';
+      })(),
+      stationRows: (this.state.ssn ? this.state.ssn.estaciones_red : []).map(st => ({
+        id: st.id, sitio: st.sitio,
+        rol: st.rol === 'local' ? 'ESTA ESTACIÓN' : 'VECINA',
+        dist: st.rol === 'local' ? '0 km' : Math.round(this.haversine(this.SITE, st)) + ' km ' + this.bearing(this.SITE, st),
+        coords: st.lat.toFixed(4) + '° N · ' + Math.abs(st.lon).toFixed(4) + '° O',
+        color: st.rol === 'local' ? C.cyan : C.ok
+      })),
+      uptime,
+      actions: this.actionList(),
+      pin: s.pin, onPin: (e) => this.setState({ pin: e.target.value.replace(/\D/g, '').slice(0, 6) }),
+      pinMsg: s.armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR · ' + armedLeft + ' s PARA CANCELAR' : s.pinMsg,
+      pinMsgColor: s.armed ? C.warn : pinColor
+    };
+  }
+}
+</script>
+</body>
+</html>
