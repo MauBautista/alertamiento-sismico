@@ -1,4 +1,4 @@
-# Runbook · Desplegar el edge al Pi 5 (T-1.40)
+# Runbook · Desplegar el edge al Pi 4 (T-1.40)
 
 ```bash
 deploy/edge/deploy.sh            # default: host ssh «takab-pi5»

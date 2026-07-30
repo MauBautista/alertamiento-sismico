@@ -47,7 +47,7 @@ acreditar, sin UPS), el marco normativo sin confirmar (`GATE-LEGAL`) y credencia
 
 ---
 
-## Bloque B · EDGE (Raspberry Pi 5) — se construye PRIMERO · Blueprint Fase A
+## Bloque B · EDGE (Raspberry Pi 4) — se construye PRIMERO · Blueprint Fase A
 
 ### [x] T-1.2 · Scaffolding `edge/` + simuladores — **[A0]** · COMPLETA
 - **Componente:** edge · **Depende de:** T-1.1 · **Prioridad: ALTA**
@@ -64,7 +64,7 @@ acreditar, sin UPS), el marco normativo sin confirmar (`GATE-LEGAL`) y credencia
         Los 3 jobs verificados localmente igual que correrán (api: ruff+pytest; web:
         eslint+prettier+vitest+build; edge: ruff+format+pytest con `GPIOZERO_PIN_FACTORY=mock`).
   - [x] `pytest` verde en CI (job `edge`) sin hardware físico (60 tests; gpiozero MockFactory).
-  - [x] Simuladores permiten levantar el edge completo en dev sin Raspberry Shake ni Pi 5
+  - [x] Simuladores permiten levantar el edge completo en dev sin Raspberry Shake ni Pi 4
         (verificado por el entry point real `uv run takab-edge`: 11 módulos arrancan en orden
         topológico, transmiten y paran limpio).
 
@@ -667,7 +667,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > en ventana (+ fail-open real de sitios sin enlace); **C3** actuación 5/5 sin nube, `sent` no
 > avanza, spool durable crece y drena al reconectar, e **idempotencia real** por RE-ENTREGA del
 > `LocalEvent` archivado byte-idéntico ⇒ el handler hace `ON CONFLICT (event_uuid)` y sigue 1
-> incidente. **Confirmación en HARDWARE real (Pi 5 `gw-dev-0001`)**: corte de WAN reversible
+> incidente. **Confirmación en HARDWARE real (Pi 4 `gw-dev-0001`)**: corte de WAN reversible
 > (nft, sólo egress a tcp/8883, watchdog auto-revert) — servicio `active`, spool 0→93→0, cero
 > pérdida. **Gate #3 sigue abierto**: relés MOCK; la latencia física <100 ms NO se acredita
 > (no hay WR-1/relés/sirena/válvula cableados; riesgo de disparo real = nulo). Revisión
@@ -848,7 +848,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 
 # Fase 1.6 · Verdad operativa (cierre de fallos, 2026-07-09)
 
-> Cierra TODO lo documentado como abierto que se puede cerrar con los accesos reales (Pi 5,
+> Cierra TODO lo documentado como abierto que se puede cerrar con los accesos reales (Pi 4,
 > Shake, AWS): los 4 GAPs del despliegue, la clave HMAC por gabinete, las sondas de salud en
 > stub, la calibración física, la semántica del WR-1, el PIN del panel local, el rol CI y la
 > validación del quórum contra el SSN. Lo que exige terceros (WhatsApp/SMS/SES prod, app móvil,
@@ -937,7 +937,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **El deploy al Pi destapó una trampa del camino de vida:** lgpio crea su FIFO `.lgd-nfy*`
 > en el CWD; con `ProtectSystem=strict` y `WorkingDirectory=/opt/takab/edge` (solo lectura)
 > `LGPIOFactory` fallaba al instanciarse y gpiozero caía EN SILENCIO al backend `native`
-> (sysfs), que en Pi 5 muere con EINVAL ⇒ **crash-loop del supervisor**. Nunca se había visto
+> (sysfs), que en Pi 4 muere con EINVAL ⇒ **crash-loop del supervisor**. Nunca se había visto
 > porque el proceso llevaba vivo desde ANTES del endurecimiento: este fue el primer restart
 > real bajo strict. Reproducido y validado con `systemd-run`; fix: `WorkingDirectory=
 > /var/lib/takab` en ambas unidades (takab-gpio además carecía de `ReadWritePaths`). Segunda

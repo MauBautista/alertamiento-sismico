@@ -9,7 +9,7 @@
 
 Estas reglas gobiernan toda la ejecución. Tienen prioridad sobre cualquier inferencia hecha a partir del deck de producto o de documentos exploratorios.
 
-1. **Orden de trabajo = EDGE PRIMERO, luego CLOUD, luego FRONTEND.** Se programa completa la inteligencia del gabinete (Raspberry Pi 5) antes de tocar la nube. La nube se construye sobre contratos ya validados en el edge. El frontend consume la nube ya existente. Ver §13.
+1. **Orden de trabajo = EDGE PRIMERO, luego CLOUD, luego FRONTEND.** Se programa completa la inteligencia del gabinete (Raspberry Pi 4) antes de tocar la nube. La nube se construye sobre contratos ya validados en el edge. El frontend consume la nube ya existente. Ver §13.
 2. **No auto-atribución en el control de versiones.** Los commits **no** deben incluir a Claude/Anthropic como coautor ni footers de generación automática. Prohibido:
    - `Co-Authored-By: Claude <...>`
    - `🤖 Generated with Claude Code` (o cualquier variante)
@@ -44,7 +44,7 @@ Modelo comercial dual: **SOC operado por TAKAB** y **despliegue por tenant**. La
 |---|---|---|
 | P1 | **Autonomía local total** | SeedLink, features PGA/PGV, motor de reglas, disparo de actuadores, señal WR-1 y buffer offline viven en el edge. Con WAN caída, el sitio se protege solo. |
 | P2 | **Separación estricta edge/cloud** | La nube coordina, almacena, notifica, factura y enriquece post-evento. Nunca está en la ruta crítica de actuación. |
-| P3 | **Independencia de firmware** | El Raspberry Shake (Shake OS) queda intacto: es solo sensor. El Pi 5 es un equipo separado, versionable, con hardening propio (mTLS, X.509) y auditable, sin riesgo para el instrumento sísmico. |
+| P3 | **Independencia de firmware** | El Raspberry Shake (Shake OS) queda intacto: es solo sensor. El Pi 4 es un equipo separado, versionable, con hardening propio (mTLS, X.509) y auditable, sin riesgo para el instrumento sísmico. |
 | P4 | **Determinista ≠ IA** | Cálculo sísmico y decisiones de seguridad son deterministas. Los LLM/modelos nunca generan cálculos sísmicos ni salidas ShakeMap. |
 | P5 | **Logging por evento, no por intervalo** | Registro por transición de estado + heartbeat periódico. Nada de logging continuo por intervalo para `rule_evaluations` o salud de dispositivo. |
 | P6 | **Sin streaming de forma de onda cruda** | El waveform crudo (100 sps) no se sube en continuo. El miniSEED crudo se sube a S3 **solo** en eventos confirmados. |
@@ -61,7 +61,7 @@ flowchart LR
   subgraph Gabinete["Gabinete de sitio (EDGE)"]
     RS["Raspberry Shake RS4D\n(sensor · Shake OS intacto)"]
     WR1["Receptor SASMEX WR-1\n(relé dry-contact)"]
-    PI["Raspberry Pi 5\n(gateway de inteligencia)"]
+    PI["Raspberry Pi 4\n(gateway de inteligencia)"]
     SSD["NVMe industrial 64 GB\n(buffer miniSEED 7-14 d)"]
     UPS["UPS + monitoreo batería"]
     BAC["Actuadores BACnet/IP\nsirena · gas · ascensores · puertas"]
@@ -106,14 +106,14 @@ Sitios de referencia (del deck, para fixtures/seed): Planta Cholula (Edif. A/B),
 
 ---
 
-# CAPA EDGE — Raspberry Pi 5 (SE CONSTRUYE PRIMERO)
+# CAPA EDGE — Raspberry Pi 4 (SE CONSTRUYE PRIMERO)
 
 ## 4.1 Hardware del gabinete
 
 | Componente | Rol | Notas |
 |---|---|---|
 | Raspberry Shake RS4D | Sensor (velocidad vertical + acelerómetro 3D) | **Solo sensor.** Expone SeedLink en TCP 18000. Shake OS no se modifica. |
-| Raspberry Pi 5 | Gateway de inteligencia | Ejecuta todo el software TAKAB del edge. |
+| Raspberry Pi 4 Model B | Gateway de inteligencia | Ejecuta todo el software TAKAB del edge. **Rev 1.5, SoC BCM2711** — verificado en la unidad real (`/proc/device-tree/model` y `compatible` = `raspberrypi,4-model-b` + `brcm,bcm2711`). Este documento decía "Pi 5" hasta el 2026-07-30; el host se llama `takab-pi5` por razones históricas y de ahí venía la confusión. **No re-corregir a Pi 5.** |
 | NVMe industrial 64 GB | Buffer circular miniSEED | Uso real ~0.5–4 GB a 100 sps × 4 canales (ring 7–14 días); 64 GB = holgura ≥15×. |
 | UPS con monitoreo | Respaldo eléctrico | Reporta `RED ELÉCTRICA %`, `RESPALDO Xh Ym`, modo `EN BATERÍA`. |
 | Receptor SASMEX WR-1 | Alerta temprana regional | Salida relé **dry-contact → GPIO**. Boolean puro. Contacto de **prueba periódica CIRES** monitoreado como heartbeat (§4.7, confirmar semántica en §15). |
@@ -123,7 +123,7 @@ Sitios de referencia (del deck, para fixtures/seed): Planta Cholula (Edif. A/B),
 | CCTV ONVIF (opcional) | Verificación visual | RTSP/H.264; bookmark por incidente. |
 | Red | Ethernet **obligatorio** | No usar Wi-Fi integrado (latencia/pérdida). |
 
-## 4.2 Servicios/módulos del Pi 5
+## 4.2 Servicios/módulos del Pi 4
 
 Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilidad única y contrato claro.
 
@@ -246,7 +246,7 @@ Umbrales de referencia por tipo de instalación (del deck; calibrar por tipolog�
 
 | SPOF | Mitigación obligatoria |
 |---|---|
-| Pi 5 muerto (SPOF-02) | (a) **Ruta de hardware paralela WR-1→sirena** (relé de potencia; T-1.4) — la mitigación más importante del sistema; (b) **watchdog de hardware** BCM2712 (`dtparam=watchdog=on` + `RuntimeWatchdogSec=10`, reboot <15 s); (c) boot desde **NVMe/eMMC industrial, nunca microSD consumer**; (d) raíz de solo lectura (**overlayroot**) + partición de datos `ext4 data=journal`. |
+| Pi 4 muerto (SPOF-02) | (a) **Ruta de hardware paralela WR-1→sirena** (relé de potencia; T-1.4) — la mitigación más importante del sistema; (b) **watchdog de hardware** BCM2711 (`dtparam=watchdog=on` + `RuntimeWatchdogSec=10`, reboot <15 s) — verificado presente en la unidad real: `/dev/watchdog0`, `Broadcom BCM2835 Watchdog timer`; (c) boot desde **NVMe/eMMC industrial, nunca microSD consumer**; (d) raíz de solo lectura (**overlayroot**) + partición de datos `ext4 data=journal`. |
 | WR-1 dañado/desconfigurado (SPOF-03) | Monitorear el **contacto de prueba periódica de CIRES** como heartbeat; sin prueba esperada en N días → alerta de mantenimiento en Flota Edge (calibrar N con CIRES, §15). |
 | Energía (SPOF-04) | UPS 4–12 h supervisada por el Pi (`power_status`, `battery_pct`); apagado limpio al 10% con last-will MQTT (`disconnected: power_loss`); **dimensionar la UPS para el pico de corriente de la sirena** (validar contra la sirena elegida). |
 | Certificados X.509 expirados (SPOF-05) | Rotación vía fleet provisioning; alarma a 30 días; métrica `cert_days_remaining` en `health`/`device_health`. |
@@ -422,7 +422,7 @@ Móvil (fase posterior): acuse, escalamiento, inspección de campo con checklist
 
 ```
 takab/
-  edge/                 # Raspberry Pi 5 gateway (Python 3.12 · uv)   [NUEVO — se hace PRIMERO]
+  edge/                 # Raspberry Pi 4 gateway (Python 3.12 · uv)   [NUEVO — se hace PRIMERO]
   api/                  # backend cloud (FastAPI + GraphQL)           [existe]
   web/                  # Consola SOC (React 18 · Vite)               [existe]
   infra/                # IaC AWS (CDK o Terraform)
@@ -453,7 +453,7 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 
 > Secuencia recomendada. Mapear/refinar contra `TASKS.md` (T-1.2…T-1.31) conservando **T-1.1 completa** (salvo el CI trasladado a T-1.2, ver §0.8). No avanzar a una fase hasta cerrar la anterior con tests verdes. Nota [ANALISIS-00]: `TASKS.md` adelanta deliberadamente A4 (GPIO SASMEX, T-1.3) antes que A1–A3 — el camino de mayor valor de vida primero; ese orden gobierna.
 
-### Fase A — EDGE (Raspberry Pi 5) · primero
+### Fase A — EDGE (Raspberry Pi 4) · primero
 
 | WP | Trabajo | Entregable de aceptación |
 |---|---|---|

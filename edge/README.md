@@ -1,6 +1,6 @@
-# edge — Raspberry Pi 5 (gateway de inteligencia del gabinete)
+# edge — Raspberry Pi 4 (gateway de inteligencia del gabinete)
 
-Software del **Pi 5** (el cerebro del gabinete). Lee SeedLink del Raspberry Shake,
+Software del **Pi 4** (el cerebro del gabinete). Lee SeedLink del Raspberry Shake,
 recibe SASMEX por el contacto seco del WR-1, corre reglas deterministas, dispara
 actuadores (relés fail-safe + BACnet/IP) y sincroniza a la nube — **operando sin
 internet**. **No se toca Shake OS.** Documento canónico: `takab-docs/BLUEPRINT-TECNICO-TAKAB.md §4`.
@@ -49,12 +49,12 @@ uv run takab-edge                            # levanta el gabinete completo (dev
 uv run takab-gpio                            # SOLO el proceso mínimo del camino de vida (T-1.3)
 ```
 
-En el Pi 5 real, instala el backend de hardware y desactiva el modo dev. En
+En el Pi 4 real, instala el backend de hardware y desactiva el modo dev. En
 producción la clave HMAC de comandos es **obligatoria** (nunca se hardcodea,
 `CLAUDE.md §2.6`); inyéctala desde el entorno / Secrets Manager:
 
 ```bash
-uv sync --extra hardware                     # deps + grupo dev + lgpio (GPIO nativo BCM2712)
+uv sync --extra hardware                     # deps + grupo dev + lgpio (GPIO nativo BCM2711)
 export TAKAB_EDGE_HMAC_KEY="$(cat /run/secrets/takab_hmac_key)"
 TAKAB_EDGE_DEV_MODE=false uv run takab-edge   # o `takab-gpio` para el proceso mínimo de vida
 ```
