@@ -646,7 +646,7 @@ acreditar, sin UPS), el marco normativo sin confirmar (`GATE-LEGAL`) y credencia
   publish ⇒ 202; config-state PENDIENTE → SINCRONIZADO con sólo la huella sha256);
   **smoke de navegador real 25/25**, cero errores de runtime.)
 
-### [ ] T-1.31 · App móvil (fase posterior) — **[C5]**
+### [x] T-1.31 · App móvil (fase posterior) — **[C5] CUBIERTA POR LA FASE 2 COMPLETA** (reconciliado 2026-07-31; el marcador quedó atrás cuando la nota de reactivación ya lo decía)
 - **Componente:** mobile · **Depende de:** T-1.22, T-1.26 · **Diferida — no iniciar en Fase 1.**
 - **Criterios (referencia futura):** acuse, escalamiento, inspección de campo con
   checklist/fotos/firma, check-in de vida, offline-first.
@@ -1016,7 +1016,13 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > NO fue espurio — fue su prueba DELIBERADA con un botón físico en los puertos GPIO donde
 > irá el radio SASMEX. Ver T-1.42: esa pulsación validó la entrada física completa.
 
-### [~] T-1.42 · Semántica real del WR-1 — **ENTRADA FÍSICA VALIDADA (botón) · falta el radio**
+### [~] T-1.42 · Semántica real del WR-1 — **RADIO INSTALADO Y REFLEJO PROBADO 2× (6.65 ms hito 2026-07-14 · 4.16 ms en frío 2026-07-31); queda OBSERVAR la semántica en una transmisión REAL de CIRES + gate #3 del relé físico**
+> **Reconciliación (2026-07-31):** la activación manual del WR-1 en sitio produjo 3 cierres en
+> 2.5 s (4.16/0.11/0.19 ms de reflejo) — prueba el camino eléctrico, pero NO responde la
+> semántica del contacto durante un broadcast real (¿sostenido o pulsos?): el Relevador 1
+> (multi-riesgo) no está conectado a propósito, así que la prueba periódica de CIRES no cierra
+> el Relevador 2 — solo una alerta real lo mostrará. Los 3 puntos abiertos de abajo siguen
+> vigentes; el "falta el radio" del encabezado viejo ya no era verdad.
 - **Componente:** edge + hardware · **Avanza:** gate #3 (parte software/entrada)
 - **Lo VALIDADO con el botón físico de Mauricio en GPIO16/GND (2026-07-10 03:17 UTC,
   7 pulsaciones medidas del journal):**
@@ -1108,7 +1114,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > (`pga_source=features`) → reubicar epicentro (EVT-MAN determinista) → dictamen-request
 > 201/409 → panel LAN con 4 canales vivos y silencio por LAN.
 
-### [~] T-1.47 · Datos reales: split de seeds, rule_set v1 y runbook de purga — **CÓDIGO LISTO (2026-07-10); ejecución del runbook en EC2 pendiente (manual, Mauricio)**
+### [~] T-1.47 · Datos reales: split de seeds, rule_set v1 y runbook de purga — **CÓDIGO LISTO (2026-07-10); PURGA EN EC2 VERIFICADA PENDIENTE (2026-07-31: los 20 `site-sim-*` del 2026-07-07 SIGUEN en la DB viva — un solo tenant, los sim viejos multi-tenant sí desaparecieron)**
 - **Componente:** db + demo + deploy · **Depende de:** —
 - **Objetivo:** que el entorno desplegado contenga SOLO la estación real y que ningún deploy
   futuro pueda resucitar datos sim; runbook seguro para purgar lo existente.
@@ -1265,7 +1271,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **ESTADO.** web 514 passed (+10: CatalogPanel 4, useCatalog 2, model durationOf/
 > insufficientData 2, TriagePage hechos/basis 2) · tsc/eslint/prettier/build OK.
 
-### [~] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi) — **CÓDIGO LISTO Y VERDE (2026-07-10); verificación en el Pi real pendiente (con Mauricio)**
+### [x] T-1.53 · Edge: mini-consola local del inmueble (panel LAN del Pi) — **VERIFICADA EN EL PI REAL CON CRECES (reconciliado 2026-07-31: recorrido de navegador 44/44 + operador en sitio) y SUPERSEDIDA por la reescritura de T-2.23 (Fase 2.1)**
 - **Componente:** edge (+1 docstring api) · **Depende de:** — (independiente)
 - **Criterios de aceptación:**
   - [x] **Fix del bug latente**: `HealthMonitor` cachea `last_snapshot` (propiedad SIN side
@@ -1380,7 +1386,7 @@ simulado en 3 estaciones activa quórum; corte de internet no detiene la protecc
 > **ESTADO.** api 743 passed (not perf) · demo 22 · web 525 · e2e 1 · ruff/eslint/
 > prettier/tsc/build OK.
 
-### [~] T-1.56 · Batcheo escalonado por tier de features edge→nube — **CÓDIGO COMPLETO (2026-07-12); despliegue pendiente (terraform → api → edge)**
+### [x] T-1.56 · Batcheo escalonado por tier de features edge→nube — **DESPLEGADO Y VIVO desde la Fase 1.8 (2026-07-13, batcheo activo con ~95 % menos SQS) y re-desplegado con los redeploys de Fase 2** (reconciliado 2026-07-31; el "despliegue pendiente" del encabezado llevaba semanas vencido)
 - **Componente:** edge + api + infra · **Depende de:** — · **Decisión:** escalonado por tier
 - **Objetivo:** ~97% menos publishes/SQS en reposo (hoy ~178k msgs/día del gateway real)
   sin tocar jamás la detección/actuación ni el panel LAN (1 Hz in-process).
