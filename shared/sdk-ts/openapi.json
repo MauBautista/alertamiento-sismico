@@ -220,6 +220,45 @@
         "title": "CatalogEarthquakeOut",
         "type": "object"
       },
+      "CatalogPushIn": {
+        "description": "[T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.\n\nEl cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/\neventos[m,fecha,hora,lat,lon,prof,loc]/referencias`): el mismo archivo que\ninstala `provision_gateway.sh --catalog`. El edge re-valida fail-closed.",
+        "properties": {
+          "catalog": {
+            "additionalProperties": true,
+            "description": "instantánea SSN, formato del entregable",
+            "title": "Catalog",
+            "type": "object"
+          }
+        },
+        "required": [
+          "catalog"
+        ],
+        "title": "CatalogPushIn",
+        "type": "object"
+      },
+      "CatalogPushOut": {
+        "properties": {
+          "gateway_id": {
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gateway_id",
+          "version",
+          "topic"
+        ],
+        "title": "CatalogPushOut",
+        "type": "object"
+      },
       "ChannelSeries": {
         "description": "Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).",
         "properties": {
@@ -7077,6 +7116,57 @@
           }
         },
         "summary": "Restore Gateway"
+      }
+    },
+    "/gateways/{gateway_id}/catalog": {
+      "post": {
+        "description": "Firma y publica la instantánea SSN a ``takab/catalog/<thing>`` (T-2.24).\n\nVersión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza\ntoda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503\n(fail-closed, jamás se firma con una compartida). La periodicidad es una\nllamada programada a este endpoint; el contrato de ``GET /api/catalog`` en\nel panel no cambia.",
+        "operationId": "push_catalog_gateways__gateway_id__catalog_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogPushIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPushOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Catalog"
       }
     },
     "/health": {
