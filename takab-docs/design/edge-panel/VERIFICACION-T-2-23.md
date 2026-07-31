@@ -16,9 +16,24 @@
 > del soak y volvió solo a EN VIVO). **Pescó y cerró un defecto real**: la franja SSN del
 > modo MURO estaba condenada por un `display:none` inline (fix PR #30, re-verificado en el
 > gabinete). Capturas y detalle: informe visual publicado como Artifact de la sesión.
-> **Sigue pendiente lo presencial:** pruebas audibles, disparo físico del WR-1
-> (`reflex_s` de S/D a ~7 ms), PIN de producción en sitio y la apreciación estética en el
-> monitor del inmueble.
+> **PRESENCIAL EJECUTADO Y CONFIRMADO (2026-07-31, Mauricio en el sitio):**
+> - **Pruebas audibles** (2 corridas, la segunda a las 12:36 UTC): PROBAR SIRENA 2 s y
+>   PROBAR ACTUADORES ~5 s sostenidos — relés 5/5 con readback ✓, **`aplay` capturado EN VIVO
+>   reproduciendo `siren.wav` por el jack** durante ambos sostenes (PIDs 14301/14325), cero
+>   cadena de alerta (journal: "NO es alerta real" ×2, sin transición de tier, nada a la
+>   nube). **Confirmación auditiva del operador: «se oyó todo bien»** — sirena de relé,
+>   altavoz del jack y estrobo.
+> - **WR-1 físico**: contacto real disparado en sitio — **reflejo SASMEX→relé 4.16 ms en
+>   frío** (re-flancos 0.11/0.19 ms) contra presupuesto de 100 ms; `reflex_s` pintado en el
+>   panel. (El disparo salió a la nube porque un armado del modo prueba falló con 401
+>   silencioso — incidente cerrado con nota de auditoría; el rechazo silencioso quedó
+>   corregido en PR #32: ahora se grita en banner `role=alert` y sondear sin PIN ya no
+>   quema el lockout.)
+> - **PIN de producción**: ejercitado de verdad en sitio (armados/desarmes, silencios,
+>   pruebas) — flujo 200/401 vivido y endurecido.
+>
+> **Con esto, el checklist queda CERRADO al 100 %**: contrato por pytest (49), recorrido
+> visual con navegador real (44/44 + soak), y lo presencial confirmado por el operador.
 
 ## 1 · Los 10 estados (§13.2) × 3 densidades
 
