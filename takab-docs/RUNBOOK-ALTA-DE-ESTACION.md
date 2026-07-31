@@ -97,11 +97,12 @@ Esto crea el *thing* IoT, su certificado mTLS y su clave HMAC de comandos, y baj
    El script imprime **UNA vez** el **PIN del panel LAN** (6 dígitos): entrégalo al responsable
    del edificio; sin él, las acciones del panel local quedan 403 (fail-closed).
 
-> **GOTCHA CRÍTICO (de T-1.41):** `provision_gateway.sh` **SOBRESCRIBE** `/etc/takab/edge.env` y
-> solo escribe **tres** líneas — `TAKAB_EDGE_HMAC_KEY`, `TAKAB_EDGE_MQTT_ENDPOINT`,
-> `TAKAB_EDGE_LOCAL_API_PIN` — más los certs. **El resto del `edge.env` (identidad, SeedLink,
-> rutas de cert, calibración) se AGREGA después** (§5, §7). Si vuelves a correr `provision`,
-> **borra** esos añadidos: re-aplica la identidad, SeedLink y calibración tras cada re-provision.
+> **GOTCHA (histórico, CORREGIDO en PRs #13/#14):** `provision_gateway.sh` **sobrescribía**
+> `/etc/takab/edge.env` con solo sus claves gestionadas, borrando identidad, SeedLink y
+> calibración. Desde entonces hace un **merge idempotente** (`infra/scripts/merge_env.py`, con
+> tests en CI): actualiza SOLO lo que gobierna — identidad, `DEV_MODE`, HMAC, endpoint, PIN y,
+> si pasas `--site-lat/--site-lon` (T-2.20), las coordenadas — y **conserva todo lo demás**,
+> con respaldo fechado previo en el dispositivo. Re-correr `provision` ya es seguro.
 
 ---
 
@@ -141,6 +142,16 @@ TAKAB_EDGE_MQTT_CA_PATH=/etc/takab/certs/ca.pem
 # --- Calibración (se llena en §7; hasta entonces PGA/PGV son RELATIVOS) ---
 # TAKAB_EDGE_SIGNAL__VEL_SENSITIVITY_MS_PER_COUNT=...
 # TAKAB_EDGE_SIGNAL__ACCEL_SENSITIVITY_MS2_PER_COUNT=...
+
+# --- Ubicación del sitio (T-2.20; habilita el mapa del panel LAN) ---
+# Mismas coordenadas que registres en `POST /sites` (§6). Sin ellas el panel
+# muestra "SIN UBICACIÓN PROVISIONADA" (jamás inventa un punto). También puedes
+# dejarlas desde el aprovisionamiento: provision_gateway.sh ... --site-lat 19.0433 --site-lon -98.1980
+TAKAB_EDGE_SITE_LAT=19.0433
+TAKAB_EDGE_SITE_LON=-98.1980
+# Vecinas de la red (informativas; el quórum vive en la NUBE y JAMÁS gatea la
+# sirena local): JSON en una línea, opcional.
+# TAKAB_EDGE_NEIGHBORS=[{"code":"AM.R0001","lat":19.10,"lon":-98.30,"distance_km":17.0}]
 ```
 
 El servicio `systemd` (`edge/systemd/takab-edge.service`) ya fuerza `TAKAB_EDGE_DEV_MODE=false`,

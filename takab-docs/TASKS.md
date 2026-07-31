@@ -2630,7 +2630,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   MEMS (EH\* excluido — no es aceleración), deque 180 min, tendencia mediana 15v15 ±20%.
   Amend §5.1: `current_mg` es `float|null`. 12 tests nuevos.
 
-### [ ] T-2.20 · Coordenadas del sitio (y vecinos opcionales) — `P-6`
+### [x] T-2.20 · Coordenadas del sitio (y vecinos opcionales) — `P-6`
 - **Componente:** edge (+ config sync) · **Depende de:** — · **Habilita:** spec §7 (el mapa)
 - **El hueco (el más sorprendente):** **el gabinete literalmente no sabe dónde está.** No hay
   latitud ni longitud en `config/settings.py` ni en `contracts.py`. Sin esto no hay mapa de
@@ -2654,23 +2654,31 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
      **no** un caché general del `ConfigStore`: persistir config firmada obligaría a persistir el
      `_high_water` (`config/store.py:36-37`) o un reinicio reabriría la ventana anti-replay — y
      cachear umbrales sí tendría impacto en la actuación. La ubicación no dispara nada.
-  4. **Arreglar `provision_gateway.sh` para que preserve.** Hoy `:63` compone `edge.env` con un
-     `printf` de 3 líneas y `:78` lo instala con `tee` ⇒ **truncado**: se pierden identidad,
-     SeedLink, rutas de cert **y calibración**. Pasa a un **merge idempotente** que reemplaza solo
-     las claves gestionadas. Extraerlo a un helper testeable (`infra/scripts/lib/merge_env.py`) es
-     lo que vuelve verificable **en CI, sin el Pi**, el criterio de abajo — hoy no hay ningún test
-     de `infra/scripts/`. Esto **también salva a T-2.21**: `calibration_source` vive en el mismo
-     archivo que se trunca.
+  4. **Arreglar `provision_gateway.sh` para que preserve.** **YA HECHO antes de esta tarea (PRs
+     #13/#14):** el merge idempotente vive en `infra/scripts/merge_env.py` (ruta real; el plan
+     original decía `lib/`) con `test_merge_env.sh` en CI. Lo que esta tarea añadió encima:
+     flags opcionales `--site-lat/--site-lon` (validados en rango, en PAR) que suman
+     `TAKAB_EDGE_SITE_LAT/LON` a las claves gestionadas; sin flags, nada cambia y unas
+     coordenadas puestas a mano sobreviven al re-provision (casos nuevos en el test).
 - **Vecinos:** lista opcional de estaciones cercanas servida por la misma config, **puramente
   informativa**. Invariante: el quórum se correlaciona en la nube y **JAMÁS** gatea la sirena local
   (blueprint §4.5, SPOF-01, ratificado en Fase 1.10).
 - **Criterios de aceptación:**
-  - [ ] `site_lat` / `site_lon` como `float|None` en la config del gabinete y en `/api/status`.
-  - [ ] Sin provisionar ⇒ `null` y el panel muestra `SIN UBICACIÓN PROVISIONADA`. **Jamás un punto
-        inventado ni un centro por defecto.**
-  - [ ] Sobreviven a un reinicio sin WAN (caché en disco).
-  - [ ] Un re-aprovisionamiento **no** las borra (o el runbook documenta el paso de restitución).
-  - [ ] Los vecinos, si existen, no participan de ninguna decisión de actuación (test).
+  - [x] `site_lat` / `site_lon` como `float|None` en la config del gabinete y en `/api/status`.
+  - [x] Sin provisionar ⇒ `null` y el panel muestra `SIN UBICACIÓN PROVISIONADA`. **Jamás un punto
+        inventado ni un centro por defecto.** (El rótulo lo pinta T-2.23; el dato ya degrada.)
+  - [x] Sobreviven a un reinicio sin WAN (caché en disco).
+  - [x] Un re-aprovisionamiento **no** las borra (o el runbook documenta el paso de restitución).
+  - [x] Los vecinos, si existen, no participan de ninguna decisión de actuación (test).
+- **Cierre (2026-07-30):** `config/location.py` — `SiteLocationCache` (objeto plano, NO
+  EdgeModule): prioridad env > sync firmado (overlay SOLO-no-nulos, lat/lon en PAR) > caché
+  estrecha (`site_location.json`, tmp+`os.replace` 0644, leída UNA vez al construir; `current()`
+  jamás toca disco; escritura por evento solo al aprender un par DISTINTO). Vecinos con regla
+  «última lista no-vacía». `provision_gateway.sh --site-lat/--site-lon` validados en rango.
+  Runbook de alta actualizado (incluye el gotcha histórico ya corregido y `TAKAB_EDGE_NEIGHBORS`
+  como JSON). Tests: 10 en `test_site_location.py` (incl. el crux
+  `test_partial_signed_config_cannot_null_out_location` y el anti-quórum
+  `test_neighbors_do_not_affect_actuation`) + 3 casos nuevos en `test_merge_env.sh`.
 
 ### [x] T-2.21 · Bandera de calibración instrumental — `P-7`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §6.4 y §8 (honestidad de unidades)

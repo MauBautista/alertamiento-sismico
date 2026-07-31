@@ -81,6 +81,38 @@ esac
 echo "== el archivo resultante nace en 0600 =="
 check "permisos" "600" "$(stat -c '%a' "$TMP/out3")"
 
+echo "== T-2.20: las coordenadas del sitio sobreviven y se actualizan =="
+# a) puestas a mano en el edge.env, un re-aprovisionamiento SIN flags las conserva
+cat >"$TMP/existing_loc" <<'EOF'
+TAKAB_EDGE_STATION=R4F74
+TAKAB_EDGE_SITE_LAT=19.0433
+TAKAB_EDGE_SITE_LON=-98.1980
+EOF
+python3 "$MERGE" --managed "$TMP/managed" --existing "$TMP/existing_loc" --out "$TMP/out_loc1" 2>/dev/null
+check "SITE_LAT manual sobrevive al re-provision" "TAKAB_EDGE_SITE_LAT=19.0433" \
+  "$(grep '^TAKAB_EDGE_SITE_LAT=' "$TMP/out_loc1")"
+check "SITE_LON manual sobrevive al re-provision" "TAKAB_EDGE_SITE_LON=-98.1980" \
+  "$(grep '^TAKAB_EDGE_SITE_LON=' "$TMP/out_loc1")"
+
+# b) pedidas con --site-lat/--site-lon (entran a lo GESTIONADO), se ACTUALIZAN
+cat >"$TMP/managed_loc" <<'EOF'
+TAKAB_EDGE_HMAC_KEY=nueva-clave
+TAKAB_EDGE_SITE_LAT=20.5888
+TAKAB_EDGE_SITE_LON=-100.3899
+EOF
+python3 "$MERGE" --managed "$TMP/managed_loc" --existing "$TMP/existing_loc" --out "$TMP/out_loc2" 2>/dev/null
+check "SITE_LAT gestionada se actualiza" "TAKAB_EDGE_SITE_LAT=20.5888" \
+  "$(grep '^TAKAB_EDGE_SITE_LAT=' "$TMP/out_loc2")"
+check "sin duplicar SITE_LAT" "1" "$(grep -c '^TAKAB_EDGE_SITE_LAT=' "$TMP/out_loc2")"
+
+# c) provision_gateway.sh declara los flags y las escribe en el bloque gestionado
+PROV_LOC="$HERE/../provision_gateway.sh"
+if grep -q -- '--site-lat' "$PROV_LOC" && grep -q 'TAKAB_EDGE_SITE_LAT=%s' "$PROV_LOC"; then
+  ok "provision_gateway.sh acepta --site-lat/--site-lon y escribe SITE_LAT/LON"
+else
+  fallo "provision_gateway.sh NO cablea --site-lat/--site-lon"
+fi
+
 echo "== el aprovisionamiento escribe la IDENTIDAD del gabinete =="
 # Por qué se comprueba aquí: `gateway_id` NO estaba en el edge.env del Pi. El gabinete
 # se identificaba con el DEFAULT horneado en settings.py ("gw-dev-0001"), que coincidía

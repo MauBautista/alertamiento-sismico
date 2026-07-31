@@ -5,14 +5,55 @@
 # panel LAN (T-1.43) se imprime al final porque imprimirlo ES la vía de entrega
 # al responsable del edificio (no existe en Secrets Manager ni en otro canal).
 #
-# Uso: provision_gateway.sh <thing_name> [ssh_host]
+# Uso: provision_gateway.sh <thing_name> [ssh_host] [--site-lat LAT --site-lon LON]
 #   sin ssh_host: escribe ./certs-<thing_name>/{cert.pem,key.pem,ca.pem,edge.env}
 #   con ssh_host: instala en <ssh_host>:/etc/takab/{certs/,edge.env} (sudo)
+#   --site-lat/--site-lon (T-2.20, JUNTOS): añade TAKAB_EDGE_SITE_LAT/LON a las
+#   claves gestionadas. Sin flags NO se tocan: unas coordenadas puestas a mano
+#   en edge.env sobreviven al re-aprovisionamiento (merge_env.py las preserva).
 set -euo pipefail
 
+SITE_LAT=""
+SITE_LON=""
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --site-lat)
+    SITE_LAT="${2:?--site-lat requiere un valor}"
+    shift 2
+    ;;
+  --site-lon)
+    SITE_LON="${2:?--site-lon requiere un valor}"
+    shift 2
+    ;;
+  *)
+    POSITIONAL+=("$1")
+    shift
+    ;;
+  esac
+done
+set -- ${POSITIONAL+"${POSITIONAL[@]}"}
+
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "uso: $0 <thing_name> [ssh_host]" >&2
+  echo "uso: $0 <thing_name> [ssh_host] [--site-lat LAT --site-lon LON]" >&2
   exit 1
+fi
+
+# Las coordenadas van en PAR (una suelta no ubica nada) y se validan AQUÍ:
+# un valor fuera de rango bricktearía el servicio al reiniciar con settings
+# inválidos — mejor fallar antes de tocar el gabinete.
+if [ -n "$SITE_LAT$SITE_LON" ]; then
+  if [ -z "$SITE_LAT" ] || [ -z "$SITE_LON" ]; then
+    echo "error: --site-lat y --site-lon van JUNTOS" >&2
+    exit 1
+  fi
+  python3 - "$SITE_LAT" "$SITE_LON" <<'PY'
+import sys
+
+lat, lon = float(sys.argv[1]), float(sys.argv[2])
+if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+    sys.exit("error: coordenadas fuera de rango (lat [-90,90], lon [-180,180])")
+PY
 fi
 
 THING="$1"
@@ -79,6 +120,13 @@ LOCAL_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**6):06d}"
 # credenciales REALES de Secrets Manager, esto no es un entorno de desarrollo.
 printf 'TAKAB_EDGE_GATEWAY_ID=%s\nTAKAB_EDGE_DEV_MODE=false\nTAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
   "$THING" "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env.managed"
+
+# T-2.20: la ubicación SOLO entra a lo gestionado si el operador la pidió con
+# flags. Sin flags, merge_env.py preserva lo que el edge.env ya tenga.
+if [ -n "$SITE_LAT" ]; then
+  printf 'TAKAB_EDGE_SITE_LAT=%s\nTAKAB_EDGE_SITE_LON=%s\n' \
+    "$SITE_LAT" "$SITE_LON" >>"$TMP/edge.env.managed"
+fi
 
 if [ -z "$SSH_HOST" ]; then
   OUT_DIR="./certs-$THING"

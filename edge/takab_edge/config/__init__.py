@@ -1,10 +1,12 @@
 """config — configuración del edge (settings + store local + sync firmada)."""
 
+from takab_edge.config.location import SiteLocationCache
 from takab_edge.config.settings import (
     DEFAULT_FAILSAFE,
     BufferConfig,
     EdgeSettings,
     GpioPins,
+    NeighborStation,
     SignalConfig,
     ThresholdBand,
     load_settings,
@@ -18,7 +20,9 @@ __all__ = [
     "ConfigStore",
     "EdgeSettings",
     "GpioPins",
+    "NeighborStation",
     "SignalConfig",
+    "SiteLocationCache",
     "ThresholdBand",
     "load_settings",
 ]

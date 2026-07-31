@@ -77,6 +77,20 @@ class SignalConfig(BaseModel):
     clip_count: int = Field(default=8_300_000, gt=0)  # ~±2^23 (ADC 24-bit del RS4D)
 
 
+class NeighborStation(BaseModel):
+    """Estación vecina de la red — PURAMENTE INFORMATIVA (T-2.20).
+
+    Invariante (blueprint §4.5, SPOF-01, ratificado en Fase 1.10): el quórum se
+    correlaciona en la NUBE y jamás gatea la sirena local. Ningún módulo de
+    actuación recibe esta lista; solo el panel LAN la pinta en su plano.
+    """
+
+    code: str
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    distance_km: float | None = Field(default=None, ge=0.0)
+
+
 class BufferConfig(BaseModel):
     """Ring buffer miniSEED en disco (T-1.7).
 
@@ -201,6 +215,22 @@ class EdgeSettings(BaseSettings):
     #: pre-roll y post-roll en segundos (se sube cuando la ventana está completa).
     evidence_pre_s: float = Field(default=60.0, ge=0)
     evidence_post_s: float = Field(default=120.0, ge=0)
+
+    # --- Ubicación del sitio (T-2.20, P-6) ---
+    #: Coordenadas del gabinete. FUENTE DE VERDAD = edge.env (sobreviven reinicios
+    #: sin WAN gratis); el sync firmado solo puede COMPLETARLAS, jamás anularlas
+    #: (overlay solo-no-nulos en `config/location.py` — `apply_signed_update` es
+    #: reemplazo total y la nube publica documentos parciales por diseño).
+    #: None = SIN UBICACIÓN PROVISIONADA: el panel no inventa un punto.
+    site_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    site_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    #: Vecinas de la red (informativas; el quórum vive en la NUBE — ver arriba).
+    neighbors: list[NeighborStation] = Field(default_factory=list)
+    #: Caché estrecha de la ubicación APRENDIDA por sync (JSON). Deliberadamente
+    #: NO un caché general del ConfigStore: persistir config firmada obligaría a
+    #: persistir el high_water anti-replay, y cachear umbrales tocaría actuación.
+    #: La ubicación no dispara nada. Se lee UNA vez al arrancar, jamás en status().
+    site_location_cache: str = "/var/lib/takab/site_location.json"
 
     # --- local_api (dashboard LAN, sin internet) ---
     local_api_host: str = "0.0.0.0"  # noqa: S104 — LAN del gabinete por diseño
