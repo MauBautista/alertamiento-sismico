@@ -455,11 +455,18 @@ defaults, jamás 400. Un tick incremental sin muestras nuevas responde `channels
 
 **`GET /api/catalog`** *(Amend 2026-07-30, T-2.23 — el TERCER endpoint del panel)*
 
-Instantánea local del catálogo SSN, **leída UNA vez al construir el panel** desde el archivo
-que instala `provision_gateway.sh --catalog FILE` (`/var/lib/takab/ssn-catalog.json`, formato
-del entregable de diseño `data/ssn-sismos.json`). Lectura abierta. El feed nube→edge firmado
-es **T-2.24 (futura)**; hasta entonces la procedencia se declara en pantalla
+Instantánea local del catálogo SSN, servida desde `/var/lib/takab/ssn-catalog.json` (formato
+del entregable de diseño `data/ssn-sismos.json`; siembra inicial con
+`provision_gateway.sh --catalog FILE`). Lectura abierta; la procedencia se declara en pantalla
 (`INSTANTÁNEA DEL CATÁLOGO · <captured_at>`).
+
+*(Amend 2026-07-31, T-2.24 — **feed firmado nube→edge**: el archivo se actualiza en caliente
+por `takab/catalog/<thing>` con el MISMO mecanismo HMAC de la config (dominio `catalog`,
+versión monótona anti-replay persistida como `feed_version` DENTRO del archivo; el archivo
+provisionado a mano es v0). Firma inválida, versión vieja o payload malformado ⇒ se conserva
+el último snapshot bueno. **El contrato de `GET /api/catalog` NO cambió** — el panel sigue
+leyéndolo una vez al construirse; `feed_version` es interno y no viaja en la respuesta. El
+push lo origina la nube: `POST /gateways/{id}/catalog`, interno-only y auditado.)*
 
 ```
 available     bool     false = archivo ausente o corrupto ⇒ el panel rotula

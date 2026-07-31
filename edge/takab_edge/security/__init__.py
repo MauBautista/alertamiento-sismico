@@ -109,5 +109,17 @@ class SecurityManager(EdgeModule):
             return False
         return self._safe_equal(self.sign_config(payload, version), signature)
 
+    # --- Catálogo firmado (T-2.24) ---
+    def sign_catalog(self, payload: bytes, version: int) -> str:
+        """Firma del catálogo SSN atada a su VERSIÓN (dominio propio, ≠ config)."""
+        return self._hmac(b"catalog", str(version).encode(), payload)
+
+    def verify_catalog(self, payload: bytes, signature: str, version: int) -> bool:
+        """True sólo si la firma cubre EXACTAMENTE (payload, version)."""
+        if not signature:
+            log.warning("catálogo rechazado: sin firma")
+            return False
+        return self._safe_equal(self.sign_catalog(payload, version), signature)
+
     def _on_start(self) -> None:
         log.info("gestor de seguridad activo (ventana de comando %.0fs)", self._command_ttl_s)

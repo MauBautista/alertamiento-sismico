@@ -1,5 +1,5 @@
 {
-  "_comment": "Vectores HMAC compartidos edge<->nube (T-1.23). Generados con el SecurityManager REAL del edge (framing length-prefixed 8B big-endian, dominios 'command'/'config', HMAC-SHA256 hexdigest). La clave NO es un secreto: existe solo para fijar el framing en ambos lados. payload canonico = json.dumps(separators=(',',':'), sort_keys=True).",
+  "_comment": "Vectores HMAC compartidos edge<->nube (T-1.23). Generados con el SecurityManager REAL del edge (framing length-prefixed 8B big-endian, dominios 'command'/'config'/'catalog', HMAC-SHA256 hexdigest). La clave NO es un secreto: existe solo para fijar el framing en ambos lados. payload canonico = json.dumps(separators=(',',':'), sort_keys=True).",
   "key_hex": "3734366236325f636c6176655f64655f766563746f7265735f6e6f5f736563726574615f30303031",
   "command": [
     {
@@ -84,6 +84,49 @@
       },
       "payload_canonical_hex": "7b22636f6d6d616e645f74746c5f73223a33302e302c226465765f6d6f6465223a747275652c22736974655f636f6465223a2243484c2d41227d",
       "sig": "aaf54bb4bd9b7ec707f48f5a6046b8617f2f5f11d5fceaacfd7710bd4c46cced"
+    }
+  ],
+  "catalog": [
+    {
+      "name": "catalogo_minimo",
+      "version": 1,
+      "payload": {
+        "capturado": "2026-05-17T08:11:22-06:00",
+        "eventos": [
+          {
+            "m": 4.0,
+            "fecha": "2026-05-17",
+            "hora": "08:11:22",
+            "lat": 16.623,
+            "lon": -93.275,
+            "prof": 214.2,
+            "loc": "19 km al SURESTE de OCOZOCOAUTLA, CHIS."
+          }
+        ],
+        "fuente": "SSN/UNAM",
+        "referencias": []
+      },
+      "payload_canonical_hex": "7b2263617074757261646f223a22323032362d30352d31375430383a31313a32322d30363a3030222c226576656e746f73223a5b7b226665636861223a22323032362d30352d3137222c22686f7261223a2230383a31313a3232222c226c6174223a31362e3632332c226c6f63223a223139206b6d20616c2053555245535445206465204f434f5a4f434f4155544c412c20434849532e222c226c6f6e223a2d39332e3237352c226d223a342e302c2270726f66223a3231342e327d5d2c226675656e7465223a2253534e2f554e414d222c227265666572656e63696173223a5b5d7d",
+      "sig": "78e61763b8ae31a55e11d7abb3b122574d6adb0eee82f06652a53413c3b050b8"
+    },
+    {
+      "name": "catalogo_unicode_y_version_alta",
+      "version": 4102,
+      "payload": {
+        "capturado": "2026-07-31T06:00:00-06:00",
+        "eventos": [],
+        "fuente": "Servicio Sismológico Nacional (SSN) · Geofísica UNAM",
+        "replicas_nota": "réplicas — señal ñ/áé",
+        "referencias": [
+          {
+            "n": "CDMX",
+            "lat": 19.4326,
+            "lon": -99.1332
+          }
+        ]
+      },
+      "payload_canonical_hex": "7b2263617074757261646f223a22323032362d30372d33315430363a30303a30302d30363a3030222c226576656e746f73223a5b5d2c226675656e7465223a22536572766963696f205369736d6f6c5c75303066336769636f204e6163696f6e616c202853534e29205c75303062372047656f665c75303065647369636120554e414d222c227265666572656e63696173223a5b7b226c6174223a31392e343332362c226c6f6e223a2d39392e313333322c226e223a2243444d58227d5d2c227265706c696361735f6e6f7461223a22725c7530306539706c69636173205c75323031342073655c7530306631616c205c75303066312f5c75303065315c7530306539227d",
+      "sig": "a4c52153f8750cb1e50053c499ec06d9de696d90f6175e6c0c3643161d05a13f"
     }
   ]
 }

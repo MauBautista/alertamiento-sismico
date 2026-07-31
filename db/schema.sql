@@ -874,6 +874,26 @@ CREATE POLICY gateway_config_state_read ON gateway_config_state FOR SELECT
 CREATE POLICY gateway_config_state_admin ON gateway_config_state FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
+-- [T-2.24] Estado del catálogo SSN firmado publicado por gateway (espejo del
+-- de config): versión MONÓTONA anti-replay + huella de qué instantánea salió
+-- a quién. Lo escribe la API (push interno superadmin/support), no la ingesta.
+CREATE TABLE gateway_catalog_state (
+  gateway_id   uuid PRIMARY KEY REFERENCES gateways(gateway_id) ON DELETE CASCADE,
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  version      integer NOT NULL,
+  payload      jsonb NOT NULL,
+  sig          text NOT NULL,
+  published_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE ON gateway_catalog_state TO takab_app;
+
+ALTER TABLE gateway_catalog_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gateway_catalog_state FORCE  ROW LEVEL SECURITY;
+CREATE POLICY gateway_catalog_state_read ON gateway_catalog_state FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY gateway_catalog_state_admin ON gateway_catalog_state FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
 -- Cascada de notificación (T-1.21 · blueprint §5.6): un job por (incidente,
 -- canal, modo) — UNIQUE = idempotencia del orquestador ante re-entregas.
 CREATE TABLE notification_jobs (

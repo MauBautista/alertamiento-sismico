@@ -22,6 +22,7 @@ from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.audio import AudioNotifier
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
+from takab_edge.catalog import CatalogStore
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
 from takab_edge.config import ConfigStore, EdgeSettings, SiteLocationCache, load_settings
 from takab_edge.contracts import (
@@ -195,6 +196,9 @@ class EdgeSupervisor:
         # CERO relés; lo real (SASMEX o tier instrumental) lo aborta. Se crea
         # ANTES que dispatch (que le enruta drill_start/drill_stop).
         self.drill = DrillController(s, gpio=self.gpio, audio=self.audio)
+        # T-2.24: catálogo SSN con feed firmado — el archivo provisionado sigue
+        # siendo la base; el feed solo lo REFRESCA (mismo HMAC, dominio propio).
+        self.catalog = CatalogStore(s.catalog_path, security=self.security)
         self.dispatch = CommandDispatcher(
             s,
             self.security,
@@ -206,6 +210,7 @@ class EdgeSupervisor:
             health=self.health,
             # T-1.60: ramas drill_start/drill_stop del canal system.
             drill=self.drill,
+            catalog=self.catalog,
         )
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
@@ -226,7 +231,7 @@ class EdgeSupervisor:
             seedlink=self.seedlink,
             config=self.config,
             location=self.location,  # T-2.20: lat/lon + vecinos (overlay vivo)
-            catalog_path=s.catalog_path,  # T-2.23: instantánea SSN provisionada
+            catalog=self.catalog,  # T-2.23/24: instantánea SSN (+feed firmado)
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
@@ -271,6 +276,10 @@ class EdgeSupervisor:
         # en cada conexión; el dispatcher verifica TODO antes de tocar nada.
         self.cloud.subscribe(self.settings.command_topic, self.dispatch.on_command)
         self.cloud.subscribe(self.settings.config_topic, self.dispatch.on_config)
+        # T-2.24: catálogo SSN firmado. OJO política IoT: takab/catalog/<thing>
+        # debe estar en Subscribe/Receive de la política de flota ANTES de
+        # desplegar esto al Pi (terraform), o el broker rechaza la suscripción.
+        self.cloud.subscribe(self.settings.catalog_topic, self.dispatch.on_catalog)
 
     def _on_packet(self, packet: WaveformPacket) -> None:
         # Detección y actuación PRIMERO: el camino umbral→actuador (regla de oro 1/2)

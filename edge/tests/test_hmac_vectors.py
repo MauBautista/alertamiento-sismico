@@ -51,3 +51,18 @@ def test_config_vectors_sign_and_verify(case: dict) -> None:
     mgr = _mgr()
     assert mgr.sign_config(body, case["version"]) == case["sig"]
     assert mgr.verify_config(body, case["sig"], case["version"]) is True
+
+
+@pytest.mark.parametrize("case", VECTORS["catalog"], ids=lambda c: c["name"])
+def test_catalog_vectors_sign(case: dict) -> None:
+    """[T-2.24] El dominio 'catalog' queda anclado por los vectores compartidos."""
+    body = bytes.fromhex(case["payload_canonical_hex"])
+    assert _mgr().sign_catalog(body, case["version"]) == case["sig"]
+
+
+@pytest.mark.parametrize("case", VECTORS["catalog"], ids=lambda c: c["name"])
+def test_catalog_vectors_verify_and_antirelabel(case: dict) -> None:
+    body = bytes.fromhex(case["payload_canonical_hex"])
+    assert _mgr().verify_catalog(body, case["sig"], case["version"]) is True
+    # Re-etiquetar la versión invalida la firma (anti-relabeleo).
+    assert _mgr().verify_catalog(body, case["sig"], case["version"] + 1) is False

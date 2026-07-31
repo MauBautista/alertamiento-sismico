@@ -40,8 +40,9 @@ from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from pathlib import Path
 
+from takab_edge.catalog import DEGRADED as _CATALOG_DEGRADED
+from takab_edge.catalog import CatalogStore
 from takab_edge.contracts import utcnow
 from takab_edge.gpio import GpioController
 from takab_edge.health import HealthMonitor
@@ -116,55 +117,9 @@ def _load_static_fonts() -> dict[str, tuple[str, bytes]]:
     return served
 
 
-def _load_catalog(path: str) -> dict:
-    """[T-2.23] Instantánea del catálogo SSN, leída UNA vez y normalizada a §5.1.
-
-    El archivo usa el formato del entregable de diseño (`fuente/capturado/
-    eventos[m,fecha,hora,lat,lon,prof,loc]/referencias`). Ausente o corrupto ⇒
-    degradación honesta: `available: false` y el panel rotula
-    `CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ`. Jamás lanza.
-    """
-    degraded = {
-        "available": False,
-        "source": None,
-        "captured_at": None,
-        "note": None,
-        "events": [],
-        "references": [],
-    }
-    if not path:
-        return degraded
-    try:
-        raw = json.loads(Path(path).read_text("utf-8"))
-        events = [
-            {
-                "m": float(e["m"]),
-                "at": f"{e.get('fecha', '')} {e.get('hora', '')}".strip(),
-                "lat": float(e["lat"]),
-                "lon": float(e["lon"]),
-                "depth_km": float(e["prof"]) if e.get("prof") is not None else None,
-                "place": str(e.get("loc", "")),
-            }
-            for e in raw.get("eventos", [])
-        ]
-        references = [
-            {"n": str(r["n"]), "lat": float(r["lat"]), "lon": float(r["lon"])}
-            for r in raw.get("referencias", [])
-        ]
-        return {
-            "available": True,
-            "source": raw.get("fuente"),
-            "captured_at": raw.get("capturado"),
-            "note": raw.get("replicas_nota"),
-            "events": events,
-            "references": references,
-        }
-    except FileNotFoundError:
-        log.info("catálogo SSN no instalado (%s); el panel lo declara", path)
-        return degraded
-    except Exception:  # noqa: BLE001 — catálogo corrupto = ausente, jamás un crash
-        log.warning("catálogo SSN ilegible (%s); se degrada", path, exc_info=True)
-        return degraded
+# [T-2.24] La carga/normalización del catálogo vive en `takab_edge.catalog`
+# (CatalogStore): mismo archivo, mismo contrato §5.1, y ahora con feed FIRMADO
+# nube→edge. El panel solo LEE la instantánea viva del store.
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -273,6 +228,7 @@ class LocalDashboard(EdgeModule):
         seedlink: object | None = None,
         config: object | None = None,
         location: object | None = None,
+        catalog: object | None = None,
         catalog_path: str = "",
         gateway_id: str = "",
         site_name: str = "",
@@ -311,12 +267,18 @@ class LocalDashboard(EdgeModule):
         self._last_actuation_test: dict | None = None  # T-1.67: resultado por relé
         self.index_html = _load_index_html()
         # T-2.23: estáticos y catálogo se cargan UNA vez — servir jamás toca disco.
+        # T-2.24: el store compartido del supervisor trae el feed firmado; un
+        # panel suelto (tests/parcial) construye uno de solo-lectura por path.
         self.static_files = _load_static_fonts()
-        self._catalog = _load_catalog(catalog_path)
+        self._catalog_store = catalog if catalog is not None else CatalogStore(catalog_path)
 
     def catalog(self) -> dict:
-        """[T-2.23] Instantánea SSN normalizada (§5.1). Lectura pura del cache."""
-        return self._catalog
+        """[T-2.23/24] Instantánea SSN normalizada (§5.1). Lectura pura del store."""
+        try:
+            return self._catalog_store.current()
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: catálogo no disponible", exc_info=True)
+            return dict(_CATALOG_DEGRADED)
 
     def authorize_action(self, provided: str | None) -> int:
         """Autoriza un POST del panel (T-1.43). Devuelve el status HTTP.

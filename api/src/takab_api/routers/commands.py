@@ -17,10 +17,12 @@ firma usa la clave de ESE gabinete (T-1.38); sin clave resoluble ⇒ 503.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -40,14 +42,18 @@ from takab_api.commands.keys import (
     SecretsManagerKeyProvider,
     build_key_provider,
 )
-from takab_api.commands.publisher import CommandPublisher, IotDataPublisher
+from takab_api.commands.publisher import CommandPublisher, IotDataPublisher, PublishError
 from takab_api.commands.service import issue_signed_command
+from takab_api.commands.signing import canonical_payload as _canonical_catalog
+from takab_api.commands.signing import sign_catalog
 from takab_api.queries import commands as q
 from takab_api.queries import mobile as mobile_q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.schemas.commands import (
     ACTIONS,
     CHANNELS,
+    CatalogPushIn,
+    CatalogPushOut,
     CommandIn,
     CommandList,
     CommandNonceOut,
@@ -381,3 +387,90 @@ async def panic_vote(
         remaining=0,
         window_s=settings.panic_quorum_window_s,
     )
+
+
+# ---------------------------------------------------------------- catálogo SSN
+
+# [T-2.24] Push del catálogo SSN firmado al gabinete. Interno-only: es contenido
+# informativo de plataforma (no toca actuación), pero viaja FIRMADO con la clave
+# del gabinete — mismo régimen fail-closed por gateway que los comandos (T-1.38).
+_require_catalog_push = require_roles("takab_superadmin", "takab_support")
+
+_CATALOG_GATEWAY_SQL = sql_text(
+    "SELECT gateway_id, tenant_id, iot_thing FROM gateways WHERE gateway_id = :gw"
+)
+_CATALOG_STATE_SQL = sql_text("SELECT version FROM gateway_catalog_state WHERE gateway_id = :gw")
+_CATALOG_UPSERT_SQL = sql_text(
+    "INSERT INTO gateway_catalog_state "
+    "  (gateway_id, tenant_id, version, payload, sig, published_at) "
+    "VALUES (:gw, :tenant, :version, CAST(:payload AS jsonb), :sig, now()) "
+    "ON CONFLICT (gateway_id) DO UPDATE "
+    "SET version = EXCLUDED.version, payload = EXCLUDED.payload, "
+    "    sig = EXCLUDED.sig, published_at = EXCLUDED.published_at"
+)
+
+
+@router.post("/gateways/{gateway_id}/catalog", response_model=CatalogPushOut, status_code=202)
+async def push_catalog(
+    gateway_id: UUID,
+    body: CatalogPushIn,
+    claims: Claims = Depends(_require_catalog_push),
+    conn: AsyncConnection = Depends(get_session),
+    publisher: CommandPublisher = Depends(get_publisher),
+    keys: CommandKeyProvider = Depends(get_key_provider),
+) -> CatalogPushOut:
+    """Firma y publica la instantánea SSN a ``takab/catalog/<thing>`` (T-2.24).
+
+    Versión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza
+    toda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503
+    (fail-closed, jamás se firma con una compartida). La periodicidad es una
+    llamada programada a este endpoint; el contrato de ``GET /api/catalog`` en
+    el panel no cambia.
+    """
+    catalog = body.catalog
+    if not isinstance(catalog.get("eventos"), list) or not catalog.get("capturado"):
+        raise http_error(400, "catálogo inválido: exige 'eventos' (lista) y 'capturado'")
+    row = (await conn.execute(_CATALOG_GATEWAY_SQL, {"gw": gateway_id})).first()
+    if row is None:
+        raise http_error(404, "gateway inexistente")
+    if row.iot_thing is None:
+        raise http_error(409, "gateway sin iot_thing: no es alcanzable por IoT")
+    key = keys.key_for(row.iot_thing)
+    if key is None:
+        raise http_error(503, "sin clave HMAC resoluble para el gateway (fail-closed)")
+
+    state = (await conn.execute(_CATALOG_STATE_SQL, {"gw": gateway_id})).first()
+    version = (state.version if state else 0) + 1
+    signature = sign_catalog(key, _canonical_catalog(catalog), version)
+    envelope = {
+        "kind": "catalog_update",
+        "version": version,
+        "payload": catalog,
+        "sig": signature,
+    }
+    topic = f"takab/catalog/{row.iot_thing}"
+    try:
+        publisher.publish(topic, json.dumps(envelope).encode())
+    except PublishError as exc:
+        # Sin upsert: la versión no se quema si no salió al aire.
+        raise http_error(502, f"publish IoT falló: {exc}") from exc
+    await conn.execute(
+        _CATALOG_UPSERT_SQL,
+        {
+            "gw": gateway_id,
+            "tenant": str(row.tenant_id),
+            "version": version,
+            "payload": json.dumps(catalog),
+            "sig": signature,
+        },
+    )
+    await audit_async(
+        conn,
+        tenant_id=str(row.tenant_id),
+        actor=f"user:{claims.sub}",
+        verb="catalog_published",
+        obj=f"gateway:{gateway_id}",
+        meta={"version": version, "sig": signature[:16], "capturado": catalog.get("capturado")},
+    )
+    await conn.commit()
+    return CatalogPushOut(gateway_id=str(gateway_id), version=version, topic=topic)
