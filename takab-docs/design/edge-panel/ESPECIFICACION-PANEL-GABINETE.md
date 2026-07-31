@@ -453,6 +453,28 @@ endpoint responde **200** con `{"cursor": <since|0>, "reset": true, "sample_rate
 defaults, jamás 400. Un tick incremental sin muestras nuevas responde `channels: {}` con
 `reset: false`: el cliente simplemente no redibuja.)*
 
+**`GET /api/catalog`** *(Amend 2026-07-30, T-2.23 — el TERCER endpoint del panel)*
+
+Instantánea local del catálogo SSN, **leída UNA vez al construir el panel** desde el archivo
+que instala `provision_gateway.sh --catalog FILE` (`/var/lib/takab/ssn-catalog.json`, formato
+del entregable de diseño `data/ssn-sismos.json`). Lectura abierta. El feed nube→edge firmado
+es **T-2.24 (futura)**; hasta entonces la procedencia se declara en pantalla
+(`INSTANTÁNEA DEL CATÁLOGO · <captured_at>`).
+
+```
+available     bool     false = archivo ausente o corrupto ⇒ el panel rotula
+                       CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ
+source        str|null fuente textual (SSN/UNAM)
+captured_at   str|null ISO de la captura de la instantánea
+note          str|null nota de réplicas del SSN
+events[]      { m, at ("fecha hora"), lat, lon, depth_km|null, place }
+references[]  { n, lat, lon }   referencias urbanas para el mapa
+```
+
+Las estaciones NO viajan aquí: la propia viene de `site_lat/lon` y las vecinas de
+`neighbors[]` en `/api/status` (T-2.20). Se pide al arrancar y a lo sumo cada ~10 min,
+dentro del MISMO tick secuencial.
+
 ---
 
 ## §6 · Ondas de movimiento en vivo — el corazón del rediseño

@@ -244,6 +244,12 @@ class EdgeSettings(BaseSettings):
     #: dev_mode ⇒ abierto (tests/demo); vacío en PRODUCCIÓN ⇒ POST 403
     #: fail-closed hasta provisionarlo (provision_gateway.sh lo genera).
     local_api_pin: str = ""
+    #: [T-2.23] Instantánea local del catálogo SSN (JSON, formato del entregable
+    #: de diseño) que sirve `GET /api/catalog`. Se lee UNA vez al construir el
+    #: panel; ausente/corrupta ⇒ `available: false` y el panel rotula
+    #: `CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ`. La instala
+    #: `provision_gateway.sh --catalog FILE`. El feed nube→edge firmado = T-2.24.
+    catalog_path: str = "/var/lib/takab/ssn-catalog.json"
 
     # --- audio de voceo (A-6; canal ADVISORY — la sirena de RELÉ es la primaria) ---
     #: El voceo hablado arranca DESHABILITADO: exige dos WAVs grabados (sismo vs

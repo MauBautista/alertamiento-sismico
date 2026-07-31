@@ -15,6 +15,7 @@ set -euo pipefail
 
 SITE_LAT=""
 SITE_LON=""
+CATALOG=""
 POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -26,6 +27,11 @@ while [ $# -gt 0 ]; do
     SITE_LON="${2:?--site-lon requiere un valor}"
     shift 2
     ;;
+  --catalog)
+    # T-2.23: instantánea local del catálogo SSN para GET /api/catalog del panel.
+    CATALOG="${2:?--catalog requiere un archivo}"
+    shift 2
+    ;;
   *)
     POSITIONAL+=("$1")
     shift
@@ -35,7 +41,12 @@ done
 set -- ${POSITIONAL+"${POSITIONAL[@]}"}
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "uso: $0 <thing_name> [ssh_host] [--site-lat LAT --site-lon LON]" >&2
+  echo "uso: $0 <thing_name> [ssh_host] [--site-lat LAT --site-lon LON] [--catalog FILE]" >&2
+  exit 1
+fi
+
+if [ -n "$CATALOG" ] && [ ! -f "$CATALOG" ]; then
+  echo "error: --catalog $CATALOG no existe" >&2
   exit 1
 fi
 
@@ -142,6 +153,11 @@ if [ -z "$SSH_HOST" ]; then
     cp "$TMP/$f" "$OUT_DIR/$f"
     chmod 600 "$OUT_DIR/$f"
   done
+  if [ -n "$CATALOG" ]; then
+    cp "$CATALOG" "$OUT_DIR/ssn-catalog.json"
+    chmod 644 "$OUT_DIR/ssn-catalog.json" # lo lee el panel de a pie: no es secreto
+    echo "catálogo SSN copiado a $OUT_DIR/ssn-catalog.json → instálalo en /var/lib/takab/"
+  fi
   echo "credenciales de $THING escritas en $OUT_DIR/ (no versionar)"
 else
   # El edge.env que ya viva en el gabinete manda sobre todo lo que no generamos aqui.
@@ -159,6 +175,11 @@ else
   # anterior sigue en el dispositivo y se restaura con un `cp`.
   ssh "$SSH_HOST" 'test -f /etc/takab/edge.env && sudo cp -a /etc/takab/edge.env "/etc/takab/edge.env.bak-$(date +%Y%m%d-%H%M%S)" || true'
   ssh "$SSH_HOST" 'sudo tee /etc/takab/edge.env >/dev/null && sudo chmod 600 /etc/takab/edge.env' <"$TMP/edge.env"
+  if [ -n "$CATALOG" ]; then
+    # T-2.23: la instantánea vive donde el servicio puede leerla (ReadWritePaths).
+    ssh "$SSH_HOST" 'sudo mkdir -p /var/lib/takab && sudo tee /var/lib/takab/ssn-catalog.json >/dev/null && sudo chmod 644 /var/lib/takab/ssn-catalog.json' <"$CATALOG"
+    echo "catálogo SSN instalado en $SSH_HOST:/var/lib/takab/ssn-catalog.json"
+  fi
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
   echo "reinicia el servicio para que tome las claves nuevas: ssh $SSH_HOST 'sudo systemctl restart takab-edge'"
 fi

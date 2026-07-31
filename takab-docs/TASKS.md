@@ -9,13 +9,16 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual (2026-07-29):** ▶ **Fase 2.1 · `T-2.15`…`T-2.23`** — habilitar los datos que el
-gabinete mide y no publica, para rediseñar el panel local del inmueble. **0 de 9 empezadas.**
+**Estado actual (2026-07-30): Fase 2.1 · `T-2.15`…`T-2.23` COMPLETA en código** (6 PRs apilados
+#22→#27, CI verde; pendiente el merge en orden y el smoke en el Pi real — checklist en
+`takab-docs/design/edge-panel/VERIFICACION-T-2-23.md`). La fase habilitó los datos que el
+gabinete medía y no publicaba, y reescribió el panel local del inmueble contra ellos.
+**9 de 9 tareas en verde.**
 
 Todo lo anterior está construido y mergeado a `main`: Bloques A/B/C/D (T-1.1…T-1.30) + Fases 1.5,
 1.6, 1.7, 1.8, 1.8.1, 1.9, 1.10 (T-1.32…T-1.73) + **Fase 2 · App móvil completa** (T-2.00…T-2.14).
-**82 de 97 tareas `[x]`** (5 `[~]` · 10 `[ ]`), CI verde, ~1 765 tests. La nube corre `8bad0b3` con
-alembic `0020`.
+Qué corre en producción se le pregunta al sistema, no a este archivo (`/api/health` para la nube,
+`FW_VERSION` para el gabinete — ver README §"¿Qué está desplegado?").
 
 Lo que falta **no es mayormente código**: son los gates físicos (relés en MOCK, gate #3 / G-04 sin
 acreditar, sin UPS), el marco normativo sin confirmar (`GATE-LEGAL`) y credenciales de terceros
@@ -2726,7 +2729,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   (contra `takab_test`; OJO: `DEFAULT_URL` del conftest apunta a `/takab` — exportar
   `DATABASE_URL` a `takab_test` o el seed dev da fallos falsos).
 
-### [ ] T-2.23 · Implementar el panel rediseñado — cierra la Fase 2.1
+### [x] T-2.23 · Implementar el panel rediseñado — cierra la Fase 2.1
 - **Componente:** edge · **Depende de:** T-2.15…T-2.22 **y de los entregables §13 de la spec**
 - **Por qué existe:** es la única tarea de la fase que produce algo **visible en el inmueble**. Las
   ocho anteriores habilitan datos; esta los pinta. Sin ella, la fase cierra en verde y el guardia
@@ -2744,15 +2747,43 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   `empty`/`stale`) · `null` se pinta `S/D`, nunca un valor optimista · dato retenido se rotula como
   retenido (regla de oro 7).
 - **Criterios de aceptación:**
-  - [ ] Los 3 modos de densidad (MURO / CONSOLA / CAMPO) responden a sus breakpoints.
-  - [ ] Los 10 estados de §13.2 se pueden forzar y se ven íntegros, incluido **arranque en frío con
+  - [x] Los 3 modos de densidad (MURO / CONSOLA / CAMPO) responden a sus breakpoints.
+  - [x] Los 10 estados de §13.2 se pueden forzar y se ven íntegros, incluido **arranque en frío con
         `signal`, `health`, `shake_history` y `seedlink` en `null` simultáneamente**.
-  - [ ] El sismograma pinta 4 trazas con umbral, saturación, marca SASMEX y tier; `encoding:
+  - [x] El sismograma pinta 4 trazas con umbral, saturación, marca SASMEX y tier; `encoding:
         "minmax"` se dibuja como **banda**, no como línea; `gap_before` corta el trazo.
-  - [ ] `calibrated: false` ⇒ **`SIN CALIBRAR`** y unidades `rel.` en ondas, estadística y umbrales.
-  - [ ] `site_lat`/`site_lon` en `null` ⇒ `SIN UBICACIÓN PROVISIONADA`, sin punto inventado.
-  - [ ] `test_index_has_no_external_resources` extendido: sigue vetando CDN/`https://`/T-MINUS y
-        **además** `localStorage`/`sessionStorage`.
-  - [ ] Un solo tick de polling secuencial a 1 Hz para los dos endpoints (no dos bucles paralelos:
+  - [x] `calibrated: false` ⇒ **`SIN CALIBRAR`** y unidades `rel.` en ondas, estadística y umbrales.
+  - [x] `site_lat`/`site_lon` en `null` ⇒ `SIN UBICACIÓN PROVISIONADA`, sin punto inventado.
+  - [x] `test_index_has_no_external_resources` extendido: sigue vetando CDN/`https://`/T-MINUS y
+        **además** `localStorage`/`sessionStorage` (+`indexedDB`/`WebSocket`/`EventSource`).
+  - [x] Un solo tick de polling secuencial a 1 Hz para los dos endpoints (no dos bucles paralelos:
         el servidor HTTP del Pi es de hilos y se duplicarían los hilos retenidos por pantalla).
-  - [ ] DevTools sin una sola petición fuera de la LAN.
+  - [x] DevTools sin una sola petición fuera de la LAN. (Checklist manual:
+        `takab-docs/design/edge-panel/VERIFICACION-T-2-23.md` — el render de canvas se valida a ojo.)
+- **Cierre (2026-07-30, PR-6 de la fase):** `index.html` reescrito (142 KB, un solo archivo): des-Reactizado del
+  prototipo de Claude Design (~330 L de canvas portadas: trazas min/máx, envolvente B, rosa,
+  mapa equirect), DOM estático + `render(status)` imperativo, tick ÚNICO encadenado
+  status→waveform (+catalog ~10 min) con backoff 1→2→5 s, buffers cliente preallocados
+  min/máx (minmax ⇒ BANDA; `gap_before` ⇒ corte), conciliación §5.1 completa (umbrales/
+  latencias/contadores/calibración/ubicación/UPS/shake_history + PGV sobre EHZ y desarme real
+  del two-step a 5 s — defectos del prototipo corregidos), 10 escenas `?demo=` con la forma
+  EXACTA de §5.1 + ribbon `DEMO · NO ES ESTADO REAL`, `?mode=muro`, accesibilidad
+  (focus-ring/aria-live/sr-only/reduced-motion). **Estáticos**: `/fonts/geist.ttf` (variable,
+  del entregable) + `/fonts/jbmono.woff2` (subset OFL 26 KB, `pyftsubset` documentado) por
+  whitelist exacta (traversal imposible) con `max-age=86400`. **Geografía**: Natural Earth
+  50m/10m (dominio público) recortada a México, DP 0.02° + cuantización ⇒ 45 KB inline
+  (generador: `takab-docs/design/edge-panel/tools/gen-geografia-mexico.py`). **Catálogo**:
+  `GET /api/catalog` (amend §5.1) desde `catalog_path` leído UNA vez; `provision --catalog`.
+  `support.js` del entregable queda como referencia (cargaba React de unpkg — descalificado).
+  7 tests nuevos + extensión del de recursos. Suite edge: **430**.
+
+### [ ] T-2.24 · Feed del catálogo SSN nube→edge, firmado — FUTURA (acordada 2026-07-30)
+- **Componente:** edge + api · **Depende de:** T-2.23
+- **Qué es:** hoy el catálogo del panel es una **instantánea provisionada a mano**
+  (`provision_gateway.sh --catalog`; fecha de captura visible — decisión de alcance de la
+  Fase 2.1). Esta tarea lo convierte en un feed **firmado** nube→edge por el canal de config
+  (mismo mecanismo HMAC de `takab/cfg/<thing>`), con actualización periódica desde la nube y
+  degradación al último snapshot conocido. El gabinete JAMÁS scrapea al SSN directo: no tiene
+  salida a internet y el SSN no es fuente de alertamiento.
+- **Criterios (borrador):** archivo atómico (tmp+replace) · verificación de firma fail-closed ·
+  `captured_at` siempre visible · sin cambio de contrato en `GET /api/catalog`.

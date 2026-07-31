@@ -1,370 +1,1485 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8">
+<!-- TAKAB Ailert · Panel local del gabinete (T-2.23, Fase 2.1)
+
+     UN solo archivo, cero build, cero internet: la LAN del inmueble no tiene
+     salida y un test veta cualquier recurso externo. Vanilla imperativo (sin
+     framework): DOM estático + render(status) + canvas. Portado del prototipo
+     de Claude Design (takab-docs/design/edge-panel/) y conciliado contra el
+     contrato CONGELADO §5.1 de la spec — los datos vienen de /api/status,
+     /api/waveform y /api/catalog, jamás de strings inventados.
+
+     Reglas duras: un SOLO tick secuencial encadenado a 1 Hz con backoff 1→2→5 s
+     (el servidor del Pi es de hilos: dos bucles duplican hilos retenidos);
+     status() jamás se sondea en paralelo; sin almacenamiento del navegador (el
+     PIN vive en memoria y se re-pide al recargar); null se pinta S/D; dato viejo
+     se rotula DATO RETENIDO; lo desconocido va ámbar, nunca verde. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TAKAB Ailert — Gabinete</title>
+<title>TAKAB Ailert · Panel del gabinete</title>
 <style>
-/* Mini-consola LAN (T-1.53). Familia visual TAKAB con tokens EN HEX inline:
-   la LAN no tiene internet — CERO fuentes/CSS/JS externos (test lo ancla).
-   system-ui para UI; monospace del sistema con tabular-nums para datos. */
+@font-face{font-family:'Geist';src:url('./fonts/geist.ttf') format('truetype-variations'),url('./fonts/geist.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:block}
+@font-face{font-family:'JetBrains Mono';src:url('./fonts/jbmono.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}
 :root{
-  --s0:#0E2336; --s1:#122B44; --s2:#18324E; --s3:#1F3D5C;
-  --fg1:#F0F2F5; --fg2:#B8C2CE; --fg3:#6F7E8F;
-  --cyan:#00BFFF; --ok:#00E676; --warn:#FFC107; --crit:#FF5252;
-  --border:rgba(240,242,245,.08); --border2:rgba(240,242,245,.16);
-  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --tk-surface-0:#0E2336;--tk-surface-1:#122B44;--tk-surface-2:#18324E;--tk-surface-3:#1F3D5C;
+  --tk-surface-overlay:rgba(14,35,54,0.92);
+  --tk-fg-1:#F0F2F5;--tk-fg-2:#B8C2CE;--tk-fg-3:#6F7E8F;--tk-fg-4:#8A97A6;--tk-fg-disabled:#4A5765;
+  --tk-cyan:#00BFFF;--tk-cyan-hover:#33CCFF;--tk-cyan-press:#009ACC;
+  --tk-cyan-tint:rgba(0,191,255,0.15);--tk-cyan-tint-soft:rgba(0,191,255,0.08);
+  --tk-ok:#00E676;--tk-warn:#FFC107;--tk-crit:#FF5252;--tk-geo:#7CE7FF;--tk-violet:#7C4DFF;
+  --tk-border:rgba(240,242,245,0.08);--tk-border-strong:rgba(240,242,245,0.16);
+  --tk-shadow-critical:0 0 0 1px #FF5252,0 0 24px -6px rgba(255,82,82,0.45);
+  --tk-shadow-warning:0 0 0 1px #FFC107,0 0 16px -8px rgba(255,193,7,0.35);
+  --tk-shadow-active:inset 0 0 0 1px #00BFFF,0 0 0 1px rgba(0,191,255,0.15);
+  --tk-focus-ring:0 0 0 2px #0E2336,0 0 0 4px #00BFFF;
+  --f-ui:'Geist',system-ui,sans-serif;
+  --f-data:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
 }
+@keyframes tk-blink{0%,49%{opacity:1}50%,100%{opacity:0.35}}
+@keyframes tk-pulse{0%{opacity:1;transform:scale(1)}70%{opacity:0.25;transform:scale(2.2)}100%{opacity:0;transform:scale(2.4)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--s0);color:var(--fg1);
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:12px 18px;background:var(--s1);border-bottom:1px solid var(--border)}
-.brand{font-weight:800;letter-spacing:.06em}
-.brand small{display:block;font-weight:500;color:var(--fg3);
-  font-family:var(--mono);font-size:11px;letter-spacing:.04em}
-.pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
-  font-size:11px;font-weight:700;letter-spacing:.08em;white-space:nowrap}
-.pill.ok{background:rgba(0,230,118,.15);color:var(--ok)}
-.pill.warn{background:rgba(255,193,7,.18);color:var(--warn)}
-.pill.crit{background:rgba(255,82,82,.18);color:var(--crit)}
-.pill.idle{background:rgba(240,242,245,.08);color:var(--fg3)}
-.dot{width:8px;height:8px;border-radius:999px;background:currentColor}
-#banner{display:none;padding:16px;text-align:center;font-weight:800;
-  font-size:clamp(22px,4.5vw,40px);letter-spacing:.04em;
-  background:#7B1818;color:#fff;border-bottom:2px solid var(--crit)}
-#banner.on{display:block;animation:blink 1s step-start infinite}
-@keyframes blink{50%{opacity:.6}}
-/* T-1.60: banner de SIMULACRO — estilo DISTINTO (ámbar, sin parpadeo) para que
-   jamás se confunda con la alerta real; la real SIEMPRE pinta encima. */
-#drill{display:none;padding:12px;text-align:center;font-weight:800;
-  font-size:clamp(16px,3vw,26px);letter-spacing:.06em;
-  background:#6b4d00;color:#ffd76a;border-bottom:2px solid var(--warn)}
-#drill.on{display:block}
-/* T-1.67: banner de PRUEBA DE ACTUADORES — estilo propio (cian, sin parpadeo),
-   distinto de la alerta (rojo) y del simulacro (ámbar). La real pinta encima. */
-#acttest{display:none;padding:12px;text-align:center;font-weight:800;
-  font-size:clamp(16px,3vw,26px);letter-spacing:.06em;
-  background:#0b3a44;color:#7fe3f0;border-bottom:2px solid #29b6cf}
-#acttest.on{display:block}
-/* T-1.69: modo prueba WR-1 — estado de SEGURIDAD (la nube NO recibe alertas).
-   Violeta, siempre visible mientras esté armado, aun bajo alerta real. */
-#testmode{display:none;padding:12px;text-align:center;font-weight:800;
-  font-size:clamp(15px,2.8vw,24px);letter-spacing:.05em;
-  background:#3a1d5c;color:#d7b3ff;border-bottom:2px solid #9c5cff}
-#testmode.on{display:block}
-main{max-width:1100px;margin:0 auto;padding:14px;display:grid;gap:14px}
-.card{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:14px}
-.card h2{margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:.12em;
-  color:var(--fg3);text-transform:uppercase}
-.card .sub{font-size:10px;color:var(--fg3);letter-spacing:.04em;
-  font-family:var(--mono);margin-bottom:10px}
-#tier{font-weight:800;line-height:1.05;font-size:clamp(40px,9vw,72px);letter-spacing:-.01em}
-#tier.ok{color:var(--ok)} #tier.warn{color:var(--warn)} #tier.crit{color:var(--crit)}
-#tiersub{margin-top:8px;color:var(--fg2);font-family:var(--mono);font-size:13px}
-.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-.ch{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:10px}
-.ch .name{font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.06em;
-  display:flex;justify-content:space-between}
-.ch .pga{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;
-  font-size:clamp(24px,4vw,36px);line-height:1.1}
-.ch .pga .unit{font-size:13px;color:var(--fg3);font-weight:500}
-.ch .meta{font-family:var(--mono);font-size:11px;color:var(--fg3);margin-top:4px}
-.clip{color:var(--crit);font-weight:700}
-.rows{display:grid;gap:0}
-.row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
-  border-bottom:1px solid var(--border);font-size:13px}
-.row:last-child{border-bottom:none}
-.row b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
-.sd{color:var(--fg3)}
-.warn-t{color:var(--warn)} .crit-t{color:var(--crit)} .ok-t{color:var(--ok)}
-.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-button{padding:12px 16px;border:0;border-radius:6px;font-weight:800;cursor:pointer;
-  letter-spacing:.06em;font-size:13px}
-.silence{background:var(--warn);color:#0E2336}
-.test{background:var(--cyan);color:#0E2336}
-.reset{background:#334155;color:#fff}
-#msg{margin-top:8px;font-weight:700;color:var(--warn);min-height:1.2em;
-  font-family:var(--mono);font-size:12px}
-#events li{font-family:var(--mono);font-size:12.5px;color:var(--fg2);
-  padding:5px 0;border-bottom:1px solid var(--border);list-style:none}
-#events{margin:0;padding:0}
-.stateline{padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;
-  font-weight:700;letter-spacing:.06em;margin-bottom:10px;display:none}
-.stateline.show{display:block}
-.stateline.stale{background:rgba(255,193,7,.18);color:var(--warn)}
-.stateline.err{background:rgba(255,82,82,.18);color:var(--crit)}
-footer{padding:10px 18px;color:var(--fg3);font-family:var(--mono);font-size:10.5px}
-</style></head><body>
+html,body{margin:0;padding:0;background:var(--tk-surface-0)}
+body{font-family:var(--f-ui);color:var(--tk-fg-1);-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--tk-focus-ring)}
+input{font-family:inherit}
+canvas{display:block}
+.mono{font-family:var(--f-data);font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.hide{display:none !important}
+.card{background:var(--tk-surface-1);border:1px solid var(--tk-border);border-radius:8px}
+.seclabel{font:600 11px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-2)}
+.meta{font:400 10px/1.3 var(--f-data);color:var(--tk-fg-3)}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;border:1px solid;font:700 11px/1 var(--f-ui);letter-spacing:0.10em}
+.dot{width:8px;height:8px;border-radius:999px;flex:0 0 auto;position:relative}
+.dot .halo{position:absolute;inset:0;border-radius:999px;animation:tk-pulse 1s linear infinite}
+.btn{padding:9px 16px;border-radius:4px;border:1px solid var(--tk-border-strong);background:transparent;color:var(--tk-fg-2);font:700 11px/1.3 var(--f-ui);letter-spacing:0.10em;text-transform:uppercase;text-align:left;display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.btn:hover{background:var(--tk-cyan-tint-soft)}
+.btn:active{background:var(--tk-cyan-tint)}
+.btn .sub{font:400 9px/1.2 var(--f-ui);letter-spacing:0.04em;text-transform:none;opacity:0.72}
+.btn.primary{background:var(--tk-cyan);border-color:var(--tk-cyan);color:var(--tk-surface-0)}
+.btn.primary:hover{background:var(--tk-cyan-hover)}
+.btn.primary:active{background:var(--tk-cyan-press)}
+.btn.danger{background:var(--tk-crit);border-color:var(--tk-crit);color:var(--tk-surface-0)}
+.chip{padding:6px 9px;border-radius:4px;border:1px solid var(--tk-border-strong);background:transparent;color:var(--tk-fg-2);font:700 10px/1 var(--f-ui);letter-spacing:0.08em}
+.chip.on{background:var(--tk-cyan);border-color:var(--tk-cyan);color:var(--tk-surface-0)}
+.kv{display:flex;align-items:baseline;gap:7px}
+.kv .lbl{font:400 11px/1.3 var(--f-ui);color:var(--tk-fg-2)}
+.kv .fill{flex:1 1 auto;height:1px;background:var(--tk-border)}
+.kv .val{font:400 11px/1 var(--f-data);font-variant-numeric:tabular-nums}
+.statdot{width:7px;height:7px;border-radius:999px;flex:0 0 auto}
+
+/* --- banners (precedencia §9.1) --- */
+#banner-alert{display:flex;align-items:center;gap:18px;padding:14px 20px;background:var(--tk-crit);animation:tk-blink 900ms steps(2,end) infinite}
+#banner-alert .big{font:700 28px/1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-surface-0)}
+#banner-amber{display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
+#banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
+#banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
+#demo-ribbon{display:flex;align-items:center;gap:14px;padding:6px 16px;background:#08171f;border-bottom:1px solid var(--tk-border-strong)}
+
+/* --- layout CONSOLA (por defecto; ancho mínimo real 1280: scroll, no compresión) --- */
+#main{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow-x:auto}
+#grid{flex:1 1 auto;min-height:0;min-width:1280px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;padding:12px}
+#col-izq{display:grid;grid-template-rows:auto minmax(240px,1fr) auto;gap:12px;min-height:0;min-width:0}
+#col-der{display:grid;grid-template-rows:minmax(300px,1fr) auto auto;gap:12px;min-height:0}
+#tierline{display:flex;align-items:stretch;background:var(--tk-surface-1);border:1px solid var(--tk-border);border-left:4px solid var(--tk-fg-3);border-radius:8px;overflow:hidden}
+#tier-label{font:700 28px/1.1 var(--f-ui);letter-spacing:-0.01em}
+#relays{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-left:1px solid var(--tk-border)}
+.relay{padding:12px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid rgba(240,242,245,0.06)}
+.relay .rl{font:600 10px/1 var(--f-ui);letter-spacing:0.12em;color:var(--tk-fg-3)}
+.relay .rs{font:700 15px/1 var(--f-ui);letter-spacing:0.04em}
+.relay .re{font:400 10px/1.3 var(--f-data);color:var(--tk-fg-3)}
+#waves-card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#waves-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
+#wave-canvas{position:absolute;inset:0;width:100%;height:100%}
+#lanes{position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none}
+.lane{position:relative;border-top:1px solid rgba(240,242,245,0.06)}
+.lane .top{position:absolute;left:10px;top:7px;display:flex;align-items:baseline;gap:8px}
+.lane .ch{font:700 13px/1 var(--f-data)}
+.lane .unit{font:500 10px/1 var(--f-ui);letter-spacing:0.08em;color:var(--tk-fg-3)}
+.lane .peak{font:400 11px/1 var(--f-data);color:var(--tk-fg-2)}
+.lane .scale{position:absolute;right:10px;top:7px;font:400 10px/1 var(--f-data);color:var(--tk-fg-3)}
+.lane .note{position:absolute;left:10px;bottom:6px;font:400 10px/1 var(--f-data)}
+#stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stat-card{padding:14px;display:flex;flex-direction:column;gap:11px}
+.bar{position:relative;height:10px;background:var(--tk-surface-0);border:1px solid var(--tk-border)}
+.bar .f{position:absolute;left:0;top:0;bottom:0}
+.bar .m{position:absolute;top:-2px;bottom:-2px;width:1px}
+.lat .bar{height:5px}
+#hourly{display:flex;align-items:flex-end;gap:2px;height:34px}
+#hourly .hb{flex:1 1 0;background:var(--tk-cyan);opacity:0.65;min-height:1px}
+#rose-card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#rose-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
+#rose-canvas{position:absolute;inset:0;width:100%;height:100%}
+#salud-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+#bitacora{padding:14px;display:flex;flex-direction:column;gap:9px;max-height:250px;overflow:hidden}
+.tab{padding:6px 10px;border:none;border-bottom:2px solid transparent;background:transparent;font:700 10px/1 var(--f-ui);letter-spacing:0.10em;text-transform:uppercase;color:var(--tk-fg-3)}
+.tab.on{border-bottom-color:var(--tk-cyan);background:var(--tk-cyan-tint);color:var(--tk-cyan)}
+#actionbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--tk-surface-1);border-top:1px solid var(--tk-border-strong);flex-wrap:wrap}
+#pin{width:132px;padding:9px 12px;background:var(--tk-surface-0);border:1px solid var(--tk-border-strong);border-radius:4px;color:var(--tk-fg-1);font:700 14px/1 var(--f-data);letter-spacing:0.28em}
+#overlay{position:fixed;inset:0;z-index:800;background:var(--tk-surface-overlay);display:flex;align-items:stretch;padding:24px}
+#overlay-box{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 420px;background:var(--tk-surface-1);border:1px solid var(--tk-border-strong);border-radius:8px;box-shadow:0 24px 48px -16px rgba(0,0,0,0.65);overflow:hidden}
+#map-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
+#map-canvas{position:absolute;inset:0;width:100%;height:100%}
+#muro-extra{display:none}
+header{flex:0 0 auto;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--tk-surface-1);border-bottom:1px solid var(--tk-border)}
+
+/* --- modo MURO: solo lectura, tipografía de sala --- */
+body.mode-muro #actionbar{display:none}
+body.mode-muro #grid{grid-template-columns:minmax(0,1fr);min-width:0}
+body.mode-muro #col-der{display:none}
+body.mode-muro #stats{display:none}
+body.mode-muro #tier-label{font-size:72px;line-height:1.05}
+body.mode-muro #tier-sub{font-size:24px}
+body.mode-muro .relay .rs{font-size:28px}
+body.mode-muro .lane .ch{font-size:22px}
+body.mode-muro .lane .peak{font-size:18px}
+body.mode-muro #muro-extra{display:flex}
+body.mode-muro #hdr-clock{font-size:34px}
+
+/* --- modo CAMPO: <1024, una columna, objetivos táctiles ≥48px --- */
+body.mode-campo #grid{grid-template-columns:minmax(0,1fr);min-width:0;max-width:560px;margin:0 auto}
+body.mode-campo #col-izq{grid-template-rows:auto minmax(220px,300px) auto}
+body.mode-campo #col-der{grid-template-rows:auto auto auto}
+body.mode-campo #stats{grid-template-columns:1fr}
+body.mode-campo #relays{grid-template-columns:1fr;border-left:none;border-top:1px solid var(--tk-border)}
+body.mode-campo #tierline{flex-direction:column}
+body.mode-campo #actionbar{order:-1;border-top:none;border-bottom:1px solid var(--tk-border-strong)}
+body.mode-campo .btn{min-height:56px;justify-content:center}
+body.mode-campo #pin{min-height:48px;flex:1 1 160px;font-size:18px}
+body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
+</style>
+</head>
+<body>
+
+<div id="demo-ribbon" class="hide" role="status">
+  <span style="font:700 11px/1 var(--f-ui);letter-spacing:0.14em;color:var(--tk-warn)">DEMO · NO ES ESTADO REAL</span>
+  <span class="meta" id="demo-which"></span>
+  <span class="meta" style="margin-left:auto">quita ?demo= de la URL para volver al gabinete real</span>
+</div>
+
 <header>
-  <div class="brand">TAKAB AILERT · <span id="site">—</span>
-    <small id="gw">—</small></div>
-  <div class="pills">
-    <span id="cloudpill" class="pill idle"><span class="dot"></span> ENLACE NUBE · S/D</span>
-    <span id="connpill" class="pill idle"><span class="dot"></span> CONECTANDO…</span>
+  <svg viewBox="0 0 100 100" fill="none" style="height:24px;width:24px;color:var(--tk-fg-1)" aria-hidden="true"><g fill="currentColor"><path d="M 18 12 L 32 12 L 32 88 L 18 88 Z"></path><path d="M 32 50 L 78 12 L 96 12 L 50 50 Z"></path><path d="M 32 50 L 78 88 L 96 88 L 50 50 Z"></path></g></svg>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font:600 13px/1 var(--f-ui);letter-spacing:0.06em;text-transform:uppercase">Takab Ailert · Panel local del gabinete</span>
+    <span class="meta" id="hdr-id">— · LAN del inmueble</span>
+  </div>
+  <div style="width:1px;height:28px;background:var(--tk-border)"></div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font:600 10px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3)">Sitio</span>
+    <span id="hdr-site" style="font:500 14px/1 var(--f-ui)">—</span>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span class="pill" id="pill-live" aria-live="polite"><span class="dot" id="pill-live-dot"><span class="halo"></span></span><span id="pill-live-txt">CONECTANDO…</span></span>
+    <span class="pill" id="pill-cloud"><span class="dot" id="pill-cloud-dot"></span><span id="pill-cloud-txt">ENLACE NUBE · S/D</span></span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <span class="mono" id="hdr-clock" style="font-weight:700;font-size:16px">--:--:-- UTC</span>
+      <span class="meta" id="hdr-meta">CADENCIA 1000 ms · config S/D</span>
+    </div>
+    <div style="display:flex;gap:4px" role="group" aria-label="Modo de densidad">
+      <button class="chip" data-mode="auto" id="mode-auto">AUTO</button>
+      <button class="chip" data-mode="muro">MURO</button>
+      <button class="chip" data-mode="consola">CONSOLA</button>
+      <button class="chip" data-mode="campo">CAMPO</button>
+    </div>
   </div>
 </header>
 
-<div id="banner">ALERTA SÍSMICA · PROTÉJASE</div>
-<div id="drill">🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL</div>
-<div id="acttest">🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL</div>
-<div id="testmode">🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</div>
+<!-- precedencia §9.1: alerta real tapa simulacro y prueba; WR-1 SIEMPRE visible -->
+<div id="banner-wr1" class="hide">
+  <span style="font:700 13px/1 var(--f-ui);letter-spacing:0.10em;color:#B79CFF">🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
+  <span class="mono" id="wr1-left" style="font-weight:700;font-size:13px">—</span>
+  <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">La protección local sigue armada · la ventana expira sola</span>
+</div>
+<div id="banner-alert" class="hide" role="alert" aria-live="assertive">
+  <span class="big">ALERTA SÍSMICA · PROTÉJASE</span>
+  <span style="font:600 13px/1.3 var(--f-ui);color:rgba(14,35,54,0.85);max-width:520px">Alejarse de ventanas · no usar ascensores · seguir la ruta de evacuación señalizada</span>
+  <span class="mono" id="alert-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-surface-0)"></span>
+</div>
+<div id="banner-amber" class="hide">
+  <span id="amber-txt" style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL</span>
+  <span id="amber-sub" style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)"></span>
+  <span class="mono" id="amber-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-warn)"></span>
+</div>
+<div id="banner-cyan" class="hide">
+  <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-cyan)">🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL</span>
+  <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">Sirena y estrobo sostenidos · gas, ascensores y puertas en pulso de verificación con lectura de retorno</span>
+  <span class="mono" id="cyan-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-cyan)"></span>
+</div>
 
-<main>
-  <div id="stateline" class="stateline"></div>
+<div id="main">
+<div id="grid">
 
-  <section class="card">
-    <h2>Estado del sitio</h2>
-    <div id="tier" class="ok">—</div>
-    <div id="tiersub">—</div>
-  </section>
+  <div id="col-izq">
 
-  <section class="card">
-    <h2>Sensores en vivo</h2>
-    <div class="sub">PGA/PGV POR CANAL · FEATURES 1 s · PROCESAMIENTO EDGE</div>
-    <div id="signalstate" class="stateline"></div>
-    <div id="channels" class="grid"></div>
-  </section>
-
-  <section class="card">
-    <h2>Actuadores del gabinete</h2>
-    <div class="sub">RELÉS + ACCIONES CON PIN (T-1.43)</div>
-    <div id="relays" class="rows"></div>
-    <div class="btns">
-      <button class="silence" onclick="cmd('silence')">SILENCIAR AUDIBLES</button>
-      <button class="test" onclick="cmd('siren-test')">PROBAR SIRENA</button>
-      <!-- T-1.67: prueba LOCAL — suena la sirena y verifica gas/ascensor/puertas
-           sin alertar a la nube (no abre incidente ni notifica). -->
-      <button class="test" onclick="cmd('actuator-test')">PROBAR ACTUADORES</button>
-      <!-- T-1.69: modo prueba del WR-1 — toggle; la nube no recibe alertas. -->
-      <button class="test" id="testmode-btn" onclick="cmd('test-mode')">MODO PRUEBA WR-1</button>
-      <button class="reset" onclick="cmd('reset')">CERRAR ALERTA</button>
-      <!-- A-6: voceo de simulacro — el botón SOLO aparece si el gabinete tiene
-           audio habilitado (nada de botones muertos, regla de la auditoría). -->
-      <button class="test" id="drill" style="display:none"
-        onclick="cmd('drill-audio')">SIMULACRO DE VOCEO</button>
+    <div id="tierline">
+      <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px;min-width:340px">
+        <span class="seclabel" style="color:var(--tk-fg-3)">Estado del inmueble</span>
+        <span id="tier-label">—</span>
+        <span class="mono" id="tier-sub" style="font-size:12px;color:var(--tk-fg-2)">—</span>
+      </div>
+      <div id="relays"></div>
     </div>
-    <div id="acttest-results" class="sub" style="margin-top:8px"></div>
-    <div id="msg"></div>
-  </section>
 
-  <section class="card">
-    <h2>Salud del gabinete</h2>
-    <div class="sub" id="healthage">SALUD · S/D</div>
-    <div id="health" class="rows"></div>
-  </section>
+    <div class="card" id="waves-card">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--tk-border);flex-wrap:wrap">
+        <span class="seclabel">Movimiento del suelo · 4 canales · ventana 60 s</span>
+        <span class="meta" id="decim-note">S/D</span>
+        <span id="nocal-pill" class="hide" style="padding:3px 8px;border-radius:4px;background:rgba(255,193,7,0.18);font:700 10px/1 var(--f-ui);letter-spacing:0.10em;color:var(--tk-warn);white-space:nowrap">SIN CALIBRAR · UNIDADES rel.</span>
+        <div style="margin-left:auto;display:flex;gap:4px" role="group" aria-label="Variante de ondas y mapa">
+          <button class="chip" data-variant="A">A · trazas</button>
+          <button class="chip" data-variant="B">B · envolvente</button>
+        </div>
+      </div>
+      <div id="waves-wrap">
+        <canvas id="wave-canvas" aria-hidden="true"></canvas>
+        <div id="lanes"></div>
+      </div>
+      <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:7px 16px;border-top:1px solid var(--tk-border)">
+        <span class="meta">−60 s</span><span class="meta">−45</span><span class="meta">−30</span><span class="meta">−15</span>
+        <div style="display:flex;align-items:center;gap:14px">
+          <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-3)"><span style="width:14px;border-top:1px dashed var(--tk-warn)"></span>CAUTELA</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-3)"><span style="width:14px;border-top:1px dashed var(--tk-crit)"></span>DISPARO</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font:400 10px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-3)"><span style="width:1px;height:10px;background:var(--tk-cyan)"></span>SASMEX</span>
+          <span class="mono" style="font-weight:700;font-size:10px">AHORA</span>
+        </div>
+      </div>
+      <p class="sr-only" id="waves-sr" aria-live="polite"></p>
+    </div>
 
-  <section class="card">
-    <h2>Eventos recientes</h2>
-    <div class="sub" id="uptime">DESDE EL ARRANQUE</div>
-    <ul id="events"></ul>
-  </section>
-</main>
-<footer>Mini-consola LAN del gabinete · lectura abierta en la red local · acciones con PIN ·
-sin internet requerido</footer>
+    <div id="muro-extra" class="card" style="align-items:stretch;gap:12px;padding:14px 18px;display:none">
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:300px">
+        <span class="seclabel" style="color:var(--tk-fg-3)">Sismicidad regional · SSN</span>
+        <span class="mono" id="muro-nearest" style="font-weight:700;font-size:20px;color:var(--tk-cyan)">S/D</span>
+        <span id="muro-ssnmeta" style="font:600 12px/1.3 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-4)"></span>
+      </div>
+      <div id="muro-top3" style="flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;border-left:1px solid var(--tk-border);padding-left:18px"></div>
+    </div>
+
+    <div id="stats">
+      <div class="card stat-card">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="seclabel">Proximidad al disparo</span>
+          <span class="meta" id="prox-profile">umbrales del sitio</span>
+        </div>
+        <div id="prox-bars" style="display:flex;flex-direction:column;gap:12px"></div>
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)">El piso de ruido en reposo es 0.6–1.1 mg: el disparo está 60× por encima. En reposo esta barra debe verse vacía — y eso es información.</span>
+      </div>
+      <div class="card stat-card">
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+          <span class="seclabel">Histórico de sacudida</span>
+          <span id="hist-since" style="padding:2px 6px;border-radius:4px;background:rgba(240,242,245,0.06);font:700 9px/1.4 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-3)">DESDE EL ARRANQUE · S/D</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:5px"><span style="font:500 10px/1 var(--f-ui);letter-spacing:0.08em;color:var(--tk-fg-3)">PGA MÁX · ÚLTIMA HORA</span><span class="mono" id="pga-hour" style="font-weight:700;font-size:20px">S/D</span></div>
+          <div style="display:flex;flex-direction:column;gap:5px"><span style="font:500 10px/1 var(--f-ui);letter-spacing:0.08em;color:var(--tk-fg-3)">PGA MÁX · 24 h</span><span class="mono" id="pga-24h" style="font-weight:700;font-size:20px">S/D</span></div>
+        </div>
+        <div id="hourly" title="PGA máximo por hora (barras, del más viejo al más nuevo)"></div>
+        <div id="hist-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div class="card stat-card lat">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="seclabel">Latencias de la cadena crítica</span>
+          <span class="meta">medidas · contra presupuesto</span>
+        </div>
+        <div id="lat-rows" style="display:flex;flex-direction:column;gap:12px"></div>
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)">El reflejo SASMEX → relé es también una rama de hardware: sigue cerrando aunque el software del Pi esté caído.</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="col-der">
+
+    <div class="card" id="rose-card">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--tk-border)">
+        <span class="seclabel">Estación y dirección de sacudida</span>
+        <span class="meta" id="rose-variant-note"></span>
+        <button id="open-map" class="chip" style="margin-left:auto;border-color:rgba(0,191,255,0.45);background:var(--tk-cyan-tint-soft);color:var(--tk-cyan)">AMPLIAR MAPA REGIONAL</button>
+      </div>
+      <div id="rose-wrap">
+        <canvas id="rose-canvas" aria-hidden="true"></canvas>
+        <div style="position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:4px;pointer-events:none">
+          <span class="mono" id="rose-station" style="font-weight:700;font-size:12px">—</span>
+          <span class="meta" id="rose-site" style="color:var(--tk-fg-2)">—</span>
+          <span class="meta" id="rose-coords">SIN UBICACIÓN PROVISIONADA</span>
+        </div>
+        <div id="rose-axes" style="position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;pointer-events:none"></div>
+      </div>
+      <div style="flex:0 0 auto;padding:9px 14px;border-top:1px solid var(--tk-border);display:flex;flex-direction:column;gap:5px">
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)" id="quorum-note">—</span>
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)">El quórum entre estaciones corrige y confirma en la nube. Nunca condiciona la sirena local: el gabinete actúa solo, de inmediato.</span>
+      </div>
+    </div>
+
+    <div class="card stat-card">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="seclabel">Salud y calidad de la señal</span>
+        <span id="salud-age" class="mono" style="margin-left:auto;padding:3px 8px;border-radius:4px;background:rgba(240,242,245,0.06);font-weight:700;font-size:10px;color:var(--tk-fg-3)">S/D</span>
+      </div>
+      <div id="salud-grid"></div>
+    </div>
+
+    <div class="card" id="bitacora">
+      <div style="display:flex;align-items:center;gap:4px" role="tablist">
+        <button class="tab on" id="tab-local" role="tab">Bitácora local</button>
+        <button class="tab" id="tab-ssn" role="tab">Sismicidad SSN</button>
+      </div>
+      <div id="pane-local" style="display:flex;flex-direction:column;gap:6px;overflow:hidden">
+        <span style="font:700 9px/1.4 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-4)">DESDE EL ARRANQUE · VOLÁTIL EN RAM</span>
+        <div id="event-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div id="pane-ssn" class="hide" style="display:flex;flex-direction:column;gap:5px;overflow:hidden">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span id="ssn-meta" style="font:700 9px/1.4 var(--f-ui);letter-spacing:0.10em;color:var(--tk-warn)">CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ</span>
+          <span class="mono" id="ssn-nearest" style="margin-left:auto;font-weight:700;font-size:9px;color:var(--tk-cyan)"></span>
+        </div>
+        <div id="ssn-rows" style="display:flex;flex-direction:column;gap:2px;overflow:hidden"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="actionbar">
+  <span style="font:600 10px/1.3 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3);max-width:104px">Acciones · exigen PIN</span>
+  <div id="action-btns" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span id="pin-msg" style="font:700 10px/1.3 var(--f-ui);letter-spacing:0.08em;color:var(--tk-fg-3);max-width:240px;text-align:right" aria-live="polite">El PIN se pide de nuevo al recargar · nunca se guarda</span>
+    <label class="sr-only" for="pin">PIN de seis dígitos para las acciones del panel</label>
+    <input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" autocomplete="off">
+  </div>
+</div>
+</div>
+
+<div id="overlay" class="hide" role="dialog" aria-label="Mapa regional">
+  <div id="overlay-box">
+    <div style="display:flex;flex-direction:column;min-width:0">
+      <div style="flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;column-gap:14px;row-gap:10px;padding:14px 18px;border-bottom:1px solid var(--tk-border)">
+        <span style="flex:1 1 auto;min-width:0;font:600 12px/1 var(--f-ui);letter-spacing:0.10em;text-transform:uppercase">Mapa regional</span>
+        <div style="display:flex;gap:6px">
+          <button class="chip" data-scope="local">Red local · 60 km</button>
+          <button class="chip on" data-scope="regional">Regional</button>
+        </div>
+        <button id="close-map" class="chip">Cerrar mapa</button>
+      </div>
+      <div id="map-wrap"><canvas id="map-canvas" aria-hidden="true"></canvas></div>
+    </div>
+    <div style="display:flex;flex-direction:column;border-left:1px solid var(--tk-border);min-height:0">
+      <div style="flex:0 0 auto;padding:14px 16px;border-bottom:1px solid var(--tk-border);display:flex;flex-direction:column;gap:9px">
+        <span class="seclabel">Estaciones de la red</span>
+        <div id="station-rows" style="display:flex;flex-direction:column;gap:9px"></div>
+      </div>
+      <div style="flex:1 1 auto;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:14px 16px 8px">
+          <span class="seclabel">Últimos sismos detectados</span>
+          <span class="mono" id="ssn-count" style="font-weight:700;font-size:11px;color:var(--tk-cyan)">—</span>
+        </div>
+        <div id="ssn-rows-big" style="flex:1 1 auto;overflow-y:auto;padding:0 16px 14px;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+      <div style="flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--tk-border);display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:16px;row-gap:6px">
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:8px;height:8px;background:var(--tk-fg-1)"></span>Esta estación</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:8px;height:8px;border-radius:999px;background:var(--tk-ok)"></span>Vecinas</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:9px;height:9px;border-radius:999px;border:1.4px solid #FFD700"></span>Epicentro · área ∝ M</span>
+        </div>
+        <span id="ssn-meta-big" style="font:700 10px/1.4 var(--f-ui);letter-spacing:0.08em;color:var(--tk-warn)">CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ</span>
+        <span id="ssn-source" style="font:400 11px/1.5 var(--f-ui);color:var(--tk-fg-4)">Proyección equirectangular local · coordenadas reales, sin geometría dibujada a mano · GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO</span>
+        <span id="ssn-note" style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)"></span>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
-// El PIN vive SOLO en memoria de la página (CLAUDE.md §8: nada de localStorage).
-let pin = null;
-let refreshMs = 1000;
-let failures = 0;
-let lastGood = null;
+'use strict';
+/* GEOGRAFÍA: NATURAL EARTH 1:50m/1:10m · DOMINIO PÚBLICO · generado por
+   takab-docs/design/edge-panel/tools/gen-geografia-mexico.py */
+const GEO = {"c":[[[-84.045,22.666],[-84.361,22.379],[-84.383,22.256],[-84.326,22.074],[-84.373,22.036],[-84.533,22.031],[-84.877,21.894],[-84.887,21.857],[-84.838,21.828],[-84.627,21.92],[-84.501,21.93],[-84.503,21.776],[-84.241,21.898],[-84.031,21.943]],[[-119.525,33.282],[-119.525,33.282]],[[-96.84,28.089],[-96.84,28.089]],[[-88.941,29.68],[-88.941,29.68]],[[-88.723,30.264],[-88.723,30.264]],[[-88.109,30.274],[-88.109,30.274]],[[-86.338,16.439],[-86.338,16.439]],[[-118.507,32.96],[-118.507,32.96]],[[-118.312,29.131],[-118.312,29.131]],[[-119.984,33.973],[-119.994,33.985]],[[-119.679,34.028],[-119.679,34.028]],[[-118.469,33.357],[-118.469,33.357]],[[-96.519,28.333],[-96.519,28.333]],[[-97.295,27.523],[-97.295,27.523]],[[-95.09,29.136],[-95.09,29.136]],[[-97.386,27.196],[-97.386,27.196]],[[-85.049,29.638],[-85.049,29.638]],[[-89.185,30.169],[-89.185,30.169]],[[-91.796,29.597],[-91.796,29.597]],[[-88.828,29.928],[-88.828,29.928]],[[-87.849,18.14],[-87.849,18.14]],[[-87.903,17.426],[-87.903,17.426]],[[-91.816,18.676],[-91.816,18.676]],[[-86.928,20.552],[-86.928,20.552]],[[-106.524,21.652],[-106.524,21.652]],[[-110.989,18.863],[-110.989,18.863]],[[-110.703,25.047],[-110.703,25.047]],[[-109.89,24.345],[-109.89,24.345]],[[-113.202,29.302],[-113.202,29.302]],[[-114.789,31.747],[-114.789,31.747]],[[-115.234,28.368],[-115.234,28.368]],[[-111.857,24.538],[-111.857,24.538]],[[-111.091,26.076],[-111.091,26.076]],[[-112.203,29.005],[-112.203,29.005]],[[-112.164,24.8],[-112.164,24.8]],[[-119.853,34.412],[-119.606,34.418],[-119.414,34.339],[-119.268,34.257],[-119.236,34.164],[-119.144,34.112],[-118.832,34.024],[-118.506,34.017],[-118.393,33.858],[-118.41,33.744],[-118.294,33.712],[-118.264,33.759],[-118.081,33.722],[-117.467,33.296],[-117.319,33.1],[-117.263,32.939],[-117.243,32.664],[-117.184,32.688],[-117.137,32.649],[-117.063,32.344],[-116.914,32.199],[-116.848,31.997],[-116.621,31.851],[-116.624,31.758],[-116.722,31.735],[-116.668,31.699],[-116.662,31.565],[-116.333,31.203],[-116.296,30.971],[-116.062,30.804],[-115.996,30.414],[-115.858,30.36],[-115.816,30.304],[-115.79,30.084],[-115.808,29.96],[-115.749,29.936],[-115.674,29.756],[-115.166,29.427],[-114.937,29.352],[-114.309,28.73],[-114.146,28.605],[-114.048,28.426],[-114.093,28.221],[-114.185,28.013],[-114.266,27.934],[-114.253,27.908],[-114.158,27.92],[-114.175,27.831],[-114.135,27.727],[-114.069,27.676],[-114.137,27.671],[-114.302,27.776],[-114.301,27.873],[-114.448,27.797],[-114.57,27.784],[-115.036,27.842],[-114.994,27.736],[-114.54,27.431],[-114.445,27.218],[-114.333,27.158],[-114.11,27.106],[-113.996,26.988],[-113.841,26.967],[-113.701,26.791],[-113.599,26.721],[-113.426,26.796],[-113.272,26.791],[-113.156,26.946],[-113.119,26.717],[-113.021,26.583],[-112.658,26.317],[-112.377,26.214],[-112.174,25.913],[-112.12,25.766],[-112.115,25.63],[-112.07,25.573],[-112.056,25.488],[-112.129,25.043],[-112.073,24.84],[-111.848,24.67],[-111.802,24.543],[-111.683,24.556],[-111.419,24.329],[-111.036,24.105],[-110.63,23.737],[-110.363,23.605],[-110.181,23.342],[-110.086,23.005],[-110.006,22.894],[-109.923,22.886],[-109.823,22.922],[-109.496,23.16],[-109.458,23.215],[-109.421,23.48],[-109.51,23.598],[-109.677,23.662],[-109.711,23.804],[-109.811,23.939],[-110.023,24.175],[-110.263,24.345],[-110.325,24.306],[-110.297,24.195],[-110.367,24.1],[-110.421,24.183],[-110.547,24.214],[-110.659,24.341],[-110.735,24.59],[-110.677,24.789],[-110.687,24.868],[-110.756,24.995],[-110.894,25.144],[-111.034,25.527],[-111.15,25.573],[-111.292,25.79],[-111.33,25.931],[-111.332,26.125],[-111.465,26.408],[-111.47,26.507],[-111.546,26.579],[-111.57,26.708],[-111.795,26.88],[-111.822,26.865],[-111.817,26.756],[-111.699,26.581],[-111.754,26.573],[-111.863,26.679],[-111.883,26.84],[-112.009,26.967],[-112.004,27.079],[-112.191,27.187],[-112.283,27.347],[-112.329,27.523],[-112.553,27.657],[-112.734,27.826],[-112.749,27.995],[-112.808,28.092],[-112.796,28.207],[-112.868,28.292],[-112.871,28.424],[-113.094,28.512],[-113.206,28.799],[-113.321,28.813],[-113.382,28.947],[-113.5,28.927],[-113.545,29.102],[-113.755,29.367],[-114.179,29.734],[-114.373,29.83],[-114.403,29.896],[-114.55,30.022],[-114.63,30.156],[-114.633,30.507],[-114.761,30.959],[-114.882,31.156],[-114.848,31.538],[-114.79,31.647],[-114.84,31.799],[-114.934,31.901],[-114.549,31.734],[-114.149,31.507],[-114.003,31.525],[-113.948,31.629],[-113.759,31.558],[-113.633,31.468],[-113.623,31.346],[-113.231,31.256],[-113.047,31.179],[-113.043,31.087],[-113.073,31.061],[-113.108,31.077],[-113.119,31.048],[-113.087,30.938],[-113.11,30.793],[-113.058,30.651],[-112.825,30.3],[-112.738,29.985],[-112.573,29.72],[-112.415,29.536],[-112.378,29.348],[-112.223,29.269],[-112.162,29.019],[-111.941,28.823],[-111.68,28.471],[-111.472,28.384],[-111.282,28.115],[-111.121,27.967],[-110.921,27.889],[-110.759,27.915],[-110.53,27.864],[-110.615,27.654],[-110.561,27.45],[-110.478,27.323],[-110.277,27.162],[-109.944,27.079],[-109.891,26.883],[-109.755,26.703],[-109.483,26.71],[-109.276,26.534],[-109.216,26.355],[-109.117,26.253],[-109.2,26.305],[-109.426,26.033],[-109.385,25.727],[-109.304,25.633],[-109.196,25.593],[-109.008,25.642],[-108.887,25.733],[-108.885,25.696],[-108.973,25.588],[-109.068,25.552],[-109.029,25.48],[-108.787,25.538],[-108.751,25.424],[-108.696,25.383],[-108.374,25.194],[-108.051,25.067],[-108.036,25.035],[-108.14,25.018],[-108.281,25.082],[-108.015,24.783],[-108.009,24.694],[-107.951,24.615],[-107.817,24.539],[-107.512,24.489],[-107.494,24.369],[-107.527,24.36],[-107.765,24.472],[-107.085,24.016],[-106.935,23.881],[-106.567,23.449],[-106.402,23.196],[-105.792,22.627],[-105.646,22.327],[-105.649,21.988],[-105.431,21.618],[-105.209,21.491],[-105.237,21.119],[-105.511,20.809],[-105.492,20.777],[-105.327,20.753],[-105.252,20.669],[-105.26,20.579],[-105.377,20.512],[-105.543,20.498],[-105.669,20.386],[-105.57,20.228],[-105.482,19.976],[-105.286,19.706],[-105.108,19.562],[-104.938,19.309],[-104.405,19.091],[-103.912,18.828],[-103.699,18.633],[-103.442,18.325],[-102.7,18.063],[-102.217,17.957],[-101.919,17.96],[-101.762,17.842],[-101.6,17.652],[-101.487,17.615],[-101.385,17.514],[-100.848,17.2],[-100.025,16.921],[-99.691,16.72],[-98.762,16.535],[-98.52,16.305],[-98.139,16.206],[-97.755,15.967],[-97.185,15.909],[-96.808,15.726],[-96.511,15.652],[-96.214,15.693],[-95.772,15.888],[-95.464,15.975],[-95.134,16.177],[-94.799,16.21],[-94.786,16.229],[-95.021,16.278],[-95.024,16.306],[-94.9,16.417],[-94.859,16.42],[-94.793,16.365],[-94.791,16.287],[-94.617,16.348],[-94.587,16.316],[-94.682,16.228],[-94.662,16.202],[-94.471,16.187],[-94.001,16.019],[-94.028,16.062],[-94.193,16.146],[-94.426,16.226],[-94.409,16.287],[-94.374,16.285],[-93.916,16.054],[-92.809,15.139],[-92.265,14.568],[-91.819,14.228],[-91.377,13.99],[-91.146,13.926],[-90.607,13.929],[-90.479,13.901],[-89.97,13.683],[-89.804,13.56],[-89.278,13.478],[-88.867,13.283],[-88.512,13.184],[-88.484,13.197],[-88.686,13.281],[-88.592,13.281],[-88.181,13.164],[-88.023,13.169],[-87.931,13.181],[-87.821,13.285],[-87.838,13.386],[-87.814,13.399],[-87.708,13.36],[-87.602,13.386],[-87.489,13.353],[-87.498,13.275],[-87.413,13.127],[-87.333,13.085],[-87.339,12.95],[-87.424,12.921],[-87.543,13.04],[-87.585,13.043],[-87.67,12.966],[-87.668,12.904],[-86.756,12.157]],[[-84.013,15.414],[-84.095,15.401],[-84.111,15.492],[-84.083,15.511]],[[-84.261,15.823],[-84.52,15.873],[-84.426,15.829],[-84.492,15.794],[-84.56,15.802],[-84.646,15.884],[-84.974,15.99],[-85.164,15.918],[-85.484,15.9],[-85.784,16.003],[-85.986,16.024],[-85.936,15.953],[-86.181,15.885],[-86.357,15.783],[-86.757,15.794],[-86.907,15.762],[-87.286,15.834],[-87.487,15.79],[-87.618,15.91],[-87.702,15.911],[-87.875,15.879],[-88.131,15.701],[-88.228,15.729],[-88.594,15.95],[-88.536,15.85],[-88.603,15.764],[-88.894,15.891],[-88.912,15.956],[-88.879,16.017],[-88.695,16.248],[-88.562,16.29],[-88.313,16.633],[-88.262,16.963],[-88.289,17.313],[-88.203,17.517],[-88.272,17.61],[-88.085,18.226],[-88.13,18.351],[-88.349,18.359],[-88.195,18.643],[-88.197,18.72],[-88.074,18.834],[-88.032,18.839],[-88.011,18.727],[-88.056,18.524],[-87.96,18.441],[-87.882,18.274],[-87.853,18.269],[-87.762,18.446],[-87.734,18.655],[-87.653,18.799],[-87.501,19.288],[-87.509,19.317],[-87.551,19.321],[-87.622,19.25],[-87.656,19.258],[-87.659,19.352],[-87.483,19.444],[-87.435,19.502],[-87.425,19.583],[-87.645,19.554],[-87.69,19.594],[-87.688,19.637],[-87.586,19.779],[-87.466,19.824],[-87.442,19.862],[-87.467,20.102],[-87.421,20.231],[-87.221,20.507],[-87.06,20.631],[-86.926,20.786],[-86.816,21.005],[-86.772,21.151],[-86.817,21.234],[-86.824,21.422],[-86.912,21.463],[-87.035,21.592],[-87.128,21.621],[-87.216,21.582],[-87.369,21.574],[-87.387,21.551],[-87.296,21.525],[-87.188,21.546],[-87.164,21.514],[-87.251,21.447],[-87.48,21.472],[-88.007,21.604],[-88.132,21.616],[-88.251,21.567],[-88.467,21.569],[-88.879,21.414],[-89.82,21.275],[-90.183,21.121],[-90.353,21.009],[-90.484,20.556],[-90.492,19.947],[-90.693,19.73],[-90.739,19.352],[-90.955,19.152],[-91.437,18.89],[-91.469,18.833],[-91.446,18.833],[-91.343,18.901],[-91.368,18.806],[-91.279,18.721],[-91.275,18.624],[-91.44,18.542],[-91.534,18.457],[-91.803,18.471],[-91.914,18.529],[-91.943,18.563],[-91.88,18.6],[-91.88,18.638],[-91.974,18.716],[-92.441,18.675],[-92.71,18.612],[-92.769,18.524],[-92.885,18.469],[-93.127,18.423],[-93.552,18.43],[-94.189,18.195],[-94.546,18.175],[-94.798,18.515],[-95.015,18.571],[-95.182,18.701],[-95.561,18.719],[-95.697,18.775],[-95.578,18.69],[-95.627,18.691],[-95.92,18.82],[-95.928,18.85],[-95.778,18.806],[-95.913,18.897],[-95.985,19.054],[-96.073,19.106],[-96.124,19.199],[-96.29,19.344],[-96.456,19.87],[-97.186,20.717],[-97.195,20.8],[-97.501,21.398],[-97.515,21.478],[-97.638,21.604],[-97.754,22.027],[-97.59,21.762],[-97.383,21.567],[-97.434,21.356],[-97.409,21.273],[-97.315,21.564],[-97.585,21.809],[-97.763,22.106],[-97.858,22.625],[-97.745,22.942],[-97.766,23.306],[-97.743,23.761],[-97.668,24.39],[-97.507,25.015],[-97.164,25.755],[-97.14,26.03],[-97.15,26.065],[-97.214,26.068],[-97.435,26.486],[-97.555,26.967],[-97.476,27.118],[-97.485,27.237],[-97.692,27.287],[-97.768,27.458],[-97.524,27.314],[-97.439,27.328],[-97.289,27.671],[-97.431,27.837],[-97.374,27.87],[-97.252,27.854],[-97.171,27.88],[-97.073,27.986],[-97.034,28.094],[-97.141,28.061],[-97.156,28.144],[-97.015,28.163],[-96.933,28.224],[-96.892,28.158],[-96.84,28.194],[-96.807,28.22],[-96.774,28.422],[-96.676,28.341],[-96.562,28.367],[-96.421,28.457],[-96.525,28.489],[-96.64,28.709],[-96.576,28.716],[-96.449,28.594],[-96.373,28.657],[-96.011,28.632],[-96.235,28.489],[-95.853,28.64],[-95.273,28.964],[-95.152,29.079],[-95.139,29.168],[-94.888,29.371],[-94.993,29.531],[-95.023,29.702],[-94.89,29.677],[-94.832,29.753],[-94.742,29.75],[-94.724,29.655],[-94.778,29.548],[-94.526,29.548],[-94.75,29.418],[-94.76,29.384],[-94.1,29.67],[-93.89,29.689],[-93.946,29.815],[-93.841,29.98],[-93.769,29.952],[-93.809,29.851],[-93.884,29.81],[-93.826,29.725],[-93.695,29.77],[-93.176,29.779],[-92.671,29.597],[-92.261,29.557],[-92.084,29.593],[-92.059,29.617],[-92.135,29.699],[-92.017,29.8],[-91.893,29.836],[-91.824,29.751],[-91.672,29.746],[-91.514,29.555],[-91.331,29.514],[-91.249,29.564],[-91.244,29.457],[-91.151,29.318],[-91.237,29.331],[-91.283,29.321],[-91.29,29.289],[-90.751,29.131],[-90.677,29.151],[-90.586,29.272],[-90.379,29.295],[-90.302,29.256],[-90.213,29.105],[-90.101,29.182],[-90.053,29.337],[-90.052,29.431],[-90.141,29.48],[-90.159,29.537],[-89.877,29.458],[-89.818,29.416],[-89.792,29.333],[-89.62,29.302],[-89.443,29.194],[-89.354,29.07],[-89.376,28.981],[-89.236,29.081],[-89.156,29.017],[-89.11,29.099],[-89.021,29.143],[-89.016,29.203],[-89.117,29.248],[-89.181,29.336],[-89.514,29.42],[-89.675,29.539],[-89.721,29.619],[-89.683,29.675],[-89.559,29.698],[-89.591,29.725],[-89.531,29.772],[-89.354,29.82],[-89.358,29.921],[-89.414,30.011],[-89.401,30.046],[-89.494,30.058],[-89.563,30.002],[-89.59,29.915],[-89.632,29.904],[-89.744,29.93],[-89.815,30.007],[-89.665,30.117],[-89.668,30.145],[-89.737,30.172],[-89.812,30.124],[-89.894,30.126],[-89.994,30.059],[-90.175,30.029],[-90.285,30.065],[-90.413,30.14],[-90.332,30.278],[-90.225,30.379],[-90.045,30.351],[-89.954,30.269],[-89.588,30.166],[-89.444,30.223],[-89.321,30.345],[-89.224,30.332],[-88.905,30.415],[-88.692,30.355],[-88.135,30.367],[-88.011,30.694],[-87.923,30.562],[-87.924,30.45],[-87.857,30.407],[-87.79,30.292],[-88.006,30.231],[-87.622,30.265],[-87.448,30.394],[-87.501,30.309],[-87.476,30.294],[-87.281,30.339],[-87.185,30.454],[-87.171,30.539],[-87.072,30.5],[-86.998,30.57],[-86.965,30.502],[-86.986,30.431],[-87.124,30.397],[-87.201,30.339],[-86.68,30.403],[-86.448,30.496],[-86.257,30.493],[-86.166,30.464],[-86.124,30.406],[-86.24,30.429],[-86.454,30.399],[-86.175,30.333],[-85.791,30.172],[-85.756,30.167],[-85.741,30.244],[-85.604,30.287],[-85.663,30.189],[-85.61,30.148],[-85.623,30.117],[-85.676,30.122],[-85.354,29.876],[-85.307,29.798],[-85.315,29.758],[-85.336,29.74],[-85.414,29.842],[-85.414,29.768],[-85.376,29.695],[-85.319,29.68],[-85.029,29.721],[-84.889,29.778],[-84.801,29.773],[-84.55,29.898],[-84.383,29.907],[-84.356,30.029],[-84.31,30.065],[-84.044,30.104]],[[-85.961,16.43],[-85.961,16.43]],[[-86.727,21.264],[-86.727,21.264]]],"e":[[[-114.099,28.0],[-114.147,28.0]],[[-94.084,16.149],[-94.084,16.149]],[[-103.742,18.69],[-103.749,18.686]],[[-94.137,18.207],[-94.137,18.207]],[[-114.934,31.909],[-114.934,31.909]],[[-114.063,28.0],[-114.071,28.0]],[[-112.755,27.999],[-112.764,27.999]],[[-87.538,21.499],[-87.538,21.499]],[[-90.381,20.824],[-90.381,20.824]],[[-109.139,26.332],[-109.139,26.332]],[[-109.293,26.237],[-109.293,26.237]],[[-94.094,16.099],[-94.115,16.057]],[[-114.147,28.0],[-114.207,28.0]],[[-114.071,28.0],[-114.098,28.0]],[[-98.641,19.462],[-98.672,19.39],[-98.633,19.19],[-98.646,19.024]],[[-98.646,19.024],[-98.662,18.945]],[[-98.662,18.945],[-98.669,18.947]],[[-98.669,18.947],[-98.658,18.891],[-98.733,18.812],[-98.666,18.702],[-98.691,18.683]],[[-98.691,18.683],[-98.75,18.692]],[[-98.75,18.692],[-98.679,18.46],[-98.696,18.423]],[[-98.696,18.423],[-98.807,18.495]],[[-98.807,18.495],[-98.878,18.48],[-98.94,18.404],[-99.05,18.35]],[[-99.043,21.268],[-99.042,21.176]],[[-99.042,21.176],[-99.066,21.18]],[[-99.066,21.18],[-99.098,21.17]],[[-99.098,21.17],[-99.122,21.171]],[[-99.122,21.171],[-99.228,21.119]],[[-99.228,21.119],[-99.303,21.147]],[[-99.303,21.147],[-99.38,21.096],[-99.354,21.028],[-99.398,20.914],[-99.492,20.834],[-99.522,20.726],[-99.49,20.661],[-99.578,20.604]],[[-99.578,20.604],[-99.597,20.611]],[[-99.597,20.611],[-99.661,20.56]],[[-99.661,20.56],[-99.674,20.565]],[[-99.674,20.565],[-99.82,20.512],[-99.844,20.309]],[[-99.844,20.309],[-99.938,20.252],[-99.888,20.19],[-99.951,20.171],[-100.123,19.938]],[[-99.791,21.419],[-99.793,21.291],[-99.707,21.247],[-99.857,21.155]],[[-99.857,21.155],[-99.96,21.201]],[[-99.96,21.201],[-100.052,21.158],[-100.087,20.945],[-100.162,20.879]],[[-100.322,20.896],[-100.412,20.912],[-100.439,20.97]],[[-100.439,20.97],[-100.51,20.896],[-100.569,20.699],[-100.491,20.543],[-100.469,20.402],[-100.374,20.272],[-100.286,20.213]],[[-100.162,20.879],[-100.254,20.933]],[[-100.254,20.933],[-100.322,20.896]],[[-100.828,24.565],[-100.618,24.311],[-100.597,23.974],[-100.48,23.789],[-100.494,23.662],[-100.453,23.5],[-100.473,23.433],[-100.451,23.258],[-100.422,23.211],[-100.34,23.19]],[[-100.327,23.254],[-100.057,23.241]],[[-100.34,23.19],[-100.327,23.254]],[[-102.114,23.345],[-102.0,23.399],[-101.828,23.581],[-101.728,23.618],[-101.664,23.707],[-101.45,23.834],[-101.316,23.97],[-101.227,24.003],[-100.97,24.402],[-100.852,24.491],[-100.828,24.565]],[[-102.155,23.408],[-102.114,23.345]],[[-102.26,23.265],[-102.231,23.278],[-102.198,23.395],[-102.155,23.408]],[[-102.275,23.27],[-102.26,23.265]],[[-101.762,22.45],[-101.813,22.465],[-101.953,22.648],[-102.154,22.796],[-102.251,22.984],[-102.225,23.078],[-102.253,23.189],[-102.3,23.231],[-102.275,23.27]],[[-101.521,21.841],[-101.322,22.102],[-101.379,22.382],[-101.299,22.46],[-101.352,22.59],[-101.388,22.609]],[[-101.388,22.609],[-101.432,22.608]],[[-101.432,22.608],[-101.512,22.609]],[[-101.512,22.609],[-101.584,22.586],[-101.63,22.498],[-101.663,22.491]],[[-101.663,22.491],[-101.67,22.491]],[[-101.67,22.491],[-101.762,22.45]],[[-98.592,21.212],[-98.59,21.372],[-98.515,21.399]],[[-98.964,21.298],[-98.906,21.216],[-98.807,21.174]],[[-99.043,21.268],[-98.964,21.298]],[[-98.612,21.217],[-98.592,21.212]],[[-98.652,21.201],[-98.612,21.217]],[[-98.69,21.212],[-98.652,21.201]],[[-98.807,21.174],[-98.69,21.212]],[[-99.198,21.646],[-99.099,21.382],[-99.112,21.29]],[[-99.285,21.53],[-99.198,21.646]],[[-99.315,21.539],[-99.285,21.53]],[[-99.393,21.431],[-99.315,21.539]],[[-99.72,21.515],[-99.57,21.392]],[[-99.791,21.419],[-99.72,21.515]],[[-99.419,21.435],[-99.393,21.431]],[[-99.501,21.403],[-99.419,21.435]],[[-99.551,21.404],[-99.501,21.403]],[[-99.57,21.392],[-99.551,21.404]],[[-99.094,21.292],[-99.043,21.268]],[[-99.112,21.29],[-99.094,21.292]],[[-101.202,21.754],[-101.27,21.781],[-101.326,21.873]],[[-101.326,21.873],[-101.449,21.822]],[[-101.449,21.822],[-101.521,21.841]],[[-100.627,21.492],[-100.961,21.75],[-101.091,21.772]],[[-101.091,21.772],[-101.202,21.754]],[[-99.915,21.455],[-100.076,21.554],[-100.404,21.678]],[[-100.404,21.678],[-100.463,21.637],[-100.499,21.514],[-100.556,21.492]],[[-100.556,21.492],[-100.594,21.492]],[[-100.594,21.492],[-100.627,21.492]],[[-99.791,21.419],[-99.878,21.456]],[[-99.878,21.456],[-99.915,21.455]],[[-96.728,18.41],[-96.79,18.284],[-97.026,18.122]],[[-97.453,17.978],[-97.502,18.006],[-97.545,18.106],[-97.64,18.171],[-97.606,18.36]],[[-97.606,18.36],[-97.699,18.311]],[[-97.699,18.311],[-97.712,18.315]],[[-97.712,18.315],[-97.818,18.137],[-97.733,18.005],[-97.858,17.916]],[[-97.026,18.122],[-97.208,18.177]],[[-97.208,18.177],[-97.356,18.111],[-97.453,17.978]],[[-97.858,17.916],[-97.925,18.036]],[[-97.925,18.036],[-98.024,18.022]],[[-98.024,18.022],[-98.135,18.026]],[[-98.135,18.026],[-98.277,17.911]],[[-98.277,17.911],[-98.31,17.923]],[[-98.31,17.923],[-98.348,17.892]],[[-102.286,21.67],[-102.08,21.768],[-102.049,21.866],[-101.892,21.956],[-101.845,22.017]],[[-102.661,21.778],[-102.514,21.706],[-102.286,21.67]],[[-102.76,21.749],[-102.661,21.778]],[[-103.852,22.179],[-103.89,22.286],[-103.866,22.409],[-103.887,22.467],[-103.848,22.506],[-103.851,22.569],[-103.795,22.624],[-103.779,22.735],[-103.983,22.772]],[[-103.983,22.772],[-103.992,22.574],[-103.927,22.507],[-103.952,22.37],[-104.132,22.343],[-104.33,22.264]],[[-103.698,22.591],[-103.728,22.606]],[[-103.728,22.606],[-103.852,22.179]],[[-103.642,22.113],[-103.678,22.137],[-103.683,22.322],[-103.608,22.524],[-103.645,22.543],[-103.645,22.589],[-103.677,22.591]],[[-103.677,22.591],[-103.698,22.591]],[[-103.189,22.322],[-103.185,22.38],[-103.373,22.517]],[[-103.373,22.517],[-103.427,22.41],[-103.359,22.349],[-103.5,22.124]],[[-103.092,22.298],[-103.132,22.338]],[[-103.132,22.338],[-103.189,22.322]],[[-103.205,21.977],[-103.089,22.075],[-103.086,22.125],[-103.131,22.163],[-103.053,22.238],[-103.055,22.306]],[[-103.055,22.306],[-103.092,22.298]],[[-103.535,22.145],[-103.569,22.152]],[[-103.569,22.152],[-103.642,22.113]],[[-103.5,22.124],[-103.52,22.146]],[[-103.52,22.146],[-103.535,22.145]],[[-103.264,21.988],[-103.205,21.977]],[[-103.644,21.487],[-103.519,21.6],[-103.527,21.817],[-103.401,21.929],[-103.264,21.988]],[[-102.76,21.749],[-102.784,21.627],[-102.693,21.574]],[[-102.655,21.576],[-102.634,21.534],[-102.684,21.404],[-102.808,21.293]],[[-102.693,21.574],[-102.655,21.576]],[[-103.734,21.525],[-103.644,21.487]],[[-103.736,21.227],[-103.747,21.297],[-103.704,21.384],[-103.734,21.525]],[[-102.808,21.293],[-102.815,21.341]],[[-102.815,21.341],[-102.946,21.277]],[[-102.946,21.277],[-103.024,21.291]],[[-103.024,21.291],[-103.056,21.266],[-103.048,21.074],[-103.083,21.042]],[[-103.591,21.193],[-103.653,21.265]],[[-103.653,21.265],[-103.736,21.227]],[[-103.449,21.159],[-103.528,21.198]],[[-103.528,21.198],[-103.591,21.193]],[[-103.194,21.068],[-103.401,21.162]],[[-103.401,21.162],[-103.449,21.159]],[[-103.083,21.042],[-103.161,21.076]],[[-103.161,21.076],[-103.194,21.068]],[[-101.739,21.957],[-101.845,22.017]],[[-101.56,21.878],[-101.694,21.963]],[[-101.694,21.963],[-101.739,21.957]],[[-101.521,21.841],[-101.54,21.881]],[[-101.54,21.881],[-101.56,21.878]],[[-101.521,21.841],[-101.586,21.755],[-101.538,21.637],[-101.64,21.553],[-101.568,21.406],[-101.573,21.348],[-101.716,21.231]],[[-101.716,21.231],[-101.753,21.232]],[[-101.753,21.232],[-101.855,21.148],[-102.088,20.791],[-102.085,20.729],[-101.983,20.64],[-101.968,20.587],[-102.1,20.387]],[[-100.624,18.871],[-100.509,18.844]],[[-100.469,18.844],[-100.428,18.787],[-100.43,18.637],[-100.35,18.533],[-100.366,18.455],[-100.288,18.389]],[[-100.509,18.844],[-100.469,18.844]],[[-99.66,18.764],[-99.56,18.676],[-99.513,18.67]],[[-99.785,18.622],[-99.66,18.764]],[[-99.513,18.67],[-99.495,18.674]],[[-99.85,18.663],[-99.785,18.622]],[[-100.288,18.389],[-100.148,18.491],[-100.071,18.61],[-99.85,18.663]],[[-99.495,18.674],[-99.507,18.624],[-99.468,18.615],[-99.39,18.506],[-99.345,18.498],[-99.331,18.453],[-99.288,18.452]],[[-99.197,18.558],[-99.155,18.549],[-99.05,18.35]],[[-99.288,18.452],[-99.245,18.454],[-99.197,18.558]],[[-99.05,18.35],[-99.031,18.238]],[[-99.002,18.243],[-98.969,18.186]],[[-99.031,18.238],[-99.002,18.243]],[[-98.942,18.2],[-98.92,18.14],[-98.83,18.116],[-98.751,18.008],[-98.522,17.95]],[[-98.969,18.186],[-98.942,18.2]],[[-98.427,17.964],[-98.348,17.892]],[[-98.522,17.95],[-98.427,17.964]],[[-98.348,17.892],[-98.328,17.858],[-98.389,17.641],[-98.362,17.59],[-98.378,17.542],[-98.324,17.465],[-98.325,17.317],[-98.205,17.218]],[[-98.176,17.22],[-98.002,17.015],[-98.059,16.9],[-98.079,16.766],[-98.174,16.703]],[[-98.205,17.218],[-98.176,17.22]],[[-98.174,16.703],[-98.215,16.709]],[[-98.215,16.709],[-98.24,16.703],[-98.22,16.618],[-98.256,16.571]],[[-98.256,16.571],[-98.307,16.578]],[[-98.307,16.578],[-98.346,16.547],[-98.315,16.467],[-98.343,16.41],[-98.555,16.318]],[[-100.123,19.938],[-100.215,19.565],[-100.146,19.436],[-100.33,19.323],[-100.299,19.259],[-100.595,18.898]],[[-100.595,18.898],[-100.6,18.899]],[[-100.6,18.899],[-100.624,18.871]],[[-100.123,19.938],[-100.177,19.978],[-100.198,20.144],[-100.286,20.213]],[[-102.006,20.335],[-101.996,20.403]],[[-101.996,20.403],[-102.1,20.387]],[[-101.869,20.198],[-101.932,20.252],[-101.965,20.376]],[[-101.965,20.376],[-102.006,20.335]],[[-101.48,20.331],[-101.516,20.335]],[[-101.516,20.335],[-101.615,20.318],[-101.673,20.191]],[[-101.393,20.039],[-101.42,20.054],[-101.434,20.225],[-101.377,20.27],[-101.461,20.335]],[[-101.461,20.335],[-101.48,20.331]],[[-100.286,20.213],[-100.358,20.118]],[[-101.742,20.205],[-101.78,20.212]],[[-101.78,20.212],[-101.808,20.198]],[[-101.808,20.198],[-101.838,20.212]],[[-101.838,20.212],[-101.869,20.198]],[[-101.673,20.191],[-101.708,20.205]],[[-101.708,20.205],[-101.742,20.205]],[[-100.358,20.118],[-100.381,20.121]],[[-100.381,20.121],[-100.379,19.975],[-100.49,19.954],[-100.532,19.905]],[[-101.105,20.086],[-101.14,20.108]],[[-101.14,20.108],[-101.213,20.03]],[[-100.931,19.924],[-101.04,19.968],[-100.983,20.043],[-100.999,20.09],[-101.045,20.1]],[[-101.045,20.1],[-101.105,20.086]],[[-101.324,20.041],[-101.353,20.055]],[[-101.353,20.055],[-101.393,20.039]],[[-101.213,20.03],[-101.286,20.047]],[[-101.286,20.047],[-101.324,20.041]],[[-100.733,19.908],[-100.787,19.919],[-100.83,19.976]],[[-100.83,19.976],[-100.931,19.924]],[[-100.532,19.905],[-100.561,19.947]],[[-100.561,19.947],[-100.716,19.94],[-100.733,19.908]],[[-102.1,20.387],[-102.243,20.34]],[[-102.243,20.34],[-102.297,20.362]],[[-102.297,20.362],[-102.498,20.315],[-102.65,20.223],[-103.078,20.105],[-103.074,19.997],[-103.023,19.97]],[[-102.934,19.99],[-102.863,19.96]],[[-103.023,19.97],[-102.934,19.99]],[[-102.823,19.963],[-102.79,19.956]],[[-102.863,19.96],[-102.823,19.963]],[[-102.773,19.957],[-102.757,19.891],[-102.707,19.862],[-102.81,19.821],[-102.814,19.751],[-102.739,19.598],[-102.746,19.476],[-102.707,19.468]],[[-102.79,19.956],[-102.773,19.957]],[[-102.614,19.491],[-102.545,19.4],[-102.672,19.223]],[[-102.707,19.468],[-102.614,19.491]],[[-102.672,19.223],[-102.751,19.259]],[[-102.751,19.259],[-102.904,19.192],[-102.967,19.074],[-103.122,19.006],[-103.149,18.954]],[[-103.242,19.013],[-103.282,19.053]],[[-103.282,19.053],[-103.383,18.973]],[[-103.149,18.954],[-103.211,19.015]],[[-103.211,19.015],[-103.242,19.013]],[[-103.383,18.973],[-103.422,18.976]],[[-103.422,18.976],[-103.478,18.966]],[[-101.492,18.477],[-101.578,18.506],[-101.645,18.58],[-101.76,18.59]],[[-101.76,18.59],[-101.839,18.577],[-101.881,18.523],[-101.876,18.295],[-101.941,18.205]],[[-100.994,18.501],[-101.024,18.539]],[[-101.024,18.539],[-101.096,18.529]],[[-101.096,18.529],[-101.257,18.537]],[[-101.257,18.537],[-101.492,18.477]],[[-100.953,18.466],[-100.97,18.507]],[[-100.97,18.507],[-100.994,18.501]],[[-100.727,18.432],[-100.818,18.498],[-100.925,18.501]],[[-100.925,18.501],[-100.953,18.466]],[[-100.693,18.416],[-100.72,18.452]],[[-100.72,18.452],[-100.727,18.432]],[[-101.941,18.205],[-101.97,18.21]],[[-101.97,18.21],[-102.008,18.197]],[[-102.008,18.197],[-102.038,18.199]],[[-102.038,18.199],[-102.105,18.187]],[[-102.105,18.187],[-102.123,18.188]],[[-102.123,18.188],[-102.176,18.108],[-102.169,17.921]],[[-100.624,18.871],[-100.685,18.794]],[[-100.685,18.794],[-100.735,18.857]],[[-100.735,18.857],[-100.789,18.801],[-100.745,18.734],[-100.772,18.684],[-100.742,18.524],[-100.61,18.418],[-100.632,18.337]],[[-100.689,18.326],[-100.72,18.378],[-100.693,18.416]],[[-100.632,18.337],[-100.652,18.359]],[[-100.652,18.359],[-100.689,18.326]],[[-93.873,17.15],[-93.868,17.012]],[[-93.868,17.012],[-93.894,17.017]],[[-93.894,17.017],[-93.911,16.881],[-94.041,16.801],[-94.04,16.643],[-94.125,16.509],[-94.04,16.303],[-94.084,16.149]],[[-93.055,17.895],[-93.271,17.994]],[[-93.271,17.994],[-93.313,17.964],[-93.414,17.638],[-93.475,17.571]],[[-92.969,17.531],[-93.011,17.708],[-92.998,17.933]],[[-92.998,17.933],[-93.011,17.912]],[[-93.011,17.912],[-93.032,17.915]],[[-93.032,17.915],[-93.055,17.895]],[[-91.943,17.854],[-91.967,17.909]],[[-91.967,17.909],[-92.078,17.833],[-92.061,17.803],[-92.117,17.783]],[[-91.86,17.874],[-91.9,17.889]],[[-91.9,17.889],[-91.943,17.854]],[[-91.782,17.721],[-91.785,17.847],[-91.84,17.889]],[[-91.84,17.889],[-91.86,17.874]],[[-92.117,17.783],[-92.148,17.788]],[[-92.148,17.788],[-92.368,17.697],[-92.383,17.623],[-92.755,17.364]],[[-91.453,17.388],[-91.492,17.401],[-91.501,17.464],[-91.645,17.525],[-91.68,17.685],[-91.739,17.722]],[[-91.739,17.722],[-91.782,17.721]],[[-93.475,17.571],[-93.479,17.571]],[[-93.479,17.571],[-93.59,17.376]],[[-92.755,17.364],[-92.829,17.402],[-92.91,17.526],[-92.943,17.532]],[[-92.943,17.532],[-92.969,17.531]],[[-91.402,17.316],[-91.431,17.389]],[[-91.431,17.389],[-91.453,17.388]],[[-91.416,17.317],[-91.402,17.316]],[[-91.433,17.255],[-91.416,17.317]],[[-108.339,27.051],[-108.374,27.077]],[[-108.374,27.077],[-108.466,26.98]],[[-106.937,25.642],[-107.255,25.863],[-107.361,26.107],[-107.776,26.201],[-107.853,26.646],[-108.0,26.815],[-108.021,26.92],[-108.197,26.971],[-108.289,27.055]],[[-108.289,27.055],[-108.339,27.051]],[[-106.937,25.642],[-107.083,25.465],[-107.126,25.19],[-107.036,24.92],[-106.963,24.879],[-106.943,24.809],[-106.899,24.792]],[[-106.868,24.792],[-106.756,24.704],[-106.664,24.566],[-106.596,24.368],[-106.476,24.286]],[[-106.899,24.792],[-106.868,24.792]],[[-106.236,24.397],[-106.053,24.283],[-105.964,24.097],[-105.909,24.052]],[[-106.421,24.288],[-106.236,24.397]],[[-106.438,24.288],[-106.421,24.288]],[[-106.476,24.286],[-106.438,24.288]],[[-105.862,24.064],[-105.922,23.902],[-105.853,23.601],[-105.766,23.551],[-105.726,23.487],[-105.678,23.282],[-105.55,23.163],[-105.475,23.143]],[[-105.909,24.052],[-105.862,24.064]],[[-105.392,23.15],[-105.389,23.033]],[[-105.475,23.143],[-105.392,23.15]],[[-103.833,19.398],[-104.051,19.502],[-104.056,19.537]],[[-104.056,19.537],[-104.232,19.319]],[[-103.478,18.966],[-103.525,19.093],[-103.491,19.311],[-103.601,19.408],[-103.649,19.501]],[[-103.649,19.501],[-103.759,19.426]],[[-103.759,19.426],[-103.773,19.426]],[[-103.773,19.426],[-103.833,19.398]],[[-104.232,19.319],[-104.255,19.32]],[[-104.255,19.32],[-104.385,19.27]],[[-104.385,19.27],[-104.421,19.288]],[[-104.421,19.288],[-104.475,19.23]],[[-104.475,19.23],[-104.526,19.253]],[[-104.526,19.253],[-104.593,19.15]],[[-103.627,26.644],[-103.963,27.919],[-103.312,29.026]],[[-100.182,27.794],[-99.976,27.638]],[[-100.486,27.345],[-100.435,27.38],[-100.358,27.674],[-100.182,27.794]],[[-99.976,27.638],[-99.807,27.771]],[[-100.512,27.366],[-100.486,27.345]],[[-100.754,27.013],[-100.8,27.06],[-100.813,27.199],[-100.628,27.328],[-100.512,27.366]],[[-100.711,26.617],[-100.609,26.716],[-100.552,26.887],[-100.56,27.053],[-100.665,27.1]],[[-100.665,27.1],[-100.689,27.07]],[[-100.689,27.07],[-100.697,27.07]],[[-100.697,27.07],[-100.704,27.027],[-100.754,27.013]],[[-100.753,26.732],[-100.711,26.617]],[[-101.027,26.154],[-101.109,26.283],[-101.216,26.373],[-100.753,26.732]],[[-100.571,25.498],[-100.582,25.546],[-100.636,25.557],[-100.657,25.61],[-100.739,25.626],[-100.807,25.712],[-100.853,25.821],[-100.848,25.957],[-100.923,26.0],[-100.946,26.108],[-101.007,26.155]],[[-101.007,26.155],[-101.027,26.154]],[[-100.665,25.53],[-100.571,25.498]],[[-100.452,25.341],[-100.499,25.397],[-100.572,25.414],[-100.696,25.506],[-100.665,25.53]],[[-100.274,25.203],[-100.212,25.292],[-100.303,25.345],[-100.394,25.354]],[[-100.394,25.354],[-100.452,25.341]],[[-100.596,25.229],[-100.402,25.193]],[[-100.828,24.565],[-100.767,24.776],[-100.796,24.893],[-100.732,24.962],[-100.835,25.041],[-100.823,25.079],[-100.771,25.147],[-100.596,25.229]],[[-100.316,25.207],[-100.274,25.203]],[[-100.402,25.193],[-100.316,25.207]],[[-106.028,26.839],[-105.849,26.715],[-105.756,26.691]],[[-106.092,26.735],[-106.028,26.839]],[[-104.01,26.777],[-103.627,26.644]],[[-104.557,26.341],[-104.235,26.723],[-104.155,26.768],[-104.01,26.777]],[[-106.129,26.768],[-106.092,26.735]],[[-106.443,26.037],[-106.399,26.068],[-106.374,26.168],[-106.432,26.362],[-106.196,26.445],[-106.225,26.56],[-106.166,26.621],[-106.158,26.742],[-106.129,26.768]],[[-105.68,26.699],[-105.578,26.587],[-105.327,26.459]],[[-105.756,26.691],[-105.68,26.699]],[[-105.117,26.552],[-105.026,26.459]],[[-105.327,26.459],[-105.117,26.552]],[[-104.966,26.506],[-104.777,26.469],[-104.557,26.341]],[[-105.026,26.459],[-104.966,26.506]],[[-106.461,26.038],[-106.443,26.037]],[[-106.759,25.62],[-106.544,25.78],[-106.525,25.993],[-106.461,26.038]],[[-106.937,25.642],[-106.759,25.62]],[[-103.627,26.644],[-103.326,26.409],[-103.27,26.313],[-103.35,26.074],[-103.32,25.699],[-103.488,25.541],[-103.484,25.485],[-103.424,25.417],[-103.48,25.377],[-103.506,25.281],[-103.388,25.141],[-103.275,25.072],[-103.226,24.887],[-102.972,24.807],[-102.843,24.728]],[[-102.843,24.728],[-102.839,24.899],[-102.668,25.079]],[[-102.2,25.166],[-101.861,25.076],[-101.768,24.938],[-101.692,24.909]],[[-102.668,25.079],[-102.613,25.122],[-102.2,25.166]],[[-101.653,24.911],[-101.591,24.882],[-101.574,24.807]],[[-101.692,24.909],[-101.653,24.911]],[[-101.344,24.838],[-101.342,24.812]],[[-101.462,24.749],[-101.344,24.838]],[[-101.574,24.807],[-101.654,24.826]],[[-101.654,24.826],[-101.617,24.757],[-101.462,24.749]],[[-101.265,24.823],[-101.182,24.782],[-101.097,24.641],[-100.98,24.6]],[[-101.342,24.812],[-101.265,24.823]],[[-100.925,24.612],[-100.828,24.565]],[[-100.98,24.6],[-100.925,24.612]],[[-102.757,24.409],[-102.49,24.474],[-102.492,24.824],[-102.668,25.079]],[[-103.247,24.491],[-102.757,24.409]],[[-103.449,24.35],[-103.413,24.36],[-103.371,24.449],[-103.247,24.491]],[[-103.488,24.352],[-103.449,24.35]],[[-103.833,23.63],[-103.807,23.692],[-103.879,23.773],[-103.851,23.851],[-103.905,23.925],[-103.839,23.945],[-103.847,24.071],[-103.67,24.162],[-103.591,24.279],[-103.527,24.298],[-103.488,24.352]],[[-103.897,23.664],[-103.833,23.63]],[[-104.311,22.319],[-104.209,22.644],[-104.189,23.118],[-104.134,23.187],[-104.109,23.435],[-103.952,23.551],[-103.897,23.664]],[[-102.211,22.355],[-102.292,22.465]],[[-102.292,22.465],[-102.345,22.397]],[[-102.345,22.397],[-102.364,22.397]],[[-102.364,22.397],[-102.414,22.361]],[[-102.132,22.322],[-102.166,22.374]],[[-102.166,22.374],[-102.211,22.355]],[[-102.414,22.361],[-102.443,22.364]],[[-102.443,22.364],[-102.511,22.306]],[[-101.845,22.017],[-101.98,22.123],[-101.999,22.275],[-102.113,22.323]],[[-102.113,22.323],[-102.132,22.322]],[[-102.511,22.306],[-102.583,22.31]],[[-102.583,22.31],[-102.676,22.261],[-102.652,22.187],[-102.85,21.913],[-102.847,21.812],[-102.76,21.749]],[[-98.252,19.72],[-98.169,19.672]],[[-98.346,19.595],[-98.252,19.72]],[[-98.169,19.672],[-98.143,19.673]],[[-98.487,19.644],[-98.346,19.595]],[[-98.53,19.614],[-98.487,19.644]],[[-98.573,19.634],[-98.53,19.614]],[[-98.621,19.608],[-98.573,19.634]],[[-98.632,19.611],[-98.621,19.608]],[[-98.659,19.586],[-98.632,19.611]],[[-98.964,19.089],[-98.939,19.137],[-98.967,19.303],[-99.059,19.377],[-99.039,19.427],[-99.124,19.571]],[[-99.124,19.571],[-99.153,19.492],[-99.273,19.356]],[[-99.273,19.356],[-99.309,19.363]],[[-99.309,19.363],[-99.335,19.247],[-99.285,19.142]],[[-98.659,19.586],[-98.709,19.583],[-98.641,19.462]],[[-99.641,20.129],[-99.844,20.309]],[[-99.387,19.756],[-99.432,19.897],[-99.519,19.953],[-99.486,20.061],[-99.549,20.158],[-99.585,20.167]],[[-99.585,20.167],[-99.641,20.129]],[[-98.916,19.804],[-98.966,19.821],[-98.93,19.931],[-98.943,19.99],[-99.018,20.042]],[[-99.018,20.042],[-99.202,19.979],[-99.242,19.893]],[[-99.242,19.893],[-99.252,19.895]],[[-99.252,19.895],[-99.287,19.822]],[[-98.745,19.841],[-98.835,19.886]],[[-98.835,19.886],[-98.916,19.804]],[[-98.659,19.586],[-98.596,19.721],[-98.707,19.852]],[[-98.707,19.852],[-98.745,19.841]],[[-99.287,19.822],[-99.321,19.825]],[[-99.321,19.825],[-99.387,19.756]],[[-99.285,19.142],[-99.043,19.058]],[[-98.977,19.088],[-98.964,19.089]],[[-98.991,19.089],[-98.977,19.088]],[[-99.043,19.058],[-98.991,19.089]],[[-98.964,19.089],[-98.852,19.042]],[[-98.84,19.045],[-98.804,18.966]],[[-98.852,19.042],[-98.84,19.045]],[[-98.761,18.961],[-98.646,19.024]],[[-98.795,18.966],[-98.761,18.961]],[[-98.804,18.966],[-98.795,18.966]],[[-99.285,19.142],[-99.332,19.089],[-99.308,18.935],[-99.391,18.896],[-99.472,18.8],[-99.495,18.674]],[[-98.063,19.731],[-98.028,19.692],[-98.035,19.636],[-97.843,19.543],[-97.861,19.513]],[[-98.102,19.671],[-98.073,19.677],[-98.063,19.731]],[[-98.143,19.673],[-98.102,19.671]],[[-97.861,19.513],[-97.871,19.513]],[[-97.871,19.513],[-97.844,19.436]],[[-98.548,19.438],[-98.641,19.462]],[[-97.795,19.457],[-97.669,19.37]],[[-97.844,19.436],[-97.795,19.457]],[[-98.193,19.106],[-98.343,19.229],[-98.493,19.454]],[[-98.493,19.454],[-98.548,19.438]],[[-97.641,19.373],[-97.62,19.319],[-97.698,19.283]],[[-97.669,19.37],[-97.641,19.373]],[[-97.748,19.295],[-97.828,19.311]],[[-97.828,19.311],[-97.884,19.265],[-97.852,19.195],[-97.906,19.156]],[[-97.698,19.283],[-97.729,19.305]],[[-97.729,19.305],[-97.748,19.295]],[[-97.906,19.156],[-98.05,19.209]],[[-98.05,19.209],[-98.108,19.135],[-98.193,19.106]],[[-98.0,20.484],[-98.159,20.33],[-98.251,20.303],[-98.275,20.232],[-98.238,20.201]],[[-98.16,20.223],[-98.101,20.086],[-98.251,19.849],[-98.143,19.673]],[[-98.238,20.201],[-98.16,20.223]],[[-103.478,18.966],[-103.491,18.969]],[[-103.491,18.969],[-103.586,18.882]],[[-103.586,18.882],[-103.607,18.892]],[[-103.607,18.892],[-103.627,18.802],[-103.742,18.69]],[[-104.971,22.542],[-105.003,22.563],[-104.994,22.675],[-104.889,22.79],[-104.945,22.916],[-105.23,23.037]],[[-105.23,23.037],[-105.389,23.033]],[[-104.504,22.416],[-104.614,22.481],[-104.668,22.626],[-104.774,22.676]],[[-104.774,22.676],[-104.971,22.542]],[[-104.311,22.319],[-104.335,22.475]],[[-104.335,22.475],[-104.504,22.416]],[[-104.311,22.319],[-104.33,22.264]],[[-104.286,20.708],[-104.271,20.862],[-104.208,20.993],[-104.224,21.169],[-104.202,21.199],[-104.04,21.22],[-103.969,21.287],[-103.945,21.375],[-104.21,21.519],[-104.098,21.784],[-104.393,22.07],[-104.33,22.264]],[[-104.778,21.021],[-104.598,20.92]],[[-104.975,20.923],[-104.778,21.021]],[[-105.044,20.937],[-105.027,20.917]],[[-105.291,20.685],[-105.126,20.891],[-105.044,20.937]],[[-105.004,20.927],[-104.975,20.923]],[[-105.027,20.917],[-105.004,20.927]],[[-104.568,20.92],[-104.286,20.708]],[[-104.598,20.92],[-104.568,20.92]],[[-105.389,23.033],[-105.414,23.035]],[[-105.414,23.035],[-105.471,22.986],[-105.452,22.901],[-105.577,22.77],[-105.487,22.684],[-105.448,22.574],[-105.443,22.515],[-105.5,22.49]],[[-105.5,22.49],[-105.613,22.548]],[[-105.613,22.548],[-105.677,22.535],[-105.679,22.449]],[[-105.679,22.449],[-105.724,22.51]],[[-98.515,21.399],[-98.443,21.354],[-98.49,21.25],[-98.373,21.155]],[[-98.286,21.246],[-98.266,21.197],[-98.288,21.143],[-98.249,21.124]],[[-98.373,21.155],[-98.313,21.188],[-98.286,21.246]],[[-98.212,21.151],[-98.13,21.072],[-98.154,21.021]],[[-98.249,21.124],[-98.212,21.151]],[[-98.154,21.021],[-98.163,21.023]],[[-98.163,21.023],[-98.232,20.938],[-98.227,20.834],[-98.261,20.829]],[[-98.261,20.829],[-98.393,20.877]],[[-98.393,20.877],[-98.431,20.857],[-98.419,20.788],[-98.495,20.757],[-98.465,20.73]],[[-98.428,20.749],[-98.428,20.692],[-98.508,20.625],[-98.571,20.495],[-98.501,20.362],[-98.468,20.354]],[[-98.465,20.73],[-98.428,20.749]],[[-98.079,20.697],[-98.022,20.661],[-98.0,20.484]],[[-98.336,20.435],[-98.079,20.697]],[[-98.377,20.465],[-98.336,20.435]],[[-98.468,20.354],[-98.377,20.465]],[[-97.876,20.825],[-97.843,20.814]],[[-98.0,20.484],[-97.946,20.57],[-97.966,20.682],[-97.876,20.825]],[[-97.797,20.817],[-97.743,20.778],[-97.701,20.644],[-97.722,20.611],[-97.696,20.602]],[[-97.843,20.814],[-97.797,20.817]],[[-97.662,20.607],[-97.589,20.582],[-97.56,20.529],[-97.64,20.416]],[[-97.696,20.602],[-97.662,20.607]],[[-97.64,20.416],[-97.693,20.466]],[[-97.693,20.466],[-97.741,20.438]],[[-97.741,20.438],[-97.756,20.44]],[[-97.756,20.44],[-97.778,20.43],[-97.774,20.273],[-97.678,20.179]],[[-97.403,20.26],[-97.136,20.122],[-97.309,19.897],[-97.308,19.748],[-97.389,19.623],[-97.392,19.576],[-97.321,19.481],[-97.367,19.452]],[[-97.576,20.118],[-97.47,20.238],[-97.403,20.26]],[[-97.621,20.193],[-97.576,20.118]],[[-97.678,20.179],[-97.621,20.193]],[[-97.367,19.452],[-97.382,19.453]],[[-97.382,19.453],[-97.399,19.43],[-97.317,19.388]],[[-97.282,19.401],[-97.226,19.339],[-97.112,19.303]],[[-97.317,19.388],[-97.282,19.401]],[[-97.06,19.319],[-96.982,19.281],[-97.057,19.207]],[[-97.112,19.303],[-97.06,19.319]],[[-97.057,19.207],[-97.072,19.21]],[[-97.072,19.21],[-97.109,19.179]],[[-97.109,19.179],[-97.167,19.194]],[[-97.167,19.194],[-97.264,19.16],[-97.226,18.892],[-97.282,18.868],[-97.342,18.783],[-97.31,18.685],[-97.269,18.659]],[[-97.221,18.676],[-97.135,18.648],[-97.087,18.481]],[[-97.269,18.659],[-97.221,18.676]],[[-96.8,18.551],[-96.786,18.478],[-96.728,18.41]],[[-97.04,18.479],[-96.8,18.551]],[[-97.056,18.485],[-97.04,18.479]],[[-97.087,18.481],[-97.056,18.485]],[[-98.457,21.979],[-98.348,22.222],[-98.616,22.419]],[[-98.466,21.987],[-98.457,21.979]],[[-98.487,21.974],[-98.466,21.987]],[[-98.588,21.981],[-98.538,21.972]],[[-98.57,21.95],[-98.588,21.981]],[[-98.509,21.98],[-98.487,21.974]],[[-98.538,21.972],[-98.509,21.98]],[[-98.532,21.849],[-98.566,21.904],[-98.528,21.959]],[[-98.528,21.959],[-98.57,21.95]],[[-98.525,21.726],[-98.456,21.797],[-98.491,21.853]],[[-98.491,21.853],[-98.532,21.849]],[[-98.544,21.734],[-98.525,21.726]],[[-98.57,21.692],[-98.544,21.734]],[[-98.609,21.697],[-98.57,21.692]],[[-98.515,21.399],[-98.53,21.525],[-98.642,21.609],[-98.609,21.697]],[[-96.204,18.185],[-96.26,18.3],[-96.357,18.387],[-96.411,18.539],[-96.562,18.593],[-96.664,18.669]],[[-96.664,18.669],[-96.634,18.536],[-96.728,18.41]],[[-96.122,18.14],[-96.18,18.188]],[[-96.18,18.188],[-96.204,18.185]],[[-95.995,18.16],[-96.071,18.172]],[[-96.071,18.172],[-96.122,18.14]],[[-95.727,17.502],[-95.797,17.537],[-95.909,17.756],[-95.894,17.824],[-95.775,17.995],[-95.838,18.12],[-95.966,18.166]],[[-95.966,18.166],[-95.995,18.16]],[[-93.873,17.15],[-94.938,17.217],[-94.972,17.237],[-94.999,17.36],[-95.076,17.391],[-95.255,17.583],[-95.204,17.655],[-95.214,17.732]],[[-95.214,17.732],[-95.233,17.73]],[[-95.233,17.73],[-95.241,17.73]],[[-95.241,17.73],[-95.244,17.703]],[[-95.244,17.703],[-95.277,17.716]],[[-95.277,17.716],[-95.364,17.641]],[[-95.364,17.641],[-95.387,17.641]],[[-95.387,17.641],[-95.612,17.515]],[[-95.612,17.515],[-95.662,17.526]],[[-95.662,17.526],[-95.727,17.502]],[[-94.055,17.868],[-94.079,17.905],[-94.051,17.994],[-94.137,18.207]],[[-93.837,17.708],[-93.862,17.744],[-93.937,17.759],[-93.97,17.832],[-94.047,17.868]],[[-94.047,17.868],[-94.055,17.868]],[[-93.59,17.376],[-93.643,17.421],[-93.623,17.563],[-93.734,17.671],[-93.825,17.708]],[[-93.825,17.708],[-93.837,17.708]],[[-93.873,17.15],[-93.637,17.3],[-93.59,17.376]],[[-108.466,26.98],[-108.473,26.99]],[[-108.64,28.239],[-108.541,28.334],[-108.646,28.608],[-108.61,28.743],[-108.708,29.401],[-108.611,29.419],[-108.537,30.039],[-108.57,30.389],[-108.599,30.537],[-108.8,30.636],[-109.04,30.814],[-108.968,31.327]],[[-108.927,28.292],[-108.64,28.239]],[[-108.537,27.022],[-108.687,27.204],[-108.637,27.314],[-108.66,27.525],[-108.779,27.622],[-108.763,27.675],[-108.871,27.757],[-108.906,27.836],[-109.013,27.894],[-109.154,28.199],[-109.069,28.276],[-108.927,28.292]],[[-108.473,26.99],[-108.503,27.029]],[[-108.503,27.029],[-108.537,27.022]],[[-99.7,26.896],[-99.732,26.932],[-99.728,26.993],[-99.676,27.154],[-99.712,27.2],[-99.756,27.45],[-99.778,27.482],[-99.904,27.5],[-99.915,27.534],[-99.91,27.572],[-99.711,27.67]],[[-99.632,26.684],[-99.563,26.835],[-99.69,26.897]],[[-99.69,26.897],[-99.7,26.896]],[[-99.392,26.366],[-99.425,26.431],[-99.391,26.598],[-99.571,26.686]],[[-99.571,26.686],[-99.632,26.684]],[[-99.225,26.287],[-99.333,26.395]],[[-99.333,26.395],[-99.392,26.366]],[[-99.133,26.057],[-99.194,26.291]],[[-99.194,26.291],[-99.225,26.287]],[[-98.889,25.971],[-99.037,26.101]],[[-99.037,26.101],[-99.088,26.077]],[[-99.088,26.077],[-99.102,26.081]],[[-99.102,26.081],[-99.133,26.057]],[[-98.515,25.472],[-98.561,25.503],[-98.556,25.971],[-98.569,25.997],[-98.81,26.06]],[[-98.81,26.06],[-98.889,25.971]],[[-98.956,25.07],[-98.869,25.099],[-98.458,25.41],[-98.447,25.46],[-98.473,25.474]],[[-98.473,25.474],[-98.515,25.472]],[[-99.034,25.12],[-98.956,25.07]],[[-99.107,25.049],[-99.034,25.12]],[[-99.145,25.052],[-99.107,25.049]],[[-99.143,25.013],[-99.145,25.052]],[[-99.157,25.015],[-99.143,25.013]],[[-99.164,24.776],[-99.193,24.878],[-99.142,24.946],[-99.188,25.007],[-99.157,25.015]],[[-99.294,24.827],[-99.164,24.776]],[[-99.381,24.781],[-99.294,24.827]],[[-99.399,24.782],[-99.381,24.781]],[[-99.556,24.643],[-99.5,24.674],[-99.479,24.74],[-99.399,24.782]],[[-99.587,24.659],[-99.556,24.643]],[[-99.71,24.472],[-99.737,24.57],[-99.587,24.659]],[[-99.462,23.889],[-99.464,23.957],[-99.609,24.092],[-99.574,24.362],[-99.606,24.513]],[[-99.606,24.513],[-99.71,24.472]],[[-99.491,23.895],[-99.462,23.889]],[[-99.77,23.75],[-99.6,23.767],[-99.491,23.895]],[[-99.798,23.751],[-99.77,23.75]],[[-99.906,23.375],[-99.95,23.539],[-99.853,23.726],[-99.798,23.751]],[[-100.043,23.415],[-99.906,23.375]],[[-100.057,23.241],[-100.055,23.314],[-100.126,23.356],[-100.043,23.415]],[[-100.057,23.241],[-100.089,23.121]],[[-100.022,23.171],[-99.908,22.984],[-99.933,22.935],[-100.037,22.88],[-100.0,22.783],[-99.537,22.617]],[[-100.089,23.121],[-100.022,23.171]],[[-99.539,22.731],[-99.432,22.636]],[[-99.537,22.617],[-99.539,22.731]],[[-99.379,22.683],[-99.229,22.445],[-98.831,22.358]],[[-99.432,22.636],[-99.379,22.683]],[[-98.656,22.443],[-98.616,22.419]],[[-98.831,22.358],[-98.656,22.443]],[[-98.198,22.481],[-98.093,22.373],[-97.909,22.319],[-97.913,22.267],[-97.863,22.22]],[[-98.256,22.459],[-98.198,22.481]],[[-98.274,22.468],[-98.256,22.459]],[[-98.323,22.399],[-98.274,22.468]],[[-98.514,22.435],[-98.477,22.433]],[[-98.616,22.419],[-98.514,22.435]],[[-98.472,22.434],[-98.452,22.424]],[[-98.477,22.433],[-98.472,22.434]],[[-98.439,22.433],[-98.402,22.413]],[[-98.452,22.424],[-98.439,22.433]],[[-98.378,22.427],[-98.364,22.401]],[[-98.402,22.413],[-98.378,22.427]],[[-98.348,22.409],[-98.323,22.399]],[[-98.364,22.401],[-98.348,22.409]],[[-97.863,22.22],[-97.782,22.273]],[[-114.854,32.488],[-114.819,32.499]],[[-114.906,32.492],[-114.854,32.488]],[[-114.934,31.909],[-114.937,32.032],[-114.979,32.074],[-114.967,32.181],[-115.04,32.277],[-114.906,32.492]],[[-112.764,27.999],[-113.835,28.001]],[[-113.835,28.001],[-114.063,28.0]],[[-88.014,20.435],[-87.675,20.648],[-87.609,20.776],[-87.534,20.956],[-87.585,21.111],[-87.525,21.299],[-87.538,21.499]],[[-88.161,20.459],[-88.106,20.428]],[[-88.261,20.263],[-88.257,20.376],[-88.161,20.459]],[[-88.074,20.437],[-88.014,20.435]],[[-88.106,20.428],[-88.074,20.437]],[[-88.346,20.319],[-88.261,20.263]],[[-88.791,19.981],[-88.79,20.019],[-88.707,20.081],[-88.445,20.184],[-88.346,20.319]],[[-88.839,20.014],[-88.791,19.981]],[[-89.31,19.828],[-89.202,19.842],[-89.056,19.932],[-88.928,19.941],[-88.839,20.014]],[[-89.344,19.831],[-89.31,19.828]],[[-89.415,19.651],[-89.344,19.831]],[[-92.358,18.457],[-92.416,18.503],[-92.479,18.65]],[[-92.29,18.458],[-92.334,18.464]],[[-92.334,18.464],[-92.358,18.457]],[[-91.633,17.951],[-91.859,17.954],[-92.141,18.146],[-92.149,18.462]],[[-92.149,18.462],[-92.29,18.458]],[[-91.227,18.006],[-91.332,18.067],[-91.541,18.105]],[[-91.541,18.105],[-91.589,18.098],[-91.633,17.951]],[[-90.991,17.802],[-90.992,17.968],[-91.188,18.008]],[[-91.188,18.008],[-91.227,18.006]],[[-90.381,20.824],[-90.392,20.547],[-90.327,20.514]],[[-90.277,20.515],[-90.236,20.51],[-90.169,20.425]],[[-90.327,20.514],[-90.277,20.515]],[[-90.018,20.468],[-89.811,20.137],[-89.63,20.019],[-89.455,19.777],[-89.415,19.651]],[[-90.094,20.407],[-90.018,20.468]],[[-90.13,20.439],[-90.094,20.407]],[[-90.169,20.425],[-90.13,20.439]],[[-89.415,19.651],[-89.135,19.405],[-89.014,19.218],[-89.021,19.033],[-89.082,18.961],[-89.109,18.691],[-89.067,18.59],[-89.076,18.506],[-89.045,18.492],[-89.036,18.203],[-89.154,18.031],[-89.146,17.951]],[[-108.473,26.99],[-108.507,26.802],[-109.139,26.332]],[[-109.156,26.308],[-109.231,26.263]],[[-109.284,26.241],[-109.292,26.237]],[[-109.292,26.237],[-109.293,26.237]]]};
 
-function el(id){ return document.getElementById(id); }
-function send(name){
-  const h = pin ? {'X-Takab-Pin': pin} : {};
-  return fetch('/api/'+name,{method:'POST',headers:h});
-}
-async function cmd(name){
-  const m = el('msg');
-  try{
-    let r = await send(name);
-    if(r.status===401){
-      const entered = window.prompt('PIN del gabinete');
-      if(entered===null || entered===''){ return; }
-      pin = entered;
-      r = await send(name);
-      if(r.status===401){ pin=null; m.textContent='PIN INCORRECTO'; }
-    }
-    if(r.status===403){ m.textContent='SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS'; }
-    else if(r.status===429){ m.textContent='BLOQUEADO POR INTENTOS · ESPERA 60 s'; }
-    else if(r.ok){ m.textContent=''; }
-    tick();
-  }catch(e){}
-}
-
+/* ============================== utilidades ============================== */
+const $ = (id) => document.getElementById(id);
+const C = { fg1:'#F0F2F5', fg2:'#B8C2CE', fg3:'#6F7E8F', fg4:'#8A97A6', cyan:'#00BFFF',
+            geo:'#7CE7FF', ok:'#00E676', warn:'#FFC107', crit:'#FF5252' };
+const CH = ['EHZ','ENZ','ENN','ENE'];
+const G = 9.80665;
+const pad2 = (n) => String(n).padStart(2,'0');
+const clockUTC = (d) => { d = d || new Date(); return pad2(d.getUTCHours())+':'+pad2(d.getUTCMinutes())+':'+pad2(d.getUTCSeconds())+' UTC'; };
+function fmtG(v, cal){ const u = cal ? ' g' : ' g rel.'; if (v == null) return 'S/D'; if (v === 0) return '0.000'+u; if (v < 0.001) return '<0.001'+u; return v.toFixed(3)+u; }
+function fmtV(v, cal){ const u = cal ? ' cm/s' : ' cm/s rel.'; if (v == null) return 'S/D'; if (v === 0) return '0.00'+u; if (v < 0.01) return '<0.01'+u; return v.toFixed(2)+u; }
+function fmtAge(s){ if (s == null) return 'S/D'; if (s < 90) return Math.round(s)+' s'; if (s < 5400) return Math.round(s/60)+' m'; return (s/3600).toFixed(1)+' h'; }
+function fmtUptime(s){ if (s == null) return 'S/D'; const h = Math.floor(s/3600), m = Math.floor(s%3600/60); return h+' h '+pad2(m)+' m'; }
+function haversine(a, b){ const R=6371, rad=Math.PI/180; const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad; const s=Math.sin(dLat/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
+function bearing(a, b){ const rad=Math.PI/180; const y=Math.sin((b.lon-a.lon)*rad)*Math.cos(b.lat*rad); const x=Math.cos(a.lat*rad)*Math.sin(b.lat*rad)-Math.sin(a.lat*rad)*Math.cos(b.lat*rad)*Math.cos((b.lon-a.lon)*rad); const d=(Math.atan2(y,x)/rad+360)%360; return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16]; }
+const magColor = (m) => m >= 6 ? C.crit : m >= 4.5 ? C.warn : m >= 3.5 ? '#FFD700' : C.ok;
 const TIERS = {
-  normal:        {cls:'ok',   txt:'✓ NORMAL · SIN ALERTA'},
-  watch:         {cls:'warn', txt:'▲ VIGILANCIA'},
-  restricted:    {cls:'crit', txt:'■ ACCESO RESTRINGIDO'},
-  evacuate_or_hold:{cls:'crit', txt:'■ EVACUAR / RESGUARDO'},
-  manual_only:   {cls:'warn', txt:'⚠ MODO MANUAL — SENSORES DEGRADADOS'},
+  normal:            { label: '✓ NORMAL · SIN ALERTA', color: C.ok },
+  watch:             { label: '▲ VIGILANCIA', color: C.warn },
+  restricted:        { label: '■ ACCESO RESTRINGIDO', color: C.crit },
+  evacuate_or_hold:  { label: '■ EVACUAR / RESGUARDO', color: C.crit },
+  manual_only:       { label: '⚠ MODO MANUAL — SENSORES DEGRADADOS', color: C.warn },
 };
-function pill(node, cls, txt){ node.className='pill '+cls;
-  node.innerHTML='<span class="dot"></span> '+txt; }
-function row(k,v,cls){ return '<div class="row"><span>'+k+'</span><b class="'+(cls||'')+'">'
-  +v+'</b></div>'; }
-function num(v,dec,unit,warnAt,critAt){
-  if(v===null||v===undefined) return '<span class="sd">S/D</span>';
-  let cls='';
-  if(critAt!==undefined && v>=critAt) cls='crit-t';
-  else if(warnAt!==undefined && v>=warnAt) cls='warn-t';
-  return '<span class="'+cls+'">'+v.toFixed(dec)+(unit?' '+unit:'')+'</span>';
-}
-function hhmmss(iso){ try{ return iso.slice(11,19)+' UTC'; }catch(e){ return '—'; } }
+const RELAY_META = {
+  siren:{label:'SIRENA'}, strobe:{label:'ESTROBO'}, gas_valve:{label:'GAS'},
+  elevator:{label:'ASCENSORES'}, door_retainer:{label:'PUERTAS'},
+};
+const FS_SHORT = { normally_open:'NO', normally_closed:'NC', fail_close:'fail_close' };
 
-function render(s){
-  el('site').textContent = s.site_name || s.gateway_id || '—';
-  el('gw').textContent = s.gateway_id || '';
-  refreshMs = s.refresh_ms || 1000;
-
-  // Enlace a nube: aislado ≠ desprotegido (doctrina edge-first).
-  const c = s.cloud || {};
-  if(c.online){ pill(el('cloudpill'),'ok','ENLACE NUBE · CONECTADO'); }
-  else{ pill(el('cloudpill'),'warn','SIN ENLACE — PROTECCIÓN LOCAL ACTIVA'
-    +(c.queued? ' · '+c.queued+' EN COLA':'')); }
-
-  // Banner + tier hero (SIN cuenta regresiva ni magnitud — blueprint §14).
-  const alertOn = s.sasmex_active || s.last_tier==='evacuate_or_hold';
-  el('banner').className = alertOn ? 'on' : '';
-  // T-1.60: el drill solo se pinta SIN alerta real (lo real siempre gana);
-  // un aborto queda visible con su motivo.
-  const drill = s.drill || {};
-  const drillOn = !alertOn && (drill.active || drill.aborted);
-  el('drill').className = drillOn ? 'on' : '';
-  if (drillOn) {
-    el('drill').textContent = drill.aborted
-      ? ('SIMULACRO ABORTADO — ALERTA REAL EN CURSO (' + (drill.abort_reason || '') + ')')
-      : '🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL';
+/* ============================== estado ============================== */
+const params = new URLSearchParams(location.search);
+const DEMO = params.get('demo');
+const S = {
+  status: null,          // último /api/status recibido (crudo, §5.1)
+  lastGoodAt: null,      // reloj local de la última respuesta buena
+  lastGoodClock: null,   // hh:mm:ss UTC de esa respuesta (para DATO RETENIDO)
+  failures: 0,
+  cursor: null,          // cursor de /api/waveform
+  nominalSr: 100,
+  mode: 'consola', userMode: false,
+  variant: 'A',
+  catalog: null,
+  catalogAt: 0,
+  overlay: false, mapScope: 'regional', selEvent: null, tab: 'local',
+  pinMsg: 'El PIN se pide de nuevo al recargar · nunca se guarda', pinKind: 'meta',
+  armed: null, armedAt: 0,
+  markers: [],           // {t: epoch_s, kind: 'sasmex'|'tier'}
+  prevSasmex: false, prevTier: null,
+  lastFrame: 0, raf: 0,
+  demoT0: performance.now()/1000, demoLastS: performance.now()/1000,
+};
+/* buffers de onda del cliente: min/máx paralelos a resolución nominal (preallocados) */
+const N = 6000;
+const buf = {};
+CH.forEach(c => { buf[c] = { min: new Float32Array(N), max: new Float32Array(N), clip: new Uint8Array(N), head: 0, count: 0, lastAt: 0, gaps: [] }; });
+const peakHold = {};
+function clearBuffers(){ CH.forEach(c => { const b = buf[c]; b.min.fill(0); b.max.fill(0); b.clip.fill(0); b.head = 0; b.count = 0; b.gaps = []; }); }
+function pushSamples(c, mins, maxs, gapBefore){
+  const b = buf[c];
+  if (gapBefore) b.gaps.push(b.count);
+  for (let i = 0; i < mins.length; i++){
+    b.min[b.head] = mins[i]; b.max[b.head] = maxs[i]; b.clip[b.head] = 0;
+    b.head = (b.head + 1) % N; b.count++;
   }
-  // T-1.69: modo prueba WR-1 — SIEMPRE visible mientras esté armado (aun bajo
-  // alerta real): el operador debe saber que la nube no está recibiendo alertas.
-  const tm = s.test_mode || {};
-  el('testmode').className = tm.active ? 'on' : '';
-  if (tm.active) {
-    el('testmode').textContent =
-      '🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS (' + Math.round(tm.remaining_s) + 's)';
-  }
-  const tmBtn = el('testmode-btn');
-  if (tmBtn) tmBtn.textContent = tm.active ? 'SALIR DE PRUEBA WR-1' : 'MODO PRUEBA WR-1';
-
-  // T-1.67: prueba local de actuación — banner propio; la alerta real gana.
-  const at = s.actuation_test || {};
-  el('acttest').className = (!alertOn && at.active) ? 'on' : '';
-  const atr = at.results, atBox = el('acttest-results');
-  if (atr && atr.relays) {
-    atBox.innerHTML = Object.entries(atr.relays).map(function(e){
-      const ch = e[0], r = e[1], ok = r.readback_ok;
-      const kind = r.held ? 'SUENA' : (r.pulsed ? 'PULSO' : 'LECTURA');
-      return '<span style="color:'+(ok?'#39d98a':'#ff5252')+';margin-right:14px">'
-        + ch.toUpperCase()+' '+kind+' '+(ok?'✓':'✗')+'</span>';
-    }).join('');
-  } else { atBox.innerHTML = ''; }
-  const t = TIERS[s.last_tier] || {cls:'ok', txt:'—'};
-  el('tier').className = t.cls; el('tier').textContent = t.txt;
-  // Voceo (A-6): botón de drill solo con audio habilitado; estado honesto.
-  const au = s.audio;
-  el('drill').style.display = (au && au.enabled) ? '' : 'none';
-  el('tiersub').textContent =
-    'SIRENA: '+(s.siren_sounding?'SONANDO':(s.audible_silenced?'SILENCIADA':'EN REPOSO'))
-    +' · SASMEX: '+(s.sasmex_active?'ACTIVO':'NO')
-    +((au && au.sounding)?' · VOCEANDO':'');
-
-  // Sensores por canal (staleness honesta contra la hora de LLEGADA).
-  const sig = s.signal;
-  const chBox = el('channels'); const sigState = el('signalstate');
-  if(!sig || Object.keys(sig.channels||{}).length===0){
-    chBox.innerHTML='';
-    sigState.className='stateline err show';
-    sigState.textContent='SIN SEÑAL DEL SENSOR · SIN FEATURES RECIBIDAS';
-  } else {
-    const stale = Object.values(sig.channels).every(ch => ch.age_s > sig.stale_after_s);
-    if(stale){
-      sigState.className='stateline stale show';
-      sigState.textContent='SIN SEÑAL DEL SENSOR · ÚLTIMO DATO '+hhmmss(sig.last_received_at||'');
-    } else { sigState.className='stateline'; }
-    chBox.innerHTML = Object.entries(sig.channels).map(([name,ch]) =>
-      '<div class="ch"><div class="name"><span>'+name+'</span>'
-      +(ch.clipping?'<span class="clip">CLIP</span>':'')
-      +'</div><div class="pga">'+ch.pga_g.toFixed(4)+' <span class="unit">g</span></div>'
-      +'<div class="meta">PGV '+ch.pgv_cms.toFixed(2)+' cm/s · STA/LTA '
-      +ch.sta_lta.toFixed(1)+' · hace '+ch.age_s.toFixed(0)+' s</div></div>'
-    ).join('');
-  }
-
-  // Relés.
-  el('relays').innerHTML = (s.relays||[]).map(r =>
-    row(r.channel.toUpperCase().replaceAll('_',' '),
-        (r.activated?'ACTIVADO':(r.energized?'ENERGIZADO':'REPOSO'))
-        +' <span class="sd">· fail-safe '+r.fail_safe+'</span>',
-        r.activated?'crit-t':'')
-  ).join('') || '<div class="row"><span>Relés</span><b class="sd">S/D</b></div>';
-
-  // Salud (edad declarada; S/D jamás un número inventado).
-  const h = s.health;
-  if(!h){
-    el('healthage').textContent='SALUD · SIN SNAPSHOT TODAVÍA';
-    el('health').innerHTML='';
-  } else {
-    el('healthage').textContent='SALUD MEDIDA HACE '+h.age_s.toFixed(0)+' s';
-    el('health').innerHTML =
-      row('NTP offset', h.ntp_offset_s===null?'<span class="sd">S/D</span>'
-        :(h.ntp_offset_s*1000).toFixed(1)+' ms')
-      +row('Lag SeedLink', num(h.seedlink_lag_s,2,'s',2,10))
-      +row('Pérdida de paquetes', num(h.packet_loss_pct,1,'%',1,10))
-      +row('RTT MQTT', h.mqtt_rtt_ms===null?'<span class="sd">S/D</span>'
-        :h.mqtt_rtt_ms.toFixed(1)+' ms')
-      +row('UPS', h.ups_status.toUpperCase()
-        +(h.battery_pct!==null?' · '+h.battery_pct.toFixed(0)+'%':''),
-        h.ups_status==='battery'?'warn-t':'')
-      +row('Temperatura', num(h.temperature_c,1,'°C',70,80))
-      +row('Cert mTLS', h.cert_days_remaining===null?'<span class="sd">S/D</span>'
-        :'<span class="'+(h.cert_days_remaining<30?'warn-t':'')+'">'
-         +h.cert_days_remaining+' días</span>')
-      +row('Disco', h.disk_used_pct===null?'<span class="sd">S/D</span>'
-        :'<span class="'+(h.disk_used_pct>90?'warn-t':'')+'">'
-         +h.disk_used_pct.toFixed(0)+'% usado</span>');
-  }
-
-  // Eventos (desde el arranque — honesto: la nube guarda el historial completo).
-  el('uptime').textContent = 'DESDE EL ARRANQUE'
-    +(s.uptime_s!==null&&s.uptime_s!==undefined?
-      ' · UPTIME '+Math.floor(s.uptime_s/3600)+'h '
-      +Math.floor((s.uptime_s%3600)/60)+'m':'');
-  const ev = (s.events||[]).map(e => {
-    if(e.action){ return '<li>'+hhmmss(e.at)+' — '
-      +e.action.toUpperCase().replaceAll('_',' ')+' · VÍA LAN</li>'; }
-    return '<li>'+hhmmss(e.at)+' — '+(e.from_tier||'—').toUpperCase()+' → '
-      +e.to_tier.toUpperCase()+' · '+e.source.toUpperCase()
-      +(e.pga!==null&&e.pga!==undefined?' · PGA '+e.pga.toFixed(3)+' g':'')+'</li>';
-  }).join('');
-  el('events').innerHTML = ev || '<li class="sd">Sin eventos desde el arranque</li>';
+  b.lastAt = performance.now()/1000;
 }
 
-// Poll con setTimeout ENCADENADO (no setInterval: no se encima si el Pi tarda)
-// y backoff 1→2→5 s en fallo. Estados de conexión del PANEL, separados de la
-// edad de la salud (que es del heartbeat del gabinete).
-async function tick(){
-  const line = el('stateline');
-  try{
-    const r = await fetch('/api/status'); if(!r.ok) throw 0;
-    render(await r.json());
-    failures = 0; lastGood = Date.now();
-    pill(el('connpill'),'ok','PANEL EN VIVO');
-    line.className='stateline';
-  }catch(e){
-    failures += 1;
-    if(failures >= 3){
-      pill(el('connpill'),'crit','SIN CONEXIÓN CON EL GABINETE');
-      line.className='stateline err show';
-      line.textContent='SIN CONEXIÓN CON EL GABINETE · REINTENTANDO…';
-    } else if(lastGood){
-      pill(el('connpill'),'warn','DATO RETENIDO');
-      line.className='stateline stale show';
-      line.textContent='DATO RETENIDO DESDE '+new Date(lastGood).toISOString().slice(11,19)+' UTC';
+/* ============================== escenas demo ============================== */
+/* Fixtures con la forma EXACTA del contrato §5.1 — alimentan el MISMO render
+   y el MISMO dibujo que el gabinete real. El ribbon DEMO siempre lo declara. */
+function baseStatus(){
+  const now = new Date().toISOString();
+  return {
+    gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
+    sasmex_active:false, siren_sounding:false, audible_silenced:false, last_tier:'normal',
+    relays: [
+      {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
+      {channel:'strobe', energized:false, activated:false, fail_safe:'normally_open'},
+      {channel:'gas_valve', energized:true, activated:false, fail_safe:'fail_close'},
+      {channel:'elevator', energized:false, activated:false, fail_safe:'normally_open'},
+      {channel:'door_retainer', energized:true, activated:false, fail_safe:'normally_closed'},
+    ],
+    site_lat: 19.0414, site_lon: -98.2063,
+    neighbors: [
+      {code:'AM.R7B21', lat:19.12, lon:-98.42, distance_km:17.2},
+      {code:'AM.RA13C', lat:18.93, lon:-98.09, distance_km:16.8},
+      {code:'AM.R9F02', lat:19.21, lon:-97.98, distance_km:29.5},
+    ],
+    config_version: 4,
+    thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0},
+    latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200},
+    seedlink: {packets_seen:1284902, reconnects:2, duplicates:0, gaps:0},
+    calibration: {calibrated:true, source:'StationXML FDSN AM.R4F74 2026-07-09',
+      vel_sensitivity_ms_per_count:2.5021894e-9, accel_sensitivity_ms2_per_count:2.6007802e-6},
+    shake_history: { since: now, by_channel: { ENZ: { pga_g_max_24h: 0.011, pgv_cms_max_24h: 0.9,
+      hourly: [ {hour_start: now, pga_g_max: 0.004, pgv_cms_max: 0.3}, {hour_start: now, pga_g_max: 0.011, pgv_cms_max: 0.9} ] } },
+      events_by_tier: {normal:1, watch:1, restricted:0, evacuate_or_hold:0, manual_only:0},
+      noise_floor: {current_mg: 0.8, baseline_low_mg: 0.6, baseline_high_mg: 1.1, trend: 'stable'} },
+    signal: { channels: sceneChannels(0.0010), last_received_at: now, stale_after_s: 5 },
+    health: { ntp_offset_s:0.0031, seedlink_lag_s:0.42, packet_loss_pct:0.2, mqtt_rtt_ms:84,
+      ups_status:'line', battery_pct:100, ups_runtime_s:2460, temperature_c:58.4,
+      cert_days_remaining:213, disk_used_pct:62, captured_at: now, age_s: 38 },
+    cloud: {online:true, mqtt_rtt_ms:84, queued:0},
+    drill: null, actuation_test: {active:false, results:null},
+    test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false},
+    events: [ {at: now, action:'boot', via:'boot'} ],
+  };
+}
+function sceneChannels(pga){
+  const now = new Date().toISOString(); const out = {};
+  CH.forEach((c, i) => { out[c] = { pga_g: pga*(1-0.12*i), pgv_cms: pga*39*(1-0.12*i), rms: 380+i*12,
+    sta_lta: 1.0, clipping: false, health_score: 1.0, window_start: now, received_at: now, age_s: 0.4 }; });
+  return out;
+}
+const SCENES = {
+  reposo: () => baseStatus(),
+  vigilancia: () => { const s = baseStatus(); s.last_tier='watch'; s.signal.channels = sceneChannels(0.031);
+    s.shake_history.events_by_tier.watch = 2; return s; },
+  alerta: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold'; s.sasmex_active=true; s.siren_sounding=true;
+    s.signal.channels = sceneChannels(0.31);
+    s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
+    s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
+  simulacro: () => { const s = baseStatus(); s.siren_sounding=true;
+    s.drill = {active:true, drill_id:'DRILL-2026-0730-01', elapsed_s:252, total_s:480}; return s; },
+  prueba_actuadores: () => { const s = baseStatus(); s.siren_sounding=true;
+    s.actuation_test = {active:true, results:{ok:true, reason:null, relays:{siren:{held:true,readback_ok:true},
+      gas_valve:{pulsed:true,readback_ok:true}, elevator:{pulsed:true,readback_ok:true}, door_retainer:{pulsed:true,readback_ok:true}}}};
+    return s; },
+  wr1: () => { const s = baseStatus(); s.test_mode = {active:true, remaining_s:87}; return s; },
+  sin_senal: () => { const s = baseStatus(); s.last_tier='manual_only';
+    s.signal = {channels:{}, last_received_at:null, stale_after_s:5};
+    s.seedlink = {packets_seen:0, reconnects:18, duplicates:0, gaps:1};
+    s.health.seedlink_lag_s = 54200; s.shake_history = null; return s; },
+  sin_nube: () => { const s = baseStatus(); s.cloud = {online:false, mqtt_rtt_ms:null, queued:47};
+    s.health.mqtt_rtt_ms = null; return s; },
+  arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
+    now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
+    audible_silenced:false, last_tier:null, relays:[], site_lat:null, site_lon:null, neighbors:[],
+    config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200},
+    seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
+    shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null},
+    drill:null, actuation_test:{active:false, results:null}, test_mode:{active:false, remaining_s:0},
+    audio:null, events:[] }),
+  dato_retenido: () => baseStatus(),
+};
+function demoWaveAmp(scene, el){
+  if (scene === 'vigilancia') return 0.030*(0.55+0.45*Math.sin(el/5.5));
+  if (scene === 'alerta'){ const p = ((el % 48)+48)%48 - 3; if (p < 0) return 0.0012;
+    const P = 0.10*Math.exp(-Math.pow((p-1.1)/1.2,2));
+    const Sw = p > 2.2 ? 0.60*Math.exp(-Math.pow((p-6.0)/5.2,2))+0.09*Math.exp(-(p-6)/14) : 0;
+    return Math.max(0.0012, P+Math.max(0,Sw)); }
+  return 0.0010;
+}
+function demoFillWave(){
+  if (DEMO === 'sin_senal' || DEMO === 'arranque_frio') return;
+  const nowS = performance.now()/1000;
+  let n = Math.floor((nowS - S.demoLastS) * S.nominalSr);
+  if (n <= 0) return; if (n > 400) n = 400;
+  const cal = SCENES[DEMO] ? SCENES[DEMO]().calibration : null;
+  const sensA = (cal && cal.accel_sensitivity_ms2_per_count) || 1e-6;
+  const sensV = (cal && cal.vel_sensitivity_ms_per_count) || 1e-9;
+  for (let i = 0; i < n; i++){
+    S.demoLastS += 1/S.nominalSr;
+    const el = S.demoLastS - S.demoT0, t = S.demoLastS;
+    const A = demoWaveAmp(DEMO, el);
+    const w = (f, ph) => Math.sin(2*Math.PI*f*t+ph);
+    const r = () => (Math.random()-0.5)*2;
+    const g = 0.55*w(3.1,0)+0.3*w(7.4,1.1)+0.15*r();
+    const h = 0.5*w(2.6,0.7)+0.32*w(6.1,2.2)+0.18*r();
+    const k = 0.48*w(2.9,1.9)+0.34*w(8.3,0.4)+0.18*r();
+    const phys = { EHZ: A*12*g, ENZ: A*g, ENN: A*0.74*h, ENE: A*0.66*k };
+    CH.forEach(c => {
+      const counts = c === 'EHZ' ? (phys[c]/100)/sensV : (phys[c]*G)/sensA;
+      const b = buf[c];
+      b.min[b.head] = counts; b.max[b.head] = counts; b.clip[b.head] = 0;
+      b.head = (b.head+1)%N; b.count++;
+    });
+  }
+  if (DEMO === 'alerta'){
+    const el = (S.demoLastS - S.demoT0), p = ((el % 48)+48)%48;
+    const t = Date.now()/1000;
+    if (p >= 3 && p < 3.15 && !S.markers.some(m => Math.abs(m.t - t) < 2)){
+      S.markers.push({t, kind:'sasmex'}); S.markers.push({t: t+0.4, kind:'tier'});
     }
+    S.markers = S.markers.filter(m => m.t > t - 70);
   }
-  const delay = failures===0 ? refreshMs : Math.min(5000, 1000*Math.pow(2,failures-1));
-  setTimeout(tick, delay);
 }
-tick();
-</script></body></html>
+
+/* ============================== tick (ÚNICO, secuencial) ============================== */
+let tickDelay = 1000;
+async function tick(){
+  try {
+    if (DEMO){
+      const st = SCENES[DEMO] ? SCENES[DEMO]() : baseStatus();
+      demoFillWave();
+      S.status = st; S.failures = DEMO === 'dato_retenido' ? 1 : 0;
+      if (DEMO === 'dato_retenido'){ S.lastGoodClock = '14:22:07 UTC'; }
+      else { S.lastGoodAt = performance.now(); S.lastGoodClock = clockUTC(); }
+      if (!S.catalogAt){ S.catalogAt = 1; try { const r = await fetch('api/catalog'); if (r.ok) S.catalog = await r.json(); } catch (err) { S.catalog = null; } }
+    } else {
+      const rs = await fetch('api/status', {cache:'no-store'});
+      if (!rs.ok) throw new Error('status '+rs.status);
+      const st = await rs.json();
+      /* mismo tick, SECUENCIAL: jamás dos fetch en paralelo contra el Pi */
+      const q = 'api/waveform?since=' + (S.cursor == null ? '' : S.cursor);
+      const rw = await fetch(q, {cache:'no-store'});
+      if (rw.ok) integrateWave(await rw.json());
+      if (!S.catalog || (performance.now() - S.catalogAt) > 600000){
+        S.catalogAt = performance.now();
+        try { const rc = await fetch('api/catalog', {cache:'no-store'}); if (rc.ok) S.catalog = await rc.json(); } catch (err) { /* el panel lo declara */ }
+      }
+      markTransitions(st);
+      S.status = st; S.failures = 0; S.lastGoodAt = performance.now(); S.lastGoodClock = clockUTC();
+      tickDelay = st.refresh_ms || 1000;
+    }
+  } catch (err){
+    S.failures += 1;
+  }
+  render();
+  if (!S.raf || (performance.now() - S.lastFrame) > 1500){ S.raf = requestAnimationFrame(frame); }
+  const backoff = S.failures === 0 ? tickDelay : (S.failures === 1 ? 2000 : 5000);
+  setTimeout(tick, backoff);
+}
+function integrateWave(w){
+  if (w.reset){ clearBuffers(); S.cursor = null; }
+  const factor = w.decimation || 1;
+  if (w.sample_rate) S.nominalSr = w.sample_rate * factor;
+  Object.keys(w.channels || {}).forEach(c => {
+    if (!buf[c]) return;
+    const sec = w.channels[c];
+    const raw = sec.samples || [];
+    let mins, maxs;
+    if (sec.encoding === 'minmax'){
+      /* pares APLANADOS [min,máx,...] — cada bucket se expande a `factor`
+         ranuras iguales: una BANDA honesta, no una línea inventada */
+      const nb = raw.length >> 1;
+      mins = new Float32Array(nb*factor); maxs = new Float32Array(nb*factor);
+      for (let i = 0; i < nb; i++){
+        for (let j = 0; j < factor; j++){ mins[i*factor+j] = raw[2*i]; maxs[i*factor+j] = raw[2*i+1]; }
+      }
+    } else {
+      mins = Float32Array.from(raw); maxs = mins;
+    }
+    pushSamples(c, mins, maxs, !!sec.gap_before);
+  });
+  if (typeof w.cursor === 'number') S.cursor = w.cursor;
+}
+function markTransitions(st){
+  const t = Date.now()/1000;
+  if (st.sasmex_active && !S.prevSasmex) S.markers.push({t, kind:'sasmex'});
+  S.prevSasmex = !!st.sasmex_active;
+  if (st.last_tier && S.prevTier && st.last_tier !== S.prevTier) S.markers.push({t, kind:'tier'});
+  S.prevTier = st.last_tier;
+  S.markers = S.markers.filter(m => m.t > t - 70);
+}
+
+/* ============================== conexión (4 estados de UI) ============================== */
+function connectionState(){
+  if (!S.status && S.failures === 0) return {kind:'loading', label:'CONECTANDO…', color:C.warn};
+  if (S.failures >= 3) return {kind:'down', label:'SIN CONEXIÓN CON EL GABINETE · REINTENTANDO…', color:C.crit};
+  if (S.failures > 0) return {kind:'stale', label:'DATO RETENIDO DESDE '+(S.lastGoodClock||'—'), color:C.warn};
+  return {kind:'live', label:'PANEL EN VIVO', color:C.ok};
+}
+
+/* ============================== render ============================== */
+function setPill(idTxt, idDot, pill, label, color, bg){
+  $(idTxt).textContent = label; $(idTxt).style.color = color;
+  $(idDot).style.background = color;
+  pill.style.borderColor = color; pill.style.background = bg;
+}
+function render(){
+  const st = S.status, conn = connectionState();
+  document.body.className = 'mode-' + S.mode;
+  $('hdr-clock').textContent = clockUTC();
+  setPill('pill-live-txt','pill-live-dot',$('pill-live'), conn.label, conn.color,
+    conn.kind === 'live' ? 'rgba(0,230,118,0.08)' : conn.kind === 'down' ? 'rgba(255,82,82,0.15)' : 'rgba(255,193,7,0.18)');
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', (S.userMode ? S.mode === b.dataset.mode : b.dataset.mode === 'auto')));
+  document.querySelectorAll('[data-variant]').forEach(b => b.classList.toggle('on', S.variant === b.dataset.variant));
+  $('rose-variant-note').textContent = S.variant === 'A' ? 'variante A · plano de estación con vecinas' : 'variante B · instrumento de ejes';
+  if (!st){ return; }
+
+  const cal = st.calibration && st.calibration.calibrated === true;
+  const tier = st.last_tier ? TIERS[st.last_tier] : {label:'ARRANQUE EN FRÍO · SIN DECISIÓN AÚN', color:C.warn};
+
+  /* cabecera e identidad */
+  $('hdr-id').textContent = (st.gateway_id||'—') + ' · LAN del inmueble';
+  $('hdr-site').textContent = st.site_name || st.gateway_id || '—';
+  $('hdr-meta').textContent = 'CADENCIA ' + (st.refresh_ms||1000) + ' ms · config ' +
+    (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version));
+  const cloud = st.cloud || {online:false, queued:null};
+  setPill('pill-cloud-txt','pill-cloud-dot',$('pill-cloud'),
+    cloud.online ? 'ENLACE NUBE · CONECTADO' : 'SIN ENLACE — PROTECCIÓN LOCAL ACTIVA' + (cloud.queued != null ? ' · '+cloud.queued+' EN COLA' : ''),
+    cloud.online ? C.ok : C.warn, cloud.online ? 'rgba(0,230,118,0.08)' : 'rgba(255,193,7,0.18)');
+
+  /* banners (§9.1) */
+  const drill = st.drill && st.drill.active;
+  const test = st.actuation_test && st.actuation_test.active;
+  const wr1 = st.test_mode && st.test_mode.active;
+  const alert = st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted' || st.sasmex_active;
+  $('banner-alert').classList.toggle('hide', !alert);
+  if (alert) $('alert-meta').textContent = 'FUENTE ' + (st.sasmex_active ? 'SASMEX WR-1' : 'UMBRAL INSTRUMENTAL') + ' · ' + clockUTC();
+  const showAmber = drill && !alert;
+  $('banner-amber').classList.toggle('hide', !showAmber && !(drill && alert));
+  if (drill && alert){
+    $('amber-txt').textContent = 'SIMULACRO ABORTADO — ALERTA REAL EN CURSO';
+    $('amber-sub').textContent = 'Lo real siempre gana'; $('amber-meta').textContent = st.drill.drill_id || '';
+  } else if (showAmber){
+    $('amber-txt').textContent = '🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL';
+    $('amber-sub').textContent = 'Voceo de simulacro en curso · aborta solo si entra una alerta real';
+    $('amber-meta').textContent = (st.drill.drill_id||'') + (st.drill.total_s ? ' · ' + fmtAge(st.drill.elapsed_s||0) + ' / ' + fmtAge(st.drill.total_s) : '');
+  }
+  $('banner-cyan').classList.toggle('hide', !(test && !alert));
+  if (test) $('cyan-meta').textContent = 'EN CURSO';
+  $('banner-wr1').classList.toggle('hide', !wr1); /* SIEMPRE visible si armado, aun bajo alerta */
+  if (wr1) $('wr1-left').textContent = Math.ceil(st.test_mode.remaining_s) + ' s RESTANTES';
+
+  /* tier + relés */
+  $('tier-label').textContent = tier.label; $('tier-label').style.color = tier.color;
+  $('tierline').style.borderLeftColor = tier.color;
+  $('tier-sub').textContent = 'SIRENA: ' + (st.siren_sounding ? 'SONANDO' : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO')) +
+    ' · SASMEX: ' + (st.sasmex_active ? 'ACTIVO' : 'NO') + ' · TIER ' + (st.last_tier || 'S/D');
+  const relays = $('relays'); relays.textContent = '';
+  (st.relays || []).forEach(r => {
+    const meta = RELAY_META[r.channel] || {label: String(r.channel||'?').toUpperCase()};
+    const active = !!r.activated;
+    const div = document.createElement('div'); div.className = 'relay';
+    div.style.background = active ? (test ? 'rgba(0,191,255,0.08)' : 'rgba(255,82,82,0.08)') : 'transparent';
+    const rl = document.createElement('span'); rl.className = 'rl'; rl.textContent = meta.label;
+    const rs = document.createElement('span'); rs.className = 'rs';
+    rs.textContent = active ? 'ACTIVADO' : 'REPOSO';
+    rs.style.color = active ? (test ? C.cyan : C.crit) : C.fg2;
+    const re = document.createElement('span'); re.className = 're';
+    re.textContent = (r.energized ? 'ENERGIZADO' : 'DESENERGIZADO') + ' · fail-safe ' + (FS_SHORT[r.fail_safe] || r.fail_safe || 'S/D');
+    div.append(rl, rs, re); relays.appendChild(div);
+  });
+  if (!(st.relays||[]).length){
+    const div = document.createElement('div'); div.className = 'relay';
+    const a = document.createElement('span'); a.className = 'rl'; a.textContent = 'RELÉS';
+    const b = document.createElement('span'); b.className = 'rs'; b.style.color = C.warn; b.textContent = 'S/D';
+    const c2 = document.createElement('span'); c2.className = 're'; c2.textContent = 'arranque en frío';
+    div.append(a, b, c2); relays.appendChild(div);
+  }
+
+  /* ondas: cabecera + carriles */
+  $('nocal-pill').classList.toggle('hide', cal);
+  $('decim-note').textContent = S.nominalSr ? (S.nominalSr.toFixed(0) + ' sps del sensor · la decimación de lo servido se declara por petición') : 'S/D';
+  renderLanes(st, cal);
+
+  renderProximity(st, cal);
+  renderHistory(st, cal);
+  renderLatencies(st, cloud);
+  renderRoseInfo(st);
+  renderSalud(st);
+  renderEvents(st);
+  renderSsn();
+  renderActions(st);
+  const enz = st.signal && st.signal.channels && st.signal.channels.ENZ;
+  $('waves-sr').textContent = 'Estado ' + tier.label + '. PGA vertical ' + fmtG(enz ? enz.pga_g : null, cal) + '.';
+  renderMuroExtra();
+}
+function laneGrow(){ return S.variant === 'A' ? [1,1,1,1] : [1,3,1,1]; }
+function renderLanes(st, cal){
+  const lanes = $('lanes'); lanes.textContent = '';
+  const grows = laneGrow();
+  const sig = st.signal, chs = sig && sig.channels ? sig.channels : {};
+  CH.forEach((c, i) => {
+    const m = chs[c];
+    const acc = c[1] === 'N';
+    const stale = m && sig.stale_after_s != null && m.age_s > sig.stale_after_s;
+    const div = document.createElement('div'); div.className = 'lane'; div.style.flex = grows[i]+' 1 0';
+    const top = document.createElement('div'); top.className = 'top';
+    const chEl = document.createElement('span'); chEl.className = 'ch'; chEl.style.color = acc ? C.cyan : C.geo; chEl.textContent = c;
+    const unit = document.createElement('span'); unit.className = 'unit';
+    unit.textContent = acc ? ('aceleración · ' + (cal ? 'g' : 'g rel.')) : ('velocidad · ' + (cal ? 'cm/s' : 'cm/s rel.'));
+    const peak = document.createElement('span'); peak.className = 'peak';
+    peak.textContent = m && !stale ? ((acc ? fmtG(m.pga_g, cal) : fmtV(m.pgv_cms, cal)) + ' · STA/LTA ' + (m.sta_lta != null ? m.sta_lta.toFixed(1) : 'S/D')) : 'S/D';
+    top.append(chEl, unit, peak);
+    const scale = document.createElement('span'); scale.className = 'scale';
+    const sc = scaleFor(c, st);
+    scale.textContent = sc == null ? '' : ('± ' + (acc ? fmtG(sc, cal) : fmtV(sc, cal)) + ' · piso de escala fijo');
+    const note = document.createElement('span'); note.className = 'note';
+    if (!m || stale){ note.textContent = 'SIN SEÑAL DEL SENSOR · SIN FEATURES RECIBIDAS'; note.style.color = C.warn; }
+    else if (m.clipping){ note.textContent = 'SATURACIÓN DEL ADC · EL CANAL ESTÁ TOPADO, NO MIDIENDO'; note.style.color = C.crit; }
+    else { note.textContent = 'rms ' + Math.round(m.rms) + ' counts · salud ' + (m.health_score != null ? m.health_score.toFixed(1) : 'S/D'); note.style.color = C.fg4; }
+    div.append(top, scale, note); lanes.appendChild(div);
+  });
+}
+function renderProximity(st, cal){
+  const box = $('prox-bars'); box.textContent = '';
+  const th = st.thresholds;
+  $('prox-profile').textContent = th ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g') : 'umbrales S/D (motor caído)';
+  const enz = st.signal && st.signal.channels && st.signal.channels.ENZ;
+  [['PGA ENZ', enz ? enz.pga_g : null, th ? th.pga_watch_g : null, th ? th.pga_trip_g : null, (v)=>fmtG(v,cal)],
+   ['PGV ENZ', enz ? enz.pgv_cms : null, th ? th.pgv_watch_cms : null, th ? th.pgv_trip_cms : null, (v)=>fmtV(v,cal)]]
+  .forEach(([label, v, watch, trip, fmt]) => {
+    const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;gap:5px';
+    const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:baseline;gap:8px';
+    const l = document.createElement('span'); l.style.cssText = 'font:500 11px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-3)'; l.textContent = label;
+    const val = document.createElement('span'); val.className = 'mono'; val.style.cssText = 'font-weight:700;font-size:15px';
+    const pct = document.createElement('span'); pct.className = 'meta'; pct.style.marginLeft = 'auto';
+    const color = (v == null || trip == null) ? C.warn : v >= trip ? C.crit : v >= watch ? C.warn : C.ok;
+    val.textContent = fmt(v); val.style.color = color;
+    pct.textContent = (v == null || trip == null) ? 'S/D' : Math.round(v/trip*100) + ' % del disparo';
+    head.append(l, val, pct);
+    const bar = document.createElement('div'); bar.className = 'bar';
+    if (v != null && trip != null){
+      const span = trip*1.6;
+      const f = document.createElement('div'); f.className = 'f'; f.style.width = Math.min(100, v/span*100).toFixed(1)+'%'; f.style.background = color; bar.appendChild(f);
+      const mw = document.createElement('div'); mw.className = 'm'; mw.style.left = (watch/span*100)+'%'; mw.style.background = C.warn; bar.appendChild(mw);
+      const mt = document.createElement('div'); mt.className = 'm'; mt.style.left = (1/1.6*100)+'%'; mt.style.background = C.crit; bar.appendChild(mt);
+    }
+    wrap.append(head, bar);
+    const foot = document.createElement('span'); foot.className = 'meta';
+    foot.textContent = (watch != null) ? ('cautela ' + fmt(watch) + ' · disparo ' + fmt(trip)) : 'S/D';
+    wrap.appendChild(foot);
+    box.appendChild(wrap);
+  });
+}
+function renderHistory(st, cal){
+  const sh = st.shake_history;
+  const rows = $('hist-rows'); rows.textContent = '';
+  const hourly = $('hourly'); hourly.textContent = '';
+  if (!sh){
+    $('hist-since').textContent = 'DESDE EL ARRANQUE · S/D';
+    $('pga-hour').textContent = 'S/D'; $('pga-24h').textContent = 'S/D';
+    const r = document.createElement('div'); r.className = 'kv';
+    const a = document.createElement('span'); a.className = 'lbl'; a.textContent = 'Agregado de sacudida';
+    const f = document.createElement('span'); f.className = 'fill';
+    const b = document.createElement('span'); b.className = 'val'; b.style.color = C.warn; b.textContent = 'S/D · módulo de señal caído';
+    r.append(a, f, b); rows.appendChild(r); return;
+  }
+  $('hist-since').textContent = 'DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s);
+  const chans = Object.keys(sh.by_channel || {});
+  let hourMax = null, dayMax = null, series = [];
+  chans.forEach(c => {
+    const b = sh.by_channel[c];
+    if (b.pga_g_max_24h != null) dayMax = Math.max(dayMax == null ? 0 : dayMax, b.pga_g_max_24h);
+    const hs = b.hourly || [];
+    if (hs.length){ const last = hs[hs.length-1]; hourMax = Math.max(hourMax == null ? 0 : hourMax, last.pga_g_max); }
+    if (c === 'ENZ' || !series.length) series = hs.map(x2 => x2.pga_g_max);
+  });
+  $('pga-hour').textContent = fmtG(hourMax, cal);
+  $('pga-24h').textContent = fmtG(dayMax, cal);
+  const top = Math.max(1e-9, ...series, 0);
+  series.slice(-24).forEach(v => { const bar = document.createElement('div'); bar.className = 'hb';
+    bar.style.height = Math.max(4, v/top*100) + '%'; hourly.appendChild(bar); });
+  const ev = sh.events_by_tier || {};
+  const noise = sh.noise_floor || {};
+  const trendGlyph = noise.trend === 'rising' ? '↗ rising' : noise.trend === 'falling' ? '↘ falling' : '→ stable';
+  const items = [
+    ['Eventos watch / restringido / evacuar', (ev.watch||0)+' / '+(ev.restricted||0)+' / '+(ev.evacuate_or_hold||0), C.fg1],
+    ['Ruido de fondo ahora', noise.current_mg == null ? 'S/D' : noise.current_mg.toFixed(2)+' mg', noise.current_mg == null ? C.warn : C.ok],
+    ['Tendencia del piso', trendGlyph, noise.trend === 'stable' ? C.ok : C.warn],
+    ['Piso conocido del sensor', (noise.baseline_low_mg != null ? noise.baseline_low_mg : 0.6)+' – '+(noise.baseline_high_mg != null ? noise.baseline_high_mg : 1.1)+' mg (medido)', C.fg3],
+  ];
+  items.forEach(([lbl, val, color]) => {
+    const r = document.createElement('div'); r.className = 'kv';
+    const a = document.createElement('span'); a.className = 'lbl'; a.textContent = lbl;
+    const f = document.createElement('span'); f.className = 'fill';
+    const b = document.createElement('span'); b.className = 'val'; b.textContent = val; b.style.color = color;
+    r.append(a, f, b); rows.appendChild(r);
+  });
+}
+function renderLatencies(st, cloud){
+  const box = $('lat-rows'); box.textContent = '';
+  const lat = st.latencies || {reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200};
+  const ms = (v) => v == null ? 'S/D' : (v*1000).toFixed(2)+' ms';
+  const rows = [
+    ['Reflejo SASMEX → relé', lat.reflex_s, lat.reflex_budget_s, 'p95 < ' + Math.round(lat.reflex_budget_s*1000) + ' ms'],
+    ['Motor de reglas (umbral → decisión)', lat.rules_s, lat.rules_budget_s, 'p95 < ' + Math.round(lat.rules_budget_s*1000) + ' ms'],
+    ['RTT a la nube', cloud.mqtt_rtt_ms == null ? null : cloud.mqtt_rtt_ms/1000, null,
+      cloud.online ? 'informativo' : (cloud.queued != null ? cloud.queued + ' EN COLA' : 'sin enlace')],
+  ];
+  rows.forEach(([label, v, budget, budgetLabel]) => {
+    const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;gap:5px';
+    const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:baseline;gap:8px';
+    const l = document.createElement('span'); l.style.cssText = 'font:500 11px/1 var(--f-ui);letter-spacing:0.04em;color:var(--tk-fg-2)'; l.textContent = label;
+    const val = document.createElement('span'); val.className = 'mono'; val.style.cssText = 'margin-left:auto;font-weight:700;font-size:14px';
+    const ok = budget == null || v == null || v <= budget;
+    val.textContent = v == null ? 'S/D' : ms(v); val.style.color = v == null ? C.warn : (ok ? C.ok : C.crit);
+    const b = document.createElement('span'); b.className = 'meta'; b.textContent = '/ ' + budgetLabel;
+    head.append(l, val, b);
+    const bar = document.createElement('div'); bar.className = 'bar';
+    if (v != null && budget != null){
+      const f = document.createElement('div'); f.className = 'f';
+      f.style.width = Math.min(100, v/budget*100).toFixed(1)+'%'; f.style.background = ok ? C.ok : C.crit; bar.appendChild(f);
+    } else if (v != null){
+      const f = document.createElement('div'); f.className = 'f'; f.style.width = '18%'; f.style.background = C.ok; bar.appendChild(f);
+    }
+    wrap.append(head, bar); box.appendChild(wrap);
+  });
+}
+function renderRoseInfo(st){
+  $('rose-station').textContent = (st.gateway_id || '—');
+  $('rose-site').textContent = (st.site_name || '—');
+  const hasLoc = st.site_lat != null && st.site_lon != null;
+  $('rose-coords').textContent = hasLoc
+    ? (st.site_lat.toFixed(4) + '° ' + (st.site_lat >= 0 ? 'N' : 'S') + ' · ' + Math.abs(st.site_lon).toFixed(4) + '° ' + (st.site_lon <= 0 ? 'O' : 'E') + ' · provisionado')
+    : 'SIN UBICACIÓN PROVISIONADA';
+  $('rose-coords').style.color = hasLoc ? C.fg3 : C.warn;
+  const cal = st.calibration && st.calibration.calibrated === true;
+  const axes = $('rose-axes'); axes.textContent = '';
+  const chs = st.signal && st.signal.channels ? st.signal.channels : {};
+  [['EJE Z','ENZ'],['EJE N-S','ENN'],['EJE E-O','ENE']].forEach(([lbl, c]) => {
+    const m = chs[c];
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:baseline;gap:7px';
+    const a = document.createElement('span'); a.style.cssText = 'font:500 10px/1 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-3)'; a.textContent = lbl;
+    const v = document.createElement('span'); v.className = 'mono'; v.style.cssText = 'font-weight:700;font-size:12px';
+    v.textContent = m ? fmtG(m.pga_g, cal) : 'S/D'; v.style.color = m ? C.cyan : C.warn;
+    row.append(a, v); axes.appendChild(row);
+  });
+  const n = (st.neighbors || []).length;
+  $('quorum-note').textContent = S.variant === 'A'
+    ? (n ? (n + ' estación(es) vecina(s) informativas · el quórum regional ≥3 lo correlaciona la nube') : 'Sin vecinas provisionadas · el quórum regional vive en la nube')
+    : 'Vector horizontal resultante ENN/ENE y magnitud vertical ENZ contra el umbral de disparo';
+}
+function renderSalud(st){
+  const grid = $('salud-grid'); grid.textContent = '';
+  const h = st.health, sl = st.seedlink, cloud = st.cloud || {};
+  $('salud-age').textContent = h ? ('DIAGNÓSTICO DE HACE ' + fmtAge(h.age_s)) : 'S/D · SIN DIAGNÓSTICO AÚN';
+  $('salud-age').style.color = h && h.age_s < 180 ? C.fg3 : C.warn;
+  $('salud-age').style.background = h && h.age_s < 180 ? 'rgba(240,242,245,0.06)' : 'rgba(255,193,7,0.18)';
+  const col = (v, amber, red) => v == null ? C.warn : (red != null && v >= red) ? C.crit : (amber != null && v >= amber) ? C.warn : C.ok;
+  const rows = [];
+  if (h){
+    rows.push(['Retraso del sensor', h.seedlink_lag_s == null ? 'S/D' : (h.seedlink_lag_s >= 3600 ? (h.seedlink_lag_s/3600).toFixed(1)+' h' : h.seedlink_lag_s.toFixed(2)+' s'), col(h.seedlink_lag_s, 2, 10)]);
+    rows.push(['Pérdida de paquetes', h.packet_loss_pct == null ? 'S/D' : h.packet_loss_pct.toFixed(1)+' %', col(h.packet_loss_pct, 1, 10)]);
+  } else {
+    rows.push(['Retraso del sensor', 'S/D', C.warn]);
+  }
+  if (sl){
+    rows.push(['Paquetes vistos (desde el arranque)', String(sl.packets_seen), C.fg2]);
+    rows.push(['Reconexiones SeedLink', String(sl.reconnects), sl.reconnects > 5 ? C.warn : C.fg2]);
+    rows.push(['Huecos del flujo', String(sl.gaps), sl.gaps > 0 ? C.warn : C.ok]);
+    rows.push(['Duplicados', String(sl.duplicates), C.fg2]);
+  } else {
+    rows.push(['Contadores SeedLink', 'S/D · sin cliente', C.warn]);
+  }
+  if (h){
+    rows.push(['Desfase de reloj NTP', h.ntp_offset_s == null ? 'S/D' : (h.ntp_offset_s*1000).toFixed(1)+' ms', h.ntp_offset_s == null ? C.warn : C.ok]);
+    rows.push(['Temperatura del SoC', h.temperature_c == null ? 'S/D' : h.temperature_c.toFixed(1)+' °C', col(h.temperature_c, 70, 80)]);
+    const ups = (h.ups_status || 'unknown') + (h.battery_pct != null ? ' · '+Math.round(h.battery_pct)+' %' : '') +
+      (h.ups_runtime_s != null ? ' · ' + Math.round(h.ups_runtime_s/60) + ' min' : ' · autonomía S/D');
+    rows.push(['UPS', ups, h.ups_status === 'battery' ? C.warn : (h.ups_status === 'line' ? C.ok : C.warn)]);
+    rows.push(['Disco usado', h.disk_used_pct == null ? 'S/D' : Math.round(h.disk_used_pct)+' %', col(h.disk_used_pct, 90, null)]);
+    rows.push(['Certificado mTLS', h.cert_days_remaining == null ? 'S/D' : h.cert_days_remaining+' d', h.cert_days_remaining != null && h.cert_days_remaining < 30 ? C.warn : C.ok]);
+  }
+  rows.push(['Enlace a la nube', cloud.online ? 'conectado' + (cloud.mqtt_rtt_ms != null ? ' · '+Math.round(cloud.mqtt_rtt_ms)+' ms' : '') : 'sin enlace' + (cloud.queued != null ? ' · '+cloud.queued+' en cola' : ''), cloud.online ? C.ok : C.warn]);
+  rows.forEach(([lbl, val, color]) => {
+    const r = document.createElement('div'); r.className = 'kv';
+    const d = document.createElement('span'); d.className = 'statdot'; d.style.background = color;
+    const a = document.createElement('span'); a.className = 'lbl'; a.textContent = lbl;
+    const f = document.createElement('span'); f.className = 'fill';
+    const v = document.createElement('span'); v.className = 'val'; v.textContent = val; v.style.color = color;
+    r.append(d, a, f, v); grid.appendChild(r);
+  });
+}
+function renderEvents(st){
+  const box = $('event-rows'); box.textContent = '';
+  const events = (st.events || []).slice(0, 10);
+  if (!events.length){
+    const r = document.createElement('div'); r.className = 'meta';
+    r.textContent = 'Sin eventos · DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s); box.appendChild(r); return;
+  }
+  events.forEach(e => {
+    const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:baseline;gap:9px';
+    const at = document.createElement('span'); at.className = 'meta'; at.style.flex = '0 0 auto';
+    at.textContent = (e.at || '').slice(11, 19) + ' UTC';
+    const dot = document.createElement('span'); dot.className = 'statdot';
+    const isTier = !!e.to_tier;
+    dot.style.background = isTier ? (TIERS[e.to_tier] ? TIERS[e.to_tier].color : C.warn) : C.cyan;
+    const tx = document.createElement('span'); tx.style.cssText = 'font:400 11px/1.3 var(--f-ui);color:var(--tk-fg-2)';
+    tx.textContent = isTier ? ((e.from_tier || '—') + ' → ' + e.to_tier + (e.source ? ' · fuente ' + e.source : '')) : ((e.action || '—') + ' · desde el panel');
+    const meta = document.createElement('span'); meta.className = 'meta'; meta.style.marginLeft = 'auto';
+    meta.textContent = e.via || (e.severity != null ? 'sev ' + e.severity : '');
+    r.append(at, dot, tx, meta); box.appendChild(r);
+  });
+}
+function ssnEvents(){
+  const cat = S.catalog, st = S.status;
+  if (!cat || !cat.available) return [];
+  const site = st && st.site_lat != null ? {lat: st.site_lat, lon: st.site_lon} : null;
+  return (cat.events || []).map((e, i) => Object.assign({}, e, {i,
+    km: site ? haversine(site, e) : null,
+    rumbo: site ? bearing(site, e) : null }));
+}
+function renderSsn(){
+  const cat = S.catalog;
+  const metaTxt = cat && cat.available
+    ? 'INSTANTÁNEA DEL CATÁLOGO · ' + String(cat.captured_at||'').slice(0,16).replace('T',' ')
+    : 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ';
+  const metaColor = cat && cat.available ? C.fg4 : C.warn;
+  ['ssn-meta','ssn-meta-big'].forEach(id => { $(id).textContent = metaTxt; $(id).style.color = metaColor; });
+  $('ssn-note').textContent = cat && cat.note ? cat.note : '';
+  const evs = ssnEvents();
+  $('ssn-count').textContent = evs.length ? String(evs.length) : '—';
+  const near = evs.filter(e => e.km != null).sort((a,b) => a.km-b.km)[0];
+  const nearTxt = near ? ('MÁS CERCANO: M ' + near.m.toFixed(1) + ' A ' + Math.round(near.km) + ' km ' + near.rumbo) : (evs.length ? 'SIN UBICACIÓN PROVISIONADA · SIN DISTANCIAS' : 'S/D');
+  $('ssn-nearest').textContent = nearTxt;
+  const fill = (boxId, limit, big) => {
+    const box = $(boxId); box.textContent = '';
+    evs.slice(0, limit).forEach(e => {
+      const b = document.createElement('button');
+      b.style.cssText = 'cursor:pointer;display:flex;align-items:baseline;gap:8px;padding:'+(big?'8px':'3px 4px')+';border:none;border-left:2px solid '+magColor(e.m)+';background:'+(S.selEvent===e.i?'rgba(0,191,255,0.08)':'transparent')+';text-align:left;width:100%';
+      const mag = document.createElement('span'); mag.className = 'mono'; mag.style.cssText = 'font-weight:700;font-size:'+(big?'13px':'11px')+';color:'+magColor(e.m); mag.textContent = 'M ' + e.m.toFixed(1);
+      const when = document.createElement('span'); when.className = 'meta'; when.textContent = e.at || '';
+      const loc = document.createElement('span'); loc.style.cssText = 'font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; loc.textContent = e.place || '';
+      const dist = document.createElement('span'); dist.className = 'meta'; dist.style.cssText = 'margin-left:auto;flex:0 0 auto;color:var(--tk-cyan)';
+      dist.textContent = e.km != null ? (Math.round(e.km) + ' km ' + e.rumbo) : (e.depth_km != null ? 'prof ' + e.depth_km.toFixed(0) + ' km' : '');
+      b.append(mag, when, loc, dist);
+      b.addEventListener('click', () => { S.selEvent = e.i; S.overlay = true; syncOverlay(); render(); });
+      box.appendChild(b);
+    });
+  };
+  fill('ssn-rows', 8, false);
+  fill('ssn-rows-big', 40, true);
+  renderStationRows();
+}
+function renderStationRows(){
+  const st = S.status; const box = $('station-rows'); box.textContent = '';
+  if (!st) return;
+  const own = st.site_lat != null ? [{code: st.gateway_id || 'ESTA ESTACIÓN', lat: st.site_lat, lon: st.site_lon, self:true}] : [];
+  const site = st.site_lat != null ? {lat: st.site_lat, lon: st.site_lon} : null;
+  own.concat((st.neighbors||[]).map(n2 => Object.assign({}, n2, {self:false}))).forEach(sta => {
+    const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:baseline;gap:9px';
+    const d = document.createElement('span'); d.className = 'statdot'; d.style.background = sta.self ? C.cyan : C.ok;
+    const id = document.createElement('span'); id.className = 'mono'; id.style.cssText = 'font-weight:700;font-size:11px'; id.textContent = sta.code;
+    const rol = document.createElement('span'); rol.style.cssText = 'font:400 11px/1.3 var(--f-ui);color:var(--tk-fg-2)'; rol.textContent = sta.self ? 'ESTA ESTACIÓN' : 'VECINA';
+    const dist = document.createElement('span'); dist.className = 'meta'; dist.style.marginLeft = 'auto';
+    dist.textContent = sta.self ? '0 km' : (site ? (Math.round(sta.distance_km != null ? sta.distance_km : haversine(site, sta)) + ' km ' + bearing(site, sta)) : (sta.lat.toFixed(2)+'°, '+sta.lon.toFixed(2)+'°'));
+    r.append(d, id, rol, dist); box.appendChild(r);
+  });
+  if (!own.length && !(st.neighbors||[]).length){
+    const r = document.createElement('div'); r.className = 'meta'; r.textContent = 'SIN UBICACIÓN PROVISIONADA · sin vecinas'; box.appendChild(r);
+  }
+}
+function renderMuroExtra(){
+  if (S.mode !== 'muro') return;
+  const evs = ssnEvents();
+  $('muro-nearest').textContent = $('ssn-nearest').textContent || 'S/D';
+  $('muro-ssnmeta').textContent = $('ssn-meta').textContent;
+  const box = $('muro-top3'); box.textContent = '';
+  evs.slice(0,3).forEach(e => {
+    const d = document.createElement('div'); d.style.cssText = 'display:flex;flex-direction:column;gap:6px;border-left:3px solid '+magColor(e.m)+';padding-left:12px';
+    const a = document.createElement('span'); a.className = 'mono'; a.style.cssText = 'font-weight:700;font-size:24px;color:'+magColor(e.m); a.textContent = 'M '+e.m.toFixed(1);
+    const b = document.createElement('span'); b.style.cssText = 'font:400 13px/1.3 var(--f-ui);color:var(--tk-fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; b.textContent = e.place || '';
+    const c2 = document.createElement('span'); c2.className = 'meta';
+    c2.textContent = (e.at||'') + (e.km != null ? ' · '+Math.round(e.km)+' km '+e.rumbo : '') + (e.depth_km != null ? ' · prof '+e.depth_km.toFixed(1)+' km' : '');
+    d.append(a, b, c2); box.appendChild(d);
+  });
+}
+
+/* ============================== acciones + PIN ============================== */
+function pinValue(){ return $('pin').value.replace(/\D/g,'').slice(0,6); }
+function setPinMsg(msg, kind){ S.pinMsg = msg; S.pinKind = kind;
+  const colors = {crit:C.crit, warn:C.warn, ok:C.ok, meta:C.fg3};
+  $('pin-msg').textContent = msg; $('pin-msg').style.color = colors[kind] || C.fg3; }
+async function doAction(label, endpoint, twoStep){
+  if (twoStep && S.armed !== endpoint){
+    S.armed = endpoint; S.armedAt = performance.now();
+    setPinMsg('CLIC NUEVAMENTE PARA CONFIRMAR · Orden bajo verificación humana · 5 s para cancelar', 'warn');
+    renderActions(S.status); return;
+  }
+  S.armed = null;
+  try {
+    const r = await fetch(endpoint, {method:'POST', headers:{'X-Takab-Pin': pinValue()}});
+    if (r.status === 200){ setPinMsg('ORDEN ACEPTADA · ' + label, 'ok'); }
+    else if (r.status === 401){ setPinMsg('PIN INCORRECTO', 'crit'); }
+    else if (r.status === 403){ setPinMsg('SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS', 'crit'); }
+    else if (r.status === 429){ setPinMsg('BLOQUEADO POR INTENTOS · ESPERA 60 s', 'crit'); }
+    else { setPinMsg('ERROR ' + r.status, 'crit'); }
+  } catch (err){ setPinMsg('SIN CONEXIÓN CON EL GABINETE', 'crit'); }
+  renderActions(S.status);
+}
+function renderActions(st){
+  const box = $('action-btns'); if (!box) return; box.textContent = '';
+  if (!st) return;
+  const defs = [];
+  if (st.siren_sounding) defs.push(['SILENCIAR AUDIBLES', st.audible_silenced ? 'ya silenciado' : 'no calla la rama de hardware', 'api/silence', false, 'primary']);
+  if (st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
+    defs.push(['CERRAR ALERTA', 'libera el enclave', 'api/reset', true, 'danger']);
+  defs.push(['PROBAR SIRENA', 'suena 2 s', 'api/siren-test', false, '']);
+  defs.push(['PROBAR ACTUADORES', 'sostiene sirena+estrobo · pulso en gas, ascensores, puertas', 'api/actuator-test', true, '']);
+  const wr1 = st.test_mode && st.test_mode.active;
+  defs.push([wr1 ? 'SALIR DE PRUEBA WR-1' : 'MODO PRUEBA WR-1', wr1 ? 'la nube vuelve a recibir' : 'ventana de 120 s · la nube no recibe', 'api/test-mode', false, '']);
+  if (st.audio && st.audio.enabled) defs.push(['SIMULACRO DE VOCEO', 'voceo de drill · sin tocar relés', 'api/drill-audio', false, '']);
+  defs.forEach(([label, sub, endpoint, twoStep, kind]) => {
+    const armed = S.armed === endpoint;
+    const b = document.createElement('button');
+    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : ''));
+    const t = document.createElement('span'); t.textContent = armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR' : label;
+    const s = document.createElement('span'); s.className = 'sub';
+    s.textContent = armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub;
+    b.append(t, s);
+    b.addEventListener('click', () => doAction(label, endpoint, twoStep));
+    box.appendChild(b);
+  });
+}
+
+/* ============================== dibujo (portado del prototipo) ============================== */
+function fitCanvas(el){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return null;
+  const W = Math.floor(w*dpr), H = Math.floor(h*dpr);
+  if (el.width !== W || el.height !== H){ el.width = W; el.height = H; }
+  const x = el.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  return {x, w, h};
+}
+function sens(){
+  const c = S.status && S.status.calibration;
+  return { a: (c && c.accel_sensitivity_ms2_per_count) || 1e-6, v: (c && c.vel_sensitivity_ms_per_count) || 1e-9 };
+}
+function toPhys(c, counts){
+  const s = sens();
+  return c[1] === 'N' ? counts*s.a/G : counts*s.v*100; /* g | cm/s */
+}
+function scaleFor(c, st){
+  const floor = c === 'EHZ' ? 0.10 : 0.012;
+  const m = st && st.signal && st.signal.channels && st.signal.channels[c];
+  const pk = Math.max(m ? (c[1] === 'N' ? m.pga_g : m.pgv_cms) : 0, peakHold[c] || 0);
+  peakHold[c] = Math.max(pk, (peakHold[c] || 0) * 0.985);
+  return Math.max(floor, pk*1.35);
+}
+function windowOf(c){
+  const b = buf[c];
+  const avail = Math.min(b.count, N);
+  const out = new Float32Array(N), outMax = new Float32Array(N), clip = new Uint8Array(N);
+  const start = (b.head - avail + N*2) % N;
+  for (let i = 0; i < N; i++){
+    if (i < N - avail){ out[i] = 0; outMax[i] = 0; clip[i] = 0; continue; }
+    const j = (start + (i - (N - avail))) % N;
+    out[i] = b.min[j]; outMax[i] = b.max[j]; clip[i] = b.clip[j];
+  }
+  return {min: out, max: outMax, clip, avail};
+}
+function drawWaves(){
+  const el = $('wave-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
+  const {x, w, h} = ctx;
+  const st = S.status; const grows = laneGrow(); const tot = grows.reduce((a,b)=>a+b,0);
+  const th = st && st.thresholds;
+  let y0 = 0;
+  CH.forEach((c, i) => {
+    const lh = h*grows[i]/tot, mid = y0+lh/2, half = lh/2-6;
+    x.strokeStyle = 'rgba(240,242,245,0.06)'; x.lineWidth = 1;
+    for (let g2 = 1; g2 < 4; g2++){ const gx = w*g2/4; x.beginPath(); x.moveTo(gx,y0); x.lineTo(gx,y0+lh); x.stroke(); }
+    x.strokeStyle = 'rgba(240,242,245,0.10)'; x.beginPath(); x.moveTo(0,mid); x.lineTo(w,mid); x.stroke();
+    const b = buf[c];
+    if (b.count === 0){
+      /* carril VACÍO con su razón: una línea plana se leería "todo tranquilo" */
+      x.strokeStyle = 'rgba(255,193,7,0.35)'; x.setLineDash([3,5]);
+      x.beginPath(); x.moveTo(0,mid); x.lineTo(w,mid); x.stroke(); x.setLineDash([]);
+      y0 += lh; return;
+    }
+    const acc = c[1] === 'N';
+    const sc = scaleFor(c, st);
+    const win = windowOf(c);
+    /* umbrales por carril: PGA en EN*, PGV en EHZ (el prototipo omitía EHZ) */
+    if (th){
+      const pairs = acc ? [[th.pga_watch_g, C.warn],[th.pga_trip_g, C.crit]] : [[th.pgv_watch_cms, C.warn],[th.pgv_trip_cms, C.crit]];
+      pairs.forEach(([tv, colr]) => {
+        const yy = Math.min(half, tv/sc*half);
+        x.strokeStyle = colr; x.globalAlpha = yy >= half ? 0.35 : 0.75; x.setLineDash([4,4]); x.lineWidth = 1;
+        x.beginPath(); x.moveTo(0,mid-yy); x.lineTo(w,mid-yy); x.moveTo(0,mid+yy); x.lineTo(w,mid+yy); x.stroke();
+        x.setLineDash([]); x.globalAlpha = 1;
+      });
+    }
+    const colr = acc ? C.cyan : C.geo;
+    const per = N/w;
+    const gapSet = new Set();
+    b.gaps.forEach(gAbs => { const rel = gAbs - (b.count - win.avail); if (rel >= 0 && rel < win.avail) gapSet.add(Math.floor((N - win.avail + rel)/per)); });
+    if (S.variant === 'A'){
+      x.strokeStyle = colr; x.lineWidth = 1.3; x.lineCap = 'round'; x.beginPath();
+      for (let px = 0; px < w; px++){
+        if (gapSet.has(px)) continue; /* gap_before: el trazo se CORTA, no se une */
+        let mn = 1e30, mx = -1e30;
+        for (let j = Math.floor(px*per); j < Math.floor((px+1)*per); j++){
+          const a2 = toPhys(c, win.min[j]), b2 = toPhys(c, win.max[j]);
+          if (a2 < mn) mn = a2; if (b2 > mx) mx = b2;
+        }
+        if (mn > mx) continue;
+        const ya = mid - Math.max(-half, Math.min(half, mx/sc*half));
+        const yb = mid - Math.max(-half, Math.min(half, mn/sc*half));
+        x.moveTo(px+0.5, ya); x.lineTo(px+0.5, yb === ya ? yb+0.6 : yb);
+      }
+      x.stroke();
+    } else {
+      const up = [], dn = [];
+      for (let px = 0; px < w; px++){
+        let mn = 1e30, mx = -1e30;
+        for (let j = Math.floor(px*per); j < Math.floor((px+1)*per); j++){
+          const a2 = toPhys(c, win.min[j]), b2 = toPhys(c, win.max[j]);
+          if (a2 < mn) mn = a2; if (b2 > mx) mx = b2;
+        }
+        if (mn > mx){ mn = 0; mx = 0; }
+        up.push([px, mid - Math.max(-half, Math.min(half, mx/sc*half))]);
+        dn.push([px, mid - Math.max(-half, Math.min(half, mn/sc*half))]);
+      }
+      x.beginPath(); up.forEach((p,k)=>k?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));
+      for (let k = dn.length-1; k >= 0; k--) x.lineTo(dn[k][0], dn[k][1]);
+      x.closePath(); x.fillStyle = colr; x.globalAlpha = 0.30; x.fill(); x.globalAlpha = 1;
+      x.strokeStyle = colr; x.lineWidth = 1.2; x.beginPath();
+      up.forEach((p,k)=>k?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1])); x.stroke();
+      const ph = Math.min(half, (peakHold[c] || 0)/sc*half);
+      x.strokeStyle = colr; x.globalAlpha = 0.5; x.setLineDash([2,6]);
+      x.beginPath(); x.moveTo(0,mid-ph); x.lineTo(w,mid-ph); x.moveTo(0,mid+ph); x.lineTo(w,mid+ph); x.stroke();
+      x.setLineDash([]); x.globalAlpha = 1;
+    }
+    /* ticks de saturación desde las FEATURES (clipping por canal) */
+    const m = st && st.signal && st.signal.channels && st.signal.channels[c];
+    if (m && m.clipping){ x.fillStyle = C.crit; for (let px = w-60; px < w; px += 3) x.fillRect(px, y0+1, 1, 5); }
+    y0 += lh;
+  });
+  /* marcas verticales: SASMEX + transición de tier */
+  const nowT = Date.now()/1000;
+  S.markers.forEach(mk => {
+    const age = nowT - mk.t; if (age < 0 || age > 60) return;
+    const px = w*(1 - age/60);
+    x.strokeStyle = mk.kind === 'sasmex' ? C.cyan : C.crit;
+    x.lineWidth = mk.kind === 'sasmex' ? 1.5 : 1;
+    if (mk.kind === 'tier') x.setLineDash([3,3]);
+    x.beginPath(); x.moveTo(px,0); x.lineTo(px,h); x.stroke(); x.setLineDash([]);
+    x.fillStyle = mk.kind === 'sasmex' ? C.cyan : C.crit;
+    x.font = "700 9px 'JetBrains Mono',monospace";
+    x.fillText(mk.kind === 'sasmex' ? 'SASMEX' : 'TIER', Math.min(w-44, px+3), 12);
+  });
+}
+function drawRose(){
+  const el = $('rose-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
+  const {x, w, h} = ctx;
+  const st = S.status; if (!st) return;
+  const V = S.variant;
+  const chs = st.signal && st.signal.channels ? st.signal.channels : {};
+  const dead = !Object.keys(chs).length;
+  const cx = V === 'A' ? w/2 : w*0.40, cy = h/2+6, R = Math.min(w,h)*0.36;
+  const th = st.thresholds;
+  const trip = th ? th.pga_trip_g : 0.060;
+  const mZ = chs.ENZ;
+  const sc = Math.max(0.006, trip*1.15, (mZ ? mZ.pga_g : 0)*1.2);
+  const lastCounts = (c) => { const b = buf[c]; if (!b.count) return 0; return b.max[(b.head-1+N)%N]; };
+  const vz = dead ? 0 : Math.abs(toPhys('ENZ', lastCounts('ENZ')));
+  const vn = dead ? 0 : Math.abs(toPhys('ENN', lastCounts('ENN')));
+  const ve = dead ? 0 : Math.abs(toPhys('ENE', lastCounts('ENE')));
+  const rings = V === 'A' ? [0.34,0.62,0.86,1] : [0.55,1];
+  x.font = "400 9px 'JetBrains Mono',monospace";
+  rings.forEach((f, i) => {
+    x.beginPath(); x.arc(cx,cy,R*f,0,Math.PI*2); x.strokeStyle = 'rgba(240,242,245,0.10)'; x.lineWidth = 1; x.stroke();
+    if (V === 'A'){ x.fillStyle = C.fg4; x.fillText([5,10,25,50][i]+' km', cx+4, cy-R*f-3); }
+  });
+  x.strokeStyle = 'rgba(240,242,245,0.14)';
+  x.beginPath(); x.moveTo(cx-R,cy); x.lineTo(cx+R,cy); x.moveTo(cx,cy-R); x.lineTo(cx,cy+R); x.stroke();
+  x.fillStyle = C.fg3; x.font = "600 10px 'Geist',system-ui";
+  x.fillText('N', cx-3, cy-R-8); x.fillText('S', cx-3, cy+R+16);
+  x.fillText('E', cx+R+6, cy+4); x.fillText('O', cx-R-16, cy+4);
+  if (V === 'A' && st.site_lat != null){
+    /* vecinas REALES proyectadas por rumbo/distancia (anillo 50 km = R) */
+    const site = {lat: st.site_lat, lon: st.site_lon};
+    (st.neighbors || []).forEach(nb => {
+      const km = nb.distance_km != null ? nb.distance_km : haversine(site, nb);
+      const rad = Math.min(1, km/50)*R;
+      const rad2 = Math.PI/180;
+      const y2 = Math.sin((nb.lon-site.lon)*rad2)*Math.cos(nb.lat*rad2);
+      const x2 = Math.cos(site.lat*rad2)*Math.sin(nb.lat*rad2)-Math.sin(site.lat*rad2)*Math.cos(nb.lat*rad2)*Math.cos((nb.lon-site.lon)*rad2);
+      const ang = Math.atan2(y2,x2);
+      const px = cx + Math.sin(ang)*rad, py = cy - Math.cos(ang)*rad;
+      x.beginPath(); x.arc(px,py,4,0,Math.PI*2); x.fillStyle = C.ok; x.fill();
+      x.globalAlpha = 0.25; x.beginPath(); x.moveTo(cx,cy); x.lineTo(px,py); x.strokeStyle = C.ok; x.stroke(); x.globalAlpha = 1;
+      x.fillStyle = C.fg3; x.font = "400 9px 'JetBrains Mono',monospace"; x.fillText(nb.code, px+7, py+3);
+    });
+  }
+  if (!dead){
+    const gx2 = Math.min(1, ve/sc), gy2 = Math.min(1, vn/sc);
+    const sE = Math.sign(lastCounts('ENE') || 1);
+    const sN = Math.sign(lastCounts('ENN') || 1);
+    const tx = cx + sE*gx2*R*0.92, ty = cy - sN*gy2*R*0.92;
+    x.strokeStyle = C.cyan; x.lineWidth = 2; x.beginPath(); x.moveTo(cx,cy); x.lineTo(tx,ty); x.stroke();
+    x.beginPath(); x.arc(tx,ty,3.5,0,Math.PI*2); x.fillStyle = C.cyan; x.fill();
+    const bx = V === 'A' ? w-30 : w-54, bw = V === 'A' ? 12 : 22;
+    const bh = R*1.6, by = cy+bh/2;
+    x.strokeStyle = 'rgba(240,242,245,0.12)'; x.strokeRect(bx-bw/2, by-bh, bw, bh);
+    const watch = th ? th.pga_watch_g : 0.040;
+    const fz = Math.min(1, vz/sc)*bh;
+    x.fillStyle = vz > trip ? C.crit : vz > watch ? C.warn : C.cyan;
+    x.fillRect(bx-bw/2+1, by-fz, bw-2, fz);
+    x.fillStyle = C.fg3; x.font = "600 9px 'Geist',system-ui"; x.fillText('Z', bx-3, by+12);
+    const ty2 = by - Math.min(1, trip/sc)*bh;
+    x.strokeStyle = C.crit; x.setLineDash([3,3]); x.beginPath(); x.moveTo(bx-bw/2-4, ty2); x.lineTo(bx+bw/2+4, ty2); x.stroke(); x.setLineDash([]);
+  }
+  x.fillStyle = dead ? C.warn : C.fg1; x.fillRect(cx-4,cy-4,8,8);
+  x.strokeStyle = dead ? C.warn : C.cyan; x.lineWidth = 1; x.beginPath(); x.arc(cx,cy,11,0,Math.PI*2); x.stroke();
+  if (dead){ x.fillStyle = C.warn; x.font = "700 11px 'Geist',system-ui"; x.fillText('SIN SEÑAL DEL SENSOR', cx-62, cy+R+34); }
+}
+function drawGeoMap(){
+  const el = $('map-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
+  const {x, w, h} = ctx;
+  const st = S.status, cat = S.catalog;
+  const site = st && st.site_lat != null ? {lat: st.site_lat, lon: st.site_lon} : null;
+  const evs = ssnEvents();
+  if ((!cat || !cat.available) && !site){
+    x.fillStyle = C.warn; x.font = "700 12px 'Geist',system-ui";
+    x.fillText('CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ', 16, 26);
+    x.fillText('SIN UBICACIÓN PROVISIONADA', 16, 46); return;
+  }
+  const local = S.mapScope === 'local' && !!site;
+  const RADIO_LOCAL = 60;
+  const neighbors = (st && st.neighbors) || [];
+  const stations = (site ? [{code: st.gateway_id, lat: site.lat, lon: site.lon, self:true}] : []).concat(neighbors.map(n2 => Object.assign({}, n2, {self:false})));
+  const refs = (cat && cat.references) || [];
+  const evsUse = local ? evs.filter(e => e.km != null && e.km <= RADIO_LOCAL) : evs;
+  const staUse = local ? stations.filter(s2 => s2.self || haversine(site, s2) <= RADIO_LOCAL) : stations;
+  const refUse = (local && site) ? refs.filter(r => haversine(site, r) <= RADIO_LOCAL) : refs;
+  const anchorLat = site ? site.lat : (evsUse[0] ? evsUse[0].lat : 23);
+  const kx = Math.cos(anchorLat*Math.PI/180);
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  const fit = p => { const px = p.lon*kx, py = -p.lat; if (px < minX) minX = px; if (px > maxX) maxX = px; if (py < minY) minY = py; if (py > maxY) maxY = py; };
+  (local ? staUse.concat(refUse, evsUse) : evsUse.concat(staUse, refUse)).forEach(fit);
+  if (site) fit(site);
+  if (minX > maxX){ fit({lat: 23, lon: -102}); fit({lat: 17, lon: -92}); }
+  const mx = (maxX-minX)*0.12 || 0.05, my = (maxY-minY)*0.12 || 0.05;
+  minX -= mx; maxX += mx; minY -= my; maxY += my;
+  const pad = 46;
+  const sc = Math.min((w-pad*2)/(maxX-minX), (h-pad*2)/(maxY-minY));
+  const ox = (w-(maxX-minX)*sc)/2 - minX*sc, oy = (h-(maxY-minY)*sc)/2 - minY*sc;
+  const P = p => [p.lon*kx*sc+ox, -p.lat*sc+oy];
+  const kmPerDeg = 111.32;
+  const gut = 34;
+  /* geografía REAL (Natural Earth, inline): costas + estados bajo la retícula */
+  const drawPoly = (segs, style, lw) => {
+    x.strokeStyle = style; x.lineWidth = lw; x.beginPath();
+    segs.forEach(seg => {
+      let started = false;
+      for (let i = 0; i < seg.length; i++){
+        const lon = seg[i][0], lat = seg[i][1];
+        if (lon < minX/kx - 2 || lon > maxX/kx + 2 || -lat < minY - 2 || -lat > maxY + 2){ started = false; continue; }
+        const px = lon*kx*sc+ox, py = -lat*sc+oy;
+        if (!started){ x.moveTo(px,py); started = true; } else { x.lineTo(px,py); }
+      }
+    });
+    x.stroke();
+  };
+  drawPoly(GEO.c, 'rgba(124,231,255,0.28)', 1);
+  drawPoly(GEO.e, 'rgba(240,242,245,0.10)', 1);
+  /* retícula con paso elegido por píxeles */
+  x.font = "400 9px 'JetBrains Mono',monospace";
+  const step = (min, perDeg) => [1,2,5,10,20].find(v => v*perDeg >= min) || 20;
+  const latStep = step(30, sc), lonStep = step(46, sc*kx);
+  const anchorLon = site ? site.lon : -98;
+  for (let lat = Math.ceil(-maxY/latStep)*latStep; lat <= -minY; lat += latStep){
+    const y2 = P({lat, lon: anchorLon})[1];
+    x.strokeStyle = 'rgba(240,242,245,0.05)'; x.beginPath(); x.moveTo(0,y2); x.lineTo(w,y2); x.stroke();
+    if (y2 > 14 && y2 < h-gut){ x.fillStyle = C.fg3; x.fillText(lat+'° N', 4, y2-3); }
+  }
+  const lonLabelY = h-gut+12;
+  for (let lon = Math.ceil((minX/kx)/lonStep)*lonStep; lon <= maxX/kx; lon += lonStep){
+    const px = P({lat: anchorLat, lon})[0];
+    x.strokeStyle = 'rgba(240,242,245,0.05)'; x.beginPath(); x.moveTo(px,0); x.lineTo(px,h-gut); x.stroke();
+    if (px > 4 && px < w-40){ x.fillStyle = C.fg3; x.fillText(Math.abs(lon)+'° O', px+3, lonLabelY); }
+  }
+  /* anillos desde el sitio (solo si HAY sitio: jamás un centro inventado) */
+  let Spt = null;
+  if (site){
+    Spt = P(site);
+    (local ? [5,10,25,50] : [100,200,400,800]).forEach(km => {
+      const r = km/kmPerDeg*sc; if (r < 12) return;
+      x.beginPath(); x.arc(Spt[0],Spt[1],r,0,Math.PI*2);
+      x.strokeStyle = 'rgba(0,191,255,0.16)'; x.setLineDash([3,5]); x.lineWidth = 1; x.stroke(); x.setLineDash([]);
+      x.fillStyle = C.fg4; x.font = "400 9px 'JetBrains Mono',monospace";
+      const d45 = Math.SQRT1_2; x.fillText(km+' km', Spt[0]+r*d45+4, Spt[1]+r*d45+10);
+    });
+  }
+  /* referencias urbanas (coordenadas reales) */
+  const refQueue = [];
+  refUse.forEach(rf => { const p = P(rf); x.fillStyle = C.fg3; x.fillRect(p[0]-1.5, p[1]-1.5, 3, 3); refQueue.push({n: rf.n, p}); });
+  /* epicentros */
+  evsUse.forEach(e => {
+    const p = P(e), colr = magColor(e.m), r = 3+(e.m-2.5)*2.4;
+    x.beginPath(); x.arc(p[0],p[1],r,0,Math.PI*2);
+    x.fillStyle = colr; x.globalAlpha = 0.22; x.fill(); x.globalAlpha = 1;
+    x.strokeStyle = colr; x.lineWidth = 1.4; x.stroke();
+    if (S.selEvent === e.i){
+      x.beginPath(); x.arc(p[0],p[1],r+5,0,Math.PI*2); x.strokeStyle = C.fg1; x.lineWidth = 1; x.stroke();
+      if (Spt){ x.globalAlpha = 0.4; x.beginPath(); x.moveTo(Spt[0],Spt[1]); x.lineTo(p[0],p[1]); x.strokeStyle = C.cyan; x.stroke(); x.globalAlpha = 1; }
+      x.fillStyle = C.fg1; x.font = "700 11px 'JetBrains Mono',monospace";
+      const txt = 'M '+e.m.toFixed(1) + (e.km != null ? ' · '+Math.round(e.km)+' km' : '');
+      const tw = x.measureText(txt).width;
+      let lx = p[0]+r+8, ly = p[1]-6;
+      if (lx+tw > w-6) lx = p[0]-r-8-tw;
+      if (lx < 6) lx = Math.min(Math.max(6, p[0]-tw/2), w-tw-6);
+      if (ly < 14) ly = p[1]+r+16;
+      if (ly > h-gut) ly = p[1]-r-8;
+      x.fillText(txt, lx, ly);
+    }
+  });
+  /* estaciones con anti-colisión de rótulos */
+  const placed = []; let hidden = 0;
+  x.font = "700 10px 'Geist',system-ui";
+  const cluW = x.measureText('+9 vecinas · ver lista').width;
+  const cluBox = Spt ? {x0:Spt[0]+11, y0:Spt[1]+8, x1:Spt[0]+15+cluW, y1:Spt[1]+22} : {x0:-1,y0:-1,x1:-1,y1:-1};
+  placed.push(cluBox);
+  x.font = "700 10px 'JetBrains Mono',monospace";
+  staUse.forEach(s2 => {
+    const p = P(s2);
+    if (s2.self){
+      x.strokeStyle = C.cyan; x.lineWidth = 1.4; x.beginPath(); x.arc(p[0],p[1],9,0,Math.PI*2); x.stroke();
+      x.fillStyle = C.fg1; x.fillRect(p[0]-3.5, p[1]-3.5, 7, 7);
+    } else {
+      x.fillStyle = C.ok; x.beginPath(); x.arc(p[0],p[1],3.5,0,Math.PI*2); x.fill();
+      if (Spt){ x.globalAlpha = 0.22; x.strokeStyle = C.ok; x.lineWidth = 1; x.beginPath(); x.moveTo(Spt[0],Spt[1]); x.lineTo(p[0],p[1]); x.stroke(); x.globalAlpha = 1; }
+    }
+    const label = s2.code || '—';
+    const tw = x.measureText(label).width;
+    let lx = p[0]+(s2.self ? 13 : 7), ly = p[1]+3;
+    if (lx+tw > w-6) lx = p[0]-(s2.self ? 13 : 7)-tw;
+    const box = {x0:lx-2, y0:ly-10, x1:lx+tw+2, y1:ly+3};
+    const hit = placed.some(q => !(box.x1 < q.x0 || box.x0 > q.x1 || box.y1 < q.y0 || box.y0 > q.y1));
+    if (hit && !s2.self){ hidden++; return; }
+    placed.push(box);
+    x.fillStyle = s2.self ? C.fg1 : C.fg4;
+    x.fillText(label, lx, ly);
+  });
+  if (hidden && Spt){ x.fillStyle = C.ok; x.font = "700 10px 'Geist',system-ui"; x.fillText('+'+hidden+' vecinas · ver lista', cluBox.x0+2, cluBox.y1-4); }
+  x.font = "400 10px 'Geist',system-ui"; x.fillStyle = C.fg4;
+  refQueue.forEach(q => {
+    const tw = x.measureText(q.n).width;
+    let lx = q.p[0]+5; if (lx+tw > w-6) lx = q.p[0]-5-tw; if (lx < 6) return;
+    const ly = q.p[1]+3; if (ly < 14 || ly > h-gut) return;
+    const box = {x0:lx-2, y0:ly-10, x1:lx+tw+2, y1:ly+3};
+    if (placed.some(z => !(box.x1 < z.x0 || box.x0 > z.x1 || box.y1 < z.y0 || box.y0 > z.y1))) return;
+    placed.push(box); x.fillText(q.n, lx, ly);
+  });
+  x.fillStyle = C.fg4; x.font = "700 10px 'Geist',system-ui";
+  x.fillText(local
+    ? 'ALCANCE RED LOCAL · RADIO '+RADIO_LOCAL+' km · '+staUse.length+' DE '+stations.length+' ESTACIONES'
+    : 'ALCANCE REGIONAL · CATÁLOGO COMPLETO · '+stations.length+' ESTACIÓN(ES)', 12, 18);
+  if (!site){ x.fillStyle = C.warn; x.fillText('SIN UBICACIÓN PROVISIONADA · sin anillos ni distancias', 12, 34); }
+  x.fillStyle = C.fg4; x.font = "400 9px 'Geist',system-ui";
+  x.fillText('GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO', 12, h-10);
+}
+function frame(){
+  S.raf = 0; S.lastFrame = performance.now();
+  try {
+    if (DEMO) demoFillWave();
+    drawWaves(); drawRose();
+    if (S.overlay) drawGeoMap();
+    /* desarme REAL del two-step a los 5 s (defecto del prototipo, corregido) */
+    if (S.armed && (performance.now() - S.armedAt) > 5000){
+      S.armed = null; setPinMsg('Orden cancelada · no se confirmó a tiempo', 'meta'); renderActions(S.status);
+    } else if (S.armed){ renderActions(S.status); }
+    if (S.status && S.status.test_mode && S.status.test_mode.active && !DEMO){
+      /* la cuenta del banner WR-1 baja fluida entre ticks */
+      const base = S.status.test_mode.remaining_s;
+      const since = (performance.now() - (S.lastGoodAt || performance.now()))/1000;
+      $('wr1-left').textContent = Math.max(0, Math.ceil(base - since)) + ' s RESTANTES';
+    }
+  } catch (err){ /* un canvas roto no detiene el panel */ }
+  S.raf = requestAnimationFrame(frame);
+}
+
+/* ============================== interacción ============================== */
+function syncOverlay(){
+  $('overlay').classList.toggle('hide', !S.overlay);
+  document.querySelectorAll('[data-scope]').forEach(b => b.classList.toggle('on', S.mapScope === b.dataset.scope));
+}
+$('open-map').addEventListener('click', () => { S.overlay = true; syncOverlay(); });
+$('close-map').addEventListener('click', () => { S.overlay = false; S.selEvent = null; syncOverlay(); });
+document.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => { S.mapScope = b.dataset.scope; syncOverlay(); }));
+document.querySelectorAll('[data-variant]').forEach(b => b.addEventListener('click', () => { S.variant = b.dataset.variant; render(); }));
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.mode === 'auto'){ S.userMode = false; autoMode(); } else { S.userMode = true; S.mode = b.dataset.mode; }
+  render();
+}));
+$('tab-local').addEventListener('click', () => { S.tab = 'local'; $('tab-local').classList.add('on'); $('tab-ssn').classList.remove('on'); $('pane-local').classList.remove('hide'); $('pane-ssn').classList.add('hide'); });
+$('tab-ssn').addEventListener('click', () => { S.tab = 'ssn'; $('tab-ssn').classList.add('on'); $('tab-local').classList.remove('on'); $('pane-ssn').classList.remove('hide'); $('pane-local').classList.add('hide'); });
+function autoMode(){ if (S.userMode) return; S.mode = window.innerWidth < 1024 ? 'campo' : 'consola'; }
+window.addEventListener('resize', () => { autoMode(); render(); });
+
+/* ============================== arranque ============================== */
+if (params.get('mode')){ S.userMode = true; S.mode = params.get('mode'); }
+else autoMode();
+if (DEMO){
+  $('demo-ribbon').classList.remove('hide');
+  $('demo-which').textContent = 'escena: ' + DEMO + (SCENES[DEMO] ? '' : ' (desconocida → reposo)');
+}
+S.raf = requestAnimationFrame(frame);
+tick(); /* el único re-armado vive DENTRO de tick: setTimeout encadenado con backoff */
+</script>
+</body>
+</html>

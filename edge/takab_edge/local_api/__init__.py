@@ -40,6 +40,7 @@ from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 
 from takab_edge.contracts import utcnow
 from takab_edge.gpio import GpioController
@@ -98,16 +99,92 @@ def _load_index_html() -> str:
         return _FALLBACK_HTML
 
 
+def _load_static_fonts() -> dict[str, tuple[str, bytes]]:
+    """[T-2.23] Whitelist de estáticos, cargada UNA vez al construir el panel.
+
+    Dict por ruta EXACTA ⇒ inmune a path traversal por construcción: cualquier
+    otra ruta (incluido `/fonts/../`) es 404. Una fuente ausente simplemente no
+    entra a la whitelist y la pila CSS cae a la del sistema.
+    """
+    served: dict[str, tuple[str, bytes]] = {}
+    for name, mime in (("geist.ttf", "font/ttf"), ("jbmono.woff2", "font/woff2")):
+        try:
+            data = resources.files("takab_edge.local_api").joinpath(f"fonts/{name}").read_bytes()
+            served[f"/fonts/{name}"] = (mime, data)
+        except OSError:
+            log.warning("fuente %s no empaquetada; la pila CSS cae al sistema", name)
+    return served
+
+
+def _load_catalog(path: str) -> dict:
+    """[T-2.23] Instantánea del catálogo SSN, leída UNA vez y normalizada a §5.1.
+
+    El archivo usa el formato del entregable de diseño (`fuente/capturado/
+    eventos[m,fecha,hora,lat,lon,prof,loc]/referencias`). Ausente o corrupto ⇒
+    degradación honesta: `available: false` y el panel rotula
+    `CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ`. Jamás lanza.
+    """
+    degraded = {
+        "available": False,
+        "source": None,
+        "captured_at": None,
+        "note": None,
+        "events": [],
+        "references": [],
+    }
+    if not path:
+        return degraded
+    try:
+        raw = json.loads(Path(path).read_text("utf-8"))
+        events = [
+            {
+                "m": float(e["m"]),
+                "at": f"{e.get('fecha', '')} {e.get('hora', '')}".strip(),
+                "lat": float(e["lat"]),
+                "lon": float(e["lon"]),
+                "depth_km": float(e["prof"]) if e.get("prof") is not None else None,
+                "place": str(e.get("loc", "")),
+            }
+            for e in raw.get("eventos", [])
+        ]
+        references = [
+            {"n": str(r["n"]), "lat": float(r["lat"]), "lon": float(r["lon"])}
+            for r in raw.get("referencias", [])
+        ]
+        return {
+            "available": True,
+            "source": raw.get("fuente"),
+            "captured_at": raw.get("capturado"),
+            "note": raw.get("replicas_nota"),
+            "events": events,
+            "references": references,
+        }
+    except FileNotFoundError:
+        log.info("catálogo SSN no instalado (%s); el panel lo declara", path)
+        return degraded
+    except Exception:  # noqa: BLE001 — catálogo corrupto = ausente, jamás un crash
+        log.warning("catálogo SSN ilegible (%s); se degrada", path, exc_info=True)
+        return degraded
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
     # keep-alive: un hilo por kiosco en vez de hilo por request (menos churn).
     protocol_version = "HTTP/1.1"
 
-    def _send(self, code: int, body: str, content_type: str = "application/json") -> None:
-        data = body.encode()
+    def _send(
+        self,
+        code: int,
+        body: str | bytes,
+        content_type: str = "application/json",
+        cache_control: str | None = None,
+    ) -> None:
+        data = body.encode() if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        if content_type.startswith("application/json"):
+        if cache_control is not None:
+            self.send_header("Cache-Control", cache_control)
+        elif content_type.startswith("application/json"):
             self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
@@ -129,6 +206,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # T-2.15: lectura abierta como /api/status (es el panel del guardia).
             # waveform() es defensivo de punta a punta: signal roto ⇒ 200 degradado.
             self._send(200, json.dumps(dashboard.waveform(*_waveform_params(query))))
+        elif path == "/api/catalog":
+            # T-2.23: instantánea SSN cacheada en memoria (leída UNA vez al construir).
+            self._send(200, json.dumps(dashboard.catalog()))
+        elif path in dashboard.static_files:
+            # T-2.23: whitelist EXACTA (traversal imposible por construcción).
+            mime, data = dashboard.static_files[path]
+            self._send(200, data, mime, cache_control="public, max-age=86400")
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -189,6 +273,7 @@ class LocalDashboard(EdgeModule):
         seedlink: object | None = None,
         config: object | None = None,
         location: object | None = None,
+        catalog_path: str = "",
         gateway_id: str = "",
         site_name: str = "",
         refresh_ms: int = 1000,
@@ -225,6 +310,13 @@ class LocalDashboard(EdgeModule):
         self._actions_lock = threading.Lock()
         self._last_actuation_test: dict | None = None  # T-1.67: resultado por relé
         self.index_html = _load_index_html()
+        # T-2.23: estáticos y catálogo se cargan UNA vez — servir jamás toca disco.
+        self.static_files = _load_static_fonts()
+        self._catalog = _load_catalog(catalog_path)
+
+    def catalog(self) -> dict:
+        """[T-2.23] Instantánea SSN normalizada (§5.1). Lectura pura del cache."""
+        return self._catalog
 
     def authorize_action(self, provided: str | None) -> int:
         """Autoriza un POST del panel (T-1.43). Devuelve el status HTTP.
