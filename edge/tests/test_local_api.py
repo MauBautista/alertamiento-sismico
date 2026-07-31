@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from datetime import UTC
 
 import pytest
 
@@ -450,6 +451,69 @@ def test_calibration_with_source_is_true(supervisor):
     assert calibration["source"] == "StationXML FDSN AM.R4F74 2026-07-09"
     assert calibration["vel_sensitivity_ms_per_count"] == pytest.approx(2.5021894e-9)
     assert calibration["accel_sensitivity_ms2_per_count"] == pytest.approx(2.6007802e-6)
+
+
+# --- Fase 2.1 · T-2.15: /api/waveform sobre HTTP ------------------------------
+
+
+def _feed_wave(supervisor, channel: str = "EHZ", index: int = 0) -> None:
+    from datetime import datetime, timedelta
+
+    from takab_edge.contracts import WaveformPacket
+
+    t0 = datetime(2026, 7, 30, 12, 0, 0, tzinfo=UTC)
+    supervisor.seedlink.feed(
+        WaveformPacket(
+            station="R4F74",
+            channel=channel,
+            starttime=t0 + timedelta(seconds=index),
+            samples=[0, 7] * 50,
+        )
+    )
+
+
+def test_waveform_endpoint_incremental_over_http(supervisor):
+    _feed_wave(supervisor, index=0)
+    code, body = _get(supervisor.local_api, "/api/waveform?max_points=6000")
+    assert code == 200
+    first = json.loads(body)
+    assert first["reset"] is True
+    assert first["channels"]["EHZ"]["encoding"] == "raw"
+    assert len(first["channels"]["EHZ"]["samples"]) == 100
+    _feed_wave(supervisor, index=1)
+    code, body = _get(
+        supervisor.local_api,
+        f"/api/waveform?since={first['cursor']}&channels=EHZ&max_points=6000",
+    )
+    incremental = json.loads(body)
+    assert incremental["reset"] is False
+    assert len(incremental["channels"]["EHZ"]["samples"]) == 100  # SOLO lo nuevo
+    assert incremental["cursor"] > first["cursor"]
+
+
+def test_waveform_with_signal_broken_returns_200_empty(supervisor, monkeypatch):
+    """Módulo de señal caído + parámetros basura ⇒ 200 degradado, jamás 500/400."""
+    monkeypatch.setattr(supervisor.local_api, "_signal", None)
+    code, body = _get(supervisor.local_api, "/api/waveform?since=abc&max_points=zz")
+    assert code == 200
+    assert json.loads(body) == {
+        "cursor": 0,
+        "reset": True,
+        "sample_rate": None,
+        "decimation": 1,
+        "channels": {},
+    }
+
+
+def test_waveform_does_not_publish_nor_probe(supervisor, monkeypatch):
+    """Regresión hermana de test_status_does_not_publish_health: esto es SOLO LAN."""
+    leaked = []
+    supervisor.health.on_snapshot(leaked.append)
+    monkeypatch.setattr(supervisor.cloud, "publish", lambda *a, **k: leaked.append(a))
+    for _ in range(10):
+        code, _ = _get(supervisor.local_api, "/api/waveform")
+        assert code == 200
+    assert leaked == []  # ni sondas ni publicaciones: el GET del guardia es pasivo
 
 
 def test_index_has_no_external_resources(supervisor):

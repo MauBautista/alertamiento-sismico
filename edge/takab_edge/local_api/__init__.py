@@ -35,6 +35,7 @@ import json
 import logging
 import threading
 import time
+import urllib.parse
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -74,6 +75,21 @@ _FALLBACK_HTML = (
 )
 
 
+def _waveform_params(query: str) -> tuple[int | None, list[str] | None, int | None]:
+    """Parámetros de /api/waveform (T-2.15): ilegales ⇒ defaults, jamás 400 al kiosco."""
+    params = urllib.parse.parse_qs(query)
+
+    def _int(name: str) -> int | None:
+        try:
+            return int(params[name][0])
+        except (KeyError, IndexError, ValueError):
+            return None
+
+    raw_channels = params.get("channels", [""])[0]
+    channels = [c for c in raw_channels.split(",") if c] or None
+    return _int("since"), channels, _int("max_points")
+
+
 def _load_index_html() -> str:
     try:
         return resources.files("takab_edge.local_api").joinpath("index.html").read_text("utf-8")
@@ -98,9 +114,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
-        if self.path in ("/", "/index.html"):
+        path, _, query = self.path.partition("?")
+        if path in ("/", "/index.html"):
             self._send(200, dashboard.index_html, "text/html; charset=utf-8")
-        elif self.path == "/api/status":
+        elif path == "/api/status":
             # El GET del guardia no puede reventar por un módulo caído: status()
             # ya es defensivo por sección; esto es el último cinturón.
             try:
@@ -108,6 +125,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001 — panel no-crítico, jamás traceback al socket
                 log.exception("status() del panel LAN falló")
                 self._send(500, json.dumps({"error": "status"}))
+        elif path == "/api/waveform":
+            # T-2.15: lectura abierta como /api/status (es el panel del guardia).
+            # waveform() es defensivo de punta a punta: signal roto ⇒ 200 degradado.
+            self._send(200, json.dumps(dashboard.waveform(*_waveform_params(query))))
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -285,6 +306,33 @@ class LocalDashboard(EdgeModule):
             "captured_at": snap.captured_at.isoformat(),
             "age_s": max(0.0, (now - snap.captured_at).total_seconds()),
         }
+
+    def waveform(
+        self,
+        since: int | None,
+        channels: list[str] | None = None,
+        max_points: int | None = None,
+    ) -> dict:
+        """[T-2.15] Ventana incremental de forma de onda (§5.1). SOLO LAN.
+
+        Defensivo de punta a punta: sin módulo de señal, sin ring o con el ring
+        roto responde la forma degradada con 200 — el kiosco pinta "sin ondas",
+        jamás recibe un 500. Nada de esto publica ni sondea.
+        """
+        try:
+            ring = getattr(self._signal, "waveform", None)
+            if ring is None:
+                raise RuntimeError("módulo de señal sin ring de waveform")
+            return ring.serve(since, channels=channels, max_points=max_points)
+        except Exception:  # noqa: BLE001 — panel no-crítico
+            log.warning("panel LAN: waveform no disponible", exc_info=True)
+            return {
+                "cursor": since or 0,
+                "reset": True,
+                "sample_rate": None,
+                "decimation": 1,
+                "channels": {},
+            }
 
     def _thresholds_section(self) -> dict | None:
         """[T-2.16] Umbrales VIGENTES en el motor (T-1.71: se reemplazan en vivo).

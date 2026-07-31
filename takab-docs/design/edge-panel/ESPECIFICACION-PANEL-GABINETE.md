@@ -427,6 +427,9 @@ Cuatro cosas que el diseño tiene que respetar:
    bucket, no una serie. Es una envolvente y se dibuja como banda, no como línea. Se eligió sobre
    el submuestreo porque el submuestreo se salta el pico y dibuja un sismo **más chico del que
    fue**. Rotula el `sample_rate` efectivo y el factor cuando `decimation > 1` (§6.4).
+   *(Amend 2026-07-30, T-2.15: los pares llegan **APLANADOS** en `samples[]` —
+   `[min0, max0, min1, max1, …]`, longitud SIEMPRE par. Con `encoding: "raw"` la longitud es la
+   serie tal cual.)*
 2. **`gap_before: true` ⇒ segmento nuevo.** No unas dos tramos discontinuos con una línea recta:
    eso inventa movimiento que no ocurrió.
 3. **`reset: true` ⇒ tira el buffer del cliente y redibuja.** Pasa con una pestaña dormida o una
@@ -438,6 +441,12 @@ Cuatro cosas que el diseño tiene que respetar:
 
 A 1 Hz, un tick típico son ~50 muestras × 4 canales ≈ **2 KB**. El ring retiene **60 s a 100 sps
 por canal** — esa es toda la historia disponible, y es la ventana máxima que puedes ofrecer.
+
+*(Amend 2026-07-30, T-2.15 — **forma degradada**: con el módulo de señal caído o ausente el
+endpoint responde **200** con `{"cursor": <since|0>, "reset": true, "sample_rate": null,
+"decimation": 1, "channels": {}}` — jamás un 500 al kiosco. Parámetros ilegales caen a sus
+defaults, jamás 400. Un tick incremental sin muestras nuevas responde `channels: {}` con
+`reset: false`: el cliente simplemente no redibuja.)*
 
 ---
 
