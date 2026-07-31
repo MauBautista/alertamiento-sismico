@@ -543,6 +543,33 @@ def test_index_has_no_external_resources(supervisor):
     assert "countdown" not in html.lower()
 
 
+def test_status_relays_empty_when_gpio_stopped(supervisor):
+    """REGRESIÓN (journal 2026-07-30): GET durante el shutdown ⇒ 200, no 500.
+
+    Reproduce la ventana real: el server HTTP sigue sirviendo (hilos daemon)
+    cuando gpio ya ejecutó su `_on_stop`. `relays` degrada a [] — el panel pinta
+    S/D — y el resto del status sobrevive.
+    """
+    supervisor.gpio.stop()
+    code, body = _get(supervisor.local_api, "/api/status")
+    assert code == 200
+    payload = json.loads(body)
+    assert payload["relays"] == []
+    assert payload["gateway_id"] == supervisor.settings.gateway_id  # el resto vive
+
+
+def test_status_relays_degrade_when_gpio_broken(supervisor, monkeypatch):
+    """Último cinturón en el panel: si relay_states LANZA, la sección degrada a []."""
+
+    def _kaput():
+        raise RuntimeError("kaput")
+
+    monkeypatch.setattr(supervisor.gpio, "relay_states", _kaput)
+    code, body = _get(supervisor.local_api, "/api/status")
+    assert code == 200
+    assert json.loads(body)["relays"] == []
+
+
 # --- Fase 2.1 · T-2.23: panel rediseñado + estáticos + catálogo ----------------
 
 _DEMO_SCENES = (

@@ -2355,6 +2355,16 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > que iba a quedarse obsoleto, y un test que asertaba sobre una muestra al azar — los cuatro
 > presentaban como cierto algo que no habían medido.
 
+- **[x] `relay_states()` reventaba con KeyError si el panel preguntaba DURANTE el shutdown**
+  (PR #29). Pescado en el journal en el deploy de la Fase 2.1 (2026-07-30): `_on_stop` de gpio
+  vacía `_relays`/`_energized`, pero los hilos HTTP del panel son daemon y un kiosco con
+  keep-alive a 1 Hz puede colar un `status()` en esa ventana ⇒ `self._energized[channel]` sobre
+  el dict vaciado ⇒ 500 al kiosco. Doble fix: `relay_states()` itera el dict REAL bajo un solo
+  lock (módulo detenido ⇒ **lista vacía** — los dispositivos están cerrados y su estado ya no se
+  mide; inventar 5 filas sería peor, regla de oro 7) y el panel gana `_relays_section()`
+  defensiva — `relays` era la ÚNICA pieza de `status()` sin cinturón. 3 tests de regresión
+  (incluida la reproducción exacta: gpio detenido + GET por HTTP ⇒ 200 con `relays: []`).
+
 - **[x] El hilo de reconexión a la nube MORÍA por desborde del backoff** (`737dd73`, PR #8).
   Tras ~1024 intentos (17 h sin WAN) el cálculo del backoff desbordaba y el hilo `cloud-reconnect`
   moría: el gabinete quedaba **sin publicar EN SILENCIO** — 41 h, 3 300 mensajes en el spool

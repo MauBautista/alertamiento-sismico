@@ -435,3 +435,19 @@ def test_modo_prueba_no_altera_el_reflejo(gpio):
     gpio.simulate_sasmex(active=True)
     assert gpio.siren_sounding is True  # protección local intacta
     assert gpio.sasmex_active is True
+
+
+def test_relay_states_tras_stop_queda_vacio_sin_keyerror(gpio):
+    """REGRESIÓN (journal 2026-07-30): un GET del panel DURANTE el shutdown reventaba.
+
+    `_on_stop` vacía `_relays`/`_energized`, pero los hilos HTTP del panel son
+    daemon y pueden servir un `status()` en esa ventana: `relay_states()` hacía
+    `self._energized[channel]` sobre el dict vaciado ⇒ KeyError ⇒ 500 al kiosco.
+    Tras el stop la respuesta honesta es VACÍO — los dispositivos están cerrados
+    y su estado eléctrico ya no se mide; inventar 5 filas sería peor (regla 7).
+    """
+    assert len(gpio.relay_states()) == len(LOCAL_RELAY_CHANNELS)  # vivo: 5 relés
+    gpio.stop()
+    assert gpio.relay_states() == []  # detenido: vacío, JAMÁS un KeyError
+    gpio.stop()  # doble stop sigue siendo inocuo
+    assert gpio.relay_states() == []
