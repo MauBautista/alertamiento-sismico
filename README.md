@@ -4,9 +4,12 @@ Plataforma SaaS multi-tenant de **alertamiento sísmico, monitoreo estructural y
 operativa post-sismo** (edge + cloud). Ver `CLAUDE.md` para el contexto maestro y
 `takab-docs/BLUEPRINT-TECNICO-TAKAB.md` para la arquitectura completa.
 
-El sistema está **en operación**: un gabinete real publicando a la nube, con consola web y app
-móvil. El backlog vivo y el estado por tarea están en `takab-docs/TASKS.md`; este README solo
-explica cómo moverse por el repo.
+El sistema está **en operación**: un gabinete real publicando a la nube, con consola web, app
+móvil y un **panel LAN del inmueble** que se sirve desde el propio gabinete sin internet —
+sismograma en vivo de los 4 canales, mapa esquemático offline (geografía Natural Earth
+empaquetada), estadística de sacudida y catálogo SSN provisionado (Fase 2.1). El backlog vivo
+y el estado por tarea están en `takab-docs/TASKS.md`; este README solo explica cómo moverse
+por el repo.
 
 > **Este archivo no lleva cifras de estado a propósito** (tests que pasan, migraciones aplicadas,
 > qué commit está desplegado). Un número escrito a mano se queda obsoleto en silencio y acaba
@@ -17,7 +20,7 @@ explica cómo moverse por el repo.
 
 | Directorio | Qué es |
 |---|---|
-| `edge/` | software del gabinete (Python 3.12 · `uv`): SeedLink, señal, reglas, GPIO, actuadores, nube, panel LAN |
+| `edge/` | software del gabinete (Python 3.12 · `uv`): SeedLink, señal (ring de onda + agregador), reglas, GPIO, actuadores, nube, panel LAN (ondas/mapa/estadística, un solo archivo) |
 | `api/` | backend cloud — FastAPI + REST/WS, ingesta SQS, motor de incidentes |
 | `web/` | consola SOC — React 18 + TypeScript + Vite |
 | `mobile/` | app móvil (Expo / React Native): ocupante y brigadista |
@@ -56,6 +59,11 @@ Verificar la API: `curl localhost:8000/health` → `{"status":"ok","build":"<com
 
 `make test` crea sola la base `takab_test`: la suite de api **exige** una base sin la semilla de
 desarrollo, o produce fallos falsos por choque de tenants.
+
+El panel LAN del gabinete corre con `make edge` en `http://localhost:8080` — acepta
+`?demo=<escena>` para forzar sus 10 estados (reposo, alerta, sin_senal, arranque_frio…) y
+`?mode=muro|consola|campo` para las 3 densidades. La checklist de verificación visual vive en
+`takab-docs/design/edge-panel/VERIFICACION-T-2-23.md`.
 
 Operación de la nube (requieren sesión AWS: `aws sso login --profile takab-dev`):
 
