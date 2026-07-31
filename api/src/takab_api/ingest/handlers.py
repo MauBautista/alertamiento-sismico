@@ -326,8 +326,8 @@ def handle_local_event(
 _HEALTH_SQL = """
 INSERT INTO device_health
   (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
-   cpu_temp_c, power_status, battery_pct, cert_days_remaining)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+   cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
@@ -365,7 +365,9 @@ def handle_health_snapshot(
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
     persisten como NULL — la flota pinta S/D, no un invento. Sin columna
     destino: packet_loss_pct, relays, disk_used_pct (T-1.53, consumo local del
-    panel LAN). Sin fuente edge: battery_min_left.
+    panel LAN). `ups_runtime_s` (T-2.22, segundos) aterriza en
+    `battery_min_left` (minutos): la columna existía desde el schema inicial y
+    era SIEMPRE NULL porque el edge no mandaba la fuente.
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "health_snapshot")) is not None:
         return rej
@@ -374,6 +376,13 @@ def handle_health_snapshot(
     except ValueError as exc:
         return reject(f"health_snapshot: captured_at inválido ({exc})")
     ntp_s = payload.get("ntp_offset_s")
+    # T-2.22: contrato ADITIVO — payloads 1.6.0 sin la clave ⇒ NULL, como siempre.
+    # bool es subclase de int: un `true` manipulado NO se convierte en "0 min".
+    runtime_s = payload.get("ups_runtime_s")
+    if isinstance(runtime_s, bool) or not isinstance(runtime_s, (int, float)):
+        battery_min_left = None
+    else:
+        battery_min_left = int(round(runtime_s / 60.0))
     is_hb = payload.get("transition_reason", "heartbeat") == "heartbeat"
     reason = "heartbeat" if is_hb else "transition"
     conn.execute(
@@ -390,6 +399,7 @@ def handle_health_snapshot(
             payload.get("ups_status"),
             payload.get("battery_pct"),
             payload.get("cert_days_remaining"),
+            battery_min_left,
         ),
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se

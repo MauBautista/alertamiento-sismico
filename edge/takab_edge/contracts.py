@@ -259,6 +259,11 @@ class HealthSnapshot(BaseModel):
     mqtt_rtt_ms: float | None = None
     ups_status: UpsStatus = UpsStatus.UNKNOWN
     battery_pct: float | None = None
+    # [T-2.22] Autonomía restante del UPS en SEGUNDOS (P-8). Ya se medía en
+    # `UpsReading.runtime_s` y el snapshot la perdía. ADITIVO (schema 1.7.0):
+    # None = «sin dato» (UPS ausente o sin reportarla) ⇒ S/D, jamás un número
+    # optimista. La nube la persiste en `device_health.battery_min_left` (min).
+    ups_runtime_s: float | None = None
     temperature_c: float = 0.0
     cert_days_remaining: int | None = None
     # [T-1.53] % de disco usado (shutil.disk_usage) — None = sin dato (regla de

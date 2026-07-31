@@ -107,6 +107,19 @@ def test_snapshot_composes_from_probes_and_seedlink(settings):
     assert snap.packet_loss_pct == pytest.approx(0.5)  # 5 / (995 + 5) * 100
 
 
+def test_snapshot_carries_ups_runtime(settings):
+    """[T-2.22] La autonomía que el UPS ya reportaba deja de perderse en el snapshot."""
+    probes = _FakeProbes(ups=UpsReading(UpsStatus.BATTERY, 55.0, 4500.0))
+    snap = HealthMonitor(settings, probes=probes).snapshot("test")
+    assert snap.ups_runtime_s == 4500.0
+
+
+def test_snapshot_ups_absent_runtime_is_null(settings):
+    """UPS ausente o sin reportar autonomía ⇒ None («sin dato»), jamás un optimismo."""
+    snap = HealthMonitor(settings, probes=_FakeProbes(ups=UpsReading())).snapshot()
+    assert snap.ups_runtime_s is None
+
+
 def test_snapshot_without_sources_is_honestly_none(settings):
     """Sin UPS/NTP/cert/cloud: los campos son None («sin dato»), no inventos (T-1.40)."""
 

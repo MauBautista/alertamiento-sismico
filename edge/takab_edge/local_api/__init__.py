@@ -278,6 +278,7 @@ class LocalDashboard(EdgeModule):
             "mqtt_rtt_ms": snap.mqtt_rtt_ms,
             "ups_status": snap.ups_status.value,
             "battery_pct": snap.battery_pct,
+            "ups_runtime_s": snap.ups_runtime_s,
             "temperature_c": snap.temperature_c,
             "cert_days_remaining": snap.cert_days_remaining,
             "disk_used_pct": snap.disk_used_pct,
