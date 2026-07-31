@@ -65,6 +65,7 @@ class CommandDispatcher(EdgeModule):
         acks_topic: str = "takab/acks",
         health=None,
         drill=None,
+        catalog=None,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -73,6 +74,8 @@ class CommandDispatcher(EdgeModule):
         self._actuators = actuators
         self._cloud = cloud
         self._acks_topic = acks_topic
+        # [T-2.24] Store del catálogo SSN (feed firmado nube→edge, opcional).
+        self._catalog = catalog
         # [T-1.59] Solo para adjuntar la salud CACHEADA al ack del self_test —
         # jamás se ejecutan sondas desde aquí (lección del panel local).
         self._health = health
@@ -244,6 +247,42 @@ class CommandDispatcher(EdgeModule):
             action.value,
             detail or "ok",
         )
+
+    # -------------------------------------------------------------- catálogo
+
+    def on_catalog(self, _topic: str, raw: bytes) -> None:
+        """[T-2.24] Callback de ``takab/catalog/<thing>``. JAMÁS lanza (hilo del broker)."""
+        try:
+            self._handle_catalog(raw)
+        except Exception:  # noqa: BLE001 — un catálogo hostil nunca tira el enlace
+            log.exception("catálogo: error inesperado procesando el mensaje")
+
+    def _handle_catalog(self, raw: bytes) -> None:
+        if self._catalog is None:
+            log.warning("catálogo descartado: sin store cableado")
+            return
+        envelope = self._parse(raw)
+        if envelope is None:
+            return
+        version = envelope.get("version")
+        signature = envelope.get("sig")
+        payload = envelope.get("payload")
+        if not (
+            isinstance(version, int) and isinstance(signature, str) and isinstance(payload, dict)
+        ):
+            log.warning("catálogo descartado: envelope incompleto")
+            return
+        from takab_edge.catalog import CatalogError
+
+        try:
+            applied = self._catalog.apply_signed_update(
+                canonical_payload(payload), signature, version
+            )
+        except CatalogError as exc:
+            # Firma mala / versión no fresca / payload inválido: NO se aplica.
+            log.warning("catálogo v%s rechazado: %s", version, exc)
+            return
+        log.info("catálogo SSN sincronizado: v%d", applied)
 
     # --------------------------------------------------------------- config
 

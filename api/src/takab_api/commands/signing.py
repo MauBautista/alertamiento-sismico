@@ -47,3 +47,8 @@ def sign_command(key: bytes, payload: bytes, nonce: str, ts_iso: str) -> str:
 def sign_config(key: bytes, payload: bytes, version: int) -> str:
     """Firma de una config atada a su VERSIÓN (dominio separado, anti-relabeleo)."""
     return _hmac(key, b"config", str(version).encode(), payload)
+
+
+def sign_catalog(key: bytes, payload: bytes, version: int) -> str:
+    """[T-2.24] Firma del catálogo SSN atada a su VERSIÓN (dominio propio)."""
+    return _hmac(key, b"catalog", str(version).encode(), payload)

@@ -193,6 +193,11 @@ class EdgeSettings(BaseSettings):
         """Topic de config firmada nube→edge (T-1.23)."""
         return f"takab/cfg/{self.thing_name}"
 
+    @property
+    def catalog_topic(self) -> str:
+        """Topic del catálogo SSN firmado nube→edge (T-2.24)."""
+        return f"takab/catalog/{self.thing_name}"
+
     # --- backfill por S3 (T-1.25; regla FASE-0 capa 4) ---
     #: Umbral de la ruta S3: spool con MÁS de esto (s) de datos → S3; si no, MQTT.
     backfill_threshold_s: float = Field(default=900.0, gt=0)  # 15 min

@@ -12,7 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from takab_api.commands.signing import canonical_payload, sign_command, sign_config
+from takab_api.commands.signing import (
+    canonical_payload,
+    sign_catalog,
+    sign_command,
+    sign_config,
+)
 
 VECTORS_PATH = Path(__file__).resolve().parents[3] / "shared/schemas/tests/hmac_vectors.json"
 VECTORS = json.loads(VECTORS_PATH.read_text())
@@ -43,3 +48,15 @@ def test_tampering_changes_signature() -> None:
     assert sign_command(KEY, body, case["nonce"] + "x", case["ts"]) != case["sig"]
     assert sign_command(KEY, body + b" ", case["nonce"], case["ts"]) != case["sig"]
     assert sign_command(b"otra-clave", body, case["nonce"], case["ts"]) != case["sig"]
+
+
+@pytest.mark.parametrize("case", VECTORS["catalog"], ids=lambda c: c["name"])
+def test_catalog_vectors(case: dict) -> None:
+    """[T-2.24] La firma del catálogo reproduce los vectores del edge byte a byte."""
+    body = bytes.fromhex(case["payload_canonical_hex"])
+    assert sign_catalog(KEY, body, case["version"]) == case["sig"]
+
+
+@pytest.mark.parametrize("case", VECTORS["catalog"], ids=lambda c: c["name"])
+def test_catalog_canonicalization(case: dict) -> None:
+    assert canonical_payload(case["payload"]).hex() == case["payload_canonical_hex"]

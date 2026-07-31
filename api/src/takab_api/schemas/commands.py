@@ -87,3 +87,20 @@ class CommandList(BaseModel):
     """Comandos recientes de un sitio (más reciente primero)."""
 
     items: list[CommandOut]
+
+
+class CatalogPushIn(BaseModel):
+    """[T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.
+
+    El cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/
+    eventos[m,fecha,hora,lat,lon,prof,loc]/referencias`): el mismo archivo que
+    instala `provision_gateway.sh --catalog`. El edge re-valida fail-closed.
+    """
+
+    catalog: dict = Field(description="instantánea SSN, formato del entregable")
+
+
+class CatalogPushOut(BaseModel):
+    gateway_id: str
+    version: int
+    topic: str

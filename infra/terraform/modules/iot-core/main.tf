@@ -73,6 +73,7 @@ resource "aws_iot_policy" "fleet" {
         Resource = [
           "${local.iot_arn}:topicfilter/takab/cmd/${local.thing_name}",
           "${local.iot_arn}:topicfilter/takab/cfg/${local.thing_name}",
+          "${local.iot_arn}:topicfilter/takab/catalog/${local.thing_name}",
           "${local.iot_arn}:topicfilter/takab/backfill/grant/${local.thing_name}",
         ]
       },
@@ -82,6 +83,7 @@ resource "aws_iot_policy" "fleet" {
         Resource = [
           "${local.iot_arn}:topic/takab/cmd/${local.thing_name}",
           "${local.iot_arn}:topic/takab/cfg/${local.thing_name}",
+          "${local.iot_arn}:topic/takab/catalog/${local.thing_name}",
           "${local.iot_arn}:topic/takab/backfill/grant/${local.thing_name}",
         ]
       },

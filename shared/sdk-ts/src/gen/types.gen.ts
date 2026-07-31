@@ -63,6 +63,28 @@ export type CatalogEarthquakeOut = {
 };
 
 /**
+ * [T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.
+ *
+ * El cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/
+ * eventos[m,fecha,hora,lat,lon,prof,loc]/referencias`): el mismo archivo que
+ * instala `provision_gateway.sh --catalog`. El edge re-valida fail-closed.
+ */
+export type CatalogPushIn = {
+    /**
+     * instantánea SSN, formato del entregable
+     */
+    catalog: {
+        [key: string]: unknown;
+    };
+};
+
+export type CatalogPushOut = {
+    gateway_id: string;
+    topic: string;
+    version: number;
+};
+
+/**
  * Una traza por canal SEED del RS4D: ``EHZ`` (geófono) o ``EN[ZNE]`` (acelerómetro).
  */
 export type ChannelSeries = {
@@ -1814,6 +1836,33 @@ export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses = {
 };
 
 export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponse = RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses[keyof RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses];
+
+export type PushCatalogGatewaysGatewayIdCatalogPostData = {
+    body: CatalogPushIn;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/gateways/{gateway_id}/catalog';
+};
+
+export type PushCatalogGatewaysGatewayIdCatalogPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PushCatalogGatewaysGatewayIdCatalogPostError = PushCatalogGatewaysGatewayIdCatalogPostErrors[keyof PushCatalogGatewaysGatewayIdCatalogPostErrors];
+
+export type PushCatalogGatewaysGatewayIdCatalogPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CatalogPushOut;
+};
+
+export type PushCatalogGatewaysGatewayIdCatalogPostResponse = PushCatalogGatewaysGatewayIdCatalogPostResponses[keyof PushCatalogGatewaysGatewayIdCatalogPostResponses];
 
 export type HealthHealthGetData = {
     body?: never;

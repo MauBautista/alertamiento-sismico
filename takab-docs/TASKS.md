@@ -2810,13 +2810,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   `support.js` del entregable queda como referencia (cargaba React de unpkg — descalificado).
   7 tests nuevos + extensión del de recursos. Suite edge: **430**.
 
-### [ ] T-2.24 · Feed del catálogo SSN nube→edge, firmado — FUTURA (acordada 2026-07-30)
-- **Componente:** edge + api · **Depende de:** T-2.23
+### [x] T-2.24 · Feed del catálogo SSN nube→edge, firmado — COMPLETA (2026-07-31)
+- **Componente:** edge + api + infra · **Depende de:** T-2.23
 - **Qué es:** hoy el catálogo del panel es una **instantánea provisionada a mano**
   (`provision_gateway.sh --catalog`; fecha de captura visible — decisión de alcance de la
-  Fase 2.1). Esta tarea lo convierte en un feed **firmado** nube→edge por el canal de config
-  (mismo mecanismo HMAC de `takab/cfg/<thing>`), con actualización periódica desde la nube y
+  Fase 2.1). Esta tarea lo convierte en un feed **firmado** nube→edge con el mismo mecanismo
+  HMAC de la config (dominio propio `b"catalog"`, topic propio `takab/catalog/<thing>`), con
   degradación al último snapshot conocido. El gabinete JAMÁS scrapea al SSN directo: no tiene
   salida a internet y el SSN no es fuente de alertamiento.
-- **Criterios (borrador):** archivo atómico (tmp+replace) · verificación de firma fail-closed ·
-  `captured_at` siempre visible · sin cambio de contrato en `GET /api/catalog`.
+- **Criterios:**
+  - [x] Archivo atómico (tmp+`os.replace`, 0644) y hot-swap en memoria.
+  - [x] Verificación de firma fail-closed (sin verificador se rechaza; firma cubre
+        payload+versión; versión monótona anti-replay que **SOBREVIVE reinicios** — viaja en
+        el propio archivo como `feed_version`; el archivo provisionado a mano es v0).
+  - [x] `captured_at` siempre visible · **sin cambio de contrato en `GET /api/catalog`**.
+  - [x] Nube: `POST /gateways/{id}/catalog` (interno-only `takab_superadmin`/`takab_support`,
+        auditado `catalog_published`), firma con la clave POR-GATEWAY (sin clave ⇒ 503
+        fail-closed), versión monótona en `gateway_catalog_state` (0021; FK `ON DELETE
+        CASCADE`), y un publish fallido NO quema versión. La periodicidad es una llamada
+        programada al endpoint (ajuste sobre el borrador: push bajo demanda, no worker).
+- **Cierre (2026-07-31):** dominio HMAC `catalog` anclado en los **vectores compartidos**
+  (`hmac_vectors.json` regenerado con el SecurityManager real; ambos lados truenan ante
+  drift). Edge: `takab_edge/catalog.py` (`CatalogStore`, espejo de la doctrina de
+  `SiteLocationCache`), sobre por `dispatch.on_catalog` (kind `catalog_update`), suscripción
+  en supervisor. **Terraform: `takab/catalog/<thing>` añadido a Subscribe/Receive de la
+  política de flota — APLICAR ANTES de desplegar el edge** (la trampa de fase 1.8 al revés:
+  una suscripción no autorizada tumba el enlace). Trampas de la ejecución: los roles
+  canónicos internos son `takab_superadmin`/`takab_support` (el nombre corto pasa el guard
+  propio pero el RLS interno dice no); un UUID de fixture que colisiona con el de otro
+  módulo + `ON CONFLICT DO NOTHING` hereda EN SILENCIO el `iot_thing` ajeno. Tests: edge 12
+  (store+E2E sobre HTTP) · api 7 (endpoint) · vectores ×2 lados. Suites: edge 446 · api 914.
