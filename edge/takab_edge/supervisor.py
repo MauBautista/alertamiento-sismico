@@ -273,6 +273,7 @@ class EdgeSupervisor:
         feature = self.signal.process(packet)
         decision = self.rules.evaluate_features(feature)
         self._act_and_publish(decision, feature)
+        self._observe_shake(decision)
         try:
             self.buffer.append(packet)
         except OSError:
@@ -292,6 +293,18 @@ class EdgeSupervisor:
             # T-1.56: la escalación por SASMEX no pasa por _on_packet — drenar el
             # acumulado YA para que el contexto pre-evento llegue antes que el 1 Hz.
             self.telemetry.notify_tier(decision.tier)
+            self._observe_shake(decision)
+
+    def _observe_shake(self, decision: TierDecision) -> None:
+        """[T-2.19] Observador del agregado del panel: best-effort, DESPUÉS de actuar.
+
+        Vive aquí y no dentro de `RuleEngine` (módulo crítico intocable) ni antes
+        de `_act_and_publish`: contar eventos jamás compite con la actuación.
+        """
+        try:
+            self.signal.aggregate.observe_decision(decision)
+        except Exception:  # noqa: BLE001 — el conteo del panel nunca tumba el pipeline
+            log.warning("agregador de sacudida no disponible (aislado)", exc_info=True)
 
     def _act_and_publish(self, decision: TierDecision, feature: Feature1s | None) -> None:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:

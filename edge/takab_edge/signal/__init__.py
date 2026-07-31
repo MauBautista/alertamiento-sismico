@@ -28,6 +28,7 @@ from scipy.integrate import cumulative_trapezoid
 from takab_edge.config import SignalConfig
 from takab_edge.contracts import Feature1s, WaveformPacket, utcnow
 from takab_edge.module import EdgeModule
+from takab_edge.signal.aggregate import ShakeAggregator
 from takab_edge.signal.waveform import WaveformRing
 
 log = logging.getLogger("takab_edge.signal")
@@ -163,6 +164,10 @@ class FeatureExtractor(EdgeModule):
         # (sin decodificar dos veces, sin hilo nuevo). Su fallo JAMÁS toca el
         # camino de features: process() lo alimenta dentro de un try/except.
         self.waveform = WaveformRing()
+        # [T-2.19] Agregado rodante de sacudida (RAM, solo panel): mismo régimen
+        # de aislamiento que el ring. Las transiciones de tier las observa el
+        # SUPERVISOR (observe_decision), nunca RuleEngine — crítico intocable.
+        self.aggregate = ShakeAggregator()
         self._context: dict[str, np.ndarray] = {}
         self._last: Feature1s | None = None
         # [T-1.53] Última feature POR CANAL + hora de RECEPCIÓN (reloj de pared
@@ -193,8 +198,9 @@ class FeatureExtractor(EdgeModule):
             self._by_channel[packet.channel] = (feature, utcnow())
         try:
             self.waveform.append(packet)
-        except Exception:  # noqa: BLE001 — el camino de features JAMÁS muere por el ring
-            log.warning("waveform ring: append falló (aislado)", exc_info=True)
+            self.aggregate.observe_feature(feature, self.config.accel_sensitivity_ms2_per_count)
+        except Exception:  # noqa: BLE001 — el camino de features JAMÁS muere por los extras
+            log.warning("extras del panel (ring/agregador) fallaron (aislado)", exc_info=True)
         return feature
 
     def _update_context(self, packet: WaveformPacket) -> None:
