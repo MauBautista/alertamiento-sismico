@@ -9,10 +9,14 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-**Estado actual (2026-07-30): Fase 2.1 · `T-2.15`…`T-2.23` COMPLETA en código** (6 PRs apilados
-#22→#27, CI verde; pendiente el merge en orden y el smoke en el Pi real — checklist en
-`takab-docs/design/edge-panel/VERIFICACION-T-2-23.md`). La fase habilitó los datos que el
-gabinete medía y no publicaba, y reescribió el panel local del inmueble contra ellos.
+**Estado actual (2026-07-30): Fase 2.1 · `T-2.15`…`T-2.23` COMPLETA, MERGEADA Y DESPLEGADA.**
+Los 6 PRs (#22→#27) mergeados en orden a `main` (=`06aa360`, CI verde) y desplegados al Pi con
+smoke remoto en verde: las secciones nuevas viven en el gabinete real (4 canales en el ring,
+ubicación provisionada, catálogo SSN instalado, fuentes servidas) y `calibration_source` quedó
+DECLARADA en el edge.env (las sensibilidades medidas de T-1.41 por fin se reportan
+`calibrated: true`). **Queda la verificación VISUAL presencial** del checklist
+(`takab-docs/design/edge-panel/VERIFICACION-T-2-23.md`): render de canvas, kiosco 10 min,
+modo MURO en el monitor, y las pruebas audibles/WR-1 — eso es con ojos y manos en el sitio.
 **9 de 9 tareas en verde.**
 
 Todo lo anterior está construido y mergeado a `main`: Bloques A/B/C/D (T-1.1…T-1.30) + Fases 1.5,
