@@ -313,6 +313,137 @@ def test_events_merge_transitions_and_lan_actions(supervisor):
     assert ats == sorted(ats, reverse=True)
 
 
+# --- Fase 2.1 · T-2.16/17/18/21: exponer la memoria viva en /api/status --------
+# Contrato CONGELADO en la §5.1 de la spec de diseño del panel: claves, unidades
+# y semántica de null. Toda sección nueva es defensiva (roto ⇒ null, GET 200).
+
+
+class _RotoAttr:
+    """Descriptor de DATOS (get+set): rompe atributos de instancia, no solo properties."""
+
+    def __get__(self, *_):
+        raise RuntimeError("kaput")
+
+    def __set__(self, *_):
+        raise RuntimeError("kaput")
+
+
+def _panel_minimo(supervisor):
+    """Panel SIN seedlink/config/signal cableados (instalación parcial)."""
+    from takab_edge.local_api import LocalDashboard
+
+    return LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health)
+
+
+def test_status_exposes_live_thresholds_and_config_version(supervisor):
+    status = supervisor.local_api.status()
+    band = supervisor.settings.thresholds
+    assert status["thresholds"] == {
+        "pga_watch_g": band.pga_watch_g,
+        "pga_trip_g": band.pga_trip_g,
+        "pgv_watch_cms": band.pgv_watch_cms,
+        "pgv_trip_cms": band.pgv_trip_cms,
+    }
+    assert status["config_version"] == 0  # jamás sincronizada: corre sus defaults
+
+
+def test_thresholds_reflect_signed_update(supervisor):
+    """T-1.71: el panel pinta los umbrales VIGENTES en el motor, no los estáticos."""
+    updated = supervisor.settings.model_copy(deep=True)
+    updated.thresholds.pga_trip_g = 0.123
+    raw = updated.model_dump_json().encode()
+    signature = supervisor.security.sign_config(raw, 7)
+    supervisor.config.apply_signed_update(raw, signature, 7)
+    status = supervisor.local_api.status()
+    assert status["thresholds"]["pga_trip_g"] == 0.123
+    assert status["config_version"] == 7
+
+
+def test_thresholds_null_when_rules_broken(supervisor, monkeypatch):
+    # raising=False: `thresholds` vive en la instancia; el descriptor de DATOS en
+    # la clase lo eclipsa (los data descriptors ganan al __dict__ de la instancia).
+    monkeypatch.setattr(type(supervisor.rules), "thresholds", _RotoAttr(), raising=False)
+    code, body = _get(supervisor.local_api, "/api/status")
+    assert code == 200
+    assert json.loads(body)["thresholds"] is None
+
+
+def test_latencies_budgets_declared_and_null_before_measurement(supervisor):
+    """Sin medición ⇒ null (S/D). JAMÁS un 0.0 fabricado que se lea 'instantáneo'."""
+    assert supervisor.local_api.status()["latencies"] == {
+        "reflex_s": None,
+        "reflex_budget_s": 0.100,
+        "rules_s": None,
+        "rules_budget_s": 0.200,
+    }
+
+
+def test_latencies_after_measurement(supervisor):
+    from takab_edge.contracts import WaveformPacket, utcnow
+
+    supervisor.gpio.simulate_sasmex(active=True)  # mide el reflejo SASMEX→relé
+    supervisor.seedlink.feed(  # mide la evaluación del motor de reglas
+        WaveformPacket(station="R4F74", channel="ENZ", starttime=utcnow(), samples=[0, 5] * 50)
+    )
+    latencies = supervisor.local_api.status()["latencies"]
+    assert latencies["reflex_s"] is not None and latencies["reflex_s"] > 0.0
+    assert latencies["rules_s"] is not None and latencies["rules_s"] > 0.0
+    assert latencies["reflex_budget_s"] == 0.100  # los presupuestos no cambian
+
+
+def test_seedlink_counters_exposed_since_boot(supervisor):
+    from takab_edge.contracts import WaveformPacket, utcnow
+
+    supervisor.seedlink.feed(
+        WaveformPacket(station="R4F74", channel="EHZ", starttime=utcnow(), samples=[0, 1] * 50)
+    )
+    section = supervisor.local_api.status()["seedlink"]
+    assert set(section) == {"packets_seen", "reconnects", "duplicates", "gaps"}
+    assert section["packets_seen"] >= 1  # acumulado DESDE EL ARRANQUE
+    assert all(isinstance(v, int) and v >= 0 for v in section.values())
+
+
+def test_seedlink_section_null_without_client(supervisor):
+    assert _panel_minimo(supervisor).status()["seedlink"] is None
+
+
+def test_calibration_default_deny(supervisor):
+    """Sin procedencia declarada NUNCA se reporta calibrado (espejo de la nube)."""
+    calibration = supervisor.local_api.status()["calibration"]
+    assert calibration["calibrated"] is False  # defaults placeholder ⇒ SIN CALIBRAR
+    assert calibration["source"] is None
+    assert calibration["vel_sensitivity_ms_per_count"] == pytest.approx(1.0e-9)
+    assert calibration["accel_sensitivity_ms2_per_count"] == pytest.approx(1.0e-6)
+    # Procedencia de puro espacio en blanco tampoco cuenta (default-deny estricto).
+    supervisor.signal.config = supervisor.signal.config.model_copy(
+        update={"calibration_source": "   "}
+    )
+    assert supervisor.local_api.status()["calibration"]["calibrated"] is False
+    # Panel sin módulo de señal: la sección NUNCA es null — degrada a no-calibrado.
+    degraded = _panel_minimo(supervisor).status()["calibration"]
+    assert degraded == {
+        "calibrated": False,
+        "source": None,
+        "vel_sensitivity_ms_per_count": None,
+        "accel_sensitivity_ms2_per_count": None,
+    }
+
+
+def test_calibration_with_source_is_true(supervisor):
+    supervisor.signal.config = supervisor.signal.config.model_copy(
+        update={
+            "calibration_source": "StationXML FDSN AM.R4F74 2026-07-09",
+            "vel_sensitivity_ms_per_count": 2.5021894e-9,
+            "accel_sensitivity_ms2_per_count": 2.6007802e-6,
+        }
+    )
+    calibration = supervisor.local_api.status()["calibration"]
+    assert calibration["calibrated"] is True
+    assert calibration["source"] == "StationXML FDSN AM.R4F74 2026-07-09"
+    assert calibration["vel_sensitivity_ms_per_count"] == pytest.approx(2.5021894e-9)
+    assert calibration["accel_sensitivity_ms2_per_count"] == pytest.approx(2.6007802e-6)
+
+
 def test_index_has_no_external_resources(supervisor):
     """La LAN no tiene internet: el HTML no puede referenciar NADA externo."""
     code, body = _get(supervisor.local_api, "/")

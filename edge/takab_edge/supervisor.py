@@ -216,6 +216,10 @@ class EdgeSupervisor:
             # T-1.53: mini-consola — PGA vivo, enlace a nube e identidad viva.
             signal=self.signal,
             cloud=self.cloud,
+            # Fase 2.1: contadores SeedLink (T-2.18) y umbrales/versión vigentes
+            # (T-2.16) — el panel lee la MEMORIA VIVA, jamás sondea ni publica.
+            seedlink=self.seedlink,
+            config=self.config,
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
