@@ -9,7 +9,7 @@
 
 Alcance pedido: recorrido exhaustivo de la consola (botones sin funcionalidad, funciones y
 cálculos faltantes), alta/baja de estaciones, envío de alerta, audio de simulacro/sismo por la
-salida del Pi 5, y auditoría de los 6 bloques de riesgo (vida, botones, E2E, seguridad,
+salida del Pi 4, y auditoría de los 6 bloques de riesgo (vida, botones, E2E, seguridad,
 operación, CI). Decisiones de alcance ratificadas: el audio se especifica como tarea (no se
 implementa); todo lo físico queda como gate; a la nube viva solo se le hicieron GETs.
 
@@ -498,13 +498,18 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
     pero deja a Protección Civil sin herramienta de SIMULACRO end-to-end (M-1).
 - `[ ]` **GATE-HW (en G-06/G-10):** sirena física + panel en el Pi real, presencial.
 
-### [x] F4 · Audio de simulacro y de sismo por la salida del Pi 5 cerebro
+### [x] F4 · Audio de simulacro y de sismo por la salida del Pi 4 cerebro
 - **Cómo verificar:** `grep -rniE "aplay|alsa|pyaudio|sounddevice|simpleaudio|playsound|\.wav|\.mp3|espeak|pyttsx" edge/`
 - **Resultado (al momento de la auditoría):** **FAIL — NO EXISTÍA → hallazgo A-6.** El grep
   devolvía exit=1 (cero hits reales en todo el repo). La "sirena" es SIEMPRE un relé seco
   (`ActuatorChannel.SIREN`, `contracts.py:54`; jamás por BACnet, `actuators/__init__.py:33-34`).
-  **Nota de hardware:** el Raspberry Pi 5 NO trae jack de 3.5 mm — la salida de audio requiere
-  HDMI, DAC USB o HAT I2S + amplificador + bocina, nada de lo cual está en el BOM.
+  ~~**Nota de hardware:** el Raspberry Pi 5 NO trae jack de 3.5 mm — la salida de audio requiere
+  HDMI, DAC USB o HAT I2S + amplificador + bocina, nada de lo cual está en el BOM.~~
+  > **ERRÓNEA (corregido 2026-07-30).** La nota era cierta de un Pi 5, pero **el cerebro es un
+  > Pi 4 Model B Rev 1.5**, y el Pi 4 **SÍ trae jack de 3.5 mm y funciona** — verificado en la
+  > unidad real en T-1.68 (`speaker-test` reprodujo tono; jack al 96%). No hacía falta DAC, HAT
+  > ni ampliar el BOM: **T-1.68 desplegó la sirena por audio a través de ese jack** y se validó en
+  > vivo. La conclusión de "hardware faltante" salía del modelo mal documentado, no del hardware.
 - **Remediación en SOFTWARE (2026-07-11):** nuevo módulo `edge/takab_edge/audio` —
   `AudioNotifier` (EdgeModule `critical=False`, `depends_on=("gpio",)`) con backend `aplay`
   real (subproceso, sin deps pesadas — regla de oro 4) y backend simulado para dev/tests.
