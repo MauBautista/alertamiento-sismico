@@ -188,6 +188,7 @@ class LocalDashboard(EdgeModule):
         cloud: object | None = None,
         seedlink: object | None = None,
         config: object | None = None,
+        location: object | None = None,
         gateway_id: str = "",
         site_name: str = "",
         refresh_ms: int = 1000,
@@ -202,6 +203,7 @@ class LocalDashboard(EdgeModule):
         self._cloud = cloud
         self._seedlink = seedlink
         self._config = config
+        self._location = location
         self._audio = audio
         self._drill = drill
         self._gateway_id = gateway_id
@@ -402,6 +404,19 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: contadores SeedLink no disponibles", exc_info=True)
             return None
 
+    def _site_location(self) -> dict:
+        """[T-2.20] Ubicación viva del sitio. `null` ⇒ SIN UBICACIÓN PROVISIONADA.
+
+        Jamás un punto inventado ni un centro por defecto: un mapa centrado en
+        el Zócalo cuando el gabinete está en Puebla es peor que no tener mapa.
+        """
+        empty = {"site_lat": None, "site_lon": None, "neighbors": []}
+        try:
+            return empty if self._location is None else self._location.current()
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: ubicación no disponible", exc_info=True)
+            return empty
+
     def _shake_history_section(self) -> dict | None:
         """[T-2.19] Agregado rodante de sacudida (RAM, rotulado DESDE EL ARRANQUE)."""
         try:
@@ -482,6 +497,7 @@ class LocalDashboard(EdgeModule):
     def status(self) -> dict:
         """Snapshot para la mini-consola LAN (los 4 estados los rotula la UI)."""
         now = utcnow()
+        site = self._site_location()
         try:
             decision = self._rules.last_decision
             last_tier = decision.tier.value if decision else None
@@ -507,6 +523,9 @@ class LocalDashboard(EdgeModule):
             # Compat con el panel previo: hora del último dato de salud (o ahora).
             "captured_at": (health or {}).get("captured_at", now.isoformat()),
             # Fase 2.1 (contrato §5.1 de la spec del panel): memoria viva expuesta.
+            "site_lat": site["site_lat"],
+            "site_lon": site["site_lon"],
+            "neighbors": site["neighbors"],
             "config_version": self._config_version(),
             "thresholds": self._thresholds_section(),
             "latencies": self._latencies_section(),

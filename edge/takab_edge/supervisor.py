@@ -23,7 +23,7 @@ from takab_edge.audio import AudioNotifier
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
-from takab_edge.config import ConfigStore, EdgeSettings, load_settings
+from takab_edge.config import ConfigStore, EdgeSettings, SiteLocationCache, load_settings
 from takab_edge.contracts import (
     Feature1s,
     HealthSnapshot,
@@ -183,6 +183,11 @@ class EdgeSupervisor:
         # ventana, sin reconstruirse. El camino SASMEX es inmune (evaluate_sasmex
         # ignora umbrales) y la actuación local nunca depende de la nube.
         self.config.add_apply_listener(lambda cfg: self.rules.apply_thresholds(cfg.thresholds))
+        # T-2.20: ubicación del sitio con overlay solo-no-nulos («last known
+        # good») — un sync parcial jamás la anula; la caché estrecha sobrevive
+        # reinicios sin WAN. No es EdgeModule: objeto plano sin ciclo de vida.
+        self.location = SiteLocationCache(s)
+        self.config.add_apply_listener(self.location.on_config_applied)
         # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
         # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
         self.audio = AudioNotifier(s, gpio=self.gpio)
@@ -220,6 +225,7 @@ class EdgeSupervisor:
             # (T-2.16) — el panel lee la MEMORIA VIVA, jamás sondea ni publica.
             seedlink=self.seedlink,
             config=self.config,
+            location=self.location,  # T-2.20: lat/lon + vecinos (overlay vivo)
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
