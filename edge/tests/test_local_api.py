@@ -517,13 +517,157 @@ def test_waveform_does_not_publish_nor_probe(supervisor, monkeypatch):
 
 
 def test_index_has_no_external_resources(supervisor):
-    """La LAN no tiene internet: el HTML no puede referenciar NADA externo."""
+    """La LAN no tiene internet: el HTML no puede referenciar NADA externo.
+
+    [T-2.23] Extendido: tampoco almacenamiento del navegador ni canales vivos —
+    el PIN vive SOLO en memoria y el servidor de hilos no admite streams.
+    """
     code, body = _get(supervisor.local_api, "/")
     assert code == 200
     html = body.decode()
     assert "ALERTA S" in html and "PROTÉJASE" in html  # banner MVP intacto
-    for forbidden in ("googleapis", "cdn.", "https://", "http://"):
-        assert forbidden not in html, f"recurso externo en el panel: {forbidden}"
+    for forbidden in (
+        "googleapis",
+        "cdn.",
+        "https://",
+        "http://",
+        "localStorage",
+        "sessionStorage",
+        "indexedDB",
+        "new WebSocket",
+        "EventSource",
+    ):
+        assert forbidden not in html, f"recurso vetado en el panel: {forbidden}"
     # sin countdown ni magnitud preliminar (blueprint §14)
     assert "T-MINUS" not in html
     assert "countdown" not in html.lower()
+
+
+# --- Fase 2.1 · T-2.23: panel rediseñado + estáticos + catálogo ----------------
+
+_DEMO_SCENES = (
+    "reposo",
+    "vigilancia",
+    "alerta",
+    "simulacro",
+    "prueba_actuadores",
+    "wr1",
+    "sin_senal",
+    "sin_nube",
+    "arranque_frio",
+    "dato_retenido",
+)
+
+
+def test_index_declares_demo_scenes(supervisor):
+    """Las 10 escenas de §13.2 se pueden forzar con ?demo=<escena>."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for scene in _DEMO_SCENES:
+        assert f"{scene}:" in html or f"'{scene}'" in html or f'"{scene}"' in html, scene
+    assert "DEMO · NO ES ESTADO REAL" in html  # el modo demo se declara, jamás se disfraza
+
+
+def test_index_contains_frozen_contract_hooks(supervisor):
+    """Literales del contrato §5.1/§9 que el panel DEBE hablar tal cual."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    hooks = (
+        "SIN CALIBRAR",
+        "SIN UBICACIÓN PROVISIONADA",
+        "CATÁLOGO NO DISPONIBLE",
+        "DATO RETENIDO",
+        "DESDE EL ARRANQUE",
+        "ALERTA SÍSMICA · PROTÉJASE",
+        "gap_before",
+        "minmax",
+        "X-Takab-Pin",
+        # los cinco rótulos de tier, literales de §9.2
+        "✓ NORMAL · SIN ALERTA",
+        "▲ VIGILANCIA",
+        "■ ACCESO RESTRINGIDO",
+        "■ EVACUAR / RESGUARDO",
+        "⚠ MODO MANUAL — SENSORES DEGRADADOS",
+        "SIN PIN CONFIGURADO",
+        "PROTECCIÓN LOCAL ACTIVA",
+    )
+    for hook in hooks:
+        assert hook in html, hook
+
+
+def test_index_polls_single_chained_tick(supervisor):
+    """UN solo tick secuencial encadenado (hilos del Pi): cero bucles paralelos."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    assert html.count("setTimeout(tick") == 1
+    assert "setInterval" not in html
+
+
+def test_static_fonts_served_with_mime_and_cache(supervisor):
+    for path, mime in (("/fonts/geist.ttf", "font/ttf"), ("/fonts/jbmono.woff2", "font/woff2")):
+        with urllib.request.urlopen(_url(supervisor.local_api, path), timeout=5) as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"] == mime
+            assert "max-age=86400" in response.headers.get("Cache-Control", "")
+            assert len(response.read()) > 1000  # la fuente de verdad viaja, no un stub
+
+
+def test_static_unknown_path_is_404(supervisor):
+    for path in ("/fonts/otra.ttf", "/fonts/../__init__.py", "/fonts/", "/assets/x.svg"):
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(_url(supervisor.local_api, path), timeout=5)
+        assert exc.value.code == 404, path
+
+
+def test_catalog_endpoint_degrades_honestly(supervisor, tmp_path):
+    """Sin archivo ⇒ available:false y el panel rotula CATÁLOGO NO DISPONIBLE."""
+    code, body = _get(supervisor.local_api, "/api/catalog")
+    assert code == 200
+    payload = json.loads(body)
+    assert payload["available"] is False
+    assert payload["events"] == [] and payload["references"] == []
+    # Con la instantánea instalada (formato del entregable de diseño): se normaliza.
+    snapshot = {
+        "fuente": "Servicio Sismológico Nacional (SSN) · Instituto de Geofísica, UNAM",
+        "capturado": "2026-05-17T08:11:22-06:00",
+        "replicas_nota": "réplicas en curso",
+        "eventos": [
+            {
+                "m": 4.0,
+                "fecha": "2026-05-17",
+                "hora": "08:11:22",
+                "lat": 16.623,
+                "lon": -93.275,
+                "prof": 214.2,
+                "loc": "19 km al SURESTE de OCOZOCOAUTLA, CHIS.",
+            }
+        ],
+        "referencias": [{"n": "CDMX", "lat": 19.4326, "lon": -99.1332}],
+    }
+    catalog_file = tmp_path / "ssn-catalog.json"
+    catalog_file.write_text(json.dumps(snapshot), "utf-8")
+    from takab_edge.local_api import LocalDashboard
+
+    dash = LocalDashboard(
+        supervisor.gpio,
+        supervisor.rules,
+        supervisor.health,
+        catalog_path=str(catalog_file),
+    )
+    served = dash.catalog()
+    assert served["available"] is True
+    assert served["captured_at"] == "2026-05-17T08:11:22-06:00"
+    event = served["events"][0]
+    assert event["m"] == 4.0 and event["depth_km"] == 214.2
+    assert event["at"] == "2026-05-17 08:11:22"
+    assert event["place"].endswith("CHIS.")
+    assert served["references"][0]["n"] == "CDMX"
+    # Corrupto ⇒ degradación idéntica a ausente (jamás un 500 al construir).
+    catalog_file.write_text("esto{no-es-json", "utf-8")
+    broken = LocalDashboard(
+        supervisor.gpio,
+        supervisor.rules,
+        supervisor.health,
+        catalog_path=str(catalog_file),
+    )
+    assert broken.catalog()["available"] is False

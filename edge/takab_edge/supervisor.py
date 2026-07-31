@@ -226,6 +226,7 @@ class EdgeSupervisor:
             seedlink=self.seedlink,
             config=self.config,
             location=self.location,  # T-2.20: lat/lon + vecinos (overlay vivo)
+            catalog_path=s.catalog_path,  # T-2.23: instantánea SSN provisionada
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,
