@@ -428,6 +428,19 @@ class LocalDashboard(EdgeModule):
                 "channels": {},
             }
 
+    def _relays_section(self) -> list[dict]:
+        """Relés para el panel — era la ÚNICA pieza de status() sin cinturón.
+
+        gpio.relay_states() ya es seguro en shutdown (devuelve []); este guard
+        cubre cualquier otro fallo: roto ⇒ [] y el panel pinta S/D, jamás un 500
+        al kiosco (misma doctrina que el resto de las secciones).
+        """
+        try:
+            return [r.model_dump(mode="json") for r in self._gpio.relay_states()]
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: relés no disponibles", exc_info=True)
+            return []
+
     def _thresholds_section(self) -> dict | None:
         """[T-2.16] Umbrales VIGENTES en el motor (T-1.71: se reemplazan en vivo).
 
@@ -611,7 +624,7 @@ class LocalDashboard(EdgeModule):
             "siren_sounding": self._gpio.siren_sounding,
             "audible_silenced": self._gpio.audible_silenced,
             "last_tier": last_tier,
-            "relays": [r.model_dump(mode="json") for r in self._gpio.relay_states()],
+            "relays": self._relays_section(),
             # Compat con el panel previo: hora del último dato de salud (o ahora).
             "captured_at": (health or {}).get("captured_at", now.isoformat()),
             # Fase 2.1 (contrato §5.1 de la spec del panel): memoria viva expuesta.

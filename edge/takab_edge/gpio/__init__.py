@@ -689,7 +689,26 @@ class GpioController(EdgeModule):
             )
 
     def relay_states(self) -> list[RelayState]:
-        return [self.relay_state(channel) for channel in LOCAL_RELAY_CHANNELS]
+        """Estado de los relés VIVOS, bajo un solo lock (seguro durante el shutdown).
+
+        `_on_stop` vacía `_relays`/`_energized`, pero los hilos HTTP del panel son
+        daemon y pueden pedir un `status()` en esa ventana (pasó el 2026-07-30:
+        KeyError ⇒ 500 al kiosco). Se itera el dict REAL en vez de indexar los 5
+        canales esperados: módulo detenido ⇒ lista vacía — los dispositivos están
+        cerrados y su estado eléctrico ya no se mide; inventar filas sería peor
+        que no tener filas (regla de oro 7). El orden de inserción de `_on_start`
+        preserva el orden canónico de LOCAL_RELAY_CHANNELS.
+        """
+        with self._lock:
+            return [
+                RelayState(
+                    channel=channel,
+                    energized=energized,
+                    activated=energized == active_energized(self._failsafe(channel)),
+                    fail_safe=self._failsafe(channel),
+                )
+                for channel, energized in self._energized.items()
+            ]
 
     @property
     def sasmex_active(self) -> bool:
