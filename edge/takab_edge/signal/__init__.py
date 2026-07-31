@@ -28,6 +28,7 @@ from scipy.integrate import cumulative_trapezoid
 from takab_edge.config import SignalConfig
 from takab_edge.contracts import Feature1s, WaveformPacket, utcnow
 from takab_edge.module import EdgeModule
+from takab_edge.signal.waveform import WaveformRing
 
 log = logging.getLogger("takab_edge.signal")
 
@@ -157,6 +158,11 @@ class FeatureExtractor(EdgeModule):
     def __init__(self, config: SignalConfig | None = None) -> None:
         super().__init__()
         self.config = config or SignalConfig()
+        # [T-2.15] Ring de 60 s de muestras crudas para el panel LAN. Vive aquí
+        # porque este es el único punto donde el paquete ya está decodificado
+        # (sin decodificar dos veces, sin hilo nuevo). Su fallo JAMÁS toca el
+        # camino de features: process() lo alimenta dentro de un try/except.
+        self.waveform = WaveformRing()
         self._context: dict[str, np.ndarray] = {}
         self._last: Feature1s | None = None
         # [T-1.53] Última feature POR CANAL + hora de RECEPCIÓN (reloj de pared
@@ -185,6 +191,10 @@ class FeatureExtractor(EdgeModule):
         self._last = feature
         with self._live_lock:
             self._by_channel[packet.channel] = (feature, utcnow())
+        try:
+            self.waveform.append(packet)
+        except Exception:  # noqa: BLE001 — el camino de features JAMÁS muere por el ring
+            log.warning("waveform ring: append falló (aislado)", exc_info=True)
         return feature
 
     def _update_context(self, packet: WaveformPacket) -> None:

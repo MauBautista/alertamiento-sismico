@@ -2509,7 +2509,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > y GET 200, nunca 500) · `null` = «sin dato» y se pinta `S/D`, jamás un valor optimista ·
 > logging por evento, no por intervalo · nada de recursos externos ni `localStorage` en el panel.
 
-### [ ] T-2.15 · Ring de muestras en RAM + endpoint incremental de forma de onda — `P-1`
+### [x] T-2.15 · Ring de muestras en RAM + endpoint incremental de forma de onda — `P-1`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §6 (las ondas en vivo)
 - **El hueco:** las muestras crudas (`WaveformPacket.samples: list[int]`, counts del ADC 24-bit)
   cruzan `seedlink → signal → buffer` y **nunca llegan a `local_api`**. Lo único graficable hoy
@@ -2529,18 +2529,27 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   reconexión), responder la ventana completa con `reset: true` — el cliente redibuja en vez de
   empalmar dos tramos discontinuos como si fueran continuos.
 - **Criterios de aceptación:**
-  - [ ] El ring conserva 60 s por canal y descarta lo viejo sin crecer sin límite (tope por
+  - [x] El ring conserva 60 s por canal y descarta lo viejo sin crecer sin límite (tope por
         muestras, no por tiempo de reloj).
-  - [ ] Alimentarlo **no** agrega hilos ni bloquea el camino de features (mismo lock/estructura
+  - [x] Alimentarlo **no** agrega hilos ni bloquea el camino de features (mismo lock/estructura
         que `live_by_channel()`; copia defensiva al servir).
-  - [ ] La decimación min/max **preserva el pico**: un test con un impulso de una sola muestra
+  - [x] La decimación min/max **preserva el pico**: un test con un impulso de una sola muestra
         sigue mostrando esa amplitud tras decimar.
-  - [ ] Peticiones incrementales consecutivas reconstruyen la señal sin huecos ni duplicados.
-  - [ ] `since` caducado ⇒ ventana completa + `reset: true`.
-  - [ ] Módulo `signal` caído ⇒ **200** con carga vacía, nunca 500.
-  - [ ] El endpoint **no** publica nada a la nube ni ejecuta sondas (regresión hermana de
-        `test_status_does_not_publish_health`).
-  - [ ] Sin streaming continuo a la nube: esto es **solo** LAN (blueprint P6, regla de oro 9).
+  - [x] Peticiones incrementales consecutivas reconstruyen la señal sin huecos ni duplicados.
+  - [x] `since` caducado ⇒ ventana completa + `reset: true`.
+  - [x] Módulo `signal` caído ⇒ **200** con carga vacía, nunca 500.
+  - [x] El endpoint **no** publica nada a la nube ni ejecuta sondas (regresión hermana de
+        `test_status_does_not_publish_health` — `test_waveform_does_not_publish_nor_probe`).
+  - [x] Sin streaming continuo a la nube: esto es **solo** LAN (blueprint P6, regla de oro 9).
+- **Cierre (2026-07-30):** `signal/waveform.py` — `WaveformRing` con **cursor global** por
+  muestras (stateless, sin estado por cliente), buffer circular int32 dimensionado con el primer
+  paquete del canal, y **marks a paquete completo**: en cuanto una muestra se sobrescribe, su
+  paquete entero deja de servirse y sube el piso de reset (jamás un tramo a medias). Gap por
+  `next_starttime` (tolerancia 0.6/sr); **corte honesto**: hueco a mitad del rango ⇒ se sirve
+  solo el tramo posterior al último gap. Decimación min/max con **pares aplanados** (amend §5.1;
+  también quedó especificada la forma degradada). `FeatureExtractor.process` alimenta el ring en
+  try/except (las features jamás mueren por él). `do_GET` refactorizado a `partition("?")`;
+  params ilegales ⇒ defaults (clamp [50, 6000], default 1500). 12 tests nuevos (9 ring + 3 HTTP).
 
 ### [x] T-2.16 · Exponer los umbrales vigentes y la versión de config — `P-2`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.1 (proximidad al disparo)
