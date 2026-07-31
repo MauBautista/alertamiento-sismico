@@ -6,6 +6,20 @@
 > `uv run --directory edge takab-edge` (supervisor dev con simulador RS4D) y abre
 > `http://localhost:8080/`.
 
+> **RECORRIDO AUTOMATIZADO EJECUTADO (2026-07-31, navegador real):** Playwright/Chromium
+> contra el **panel en producción** (`192.168.3.91:8080`, `main=902ab91`) — **44/44
+> comprobaciones en verde**: §1 completo (10 escenas con asserts + capturas), §2 canvas
+> pintando (conteo de píxeles con tinta), §3 mapa/rosa/catálogo/geografía, §4 red 100 %
+> same-origin + cadencia 1 Hz secuencial + consola limpia + two-step con desarme real (las
+> acciones SOLO contra el supervisor dev con relés mock), y el kiosco de §5 en lo medible
+> (soak de 6 min: heap PLANO en 9.5 MB; el panel atravesó un restart del servicio a mitad
+> del soak y volvió solo a EN VIVO). **Pescó y cerró un defecto real**: la franja SSN del
+> modo MURO estaba condenada por un `display:none` inline (fix PR #30, re-verificado en el
+> gabinete). Capturas y detalle: informe visual publicado como Artifact de la sesión.
+> **Sigue pendiente lo presencial:** pruebas audibles, disparo físico del WR-1
+> (`reflex_s` de S/D a ~7 ms), PIN de producción en sitio y la apreciación estética en el
+> monitor del inmueble.
+
 ## 1 · Los 10 estados (§13.2) × 3 densidades
 
 Recorre `?demo=<escena>` en los 3 modos (`?mode=muro`, `?mode=consola`, `?mode=campo`
