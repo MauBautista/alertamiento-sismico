@@ -2840,3 +2840,10 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   propio pero el RLS interno dice no); un UUID de fixture que colisiona con el de otro
   módulo + `ON CONFLICT DO NOTHING` hereda EN SILENCIO el `iot_thing` ajeno. Tests: edge 12
   (store+E2E sobre HTTP) · api 7 (endpoint) · vectores ×2 lados. Suites: edge 446 · api 914.
+- **E2E EN VIVO (2026-07-31, PR #36 desplegado: terraform → nube `0549cc5`/alembic 0021 →
+  edge al Pi):** push real de una captura del RSS del SSN (15 sismos del día) → `202` v1 →
+  el gabinete verificó la firma y cambió EN CALIENTE (journal: «catálogo SSN actualizado por
+  feed firmado: v1»; el panel pasó de la instantánea del 17-may a la del día;
+  `feed_version: 1` persistida en el archivo). Huella en nube: `gateway_catalog_state` v1 +
+  `audit_log` `catalog_published` con el actor real. Enlace del gabinete estable tras la
+  suscripción nueva (0 reconexiones, RTT 76 ms, spool 0).
