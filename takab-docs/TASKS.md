@@ -2605,7 +2605,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   parcial sin cliente. Tests: `test_seedlink_counters_exposed_since_boot` ·
   `test_seedlink_section_null_without_client`.
 
-### [ ] T-2.19 · Agregador rodante de sacudida — `P-5`
+### [x] T-2.19 · Agregador rodante de sacudida — `P-5`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.2 (histórico de sacudida)
 - **El hueco:** no existe ninguna agregación temporal en el edge. El panel no puede decir "el
   máximo de hoy fue X" ni "el ruido de fondo va subiendo".
@@ -2617,11 +2617,18 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   ni se persiste**. Nada nuevo viaja a la nube — la nube ya tiene sus continuous aggregates
   (`site_metrics_1m` / `site_metrics_1h`).
 - **Criterios de aceptación:**
-  - [ ] Máximos por hora y 24 h por canal, conteo de eventos por tier, tendencia de ruido.
-  - [ ] Los buckets rotan por tiempo y no crecen sin límite.
-  - [ ] Se pierde al reiniciar **a propósito** y se rotula **DESDE EL ARRANQUE** hasta acumular
+  - [x] Máximos por hora y 24 h por canal, conteo de eventos por tier, tendencia de ruido.
+  - [x] Los buckets rotan por tiempo y no crecen sin límite.
+  - [x] Se pierde al reiniciar **a propósito** y se rotula **DESDE EL ARRANQUE** hasta acumular
         24 h — sin fingir una continuidad que el gabinete no tiene.
-  - [ ] Cero publicaciones nuevas a la nube (test de regresión).
+  - [x] Cero publicaciones nuevas a la nube (test de regresión).
+- **Cierre (2026-07-30):** `signal/aggregate.py` — buckets horarios UTC-floor podados por el
+  reloj DEL DATO (determinista); `events_by_tier` cuenta **transiciones** (arranca en `normal`:
+  el primer tick no cuenta; un `watch` sostenido es UN evento) y lo alimenta un observador en el
+  SUPERVISOR tras `_act_and_publish` — en AMBAS rutas, `_on_packet` y `_on_sasmex` (la escalación
+  SASMEX no pasa por `_on_packet` y se habría perdido). Piso de ruido: MIN/minuto del rms→mg del
+  MEMS (EH\* excluido — no es aceleración), deque 180 min, tendencia mediana 15v15 ±20%.
+  Amend §5.1: `current_mg` es `float|null`. 12 tests nuevos.
 
 ### [ ] T-2.20 · Coordenadas del sitio (y vecinos opcionales) — `P-6`
 - **Componente:** edge (+ config sync) · **Depende de:** — · **Habilita:** spec §7 (el mapa)

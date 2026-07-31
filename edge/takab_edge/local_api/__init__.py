@@ -402,6 +402,15 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: contadores SeedLink no disponibles", exc_info=True)
             return None
 
+    def _shake_history_section(self) -> dict | None:
+        """[T-2.19] Agregado rodante de sacudida (RAM, rotulado DESDE EL ARRANQUE)."""
+        try:
+            aggregate = getattr(self._signal, "aggregate", None)
+            return None if aggregate is None else aggregate.snapshot()
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: shake_history no disponible", exc_info=True)
+            return None
+
     def _calibration_section(self) -> dict:
         """[T-2.21] Calibración instrumental. NUNCA null; default-deny estricto.
 
@@ -503,6 +512,7 @@ class LocalDashboard(EdgeModule):
             "latencies": self._latencies_section(),
             "seedlink": self._seedlink_section(),
             "calibration": self._calibration_section(),
+            "shake_history": self._shake_history_section(),
             "signal": self._signal_section(now),
             "health": health,
             "cloud": self._cloud_section(),

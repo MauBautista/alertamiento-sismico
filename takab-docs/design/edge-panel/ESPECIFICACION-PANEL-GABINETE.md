@@ -403,6 +403,11 @@ veinticuatro vacíos. Rotúlalo **DESDE EL ARRANQUE** hasta que `since` tenga m�
 antigüedad — el agregador vive en RAM y se pierde al reiniciar, a propósito. No finjas una
 continuidad que el gabinete no tiene.
 
+*(Amend 2026-07-30, T-2.19: `noise_floor.current_mg` es `float|null` — `null` mientras el MEMS
+(EN\*) no haya aportado ni una ventana; el geófono EH\* no es aceleración y no alimenta el piso.
+`by_channel` puede venir vacío en el primer segundo tras el arranque. `events_by_tier` arranca
+en `normal`: un día tranquilo son puros ceros — el primer tick NO cuenta como transición.)*
+
 **`GET /api/waveform`** (`P-1`) — **el segundo endpoint**, y el único además de `/api/status`
 
 Petición: `?since=<cursor>&channels=<lista opcional>&max_points=<n opcional>`.
