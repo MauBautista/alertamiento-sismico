@@ -622,6 +622,26 @@ def test_index_contains_frozen_contract_hooks(supervisor):
         assert hook in html, hook
 
 
+def test_index_pin_failure_is_loud(supervisor):
+    """[UX post-incidente 2026-07-31] Un rechazo de PIN se GRITA, no se susurra.
+
+    El disparo real del WR-1 salió a la nube porque un armado falló con 401 y el
+    mensajito junto al input fue invisible a distancia de muro. El panel debe
+    declarar el rechazo en un banner (`role=alert`) con el NOMBRE de la orden.
+    """
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    assert 'id="action-toast"' in html
+    assert 'role="alert"' in html
+    for hook in (
+        "ORDEN RECHAZADA",
+        "CAPTURE EL PIN DE 6 DÍGITOS",
+        "LA ORDEN NO SE EJECUTÓ",
+        "ORDEN NO ENVIADA",
+    ):
+        assert hook in html, hook
+
+
 def test_index_polls_single_chained_tick(supervisor):
     """UN solo tick secuencial encadenado (hilos del Pi): cero bucles paralelos."""
     _, body = _get(supervisor.local_api, "/")

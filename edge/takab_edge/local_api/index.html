@@ -78,6 +78,13 @@ canvas{display:block}
 #banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
 #banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
 #demo-ribbon{display:flex;align-items:center;gap:14px;padding:6px 16px;background:#08171f;border-bottom:1px solid var(--tk-border-strong)}
+/* Rechazo de una ORDEN (401/403/429/red): se GRITA — a distancia de kiosco el
+   mensajito junto al PIN es invisible (incidente 2026-07-31: un armado falló en
+   silencio y el disparo del WR-1 salió a la nube). Ámbar operativo: el rojo es
+   solo del edificio en peligro. Se desvanece solo desde el frame loop. */
+#action-toast{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn);box-shadow:var(--tk-shadow-warning)}
+#action-toast .big{font:700 18px/1.3 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)}
+#action-toast .sub{font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)}
 
 /* --- layout CONSOLA (por defecto; ancho mínimo real 1280: scroll, no compresión) --- */
 #main{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow-x:auto}
@@ -207,6 +214,10 @@ body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
   <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-cyan)">🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL</span>
   <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">Sirena y estrobo sostenidos · gas, ascensores y puertas en pulso de verificación con lectura de retorno</span>
   <span class="mono" id="cyan-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-cyan)"></span>
+</div>
+<div id="action-toast" class="hide" role="alert">
+  <span class="big" id="action-toast-txt">ORDEN RECHAZADA</span>
+  <span class="sub">LA ORDEN NO SE EJECUTÓ · verifica el PIN y reintenta</span>
 </div>
 
 <div id="main">
@@ -443,6 +454,7 @@ const S = {
   overlay: false, mapScope: 'regional', selEvent: null, tab: 'local',
   pinMsg: 'El PIN se pide de nuevo al recargar · nunca se guarda', pinKind: 'meta',
   armed: null, armedAt: 0,
+  toast: null,           // {text, at} — rechazo de orden visible a distancia
   markers: [],           // {t: epoch_s, kind: 'sasmex'|'tier'}
   prevSasmex: false, prevTier: null,
   lastFrame: 0, raf: 0,
@@ -1054,6 +1066,14 @@ function pinValue(){ return $('pin').value.replace(/\D/g,'').slice(0,6); }
 function setPinMsg(msg, kind){ S.pinMsg = msg; S.pinKind = kind;
   const colors = {crit:C.crit, warn:C.warn, ok:C.ok, meta:C.fg3};
   $('pin-msg').textContent = msg; $('pin-msg').style.color = colors[kind] || C.fg3; }
+function shoutRejection(text){
+  /* UX post-incidente 2026-07-31: un rechazo se GRITA con el NOMBRE de la orden.
+     Se desvanece solo (frame loop, sin timers nuevos); una orden aceptada lo baja. */
+  S.toast = { text, at: performance.now() };
+  $('action-toast-txt').textContent = text;
+  $('action-toast').classList.remove('hide');
+}
+function clearRejection(){ S.toast = null; $('action-toast').classList.add('hide'); }
 async function doAction(label, endpoint, twoStep){
   if (twoStep && S.armed !== endpoint){
     S.armed = endpoint; S.armedAt = performance.now();
@@ -1062,13 +1082,30 @@ async function doAction(label, endpoint, twoStep){
   }
   S.armed = null;
   try {
-    const r = await fetch(endpoint, {method:'POST', headers:{'X-Takab-Pin': pinValue()}});
-    if (r.status === 200){ setPinMsg('ORDEN ACEPTADA · ' + label, 'ok'); }
-    else if (r.status === 401){ setPinMsg('PIN INCORRECTO', 'crit'); }
-    else if (r.status === 403){ setPinMsg('SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS', 'crit'); }
-    else if (r.status === 429){ setPinMsg('BLOQUEADO POR INTENTOS · ESPERA 60 s', 'crit'); }
-    else { setPinMsg('ERROR ' + r.status, 'crit'); }
-  } catch (err){ setPinMsg('SIN CONEXIÓN CON EL GABINETE', 'crit'); }
+    /* Sin PIN capturado NO se manda el header: el servidor trata la ausencia como
+       "la página pregunta" (401 que NO cuenta para el lockout) — sondear con un
+       header vacío quemaba intentos y acercaba el bloqueo de 60 s. */
+    const pin = pinValue();
+    const headers = pin ? {'X-Takab-Pin': pin} : {};
+    const r = await fetch(endpoint, {method:'POST', headers});
+    if (r.status === 200){ setPinMsg('ORDEN ACEPTADA · ' + label, 'ok'); clearRejection(); }
+    else if (r.status === 401){
+      const why = pin ? 'PIN INCORRECTO' : 'CAPTURE EL PIN DE 6 DÍGITOS';
+      setPinMsg(why, 'crit'); shoutRejection('ORDEN RECHAZADA · ' + label + ' — ' + why);
+    }
+    else if (r.status === 403){
+      setPinMsg('SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS', 'crit');
+      shoutRejection('ORDEN RECHAZADA · ' + label + ' — SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS');
+    }
+    else if (r.status === 429){
+      setPinMsg('BLOQUEADO POR INTENTOS · ESPERA 60 s', 'crit');
+      shoutRejection('ORDEN RECHAZADA · ' + label + ' — BLOQUEADO POR INTENTOS · ESPERA 60 s');
+    }
+    else { setPinMsg('ERROR ' + r.status, 'crit'); shoutRejection('ORDEN RECHAZADA · ' + label + ' — ERROR ' + r.status); }
+  } catch (err){
+    setPinMsg('SIN CONEXIÓN CON EL GABINETE', 'crit');
+    shoutRejection('ORDEN NO ENVIADA · ' + label + ' — SIN CONEXIÓN CON EL GABINETE');
+  }
   renderActions(S.status);
 }
 function renderActions(st){
@@ -1444,6 +1481,8 @@ function frame(){
     if (S.armed && (performance.now() - S.armedAt) > 5000){
       S.armed = null; setPinMsg('Orden cancelada · no se confirmó a tiempo', 'meta'); renderActions(S.status);
     } else if (S.armed){ renderActions(S.status); }
+    /* el grito de rechazo se desvanece solo a los 10 s (mismo patrón, sin timers) */
+    if (S.toast && (performance.now() - S.toast.at) > 10000){ clearRejection(); }
     if (S.status && S.status.test_mode && S.status.test_mode.active && !DEMO){
       /* la cuenta del banner WR-1 baja fluida entre ticks */
       const base = S.status.test_mode.remaining_s;

@@ -2355,6 +2355,19 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > que iba a quedarse obsoleto, y un test que asertaba sobre una muestra al azar — los cuatro
 > presentaban como cierto algo que no habían medido.
 
+- **[x] Un rechazo de PIN se susurraba y costó una alerta real a la nube** (PR #32). En la
+  prueba del WR-1 (2026-07-31) un armado del modo prueba falló con 401 — el PIN se re-pide al
+  recargar — y el único aviso era el mensajito junto al input, invisible a distancia de muro:
+  el disparo salió a la nube como incidente real con correos. Doble fix de UX/contrato: (1)
+  todo rechazo (401/403/429/sin-red) se **GRITA** en un banner ámbar `role=alert` con el
+  NOMBRE de la orden (`ORDEN RECHAZADA · MODO PRUEBA WR-1 — PIN INCORRECTO`), se desvanece
+  solo a los 10 s desde el frame loop (cero timers nuevos) y una orden aceptada lo baja; (2)
+  sin PIN capturado **ya no se manda el header** — el servidor trata la ausencia como "la
+  página pregunta" (401 que NO cuenta), así que sondear ya no quema intentos del lockout.
+  Verificado con navegador real contra un panel con PIN: 5/5 (incluidos 6 sondeos sin header
+  seguidos de un PIN correcto que entra). *La confirmación fiable de un armado remoto es
+  `test_mode_on · lan` en `status().events`, no el botón.*
+
 - **[x] `relay_states()` reventaba con KeyError si el panel preguntaba DURANTE el shutdown**
   (PR #29). Pescado en el journal en el deploy de la Fase 2.1 (2026-07-30): `_on_stop` de gpio
   vacía `_relays`/`_energized`, pero los hilos HTTP del panel son daemon y un kiosco con
