@@ -66,6 +66,12 @@ class SignalConfig(BaseModel):
 
     vel_sensitivity_ms_per_count: float = 1.0e-9  # geophone EH* (velocidad)
     accel_sensitivity_ms2_per_count: float = 1.0e-6  # MEMS EN* (aceleración)
+    #: [T-2.21] Procedencia de la calibración (p.ej. "StationXML FDSN AM.R4F74 2026-07-09").
+    #: Vacío ⇒ las sensibilidades de arriba son placeholder y todo cliente rotula
+    #: SIN CALIBRAR con unidades relativas (default-deny, espejo exacto de
+    #: `sensors.calibration_source` en la nube — no existe checkbox de "calibrado").
+    #: En el Pi: TAKAB_EDGE_SIGNAL__CALIBRATION_SOURCE en edge.env.
+    calibration_source: str = ""
     sta_seconds: float = Field(default=0.5, gt=0)
     lta_seconds: float = Field(default=5.0, gt=0)
     clip_count: int = Field(default=8_300_000, gt=0)  # ~±2^23 (ADC 24-bit del RS4D)

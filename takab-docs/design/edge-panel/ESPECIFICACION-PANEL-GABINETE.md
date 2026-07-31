@@ -316,8 +316,10 @@ debería llamarse un campo.
 Son los umbrales **VIGENTES en el motor**, no los del archivo de configuración: se reemplazan en
 vivo desde la nube. La línea de umbral que dibujes sobre las trazas es siempre esta.
 
-**`config_version`** (`P-2`) — raíz, `int`. Contador monótono de la configuración firmada aplicada.
-`0` = nunca se ha sincronizado con la nube (el gabinete corre sus defaults).
+**`config_version`** (`P-2`) — raíz, `int|null`. Contador monótono de la configuración firmada
+aplicada. `0` = nunca se ha sincronizado con la nube (el gabinete corre sus defaults); `null` =
+el store de config está roto o no cableado (degradación defensiva) ⇒ se pinta `S/D`.
+*(Amend 2026-07-30, T-2.16: se añade la rama `null` al implementar la sección defensiva.)*
 
 **`latencies`** (`P-3`) — nunca `null`; los campos medidos sí pueden serlo
 
@@ -352,13 +354,15 @@ justo lo que nadie pudo ver durante las 15 h en que el sistema estuvo ciego.
 |---|---|---|
 | `calibrated` | `bool` | **Derivado**: `source` no vacío. No existe un checkbox de "calibrado" |
 | `source` | `str\|null` | Procedencia, ej. `StationXML FDSN AM.R4F74 2026-07-09` |
-| `vel_sensitivity_ms_per_count` | `float` | Sensibilidad de velocidad en uso |
-| `accel_sensitivity_ms2_per_count` | `float` | Sensibilidad de aceleración en uso |
+| `vel_sensitivity_ms_per_count` | `float\|null` | Sensibilidad de velocidad en uso |
+| `accel_sensitivity_ms2_per_count` | `float\|null` | Sensibilidad de aceleración en uso |
 
 **Default-deny:** ausencia de procedencia **nunca** se interpreta como calibrado. Con
 `calibrated: false` el panel rotula **`SIN CALIBRAR`** y usa unidades relativas (`rel.`) en lugar
 de `g` y `cm/s` — en las ondas, en la estadística y en los umbrales. Las dos sensibilidades son
 para el perfil técnico; pintarlas es opcional, pero el rótulo `SIN CALIBRAR` no lo es.
+*(Amend 2026-07-30, T-2.21: con el módulo de señal caído la sección NO se vuelve `null` — degrada
+a `{calibrated: false, source: null}` con las dos sensibilidades en `null`.)*
 
 **`site_lat` / `site_lon`** (`P-6`) — raíz, `float\|null`
 

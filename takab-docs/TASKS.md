@@ -2540,7 +2540,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         `test_status_does_not_publish_health`).
   - [ ] Sin streaming continuo a la nube: esto es **solo** LAN (blueprint P6, regla de oro 9).
 
-### [ ] T-2.16 · Exponer los umbrales vigentes y la versión de config — `P-2`
+### [x] T-2.16 · Exponer los umbrales vigentes y la versión de config — `P-2`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.1 (proximidad al disparo)
 - **El hueco:** `ThresholdBand` (`pga_watch_g=0.040`, `pga_trip_g=0.060`, `pgv_watch_cms=2.0`,
   `pgv_trip_cms=4.0` por defecto, perfil hospital) vive en el gabinete y **no sale en
@@ -2551,23 +2551,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   el motor tiene vigentes**, no los de `EdgeSettings` estáticos — si no, tras una actualización
   el panel pinta una línea de umbral que ya no es la que dispara.
 - **Criterios de aceptación:**
-  - [ ] `/api/status` incluye los 4 umbrales vigentes + `config_version`.
-  - [ ] Tras un `apply_signed_update` que cambie umbrales, el siguiente GET ya refleja los nuevos.
-  - [ ] `rules` caído ⇒ sección `null`, GET 200.
+  - [x] `/api/status` incluye los 4 umbrales vigentes + `config_version`.
+  - [x] Tras un `apply_signed_update` que cambie umbrales, el siguiente GET ya refleja los nuevos.
+  - [x] `rules` caído ⇒ sección `null`, GET 200.
+- **Cierre (2026-07-30):** los umbrales salen del MOTOR (`rules.thresholds`, rebind vivo de
+  T-1.71) y `config_version` de `ConfigStore.version`. Amend §5.1: `config_version` es
+  `int|null` (null = store roto/ausente). Tests: `test_status_exposes_live_thresholds_and_
+  config_version` · `test_thresholds_reflect_signed_update` (firma real por HMAC) ·
+  `test_thresholds_null_when_rules_broken` (descriptor de DATOS: eclipsa al atributo de
+  instancia).
 
-### [ ] T-2.17 · Exponer las latencias de la cadena crítica — `P-3`
+### [x] T-2.17 · Exponer las latencias de la cadena crítica — `P-3`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.4
 - **El hueco:** `gpio.last_reflex_latency_s` (latencia medida SASMEX→relé; **6.65 ms** con hardware
   real en T-1.69) y `rules.last_latency_s` **ya se miden y no se exponen**. Es el dato de oro del
   gabinete: la prueba viva de que responde.
 - **Criterios de aceptación:**
-  - [ ] `/api/status` incluye ambas latencias, en segundos, con sus presupuestos declarados
+  - [x] `/api/status` incluye ambas latencias, en segundos, con sus presupuestos declarados
         (reflejo p95 < 100 ms · reglas p95 < 200 ms) para que la UI las pinte **contra** el
         presupuesto, no en el vacío.
-  - [ ] Sin medición todavía ⇒ `null` (la UI pinta `S/D`). **Jamás un `0.0` fabricado**, que se
+  - [x] Sin medición todavía ⇒ `null` (la UI pinta `S/D`). **Jamás un `0.0` fabricado**, que se
         leería como "instantáneo".
+- **Cierre (2026-07-30):** sección `latencies` (nunca null; campos medidos sí) con presupuestos
+  `_REFLEX_BUDGET_S=0.100` / `_RULES_BUDGET_S=0.200` — nacen en `local_api` (contrato del panel,
+  no perilla del gabinete). Tests: `test_latencies_budgets_declared_and_null_before_measurement`
+  · `test_latencies_after_measurement` (reflejo vía `simulate_sasmex`, motor vía `feed`).
 
-### [ ] T-2.18 · Exponer los contadores del flujo SeedLink — `P-4`
+### [x] T-2.18 · Exponer los contadores del flujo SeedLink — `P-4`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.3
 - **El hueco:** `SeedLinkClient` expone `packets_seen`, `reconnects`, `duplicates` y `gaps` como
   propiedades públicas. Al panel solo llega `last_lag_s` (vía `health.seedlink_lag_s`) y `gaps`
@@ -2576,8 +2586,13 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - **Contexto que lo justifica:** el sistema estuvo **15 h ciego** (T-1.65/66) con la consola
   diciendo OPERATIVO. Estos cuatro contadores son la evidencia de degradación temprana.
 - **Criterios de aceptación:**
-  - [ ] Los 4 contadores en `/api/status`, rotulables como acumulados **DESDE EL ARRANQUE**.
-  - [ ] Sin cliente SeedLink (dev/simulador) ⇒ sección `null`, GET 200.
+  - [x] Los 4 contadores en `/api/status`, rotulables como acumulados **DESDE EL ARRANQUE**.
+  - [x] Sin cliente SeedLink (dev/simulador) ⇒ sección `null`, GET 200.
+- **Cierre (2026-07-30):** `LocalDashboard` recibe el cliente por kw-only `seedlink=` (los
+  posicionales quedan intactos: la fixture `pinned` construye con 3). Nota: el supervisor dev SÍ
+  cablea un `SeedLinkClient` (con simulador) ⇒ la sección sale poblada; `null` es el panel
+  parcial sin cliente. Tests: `test_seedlink_counters_exposed_since_boot` ·
+  `test_seedlink_section_null_without_client`.
 
 ### [ ] T-2.19 · Agregador rodante de sacudida — `P-5`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §8.2 (histórico de sacudida)
@@ -2639,7 +2654,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [ ] Un re-aprovisionamiento **no** las borra (o el runbook documenta el paso de restitución).
   - [ ] Los vecinos, si existen, no participan de ninguna decisión de actuación (test).
 
-### [ ] T-2.21 · Bandera de calibración instrumental — `P-7`
+### [x] T-2.21 · Bandera de calibración instrumental — `P-7`
 - **Componente:** edge · **Depende de:** — · **Habilita:** spec §6.4 y §8 (honestidad de unidades)
 - **El hueco:** los defaults de `SignalConfig` (`vel_sensitivity_ms_per_count=1.0e-9`,
   `accel_sensitivity_ms2_per_count=1.0e-6`) son **marcadores de posición**; las reales de AM.R4F74
@@ -2649,10 +2664,15 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   junto con las sensibilidades — **espejo exacto del contrato de la nube**, donde
   `calibrated := (sensors.calibration_source IS NOT NULL)` y no existe checkbox de "calibrado".
 - **Criterios de aceptación:**
-  - [ ] `/api/status` expone `calibrated` (bool) y su procedencia.
-  - [ ] Vacío ⇒ `calibrated=false` ⇒ el panel rotula **`SIN CALIBRAR`** y usa unidades relativas
+  - [x] `/api/status` expone `calibrated` (bool) y su procedencia.
+  - [x] Vacío ⇒ `calibrated=false` ⇒ el panel rotula **`SIN CALIBRAR`** y usa unidades relativas
         (`rel.`) en vez de `g` y `cm/s`, igual que ya hace la consola web.
-  - [ ] Default-deny: ausencia de procedencia **nunca** se interpreta como calibrado.
+  - [x] Default-deny: ausencia de procedencia **nunca** se interpreta como calibrado.
+- **Cierre (2026-07-30):** `SignalConfig.calibration_source` (env
+  `TAKAB_EDGE_SIGNAL__CALIBRATION_SOURCE`); `calibrated := bool(source.strip())` — puro espacio
+  en blanco NO cuenta. La sección NUNCA es null: degrada a no-calibrado con sensibilidades
+  `null` (amend §5.1). El rótulo `rel.` lo aplica T-2.23 (el panel); aquí queda el dato. Tests:
+  `test_calibration_default_deny` · `test_calibration_with_source_is_true`.
 
 ### [ ] T-2.22 · Autonomía restante del UPS en el snapshot de salud — `P-8`
 - **Componente:** edge + shared/schemas · **Depende de:** — · **Habilita:** spec §8.3

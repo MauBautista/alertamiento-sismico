@@ -55,6 +55,12 @@ _PIN_LOCKOUT_S = 60.0
 #: Sin feature nueva tras esto, el canal se declara "SIN SEÑAL" en la UI.
 _SIGNAL_STALE_S = 5.0
 
+#: Presupuestos de la cadena crítica (§4.3 del blueprint): la UI pinta las
+#: latencias MEDIDAS contra estos, no en el vacío. Nacen aquí (T-2.17) porque
+#: son un contrato del panel, no un parámetro operable del gabinete.
+_REFLEX_BUDGET_S = 0.100  # reflejo SASMEX→relé, p95
+_RULES_BUDGET_S = 0.200  # evaluación del motor de reglas, p95
+
 #: Tope de acciones LAN recordadas para la lista de eventos del panel.
 _ACTIONS_MAX = 16
 #: Tope de filas de la lista de eventos servida por /api/status.
@@ -159,6 +165,8 @@ class LocalDashboard(EdgeModule):
         *,
         signal: object | None = None,
         cloud: object | None = None,
+        seedlink: object | None = None,
+        config: object | None = None,
         gateway_id: str = "",
         site_name: str = "",
         refresh_ms: int = 1000,
@@ -171,6 +179,8 @@ class LocalDashboard(EdgeModule):
         self._health = health
         self._signal = signal
         self._cloud = cloud
+        self._seedlink = seedlink
+        self._config = config
         self._audio = audio
         self._drill = drill
         self._gateway_id = gateway_id
@@ -275,6 +285,102 @@ class LocalDashboard(EdgeModule):
             "age_s": max(0.0, (now - snap.captured_at).total_seconds()),
         }
 
+    def _thresholds_section(self) -> dict | None:
+        """[T-2.16] Umbrales VIGENTES en el motor (T-1.71: se reemplazan en vivo).
+
+        No son los de `EdgeSettings` estáticos: tras un `apply_signed_update` el
+        panel debe pintar la línea de umbral que de verdad dispara.
+        """
+        try:
+            band = self._rules.thresholds
+            return {
+                "pga_watch_g": band.pga_watch_g,
+                "pga_trip_g": band.pga_trip_g,
+                "pgv_watch_cms": band.pgv_watch_cms,
+                "pgv_trip_cms": band.pgv_trip_cms,
+            }
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: umbrales no disponibles", exc_info=True)
+            return None
+
+    def _config_version(self) -> int | None:
+        """[T-2.16] Versión de la config firmada aplicada (0 = corre defaults)."""
+        try:
+            return int(self._config.version) if self._config is not None else None
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: versión de config no disponible", exc_info=True)
+            return None
+
+    def _latencies_section(self) -> dict:
+        """[T-2.17] Latencias MEDIDAS de la cadena crítica, contra presupuesto.
+
+        `null` = sin medición todavía (la UI pinta S/D). JAMÁS un 0.0 fabricado:
+        un cero se leería como "instantáneo" y sería una mentira.
+        """
+        try:
+            reflex = self._gpio.last_reflex_latency_s
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: latencia de reflejo no disponible", exc_info=True)
+            reflex = None
+        try:
+            rules = self._rules.last_latency_s
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: latencia del motor no disponible", exc_info=True)
+            rules = None
+        return {
+            "reflex_s": reflex,
+            "reflex_budget_s": _REFLEX_BUDGET_S,
+            "rules_s": rules,
+            "rules_budget_s": _RULES_BUDGET_S,
+        }
+
+    def _seedlink_section(self) -> dict | None:
+        """[T-2.18] Contadores del flujo SeedLink, acumulados DESDE EL ARRANQUE.
+
+        Distinguen "el enlace se cae y se levanta" (`reconnects`) de "el Shake
+        manda con huecos" (`gaps`) — lo que nadie pudo ver en las 15 h ciegas.
+        """
+        try:
+            if self._seedlink is None:
+                return None
+            return {
+                "packets_seen": int(self._seedlink.packets_seen),
+                "reconnects": int(self._seedlink.reconnects),
+                "duplicates": int(self._seedlink.duplicates),
+                "gaps": int(self._seedlink.gaps),
+            }
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: contadores SeedLink no disponibles", exc_info=True)
+            return None
+
+    def _calibration_section(self) -> dict:
+        """[T-2.21] Calibración instrumental. NUNCA null; default-deny estricto.
+
+        `calibrated` se DERIVA de la procedencia (`calibration_source` no vacío)
+        — no existe un checkbox de "calibrado", igual que en la nube. Sin señal
+        o roto ⇒ degrada a no-calibrado con sensibilidades null, jamás a null.
+        """
+        degraded = {
+            "calibrated": False,
+            "source": None,
+            "vel_sensitivity_ms_per_count": None,
+            "accel_sensitivity_ms2_per_count": None,
+        }
+        try:
+            config = self._signal.config if self._signal is not None else None
+            if config is None:
+                return degraded
+            source = config.calibration_source.strip()
+            return {
+                "calibrated": bool(source),
+                "source": source or None,
+                "vel_sensitivity_ms_per_count": config.vel_sensitivity_ms_per_count,
+                "accel_sensitivity_ms2_per_count": config.accel_sensitivity_ms2_per_count,
+            }
+        except Exception:  # noqa: BLE001
+            log.warning("panel LAN: calibración no disponible", exc_info=True)
+            return degraded
+
     def _cloud_section(self) -> dict:
         try:
             if self._cloud is None:
@@ -342,6 +448,12 @@ class LocalDashboard(EdgeModule):
             "relays": [r.model_dump(mode="json") for r in self._gpio.relay_states()],
             # Compat con el panel previo: hora del último dato de salud (o ahora).
             "captured_at": (health or {}).get("captured_at", now.isoformat()),
+            # Fase 2.1 (contrato §5.1 de la spec del panel): memoria viva expuesta.
+            "config_version": self._config_version(),
+            "thresholds": self._thresholds_section(),
+            "latencies": self._latencies_section(),
+            "seedlink": self._seedlink_section(),
+            "calibration": self._calibration_section(),
             "signal": self._signal_section(now),
             "health": health,
             "cloud": self._cloud_section(),
