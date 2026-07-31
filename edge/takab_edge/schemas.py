@@ -47,7 +47,11 @@ from takab_edge.contracts import (
 #: corre en vez de que alguien lo anote en `gateways.fw_version`. ADITIVO: clave
 #: opcional, un payload 1.5.0 sigue validando y la nube trata su ausencia como
 #: «sin dato» (no pisa lo que ya tenga).
-SCHEMA_VERSION = "1.6.0"
+#: 1.7.0 (T-2.22): HealthSnapshot + `ups_runtime_s` — la autonomía del UPS que
+#: `UpsReading` ya medía deja de perderse. ADITIVO: clave opcional nullable; un
+#: payload 1.6.0 sigue validando y la nube persiste su ausencia como NULL
+#: (`battery_min_left` deja de ser siempre NULL).
+SCHEMA_VERSION = "1.7.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

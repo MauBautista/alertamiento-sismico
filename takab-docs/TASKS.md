@@ -2489,8 +2489,10 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 > viaja a la nube) ⇒ sin cambio en `shared/schemas`. **T-2.22 SÍ toca `HealthSnapshot`**, que es
 > contrato compartido con la ingesta ⇒ cambio **ADITIVO** y bump de versión, igual que hizo
 > `disk_used_pct` en T-1.53. **CORRECCIÓN al verificar el código:** el archivo es
-> `shared/schemas/health_snapshot.schema.json` y va en **1.5.0**, no 1.2.0; y `SCHEMA_VERSION`
-> (`edge/takab_edge/schemas.py:47`) es **global** — un bump reescribe los 9 schemas.
+> `shared/schemas/health_snapshot.schema.json`; y `SCHEMA_VERSION`
+> (`edge/takab_edge/schemas.py`) es **global** — un bump reescribe los 9 schemas. (La nota
+> original decía "va en 1.5.0" con la 1.4.0 vigente; para cuando se implementó, la vigente era
+> 1.6.0 ⇒ **aterrizó como 1.7.0** — otro número escrito a mano que envejeció en silencio.)
 >
 > **T-2.23 cierra la fase (decisión de Mauricio, 2026-07-29).** T-2.15…T-2.22 producen datos que
 > **ningún cliente consume**: sin T-2.23 la fase termina con ocho tareas verdes y cero cambio
@@ -2674,7 +2676,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   `null` (amend §5.1). El rótulo `rel.` lo aplica T-2.23 (el panel); aquí queda el dato. Tests:
   `test_calibration_default_deny` · `test_calibration_with_source_is_true`.
 
-### [ ] T-2.22 · Autonomía restante del UPS en el snapshot de salud — `P-8`
+### [x] T-2.22 · Autonomía restante del UPS en el snapshot de salud — `P-8`
 - **Componente:** edge + shared/schemas · **Depende de:** — · **Habilita:** spec §8.3
 - **El hueco:** `UpsReading` **ya mide** `runtime_s` (autonomía restante) y `HealthSnapshot`
   **lo pierde**: nunca llega al panel ni a la nube. Existe hasta un `ups_label()` que compone
@@ -2683,15 +2685,22 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   **ADITIVO** con bump de versión, mismo patrón que `disk_used_pct` en T-1.53. Un consumidor viejo
   no puede romperse por este campo.
 - **Criterios de aceptación:**
-  - [ ] `ups_runtime_s: float|None` en `HealthSnapshot`, en `/api/status` y en `shared/schemas`
+  - [x] `ups_runtime_s: float|None` en `HealthSnapshot`, en `/api/status` y en `shared/schemas`
         (aditivo, versión bumpeada).
-  - [ ] UPS ausente o sin reportar autonomía ⇒ `null` ⇒ `S/D`. Nunca un número optimista.
-  - [ ] La ingesta de la nube acepta el campo nuevo sin romper mensajes sin él (test).
-  - [ ] **El dato aterriza en la nube:** `battery_min_left` deja de ser siempre `NULL`. La columna
+  - [x] UPS ausente o sin reportar autonomía ⇒ `null` ⇒ `S/D`. Nunca un número optimista.
+  - [x] La ingesta de la nube acepta el campo nuevo sin romper mensajes sin él (test).
+  - [x] **El dato aterriza en la nube:** `battery_min_left` deja de ser siempre `NULL`. La columna
         **ya existe** (`db/schema.sql:362`) y ya viaja `ws/hub.py:74` → `ws/protocol.py:111` →
         `sdk-ts/src/gen/types.gen.ts:1302` ⇒ **cero DDL, cero Alembic, cero regeneración de SDK**:
         son 2 líneas en `api/.../ingest/handlers.py:327-375` (`int(round(runtime/60))`) y actualizar
         `api/tests/test_ingest_handlers.py:404-418`, que hoy afirma `row[11] is None`.
+- **Cierre (2026-07-30):** `SCHEMA_VERSION` → **1.7.0** (9 schemas regenerados). La conversión
+  s→min guarda de `None` Y de tipos ajenos (bool incluido: subclase de int — un `true`
+  manipulado no se vuelve "0 min"). Tests: edge `test_snapshot_carries_ups_runtime` ·
+  `test_snapshot_ups_absent_runtime_is_null` · `test_status_health_includes_ups_runtime`; api
+  happy path (4500 s → 75 min) + payload 1.6.0 sin la clave ⇒ NULL. Suites: edge 390 · api 903
+  (contra `takab_test`; OJO: `DEFAULT_URL` del conftest apunta a `/takab` — exportar
+  `DATABASE_URL` a `takab_test` o el seed dev da fallos falsos).
 
 ### [ ] T-2.23 · Implementar el panel rediseñado — cierra la Fase 2.1
 - **Componente:** edge · **Depende de:** T-2.15…T-2.22 **y de los entregables §13 de la spec**

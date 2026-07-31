@@ -119,6 +119,18 @@
       "default": null,
       "title": "Battery Pct"
     },
+    "ups_runtime_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ups Runtime S"
+    },
     "temperature_c": {
       "default": 0.0,
       "title": "Temperature C",
@@ -179,6 +191,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.6.0",
-  "version": "1.6.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.7.0",
+  "version": "1.7.0"
 }

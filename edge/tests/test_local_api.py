@@ -429,6 +429,14 @@ def test_calibration_default_deny(supervisor):
     }
 
 
+def test_status_health_includes_ups_runtime(supervisor):
+    """[T-2.22] `health.ups_runtime_s` llega al panel (hereda el age_s del cache)."""
+    health = supervisor.local_api.status()["health"]
+    assert "ups_runtime_s" in health
+    # En dev no hay upsc ⇒ None; con UPS real es una medición en segundos.
+    assert health["ups_runtime_s"] is None or isinstance(health["ups_runtime_s"], float)
+
+
 def test_calibration_with_source_is_true(supervisor):
     supervisor.signal.config = supervisor.signal.config.model_copy(
         update={

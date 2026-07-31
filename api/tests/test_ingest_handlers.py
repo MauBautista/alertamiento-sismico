@@ -398,7 +398,8 @@ def test_event_of_secondary_served_site_accepted_and_attributed(fleet_multi, ctx
 
 
 def test_health_happy_path_converts_units(fleet, ctx, meta) -> None:
-    assert handle_health_snapshot(fleet, _health(mqtt_rtt_ms=42.5), meta, ctx).is_ok
+    payload = _health(mqtt_rtt_ms=42.5, ups_runtime_s=4500.0)  # 75 min de autonomía
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
     row = fleet.execute(
         "SELECT ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, cpu_temp_c, "
         "power_status, battery_pct, cert_days_remaining, mqtt_rtt_ms, battery_min_left "
@@ -415,7 +416,7 @@ def test_health_happy_path_converts_units(fleet, ctx, meta) -> None:
     assert row[8] == pytest.approx(87.5)
     assert row[9] == 300
     assert row[10] == pytest.approx(42.5)  # RTT del PUBACK real (T-1.40)
-    assert row[11] is None  # battery_min_left sigue sin fuente edge → NULL
+    assert row[11] == 75  # ups_runtime_s 4500 s → battery_min_left 75 min (T-2.22)
 
 
 def test_health_honest_none_fields_persist_as_null(fleet, ctx, meta) -> None:
@@ -426,12 +427,14 @@ def test_health_honest_none_fields_persist_as_null(fleet, ctx, meta) -> None:
     )
     assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
     row = fleet.execute(
-        "SELECT ntp_offset_ms, mqtt_rtt_ms, battery_pct, cert_days_remaining, power_status "
-        "FROM device_health WHERE gateway_id = %s",
+        "SELECT ntp_offset_ms, mqtt_rtt_ms, battery_pct, cert_days_remaining, power_status, "
+        "battery_min_left FROM device_health WHERE gateway_id = %s",
         (GW,),
     ).fetchone()
     assert row[0] is None and row[1] is None and row[2] is None and row[3] is None
     assert row[4] == "unknown"
+    # T-2.22 aditivo: un payload 1.6.0 SIN `ups_runtime_s` sigue aterrizando NULL.
+    assert row[5] is None
 
 
 def test_health_default_reason_is_heartbeat(fleet, ctx, meta) -> None:

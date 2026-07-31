@@ -90,6 +90,6 @@
   "title": "FeatureBatch",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/feature_batch/v1.6.0",
-  "version": "1.6.0"
+  "$id": "https://takab.mx/schemas/feature_batch/v1.7.0",
+  "version": "1.7.0"
 }

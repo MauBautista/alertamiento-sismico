@@ -370,6 +370,7 @@ class HealthMonitor(EdgeModule):
             mqtt_rtt_ms=self._safe(self._mqtt_rtt_ms, None),
             ups_status=ups.status,
             battery_pct=ups.battery_pct,
+            ups_runtime_s=ups.runtime_s,
             temperature_c=self._safe(self._probes.temperature_c, 0.0),
             cert_days_remaining=self._safe(self._probes.cert_days_remaining, None),
             # getattr: sondas previas a T-1.53 (fakes/impl externas) pueden no
