@@ -25,7 +25,9 @@ def test_rs4d_packet_is_100_sps():
 
 
 def test_rs4d_event_injection_raises_amplitude():
-    sim = RS4DSimulator(seed=7)
+    # dc_offsets={} EXPLÍCITO: este test mide la amplitud del transitorio, y el
+    # DC realista de ENZ (gravedad, T-2.25) taparía la razón loud/quiet.
+    sim = RS4DSimulator(seed=7, dc_offsets={})
     quiet = np.abs(sim.packet("ENZ", START).samples).max()
     loud = np.abs(sim.packet("ENZ", START, peak_counts=200_000.0).samples).max()
     assert loud > quiet * 10
@@ -48,6 +50,26 @@ def test_rs4d_miniseed_is_parseable_by_obspy():
     assert stream[0].stats.sampling_rate == 100.0
     assert stream[0].stats.station == "TAKAB"
     assert stream[0].stats.npts == 100
+
+
+def test_rs4d_en_channels_carry_realistic_dc_offset():
+    # [T-2.25] Un acelerómetro real NUNCA es de media cero: ENZ ve la gravedad
+    # (≈1 g ≈ 3.77e6 counts con la sensibilidad real de AM.R4F74) y los
+    # horizontales llevan bias de cero-g del MEMS. El ruido de media cero del
+    # simulador ENMASCARABA el bug de la brújula del panel (counts crudos contra
+    # escala de-media): el default realista lo hace imposible de re-ocultar.
+    sim = RS4DSimulator(seed=7)
+    mean_of = lambda ch: float(np.mean(sim.packet(ch, START).samples))  # noqa: E731
+    assert abs(mean_of("EHZ")) < 200  # geófono AC-coupled: sin offset
+    assert mean_of("ENZ") > 3_000_000  # gravedad
+    assert mean_of("ENN") > 5_000  # bias MEMS positivo
+    assert mean_of("ENE") < -3_000  # bias MEMS negativo
+
+
+def test_rs4d_dc_offset_is_configurable():
+    # Media cero EXPLÍCITA para quien la necesite — jamás como default.
+    sim = RS4DSimulator(seed=7, dc_offsets={})
+    assert abs(float(np.mean(sim.packet("ENZ", START).samples))) < 200
 
 
 def test_wr1_alert_triggers_reflex_and_test_pulse_does_not(settings):

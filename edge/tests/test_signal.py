@@ -96,6 +96,23 @@ def test_event_packet_raises_pga_pgv_over_quiet():
     assert quiet.pga < 0.04  # el ruido de fondo no dispara
 
 
+def test_features_immune_to_dc_offset():
+    # [T-2.25] El backend DE-MEDIA antes de todo: las features NO cambian con el
+    # offset DC del sensor (gravedad/bias MEMS). Este es el contrato del que
+    # depende el fix del panel — el DC se resta solo en PRESENTACIÓN; el ring de
+    # /api/waveform sigue sirviendo counts CRUDOS (evidencia, contrato intacto).
+    import pytest
+
+    quiet = compute_features(RS4DSimulator(seed=11, dc_offsets={}).packet("ENZ", START))
+    offset = compute_features(RS4DSimulator(seed=11).packet("ENZ", START))
+    # rel 1e-9: la de-media con un DC de 3.77e6 counts pierde unos ULPs de
+    # float64 frente a señal de ~500 counts — inmunidad real, no bit-exacta.
+    assert offset.pga == pytest.approx(quiet.pga, rel=1e-9)
+    assert offset.pgv == pytest.approx(quiet.pgv, rel=1e-9)
+    assert offset.rms == pytest.approx(quiet.rms, rel=1e-9)
+    assert offset.clipping is False
+
+
 def test_clipping_flagged_and_health_degraded():
     packet = WaveformPacket(
         station="R4F74", channel="ENZ", starttime=START, samples=[0, 9_000_000, 0, -9_000_000]
