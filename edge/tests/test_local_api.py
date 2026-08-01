@@ -673,6 +673,37 @@ def test_index_pin_failure_is_loud(supervisor):
         assert hook in html, hook
 
 
+def test_index_comparativa_hooks(supervisor):
+    """[T-2.27] Comparativa sismo↔estación: hooks congelados del contrato.
+
+    La curva es una ESTIMACIÓN determinista (ley ATTEN-LAW v1, espejo de
+    ``_plausible_pga_g`` — jamás en el camino de disparo) y NUNCA se presenta
+    como dato medido; el medido solo aparece con los tres candados (estación
+    propia + bucket temporal + calibración). NO es el mini-ShakeMap del
+    blueprint §14: cero interpolación espacial, cero IA.
+    """
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        "ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO",
+        "ATTEN-LAW v1: log10(PGA_g) = 0.5*M - 2.8 - log10(max(R_hipo_km, 1))",
+        "DISTANCIA EPICENTRAL",
+        "DISTANCIA HIPOCENTRAL",
+        "ARRIBO P TEÓRICO",
+        "V_P_KM_S",
+        "SSN_UTC_OFFSET_H",
+        "SELECCIONE UN SISMO PARA COMPARAR",
+        "SOLO LA ESTACIÓN PROPIA MIDE",
+        "SIN DATO MEDIDO EN ESTA VENTANA",
+        "PGA RELATIVO · SIN CALIBRAR — NO COMPARABLE",
+        "SIN PROFUNDIDAD REPORTADA",
+        "BANDA ILUSTRATIVA",
+        'id="cmp-drawer"',
+        'id="cmp-canvas"',
+    ):
+        assert hook in html, hook
+
+
 def test_index_removes_dc_before_physical_units(supervisor):
     """[T-2.25] El panel resta la media rodante DC ANTES de convertir a unidades
     físicas: counts crudos (gravedad ≈1 g en ENZ + bias MEMS en ENN/ENE) contra
