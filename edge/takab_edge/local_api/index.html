@@ -75,6 +75,7 @@ canvas{display:block}
 #banner-alert{display:flex;align-items:center;gap:18px;padding:14px 20px;background:var(--tk-crit);animation:tk-blink 900ms steps(2,end) infinite}
 #banner-alert .big{font:700 28px/1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-surface-0)}
 #banner-amber{display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
+#banner-latched{display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
 #banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
 #banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
 #demo-ribbon{display:flex;align-items:center;gap:14px;padding:6px 16px;background:#08171f;border-bottom:1px solid var(--tk-border-strong)}
@@ -204,6 +205,10 @@ body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
   <span class="big">ALERTA SÍSMICA · PROTÉJASE</span>
   <span style="font:600 13px/1.3 var(--f-ui);color:rgba(14,35,54,0.85);max-width:520px">Alejarse de ventanas · no usar ascensores · seguir la ruta de evacuación señalizada</span>
   <span class="mono" id="alert-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-surface-0)"></span>
+</div>
+<div id="banner-latched" class="hide" role="alert">
+  <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">🔒 ACTUADORES ENCLAVADOS · CIERRE LA ALERTA PARA LIBERAR</span>
+  <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">Los relés siguen en protección aunque el tier volvió a normal (enclave por diseño) · use CERRAR ALERTA con el PIN</span>
 </div>
 <div id="banner-amber" class="hide">
   <span id="amber-txt" style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL</span>
@@ -483,7 +488,7 @@ function baseStatus(){
   const now = new Date().toISOString();
   return {
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
-    sasmex_active:false, siren_sounding:false, audible_silenced:false, last_tier:'normal',
+    sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, last_tier:'normal',
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
       {channel:'strobe', energized:false, activated:false, fail_safe:'normally_open'},
@@ -527,7 +532,7 @@ const SCENES = {
   reposo: () => baseStatus(),
   vigilancia: () => { const s = baseStatus(); s.last_tier='watch'; s.signal.channels = sceneChannels(0.031);
     s.shake_history.events_by_tier.watch = 2; return s; },
-  alerta: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold'; s.sasmex_active=true; s.siren_sounding=true;
+  alerta: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold'; s.sasmex_active=true; s.siren_sounding=true; s.alert_latched=true;
     s.signal.channels = sceneChannels(0.31);
     s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
@@ -710,6 +715,9 @@ function render(){
   const alert = st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted' || st.sasmex_active;
   $('banner-alert').classList.toggle('hide', !alert);
   if (alert) $('alert-meta').textContent = 'FUENTE ' + (st.sasmex_active ? 'SASMEX WR-1' : 'UMBRAL INSTRUMENTAL') + ' · ' + clockUTC();
+  /* [T-2.26] enclave sin alerta viva: el tier decayó pero los relés siguen en
+     protección — el rojo queda EXCLUSIVO de alerta viva, esto es ámbar */
+  $('banner-latched').classList.toggle('hide', !(st.alert_latched && !alert));
   const showAmber = drill && !alert;
   $('banner-amber').classList.toggle('hide', !showAmber && !(drill && alert));
   if (drill && alert){
@@ -1088,7 +1096,22 @@ async function doAction(label, endpoint, twoStep){
     const pin = pinValue();
     const headers = pin ? {'X-Takab-Pin': pin} : {};
     const r = await fetch(endpoint, {method:'POST', headers});
-    if (r.status === 200){ setPinMsg('ORDEN ACEPTADA · ' + label, 'ok'); clearRejection(); }
+    if (r.status === 200){
+      setPinMsg('ORDEN ACEPTADA · ' + label, 'ok'); clearRejection();
+      /* [T-2.26] refetch one-shot: lo que la orden cambió se pinta YA, no al
+         siguiente poll (repintar con S.status viejo dejaba la alerta en pantalla).
+         Un solo fetch dentro del handler — NO es un tick nuevo. */
+      if (!DEMO){
+        try {
+          const rs = await fetch('api/status', {cache:'no-store'});
+          if (rs.ok){
+            const st2 = await rs.json();
+            markTransitions(st2);
+            S.status = st2; S.failures = 0; S.lastGoodAt = performance.now(); S.lastGoodClock = clockUTC();
+          }
+        } catch (err) { /* el poll normal lo recoge en ≤1 s */ }
+      }
+    }
     else if (r.status === 401){
       const why = pin ? 'PIN INCORRECTO' : 'CAPTURE EL PIN DE 6 DÍGITOS';
       setPinMsg(why, 'crit'); shoutRejection('ORDEN RECHAZADA · ' + label + ' — ' + why);
@@ -1106,15 +1129,15 @@ async function doAction(label, endpoint, twoStep){
     setPinMsg('SIN CONEXIÓN CON EL GABINETE', 'crit');
     shoutRejection('ORDEN NO ENVIADA · ' + label + ' — SIN CONEXIÓN CON EL GABINETE');
   }
-  renderActions(S.status);
+  render(); /* [T-2.26] repinta TODO con el status fresco (banners incluidos) */
 }
 function renderActions(st){
   const box = $('action-btns'); if (!box) return; box.textContent = '';
   if (!st) return;
   const defs = [];
   if (st.siren_sounding) defs.push(['SILENCIAR AUDIBLES', st.audible_silenced ? 'ya silenciado' : 'no calla la rama de hardware', 'api/silence', false, 'primary']);
-  if (st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
-    defs.push(['CERRAR ALERTA', 'libera el enclave', 'api/reset', true, 'danger']);
+  if (st.alert_latched || st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
+    defs.push(['CERRAR ALERTA', 'libera el enclave · 2 clics + PIN', 'api/reset', true, 'danger']);
   defs.push(['PROBAR SIRENA', 'suena 2 s', 'api/siren-test', false, '']);
   defs.push(['PROBAR ACTUADORES', 'sostiene sirena+estrobo · pulso en gas, ascensores, puertas', 'api/actuator-test', true, '']);
   const wr1 = st.test_mode && st.test_mode.active;

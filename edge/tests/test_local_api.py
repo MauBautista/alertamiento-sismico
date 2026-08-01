@@ -51,9 +51,27 @@ def test_lan_silence_stops_the_siren(supervisor):
 
 def test_lan_reset_clears_latched_alert(supervisor):
     supervisor.gpio.simulate_sasmex(active=True)
+    before = supervisor.local_api.status()
+    assert before["alert_latched"] is True
+    assert before["last_tier"] == "evacuate_or_hold"
     supervisor.local_api.reset_alert()
     assert supervisor.gpio.sasmex_active is False
     assert supervisor.gpio.siren_sounding is False
+    # [T-2.26] El reset también re-arma el MOTOR: sin esto el banner del panel
+    # quedaba en alerta para siempre si SeedLink no traía features nuevas.
+    after = supervisor.local_api.status()
+    assert after["last_tier"] == "normal"
+    assert after["alert_latched"] is False
+
+
+def test_status_exposes_alert_latched_for_rules_demand_only(supervisor):
+    # El estado irrecuperable del 2026-08-01: tier normal, relés aún enclavados.
+    from takab_edge.contracts import ActuatorChannel
+
+    supervisor.gpio.activate(ActuatorChannel.GAS_VALVE)
+    status = supervisor.local_api.status()
+    assert status["alert_latched"] is True
+    assert status["sasmex_active"] is False
 
 
 # --- Servidor HTTP en LAN (sin internet) ---
@@ -90,6 +108,15 @@ def test_http_reset_command(supervisor):
     supervisor.gpio.simulate_sasmex(active=True)
     assert _post(supervisor.local_api, "/api/reset") == 200
     assert supervisor.gpio.sasmex_active is False
+
+
+def test_http_reset_releases_tier_and_latch(supervisor):
+    supervisor.gpio.simulate_sasmex(active=True)
+    assert _post(supervisor.local_api, "/api/reset") == 200
+    _, body = _get(supervisor.local_api, "/api/status")
+    data = json.loads(body)
+    assert data["last_tier"] == "normal"
+    assert data["alert_latched"] is False
 
 
 # --- Prueba LOCAL de actuación por LAN (T-1.67) ------------------------------
@@ -617,6 +644,10 @@ def test_index_contains_frozen_contract_hooks(supervisor):
         "⚠ MODO MANUAL — SENSORES DEGRADADOS",
         "SIN PIN CONFIGURADO",
         "PROTECCIÓN LOCAL ACTIVA",
+        # [T-2.26] enclave visible: sin estos hooks el gabinete queda irrecuperable
+        # desde el panel cuando el tier decae con relés aún enclavados.
+        "alert_latched",
+        "ACTUADORES ENCLAVADOS",
     )
     for hook in hooks:
         assert hook in html, hook
