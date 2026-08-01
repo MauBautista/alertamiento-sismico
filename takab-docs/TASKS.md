@@ -2975,3 +2975,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [x] Cero cambios en api/db/sdk; cero dependencias nuevas (SVG a mano).
   - [x] vitest + eslint + build verdes; tests nuevos: atenuación (4), geo (5),
         ComparePanel (4), capa catálogo (4).
+
+---
+
+### [x] T-2.29 · Calibrador del PUNTO 0 de la brújula + sensibilidad adaptativa — COMPLETA (2026-08-01)
+- **Componente:** edge (local_api + panel) · **Depende de:** T-2.25
+- **Origen:** prueba de campo de Mauricio tras T-2.25: la brújula ya no satura, pero la media
+  rodante ABSORBE inclinaciones sostenidas (τ≈30 s ⇒ el punto regresa al centro aunque el
+  gabinete quede inclinado) y a escala de umbral (~0.07 g) el movimiento de reposo es
+  invisible. Pedido: fijar el cero CON EL GABINETE YA INSTALADO Y NIVELADO y poder
+  restablecerlo, y que la brújula viva a partir de ese punto 0.
+- **Criterios:**
+  - [x] `POST /api/rose-zero` (PIN + two-step en el panel): captura la media por canal EN*
+        del ring (~ventana reciente, raw o minmax) y la persiste ATÓMICA en
+        `rose_zero_path` (`/var/lib/takab/rose-zero.json`; sobrevive reinicios; sin disco
+        queda en memoria y lo loguea). Re-pulsar RESTABLECE. Sin señal ⇒ **409**
+        (`ActionUnavailable`) y `rose_zero` sigue null — jamás un cero inventado.
+  - [x] `status().rose_zero = {channels, set_at} | null`; la brújula usa el PUNTO 0 fijo
+        cuando existe y degrada a la media rodante [T-2.25] cuando no — y LO DECLARA en el
+        canvas: «PUNTO ±X mg · PUNTO 0 FIJADO» vs «MEDIA RODANTE · SIN CALIBRAR».
+  - [x] Sensibilidad: ganancia adaptativa del punto (pico decaído ×1.4, piso 2 mg, techo =
+        escala de umbral) — vivo en reposo, comparable en sismo. La barra Z conserva la
+        escala anclada a umbrales (es proximidad al disparo, otra pregunta).
+  - [x] Presentación pura: cero cambios en rules/gpio/actuación; contrato de
+        `/api/waveform` intacto.
+  - [x] Tests: captura ≈ DC del simulador (ENZ ~3.77e6) + persistencia releída por otro
+        panel (= reinicio) + 409 sin señal + 401 con PIN + hooks congelados
+        (`CALIBRAR BRÚJULA`, `PUNTO 0 FIJADO`, `api/rose-zero`…). Suite edge 468 verde ·
+        ruff limpio · smoke headless (botón, two-step, rose con cero fijo, 0 errores).
+  - [ ] Verificación física: nivelar el gabinete, CALIBRAR BRÚJULA con PIN, inclinar ⇒ el
+        punto se DESVÍA Y SE QUEDA (ya no regresa por la media rodante); restablecer.

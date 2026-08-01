@@ -232,6 +232,7 @@ class EdgeSupervisor:
             config=self.config,
             location=self.location,  # T-2.20: lat/lon + vecinos (overlay vivo)
             catalog=self.catalog,  # T-2.23/24: instantánea SSN (+feed firmado)
+            rose_zero_path=s.rose_zero_path,  # T-2.29: punto 0 de la brújula
             gateway_id=s.gateway_id,
             site_name=s.site_name,
             refresh_ms=s.local_api_refresh_ms,

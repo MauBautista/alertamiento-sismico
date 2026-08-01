@@ -256,6 +256,11 @@ class EdgeSettings(BaseSettings):
     #: `provision_gateway.sh --catalog FILE`. El feed nube→edge firmado = T-2.24.
     catalog_path: str = "/var/lib/takab/ssn-catalog.json"
 
+    #: [T-2.29] PUNTO 0 de la brújula del panel: media EN* capturada con el
+    #: gabinete instalado y nivelado (presentación pura; jamás toca umbrales ni
+    #: actuación). Se fija/restablece desde el panel con PIN y sobrevive reinicios.
+    rose_zero_path: str = "/var/lib/takab/rose-zero.json"
+
     # --- audio de voceo (A-6; canal ADVISORY — la sirena de RELÉ es la primaria) ---
     #: El voceo hablado arranca DESHABILITADO: exige dos WAVs grabados (sismo vs
     #: simulacro) que se enciende por gabinete cuando existan. (El "cerebro" real es
