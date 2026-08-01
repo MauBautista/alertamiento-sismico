@@ -205,6 +205,52 @@ class RuleEngine(EdgeModule):
             thresholds.pgv_trip_cms,
         )
 
+    def reset(self) -> None:
+        """Cierre manual de alerta por operador (LAN, T-2.26): re-arma a NORMAL.
+
+        Contraparte de ``gpio.reset()`` para el ESTADO DE DECISIÓN: sin esto,
+        ``last_decision`` queda congelado en el tier del episodio hasta que
+        llegue una feature nueva (SeedLink caído ⇒ para siempre) y el panel
+        nunca sale de alerta. Termina el episodio de dedup: un disparo
+        posterior es un EVENTO NUEVO (``event_id`` distinto). Registra la
+        transición (regla de oro 10) con fuente ``manual`` SOLO en el ring del
+        panel — la nube no recibe nada por aquí (el reset no pasa por la
+        publicación de eventos). Idempotente: llamable N veces sin lanzar.
+        """
+        old = self._last_tier
+        closed_event = self._event_id
+        self._features.clear()
+        self._event_id = None
+        self._episode_end = None
+        decision = TierDecision(
+            tier=Tier.NORMAL,
+            source=AlertSource.MANUAL,
+            severity=0.0,
+            reasons=["alerta cerrada por operador (LAN)"],
+        )
+        if old is not None and old is not Tier.NORMAL:
+            log.warning(
+                "transición de tier %s → %s (%s)",
+                old.value,
+                Tier.NORMAL.value,
+                "; ".join(decision.reasons),
+            )
+            with self._transitions_lock:
+                self._transitions.append(
+                    {
+                        "at": self._clock().isoformat(),
+                        "from_tier": old.value,
+                        "to_tier": Tier.NORMAL.value,
+                        "source": AlertSource.MANUAL.value,
+                        # El event_id del episodio CERRADO, para trazabilidad.
+                        "event_id": closed_event or decision.event_id,
+                        "pga": None,  # el cierre no es una medición
+                        "reasons": list(decision.reasons),
+                    }
+                )
+        self._last_tier = Tier.NORMAL
+        self._last_decision = decision
+
     def evaluate_features(self, feature: Feature1s) -> TierDecision:
         started = perf_counter()
         self._features[feature.channel] = feature
