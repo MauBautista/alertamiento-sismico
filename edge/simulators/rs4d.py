@@ -19,6 +19,21 @@ from takab_edge.contracts import WaveformPacket, utcnow
 #: Canales del RS4D: EHZ (velocidad, vertical) + ENZ/ENN/ENE (aceleración MEMS).
 DEFAULT_CHANNELS: tuple[str, ...] = ("EHZ", "ENZ", "ENN", "ENE")
 
+#: [T-2.25] Offsets DC realistas por canal (counts del ADC): un acelerómetro real
+#: NUNCA es de media cero — ENZ ve la gravedad (≈1 g ≈ 9.80665 / 2.6007802e-6 ≈
+#: 3.77e6 counts con la sensibilidad real de AM.R4F74) y los horizontales llevan
+#: el bias de cero-g del MEMS. EHZ (geófono, AC-coupled) sí es ≈0. El ruido de
+#: media cero enmascaraba el bug de la brújula del panel (counts crudos contra
+#: escala de-media): el default realista lo hace imposible de re-ocultar. Valores
+#: ENTEROS a propósito: `rint(ruido + c) == rint(ruido) + c` ⇒ las features
+#: (que de-median) quedan idénticas con o sin offset salvo ULPs de float64.
+DEFAULT_DC_OFFSETS: dict[str, float] = {
+    "EHZ": 0.0,
+    "ENZ": 3_770_000.0,
+    "ENN": 15_000.0,
+    "ENE": -9_000.0,
+}
+
 
 class RS4DSimulator:
     """Fuente de forma de onda sintética 100 sps por canal."""
@@ -32,6 +47,7 @@ class RS4DSimulator:
         channels: tuple[str, ...] = DEFAULT_CHANNELS,
         noise_counts: float = 500.0,
         seed: int = 1234,
+        dc_offsets: dict[str, float] | None = None,
     ) -> None:
         self.station = station
         self.network = network
@@ -39,9 +55,11 @@ class RS4DSimulator:
         self.sample_rate = sample_rate
         self.channels = channels
         self.noise_counts = noise_counts
+        # None ⇒ default realista; media cero se pide EXPLÍCITA con dc_offsets={}.
+        self.dc_offsets = DEFAULT_DC_OFFSETS if dc_offsets is None else dc_offsets
         self._rng = np.random.default_rng(seed)
 
-    def _samples(self, peak_counts: float = 0.0) -> list[int]:
+    def _samples(self, peak_counts: float = 0.0, dc: float = 0.0) -> list[int]:
         n = int(round(self.sample_rate))  # una ventana de 1 s
         noise = self._rng.normal(0.0, self.noise_counts, n)
         signal = np.zeros(n)
@@ -49,7 +67,7 @@ class RS4DSimulator:
             t = np.arange(n) / self.sample_rate
             envelope = np.exp(-3.0 * t)  # decaimiento del transitorio
             signal = peak_counts * envelope * np.sin(2.0 * np.pi * 5.0 * t)
-        data = np.rint(noise + signal).astype(np.int32)
+        data = np.rint(noise + signal + dc).astype(np.int32)
         return data.tolist()
 
     def packet(self, channel: str, start: datetime, peak_counts: float = 0.0) -> WaveformPacket:
@@ -61,7 +79,7 @@ class RS4DSimulator:
             channel=channel,
             starttime=start,
             sample_rate=self.sample_rate,
-            samples=self._samples(peak_counts),
+            samples=self._samples(peak_counts, dc=self.dc_offsets.get(channel, 0.0)),
         )
 
     def stream(

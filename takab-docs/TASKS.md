@@ -2880,3 +2880,33 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         (`test_silence_keeps_visual_strobe` sin tocar; `commands_for` solo ACTIVATE).
   - [ ] Verificación en el Pi real (deploy + ciclo WR-1 en modo prueba → enclave → banner
         ámbar → CERRAR ALERTA con PIN ⇒ `last_tier=normal`, `alert_latched=false`).
+
+---
+
+### [x] T-2.25 · Brújula y sismograma saturados por offset DC — media rodante en el cliente — CÓDIGO COMPLETO (2026-08-01); verificación visual en el Pi pendiente de deploy
+- **Componente:** edge (panel LAN + simulador) · **Depende de:** —
+- **El bug (observado EN VIVO el 2026-08-01):** el punto de la brújula N/S/E/O vivía clavado
+  al borde en un cuadrante fijo y la barra Z al 100 %. Causa: `drawRose()`/`drawWaves()`
+  convierten counts CRUDOS del ring de `/api/waveform` (gravedad ≈1 g ≈ 3.77e6 counts en
+  ENZ + bias MEMS en ENN/ENE) con `toPhys()` SIN restar la media, contra una escala `sc`
+  derivada de umbrales que el backend calcula sobre señal DE-MEDIA (~0.069 g) ⇒
+  `min(1, v/sc)` siempre 1 y `Math.sign(lastCounts())` constante. Regresión del port del
+  prototipo (buffer sintético ya en g y media cero); el simulador con ruido de media CERO
+  la enmascaraba en CI y en `?demo=`.
+- **Criterios:**
+  - [x] Fix 100 % frontend: media rodante DC por canal (EMA τ≈30 s sobre el centro
+        `(min+max)/2`, sembrada con el primer tramo — sin rampa desde 0), mantenida en
+        `pushSamples()` (1×/tick) y restada en `windowOf()` (solo ranuras llenas) y en
+        `lastCounts()` de la rosa. `drawRose`/`drawWaves`/`toPhys` intactos.
+  - [x] Contrato `/api/waveform` INTACTO: el ring sigue sirviendo counts crudos (evidencia).
+  - [x] `RS4DSimulator` emite EN* con DC realista POR DEFAULT (`DEFAULT_DC_OFFSETS`; media
+        cero solo explícita con `dc_offsets={}`) — el bug ya no se puede re-ocultar.
+  - [x] `test_features_immune_to_dc_offset`: las features son EXACTAMENTE iguales con o sin
+        offset (el backend de-media; offsets enteros ⇒ `rint` conmuta) — congela el
+        contrato del que depende el fix.
+  - [x] Hook de contrato en el HTML: `media rodante DC`, `- b.dc` ×≥3, `dcReady`.
+  - [x] Suite edge verde · ruff limpio · escenas `?demo=` sin cambio visual (onda demo de
+        media cero ⇒ EMA≈0).
+  - [ ] Verificación visual en el Pi real: en reposo el punto ORBITA EL CENTRO y la barra Z
+        está abajo; un golpe junto al sensor deflecta y REGRESA; sismograma centrado con
+        banda de ruido visible (no pegado a los rieles).

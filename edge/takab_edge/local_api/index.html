@@ -468,12 +468,29 @@ const S = {
 /* buffers de onda del cliente: min/máx paralelos a resolución nominal (preallocados) */
 const N = 6000;
 const buf = {};
-CH.forEach(c => { buf[c] = { min: new Float32Array(N), max: new Float32Array(N), clip: new Uint8Array(N), head: 0, count: 0, lastAt: 0, gaps: [] }; });
+CH.forEach(c => { buf[c] = { min: new Float32Array(N), max: new Float32Array(N), clip: new Uint8Array(N), head: 0, count: 0, lastAt: 0, gaps: [], dc: 0, dcReady: false }; });
 const peakHold = {};
-function clearBuffers(){ CH.forEach(c => { const b = buf[c]; b.min.fill(0); b.max.fill(0); b.clip.fill(0); b.head = 0; b.count = 0; b.gaps = []; }); }
+function clearBuffers(){ CH.forEach(c => { const b = buf[c]; b.min.fill(0); b.max.fill(0); b.clip.fill(0); b.head = 0; b.count = 0; b.gaps = []; b.dc = 0; b.dcReady = false; }); }
 function pushSamples(c, mins, maxs, gapBefore){
   const b = buf[c];
   if (gapBefore) b.gaps.push(b.count);
+  /* [T-2.25] media rodante DC (EMA τ≈30 s) sobre el centro (min+max)/2 del tramo.
+     El ring sirve counts CRUDOS (gravedad ≈1 g en ENZ + bias MEMS en ENN/ENE);
+     convertirlos a unidades físicas SIN restar esta media contra una escala
+     de-media (pga_trip_g) clavaba brújula y sismograma al máximo permanente.
+     El primer tramo SIEMBRA la media (sin rampa desde 0 ⇒ sin deflexión falsa
+     al cargar); τ=30 s sigue la deriva térmica y un sismo de segundos apenas
+     la desplaza (distorsión acotada y transitoria). Corre 1×/tick, no por frame. */
+  if (mins.length){
+    let sum = 0;
+    for (let i = 0; i < mins.length; i++) sum += (mins[i] + maxs[i]) / 2;
+    const m = sum / mins.length;
+    if (!b.dcReady){ b.dc = m; b.dcReady = true; }
+    else {
+      const alpha = 1 - Math.exp(-(mins.length / (S.nominalSr || 100)) / 30);
+      b.dc += alpha * (m - b.dc);
+    }
+  }
   for (let i = 0; i < mins.length; i++){
     b.min[b.head] = mins[i]; b.max[b.head] = maxs[i]; b.clip[b.head] = 0;
     b.head = (b.head + 1) % N; b.count++;
@@ -1188,7 +1205,9 @@ function windowOf(c){
   for (let i = 0; i < N; i++){
     if (i < N - avail){ out[i] = 0; outMax[i] = 0; clip[i] = 0; continue; }
     const j = (start + (i - (N - avail))) % N;
-    out[i] = b.min[j]; outMax[i] = b.max[j]; clip[i] = b.clip[j];
+    /* [T-2.25] resta la media rodante DC SOLO en ranuras llenas (las vacías
+       quedan 0: la línea base del carril vacío no se desplaza) */
+    out[i] = b.min[j] - b.dc; outMax[i] = b.max[j] - b.dc; clip[i] = b.clip[j];
   }
   return {min: out, max: outMax, clip, avail};
 }
@@ -1295,7 +1314,9 @@ function drawRose(){
   const trip = th ? th.pga_trip_g : 0.060;
   const mZ = chs.ENZ;
   const sc = Math.max(0.006, trip*1.15, (mZ ? mZ.pga_g : 0)*1.2);
-  const lastCounts = (c) => { const b = buf[c]; if (!b.count) return 0; return b.max[(b.head-1+N)%N]; };
+  /* [T-2.25] último valor SIN la media rodante DC: con el crudo, Math.sign leía
+     el signo del offset (constante) y el punto quedaba clavado en un cuadrante */
+  const lastCounts = (c) => { const b = buf[c]; if (!b.count) return 0; return b.max[(b.head-1+N)%N] - b.dc; };
   const vz = dead ? 0 : Math.abs(toPhys('ENZ', lastCounts('ENZ')));
   const vn = dead ? 0 : Math.abs(toPhys('ENN', lastCounts('ENN')));
   const ve = dead ? 0 : Math.abs(toPhys('ENE', lastCounts('ENE')));
