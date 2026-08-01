@@ -74,6 +74,26 @@ def test_evidence_window_extractable_after_quake(supervisor):
     assert obj.sha256
 
 
+def test_manual_reset_closes_alert_end_to_end(supervisor):
+    # [T-2.26] SASMEX real → protección completa → CERRAR ALERTA libera TODO
+    # (relés + tier + latch); un SASMEX NUEVO re-enclava (latch monótono intacto).
+    WR1Simulator(supervisor.gpio).alert()
+    assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
+    for channel in FULL_SEQUENCE:
+        assert supervisor.gpio.relay_state(channel).activated is True, channel
+
+    supervisor.local_api.reset_alert()
+    status = supervisor.local_api.status()
+    assert status["last_tier"] == "normal"
+    assert status["alert_latched"] is False
+    for channel in FULL_SEQUENCE:
+        assert supervisor.gpio.relay_state(channel).activated is False, channel
+
+    WR1Simulator(supervisor.gpio).alert()  # alerta NUEVA tras el cierre
+    assert supervisor.gpio.alert_latched is True
+    assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
+
+
 def test_load_many_noise_packets_no_spurious_alert(supervisor):
     sim = RS4DSimulator(station=supervisor.settings.station)
     stream = sim.stream(channel="EHZ")
