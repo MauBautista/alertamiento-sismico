@@ -40,6 +40,52 @@ export function formatPoint({ lat, lon }: LonLat): string {
   return `${Math.abs(lat).toFixed(4)}°${ns} · ${Math.abs(lon).toFixed(4)}°${ew}`;
 }
 
+/** Radio terrestre medio (km) — el mismo del haversine del panel del gabinete. */
+const EARTH_R_KM = 6371;
+
+/** [T-2.28] Distancia lineal de gran círculo en km — espejo de `haversine()` del
+ * panel edge (index.html). Es la "distancia lineal" que ve el operador. */
+export function haversineKm(a: LonLat, b: LonLat): number {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lon - a.lon) * rad;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_R_KM * Math.asin(Math.sqrt(s));
+}
+
+/** Rosa de 16 puntos EN ESPAÑOL (O = oeste), como la habla el panel del gabinete. */
+const ROSE_16 = [
+  "N",
+  "NNE",
+  "NE",
+  "ENE",
+  "E",
+  "ESE",
+  "SE",
+  "SSE",
+  "S",
+  "SSO",
+  "SO",
+  "OSO",
+  "O",
+  "ONO",
+  "NO",
+  "NNO",
+] as const;
+
+/** [T-2.28] Rumbo de 16 puntos desde `a` hacia `b` — espejo de `bearing()` del panel. */
+export function bearing16(a: LonLat, b: LonLat): string {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lon - a.lon) * rad) * Math.cos(b.lat * rad);
+  const x =
+    Math.cos(a.lat * rad) * Math.sin(b.lat * rad) -
+    Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lon - a.lon) * rad);
+  const deg = (Math.atan2(y, x) / rad + 360) % 360;
+  return ROSE_16[Math.round(deg / 22.5) % 16];
+}
+
 /**
  * Parsea "lat, lon" pegado del portapapeles (el formato que dan Google Maps y el GPS).
  *

@@ -19,7 +19,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
-import type { MapEpicenter, MapSiteState } from "@takab/sdk";
+import type { CatalogEarthquakeOut, MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import { observeMapResize } from "../../lib/maplibre";
 
@@ -67,6 +67,10 @@ export const FELT_COLOR: Record<string, string> = {
 };
 
 export const EPICENTER_COLOR = "#E040FB";
+
+/** [T-2.28] Catálogo HISTÓRICO de referencia (1985–2022): color y símbolo (◇)
+ * propios — jamás se confunde ni con un edificio ni con el ✳ de un incidente. */
+export const CATALOG_COLOR = "#7CE7FF";
 
 /** Banda de sacudida medida del sitio (la deriva el server; el default es honesto). */
 export function siteFelt(site: MapSiteState): string {
@@ -132,13 +136,46 @@ export function epicentersToFeatureCollection(epicenters: MapEpicenter[]): Featu
   };
 }
 
+/** [T-2.28] GeoJSON del catálogo histórico. Los "gemelos" SSN/USGS del mismo sismo
+ * se pintan AMBOS: sus ~28 km de separación son dato honesto del catálogo. */
+export function catalogToFeatureCollection(
+  items: CatalogEarthquakeOut[],
+  selectedId: string | null,
+): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: items.map((q) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [q.lon, q.lat] },
+      properties: {
+        ref_id: q.ref_id,
+        label: `M ${q.magnitude.toFixed(1)} · ${q.origin_time.slice(0, 4)} · ${q.source}`,
+        selected: q.ref_id === selectedId,
+      },
+    })),
+  };
+}
+
 export interface MapPanelProps {
   sites: MapSiteState[];
   epicenters: MapEpicenter[];
   onSelectSite: (siteId: string) => void;
+  /** Catálogo histórico (T-2.28); sin la prop, la capa no existe. */
+  catalog?: CatalogEarthquakeOut[];
+  catalogError?: boolean;
+  selectedCatalogId?: string | null;
+  onSelectCatalog?: (refId: string) => void;
 }
 
-export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelProps) {
+export default function MapPanel({
+  sites,
+  epicenters,
+  onSelectSite,
+  catalog = [],
+  catalogError = false,
+  selectedCatalogId = null,
+  onSelectCatalog,
+}: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
@@ -150,6 +187,16 @@ export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelPr
   epicentersRef.current = epicenters;
   const onSelectRef = useRef(onSelectSite);
   onSelectRef.current = onSelectSite;
+  // [T-2.28] capa de catálogo histórico: OFF por default (el wall es operativo).
+  const [showCatalog, setShowCatalog] = useState(false);
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  const selectedCatalogRef = useRef(selectedCatalogId);
+  selectedCatalogRef.current = selectedCatalogId;
+  const showCatalogRef = useRef(showCatalog);
+  showCatalogRef.current = showCatalog;
+  const onSelectCatalogRef = useRef(onSelectCatalog);
+  onSelectCatalogRef.current = onSelectCatalog;
 
   // Init una sola vez; datos y handlers via refs (sin re-crear el mapa).
   useEffect(() => {
@@ -287,10 +334,54 @@ export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelPr
         },
       });
 
+      // [T-2.28] Catálogo histórico: ◇ + rótulo. La capa nace VACÍA (toggle off);
+      // el efecto de datos la alimenta. NO es intensidad interpolada: cada ◇ es
+      // un epicentro puntual del catálogo oficial, sin radios ni isosistas.
+      map.addSource("catalog", {
+        type: "geojson",
+        data: catalogToFeatureCollection([], null),
+      });
+      map.addLayer({
+        id: "catalog-mark",
+        type: "symbol",
+        source: "catalog",
+        layout: {
+          "text-field": "◇",
+          "text-size": ["case", ["get", "selected"], 26, 18],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": CATALOG_COLOR,
+          "text-halo-color": "#0d2034",
+          "text-halo-width": ["case", ["get", "selected"], 2.5, 1],
+        },
+      });
+      map.addLayer({
+        id: "catalog-label",
+        type: "symbol",
+        source: "catalog",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 10,
+          "text-offset": [0, 1.4],
+          "text-anchor": "top",
+        },
+        paint: {
+          "text-color": CATALOG_COLOR,
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.5,
+        },
+      });
+
       map.on("click", "site-core", (event) => {
         const feature = event.features?.[0];
         const siteId = feature?.properties?.["site_id"];
         if (typeof siteId === "string") onSelectRef.current(siteId);
+      });
+      map.on("click", "catalog-mark", (event) => {
+        const refId = event.features?.[0]?.properties?.["ref_id"];
+        if (typeof refId === "string") onSelectCatalogRef.current?.(refId);
       });
 
       if (raf !== 0) return; // el loop del pulso ya corre (re-add tras fallback)
@@ -329,7 +420,10 @@ export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelPr
     (map.getSource("epicenters") as maplibregl.GeoJSONSource | undefined)?.setData(
       epicentersToFeatureCollection(epicenters),
     );
-  }, [sites, epicenters]);
+    (map.getSource("catalog") as maplibregl.GeoJSONSource | undefined)?.setData(
+      catalogToFeatureCollection(showCatalog ? catalog : [], selectedCatalogId),
+    );
+  }, [sites, epicenters, catalog, selectedCatalogId, showCatalog]);
 
   const anyUncalibrated = sites.some((s) => s.calibrated !== true);
 
@@ -373,6 +467,31 @@ export default function MapPanel({ sites, epicenters, onSelectSite }: MapPanelPr
         {anyUncalibrated && (
           <div className="soc-map__legend-note" data-testid="map-uncalibrated">
             ○ SIN CALIBRAR · PGA RELATIVO
+          </div>
+        )}
+        <button
+          type="button"
+          className={`soc-map__legend-toggle${showCatalog ? " soc-map__legend-toggle--on" : ""}`}
+          data-testid="catalog-toggle"
+          aria-pressed={showCatalog}
+          onClick={() => setShowCatalog((v) => !v)}
+        >
+          <span className="soc-map__sw" style={{ background: CATALOG_COLOR }} /> CATÁLOGO HISTÓRICO
+          1985–2022 · {showCatalog ? "ON" : "OFF"}
+        </button>
+        {showCatalog && catalogError && (
+          <div className="soc-map__legend-note" data-testid="catalog-error">
+            CATÁLOGO NO DISPONIBLE
+          </div>
+        )}
+        {showCatalog && !catalogError && catalog.length === 0 && (
+          <div className="soc-map__legend-note" data-testid="catalog-empty">
+            CATÁLOGO VACÍO
+          </div>
+        )}
+        {showCatalog && selectedCatalogId !== null && (
+          <div className="soc-map__legend-note" data-testid="catalog-step2">
+            PASO 2 · SELECCIONE UNA ESTACIÓN EN EL MAPA
           </div>
         )}
       </div>

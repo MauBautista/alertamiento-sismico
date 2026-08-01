@@ -2943,3 +2943,35 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         0.099 g vs 0.053 g), curva pintada, candado de vecina, reset de selección, estados
         vacíos, CERO errores de consola.
   - [ ] Verificación visual presencial en el Pi (misma pantalla del gabinete).
+
+---
+
+### [x] T-2.28 · Consola SOC: capa de catálogo histórico + ComparePanel de atenuación — COMPLETA (2026-08-01)
+- **Componente:** web · **Depende de:** T-1.48/T-1.52 (catálogo servido), T-2.27 (ley v1 ratificada)
+- **Qué es:** los 13 sismos ratificados (1985–2022, gemelos SSN/USGS incluidos y AMBOS
+  visibles) como capa propia del mapa del wall (◇ `#7CE7FF`, distinta del ✳ de incidentes),
+  selección en DOS PASOS (clic en sismo → hint «PASO 2 · SELECCIONE UNA ESTACIÓN EN EL MAPA»
+  → clic en sitio) y modal `ComparePanel` con distancia epicentral lineal + rumbo,
+  hipocentral, arribo P teórico (v_P 6.5), PGA estimados (epicentro/estación) y curva SVG
+  log-Y de ATTEN-LAW v1 con banda ilustrativa ×3/÷3. **Sin PGA medido y se declara**
+  (retención de features 24 meses; los históricos no tienen series): nota fija «SIN PGA
+  MEDIDO — EVENTO FUERA DE LA VENTANA DE DATOS». NO es el mini-ShakeMap del §14.
+- **Criterios:**
+  - [x] `haversineKm`/`bearing16` en `fleet/geo.ts` (espejo del panel; rosa en español) +
+        `console/attenuation.ts` puro con vectores de PARIDAD en vitest
+        (M 7.1/57/100 ⇒ hipo 115.1043 km · 0.04885 g estación · 0.09866 g epicentro ·
+        P 17.71 s) — mismos números que el espejo edge y la fuente
+        `_plausible_pga_g` (ancla ATTEN-LAW v1 en su docstring).
+  - [x] Capa `catalog` en MapPanel con toggle «CATÁLOGO HISTÓRICO 1985–2022» (default OFF:
+        el wall es operativo), `catalogToFeatureCollection` puro testeable, clic en ◇ emite
+        `ref_id`, estados de leyenda (error ⇒ «CATÁLOGO NO DISPONIBLE», vacío ⇒ «CATÁLOGO
+        VACÍO», seleccionado ⇒ hint paso 2).
+  - [x] `ComparePanel` modal (patrón EpicenterModal) con select de sitio, rótulo maestro
+        «ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO», nota
+        sin-medido, y estados: sin sitios ⇒ «SIN SITIOS CON COORDENADAS EN EL TENANT»;
+        sin profundidad ⇒ «SIN PROFUNDIDAD REPORTADA» (hipocentral degrada a epicentral).
+  - [x] El auto-popup por anomalía NUNCA cae en modo comparación (handler separado del
+        clic de mapa); cerrar el modal limpia la selección de sismo.
+  - [x] Cero cambios en api/db/sdk; cero dependencias nuevas (SVG a mano).
+  - [x] vitest + eslint + build verdes; tests nuevos: atenuación (4), geo (5),
+        ComparePanel (4), capa catálogo (4).
