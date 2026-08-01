@@ -585,6 +585,9 @@ class LocalDashboard(EdgeModule):
             "sasmex_active": self._gpio.sasmex_active,
             "siren_sounding": self._gpio.siren_sounding,
             "audible_silenced": self._gpio.audible_silenced,
+            # [T-2.26] Enclave vivo (SASMEX o rules): el panel ofrece CERRAR
+            # ALERTA mientras esto sea true, aunque el tier ya haya decaído.
+            "alert_latched": self._gpio.alert_latched,
             "last_tier": last_tier,
             "relays": self._relays_section(),
             # Compat con el panel previo: hora del último dato de salud (o ahora).
@@ -686,7 +689,13 @@ class LocalDashboard(EdgeModule):
 
     def reset_alert(self) -> None:
         """Cierra/re-arma la alerta enclavada por LAN (vuelve a operación normal)."""
+        # Orden gpio→rules a propósito (falla seguro ante un disparo concurrente):
+        # si un sismo vivo re-enclava entre ambas llamadas, los relés QUEDAN en
+        # protección y la siguiente ventana de features re-emite el tier.
         self._gpio.reset()
+        # [T-2.26] Sin esto, last_tier quedaba congelado en el tier del episodio
+        # hasta la siguiente feature — con SeedLink caído, PARA SIEMPRE.
+        self._rules.reset()
         if self._audio is not None:
             # La alerta terminó: la voz también se calla (A-6).
             try:

@@ -218,6 +218,9 @@ def test_watcher_arranca_la_sirena_en_segundo_plano(siren_cfg, gpio) -> None:  #
 class _RulesStub:
     last_decision = None
 
+    def reset(self) -> None:  # [T-2.26] reset_alert() re-arma también el motor
+        pass
+
 
 class _HealthStub:
     last_snapshot = None

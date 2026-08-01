@@ -2847,3 +2847,36 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   `feed_version: 1` persistida en el archivo). Huella en nube: `gateway_catalog_state` v1 +
   `audit_log` `catalog_published` con el actor real. Enlace del gabinete estable tras la
   suscripción nueva (0 reconexiones, RTT 76 ms, spool 0).
+
+---
+
+### [x] T-2.26 · Cancelar alerta no liberaba UI ni actuadores — `RuleEngine.reset()` + `alert_latched` — CÓDIGO COMPLETO (2026-08-01); verificación en el Pi pendiente de deploy
+- **Componente:** edge (rules + gpio + local_api + panel) · **Depende de:** —
+- **El bug (observado EN VIVO el 2026-08-01):** tras una alerta instrumental real, CERRAR
+  ALERTA limpiaba el GPIO pero el `RuleEngine` no tenía `reset()`: `last_tier` quedaba
+  congelado en el tier del episodio (con SeedLink quieto, PARA SIEMPRE) y el banner rojo no
+  se iba. Peor: cuando el tier decaía solo a `normal` con los relés AÚN enclavados (estrobo,
+  gas, ascensor, retenedores — el enclave es monótono por diseño), el botón CERRAR ALERTA
+  desaparecía ⇒ estado IRRECUPERABLE desde el panel. Y `doAction` repintaba con el status
+  viejo (sin refetch tras un 200). SILENCIAR solo toca la sirena (NFPA-72) — eso se conserva.
+- **Política ratificada (Mauricio, 2026-08-01):** el latch se CONSERVA (nada se suelta solo);
+  el fix es visibilidad + reset completo. Two-step de 5 s del CERRAR ALERTA se conserva.
+- **Criterios:**
+  - [x] `RuleEngine.reset()`: re-arma a NORMAL con `source=manual` (enum EXISTENTE — nada
+        nuevo viaja a la nube; el ring de transiciones es solo-panel), limpia features,
+        TERMINA el episodio de dedup (re-disparo ⇒ `event_id` nuevo), idempotente, y NO
+        puede enmascarar un sismo en curso (la siguiente ventana re-eleva) — 5 tests.
+  - [x] `GpioController.alert_latched` (SASMEX latcheado o demanda de rules viva; excluye
+        pruebas y `_safed`) expuesto en `/api/status` — 5 tests gpio + 3 local_api.
+  - [x] `reset_alert()` = `gpio.reset()` → `rules.reset()` (orden falla-seguro ante disparo
+        concurrente: los relés quedan protegidos si el sismo sigue).
+  - [x] Panel: CERRAR ALERTA visible SIEMPRE que haya enclave (aunque el tier ya sea
+        normal); banner ámbar «ACTUADORES ENCLAVADOS · CIERRE LA ALERTA PARA LIBERAR»
+        (el rojo queda EXCLUSIVO de alerta viva); refetch one-shot del status tras un 200
+        (sin tick nuevo: `setTimeout(tick` sigue apareciendo 1 vez). Hooks congelados
+        nuevos: `alert_latched`, `ACTUADORES ENCLAVADOS`.
+  - [x] E2E: SASMEX → protección completa → reset libera TODO → un SASMEX nuevo re-enclava.
+  - [x] Suite edge 459 verde · ruff limpio · latch monótono intacto
+        (`test_silence_keeps_visual_strobe` sin tocar; `commands_for` solo ACTIVATE).
+  - [ ] Verificación en el Pi real (deploy + ciclo WR-1 en modo prueba → enclave → banner
+        ámbar → CERRAR ALERTA con PIN ⇒ `last_tier=normal`, `alert_latched=false`).

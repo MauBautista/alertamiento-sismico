@@ -246,3 +246,63 @@ def test_recent_transitions_bounded_and_sasmex_source():
     assert latest["source"] == "sasmex"
     assert latest["pga"] is None  # SASMEX es booleano: su severidad no es medición
     assert latest["to_tier"] == "evacuate_or_hold"
+
+
+# --- reset manual (T-2.26): cierre de alerta por operador -----------------------
+
+
+def test_manual_reset_rearms_engine_to_normal():
+    engine = RuleEngine(TH)
+    engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
+    engine.evaluate_features(_feature(pga=0.12, channel="ENN"))  # evacuate
+    engine.reset()
+    assert engine.last_decision is not None
+    assert engine.last_decision.tier is Tier.NORMAL
+    assert engine.last_decision.source is AlertSource.MANUAL
+
+
+def test_manual_reset_logs_transition_with_manual_source():
+    clock = _Clock(START)
+    engine = RuleEngine(TH, clock=clock)
+    tripped = engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
+    engine.reset()
+    newest = engine.recent_transitions()[0]
+    assert newest["to_tier"] == "normal"
+    assert newest["from_tier"] == "restricted"
+    assert newest["source"] == "manual"
+    assert newest["pga"] is None  # el cierre no es una medición
+    assert newest["event_id"] == tripped.event_id  # traza el episodio CERRADO
+
+
+def test_manual_reset_ends_episode_new_event_id_on_retrip():
+    clock = _Clock(START)
+    engine = RuleEngine(TH, dedup_window_s=30.0, clock=clock)
+    first = engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
+    engine.reset()
+    clock.t = START + timedelta(seconds=2)  # aún dentro de la ventana de dedup original
+    again = engine.evaluate_features(
+        _feature(pga=0.12, channel="ENZ", when=START + timedelta(seconds=2))
+    )
+    assert again.event_id != first.event_id  # el cierre del operador TERMINA el episodio
+
+
+def test_manual_reset_from_normal_is_idempotent_and_quiet():
+    engine = RuleEngine(TH)
+    engine.evaluate_features(_feature(pga=0.001))  # arranque: None→normal
+    before = len(engine.recent_transitions(limit=50))
+    engine.reset()
+    engine.reset()  # idempotente: llamable N veces sin lanzar ni ensuciar el ring
+    assert len(engine.recent_transitions(limit=50)) == before
+    assert engine.last_decision.tier is Tier.NORMAL
+
+
+def test_retrip_after_reset_when_shaking_continues():
+    engine = RuleEngine(TH)
+    engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
+    engine.evaluate_features(_feature(pga=0.12, channel="ENN"))  # evacuate
+    engine.reset()
+    # El reset NO puede enmascarar un sismo en curso: la siguiente ventana re-eleva.
+    later = engine.evaluate_features(
+        _feature(pga=0.12, channel="ENZ", when=START + timedelta(seconds=1))
+    )
+    assert later.tier is Tier.RESTRICTED

@@ -716,6 +716,20 @@ class GpioController(EdgeModule):
         return self._sasmex_latched
 
     @property
+    def alert_latched(self) -> bool:
+        """¿Alguna demanda de ALERTA sigue enclavada (SASMEX o `rules`)? (T-2.26)
+
+        Es el campo que decide en el panel si CERRAR ALERTA debe ofrecerse
+        aunque el tier ya haya decaído a normal (el enclave es monótono por
+        diseño: solo `reset()` lo suelta). Excluye a propósito las pruebas
+        (no son alertas) y `_safed` (estado seguro durable, condición aparte).
+        `any(values())` y no `bool(dict)`: `deactivate()` deja la llave en
+        False sin borrarla.
+        """
+        with self._lock:
+            return self._sasmex_latched or any(self._rules_demand.values())
+
+    @property
     def siren_sounding(self) -> bool:
         """¿La sirena audible está sonando físicamente ahora mismo?"""
         with self._lock:

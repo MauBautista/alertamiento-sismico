@@ -224,6 +224,42 @@ def test_drive_all_safe_is_durable(gpio):
     assert gpio.relay_state(ActuatorChannel.GAS_VALVE).energized is True
 
 
+# --- T-2.26: alert_latched — decide si CERRAR ALERTA se ofrece en el panel ---
+
+
+def test_alert_latched_true_while_rules_demand_active(gpio):
+    # El estado real observado el 2026-08-01: tier ya normal, relés aún enclavados.
+    gpio.activate(ActuatorChannel.GAS_VALVE)
+    assert gpio.alert_latched is True
+    assert gpio.sasmex_active is False
+
+
+def test_alert_latched_true_while_sasmex_latched_even_if_silenced(gpio):
+    gpio.simulate_sasmex(active=True)
+    gpio.silence_audibles(True)  # silenciar el audible NO cierra la alerta
+    assert gpio.alert_latched is True
+
+
+def test_alert_latched_false_after_reset_and_when_idle(gpio):
+    assert gpio.alert_latched is False  # idle
+    gpio.simulate_sasmex(active=True)
+    gpio.activate(ActuatorChannel.GAS_VALVE)
+    gpio.reset()
+    assert gpio.alert_latched is False
+
+
+def test_deactivated_demand_does_not_count_as_latched(gpio):
+    # deactivate() deja la llave en False sin borrarla: any(values), no bool(dict).
+    gpio.activate(ActuatorChannel.ELEVATOR)
+    gpio.deactivate(ActuatorChannel.ELEVATOR)
+    assert gpio.alert_latched is False
+
+
+def test_siren_test_does_not_set_alert_latched(gpio):
+    gpio.run_siren_test(duration_s=100)
+    assert gpio.alert_latched is False  # una prueba NO es una alerta
+
+
 def test_concurrent_transitions_keep_state_coherent(gpio):
     # HALLAZGO C / RE-REVISIÓN #4: bajo contención en el MISMO canal, la sombra
     # (_energized) y el relé físico nunca divergen de las demandas (un torn update
