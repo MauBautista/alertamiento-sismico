@@ -33,6 +33,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import os
 import threading
 import time
 import urllib.parse
@@ -40,6 +41,7 @@ from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 
 from takab_edge.catalog import DEGRADED as _CATALOG_DEGRADED
 from takab_edge.catalog import CatalogStore
@@ -75,6 +77,73 @@ _FALLBACK_HTML = (
     "<!doctype html><meta charset='utf-8'><title>TAKAB Ailert</title>"
     "<p>Panel sin index.html empaquetado; usa /api/status.</p>"
 )
+
+
+class ActionUnavailable(RuntimeError):
+    """[T-2.29] Orden válida que AHORA no puede cumplirse (p.ej. sin señal).
+
+    El handler la traduce a 409: el operador ve por qué no pasó nada, en vez
+    de un OK mentiroso o un 500 al kiosco.
+    """
+
+
+class RoseZeroStore:
+    """[T-2.29] PUNTO 0 de la brújula del panel (presentación pura).
+
+    Media de counts por canal EN* capturada con el gabinete YA instalado y
+    nivelado: la brújula pasa a medir desviaciones respecto a la INSTALACIÓN,
+    no respecto a una media rodante que absorbe inclinaciones sostenidas.
+    Misma doctrina de archivo que `CatalogStore`: carga única, escritura
+    atómica (tmp + os.replace), sin path ⇒ solo memoria (tests/parcial), y un
+    archivo ilegible degrada a "sin calibrar" — jamás un cero inventado.
+    Jamás toca umbrales, rules ni actuadores.
+    """
+
+    def __init__(self, path: str = "") -> None:
+        self._path = Path(path) if path else None
+        self._lock = threading.Lock()
+        self._current: dict | None = None
+        self._load_once()
+
+    def _load_once(self) -> None:
+        if self._path is None:
+            return
+        try:
+            raw = json.loads(self._path.read_text("utf-8"))
+            channels = raw.get("channels")
+            if isinstance(channels, dict) and channels and raw.get("set_at"):
+                self._current = {
+                    "channels": {str(k): float(v) for k, v in channels.items()},
+                    "set_at": str(raw["set_at"]),
+                }
+        except FileNotFoundError:
+            log.info("punto 0 de la brújula aún no fijado (%s)", self._path)
+        except Exception:  # noqa: BLE001 — presentación; ilegible ⇒ sin calibrar
+            log.warning("punto 0 de la brújula ilegible (%s); se ignora", self._path, exc_info=True)
+
+    def current(self) -> dict | None:
+        with self._lock:
+            return dict(self._current) if self._current else None
+
+    def set(self, channels: dict[str, float]) -> dict:
+        snapshot = {
+            "channels": {str(k): float(v) for k, v in channels.items()},
+            "set_at": utcnow().isoformat(),
+        }
+        with self._lock:
+            self._current = snapshot
+            if self._path is not None:
+                try:
+                    tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+                    tmp.write_text(json.dumps(snapshot), "utf-8")
+                    os.replace(tmp, self._path)
+                except Exception:  # noqa: BLE001 — sin disco sigue vivo en memoria
+                    log.warning(
+                        "no se pudo persistir el punto 0 (%s); queda en memoria",
+                        self._path,
+                        exc_info=True,
+                    )
+        return snapshot
 
 
 def _waveform_params(query: str) -> tuple[int | None, list[str] | None, int | None]:
@@ -180,6 +249,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             "/api/test-mode": dashboard.toggle_test_mode,
             "/api/reset": dashboard.reset_alert,
             "/api/drill-audio": dashboard.drill_audio,
+            "/api/rose-zero": dashboard.set_rose_zero,  # T-2.29
         }
         action = actions.get(self.path)
         if action is None:
@@ -191,7 +261,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if code != 200:
             self._send(code, json.dumps({"error": "pin"}))
             return
-        action()
+        try:
+            action()
+        except ActionUnavailable as exc:
+            # [T-2.29] La orden es válida pero AHORA no puede cumplirse (p.ej.
+            # calibrar sin señal): 409 honesto, jamás un OK que no hizo nada.
+            self._send(409, json.dumps({"error": str(exc)}))
+            return
         self._send(200, json.dumps({"ok": True}))
 
     def log_message(self, *args: object) -> None:  # no spamear stdout del edge
@@ -230,6 +306,7 @@ class LocalDashboard(EdgeModule):
         location: object | None = None,
         catalog: object | None = None,
         catalog_path: str = "",
+        rose_zero_path: str = "",
         gateway_id: str = "",
         site_name: str = "",
         refresh_ms: int = 1000,
@@ -271,6 +348,7 @@ class LocalDashboard(EdgeModule):
         # panel suelto (tests/parcial) construye uno de solo-lectura por path.
         self.static_files = _load_static_fonts()
         self._catalog_store = catalog if catalog is not None else CatalogStore(catalog_path)
+        self._rose_zero = RoseZeroStore(rose_zero_path)  # T-2.29
 
     def catalog(self) -> dict:
         """[T-2.23/24] Instantánea SSN normalizada (§5.1). Lectura pura del store."""
@@ -601,6 +679,8 @@ class LocalDashboard(EdgeModule):
             "latencies": self._latencies_section(),
             "seedlink": self._seedlink_section(),
             "calibration": self._calibration_section(),
+            # [T-2.29] Punto 0 de la brújula (o null: el panel usa media rodante).
+            "rose_zero": self._rose_zero.current(),
             "shake_history": self._shake_history_section(),
             "signal": self._signal_section(now),
             "health": health,
@@ -704,6 +784,36 @@ class LocalDashboard(EdgeModule):
                 log.exception("audio.stop_playback() en reset falló (aislado)")
         self._record_action("reset")
         log.warning("alerta cerrada/re-armada por LAN")
+
+    def set_rose_zero(self) -> None:
+        """[T-2.29] Fija/restablece el PUNTO 0 de la brújula por LAN (con PIN).
+
+        Media por canal EN* de la ventana reciente del ring (counts crudos:
+        gravedad + bias MEMS + inclinación de la instalación). Se invoca con el
+        gabinete YA instalado lo más nivelado posible; volver a pulsarlo
+        RESTABLECE el cero. Sin señal ⇒ `ActionUnavailable` (409): jamás se
+        fija un cero inventado. Presentación pura — no toca actuación.
+        """
+        data = self.waveform(None, channels=["ENZ", "ENN", "ENE"], max_points=600)
+        channels: dict[str, float] = {}
+        for name, payload in (data.get("channels") or {}).items():
+            flat: list[float] = []
+            for sample in payload.get("samples") or []:
+                # encoding "raw" = enteros sueltos; "minmax" = pares [min, max].
+                if isinstance(sample, (list, tuple)):
+                    flat.extend(float(v) for v in sample)
+                else:
+                    flat.append(float(sample))
+            if flat:
+                channels[name] = sum(flat) / len(flat)
+        if not channels:
+            raise ActionUnavailable("sin señal para calibrar el punto 0")
+        self._rose_zero.set(channels)
+        self._record_action("rose_zero")
+        log.warning(
+            "PUNTO 0 de la brújula fijado por LAN: %s",
+            {name: round(value) for name, value in channels.items()},
+        )
 
     def drill_audio(self) -> None:
         """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés."""

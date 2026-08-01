@@ -673,6 +673,88 @@ def test_index_pin_failure_is_loud(supervisor):
         assert hook in html, hook
 
 
+# --- T-2.29: calibrador del PUNTO 0 de la brújula --------------------------
+
+
+def _feed_en_channels(supervisor, seconds: int = 3) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from simulators.rs4d import RS4DSimulator
+
+    sim = RS4DSimulator(station=supervisor.settings.station)
+    start = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
+    for i in range(seconds):
+        for ch in ("ENZ", "ENN", "ENE"):
+            supervisor.seedlink.feed(sim.packet(ch, start + timedelta(seconds=i)))
+
+
+@pytest.fixture
+def zero_supervisor(settings, tmp_path):
+    """Supervisor con rose_zero_path escribible (el default apunta a /var/lib)."""
+    from takab_edge.supervisor import EdgeSupervisor
+
+    s = settings.model_copy(update={"rose_zero_path": str(tmp_path / "rose-zero.json")})
+    sup = EdgeSupervisor(s, seedlink_source=None)
+    sup.start()
+    try:
+        yield sup
+    finally:
+        sup.stop()
+
+
+def test_rose_zero_captures_dc_and_persists(zero_supervisor, tmp_path):
+    """El PUNTO 0 captura la media por canal EN* (gravedad + bias) y persiste."""
+    _feed_en_channels(zero_supervisor)
+    assert _post(zero_supervisor.local_api, "/api/rose-zero") == 200
+    status = zero_supervisor.local_api.status()
+    zero = status["rose_zero"]
+    assert zero is not None and zero["set_at"]
+    # DC del simulador: ENZ ≈ 3.77e6 (gravedad), ENN > 0, ENE < 0.
+    assert abs(zero["channels"]["ENZ"] - 3_770_000) < 40_000
+    assert zero["channels"]["ENN"] > 5_000
+    assert zero["channels"]["ENE"] < -3_000
+    # Persistencia atómica: otro panel que lea el MISMO archivo ve el punto 0
+    # (equivale a un reinicio del servicio).
+    from takab_edge.local_api import LocalDashboard
+
+    reread = LocalDashboard(
+        zero_supervisor.gpio,
+        zero_supervisor.rules,
+        zero_supervisor.health,
+        port=0,
+        dev_mode=True,
+        rose_zero_path=str(tmp_path / "rose-zero.json"),
+    )
+    zero2 = reread.status()["rose_zero"]
+    assert zero2 is not None
+    assert zero2["channels"] == zero["channels"]
+
+
+def test_rose_zero_without_signal_is_409_and_does_not_set(supervisor):
+    """Sin datos en el ring no hay nada que calibrar: 409 y rose_zero sigue null."""
+    assert _post(supervisor.local_api, "/api/rose-zero") == 409
+    assert supervisor.local_api.status()["rose_zero"] is None
+
+
+def test_rose_zero_requires_pin_when_configured(pinned):
+    assert _post(pinned, "/api/rose-zero") == 401
+
+
+def test_index_rose_zero_hooks(supervisor):
+    """[T-2.29] La brújula declara su cero y su escala; el botón exige PIN."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        "CALIBRAR BRÚJULA",
+        "PUNTO 0",
+        "rose_zero",
+        "MEDIA RODANTE",
+        "PUNTO 0 FIJADO",
+        "api/rose-zero",
+    ):
+        assert hook in html, hook
+
+
 def test_index_comparativa_hooks(supervisor):
     """[T-2.27] Comparativa sismo↔estación: hooks congelados del contrato.
 

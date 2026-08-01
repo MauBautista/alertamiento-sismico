@@ -481,7 +481,7 @@ const S = {
   toast: null,           // {text, at} — rechazo de orden visible a distancia
   markers: [],           // {t: epoch_s, kind: 'sasmex'|'tier'}
   prevSasmex: false, prevTier: null,
-  lastFrame: 0, raf: 0,
+  lastFrame: 0, raf: 0, rosePeak: 0,
   demoT0: performance.now()/1000, demoLastS: performance.now()/1000,
 };
 /* buffers de onda del cliente: min/máx paralelos a resolución nominal (preallocados) */
@@ -525,6 +525,7 @@ function baseStatus(){
   return {
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, last_tier:'normal',
+    rose_zero: null,
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
       {channel:'strobe', energized:false, activated:false, fail_safe:'normally_open'},
@@ -1274,6 +1275,7 @@ function renderActions(st){
   if (st.alert_latched || st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
     defs.push(['CERRAR ALERTA', 'libera el enclave · 2 clics + PIN', 'api/reset', true, 'danger']);
   defs.push(['PROBAR SIRENA', 'suena 2 s', 'api/siren-test', false, '']);
+  defs.push(['CALIBRAR BRÚJULA', 'fija el PUNTO 0 con el gabinete instalado y nivelado · re-pulsar restablece', 'api/rose-zero', true, '']);
   defs.push(['PROBAR ACTUADORES', 'sostiene sirena+estrobo · pulso en gas, ascensores, puertas', 'api/actuator-test', true, '']);
   const wr1 = st.test_mode && st.test_mode.active;
   defs.push([wr1 ? 'SALIR DE PRUEBA WR-1' : 'MODO PRUEBA WR-1', wr1 ? 'la nube vuelve a recibir' : 'ventana de 120 s · la nube no recibe', 'api/test-mode', false, '']);
@@ -1432,12 +1434,20 @@ function drawRose(){
   const trip = th ? th.pga_trip_g : 0.060;
   const mZ = chs.ENZ;
   const sc = Math.max(0.006, trip*1.15, (mZ ? mZ.pga_g : 0)*1.2);
-  /* [T-2.25] último valor SIN la media rodante DC: con el crudo, Math.sign leía
-     el signo del offset (constante) y el punto quedaba clavado en un cuadrante */
-  const lastCounts = (c) => { const b = buf[c]; if (!b.count) return 0; return b.max[(b.head-1+N)%N] - b.dc; };
+  /* [T-2.29] cero de la brújula: el PUNTO 0 fijado en la instalación (persiste
+     en el Pi) o, sin calibrar, la media rodante [T-2.25] — que absorbe
+     inclinaciones sostenidas y por eso "restaba" sensibilidad aparente */
+  const rz = st.rose_zero && st.rose_zero.channels ? st.rose_zero.channels : null;
+  const zeroOf = (c) => rz && rz[c] != null ? rz[c] : buf[c].dc;
+  const lastCounts = (c) => { const b = buf[c]; if (!b.count) return 0; return b.max[(b.head-1+N)%N] - zeroOf(c); };
   const vz = dead ? 0 : Math.abs(toPhys('ENZ', lastCounts('ENZ')));
   const vn = dead ? 0 : Math.abs(toPhys('ENN', lastCounts('ENN')));
   const ve = dead ? 0 : Math.abs(toPhys('ENE', lastCounts('ENE')));
+  /* [T-2.29] ganancia adaptativa del punto: pico decaído reciente con piso de
+     2 mg (vivo en reposo) y techo en la escala de umbral (comparable en sismo).
+     La barra Z conserva la escala anclada a umbrales — es OTRA pregunta. */
+  S.rosePeak = Math.max(Math.abs(vn), Math.abs(ve), (S.rosePeak || 0)*0.995, 0.0001);
+  const scDot = Math.min(Math.max(S.rosePeak*1.4, 0.002), sc);
   const rings = V === 'A' ? [0.34,0.62,0.86,1] : [0.55,1];
   x.font = "400 9px 'JetBrains Mono',monospace";
   rings.forEach((f, i) => {
@@ -1466,7 +1476,7 @@ function drawRose(){
     });
   }
   if (!dead){
-    const gx2 = Math.min(1, ve/sc), gy2 = Math.min(1, vn/sc);
+    const gx2 = Math.min(1, ve/scDot), gy2 = Math.min(1, vn/scDot);
     const sE = Math.sign(lastCounts('ENE') || 1);
     const sN = Math.sign(lastCounts('ENN') || 1);
     const tx = cx + sE*gx2*R*0.92, ty = cy - sN*gy2*R*0.92;
@@ -1486,6 +1496,12 @@ function drawRose(){
   x.fillStyle = dead ? C.warn : C.fg1; x.fillRect(cx-4,cy-4,8,8);
   x.strokeStyle = dead ? C.warn : C.cyan; x.lineWidth = 1; x.beginPath(); x.arc(cx,cy,11,0,Math.PI*2); x.stroke();
   if (dead){ x.fillStyle = C.warn; x.font = "700 11px 'Geist',system-ui"; x.fillText('SIN SEÑAL DEL SENSOR', cx-62, cy+R+34); }
+  /* [T-2.29] la escala del punto y su cero SE DECLARAN — un punto sin escala
+     rotulada afirmaría una intensidad que no está diciendo */
+  if (!dead){
+    x.fillStyle = C.fg4; x.font = "400 9px 'JetBrains Mono',monospace";
+    x.fillText('PUNTO ±' + (scDot*1000).toFixed(1) + ' mg · ' + (rz ? 'PUNTO 0 FIJADO' : 'MEDIA RODANTE · SIN CALIBRAR'), 8, h-8);
+  }
 }
 function drawGeoMap(){
   const el = $('map-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
