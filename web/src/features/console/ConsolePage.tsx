@@ -7,7 +7,7 @@
 // StateFrame sobre el snapshot del mapa (la fuente que define si el wall
 // puede pintar).
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
@@ -17,7 +17,9 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
+import { useCatalog } from "../triage/useCatalog";
 import AlertBanner from "./AlertBanner";
+import ComparePanel from "./ComparePanel";
 import DetailPanel from "./DetailPanel";
 import EpicenterModal from "./EpicenterModal";
 import DrillBanner from "./DrillBanner";
@@ -52,6 +54,13 @@ function ConsoleWall() {
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
+  // [T-2.28] comparativa histórica en dos pasos: sismo del catálogo → sitio.
+  const catalog = useCatalog();
+  const [catalogSel, setCatalogSel] = useState<string | null>(null);
+  const [compareSiteId, setCompareSiteId] = useState<string | null>(null);
+  const catalogSelRef = useRef<string | null>(null);
+  catalogSelRef.current = catalogSel;
+
   // Sitio enfocado: selección explícita, o el del incidente más severo.
   const focusSiteId = selectedSiteId ?? incidents.incidents[0]?.site_id ?? null;
   const features = useSiteFeatures(focusSiteId);
@@ -65,6 +74,19 @@ function ConsoleWall() {
     setSelectedSiteId(siteId);
     setDetailOpen(true);
   }, []);
+  // Con un sismo del catálogo armado, el clic en un sitio es el PASO 2 de la
+  // comparativa (no abre el detalle). El auto-popup usa openDetail directo, así
+  // que una anomalía sostenida jamás cae en modo comparación.
+  const onMapSiteClick = useCallback(
+    (siteId: string) => {
+      if (catalogSelRef.current !== null) {
+        setCompareSiteId(siteId);
+        return;
+      }
+      openDetail(siteId);
+    },
+    [openDetail],
+  );
   useAutoPopup(focusSiteId, features.points, openDetail);
 
   const siteById = useMemo(() => new Map(map.sites.map((s) => [s.site_id, s])), [map.sites]);
@@ -143,7 +165,15 @@ function ConsoleWall() {
           staleSince={staleSince}
         >
           <div className="soc-stage">
-            <MapPanel sites={map.sites} epicenters={map.epicenters} onSelectSite={openDetail} />
+            <MapPanel
+              sites={map.sites}
+              epicenters={map.epicenters}
+              onSelectSite={onMapSiteClick}
+              catalog={catalog.items}
+              catalogError={catalog.error !== null}
+              selectedCatalogId={catalogSel}
+              onSelectCatalog={setCatalogSel}
+            />
             <AlertBanner
               incident={critical}
               siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
@@ -178,6 +208,22 @@ function ConsoleWall() {
           </p>
         )}
       </main>
+      {catalogSel !== null &&
+        compareSiteId !== null &&
+        (() => {
+          const quake = catalog.items.find((q) => q.ref_id === catalogSel) ?? null;
+          return quake !== null ? (
+            <ComparePanel
+              quake={quake}
+              sites={map.sites}
+              initialSiteId={compareSiteId}
+              onClose={() => {
+                setCompareSiteId(null);
+                setCatalogSel(null);
+              }}
+            />
+          ) : null;
+        })()}
       {epicenterIncident !== null && (
         <EpicenterModal
           incident={epicenterIncident}
