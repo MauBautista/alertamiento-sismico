@@ -673,6 +673,18 @@ def test_index_pin_failure_is_loud(supervisor):
         assert hook in html, hook
 
 
+def test_index_removes_dc_before_physical_units(supervisor):
+    """[T-2.25] El panel resta la media rodante DC ANTES de convertir a unidades
+    físicas: counts crudos (gravedad ≈1 g en ENZ + bias MEMS en ENN/ENE) contra
+    una escala en g de-media clavaban brújula y sismograma al máximo permanente.
+    """
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    assert "media rodante DC" in html
+    assert html.count("- b.dc") >= 3  # windowOf (min y max) + lastCounts de la rosa
+    assert "dcReady" in html
+
+
 def test_index_polls_single_chained_tick(supervisor):
     """UN solo tick secuencial encadenado (hilos del Pi): cero bucles paralelos."""
     _, body = _get(supervisor.local_api, "/")
