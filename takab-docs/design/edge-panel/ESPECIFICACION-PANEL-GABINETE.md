@@ -588,6 +588,23 @@ el módulo colapsa a la rosa de ejes del sensor, que no necesita coordenadas. **
 inventado, jamás un centro por defecto.** Un gabinete mal ubicado en el mapa es peor que un
 gabinete sin mapa.
 
+### 7.5 · Comparativa sismo↔estación (T-2.27)
+
+Dentro del overlay del mapa: se selecciona un sismo del catálogo Y una estación (propia por
+default; vecinas seleccionables en «Estaciones de la red»). El cajón `#cmp-drawer` bajo el mapa
+muestra las cifras (distancia epicentral lineal con rumbo, hipocentral con profundidad, arribo P
+teórico a v_P 6.5 km/s, PGA estimado en el epicentro y en la estación) y la curva
+PGA-vs-distancia (X lineal en km, Y log por décadas, banda ilustrativa ×3/÷3) de la ley
+**ATTEN-LAW v1** — espejo de `_plausible_pga_g` de la nube, determinista, jamás en el camino de
+disparo. Rótulo maestro obligatorio: **«ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES
+DATO MEDIDO»**. El PGA **medido** solo se superpone con tres candados: estación propia + el
+sismo cae en un bucket horario de `shake_history` (matching `at` SSN hora local UTC-6 → bucket
+UTC, con caveat de bucket) + calibración presente (sin calibrar: texto «NO COMPARABLE», nunca en
+el eje en g). Vecina seleccionada ⇒ «SOLO LA ESTACIÓN PROPIA MIDE». La línea y el rótulo del
+mapa siguen a la estación seleccionada. **No es el mini-ShakeMap del blueprint §14**: cero
+interpolación espacial, cero IA. Estados vacíos: sin sismo ⇒ «SELECCIONE UN SISMO PARA
+COMPARAR»; sin ubicación ⇒ hereda §7.4; sin catálogo ⇒ hereda «CATÁLOGO NO DISPONIBLE».
+
 ---
 
 ## §8 · Estadística de los movimientos

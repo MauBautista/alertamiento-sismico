@@ -2910,3 +2910,36 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [ ] Verificación visual en el Pi real: en reposo el punto ORBITA EL CENTRO y la barra Z
         está abajo; un golpe junto al sensor deflecta y REGRESA; sismograma centrado con
         banda de ruido visible (no pegado a los rieles).
+
+---
+
+### [x] T-2.27 · Panel LAN: comparativa sismo↔estación con ley de atenuación — COMPLETA (2026-08-01)
+- **Componente:** edge (panel LAN) · **Depende de:** T-2.23, T-2.24
+- **Qué es:** en el overlay del mapa, seleccionar un sismo del catálogo Y una estación (propia o
+  vecina) y ver: distancia epicentral LINEAL con rumbo, hipocentral (con profundidad), arribo P
+  teórico (v_P 6.5 espejo del quórum) y la curva PGA-vs-distancia de la ley **ATTEN-LAW v1**
+  (espejo de `_plausible_pga_g`, con ancla en su docstring), con PGA MEDIDO superpuesto solo
+  bajo tres candados (estación propia + bucket horario de `shake_history` con matching SSN
+  UTC-6→UTC declarado + calibración). **NO es el mini-ShakeMap del blueprint §14**: cero
+  interpolación espacial, cero IA, y la ley jamás toca el camino de disparo.
+- **Criterios:**
+  - [x] Selector de estación en `#station-rows` (botones; default propia; vecina sin dato
+        medido lo declara: «SOLO LA ESTACIÓN PROPIA MIDE»).
+  - [x] Cajón `#cmp-drawer` (cifras + canvas `drawCmpChart()`: X lineal km, Y log décadas,
+        banda ilustrativa ×3/÷3, marcadores epicentro/estación/medido) dibujado en el frame
+        loop bajo `S.overlay` — cero timers nuevos (`setTimeout(tick` sigue 1 vez).
+  - [x] Rótulo maestro «ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO» +
+        marcador de paridad ATTEN-LAW v1 congelados en `test_index_comparativa_hooks` (15 hooks).
+  - [x] Matching temporal declarado (`SSN_UTC_OFFSET_H = 6` → bucket UTC con caveat); fuera de
+        ventana ⇒ «SIN DATO MEDIDO EN ESTA VENTANA (24 h · DESDE EL ARRANQUE)»; sin calibrar ⇒
+        «PGA RELATIVO · SIN CALIBRAR — NO COMPARABLE» (jamás en el eje en g).
+  - [x] La línea y el rótulo `M x.x · N km` del mapa siguen a la estación SELECCIONADA
+        (vecina en verde); `close-map` resetea a propia.
+  - [x] Estados vacíos honestos (sin sismo / sin ubicación / sin catálogo); sin profundidad ⇒
+        «SIN PROFUNDIDAD REPORTADA» y R_hipo = epicentral.
+  - [x] Cero endpoints nuevos, cero recursos externos; suite edge 464 verde + ruff limpio.
+  - [x] Smoke headless (Chromium/Playwright, protocolo estilo VERIFICACION-T-2-23): overlay →
+        clic sismo → cifras completas (fixture M 7.1/57 km/90 km ⇒ hipo 106 km, P ~16 s,
+        0.099 g vs 0.053 g), curva pintada, candado de vecina, reset de selección, estados
+        vacíos, CERO errores de consola.
+  - [ ] Verificación visual presencial en el Pi (misma pantalla del gabinete).
