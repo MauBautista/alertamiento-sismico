@@ -130,6 +130,12 @@ canvas{display:block}
 #overlay{position:fixed;inset:0;z-index:800;background:var(--tk-surface-overlay);display:flex;align-items:stretch;padding:24px}
 #overlay-box{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 420px;background:var(--tk-surface-1);border:1px solid var(--tk-border-strong);border-radius:8px;box-shadow:0 24px 48px -16px rgba(0,0,0,0.65);overflow:hidden}
 #map-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
+#cmp-drawer{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--tk-border);padding:10px 14px;height:216px}
+#cmp-facts{display:flex;flex-wrap:wrap;column-gap:16px;row-gap:4px;align-items:baseline}
+#cmp-canvas-wrap{flex:1 1 auto;min-height:0;position:relative}
+#cmp-canvas{position:absolute;inset:0;width:100%;height:100%}
+.cmp-kv{display:inline-flex;align-items:baseline;gap:6px;font:600 10px/1.3 var(--f-ui);letter-spacing:0.08em;text-transform:uppercase;color:var(--tk-fg-3)}
+.cmp-kv .v{font:700 12px/1 var(--f-mono,monospace);letter-spacing:0;text-transform:none;color:var(--tk-fg-1)}
 #map-canvas{position:absolute;inset:0;width:100%;height:100%}
 #muro-extra{display:none}
 header{flex:0 0 auto;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--tk-surface-1);border-bottom:1px solid var(--tk-border)}
@@ -381,6 +387,10 @@ body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
         <button id="close-map" class="chip">Cerrar mapa</button>
       </div>
       <div id="map-wrap"><canvas id="map-canvas" aria-hidden="true"></canvas></div>
+      <div id="cmp-drawer">
+        <div id="cmp-facts"></div>
+        <div id="cmp-canvas-wrap"><canvas id="cmp-canvas" aria-hidden="true"></canvas></div>
+      </div>
     </div>
     <div style="display:flex;flex-direction:column;border-left:1px solid var(--tk-border);min-height:0">
       <div style="flex:0 0 auto;padding:14px 16px;border-bottom:1px solid var(--tk-border);display:flex;flex-direction:column;gap:9px">
@@ -429,6 +439,15 @@ function fmtUptime(s){ if (s == null) return 'S/D'; const h = Math.floor(s/3600)
 function haversine(a, b){ const R=6371, rad=Math.PI/180; const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad; const s=Math.sin(dLat/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
 function bearing(a, b){ const rad=Math.PI/180; const y=Math.sin((b.lon-a.lon)*rad)*Math.cos(b.lat*rad); const x=Math.cos(a.lat*rad)*Math.sin(b.lat*rad)-Math.sin(a.lat*rad)*Math.cos(b.lat*rad)*Math.cos((b.lon-a.lon)*rad); const d=(Math.atan2(y,x)/rad+360)%360; return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16]; }
 const magColor = (m) => m >= 6 ? C.crit : m >= 4.5 ? C.warn : m >= 3.5 ? '#FFD700' : C.ok;
+/* [T-2.27] ATTEN-LAW v1: log10(PGA_g) = 0.5*M - 2.8 - log10(max(R_hipo_km, 1))
+   — espejo de api/tools/quorum_ssn_validation.py::_plausible_pga_g. Ley ILUSTRATIVA,
+   determinista y de dos constantes: alimenta SOLO la comparativa informativa del
+   panel, jamás el camino de disparo. NO es el mini-ShakeMap del blueprint §14. */
+const V_P_KM_S = 6.5;        /* espejo de quorum_v_p_km_s (settings de la nube) */
+const SSN_UTC_OFFSET_H = 6;  /* el `at` del catálogo SSN viene en hora local UTC-6 (fijo desde 2022) */
+const hypoKm = (epiKm, depthKm) => Math.hypot(epiKm, depthKm || 0);
+const pgaLawG = (m, rHipoKm) => Math.pow(10, 0.5*m - 2.8) / Math.max(rHipoKm, 1);
+const pArrivalS = (rHipoKm) => rHipoKm / V_P_KM_S;
 const TIERS = {
   normal:            { label: '✓ NORMAL · SIN ALERTA', color: C.ok },
   watch:             { label: '▲ VIGILANCIA', color: C.warn },
@@ -456,7 +475,7 @@ const S = {
   variant: 'A',
   catalog: null,
   catalogAt: 0,
-  overlay: false, mapScope: 'regional', selEvent: null, tab: 'local',
+  overlay: false, mapScope: 'regional', selEvent: null, selStation: 'self', tab: 'local',
   pinMsg: 'El PIN se pide de nuevo al recargar · nunca se guarda', pinKind: 'meta',
   armed: null, armedAt: 0,
   toast: null,           // {text, at} — rechazo de orden visible a distancia
@@ -1020,6 +1039,99 @@ function ssnEvents(){
     km: site ? haversine(site, e) : null,
     rumbo: site ? bearing(site, e) : null }));
 }
+/* [T-2.27] comparativa sismo↔estación ------------------------------------- */
+function selStationObj(){
+  const st = S.status;
+  if (!st || st.site_lat == null) return null;
+  if (S.selStation !== 'self'){
+    const nb = (st.neighbors || []).find(n2 => n2.code === S.selStation);
+    if (nb) return {code: nb.code, lat: nb.lat, lon: nb.lon, self: false};
+  }
+  return {code: st.gateway_id || 'ESTA ESTACIÓN', lat: st.site_lat, lon: st.site_lon, self: true};
+}
+function measuredBucketFor(atLocal){
+  /* `at` del SSN = "YYYY-MM-DD hh:mm:ss" en hora LOCAL (UTC-6 fijo) → bucket
+     horario UTC de shake_history. El máximo del bucket puede incluir OTRA
+     sacudida de la misma hora: el rótulo lo declara. */
+  const st = S.status; const sh = st && st.shake_history;
+  if (!atLocal || !sh || !sh.by_channel) return null;
+  const t = Date.parse(String(atLocal).replace(' ', 'T') + 'Z');
+  if (isNaN(t)) return null;
+  const utcMs = t + SSN_UTC_OFFSET_H*3600*1000;
+  let best = null;
+  Object.keys(sh.by_channel).forEach(ch => {
+    (sh.by_channel[ch].hourly || []).forEach(hb => {
+      const h0 = Date.parse(hb.hour_start);
+      if (!isNaN(h0) && utcMs >= h0 && utcMs < h0 + 3600*1000 && hb.pga_g_max != null){
+        if (!best || hb.pga_g_max > best.pga) best = {pga: hb.pga_g_max, hour: hb.hour_start};
+      }
+    });
+  });
+  return best;
+}
+function cmpModel(){
+  const cat = S.catalog, st = S.status;
+  if (!cat || !cat.available) return {empty: 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ'};
+  const ev = ssnEvents().find(e => e.i === S.selEvent);
+  if (!ev) return {empty: 'SELECCIONE UN SISMO PARA COMPARAR — toque una fila del catálogo'};
+  const sta = selStationObj();
+  if (!sta) return {empty: 'SIN UBICACIÓN PROVISIONADA — sin distancias ni comparativa'};
+  const epiKm = haversine(sta, ev);
+  const rHipo = hypoKm(epiKm, ev.depth_km);
+  const model = {
+    ev, sta, epiKm, hipoKm: rHipo,
+    rumbo: bearing(sta, ev),
+    pArrS: pArrivalS(rHipo),
+    depthNote: ev.depth_km == null ? 'SIN PROFUNDIDAD REPORTADA' : null,
+    /* "en el epicentro" = la ley evaluada en el punto de superficie sobre el
+       hipocentro (R_hipo mínimo = profundidad); sin profundidad, R = epi. */
+    pgaEpiG: pgaLawG(ev.m, ev.depth_km != null ? ev.depth_km : epiKm),
+    pgaStaG: pgaLawG(ev.m, rHipo),
+    measured: null, measuredNote: null, measuredRelative: false,
+  };
+  if (!sta.self){
+    model.measuredNote = 'SIN DATO MEDIDO — SOLO LA ESTACIÓN PROPIA MIDE';
+  } else {
+    const bucket = measuredBucketFor(ev.at);
+    if (!bucket){
+      model.measuredNote = 'SIN DATO MEDIDO EN ESTA VENTANA (24 h · DESDE EL ARRANQUE)';
+    } else if (st.calibration && st.calibration.calibrated === false){
+      /* sin calibrar el PGA es RELATIVO: jamás se pinta sobre el eje en g */
+      model.measuredRelative = true;
+      model.measuredNote = 'PGA RELATIVO · SIN CALIBRAR — NO COMPARABLE CON LA ESTIMACIÓN';
+    } else {
+      const hh = String(bucket.hour).slice(11, 13);
+      model.measured = bucket;
+      model.measuredNote = 'MEDIDO: MÁXIMO DEL BUCKET ' + hh + ':00–' + hh + ':59 UTC — puede incluir otra sacudida';
+    }
+  }
+  return model;
+}
+function renderCmp(){
+  const box = $('cmp-facts'); if (!box) return; box.textContent = '';
+  const m = cmpModel();
+  const meta = (txt, color) => { const s2 = document.createElement('span'); s2.className = 'meta';
+    s2.textContent = txt; if (color) s2.style.color = color; box.appendChild(s2); };
+  if (m.empty){ meta(m.empty, C.warn); return; }
+  const head = document.createElement('span'); head.className = 'mono';
+  head.style.cssText = 'font-weight:700;font-size:13px;color:' + magColor(m.ev.m);
+  head.textContent = 'M ' + m.ev.m.toFixed(1) + ' · ' + (m.ev.place || 'S/D');
+  box.appendChild(head);
+  const kv = (lbl, val) => { const r = document.createElement('span'); r.className = 'cmp-kv';
+    const a = document.createElement('span'); a.textContent = lbl;
+    const v = document.createElement('span'); v.className = 'v mono'; v.textContent = val;
+    r.append(a, v); box.appendChild(r); };
+  kv('Estación', m.sta.code + (m.sta.self ? '' : ' (VECINA)'));
+  kv('DISTANCIA EPICENTRAL', Math.round(m.epiKm) + ' km ' + m.rumbo);
+  kv('DISTANCIA HIPOCENTRAL', Math.round(m.hipoKm) + ' km' +
+     (m.ev.depth_km != null ? ' · prof ' + m.ev.depth_km.toFixed(0) + ' km' : ''));
+  kv('ARRIBO P TEÓRICO', '~' + Math.round(m.pArrS) + ' s · v_P ' + V_P_KM_S + ' km/s');
+  kv('PGA EST. EPICENTRO', fmtG(m.pgaEpiG, true));
+  kv('PGA EST. ESTACIÓN', fmtG(m.pgaStaG, true));
+  if (m.depthNote) meta(m.depthNote, C.warn);
+  if (m.measuredNote) meta(m.measuredNote, m.measured ? C.cyan : C.fg4);
+  meta('ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO', C.warn);
+}
 function renderSsn(){
   const cat = S.catalog;
   const metaTxt = cat && cat.available
@@ -1051,6 +1163,7 @@ function renderSsn(){
   fill('ssn-rows', 8, false);
   fill('ssn-rows-big', 40, true);
   renderStationRows();
+  renderCmp();
 }
 function renderStationRows(){
   const st = S.status; const box = $('station-rows'); box.textContent = '';
@@ -1058,13 +1171,18 @@ function renderStationRows(){
   const own = st.site_lat != null ? [{code: st.gateway_id || 'ESTA ESTACIÓN', lat: st.site_lat, lon: st.site_lon, self:true}] : [];
   const site = st.site_lat != null ? {lat: st.site_lat, lon: st.site_lon} : null;
   own.concat((st.neighbors||[]).map(n2 => Object.assign({}, n2, {self:false}))).forEach(sta => {
-    const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:baseline;gap:9px';
+    /* [T-2.27] fila = botón: selecciona la estación de la comparativa */
+    const sel = sta.self ? S.selStation === 'self' : S.selStation === sta.code;
+    const r = document.createElement('button');
+    r.style.cssText = 'cursor:pointer;display:flex;align-items:baseline;gap:9px;padding:2px 4px;border:none;border-left:2px solid '+(sel ? C.cyan : 'transparent')+';background:'+(sel ? 'rgba(0,191,255,0.08)' : 'transparent')+';text-align:left;width:100%';
     const d = document.createElement('span'); d.className = 'statdot'; d.style.background = sta.self ? C.cyan : C.ok;
     const id = document.createElement('span'); id.className = 'mono'; id.style.cssText = 'font-weight:700;font-size:11px'; id.textContent = sta.code;
     const rol = document.createElement('span'); rol.style.cssText = 'font:400 11px/1.3 var(--f-ui);color:var(--tk-fg-2)'; rol.textContent = sta.self ? 'ESTA ESTACIÓN' : 'VECINA';
     const dist = document.createElement('span'); dist.className = 'meta'; dist.style.marginLeft = 'auto';
     dist.textContent = sta.self ? '0 km' : (site ? (Math.round(sta.distance_km != null ? sta.distance_km : haversine(site, sta)) + ' km ' + bearing(site, sta)) : (sta.lat.toFixed(2)+'°, '+sta.lon.toFixed(2)+'°'));
-    r.append(d, id, rol, dist); box.appendChild(r);
+    r.append(d, id, rol, dist);
+    r.addEventListener('click', () => { S.selStation = sta.self ? 'self' : sta.code; renderSsn(); });
+    box.appendChild(r);
   });
   if (!own.length && !(st.neighbors||[]).length){
     const r = document.createElement('div'); r.className = 'meta'; r.textContent = 'SIN UBICACIÓN PROVISIONADA · sin vecinas'; box.appendChild(r);
@@ -1458,9 +1576,14 @@ function drawGeoMap(){
     x.strokeStyle = colr; x.lineWidth = 1.4; x.stroke();
     if (S.selEvent === e.i){
       x.beginPath(); x.arc(p[0],p[1],r+5,0,Math.PI*2); x.strokeStyle = C.fg1; x.lineWidth = 1; x.stroke();
-      if (Spt){ x.globalAlpha = 0.4; x.beginPath(); x.moveTo(Spt[0],Spt[1]); x.lineTo(p[0],p[1]); x.strokeStyle = C.cyan; x.stroke(); x.globalAlpha = 1; }
+      /* [T-2.27] la línea y el rótulo siguen a la ESTACIÓN SELECCIONADA (propia
+         o vecina); vecina en verde (su color de leyenda), propia en cyan */
+      const selSta = selStationObj();
+      const fromPt = selSta ? (selSta.self ? Spt : P(selSta)) : Spt;
+      const dSelKm = selSta ? haversine(selSta, e) : e.km;
+      if (fromPt){ x.globalAlpha = 0.4; x.beginPath(); x.moveTo(fromPt[0],fromPt[1]); x.lineTo(p[0],p[1]); x.strokeStyle = (selSta && !selSta.self) ? C.ok : C.cyan; x.stroke(); x.globalAlpha = 1; }
       x.fillStyle = C.fg1; x.font = "700 11px 'JetBrains Mono',monospace";
-      const txt = 'M '+e.m.toFixed(1) + (e.km != null ? ' · '+Math.round(e.km)+' km' : '');
+      const txt = 'M '+e.m.toFixed(1) + (dSelKm != null ? ' · '+Math.round(dSelKm)+' km' : '');
       const tw = x.measureText(txt).width;
       let lx = p[0]+r+8, ly = p[1]-6;
       if (lx+tw > w-6) lx = p[0]-r-8-tw;
@@ -1515,12 +1638,84 @@ function drawGeoMap(){
   x.fillStyle = C.fg4; x.font = "400 9px 'Geist',system-ui";
   x.fillText('GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO', 12, h-10);
 }
+function drawCmpChart(){
+  /* [T-2.27] curva PGA-vs-distancia de la ley ATTEN-LAW v1: X lineal en km,
+     Y log por décadas (la ley decae ~1/R; en Y lineal la cola sería ilegible).
+     BANDA ILUSTRATIVA ×3/÷3: las leyes reales dispersan ~1 orden de magnitud. */
+  const el = $('cmp-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
+  const {x, w, h} = ctx;
+  const m = cmpModel();
+  if (m.empty){
+    x.fillStyle = C.warn; x.font = "700 11px 'Geist',system-ui";
+    x.fillText(m.empty, 10, 22); return;
+  }
+  const padL = 50, padR = 12, padT = 8, padB = 20;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  if (iw < 60 || ih < 40) return;
+  const maxKm = Math.max(m.epiKm * 1.25, 50);
+  const depth = m.ev.depth_km != null ? m.ev.depth_km : 0;
+  /* dominio Y por décadas que contenga curva (máx en R mínimo) y estación /3 */
+  const vMax = pgaLawG(m.ev.m, Math.max(depth, 1));
+  const vMin = Math.min(pgaLawG(m.ev.m, hypoKm(maxKm, depth)) / 3, m.pgaStaG / 3);
+  const eTop = Math.ceil(Math.log10(vMax)), eBot = Math.floor(Math.log10(Math.max(vMin, 1e-7)));
+  const X = (km) => padL + (km / maxKm) * iw;
+  const Y = (g) => padT + (eTop - Math.log10(Math.max(g, 1e-9))) / (eTop - eBot) * ih;
+  /* retícula por décadas */
+  x.font = "400 9px 'JetBrains Mono',monospace";
+  for (let e2 = eTop; e2 >= eBot; e2--){
+    const gy = Y(Math.pow(10, e2));
+    x.strokeStyle = 'rgba(240,242,245,0.08)'; x.beginPath(); x.moveTo(padL, gy); x.lineTo(w-padR, gy); x.stroke();
+    const dec = Math.pow(10, e2);
+    x.fillStyle = C.fg4; x.fillText((e2 >= 0 ? String(dec) : dec.toFixed(Math.min(-e2, 6))) + ' g', 2, gy+3);
+  }
+  /* eje X: marcas cada cuarto */
+  for (let f2 = 0; f2 <= 4; f2++){
+    const km = maxKm*f2/4, gx = X(km);
+    x.strokeStyle = 'rgba(240,242,245,0.06)'; x.beginPath(); x.moveTo(gx, padT); x.lineTo(gx, padT+ih); x.stroke();
+    x.fillStyle = C.fg4; x.fillText(Math.round(km)+' km', gx-12, h-6);
+  }
+  /* banda ×3/÷3 + curva */
+  const NPTS = 120;
+  const pts = [];
+  for (let i2 = 0; i2 <= NPTS; i2++){
+    const km = maxKm*i2/NPTS;
+    pts.push([X(km), pgaLawG(m.ev.m, hypoKm(km, depth))]);
+  }
+  x.beginPath();
+  pts.forEach((p2, i2) => { const py = Y(p2[1]*3); i2 ? x.lineTo(p2[0], py) : x.moveTo(p2[0], py); });
+  for (let i2 = NPTS; i2 >= 0; i2--) x.lineTo(pts[i2][0], Y(pts[i2][1]/3));
+  x.closePath(); x.fillStyle = 'rgba(0,191,255,0.08)'; x.fill();
+  x.beginPath();
+  pts.forEach((p2, i2) => { const py = Y(p2[1]); i2 ? x.lineTo(p2[0], py) : x.moveTo(p2[0], py); });
+  x.strokeStyle = C.cyan; x.lineWidth = 1.6; x.stroke();
+  /* marcador EPICENTRO (x=0) */
+  const ep = [X(0), Y(m.pgaEpiG)];
+  x.beginPath(); x.arc(ep[0], ep[1], 5, 0, Math.PI*2); x.strokeStyle = magColor(m.ev.m); x.lineWidth = 1.6; x.stroke();
+  x.fillStyle = C.fg2; x.font = "700 9px 'Geist',system-ui"; x.fillText('EPICENTRO', ep[0]+8, ep[1]-6);
+  /* marcador ESTACIÓN (x=epiKm) */
+  const sp = [X(m.epiKm), Y(m.pgaStaG)];
+  if (m.sta.self){ x.fillStyle = C.fg1; x.fillRect(sp[0]-3.5, sp[1]-3.5, 7, 7); }
+  else { x.beginPath(); x.arc(sp[0], sp[1], 4, 0, Math.PI*2); x.fillStyle = C.ok; x.fill(); }
+  x.fillStyle = C.fg2;
+  const stxt = m.sta.code + ' · ' + Math.round(m.epiKm) + ' km';
+  const stw = x.measureText(stxt).width;
+  x.fillText(stxt, Math.min(sp[0]+8, w-padR-stw), sp[1]+12);
+  /* punto MEDIDO (solo con los tres candados; relativo JAMÁS entra al eje en g) */
+  if (m.measured && !m.measuredRelative){
+    const mp = [X(m.epiKm), Y(m.measured.pga)];
+    x.beginPath(); x.arc(mp[0], mp[1], 3.5, 0, Math.PI*2); x.fillStyle = C.cyan; x.fill();
+    x.strokeStyle = C.fg1; x.lineWidth = 1; x.stroke();
+    x.fillStyle = C.cyan; x.fillText('MEDIDO', Math.min(mp[0]+8, w-padR-42), mp[1]+3);
+  }
+  x.fillStyle = C.fg4; x.font = "400 9px 'Geist',system-ui";
+  x.fillText('BANDA ILUSTRATIVA ×3 / ÷3 · LEY v1 ILUSTRATIVA · SSN HORA LOCAL UTC-'+SSN_UTC_OFFSET_H, padL, padT+9);
+}
 function frame(){
   S.raf = 0; S.lastFrame = performance.now();
   try {
     if (DEMO) demoFillWave();
     drawWaves(); drawRose();
-    if (S.overlay) drawGeoMap();
+    if (S.overlay){ drawGeoMap(); drawCmpChart(); }
     /* desarme REAL del two-step a los 5 s (defecto del prototipo, corregido) */
     if (S.armed && (performance.now() - S.armedAt) > 5000){
       S.armed = null; setPinMsg('Orden cancelada · no se confirmó a tiempo', 'meta'); renderActions(S.status);
@@ -1543,7 +1738,7 @@ function syncOverlay(){
   document.querySelectorAll('[data-scope]').forEach(b => b.classList.toggle('on', S.mapScope === b.dataset.scope));
 }
 $('open-map').addEventListener('click', () => { S.overlay = true; syncOverlay(); });
-$('close-map').addEventListener('click', () => { S.overlay = false; S.selEvent = null; syncOverlay(); });
+$('close-map').addEventListener('click', () => { S.overlay = false; S.selEvent = null; S.selStation = 'self'; syncOverlay(); });
 document.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => { S.mapScope = b.dataset.scope; syncOverlay(); }));
 document.querySelectorAll('[data-variant]').forEach(b => b.addEventListener('click', () => { S.variant = b.dataset.variant; render(); }));
 document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {

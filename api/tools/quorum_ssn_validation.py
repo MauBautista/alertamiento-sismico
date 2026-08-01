@@ -61,7 +61,11 @@ def _p_travel_s(epi_km: float, depth_km: float, v_p_travel: float) -> float:
 def _plausible_pga_g(magnitude: float, hypo_km: float) -> float:
     """PGA ilustrativa (decaimiento tipo GMPE simple). NO interviene en la
     asociacion (quorum.py no usa pga); solo puebla Detection.pga_g de forma
-    plausible."""
+    plausible.
+
+    ATTEN-LAW v1: log10(PGA_g) = 0.5*M - 2.8 - log10(max(R_hipo_km, 1)) —
+    fuente de la ley; espejos en edge (panel LAN, T-2.27) y web (T-2.28).
+    Cualquier cambio aqui debe propagarse a los espejos (grep ATTEN-LAW)."""
     return round(10 ** (0.5 * magnitude - 2.8) / max(hypo_km, 1.0), 5)
 
 
