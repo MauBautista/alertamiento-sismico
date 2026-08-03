@@ -105,6 +105,145 @@ def test_rollback_does_not_reopen_replay_window():
     assert store.current().tenant_id == "buena"
 
 
+# --- T-2.34: la config firmada SOBREVIVE reinicios (caché en disco) ---
+
+
+def _cached_store(tmp_path, *, key: bytes = b"clave-de-config-inyectada"):
+    from takab_edge.security import SecurityManager as _SM
+
+    security = _SM(key)
+    path = str(tmp_path / "config-cache.json")
+    return ConfigStore(load_settings(), security=security, cache_path=path), security, path
+
+
+def test_applied_config_survives_restart(tmp_path):
+    """El corte de energía del 2026-08-03 lo demostró en vivo: al reiniciar, el
+    edge arrancaba en v0 y la nube no re-publica si nada cambió — umbrales,
+    equipamiento y command_enabled REGRESABAN a defaults. La caché lo cierra."""
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = (
+        load_settings()
+        .model_copy(update={"tenant_id": "tenant-persistido", "command_enabled": True})
+        .model_dump_json()
+        .encode()
+    )
+    store.apply_signed_update(raw, security.sign_config(raw, 14), 14)
+    store.stop()
+
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    assert reborn.version == 0  # antes de arrancar: nada aplicado
+    reborn.start()
+    assert reborn.version == 14
+    assert reborn.current().tenant_id == "tenant-persistido"
+    assert reborn.current().command_enabled is True
+
+
+def test_boot_restore_notifies_listeners(tmp_path):
+    """La restauración notifica a los listeners (umbrales→rules, location):
+    los módulos vivos adoptan la config restaurada igual que una sync."""
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = load_settings().model_copy(update={"tenant_id": "avisado"}).model_dump_json().encode()
+    store.apply_signed_update(raw, security.sign_config(raw, 3), 3)
+
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    seen: list[str] = []
+    reborn.add_apply_listener(lambda cfg: seen.append(cfg.tenant_id))
+    reborn.start()
+    assert seen == ["avisado"]
+
+
+def test_tampered_cache_boots_with_defaults(tmp_path):
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = load_settings().model_copy(update={"tenant_id": "legitimo"}).model_dump_json().encode()
+    store.apply_signed_update(raw, security.sign_config(raw, 5), 5)
+
+    import json as _json
+    from pathlib import Path as _Path
+
+    doc = _json.loads(_Path(path).read_text())
+    doc["payload"] = doc["payload"].replace("legitimo", "atacante")  # sin re-firmar
+    _Path(path).write_text(_json.dumps(doc))
+
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    reborn.start()
+    assert reborn.version == 0  # fail-closed: defaults de arranque
+    assert reborn.current().tenant_id != "atacante"
+
+
+def test_cache_with_rotated_key_boots_with_defaults(tmp_path):
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = load_settings().model_dump_json().encode()
+    store.apply_signed_update(raw, security.sign_config(raw, 5), 5)
+
+    from takab_edge.security import SecurityManager as _SM
+
+    reborn = ConfigStore(load_settings(), security=_SM(b"clave-rotada-distinta"), cache_path=path)
+    reborn.start()
+    assert reborn.version == 0
+
+
+def test_corrupt_or_missing_cache_boots_with_defaults(tmp_path):
+    from pathlib import Path as _Path
+
+    path = str(tmp_path / "config-cache.json")
+    security = SecurityManager(b"clave-de-config-inyectada")
+    missing = ConfigStore(load_settings(), security=security, cache_path=path)
+    missing.start()
+    assert missing.version == 0
+
+    _Path(path).write_text("esto{no-es-json")
+    corrupt = ConfigStore(load_settings(), security=security, cache_path=path)
+    corrupt.start()
+    assert corrupt.version == 0
+
+
+def test_replay_rejected_across_restart(tmp_path):
+    """[SEGURIDAD] Antes de T-2.34 el high_water moría con el proceso: un
+    reinicio reabría la ventana de replay de CUALQUIER config vieja firmada."""
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = load_settings().model_dump_json().encode()
+    sig = security.sign_config(raw, 7)
+    store.apply_signed_update(raw, sig, 7)
+
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    reborn.start()
+    with pytest.raises(ConfigError):
+        reborn.apply_signed_update(raw, sig, 7)  # replay del mismo frame tras reboot
+
+
+def test_rollback_persists_reverted_config_without_lowering_high_water(tmp_path):
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw1 = load_settings().model_copy(update={"tenant_id": "buena"}).model_dump_json().encode()
+    store.apply_signed_update(raw1, security.sign_config(raw1, 1), 1)
+    raw2 = load_settings().model_copy(update={"tenant_id": "mala"}).model_dump_json().encode()
+    sig2 = security.sign_config(raw2, 2)
+    store.apply_signed_update(raw2, sig2, 2)
+    store.rollback()
+    assert store.current().tenant_id == "buena"
+
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    reborn.start()
+    assert reborn.current().tenant_id == "buena"  # el reboot NO resucita la mala
+    assert reborn.version == 1
+    with pytest.raises(ConfigError):
+        reborn.apply_signed_update(raw2, sig2, 2)  # high_water sobrevivió al reboot
+
+
+def test_store_without_cache_path_behaves_as_before(tmp_path):
+    """Sin cache_path (unit tests, dev suelto) nada se escribe ni se lee."""
+    store, security = _store()
+    store.start()
+    raw = load_settings().model_dump_json().encode()
+    store.apply_signed_update(raw, security.sign_config(raw, 1), 1)
+    assert list(tmp_path.iterdir()) == []
+
+
 # --- T-2.31: perfil de equipamiento por sitio ---
 
 

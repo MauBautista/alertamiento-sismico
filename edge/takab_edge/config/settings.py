@@ -386,6 +386,10 @@ class EdgeSettings(BaseSettings):
     #: (gas/ascensores/puertas). Vacío = todo por relé local [SUPUESTO plan-maestro-01 #4].
     #: La sirena/estrobo NUNCA van por BACnet (vida audible = relé local directo).
     bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
+    #: [T-2.34] Caché de la config firmada aplicada (+high_water anti-replay):
+    #: sobrevive reinicios — sin ella el edge arrancaba en v0 con defaults hasta
+    #: el siguiente cambio de config en la nube. Vacío = sin persistencia.
+    config_cache_path: str = "/var/lib/takab/config-cache.json"
     #: [T-2.33] Gabinetes secundarios LoRa (espejos de sirena/estrobo a distancia).
     lora: LoraConfig = Field(default_factory=LoraConfig)
     #: Periodo del heartbeat de salud (beacon de vida); las transiciones se loguean aparte.

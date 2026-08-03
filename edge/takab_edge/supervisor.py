@@ -209,7 +209,8 @@ class EdgeSupervisor:
             heartbeat_s=s.health_heartbeat_s,
         )
         self.security = SecurityManager(_resolve_hmac_key(s), command_ttl_s=s.command_ttl_s)
-        self.config = ConfigStore(s, security=self.security)
+        # [T-2.34] La config firmada sobrevive reinicios (caché re-verificada al arrancar).
+        self.config = ConfigStore(s, security=self.security, cache_path=s.config_cache_path)
         # T-1.71: umbral por sitio aplicado EN VIVO. Al llegar una config firmada
         # (o un rollback), el motor de reglas adopta la banda nueva en la próxima
         # ventana, sin reconstruirse. El camino SASMEX es inmune (evaluate_sasmex
