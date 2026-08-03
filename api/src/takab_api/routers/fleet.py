@@ -61,11 +61,26 @@ router = APIRouter(
     dependencies=[Depends(require_web_surface), Depends(require_roles(*_FLEET_ROLES))]
 )
 
-_WRITE_FIELDS = ("site_id", "serial", "fw_version", "iot_thing", "has_wr1", "installed_at")
+_WRITE_FIELDS = (
+    "site_id",
+    "serial",
+    "fw_version",
+    "iot_thing",
+    "has_wr1",
+    "equipment",
+    "installed_at",
+)
 
 
 def _row_out(row) -> GatewayRowOut:
     return GatewayRowOut(**dict(row._mapping))
+
+
+def _write_values(body) -> dict:
+    """Valores para el SQL de escritura; ``equipment`` viaja como JSON (::jsonb)."""
+    values = {f: getattr(body, f) for f in _WRITE_FIELDS}
+    values["equipment"] = body.equipment.model_dump_json()
+    return values
 
 
 @router.get(
@@ -149,6 +164,7 @@ async def list_gateways(
                 iot_thing=m["iot_thing"],
                 status=m["status"],
                 has_wr1=m["has_wr1"],
+                equipment=m["equipment"],
                 installed_at=m["installed_at"],
                 row_version=m["row_version"],
                 derived_state=state,
@@ -182,7 +198,7 @@ async def create_gateway(
     su certificado.
     """
     tenant_id = await tenant_of_parent_site(conn, claims, body.site_id)
-    values = {f: getattr(body, f) for f in _WRITE_FIELDS}
+    values = _write_values(body)
     try:
         row = await q.insert_gateway(conn, tenant_id=tenant_id, values=values)
     except IntegrityError as exc:
@@ -219,7 +235,7 @@ async def update_gateway(
     if site_tenant != str(current.tenant_id):
         raise http_error(403, "el sitio destino pertenece a otro tenant")
 
-    values = {f: getattr(body, f) for f in _WRITE_FIELDS}
+    values = _write_values(body)
     try:
         row = await q.update_gateway(
             conn, gateway_id=gateway_id, values=values, base_row_version=body.base_row_version

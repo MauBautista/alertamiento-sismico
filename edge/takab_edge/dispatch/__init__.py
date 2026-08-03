@@ -167,6 +167,12 @@ class CommandDispatcher(EdgeModule):
                 command_id, nonce, channel, action, False, "canal system solo admite self_test"
             )
             return
+        # [T-2.31] Canal no instalado en el sitio: rechazo HONESTO con ack (la
+        # nube marca rejected en vez de esperar el TTL). El perfil se lee del
+        # store vivo — la nube pudo publicarlo después del arranque.
+        if not self._config_store.current().equipment.has(channel):
+            self._ack(command_id, nonce, channel, action, False, "canal no instalado en este sitio")
+            return
 
         started = utcnow()
         command = ActuatorCommand(

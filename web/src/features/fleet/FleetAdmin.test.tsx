@@ -157,10 +157,49 @@ describe("FleetAdmin", () => {
 
     await waitFor(() => expect(mocks.createGatewayFleetGatewaysPost).toHaveBeenCalledTimes(1));
     const body = mocks.createGatewayFleetGatewaysPost.mock.calls[0][0].body;
-    expect(body).toEqual({ site_id: "s-1", serial: "TKB-0007", has_wr1: true });
+    // [T-2.31] El alta declara el equipamiento (default todo instalado).
+    expect(body).toEqual({
+      site_id: "s-1",
+      serial: "TKB-0007",
+      has_wr1: true,
+      equipment: {
+        siren: true,
+        strobe: true,
+        gas_valve: true,
+        elevator: true,
+        door_retainer: true,
+      },
+    });
     // El tenant lo hereda del sitio; el certificado X.509 lo emite Terraform.
     expect(body).not.toHaveProperty("tenant_id");
     expect(body).not.toHaveProperty("iot_thing");
+  });
+
+  it("[T-2.31] desmarcar actuadores del sitio viaja en equipment", async () => {
+    mocks.createGatewayFleetGatewaysPost.mockResolvedValue({
+      data: {},
+      response: { status: 201 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: "HARDWARE" }));
+    fireEvent.change(screen.getByLabelText("SERIAL DEL GABINETE"), {
+      target: { value: "TKB-0008" },
+    });
+    fireEvent.click(screen.getByLabelText("VÁLVULA DE GAS"));
+    fireEvent.click(screen.getByLabelText("ASCENSORES"));
+    fireEvent.click(screen.getByRole("button", { name: "AÑADIR GABINETE" }));
+
+    await waitFor(() => expect(mocks.createGatewayFleetGatewaysPost).toHaveBeenCalledTimes(1));
+    const body = mocks.createGatewayFleetGatewaysPost.mock.calls[0][0].body;
+    expect(body.equipment).toEqual({
+      siren: true,
+      strobe: true,
+      gas_valve: false,
+      elevator: false,
+      door_retainer: true,
+    });
   });
 
   it("un sensor sin procedencia declarada se crea SIN CALIBRAR (null, no cadena vacía)", async () => {

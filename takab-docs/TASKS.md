@@ -3042,3 +3042,40 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - **Nota:** 1024px exactos cae en CONSOLA por diseño (`autoMode` usa <1024): una tablet
   horizontal ve el layout de escritorio con scroll interno en `#main` — documentado, no es
   regresión.
+
+---
+
+### [x] T-2.31 · Perfil de equipamiento por estación (nube declara, panel/consola adaptan) — COMPLETA (2026-08-03)
+- **Componente:** db + api + edge + web · **Depende de:** T-2.30
+- **Qué es:** no toda estación tiene gas/ascensores/puertas. `gateways.equipment`
+  (jsonb, 5 bools, default todo-true = compat retro) declara qué actuadores existen en el
+  sitio; viaja al edge FUSIONADO en el doc firmado del config sync existente (cero topics,
+  cero terraform: `takab/cfg/*` ya estaba en la política IoT y en WorkerIotPublish) y las
+  vistas se adaptan.
+- **Criterios:**
+  - [x] Migración `0022_gateway_equipment` idempotente (columna + trigger que reutiliza el
+        evento `t='rule_set'` de `takab_live` ⇒ el worker de sync despierta al editar,
+        SLA ≤60 s, sin tocar el worker). DDL sobre tabla preexistente como usuario de
+        conexión.
+  - [x] Fleet API: `equipment` en Out/Create/Update (extra=forbid: clave desconocida ⇒
+        422; parcial completa con true); RLS cross-tenant verificada (404). SDK TS
+        regenerado (`make drift` verde).
+  - [x] Config sync fusiona `rs.config->'edge' || {'equipment': g.equipment}` — una firma
+        cubre config + equipamiento; editar SOLO equipamiento re-publica con versión
+        monótona; `in_sync` del config-state compara contra la MISMA fusión (espejo del
+        predicado del worker).
+  - [x] Edge: `EquipmentProfile` en `EdgeSettings` (doc parcial ⇒ todo-true); la secuencia
+        de tier comanda SOLO instalados (leyendo `config.current()`, no el settings
+        congelado); comando de nube a canal no instalado ⇒ ack `rejected` honesto; el
+        panel pinta SOLO instalados EN CALIENTE. gpio conserva sus 5 relés (hardware
+        intocado); reflejo SASMEX intocado.
+  - [x] Web: HardwareForm con 5 checkboxes (viajan en el alta); `relaysFor` oculta canales
+        no instalados aunque el rule_set declare cableado y muestra instalados sin
+        cableado como S/D; sin `equipment` (flota vieja) la conducta no cambia.
+  - [x] Suites verdes: api 921 · edge 476 · web 606 · ruff/eslint/prettier/build ·
+        `make drift`.
+  - [ ] Despliegue: la nube toma la migración/API en el próximo redeploy (gated a
+        Mauricio); el edge puede desplegarse antes sin cambio de conducta (default
+        todo-true hasta que la nube publique el perfil).
+- **Nota:** el equipamiento solo llega a gateways cuyo rule_set activo trae la clave
+  `'edge'` (cierto para gw-dev-0001) — prerrequisito documentado de alta de estación.

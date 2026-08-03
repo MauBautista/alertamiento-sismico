@@ -390,6 +390,23 @@ export type EpicenterRelocateOut = {
 };
 
 /**
+ * [T-2.31] Actuadores INSTALADOS físicamente en el sitio del gabinete.
+ *
+ * No toda estación tiene gas/ascensores/puertas. Contrato: 5 bools, default
+ * todo-true (la flota existente no cambia de conducta), claves desconocidas
+ * rechazadas — un typo en 'gas_valve' no puede volverse "instalado" silencioso.
+ * Viaja al edge FUSIONADO en el doc firmado del config sync (una sola firma
+ * cubre config + equipamiento).
+ */
+export type EquipmentProfile = {
+    door_retainer?: boolean;
+    elevator?: boolean;
+    gas_valve?: boolean;
+    siren?: boolean;
+    strobe?: boolean;
+};
+
+/**
  * Error de protocolo (topic/JSON inválido); no cierra el socket.
  */
 export type ErrorFrame = {
@@ -547,6 +564,7 @@ export type GatewayConfigStateOut = {
  * identidad de los gabinetes.
  */
 export type GatewayCreate = {
+    equipment?: EquipmentProfile;
     fw_version?: string | null;
     has_wr1?: boolean;
     installed_at?: string | null;
@@ -563,6 +581,7 @@ export type GatewayOut = {
     cert_days_remaining?: number | null;
     degrade_reasons?: Array<string>;
     derived_state: string;
+    equipment?: EquipmentProfile;
     fw_version?: string | null;
     gateway_id: string;
     has_wr1: boolean;
@@ -588,6 +607,7 @@ export type GatewayOut = {
  * regla de oro 7.
  */
 export type GatewayRowOut = {
+    equipment?: EquipmentProfile;
     fw_version?: string | null;
     gateway_id: string;
     has_wr1: boolean;
@@ -609,6 +629,7 @@ export type GatewayRowOut = {
  */
 export type GatewayUpdate = {
     base_row_version?: string | null;
+    equipment?: EquipmentProfile;
     fw_version?: string | null;
     has_wr1?: boolean;
     installed_at?: string | null;

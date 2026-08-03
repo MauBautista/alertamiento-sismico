@@ -84,11 +84,22 @@ const RELAY_LABEL: Record<string, string> = {
   door_retainer: "PUERTAS",
 };
 
+/** [T-2.31] Alias históricos del rule_set → canal canónico del equipamiento. */
+const EQUIPMENT_KEY: Record<string, string> = {
+  gas: "gas_valve",
+  doors: "door_retainer",
+};
+
 /**
  * Relays del gabinete desde la config ACTIVA (site-scope primero, tenant después).
  * El estado por relay se DERIVA del enlace: el supervisor edge trata actuadores
  * como módulo crítico fail-fast, así que proceso vivo ⇒ reglas armadas; sin
  * enlace no hay dato (null), jamás se inventa un estado.
+ *
+ * [T-2.31] `gateways.equipment` manda sobre la lista: un canal NO instalado se
+ * oculta aunque el rule_set declare su cableado (mostrar gas en un sitio sin
+ * gas es un dato falso), y un canal instalado sin cableado declarado aparece
+ * con wiring "S/D". Sin `equipment` (SDK/flota vieja) la conducta no cambia.
  */
 function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRelay[] | null {
   if (!ruleSets) {
@@ -102,15 +113,37 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
   if (!relays || typeof relays !== "object" || Array.isArray(relays)) {
     return null;
   }
+  const equipment = (gw.equipment ?? null) as Record<string, unknown> | null;
+  const installed = (key: string): boolean => {
+    if (!equipment) {
+      return true;
+    }
+    const flag = equipment[EQUIPMENT_KEY[key] ?? key];
+    return typeof flag === "boolean" ? flag : true;
+  };
   const linked = gw.derived_state !== "SIN ENLACE";
-  return Object.entries(relays as Record<string, unknown>)
+  const declared = Object.entries(relays as Record<string, unknown>)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .filter(([key]) => installed(key))
     .map(([key, wiring]) => ({
       key,
       label: RELAY_LABEL[key] ?? key.toUpperCase(),
       wiring,
       armed: linked ? true : null,
     }));
+  if (!equipment) {
+    return declared;
+  }
+  const declaredChannels = new Set(declared.map((r) => EQUIPMENT_KEY[r.key] ?? r.key));
+  const undeclared = Object.entries(equipment)
+    .filter(([key, flag]) => flag === true && !declaredChannels.has(key))
+    .map(([key]) => ({
+      key,
+      label: RELAY_LABEL[key] ?? key.toUpperCase(),
+      wiring: "S/D",
+      armed: linked ? true : null,
+    }));
+  return [...declared, ...undeclared];
 }
 
 /** View-model puro (exportado para tests sin DOM). */

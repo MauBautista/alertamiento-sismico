@@ -124,7 +124,11 @@ CREATE TABLE gateways (
                CHECK (status IN ('provisioned','online','degraded','offline','retired')),
   has_wr1      boolean NOT NULL DEFAULT true,
   installed_at timestamptz,
-  metadata     jsonb NOT NULL DEFAULT '{}'
+  metadata     jsonb NOT NULL DEFAULT '{}',
+  -- [T-2.31] Actuadores INSTALADOS en el sitio (contrato de 5 bools; default
+  -- todo-true = compat retro). Viaja al edge fusionado en el config sync.
+  equipment    jsonb NOT NULL DEFAULT
+    '{"siren":true,"strobe":true,"gas_valve":true,"elevator":true,"door_retainer":true}'
 );
 
 CREATE TABLE sensors (

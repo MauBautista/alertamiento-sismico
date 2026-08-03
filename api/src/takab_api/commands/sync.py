@@ -36,11 +36,15 @@ _SYNC_LOCK_KEY = 0x7A4B_1123
 # Gateways comandables cuyo rule_set activo trae 'edge' y difiere del último
 # estado publicado (o nunca se publicó). El rule_set se resuelve por gateway:
 # scope site (el del gateway) preferente sobre tenant, versión más alta.
+# [T-2.31] El doc publicado FUSIONA gateways.equipment server-side: una sola
+# firma cubre config + equipamiento, y editar el equipamiento re-publica solo
+# (IS DISTINCT contra la misma fusión). El espejo de lectura vive en
+# queries/fleet.py::_CONFIG_STATE (in_sync) — cambiar uno exige cambiar el otro.
 _CANDIDATES_SQL = """
 SELECT g.gateway_id,
        g.tenant_id,
        g.iot_thing,
-       rs.config->'edge' AS edge_config,
+       rs.config->'edge' || jsonb_build_object('equipment', g.equipment) AS edge_config,
        st.version AS state_version,
        st.payload AS state_payload
 FROM gateways g
@@ -56,7 +60,8 @@ JOIN LATERAL (
 LEFT JOIN gateway_config_state st ON st.gateway_id = g.gateway_id
 WHERE g.status <> 'retired'
   AND g.iot_thing IS NOT NULL
-  AND (st.gateway_id IS NULL OR st.payload IS DISTINCT FROM rs.config->'edge')
+  AND (st.gateway_id IS NULL OR st.payload IS DISTINCT FROM
+       (rs.config->'edge' || jsonb_build_object('equipment', g.equipment)))
 ORDER BY g.gateway_id
 """
 

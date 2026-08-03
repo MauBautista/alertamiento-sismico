@@ -1700,6 +1700,39 @@
         "title": "EpicenterRelocateOut",
         "type": "object"
       },
+      "EquipmentProfile": {
+        "additionalProperties": false,
+        "description": "[T-2.31] Actuadores INSTALADOS físicamente en el sitio del gabinete.\n\nNo toda estación tiene gas/ascensores/puertas. Contrato: 5 bools, default\ntodo-true (la flota existente no cambia de conducta), claves desconocidas\nrechazadas — un typo en 'gas_valve' no puede volverse \"instalado\" silencioso.\nViaja al edge FUSIONADO en el doc firmado del config sync (una sola firma\ncubre config + equipamiento).",
+        "properties": {
+          "door_retainer": {
+            "default": true,
+            "title": "Door Retainer",
+            "type": "boolean"
+          },
+          "elevator": {
+            "default": true,
+            "title": "Elevator",
+            "type": "boolean"
+          },
+          "gas_valve": {
+            "default": true,
+            "title": "Gas Valve",
+            "type": "boolean"
+          },
+          "siren": {
+            "default": true,
+            "title": "Siren",
+            "type": "boolean"
+          },
+          "strobe": {
+            "default": true,
+            "title": "Strobe",
+            "type": "boolean"
+          }
+        },
+        "title": "EquipmentProfile",
+        "type": "object"
+      },
       "ErrorFrame": {
         "description": "Error de protocolo (topic/JSON inválido); no cierra el socket.",
         "properties": {
@@ -2305,6 +2338,9 @@
         "additionalProperties": false,
         "description": "Alta de gabinete. NO hay ``tenant_id``: se hereda del sitio (y RLS lo valida).\n\nLa API **no llama a AWS**. Escribe la fila con ``status='provisioned'`` e\n``iot_thing`` nulo salvo que el operador ya conozca el thing creado por Terraform\n(``infra/scripts/provision_gateway.sh``). Sin ``iot_thing`` el gabinete no es\nsincronizable, y la consola lo dice: PENDIENTE DE APROVISIONAR. Un endpoint HTTP\nque pudiera emitir certificados X.509 sería una superficie de ataque contra la\nidentidad de los gabinetes.",
         "properties": {
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentProfile"
+          },
           "fw_version": {
             "anyOf": [
               {
@@ -2401,6 +2437,9 @@
           "derived_state": {
             "title": "Derived State",
             "type": "string"
+          },
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentProfile"
           },
           "fw_version": {
             "anyOf": [
@@ -2534,6 +2573,9 @@
       "GatewayRowOut": {
         "description": "Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).\n\nSin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último\n``device_health``, y un gabinete recién dado de alta todavía no tiene ninguno.\nInventarle \"OPERATIVO\" sería exactamente la clase de dato falso que prohíbe la\nregla de oro 7.",
         "properties": {
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentProfile"
+          },
           "fw_version": {
             "anyOf": [
               {
@@ -2626,6 +2668,9 @@
               }
             ],
             "title": "Base Row Version"
+          },
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentProfile"
           },
           "fw_version": {
             "anyOf": [

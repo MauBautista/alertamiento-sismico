@@ -8,7 +8,7 @@ import type { GatewayOut, RuleSetOut, SiteOut } from "@takab/sdk";
 import { resetSessionStoreForTests } from "../../auth/session.store";
 import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { seedAuthenticated } from "../../test-utils/renderRoutes";
-import { useFleet } from "./useFleet";
+import { buildCabinets, useFleet } from "./useFleet";
 
 const mocks = vi.hoisted(() => ({
   listGatewaysFleetGatewaysGet: vi.fn(),
@@ -213,5 +213,45 @@ describe("useFleet", () => {
     await settled(result);
     expect(result.current.error).toBeNull();
     expect(result.current.cabinets).toEqual([]);
+  });
+});
+
+describe("buildCabinets · perfil de equipamiento [T-2.31]", () => {
+  const EQUIP_ALL = {
+    siren: true,
+    strobe: true,
+    gas_valve: true,
+    elevator: true,
+    door_retainer: true,
+  };
+
+  it("un canal no instalado se OCULTA aunque el rule_set declare su cableado", () => {
+    const gw = { ...GW_OK, equipment: { ...EQUIP_ALL, gas_valve: false } };
+    const [cab] = buildCabinets([gw], SITES, [ruleSet({})]);
+    expect(cab.relays?.map((r) => r.key)).not.toContain("gas_valve");
+    expect(cab.relays?.map((r) => r.key)).toContain("siren");
+  });
+
+  it("un canal instalado SIN cableado declarado aparece con wiring S/D", () => {
+    const gw = { ...GW_OK, equipment: EQUIP_ALL };
+    const [cab] = buildCabinets([gw], SITES, [ruleSet({})]);
+    const strobe = cab.relays?.find((r) => r.key === "strobe");
+    expect(strobe).toBeDefined();
+    expect(strobe?.wiring).toBe("S/D");
+    expect(strobe?.label).toBe("ESTROBO");
+  });
+
+  it("alias del rule_set (gas/doors) se filtran por su canal de equipment", () => {
+    const gw = { ...GW_OK, equipment: { ...EQUIP_ALL, door_retainer: false } };
+    const [cab] = buildCabinets([gw], SITES, [
+      ruleSet({ config: { relays: { siren: "NO", doors: "NC" } } }),
+    ]);
+    expect(cab.relays?.map((r) => r.key)).not.toContain("doors");
+    expect(cab.relays?.map((r) => r.key)).toContain("siren");
+  });
+
+  it("gateway sin equipment (SDK viejo) conserva la conducta previa", () => {
+    const [cab] = buildCabinets([GW_OK], SITES, [ruleSet({})]);
+    expect(cab.relays?.map((r) => r.key)).toEqual(["siren", "gas_valve"]);
   });
 });

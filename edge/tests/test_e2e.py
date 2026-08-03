@@ -106,6 +106,34 @@ def test_manual_reset_closes_alert_end_to_end(supervisor):
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
 
 
+def test_quake_sequence_skips_uninstalled_channels(settings):
+    # [T-2.31] Sitio sin gas ni ascensores: la secuencia de tier comanda SOLO lo
+    # instalado; gpio conserva sus 5 relés (hardware intocado) pero los canales
+    # ausentes jamás se activan.
+    from takab_edge.config import EquipmentProfile
+    from takab_edge.supervisor import EdgeSupervisor
+
+    site = settings.model_copy(
+        update={"equipment": EquipmentProfile(gas_valve=False, elevator=False)}
+    )
+    sup = EdgeSupervisor(site, seedlink_source=None)
+    sup.start()
+    try:
+        _feed_quake(sup)
+        assert sup.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
+        for channel in (
+            ActuatorChannel.SIREN,
+            ActuatorChannel.STROBE,
+            ActuatorChannel.DOOR_RETAINER,
+        ):
+            assert sup.gpio.relay_state(channel).activated is True, channel
+        for channel in (ActuatorChannel.GAS_VALVE, ActuatorChannel.ELEVATOR):
+            assert sup.gpio.relay_state(channel).activated is False, channel
+        assert len(sup.gpio.relay_states()) == 5  # el hardware sigue completo
+    finally:
+        sup.stop()
+
+
 def test_load_many_noise_packets_no_spurious_alert(supervisor):
     sim = RS4DSimulator(station=supervisor.settings.station)
     stream = sim.stream(channel="EHZ")

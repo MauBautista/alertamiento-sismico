@@ -27,6 +27,16 @@ DEFAULT_URL = "postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab"
 KEY = "clave-sync-test"
 
 EDGE_DOC = {"command_enabled": True, "command_ttl_s": 30.0}
+# [T-2.31] El worker fusiona gateways.equipment DENTRO del doc firmado: el
+# payload publicado siempre trae la clave 'equipment' (default DB = todo-true).
+EQUIP_ALL = {
+    "siren": True,
+    "strobe": True,
+    "gas_valve": True,
+    "elevator": True,
+    "door_retainer": True,
+}
+MERGED_DOC = {**EDGE_DOC, "equipment": EQUIP_ALL}
 
 
 def _dsn() -> str:
@@ -53,7 +63,7 @@ class _Scenario:
         self.gateway = str(uuid.uuid4())
         self.thing = f"gw-sync-{self.gateway[:8]}"
 
-    def seed_gateway(self, *, iot_thing: str | None = None) -> None:
+    def seed_gateway(self, *, iot_thing: str | None = None, equipment: dict | None = None) -> None:
         self.conn.execute(
             "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES "
             "(%s,%s,%s,'S', ST_SetSRID(ST_MakePoint(-100.9,11.9),4326)::geography)",
@@ -69,6 +79,18 @@ class _Scenario:
                 f"SER-{self.gateway[:8]}",
                 iot_thing if iot_thing is not None else self.thing,
             ),
+        )
+        if equipment is not None:
+            self.conn.execute(
+                "UPDATE gateways SET equipment = %s::jsonb WHERE gateway_id = %s",
+                (json.dumps(equipment), self.gateway),
+            )
+        self.conn.commit()
+
+    def set_equipment(self, equipment: dict) -> None:
+        self.conn.execute(
+            "UPDATE gateways SET equipment = %s::jsonb WHERE gateway_id = %s",
+            (json.dumps(equipment), self.gateway),
         )
         self.conn.commit()
 
@@ -144,11 +166,12 @@ def test_activation_publishes_signed_v1(scenario: _Scenario) -> None:
     envelope = mine[0][1]
     assert envelope["kind"] == "config_update"
     assert envelope["version"] == 1
-    assert envelope["payload"] == EDGE_DOC
-    expected = sign_config(KEY.encode(), canonical_payload(EDGE_DOC), 1)
+    # [T-2.31] El doc firmado viaja FUSIONADO con gateways.equipment.
+    assert envelope["payload"] == MERGED_DOC
+    expected = sign_config(KEY.encode(), canonical_payload(MERGED_DOC), 1)
     assert envelope["sig"] == expected
     state = scenario.state()
-    assert state["version"] == 1 and state["payload"] == EDGE_DOC
+    assert state["version"] == 1 and state["payload"] == MERGED_DOC
 
 
 def test_rerun_without_change_is_idempotent(scenario: _Scenario) -> None:
@@ -173,7 +196,43 @@ def test_config_change_bumps_monotonic_version(scenario: _Scenario) -> None:
 
     mine = scenario.mine(publisher)
     assert [p["version"] for _t, p in mine] == [1, 2]
-    assert mine[1][1]["payload"] == new_doc
+    assert mine[1][1]["payload"] == {**new_doc, "equipment": EQUIP_ALL}
+    assert scenario.state()["version"] == 2
+
+
+def test_equipment_rides_merged_into_the_signed_payload(scenario: _Scenario) -> None:
+    """[T-2.31] El equipamiento del gateway viaja DENTRO del doc firmado (una
+    firma cubre config + equipment; el edge no puede recibir uno sin el otro)."""
+    partial = {**EQUIP_ALL, "gas_valve": False, "elevator": False}
+    scenario.seed_gateway(equipment=partial)
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    publisher = _FakePublisher()
+
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    mine = scenario.mine(publisher)
+    assert len(mine) == 1
+    payload = mine[0][1]["payload"]
+    assert payload["equipment"] == partial
+    expected = sign_config(KEY.encode(), canonical_payload(payload), 1)
+    assert mine[0][1]["sig"] == expected
+
+
+def test_equipment_edit_triggers_republish_with_bumped_version(scenario: _Scenario) -> None:
+    """[T-2.31] Editar SOLO el equipamiento re-publica (IS DISTINCT del estado);
+    el re-run posterior vuelve a ser idempotente."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    scenario.set_equipment({**EQUIP_ALL, "door_retainer": False})
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    mine = scenario.mine(publisher)
+    assert [p["version"] for _t, p in mine] == [1, 2]
+    assert mine[1][1]["payload"]["equipment"]["door_retainer"] is False
     assert scenario.state()["version"] == 2
 
 
@@ -242,7 +301,7 @@ def test_mixed_fleet_signs_only_gateways_with_key(scenario: _Scenario) -> None:
     assert published2 == [gw2]  # solo el pendiente; el otro ya estaba al día
     env2 = next(p for t, p in publisher.published if t == f"takab/cfg/{thing2}")
     assert env2["version"] == 1
-    assert env2["sig"] == sign_config(b"clave-2", canonical_payload(EDGE_DOC), 1)
+    assert env2["sig"] == sign_config(b"clave-2", canonical_payload(MERGED_DOC), 1)
 
 
 def test_publish_failure_keeps_candidate_for_retry(scenario: _Scenario) -> None:

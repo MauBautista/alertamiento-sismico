@@ -474,9 +474,18 @@ class LocalDashboard(EdgeModule):
         gpio.relay_states() ya es seguro en shutdown (devuelve []); este guard
         cubre cualquier otro fallo: roto ⇒ [] y el panel pinta S/D, jamás un 500
         al kiosco (misma doctrina que el resto de las secciones).
+
+        [T-2.31] Se pintan SOLO los actuadores instalados (perfil vivo del
+        config store): mostrar un relé de gas en un sitio sin gas es un dato
+        falso (regla de oro 7). gpio conserva sus 5 relés; el filtro es de
+        presentación.
         """
         try:
-            return [r.model_dump(mode="json") for r in self._gpio.relay_states()]
+            states = self._gpio.relay_states()
+            if self._config is not None:
+                equipment = self._config.current().equipment
+                states = [r for r in states if equipment.has(r.channel)]
+            return [r.model_dump(mode="json") for r in states]
         except Exception:  # noqa: BLE001 — sección no-crítica
             log.warning("panel LAN: relés no disponibles", exc_info=True)
             return []
