@@ -896,6 +896,75 @@ def test_status_relays_filtered_by_equipment(supervisor):
     assert len(supervisor.gpio.relay_states()) == 5
 
 
+# --- T-2.33 · gabinetes secundarios LoRa ------------------------------------
+
+
+def test_status_lora_section_none_without_radio(supervisor):
+    """Sin radio LoRa (default) la sección es None: el panel dice DESHABILITADO,
+    jamás inventa secundarios (regla de oro 7)."""
+    assert supervisor.local_api.status()["lora"] is None
+
+
+def test_status_lora_section_passes_snapshot_through(supervisor):
+    """Con enlace vivo, status().lora es el snapshot del módulo (contrato
+    SecondaryCabinetState) y una excepción del módulo degrada a None."""
+
+    class _FakeLora:
+        def snapshot(self):
+            return {
+                "enabled": True,
+                "heartbeat_s": 90.0,
+                "secondaries": [
+                    {
+                        "id": 258,
+                        "name": "AZOTEA",
+                        "zone": "Torre B",
+                        "age_s": 12.0,
+                        "battery_mv": 3870,
+                        "rssi_dbm": -92.0,
+                        "snr_db": 7.5,
+                        "alarm_active": False,
+                        "link": "online",
+                        "acked": None,
+                    }
+                ],
+            }
+
+    from takab_edge.local_api import LocalDashboard
+
+    dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health, lora=_FakeLora())
+    section = dash.status()["lora"]
+    assert section["secondaries"][0]["name"] == "AZOTEA"
+    assert section["secondaries"][0]["link"] == "online"
+
+    class _BrokenLora:
+        def snapshot(self):
+            raise RuntimeError("radio muerta")
+
+    broken = LocalDashboard(
+        supervisor.gpio, supervisor.rules, supervisor.health, lora=_BrokenLora()
+    )
+    assert broken.status()["lora"] is None
+
+
+def test_index_lora_hooks(supervisor):
+    """[T-2.33] Rótulos congelados de la card de secundarios LoRa."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        'id="lora-card"',
+        'id="lora-rows"',
+        "Gabinetes secundarios · LoRa",
+        "SIN RADIO LORA · MÓDULO DESHABILITADO",
+        "SIN GABINETES SECUNDARIOS PROVISIONADOS",
+        "ENLACE PERDIDO",
+        "SIN CONTACTO AÚN",
+        "SIN ACK",
+        "ALARMA PROPAGADA",
+    ):
+        assert hook in html, hook
+
+
 # --- T-2.32 · política de quórum -------------------------------------------
 
 
