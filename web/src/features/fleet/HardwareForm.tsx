@@ -10,15 +10,33 @@
 
 import { useState } from "react";
 
-import type { SiteOut } from "@takab/sdk";
+import type { EquipmentProfile, SiteOut } from "@takab/sdk";
 
 /** Espejo de los CHECK de `sensors` (db/schema.sql). */
 export const SENSOR_KINDS = ["structural", "ground"] as const;
 export const SENSOR_MOUNTS = ["concrete_column", "steel", "floor", "buried"] as const;
 
+/** [T-2.31] Actuadores declarables por sitio (espejo de EquipmentProfile). */
+export const EQUIPMENT_FIELDS = [
+  { key: "siren", label: "SIRENA" },
+  { key: "strobe", label: "ESTROBO" },
+  { key: "gas_valve", label: "VÁLVULA DE GAS" },
+  { key: "elevator", label: "ASCENSORES" },
+  { key: "door_retainer", label: "RETENEDORES DE PUERTA" },
+] as const;
+
+const EQUIPMENT_ALL: Required<EquipmentProfile> = {
+  siren: true,
+  strobe: true,
+  gas_valve: true,
+  elevator: true,
+  door_retainer: true,
+};
+
 export interface GatewayValues {
   serial: string;
   has_wr1: boolean;
+  equipment: Required<EquipmentProfile>;
 }
 
 export interface SensorValues {
@@ -46,7 +64,11 @@ export default function HardwareForm({
   onCreateSensor,
   onDone,
 }: HardwareFormProps) {
-  const [gw, setGw] = useState<GatewayValues>({ serial: "", has_wr1: true });
+  const [gw, setGw] = useState<GatewayValues>({
+    serial: "",
+    has_wr1: true,
+    equipment: { ...EQUIPMENT_ALL },
+  });
   const [sensor, setSensor] = useState<SensorValues>({
     kind: "structural",
     model: "RS4D",
@@ -60,7 +82,7 @@ export default function HardwareForm({
       <h3 className="fleet__formtitle">HARDWARE · {site.code}</h3>
 
       <fieldset className="fleet__coords">
-        <legend>GABINETE (RASPBERRY PI 5)</legend>
+        <legend>GABINETE (RASPBERRY PI 4)</legend>
         <p className="fleet__hint">
           Nace en <strong>PROVISIONADO</strong>. Su certificado X.509 lo emite Terraform; hasta
           entonces no sincroniza y la flota lo muestra como pendiente.
@@ -81,6 +103,22 @@ export default function HardwareForm({
           />
           <span>RECEPTOR WR-1 (SASMEX) INSTALADO</span>
         </label>
+        <p className="fleet__hint">
+          ACTUADORES INSTALADOS EN EL SITIO — no toda estación tiene gas, ascensores o retenedores.
+          Lo aquí declarado viaja firmado al gabinete: un canal ausente no se comanda ni se pinta.
+        </p>
+        {EQUIPMENT_FIELDS.map(({ key, label }) => (
+          <label className="fleet__checkbox" key={key}>
+            <input
+              type="checkbox"
+              checked={gw.equipment[key]}
+              onChange={(e) =>
+                setGw({ ...gw, equipment: { ...gw.equipment, [key]: e.target.checked } })
+              }
+            />
+            <span>{label}</span>
+          </label>
+        ))}
         <button
           type="button"
           className="soc-btn"

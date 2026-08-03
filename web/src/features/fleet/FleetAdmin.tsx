@@ -101,7 +101,13 @@ function FleetAdminPanel() {
 
   function createGateway(siteId: string, values: GatewayValues) {
     // Sin `iot_thing`: la API no habla con AWS. El thing lo crea Terraform.
-    addGateway.mutate({ site_id: siteId, serial: values.serial, has_wr1: values.has_wr1 });
+    addGateway.mutate({
+      site_id: siteId,
+      serial: values.serial,
+      has_wr1: values.has_wr1,
+      // [T-2.31] Qué actuadores existen en el sitio; viaja firmado al edge.
+      equipment: values.equipment,
+    });
   }
 
   function createSensor(siteId: string, values: SensorValues) {
