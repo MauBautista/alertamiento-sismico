@@ -1,0 +1,102 @@
+{
+  "description": "[T-2.33] Estado de un gabinete secundario LoRa (ESP32 + sirena/estrobo).\n\nEs lo que el panel del gabinete pinta por secundario (sección ``lora`` de\n``/api/status``); el JSON Schema espejo ancla el contrato para el firmware\nESP32 futuro. ``link``: ``never`` (jamás visto) · ``online`` · ``offline``\n(heartbeat ausente > factor×periodo). ``acked``: estado del último comando\npropagado (``None`` = sin comando pendiente).",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "integer"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "zone": {
+      "default": "",
+      "title": "Zone",
+      "type": "string"
+    },
+    "age_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Age S"
+    },
+    "battery_mv": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Battery Mv"
+    },
+    "rssi_dbm": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rssi Dbm"
+    },
+    "snr_db": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Snr Db"
+    },
+    "alarm_active": {
+      "default": false,
+      "title": "Alarm Active",
+      "type": "boolean"
+    },
+    "link": {
+      "default": "never",
+      "enum": [
+        "never",
+        "online",
+        "offline"
+      ],
+      "title": "Link",
+      "type": "string"
+    },
+    "acked": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Acked"
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "title": "SecondaryCabinetState",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/lora_secondary_state/v1.8.0",
+  "version": "1.8.0"
+}

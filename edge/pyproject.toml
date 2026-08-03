@@ -31,6 +31,11 @@ bacnet = [
 aws = [
     "awsiotsdk>=1.22",
 ]
+# [T-2.33] Radio LoRa real (módem ESP32 por USB-serial). El simulador NO lo
+# necesita; instalar en el Pi con `uv sync --extra lora` cuando exista hardware.
+lora = [
+    "pyserial>=3.5",
+]
 
 # Grupo de desarrollo — uv lo instala por defecto en `uv sync`/`uv run` (a diferencia
 # de los extras), evitando que `uv run` desinstale herramientas al re-sincronizar.

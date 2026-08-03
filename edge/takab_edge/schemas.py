@@ -25,6 +25,7 @@ from takab_edge.contracts import (
     FeatureBatch,
     HealthSnapshot,
     LocalEvent,
+    SecondaryCabinetState,
     WaveformPacket,
 )
 
@@ -51,7 +52,9 @@ from takab_edge.contracts import (
 #: `UpsReading` ya medía deja de perderse. ADITIVO: clave opcional nullable; un
 #: payload 1.6.0 sigue validando y la nube persiste su ausencia como NULL
 #: (`battery_min_left` deja de ser siempre NULL).
-SCHEMA_VERSION = "1.7.0"
+#: 1.8.0 (T-2.33): + lora_secondary_state (estado por gabinete secundario LoRa,
+#: sección ``lora`` del panel; ancla del firmware ESP32). ADITIVO: familia nueva.
+SCHEMA_VERSION = "1.8.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -64,6 +67,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "command_ack": CommandAck,  # T-1.23: ack de comando remoto (takab/acks)
     "backfill_request": BackfillRequest,  # T-1.25: solicitud de URL pre-firmada
     "evidence_object": EvidenceObject,
+    "lora_secondary_state": SecondaryCabinetState,  # T-2.33: gabinete secundario LoRa
 }
 
 

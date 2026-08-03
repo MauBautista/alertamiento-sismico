@@ -302,3 +302,25 @@ class EvidenceObject(BaseModel):
     sha256: str
     size_bytes: int
     uploaded_at: datetime = Field(default_factory=utcnow)
+
+
+class SecondaryCabinetState(BaseModel):
+    """[T-2.33] Estado de un gabinete secundario LoRa (ESP32 + sirena/estrobo).
+
+    Es lo que el panel del gabinete pinta por secundario (sección ``lora`` de
+    ``/api/status``); el JSON Schema espejo ancla el contrato para el firmware
+    ESP32 futuro. ``link``: ``never`` (jamás visto) · ``online`` · ``offline``
+    (heartbeat ausente > factor×periodo). ``acked``: estado del último comando
+    propagado (``None`` = sin comando pendiente).
+    """
+
+    id: int
+    name: str
+    zone: str = ""
+    age_s: float | None = None
+    battery_mv: int | None = None
+    rssi_dbm: float | None = None
+    snr_db: float | None = None
+    alarm_active: bool = False
+    link: Literal["never", "online", "offline"] = "never"
+    acked: bool | None = None
