@@ -20,6 +20,7 @@ import type { IncidentActionsData } from "./useIncidentActions";
 import type { SiteFeaturesData } from "./useSiteFeatures";
 import { RELAYS_STALE_MS, type SiteRelaysData } from "./useSiteRelays";
 import FeatureStrip from "./FeatureStrip";
+import type { QuorumCommandSummary } from "./useQuorumCommands";
 import type { SiteStateFrame } from "@takab/sdk";
 
 /** Sin frame de features tras esto (live 1 Hz) el strip pasa a DATOS RETENIDOS. */
@@ -54,6 +55,8 @@ export interface DetailPanelProps {
   incident: LiveIncident | null;
   /** Relés del gabinete del sitio (config activa; null = no visible). */
   relays: SiteRelaysData;
+  /** [T-2.32] Burst de actuación comandado por el quórum de red (null = ninguno). */
+  quorumCommanded?: QuorumCommandSummary | null;
   nowMs: number;
   onClose: () => void;
 }
@@ -75,6 +78,7 @@ export default function DetailPanel({
   actions,
   incident,
   relays,
+  quorumCommanded = null,
   nowMs,
   onClose,
 }: DetailPanelProps) {
@@ -218,6 +222,15 @@ export default function DetailPanel({
                 {incident.event_id ?? "SIN EVENTO SÍSMICO ASOCIADO"}
               </span>
             </div>
+            {quorumCommanded && (
+              <div className="soc-fact">
+                <span className="soc-fact__label">ACTUACIÓN DE RED</span>
+                <span className="soc-fact__value soc-quorum-red" data-testid="quorum-red-badge">
+                  QUÓRUM RED · {quorumCommanded.channels.join(" · ").toUpperCase()} ·{" "}
+                  {quorumCommanded.acked}/{quorumCommanded.total} ACK
+                </span>
+              </div>
+            )}
             <div className="soc-fact">
               <span className="soc-fact__label">ESTADO · EDAD</span>
               <span className="soc-fact__value">

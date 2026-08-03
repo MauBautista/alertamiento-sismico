@@ -105,6 +105,22 @@ function renderPanel(over: Partial<Parameters<typeof DetailPanel>[0]> = {}) {
 }
 
 describe("DetailPanel", () => {
+  it("[T-2.32] pinta el badge QUÓRUM RED cuando hay burst de actuación de red", () => {
+    renderPanel({
+      incident: { ...INCIDENT, event_id: "EVT-20260803-120000-abc123" },
+      quorumCommanded: { channels: ["gas_valve", "siren"], acked: 3, total: 9 },
+    });
+    const badge = screen.getByTestId("quorum-red-badge");
+    expect(badge.textContent).toContain("QUÓRUM RED");
+    expect(badge.textContent).toContain("GAS_VALVE · SIREN");
+    expect(badge.textContent).toContain("3/9 ACK");
+  });
+
+  it("[T-2.32] sin burst de red no se inventa el badge", () => {
+    renderPanel();
+    expect(screen.queryByTestId("quorum-red-badge")).toBeNull();
+  });
+
   it("readouts PGA/PGV, SOH real y caption honesto de features 1 s", () => {
     renderPanel();
     expect(screen.getByText("Planta Cholula")).toBeInTheDocument();
