@@ -97,10 +97,17 @@ class EdgeSupervisor:
         settings: EdgeSettings,
         seedlink_source: Iterator[WaveformPacket] | None = None,
         mqtt_transport: MqttTransport | None = None,
+        lora_transport=None,
+        lora_site_key: bytes | None = None,
     ) -> None:
         self.settings = settings
         self._seedlink_source = seedlink_source
         self._mqtt_transport = mqtt_transport
+        # [T-2.33] Radio LoRa: inyectado (tests/simulador) > serial real si
+        # lora.enabled > ninguno (módulo dormido). La clave de sitio viaja por
+        # env (TAKAB_EDGE_LORA_KEY) o inyectada en tests.
+        self._lora_transport = lora_transport
+        self._lora_site_key = lora_site_key
         self._built = False
         self._stop_event = threading.Event()
 
@@ -140,6 +147,29 @@ class EdgeSupervisor:
                 status_topic=s.status_topic,
             )
         return None
+
+    def _build_lora(self, s: EdgeSettings):
+        """[T-2.33] Enlace LoRa: inyectado > serial real (lora.enabled) > None.
+
+        No-crítico y fuera del camino GPIO (regla de oro 4): sin radio ni
+        secundarios el gabinete opera exactamente igual que antes.
+        """
+        from takab_edge.lora import LoraLink, SerialLoraTransport
+
+        transport = self._lora_transport
+        if transport is None:
+            if not s.lora.enabled:
+                return None
+            transport = SerialLoraTransport(s.lora.port, s.lora.baud)
+        key = self._lora_site_key
+        if key is None:
+            key = os.environ.get("TAKAB_EDGE_LORA_KEY", "").encode()
+            if not key:
+                if s.dev_mode:
+                    key = os.urandom(32)  # efímera, sólo desarrollo
+                else:
+                    raise RuntimeError("TAKAB_EDGE_LORA_KEY es obligatoria con lora.enabled")
+        return LoraLink(s, transport, key)
 
     def build(self) -> EdgeSupervisor:
         from simulators.bacnet import BacnetSimulator
@@ -200,6 +230,8 @@ class EdgeSupervisor:
         # T-2.24: catálogo SSN con feed firmado — el archivo provisionado sigue
         # siendo la base; el feed solo lo REFRESCA (mismo HMAC, dominio propio).
         self.catalog = CatalogStore(s.catalog_path, security=self.security)
+        # [T-2.33] Espejos de sirena/estrobo a distancia (None sin radio/inyección).
+        self.lora = self._build_lora(s)
         self.dispatch = CommandDispatcher(
             s,
             self.security,
@@ -212,6 +244,7 @@ class EdgeSupervisor:
             # T-1.60: ramas drill_start/drill_stop del canal system.
             drill=self.drill,
             catalog=self.catalog,
+            lora=self.lora,  # T-2.33: comando de red → espejo a secundarios
         )
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
@@ -240,6 +273,7 @@ class EdgeSupervisor:
             audio=self.audio,
             drill=self.drill,
             dispatch=self.dispatch,  # T-2.32: fuente «QUÓRUM RED» + su cierre
+            lora=self.lora,  # T-2.33: salud de secundarios + CLEAR/TEST
         )
 
         self._modules: dict[str, EdgeModule] = {
@@ -263,6 +297,9 @@ class EdgeSupervisor:
                 self.local_api,
             )
         }
+        if self.lora is not None:
+            # [T-2.33] Solo con radio (real o simulado): módulo no-crítico.
+            self._modules[self.lora.name] = self.lora
         self._wire()
         self._built = True
         return self
@@ -361,6 +398,16 @@ class EdgeSupervisor:
         # voceo: «no activa nada, solo un aviso visual en la pantalla».
         if not visual_only:
             self.audio.on_tier(decision)
+        # [T-2.33] Espejo a gabinetes secundarios SOLO cuando el principal ACTÚA
+        # (SASMEX u opt-in instrumental): evacuate ⇒ sirena+estrobo remotos;
+        # restricted ⇒ estrobo. Fire-and-forget tras la actuación local — y ANTES
+        # del corte de nube del modo prueba WR-1: los secundarios son protección
+        # local, como la sirena que SÍ suena en la prueba.
+        if self.lora is not None and not visual_only:
+            if decision.tier is Tier.EVACUATE_OR_HOLD:
+                self.lora.propagate("activate", siren=True, strobe=True)
+            elif decision.tier is Tier.RESTRICTED:
+                self.lora.propagate("activate", strobe=True)
         # T-1.60: un tier instrumental de protección aborta el simulacro en curso.
         self.drill.on_tier(decision)
         # [T-1.69] Modo prueba del WR-1: la protección LOCAL ya ocurrió (relés +

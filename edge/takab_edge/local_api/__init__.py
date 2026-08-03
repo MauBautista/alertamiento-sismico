@@ -313,6 +313,7 @@ class LocalDashboard(EdgeModule):
         audio: object | None = None,
         drill: object | None = None,
         dispatch: object | None = None,
+        lora: object | None = None,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -328,6 +329,8 @@ class LocalDashboard(EdgeModule):
         # [T-2.32] Fuente «QUÓRUM RED»: el dispatcher registra la actuación
         # comandada por la nube y CERRAR ALERTA la limpia.
         self._dispatch = dispatch
+        # [T-2.33] Enlace a gabinetes secundarios LoRa (salud + CLEAR/TEST).
+        self._lora = lora
         self._gateway_id = gateway_id
         self._site_name = site_name
         self._refresh_ms = refresh_ms
@@ -612,6 +615,20 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: calibración no disponible", exc_info=True)
             return degraded
 
+    def _lora_section(self) -> dict | None:
+        """[T-2.33] Salud de gabinetes secundarios LoRa (o ``None`` sin radio).
+
+        ``None`` ⇒ el panel pinta «SIN RADIO LORA · MÓDULO DESHABILITADO»;
+        con radio y lista vacía ⇒ «SIN GABINETES SECUNDARIOS PROVISIONADOS».
+        """
+        try:
+            if self._lora is None:
+                return None
+            return self._lora.snapshot()
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: lora no disponible", exc_info=True)
+            return None
+
     def _network_alert_section(self) -> dict | None:
         """[T-2.32] Actuación comandada por el quórum de red (o ``None``).
 
@@ -694,6 +711,7 @@ class LocalDashboard(EdgeModule):
             # ALERTA mientras esto sea true, aunque el tier ya haya decaído.
             "alert_latched": self._gpio.alert_latched,
             "network_alert": self._network_alert_section(),
+            "lora": self._lora_section(),
             "last_tier": last_tier,
             "relays": self._relays_section(),
             # Compat con el panel previo: hora del último dato de salud (o ahora).
@@ -777,6 +795,13 @@ class LocalDashboard(EdgeModule):
         result = self._gpio.run_local_actuation_test()
         with self._actions_lock:
             self._last_actuation_test = result
+        if self._lora is not None:
+            # [T-2.33] Los secundarios también se prueban: TEST hace destellar el
+            # estrobo remoto SIN sirena (verificación de enlace + actuador).
+            try:
+                self._lora.propagate("test", strobe=True)
+            except Exception:  # noqa: BLE001 — la prueba local jamás falla por esto
+                log.exception("lora.propagate('test') falló (aislado)")
         self._record_action("actuator_test")
         log.warning("prueba local de actuación por LAN (NO es alerta real)")
 
@@ -810,6 +835,13 @@ class LocalDashboard(EdgeModule):
                 self._dispatch.clear_network_alert()
             except Exception:  # noqa: BLE001 — el cierre local jamás falla por esto
                 log.exception("clear_network_alert() en reset falló (aislado)")
+        if self._lora is not None:
+            # [T-2.33] CERRAR ALERTA también libera los secundarios (ALARM_CLEAR
+            # con repeat-until-ack; el estado de ack queda visible en el panel).
+            try:
+                self._lora.propagate("clear")
+            except Exception:  # noqa: BLE001 — el cierre local jamás falla por esto
+                log.exception("lora.propagate('clear') en reset falló (aislado)")
         if self._audio is not None:
             # La alerta terminó: la voz también se calla (A-6).
             try:

@@ -105,6 +105,36 @@ class BufferConfig(BaseModel):
     max_bytes: int = Field(default=8 * 1024**3, gt=0)  # ~8 GB (holgura ≥15× en NVMe de 64 GB)
 
 
+class SecondaryCabinet(BaseModel):
+    """[T-2.33] Gabinete secundario LoRa provisionado (ESP32 + sirena/estrobo)."""
+
+    id: int = Field(gt=0, le=0xFFFF)  # u16 de la trama; clave HMAC derivada de él
+    name: str = ""
+    zone: str = ""
+
+
+class LoraConfig(BaseModel):
+    """[T-2.33] Enlace LoRa a gabinetes secundarios (módem ESP32 por USB-serial).
+
+    ``enabled=False`` de fábrica: el Pi aún no tiene radio — el módulo solo vive
+    con el simulador/tests hasta que exista el hardware (915 MHz ISM MX). La
+    clave de sitio viaja SOLO por env (``TAKAB_EDGE_LORA_KEY``), jamás en este
+    modelo serializable.
+    """
+
+    enabled: bool = False
+    port: str = "/dev/ttyUSB0"
+    baud: int = 115200
+    #: Cadencia esperada del heartbeat uplink de cada secundario (ellos emiten).
+    heartbeat_s: float = Field(default=90.0, gt=0)
+    #: Sin heartbeat durante factor×heartbeat_s ⇒ ENLACE PERDIDO (transición).
+    heartbeat_timeout_factor: float = Field(default=3.0, gt=0)
+    #: Reintentos de una orden hasta ACK (disciplina de aire: espaciados).
+    alarm_retry_max: int = Field(default=5, gt=0)
+    alarm_retry_s: float = Field(default=2.0, gt=0)
+    secondaries: list[SecondaryCabinet] = Field(default_factory=list)
+
+
 class EquipmentProfile(BaseModel):
     """[T-2.31] Actuadores INSTALADOS físicamente en el sitio.
 
@@ -356,6 +386,8 @@ class EdgeSettings(BaseSettings):
     #: (gas/ascensores/puertas). Vacío = todo por relé local [SUPUESTO plan-maestro-01 #4].
     #: La sirena/estrobo NUNCA van por BACnet (vida audible = relé local directo).
     bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
+    #: [T-2.33] Gabinetes secundarios LoRa (espejos de sirena/estrobo a distancia).
+    lora: LoraConfig = Field(default_factory=LoraConfig)
     #: Periodo del heartbeat de salud (beacon de vida); las transiciones se loguean aparte.
     health_heartbeat_s: float = Field(default=60.0, gt=0)
     #: Punto de montaje que reporta la sonda de disco del panel (T-1.53).

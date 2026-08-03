@@ -161,6 +161,54 @@ def test_quake_sequence_skips_uninstalled_channels(settings):
         sup.stop()
 
 
+def test_sasmex_propagates_to_lora_secondaries_and_reset_clears(settings):
+    # [T-2.33] Los secundarios son ESPEJOS de la actuación real: SASMEX ⇒
+    # ALARM_ACT firmada (sirena+estrobo remotos) hasta ACK; CERRAR ALERTA ⇒
+    # ALARM_CLEAR. La detección instrumental (solo aviso, T-2.32) NO propaga.
+    import time as _time
+
+    from simulators.lora import FakeSecondaryCabinet, SimulatedLoraTransport
+    from takab_edge.config import LoraConfig, SecondaryCabinet
+    from takab_edge.supervisor import EdgeSupervisor
+
+    site_key = b"clave-lora-de-sitio-0123456789ab"
+    transport = SimulatedLoraTransport()
+    cab = transport.attach(FakeSecondaryCabinet(site_key, 258))
+    lora_settings = settings.model_copy(
+        update={
+            "lora": LoraConfig(
+                enabled=True,
+                alarm_retry_s=0.05,
+                secondaries=[SecondaryCabinet(id=258, name="AZOTEA")],
+            )
+        }
+    )
+    sup = EdgeSupervisor(
+        lora_settings, seedlink_source=None, lora_transport=transport, lora_site_key=site_key
+    )
+    sup.start()
+    try:
+        _feed_quake(sup)  # instrumental = solo aviso ⇒ nada viaja a secundarios
+        _time.sleep(0.2)
+        assert cab.alarm_active is False
+
+        WR1Simulator(sup.gpio).alert()  # SASMEX real ⇒ espejo remoto
+        deadline = _time.monotonic() + 3.0
+        while _time.monotonic() < deadline and not cab.alarm_active:
+            _time.sleep(0.01)
+        assert cab.alarm_active is True
+        row = sup.local_api.status()["lora"]["secondaries"][0]
+        assert row["acked"] is True
+
+        sup.local_api.reset_alert()  # CERRAR ALERTA libera también a distancia
+        deadline = _time.monotonic() + 3.0
+        while _time.monotonic() < deadline and cab.alarm_active:
+            _time.sleep(0.01)
+        assert cab.alarm_active is False
+    finally:
+        sup.stop()
+
+
 def test_load_many_noise_packets_no_spurious_alert(supervisor):
     sim = RS4DSimulator(station=supervisor.settings.station)
     stream = sim.stream(channel="EHZ")
