@@ -894,5 +894,8 @@ def test_index_responsive_overlap_fixes(supervisor):
         "body.mode-campo #overlay",  # el modal TIENE reglas campo (apilado)
         "body.mode-campo #cmp-drawer",  # cajón acotado en pantallas bajas
         "overflow:hidden auto",  # bitácora: x oculto, y desplazable
+        "body.mode-campo #rose-wrap",  # la brújula colapsaba a 0 px en teléfono
+        "body.mode-muro header",  # muro forzado en angosto: crece, no desborda
+        "@media (max-width:699px)",  # modal apilado en angosto SEA CUAL SEA el modo
     ):
         assert hook in html, hook
