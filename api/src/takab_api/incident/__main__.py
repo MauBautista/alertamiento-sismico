@@ -26,6 +26,8 @@ from functools import partial
 
 import psycopg
 
+from takab_api.commands.keys import build_key_provider
+from takab_api.commands.publisher import IotDataPublisher
 from takab_api.db import pool
 from takab_api.incident.engine import IncidentEngine
 from takab_api.settings import Settings
@@ -35,7 +37,17 @@ log = logging.getLogger("takab_api.incident")
 
 def build_engine(settings: Settings, *, poll_s: float, lookback_s: float) -> IncidentEngine:
     conn_factory: partial[psycopg.Connection] = partial(pool.connect, settings.database_url)
-    return IncidentEngine(conn_factory, settings, poll_s=poll_s, lookback_s=lookback_s)
+    # [T-2.32] El engine también emite los comandos de quórum (firmados por
+    # gateway): mismo publisher/keys que el config sync. El contenedor co-locado
+    # debe portar WorkerIotPublish (verificar en el deploy).
+    return IncidentEngine(
+        conn_factory,
+        settings,
+        poll_s=poll_s,
+        lookback_s=lookback_s,
+        publisher=IotDataPublisher(settings),
+        key_provider=build_key_provider(settings),
+    )
 
 
 def install_signal_handlers(engine: IncidentEngine) -> None:

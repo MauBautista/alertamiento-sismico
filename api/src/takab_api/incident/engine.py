@@ -41,6 +41,8 @@ from takab_api.incident.quorum import (
 )
 
 if TYPE_CHECKING:
+    from takab_api.commands.keys import CommandKeyProvider
+    from takab_api.commands.publisher import CommandPublisher
     from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.incident")
@@ -164,11 +166,18 @@ class IncidentEngine:
         *,
         poll_s: float = 5.0,
         lookback_s: float = 300.0,
+        publisher: CommandPublisher | None = None,
+        key_provider: CommandKeyProvider | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._settings = settings
         self._poll_s = poll_s
         self._lookback_s = lookback_s
+        # [T-2.32] Con publisher+keys cableados (producción: __main__), tras cada
+        # correlación se emiten los comandos de actuación FIRMADOS del quórum
+        # confirmado. Sin ellos (tests de correlación pura) la pasada es no-op.
+        self._publisher = publisher
+        self._keys = key_provider
         self._stop = threading.Event()
 
     # ------------------------------------------------------------------ loop
@@ -192,6 +201,7 @@ class IncidentEngine:
                         break
                     work_conn = self._ensure_work(work_conn)
                     self.run_correlation(work_conn)
+                    self._quorum_actuation_pass(work_conn)
                     self._dictamen_pass(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("engine: DB no disponible; reconecta")
@@ -231,6 +241,23 @@ class IncidentEngine:
                 continue
             if isinstance(payload, dict) and payload.get("t") == "incident":
                 logger.debug("engine: notify incident tenant=%s", payload.get("tenant"))
+
+    def _quorum_actuation_pass(self, work_conn: psycopg.Connection) -> None:
+        """[T-2.32] Quórum confirmado ⇒ comandos de actuación firmados a los
+        miembros (política ratificada 2026-08-03). Transacción PROPIA, DESPUÉS de
+        la correlación: un fallo aquí jamás revierte el evento de red. Import
+        perezoso (patrón del dictamen) para no cargar commands sin publisher."""
+        if self._publisher is None or self._keys is None:
+            return
+        from takab_api.commands.quorum_actuation import run_quorum_actuation_pass
+
+        run_quorum_actuation_pass(
+            work_conn,
+            self._settings,
+            self._publisher,
+            self._keys,
+            lookback_s=self._lookback_s,
+        )
 
     def _dictamen_pass(self, work_conn: psycopg.Connection) -> None:
         """Dictamen preliminar (T-1.20 · B5): post-hoc, tras dar tiempo (settle)

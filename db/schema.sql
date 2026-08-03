@@ -845,6 +845,11 @@ CREATE TABLE commands (
 CREATE INDEX idx_commands_site    ON commands (site_id, issued_at DESC);
 CREATE INDEX idx_commands_rate    ON commands (issued_by, site_id, issued_at DESC);
 CREATE INDEX idx_commands_pending ON commands (expires_at) WHERE status = 'pending';
+-- [T-2.32] Ledger idempotente del burst de quórum: el actor sistema (UUID
+-- espejo de commands/quorum_actuation.py) no puede duplicar (gateway,evento,canal).
+CREATE UNIQUE INDEX idx_commands_quorum_ledger
+  ON commands (gateway_id, event_id, channel)
+  WHERE issued_by = '00000000-0000-4000-8000-00000000c092';
 GRANT SELECT, INSERT, UPDATE ON commands TO takab_app;    -- la API emite y lista
 GRANT SELECT, INSERT, UPDATE ON commands TO takab_ingest; -- el ack transiciona el estado
 
