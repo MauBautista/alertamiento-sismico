@@ -896,6 +896,40 @@ def test_status_relays_filtered_by_equipment(supervisor):
     assert len(supervisor.gpio.relay_states()) == 5
 
 
+# --- T-2.32 · política de quórum -------------------------------------------
+
+
+def test_status_exposes_network_alert_and_reset_clears_it(supervisor):
+    """[T-2.32] La fuente «QUÓRUM RED» viaja en status() y CERRAR ALERTA la
+    cierra junto con el resto (gpio→rules→network)."""
+    assert supervisor.local_api.status()["network_alert"] is None
+    supervisor.dispatch._network_alert = {
+        "event_id": "EVT-QRED-9",
+        "at": "2026-08-03T12:00:00+00:00",
+        "channels": ["siren"],
+    }
+    assert supervisor.local_api.status()["network_alert"]["event_id"] == "EVT-QRED-9"
+
+    supervisor.local_api.reset_alert()
+    assert supervisor.local_api.status()["network_alert"] is None
+
+
+def test_index_quorum_policy_hooks(supervisor):
+    """[T-2.32] Rótulos congelados de la política: el rojo es exclusivo de
+    actuación real (SASMEX/QUÓRUM RED); el umbral instrumental es AVISO ámbar."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        'id="banner-aviso"',
+        "AVISO SÍSMICO · MOVIMIENTO FUERTE (UMBRAL INSTRUMENTAL)",
+        "SOLO AVISO · SIN ACTUACIÓN",
+        "QUÓRUM RED",
+        "network_alert",
+        "aviso:",  # escena demo nueva (las 10 originales quedan intactas)
+    ):
+        assert hook in html, hook
+
+
 # --- T-2.30 · responsive / solapamientos -----------------------------------
 
 

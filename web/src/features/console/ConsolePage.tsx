@@ -29,6 +29,7 @@ import { useAutoPopup } from "./useAutoPopup";
 import { useDictamenRequest } from "./useDictamenRequest";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
+import { useQuorumCommands } from "./useQuorumCommands";
 import { useMapState } from "./useMapState";
 import { useSiteFeatures } from "./useSiteFeatures";
 import { useSiteRelays } from "./useSiteRelays";
@@ -68,6 +69,8 @@ function ConsoleWall() {
   const relays = useSiteRelays(focusSiteId);
   const focusIncident = incidents.incidents.find((i) => i.site_id === focusSiteId) ?? null;
   const actions = useIncidentActions(focusIncident?.incident_id ?? null);
+  // [T-2.32] Burst de actuación del quórum de red para el incidente enfocado.
+  const quorumCommanded = useQuorumCommands(focusSiteId, focusIncident?.event_id ?? null);
 
   // Pop-up automático por anomalía sostenida (criterio #4).
   const openDetail = useCallback((siteId: string) => {
@@ -247,6 +250,7 @@ function ConsoleWall() {
           actions={actions}
           incident={focusIncident}
           relays={relays}
+          quorumCommanded={quorumCommanded}
           nowMs={now}
           onClose={() => setDetailOpen(false)}
         />

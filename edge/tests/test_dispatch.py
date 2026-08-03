@@ -138,6 +138,36 @@ def test_command_on_uninstalled_channel_is_rejected_with_honest_ack() -> None:
     assert actuators.executed == []
 
 
+def test_quorum_command_sets_network_alert_and_clear() -> None:
+    """[T-2.32] Un comando firmado con origin=quorum ejecuta Y registra la
+    fuente «QUÓRUM RED» (canales acumulados por evento); clear la cierra."""
+    dispatcher, signer, _cloud, _store, actuators = _dispatcher()
+    for i, channel in enumerate(("siren", "strobe")):
+        payload = {
+            "channel": channel,
+            "action": "activate",
+            "event_id": "EVT-QRED-1",
+            "origin": "quorum",
+        }
+        dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, f"n-q{i}", NOW))
+    assert len(actuators.executed) == 2
+
+    alert = dispatcher.network_alert()
+    assert alert is not None
+    assert alert["event_id"] == "EVT-QRED-1"
+    assert alert["channels"] == ["siren", "strobe"]
+
+    dispatcher.clear_network_alert()
+    assert dispatcher.network_alert() is None
+
+
+def test_command_without_origin_does_not_claim_network_alert() -> None:
+    """Un comando manual del SOC (sin origin) jamás se rotula como quórum."""
+    dispatcher, signer, _cloud, _store, _actuators = _dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _siren_payload(), "n-man", NOW))
+    assert dispatcher.network_alert() is None
+
+
 def test_bad_signature_neither_executes_nor_acks() -> None:
     dispatcher, signer, cloud, _store, actuators = _dispatcher()
     raw = _sign_command(signer, _siren_payload(), "n-3", NOW)

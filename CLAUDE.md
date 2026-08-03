@@ -42,19 +42,24 @@ Arquitectura **híbrida edge + cloud**:
 
 **Fuentes de alertamiento (en orden):**
 1. **SASMEX** vía receptor **WR-1**, salida de **contacto seco** → GPIO del Pi 4 (boolean). Canal
-   primario y autoritativo.
+   primario y autoritativo. Actúa SIEMPRE, 100 % local.
 2. **Detección local instrumental** del propio sensor (umbral PGA/PGV; tiers `normal`/`watch`/
-   `restricted`/`evacuate_or_hold`/`manual_only`).
+   `restricted`/`evacuate_or_hold`/`manual_only`). **VISUAL-ONLY desde T-2.32 (política
+   ratificada 2026-08-03): una estación sola NO actúa relés ni voceo — solo AVISO en panel +
+   evento a nube; opt-in por sitio (`instrumental_actuation`) restaura la actuación autónoma.**
 3. **Quórum colaborativo:** ≥3 estaciones con **ventana de asociación consciente de la
    distancia** entre sitios (`|Δt| ≤ dist/v_P + margen` — ver blueprint §4.5; una ventana fija
-   de 2–5 s era físicamente inalcanzable a 90–110 km). Se correlaciona en la nube; no bloquea
-   la actuación local autónoma.
+   de 2–5 s era físicamente inalcanzable a 90–110 km). Se correlaciona en la nube y, **al
+   confirmar, la NUBE COMANDA actuación firmada** (regla de oro 8, ledger idempotente) a los
+   gateways miembro ∩ su equipamiento. No gatea jamás el camino SASMEX.
 
 ## 2. Reglas de oro (NO negociables — esto es un sistema donde fallar cuesta vidas)
 
-1. **El camino crítico de activación es 100% determinista.** SASMEX→actuador y umbral→actuador
-   NUNCA dependen de IA, de la nube, ni de internet. La IA solo asesora/prioriza/filtra, jamás
-   veta ni dispara una alerta por sí sola.
+1. **El camino crítico de activación es 100% determinista.** SASMEX→actuador NUNCA depende de
+   IA, de la nube, ni de internet. (T-2.32: el umbral instrumental local quedó degradado a
+   AVISO visual por política ratificada; la actuación instrumental llega por comando FIRMADO
+   del quórum de red — determinista y auditable, jamás IA.) La IA solo asesora/prioriza/filtra,
+   jamás veta ni dispara una alerta por sí sola.
 2. **El edge opera sin nube.** Si cae internet, el gabinete sigue detectando, accionando
    actuadores y guardando datos. La nube es para coordinación, no para seguridad local.
 3. **Idempotencia en todo dato que cruza el edge→nube.** Nada se duplica al reconectar

@@ -76,6 +76,10 @@ canvas{display:block}
 #banner-alert .big{font:700 28px/1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-surface-0)}
 #banner-amber{display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
 #banner-latched{display:flex;align-items:center;gap:14px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
+/* [T-2.32] AVISO instrumental: tier elevado SIN actuación (política ratificada) —
+   ámbar fuerte, distinto del rojo (que queda EXCLUSIVO de actuación real). */
+#banner-aviso{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 20px;background:rgba(255,193,7,0.28);border-bottom:2px solid var(--tk-warn)}
+#banner-aviso .big{font:700 20px/1.1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-warn)}
 #banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
 #banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
 #demo-ribbon{display:flex;align-items:center;gap:14px;padding:6px 16px;background:#08171f;border-bottom:1px solid var(--tk-border-strong)}
@@ -236,6 +240,11 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   <span class="big">ALERTA SÍSMICA · PROTÉJASE</span>
   <span style="font:600 13px/1.3 var(--f-ui);color:rgba(14,35,54,0.85);max-width:520px">Alejarse de ventanas · no usar ascensores · seguir la ruta de evacuación señalizada</span>
   <span class="mono" id="alert-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-surface-0)"></span>
+</div>
+<div id="banner-aviso" class="hide" role="alert" aria-live="assertive">
+  <span class="big">⚠️ AVISO SÍSMICO · MOVIMIENTO FUERTE (UMBRAL INSTRUMENTAL)</span>
+  <span style="font:600 12px/1.3 var(--f-ui);color:var(--tk-fg-2);max-width:460px">SOLO AVISO · SIN ACTUACIÓN — una sola estación no dispara alarmas; actúan SASMEX o el quórum de red confirmado</span>
+  <span class="mono" id="aviso-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-warn)"></span>
 </div>
 <div id="banner-latched" class="hide" role="alert">
   <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">🔒 ACTUADORES ENCLAVADOS · CIERRE LA ALERTA PARA LIBERAR</span>
@@ -549,7 +558,7 @@ function baseStatus(){
   const now = new Date().toISOString();
   return {
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
-    sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, last_tier:'normal',
+    sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
     rose_zero: null,
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
@@ -597,6 +606,11 @@ const SCENES = {
   alerta: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold'; s.sasmex_active=true; s.siren_sounding=true; s.alert_latched=true;
     s.signal.channels = sceneChannels(0.31);
     s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
+    s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
+  /* [T-2.32] AVISO instrumental: tier elevado SIN actuación (política ratificada) —
+     escena NUEVA (las 10 originales quedan intactas). */
+  aviso: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold';
+    s.signal.channels = sceneChannels(0.31);
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
   simulacro: () => { const s = baseStatus(); s.siren_sounding=true;
     s.drill = {active:true, drill_id:'DRILL-2026-0730-01', elapsed_s:252, total_s:480}; return s; },
@@ -774,9 +788,15 @@ function render(){
   const drill = st.drill && st.drill.active;
   const test = st.actuation_test && st.actuation_test.active;
   const wr1 = st.test_mode && st.test_mode.active;
-  const alert = st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted' || st.sasmex_active;
+  /* [T-2.32] El ROJO es exclusivo de ACTUACIÓN REAL (SASMEX o comando firmado
+     del quórum de red); el tier instrumental solo eleva el AVISO ámbar —
+     «no activa nada, solo un aviso visual en la pantalla» (política ratificada). */
+  const alert = st.sasmex_active || !!st.network_alert;
+  const aviso = !alert && (st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted');
   $('banner-alert').classList.toggle('hide', !alert);
-  if (alert) $('alert-meta').textContent = 'FUENTE ' + (st.sasmex_active ? 'SASMEX WR-1' : 'UMBRAL INSTRUMENTAL') + ' · ' + clockUTC();
+  if (alert) $('alert-meta').textContent = 'FUENTE ' + (st.sasmex_active ? 'SASMEX WR-1' : 'QUÓRUM RED') + ' · ' + clockUTC();
+  $('banner-aviso').classList.toggle('hide', !aviso);
+  if (aviso) $('aviso-meta').textContent = 'TIER ' + String(st.last_tier).toUpperCase() + ' · ' + clockUTC();
   /* [T-2.26] enclave sin alerta viva: el tier decayó pero los relés siguen en
      protección — el rojo queda EXCLUSIVO de alerta viva, esto es ámbar */
   $('banner-latched').classList.toggle('hide', !(st.alert_latched && !alert));

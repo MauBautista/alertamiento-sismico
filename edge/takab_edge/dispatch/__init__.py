@@ -81,6 +81,20 @@ class CommandDispatcher(EdgeModule):
         self._health = health
         # [T-1.60] Controlador de simulacros (observador; cero relés).
         self._drill = drill
+        # [T-2.32] Última actuación comandada por el quórum de red (dict swap
+        # atómico; el panel la lee vía status().network_alert y CERRAR ALERTA
+        # la limpia). None = sin alerta de red viva.
+        self._network_alert: dict | None = None
+
+    def network_alert(self) -> dict | None:
+        """[T-2.32] Alerta de red viva (quórum) o ``None``."""
+        return self._network_alert
+
+    def clear_network_alert(self) -> None:
+        """[T-2.32] CERRAR ALERTA también cierra la fuente «QUÓRUM RED»."""
+        if self._network_alert is not None:
+            log.warning("alerta de red (quórum) cerrada por operador (LAN)")
+        self._network_alert = None
 
     # ------------------------------------------------------------- comandos
 
@@ -182,6 +196,34 @@ class CommandDispatcher(EdgeModule):
         )
         result = self._actuators.execute(command)
         latency = (utcnow() - started).total_seconds()
+        # [T-2.32] Comando de ACTUACIÓN del quórum de red ejecutado: el panel
+        # rotula la fuente («QUÓRUM RED»). `origin` viene DENTRO de la firma —
+        # nadie lo inyecta sin la clave. Swap atómico del dict (lector = panel).
+        if (
+            result.success
+            and action is ActuatorAction.ACTIVATE
+            and payload.get("origin") == "quorum"
+        ):
+            current = self._network_alert
+            channels = sorted(
+                {channel.value}
+                | (
+                    set(current["channels"])
+                    if current and current["event_id"] == command.event_id
+                    else set()
+                )
+            )
+            if current is None or current["event_id"] != command.event_id:
+                # Transición (regla de oro 10): UNA línea por evento de red, no por canal.
+                log.warning(
+                    "ALERTA DE RED (quórum ≥3): actuación comandada por la nube (%s)",
+                    command.event_id,
+                )
+            self._network_alert = {
+                "event_id": command.event_id,
+                "at": utcnow().isoformat(),
+                "channels": channels,
+            }
         self._ack(
             command_id,
             nonce,
