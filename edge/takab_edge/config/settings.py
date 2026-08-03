@@ -342,6 +342,12 @@ class EdgeSettings(BaseSettings):
     #: retro. gpio conserva sus 5 relés (hardware); el perfil filtra la
     #: secuencia de tier, los comandos de nube y la vista del panel.
     equipment: EquipmentProfile = Field(default_factory=lambda: EquipmentProfile())
+    #: [T-2.32 · política ratificada 2026-08-03] La detección instrumental LOCAL
+    #: es SOLO AVISO VISUAL por defecto (una estación sola no activa nada, ni
+    #: siquiera sin nube). La actuación viene de SASMEX (reflejo gpio, intocado)
+    #: o del comando FIRMADO de quórum ≥3 de la nube. `True` = opt-in explícito
+    #: por sitio que restaura la actuación instrumental autónoma de Fase 1.
+    instrumental_actuation: bool = False
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
     pins: GpioPins = Field(default_factory=GpioPins)
     signal: SignalConfig = Field(default_factory=SignalConfig)

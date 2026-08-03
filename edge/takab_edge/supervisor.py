@@ -26,6 +26,7 @@ from takab_edge.catalog import CatalogStore
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
 from takab_edge.config import ConfigStore, EdgeSettings, SiteLocationCache, load_settings
 from takab_edge.contracts import (
+    AlertSource,
     Feature1s,
     HealthSnapshot,
     LocalEvent,
@@ -331,17 +332,36 @@ class EdgeSupervisor:
         # (config.current(): apply_signed_update REEMPLAZA el objeto settings) —
         # jamás de self.settings, que queda congelado al del arranque. El reflejo
         # SASMEX in-process de gpio no pasa por aquí y queda intocado.
-        equipment = self.config.current().equipment
-        commands = [c for c in commands_for(decision) if equipment.has(c.channel)]
-        acks = self.actuators.execute_sequence(commands)
+        live = self.config.current()
+        # [T-2.32 · política ratificada 2026-08-03] El umbral instrumental LOCAL
+        # es SOLO AVISO: con source=THRESHOLD y sin opt-in del sitio no se
+        # comanda NINGÚN actuador ni voceo — el panel muestra el aviso, el
+        # evento viaja a la nube (alimenta el quórum) y la evidencia se guarda.
+        # SASMEX y MANUAL no entran por esta rama (source distinto).
+        visual_only = (
+            decision.source is AlertSource.THRESHOLD and not live.instrumental_actuation
+        )
+        if visual_only:
+            acks = []
+            if decision.tier in (Tier.EVACUATE_OR_HOLD, Tier.RESTRICTED):
+                log.warning(
+                    "AVISO instrumental SIN actuación (política T-2.32): tier=%s event_id=%s",
+                    decision.tier.value,
+                    decision.event_id,
+                )
+        else:
+            commands = [c for c in commands_for(decision) if live.equipment.has(c.channel)]
+            acks = self.actuators.execute_sequence(commands)
         failed = [ack.channel.value for ack in acks if not ack.success]
         if failed:
             # Actuación de vida fallida: avisar de inmediato. La escalación a la nube como
             # alarma (T-1.11) y el fallback por contrato al relé (T-1.10) van aparte.
             log.warning("actuación con fallo(s) en %s (event_id=%s)", failed, decision.event_id)
         # Voceo ADVISORY (A-6) tras actuar los relés: nunca antes, nunca bloqueante,
-        # y sus fallos se aíslan dentro del propio módulo.
-        self.audio.on_tier(decision)
+        # y sus fallos se aíslan dentro del propio módulo. En solo-aviso NO hay
+        # voceo: «no activa nada, solo un aviso visual en la pantalla».
+        if not visual_only:
+            self.audio.on_tier(decision)
         # T-1.60: un tier instrumental de protección aborta el simulacro en curso.
         self.drill.on_tier(decision)
         # [T-1.69] Modo prueba del WR-1: la protección LOCAL ya ocurrió (relés +
