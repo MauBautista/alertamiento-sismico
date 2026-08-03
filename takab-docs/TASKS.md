@@ -3079,3 +3079,38 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         todo-true hasta que la nube publique el perfil).
 - **Nota:** el equipamiento solo llega a gateways cuyo rule_set activo trae la clave
   `'edge'` (cierto para gw-dev-0001) — prerrequisito documentado de alta de estación.
+
+---
+
+### [x] T-2.32 · Política de actuación: instrumental = aviso visual; el quórum comanda firmado — COMPLETA (2026-08-03)
+- **Componente:** edge + db + api + web + docs · **Depende de:** T-2.31
+- **Qué es:** política RATIFICADA por Mauricio (2026-08-03): una sola estación moviéndose NO
+  activa nada (ni sirena ni voceo) — el panel muestra AVISO; se requieren ≥3 estaciones en
+  ventana consciente de la distancia. Al confirmar quórum, la NUBE emite comandos de
+  actuación FIRMADOS (regla de oro 8) a los miembros. SASMEX intacto. Es una REESCRITURA
+  DELIBERADA del contrato de Fase 1 (T-1.14), registrada como enmienda del blueprint.
+- **Criterios:**
+  - [x] Edge: `instrumental_actuation=False` de fábrica; gate en `_act_and_publish` por
+        `source=THRESHOLD` — cero relés/voceo, CONSERVA LocalEvent (alimenta el quórum),
+        evidencia y aborto de drill; online y offline. Opt-in por sitio restaura Fase 1.
+        SASMEX y MANUAL intocados (tests previos sin modificar).
+  - [x] Nube: pass `quorum_actuation` en el IncidentEngine (tras la correlación, txn
+        propia): canales = evacuación ∩ equipamiento, firma per-gateway fail-closed,
+        `origin=quorum` DENTRO de la firma, ledger idempotente = índice único parcial de
+        `commands` (0023); publish fallido reintenta sin fila fantasma; el evento de red
+        sobrevive siempre.
+  - [x] Panel: ROJO exclusivo de actuación real (FUENTE SASMEX WR-1 | QUÓRUM RED); banner
+        ámbar «AVISO SÍSMICO … SOLO AVISO · SIN ACTUACIÓN»; `status().network_alert` y
+        CERRAR ALERTA lo cierra; escena demo `aviso` nueva (las 10 originales intactas).
+  - [x] Web: badge «QUÓRUM RED · canales · acks» en el DetailPanel del incidente enfocado.
+  - [x] Docs: blueprint §4.5 (A=advisory, B=actuante) + §2 P1/P2 + tabla de tiers con nota;
+        CLAUDE.md §1 fuentes y §2 regla 1 enmendados.
+  - [x] Suites: edge 481 · api 926 · web 606 + smoke layout (64 celdas, 0 hallazgos) ·
+        ruff/eslint/prettier/build verdes.
+  - [ ] Despliegue: cloud (migración 0023 + engine con WorkerIotPublish — VERIFICAR el rol
+        del contenedor co-locado) gated al redeploy de Mauricio; `command_enabled=true` en
+        gw-dev-0001 SOLO tras validar acks de self_test. El edge puede desplegarse antes
+        (el default visual-only ES la política).
+- **Nota:** con la flota real de 1 estación, la actuación instrumental queda en AVISO hasta
+  que existan ≥3 estaciones (decisión consciente del usuario); el rate-limit por sitio no
+  se ve afectado (el actor quórum no pasa por `issue_signed_command`).
