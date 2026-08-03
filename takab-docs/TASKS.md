@@ -3074,9 +3074,9 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         cableado como S/D; sin `equipment` (flota vieja) la conducta no cambia.
   - [x] Suites verdes: api 921 · edge 476 · web 606 · ruff/eslint/prettier/build ·
         `make drift`.
-  - [ ] Despliegue: la nube toma la migración/API en el próximo redeploy (gated a
-        Mauricio); el edge puede desplegarse antes sin cambio de conducta (default
-        todo-true hasta que la nube publique el perfil).
+  - [x] Despliegue VERIFICADO (2026-08-03): nube en `698efa0` con alembic 0022; el
+        config sync re-publicó v13 con `equipment` fusionado y el Pi la aplicó EN
+        CALIENTE (journal «config actualizada a v13»).
 - **Nota:** el equipamiento solo llega a gateways cuyo rule_set activo trae la clave
   `'edge'` (cierto para gw-dev-0001) — prerrequisito documentado de alta de estación.
 
@@ -3107,10 +3107,15 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         CLAUDE.md §1 fuentes y §2 regla 1 enmendados.
   - [x] Suites: edge 481 · api 926 · web 606 + smoke layout (64 celdas, 0 hallazgos) ·
         ruff/eslint/prettier/build verdes.
-  - [ ] Despliegue: cloud (migración 0023 + engine con WorkerIotPublish — VERIFICAR el rol
-        del contenedor co-locado) gated al redeploy de Mauricio; `command_enabled=true` en
-        gw-dev-0001 SOLO tras validar acks de self_test. El edge puede desplegarse antes
-        (el default visual-only ES la política).
+  - [x] Despliegue VERIFICADO (2026-08-03): migración 0023 aplicada; el rol del EC2
+        co-locado ya portaba `WorkerIotPublish` con `takab/cmd/*`; ciclo regla-8 validado
+        EN PRODUCCIÓN — self_test ⇒ ack `rejected` (command_enabled=false de fábrica),
+        habilitación por el doc firmado (v14, hot-apply) + edge.env, self_test ⇒ ack
+        `acked` con readback. `command_enabled=true` OPERATIVO en gw-dev-0001.
+        Hallazgo abierto (candidato T-2.34): al reiniciar, el edge arranca en config v0 y
+        la nube no re-publica si el payload no cambió ⇒ umbrales/equipment/command_enabled
+        regresan a defaults hasta el siguiente cambio — persistir la config firmada en
+        disco como ya hace CatalogStore.
 - **Nota:** con la flota real de 1 estación, la actuación instrumental queda en AVISO hasta
   que existan ≥3 estaciones (decisión consciente del usuario); el rate-limit por sitio no
   se ve afectado (el actor quórum no pasa por `issue_signed_command`).
