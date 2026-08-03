@@ -3153,3 +3153,27 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [ ] Cuando exista hardware: firmware ESP32 (RadioLib + códec §2 validado contra los
         vectores §3), medir alcance/SF en sitio, alta de secundarios reales en
         `TAKAB_EDGE_LORA__SECONDARIES` y política del watchdog de alarma con PC.
+
+---
+
+### [x] T-2.34 · La config firmada sobrevive reinicios (caché re-verificada en disco) — COMPLETA (2026-08-03)
+- **Componente:** edge (config store) · **Depende de:** T-2.32
+- **Origen:** el corte de energía del 2026-08-03 lo demostró EN VIVO: al reiniciar, el edge
+  arrancaba en config v0 y la nube no re-publica si el payload no cambió (`IS DISTINCT`
+  falso) ⇒ umbrales de sitio, equipamiento y `command_enabled` REGRESABAN a defaults hasta
+  el siguiente cambio de config. Además el `high_water` anti-replay moría con el proceso:
+  un reboot reabría la ventana de replay de cualquier config vieja firmada.
+- **Criterios:**
+  - [x] `ConfigStore` persiste `{applied_version, high_water, payload, sig}` atómico en
+        `config_cache_path` (`/var/lib/takab/config-cache.json`; patrón CatalogStore:
+        tmp + `os.replace`, fail-soft sin disco — la config sigue en memoria).
+  - [x] Al arrancar, la caché se RE-VERIFICA (la firma cubre payload+versión) y se aplica
+        notificando a los listeners (umbrales→rules, location). Fail-closed a defaults ante
+        alteración, clave rotada, JSON ilegible o contrato incompatible.
+  - [x] El `high_water` sobrevive reinicios: el replay de un frame viejo firmado se rechaza
+        también tras un reboot. El rollback persiste la versión revertida SIN bajar el
+        high_water (un reboot no resucita la config mala).
+  - [x] Sin `cache_path` (stores sueltos/tests) la conducta previa no cambia.
+  - [x] Suite edge 513 verde · ruff limpio.
+  - [x] Prueba EN VIVO en el Pi: re-seed de la config (v15) → reinicio del servicio →
+        `config_version` se conserva tras el reboot (antes regresaba a 0).
