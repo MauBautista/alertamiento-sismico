@@ -31,4 +31,5 @@ def test_all_contract_families_are_exported():
         "command_ack",
         "backfill_request",
         "evidence_object",
+        "lora_secondary_state",  # T-2.33: gabinete secundario LoRa
     }

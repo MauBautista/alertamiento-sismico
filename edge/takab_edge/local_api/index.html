@@ -366,7 +366,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       </div>
       <div style="flex:0 0 auto;padding:9px 14px;border-top:1px solid var(--tk-border);display:flex;flex-direction:column;gap:5px">
         <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)" id="quorum-note">—</span>
-        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)">El quórum entre estaciones corrige y confirma en la nube. Nunca condiciona la sirena local: el gabinete actúa solo, de inmediato.</span>
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)">El quórum (≥3 estaciones) se confirma en la nube y COMANDA la actuación firmada. SASMEX actúa solo, de inmediato; el umbral local de esta estación es solo aviso.</span>
       </div>
     </div>
 
@@ -376,6 +376,14 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
         <span id="salud-age" class="mono" style="margin-left:auto;padding:3px 8px;border-radius:4px;background:rgba(240,242,245,0.06);font-weight:700;font-size:10px;color:var(--tk-fg-3)">S/D</span>
       </div>
       <div id="salud-grid"></div>
+    </div>
+
+    <div class="card stat-card" id="lora-card">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="seclabel">Gabinetes secundarios · LoRa</span>
+        <span id="lora-meta" class="meta" style="margin-left:auto"></span>
+      </div>
+      <div id="lora-rows" style="display:flex;flex-direction:column;gap:7px"></div>
     </div>
 
     <div class="card" id="bitacora">
@@ -559,6 +567,9 @@ function baseStatus(){
   return {
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
+    lora:{enabled:true, heartbeat_s:90, secondaries:[
+      {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null},
+      {id:259, name:'PATIO-SUR', zone:'Patio', age_s:412, battery_mv:3610, rssi_dbm:-104, snr_db:2.1, alarm_active:false, link:'offline', acked:null}]},
     rose_zero: null,
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
@@ -606,6 +617,8 @@ const SCENES = {
   alerta: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold'; s.sasmex_active=true; s.siren_sounding=true; s.alert_latched=true;
     s.signal.channels = sceneChannels(0.31);
     s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
+    s.lora.secondaries[0].alarm_active = true; s.lora.secondaries[0].acked = true;
+    s.lora.secondaries[1].acked = false; /* enlace perdido ⇒ SIN ACK visible */
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
   /* [T-2.32] AVISO instrumental: tier elevado SIN actuación (política ratificada) —
      escena NUEVA (las 10 originales quedan intactas). */
@@ -852,6 +865,7 @@ function render(){
   renderLatencies(st, cloud);
   renderRoseInfo(st);
   renderSalud(st);
+  renderLora(st);
   renderEvents(st);
   renderSsn();
   renderActions(st);
@@ -1015,6 +1029,45 @@ function renderRoseInfo(st){
     ? (n ? (n + ' estación(es) vecina(s) informativas · el quórum regional ≥3 lo correlaciona la nube') : 'Sin vecinas provisionadas · el quórum regional vive en la nube')
     : 'Vector horizontal resultante ENN/ENE y magnitud vertical ENZ contra el umbral de disparo';
 }
+/* [T-2.33] Salud de gabinetes secundarios LoRa (ESP32 + sirena/estrobo remotos). */
+function renderLora(st){
+  const box = $('lora-rows'); if (!box) return; box.textContent = '';
+  const meta = $('lora-meta');
+  const mkNote = (txt) => { const s = document.createElement('span');
+    s.style.cssText = 'font:400 11px/1.4 var(--f-ui);color:var(--tk-fg-3)';
+    s.textContent = txt; box.appendChild(s); };
+  const lo = st.lora;
+  if (!lo){ meta.textContent = ''; mkNote('SIN RADIO LORA · MÓDULO DESHABILITADO'); return; }
+  const secs = lo.secondaries || [];
+  meta.textContent = secs.length ? (secs.length + ' PROVISIONADOS · LATIDO ' + Math.round(lo.heartbeat_s || 90) + ' s') : '';
+  if (!secs.length){ mkNote('SIN GABINETES SECUNDARIOS PROVISIONADOS'); return; }
+  secs.forEach(sec => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap';
+    const lost = sec.link === 'offline';
+    const dotColor = sec.link === 'online' ? C.ok : (lost ? C.crit : C.fg4);
+    const dot = document.createElement('span');
+    dot.style.cssText = 'width:8px;height:8px;border-radius:999px;flex:0 0 auto;align-self:center;background:' + dotColor;
+    const name = document.createElement('span');
+    name.style.cssText = 'font:700 12px/1 var(--f-ui)';
+    name.textContent = sec.name + (sec.zone ? ' · ' + sec.zone : '');
+    const link = document.createElement('span');
+    link.className = 'mono'; link.style.cssText = 'font-size:10px;color:' + (lost ? C.crit : C.fg3);
+    link.textContent = sec.link === 'never' ? 'SIN CONTACTO AÚN'
+      : lost ? 'ENLACE PERDIDO'
+      : (sec.rssi_dbm != null ? Math.round(sec.rssi_dbm) + ' dBm' : '—')
+        + (sec.snr_db != null ? ' · SNR ' + sec.snr_db.toFixed(1) : '')
+        + (sec.battery_mv != null ? ' · ' + (sec.battery_mv/1000).toFixed(2) + ' V' : '');
+    const state = document.createElement('span');
+    state.className = 'mono'; state.style.cssText = 'margin-left:auto;font-weight:700;font-size:10px';
+    if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
+    else if (sec.alarm_active){ state.textContent = 'ALARMA PROPAGADA'; state.style.color = C.warn; }
+    else { state.textContent = '—'; state.style.color = C.fg4; }
+    row.append(dot, name, link, state);
+    box.appendChild(row);
+  });
+}
+
 function renderSalud(st){
   const grid = $('salud-grid'); grid.textContent = '';
   const h = st.health, sl = st.seedlink, cloud = st.cloud || {};

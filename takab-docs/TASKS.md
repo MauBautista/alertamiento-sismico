@@ -3114,3 +3114,37 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 - **Nota:** con la flota real de 1 estación, la actuación instrumental queda en AVISO hasta
   que existan ≥3 estaciones (decisión consciente del usuario); el rate-limit por sitio no
   se ve afectado (el actor quórum no pasa por `issue_signed_command`).
+
+---
+
+### [x] T-2.33 · Gabinetes secundarios LoRa (contrato + módulo + simulador + panel) — COMPLETA (2026-08-03)
+- **Componente:** edge (lora + panel) + shared/schemas + docs · **Depende de:** T-2.32
+- **Qué es:** gabinetes secundarios (ESP32 + estrobos + sirena/bocina) instalados lejos del
+  principal, comunicados por LoRa 915 MHz. Espejos de la protección: reciben ALARM_ACT cuando
+  el principal ACTÚA (SASMEX o comando de quórum — el aviso instrumental NO propaga), CLEAR
+  con CERRAR ALERTA, TEST con PROBAR ACTUADORES; su salud vive en el dashboard del Pi.
+  Alcance ratificado: contrato + módulo edge + simulador AHORA; firmware ESP32 cuando exista
+  hardware (`takab-docs/design/LORA-SECUNDARIOS.md` ancla la paridad).
+- **Criterios:**
+  - [x] Trama v1 byte-exacta (29 B, HMAC-SHA256 truncado 10 B dominio `lora-v1`) con
+        VECTORES DORADOS; clave POR GABINETE derivada de la de sitio; anti-replay sin RTC
+        (session+seq); forja/alteración/replay rechazados en tests.
+  - [x] `LoraLink` (EdgeModule NO crítico, sin gpio): `propagate()` jamás bloquea;
+        repeat-until-ack (espaciado 2 s, tope 5) con `SIN ACK` visible al agotarse;
+        heartbeat ausente >3 periodos ⇒ `ENLACE PERDIDO` con log SOLO por transición
+        (regla 10). Transporte Protocol + serial NDJSON (extra `lora`=pyserial, import
+        perezoso) + simulador determinista (pérdida con `drop_next`, ACK firmado real).
+  - [x] E2E simulado: SASMEX ⇒ secundarios activados (ack visible en status); CERRAR
+        ALERTA ⇒ ALARM_CLEAR; quake instrumental (solo aviso T-2.32) NO propaga; comando
+        de red QUÓRUM RED a sirena/estrobo también se espeja (flags acumulados).
+  - [x] Panel: card «Gabinetes secundarios · LoRa» (enlace/RSSI/SNR/batería/estado de la
+        orden) con estados honestos (SIN RADIO LORA · MÓDULO DESHABILITADO / SIN GABINETES
+        SECUNDARIOS PROVISIONADOS); datos SOLO vía `/api/status` (tick único intacto);
+        smoke de layout 64 celdas en 0 hallazgos (criterio 1080p sin scroll intacto).
+  - [x] Contrato `SecondaryCabinetState` + schema espejo v1.8.0 (`lora_secondary_state`);
+        `lora.enabled=False` default (módulo dormido sin radio); sin secretos en git
+        (clave por `TAKAB_EDGE_LORA_KEY`).
+  - [x] Suite edge 505 verde · ruff limpio.
+  - [ ] Cuando exista hardware: firmware ESP32 (RadioLib + códec §2 validado contra los
+        vectores §3), medir alcance/SF en sitio, alta de secundarios reales en
+        `TAKAB_EDGE_LORA__SECONDARIES` y política del watchdog de alarma con PC.

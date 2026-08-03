@@ -66,6 +66,7 @@ class CommandDispatcher(EdgeModule):
         health=None,
         drill=None,
         catalog=None,
+        lora=None,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -85,6 +86,8 @@ class CommandDispatcher(EdgeModule):
         # atómico; el panel la lee vía status().network_alert y CERRAR ALERTA
         # la limpia). None = sin alerta de red viva.
         self._network_alert: dict | None = None
+        # [T-2.33] Enlace a gabinetes secundarios (espejo de sirena/estrobo).
+        self._lora = lora
 
     def network_alert(self) -> dict | None:
         """[T-2.32] Alerta de red viva (quórum) o ``None``."""
@@ -224,6 +227,21 @@ class CommandDispatcher(EdgeModule):
                 "at": utcnow().isoformat(),
                 "channels": channels,
             }
+            # [T-2.33] Espejo a secundarios: la alerta de red también destella
+            # y suena a distancia (fire-and-forget; los flags se ACUMULAN si la
+            # sirena y el estrobo llegan como comandos separados).
+            if self._lora is not None and channel in (
+                ActuatorChannel.SIREN,
+                ActuatorChannel.STROBE,
+            ):
+                try:
+                    self._lora.propagate(
+                        "activate",
+                        siren=channel is ActuatorChannel.SIREN,
+                        strobe=channel is ActuatorChannel.STROBE,
+                    )
+                except Exception:  # noqa: BLE001 — el espejo jamás bloquea el ack
+                    log.exception("lora.propagate desde comando de red falló (aislado)")
         self._ack(
             command_id,
             nonce,
