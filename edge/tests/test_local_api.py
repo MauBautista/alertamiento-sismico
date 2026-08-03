@@ -874,3 +874,28 @@ def test_catalog_endpoint_degrades_honestly(supervisor, tmp_path):
         catalog_path=str(catalog_file),
     )
     assert broken.catalog()["available"] is False
+
+
+# --- T-2.30 · responsive / solapamientos -----------------------------------
+
+
+def test_index_responsive_overlap_fixes(supervisor):
+    """[T-2.30] Fixes de layout verificados por el barrido headless multi-viewport:
+    el overlay del mapa se apila en modo CAMPO (columna fija de 420px desbordaba
+    en teléfono), el cajón comparativo se acota, la bitácora desplaza en vez de
+    recortar y los relés fluyen con auto-fit (pre-habilita perfiles de
+    equipamiento con menos de 5 actuadores).
+    """
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        "repeat(auto-fit,minmax(",  # relés fluyen: 5 hoy, 4/6 mañana sin tocar CSS
+        'id="overlay-side"',  # panel derecho del modal con identidad propia
+        "body.mode-campo #overlay",  # el modal TIENE reglas campo (apilado)
+        "body.mode-campo #cmp-drawer",  # cajón acotado en pantallas bajas
+        "overflow:hidden auto",  # bitácora: x oculto, y desplazable
+        "body.mode-campo #rose-wrap",  # la brújula colapsaba a 0 px en teléfono
+        "body.mode-muro header",  # muro forzado en angosto: crece, no desborda
+        "@media (max-width:699px)",  # modal apilado en angosto SEA CUAL SEA el modo
+    ):
+        assert hook in html, hook

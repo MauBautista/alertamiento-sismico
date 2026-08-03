@@ -43,6 +43,18 @@ def test_instrumental_quake_full_autonomous_actuation_cloud_off(supervisor):
     assert len(supervisor.buffer) > 0
 
 
+def test_quake_event_reflected_in_panel_status(supervisor):
+    # [T-2.30] El eslabón sim→tier→PANEL: /api/status cuenta la verdad del evento
+    # (tier, latch y relés) — es lo que ve el operador en el gabinete.
+    _feed_quake(supervisor)
+    status = supervisor.local_api.status()
+    assert status["last_tier"] == "evacuate_or_hold"
+    assert status["alert_latched"] is True
+    by_channel = {relay["channel"]: relay for relay in status["relays"]}
+    for channel in FULL_SEQUENCE:
+        assert by_channel[channel.value]["activated"] is True, channel
+
+
 def test_actuation_latency_within_budget(supervisor):
     _feed_quake(supervisor)
     assert supervisor.rules.last_latency_s is not None

@@ -3005,3 +3005,40 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
         ruff limpio · smoke headless (botón, two-step, rose con cero fijo, 0 errores).
   - [ ] Verificación física: nivelar el gabinete, CALIBRAR BRÚJULA con PIN, inclinar ⇒ el
         punto se DESVÍA Y SE QUEDA (ya no regresa por la media rodante); restablecer.
+
+---
+
+### [x] T-2.30 · Verificación integral del panel + fixes responsive/solapamientos — COMPLETA (2026-08-03)
+- **Componente:** edge (panel local_api) · **Depende de:** T-2.29
+- **Qué es:** barrido headless del panel (Playwright scratchpad, no committeado — M-7 sigue
+  abierto): 60 celdas = 12 viewports (muro/consola/campo, 1920×1080 → 360×740, incl. muro y
+  consola FORZADOS en teléfono) × 10 escenas `?demo=` × overlay abierto, con detector de
+  solapes/desbordes (intersección pareada, recortes, canvas sin alto, scroll de página) +
+  click-through de los 7 botones contra fixture server real; fixes de lo que reventó.
+- **Criterios:**
+  - [x] Smoke: 0 errores de consola/página; 0 solapes entre secciones visibles; 0 scroll
+        horizontal a nivel página en TODOS los modos; overlay usable en 390×844 aunque el
+        operador fuerce CONSOLA (media query, no solo clase campo).
+  - [x] Los 7 botones ejercitados en vivo: two-step (armado por botón reconstruido con
+        rótulo CONFIRMAR + countdown), auto-desarme a los 5 s, PIN en header solo si está
+        capturado (anti-lockout), refetch one-shot tras 200, y los 4 caminos de rechazo
+        (401 con/sin PIN, 403, 429) gritados en el toast. Chips de modo/variante, tabs,
+        filas SSN/estación y cierre del mapa incluidos.
+  - [x] Fixes con hooks congelados nuevos (`test_index_responsive_overlap_fixes`):
+        overlay apilado en angosto (`id="overlay-side"`, reglas campo + `@media
+        (max-width:699px)`), `#cmp-drawer` acotado con clamp, bitácora `overflow:hidden
+        auto`, relés `repeat(auto-fit,minmax(150px,1fr))` (pre-habilita perfiles de
+        equipamiento), header con `min-height` + wrap (idéntico en 1080p), y
+        `body.mode-campo #rose-wrap{min-height:240px}` — **la brújula colapsaba a 0 px y
+        JAMÁS se pintaba en teléfono** (bug preexistente destapado por el detector).
+  - [x] Consola@1080p reposo sin scroll vertical (spec §3); muro forzable en cualquier
+        ancho sin desbordar la página.
+  - [x] E2E: suite `test_e2e.py` verde + test nuevo `test_quake_event_reflected_in_panel_status`
+        (sim→tier→`/api/status`: tier, latch y 5 relés activados llegan al panel).
+        Suite edge 470 verde · ruff limpio.
+  - [ ] Verificación física coordinada: WR-1 en modo prueba + PROBAR ACTUADORES con
+        readback en el gabinete (sirena real ~2 s — avisar a ocupantes) y vista del panel
+        en el monitor del gabinete y en un teléfono.
+- **Nota:** 1024px exactos cae en CONSOLA por diseño (`autoMode` usa <1024): una tablet
+  horizontal ve el layout de escritorio con scroll interno en `#main` — documentado, no es
+  regresión.

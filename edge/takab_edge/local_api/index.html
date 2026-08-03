@@ -94,7 +94,7 @@ canvas{display:block}
 #col-der{display:grid;grid-template-rows:minmax(300px,1fr) auto auto;gap:12px;min-height:0}
 #tierline{display:flex;align-items:stretch;background:var(--tk-surface-1);border:1px solid var(--tk-border);border-left:4px solid var(--tk-fg-3);border-radius:8px;overflow:hidden}
 #tier-label{font:700 28px/1.1 var(--f-ui);letter-spacing:-0.01em}
-#relays{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-left:1px solid var(--tk-border)}
+#relays{flex:1 1 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-left:1px solid var(--tk-border)}
 .relay{padding:12px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid rgba(240,242,245,0.06)}
 .relay .rl{font:600 10px/1 var(--f-ui);letter-spacing:0.12em;color:var(--tk-fg-3)}
 .relay .rs{font:700 15px/1 var(--f-ui);letter-spacing:0.04em}
@@ -122,7 +122,7 @@ canvas{display:block}
 #rose-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
 #rose-canvas{position:absolute;inset:0;width:100%;height:100%}
 #salud-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
-#bitacora{padding:14px;display:flex;flex-direction:column;gap:9px;max-height:250px;overflow:hidden}
+#bitacora{padding:14px;display:flex;flex-direction:column;gap:9px;max-height:250px;overflow:hidden auto}
 .tab{padding:6px 10px;border:none;border-bottom:2px solid transparent;background:transparent;font:700 10px/1 var(--f-ui);letter-spacing:0.10em;text-transform:uppercase;color:var(--tk-fg-3)}
 .tab.on{border-bottom-color:var(--tk-cyan);background:var(--tk-cyan-tint);color:var(--tk-cyan)}
 #actionbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--tk-surface-1);border-top:1px solid var(--tk-border-strong);flex-wrap:wrap}
@@ -138,9 +138,14 @@ canvas{display:block}
 .cmp-kv .v{font:700 12px/1 var(--f-mono,monospace);letter-spacing:0;text-transform:none;color:var(--tk-fg-1)}
 #map-canvas{position:absolute;inset:0;width:100%;height:100%}
 #muro-extra{display:none}
-header{flex:0 0 auto;height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--tk-surface-1);border-bottom:1px solid var(--tk-border)}
+/* [T-2.30] min-height + wrap: en 1080p una sola línea (idéntico); en un viewport
+   angosto el header crece hacia abajo en vez de provocar scroll horizontal de página. */
+header{flex:0 0 auto;min-height:56px;height:auto;flex-wrap:wrap;display:flex;align-items:center;gap:12px 20px;padding:8px 20px;background:var(--tk-surface-1);border-bottom:1px solid var(--tk-border)}
 
 /* --- modo MURO: solo lectura, tipografía de sala --- */
+/* [T-2.30] min-height + wrap: en el monitor de sala no cambia nada; forzado en un
+   dispositivo angosto el header crece en vez de desbordar la página. */
+body.mode-muro header{height:auto;min-height:56px;flex-wrap:wrap}
 body.mode-muro #actionbar{display:none}
 body.mode-muro #grid{grid-template-columns:minmax(0,1fr);min-width:0}
 body.mode-muro #col-der{display:none}
@@ -160,10 +165,30 @@ body.mode-campo #col-der{grid-template-rows:auto auto auto}
 body.mode-campo #stats{grid-template-columns:1fr}
 body.mode-campo #relays{grid-template-columns:1fr;border-left:none;border-top:1px solid var(--tk-border)}
 body.mode-campo #tierline{flex-direction:column}
+/* [T-2.30] En campo #col-der pasa a filas auto: sin un mínimo, #rose-wrap
+   (flex:1 + min-height:0) colapsaba a 0 y la brújula JAMÁS se pintaba en teléfono. */
+body.mode-campo #rose-wrap{min-height:240px}
 body.mode-campo #actionbar{order:-1;border-top:none;border-bottom:1px solid var(--tk-border-strong)}
 body.mode-campo .btn{min-height:56px;justify-content:center}
 body.mode-campo #pin{min-height:48px;flex:1 1 160px;font-size:18px}
 body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
+/* [T-2.30] El modal del mapa se apila en campo: la columna fija de 420px
+   desbordaba el viewport de un teléfono y el cajón fijo se comía el mapa. */
+body.mode-campo #overlay{padding:0}
+body.mode-campo #overlay-box{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,45%);border-radius:0}
+body.mode-campo #overlay-side{border-left:none;border-top:1px solid var(--tk-border);overflow-y:auto}
+body.mode-campo #map-wrap{min-height:180px}
+body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
+/* [T-2.30] Viewport angosto: el modal apilado aplica SIN importar el modo elegido —
+   una CONSOLA forzada en teléfono dejaba la columna de 420px fuera de pantalla en un
+   position:fixed imposible de desplazar. */
+@media (max-width:699px){
+  #overlay{padding:0}
+  #overlay-box{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,45%);border-radius:0}
+  #overlay-side{border-left:none;border-top:1px solid var(--tk-border);overflow-y:auto}
+  #map-wrap{min-height:180px}
+  #cmp-drawer{height:clamp(140px,30vh,216px)}
+}
 </style>
 </head>
 <body>
@@ -392,7 +417,7 @@ body.mode-campo header{height:auto;flex-wrap:wrap;padding:10px 14px;gap:10px}
         <div id="cmp-canvas-wrap"><canvas id="cmp-canvas" aria-hidden="true"></canvas></div>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;border-left:1px solid var(--tk-border);min-height:0">
+    <div id="overlay-side" style="display:flex;flex-direction:column;border-left:1px solid var(--tk-border);min-height:0">
       <div style="flex:0 0 auto;padding:14px 16px;border-bottom:1px solid var(--tk-border);display:flex;flex-direction:column;gap:9px">
         <span class="seclabel">Estaciones de la red</span>
         <div id="station-rows" style="display:flex;flex-direction:column;gap:9px"></div>
