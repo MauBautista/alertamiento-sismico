@@ -327,7 +327,13 @@ class EdgeSupervisor:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:
         # en la ruta SASMEX es idempotente con el reflejo in-process de gpio; en la
         # ruta instrumental (umbral, sin SASMEX) es la única alerta audible (§4.5).
-        acks = self.actuators.execute_sequence(commands_for(decision))
+        # [T-2.31] Solo canales INSTALADOS en el sitio. Se lee del store vivo
+        # (config.current(): apply_signed_update REEMPLAZA el objeto settings) —
+        # jamás de self.settings, que queda congelado al del arranque. El reflejo
+        # SASMEX in-process de gpio no pasa por aquí y queda intocado.
+        equipment = self.config.current().equipment
+        commands = [c for c in commands_for(decision) if equipment.has(c.channel)]
+        acks = self.actuators.execute_sequence(commands)
         failed = [ack.channel.value for ack in acks if not ack.success]
         if failed:
             # Actuación de vida fallida: avisar de inmediato. La escalación a la nube como

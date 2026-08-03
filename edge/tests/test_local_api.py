@@ -876,6 +876,26 @@ def test_catalog_endpoint_degrades_honestly(supervisor, tmp_path):
     assert broken.catalog()["available"] is False
 
 
+# --- T-2.31 · perfil de equipamiento ----------------------------------------
+
+
+def test_status_relays_filtered_by_equipment(supervisor):
+    """[T-2.31] El panel pinta SOLO los actuadores instalados en el sitio; el
+    cambio aplica EN CALIENTE (el store reemplaza el settings) y gpio conserva
+    sus 5 relés (el filtro es de presentación/secuencia, no de hardware)."""
+    from takab_edge.config import EquipmentProfile
+
+    baseline = {r["channel"] for r in supervisor.local_api.status()["relays"]}
+    assert baseline == {"siren", "strobe", "gas_valve", "elevator", "door_retainer"}
+
+    supervisor.config.settings = supervisor.config.settings.model_copy(
+        update={"equipment": EquipmentProfile(gas_valve=False, elevator=False)}
+    )
+    filtered = {r["channel"] for r in supervisor.local_api.status()["relays"]}
+    assert filtered == {"siren", "strobe", "door_retainer"}
+    assert len(supervisor.gpio.relay_states()) == 5
+
+
 # --- T-2.30 · responsive / solapamientos -----------------------------------
 
 

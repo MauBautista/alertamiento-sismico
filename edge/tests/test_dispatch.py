@@ -73,8 +73,9 @@ def _sign_command(security: SecurityManager, payload: dict, nonce: str, ts: date
     return json.dumps(envelope).encode()
 
 
-def _dispatcher(*, command_enabled: bool = True):
-    settings = EdgeSettings(dev_mode=True, command_enabled=command_enabled)
+def _dispatcher(*, command_enabled: bool = True, equipment: dict | None = None):
+    extra = {"equipment": equipment} if equipment is not None else {}
+    settings = EdgeSettings(dev_mode=True, command_enabled=command_enabled, **extra)
     security = SecurityManager(KEY, clock=lambda: NOW)
     signer = SecurityManager(KEY, clock=lambda: NOW)  # lado "nube" (nonce-store aparte)
     config_store = ConfigStore(settings, security=security)
@@ -121,6 +122,20 @@ def test_command_enabled_false_rejects_with_ack() -> None:
     assert acks[0]["success"] is False
     assert "command_enabled" in acks[0]["detail"]
     assert actuators.executed == []  # jamás tocó el actuador
+
+
+def test_command_on_uninstalled_channel_is_rejected_with_honest_ack() -> None:
+    """[T-2.31] El sitio no tiene gas: un comando firmado a gas_valve no ejecuta
+    nada y ACKea el rechazo con la razón — la nube marca rejected, no expired."""
+    dispatcher, signer, cloud, _store, actuators = _dispatcher(equipment={"gas_valve": False})
+    payload = {"channel": "gas_valve", "action": "activate", "event_id": "EVT-EQ-1"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-eq", NOW))
+
+    acks = _acks(cloud)
+    assert len(acks) == 1
+    assert acks[0]["success"] is False
+    assert "no instalado" in acks[0]["detail"]
+    assert actuators.executed == []
 
 
 def test_bad_signature_neither_executes_nor_acks() -> None:

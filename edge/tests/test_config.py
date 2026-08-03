@@ -105,6 +105,48 @@ def test_rollback_does_not_reopen_replay_window():
     assert store.current().tenant_id == "buena"
 
 
+# --- T-2.31: perfil de equipamiento por sitio ---
+
+
+def test_equipment_defaults_to_all_installed():
+    """Sin declarar nada, TODO instalado: la flota existente no cambia de conducta."""
+    s = load_settings()
+    assert s.equipment.model_dump() == {
+        "siren": True,
+        "strobe": True,
+        "gas_valve": True,
+        "elevator": True,
+        "door_retainer": True,
+    }
+    assert ActuatorChannel.GAS_VALVE in s.equipment.installed()
+
+
+def test_partial_config_doc_fills_equipment_with_true():
+    """Un doc firmado parcial completa con true (compat con nubes viejas sin la clave)."""
+    s = EdgeSettings.model_validate_json('{"equipment": {"gas_valve": false}}')
+    assert s.equipment.gas_valve is False
+    assert s.equipment.siren is True
+    assert ActuatorChannel.GAS_VALVE not in s.equipment.installed()
+    assert ActuatorChannel.SIREN in s.equipment.installed()
+
+
+def test_signed_update_applies_equipment_hot():
+    """El equipamiento llega FUSIONADO en el doc firmado y aplica en caliente."""
+    from takab_edge.config import EquipmentProfile
+
+    store, security = _store()
+    raw = (
+        load_settings()
+        .model_copy(update={"equipment": EquipmentProfile(gas_valve=False, elevator=False)})
+        .model_dump_json()
+        .encode()
+    )
+    store.apply_signed_update(raw, security.sign_config(raw, 1), 1)
+    equip = store.current().equipment
+    assert equip.gas_valve is False and equip.elevator is False
+    assert equip.siren is True
+
+
 def test_local_panel_settings_defaults():
     """T-1.53: settings nuevos de la mini-consola LAN con defaults sensatos."""
     from takab_edge.config import load_settings

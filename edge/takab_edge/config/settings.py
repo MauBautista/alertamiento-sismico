@@ -105,6 +105,43 @@ class BufferConfig(BaseModel):
     max_bytes: int = Field(default=8 * 1024**3, gt=0)  # ~8 GB (holgura ≥15× en NVMe de 64 GB)
 
 
+class EquipmentProfile(BaseModel):
+    """[T-2.31] Actuadores INSTALADOS físicamente en el sitio.
+
+    No toda estación tiene gas/ascensores/puertas. La nube lo declara
+    (``gateways.equipment``) y llega FUSIONADO en el doc firmado del config
+    sync. Default todo-true (compat retro: un doc viejo sin la clave = todo
+    instalado). Un canal ausente se filtra en la secuencia de tier, en los
+    comandos de nube (ack de rechazo honesto) y en la vista del panel — el
+    hardware gpio conserva sus 5 relés (un relé sin cablear es inocuo y los
+    handles no se reconstruyen en caliente).
+    """
+
+    siren: bool = True
+    strobe: bool = True
+    gas_valve: bool = True
+    elevator: bool = True
+    door_retainer: bool = True
+
+    def installed(self) -> frozenset[ActuatorChannel]:
+        """Canales instalados (los 5 locales; SYSTEM no es un actuador físico)."""
+        return frozenset(
+            channel
+            for channel in (
+                ActuatorChannel.SIREN,
+                ActuatorChannel.STROBE,
+                ActuatorChannel.GAS_VALVE,
+                ActuatorChannel.ELEVATOR,
+                ActuatorChannel.DOOR_RETAINER,
+            )
+            if getattr(self, channel.value)
+        )
+
+    def has(self, channel: ActuatorChannel) -> bool:
+        """True si el canal está instalado (canales fuera del perfil pasan)."""
+        return bool(getattr(self, channel.value, True))
+
+
 class EdgeSettings(BaseSettings):
     """Configuración raíz del gabinete."""
 
@@ -300,6 +337,11 @@ class EdgeSettings(BaseSettings):
     failsafe: dict[ActuatorChannel, FailSafeMode] = Field(
         default_factory=lambda: dict(DEFAULT_FAILSAFE)
     )
+    #: [T-2.31] Actuadores INSTALADOS en el sitio (la nube lo declara y viaja
+    #: fusionado en el doc firmado del config sync). Default todo-true = compat
+    #: retro. gpio conserva sus 5 relés (hardware); el perfil filtra la
+    #: secuencia de tier, los comandos de nube y la vista del panel.
+    equipment: EquipmentProfile = Field(default_factory=lambda: EquipmentProfile())
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
     pins: GpioPins = Field(default_factory=GpioPins)
     signal: SignalConfig = Field(default_factory=SignalConfig)
