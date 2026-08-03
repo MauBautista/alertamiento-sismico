@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 _LIST = text(
     """
     SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.iot_thing,
-           g.status, g.has_wr1, g.installed_at, g.xmin::text AS row_version,
+           g.status, g.has_wr1, g.equipment, g.installed_at, g.xmin::text AS row_version,
            h.ts AS health_ts, h.power_status,
            h.battery_pct::float8       AS battery_pct,
            h.cert_days_remaining,
@@ -61,9 +61,13 @@ _CONFIG_STATE = text(
            st.sig,
            COALESCE(rs.config ? 'edge', false)        AS has_edge_config,
            (g.status <> 'retired' AND g.iot_thing IS NOT NULL) AS is_syncable,
+           -- [T-2.31] El worker publica el doc FUSIONADO con equipment: in_sync
+           -- compara contra esa misma fusión o mentiría PENDIENTE para siempre.
            COALESCE(st.gateway_id IS NOT NULL
             AND rs.config ? 'edge'
-            AND st.payload IS NOT DISTINCT FROM rs.config->'edge', false) AS in_sync
+            AND st.payload IS NOT DISTINCT FROM
+                (rs.config->'edge' || jsonb_build_object('equipment', g.equipment)),
+            false) AS in_sync
     FROM gateways g
     LEFT JOIN LATERAL (
         SELECT r.config
@@ -91,7 +95,7 @@ async def get_config_state(conn: AsyncConnection, gateway_id: str) -> Row | None
 
 _ROW_COLS = (
     "gateway_id, tenant_id, site_id, serial, fw_version, iot_thing, "
-    "status, has_wr1, installed_at, xmin::text AS row_version"
+    "status, has_wr1, equipment, installed_at, xmin::text AS row_version"
 )
 
 _GET_ROW = text(f"SELECT {_ROW_COLS} FROM gateways WHERE gateway_id = :id")
@@ -100,15 +104,16 @@ _GET_ROW = text(f"SELECT {_ROW_COLS} FROM gateways WHERE gateway_id = :id")
 # heartbeat lo demuestre. La API no crea certificados X.509 (eso es Terraform).
 _INSERT = text(
     "INSERT INTO gateways (tenant_id, site_id, serial, fw_version, iot_thing, "
-    "status, has_wr1, installed_at) "
+    "status, has_wr1, equipment, installed_at) "
     "VALUES (CAST(:tenant_id AS uuid), :site_id, :serial, :fw_version, :iot_thing, "
-    "'provisioned', :has_wr1, :installed_at) "
+    "'provisioned', :has_wr1, CAST(:equipment AS jsonb), :installed_at) "
     f"RETURNING {_ROW_COLS}"
 )
 
 _UPDATE = text(
     "UPDATE gateways SET site_id = :site_id, serial = :serial, fw_version = :fw_version, "
-    "iot_thing = :iot_thing, has_wr1 = :has_wr1, installed_at = :installed_at "
+    "iot_thing = :iot_thing, has_wr1 = :has_wr1, equipment = CAST(:equipment AS jsonb), "
+    "installed_at = :installed_at "
     "WHERE gateway_id = :id "
     "  AND (CAST(:base_row_version AS text) IS NULL "
     "       OR xmin::text = CAST(:base_row_version AS text)) "

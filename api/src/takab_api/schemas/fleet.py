@@ -138,6 +138,25 @@ class GatewayConfigStateOut(BaseModel):
     is_syncable: bool
 
 
+class EquipmentProfile(BaseModel):
+    """[T-2.31] Actuadores INSTALADOS físicamente en el sitio del gabinete.
+
+    No toda estación tiene gas/ascensores/puertas. Contrato: 5 bools, default
+    todo-true (la flota existente no cambia de conducta), claves desconocidas
+    rechazadas — un typo en 'gas_valve' no puede volverse "instalado" silencioso.
+    Viaja al edge FUSIONADO en el doc firmado del config sync (una sola firma
+    cubre config + equipamiento).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    siren: bool = True
+    strobe: bool = True
+    gas_valve: bool = True
+    elevator: bool = True
+    door_retainer: bool = True
+
+
 class GatewayOut(BaseModel):
     """Gateway del tenant + estado derivado del último ``device_health``."""
 
@@ -148,6 +167,7 @@ class GatewayOut(BaseModel):
     iot_thing: str | None = None
     status: str
     has_wr1: bool
+    equipment: EquipmentProfile = Field(default_factory=EquipmentProfile)
     installed_at: datetime | None = None
     row_version: str
     derived_state: str
@@ -180,6 +200,7 @@ class GatewayRowOut(BaseModel):
     iot_thing: str | None = None
     status: str
     has_wr1: bool
+    equipment: EquipmentProfile = Field(default_factory=EquipmentProfile)
     installed_at: datetime | None = None
     row_version: str
 
@@ -202,6 +223,7 @@ class GatewayCreate(BaseModel):
     fw_version: str | None = Field(default=None, max_length=32)
     iot_thing: str | None = Field(default=None, max_length=128)
     has_wr1: bool = True
+    equipment: EquipmentProfile = Field(default_factory=EquipmentProfile)
     installed_at: datetime | None = None
 
 
@@ -220,5 +242,6 @@ class GatewayUpdate(BaseModel):
     fw_version: str | None = Field(default=None, max_length=32)
     iot_thing: str | None = Field(default=None, max_length=128)
     has_wr1: bool = True
+    equipment: EquipmentProfile = Field(default_factory=EquipmentProfile)
     installed_at: datetime | None = None
     base_row_version: str | None = None

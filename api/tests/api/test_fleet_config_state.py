@@ -142,10 +142,19 @@ async def seed() -> None:
         )
 
         # Estado publicado: SYNCED coincide con el rule_set; STALE quedó atrás.
+        # [T-2.31] El worker guarda el doc FUSIONADO con gateways.equipment
+        # (default DB = todo-true): el seed refleja lo que el worker escribe hoy.
+        _EQ_ALL = {
+            "siren": True,
+            "strobe": True,
+            "gas_valve": True,
+            "elevator": True,
+            "door_retainer": True,
+        }
         for gw, tid, ver, payload in (
-            (GW_SYNCED, T_A, 7, EDGE_CFG),
-            (GW_STALE, T_A, 3, EDGE_CFG_NEW),
-            (GW_B, T_B, 1, EDGE_CFG),
+            (GW_SYNCED, T_A, 7, {**EDGE_CFG, "equipment": _EQ_ALL}),
+            (GW_STALE, T_A, 3, {**EDGE_CFG_NEW, "equipment": _EQ_ALL}),
+            (GW_B, T_B, 1, {**EDGE_CFG, "equipment": _EQ_ALL}),
         ):
             await conn.execute(
                 text(
