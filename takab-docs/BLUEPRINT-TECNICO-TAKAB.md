@@ -42,8 +42,8 @@ Modelo comercial dual: **SOC operado por TAKAB** y **despliegue por tenant**. La
 
 | # | Principio | Implicación de implementación |
 |---|---|---|
-| P1 | **Autonomía local total** | SeedLink, features PGA/PGV, motor de reglas, disparo de actuadores, señal WR-1 y buffer offline viven en el edge. Con WAN caída, el sitio se protege solo. |
-| P2 | **Separación estricta edge/cloud** | La nube coordina, almacena, notifica, factura y enriquece post-evento. Nunca está en la ruta crítica de actuación. |
+| P1 | **Autonomía local total** | SeedLink, features PGA/PGV, motor de reglas, disparo de actuadores, señal WR-1 y buffer offline viven en el edge. Con WAN caída, el sitio se protege solo **vía SASMEX** (enmienda 2026-08 · T-2.32: el umbral instrumental de una sola estación quedó degradado a AVISO visual por política ratificada — ver §4.5-A). |
+| P2 | **Separación estricta edge/cloud** | La nube coordina, almacena, notifica, factura y enriquece post-evento. Nunca está en la ruta crítica de actuación **SASMEX** (enmienda 2026-08: el quórum de red SÍ comanda actuación instrumental firmada — es corroboración, no ruta crítica de vida; SASMEX no depende de ella). |
 | P3 | **Independencia de firmware** | El Raspberry Shake (Shake OS) queda intacto: es solo sensor. El Pi 4 es un equipo separado, versionable, con hardening propio (mTLS, X.509) y auditable, sin riesgo para el instrumento sísmico. |
 | P4 | **Determinista ≠ IA** | Cálculo sísmico y decisiones de seguridad son deterministas. Los LLM/modelos nunca generan cálculos sísmicos ni salidas ShakeMap. |
 | P5 | **Logging por evento, no por intervalo** | Registro por transición de estado + heartbeat periódico. Nada de logging continuo por intervalo para `rule_evaluations` o salud de dispositivo. |
@@ -207,9 +207,9 @@ edge/
 
 **Canal primario — SASMEX / WR-1 (boolean):** al cerrar el relé, `rules` dispara la secuencia de protección inmediata (sirena + secuencia BACnet) de forma autónoma. Es el canal más rápido y autoritativo para alerta temprana regional.
 
-**Secundario A — umbral local PGA/PGV:** detección en sitio por edificio (T1 cautela / T2 disparo) para eventos locales/cercanos no cubiertos por SASMEX, o para corroboración.
+**Secundario A — umbral local PGA/PGV (ADVISORY desde la enmienda 2026-08 · T-2.32):** detección en sitio por edificio (T1 cautela / T2 disparo). **Política ratificada 2026-08-03: una sola estación NO actúa relés ni voceo** — el tier eleva un AVISO visual en el panel («SOLO AVISO · SIN ACTUACIÓN») y publica el evento a la nube (alimenta el quórum). Rige online y offline (sin fallback autónomo). Opt-in explícito por sitio (`instrumental_actuation`, config firmada) restaura la actuación autónoma de Fase 1 donde un contrato lo exija.
 
-**Secundario B — quórum colaborativo (anti-falso-positivo):** corroboración multi-estación (**≥3 nodos**) con **ventana de asociación consciente de la distancia entre estaciones**. Se coordina a nivel de red (**nube**: incident engine) usando los eventos que cada edge publica; **no** bloquea la actuación local autónoma. Eleva la confianza del incidente y alimenta el dictamen.
+**Secundario B — quórum colaborativo (anti-falso-positivo → ACTUANTE desde la enmienda 2026-08 · T-2.32):** corroboración multi-estación (**≥3 nodos**) con **ventana de asociación consciente de la distancia entre estaciones**. Se coordina a nivel de red (**nube**: incident engine) usando los eventos que cada edge publica. **Al confirmar el quórum, la NUBE emite comandos de actuación FIRMADOS** (regla de oro 8: HMAC por gateway + nonce + TTL + ack; ledger idempotente en `commands`) a los gateways miembro, a nivel evacuación ∩ equipamiento del sitio; el edge los ejecuta si `command_enabled` y rotula la fuente «QUÓRUM RED». Sigue elevando la confianza del incidente y alimentando el dictamen. El camino SASMEX permanece 100 % autónomo e intocado.
 
 > **[ANALISIS-00] Corrección de la ventana (antes "2–5 s", físicamente inalcanzable):** las ondas
 > sísmicas viajan a ~6–8 km/s (P); entre los sitios de referencia hay 90–110 km (Cholula↔CDMX,
@@ -229,6 +229,10 @@ Tiers deterministas (umbrales configurables por edificio, definidos por ingenier
 | `restricted` | Excedencia confirmada por múltiples sensores o utilities críticas afectadas | Restringir accesos, retornar ascensores, notificar brigadas |
 | `evacuate_or_hold` | Excedencia mayor + correlación alta + utilities críticas | Sirena general, cierre de gas, hold, escalamiento mayor |
 | `manual_only` | Sensores degradados o datos contradictorios | No automatizar reingreso; decide humano |
+
+> **Nota (enmienda 2026-08 · T-2.32):** la columna «Acción» se ejecuta vía **SASMEX** o
+> **comando de red firmado del quórum**; el umbral local por sí solo eleva el tier como
+> **AVISO visual** (sin relés ni voceo), salvo opt-in explícito del sitio.
 
 Umbrales de referencia por tipo de instalación (del deck; calibrar por tipología/altura): Hospitales 0.040–0.060 g · Industriales 0.080–0.120 g · Corporativos 0.100–0.150 g. Cada umbral tiene banda `cautela` y `disparo` para PGA (g) y PGV (cm/s).
 
