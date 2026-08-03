@@ -239,6 +239,7 @@ class EdgeSupervisor:
             refresh_ms=s.local_api_refresh_ms,
             audio=self.audio,
             drill=self.drill,
+            dispatch=self.dispatch,  # T-2.32: fuente «QUÓRUM RED» + su cierre
         )
 
         self._modules: dict[str, EdgeModule] = {
@@ -338,9 +339,7 @@ class EdgeSupervisor:
         # comanda NINGÚN actuador ni voceo — el panel muestra el aviso, el
         # evento viaja a la nube (alimenta el quórum) y la evidencia se guarda.
         # SASMEX y MANUAL no entran por esta rama (source distinto).
-        visual_only = (
-            decision.source is AlertSource.THRESHOLD and not live.instrumental_actuation
-        )
+        visual_only = decision.source is AlertSource.THRESHOLD and not live.instrumental_actuation
         if visual_only:
             acks = []
             if decision.tier in (Tier.EVACUATE_OR_HOLD, Tier.RESTRICTED):

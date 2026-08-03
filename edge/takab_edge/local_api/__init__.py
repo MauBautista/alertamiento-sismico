@@ -312,6 +312,7 @@ class LocalDashboard(EdgeModule):
         refresh_ms: int = 1000,
         audio: object | None = None,
         drill: object | None = None,
+        dispatch: object | None = None,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -324,6 +325,9 @@ class LocalDashboard(EdgeModule):
         self._location = location
         self._audio = audio
         self._drill = drill
+        # [T-2.32] Fuente «QUÓRUM RED»: el dispatcher registra la actuación
+        # comandada por la nube y CERRAR ALERTA la limpia.
+        self._dispatch = dispatch
         self._gateway_id = gateway_id
         self._site_name = site_name
         self._refresh_ms = refresh_ms
@@ -608,6 +612,20 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: calibración no disponible", exc_info=True)
             return degraded
 
+    def _network_alert_section(self) -> dict | None:
+        """[T-2.32] Actuación comandada por el quórum de red (o ``None``).
+
+        Defensiva como el resto: sin dispatcher (arranques parciales/tests) o
+        roto ⇒ ``None`` — el panel simplemente no rotula «QUÓRUM RED».
+        """
+        try:
+            if self._dispatch is None:
+                return None
+            return self._dispatch.network_alert()
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: network_alert no disponible", exc_info=True)
+            return None
+
     def _cloud_section(self) -> dict:
         try:
             if self._cloud is None:
@@ -675,6 +693,7 @@ class LocalDashboard(EdgeModule):
             # [T-2.26] Enclave vivo (SASMEX o rules): el panel ofrece CERRAR
             # ALERTA mientras esto sea true, aunque el tier ya haya decaído.
             "alert_latched": self._gpio.alert_latched,
+            "network_alert": self._network_alert_section(),
             "last_tier": last_tier,
             "relays": self._relays_section(),
             # Compat con el panel previo: hora del último dato de salud (o ahora).
@@ -785,6 +804,12 @@ class LocalDashboard(EdgeModule):
         # [T-2.26] Sin esto, last_tier quedaba congelado en el tier del episodio
         # hasta la siguiente feature — con SeedLink caído, PARA SIEMPRE.
         self._rules.reset()
+        if self._dispatch is not None:
+            # [T-2.32] La fuente «QUÓRUM RED» también se cierra con la alerta.
+            try:
+                self._dispatch.clear_network_alert()
+            except Exception:  # noqa: BLE001 — el cierre local jamás falla por esto
+                log.exception("clear_network_alert() en reset falló (aislado)")
         if self._audio is not None:
             # La alerta terminó: la voz también se calla (A-6).
             try:
