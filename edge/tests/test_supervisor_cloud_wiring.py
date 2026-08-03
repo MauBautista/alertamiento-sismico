@@ -14,6 +14,7 @@ import pytest
 from simulators.mqtt import FakeMqttTransport
 from simulators.quake import quake_packets
 from simulators.rs4d import RS4DSimulator
+from simulators.wr1 import WR1Simulator
 from takab_edge.supervisor import (
     ACKS_TOPIC,
     EVENTS_TOPIC,
@@ -69,8 +70,13 @@ def test_quake_publishes_local_event_and_acks(online_supervisor):
     events = _payloads(transport, EVENTS_TOPIC)
     assert any(e["tier"] == "evacuate_or_hold" for e in events)
     assert all(e["tenant_id"] == sup.settings.tenant_id for e in events)
+    # [T-2.32] Aviso instrumental: el EVENTO viaja (alimenta el quórum) pero no
+    # hay NINGÚN ack de actuador — nada actuó por una estación sola.
+    assert _payloads(transport, ACKS_TOPIC) == []
+    # La ruta SASMEX sí actúa: sus ACKs viajan con su event_id (cableado intacto).
+    WR1Simulator(sup.gpio).alert()
+    assert _wait(lambda: _payloads(transport, ACKS_TOPIC))
     acks = _payloads(transport, ACKS_TOPIC)
-    # La secuencia evacuate incluye sirena y cierre de gas; cada ACK lleva su event_id.
     assert {a["channel"] for a in acks} >= {"siren", "gas_valve"}
     assert all(a["event_id"] and a["action"] == "activate" for a in acks)
 

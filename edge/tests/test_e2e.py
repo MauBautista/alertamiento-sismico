@@ -29,30 +29,53 @@ def _feed_quake(supervisor, start: datetime = QUAKE_START) -> datetime:
     return start
 
 
-def test_instrumental_quake_full_autonomous_actuation_cloud_off(supervisor):
-    assert supervisor.cloud.online is False  # NUBE APAGADA (criterio central de T-1.14)
+def test_instrumental_quake_visual_only_no_actuation(supervisor):
+    # [T-2.32 · REESCRITURA DELIBERADA del contrato de T-1.14, política ratificada
+    # 2026-08-03] Una sola estación moviéndose NO activa nada: la detección
+    # instrumental local es SOLO AVISO (online y offline). La actuación viene de
+    # SASMEX (intacta) o del comando firmado de quórum ≥3 de la nube.
+    assert supervisor.cloud.online is False  # sin nube el aviso sigue siendo solo aviso
     _feed_quake(supervisor)
-    # Actuación autónoma COMPLETA (evacuate) sin depender de la nube:
+    # El tier SÍ se eleva (el panel lo muestra como AVISO)…
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
+    # …pero NINGÚN actuador dispara por umbral local.
     for channel in FULL_SEQUENCE:
-        assert supervisor.gpio.relay_state(channel).activated is True, channel
-    # La nube sólo encoló (offline-first); nunca fue prerequisito para actuar (§4.2).
-    assert supervisor.cloud.queued >= 1
+        assert supervisor.gpio.relay_state(channel).activated is False, channel
+    assert supervisor.gpio.alert_latched is False
+    # El evento SÍ viaja a la nube (offline-first): es lo que alimenta el quórum.
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) >= 1
     assert supervisor.cloud.sent == 0
     # El waveform crudo quedó en el buffer (evidencia S3 en evento confirmado, T-1.7/1.11).
     assert len(supervisor.buffer) > 0
 
 
+def test_instrumental_actuation_optin_restores_sequence(settings):
+    # [T-2.32] El opt-in explícito por sitio (config firmada) restaura la
+    # actuación instrumental autónoma completa — la de la Fase 1.
+    from takab_edge.supervisor import EdgeSupervisor
+
+    optin = settings.model_copy(update={"instrumental_actuation": True})
+    sup = EdgeSupervisor(optin, seedlink_source=None)
+    sup.start()
+    try:
+        _feed_quake(sup)
+        assert sup.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
+        for channel in FULL_SEQUENCE:
+            assert sup.gpio.relay_state(channel).activated is True, channel
+    finally:
+        sup.stop()
+
+
 def test_quake_event_reflected_in_panel_status(supervisor):
-    # [T-2.30] El eslabón sim→tier→PANEL: /api/status cuenta la verdad del evento
-    # (tier, latch y relés) — es lo que ve el operador en el gabinete.
+    # [T-2.30, renegociado en T-2.32] El eslabón sim→tier→PANEL: /api/status
+    # cuenta la verdad del AVISO — tier elevado, relés SIN activar, sin enclave.
     _feed_quake(supervisor)
     status = supervisor.local_api.status()
     assert status["last_tier"] == "evacuate_or_hold"
-    assert status["alert_latched"] is True
+    assert status["alert_latched"] is False
     by_channel = {relay["channel"]: relay for relay in status["relays"]}
     for channel in FULL_SEQUENCE:
-        assert by_channel[channel.value]["activated"] is True, channel
+        assert by_channel[channel.value]["activated"] is False, channel
 
 
 def test_actuation_latency_within_budget(supervisor):
@@ -109,12 +132,16 @@ def test_manual_reset_closes_alert_end_to_end(supervisor):
 def test_quake_sequence_skips_uninstalled_channels(settings):
     # [T-2.31] Sitio sin gas ni ascensores: la secuencia de tier comanda SOLO lo
     # instalado; gpio conserva sus 5 relés (hardware intocado) pero los canales
-    # ausentes jamás se activan.
+    # ausentes jamás se activan. [T-2.32] Con opt-in instrumental explícito: el
+    # filtro de equipamiento se prueba en la ruta que SÍ actúa.
     from takab_edge.config import EquipmentProfile
     from takab_edge.supervisor import EdgeSupervisor
 
     site = settings.model_copy(
-        update={"equipment": EquipmentProfile(gas_valve=False, elevator=False)}
+        update={
+            "equipment": EquipmentProfile(gas_valve=False, elevator=False),
+            "instrumental_actuation": True,
+        }
     )
     sup = EdgeSupervisor(site, seedlink_source=None)
     sup.start()

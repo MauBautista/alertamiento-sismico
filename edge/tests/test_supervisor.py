@@ -125,8 +125,14 @@ def test_disk_full_does_not_blind_detection(settings, monkeypatch):
 
 def test_disk_full_on_evidence_does_not_break_actuation(settings, monkeypatch):
     """queue_evidence que lanza OSError tras un EVACUATE no debe romper el hilo:
-    los actuadores ya dispararon; la evidencia es best-effort."""
-    sup = EdgeSupervisor(settings, seedlink_source=None)
+    los actuadores ya dispararon; la evidencia es best-effort.
+
+    [T-2.32] Opt-in instrumental explícito: este test valida el seam de disco
+    lleno y la actuación es su observable — sin opt-in no habría secuencia.
+    """
+    sup = EdgeSupervisor(
+        settings.model_copy(update={"instrumental_actuation": True}), seedlink_source=None
+    )
     sup.build()
     sup.start()
 
@@ -172,8 +178,9 @@ def test_instrumental_event_drives_tier(supervisor):
         supervisor.seedlink.feed(sim.packet(channel, now, peak_counts=1_000_000.0))
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
     assert len(supervisor.buffer) == 3
-    # La ruta instrumental debe alertar audiblemente por su cuenta (blueprint §4.5):
-    assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is True
+    # [T-2.32 · política ratificada] El umbral instrumental es SOLO AVISO: el
+    # tier se eleva (panel) pero la sirena NO suena por una estación sola.
+    assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is False
 
 
 def test_production_supervisor_wires_real_seedlink_transport(monkeypatch):
