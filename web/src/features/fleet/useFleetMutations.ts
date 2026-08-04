@@ -14,13 +14,18 @@ import {
   createSensorSensorsPost,
   createSiteSitesPost,
   getRetireCodeStateTenantsTenantIdRetireCodeGet,
+  listGatewayConfigStatesFleetConfigStateGet,
+  restoreGatewayFleetGatewaysGatewayIdRestorePost,
   retireGatewayFleetGatewaysGatewayIdRetirePost,
   retireSiteSitesSiteIdRetirePost,
+  updateGatewayFleetGatewaysGatewayIdPut,
   updateSiteSitesSiteIdPut,
 } from "@takab/sdk";
 import type {
+  GatewayConfigStateOut,
   GatewayCreate,
   GatewayRetire,
+  GatewayUpdate,
   SensorCreate,
   SiteCreate,
   SiteRetire,
@@ -164,6 +169,56 @@ export function useCreateGateway() {
       unwrap(createGatewayFleetGatewaysPost({ body }), "El alta del gabinete"),
     onSuccess: invalidate,
   });
+}
+
+export function useUpdateGateway() {
+  const invalidate = useInvalidateFleet();
+  return useMutation({
+    mutationFn: ({ gatewayId, body }: { gatewayId: string; body: GatewayUpdate }) =>
+      unwrap(
+        updateGatewayFleetGatewaysGatewayIdPut({ path: { gateway_id: gatewayId }, body }),
+        "La edición del gabinete",
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRestoreGateway() {
+  const invalidate = useInvalidateFleet();
+  return useMutation({
+    // Vuelve a `provisioned`, NO a `online`: el estado vivo lo demuestra el siguiente
+    // heartbeat. Restaurar no lleva código de retiro — encender protección de más no
+    // es el riesgo que la fricción vigila.
+    mutationFn: (gatewayId: string) =>
+      unwrap(
+        restoreGatewayFleetGatewaysGatewayIdRestorePost({ path: { gateway_id: gatewayId } }),
+        "La restauración del gabinete",
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * Estado del config firmado de TODA la flota, en UNA consulta [T-2.37].
+ *
+ * Antes se abría una query por gabinete con `refetchInterval` de 10 s. La cadencia se
+ * mantiene holgada porque el worker publica en menos de un minuto: refrescar más
+ * rápido no adelanta nada y multiplica el tráfico.
+ */
+export function useFleetSyncStates(enabled: boolean): Map<string, GatewayConfigStateOut> {
+  const query = useQuery({
+    queryKey: ["fleet", "config-state"],
+    queryFn: async () => {
+      const { data, response } = await listGatewayConfigStatesFleetConfigStateGet();
+      if (data === undefined) {
+        throw new Error(`GET /fleet/config-state falló (${response.status})`);
+      }
+      return data;
+    },
+    enabled,
+    refetchInterval: 30_000,
+  });
+  return new Map((query.data ?? []).map((s) => [s.gateway_id, s]));
 }
 
 export function useCreateSensor() {

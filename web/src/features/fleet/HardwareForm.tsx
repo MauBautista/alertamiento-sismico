@@ -4,37 +4,26 @@
 // Es lo que impide colgar el gabinete de un cliente en el edificio de otro (las claves
 // foráneas de PostgreSQL no comparan `tenant_id`).
 //
-// El gabinete nace en `provisioned` y sin `iot_thing`: la API **no crea certificados
-// X.509**, eso es Terraform. Hasta que el thing exista, el gabinete no es sincronizable
-// y la Flota Edge lo dice. Prometer "OPERATIVO" al pulsar CREAR sería mentir.
+// El gabinete nace en `provisioned`. La API **no crea certificados X.509**, eso es
+// Terraform; pero desde T-2.37 el `iot_thing` SÍ se puede capturar aquí si el operador
+// ya lo provisionó, porque sin él el gabinete no sincroniza NUNCA y hasta ahora la
+// consola no ofrecía forma alguna de vincularlo.
 
 import { useState } from "react";
 
-import type { EquipmentProfile, SiteOut } from "@takab/sdk";
+import type { EquipmentProfile, GatewayOut, SiteOut } from "@takab/sdk";
+
+import { EQUIPMENT_ALL, EQUIPMENT_FIELDS } from "./equipment";
 
 /** Espejo de los CHECK de `sensors` (db/schema.sql). */
 export const SENSOR_KINDS = ["structural", "ground"] as const;
 export const SENSOR_MOUNTS = ["concrete_column", "steel", "floor", "buried"] as const;
 
-/** [T-2.31] Actuadores declarables por sitio (espejo de EquipmentProfile). */
-export const EQUIPMENT_FIELDS = [
-  { key: "siren", label: "SIRENA" },
-  { key: "strobe", label: "ESTROBO" },
-  { key: "gas_valve", label: "VÁLVULA DE GAS" },
-  { key: "elevator", label: "ASCENSORES" },
-  { key: "door_retainer", label: "RETENEDORES DE PUERTA" },
-] as const;
-
-const EQUIPMENT_ALL: Required<EquipmentProfile> = {
-  siren: true,
-  strobe: true,
-  gas_valve: true,
-  elevator: true,
-  door_retainer: true,
-};
+export { EQUIPMENT_FIELDS };
 
 export interface GatewayValues {
   serial: string;
+  iot_thing: string;
   has_wr1: boolean;
   equipment: Required<EquipmentProfile>;
 }
@@ -49,6 +38,8 @@ export interface SensorValues {
 
 export interface HardwareFormProps {
   site: SiteOut;
+  /** Gabinetes YA registrados en este sitio: freno anti-duplicado ANTES de pulsar. */
+  existing: GatewayOut[];
   submitting: boolean;
   error: string | null;
   onCreateGateway: (values: GatewayValues) => void;
@@ -58,6 +49,7 @@ export interface HardwareFormProps {
 
 export default function HardwareForm({
   site,
+  existing,
   submitting,
   error,
   onCreateGateway,
@@ -66,6 +58,7 @@ export default function HardwareForm({
 }: HardwareFormProps) {
   const [gw, setGw] = useState<GatewayValues>({
     serial: "",
+    iot_thing: "",
     has_wr1: true,
     equipment: { ...EQUIPMENT_ALL },
   });
@@ -87,6 +80,13 @@ export default function HardwareForm({
           Nace en <strong>PROVISIONADO</strong>. Su certificado X.509 lo emite Terraform; hasta
           entonces no sincroniza y la flota lo muestra como pendiente.
         </p>
+        {existing.length > 0 && (
+          <p className="fleet__hint fleet__hint--warn" data-testid="hardware-existing">
+            ESTE SITIO YA TIENE {existing.length} GABINETE(S):{" "}
+            {existing.map((g) => g.serial).join(" · ")}. Añade otro solo si el edificio tiene un
+            segundo gabinete físico.
+          </p>
+        )}
         <label>
           <span>SERIAL DEL GABINETE</span>
           <input
@@ -95,6 +95,21 @@ export default function HardwareForm({
             maxLength={64}
           />
         </label>
+        <label>
+          <span>IOT THING (AWS · OPCIONAL)</span>
+          <input
+            value={gw.iot_thing}
+            placeholder="gw-dev-0001 · vacío = NO SINCRONIZABLE"
+            onChange={(e) => setGw({ ...gw, iot_thing: e.target.value })}
+            maxLength={128}
+          />
+        </label>
+        {gw.iot_thing.trim() === "" && (
+          <p className="fleet__hint fleet__hint--warn">
+            SIN IOT THING EL GABINETE QUEDA <strong>PENDIENTE DE APROVISIONAR</strong> y no recibirá
+            configuración firmada hasta vincularlo (EDITAR GABINETE).
+          </p>
+        )}
         <label className="fleet__checkbox">
           <input
             type="checkbox"
@@ -123,7 +138,13 @@ export default function HardwareForm({
           type="button"
           className="soc-btn"
           disabled={submitting || gw.serial.trim() === ""}
-          onClick={() => onCreateGateway({ ...gw, serial: gw.serial.trim() })}
+          onClick={() =>
+            onCreateGateway({
+              ...gw,
+              serial: gw.serial.trim(),
+              iot_thing: gw.iot_thing.trim(),
+            })
+          }
         >
           AÑADIR GABINETE
         </button>

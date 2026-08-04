@@ -1185,6 +1185,75 @@
 .fleet__admintable td { padding: 7px 8px; border-bottom: 1px solid var(--tk-border); }
 .fleet__rowactions { display: flex; gap: 6px; justify-content: flex-end; }
 
+/* [T-2.37] Estado del config firmado por gabinete. Cuatro tonos porque "no ha
+   llegado" y "no puede llegar" son problemas distintos con destinatarios distintos. */
+.fleet-sync {
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border: 1px solid var(--tk-border);
+  white-space: nowrap;
+}
+.fleet-sync--ok { color: var(--tk-status-normal); border-color: var(--tk-status-normal); }
+.fleet-sync--warn { color: var(--tk-status-warning); border-color: var(--tk-status-warning); }
+.fleet-sync--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.fleet-sync--idle { color: var(--tk-fg-3); }
+
+/* Acciones de administración de la tarjeta (solo con manage_fleet). */
+.fleet-card__admin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--tk-border);
+}
+
+/* Banda de retirado: el gabinete se ve, pero nadie puede confundirlo con uno vivo. */
+.fleet-card--retired { opacity: 0.68; }
+.fleet-card__retired {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+  background: var(--tk-surface-2);
+  border-bottom: 1px solid var(--tk-border);
+}
+
+.fleet__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+  cursor: pointer;
+}
+
+.fleet__hint--warn { color: var(--tk-status-warning); }
+
+/* Acuse de alta: los UUID que el runbook manda pegar en el edge.env del Pi. */
+.acuse__row { display: flex; align-items: center; gap: 8px; }
+.acuse__label {
+  flex: 0 0 190px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+}
+.acuse__value {
+  flex: 1 1 auto;
+  font-family: var(--tk-font-mono);
+  font-size: 11px;
+  color: var(--tk-fg-1);
+  overflow-wrap: anywhere;
+}
+
 /* [T-2.36] Diálogo de retiro con doble fricción. Deliberadamente austero y sin
    acentos de color salvo la advertencia: apagar la protección de un edificio no es
    una acción que deba verse cómoda. */

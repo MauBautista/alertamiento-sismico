@@ -7059,6 +7059,29 @@
         "summary": "Verify Evidence"
       }
     },
+    "/fleet/config-state": {
+      "get": {
+        "description": "Estado del config firmado de TODA la flota visible, en UNA consulta.\n\n[T-2.37] Sustituye al abanico de N peticiones por gabinete que abría la consola\ncada 10 s. El endpoint por-id se conserva: sigue siendo el diagnóstico de un\ngabinete concreto.",
+        "operationId": "list_gateway_config_states_fleet_config_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayConfigStateOut"
+                  },
+                  "title": "Response List Gateway Config States Fleet Config State Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Gateway Config States"
+      }
+    },
     "/fleet/gateways": {
       "get": {
         "description": "Gateways del tenant con su estado derivado del último ``device_health``.\n\n[T-2.35] Oculta lo retirado por defecto —el gabinete mismo o su sitio padre—,\nespejando ``GET /sites?include_retired``. Sin este filtro el inventario devolvía\nhardware dado de baja que la consola no tenía forma de quitar de la pantalla.",

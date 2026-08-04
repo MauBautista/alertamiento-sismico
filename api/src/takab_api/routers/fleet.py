@@ -101,7 +101,10 @@ async def get_gateway_config_state(
     row = await q.get_config_state(conn, str(gateway_id))
     if row is None:
         raise http_error(404, "gateway no encontrado")
-    m = dict(row._mapping)
+    return _config_state_out(dict(row._mapping))
+
+
+def _config_state_out(m: dict) -> GatewayConfigStateOut:
     return GatewayConfigStateOut(
         gateway_id=m["gateway_id"],
         version=m["version"],
@@ -111,6 +114,19 @@ async def get_gateway_config_state(
         has_edge_config=m["has_edge_config"],
         is_syncable=m["is_syncable"],
     )
+
+
+@router.get("/fleet/config-state", response_model=list[GatewayConfigStateOut])
+async def list_gateway_config_states(
+    conn: AsyncConnection = Depends(read_session),
+) -> list[GatewayConfigStateOut]:
+    """Estado del config firmado de TODA la flota visible, en UNA consulta.
+
+    [T-2.37] Sustituye al abanico de N peticiones por gabinete que abría la consola
+    cada 10 s. El endpoint por-id se conserva: sigue siendo el diagnóstico de un
+    gabinete concreto.
+    """
+    return [_config_state_out(dict(r._mapping)) for r in await q.list_config_states(conn)]
 
 
 @router.get("/fleet/gateways", response_model=list[GatewayOut])

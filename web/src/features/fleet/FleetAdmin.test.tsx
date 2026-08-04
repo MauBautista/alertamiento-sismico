@@ -9,6 +9,8 @@ import { ME_FIXTURES } from "../../test-utils/meFixtures";
 
 const mocks = vi.hoisted(() => ({
   listSitesSitesGet: vi.fn(),
+  listGatewaysFleetGatewaysGet: vi.fn(),
+  listRuleSetsRuleSetsGet: vi.fn(),
   createSiteSitesPost: vi.fn(),
   updateSiteSitesSiteIdPut: vi.fn(),
   retireSiteSitesSiteIdRetirePost: vi.fn(),
@@ -43,6 +45,26 @@ const SITE: SiteOut = {
   created_at: "2026-01-01T00:00:00Z",
 };
 
+const GATEWAY_ROW = {
+  gateway_id: "g-new",
+  tenant_id: "t-1",
+  site_id: "s-1",
+  serial: "TKB-0007",
+  fw_version: null,
+  iot_thing: "gw-dev-0007",
+  status: "provisioned",
+  has_wr1: true,
+  equipment: {
+    siren: true,
+    strobe: true,
+    gas_valve: true,
+    elevator: true,
+    door_retainer: true,
+  },
+  installed_at: null,
+  row_version: "1",
+};
+
 function renderAdmin() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -57,6 +79,11 @@ describe("FleetAdmin", () => {
     resetSessionStoreForTests();
     vi.clearAllMocks();
     mocks.listSitesSitesGet.mockResolvedValue({ data: [SITE], response: { status: 200 } });
+    mocks.listGatewaysFleetGatewaysGet.mockResolvedValue({ data: [], response: { status: 200 } });
+    mocks.listRuleSetsRuleSetsGet.mockResolvedValue({
+      data: { items: [] },
+      response: { status: 200 },
+    });
     // [T-2.36] El diálogo consulta si el cliente tiene código configurado.
     mocks.getRetireCodeStateTenantsTenantIdRetireCodeGet.mockResolvedValue({
       data: { tenant_id: "t-1", configured: true, version: 1, rotated_at: "2026-08-03T00:00:00Z" },
@@ -183,9 +210,50 @@ describe("FleetAdmin", () => {
     expect(await screen.findByTestId("retire-error")).toHaveTextContent(/DEMASIADOS INTENTOS/);
   });
 
-  it("el alta de gabinete no manda tenant_id ni iot_thing", async () => {
+  // [T-2.37] Este test CONGELABA el defecto: afirmaba que el alta nunca manda
+  // `iot_thing`. Sin él, el worker de config sync excluye al gabinete y ningún
+  // gabinete creado desde la consola recibía jamás configuración firmada, sin que
+  // la consola ofreciera forma alguna de vincularlo después.
+  it("el alta de gabinete manda el iot_thing cuando el operador lo escribe", async () => {
     mocks.createGatewayFleetGatewaysPost.mockResolvedValue({
-      data: {},
+      data: { ...GATEWAY_ROW, iot_thing: "gw-dev-0007" },
+      response: { status: 201 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: "HARDWARE" }));
+    fireEvent.change(screen.getByLabelText("SERIAL DEL GABINETE"), {
+      target: { value: "TKB-0007" },
+    });
+    fireEvent.change(screen.getByLabelText(/IOT THING/), {
+      target: { value: " gw-dev-0007 " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AÑADIR GABINETE" }));
+
+    await waitFor(() => expect(mocks.createGatewayFleetGatewaysPost).toHaveBeenCalledTimes(1));
+    const body = mocks.createGatewayFleetGatewaysPost.mock.calls[0][0].body;
+    expect(body).toEqual({
+      site_id: "s-1",
+      serial: "TKB-0007",
+      iot_thing: "gw-dev-0007",
+      has_wr1: true,
+      // [T-2.31] El alta declara el equipamiento (default todo instalado).
+      equipment: {
+        siren: true,
+        strobe: true,
+        gas_valve: true,
+        elevator: true,
+        door_retainer: true,
+      },
+    });
+    // El tenant lo sigue heredando del sitio: jamás viaja en el cuerpo.
+    expect(body).not.toHaveProperty("tenant_id");
+  });
+
+  it("sin iot_thing manda null y el acuse lo declara NO SINCRONIZABLE", async () => {
+    mocks.createGatewayFleetGatewaysPost.mockResolvedValue({
+      data: { ...GATEWAY_ROW, iot_thing: null },
       response: { status: 201 },
     });
     renderAdmin();
@@ -198,23 +266,32 @@ describe("FleetAdmin", () => {
     fireEvent.click(screen.getByRole("button", { name: "AÑADIR GABINETE" }));
 
     await waitFor(() => expect(mocks.createGatewayFleetGatewaysPost).toHaveBeenCalledTimes(1));
-    const body = mocks.createGatewayFleetGatewaysPost.mock.calls[0][0].body;
-    // [T-2.31] El alta declara el equipamiento (default todo instalado).
-    expect(body).toEqual({
-      site_id: "s-1",
-      serial: "TKB-0007",
-      has_wr1: true,
-      equipment: {
-        siren: true,
-        strobe: true,
-        gas_valve: true,
-        elevator: true,
-        door_retainer: true,
-      },
+    expect(mocks.createGatewayFleetGatewaysPost.mock.calls[0][0].body.iot_thing).toBeNull();
+    expect(await screen.findByTestId("acuse-unsyncable")).toBeInTheDocument();
+  });
+
+  // El otro camino de los duplicados: al pulsar no cambiaba NADA en pantalla, así que
+  // el operador volvía a pulsar. Con un dígito distinto en el serial, nacía un
+  // gabinete gemelo en el mismo sitio y con el mismo rótulo.
+  it("tras el alta el formulario se cierra y aparece el acuse con los UUID del edge.env", async () => {
+    mocks.createGatewayFleetGatewaysPost.mockResolvedValue({
+      data: GATEWAY_ROW,
+      response: { status: 201 },
     });
-    // El tenant lo hereda del sitio; el certificado X.509 lo emite Terraform.
-    expect(body).not.toHaveProperty("tenant_id");
-    expect(body).not.toHaveProperty("iot_thing");
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: "HARDWARE" }));
+    fireEvent.change(screen.getByLabelText("SERIAL DEL GABINETE"), {
+      target: { value: "TKB-0007" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AÑADIR GABINETE" }));
+
+    const acuse = await screen.findByTestId("gateway-acuse");
+    expect(screen.queryByTestId("hardware-form")).not.toBeInTheDocument();
+    expect(acuse).toHaveTextContent("TAKAB_EDGE_GATEWAY_ID");
+    expect(acuse).toHaveTextContent(GATEWAY_ROW.gateway_id);
+    expect(acuse).toHaveTextContent(GATEWAY_ROW.tenant_id);
   });
 
   it("[T-2.31] desmarcar actuadores del sitio viaja en equipment", async () => {

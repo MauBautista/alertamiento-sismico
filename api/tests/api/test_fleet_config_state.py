@@ -295,3 +295,36 @@ async def test_unauthenticated_rejected(seed: None) -> None:
     async with au.client_for(_app()) as c:
         resp = await c.get(f"/fleet/gateways/{GW_SYNCED}/config-state")
     assert resp.status_code == 401
+
+
+# ---- estado en LOTE (T-2.37) -------------------------------------------------
+#
+# La consola pedía el estado de N gabinetes con N peticiones cada 10 s. Con 500
+# gabinetes eso son ~50 req/s desde un solo navegador, y como el pie solo se toma
+# por bueno cuando responden TODAS, a esa escala habría dicho "desconocido" siempre.
+
+
+async def _get_all(token: str):
+    async with au.client_for(_app()) as c:
+        return await c.get("/fleet/config-state", headers=au.bearer(token))
+
+
+async def test_el_lote_devuelve_lo_mismo_que_el_endpoint_por_gabinete(seed: None) -> None:
+    token = au.make_token("soc_operator", tenant=T_A)
+    batch = await _get_all(token)
+    assert batch.status_code == 200, batch.text
+    by_id = {row["gateway_id"]: row for row in batch.json()}
+
+    for gid in (GW_SYNCED, GW_STALE):
+        single = (await _get(gid, token)).json()
+        assert by_id[gid] == single, "el lote y el detalle no pueden discrepar"
+
+
+async def test_el_lote_respeta_la_rls_por_tenant(seed: None) -> None:
+    rows = (await _get_all(au.make_token("soc_operator", tenant=T_A))).json()
+    assert GW_B not in {r["gateway_id"] for r in rows}
+
+
+async def test_el_lote_exige_acceso_a_la_flota(seed: None) -> None:
+    resp = await _get_all(au.make_token("inspector", tenant=T_A))
+    assert resp.status_code == 403

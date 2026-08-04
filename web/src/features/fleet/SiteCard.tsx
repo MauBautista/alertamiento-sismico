@@ -1,17 +1,41 @@
 import { DERIVED_STATE_PILL, UNKNOWN_DERIVED_STATE_KIND } from "@takab/design-tokens";
 import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
 
+import type { GatewayConfigStateOut } from "@takab/sdk";
+
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
 import LinkPill from "./LinkPill";
 import RelayGrid from "./RelayGrid";
+import SyncBadge from "./SyncBadge";
 import UpsGauge from "./UpsGauge";
 import { useSelfTest } from "./useSelfTest";
 import type { FleetCabinet } from "./useFleet";
 
+export interface SiteCardProps {
+  cabinet: FleetCabinet;
+  /** [T-2.37] Estado del config firmado; `undefined` = no se sabe (no se asume). */
+  syncState?: GatewayConfigStateOut;
+  /** [T-2.37] Acciones de administración; ausentes para quien no tiene manage_fleet. */
+  onEdit?: () => void;
+  onRetire?: () => void;
+  onRestore?: () => void;
+  restoring?: boolean;
+}
+
 /** Tarjeta de gabinete: pinta el estado YA derivado por el servidor (G7). */
-export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
+export default function SiteCard({
+  cabinet,
+  syncState,
+  onEdit,
+  onRetire,
+  onRestore,
+  restoring = false,
+}: SiteCardProps) {
   const gw = cabinet.gateway;
+  // [T-2.35/37] Un gabinete retirado (o cuyo sitio lo está) solo aparece con el
+  // toggle VER RETIRADOS. Se rotula sin ambigüedad: sus métricas son historia.
+  const retired = gw.status === "retired" || cabinet.siteStatus === "retired";
   const offline = gw.derived_state === "SIN ENLACE";
   // T-1.59: autodiagnóstico remoto — gate por matriz (self_test), no por rol.
   const canSelfTest = useSessionStore((s) => s.me?.allowed_actions.self_test === true);
@@ -32,7 +56,25 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
       : "s/d";
 
   return (
-    <article className={`fleet-card fleet-card--${pill}`} data-gateway={gw.gateway_id}>
+    <article
+      className={`fleet-card fleet-card--${pill}${retired ? " fleet-card--retired" : ""}`}
+      data-gateway={gw.gateway_id}
+    >
+      {retired && (
+        <div className="fleet-card__retired" data-testid="card-retired">
+          RETIRADO{cabinet.siteStatus === "retired" ? " · LA ESTACIÓN TAMBIÉN" : ""}
+          {onRestore && (
+            <button
+              type="button"
+              className="soc-btn soc-btn--secondary"
+              disabled={restoring}
+              onClick={onRestore}
+            >
+              RESTAURAR
+            </button>
+          )}
+        </div>
+      )}
       <header className="fleet-card__hd">
         <div>
           <div className="fleet-card__name">{cabinet.siteName}</div>
@@ -46,6 +88,7 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
           <span className={`soc-pill soc-pill--${pill}`}>
             <span className="soc-dot" /> {gw.derived_state}
           </span>
+          <SyncBadge state={syncState} />
           <span className="fleet-card__sid">{gw.serial}</span>
         </div>
       </header>
@@ -124,6 +167,21 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
             : "AUTODIAGNÓSTICO SILENCIOSO"}
         </button>
       </footer>
+
+      {(onEdit || onRetire) && !retired && (
+        <div className="fleet-card__admin" data-testid="card-admin">
+          {onEdit && (
+            <button type="button" className="soc-btn soc-btn--secondary" onClick={onEdit}>
+              EDITAR GABINETE
+            </button>
+          )}
+          {onRetire && (
+            <button type="button" className="soc-btn soc-btn--secondary" onClick={onRetire}>
+              RETIRAR
+            </button>
+          )}
+        </div>
+      )}
 
       {/* T-1.59: resultado del ack del edge — chips por relé, jamás inventados. */}
       {selfTest.phase !== "idle" && selfTest.phase !== "issued" && (

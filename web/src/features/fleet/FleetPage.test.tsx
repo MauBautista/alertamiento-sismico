@@ -17,11 +17,41 @@ import { expectFourStates } from "../../test-utils/states";
 import FleetPage from "./FleetPage";
 import type { FleetCabinet, FleetData } from "./useFleet";
 
-const mocks = vi.hoisted(() => ({ useFleet: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  useFleet: vi.fn(),
+  useFleetSyncStates: vi.fn(),
+  useRetireCodeConfigured: vi.fn(),
+  updateMutate: vi.fn(),
+  retireMutate: vi.fn(),
+  restoreMutate: vi.fn(),
+}));
 
 vi.mock("./useFleet", () => ({
   useFleet: mocks.useFleet,
   FLEET_STALE_MS: 90_000,
+}));
+
+const idleMutation = (mutate: ReturnType<typeof vi.fn>) => ({
+  mutate,
+  isPending: false,
+  error: null,
+  reset: vi.fn(),
+});
+
+vi.mock("./useFleetMutations", () => ({
+  useFleetSyncStates: (...args: unknown[]) => mocks.useFleetSyncStates(...args),
+  useRetireCodeConfigured: (...args: unknown[]) => mocks.useRetireCodeConfigured(...args),
+  useUpdateGateway: () => idleMutation(mocks.updateMutate),
+  useRetireGateway: () => idleMutation(mocks.retireMutate),
+  useRestoreGateway: () => idleMutation(mocks.restoreMutate),
+}));
+
+// FleetAdmin tiene su propia suite y aquí solo estorba (monta /sites, formularios y
+// mutaciones). Se sustituye por un marcador que CONSERVA su elemento y su clase: el
+// contrato anti-solape de T-1.54 comprueba el orden de flujo entre la reja y esta
+// sección, y un stub vacío lo habría desactivado en silencio.
+vi.mock("./FleetAdmin", () => ({
+  default: () => <section className="fleet__admin" data-testid="fleet-admin" />,
 }));
 
 function cabinet(id: string, state: string): FleetCabinet {
@@ -68,7 +98,10 @@ function fleetData(over: Partial<FleetData> = {}): FleetData {
 
 describe("FleetPage", () => {
   beforeEach(() => {
-    mocks.useFleet.mockReset();
+    resetSessionStoreForTests();
+    vi.clearAllMocks();
+    mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useRetireCodeConfigured.mockReturnValue(true);
   });
 
   it("materializa los 4 estados obligatorios (regla de oro 7)", () => {
@@ -171,5 +204,95 @@ describe("FleetPage · contrato anti-solape (T-1.54)", () => {
     const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
     expect(kpis).toEqual(["1GABINETES", "1OPERATIVOS", "0DEGRADADOS", "0SIN ENLACE"]);
     expect(container.querySelectorAll(".fleet-card")).toHaveLength(1);
+  });
+});
+
+// [T-2.37] El CRUD del gabinete: hasta aquí la consola no podía editar ni retirar un
+// gabinete pese a que la API lo permitía desde T-1.32.
+describe("FleetPage · administración del gabinete [T-2.37]", () => {
+  beforeEach(() => {
+    resetSessionStoreForTests();
+    vi.clearAllMocks();
+    mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useRetireCodeConfigured.mockReturnValue(true);
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [cabinet("1", "OPERATIVO")] }));
+  });
+
+  it("sin manage_fleet no hay acciones de administración ni toggle", () => {
+    seedAuthenticated(ME_FIXTURES.soc_operator);
+    render(<FleetPage />);
+    expect(screen.queryByTestId("card-admin")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("fleet-include-retired")).not.toBeInTheDocument();
+  });
+
+  it("con manage_fleet ofrece editar y retirar", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    render(<FleetPage />);
+    expect(screen.getByRole("button", { name: "EDITAR GABINETE" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "RETIRAR" })).toBeInTheDocument();
+  });
+
+  it("EDITAR abre el formulario con el gabinete precargado", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR GABINETE" }));
+    expect(screen.getByTestId("gateway-form")).toBeInTheDocument();
+    expect(screen.getByLabelText(/SERIAL/)).toHaveValue("TKB-1");
+  });
+
+  it("guardar manda base_row_version: la carrera se resuelve con 409, no pisando", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR GABINETE" }));
+    fireEvent.click(screen.getByRole("button", { name: /GUARDAR GABINETE/ }));
+    expect(mocks.updateMutate.mock.calls[0][0].body.base_row_version).toBe("1");
+  });
+
+  it("RETIRAR abre el diálogo de doble fricción, no retira de un clic", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("button", { name: "RETIRAR" }));
+    expect(screen.getByTestId("retire-dialog")).toBeInTheDocument();
+    expect(mocks.retireMutate).not.toHaveBeenCalled();
+  });
+
+  it("el toggle VER RETIRADOS se lo pide al hook, no filtra en cliente", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /VER RETIRADOS/ }));
+    expect(mocks.useFleet).toHaveBeenLastCalledWith({ includeRetired: true });
+  });
+
+  it("un gabinete retirado se rotula y ofrece RESTAURAR en vez de retirar", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    const retired = cabinet("9", "SIN ENLACE");
+    retired.gateway.status = "retired";
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [retired] }));
+    render(<FleetPage />);
+    expect(screen.getByTestId("card-retired")).toHaveTextContent("RETIRADO");
+    expect(screen.getByRole("button", { name: "RESTAURAR" })).toBeInTheDocument();
+    expect(screen.queryByTestId("card-admin")).not.toBeInTheDocument();
+  });
+
+  it("el estado del config firmado se pinta por gabinete", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    mocks.useFleetSyncStates.mockReturnValue(
+      new Map([
+        [
+          "1",
+          {
+            gateway_id: "1",
+            version: 12,
+            published_at: null,
+            sig_fingerprint: null,
+            in_sync: true,
+            has_edge_config: true,
+            is_syncable: true,
+          },
+        ],
+      ]),
+    );
+    render(<FleetPage />);
+    expect(screen.getByTestId("sync-badge")).toHaveTextContent("SINCRONIZADO v12");
   });
 });

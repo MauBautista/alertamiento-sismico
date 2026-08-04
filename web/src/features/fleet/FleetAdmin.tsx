@@ -8,17 +8,19 @@
 import { useState } from "react";
 
 import { listSitesSitesGet } from "@takab/sdk";
-import type { SiteOut } from "@takab/sdk";
+import type { GatewayOut, GatewayRowOut, SiteOut } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import HardwareForm from "./HardwareForm";
 import type { GatewayValues, SensorValues } from "./HardwareForm";
+import GatewayAcuse from "./GatewayAcuse";
 import RetireDialog from "./RetireDialog";
 import SiteForm from "./SiteForm";
 import type { SiteFormValues } from "./SiteForm";
 import { formatPoint } from "./geo";
+import { useFleet } from "./useFleet";
 import {
   useCreateGateway,
   useCreateSensor,
@@ -33,6 +35,8 @@ type Editing =
   | { kind: "new" }
   | { kind: "edit"; site: SiteOut }
   | { kind: "hardware"; site: SiteOut }
+  // [T-2.37] Acuse tras el alta: cierra el formulario y entrega los UUID del edge.env.
+  | { kind: "acuse"; site: SiteOut; gateway: GatewayRowOut }
   // [T-2.36] El retiro deja de ser un ConfirmButton: exige un segundo factor y por
   // tanto un diálogo con dos campos, no un doble clic armado.
   | { kind: "retire"; site: SiteOut };
@@ -68,6 +72,10 @@ function FleetAdminPanel() {
   const retire = useRetireSite();
   const addGateway = useCreateGateway();
   const addSensor = useCreateSensor();
+
+  const fleet = useFleet();
+  const gatewaysOf = (siteId: string): GatewayOut[] =>
+    fleet.cabinets.filter((c) => c.gateway.site_id === siteId).map((c) => c.gateway);
 
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
   const codeConfigured = useRetireCodeConfigured(tenantId);
@@ -106,15 +114,26 @@ function FleetAdminPanel() {
     }
   }
 
-  function createGateway(siteId: string, values: GatewayValues) {
-    // Sin `iot_thing`: la API no habla con AWS. El thing lo crea Terraform.
-    addGateway.mutate({
-      site_id: siteId,
-      serial: values.serial,
-      has_wr1: values.has_wr1,
-      // [T-2.31] Qué actuadores existen en el sitio; viaja firmado al edge.
-      equipment: values.equipment,
-    });
+  function createGateway(site: SiteOut, values: GatewayValues) {
+    addGateway.mutate(
+      {
+        site_id: site.site_id,
+        serial: values.serial,
+        // [T-2.37] La API sigue sin hablar con AWS —el thing lo crea Terraform—, pero
+        // si el operador ya lo provisionó lo registra aquí. Sin esto, todo gabinete
+        // dado de alta desde la consola quedaba no-sincronizable para siempre.
+        iot_thing: values.iot_thing === "" ? null : values.iot_thing,
+        has_wr1: values.has_wr1,
+        // [T-2.31] Qué actuadores existen en el sitio; viaja firmado al edge.
+        equipment: values.equipment,
+      },
+      {
+        // Acusar recibo y CERRAR el formulario. Sin esto la pantalla no cambiaba al
+        // pulsar y el operador volvía a pulsar: uno de los dos caminos por los que
+        // aparecían gabinetes duplicados en el mismo sitio.
+        onSuccess: (gateway) => setEditing({ kind: "acuse", site, gateway }),
+      },
+    );
   }
 
   function createSensor(siteId: string, values: SensorValues) {
@@ -140,12 +159,19 @@ function FleetAdminPanel() {
         )}
       </header>
 
-      {editing.kind === "hardware" ? (
+      {editing.kind === "acuse" ? (
+        <GatewayAcuse
+          gateway={editing.gateway}
+          siteName={editing.site.name}
+          onDone={() => setEditing({ kind: "hardware", site: editing.site })}
+        />
+      ) : editing.kind === "hardware" ? (
         <HardwareForm
           site={editing.site}
+          existing={gatewaysOf(editing.site.site_id)}
           submitting={hardwareBusy}
           error={hardwareError}
-          onCreateGateway={(values) => createGateway(editing.site.site_id, values)}
+          onCreateGateway={(values) => createGateway(editing.site, values)}
           onCreateSensor={(values) => createSensor(editing.site.site_id, values)}
           onDone={() => setEditing({ kind: "none" })}
         />

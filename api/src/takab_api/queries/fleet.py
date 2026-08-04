@@ -105,10 +105,21 @@ _CONFIG_STATE = text(
     """
 )
 
+# [T-2.37] El MISMO SQL sin el filtro por id. Existe porque la consola necesitaba el
+# estado de N gabinetes y lo resolvía con N peticiones en paralelo cada 10 s: con 500
+# gabinetes eso son ~50 req/s desde un solo navegador, y como el pie solo se considera
+# válido cuando responden TODOS, a esa escala habría dicho "desconocido" casi siempre.
+_CONFIG_STATE_ALL = text(str(_CONFIG_STATE).replace("WHERE g.gateway_id = :gateway_id", "").strip())
+
 
 async def get_config_state(conn: AsyncConnection, gateway_id: str) -> Row | None:
     """Estado del config firmado del gateway. ``None`` si RLS no lo deja verlo."""
     return (await conn.execute(_CONFIG_STATE, {"gateway_id": gateway_id})).first()
+
+
+async def list_config_states(conn: AsyncConnection) -> Sequence[Row]:
+    """Estado del config firmado de TODOS los gateways visibles (RLS por tenant)."""
+    return (await conn.execute(_CONFIG_STATE_ALL)).all()
 
 
 # --- Administración de gabinetes (T-1.32) ------------------------------------

@@ -1764,6 +1764,22 @@ export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses = {
 
 export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponse = VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses[keyof VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses];
 
+export type ListGatewayConfigStatesFleetConfigStateGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/fleet/config-state';
+};
+
+export type ListGatewayConfigStatesFleetConfigStateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<GatewayConfigStateOut>;
+};
+
+export type ListGatewayConfigStatesFleetConfigStateGetResponse = ListGatewayConfigStatesFleetConfigStateGetResponses[keyof ListGatewayConfigStatesFleetConfigStateGetResponses];
+
 export type ListGatewaysFleetGatewaysGetData = {
     body?: never;
     path?: never;
