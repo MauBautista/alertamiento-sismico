@@ -136,7 +136,9 @@ body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
   grid-template-rows: 64px;
-  gap: 24px;
+  /* 18 y no 24: con seis pestañas (AUDITORÍA llegó en T-2.52) y la insignia de
+     alcance (T-2.45), los 120 px de hueco eran parte de por qué no cabía. */
+  gap: 18px;
   align-items: center;
   padding: 0 24px;
   background: var(--tk-navy-800);
@@ -153,7 +155,31 @@ body {
 }
 /* [T-2.55] `.soc-brand__mark`, `__name` y `__tag` eran el wordmark TIPOGRÁFICO
    del mockup; la topbar real sirve el logotipo como imagen (`__logo`). */
-.soc-system { display: flex; align-items: center; gap: 14px; min-width: 0; }
+/* [T-2.57] `overflow: hidden` es la RED DE SEGURIDAD, no el arreglo: la columna
+ * es `minmax(0,1fr)` —la única que cede— y su contenido no cedía con ella, así que
+ * los 224 px sobrantes se pintaban ENCIMA de las pestañas a 1920×1080, la
+ * resolución OBJETIVO del producto. Con esto, si algún día vuelve a no caber,
+ * recorta en su columna en vez de invadir la vecina.
+ * El arreglo de verdad es que la barra quepa: ver el rótulo oculto de abajo. */
+.soc-system {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+/* El rótulo "SISTEMA OPERATIVO" etiqueta dos pills que ya dicen lo que son
+ * ("CONECTADO", "EDGE · MQTT …"): son 134 px, los más baratos de la barra. Se
+ * oculta VISUALMENTE pero sigue en el árbol de accesibilidad — un lector de
+ * pantalla lo sigue anunciando, así que no se pierde información, solo píxeles. */
+.soc-system > .soc-meta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .soc-nav { display: flex; gap: 4px; }
 .soc-nav__tab {
   background: transparent; border: none;
@@ -162,7 +188,7 @@ body {
   font-size: 12px;
   letter-spacing: 0.14em;
   color: var(--tk-fg-2);
-  padding: 9px 16px;
+  padding: 9px 12px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 120ms var(--tk-ease);
@@ -200,6 +226,12 @@ body {
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
+/* [T-2.57] La FECHA sale de la barra a todos los anchos. Costaba 110 px y era
+   justo lo que faltaba para que el estado del canal live cupiera a 1920×1080 sin
+   recortarse. No se pierde: viaja en el `title` del reloj, y cada incidente trae
+   su fecha completa. Entre ver la fecha y ver si el dato está vivo, gana lo
+   segundo (regla de oro 7). */
+.soc-clock > :nth-last-child(-n + 2) { display: none; }
 .soc-clock .sep { color: var(--tk-fg-3); }
 .soc-clock .meta { color: var(--tk-fg-3); font-size: 10px; letter-spacing: 0.10em; }
 
@@ -1543,8 +1575,19 @@ body {
      sliver de 14 px se lee como un fallo de render, y lo que transporta —si el
      canal live está vivo y con qué RTT— es precisamente lo que distingue un dato
      fresco de uno congelado (regla de oro 7). */
-  .soc-system { overflow: hidden; gap: 8px; }
-  .soc-pill { flex-shrink: 1; min-width: 0; overflow: hidden; padding: 5px 8px; }
+  /* Las pills conservan su TEXTO: con el rótulo oculto ya caben, y una pill
+     recortada a "C" o "E" no informa de nada — es peor que no estar. */
+  .soc-system { gap: 8px; }
+  .soc-pill { padding: 5px 8px; }
+}
+
+/* --- ≤1439 · la barra ya no da para las dos pills ------------------------ */
+@media (max-width: 1439px) {
+  /* Se va la de MQTT, no la de CONEXIÓN. Media pill cortada se lee como un fallo
+     de render; y si solo cabe un dato, el que importa es si el canal live está
+     vivo — el RTT es una métrica de calidad, no de existencia. El valor sigue en
+     /fleet, que es donde se diagnostica un gabinete. */
+  .soc-system [data-testid="mqtt-pill"] { display: none; }
 }
 
 /* --- < 1280 · fuente = --tk-bp-md (1280px) ------------------------------ */

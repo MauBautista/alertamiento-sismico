@@ -426,6 +426,13 @@
   display: flex; flex-direction: column;
   gap: 16px;
   min-height: 0;
+  /* [T-2.57] EVALUACIÓN era el ÚNICO contenedor de página sin scroll propio:
+     `.fleet` lo tiene desde T-1.54, `.mt` desde T-2.51 y `.audit` nació con él.
+     Dentro de `body { overflow: hidden }` eso significa que lo que no cabe no se
+     alcanza — y T-2.51 lo empeoró al fijar `.triage > * { flex-shrink: 0 }`, que
+     retiró la última válvula (antes los hijos al menos se encogían). Reportado
+     desde la nube: "en evaluación no puedo hacer scroll hacia abajo o arriba". */
+  overflow-y: auto;
 }
 .triage__hd {
   display: flex; justify-content: space-between; align-items: flex-end;

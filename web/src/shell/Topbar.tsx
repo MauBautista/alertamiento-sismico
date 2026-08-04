@@ -104,7 +104,11 @@ export default function Topbar() {
           tiene que poder saber si es que solo hay una o es que solo ve una. */}
       <ScopeBadge />
 
-      <div className="soc-clock" aria-label="System time">
+      <div
+        className="soc-clock"
+        aria-label="System time"
+        title={`${clock.date} · UTC ${clock.utc} · CST ${clock.cst}`}
+      >
         <span className="meta">UTC</span>
         <span>{clock.utc}</span>
         <span className="sep">|</span>
