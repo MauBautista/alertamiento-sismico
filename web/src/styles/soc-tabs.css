@@ -119,6 +119,25 @@
   color: var(--tk-cyan);
   background: var(--tk-cyan-08);
 }
+/* [T-2.59] Apagado tiene que VERSE apagado.
+ *
+ * `CONFIRMAR ACUSE` deshabilitado se pintaba con el cian pleno de la variante
+ * primaria, `opacity: 1` y `cursor: pointer` — indistinguible de un botón que sí
+ * se puede pulsar. En el botón más consecuente del producto eso se lee como "el
+ * sistema no responde", justo lo que nadie puede pensar durante un sismo.
+ * El `title` del envoltorio dice el porqué; esto dice el QUÉ, antes de acercar
+ * el ratón. Mismos valores que el resto del repo (`.mt__new-submit:disabled`). */
+.soc-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* El hover no puede sobrescribir lo anterior y devolverle aspecto de vivo. */
+.soc-confirm--primary:disabled:hover { background: var(--tk-cyan); }
+.soc-confirm--secondary:disabled:hover {
+  border-color: var(--tk-border-strong);
+  color: var(--tk-fg-1);
+  background: transparent;
+}
 
 .soc-confirm--armed {
   background: var(--tk-status-warning);

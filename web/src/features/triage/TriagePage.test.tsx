@@ -183,6 +183,21 @@ describe("TriagePage", () => {
     expect(screen.getByText(/1 INCIDENTES CARGADOS/)).toBeTruthy();
   });
 
+  // [T-2.59] Misma familia que la tira de KPI de la flota: este rótulo vive
+  // FUERA del StateFrame, así que con la consulta caída anunciaba
+  // "0 INCIDENTES CARGADOS" al lado del propio error. Cero incidentes tras un
+  // sismo es la afirmación más tranquilizadora que puede hacer esta pantalla, y
+  // ahí nadie la había comprobado (regla de oro 7).
+  it.each([
+    ["error", { error: "GET /incidents falló (500)" }],
+    ["carga", { loading: true }],
+  ])("sin dato (%s) no anuncia una cuenta de incidentes", (_caso, patch) => {
+    mocks.useTriage.mockReturnValue(triageData({ rows: [], ...patch }));
+    render(pageAt());
+    expect(screen.queryByText(/INCIDENTES CARGADOS/)).toBeNull();
+    expect(screen.getByText(/SIN DATO · HISTORIAL NO DISPONIBLE/)).toBeTruthy();
+  });
+
   it("selecciona la primera fila por defecto y monta el detalle", () => {
     mocks.useTriage.mockReturnValue(triageData());
     render(pageAt());

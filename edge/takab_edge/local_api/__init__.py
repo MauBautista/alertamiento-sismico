@@ -706,6 +706,7 @@ class LocalDashboard(EdgeModule):
             # Distinguir alerta REAL vs. sirena sonando vs. silenciado (regla de oro 7):
             "sasmex_active": self._gpio.sasmex_active,
             "siren_sounding": self._gpio.siren_sounding,
+            "siren_reason": self._siren_reason(),
             "audible_silenced": self._gpio.audible_silenced,
             # [T-2.26] Enclave vivo (SASMEX o rules): el panel ofrece CERRAR
             # ALERTA mientras esto sea true, aunque el tier ya haya decaído.
@@ -760,12 +761,60 @@ class LocalDashboard(EdgeModule):
             results = self._last_actuation_test
         return {"active": active, "results": results}
 
+    def _siren_reason(self) -> str | None:
+        """[T-2.49] POR QUÉ suena la sirena. `siren_sounding` es un booleano
+        ELÉCTRICO y no distingue nada.
+
+        T-2.49 derivó `gpio.siren_reason` para que el ALTAVOZ dejara de sonar
+        igual en una prueba que en un sismo; el panel se quedó atrás leyendo solo
+        el booleano. Quien llega a mitad de un self-test ve «SIRENA: SONANDO» y
+        no tiene forma de saber que no está pasando nada — que es exactamente el
+        problema que T-2.49 arregló para el oído y no para la vista.
+
+        Sección no-crítica: rota ⇒ ``None`` (el panel no rotula), jamás un 500.
+        """
+        try:
+            reason = self._gpio.siren_reason
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: motivo de la sirena no disponible", exc_info=True)
+            return None
+        return None if reason is None else str(reason.value)
+
+    def _audio_profile(self) -> dict | None:
+        """[T-2.49] Perfil de tonos EFECTIVO, en la forma que el panel necesita.
+
+        `applied`/`rejected` mapean slot → id de catálogo. Un ID rechazado (por
+        desconocido, o RESERVADO como el tono oficial de SASMEX) deja al gabinete
+        sonando el tono ANTERIOR — y una prueba sin tono de prueba CALLA. Eso solo
+        se veía en el journal del Pi y en `HealthSnapshot.audio`, que la nube hoy
+        descarta por falta de columna: el único que puede actuar sobre ello es
+        quien está de pie frente al gabinete.
+
+        Las RUTAS de disco (`siren_path`/`test_path`) NO se publican: `/api/status`
+        es una lectura ABIERTA en la LAN y el panel solo necesita saber SI hay
+        tono de prueba, no dónde vive.
+        """
+        try:
+            report = self._audio.profile_report
+            return {
+                "applied": dict(report.get("applied") or {}),
+                "rejected": dict(report.get("rejected") or {}),
+                "test_tone": bool(report.get("test_path")),
+            }
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: perfil de tonos no disponible", exc_info=True)
+            return None
+
     def _audio_section(self) -> dict | None:
         """Voceo (A-6): la UI solo muestra el botón de drill si está habilitado."""
         try:
             if self._audio is None:
                 return None
-            return {"enabled": bool(self._audio.enabled), "sounding": bool(self._audio.sounding)}
+            return {
+                "enabled": bool(self._audio.enabled),
+                "sounding": bool(self._audio.sounding),
+                "profile": self._audio_profile(),
+            }
         except Exception:  # noqa: BLE001
             log.warning("panel LAN: sección de audio no disponible", exc_info=True)
             return None

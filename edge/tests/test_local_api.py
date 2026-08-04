@@ -1022,3 +1022,68 @@ def test_index_responsive_overlap_fixes(supervisor):
         "@media (max-width:699px)",  # modal apilado en angosto SEA CUAL SEA el modo
     ):
         assert hook in html, hook
+
+
+# --- T-2.49 · el panel tiene que saber POR QUÉ suena la sirena --------------
+
+
+def test_status_expone_el_motivo_de_la_sirena(supervisor):
+    """`siren_sounding` es un booleano ELÉCTRICO y no distingue nada.
+
+    T-2.49 derivó `gpio.siren_reason` para que el ALTAVOZ deje de sonar igual en
+    una prueba que en un sismo, pero el panel siguió leyendo solo el booleano:
+    quien llega a mitad de un self-test lee «SIRENA: SONANDO» y no tiene forma
+    de saber que no está pasando nada. La razón viaja ahora en `/api/status`.
+    """
+    assert supervisor.local_api.status()["siren_reason"] is None  # en reposo no suena
+
+    supervisor.gpio.run_siren_test()
+    assert supervisor.local_api.status()["siren_reason"] == "test"
+
+    # Lo real domina a la prueba (precedencia de seguridad, jamás al revés).
+    supervisor.gpio.simulate_sasmex(active=True)
+    assert supervisor.local_api.status()["siren_reason"] == "alert"
+
+
+def test_motivo_de_sirena_degrada_a_null_si_el_gpio_falla(supervisor, monkeypatch):
+    """Sección no-crítica: rota ⇒ null y el panel no rotula, jamás un 500."""
+    monkeypatch.setattr(type(supervisor.gpio), "siren_reason", _RotoAttr(), raising=False)
+    assert supervisor.local_api.status()["siren_reason"] is None
+
+
+def test_status_expone_el_perfil_de_tonos_efectivo(supervisor):
+    """Un tono rechazado deja al gabinete sonando el ANTERIOR — o mudo en una
+    prueba — y hasta aquí eso solo se veía en el journal del Pi y en un campo de
+    health que la nube descarta. El operador de pie es quien lo necesita.
+    """
+    profile = supervisor.local_api.status()["audio"]["profile"]
+    assert profile["applied"] == {}  # sin config firmada corre lo empaquetado
+    assert profile["rejected"] == {}
+    assert profile["test_tone"] is True  # `prueba.wav` viaja en la release
+    # Las RUTAS de disco no salen: /api/status es una lectura ABIERTA en la LAN.
+    assert "siren_path" not in profile
+    assert "test_path" not in profile
+
+
+def test_perfil_de_tonos_declara_lo_rechazado_por_el_catalogo(supervisor):
+    """El tono oficial de SASMEX está RESERVADO y ausente (GATE-LEGAL): pedirlo
+    no lo hace sonar, y el panel debe poder decir por qué no cambió nada."""
+    supervisor.audio.apply_audio_profile({"siren": "sasmex-oficial-v1", "test": "no-existe-v9"})
+    profile = supervisor.local_api.status()["audio"]["profile"]
+    assert profile["rejected"] == {"siren": "sasmex-oficial-v1", "test": "no-existe-v9"}
+    # Rechazar NO desarma el gabinete: conserva los tonos que ya tenía.
+    assert profile["test_tone"] is True
+
+
+def test_index_declara_el_motivo_de_la_sirena_y_los_tonos(supervisor):
+    """[T-2.49] Rótulos congelados: una PRUEBA no puede leerse como una alerta."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        "SIREN_REASON",
+        "PRUEBA",
+        "ESTADO SEGURO",
+        "Tonos de voceo",
+        "SIN TONO DE PRUEBA",
+    ):
+        assert hook in html, hook

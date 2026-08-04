@@ -21,10 +21,23 @@ import {
   useUpdateGateway,
 } from "./useFleetMutations";
 
-function Kpi({ label, value, kind }: { label: string; value: number; kind?: string }) {
+/**
+ * Un contador de la tira superior.
+ *
+ * [T-2.59] `value === null` significa NO HAY DATO, y entonces se pinta `S/D` y
+ * se RETIRA el color semántico: un "0 SIN ENLACE" en rojo tranquilo o un
+ * "0 OPERATIVOS" en verde son afirmaciones sobre la flota que nadie ha
+ * comprobado. Regla de oro 7 — mostrar un dato inventado como si fuera fresco
+ * es peor que no mostrar nada, porque el cero es tranquilizador.
+ */
+function Kpi({ label, value, kind }: { label: string; value: number | null; kind?: string }) {
+  const sinDato = value === null;
   return (
-    <div className={`fleet__kpi${kind ? ` fleet__kpi--${kind}` : ""}`} data-testid="fleet-kpi">
-      <span className="fleet__kpi-val">{value}</span>
+    <div
+      className={`fleet__kpi${kind && !sinDato ? ` fleet__kpi--${kind}` : ""}`}
+      data-testid="fleet-kpi"
+    >
+      <span className="fleet__kpi-val">{sinDato ? "S/D" : value}</span>
       <span className="fleet__kpi-lbl">{label}</span>
     </div>
   );
@@ -72,6 +85,11 @@ export default function FleetPage() {
       : null;
   // Los KPI cuentan el TOTAL a propósito: un contador que se moviera con el filtro
   // convertiría "3 SIN ENLACE" en una cifra distinta según lo tecleado.
+  //
+  // [T-2.59] …y no cuentan NADA mientras no haya respuesta. La tira se pinta
+  // fuera del StateFrame, así que sin esta puerta un fallo de la API se leía
+  // como una flota de cero gabinetes en perfecto estado (ver Kpi arriba).
+  const sinDato = fleet.loading || fleet.error !== null;
   const counts = countStates(fleet.cabinets);
   const visible = applyFilters(fleet.cabinets, filters);
 
@@ -86,10 +104,10 @@ export default function FleetPage() {
           </p>
         </div>
         <div className="fleet__kpis">
-          <Kpi label="GABINETES" value={counts.total} />
-          <Kpi label="OPERATIVOS" value={counts.ok} kind="ok" />
-          <Kpi label="DEGRADADOS" value={counts.warn} kind="warn" />
-          <Kpi label="SIN ENLACE" value={counts.crit} kind="crit" />
+          <Kpi label="GABINETES" value={sinDato ? null : counts.total} />
+          <Kpi label="OPERATIVOS" value={sinDato ? null : counts.ok} kind="ok" />
+          <Kpi label="DEGRADADOS" value={sinDato ? null : counts.warn} kind="warn" />
+          <Kpi label="SIN ENLACE" value={sinDato ? null : counts.crit} kind="crit" />
         </div>
       </header>
 
