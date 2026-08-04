@@ -51,6 +51,9 @@ test("el mapa se queda el alto: el simulacro es una tira, no un panel", async ({
   await page.getByRole("button", { name: "ENTRAR COMO ROL" }).click();
   // El login ya aterriza en /console; navegar antes de que monte tira la sesión.
   await expect(page.locator('[data-screen-label="01 Monitoreo en Vivo"]')).toBeVisible();
+  // [T-2.57] El label monta antes que el dato del wall; sin esta espera se mide
+  // `.soc-stage` mientras el StateFrame aún pinta su carga.
+  await expect(page.locator(".soc-stage")).toBeVisible();
 
   const drill = page.getByTestId("drill-idle");
   await expect(drill).toBeVisible();

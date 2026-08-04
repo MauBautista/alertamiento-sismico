@@ -10,7 +10,7 @@
 // decoración — un halo pulsante y un frente de onda avanzando son SEÑAL. Que se
 // apaguen para quien lo pidió es accesibilidad; que se apaguen bien es que
 // siguen leyéndose como estado, no que desaparecen.
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { devLogin, gotoScreen } from "./helpers";
 
@@ -30,6 +30,29 @@ async function pseudoAnimation(
   );
 }
 
+/**
+ * [T-2.57] Monta un halo de estado y devuelve su selector.
+ *
+ * `.soc-dot--pulse` solo lo renderiza la app con DATO VIVO FRESCO (`DetailPanel`
+ * con un sitio enfocado, o un `LinkPill` OPERATIVO). El seed local no tiene
+ * ninguno de los dos, así que estos tests fallaban por AUSENCIA DEL SUJETO, no
+ * porque la animación estuviera mal.
+ *
+ * Lo que estos casos afirman es un contrato de la HOJA DE ESTILOS —que
+ * `prefers-reduced-motion` apaga el keyframe y que sin la preferencia sí corre—,
+ * y eso se comprueba mejor sobre un elemento montado a propósito que sobre uno
+ * que depende de que el gabinete esté vivo en ese instante.
+ */
+async function mountPulseDot(page: Page): Promise<string> {
+  await page.evaluate(() => {
+    const el = document.createElement("span");
+    el.className = "soc-dot soc-dot--pulse";
+    el.dataset.testid = "pulse-probe";
+    document.body.appendChild(el);
+  });
+  return '[data-testid="pulse-probe"]';
+}
+
 // En @playwright/test 1.61 `reducedMotion` ya NO es opción de primer nivel de
 // `test.use`: viaja dentro de `contextOptions` (es una opción del contexto de
 // navegador). Escrito como `test.use({ reducedMotion })` NO da error en tiempo
@@ -43,16 +66,16 @@ test.describe("con movimiento reducido", () => {
   }) => {
     await devLogin(page);
     await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
-    const dot = page.locator(".soc-dot--pulse").first();
-    await expect(dot).toBeVisible();
+    const sel = await mountPulseDot(page);
+    await expect(page.locator(sel)).toBeAttached();
 
-    expect(await pseudoAnimation(page, ".soc-dot--pulse", "::after")).toBe("none");
+    expect(await pseudoAnimation(page, sel, "::after")).toBe("none");
     // Sin la animación el halo se quedaría congelado a media escala (el
     // keyframe arranca en 0.6): la hoja lo fija en su reposo a propósito.
-    const opacity = await page.evaluate(() => {
-      const el = document.querySelector(".soc-dot--pulse");
+    const opacity = await page.evaluate((s) => {
+      const el = document.querySelector(s);
       return el === null ? null : getComputedStyle(el, "::after").opacity;
-    });
+    }, sel);
     expect(Number(opacity)).toBeGreaterThan(0);
   });
 
@@ -95,7 +118,8 @@ test.describe("sin preferencia declarada", () => {
     // no hubiera existido nunca — que es la forma más común de verde falso.
     await devLogin(page);
     await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
-    await expect(page.locator(".soc-dot--pulse").first()).toBeVisible();
-    expect(await pseudoAnimation(page, ".soc-dot--pulse", "::after")).toBe("soc-pulse");
+    const sel = await mountPulseDot(page);
+    await expect(page.locator(sel)).toBeAttached();
+    expect(await pseudoAnimation(page, sel, "::after")).toBe("soc-pulse");
   });
 });

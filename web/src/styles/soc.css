@@ -93,12 +93,27 @@ body {
  * [T-1.62] Ya NO es el único hijo de .soc-main (el DrillBanner es su hermano),
  * pero sí es el único que crece: `flex: 1 1 auto` arriba. `height: 100%` se
  * queda por si el wall se reutiliza fuera de este contenedor. */
+/* [T-2.57] Columna flex con el que crece DECLARADO, no deducido del orden.
+ * Era `grid-template-rows: minmax(0,1fr) auto` — dos filas — y T-2.50 metió la
+ * tira de KPIs como PRIMER hijo: la fila elástica se la quedó ella y el mapa cayó
+ * a `auto`, quedándose en 370 px de 800. Es el mismo fallo que T-1.62 arregló un
+ * bloque más arriba para `.soc-main`, reaparecido por la misma causa: el número
+ * de hijos cambia con el tiempo y el orden no es un contrato.
+ * Lo cazó `layout.spec.ts` en un navegador; jsdom no hace layout y ninguna prueba
+ * unitaria podía verlo. */
 .soc-wall {
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+}
+.soc-wall > .soc-stage {
+  flex: 1 1 auto; /* el mapa se queda TODO el sobrante */
+  min-height: 0;
+}
+.soc-wall > *:not(.soc-stage) {
+  flex: 0 0 auto; /* KPIs y cola de incidentes: solo su altura natural */
 }
 
 /* =====================================================================
@@ -111,9 +126,15 @@ body {
  * roles. Ese era el "no hay botón de cerrar sesión": sí existe, pero aterrizaba
  * fuera de la barra. minmax(0,1fr) deja que la columna de sistema ceda ancho en
  * pantallas angostas en vez de desbordar la barra. */
+/* [T-2.57] SEIS columnas para SEIS hijos. T-2.45 añadió la insignia de alcance
+ * como sexto hijo y dejó la rejilla en cinco: el menú de operador volvió a caer a
+ * la fila implícita —el bug que este mismo comentario describe— y con él el botón
+ * SALIR, encima del título, en todas las rutas. Lo encontró `layout.spec.ts` en un
+ * navegador de verdad: jsdom no hace layout y ninguna prueba unitaria podía verlo.
+ * Si mañana se añade un séptimo hijo, esta línea sube a siete o el bug vuelve. */
 .soc-topbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
   grid-template-rows: 64px;
   gap: 24px;
   align-items: center;
@@ -1491,6 +1512,39 @@ body {
   }
   .mt__grid { grid-template-columns: 300px minmax(0, 1fr); }
   .triage__grid { grid-template-columns: minmax(0, 1.7fr) 360px; }
+
+  /* [T-2.57] LA BARRA TIENE QUE CABER. A 1280 su contenido natural medía 1613 px
+     y desbordaba el documento entero en las CINCO pantallas — por eso el desborde
+     era idéntico en todas: no era de ninguna, era del chrome compartido.
+     Este bloque empieza en 1599 y no en 1279 a propósito: a 1280 exacto el
+     bloque de 1279 NO aplica (`max-width` es inclusiva), que es justo donde
+     `layout.spec.ts` lo cazó.
+     Se recorta por orden de lo que menos cuesta perder:
+       · la FECHA del reloj — la hora sigue, y la fecha está en cada incidente;
+       · la hora local CST — en un SOC sísmico la referencia es UTC;
+       · la insignia de alcance cede ancho con elipsis; su `title` conserva el
+         texto íntegro, así que no se pierde información, solo píxeles;
+       · las pills de sistema pueden encogerse EN VEZ de aplastar a sus vecinas:
+         a 1280 `soc-system` medía ancho CERO y el estado del canal y el RTT del
+         edge eran INVISIBLES, que es peor que verlos apretados (regla de oro 7). */
+  .soc-topbar { gap: 12px; padding: 0 12px; }
+  .soc-nav__tab { padding: 9px 6px; letter-spacing: 0.04em; }
+  .soc-brand__logo { height: 28px; }
+  .soc-clock { gap: 6px; }
+  .soc-clock > :nth-child(n + 3) { display: none; }
+  .soc-scope {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 110px;
+  }
+  /* El estado del canal NO se sacrifica. Con lo que sueltan marca, nav, reloj y
+     alcance, la columna de sistema recupera ancho suficiente para leerse. Un
+     sliver de 14 px se lee como un fallo de render, y lo que transporta —si el
+     canal live está vivo y con qué RTT— es precisamente lo que distingue un dato
+     fresco de uno congelado (regla de oro 7). */
+  .soc-system { overflow: hidden; gap: 8px; }
+  .soc-pill { flex-shrink: 1; min-width: 0; overflow: hidden; padding: 5px 8px; }
 }
 
 /* --- < 1280 · fuente = --tk-bp-md (1280px) ------------------------------ */
@@ -1537,8 +1591,6 @@ body {
   .mt__list,
   .mt__detail { max-height: none; }
 
-  .soc-topbar { gap: 12px; padding: 0 12px; }
-  .soc-nav__tab { padding: 9px 10px; letter-spacing: 0.08em; }
 }
 
 /* --- Alto de portátil · el mapa manda ---------------------------------- */
@@ -1555,4 +1607,21 @@ body {
   .soc-table th { padding: 5px 14px 6px; }
   .soc-table td { padding: 6px 14px; }
   .soc-shell > .soc-detail { top: 52px; }
+
+  /* [T-2.57] EL MAPA MANDA — que es lo que este bloque promete en su título.
+     Con 800 px de alto el escenario se quedaba en 370 px: la tira de KPIs ENVUELVE
+     a dos líneas en pantallas angostas (76 px frente a 46 en 1920) y la cola de
+     incidentes se llevaba 220 px fijos. Se recortan los dos:
+       · los KPIs no envuelven; si no caben, la tira scrollea en horizontal — un
+         contador cortado es peor que uno al que hay que desplazarse;
+       · la cola se acota y scrollea, que es su comportamiento natural: es una
+         cola, no una tabla completa.
+     Sin esto el mapa se acercaba a su piso de 280 px en el viewport más común de
+     un portátil de 14", que es justo donde `layout.spec.ts` lo midió. */
+  .soc-kpis {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 10px;
+  }
+  .soc-incidents { max-height: 170px; }
 }

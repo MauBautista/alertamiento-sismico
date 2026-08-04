@@ -63,6 +63,11 @@ test("el mapa conserva su alto: nadie se lo roba", async ({ page }) => {
   // matriz: en 1280×800 el recorte de paddings de `@media (max-height: 800px)`
   // es lo único que impide que el escenario caiga a su piso de 280 px.
   await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+  // [T-2.57] `gotoScreen` espera al `data-screen-label`, que monta ANTES de que
+  // el StateFrame del wall reciba `/telemetry/map/state`: hasta entonces el wall
+  // pinta su estado de carga y `.soc-stage` no existe. Medir ahí daba un fallo
+  // que parecía del layout y era una carrera del test.
+  await expect(page.locator(".soc-stage")).toBeVisible();
   const stage = await boxOf(page.locator(".soc-stage"));
   expect(stage, "no se encontró `.soc-stage` visible").not.toBeNull();
   expect(
