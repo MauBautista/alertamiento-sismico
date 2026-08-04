@@ -38,7 +38,7 @@ export default function SiteCard({ cabinet }: { cabinet: FleetCabinet }) {
           <div className="fleet-card__name">{cabinet.siteName}</div>
           <div className="fleet-card__loc">
             <MapPin size={11} aria-hidden />
-            {cabinet.siteCode ?? gw.serial}
+            {cabinet.siteCode}
             {gw.iot_thing && <span className="fleet-card__tenant"> · {gw.iot_thing}</span>}
           </div>
         </div>

@@ -29,6 +29,9 @@ function cabinet(id: string, state: string): FleetCabinet {
     gateway: {
       gateway_id: id,
       site_id: `s-${id}`,
+      site_name: `Sitio ${id}`,
+      site_code: `C-${id}`,
+      site_status: "active",
       serial: `TKB-${id}`,
       fw_version: "edge-1.4.0",
       iot_thing: null,
@@ -46,7 +49,8 @@ function cabinet(id: string, state: string): FleetCabinet {
       ntp_offset_ms: null,
     },
     siteName: `Sitio ${id}`,
-    siteCode: null,
+    siteCode: `C-${id}`,
+    siteStatus: "active",
     relays: null,
   };
 }

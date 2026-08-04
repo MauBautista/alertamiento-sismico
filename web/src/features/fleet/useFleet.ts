@@ -1,12 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-import {
-  listGatewaysFleetGatewaysGet,
-  listRuleSetsRuleSetsGet,
-  listSitesSitesGet,
-} from "@takab/sdk";
-import type { GatewayOut, RuleSetOut, SiteOut } from "@takab/sdk";
+import { listGatewaysFleetGatewaysGet, listRuleSetsRuleSetsGet } from "@takab/sdk";
+import type { GatewayOut, RuleSetOut } from "@takab/sdk";
 
 import { useSessionStore } from "../../auth/session.store";
 
@@ -28,8 +24,11 @@ export interface FleetRelay {
 
 export interface FleetCabinet {
   gateway: GatewayOut;
+  /** [T-2.35] Del SERVIDOR. Ver `buildCabinets` para por qué ya no se deriva aquí. */
   siteName: string;
-  siteCode: string | null;
+  siteCode: string;
+  /** 'active' | 'retired' — un gabinete vivo en un sitio retirado se rotula. */
+  siteStatus: string;
   /** null = config de relays no visible (sin rule_set o /rule-sets falló). */
   relays: FleetRelay[] | null;
 }
@@ -50,18 +49,12 @@ class FleetRequestError extends Error {
   }
 }
 
-async function fetchGateways(): Promise<GatewayOut[]> {
-  const { data, response } = await listGatewaysFleetGatewaysGet();
+async function fetchGateways(includeRetired: boolean): Promise<GatewayOut[]> {
+  const { data, response } = await listGatewaysFleetGatewaysGet(
+    includeRetired ? { query: { include_retired: true } } : undefined,
+  );
   if (data === undefined) {
     throw new FleetRequestError("/fleet/gateways", response.status);
-  }
-  return data;
-}
-
-async function fetchSites(): Promise<SiteOut[]> {
-  const { data, response } = await listSitesSitesGet();
-  if (data === undefined) {
-    throw new FleetRequestError("/sites", response.status);
   }
   return data;
 }
@@ -146,33 +139,43 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
   return [...declared, ...undeclared];
 }
 
-/** View-model puro (exportado para tests sin DOM). */
+/**
+ * View-model puro (exportado para tests sin DOM).
+ *
+ * [T-2.35] El nombre del sitio VIENE DEL SERVIDOR; aquí ya no se hace join ni se
+ * fabrica nada. Antes se cruzaba contra `/sites`, que oculta los retirados: un
+ * gabinete cuyo sitio se había retirado perdía su nombre y esta función lo
+ * rebautizaba `SITIO <8 hex>`. Como además el inventario devolvía a esos huérfanos y
+ * la UI no tenía forma de borrarlos, el operador veía varias "estaciones fantasma"
+ * con el mismo rótulo. Sin fallback que inventar, la clase de bug desaparece.
+ */
 export function buildCabinets(
   gateways: GatewayOut[] | undefined,
-  sites: SiteOut[] | undefined,
   ruleSets: RuleSetOut[] | undefined,
 ): FleetCabinet[] {
   if (!gateways) {
     return [];
   }
-  const byId = new Map((sites ?? []).map((s) => [s.site_id, s]));
-  return gateways.map((gw) => {
-    const site = byId.get(gw.site_id);
-    return {
-      gateway: gw,
-      siteName: site?.name ?? `SITIO ${gw.site_id.slice(0, 8)}`,
-      siteCode: site?.code ?? null,
-      relays: relaysFor(gw, ruleSets),
-    };
-  });
+  return gateways.map((gw) => ({
+    gateway: gw,
+    siteName: gw.site_name,
+    siteCode: gw.site_code,
+    siteStatus: gw.site_status,
+    relays: relaysFor(gw, ruleSets),
+  }));
+}
+
+export interface UseFleetOptions {
+  /** [T-2.35] Incluye gabinetes retirados (y los de sitios retirados) para restaurarlos. */
+  includeRetired?: boolean;
 }
 
 /**
- * Inventario de la flota: /fleet/gateways (estado YA derivado server-side —
- * la UI solo pinta) enriquecido con /sites y /rule-sets, que degradan sin
- * tumbar la página si fallan.
+ * Inventario de la flota: /fleet/gateways (estado y nombre de sitio YA derivados
+ * server-side — la UI solo pinta) enriquecido con /rule-sets, que degrada sin
+ * tumbar la página si falla.
  */
-export function useFleet(): FleetData {
+export function useFleet({ includeRetired = false }: UseFleetOptions = {}): FleetData {
   // /fleet/gateways exige permiso de flota. FleetPage ya vive detrás del
   // RouteGuard, pero useSiteRelays monta este hook en la CONSOLA, donde
   // inspector y building_admin sí entran y no pueden leer la flota: sin este
@@ -181,15 +184,12 @@ export function useFleet(): FleetData {
   const canReadFleet = useSessionStore((s) => s.me?.allowed_routes.includes("/fleet") ?? false);
 
   const gateways = useQuery({
-    queryKey: ["fleet", "gateways"],
-    queryFn: fetchGateways,
+    // `includeRetired` va en la clave: si no, el toggle mostraría la caché del otro
+    // modo y el operador creería que no hay retirados que restaurar.
+    queryKey: ["fleet", "gateways", includeRetired],
+    queryFn: () => fetchGateways(includeRetired),
     refetchInterval: FLEET_REFETCH_MS,
     enabled: canReadFleet,
-  });
-  const sites = useQuery({
-    queryKey: ["sites"],
-    queryFn: fetchSites,
-    staleTime: 300_000,
   });
   const ruleSets = useQuery({
     queryKey: ["rule-sets"],
@@ -198,8 +198,8 @@ export function useFleet(): FleetData {
   });
 
   const cabinets = useMemo(
-    () => buildCabinets(gateways.data, sites.data, ruleSets.data),
-    [gateways.data, sites.data, ruleSets.data],
+    () => buildCabinets(gateways.data, ruleSets.data),
+    [gateways.data, ruleSets.data],
   );
 
   return {

@@ -575,6 +575,12 @@ export type GatewayCreate = {
 
 /**
  * Gateway del tenant + estado derivado del último ``device_health``.
+ *
+ * [T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web
+ * los resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete
+ * huérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos
+ * huérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que
+ * inventar — la clase de bug entera desaparece.
  */
 export type GatewayOut = {
     battery_pct?: number | null;
@@ -594,7 +600,10 @@ export type GatewayOut = {
     row_version: string;
     seedlink_lag_s?: number | null;
     serial: string;
+    site_code: string;
     site_id: string;
+    site_name: string;
+    site_status: string;
     status: string;
 };
 
@@ -1712,9 +1721,20 @@ export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponse = VerifyEvidenceE
 export type ListGatewaysFleetGatewaysGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        include_retired?: boolean;
+    };
     url: '/fleet/gateways';
 };
+
+export type ListGatewaysFleetGatewaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListGatewaysFleetGatewaysGetError = ListGatewaysFleetGatewaysGetErrors[keyof ListGatewaysFleetGatewaysGetErrors];
 
 export type ListGatewaysFleetGatewaysGetResponses = {
     /**

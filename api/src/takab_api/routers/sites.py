@@ -162,12 +162,21 @@ async def retire_site(
     claims: Claims = Depends(_require_manage),
     conn: AsyncConnection = Depends(read_session),
 ) -> SiteOut:
-    """Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable."""
+    """Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.
+
+    [T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y
+    el hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía
+    candidato de config firmada y de comandos de actuación (ambos predicados miran
+    ``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:
+    volver a encender hardware es un acto explícito, no un efecto colateral.
+    """
     if await q.get_site(conn, site_id) is None:
         raise http_error(404, "sitio no encontrado")
     row = await q.retire_site(conn, site_id)
     if row is None:  # visible por RLS de lectura, no escribible: no debería ocurrir
         raise http_error(403, "sin permiso para retirar este sitio")
+
+    retired_gateways = await q.retire_site_gateways(conn, site_id)
 
     await audit_async(
         conn,
@@ -175,6 +184,17 @@ async def retire_site(
         actor=f"user:{claims.sub}",
         verb="site_retire",
         obj=f"site:{site_id}",
-        meta={"code": row.code},
+        meta={"code": row.code, "gateways_retired": len(retired_gateways)},
     )
+    # Una fila por gabinete: la bitácora debe decir QUÉ hardware se apagó, no solo
+    # cuántos. Los retirados de una pasada previa no reaparecen (RETURNING vacío).
+    for gw in retired_gateways:
+        await audit_async(
+            conn,
+            tenant_id=row.tenant_id,
+            actor=f"user:{claims.sub}",
+            verb="gateway_retire",
+            obj=f"gateway:{gw.gateway_id}",
+            meta={"serial": gw.serial, "reason": "retiro del sitio", "site_code": row.code},
+        )
     return _out(row)

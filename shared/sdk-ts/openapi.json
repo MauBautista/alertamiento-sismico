@@ -2402,7 +2402,7 @@
         "type": "object"
       },
       "GatewayOut": {
-        "description": "Gateway del tenant + estado derivado del último ``device_health``.",
+        "description": "Gateway del tenant + estado derivado del último ``device_health``.\n\n[T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web\nlos resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete\nhuérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos\nhuérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que\ninventar — la clase de bug entera desaparece.",
         "properties": {
           "battery_pct": {
             "anyOf": [
@@ -2548,9 +2548,21 @@
             "title": "Serial",
             "type": "string"
           },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "site_status": {
+            "title": "Site Status",
             "type": "string"
           },
           "status": {
@@ -2561,6 +2573,9 @@
         "required": [
           "gateway_id",
           "site_id",
+          "site_name",
+          "site_code",
+          "site_status",
           "serial",
           "status",
           "has_wr1",
@@ -6933,8 +6948,20 @@
     },
     "/fleet/gateways": {
       "get": {
-        "description": "Gateways del tenant con su estado derivado del último ``device_health``.",
+        "description": "Gateways del tenant con su estado derivado del último ``device_health``.\n\n[T-2.35] Oculta lo retirado por defecto —el gabinete mismo o su sitio padre—,\nespejando ``GET /sites?include_retired``. Sin este filtro el inventario devolvía\nhardware dado de baja que la consola no tenía forma de quitar de la pantalla.",
         "operationId": "list_gateways_fleet_gateways_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6949,6 +6976,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Gateways"
@@ -8842,7 +8879,7 @@
     },
     "/sites/{site_id}": {
       "delete": {
-        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.",
+        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.\n\n[T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y\nel hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía\ncandidato de config firmada y de comandos de actuación (ambos predicados miran\n``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:\nvolver a encender hardware es un acto explícito, no un efecto colateral.",
         "operationId": "retire_site_sites__site_id__delete",
         "parameters": [
           {

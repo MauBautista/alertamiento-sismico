@@ -36,6 +36,9 @@ beforeEach(() => {
 const GW: GatewayOut = {
   gateway_id: "g-1",
   site_id: "s-1",
+  site_name: "Planta Cholula",
+  site_code: "CHL-A",
+  site_status: "active",
   serial: "TKB-0001",
   fw_version: "edge-1.4.0",
   iot_thing: "gw-dev-0001",
@@ -58,6 +61,7 @@ function cabinet(over: Partial<FleetCabinet> = {}, gw: Partial<GatewayOut> = {})
     gateway: { ...GW, ...gw },
     siteName: "Planta Cholula",
     siteCode: "CHL-A",
+    siteStatus: "active",
     relays: [
       { key: "siren", label: "SIRENA", wiring: "NO", armed: true },
       { key: "gas_valve", label: "GAS", wiring: "fail_close", armed: true },

@@ -158,10 +158,20 @@ class EquipmentProfile(BaseModel):
 
 
 class GatewayOut(BaseModel):
-    """Gateway del tenant + estado derivado del último ``device_health``."""
+    """Gateway del tenant + estado derivado del último ``device_health``.
+
+    [T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web
+    los resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete
+    huérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos
+    huérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que
+    inventar — la clase de bug entera desaparece.
+    """
 
     gateway_id: UUID
     site_id: UUID
+    site_name: str
+    site_code: str
+    site_status: str
     serial: str
     fw_version: str | None = None
     iot_thing: str | None = None

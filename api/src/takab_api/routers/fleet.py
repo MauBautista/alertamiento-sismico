@@ -113,11 +113,17 @@ async def get_gateway_config_state(
 
 @router.get("/fleet/gateways", response_model=list[GatewayOut])
 async def list_gateways(
+    include_retired: bool = False,
     conn: AsyncConnection = Depends(read_session),
 ) -> list[GatewayOut]:
-    """Gateways del tenant con su estado derivado del último ``device_health``."""
+    """Gateways del tenant con su estado derivado del último ``device_health``.
+
+    [T-2.35] Oculta lo retirado por defecto —el gabinete mismo o su sitio padre—,
+    espejando ``GET /sites?include_retired``. Sin este filtro el inventario devolvía
+    hardware dado de baja que la consola no tenía forma de quitar de la pantalla.
+    """
     s = Settings()
-    rows = await q.list_gateways_with_health(conn)
+    rows = await q.list_gateways_with_health(conn, include_retired=include_retired)
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)
@@ -159,6 +165,9 @@ async def list_gateways(
             GatewayOut(
                 gateway_id=m["gateway_id"],
                 site_id=m["site_id"],
+                site_name=m["site_name"],
+                site_code=m["site_code"],
+                site_status=m["site_status"],
                 serial=m["serial"],
                 fw_version=m["fw_version"],
                 iot_thing=m["iot_thing"],

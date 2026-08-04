@@ -15,10 +15,23 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+# [T-2.35] El JOIN a `sites` y el WHERE no son adorno: eran la ÚNICA query del repo
+# que devolvía TODO sin filtrar, y de ahí salían las "estaciones fantasma". Como
+# `retire_site` tampoco tocaba `gateways`, cada retiro dejaba una tarjeta indeleble
+# cuyo nombre la web tenía que inventar (`SITIO <8 hex>`) — dos huérfanos parecían el
+# mismo. Ahora el nombre del sitio VIAJA CON LA FILA: sin join en el cliente no hay
+# fallback que fabricar.
+#
+# El JOIN es INNER a propósito y no pierde filas: `gateways.site_id` es
+# `NOT NULL REFERENCES sites` (db/schema.sql). Tampoco ensancha la visibilidad:
+# `sites_read` y `gateways_read` tienen políticas equivalentes.
 _LIST = text(
     """
     SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.iot_thing,
            g.status, g.has_wr1, g.equipment, g.installed_at, g.xmin::text AS row_version,
+           s.name   AS site_name,
+           s.code   AS site_code,
+           s.status AS site_status,
            h.ts AS health_ts, h.power_status,
            h.battery_pct::float8       AS battery_pct,
            h.cert_days_remaining,
@@ -27,6 +40,7 @@ _LIST = text(
            h.ntp_offset_ms::float8     AS ntp_offset_ms,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
     FROM gateways g
+    JOIN sites s ON s.site_id = g.site_id
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
                dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
@@ -35,14 +49,22 @@ _LIST = text(
         ORDER BY dh.ts DESC
         LIMIT 1
     ) h ON true
-    ORDER BY g.serial, g.gateway_id
+    WHERE :include_retired
+       OR (g.status <> 'retired' AND s.status <> 'retired')
+    ORDER BY s.name, g.serial, g.gateway_id
     """
 )
 
 
-async def list_gateways_with_health(conn: AsyncConnection) -> Sequence[Row]:
-    """Gateways del tenant + su último heartbeat (RLS por tenant en ambas tablas)."""
-    return (await conn.execute(_LIST)).all()
+async def list_gateways_with_health(
+    conn: AsyncConnection, *, include_retired: bool = False
+) -> Sequence[Row]:
+    """Gateways del tenant + su último heartbeat (RLS por tenant en todas las tablas).
+
+    Por defecto oculta lo retirado —gabinete propio O sitio padre—; los retirados solo
+    se piden explícitamente, para poder restaurarlos.
+    """
+    return (await conn.execute(_LIST, {"include_retired": include_retired})).all()
 
 
 # Estado del sync firmado de UN gateway. El rule_set se resuelve EXACTAMENTE como

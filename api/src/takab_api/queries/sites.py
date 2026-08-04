@@ -58,6 +58,18 @@ _UPDATE = text(
 # Retiro lógico e idempotente: retirar dos veces devuelve la misma fila.
 _RETIRE = text(f"UPDATE sites SET status = 'retired' WHERE site_id = :id RETURNING {_COLS}")
 
+# [T-2.35] Retirar la estación apaga su hardware EN LA MISMA TRANSACCIÓN. No es
+# cosmética de UI: `commands/sync.py` y `queries/commands.py` filtran por
+# `gateways.status`, NO por `sites.status`. Un gabinete cuyo sitio se retiró seguía
+# siendo candidato de config firmada y de comandos de actuación — hardware fuera de
+# todo catálogo que aún podía recibir órdenes.
+# Idempotente: la segunda pasada devuelve 0 filas y no vuelve a auditar.
+_RETIRE_GATEWAYS = text(
+    "UPDATE gateways SET status = 'retired' "
+    "WHERE site_id = :id AND status <> 'retired' "
+    "RETURNING gateway_id, serial"
+)
+
 
 async def list_sites(conn: AsyncConnection, *, include_retired: bool = False) -> Sequence[Row]:
     """Sitios visibles al request (RLS por tenant). Los retirados solo si se piden."""
@@ -90,3 +102,8 @@ async def update_site(
 async def retire_site(conn: AsyncConnection, site_id: UUID) -> Row | None:
     """Marca el sitio como ``retired``. ``None`` si RLS no lo deja tocarlo."""
     return (await conn.execute(_RETIRE, {"id": site_id})).first()
+
+
+async def retire_site_gateways(conn: AsyncConnection, site_id: UUID) -> Sequence[Row]:
+    """Retira los gabinetes del sitio. Devuelve solo los que CAMBIARON (idempotencia)."""
+    return (await conn.execute(_RETIRE_GATEWAYS, {"id": site_id})).all()
