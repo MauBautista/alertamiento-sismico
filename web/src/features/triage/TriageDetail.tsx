@@ -11,6 +11,8 @@ import { useState } from "react";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
+import IncidentTimeline from "./IncidentTimeline";
+import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
 import {
@@ -28,6 +30,7 @@ import {
   verdictOf,
 } from "./model";
 import type { TriageRow } from "./model";
+import type { ForensicsState } from "./useForensics";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 
 const VERDICT_ICON = { crit: AlertOctagon, warn: AlertTriangle, ok: CheckCircle2 } as const;
@@ -80,6 +83,8 @@ function countOf(res: Resource<unknown[]>): string {
 export interface TriageDetailProps {
   row: TriageRow;
   detail: IncidentDetailData;
+  /** [T-2.40] Hechos medidos; el MISMO objeto que consume el dictamen PDF. */
+  forensics: ForensicsState;
   minNodes: number | null;
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
@@ -109,6 +114,7 @@ export interface TriageDetailProps {
 export default function TriageDetail({
   row,
   detail,
+  forensics,
   minNodes,
   canSign,
   canExport,
@@ -192,6 +198,12 @@ export default function TriageDetail({
         </p>
       )}
 
+      {/* [T-2.40] Desempeño de la red, al estilo del post-mortem que USGS publica
+          tras cada sismo relevante: tiempo de aviso, estaciones que contribuyeron y
+          contraste con el catálogo. Convierte "el sistema funcionó" en algo
+          verificable. */}
+      <PostEventSummary forensics={forensics} />
+
       <QuorumNodes
         view={quorum}
         eventState={eventStateOf(row, event)}
@@ -231,6 +243,10 @@ export default function TriageDetail({
           )}
         </StateFrame>
       </div>
+
+      {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
+          número desperdiciaba precisamente eso. */}
+      <IncidentTimeline actions={actions} onRetry={detail.refetch} />
 
       {detail.exportError && (
         <p className="soc-meta" role="alert">
@@ -327,9 +343,7 @@ export default function TriageDetail({
 
             <div className="triage-detail__chain">
               <ShieldCheck size={11} aria-hidden />
-              CADENA DE CUSTODIA · {countOf(dictamens)} VERSIÓN(ES) APPEND-ONLY · {countOf(actions)}{" "}
-              ACCIONES REGISTRADAS
-              {actions.error && " (bitácora no disponible)"}
+              CADENA DE CUSTODIA · {countOf(dictamens)} VERSIÓN(ES) APPEND-ONLY
               {head.signed_by && ` · firmó ${head.signed_by.slice(0, 8)}`}
             </div>
           </>

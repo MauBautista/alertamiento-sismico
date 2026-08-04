@@ -39,6 +39,16 @@ export type AuthFrame = {
 };
 
 /**
+ * Diferencia entre lo que estimó la red y lo que dice el catálogo.
+ */
+export type CatalogDelta = {
+    bearing?: string | null;
+    dt_s: number;
+    km?: number | null;
+    magnitude?: number | null;
+};
+
+/**
  * Lista completa (13 sismos ratificados; sin paginación).
  */
 export type CatalogEarthquakeList = {
@@ -63,6 +73,24 @@ export type CatalogEarthquakeOut = {
 };
 
 /**
+ * Sismo del catálogo de referencia más cercano en tiempo.
+ *
+ * Es el único contraste externo disponible. Sirve para declarar "la red estimó
+ * esto, el catálogo dice aquello", no para corregir el dato propio.
+ */
+export type CatalogMatch = {
+    catalog_key: string;
+    depth_km?: number | null;
+    dt_s: number;
+    lat?: number | null;
+    lon?: number | null;
+    magnitude?: number | null;
+    origin_time: string;
+    place?: string | null;
+    source: string;
+};
+
+/**
  * [T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.
  *
  * El cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/
@@ -82,6 +110,21 @@ export type CatalogPushOut = {
     gateway_id: string;
     topic: string;
     version: number;
+};
+
+/**
+ * Pico de un canal SEED en la ventana del incidente.
+ */
+export type ChannelPeak = {
+    channel: string;
+    clipped?: boolean;
+    energy_sum?: number | null;
+    peak_pga_g?: number | null;
+    peak_pgv_cms?: number | null;
+    peak_rms?: number | null;
+    peak_stalta?: number | null;
+    peak_ts?: string | null;
+    samples?: number;
 };
 
 /**
@@ -525,6 +568,35 @@ export type FeaturesFrame = {
     rows: Array<FeatureRow>;
     site_id: string;
     type?: 'features';
+};
+
+/**
+ * Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.
+ *
+ * ``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el
+ * pico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un
+ * incidente disparado por umbral local la "alerta" ES la sacudida, y el número sería
+ * cero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y
+ * ``lead_time_reason`` dice por qué; nunca 0.
+ */
+export type ForensicsOut = {
+    calibrated?: boolean;
+    catalog?: CatalogMatch | null;
+    catalog_delta?: CatalogDelta | null;
+    channels?: Array<ChannelPeak>;
+    felt_band?: string;
+    incident_id: string;
+    lead_time_reason?: string | null;
+    lead_time_s?: number | null;
+    peak_pga_g?: number | null;
+    peak_pgv_cms?: number | null;
+    peak_ts?: string | null;
+    peers?: Array<QuorumPeer>;
+    sensors?: Array<SensorInfo>;
+    site?: SiteGeo | null;
+    station_count?: number;
+    window_from: string;
+    window_to: string;
 };
 
 /**
@@ -1114,6 +1186,19 @@ export type PushTokenOut = {
 };
 
 /**
+ * Estación que votó. Coordenadas nulas = la RLS oculta esa estación (otra red).
+ */
+export type QuorumPeer = {
+    counted: boolean;
+    delta_s?: number | null;
+    lat?: number | null;
+    lon?: number | null;
+    pga_g?: number | null;
+    sensor_id: string;
+    site_code?: string | null;
+};
+
+/**
  * Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.
  *
  * [T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa
@@ -1296,6 +1381,24 @@ export type SensorCreate = {
 };
 
 /**
+ * Sensor del sitio. ``calibration_source`` decide la honestidad de las unidades.
+ *
+ * Sin procedencia declarada, el PGA/PGV NO está en g ni cm/s: son valores
+ * RELATIVOS. Un dictamen que los presentara como gravedades estaría afirmando una
+ * medición física que nadie hizo.
+ */
+export type SensorInfo = {
+    calibration_source?: string | null;
+    channels?: Array<string>;
+    kind: string;
+    model: string;
+    mount?: string | null;
+    sample_rate?: number | null;
+    sensor_id: string;
+    serial?: string | null;
+};
+
+/**
  * Sensor de un sitio (RS4D estructural o de terreno).
  */
 export type SensorOut = {
@@ -1395,6 +1498,19 @@ export type SiteDetailOut = {
     tenant_id: string;
     timezone: string;
     zones: Array<ZoneOut>;
+};
+
+/**
+ * Ficha del sitio para el croquis y la portada del dictamen.
+ */
+export type SiteGeo = {
+    address?: string | null;
+    building_type?: string | null;
+    code: string;
+    criticality?: string | null;
+    lat?: number | null;
+    lon?: number | null;
+    name: string;
 };
 
 /**
@@ -2471,6 +2587,33 @@ export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponses = {
 };
 
 export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponse = RegisterEvidenceIncidentsIncidentIdEvidencePostResponses[keyof RegisterEvidenceIncidentsIncidentIdEvidencePostResponses];
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/forensics';
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetError = IncidentForensicsIncidentsIncidentIdForensicsGetErrors[keyof IncidentForensicsIncidentsIncidentIdForensicsGetErrors];
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ForensicsOut;
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetResponse = IncidentForensicsIncidentsIncidentIdForensicsGetResponses[keyof IncidentForensicsIncidentsIncidentIdForensicsGetResponses];
 
 export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostData = {
     body: HeadcountCloseIn;

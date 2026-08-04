@@ -1583,3 +1583,85 @@
   border-left: 2px solid var(--tk-border-strong);
   padding-left: 8px;
 }
+
+/* [T-2.40] Resumen post-evento, matriz de inspección y bitácora. */
+.postevent__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.postevent__tile {
+  border: 1px solid var(--tk-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.postevent__tile--ok { border-color: var(--tk-status-normal-15); }
+.postevent__tile--warn { border-color: var(--tk-status-warning); }
+.postevent__lbl { font-size: 8.5px; letter-spacing: 0.12em; color: var(--tk-fg-3); }
+.postevent__val {
+  font-family: var(--tk-font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tk-fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.postevent__note { font-size: 9px; line-height: 1.35; color: var(--tk-fg-3); }
+.postevent__tile--warn .postevent__note { color: var(--tk-status-warning); }
+
+/* La matriz de inspección se parece a un dictamen, así que el descargo va ARRIBA y
+   no en un tooltip: un cuadro con semáforos junto a un panel de dictámenes se
+   confunde solo si nadie lo desmiente. */
+.inspection__disclaimer {
+  margin: 0 0 8px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.inspection__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.inspection__row {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+.inspection__row:hover { border-color: var(--tk-border-strong); }
+.inspection__row:focus-visible { outline: var(--tk-focus-ring); outline-offset: -2px; }
+.inspection__row.is-selected { background: var(--tk-surface-2); border-color: var(--tk-cyan); }
+.inspection__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tk-fg-3); }
+.inspection__row--rojo .inspection__dot { background: var(--tk-status-critical); }
+.inspection__row--naranja .inspection__dot { background: var(--tk-status-warning); }
+.inspection__row--amarillo .inspection__dot { background: var(--tk-status-warning); opacity: 0.55; }
+.inspection__row--verde .inspection__dot { background: var(--tk-status-normal); }
+.inspection__row--gris .inspection__dot { background: var(--tk-fg-3); }
+.inspection__site { font-size: 11px; color: var(--tk-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspection__pga { font-size: 10px; color: var(--tk-fg-2); }
+.inspection__level { font-size: 8.5px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+
+.timeline__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.timeline__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--tk-border);
+}
+.timeline__ts { color: var(--tk-fg-3); font-size: 9px; }
+.timeline__kind { color: var(--tk-fg-1); letter-spacing: 0.04em; }
+.timeline__actor { color: var(--tk-fg-3); font-size: 9px; }
+
+@media (max-width: 1100px) {
+  .inspection__row { grid-template-columns: 10px minmax(0, 1fr) auto; }
+  .inspection__level { grid-column: 2 / -1; }
+}

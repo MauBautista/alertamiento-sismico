@@ -123,6 +123,53 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "CatalogDelta": {
+        "description": "Diferencia entre lo que estimó la red y lo que dice el catálogo.",
+        "properties": {
+          "bearing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bearing"
+          },
+          "dt_s": {
+            "title": "Dt S",
+            "type": "number"
+          },
+          "km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          }
+        },
+        "required": [
+          "dt_s"
+        ],
+        "title": "CatalogDelta",
+        "type": "object"
+      },
       "CatalogEarthquakeList": {
         "description": "Lista completa (13 sismos ratificados; sin paginación).",
         "properties": {
@@ -220,6 +267,91 @@
         "title": "CatalogEarthquakeOut",
         "type": "object"
       },
+      "CatalogMatch": {
+        "description": "Sismo del catálogo de referencia más cercano en tiempo.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.",
+        "properties": {
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "dt_s": {
+            "title": "Dt S",
+            "type": "number"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "origin_time": {
+            "format": "date-time",
+            "title": "Origin Time",
+            "type": "string"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_key",
+          "origin_time",
+          "source",
+          "dt_s"
+        ],
+        "title": "CatalogMatch",
+        "type": "object"
+      },
       "CatalogPushIn": {
         "description": "[T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.\n\nEl cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/\neventos[m,fecha,hora,lat,lon,prof,loc]/referencias`): el mismo archivo que\ninstala `provision_gateway.sh --catalog`. El edge re-valida fail-closed.",
         "properties": {
@@ -257,6 +389,97 @@
           "topic"
         ],
         "title": "CatalogPushOut",
+        "type": "object"
+      },
+      "ChannelPeak": {
+        "description": "Pico de un canal SEED en la ventana del incidente.",
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "clipped": {
+            "default": false,
+            "title": "Clipped",
+            "type": "boolean"
+          },
+          "energy_sum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Sum"
+          },
+          "peak_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pga G"
+          },
+          "peak_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pgv Cms"
+          },
+          "peak_rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Rms"
+          },
+          "peak_stalta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Stalta"
+          },
+          "peak_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Ts"
+          },
+          "samples": {
+            "default": 0,
+            "title": "Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "ChannelPeak",
         "type": "object"
       },
       "ChannelSeries": {
@@ -2268,6 +2491,158 @@
           "rows"
         ],
         "title": "FeaturesFrame",
+        "type": "object"
+      },
+      "ForensicsOut": {
+        "description": "Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.\n\n``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el\npico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un\nincidente disparado por umbral local la \"alerta\" ES la sacudida, y el número sería\ncero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y\n``lead_time_reason`` dice por qué; nunca 0.",
+        "properties": {
+          "calibrated": {
+            "default": false,
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogMatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalog_delta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogDelta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ChannelPeak"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "felt_band": {
+            "default": "unknown",
+            "title": "Felt Band",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "lead_time_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time Reason"
+          },
+          "lead_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time S"
+          },
+          "peak_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pga G"
+          },
+          "peak_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pgv Cms"
+          },
+          "peak_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Ts"
+          },
+          "peers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/QuorumPeer"
+            },
+            "title": "Peers",
+            "type": "array"
+          },
+          "sensors": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SensorInfo"
+            },
+            "title": "Sensors",
+            "type": "array"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteGeo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "station_count": {
+            "default": 0,
+            "title": "Station Count",
+            "type": "integer"
+          },
+          "window_from": {
+            "format": "date-time",
+            "title": "Window From",
+            "type": "string"
+          },
+          "window_to": {
+            "format": "date-time",
+            "title": "Window To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "window_from",
+          "window_to"
+        ],
+        "title": "ForensicsOut",
         "type": "object"
       },
       "GatewayConfigStateOut": {
@@ -4614,6 +4989,81 @@
         "title": "PushTokenOut",
         "type": "object"
       },
+      "QuorumPeer": {
+        "description": "Estación que votó. Coordenadas nulas = la RLS oculta esa estación (otra red).",
+        "properties": {
+          "counted": {
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "delta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta S"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga G"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          }
+        },
+        "required": [
+          "sensor_id",
+          "counted"
+        ],
+        "title": "QuorumPeer",
+        "type": "object"
+      },
       "QuorumVoteOut": {
         "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.\n\n[T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa\nalgo: el voto viene de una estación que la RLS de este tenant no deja ver. La\nconsola lo rotula \"OTRA RED\" — que es el hecho — en vez de un uuid truncado.",
         "properties": {
@@ -5337,6 +5787,83 @@
         "title": "SensorCreate",
         "type": "object"
       },
+      "SensorInfo": {
+        "description": "Sensor del sitio. ``calibration_source`` decide la honestidad de las unidades.\n\nSin procedencia declarada, el PGA/PGV NO está en g ni cm/s: son valores\nRELATIVOS. Un dictamen que los presentara como gravedades estaría afirmando una\nmedición física que nadie hizo.",
+        "properties": {
+          "calibration_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Source"
+          },
+          "channels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          }
+        },
+        "required": [
+          "sensor_id",
+          "kind",
+          "model"
+        ],
+        "title": "SensorInfo",
+        "type": "object"
+      },
       "SensorOut": {
         "description": "Sensor de un sitio (RS4D estructural o de terreno).",
         "properties": {
@@ -5987,6 +6514,80 @@
           "zones"
         ],
         "title": "SiteDetailOut",
+        "type": "object"
+      },
+      "SiteGeo": {
+        "description": "Ficha del sitio para el croquis y la portada del dictamen.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "criticality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criticality"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "SiteGeo",
         "type": "object"
       },
       "SiteOut": {
@@ -8447,6 +9048,47 @@
           }
         },
         "summary": "Register Evidence"
+      }
+    },
+    "/incidents/{incident_id}/forensics": {
+      "get": {
+        "description": "Picos por canal, tiempo de aviso, quórum, catálogo y calibración.\n\nAlimenta la pantalla y el dictamen PDF con los MISMOS números: dos rutas\ndistintas para los mismos hechos acabarían discrepando, y un dictamen que no\ncoincide con lo que el operador vio en pantalla es peor que ninguno.",
+        "operationId": "incident_forensics_incidents__incident_id__forensics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForensicsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Forensics"
       }
     },
     "/incidents/{incident_id}/headcount/close": {

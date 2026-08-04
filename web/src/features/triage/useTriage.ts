@@ -107,6 +107,8 @@ export interface TriageData {
   /** `config.quorum.min_nodes` ACTUAL que aplica a un sitio (scope site preferente
    * sobre tenant, como el motor). Es contexto de configuración, no un veredicto. */
   minNodesFor: (siteId: string | null) => number | null;
+  /** [T-2.40] Criticidad declarada del inmueble (`sites.criticality`), o `null`. */
+  criticalityOf: (siteId: string) => string | null;
   loading: boolean;
   error: string | null;
   dataUpdatedAt: number;
@@ -176,6 +178,11 @@ export function useTriage(filters: TriageFilters): TriageData {
     [incidentItems, events.data, sites.data],
   );
 
+  const criticalityOf = useCallback(
+    (siteId: string) => sites.data?.find((s) => s.site_id === siteId)?.criticality ?? null,
+    [sites.data],
+  );
+
   const minNodesFor = useCallback(
     (siteId: string | null) => minNodesFrom(activeConfigFor(ruleSets.data, siteId)),
     [ruleSets.data],
@@ -184,6 +191,7 @@ export function useTriage(filters: TriageFilters): TriageData {
   return {
     rows,
     minNodesFor,
+    criticalityOf,
     loading: incidents.isPending,
     error: incidents.data === undefined && incidents.error ? incidents.error.message : null,
     dataUpdatedAt: incidents.dataUpdatedAt,

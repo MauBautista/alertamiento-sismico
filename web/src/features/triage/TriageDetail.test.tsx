@@ -46,6 +46,13 @@ const ROW: TriageRow = {
   nodeCount: 3,
 };
 
+const FORENSICS = {
+  data: undefined,
+  loading: false,
+  error: null,
+  refetch: vi.fn(),
+} as unknown as TriageDetailProps["forensics"];
+
 function resource<T>(over: Partial<{ data: T; loading: boolean; error: string | null }> = {}) {
   return {
     data: undefined as T | undefined,
@@ -81,6 +88,7 @@ function arrange(
     <TriageDetail
       row={ROW}
       detail={detail}
+      forensics={FORENSICS}
       minNodes={3}
       canSign={false}
       canExport={false}
@@ -145,6 +153,7 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
             exportError: null,
           } as unknown as TriageDetailProps["detail"]
         }
+        forensics={FORENSICS}
         minNodes={3}
         canSign={false}
         canExport={false}

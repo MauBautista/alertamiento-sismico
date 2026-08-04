@@ -33,6 +33,11 @@ vi.mock("./useTriage", () => ({
   TRIAGE_STALE_MS: 120_000,
 }));
 vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDetail }));
+// [T-2.40] `useForensics` monta react-query; esta suite no lleva provider a propósito
+// (prueba la composición de la página, no la red). Su semántica se prueba aparte.
+vi.mock("./useForensics", () => ({
+  useForensics: () => ({ data: undefined, loading: false, error: null, refetch: vi.fn() }),
+}));
 // CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
 vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 // [T-2.10] El Triage Estructural tiene su propio suite (StructuralTriage.test);
@@ -48,6 +53,7 @@ function triageData(over: Partial<TriageData> = {}): TriageData {
   return {
     rows: ROWS,
     minNodesFor: () => 3,
+    criticalityOf: () => null,
     loading: false,
     error: null,
     dataUpdatedAt: Date.now(),
@@ -280,7 +286,10 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     });
     expect(screen.queryByText(/0 ACCIONES REGISTRADAS/)).toBeNull();
     expect(screen.getByText(/S\/D ACCIONES REGISTRADAS/)).toBeTruthy();
-    expect(screen.getByText(/bitácora no disponible/)).toBeTruthy();
+    // [T-2.40] El fallo dejó de ser un inciso entre paréntesis en la cadena de
+    // custodia: ahora lo declara el StateFrame de la bitácora, con REINTENTAR.
+    // Sigue siendo visible, y además accionable.
+    expect(screen.getByText(/GET actions falló \(500\)/)).toBeTruthy();
   });
 
   it("bitácora vacía de verdad SÍ dice 0", () => {
