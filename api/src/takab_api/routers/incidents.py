@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.deps import get_claims, require_roles
+from takab_api.auth.deps import get_claims, get_console_scope, require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import incidents as q
 from takab_api.routers._common import (
     clamp_limit,
@@ -51,6 +52,7 @@ actions_router = APIRouter(dependencies=[Depends(_require_console_or_panel)])
 @router.get("/incidents", response_model=IncidentPage)
 async def list_incidents(
     conn: AsyncConnection = Depends(read_session),
+    scope: ConsoleScope = Depends(get_console_scope),
     state: str | None = Query(None),
     severity: str | None = Query(None),
     site_id: str | None = Query(None),
@@ -82,6 +84,7 @@ async def list_incidents(
         to_ts=to_ts,
         cursor_opened_at=cur_ts,
         cursor_id=cur_id,
+        scope=scope,
         limit=size + 1,
     )
     rows = (await conn.execute(stmt, params)).mappings().all()

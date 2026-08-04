@@ -18,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import TextClause, text
 
+from takab_api.auth.scope import ConsoleScope, apply_scope
+
 # Columnas de la vista segura que alimentan el strip 1 s del SOC.
 _FEATURE_COLS = "ts, pga_g, pgv_cms, stalta, clipping"
 
@@ -189,14 +191,20 @@ LEFT JOIN LATERAL (
     ORDER BY (rs.scope_type = 'site') DESC, rs.version DESC
     LIMIT 1
 ) th ON true
-WHERE s.status = 'active'
+WHERE s.status = 'active' /*+console_scope*/
 ORDER BY s.name ASC, s.site_id ASC
 """
 
 
-def select_map_state() -> tuple[TextClause, dict[str, Any]]:
-    """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``)."""
-    return text(_MAP_STATE_SQL), {}
+def select_map_state(scope: ConsoleScope) -> tuple[TextClause, dict[str, Any]]:
+    """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``).
+
+    [T-2.45] El ``site_scope`` del claim se aplica ENCIMA de la RLS, no en su lugar: la
+    RLS aísla tenants y el scope acota dentro del tenant. Sin él, un ``soc_operator``
+    acotado a una estación veía el mapa entero de su cliente.
+    """
+    sql, params = apply_scope(_MAP_STATE_SQL, scope, "s.site_id")
+    return text(sql), params
 
 
 # Epicentros de los eventos que tienen incidente ABIERTO. `seismic_events` es de

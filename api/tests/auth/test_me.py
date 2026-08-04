@@ -72,6 +72,9 @@ async def test_me_openapi_publishes_typed_response(client) -> None:
         "tenant_id",
         "role",
         "site_scope",
+        # [T-2.45] La UI declara si el SERVIDOR filtra de verdad; sin este campo la
+        # insignia de alcance afirmaría un filtro que en fase A no se aplica.
+        "console_scope_enforced",
         "surface",
         "allowed_routes",
         "allowed_actions",

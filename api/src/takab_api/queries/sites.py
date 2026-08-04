@@ -19,6 +19,8 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.auth.scope import ConsoleScope, apply_scope
+
 # geom es geography(Point,4326): se castea a geometry para ST_Y/ST_X (lat/lon).
 _COLS = (
     "site_id, tenant_id, code, name, timezone, criticality, "
@@ -28,8 +30,14 @@ _COLS = (
 
 _GEOM = "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography"
 
-_LIST = text(f"SELECT {_COLS} FROM sites WHERE status = 'active' ORDER BY code, site_id")
-_LIST_ALL = text(f"SELECT {_COLS} FROM sites ORDER BY code, site_id")
+# El marcador `/*+console_scope*/` lo sustituye `apply_scope` por el filtro de
+# `site_scope` (T-2.45), o por nada cuando el rol no está acotado.
+_LIST_SQL = (
+    f"SELECT {_COLS} FROM sites WHERE status = 'active' /*+console_scope*/ ORDER BY code, site_id"
+)
+_LIST_ALL_SQL = f"SELECT {_COLS} FROM sites WHERE true /*+console_scope*/ ORDER BY code, site_id"
+_LIST = text(_LIST_SQL.replace("/*+console_scope*/", ""))
+_LIST_ALL = text(_LIST_ALL_SQL.replace("/*+console_scope*/", ""))
 _GET = text(f"SELECT {_COLS} FROM sites WHERE site_id = :id")
 _ZONES = text(
     "SELECT zone_id, name, level_code FROM zones WHERE site_id = :id ORDER BY name, zone_id"
@@ -71,9 +79,18 @@ _RETIRE_GATEWAYS = text(
 )
 
 
-async def list_sites(conn: AsyncConnection, *, include_retired: bool = False) -> Sequence[Row]:
-    """Sitios visibles al request (RLS por tenant). Los retirados solo si se piden."""
-    return (await conn.execute(_LIST_ALL if include_retired else _LIST)).all()
+async def list_sites(
+    conn: AsyncConnection, *, include_retired: bool = False, scope: ConsoleScope | None = None
+) -> Sequence[Row]:
+    """Sitios visibles al request (RLS por tenant). Los retirados solo si se piden.
+
+    [T-2.45] ``scope`` acota por ``site_scope`` dentro del tenant. El catálogo alimenta
+    los selectores de toda la consola: sin acotarlo, un operador restringido seguiría
+    viendo los nombres de estaciones que no le tocan.
+    """
+    base = _LIST_ALL_SQL if include_retired else _LIST_SQL
+    sql, params = apply_scope(base, scope, "site_id") if scope else (base, {})
+    return (await conn.execute(text(sql), params)).all()
 
 
 async def get_site(conn: AsyncConnection, site_id: UUID) -> Row | None:

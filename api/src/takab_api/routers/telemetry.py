@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims
-from takab_api.auth.deps import require_roles
+from takab_api.auth.deps import get_console_scope, require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX
+from takab_api.auth.scope import ConsoleScope
 from takab_api.felt import felt_band, thresholds_from_row
 from takab_api.queries.telemetry import (
     select_features,
@@ -138,13 +139,20 @@ def _map_site(r: Any) -> MapSiteState:
     )
 
 
+def _scope_or_404(scope: ConsoleScope, site_id: UUID) -> None:
+    """[T-2.45] Fuera de alcance ⇒ 404, nunca 403: un 403 confirma que el sitio existe."""
+    if not scope.allows(str(site_id)):
+        raise http_error(404, "sitio no encontrado")
+
+
 @router.get("/map/state", response_model=MapState)
 async def map_state(
     _claims: Claims = Depends(_require_console),
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> MapState:
-    """Estado de todos los sitios visibles: sacudida medida + incidente + epicentros."""
-    stmt, params = select_map_state()
+    """Estado de los sitios visibles Y dentro del alcance: sacudida + incidente + epicentros."""
+    stmt, params = select_map_state(scope)
     sites = [_map_site(r) for r in (await conn.execute(stmt, params)).all()]
 
     ep_stmt, ep_params = select_map_epicenters()
@@ -171,9 +179,11 @@ async def site_features(
     to: str | None = Query(None),
     channel: str | None = Query(None),
     _claims: Claims = Depends(_require_console),
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> FeatureSeries:
     """Strip de features 1 s de un sitio (vista segura). Span máx 2 h, default 10 min."""
+    _scope_or_404(scope, site_id)
     from_ts, to_ts = _resolve_range(from_, to, default_span_s=_DEFAULT_FEATURES_SPAN_S)
     if (to_ts - from_ts).total_seconds() > _MAX_FEATURES_SPAN_S:
         raise http_error(422, "rango de features excede el máximo de 2 h")
@@ -200,6 +210,7 @@ async def site_features_by_channel(
     from_: str | None = Query(None, alias="from"),
     to: str | None = Query(None),
     _claims: Claims = Depends(_require_console),
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> MultiChannelFeatures:
     """Features 1 s por canal SEED (EHZ + EN[ZNE]). Mismo límite de 2 h que el strip.
@@ -207,6 +218,7 @@ async def site_features_by_channel(
     Una sola query agrupada en memoria: los canales de un sitio son 4, y pedirlos por
     separado multiplicaría por cuatro los planes de consulta sobre la vista segura.
     """
+    _scope_or_404(scope, site_id)
     from_ts, to_ts = _resolve_range(from_, to, default_span_s=_DEFAULT_FEATURES_SPAN_S)
     if (to_ts - from_ts).total_seconds() > _MAX_FEATURES_SPAN_S:
         raise http_error(422, "rango de features excede el máximo de 2 h")
@@ -241,9 +253,11 @@ async def site_metrics(
     from_: str | None = Query(None, alias="from"),
     to: str | None = Query(None),
     _claims: Claims = Depends(_require_console),
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> MetricSeries:
     """Máximos por bucket de un sitio (cagg 1m/1h con JOIN sites). Default 24 h."""
+    _scope_or_404(scope, site_id)
     from_ts, to_ts = _resolve_range(from_, to, default_span_s=_DEFAULT_METRICS_SPAN_S)
     resolved = _resolve_bucket(bucket, from_ts, to_ts)
     stmt, params = select_metrics(

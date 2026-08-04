@@ -14,19 +14,24 @@ reconstruyen por request); en tests se limpian los caches al fijar el entorno.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from functools import lru_cache
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.jwks import JWKSProvider, select_jwks, select_jwks_occupants
+from takab_api.auth.scope import ConsoleScope, console_scope
 from takab_api.auth.tokens import AuthError, decode_verify_any
 from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.settings import Settings
 
 # Superficies del token que pueden usar el SOC web.
+log = logging.getLogger("takab_api.auth")
+
 _WEB_SURFACES = frozenset({"web", "both"})
 
 # Superficies del token que pueden usar la app móvil (T-2.03).
@@ -122,3 +127,42 @@ async def get_session(
     """
     async with get_tenant_conn(SessionCtx.from_claims(claims)) as conn:
         yield conn
+
+
+# --- Alcance por sitio de la consola (T-2.45) ---------------------------------
+
+#: Huecos de alcance ya auditados en ESTE proceso, como ``(tenant_id, sub)``.
+#:
+#: La regla de oro 10 es logging por transición de estado, no por intervalo: auditar el
+#: hueco en cada request lo convertiría en ruido de alto volumen sobre una tabla que no
+#: se poda nunca (regla 11). Una fila por usuario y por proceso basta para que el hueco
+#: sea contable, y el reinicio del proceso lo vuelve a levantar.
+_scope_gaps_seen: set[tuple[str, str]] = set()
+
+
+def _reset_scope_gaps_for_tests() -> None:
+    _scope_gaps_seen.clear()
+
+
+async def get_console_scope(
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> ConsoleScope:
+    """Alcance por sitio del request, auditando el hueco la primera vez que se ve."""
+    scope = console_scope(claims, enforced=_settings().console_scope_enforced)
+    key = (claims.tenant_id, claims.sub)
+    if scope.gap and key not in _scope_gaps_seen:
+        _scope_gaps_seen.add(key)
+        try:
+            await audit_async(
+                conn,
+                tenant_id=claims.tenant_id,
+                actor=f"user:{claims.sub}",
+                verb="scope_gap",
+                obj=f"role:{claims.role}",
+                meta={"reason": "custom:site_scope no aprovisionado", "enforced": False},
+            )
+        except Exception:  # noqa: BLE001 - auditar el hueco no puede tumbar la consola
+            _scope_gaps_seen.discard(key)
+            log.warning("no se pudo auditar el scope_gap de %s", claims.sub, exc_info=True)
+    return scope

@@ -24,8 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
-from takab_api.auth.deps import require_roles, require_web_surface
+from takab_api.auth.deps import get_console_scope, require_roles, require_web_surface
 from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import fleet as q
 from takab_api.queries import fleet_health as qh
 from takab_api.retire_code import check_confirmation, require_retire_code
@@ -191,6 +192,7 @@ async def fleet_health_history(
 @router.get("/fleet/gateways", response_model=list[GatewayOut])
 async def list_gateways(
     include_retired: bool = False,
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> list[GatewayOut]:
     """Gateways del tenant con su estado derivado del último ``device_health``.
@@ -200,7 +202,7 @@ async def list_gateways(
     hardware dado de baja que la consola no tenía forma de quitar de la pantalla.
     """
     s = Settings()
-    rows = await q.list_gateways_with_health(conn, include_retired=include_retired)
+    rows = await q.list_gateways_with_health(conn, include_retired=include_retired, scope=scope)
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)

@@ -163,6 +163,24 @@ body {
   background: var(--tk-cyan-15);
   color: var(--tk-cyan);
 }
+/* [T-2.45] Insignia de alcance por sitio. Neutra cuando el servidor no filtra;
+   acentuada cuando SÍ, porque entonces lo que se ve en pantalla es un subconjunto
+   y el operador tiene que saberlo antes de concluir nada de un mapa medio vacío. */
+.soc-scope {
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--tk-border);
+  color: var(--tk-fg-2);
+}
+.soc-scope--limited {
+  border-color: var(--tk-border-cyan);
+  color: var(--tk-cyan);
+}
 .soc-clock {
   display: flex; gap: 12px; align-items: center;
   font-family: var(--tk-font-mono);

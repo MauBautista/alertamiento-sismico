@@ -23,8 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
-from takab_api.auth.deps import require_roles, require_web_surface
+from takab_api.auth.deps import get_console_scope, require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import sites as q
 from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
@@ -73,18 +74,28 @@ def _out(row) -> SiteOut:
 
 @router.get("/sites", response_model=list[SiteOut])
 async def list_sites(
-    include_retired: bool = False, conn: AsyncConnection = Depends(read_session)
+    include_retired: bool = False,
+    scope: ConsoleScope = Depends(get_console_scope),
+    conn: AsyncConnection = Depends(read_session),
 ) -> list[SiteOut]:
-    """Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto."""
-    rows = await q.list_sites(conn, include_retired=include_retired)
+    """Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.
+
+    [T-2.45] Acotado además por el ``site_scope`` del claim.
+    """
+    rows = await q.list_sites(conn, include_retired=include_retired, scope=scope)
     return [_out(r) for r in rows]
 
 
 @router.get("/sites/{site_id}", response_model=SiteDetailOut)
-async def get_site(site_id: UUID, conn: AsyncConnection = Depends(read_session)) -> SiteDetailOut:
-    """Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS)."""
+async def get_site(
+    site_id: UUID,
+    scope: ConsoleScope = Depends(get_console_scope),
+    conn: AsyncConnection = Depends(read_session),
+) -> SiteDetailOut:
+    """Detalle de un sitio con sus zonas. 404 si no existe, no es visible o está
+    fuera del alcance del portador (T-2.45: 404, nunca 403)."""
     row = await q.get_site(conn, site_id)
-    if row is None:
+    if row is None or not scope.allows(str(site_id)):
         raise http_error(404, "sitio no encontrado")
     zones = await q.list_zones_for_site(conn, site_id)
     return SiteDetailOut(

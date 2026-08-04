@@ -824,6 +824,8 @@ export const updateSensorSensorsSensorIdPut = <ThrowOnError extends boolean = fa
 /**
  * List Sites
  * Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.
+ *
+ * [T-2.45] Acotado además por el ``site_scope`` del claim.
  */
 export const listSitesSitesGet = <ThrowOnError extends boolean = false>(options?: Options<ListSitesSitesGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<ListSitesSitesGetResponse, ListSitesSitesGetError, ThrowOnError>({
@@ -849,7 +851,8 @@ export const createSiteSitesPost = <ThrowOnError extends boolean = false>(option
 
 /**
  * Get Site
- * Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).
+ * Detalle de un sitio con sus zonas. 404 si no existe, no es visible o está
+ * fuera del alcance del portador (T-2.45: 404, nunca 403).
  */
 export const getSiteSitesSiteIdGet = <ThrowOnError extends boolean = false>(options: Options<GetSiteSitesSiteIdGetData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetSiteSitesSiteIdGetResponse, GetSiteSitesSiteIdGetError, ThrowOnError>({
@@ -1078,7 +1081,7 @@ export const retireSiteSitesSiteIdRetirePost = <ThrowOnError extends boolean = f
 
 /**
  * Map State
- * Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.
+ * Estado de los sitios visibles Y dentro del alcance: sacudida + incidente + epicentros.
  */
 export const mapStateTelemetryMapStateGet = <ThrowOnError extends boolean = false>(options?: Options<MapStateTelemetryMapStateGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<MapStateTelemetryMapStateGetResponse, unknown, ThrowOnError>({

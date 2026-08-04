@@ -4118,6 +4118,11 @@
             "title": "Allowed Routes",
             "type": "array"
           },
+          "console_scope_enforced": {
+            "default": false,
+            "title": "Console Scope Enforced",
+            "type": "boolean"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -9814,7 +9819,7 @@
     },
     "/sites": {
       "get": {
-        "description": "Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.",
+        "description": "Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.\n\n[T-2.45] Acotado además por el ``site_scope`` del claim.",
         "operationId": "list_sites_sites_get",
         "parameters": [
           {
@@ -9896,7 +9901,7 @@
     },
     "/sites/{site_id}": {
       "get": {
-        "description": "Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).",
+        "description": "Detalle de un sitio con sus zonas. 404 si no existe, no es visible o está\nfuera del alcance del portador (T-2.45: 404, nunca 403).",
         "operationId": "get_site_sites__site_id__get",
         "parameters": [
           {
@@ -10619,7 +10624,7 @@
     },
     "/telemetry/map/state": {
       "get": {
-        "description": "Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.",
+        "description": "Estado de los sitios visibles Y dentro del alcance: sacudida + incidente + epicentros.",
         "operationId": "map_state_telemetry_map_state_get",
         "responses": {
           "200": {

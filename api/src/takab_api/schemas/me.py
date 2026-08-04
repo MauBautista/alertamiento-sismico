@@ -57,6 +57,12 @@ class MeResponse(BaseModel):
     tenant_id: str
     role: str
     site_scope: Literal["*"] | list[str]
+    #: [T-2.45] Si el SERVIDOR está filtrando de verdad por ``site_scope`` en las
+    #: pantallas de consola. Existe porque el cutover va en dos fases: durante la
+    #: fase A un claim vacío no filtra, y una insignia que dijera "ALCANCE · 0
+    #: ESTACIONES" mientras se ve todo el tenant sería exactamente el dato falso
+    #: que la regla de oro 7 prohíbe. La UI declara lo que el servidor hace.
+    console_scope_enforced: bool = False
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions

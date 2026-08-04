@@ -178,6 +178,14 @@ class Settings(BaseSettings):
     # Sin reintentos: 8 s ya es mucho dentro de un request que genera evidencia.
     openrouter_timeout_s: float = 8.0
 
+    # --- Alcance por sitio en la consola web (T-2.45) ---
+    # Cutover en DOS FASES. `custom:site_scope` no está aprovisionado para usuarios
+    # web (nadie lo escribe hasta T-2.54), y `claims.site_scope` es default-deny: con
+    # esto en True desde ya, TODO `soc_operator` vería cero sitios. En False un claim
+    # vacío significa "sin restricción declarada" y se audita como hueco; un claim que
+    # SÍ trae sitios se respeta igual. Se enciende cuando T-2.54 pueda escribirlo.
+    console_scope_enforced: bool = False
+
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
     # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).
     # email_from vacío ⇒ provider de email simulado; con valor ⇒ SES (sandbox

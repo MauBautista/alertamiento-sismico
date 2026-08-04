@@ -973,6 +973,7 @@ export type MeActions = {
 export type MeResponse = {
     allowed_actions: MeActions;
     allowed_routes: Array<string>;
+    console_scope_enforced?: boolean;
     role: string;
     site_scope: '*' | Array<string>;
     sub: string;
