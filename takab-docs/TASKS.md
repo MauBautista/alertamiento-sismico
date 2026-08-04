@@ -3177,3 +3177,132 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [x] Suite edge 513 verde · ruff limpio.
   - [x] Prueba EN VIVO en el Pi: re-seed de la config (v15) → reinicio del servicio →
         `config_version` se conserva tras el reboot (antes regresaba a 0).
+
+---
+
+## Ciclo Nube 2.2 · Auditoría y reforma de la consola SOC (T-2.35 … T-2.57)
+
+Las cuatro pantallas de la consola se construyeron una a una entre T-1.15 y T-2.34,
+siempre detrás del edge, y nunca se auditaron como producto. Este ciclo cierra los
+huecos encontrados, añade lo que faltaba y deja preparada la capa de IA. Un solo
+redespliegue al final (T-2.57).
+
+### Bloque A · FLOTA EDGE
+
+### [x] T-2.35 · Las estaciones fantasma no sobreviven al retiro — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.34
+- **Origen:** el cliente reportó estaciones duplicadas, con el mismo nombre y sin forma
+  de borrarlas. `queries/fleet.py::_LIST` era la ÚNICA query del repo sin `WHERE`:
+  devolvía gabinetes `retired` y gabinetes de sitios `retired` (compárese con
+  `queries/sites.py:31`, `telemetry.py:192`, `commands.py:35`, `mobile.py:276`,
+  `commands/sync.py:61`). Como `retire_site` tampoco tocaba `gateways`, el hardware
+  quedaba huérfano, y al desaparecer el sitio de `/sites` la web perdía su nombre y lo
+  rebautizaba `SITIO <8 hex>`: varios huérfanos se veían como la misma estación.
+  Ninguna suite lo habría cazado — `test_fleet_admin` retiraba y nunca volvía a listar.
+- **Criterios:**
+  - [x] `_LIST` hace JOIN a `sites`, filtra ambos estados y acepta `?include_retired=`
+        (espejo de `GET /sites?include_retired`).
+  - [x] `GatewayOut` trae `site_name`/`site_code`/`site_status` del SERVIDOR; la web
+        deja de cruzar contra `/sites` y no puede volver a fabricar un nombre.
+  - [x] `retire_site` propaga el retiro a sus gabinetes en la misma transacción y
+        audita uno por uno. `commands/sync.py` y `queries/commands.py` filtran por
+        `gateways.status`: un huérfano seguía siendo candidato de config firmada y de
+        comandos de actuación.
+  - [x] Migración `0024` sanea los fantasmas ya presentes en la base viva. Idempotente
+        y con `SET LOCAL app.role`: `gateways` lleva FORCE RLS y el dueño es el mismo
+        usuario que migra en la nube, así que sin el GUC el UPDATE tocaría 0 filas EN
+        SILENCIO (en local no se notaría: el superusuario ignora la RLS).
+  - [x] 13 tests nuevos, empezando por el que faltaba: retirar un gabinete y volver a
+        listar el inventario. Más el de la migración, su idempotencia y el que ancla el
+        GUC para que no desaparezca en una limpieza futura.
+  - [x] Suite api 936 verde · web 614 · drift gate verde.
+
+---
+
+### [x] T-2.36 · Retirar una estación exige un segundo factor — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.35
+- **Origen:** retirar un gabinete lo saca del config sync firmado y de los comandos de
+  actuación: deja un edificio sin protección sísmica. Hasta aquí bastaba un doble clic
+  armado en la consola.
+- **Criterios:**
+  - [x] Dos factores: teclear el identificador exacto (`serial` del gabinete, `code`
+        del sitio — visible en pantalla, freno contra el clic en la fila equivocada) y
+        el **código de retiro del cliente**, que TAKAB entrega fuera de banda. El
+        identificador se comprueba PRIMERO: un dedazo no debe quemar un intento.
+  - [x] `tenant_retire_codes` con bcrypt vía `pgcrypto` (coste 12). El hash NUNCA sale
+        de Postgres: se pregunta por `app_verify_retire_code` (SECURITY DEFINER con
+        `search_path` fijado) y `takab_app` no tiene política de lectura — ni el
+        `tenant_admin` que usa el código ve su propio hash.
+  - [x] La tabla va ENABLE **sin FORCE**, única excepción del esquema y documentada:
+        FORCE sujeta también al dueño, y el dueño es quien debe poder leer desde la
+        función definer (SECURITY DEFINER cambia el usuario, no los GUC).
+  - [x] `manage_retire_code` = SOLO `takab_superadmin`. Si el cliente rotara su propio
+        código, el segundo factor volvería a ser el primero (su sesión).
+  - [x] Fail-closed: sin código configurado no se retira (409). La ausencia de
+        credencial nunca es un bypass.
+  - [x] Rate-limit 5 intentos / 15 min por cliente ⇒ 429, y el bloqueo tampoco deja
+        pasar el código correcto (si no, agotar los intentos revelaría cuál es).
+  - [x] La denegación se audita en una conexión APARTE que commitea: el request es una
+        sola transacción y el rollback del 403 se habría llevado la fila por delante,
+        dejando el contador inoperante. Hay test dedicado.
+  - [x] `DELETE /sites/{id}` y `DELETE /fleet/gateways/{id}` → `POST …/retire`: ahora
+        llevan cuerpo y un DELETE con body no atraviesa proxies de forma fiable.
+  - [x] 16 tests de API + 12 de `RetireDialog` · RBAC-TAKAB.md §2 actualizado.
+- **Pendiente de despliegue:** rotar el código de cada tenant tras el redeploy. Sin él
+  nadie puede retirar nada (es el fail-closed funcionando).
+
+---
+
+### [x] T-2.37 · La consola administra el gabinete completo — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.36
+- **Origen:** `PUT /fleet/gateways/{id}`, `POST …/restore` y el `config-state` existían
+  desde T-1.30/T-1.32 y la web no llamaba a ninguno. Un gabinete dado de alta desde la
+  consola quedaba congelado para siempre.
+- **Criterios:**
+  - [x] El alta MANDA `iot_thing`. Sin él el worker de config sync excluye al gabinete
+        y no recibe umbrales firmados nunca; no había forma de vincularlo después. El
+        test que afirmaba lo contrario congelaba el defecto y se reescribió.
+  - [x] Acuse tras el alta: cierra el formulario y entrega los tres UUID del
+        `edge.env`. Antes no cambiaba NADA en pantalla al pulsar, el operador volvía a
+        pulsar, y con un dígito distinto en el serial nacía un gabinete gemelo — el
+        segundo camino de las "estaciones repetidas".
+  - [x] `GatewayForm`: serial, `iot_thing`, firmware, WR-1 y EQUIPAMIENTO, con
+        `base_row_version`. `status` no se edita: lo deriva el heartbeat.
+  - [x] `SyncBadge` distingue PENDIENTE de NO SINCRONIZABLE y de SIN CONFIG EDGE. Los
+        tres se veían igual y el operador esperaba una publicación imposible.
+  - [x] Retirar y restaurar gabinete desde la tarjeta + toggle VER RETIRADOS.
+  - [x] `HardwareForm` lista los gabinetes ya registrados en el sitio: freno
+        anti-duplicado antes de pulsar.
+  - [x] `GET /fleet/config-state` (lote) sustituye al abanico de N peticiones cada
+        10 s: con 500 gabinetes eran ~50 req/s desde un navegador y, como el pie solo
+        vale cuando responden todas, a esa escala habría dicho "desconocido" siempre.
+  - [x] `EquipmentProfile` NO se extiende: es el conjunto de `ActuatorChannel` del
+        edge, y un canal nuevo sin su pin GPIO y su secuencia de tier aparecería como
+        "instalado" sin que el gabinete pueda accionarlo (dato falso).
+  - [x] 27 tests nuevos · suite api 959 · web 652.
+
+---
+
+### [x] T-2.38 · La flota muestra reincidencia, no solo el instante — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.37
+- **Origen:** la pantalla decía si un gabinete está bien AHORA y nada más. Uno que se
+  cae cinco veces al día se veía idéntico a uno que nunca falló — que es justo la
+  diferencia entre un corte puntual y una instalación mal hecha.
+- **Criterios:**
+  - [x] `GET /fleet/health-history`: buckets de 24 h (p95 del RTT, no promedio — la
+        cola larga es lo que importa en un enlace) y CAÍDAS derivadas del silencio
+        entre latidos, con el MISMO umbral que `derive_fleet_state`.
+  - [x] `Sparkline` sin dependencias: un `null` PARTE el trazo. Cualquier librería de
+        charts habría unido los extremos del hueco con una recta que se lee como "todo
+        estuvo bien" justo donde no hubo dato.
+  - [x] Búsqueda (nombre/código/serial/iot thing), orden peor-primero y OCULTAR SIN
+        ENLACE. Los KPI cuentan el TOTAL: un contador que se moviera con el filtro
+        convertiría "3 SIN ENLACE" en una cifra distinta según lo tecleado. La leyenda
+        MOSTRANDO n DE N dice cuánto se ve.
+  - [x] El vacío por filtro se distingue del vacío por flota sin gabinetes.
+  - [x] Responsive: la reja pasa de TRES columnas duras a `auto-fill minmax(340px,1fr)`
+        (en 1366 px las tarjetas se estrujaban hasta partir sus pills), `flex-wrap` en
+        el header y scroll propio para la tabla admin. Breakpoints 1100/640 como
+        DEGRADACIÓN: el objetivo sigue siendo 1920×1080.
+  - [x] Rótulo honesto COMPLETITUD DE LATIDOS, no "de datos".
+  - [x] 38 tests nuevos · suite api 968 · web 683 · drift gate verde.
