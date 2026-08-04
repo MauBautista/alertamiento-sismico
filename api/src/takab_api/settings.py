@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     auth_occupants_jwks_url: str = ""
     auth_occupants_jwks_json: str = ""
 
+    # [T-2.54] Gestión de usuarios (proxy del Admin API de Cognito). Vacío ⇒
+    # directorio SIMULADO que grita en cada escritura (patrón T-1.62/T-2.04): la
+    # consola es usable sin AWS, pero jamás finge haber creado una identidad real.
+    # Es el pool PRINCIPAL; los ocupantes viven en su propio pool y se dan de alta
+    # por código de enrolamiento (T-2.53), no por esta pantalla.
+    cognito_user_pool_id: str = ""
+
     # --- WebSocket live (T-1.22 · G3) ---
     # Ventana para que el cliente mande el primer frame {"type":"auth",...} tras
     # el upgrade; si se excede, el hub cierra con code 4401.
@@ -121,6 +128,21 @@ class Settings(BaseSettings):
     # a decenas de ms; 100 ms marca reloj a la deriva.
     fleet_ntp_offset_max_ms: float = 100.0
 
+    # [T-2.38] Cadencia del latido del edge (`TAKAB_EDGE_HEALTH_HEARTBEAT_S`, hoy 60 s).
+    # Solo se usa para el DENOMINADOR de la completitud de latidos: si la flota cambia
+    # de cadencia y esto no, el porcentaje miente. No gobierna nada del gabinete.
+    fleet_heartbeat_s: float = 60.0
+
+    # --- Código de retiro por tenant (T-2.36) ---
+    # Intentos fallidos tolerados por tenant dentro de la ventana antes del 429.
+    # El código lo teclea una persona que lo tiene delante: cinco es holgado para
+    # un dedazo y estrecho para adivinar. El contador se lleva sobre `audit_log`
+    # (verbo `retire_code_denied`), que es append-only y ya se replica y respalda.
+    retire_code_max_attempts: int = 5
+    # Ventana del contador. 15 min bloquea de sobra un intento de fuerza bruta y
+    # no deja a un operador legítimo esperando media jornada.
+    retire_code_window_s: float = 900.0
+
     # --- Quórum de red (T-1.19 · G1) ---
     # Defaults del quórum distance-aware (blueprint §4.5) usados cuando el
     # rule_set no trae la clave 'quorum' (rule_sets.config). min_nodes ≥3
@@ -143,6 +165,41 @@ class Settings(BaseSettings):
     # EVIDENCIA del dictamen; la ventana de asociación del quórum NO se toca.
     dictamen_pga_window_pre_s: float = 5.0
     dictamen_pga_window_post_s: float = 180.0
+
+    # --- Capa narrativa del dictamen (T-2.42) ---
+    # APAGADA por defecto y así se despliega: el gate #9 del plan maestro sitúa la IA
+    # en Fase 3 y en modo sombra. Con esto en False no se abre un socket, y la prosa
+    # la produce el proveedor determinista (que es el suelo, no un relleno).
+    #
+    # Encenderla exige LAS TRES: flag, clave resoluble y slug de modelo. El slug NO
+    # tiene default a propósito — un identificador de modelo hardcodeado caduca en
+    # silencio; se verifica contra `GET /api/v1/models` de OpenRouter el día que se
+    # encienda. El veredicto y todos los valores medidos siguen siendo deterministas
+    # con la capa encendida (regla de oro 1).
+    openrouter_enabled: bool = False
+    openrouter_model: str = ""
+    # Clave inline (dev) o secreto de Secrets Manager (producción), como command_hmac.
+    openrouter_api_key: str = ""
+    openrouter_secret_id: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Sin reintentos: 8 s ya es mucho dentro de un request que genera evidencia.
+    openrouter_timeout_s: float = 8.0
+
+    # --- Alcance por sitio en la consola web (T-2.45) ---
+    # Cutover en DOS FASES. `custom:site_scope` no está aprovisionado para usuarios
+    # web (nadie lo escribe hasta T-2.54), y `claims.site_scope` es default-deny: con
+    # esto en True desde ya, TODO `soc_operator` vería cero sitios. En False un claim
+    # vacío significa "sin restricción declarada" y se audita como hueco; un claim que
+    # SÍ trae sitios se respeta igual. Se enciende cuando T-2.54 pueda escribirlo.
+    #
+    # [T-2.54 · 2026-08-04] El BLOQUEANTE ya está levantado: `PATCH /users/{username}`
+    # escribe `custom:site_scope` (ver `routers/users.py`), así que la Fase B es
+    # ACTIVABLE. Sigue en False a propósito: encenderla antes de que CADA usuario web
+    # tenga su claim aprovisionado deja sin datos exactamente a quien no lo tenga, que
+    # es el escenario para el que existe el cutover en dos fases. La secuencia es
+    # (1) desplegar, (2) recorrer la lista de `scope_gap` del audit_log y fijar el
+    # alcance de cada usuario desde la consola, (3) poner esto en True.
+    console_scope_enforced: bool = False
 
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
     # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).

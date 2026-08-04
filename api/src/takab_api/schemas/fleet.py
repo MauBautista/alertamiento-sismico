@@ -158,10 +158,20 @@ class EquipmentProfile(BaseModel):
 
 
 class GatewayOut(BaseModel):
-    """Gateway del tenant + estado derivado del último ``device_health``."""
+    """Gateway del tenant + estado derivado del último ``device_health``.
+
+    [T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web
+    los resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete
+    huérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos
+    huérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que
+    inventar — la clase de bug entera desaparece.
+    """
 
     gateway_id: UUID
     site_id: UUID
+    site_name: str
+    site_code: str
+    site_status: str
     serial: str
     fw_version: str | None = None
     iot_thing: str | None = None
@@ -181,6 +191,39 @@ class GatewayOut(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
     ntp_offset_ms: float | None = None
+
+
+class HealthBucket(BaseModel):
+    """Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.
+
+    Un bucket sin dato para una métrica vale ``None``, **nunca 0**: "no reportó RTT"
+    y "reportó 0 ms" son hechos distintos y confundirlos pinta una línea plana que
+    parece salud perfecta (regla de oro 7).
+    """
+
+    ts: datetime
+    heartbeats: int
+    mqtt_rtt_p95_ms: float | None = None
+    seedlink_lag_max_s: float | None = None
+    ntp_offset_abs_max_ms: float | None = None
+    battery_min_pct: float | None = None
+
+
+class GatewayHealthOut(BaseModel):
+    """Historia de 24 h de un gabinete (T-2.38).
+
+    ``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de
+    latidos periódicos recibidos frente a los esperados por la cadencia del edge. Se
+    rotula así en la UI a propósito — la completitud de forma de onda exigiría contar
+    la serie sísmica por segundo, y hoy no hay agregado que lo haga barato.
+    """
+
+    gateway_id: UUID
+    buckets: list[HealthBucket] = []
+    outages: int = 0
+    downtime_s: float = 0.0
+    last_outage_end: datetime | None = None
+    heartbeat_completeness: float | None = None
 
 
 class GatewayRowOut(BaseModel):

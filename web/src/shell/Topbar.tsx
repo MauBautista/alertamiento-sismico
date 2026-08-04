@@ -4,6 +4,7 @@ import { NavLink } from "react-router";
 
 import logoTakab from "../assets/LogoTakab2.png";
 import { useSessionStore } from "../auth/session.store";
+import ScopeBadge from "../components/ScopeBadge";
 import { edgeMqttView, useLiveHealthStore } from "../live/liveHealth.store";
 import { useNow } from "../lib/useNow";
 import { navTabsFor } from "./navItems";
@@ -97,6 +98,11 @@ export default function Topbar() {
           );
         })}
       </nav>
+
+      {/* [T-2.45] Alcance por sitio. Va en la barra —no dentro de una pantalla—
+          porque acota TODAS: si el operador ve un mapa con una sola estación,
+          tiene que poder saber si es que solo hay una o es que solo ve una. */}
+      <ScopeBadge />
 
       <div className="soc-clock" aria-label="System time">
         <span className="meta">UTC</span>

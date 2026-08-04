@@ -903,6 +903,52 @@ CREATE POLICY gateway_catalog_state_read ON gateway_catalog_state FOR SELECT
 CREATE POLICY gateway_catalog_state_admin ON gateway_catalog_state FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
+-- [T-2.36] Segundo factor para RETIRAR una estación. Retirar un gabinete lo saca
+-- del config sync firmado y de los comandos de actuación: deja un edificio sin
+-- protección, así que exige un código que TAKAB entrega fuera de banda y solo el
+-- superadmin rota. bcrypt vía pgcrypto (coste 12); el hash NUNCA sale de la base
+-- —se pregunta por función SECURITY DEFINER— y no hay política de lectura para
+-- roles de tenant: ni el tenant_admin que lo usa ve su propio hash.
+CREATE TABLE tenant_retire_codes (
+  tenant_id  uuid PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  code_hash  text NOT NULL,
+  version    integer NOT NULL DEFAULT 1,
+  rotated_by uuid NOT NULL,
+  rotated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE ON tenant_retire_codes TO takab_app;
+
+-- ENABLE sin FORCE, única excepción del esquema y deliberada: FORCE sujeta también
+-- al DUEÑO, y el dueño es quien debe poder leer el hash desde las funciones
+-- SECURITY DEFINER de abajo (SECURITY DEFINER cambia el USUARIO, no los GUC: con
+-- FORCE, `app_role()` seguiría siendo 'tenant_admin' y verificar el código sería
+-- imposible). `takab_app` NO es dueño ⇒ sigue sujeto a RLS y no tiene política de
+-- lectura: la API no puede leer el hash ni queriendo.
+ALTER TABLE tenant_retire_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_retire_codes NO FORCE ROW LEVEL SECURITY;
+CREATE POLICY trc_admin ON tenant_retire_codes FOR ALL
+  USING (app_role() = 'takab_superadmin') WITH CHECK (app_role() = 'takab_superadmin');
+
+CREATE FUNCTION app_verify_retire_code(t uuid, candidate text)
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM tenant_retire_codes c
+     WHERE c.tenant_id = t AND c.code_hash = crypt(candidate, c.code_hash)
+  )
+$$;
+
+CREATE FUNCTION app_retire_code_state(t uuid)
+  RETURNS TABLE (version integer, rotated_at timestamptz)
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT c.version, c.rotated_at FROM tenant_retire_codes c WHERE c.tenant_id = t
+$$;
+
+REVOKE ALL ON FUNCTION app_verify_retire_code(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app_retire_code_state(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_verify_retire_code(uuid, text) TO takab_app;
+GRANT EXECUTE ON FUNCTION app_retire_code_state(uuid) TO takab_app;
+
 -- Cascada de notificación (T-1.21 · blueprint §5.6): un job por (incidente,
 -- canal, modo) — UNIQUE = idempotencia del orquestador ante re-entregas.
 CREATE TABLE notification_jobs (

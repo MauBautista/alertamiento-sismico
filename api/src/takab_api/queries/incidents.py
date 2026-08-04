@@ -12,6 +12,8 @@ from typing import Any
 
 from sqlalchemy import TextClause, text
 
+from takab_api.auth.scope import ConsoleScope
+
 _COLS = (
     "incident_id, event_uuid, tenant_id, site_id, event_id, opened_at, closed_at, "
     "severity, state, trigger, max_pga_g, max_pgv_cms, summary"
@@ -29,10 +31,17 @@ def select_incidents(
     cursor_opened_at: str | None,
     cursor_id: str | None,
     limit: int,
+    scope: ConsoleScope | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
-    """Lista keyset de incidentes con filtros opcionales. Pide ``limit`` filas."""
+    """Lista keyset de incidentes con filtros opcionales. Pide ``limit`` filas.
+
+    [T-2.45] ``scope`` acota por ``site_scope`` DENTRO del tenant que ya aísla la RLS.
+    """
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit}
+    if scope is not None and scope.sites is not None:
+        where.append("site_id = ANY(CAST(:console_scope AS uuid[]))")
+        params["console_scope"] = sorted(scope.sites)
     if state is not None:
         where.append("state = :state")
         params["state"] = state

@@ -3177,3 +3177,412 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
   - [x] Suite edge 513 verde · ruff limpio.
   - [x] Prueba EN VIVO en el Pi: re-seed de la config (v15) → reinicio del servicio →
         `config_version` se conserva tras el reboot (antes regresaba a 0).
+
+---
+
+## Ciclo Nube 2.2 · Auditoría y reforma de la consola SOC (T-2.35 … T-2.57)
+
+Las cuatro pantallas de la consola se construyeron una a una entre T-1.15 y T-2.34,
+siempre detrás del edge, y nunca se auditaron como producto. Este ciclo cierra los
+huecos encontrados, añade lo que faltaba y deja preparada la capa de IA. Un solo
+redespliegue al final (T-2.57).
+
+### Bloque A · FLOTA EDGE
+
+### [x] T-2.35 · Las estaciones fantasma no sobreviven al retiro — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.34
+- **Origen:** el cliente reportó estaciones duplicadas, con el mismo nombre y sin forma
+  de borrarlas. `queries/fleet.py::_LIST` era la ÚNICA query del repo sin `WHERE`:
+  devolvía gabinetes `retired` y gabinetes de sitios `retired` (compárese con
+  `queries/sites.py:31`, `telemetry.py:192`, `commands.py:35`, `mobile.py:276`,
+  `commands/sync.py:61`). Como `retire_site` tampoco tocaba `gateways`, el hardware
+  quedaba huérfano, y al desaparecer el sitio de `/sites` la web perdía su nombre y lo
+  rebautizaba `SITIO <8 hex>`: varios huérfanos se veían como la misma estación.
+  Ninguna suite lo habría cazado — `test_fleet_admin` retiraba y nunca volvía a listar.
+- **Criterios:**
+  - [x] `_LIST` hace JOIN a `sites`, filtra ambos estados y acepta `?include_retired=`
+        (espejo de `GET /sites?include_retired`).
+  - [x] `GatewayOut` trae `site_name`/`site_code`/`site_status` del SERVIDOR; la web
+        deja de cruzar contra `/sites` y no puede volver a fabricar un nombre.
+  - [x] `retire_site` propaga el retiro a sus gabinetes en la misma transacción y
+        audita uno por uno. `commands/sync.py` y `queries/commands.py` filtran por
+        `gateways.status`: un huérfano seguía siendo candidato de config firmada y de
+        comandos de actuación.
+  - [x] Migración `0024` sanea los fantasmas ya presentes en la base viva. Idempotente
+        y con `SET LOCAL app.role`: `gateways` lleva FORCE RLS y el dueño es el mismo
+        usuario que migra en la nube, así que sin el GUC el UPDATE tocaría 0 filas EN
+        SILENCIO (en local no se notaría: el superusuario ignora la RLS).
+  - [x] 13 tests nuevos, empezando por el que faltaba: retirar un gabinete y volver a
+        listar el inventario. Más el de la migración, su idempotencia y el que ancla el
+        GUC para que no desaparezca en una limpieza futura.
+  - [x] Suite api 936 verde · web 614 · drift gate verde.
+
+---
+
+### [x] T-2.36 · Retirar una estación exige un segundo factor — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.35
+- **Origen:** retirar un gabinete lo saca del config sync firmado y de los comandos de
+  actuación: deja un edificio sin protección sísmica. Hasta aquí bastaba un doble clic
+  armado en la consola.
+- **Criterios:**
+  - [x] Dos factores: teclear el identificador exacto (`serial` del gabinete, `code`
+        del sitio — visible en pantalla, freno contra el clic en la fila equivocada) y
+        el **código de retiro del cliente**, que TAKAB entrega fuera de banda. El
+        identificador se comprueba PRIMERO: un dedazo no debe quemar un intento.
+  - [x] `tenant_retire_codes` con bcrypt vía `pgcrypto` (coste 12). El hash NUNCA sale
+        de Postgres: se pregunta por `app_verify_retire_code` (SECURITY DEFINER con
+        `search_path` fijado) y `takab_app` no tiene política de lectura — ni el
+        `tenant_admin` que usa el código ve su propio hash.
+  - [x] La tabla va ENABLE **sin FORCE**, única excepción del esquema y documentada:
+        FORCE sujeta también al dueño, y el dueño es quien debe poder leer desde la
+        función definer (SECURITY DEFINER cambia el usuario, no los GUC).
+  - [x] `manage_retire_code` = SOLO `takab_superadmin`. Si el cliente rotara su propio
+        código, el segundo factor volvería a ser el primero (su sesión).
+  - [x] Fail-closed: sin código configurado no se retira (409). La ausencia de
+        credencial nunca es un bypass.
+  - [x] Rate-limit 5 intentos / 15 min por cliente ⇒ 429, y el bloqueo tampoco deja
+        pasar el código correcto (si no, agotar los intentos revelaría cuál es).
+  - [x] La denegación se audita en una conexión APARTE que commitea: el request es una
+        sola transacción y el rollback del 403 se habría llevado la fila por delante,
+        dejando el contador inoperante. Hay test dedicado.
+  - [x] `DELETE /sites/{id}` y `DELETE /fleet/gateways/{id}` → `POST …/retire`: ahora
+        llevan cuerpo y un DELETE con body no atraviesa proxies de forma fiable.
+  - [x] 16 tests de API + 12 de `RetireDialog` · RBAC-TAKAB.md §2 actualizado.
+- **Pendiente de despliegue:** rotar el código de cada tenant tras el redeploy. Sin él
+  nadie puede retirar nada (es el fail-closed funcionando).
+
+---
+
+### [x] T-2.37 · La consola administra el gabinete completo — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.36
+- **Origen:** `PUT /fleet/gateways/{id}`, `POST …/restore` y el `config-state` existían
+  desde T-1.30/T-1.32 y la web no llamaba a ninguno. Un gabinete dado de alta desde la
+  consola quedaba congelado para siempre.
+- **Criterios:**
+  - [x] El alta MANDA `iot_thing`. Sin él el worker de config sync excluye al gabinete
+        y no recibe umbrales firmados nunca; no había forma de vincularlo después. El
+        test que afirmaba lo contrario congelaba el defecto y se reescribió.
+  - [x] Acuse tras el alta: cierra el formulario y entrega los tres UUID del
+        `edge.env`. Antes no cambiaba NADA en pantalla al pulsar, el operador volvía a
+        pulsar, y con un dígito distinto en el serial nacía un gabinete gemelo — el
+        segundo camino de las "estaciones repetidas".
+  - [x] `GatewayForm`: serial, `iot_thing`, firmware, WR-1 y EQUIPAMIENTO, con
+        `base_row_version`. `status` no se edita: lo deriva el heartbeat.
+  - [x] `SyncBadge` distingue PENDIENTE de NO SINCRONIZABLE y de SIN CONFIG EDGE. Los
+        tres se veían igual y el operador esperaba una publicación imposible.
+  - [x] Retirar y restaurar gabinete desde la tarjeta + toggle VER RETIRADOS.
+  - [x] `HardwareForm` lista los gabinetes ya registrados en el sitio: freno
+        anti-duplicado antes de pulsar.
+  - [x] `GET /fleet/config-state` (lote) sustituye al abanico de N peticiones cada
+        10 s: con 500 gabinetes eran ~50 req/s desde un navegador y, como el pie solo
+        vale cuando responden todas, a esa escala habría dicho "desconocido" siempre.
+  - [x] `EquipmentProfile` NO se extiende: es el conjunto de `ActuatorChannel` del
+        edge, y un canal nuevo sin su pin GPIO y su secuencia de tier aparecería como
+        "instalado" sin que el gabinete pueda accionarlo (dato falso).
+  - [x] 27 tests nuevos · suite api 959 · web 652.
+
+---
+
+### [x] T-2.38 · La flota muestra reincidencia, no solo el instante — COMPLETA (2026-08-03)
+- **Componente:** api + web · **Depende de:** T-2.37
+- **Origen:** la pantalla decía si un gabinete está bien AHORA y nada más. Uno que se
+  cae cinco veces al día se veía idéntico a uno que nunca falló — que es justo la
+  diferencia entre un corte puntual y una instalación mal hecha.
+- **Criterios:**
+  - [x] `GET /fleet/health-history`: buckets de 24 h (p95 del RTT, no promedio — la
+        cola larga es lo que importa en un enlace) y CAÍDAS derivadas del silencio
+        entre latidos, con el MISMO umbral que `derive_fleet_state`.
+  - [x] `Sparkline` sin dependencias: un `null` PARTE el trazo. Cualquier librería de
+        charts habría unido los extremos del hueco con una recta que se lee como "todo
+        estuvo bien" justo donde no hubo dato.
+  - [x] Búsqueda (nombre/código/serial/iot thing), orden peor-primero y OCULTAR SIN
+        ENLACE. Los KPI cuentan el TOTAL: un contador que se moviera con el filtro
+        convertiría "3 SIN ENLACE" en una cifra distinta según lo tecleado. La leyenda
+        MOSTRANDO n DE N dice cuánto se ve.
+  - [x] El vacío por filtro se distingue del vacío por flota sin gabinetes.
+  - [x] Responsive: la reja pasa de TRES columnas duras a `auto-fill minmax(340px,1fr)`
+        (en 1366 px las tarjetas se estrujaban hasta partir sus pills), `flex-wrap` en
+        el header y scroll propio para la tabla admin. Breakpoints 1100/640 como
+        DEGRADACIÓN: el objetivo sigue siendo 1920×1080.
+  - [x] Rótulo honesto COMPLETITUD DE LATIDOS, no "de datos".
+  - [x] 38 tests nuevos · suite api 968 · web 683 · drift gate verde.
+
+### Bloque B · EVALUACIÓN ESTRUCTURAL
+
+### [x] T-2.39 · La pantalla dice el hecho medido, no un guion — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.38
+- **Origen:** la pestaña se llamaba «Triage» (término de urgencias, no de estructuras) y
+  el encabezado abría con `M —` porque la magnitud es SIEMPRE null: no hay ingesta de
+  catálogo. Un dictamen que abre con un guion no informa de nada.
+- **Criterios:**
+  - [x] Pestaña **EVALUACIÓN**, título *Evaluación Estructural Post-Sismo*. Ruta
+        `/triage` y clases CSS INTACTAS: están cableadas en `matrix.py` y en la hoja
+        entera, y renombrarlas rompería el RBAC por un cambio de etiqueta.
+  - [x] Los reportes de daño del móvil salen del gate del dictamen: son un HECHO del
+        incidente y sin dictamen no se renderizaban.
+  - [x] `magnitudeOf` devuelve `S/CATÁLOGO` / `SIN EVENTO`, nunca `—`. El encabezado
+        pasa a la banda `felt` MEDIDA y la magnitud baja a métrica rotulada.
+  - [x] El epicentro declara si es CENTROIDE DE LA RED (no es una localización sísmica),
+        reubicado por operador, o de catálogo externo.
+  - [x] Nodos del quórum con nombre; uno de otra red se pinta `OTRA RED` en gris, que es
+        exactamente lo que hay que decir.
+  - [x] `role="grid"` y primera celda como `<button>`: el `<tr onClick>` no era accesible
+        por teclado y `aria-selected` fuera de un grid es inválido.
+
+### [x] T-2.40 · Una sola fuente de hechos para la pantalla y el dictamen — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.39
+- **Origen:** la pantalla y el PDF calculaban lo mismo por su cuenta. Dos caminos hacia
+  el mismo número divergen, y en un dictamen eso es una contradicción firmada.
+- **Criterios:**
+  - [x] `GET /incidents/{id}/forensics`: picos por canal, tiempo de aviso (solo con
+        `trigger='sasmex'`, con su razón cuando es nulo), estaciones, contraste con el
+        catálogo SSN y calibración.
+  - [x] **Usa `waveform_features_1s_secure`**: el contract-test `test_waveform_view.py`
+        falla el build si un módulo bajo RLS nombra la hypertable cruda. El allowlist NO
+        se amplió.
+  - [x] Matriz de prioridad de inspección (ShakeCast): `felt === "unknown"` ⇒ GRIS/SIN
+        MEDICIÓN, jamás verde. Encabezado literal *NO ES UN DICTAMEN*.
+  - [x] Resumen post-evento, bitácora como timeline (antes solo se contaba) y
+        mini-waveform rotulado ENVOLVENTE, NO la forma de onda cruda (regla de oro 9).
+  - [x] Animaciones dentro de `prefers-reduced-motion`; ninguna anima un dato que cambia.
+
+### [x] T-2.41 · Motor de PDF vectorial: dictamen técnico y ejecutivo — COMPLETA (2026-08-04)
+- **Componente:** api · **Depende de:** T-2.40
+- **Origen:** el PDF era texto plano latin-1 sin tablas, mapa, gráficas ni paginación —
+  y Δ, ≥ y ≈ se degradaban a interrogantes en un documento de compliance.
+- **Criterios:**
+  - [x] `dictamen/{model,layout,plot,sketch,mseed}.py` + fuentes DejaVu empaquetadas.
+  - [x] **Determinista**: `set_creation_date(opened_at)` fija `/CreationDate`; sin eso
+        dos generaciones del mismo modelo daban hashes distintos y «verifique el sha256»
+        habría sido una promesa falsa.
+  - [x] Decodificador STEIM2 **vendorizado** (~200 líneas) validado con vectores dorados
+        generados por el ObsPy del propio edge. Se rechazó ObsPy: arrastra
+        matplotlib+scipy+lxml (~200 MB) a una imagen co-locada en un EC2 Graviton. Única
+        dependencia añadida: `numpy` (FFT).
+  - [x] Dos documentos de un mismo modelo: técnico ≥6 páginas y ejecutivo 1–2. La
+        variante va en la key de S3 y en la auditoría, no en un `kind` de evidencia nuevo.
+  - [x] **Prohibido inventar**: cada `None` produce un literal de ausencia con su razón.
+        Hay un test que busca `"0.000 g"` con pico nulo.
+  - [x] Se retira el gate «sin dictamen no hay PDF»: un incidente sin dictamen YA tiene
+        hechos que reportar y el documento lo rotula preliminar.
+
+### [x] T-2.42 · La prosa rodea al veredicto sin poder tocarlo — COMPLETA (2026-08-04)
+- **Componente:** api · **Depende de:** T-2.41
+- **Origen:** preparar la capa de IA sin que pueda colarse al camino determinista.
+- **Criterios:**
+  - [x] `Narrative` **no tiene campo de veredicto**: un proveedor no puede emitir uno
+        porque no hay dónde ponerlo. Tres contract-tests, no promesas en la doc.
+  - [x] `narrative/` no importa `dictamen.rules` ni `dictamen.service`: no puede ni
+        invocar al motor que dictamina.
+  - [x] Proveedor determinista ACTIVO con seis secciones; «por qué este veredicto» cita
+        el basis literal (qué umbral, con qué valor, de qué versión de reglas).
+  - [x] OpenRouter listo y **APAGADO** (gate #9 = Fase 3, shadow-mode). Fail-open total,
+        sin reintentos, y un guardrail que DESCARTA la respuesta entera si menciona otro
+        veredicto o cita una medición que no está en los hechos.
+  - [x] Redacción por ALLOWLIST: un campo nuevo del modelo queda fuera por omisión.
+  - [x] Sin tabla nueva: la narrativa se congela en el PDF y su procedencia va a
+        `audit_log` (`narrative_generated`), append-only y sin poda.
+
+### [x] T-2.43 · El botón de miniSEED explica por qué no se puede — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.41
+- **Origen:** el botón NO tenía bug —estaba bien deshabilitado— pero deshabilitado y
+  mudo es indistinguible de roto para quien está operando un incidente.
+- **Criterios:**
+  - [x] Seis estados distinguibles. El que faltaba: **BACKFILL EN CURSO** (< 15 min, el
+        crudo aún puede estar subiendo); decir «no hay» ahí es falso.
+  - [x] Pasada la ventana, la nota apunta a `/fleet`: la causa probable es el enlace.
+  - [x] **No se ofrece generación bajo demanda** (reglas de oro 4, 8 y 9), y hay un test
+        que lo fija: además fallaría igual, porque el buffer del edge es finito.
+  - [x] Se retira el gate `head === null` del botón de PDF, espejo del de la API.
+
+### Bloque C · MONITOREO
+
+### [x] T-2.44 · La pestaña C4I pasa a llamarse MONITOREO — COMPLETA (2026-08-04)
+- **Componente:** web + docs · **Depende de:** T-2.39
+- **Criterios:**
+  - [x] Pestaña **MONITOREO**, título *Monitoreo en Vivo*. Ruta `/console` intacta.
+  - [x] Columna §2 de `RBAC-TAKAB.md` renombrada — una docena de docstrings la citan, y
+        dejar referencias a una columna inexistente habría sido peor que el nombre viejo.
+  - [x] Se cierra de paso el desfase de T-2.39: la columna «Triage» pasa a EVALUACIÓN.
+  - [x] Un solo docstring llega al OpenAPI: regenerado y commiteado (drift gate).
+
+### [x] T-2.45 · La consola respeta `site_scope`, con cutover en dos fases — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.44
+- **Origen:** `site_scope` se aplicaba en WS, móvil, comandos y simulacros; en la consola
+  no. Un `soc_operator` acotado a una estación veía el tenant entero.
+- **Criterios:**
+  - [x] Aplicado en mapa, features, features por canal, métricas, `/sites`,
+        `/fleet/gateways` e `/incidents`. Fuera de alcance ⇒ **404, nunca 403**.
+  - [x] **Fase A** (la que se despliega): el claim no está aprovisionado, así que un
+        claim vacío NO filtra —filtrar dejaría a todo `soc_operator` con cero sitios— y
+        se AUDITA como `scope_gap`, una fila por usuario y proceso.
+  - [x] **Fase B** (`console_scope_enforced=True`): un claim vacío filtra a cero. El
+        bloqueante cayó con T-2.54; falta asignar alcances antes de encenderlo.
+  - [x] `/me` gana `console_scope_enforced` y la insignia declara lo que el SERVIDOR
+        hace. El front NO filtra: la autoridad es el servidor.
+
+### [x] T-2.46 · Enlace por estación en el mapa — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.45
+- **Origen:** el mapa coloreaba por sacudida sin decir si el gabinete seguía vivo: un
+  punto verde podía ser «todo bien» o «el color es un recuerdo de hace seis horas».
+- **Criterios:**
+  - [x] Estado derivado de `derive_fleet_state` (verdad única, cero reimplementación).
+  - [x] El enlace NO usa el canal de color —lo ocupa `felt`—: opacidad, núcleo hueco y
+        glifo, con segunda leyenda `ENLACE CON LA ESTACIÓN`.
+  - [x] **`SIN GABINETE` no se colapsa con `SIN ENLACE`**: «no hay hardware» y «el
+        hardware calló» exigen acciones distintas.
+
+### [x] T-2.47 · Animaciones del mapa — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.46
+- **Criterios:**
+  - [x] `V_S` se DERIVA de `V_P` (Poisson, √3): una constante suelta sería una segunda
+        fuente de verdad que se desincronizaría.
+  - [x] Anillos P/S con radio FÍSICO en km → píxeles con el tile de **512 px** de
+        MapLibre; con 256 salían al doble. Rotulados MODELO DE UNA CAPA · ESTIMACIÓN.
+  - [x] Un solo rAF a 20 fps, `line-dasharray` conmutado O(1) por frame, apagado al
+        cruzar los 180 s sin esperar snapshot.
+  - [x] `prefers-reduced-motion` deja anillos quietos y anula los dos keyframes vivos.
+  - [x] **Sin cuenta regresiva T-MINUS ni magnitud preliminar** (CLAUDE.md §8), asertado.
+
+### [x] T-2.48 · Simulacro programado, historial y acuse — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.47
+- **Origen:** `POST /drills` con `scheduled_at` existía y no tenía UI; y el banner tenía
+  un fallo serio.
+- **Criterios:**
+  - [x] **El banner ya no se calla**: si `/drills/active` fallaba con un simulacro vivo,
+        DESAPARECÍA en silencio — y un simulacro que deja de anunciarse es
+        indistinguible de una alerta real para quien está dentro. Degrada a DATOS
+        RETENIDOS con el último dato conocido.
+  - [x] **`SIN GABINETE COMANDABLE` ≠ `SIN ACUSE`**: colapsarlos haría creer que un
+        sitio ignoró el simulacro cuando no había a quién mandárselo.
+  - [x] `GET /drills` con keyset (desempate por id: sin él se solapaba entre una agenda y
+        su ejecución creadas en el mismo ms), `POST /drills/{id}/cancel`, y la agenda
+        persiste sus sitios con `command_id NULL`.
+  - [x] Simulacro ARMADO: banner a T−15 min, botón precargado a T−0. **Ejecutar sigue
+        siendo un clic humano; no hay temporizador en ninguna capa** (regla de oro 8).
+
+### [x] T-2.49 · Una prueba de sirena deja de sonar como un sismo — COMPLETA (2026-08-04)
+- **Componente:** edge · **Depende de:** T-2.48
+- **Origen:** el voceo miraba `siren_sounding` —un booleano ELÉCTRICO— y sonaba el mismo
+  `siren.wav` en todos los casos: el self-test de un operador sonaba byte a byte igual
+  que un sismo real dentro de un edificio con gente. Un test lo congelaba.
+- **Criterios:**
+  - [x] `gpio.siren_reason` DERIVA la causa de los enclaves que ya deciden el relé; una
+        alerta real durante una prueba se reporta ALERT y el altavoz conmuta.
+  - [x] Sin tono de prueba, una prueba **CALLA**: caer al tono de alerta sería el bug
+        otra vez, y el silencio durante una prueba no arriesga a nadie.
+  - [x] `prueba.wav` original de TAKAB, auditado por sha256 al arrancar.
+  - [x] **El tono oficial de SASMEX no se empaqueta**: es de CIRES, su ID queda RESERVADO
+        y ausente, y «ID desconocido ⇒ conservar el anterior» impide que se cuele
+        (GATE-LEGAL).
+  - [x] La nube elige por ID de catálogo en `config.edge.audio`: ni binarios —el doc
+        viaja firmado hacia un dispositivo que toca sirena y gas— ni rutas absolutas.
+
+### [x] T-2.50 · Estadísticas y capas de MONITOREO — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.47
+- **Criterios:**
+  - [x] Cero endpoints nuevos. Contadores por viewport, capas conmutables, orden de cola
+        y KPI semáforo.
+  - [x] **`OCULTAR SIN ENLACE` filtra el mapa pero NO el semáforo**: si filtrara los
+        KPIs, el operador podría esconder sin darse cuenta el problema que debe atender.
+  - [x] Diferido con nombre: intensidad areal interpolada (= mini-ShakeMap, blueprint
+        §14) y eventos versionados New/Update.
+
+### Bloque D · MULTI-TENANT y pantallas nuevas
+
+### [x] T-2.51 · Multi-tenant: clipping, CSS, escala y edición — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.50
+- **Origen:** `.mt__list` no tenía `overflow` dentro de `body{overflow:hidden}`: con ~15
+  clientes los últimos eran **físicamente inalcanzables**. Bug de accesibilidad.
+- **Criterios:**
+  - [x] Clipping cerrado y la invariante `flex-shrink:0` extendida a `.mt`, `.triage` y
+        `.soc-main`.
+  - [x] El CSS que T-1.72/T-1.73 nunca tuvieron (`.mt__new-*`, `.vis-*`, …).
+  - [x] N+1 cerrado: de una query por gabinete cada 10 s (500 gabinetes ≈ 50 req/s desde
+        un navegador) a una sola en lote, conservando `unknown` si falta uno.
+  - [x] `PATCH /tenants/{id}` con concurrencia optimista por `xmin`, auditado. Es
+        **superadmin-only**: la RLS lo exige y dárselo a `tenant_admin` habría pintado un
+        botón con 403 garantizado.
+  - [x] Paginación de servidor: deuda declarada hasta ~200 clientes.
+
+### [x] T-2.52 · Pantalla de AUDITORÍA — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.51
+- **Origen:** `GET /audit` existía completo con filtros y keyset, y **no había ninguna
+  pantalla que lo consumiera** en toda la web.
+- **Criterios:**
+  - [x] Ruta `/audit` en `matrix.py` para exactamente los roles con `read_audit`, tab,
+        filtros actor/verbo/objeto/rango, keyset y `StateFrame` completo.
+  - [x] `test_matrix.py` y RBAC §2/§7 actualizados en el mismo cambio.
+
+### [x] T-2.53 · Códigos de enrolamiento en la web — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.52
+- **Origen:** los tres endpoints existían y **no tenían consumidor en ningún lado**. Es
+  lo que desbloquea enrolar un teléfono real (GATE-HW).
+- **Criterios:**
+  - [x] Tarjeta por estación en `/fleet`: generar, listar con expiración y rol, revocar.
+  - [x] El código se destaca una vez, sale del DOM a los 120 s, los existentes salen
+        enmascarados y **nada toca `localStorage`/`sessionStorage`** (CLAUDE.md §8).
+
+### [x] T-2.54 · Gestión de usuarios (Cognito) — COMPLETA (2026-08-04)
+- **Componente:** api + web · **Depende de:** T-2.53
+- **Origen:** superficie de seguridad NUEVA, y el bloqueante real de la Fase B de T-2.45:
+  alguien tiene que poder escribir `custom:site_scope`.
+- **Criterios:**
+  - [x] Proxy del Admin API de Cognito con gate `manage_users` (superadmin +
+        tenant_admin, **no** support), auditoría por escritura y jamás credenciales.
+  - [x] **Escalada de privilegios cerrada**: sin `PLATFORM_ROLES` un `tenant_admin` se
+        creaba un superadmin en un solo POST. `occupant` no es asignable aquí (vive en
+        su propio pool con ancla pool→rol).
+  - [x] Rol y grupo se mueven juntos, entrando al grupo nuevo ANTES de salir del viejo:
+        `Claims.from_verified` exige `custom:role ∈ cognito:groups` y escribir solo el
+        atributo crea un usuario fantasma.
+  - [x] `site_scope` validado contra la DB: un UUID inventado dejaba al usuario con cero
+        estaciones sin que nadie supiera por qué.
+  - [x] Sin credenciales, el directorio es un stand-in que **GRITA** en cada escritura.
+  - [x] **Pendiente de infra (T-2.57):** `TAKAB_API_COGNITO_USER_POOL_ID` en
+        `deploy.sh` y permisos `cognito-idp:Admin*` en el rol de instancia. Sin ambos
+        arranca SIMULADO.
+
+### Bloque E · Transversal y cierre
+
+### [x] T-2.55 · Degradación responsive, colisiones e invariantes de CSS — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.54
+- **Origen:** CERO media queries en toda la hoja, y tres overlays cayendo en la misma
+  esquina del escenario.
+- **Criterios:**
+  - [x] 1920×1080 **no mueve un píxel**. Los breakpoints son DEGRADACIÓN: <1600 columnas
+        más estrechas, <1280 una columna con el detalle como cajón, `max-height:800px`
+        recorta paddings.
+  - [x] Trampa documentada en la hoja: las custom properties **no funcionan dentro de
+        `@media`**. Los tokens sirven al lado JS; las media queries llevan el px literal
+        citando el token como fuente.
+  - [x] Colisiones **por reubicación, no por z-index**: cada esquina tiene dueño y las
+        dos pilas superiores se acotan al 46 % ⇒ la no-superposición es aritmética.
+        Desviación deliberada: la alerta NO va dentro de MapPanel — desaparecería cada
+        vez que el mapa falla, y es el elemento más crítico de la consola.
+  - [x] `cssContract.test.ts` falla si un `className` usado no tiene regla. Al escribirlo
+        aparecieron **siete bloques sin una sola regla**; todos arreglados escribiendo la
+        regla, no relajando el test.
+  - [x] **Hallazgo mayor:** `.soc-alert__grid/__num/__lbl` era el estilo de MAGNITUD
+        PRELIMINAR y T-MINUS, funciones que `CLAUDE.md §8` PROHÍBE. Dejarlo vivo invitaba
+        a recablearlas «porque el estilo ya existe». Eliminado.
+  - [x] Guard de sanidad: un `/*` sin cerrar borra el bloque siguiente EN SILENCIO.
+        Verificado por mutación, igual que el propio contrato.
+  - [x] `StateFrame` completado donde faltaba; fuga `--soc-*` (prefijo inexistente, todas
+        sus reglas caían al fallback) cerrada.
+
+### [x] T-2.56 · Playwright con matriz de viewports — COMPLETA (2026-08-04)
+- **Componente:** web + CI · **Depende de:** T-2.55
+- **Origen:** ningún `project`, un solo viewport en un solo test y cero a11y automatizada.
+- **Criterios:**
+  - [x] 1280×800 / 1440×900 / 1920×1080. Specs de layout, alcance, simulacro, movimiento
+        reducido y axe. 84 pruebas colectadas.
+  - [x] Umbral de axe honesto: arranca en `critical` y ADJUNTA el resto con recuento.
+        «Cero violaciones» el primer día produce un job rojo permanente que nadie mira, o
+        un `disableRules` que lo vacía.
+  - [x] Job `workflow_dispatch` **no bloqueante**.
+  - [x] Trampa documentada: en Playwright 1.61 `reducedMotion` va en `contextOptions`.
+        Escrito como opción de primer nivel **no falla**: se ignora, y el spec pasaría en
+        verde sin emular nada. Solo `tsc` lo caza.
+  - [ ] **Ejecución pendiente del deploy**: `make soc-local` invoca `make demo-db`, que
+        RESIEMBRA la DB local. Los specs quedan escritos y colectados; se corren después.

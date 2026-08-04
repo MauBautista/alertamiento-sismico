@@ -7,6 +7,7 @@ transcribió celda por celda de §2: True = la celda NO es "—".
 from __future__ import annotations
 
 from takab_api.auth.matrix import (
+    AUDIT,
     BUILDING,
     CONSOLE,
     FLEET,
@@ -17,22 +18,23 @@ from takab_api.auth.matrix import (
     allowed_routes,
 )
 
-# Columnas §2 → (Consola C4I, Flota Edge, Triage, Multi-Tenant, Dash Edificio).
-COLS = (CONSOLE, FLEET, TRIAGE, TENANTS, BUILDING)
+# Columnas §2 → (MONITOREO, Flota Edge, EVALUACIÓN, Multi-Tenant, Auditoría,
+# Dash Edificio).
+COLS = (CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING)
 
 # Copiado A MANO de RBAC-TAKAB.md §2 (matriz web), celda por celda.
 RBAC_SECTION_2 = {
-    #                    console fleet triage tenants building
-    "takab_superadmin": (True, True, True, True, True),
-    "takab_support": (True, True, True, True, True),
-    "tenant_admin": (True, True, True, True, True),
-    "soc_operator": (True, True, True, False, True),
-    "gov_operator": (True, True, True, False, True),
-    "inspector": (True, False, True, False, True),
-    "building_admin": (True, False, True, False, True),
-    "brigadista": (False, False, False, False, False),
-    "security_guard": (False, False, False, False, False),
-    "occupant": (False, False, False, False, False),
+    #                    console fleet triage tenants audit building
+    "takab_superadmin": (True, True, True, True, True, True),
+    "takab_support": (True, True, True, True, True, True),
+    "tenant_admin": (True, True, True, True, True, True),
+    "soc_operator": (True, True, True, False, False, True),
+    "gov_operator": (True, True, True, False, True, True),
+    "inspector": (True, False, True, False, False, True),
+    "building_admin": (True, False, True, False, False, True),
+    "brigadista": (False, False, False, False, False, False),
+    "security_guard": (False, False, False, False, False, False),
+    "occupant": (False, False, False, False, False, False),
 }
 
 MOBILE_ONLY = ("brigadista", "security_guard", "occupant")
@@ -75,6 +77,8 @@ DENY_ALL = {
     "drill_start": False,
     "manage_tenants": False,
     "manage_visibility": False,
+    "manage_retire_code": False,
+    "manage_users": False,
     "checkin_submit": False,
     "roster_read": False,
     "damage_report_submit": False,
@@ -183,6 +187,16 @@ def test_read_audit_is_read_only_oversight() -> None:
     assert can == {"takab_superadmin", "takab_support", "tenant_admin", "gov_operator"}
 
 
+def test_audit_route_matches_read_audit_action_exactly() -> None:
+    """[T-2.52] La ruta /audit NO inventa una frontera nueva: es la acción
+    ``read_audit`` hecha visible. Si alguien concediera la ruta sin la acción, la
+    pestaña llevaría a un 403; si concediera la acción sin la ruta, el endpoint
+    quedaría otra vez sin pantalla (que es el defecto que esta tarea cerró)."""
+    with_route = {r for r in RBAC_SECTION_2 if AUDIT in ROLE_ROUTE_MATRIX[r]}
+    with_action = {r for r in RBAC_SECTION_2 if allowed_actions(r)["read_audit"]}
+    assert with_route == with_action
+
+
 def test_self_test_is_owner_maintenance_action() -> None:
     """[T-1.59] Autodiagnóstico del gabinete = espejo de siren_test (acción de
     dueño del sitio): pulsa gas/puertas con readback. soc_operator DENEGADO —
@@ -201,6 +215,16 @@ def test_drill_start_is_institutional_admin_action() -> None:
     assert can == {"takab_superadmin", "tenant_admin"}
 
 
+def test_manage_retire_code_is_superadmin_only() -> None:
+    """[T-2.36] El segundo factor del retiro lo rota TAKAB, no el cliente.
+
+    Si ``tenant_admin`` pudiera rotar su propio código, el segundo factor volvería a
+    ser el primero (su sesión) y la fricción del retiro sería decorativa.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_retire_code"]}
+    assert can == {"takab_superadmin"}
+
+
 def test_manage_tenants_is_superadmin_only() -> None:
     """[T-1.72] Alta de clientes (POST /tenants) = acto del DUEÑO de la plataforma.
     Solo takab_superadmin: tenant_admin no da de alta OTROS clientes; support lee la
@@ -214,6 +238,19 @@ def test_manage_visibility_is_superadmin_only() -> None:
     aislamiento multi-tenant: SOLO takab_superadmin. La RLS ``vg_admin`` lo exige igual."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_visibility"]}
     assert can == {"takab_superadmin"}
+
+
+def test_manage_users_excludes_support() -> None:
+    """[T-2.54] Repartir identidades = repartir ACCESO A DATOS: ``custom:tenant_id``
+    y ``custom:role`` son los dos claims donde se ancla la RLS (regla de oro 5).
+
+    Es del dueño de la plataforma y del dueño del cliente, nunca de soporte — que en
+    §2 tiene "Total" en Flota Edge y aun así no puebla el directorio, misma
+    disciplina que ``manage_fleet``.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_users"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
+    assert allowed_actions("takab_support")["manage_users"] is False
 
 
 def test_mobile_roles_have_only_mobile_actions() -> None:

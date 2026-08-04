@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
@@ -6,6 +6,7 @@ import type { MapSiteState } from "@takab/sdk";
 const mocks = vi.hoisted(() => {
   const handlers = new Map<string, (event?: unknown) => void>();
   const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
+  const layers = new Set<string>();
   const map = {
     on: vi.fn((event: string, layerOrCb: unknown, cb?: (event?: unknown) => void) => {
       if (typeof layerOrCb === "function") handlers.set(event, layerOrCb as () => void);
@@ -14,19 +15,30 @@ const mocks = vi.hoisted(() => {
     addSource: vi.fn((id: string) => {
       sources.set(id, { setData: vi.fn() });
     }),
-    addLayer: vi.fn(),
+    addLayer: vi.fn((layer: { id: string }) => {
+      layers.add(layer.id);
+    }),
     getSource: vi.fn((id: string) => sources.get(id)),
-    getLayer: vi.fn(() => undefined),
+    getLayer: vi.fn((id: string) => (layers.has(id) ? { id } : undefined)),
     // setStyle borra el estilo previo: las sources desaparecen hasta que el
     // siguiente style.load las re-agregue (semántica real de MapLibre).
     setStyle: vi.fn(() => {
       sources.clear();
+      layers.clear();
     }),
     setPaintProperty: vi.fn(),
+    setLayoutProperty: vi.fn(),
+    getZoom: vi.fn(() => 8.5),
+    getBounds: vi.fn(() => ({
+      getWest: () => -100,
+      getSouth: () => 18,
+      getEast: () => -97,
+      getNorth: () => 20,
+    })),
     resize: vi.fn(),
     remove: vi.fn(),
   };
-  return { handlers, sources, map, Map: vi.fn(() => map) };
+  return { handlers, sources, layers, map, Map: vi.fn(() => map) };
 });
 
 vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
@@ -38,8 +50,17 @@ import MapPanel, {
   FELT_COLOR,
   pulseAt,
   sitesToFeatureCollection,
+  staticRingsFeatureCollection,
   trippedFeatures,
 } from "./MapPanel";
+import {
+  LINK_DEGRADADO,
+  LINK_OPERATIVO,
+  LINK_SIN_ENLACE,
+  LINK_SIN_GABINETE,
+  coreOpacity,
+} from "./link";
+import { kmToPixels, staticRings } from "./wavefront";
 
 function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
   return {
@@ -195,10 +216,78 @@ describe("builders del mapa (puros)", () => {
   });
 });
 
+describe("[T-2.46] el ENLACE no usa el canal de color", () => {
+  it("un enlace caído deja el NÚCLEO HUECO y apaga el punto, sin tocar `color`", () => {
+    const caido = site("down", { felt: "trip", link_state: LINK_SIN_ENLACE });
+    const vivo = site("up", { felt: "trip", link_state: LINK_OPERATIVO });
+    const [f0, f1] = sitesToFeatureCollection([caido, vivo]).features;
+    // El color sigue diciendo EXCLUSIVAMENTE qué midió el edificio.
+    expect(f0.properties.color).toBe(FELT_COLOR.trip);
+    expect(f1.properties.color).toBe(FELT_COLOR.trip);
+    // Y el enlace se dice por otros canales.
+    expect(f0.properties.link_down).toBe(true);
+    expect(f1.properties.link_down).toBe(false);
+    expect(f0.properties.link_opacity).toBeLessThan(f1.properties.link_opacity as number);
+  });
+
+  it("cada estado trae su glifo; SIN GABINETE y SIN ENLACE NO se confunden", () => {
+    const fc = sitesToFeatureCollection([
+      site("a", { link_state: LINK_SIN_ENLACE }),
+      site("b", { link_state: LINK_SIN_GABINETE }),
+      site("c", { link_state: LINK_DEGRADADO }),
+      site("d", { link_state: LINK_OPERATIVO }),
+    ]);
+    const glyphs = fc.features.map((f) => f.properties.link_glyph);
+    expect(glyphs[0]).toBe("⊘");
+    expect(glyphs[1]).toBe("○");
+    expect(glyphs[2]).toBe("▲");
+    expect(glyphs[3]).toBe(""); // el sano no lleva ruido visual
+    expect(glyphs[0]).not.toBe(glyphs[1]);
+  });
+
+  it("un sitio sin `link_state` (snapshot viejo) NO se pinta como enlace vivo", () => {
+    const f = sitesToFeatureCollection([site("x")]).features[0];
+    expect(f.properties.link).toBe(LINK_SIN_GABINETE);
+    expect(f.properties.link_opacity).toBe(coreOpacity(LINK_SIN_GABINETE));
+  });
+});
+
+describe("[T-2.47] anillos estáticos con radio FÍSICO", () => {
+  const EPI = {
+    event_id: "E",
+    source: "sasmex",
+    lon: -99.1,
+    lat: 16.8,
+    magnitude: null,
+    depth_km: null,
+    detected_at: "2026-08-04T12:00:00Z",
+  };
+
+  it("el radio en píxeles CAMBIA con el zoom para que los km no cambien", () => {
+    const z8 = staticRingsFeatureCollection([EPI], 8);
+    const z9 = staticRingsFeatureCollection([EPI], 9);
+    const r8 = z8.features[0].properties.radius_px as number;
+    const r9 = z9.features[0].properties.radius_px as number;
+    expect(r9).toBeCloseTo(r8 * 2, 6);
+    expect(r8).toBeCloseTo(kmToPixels(staticRings()[0].km, EPI.lat, 8), 6);
+  });
+
+  it("seis anillos rotulados por fase y tiempo, sin cuenta regresiva", () => {
+    const fc = staticRingsFeatureCollection([EPI], 8);
+    expect(fc.features).toHaveLength(6);
+    const labels = fc.features.map((f) => f.properties.label);
+    expect(labels).toContain("P +5s");
+    expect(labels).toContain("S +20s");
+    // CLAUDE.md §8: animación sí, T-MINUS no.
+    expect(labels.some((l) => String(l).includes("T-"))).toBe(false);
+  });
+});
+
 describe("MapPanel", () => {
   beforeEach(() => {
     mocks.handlers.clear();
     mocks.sources.clear();
+    mocks.layers.clear();
     vi.clearAllMocks();
   });
 
@@ -305,6 +394,219 @@ describe("MapPanel", () => {
     });
     expect(mocks.map.setStyle).not.toHaveBeenCalled();
     expect(screen.queryByTestId("map-degraded")).toBeNull();
+  });
+
+  it("[T-2.46] SEGUNDA leyenda de ENLACE, separada de la del movimiento del suelo", () => {
+    render(
+      <MapPanel
+        sites={[
+          site("a", { link_state: LINK_OPERATIVO }),
+          site("b", { link_state: LINK_SIN_ENLACE }),
+          site("c", { link_state: LINK_SIN_GABINETE }),
+        ]}
+        epicenters={[]}
+        onSelectSite={vi.fn()}
+      />,
+    );
+    const legend = screen.getByTestId("map-legend-link");
+    expect(legend).toHaveTextContent(/Enlace con la estación/i);
+    // Cuenta por estado, y los dos "caídos" siguen separados.
+    expect(legend).toHaveTextContent(`${LINK_SIN_ENLACE} · 1`);
+    expect(legend).toHaveTextContent(`${LINK_SIN_GABINETE} · 1`);
+    // La leyenda de sacudida sigue siendo OTRA caja.
+    expect(screen.getByText(/SACUDIDA MEDIDA EN EL EDIFICIO/i)).toBeInTheDocument();
+    expect(legend).not.toHaveTextContent(/SACUDIDA MEDIDA/i);
+  });
+
+  it("[T-2.46] la capa de glifo del enlace sale de la fuente de sitios", () => {
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const layers: Array<{ id: string; source: string }> = mocks.map.addLayer.mock.calls.map(
+      (call) => call[0] as { id: string; source: string },
+    );
+    const glyph = layers.find((l) => l.id === "site-link");
+    expect(glyph?.source).toBe("sites");
+  });
+
+  it("[T-2.47] recargar con un incidente VIEJO no arranca anillos fantasma", () => {
+    const viejo = {
+      event_id: "e-viejo",
+      source: "sasmex",
+      lon: -99.1,
+      lat: 16.8,
+      magnitude: null,
+      depth_km: null,
+      detected_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+    };
+    render(<MapPanel sites={[CRITICAL]} epicenters={[viejo]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    expect(screen.getByTestId("waves-idle")).toBeInTheDocument();
+    expect(screen.queryByTestId("waves-model")).toBeNull();
+    // Y las capas de onda quedan explícitamente ocultas, no "por defecto".
+    const hidden = mocks.map.setLayoutProperty.mock.calls.filter(
+      (c) => c[0] === "wave-p" && c[2] === "none",
+    );
+    expect(hidden.length).toBeGreaterThan(0);
+  });
+
+  it("[T-2.47] con epicentro localizado y fresco declara el MODELO, sin T-MINUS", () => {
+    const fresco = {
+      event_id: "e-vivo",
+      source: "local_quorum",
+      lon: -99.1,
+      lat: 16.8,
+      magnitude: null,
+      depth_km: null,
+      detected_at: new Date(Date.now() - 5_000).toISOString(),
+      node_count: 3,
+    };
+    render(<MapPanel sites={[CRITICAL]} epicenters={[fresco]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const note = screen.getByTestId("waves-model");
+    expect(note).toHaveTextContent(/MODELO DE UNA CAPA · ESTIMACIÓN/);
+    // CLAUDE.md §8: ni cuenta regresiva ni magnitud preliminar.
+    expect(note).not.toHaveTextContent(/T-\d/);
+    expect(note).not.toHaveTextContent(/MAGNITUD/i);
+  });
+
+  it("[T-2.47] un SOLO rAF, compuertado a 20 fps, avanza el frente y conmuta el dash", () => {
+    // El rAF se captura en vez de ejecutarse: el loop es recursivo y un mock que
+    // invoca el callback en el acto se cuelga.
+    const frames: FrameRequestCallback[] = [];
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    try {
+      const fresco = {
+        event_id: "e-vivo",
+        source: "sasmex",
+        lon: -99.1,
+        lat: 16.8,
+        magnitude: null,
+        depth_km: null,
+        detected_at: new Date(Date.now() - 5_000).toISOString(),
+      };
+      render(<MapPanel sites={[CRITICAL]} epicenters={[fresco]} onSelectSite={vi.fn()} />);
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      act(() => {
+        frames[frames.length - 1](1000);
+      });
+
+      const paint = (layer: string, prop: string) =>
+        mocks.map.setPaintProperty.mock.calls.filter((c) => c[0] === layer && c[1] === prop);
+
+      // Radio del frente P: PÍXELES derivados de km, y estrictamente positivo a
+      // los 5 s del origen. La S va por detrás (velocidad menor).
+      const p = paint("wave-p", "circle-radius");
+      const s = paint("wave-s", "circle-radius");
+      expect(p.length).toBeGreaterThan(0);
+      expect(p.at(-1)?.[2]).toBeGreaterThan(0);
+      expect(s.at(-1)?.[2] as number).toBeLessThan(p.at(-1)?.[2] as number);
+      // Dash conmutado: una propiedad de PINTURA, no geometría reescrita.
+      expect(paint("wave-link", "line-dasharray").length).toBeGreaterThan(0);
+
+      // Compuerta: un frame a +10 ms no vuelve a pintar nada…
+      const antes = mocks.map.setPaintProperty.mock.calls.length;
+      act(() => {
+        frames[frames.length - 1](1010);
+      });
+      expect(mocks.map.setPaintProperty.mock.calls.length).toBe(antes);
+      // …pero el loop SIGUE agendado (un solo rAF, nunca dos).
+      expect(frames.length).toBeGreaterThan(2);
+
+      // …y a +50 ms sí.
+      act(() => {
+        frames[frames.length - 1](1060);
+      });
+      expect(mocks.map.setPaintProperty.mock.calls.length).toBeGreaterThan(antes);
+    } finally {
+      rafSpy.mockRestore();
+    }
+  });
+
+  it("[T-2.47] pasados los 180 s el frente se apaga SOLO, sin esperar snapshot", () => {
+    const frames: FrameRequestCallback[] = [];
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    try {
+      // Fresco al montar (arranca), pero el reloj avanza más allá de la ventana.
+      const casiViejo = {
+        event_id: "e-borde",
+        source: "sasmex",
+        lon: -99.1,
+        lat: 16.8,
+        magnitude: null,
+        depth_km: null,
+        detected_at: new Date(Date.now() - 179_000).toISOString(),
+      };
+      const nowSpy = vi.spyOn(Date, "now");
+      const real = Date.now();
+      nowSpy.mockReturnValue(real);
+      render(<MapPanel sites={[CRITICAL]} epicenters={[casiViejo]} onSelectSite={vi.fn()} />);
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      expect(screen.getByTestId("waves-model")).toBeInTheDocument();
+
+      // El reloj cruza los 180 s sin que llegue ningún snapshot nuevo.
+      nowSpy.mockReturnValue(real + 5_000);
+      act(() => {
+        frames[frames.length - 1](2000);
+      });
+      expect(screen.getByTestId("waves-idle")).toBeInTheDocument();
+      nowSpy.mockRestore();
+    } finally {
+      rafSpy.mockRestore();
+    }
+  });
+
+  it("[T-2.50] las capas se conmutan y el estado se declara en el botón", () => {
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    for (const key of ["stations", "epicenters", "catalog", "link", "waves"]) {
+      expect(screen.getByTestId(`layer-${key}`)).toBeInTheDocument();
+    }
+    const link = screen.getByTestId("layer-link");
+    expect(link).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(link);
+    expect(link).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByTestId("map-legend-link")).toBeNull();
+    expect(mocks.map.setLayoutProperty).toHaveBeenCalledWith("site-link", "visibility", "none");
+  });
+
+  it("[T-2.50] moveend reporta SOLO las estaciones del viewport", () => {
+    const onViewportChange = vi.fn();
+    const dentro = site("in", { lon: -98.3, lat: 19.06 });
+    const fuera = site("out", { lon: -110, lat: 30 });
+    render(
+      <MapPanel
+        sites={[dentro, fuera]}
+        epicenters={[]}
+        onSelectSite={vi.fn()}
+        onViewportChange={onViewportChange}
+      />,
+    );
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    onViewportChange.mockClear();
+    act(() => {
+      mocks.handlers.get("moveend")?.();
+    });
+    expect(onViewportChange).toHaveBeenCalledWith(["in"]);
   });
 
   it("re-dimensionar el contenedor dispara map.resize() (canvas jamás en 0×0)", () => {

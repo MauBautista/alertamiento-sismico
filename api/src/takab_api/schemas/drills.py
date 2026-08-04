@@ -22,6 +22,11 @@ class DrillCreateIn(BaseModel):
     duration_s: int = Field(default=300, ge=30, le=3600)
     note: str | None = Field(default=None, max_length=500)
     scheduled_at: datetime | None = None
+    #: [T-2.48] Ejecuta AHORA el simulacro ARMADO con este id: hereda sus sitios,
+    #: duración y nota, y consume la agenda (``stop_reason='executed'``). NO es un
+    #: temporizador: el disparo lo hace un humano con sesión viva (regla de oro 8),
+    #: este campo solo evita que el banner armado siga anunciando lo ya ocurrido.
+    from_scheduled: UUID | None = None
 
 
 class DrillSiteOut(BaseModel):
@@ -32,6 +37,11 @@ class DrillSiteOut(BaseModel):
     command_id: UUID | None
     command_status: str | None
     ack: dict[str, Any] | None
+    #: [T-2.48] ¿el sitio tiene HOY gabinete comandable (no retirado, con
+    #: ``iot_thing``)? Se evalúa al LEER, no se congela en el registro: es la
+    #: única forma sin DDL nuevo. Existe para no colapsar dos hechos distintos —
+    #: "no había a quién mandarle el simulacro" NO es "el sitio no acusó".
+    commandable: bool = True
 
 
 class DrillOut(BaseModel):
@@ -52,6 +62,8 @@ class DrillOut(BaseModel):
 
 class DrillList(BaseModel):
     items: list[DrillOut]
+    #: [T-2.48] Cursor keyset opaco de la siguiente página; ``None`` = no hay más.
+    next_cursor: str | None = None
 
 
 class ActiveDrillOut(BaseModel):

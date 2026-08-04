@@ -296,10 +296,14 @@ class HealthMonitor(EdgeModule):
         probes: HealthProbes | None = None,
         cloud: object | None = None,
         heartbeat_s: float = 60.0,
+        audio: object | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
         self._gpio = gpio
+        # [T-2.49] Opcional: sin módulo de audio el snapshot reporta `audio=None`,
+        # que es «este gabinete no tiene voceo», no «no sé qué tono suena».
+        self._audio = audio
         self._seedlink = seedlink
         self._probes = probes or HostProbes(settings)
         self._cloud = cloud
@@ -309,6 +313,10 @@ class HealthMonitor(EdgeModule):
         self._last_key: tuple | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+
+    def set_audio(self, audio: object | None) -> None:
+        """[T-2.49] Enlaza el módulo de audio (se construye después del monitor)."""
+        self._audio = audio
 
     def on_snapshot(self, callback: Callable[[HealthSnapshot], None]) -> None:
         """Registra un consumidor de snapshots (p.ej. publicar a la nube, T-1.11)."""
@@ -380,6 +388,9 @@ class HealthMonitor(EdgeModule):
             # sin reiniciar, el heartbeat siguiente ya dice la verdad. Es una lectura
             # de un archivo diminuto, y `fw_version()` nunca lanza.
             fw_version=fw_version(),
+            # [T-2.49] Perfil de tonos efectivo. `None` si no hay módulo de audio
+            # (getattr: los fakes de los tests y los edges sin audio no lo traen).
+            audio=self._audio_report(),
             relays=relays,
             transition_reason=transition_reason,
         )
@@ -388,6 +399,17 @@ class HealthMonitor(EdgeModule):
         for callback in self._callbacks:
             callback(snap)
         return snap
+
+    def _audio_report(self) -> dict | None:
+        """Perfil de tonos que el gabinete puede sonar, o ``None`` si no hay audio."""
+        audio = getattr(self, "_audio", None)
+        if audio is None:
+            return None
+        try:
+            return audio.profile_report
+        except Exception:  # noqa: BLE001 — el latido sobrevive a cualquier sonda
+            log.warning("perfil de audio ilegible; se reporta sin dato", exc_info=True)
+            return None
 
     def _log_transition(self, snap: HealthSnapshot, reason: str) -> None:
         # Clave de estado DISCRETO: relés + UPS + banderas de umbral. Nunca el drift de

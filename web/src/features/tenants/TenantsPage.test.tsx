@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GatewayConfigStateOut, RuleSetOut, SiteOut, TenantOut } from "@takab/sdk";
@@ -7,7 +7,12 @@ import { useSessionStore } from "../../auth/session.store";
 import { ME_FIXTURES, TENANT_ID } from "../../test-utils/meFixtures";
 import { expectFourStates } from "../../test-utils/states";
 import TenantsPage from "./TenantsPage";
-import type { CreateTenantState, TenantsData, TenantSyncData } from "./useTenants";
+import type {
+  CreateTenantState,
+  TenantsData,
+  TenantSyncData,
+  UpdateTenantState,
+} from "./useTenants";
 import type { PublishState } from "./useRuleSetPublish";
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   useTenantGateways: vi.fn(),
   useRuleSetPublish: vi.fn(),
   useCreateTenant: vi.fn(),
+  useUpdateTenant: vi.fn(),
 }));
 
 vi.mock("./useTenants", () => ({
@@ -23,11 +29,17 @@ vi.mock("./useTenants", () => ({
   useTenantSync: mocks.useTenantSync,
   useTenantGateways: mocks.useTenantGateways,
   useCreateTenant: mocks.useCreateTenant,
+  useUpdateTenant: mocks.useUpdateTenant,
   TENANTS_STALE_MS: 120_000,
 }));
 vi.mock("./useRuleSetPublish", () => ({ useRuleSetPublish: mocks.useRuleSetPublish }));
 // Stub: aísla el gating de la tarjeta de su lógica (probada en VisibilityCard.test).
-vi.mock("./VisibilityCard", () => ({ default: () => "VISIBILITY_CARD_STUB" }));
+// Va envuelto en un <div>: desde T-2.54 tiene una tarjeta hermana y dos stubs de
+// texto pelado se funden en el textContent del mismo padre.
+vi.mock("./VisibilityCard", () => ({ default: () => <div>VISIBILITY_CARD_STUB</div> }));
+// [T-2.54] Mismo criterio: aquí se prueba QUIÉN ve la tarjeta de usuarios, no
+// su lógica (que vive en UsersCard.test).
+vi.mock("./UsersCard", () => ({ default: () => <div>USERS_CARD_STUB</div> }));
 
 const TENANT: TenantOut = {
   tenant_id: TENANT_ID, // el tenant de la sesión: es el único editable
@@ -38,6 +50,7 @@ const TENANT: TenantOut = {
   visibility: "private",
   status: "active",
   plan_code: "mvp",
+  row_version: "774100",
   created_at: "2026-01-01T00:00:00Z",
 };
 
@@ -123,6 +136,10 @@ function createState(over: Partial<CreateTenantState> = {}): CreateTenantState {
   return { create: vi.fn(), pending: false, error: null, createdId: null, reset: vi.fn(), ...over };
 }
 
+function updateState(over: Partial<UpdateTenantState> = {}): UpdateTenantState {
+  return { update: vi.fn(), pending: false, error: null, reset: vi.fn(), ...over };
+}
+
 function cfg(over: Partial<GatewayConfigStateOut> = {}): GatewayConfigStateOut {
   return {
     gateway_id: "g-1",
@@ -154,6 +171,7 @@ beforeEach(() => {
   mocks.useTenantGateways.mockReturnValue({ gatewayIds: [], loading: false, error: null });
   mocks.useRuleSetPublish.mockReturnValue(publishState());
   mocks.useCreateTenant.mockReturnValue(createState());
+  mocks.useUpdateTenant.mockReturnValue(updateState());
 });
 
 describe("TenantsPage · regla de oro 7", () => {
@@ -581,5 +599,88 @@ describe("TenantsPage · una publicación ajena no pisa la edición sin guardar"
 
     expect(screen.queryByText(/OTRO ADMIN PUBLICÓ/)).toBeNull();
     expect((screen.getByLabelText(/PGA · banda de disparo/) as HTMLInputElement).value).toBe("0.2");
+  });
+});
+
+describe("TenantsPage · búsqueda local del catálogo (T-2.51)", () => {
+  it("filtra la lista sin pedir nada al servidor", () => {
+    render(<TenantsPage />);
+    const list = screen.getByRole("navigation", { name: "Tenants" });
+    expect(within(list).getByText("Industrias del Valle")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "Salud" } });
+    expect(within(list).queryByText("Industrias del Valle")).toBeNull();
+    expect(within(list).getByText("Secretaría de Salud")).toBeTruthy();
+    // `useTenants` no recibe la búsqueda: `GET /tenants` no filtra ni pagina.
+    expect(mocks.useTenants).toHaveBeenCalledWith();
+  });
+
+  it("el contador pasa a MOSTRANDO n DE N mientras se filtra", () => {
+    render(<TenantsPage />);
+    expect(screen.getByText("2 TENANT(S) VISIBLES")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "Salud" } });
+    expect(screen.getByText("MOSTRANDO 1 DE 2")).toBeTruthy();
+  });
+
+  it("sin coincidencias lo DICE en vez de dejar la columna en blanco", () => {
+    render(<TenantsPage />);
+    fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "zzz" } });
+    expect(screen.getByTestId("tenant-search-empty")).toBeTruthy();
+  });
+
+  it("filtrar NO deselecciona el cliente abierto (el detalle no se vacía)", () => {
+    render(<TenantsPage />);
+    fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "zzz" } });
+    expect(screen.getByText("Industrias del Valle")).toBeTruthy(); // sigue en el detalle
+  });
+});
+
+describe("TenantsPage · edición de la ficha (T-2.51, solo manage_tenants)", () => {
+  it("tenant_admin NO ve el botón de editar ficha (la RLS lo rechazaría)", () => {
+    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    expect(screen.queryByRole("button", { name: "EDITAR FICHA" })).toBeNull();
+  });
+
+  it("el superadmin abre la ficha y guarda con base_row_version", () => {
+    seedRole("takab_superadmin");
+    const update = vi.fn();
+    mocks.useUpdateTenant.mockReturnValue(updateState({ update }));
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR FICHA" }));
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Otro Nombre" } });
+    fireEvent.click(screen.getByRole("button", { name: "GUARDAR FICHA" }));
+    expect(update).toHaveBeenCalledWith(
+      { tenantId: TENANT_ID, body: { name: "Otro Nombre", base_row_version: "774100" } },
+      expect.any(Function),
+    );
+  });
+
+  it("el 409 del servidor llega literal al formulario", () => {
+    seedRole("takab_superadmin");
+    mocks.useUpdateTenant.mockReturnValue(
+      updateState({ error: "CONFLICTO · otro administrador guardó este cliente" }),
+    );
+    render(<TenantsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR FICHA" }));
+    expect(screen.getByRole("alert").textContent).toMatch(/CONFLICTO/);
+  });
+});
+
+describe("TenantsPage · gestión de usuarios (T-2.54, solo manage_users)", () => {
+  it("el superadmin ve la tarjeta de usuarios", () => {
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    expect(screen.getByText("USERS_CARD_STUB")).toBeTruthy();
+  });
+
+  it("tenant_admin también: administra SU propio cliente", () => {
+    render(<TenantsPage />);
+    expect(screen.getByText("USERS_CARD_STUB")).toBeTruthy();
+  });
+
+  it("takab_support NO la ve: soporte lee la plataforma, no reparte identidades", () => {
+    seedRole("takab_support");
+    render(<TenantsPage />);
+    expect(screen.queryByText("USERS_CARD_STUB")).toBeNull();
   });
 });

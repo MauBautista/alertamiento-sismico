@@ -1,6 +1,6 @@
 import SevTag from "../../components/SevTag";
 import { utcStamp } from "../../lib/time";
-import { epicenterOf, magnitudeOf } from "./model";
+import { epicenterKindOf, magnitudeOf } from "./model";
 import type { TriageRow } from "./model";
 
 /** Estados del CHECK de ``incidents.state`` con etiqueta de operador. */
@@ -33,7 +33,7 @@ export interface TriageTableProps {
  */
 export default function TriageTable({ rows, selectedId, onSelect }: TriageTableProps) {
   return (
-    <table className="soc-table triage-table">
+    <table role="grid" className="soc-table triage-table">
       <thead>
         <tr>
           <th style={{ width: "24%" }}>Fecha · ID</th>
@@ -49,6 +49,8 @@ export default function TriageTable({ rows, selectedId, onSelect }: TriageTableP
         {rows.map((row) => {
           const inc = row.incident;
           const selected = inc.incident_id === selectedId;
+          const mag = magnitudeOf(row.event);
+          const epi = epicenterKindOf(row.event);
           return (
             <tr
               key={inc.incident_id}
@@ -58,15 +60,36 @@ export default function TriageTable({ rows, selectedId, onSelect }: TriageTableP
               onClick={() => onSelect(row)}
             >
               <td>
-                <div className="triage-table__dt">{utcStamp(Date.parse(inc.opened_at))} UTC</div>
-                <div className="triage-table__id">
-                  {inc.event_id ?? inc.incident_id.slice(0, 13)}
-                </div>
+                {/* [T-2.39] La fila era un <tr onClick> sin teclado, y `aria-selected`
+                    fuera de un grid es inválido. La primera celda pasa a ser un botón
+                    real: se enfoca, responde a Enter/Espacio y anuncia la fila. */}
+                <button
+                  type="button"
+                  className="triage-table__pick"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(row);
+                  }}
+                >
+                  <span className="triage-table__dt">
+                    {utcStamp(Date.parse(inc.opened_at))} UTC
+                  </span>
+                  <span className="triage-table__id">
+                    {inc.event_id ?? inc.incident_id.slice(0, 13)}
+                  </span>
+                </button>
               </td>
               <td>
-                <span className="soc-mono triage-table__mag">{magnitudeOf(row.event)}</span>
+                <span className="soc-mono triage-table__mag" title={mag.title}>
+                  {mag.label}
+                </span>
               </td>
-              <td className="soc-mono">{epicenterOf(row.event)}</td>
+              <td className="soc-mono" title={epi.note}>
+                {epi.label}
+                {epi.kind === "centroid" && (
+                  <span className="triage-table__note"> · CENTROIDE</span>
+                )}
+              </td>
               <td className={`soc-mono ${inc.severity !== "info" ? "soc-table__pga" : ""}`}>
                 {pga(row)}
               </td>

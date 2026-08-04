@@ -149,7 +149,25 @@ export const tokens = {
     sidebarW: v("--tk-sidebar-w"),
     detailW: v("--tk-detail-w"),
   },
+  /**
+   * [T-2.55] Cortes de degradación de la consola. El objetivo del producto sigue
+   * siendo 1920×1080; `md` (1280) y `lg` (1600) marcan dónde el layout DEGRADA,
+   * no dónde se rediseña.
+   *
+   * ⚠️ Una custom property NO es válida en el prelude de una `@media`
+   * (`@media (max-width: var(--tk-bp-md))` no evalúa: el prelude se resuelve
+   * antes de la cascada). Estos tokens sirven al lado JS —matchMedia, la matriz
+   * de viewports de Playwright— y las hojas llevan el píxel LITERAL con un
+   * comentario que cita el token del que sale.
+   */
+  breakpoint: {
+    md: v("--tk-bp-md"),
+    lg: v("--tk-bp-lg"),
+    xl: v("--tk-bp-xl"),
+  },
   z: {
+    mapOverlay: v("--tk-z-map-overlay"),
+    mapStatus: v("--tk-z-map-status"),
     nav: v("--tk-z-nav"),
     sticky: v("--tk-z-sticky"),
     modal: v("--tk-z-modal"),

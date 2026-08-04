@@ -14,6 +14,7 @@ from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
 from takab_api.routers.fleet import router as fleet_router
+from takab_api.routers.forensics import router as forensics_router
 from takab_api.routers.incidents import actions_router as incident_actions_router
 from takab_api.routers.incidents import router as incidents_router
 from takab_api.routers.incidents_ack import router as incidents_ack_router
@@ -28,6 +29,7 @@ from takab_api.routers.sensors import router as sensors_router
 from takab_api.routers.sites import router as sites_router
 from takab_api.routers.telemetry import router as telemetry_router
 from takab_api.routers.tenants import router as tenants_router
+from takab_api.routers.users import router as users_router
 from takab_api.routers.visibility import router as visibility_router
 from takab_api.routers.ws import router as ws_router
 from takab_api.settings import Settings
@@ -54,6 +56,8 @@ def create_app() -> FastAPI:
     app.include_router(tenants_router)
     # Visibilidad configurable entre clientes (T-1.73, superadmin).
     app.include_router(visibility_router)
+    # Gestión de usuarios: proxy del Admin API de Cognito (T-2.54).
+    app.include_router(users_router)
 
     # Incidentes / eventos / dictámenes / rule-sets (B2).
     app.include_router(incidents_router)
@@ -77,6 +81,8 @@ def create_app() -> FastAPI:
     app.include_router(telemetry_router)
     app.include_router(exports_router)
     app.include_router(reports_router)
+    # [T-2.40] Hechos medidos del incidente: una fuente para pantalla y dictamen.
+    app.include_router(forensics_router)
 
     # Comandos remotos de actuador firmados (B9, regla de oro 8).
     app.include_router(commands_router)

@@ -15,10 +15,24 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-_LIST = text(
-    """
+from takab_api.auth.scope import ConsoleScope, apply_scope
+
+# [T-2.35] El JOIN a `sites` y el WHERE no son adorno: eran la ÚNICA query del repo
+# que devolvía TODO sin filtrar, y de ahí salían las "estaciones fantasma". Como
+# `retire_site` tampoco tocaba `gateways`, cada retiro dejaba una tarjeta indeleble
+# cuyo nombre la web tenía que inventar (`SITIO <8 hex>`) — dos huérfanos parecían el
+# mismo. Ahora el nombre del sitio VIAJA CON LA FILA: sin join en el cliente no hay
+# fallback que fabricar.
+#
+# El JOIN es INNER a propósito y no pierde filas: `gateways.site_id` es
+# `NOT NULL REFERENCES sites` (db/schema.sql). Tampoco ensancha la visibilidad:
+# `sites_read` y `gateways_read` tienen políticas equivalentes.
+_LIST_SQL = """
     SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.iot_thing,
            g.status, g.has_wr1, g.equipment, g.installed_at, g.xmin::text AS row_version,
+           s.name   AS site_name,
+           s.code   AS site_code,
+           s.status AS site_status,
            h.ts AS health_ts, h.power_status,
            h.battery_pct::float8       AS battery_pct,
            h.cert_days_remaining,
@@ -27,6 +41,7 @@ _LIST = text(
            h.ntp_offset_ms::float8     AS ntp_offset_ms,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
     FROM gateways g
+    JOIN sites s ON s.site_id = g.site_id
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
                dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
@@ -35,14 +50,27 @@ _LIST = text(
         ORDER BY dh.ts DESC
         LIMIT 1
     ) h ON true
-    ORDER BY g.serial, g.gateway_id
+    WHERE (:include_retired
+       OR (g.status <> 'retired' AND s.status <> 'retired'))
+       /*+console_scope*/
+    ORDER BY s.name, g.serial, g.gateway_id
     """
-)
+# [T-2.45] Sin marcador sustituido: la variante que usan los consumidores que no
+# pasan por la consola (el espejo `_CONFIG_STATE_ALL` de abajo la deriva de esta).
+_LIST = text(_LIST_SQL.replace("/*+console_scope*/", ""))
 
 
-async def list_gateways_with_health(conn: AsyncConnection) -> Sequence[Row]:
-    """Gateways del tenant + su último heartbeat (RLS por tenant en ambas tablas)."""
-    return (await conn.execute(_LIST)).all()
+async def list_gateways_with_health(
+    conn: AsyncConnection, *, include_retired: bool = False, scope: ConsoleScope | None = None
+) -> Sequence[Row]:
+    """Gateways del tenant + su último heartbeat (RLS por tenant en todas las tablas).
+
+    Por defecto oculta lo retirado —gabinete propio O sitio padre—; los retirados solo
+    se piden explícitamente, para poder restaurarlos.
+    """
+    sql, extra = apply_scope(_LIST_SQL, scope, "g.site_id") if scope else (_LIST_SQL, {})
+    params = {"include_retired": include_retired, **extra}
+    return (await conn.execute(text(sql), params)).all()
 
 
 # Estado del sync firmado de UN gateway. El rule_set se resuelve EXACTAMENTE como
@@ -83,10 +111,21 @@ _CONFIG_STATE = text(
     """
 )
 
+# [T-2.37] El MISMO SQL sin el filtro por id. Existe porque la consola necesitaba el
+# estado de N gabinetes y lo resolvía con N peticiones en paralelo cada 10 s: con 500
+# gabinetes eso son ~50 req/s desde un solo navegador, y como el pie solo se considera
+# válido cuando responden TODOS, a esa escala habría dicho "desconocido" casi siempre.
+_CONFIG_STATE_ALL = text(str(_CONFIG_STATE).replace("WHERE g.gateway_id = :gateway_id", "").strip())
+
 
 async def get_config_state(conn: AsyncConnection, gateway_id: str) -> Row | None:
     """Estado del config firmado del gateway. ``None`` si RLS no lo deja verlo."""
     return (await conn.execute(_CONFIG_STATE, {"gateway_id": gateway_id})).first()
+
+
+async def list_config_states(conn: AsyncConnection) -> Sequence[Row]:
+    """Estado del config firmado de TODOS los gateways visibles (RLS por tenant)."""
+    return (await conn.execute(_CONFIG_STATE_ALL)).all()
 
 
 # --- Administración de gabinetes (T-1.32) ------------------------------------

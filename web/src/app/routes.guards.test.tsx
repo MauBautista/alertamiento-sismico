@@ -12,18 +12,20 @@ const URL_BY_ROUTE: Record<RouteKey, string> = {
   "/fleet": "/fleet",
   "/triage": "/triage",
   "/tenants": "/tenants",
+  "/audit": "/audit",
   "/building": "/building/S-001",
 };
 
 const HEADING_BY_ROUTE: Record<RouteKey, string> = {
-  "/console": "CONSOLA C4I",
+  "/console": "Monitoreo en Vivo",
   "/fleet": "Flota Edge y Estado de Gabinetes",
-  "/triage": "Triage Estructural e Historial",
+  "/triage": "Evaluación Estructural Post-Sismo",
   "/tenants": "Matriz Multi-Tenant y Umbrales",
+  "/audit": "Bitácora de Auditoría",
   "/building": "DASHBOARD EDIFICIO",
 };
 
-describe("guards de routing — matriz 10 roles × 5 rutas (criterio central T-1.26)", () => {
+describe("guards de routing — matriz 10 roles × 6 rutas (criterio central T-1.26)", () => {
   beforeEach(() => {
     resetSessionStoreForTests();
   });

@@ -18,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import TextClause, text
 
+from takab_api.auth.scope import ConsoleScope, apply_scope
+
 # Columnas de la vista segura que alimentan el strip 1 s del SOC.
 _FEATURE_COLS = "ts, pga_g, pgv_cms, stalta, clipping"
 
@@ -122,6 +124,15 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        li.felt_pga_g   AS inc_pga_g,
        li.felt_pgv_cms AS inc_pgv_cms,
        cal.calibrated AS calibrated,
+       lk.gateway_id       AS link_gateway_id,
+       lk.health_ts        AS link_health_ts,
+       lk.age_s            AS link_age_s,
+       lk.power_status     AS link_power_status,
+       lk.battery_pct      AS link_battery_pct,
+       lk.cert_days_remaining AS link_cert_days_remaining,
+       lk.mqtt_rtt_ms      AS link_mqtt_rtt_ms,
+       lk.seedlink_lag_s   AS link_seedlink_lag_s,
+       lk.ntp_offset_ms    AS link_ntp_offset_ms,
        th.pga_watch_g   AS pga_watch_g,
        th.pga_trip_g    AS pga_trip_g,
        th.pgv_watch_cms AS pgv_watch_cms,
@@ -174,6 +185,42 @@ LEFT JOIN LATERAL (
     WHERE sn.site_id = s.site_id AND sn.status = 'active'
 ) cal ON true
 LEFT JOIN LATERAL (
+    -- [T-2.46] Enlace del gabinete de la estación. Mismo patrón que el `_LIST` de
+    -- queries/fleet.py: el último `device_health` por gateway y la EDAD calculada
+    -- con el `now()` de la transacción (no con el reloj de la app, que puede ir a
+    -- la deriva respecto de la DB). La derivación del estado NO vive aquí: la hace
+    -- `derive_fleet_state` con estas mismas columnas, para que el mapa y la flota
+    -- no puedan contar historias distintas del mismo gabinete.
+    --
+    -- El `retired` se excluye: un gabinete dado de baja ya no es hardware de la
+    -- estación, así que la estación queda SIN GABINETE, no con un enlace muerto.
+    --
+    -- Con varios gabinetes por sitio (hoy no ocurre, el schema no lo prohíbe) gana
+    -- el del latido MÁS FRESCO: es el que responde por el enlace de la estación.
+    -- El diagnóstico gabinete a gabinete es la pantalla de Flota, no el mapa.
+    SELECT g.gateway_id,
+           h.ts AS health_ts,
+           h.power_status,
+           h.battery_pct::float8    AS battery_pct,
+           h.cert_days_remaining,
+           h.mqtt_rtt_ms::float8    AS mqtt_rtt_ms,
+           h.seedlink_lag_s::float8 AS seedlink_lag_s,
+           h.ntp_offset_ms::float8  AS ntp_offset_ms,
+           EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
+    FROM gateways g
+    LEFT JOIN LATERAL (
+        SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
+               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
+        FROM device_health dh
+        WHERE dh.gateway_id = g.gateway_id
+        ORDER BY dh.ts DESC
+        LIMIT 1
+    ) h ON true
+    WHERE g.site_id = s.site_id AND g.status <> 'retired'
+    ORDER BY h.ts DESC NULLS LAST, g.gateway_id
+    LIMIT 1
+) lk ON true
+LEFT JOIN LATERAL (
     -- Los MISMOS umbrales que arman los actuadores en el edge: el color del mapa
     -- y la decisión de disparo tienen que contar la misma historia. Scope de
     -- sitio manda sobre el de tenant. Si no hay rule_set (o RLS lo oculta), sale
@@ -189,14 +236,20 @@ LEFT JOIN LATERAL (
     ORDER BY (rs.scope_type = 'site') DESC, rs.version DESC
     LIMIT 1
 ) th ON true
-WHERE s.status = 'active'
+WHERE s.status = 'active' /*+console_scope*/
 ORDER BY s.name ASC, s.site_id ASC
 """
 
 
-def select_map_state() -> tuple[TextClause, dict[str, Any]]:
-    """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``)."""
-    return text(_MAP_STATE_SQL), {}
+def select_map_state(scope: ConsoleScope) -> tuple[TextClause, dict[str, Any]]:
+    """Snapshot del mapa SOC (una query; RLS sobre ``sites`` e ``incidents``).
+
+    [T-2.45] El ``site_scope`` del claim se aplica ENCIMA de la RLS, no en su lugar: la
+    RLS aísla tenants y el scope acota dentro del tenant. Sin él, un ``soc_operator``
+    acotado a una estación veía el mapa entero de su cliente.
+    """
+    sql, params = apply_scope(_MAP_STATE_SQL, scope, "s.site_id")
+    return text(sql), params
 
 
 # Epicentros de los eventos que tienen incidente ABIERTO. `seismic_events` es de

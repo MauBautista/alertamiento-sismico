@@ -1,6 +1,6 @@
 """Routers de lectura de incidentes (T-1.22 · B2): lista keyset, detalle, timeline.
 
-Roles con acceso = quienes tienen la Consola C4I en RBAC §2 (la matriz de rutas es
+Roles con acceso = quienes tienen MONITOREO en RBAC §2 (la matriz de rutas es
 la fuente única). El acuse (POST /incidents/{id}/ack) vive en ``incidents_ack``; aquí
 solo lectura. RLS acota por tenant en cada consulta.
 """
@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.deps import get_claims, require_roles
+from takab_api.auth.deps import get_claims, get_console_scope, require_roles
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import incidents as q
 from takab_api.routers._common import (
     clamp_limit,
@@ -26,7 +27,7 @@ from takab_api.routers._common import (
 )
 from takab_api.schemas.incidents import IncidentActionOut, IncidentOut, IncidentPage
 
-# Roles con Consola C4I (celda ≠ "—" en RBAC §2), derivados de la matriz de rutas.
+# Roles con MONITOREO (celda ≠ "—" en RBAC §2), derivados de la matriz de rutas.
 CONSOLE_ROLES: tuple[str, ...] = tuple(
     sorted(r for r, routes in ROLE_ROUTE_MATRIX.items() if CONSOLE in routes)
 )
@@ -51,6 +52,7 @@ actions_router = APIRouter(dependencies=[Depends(_require_console_or_panel)])
 @router.get("/incidents", response_model=IncidentPage)
 async def list_incidents(
     conn: AsyncConnection = Depends(read_session),
+    scope: ConsoleScope = Depends(get_console_scope),
     state: str | None = Query(None),
     severity: str | None = Query(None),
     site_id: str | None = Query(None),
@@ -82,6 +84,7 @@ async def list_incidents(
         to_ts=to_ts,
         cursor_opened_at=cur_ts,
         cursor_id=cur_id,
+        scope=scope,
         limit=size + 1,
     )
     rows = (await conn.execute(stmt, params)).mappings().all()
@@ -116,7 +119,7 @@ async def list_incident_actions(
 ) -> list[IncidentActionOut]:
     """Timeline append-only del incidente. 404 si el incidente no es visible.
 
-    [T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):
+    [T-2.08] MONITOREO por rol, o dashboard táctico móvil (``panel_read``):
     el táctico queda además acotado a su ``site_scope`` default-deny — fuera de
     alcance recibe el MISMO 404 (sin filtración de existencia).
     """

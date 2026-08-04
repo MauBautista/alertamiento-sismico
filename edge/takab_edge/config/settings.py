@@ -23,6 +23,19 @@ DEFAULT_FAILSAFE: dict[ActuatorChannel, FailSafeMode] = {
 }
 
 
+class AudioProfile(BaseModel):
+    """[T-2.49] Tonos elegidos por la nube, **solo por ID de catálogo**.
+
+    Nunca binarios (el doc de config viaja firmado hacia un dispositivo que toca
+    sirena y gas) ni rutas absolutas (la nube no conoce el disco del gabinete).
+    Vacío = conservar lo empaquetado; un ID que este edge no conoce conserva el
+    tono anterior y lo declara en el latido (ver ``audio/catalog.py``).
+    """
+
+    siren: str = ""
+    test: str = ""
+
+
 class ThresholdBand(BaseModel):
     """Banda de umbral por tipo de instalación (blueprint §4.5).
 
@@ -346,6 +359,9 @@ class EdgeSettings(BaseSettings):
     audio_siren_enabled: bool = False
     #: WAV de la sirena; vacío ⇒ el asset empaquetado (takab_edge/audio/assets/siren.wav).
     audio_siren_path: str = ""
+    #: [T-2.49] Tono del SELF-TEST de sirena. Vacío ⇒ `assets/prueba.wav` empaquetado.
+    #: Si tampoco existe, una prueba CALLA: jamás cae al tono de alerta real.
+    audio_test_path: str = ""
 
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
@@ -379,6 +395,9 @@ class EdgeSettings(BaseSettings):
     #: por sitio que restaura la actuación instrumental autónoma de Fase 1.
     instrumental_actuation: bool = False
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
+    #: [T-2.49] Perfil de tonos. ANIDADO dentro de `config.edge`, de modo que
+    #: `commands/sync.py` y el espejo `in_sync` de la nube no cambian.
+    audio: AudioProfile = Field(default_factory=AudioProfile)
     pins: GpioPins = Field(default_factory=GpioPins)
     signal: SignalConfig = Field(default_factory=SignalConfig)
     buffer: BufferConfig = Field(default_factory=BufferConfig)

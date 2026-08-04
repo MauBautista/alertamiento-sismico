@@ -43,9 +43,9 @@ export default function StructuralTriage({ incidentId }: { incidentId: string })
 
   return (
     <section className="structural" data-testid="structural-triage">
-      <h3 className="structural__title">TRIAGE ESTRUCTURAL · REPORTES DE CAMPO</h3>
+      <h3 className="structural__title">EVALUACIÓN DE CAMPO · REPORTES DEL TÁCTICO</h3>
       <StateFrame
-        label="Triage estructural"
+        label="Evaluación de campo"
         loading={loading}
         error={error}
         empty={reports !== undefined && ordered.length === 0}

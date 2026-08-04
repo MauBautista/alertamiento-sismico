@@ -33,6 +33,11 @@ vi.mock("./useTriage", () => ({
   TRIAGE_STALE_MS: 120_000,
 }));
 vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDetail }));
+// [T-2.40] `useForensics` monta react-query; esta suite no lleva provider a propósito
+// (prueba la composición de la página, no la red). Su semántica se prueba aparte.
+vi.mock("./useForensics", () => ({
+  useForensics: () => ({ data: undefined, loading: false, error: null, refetch: vi.fn() }),
+}));
 // CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
 vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 // [T-2.10] El Triage Estructural tiene su propio suite (StructuralTriage.test);
@@ -48,6 +53,7 @@ function triageData(over: Partial<TriageData> = {}): TriageData {
   return {
     rows: ROWS,
     minNodesFor: () => 3,
+    criticalityOf: () => null,
     loading: false,
     error: null,
     dataUpdatedAt: Date.now(),
@@ -274,13 +280,45 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     expect(btn.getAttribute("title")).toMatch(/No se pudo cargar la evidencia/);
   });
 
+  // [T-2.43] Los seis estados del miniSEED tienen que ser distinguibles EN PANTALLA;
+  // un botón gris sin explicación es indistinguible de una consola rota.
+  it("incidente reciente sin miniSEED: BACKFILL EN CURSO, no 'no hay'", () => {
+    vi.useFakeTimers();
+    // El fixture abre a las 09:00; a las 09:05 el crudo todavía puede estar subiendo.
+    vi.setSystemTime(new Date("2026-07-08T09:05:00Z"));
+    try {
+      renderWith({ evidence: res<EvidenceObject[]>([]) });
+      expect(screen.getByRole("button", { name: /BACKFILL EN CURSO/ })).toBeTruthy();
+      expect(screen.queryByText(/SIN miniSEED ARCHIVADO/)).toBeNull();
+      expect(screen.queryByRole("link", { name: /IR A FLOTA EDGE/ })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("incidente viejo sin miniSEED: lo declara y manda a revisar el enlace", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-08T11:00:00Z"));
+    try {
+      renderWith({ evidence: res<EvidenceObject[]>([]) });
+      expect(screen.getByRole("button", { name: /SIN miniSEED ARCHIVADO/ })).toBeTruthy();
+      const link = screen.getByRole("link", { name: /IR A FLOTA EDGE/ });
+      expect(link.getAttribute("href")).toBe("/fleet");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bitácora fallida: NO afirma '0 ACCIONES REGISTRADAS'", () => {
     renderWith({
       actions: res<IncidentActionOut[]>(undefined, { error: "GET actions falló (500)" }),
     });
     expect(screen.queryByText(/0 ACCIONES REGISTRADAS/)).toBeNull();
     expect(screen.getByText(/S\/D ACCIONES REGISTRADAS/)).toBeTruthy();
-    expect(screen.getByText(/bitácora no disponible/)).toBeTruthy();
+    // [T-2.40] El fallo dejó de ser un inciso entre paréntesis en la cadena de
+    // custodia: ahora lo declara el StateFrame de la bitácora, con REINTENTAR.
+    // Sigue siendo visible, y además accionable.
+    expect(screen.getByText(/GET actions falló \(500\)/)).toBeTruthy();
   });
 
   it("bitácora vacía de verdad SÍ dice 0", () => {

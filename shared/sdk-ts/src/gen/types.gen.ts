@@ -39,6 +39,16 @@ export type AuthFrame = {
 };
 
 /**
+ * Diferencia entre lo que estimó la red y lo que dice el catálogo.
+ */
+export type CatalogDelta = {
+    bearing?: string | null;
+    dt_s: number;
+    km?: number | null;
+    magnitude?: number | null;
+};
+
+/**
  * Lista completa (13 sismos ratificados; sin paginación).
  */
 export type CatalogEarthquakeList = {
@@ -63,6 +73,24 @@ export type CatalogEarthquakeOut = {
 };
 
 /**
+ * Sismo del catálogo de referencia más cercano en tiempo.
+ *
+ * Es el único contraste externo disponible. Sirve para declarar "la red estimó
+ * esto, el catálogo dice aquello", no para corregir el dato propio.
+ */
+export type CatalogMatch = {
+    catalog_key: string;
+    depth_km?: number | null;
+    dt_s: number;
+    lat?: number | null;
+    lon?: number | null;
+    magnitude?: number | null;
+    origin_time: string;
+    place?: string | null;
+    source: string;
+};
+
+/**
  * [T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.
  *
  * El cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/
@@ -82,6 +110,21 @@ export type CatalogPushOut = {
     gateway_id: string;
     topic: string;
     version: number;
+};
+
+/**
+ * Pico de un canal SEED en la ventana del incidente.
+ */
+export type ChannelPeak = {
+    channel: string;
+    clipped?: boolean;
+    energy_sum?: number | null;
+    peak_pga_g?: number | null;
+    peak_pgv_cms?: number | null;
+    peak_rms?: number | null;
+    peak_stalta?: number | null;
+    peak_ts?: string | null;
+    samples?: number;
 };
 
 /**
@@ -295,6 +338,7 @@ export type DirectoryEntryOut = {
  */
 export type DrillCreateIn = {
     duration_s?: number;
+    from_scheduled?: string | null;
     note?: string | null;
     scheduled_at?: string | null;
     site_ids?: Array<string> | null;
@@ -302,6 +346,7 @@ export type DrillCreateIn = {
 
 export type DrillList = {
     items: Array<DrillOut>;
+    next_cursor?: string | null;
 };
 
 export type DrillOut = {
@@ -327,6 +372,7 @@ export type DrillSiteOut = {
     } | null;
     command_id: string | null;
     command_status: string | null;
+    commandable?: boolean;
     site_id: string;
     site_name: string | null;
 };
@@ -528,6 +574,35 @@ export type FeaturesFrame = {
 };
 
 /**
+ * Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.
+ *
+ * ``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el
+ * pico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un
+ * incidente disparado por umbral local la "alerta" ES la sacudida, y el número sería
+ * cero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y
+ * ``lead_time_reason`` dice por qué; nunca 0.
+ */
+export type ForensicsOut = {
+    calibrated?: boolean;
+    catalog?: CatalogMatch | null;
+    catalog_delta?: CatalogDelta | null;
+    channels?: Array<ChannelPeak>;
+    felt_band?: string;
+    incident_id: string;
+    lead_time_reason?: string | null;
+    lead_time_s?: number | null;
+    peak_pga_g?: number | null;
+    peak_pgv_cms?: number | null;
+    peak_ts?: string | null;
+    peers?: Array<QuorumPeer>;
+    sensors?: Array<SensorInfo>;
+    site?: SiteGeo | null;
+    station_count?: number;
+    window_from: string;
+    window_to: string;
+};
+
+/**
  * Estado del config firmado que el gateway tiene REALMENTE (T-1.30 · C4).
  *
  * ``publish`` solo registra la intención (202 ``pending_sync``); quien firma y
@@ -574,7 +649,30 @@ export type GatewayCreate = {
 };
 
 /**
+ * Historia de 24 h de un gabinete (T-2.38).
+ *
+ * ``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de
+ * latidos periódicos recibidos frente a los esperados por la cadencia del edge. Se
+ * rotula así en la UI a propósito — la completitud de forma de onda exigiría contar
+ * la serie sísmica por segundo, y hoy no hay agregado que lo haga barato.
+ */
+export type GatewayHealthOut = {
+    buckets?: Array<HealthBucket>;
+    downtime_s?: number;
+    gateway_id: string;
+    heartbeat_completeness?: number | null;
+    last_outage_end?: string | null;
+    outages?: number;
+};
+
+/**
  * Gateway del tenant + estado derivado del último ``device_health``.
+ *
+ * [T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web
+ * los resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete
+ * huérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos
+ * huérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que
+ * inventar — la clase de bug entera desaparece.
  */
 export type GatewayOut = {
     battery_pct?: number | null;
@@ -594,8 +692,19 @@ export type GatewayOut = {
     row_version: string;
     seedlink_lag_s?: number | null;
     serial: string;
+    site_code: string;
     site_id: string;
+    site_name: string;
+    site_status: string;
     status: string;
+};
+
+/**
+ * Retiro de gabinete: ``confirm_serial`` (visible) + ``retire_code`` (secreto).
+ */
+export type GatewayRetire = {
+    confirm_serial: string;
+    retire_code: string;
 };
 
 /**
@@ -661,6 +770,22 @@ export type HeadcountActionOut = {
 export type HeadcountCloseIn = {
     key_id?: string | null;
     signature?: string | null;
+};
+
+/**
+ * Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.
+ *
+ * Un bucket sin dato para una métrica vale ``None``, **nunca 0**: "no reportó RTT"
+ * y "reportó 0 ms" son hechos distintos y confundirlos pinta una línea plana que
+ * parece salud perfecta (regla de oro 7).
+ */
+export type HealthBucket = {
+    battery_min_pct?: number | null;
+    heartbeats: number;
+    mqtt_rtt_p95_ms?: number | null;
+    ntp_offset_abs_max_ms?: number | null;
+    seedlink_lag_max_s?: number | null;
+    ts: string;
 };
 
 /**
@@ -790,12 +915,17 @@ export type MapSiteState = {
     felt_pga_g: number | null;
     felt_pgv_cms: number | null;
     last_bucket: string | null;
+    last_heartbeat_ts?: string | null;
     lat: number;
+    link_reasons?: Array<string>;
+    link_state?: string;
     lon: number;
     max_pga_g: number | null;
     max_pgv_cms: number | null;
+    mqtt_rtt_ms?: number | null;
     name: string;
     open_incident: MapIncident | null;
+    seedlink_lag_s?: number | null;
     site_id: string;
     tenant_id: string;
 };
@@ -826,7 +956,9 @@ export type MeActions = {
     export: boolean;
     generate_report: boolean;
     manage_fleet: boolean;
+    manage_retire_code: boolean;
     manage_tenants: boolean;
+    manage_users: boolean;
     manage_visibility: boolean;
     manual_activate: boolean;
     panel_read: boolean;
@@ -850,6 +982,7 @@ export type MeActions = {
 export type MeResponse = {
     allowed_actions: MeActions;
     allowed_routes: Array<string>;
+    console_scope_enforced?: boolean;
     role: string;
     site_scope: '*' | Array<string>;
     sub: string;
@@ -1063,7 +1196,24 @@ export type PushTokenOut = {
 };
 
 /**
+ * Estación que votó. Coordenadas nulas = la RLS oculta esa estación (otra red).
+ */
+export type QuorumPeer = {
+    counted: boolean;
+    delta_s?: number | null;
+    lat?: number | null;
+    lon?: number | null;
+    pga_g?: number | null;
+    sensor_id: string;
+    site_code?: string | null;
+};
+
+/**
  * Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.
+ *
+ * [T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa
+ * algo: el voto viene de una estación que la RLS de este tenant no deja ver. La
+ * consola lo rotula "OTRA RED" — que es el hecho — en vez de un uuid truncado.
  */
 export type QuorumVoteOut = {
     counted: boolean;
@@ -1072,6 +1222,8 @@ export type QuorumVoteOut = {
     event_id: string;
     pga_g: number;
     sensor_id: string;
+    site_code?: string | null;
+    station_serial?: string | null;
 };
 
 /**
@@ -1088,6 +1240,31 @@ export type ReportOut = {
     evidence_id: string;
     expires_in: number;
     url: string;
+};
+
+/**
+ * Fija o rota el código del tenant. Solo ``takab_superadmin``.
+ *
+ * Mínimo 8 caracteres: es una credencial tecleada por una persona, no un token
+ * generado. El hash lo calcula Postgres (bcrypt vía ``pgcrypto``); este texto no se
+ * guarda ni se registra en ninguna parte.
+ */
+export type RetireCodeRotate = {
+    code: string;
+};
+
+/**
+ * ¿Hay código y de cuándo? Nunca el hash.
+ *
+ * La consola lo consulta ANTES de ofrecer el retiro: sin código configurado el
+ * intento sería un 409 seguro, y prometer un botón que siempre falla es
+ * exactamente lo que prohíbe la regla de oro 7.
+ */
+export type RetireCodeState = {
+    configured: boolean;
+    rotated_at?: string | null;
+    tenant_id: string;
+    version?: number | null;
 };
 
 export type RosterCheckin = {
@@ -1214,6 +1391,24 @@ export type SensorCreate = {
 };
 
 /**
+ * Sensor del sitio. ``calibration_source`` decide la honestidad de las unidades.
+ *
+ * Sin procedencia declarada, el PGA/PGV NO está en g ni cm/s: son valores
+ * RELATIVOS. Un dictamen que los presentara como gravedades estaría afirmando una
+ * medición física que nadie hizo.
+ */
+export type SensorInfo = {
+    calibration_source?: string | null;
+    channels?: Array<string>;
+    kind: string;
+    model: string;
+    mount?: string | null;
+    sample_rate?: number | null;
+    sensor_id: string;
+    serial?: string | null;
+};
+
+/**
  * Sensor de un sitio (RS4D estructural o de terreno).
  */
 export type SensorOut = {
@@ -1316,6 +1511,19 @@ export type SiteDetailOut = {
 };
 
 /**
+ * Ficha del sitio para el croquis y la portada del dictamen.
+ */
+export type SiteGeo = {
+    address?: string | null;
+    building_type?: string | null;
+    code: string;
+    criticality?: string | null;
+    lat?: number | null;
+    lon?: number | null;
+    name: string;
+};
+
+/**
  * Sitio del tenant. ``geom`` se proyecta a ``lat``/``lon`` (ST_Y/ST_X).
  */
 export type SiteOut = {
@@ -1332,6 +1540,18 @@ export type SiteOut = {
     status: string;
     tenant_id: string;
     timezone: string;
+};
+
+/**
+ * Retiro de sitio: ``confirm_code`` (el ``code`` del sitio) + ``retire_code``.
+ *
+ * Se teclea el ``code`` y no el ``name`` porque ``sites.name`` NO es único
+ * (``db/schema.sql`` solo restringe ``(tenant_id, code)``): confirmar con un rótulo
+ * ambiguo dejaría al operador creyendo que apagó otra estación.
+ */
+export type SiteRetire = {
+    confirm_code: string;
+    retire_code: string;
 };
 
 /**
@@ -1414,10 +1634,92 @@ export type TenantOut = {
     isolation_mode: string;
     name: string;
     plan_code: string;
+    row_version: string;
     status: string;
     tenant_id: string;
     vertical?: string | null;
     visibility: string;
+};
+
+/**
+ * Edición PARCIAL de un cliente (T-2.51). Solo ``takab_superadmin``.
+ *
+ * Es un PATCH, no un PUT: la pantalla Multi-Tenant edita una ficha campo a campo y
+ * un reemplazo total obligaría a reenviar valores que el operador no tocó (y a
+ * pisarlos si otro admin los cambió mientras el formulario estaba abierto).
+ *
+ * ``code`` NO es editable: es la llave que TAKAB entrega fuera de banda y que
+ * aparece en runbooks, tickets y en el ``edge.env`` de los gabinetes. ``tenant_id``
+ * tampoco (``extra='forbid'`` los rechaza con 422). ``isolation_mode`` queda fuera
+ * a propósito: pasar de ``logical`` a ``dedicated`` es una migración de datos, no
+ * una casilla — anunciarlo aquí prometería un aislamiento que nadie ejecutó.
+ */
+export type TenantUpdate = {
+    base_row_version?: string | null;
+    name?: string | null;
+    plan_code?: string | null;
+    status?: ('trial' | 'active' | 'suspended') | null;
+    vertical?: string | null;
+    visibility?: ('private' | 'gov_shared') | null;
+};
+
+/**
+ * Acuse de reset/reenvío. NO trae contraseña ni código: el correo lo lleva.
+ */
+export type UserActionOut = {
+    action: 'password_reset' | 'invitation_resent';
+    /**
+     * Qué pasó, en lenguaje de operador. Jamás una credencial.
+     */
+    detail: string;
+    username: string;
+};
+
+/**
+ * Alta de usuario. La contraseña la genera Cognito y viaja por correo.
+ */
+export type UserCreate = {
+    email: string;
+    role: string;
+    site_scope?: string;
+    surface?: 'web' | 'mobile' | 'both';
+    tenant_id?: string | null;
+    zone_id?: string;
+};
+
+/**
+ * Usuario del directorio. Sin credenciales, por construcción.
+ */
+export type UserOut = {
+    created_at?: string | null;
+    email: string;
+    enabled: boolean;
+    role: string;
+    site_scope: string;
+    status: string;
+    surface: string;
+    tenant_id: string;
+    updated_at?: string | null;
+    username: string;
+    zone_id: string;
+};
+
+export type UserPage = {
+    backend: string;
+    items: Array<UserOut>;
+    next_cursor?: string | null;
+};
+
+/**
+ * Edición PARCIAL. ``email`` no se toca: es el identificador de acceso y
+ * cambiarlo desde aquí rompería el vínculo con la invitación ya enviada.
+ */
+export type UserUpdate = {
+    enabled?: boolean | null;
+    role?: string | null;
+    site_scope?: string | null;
+    surface?: ('web' | 'mobile' | 'both') | null;
+    zone_id?: string | null;
 };
 
 export type ValidationError = {
@@ -1518,9 +1820,22 @@ export type ListReferenceEarthquakesCatalogEarthquakesGetResponse = ListReferenc
 export type ListDrillsDrillsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        kind?: 'all' | 'executed' | 'scheduled';
+        cursor?: string | null;
+        limit?: number | null;
+    };
     url: '/drills';
 };
+
+export type ListDrillsDrillsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDrillsDrillsGetError = ListDrillsDrillsGetErrors[keyof ListDrillsDrillsGetErrors];
 
 export type ListDrillsDrillsGetResponses = {
     /**
@@ -1572,6 +1887,33 @@ export type ActiveDrillDrillsActiveGetResponses = {
 
 export type ActiveDrillDrillsActiveGetResponse = ActiveDrillDrillsActiveGetResponses[keyof ActiveDrillDrillsActiveGetResponses];
 
+export type CancelDrillDrillsDrillIdCancelPostData = {
+    body?: never;
+    path: {
+        drill_id: string;
+    };
+    query?: never;
+    url: '/drills/{drill_id}/cancel';
+};
+
+export type CancelDrillDrillsDrillIdCancelPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelDrillDrillsDrillIdCancelPostError = CancelDrillDrillsDrillIdCancelPostErrors[keyof CancelDrillDrillsDrillIdCancelPostErrors];
+
+export type CancelDrillDrillsDrillIdCancelPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillOut;
+};
+
+export type CancelDrillDrillsDrillIdCancelPostResponse = CancelDrillDrillsDrillIdCancelPostResponses[keyof CancelDrillDrillsDrillIdCancelPostResponses];
+
 export type StopDrillDrillsDrillIdStopPostData = {
     body?: never;
     path: {
@@ -1606,6 +1948,10 @@ export type ListEventsEventsGetData = {
         source?: string | null;
         cursor?: string | null;
         limit?: number | null;
+        /**
+         * event_id separados por coma (máx. 200)
+         */
+        ids?: string | null;
     };
     url: '/events';
 };
@@ -1709,12 +2055,39 @@ export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses = {
 
 export type VerifyEvidenceEvidenceEvidenceIdVerifyPostResponse = VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses[keyof VerifyEvidenceEvidenceEvidenceIdVerifyPostResponses];
 
-export type ListGatewaysFleetGatewaysGetData = {
+export type ListGatewayConfigStatesFleetConfigStateGetData = {
     body?: never;
     path?: never;
     query?: never;
+    url: '/fleet/config-state';
+};
+
+export type ListGatewayConfigStatesFleetConfigStateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<GatewayConfigStateOut>;
+};
+
+export type ListGatewayConfigStatesFleetConfigStateGetResponse = ListGatewayConfigStatesFleetConfigStateGetResponses[keyof ListGatewayConfigStatesFleetConfigStateGetResponses];
+
+export type ListGatewaysFleetGatewaysGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        include_retired?: boolean;
+    };
     url: '/fleet/gateways';
 };
+
+export type ListGatewaysFleetGatewaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListGatewaysFleetGatewaysGetError = ListGatewaysFleetGatewaysGetErrors[keyof ListGatewaysFleetGatewaysGetErrors];
 
 export type ListGatewaysFleetGatewaysGetResponses = {
     /**
@@ -1749,33 +2122,6 @@ export type CreateGatewayFleetGatewaysPostResponses = {
 };
 
 export type CreateGatewayFleetGatewaysPostResponse = CreateGatewayFleetGatewaysPostResponses[keyof CreateGatewayFleetGatewaysPostResponses];
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteData = {
-    body?: never;
-    path: {
-        gateway_id: string;
-    };
-    query?: never;
-    url: '/fleet/gateways/{gateway_id}';
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteError = RetireGatewayFleetGatewaysGatewayIdDeleteErrors[keyof RetireGatewayFleetGatewaysGatewayIdDeleteErrors];
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteResponses = {
-    /**
-     * Successful Response
-     */
-    200: GatewayRowOut;
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteResponse = RetireGatewayFleetGatewaysGatewayIdDeleteResponses[keyof RetireGatewayFleetGatewaysGatewayIdDeleteResponses];
 
 export type UpdateGatewayFleetGatewaysGatewayIdPutData = {
     body: GatewayUpdate;
@@ -1857,6 +2203,61 @@ export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses = {
 };
 
 export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponse = RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses[keyof RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses];
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostData = {
+    body: GatewayRetire;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}/retire';
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostError = RetireGatewayFleetGatewaysGatewayIdRetirePostErrors[keyof RetireGatewayFleetGatewaysGatewayIdRetirePostErrors];
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayRowOut;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponse = RetireGatewayFleetGatewaysGatewayIdRetirePostResponses[keyof RetireGatewayFleetGatewaysGatewayIdRetirePostResponses];
+
+export type FleetHealthHistoryFleetHealthHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        hours?: number;
+        bucket_min?: number;
+    };
+    url: '/fleet/health-history';
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetError = FleetHealthHistoryFleetHealthHistoryGetErrors[keyof FleetHealthHistoryFleetHealthHistoryGetErrors];
+
+export type FleetHealthHistoryFleetHealthHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<GatewayHealthOut>;
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetResponse = FleetHealthHistoryFleetHealthHistoryGetResponses[keyof FleetHealthHistoryFleetHealthHistoryGetResponses];
 
 export type PushCatalogGatewaysGatewayIdCatalogPostData = {
     body: CatalogPushIn;
@@ -2319,6 +2720,33 @@ export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponses = {
 
 export type RegisterEvidenceIncidentsIncidentIdEvidencePostResponse = RegisterEvidenceIncidentsIncidentIdEvidencePostResponses[keyof RegisterEvidenceIncidentsIncidentIdEvidencePostResponses];
 
+export type IncidentForensicsIncidentsIncidentIdForensicsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/forensics';
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetError = IncidentForensicsIncidentsIncidentIdForensicsGetErrors[keyof IncidentForensicsIncidentsIncidentIdForensicsGetErrors];
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ForensicsOut;
+};
+
+export type IncidentForensicsIncidentsIncidentIdForensicsGetResponse = IncidentForensicsIncidentsIncidentIdForensicsGetResponses[keyof IncidentForensicsIncidentsIncidentIdForensicsGetResponses];
+
 export type CloseHeadcountIncidentsIncidentIdHeadcountClosePostData = {
     body: HeadcountCloseIn;
     path: {
@@ -2378,7 +2806,12 @@ export type GenerateReportIncidentsIncidentIdReportPostData = {
     path: {
         incident_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * technical | executive
+         */
+        variant?: string;
+    };
     url: '/incidents/{incident_id}/report';
 };
 
@@ -2844,33 +3277,6 @@ export type CreateSiteSitesPostResponses = {
 
 export type CreateSiteSitesPostResponse = CreateSiteSitesPostResponses[keyof CreateSiteSitesPostResponses];
 
-export type RetireSiteSitesSiteIdDeleteData = {
-    body?: never;
-    path: {
-        site_id: string;
-    };
-    query?: never;
-    url: '/sites/{site_id}';
-};
-
-export type RetireSiteSitesSiteIdDeleteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RetireSiteSitesSiteIdDeleteError = RetireSiteSitesSiteIdDeleteErrors[keyof RetireSiteSitesSiteIdDeleteErrors];
-
-export type RetireSiteSitesSiteIdDeleteResponses = {
-    /**
-     * Successful Response
-     */
-    200: SiteOut;
-};
-
-export type RetireSiteSitesSiteIdDeleteResponse = RetireSiteSitesSiteIdDeleteResponses[keyof RetireSiteSitesSiteIdDeleteResponses];
-
 export type GetSiteSitesSiteIdGetData = {
     body?: never;
     path: {
@@ -3278,6 +3684,33 @@ export type MobileStateSitesSiteIdMobileStateGetResponses = {
 
 export type MobileStateSitesSiteIdMobileStateGetResponse = MobileStateSitesSiteIdMobileStateGetResponses[keyof MobileStateSitesSiteIdMobileStateGetResponses];
 
+export type RetireSiteSitesSiteIdRetirePostData = {
+    body: SiteRetire;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/retire';
+};
+
+export type RetireSiteSitesSiteIdRetirePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireSiteSitesSiteIdRetirePostError = RetireSiteSitesSiteIdRetirePostErrors[keyof RetireSiteSitesSiteIdRetirePostErrors];
+
+export type RetireSiteSitesSiteIdRetirePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SiteOut;
+};
+
+export type RetireSiteSitesSiteIdRetirePostResponse = RetireSiteSitesSiteIdRetirePostResponses[keyof RetireSiteSitesSiteIdRetirePostResponses];
+
 export type MapStateTelemetryMapStateGetData = {
     body?: never;
     path?: never;
@@ -3426,6 +3859,248 @@ export type CreateTenantTenantsPostResponses = {
 };
 
 export type CreateTenantTenantsPostResponse = CreateTenantTenantsPostResponses[keyof CreateTenantTenantsPostResponses];
+
+export type UpdateTenantTenantsTenantIdPatchData = {
+    body: TenantUpdate;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}';
+};
+
+export type UpdateTenantTenantsTenantIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateTenantTenantsTenantIdPatchError = UpdateTenantTenantsTenantIdPatchErrors[keyof UpdateTenantTenantsTenantIdPatchErrors];
+
+export type UpdateTenantTenantsTenantIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: TenantOut;
+};
+
+export type UpdateTenantTenantsTenantIdPatchResponse = UpdateTenantTenantsTenantIdPatchResponses[keyof UpdateTenantTenantsTenantIdPatchResponses];
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetData = {
+    body?: never;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/retire-code';
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetError = GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors[keyof GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors];
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RetireCodeState;
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetResponse = GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses[keyof GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses];
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutData = {
+    body: RetireCodeRotate;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/retire-code';
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutError = PutRetireCodeTenantsTenantIdRetireCodePutErrors[keyof PutRetireCodeTenantsTenantIdRetireCodePutErrors];
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: RetireCodeState;
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutResponse = PutRetireCodeTenantsTenantIdRetireCodePutResponses[keyof PutRetireCodeTenantsTenantIdRetireCodePutResponses];
+
+export type ListUsersUsersGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number | null;
+        cursor?: string | null;
+    };
+    url: '/users';
+};
+
+export type ListUsersUsersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListUsersUsersGetError = ListUsersUsersGetErrors[keyof ListUsersUsersGetErrors];
+
+export type ListUsersUsersGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserPage;
+};
+
+export type ListUsersUsersGetResponse = ListUsersUsersGetResponses[keyof ListUsersUsersGetResponses];
+
+export type CreateUserUsersPostData = {
+    body: UserCreate;
+    path?: never;
+    query?: never;
+    url: '/users';
+};
+
+export type CreateUserUsersPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateUserUsersPostError = CreateUserUsersPostErrors[keyof CreateUserUsersPostErrors];
+
+export type CreateUserUsersPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: UserOut;
+};
+
+export type CreateUserUsersPostResponse = CreateUserUsersPostResponses[keyof CreateUserUsersPostResponses];
+
+export type DeleteUserUsersUsernameDeleteData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}';
+};
+
+export type DeleteUserUsersUsernameDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteUserUsersUsernameDeleteError = DeleteUserUsersUsernameDeleteErrors[keyof DeleteUserUsersUsernameDeleteErrors];
+
+export type DeleteUserUsersUsernameDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteUserUsersUsernameDeleteResponse = DeleteUserUsersUsernameDeleteResponses[keyof DeleteUserUsersUsernameDeleteResponses];
+
+export type UpdateUserUsersUsernamePatchData = {
+    body: UserUpdate;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}';
+};
+
+export type UpdateUserUsersUsernamePatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateUserUsersUsernamePatchError = UpdateUserUsersUsernamePatchErrors[keyof UpdateUserUsersUsernamePatchErrors];
+
+export type UpdateUserUsersUsernamePatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserOut;
+};
+
+export type UpdateUserUsersUsernamePatchResponse = UpdateUserUsersUsernamePatchResponses[keyof UpdateUserUsersUsernamePatchResponses];
+
+export type ResendInvitationUsersUsernameResendInvitationPostData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}/resend-invitation';
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostError = ResendInvitationUsersUsernameResendInvitationPostErrors[keyof ResendInvitationUsersUsernameResendInvitationPostErrors];
+
+export type ResendInvitationUsersUsernameResendInvitationPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserActionOut;
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostResponse = ResendInvitationUsersUsernameResendInvitationPostResponses[keyof ResendInvitationUsersUsernameResendInvitationPostResponses];
+
+export type ResetPasswordUsersUsernameResetPasswordPostData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}/reset-password';
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostError = ResetPasswordUsersUsernameResetPasswordPostErrors[keyof ResetPasswordUsersUsernameResetPasswordPostErrors];
+
+export type ResetPasswordUsersUsernameResetPasswordPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserActionOut;
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostResponse = ResetPasswordUsersUsernameResetPasswordPostResponses[keyof ResetPasswordUsersUsernameResetPasswordPostResponses];
 
 export type ListVisibilityGrantsVisibilityGrantsGetData = {
     body?: never;

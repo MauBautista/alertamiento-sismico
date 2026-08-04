@@ -19,6 +19,8 @@ from uuid import UUID
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.auth.scope import ConsoleScope, apply_scope
+
 # geom es geography(Point,4326): se castea a geometry para ST_Y/ST_X (lat/lon).
 _COLS = (
     "site_id, tenant_id, code, name, timezone, criticality, "
@@ -28,8 +30,14 @@ _COLS = (
 
 _GEOM = "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography"
 
-_LIST = text(f"SELECT {_COLS} FROM sites WHERE status = 'active' ORDER BY code, site_id")
-_LIST_ALL = text(f"SELECT {_COLS} FROM sites ORDER BY code, site_id")
+# El marcador `/*+console_scope*/` lo sustituye `apply_scope` por el filtro de
+# `site_scope` (T-2.45), o por nada cuando el rol no está acotado.
+_LIST_SQL = (
+    f"SELECT {_COLS} FROM sites WHERE status = 'active' /*+console_scope*/ ORDER BY code, site_id"
+)
+_LIST_ALL_SQL = f"SELECT {_COLS} FROM sites WHERE true /*+console_scope*/ ORDER BY code, site_id"
+_LIST = text(_LIST_SQL.replace("/*+console_scope*/", ""))
+_LIST_ALL = text(_LIST_ALL_SQL.replace("/*+console_scope*/", ""))
 _GET = text(f"SELECT {_COLS} FROM sites WHERE site_id = :id")
 _ZONES = text(
     "SELECT zone_id, name, level_code FROM zones WHERE site_id = :id ORDER BY name, zone_id"
@@ -58,10 +66,31 @@ _UPDATE = text(
 # Retiro lógico e idempotente: retirar dos veces devuelve la misma fila.
 _RETIRE = text(f"UPDATE sites SET status = 'retired' WHERE site_id = :id RETURNING {_COLS}")
 
+# [T-2.35] Retirar la estación apaga su hardware EN LA MISMA TRANSACCIÓN. No es
+# cosmética de UI: `commands/sync.py` y `queries/commands.py` filtran por
+# `gateways.status`, NO por `sites.status`. Un gabinete cuyo sitio se retiró seguía
+# siendo candidato de config firmada y de comandos de actuación — hardware fuera de
+# todo catálogo que aún podía recibir órdenes.
+# Idempotente: la segunda pasada devuelve 0 filas y no vuelve a auditar.
+_RETIRE_GATEWAYS = text(
+    "UPDATE gateways SET status = 'retired' "
+    "WHERE site_id = :id AND status <> 'retired' "
+    "RETURNING gateway_id, serial"
+)
 
-async def list_sites(conn: AsyncConnection, *, include_retired: bool = False) -> Sequence[Row]:
-    """Sitios visibles al request (RLS por tenant). Los retirados solo si se piden."""
-    return (await conn.execute(_LIST_ALL if include_retired else _LIST)).all()
+
+async def list_sites(
+    conn: AsyncConnection, *, include_retired: bool = False, scope: ConsoleScope | None = None
+) -> Sequence[Row]:
+    """Sitios visibles al request (RLS por tenant). Los retirados solo si se piden.
+
+    [T-2.45] ``scope`` acota por ``site_scope`` dentro del tenant. El catálogo alimenta
+    los selectores de toda la consola: sin acotarlo, un operador restringido seguiría
+    viendo los nombres de estaciones que no le tocan.
+    """
+    base = _LIST_ALL_SQL if include_retired else _LIST_SQL
+    sql, params = apply_scope(base, scope, "site_id") if scope else (base, {})
+    return (await conn.execute(text(sql), params)).all()
 
 
 async def get_site(conn: AsyncConnection, site_id: UUID) -> Row | None:
@@ -90,3 +119,8 @@ async def update_site(
 async def retire_site(conn: AsyncConnection, site_id: UUID) -> Row | None:
     """Marca el sitio como ``retired``. ``None`` si RLS no lo deja tocarlo."""
     return (await conn.execute(_RETIRE, {"id": site_id})).first()
+
+
+async def retire_site_gateways(conn: AsyncConnection, site_id: UUID) -> Sequence[Row]:
+    """Retira los gabinetes del sitio. Devuelve solo los que CAMBIARON (idempotencia)."""
+    return (await conn.execute(_RETIRE_GATEWAYS, {"id": site_id})).all()

@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router";
 
+import AuditPage from "../features/audit/AuditPage";
 import ConsolePage from "../features/console/ConsolePage";
 import FleetPage from "../features/fleet/FleetPage";
 import TenantsPage from "../features/tenants/TenantsPage";
@@ -51,6 +52,14 @@ export const routes: RouteObject[] = [
             element: (
               <RouteGuard routeKey="/tenants">
                 <TenantsPage />
+              </RouteGuard>
+            ),
+          },
+          {
+            path: "/audit",
+            element: (
+              <RouteGuard routeKey="/audit">
+                <AuditPage />
               </RouteGuard>
             ),
           },

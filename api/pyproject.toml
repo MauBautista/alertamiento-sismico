@@ -19,6 +19,11 @@ dependencies = [
     # la importa a nivel de módulo.
     "cryptography>=43",
     "fpdf2>=2.8.7",
+    # [T-2.41] SOLO para la FFT del dictamen técnico. Se rechazó ObsPy —que sería la
+    # opción obvia para leer miniSEED— porque arrastra matplotlib+scipy+lxml (>200 MB)
+    # a una imagen co-locada con TimescaleDB en un EC2 pequeño; el lector STEIM2 vive
+    # en `dictamen/mseed.py` y se valida contra vectores del propio ObsPy del edge.
+    "numpy>=2.1",
     # RUNTIME, no dev: `notify/providers.py` lo importa a nivel de módulo para el canal
     # webhook. Estaba solo en el extra `dev`, así que el worker `notify` moría al
     # arrancar en cualquier despliegue real (descubierto ejecutando la imagen, T-1.37).
@@ -35,6 +40,11 @@ dev = [
     "moto[s3,sqs,ses]>=5.2.2",
     "pytest-asyncio>=1.4.0",
 ]
+
+[tool.setuptools.package-data]
+# [T-2.41] Tipografía Unicode del PDF. Las fuentes core de fpdf2 son latin-1 y
+# degradaban Δ, ≥ y ≈ a interrogantes en un documento de compliance.
+"takab_api.dictamen" = ["fonts/*.ttf", "fonts/LICENSE"]
 
 [build-system]
 requires = ["setuptools>=68"]

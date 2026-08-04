@@ -39,6 +39,7 @@ from takab_edge.contracts import (
     FailSafeMode,
     RelayState,
     SasmexSignal,
+    SirenReason,
 )
 from takab_edge.module import EdgeModule
 
@@ -735,3 +736,30 @@ class GpioController(EdgeModule):
         with self._lock:
             energized = self._energized.get(ActuatorChannel.SIREN, False)
             return energized == active_energized(self._failsafe(ActuatorChannel.SIREN))
+
+    @property
+    def siren_reason(self) -> SirenReason | None:
+        """[T-2.49] POR QUÉ suena la sirena, o ``None`` si no suena.
+
+        Se DERIVA de los enclaves que ya deciden el estado eléctrico; no se lleva un
+        estado paralelo que pudiera desincronizarse del relé (que es el que manda).
+
+        La precedencia es la de la seguridad: una alerta real durante una prueba se
+        reporta como ``ALERT``. Al revés —rotular de prueba una alerta viva— haría que
+        el gabinete tranquilizara a un edificio que se está moviendo.
+        """
+        with self._lock:
+            energized = self._energized.get(ActuatorChannel.SIREN, False)
+            if energized != active_energized(self._failsafe(ActuatorChannel.SIREN)):
+                return None
+            if self._sasmex_latched or self._rules_demand.get(ActuatorChannel.SIREN, False):
+                return SirenReason.ALERT
+            if self._safed:
+                return SirenReason.SAFE_STATE
+            if self._siren_test_active or self._actuation_test_active:
+                return SirenReason.TEST
+            # Suena pero ninguna demanda conocida lo explica: es un estado que no
+            # debería existir. Se reporta como ALERTA a propósito — ante la duda, el
+            # sonido que NO minimiza lo que está pasando.
+            log.warning("sirena sonando sin demanda conocida; se rotula como ALERTA")
+            return SirenReason.ALERT

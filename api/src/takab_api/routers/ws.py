@@ -8,7 +8,7 @@ Tras auth el servidor responde ``{"type":"ready"}`` y el cliente puede
 ``{"type":"subscribe","topic": "incidents"|"site_state"|"features:<site_id>"}``.
 
 La suscripción respeta el MISMO gate que el REST equivalente: solo roles con
-Consola C4I (RBAC §2) ven el canal live, y ``features:<site_id>`` respeta el
+MONITOREO (RBAC §2) ven el canal live, y ``features:<site_id>`` respeta el
 ``site_scope`` default-deny del token. El token se re-chequea contra su ``exp``
 mientras el socket vive (un token vencido deja de recibir, como en REST).
 El fan-out lo hace el hub (LISTEN/NOTIFY + re-consulta RLS por suscriptor).
@@ -36,7 +36,7 @@ router = APIRouter()
 
 _WS_AUTH_FAILED = 4401
 
-# Roles con Consola C4I (RBAC §2): autorizados en el canal live desde T-1.22.
+# Roles con MONITOREO (RBAC §2): autorizados en el canal live desde T-1.22.
 _CONSOLE_ROLES = frozenset(r for r, routes in ROLE_ROUTE_MATRIX.items() if CONSOLE in routes)
 
 # [T-2.08] Allowlist topic×rol DEFAULT-DENY (spec móvil §5.3). Los tácticos

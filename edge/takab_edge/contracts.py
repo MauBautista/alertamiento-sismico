@@ -81,6 +81,23 @@ class ActuatorAction(StrEnum):
     DRILL_STOP = "drill_stop"
 
 
+class SirenReason(StrEnum):
+    """[T-2.49] POR QUÉ suena la sirena. No es cosmético: decide QUÉ se oye.
+
+    Hasta ahora el voceo miraba solo ``gpio.siren_sounding`` —un booleano eléctrico— y
+    reproducía el mismo ``siren.wav`` en todos los casos. Consecuencia: el self-test de
+    sirena de un operador sonaba **byte a byte idéntico** a un sismo real dentro de un
+    edificio con gente. Eso es una falsa alarma provocada por el propio sistema.
+
+    El orden de precedencia importa y es el de la seguridad: si una alerta real llega
+    DURANTE una prueba, la razón es ``ALERT``. Nunca al revés.
+    """
+
+    ALERT = "alert"  # SASMEX enclavado o demanda de `rules`: es de verdad
+    SAFE_STATE = "safe_state"  # estado seguro durable (drive_all_safe)
+    TEST = "test"  # self-test de sirena o prueba local de actuación
+
+
 class UpsStatus(StrEnum):
     LINE = "line"  # RED ELÉCTRICA
     BATTERY = "battery"  # EN BATERÍA
@@ -276,6 +293,12 @@ class HealthSnapshot(BaseModel):
     # persiste en `gateways.fw_version` y NUNCA pisa lo que ya tenga con un None:
     # ese campo se llenaba a mano y se habría quedado obsoleto en silencio.
     fw_version: str | None = None
+    # [T-2.49] Perfil de tonos EFECTIVO del gabinete: qué IDs de catálogo se
+    # aplicaron y cuáles se rechazaron (por desconocidos o reservados). ADITIVO,
+    # mismo patrón que `disk_used_pct`: el ingest de la nube lo ignora mientras no
+    # haya columna destino, y el panel LAN ya lo muestra. Sirve para responder
+    # "¿qué gabinetes se quedaron atrás de un cambio de catálogo?" sin ir uno a uno.
+    audio: dict | None = None
     relays: list[RelayState] = Field(default_factory=list)
     transition_reason: str = "heartbeat"
 

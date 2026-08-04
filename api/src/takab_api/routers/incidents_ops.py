@@ -1,5 +1,5 @@
 """Operaciones del operador sobre incidentes (T-1.48): reubicar epicentro y
-solicitar dictamen técnico — los dos botones de la Consola C4I que estaban
+solicitar dictamen técnico — los dos botones de MONITOREO que estaban
 muertos.
 
 - ``POST /incidents/{id}/epicenter``: la escritura sobre ``seismic_events``

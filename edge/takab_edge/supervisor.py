@@ -224,6 +224,13 @@ class EdgeSupervisor:
         # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
         # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
         self.audio = AudioNotifier(s, gpio=self.gpio)
+        # [T-2.49] El latido reporta QUÉ tonos puede sonar este gabinete, para poder
+        # ver desde la flota quién se quedó atrás de un cambio de catálogo.
+        self.health.set_audio(self.audio)
+        # Un cambio de perfil desde la nube se adopta EN VIVO, sin reiniciar.
+        self.config.add_apply_listener(
+            lambda cfg: self.audio.apply_audio_profile(cfg.audio.model_dump())
+        )
         # Simulacro institucional (T-1.60): observador puro — banner + voceo,
         # CERO relés; lo real (SASMEX o tier instrumental) lo aborta. Se crea
         # ANTES que dispatch (que le enruta drill_start/drill_stop).

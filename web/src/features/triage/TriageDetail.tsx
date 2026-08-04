@@ -7,32 +7,50 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
+import IncidentTimeline from "./IncidentTimeline";
+import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
 import {
   SIGNABLE_STATUS,
   chainHead,
   durationOf,
+  epicenterKindOf,
+  feltLabelOf,
   insufficientData,
   isCorroborated,
   isPreliminary,
   magnitudeOf,
   miniseedOf,
+  miniseedState,
   quorumView,
   verdictOf,
 } from "./model";
 import type { TriageRow } from "./model";
+import type { ForensicsState } from "./useForensics";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 
 const VERDICT_ICON = { crit: AlertOctagon, warn: AlertTriangle, ok: CheckCircle2 } as const;
 
-function Metric({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function Metric({
+  label,
+  value,
+  unit,
+  title,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  /** Por qué el dato falta o qué significa exactamente. */
+  title?: string;
+}) {
   return (
-    <div className="triage-metric">
+    <div className="triage-metric" title={title}>
       <div className="triage-metric__lbl">{label}</div>
       <div className="triage-metric__val">
         {value}
@@ -67,6 +85,8 @@ function countOf(res: Resource<unknown[]>): string {
 export interface TriageDetailProps {
   row: TriageRow;
   detail: IncidentDetailData;
+  /** [T-2.40] Hechos medidos; el MISMO objeto que consume el dictamen PDF. */
+  forensics: ForensicsState;
   minNodes: number | null;
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
@@ -96,6 +116,7 @@ export interface TriageDetailProps {
 export default function TriageDetail({
   row,
   detail,
+  forensics,
   minNodes,
   canSign,
   canExport,
@@ -109,6 +130,8 @@ export default function TriageDetail({
   const Icon = verdict ? VERDICT_ICON[verdict.kind] : AlertTriangle;
   const quorum = quorumView(event.data?.quorum_votes);
   const miniseed = miniseedOf(evidence.data);
+  const mag = magnitudeOf(row.event);
+  const epi = epicenterKindOf(row.event);
   const evidenceUnknown = evidence.data === undefined;
 
   const badge = dictamens.loading
@@ -121,22 +144,30 @@ export default function TriageDetail({
           ? "DICTAMEN AUTOMÁTICO PRELIMINAR"
           : "DICTAMEN FIRMADO";
 
-  const miniseedTitle = !canExport
-    ? "Requiere la acción export"
-    : evidence.loading
-      ? "Cargando la evidencia del incidente"
-      : evidence.error
-        ? "No se pudo cargar la evidencia del incidente"
-        : miniseed === null
-          ? "No hay miniSEED archivado para este incidente"
-          : undefined;
+  // [T-2.43] Seis estados distinguibles en lugar de un botón gris sin explicación.
+  // `evidenceUnknown` (data === undefined) cuenta como carga —una consulta que aún no
+  // resolvió no puede presentarse como "no hay"—, PERO una consulta fallida también
+  // deja `data` en undefined, y ahí lo honesto es decir que falló, no que sigue en
+  // vuelo. De ahí el `&& !evidence.error`.
+  const mseed = miniseedState({
+    canExport,
+    loading: evidence.loading || (evidenceUnknown && !evidence.error),
+    error: Boolean(evidence.error),
+    miniseed,
+    openedAt: Date.parse(inc.opened_at),
+    now: Date.now(),
+  });
 
   return (
     <aside className="triage-detail">
       <header className="triage-detail__hd">
         <span className="soc-meta">{badge}</span>
+        {/* [T-2.39] El título era `M — · Sitio`: la magnitud es SIEMPRE null (no hay
+            ingesta de catálogo), así que el encabezado del panel se abría con un
+            guion. Ahora encabeza el HECHO MEDIDO —la sacudida que registró el
+            sensor— y la magnitud baja a métrica, rotulada como lo que es. */}
         <h2 className="triage-detail__title">
-          {magnitudeOf(row.event)} · {row.siteName}
+          {feltLabelOf(inc.max_pga_g)} · {row.siteName}
         </h2>
         <div className="triage-detail__id">
           {inc.event_id ?? inc.incident_id} · {utcStamp(Date.parse(inc.opened_at))} UTC
@@ -158,13 +189,26 @@ export default function TriageDetail({
           unit={inc.max_pgv_cms === null ? undefined : "cm/s"}
         />
         <Metric label="DURACIÓN DEL INCIDENTE" value={durationOf(inc)} />
+        <Metric label="MAGNITUD (CATÁLOGO)" value={mag.label} title={mag.title} />
         <Metric
           label="PROFUNDIDAD"
           value={row.event?.depth_km == null ? "—" : String(row.event.depth_km)}
           unit={row.event?.depth_km == null ? undefined : "km"}
         />
         <Metric label="NODOS" value={row.nodeCount === null ? "—" : String(row.nodeCount)} />
+        <Metric label="EPICENTRO" value={epi.label} title={epi.note} />
       </div>
+      {epi.kind !== "none" && (
+        <p className="triage-detail__epinote" data-testid="epicenter-note">
+          {epi.note}
+        </p>
+      )}
+
+      {/* [T-2.40] Desempeño de la red, al estilo del post-mortem que USGS publica
+          tras cada sismo relevante: tiempo de aviso, estaciones que contribuyeron y
+          contraste con el catálogo. Convierte "el sistema funcionó" en algo
+          verificable. */}
+      <PostEventSummary forensics={forensics} />
 
       <QuorumNodes
         view={quorum}
@@ -194,17 +238,33 @@ export default function TriageDetail({
           emptyText="SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE"
           staleSince={null}
         >
-          {miniseed === null ? (
-            <p className="soc-meta">
-              SIN miniSEED ARCHIVADO · el waveform crudo no se transmite en continuo
-            </p>
-          ) : (
-            miniseed.sha256 && (
-              <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
-            )
+          {miniseed?.sha256 && (
+            <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
           )}
         </StateFrame>
+        {/* [T-2.43] La explicación del miniSEED vive FUERA del StateFrame: con cero
+            objetos el marco pinta su estado "empty" y se comía la nota justo en el
+            caso que más necesita explicarse. Solo se muestra cuando la consulta ya
+            resolvió y de verdad no hay crudo — en `loading`/`error` el marco ya dice
+            lo suyo y duplicarlo sería ruido. */}
+        {(mseed.kind === "backfill" || mseed.kind === "absent") && (
+          <p className="soc-meta" data-testid="miniseed-note">
+            {mseed.label} · {mseed.hint}
+            {mseed.fleetLink && (
+              <>
+                {" "}
+                <Link to="/fleet" className="soc-link">
+                  IR A FLOTA EDGE
+                </Link>
+              </>
+            )}
+          </p>
+        )}
       </div>
+
+      {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
+          número desperdiciaba precisamente eso. */}
+      <IncidentTimeline actions={actions} onRetry={detail.refetch} />
 
       {detail.exportError && (
         <p className="soc-meta" role="alert">
@@ -216,23 +276,22 @@ export default function TriageDetail({
         <button
           type="button"
           className="soc-btn soc-btn--secondary"
-          disabled={!canExport || evidenceUnknown || miniseed === null || detail.downloadPending}
-          title={miniseedTitle}
+          disabled={!mseed.enabled || detail.downloadPending}
+          title={mseed.hint}
           onClick={() => miniseed && detail.downloadEvidence(miniseed.evidence_id)}
         >
-          <FileDown size={13} aria-hidden /> EXPORTAR miniSEED
+          <FileDown size={13} aria-hidden /> {mseed.label}
         </button>
         <button
           type="button"
           className="soc-btn soc-btn--primary"
-          disabled={!canGenerateReport || head === null || detail.pdfPending}
-          title={
-            !canGenerateReport
-              ? "Requiere la acción generate_report"
-              : head === null
-                ? "Sin dictamen que imprimir"
-                : undefined
-          }
+          // [T-2.43] Se retira el gate `head === null`, espejo del que ya se quitó en la
+          // API: un incidente sin dictamen YA tiene hechos que reportar —lo medido,
+          // quién acusó, qué estaciones corroboraron— y el documento se rotula como
+          // preliminar. El gate dejaba sin evidencia exportable justo el caso en que
+          // más falta hace.
+          disabled={!canGenerateReport || detail.pdfPending}
+          title={!canGenerateReport ? "Requiere la acción generate_report" : undefined}
           onClick={() => detail.generatePdf()}
         >
           <Printer size={13} aria-hidden /> DICTAMEN PDF
@@ -301,17 +360,20 @@ export default function TriageDetail({
 
             <div className="triage-detail__chain">
               <ShieldCheck size={11} aria-hidden />
-              CADENA DE CUSTODIA · {countOf(dictamens)} VERSIÓN(ES) APPEND-ONLY · {countOf(actions)}{" "}
-              ACCIONES REGISTRADAS
-              {actions.error && " (bitácora no disponible)"}
+              CADENA DE CUSTODIA · {countOf(dictamens)} VERSIÓN(ES) APPEND-ONLY
               {head.signed_by && ` · firmó ${head.signed_by.slice(0, 8)}`}
             </div>
-
-            {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash. */}
-            <StructuralTriage incidentId={inc.incident_id} />
           </>
         )}
       </StateFrame>
+
+      {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash.
+          [T-2.39] FUERA del gate `verdict && head` y fuera del StateFrame del
+          dictamen: vivían dentro, así que un incidente sin dictamen —o con la
+          consulta del dictamen aún en vuelo— ocultaba por completo los reportes que
+          los tácticos ya habían enviado desde el edificio. Son un HECHO del
+          incidente, igual que las métricas que T-1.52 sacó del gate. */}
+      <StructuralTriage incidentId={inc.incident_id} />
     </aside>
   );
 }

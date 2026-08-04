@@ -31,6 +31,11 @@ class MeActions(BaseModel):
     drill_start: bool
     manage_tenants: bool
     manage_visibility: bool
+    #: [T-2.36] Rotar el código de retiro del cliente (solo takab_superadmin).
+    manage_retire_code: bool
+    #: [T-2.54] Alta/edición/baja de identidades en Cognito (superadmin +
+    #: tenant_admin acotado a su tenant). No la recibe ``takab_support``.
+    manage_users: bool
     checkin_submit: bool
     roster_read: bool
     damage_report_submit: bool
@@ -55,6 +60,12 @@ class MeResponse(BaseModel):
     tenant_id: str
     role: str
     site_scope: Literal["*"] | list[str]
+    #: [T-2.45] Si el SERVIDOR está filtrando de verdad por ``site_scope`` en las
+    #: pantallas de consola. Existe porque el cutover va en dos fases: durante la
+    #: fase A un claim vacío no filtra, y una insignia que dijera "ALCANCE · 0
+    #: ESTACIONES" mientras se ve todo el tenant sería exactamente el dato falso
+    #: que la regla de oro 7 prohíbe. La UI declara lo que el servidor hace.
+    console_scope_enforced: bool = False
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions

@@ -68,7 +68,7 @@ describe("LoginPage", () => {
     seedAuthenticated(ME_FIXTURES.soc_operator);
     const router = renderRoutesAt("/");
     expect(router.state.location.pathname).toBe("/console");
-    expect(screen.getByRole("heading", { name: "CONSOLA C4I" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Monitoreo en Vivo" })).toBeInTheDocument();
   });
 
   it("autenticado con returnTo honra el deep-link original", () => {

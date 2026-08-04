@@ -8,24 +8,16 @@
    All tabs share the design tokens in design-system/colors_and_type.css
    ========================================================================== */
 
-/* =====================================================================
-   Tab page wrapper — fills the screen below the topbar.
-   ===================================================================== */
-.soc-tabpage {
-  height: 100%;
-  min-height: 0;
-  overflow: auto;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-}
+/* [T-2.55] Se retira `.soc-tabpage` (envoltorio genérico de pestaña del
+   mockup): cada página trae hoy su propio contenedor con su propia disciplina
+   de scroll —`.fleet`, `.triage`, `.mt`, `.audit`— y ningún `.tsx` lo escribe. */
 
 /* =====================================================================
    SOH BADGES (Sensor State of Health) — DetailPanel
    ===================================================================== */
 .soc-soh {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
@@ -217,9 +209,13 @@
 .fleet__kpi--warn .fleet__kpi-val { color: var(--tk-status-warning); }
 .fleet__kpi--crit .fleet__kpi-val { color: var(--tk-status-critical); }
 
+/* [T-2.38] La reja se auto-ajusta. Antes eran TRES columnas duras: en 1366 px las
+   tarjetas se estrujaban hasta partir sus pills de razones, y en 4K quedaban
+   enormes con el mismo contenido. 340 px es el ancho mínimo con el que la tarjeta
+   no rompe su cabecera. */
 .fleet__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 14px;
 }
 
@@ -272,7 +268,7 @@
 }
 
 .fleet-card__links {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
 }
 .fleet-link {
   padding: 8px 10px;
@@ -341,16 +337,6 @@
 .fleet-ups__fill--ok   { background: var(--tk-status-normal); }
 .fleet-ups__fill--warn { background: var(--tk-status-warning); }
 .fleet-ups__fill--crit { background: var(--tk-status-critical); }
-.fleet-ups__ft {
-  display: flex; justify-content: space-between; align-items: baseline;
-  margin-top: 6px;
-}
-.fleet-ups__autonomy {
-  font-family: var(--tk-font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--tk-fg-1);
-}
 
 /* Section heading inside card */
 .fleet-card__section { display: flex; flex-direction: column; gap: 8px; }
@@ -370,7 +356,7 @@
 }
 .fleet-relay {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px; align-items: center;
   padding: 6px 8px;
   border-radius: 3px;
@@ -432,22 +418,6 @@
 }
 .fleet-card__diag:hover:not(:disabled) { background: var(--tk-cyan-15); border-color: var(--tk-cyan); }
 .fleet-card__diag:disabled { opacity: 0.4; cursor: not-allowed; }
-.fleet-card__diag--running {
-  background: var(--tk-surface-2);
-  border-color: var(--tk-cyan);
-  color: var(--tk-cyan);
-}
-.fleet-card__diag--done {
-  background: var(--tk-status-normal-15);
-  border-color: var(--tk-status-normal);
-  color: var(--tk-status-normal);
-}
-.fleet-card__diag-bar {
-  position: absolute; left: 0; bottom: 0;
-  height: 2px;
-  background: var(--tk-cyan);
-  transition: width 220ms var(--tk-ease-data);
-}
 
 /* =====================================================================
    TRIAGE HISTORY (Tab 3)
@@ -644,13 +614,8 @@
   margin-top: 2px;
 }
 
-.triage-detail__waveform {
-  width: 100%; height: 60px;
-  display: block;
-}
-
 .triage-detail__metrics {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px;
 }
 .triage-metric {
   padding: 10px;
@@ -687,7 +652,7 @@
 }
 .triage-node {
   display: grid;
-  grid-template-columns: 12px 1fr auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
@@ -766,9 +731,13 @@
 .mt__leg-sw--ded { background: var(--tk-cyan); }
 .mt__leg-sw--log { background: var(--tk-status-normal); }
 
+/* [T-2.55] El catálogo de clientes es la ÚNICA columna fija tipo barra lateral
+   de la consola, así que estrena `--tk-sidebar-w` — que llevaba definido y sin
+   un solo consumidor desde el design system. El token se alineó con los 360 px
+   que esta reja ya servía: 1920×1080 no cambia ni un píxel. */
 .mt__grid {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: var(--tk-sidebar-w) minmax(0, 1fr);
   gap: 16px;
   min-height: 0;
 }
@@ -787,7 +756,7 @@
 }
 .mt-tenant {
   display: grid;
-  grid-template-columns: 6px 1fr auto;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
   gap: 10px; align-items: center;
   padding: 10px;
   background: var(--tk-surface-2);
@@ -832,25 +801,6 @@
 }
 .mt-tenant__iso--dedicated { background: var(--tk-cyan-15); color: var(--tk-cyan); }
 .mt-tenant__iso--logical { background: var(--tk-status-normal-15); color: var(--tk-status-normal); }
-
-.mt-isolation {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--tk-surface-0);
-  border: 1px solid var(--tk-border);
-  border-radius: 4px;
-}
-.mt-isolation__hd {
-  display: inline-flex; align-items: center; gap: 6px;
-  color: var(--tk-fg-2); margin-bottom: 8px;
-}
-.mt-isolation__rows { display: flex; flex-direction: column; gap: 5px; }
-.mt-isolation__row {
-  display: flex; justify-content: space-between;
-  font-family: var(--tk-font-ui);
-  font-size: 11px;
-  color: var(--tk-fg-2);
-}
 
 /* tenant detail */
 .mt__detail {
@@ -904,7 +854,7 @@
 /* sliders */
 .mt-sliders {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 .mt-slider {
@@ -944,16 +894,6 @@
   border-radius: 999px;
   overflow: hidden;
 }
-.mt-slider__zone-ok,
-.mt-slider__zone-warn,
-.mt-slider__zone-crit {
-  position: absolute; top: 0; bottom: 0;
-  opacity: 0.18;
-}
-.mt-slider__zone-ok   { left: 0;                                 background: var(--tk-status-normal); }
-.mt-slider__zone-warn { left: 0; transform: translateX(0%);      background: var(--tk-status-warning); }
-.mt-slider__zone-crit { right: 0;                                background: var(--tk-status-critical); }
-.mt-slider__zone-warn { left: auto; /* positioned via width math */ }
 .mt-slider__fill {
   position: absolute; top: 0; bottom: 0; left: 0;
   border-radius: 999px;
@@ -1006,12 +946,12 @@
 /* channels */
 .mt-channels {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 .mt-channel {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 11px 12px;
@@ -1138,7 +1078,7 @@
   margin: 0;
 }
 .bld__actions { display: flex; gap: 8px; margin-top: 12px; }
-.bld__soh { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 11px; }
+.bld__soh { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font-size: 11px; }
 .bld__soh dt { color: var(--tk-fg-3); font-size: 9px; letter-spacing: 0.1em; }
 .bld__soh dd { margin: 3px 0 0; color: var(--tk-fg-1); }
 .bld__table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -1184,6 +1124,133 @@
 }
 .fleet__admintable td { padding: 7px 8px; border-bottom: 1px solid var(--tk-border); }
 .fleet__rowactions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* [T-2.37] Estado del config firmado por gabinete. Cuatro tonos porque "no ha
+   llegado" y "no puede llegar" son problemas distintos con destinatarios distintos. */
+.fleet-sync {
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border: 1px solid var(--tk-border);
+  white-space: nowrap;
+}
+.fleet-sync--ok { color: var(--tk-status-normal); border-color: var(--tk-status-normal); }
+.fleet-sync--warn { color: var(--tk-status-warning); border-color: var(--tk-status-warning); }
+.fleet-sync--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.fleet-sync--idle { color: var(--tk-fg-3); }
+
+/* Acciones de administración de la tarjeta (solo con manage_fleet). */
+.fleet-card__admin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--tk-border);
+}
+
+/* Banda de retirado: el gabinete se ve, pero nadie puede confundirlo con uno vivo. */
+.fleet-card--retired { opacity: 0.68; }
+.fleet-card__retired {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+  background: var(--tk-surface-2);
+  border-bottom: 1px solid var(--tk-border);
+}
+
+.fleet__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+  cursor: pointer;
+}
+
+.fleet__hint--warn { color: var(--tk-status-warning); }
+
+/* Acuse de alta: los UUID que el runbook manda pegar en el edge.env del Pi. */
+/* [T-2.55] El BLOQUE `.acuse` se escribió en T-2.37 sin regla: heredaba el
+   `gap: 10px` de `.fleet__form` y las tres filas de UUID quedaban tan separadas
+   como los campos de un formulario, sin leerse como un solo acuse. */
+.acuse {
+  gap: 6px;
+  padding: 12px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
+.acuse__row { display: flex; align-items: center; gap: 8px; }
+.acuse__label {
+  flex: 0 0 190px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+}
+.acuse__value {
+  flex: 1 1 auto;
+  font-family: var(--tk-font-mono);
+  font-size: 11px;
+  color: var(--tk-fg-1);
+  overflow-wrap: anywhere;
+}
+
+/* [T-2.36] Diálogo de retiro con doble fricción. Deliberadamente austero y sin
+   acentos de color salvo la advertencia: apagar la protección de un edificio no es
+   una acción que deba verse cómoda. */
+.retire { display: flex; flex-direction: column; gap: 12px; min-width: 340px; }
+.retire__target { margin: 0; font-size: 12px; color: var(--tk-fg-1); }
+.retire__id {
+  font-family: var(--tk-font-mono);
+  color: var(--tk-fg-2);
+  letter-spacing: 0.04em;
+}
+.retire__warn {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.retire__blocked {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tk-status-warning);
+  background: var(--tk-status-warning-08);
+  border: 1px solid var(--tk-status-warning);
+  padding: 8px;
+}
+.retire__field { display: flex; flex-direction: column; gap: 4px; }
+.retire__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.retire__field strong { color: var(--tk-fg-1); font-family: var(--tk-font-mono); }
+.retire__field input {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono);
+  font-size: 12px;
+  padding: 7px 8px;
+}
+.retire__field input:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.retire__field input:disabled { opacity: 0.5; }
+.retire__error {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tk-status-critical);
+}
+.retire__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 
 .fleet__form { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
 .fleet__formtitle {
@@ -1259,7 +1326,7 @@
 .triage-catalog__hd {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -1335,3 +1402,804 @@
 .structural-verify--ok .structural-verify__state { color: var(--tk-status-normal); }
 .structural-verify--crit .structural-verify__state { color: var(--tk-status-critical); }
 .structural-verify--muted .structural-verify__state { color: var(--tk-cyan); }
+
+
+/* ---------------------------------------------------------------------------
+   [T-2.38] FLOTA EDGE · barra de herramientas, historia y degradación responsive.
+
+   El objetivo del proyecto sigue siendo 1920×1080 (soc.css §1). Estos breakpoints
+   son DEGRADACIÓN, no un rediseño: en pantallas menores la información no se
+   reordena, solo deja de estar apretada. Los píxeles van literales porque una
+   custom property NO es válida en el prelude de una @media; los valores espejan
+   --tk-bp-md (1280) y el corte de laptop (1100).
+   --------------------------------------------------------------------------- */
+.fleet__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 10px;
+}
+.fleet__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+  border: 1px solid var(--tk-border);
+  background: var(--tk-surface-0);
+  padding: 5px 8px;
+  color: var(--tk-fg-3);
+}
+.fleet__search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 11px;
+}
+.fleet__search input:focus-visible { outline: var(--tk-focus-ring); }
+.fleet__sort { display: flex; align-items: center; gap: 6px; }
+.fleet__sort > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.fleet__sort select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  color: var(--tk-fg-1);
+  font-size: 10px;
+  padding: 4px 6px;
+}
+.fleet__shown {
+  margin-left: auto;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+}
+
+.fleet-card__history {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+.fleet-card__historylbl { color: var(--tk-fg-3); }
+/* [T-2.55] Sin regla desde T-2.38. El rótulo es "COMPLETITUD DE LATIDOS 24 H"
+   —un porcentaje— y se leía con el mismo peso que las etiquetas de su fila. */
+.fleet-card__completeness {
+  color: var(--tk-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.fleet-card__outages--warn { color: var(--tk-status-warning); }
+.sparkline { color: var(--tk-cyan); display: block; }
+.sparkline--empty { color: var(--tk-fg-3); font-family: var(--tk-font-mono); font-size: 9px; }
+
+/* El header apilaba 4 KPI de 96 px con gap 32 y SIN flex-wrap: por debajo de
+   ~1100 px empujaban al título fuera de su caja. */
+.fleet__hd { flex-wrap: wrap; }
+.fleet__kpis { flex-wrap: wrap; }
+
+/* La tabla de administración no se re-maqueta: se le da su propio scroll
+   horizontal. Reordenar columnas de un inventario confunde más que desplazarlas. */
+.fleet__adminscroll { overflow-x: auto; }
+
+@media (max-width: 1100px) {
+  .fleet__hd { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .fleet__sub { max-width: 100%; }
+  .fleet__shown { margin-left: 0; }
+}
+
+@media (max-width: 640px) {
+  .fleet__grid { grid-template-columns: minmax(0, 1fr); }
+  .fleet__kpi { min-width: 0; flex: 1 1 40%; padding: 8px 12px; }
+  .fleet__form { max-width: 100%; }
+  .fleet__rowactions { flex-wrap: wrap; justify-content: flex-start; }
+  .retire { min-width: 0; }
+  .acuse__label { flex: 0 0 auto; }
+  .acuse__row { flex-wrap: wrap; }
+}
+
+/* [T-2.39] EVALUACIÓN ESTRUCTURAL · accesibilidad de la tabla y notas honestas.
+
+   `.triage-table__pick` convierte la primera celda en un botón real: antes la fila
+   era un <tr onClick> y con teclado no se podía seleccionar nada. `all: unset` lo
+   despoja del aspecto de botón sin perder su semántica. */
+.triage-table__pick {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.triage-table__pick:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: -2px;
+}
+.triage-table__note {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+/* La nota del epicentro: sin ella, un centroide entre estaciones se lee como una
+   localización sísmica y se compara con el epicentro del SSN. */
+.triage-detail__epinote {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-border-strong);
+  padding-left: 8px;
+}
+
+/* [T-2.40] Resumen post-evento, matriz de inspección y bitácora. */
+.postevent__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.postevent__tile {
+  border: 1px solid var(--tk-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.postevent__tile--ok { border-color: var(--tk-status-normal-15); }
+.postevent__tile--warn { border-color: var(--tk-status-warning); }
+.postevent__lbl { font-size: 8.5px; letter-spacing: 0.12em; color: var(--tk-fg-3); }
+.postevent__val {
+  font-family: var(--tk-font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tk-fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.postevent__note { font-size: 9px; line-height: 1.35; color: var(--tk-fg-3); }
+.postevent__tile--warn .postevent__note { color: var(--tk-status-warning); }
+
+/* La matriz de inspección se parece a un dictamen, así que el descargo va ARRIBA y
+   no en un tooltip: un cuadro con semáforos junto a un panel de dictámenes se
+   confunde solo si nadie lo desmiente. */
+.inspection__disclaimer {
+  margin: 0 0 8px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.inspection__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.inspection__row {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+.inspection__row:hover { border-color: var(--tk-border-strong); }
+.inspection__row:focus-visible { outline: var(--tk-focus-ring); outline-offset: -2px; }
+.inspection__row.is-selected { background: var(--tk-surface-2); border-color: var(--tk-cyan); }
+.inspection__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tk-fg-3); }
+.inspection__row--rojo .inspection__dot { background: var(--tk-status-critical); }
+.inspection__row--naranja .inspection__dot { background: var(--tk-status-warning); }
+.inspection__row--amarillo .inspection__dot { background: var(--tk-status-warning); opacity: 0.55; }
+.inspection__row--verde .inspection__dot { background: var(--tk-status-normal); }
+.inspection__row--gris .inspection__dot { background: var(--tk-fg-3); }
+.inspection__site { font-size: 11px; color: var(--tk-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspection__pga { font-size: 10px; color: var(--tk-fg-2); }
+.inspection__level { font-size: 8.5px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+
+/* [T-2.55] Los BLOQUES `.inspection`, `.postevent` y `.timeline` se escribieron
+   en T-2.40 sobre una `.soc-card` y nunca recibieron regla: sus hijos caían en
+   flujo de bloque, sin ritmo vertical, y el descargo "NO ES UN DICTAMEN" quedaba
+   pegado a la primera fila de semáforos. Es exactamente el defecto que el
+   contract-test `cssContract` vigila desde ahora. */
+.inspection,
+.postevent,
+.timeline,
+.users {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.timeline__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.timeline__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--tk-border);
+}
+.timeline__ts { color: var(--tk-fg-3); font-size: 9px; }
+.timeline__kind { color: var(--tk-fg-1); letter-spacing: 0.04em; }
+.timeline__actor { color: var(--tk-fg-3); font-size: 9px; }
+
+@media (max-width: 1100px) {
+  .inspection__row { grid-template-columns: 10px minmax(0, 1fr) auto; }
+  .inspection__level { grid-column: 2 / -1; }
+}
+
+/* =====================================================================
+   [T-2.51] CLIPPING DEL MULTI-TENANT — bug de accesibilidad real
+   =====================================================================
+   `body { overflow: hidden }` (soc.css) hace que NADA sea alcanzable fuera
+   de la primera pantalla si un contenedor no declara su propio scroll.
+   `.mt__detail` sí lo declaraba; `.mt__list` NO. Con ~15 clientes los
+   últimos quedaban físicamente inalcanzables: sin barra, sin rueda y sin
+   teclado. No es un defecto estético — es una pantalla que oculta clientes.
+
+   Se cierra en dos capas, igual que `.fleet` (T-1.54):
+   1. La página entera scrollea dentro de su fila 1fr del shell.
+   2. La lista scrollea por su cuenta cuando sí tiene altura acotada.
+
+   Y se extiende la invariante `flex-shrink: 0` de soc.css (§"COLUMNAS FLEX
+   SCROLLEABLES") a los contenedores que faltaban: sin ella el StateFrame
+   —que trae `min-height: 0`— se encoge hasta altura CERO y su contenido,
+   con overflow visible, se pinta ENCIMA del hermano de abajo en vez de
+   provocar el scroll que el `overflow-y: auto` estaba pidiendo.
+   ===================================================================== */
+.mt {
+  overflow-y: auto;
+}
+.mt__list {
+  overflow-y: auto;
+  min-height: 0;
+}
+.mt > *,
+.triage > *,
+.soc-main > * {
+  flex-shrink: 0;
+}
+
+/* Búsqueda local del catálogo de clientes (T-2.51). */
+.mt__search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+.mt__search input {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 6px 9px;
+  width: 100%;
+}
+.mt__search input:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+
+/* =====================================================================
+   [T-1.72 · con CSS desde T-2.51] ALTA DE CLIENTES
+   =====================================================================
+   Estas clases se escribieron en T-1.72 y nunca tuvieron una sola regla:
+   el formulario se pintaba con los estilos por defecto del navegador
+   dentro de una consola industrial oscura. El contract-test de
+   `layoutInvariants` impide que vuelva a pasar.
+   ===================================================================== */
+.mt__new-btn {
+  background: transparent;
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+  transition: background 120ms var(--tk-ease);
+}
+.mt__new-btn:hover { background: var(--tk-cyan-08); }
+.mt__new-btn:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.mt__new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: 4px;
+}
+.mt__new-field { display: flex; flex-direction: column; gap: 4px; }
+.mt__new-field > span {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+}
+.mt__new-field input,
+.mt__new-field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 12px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.mt__new-field input:focus-visible,
+.mt__new-field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.mt__new-error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.mt__new-submit {
+  background: var(--tk-cyan-15);
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 8px 10px;
+}
+.mt__new-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.mt__new-submit:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+
+/* Ficha editable del cliente (T-2.51 · PATCH /tenants). */
+.mt__detail-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
+.mt-edit__hd { border-bottom: 1px solid var(--tk-border); padding-bottom: 8px; }
+.mt-edit__field { display: flex; flex-direction: column; gap: 4px; }
+.mt-edit__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.mt-edit__field input,
+.mt-edit__field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.mt-edit__field input:focus-visible,
+.mt-edit__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+/* El aviso de `gov_shared`/`suspended` NO es decorativo: marca el borde de la
+   frontera de aislamiento y el del servicio. Va en ámbar y con barra lateral,
+   el mismo lenguaje que el descargo de la matriz de inspección. */
+.mt-edit__warn {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-status-warning);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.mt-edit__error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.mt-edit__actions { display: flex; gap: 8px; }
+
+/* =====================================================================
+   [T-1.73 · con CSS desde T-2.51] VISIBILIDAD ENTRE CLIENTES
+   ===================================================================== */
+.vis-grants { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.vis-grant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.vis-grant__target {
+  font-family: var(--tk-font-ui);
+  font-size: 11.5px;
+  color: var(--tk-fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vis-grant__revoke {
+  background: transparent;
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 3px;
+  color: var(--tk-status-critical);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+.vis-grant__revoke:disabled { opacity: 0.45; cursor: not-allowed; }
+.vis-grant__revoke:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.vis-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tk-border);
+}
+.vis-form__field { display: flex; flex-direction: column; gap: 4px; }
+.vis-form__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.vis-form__field select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.vis-form__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--tk-fg-2);
+}
+.vis-form__error {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--tk-status-critical);
+}
+.vis-form__submit {
+  align-self: flex-start;
+  background: var(--tk-cyan-15);
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 12px;
+}
+.vis-form__submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.vis-form__submit:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+
+/* =====================================================================
+   [T-1.59/T-2.51] RESULTADO DEL AUTODIAGNÓSTICO Y SEPARADOR
+   ===================================================================== */
+.fleet-card__selftest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px solid var(--tk-border);
+}
+/* Separador tipográfico entre metadatos ("fw · HB"). Existía en el markup y
+   heredaba el color del texto: se leía como contenido, no como puntuación. */
+.tk-sep { color: var(--tk-fg-3); opacity: 0.6; }
+
+/* =====================================================================
+   [T-2.54] GESTIÓN DE USUARIOS (dentro de la ficha del cliente)
+   ===================================================================== */
+.users__note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-border-strong);
+  padding-left: 8px;
+}
+.users__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.users__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.users__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.users__email {
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  color: var(--tk-fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.users__rowactions { display: flex; flex-wrap: wrap; gap: 6px; }
+.users__editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px solid var(--tk-border);
+}
+.users__field { display: flex; flex-direction: column; gap: 4px; }
+.users__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.users__field input,
+.users__field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.users__field input:focus-visible,
+.users__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.users__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  padding: 10px 12px 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.users__scope legend { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); padding: 0 4px; }
+.users__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--tk-fg-2);
+}
+.users__ack {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-normal);
+}
+.users__error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.users__new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
+
+/* =====================================================================
+   [T-2.53] CÓDIGOS DE ALTA DE OCUPANTES (por estación, dentro de /fleet)
+   ===================================================================== */
+.enroll { display: flex; flex-direction: column; gap: 12px; }
+.enroll__hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid var(--tk-border);
+  padding-bottom: 10px;
+}
+.enroll__title {
+  margin: 0 0 4px;
+  font-family: var(--tk-font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tk-fg-1);
+}
+.enroll__sub { margin: 0; font-size: 10.5px; line-height: 1.45; color: var(--tk-fg-2); max-width: 640px; }
+.enroll__form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.enroll__field { display: flex; flex-direction: column; gap: 4px; }
+.enroll__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.enroll__field input,
+.enroll__field select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.enroll__field input:focus-visible,
+.enroll__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.enroll__warn {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-status-warning);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.enroll__error { margin: 0; font-size: 10.5px; line-height: 1.4; color: var(--tk-status-critical); }
+/* El código recién creado se destaca UNA vez y se retira del DOM solo. */
+.enroll__fresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--tk-cyan-08);
+  border: 1px solid var(--tk-cyan);
+  border-radius: var(--tk-radius-md);
+}
+.enroll__freshactions { display: flex; gap: 6px; margin-left: auto; }
+.enroll__code {
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--tk-cyan);
+}
+.enroll__code--masked {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--tk-fg-2);
+}
+.enroll__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.enroll__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.enroll__row--revoked { opacity: 0.5; }
+.enroll__rowactions { display: flex; gap: 6px; }
+
+/* =====================================================================
+   [T-2.52] BITÁCORA DE AUDITORÍA (Tab 5)
+   ===================================================================== */
+.audit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  /* Misma disciplina que `.fleet`: la página scrollea DENTRO de su fila 1fr,
+     porque `body { overflow: hidden }` no perdona un contenedor sin scroll. */
+  overflow-y: auto;
+}
+.audit > * { flex-shrink: 0; }
+.audit__hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--tk-border);
+}
+.audit__title {
+  margin: 6px 0 4px;
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  color: var(--tk-fg-1);
+}
+.audit__sub { margin: 0; color: var(--tk-fg-2); font-size: 13px; max-width: 820px; }
+.audit__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.audit__field { display: flex; flex-direction: column; gap: 4px; }
+.audit__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.audit__field input {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+  min-width: 190px;
+}
+.audit__field input:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.audit__actions { display: flex; gap: 8px; }
+.audit__frame { min-height: 0; }
+/* La tabla tiene 5 columnas y `meta` puede ser larga: scrollea EN HORIZONTAL
+   dentro de su caja en vez de desbordar el shell (que tiene overflow oculto). */
+.audit__tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  background: var(--tk-surface-1);
+}
+.audit__table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.audit__table th {
+  position: sticky;
+  top: 0;
+  background: var(--tk-surface-2);
+  text-align: left;
+  font-family: var(--tk-font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--tk-fg-3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--tk-border);
+  white-space: nowrap;
+}
+.audit__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--tk-border);
+  color: var(--tk-fg-2);
+  vertical-align: top;
+}
+.audit__table tr:last-child td { border-bottom: none; }
+.audit__ts { white-space: nowrap; color: var(--tk-fg-1); }
+.audit__verb {
+  font-family: var(--tk-font-ui);
+  letter-spacing: 0.04em;
+  color: var(--tk-fg-1);
+  white-space: nowrap;
+}
+.audit__object { white-space: nowrap; }
+.audit__meta {
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 10px;
+  color: var(--tk-fg-3);
+  max-width: 520px;
+  overflow-wrap: anywhere;
+}
+.audit__more {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+}
+
+@media (max-width: 1100px) {
+  .audit__field input { min-width: 140px; }
+  .enroll__form { flex-direction: column; align-items: stretch; }
+  .users__row { grid-template-columns: minmax(0, 1fr); }
+}

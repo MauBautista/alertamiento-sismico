@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import type { CatalogEarthquakeOut, MapSiteState } from "@takab/sdk";
 
 import Modal from "../../components/Modal";
+import StateFrame from "../../components/StateFrame";
 import { bearing16, haversineKm } from "../fleet/geo";
 import { attenPoints, hypoKm, pgaLawG, pTravelS, V_P_KM_S } from "./attenuation";
 import { CATALOG_COLOR } from "./MapPanel";
@@ -68,11 +69,17 @@ export default function ComparePanel({ quake, sites, initialSiteId, onClose }: C
         <label className="soc-meta" htmlFor="compare-site">
           ESTACIÓN / SITIO A COMPARAR
         </label>
-        {sites.length === 0 ? (
-          <p className="soc-compare__note" role="note">
-            SIN SITIOS CON COORDENADAS EN EL TENANT
-          </p>
-        ) : (
+        {/* [T-2.55] El vacío ya se declaraba, pero a mano y fuera del contrato de
+            los 4 estados. El panel no consulta nada (recibe `sites` y `quake`
+            del wall), así que `loading`/`error` no son suyos; lo que sí es suyo
+            —no hay con qué comparar— pasa por el mismo componente que el resto
+            de la consola, con el mismo `data-state` que los tests inspeccionan. */}
+        <StateFrame
+          label="COMPARATIVA"
+          loading={false}
+          empty={sites.length === 0}
+          emptyText="SIN SITIOS CON COORDENADAS EN EL TENANT"
+        >
           <select
             id="compare-site"
             className="soc-user__input"
@@ -85,47 +92,47 @@ export default function ComparePanel({ quake, sites, initialSiteId, onClose }: C
               </option>
             ))}
           </select>
-        )}
 
-        {model !== null && site !== null && (
-          <>
-            <dl className="soc-compare__facts">
-              <div>
-                <dt>DISTANCIA EPICENTRAL</dt>
-                <dd className="soc-mono">
-                  {Math.round(model.epiKm)} km {model.rumbo}
-                </dd>
-              </div>
-              <div>
-                <dt>DISTANCIA HIPOCENTRAL</dt>
-                <dd className="soc-mono">{Math.round(model.rHipo)} km</dd>
-              </div>
-              <div>
-                <dt>ARRIBO P TEÓRICO</dt>
-                <dd className="soc-mono">
-                  ~{Math.round(model.pArrS)} s · v_P {V_P_KM_S} km/s
-                </dd>
-              </div>
-              <div>
-                <dt>PGA EST. EPICENTRO</dt>
-                <dd className="soc-mono">{model.pgaEpiG.toFixed(3)} g</dd>
-              </div>
-              <div>
-                <dt>PGA EST. ESTACIÓN</dt>
-                <dd className="soc-mono">{model.pgaStaG.toFixed(3)} g</dd>
-              </div>
-            </dl>
-            {quake.depth_km === null && (
-              <p className="soc-compare__note" role="note">
-                SIN PROFUNDIDAD REPORTADA — la hipocentral degrada a la epicentral
+          {model !== null && site !== null && (
+            <>
+              <dl className="soc-compare__facts">
+                <div>
+                  <dt>DISTANCIA EPICENTRAL</dt>
+                  <dd className="soc-mono">
+                    {Math.round(model.epiKm)} km {model.rumbo}
+                  </dd>
+                </div>
+                <div>
+                  <dt>DISTANCIA HIPOCENTRAL</dt>
+                  <dd className="soc-mono">{Math.round(model.rHipo)} km</dd>
+                </div>
+                <div>
+                  <dt>ARRIBO P TEÓRICO</dt>
+                  <dd className="soc-mono">
+                    ~{Math.round(model.pArrS)} s · v_P {V_P_KM_S} km/s
+                  </dd>
+                </div>
+                <div>
+                  <dt>PGA EST. EPICENTRO</dt>
+                  <dd className="soc-mono">{model.pgaEpiG.toFixed(3)} g</dd>
+                </div>
+                <div>
+                  <dt>PGA EST. ESTACIÓN</dt>
+                  <dd className="soc-mono">{model.pgaStaG.toFixed(3)} g</dd>
+                </div>
+              </dl>
+              {quake.depth_km === null && (
+                <p className="soc-compare__note" role="note">
+                  SIN PROFUNDIDAD REPORTADA — la hipocentral degrada a la epicentral
+                </p>
+              )}
+              <AttenChart quake={quake} epiKm={model.epiKm} siteName={site.name} />
+              <p className="soc-compare__note" role="note" data-testid="compare-no-measured">
+                {NO_MEASURED_NOTE}
               </p>
-            )}
-            <AttenChart quake={quake} epiKm={model.epiKm} siteName={site.name} />
-            <p className="soc-compare__note" role="note" data-testid="compare-no-measured">
-              {NO_MEASURED_NOTE}
-            </p>
-          </>
-        )}
+            </>
+          )}
+        </StateFrame>
 
         <p className="soc-compare__master" role="note">
           {MASTER_LABEL}

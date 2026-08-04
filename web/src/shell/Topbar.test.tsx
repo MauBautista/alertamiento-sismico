@@ -21,10 +21,11 @@ const profileMocks = vi.hoisted(() => ({
 vi.mock("../auth/useProfile", () => profileMocks);
 
 const TAB_LABELS: Record<string, string> = {
-  "/console": "CONSOLA C4I",
+  "/console": "MONITOREO",
   "/fleet": "FLOTA EDGE",
-  "/triage": "TRIAGE",
+  "/triage": "EVALUACIÓN",
   "/tenants": "MULTI-TENANT",
+  "/audit": "AUDITORÍA",
 };
 
 function seed(me: MeResponse): void {
@@ -86,10 +87,7 @@ describe("Topbar", () => {
   it("marca el tab activo con aria-current=page", () => {
     seed(ME_FIXTURES.soc_operator);
     renderTopbar("/console");
-    expect(screen.getByRole("link", { name: "CONSOLA C4I" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(screen.getByRole("link", { name: "MONITOREO" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "FLOTA EDGE" })).not.toHaveAttribute("aria-current");
   });
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from takab_api.auth.deps import require_roles
+from takab_api.auth.deps import require_roles, require_web_surface
 from takab_api.auth.matrix import roles_with_action
 from takab_api.queries.audit import select_audit
 from takab_api.routers._common import (
@@ -27,7 +27,13 @@ from takab_api.schemas.audit import AuditPage, AuditRowOut
 
 AUDIT_ROLES: tuple[str, ...] = roles_with_action("read_audit")
 
-router = APIRouter(dependencies=[Depends(require_roles(*AUDIT_ROLES))])
+# [T-2.52] ``/audit`` pasa a ser una RUTA de la consola (``matrix.ROUTE_ORDER``), así
+# que su endpoint declara la misma superficie que el resto del SOC web. No es
+# cosmética: el audit trail lleva PII de actores y el detalle de cada acción sobre
+# actuadores; un token de la app móvil no tiene por qué poder paginarlo.
+router = APIRouter(
+    dependencies=[Depends(require_web_surface), Depends(require_roles(*AUDIT_ROLES))]
+)
 
 
 @router.get("/audit", response_model=AuditPage)

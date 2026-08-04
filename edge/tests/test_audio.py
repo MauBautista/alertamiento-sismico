@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 from takab_edge.audio import AudioNotifier, SimulatedAudioBackend
 from takab_edge.config import load_settings
-from takab_edge.contracts import AlertSource, Tier, TierDecision
+from takab_edge.contracts import AlertSource, SirenReason, Tier, TierDecision
 from takab_edge.gpio import GpioController
 from takab_edge.local_api import LocalDashboard
 from takab_edge.supervisor import EdgeSupervisor
@@ -167,12 +167,20 @@ def test_sirena_por_audio_sigue_el_estado_de_la_sirena(siren_cfg, gpio) -> None:
     assert siren.playing is None  # la sirena por audio se calla con la de relé
 
 
-def test_prueba_de_actuacion_suena_por_audio(siren_cfg, gpio) -> None:  # noqa: ANN001
-    """La prueba LOCAL de actuación (T-1.67) también hace sonar la sirena por el jack."""
+def test_prueba_de_actuacion_suena_con_el_TONO_DE_PRUEBA(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """La prueba LOCAL de actuación (T-1.67) suena por el jack, pero con SU tono.
+
+    [T-2.49] Este test afirmaba `audio_siren_path` — es decir, congelaba el bug: una
+    prueba deliberada de un operador sonaba byte a byte igual que un sismo real dentro
+    de un edificio con gente. Ahora suena el tono de prueba empaquetado, que aquí llega
+    por el default (`siren_cfg` no fija `audio_test_path`).
+    """
     notifier, siren = _siren_notifier(siren_cfg, gpio)
     gpio.run_local_actuation_test(hold_s=100, pulse_s=0.01, gap_s=0.0)
     notifier._reconcile_siren()
-    assert siren.playing == siren_cfg.audio_siren_path
+    assert siren.playing is not None
+    assert siren.playing.endswith("prueba.wav")
+    assert siren.playing != siren_cfg.audio_siren_path
     gpio.reset()
 
 
@@ -292,3 +300,169 @@ def test_supervisor_cablea_el_voceo(audio_settings, monkeypatch) -> None:  # noq
         sup.actuators.stop()
         sup.gpio.stop()
     assert voceados == [Tier.EVACUATE_OR_HOLD]
+
+
+# ---- T-2.49 · el tono depende de POR QUÉ suena, no solo de que suene -----------
+
+
+def _tono(cfg, tmp_path):  # noqa: ANN001
+    """Config con sirena Y tono de prueba, en archivos distinguibles."""
+    prueba = tmp_path / "prueba.wav"
+    prueba.write_bytes(b"RIFF-prueba-fake-wav")
+    return cfg.model_copy(update={"audio_test_path": str(prueba)})
+
+
+def test_un_self_test_NO_suena_como_un_sismo(siren_cfg, gpio, tmp_path) -> None:  # noqa: ANN001
+    """El bug que motiva la tarea: hasta ahora el self-test de sirena de un operador
+    reproducía el MISMO siren.wav que una alerta real, dentro de un edificio con
+    gente. Eso es una falsa alarma provocada por el propio sistema."""
+    cfg = _tono(siren_cfg, tmp_path)
+    notifier, siren = _siren_notifier(cfg, gpio)
+    try:
+        gpio.run_siren_test(duration_s=5.0)
+        notifier._reconcile_siren()
+        assert siren.playing == cfg.audio_test_path
+        assert siren.playing != cfg.audio_siren_path
+    finally:
+        notifier.stop()
+
+
+def test_una_alerta_real_si_suena_a_sirena(siren_cfg, gpio, tmp_path) -> None:  # noqa: ANN001
+    cfg = _tono(siren_cfg, tmp_path)
+    notifier, siren = _siren_notifier(cfg, gpio)
+    try:
+        gpio.simulate_sasmex(active=True)
+        notifier._reconcile_siren()
+        assert siren.playing == cfg.audio_siren_path
+    finally:
+        notifier.stop()
+
+
+def test_una_alerta_durante_una_prueba_CONMUTA_al_tono_real(siren_cfg, gpio, tmp_path) -> None:  # noqa: ANN001
+    """La precedencia es la de la seguridad: lo real domina a la prueba, y el altavoz
+    lo refleja sin esperar a que la prueba termine."""
+    cfg = _tono(siren_cfg, tmp_path)
+    notifier, siren = _siren_notifier(cfg, gpio)
+    try:
+        gpio.run_siren_test(duration_s=5.0)
+        notifier._reconcile_siren()
+        assert siren.playing == cfg.audio_test_path
+
+        gpio.simulate_sasmex(active=True)
+        notifier._reconcile_siren()
+        assert siren.playing == cfg.audio_siren_path
+        assert siren.stops >= 1, "hay que PARAR antes de conmutar: si no, se mezclan"
+    finally:
+        notifier.stop()
+
+
+def test_sin_tono_de_prueba_la_prueba_CALLA_en_vez_de_sonar_a_alerta(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """Degradación honesta: el silencio durante una prueba no arriesga a nadie;
+    sonar la sirena real por un self-test, sí."""
+    cfg = siren_cfg.model_copy(update={"audio_test_path": "/no/existe/prueba.wav"})
+    notifier, siren = _siren_notifier(cfg, gpio)
+    try:
+        assert notifier.asset_for(SirenReason.TEST) is None
+        assert notifier.asset_for(SirenReason.ALERT) == cfg.audio_siren_path
+        gpio.run_siren_test(duration_s=5.0)
+        notifier._reconcile_siren()
+        assert siren.playing is None
+    finally:
+        notifier.stop()
+
+
+def test_el_tono_de_prueba_viaja_empaquetado_con_el_edge() -> None:
+    """Si no se empaqueta, cada gabinete se queda mudo en sus pruebas."""
+    from takab_edge import audio as audio_mod
+
+    asset = Path(audio_mod.__file__).parent / "assets" / "prueba.wav"
+    assert asset.is_file(), "assets/prueba.wav no se empaquetó"
+    assert asset.read_bytes()[:4] == b"RIFF"
+
+
+def test_la_razon_de_la_sirena_se_deriva_de_los_enclaves(gpio) -> None:  # noqa: ANN001
+    assert gpio.siren_reason is None  # en reposo no suena
+    gpio.run_siren_test(duration_s=5.0)
+    assert gpio.siren_reason is SirenReason.TEST
+    gpio.simulate_sasmex(active=True)
+    assert gpio.siren_reason is SirenReason.ALERT, "lo real domina a la prueba"
+
+
+def test_el_simulacro_no_toca_la_sirena_y_por_eso_no_tiene_tono_de_rele(gpio) -> None:  # noqa: ANN001
+    """`DrillController` no toca relés a propósito: un simulacro es SOLO voz. Por eso
+    aquí no hay un cuarto tono de sirena — no habría cuándo sonarlo."""
+    assert gpio.siren_reason is None
+
+
+# ---- T-2.49 · perfil de audio desde la nube -----------------------------------
+
+
+def test_la_nube_elige_el_tono_por_ID_de_catalogo(siren_cfg, gpio) -> None:  # noqa: ANN001
+    notifier, _ = _siren_notifier(siren_cfg, gpio)
+    try:
+        perfil = {"siren": "takab-siren-v1", "test": "takab-prueba-v1"}
+        report = notifier.apply_audio_profile(perfil)
+        assert report["applied"] == {"siren": "takab-siren-v1", "test": "takab-prueba-v1"}
+        assert report["rejected"] == {}
+        assert notifier._siren_path.endswith("siren.wav")
+        assert notifier._test_path.endswith("prueba.wav")
+    finally:
+        notifier.stop()
+
+
+def test_un_ID_desconocido_CONSERVA_el_tono_anterior(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """Caer a otro tono haría que el gabinete sonara distinto de lo que su propia
+    config declara. Conservar y declarar es lo honesto."""
+    notifier, _ = _siren_notifier(siren_cfg, gpio)
+    try:
+        antes = notifier._siren_path
+        report = notifier.apply_audio_profile({"siren": "tono-del-futuro-v9"})
+        assert notifier._siren_path == antes
+        assert report["rejected"] == {"siren": "tono-del-futuro-v9"}
+        assert report["applied"] == {}
+    finally:
+        notifier.stop()
+
+
+def test_el_tono_oficial_de_SASMEX_esta_reservado_y_NO_se_sirve() -> None:
+    """Propiedad de CIRES: sin licencia escrita no se empaqueta. Que el ID no exista
+    en el catálogo es lo que impide que se cuele por descuido (GATE-LEGAL)."""
+    from takab_edge.audio import catalog
+
+    assert "sasmex-oficial-v1" not in catalog.CATALOG
+    assert "sasmex-oficial-v1" in catalog.RESERVED
+    assert catalog.resolve("sasmex-oficial-v1") is None
+    assert "CIRES" in catalog.RESERVED["sasmex-oficial-v1"]
+
+
+def test_el_catalogo_solo_declara_archivos_que_existen() -> None:
+    """Un ID en el catálogo sin su WAV empaquetado dejaría mudo al gabinete."""
+    from takab_edge.audio import catalog
+
+    for asset_id in catalog.CATALOG:
+        assert catalog.resolve(asset_id) is not None, asset_id
+
+
+def test_la_nube_no_puede_mandar_una_ruta_ni_un_binario(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """El doc de config viaja FIRMADO hacia un dispositivo que toca sirena y gas: solo
+    se aceptan IDs de catálogo, jamás rutas ni contenido."""
+    notifier, _ = _siren_notifier(siren_cfg, gpio)
+    try:
+        antes = notifier._siren_path
+        report = notifier.apply_audio_profile({"siren": "/etc/passwd"})
+        assert notifier._siren_path == antes
+        assert report["rejected"] == {"siren": "/etc/passwd"}
+    finally:
+        notifier.stop()
+
+
+def test_un_perfil_ausente_no_cambia_nada(siren_cfg, gpio) -> None:  # noqa: ANN001
+    """Compatibilidad: los edges desplegados hoy no reciben la clave `audio`."""
+    notifier, _ = _siren_notifier(siren_cfg, gpio)
+    try:
+        antes = (notifier._siren_path, notifier._test_path)
+        notifier.apply_audio_profile(None)
+        assert (notifier._siren_path, notifier._test_path) == antes
+        assert notifier.profile_report["applied"] == {}
+    finally:
+        notifier.stop()

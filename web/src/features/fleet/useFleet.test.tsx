@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { GatewayOut, RuleSetOut, SiteOut } from "@takab/sdk";
+import type { GatewayOut, RuleSetOut } from "@takab/sdk";
 
 import { resetSessionStoreForTests } from "../../auth/session.store";
 import { ME_FIXTURES } from "../../test-utils/meFixtures";
@@ -12,7 +12,6 @@ import { buildCabinets, useFleet } from "./useFleet";
 
 const mocks = vi.hoisted(() => ({
   listGatewaysFleetGatewaysGet: vi.fn(),
-  listSitesSitesGet: vi.fn(),
   listRuleSetsRuleSetsGet: vi.fn(),
 }));
 
@@ -21,6 +20,10 @@ vi.mock("@takab/sdk", () => mocks);
 const GW_OK: GatewayOut = {
   gateway_id: "g-1",
   site_id: "s-1",
+  // [T-2.35] El nombre viaja con la fila: la UI no vuelve a cruzar contra /sites.
+  site_name: "Planta Cholula",
+  site_code: "CHL-A",
+  site_status: "active",
   serial: "TKB-0001",
   fw_version: "edge-1.4.0",
   iot_thing: "gw-dev-0001",
@@ -42,6 +45,8 @@ const GW_OFFLINE: GatewayOut = {
   ...GW_OK,
   gateway_id: "g-2",
   site_id: "s-2",
+  site_name: "Torre Sur",
+  site_code: "TS-B",
   serial: "TKB-0002",
   derived_state: "SIN ENLACE",
   last_heartbeat_ts: null,
@@ -50,22 +55,6 @@ const GW_OFFLINE: GatewayOut = {
   mqtt_rtt_ms: null,
   seedlink_lag_s: null,
 };
-
-const SITES: SiteOut[] = [
-  {
-    site_id: "s-1",
-    tenant_id: "t-1",
-    code: "CHL-A",
-    name: "Planta Cholula",
-    criticality: "high",
-    lat: 19.06,
-    lon: -98.3,
-    timezone: "America/Mexico_City",
-    status: "active",
-    row_version: "1",
-    created_at: "2026-01-01T00:00:00Z",
-  },
-];
 
 function ruleSet(over: Partial<RuleSetOut>): RuleSetOut {
   return {
@@ -99,20 +88,19 @@ function makeWrapper() {
 
 function arrange({
   gateways = [GW_OK, GW_OFFLINE] as GatewayOut[] | number,
-  sites = SITES as SiteOut[] | number,
   ruleSets = [ruleSet({})] as RuleSetOut[] | number,
   /** Rol en sesión: /fleet/gateways solo se pide si su matriz lo permite. */
   role = "takab_superadmin" as keyof typeof ME_FIXTURES,
+  includeRetired = false,
 } = {}) {
   seedAuthenticated(ME_FIXTURES[role]);
   mocks.listGatewaysFleetGatewaysGet.mockResolvedValue(
     typeof gateways === "number" ? fail(gateways) : ok(gateways),
   );
-  mocks.listSitesSitesGet.mockResolvedValue(typeof sites === "number" ? fail(sites) : ok(sites));
   mocks.listRuleSetsRuleSetsGet.mockResolvedValue(
     typeof ruleSets === "number" ? fail(ruleSets) : ok({ items: ruleSets }),
   );
-  return renderHook(() => useFleet(), { wrapper: makeWrapper() });
+  return renderHook(() => useFleet({ includeRetired }), { wrapper: makeWrapper() });
 }
 
 beforeEach(() => {
@@ -127,7 +115,7 @@ async function settled(result: { current: ReturnType<typeof useFleet> }) {
 }
 
 describe("useFleet", () => {
-  it("une gateways con el nombre del sitio y respeta el orden del API", async () => {
+  it("toma el nombre del sitio del servidor y respeta el orden del API", async () => {
     const { result } = arrange();
     await settled(result);
     await waitFor(() => {
@@ -135,6 +123,60 @@ describe("useFleet", () => {
     });
     expect(result.current.cabinets.map((c) => c.gateway.gateway_id)).toEqual(["g-1", "g-2"]);
     expect(result.current.cabinets[0].siteCode).toBe("CHL-A");
+    // `listSitesSitesGet` ni siquiera está mockeada: si el hook volviera a pedir
+    // /sites, este test reventaría con un TypeError. Ese es el guard.
+  });
+
+  // [T-2.35] El bug de las "estaciones fantasma": al cruzar contra /sites (que
+  // oculta los retirados) un gabinete huérfano perdía su nombre y la UI lo
+  // rebautizaba `SITIO <8 hex>`. Dos huérfanos se veían idénticos e indelebles.
+  it("nunca fabrica un nombre a partir del site_id", async () => {
+    const { result } = arrange();
+    await settled(result);
+    await waitFor(() => {
+      expect(result.current.cabinets).toHaveLength(2);
+    });
+    for (const cab of result.current.cabinets) {
+      expect(cab.siteName).not.toMatch(/^SITIO /);
+      expect(cab.siteName).not.toContain(cab.gateway.site_id.slice(0, 8));
+    }
+  });
+
+  it("dos gabinetes del MISMO sitio se distinguen por serial", async () => {
+    // `sites.name` no es único (db/schema.sql solo restringe (tenant_id, code)):
+    // el rótulo puede repetirse legítimamente y la identidad la pone el serial.
+    const twin: GatewayOut = { ...GW_OK, gateway_id: "g-3", serial: "TKB-0003" };
+    const { result } = arrange({ gateways: [GW_OK, twin] });
+    await settled(result);
+    await waitFor(() => {
+      expect(result.current.cabinets).toHaveLength(2);
+    });
+    const [a, b] = result.current.cabinets;
+    expect(a.siteName).toBe(b.siteName);
+    expect(a.gateway.serial).not.toBe(b.gateway.serial);
+  });
+
+  it("includeRetired viaja al servidor como query param", async () => {
+    const { result } = arrange({ includeRetired: true });
+    await settled(result);
+    expect(mocks.listGatewaysFleetGatewaysGet).toHaveBeenCalledWith({
+      query: { include_retired: true },
+    });
+  });
+
+  it("por defecto NO pide los retirados", async () => {
+    const { result } = arrange();
+    await settled(result);
+    expect(mocks.listGatewaysFleetGatewaysGet).toHaveBeenCalledWith(undefined);
+  });
+
+  it("expone el estado del sitio padre para rotular al huérfano", async () => {
+    const orphan: GatewayOut = { ...GW_OK, site_status: "retired" };
+    const { result } = arrange({ gateways: [orphan], includeRetired: true });
+    await settled(result);
+    await waitFor(() => {
+      expect(result.current.cabinets[0]?.siteStatus).toBe("retired");
+    });
   });
 
   // El rol sin /fleet en su matriz (inspector, building_admin) SÍ entra a la
@@ -148,13 +190,6 @@ describe("useFleet", () => {
     expect(mocks.listGatewaysFleetGatewaysGet).not.toHaveBeenCalled();
     expect(result.current.cabinets).toEqual([]);
     expect(result.current.error).toBeNull();
-  });
-
-  it("si /sites falla usa un fallback identificable y NO tumba la página", async () => {
-    const { result } = arrange({ sites: 500 });
-    await settled(result);
-    expect(result.current.error).toBeNull();
-    expect(result.current.cabinets[0].siteName).toBe("SITIO s-1");
   });
 
   it("deriva relays de la config site-scope activa: ARMADO con enlace vivo", async () => {
@@ -227,14 +262,14 @@ describe("buildCabinets · perfil de equipamiento [T-2.31]", () => {
 
   it("un canal no instalado se OCULTA aunque el rule_set declare su cableado", () => {
     const gw = { ...GW_OK, equipment: { ...EQUIP_ALL, gas_valve: false } };
-    const [cab] = buildCabinets([gw], SITES, [ruleSet({})]);
+    const [cab] = buildCabinets([gw], [ruleSet({})]);
     expect(cab.relays?.map((r) => r.key)).not.toContain("gas_valve");
     expect(cab.relays?.map((r) => r.key)).toContain("siren");
   });
 
   it("un canal instalado SIN cableado declarado aparece con wiring S/D", () => {
     const gw = { ...GW_OK, equipment: EQUIP_ALL };
-    const [cab] = buildCabinets([gw], SITES, [ruleSet({})]);
+    const [cab] = buildCabinets([gw], [ruleSet({})]);
     const strobe = cab.relays?.find((r) => r.key === "strobe");
     expect(strobe).toBeDefined();
     expect(strobe?.wiring).toBe("S/D");
@@ -243,15 +278,16 @@ describe("buildCabinets · perfil de equipamiento [T-2.31]", () => {
 
   it("alias del rule_set (gas/doors) se filtran por su canal de equipment", () => {
     const gw = { ...GW_OK, equipment: { ...EQUIP_ALL, door_retainer: false } };
-    const [cab] = buildCabinets([gw], SITES, [
-      ruleSet({ config: { relays: { siren: "NO", doors: "NC" } } }),
-    ]);
+    const [cab] = buildCabinets(
+      [gw],
+      [ruleSet({ config: { relays: { siren: "NO", doors: "NC" } } })],
+    );
     expect(cab.relays?.map((r) => r.key)).not.toContain("doors");
     expect(cab.relays?.map((r) => r.key)).toContain("siren");
   });
 
   it("gateway sin equipment (SDK viejo) conserva la conducta previa", () => {
-    const [cab] = buildCabinets([GW_OK], SITES, [ruleSet({})]);
+    const [cab] = buildCabinets([GW_OK], [ruleSet({})]);
     expect(cab.relays?.map((r) => r.key)).toEqual(["siren", "gas_valve"]);
   });
 });

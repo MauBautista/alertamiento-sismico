@@ -123,6 +123,53 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "CatalogDelta": {
+        "description": "Diferencia entre lo que estimó la red y lo que dice el catálogo.",
+        "properties": {
+          "bearing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bearing"
+          },
+          "dt_s": {
+            "title": "Dt S",
+            "type": "number"
+          },
+          "km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          }
+        },
+        "required": [
+          "dt_s"
+        ],
+        "title": "CatalogDelta",
+        "type": "object"
+      },
       "CatalogEarthquakeList": {
         "description": "Lista completa (13 sismos ratificados; sin paginación).",
         "properties": {
@@ -220,6 +267,91 @@
         "title": "CatalogEarthquakeOut",
         "type": "object"
       },
+      "CatalogMatch": {
+        "description": "Sismo del catálogo de referencia más cercano en tiempo.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.",
+        "properties": {
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "dt_s": {
+            "title": "Dt S",
+            "type": "number"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "origin_time": {
+            "format": "date-time",
+            "title": "Origin Time",
+            "type": "string"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_key",
+          "origin_time",
+          "source",
+          "dt_s"
+        ],
+        "title": "CatalogMatch",
+        "type": "object"
+      },
       "CatalogPushIn": {
         "description": "[T-2.24] Instantánea del catálogo SSN a empujar firmada al gabinete.\n\nEl cuerpo usa el FORMATO DEL ENTREGABLE de diseño (`fuente/capturado/\neventos[m,fecha,hora,lat,lon,prof,loc]/referencias`): el mismo archivo que\ninstala `provision_gateway.sh --catalog`. El edge re-valida fail-closed.",
         "properties": {
@@ -257,6 +389,97 @@
           "topic"
         ],
         "title": "CatalogPushOut",
+        "type": "object"
+      },
+      "ChannelPeak": {
+        "description": "Pico de un canal SEED en la ventana del incidente.",
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "clipped": {
+            "default": false,
+            "title": "Clipped",
+            "type": "boolean"
+          },
+          "energy_sum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Sum"
+          },
+          "peak_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pga G"
+          },
+          "peak_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pgv Cms"
+          },
+          "peak_rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Rms"
+          },
+          "peak_stalta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Stalta"
+          },
+          "peak_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Ts"
+          },
+          "samples": {
+            "default": 0,
+            "title": "Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "ChannelPeak",
         "type": "object"
       },
       "ChannelSeries": {
@@ -1199,6 +1422,18 @@
             "title": "Duration S",
             "type": "integer"
           },
+          "from_scheduled": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Scheduled"
+          },
           "note": {
             "anyOf": [
               {
@@ -1250,6 +1485,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "required": [
@@ -1395,6 +1641,11 @@
               }
             ],
             "title": "Command Status"
+          },
+          "commandable": {
+            "default": true,
+            "title": "Commandable",
+            "type": "boolean"
           },
           "site_id": {
             "format": "uuid",
@@ -2270,6 +2521,158 @@
         "title": "FeaturesFrame",
         "type": "object"
       },
+      "ForensicsOut": {
+        "description": "Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.\n\n``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el\npico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un\nincidente disparado por umbral local la \"alerta\" ES la sacudida, y el número sería\ncero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y\n``lead_time_reason`` dice por qué; nunca 0.",
+        "properties": {
+          "calibrated": {
+            "default": false,
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogMatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalog_delta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogDelta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ChannelPeak"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "felt_band": {
+            "default": "unknown",
+            "title": "Felt Band",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "lead_time_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time Reason"
+          },
+          "lead_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time S"
+          },
+          "peak_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pga G"
+          },
+          "peak_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pgv Cms"
+          },
+          "peak_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Ts"
+          },
+          "peers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/QuorumPeer"
+            },
+            "title": "Peers",
+            "type": "array"
+          },
+          "sensors": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SensorInfo"
+            },
+            "title": "Sensors",
+            "type": "array"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteGeo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "station_count": {
+            "default": 0,
+            "title": "Station Count",
+            "type": "integer"
+          },
+          "window_from": {
+            "format": "date-time",
+            "title": "Window From",
+            "type": "string"
+          },
+          "window_to": {
+            "format": "date-time",
+            "title": "Window To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "window_from",
+          "window_to"
+        ],
+        "title": "ForensicsOut",
+        "type": "object"
+      },
       "GatewayConfigStateOut": {
         "description": "Estado del config firmado que el gateway tiene REALMENTE (T-1.30 · C4).\n\n``publish`` solo registra la intención (202 ``pending_sync``); quien firma y\nentrega es el worker de T-1.23. Este modelo es lo único que autoriza a la\nconsola a decir \"SINCRONIZADO\" en vez de \"PENDIENTE\".\n\n- ``in_sync``: el payload publicado coincide con ``config.edge`` del rule_set\n  activo. Es la negación del predicado de publicación del worker.\n- ``has_edge_config``: el rule_set activo trae bloque ``edge``. Si es falso el\n  worker no publicará nunca — pintar PENDIENTE para siempre sería mentir.\n- ``is_syncable``: gateway no retirado y con ``iot_thing`` (el worker lo excluye\n  en caso contrario).\n- ``version``/``published_at``: los del último documento firmado; ``None`` si\n  nunca se publicó.",
         "properties": {
@@ -2401,8 +2804,64 @@
         "title": "GatewayCreate",
         "type": "object"
       },
+      "GatewayHealthOut": {
+        "description": "Historia de 24 h de un gabinete (T-2.38).\n\n``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de\nlatidos periódicos recibidos frente a los esperados por la cadencia del edge. Se\nrotula así en la UI a propósito — la completitud de forma de onda exigiría contar\nla serie sísmica por segundo, y hoy no hay agregado que lo haga barato.",
+        "properties": {
+          "buckets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HealthBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "downtime_s": {
+            "default": 0.0,
+            "title": "Downtime S",
+            "type": "number"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "heartbeat_completeness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Completeness"
+          },
+          "last_outage_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outage End"
+          },
+          "outages": {
+            "default": 0,
+            "title": "Outages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gateway_id"
+        ],
+        "title": "GatewayHealthOut",
+        "type": "object"
+      },
       "GatewayOut": {
-        "description": "Gateway del tenant + estado derivado del último ``device_health``.",
+        "description": "Gateway del tenant + estado derivado del último ``device_health``.\n\n[T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web\nlos resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete\nhuérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos\nhuérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que\ninventar — la clase de bug entera desaparece.",
         "properties": {
           "battery_pct": {
             "anyOf": [
@@ -2548,9 +3007,21 @@
             "title": "Serial",
             "type": "string"
           },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "site_status": {
+            "title": "Site Status",
             "type": "string"
           },
           "status": {
@@ -2561,6 +3032,9 @@
         "required": [
           "gateway_id",
           "site_id",
+          "site_name",
+          "site_code",
+          "site_status",
           "serial",
           "status",
           "has_wr1",
@@ -2568,6 +3042,30 @@
           "derived_state"
         ],
         "title": "GatewayOut",
+        "type": "object"
+      },
+      "GatewayRetire": {
+        "additionalProperties": false,
+        "description": "Retiro de gabinete: ``confirm_serial`` (visible) + ``retire_code`` (secreto).",
+        "properties": {
+          "confirm_serial": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Confirm Serial",
+            "type": "string"
+          },
+          "retire_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Retire Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_serial",
+          "retire_code"
+        ],
+        "title": "GatewayRetire",
         "type": "object"
       },
       "GatewayRowOut": {
@@ -2810,6 +3308,70 @@
           }
         },
         "title": "HeadcountCloseIn",
+        "type": "object"
+      },
+      "HealthBucket": {
+        "description": "Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.\n\nUn bucket sin dato para una métrica vale ``None``, **nunca 0**: \"no reportó RTT\"\ny \"reportó 0 ms\" son hechos distintos y confundirlos pinta una línea plana que\nparece salud perfecta (regla de oro 7).",
+        "properties": {
+          "battery_min_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Min Pct"
+          },
+          "heartbeats": {
+            "title": "Heartbeats",
+            "type": "integer"
+          },
+          "mqtt_rtt_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt P95 Ms"
+          },
+          "ntp_offset_abs_max_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntp Offset Abs Max Ms"
+          },
+          "seedlink_lag_max_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag Max S"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "heartbeats"
+        ],
+        "title": "HealthBucket",
         "type": "object"
       },
       "IncidentActionFrame": {
@@ -3338,9 +3900,34 @@
             ],
             "title": "Last Bucket"
           },
+          "last_heartbeat_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat Ts"
+          },
           "lat": {
             "title": "Lat",
             "type": "number"
+          },
+          "link_reasons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Link Reasons",
+            "type": "array"
+          },
+          "link_state": {
+            "default": "SIN GABINETE",
+            "title": "Link State",
+            "type": "string"
           },
           "lon": {
             "title": "Lon",
@@ -3368,6 +3955,17 @@
             ],
             "title": "Max Pgv Cms"
           },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt Ms"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3381,6 +3979,17 @@
                 "type": "null"
               }
             ]
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag S"
           },
           "site_id": {
             "format": "uuid",
@@ -3484,8 +4093,16 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "manage_retire_code": {
+            "title": "Manage Retire Code",
+            "type": "boolean"
+          },
           "manage_tenants": {
             "title": "Manage Tenants",
+            "type": "boolean"
+          },
+          "manage_users": {
+            "title": "Manage Users",
             "type": "boolean"
           },
           "manage_visibility": {
@@ -3552,6 +4169,8 @@
           "drill_start",
           "manage_tenants",
           "manage_visibility",
+          "manage_retire_code",
+          "manage_users",
           "checkin_submit",
           "roster_read",
           "damage_report_submit",
@@ -3578,6 +4197,11 @@
             },
             "title": "Allowed Routes",
             "type": "array"
+          },
+          "console_scope_enforced": {
+            "default": false,
+            "title": "Console Scope Enforced",
+            "type": "boolean"
           },
           "role": {
             "title": "Role",
@@ -4450,8 +5074,83 @@
         "title": "PushTokenOut",
         "type": "object"
       },
+      "QuorumPeer": {
+        "description": "Estación que votó. Coordenadas nulas = la RLS oculta esa estación (otra red).",
+        "properties": {
+          "counted": {
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "delta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta S"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga G"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          }
+        },
+        "required": [
+          "sensor_id",
+          "counted"
+        ],
+        "title": "QuorumPeer",
+        "type": "object"
+      },
       "QuorumVoteOut": {
-        "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.",
+        "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.\n\n[T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa\nalgo: el voto viene de una estación que la RLS de este tenant no deja ver. La\nconsola lo rotula \"OTRA RED\" — que es el hecho — en vez de un uuid truncado.",
         "properties": {
           "counted": {
             "title": "Counted",
@@ -4485,6 +5184,28 @@
             "format": "uuid",
             "title": "Sensor Id",
             "type": "string"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "station_serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Station Serial"
           }
         },
         "required": [
@@ -4534,6 +5255,66 @@
           "expires_in"
         ],
         "title": "ReportOut",
+        "type": "object"
+      },
+      "RetireCodeRotate": {
+        "additionalProperties": false,
+        "description": "Fija o rota el código del tenant. Solo ``takab_superadmin``.\n\nMínimo 8 caracteres: es una credencial tecleada por una persona, no un token\ngenerado. El hash lo calcula Postgres (bcrypt vía ``pgcrypto``); este texto no se\nguarda ni se registra en ninguna parte.",
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "RetireCodeRotate",
+        "type": "object"
+      },
+      "RetireCodeState": {
+        "description": "¿Hay código y de cuándo? Nunca el hash.\n\nLa consola lo consulta ANTES de ofrecer el retiro: sin código configurado el\nintento sería un 409 seguro, y prometer un botón que siempre falla es\nexactamente lo que prohíbe la regla de oro 7.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotated At"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "configured"
+        ],
+        "title": "RetireCodeState",
         "type": "object"
       },
       "RosterCheckin": {
@@ -5089,6 +5870,83 @@
           "model"
         ],
         "title": "SensorCreate",
+        "type": "object"
+      },
+      "SensorInfo": {
+        "description": "Sensor del sitio. ``calibration_source`` decide la honestidad de las unidades.\n\nSin procedencia declarada, el PGA/PGV NO está en g ni cm/s: son valores\nRELATIVOS. Un dictamen que los presentara como gravedades estaría afirmando una\nmedición física que nadie hizo.",
+        "properties": {
+          "calibration_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Source"
+          },
+          "channels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "sensor_id": {
+            "format": "uuid",
+            "title": "Sensor Id",
+            "type": "string"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
+          }
+        },
+        "required": [
+          "sensor_id",
+          "kind",
+          "model"
+        ],
+        "title": "SensorInfo",
         "type": "object"
       },
       "SensorOut": {
@@ -5743,6 +6601,80 @@
         "title": "SiteDetailOut",
         "type": "object"
       },
+      "SiteGeo": {
+        "description": "Ficha del sitio para el croquis y la portada del dictamen.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "building_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Type"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "criticality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criticality"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "SiteGeo",
+        "type": "object"
+      },
       "SiteOut": {
         "description": "Sitio del tenant. ``geom`` se proyecta a ``lat``/``lon`` (ST_Y/ST_X).",
         "properties": {
@@ -5830,6 +6762,30 @@
           "created_at"
         ],
         "title": "SiteOut",
+        "type": "object"
+      },
+      "SiteRetire": {
+        "additionalProperties": false,
+        "description": "Retiro de sitio: ``confirm_code`` (el ``code`` del sitio) + ``retire_code``.\n\nSe teclea el ``code`` y no el ``name`` porque ``sites.name`` NO es único\n(``db/schema.sql`` solo restringe ``(tenant_id, code)``): confirmar con un rótulo\nambiguo dejaría al operador creyendo que apagó otra estación.",
+        "properties": {
+          "confirm_code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Confirm Code",
+            "type": "string"
+          },
+          "retire_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Retire Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_code",
+          "retire_code"
+        ],
+        "title": "SiteRetire",
         "type": "object"
       },
       "SiteStateFrame": {
@@ -6225,6 +7181,10 @@
             "title": "Plan Code",
             "type": "string"
           },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -6258,9 +7218,359 @@
           "visibility",
           "status",
           "plan_code",
+          "row_version",
           "created_at"
         ],
         "title": "TenantOut",
+        "type": "object"
+      },
+      "TenantUpdate": {
+        "additionalProperties": false,
+        "description": "Edición PARCIAL de un cliente (T-2.51). Solo ``takab_superadmin``.\n\nEs un PATCH, no un PUT: la pantalla Multi-Tenant edita una ficha campo a campo y\nun reemplazo total obligaría a reenviar valores que el operador no tocó (y a\npisarlos si otro admin los cambió mientras el formulario estaba abierto).\n\n``code`` NO es editable: es la llave que TAKAB entrega fuera de banda y que\naparece en runbooks, tickets y en el ``edge.env`` de los gabinetes. ``tenant_id``\ntampoco (``extra='forbid'`` los rechaza con 422). ``isolation_mode`` queda fuera\na propósito: pasar de ``logical`` a ``dedicated`` es una migración de datos, no\nuna casilla — anunciarlo aquí prometería un aislamiento que nadie ejecutó.",
+        "properties": {
+          "base_row_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Row Version"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "plan_code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Code"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "trial",
+                  "active",
+                  "suspended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "vertical": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "gov_shared"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "TenantUpdate",
+        "type": "object"
+      },
+      "UserActionOut": {
+        "description": "Acuse de reset/reenvío. NO trae contraseña ni código: el correo lo lleva.",
+        "properties": {
+          "action": {
+            "enum": [
+              "password_reset",
+              "invitation_resent"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Qué pasó, en lenguaje de operador. Jamás una credencial.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "action",
+          "detail"
+        ],
+        "title": "UserActionOut",
+        "type": "object"
+      },
+      "UserCreate": {
+        "additionalProperties": false,
+        "description": "Alta de usuario. La contraseña la genera Cognito y viaja por correo.",
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_scope": {
+            "default": "*",
+            "title": "Site Scope",
+            "type": "string"
+          },
+          "surface": {
+            "default": "web",
+            "enum": [
+              "web",
+              "mobile",
+              "both"
+            ],
+            "title": "Surface",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "zone_id": {
+            "default": "",
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "UserCreate",
+        "type": "object"
+      },
+      "UserOut": {
+        "description": "Usuario del directorio. Sin credenciales, por construcción.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_scope": {
+            "title": "Site Scope",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "surface": {
+            "title": "Surface",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "zone_id": {
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "tenant_id",
+          "role",
+          "site_scope",
+          "zone_id",
+          "surface",
+          "enabled",
+          "status"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "UserPage": {
+        "properties": {
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "backend"
+        ],
+        "title": "UserPage",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "additionalProperties": false,
+        "description": "Edición PARCIAL. ``email`` no se toca: es el identificador de acceso y\ncambiarlo desde aquí rompería el vínculo con la invitación ya enviada.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "site_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Scope"
+          },
+          "surface": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mobile",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "title": "UserUpdate",
         "type": "object"
       },
       "ValidationError": {
@@ -6616,8 +7926,57 @@
     },
     "/drills": {
       "get": {
-        "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).",
+        "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).\n\n[T-2.48] Paginación keyset y filtro por tipo: ``executed`` es lo que sonó en\nlos edificios, ``scheduled`` la agenda (de ahí sale el banner armado).",
         "operationId": "list_drills_drills_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "executed",
+                "scheduled"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6628,12 +7987,22 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Drills"
       },
       "post": {
-        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.\n\n[T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del \"próximo\nsimulacro\" para la app): sin comandos, sin banner, jamás ``active``.",
+        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.\n\n[T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del \"próximo\nsimulacro\" para la app): sin comandos, sin banner, jamás ``active``.\n\n[T-2.48] Con ``from_scheduled`` se EJECUTA una agenda ya armada, heredando\nsus sitios/duración/nota, y la agenda queda consumida. Sigue siendo un clic\nhumano en una sesión viva: aquí no hay temporizador que dispare nada — un\nactuador que se activa solo por reloj rompería la regla de oro 8.",
         "operationId": "start_drill_drills_post",
         "requestBody": {
           "content": {
@@ -6689,6 +8058,47 @@
         "summary": "Active Drill"
       }
     },
+    "/drills/{drill_id}/cancel": {
+      "post": {
+        "description": "[T-2.48] Cancela un simulacro PROGRAMADO antes de que se ejecute.\n\nSolo aplica a la agenda. Un simulacro que ya corrió no se cancela: sonó en\nedificios reales y el registro es evidencia de cumplimiento — marcarlo\n\"cancelado\" después reescribiría un hecho (regla de oro 11). Para ese caso\nexiste ``/stop``, que cierra la ventana sin negar que ocurrió.\n\nIdempotente y sin emitir nada: una agenda ya cerrada (cancelada o ejecutada)\nse devuelve TAL CUAL, conservando su ``stop_reason`` original.",
+        "operationId": "cancel_drill_drills__drill_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Drill"
+      }
+    },
     "/drills/{drill_id}/stop": {
       "post": {
         "description": "Termina el simulacro antes de la ventana y avisa a los gabinetes.",
@@ -6732,7 +8142,7 @@
     },
     "/events": {
       "get": {
-        "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.",
+        "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.\n\n[T-2.39] Con ``ids`` devuelve EXACTAMENTE ese conjunto y el keyset se desactiva:\nla pantalla de evaluación enriquece las filas que tiene cargadas, no las 50 más\nrecientes. Antes, al pasar de página, incidentes con evento existente perdían\nmagnitud, epicentro y nodos sin decir por qué.",
         "operationId": "list_events_events_get",
         "parameters": [
           {
@@ -6781,6 +8191,24 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "description": "event_id separados por coma (máx. 200)",
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "event_id separados por coma (máx. 200)",
+              "title": "Ids"
             }
           }
         ],
@@ -6931,10 +8359,45 @@
         "summary": "Verify Evidence"
       }
     },
+    "/fleet/config-state": {
+      "get": {
+        "description": "Estado del config firmado de TODA la flota visible, en UNA consulta.\n\n[T-2.37] Sustituye al abanico de N peticiones por gabinete que abría la consola\ncada 10 s. El endpoint por-id se conserva: sigue siendo el diagnóstico de un\ngabinete concreto.",
+        "operationId": "list_gateway_config_states_fleet_config_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayConfigStateOut"
+                  },
+                  "title": "Response List Gateway Config States Fleet Config State Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Gateway Config States"
+      }
+    },
     "/fleet/gateways": {
       "get": {
-        "description": "Gateways del tenant con su estado derivado del último ``device_health``.",
+        "description": "Gateways del tenant con su estado derivado del último ``device_health``.\n\n[T-2.35] Oculta lo retirado por defecto —el gabinete mismo o su sitio padre—,\nespejando ``GET /sites?include_retired``. Sin este filtro el inventario devolvía\nhardware dado de baja que la consola no tenía forma de quitar de la pantalla.",
         "operationId": "list_gateways_fleet_gateways_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6949,6 +8412,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Gateways"
@@ -6992,45 +8465,6 @@
       }
     },
     "/fleet/gateways/{gateway_id}": {
-      "delete": {
-        "description": "Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable.",
-        "operationId": "retire_gateway_fleet_gateways__gateway_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "gateway_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Gateway Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GatewayRowOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Retire Gateway"
-      },
       "put": {
         "description": "Reemplaza el gabinete. ``base_row_version`` viejo ⇒ 409.\n\nEl sitio destino debe ser del mismo tenant que el gabinete: mudarlo a un sitio ajeno\nharía que su telemetría (y sus actuadores) quedaran bajo otro tenant.",
         "operationId": "update_gateway_fleet_gateways__gateway_id__put",
@@ -7161,6 +8595,112 @@
           }
         },
         "summary": "Restore Gateway"
+      }
+    },
+    "/fleet/gateways/{gateway_id}/retire": {
+      "post": {
+        "description": "Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).\n\nRetirar un gabinete lo saca del config sync firmado y de los comandos de\nactuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,\nteclear el ``serial`` exacto (visible en pantalla) y el código de retiro del\ncliente (secreto que entrega TAKAB).\n\nEs ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo\nno atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.",
+        "operationId": "retire_gateway_fleet_gateways__gateway_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayRetire"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Gateway"
+      }
+    },
+    "/fleet/health-history": {
+      "get": {
+        "description": "Historia de salud de la flota: tendencia y REINCIDENCIA (T-2.38).\n\nLa pantalla sabía si un gabinete está bien ahora y nada más: uno que se cae cinco\nveces al día se veía igual que uno que nunca falló. Aquí salen las caídas\n(derivadas del silencio entre latidos, con el umbral de ``derive_fleet_state``) y\nla serie por bucket para la sparkline.\n\nVentana acotada a 7 días y bucket a [5, 1440] min: es una vista de operación, no\nun almacén de series — para eso está la telemetría.",
+        "operationId": "fleet_health_history_fleet_health_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_min",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "title": "Bucket Min",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayHealthOut"
+                  },
+                  "title": "Response Fleet Health History Fleet Health History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fleet Health History"
       }
     },
     "/gateways/{gateway_id}/catalog": {
@@ -7484,7 +9024,7 @@
     },
     "/incidents/{incident_id}/actions": {
       "get": {
-        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.\n\n[T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):\nel táctico queda además acotado a su ``site_scope`` default-deny — fuera de\nalcance recibe el MISMO 404 (sin filtración de existencia).",
+        "description": "Timeline append-only del incidente. 404 si el incidente no es visible.\n\n[T-2.08] MONITOREO por rol, o dashboard táctico móvil (``panel_read``):\nel táctico queda además acotado a su ``site_scope`` default-deny — fuera de\nalcance recibe el MISMO 404 (sin filtración de existencia).",
         "operationId": "list_incident_actions_incidents__incident_id__actions_get",
         "parameters": [
           {
@@ -8049,6 +9589,47 @@
         "summary": "Register Evidence"
       }
     },
+    "/incidents/{incident_id}/forensics": {
+      "get": {
+        "description": "Picos por canal, tiempo de aviso, quórum, catálogo y calibración.\n\nAlimenta la pantalla y el dictamen PDF con los MISMOS números: dos rutas\ndistintas para los mismos hechos acabarían discrepando, y un dictamen que no\ncoincide con lo que el operador vio en pantalla es peor que ninguno.",
+        "operationId": "incident_forensics_incidents__incident_id__forensics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForensicsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Forensics"
+      }
+    },
     "/incidents/{incident_id}/headcount/close": {
       "post": {
         "description": "[T-2.11 · 2.6] Cierra el headcount (todos contabilizados) como ACCIÓN\nFIRMADA — precondición del paso 1 de 2.2. La firma de intención es opcional;\nsi viene, se verifica contra ``device_keys`` (§2.1-B) y se sella su huella.",
@@ -8143,7 +9724,7 @@
     },
     "/incidents/{incident_id}/report": {
       "post": {
-        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.",
+        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.",
         "operationId": "generate_report_incidents__incident_id__report_post",
         "parameters": [
           {
@@ -8153,6 +9734,18 @@
             "schema": {
               "format": "uuid",
               "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "technical | executive",
+            "in": "query",
+            "name": "variant",
+            "required": false,
+            "schema": {
+              "default": "technical",
+              "description": "technical | executive",
+              "title": "Variant",
               "type": "string"
             }
           }
@@ -8760,7 +10353,7 @@
     },
     "/sites": {
       "get": {
-        "description": "Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.",
+        "description": "Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.\n\n[T-2.45] Acotado además por el ``site_scope`` del claim.",
         "operationId": "list_sites_sites_get",
         "parameters": [
           {
@@ -8841,47 +10434,8 @@
       }
     },
     "/sites/{site_id}": {
-      "delete": {
-        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.",
-        "operationId": "retire_site_sites__site_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "site_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Site Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SiteOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Retire Site"
-      },
       "get": {
-        "description": "Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).",
+        "description": "Detalle de un sitio con sus zonas. 404 si no existe, no es visible o está\nfuera del alcance del portador (T-2.45: 404, nunca 403).",
         "operationId": "get_site_sites__site_id__get",
         "parameters": [
           {
@@ -9551,9 +11105,60 @@
         "summary": "Mobile State"
       }
     },
+    "/sites/{site_id}/retire": {
+      "post": {
+        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.\n\n[T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y\nel hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía\ncandidato de config firmada y de comandos de actuación (ambos predicados miran\n``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:\nvolver a encender hardware es un acto explícito, no un efecto colateral.\n\n[T-2.36] Doble fricción: teclear el ``code`` del sitio (no el ``name``, que no es\núnico) y el código de retiro del cliente. Retirar un sitio arrastra su hardware, así\nque la fricción es la misma que la del gabinete, no menor.",
+        "operationId": "retire_site_sites__site_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteRetire"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Site"
+      }
+    },
     "/telemetry/map/state": {
       "get": {
-        "description": "Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.",
+        "description": "Estado de los sitios visibles Y dentro del alcance: sacudida + enlace + epicentros.",
         "operationId": "map_state_telemetry_map_state_get",
         "responses": {
           "200": {
@@ -9891,6 +11496,408 @@
           }
         },
         "summary": "Create Tenant"
+      }
+    },
+    "/tenants/{tenant_id}": {
+      "patch": {
+        "description": "Edita la ficha del cliente (T-2.51). SOLO ``takab_superadmin``.\n\nPATCH parcial: solo llegan al SET los campos que el cuerpo trae. ``code`` e\n``isolation_mode`` no son editables (ver ``TenantUpdate``).\n\n``base_row_version`` viejo ⇒ 409. La carrera importa aquí más que en una ficha\ncualquiera: ``visibility='gov_shared'`` amplía QUIÉN puede leer los datos del\ncliente (``tenants_read`` y ``app_gov_can_see``) y ``status='suspended'`` es una\ndecisión comercial. Revertir cualquiera de las dos en silencio, porque dos\npestañas guardaron con segundos de diferencia, sería un cambio de superficie de\nseguridad que nadie ordenó.\n\nLa escritura la autoriza la RLS ``tenants_admin``; la acción ``manage_tenants``\nevita pintar un control que siempre daría 403 (regla de oro 7).",
+        "operationId": "update_tenant_tenants__tenant_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Tenant"
+      }
+    },
+    "/tenants/{tenant_id}/retire-code": {
+      "get": {
+        "description": "¿Tiene este cliente código de retiro configurado? Nunca devuelve el hash.\n\nLa consola lo consulta antes de ofrecer el retiro: sin código el intento sería un\n409 seguro, y ofrecer un botón que siempre falla es lo que veta la regla de oro 7.",
+        "operationId": "get_retire_code_state_tenants__tenant_id__retire_code_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireCodeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Retire Code State"
+      },
+      "put": {
+        "description": "Fija o rota el código de retiro del cliente. SOLO ``takab_superadmin``.\n\nRotar invalida el anterior de inmediato: la fila es única por tenant y el\n``version`` monótono deja constancia de cuántas veces se cambió. El texto en claro\nno se guarda, no se devuelve y no entra en la bitácora — solo el hecho de la\nrotación.",
+        "operationId": "put_retire_code_tenants__tenant_id__retire_code_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetireCodeRotate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireCodeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Retire Code"
+      }
+    },
+    "/users": {
+      "get": {
+        "description": "Usuarios del cliente en sesión (o de todos, para roles internos TAKAB).\n\n``ListUsers`` de Cognito **no filtra por atributos custom**, así que el\nacotamiento por tenant se hace aquí sobre la página que devuelve el pool. El\ncursor sigue siendo el ``PaginationToken`` de Cognito (paginación estable); lo\nque no se puede prometer es que cada página traiga exactamente ``limit`` filas.\nSe documenta en vez de simularse: mentir sobre el tamaño de página obligaría a\nbarrer el pool entero en cada request.",
+        "operationId": "list_users_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Users"
+      },
+      "post": {
+        "description": "Da de alta una identidad e invita por correo. Nunca devuelve credenciales.",
+        "operationId": "create_user_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create User"
+      }
+    },
+    "/users/{username}": {
+      "delete": {
+        "description": "Baja definitiva de la identidad. Su rastro en ``audit_log`` NO se toca.\n\nLa bitácora referencia al actor por ``sub``, no por FK: borrar la cuenta no\nborra lo que hizo (regla de oro 11). Un ``PATCH {\"enabled\": false}`` es la\nalternativa reversible y es la que la consola ofrece primero.",
+        "operationId": "delete_user_users__username__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete User"
+      },
+      "patch": {
+        "description": "Edita rol, alcance, zona, superficie y estado. ``tenant_id`` NO es editable.\n\nMover a alguien de cliente re-tenantiza su rastro de auditoría, que es evidencia\ninmutable (regla de oro 11) — el camino honesto es dar de baja allá y de alta acá.",
+        "operationId": "update_user_users__username__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update User"
+      }
+    },
+    "/users/{username}/resend-invitation": {
+      "post": {
+        "description": "Reenvía la invitación inicial (usuario que nunca entró).",
+        "operationId": "resend_invitation_users__username__resend_invitation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Invitation"
+      }
+    },
+    "/users/{username}/reset-password": {
+      "post": {
+        "description": "Dispara el flujo de recuperación de Cognito. NO fija ni devuelve una clave.",
+        "operationId": "reset_password_users__username__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password"
       }
     },
     "/visibility-grants": {

@@ -3,7 +3,7 @@
 El router completo de incidentes es T-1.22; aquí solo el acuse open→acked, que
 ejercita RLS por tenant (roles de tenant) y la vía SECURITY DEFINER de gobierno.
 
-Roles con acuse (RBAC §2, Consola C4I ∈ {Total, "Lectura + ack"}) = los que la
+Roles con acuse (RBAC §2, MONITOREO ∈ {Total, "Lectura + ack"}) = los que la
 matriz marca ``ack_incident``: superadmin, tenant_admin, soc_operator, gov_operator.
 ``gov_operator`` NO escribe incidentes a nivel de fila (RLS): su única escritura
 es ``gov_ack_incident`` (SECURITY DEFINER, valida gov_shared + open→acked + audit).

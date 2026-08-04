@@ -30,7 +30,12 @@ class EventPage(BaseModel):
 
 
 class QuorumVoteOut(BaseModel):
-    """Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``."""
+    """Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.
+
+    [T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa
+    algo: el voto viene de una estación que la RLS de este tenant no deja ver. La
+    consola lo rotula "OTRA RED" — que es el hecho — en vez de un uuid truncado.
+    """
 
     event_id: str
     sensor_id: UUID
@@ -38,6 +43,8 @@ class QuorumVoteOut(BaseModel):
     pga_g: float
     delta_s: float | None
     counted: bool
+    station_serial: str | None = None
+    site_code: str | None = None
 
 
 class EventDetailOut(SeismicEventOut):

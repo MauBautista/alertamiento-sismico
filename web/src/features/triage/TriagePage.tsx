@@ -1,13 +1,16 @@
 import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import CatalogPanel from "./CatalogPanel";
+import InspectionMatrix from "./InspectionMatrix";
 import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
+import { inspectionMatrix } from "./priority";
+import { useForensics } from "./useForensics";
 import { TRIAGE_STALE_MS, useTriage } from "./useTriage";
 import { useIncidentDetail } from "./useIncidentDetail";
 import type { TriageRow } from "./model";
@@ -22,7 +25,7 @@ const SEVERITIES: { id: string | null; lbl: string }[] = [
 ];
 
 /**
- * T-1.29 · Triage Estructural e Historial (mockup 3, TriageHistory.jsx).
+ * T-1.29 · Evaluación Estructural Post-Sismo (mockup 3, TriageHistory.jsx).
  *
  * Desviaciones honestas ratificadas frente al mockup:
  * - Rango de fechas REAL del servidor (T-1.57/58: `GET /incidents?from&to`) con
@@ -77,6 +80,18 @@ export default function TriagePage() {
     current?.incident.incident_id ?? null,
     current?.incident.event_id ?? null,
   );
+  const forensics = useForensics(current?.incident.incident_id ?? null);
+
+  // [T-2.40] Sitios del MISMO evento, ordenados por prioridad. Se derivan de las
+  // filas YA cargadas —incidentes del propio tenant, ya filtrados por RLS—: un
+  // endpoint nuevo podría discrepar de lo que la tabla está mostrando.
+  const matrix = useMemo(
+    () =>
+      inspectionMatrix(triage.rows, current?.incident.event_id ?? null, (siteId) =>
+        triage.criticalityOf(siteId),
+      ),
+    [triage, current],
+  );
 
   const staleSince =
     !triage.loading &&
@@ -87,11 +102,11 @@ export default function TriagePage() {
       : null;
 
   return (
-    <section className="triage" data-screen-label="03 Triage Estructural">
+    <section className="triage" data-screen-label="03 Evaluación Estructural">
       <header className="triage__hd">
         <div>
           <span className="soc-meta">PROTECCIÓN CIVIL · EVIDENCIA INMUTABLE</span>
-          <h1 className="triage__title">Triage Estructural e Historial</h1>
+          <h1 className="triage__title">Evaluación Estructural Post-Sismo</h1>
         </div>
         <div className="triage__filters">
           <div className="triage__search">
@@ -174,6 +189,14 @@ export default function TriagePage() {
               {triage.loadingMore ? "CARGANDO MÁS…" : "CARGAR MÁS"}
             </button>
           )}
+          <InspectionMatrix
+            rows={matrix}
+            selectedId={current?.incident.incident_id ?? null}
+            onSelect={(id) => {
+              const row = triage.rows.find((r) => r.incident.incident_id === id);
+              if (row) setSelected(row);
+            }}
+          />
           <CatalogPanel />
         </div>
 
@@ -181,6 +204,7 @@ export default function TriagePage() {
           <TriageDetail
             row={current}
             detail={detail}
+            forensics={forensics}
             minNodes={triage.minNodesFor(current.incident.site_id)}
             canSign={me?.allowed_actions.sign_dictamen === true}
             canExport={me?.allowed_actions.export === true}

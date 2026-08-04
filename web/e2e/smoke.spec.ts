@@ -3,15 +3,17 @@
 //
 // Asserta el `data-screen-label` de cada página — el mismo marcador que usan los
 // mockups del design system — porque sobrevive a cambios de copy y de datos.
+//
+// [T-2.56] Corre en los TRES viewports de la matriz: el smoke era el único e2e
+// y fijaba su propio tamaño, así que el shell nunca se montó por debajo de 1440.
 import { expect, test } from "@playwright/test";
 
-/** Sitio real del seed (`db/seeds/prod_fleet.sql`): site-dev · Puebla. */
-const SITE_DEV = "d1000000-0000-0000-0000-000000000000";
+import { SITE_DEV } from "./helpers";
 
 const SCREENS = [
-  { path: "/console", label: "01 Consola C4I · Live Wall" },
+  { path: "/console", label: "01 Monitoreo en Vivo" },
   { path: "/fleet", label: "02 Flota Edge" },
-  { path: "/triage", label: "03 Triage Estructural" },
+  { path: "/triage", label: "03 Evaluación Estructural" },
   { path: "/tenants", label: "04 Multi-Tenant" },
   { path: `/building/${SITE_DEV}`, label: "05 Dashboard Edificio" },
 ];
@@ -40,13 +42,15 @@ test("login dev y las 5 pantallas cargan", async ({ page }) => {
 // [T-1.62] Regresión de layout que jsdom NO puede ver (no calcula alturas): el
 // control de simulacro de T-1.60 caía en la fila elástica de .soc-main y dejaba
 // el mapa clavado en su piso de 280 px. Solo un navegador real lo caza.
+// [T-2.56] Ya NO fija el viewport: lo pone el project de la matriz, así que la
+// misma regresión se vigila en 1280×800, 1440×900 y 1920×1080. La versión
+// exhaustiva de esta medida vive en `layout.spec.ts`.
 test("el mapa se queda el alto: el simulacro es una tira, no un panel", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1024 });
   await page.goto("/");
   await page.getByLabel("ROL").selectOption("takab_superadmin"); // tiene drill_start
   await page.getByRole("button", { name: "ENTRAR COMO ROL" }).click();
   // El login ya aterriza en /console; navegar antes de que monte tira la sesión.
-  await expect(page.locator('[data-screen-label="01 Consola C4I · Live Wall"]')).toBeVisible();
+  await expect(page.locator('[data-screen-label="01 Monitoreo en Vivo"]')).toBeVisible();
 
   const drill = page.getByTestId("drill-idle");
   await expect(drill).toBeVisible();

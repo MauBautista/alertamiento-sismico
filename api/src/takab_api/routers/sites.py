@@ -1,7 +1,7 @@
 """Catálogo de sitios: lectura (T-1.22 · B1) y administración (T-1.32).
 
 Autz de lectura (RBAC §2): cualquier rol con superficie web y acceso a alguna vista SOC
-ve el catálogo (todos tienen al menos Consola C4I). Los roles móvil-only quedan fuera
+ve el catálogo (todos tienen al menos MONITOREO). Los roles móvil-only quedan fuera
 (conjunto de rutas vacío). RLS filtra las filas por tenant.
 
 Autz de escritura: acción ``manage_fleet`` (superadmin + tenant_admin). El ``tenant_id``
@@ -23,15 +23,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
-from takab_api.auth.deps import require_roles, require_web_surface
+from takab_api.auth.deps import get_console_scope, require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import sites as q
+from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
     integrity_error,
     read_session,
     resolve_write_tenant,
 )
+from takab_api.schemas.retire import SiteRetire
 from takab_api.schemas.sites import (
     SiteCreate,
     SiteDetailOut,
@@ -71,18 +74,28 @@ def _out(row) -> SiteOut:
 
 @router.get("/sites", response_model=list[SiteOut])
 async def list_sites(
-    include_retired: bool = False, conn: AsyncConnection = Depends(read_session)
+    include_retired: bool = False,
+    scope: ConsoleScope = Depends(get_console_scope),
+    conn: AsyncConnection = Depends(read_session),
 ) -> list[SiteOut]:
-    """Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto."""
-    rows = await q.list_sites(conn, include_retired=include_retired)
+    """Sitios del tenant (superadmin/support ven todos vía RLS). Activos por defecto.
+
+    [T-2.45] Acotado además por el ``site_scope`` del claim.
+    """
+    rows = await q.list_sites(conn, include_retired=include_retired, scope=scope)
     return [_out(r) for r in rows]
 
 
 @router.get("/sites/{site_id}", response_model=SiteDetailOut)
-async def get_site(site_id: UUID, conn: AsyncConnection = Depends(read_session)) -> SiteDetailOut:
-    """Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS)."""
+async def get_site(
+    site_id: UUID,
+    scope: ConsoleScope = Depends(get_console_scope),
+    conn: AsyncConnection = Depends(read_session),
+) -> SiteDetailOut:
+    """Detalle de un sitio con sus zonas. 404 si no existe, no es visible o está
+    fuera del alcance del portador (T-2.45: 404, nunca 403)."""
     row = await q.get_site(conn, site_id)
-    if row is None:
+    if row is None or not scope.allows(str(site_id)):
         raise http_error(404, "sitio no encontrado")
     zones = await q.list_zones_for_site(conn, site_id)
     return SiteDetailOut(
@@ -156,18 +169,43 @@ async def update_site(
     return _out(row)
 
 
-@router.delete("/sites/{site_id}", response_model=SiteOut)
+@router.post("/sites/{site_id}/retire", response_model=SiteOut)
 async def retire_site(
     site_id: UUID,
+    body: SiteRetire,
     claims: Claims = Depends(_require_manage),
     conn: AsyncConnection = Depends(read_session),
 ) -> SiteOut:
-    """Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable."""
-    if await q.get_site(conn, site_id) is None:
+    """Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.
+
+    [T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y
+    el hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía
+    candidato de config firmada y de comandos de actuación (ambos predicados miran
+    ``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:
+    volver a encender hardware es un acto explícito, no un efecto colateral.
+
+    [T-2.36] Doble fricción: teclear el ``code`` del sitio (no el ``name``, que no es
+    único) y el código de retiro del cliente. Retirar un sitio arrastra su hardware, así
+    que la fricción es la misma que la del gabinete, no menor.
+    """
+    current = await q.get_site(conn, site_id)
+    if current is None:
         raise http_error(404, "sitio no encontrado")
+
+    check_confirmation(typed=body.confirm_code, expected=current.code, label="código")
+    await require_retire_code(
+        conn,
+        claims,
+        tenant_id=str(current.tenant_id),
+        code=body.retire_code,
+        obj=f"site:{site_id}",
+    )
+
     row = await q.retire_site(conn, site_id)
     if row is None:  # visible por RLS de lectura, no escribible: no debería ocurrir
         raise http_error(403, "sin permiso para retirar este sitio")
+
+    retired_gateways = await q.retire_site_gateways(conn, site_id)
 
     await audit_async(
         conn,
@@ -175,6 +213,17 @@ async def retire_site(
         actor=f"user:{claims.sub}",
         verb="site_retire",
         obj=f"site:{site_id}",
-        meta={"code": row.code},
+        meta={"code": row.code, "gateways_retired": len(retired_gateways)},
     )
+    # Una fila por gabinete: la bitácora debe decir QUÉ hardware se apagó, no solo
+    # cuántos. Los retirados de una pasada previa no reaparecen (RETURNING vacío).
+    for gw in retired_gateways:
+        await audit_async(
+            conn,
+            tenant_id=row.tenant_id,
+            actor=f"user:{claims.sub}",
+            verb="gateway_retire",
+            obj=f"gateway:{gw.gateway_id}",
+            meta={"serial": gw.serial, "reason": "retiro del sitio", "site_code": row.code},
+        )
     return _out(row)

@@ -18,7 +18,9 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.auth.deps import get_claims, get_session
 from takab_api.auth.matrix import allowed_actions, allowed_routes
+from takab_api.auth.scope import console_scope
 from takab_api.schemas.me import MeActions, MeResponse, ProfileOut, ProfilePutIn
+from takab_api.settings import Settings
 
 router = APIRouter()
 
@@ -40,6 +42,9 @@ def me(claims: Claims = Depends(get_claims)) -> MeResponse:
         tenant_id=claims.tenant_id,
         role=claims.role,
         site_scope=site_scope,
+        console_scope_enforced=console_scope(
+            claims, enforced=Settings().console_scope_enforced
+        ).enforced,
         surface=claims.surface,
         allowed_routes=allowed_routes(claims.role),
         allowed_actions=MeActions(**allowed_actions(claims.role)),

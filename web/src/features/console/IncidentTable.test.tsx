@@ -89,8 +89,57 @@ describe("IncidentTable", () => {
 
   it("muestra la identidad real de la sesión (sin selector de turno)", () => {
     renderTable();
-    expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · SOC");
-    expect(screen.queryByRole("combobox")).toBeNull();
+    const operator = screen.getByTestId("operator-label");
+    expect(operator).toHaveTextContent("TENANT_ADMIN · SOC");
+    // [T-2.50] La aserción original era `queryByRole("combobox") === null`, y
+    // pasó a ser falsa al añadir el selector de ORDEN de la cola. Lo que la
+    // desviación ratificada prohíbe es un selector de TURNO que permita firmar
+    // como otro operador — no cualquier <select> de la pantalla. Se acota al
+    // bloque de identidad, que es donde vivía el riesgo.
+    const block = operator.closest(".soc-incidents__operator");
+    expect(block).not.toBeNull();
+    expect(block?.querySelector("select")).toBeNull();
+  });
+
+  // ---- T-2.50: orden de la cola -------------------------------------------
+  it("ordena por el criterio elegido sin tocar la cola del servidor", () => {
+    const critico = incident("crit", { severity: "critical", opened_at: "2026-07-08T10:00:00Z" });
+    const reciente = incident("new", { severity: "info", opened_at: "2026-07-08T10:41:30Z" });
+    renderTable({ incidents: [reciente, critico] });
+
+    const first = () => screen.getAllByRole("row")[1].textContent ?? "";
+    // Default = severidad: el crítico manda aunque sea más viejo.
+    expect(first()).toContain("10:00:00 UTC");
+
+    fireEvent.change(screen.getByTestId("incident-order"), { target: { value: "recent" } });
+    expect(first()).toContain("10:41:30 UTC");
+
+    fireEvent.change(screen.getByTestId("incident-order"), { target: { value: "age" } });
+    expect(first()).toContain("10:00:00 UTC");
+  });
+
+  it("ordenar por distancia SIN epicentro lo declara, no baraja las filas", () => {
+    renderTable({ incidents: [incident("a"), incident("b", { severity: "info" })] });
+    fireEvent.change(screen.getByTestId("incident-order"), { target: { value: "distance" } });
+    expect(screen.getByTestId("order-distance-unavailable")).toHaveTextContent(
+      "SIN EPICENTRO LOCALIZADO · ORDENADO POR SEVERIDAD",
+    );
+  });
+
+  it("con epicentro conocido NO muestra el aviso de degradación", () => {
+    renderTable({
+      epicenter: {
+        event_id: "E",
+        source: "sasmex",
+        lon: -98.3,
+        lat: 19.06,
+        magnitude: null,
+        depth_km: null,
+        detected_at: "2026-07-08T10:41:00Z",
+      },
+    });
+    fireEvent.change(screen.getByTestId("incident-order"), { target: { value: "distance" } });
+    expect(screen.queryByTestId("order-distance-unavailable")).toBeNull();
   });
 
   // ---- T-1.51: botones del operador vivos ---------------------------------

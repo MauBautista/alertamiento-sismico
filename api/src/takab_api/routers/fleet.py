@@ -24,9 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
-from takab_api.auth.deps import require_roles, require_web_surface
+from takab_api.auth.deps import get_console_scope, require_roles, require_web_surface
 from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
+from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import fleet as q
+from takab_api.queries import fleet_health as qh
+from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
     integrity_error,
@@ -37,13 +40,16 @@ from takab_api.schemas.fleet import (
     DEGRADADO,
     GatewayConfigStateOut,
     GatewayCreate,
+    GatewayHealthOut,
     GatewayOut,
     GatewayRowOut,
     GatewayUpdate,
+    HealthBucket,
     derive_fleet_state,
     fleet_degrade_reasons,
     sig_fingerprint,
 )
+from takab_api.schemas.retire import GatewayRetire
 from takab_api.settings import Settings
 
 # Roles con /fleet en RBAC §2 (vía matrix.py).
@@ -99,7 +105,10 @@ async def get_gateway_config_state(
     row = await q.get_config_state(conn, str(gateway_id))
     if row is None:
         raise http_error(404, "gateway no encontrado")
-    m = dict(row._mapping)
+    return _config_state_out(dict(row._mapping))
+
+
+def _config_state_out(m: dict) -> GatewayConfigStateOut:
     return GatewayConfigStateOut(
         gateway_id=m["gateway_id"],
         version=m["version"],
@@ -111,13 +120,89 @@ async def get_gateway_config_state(
     )
 
 
+@router.get("/fleet/config-state", response_model=list[GatewayConfigStateOut])
+async def list_gateway_config_states(
+    conn: AsyncConnection = Depends(read_session),
+) -> list[GatewayConfigStateOut]:
+    """Estado del config firmado de TODA la flota visible, en UNA consulta.
+
+    [T-2.37] Sustituye al abanico de N peticiones por gabinete que abría la consola
+    cada 10 s. El endpoint por-id se conserva: sigue siendo el diagnóstico de un
+    gabinete concreto.
+    """
+    return [_config_state_out(dict(r._mapping)) for r in await q.list_config_states(conn)]
+
+
+@router.get("/fleet/health-history", response_model=list[GatewayHealthOut])
+async def fleet_health_history(
+    hours: int = 24,
+    bucket_min: int = 60,
+    conn: AsyncConnection = Depends(read_session),
+) -> list[GatewayHealthOut]:
+    """Historia de salud de la flota: tendencia y REINCIDENCIA (T-2.38).
+
+    La pantalla sabía si un gabinete está bien ahora y nada más: uno que se cae cinco
+    veces al día se veía igual que uno que nunca falló. Aquí salen las caídas
+    (derivadas del silencio entre latidos, con el umbral de ``derive_fleet_state``) y
+    la serie por bucket para la sparkline.
+
+    Ventana acotada a 7 días y bucket a [5, 1440] min: es una vista de operación, no
+    un almacén de series — para eso está la telemetría.
+    """
+    s = Settings()
+    hours = max(1, min(hours, 24 * 7))
+    bucket_min = max(5, min(bucket_min, 1440))
+    sin_enlace_s = s.sin_enlace_min * 60.0
+
+    buckets = await qh.health_buckets(conn, hours=hours, bucket_min=bucket_min)
+    outages = await qh.health_outages(conn, hours=hours, sin_enlace_s=sin_enlace_s)
+
+    expected = (hours * 3600.0) / max(s.fleet_heartbeat_s, 1.0)
+    by_gateway: dict[str, GatewayHealthOut] = {}
+    for row in buckets:
+        m = dict(row._mapping)
+        gid = str(m["gateway_id"])
+        entry = by_gateway.setdefault(gid, GatewayHealthOut(gateway_id=m["gateway_id"]))
+        entry.buckets.append(
+            HealthBucket(
+                ts=m["bucket"],
+                heartbeats=m["heartbeats"],
+                mqtt_rtt_p95_ms=m["mqtt_rtt_p95_ms"],
+                seedlink_lag_max_s=m["seedlink_lag_max_s"],
+                ntp_offset_abs_max_ms=m["ntp_offset_abs_max_ms"],
+                battery_min_pct=m["battery_min_pct"],
+            )
+        )
+    for row in outages:
+        m = dict(row._mapping)
+        gid = str(m["gateway_id"])
+        entry = by_gateway.setdefault(gid, GatewayHealthOut(gateway_id=m["gateway_id"]))
+        entry.outages = m["outages"]
+        entry.downtime_s = m["downtime_s"]
+        entry.last_outage_end = m["last_outage_end"]
+
+    for entry in by_gateway.values():
+        received = sum(b.heartbeats for b in entry.buckets)
+        # Acotado a 1.0: un edge que reintenta puede mandar de más, y "112 % de
+        # completitud" no significa nada para quien lo lee.
+        entry.heartbeat_completeness = min(received / expected, 1.0) if expected > 0 else None
+    return list(by_gateway.values())
+
+
 @router.get("/fleet/gateways", response_model=list[GatewayOut])
 async def list_gateways(
+    include_retired: bool = False,
+    scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> list[GatewayOut]:
-    """Gateways del tenant con su estado derivado del último ``device_health``."""
+    """Gateways del tenant con su estado derivado del último ``device_health``.
+
+    [T-2.35] Oculta lo retirado por defecto —el gabinete mismo o su sitio padre—,
+    espejando ``GET /sites?include_retired``. Sin este filtro el inventario devolvía
+    hardware dado de baja que la consola no tenía forma de quitar de la pantalla.
+    """
     s = Settings()
-    rows = await q.list_gateways_with_health(conn)
+    rows = await q.list_gateways_with_health(conn, include_retired=include_retired, scope=scope)
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)
@@ -159,6 +244,9 @@ async def list_gateways(
             GatewayOut(
                 gateway_id=m["gateway_id"],
                 site_id=m["site_id"],
+                site_name=m["site_name"],
+                site_code=m["site_code"],
+                site_status=m["site_status"],
                 serial=m["serial"],
                 fw_version=m["fw_version"],
                 iot_thing=m["iot_thing"],
@@ -256,15 +344,38 @@ async def update_gateway(
     return _row_out(row)
 
 
-@router.delete("/fleet/gateways/{gateway_id}", response_model=GatewayRowOut)
+@router.post("/fleet/gateways/{gateway_id}/retire", response_model=GatewayRowOut)
 async def retire_gateway(
     gateway_id: UUID,
+    body: GatewayRetire,
     claims: Claims = Depends(_require_manage),
     conn: AsyncConnection = Depends(read_session),
 ) -> GatewayRowOut:
-    """Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable."""
-    if await q.get_gateway_row(conn, gateway_id) is None:
+    """Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).
+
+    Retirar un gabinete lo saca del config sync firmado y de los comandos de
+    actuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,
+    teclear el ``serial`` exacto (visible en pantalla) y el código de retiro del
+    cliente (secreto que entrega TAKAB).
+
+    Es ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo
+    no atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.
+    """
+    current = await q.get_gateway_row(conn, gateway_id)
+    if current is None:
         raise http_error(404, "gateway no encontrado")
+
+    # El serial primero: está en pantalla, no es secreto, y un dedazo no debe
+    # consumir un intento del código.
+    check_confirmation(typed=body.confirm_serial, expected=current.serial, label="serial")
+    await require_retire_code(
+        conn,
+        claims,
+        tenant_id=str(current.tenant_id),
+        code=body.retire_code,
+        obj=f"gateway:{gateway_id}",
+    )
+
     row = await q.set_gateway_status(conn, gateway_id, "retired")
     if row is None:
         raise http_error(403, "sin permiso para retirar este gateway")
