@@ -574,6 +574,23 @@ export type GatewayCreate = {
 };
 
 /**
+ * Historia de 24 h de un gabinete (T-2.38).
+ *
+ * ``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de
+ * latidos periódicos recibidos frente a los esperados por la cadencia del edge. Se
+ * rotula así en la UI a propósito — la completitud de forma de onda exigiría contar
+ * la serie sísmica por segundo, y hoy no hay agregado que lo haga barato.
+ */
+export type GatewayHealthOut = {
+    buckets?: Array<HealthBucket>;
+    downtime_s?: number;
+    gateway_id: string;
+    heartbeat_completeness?: number | null;
+    last_outage_end?: string | null;
+    outages?: number;
+};
+
+/**
  * Gateway del tenant + estado derivado del último ``device_health``.
  *
  * [T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web
@@ -678,6 +695,22 @@ export type HeadcountActionOut = {
 export type HeadcountCloseIn = {
     key_id?: string | null;
     signature?: string | null;
+};
+
+/**
+ * Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.
+ *
+ * Un bucket sin dato para una métrica vale ``None``, **nunca 0**: "no reportó RTT"
+ * y "reportó 0 ms" son hechos distintos y confundirlos pinta una línea plana que
+ * parece salud perfecta (regla de oro 7).
+ */
+export type HealthBucket = {
+    battery_min_pct?: number | null;
+    heartbeats: number;
+    mqtt_rtt_p95_ms?: number | null;
+    ntp_offset_abs_max_ms?: number | null;
+    seedlink_lag_max_s?: number | null;
+    ts: string;
 };
 
 /**
@@ -1939,6 +1972,34 @@ export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponses = {
 };
 
 export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponse = RetireGatewayFleetGatewaysGatewayIdRetirePostResponses[keyof RetireGatewayFleetGatewaysGatewayIdRetirePostResponses];
+
+export type FleetHealthHistoryFleetHealthHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        hours?: number;
+        bucket_min?: number;
+    };
+    url: '/fleet/health-history';
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetError = FleetHealthHistoryFleetHealthHistoryGetErrors[keyof FleetHealthHistoryFleetHealthHistoryGetErrors];
+
+export type FleetHealthHistoryFleetHealthHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<GatewayHealthOut>;
+};
+
+export type FleetHealthHistoryFleetHealthHistoryGetResponse = FleetHealthHistoryFleetHealthHistoryGetResponses[keyof FleetHealthHistoryFleetHealthHistoryGetResponses];
 
 export type PushCatalogGatewaysGatewayIdCatalogPostData = {
     body: CatalogPushIn;

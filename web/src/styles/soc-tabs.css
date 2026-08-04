@@ -217,9 +217,13 @@
 .fleet__kpi--warn .fleet__kpi-val { color: var(--tk-status-warning); }
 .fleet__kpi--crit .fleet__kpi-val { color: var(--tk-status-critical); }
 
+/* [T-2.38] La reja se auto-ajusta. Antes eran TRES columnas duras: en 1366 px las
+   tarjetas se estrujaban hasta partir sus pills de razones, y en 4K quedaban
+   enormes con el mismo contenido. 340 px es el ancho mínimo con el que la tarjeta
+   no rompe su cabecera. */
 .fleet__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 14px;
 }
 
@@ -1452,3 +1456,98 @@
 .structural-verify--ok .structural-verify__state { color: var(--tk-status-normal); }
 .structural-verify--crit .structural-verify__state { color: var(--tk-status-critical); }
 .structural-verify--muted .structural-verify__state { color: var(--tk-cyan); }
+
+
+/* ---------------------------------------------------------------------------
+   [T-2.38] FLOTA EDGE · barra de herramientas, historia y degradación responsive.
+
+   El objetivo del proyecto sigue siendo 1920×1080 (soc.css §1). Estos breakpoints
+   son DEGRADACIÓN, no un rediseño: en pantallas menores la información no se
+   reordena, solo deja de estar apretada. Los píxeles van literales porque una
+   custom property NO es válida en el prelude de una @media; los valores espejan
+   --tk-bp-md (1280) y el corte de laptop (1100).
+   --------------------------------------------------------------------------- */
+.fleet__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 10px;
+}
+.fleet__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+  border: 1px solid var(--tk-border);
+  background: var(--tk-surface-0);
+  padding: 5px 8px;
+  color: var(--tk-fg-3);
+}
+.fleet__search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 11px;
+}
+.fleet__search input:focus-visible { outline: var(--tk-focus-ring); }
+.fleet__sort { display: flex; align-items: center; gap: 6px; }
+.fleet__sort > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.fleet__sort select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  color: var(--tk-fg-1);
+  font-size: 10px;
+  padding: 4px 6px;
+}
+.fleet__shown {
+  margin-left: auto;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+}
+
+.fleet-card__history {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+.fleet-card__historylbl { color: var(--tk-fg-3); }
+.fleet-card__outages--warn { color: var(--tk-status-warning); }
+.sparkline { color: var(--tk-cyan); display: block; }
+.sparkline--empty { color: var(--tk-fg-3); font-family: var(--tk-font-mono); font-size: 9px; }
+
+/* El header apilaba 4 KPI de 96 px con gap 32 y SIN flex-wrap: por debajo de
+   ~1100 px empujaban al título fuera de su caja. */
+.fleet__hd { flex-wrap: wrap; }
+.fleet__kpis { flex-wrap: wrap; }
+
+/* La tabla de administración no se re-maqueta: se le da su propio scroll
+   horizontal. Reordenar columnas de un inventario confunde más que desplazarlas. */
+.fleet__adminscroll { overflow-x: auto; }
+
+@media (max-width: 1100px) {
+  .fleet__hd { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .fleet__sub { max-width: 100%; }
+  .fleet__shown { margin-left: 0; }
+}
+
+@media (max-width: 640px) {
+  .fleet__grid { grid-template-columns: 1fr; }
+  .fleet__kpi { min-width: 0; flex: 1 1 40%; padding: 8px 12px; }
+  .fleet__form { max-width: 100%; }
+  .fleet__rowactions { flex-wrap: wrap; justify-content: flex-start; }
+  .retire { min-width: 0; }
+  .acuse__label { flex: 0 0 auto; }
+  .acuse__row { flex-wrap: wrap; }
+}

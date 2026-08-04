@@ -4,12 +4,16 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import FleetAdmin from "./FleetAdmin";
+import FleetToolbar from "./FleetToolbar";
 import GatewayForm from "./GatewayForm";
 import RetireDialog from "./RetireDialog";
 import SiteCard from "./SiteCard";
+import { DEFAULT_FILTERS, applyFilters, isFiltering } from "./fleetFilter";
+import type { FleetFilters } from "./fleetFilter";
 import { FLEET_STALE_MS, useFleet } from "./useFleet";
 import type { FleetCabinet } from "./useFleet";
 import {
+  useFleetHealth,
   useFleetSyncStates,
   useRestoreGateway,
   useRetireCodeConfigured,
@@ -53,7 +57,9 @@ export default function FleetPage() {
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
   const codeConfigured = useRetireCodeConfigured(canManage ? tenantId : null);
   const syncStates = useFleetSyncStates(fleet.cabinets.length > 0);
+  const [filters, setFilters] = useState<FleetFilters>(DEFAULT_FILTERS);
   const [action, setAction] = useState<GatewayAction>({ kind: "none" });
+  const health = useFleetHealth(fleet.cabinets.length > 0);
   const updateGateway = useUpdateGateway();
   const retireGateway = useRetireGateway();
   const restoreGateway = useRestoreGateway();
@@ -64,7 +70,10 @@ export default function FleetPage() {
     now - fleet.dataUpdatedAt > FLEET_STALE_MS
       ? fleet.dataUpdatedAt
       : null;
+  // Los KPI cuentan el TOTAL a propósito: un contador que se moviera con el filtro
+  // convertiría "3 SIN ENLACE" en una cifra distinta según lo tecleado.
   const counts = countStates(fleet.cabinets);
+  const visible = applyFilters(fleet.cabinets, filters);
 
   return (
     <section className="fleet" data-screen-label="02 Flota Edge">
@@ -84,32 +93,35 @@ export default function FleetPage() {
         </div>
       </header>
 
-      {canManage && (
-        <label className="fleet__toggle" data-testid="fleet-include-retired">
-          <input
-            type="checkbox"
-            checked={includeRetired}
-            onChange={(e) => setIncludeRetired(e.target.checked)}
-          />
-          <span>VER RETIRADOS</span>
-        </label>
-      )}
+      <FleetToolbar
+        filters={filters}
+        onChange={setFilters}
+        includeRetired={canManage ? includeRetired : undefined}
+        onIncludeRetired={canManage ? setIncludeRetired : undefined}
+        shown={visible.length}
+        total={fleet.cabinets.length}
+      />
 
       <StateFrame
         label="FLOTA EDGE"
         loading={fleet.loading}
         error={fleet.error}
         onRetry={fleet.refetch}
-        empty={fleet.cabinets.length === 0}
-        emptyText="SIN GABINETES REGISTRADOS EN EL TENANT"
+        empty={visible.length === 0}
+        emptyText={
+          isFiltering(filters) && fleet.cabinets.length > 0
+            ? "SIN RESULTADOS PARA EL FILTRO"
+            : "SIN GABINETES REGISTRADOS EN EL TENANT"
+        }
         staleSince={staleSince}
       >
         <div className="fleet__grid">
-          {fleet.cabinets.map((c) => (
+          {visible.map((c) => (
             <SiteCard
               key={c.gateway.gateway_id}
               cabinet={c}
               syncState={syncStates.get(c.gateway.gateway_id)}
+              health={health.get(c.gateway.gateway_id)}
               onEdit={canManage ? () => setAction({ kind: "edit", cabinet: c }) : undefined}
               onRetire={canManage ? () => setAction({ kind: "retire", cabinet: c }) : undefined}
               onRestore={canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined}

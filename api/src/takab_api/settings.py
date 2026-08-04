@@ -121,6 +121,11 @@ class Settings(BaseSettings):
     # a decenas de ms; 100 ms marca reloj a la deriva.
     fleet_ntp_offset_max_ms: float = 100.0
 
+    # [T-2.38] Cadencia del latido del edge (`TAKAB_EDGE_HEALTH_HEARTBEAT_S`, hoy 60 s).
+    # Solo se usa para el DENOMINADOR de la completitud de latidos: si la flota cambia
+    # de cadencia y esto no, el porcentaje miente. No gobierna nada del gabinete.
+    fleet_heartbeat_s: float = 60.0
+
     # --- Código de retiro por tenant (T-2.36) ---
     # Intentos fallidos tolerados por tenant dentro de la ventana antes del 429.
     # El código lo teclea una persona que lo tiene delante: cinco es holgado para

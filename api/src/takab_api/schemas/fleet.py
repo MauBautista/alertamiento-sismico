@@ -193,6 +193,39 @@ class GatewayOut(BaseModel):
     ntp_offset_ms: float | None = None
 
 
+class HealthBucket(BaseModel):
+    """Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.
+
+    Un bucket sin dato para una métrica vale ``None``, **nunca 0**: "no reportó RTT"
+    y "reportó 0 ms" son hechos distintos y confundirlos pinta una línea plana que
+    parece salud perfecta (regla de oro 7).
+    """
+
+    ts: datetime
+    heartbeats: int
+    mqtt_rtt_p95_ms: float | None = None
+    seedlink_lag_max_s: float | None = None
+    ntp_offset_abs_max_ms: float | None = None
+    battery_min_pct: float | None = None
+
+
+class GatewayHealthOut(BaseModel):
+    """Historia de 24 h de un gabinete (T-2.38).
+
+    ``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de
+    latidos periódicos recibidos frente a los esperados por la cadencia del edge. Se
+    rotula así en la UI a propósito — la completitud de forma de onda exigiría contar
+    la serie sísmica por segundo, y hoy no hay agregado que lo haga barato.
+    """
+
+    gateway_id: UUID
+    buckets: list[HealthBucket] = []
+    outages: int = 0
+    downtime_s: float = 0.0
+    last_outage_end: datetime | None = None
+    heartbeat_completeness: float | None = None
+
+
 class GatewayRowOut(BaseModel):
     """Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).
 

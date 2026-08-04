@@ -27,6 +27,7 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles, require_web_surface
 from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
 from takab_api.queries import fleet as q
+from takab_api.queries import fleet_health as qh
 from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
@@ -38,9 +39,11 @@ from takab_api.schemas.fleet import (
     DEGRADADO,
     GatewayConfigStateOut,
     GatewayCreate,
+    GatewayHealthOut,
     GatewayOut,
     GatewayRowOut,
     GatewayUpdate,
+    HealthBucket,
     derive_fleet_state,
     fleet_degrade_reasons,
     sig_fingerprint,
@@ -127,6 +130,62 @@ async def list_gateway_config_states(
     gabinete concreto.
     """
     return [_config_state_out(dict(r._mapping)) for r in await q.list_config_states(conn)]
+
+
+@router.get("/fleet/health-history", response_model=list[GatewayHealthOut])
+async def fleet_health_history(
+    hours: int = 24,
+    bucket_min: int = 60,
+    conn: AsyncConnection = Depends(read_session),
+) -> list[GatewayHealthOut]:
+    """Historia de salud de la flota: tendencia y REINCIDENCIA (T-2.38).
+
+    La pantalla sabía si un gabinete está bien ahora y nada más: uno que se cae cinco
+    veces al día se veía igual que uno que nunca falló. Aquí salen las caídas
+    (derivadas del silencio entre latidos, con el umbral de ``derive_fleet_state``) y
+    la serie por bucket para la sparkline.
+
+    Ventana acotada a 7 días y bucket a [5, 1440] min: es una vista de operación, no
+    un almacén de series — para eso está la telemetría.
+    """
+    s = Settings()
+    hours = max(1, min(hours, 24 * 7))
+    bucket_min = max(5, min(bucket_min, 1440))
+    sin_enlace_s = s.sin_enlace_min * 60.0
+
+    buckets = await qh.health_buckets(conn, hours=hours, bucket_min=bucket_min)
+    outages = await qh.health_outages(conn, hours=hours, sin_enlace_s=sin_enlace_s)
+
+    expected = (hours * 3600.0) / max(s.fleet_heartbeat_s, 1.0)
+    by_gateway: dict[str, GatewayHealthOut] = {}
+    for row in buckets:
+        m = dict(row._mapping)
+        gid = str(m["gateway_id"])
+        entry = by_gateway.setdefault(gid, GatewayHealthOut(gateway_id=m["gateway_id"]))
+        entry.buckets.append(
+            HealthBucket(
+                ts=m["bucket"],
+                heartbeats=m["heartbeats"],
+                mqtt_rtt_p95_ms=m["mqtt_rtt_p95_ms"],
+                seedlink_lag_max_s=m["seedlink_lag_max_s"],
+                ntp_offset_abs_max_ms=m["ntp_offset_abs_max_ms"],
+                battery_min_pct=m["battery_min_pct"],
+            )
+        )
+    for row in outages:
+        m = dict(row._mapping)
+        gid = str(m["gateway_id"])
+        entry = by_gateway.setdefault(gid, GatewayHealthOut(gateway_id=m["gateway_id"]))
+        entry.outages = m["outages"]
+        entry.downtime_s = m["downtime_s"]
+        entry.last_outage_end = m["last_outage_end"]
+
+    for entry in by_gateway.values():
+        received = sum(b.heartbeats for b in entry.buckets)
+        # Acotado a 1.0: un edge que reintenta puede mandar de más, y "112 % de
+        # completitud" no significa nada para quien lo lee.
+        entry.heartbeat_completeness = min(received / expected, 1.0) if expected > 0 else None
+    return list(by_gateway.values())
 
 
 @router.get("/fleet/gateways", response_model=list[GatewayOut])

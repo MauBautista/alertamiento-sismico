@@ -20,6 +20,7 @@ import type { FleetCabinet, FleetData } from "./useFleet";
 const mocks = vi.hoisted(() => ({
   useFleet: vi.fn(),
   useFleetSyncStates: vi.fn(),
+  useFleetHealth: vi.fn(),
   useRetireCodeConfigured: vi.fn(),
   updateMutate: vi.fn(),
   retireMutate: vi.fn(),
@@ -40,6 +41,7 @@ const idleMutation = (mutate: ReturnType<typeof vi.fn>) => ({
 
 vi.mock("./useFleetMutations", () => ({
   useFleetSyncStates: (...args: unknown[]) => mocks.useFleetSyncStates(...args),
+  useFleetHealth: (...args: unknown[]) => mocks.useFleetHealth(...args),
   useRetireCodeConfigured: (...args: unknown[]) => mocks.useRetireCodeConfigured(...args),
   useUpdateGateway: () => idleMutation(mocks.updateMutate),
   useRetireGateway: () => idleMutation(mocks.retireMutate),
@@ -101,6 +103,7 @@ describe("FleetPage", () => {
     resetSessionStoreForTests();
     vi.clearAllMocks();
     mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useFleetHealth.mockReturnValue(new Map());
     mocks.useRetireCodeConfigured.mockReturnValue(true);
   });
 
@@ -214,6 +217,7 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
     resetSessionStoreForTests();
     vi.clearAllMocks();
     mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useFleetHealth.mockReturnValue(new Map());
     mocks.useRetireCodeConfigured.mockReturnValue(true);
     mocks.useFleet.mockReturnValue(fleetData({ cabinets: [cabinet("1", "OPERATIVO")] }));
   });
@@ -294,5 +298,92 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
     );
     render(<FleetPage />);
     expect(screen.getByTestId("sync-badge")).toHaveTextContent("SINCRONIZADO v12");
+  });
+});
+
+// [T-2.38] Buscar, ordenar y filtrar sin que los KPI mientan.
+describe("FleetPage · barra de herramientas [T-2.38]", () => {
+  beforeEach(() => {
+    resetSessionStoreForTests();
+    vi.clearAllMocks();
+    mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useFleetHealth.mockReturnValue(new Map());
+    mocks.useRetireCodeConfigured.mockReturnValue(true);
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    const ok = cabinet("1", "OPERATIVO");
+    ok.siteName = "Torre Norte";
+    const dead = cabinet("2", "SIN ENLACE");
+    dead.siteName = "Almacén";
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [ok, dead] }));
+  });
+
+  it("la búsqueda filtra la reja", () => {
+    render(<FleetPage />);
+    fireEvent.change(screen.getByLabelText("Buscar en la flota"), {
+      target: { value: "torre" },
+    });
+    expect(screen.getAllByTestId("sync-badge")).toHaveLength(1);
+  });
+
+  // El invariante que importa: filtrar no puede reescribir los contadores.
+  it("filtrar NO cambia los KPI y la leyenda dice cuántos de cuántos", () => {
+    render(<FleetPage />);
+    fireEvent.change(screen.getByLabelText("Buscar en la flota"), {
+      target: { value: "torre" },
+    });
+    const kpis = screen.getAllByTestId("fleet-kpi").map((k) => k.textContent);
+    expect(kpis[0]).toContain("2"); // GABINETES sigue diciendo 2
+    expect(screen.getByTestId("fleet-shown")).toHaveTextContent("MOSTRANDO 1 DE 2");
+  });
+
+  it("sin filtro activo no se pinta la leyenda", () => {
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-shown")).not.toBeInTheDocument();
+  });
+
+  it("OCULTAR SIN ENLACE deja fuera al caído", () => {
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /OCULTAR SIN ENLACE/ }));
+    expect(screen.getAllByTestId("sync-badge")).toHaveLength(1);
+  });
+
+  // "No hay gabinetes" y "no hay resultados" exigen acciones distintas del operador.
+  it("el vacío POR FILTRO se distingue del vacío por flota sin gabinetes", () => {
+    render(<FleetPage />);
+    fireEvent.change(screen.getByLabelText("Buscar en la flota"), {
+      target: { value: "zzz" },
+    });
+    expect(screen.getByText("SIN RESULTADOS PARA EL FILTRO")).toBeInTheDocument();
+  });
+
+  it("la historia de 24 h se pinta por gabinete cuando existe", () => {
+    mocks.useFleetHealth.mockReturnValue(
+      new Map([
+        [
+          "1",
+          {
+            gateway_id: "1",
+            buckets: [
+              { ts: "2026-08-03T09:00:00Z", heartbeats: 60, mqtt_rtt_p95_ms: 40 },
+              { ts: "2026-08-03T10:00:00Z", heartbeats: 60, mqtt_rtt_p95_ms: 55 },
+            ],
+            outages: 2,
+            downtime_s: 1800,
+            last_outage_end: "2026-08-03T09:30:00Z",
+            heartbeat_completeness: 0.92,
+          },
+        ],
+      ]),
+    );
+    render(<FleetPage />);
+    const history = screen.getAllByTestId("card-history")[0];
+    expect(history).toHaveTextContent("CAÍDAS 24 H: 2");
+    expect(history).toHaveTextContent("30 min sin enlace");
+    expect(history).toHaveTextContent("LATIDOS 92%");
+  });
+
+  it("sin historia no se inventa una tarjeta vacía", () => {
+    render(<FleetPage />);
+    expect(screen.queryByTestId("card-history")).not.toBeInTheDocument();
   });
 });

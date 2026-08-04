@@ -14,6 +14,7 @@ import {
   createSensorSensorsPost,
   createSiteSitesPost,
   getRetireCodeStateTenantsTenantIdRetireCodeGet,
+  fleetHealthHistoryFleetHealthHistoryGet,
   listGatewayConfigStatesFleetConfigStateGet,
   restoreGatewayFleetGatewaysGatewayIdRestorePost,
   retireGatewayFleetGatewaysGatewayIdRetirePost,
@@ -24,6 +25,7 @@ import {
 import type {
   GatewayConfigStateOut,
   GatewayCreate,
+  GatewayHealthOut,
   GatewayRetire,
   GatewayUpdate,
   SensorCreate,
@@ -228,4 +230,26 @@ export function useCreateSensor() {
       unwrap(createSensorSensorsPost({ body }), "El alta del sensor"),
     onSuccess: invalidate,
   });
+}
+
+/**
+ * Historia de salud de 24 h por gabinete [T-2.38].
+ *
+ * Cadencia larga a propósito: es una tendencia, no un indicador vivo. El estado
+ * instantáneo ya lo trae `/fleet/gateways` cada 30 s.
+ */
+export function useFleetHealth(enabled: boolean): Map<string, GatewayHealthOut> {
+  const query = useQuery({
+    queryKey: ["fleet", "health-history"],
+    queryFn: async () => {
+      const { data } = await fleetHealthHistoryFleetHealthHistoryGet({
+        query: { hours: 24, bucket_min: 60 },
+      });
+      return data ?? [];
+    },
+    enabled,
+    staleTime: 300_000,
+    refetchInterval: 300_000,
+  });
+  return new Map((query.data ?? []).map((h) => [h.gateway_id, h]));
 }

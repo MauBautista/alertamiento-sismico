@@ -192,53 +192,55 @@ function FleetAdminPanel() {
           empty={(sites.data ?? []).length === 0}
           emptyText="SIN ESTACIONES · CREA LA PRIMERA"
         >
-          <table className="fleet__admintable">
-            <thead>
-              <tr>
-                <th>CÓDIGO</th>
-                <th>NOMBRE</th>
-                <th>UBICACIÓN</th>
-                <th>CRITICIDAD</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {(sites.data ?? []).map((site) => (
-                <tr key={site.site_id} data-testid={`site-row-${site.code}`}>
-                  <td className="soc-mono">{site.code}</td>
-                  <td>{site.name}</td>
-                  <td className="soc-mono">{formatPoint({ lat: site.lat, lon: site.lon })}</td>
-                  <td className="soc-mono">{site.criticality.toUpperCase()}</td>
-                  <td className="fleet__rowactions">
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
-                      onClick={() => setEditing({ kind: "edit", site })}
-                    >
-                      EDITAR
-                    </button>
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
-                      onClick={() => setEditing({ kind: "hardware", site })}
-                    >
-                      HARDWARE
-                    </button>
-                    {/* Retiro lógico: la fila sobrevive porque su evidencia la
-                        referencia. [T-2.36] Doble fricción en el diálogo. */}
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
-                      disabled={retire.isPending}
-                      onClick={() => setEditing({ kind: "retire", site })}
-                    >
-                      RETIRAR
-                    </button>
-                  </td>
+          <div className="fleet__adminscroll">
+            <table className="fleet__admintable">
+              <thead>
+                <tr>
+                  <th>CÓDIGO</th>
+                  <th>NOMBRE</th>
+                  <th>UBICACIÓN</th>
+                  <th>CRITICIDAD</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(sites.data ?? []).map((site) => (
+                  <tr key={site.site_id} data-testid={`site-row-${site.code}`}>
+                    <td className="soc-mono">{site.code}</td>
+                    <td>{site.name}</td>
+                    <td className="soc-mono">{formatPoint({ lat: site.lat, lon: site.lon })}</td>
+                    <td className="soc-mono">{site.criticality.toUpperCase()}</td>
+                    <td className="fleet__rowactions">
+                      <button
+                        type="button"
+                        className="soc-btn soc-btn--secondary"
+                        onClick={() => setEditing({ kind: "edit", site })}
+                      >
+                        EDITAR
+                      </button>
+                      <button
+                        type="button"
+                        className="soc-btn soc-btn--secondary"
+                        onClick={() => setEditing({ kind: "hardware", site })}
+                      >
+                        HARDWARE
+                      </button>
+                      {/* Retiro lógico: la fila sobrevive porque su evidencia la
+                        referencia. [T-2.36] Doble fricción en el diálogo. */}
+                      <button
+                        type="button"
+                        className="soc-btn soc-btn--secondary"
+                        disabled={retire.isPending}
+                        onClick={() => setEditing({ kind: "retire", site })}
+                      >
+                        RETIRAR
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {error !== null && (
             <p className="soc-stateframe__error" role="alert" data-testid="fleet-admin-error">
               {error}

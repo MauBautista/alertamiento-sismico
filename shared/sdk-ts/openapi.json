@@ -2401,6 +2401,62 @@
         "title": "GatewayCreate",
         "type": "object"
       },
+      "GatewayHealthOut": {
+        "description": "Historia de 24 h de un gabinete (T-2.38).\n\n``heartbeat_completeness`` mide LATIDOS, no datos sísmicos: es la fracción de\nlatidos periódicos recibidos frente a los esperados por la cadencia del edge. Se\nrotula así en la UI a propósito — la completitud de forma de onda exigiría contar\nla serie sísmica por segundo, y hoy no hay agregado que lo haga barato.",
+        "properties": {
+          "buckets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HealthBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "downtime_s": {
+            "default": 0.0,
+            "title": "Downtime S",
+            "type": "number"
+          },
+          "gateway_id": {
+            "format": "uuid",
+            "title": "Gateway Id",
+            "type": "string"
+          },
+          "heartbeat_completeness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Completeness"
+          },
+          "last_outage_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outage End"
+          },
+          "outages": {
+            "default": 0,
+            "title": "Outages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gateway_id"
+        ],
+        "title": "GatewayHealthOut",
+        "type": "object"
+      },
       "GatewayOut": {
         "description": "Gateway del tenant + estado derivado del último ``device_health``.\n\n[T-2.35] ``site_name``/``site_code``/``site_status`` los pone el SERVIDOR. La web\nlos resolvía haciendo join contra ``/sites``, que oculta los retirados: un gabinete\nhuérfano perdía su nombre y la UI lo rebautizaba ``SITIO <8 hex>``, de modo que dos\nhuérfanos distintos se veían idénticos. Con el nombre en la fila no hay fallback que\ninventar — la clase de bug entera desaparece.",
         "properties": {
@@ -2849,6 +2905,70 @@
           }
         },
         "title": "HeadcountCloseIn",
+        "type": "object"
+      },
+      "HealthBucket": {
+        "description": "Un tramo de la historia de salud. Todo opcional salvo el instante y la cuenta.\n\nUn bucket sin dato para una métrica vale ``None``, **nunca 0**: \"no reportó RTT\"\ny \"reportó 0 ms\" son hechos distintos y confundirlos pinta una línea plana que\nparece salud perfecta (regla de oro 7).",
+        "properties": {
+          "battery_min_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Min Pct"
+          },
+          "heartbeats": {
+            "title": "Heartbeats",
+            "type": "integer"
+          },
+          "mqtt_rtt_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt P95 Ms"
+          },
+          "ntp_offset_abs_max_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntp Offset Abs Max Ms"
+          },
+          "seedlink_lag_max_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag Max S"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "heartbeats"
+        ],
+        "title": "HealthBucket",
         "type": "object"
       },
       "IncidentActionFrame": {
@@ -7346,6 +7466,61 @@
           }
         },
         "summary": "Retire Gateway"
+      }
+    },
+    "/fleet/health-history": {
+      "get": {
+        "description": "Historia de salud de la flota: tendencia y REINCIDENCIA (T-2.38).\n\nLa pantalla sabía si un gabinete está bien ahora y nada más: uno que se cae cinco\nveces al día se veía igual que uno que nunca falló. Aquí salen las caídas\n(derivadas del silencio entre latidos, con el umbral de ``derive_fleet_state``) y\nla serie por bucket para la sparkline.\n\nVentana acotada a 7 días y bucket a [5, 1440] min: es una vista de operación, no\nun almacén de series — para eso está la telemetría.",
+        "operationId": "fleet_health_history_fleet_health_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_min",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "title": "Bucket Min",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayHealthOut"
+                  },
+                  "title": "Response Fleet Health History Fleet Health History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fleet Health History"
       }
     },
     "/gateways/{gateway_id}/catalog": {

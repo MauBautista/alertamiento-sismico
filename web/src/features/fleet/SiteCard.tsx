@@ -1,8 +1,9 @@
 import { DERIVED_STATE_PILL, UNKNOWN_DERIVED_STATE_KIND } from "@takab/design-tokens";
 import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
 
-import type { GatewayConfigStateOut } from "@takab/sdk";
+import type { GatewayConfigStateOut, GatewayHealthOut } from "@takab/sdk";
 
+import Sparkline from "../../components/Sparkline";
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
 import LinkPill from "./LinkPill";
@@ -16,6 +17,8 @@ export interface SiteCardProps {
   cabinet: FleetCabinet;
   /** [T-2.37] Estado del config firmado; `undefined` = no se sabe (no se asume). */
   syncState?: GatewayConfigStateOut;
+  /** [T-2.38] Historia de 24 h: tendencia y REINCIDENCIA de caídas. */
+  health?: GatewayHealthOut;
   /** [T-2.37] Acciones de administración; ausentes para quien no tiene manage_fleet. */
   onEdit?: () => void;
   onRetire?: () => void;
@@ -27,6 +30,7 @@ export interface SiteCardProps {
 export default function SiteCard({
   cabinet,
   syncState,
+  health,
   onEdit,
   onRetire,
   onRestore,
@@ -136,6 +140,29 @@ export default function SiteCard({
           </div>
         )}
       </div>
+
+      {health && (
+        <div className="fleet-card__history" data-testid="card-history">
+          <span className="fleet-card__historylbl">RTT p95 · 24 H</span>
+          <Sparkline
+            values={(health.buckets ?? []).map((b) => b.mqtt_rtt_p95_ms ?? null)}
+            label={`RTT MQTT p95 de las últimas 24 h de ${cabinet.siteName}`}
+          />
+          <span
+            className={`fleet-card__outages${(health.outages ?? 0) > 0 ? " fleet-card__outages--warn" : ""}`}
+          >
+            CAÍDAS 24 H: {health.outages ?? 0}
+            {(health.outages ?? 0) > 0 &&
+              ` · ${Math.round((health.downtime_s ?? 0) / 60)} min sin enlace`}
+          </span>
+          <span className="fleet-card__completeness">
+            LATIDOS{" "}
+            {health.heartbeat_completeness == null
+              ? "S/D"
+              : `${Math.round(health.heartbeat_completeness * 100)}%`}
+          </span>
+        </div>
+      )}
 
       <footer className="fleet-card__ft">
         <div className="fleet-card__meta">
