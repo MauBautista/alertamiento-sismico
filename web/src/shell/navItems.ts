@@ -12,7 +12,7 @@ export interface NavTab {
 const NAV_PRESENTATION: ReadonlyMap<string, Omit<NavTab, "path">> = new Map([
   ["/console", { label: "CONSOLA C4I", icon: Radar }],
   ["/fleet", { label: "FLOTA EDGE", icon: Server }],
-  ["/triage", { label: "TRIAGE", icon: FileSearch }],
+  ["/triage", { label: "EVALUACIÓN", icon: FileSearch }],
   ["/tenants", { label: "MULTI-TENANT", icon: Shield }],
 ]);
 

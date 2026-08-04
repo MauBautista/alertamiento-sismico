@@ -230,10 +230,23 @@ describe("epicenterOf / magnitudeOf", () => {
     expect(epicenterOf(null)).toBe("—");
   });
 
-  it("magnitud nula ⇒ guion (el catálogo la llena post-hoc; §14 prohíbe la preliminar)", () => {
-    expect(magnitudeOf(anEvent({ magnitude: null }))).toBe("—");
-    expect(magnitudeOf(null)).toBe("—");
-    expect(magnitudeOf(anEvent({ magnitude: 5 }))).toBe("M 5.0");
+  // [T-2.39] Un guion para TODO se leía como "el dato falló". Son dos ausencias
+  // distintas —no hay evento, o lo hay y el catálogo no lo enriqueció— y el operador
+  // tiene que poder distinguirlas.
+  it("distingue SIN EVENTO de S/CATÁLOGO en vez de devolver guion para todo", () => {
+    expect(magnitudeOf(null)).toMatchObject({ kind: "no-event", label: "SIN EVENTO" });
+    expect(magnitudeOf(anEvent({ magnitude: null }))).toMatchObject({
+      kind: "absent",
+      label: "S/CATÁLOGO",
+    });
+    expect(magnitudeOf(anEvent({ magnitude: 5 }))).toMatchObject({
+      kind: "catalog",
+      label: "M 5.0",
+    });
+  });
+
+  it("la magnitud ausente explica POR QUÉ falta, no solo que falta", () => {
+    expect(magnitudeOf(anEvent({ magnitude: null })).title).toMatch(/catálogo/i);
   });
 });
 

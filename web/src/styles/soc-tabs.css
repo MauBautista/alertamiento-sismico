@@ -1551,3 +1551,35 @@
   .acuse__label { flex: 0 0 auto; }
   .acuse__row { flex-wrap: wrap; }
 }
+
+/* [T-2.39] EVALUACIÓN ESTRUCTURAL · accesibilidad de la tabla y notas honestas.
+
+   `.triage-table__pick` convierte la primera celda en un botón real: antes la fila
+   era un <tr onClick> y con teclado no se podía seleccionar nada. `all: unset` lo
+   despoja del aspecto de botón sin perder su semántica. */
+.triage-table__pick {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.triage-table__pick:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: -2px;
+}
+.triage-table__note {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+/* La nota del epicentro: sin ella, un centroide entre estaciones se lee como una
+   localización sísmica y se compara con el epicentro del SSN. */
+.triage-detail__epinote {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-border-strong);
+  padding-left: 8px;
+}

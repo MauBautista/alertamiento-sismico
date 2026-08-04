@@ -17,6 +17,8 @@ import {
   SIGNABLE_STATUS,
   chainHead,
   durationOf,
+  epicenterKindOf,
+  feltLabelOf,
   insufficientData,
   isCorroborated,
   isPreliminary,
@@ -30,9 +32,20 @@ import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 
 const VERDICT_ICON = { crit: AlertOctagon, warn: AlertTriangle, ok: CheckCircle2 } as const;
 
-function Metric({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function Metric({
+  label,
+  value,
+  unit,
+  title,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  /** Por qué el dato falta o qué significa exactamente. */
+  title?: string;
+}) {
   return (
-    <div className="triage-metric">
+    <div className="triage-metric" title={title}>
       <div className="triage-metric__lbl">{label}</div>
       <div className="triage-metric__val">
         {value}
@@ -109,6 +122,8 @@ export default function TriageDetail({
   const Icon = verdict ? VERDICT_ICON[verdict.kind] : AlertTriangle;
   const quorum = quorumView(event.data?.quorum_votes);
   const miniseed = miniseedOf(evidence.data);
+  const mag = magnitudeOf(row.event);
+  const epi = epicenterKindOf(row.event);
   const evidenceUnknown = evidence.data === undefined;
 
   const badge = dictamens.loading
@@ -135,8 +150,12 @@ export default function TriageDetail({
     <aside className="triage-detail">
       <header className="triage-detail__hd">
         <span className="soc-meta">{badge}</span>
+        {/* [T-2.39] El título era `M — · Sitio`: la magnitud es SIEMPRE null (no hay
+            ingesta de catálogo), así que el encabezado del panel se abría con un
+            guion. Ahora encabeza el HECHO MEDIDO —la sacudida que registró el
+            sensor— y la magnitud baja a métrica, rotulada como lo que es. */}
         <h2 className="triage-detail__title">
-          {magnitudeOf(row.event)} · {row.siteName}
+          {feltLabelOf(inc.max_pga_g)} · {row.siteName}
         </h2>
         <div className="triage-detail__id">
           {inc.event_id ?? inc.incident_id} · {utcStamp(Date.parse(inc.opened_at))} UTC
@@ -158,13 +177,20 @@ export default function TriageDetail({
           unit={inc.max_pgv_cms === null ? undefined : "cm/s"}
         />
         <Metric label="DURACIÓN DEL INCIDENTE" value={durationOf(inc)} />
+        <Metric label="MAGNITUD (CATÁLOGO)" value={mag.label} title={mag.title} />
         <Metric
           label="PROFUNDIDAD"
           value={row.event?.depth_km == null ? "—" : String(row.event.depth_km)}
           unit={row.event?.depth_km == null ? undefined : "km"}
         />
         <Metric label="NODOS" value={row.nodeCount === null ? "—" : String(row.nodeCount)} />
+        <Metric label="EPICENTRO" value={epi.label} title={epi.note} />
       </div>
+      {epi.kind !== "none" && (
+        <p className="triage-detail__epinote" data-testid="epicenter-note">
+          {epi.note}
+        </p>
+      )}
 
       <QuorumNodes
         view={quorum}
@@ -306,12 +332,17 @@ export default function TriageDetail({
               {actions.error && " (bitácora no disponible)"}
               {head.signed_by && ` · firmó ${head.signed_by.slice(0, 8)}`}
             </div>
-
-            {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash. */}
-            <StructuralTriage incidentId={inc.incident_id} />
           </>
         )}
       </StateFrame>
+
+      {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash.
+          [T-2.39] FUERA del gate `verdict && head` y fuera del StateFrame del
+          dictamen: vivían dentro, así que un incidente sin dictamen —o con la
+          consulta del dictamen aún en vuelo— ocultaba por completo los reportes que
+          los tácticos ya habían enviado desde el edificio. Son un HECHO del
+          incidente, igual que las métricas que T-1.52 sacó del gate. */}
+      <StructuralTriage incidentId={inc.incident_id} />
     </aside>
   );
 }

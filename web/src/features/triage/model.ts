@@ -94,8 +94,10 @@ export function buildRows(
 
 export interface QuorumNode {
   sensorId: string;
-  /** Etiqueta corta del sensor. NO hay resolver uuid→código de estación en la API. */
+  /** Código del sitio, serial del sensor, o "OTRA RED" si la RLS lo oculta. */
   label: string;
+  /** true = el voto viene de una estación que este tenant no puede ver. */
+  foreign: boolean;
   deltaS: number | null;
   counted: boolean;
   isAnchor: boolean;
@@ -145,13 +147,20 @@ export function quorumView(votes: QuorumVoteOut[] | undefined): QuorumView {
     });
     anchorId = anchor.sensor_id;
   }
-  const nodes = list.map((v) => ({
-    sensorId: v.sensor_id,
-    label: v.sensor_id.slice(0, 8).toUpperCase(),
-    deltaS: v.delta_s,
-    counted: v.counted,
-    isAnchor: v.sensor_id === anchorId,
-  }));
+  const nodes = list.map((v) => {
+    // [T-2.39] El servidor resuelve el nombre bajo RLS. Que venga nulo NO es un
+    // fallo: significa que el voto es de una estación de otro cliente, y decirlo
+    // es más honesto —y más útil— que ocho hex de un uuid.
+    const named = v.site_code ?? v.station_serial ?? null;
+    return {
+      sensorId: v.sensor_id,
+      label: named ?? "OTRA RED",
+      foreign: named === null,
+      deltaS: v.delta_s,
+      counted: v.counted,
+      isAnchor: v.sensor_id === anchorId,
+    };
+  });
   return { nodes, countedNodes: nodes.filter((n) => n.counted).length };
 }
 
@@ -211,11 +220,81 @@ export function epicenterOf(event: SeismicEventOut | null): string {
   return `${event.epicenter_lat.toFixed(2)}, ${event.epicenter_lon.toFixed(2)}`;
 }
 
-/** Magnitud del catálogo (post-hoc, nullable). Jamás una magnitud preliminar (§14). */
-export function magnitudeOf(event: SeismicEventOut | null): string {
-  return event?.magnitude === null || event?.magnitude === undefined
-    ? "—"
-    : `M ${event.magnitude.toFixed(1)}`;
+export type MagnitudeKind = "catalog" | "absent" | "no-event";
+
+export interface MagnitudeView {
+  kind: MagnitudeKind;
+  label: string;
+  /** Por qué falta, para el `title` del elemento. */
+  title: string;
+}
+
+/**
+ * Magnitud del catálogo (post-hoc, nullable). Jamás una magnitud preliminar (§14).
+ *
+ * [T-2.39] Deja de devolver "—" para TODO. Hoy `seismic_events.magnitude` se inserta
+ * siempre NULL —no hay ingesta de catálogo que la rellene—, así que un guion en esa
+ * celda se leía como "el dato falló". Son dos ausencias distintas y el operador tiene
+ * que poder distinguirlas: el incidente no tiene evento asociado, o lo tiene y el
+ * catálogo aún no lo enriqueció.
+ */
+export function magnitudeOf(event: SeismicEventOut | null): MagnitudeView {
+  if (!event) {
+    return {
+      kind: "no-event",
+      label: "SIN EVENTO",
+      title: "El incidente no está asociado a un evento sísmico de red.",
+    };
+  }
+  if (event.magnitude === null || event.magnitude === undefined) {
+    return {
+      kind: "absent",
+      label: "S/CATÁLOGO",
+      title:
+        "La magnitud es un dato POST-HOC del catálogo sísmico; TAKAB no la calcula " +
+        "(blueprint §14) y este evento aún no fue enriquecido.",
+    };
+  }
+  return {
+    kind: "catalog",
+    label: `M ${event.magnitude.toFixed(1)}`,
+    title: "Magnitud del catálogo sísmico.",
+  };
+}
+
+export type EpicenterKind = "none" | "centroid" | "manual" | "external";
+
+export interface EpicenterView {
+  kind: EpicenterKind;
+  label: string;
+  /** Qué ES ese punto. Sin esto, un centroide se lee como una localización. */
+  note: string;
+}
+
+/**
+ * [T-2.39] Qué representa el epicentro, además de dónde está.
+ *
+ * Con `source='local_quorum'` el punto es el CENTROIDE de los sitios que sintieron el
+ * sismo (`incident/engine.py`), no una localización sísmica: está entre las estaciones,
+ * no en la falla. Presentarlo sin decirlo invita a compararlo con el epicentro del SSN
+ * y a concluir que la red "se equivocó" por 200 km.
+ */
+export function epicenterKindOf(event: SeismicEventOut | null): EpicenterView {
+  const label = epicenterOf(event);
+  if (!event || label === "—") {
+    return { kind: "none", label: "—", note: "SIN EPICENTRO LOCALIZADO" };
+  }
+  if (event.source === "manual") {
+    return { kind: "manual", label, note: "REUBICADO POR OPERADOR" };
+  }
+  if (event.source === CORROBORATED_SOURCE) {
+    return {
+      kind: "centroid",
+      label,
+      note: "CENTROIDE DE LA RED · NO ES UNA LOCALIZACIÓN SÍSMICA",
+    };
+  }
+  return { kind: "external", label, note: "CATÁLOGO EXTERNO" };
 }
 
 /**
@@ -252,4 +331,29 @@ export function insufficientData(dictamen: DictamenOut | null): boolean {
   const evidence =
     basis && typeof basis === "object" ? (basis["evidence"] as Record<string, unknown>) : null;
   return evidence !== null && evidence !== undefined && evidence["insufficient_data"] === true;
+}
+
+/**
+ * Banda de sacudida MEDIDA a partir del PGA pico del incidente [T-2.39].
+ *
+ * Espejo de `api/src/takab_api/felt.py::felt_band` con sus umbrales por defecto. NO es
+ * intensidad macrosísmica (MMI): TAKAB no la calcula (blueprint §14). Es la misma
+ * tabla de verdad que decide si el gabinete actúa, expresada en palabras.
+ *
+ * Sin PGA devuelve "SIN MEDICIÓN" — jamás una banda tranquilizadora por defecto.
+ */
+export const PGA_WATCH_G = 0.04;
+export const PGA_TRIP_G = 0.06;
+
+export function feltLabelOf(maxPgaG: number | null | undefined): string {
+  if (maxPgaG === null || maxPgaG === undefined) {
+    return "SIN MEDICIÓN";
+  }
+  if (maxPgaG >= PGA_TRIP_G) {
+    return "SACUDIDA FUERTE";
+  }
+  if (maxPgaG >= PGA_WATCH_G) {
+    return "SACUDIDA MODERADA";
+  }
+  return "SACUDIDA LEVE";
 }

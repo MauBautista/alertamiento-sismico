@@ -11,7 +11,7 @@ const SITE_DEV = "d1000000-0000-0000-0000-000000000000";
 const SCREENS = [
   { path: "/console", label: "01 Consola C4I · Live Wall" },
   { path: "/fleet", label: "02 Flota Edge" },
-  { path: "/triage", label: "03 Triage Estructural" },
+  { path: "/triage", label: "03 Evaluación Estructural" },
   { path: "/tenants", label: "04 Multi-Tenant" },
   { path: `/building/${SITE_DEV}`, label: "05 Dashboard Edificio" },
 ];

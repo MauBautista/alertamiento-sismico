@@ -22,7 +22,7 @@ const SEVERITIES: { id: string | null; lbl: string }[] = [
 ];
 
 /**
- * T-1.29 · Triage Estructural e Historial (mockup 3, TriageHistory.jsx).
+ * T-1.29 · Evaluación Estructural Post-Sismo (mockup 3, TriageHistory.jsx).
  *
  * Desviaciones honestas ratificadas frente al mockup:
  * - Rango de fechas REAL del servidor (T-1.57/58: `GET /incidents?from&to`) con
@@ -87,11 +87,11 @@ export default function TriagePage() {
       : null;
 
   return (
-    <section className="triage" data-screen-label="03 Triage Estructural">
+    <section className="triage" data-screen-label="03 Evaluación Estructural">
       <header className="triage__hd">
         <div>
           <span className="soc-meta">PROTECCIÓN CIVIL · EVIDENCIA INMUTABLE</span>
-          <h1 className="triage__title">Triage Estructural e Historial</h1>
+          <h1 className="triage__title">Evaluación Estructural Post-Sismo</h1>
         </div>
         <div className="triage__filters">
           <div className="triage__search">

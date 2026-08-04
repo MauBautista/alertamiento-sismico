@@ -4615,7 +4615,7 @@
         "type": "object"
       },
       "QuorumVoteOut": {
-        "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.",
+        "description": "Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.\n\n[T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa\nalgo: el voto viene de una estación que la RLS de este tenant no deja ver. La\nconsola lo rotula \"OTRA RED\" — que es el hecho — en vez de un uuid truncado.",
         "properties": {
           "counted": {
             "title": "Counted",
@@ -4649,6 +4649,28 @@
             "format": "uuid",
             "title": "Sensor Id",
             "type": "string"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "station_serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Station Serial"
           }
         },
         "required": [
@@ -6980,7 +7002,7 @@
     },
     "/events": {
       "get": {
-        "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.",
+        "description": "Lista eventos sísmicos (detected_at desc) con paginación keyset estable.\n\n[T-2.39] Con ``ids`` devuelve EXACTAMENTE ese conjunto y el keyset se desactiva:\nla pantalla de evaluación enriquece las filas que tiene cargadas, no las 50 más\nrecientes. Antes, al pasar de página, incidentes con evento existente perdían\nmagnitud, epicentro y nodos sin decir por qué.",
         "operationId": "list_events_events_get",
         "parameters": [
           {
@@ -7029,6 +7051,24 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "description": "event_id separados por coma (máx. 200)",
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "event_id separados por coma (máx. 200)",
+              "title": "Ids"
             }
           }
         ],

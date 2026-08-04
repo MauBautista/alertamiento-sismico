@@ -23,7 +23,7 @@ vi.mock("../auth/useProfile", () => profileMocks);
 const TAB_LABELS: Record<string, string> = {
   "/console": "CONSOLA C4I",
   "/fleet": "FLOTA EDGE",
-  "/triage": "TRIAGE",
+  "/triage": "EVALUACIÓN",
   "/tenants": "MULTI-TENANT",
 };
 

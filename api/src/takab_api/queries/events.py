@@ -25,14 +25,24 @@ def select_events(
     cursor_detected_at: str | None,
     cursor_id: str | None,
     limit: int,
+    ids: list[str] | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
-    """Lista keyset de eventos sísmicos, opcionalmente filtrada por ``source``."""
+    """Lista keyset de eventos sísmicos, opcionalmente filtrada por ``source``.
+
+    [T-2.39] Con ``ids`` la consulta pasa a ser una BÚSQUEDA por conjunto y el keyset
+    se desactiva. Existe porque la pantalla de evaluación enriquecía sus filas con los
+    50 eventos más recientes: al cargar la segunda página, incidentes con evento
+    perfectamente existente se quedaban sin magnitud, epicentro ni nodos, en silencio.
+    """
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit}
+    if ids:
+        where.append("event_id = ANY(:ids)")
+        params["ids"] = ids
     if source is not None:
         where.append("source = :source")
         params["source"] = source
-    if cursor_detected_at is not None and cursor_id is not None:
+    if not ids and cursor_detected_at is not None and cursor_id is not None:
         where.append("(detected_at, event_id) < (CAST(:cur_ts AS timestamptz), :cur_id)")
         params["cur_ts"] = cursor_detected_at
         params["cur_id"] = cursor_id
@@ -51,10 +61,23 @@ def select_event(event_id: str) -> tuple[TextClause, dict[str, Any]]:
 
 
 def select_quorum_votes(event_id: str) -> tuple[TextClause, dict[str, Any]]:
-    """Votos de quórum del evento, con ``delta_s`` por sensor/estación."""
+    """Votos de quórum del evento, con ``delta_s`` por sensor/estación.
+
+    [T-2.39] Resuelve el NOMBRE de la estación. Los votos son dato de RED —pueden
+    venir de sensores de otros clientes— y la consola solo tenía el uuid, que
+    truncaba a 8 caracteres: ocho hex no le dicen nada a nadie.
+
+    Los LEFT JOIN pasan por la RLS de ``sensors``/``sites``, así que una estación
+    ajena devuelve ``NULL`` en ambos campos. Eso NO es un fallo: es exactamente lo
+    que hay que decir ("otra red"), y una etiqueta inventada sería peor que el uuid.
+    """
     sql = (
-        "SELECT event_id, sensor_id, detected_at, pga_g, delta_s, counted "
-        "FROM quorum_votes WHERE event_id = :id "
-        "ORDER BY detected_at ASC, sensor_id ASC"
+        "SELECT qv.event_id, qv.sensor_id, qv.detected_at, qv.pga_g, qv.delta_s, "
+        "       qv.counted, sn.serial AS station_serial, st.code AS site_code "
+        "FROM quorum_votes qv "
+        "LEFT JOIN sensors sn ON sn.sensor_id = qv.sensor_id "
+        "LEFT JOIN sites st ON st.site_id = sn.site_id "
+        "WHERE qv.event_id = :id "
+        "ORDER BY qv.detected_at ASC, qv.sensor_id ASC"
     )
     return text(sql), {"id": event_id}

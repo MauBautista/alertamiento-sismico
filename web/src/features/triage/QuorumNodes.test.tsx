@@ -7,7 +7,12 @@ import QuorumNodes from "./QuorumNodes";
 import type { QuorumNodesProps } from "./QuorumNodes";
 import { quorumView } from "./model";
 
-function vote(sensor: string, deltaS: number | null, counted = true): QuorumVoteOut {
+function vote(
+  sensor: string,
+  deltaS: number | null,
+  counted = true,
+  named: { site_code?: string | null; station_serial?: string | null } = {},
+): QuorumVoteOut {
   return {
     event_id: "evt-1",
     sensor_id: sensor,
@@ -15,12 +20,15 @@ function vote(sensor: string, deltaS: number | null, counted = true): QuorumVote
     pga_g: 0.1,
     delta_s: deltaS,
     counted,
+    // [T-2.39] El servidor resuelve el nombre BAJO RLS. Nulo = estación de otra red.
+    site_code: named.site_code ?? null,
+    station_serial: named.station_serial ?? null,
   };
 }
 
 const VOTES = [
-  vote("aaaaaaaa-1111-0000-0000-000000000001", 0),
-  vote("bbbbbbbb-2222-0000-0000-000000000002", 1.42),
+  vote("aaaaaaaa-1111-0000-0000-000000000001", 0, true, { site_code: "TORRE-A" }),
+  vote("bbbbbbbb-2222-0000-0000-000000000002", 1.42, true, { site_code: "HOSP-01" }),
   vote("cccccccc-3333-0000-0000-000000000003", 3.07, false),
 ];
 
@@ -43,10 +51,32 @@ describe("QuorumNodes · offsets", () => {
     expect(screen.getByText("+3.07s")).toBeTruthy();
   });
 
-  it("marca el ancla y rotula los nodos por sensor_id, no por códigos inventados", () => {
+  // [T-2.39] El código lo resuelve el SERVIDOR bajo RLS; el cliente no lo inventa ni
+  // lo deduce. Antes se pintaban ocho hex de un uuid, que en una sala de crisis no
+  // identifican nada.
+  it("marca el ancla y rotula los nodos con el código que da el servidor", () => {
     render(<QuorumNodes {...props()} />);
-    expect(screen.getByText(/AAAAAAAA · ANCLA/)).toBeTruthy();
-    expect(screen.queryByText(/CHL-A|PUE-01/)).toBeNull();
+    expect(screen.getByText(/TORRE-A · ANCLA/)).toBeTruthy();
+    expect(screen.getByText("HOSP-01")).toBeTruthy();
+    expect(screen.queryByText(/AAAAAAAA/)).toBeNull();
+  });
+
+  // Que la RLS oculte el sensor NO es un fallo: es el hecho de que el voto viene de
+  // otro cliente de la red. Inventarle una etiqueta sería peor que el uuid.
+  it("un voto que la RLS oculta se rotula OTRA RED, no con un uuid", () => {
+    render(<QuorumNodes {...props()} />);
+    expect(screen.getByText("OTRA RED")).toBeTruthy();
+    expect(screen.queryByText(/CCCCCCCC/)).toBeNull();
+  });
+
+  it("prefiere el código de sitio al serial del sensor", () => {
+    const view = quorumView([
+      vote("s-1", 0, true, { site_code: "TORRE-A", station_serial: "RS4D-9" }),
+      vote("s-2", 1, true, { station_serial: "RS4D-7" }),
+    ]);
+    render(<QuorumNodes {...props({ view })} />);
+    expect(screen.getByText(/TORRE-A/)).toBeTruthy();
+    expect(screen.getByText("RS4D-7")).toBeTruthy();
   });
 
   it("un delta_s negativo lleva el signo (la ventana es simétrica)", () => {

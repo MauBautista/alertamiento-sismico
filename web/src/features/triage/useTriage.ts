@@ -67,8 +67,19 @@ async function fetchIncidentsPage(
   return data;
 }
 
-async function fetchEvents(): Promise<SeismicEventOut[]> {
-  const { data, response } = await listEventsEventsGet({ query: { limit: HISTORY_LIMIT } });
+/**
+ * Eventos de las filas CARGADAS, no los 50 más recientes [T-2.39].
+ *
+ * Antes se pedían los últimos 50 eventos y se cruzaban con los incidentes. Al pulsar
+ * CARGAR MÁS, las filas de la página 2 quedaban sin magnitud, sin epicentro y sin
+ * nodos aunque su evento existiera — en silencio, sin nada que lo explicara. Ahora se
+ * piden exactamente los que hacen falta.
+ */
+async function fetchEventsByIds(ids: string[]): Promise<SeismicEventOut[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  const { data, response } = await listEventsEventsGet({ query: { ids: ids.join(",") } });
   if (data === undefined) {
     throw new TriageRequestError("/events", response.status);
   }
@@ -133,11 +144,6 @@ export function useTriage(filters: TriageFilters): TriageData {
     getNextPageParam: (last) => last.next_cursor ?? null,
     staleTime: TRIAGE_STALE_MS,
   });
-  const events = useQuery({
-    queryKey: ["events", "history"],
-    queryFn: fetchEvents,
-    staleTime: TRIAGE_STALE_MS,
-  });
   const sites = useQuery({ queryKey: ["sites"], queryFn: fetchSites, staleTime: 300_000 });
   const ruleSets = useQuery({
     queryKey: ["rule-sets"],
@@ -149,6 +155,22 @@ export function useTriage(filters: TriageFilters): TriageData {
     () => incidents.data?.pages.flatMap((p) => p.items),
     [incidents.data],
   );
+
+  // Ordenado y deduplicado: la clave de caché debe ser estable entre renders con el
+  // mismo conjunto, o cada repintado dispararía una petición nueva.
+  const eventIds = useMemo(
+    () =>
+      [...new Set((incidentItems ?? []).map((i) => i.event_id).filter((id): id is string => !!id))]
+        .sort()
+        .join(","),
+    [incidentItems],
+  );
+  const events = useQuery({
+    queryKey: ["events", "by-ids", eventIds],
+    queryFn: () => fetchEventsByIds(eventIds === "" ? [] : eventIds.split(",")),
+    staleTime: TRIAGE_STALE_MS,
+  });
+
   const rows = useMemo(
     () => buildRows(incidentItems, events.data, sites.data),
     [incidentItems, events.data, sites.data],

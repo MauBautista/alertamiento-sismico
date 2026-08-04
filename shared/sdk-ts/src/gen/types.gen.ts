@@ -1115,6 +1115,10 @@ export type PushTokenOut = {
 
 /**
  * Voto de ``quorum_votes``: arribo por sensor/estación con ``delta_s``.
+ *
+ * [T-2.39] ``station_serial``/``site_code`` son OPCIONALES y su nulidad significa
+ * algo: el voto viene de una estación que la RLS de este tenant no deja ver. La
+ * consola lo rotula "OTRA RED" — que es el hecho — en vez de un uuid truncado.
  */
 export type QuorumVoteOut = {
     counted: boolean;
@@ -1123,6 +1127,8 @@ export type QuorumVoteOut = {
     event_id: string;
     pga_g: number;
     sensor_id: string;
+    site_code?: string | null;
+    station_serial?: string | null;
 };
 
 /**
@@ -1694,6 +1700,10 @@ export type ListEventsEventsGetData = {
         source?: string | null;
         cursor?: string | null;
         limit?: number | null;
+        /**
+         * event_id separados por coma (máx. 200)
+         */
+        ids?: string | null;
     };
     url: '/events';
 };

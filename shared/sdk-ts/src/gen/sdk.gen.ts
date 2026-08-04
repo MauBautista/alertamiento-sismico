@@ -95,6 +95,11 @@ export const stopDrillDrillsDrillIdStopPost = <ThrowOnError extends boolean = fa
 /**
  * List Events
  * Lista eventos sísmicos (detected_at desc) con paginación keyset estable.
+ *
+ * [T-2.39] Con ``ids`` devuelve EXACTAMENTE ese conjunto y el keyset se desactiva:
+ * la pantalla de evaluación enriquece las filas que tiene cargadas, no las 50 más
+ * recientes. Antes, al pasar de página, incidentes con evento existente perdían
+ * magnitud, epicentro y nodos sin decir por qué.
  */
 export const listEventsEventsGet = <ThrowOnError extends boolean = false>(options?: Options<ListEventsEventsGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<ListEventsEventsGetResponse, ListEventsEventsGetError, ThrowOnError>({
