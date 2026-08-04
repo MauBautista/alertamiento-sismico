@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SiteOut } from "@takab/sdk";
@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
   listSitesSitesGet: vi.fn(),
   createSiteSitesPost: vi.fn(),
   updateSiteSitesSiteIdPut: vi.fn(),
-  retireSiteSitesSiteIdDelete: vi.fn(),
+  retireSiteSitesSiteIdRetirePost: vi.fn(),
+  getRetireCodeStateTenantsTenantIdRetireCodeGet: vi.fn(),
   createGatewayFleetGatewaysPost: vi.fn(),
   createSensorSensorsPost: vi.fn(),
 }));
@@ -56,6 +57,11 @@ describe("FleetAdmin", () => {
     resetSessionStoreForTests();
     vi.clearAllMocks();
     mocks.listSitesSitesGet.mockResolvedValue({ data: [SITE], response: { status: 200 } });
+    // [T-2.36] El diálogo consulta si el cliente tiene código configurado.
+    mocks.getRetireCodeStateTenantsTenantIdRetireCodeGet.mockResolvedValue({
+      data: { tenant_id: "t-1", configured: true, version: 1, rotated_at: "2026-08-03T00:00:00Z" },
+      response: { status: 200 },
+    });
     useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
   });
 
@@ -126,19 +132,55 @@ describe("FleetAdmin", () => {
     expect(error).toHaveTextContent(/Recarga y reintenta/);
   });
 
-  it("retirar exige confirmación en dos pasos", async () => {
-    mocks.retireSiteSitesSiteIdDelete.mockResolvedValue({
+  // [T-2.36] El retiro dejó de ser un doble clic armado: exige teclear el `code` de
+  // la estación Y el código de retiro del cliente. Retirar apaga la protección de un
+  // edificio; la fricción es deliberada.
+  it("retirar exige el código de la estación y el del cliente", async () => {
+    mocks.retireSiteSitesSiteIdRetirePost.mockResolvedValue({
       data: { ...SITE, status: "retired" },
       response: { status: 200 },
     });
     renderAdmin();
     await screen.findByTestId("site-row-CHL-A");
 
-    fireEvent.click(screen.getByRole("button", { name: /RETIRAR/ }));
-    expect(mocks.retireSiteSitesSiteIdDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^RETIRAR$/ }));
+    const dialog = await screen.findByTestId("retire-dialog");
+    expect(mocks.retireSiteSitesSiteIdRetirePost).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
-    await waitFor(() => expect(mocks.retireSiteSitesSiteIdDelete).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText(/Escribe el código/i), {
+      target: { value: "CHL-A" },
+    });
+    fireEvent.change(screen.getByLabelText(/Código de retiro del cliente/i), {
+      target: { value: "SECRETO" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /RETIRAR ESTACIÓN/ }));
+
+    await waitFor(() => expect(mocks.retireSiteSitesSiteIdRetirePost).toHaveBeenCalledTimes(1));
+    expect(mocks.retireSiteSitesSiteIdRetirePost).toHaveBeenCalledWith({
+      path: { site_id: "s-1" },
+      body: { confirm_code: "CHL-A", retire_code: "SECRETO" },
+    });
+  });
+
+  it("el 429 del retiro se rotula con el bloqueo, no con 'algo salió mal'", async () => {
+    mocks.retireSiteSitesSiteIdRetirePost.mockResolvedValue({
+      data: undefined,
+      response: { status: 429 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: /^RETIRAR$/ }));
+    const dialog = await screen.findByTestId("retire-dialog");
+    fireEvent.change(screen.getByLabelText(/Escribe el código/i), {
+      target: { value: "CHL-A" },
+    });
+    fireEvent.change(screen.getByLabelText(/Código de retiro del cliente/i), {
+      target: { value: "MAL" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /RETIRAR ESTACIÓN/ }));
+
+    expect(await screen.findByTestId("retire-error")).toHaveTextContent(/DEMASIADOS INTENTOS/);
   });
 
   it("el alta de gabinete no manda tenant_id ni iot_thing", async () => {

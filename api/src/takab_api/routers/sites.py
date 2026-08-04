@@ -26,12 +26,14 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles, require_web_surface
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
 from takab_api.queries import sites as q
+from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
     integrity_error,
     read_session,
     resolve_write_tenant,
 )
+from takab_api.schemas.retire import SiteRetire
 from takab_api.schemas.sites import (
     SiteCreate,
     SiteDetailOut,
@@ -156,9 +158,10 @@ async def update_site(
     return _out(row)
 
 
-@router.delete("/sites/{site_id}", response_model=SiteOut)
+@router.post("/sites/{site_id}/retire", response_model=SiteOut)
 async def retire_site(
     site_id: UUID,
+    body: SiteRetire,
     claims: Claims = Depends(_require_manage),
     conn: AsyncConnection = Depends(read_session),
 ) -> SiteOut:
@@ -169,9 +172,24 @@ async def retire_site(
     candidato de config firmada y de comandos de actuación (ambos predicados miran
     ``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:
     volver a encender hardware es un acto explícito, no un efecto colateral.
+
+    [T-2.36] Doble fricción: teclear el ``code`` del sitio (no el ``name``, que no es
+    único) y el código de retiro del cliente. Retirar un sitio arrastra su hardware, así
+    que la fricción es la misma que la del gabinete, no menor.
     """
-    if await q.get_site(conn, site_id) is None:
+    current = await q.get_site(conn, site_id)
+    if current is None:
         raise http_error(404, "sitio no encontrado")
+
+    check_confirmation(typed=body.confirm_code, expected=current.code, label="código")
+    await require_retire_code(
+        conn,
+        claims,
+        tenant_id=str(current.tenant_id),
+        code=body.retire_code,
+        obj=f"site:{site_id}",
+    )
+
     row = await q.retire_site(conn, site_id)
     if row is None:  # visible por RLS de lectura, no escribible: no debería ocurrir
         raise http_error(403, "sin permiso para retirar este sitio")

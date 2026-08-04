@@ -22,6 +22,7 @@ export const ACTIONS_NONE: MeActions = {
   drill_start: false,
   manage_tenants: false,
   manage_visibility: false,
+  manage_retire_code: false,
   // [T-2.03] superficie móvil (la consola no las usa; el espejo debe estar completo)
   checkin_submit: false,
   roster_read: false,
@@ -83,6 +84,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     drill_start: true,
     manage_tenants: true,
     manage_visibility: true,
+    manage_retire_code: true,
     enrollment_manage: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.

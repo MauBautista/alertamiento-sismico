@@ -608,6 +608,14 @@ export type GatewayOut = {
 };
 
 /**
+ * Retiro de gabinete: ``confirm_serial`` (visible) + ``retire_code`` (secreto).
+ */
+export type GatewayRetire = {
+    confirm_serial: string;
+    retire_code: string;
+};
+
+/**
  * Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).
  *
  * Sin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último
@@ -835,6 +843,7 @@ export type MeActions = {
     export: boolean;
     generate_report: boolean;
     manage_fleet: boolean;
+    manage_retire_code: boolean;
     manage_tenants: boolean;
     manage_visibility: boolean;
     manual_activate: boolean;
@@ -1099,6 +1108,31 @@ export type ReportOut = {
     url: string;
 };
 
+/**
+ * Fija o rota el código del tenant. Solo ``takab_superadmin``.
+ *
+ * Mínimo 8 caracteres: es una credencial tecleada por una persona, no un token
+ * generado. El hash lo calcula Postgres (bcrypt vía ``pgcrypto``); este texto no se
+ * guarda ni se registra en ninguna parte.
+ */
+export type RetireCodeRotate = {
+    code: string;
+};
+
+/**
+ * ¿Hay código y de cuándo? Nunca el hash.
+ *
+ * La consola lo consulta ANTES de ofrecer el retiro: sin código configurado el
+ * intento sería un 409 seguro, y prometer un botón que siempre falla es
+ * exactamente lo que prohíbe la regla de oro 7.
+ */
+export type RetireCodeState = {
+    configured: boolean;
+    rotated_at?: string | null;
+    tenant_id: string;
+    version?: number | null;
+};
+
 export type RosterCheckin = {
     created_at: string;
     status: string;
@@ -1341,6 +1375,18 @@ export type SiteOut = {
     status: string;
     tenant_id: string;
     timezone: string;
+};
+
+/**
+ * Retiro de sitio: ``confirm_code`` (el ``code`` del sitio) + ``retire_code``.
+ *
+ * Se teclea el ``code`` y no el ``name`` porque ``sites.name`` NO es único
+ * (``db/schema.sql`` solo restringe ``(tenant_id, code)``): confirmar con un rótulo
+ * ambiguo dejaría al operador creyendo que apagó otra estación.
+ */
+export type SiteRetire = {
+    confirm_code: string;
+    retire_code: string;
 };
 
 /**
@@ -1770,33 +1816,6 @@ export type CreateGatewayFleetGatewaysPostResponses = {
 
 export type CreateGatewayFleetGatewaysPostResponse = CreateGatewayFleetGatewaysPostResponses[keyof CreateGatewayFleetGatewaysPostResponses];
 
-export type RetireGatewayFleetGatewaysGatewayIdDeleteData = {
-    body?: never;
-    path: {
-        gateway_id: string;
-    };
-    query?: never;
-    url: '/fleet/gateways/{gateway_id}';
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteError = RetireGatewayFleetGatewaysGatewayIdDeleteErrors[keyof RetireGatewayFleetGatewaysGatewayIdDeleteErrors];
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteResponses = {
-    /**
-     * Successful Response
-     */
-    200: GatewayRowOut;
-};
-
-export type RetireGatewayFleetGatewaysGatewayIdDeleteResponse = RetireGatewayFleetGatewaysGatewayIdDeleteResponses[keyof RetireGatewayFleetGatewaysGatewayIdDeleteResponses];
-
 export type UpdateGatewayFleetGatewaysGatewayIdPutData = {
     body: GatewayUpdate;
     path: {
@@ -1877,6 +1896,33 @@ export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses = {
 };
 
 export type RestoreGatewayFleetGatewaysGatewayIdRestorePostResponse = RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses[keyof RestoreGatewayFleetGatewaysGatewayIdRestorePostResponses];
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostData = {
+    body: GatewayRetire;
+    path: {
+        gateway_id: string;
+    };
+    query?: never;
+    url: '/fleet/gateways/{gateway_id}/retire';
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostError = RetireGatewayFleetGatewaysGatewayIdRetirePostErrors[keyof RetireGatewayFleetGatewaysGatewayIdRetirePostErrors];
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: GatewayRowOut;
+};
+
+export type RetireGatewayFleetGatewaysGatewayIdRetirePostResponse = RetireGatewayFleetGatewaysGatewayIdRetirePostResponses[keyof RetireGatewayFleetGatewaysGatewayIdRetirePostResponses];
 
 export type PushCatalogGatewaysGatewayIdCatalogPostData = {
     body: CatalogPushIn;
@@ -2864,33 +2910,6 @@ export type CreateSiteSitesPostResponses = {
 
 export type CreateSiteSitesPostResponse = CreateSiteSitesPostResponses[keyof CreateSiteSitesPostResponses];
 
-export type RetireSiteSitesSiteIdDeleteData = {
-    body?: never;
-    path: {
-        site_id: string;
-    };
-    query?: never;
-    url: '/sites/{site_id}';
-};
-
-export type RetireSiteSitesSiteIdDeleteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RetireSiteSitesSiteIdDeleteError = RetireSiteSitesSiteIdDeleteErrors[keyof RetireSiteSitesSiteIdDeleteErrors];
-
-export type RetireSiteSitesSiteIdDeleteResponses = {
-    /**
-     * Successful Response
-     */
-    200: SiteOut;
-};
-
-export type RetireSiteSitesSiteIdDeleteResponse = RetireSiteSitesSiteIdDeleteResponses[keyof RetireSiteSitesSiteIdDeleteResponses];
-
 export type GetSiteSitesSiteIdGetData = {
     body?: never;
     path: {
@@ -3298,6 +3317,33 @@ export type MobileStateSitesSiteIdMobileStateGetResponses = {
 
 export type MobileStateSitesSiteIdMobileStateGetResponse = MobileStateSitesSiteIdMobileStateGetResponses[keyof MobileStateSitesSiteIdMobileStateGetResponses];
 
+export type RetireSiteSitesSiteIdRetirePostData = {
+    body: SiteRetire;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/retire';
+};
+
+export type RetireSiteSitesSiteIdRetirePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetireSiteSitesSiteIdRetirePostError = RetireSiteSitesSiteIdRetirePostErrors[keyof RetireSiteSitesSiteIdRetirePostErrors];
+
+export type RetireSiteSitesSiteIdRetirePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SiteOut;
+};
+
+export type RetireSiteSitesSiteIdRetirePostResponse = RetireSiteSitesSiteIdRetirePostResponses[keyof RetireSiteSitesSiteIdRetirePostResponses];
+
 export type MapStateTelemetryMapStateGetData = {
     body?: never;
     path?: never;
@@ -3446,6 +3492,60 @@ export type CreateTenantTenantsPostResponses = {
 };
 
 export type CreateTenantTenantsPostResponse = CreateTenantTenantsPostResponses[keyof CreateTenantTenantsPostResponses];
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetData = {
+    body?: never;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/retire-code';
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetError = GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors[keyof GetRetireCodeStateTenantsTenantIdRetireCodeGetErrors];
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RetireCodeState;
+};
+
+export type GetRetireCodeStateTenantsTenantIdRetireCodeGetResponse = GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses[keyof GetRetireCodeStateTenantsTenantIdRetireCodeGetResponses];
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutData = {
+    body: RetireCodeRotate;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/retire-code';
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutError = PutRetireCodeTenantsTenantIdRetireCodePutErrors[keyof PutRetireCodeTenantsTenantIdRetireCodePutErrors];
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: RetireCodeState;
+};
+
+export type PutRetireCodeTenantsTenantIdRetireCodePutResponse = PutRetireCodeTenantsTenantIdRetireCodePutResponses[keyof PutRetireCodeTenantsTenantIdRetireCodePutResponses];
 
 export type ListVisibilityGrantsVisibilityGrantsGetData = {
     body?: never;

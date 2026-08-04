@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     # a decenas de ms; 100 ms marca reloj a la deriva.
     fleet_ntp_offset_max_ms: float = 100.0
 
+    # --- Código de retiro por tenant (T-2.36) ---
+    # Intentos fallidos tolerados por tenant dentro de la ventana antes del 429.
+    # El código lo teclea una persona que lo tiene delante: cinco es holgado para
+    # un dedazo y estrecho para adivinar. El contador se lleva sobre `audit_log`
+    # (verbo `retire_code_denied`), que es append-only y ya se replica y respalda.
+    retire_code_max_attempts: int = 5
+    # Ventana del contador. 15 min bloquea de sobra un intento de fuerza bruta y
+    # no deja a un operador legítimo esperando media jornada.
+    retire_code_window_s: float = 900.0
+
     # --- Quórum de red (T-1.19 · G1) ---
     # Defaults del quórum distance-aware (blueprint §4.5) usados cuando el
     # rule_set no trae la clave 'quorum' (rule_sets.config). min_nodes ≥3

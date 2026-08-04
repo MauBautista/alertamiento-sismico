@@ -23,6 +23,7 @@ from takab_api.db.engine import get_engine
 from takab_api.routers.fleet import router as fleet_router
 from takab_api.routers.sensors import router as sensors_router
 from takab_api.routers.sites import router as sites_router
+from takab_api.routers.tenants import router as tenants_router
 
 # Prefijo 6: no colisiona con los seeds sync (1/2/3/9/a/b/c), async (7) ni B1 (8).
 T_A = "61111111-1111-1111-1111-111111111111"
@@ -35,6 +36,7 @@ Z_B = "6e000000-0000-0000-0000-0000000000e1"
 _GEOM = "ST_SetSRID(ST_MakePoint(-99.13,19.43),4326)::geography"
 _TENANTS = (T_A, T_B)
 _CLEANUP = (
+    text("DELETE FROM tenant_retire_codes WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM sensors WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateways WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM zones WHERE tenant_id = ANY(:t)"),
@@ -111,6 +113,7 @@ def _app() -> FastAPI:
     app.include_router(sites_router)
     app.include_router(fleet_router)
     app.include_router(sensors_router)
+    app.include_router(tenants_router)
     return app
 
 
@@ -140,6 +143,38 @@ async def _delete(path: str, token: dict[str, str]):
 async def _get(path: str, token: dict[str, str]):
     async with au.client_for(_app()) as c:
         return await c.get(path, headers=token)
+
+
+# [T-2.36] El retiro exige doble fricción. Aquí es andamiaje: lo que se prueba en
+# este archivo es la tenancy del CRUD, no la credencial (test_retire_code.py).
+RETIRE_CODE = "FLEET-ADMIN-RETIRO"
+
+
+async def _arm_retire_code(tenant: str = T_A) -> None:
+    resp = await _put(
+        f"/tenants/{tenant}/retire-code",
+        {"code": RETIRE_CODE},
+        _tok("takab_superadmin", tenant=tenant),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _retire_site(site_id: str, code: str, token: dict[str, str] | None = None):
+    await _arm_retire_code()
+    return await _post(
+        f"/sites/{site_id}/retire",
+        {"confirm_code": code, "retire_code": RETIRE_CODE},
+        token or _tok("tenant_admin"),
+    )
+
+
+async def _retire_gateway(gateway_id: str, serial: str, token: dict[str, str] | None = None):
+    await _arm_retire_code()
+    return await _post(
+        f"/fleet/gateways/{gateway_id}/retire",
+        {"confirm_serial": serial, "retire_code": RETIRE_CODE},
+        token or _tok("tenant_admin"),
+    )
 
 
 async def _audit_verbs() -> list[str]:
@@ -243,10 +278,10 @@ async def test_retire_is_soft_idempotent_and_hides_from_the_catalog(seed: None) 
     created = (await _post("/sites", _site_body(), _tok("tenant_admin"))).json()
     sid = created["site_id"]
 
-    first = await _delete(f"/sites/{sid}", _tok("tenant_admin"))
-    assert first.status_code == 200
+    first = await _retire_site(sid, "NUEVO")
+    assert first.status_code == 200, first.text
     assert first.json()["status"] == "retired"
-    assert (await _delete(f"/sites/{sid}", _tok("tenant_admin"))).status_code == 200  # idempotente
+    assert (await _retire_site(sid, "NUEVO")).status_code == 200  # idempotente
 
     listing = (await _get("/sites", _tok("tenant_admin"))).json()
     assert sid not in {s["site_id"] for s in listing}
@@ -294,7 +329,8 @@ async def test_gateway_retire_and_restore_never_claims_online(seed: None) -> Non
         await _post("/fleet/gateways", {"site_id": S_A, "serial": "SN-A-9"}, _tok("tenant_admin"))
     ).json()["gateway_id"]
 
-    retired = await _delete(f"/fleet/gateways/{gid}", _tok("tenant_admin"))
+    retired = await _retire_gateway(gid, "SN-A-9")
+    assert retired.status_code == 200, retired.text
     assert retired.json()["status"] == "retired"
 
     restored = await _post(f"/fleet/gateways/{gid}/restore", {}, _tok("tenant_admin"))

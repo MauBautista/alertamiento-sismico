@@ -11,11 +11,11 @@ import { listSitesSitesGet } from "@takab/sdk";
 import type { SiteOut } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
-import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import HardwareForm from "./HardwareForm";
 import type { GatewayValues, SensorValues } from "./HardwareForm";
+import RetireDialog from "./RetireDialog";
 import SiteForm from "./SiteForm";
 import type { SiteFormValues } from "./SiteForm";
 import { formatPoint } from "./geo";
@@ -23,6 +23,7 @@ import {
   useCreateGateway,
   useCreateSensor,
   useCreateSite,
+  useRetireCodeConfigured,
   useRetireSite,
   useUpdateSite,
 } from "./useFleetMutations";
@@ -31,7 +32,10 @@ type Editing =
   | { kind: "none" }
   | { kind: "new" }
   | { kind: "edit"; site: SiteOut }
-  | { kind: "hardware"; site: SiteOut };
+  | { kind: "hardware"; site: SiteOut }
+  // [T-2.36] El retiro deja de ser un ConfirmButton: exige un segundo factor y por
+  // tanto un diálogo con dos campos, no un doble clic armado.
+  | { kind: "retire"; site: SiteOut };
 
 function useSites() {
   return useQuery({
@@ -64,6 +68,9 @@ function FleetAdminPanel() {
   const retire = useRetireSite();
   const addGateway = useCreateGateway();
   const addSensor = useCreateSensor();
+
+  const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
+  const codeConfigured = useRetireCodeConfigured(tenantId);
 
   const active = create.isPending || update.isPending;
   const hardwareBusy = addGateway.isPending || addSensor.isPending;
@@ -191,13 +198,16 @@ function FleetAdminPanel() {
                     >
                       HARDWARE
                     </button>
-                    {/* Retiro lógico: la fila sobrevive porque su evidencia la referencia. */}
-                    <ConfirmButton
-                      label="RETIRAR"
-                      variant="secondary"
+                    {/* Retiro lógico: la fila sobrevive porque su evidencia la
+                        referencia. [T-2.36] Doble fricción en el diálogo. */}
+                    <button
+                      type="button"
+                      className="soc-btn soc-btn--secondary"
                       disabled={retire.isPending}
-                      onConfirm={() => retire.mutate(site.site_id)}
-                    />
+                      onClick={() => setEditing({ kind: "retire", site })}
+                    >
+                      RETIRAR
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -209,6 +219,30 @@ function FleetAdminPanel() {
             </p>
           )}
         </StateFrame>
+      )}
+
+      {editing.kind === "retire" && (
+        <RetireDialog
+          kind="site"
+          label={editing.site.name}
+          confirmValue={editing.site.code}
+          codeConfigured={codeConfigured}
+          pending={retire.isPending}
+          error={retire.error?.message ?? null}
+          onCancel={() => {
+            retire.reset();
+            setEditing({ kind: "none" });
+          }}
+          onConfirm={({ confirmValue, retireCode }) =>
+            retire.mutate(
+              {
+                siteId: editing.site.site_id,
+                body: { confirm_code: confirmValue, retire_code: retireCode },
+              },
+              { onSuccess: () => setEditing({ kind: "none" }) },
+            )
+          }
+        />
       )}
     </section>
   );

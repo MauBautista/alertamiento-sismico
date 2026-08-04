@@ -27,6 +27,7 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles, require_web_surface
 from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
 from takab_api.queries import fleet as q
+from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
     integrity_error,
@@ -44,6 +45,7 @@ from takab_api.schemas.fleet import (
     fleet_degrade_reasons,
     sig_fingerprint,
 )
+from takab_api.schemas.retire import GatewayRetire
 from takab_api.settings import Settings
 
 # Roles con /fleet en RBAC §2 (vía matrix.py).
@@ -265,15 +267,38 @@ async def update_gateway(
     return _row_out(row)
 
 
-@router.delete("/fleet/gateways/{gateway_id}", response_model=GatewayRowOut)
+@router.post("/fleet/gateways/{gateway_id}/retire", response_model=GatewayRowOut)
 async def retire_gateway(
     gateway_id: UUID,
+    body: GatewayRetire,
     claims: Claims = Depends(_require_manage),
     conn: AsyncConnection = Depends(read_session),
 ) -> GatewayRowOut:
-    """Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable."""
-    if await q.get_gateway_row(conn, gateway_id) is None:
+    """Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).
+
+    Retirar un gabinete lo saca del config sync firmado y de los comandos de
+    actuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,
+    teclear el ``serial`` exacto (visible en pantalla) y el código de retiro del
+    cliente (secreto que entrega TAKAB).
+
+    Es ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo
+    no atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.
+    """
+    current = await q.get_gateway_row(conn, gateway_id)
+    if current is None:
         raise http_error(404, "gateway no encontrado")
+
+    # El serial primero: está en pantalla, no es secreto, y un dedazo no debe
+    # consumir un intento del código.
+    check_confirmation(typed=body.confirm_serial, expected=current.serial, label="serial")
+    await require_retire_code(
+        conn,
+        claims,
+        tenant_id=str(current.tenant_id),
+        code=body.retire_code,
+        obj=f"gateway:{gateway_id}",
+    )
+
     row = await q.set_gateway_status(conn, gateway_id, "retired")
     if row is None:
         raise http_error(403, "sin permiso para retirar este gateway")

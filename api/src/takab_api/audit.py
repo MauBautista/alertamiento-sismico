@@ -66,3 +66,32 @@ async def audit_async(
             "meta": json.dumps(meta or {}),
         },
     )
+
+
+async def audit_out_of_band_async(
+    ctx: object,
+    *,
+    tenant_id: object,
+    actor: str,
+    verb: str,
+    obj: str,
+    meta: dict | None = None,
+) -> None:
+    """Audita en una conexión PROPIA que sí commitea (T-2.36).
+
+    Existe por un caso concreto: el registro de un intento FALLIDO. El request de
+    FastAPI vive en una sola transacción (``db/session.py``), así que auditar y acto
+    seguido lanzar el 403 hace rollback y **se lleva la fila de auditoría por
+    delante** — el contador de rate-limit nunca armaría y el bloqueo por intentos
+    sería decorativo. Un ``commit()`` a media request tampoco vale: tiraría los GUCs
+    de RLS que sostienen el aislamiento por tenant.
+
+    ``ctx`` es un ``db.session.SessionCtx`` (se recibe sin tipar para no importar el
+    módulo de sesión desde aquí y crear un ciclo). Best-effort por diseño: si la
+    conexión secundaria falla, la decisión de seguridad del request no cambia — solo
+    se pierde el contador, y eso es preferible a convertir un 403 en un 500.
+    """
+    from takab_api.db.session import get_tenant_conn  # local: evita ciclo de imports
+
+    async with get_tenant_conn(ctx) as conn:  # type: ignore[arg-type]
+        await audit_async(conn, tenant_id=tenant_id, actor=actor, verb=verb, obj=obj, meta=meta)

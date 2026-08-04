@@ -31,6 +31,8 @@ class MeActions(BaseModel):
     drill_start: bool
     manage_tenants: bool
     manage_visibility: bool
+    #: [T-2.36] Rotar el código de retiro del cliente (solo takab_superadmin).
+    manage_retire_code: bool
     checkin_submit: bool
     roster_read: bool
     damage_report_submit: bool

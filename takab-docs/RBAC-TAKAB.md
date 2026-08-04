@@ -74,6 +74,21 @@
   del quórum (`|Δt| ≤ dist/v_P + margen`, blueprint §4.5), y eso es un acto de dueño del tenant,
   no de soporte. La verdad ejecutable vive en `api/src/takab_api/auth/matrix.py`; el test
   `tests/auth/test_matrix.py::test_manage_fleet_excludes_takab_support` la ancla.
+- **[DECISION 2026-08-03 · T-2.36] Retirar una estación exige un SEGUNDO FACTOR.** Retirar
+  un gabinete lo saca del config sync firmado (`commands/sync.py`) y de los comandos de
+  actuación (`queries/commands.py`): deja un edificio sin protección. Además de
+  `manage_fleet`, el retiro pide (a) teclear el identificador exacto del objeto —`serial`
+  del gabinete, `code` del sitio; visible en pantalla, freno contra el clic en la fila
+  equivocada— y (b) el **código de retiro del cliente**, que TAKAB entrega fuera de banda.
+  La acción `manage_retire_code` (rotarlo) es **exclusiva de `takab_superadmin`**: si el
+  propio `tenant_admin` pudiera rotar su código, el segundo factor volvería a ser el primero
+  (su sesión) y la fricción sería decorativa. Fail-closed: un cliente sin código configurado
+  NO puede retirar (409) — la ausencia de credencial nunca es un bypass. El hash (bcrypt vía
+  `pgcrypto`) jamás sale de Postgres: se pregunta por `app_verify_retire_code`
+  (SECURITY DEFINER) y `takab_app` no tiene política de lectura sobre la tabla. Cinco
+  intentos fallidos por cliente en 15 min ⇒ 429, contados sobre `audit_log`. Anclado por
+  `tests/auth/test_matrix.py::test_manage_retire_code_is_superadmin_only` y
+  `tests/api/test_retire_code.py`.
 - **[DECISION 2026-07-10 · T-1.48] Acciones nuevas de la Consola C4I (extensión de §2,
   no listadas en la matriz original):**
   - `relocate_epicenter` (botón REUBICAR EPICENTRO) = `takab_superadmin`, `tenant_admin`,

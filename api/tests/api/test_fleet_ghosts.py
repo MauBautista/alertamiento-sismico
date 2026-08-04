@@ -27,6 +27,7 @@ from takab_api.auth import deps
 from takab_api.db.engine import get_engine
 from takab_api.routers.fleet import router as fleet_router
 from takab_api.routers.sites import router as sites_router
+from takab_api.routers.tenants import router as tenants_router
 
 # Prefijo 5: libre (sync usa 1/2/3/9/a/b/c, async 7, B1 8, fleet_admin 6).
 T_A = "51111111-1111-1111-1111-111111111111"
@@ -41,6 +42,7 @@ G_B = "5d000000-0000-0000-0000-0000000000d3"
 _GEOM = "ST_SetSRID(ST_MakePoint(-99.13,19.43),4326)::geography"
 _TENANTS = (T_A, T_B)
 _CLEANUP = (
+    text("DELETE FROM tenant_retire_codes WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateway_config_state WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM rule_sets WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateways WHERE tenant_id = ANY(:t)"),
@@ -108,6 +110,8 @@ async def seed() -> None:
                 ),
                 {"g": gid, "t": tid, "s": sid, "sn": serial, "thing": f"thing-{serial}"},
             )
+    await _arm_retire_code(T_A)
+    await _arm_retire_code(T_B)
     yield
     await _cleanup()
     await engine.dispose()
@@ -118,6 +122,7 @@ def _app() -> FastAPI:
     app = FastAPI()
     app.include_router(sites_router)
     app.include_router(fleet_router)
+    app.include_router(tenants_router)
     return app
 
 
@@ -130,14 +135,44 @@ async def _get(path: str, token: dict[str, str] | None = None):
         return await c.get(path, headers=token or _tok())
 
 
-async def _delete(path: str, token: dict[str, str] | None = None):
-    async with au.client_for(_app()) as c:
-        return await c.delete(path, headers=token or _tok())
-
-
 async def _post(path: str, body: dict, token: dict[str, str] | None = None):
     async with au.client_for(_app()) as c:
         return await c.post(path, json=body, headers=token or _tok())
+
+
+async def _put(path: str, body: dict, token: dict[str, str] | None = None):
+    async with au.client_for(_app()) as c:
+        return await c.put(path, json=body, headers=token or _tok())
+
+
+# [T-2.36] Retirar exige doble fricción; aquí es ruido de fondo, no el objeto del
+# test, así que se encapsula. Su semántica propia se prueba en test_retire_code.py.
+RETIRE_CODE = "GHOSTS-RETIRO-2026"
+
+
+async def _arm_retire_code(tenant: str = T_A) -> None:
+    resp = await _put(
+        f"/tenants/{tenant}/retire-code",
+        {"code": RETIRE_CODE},
+        _tok("takab_superadmin", tenant=tenant),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _retire_gateway(gateway_id: str, serial: str, token: dict[str, str] | None = None):
+    return await _post(
+        f"/fleet/gateways/{gateway_id}/retire",
+        {"confirm_serial": serial, "retire_code": RETIRE_CODE},
+        token,
+    )
+
+
+async def _retire_site(site_id: str, code: str, token: dict[str, str] | None = None):
+    return await _post(
+        f"/sites/{site_id}/retire",
+        {"confirm_code": code, "retire_code": RETIRE_CODE},
+        token,
+    )
 
 
 async def _ids(path: str = "/fleet/gateways", token: dict[str, str] | None = None) -> set[str]:
@@ -153,7 +188,7 @@ async def test_retirar_un_gabinete_lo_saca_del_inventario(seed: None) -> None:
     """El test que faltaba: ``test_fleet_admin`` retiraba y nunca volvía a listar."""
     assert G_A in await _ids()
 
-    retired = await _delete(f"/fleet/gateways/{G_A}")
+    retired = await _retire_gateway(G_A, "SN-GHOST-A1")
     assert retired.status_code == 200, retired.text
     assert retired.json()["status"] == "retired"
 
@@ -168,7 +203,7 @@ async def test_retirar_el_sitio_retira_sus_gabinetes(seed: None) -> None:
     ``gateways.status``, no por ``sites.status``: un gabinete huérfano seguiría siendo
     candidato de config firmada y de comandos de actuación.
     """
-    resp = await _delete(f"/sites/{S_A}")
+    resp = await _retire_site(S_A, "TORRE-A")
     assert resp.status_code == 200, resp.text
 
     assert G_A not in await _ids()
@@ -196,7 +231,7 @@ async def test_gabinete_activo_de_sitio_retirado_tampoco_se_pinta(seed: None) ->
 
 async def test_include_retired_los_devuelve_rotulados(seed: None) -> None:
     """Se pueden ver para restaurarlos, pero nunca por defecto y siempre etiquetados."""
-    await _delete(f"/fleet/gateways/{G_A}")
+    await _retire_gateway(G_A, "SN-GHOST-A1")
 
     resp = await _get("/fleet/gateways?include_retired=true")
     assert resp.status_code == 200, resp.text
@@ -207,7 +242,7 @@ async def test_include_retired_los_devuelve_rotulados(seed: None) -> None:
 
 
 async def test_restaurar_devuelve_el_gabinete_al_inventario(seed: None) -> None:
-    await _delete(f"/fleet/gateways/{G_A}")
+    await _retire_gateway(G_A, "SN-GHOST-A1")
     assert G_A not in await _ids()
 
     restored = await _post(f"/fleet/gateways/{G_A}/restore", {})
@@ -242,7 +277,7 @@ async def test_retirar_el_sitio_deja_su_gabinete_no_sincronizable(seed: None) ->
     before = await _get(f"/fleet/gateways/{G_A}/config-state")
     assert before.json()["is_syncable"] is True
 
-    await _delete(f"/sites/{S_A}")
+    await _retire_site(S_A, "TORRE-A")
 
     after = await _get(f"/fleet/gateways/{G_A}/config-state")
     assert after.status_code == 200, after.text
@@ -251,7 +286,7 @@ async def test_retirar_el_sitio_deja_su_gabinete_no_sincronizable(seed: None) ->
 
 async def test_el_retiro_del_sitio_audita_cada_gabinete(seed: None) -> None:
     """La bitácora tiene que decir QUÉ hardware se apagó, no solo que cayó el sitio."""
-    await _delete(f"/sites/{S_A}")
+    await _retire_site(S_A, "TORRE-A")
 
     async with get_engine().connect() as conn:
         rows = (
@@ -266,7 +301,7 @@ async def test_el_retiro_del_sitio_audita_cada_gabinete(seed: None) -> None:
 
 
 async def test_el_tenant_b_no_ve_los_retirados_del_tenant_a(seed: None) -> None:
-    await _delete(f"/fleet/gateways/{G_A}")
+    await _retire_gateway(G_A, "SN-GHOST-A1")
 
     visible = await _ids("/fleet/gateways?include_retired=true", _tok(tenant=T_B))
     assert visible == {G_B}, "include_retired no puede ser una rendija cross-tenant"

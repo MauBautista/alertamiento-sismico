@@ -75,6 +75,7 @@ DENY_ALL = {
     "drill_start": False,
     "manage_tenants": False,
     "manage_visibility": False,
+    "manage_retire_code": False,
     "checkin_submit": False,
     "roster_read": False,
     "damage_report_submit": False,
@@ -199,6 +200,16 @@ def test_drill_start_is_institutional_admin_action() -> None:
     (lectura del registro por RLS) ni operadores/inspectores."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
     assert can == {"takab_superadmin", "tenant_admin"}
+
+
+def test_manage_retire_code_is_superadmin_only() -> None:
+    """[T-2.36] El segundo factor del retiro lo rota TAKAB, no el cliente.
+
+    Si ``tenant_admin`` pudiera rotar su propio código, el segundo factor volvería a
+    ser el primero (su sesión) y la fricción del retiro sería decorativa.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_retire_code"]}
+    assert can == {"takab_superadmin"}
 
 
 def test_manage_tenants_is_superadmin_only() -> None:

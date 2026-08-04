@@ -2585,6 +2585,30 @@
         "title": "GatewayOut",
         "type": "object"
       },
+      "GatewayRetire": {
+        "additionalProperties": false,
+        "description": "Retiro de gabinete: ``confirm_serial`` (visible) + ``retire_code`` (secreto).",
+        "properties": {
+          "confirm_serial": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Confirm Serial",
+            "type": "string"
+          },
+          "retire_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Retire Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_serial",
+          "retire_code"
+        ],
+        "title": "GatewayRetire",
+        "type": "object"
+      },
       "GatewayRowOut": {
         "description": "Fila cruda de ``gateways`` (respuesta de las mutaciones de T-1.32).\n\nSin ``derived_state``: ese lo deriva ``derive_fleet_state`` del último\n``device_health``, y un gabinete recién dado de alta todavía no tiene ninguno.\nInventarle \"OPERATIVO\" sería exactamente la clase de dato falso que prohíbe la\nregla de oro 7.",
         "properties": {
@@ -3499,6 +3523,10 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "manage_retire_code": {
+            "title": "Manage Retire Code",
+            "type": "boolean"
+          },
           "manage_tenants": {
             "title": "Manage Tenants",
             "type": "boolean"
@@ -3567,6 +3595,7 @@
           "drill_start",
           "manage_tenants",
           "manage_visibility",
+          "manage_retire_code",
           "checkin_submit",
           "roster_read",
           "damage_report_submit",
@@ -4549,6 +4578,66 @@
           "expires_in"
         ],
         "title": "ReportOut",
+        "type": "object"
+      },
+      "RetireCodeRotate": {
+        "additionalProperties": false,
+        "description": "Fija o rota el código del tenant. Solo ``takab_superadmin``.\n\nMínimo 8 caracteres: es una credencial tecleada por una persona, no un token\ngenerado. El hash lo calcula Postgres (bcrypt vía ``pgcrypto``); este texto no se\nguarda ni se registra en ninguna parte.",
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "RetireCodeRotate",
+        "type": "object"
+      },
+      "RetireCodeState": {
+        "description": "¿Hay código y de cuándo? Nunca el hash.\n\nLa consola lo consulta ANTES de ofrecer el retiro: sin código configurado el\nintento sería un 409 seguro, y prometer un botón que siempre falla es\nexactamente lo que prohíbe la regla de oro 7.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotated At"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "configured"
+        ],
+        "title": "RetireCodeState",
         "type": "object"
       },
       "RosterCheckin": {
@@ -5847,6 +5936,30 @@
         "title": "SiteOut",
         "type": "object"
       },
+      "SiteRetire": {
+        "additionalProperties": false,
+        "description": "Retiro de sitio: ``confirm_code`` (el ``code`` del sitio) + ``retire_code``.\n\nSe teclea el ``code`` y no el ``name`` porque ``sites.name`` NO es único\n(``db/schema.sql`` solo restringe ``(tenant_id, code)``): confirmar con un rótulo\nambiguo dejaría al operador creyendo que apagó otra estación.",
+        "properties": {
+          "confirm_code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Confirm Code",
+            "type": "string"
+          },
+          "retire_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Retire Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_code",
+          "retire_code"
+        ],
+        "title": "SiteRetire",
+        "type": "object"
+      },
       "SiteStateFrame": {
         "description": "Salud del gabinete: transición de ``device_health`` o de ``rule_evaluations``.\n\n``kind`` discrimina el origen. Los campos específicos de cada origen son\nopcionales (device_health trae métricas de enlace; rule_evaluation trae\ntiers). El aislamiento por tenant lo garantiza la re-consulta RLS del hub.",
         "properties": {
@@ -7029,45 +7142,6 @@
       }
     },
     "/fleet/gateways/{gateway_id}": {
-      "delete": {
-        "description": "Retiro lógico (idempotente). Un gabinete retirado deja de ser sincronizable.",
-        "operationId": "retire_gateway_fleet_gateways__gateway_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "gateway_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Gateway Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GatewayRowOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Retire Gateway"
-      },
       "put": {
         "description": "Reemplaza el gabinete. ``base_row_version`` viejo ⇒ 409.\n\nEl sitio destino debe ser del mismo tenant que el gabinete: mudarlo a un sitio ajeno\nharía que su telemetría (y sus actuadores) quedaran bajo otro tenant.",
         "operationId": "update_gateway_fleet_gateways__gateway_id__put",
@@ -7198,6 +7272,57 @@
           }
         },
         "summary": "Restore Gateway"
+      }
+    },
+    "/fleet/gateways/{gateway_id}/retire": {
+      "post": {
+        "description": "Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).\n\nRetirar un gabinete lo saca del config sync firmado y de los comandos de\nactuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,\nteclear el ``serial`` exacto (visible en pantalla) y el código de retiro del\ncliente (secreto que entrega TAKAB).\n\nEs ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo\nno atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.",
+        "operationId": "retire_gateway_fleet_gateways__gateway_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateway_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Gateway Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayRetire"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Gateway"
       }
     },
     "/gateways/{gateway_id}/catalog": {
@@ -8878,45 +9003,6 @@
       }
     },
     "/sites/{site_id}": {
-      "delete": {
-        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.\n\n[T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y\nel hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía\ncandidato de config firmada y de comandos de actuación (ambos predicados miran\n``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:\nvolver a encender hardware es un acto explícito, no un efecto colateral.",
-        "operationId": "retire_site_sites__site_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "site_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Site Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SiteOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Retire Site"
-      },
       "get": {
         "description": "Detalle de un sitio con sus zonas. 404 si no existe o no es visible (RLS).",
         "operationId": "get_site_sites__site_id__get",
@@ -9588,6 +9674,57 @@
         "summary": "Mobile State"
       }
     },
+    "/sites/{site_id}/retire": {
+      "post": {
+        "description": "Retiro lógico (idempotente). Nunca borra: la evidencia del sitio es inmutable.\n\n[T-2.35] Retira TAMBIÉN sus gabinetes, en la misma transacción. Antes no lo hacía y\nel hardware quedaba huérfano: invisible en el catálogo de sitios, pero todavía\ncandidato de config firmada y de comandos de actuación (ambos predicados miran\n``gateways.status``, no ``sites.status``). Restaurar el sitio NO los devuelve:\nvolver a encender hardware es un acto explícito, no un efecto colateral.\n\n[T-2.36] Doble fricción: teclear el ``code`` del sitio (no el ``name``, que no es\núnico) y el código de retiro del cliente. Retirar un sitio arrastra su hardware, así\nque la fricción es la misma que la del gabinete, no menor.",
+        "operationId": "retire_site_sites__site_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteRetire"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Site"
+      }
+    },
     "/telemetry/map/state": {
       "get": {
         "description": "Estado de todos los sitios visibles: sacudida medida + incidente + epicentros.",
@@ -9928,6 +10065,96 @@
           }
         },
         "summary": "Create Tenant"
+      }
+    },
+    "/tenants/{tenant_id}/retire-code": {
+      "get": {
+        "description": "¿Tiene este cliente código de retiro configurado? Nunca devuelve el hash.\n\nLa consola lo consulta antes de ofrecer el retiro: sin código el intento sería un\n409 seguro, y ofrecer un botón que siempre falla es lo que veta la regla de oro 7.",
+        "operationId": "get_retire_code_state_tenants__tenant_id__retire_code_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireCodeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Retire Code State"
+      },
+      "put": {
+        "description": "Fija o rota el código de retiro del cliente. SOLO ``takab_superadmin``.\n\nRotar invalida el anterior de inmediato: la fila es única por tenant y el\n``version`` monótono deja constancia de cuántas veces se cambió. El texto en claro\nno se guarda, no se devuelve y no entra en la bitácora — solo el hecho de la\nrotación.",
+        "operationId": "put_retire_code_tenants__tenant_id__retire_code_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetireCodeRotate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireCodeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Retire Code"
       }
     },
     "/visibility-grants": {

@@ -181,6 +181,7 @@ describe("ConsolePage", () => {
           drill_start: false,
           manage_tenants: false,
           manage_visibility: false,
+          manage_retire_code: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
           panel_read: false,
           checkin_submit: false,
@@ -300,6 +301,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           drill_start: false,
           manage_tenants: false,
           manage_visibility: false,
+          manage_retire_code: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
           panel_read: false,
           checkin_submit: false,

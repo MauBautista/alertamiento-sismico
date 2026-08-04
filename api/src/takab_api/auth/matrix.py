@@ -107,6 +107,13 @@ ACTIONS: tuple[str, ...] = (
     # la frontera de aislamiento multi-tenant; ni tenant_admin ni support amplían la
     # visibilidad de un cliente sobre otro. La RLS ``vg_admin`` ya exige superadmin.
     "manage_visibility",
+    # [T-2.36] Rotar el CÓDIGO DE RETIRO del tenant: el segundo factor que exige
+    # retirar una estación. Es una credencial que TAKAB entrega fuera de banda —
+    # SOLO takab_superadmin. Deliberadamente NO la recibe tenant_admin: si el
+    # cliente pudiera rotar su propio código, el segundo factor sería el mismo
+    # factor (su sesión) y la fricción desaparecería. La RLS ``trc_admin`` ya
+    # exige app_role='takab_superadmin'; la matriz decide quién ve el control.
+    "manage_retire_code",
     # [T-2.03] SUPERFICIE MÓVIL (spec móvil §5/§8 + RBAC §3/§4). Los roles móviles
     # dejan de ser placeholders vacíos: estas son acciones de CAMPO (persona presente
     # en el inmueble con identidad de roster), por eso los roles de plataforma/SOC
@@ -157,6 +164,7 @@ def _actions(
     drill_start: bool = False,
     manage_tenants: bool = False,
     manage_visibility: bool = False,
+    manage_retire_code: bool = False,
     checkin_submit: bool = False,
     roster_read: bool = False,
     damage_report_submit: bool = False,
@@ -183,6 +191,7 @@ def _actions(
         "drill_start": drill_start,
         "manage_tenants": manage_tenants,
         "manage_visibility": manage_visibility,
+        "manage_retire_code": manage_retire_code,
         "checkin_submit": checkin_submit,
         "roster_read": roster_read,
         "damage_report_submit": damage_report_submit,
@@ -211,6 +220,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         drill_start=True,
         manage_tenants=True,
         manage_visibility=True,
+        manage_retire_code=True,
         # [T-2.03] Administra el alta de ocupantes; las acciones de CAMPO
         # (check-in/roster/daños/silenciar) NO — exigen presencia con identidad
         # de roster en el inmueble, no "Total" de plataforma.
