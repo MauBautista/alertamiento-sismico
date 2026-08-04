@@ -186,6 +186,18 @@ body {
   text-transform: uppercase;
   color: var(--tk-fg-2);
 }
+/* [T-2.43] Enlace dentro de texto de estado (p. ej. "verifique el enlace" → /fleet).
+   Hereda la tipografía del `.soc-meta` que lo contiene: no es un botón, es una salida
+   accionable dentro de la explicación de por qué algo no se puede hacer. */
+.soc-link {
+  color: var(--tk-cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.soc-link:hover,
+.soc-link:focus-visible {
+  color: var(--tk-cyan-hover);
+}
 .soc-pill {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 5px 12px;

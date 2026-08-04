@@ -7,6 +7,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
@@ -26,6 +27,7 @@ import {
   isPreliminary,
   magnitudeOf,
   miniseedOf,
+  miniseedState,
   quorumView,
   verdictOf,
 } from "./model";
@@ -142,15 +144,19 @@ export default function TriageDetail({
           ? "DICTAMEN AUTOMÁTICO PRELIMINAR"
           : "DICTAMEN FIRMADO";
 
-  const miniseedTitle = !canExport
-    ? "Requiere la acción export"
-    : evidence.loading
-      ? "Cargando la evidencia del incidente"
-      : evidence.error
-        ? "No se pudo cargar la evidencia del incidente"
-        : miniseed === null
-          ? "No hay miniSEED archivado para este incidente"
-          : undefined;
+  // [T-2.43] Seis estados distinguibles en lugar de un botón gris sin explicación.
+  // `evidenceUnknown` (data === undefined) cuenta como carga —una consulta que aún no
+  // resolvió no puede presentarse como "no hay"—, PERO una consulta fallida también
+  // deja `data` en undefined, y ahí lo honesto es decir que falló, no que sigue en
+  // vuelo. De ahí el `&& !evidence.error`.
+  const mseed = miniseedState({
+    canExport,
+    loading: evidence.loading || (evidenceUnknown && !evidence.error),
+    error: Boolean(evidence.error),
+    miniseed,
+    openedAt: Date.parse(inc.opened_at),
+    now: Date.now(),
+  });
 
   return (
     <aside className="triage-detail">
@@ -232,16 +238,28 @@ export default function TriageDetail({
           emptyText="SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE"
           staleSince={null}
         >
-          {miniseed === null ? (
-            <p className="soc-meta">
-              SIN miniSEED ARCHIVADO · el waveform crudo no se transmite en continuo
-            </p>
-          ) : (
-            miniseed.sha256 && (
-              <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
-            )
+          {miniseed?.sha256 && (
+            <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
           )}
         </StateFrame>
+        {/* [T-2.43] La explicación del miniSEED vive FUERA del StateFrame: con cero
+            objetos el marco pinta su estado "empty" y se comía la nota justo en el
+            caso que más necesita explicarse. Solo se muestra cuando la consulta ya
+            resolvió y de verdad no hay crudo — en `loading`/`error` el marco ya dice
+            lo suyo y duplicarlo sería ruido. */}
+        {(mseed.kind === "backfill" || mseed.kind === "absent") && (
+          <p className="soc-meta" data-testid="miniseed-note">
+            {mseed.label} · {mseed.hint}
+            {mseed.fleetLink && (
+              <>
+                {" "}
+                <Link to="/fleet" className="soc-link">
+                  IR A FLOTA EDGE
+                </Link>
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
@@ -258,23 +276,22 @@ export default function TriageDetail({
         <button
           type="button"
           className="soc-btn soc-btn--secondary"
-          disabled={!canExport || evidenceUnknown || miniseed === null || detail.downloadPending}
-          title={miniseedTitle}
+          disabled={!mseed.enabled || detail.downloadPending}
+          title={mseed.hint}
           onClick={() => miniseed && detail.downloadEvidence(miniseed.evidence_id)}
         >
-          <FileDown size={13} aria-hidden /> EXPORTAR miniSEED
+          <FileDown size={13} aria-hidden /> {mseed.label}
         </button>
         <button
           type="button"
           className="soc-btn soc-btn--primary"
-          disabled={!canGenerateReport || head === null || detail.pdfPending}
-          title={
-            !canGenerateReport
-              ? "Requiere la acción generate_report"
-              : head === null
-                ? "Sin dictamen que imprimir"
-                : undefined
-          }
+          // [T-2.43] Se retira el gate `head === null`, espejo del que ya se quitó en la
+          // API: un incidente sin dictamen YA tiene hechos que reportar —lo medido,
+          // quién acusó, qué estaciones corroboraron— y el documento se rotula como
+          // preliminar. El gate dejaba sin evidencia exportable justo el caso en que
+          // más falta hace.
+          disabled={!canGenerateReport || detail.pdfPending}
+          title={!canGenerateReport ? "Requiere la acción generate_report" : undefined}
           onClick={() => detail.generatePdf()}
         >
           <Printer size={13} aria-hidden /> DICTAMEN PDF

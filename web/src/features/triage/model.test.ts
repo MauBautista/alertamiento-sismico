@@ -11,6 +11,8 @@ import {
   isCorroborated,
   minNodesFrom,
   miniseedOf,
+  miniseedState,
+  BACKFILL_WINDOW_MS,
   quorumView,
   verdictOf,
   durationOf,
@@ -215,6 +217,89 @@ describe("miniseedOf", () => {
   it("sin miniSEED archivado ⇒ null (no hay generación bajo demanda)", () => {
     expect(miniseedOf([ev("report_pdf")])).toBeNull();
     expect(miniseedOf(undefined)).toBeNull();
+  });
+});
+
+describe("miniseedState (T-2.43) · seis estados distinguibles", () => {
+  const OPENED = Date.parse("2026-08-03T10:00:00Z");
+  const objeto: EvidenceObject = {
+    evidence_id: "e-miniseed",
+    kind: "miniseed",
+    s3_key: "k/miniseed",
+    created_at: "2026-08-03T10:05:00Z",
+  };
+  const base = {
+    canExport: true,
+    loading: false,
+    error: false,
+    miniseed: null as EvidenceObject | null,
+    openedAt: OPENED,
+    now: OPENED + 60 * 60_000, // una hora después: fuera de la ventana de backfill
+  };
+
+  it("con el objeto archivado, se puede descargar", () => {
+    const v = miniseedState({ ...base, miniseed: objeto });
+    expect(v.kind).toBe("ready");
+    expect(v.enabled).toBe(true);
+  });
+
+  it("sin la acción export, el botón dice qué falta", () => {
+    const v = miniseedState({ ...base, canExport: false, miniseed: objeto });
+    expect(v.kind).toBe("forbidden");
+    expect(v.enabled).toBe(false);
+    expect(v.hint).toMatch(/export/);
+  });
+
+  it("cargando NO es lo mismo que no haber", () => {
+    // Este es el bug de fondo que el estado resuelve: la evidencia en vuelo se veía
+    // igual que la evidencia inexistente (regla de oro 7).
+    const v = miniseedState({ ...base, loading: true });
+    expect(v.kind).toBe("loading");
+    expect(v.enabled).toBe(false);
+  });
+
+  it("una consulta fallida se rotula como fallo, no como ausencia", () => {
+    const v = miniseedState({ ...base, error: true });
+    expect(v.kind).toBe("error");
+    expect(v.hint).toMatch(/Reintente/);
+  });
+
+  it("dentro de los 15 min el crudo aún puede llegar: BACKFILL EN CURSO", () => {
+    const v = miniseedState({ ...base, now: OPENED + 5 * 60_000 });
+    expect(v.kind).toBe("backfill");
+    expect(v.label).toBe("BACKFILL EN CURSO");
+    expect(v.enabled).toBe(false);
+    expect(v.fleetLink).toBe(false);
+  });
+
+  it("justo en el límite de la ventana ya se declara ausente", () => {
+    expect(miniseedState({ ...base, now: OPENED + BACKFILL_WINDOW_MS }).kind).toBe("absent");
+    expect(miniseedState({ ...base, now: OPENED + BACKFILL_WINDOW_MS - 1 }).kind).toBe("backfill");
+  });
+
+  it("pasada la ventana, apunta al enlace de la estación", () => {
+    const v = miniseedState(base);
+    expect(v.kind).toBe("absent");
+    expect(v.fleetLink).toBe(true);
+    expect(v.hint).toMatch(/Verifique el enlace/);
+  });
+
+  it("nunca ofrece pedirle el crudo al gabinete: lo dice y no habilita nada", () => {
+    // Reglas de oro 4, 8 y 9: un comando al proceso que toca sirena y gas, para una
+    // función de reporte, y sobre un buffer que ya no tiene el evento.
+    for (const now of [OPENED + 60_000, OPENED + 60 * 60_000]) {
+      expect(miniseedState({ ...base, now }).enabled).toBe(false);
+    }
+    expect(miniseedState(base).hint).toMatch(/no puede pedirse a demanda/);
+  });
+
+  it("el objeto archivado gana a la ventana de backfill", () => {
+    const v = miniseedState({ ...base, miniseed: objeto, now: OPENED + 60_000 });
+    expect(v.kind).toBe("ready");
+  });
+
+  it("una fecha de apertura ilegible no finge un backfill eterno", () => {
+    expect(miniseedState({ ...base, openedAt: Number.NaN }).kind).toBe("absent");
   });
 });
 

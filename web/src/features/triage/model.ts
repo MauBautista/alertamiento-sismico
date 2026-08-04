@@ -212,6 +212,107 @@ export function miniseedOf(evidence: EvidenceObject[] | undefined): EvidenceObje
   return (evidence ?? []).find((e) => e.kind === "miniseed") ?? null;
 }
 
+/**
+ * [T-2.43] Ventana en la que el crudo del evento todavía puede estar subiendo.
+ *
+ * El gabinete no transmite waveform en continuo: lo archiva y lo sube DESPUÉS de que
+ * el evento se confirma, y esa subida compite con el enlace del sitio. Antes de que
+ * pase esta ventana, "no hay miniSEED" no significa lo mismo que después.
+ */
+export const BACKFILL_WINDOW_MS = 15 * 60_000;
+
+export type MiniseedKind = "forbidden" | "loading" | "error" | "backfill" | "absent" | "ready";
+
+export interface MiniseedView {
+  kind: MiniseedKind;
+  /** Rótulo del botón. */
+  label: string;
+  /** Por qué está así, en lenguaje accionable. Va al `title` y al panel. */
+  hint: string;
+  enabled: boolean;
+  /** Solo cuando la causa probable es el enlace del gabinete. */
+  fleetLink: boolean;
+}
+
+/**
+ * Estado del botón de miniSEED. Seis estados DISTINGUIBLES, porque "deshabilitado"
+ * sin explicación es indistinguible de "roto" para quien está operando.
+ *
+ * No se ofrece generación bajo demanda a propósito: pedirle el crudo al gabinete
+ * abriría una superficie de comando en el proceso que toca sirena, gas, ascensores y
+ * puertas (reglas de oro 4 y 8) para una función de reporte, y violaría la 9 —el crudo
+ * solo sube en eventos confirmados—. Además el buffer del edge es finito: un evento
+ * viejo ya no existe en el gabinete, así que el comando fallaría igual.
+ */
+export function miniseedState(args: {
+  canExport: boolean;
+  loading: boolean;
+  error: boolean;
+  miniseed: EvidenceObject | null;
+  /** Apertura del incidente en ms epoch. */
+  openedAt: number;
+  now: number;
+}): MiniseedView {
+  const { canExport, loading, error, miniseed, openedAt, now } = args;
+  if (!canExport) {
+    return {
+      kind: "forbidden",
+      label: "EXPORTAR miniSEED",
+      hint: "Requiere la acción export.",
+      enabled: false,
+      fleetLink: false,
+    };
+  }
+  if (loading) {
+    return {
+      kind: "loading",
+      label: "EXPORTAR miniSEED",
+      hint: "Cargando la evidencia del incidente…",
+      enabled: false,
+      fleetLink: false,
+    };
+  }
+  if (error) {
+    return {
+      kind: "error",
+      label: "EXPORTAR miniSEED",
+      hint: "No se pudo cargar la evidencia del incidente. Reintente.",
+      enabled: false,
+      fleetLink: false,
+    };
+  }
+  if (miniseed !== null) {
+    return {
+      kind: "ready",
+      label: "EXPORTAR miniSEED",
+      hint: "Forma de onda cruda archivada de este evento.",
+      enabled: true,
+      fleetLink: false,
+    };
+  }
+  if (Number.isFinite(openedAt) && now - openedAt < BACKFILL_WINDOW_MS) {
+    return {
+      kind: "backfill",
+      label: "BACKFILL EN CURSO",
+      hint:
+        "El gabinete archiva el crudo y lo sube después de confirmar el evento; " +
+        "todavía puede llegar. Vuelva a consultar en unos minutos.",
+      enabled: false,
+      fleetLink: false,
+    };
+  }
+  return {
+    kind: "absent",
+    label: "SIN miniSEED ARCHIVADO",
+    hint:
+      "Este incidente no tiene forma de onda cruda archivada. El crudo no se transmite " +
+      "en continuo: sube solo en eventos confirmados y no puede pedirse a demanda. " +
+      "Verifique el enlace de la estación.",
+    enabled: false,
+    fleetLink: true,
+  };
+}
+
 /** Formatea el epicentro. No hay geocodificación inversa: se muestran coordenadas. */
 export function epicenterOf(event: SeismicEventOut | null): string {
   if (!event || event.epicenter_lat === null || event.epicenter_lon === null) {

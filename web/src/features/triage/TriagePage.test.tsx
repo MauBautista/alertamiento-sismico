@@ -280,6 +280,35 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     expect(btn.getAttribute("title")).toMatch(/No se pudo cargar la evidencia/);
   });
 
+  // [T-2.43] Los seis estados del miniSEED tienen que ser distinguibles EN PANTALLA;
+  // un botón gris sin explicación es indistinguible de una consola rota.
+  it("incidente reciente sin miniSEED: BACKFILL EN CURSO, no 'no hay'", () => {
+    vi.useFakeTimers();
+    // El fixture abre a las 09:00; a las 09:05 el crudo todavía puede estar subiendo.
+    vi.setSystemTime(new Date("2026-07-08T09:05:00Z"));
+    try {
+      renderWith({ evidence: res<EvidenceObject[]>([]) });
+      expect(screen.getByRole("button", { name: /BACKFILL EN CURSO/ })).toBeTruthy();
+      expect(screen.queryByText(/SIN miniSEED ARCHIVADO/)).toBeNull();
+      expect(screen.queryByRole("link", { name: /IR A FLOTA EDGE/ })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("incidente viejo sin miniSEED: lo declara y manda a revisar el enlace", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-08T11:00:00Z"));
+    try {
+      renderWith({ evidence: res<EvidenceObject[]>([]) });
+      expect(screen.getByRole("button", { name: /SIN miniSEED ARCHIVADO/ })).toBeTruthy();
+      const link = screen.getByRole("link", { name: /IR A FLOTA EDGE/ });
+      expect(link.getAttribute("href")).toBe("/fleet");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bitácora fallida: NO afirma '0 ACCIONES REGISTRADAS'", () => {
     renderWith({
       actions: res<IncidentActionOut[]>(undefined, { error: "GET actions falló (500)" }),
