@@ -3586,3 +3586,33 @@ redespliegue al final (T-2.57).
         verde sin emular nada. Solo `tsc` lo caza.
   - [ ] **Ejecución pendiente del deploy**: `make soc-local` invoca `make demo-db`, que
         RESIEMBRA la DB local. Los specs quedan escritos y colectados; se corren después.
+
+### [x] T-2.57 · Redespliegue único a la nube — COMPLETA (2026-08-04)
+- **Componente:** deploy · **Depende de:** T-2.56
+- **Verificado en la nube VIVA:**
+  - [x] PR #49 con los 6 checks en verde ⇒ merge a `main` (`c090778`). Base del PR
+        verificada antes de mergear (precedente: un PR apilado aterrizó donde no era).
+  - [x] Emulación arm64 comprobada ANTES de construir (`uname -m` ⇒ `aarch64`): el
+        binfmt se pierde al reiniciar el host y una imagen x86 no arranca en Graviton.
+  - [x] `/api/health` declara `c090778`; los 7 contenedores con ese tag.
+  - [x] `alembic_version` = `0025_tenant_retire_codes`, que es el head local.
+  - [x] **Gabinetes fantasma en producción: 0.** La migración de saneamiento de T-2.35
+        hizo su trabajo sobre la DB viva — era el bug que abrió el ciclo.
+  - [x] Endpoints nuevos vivos y pidiendo auth (401, no 500): `/audit`, `/users`,
+        `/drills`, `/fleet/gateways`. El OpenAPI servido los declara.
+- **Pendientes que NO son código y exigen intervención humana:**
+  - [ ] **Rotar el código de retiro** del tenant `TAKAB Dev`
+        (`d0000000-0000-0000-0000-000000000001`). Hoy hay **0 configurados**: es el
+        fail-closed de T-2.36 funcionando, y hasta rotarlo nadie puede retirar una
+        estación (409). Exige un ID token de superadmin con **MFA**, que es un paso
+        humano; no hay script commiteado para obtenerlo sin navegador.
+  - [ ] **Retirar los 6 `site-sim-*` que siguen activos** (13 ya estaban retirados).
+        Depende del punto anterior: retirar exige el código. Cierra T-1.47.
+  - [ ] **Cablear `TAKAB_API_COGNITO_USER_POOL_ID` en `deploy.sh` + permisos
+        `cognito-idp:Admin*`** en el rol de instancia. Sin ambos, la gestión de usuarios
+        arranca SIMULADA: grita en cada escritura, no finge. Exige `terraform apply`.
+  - [ ] **`console_scope_enforced` sigue en `False`.** El bloqueante cayó con T-2.54,
+        pero encenderlo antes de asignar alcances dejaría a cada `soc_operator` con cero
+        estaciones. Secuencia: recorrer los `scope_gap` del `audit_log` → asignar por
+        usuario → encender.
+  - [ ] **Correr los e2e** contra el entorno desplegado (`npx playwright test`).
