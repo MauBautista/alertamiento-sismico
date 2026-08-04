@@ -41,7 +41,14 @@
 
 ## 2. Matriz de acceso · SOC Web
 
-| Rol | Consola C4I | Flota Edge | Triage | Multi-Tenant | Dash Edificio | Alcance de datos |
+> **Renombrado de pestañas (T-2.39 y T-2.44).** Las columnas siguen a los rótulos que ve
+> el operador: **Consola C4I → MONITOREO** (título *Monitoreo en Vivo*) y
+> **Triage → EVALUACIÓN** (título *Evaluación Estructural Post-Sismo*). Las **rutas no
+> cambiaron** (`/console`, `/triage`): están cableadas en `auth/matrix.py`, en los tokens
+> y en las clases CSS, y renombrarlas rompería el RBAC por un cambio de etiqueta. Si
+> busca "C4I" o "Triage" en el código, esos son los nombres nuevos.
+
+| Rol | MONITOREO | Flota Edge | EVALUACIÓN | Multi-Tenant | Dash Edificio | Alcance de datos |
 |---|---|---|---|---|---|---|
 | `takab_superadmin` | Total | Total | Total | Total | Total | Toda la plataforma |
 | `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Todos los tenants |
@@ -55,11 +62,11 @@
 | `occupant` | — | — | — | — | — | (móvil only) |
 
 **Notas:**
-- "Total" en Consola C4I incluye: acuse, solicitar dictamen técnico, reubicar epicentro.
+- "Total" en MONITOREO incluye: acuse, solicitar dictamen técnico, reubicar epicentro.
 - `gov_operator`: **solo lectura + acuse**. NO puede silenciar ni probar actuadores de inmuebles
   ajenos (decisión cerrada — controlar la sirena de un tercero es inaceptable).
-  [ANALISIS-00] La celda de Triage decía "Total", lo que contradecía esta misma nota (un "Total"
-  en Triage implicaría crear/firmar); se corrigió a **Lectura + export** (exportar miniSEED/PDF
+  [ANALISIS-00] La celda de EVALUACIÓN decía "Total", lo que contradecía esta misma nota (un "Total"
+  en EVALUACIÓN implicaría crear/firmar); se corrigió a **Lectura + export** (exportar miniSEED/PDF
   de evidencia sí es coherente con coordinar respuesta). A nivel de datos, RLS solo le da
   SELECT sobre tenants `gov_shared`; su único write es el acuse vía función dedicada
   (`gov_ack_incident`, ver `db/schema.sql §8`).
@@ -89,7 +96,7 @@
   intentos fallidos por cliente en 15 min ⇒ 429, contados sobre `audit_log`. Anclado por
   `tests/auth/test_matrix.py::test_manage_retire_code_is_superadmin_only` y
   `tests/api/test_retire_code.py`.
-- **[DECISION 2026-07-10 · T-1.48] Acciones nuevas de la Consola C4I (extensión de §2,
+- **[DECISION 2026-07-10 · T-1.48] Acciones nuevas de MONITOREO (extensión de §2,
   no listadas en la matriz original):**
   - `relocate_epicenter` (botón REUBICAR EPICENTRO) = `takab_superadmin`, `tenant_admin`,
     `soc_operator`. Reescribe un dato de RED compartido (`seismic_events.epicenter`, vía
@@ -303,9 +310,9 @@ Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una 
 **Web (`web/`):**
 | Ruta | Página (mockup) | Roles con acceso |
 |---|---|---|
-| `/console` | Consola C4I (1) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
+| `/console` | MONITOREO (1) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
 | `/fleet` | Flota Edge (2) | superadmin, support, tenant_admin, soc_operator, gov_operator, building_admin |
-| `/triage` | Triage (3) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
+| `/triage` | EVALUACIÓN (3) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
 | `/tenants` | Multi-Tenant (4) | superadmin, support(lectura), tenant_admin(solo suyo) |
 | `/building/:siteId` | Dash Edificio | tenant_admin, building_admin, +lectura otros |
 

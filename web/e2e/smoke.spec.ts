@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
 const SITE_DEV = "d1000000-0000-0000-0000-000000000000";
 
 const SCREENS = [
-  { path: "/console", label: "01 Consola C4I · Live Wall" },
+  { path: "/console", label: "01 Monitoreo en Vivo" },
   { path: "/fleet", label: "02 Flota Edge" },
   { path: "/triage", label: "03 Evaluación Estructural" },
   { path: "/tenants", label: "04 Multi-Tenant" },
@@ -46,7 +46,7 @@ test("el mapa se queda el alto: el simulacro es una tira, no un panel", async ({
   await page.getByLabel("ROL").selectOption("takab_superadmin"); // tiene drill_start
   await page.getByRole("button", { name: "ENTRAR COMO ROL" }).click();
   // El login ya aterriza en /console; navegar antes de que monte tira la sesión.
-  await expect(page.locator('[data-screen-label="01 Consola C4I · Live Wall"]')).toBeVisible();
+  await expect(page.locator('[data-screen-label="01 Monitoreo en Vivo"]')).toBeVisible();
 
   const drill = page.getByTestId("drill-idle");
   await expect(drill).toBeVisible();

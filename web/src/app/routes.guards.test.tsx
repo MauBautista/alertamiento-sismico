@@ -16,7 +16,7 @@ const URL_BY_ROUTE: Record<RouteKey, string> = {
 };
 
 const HEADING_BY_ROUTE: Record<RouteKey, string> = {
-  "/console": "CONSOLA C4I",
+  "/console": "Monitoreo en Vivo",
   "/fleet": "Flota Edge y Estado de Gabinetes",
   "/triage": "Evaluación Estructural Post-Sismo",
   "/tenants": "Matriz Multi-Tenant y Umbrales",

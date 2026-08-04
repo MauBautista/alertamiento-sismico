@@ -41,7 +41,7 @@ from takab_api.settings import Settings
 DRILL_ROLES: tuple[str, ...] = roles_with_action("drill_start")
 
 _require_drill = require_roles(*DRILL_ROLES)
-# Lectura: cualquier rol con Consola C4I — el banner lo ven todos los del SOC y
+# Lectura: cualquier rol con MONITOREO — el banner lo ven todos los del SOC y
 # gov_operator LEE el registro (evidencia para Protección Civil; RLS acota).
 _require_console = require_roles(*CONSOLE_ROLES)
 

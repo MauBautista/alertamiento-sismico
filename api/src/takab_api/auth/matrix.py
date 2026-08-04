@@ -4,7 +4,7 @@ Fuente única de verdad para rutas y acciones por rol. Si el documento cambia,
 cambia aquí; ``test_matrix`` compara esta tabla contra una copia a mano de §2 y
 falla ante cualquier divergencia.
 
-Rutas (columnas §2 → ruta §7): Consola C4I=/console, Flota Edge=/fleet,
+Rutas (columnas §2 → ruta §7): MONITOREO=/console, Flota Edge=/fleet,
 Triage=/triage, Multi-Tenant=/tenants, Dash Edificio=/building. Una ruta está
 concedida si la celda de §2 no es "—".
 
@@ -13,7 +13,7 @@ Divergencia doc conocida: §7 lista ``building_admin`` en ``/fleet`` pero §2 le
 NO tiene /fleet. Pendiente de resolver en el documento.
 
 Acciones (derivadas de §2 + notas §4):
-- ``ack_incident``  ← Consola C4I ∈ {Total, "Lectura + ack"}.
+- ``ack_incident``  ← MONITOREO ∈ {Total, "Lectura + ack"}.
 - ``sign_dictamen`` ← Triage dice "firma dictamen" (acto profesional del inspector;
   no se deriva del "Total" de superadmin — decisión de seguridad, ver notas).
 - ``export``        ← Triage ∈ {Total, "Lectura + export"}: DESCARGAR evidencia ya
@@ -65,7 +65,7 @@ ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
 
 # Acciones sensibles del SOC web.
 # [T-1.48] ``relocate_epicenter``/``request_dictamen`` — extensiones de la
-# Consola C4I (§2 no las lista; anotadas en RBAC-TAKAB.md §2 como divergencia
+# MONITOREO (§2 no las lista; anotadas en RBAC-TAKAB.md §2 como divergencia
 # documentada): reubicar el epicentro reescribe un dato de RED compartido
 # (acto de operador del tenant, jamás de gov/inspector) y solicitar dictamen
 # inserta en el timeline (la RLS ``actions_insert`` excluye a gov_operator, así

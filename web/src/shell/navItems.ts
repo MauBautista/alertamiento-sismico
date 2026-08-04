@@ -10,7 +10,7 @@ export interface NavTab {
  * el armado por rol es `allowed_routes` del server ∩ este mapa, en el orden
  * del server. /building/:siteId no es tab (se entra por deep-link). */
 const NAV_PRESENTATION: ReadonlyMap<string, Omit<NavTab, "path">> = new Map([
-  ["/console", { label: "CONSOLA C4I", icon: Radar }],
+  ["/console", { label: "MONITOREO", icon: Radar }],
   ["/fleet", { label: "FLOTA EDGE", icon: Server }],
   ["/triage", { label: "EVALUACIÓN", icon: FileSearch }],
   ["/tenants", { label: "MULTI-TENANT", icon: Shield }],

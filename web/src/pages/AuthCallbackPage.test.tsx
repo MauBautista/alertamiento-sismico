@@ -35,7 +35,7 @@ describe("AuthCallbackPage", () => {
 
     const router = renderRoutesAt("/auth/callback");
 
-    expect(await screen.findByRole("heading", { name: "CONSOLA C4I" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Monitoreo en Vivo" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/console");
   });
 

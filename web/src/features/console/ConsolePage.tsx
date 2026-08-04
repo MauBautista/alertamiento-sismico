@@ -1,4 +1,4 @@
-// Consola C4I · Live Wall (T-1.27, mockup 1 con desviaciones ratificadas).
+// MONITOREO EN VIVO (antes "Consola C4I") · Live Wall (T-1.27, mockup 1 con desviaciones ratificadas).
 //
 // El LiveSocket lo posee AppShell desde T-1.49 (topbar viva en todas las
 // páginas); la consola lo consume por contexto. El wall: mapa MMI real
@@ -148,14 +148,14 @@ function ConsoleWall() {
     epicenterIncident !== null ? (siteById.get(epicenterIncident.site_id) ?? null) : null;
 
   return (
-    <div className="soc-shell" data-screen-label="01 Consola C4I · Live Wall">
-      <h1 className="soc-vh">CONSOLA C4I</h1>
+    <div className="soc-shell" data-screen-label="01 Monitoreo en Vivo">
+      <h1 className="soc-vh">Monitoreo en Vivo</h1>
       <main className="soc-main">
         {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
             incidente vivo se degrada a badge (lo real domina también visualmente). */}
         <DrillBanner hasLiveIncident={critical !== null} />
         <StateFrame
-          label="CONSOLA C4I"
+          label="MONITOREO"
           className="soc-wall"
           loading={map.loading || incidents.loading}
           error={map.error ?? incidents.error}

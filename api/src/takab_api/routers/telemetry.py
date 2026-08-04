@@ -1,7 +1,7 @@
 """Router de telemetría del SOC (T-1.22 · B3): features, métricas y estado del mapa.
 
 Solo lectura (``read_session`` → rol ``takab_app`` + GUCs RLS del request). El acceso
-se restringe a los roles con Consola C4I de RBAC §2 (todos los de superficie web); los
+se restringe a los roles con MONITOREO de RBAC §2 (todos los de superficie web); los
 roles móvil-only (brigadista/security_guard/occupant) quedan fuera. La tenancy la
 resuelve la DB: features por la vista segura, métricas por ``JOIN sites`` (RLS).
 """
@@ -39,7 +39,7 @@ from takab_api.schemas.telemetry import (
     MultiChannelFeatures,
 )
 
-# Roles con acceso a Consola C4I (RBAC §2) = fuente única desde la matriz de rutas.
+# Roles con acceso a MONITOREO (RBAC §2) = fuente única desde la matriz de rutas.
 CONSOLE_ROLES: tuple[str, ...] = tuple(
     sorted(role for role, routes in ROLE_ROUTE_MATRIX.items() if CONSOLE in routes)
 )

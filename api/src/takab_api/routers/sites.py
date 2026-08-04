@@ -1,7 +1,7 @@
 """Catálogo de sitios: lectura (T-1.22 · B1) y administración (T-1.32).
 
 Autz de lectura (RBAC §2): cualquier rol con superficie web y acceso a alguna vista SOC
-ve el catálogo (todos tienen al menos Consola C4I). Los roles móvil-only quedan fuera
+ve el catálogo (todos tienen al menos MONITOREO). Los roles móvil-only quedan fuera
 (conjunto de rutas vacío). RLS filtra las filas por tenant.
 
 Autz de escritura: acción ``manage_fleet`` (superadmin + tenant_admin). El ``tenant_id``

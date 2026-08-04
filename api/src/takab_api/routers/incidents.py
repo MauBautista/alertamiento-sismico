@@ -1,6 +1,6 @@
 """Routers de lectura de incidentes (T-1.22 · B2): lista keyset, detalle, timeline.
 
-Roles con acceso = quienes tienen la Consola C4I en RBAC §2 (la matriz de rutas es
+Roles con acceso = quienes tienen MONITOREO en RBAC §2 (la matriz de rutas es
 la fuente única). El acuse (POST /incidents/{id}/ack) vive en ``incidents_ack``; aquí
 solo lectura. RLS acota por tenant en cada consulta.
 """
@@ -26,7 +26,7 @@ from takab_api.routers._common import (
 )
 from takab_api.schemas.incidents import IncidentActionOut, IncidentOut, IncidentPage
 
-# Roles con Consola C4I (celda ≠ "—" en RBAC §2), derivados de la matriz de rutas.
+# Roles con MONITOREO (celda ≠ "—" en RBAC §2), derivados de la matriz de rutas.
 CONSOLE_ROLES: tuple[str, ...] = tuple(
     sorted(r for r, routes in ROLE_ROUTE_MATRIX.items() if CONSOLE in routes)
 )
@@ -116,7 +116,7 @@ async def list_incident_actions(
 ) -> list[IncidentActionOut]:
     """Timeline append-only del incidente. 404 si el incidente no es visible.
 
-    [T-2.08] Consola C4I por rol, o dashboard táctico móvil (``panel_read``):
+    [T-2.08] MONITOREO por rol, o dashboard táctico móvil (``panel_read``):
     el táctico queda además acotado a su ``site_scope`` default-deny — fuera de
     alcance recibe el MISMO 404 (sin filtración de existencia).
     """
