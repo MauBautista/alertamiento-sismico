@@ -159,6 +159,25 @@ class Settings(BaseSettings):
     dictamen_pga_window_pre_s: float = 5.0
     dictamen_pga_window_post_s: float = 180.0
 
+    # --- Capa narrativa del dictamen (T-2.42) ---
+    # APAGADA por defecto y así se despliega: el gate #9 del plan maestro sitúa la IA
+    # en Fase 3 y en modo sombra. Con esto en False no se abre un socket, y la prosa
+    # la produce el proveedor determinista (que es el suelo, no un relleno).
+    #
+    # Encenderla exige LAS TRES: flag, clave resoluble y slug de modelo. El slug NO
+    # tiene default a propósito — un identificador de modelo hardcodeado caduca en
+    # silencio; se verifica contra `GET /api/v1/models` de OpenRouter el día que se
+    # encienda. El veredicto y todos los valores medidos siguen siendo deterministas
+    # con la capa encendida (regla de oro 1).
+    openrouter_enabled: bool = False
+    openrouter_model: str = ""
+    # Clave inline (dev) o secreto de Secrets Manager (producción), como command_hmac.
+    openrouter_api_key: str = ""
+    openrouter_secret_id: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Sin reintentos: 8 s ya es mucho dentro de un request que genera evidencia.
+    openrouter_timeout_s: float = 8.0
+
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
     # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).
     # email_from vacío ⇒ provider de email simulado; con valor ⇒ SES (sandbox

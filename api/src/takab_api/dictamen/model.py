@@ -188,6 +188,9 @@ class ReportModel:
     spectrum_peak_hz: float | None = None
     #: Por qué no hay onda cruda ni espectro, si es el caso.
     raw_unavailable_reason: str | None = None
+    #: `basis` del dictamen vigente (T-2.42): qué umbral, con qué valor, de qué versión
+    #: de reglas. Es lo que hace auditable el "por qué este veredicto" de la prosa.
+    verdict_basis: dict = field(default_factory=dict)
     #: Prosa opcional (T-2.42). El veredicto NO sale de aquí.
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None

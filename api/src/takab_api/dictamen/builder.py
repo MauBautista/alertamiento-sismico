@@ -104,6 +104,7 @@ async def build_model(
     if forensics is None:  # pragma: no cover - el SELECT de arriba ya lo cubriría
         return None
 
+    dictamen_rows = (await conn.execute(_DICTAMENS, {"id": incident_id})).all()
     dictamens = [
         DictamenRow(
             dictamen_id=str(r.dictamen_id),
@@ -113,9 +114,12 @@ async def build_model(
             rule_set_version=(r.basis or {}).get("rule_set_version", "sin versión"),
             supersedes=str(r.supersedes_dictamen_id) if r.supersedes_dictamen_id else None,
         )
-        for r in (await conn.execute(_DICTAMENS, {"id": incident_id})).all()
+        for r in dictamen_rows
     ]
     head = dictamens[0] if dictamens else None
+    # [T-2.42] El `basis` del dictamen vigente viaja al modelo para que la prosa pueda
+    # explicar QUÉ umbral lo determinó, con qué valor y de qué versión de reglas.
+    head_basis = dict(dictamen_rows[0].basis or {}) if dictamen_rows else {}
 
     actions = [
         ActionRow(ts=r.ts, kind=r.kind, actor=r.actor)
@@ -196,6 +200,7 @@ async def build_model(
         spectrum=spectrum,
         spectrum_peak_hz=peak_hz,
         raw_unavailable_reason=reason,
+        verdict_basis=head_basis,
     )
 
 

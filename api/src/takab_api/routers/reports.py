@@ -27,6 +27,7 @@ from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
 from takab_api.dictamen.builder import build_model
 from takab_api.dictamen.pdf import render
+from takab_api.narrative import apply_narrative, build_narrative
 from takab_api.queries import reports as q
 from takab_api.routers._common import http_error
 from takab_api.routers._s3 import PRESIGN_TTL_S, get_object, presign_get, put_object
@@ -87,6 +88,12 @@ async def generate_report(
     if model is None:  # pragma: no cover - el SELECT de arriba ya lo cubre
         raise http_error(404, "incidente no encontrado")
 
+    # [T-2.42] Prosa que RODEA al veredicto. `build_narrative` nunca lanza: si el
+    # proveedor falla, degrada al determinista y el PDF lo declara. El veredicto que
+    # el documento afirma ya está en `model` y esta llamada no lo toca.
+    narrative = await build_narrative(model, settings)
+    apply_narrative(model, narrative)
+
     pdf = render(model, variant)
     sha256 = hashlib.sha256(pdf).hexdigest()
     key = (
@@ -102,6 +109,17 @@ async def generate_report(
         sha256=sha256,
     )
     evidence_id = (await conn.execute(ev_stmt, ev_params)).scalar_one()
+    # Procedencia de la prosa. No hay tabla nueva: la narrativa queda congelada en el
+    # PDF —que ya es evidencia inmutable con sha256— y su procedencia va al log
+    # append-only, que por la regla de oro 11 no se poda nunca.
+    await audit_async(
+        conn,
+        tenant_id=incident["tenant_id"],
+        actor=f"user:{claims.sub}",
+        verb="narrative_generated",
+        obj=f"evidence:{evidence_id}",
+        meta=narrative.provenance(),
+    )
     await audit_async(
         conn,
         tenant_id=incident["tenant_id"],
