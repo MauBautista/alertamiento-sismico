@@ -2674,7 +2674,12 @@ export type GenerateReportIncidentsIncidentIdReportPostData = {
     path: {
         incident_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * technical | executive
+         */
+        variant?: string;
+    };
     url: '/incidents/{incident_id}/report';
 };
 

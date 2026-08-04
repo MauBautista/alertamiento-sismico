@@ -9185,7 +9185,7 @@
     },
     "/incidents/{incident_id}/report": {
       "post": {
-        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.",
+        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.",
         "operationId": "generate_report_incidents__incident_id__report_post",
         "parameters": [
           {
@@ -9195,6 +9195,18 @@
             "schema": {
               "format": "uuid",
               "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "technical | executive",
+            "in": "query",
+            "name": "variant",
+            "required": false,
+            "schema": {
+              "default": "technical",
+              "description": "technical | executive",
+              "title": "Variant",
               "type": "string"
             }
           }

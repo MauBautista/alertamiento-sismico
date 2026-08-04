@@ -37,6 +37,11 @@ _MODULE_TO_DIST: dict[str, str] = {
     "httpx": "httpx",
     "jsonschema": "jsonschema",
     "jwt": "pyjwt",
+    # [T-2.41] FFT del dictamen técnico (import perezoso en dictamen/builder.py).
+    # Se rechazó ObsPy —que sería la opción obvia para leer miniSEED— porque arrastra
+    # matplotlib+scipy+lxml a una imagen co-locada con la DB; el lector STEIM2 propio
+    # vive en dictamen/mseed.py y se valida contra vectores del ObsPy del edge.
+    "numpy": "numpy",
     "psycopg": "psycopg",
     "pydantic": "pydantic",
     "pydantic_settings": "pydantic-settings",

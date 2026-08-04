@@ -571,6 +571,14 @@ export const notifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPost = 
 /**
  * Generate Report
  * Genera el PDF del incidente y lo registra como evidencia inmutable.
+ *
+ * [T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de
+ * evidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK
+ * del DDL por una etiqueta no lo valdría.
+ *
+ * El gate de "sin dictamen no hay PDF" se retiró: un incidente sin dictamen YA tiene
+ * hechos que reportar —lo que midió el sensor, quién acusó, qué estaciones
+ * corroboraron— y el documento lo rotula como preliminar.
  */
 export const generateReportIncidentsIncidentIdReportPost = <ThrowOnError extends boolean = false>(options: Options<GenerateReportIncidentsIncidentIdReportPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<GenerateReportIncidentsIncidentIdReportPostResponse, GenerateReportIncidentsIncidentIdReportPostError, ThrowOnError>({

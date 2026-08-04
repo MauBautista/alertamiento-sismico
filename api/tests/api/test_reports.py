@@ -147,3 +147,81 @@ async def test_report_gov_operator_forbidden(client, make_incident, monkeypatch)
     tok = au.make_token("gov_operator", tenant=au.DB_TENANT_AGENCY)
     r = await client.post(f"/incidents/{iid}/report", headers=au.bearer(tok))
     assert r.status_code == 403
+
+
+# ---- las dos variantes (T-2.41) ----------------------------------------------
+
+
+def _token(role: str) -> dict[str, str]:
+    return au.bearer(au.make_token(role, tenant=au.DB_TENANT_PRIV))
+
+
+async def test_la_variante_ejecutiva_genera_su_propio_objeto(
+    client, make_incident, monkeypatch
+) -> None:
+    """Dos documentos del mismo modelo: la variante va en la key y en la auditoría,
+    no en un `kind` de evidencia nuevo (ampliar el CHECK del DDL por una etiqueta
+    no lo valdría)."""
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        resp = await client.post(
+            f"/incidents/{iid}/report?variant=executive", headers=_token("inspector")
+        )
+        assert resp.status_code == 201, resp.text
+
+    async with get_engine().connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT kind, s3_key FROM evidence_objects "
+                    "WHERE incident_id = CAST(:i AS uuid) ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"i": iid},
+            )
+        ).first()
+    assert row.kind == "report_pdf"
+    assert "-executive-" in row.s3_key
+
+
+async def test_una_variante_desconocida_es_422(client, make_incident, monkeypatch) -> None:
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        resp = await client.post(
+            f"/incidents/{iid}/report?variant=poster", headers=_token("inspector")
+        )
+    assert resp.status_code == 422
+
+
+async def test_la_auditoria_registra_variante_y_folio(client, make_incident, monkeypatch) -> None:
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        await client.post(f"/incidents/{iid}/report", headers=_token("inspector"))
+
+    async with get_engine().connect() as conn:
+        meta = await conn.scalar(
+            text(
+                "SELECT meta::text FROM audit_log WHERE verb = 'export_pdf' "
+                "ORDER BY audit_id DESC LIMIT 1"
+            )
+        )
+    assert "technical" in meta
+    assert "TKB-" in meta
+    assert "content_sha256" in meta
+
+
+async def test_un_incidente_SIN_dictamen_ya_tiene_pdf(client, make_incident, monkeypatch) -> None:
+    """El gate "sin dictamen no hay PDF" se retiró: el incidente ya tiene hechos que
+    reportar —lo medido, quién acusó, qué estaciones corroboraron— y el documento lo
+    rotula como preliminar."""
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        resp = await client.post(f"/incidents/{iid}/report", headers=_token("inspector"))
+    assert resp.status_code == 201, resp.text

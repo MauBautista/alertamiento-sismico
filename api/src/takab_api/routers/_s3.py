@@ -76,3 +76,15 @@ def put_object(settings: Settings, s3_key: str, body: bytes, *, content_type: st
     s3_client(settings).put_object(
         Bucket=settings.evidence_bucket, Key=s3_key, Body=body, ContentType=content_type
     )
+
+
+def get_object(settings: Settings, s3_key: str) -> bytes:
+    """Descarga un objeto de evidencia (T-2.41: el miniSEED del dictamen técnico).
+
+    Lectura DIRECTA y no presignada porque el consumidor es el propio servidor, no un
+    navegador. Quien llama debe tratar cualquier excepción como "sección no
+    disponible": la exportación de una evidencia de compliance no puede caerse porque
+    S3 tarde o el objeto haya cambiado de sitio.
+    """
+    resp = s3_client(settings).get_object(Bucket=settings.evidence_bucket, Key=s3_key)
+    return resp["Body"].read()
