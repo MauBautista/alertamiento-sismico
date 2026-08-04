@@ -3542,3 +3542,47 @@ redespliegue al final (T-2.57).
   - [x] **Pendiente de infra (T-2.57):** `TAKAB_API_COGNITO_USER_POOL_ID` en
         `deploy.sh` y permisos `cognito-idp:Admin*` en el rol de instancia. Sin ambos
         arranca SIMULADO.
+
+### Bloque E · Transversal y cierre
+
+### [x] T-2.55 · Degradación responsive, colisiones e invariantes de CSS — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.54
+- **Origen:** CERO media queries en toda la hoja, y tres overlays cayendo en la misma
+  esquina del escenario.
+- **Criterios:**
+  - [x] 1920×1080 **no mueve un píxel**. Los breakpoints son DEGRADACIÓN: <1600 columnas
+        más estrechas, <1280 una columna con el detalle como cajón, `max-height:800px`
+        recorta paddings.
+  - [x] Trampa documentada en la hoja: las custom properties **no funcionan dentro de
+        `@media`**. Los tokens sirven al lado JS; las media queries llevan el px literal
+        citando el token como fuente.
+  - [x] Colisiones **por reubicación, no por z-index**: cada esquina tiene dueño y las
+        dos pilas superiores se acotan al 46 % ⇒ la no-superposición es aritmética.
+        Desviación deliberada: la alerta NO va dentro de MapPanel — desaparecería cada
+        vez que el mapa falla, y es el elemento más crítico de la consola.
+  - [x] `cssContract.test.ts` falla si un `className` usado no tiene regla. Al escribirlo
+        aparecieron **siete bloques sin una sola regla**; todos arreglados escribiendo la
+        regla, no relajando el test.
+  - [x] **Hallazgo mayor:** `.soc-alert__grid/__num/__lbl` era el estilo de MAGNITUD
+        PRELIMINAR y T-MINUS, funciones que `CLAUDE.md §8` PROHÍBE. Dejarlo vivo invitaba
+        a recablearlas «porque el estilo ya existe». Eliminado.
+  - [x] Guard de sanidad: un `/*` sin cerrar borra el bloque siguiente EN SILENCIO.
+        Verificado por mutación, igual que el propio contrato.
+  - [x] `StateFrame` completado donde faltaba; fuga `--soc-*` (prefijo inexistente, todas
+        sus reglas caían al fallback) cerrada.
+
+### [x] T-2.56 · Playwright con matriz de viewports — COMPLETA (2026-08-04)
+- **Componente:** web + CI · **Depende de:** T-2.55
+- **Origen:** ningún `project`, un solo viewport en un solo test y cero a11y automatizada.
+- **Criterios:**
+  - [x] 1280×800 / 1440×900 / 1920×1080. Specs de layout, alcance, simulacro, movimiento
+        reducido y axe. 84 pruebas colectadas.
+  - [x] Umbral de axe honesto: arranca en `critical` y ADJUNTA el resto con recuento.
+        «Cero violaciones» el primer día produce un job rojo permanente que nadie mira, o
+        un `disableRules` que lo vacía.
+  - [x] Job `workflow_dispatch` **no bloqueante**.
+  - [x] Trampa documentada: en Playwright 1.61 `reducedMotion` va en `contextOptions`.
+        Escrito como opción de primer nivel **no falla**: se ignora, y el spec pasaría en
+        verde sin emular nada. Solo `tsc` lo caza.
+  - [ ] **Ejecución pendiente del deploy**: `make soc-local` invoca `make demo-db`, que
+        RESIEMBRA la DB local. Los specs quedan escritos y colectados; se corren después.
