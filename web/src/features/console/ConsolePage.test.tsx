@@ -47,12 +47,20 @@ vi.mock("./useSiteFeatures", () => ({ useSiteFeatures: mocks.useSiteFeatures }))
 vi.mock("./useIncidentActions", () => ({ useIncidentActions: mocks.useIncidentActions }));
 vi.mock("./useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
 // T-1.60: el banner del drill usa react-query + SDK — stub inerte aquí.
+// [T-2.48] El stub declara el contrato COMPLETO a propósito: con `readError`
+// ausente (`undefined`) el banner leería "no sé si hay simulacro" y el estado
+// del stub dejaría de ser inerte.
 vi.mock("./useActiveDrill", () => ({
   useActiveDrill: () => ({
     drill: null,
+    scheduled: [],
     loading: false,
+    readError: null,
+    updatedAt: 0,
+    refetch: () => undefined,
     start: () => undefined,
     stop: () => undefined,
+    cancel: () => undefined,
     pending: false,
     error: null,
   }),
@@ -182,6 +190,7 @@ describe("ConsolePage", () => {
           manage_tenants: false,
           manage_visibility: false,
           manage_retire_code: false,
+          manage_users: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
           panel_read: false,
           checkin_submit: false,
@@ -254,6 +263,41 @@ describe("ConsolePage", () => {
   });
 });
 
+// ---- T-2.50: estadísticas del wall ----------------------------------------
+describe("ConsolePage · KPIs y filtro (T-2.50)", () => {
+  const CAIDA: MapSiteState = { ...SITE, site_id: "s-down", link_state: "SIN ENLACE" };
+  const VIVA: MapSiteState = { ...SITE, site_id: "s-up", link_state: "OPERATIVO" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStoreForTests();
+    useSessionStore.setState({ status: "authenticated", idToken: "tok" });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [] }));
+    mocks.useMapState.mockReturnValue(mapData({ sites: [VIVA, CAIDA] }));
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+  });
+
+  it("la tira de KPIs cuenta sobre el TOTAL y declara cuántas se muestran", () => {
+    render(page());
+    expect(screen.getByTestId("kpi-strip")).toBeInTheDocument();
+    expect(screen.getByTestId("kpi-showing")).toHaveTextContent("MOSTRANDO 2 DE 2");
+  });
+
+  it("OCULTAR SIN ENLACE quita la estación del MAPA pero NO del semáforo", () => {
+    render(page());
+    const sitesOf = (call: number): MapSiteState[] =>
+      (mocks.MapPanel.mock.calls[call][0] as unknown as { sites: MapSiteState[] }).sites;
+    expect(sitesOf(0).map((s) => s.site_id)).toEqual(["s-up", "s-down"]);
+
+    fireEvent.click(screen.getByTestId("hide-no-link"));
+    const last = mocks.MapPanel.mock.calls.length - 1;
+    expect(sitesOf(last).map((s) => s.site_id)).toEqual(["s-up"]);
+    // El semáforo sigue contando las dos: el filtro no puede esconder el problema.
+    expect(screen.getByTestId("kpi-showing")).toHaveTextContent("MOSTRANDO 1 DE 2");
+  });
+});
+
 describe("contrato DOM del layout del wall (T-1.50)", () => {
   it("el StateFrame del wall lleva .soc-wall — sin ella .soc-stage colapsa a 0 y el mapa desaparece", () => {
     resetSessionStoreForTests();
@@ -302,6 +346,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           manage_tenants: false,
           manage_visibility: false,
           manage_retire_code: false,
+          manage_users: false,
           // Acciones de la superficie móvil (T-2.03): inertes en la consola.
           panel_read: false,
           checkin_submit: false,

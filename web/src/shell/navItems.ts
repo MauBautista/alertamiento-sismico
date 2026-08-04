@@ -1,4 +1,4 @@
-import { FileSearch, Radar, Server, Shield } from "lucide-react";
+import { FileSearch, Radar, ScrollText, Server, Shield } from "lucide-react";
 
 export interface NavTab {
   path: string;
@@ -14,6 +14,8 @@ const NAV_PRESENTATION: ReadonlyMap<string, Omit<NavTab, "path">> = new Map([
   ["/fleet", { label: "FLOTA EDGE", icon: Server }],
   ["/triage", { label: "EVALUACIÓN", icon: FileSearch }],
   ["/tenants", { label: "MULTI-TENANT", icon: Shield }],
+  // [T-2.52] `GET /audit` existía desde T-1.57 sin pantalla que lo consumiera.
+  ["/audit", { label: "AUDITORÍA", icon: ScrollText }],
 ]);
 
 export function navTabsFor(allowedRoutes: readonly string[]): NavTab[] {

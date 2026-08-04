@@ -26,6 +26,7 @@ function tenant(id: string, name: string): TenantOut {
     visibility: "private",
     status: "active",
     plan_code: "mvp",
+    row_version: "774100",
     created_at: "2026-01-01T00:00:00Z",
   };
 }

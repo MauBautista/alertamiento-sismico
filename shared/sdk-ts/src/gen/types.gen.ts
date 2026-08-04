@@ -338,6 +338,7 @@ export type DirectoryEntryOut = {
  */
 export type DrillCreateIn = {
     duration_s?: number;
+    from_scheduled?: string | null;
     note?: string | null;
     scheduled_at?: string | null;
     site_ids?: Array<string> | null;
@@ -345,6 +346,7 @@ export type DrillCreateIn = {
 
 export type DrillList = {
     items: Array<DrillOut>;
+    next_cursor?: string | null;
 };
 
 export type DrillOut = {
@@ -370,6 +372,7 @@ export type DrillSiteOut = {
     } | null;
     command_id: string | null;
     command_status: string | null;
+    commandable?: boolean;
     site_id: string;
     site_name: string | null;
 };
@@ -912,12 +915,17 @@ export type MapSiteState = {
     felt_pga_g: number | null;
     felt_pgv_cms: number | null;
     last_bucket: string | null;
+    last_heartbeat_ts?: string | null;
     lat: number;
+    link_reasons?: Array<string>;
+    link_state?: string;
     lon: number;
     max_pga_g: number | null;
     max_pgv_cms: number | null;
+    mqtt_rtt_ms?: number | null;
     name: string;
     open_incident: MapIncident | null;
+    seedlink_lag_s?: number | null;
     site_id: string;
     tenant_id: string;
 };
@@ -950,6 +958,7 @@ export type MeActions = {
     manage_fleet: boolean;
     manage_retire_code: boolean;
     manage_tenants: boolean;
+    manage_users: boolean;
     manage_visibility: boolean;
     manual_activate: boolean;
     panel_read: boolean;
@@ -1625,10 +1634,92 @@ export type TenantOut = {
     isolation_mode: string;
     name: string;
     plan_code: string;
+    row_version: string;
     status: string;
     tenant_id: string;
     vertical?: string | null;
     visibility: string;
+};
+
+/**
+ * Edición PARCIAL de un cliente (T-2.51). Solo ``takab_superadmin``.
+ *
+ * Es un PATCH, no un PUT: la pantalla Multi-Tenant edita una ficha campo a campo y
+ * un reemplazo total obligaría a reenviar valores que el operador no tocó (y a
+ * pisarlos si otro admin los cambió mientras el formulario estaba abierto).
+ *
+ * ``code`` NO es editable: es la llave que TAKAB entrega fuera de banda y que
+ * aparece en runbooks, tickets y en el ``edge.env`` de los gabinetes. ``tenant_id``
+ * tampoco (``extra='forbid'`` los rechaza con 422). ``isolation_mode`` queda fuera
+ * a propósito: pasar de ``logical`` a ``dedicated`` es una migración de datos, no
+ * una casilla — anunciarlo aquí prometería un aislamiento que nadie ejecutó.
+ */
+export type TenantUpdate = {
+    base_row_version?: string | null;
+    name?: string | null;
+    plan_code?: string | null;
+    status?: ('trial' | 'active' | 'suspended') | null;
+    vertical?: string | null;
+    visibility?: ('private' | 'gov_shared') | null;
+};
+
+/**
+ * Acuse de reset/reenvío. NO trae contraseña ni código: el correo lo lleva.
+ */
+export type UserActionOut = {
+    action: 'password_reset' | 'invitation_resent';
+    /**
+     * Qué pasó, en lenguaje de operador. Jamás una credencial.
+     */
+    detail: string;
+    username: string;
+};
+
+/**
+ * Alta de usuario. La contraseña la genera Cognito y viaja por correo.
+ */
+export type UserCreate = {
+    email: string;
+    role: string;
+    site_scope?: string;
+    surface?: 'web' | 'mobile' | 'both';
+    tenant_id?: string | null;
+    zone_id?: string;
+};
+
+/**
+ * Usuario del directorio. Sin credenciales, por construcción.
+ */
+export type UserOut = {
+    created_at?: string | null;
+    email: string;
+    enabled: boolean;
+    role: string;
+    site_scope: string;
+    status: string;
+    surface: string;
+    tenant_id: string;
+    updated_at?: string | null;
+    username: string;
+    zone_id: string;
+};
+
+export type UserPage = {
+    backend: string;
+    items: Array<UserOut>;
+    next_cursor?: string | null;
+};
+
+/**
+ * Edición PARCIAL. ``email`` no se toca: es el identificador de acceso y
+ * cambiarlo desde aquí rompería el vínculo con la invitación ya enviada.
+ */
+export type UserUpdate = {
+    enabled?: boolean | null;
+    role?: string | null;
+    site_scope?: string | null;
+    surface?: ('web' | 'mobile' | 'both') | null;
+    zone_id?: string | null;
 };
 
 export type ValidationError = {
@@ -1729,9 +1820,22 @@ export type ListReferenceEarthquakesCatalogEarthquakesGetResponse = ListReferenc
 export type ListDrillsDrillsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        kind?: 'all' | 'executed' | 'scheduled';
+        cursor?: string | null;
+        limit?: number | null;
+    };
     url: '/drills';
 };
+
+export type ListDrillsDrillsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDrillsDrillsGetError = ListDrillsDrillsGetErrors[keyof ListDrillsDrillsGetErrors];
 
 export type ListDrillsDrillsGetResponses = {
     /**
@@ -1782,6 +1886,33 @@ export type ActiveDrillDrillsActiveGetResponses = {
 };
 
 export type ActiveDrillDrillsActiveGetResponse = ActiveDrillDrillsActiveGetResponses[keyof ActiveDrillDrillsActiveGetResponses];
+
+export type CancelDrillDrillsDrillIdCancelPostData = {
+    body?: never;
+    path: {
+        drill_id: string;
+    };
+    query?: never;
+    url: '/drills/{drill_id}/cancel';
+};
+
+export type CancelDrillDrillsDrillIdCancelPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelDrillDrillsDrillIdCancelPostError = CancelDrillDrillsDrillIdCancelPostErrors[keyof CancelDrillDrillsDrillIdCancelPostErrors];
+
+export type CancelDrillDrillsDrillIdCancelPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillOut;
+};
+
+export type CancelDrillDrillsDrillIdCancelPostResponse = CancelDrillDrillsDrillIdCancelPostResponses[keyof CancelDrillDrillsDrillIdCancelPostResponses];
 
 export type StopDrillDrillsDrillIdStopPostData = {
     body?: never;
@@ -3729,6 +3860,33 @@ export type CreateTenantTenantsPostResponses = {
 
 export type CreateTenantTenantsPostResponse = CreateTenantTenantsPostResponses[keyof CreateTenantTenantsPostResponses];
 
+export type UpdateTenantTenantsTenantIdPatchData = {
+    body: TenantUpdate;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}';
+};
+
+export type UpdateTenantTenantsTenantIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateTenantTenantsTenantIdPatchError = UpdateTenantTenantsTenantIdPatchErrors[keyof UpdateTenantTenantsTenantIdPatchErrors];
+
+export type UpdateTenantTenantsTenantIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: TenantOut;
+};
+
+export type UpdateTenantTenantsTenantIdPatchResponse = UpdateTenantTenantsTenantIdPatchResponses[keyof UpdateTenantTenantsTenantIdPatchResponses];
+
 export type GetRetireCodeStateTenantsTenantIdRetireCodeGetData = {
     body?: never;
     path: {
@@ -3782,6 +3940,167 @@ export type PutRetireCodeTenantsTenantIdRetireCodePutResponses = {
 };
 
 export type PutRetireCodeTenantsTenantIdRetireCodePutResponse = PutRetireCodeTenantsTenantIdRetireCodePutResponses[keyof PutRetireCodeTenantsTenantIdRetireCodePutResponses];
+
+export type ListUsersUsersGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number | null;
+        cursor?: string | null;
+    };
+    url: '/users';
+};
+
+export type ListUsersUsersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListUsersUsersGetError = ListUsersUsersGetErrors[keyof ListUsersUsersGetErrors];
+
+export type ListUsersUsersGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserPage;
+};
+
+export type ListUsersUsersGetResponse = ListUsersUsersGetResponses[keyof ListUsersUsersGetResponses];
+
+export type CreateUserUsersPostData = {
+    body: UserCreate;
+    path?: never;
+    query?: never;
+    url: '/users';
+};
+
+export type CreateUserUsersPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateUserUsersPostError = CreateUserUsersPostErrors[keyof CreateUserUsersPostErrors];
+
+export type CreateUserUsersPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: UserOut;
+};
+
+export type CreateUserUsersPostResponse = CreateUserUsersPostResponses[keyof CreateUserUsersPostResponses];
+
+export type DeleteUserUsersUsernameDeleteData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}';
+};
+
+export type DeleteUserUsersUsernameDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteUserUsersUsernameDeleteError = DeleteUserUsersUsernameDeleteErrors[keyof DeleteUserUsersUsernameDeleteErrors];
+
+export type DeleteUserUsersUsernameDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteUserUsersUsernameDeleteResponse = DeleteUserUsersUsernameDeleteResponses[keyof DeleteUserUsersUsernameDeleteResponses];
+
+export type UpdateUserUsersUsernamePatchData = {
+    body: UserUpdate;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}';
+};
+
+export type UpdateUserUsersUsernamePatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateUserUsersUsernamePatchError = UpdateUserUsersUsernamePatchErrors[keyof UpdateUserUsersUsernamePatchErrors];
+
+export type UpdateUserUsersUsernamePatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserOut;
+};
+
+export type UpdateUserUsersUsernamePatchResponse = UpdateUserUsersUsernamePatchResponses[keyof UpdateUserUsersUsernamePatchResponses];
+
+export type ResendInvitationUsersUsernameResendInvitationPostData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}/resend-invitation';
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostError = ResendInvitationUsersUsernameResendInvitationPostErrors[keyof ResendInvitationUsersUsernameResendInvitationPostErrors];
+
+export type ResendInvitationUsersUsernameResendInvitationPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserActionOut;
+};
+
+export type ResendInvitationUsersUsernameResendInvitationPostResponse = ResendInvitationUsersUsernameResendInvitationPostResponses[keyof ResendInvitationUsersUsernameResendInvitationPostResponses];
+
+export type ResetPasswordUsersUsernameResetPasswordPostData = {
+    body?: never;
+    path: {
+        username: string;
+    };
+    query?: never;
+    url: '/users/{username}/reset-password';
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostError = ResetPasswordUsersUsernameResetPasswordPostErrors[keyof ResetPasswordUsersUsernameResetPasswordPostErrors];
+
+export type ResetPasswordUsersUsernameResetPasswordPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserActionOut;
+};
+
+export type ResetPasswordUsersUsernameResetPasswordPostResponse = ResetPasswordUsersUsernameResetPasswordPostResponses[keyof ResetPasswordUsersUsernameResetPasswordPostResponses];
 
 export type ListVisibilityGrantsVisibilityGrantsGetData = {
     body?: never;

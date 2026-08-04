@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   getRetireCodeStateTenantsTenantIdRetireCodeGet: vi.fn(),
   createGatewayFleetGatewaysPost: vi.fn(),
   createSensorSensorsPost: vi.fn(),
+  listEnrollmentCodesSitesSiteIdEnrollmentCodesGet: vi.fn(),
+  createEnrollmentCodeSitesSiteIdEnrollmentCodesPost: vi.fn(),
+  deactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDelete: vi.fn(),
 }));
 
 vi.mock("@takab/sdk", () => mocks);
@@ -357,5 +360,58 @@ describe("FleetAdmin", () => {
     renderAdmin();
     expect(await screen.findByText("SIN ESTACIONES · CREA LA PRIMERA")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "NUEVA ESTACIÓN" })).toBeInTheDocument();
+  });
+});
+
+describe("FleetAdmin · códigos de alta por estación (T-2.53)", () => {
+  beforeEach(() => {
+    resetSessionStoreForTests();
+    vi.clearAllMocks();
+    mocks.listSitesSitesGet.mockResolvedValue({ data: [SITE], response: { status: 200 } });
+    mocks.listGatewaysFleetGatewaysGet.mockResolvedValue({ data: [], response: { status: 200 } });
+    mocks.listRuleSetsRuleSetsGet.mockResolvedValue({
+      data: { items: [] },
+      response: { status: 200 },
+    });
+    mocks.getRetireCodeStateTenantsTenantIdRetireCodeGet.mockResolvedValue({
+      data: { tenant_id: "t-1", configured: true, version: 1, rotated_at: null },
+      response: { status: 200 },
+    });
+    mocks.listEnrollmentCodesSitesSiteIdEnrollmentCodesGet.mockResolvedValue({
+      data: [],
+      response: { status: 200 },
+    });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+  });
+
+  it("con enrollment_manage aparece el botón CÓDIGOS en cada estación", async () => {
+    renderAdmin();
+    const row = await screen.findByTestId("site-row-CHL-A");
+    expect(within(row).getByRole("button", { name: "CÓDIGOS" })).toBeInTheDocument();
+  });
+
+  it("abre la tarjeta de la estación y vuelve sin perder el listado", async () => {
+    renderAdmin();
+    const row = await screen.findByTestId("site-row-CHL-A");
+    fireEvent.click(within(row).getByRole("button", { name: "CÓDIGOS" }));
+    expect(await screen.findByTestId("enrollment-codes")).toBeInTheDocument();
+    expect(screen.getByText(/Planta Cholula/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "VOLVER" }));
+    expect(await screen.findByTestId("site-row-CHL-A")).toBeInTheDocument();
+  });
+
+  it("sin enrollment_manage el botón no se pinta (gate propio, no heredado)", async () => {
+    // `manage_fleet` y `enrollment_manage` coinciden hoy en los roles web, pero el
+    // control cuelga de SU acción: derivarlo de la otra sería una coincidencia.
+    useSessionStore.setState({
+      me: {
+        ...ME_FIXTURES.tenant_admin,
+        allowed_actions: { ...ME_FIXTURES.tenant_admin.allowed_actions, enrollment_manage: false },
+      },
+    });
+    renderAdmin();
+    const row = await screen.findByTestId("site-row-CHL-A");
+    expect(within(row).queryByRole("button", { name: "CÓDIGOS" })).toBeNull();
   });
 });

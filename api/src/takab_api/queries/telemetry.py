@@ -124,6 +124,15 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        li.felt_pga_g   AS inc_pga_g,
        li.felt_pgv_cms AS inc_pgv_cms,
        cal.calibrated AS calibrated,
+       lk.gateway_id       AS link_gateway_id,
+       lk.health_ts        AS link_health_ts,
+       lk.age_s            AS link_age_s,
+       lk.power_status     AS link_power_status,
+       lk.battery_pct      AS link_battery_pct,
+       lk.cert_days_remaining AS link_cert_days_remaining,
+       lk.mqtt_rtt_ms      AS link_mqtt_rtt_ms,
+       lk.seedlink_lag_s   AS link_seedlink_lag_s,
+       lk.ntp_offset_ms    AS link_ntp_offset_ms,
        th.pga_watch_g   AS pga_watch_g,
        th.pga_trip_g    AS pga_trip_g,
        th.pgv_watch_cms AS pgv_watch_cms,
@@ -175,6 +184,42 @@ LEFT JOIN LATERAL (
     FROM sensors sn
     WHERE sn.site_id = s.site_id AND sn.status = 'active'
 ) cal ON true
+LEFT JOIN LATERAL (
+    -- [T-2.46] Enlace del gabinete de la estación. Mismo patrón que el `_LIST` de
+    -- queries/fleet.py: el último `device_health` por gateway y la EDAD calculada
+    -- con el `now()` de la transacción (no con el reloj de la app, que puede ir a
+    -- la deriva respecto de la DB). La derivación del estado NO vive aquí: la hace
+    -- `derive_fleet_state` con estas mismas columnas, para que el mapa y la flota
+    -- no puedan contar historias distintas del mismo gabinete.
+    --
+    -- El `retired` se excluye: un gabinete dado de baja ya no es hardware de la
+    -- estación, así que la estación queda SIN GABINETE, no con un enlace muerto.
+    --
+    -- Con varios gabinetes por sitio (hoy no ocurre, el schema no lo prohíbe) gana
+    -- el del latido MÁS FRESCO: es el que responde por el enlace de la estación.
+    -- El diagnóstico gabinete a gabinete es la pantalla de Flota, no el mapa.
+    SELECT g.gateway_id,
+           h.ts AS health_ts,
+           h.power_status,
+           h.battery_pct::float8    AS battery_pct,
+           h.cert_days_remaining,
+           h.mqtt_rtt_ms::float8    AS mqtt_rtt_ms,
+           h.seedlink_lag_s::float8 AS seedlink_lag_s,
+           h.ntp_offset_ms::float8  AS ntp_offset_ms,
+           EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
+    FROM gateways g
+    LEFT JOIN LATERAL (
+        SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
+               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
+        FROM device_health dh
+        WHERE dh.gateway_id = g.gateway_id
+        ORDER BY dh.ts DESC
+        LIMIT 1
+    ) h ON true
+    WHERE g.site_id = s.site_id AND g.status <> 'retired'
+    ORDER BY h.ts DESC NULLS LAST, g.gateway_id
+    LIMIT 1
+) lk ON true
 LEFT JOIN LATERAL (
     -- Los MISMOS umbrales que arman los actuadores en el edge: el color del mapa
     -- y la decisión de disparo tienen que contar la misma historia. Scope de

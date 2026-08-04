@@ -168,3 +168,134 @@ async def test_create_bad_isolation_mode_is_422(seed: None) -> None:
         {"code": "B1TEN_Z", "name": "z", "isolation_mode": "quantum"},
     )
     assert resp.status_code == 422
+
+
+# --- Edición de clientes (T-2.51): PATCH /tenants/{id} ------------------------
+
+
+async def _patch(token: str, tenant_id: str, body: dict):
+    async with au.client_for(_app()) as c:
+        return await c.patch(f"/tenants/{tenant_id}", headers=au.bearer(token), json=body)
+
+
+async def _row_version(token: str, tenant_id: str) -> str:
+    resp = await _get(token)
+    return next(t for t in resp.json() if t["tenant_id"] == tenant_id)["row_version"]
+
+
+async def _audit_verbs(tenant_id: str) -> list[str]:
+    async with get_engine().begin() as conn:
+        rows = (
+            await conn.execute(
+                text("SELECT verb FROM audit_log WHERE tenant_id = CAST(:t AS uuid) ORDER BY ts"),
+                {"t": tenant_id},
+            )
+        ).all()
+    return [r.verb for r in rows]
+
+
+async def test_list_exposes_row_version(seed: None) -> None:
+    """Sin testigo de concurrencia la consola no puede editar sin pisar a otro."""
+    resp = await _get(au.make_token("takab_superadmin", tenant=T_A))
+    assert all(t["row_version"] for t in resp.json())
+
+
+async def test_superadmin_patches_name_and_vertical(seed: None) -> None:
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    rv = await _row_version(token, T_A)
+    resp = await _patch(token, T_A, {"name": "Hospital Central", "vertical": "salud"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "Hospital Central"
+    assert body["vertical"] == "salud"
+    # El código NO es editable: es la llave que TAKAB entrega y referencia fuera de banda.
+    assert body["code"] == "B1TEN_A"
+    assert body["row_version"] != rv
+    assert "tenant_update" in await _audit_verbs(T_A)
+
+
+async def test_patch_only_touches_the_fields_sent(seed: None) -> None:
+    """PATCH parcial: mandar `plan_code` no debe blanquear `vertical` ni `name`."""
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    await _patch(token, T_A, {"vertical": "salud", "name": "Hospital Central"})
+    resp = await _patch(token, T_A, {"plan_code": "pro"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["plan_code"] == "pro"
+    assert body["vertical"] == "salud"
+    assert body["name"] == "Hospital Central"
+
+
+async def test_patch_can_clear_nullable_vertical(seed: None) -> None:
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    await _patch(token, T_A, {"vertical": "salud"})
+    resp = await _patch(token, T_A, {"vertical": None})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["vertical"] is None
+
+
+async def test_patch_visibility_to_gov_shared_is_audited(seed: None) -> None:
+    """Abrir un cliente a gobierno amplía QUIÉN lee sus datos: queda en la bitácora."""
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    resp = await _patch(token, T_A, {"visibility": "gov_shared"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["visibility"] == "gov_shared"
+    async with get_engine().begin() as conn:
+        meta = (
+            await conn.execute(
+                text(
+                    "SELECT meta FROM audit_log WHERE tenant_id = CAST(:t AS uuid) "
+                    "AND verb = 'tenant_update' ORDER BY ts DESC LIMIT 1"
+                ),
+                {"t": T_A},
+            )
+        ).scalar_one()
+    assert meta["changed"] == ["visibility"]
+    assert meta["visibility"] == "gov_shared"
+
+
+async def test_patch_with_stale_row_version_is_409(seed: None) -> None:
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    stale = await _row_version(token, T_A)
+    assert (await _patch(token, T_A, {"name": "primero"})).status_code == 200
+    resp = await _patch(token, T_A, {"name": "segundo", "base_row_version": stale})
+    assert resp.status_code == 409
+    # Y el nombre del primer escritor sigue en pie: nadie pisó nada en silencio.
+    resp = await _get(token)
+    assert next(t for t in resp.json() if t["tenant_id"] == T_A)["name"] == "primero"
+
+
+async def test_patch_with_current_row_version_succeeds(seed: None) -> None:
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    rv = await _row_version(token, T_A)
+    resp = await _patch(token, T_A, {"name": "con testigo", "base_row_version": rv})
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("role", ["tenant_admin", "takab_support"])
+async def test_non_superadmin_cannot_patch_tenant(seed: None, role: str) -> None:
+    """La RLS ``tenants_admin`` ya lo exige; la matriz evita pintar el control."""
+    resp = await _patch(au.make_token(role, tenant=T_A), T_A, {"name": "ajeno"})
+    assert resp.status_code == 403
+
+
+async def test_patch_unknown_tenant_is_404(seed: None) -> None:
+    resp = await _patch(
+        au.make_token("takab_superadmin", tenant=T_A),
+        "00000000-0000-0000-0000-0000000000ff",
+        {"name": "fantasma"},
+    )
+    assert resp.status_code == 404
+
+
+async def test_patch_empty_body_is_422(seed: None) -> None:
+    """Un PATCH sin campos no es un no-op silencioso: es una llamada mal formada."""
+    resp = await _patch(au.make_token("takab_superadmin", tenant=T_A), T_A, {})
+    assert resp.status_code == 422
+
+
+async def test_patch_rejects_unknown_and_immutable_fields(seed: None) -> None:
+    token = au.make_token("takab_superadmin", tenant=T_A)
+    assert (await _patch(token, T_A, {"code": "OTRO"})).status_code == 422
+    assert (await _patch(token, T_A, {"tenant_id": T_B})).status_code == 422
+    assert (await _patch(token, T_A, {"status": "quantum"})).status_code == 422

@@ -24,7 +24,10 @@ import DetailPanel from "./DetailPanel";
 import EpicenterModal from "./EpicenterModal";
 import DrillBanner from "./DrillBanner";
 import IncidentTable from "./IncidentTable";
+import KpiStrip from "./KpiStrip";
 import MapPanel from "./MapPanel";
+import { isLinkDown, siteLink } from "./link";
+import { consoleKpis } from "./stats";
 import { useAutoPopup } from "./useAutoPopup";
 import { useDictamenRequest } from "./useDictamenRequest";
 import { useIncidentActions } from "./useIncidentActions";
@@ -91,6 +94,27 @@ function ConsoleWall() {
     [openDetail],
   );
   useAutoPopup(focusSiteId, features.points, openDetail);
+
+  // [T-2.50] Filtro explícito del wall. Las estaciones ocultas SIGUEN contando en
+  // los KPIs: si el filtro las quitara también del semáforo, el operador podría
+  // esconder sin darse cuenta justo el problema que tiene que atender.
+  const [hideNoLink, setHideNoLink] = useState(false);
+  const [viewportIds, setViewportIds] = useState<string[] | null>(null);
+  const mapSites = useMemo(
+    () => (hideNoLink ? map.sites.filter((s) => !isLinkDown(siteLink(s))) : map.sites),
+    [map.sites, hideNoLink],
+  );
+  const kpis = useMemo(
+    () => consoleKpis(map.sites, incidents.incidents),
+    [map.sites, incidents.incidents],
+  );
+  // Antes de que el mapa reporte su viewport, "mostrando" son las que se dibujan:
+  // no se inventa un recorte que el operador todavía no ha hecho.
+  const shownCount = useMemo(() => {
+    if (viewportIds === null) return mapSites.length;
+    const visible = new Set(viewportIds);
+    return mapSites.filter((s) => visible.has(s.site_id)).length;
+  }, [mapSites, viewportIds]);
 
   const siteById = useMemo(() => new Map(map.sites.map((s) => [s.site_id, s])), [map.sites]);
   const siteInfoOf = useCallback(
@@ -167,15 +191,22 @@ function ConsoleWall() {
           emptyText="SIN SITIOS VISIBLES EN EL TENANT"
           staleSince={staleSince}
         >
+          <KpiStrip
+            kpis={kpis}
+            shown={shownCount}
+            hideNoLink={hideNoLink}
+            onToggleHideNoLink={() => setHideNoLink((v) => !v)}
+          />
           <div className="soc-stage">
             <MapPanel
-              sites={map.sites}
+              sites={mapSites}
               epicenters={map.epicenters}
               onSelectSite={onMapSiteClick}
               catalog={catalog.items}
               catalogError={catalog.error !== null}
               selectedCatalogId={catalogSel}
               onSelectCatalog={setCatalogSel}
+              onViewportChange={setViewportIds}
             />
             <AlertBanner
               incident={critical}
@@ -185,6 +216,8 @@ function ConsoleWall() {
           <IncidentTable
             incidents={incidents.incidents}
             siteInfoOf={siteInfoOf}
+            sites={map.sites}
+            epicenter={map.epicenters[0] ?? null}
             nowMs={now}
             liveStatus={incidents.liveStatus}
             operatorLabel={
@@ -251,6 +284,21 @@ function ConsoleWall() {
           incident={focusIncident}
           relays={relays}
           quorumCommanded={quorumCommanded}
+          // [T-2.46] El enlace sale del MISMO snapshot que pinta el mapa: una
+          // segunda consulta podría contar otra historia sobre el mismo gabinete.
+          link={{
+            // Sin el sitio en el snapshot NO se deriva nada: `null` es "no lo sé",
+            // y la card lo pinta como empty en vez de afirmar un enlace.
+            state: focusSite ? siteLink(focusSite) : null,
+            reasons: focusSite?.link_reasons ?? [],
+            lastHeartbeatTs: focusSite?.last_heartbeat_ts ?? null,
+            mqttRttMs: focusSite?.mqtt_rtt_ms ?? null,
+            seedlinkLagS: focusSite?.seedlink_lag_s ?? null,
+            loading: map.loading,
+            error: map.error,
+            staleSince,
+            refetch: map.refetch,
+          }}
           nowMs={now}
           onClose={() => setDetailOpen(false)}
         />

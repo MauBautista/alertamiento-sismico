@@ -1665,3 +1665,574 @@
   .inspection__row { grid-template-columns: 10px minmax(0, 1fr) auto; }
   .inspection__level { grid-column: 2 / -1; }
 }
+
+/* =====================================================================
+   [T-2.51] CLIPPING DEL MULTI-TENANT — bug de accesibilidad real
+   =====================================================================
+   `body { overflow: hidden }` (soc.css) hace que NADA sea alcanzable fuera
+   de la primera pantalla si un contenedor no declara su propio scroll.
+   `.mt__detail` sí lo declaraba; `.mt__list` NO. Con ~15 clientes los
+   últimos quedaban físicamente inalcanzables: sin barra, sin rueda y sin
+   teclado. No es un defecto estético — es una pantalla que oculta clientes.
+
+   Se cierra en dos capas, igual que `.fleet` (T-1.54):
+   1. La página entera scrollea dentro de su fila 1fr del shell.
+   2. La lista scrollea por su cuenta cuando sí tiene altura acotada.
+
+   Y se extiende la invariante `flex-shrink: 0` de soc.css (§"COLUMNAS FLEX
+   SCROLLEABLES") a los contenedores que faltaban: sin ella el StateFrame
+   —que trae `min-height: 0`— se encoge hasta altura CERO y su contenido,
+   con overflow visible, se pinta ENCIMA del hermano de abajo en vez de
+   provocar el scroll que el `overflow-y: auto` estaba pidiendo.
+   ===================================================================== */
+.mt {
+  overflow-y: auto;
+}
+.mt__list {
+  overflow-y: auto;
+  min-height: 0;
+}
+.mt > *,
+.triage > *,
+.soc-main > * {
+  flex-shrink: 0;
+}
+
+/* Búsqueda local del catálogo de clientes (T-2.51). */
+.mt__search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+.mt__search input {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 6px 9px;
+  width: 100%;
+}
+.mt__search input:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+
+/* =====================================================================
+   [T-1.72 · con CSS desde T-2.51] ALTA DE CLIENTES
+   =====================================================================
+   Estas clases se escribieron en T-1.72 y nunca tuvieron una sola regla:
+   el formulario se pintaba con los estilos por defecto del navegador
+   dentro de una consola industrial oscura. El contract-test de
+   `layoutInvariants` impide que vuelva a pasar.
+   ===================================================================== */
+.mt__new-btn {
+  background: transparent;
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+  transition: background 120ms var(--tk-ease);
+}
+.mt__new-btn:hover { background: var(--tk-cyan-08); }
+.mt__new-btn:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.mt__new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: 4px;
+}
+.mt__new-field { display: flex; flex-direction: column; gap: 4px; }
+.mt__new-field > span {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tk-fg-3);
+}
+.mt__new-field input,
+.mt__new-field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 12px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.mt__new-field input:focus-visible,
+.mt__new-field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.mt__new-error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.mt__new-submit {
+  background: var(--tk-cyan-15);
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 8px 10px;
+}
+.mt__new-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.mt__new-submit:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+
+/* Ficha editable del cliente (T-2.51 · PATCH /tenants). */
+.mt__detail-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
+.mt-edit__hd { border-bottom: 1px solid var(--tk-border); padding-bottom: 8px; }
+.mt-edit__field { display: flex; flex-direction: column; gap: 4px; }
+.mt-edit__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.mt-edit__field input,
+.mt-edit__field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.mt-edit__field input:focus-visible,
+.mt-edit__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+/* El aviso de `gov_shared`/`suspended` NO es decorativo: marca el borde de la
+   frontera de aislamiento y el del servicio. Va en ámbar y con barra lateral,
+   el mismo lenguaje que el descargo de la matriz de inspección. */
+.mt-edit__warn {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-status-warning);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.mt-edit__error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.mt-edit__actions { display: flex; gap: 8px; }
+
+/* =====================================================================
+   [T-1.73 · con CSS desde T-2.51] VISIBILIDAD ENTRE CLIENTES
+   ===================================================================== */
+.vis-grants { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.vis-grant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.vis-grant__target {
+  font-family: var(--tk-font-ui);
+  font-size: 11.5px;
+  color: var(--tk-fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vis-grant__revoke {
+  background: transparent;
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 3px;
+  color: var(--tk-status-critical);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+.vis-grant__revoke:disabled { opacity: 0.45; cursor: not-allowed; }
+.vis-grant__revoke:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.vis-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tk-border);
+}
+.vis-form__field { display: flex; flex-direction: column; gap: 4px; }
+.vis-form__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.vis-form__field select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.vis-form__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--tk-fg-2);
+}
+.vis-form__error {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--tk-status-critical);
+}
+.vis-form__submit {
+  align-self: flex-start;
+  background: var(--tk-cyan-15);
+  border: 1px solid var(--tk-cyan);
+  border-radius: 3px;
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font-family: var(--tk-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 12px;
+}
+.vis-form__submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.vis-form__submit:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+
+/* =====================================================================
+   [T-1.59/T-2.51] RESULTADO DEL AUTODIAGNÓSTICO Y SEPARADOR
+   ===================================================================== */
+.fleet-card__selftest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px solid var(--tk-border);
+}
+/* Separador tipográfico entre metadatos ("fw · HB"). Existía en el markup y
+   heredaba el color del texto: se leía como contenido, no como puntuación. */
+.tk-sep { color: var(--tk-fg-3); opacity: 0.6; }
+
+/* =====================================================================
+   [T-2.54] GESTIÓN DE USUARIOS (dentro de la ficha del cliente)
+   ===================================================================== */
+.users__note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-fg-3);
+  border-left: 2px solid var(--tk-border-strong);
+  padding-left: 8px;
+}
+.users__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.users__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.users__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.users__email {
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  color: var(--tk-fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.users__rowactions { display: flex; flex-wrap: wrap; gap: 6px; }
+.users__editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px solid var(--tk-border);
+}
+.users__field { display: flex; flex-direction: column; gap: 4px; }
+.users__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.users__field input,
+.users__field select {
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.users__field input:focus-visible,
+.users__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.users__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  padding: 10px 12px 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.users__scope legend { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); padding: 0 4px; }
+.users__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--tk-fg-2);
+}
+.users__ack {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-normal);
+}
+.users__error {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--tk-status-critical);
+}
+.users__new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
+
+/* =====================================================================
+   [T-2.53] CÓDIGOS DE ALTA DE OCUPANTES (por estación, dentro de /fleet)
+   ===================================================================== */
+.enroll { display: flex; flex-direction: column; gap: 12px; }
+.enroll__hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid var(--tk-border);
+  padding-bottom: 10px;
+}
+.enroll__title {
+  margin: 0 0 4px;
+  font-family: var(--tk-font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tk-fg-1);
+}
+.enroll__sub { margin: 0; font-size: 10.5px; line-height: 1.45; color: var(--tk-fg-2); max-width: 640px; }
+.enroll__form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.enroll__field { display: flex; flex-direction: column; gap: 4px; }
+.enroll__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.enroll__field input,
+.enroll__field select {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.enroll__field input:focus-visible,
+.enroll__field select:focus-visible {
+  outline: var(--tk-focus-ring);
+  outline-offset: 1px;
+}
+.enroll__warn {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--tk-status-warning);
+  border-left: 2px solid var(--tk-status-warning);
+  padding-left: 8px;
+}
+.enroll__error { margin: 0; font-size: 10.5px; line-height: 1.4; color: var(--tk-status-critical); }
+/* El código recién creado se destaca UNA vez y se retira del DOM solo. */
+.enroll__fresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--tk-cyan-08);
+  border: 1px solid var(--tk-cyan);
+  border-radius: var(--tk-radius-md);
+}
+.enroll__freshactions { display: flex; gap: 6px; margin-left: auto; }
+.enroll__code {
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--tk-cyan);
+}
+.enroll__code--masked {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--tk-fg-2);
+}
+.enroll__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.enroll__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+}
+.enroll__row--revoked { opacity: 0.5; }
+.enroll__rowactions { display: flex; gap: 6px; }
+
+/* =====================================================================
+   [T-2.52] BITÁCORA DE AUDITORÍA (Tab 5)
+   ===================================================================== */
+.audit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  /* Misma disciplina que `.fleet`: la página scrollea DENTRO de su fila 1fr,
+     porque `body { overflow: hidden }` no perdona un contenedor sin scroll. */
+  overflow-y: auto;
+}
+.audit > * { flex-shrink: 0; }
+.audit__hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--tk-border);
+}
+.audit__title {
+  margin: 6px 0 4px;
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  color: var(--tk-fg-1);
+}
+.audit__sub { margin: 0; color: var(--tk-fg-2); font-size: 13px; max-width: 820px; }
+.audit__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.audit__field { display: flex; flex-direction: column; gap: 4px; }
+.audit__field > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+.audit__field input {
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-border);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  padding: 7px 9px;
+  min-width: 190px;
+}
+.audit__field input:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }
+.audit__actions { display: flex; gap: 8px; }
+.audit__frame { min-height: 0; }
+/* La tabla tiene 5 columnas y `meta` puede ser larga: scrollea EN HORIZONTAL
+   dentro de su caja en vez de desbordar el shell (que tiene overflow oculto). */
+.audit__tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+  background: var(--tk-surface-1);
+}
+.audit__table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.audit__table th {
+  position: sticky;
+  top: 0;
+  background: var(--tk-surface-2);
+  text-align: left;
+  font-family: var(--tk-font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--tk-fg-3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--tk-border);
+  white-space: nowrap;
+}
+.audit__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--tk-border);
+  color: var(--tk-fg-2);
+  vertical-align: top;
+}
+.audit__table tr:last-child td { border-bottom: none; }
+.audit__ts { white-space: nowrap; color: var(--tk-fg-1); }
+.audit__verb {
+  font-family: var(--tk-font-ui);
+  letter-spacing: 0.04em;
+  color: var(--tk-fg-1);
+  white-space: nowrap;
+}
+.audit__object { white-space: nowrap; }
+.audit__meta {
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 10px;
+  color: var(--tk-fg-3);
+  max-width: 520px;
+  overflow-wrap: anywhere;
+}
+.audit__more {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+}
+
+@media (max-width: 1100px) {
+  .audit__field input { min-width: 140px; }
+  .enroll__form { flex-direction: column; align-items: stretch; }
+  .users__row { grid-template-columns: minmax(0, 1fr); }
+}

@@ -48,18 +48,18 @@
 > y en las clases CSS, y renombrarlas rompería el RBAC por un cambio de etiqueta. Si
 > busca "C4I" o "Triage" en el código, esos son los nombres nuevos.
 
-| Rol | MONITOREO | Flota Edge | EVALUACIÓN | Multi-Tenant | Dash Edificio | Alcance de datos |
-|---|---|---|---|---|---|---|
-| `takab_superadmin` | Total | Total | Total | Total | Total | Toda la plataforma |
-| `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Todos los tenants |
-| `tenant_admin` | Lectura + ack | Lectura | Lectura | Solo sus umbrales | Total | Su tenant |
-| `soc_operator` | **Total** | Lectura | Lectura + crear | — | Lectura | Su tenant |
-| `gov_operator` | Lectura + ack | Lectura | Lectura + export | — | Lectura | Tenants `gov_shared` |
-| `inspector` | Lectura | — | **Total** (firma dictamen) | — | Lectura | Sitios asignados |
-| `building_admin` | Lectura (su sitio) | — | Lectura (su sitio) | — | **Total** | Su(s) sitio(s) |
-| `brigadista` | — | — | — | — | — | (móvil en MVP) |
-| `security_guard` | — | — | — | — | — | (móvil) |
-| `occupant` | — | — | — | — | — | (móvil only) |
+| Rol | MONITOREO | Flota Edge | EVALUACIÓN | Multi-Tenant | Auditoría | Dash Edificio | Alcance de datos |
+|---|---|---|---|---|---|---|---|
+| `takab_superadmin` | Total | Total | Total | Total | Lectura | Total | Toda la plataforma |
+| `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Lectura | Todos los tenants |
+| `tenant_admin` | Lectura + ack | Lectura | Lectura | Solo sus umbrales | Lectura | Total | Su tenant |
+| `soc_operator` | **Total** | Lectura | Lectura + crear | — | — | Lectura | Su tenant |
+| `gov_operator` | Lectura + ack | Lectura | Lectura + export | — | Lectura | Lectura | Tenants `gov_shared` |
+| `inspector` | Lectura | — | **Total** (firma dictamen) | — | — | Lectura | Sitios asignados |
+| `building_admin` | Lectura (su sitio) | — | Lectura (su sitio) | — | — | **Total** | Su(s) sitio(s) |
+| `brigadista` | — | — | — | — | — | — | (móvil en MVP) |
+| `security_guard` | — | — | — | — | — | — | (móvil) |
+| `occupant` | — | — | — | — | — | — | (móvil only) |
 
 **Notas:**
 - "Total" en MONITOREO incluye: acuse, solicitar dictamen técnico, reubicar epicentro.
@@ -117,6 +117,37 @@
   reciben: ellos GENERAN auditoría, no la supervisan. Escritura: inexistente por diseño
   (único escritor `takab_api.audit`, tabla append-only). Ancla:
   `tests/auth/test_matrix.py::test_read_audit_is_read_only_oversight`.
+- **[DECISION 2026-08-04 · T-2.52] La columna "Auditoría" (`/audit`) es NUEVA en esta
+  tabla y no inventa ninguna frontera:** su celda es exactamente la acción `read_audit`
+  de arriba. `GET /audit` existía desde T-1.57 y no tenía pantalla que lo consumiera, así
+  que la ruta pasa a `auth/matrix.ROUTE_ORDER` para que la pestaña aparezca a quien ya
+  podía leer el endpoint. `/audit` va **después** de Multi-Tenant y **antes** de
+  `/building` en el orden: `web/src/app/landing.ts` aterriza en la primera ruta distinta
+  de `/building`, y adelantarla cambiaría a dónde cae un usuario al iniciar sesión. El
+  endpoint gana además `require_web_surface` (el trail lleva PII de actores y el detalle
+  de cada acción sobre actuadores; un token de la app de campo no lo pagina). Ancla:
+  `tests/auth/test_matrix.py::test_audit_route_matches_read_audit_action_exactly`.
+- **[DECISION 2026-08-04 · T-2.54] `manage_users` (GET/POST/PATCH/DELETE `/users`,
+  extensión de §2):** alta, edición y baja de identidades en Cognito =
+  `takab_superadmin` y `tenant_admin` (acotado a SU tenant por el router). **NO** la
+  recibe `takab_support`, pese a su "Total" en Flota Edge: `custom:tenant_id` y
+  `custom:role` son los dos claims donde se ancla la RLS (§5.3), así que repartir
+  identidades es repartir acceso a datos — soporte lee la plataforma, no la puebla.
+  Reglas duras del endpoint: un rol de tenant no puede otorgar `takab_superadmin` ni
+  `takab_support` (escalada), no puede escribir en otro cliente, y un usuario de otro
+  tenant responde **404** (un 403 confirmaría que la cuenta existe). `occupant` no es
+  asignable aquí: vive en el pool de ocupantes con ancla pool→rol (§5.2) y se da de alta
+  con un código de enrolamiento. Toda escritura queda en `audit_log` con el diff
+  (`user_create`, `user_update`, `user_password_reset`, `user_invitation_resent`,
+  `user_delete`). Ninguna respuesta lleva credenciales: la contraseña temporal la genera
+  y entrega Cognito por correo. Sin `TAKAB_API_COGNITO_USER_POOL_ID` el proveedor es un
+  stand-in en memoria que GRITA en cada escritura (patrón `commands/keys.py`), jamás un
+  fallback silencioso. Anclas: `tests/auth/test_matrix.py::test_manage_users_excludes_support`
+  y `tests/api/test_users.py`.
+  **Esta acción desbloquea la Fase B de T-2.45**: `custom:site_scope` ya tiene quién lo
+  escriba, así que `TAKAB_API_CONSOLE_SCOPE_ENFORCED=true` deja de dejar sin datos a los
+  operadores acotados — se activa cuando cada usuario web tenga su claim aprovisionado,
+  no antes.
 - **[DECISION 2026-07-12 · T-1.59] `self_test` (autodiagnóstico del gabinete, extensión de
   §2):** mismo círculo que `siren_test` — `takab_superadmin`, `tenant_admin`,
   `building_admin` (acción de DUEÑO del sitio: pulsa relés de gas/puertas con readback;
@@ -314,7 +345,18 @@ Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una 
 | `/fleet` | Flota Edge (2) | superadmin, support, tenant_admin, soc_operator, gov_operator, building_admin |
 | `/triage` | EVALUACIÓN (3) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
 | `/tenants` | Multi-Tenant (4) | superadmin, support(lectura), tenant_admin(solo suyo) |
+| `/audit` | Auditoría (T-2.52) | superadmin, support, tenant_admin(su tenant), gov_operator |
 | `/building/:siteId` | Dash Edificio | tenant_admin, building_admin, +lectura otros |
+
+**Sub-superficies que NO son rutas** (van dentro de una ruta existente, gateadas por
+acción — añadir una ruta obliga a tocar `auth/matrix.py`, y estas ya están cubiertas):
+
+| Sub-superficie | Vive en | Acción que la gatea |
+|---|---|---|
+| Administración de estaciones (T-1.36) | `/fleet` | `manage_fleet` |
+| Códigos de enrolamiento (T-2.53) | `/fleet` | `enrollment_manage` |
+| Visibilidad entre clientes (T-1.73) | `/tenants` | `manage_visibility` |
+| Gestión de usuarios (T-2.54) | `/tenants` | `manage_users` |
 
 **Móvil (`mobile/` — fase posterior, ver `TASKS.md` T-1.31):**
 | Stack de navegación | Pantallas | Roles |

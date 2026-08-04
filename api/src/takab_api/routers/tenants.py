@@ -22,7 +22,7 @@ from takab_api.queries import tenants as q
 from takab_api.retire_code import retire_code_state, rotate_retire_code
 from takab_api.routers._common import INTERNAL_ROLES, http_error, integrity_error, read_session
 from takab_api.schemas.retire import RetireCodeRotate, RetireCodeState
-from takab_api.schemas.tenants import TenantCreate, TenantOut
+from takab_api.schemas.tenants import TenantCreate, TenantOut, TenantUpdate
 
 # Roles con /tenants en RBAC §2 (vía matrix.py).
 _TENANT_ROLES: tuple[str, ...] = tuple(
@@ -81,6 +81,60 @@ async def create_tenant(
         verb="tenant_create",
         obj=f"tenant:{row.tenant_id}",
         meta={"code": body.code, "plan_code": body.plan_code},
+    )
+    return TenantOut(**dict(row._mapping))
+
+
+@router.patch("/tenants/{tenant_id}", response_model=TenantOut)
+async def update_tenant(
+    tenant_id: UUID,
+    body: TenantUpdate,
+    claims: Claims = Depends(_require_manage_tenants),
+    conn: AsyncConnection = Depends(read_session),
+) -> TenantOut:
+    """Edita la ficha del cliente (T-2.51). SOLO ``takab_superadmin``.
+
+    PATCH parcial: solo llegan al SET los campos que el cuerpo trae. ``code`` e
+    ``isolation_mode`` no son editables (ver ``TenantUpdate``).
+
+    ``base_row_version`` viejo ⇒ 409. La carrera importa aquí más que en una ficha
+    cualquiera: ``visibility='gov_shared'`` amplía QUIÉN puede leer los datos del
+    cliente (``tenants_read`` y ``app_gov_can_see``) y ``status='suspended'`` es una
+    decisión comercial. Revertir cualquiera de las dos en silencio, porque dos
+    pestañas guardaron con segundos de diferencia, sería un cambio de superficie de
+    seguridad que nadie ordenó.
+
+    La escritura la autoriza la RLS ``tenants_admin``; la acción ``manage_tenants``
+    evita pintar un control que siempre daría 403 (regla de oro 7).
+    """
+    current = await q.get_tenant(conn, tenant_id)
+    if current is None:
+        raise http_error(404, "tenant no encontrado")
+
+    changes = body.changes()
+    try:
+        row = await q.update_tenant(
+            conn,
+            tenant_id=tenant_id,
+            changes=changes,
+            base_row_version=body.base_row_version,
+        )
+    except IntegrityError as exc:
+        raise integrity_error(exc) from exc
+    if row is None:
+        raise http_error(409, "el cliente cambió en el servidor; recarga y reintenta")
+
+    # La bitácora guarda QUÉ campos se tocaron y su valor nuevo. `visibility` y
+    # `status` son los que mueven la frontera de aislamiento y el servicio; verlos
+    # en `audit_log` (append-only, sin poda — regla de oro 11) es lo que hace
+    # auditable un cambio que de otro modo solo dejaría el estado final.
+    await audit_async(
+        conn,
+        tenant_id=str(tenant_id),
+        actor=f"user:{claims.sub}",
+        verb="tenant_update",
+        obj=f"tenant:{tenant_id}",
+        meta={"changed": sorted(changes), **changes},
     )
     return TenantOut(**dict(row._mapping))
 

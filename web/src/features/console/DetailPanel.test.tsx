@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import type { IncidentActionOut, SiteStateFrame } from "@takab/sdk";
 
-import { expectFourStates, type UiState } from "../../test-utils/states";
-import DetailPanel, { FEATURES_STALE_MS, ageLabel } from "./DetailPanel";
+import { expectFourStates, UI_STATES, type UiState } from "../../test-utils/states";
+import DetailPanel, { FEATURES_STALE_MS, ageLabel, type SiteLinkData } from "./DetailPanel";
+import { LINK_DEGRADADO, LINK_OPERATIVO, LINK_SIN_ENLACE, LINK_SIN_GABINETE } from "./link";
 import type { LiveIncident } from "./useLiveIncidents";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { FeaturePoint, SiteFeaturesData } from "./useSiteFeatures";
@@ -86,20 +89,44 @@ const SOH: SiteStateFrame = {
   seedlink_lag_s: 0.4,
 };
 
+/** [T-2.46] Enlace vivo por defecto; cada test cambia lo que le interesa. */
+function linkData(over: Partial<SiteLinkData> = {}): SiteLinkData {
+  return {
+    state: LINK_OPERATIVO,
+    reasons: [],
+    lastHeartbeatTs: "2026-07-08T10:41:23Z",
+    mqttRttMs: 42,
+    seedlinkLagS: 1.2,
+    loading: false,
+    error: null,
+    staleSince: null,
+    refetch: vi.fn(),
+    ...over,
+  };
+}
+
+// [T-2.50] El panel enlaza a /building/:siteId ⇒ necesita un router en el árbol.
+function wrap(node: ReactElement): ReactElement {
+  return <MemoryRouter>{node}</MemoryRouter>;
+}
+
 function renderPanel(over: Partial<Parameters<typeof DetailPanel>[0]> = {}) {
   const onClose = vi.fn();
   render(
-    <DetailPanel
-      site={SITE}
-      features={features()}
-      soh={SOH}
-      actions={actions()}
-      incident={INCIDENT}
-      relays={NO_RELAYS}
-      nowMs={NOW}
-      onClose={onClose}
-      {...over}
-    />,
+    wrap(
+      <DetailPanel
+        site={SITE}
+        features={features()}
+        soh={SOH}
+        actions={actions()}
+        incident={INCIDENT}
+        relays={NO_RELAYS}
+        link={linkData()}
+        nowMs={NOW}
+        onClose={onClose}
+        {...over}
+      />,
+    ),
   );
   return { onClose };
 }
@@ -286,18 +313,110 @@ describe("DetailPanel", () => {
       empty: { points: [], latest: null, lastFrameAt: null },
       stale: { lastFrameAt: NOW - FEATURES_STALE_MS - 1 },
     };
-    expectFourStates((state) => (
-      <DetailPanel
-        site={SITE}
-        features={features(byState[state])}
-        soh={SOH}
-        actions={actions()}
-        incident={INCIDENT}
-        relays={NO_RELAYS}
-        nowMs={NOW}
-        onClose={vi.fn()}
-      />
-    ));
+    expectFourStates((state) =>
+      wrap(
+        <DetailPanel
+          site={SITE}
+          features={features(byState[state])}
+          soh={SOH}
+          actions={actions()}
+          incident={INCIDENT}
+          relays={NO_RELAYS}
+          link={linkData()}
+          nowMs={NOW}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+  });
+});
+
+// ---- T-2.46: card ENLACE CON EL GABINETE -----------------------------------
+describe("DetailPanel · enlace con el gabinete", () => {
+  it("muestra el estado, la EDAD del latido y las métricas del enlace", () => {
+    renderPanel({ link: linkData({ state: LINK_OPERATIVO }) });
+    const card = screen.getByTestId("link-card");
+    expect(within(card).getByTestId("link-state")).toHaveTextContent("OPERATIVO");
+    // La EDAD en texto, no solo el timestamp (el operador no debe restar de cabeza).
+    expect(within(card).getByTestId("link-heartbeat-age")).toHaveTextContent("HACE 12 s");
+    expect(within(card).getByTestId("link-heartbeat-age")).toHaveTextContent("10:41:23 UTC");
+    expect(within(card).getByText("42 ms")).toBeInTheDocument();
+    expect(within(card).getByText("1.2 s")).toBeInTheDocument();
+  });
+
+  it("DEGRADADO dice QUÉ métrica lo degrada (misma verdad que /fleet)", () => {
+    renderPanel({ link: linkData({ state: LINK_DEGRADADO, reasons: ["MQTT 3000ms"] }) });
+    expect(screen.getByTestId("link-reasons")).toHaveTextContent("MQTT 3000ms");
+  });
+
+  it("SIN GABINETE lo explica: no es una caída de enlace", () => {
+    renderPanel({
+      link: linkData({ state: LINK_SIN_GABINETE, lastHeartbeatTs: null, mqttRttMs: null }),
+    });
+    const card = screen.getByTestId("link-card");
+    expect(within(card).getByTestId("link-no-gateway")).toHaveTextContent(
+      "NO ES UNA CAÍDA DE ENLACE",
+    );
+    expect(within(card).getByTestId("link-heartbeat-age")).toHaveTextContent(
+      "SIN LATIDO REGISTRADO",
+    );
+    expect(within(card).getAllByText("S/D").length).toBeGreaterThan(0);
+  });
+
+  it("SIN ENLACE conserva el último latido conocido, con su edad", () => {
+    renderPanel({
+      link: linkData({ state: LINK_SIN_ENLACE, lastHeartbeatTs: "2026-07-08T04:41:23Z" }),
+    });
+    expect(screen.getByTestId("link-heartbeat-age")).toHaveTextContent("HACE 6 h");
+  });
+
+  it("sin la prop `link` NO se inventa un enlace vivo: empty honesto", () => {
+    renderPanel({ link: undefined });
+    const card = screen.getByTestId("link-card");
+    expect(within(card).getByText(/ENLACE NO DISPONIBLE EN EL SNAPSHOT/)).toBeInTheDocument();
+    expect(within(card).queryByTestId("link-state")).toBeNull();
+  });
+
+  it("materializa los 4 estados obligatorios DENTRO de la card de enlace", () => {
+    // `expectFourStates` mira el contenedor entero, y este panel tiene cuatro
+    // StateFrame: el `empty` de la card de relés lo daría por bueno sin que el
+    // enlace materialice nada. Aquí se acota a la card que se está probando.
+    const byState: Record<UiState, Partial<SiteLinkData>> = {
+      loading: { loading: true },
+      error: { error: "GET /telemetry/map/state falló (503)" },
+      empty: { state: null },
+      stale: { staleSince: NOW - 120_000 },
+    };
+    for (const state of UI_STATES) {
+      const { unmount } = render(
+        wrap(
+          <DetailPanel
+            site={SITE}
+            features={features()}
+            soh={SOH}
+            actions={actions()}
+            incident={INCIDENT}
+            relays={NO_RELAYS}
+            link={linkData(byState[state])}
+            nowMs={NOW}
+            onClose={vi.fn()}
+          />,
+        ),
+      );
+      expect(
+        screen.getByTestId("link-card").querySelector(`[data-state="${state}"]`),
+        `la card de enlace no materializa el estado "${state}"`,
+      ).not.toBeNull();
+      unmount();
+    }
+  });
+});
+
+// ---- T-2.50: deep-link a la ficha del edificio ------------------------------
+describe("DetailPanel · deep-link", () => {
+  it("enlaza a /building/:siteId con el sitio enfocado", () => {
+    renderPanel();
+    expect(screen.getByTestId("detail-building-link")).toHaveAttribute("href", "/building/s-1");
   });
 });
 

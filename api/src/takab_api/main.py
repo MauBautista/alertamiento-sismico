@@ -29,6 +29,7 @@ from takab_api.routers.sensors import router as sensors_router
 from takab_api.routers.sites import router as sites_router
 from takab_api.routers.telemetry import router as telemetry_router
 from takab_api.routers.tenants import router as tenants_router
+from takab_api.routers.users import router as users_router
 from takab_api.routers.visibility import router as visibility_router
 from takab_api.routers.ws import router as ws_router
 from takab_api.settings import Settings
@@ -55,6 +56,8 @@ def create_app() -> FastAPI:
     app.include_router(tenants_router)
     # Visibilidad configurable entre clientes (T-1.73, superadmin).
     app.include_router(visibility_router)
+    # Gestión de usuarios: proxy del Admin API de Cognito (T-2.54).
+    app.include_router(users_router)
 
     # Incidentes / eventos / dictámenes / rule-sets (B2).
     app.include_router(incidents_router)

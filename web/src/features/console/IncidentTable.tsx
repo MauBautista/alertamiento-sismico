@@ -4,11 +4,15 @@
 // gateado por allowed_actions.ack_incident (default-deny server-driven).
 
 import { CheckCircle2, FileSearch, List, MapPin, UserCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import ConfirmButton from "../../components/ConfirmButton";
 import SevTag from "../../components/SevTag";
 import { secondsSince, utcClock } from "../../lib/time";
 import type { LiveStatus } from "../../lib/ws";
+import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats";
 import type { LiveIncident } from "./useLiveIncidents";
 
 const SEV_DOT: Record<string, string> = {
@@ -41,6 +45,10 @@ export interface IncidentTableProps {
   /** allowed_actions.request_dictamen (T-1.51). */
   canRequestDictamen: boolean;
   onRequestDictamen: (incidentId: string) => void;
+  /** [T-2.50] Estaciones del snapshot: solo para el orden por DISTANCIA. */
+  sites?: MapSiteState[];
+  /** [T-2.50] Epicentro de referencia del orden por distancia (null = no hay). */
+  epicenter?: MapEpicenter | null;
 }
 
 /** Explica el gate del botón (regla de oro 7: un disabled mudo no informa). */
@@ -78,8 +86,21 @@ export default function IncidentTable({
   onRelocate,
   canRequestDictamen,
   onRequestDictamen,
+  sites = [],
+  epicenter = null,
 }: IncidentTableProps) {
   const live = liveStatus === "ready";
+  // [T-2.50] El orden vive AQUÍ, no en el servidor: es una preferencia de lectura
+  // del operador, no un hecho del incidente. La cola sigue siendo la misma.
+  const [order, setOrder] = useState<IncidentOrderKey>("severity");
+  const siteById = useMemo(() => new Map(sites.map((s) => [s.site_id, s])), [sites]);
+  const rows = useMemo(
+    () => orderIncidents(incidents, order, { epicenter, siteById }),
+    [incidents, order, epicenter, siteById],
+  );
+  // Ordenar por distancia sin epicentro conocido barajaría las filas fingiendo
+  // una medida que nadie tomó: se degrada a severidad y se DICE (regla de oro 7).
+  const distanceUnavailable = order === "distance" && epicenter === null;
   return (
     <section className="soc-incidents" data-screen-label="Incidents queue">
       <header className="soc-incidents__hd">
@@ -99,6 +120,21 @@ export default function IncidentTable({
             letterSpacing: "0.04em",
           }}
         >
+          <label className="soc-incidents__order">
+            <span className="soc-meta">ORDEN</span>
+            <select
+              aria-label="Orden de la cola de incidentes"
+              data-testid="incident-order"
+              value={order}
+              onChange={(event) => setOrder(event.target.value as IncidentOrderKey)}
+            >
+              {INCIDENT_ORDERS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>WS · LIVE</span>
           <span
             data-testid="live-pill"
@@ -121,7 +157,7 @@ export default function IncidentTable({
           </tr>
         </thead>
         <tbody>
-          {incidents.map((incident) => {
+          {rows.map((incident) => {
             const site = siteInfoOf(incident.site_id);
             return (
               <tr
@@ -155,6 +191,12 @@ export default function IncidentTable({
           })}
         </tbody>
       </table>
+
+      {distanceUnavailable && (
+        <p className="soc-incidents__note" data-testid="order-distance-unavailable" role="status">
+          SIN EPICENTRO LOCALIZADO · ORDENADO POR SEVERIDAD
+        </p>
+      )}
 
       <footer className="soc-incidents__ft">
         <div className="soc-incidents__operator">

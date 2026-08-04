@@ -29,7 +29,9 @@ from takab_api.queries.telemetry import (
     select_site_calibrated,
 )
 from takab_api.routers._common import http_error, parse_ts, read_session
+from takab_api.schemas.fleet import DEGRADADO, derive_fleet_state, fleet_degrade_reasons
 from takab_api.schemas.telemetry import (
+    SIN_GABINETE,
     ChannelSeries,
     FeatureSeries,
     MapEpicenter,
@@ -39,6 +41,7 @@ from takab_api.schemas.telemetry import (
     MetricSeries,
     MultiChannelFeatures,
 )
+from takab_api.settings import Settings
 
 # Roles con acceso a MONITOREO (RBAC §2) = fuente única desde la matriz de rutas.
 CONSOLE_ROLES: tuple[str, ...] = tuple(
@@ -93,7 +96,46 @@ def _resolve_bucket(bucket: str | None, from_ts: datetime, to_ts: datetime) -> s
     return "1h" if (to_ts - from_ts).total_seconds() > _BUCKET_1H_SPAN_S else "1m"
 
 
-def _map_site(r: Any) -> MapSiteState:
+def _map_link(r: Any, s: Settings) -> tuple[str, list[str]]:
+    """[T-2.46] Estado del enlace de la ESTACIÓN, con la verdad única de la flota.
+
+    Sin gabinete (o con el único retirado) el resultado es ``SIN GABINETE``: no hay
+    hardware del que predicar un enlace, y decir ``SIN ENLACE`` mandaría a alguien a
+    revisar una antena inexistente.
+
+    Con gabinete se delega ENTERO en ``derive_fleet_state`` — la misma función que
+    pinta /fleet, con los mismos umbrales de ``Settings``. Reimplementarla aquí
+    crearía una segunda opinión sobre el mismo gabinete, y tarde o temprano las dos
+    pantallas dirían cosas distintas del mismo hecho.
+
+    Las razones solo aplican a ``DEGRADADO``: en ``SIN ENLACE`` el problema es el
+    silencio, no una métrica, y en ``OPERATIVO`` son vacías por definición.
+    """
+    if r.link_gateway_id is None:
+        return SIN_GABINETE, []
+    metrics = {
+        "power_status": r.link_power_status,
+        "battery_pct": r.link_battery_pct,
+        "cert_days_remaining": r.link_cert_days_remaining,
+        "mqtt_rtt_ms": r.link_mqtt_rtt_ms,
+        "seedlink_lag_s": r.link_seedlink_lag_s,
+        "ntp_offset_ms": r.link_ntp_offset_ms,
+    }
+    limits = {
+        "battery_min_pct": s.fleet_battery_min_pct,
+        "cert_min_days": s.fleet_cert_min_days,
+        "mqtt_rtt_max_ms": s.fleet_mqtt_rtt_max_ms,
+        "seedlink_lag_max_s": s.fleet_seedlink_lag_max_s,
+        "ntp_offset_max_ms": s.fleet_ntp_offset_max_ms,
+    }
+    state = derive_fleet_state(
+        age_s=r.link_age_s, sin_enlace_s=s.sin_enlace_min * 60.0, **metrics, **limits
+    )
+    reasons = fleet_degrade_reasons(**metrics, **limits) if state == DEGRADADO else []
+    return state, reasons
+
+
+def _map_site(r: Any, s: Settings) -> MapSiteState:
     """Fila del mapa → estado del sitio, con la sacudida MEDIDA ya clasificada.
 
     CON incidente abierto, `felt` es el PICO de su ventana (lo que el edificio
@@ -111,6 +153,7 @@ def _map_site(r: Any) -> MapSiteState:
         pga, pgv = r.inc_pga_g, r.inc_pgv_cms
     else:
         pga, pgv = r.max_pga_g, r.max_pgv_cms
+    link_state, link_reasons = _map_link(r, s)
     return MapSiteState(
         site_id=r.site_id,
         tenant_id=r.tenant_id,
@@ -136,6 +179,14 @@ def _map_site(r: Any) -> MapSiteState:
         felt_pgv_cms=pgv,
         # bool_and sobre cero sensores da NULL ⇒ NO calibrado (default-deny).
         calibrated=bool(r.calibrated),
+        # [T-2.46] El enlace va en su PROPIO canal: jamás toca `felt`. Uno mide el
+        # suelo y otro la red; si el enlace pudiera alterar el color, el mapa
+        # mentiría sobre lo que el edificio sintió cada vez que cae una antena.
+        link_state=link_state,
+        link_reasons=link_reasons,
+        last_heartbeat_ts=r.link_health_ts,
+        mqtt_rtt_ms=r.link_mqtt_rtt_ms,
+        seedlink_lag_s=r.link_seedlink_lag_s,
     )
 
 
@@ -151,9 +202,10 @@ async def map_state(
     scope: ConsoleScope = Depends(get_console_scope),
     conn: AsyncConnection = Depends(read_session),
 ) -> MapState:
-    """Estado de los sitios visibles Y dentro del alcance: sacudida + incidente + epicentros."""
+    """Estado de los sitios visibles Y dentro del alcance: sacudida + enlace + epicentros."""
+    settings = Settings()
     stmt, params = select_map_state(scope)
-    sites = [_map_site(r) for r in (await conn.execute(stmt, params)).all()]
+    sites = [_map_site(r, settings) for r in (await conn.execute(stmt, params)).all()]
 
     ep_stmt, ep_params = select_map_epicenters()
     epicenters = [

@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
+import EnrollmentCodes from "./EnrollmentCodes";
 import HardwareForm from "./HardwareForm";
 import type { GatewayValues, SensorValues } from "./HardwareForm";
 import GatewayAcuse from "./GatewayAcuse";
@@ -39,7 +40,9 @@ type Editing =
   | { kind: "acuse"; site: SiteOut; gateway: GatewayRowOut }
   // [T-2.36] El retiro deja de ser un ConfirmButton: exige un segundo factor y por
   // tanto un diálogo con dos campos, no un doble clic armado.
-  | { kind: "retire"; site: SiteOut };
+  | { kind: "retire"; site: SiteOut }
+  // [T-2.53] Códigos de alta de ocupantes de la estación (desbloquea GATE-HW).
+  | { kind: "enrollment"; site: SiteOut };
 
 function useSites() {
   return useQuery({
@@ -79,6 +82,10 @@ function FleetAdminPanel() {
 
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
   const codeConfigured = useRetireCodeConfigured(tenantId);
+  // [T-2.53] El botón de códigos se gatea por su PROPIA acción: `manage_fleet` y
+  // `enrollment_manage` coinciden hoy en la web, pero derivarlo de la otra dejaría
+  // el control colgando de una coincidencia (regla de oro 7).
+  const canEnroll = useSessionStore((s) => s.me?.allowed_actions.enrollment_manage === true);
 
   const active = create.isPending || update.isPending;
   const hardwareBusy = addGateway.isPending || addSensor.isPending;
@@ -159,7 +166,9 @@ function FleetAdminPanel() {
         )}
       </header>
 
-      {editing.kind === "acuse" ? (
+      {editing.kind === "enrollment" ? (
+        <EnrollmentCodes site={editing.site} onClose={() => setEditing({ kind: "none" })} />
+      ) : editing.kind === "acuse" ? (
         <GatewayAcuse
           gateway={editing.gateway}
           siteName={editing.site.name}
@@ -225,6 +234,15 @@ function FleetAdminPanel() {
                       >
                         HARDWARE
                       </button>
+                      {canEnroll && (
+                        <button
+                          type="button"
+                          className="soc-btn soc-btn--secondary"
+                          onClick={() => setEditing({ kind: "enrollment", site })}
+                        >
+                          CÓDIGOS
+                        </button>
+                      )}
                       {/* Retiro lógico: la fila sobrevive porque su evidencia la
                         referencia. [T-2.36] Doble fricción en el diálogo. */}
                       <button

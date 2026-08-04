@@ -1062,3 +1062,429 @@ body {
   font-weight: 700;
   letter-spacing: 0.05em;
 }
+
+/* =====================================================================
+   [T-2.46 · T-2.47 · T-2.50] MONITOREO: enlace, ondas y estadísticas
+   ===================================================================== */
+
+/* Las leyendas del mapa se apilan en UNA columna anclada abajo-derecha. Antes
+   había una sola caja absoluta; con la segunda (ENLACE) y la de CAPAS, tres
+   `position:absolute` en la misma esquina se habrían solapado. La regla vieja
+   de `.soc-map__legend` se conserva intacta para cualquier otro consumidor: aquí
+   solo se neutraliza su anclaje cuando vive DENTRO de la pila. */
+.soc-map__legends {
+  position: absolute;
+  bottom: 36px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+}
+.soc-map__legends .soc-map__legend {
+  position: static;
+  bottom: auto;
+  right: auto;
+}
+
+/* Glifo del enlace en la leyenda: mismo ancho que el swatch de color para que
+   las dos leyendas se lean como columnas alineadas, no como listas distintas. */
+.soc-map__glyph {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: var(--tk-font-mono);
+  font-size: 12px;
+  color: var(--tk-fg-1);
+}
+.soc-map__legend--link .soc-map__legend-title {
+  color: var(--tk-cyan);
+}
+
+/* Capas conmutables (T-2.50). */
+.soc-map__layer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.soc-map__layer-btn {
+  padding: 2px 6px;
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tk-fg-3);
+  font: 700 9px var(--tk-font-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 120ms var(--tk-ease);
+}
+.soc-map__layer-btn:hover {
+  border-color: var(--tk-cyan);
+  color: var(--tk-cyan);
+}
+.soc-map__layer-btn--on {
+  background: var(--tk-cyan-15);
+  border-color: var(--tk-cyan);
+  color: var(--tk-cyan);
+}
+
+/* Tira de KPIs del wall: primera fila del grid de `.soc-wall`. */
+.soc-wall {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.soc-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 8px 12px;
+  background: var(--tk-surface-1);
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-md);
+}
+.soc-kpis__group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.soc-kpis__group--end {
+  margin-left: auto;
+  gap: 10px;
+}
+.soc-kpis__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 700 9px var(--tk-font-ui);
+  letter-spacing: 0.12em;
+  color: var(--tk-fg-3);
+}
+.soc-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.soc-kpi__value {
+  font: 700 15px var(--tk-font-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.soc-kpi__label {
+  font: 600 8.5px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  color: var(--tk-fg-3);
+  white-space: nowrap;
+}
+/* Semáforo: el color lo pone el ESTADO, nunca el gusto. `muted` es para lo que
+   no es una falla (p. ej. estaciones sin gabinete instalado). */
+.soc-kpi--ok .soc-kpi__value { color: var(--tk-status-normal); }
+.soc-kpi--warn .soc-kpi__value { color: var(--tk-status-warning); }
+.soc-kpi--crit .soc-kpi__value { color: var(--tk-status-critical); }
+.soc-kpi--muted .soc-kpi__value { color: var(--tk-fg-2); }
+
+.soc-kpis__showing {
+  font: 600 10px var(--tk-font-mono);
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+.soc-kpis__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tk-fg-2);
+  font: 700 9.5px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.soc-kpis__filter:hover { border-color: var(--tk-cyan); color: var(--tk-cyan); }
+.soc-kpis__filter--on {
+  background: var(--tk-cyan-15);
+  border-color: var(--tk-cyan);
+  color: var(--tk-cyan);
+}
+
+/* Selector de orden de la cola + aviso de degradación (T-2.50). */
+.soc-incidents__order {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.soc-incidents__order select {
+  background: var(--tk-surface-2);
+  border: 1px solid var(--tk-border-strong);
+  border-radius: 3px;
+  color: var(--tk-fg-1);
+  font: 600 10px var(--tk-font-mono);
+  letter-spacing: 0.04em;
+  padding: 2px 4px;
+}
+.soc-incidents__note {
+  margin: 0;
+  padding: 4px 18px 0;
+  font: 600 10px var(--tk-font-mono);
+  letter-spacing: 0.06em;
+  color: var(--tk-status-warning);
+}
+
+/* Card ENLACE CON EL GABINETE del DetailPanel (T-2.46). */
+.soc-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.soc-link-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.soc-detail__deeplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font: 700 9.5px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  color: var(--tk-cyan);
+  text-decoration: none;
+}
+.soc-detail__deeplink:hover { text-decoration: underline; }
+
+/* =====================================================================
+   [T-2.47] prefers-reduced-motion — un INTERRUPTOR, no una sugerencia
+   =====================================================================
+   El módulo `wavefront.ts` ya apaga los frentes y congela el dash, pero eso no
+   alcanza a lo que anima el CSS. Aquí se neutralizan los DOS keyframes vivos de
+   la hoja de estilos: `soc-pulse` (punto de estado y el "live" del CCTV, en
+   soc.css) y `soc-armed-pulse` (botón armado de ConfirmButton, en soc-tabs.css).
+   Se apagan por SELECTOR desde aquí a propósito: la regla vive junto al resto de
+   la política de movimiento en vez de repartida por dos archivos. */
+@media (prefers-reduced-motion: reduce) {
+  .soc-dot--pulse::after,
+  .soc-cctv__live::before,
+  .soc-confirm--armed {
+    animation: none !important;
+  }
+  /* Sin la animación, el halo del punto se quedaría congelado a media escala:
+     se fija en su estado de reposo para que siga leyéndose como un halo. */
+  .soc-dot--pulse::after {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  .soc-map__layer-btn,
+  .soc-kpis__filter {
+    transition: none;
+  }
+}
+
+/* =====================================================================
+   SIMULACRO — barra, agenda armada, alta e historial (T-2.48)
+   ===================================================================== */
+/* La barra ocupa una fila del <main> de la consola y NADA más: el mapa manda.
+   `.soc-shell > .soc-main > *:not(.soc-wall)` ya le da `flex: 0 0 auto`. */
+.soc-drill-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* TRAMPA (regresión de T-1.62): `.soc-stateframe--status` trae `min-height:120px`
+   y `padding: var(--tk-space-4)`. En esta barra eso volvería a robarle el alto al
+   mapa —el mismo bug de "el botón de simulacro ocupa 3/4 de pantalla"— porque los
+   estados loading/error/empty del banner son de STATUS. Aquí el frame es una tira:
+   se aplasta a su contenido y crece en ancho, no en alto. */
+.soc-drill__frame {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.soc-drill__frame.soc-stateframe--status {
+  min-height: 0;
+  padding: 4px 0;
+  place-items: center start;
+  text-align: left;
+  font-size: var(--tk-text-xs);
+}
+/* El aviso de dato retenido va en línea, no flotando sobre el mapa. */
+.soc-drill__frame > .soc-stateframe__stale {
+  position: static;
+  transform: none;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.soc-drill__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Agenda armada: cian (información), nunca ámbar — el ámbar es el simulacro que
+   YA está sonando en los edificios y los dos no pueden confundirse. */
+.soc-drill--armed {
+  background: var(--tk-cyan-08);
+  border: 1px solid var(--tk-border-cyan);
+  color: var(--tk-cyan);
+  flex-wrap: wrap;
+}
+
+/* --- Alta de simulacro ---------------------------------------------------- */
+.soc-drillform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tk-space-3);
+  min-width: 0;
+}
+.soc-drillform__notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--tk-status-warning);
+  background: var(--tk-status-warning-15);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  letter-spacing: 0.04em;
+}
+.soc-drillform__group {
+  margin: 0;
+  padding: var(--tk-space-3);
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.soc-drillform__group > legend {
+  padding: 0 6px;
+  color: var(--tk-fg-3);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  letter-spacing: 0.08em;
+}
+.soc-drillform__group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--tk-text-sm);
+}
+/* Lista larga de sitios: scrollea DENTRO del modal en vez de empujarlo. */
+.soc-drillform__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.soc-drillform__sites .soc-meta {
+  margin-left: auto;
+}
+.soc-drillform__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* --- Historial ------------------------------------------------------------ */
+.soc-drillhist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tk-space-3);
+  min-width: 0;
+}
+.soc-drillhist__tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.soc-drillhist__tabs .is-on {
+  color: var(--tk-cyan);
+  border-bottom: 2px solid var(--tk-cyan);
+}
+.soc-drillhist__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.soc-drillhist__row {
+  padding: 8px 10px;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.soc-drillhist__hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.soc-drillhist__ack {
+  margin: 0;
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  color: var(--tk-fg-2);
+  letter-spacing: 0.04em;
+}
+.soc-drillhist__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.soc-drillhist__sites > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--tk-text-xs);
+}
+/* Cada causa con su color: verde solo el acuse real. `no_gateway` es GRIS —
+   no es un fallo del edificio, es que no había a quién mandarle el simulacro. */
+.soc-drillhist__ackpill {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--tk-radius-pill);
+  font-family: var(--tk-font-mono);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.soc-drillhist__ackpill.is-acked {
+  background: var(--tk-status-normal-15);
+  color: var(--tk-status-normal);
+}
+.soc-drillhist__ackpill.is-pending,
+.soc-drillhist__ackpill.is-not_sent {
+  background: var(--tk-status-warning-15);
+  color: var(--tk-status-warning);
+}
+.soc-drillhist__ackpill.is-rejected {
+  background: var(--tk-status-critical-15);
+  color: var(--tk-status-critical);
+}
+.soc-drillhist__ackpill.is-no_gateway,
+.soc-drillhist__ackpill.is-scheduled {
+  background: var(--tk-navy-700);
+  color: var(--tk-fg-3);
+}

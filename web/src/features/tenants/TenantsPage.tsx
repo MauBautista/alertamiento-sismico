@@ -6,7 +6,9 @@ import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import NotificationChannels from "./NotificationChannels";
 import SyncFooter from "./SyncFooter";
+import TenantEditForm from "./TenantEditForm";
 import ThresholdSlider from "./ThresholdSlider";
+import UsersCard from "./UsersCard";
 import VisibilityCard from "./VisibilityCard";
 import {
   REFERENCE_BANDS,
@@ -14,12 +16,13 @@ import {
   activeTenantRuleSet,
   channelErrors,
   draftsFrom,
+  filterTenants,
   isDedicated,
   patchChannels,
   patchThresholds,
   readChannels,
   readThresholds,
-  siteCountOf,
+  siteCountsBy,
   syncStatusOf,
   syncedFingerprintOf,
   thresholdErrors,
@@ -33,6 +36,7 @@ import {
   useTenantGateways,
   useTenantSync,
   useTenants,
+  useUpdateTenant,
 } from "./useTenants";
 
 const SLIDERS: {
@@ -117,15 +121,27 @@ export default function TenantsPage() {
   const data = useTenants();
   const now = useNow(5000);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const selected = data.tenants.find((t) => t.tenant_id === selectedId) ?? data.tenants[0] ?? null;
   const tenantId = selected?.tenant_id ?? null;
+
+  // [T-2.51] Un solo agrupado O(sitios) en vez de un `filter` por tenant pintado:
+  // con 40 clientes y 200 estaciones eran 8 000 comparaciones por render, y la
+  // lista se repinta con cada tecla de la búsqueda.
+  const siteCounts = useMemo(() => siteCountsBy(data.sites), [data.sites]);
+  const visibleTenants = useMemo(() => filterTenants(data.tenants, search), [data.tenants, search]);
 
   // Alta de clientes (T-1.72): SOLO el superadmin (la acción la da matrix.py; el
   // servidor la exige igual). El botón/formulario no se pintan si no la tiene (regla 7).
   const canManageTenants = me?.allowed_actions.manage_tenants === true;
   const canManageVisibility = me?.allowed_actions.manage_visibility === true;
+  // [T-2.54] Gestión de usuarios: superadmin y tenant_admin (acotado a su tenant
+  // por el servidor). No es una ruta nueva — vive dentro de la ficha del cliente.
+  const canManageUsers = me?.allowed_actions.manage_users === true;
   const createTenant = useCreateTenant();
+  const updateTenant = useUpdateTenant();
+  const [editingTenant, setEditingTenant] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newTenant, setNewTenant] = useState({
     code: "",
@@ -293,7 +309,11 @@ export default function TenantsPage() {
         <div className="mt__grid">
           <nav className="mt__list" aria-label="Tenants">
             <div className="mt__list-hd">
-              <span className="soc-meta">{data.tenants.length} TENANT(S) VISIBLES</span>
+              <span className="soc-meta">
+                {search.trim() === ""
+                  ? `${data.tenants.length} TENANT(S) VISIBLES`
+                  : `MOSTRANDO ${visibleTenants.length} DE ${data.tenants.length}`}
+              </span>
               {canManageTenants && (
                 <button
                   type="button"
@@ -376,8 +396,26 @@ export default function TenantsPage() {
                 </button>
               </form>
             )}
-            {data.tenants.map((t) => {
-              const sites = siteCountOf(data.sites, t.tenant_id);
+            {/* La búsqueda es local: `GET /tenants` no pagina ni filtra, y a esta
+                escala (decenas de clientes) eso es lo correcto. Deuda declarada:
+                hacia ~200 clientes hay que mover filtro y paginación al servidor. */}
+            <label className="mt__search">
+              <span className="soc-meta">BUSCAR</span>
+              <input
+                type="search"
+                value={search}
+                placeholder="nombre, código, vertical…"
+                aria-label="Buscar cliente"
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            {visibleTenants.length === 0 && data.tenants.length > 0 && (
+              <p className="soc-meta" data-testid="tenant-search-empty">
+                SIN CLIENTES PARA LA BÚSQUEDA
+              </p>
+            )}
+            {visibleTenants.map((t) => {
+              const sites = siteCounts?.get(t.tenant_id) ?? (siteCounts === null ? null : 0);
               return (
                 <button
                   type="button"
@@ -414,13 +452,49 @@ export default function TenantsPage() {
                     {selected.visibility}
                   </div>
                 </div>
-                <span
-                  className={`soc-pill ${isDedicated(selected) ? "soc-pill--edge" : "soc-pill--ok"}`}
-                >
-                  <ShieldCheck size={11} aria-hidden />
-                  {isDedicated(selected) ? "TENANT DEDICADO" : "TENANT LÓGICO"}
-                </span>
+                <div className="mt__detail-badges">
+                  <span
+                    className={`soc-pill ${isDedicated(selected) ? "soc-pill--edge" : "soc-pill--ok"}`}
+                  >
+                    <ShieldCheck size={11} aria-hidden />
+                    {isDedicated(selected) ? "TENANT DEDICADO" : "TENANT LÓGICO"}
+                  </span>
+                  {canManageTenants && (
+                    <button
+                      type="button"
+                      className="soc-btn soc-btn--secondary"
+                      onClick={() => {
+                        updateTenant.reset();
+                        setEditingTenant((v) => !v);
+                      }}
+                    >
+                      {editingTenant ? "CERRAR FICHA" : "EDITAR FICHA"}
+                    </button>
+                  )}
+                </div>
               </header>
+
+              {editingTenant && canManageTenants && (
+                <TenantEditForm
+                  // La clave por (cliente, versión) resiembra el formulario cuando
+                  // el catálogo se refresca: sin ella, tras guardar seguiría
+                  // mostrando el `row_version` viejo y el siguiente guardado
+                  // chocaría con un 409 que nadie provocó.
+                  key={`${selected.tenant_id}|${selected.row_version}`}
+                  tenant={selected}
+                  pending={updateTenant.pending}
+                  error={updateTenant.error}
+                  onCancel={() => {
+                    updateTenant.reset();
+                    setEditingTenant(false);
+                  }}
+                  onSubmit={(body) =>
+                    updateTenant.update({ tenantId: selected.tenant_id, body }, () =>
+                      setEditingTenant(false),
+                    )
+                  }
+                />
+              )}
 
               <StateFrame
                 label="UMBRALES"
@@ -493,6 +567,8 @@ export default function TenantsPage() {
                   onReset={reset}
                 />
               </StateFrame>
+
+              {canManageUsers && <UsersCard tenant={selected} sites={data.sites} />}
 
               {canManageVisibility && (
                 <VisibilityCard grantee={selected} allTenants={data.tenants} />

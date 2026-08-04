@@ -1,13 +1,14 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
   createTenantTenantsPost,
-  getGatewayConfigStateFleetGatewaysGatewayIdConfigStateGet,
+  listGatewayConfigStatesFleetConfigStateGet,
   listGatewaysFleetGatewaysGet,
   listRuleSetsRuleSetsGet,
   listSitesSitesGet,
   listTenantsTenantsGet,
+  updateTenantTenantsTenantIdPatch,
 } from "@takab/sdk";
 import type {
   GatewayConfigStateOut,
@@ -16,6 +17,7 @@ import type {
   SiteOut,
   TenantCreate,
   TenantOut,
+  TenantUpdate,
 } from "@takab/sdk";
 
 /** El config-state cambia cuando el worker de sync publica: ≤60 s por contrato. */
@@ -63,12 +65,10 @@ async function fetchGateways(): Promise<GatewayOut[]> {
   return data;
 }
 
-async function fetchConfigState(gatewayId: string): Promise<GatewayConfigStateOut> {
-  const { data, response } = await getGatewayConfigStateFleetGatewaysGatewayIdConfigStateGet({
-    path: { gateway_id: gatewayId },
-  });
+async function fetchConfigStates(): Promise<GatewayConfigStateOut[]> {
+  const { data, response } = await listGatewayConfigStatesFleetConfigStateGet();
   if (data === undefined) {
-    throw new TenantsRequestError(`/fleet/gateways/${gatewayId}/config-state`, response.status);
+    throw new TenantsRequestError("/fleet/config-state", response.status);
   }
   return data;
 }
@@ -130,27 +130,48 @@ export interface TenantSyncData {
  *
  * Los gateways llegan de `/fleet/gateways`, ya filtrado por RLS al tenant en sesión.
  * Un superadmin mirando OTRO tenant no verá gabinetes aquí: se le dice, no se finge.
+ *
+ * [T-2.51] **Una sola consulta, no una por gabinete.** Esto abría un `useQuery` por
+ * gateway con `refetchInterval` de 10 s: 500 gabinetes = ~50 peticiones por segundo
+ * desde UN navegador, contra una API que además corre co-locada con la base. El
+ * endpoint en lote `GET /fleet/config-state` (T-2.37) devuelve el mismo SQL sin el
+ * `WHERE`, y comparte la clave de consulta con `useFleetSyncStates` — la Flota y el
+ * Multi-Tenant se sirven de la MISMA respuesta cacheada.
+ *
+ * La semántica honesta se conserva intacta: si en la respuesta falta el estado de
+ * alguno de los gabinetes pedidos, `states` es `undefined` (= "no se sabe"), jamás
+ * una lista parcial que el pie interpretaría como SINCRONIZADO (regla de oro 7).
  */
 export function useTenantSync(gatewayIds: string[]): TenantSyncData {
-  const results = useQueries({
-    queries: gatewayIds.map((id) => ({
-      queryKey: ["config-state", id],
-      queryFn: () => fetchConfigState(id),
-      refetchInterval: SYNC_POLL_MS,
-    })),
+  const query = useQuery({
+    queryKey: ["fleet", "config-state"],
+    queryFn: fetchConfigStates,
+    refetchInterval: SYNC_POLL_MS,
+    enabled: gatewayIds.length > 0,
   });
+
+  const states = useMemo(() => {
+    if (query.data === undefined) {
+      return undefined;
+    }
+    const byId = new Map(query.data.map((s) => [s.gateway_id, s]));
+    const picked = gatewayIds
+      .map((id) => byId.get(id))
+      .filter((s): s is GatewayConfigStateOut => s !== undefined);
+    // Falta alguno ⇒ undefined. Un gabinete ausente del lote no está "al día":
+    // simplemente no se sabe nada de él, y eso no autoriza ningún veredicto.
+    return picked.length === gatewayIds.length ? picked : undefined;
+  }, [query.data, gatewayIds]);
 
   if (gatewayIds.length === 0) {
     return { states: [], loading: false, error: null };
   }
-  const loading = results.some((r) => r.isPending);
-  const firstError = results.find((r) => r.error)?.error;
-  const data = results.map((r) => r.data).filter((d): d is GatewayConfigStateOut => !!d);
   return {
-    // Parcial ⇒ undefined: con un gabinete sin responder no se afirma nada del sync.
-    states: data.length === gatewayIds.length ? data : undefined,
-    loading,
-    error: firstError ? firstError.message : null,
+    states,
+    // `enabled:false` dejaría la query en `isPending` para siempre; aquí ya se
+    // devolvió antes en ese caso, así que isPending significa "en vuelo".
+    loading: query.isPending,
+    error: query.error ? query.error.message : null,
   };
 }
 
@@ -218,6 +239,63 @@ export function useCreateTenant(): CreateTenantState {
     pending: mutation.isPending,
     error: mutation.error ? mutation.error.message : null,
     createdId: mutation.data?.tenant_id ?? null,
+    reset: mutation.reset,
+  };
+}
+
+/** Un 409 aquí NO es "algo salió mal": otro admin guardó y hay que releer. */
+export function tenantPatchMessage(status: number): string {
+  switch (status) {
+    case 409:
+      return "CONFLICTO · otro administrador guardó este cliente mientras editabas. Recarga y reintenta.";
+    case 403:
+      return "SIN PERMISO · solo TAKAB edita la ficha de un cliente.";
+    case 404:
+      return "NO ENCONTRADO · el cliente no existe o no es visible para tu rol.";
+    case 422:
+      return "DATOS INVÁLIDOS · revisa el nombre, el plan y el estado.";
+    default:
+      return `PATCH /tenants falló (${status})`;
+  }
+}
+
+export interface UpdateTenantState {
+  update: (args: { tenantId: string; body: TenantUpdate }, onDone?: () => void) => void;
+  pending: boolean;
+  error: string | null;
+  reset: () => void;
+}
+
+/**
+ * [T-2.51] Edición de la ficha del cliente. Solo `takab_superadmin` (la acción
+ * `manage_tenants` gatea el control y la RLS `tenants_admin` lo exige igual).
+ *
+ * Manda `base_row_version` SIEMPRE: `visibility` decide si Protección Civil puede
+ * leer los datos de este cliente y `status` si el servicio sigue vivo. Que una
+ * pestaña vieja revierta cualquiera de las dos en silencio sería un cambio de
+ * superficie de seguridad que nadie ordenó — por eso el servidor responde 409.
+ */
+export function useUpdateTenant(): UpdateTenantState {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async ({ tenantId, body }: { tenantId: string; body: TenantUpdate }) => {
+      const { data, response } = await updateTenantTenantsTenantIdPatch({
+        path: { tenant_id: tenantId },
+        body,
+      });
+      if (data === undefined) {
+        throw new Error(tenantPatchMessage(response.status));
+      }
+      return data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["tenants"] });
+    },
+  });
+  return {
+    update: (args, onDone) => mutation.mutate(args, { onSuccess: () => onDone?.() }),
+    pending: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
     reset: mutation.reset,
   };
 }

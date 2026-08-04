@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     auth_occupants_jwks_url: str = ""
     auth_occupants_jwks_json: str = ""
 
+    # [T-2.54] Gestión de usuarios (proxy del Admin API de Cognito). Vacío ⇒
+    # directorio SIMULADO que grita en cada escritura (patrón T-1.62/T-2.04): la
+    # consola es usable sin AWS, pero jamás finge haber creado una identidad real.
+    # Es el pool PRINCIPAL; los ocupantes viven en su propio pool y se dan de alta
+    # por código de enrolamiento (T-2.53), no por esta pantalla.
+    cognito_user_pool_id: str = ""
+
     # --- WebSocket live (T-1.22 · G3) ---
     # Ventana para que el cliente mande el primer frame {"type":"auth",...} tras
     # el upgrade; si se excede, el hub cierra con code 4401.
@@ -184,6 +191,14 @@ class Settings(BaseSettings):
     # esto en True desde ya, TODO `soc_operator` vería cero sitios. En False un claim
     # vacío significa "sin restricción declarada" y se audita como hueco; un claim que
     # SÍ trae sitios se respeta igual. Se enciende cuando T-2.54 pueda escribirlo.
+    #
+    # [T-2.54 · 2026-08-04] El BLOQUEANTE ya está levantado: `PATCH /users/{username}`
+    # escribe `custom:site_scope` (ver `routers/users.py`), así que la Fase B es
+    # ACTIVABLE. Sigue en False a propósito: encenderla antes de que CADA usuario web
+    # tenga su claim aprovisionado deja sin datos exactamente a quien no lo tenga, que
+    # es el escenario para el que existe el cutover en dos fases. La secuencia es
+    # (1) desplegar, (2) recorrer la lista de `scope_gap` del audit_log y fijar el
+    # alcance de cada usuario desde la consola, (3) poner esto en True.
     console_scope_enforced: bool = False
 
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---

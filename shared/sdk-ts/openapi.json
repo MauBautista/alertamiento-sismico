@@ -1422,6 +1422,18 @@
             "title": "Duration S",
             "type": "integer"
           },
+          "from_scheduled": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Scheduled"
+          },
           "note": {
             "anyOf": [
               {
@@ -1473,6 +1485,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "required": [
@@ -1618,6 +1641,11 @@
               }
             ],
             "title": "Command Status"
+          },
+          "commandable": {
+            "default": true,
+            "title": "Commandable",
+            "type": "boolean"
           },
           "site_id": {
             "format": "uuid",
@@ -3872,9 +3900,34 @@
             ],
             "title": "Last Bucket"
           },
+          "last_heartbeat_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat Ts"
+          },
           "lat": {
             "title": "Lat",
             "type": "number"
+          },
+          "link_reasons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Link Reasons",
+            "type": "array"
+          },
+          "link_state": {
+            "default": "SIN GABINETE",
+            "title": "Link State",
+            "type": "string"
           },
           "lon": {
             "title": "Lon",
@@ -3902,6 +3955,17 @@
             ],
             "title": "Max Pgv Cms"
           },
+          "mqtt_rtt_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mqtt Rtt Ms"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3915,6 +3979,17 @@
                 "type": "null"
               }
             ]
+          },
+          "seedlink_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seedlink Lag S"
           },
           "site_id": {
             "format": "uuid",
@@ -4026,6 +4101,10 @@
             "title": "Manage Tenants",
             "type": "boolean"
           },
+          "manage_users": {
+            "title": "Manage Users",
+            "type": "boolean"
+          },
           "manage_visibility": {
             "title": "Manage Visibility",
             "type": "boolean"
@@ -4091,6 +4170,7 @@
           "manage_tenants",
           "manage_visibility",
           "manage_retire_code",
+          "manage_users",
           "checkin_submit",
           "roster_read",
           "damage_report_submit",
@@ -7101,6 +7181,10 @@
             "title": "Plan Code",
             "type": "string"
           },
+          "row_version": {
+            "title": "Row Version",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -7134,9 +7218,359 @@
           "visibility",
           "status",
           "plan_code",
+          "row_version",
           "created_at"
         ],
         "title": "TenantOut",
+        "type": "object"
+      },
+      "TenantUpdate": {
+        "additionalProperties": false,
+        "description": "Edición PARCIAL de un cliente (T-2.51). Solo ``takab_superadmin``.\n\nEs un PATCH, no un PUT: la pantalla Multi-Tenant edita una ficha campo a campo y\nun reemplazo total obligaría a reenviar valores que el operador no tocó (y a\npisarlos si otro admin los cambió mientras el formulario estaba abierto).\n\n``code`` NO es editable: es la llave que TAKAB entrega fuera de banda y que\naparece en runbooks, tickets y en el ``edge.env`` de los gabinetes. ``tenant_id``\ntampoco (``extra='forbid'`` los rechaza con 422). ``isolation_mode`` queda fuera\na propósito: pasar de ``logical`` a ``dedicated`` es una migración de datos, no\nuna casilla — anunciarlo aquí prometería un aislamiento que nadie ejecutó.",
+        "properties": {
+          "base_row_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Row Version"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "plan_code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Code"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "trial",
+                  "active",
+                  "suspended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "vertical": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "gov_shared"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "TenantUpdate",
+        "type": "object"
+      },
+      "UserActionOut": {
+        "description": "Acuse de reset/reenvío. NO trae contraseña ni código: el correo lo lleva.",
+        "properties": {
+          "action": {
+            "enum": [
+              "password_reset",
+              "invitation_resent"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Qué pasó, en lenguaje de operador. Jamás una credencial.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "action",
+          "detail"
+        ],
+        "title": "UserActionOut",
+        "type": "object"
+      },
+      "UserCreate": {
+        "additionalProperties": false,
+        "description": "Alta de usuario. La contraseña la genera Cognito y viaja por correo.",
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_scope": {
+            "default": "*",
+            "title": "Site Scope",
+            "type": "string"
+          },
+          "surface": {
+            "default": "web",
+            "enum": [
+              "web",
+              "mobile",
+              "both"
+            ],
+            "title": "Surface",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "zone_id": {
+            "default": "",
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "UserCreate",
+        "type": "object"
+      },
+      "UserOut": {
+        "description": "Usuario del directorio. Sin credenciales, por construcción.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_scope": {
+            "title": "Site Scope",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "surface": {
+            "title": "Surface",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "zone_id": {
+            "title": "Zone Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "tenant_id",
+          "role",
+          "site_scope",
+          "zone_id",
+          "surface",
+          "enabled",
+          "status"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "UserPage": {
+        "properties": {
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "backend"
+        ],
+        "title": "UserPage",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "additionalProperties": false,
+        "description": "Edición PARCIAL. ``email`` no se toca: es el identificador de acceso y\ncambiarlo desde aquí rompería el vínculo con la invitación ya enviada.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "site_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Scope"
+          },
+          "surface": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mobile",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          }
+        },
+        "title": "UserUpdate",
         "type": "object"
       },
       "ValidationError": {
@@ -7492,8 +7926,57 @@
     },
     "/drills": {
       "get": {
-        "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).",
+        "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).\n\n[T-2.48] Paginación keyset y filtro por tipo: ``executed`` es lo que sonó en\nlos edificios, ``scheduled`` la agenda (de ahí sale el banner armado).",
         "operationId": "list_drills_drills_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "executed",
+                "scheduled"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7504,12 +7987,22 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Drills"
       },
       "post": {
-        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.\n\n[T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del \"próximo\nsimulacro\" para la app): sin comandos, sin banner, jamás ``active``.",
+        "description": "Inicia el simulacro: 1 comando firmado `drill_start` por sitio.\n\n[T-2.03·D4c] Con ``scheduled_at`` la fila es AGENDA (anuncio del \"próximo\nsimulacro\" para la app): sin comandos, sin banner, jamás ``active``.\n\n[T-2.48] Con ``from_scheduled`` se EJECUTA una agenda ya armada, heredando\nsus sitios/duración/nota, y la agenda queda consumida. Sigue siendo un clic\nhumano en una sesión viva: aquí no hay temporizador que dispare nada — un\nactuador que se activa solo por reloj rompería la regla de oro 8.",
         "operationId": "start_drill_drills_post",
         "requestBody": {
           "content": {
@@ -7563,6 +8056,47 @@
           }
         },
         "summary": "Active Drill"
+      }
+    },
+    "/drills/{drill_id}/cancel": {
+      "post": {
+        "description": "[T-2.48] Cancela un simulacro PROGRAMADO antes de que se ejecute.\n\nSolo aplica a la agenda. Un simulacro que ya corrió no se cancela: sonó en\nedificios reales y el registro es evidencia de cumplimiento — marcarlo\n\"cancelado\" después reescribiría un hecho (regla de oro 11). Para ese caso\nexiste ``/stop``, que cierra la ventana sin negar que ocurrió.\n\nIdempotente y sin emitir nada: una agenda ya cerrada (cancelada o ejecutada)\nse devuelve TAL CUAL, conservando su ``stop_reason`` original.",
+        "operationId": "cancel_drill_drills__drill_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Drill"
       }
     },
     "/drills/{drill_id}/stop": {
@@ -10624,7 +11158,7 @@
     },
     "/telemetry/map/state": {
       "get": {
-        "description": "Estado de los sitios visibles Y dentro del alcance: sacudida + incidente + epicentros.",
+        "description": "Estado de los sitios visibles Y dentro del alcance: sacudida + enlace + epicentros.",
         "operationId": "map_state_telemetry_map_state_get",
         "responses": {
           "200": {
@@ -10964,6 +11498,57 @@
         "summary": "Create Tenant"
       }
     },
+    "/tenants/{tenant_id}": {
+      "patch": {
+        "description": "Edita la ficha del cliente (T-2.51). SOLO ``takab_superadmin``.\n\nPATCH parcial: solo llegan al SET los campos que el cuerpo trae. ``code`` e\n``isolation_mode`` no son editables (ver ``TenantUpdate``).\n\n``base_row_version`` viejo ⇒ 409. La carrera importa aquí más que en una ficha\ncualquiera: ``visibility='gov_shared'`` amplía QUIÉN puede leer los datos del\ncliente (``tenants_read`` y ``app_gov_can_see``) y ``status='suspended'`` es una\ndecisión comercial. Revertir cualquiera de las dos en silencio, porque dos\npestañas guardaron con segundos de diferencia, sería un cambio de superficie de\nseguridad que nadie ordenó.\n\nLa escritura la autoriza la RLS ``tenants_admin``; la acción ``manage_tenants``\nevita pintar un control que siempre daría 403 (regla de oro 7).",
+        "operationId": "update_tenant_tenants__tenant_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Tenant"
+      }
+    },
     "/tenants/{tenant_id}/retire-code": {
       "get": {
         "description": "¿Tiene este cliente código de retiro configurado? Nunca devuelve el hash.\n\nLa consola lo consulta antes de ofrecer el retiro: sin código el intento sería un\n409 seguro, y ofrecer un botón que siempre falla es lo que veta la regla de oro 7.",
@@ -11052,6 +11637,267 @@
           }
         },
         "summary": "Put Retire Code"
+      }
+    },
+    "/users": {
+      "get": {
+        "description": "Usuarios del cliente en sesión (o de todos, para roles internos TAKAB).\n\n``ListUsers`` de Cognito **no filtra por atributos custom**, así que el\nacotamiento por tenant se hace aquí sobre la página que devuelve el pool. El\ncursor sigue siendo el ``PaginationToken`` de Cognito (paginación estable); lo\nque no se puede prometer es que cada página traiga exactamente ``limit`` filas.\nSe documenta en vez de simularse: mentir sobre el tamaño de página obligaría a\nbarrer el pool entero en cada request.",
+        "operationId": "list_users_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Users"
+      },
+      "post": {
+        "description": "Da de alta una identidad e invita por correo. Nunca devuelve credenciales.",
+        "operationId": "create_user_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create User"
+      }
+    },
+    "/users/{username}": {
+      "delete": {
+        "description": "Baja definitiva de la identidad. Su rastro en ``audit_log`` NO se toca.\n\nLa bitácora referencia al actor por ``sub``, no por FK: borrar la cuenta no\nborra lo que hizo (regla de oro 11). Un ``PATCH {\"enabled\": false}`` es la\nalternativa reversible y es la que la consola ofrece primero.",
+        "operationId": "delete_user_users__username__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete User"
+      },
+      "patch": {
+        "description": "Edita rol, alcance, zona, superficie y estado. ``tenant_id`` NO es editable.\n\nMover a alguien de cliente re-tenantiza su rastro de auditoría, que es evidencia\ninmutable (regla de oro 11) — el camino honesto es dar de baja allá y de alta acá.",
+        "operationId": "update_user_users__username__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update User"
+      }
+    },
+    "/users/{username}/resend-invitation": {
+      "post": {
+        "description": "Reenvía la invitación inicial (usuario que nunca entró).",
+        "operationId": "resend_invitation_users__username__resend_invitation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Invitation"
+      }
+    },
+    "/users/{username}/reset-password": {
+      "post": {
+        "description": "Dispara el flujo de recuperación de Cognito. NO fija ni devuelve una clave.",
+        "operationId": "reset_password_users__username__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password"
       }
     },
     "/visibility-grants": {

@@ -25,6 +25,7 @@ const TAB_LABELS: Record<string, string> = {
   "/fleet": "FLOTA EDGE",
   "/triage": "EVALUACIÓN",
   "/tenants": "MULTI-TENANT",
+  "/audit": "AUDITORÍA",
 };
 
 function seed(me: MeResponse): void {
@@ -86,10 +87,7 @@ describe("Topbar", () => {
   it("marca el tab activo con aria-current=page", () => {
     seed(ME_FIXTURES.soc_operator);
     renderTopbar("/console");
-    expect(screen.getByRole("link", { name: "MONITOREO" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(screen.getByRole("link", { name: "MONITOREO" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "FLOTA EDGE" })).not.toHaveAttribute("aria-current");
   });
 

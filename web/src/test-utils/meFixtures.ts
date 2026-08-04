@@ -5,7 +5,14 @@ import type { MeActions, MeResponse } from "../auth/me";
  * nav y guards leen `allowed_routes`/`allowed_actions` del servidor (/me).
  * Si la matriz cambia en el backend, este archivo debe cambiar con ella. */
 
-export const ALL_ROUTES = ["/console", "/fleet", "/triage", "/tenants", "/building"] as const;
+export const ALL_ROUTES = [
+  "/console",
+  "/fleet",
+  "/triage",
+  "/tenants",
+  "/audit",
+  "/building",
+] as const;
 
 export const ACTIONS_NONE: MeActions = {
   ack_incident: false,
@@ -23,6 +30,8 @@ export const ACTIONS_NONE: MeActions = {
   manage_tenants: false,
   manage_visibility: false,
   manage_retire_code: false,
+  // [T-2.54] gestión de usuarios (proxy del Admin API de Cognito)
+  manage_users: false,
   // [T-2.03] superficie móvil (la consola no las usa; el espejo debe estar completo)
   checkin_submit: false,
   roster_read: false,
@@ -85,6 +94,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     manage_tenants: true,
     manage_visibility: true,
     manage_retire_code: true,
+    manage_users: true,
     enrollment_manage: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
@@ -99,6 +109,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     read_audit: true,
     self_test: true,
     drill_start: true,
+    manage_users: true,
     enrollment_manage: true,
   }),
   soc_operator: me("soc_operator", ["/console", "/fleet", "/triage", "/building"], {
@@ -106,7 +117,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     relocate_epicenter: true,
     request_dictamen: true,
   }),
-  gov_operator: me("gov_operator", ["/console", "/fleet", "/triage", "/building"], {
+  gov_operator: me("gov_operator", ["/console", "/fleet", "/triage", "/audit", "/building"], {
     ack_incident: true,
     export: true,
     read_audit: true,

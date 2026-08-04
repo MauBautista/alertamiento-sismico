@@ -161,3 +161,21 @@ async def test_cursor_corrupto_400_y_rango_invalido_422(client, make_audit) -> N
         headers=_token(),
     )
     assert bad_range.status_code == 422
+
+
+async def test_superficie_movil_no_pagina_el_audit_trail(client, make_audit) -> None:
+    """[T-2.52] /audit es una ruta de la CONSOLA (matrix.ROUTE_ORDER): un token de la
+    app móvil no la abre. El trail lleva PII de actores y el detalle de cada acción
+    sobre actuadores; la app de campo tiene su propia superficie."""
+    await make_audit(au.DB_TENANT_PRIV)
+    token = au.bearer(
+        au.make_token(
+            "tenant_admin",
+            tenant=au.DB_TENANT_PRIV,
+            site_scope="*",
+            user_id=_USER,
+            surface="mobile",
+        )
+    )
+    resp = await client.get("/audit", headers=token)
+    assert resp.status_code == 403

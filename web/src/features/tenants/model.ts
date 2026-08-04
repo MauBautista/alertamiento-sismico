@@ -279,6 +279,49 @@ export function siteCountOf(sites: SiteOut[] | undefined, tenantId: string): num
   return sites === undefined ? null : sites.filter((s) => s.tenant_id === tenantId).length;
 }
 
+/**
+ * [T-2.51] Cuenta de sitios de TODOS los tenants en una pasada.
+ *
+ * `siteCountOf` recorre la lista entera de sitios por cada tenant pintado: con 40
+ * clientes y 200 estaciones son 8 000 comparaciones en CADA render, y la lista se
+ * repinta con cada tecla de la búsqueda. Un solo agrupado O(sitios) lo resuelve;
+ * `siteCountOf` se conserva para la ficha individual.
+ *
+ * `undefined` (el `/sites` que degradó sin tumbar la página) ⇒ mapa vacío y la UI
+ * pinta `S/D`: cero sitios y "no se sabe" no son lo mismo (regla de oro 7).
+ */
+export function siteCountsBy(sites: SiteOut[] | undefined): Map<string, number> | null {
+  if (sites === undefined) {
+    return null;
+  }
+  const counts = new Map<string, number>();
+  for (const site of sites) {
+    counts.set(site.tenant_id, (counts.get(site.tenant_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * [T-2.51] Búsqueda en el CLIENTE por nombre, código o vertical.
+ *
+ * `GET /tenants` no pagina ni filtra: devuelve todas las filas que la RLS deja ver.
+ * A la escala de este producto (decenas de clientes) eso es correcto y la búsqueda
+ * local es instantánea. **Deuda declarada**: hacia ~200 clientes hay que mover
+ * filtro y paginación al servidor — a partir de ahí el navegador descarga y ordena
+ * un catálogo que nunca va a mirar entero.
+ */
+export function filterTenants(tenants: TenantOut[], query: string): TenantOut[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return tenants;
+  }
+  return tenants.filter((t) =>
+    [t.name, t.code, t.vertical ?? "", t.plan_code, t.status].some((field) =>
+      field.toLowerCase().includes(needle),
+    ),
+  );
+}
+
 /** `tenants.vertical` es texto libre y nullable: es el "tipo de instalación". */
 export function verticalOf(tenant: TenantOut): string {
   return tenant.vertical && tenant.vertical.trim() !== "" ? tenant.vertical : "SIN CLASIFICAR";

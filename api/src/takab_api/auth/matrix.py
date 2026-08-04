@@ -5,8 +5,13 @@ cambia aquí; ``test_matrix`` compara esta tabla contra una copia a mano de §2 
 falla ante cualquier divergencia.
 
 Rutas (columnas §2 → ruta §7): MONITOREO=/console, Flota Edge=/fleet,
-Triage=/triage, Multi-Tenant=/tenants, Dash Edificio=/building. Una ruta está
-concedida si la celda de §2 no es "—".
+Triage=/triage, Multi-Tenant=/tenants, Auditoría=/audit, Dash Edificio=/building.
+Una ruta está concedida si la celda de §2 no es "—".
+
+[T-2.52] ``/audit`` es la columna nueva: ``GET /audit`` existía desde T-1.57 sin
+ninguna pantalla que lo consumiera. La celda es EXACTAMENTE la acción
+``read_audit`` (superadmin, support, tenant_admin, gov_operator) — no se inventa
+una frontera nueva, se hace visible la que ya decidía el endpoint.
 
 Divergencia doc conocida: §7 lista ``building_admin`` en ``/fleet`` pero §2 le da
 "—" en Flota Edge. Seguimos §2 (celda a celda, como el test) → building_admin
@@ -44,18 +49,23 @@ CONSOLE = "/console"
 FLEET = "/fleet"
 TRIAGE = "/triage"
 TENANTS = "/tenants"
+AUDIT = "/audit"
 BUILDING = "/building"
 
-# Orden estable de rutas para allowed_routes().
-ROUTE_ORDER: tuple[str, ...] = (CONSOLE, FLEET, TRIAGE, TENANTS, BUILDING)
+# Orden estable de rutas para allowed_routes(). ``/building`` va al final porque no
+# es un tab (se entra por deep-link) y ``landing.ts`` toma la PRIMERA ruta distinta
+# de él como destino tras el login: meter /audit antes rompería el aterrizaje.
+ROUTE_ORDER: tuple[str, ...] = (CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING)
 
 # Rutas concedidas por rol (espejo de §2, celda ≠ "—").
 ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
-    "takab_superadmin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, BUILDING}),
-    "takab_support": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, BUILDING}),
-    "tenant_admin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, BUILDING}),
+    "takab_superadmin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
+    "takab_support": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
+    "tenant_admin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
     "soc_operator": frozenset({CONSOLE, FLEET, TRIAGE, BUILDING}),
-    "gov_operator": frozenset({CONSOLE, FLEET, TRIAGE, BUILDING}),
+    # [T-2.52] gov_operator SÍ ve /audit: RBAC §2 le da `read_audit` como evidencia
+    # de protección civil, y la RLS `audit_read` ya acota las filas a lo que puede ver.
+    "gov_operator": frozenset({CONSOLE, FLEET, TRIAGE, AUDIT, BUILDING}),
     "inspector": frozenset({CONSOLE, TRIAGE, BUILDING}),
     "building_admin": frozenset({CONSOLE, TRIAGE, BUILDING}),
     "brigadista": frozenset(),
@@ -114,6 +124,15 @@ ACTIONS: tuple[str, ...] = (
     # factor (su sesión) y la fricción desaparecería. La RLS ``trc_admin`` ya
     # exige app_role='takab_superadmin'; la matriz decide quién ve el control.
     "manage_retire_code",
+    # [T-2.54] Alta/edición/baja de USUARIOS (proxy del Admin API de Cognito).
+    # ``takab_superadmin`` (dueño de la plataforma) y ``tenant_admin`` (dueño del
+    # cliente, acotado a SU tenant por el router). Deliberadamente NO la recibe
+    # ``takab_support``: soporte lee la plataforma, no reparte identidades — y
+    # ``custom:tenant_id``/``custom:role`` son justo los dos claims donde se ancla
+    # la RLS (regla de oro 5), así que otorgarlos es otorgar datos. Los roles de
+    # tenant solo pueden asignar roles NO internos (``schemas/users.PLATFORM_ROLES``),
+    # o un tenant_admin se fabricaría un superadmin.
+    "manage_users",
     # [T-2.03] SUPERFICIE MÓVIL (spec móvil §5/§8 + RBAC §3/§4). Los roles móviles
     # dejan de ser placeholders vacíos: estas son acciones de CAMPO (persona presente
     # en el inmueble con identidad de roster), por eso los roles de plataforma/SOC
@@ -165,6 +184,7 @@ def _actions(
     manage_tenants: bool = False,
     manage_visibility: bool = False,
     manage_retire_code: bool = False,
+    manage_users: bool = False,
     checkin_submit: bool = False,
     roster_read: bool = False,
     damage_report_submit: bool = False,
@@ -192,6 +212,7 @@ def _actions(
         "manage_tenants": manage_tenants,
         "manage_visibility": manage_visibility,
         "manage_retire_code": manage_retire_code,
+        "manage_users": manage_users,
         "checkin_submit": checkin_submit,
         "roster_read": roster_read,
         "damage_report_submit": damage_report_submit,
@@ -221,6 +242,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manage_tenants=True,
         manage_visibility=True,
         manage_retire_code=True,
+        manage_users=True,
         # [T-2.03] Administra el alta de ocupantes; las acciones de CAMPO
         # (check-in/roster/daños/silenciar) NO — exigen presencia con identidad
         # de roster en el inmueble, no "Total" de plataforma.
@@ -237,6 +259,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         read_audit=True,
         self_test=True,
         drill_start=True,
+        manage_users=True,
         enrollment_manage=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),

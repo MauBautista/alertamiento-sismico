@@ -13,6 +13,15 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+#: [T-2.46] Cuarto estado de enlace, exclusivo del MAPA (no existe en la flota).
+#:
+#: ``schemas.fleet`` deriva el estado de un GABINETE, así que sus tres valores
+#: presuponen que hay uno. El mapa habla de ESTACIONES, y una estación puede no
+#: tener hardware instalado todavía. Colapsarlo en ``SIN ENLACE`` mandaría a un
+#: técnico a revisar la antena de un edificio donde no hay nada que revisar; y
+#: pintarlo como OPERATIVO sería peor. Es un hecho distinto y se dice distinto.
+SIN_GABINETE = "SIN GABINETE"
+
 
 class FeatureSeries(BaseModel):
     """Strip de features 1 s (crudo procesado en el edge, no waveform 100 sps).
@@ -122,6 +131,26 @@ class MapSiteState(BaseModel):
     #: False ⇒ PGA/PGV son RELATIVOS, no unidades físicas: la UI no puede
     #: presentarlos como una intensidad real (db/schema.sql §sensors).
     calibrated: bool
+
+    # --- [T-2.46] Enlace con el gabinete de la estación -----------------------
+    # El mapa decía qué SINTIÓ cada edificio y nada sobre si su gabinete sigue
+    # vivo: un punto verde podía ser "todo bien" o "llevo seis horas sin datos y
+    # este color es un recuerdo". Exactamente lo que prohíbe la regla de oro 7.
+    #
+    # Lo deriva ``derive_fleet_state`` — la MISMA función que pinta /fleet — más
+    # ``SIN GABINETE`` cuando la estación no tiene hardware. Aditivo y opcional:
+    # ningún consumidor previo del contrato se rompe.
+    #: ``OPERATIVO`` | ``DEGRADADO`` | ``SIN ENLACE`` | ``SIN GABINETE``.
+    #: El default NO afirma un enlace vivo: sin dato, no hay gabinete que valga.
+    link_state: str = SIN_GABINETE
+    #: QUÉ degrada, en el idioma de la UI. Vacía salvo en ``DEGRADADO``: en
+    #: ``SIN ENLACE`` el problema es el silencio, no una métrica.
+    link_reasons: list[str] = []
+    #: Último latido conocido. Es lo que permite a la UI decir la EDAD ("hace
+    #: 1 h") en vez de dejar el color como si fuera una lectura viva.
+    last_heartbeat_ts: datetime | None = None
+    mqtt_rtt_ms: float | None = None
+    seedlink_lag_s: float | None = None
 
 
 class MapState(BaseModel):

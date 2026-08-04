@@ -33,6 +33,9 @@ class MeActions(BaseModel):
     manage_visibility: bool
     #: [T-2.36] Rotar el código de retiro del cliente (solo takab_superadmin).
     manage_retire_code: bool
+    #: [T-2.54] Alta/edición/baja de identidades en Cognito (superadmin +
+    #: tenant_admin acotado a su tenant). No la recibe ``takab_support``.
+    manage_users: bool
     checkin_submit: bool
     roster_read: bool
     damage_report_submit: bool

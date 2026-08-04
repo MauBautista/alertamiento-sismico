@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import type { GatewayConfigStateOut, RuleSetOut, TenantOut } from "@takab/sdk";
+import type { GatewayConfigStateOut, RuleSetOut, SiteOut, TenantOut } from "@takab/sdk";
 
 import {
   EDGE_THRESHOLD_DEFAULTS,
   activeTenantRuleSet,
   channelErrors,
   draftsFrom,
+  filterTenants,
   isDedicated,
   patchChannels,
   patchThresholds,
   readChannels,
   readThresholds,
   siteCountOf,
+  siteCountsBy,
   syncStatusOf,
   syncedFingerprintOf,
   thresholdErrors,
@@ -44,6 +46,7 @@ function tenant(over: Partial<TenantOut> = {}): TenantOut {
     visibility: "private",
     status: "active",
     plan_code: "mvp",
+    row_version: "774100",
     created_at: "2026-01-01T00:00:00Z",
     ...over,
   };
@@ -391,5 +394,63 @@ describe("channelErrors / draftsFrom", () => {
       enabled: false,
       destination: "",
     });
+  });
+});
+
+describe("siteCountsBy · una pasada para todo el catálogo (T-2.51)", () => {
+  const sites = [
+    { site_id: "s1", tenant_id: "t-1" },
+    { site_id: "s2", tenant_id: "t-1" },
+    { site_id: "s3", tenant_id: "t-2" },
+  ] as unknown as SiteOut[];
+
+  it("agrupa por tenant en O(sitios), no en O(tenants × sitios)", () => {
+    const counts = siteCountsBy(sites);
+    expect(counts?.get("t-1")).toBe(2);
+    expect(counts?.get("t-2")).toBe(1);
+  });
+
+  it("un tenant sin sitios no aparece: la página distingue 0 de S/D", () => {
+    expect(siteCountsBy(sites)?.has("t-9")).toBe(false);
+  });
+
+  it("`/sites` degradado ⇒ null (no se sabe), jamás un mapa vacío que diría 0", () => {
+    // Ese es exactamente el fallo de la regla de oro 7: cero estaciones y "no se
+    // pudo consultar el catálogo" no son el mismo hecho.
+    expect(siteCountsBy(undefined)).toBeNull();
+  });
+
+  it("coincide con siteCountOf, que sigue sirviendo a la ficha individual", () => {
+    expect(siteCountsBy(sites)?.get("t-1")).toBe(siteCountOf(sites, "t-1"));
+  });
+});
+
+describe("filterTenants · búsqueda local del catálogo (T-2.51)", () => {
+  const a = tenant({ tenant_id: "t-1", code: "TKB-001", name: "Hospital Ángeles" });
+  const b = tenant({ tenant_id: "t-2", code: "GOB-002", name: "Secretaría", vertical: "gobierno" });
+
+  it("sin búsqueda devuelve el catálogo intacto (misma referencia de filas)", () => {
+    expect(filterTenants([a, b], "")).toEqual([a, b]);
+    expect(filterTenants([a, b], "   ")).toEqual([a, b]);
+  });
+
+  it("busca por nombre, sin distinguir mayúsculas ni acentos ya escritos", () => {
+    expect(filterTenants([a, b], "ángeles")).toEqual([a]);
+    expect(filterTenants([a, b], "HOSPITAL")).toEqual([a]);
+  });
+
+  it("busca también por código, vertical, plan y estado", () => {
+    expect(filterTenants([a, b], "GOB")).toEqual([b]);
+    expect(filterTenants([a, b], "gobierno")).toEqual([b]);
+    expect(filterTenants([a, b], "mvp")).toEqual([a, b]);
+    expect(filterTenants([a, b], "active")).toEqual([a, b]);
+  });
+
+  it("sin coincidencias devuelve vacío (la página lo rotula, no lo esconde)", () => {
+    expect(filterTenants([a, b], "zzz")).toEqual([]);
+  });
+
+  it("una vertical nula no rompe la búsqueda", () => {
+    expect(filterTenants([tenant({ vertical: null })], "industrial")).toEqual([]);
   });
 });
