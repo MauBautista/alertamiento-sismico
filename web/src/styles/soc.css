@@ -23,9 +23,13 @@ body {
   height: 100vh;
   min-height: 720px;
 }
+/* La columna de detalle sale del token `--tk-detail-w` (T-2.55: hasta ahora el
+ * token existía y el ancho iba duro en la hoja, así que eran DOS fuentes de
+ * verdad para el mismo número). El valor del token se alineó con lo que la
+ * consola lleva sirviendo —380 px—, no al revés: 1920×1080 no se mueve. */
 .soc-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr) var(--tk-detail-w);
   gap: 14px;
   padding: 14px;
   overflow: hidden;
@@ -77,7 +81,6 @@ body {
    Fijando los hijos a su altura natural, el sobrante va al scroll del
    contenedor — que es justo lo que el `overflow-y: auto` pedía. */
 .soc-detail > *,
-.soc-tabpage > *,
 .fleet > *,
 .triage-detail > *,
 .mt__detail > *,
@@ -127,22 +130,8 @@ body {
   /* The wordmark ships on a dark-navy. On the topbar (also navy-800) we
      don't need any treatment; image arrives with transparent background. */
 }
-.soc-brand__mark { color: var(--tk-fg-1); }
-.soc-brand__name {
-  font-family: var(--tk-font-brand);
-  font-weight: 600;
-  font-size: 19px;
-  letter-spacing: 0.08em;
-  line-height: 1;
-}
-.soc-brand__tag {
-  font-family: var(--tk-font-brand);
-  font-weight: 500;
-  font-size: 9.5px;
-  letter-spacing: 0.20em;
-  color: var(--tk-fg-3);
-  margin-top: 4px;
-}
+/* [T-2.55] `.soc-brand__mark`, `__name` y `__tag` eran el wordmark TIPOGRÁFICO
+   del mockup; la topbar real sirve el logotipo como imagen (`__logo`). */
 .soc-system { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .soc-nav { display: flex; gap: 4px; }
 .soc-nav__tab {
@@ -259,20 +248,58 @@ body {
   background: #0d2034;
 }
 .soc-map { position: absolute; inset: 0; }
-.soc-map__svg { width: 100%; height: 100%; display: block; }
 
-.soc-map__expand {
-  position: absolute; top: 14px; right: 14px;
-  width: 30px; height: 30px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid var(--tk-border-strong);
-  border-radius: 4px;
-  color: var(--tk-fg-1);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 120ms var(--tk-ease);
+/* =====================================================================
+   [T-2.55] GEOGRAFÍA DE LOS SOBREPUESTOS DEL ESCENARIO
+   =====================================================================
+   Tres cajas absolutas caían en la misma banda superior y se tapaban entre
+   sí en cuanto el escenario se estrechaba: `.soc-alert` (arriba-izquierda,
+   360 px fijos), `.soc-map__degraded` (arriba-CENTRO) y el
+   `.soc-stateframe__stale` del wall (arriba-centro también).
+
+   Se resuelve por REUBICACIÓN, no subiendo z-index: dos elementos que se
+   tapan siguen tapándose aunque uno gane la disputa de pintado — el que
+   pierde deja de ser legible igual. Cada esquina tiene ahora UN dueño:
+
+     arriba-izquierda  →  `.soc-map__status`    (estado del mapa)
+     arriba-derecha    →  `.soc-stage__overlays` (alerta y avisos de página)
+     abajo-derecha     →  `.soc-map__legends`   (las DOS leyendas + capas)
+     abajo-izquierda   →  `.soc-map__attribution`
+
+   Las dos pilas superiores se acotan a 46 % del ancho cada una: con eso NO
+   PUEDEN solaparse por aritmética, sin importar el viewport. Es lo que
+   `e2e/layout.spec.ts` comprueba midiendo `boundingBox` de verdad.
+   ===================================================================== */
+.soc-stage__overlays {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: var(--tk-z-alert);
+  width: min(360px, 46%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
+  /* La pila no intercepta el ratón; sus hijos sí. Sin esto, una columna
+     vacía de 360 px comería los clics de selección de estación del mapa. */
+  pointer-events: none;
 }
-.soc-map__expand:hover { color: var(--tk-cyan); border-color: var(--tk-cyan); }
+.soc-stage__overlays > * { pointer-events: auto; }
+
+.soc-map__status {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: var(--tk-z-map-status);
+  max-width: 46%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
 
 .soc-map__legend {
   position: absolute; bottom: 36px; right: 14px;
@@ -308,9 +335,13 @@ body {
   color: var(--tk-fg-3);
 }
 
+/* Abajo-IZQUIERDA y en columna (antes ocupaba el ancho completo con
+   `space-between`, así que su segunda línea aterrizaba bajo la pila de
+   leyendas de la esquina derecha). */
 .soc-map__attribution {
-  position: absolute; bottom: 6px; left: 12px; right: 12px;
-  display: flex; justify-content: space-between;
+  position: absolute; bottom: 6px; left: 12px; right: auto;
+  max-width: 46%;
+  display: flex; flex-direction: column; gap: 1px;
   font-family: var(--tk-font-ui);
   font-size: 10px;
   color: var(--tk-fg-3);
@@ -319,18 +350,19 @@ body {
 }
 
 /* =====================================================================
-   ALERT HERO (left-anchored overlay)
+   ALERT HERO — primer elemento de la pila `.soc-stage__overlays`
    ===================================================================== */
+/* [T-2.55] Deja de anclarse solo: vive DENTRO de la pila arriba-derecha, que es
+   quien decide la esquina y el ancho. Sigue siendo hijo de `.soc-stage` en el
+   marcado de la PÁGINA y no del mapa: si MapPanel falla, se moquea o se
+   reemplaza, la alerta sísmica tiene que seguir pintándose (regla de oro 1). */
 .soc-alert {
-  position: absolute;
-  top: 14px; left: 14px;
-  width: 360px;
+  width: 100%;
   background: rgba(10, 14, 24, 0.92);
   border: 1px solid var(--tk-status-critical);
   border-radius: var(--tk-radius-md);
   overflow: hidden;
   box-shadow: var(--tk-shadow-critical);
-  z-index: 10;
 }
 .soc-alert__strip {
   background: var(--tk-status-critical);
@@ -358,38 +390,11 @@ body {
   color: var(--tk-fg-3);
   letter-spacing: 0.04em;
 }
-.soc-alert__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 12px 16px 6px;
-  gap: 12px;
-}
-.soc-alert__num {
-  font-family: var(--tk-font-mono);
-  font-weight: 700;
-  font-size: 56px;
-  line-height: 1;
-  color: var(--tk-fg-1);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-.soc-alert__num--warn { color: var(--tk-status-warning); }
-.soc-alert__num--unit {
-  font-size: 26px;
-  margin-left: 2px;
-  font-weight: 500;
-  color: var(--tk-fg-2);
-}
-.soc-alert__lbl {
-  font-family: var(--tk-font-ui);
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tk-fg-2);
-  margin-top: 4px;
-}
-.soc-alert__lbl--warn { color: var(--tk-status-warning); }
+/* [T-2.55] Se retiran `.soc-alert__grid`, `__num`, `__num--warn`, `__num--unit`,
+   `__lbl` y `__lbl--warn`: eran la rejilla de MAGNITUD PRELIMINAR y T-MINUS del
+   mockup original. Esa UI está PROHIBIDA (CLAUDE.md §8 — el WR-1 entrega un
+   booleano), `AlertBanner.tsx` nunca las escribió y dejarlas invitaba a
+   recablearlas "porque el estilo ya existe". */
 
 .soc-alert__pga {
   margin: 6px 16px 14px;
@@ -631,7 +636,7 @@ body {
   display: grid;
   /* La 3ª columna es la insignia SIN CALIBRAR (T-1.33): va pegada a los readouts
      que califica, no perdida en una cabecera. */
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   margin-top: 10px;
@@ -678,7 +683,7 @@ body {
 .soc-bms { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .soc-bms__row {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -708,88 +713,17 @@ body {
 .soc-bms__state--warning { background: var(--tk-status-warning); color: var(--tk-navy-900); }
 .soc-bms__state--critical { background: var(--tk-status-critical); color: #fff; }
 
-/* CCTV */
+/* CCTV — [T-2.55] solo queda el contenedor. El reproductor del mockup
+   (`__feed-wrap`, `__feed`, `__overlay`, `__live`, `__camlbl`, `__ts`,
+   `__controls`, `__seek`) se retira: `DetailPanel` únicamente pinta el ESTADO
+   VACÍO de esta card —no hay integración de video en la plataforma— y 60
+   líneas de estilo para un reproductor inexistente se leían como una función
+   que ya está y solo falta cablear. Vuelve con el video, no antes. */
 .soc-cctv { display: flex; flex-direction: column; gap: 6px; }
-.soc-cctv__feed-wrap { position: relative; border-radius: 3px; overflow: hidden; background: #060708; }
-.soc-cctv__feed { width: 100%; height: 130px; display: block; }
-.soc-cctv__overlay {
-  position: absolute; top: 6px; left: 6px;
-  display: flex; align-items: center; gap: 8px;
-}
-.soc-cctv__live {
-  font-family: var(--tk-font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--tk-status-critical);
-  padding: 2px 6px;
-  border-radius: 2px;
-  letter-spacing: 0.10em;
-  display: inline-flex; align-items: center; gap: 4px;
-}
-.soc-cctv__live::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%;
-  background: #fff; animation: soc-pulse 1.6s linear infinite;
-}
-.soc-cctv__camlbl {
-  font-family: var(--tk-font-mono);
-  font-size: 10px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 2px 6px;
-  border-radius: 2px;
-  letter-spacing: 0.04em;
-}
-.soc-cctv__ts {
-  position: absolute; bottom: 6px; right: 6px;
-  font-family: var(--tk-font-mono);
-  font-size: 10px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 2px 6px;
-  border-radius: 2px;
-  letter-spacing: 0.04em;
-}
-.soc-cctv__controls {
-  display: flex; align-items: center; gap: 8px;
-  color: var(--tk-fg-2);
-  padding: 0 2px;
-}
-.soc-cctv__seek {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 2px;
-  background: var(--tk-border-strong);
-  border-radius: 999px;
-  outline: none;
-}
-.soc-cctv__seek::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--tk-cyan);
-  cursor: pointer;
-}
 
-/* =====================================================================
-   DEMO / TWEAKS BAR (always visible — reset alert state)
-   ===================================================================== */
-.soc-demo {
-  position: fixed; bottom: 12px; right: 14px;
-  z-index: 1000;
-  background: rgba(14, 35, 54, 0.94);
-  border: 1px solid var(--tk-border-strong);
-  border-radius: 4px;
-  padding: 8px 10px;
-  display: flex; gap: 8px; align-items: center;
-  font-family: var(--tk-font-ui);
-  font-size: 10px;
-  color: var(--tk-fg-3);
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-}
-.soc-demo button { font-size: 10px; padding: 7px 12px; }
+/* [T-2.55] Se retira `.soc-demo` (barra de "tweaks" del mockup para resetear la
+   alerta a mano): ningún componente la escribe y una consola de operación real
+   no lleva controles de demostración. */
 
 /* Utilidad: texto solo para lectores de pantalla (landmark del videowall — el
    live wall no lleva título visible, pero la página debe anunciarse). */
@@ -809,7 +743,7 @@ body {
 /* Cada canal tiene su propia escala vertical: geófono (velocidad) y acelerómetro
    no comparten unidad, y un eje común aplastaría uno de los dos. */
 .soc-traces { display: flex; flex-direction: column; gap: 6px; }
-.soc-trace { display: grid; grid-template-columns: 116px 1fr; align-items: center; gap: 8px; }
+.soc-trace { display: grid; grid-template-columns: 116px minmax(0, 1fr); align-items: center; gap: 8px; }
 .soc-trace .soc-sismograma { height: 54px; }
 .soc-trace__label {
   display: flex;
@@ -885,12 +819,15 @@ body {
 
 /* ==== T-1.50 · Consola: badge de mapa degradado, card de incidente y BMS
    agrupado ================================================================ */
+/* [T-2.55] Deja de anclarse al CENTRO del mapa (donde chocaba con la alerta
+   sísmica y con el banner de datos retenidos) y pasa a la pila arriba-izquierda
+   `.soc-map__status`, que es la esquina del estado del mapa. */
 .soc-map__degraded {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  z-index: 5; padding: 4px 12px; border-radius: var(--tk-radius-sm);
+  pointer-events: auto;
+  padding: 4px 12px; border-radius: var(--tk-radius-sm);
   background: var(--tk-status-warning-15); color: var(--tk-status-warning);
   border: 1px solid var(--tk-status-warning);
-  font: 700 10px var(--tk-font-mono); letter-spacing: 0.08em; white-space: nowrap;
+  font: 700 10px var(--tk-font-mono); letter-spacing: 0.08em;
 }
 
 .soc-incident-facts { display: grid; gap: 8px; padding: 4px 0; }
@@ -985,6 +922,11 @@ body {
 .soc-drill--idle { justify-content: flex-end; padding: 0; gap: 8px; }
 
 /* [T-2.28] comparativa histórica ------------------------------------------ */
+/* [T-2.55] FUGA CORREGIDA: este bloque citaba `var(--soc-fg-2, …)`,
+   `var(--soc-fg-3, …)` y `var(--soc-font-ui, …)`. El prefijo `--soc-` NO EXISTE
+   en el design system (todo es `--tk-`), así que las siete declaraciones caían
+   SIEMPRE al valor de respaldo hardcodeado y esta comparativa quedaba fuera del
+   tema: cambiar un token no la movía. Ahora consume los tokens de verdad. */
 .soc-map__legend-toggle {
   display: flex;
   align-items: center;
@@ -993,8 +935,8 @@ body {
   padding: 3px 6px;
   border: 1px solid rgba(124, 231, 255, 0.35);
   background: transparent;
-  color: var(--soc-fg-2, #b8c2ce);
-  font: 600 10px/1.3 var(--soc-font-ui, inherit);
+  color: var(--tk-fg-2);
+  font: 600 10px/1.3 var(--tk-font-ui);
   letter-spacing: 0.06em;
   cursor: pointer;
 }
@@ -1019,9 +961,9 @@ body {
   margin: 0;
 }
 .soc-compare__facts dt {
-  font: 600 10px/1.3 var(--soc-font-ui, inherit);
+  font: 600 10px/1.3 var(--tk-font-ui);
   letter-spacing: 0.08em;
-  color: var(--soc-fg-3, #6f7e8f);
+  color: var(--tk-fg-3);
   text-transform: uppercase;
 }
 .soc-compare__facts dd {
@@ -1047,11 +989,11 @@ body {
 .soc-compare__note {
   margin: 0;
   font-size: 11px;
-  color: var(--soc-fg-3, #8a97a6);
+  color: var(--tk-fg-3);
 }
 .soc-compare__master {
   margin: 0;
-  font: 700 11px/1.4 var(--soc-font-ui, inherit);
+  font: 700 11px/1.4 var(--tk-font-ui);
   letter-spacing: 0.06em;
   color: #ffc107;
 }
@@ -1076,11 +1018,16 @@ body {
   position: absolute;
   bottom: 36px;
   right: 14px;
+  z-index: var(--tk-z-map-overlay);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  /* [T-2.55] El tope se calcula contra la esquina ARRIBA-DERECHA, que es de la
+     pila de alertas: sin él, tres leyendas abiertas trepaban hasta meterse
+     debajo de la alerta sísmica. Con el tope, la última leyenda scrollea. */
   max-height: calc(100% - 60px);
+  max-width: 46%;
   overflow-y: auto;
 }
 .soc-map__legends .soc-map__legend {
@@ -1101,6 +1048,12 @@ body {
 }
 .soc-map__legend--link .soc-map__legend-title {
   color: var(--tk-cyan);
+}
+/* [T-2.55] `--layers` estaba en el marcado desde T-2.50 SIN una sola regla: la
+   caja de capas heredaba el ancho mínimo de leyenda (130 px) y partía sus
+   botones en cinco líneas. No es una leyenda de lectura sino un control. */
+.soc-map__legend--layers {
+  min-width: 190px;
 }
 
 /* Capas conmutables (T-2.50). */
@@ -1133,6 +1086,20 @@ body {
 /* Tira de KPIs del wall: primera fila del grid de `.soc-wall`. */
 .soc-wall {
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* [T-2.55] TERCERA colisión de la banda superior. El `.soc-stateframe__stale`
+   es absoluto en `top: 8px` del wrapper, y desde T-2.50 el primer contenido del
+   wall es la tira de KPIs: el rótulo "DATOS RETENIDOS" se pintaba justo ENCIMA
+   de los números que declara viejos — el peor sitio posible para taparlo.
+   Se resuelve reservando la banda (no subiendo z-index): el atributo lo pone
+   el propio StateFrame, así que la reserva aparece y desaparece con el estado.
+   Solo el WALL la necesita; en una card el banner flotante sigue estando bien. */
+.soc-wall[data-state="stale"] {
+  padding-top: 26px;
+}
+.soc-wall > .soc-stateframe__stale {
+  top: 0;
 }
 .soc-kpis {
   display: flex;
@@ -1263,13 +1230,14 @@ body {
    =====================================================================
    El módulo `wavefront.ts` ya apaga los frentes y congela el dash, pero eso no
    alcanza a lo que anima el CSS. Aquí se neutralizan los DOS keyframes vivos de
-   la hoja de estilos: `soc-pulse` (punto de estado y el "live" del CCTV, en
-   soc.css) y `soc-armed-pulse` (botón armado de ConfirmButton, en soc-tabs.css).
+   la hoja de estilos: `soc-pulse` (punto de estado, en soc.css) y
+   `soc-armed-pulse` (botón armado de ConfirmButton, en soc-tabs.css).
    Se apagan por SELECTOR desde aquí a propósito: la regla vive junto al resto de
-   la política de movimiento en vez de repartida por dos archivos. */
+   la política de movimiento en vez de repartida por dos archivos.
+   [T-2.55] Cae `.soc-cctv__live::before` con el resto del reproductor CCTV del
+   mockup: no había nada que apagar. */
 @media (prefers-reduced-motion: reduce) {
   .soc-dot--pulse::after,
-  .soc-cctv__live::before,
   .soc-confirm--armed {
     animation: none !important;
   }
@@ -1487,4 +1455,104 @@ body {
 .soc-drillhist__ackpill.is-scheduled {
   background: var(--tk-navy-700);
   color: var(--tk-fg-3);
+}
+
+/* =====================================================================
+   [T-2.55] DEGRADACIÓN RESPONSIVE — no es un rediseño
+   =====================================================================
+   El objetivo del producto SIGUE siendo 1920×1080 (cabecera de esta hoja):
+   un videowall de SOC. Lo que sigue no reordena la información ni cambia la
+   jerarquía; solo evita que en una laptop la consola quede apretada o, peor,
+   con contenido físicamente INALCANZABLE bajo `body { overflow: hidden }`.
+
+     ≥ 1600   →  intacto, byte a byte
+     1280–1599 →  columnas laterales más estrechas
+     < 1280   →  UNA columna; el detalle pasa a cajón superpuesto y el body
+                 recupera el scroll (nada puede quedar fuera de alcance)
+     ≤ 800 de alto → se recortan paddings y la topbar, para que el mapa no
+                 caiga a su piso de 280 px en una pantalla de portátil
+
+   ⚠️ TRAMPA DOCUMENTADA — los píxeles van LITERALES a propósito:
+   una custom property NO es válida en el prelude de una @media. El prelude
+   se evalúa antes de la cascada, así que `@media (max-width: var(--tk-bp-md))`
+   NO es "el token con otro nombre": simplemente no aplica nunca, en silencio.
+   Los tokens `--tk-bp-md` (1280), `--tk-bp-lg` (1600) y `--tk-bp-xl` (1920)
+   existen para el lado JS (matchMedia, la matriz de viewports de Playwright)
+   y son la FUENTE de estos literales. Si cambian allá, cámbialos aquí.
+   ===================================================================== */
+
+/* --- 1280 … 1599 · fuente = --tk-bp-lg (1600px) ------------------------- */
+@media (max-width: 1599px) {
+  .soc-shell {
+    /* El detalle cede ~60 px; el mapa se queda todo lo que suelta. */
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 10px;
+    padding: 10px;
+  }
+  .mt__grid { grid-template-columns: 300px minmax(0, 1fr); }
+  .triage__grid { grid-template-columns: minmax(0, 1.7fr) 360px; }
+}
+
+/* --- < 1280 · fuente = --tk-bp-md (1280px) ------------------------------ */
+@media (max-width: 1279px) {
+  /* Sin esto, TODO lo que no cupiera en la primera pantalla quedaría
+     inalcanzable: sin barra, sin rueda y sin teclado. Es el mismo defecto de
+     accesibilidad que T-2.51 cerró en `.mt__list`, pero a nivel de documento. */
+  body { overflow: auto; }
+  .soc-app { height: auto; min-height: 100vh; }
+
+  .soc-shell {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+  /* El detalle del sitio deja de ser una columna y pasa a CAJÓN superpuesto:
+     en una sola columna, empujado al final del documento, el operador tendría
+     que scrollear un mapa entero para leer el sitio que acaba de tocar. */
+  .soc-shell > .soc-detail {
+    position: fixed;
+    top: 64px;
+    right: 0;
+    bottom: 0;
+    width: min(380px, 92vw);
+    z-index: var(--tk-z-modal);
+    border-radius: 0;
+    border-right: none;
+    box-shadow: var(--tk-shadow-modal);
+  }
+  .soc-stage { min-height: 420px; }
+
+  .mt__grid,
+  .triage__grid,
+  .bld__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Con el body scrolleando, un `max-height` heredado de la fila 1fr dejaría
+     listas de 2 cm. Cada página se estira y el documento hace el scroll. */
+  .mt,
+  .fleet,
+  .audit,
+  .triage {
+    overflow-y: visible;
+  }
+  .mt__list,
+  .mt__detail { max-height: none; }
+
+  .soc-topbar { gap: 12px; padding: 0 12px; }
+  .soc-nav__tab { padding: 9px 10px; letter-spacing: 0.08em; }
+}
+
+/* --- Alto de portátil · el mapa manda ---------------------------------- */
+@media (max-height: 800px) {
+  .soc-app { grid-template-rows: 52px 1fr; }
+  .soc-topbar { height: 52px; grid-template-rows: 52px; }
+  .soc-shell { padding: 8px; gap: 8px; }
+  .soc-main { gap: 8px; }
+  .soc-wall { gap: 8px; }
+  .soc-detail { padding: 10px; gap: 8px; }
+  .soc-kpis { padding: 5px 10px; }
+  .soc-incidents__hd { padding: 8px 14px 6px; }
+  .soc-incidents__ft { padding: 8px 14px; }
+  .soc-table th { padding: 5px 14px 6px; }
+  .soc-table td { padding: 6px 14px; }
+  .soc-shell > .soc-detail { top: 52px; }
 }

@@ -10,6 +10,7 @@ import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import ConfirmButton from "../../components/ConfirmButton";
 import SevTag from "../../components/SevTag";
+import StateFrame from "../../components/StateFrame";
 import { secondsSince, utcClock } from "../../lib/time";
 import type { LiveStatus } from "../../lib/ws";
 import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats";
@@ -145,52 +146,67 @@ export default function IncidentTable({
         </div>
       </header>
 
-      <table className="soc-table">
-        <thead>
-          <tr>
-            <th style={{ width: "26%" }}>Sitio</th>
-            <th style={{ width: "14%" }}>Severidad</th>
-            <th style={{ width: "24%" }}>Coordenadas</th>
-            <th style={{ width: "10%" }}>PGA</th>
-            <th style={{ width: "14%" }}>Hora UTC</th>
-            <th style={{ width: "12%" }}>Edad</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((incident) => {
-            const site = siteInfoOf(incident.site_id);
-            return (
-              <tr
-                key={incident.incident_id}
-                onClick={() => onSelect(incident)}
-                aria-selected={incident.incident_id === selectedId}
-                style={{ cursor: "pointer" }}
-              >
-                <td className="soc-table__site">
-                  <span
-                    className="soc-dot"
-                    style={{ color: SEV_DOT[incident.severity] ?? "var(--tk-status-warning)" }}
-                  />
-                  {site?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`}
-                </td>
-                <td>
-                  <SevTag severity={incident.severity} />
-                </td>
-                <td className="soc-mono" style={{ color: "var(--tk-fg-2)" }}>
-                  {site?.coords ?? "—"}
-                </td>
-                <td className={`soc-mono ${incident.severity !== "info" ? "soc-table__pga" : ""}`}>
-                  {formatPga(incident.max_pga_g)}
-                </td>
-                <td className="soc-mono">{utcClock(Date.parse(incident.opened_at))} UTC</td>
-                <td className="soc-mono" style={{ color: "var(--tk-fg-3)" }}>
-                  {age(incident.opened_at, nowMs)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {/* [T-2.55] Estado VACÍO explícito. Sin él, cero incidentes producía un
+          <tbody> hueco bajo los encabezados: indistinguible de "la cola no
+          cargó". `loading`/`error` de la fuente los resuelve el StateFrame del
+          wall, que envuelve a esta tabla y no la monta hasta tener datos; aquí
+          se declara lo único que el wall no puede saber: que la cola está
+          vacía porque no hay incidentes abiertos, que es una BUENA noticia. */}
+      <StateFrame
+        label="INCIDENTES ABIERTOS"
+        loading={false}
+        empty={rows.length === 0}
+        emptyText="SIN INCIDENTES ABIERTOS EN EL ALCANCE"
+      >
+        <table className="soc-table">
+          <thead>
+            <tr>
+              <th style={{ width: "26%" }}>Sitio</th>
+              <th style={{ width: "14%" }}>Severidad</th>
+              <th style={{ width: "24%" }}>Coordenadas</th>
+              <th style={{ width: "10%" }}>PGA</th>
+              <th style={{ width: "14%" }}>Hora UTC</th>
+              <th style={{ width: "12%" }}>Edad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((incident) => {
+              const site = siteInfoOf(incident.site_id);
+              return (
+                <tr
+                  key={incident.incident_id}
+                  onClick={() => onSelect(incident)}
+                  aria-selected={incident.incident_id === selectedId}
+                  style={{ cursor: "pointer" }}
+                >
+                  <td className="soc-table__site">
+                    <span
+                      className="soc-dot"
+                      style={{ color: SEV_DOT[incident.severity] ?? "var(--tk-status-warning)" }}
+                    />
+                    {site?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`}
+                  </td>
+                  <td>
+                    <SevTag severity={incident.severity} />
+                  </td>
+                  <td className="soc-mono" style={{ color: "var(--tk-fg-2)" }}>
+                    {site?.coords ?? "—"}
+                  </td>
+                  <td
+                    className={`soc-mono ${incident.severity !== "info" ? "soc-table__pga" : ""}`}
+                  >
+                    {formatPga(incident.max_pga_g)}
+                  </td>
+                  <td className="soc-mono">{utcClock(Date.parse(incident.opened_at))} UTC</td>
+                  <td className="soc-mono" style={{ color: "var(--tk-fg-3)" }}>
+                    {age(incident.opened_at, nowMs)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </StateFrame>
 
       {distanceUnavailable && (
         <p className="soc-incidents__note" data-testid="order-distance-unavailable" role="status">

@@ -835,11 +835,16 @@ export default function MapPanel({
     <div className="soc-map" data-testid="map-panel">
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
-      {degraded && (
-        <div className="soc-map__degraded" data-testid="map-degraded" role="status">
-          ◐ SIN MAPA BASE · TILES NO DISPONIBLES · SITIOS EN VIVO
-        </div>
-      )}
+      {/* [T-2.55] Pila de ESTADO DEL MAPA, arriba-izquierda. El badge estaba
+          anclado al centro superior y ahí chocaba con la alerta sísmica y con
+          el "DATOS RETENIDOS" del wall. Cada esquina tiene un solo dueño. */}
+      <div className="soc-map__status">
+        {degraded && (
+          <div className="soc-map__degraded" data-testid="map-degraded" role="status">
+            ◐ SIN MAPA BASE · TILES NO DISPONIBLES · SITIOS EN VIVO
+          </div>
+        )}
+      </div>
 
       <div className="soc-map__legends">
         {/* [T-2.50] Capas conmutables: el operador decide qué mira. */}

@@ -325,57 +325,66 @@ export default function DetailPanel({
             <div className="soc-card__sub">CANAL DE DISPARO · EVENTO · ESTADO</div>
           </div>
         </div>
-        {incident === null ? (
-          <div className="soc-stateframe soc-stateframe--status" data-state="empty">
-            <span>SIN INCIDENTE ABIERTO EN EL SITIO</span>
-          </div>
-        ) : (
-          <div className="soc-incident-facts">
-            <div className="soc-fact">
-              <span className="soc-fact__label">TRIGGER</span>
-              <span className="soc-fact__value">
-                {TRIGGER_LABEL[incident.trigger] ?? incident.trigger.toUpperCase()}
-              </span>
-            </div>
-            <div className="soc-fact">
-              <span className="soc-fact__label">EVENTO</span>
-              <span className="soc-fact__value soc-fact__value--mono">
-                {incident.event_id ?? "SIN EVENTO SÍSMICO ASOCIADO"}
-              </span>
-            </div>
-            {quorumCommanded && (
+        {/* [T-2.55] Antes esta card COPIABA a mano el marcado interno del
+            StateFrame (`.soc-stateframe--status` + `data-state="empty"`). Dos
+            copias del mismo contrato divergen a la primera: se usa el
+            componente, que es quien define los 4 estados obligatorios. El
+            incidente llega ya resuelto por el wall, así que aquí no hay
+            `loading` ni `error` propios que declarar. */}
+        <StateFrame
+          label="INCIDENTE"
+          loading={false}
+          empty={incident === null}
+          emptyText="SIN INCIDENTE ABIERTO EN EL SITIO"
+        >
+          {incident !== null && (
+            <div className="soc-incident-facts">
               <div className="soc-fact">
-                <span className="soc-fact__label">ACTUACIÓN DE RED</span>
-                <span className="soc-fact__value soc-quorum-red" data-testid="quorum-red-badge">
-                  QUÓRUM RED · {quorumCommanded.channels.join(" · ").toUpperCase()} ·{" "}
-                  {quorumCommanded.acked}/{quorumCommanded.total} ACK
+                <span className="soc-fact__label">TRIGGER</span>
+                <span className="soc-fact__value">
+                  {TRIGGER_LABEL[incident.trigger] ?? incident.trigger.toUpperCase()}
                 </span>
               </div>
-            )}
-            <div className="soc-fact">
-              <span className="soc-fact__label">ESTADO · EDAD</span>
-              <span className="soc-fact__value">
-                {incident.state.toUpperCase()} · {ageLabel(incident.opened_at, nowMs)}
-              </span>
+              <div className="soc-fact">
+                <span className="soc-fact__label">EVENTO</span>
+                <span className="soc-fact__value soc-fact__value--mono">
+                  {incident.event_id ?? "SIN EVENTO SÍSMICO ASOCIADO"}
+                </span>
+              </div>
+              {quorumCommanded && (
+                <div className="soc-fact">
+                  <span className="soc-fact__label">ACTUACIÓN DE RED</span>
+                  <span className="soc-fact__value soc-quorum-red" data-testid="quorum-red-badge">
+                    QUÓRUM RED · {quorumCommanded.channels.join(" · ").toUpperCase()} ·{" "}
+                    {quorumCommanded.acked}/{quorumCommanded.total} ACK
+                  </span>
+                </div>
+              )}
+              <div className="soc-fact">
+                <span className="soc-fact__label">ESTADO · EDAD</span>
+                <span className="soc-fact__value">
+                  {incident.state.toUpperCase()} · {ageLabel(incident.opened_at, nowMs)}
+                </span>
+              </div>
+              <div className="soc-fact">
+                <span className="soc-fact__label">PGA MÁX · PGV MÁX</span>
+                <span className="soc-fact__value soc-fact__value--mono">
+                  {incident.max_pga_g !== null ? `${incident.max_pga_g.toFixed(3)} g` : "—"}
+                  {" · "}
+                  {incident.max_pgv_cms !== null ? `${incident.max_pgv_cms.toFixed(1)} cm/s` : "—"}
+                </span>
+              </div>
+              <div className="soc-fact">
+                <span className="soc-fact__label">ÚLTIMO ACUSE</span>
+                <span className="soc-fact__value soc-fact__value--mono">
+                  {lastAck
+                    ? `${lastAck.actor.toUpperCase()} · ${utcClock(Date.parse(lastAck.ts))} UTC`
+                    : "SIN ACUSE"}
+                </span>
+              </div>
             </div>
-            <div className="soc-fact">
-              <span className="soc-fact__label">PGA MÁX · PGV MÁX</span>
-              <span className="soc-fact__value soc-fact__value--mono">
-                {incident.max_pga_g !== null ? `${incident.max_pga_g.toFixed(3)} g` : "—"}
-                {" · "}
-                {incident.max_pgv_cms !== null ? `${incident.max_pgv_cms.toFixed(1)} cm/s` : "—"}
-              </span>
-            </div>
-            <div className="soc-fact">
-              <span className="soc-fact__label">ÚLTIMO ACUSE</span>
-              <span className="soc-fact__value soc-fact__value--mono">
-                {lastAck
-                  ? `${lastAck.actor.toUpperCase()} · ${utcClock(Date.parse(lastAck.ts))} UTC`
-                  : "SIN ACUSE"}
-              </span>
-            </div>
-          </div>
-        )}
+          )}
+        </StateFrame>
       </div>
 
       {/* Actuadores y acciones (ACKs reales), AGRUPADOS por canal ======= */}
@@ -495,8 +504,19 @@ export default function DetailPanel({
           </div>
           <span className="soc-bacnet">⬢ ONVIF</span>
         </div>
+        {/* [T-2.55] El vacío pasa por StateFrame como el de cualquier otra
+            card. No hay integración ONVIF: `empty` es SIEMPRE cierto, y decirlo
+            con el mismo componente que el resto evita que un día alguien lea
+            este bloque como "video que todavía no cargó". */}
         <div className="soc-cctv" data-testid="cctv-empty">
-          <div className="soc-edge-tag">SIN CÁMARA CONFIGURADA · PENDIENTE DE HARDWARE</div>
+          <StateFrame
+            label="CCTV"
+            loading={false}
+            empty
+            emptyText="SIN CÁMARA CONFIGURADA · PENDIENTE DE HARDWARE"
+          >
+            {null}
+          </StateFrame>
         </div>
       </div>
     </aside>

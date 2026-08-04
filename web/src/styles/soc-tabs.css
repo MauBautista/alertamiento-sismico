@@ -8,24 +8,16 @@
    All tabs share the design tokens in design-system/colors_and_type.css
    ========================================================================== */
 
-/* =====================================================================
-   Tab page wrapper — fills the screen below the topbar.
-   ===================================================================== */
-.soc-tabpage {
-  height: 100%;
-  min-height: 0;
-  overflow: auto;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-}
+/* [T-2.55] Se retira `.soc-tabpage` (envoltorio genérico de pestaña del
+   mockup): cada página trae hoy su propio contenedor con su propia disciplina
+   de scroll —`.fleet`, `.triage`, `.mt`, `.audit`— y ningún `.tsx` lo escribe. */
 
 /* =====================================================================
    SOH BADGES (Sensor State of Health) — DetailPanel
    ===================================================================== */
 .soc-soh {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
@@ -276,7 +268,7 @@
 }
 
 .fleet-card__links {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
 }
 .fleet-link {
   padding: 8px 10px;
@@ -345,16 +337,6 @@
 .fleet-ups__fill--ok   { background: var(--tk-status-normal); }
 .fleet-ups__fill--warn { background: var(--tk-status-warning); }
 .fleet-ups__fill--crit { background: var(--tk-status-critical); }
-.fleet-ups__ft {
-  display: flex; justify-content: space-between; align-items: baseline;
-  margin-top: 6px;
-}
-.fleet-ups__autonomy {
-  font-family: var(--tk-font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--tk-fg-1);
-}
 
 /* Section heading inside card */
 .fleet-card__section { display: flex; flex-direction: column; gap: 8px; }
@@ -374,7 +356,7 @@
 }
 .fleet-relay {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px; align-items: center;
   padding: 6px 8px;
   border-radius: 3px;
@@ -436,22 +418,6 @@
 }
 .fleet-card__diag:hover:not(:disabled) { background: var(--tk-cyan-15); border-color: var(--tk-cyan); }
 .fleet-card__diag:disabled { opacity: 0.4; cursor: not-allowed; }
-.fleet-card__diag--running {
-  background: var(--tk-surface-2);
-  border-color: var(--tk-cyan);
-  color: var(--tk-cyan);
-}
-.fleet-card__diag--done {
-  background: var(--tk-status-normal-15);
-  border-color: var(--tk-status-normal);
-  color: var(--tk-status-normal);
-}
-.fleet-card__diag-bar {
-  position: absolute; left: 0; bottom: 0;
-  height: 2px;
-  background: var(--tk-cyan);
-  transition: width 220ms var(--tk-ease-data);
-}
 
 /* =====================================================================
    TRIAGE HISTORY (Tab 3)
@@ -648,13 +614,8 @@
   margin-top: 2px;
 }
 
-.triage-detail__waveform {
-  width: 100%; height: 60px;
-  display: block;
-}
-
 .triage-detail__metrics {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px;
 }
 .triage-metric {
   padding: 10px;
@@ -691,7 +652,7 @@
 }
 .triage-node {
   display: grid;
-  grid-template-columns: 12px 1fr auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
@@ -770,9 +731,13 @@
 .mt__leg-sw--ded { background: var(--tk-cyan); }
 .mt__leg-sw--log { background: var(--tk-status-normal); }
 
+/* [T-2.55] El catálogo de clientes es la ÚNICA columna fija tipo barra lateral
+   de la consola, así que estrena `--tk-sidebar-w` — que llevaba definido y sin
+   un solo consumidor desde el design system. El token se alineó con los 360 px
+   que esta reja ya servía: 1920×1080 no cambia ni un píxel. */
 .mt__grid {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: var(--tk-sidebar-w) minmax(0, 1fr);
   gap: 16px;
   min-height: 0;
 }
@@ -791,7 +756,7 @@
 }
 .mt-tenant {
   display: grid;
-  grid-template-columns: 6px 1fr auto;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
   gap: 10px; align-items: center;
   padding: 10px;
   background: var(--tk-surface-2);
@@ -836,25 +801,6 @@
 }
 .mt-tenant__iso--dedicated { background: var(--tk-cyan-15); color: var(--tk-cyan); }
 .mt-tenant__iso--logical { background: var(--tk-status-normal-15); color: var(--tk-status-normal); }
-
-.mt-isolation {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--tk-surface-0);
-  border: 1px solid var(--tk-border);
-  border-radius: 4px;
-}
-.mt-isolation__hd {
-  display: inline-flex; align-items: center; gap: 6px;
-  color: var(--tk-fg-2); margin-bottom: 8px;
-}
-.mt-isolation__rows { display: flex; flex-direction: column; gap: 5px; }
-.mt-isolation__row {
-  display: flex; justify-content: space-between;
-  font-family: var(--tk-font-ui);
-  font-size: 11px;
-  color: var(--tk-fg-2);
-}
 
 /* tenant detail */
 .mt__detail {
@@ -908,7 +854,7 @@
 /* sliders */
 .mt-sliders {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 .mt-slider {
@@ -948,16 +894,6 @@
   border-radius: 999px;
   overflow: hidden;
 }
-.mt-slider__zone-ok,
-.mt-slider__zone-warn,
-.mt-slider__zone-crit {
-  position: absolute; top: 0; bottom: 0;
-  opacity: 0.18;
-}
-.mt-slider__zone-ok   { left: 0;                                 background: var(--tk-status-normal); }
-.mt-slider__zone-warn { left: 0; transform: translateX(0%);      background: var(--tk-status-warning); }
-.mt-slider__zone-crit { right: 0;                                background: var(--tk-status-critical); }
-.mt-slider__zone-warn { left: auto; /* positioned via width math */ }
 .mt-slider__fill {
   position: absolute; top: 0; bottom: 0; left: 0;
   border-radius: 999px;
@@ -1010,12 +946,12 @@
 /* channels */
 .mt-channels {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 .mt-channel {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 11px 12px;
@@ -1142,7 +1078,7 @@
   margin: 0;
 }
 .bld__actions { display: flex; gap: 8px; margin-top: 12px; }
-.bld__soh { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 11px; }
+.bld__soh { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font-size: 11px; }
 .bld__soh dt { color: var(--tk-fg-3); font-size: 9px; letter-spacing: 0.1em; }
 .bld__soh dd { margin: 3px 0 0; color: var(--tk-fg-1); }
 .bld__table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -1243,6 +1179,16 @@
 .fleet__hint--warn { color: var(--tk-status-warning); }
 
 /* Acuse de alta: los UUID que el runbook manda pegar en el edge.env del Pi. */
+/* [T-2.55] El BLOQUE `.acuse` se escribió en T-2.37 sin regla: heredaba el
+   `gap: 10px` de `.fleet__form` y las tres filas de UUID quedaban tan separadas
+   como los campos de un formulario, sin leerse como un solo acuse. */
+.acuse {
+  gap: 6px;
+  padding: 12px;
+  background: var(--tk-surface-0);
+  border: 1px solid var(--tk-cyan-15);
+  border-radius: var(--tk-radius-md);
+}
 .acuse__row { display: flex; align-items: center; gap: 8px; }
 .acuse__label {
   flex: 0 0 190px;
@@ -1380,7 +1326,7 @@
 .triage-catalog__hd {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -1523,6 +1469,12 @@
   color: var(--tk-fg-3);
 }
 .fleet-card__historylbl { color: var(--tk-fg-3); }
+/* [T-2.55] Sin regla desde T-2.38. El rótulo es "COMPLETITUD DE LATIDOS 24 H"
+   —un porcentaje— y se leía con el mismo peso que las etiquetas de su fila. */
+.fleet-card__completeness {
+  color: var(--tk-fg-2);
+  font-variant-numeric: tabular-nums;
+}
 .fleet-card__outages--warn { color: var(--tk-status-warning); }
 .sparkline { color: var(--tk-cyan); display: block; }
 .sparkline--empty { color: var(--tk-fg-3); font-family: var(--tk-font-mono); font-size: 9px; }
@@ -1543,7 +1495,7 @@
 }
 
 @media (max-width: 640px) {
-  .fleet__grid { grid-template-columns: 1fr; }
+  .fleet__grid { grid-template-columns: minmax(0, 1fr); }
   .fleet__kpi { min-width: 0; flex: 1 1 40%; padding: 8px 12px; }
   .fleet__form { max-width: 100%; }
   .fleet__rowactions { flex-wrap: wrap; justify-content: flex-start; }
@@ -1646,6 +1598,21 @@
 .inspection__site { font-size: 11px; color: var(--tk-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspection__pga { font-size: 10px; color: var(--tk-fg-2); }
 .inspection__level { font-size: 8.5px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
+
+/* [T-2.55] Los BLOQUES `.inspection`, `.postevent` y `.timeline` se escribieron
+   en T-2.40 sobre una `.soc-card` y nunca recibieron regla: sus hijos caían en
+   flujo de bloque, sin ritmo vertical, y el descargo "NO ES UN DICTAMEN" quedaba
+   pegado a la primera fila de semáforos. Es exactamente el defecto que el
+   contract-test `cssContract` vigila desde ahora. */
+.inspection,
+.postevent,
+.timeline,
+.users {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 
 .timeline__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .timeline__item {

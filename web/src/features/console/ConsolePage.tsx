@@ -208,10 +208,17 @@ function ConsoleWall() {
               onSelectCatalog={setCatalogSel}
               onViewportChange={setViewportIds}
             />
-            <AlertBanner
-              incident={critical}
-              siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
-            />
+            {/* [T-2.55] Pila ÚNICA de sobrepuestos de la página, anclada
+                arriba-derecha. Nada más se ancla a esa esquina, así que dos
+                avisos no pueden taparse: se apilan. Vive aquí y NO dentro de
+                MapPanel a propósito — la alerta sísmica no puede depender de
+                que el mapa monte (regla de oro 1). */}
+            <div className="soc-stage__overlays" data-testid="stage-overlays">
+              <AlertBanner
+                incident={critical}
+                siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
+              />
+            </div>
           </div>
           <IncidentTable
             incidents={incidents.incidents}
