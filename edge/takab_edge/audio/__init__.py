@@ -29,8 +29,9 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from takab_edge.audio import catalog
 from takab_edge.config import EdgeSettings
-from takab_edge.contracts import Tier, TierDecision
+from takab_edge.contracts import SirenReason, Tier, TierDecision
 from takab_edge.module import EdgeModule
 
 if TYPE_CHECKING:
@@ -154,6 +155,16 @@ class AudioNotifier(EdgeModule):
         self._siren_path = settings.audio_siren_path or str(
             Path(__file__).parent / "assets" / "siren.wav"
         )
+        # [T-2.49] Tono de PRUEBA: patrón de bips deliberadamente NO confundible con el
+        # barrido de la sirena. `None` si no existe ⇒ la prueba calla (ver `asset_for`).
+        test_path = settings.audio_test_path or str(Path(__file__).parent / "assets" / "prueba.wav")
+        self._test_path: str | None = test_path if Path(test_path).is_file() else None
+        self._audio_profile: dict = {
+            "applied": {},
+            "rejected": {},
+            "siren_path": self._siren_path,
+            "test_path": self._test_path,
+        }
         self._siren_stop = threading.Event()
         self._siren_thread: threading.Thread | None = None
 
@@ -216,6 +227,19 @@ class AudioNotifier(EdgeModule):
             self._siren_path,
             hashlib.sha256(p.read_bytes()).hexdigest(),
         )
+        # [T-2.49] El tono de prueba se audita igual que la sirena: hay que poder
+        # decir QUÉ sonido exacto puede salir por el altavoz de un inmueble.
+        if self._test_path is not None:
+            log.info(
+                "tono de prueba por audio: %s sha256=%s",
+                self._test_path,
+                hashlib.sha256(Path(self._test_path).read_bytes()).hexdigest(),
+            )
+        else:
+            log.warning(
+                "sin tono de PRUEBA empaquetado: los self-test de sirena sonarán en "
+                "silencio (nunca con el tono de alerta real)"
+            )
         self._siren_stop.clear()
         self._siren_thread = threading.Thread(
             target=self._siren_watch_loop, name="audio-siren", daemon=True
@@ -226,22 +250,89 @@ class AudioNotifier(EdgeModule):
         while not self._siren_stop.wait(_SIREN_POLL_S):
             self._reconcile_siren()
 
-    def _reconcile_siren(self) -> None:
-        """Enciende/apaga el WAV de la sirena según suene la sirena de relé.
+    def apply_audio_profile(self, profile: dict | None) -> dict:
+        """[T-2.49] Aplica `config.edge.audio` de la nube. Devuelve lo que se reporta.
 
-        `gpio.siren_sounding` ya integra silencio y reset, así que un solo poll
-        cubre el reflejo real, la prueba de sirena y la de actuación, y calla al
-        silenciar. Advisory: cualquier fallo se aísla, jamás toca el camino de vida.
+        Contrato de honestidad: un ID que este edge no puede servir **conserva el tono
+        anterior** y lo declara. La alternativa —caer a otro tono— haría que el gabinete
+        sonara distinto de lo que su propia config dice, que es peor que no cambiar.
+
+        El resultado va a `device_health.meta.audio`, de modo que la flota puede ver
+        qué gabinetes quedaron atrás de un cambio de catálogo sin ir uno por uno.
+        """
+        applied: dict[str, str] = {}
+        rejected: dict[str, str] = {}
+        if isinstance(profile, dict):
+            for slot, attr in (("siren", "_siren_path"), ("test", "_test_path")):
+                asset_id = profile.get(slot)
+                if not isinstance(asset_id, str) or not asset_id:
+                    continue
+                path = catalog.resolve(asset_id)
+                if path is None:
+                    rejected[slot] = asset_id
+                    continue
+                setattr(self, attr, str(path))
+                applied[slot] = asset_id
+        self._audio_profile = {
+            "applied": applied,
+            "rejected": rejected,
+            "siren_path": self._siren_path,
+            "test_path": self._test_path,
+        }
+        if rejected:
+            log.warning("audio: perfil parcialmente aplicado; tonos conservados: %s", rejected)
+        return self._audio_profile
+
+    @property
+    def profile_report(self) -> dict:
+        """Lo que `health` publica en `device_health.meta.audio`."""
+        return dict(self._audio_profile)
+
+    def asset_for(self, reason: SirenReason) -> str | None:
+        """[T-2.49] Qué WAV corresponde a cada razón, o ``None`` si no debe sonar.
+
+        Una prueba SIN su tono no cae al tono de alerta: **calla**. Sonar la sirena
+        real por un self-test es precisamente la falsa alarma que esta tarea elimina,
+        y un edificio en silencio durante una prueba no corre ningún riesgo.
+        """
+        if reason is SirenReason.TEST:
+            if self._test_path is None:
+                log.warning(
+                    "sirena por audio: no hay tono de PRUEBA disponible; se calla en vez "
+                    "de sonar la alerta real (una prueba no puede sonar a sismo)"
+                )
+            return self._test_path
+        return self._siren_path
+
+    def _reconcile_siren(self) -> None:
+        """Enciende/apaga el WAV de la sirena según suene —y POR QUÉ— la de relé.
+
+        [T-2.49] Antes se miraba solo `gpio.siren_sounding`, un booleano eléctrico, y
+        se reproducía el mismo `siren.wav` en todos los casos: el self-test de sirena
+        de un operador sonaba idéntico a un sismo real dentro de un edificio con gente.
+        Ahora se consulta `gpio.siren_reason`, que deriva de los mismos enclaves que
+        deciden el relé, y se elige el asset. Si la razón cambia mientras suena (una
+        alerta real llega durante una prueba), el audio CONMUTA al tono correcto.
+
+        `gpio` ya integra silencio y reset, así que un solo poll cubre el reflejo real,
+        la prueba de sirena y la de actuación. Advisory: cualquier fallo se aísla.
         """
         if not self.siren_enabled:
             return
         try:
-            should = self._gpio.siren_sounding
-            playing = self._siren_backend.playing is not None
-            if should and not playing:
-                self._siren_backend.play(self._siren_path)
-            elif not should and playing:
-                self._siren_backend.stop()
+            reason = self._gpio.siren_reason
+            wanted = self.asset_for(reason) if reason is not None else None
+            playing = self._siren_backend.playing
+            if wanted is None:
+                if playing is not None:
+                    self._siren_backend.stop()
+                return
+            if playing != wanted:
+                # Conmutar de tono exige parar primero: dos WAVs a la vez en el mismo
+                # jack se mezclarían y sonaría un híbrido que no es ninguno de los dos.
+                if playing is not None:
+                    self._siren_backend.stop()
+                self._siren_backend.play(wanted)
         except Exception:  # noqa: BLE001 — advisory: jamás propaga al camino de vida
             log.exception("sirena por audio: reconciliación falló (aislada)")
 

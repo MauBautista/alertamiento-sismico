@@ -172,6 +172,19 @@
       "default": null,
       "title": "Fw Version"
     },
+    "audio": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audio"
+    },
     "relays": {
       "items": {
         "$ref": "#/$defs/RelayState"
