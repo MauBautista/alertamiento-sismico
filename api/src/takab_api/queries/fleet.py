@@ -39,7 +39,9 @@ _LIST_SQL = """
            h.mqtt_rtt_ms::float8       AS mqtt_rtt_ms,
            h.seedlink_lag_s::float8    AS seedlink_lag_s,
            h.ntp_offset_ms::float8     AS ntp_offset_ms,
-           EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
+           EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s,
+           r.ts    AS retired_at,
+           r.actor AS retired_by
     FROM gateways g
     JOIN sites s ON s.site_id = g.site_id
     LEFT JOIN LATERAL (
@@ -50,8 +52,34 @@ _LIST_SQL = """
         ORDER BY dh.ts DESC
         LIMIT 1
     ) h ON true
+    -- [T-2.60.a] Cuándo y quién lo retiró. Vive SOLO en la bitácora: `gateways`
+    -- no tiene `retired_at`, y añadirlo duplicaría un hecho que ya está escrito
+    -- en una tabla append-only (la copia y el original acabarían discrepando).
+    -- La guarda de estado va PRIMERO para que en un inventario sano —donde nadie
+    -- está retirado— este LATERAL no llegue a mirar la bitácora.
+    -- Se apoya en idx_audit_log_object_ts (0026); sin ese índice esto sería un
+    -- escaneo secuencial de la única tabla que no se poda jamás (regla de oro 11).
+    LEFT JOIN LATERAL (
+        SELECT a.ts, a.actor
+        FROM audit_log a
+        WHERE (g.status = 'retired' OR s.status = 'retired')
+          AND a.verb IN ('gateway_retire', 'site_retire')
+          AND a.object IN ('gateway:' || g.gateway_id::text, 'site:' || s.site_id::text)
+        ORDER BY a.ts DESC
+        LIMIT 1
+    ) r ON true
     WHERE (:include_retired
-       OR (g.status <> 'retired' AND s.status <> 'retired'))
+       OR (g.status <> 'retired' AND s.status <> 'retired')
+       -- [T-2.60.a] …O SIGUE LATIENDO. T-2.35 enseñó a esconder lo retirado y
+       -- estuvo bien: un gabinete desmontado no puede quedarse en el grid para
+       -- siempre. Pero esconder por ESTADO sin mirar si el aparato habla creó el
+       -- fallo simétrico, y el 2026-08-04 se lo comió un operador: `gw-dev-0001`
+       -- llevaba horas publicando latidos cada 60 s, invisible, porque el retiro
+       -- de su sitio se heredó al gabinete. Se supo porque preguntó él.
+       -- Esconder al mudo, delatar al que late. El umbral es el MISMO de
+       -- `derive_fleet_state` (`SIN ENLACE`), pasado desde el router: dos
+       -- definiciones de "vivo" acabarían divergiendo.
+       OR h.ts > now() - make_interval(secs => :alive_s))
        /*+console_scope*/
     ORDER BY s.name, g.serial, g.gateway_id
     """
@@ -61,15 +89,28 @@ _LIST = text(_LIST_SQL.replace("/*+console_scope*/", ""))
 
 
 async def list_gateways_with_health(
-    conn: AsyncConnection, *, include_retired: bool = False, scope: ConsoleScope | None = None
+    conn: AsyncConnection,
+    *,
+    include_retired: bool = False,
+    alive_s: float,
+    scope: ConsoleScope | None = None,
 ) -> Sequence[Row]:
     """Gateways del tenant + su último heartbeat (RLS por tenant en todas las tablas).
 
     Por defecto oculta lo retirado —gabinete propio O sitio padre—; los retirados solo
     se piden explícitamente, para poder restaurarlos.
+
+    [T-2.60.a] Con UNA excepción que no se puede desactivar: un retirado cuyo último
+    latido sea más nuevo que ``alive_s`` sale SIEMPRE. Esconder a un aparato que está
+    hablando no es limpiar el inventario, es perder de vista un edificio.
+
+    ``alive_s`` no tiene defecto a propósito: quien llama tiene que decidirlo con el
+    mismo umbral que usa para derivar ``SIN ENLACE``. Un defecto silencioso aquí sería
+    una segunda definición de "vivo", y las dos divergirían en cuanto alguien tocase
+    ``sin_enlace_min``.
     """
     sql, extra = apply_scope(_LIST_SQL, scope, "g.site_id") if scope else (_LIST_SQL, {})
-    params = {"include_retired": include_retired, **extra}
+    params = {"include_retired": include_retired, "alive_s": alive_s, **extra}
     return (await conn.execute(text(sql), params)).all()
 
 

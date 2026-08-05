@@ -3669,6 +3669,9 @@ redespliegue al final (T-2.57).
         y no publica nada: el gabinete queda sin config firmada y sin comandos, y el
         panel sigue diciendo `ENLACE NUBE · CONECTADO` porque el MQTT sí vive. Ningún
         topic nube→edge transporta hoy ese aviso. **Requiere contrato nuevo.**
+        → **Promovido a tarea propia: T-2.60**, donde se parte en la mitad que se puede
+        hacer ya (60.a, la consola delata al fantasma vivo) y la que espera decisión de
+        producto (60.b, el gabinete se entera).
   - [ ] **§2.5 ·** El catálogo SSN no declara edad ni procedencia: una instantánea de
         hace tres semanas se ve igual que una recién firmada.
   - [ ] **§2.6 ·** El panel no tiene vista de evidencia/backfill (la consola sí, T-2.43).
@@ -3723,3 +3726,114 @@ redespliegue al final (T-2.57).
   propósito la comprobación de producción en localhost) · unitarias web **1130** · api
   **1208** · edge **598** · mobile **201** · `make lint`, `make drift` y `vite build`
   limpios.
+
+---
+
+### [ ] T-2.60 · Un gabinete retirado desaparece en silencio — DECISIÓN + CONTRATO
+- **Componente:** api + web (60.a) · api + edge + contrato (60.b)
+- **Origen:** T-2.58 §2.3. No es una regresión: es un hueco que lleva desde T-2.35 y que
+  **se cobró su primera víctima el 2026-08-04** (ver "Qué pasó de verdad", abajo).
+
+#### El hecho, verificado en código
+
+`retire_gateway` (`api/src/takab_api/routers/fleet.py:348-391`) hace exactamente dos cosas:
+`set_gateway_status(conn, gateway_id, "retired")` y `audit_async(...)`. **No hay ninguna
+llamada a `publish`.** Los únicos cuatro topics nube→edge que existen son
+`takab/cmd/{thing}`, `takab/cfg/{thing}`, `takab/catalog/{thing}` y
+`takab/backfill/grant/{thing}` (`edge/takab_edge/config/settings.py:265-296`), y ninguno
+transporta estado administrativo. **La palabra `retired` no aparece ni una vez en
+`edge/takab_edge/`**: el concepto no existe de ese lado.
+
+Consecuencia: al retirar, el gabinete deja de ser candidato de config firmada y de
+comandos, pero **sigue publicando latidos, sigue leyendo el Shake y sigue actuando la
+sirena por SASMEX** — que es justo lo que las reglas de oro 1 y 2 exigen. Lo que falla no
+es la actuación: es que **nadie se entera, en ninguno de los dos lados**.
+
+- En la nube: el filtro de T-2.35 lo esconde del inventario. Correcto para un gabinete
+  desmontado; **mentiroso para uno que está latiendo cada 60 s**.
+- En el gabinete: el panel sigue diciendo `ENLACE NUBE · CONECTADO`, porque el MQTT
+  **sí** vive. La única huella local es que `config_version` deja de subir, y el panel lo
+  muestra sin edad (`config v17`), así que es invisible.
+
+#### Qué pasó de verdad (2026-08-04)
+
+Se retiró el sitio `site-dev` el 03-08 a las 21:17. La migración `0024` propagó ese retiro
+al gabinete el 04-08 a las 13:22. Desde entonces **`gw-dev-0001` siguió publicando
+latidos sin interrupción** —al restaurarlo se midió *último latido hace 3 s, 60 latidos en
+la última hora*— mientras era invisible en la consola. Se detectó porque el operador
+preguntó por qué no veía su estación, no porque el sistema lo dijera. **Con un cliente
+real, la pregunta habría sido por qué un edificio llevaba semanas sin supervisión.**
+
+---
+
+#### 60.a · La consola delata al fantasma vivo — NO exige contrato nuevo ni decisión
+
+Esta mitad se puede hacer ya y es la que cierra el daño operativo. Todo el dato necesario
+ya está en la base: `gateways.status` y el último `device_health.ts`.
+
+- [x] **HECHO (2026-08-05).** El gabinete `retired` que **sigue latiendo** sale siempre en
+      `/fleet`, en sección propia con `role="alert"` y borde crítico
+      (`RETIRADO · PERO SIGUE REPORTANDO`), con la fecha, quién lo retiró y la decisión
+      que se le pide. **No se puede desactivar** con `include_retired`: esconder a un
+      aparato que habla no es limpiar el inventario, es perder de vista un edificio.
+- [x] **HECHO.** KPI `FANTASMAS` que **solo aparece cuando hay alguno** — un contador
+      clavado en cero deja de leerse a las dos semanas, y este tiene que dar un salto.
+      Los fantasmas se apartan ANTES de contar: no engordan `GABINETES` ni `OPERATIVOS`,
+      porque están dados de baja.
+- [ ] **NO HECHO · Alarma.** Exige lo que hoy no existe: **nadie en la API publica
+      métricas a CloudWatch**. Las alarmas del módulo `observability` cuelgan de `AWS/*`
+      y de `Takab/Ops` alimentado por IoT, no por el backend. Montarlo pide un emisor
+      periódico nuevo (¿en qué worker?) **más** un `terraform apply`. Se deja fuera a
+      propósito en vez de entregarlo a medias. Mientras tanto, la contradicción es
+      visible y ruidosa en pantalla, que era el daño operativo real.
+- [x] **HECHO.** Tests: retirar con latido fresco NO lo esconde; retirar uno mudo —o que
+      nunca latió— sí lo esconde (T-2.35 intacto); el retiro por herencia del SITIO
+      también lo delata (el caso REAL del 04-08); el fantasma dice cuándo y quién; un
+      gabinete normal no lleva la bandera; y el tenant B no ve el fantasma del A.
+
+**Implementación (para quien lo lea luego):**
+- `is_ghost` se deriva de `derived_state != SIN ENLACE`, **no** de `age_s` suelto: "vivo"
+  tiene UNA sola definición en el producto y así no puede divergir.
+- El umbral viaja del router a la query (`alive_s`, sin defecto a propósito) para que la
+  fila que pasa el filtro sea exactamente la que se rotula.
+- `retired_at`/`retired_by` salen del `audit_log` por LATERAL — `gateways` no tiene
+  `retired_at`, y añadirlo duplicaría un hecho ya escrito en una tabla append-only.
+- **Migración 0026:** índice `(object, ts DESC)` en `audit_log`. Sin él eso sería un
+  escaneo secuencial de la única tabla que por la regla de oro 11 no se poda jamás.
+
+#### 60.b · El gabinete se entera — EXIGE DECISIÓN DE PRODUCTO
+
+**La pregunta que hay que responder antes de escribir una línea:** ¿qué debe hacer un
+gabinete retirado que sigue protegiendo un edificio con gente dentro?
+
+Las reglas de oro acotan la respuesta más de lo que parece. La 1 dice que el camino
+SASMEX→actuador **nunca** depende de la nube; la 2, que el edge opera sin nube. Un retiro
+es un acto administrativo que viaja por la nube: **dejar que apague la protección
+convertiría un clic de inventario en una desprotección física**, y eso contradice las dos.
+Por eso la opción "se apaga al retirarse" se considera descartada salvo que se ratifique
+explícitamente lo contrario.
+
+- [ ] **DECIDIR** entre:
+      - **(A) Sigue protegiendo y lo declara.** El retiro es administrativo. El panel
+        muestra un aviso permanente e inequívoco (`DADO DE BAJA EN LA NUBE · SIGUE
+        PROTEGIENDO`), y la sirena sigue actuando por SASMEX. Es lo que ya ocurre de
+        facto; esto solo lo hace visible y deliberado.
+      - **(B) Igual que A, pero además el gabinete deja de emitir** para no ensuciar la
+        nube con datos de un sitio dado de baja. Cuidado: el silencio es indistinguible
+        de una avería, y perderíamos la señal que permite detectar el error de 60.a.
+      - **(C) Se apaga.** Solo si se ratifica que un retiro puede desproteger un edificio.
+- [ ] Una vez decidido: añadir el estado administrativo al **sobre de config firmado**
+      (`takab/cfg/{thing}`) en vez de inventar un topic — el sobre ya está firmado,
+      versionado y con ack, y su camino ya está probado. Nota: el gabinete retirado **deja
+      de ser candidato de config**, así que hay que publicarle el sobre del retiro **antes**
+      de sacarlo de la lista, o el aviso no sale nunca. Es el detalle donde esto se rompe.
+- [ ] El panel pinta el aviso con la precedencia que le corresponda entre los banners
+      (nunca por encima de una alerta sísmica real).
+- [ ] Test de extremo a extremo: retirar desde la consola ⇒ el aviso aparece en el panel
+      del gabinete; restaurar ⇒ desaparece.
+
+#### Nota de secuencia
+
+**60.a no depende de 60.b.** Si la decisión de producto tarda, 60.a se entrega igual y ya
+evita que vuelva a pasar lo del 04-08: el fantasma vivo deja de ser invisible en la nube,
+que es donde alguien lo va a mirar.

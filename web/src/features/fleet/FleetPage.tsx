@@ -43,6 +43,42 @@ function Kpi({ label, value, kind }: { label: string; value: number | null; kind
   );
 }
 
+/**
+ * [T-2.60.a] La tarjeta del gabinete que la organización cree dado de baja y
+ * sigue reportando.
+ *
+ * No se pinta como una tarjeta más del grid: es una CONTRADICCIÓN que exige
+ * acción humana en una de las dos direcciones —desmontarlo de verdad o
+ * restaurarlo—, y hasta entonces hay un edificio cuya supervisión nadie mira.
+ */
+function GhostCard({ cabinet }: { cabinet: FleetCabinet }) {
+  const gw = cabinet.gateway;
+  const cuando = gw.retired_at !== null && gw.retired_at !== undefined ? gw.retired_at : null;
+  return (
+    <li className="fleet-ghost">
+      <div className="fleet-ghost__hd">
+        <span className="fleet-ghost__site">{gw.site_name}</span>
+        <span className="soc-mono fleet-ghost__serial">{gw.serial}</span>
+      </div>
+      <p className="fleet-ghost__why">
+        Dado de baja{" "}
+        {cuando !== null ? (
+          <time dateTime={cuando}>el {new Date(cuando).toLocaleString("es-MX")}</time>
+        ) : (
+          "en fecha no registrada"
+        )}
+        {/* Sin actor la delación sigue valiendo: falta el quién, no el qué. */}
+        {gw.retired_by ? <> por {gw.retired_by}</> : <> (sin actor en la bitácora)</>}, y aun así
+        sigue enviando latidos.
+      </p>
+      <p className="fleet-ghost__act">
+        Decida: <strong>restaurarlo</strong> si el edificio sigue protegido, o retirar el hardware
+        si de verdad está fuera de servicio.
+      </p>
+    </li>
+  );
+}
+
 /** Conteo por derived_state EXACTO del servidor (verdad única, G7). */
 function countStates(cabinets: FleetCabinet[]) {
   return {
@@ -90,8 +126,14 @@ export default function FleetPage() {
   // fuera del StateFrame, así que sin esta puerta un fallo de la API se leía
   // como una flota de cero gabinetes en perfecto estado (ver Kpi arriba).
   const sinDato = fleet.loading || fleet.error !== null;
-  const counts = countStates(fleet.cabinets);
-  const visible = applyFilters(fleet.cabinets, filters);
+  // [T-2.60.a] Los fantasmas se apartan ANTES de contar y de filtrar. Están dados
+  // de baja, así que no son parte de la flota (no engordan "GABINETES" ni
+  // "OPERATIVOS"), y meterlos en el grid resucitaría el bug que cerró T-2.35:
+  // tarjetas de hardware retirado que la consola no podía quitar de la pantalla.
+  const ghosts = fleet.cabinets.filter((c) => c.gateway.is_ghost === true);
+  const activos = fleet.cabinets.filter((c) => c.gateway.is_ghost !== true);
+  const counts = countStates(activos);
+  const visible = applyFilters(activos, filters);
 
   return (
     <section className="fleet" data-screen-label="02 Flota Edge">
@@ -108,8 +150,34 @@ export default function FleetPage() {
           <Kpi label="OPERATIVOS" value={sinDato ? null : counts.ok} kind="ok" />
           <Kpi label="DEGRADADOS" value={sinDato ? null : counts.warn} kind="warn" />
           <Kpi label="SIN ENLACE" value={sinDato ? null : counts.crit} kind="crit" />
+          {/* Solo aparece cuando hay alguno: un contador que está siempre a cero
+              deja de leerse a las dos semanas, y este tiene que dar un salto. */}
+          {!sinDato && ghosts.length > 0 && (
+            <Kpi label="FANTASMAS" value={ghosts.length} kind="crit" />
+          )}
         </div>
       </header>
+
+      {/* [T-2.60.a] Antes del inventario y antes de los filtros: es lo que hay que
+          resolver, no una fila más que se pueda filtrar hasta esconderla. */}
+      {ghosts.length > 0 && (
+        <section className="fleet-ghosts" data-testid="fleet-ghosts" role="alert">
+          <header className="fleet-ghosts__hd">
+            <span className="fleet-ghosts__badge">RETIRADO · PERO SIGUE REPORTANDO</span>
+            <span className="soc-meta">
+              {ghosts.length}{" "}
+              {ghosts.length === 1
+                ? "gabinete dado de baja y latiendo"
+                : "gabinetes dados de baja y latiendo"}
+            </span>
+          </header>
+          <ul className="fleet-ghosts__list">
+            {ghosts.map((c) => (
+              <GhostCard key={c.gateway.gateway_id} cabinet={c} />
+            ))}
+          </ul>
+        </section>
+      )}
 
       <FleetToolbar
         filters={filters}

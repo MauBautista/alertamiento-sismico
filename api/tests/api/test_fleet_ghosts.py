@@ -45,6 +45,7 @@ _CLEANUP = (
     text("DELETE FROM tenant_retire_codes WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateway_config_state WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM rule_sets WHERE tenant_id = ANY(:t)"),
+    text("DELETE FROM device_health WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateways WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM sites WHERE tenant_id = ANY(:t)"),
     text("TRUNCATE audit_log"),  # append-only: DELETE lo veta un trigger
@@ -382,3 +383,102 @@ def test_la_migracion_0024_conserva_el_guc_de_rls() -> None:
     línea desaparezca en una limpieza futura.
     """
     assert "SET LOCAL app.role = 'takab_superadmin'" in _migration_sql()
+
+
+# ---- T-2.60.a · el fantasma VIVO -------------------------------------------
+#
+# T-2.35 enseñó a esconder lo retirado y estuvo bien: un gabinete desmontado no
+# puede quedarse en el grid para siempre. Pero esconder por estado, sin mirar si
+# el aparato sigue hablando, creó el fallo simétrico — y se cobró su víctima el
+# 2026-08-04: `gw-dev-0001` llevaba HORAS publicando latidos cada 60 s mientras
+# era invisible en la consola, porque el 03-08 se retiró su sitio y la migración
+# 0024 heredó el retiro. Se detectó porque el operador preguntó por su estación,
+# no porque el sistema dijera nada.
+#
+# La regla que estos tests fijan: **esconder al mudo, delatar al que late**.
+# "Late" no se inventa aquí — es la misma frontera de `derive_fleet_state`
+# (`SIN ENLACE` ⇔ sin latido o más viejo que `sin_enlace_min`), para que no haya
+# dos definiciones de "vivo" que puedan divergir.
+
+
+async def _latido(gateway_id: str, tenant: str, *, hace_s: float) -> None:
+    """Un heartbeat a medida, para poder fabricar vivos y mudos."""
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO device_health (ts, tenant_id, gateway_id, reason, mqtt_rtt_ms) "
+                "VALUES (now() - make_interval(secs => :age), :t, :g, 'heartbeat', 40)"
+            ),
+            {"age": hace_s, "t": tenant, "g": gateway_id},
+        )
+
+
+async def _fila(gateway_id: str, path: str = "/fleet/gateways") -> dict | None:
+    resp = await _get(path)
+    assert resp.status_code == 200, resp.text
+    return next((g for g in resp.json() if g["gateway_id"] == gateway_id), None)
+
+
+async def test_el_retirado_que_sigue_latiendo_NO_desaparece(seed: None) -> None:
+    """El corazón de T-2.60.a: retirar no puede silenciar a un aparato que habla."""
+    await _latido(G_A, T_A, hace_s=5)  # latió hace 5 s: está vivo
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+
+    fila = await _fila(G_A)
+    assert fila is not None, (
+        "el gabinete retirado SIGUE LATIENDO y aun así desapareció del inventario: "
+        "es exactamente el fallo del 2026-08-04"
+    )
+    assert fila["is_ghost"] is True
+    assert fila["status"] == "retired"
+    assert fila["derived_state"] != "SIN ENLACE"
+
+
+async def test_el_retirado_y_mudo_si_desaparece(seed: None) -> None:
+    """La otra mitad: T-2.35 sigue vigente para el hardware realmente desmontado."""
+    await _latido(G_A, T_A, hace_s=3600)  # una hora callado: desmontado
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+    assert await _fila(G_A) is None
+
+
+async def test_el_retirado_que_nunca_latio_si_desaparece(seed: None) -> None:
+    """Sin un solo heartbeat no hay nada que delatar: se esconde y ya."""
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+    assert await _fila(G_A) is None
+
+
+async def test_el_fantasma_dice_CUANDO_y_QUIEN_lo_retiro(seed: None) -> None:
+    """Delatarlo sin decir quién ni cuándo obliga a irse a la auditoría a mano."""
+    await _latido(G_A, T_A, hace_s=5)
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+
+    fila = await _fila(G_A)
+    assert fila is not None
+    assert fila["retired_at"] is not None, "el fantasma no dice cuándo lo retiraron"
+    assert fila["retired_by"], "el fantasma no dice quién lo retiró"
+
+
+async def test_retirar_el_SITIO_tambien_delata_al_gabinete_vivo(seed: None) -> None:
+    """El caso REAL del 2026-08-04: el retiro llegó por herencia del sitio."""
+    await _latido(G_A, T_A, hace_s=5)
+    assert (await _retire_site(S_A, "TORRE-A")).status_code == 200
+
+    fila = await _fila(G_A)
+    assert fila is not None, "el gabinete vivo se perdió al retirar su sitio"
+    assert fila["is_ghost"] is True
+
+
+async def test_un_gabinete_normal_no_es_fantasma(seed: None) -> None:
+    """La bandera tiene que ser rara: si se enciende siempre, no informa de nada."""
+    await _latido(G_A, T_A, hace_s=5)
+    fila = await _fila(G_A)
+    assert fila is not None
+    assert fila["is_ghost"] is False
+    assert fila["retired_at"] is None
+
+
+async def test_el_tenant_B_no_ve_el_fantasma_del_tenant_A(seed: None) -> None:
+    """Delatar no puede abrir un boquete en el aislamiento (regla de oro 5)."""
+    await _latido(G_A, T_A, hace_s=5)
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+    assert G_A not in await _ids(token=_tok("tenant_admin", tenant=T_B))

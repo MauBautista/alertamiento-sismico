@@ -2943,6 +2943,11 @@
             ],
             "title": "Iot Thing"
           },
+          "is_ghost": {
+            "default": false,
+            "title": "Is Ghost",
+            "type": "boolean"
+          },
           "last_heartbeat_ts": {
             "anyOf": [
               {
@@ -2987,6 +2992,29 @@
               }
             ],
             "title": "Power Status"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retired_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired By"
           },
           "row_version": {
             "title": "Row Version",

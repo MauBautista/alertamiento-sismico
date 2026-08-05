@@ -416,3 +416,81 @@ describe("FleetPage · barra de herramientas [T-2.38]", () => {
     expect(screen.queryByTestId("card-history")).not.toBeInTheDocument();
   });
 });
+
+// [T-2.60.a] El gabinete retirado que sigue latiendo.
+//
+// T-2.35 enseñó a esconder lo retirado y estuvo bien. Pero esconder por ESTADO
+// sin mirar si el aparato habla creó el fallo simétrico, y el 2026-08-04 se lo
+// comió un operador: su estación publicaba latidos cada 60 s mientras era
+// invisible en la consola. Se supo porque preguntó él, no porque el sistema
+// dijera nada.
+//
+// La contradicción —la organización lo cree dado de baja, el aparato reporta—
+// exige acción humana en una de las dos direcciones, así que no puede vivir
+// mezclada en el grid ni escondida: sección propia y ruidosa.
+describe("FleetPage · fantasmas vivos", () => {
+  function fantasma(id: string): FleetCabinet {
+    const c = cabinet(id, "OPERATIVO");
+    return {
+      ...c,
+      gateway: {
+        ...c.gateway,
+        status: "retired",
+        is_ghost: true,
+        retired_at: "2026-08-03T21:17:00Z",
+        retired_by: "ana@takab.mx",
+      },
+    };
+  }
+
+  it("el fantasma sale en su propia sección, no escondido", () => {
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1")] }));
+    render(<FleetPage />);
+    expect(screen.getByTestId("fleet-ghosts")).toBeInTheDocument();
+    expect(screen.getByText(/RETIRADO.*SIGUE REPORTANDO/i)).toBeInTheDocument();
+  });
+
+  it("dice cuándo y quién lo retiró, para no ir a la auditoría a mano", () => {
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1")] }));
+    render(<FleetPage />);
+    const seccion = screen.getByTestId("fleet-ghosts");
+    expect(seccion.textContent).toMatch(/ana@takab\.mx/);
+    expect(seccion.textContent).toMatch(/2026/);
+  });
+
+  it("NO se cuela además en el grid normal: eso resucitaría el bug de T-2.35", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [fantasma("1"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    const grid = document.querySelector(".fleet__grid");
+    expect(grid?.textContent).not.toMatch(/TKB-1/);
+    expect(grid?.textContent).toMatch(/TKB-2/);
+  });
+
+  it("cuenta en la tira de KPI, porque exige acción", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [fantasma("1"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis.some((k) => k?.includes("FANTASMA"))).toBe(true);
+  });
+
+  it("sin fantasmas no hay sección ni KPI: una alarma que suena siempre no es alarma", () => {
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [cabinet("1", "OPERATIVO")] }));
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-ghosts")).toBeNull();
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis.some((k) => k?.includes("FANTASMA"))).toBe(false);
+  });
+
+  it("los KPI normales NO cuentan al fantasma: está dado de baja", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [fantasma("1"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis[0]).toBe("1GABINETES");
+  });
+});
