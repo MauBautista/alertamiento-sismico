@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING
 
 import psycopg
@@ -19,6 +20,7 @@ import psycopg
 from takab_api.db import pool
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.providers import NotifyProvider, build_providers
+from takab_api.ops.metrics import GhostGauge, count_ghosts
 
 if TYPE_CHECKING:
     from takab_api.settings import Settings
@@ -26,6 +28,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger("takab_api.notify")
 
 _RECONNECT_BACKOFF_S = 1.0
+
+
+def build_ghost_gauge(settings: Settings) -> GhostGauge:
+    """Medidor de fantasmas listo para el bucle; inerte si no está habilitado.
+
+    boto3 se importa DENTRO a propósito: con la métrica apagada —que es el caso
+    en local y en los tests— este módulo no arrastra AWS ni ejecuta su resolución
+    de credenciales al importarse.
+    """
+    client = None
+    if settings.ops_metrics_enabled:
+        try:
+            import boto3
+
+            client = boto3.client("cloudwatch", region_name=settings.aws_region)
+        except Exception:
+            # Sin cliente el medidor queda inerte y el worker sigue notificando:
+            # perder una métrica de inventario no puede costar un aviso de sismo.
+            logger.warning("no se pudo crear el cliente de CloudWatch", exc_info=True)
+    return GhostGauge(
+        namespace=settings.ops_metrics_namespace,
+        every_s=settings.ops_metrics_interval_s,
+        client=client,
+        counter=partial(count_ghosts, alive_s=settings.sin_enlace_min * 60.0),
+    )
 
 
 class NotifyWorker:
@@ -39,12 +66,20 @@ class NotifyWorker:
         *,
         poll_s: float = 2.0,
         providers: dict[str, NotifyProvider] | None = None,
+        ghost_gauge: GhostGauge | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._settings = settings
         self._poll_s = poll_s
         self._providers = providers if providers is not None else build_providers(settings)
         self._stop = threading.Event()
+        # [T-2.60.a] La métrica del gabinete retirado que sigue latiendo viaja de
+        # gorra en este bucle. Va aquí y no en un worker propio porque `notify` ya
+        # despierta cada pocos segundos con una conexión caliente, y montar un
+        # proceso entero para publicar un entero por minuto sería desproporcionado.
+        # Se inyecta como colaborador (`ghost_gauge`) para poder probar el bucle
+        # sin AWS delante.
+        self._ghost_gauge = ghost_gauge if ghost_gauge is not None else build_ghost_gauge(settings)
 
     def run(self) -> None:
         """Escucha y despacha hasta ``stop()``; reconecta con backoff."""
@@ -60,6 +95,10 @@ class NotifyWorker:
                         break
                     work_conn = self._ensure_work(work_conn)
                     run_notify_pass(work_conn, self._settings, self._providers)
+                    # DESPUÉS del pase, nunca antes: avisar de un sismo manda
+                    # sobre publicar una métrica de inventario. `maybe_publish`
+                    # se estrangula sola y no lanza (contrato de GhostGauge).
+                    self._ghost_gauge.maybe_publish(conn=work_conn)
                 except psycopg.OperationalError:
                     logger.exception("notify: DB no disponible; reconecta")
                     self._safe_close(work_conn)

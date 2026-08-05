@@ -114,6 +114,21 @@ resource "aws_iam_role_policy" "db" {
         ]
         Resource = var.worker_queue_arns
       },
+      # [T-2.60.a] El worker `notify` publica GhostGatewaysAlive (gabinetes
+      # retirados que siguen reportando) en el namespace Takab/Ops.
+      # PutMetricData no admite ARN de recurso — el alcance se acota por
+      # `cloudwatch:namespace`, que es la unica llave de condicion que ofrece.
+      {
+        Sid      = "PutOpsMetrics"
+        Effect   = "Allow"
+        Action   = "cloudwatch:PutMetricData"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Takab/Ops"
+          }
+        }
+      },
       # Pull de la imagen takab/cloud desde ECR (GetAuthorizationToken exige "*").
       {
         Sid      = "EcrAuth"

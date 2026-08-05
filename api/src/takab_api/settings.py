@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     # carga que un solo cliente autenticado puede generar contra el pool.
     ws_max_feature_pollers: int = 16
 
+    # --- [T-2.60.a] Métricas de operación a CloudWatch (las emite `notify`) ---
+    # APAGADO por defecto: en local no hay CloudWatch ni credenciales, y un worker
+    # que intenta hablar con AWS en cada arranque de desarrollo es ruido puro. El
+    # despliegue lo enciende (deploy/cloud/deploy.sh).
+    ops_metrics_enabled: bool = False
+    ops_metrics_namespace: str = "Takab/Ops"
+    # Cadencia de publicación. El bucle de `notify` despierta cada 2 s; CloudWatch
+    # agrega por minuto, así que publicar más a menudo solo cuesta dinero.
+    ops_metrics_interval_s: float = 60.0
+
     # --- Flota / fleet-status derivado server-side (T-1.22 · G7) ---
     # Minutos sin heartbeat en device_health → estado SIN ENLACE (el gateway dejó
     # de reportar). Debe holgar sobre el espaciado real del heartbeat del edge.
