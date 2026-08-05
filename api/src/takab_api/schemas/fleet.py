@@ -191,6 +191,20 @@ class GatewayOut(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
     ntp_offset_ms: float | None = None
+    # [T-2.60.a] Retirado PERO sigue latiendo. No es un estado más del gabinete:
+    # es una CONTRADICCIÓN entre lo que la organización cree (dado de baja) y lo
+    # que el aparato hace (reportar). Por eso va aparte de `status` y de
+    # `derived_state`, que siguen diciendo cada uno su verdad sin mezclarse.
+    #
+    # Exige acción humana en una de las dos direcciones —desmontarlo de verdad o
+    # restaurarlo—, y hasta entonces hay un edificio cuya supervisión nadie mira.
+    is_ghost: bool = False
+    # Cuándo y quién, para no obligar a irse a la auditoría a mano. `None` cuando
+    # no está retirado, y también cuando lo está pero la bitácora no lo recoge
+    # (p. ej. un retiro hecho por SQL): ahí el fantasma se delata igual, solo que
+    # sin quién — mejor eso que callarse por falta de un dato accesorio.
+    retired_at: datetime | None = None
+    retired_by: str | None = None
 
 
 class HealthBucket(BaseModel):

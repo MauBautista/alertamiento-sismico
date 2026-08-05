@@ -38,6 +38,7 @@ from takab_api.routers._common import (
 )
 from takab_api.schemas.fleet import (
     DEGRADADO,
+    SIN_ENLACE,
     GatewayConfigStateOut,
     GatewayCreate,
     GatewayHealthOut,
@@ -202,7 +203,13 @@ async def list_gateways(
     hardware dado de baja que la consola no tenía forma de quitar de la pantalla.
     """
     s = Settings()
-    rows = await q.list_gateways_with_health(conn, include_retired=include_retired, scope=scope)
+    # Un único umbral de "vivo" para las dos decisiones: qué filas trae la query
+    # y cuáles se marcan como fantasma. Calcularlo dos veces sería invitar a que
+    # una fila salga del filtro y luego no se rotule, o al revés.
+    alive_s = s.sin_enlace_min * 60.0
+    rows = await q.list_gateways_with_health(
+        conn, include_retired=include_retired, alive_s=alive_s, scope=scope
+    )
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)
@@ -257,6 +264,13 @@ async def list_gateways(
                 row_version=m["row_version"],
                 derived_state=state,
                 degrade_reasons=reasons,
+                # [T-2.60.a] Retirado —él o su sitio— y sin embargo hablando. Se
+                # deriva de `state` y no de `age_s` para que "vivo" tenga UNA sola
+                # definición en todo el producto: la frontera de SIN ENLACE.
+                is_ghost=(m["status"] == "retired" or m["site_status"] == "retired")
+                and state != SIN_ENLACE,
+                retired_at=m["retired_at"],
+                retired_by=m["retired_by"],
                 last_heartbeat_ts=m["health_ts"],
                 power_status=m["power_status"],
                 battery_pct=m["battery_pct"],

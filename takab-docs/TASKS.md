@@ -3771,16 +3771,35 @@ real, la pregunta habría sido por qué un edificio llevaba semanas sin supervis
 Esta mitad se puede hacer ya y es la que cierra el daño operativo. Todo el dato necesario
 ya está en la base: `gateways.status` y el último `device_health.ts`.
 
-- [ ] Un gabinete `retired` cuyo último latido sea **más reciente que el retiro** aparece
-      en `/fleet` en una sección propia y ruidosa, del tipo `RETIRADO PERO SIGUE
-      REPORTANDO`, con la fecha del retiro, quién lo retiró (sale del `audit_log`) y la
-      edad del último latido. Ni se esconde como hoy ni se mezcla con la flota activa.
-- [ ] La cuenta sale también en la tira de KPI, porque es una condición que exige acción:
-      o se desmonta el gabinete de verdad, o se restaura.
-- [ ] Alarma: si un gabinete retirado sigue latiendo más de N horas, avisa. Vale el mismo
-      patrón que la alarma de gabinete mudo — **vigilar la contradicción, no la ausencia**.
-- [ ] Test: retirar un gateway con latido fresco NO lo hace desaparecer del todo; retirar
-      uno mudo desde antes del retiro sí lo esconde (ese está desmontado de verdad).
+- [x] **HECHO (2026-08-05).** El gabinete `retired` que **sigue latiendo** sale siempre en
+      `/fleet`, en sección propia con `role="alert"` y borde crítico
+      (`RETIRADO · PERO SIGUE REPORTANDO`), con la fecha, quién lo retiró y la decisión
+      que se le pide. **No se puede desactivar** con `include_retired`: esconder a un
+      aparato que habla no es limpiar el inventario, es perder de vista un edificio.
+- [x] **HECHO.** KPI `FANTASMAS` que **solo aparece cuando hay alguno** — un contador
+      clavado en cero deja de leerse a las dos semanas, y este tiene que dar un salto.
+      Los fantasmas se apartan ANTES de contar: no engordan `GABINETES` ni `OPERATIVOS`,
+      porque están dados de baja.
+- [ ] **NO HECHO · Alarma.** Exige lo que hoy no existe: **nadie en la API publica
+      métricas a CloudWatch**. Las alarmas del módulo `observability` cuelgan de `AWS/*`
+      y de `Takab/Ops` alimentado por IoT, no por el backend. Montarlo pide un emisor
+      periódico nuevo (¿en qué worker?) **más** un `terraform apply`. Se deja fuera a
+      propósito en vez de entregarlo a medias. Mientras tanto, la contradicción es
+      visible y ruidosa en pantalla, que era el daño operativo real.
+- [x] **HECHO.** Tests: retirar con latido fresco NO lo esconde; retirar uno mudo —o que
+      nunca latió— sí lo esconde (T-2.35 intacto); el retiro por herencia del SITIO
+      también lo delata (el caso REAL del 04-08); el fantasma dice cuándo y quién; un
+      gabinete normal no lleva la bandera; y el tenant B no ve el fantasma del A.
+
+**Implementación (para quien lo lea luego):**
+- `is_ghost` se deriva de `derived_state != SIN ENLACE`, **no** de `age_s` suelto: "vivo"
+  tiene UNA sola definición en el producto y así no puede divergir.
+- El umbral viaja del router a la query (`alive_s`, sin defecto a propósito) para que la
+  fila que pasa el filtro sea exactamente la que se rotula.
+- `retired_at`/`retired_by` salen del `audit_log` por LATERAL — `gateways` no tiene
+  `retired_at`, y añadirlo duplicaría un hecho ya escrito en una tabla append-only.
+- **Migración 0026:** índice `(object, ts DESC)` en `audit_log`. Sin él eso sería un
+  escaneo secuencial de la única tabla que por la regla de oro 11 no se poda jamás.
 
 #### 60.b · El gabinete se entera — EXIGE DECISIÓN DE PRODUCTO
 

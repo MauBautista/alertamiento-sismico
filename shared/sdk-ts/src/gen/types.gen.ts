@@ -685,10 +685,13 @@ export type GatewayOut = {
     has_wr1: boolean;
     installed_at?: string | null;
     iot_thing?: string | null;
+    is_ghost?: boolean;
     last_heartbeat_ts?: string | null;
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
     power_status?: string | null;
+    retired_at?: string | null;
+    retired_by?: string | null;
     row_version: string;
     seedlink_lag_s?: number | null;
     serial: string;
