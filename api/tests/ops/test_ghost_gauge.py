@@ -192,7 +192,7 @@ def test_la_metrica_NO_puede_tumbar_el_aviso_de_un_sismo(monkeypatch) -> None:
     class _Conn:
         closed = False
 
-        def execute(self, *_a: object, **_k: object) -> "_Conn":
+        def execute(self, *_a: object, **_k: object) -> _Conn:
             return self
 
         def fetchone(self) -> tuple:
