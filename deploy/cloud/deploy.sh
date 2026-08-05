@@ -35,6 +35,12 @@ TAKAB_API_AWS_REGION=${AWS_REGION}
 # Commit desplegado: CLOUD_TAG ya es \`git rev-parse --short HEAD\`. Se expone en
 # GET /health para poder responder "que esta vivo" sin abrir una sesion SSM.
 TAKAB_API_BUILD_SHA=${CLOUD_TAG}
+# [T-2.60.a] El worker \`notify\` publica GhostGatewaysAlive a CloudWatch cada
+# 60 s (gabinetes retirados que siguen reportando). APAGADO por defecto en el
+# codigo — en local no hay CloudWatch —, se enciende SOLO aqui. Exige el permiso
+# PutOpsMetrics del rol de instancia (modules/database): sin el, el worker
+# registra el fallo y sigue notificando, pero la alarma se queda ciega.
+TAKAB_API_OPS_METRICS_ENABLED=true
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).

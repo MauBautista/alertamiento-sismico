@@ -200,3 +200,41 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   ok_actions                = [aws_sns_topic.ops_alerts.arn]
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
+
+# [T-2.60.a] Un gabinete RETIRADO que sigue reportando.
+#
+# La contradiccion: la organizacion lo cree dado de baja y el aparato sigue
+# hablando. Paso el 2026-08-04 y duro horas invisible; se supo cuando el operador
+# pregunto por su estacion, no porque el sistema dijera nada. La consola ya lo
+# pinta en rojo (T-2.60.a), pero eso exige que alguien mire la pantalla: esta
+# alarma es la mitad que no depende de que haya un humano delante.
+#
+# La metrica la publica el worker `notify` cada 60 s, SIEMPRE, incluido el cero.
+# Eso es deliberado y cambia el significado de "sin datos": aqui la ausencia ya
+# no es ambigua, es que el worker esta caido.
+#
+# Por eso `treat_missing_data` NO es "breaching" como en gateway-offline. Alli la
+# ausencia de heartbeat ES la condicion vigilada; aqui la ausencia de metrica no
+# dice nada sobre fantasmas, solo que nos hemos quedado ciegos. Se deja en
+# "missing" y la ceguera se pagina por `insufficient_data_actions`, siguiendo el
+# mismo principio de la casa: callar nunca es la opcion segura (regla de oro 7).
+#
+# 12 periodos de 5 min = 1 h sostenida. Retirar un gabinete que sigue enchufado y
+# luego ir a desmontarlo es una secuencia legitima; lo que no es legitimo es que
+# ese estado se quede ahi. Una hora separa el tramite del olvido.
+resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
+  alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
+  alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie."
+  namespace           = "Takab/Ops"
+  metric_name         = "GhostGatewaysAlive"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 12
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
