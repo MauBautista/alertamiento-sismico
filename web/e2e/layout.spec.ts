@@ -30,6 +30,15 @@ test("los sobrepuestos del escenario no se pisan entre sí", async ({ page }) =>
     ["leyendas (abajo-derecha)", page.locator(".soc-map__legends")],
     ["atribución (abajo-izquierda)", page.locator(".soc-map__attribution")],
     ["datos retenidos", page.locator(".soc-wall > .soc-stateframe__stale")],
+    // [T-2.59] El control NATIVO de MapLibre no estaba en esta lista, y por eso
+    // se coló: se ancla abajo-DERECHA, que es la esquina de las leyendas, y las
+    // pisaba 2853 px² (357×8) en los tres viewports. Hoy va desactivado
+    // (`attributionControl: false`) porque duplicaba unos créditos que este
+    // panel ya pinta; si alguien lo reactiva, que choque aquí y no en el muro.
+    [
+      "atribución nativa de MapLibre (abajo-derecha)",
+      page.locator(".maplibregl-ctrl-bottom-right"),
+    ],
   ];
 
   const boxes: [string, Awaited<ReturnType<typeof boxOf>>][] = [];
@@ -121,4 +130,16 @@ test.describe("sin desborde horizontal en ninguna pantalla", () => {
       await expectNoHorizontalOverflow(page);
     });
   }
+});
+
+// [T-2.59] Quitar el control nativo de MapLibre quitó un DUPLICADO, no el
+// crédito: OpenFreeMap y OpenStreetMap exigen que la atribución se vea, y esa
+// obligación no se cumple con un comentario en el código. Si alguien borra
+// `.soc-map__attribution` creyendo que sobra, este test lo para.
+test("los créditos del mapa siguen visibles sin el control nativo", async ({ page }) => {
+  await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+  const attribution = page.locator(".soc-map__attribution");
+  await expect(attribution, "el panel se quedó sin atribución propia").toBeVisible();
+  await expect(attribution).toContainText("OpenFreeMap");
+  await expect(attribution).toContainText("OpenStreetMap");
 });

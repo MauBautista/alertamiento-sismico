@@ -276,10 +276,20 @@ def test_reset_por_panel_detiene_voceo(panel) -> None:  # noqa: ANN001
 
 
 def test_status_expone_audio(panel) -> None:  # noqa: ANN001
-    """El panel solo muestra el botón si status.audio.enabled — sin botones muertos."""
+    """El panel solo muestra el botón si status.audio.enabled — sin botones muertos.
+
+    [T-2.49] La sección crece con el PERFIL de tonos efectivo: sin él, un ID
+    rechazado dejaba al gabinete sonando el tono anterior sin que nadie frente al
+    gabinete pudiera enterarse. Las rutas de disco NO salen (lectura abierta en
+    la LAN): solo si HAY tono de prueba.
+    """
     dashboard, _backend = panel
     section = dashboard.status()["audio"]
-    assert section == {"enabled": True, "sounding": False}
+    assert section == {
+        "enabled": True,
+        "sounding": False,
+        "profile": {"applied": {}, "rejected": {}, "test_tone": True},
+    }
 
 
 def test_supervisor_cablea_el_voceo(audio_settings, monkeypatch) -> None:  # noqa: ANN001

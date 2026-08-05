@@ -1623,14 +1623,20 @@ body {
   .bld__grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* Con el body scrolleando, un `max-height` heredado de la fila 1fr dejaría
-     listas de 2 cm. Cada página se estira y el documento hace el scroll. */
-  .mt,
-  .fleet,
-  .audit,
-  .triage {
-    overflow-y: visible;
-  }
+  /* [T-2.58] Aquí vivía `.mt, .fleet, .audit, .triage { overflow-y: visible }`
+     con la intención de que por debajo de 1100 px scrollease el DOCUMENTO y no
+     cada página. Nunca llegó a aplicarse: `soc-tabs.css` se importa después que
+     este archivo (main.tsx) y declara `overflow-y: auto` sobre esos mismos
+     selectores SIN media query — y una @media no añade especificidad, así que
+     la regla posterior gana también aquí. Medido a 640/900/1100 px: `auto` en
+     los tres. Estaba muerta desde T-1.54 (`.fleet`), mucho antes de que T-2.57
+     añadiera `.triage`.
+
+     Se elimina en vez de resucitarla porque el comportamiento realmente
+     desplegado —cada página scrollea dentro de su fila y la topbar queda
+     fija— es el correcto para un SOC: reloj, pill del canal live y estado de
+     alerta no pueden irse con el scroll (regla de oro 7). Revivirla exigiría
+     `!important` o subir especificidad, y empeoraría la pantalla estrecha. */
   .mt__list,
   .mt__detail { max-height: none; }
 
@@ -1666,5 +1672,40 @@ body {
     overflow-x: auto;
     gap: 10px;
   }
-  .soc-incidents { max-height: 170px; }
+  /* [T-2.59] `max-height` SIN `overflow` no acota: recorta y tira lo que sobra.
+     La regla de arriba prometía "la cola se acota y scrollea" y solo cumplió la
+     primera mitad — nunca se le dio el `overflow`. Con `overflow: visible` la
+     caja se quedó en 170 px mientras su contenido seguía midiendo 218, así que
+     el PIE se pintaba 48 px por debajo de la caja, fuera de `.soc-shell` (que sí
+     es `overflow: hidden`) y fuera de la ventana de 800 px.
+
+     Lo que había en ese pie: REUBICAR EPICENTRO, SOLICITAR DICTAMEN TÉCNICO y
+     CONFIRMAR ACUSE. Medido a 1280×800: el pie iba de y=768 a y=833 con el
+     `.soc-shell` terminando en y=792 — de los 48 px de alto de los botones solo
+     15 quedaban dentro, con los rótulos fuera de pantalla, y sin ninguna barra
+     que sacar (`body` y `.soc-shell` son `overflow: hidden` por encima de
+     1280 px). En un portátil de 14" el operador no podía leer ni pulsar el
+     acuse. Lo cazó `screens.spec.ts`.
+
+     El arreglo es hacer de la cola una columna de verdad: cabecera y pie fijos
+     —son identidad de operador y acciones, no pueden irse con el scroll— y que
+     scrollee SOLO la lista, que es lo que crece. El tope de 170 px se queda tal
+     cual: subirlo le robaría al mapa el alto que este bloque entero existe para
+     protegerle (`layout.spec.ts` exige `.soc-stage` > 400 px aquí). */
+  .soc-incidents {
+    max-height: 170px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .soc-incidents__hd,
+  .soc-incidents__note,
+  .soc-incidents__ft {
+    flex: 0 0 auto;
+  }
+  .soc-incidents > .soc-stateframe {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
 }

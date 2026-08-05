@@ -3600,14 +3600,26 @@ redespliegue al final (T-2.57).
         hizo su trabajo sobre la DB viva — era el bug que abrió el ciclo.
   - [x] Endpoints nuevos vivos y pidiendo auth (401, no 500): `/audit`, `/users`,
         `/drills`, `/fleet/gateways`. El OpenAPI servido los declara.
+- **Segundo redespliegue (`e4980da`, mismo día):** los arreglos de T-2.58 llegaron a la
+  nube. `/api/health` ⇒ `e4980da`, 7/7 contenedores, bundle nuevo servido, y los cortes
+  de compactación (1599 px, 1439 px) presentes en el CSS que sirve Caddy.
+  `deployed.spec.ts` ⇒ **12/12** en los tres viewports.
 - **Pendientes que NO son código y exigen intervención humana:**
-  - [ ] **Rotar el código de retiro** del tenant `TAKAB Dev`
-        (`d0000000-0000-0000-0000-000000000001`). Hoy hay **0 configurados**: es el
-        fail-closed de T-2.36 funcionando, y hasta rotarlo nadie puede retirar una
-        estación (409). Exige un ID token de superadmin con **MFA**, que es un paso
-        humano; no hay script commiteado para obtenerlo sin navegador.
-  - [ ] **Retirar los 6 `site-sim-*` que siguen activos** (13 ya estaban retirados).
-        Depende del punto anterior: retirar exige el código. Cierra T-1.47.
+  - [x] **Código de retiro rotado** para `TAKAB Dev` (2026-08-04, por SQL vía SSM con
+        `crypt(…, gen_salt('bf'))` y auditado como `system:manual_rotation`). Se hizo
+        por base y no por API porque el endpoint exige un ID token con MFA y no hay
+        script commiteado para obtenerlo sin navegador. **1 código configurado.**
+  - [x] **Los 6 `site-sim-*` activos, retirados** con sus 6 gabinetes propagados y
+        auditados. Verificado: `site-sim activos = 0`, `gabinetes fantasma = 0`.
+        **Cierra T-1.47.**
+  - [x] **Estación de pruebas recuperada.** `site-dev` volvió a `active` y
+        `gw-dev-0001` a `provisioned`. La había retirado la migración `0024` al heredar
+        el retiro del sitio (hecho el 03-08 21:17, propagado el 04-08 13:22) mientras el
+        Pi seguía publicando latidos. Verificado tras el arreglo: **último latido hace
+        3 s, 60 latidos en la última hora**, 2 sitios activos y 2 gabinetes visibles.
+        Deja al descubierto un hueco de diseño que NO se cierra aquí: un gabinete
+        retirado que sigue latiendo desaparece EN SILENCIO en vez de gritar (ver
+        T-2.58 §2.3).
   - [ ] **Cablear `TAKAB_API_COGNITO_USER_POOL_ID` en `deploy.sh` + permisos
         `cognito-idp:Admin*`** en el rol de instancia. Sin ambos, la gestión de usuarios
         arranca SIMULADA: grita en cada escritura, no finge. Exige `terraform apply`.
@@ -3616,3 +3628,98 @@ redespliegue al final (T-2.57).
         estaciones. Secuencia: recorrer los `scope_gap` del `audit_log` → asignar por
         usuario → encender.
   - [ ] **Correr los e2e** contra el entorno desplegado (`npx playwright test`).
+
+---
+
+### [x] T-2.58 · Auditoría del panel del gabinete y su sincronía con la nube 2.2 — COMPLETA (2026-08-04)
+- **Componente:** edge · **Depende de:** T-2.49, T-2.57
+- **Motivo:** el ciclo 2.2 reformó la consola de la nube. El panel local del Pi —lo que
+  ve un operador DE PIE frente al gabinete, sin nube y sin internet— no se había
+  contrastado contra nada de eso. Es la superficie de la regla de oro 2.
+- **Hallazgos corregidos:**
+  - [x] **CRÍTICO · La feature congelada se pintaba como medición viva.**
+        `signal.live_by_channel()` nunca desaloja: con SeedLink muerto, el último
+        `Feature1s` seguía en `/api/status` con `age_s` creciendo sin límite. Los
+        carriles miraban la edad; la barra de proximidad, los ejes de la brújula, el
+        resumen para lector de pantalla y el punto de la rosa **no**. Reproducido con
+        `age_s = 7200`: `PROXIMIDAD AL DISPARO → 0.001 g en VERDE · 2 % del disparo`.
+        Es el incidente del 2026-07-14 (15 h ciego con la consola en OPERATIVO)
+        trasladado al panel local, que es justo el que queda cuando no hay nube.
+        Corregido con una sola puerta —`liveChannels(st)`— que consumen los cuatro:
+        fuera de plazo el canal NO EXISTE (`S/D` ámbar, brújula `SIN SEÑAL DEL SENSOR`).
+  - [x] **ALTO · Una prueba de sirena se leía como una alerta.** T-2.49 arregló el oído
+        (`asset_for(TEST)`) y dejó la vista atrás: `siren_sounding` es un booleano
+        eléctrico, así que quien llegaba a mitad de un self-test veía
+        `SIRENA: SONANDO · SASMEX: NO`. Ahora `status()` publica `siren_reason` y el
+        panel pinta `SIRENA: SONANDO · PRUEBA`.
+  - [x] **MEDIO · Un tono rechazado dejaba al gabinete sonando otra cosa en silencio.**
+        `HealthSnapshot.audio` solo viajaba a la nube, que lo DESCARTA (no hay columna en
+        `device_health`); el único que puede actuar —quien está delante— no lo veía.
+        Ahora `/api/status` publica el perfil (sin rutas de disco: es lectura abierta en
+        la LAN) y `PROBAR SIRENA` advierte `SIN TONO DE PRUEBA: el voceo CALLA` **antes**
+        del clic.
+- **Cobertura nueva:** `edge/tests/panel_harness.js` (mini-DOM en Node, **cero
+  dependencias** — el job `edge` del CI solo hace `uv sync`) ejecuta el `<script>` REAL
+  del panel; `edge/tests/test_local_api_panel.py` con **67 tests** por `id` de zona, más
+  un test de contrato que cruza el fixture contra `dashboard.status()` real. Suite edge:
+  **598 passed** (+72). El CI gana un paso `node --version`: sin él, los 67 se saltarían
+  EN SILENCIO por el `skipif` y el job seguiría verde cubriendo nada.
+- **Huecos documentados y NO cerrados (exigen decisión de producto):**
+  - [ ] **§2.3 · Un gabinete retirado no sabe que lo retiraron.** `retire_gateway` audita
+        y no publica nada: el gabinete queda sin config firmada y sin comandos, y el
+        panel sigue diciendo `ENLACE NUBE · CONECTADO` porque el MQTT sí vive. Ningún
+        topic nube→edge transporta hoy ese aviso. **Requiere contrato nuevo.**
+  - [ ] **§2.5 ·** El catálogo SSN no declara edad ni procedencia: una instantánea de
+        hace tres semanas se ve igual que una recién firmada.
+  - [ ] **§2.6 ·** El panel no tiene vista de evidencia/backfill (la consola sí, T-2.43).
+  - [ ] **§2.7 ·** `RELÉS · S/D · arranque en frío` colapsa tres causas distintas.
+
+### [x] T-2.59 · Barrido visual de las 6 pantallas y cierre de la regla de oro 7 — COMPLETA (2026-08-04)
+- **Componente:** web · **Depende de:** T-2.56
+- **Método:** revisión visual medida (58 capturas, 3 viewports) + batería sistemática
+  nueva `web/e2e/screens.spec.ts` (**114 tests** = 38 × 3 viewports).
+- **Defectos REALES corregidos:**
+  - [x] **G7 · `/fleet` pintaba `0 GABINETES · 0 OPERATIVOS · 0 DEGRADADOS · 0 SIN
+        ENLACE` con sus colores normales mientras la API estaba caída.** La tira de KPI
+        vive FUERA del `StateFrame`, así que un fallo se leía como una flota de cero
+        gabinetes en perfecto estado. Reproducido en navegador con toda la API a 500.
+        Ahora `S/D` **sin color semántico**; el cero legítimo sigue siendo cero.
+  - [x] **G7 · `/triage` anunciaba `0 INCIDENTES CARGADOS` junto a su propio error.**
+        Cero incidentes tras un sismo es la afirmación más tranquilizadora de esa
+        pantalla. Ahora `SIN DATO · HISTORIAL NO DISPONIBLE`.
+  - [x] **El pie de la cola de incidentes se salía de la pantalla a 1280×800.**
+        `@media (max-height:800px) { .soc-incidents { max-height: 170px } }` prometía en
+        su comentario que la cola "scrollea" y nunca se le dio `overflow`: 41 px fuera
+        con `body` y `.soc-shell` en `overflow:hidden`, o sea **sin ninguna barra que
+        sacar**. Afectaba a REUBICAR EPICENTRO / SOLICITAR DICTAMEN / CONFIRMAR ACUSE.
+        Tercera reaparición de la familia (T-2.51 `.mt__list`, T-2.58 `.triage`).
+  - [x] **`CONFIRMAR ACUSE` deshabilitado parecía armado**: `opacity: 1`,
+        `cursor: pointer` y el cian pleno de llamada a la acción. En el botón más
+        consecuente del producto eso se lee como "el sistema no responde". Ahora
+        `.soc-confirm:disabled` con el idioma que ya usaba el resto del repo, y el
+        `title` del envoltorio (`gateTitle`) que le faltaba solo a él desde T-1.51.
+  - [x] **La atribución NATIVA de MapLibre pisaba el panel de leyendas** 2853 px²
+        (357×8) en los tres viewports. Duplicaba unos créditos que el panel ya pinta en
+        `.soc-map__attribution`, así que se quita el control, no el crédito — con un
+        test que exige que OpenFreeMap y OpenStreetMap sigan visibles.
+  - [x] **Regla CSS muerta desde T-1.54.** `soc.css` declaraba
+        `@media (max-width:1100px) { .mt,.fleet,.audit,.triage { overflow-y: visible } }`
+        y **nunca se aplicó**: `soc-tabs.css` se importa después (main.tsx) y declara
+        `overflow-y: auto` sobre los mismos selectores sin media query; una @media no
+        añade especificidad. Medido a 640/900/1100 px: `auto` en los tres. Se elimina
+        documentando la verdad (el scroll interno con topbar fija es lo correcto para un
+        SOC) y un test nuevo la caza si vuelve.
+- **Verificado y en orden:** el **menú del operador NO se solapa** con nada (era la queja
+  del usuario) — 260×142, dentro del viewport en los tres tamaños, y sus tres controles
+  reciben su propio clic; el scroll de EVALUACIÓN funciona de verdad (`scrollHeight 971`
+  vs `clientHeight 740`, último elemento alcanzable); cero desborde horizontal en 8 rutas
+  × 3 viewports; estado de error presente en las 6 pantallas; `prefers-reduced-motion`
+  apaga las dos animaciones en ambos sentidos.
+- **Anotado, no corregido:** numeración `05` duplicada (`AuditPage` y `BuildingPage`);
+  contraste 3.48:1 del token gris en rótulos de 8–10 px (AA pide 4.5) — sale de un solo
+  token y `axe.spec.ts` no lo bloquea hoy; la columna de detalle de `/console` reserva
+  320–408 px aunque esté vacía.
+- **Números:** e2e **210 passed / 3 skipped** (los 3 son `deployed.spec.ts` saltándose a
+  propósito la comprobación de producción en localhost) · unitarias web **1130** · api
+  **1208** · edge **598** · mobile **201** · `make lint`, `make drift` y `vite build`
+  limpios.

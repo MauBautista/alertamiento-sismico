@@ -255,16 +255,22 @@ export default function IncidentTable({
               }}
             />
           </span>
-          <ConfirmButton
-            icon={<CheckCircle2 size={13} aria-hidden />}
-            label="CONFIRMAR ACUSE"
-            armedLabel="CLIC DE NUEVO PARA ACUSAR"
-            variant="primary"
-            disabled={!canAck || selectedId === null}
-            onConfirm={() => {
-              if (selectedId !== null) onAck(selectedId);
-            }}
-          />
+          {/* [T-2.59] El envoltorio con `gateTitle` faltaba SOLO aquí: los dos
+              botones de al lado explicaban su gate desde T-1.51 y el acuse —el
+              más consecuente de los tres— se quedaba gris y mudo. Lo encontró
+              `screens.spec.ts` inventariando los deshabilitados de cada pantalla. */}
+          <span title={gateTitle(canAck, selectedId !== null)}>
+            <ConfirmButton
+              icon={<CheckCircle2 size={13} aria-hidden />}
+              label="CONFIRMAR ACUSE"
+              armedLabel="CLIC DE NUEVO PARA ACUSAR"
+              variant="primary"
+              disabled={!canAck || selectedId === null}
+              onConfirm={() => {
+                if (selectedId !== null) onAck(selectedId);
+              }}
+            />
+          </span>
         </div>
       </footer>
     </section>

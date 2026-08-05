@@ -155,8 +155,14 @@ export default function TriagePage() {
       <div className="triage__grid">
         <div className="triage__tablewrap">
           <div className="triage__tablehd">
+            {/* [T-2.59] El rótulo se pinta FUERA del StateFrame, así que sin esta
+                puerta anunciaba "0 INCIDENTES CARGADOS" junto al propio mensaje
+                de error. Cero incidentes tras un sismo es la afirmación más
+                tranquilizadora de esta pantalla: no se hace sin dato (G7). */}
             <span className="soc-meta">
-              {triage.rows.length} INCIDENTES CARGADOS · MÁS RECIENTES PRIMERO
+              {triage.loading || triage.error !== null
+                ? "SIN DATO · HISTORIAL NO DISPONIBLE"
+                : `${triage.rows.length} INCIDENTES CARGADOS · MÁS RECIENTES PRIMERO`}
             </span>
             {deepLinkMiss && (
               <span className="soc-meta triage__deeplink-miss" role="status">

@@ -143,6 +143,35 @@ describe("FleetPage", () => {
     expect(kpis).toEqual(["4GABINETES", "2OPERATIVOS", "1DEGRADADOS", "1SIN ENLACE"]);
   });
 
+  // [T-2.59] Regla de oro 7. La tira de KPI vive FUERA del StateFrame, así que
+  // cuando la consulta falla `cabinets` es `[]` y los cuatro contadores daban
+  // CERO — pintados con sus colores normales, verde el de operativos y rojo el
+  // de sin-enlace. Un operador que barre la tira superior lee "cero gabinetes
+  // sin enlace" = todo en orden, cuando la verdad es "no hay dato". Es el mismo
+  // fallo del 2026-07-14 (15 h ciego con la consola en OPERATIVO), y es peor que
+  // no mostrar nada porque el cero es tranquilizador.
+  //
+  // Reproducido en navegador con toda la API a 500: `0 GABINETES · 0 OPERATIVOS
+  // · 0 DEGRADADOS · 0 SIN ENLACE` mientras el listado de abajo sí gritaba.
+  it.each([
+    ["error", { error: "GET /fleet/gateways falló (503)" }],
+    ["carga", { loading: true }],
+  ])("sin dato (%s) los KPI dicen S/D, no CERO", (_caso, patch) => {
+    mocks.useFleet.mockReturnValue(fleetData(patch));
+    render(<FleetPage />);
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis).toEqual(["S/DGABINETES", "S/DOPERATIVOS", "S/DDEGRADADOS", "S/DSIN ENLACE"]);
+  });
+
+  // El cero LEGÍTIMO —la consulta respondió y de verdad no hay gabinetes— tiene
+  // que seguir siendo un cero: "S/D" ahí sería mentir en el otro sentido.
+  it("cero real sigue siendo cero, no S/D", () => {
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [] }));
+    render(<FleetPage />);
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis).toEqual(["0GABINETES", "0OPERATIVOS", "0DEGRADADOS", "0SIN ENLACE"]);
+  });
+
   it("pinta una tarjeta por gabinete", () => {
     mocks.useFleet.mockReturnValue(
       fleetData({ cabinets: [cabinet("1", "OPERATIVO"), cabinet("2", "DEGRADADO")] }),

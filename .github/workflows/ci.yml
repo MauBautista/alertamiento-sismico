@@ -146,6 +146,14 @@ jobs:
         run: uv run ruff check .
       - name: Formato (ruff)
         run: uv run ruff format --check .
+      - name: Node presente (el arnés del panel se salta sin él)
+        # `test_local_api_panel.py` renderiza el panel REAL del gabinete
+        # ejecutando su <script> con Node, y lleva un `skipif` cuando `node` no
+        # está en el PATH. Sin esta comprobación, un runner sin Node saltaría 67
+        # tests EN SILENCIO y el job seguiría verde cubriendo nada — la misma
+        # familia de fallo que la alarma que vigila la AUSENCIA del latido.
+        # `ubuntu-latest` trae Node hoy; el día que deje de traerlo, que grite.
+        run: node --version
       - name: Tests (pytest)
         run: uv run pytest -q
 

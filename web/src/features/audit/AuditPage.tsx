@@ -96,6 +96,14 @@ export default function AuditPage() {
             type="button"
             className="soc-btn soc-btn--secondary"
             disabled={!isFiltering(draft) && !isFiltering(filters)}
+            // [T-2.59] Un botón apagado y mudo obliga a adivinar en mitad de un
+            // turno (regla de oro 7). Aquí el motivo es siempre el mismo y cabe
+            // en una línea: no hay nada que limpiar.
+            title={
+              !isFiltering(draft) && !isFiltering(filters)
+                ? "No hay filtros aplicados que limpiar"
+                : undefined
+            }
             onClick={() => {
               setDraft(EMPTY_FILTERS);
               setFilters(EMPTY_FILTERS);

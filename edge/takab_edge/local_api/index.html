@@ -502,6 +502,9 @@ const RELAY_META = {
   elevator:{label:'ASCENSORES'}, door_retainer:{label:'PUERTAS'},
 };
 const FS_SHORT = { normally_open:'NO', normally_closed:'NC', fail_close:'fail_close' };
+/* [T-2.49] POR QUÉ suena. El altavoz ya conmuta el tono con esto; la pantalla
+   no lo miraba y una prueba de sirena se leía igual que un sismo real. */
+const SIREN_REASON = { alert:'ALERTA', safe_state:'ESTADO SEGURO', test:'PRUEBA' };
 
 /* ============================== estado ============================== */
 const params = new URLSearchParams(location.search);
@@ -768,6 +771,25 @@ function connectionState(){
 }
 
 /* ============================== render ============================== */
+/* [T-2.58] Canales que SIGUEN MIDIENDO. `signal.live_by_channel()` no desaloja
+   nunca: con SeedLink caído el último Feature1s permanece en /api/status con su
+   `age_s` creciendo sin límite. Los carriles ya miraban la edad; la barra de
+   proximidad, los ejes de la brújula, el resumen accesible y el punto de la rosa
+   NO — y pintaban el valor congelado en VERDE, con su "% del disparo", como si
+   se acabara de medir. Es el fallo del 2026-07-14 (15 h ciego con la consola en
+   OPERATIVO) trasladado al panel local, que es justo el que queda cuando no hay
+   nube. Una sola puerta para todos los consumidores: fuera de plazo, no existe. */
+function liveChannels(st){
+  const sig = st && st.signal;
+  const chs = (sig && sig.channels) || {};
+  const max = sig && sig.stale_after_s != null ? sig.stale_after_s : null;
+  const out = {};
+  Object.keys(chs).forEach(c => {
+    const m = chs[c];
+    if (max == null || m.age_s == null || m.age_s <= max) out[c] = m;
+  });
+  return out;
+}
 function setPill(idTxt, idDot, pill, label, color, bg){
   $(idTxt).textContent = label; $(idTxt).style.color = color;
   $(idDot).style.background = color;
@@ -831,7 +853,8 @@ function render(){
   /* tier + relés */
   $('tier-label').textContent = tier.label; $('tier-label').style.color = tier.color;
   $('tierline').style.borderLeftColor = tier.color;
-  $('tier-sub').textContent = 'SIRENA: ' + (st.siren_sounding ? 'SONANDO' : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO')) +
+  const why = st.siren_reason ? (SIREN_REASON[st.siren_reason] || String(st.siren_reason).toUpperCase()) : null;
+  $('tier-sub').textContent = 'SIRENA: ' + (st.siren_sounding ? ('SONANDO' + (why ? ' · ' + why : '')) : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO')) +
     ' · SASMEX: ' + (st.sasmex_active ? 'ACTIVO' : 'NO') + ' · TIER ' + (st.last_tier || 'S/D');
   const relays = $('relays'); relays.textContent = '';
   (st.relays || []).forEach(r => {
@@ -869,7 +892,7 @@ function render(){
   renderEvents(st);
   renderSsn();
   renderActions(st);
-  const enz = st.signal && st.signal.channels && st.signal.channels.ENZ;
+  const enz = liveChannels(st).ENZ;
   $('waves-sr').textContent = 'Estado ' + tier.label + '. PGA vertical ' + fmtG(enz ? enz.pga_g : null, cal) + '.';
   renderMuroExtra();
 }
@@ -904,7 +927,7 @@ function renderProximity(st, cal){
   const box = $('prox-bars'); box.textContent = '';
   const th = st.thresholds;
   $('prox-profile').textContent = th ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g') : 'umbrales S/D (motor caído)';
-  const enz = st.signal && st.signal.channels && st.signal.channels.ENZ;
+  const enz = liveChannels(st).ENZ;
   [['PGA ENZ', enz ? enz.pga_g : null, th ? th.pga_watch_g : null, th ? th.pga_trip_g : null, (v)=>fmtG(v,cal)],
    ['PGV ENZ', enz ? enz.pgv_cms : null, th ? th.pgv_watch_cms : null, th ? th.pgv_trip_cms : null, (v)=>fmtV(v,cal)]]
   .forEach(([label, v, watch, trip, fmt]) => {
@@ -1015,7 +1038,7 @@ function renderRoseInfo(st){
   $('rose-coords').style.color = hasLoc ? C.fg3 : C.warn;
   const cal = st.calibration && st.calibration.calibrated === true;
   const axes = $('rose-axes'); axes.textContent = '';
-  const chs = st.signal && st.signal.channels ? st.signal.channels : {};
+  const chs = liveChannels(st);
   [['EJE Z','ENZ'],['EJE N-S','ENN'],['EJE E-O','ENE']].forEach(([lbl, c]) => {
     const m = chs[c];
     const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:baseline;gap:7px';
@@ -1100,6 +1123,18 @@ function renderSalud(st){
     rows.push(['Certificado mTLS', h.cert_days_remaining == null ? 'S/D' : h.cert_days_remaining+' d', h.cert_days_remaining != null && h.cert_days_remaining < 30 ? C.warn : C.ok]);
   }
   rows.push(['Enlace a la nube', cloud.online ? 'conectado' + (cloud.mqtt_rtt_ms != null ? ' · '+Math.round(cloud.mqtt_rtt_ms)+' ms' : '') : 'sin enlace' + (cloud.queued != null ? ' · '+cloud.queued+' en cola' : ''), cloud.online ? C.ok : C.warn]);
+  /* [T-2.49] Tonos EFECTIVOS. Un ID rechazado (desconocido, o RESERVADO como el
+     oficial de SASMEX) deja al gabinete sonando el tono ANTERIOR sin avisar, y
+     sin tono de prueba una PRUEBA CALLA. Nadie más que quien está aquí puede
+     actuar sobre eso: la nube ni siquiera persiste el campo. */
+  const prof = st.audio && st.audio.profile;
+  if (prof){
+    const rej = Object.keys(prof.rejected || {});
+    rows.push(['Tonos de voceo',
+      rej.length ? (rej.length + ' RECHAZADO(S) · ' + rej.map(k => prof.rejected[k]).join(', '))
+                 : (prof.test_tone ? 'alerta + prueba' : 'alerta · SIN TONO DE PRUEBA'),
+      rej.length ? C.crit : (prof.test_tone ? C.ok : C.warn)]);
+  }
   rows.forEach(([lbl, val, color]) => {
     const r = document.createElement('div'); r.className = 'kv';
     const d = document.createElement('span'); d.className = 'statdot'; d.style.background = color;
@@ -1372,7 +1407,11 @@ function renderActions(st){
   if (st.siren_sounding) defs.push(['SILENCIAR AUDIBLES', st.audible_silenced ? 'ya silenciado' : 'no calla la rama de hardware', 'api/silence', false, 'primary']);
   if (st.alert_latched || st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
     defs.push(['CERRAR ALERTA', 'libera el enclave · 2 clics + PIN', 'api/reset', true, 'danger']);
-  defs.push(['PROBAR SIRENA', 'suena 2 s', 'api/siren-test', false, '']);
+  /* [T-2.49] Sin tono de prueba el voceo CALLA a propósito (caer al tono de
+     alerta era el bug). Decirlo ANTES del clic evita que alguien concluya que
+     el altavoz está roto y salga a buscar una avería que no existe. */
+  const prof = st.audio && st.audio.profile;
+  defs.push(['PROBAR SIRENA', prof && !prof.test_tone ? 'suena 2 s · SIN TONO DE PRUEBA: el voceo CALLA' : 'suena 2 s', 'api/siren-test', false, '']);
   defs.push(['CALIBRAR BRÚJULA', 'fija el PUNTO 0 con el gabinete instalado y nivelado · re-pulsar restablece', 'api/rose-zero', true, '']);
   defs.push(['PROBAR ACTUADORES', 'sostiene sirena+estrobo · pulso en gas, ascensores, puertas', 'api/actuator-test', true, '']);
   const wr1 = st.test_mode && st.test_mode.active;
@@ -1525,7 +1564,9 @@ function drawRose(){
   const {x, w, h} = ctx;
   const st = S.status; if (!st) return;
   const V = S.variant;
-  const chs = st.signal && st.signal.channels ? st.signal.channels : {};
+  /* [T-2.58] `dead` incluye ahora "hay canales pero todos vencidos": un vector
+     quieto dibujado con el último dato se lee como "quieto de verdad". */
+  const chs = liveChannels(st);
   const dead = !Object.keys(chs).length;
   const cx = V === 'A' ? w/2 : w*0.40, cy = h/2+6, R = Math.min(w,h)*0.36;
   const th = st.thresholds;

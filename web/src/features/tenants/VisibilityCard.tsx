@@ -114,7 +114,24 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
             {mut.error}
           </p>
         )}
-        <button type="submit" className="vis-form__submit" disabled={mut.pending || invalid}>
+        {/* [T-2.59] `invalid` tiene DOS causas distintas y el botón las tapaba a
+            las dos con el mismo gris. Conceder visibilidad entre clientes es una
+            operación de aislamiento multi-tenant: quien la ejecuta tiene que
+            saber exactamente qué le falta antes de pulsar. */}
+        <button
+          type="submit"
+          className="vis-form__submit"
+          disabled={mut.pending || invalid}
+          title={
+            mut.pending
+              ? "Concediendo…"
+              : target === ""
+                ? "Elige primero a qué cliente se le concede la vista"
+                : !meta && !live
+                  ? "Marca al menos un permiso: metadatos o datos en vivo"
+                  : undefined
+          }
+        >
           Conceder
         </button>
       </form>

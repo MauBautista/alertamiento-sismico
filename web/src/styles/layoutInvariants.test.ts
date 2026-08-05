@@ -334,3 +334,56 @@ describe("sanidad del CSS — un error de sintaxis no lo grita nadie", () => {
     expect(open, `${name}: llaves descuadradas`).toBe(close);
   });
 });
+
+describe("reglas muertas — la @media que nunca gana", () => {
+  // [T-2.58] `soc.css` llevaba desde T-1.54 un bloque
+  // `@media (max-width:1100px) { .mt,.fleet,.audit,.triage { overflow-y: visible } }`
+  // que jamás se aplicó: `main.tsx` importa `soc-tabs.css` DESPUÉS, y allí esos
+  // mismos selectores declaran `overflow-y: auto` sin media query. Una @media no
+  // añade especificidad, así que la regla posterior gana también dentro del rango.
+  //
+  // Medido en navegador a 640/900/1100 px: `auto` en los tres. El daño no es
+  // visual hoy, es que la hoja DOCUMENTA una intención que el navegador ignora —
+  // y el siguiente que lea el comentario creerá que la pantalla estrecha se
+  // comporta de un modo en el que no se comporta.
+  const CONTENEDORES = [".mt", ".fleet", ".audit", ".triage", ".bld"];
+
+  it.each(CONTENEDORES)(
+    "%s: si soc-tabs.css lo hace scrolleable, soc.css no puede fingir que lo revierte",
+    (selector) => {
+      const tabsScrollea = /overflow-y:\s*auto/.test(rulesFor(TABS, selector));
+      if (!tabsScrollea) return; // no aplica: nadie lo hizo scrolleable
+
+      expect(
+        rulesFor(SOC, selector),
+        `${selector}: soc.css declara overflow-y sobre un contenedor que ` +
+          `soc-tabs.css ya hizo scrolleable. Como soc-tabs.css se importa después ` +
+          `y sin media query, esa declaración NO se aplica nunca — es letra muerta ` +
+          `que miente sobre el comportamiento real.`,
+      ).not.toMatch(/overflow-y:/);
+    },
+  );
+});
+
+describe("un botón apagado tiene que PARECER apagado", () => {
+  // [T-2.59] `CONFIRMAR ACUSE` se pintaba deshabilitado con `opacity: 1`,
+  // `cursor: pointer` y el CIAN PLENO de llamada a la acción: idéntico a cuando
+  // sí se puede pulsar. Medido en navegador: `disabled=true` con
+  // `background: rgb(0,191,255)`.
+  //
+  // Es el botón más consecuente del producto —el acuse de un incidente
+  // sísmico—: parecer armado sin estarlo se lee como "el sistema no responde",
+  // que es justo lo que nadie debe pensar en mitad de una emergencia. El resto
+  // del repo ya tenía el idioma (`.fleet-card__diag:disabled`,
+  // `.mt__new-submit:disabled`, `.vis-form__submit:disabled`…); faltaba aquí.
+  it(".soc-confirm apagado baja opacidad y cambia el cursor", () => {
+    const apagado = rulesFor(ALL, ".soc-confirm:disabled");
+    expect(apagado, ".soc-confirm no tiene regla :disabled").not.toBe("");
+    expect(apagado, "un botón apagado no puede quedarse a opacidad plena").toMatch(
+      /opacity:\s*0?\.\d+/,
+    );
+    expect(apagado, "el cursor no puede seguir invitando a pulsar").toMatch(
+      /cursor:\s*not-allowed/,
+    );
+  });
+});

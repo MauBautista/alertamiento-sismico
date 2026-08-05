@@ -351,7 +351,12 @@ export default function MapPanel({
       style: MAP_STYLE_URL,
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
-      attributionControl: { compact: true },
+      // [T-2.59] Sin el control nativo: este panel YA pinta su atribución en
+      // `.soc-map__attribution` (abajo-izquierda) con los créditos que exigen
+      // OpenFreeMap y OpenStreetMap. El nativo los repetía abajo-DERECHA, y
+      // esa esquina es la del panel de leyendas: medidos 2853 px² (357×8) de
+      // solape en los tres viewports. Se quita el duplicado, no el crédito.
+      attributionControl: false,
     });
     mapRef.current = map;
     let raf = 0;
