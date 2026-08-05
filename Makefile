@@ -1,4 +1,5 @@
-.PHONY: dev down lint test test-db fmt drift api web edge mobile db install db-tunnel cloud-stop cloud-start \
+.PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
+        cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
         cloud-images cloud-deploy cloud-allow-my-ip
 
@@ -93,22 +94,36 @@ down:
 # Paridad con ci.yml, incluido `mobile`: el job existe en CI desde T-2.00 pero el
 # Makefile lo ignoraba, y por ahí se coló un merge en rojo (main, 2026-07-18).
 # `ruff format --check` de api también faltaba: CI lo corre, make no.
+# T-2.62: el `typecheck` de web es la tercera fuga de la misma familia — CI lo corría
+# dentro de su build y make no lo corría en ningún sitio, así que un error de tipos
+# en web/src pasaba `make lint && make test` en verde y reventaba el PR. Va en `lint`
+# (es un error de tipos, no una suite; ~5 s) exactamente como el de `mobile` de abajo.
+# `terraform fmt -check` es la cuarta: un .tf desalineado rompía el PR sin ningún
+# aviso local. Cabe en `lint` porque es instantáneo, offline y no añade requisito
+# nuevo al entorno (`make test` ya invoca terraform para el módulo observability).
+# Sus hermanos `validate` NO caben: exigen un `init` que descarga providers, y
+# lintar no puede depender de la red — quedan declarados en test_ci_parity.sh.
 lint:
 	cd $(API_DIR) && uv run ruff check . && uv run ruff format --check .
-	cd $(WEB_DIR) && npm run lint && npm run format:check
+	cd $(WEB_DIR) && npm run lint && npm run format:check && npm run typecheck
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(MOBILE_DIR) && npx expo lint && npm run typecheck
+	terraform fmt -check -recursive infra/terraform
 
 # Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de
 # api (B-2) — sus imports son takab_api + psycopg, sin dependencia del edge.
+# `-rs` en el edge: los tests que necesitan hardware se saltan, y sin `-rs` se
+# saltaban ANÓNIMOS (un "67 skipped" no dice qué dejó de cubrirse). Mismo flag en
+# el job `edge` de ci.yml.
 test: test-db
 	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q -m "not perf"
 	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
-	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q
+	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q -rs
 	cd $(MOBILE_DIR) && npm test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	bash infra/scripts/tests/test_merge_env.sh
+	bash infra/scripts/tests/test_ci_parity.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
 # commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo
@@ -120,6 +135,20 @@ drift:
 	git diff --exit-code $(SDK_DIR)/src/gen
 	cd $(SDK_DIR) && npm run check
 	cd $(TOKENS_DIR) && npm run check
+
+# El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
+# suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que
+# CI corre desde siempre (job `web`) y que en local no corría nadie.
+build:
+	cd $(WEB_DIR) && npm run build
+
+# Lo que corre CI, de una sola vez: el desarrollador no debería tener que saberse
+# qué target cubre qué job. Precio explícito y aceptado: `tsc` corre dos veces
+# (typecheck en `lint` + el build de aquí, ~5 s) a cambio de que no exista un orden
+# de targets que deje un gate fuera. `test_ci_parity.sh` vigila que ci.yml no vuelva
+# a ganar un paso sin espejo local, y corre en los DOS lados (`test` aquí y el job
+# `infra` en CI): un gate que sólo viva en local no protege un PR.
+verify: lint test build drift
 
 fmt:
 	cd $(API_DIR) && ruff format . && ruff check --fix .

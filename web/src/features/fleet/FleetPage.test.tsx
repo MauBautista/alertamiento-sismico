@@ -493,4 +493,33 @@ describe("FleetPage · fantasmas vivos", () => {
     const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
     expect(kpis[0]).toBe("1GABINETES");
   });
+
+  // La leyenda "MOSTRANDO n DE m" solo existe para avisar de que hay un FILTRO
+  // escondiendo gabinetes. Sin filtro no debe aparecer: si lo hace, el operador
+  // busca un filtro que no ha puesto.
+  it("sin filtro NO aparece 'MOSTRANDO' aunque haya un fantasma apartado", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [fantasma("1"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-shown")).toBeNull();
+  });
+
+  // Y cuando sí hay filtro, el "DE m" tiene que ser el MISMO número que el KPI
+  // GABINETES que se pinta tres centímetros más arriba. Dos cifras del mismo
+  // conjunto discrepando en la misma pantalla es la regla de oro 7 al revés.
+  it("con filtro, el 'DE m' coincide con el KPI GABINETES (sin el fantasma)", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [fantasma("1"), cabinet("2", "OPERATIVO"), cabinet("3", "OPERATIVO")],
+      }),
+    );
+    render(<FleetPage />);
+    fireEvent.change(screen.getByLabelText("Buscar en la flota"), {
+      target: { value: "TKB-2" },
+    });
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis[0]).toBe("2GABINETES");
+    expect(screen.getByTestId("fleet-shown")).toHaveTextContent("MOSTRANDO 1 DE 2");
+  });
 });

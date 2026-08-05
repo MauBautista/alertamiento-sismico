@@ -38,7 +38,8 @@ Arquitectura **híbrida edge + cloud**:
   > BCM2711). Estos documentos decían "Pi 5" hasta el 2026-07-30; el host se llama `takab-pi5`
   > por razones históricas y de ahí venía la confusión. **No re-corregir a Pi 5.**
 - **Cloud (AWS):** AWS IoT Core (MQTT/mTLS) → SQS → ECS Fargate → PostgreSQL/TimescaleDB/PostGIS
-  + S3. Consola web SOC, app móvil (fase posterior), notificaciones.
+  + S3. Consola web SOC, **app móvil (construida y mergeada en la Fase 2, T-2.00…T-2.14)**,
+  notificaciones.
 
 **Fuentes de alertamiento (en orden):**
 1. **SASMEX** vía receptor **WR-1**, salida de **contacto seco** → GPIO del Pi 4 (boolean). Canal
@@ -86,12 +87,12 @@ Arquitectura **híbrida edge + cloud**:
 
 | Capa | Tecnología |
 |---|---|
-| Backend API | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) · Alembic · WebSocket nativo para live (GraphQL subscriptions: pos-MVP `[SUPUESTO plan-maestro-01 #5 — confirmar]`) |
+| Backend API | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) · Alembic · WebSocket nativo para live (`[RATIFICADO 2026-07-06 · gate #5 — REST + WS nativo, SIN GraphQL]`, ver `TASKS.md` T-1.22; GraphQL subscriptions = pos-MVP `T-3.15`, solo si un cliente lo pide) |
 | DB | PostgreSQL 16 · TimescaleDB 2.x · PostGIS 3.x |
 | Cloud | AWS IoT Core · SQS · ECS Fargate · S3 · Cognito · KMS |
 | Edge | Python 3.12 (`uv`) · ObsPy · NumPy/SciPy · aws-iot-device-sdk / paho-mqtt · BAC0/bacpypes3 (BACnet) · gpiozero/lgpio (GPIO) · systemd |
 | Web | React 18 · TypeScript (estricto) · Vite · TanStack Query · zustand · MapLibre GL JS |
-| Móvil | React Native (fase posterior) |
+| Móvil | React Native + Expo — `mobile/` **existe y está mergeada** (Fase 2). Lo que sigue pendiente NO es la app: son los gates de tienda/hardware (`GATE-STORE`, `GATE-HW`) |
 | Auth | AWS Cognito (OIDC/OAuth2 + MFA) · JWT con claims de tenant/rol/scope |
 | Lint/format | Ruff (Python) · ESLint + Prettier (TS) |
 | Tests | pytest (api/edge) · Vitest + Testing Library + Playwright (web) |
@@ -106,7 +107,8 @@ takab/
 │                    #   módulos: seedlink, signal, buffer, gpio, rules, actuators,
 │                    #   cloud, health, config, security, local_api, supervisor
 │                    #   (gpio = WR-1 + relés + reflejo SASMEX→sirena consolidado
-│                    #   [SUPUESTO plan-maestro-01 #6]; el quórum vive en la NUBE)
+│                    #   [RATIFICADO 2026-07-09 · T-1.45 · gate #6]; el quórum vive
+│                    #   en la NUBE)
 ├── api/             # backend cloud (FastAPI; REST + WS)
 ├── web/             # Consola SOC (React 18 · Vite)
 ├── shared/
@@ -138,7 +140,11 @@ takab/
   fuente de verdad del DDL incluso donde el blueprint describa algo distinto.
 - **`takab-docs/TASKS.md`** — qué construir y en qué orden, con criterios de aceptación.
 - **`takab-docs/PLAN-MAESTRO-TAKAB.md`** — secuencia por fases, hitos, DoD de fase, ruta
-  crítica, decision-gates y supuestos `[SUPUESTO plan-maestro-01]` pendientes de ratificar.
+  crítica y los 9 **decision-gates**. §3 es el censo autoritativo de cuáles están cerrados:
+  **#2, #4, #5, #6 y #7 están RATIFICADOS** (no se reabren ni se "overridean"); **#1, #3, #8
+  y #9 siguen abiertos** y solo esos llevan `[SUPUESTO plan-maestro-01]`. Un gate ratificado
+  que aparezca todavía etiquetado como supuesto es un defecto — lo caza
+  `api/tests/test_docs_consistency.py`.
 - **`takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md`** — hallazgos del red-team, changelog de
   correcciones `[ANALISIS-00]` y preguntas abiertas.
 
@@ -184,8 +190,12 @@ violen las reglas de oro.
 - No usar `localStorage`/`sessionStorage` en componentes que se rendericen como artifacts de prueba.
 - No avanzar a la siguiente tarea si la actual no cumple su Definition of Done.
 - No incluir coautoría de IA ni footers de generación automática en commits/PRs (ver §0.2).
-- No implementar el microservicio "mini-ShakeMap" ni streaming continuo de forma de onda cruda
-  en este ciclo (ver blueprint §14).
+- No implementar el microservicio "mini-ShakeMap" **en este ciclo** — es la única viñeta
+  **diferida** de `blueprint §14` (`[DIFERIDO · mini-ShakeMap]`); se retoma en `T-3.09`
+  derogando esa viñeta por su nombre, y solo esa.
+- No hacer streaming continuo de forma de onda cruda. Esto **no es un diferido: es la regla
+  de oro 9** (`[INVARIANTE · streaming crudo continuo]` en `blueprint §14`). Iba pegado al
+  punto anterior en una sola línea, y así se derogaban juntos.
 
 ## graphify
 

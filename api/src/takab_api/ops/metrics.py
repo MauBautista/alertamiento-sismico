@@ -48,8 +48,12 @@ METRIC_NAME = "GhostGatewaysAlive"
 # Sin filtro de tenant a propósito: el worker conecta como `takab_ingest`
 # (BYPASSRLS) y esta es una señal de plataforma, no de cliente. La cifra por
 # tenant ya la da la consola.
+#
+# El alias `AS ghosts` NO es cosmético: la fila se lee por NOMBRE porque la
+# conexión real del worker viene de `db/pool.py::connect`, que la abre con
+# `row_factory=dict_row`. Ver la trampa completa en `count_ghosts`.
 _COUNT_SQL = """
-    SELECT count(*)
+    SELECT count(*) AS ghosts
     FROM gateways g
     JOIN sites s ON s.site_id = g.site_id
     LEFT JOIN LATERAL (
@@ -69,9 +73,21 @@ class _MetricClient(Protocol):
 
 
 def count_ghosts(conn: Any, *, alive_s: float) -> int:
-    """Gabinetes retirados cuyo último latido sigue siendo fresco."""
+    """Gabinetes retirados cuyo último latido sigue siendo fresco.
+
+    La fila se lee por NOMBRE, nunca por posición. La conexión que llega aquí en
+    producción sale de ``db/pool.py::connect`` —``row_factory=dict_row``— y viaja
+    intacta hasta el bucle (``notify/__main__.py`` arma el ``conn_factory`` →
+    ``worker.py`` saca de él la ``work_conn`` y se la pasa a ``maybe_publish``):
+    nadie cambia el ``row_factory`` por el camino. Con ``row[0]`` esto lanzaba
+    ``KeyError: 0`` en CADA llamada; el ``except`` de ``maybe_publish`` lo
+    registraba y retornaba antes del ``put_metric_data``, así que la métrica no
+    se publicó nunca —ni el cero— y la alarma de Terraform no podía sonar.
+    Detectado por auditoría el 2026-08-05; los tests de entonces inyectaban el
+    contador y jamás ejecutaban esta función.
+    """
     row = conn.execute(_COUNT_SQL, {"alive_s": alive_s}).fetchone()
-    return int(row[0]) if row else 0
+    return int(row["ghosts"]) if row else 0
 
 
 class GhostGauge:

@@ -118,9 +118,6 @@ test.describe("sin desborde horizontal en ninguna pantalla", () => {
     { path: "/fleet", label: "02 Flota Edge" },
     { path: "/triage", label: "03 Evaluación Estructural" },
     { path: "/tenants", label: "04 Multi-Tenant" },
-    // OJO: `/audit` y `/building/:id` comparten el prefijo "05" en su
-    // `data-screen-label` (AuditPage.tsx:66 y BuildingPage.tsx:67). No se
-    // renumera aquí para no arrastrar tests ajenos; queda anotado.
     { path: "/audit", label: "05 Auditoría" },
   ];
 

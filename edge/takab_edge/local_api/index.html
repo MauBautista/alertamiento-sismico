@@ -24,7 +24,14 @@
 :root{
   --tk-surface-0:#0E2336;--tk-surface-1:#122B44;--tk-surface-2:#18324E;--tk-surface-3:#1F3D5C;
   --tk-surface-overlay:rgba(14,35,54,0.92);
-  --tk-fg-1:#F0F2F5;--tk-fg-2:#B8C2CE;--tk-fg-3:#6F7E8F;--tk-fg-4:#8A97A6;--tk-fg-disabled:#4A5765;
+  /* [T-2.64.b] Copia LITERAL de shared/design-tokens/tokens.json — este archivo
+     se sirve solo, sin build ni red, así que no puede importar el paquete.
+     `test_local_api_panel.py` cruza este bloque contra el JSON: si divergen,
+     rompe. `--tk-fg-4` (#8A97A6) vivía SOLO aquí y también quedaba por debajo de
+     AA (4.40:1 sobre surface-2); el nuevo `--tk-fg-3` es más claro de lo que
+     `--tk-fg-4` llegó a ser, así que el matiz que aportaba desapareció con el
+     arreglo y se fusionó en `--tk-fg-3`. */
+  --tk-fg-1:#F0F2F5;--tk-fg-2:#B8C2CE;--tk-fg-3:#8A9CB1;--tk-fg-disabled:#4A5765;
   --tk-cyan:#00BFFF;--tk-cyan-hover:#33CCFF;--tk-cyan-press:#009ACC;
   --tk-cyan-tint:rgba(0,191,255,0.15);--tk-cyan-tint-soft:rgba(0,191,255,0.08);
   --tk-ok:#00E676;--tk-warn:#FFC107;--tk-crit:#FF5252;--tk-geo:#7CE7FF;--tk-violet:#7C4DFF;
@@ -310,7 +317,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       <div style="display:flex;flex-direction:column;gap:8px;min-width:300px">
         <span class="seclabel" style="color:var(--tk-fg-3)">Sismicidad regional · SSN</span>
         <span class="mono" id="muro-nearest" style="font-weight:700;font-size:20px;color:var(--tk-cyan)">S/D</span>
-        <span id="muro-ssnmeta" style="font:600 12px/1.3 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-4)"></span>
+        <span id="muro-ssnmeta" style="font:600 12px/1.3 var(--f-ui);letter-spacing:0.06em;color:var(--tk-fg-3)"></span>
       </div>
       <div id="muro-top3" style="flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;border-left:1px solid var(--tk-border);padding-left:18px"></div>
     </div>
@@ -366,7 +373,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       </div>
       <div style="flex:0 0 auto;padding:9px 14px;border-top:1px solid var(--tk-border);display:flex;flex-direction:column;gap:5px">
         <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)" id="quorum-note">—</span>
-        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)">El quórum (≥3 estaciones) se confirma en la nube y COMANDA la actuación firmada. SASMEX actúa solo, de inmediato; el umbral local de esta estación es solo aviso.</span>
+        <span style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)">El quórum (≥3 estaciones) se confirma en la nube y COMANDA la actuación firmada. SASMEX actúa solo, de inmediato; el umbral local de esta estación es solo aviso.</span>
       </div>
     </div>
 
@@ -392,7 +399,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
         <button class="tab" id="tab-ssn" role="tab">Sismicidad SSN</button>
       </div>
       <div id="pane-local" style="display:flex;flex-direction:column;gap:6px;overflow:hidden">
-        <span style="font:700 9px/1.4 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-4)">DESDE EL ARRANQUE · VOLÁTIL EN RAM</span>
+        <span style="font:700 9px/1.4 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-3)">DESDE EL ARRANQUE · VOLÁTIL EN RAM</span>
         <div id="event-rows" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
       <div id="pane-ssn" class="hide" style="display:flex;flex-direction:column;gap:5px;overflow:hidden">
@@ -448,13 +455,13 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       </div>
       <div style="flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--tk-border);display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:16px;row-gap:6px">
-          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:8px;height:8px;background:var(--tk-fg-1)"></span>Esta estación</span>
-          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:8px;height:8px;border-radius:999px;background:var(--tk-ok)"></span>Vecinas</span>
-          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-4)"><span style="width:9px;height:9px;border-radius:999px;border:1.4px solid #FFD700"></span>Epicentro · área ∝ M</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-3)"><span style="width:8px;height:8px;background:var(--tk-fg-1)"></span>Esta estación</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-3)"><span style="width:8px;height:8px;border-radius:999px;background:var(--tk-ok)"></span>Vecinas</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 10px/1.3 var(--f-ui);color:var(--tk-fg-3)"><span style="width:9px;height:9px;border-radius:999px;border:1.4px solid #FFD700"></span>Epicentro · área ∝ M</span>
         </div>
         <span id="ssn-meta-big" style="font:700 10px/1.4 var(--f-ui);letter-spacing:0.08em;color:var(--tk-warn)">CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ</span>
-        <span id="ssn-source" style="font:400 11px/1.5 var(--f-ui);color:var(--tk-fg-4)">Proyección equirectangular local · coordenadas reales, sin geometría dibujada a mano · GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO</span>
-        <span id="ssn-note" style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-4)"></span>
+        <span id="ssn-source" style="font:400 11px/1.5 var(--f-ui);color:var(--tk-fg-3)">Proyección equirectangular local · coordenadas reales, sin geometría dibujada a mano · GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO</span>
+        <span id="ssn-note" style="font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)"></span>
       </div>
     </div>
   </div>
@@ -468,7 +475,9 @@ const GEO = {"c":[[[-84.045,22.666],[-84.361,22.379],[-84.383,22.256],[-84.326,2
 
 /* ============================== utilidades ============================== */
 const $ = (id) => document.getElementById(id);
-const C = { fg1:'#F0F2F5', fg2:'#B8C2CE', fg3:'#6F7E8F', fg4:'#8A97A6', cyan:'#00BFFF',
+/* Los canvas no leen custom properties: la paleta va en hex. Tiene que valer lo
+   MISMO que el `:root` de arriba — `test_la_paleta_js_de_los_canvas...` lo cruza. */
+const C = { fg1:'#F0F2F5', fg2:'#B8C2CE', fg3:'#8A9CB1', cyan:'#00BFFF',
             geo:'#7CE7FF', ok:'#00E676', warn:'#FFC107', crit:'#FF5252' };
 const CH = ['EHZ','ENZ','ENN','ENE'];
 const G = 9.80665;
@@ -919,7 +928,7 @@ function renderLanes(st, cal){
     const note = document.createElement('span'); note.className = 'note';
     if (!m || stale){ note.textContent = 'SIN SEÑAL DEL SENSOR · SIN FEATURES RECIBIDAS'; note.style.color = C.warn; }
     else if (m.clipping){ note.textContent = 'SATURACIÓN DEL ADC · EL CANAL ESTÁ TOPADO, NO MIDIENDO'; note.style.color = C.crit; }
-    else { note.textContent = 'rms ' + Math.round(m.rms) + ' counts · salud ' + (m.health_score != null ? m.health_score.toFixed(1) : 'S/D'); note.style.color = C.fg4; }
+    else { note.textContent = 'rms ' + Math.round(m.rms) + ' counts · salud ' + (m.health_score != null ? m.health_score.toFixed(1) : 'S/D'); note.style.color = C.fg3; }
     div.append(top, scale, note); lanes.appendChild(div);
   });
 }
@@ -1068,7 +1077,7 @@ function renderLora(st){
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap';
     const lost = sec.link === 'offline';
-    const dotColor = sec.link === 'online' ? C.ok : (lost ? C.crit : C.fg4);
+    const dotColor = sec.link === 'online' ? C.ok : (lost ? C.crit : C.fg3);
     const dot = document.createElement('span');
     dot.style.cssText = 'width:8px;height:8px;border-radius:999px;flex:0 0 auto;align-self:center;background:' + dotColor;
     const name = document.createElement('span');
@@ -1085,7 +1094,7 @@ function renderLora(st){
     state.className = 'mono'; state.style.cssText = 'margin-left:auto;font-weight:700;font-size:10px';
     if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
     else if (sec.alarm_active){ state.textContent = 'ALARMA PROPAGADA'; state.style.color = C.warn; }
-    else { state.textContent = '—'; state.style.color = C.fg4; }
+    else { state.textContent = '—'; state.style.color = C.fg3; }
     row.append(dot, name, link, state);
     box.appendChild(row);
   });
@@ -1263,7 +1272,7 @@ function renderCmp(){
   kv('PGA EST. EPICENTRO', fmtG(m.pgaEpiG, true));
   kv('PGA EST. ESTACIÓN', fmtG(m.pgaStaG, true));
   if (m.depthNote) meta(m.depthNote, C.warn);
-  if (m.measuredNote) meta(m.measuredNote, m.measured ? C.cyan : C.fg4);
+  if (m.measuredNote) meta(m.measuredNote, m.measured ? C.cyan : C.fg3);
   meta('ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO', C.warn);
 }
 function renderSsn(){
@@ -1271,7 +1280,7 @@ function renderSsn(){
   const metaTxt = cat && cat.available
     ? 'INSTANTÁNEA DEL CATÁLOGO · ' + String(cat.captured_at||'').slice(0,16).replace('T',' ')
     : 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ';
-  const metaColor = cat && cat.available ? C.fg4 : C.warn;
+  const metaColor = cat && cat.available ? C.fg3 : C.warn;
   ['ssn-meta','ssn-meta-big'].forEach(id => { $(id).textContent = metaTxt; $(id).style.color = metaColor; });
   $('ssn-note').textContent = cat && cat.note ? cat.note : '';
   const evs = ssnEvents();
@@ -1591,7 +1600,7 @@ function drawRose(){
   x.font = "400 9px 'JetBrains Mono',monospace";
   rings.forEach((f, i) => {
     x.beginPath(); x.arc(cx,cy,R*f,0,Math.PI*2); x.strokeStyle = 'rgba(240,242,245,0.10)'; x.lineWidth = 1; x.stroke();
-    if (V === 'A'){ x.fillStyle = C.fg4; x.fillText([5,10,25,50][i]+' km', cx+4, cy-R*f-3); }
+    if (V === 'A'){ x.fillStyle = C.fg3; x.fillText([5,10,25,50][i]+' km', cx+4, cy-R*f-3); }
   });
   x.strokeStyle = 'rgba(240,242,245,0.14)';
   x.beginPath(); x.moveTo(cx-R,cy); x.lineTo(cx+R,cy); x.moveTo(cx,cy-R); x.lineTo(cx,cy+R); x.stroke();
@@ -1638,7 +1647,7 @@ function drawRose(){
   /* [T-2.29] la escala del punto y su cero SE DECLARAN — un punto sin escala
      rotulada afirmaría una intensidad que no está diciendo */
   if (!dead){
-    x.fillStyle = C.fg4; x.font = "400 9px 'JetBrains Mono',monospace";
+    x.fillStyle = C.fg3; x.font = "400 9px 'JetBrains Mono',monospace";
     x.fillText('PUNTO ±' + (scDot*1000).toFixed(1) + ' mg · ' + (rz ? 'PUNTO 0 FIJADO' : 'MEDIA RODANTE · SIN CALIBRAR'), 8, h-8);
   }
 }
@@ -1716,7 +1725,7 @@ function drawGeoMap(){
       const r = km/kmPerDeg*sc; if (r < 12) return;
       x.beginPath(); x.arc(Spt[0],Spt[1],r,0,Math.PI*2);
       x.strokeStyle = 'rgba(0,191,255,0.16)'; x.setLineDash([3,5]); x.lineWidth = 1; x.stroke(); x.setLineDash([]);
-      x.fillStyle = C.fg4; x.font = "400 9px 'JetBrains Mono',monospace";
+      x.fillStyle = C.fg3; x.font = "400 9px 'JetBrains Mono',monospace";
       const d45 = Math.SQRT1_2; x.fillText(km+' km', Spt[0]+r*d45+4, Spt[1]+r*d45+10);
     });
   }
@@ -1772,11 +1781,11 @@ function drawGeoMap(){
     const hit = placed.some(q => !(box.x1 < q.x0 || box.x0 > q.x1 || box.y1 < q.y0 || box.y0 > q.y1));
     if (hit && !s2.self){ hidden++; return; }
     placed.push(box);
-    x.fillStyle = s2.self ? C.fg1 : C.fg4;
+    x.fillStyle = s2.self ? C.fg1 : C.fg3;
     x.fillText(label, lx, ly);
   });
   if (hidden && Spt){ x.fillStyle = C.ok; x.font = "700 10px 'Geist',system-ui"; x.fillText('+'+hidden+' vecinas · ver lista', cluBox.x0+2, cluBox.y1-4); }
-  x.font = "400 10px 'Geist',system-ui"; x.fillStyle = C.fg4;
+  x.font = "400 10px 'Geist',system-ui"; x.fillStyle = C.fg3;
   refQueue.forEach(q => {
     const tw = x.measureText(q.n).width;
     let lx = q.p[0]+5; if (lx+tw > w-6) lx = q.p[0]-5-tw; if (lx < 6) return;
@@ -1785,12 +1794,12 @@ function drawGeoMap(){
     if (placed.some(z => !(box.x1 < z.x0 || box.x0 > z.x1 || box.y1 < z.y0 || box.y0 > z.y1))) return;
     placed.push(box); x.fillText(q.n, lx, ly);
   });
-  x.fillStyle = C.fg4; x.font = "700 10px 'Geist',system-ui";
+  x.fillStyle = C.fg3; x.font = "700 10px 'Geist',system-ui";
   x.fillText(local
     ? 'ALCANCE RED LOCAL · RADIO '+RADIO_LOCAL+' km · '+staUse.length+' DE '+stations.length+' ESTACIONES'
     : 'ALCANCE REGIONAL · CATÁLOGO COMPLETO · '+stations.length+' ESTACIÓN(ES)', 12, 18);
   if (!site){ x.fillStyle = C.warn; x.fillText('SIN UBICACIÓN PROVISIONADA · sin anillos ni distancias', 12, 34); }
-  x.fillStyle = C.fg4; x.font = "400 9px 'Geist',system-ui";
+  x.fillStyle = C.fg3; x.font = "400 9px 'Geist',system-ui";
   x.fillText('GEOGRAFÍA: NATURAL EARTH · DOMINIO PÚBLICO', 12, h-10);
 }
 function drawCmpChart(){
@@ -1821,13 +1830,13 @@ function drawCmpChart(){
     const gy = Y(Math.pow(10, e2));
     x.strokeStyle = 'rgba(240,242,245,0.08)'; x.beginPath(); x.moveTo(padL, gy); x.lineTo(w-padR, gy); x.stroke();
     const dec = Math.pow(10, e2);
-    x.fillStyle = C.fg4; x.fillText((e2 >= 0 ? String(dec) : dec.toFixed(Math.min(-e2, 6))) + ' g', 2, gy+3);
+    x.fillStyle = C.fg3; x.fillText((e2 >= 0 ? String(dec) : dec.toFixed(Math.min(-e2, 6))) + ' g', 2, gy+3);
   }
   /* eje X: marcas cada cuarto */
   for (let f2 = 0; f2 <= 4; f2++){
     const km = maxKm*f2/4, gx = X(km);
     x.strokeStyle = 'rgba(240,242,245,0.06)'; x.beginPath(); x.moveTo(gx, padT); x.lineTo(gx, padT+ih); x.stroke();
-    x.fillStyle = C.fg4; x.fillText(Math.round(km)+' km', gx-12, h-6);
+    x.fillStyle = C.fg3; x.fillText(Math.round(km)+' km', gx-12, h-6);
   }
   /* banda ×3/÷3 + curva */
   const NPTS = 120;
@@ -1862,7 +1871,7 @@ function drawCmpChart(){
     x.strokeStyle = C.fg1; x.lineWidth = 1; x.stroke();
     x.fillStyle = C.cyan; x.fillText('MEDIDO', Math.min(mp[0]+8, w-padR-42), mp[1]+3);
   }
-  x.fillStyle = C.fg4; x.font = "400 9px 'Geist',system-ui";
+  x.fillStyle = C.fg3; x.font = "400 9px 'Geist',system-ui";
   x.fillText('BANDA ILUSTRATIVA ×3 / ÷3 · LEY v1 ILUSTRATIVA · SSN HORA LOCAL UTC-'+SSN_UTC_OFFSET_H, padL, padT+9);
 }
 function frame(){

@@ -128,6 +128,12 @@ function ConsoleWall() {
   const critical = incidents.incidents.find((i) => i.severity === "critical") ?? null;
   const focusSite = focusSiteId !== null ? (siteById.get(focusSiteId) ?? null) : null;
 
+  // [T-2.64.c] UNA sola condición para dos consumidores: el montaje del panel y
+  // la reserva de su columna en la reja. Vivían separados y la reja reservaba
+  // 380 px (+14 gap +14 padding = 408) SIEMPRE, aunque no hubiera panel que
+  // meter dentro. Duplicar la expresión es garantizar que vuelvan a separarse.
+  const detailVisible = detailOpen && focusSiteId !== null;
+
   const staleSince =
     !map.loading &&
     !map.error &&
@@ -172,7 +178,11 @@ function ConsoleWall() {
     epicenterIncident !== null ? (siteById.get(epicenterIncident.site_id) ?? null) : null;
 
   return (
-    <div className="soc-shell" data-screen-label="01 Monitoreo en Vivo">
+    <div
+      className="soc-shell"
+      data-screen-label="01 Monitoreo en Vivo"
+      data-detail={detailVisible ? "open" : "closed"}
+    >
       <h1 className="soc-vh">Monitoreo en Vivo</h1>
       <main className="soc-main">
         {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
@@ -278,7 +288,7 @@ function ConsoleWall() {
           onClose={() => setEpicenterFor(null)}
         />
       )}
-      {detailOpen && focusSiteId !== null && (
+      {detailVisible && (
         <DetailPanel
           site={{
             site_id: focusSiteId,

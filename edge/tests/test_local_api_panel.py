@@ -23,6 +23,7 @@ o renombrado en `LocalDashboard.status()` rompe aquí hasta que el panel lo mire
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -37,6 +38,8 @@ pytestmark = pytest.mark.skipif(
 
 _INDEX = Path(__file__).resolve().parents[1] / "takab_edge" / "local_api" / "index.html"
 _HARNESS = Path(__file__).with_name("panel_harness.js")
+#: El paquete de tokens del monorepo — la ÚNICA fuente de verdad de la paleta.
+_TOKENS_JSON = Path(__file__).resolve().parents[2] / "shared" / "design-tokens" / "tokens.json"
 
 #: Paleta del panel — el COLOR es la señal de estado, no un adorno.
 OK = "#00E676"
@@ -329,6 +332,122 @@ def _value_color(out: dict, node_id: str, needle: str) -> str:
         if needle in leaf["txt"]:
             return leaf["color"]
     raise AssertionError(f"{needle!r} no aparece dentro de #{node_id}")
+
+
+# ------------------------------------------------------------------- paleta
+#
+# [T-2.64.b] El panel del gabinete NO puede importar `@takab/design-tokens`: se
+# sirve como un único archivo estático desde un Pi sin red ni build. Su paleta es
+# una COPIA literal — de hecho DOS copias, el `:root` de CSS y el objeto `C` que
+# pinta los canvas. Tres verdades para un mismo color es una que se desvía.
+#
+# Estas comprobaciones son texto puro, sin DOM; heredan el `skipif` de node del
+# módulo, que en CI está garantizado (el job `edge` verifica `node --version`).
+
+
+def _root_vars() -> dict[str, str]:
+    """Custom properties declaradas en el `:root` del propio `index.html`."""
+    html = _INDEX.read_text("utf-8")
+    inicio = html.index(":root{")
+    bloque = html[inicio + len(":root{") : html.index("}", inicio)]
+    return {m[1]: m[2].strip() for m in re.finditer(r"(--tk-[a-z0-9-]+)\s*:\s*([^;]+)", bloque)}
+
+
+def _js_palette() -> dict[str, str]:
+    """El objeto `const C = {...}` que colorea los canvas."""
+    html = _INDEX.read_text("utf-8")
+    inicio = html.index("const C = {")
+    bloque = html[inicio : html.index("}", inicio)]
+    return {m[1]: m[2].upper() for m in re.finditer(r"(\w+)\s*:\s*'(#[0-9a-fA-F]{6})'", bloque)}
+
+
+def _luminancia(color: str) -> float:
+    """Luminancia relativa WCAG 2.x de un `#RRGGBB`."""
+    crudo = color.lstrip("#")
+    canales = [int(crudo[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canales]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _contraste(fg: str, bg: str) -> float:
+    a, b = _luminancia(fg), _luminancia(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+#: AA de WCAG 1.4.3 para texto normal. El panel NO tiene texto grande donde use
+#: gris: sus rótulos son de 9–11 px, leídos DE PIE frente al gabinete.
+_AA = 4.5
+
+
+@pytest.mark.parametrize("fondo", ["--tk-surface-0", "--tk-surface-1", "--tk-surface-2"])
+def test_los_grises_del_panel_se_leen_de_pie_frente_al_gabinete(fondo):
+    """Un rótulo por debajo de AA no es un detalle estético en un gabinete.
+
+    `--tk-fg-3` vestía «SIRENA», «PGA MÁX · 24 h», las unidades de los carriles y
+    los rótulos de la brújula a 9–10 px. Medido: 3.48:1 sobre `surface-1` y
+    3.15:1 sobre `surface-2` — por debajo del 4.5 que exige AA para texto normal.
+    """
+    root = _root_vars()
+    flojos = [
+        f"{nombre} ({valor}) sobre {fondo} = {_contraste(valor, root[fondo]):.2f}:1"
+        for nombre, valor in root.items()
+        # `-disabled` está exento por WCAG 1.4.3 (texto de control apagado).
+        if nombre.startswith("--tk-fg-")
+        and nombre != "--tk-fg-disabled"
+        and _contraste(valor, root[fondo]) < _AA
+    ]
+    assert not flojos, "grises por debajo de AA en el panel del gabinete:\n" + "\n".join(flojos)
+
+
+def test_la_paleta_del_panel_no_inventa_su_propia_verdad():
+    """Todo gris/fondo del panel existe en el paquete y con el MISMO valor.
+
+    Sin esto el design system tiene dos verdades: se corrige `tokens.json`, la
+    consola SOC mejora y el panel del gabinete —la pantalla que se mira sin nube
+    y sin internet— se queda con el color viejo. Es justo lo que pasó con
+    `--tk-fg-4`, un token que solo existía aquí.
+    """
+    paquete = json.loads(_TOKENS_JSON.read_text("utf-8"))
+    divergen = []
+    for nombre, valor in _root_vars().items():
+        if not nombre.startswith(("--tk-fg-", "--tk-surface-")):
+            continue
+        if nombre not in paquete:
+            divergen.append(f"{nombre}: solo existe en el panel, no en el paquete de tokens")
+        elif valor.replace(" ", "") != paquete[nombre].replace(" ", ""):
+            divergen.append(f"{nombre}: panel {valor} ≠ paquete {paquete[nombre]}")
+    assert not divergen, "la paleta del panel se separó del paquete:\n" + "\n".join(divergen)
+
+
+def test_la_paleta_js_de_los_canvas_no_se_separa_de_la_css():
+    """`C.fg3` y `var(--tk-fg-3)` son el MISMO color o el panel se pinta a dos tonos.
+
+    Los canvas (brújula, mapa, comparativa) no leen custom properties: llevan los
+    hex a mano en `C`. Corregir solo el `:root` dejaría los ejes de la brújula y
+    las etiquetas del mapa en el gris ilegible.
+    """
+    root = _root_vars()
+    equivalencias = {
+        "fg1": "--tk-fg-1",
+        "fg2": "--tk-fg-2",
+        "fg3": "--tk-fg-3",
+        "cyan": "--tk-cyan",
+        "geo": "--tk-geo",
+        "ok": "--tk-ok",
+        "warn": "--tk-warn",
+        "crit": "--tk-crit",
+    }
+    js = _js_palette()
+    assert js, "no se pudo leer el objeto C del panel"
+    divergen = []
+    for clave, valor in js.items():
+        css = equivalencias.get(clave)
+        assert css is not None, f"C.{clave} no está mapeado a ninguna custom property"
+        if css not in root:
+            divergen.append(f"C.{clave} apunta a {css}, que el :root ya no declara")
+        elif valor.upper() != root[css].upper():
+            divergen.append(f"C.{clave} = {valor} ≠ {css} = {root[css]}")
+    assert not divergen, "las dos paletas del panel se separaron:\n" + "\n".join(divergen)
 
 
 # --------------------------------------------------- contrato con el servidor

@@ -87,7 +87,7 @@ flowchart LR
 
   subgraph Front["Experiencia (FRONTEND)"]
     WEB["Consola SOC\nReact 18 · Vite · MapLibre GL"]
-    MOB["App móvil (fase posterior)"]
+    MOB["App móvil (Fase 2 · construida)"]
   end
 
   PI -->|"MQTT QoS1 + mTLS · features/eventos/health"| IOT
@@ -97,7 +97,7 @@ flowchart LR
   ECS --> S3
   COG --> ECS
   KMS --> PG
-  ECS -->|"REST + GraphQL (subscriptions)"| WEB
+  ECS -->|"REST + WebSocket nativo (live)"| WEB
   ECS --> MOB
   ECS -.->|"config firmada JWT ≤60s / comandos firmados"| PI
 ```
@@ -132,9 +132,9 @@ Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilid
 | `seedlink` | Cliente SeedLink contra RS4D (TCP 18000). Reconexión con backoff, medición de lag. | Paquetes miniSEED por canal (EHZ + ENZ/ENN/ENE, 100 sps). |
 | `signal` | Decodifica miniSEED y calcula features **agregadas a 1 s**: PGA, PGV, RMS, STA/LTA, clipping, health_score. | Registros de feature 1 s. |
 | `buffer` | Ring buffer miniSEED crudo en NVMe (7–14 días). Extrae ventana del evento para subir. | Archivo miniSEED de ventana de evento. |
-| `gpio` | **Proceso mínimo y auditable** `[SUPUESTO plan-maestro-01 #6]`: escucha el relé WR-1 (dry-contact, debounce 50 ms), controla los **relés locales fail-safe** (sirena/estrobo, NO/NC por canal) y ejecuta el **reflejo SASMEX→sirena in-process** (<100 ms, sin cruzar IPC). **Canal primario de alertamiento.** | Señal SASMEX activa + actuación local refleja + estado de relés. |
+| `gpio` | **Proceso mínimo y auditable** `[RATIFICADO 2026-07-09 · T-1.45 · gate #6]`: escucha el relé WR-1 (dry-contact, debounce 50 ms), controla los **relés locales fail-safe** (sirena/estrobo, NO/NC por canal) y ejecuta el **reflejo SASMEX→sirena in-process** (<100 ms, sin cruzar IPC). **Canal primario de alertamiento.** | Señal SASMEX activa + actuación local refleja + estado de relés. |
 | `rules` | **Motor de reglas determinista.** Evalúa features vs umbrales por edificio (T1 cautela / T2 disparo, PGA y PGV), correlación y gating por salud. Consume la señal de `gpio`. Decide tier/severidad y ordena actuación (secuencias no-reflejas). Sin IA. | Decisión tierizada + comandos de actuador + evento local. |
-| `actuators` | Interfaz `Actuator` única para `rules`: driver primario = relés de `gpio` `[SUPUESTO #4]`; adaptador **BACnet/IP** detrás de la misma interfaz (gas/ascensores/puertas), activable por contrato. Confirma ejecución. | ACK de actuador con timestamp (`T+0.42s`, etc.). |
+| `actuators` | Interfaz `Actuator` única para `rules`: driver primario = relés de `gpio` `[RATIFICADO 2026-07-09 · T-1.45 · gate #4]`; adaptador **BACnet/IP** detrás de la misma interfaz (gas/ascensores/puertas), activable por contrato. Confirma ejecución. | ACK de actuador con timestamp (`T+0.42s`, etc.). |
 | `cloud` | Conector MQTT (QoS 1, mTLS) hacia AWS IoT Core. **Cola durable offline** con backfill al reconectar. Recibe comandos remotos firmados. | Publicación de features/eventos/health/ACKs. |
 | `health` | Autodiagnóstico silencioso: NTP offset, lag SeedLink, packet loss, estado UPS, temperatura, estado de actuadores, `cert_days_remaining`. Logging por transición + heartbeat. | Snapshots de salud por evento. |
 | `config` | Store local de umbrales/reglas/tenant. Sincronización desde la nube (JWT firmado, ≤60 s). | Config activa versionada. |
@@ -154,8 +154,9 @@ Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilid
 > hacía FASE-0 (`takab_gpio`, reflejo <70 ms) y como implica la regla de oro 4 de `CLAUDE.md`
 > ("el proceso GPIO/actuadores", singular). El camino de vida SASMEX→sirena NO cruza IPC.
 > El bus local (mosquitto, tópicos `takab/local/#`) transporta SOLO telemetría y comandos
-> no-reflejos (seedlink→signal→rules→actuators/cloud). `[SUPUESTO #6 — confirmar/override
-> antes de T-1.8; un override reabre el diseño de IPC del camino crítico]`. Trazabilidad: la
+> no-reflejos (seedlink→signal→rules→actuators/cloud). `[RATIFICADO 2026-07-09 · T-1.45 ·
+> gate #6]`: el contrato se congeló en T-1.8 y el diseño de IPC del camino crítico **no se
+> reabre** (`PLAN-MAESTRO §3`). Trazabilidad: la
 > versión previa separaba `sasmex` y `actuators` sin especificar IPC.
 
 **Regla de oro del edge:** `gpio` (+ `signal` → `rules` → `actuators`) funciona **sin nube**, y el reflejo SASMEX→sirena funciona **incluso sin los demás módulos** (proceso autocontenido). `cloud` solo transporta y recibe config/comandos; nunca es prerequisito para actuar.
@@ -187,7 +188,7 @@ edge/
     seedlink/               # cliente SeedLink + reconexión
     signal/                 # features 1s (PGA, PGV, RMS, STA/LTA)
     buffer/                 # ring buffer miniSEED en NVMe
-    gpio/                   # WR-1 + relés locales + reflejo SASMEX→sirena [SUPUESTO #6]
+    gpio/                   # WR-1 + relés locales + reflejo SASMEX→sirena [gate #6 RATIFICADO]
     rules/                  # motor determinista + esquema de umbrales
     actuators/              # interfaz Actuator: driver relés + adaptador BACnet/IP + mock
     cloud/                  # conector MQTT + cola offline + backfill
@@ -291,7 +292,7 @@ Edge → MQTT/mTLS → IoT Core → IoT Rule → SQS → Fargate ingest worker
 | Incident engine | Correlación, corroboración de quórum de red, deduplicación, ciclo de vida del incidente. |
 | Dictamen service | Dictamen automático preliminar: `NO HABITAR · INSPECCIÓN` / `HABITAR · MONITOREO` / `OPERACIÓN NORMAL`, según severidad/PGA + regla de nodos. Genera registro **inmutable y versionado** (`dictamens`, fila nueva por corrección — nunca UPDATE) y PDF. |
 | Notification orchestrator | Cascada de canales secundarios (§5.6). |
-| API service | REST (FastAPI) + GraphQL con subscriptions. |
+| API service | REST (FastAPI) + **WebSocket nativo** para live (`[RATIFICADO 2026-07-06 · gate #5]`, §5.5). |
 | Config sync service | Publica umbrales/reglas firmados a los edges (JWT, ≤60 s). |
 | Command service | Comandos remotos de actuador firmados (MFA, nonce, rate limit, ACK). |
 | Audit & compliance | Log inmutable, exento de poda por retención (§9). |
@@ -325,13 +326,29 @@ Claves: `tenant_id` en toda tabla multi-tenant (excepción documentada: `seismic
 ## 5.5 APIs
 
 - **REST (FastAPI + Pydantic):** ingesta desde edge (mTLS), gestión de sitios/reglas/incidentes, acuse, dictámenes, exportación miniSEED, pruebas de canal.
-- **GraphQL con subscriptions:** para la Consola SOC en vivo. El deck muestra explícitamente `SUBSCRIPTION · GraphQL · LIVE` en incidentes abiertos y forma de onda. Implementar suscripción de incidentes y de estado de sitio sobre WebSocket.
+- **(DEL DECK, no construido) GraphQL con subscriptions:** para la Consola SOC en vivo. El deck muestra explícitamente `SUBSCRIPTION · GraphQL · LIVE` en incidentes abiertos y forma de onda. **Descartado por el gate #5** — ver la nota de abajo.
 
-> **[PLAN-MAESTRO-01] Supuesto ADOPTADO (antes "decisión pendiente"):** MVP = **REST +
-> WebSocket nativo**; GraphQL subscriptions queda pos-MVP `[SUPUESTO #5 — confirmar/override
-> antes de T-1.22]`. Razón: un único consumidor (nuestra consola), dos superficies de API
-> duplican contratos/authz/pruebas; FASE-0 ya había elegido WebSocket fan-out y la etiqueta del
-> deck no es spec. Un override reintroduce GraphQL en T-1.22 sin tocar el edge.
+> **`[RATIFICADO 2026-07-06 · gate #5]` — REST + WebSocket nativo, SIN GraphQL.** El punto
+> anterior de esta sección (§5.5 "GraphQL con subscriptions") describe el DECK, no el sistema:
+> lo construido y desplegado es WS nativo. Razón: un único consumidor (nuestra consola), dos
+> superficies de API duplican contratos/authz/pruebas; FASE-0 ya había elegido WebSocket
+> fan-out y la etiqueta del deck no es spec. Implementado en **T-1.22** (`TASKS.md`): el
+> fan-out es LISTEN/NOTIFY fetch-on-notify (migración `0004_live_notify`) y el hub re-consulta
+> la fila con los GUCs del SUSCRIPTOR, así que **RLS es la autoridad de tenancy**. Verificado
+> E2E vivo: incidente commit→frame **214 ms**. GraphQL subscriptions queda pos-MVP en la ruta
+> como **T-3.15**, y solo si un cliente lo pide.
+>
+> **Alcance de esta nota (corregido el 2026-08-05).** Durante un mes esta nota desactivó
+> **solo el bullet de arriba**, y el resto del blueprint siguió declarando GraphQL —ausente
+> del código— en seis sitios más: topología §5.2, tabla de servicios §5.3, pantalla C4I §7,
+> árbol §11 (con un `[existe]` literal) y los work packages B7/C1 de §13. Búsqueda de
+> `graphql|strawberry|ariadne|graphene` (ausente) en `api/src/`, `api/pyproject.toml` y
+> `web/package.json`: **cero** ocurrencias. Los seis quedan reconciliados — en este
+> documento, **GraphQL (ausente del código) solo sobrevive donde se cita el deck, y siempre
+> marcado como tal.** Lo ancla
+> `api/tests/test_docs_consistency.py::test_el_blueprint_no_atribuye_al_sistema_una_tecnologia_que_el_codigo_no_tiene`,
+> que cruza el nombre contra su huella real en el código y se apagará solo el día que
+> `T-3.15` lo implemente.
 
 ## 5.6 Cascada de notificaciones (canales secundarios · FAIL-OPEN)
 
@@ -370,12 +387,12 @@ Logging **por transición de estado + heartbeat** (no por intervalo). El crecimi
 
 Stack: **React 18 · TypeScript · Vite · TanStack Query · zustand · MapLibre GL JS**. Cuatro pantallas objetivo (ver deck de producto, ID Canva `DAHJuwEIp0k`):
 
-1. **Consola C4I — Live Wall:** mapa de sitios con intensidad MMI, alerta activa, incidentes abiertos en vivo (GraphQL subscription), detalle de sitio (sismograma live, PGA/PGV, NTP offset/clipping/packet loss), actuadores BACnet con ACKs, verificación CCTV ONVIF.
+1. **Consola C4I — Live Wall:** mapa de sitios con intensidad MMI, alerta activa, incidentes abiertos en vivo (**WS nativo**; el deck decía `SUBSCRIPTION · GraphQL · LIVE` — ver §5.5), detalle de sitio (sismograma live, PGA/PGV, NTP offset/clipping/packet loss), actuadores BACnet con ACKs, verificación CCTV ONVIF.
 2. **Flota Edge — Gabinetes:** inventario de gateways (MQTT lag, SeedLink lag, UPS %, actuadores armados), estados `OPERATIVO`/`DEGRADADO`/`SIN ENLACE`, autodiagnóstico silencioso.
 3. **Triage Estructural — Historial:** evidencia de cumplimiento (auditoría/dictámenes inmutables, §9), historial de eventos, dictamen preliminar, regla "3 Nodos"/quórum con offsets, exportar miniSEED + PDF.
 4. **Matriz Multi-Tenant — Umbrales:** aislamiento (lógico vs dedicado), umbrales por tipo de instalación, cascada de notificación, sync firmada al edge.
 
-Móvil (fase posterior): acuse, escalamiento, inspección de campo con checklist/fotos/firma, offline.
+Móvil (**construida y mergeada en la Fase 2**, T-2.00…T-2.14): acuse, escalamiento, inspección de campo con checklist/fotos/firma, offline.
 
 ---
 
@@ -427,14 +444,14 @@ Móvil (fase posterior): acuse, escalamiento, inspección de campo con checklist
 ```
 takab/
   edge/                 # Raspberry Pi 4 gateway (Python 3.12 · uv)   [NUEVO — se hace PRIMERO]
-  api/                  # backend cloud (FastAPI + GraphQL)           [existe]
+  api/                  # backend cloud (FastAPI · REST + WS nativo)  [existe]
   web/                  # Consola SOC (React 18 · Vite)               [existe]
   infra/                # IaC AWS (CDK o Terraform)
   db/                   # schema.sql + migraciones
   shared/               # contratos compartidos (JSON Schema/Pydantic/protobuf)
   takab-docs/           # TASKS.md · USER-STORIES.md · RBAC-TAKAB.md · este blueprint · archive/ (FASE-0, PROMPT-XX)
                         #   (CLAUDE.md vive en la RAÍZ del repo — [ANALISIS-00])
-  .github/workflows/    # CI: jobs api + web + edge (se crea en T-1.2 — aún no existe)
+  .github/workflows/    # CI: jobs api + web + edge                    [existe]
 ```
 
 Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores).
@@ -465,19 +482,20 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 | A1 | `seedlink`: cliente contra RS4D, reconexión, medición de lag | Consume feed simulado 100 sps estable |
 | A2 | `signal`: features 1 s (PGA, PGV, RMS, STA/LTA) + clipping/health | Features correctas vs señales de referencia |
 | A3 | `buffer`: ring miniSEED en NVMe + extracción de ventana de evento | Retención 7–14 d; extrae ventana correcta |
-| A4 | `gpio`: WR-1 + relés locales + reflejo SASMEX→sirena [SUPUESTO #6] | Toggle simulado → sirena <100 ms; NO/NC por canal |
+| A4 | `gpio`: WR-1 + relés locales + reflejo SASMEX→sirena [gate #6 RATIFICADO] | Toggle simulado → sirena <100 ms; NO/NC por canal |
 | A5 | `rules`: motor determinista tierizado + umbrales por edificio | Cobertura de todos los tiers y casos borde |
-| A6 | `actuators`: interfaz Actuator (driver relés [SUPUESTO #4] + adaptador BACnet + mock) + ACKs | Secuencia sirena/gas/ascensores/puertas con ACK |
+| A6 | `actuators`: interfaz Actuator (driver relés [gate #4 RATIFICADO] + adaptador BACnet + mock) + ACKs | Secuencia sirena/gas/ascensores/puertas con ACK |
 | A7 | `health`: autodiagnóstico por transición + heartbeat | Snapshots correctos (NTP, lag, packet loss, UPS) |
 | A8 | `cloud`: MQTT mTLS + **cola offline** + backfill | Sobrevive WAN down y hace backfill idempotente |
 | A9 | `config` + `security`: sync JWT + comandos firmados + nonce | Rechaza comando no firmado/replayed |
 | A10 | Integración edge end-to-end (opcional hardware-in-the-loop) | Evento simulado → actuación autónoma sin nube |
 
-> **[PLAN-MAESTRO-01] Supuesto ADOPTADO (antes "decisión pendiente") — actuadores del MVP:**
-> actuación primaria = **relés directos fail-safe** (NO/NC/fail-close por canal, en `gpio`);
-> BACnet/IP queda detrás de la misma interfaz `Actuator`, activable por contrato (como acotaba
-> FASE-0: "solo si un contrato lo exige"). `[SUPUESTO #4 — confirmar/override antes de
-> T-1.8/T-1.9; un override solo cambia el driver primario, no el motor de reglas]`.
+> **[RATIFICADO 2026-07-09 · T-1.45 · gate #4] — actuadores del MVP:** actuación primaria =
+> **relés directos fail-safe** (NO/NC/fail-close por canal, en `gpio`); BACnet/IP queda detrás
+> de la misma interfaz `Actuator`, activable por contrato (como acotaba FASE-0: "solo si un
+> contrato lo exige"). Implementado así de facto en T-1.8/T-1.9 y acreditado en el hito de
+> Fase 1; el gate está **cerrado** y qué driver es el primario ya no se renegocia
+> (`PLAN-MAESTRO §3`).
 
 ### Fase B — CLOUD (AWS) · después del edge
 
@@ -489,7 +507,7 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 | B4 | Incident engine + corroboración de quórum de red |
 | B5 | Dictamen service (registro inmutable §9) + generación de PDF |
 | B6 | Notification orchestrator (cascada + fail-open) |
-| B7 | API REST (FastAPI) + GraphQL subscriptions |
+| B7 | API REST (FastAPI) + **WebSocket nativo** para live (`[RATIFICADO 2026-07-06 · gate #5]`) |
 | B8 | Cognito + RBAC (10 roles) + MFA |
 | B9 | Config sync (≤60 s, JWT) + command service (firmado/MFA/nonce/rate-limit/ACK) |
 | B10 | Audit/compliance inmutable + billing/metering |
@@ -498,24 +516,36 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 
 | WP | Trabajo |
 |---|---|
-| C1 | Consola C4I (mapa MapLibre, incidentes live GraphQL, detalle de sitio) |
+| C1 | Consola C4I (mapa MapLibre, incidentes live por **WS nativo**, detalle de sitio) |
 | C2 | Flota Edge (inventario/salud de gabinetes) |
 | C3 | Triage estructural (historial, dictamen, quórum, export) |
 | C4 | Matriz multi-tenant (umbrales, cascada, sync) |
-| C5 | App móvil (acuse, inspección, offline) — fase posterior |
+| C5 | App móvil (acuse, inspección, offline) — **HECHA en la Fase 2** (T-2.00…T-2.14) |
 
 ---
 
 ## 14. Fuera de alcance / diferido explícito
 
-**No implementar en el ciclo actual** (aparecen en el deck de producto como visión, no como spec):
+**No implementar en el ciclo actual** (aparecen en el deck de producto como visión, no como spec).
 
-- **T-MINUS countdown** — WR-1 es boolean; no hay dato de ETA.
-- **Magnitud preliminar** en UI — WR-1 no provee magnitud.
-- **Streaming continuo de forma de onda cruda** a la nube (P6).
-- **IA en la ruta determinista de seguridad** (P4).
-- **Microservicio "mini-ShakeMap"** (scipy/pykrige, PostGIS, MapLibre) — fase futura.
-- **Modificar el Shake OS** — el RS4D es solo sensor (P3).
+> **Esta sección NO es homogénea, y confundirlo es peligroso.** Cinco de las seis viñetas son
+> **prohibiciones permanentes** —`TASKS.md`, sección "INVARIANTES": *"una tarea futura que
+> proponga cualquiera de estas cosas se rechaza sin discusión"*—; **una sola está diferida**.
+> Por eso cada viñeta lleva su clase y su clave: **una tarea futura deroga una viñeta por su
+> clave, jamás "la §14"**. Derogar la sección entera tumbaría de un plumazo la regla de oro 1
+> (IA fuera de la ruta de disparo) y la 9 (sin streaming crudo continuo). Lo ancla
+> `api/tests/test_docs_consistency.py::test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes`.
+
+- **T-MINUS countdown** — WR-1 es boolean; no hay dato de ETA. `[INVARIANTE · T-MINUS]`
+- **Magnitud preliminar** en UI — WR-1 no provee magnitud. `[INVARIANTE · magnitud preliminar]`
+- **Streaming continuo de forma de onda cruda** a la nube (P6) — regla de oro 9.
+  `[INVARIANTE · streaming crudo continuo]`
+- **IA en la ruta determinista de seguridad** (P4) — regla de oro 1.
+  `[INVARIANTE · IA en la ruta de disparo]`
+- **Microservicio "mini-ShakeMap"** (scipy/pykrige, PostGIS, MapLibre) — fase futura; **es la
+  única viñeta que una tarea puede derogar**, y la tarea que lo haría es `T-3.09`.
+  `[DIFERIDO · mini-ShakeMap]`
+- **Modificar el Shake OS** — el RS4D es solo sensor (P3). `[INVARIANTE · Shake OS]`
 
 ---
 

@@ -26,13 +26,22 @@ body {
 /* La columna de detalle sale del token `--tk-detail-w` (T-2.55: hasta ahora el
  * token existía y el ancho iba duro en la hoja, así que eran DOS fuentes de
  * verdad para el mismo número). El valor del token se alineó con lo que la
- * consola lleva sirviendo —380 px—, no al revés: 1920×1080 no se mueve. */
+ * consola lleva sirviendo —380 px—, no al revés: 1920×1080 no se mueve.
+ *
+ * [T-2.64.c] Pero la pista se RESERVABA siempre, y `<DetailPanel>` solo monta
+ * con un sitio en foco: 380 + 14 de gap + 14 de padding = 408 px de mapa
+ * regalados a una columna vacía en el estado por defecto. El ancho no cambia;
+ * cambia CUÁNDO se aplica. El interruptor es el atributo `data-detail` que
+ * escribe ConsolePage con la MISMA condición que gobierna el montaje. */
 .soc-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--tk-detail-w);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
   overflow: hidden;
+}
+.soc-shell[data-detail="open"] {
+  grid-template-columns: minmax(0, 1fr) var(--tk-detail-w);
 }
 /* OJO: `.soc-main` la usan DOS elementos distintos — el <main> del AppShell (que
  * envuelve TODAS las rutas por el Outlet) y el <main> interno de la consola. Esta
@@ -1537,10 +1546,16 @@ body {
 /* --- 1280 … 1599 · fuente = --tk-bp-lg (1600px) ------------------------- */
 @media (max-width: 1599px) {
   .soc-shell {
-    /* El detalle cede ~60 px; el mapa se queda todo lo que suelta. */
-    grid-template-columns: minmax(0, 1fr) 320px;
     gap: 10px;
     padding: 10px;
+  }
+  /* [T-2.64.c] El recorte cuelga del selector CON atributo, no de `.soc-shell`
+     pelado: una @media no añade especificidad, así que `.soc-shell` (0,1,0) aquí
+     perdería contra `.soc-shell[data-detail="open"]` (0,2,0) de la base y el
+     detalle volvería a medir 380 px justo en el rango donde no cabe. */
+  .soc-shell[data-detail="open"] {
+    /* El detalle cede ~60 px; el mapa se queda todo lo que suelta. */
+    grid-template-columns: minmax(0, 1fr) 320px;
   }
   .mt__grid { grid-template-columns: 300px minmax(0, 1fr); }
   .triage__grid { grid-template-columns: minmax(0, 1.7fr) 360px; }
@@ -1601,6 +1616,13 @@ body {
   .soc-shell {
     grid-template-columns: minmax(0, 1fr);
     overflow: visible;
+  }
+  /* Misma trampa de especificidad al revés: sin repetir el atributo, la base
+     `[data-detail="open"]` seguiría reservando la pista bajo 1280 — y ahí el
+     detalle ya no es columna sino cajón fijo, así que sería una franja VACÍA
+     robándole ancho al mapa. */
+  .soc-shell[data-detail="open"] {
+    grid-template-columns: minmax(0, 1fr);
   }
   /* El detalle del sitio deja de ser una columna y pasa a CAJÓN superpuesto:
      en una sola columna, empujado al final del documento, el operador tendría

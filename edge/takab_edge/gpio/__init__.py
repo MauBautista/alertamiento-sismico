@@ -1,6 +1,6 @@
 """gpio — WR-1 (contacto seco) + relés locales fail-safe + reflejo SASMEX→sirena.
 
-[SUPUESTO plan-maestro-01 #6] Proceso mínimo y auditable (regla de oro 4). El
+[RATIFICADO 2026-07-09 · T-1.45 · gate #6] Proceso mínimo y auditable (regla de oro 4). El
 reflejo SASMEX→sirena ocurre **in-process** (<100 ms, blueprint §4.3), sin cruzar
 IPC ni depender de la nube ni de IA. **Canal primario de alertamiento.**
 

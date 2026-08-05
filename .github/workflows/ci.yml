@@ -155,7 +155,11 @@ jobs:
         # `ubuntu-latest` trae Node hoy; el día que deje de traerlo, que grite.
         run: node --version
       - name: Tests (pytest)
-        run: uv run pytest -q
+        # `-rs`: los tests que exigen hardware se saltan en CI, y sin este flag se
+        # saltaban ANÓNIMOS — un "N skipped" no dice QUÉ dejó de cubrirse. Con `-rs`
+        # cada skip sale con su nombre y su razón en el log, que es lo que hace
+        # auditable la cobertura real del job.
+        run: uv run pytest -q -rs
 
   mobile:
     name: mobile · eslint + tsc + jest
@@ -211,6 +215,14 @@ jobs:
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)
         run: bash infra/scripts/tests/test_merge_env.sh
+      # Paridad local↔CI (T-2.62): cada paso de calidad de ESTE fichero tiene que
+      # poder correrse con `make`. Corre aquí y no sólo en `make test` porque `make
+      # test` no lo ejecuta nadie en CI: si el gate viviera sólo en local, un PR
+      # podría romper la paridad y CI no se enteraría — el mismo agujero que la
+      # tarea cierra, reintroducido en el propio vigilante. Sin dependencias:
+      # bash + python3 del runner.
+      - name: Test de paridad local ↔ CI (make cubre lo que exige el CI)
+        run: bash infra/scripts/tests/test_ci_parity.sh
       # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
       # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
       # hermético; ver infra/terraform/README.md.

@@ -64,7 +64,7 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
       : null;
 
   return (
-    <section className="bld" data-screen-label="05 Dashboard Edificio">
+    <section className="bld" data-screen-label="06 Dashboard Edificio">
       <header className="bld__hd">
         {/* El h1 es el título de la PÁGINA: existe antes de que el sitio cargue y no
             cambia con los datos. El nombre del edificio va debajo. */}

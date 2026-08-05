@@ -317,6 +317,100 @@ describe("contrato DOM del layout del wall (T-1.50)", () => {
   });
 });
 
+/**
+ * [T-2.64.c / F3] La costura entre el MARCADO y la HOJA.
+ *
+ * La corrección que le devolvió 408 px de mapa a la consola está partida en dos
+ * mitades: la regla `.soc-shell[data-detail="open"]` de `soc.css` y el atributo
+ * que la enciende, que vive en UN solo sitio (`ConsolePage.tsx:184`).
+ * `src/styles/layoutInvariants.test.ts` vigila la primera, pero solo lee el TEXTO
+ * de la hoja: nunca renderiza el componente. Nadie assertaba la segunda — el
+ * auditor borró la línea del atributo y los 1159 tests de web siguieron VERDES.
+ *
+ * Sin atributo, `.soc-shell` se queda en una sola columna y `<DetailPanel>`
+ * —hijo DIRECTO del shell— cae fuera de su pista: el resultado es peor que el
+ * bug original, que al menos reservaba la columna.
+ *
+ * `cssContract.test.ts` no lo cubre y no puede: cruza marcado↔hoja por
+ * `className`, y los atributos `data-*` quedan fuera de ese contrato.
+ */
+describe("costura marcado↔hoja: el interruptor `data-detail` (T-2.64.c)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStoreForTests();
+    useSessionStore.setState({ status: "authenticated", idToken: "tok" });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData());
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+  });
+
+  function shell(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>(".soc-shell");
+    if (el === null) throw new Error("no hay .soc-shell en el árbol renderizado");
+    return el;
+  }
+
+  /**
+   * La reja y el panel salen de UNA sola condición (`detailVisible`,
+   * ConsolePage.tsx:135). Este BICONDICIONAL es lo que caza que vuelvan a
+   * separarse: no comprueba un valor concreto, comprueba que los dos consumidores
+   * digan lo mismo. Las dos divergencias posibles son daño real —pista abierta
+   * sin panel dentro (408 px de mapa regalados) o panel montado sin pista (cae
+   * fuera de la reja)— y se afirma en los TRES estados alcanzables de la página.
+   */
+  function expectRejaYPanelDeAcuerdo(container: HTMLElement): void {
+    const emitido = shell(container).getAttribute("data-detail");
+    const montado = screen.queryByTestId("detail-panel") !== null;
+    expect(
+      emitido,
+      'el shell no emite `data-detail`: la regla `.soc-shell[data-detail="open"]` no se enciende nunca',
+    ).not.toBeNull();
+    expect(
+      emitido,
+      montado
+        ? "hay <DetailPanel> montado pero la reja no abrió su pista: el panel cae fuera de la columna"
+        : "la reja abre la pista del detalle sin panel que meter dentro: 408 px de mapa regalados",
+    ).toBe(montado ? "open" : "closed");
+  }
+
+  it("por defecto NO hay panel y el shell lo declara: `closed`", () => {
+    const { container } = render(page());
+    expect(screen.queryByTestId("detail-panel")).toBeNull();
+    expect(shell(container).getAttribute("data-detail")).toBe("closed");
+    expectRejaYPanelDeAcuerdo(container);
+  });
+
+  it("enfocar un sitio abre la pista, y cerrar el panel la devuelve", () => {
+    const { container } = render(page());
+    fireEvent.click(screen.getByText("pick-site"));
+    expect(screen.getByTestId("detail-panel")).toBeInTheDocument();
+    expect(shell(container).getAttribute("data-detail")).toBe("open");
+    expectRejaYPanelDeAcuerdo(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    expect(shell(container).getAttribute("data-detail")).toBe("closed");
+    expectRejaYPanelDeAcuerdo(container);
+  });
+
+  it("el shell abierto casa con el selector LITERAL de la hoja y el panel es hijo DIRECTO", () => {
+    const { container } = render(page());
+    fireEvent.click(screen.getByText("pick-site"));
+    // El selector va escrito igual que en `soc.css` (base y ambas @media). Un
+    // `data-detail="opened"`, o el atributo colgado de otro elemento, dejaría la
+    // regla (0,2,0) sin aplicar y la segunda pista no se abriría jamás — y el
+    // test del valor por sí solo no lo vería.
+    expect(
+      container.querySelector('.soc-shell[data-detail="open"] > .soc-detail'),
+      'el marcado no satisface `.soc-shell[data-detail="open"] > .soc-detail`',
+    ).not.toBeNull();
+    // Hijo DIRECTO, no descendiente: envolver el panel en un <div> lo sacaría de
+    // la reja (y de `.soc-shell > .soc-detail`, que bajo 1280 lo convierte en
+    // cajón fijo) sin que ninguna aserción de valor se enterara.
+    expect(screen.getByTestId("detail-panel").parentElement).toBe(shell(container));
+  });
+});
+
 describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
   it("two-step → POST → navega a /triage con el incidente preseleccionado", async () => {
     resetSessionStoreForTests();

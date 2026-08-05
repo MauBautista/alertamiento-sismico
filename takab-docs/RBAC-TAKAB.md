@@ -13,7 +13,10 @@
 > (2 internos + 7 de tenant + 1 gobierno) — también en el snapshot de junio. Las **identidades
 > máquina** (certificado X.509 por gateway, clientes M2M `client_credentials`, rol de DB
 > `takab_ingest`) son identidades de servicio, **no roles RBAC**, y viven en blueprint §8 y
-> schema §0/§8. `[SUPUESTO — confirmar/override: si faltaba un 11º rol humano, añadirlo aquí.]`
+> schema §0/§8. `[RATIFICADO 2026-07-09 · T-1.45 — 10 roles; las identidades máquina no son
+> roles RBAC]` (`PLAN-MAESTRO-TAKAB.md:59-65`: no existía un 11º rol humano planeado; toda la
+> Fase 1 —`matrix.py`, Cognito, los E2E de T-1.30— se construyó y acreditó con 10 sin que
+> faltara ninguno).
 
 ### Internos de TAKAB
 | Rol | Descripción | Superficie primaria |
@@ -28,7 +31,7 @@
 | `soc_operator` | Operador de centro de monitoreo 24/7. **Puede ser servicio TAKAB o rol del propio tenant** — mismo rol, distinto alcance según a qué tenant pertenece el usuario. | Web |
 | `inspector` | Ingeniero estructural. Firma dictámenes de reingreso. | Web + Móvil |
 | `building_admin` | Responsable de un edificio específico. | Web + Móvil |
-| `brigadista` | Personal de respuesta en campo. | **Móvil** (web fase posterior) |
+| `brigadista` | Personal de respuesta en campo. | **Móvil** (sin superficie web hoy) |
 | `security_guard` | Seguridad/vigilancia del inmueble. | Móvil |
 | `occupant` | Ocupante común del edificio. Rol más numeroso, menor privilegio. | **Móvil only** |
 
@@ -358,7 +361,8 @@ acción — añadir una ruta obliga a tocar `auth/matrix.py`, y estas ya están 
 | Visibilidad entre clientes (T-1.73) | `/tenants` | `manage_visibility` |
 | Gestión de usuarios (T-2.54) | `/tenants` | `manage_users` |
 
-**Móvil (`mobile/` — fase posterior, ver `TASKS.md` T-1.31):**
+**Móvil (`mobile/` — CONSTRUIDA Y MERGEADA en la Fase 2, T-2.00…T-2.14; `TASKS.md` T-1.31
+quedó "CUBIERTA POR LA FASE 2 COMPLETA"):**
 | Stack de navegación | Pantallas | Roles |
 |---|---|---|
 | Ocupante | Reposo · Crisis · Check-in | `occupant` (y todos como base) |
@@ -382,4 +386,13 @@ Heredados de Fase 0, siguen abiertos:
    (auditoría, evidencia y dictámenes inmutables, nunca podados) es requisito TAKAB y NO cambia;
    el marco legal citable se define con el primer cliente/abogado. Ver blueprint §9 y
    `ANALISIS-ARQUITECTURA-TAKAB.md` pregunta abierta #1.
-4. **Disparador del pop-up automático de waveform:** propuesta STA/LTA > 3.5 sostenido 2 s.
+
+### Salidos de PENDIENTES (implementados; se quedan aquí para que no se vuelvan a "proponer")
+
+4. **Disparador del pop-up de waveform — IMPLEMENTADO en T-1.27** (reconciliado 2026-08-05,
+   T-2.61). La propuesta era "STA/LTA > 3.5 sostenido 2 s" y eso es exactamente lo que corre:
+   `web/src/features/console/useAutoPopup.ts:11-12` define `STALTA_THRESHOLD = 3.5` y
+   `STALTA_CONSECUTIVE = 2` (= 2 muestras de 1 s consecutivas = los 2 s), con **latch por
+   episodio**: dispara una vez y se rearma cuando la señal baja del umbral, para que un temblor
+   largo no reabra el panel en cada muestra (`:29,39-46`). Llevaba **desde el 2026-07-08**
+   escrito en el repo mientras este documento lo seguía llamando "propuesta".

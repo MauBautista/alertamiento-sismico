@@ -1,4 +1,4 @@
-// Smoke de navegador (M-7): login dev + las 5 pantallas montan su layout real.
+// Smoke de navegador (M-7): login dev + las 6 pantallas montan su layout real.
 // Prerrequisito: `make soc-local` corriendo (ver playwright.config.ts).
 //
 // Asserta el `data-screen-label` de cada página — el mismo marcador que usan los
@@ -15,17 +15,19 @@ const SCREENS = [
   { path: "/fleet", label: "02 Flota Edge" },
   { path: "/triage", label: "03 Evaluación Estructural" },
   { path: "/tenants", label: "04 Multi-Tenant" },
-  { path: `/building/${SITE_DEV}`, label: "05 Dashboard Edificio" },
+  // [T-2.64] `/audit` faltaba: el smoke decía "las 5 pantallas" y la app tiene 6.
+  { path: "/audit", label: "05 Auditoría" },
+  { path: `/building/${SITE_DEV}`, label: "06 Dashboard Edificio" },
 ];
 
-test("login dev y las 5 pantallas cargan", async ({ page }) => {
+test("login dev y las 6 pantallas cargan", async ({ page }) => {
   await page.goto("/");
   await expect(
     page.getByText("LOGIN DEV", { exact: false }),
     "No está el panel de login dev: ¿corre `make soc-local` y web/.env tiene VITE_DEV_TOKEN_ENABLED=true?",
   ).toBeVisible();
 
-  // superadmin ve las 5 rutas; la matriz real la sirve /me (RouteGuard).
+  // superadmin ve las 6 rutas; la matriz real la sirve /me (RouteGuard).
   await page.getByLabel("ROL").selectOption("takab_superadmin");
   await page.getByRole("button", { name: "ENTRAR COMO ROL" }).click();
   await expect(page.locator("[data-screen-label]").first()).toBeVisible();

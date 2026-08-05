@@ -402,7 +402,8 @@ class EdgeSettings(BaseSettings):
     signal: SignalConfig = Field(default_factory=SignalConfig)
     buffer: BufferConfig = Field(default_factory=BufferConfig)
     #: Canales de la secuencia extendida enrutados a **BACnet/IP** por contrato del sitio
-    #: (gas/ascensores/puertas). Vacío = todo por relé local [SUPUESTO plan-maestro-01 #4].
+    #: (gas/ascensores/puertas). Vacío = todo por relé local
+    #: [RATIFICADO 2026-07-09 · T-1.45 · gate #4].
     #: La sirena/estrobo NUNCA van por BACnet (vida audible = relé local directo).
     bacnet_channels: list[ActuatorChannel] = Field(default_factory=list)
     #: [T-2.34] Caché de la config firmada aplicada (+high_water anti-replay):

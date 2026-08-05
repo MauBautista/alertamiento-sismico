@@ -185,7 +185,14 @@ export default function FleetPage() {
         includeRetired={canManage ? includeRetired : undefined}
         onIncludeRetired={canManage ? setIncludeRetired : undefined}
         shown={visible.length}
-        total={fleet.cabinets.length}
+        // [T-2.60.a] `activos`, no `fleet.cabinets`: los fantasmas ya salieron
+        // arriba, en su propia sección, y no están en la reja que esta leyenda
+        // describe. Contándolos aquí, "MOSTRANDO 1 DE 2" aparecía SIN filtro
+        // puesto —mandando al operador a buscar un filtro que no existe— y
+        // discrepaba del KPI GABINETES pintado tres centímetros más arriba, que
+        // sí los descuenta. Dos cifras del mismo conjunto en la misma pantalla
+        // solo pueden decir lo mismo.
+        total={activos.length}
       />
 
       <StateFrame
