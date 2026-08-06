@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-05)
 
-**Conteo de tareas:** total **193** · `[x]` **135** · `[~]` **3** · `[ ]` **55**
+**Conteo de tareas:** total **193** · `[x]` **137** · `[~]` **2** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -3767,7 +3767,7 @@ redespliegue al final (T-2.57).
 
 ---
 
-### [~] T-2.60 · Un gabinete retirado desaparece en silencio — DECISIÓN + CONTRATO
+### [x] T-2.60 · Un gabinete retirado desaparece en silencio — DECISIÓN + CONTRATO · COMPLETA (2026-08-06)
 
 > **Estado (2026-08-05): 60.a ENTREGADA · 60.b DECIDIDA, sin implementar.** La mitad que
 > cerraba el daño operativo está en la nube. La decisión de producto que 60.b pedía se
@@ -4071,7 +4071,7 @@ Cierra los cuatro `[ ]` que T-2.58 dejó documentados y **no** cerró (§2.3, §
 Es **la pieza de ingeniería más sustancial que queda** y la única que toca un contrato entre
 las dos mitades del sistema. Regla dura de la fase: **el edge no gana ni un topic nuevo**.
 
-### [ ] T-2.65 · El sobre de config firmado transporta el estado administrativo — `SOFTWARE`
+### [x] T-2.65 · El sobre de config firmado transporta el estado administrativo — `SOFTWARE` · COMPLETA (2026-08-06)
 - **Componente:** api + edge + contrato · **Depende de:** T-2.60.a · **Cierra T-2.60.**
 - **Origen:** T-2.58 §2.3, promovido a T-2.60.b.
 - **`DECISIÓN` RATIFICADA (2026-08-05) — opción (A): un gabinete retirado en la nube SIGUE
@@ -4087,15 +4087,36 @@ las dos mitades del sistema. Regla dura de la fase: **el edge no gana ni un topi
   - **(C) descartada.** Reabrirla exige ratificar explícitamente que un retiro puede
     desproteger un edificio.
 - **Criterios de aceptación:**
-  - [ ] **Ningún topic nuevo.** Viaja en el sobre firmado `takab/cfg/{thing}`, que ya es
-        firmado, versionado, monótono, persistido, reversible y con espejo en la consola.
-  - [ ] **El sobre del retiro se publica ANTES de sacar al gabinete de la lista de
-        candidatos.** Es el detalle exacto donde esto se rompe: un gabinete retirado deja de
-        ser candidato de config, así que el aviso no saldría nunca.
-  - [ ] El panel pinta `DADO DE BAJA EN LA NUBE · SIGUE PROTEGIENDO` con la precedencia que
-        le corresponde: **nunca por encima de una alerta sísmica real**.
-  - [ ] La sirena sigue actuando por SASMEX con el gabinete retirado. Test que lo demuestre.
-  - [ ] E2E: retirar desde la consola ⇒ el aviso aparece en el panel; restaurar ⇒ desaparece.
+  - [x] **Ningún topic nuevo.** Viaja en el sobre firmado `takab/cfg/{thing}`. Corrección al
+        enunciado original, medida: ese sobre **NO tiene ack** (`_handle_config` no publica
+        nada, ni en éxito ni en fallo — los COMANDOS sí, la config no) y **`config_version` no
+        viaja en el latido**, así que `in_sync` es nube-contra-nube, no un espejo de lo
+        aplicado. Consta aquí porque de ahí cuelgan dos de los pendientes de abajo.
+  - [x] **El sobre del retiro se publica ANTES de sacar al gabinete de la lista de
+        candidatos.** El `WHERE` pasa a `(g.status <> 'retired' OR st.payload->>'cloud_admin_state'
+        IS DISTINCT FROM 'retired')`: entra exactamente una vez y luego deja el flujo. Quitar
+        `g.status <> 'retired'` a secas —lo primero que uno escribe— lo habría dejado dentro
+        para siempre, republicándolo en cada edición de rule_set o de equipment.
+  - [x] El panel pinta `DADO DE BAJA EN LA NUBE · SIGUE PROTEGIENDO` en la posición más baja
+        de la pila de banners, con `role="status"` y no `aria-live="assertive"`: es un hecho
+        administrativo, no una emergencia. Test que lo mide con una alerta sísmica simultánea.
+  - [x] **La sirena sigue actuando por SASMEX con el gabinete retirado**, y el test lo MIDE
+        (dispara el reflejo y lee los relés) en vez de afirmarlo. Cubre los **seis** caminos de
+        actuación, no solo el reflejo: `_act_and_publish` (gas, ascensor, puertas, LoRa), el
+        voceo, el traspaso HW→software de SPOF-02 y el comando firmado del quórum (T-2.32).
+        El invariante fijado **no** es «ninguna config toca estos canales» —eso rompería el
+        filtro de equipamiento de T-2.31— sino que **el estado administrativo no gatea
+        ninguno**: se demuestra con sitio retirado **y** sin gas cableado, midiendo las dos
+        mitades a la vez.
+- **`[ ]` PENDIENTE DE DESPLIEGUE — no es código, y por eso la tarea se cierra sin ello**
+  (mismo criterio que T-2.57: una tarea `[x]` puede tener casillas abiertas si declaran que
+  esperan a un humano):
+  - [ ] **E2E real: retirar desde la consola desplegada ⇒ el aviso aparece en el panel del
+        Pi; restaurar ⇒ desaparece.** El camino está cubierto **tramo a tramo** por test,
+        incluido el de sobre-firmado→`apply_signed_update`→`/api/status`, pero el extremo a
+        extremo exige la nube desplegada y el gabinete físico. Se acredita junto a `G-05`.
+  - [ ] **Migración `0027` aplicada.** Sin ella el aviso sale por el poll de respaldo del
+        worker (≤30 s) en vez de al instante; nada se rompe, solo tarda.
 - **Notas de implementación (medidas contra el código real, no supuestas):**
   - **Predicado elegido: "exactamente una vez".** El `WHERE` de `_CANDIDATES_SQL` pasa a
     `(g.status <> 'retired' OR st.payload->>'cloud_admin_state' IS DISTINCT FROM 'retired')`.
