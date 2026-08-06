@@ -156,6 +156,39 @@ def test_disk_full_on_evidence_does_not_break_actuation(settings, monkeypatch):
     sup.stop()
 
 
+def test_un_fichero_basura_en_el_spool_no_puede_impedir_el_arranque(settings, tmp_path):
+    """El bloqueante de la auditoría: `build()` NO aísla por módulo.
+
+    Un `.json` con `null` en el directorio de pendientes hacía que
+    `BackfillManager.__init__` lanzara AttributeError DENTRO de `build()`, y como
+    `build()` no tiene el `try` por módulo que sí tiene `start()`, el gabinete
+    entero no arrancaba: un edificio sin protección por un fichero de basura.
+    El respaldo de evidencia no es camino de vida — su avería jamás puede
+    llevarse por delante el reflejo SASMEX (regla de oro 2).
+    """
+    spool = tmp_path / "spool"
+    pending = tmp_path / "backfill-pending"  # hermano del spool (`_default_pending_dir`)
+    pending.mkdir(parents=True)
+    (pending / "evt-envenenado.json").write_bytes(b"null")
+
+    sup = EdgeSupervisor(
+        settings.model_copy(update={"cloud_spool_dir": str(spool)}), seedlink_source=None
+    )
+    sup.build()  # antes: AttributeError y el proceso no llegaba ni a start()
+    sup.start()
+    try:
+        assert sup.gpio.running and sup.rules.running and sup.actuators.running
+        WR1Simulator(sup.gpio).alert()
+        assert sup.gpio.relay_state(ActuatorChannel.SIREN).energized is True
+        # …y el hallazgo llega al panel, que es donde lo ve quien está de pie
+        # frente al gabinete (no sólo al journal).
+        evidencia = sup.local_api.status()["evidence"]
+        assert evidencia["unreadable"] == 1
+        assert evidencia["unreadable_items"] == ["evt-envenenado"]
+    finally:
+        sup.stop()
+
+
 def test_sasmex_actuates_with_cloud_offline(supervisor):
     assert supervisor.cloud.online is False
     WR1Simulator(supervisor.gpio).alert()

@@ -94,6 +94,54 @@ def test_durable_queue_survives_restart(settings, tmp_path):
     assert transport.event_ids == ["a", "b"]
 
 
+# ------------------------- el HERMANO del pendiente ilegible (auditoría T-2.67)
+#
+# `DurableSpool.load()` ya tenía la doctrina buena para un fichero ROTO
+# (cuarentena `.corrupt` + log.error), pero sólo la aplicaba cuando `json.loads`
+# LANZABA. Un fichero con `null`/`[]`/`42` es JSON VÁLIDO: pasaba el `except`,
+# entraba como registro y reventaba en `_dedup_key`/`record["topic"]` — dentro
+# del CONSTRUCTOR de `CloudConnector`, o sea dentro de `EdgeSupervisor.build()`,
+# que NO aísla por módulo. Mismo desenlace que el del backfill: el gabinete
+# entero no arranca. Un `.json` sin `topic` hacía lo mismo por KeyError.
+
+_SPOOL_BASURA = [b"null", b"[]", b'"x"', b"42", b"true", b"{trunc", b"\xff\xfe", b""]
+
+
+def test_un_mensaje_de_spool_que_no_es_objeto_no_tumba_el_arranque(settings, tmp_path):
+    """JSON válido pero no un objeto: el `except` no lo veía y el conector moría."""
+    for i, contenido in enumerate(_SPOOL_BASURA, start=1):
+        (tmp_path / f"{i:012d}-evt.json").write_bytes(contenido)
+    (tmp_path / "000000000099-evt.json").write_text('{"payload": {}}')  # objeto SIN topic
+    bueno, _t = _connector(settings, tmp_path, online=False)
+    bueno.publish("takab/events", _decision("superviviente"))
+
+    restarted = CloudConnector(settings, transport=FakeMqttTransport(), spool_dir=str(tmp_path))
+
+    assert restarted.queued == 1  # sólo el mensaje BUENO vuelve a la cola
+    # …y la basura se aparta con el mismo sufijo de siempre, sin borrarse.
+    apartados = sorted(p.name for p in tmp_path.glob("*.corrupt"))
+    assert len(apartados) == len(_SPOOL_BASURA) + 1
+    restarted.set_online(True)
+    assert restarted.sent == 1
+
+
+def test_un_spool_de_solo_lectura_no_tumba_el_arranque(settings, tmp_path):
+    """El `rename` de la cuarentena también puede fallar: no puede propagar.
+
+    Estaba DENTRO del `except`, sin protección: un directorio sin permiso de
+    escritura convertía la defensa en la causa de la caída.
+    """
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    (spool / "000000000001-evt.json").write_bytes(b"null")
+    spool.chmod(0o500)  # lectura+listado, sin escritura ⇒ el rename falla
+    try:
+        cloud = CloudConnector(settings, transport=FakeMqttTransport(), spool_dir=str(spool))
+        assert cloud.queued == 0  # el registro basura NO entra en la cola
+    finally:
+        spool.chmod(0o700)
+
+
 def test_publish_never_blocks_on_transport_error(settings, tmp_path):
     class _Raising(FakeMqttTransport):
         def publish(self, topic, payload, qos=1):

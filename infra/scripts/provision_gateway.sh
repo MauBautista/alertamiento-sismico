@@ -157,6 +157,9 @@ if [ -z "$SSH_HOST" ]; then
     cp "$CATALOG" "$OUT_DIR/ssn-catalog.json"
     chmod 644 "$OUT_DIR/ssn-catalog.json" # lo lee el panel de a pie: no es secreto
     echo "catálogo SSN copiado a $OUT_DIR/ssn-catalog.json → instálalo en /var/lib/takab/"
+    # T-2.66: el panel lo lee UNA vez al construir y rotula su EDAD y su ORIGEN
+    # (aquí, ARCHIVO PROVISIONADO). Sin reiniciar, el gabinete no se entera.
+    echo "  · reinicia takab-edge tras instalarlo: el panel lee el catálogo UNA vez al arrancar"
   fi
   echo "credenciales de $THING escritas en $OUT_DIR/ (no versionar)"
 else
@@ -179,6 +182,9 @@ else
     # T-2.23: la instantánea vive donde el servicio puede leerla (ReadWritePaths).
     ssh "$SSH_HOST" 'sudo mkdir -p /var/lib/takab && sudo tee /var/lib/takab/ssn-catalog.json >/dev/null && sudo chmod 644 /var/lib/takab/ssn-catalog.json' <"$CATALOG"
     echo "catálogo SSN instalado en $SSH_HOST:/var/lib/takab/ssn-catalog.json"
+    # T-2.66: el panel lo lee UNA vez al construir; hasta el reinicio de abajo
+    # sigue sirviendo (y rotulando la edad de) la instantánea ANTERIOR.
+    echo "  · el panel lee el catálogo UNA vez al arrancar: se ve tras el restart de abajo"
   fi
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
   echo "reinicia el servicio para que tome las claves nuevas: ssh $SSH_HOST 'sudo systemctl restart takab-edge'"

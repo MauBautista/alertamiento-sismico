@@ -282,6 +282,9 @@ class EdgeSupervisor:
             drill=self.drill,
             dispatch=self.dispatch,  # T-2.32: fuente «QUÓRUM RED» + su cierre
             lora=self.lora,  # T-2.33: salud de secundarios + CLEAR/TEST
+            # T-2.67: evidencia pendiente y desenlace del respaldo (instantánea
+            # EN MEMORIA del manager; el panel jamás recorre el directorio).
+            backfill=self.backfill,
         )
 
         self._modules: dict[str, EdgeModule] = {

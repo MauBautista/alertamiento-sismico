@@ -402,6 +402,14 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       <div id="salud-grid"></div>
     </div>
 
+    <div class="card stat-card" id="evi-card">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="seclabel">Evidencia miniSEED · respaldo a la nube</span>
+        <span id="evi-state" class="mono" style="margin-left:auto;padding:3px 8px;border-radius:4px;background:rgba(240,242,245,0.06);font-weight:700;font-size:10px;color:var(--tk-fg-3)">S/D</span>
+      </div>
+      <div id="evi-rows" style="display:flex;flex-direction:column;gap:7px"></div>
+    </div>
+
     <div class="card stat-card" id="lora-card">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="seclabel">Gabinetes secundarios · LoRa</span>
@@ -502,7 +510,10 @@ const pad2 = (n) => String(n).padStart(2,'0');
 const clockUTC = (d) => { d = d || new Date(); return pad2(d.getUTCHours())+':'+pad2(d.getUTCMinutes())+':'+pad2(d.getUTCSeconds())+' UTC'; };
 function fmtG(v, cal){ const u = cal ? ' g' : ' g rel.'; if (v == null) return 'S/D'; if (v === 0) return '0.000'+u; if (v < 0.001) return '<0.001'+u; return v.toFixed(3)+u; }
 function fmtV(v, cal){ const u = cal ? ' cm/s' : ' cm/s rel.'; if (v == null) return 'S/D'; if (v === 0) return '0.00'+u; if (v < 0.01) return '<0.01'+u; return v.toFixed(2)+u; }
-function fmtAge(s){ if (s == null) return 'S/D'; if (s < 90) return Math.round(s)+' s'; if (s < 5400) return Math.round(s/60)+' m'; return (s/3600).toFixed(1)+' h'; }
+/* [T-2.66] La rama de DÍAS no es cosmética: el catálogo se mide en días y sin
+   ella un gabinete con la instantánea de hace 6 días imprimía "144.0 h" —
+   ilegible justo en el rango donde el rótulo importa. */
+function fmtAge(s){ if (s == null) return 'S/D'; if (s < 90) return Math.round(s)+' s'; if (s < 5400) return Math.round(s/60)+' m'; if (s < 86400) return (s/3600).toFixed(1)+' h'; return (s/86400).toFixed(1)+' d'; }
 function fmtUptime(s){ if (s == null) return 'S/D'; const h = Math.floor(s/3600), m = Math.floor(s%3600/60); return h+' h '+pad2(m)+' m'; }
 function haversine(a, b){ const R=6371, rad=Math.PI/180; const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad; const s=Math.sin(dLat/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
 function bearing(a, b){ const rad=Math.PI/180; const y=Math.sin((b.lon-a.lon)*rad)*Math.cos(b.lat*rad); const x=Math.cos(a.lat*rad)*Math.sin(b.lat*rad)-Math.sin(a.lat*rad)*Math.cos(b.lat*rad)*Math.cos((b.lon-a.lon)*rad); const d=(Math.atan2(y,x)/rad+360)%360; return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16]; }
@@ -528,6 +539,21 @@ const RELAY_META = {
   elevator:{label:'ASCENSORES'}, door_retainer:{label:'PUERTAS'},
 };
 const FS_SHORT = { normally_open:'NO', normally_closed:'NC', fail_close:'fail_close' };
+/* [T-2.68] POR QUÉ la lista de relés es la que es. `RELÉS · S/D · arranque en
+   frío` colapsaba CUATRO situaciones que piden reacciones distintas de quien
+   está de pie frente al gabinete — y encima nombraba la única que NUNCA ocurre
+   (gpio puebla sus cinco canales, síncrono y bajo lock, antes de que este panel
+   abra su socket). Se leía como "todo bien, espera" mientras el proceso que
+   toca la sirena podía estar roto. Cada causa lleva su ACCIÓN, no solo su
+   nombre. `unknown` es el default: sin explicación se asume lo peor. */
+const RELAY_STATUS = {
+  gpio_stopped:           {st:'DETENIDO',       crit:true,  meta:'módulo gpio sin correr · el gabinete NO puede accionar — revisar takab-edge.service'},
+  gpio_error:             {st:'AVERÍA',         crit:true,  meta:'falló la lectura de estado con el módulo en marcha · revisar journal del gabinete'},
+  config_error:           {st:'PERFIL S/D',     crit:true,  meta:'config ilegible: la lista NO está filtrada y puede incluir actuadores no instalados'},
+  no_actuators_installed: {st:'SIN ACTUADORES', crit:false, meta:'este sitio declara 0 instalados · revisar equipamiento en la consola'},
+  partial:                {st:'INCOMPLETO',     crit:true,  meta:''},
+  unknown:                {st:'S/D',            crit:true,  meta:'sin causa conocida · tratar como avería del proceso de relés'},
+};
 /* [T-2.49] POR QUÉ suena. El altavoz ya conmuta el tono con esto; la pantalla
    no lo miraba y una prueba de sirena se leía igual que un sismo real. */
 const SIREN_REASON = { alert:'ALERTA', safe_state:'ESTADO SEGURO', test:'PRUEBA' };
@@ -607,6 +633,10 @@ function baseStatus(){
       {channel:'elevator', energized:false, activated:false, fail_safe:'normally_open'},
       {channel:'door_retainer', energized:true, activated:false, fail_safe:'normally_closed'},
     ],
+    /* [T-2.68] Como `evidence`: el test de contrato de status() NO cubre estas
+       escenas, así que un olvido aquí pasa el CI pintando el peor caso en una
+       demo sana. Los cinco declarados = los cinco vivos ⇒ `ok`, sin rótulo. */
+    relays_status: {reason:'ok', installed:['door_retainer','elevator','gas_valve','siren','strobe'], missing:[]},
     site_lat: 19.0414, site_lon: -98.2063,
     neighbors: [
       {code:'AM.R7B21', lat:19.12, lon:-98.42, distance_km:17.2},
@@ -628,6 +658,12 @@ function baseStatus(){
       ups_status:'line', battery_pct:100, ups_runtime_s:2460, temperature_c:58.4,
       cert_days_remaining:213, disk_used_pct:62, captured_at: now, age_s: 38 },
     cloud: {online:true, mqtt_rtt_ms:84, queued:0, admin_state:'active'},
+    /* [T-2.67] Estas escenas NO las cubre el test de contrato de status(): un
+       olvido aquí pasa el CI en verde pintando `undefined` en la card. */
+    evidence: {pending:0, items:[], unreadable:0, unreadable_items:[],
+      oldest_pending_age_s:null, checked_age_s:42, phase:'idle',
+      durable:true, uploaded_total:6, discarded_no_data_total:0, failed_total:0,
+      extract_failed_total:0, last_result:'uploaded', last_result_age_s:1830, stale_after_s:3600},
     drill: null, actuation_test: {active:false, results:null},
     test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false},
     events: [ {at: now, action:'boot', via:'boot'} ],
@@ -666,16 +702,36 @@ const SCENES = {
     s.seedlink = {packets_seen:0, reconnects:18, duplicates:0, gaps:1};
     s.health.seedlink_lag_s = 54200; s.shake_history = null; return s; },
   sin_nube: () => { const s = baseStatus(); s.cloud = {online:false, mqtt_rtt_ms:null, queued:47};
-    s.health.mqtt_rtt_ms = null; return s; },
+    s.health.mqtt_rtt_ms = null;
+    /* [T-2.67] Sin enlace, tener evidencia esperando es lo CORRECTO: la escena
+       lo muestra en ámbar (espera), nunca en rojo (avería). */
+    s.evidence = {...s.evidence, pending:3, oldest_pending_age_s:900, last_result:null,
+      last_result_age_s:null, uploaded_total:0,
+      items:[{event_id:'8f2c41ab', age_s:900}, {event_id:'b1d09e77', age_s:420}]};
+    return s; },
   /* [T-2.65] Baja administrativa: el gabinete sigue protegiendo y lo declara.
      Escena NUEVA — las 10 originales quedan intactas (precedente: `aviso`, T-2.32). */
   retirado: () => { const s = baseStatus(); s.cloud = {...s.cloud, admin_state:'retired'}; return s; },
+  /* [T-2.68] gpio averiado EN CALIENTE: los relés existen y están declarados,
+     pero nadie sabe en qué estado. Escena NUEVA, fuera de la tupla de las 10
+     (precedente: `aviso` T-2.32, `retirado` T-2.65). */
+  gpio_caido: () => { const s = baseStatus(); s.relays = [];
+    s.relays_status = {reason:'gpio_error',
+      installed:['door_retainer','elevator','gas_valve','siren','strobe'],
+      missing:['door_retainer','elevator','gas_valve','siren','strobe']};
+    return s; },
   arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
     now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
-    audible_silenced:false, last_tier:null, relays:[], site_lat:null, site_lon:null, neighbors:[],
+    audible_silenced:false, last_tier:null, relays:[],
+    /* [T-2.68] Esta escena se llama "arranque en frío" y ese estado NO existe en
+       el gabinete real (gpio va poblado antes de que el panel escuche): una lista
+       vacía aquí no tiene causa conocida, que es el peor caso. */
+    relays_status:{reason:'unknown', installed:null, missing:[]},
+    site_lat:null, site_lon:null, neighbors:[],
     config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200},
     seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
     shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null, admin_state:'active'},
+    evidence:null, /* [T-2.67] módulo de respaldo aún sin arrancar ⇒ S/D honesto */
     drill:null, actuation_test:{active:false, results:null}, test_mode:{active:false, remaining_s:0},
     audio:null, events:[] }),
   dato_retenido: () => baseStatus(),
@@ -913,11 +969,24 @@ function render(){
     re.textContent = (r.energized ? 'ENERGIZADO' : 'DESENERGIZADO') + ' · fail-safe ' + (FS_SHORT[r.fail_safe] || r.fail_safe || 'S/D');
     div.append(rl, rs, re); relays.appendChild(div);
   });
-  if (!(st.relays||[]).length){
+  /* [T-2.68] Diagnóstico de la lista: solo aparece cuando hay algo que decir
+     (un aviso permanente se vuelve invisible). Un status SIN el hermano —
+     servidor viejo, contrato aditivo — con la lista vacía cae al peor caso;
+     con filas, se calla, que es lo que hacía antes. */
+  const rSt = st.relays_status || null;
+  const rReason = (rSt && rSt.reason) || ((st.relays||[]).length ? 'ok' : 'unknown');
+  if (rReason !== 'ok'){
+    const m = RELAY_STATUS[rReason] || RELAY_STATUS.unknown;
+    let meta = m.meta;
+    if (rReason === 'partial'){
+      const faltan = ((rSt && rSt.missing) || []).map(ch => (RELAY_META[ch]||{}).label || String(ch).toUpperCase());
+      meta = 'sin estado de ' + (faltan.length ? faltan.join(', ') : 'S/D') + ' · declarados instalados en la config del sitio · revisar journal del gabinete';
+    }
     const div = document.createElement('div'); div.className = 'relay';
     const a = document.createElement('span'); a.className = 'rl'; a.textContent = 'RELÉS';
-    const b = document.createElement('span'); b.className = 'rs'; b.style.color = C.warn; b.textContent = 'S/D';
-    const c2 = document.createElement('span'); c2.className = 're'; c2.textContent = 'arranque en frío';
+    const b = document.createElement('span'); b.className = 'rs';
+    b.style.color = m.crit ? C.crit : C.warn; b.textContent = m.st;
+    const c2 = document.createElement('span'); c2.className = 're'; c2.textContent = meta;
     div.append(a, b, c2); relays.appendChild(div);
   }
 
@@ -931,6 +1000,7 @@ function render(){
   renderLatencies(st, cloud);
   renderRoseInfo(st);
   renderSalud(st);
+  renderEvidence(st);
   renderLora(st);
   renderEvents(st);
   renderSsn();
@@ -1187,6 +1257,129 @@ function renderSalud(st){
     r.append(d, a, f, v); grid.appendChild(r);
   });
 }
+/* [T-2.67] Evidencia miniSEED pendiente y desenlace del respaldo.
+   La consola de nube ve la evidencia desde T-2.43; ESTE panel —el único que
+   queda cuando no hay nube— no veía nada, y "nada" era peor que un hueco: una
+   subida confirmada y un descarte por ring vacío (que PIERDE la evidencia)
+   borran el mismo fichero, así que desde fuera se veían iguales.
+
+   Tabla de causas (mismo patrón que SyncBadge de la consola: un rótulo por
+   causa y la acción que pide cada una). Se evalúan EN ESTE ORDEN:
+
+     sección ausente      S/D                       módulo caído; no se asume nada
+     nada pendiente       SIN EVIDENCIA PENDIENTE   al corriente
+     …pero con descartes  N PERDIDA(S)              NO se recupera: revisa el ring
+     …o con ilegibles     N ILEGIBLE(S) · APARTADA  borra el fichero del directorio
+     ilegible + cola      N ILEGIBLE(S) …           idem: NO se arregla sola
+     subiendo             BACKFILL EN CURSO         nada que hacer, está pasando
+     pidiendo permiso     PERMISO A LA NUBE         nada que hacer
+     sin enlace           EN ESPERA DE ENLACE       recupera el enlace (no es avería)
+     edad desconocida     PENDIENTE(S) · EDAD S/D   no se inventa una edad
+     más vieja que umbral ATASCADA DESDE HACE …     no va a subir sola: escala
+     resto                PENDIENTE(S) · EN MARCHA  en camino
+
+   Las EDADES llegan calculadas del gabinete (`age_s`): el reloj del kiosco puede
+   ir corrido y aquí no se hace aritmética de fechas. NO se pinta la key de S3
+   (lleva el tenant_id y este GET es abierto en la LAN) ni una sola muestra
+   (regla de oro 9: esto es una vista de ESTADO, no de dato). Y ojo con el
+   vocabulario: «EN COLA» ya significa mensajes MQTT del spool en la píldora de
+   nube y en LATENCIAS — aquí jamás se usa para evidencias. */
+const EVI_RESULT = {
+  uploaded: ['ARCHIVADA EN LA NUBE', 'ok'],
+  discarded_no_data: ['DESCARTADA · SIN DATOS EN EL RING', 'crit'],
+  extract_failed: ['FALLO DE EXTRACCIÓN · SE REINTENTA SIN PROGRESAR', 'crit'],
+  grant_timeout: ['SIN PERMISO DE LA NUBE A TIEMPO', 'warn'],
+  put_failed: ['FALLO AL SUBIR EL OBJETO', 'warn'],
+};
+function evidenceView(evi, online){
+  if (!evi) return {label:'S/D · SIN MÓDULO DE RESPALDO', color:C.warn};
+  const n = evi.pending || 0, perdidas = evi.discarded_no_data_total || 0;
+  const ilegibles = evi.unreadable || 0;
+  const plural = (k, uno, varios) => k + ' ' + (k === 1 ? uno : varios);
+  const rotuloIlegible = () => plural(ilegibles,'PENDIENTE ILEGIBLE','PENDIENTES ILEGIBLES');
+  if (!n){
+    const males = [];
+    if (perdidas) males.push(plural(perdidas,'EVIDENCIA PERDIDA','EVIDENCIAS PERDIDAS'));
+    if (ilegibles) males.push(rotuloIlegible());
+    if (males.length) return {label:'SIN PENDIENTES · ' + males.join(' · '), color:C.crit};
+    return {label:'SIN EVIDENCIA PENDIENTE', color:C.ok};
+  }
+  /* Va ANTES que las fases: un fichero ilegible es una avería PERMANENTE que
+     pide una persona (borrarlo del directorio), y "BACKFILL EN CURSO" —que se
+     resuelve solo en segundos— no puede taparla. Antes ni siquiera existía:
+     un `.json` con `null` reventaba el arranque del gabinete entero. */
+  if (ilegibles) return {label:rotuloIlegible() + ' · ' + n + ' POR SUBIR', color:C.crit};
+  if (evi.phase === 'uploading') return {label:'BACKFILL EN CURSO · ' + n, color:C.cyan};
+  if (evi.phase === 'requesting') return {label:'PIDIENDO PERMISO A LA NUBE · ' + n, color:C.cyan};
+  const edad = evi.oldest_pending_age_s;
+  /* Sin enlace, tener evidencia esperando es lo CORRECTO: ámbar (espera), nunca
+     rojo (avería) — la píldora de nube ya grita SIN ENLACE, y la acción que pide
+     es recuperar el enlace, no escalar el respaldo. */
+  if (!online) return {label:n + ' EN ESPERA DE ENLACE' + (edad != null ? ' · LA MÁS VIEJA HACE ' + fmtAge(edad) : ''), color:C.warn};
+  if (edad == null) return {label:plural(n,'PENDIENTE','PENDIENTES') + ' · EDAD S/D', color:C.warn};
+  if (evi.stale_after_s != null && edad > evi.stale_after_s)
+    return {label:plural(n,'ATASCADA DESDE HACE','ATASCADAS DESDE HACE') + ' ' + fmtAge(edad), color:C.crit};
+  return {label:plural(n,'PENDIENTE','PENDIENTES') + ' · RESPALDO EN MARCHA', color:C.warn};
+}
+function renderEvidence(st){
+  const box = $('evi-rows'); if (!box) return; box.textContent = '';
+  const evi = st.evidence, online = !!(st.cloud && st.cloud.online);
+  const view = evidenceView(evi, online);
+  const pill = $('evi-state');
+  pill.textContent = view.label; pill.style.color = view.color;
+  pill.style.background = view.color === C.ok ? 'rgba(240,242,245,0.06)'
+    : view.color === C.crit ? 'rgba(255,82,82,0.15)'
+    : view.color === C.cyan ? 'var(--tk-cyan-tint-soft)' : 'rgba(255,193,7,0.18)';
+  const row = (lbl, val, color) => {
+    const r = document.createElement('div'); r.className = 'kv';
+    const d = document.createElement('span'); d.className = 'statdot'; d.style.background = color;
+    const a = document.createElement('span'); a.className = 'lbl'; a.textContent = lbl;
+    const f = document.createElement('span'); f.className = 'fill';
+    const v = document.createElement('span'); v.className = 'val'; v.textContent = val; v.style.color = color;
+    r.append(d, a, f, v); box.appendChild(r);
+  };
+  if (!evi){
+    const s = document.createElement('span');
+    s.style.cssText = 'font:400 11px/1.4 var(--f-ui);color:var(--tk-warn)';
+    s.textContent = 'RESPALDO DE EVIDENCIA NO DISPONIBLE EN ESTE ARRANQUE';
+    box.appendChild(s); return;
+  }
+  const n = evi.pending || 0, edad = evi.oldest_pending_age_s;
+  const atascada = n > 0 && edad != null && evi.stale_after_s != null && edad > evi.stale_after_s;
+  row('Pendientes de subir', String(n) + (n ? ' · la más vieja hace ' + fmtAge(edad) : ''),
+    n === 0 ? C.ok : (atascada ? C.crit : C.warn));
+  (evi.items || []).forEach(it => {
+    const id = String(it.event_id || '—');
+    row('· evento ' + id.slice(0, 8), fmtAge(it.age_s), it.age_s != null && atascada ? C.crit : C.fg2);
+  });
+  row('Archivadas en la nube', String(evi.uploaded_total || 0) + ' · desde el arranque',
+    (evi.uploaded_total || 0) > 0 ? C.ok : C.fg2);
+  const perdidas = evi.discarded_no_data_total || 0;
+  /* El caso que más duele: el fichero se borra igual que tras un éxito. */
+  row('Sin datos en el ring', perdidas ? (perdidas + ' · EVIDENCIA PERDIDA') : '0', perdidas ? C.crit : C.fg2);
+  /* Ilegibles: el fichero SIGUE en disco (apartado con otro sufijo), así que la
+     acción es humana y concreta. Por eso se NOMBRAN: un contador a secas no
+     dice qué borrar, y el operador no tiene shell delante del gabinete. */
+  const ilegibles = evi.unreadable || 0;
+  if (ilegibles){
+    row('Pendientes ilegibles', ilegibles + ' · APARTADAS · NO SE SUBIRÁN', C.crit);
+    (evi.unreadable_items || []).forEach(id => {
+      row('· fichero ' + String(id).slice(0, 8) + '.json', 'REVÍSALO Y BÓRRALO', C.crit);
+    });
+  }
+  const fallos = evi.failed_total || 0, extraccion = evi.extract_failed_total || 0;
+  row('Intentos fallidos', fallos + (extraccion ? ' · ' + extraccion + ' de extracción' : ''),
+    extraccion ? C.crit : (fallos ? C.warn : C.fg2));
+  const res = EVI_RESULT[evi.last_result];
+  row('Último desenlace', res ? (res[0] + (evi.last_result_age_s != null ? ' · hace ' + fmtAge(evi.last_result_age_s) : '')) : 'S/D · sin respaldos desde el arranque',
+    res ? C[res[1]] : C.fg3);
+  if (!evi.durable) row('Cola pendiente', 'COLA NO DURABLE · SE PIERDE AL REINICIAR', C.warn);
+  const meta = document.createElement('span');
+  meta.style.cssText = 'font:400 10px/1.4 var(--f-ui);color:var(--tk-fg-3)';
+  meta.textContent = 'Conteo verificado contra disco hace ' + fmtAge(evi.checked_age_s) +
+    ' · el panel jamás recorre el directorio';
+  box.appendChild(meta);
+}
 function renderEvents(st){
   const box = $('event-rows'); box.textContent = '';
   const events = (st.events || []).slice(0, 10);
@@ -1309,19 +1502,59 @@ function renderCmp(){
   if (m.measuredNote) meta(m.measuredNote, m.measured ? C.cyan : C.fg3);
   meta('ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO', C.warn);
 }
+/* [T-2.66] Procedencia del catálogo. La edad llega YA CALCULADA del gabinete
+   (`provenance.captured_age_s`) junto a su umbral: aquí no se toca `new Date()`
+   — el reloj del kiosco puede ir corrido y el catálogo se mide en días.
+   Edad desconocida = VIEJO: una instantánea que no sabe cuándo se tomó no puede
+   afirmar que es de ahora (regla de oro 7). Un consumidor previo a T-2.66 no
+   trae `provenance` y cae exactamente en ese caso. */
+function catProv(cat){
+  const p = (cat && cat.provenance) || null;
+  const age = p && typeof p.captured_age_s === 'number' ? p.captured_age_s : null;
+  const limit = p && typeof p.stale_after_s === 'number' ? p.stale_after_s : null;
+  const origin = p ? p.origin : null;
+  const label = origin === 'signed_feed' ? ('FEED FIRMADO v' + (p.version != null ? p.version : '?'))
+              : origin === 'provisioned_file' ? 'ARCHIVO PROVISIONADO' : null;
+  return { age, limit, label, unknown: age == null,
+           stale: age == null || (limit != null && age > limit) };
+}
 function renderSsn(){
   const cat = S.catalog;
-  const metaTxt = cat && cat.available
-    ? 'INSTANTÁNEA DEL CATÁLOGO · ' + String(cat.captured_at||'').slice(0,16).replace('T',' ')
-    : 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ';
-  const metaColor = cat && cat.available ? C.fg3 : C.warn;
+  const prov = catProv(cat);
+  const capt = String((cat && cat.captured_at)||'').slice(0,16).replace('T',' ');
+  const org = prov.label ? ' · ' + prov.label : '';
+  /* Se ROTULA, no se borra (a diferencia de un canal fuera de plazo, T-2.58):
+     el catálogo es una instantánea FECHADA cuyos sismos no se pudren, y además
+     ancla el mapa (`references`) y la comparativa. Lo que la edad vuelve falso
+     son solo las dos afirmaciones de ACTUALIDAD — `ssn-count` y el más cercano
+     —, que pasan de absolutas a relativas a la captura. */
+  let metaTxt, metaColor;
+  if (!cat || !cat.available){
+    metaTxt = 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ'; metaColor = C.warn;
+  } else if (prov.unknown){
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · EDAD DESCONOCIDA' + (capt ? ' · ' + capt : '') + org;
+    metaColor = C.warn;
+  } else if (prov.stale){
+    metaTxt = 'CATÁLOGO VIEJO · INSTANTÁNEA DE HACE ' + fmtAge(prov.age) +
+              ' · UMBRAL ' + fmtAge(prov.limit) + (capt ? ' · ' + capt : '') + org;
+    metaColor = C.warn;
+  } else {
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · ' + capt + ' · HACE ' + fmtAge(prov.age) + org;
+    metaColor = C.fg3;
+  }
   ['ssn-meta','ssn-meta-big'].forEach(id => { $(id).textContent = metaTxt; $(id).style.color = metaColor; });
   $('ssn-note').textContent = cat && cat.note ? cat.note : '';
   const evs = ssnEvents();
-  $('ssn-count').textContent = evs.length ? String(evs.length) : '—';
+  const rel = cat && cat.available && prov.stale;
+  $('ssn-count').textContent = evs.length ? (String(evs.length) + (rel ? ' EN LA CAPTURA' : '')) : '—';
+  $('ssn-count').style.color = rel && evs.length ? C.warn : C.cyan;
   const near = evs.filter(e => e.km != null).sort((a,b) => a.km-b.km)[0];
-  const nearTxt = near ? ('MÁS CERCANO: M ' + near.m.toFixed(1) + ' A ' + Math.round(near.km) + ' km ' + near.rumbo) : (evs.length ? 'SIN UBICACIÓN PROVISIONADA · SIN DISTANCIAS' : 'S/D');
+  const nearLbl = rel
+    ? ('MÁS CERCANO EN LA CAPTURA' + (prov.unknown ? ' (EDAD DESCONOCIDA)' : ' DE HACE ' + fmtAge(prov.age)))
+    : 'MÁS CERCANO';
+  const nearTxt = near ? (nearLbl + ': M ' + near.m.toFixed(1) + ' A ' + Math.round(near.km) + ' km ' + near.rumbo) : (evs.length ? 'SIN UBICACIÓN PROVISIONADA · SIN DISTANCIAS' : 'S/D');
   $('ssn-nearest').textContent = nearTxt;
+  $('ssn-nearest').style.color = rel && near ? C.warn : C.cyan;
   const fill = (boxId, limit, big) => {
     const box = $(boxId); box.textContent = '';
     evs.slice(0, limit).forEach(e => {
@@ -1368,8 +1601,13 @@ function renderStationRows(){
 function renderMuroExtra(){
   if (S.mode !== 'muro') return;
   const evs = ssnEvents();
+  /* [T-2.66] El muro copia del cajón SSN — y hasta aquí copiaba el TEXTO pero
+     no el COLOR, así que el ámbar de CATÁLOGO VIEJO se perdía justo en la
+     pantalla que se mira de lejos. Se propagan los dos. */
   $('muro-nearest').textContent = $('ssn-nearest').textContent || 'S/D';
+  $('muro-nearest').style.color = $('ssn-nearest').style.color || C.cyan;
   $('muro-ssnmeta').textContent = $('ssn-meta').textContent;
+  $('muro-ssnmeta').style.color = $('ssn-meta').style.color || C.fg3;
   const box = $('muro-top3'); box.textContent = '';
   evs.slice(0,3).forEach(e => {
     const d = document.createElement('div'); d.style.cssText = 'display:flex;flex-direction:column;gap:6px;border-left:3px solid '+magColor(e.m)+';padding-left:12px';

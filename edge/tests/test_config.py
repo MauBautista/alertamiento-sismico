@@ -209,6 +209,34 @@ def test_corrupt_or_missing_cache_boots_with_defaults(tmp_path):
     assert corrupt.version == 0
 
 
+def test_cache_con_payload_o_firma_no_textual_arranca_con_defaults(tmp_path):
+    """Fail-closed también con los TIPOS, no sólo con el contenido.
+
+    El `except (OSError, ValueError, KeyError, TypeError)` cubría un `doc` que no
+    fuera objeto, pero no un objeto BIEN formado con `payload` no textual:
+    `payload.encode()` levantaba AttributeError y el módulo `config` no
+    arrancaba. `start()` lo aísla (no es crítico) y el gabinete sobrevive, pero
+    se quedaba SIN caché de config y en silencio — el hermano suave del
+    pendiente ilegible del backfill.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    security = SecurityManager(b"clave-de-config-inyectada")
+    for doc in (
+        {"high_water": 1, "applied_version": 1, "payload": 42, "sig": "x"},
+        {"high_water": 1, "applied_version": 1, "payload": ["a"], "sig": "x"},
+        {"high_water": 1, "applied_version": 1, "payload": "{}", "sig": {"no": "texto"}},
+    ):
+        path = str(tmp_path / "config-cache.json")
+        _Path(path).write_text(_json.dumps(doc))
+        store = ConfigStore(load_settings(), security=security, cache_path=path)
+        store.start()  # antes: AttributeError/TypeError ⇒ el módulo no arrancaba
+        assert store.running
+        assert store.version == 0
+        assert store._high_water == 1  # el piso anti-replay SÍ se respeta  # noqa: SLF001
+
+
 def test_replay_rejected_across_restart(tmp_path):
     """[SEGURIDAD] Antes de T-2.34 el high_water moría con el proceso: un
     reinicio reabría la ventana de replay de CUALQUIER config vieja firmada."""

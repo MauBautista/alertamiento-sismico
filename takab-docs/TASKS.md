@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-05)
 
-**Conteo de tareas:** total **193** · `[x]` **137** · `[~]` **2** · `[ ]` **54**
+**Conteo de tareas:** total **196** · `[x]` **140** · `[~]` **2** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4147,36 +4147,130 @@ las dos mitades del sistema. Regla dura de la fase: **el edge no gana ni un topi
     comandos de actuación —donde un `retain` sería catastrófico—, así que arreglarlo exige un
     kwarg por llamada y su propia tarea. Anotado, no cerrado.
 
-### [ ] T-2.66 · El catálogo SSN declara edad y procedencia — `SOFTWARE`
+### [x] T-2.66 · El catálogo SSN declara edad y procedencia — `SOFTWARE` · COMPLETA (2026-08-06)
 - **Componente:** edge (panel) + api · **Depende de:** T-2.24 · **Origen:** T-2.58 §2.5
 - **Defecto:** una instantánea del catálogo de hace tres semanas se ve **idéntica** a una
   recién firmada. Es la regla de oro 7 (`stale`) sin cumplir en el gabinete.
 - **Criterios de aceptación:**
-  - [ ] El panel muestra **edad** y **origen** del catálogo instalado, no solo su versión.
-  - [ ] Umbral explícito a partir del cual el catálogo se rotula VIEJO, y qué se hace con él.
-  - [ ] Test con catálogo envejecido artificialmente: la vista cambia, no se congela.
+  - [x] El panel muestra **edad** y **origen**. Corrección al enunciado: no mostraba «solo la
+        versión» — no mostraba **ninguna de las tres**. `status()` no tenía sección de catálogo.
+  - [x] Umbral **48 h sobre `captured_at`**, y **viaja en el payload** (`stale_after_s`), no es
+        una constante escondida en JS. Qué se degrada, medido: los cuatro consumidores del
+        catálogo son de pantalla y **solo dos afirmaciones se vuelven falsas** con la edad —el
+        conteo de sismos (se lee «recientes», son «los que había en la captura») y el «más
+        cercano»—. Pasan a ser relativas a la captura. El mapa y la comparativa **no envejecen**
+        y siguen vivos: sus referencias son 8 ciudades y un sismo histórico.
+  - [x] Test con catálogo envejecido. **La edad se calcula en Python**, no en el navegador: el
+        arnés `panel_harness.js` expone el `Date` REAL, así que un test que dependiera de
+        `new Date()` caducaría con el calendario.
+- **Desviación deliberada, y no es una excepción:** aquí la doctrina de T-2.58 se cumple
+  **ROTULANDO, no borrando**. Un canal fuera de plazo se borra porque **afirma ser una medición
+  de ahora**; el catálogo es explícitamente una instantánea **fechada** cuyos datos no se pudren
+  —la magnitud de un sismo del 31-jul sigue siendo verdad hoy—. Borrarlo habría apagado el mapa
+  y la comparativa para castigar una afirmación que se arregla con un rótulo.
+- **`captured_at` naive se lee como UTC, no como UTC−6.** Es la lectura conservadora: en México
+  hace la instantánea 6 h **más vieja**, nunca más joven. Regla de oro 7.
 
-### [ ] T-2.67 · El panel local gana vista de evidencia/backfill — `SOFTWARE`
+### [x] T-2.67 · El panel local gana vista de evidencia/backfill — `SOFTWARE` · COMPLETA (2026-08-06)
 - **Componente:** edge (panel) · **Depende de:** T-2.43 · **Origen:** T-2.58 §2.6
 - **Defecto:** la consola de nube tiene vista de evidencia desde T-2.43; el panel del gabinete
   —lo único que queda **cuando no hay nube**, que es cuando importa— no.
 - **Criterios de aceptación:**
-  - [ ] El panel lista la evidencia local y el estado del backfill (pendiente/subido/fallido).
-  - [ ] Sin streaming de waveform crudo (regla de oro 9): la vista es de **estado**, no de dato.
-  - [ ] Estados `loading`/`error`/`empty`/`stale` explícitos (regla de oro 7).
+  - [x] El panel lista la evidencia y el estado del backfill. **Siete desenlaces, no tres**: la
+        ficha pedía pendiente/subido/fallido, pero se midió que había desenlaces que compartían
+        el único bit observable («el `.json` está o no está»). El que más duele es el **DESCARTE
+        POR RING VACÍO**, que borra el fichero **igual que un éxito** y perdía la evidencia en
+        silencio. T-2.67 no lo repara —eso es otra tarea—: lo cuenta y lo llama `EVIDENCIA
+        PERDIDA` en rojo.
+  - [x] Sin waveform crudo: la vista es de **estado**. Regla de oro 9 intacta.
+  - [x] Estados explícitos, y `status()` **no toca disco**: instantánea en memoria con reemplazo
+        atómico, sembrada leyendo el directorio **al construir** y re-verificada al cerrar cada
+        pasada. Medido por auditoría: **cero accesos a disco/red en 200 llamadas
+        instrumentadas**. Un contador que arrancara en cero con el directorio lleno habría sido
+        la misma mentira que esta fase persigue.
+- **Campo `durable` añadido (no estaba en la ficha):** declara que sin `cloud_spool_dir` el
+  pendiente vive en un directorio que **no sobrevive al reinicio**. Se DECLARA, no se arregla:
+  cambiar la ruta por defecto movería el sitio donde el Pi busca sus evidencias. Ver `T-2.67.b`.
+- **Hallazgo en el gabinete VIVO:** con sus datos reales la card pinta **«18 ATASCADAS DESDE
+  HACE 15.3 d · FALLO DE EXTRACCIÓN · SE REINTENTA SIN PROGRESAR»**. La causa raíz es de
+  `RingBuffer.extract_window`, no del panel que la delata. Ver `T-2.67.c`.
 
-### [ ] T-2.68 · `RELÉS · S/D` deja de colapsar tres causas — `SOFTWARE`
+### [x] T-2.68 · `RELÉS · S/D` deja de colapsar tres causas — `SOFTWARE` · COMPLETA (2026-08-06)
 - **Componente:** edge (panel + gpio) · **Depende de:** — · **Origen:** T-2.58 §2.7
 - **Defecto:** `RELÉS · S/D · arranque en frío` significa hoy tres cosas distintas, y la
   reacción correcta del operador es distinta en cada una. Un solo rótulo para tres causas es
   un rótulo que no informa.
 - **Criterios de aceptación:**
-  - [ ] Las tres causas se distinguen en pantalla, cada una con la acción que pide.
-  - [ ] **No toca el camino SASMEX→relé**: es diagnóstico, no actuación.
-  - [ ] Test por causa.
+  - [x] Las causas se distinguen, cada una con su acción. **Corrección de fondo al enunciado:
+        `arranque en frío` NO era una de las tres causas — era un rótulo que nombraba un estado
+        que el gabinete NUNCA alcanza.** La ventana es de longitud cero: `gpio` es el índice 0
+        del toposort y puebla sus 5 canales de forma síncrona bajo lock. El literal se **borró**
+        del panel en vez de conservarse por simetría. Las causas reales son seis:
+        `gpio_stopped` (módulo detenido — camino **sin excepción**, solo `running` lo delata),
+        `gpio_error` (avería EN CALIENTE del proceso que toca la sirena), `config_error`
+        (`ConfigStore` ilegible, que hasta hoy **se disfrazaba de gpio roto** porque el `try` era
+        uno solo sobre dos módulos), `no_actuators_installed` (los cinco declarados `false`: la
+        única lista vacía legítima, en ámbar), `partial` (el perfil declara relés que gpio no
+        reporta — **la lista CORTA mentía igual que la vacía** y nada la disparaba) y `unknown`.
+  - [x] **No toca el camino SASMEX→relé.** Diagnóstico puro sobre memoria ya viva: cero disco,
+        cero red.
+  - [x] Test por causa, más el cuarto caso: **`unknown` es el DEFAULT**. Sin explicación se
+        asume la peor causa y se pinta ROJO, jamás una espera benigna. Un `relays_status`
+        **ausente** (servidor viejo) y una razón que el panel no conoce también caen ahí.
 
-**DoD de la Fase 2.4:** los cuatro `[ ]` de T-2.58 marcados **con evidencia**; el edge no ganó
-ni un topic nuevo; y ninguna de las cuatro tocó el camino SASMEX→relé.
+**DoD de la Fase 2.4 — CUMPLIDO (2026-08-06):** los cuatro `[ ]` de T-2.58 cerrados con
+evidencia; **el edge no ganó ni un topic nuevo**; ninguna de las cuatro tocó el camino
+SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 → 1170**.
+
+### [ ] T-2.66.b · El catálogo SSN no tiene quién lo actualice — `DECISIÓN` + `SOFTWARE`
+- **Componente:** api · **Origen:** reconocimiento de T-2.66 · **Depende de:** decisión de producto
+- **El hecho, medido:** `push_catalog` (`api/src/takab_api/routers/commands.py`) recibe el
+  catálogo **en el cuerpo de la petición**, y su propio docstring promete que la periodicidad
+  «es una llamada programada a este endpoint» — **que no existe**. Y no puede existir todavía:
+  `grep` de `ssn.unam.mx` y `rss` sobre todo el repo devuelve **cero**. Nada en ninguna capa
+  obtiene el catálogo del SSN; el snapshot vivo del Pi lo armó alguien **a mano**. Tampoco hay
+  dónde guardarlo: en `db/schema.sql` solo existen `seismic_events`, `gateway_catalog_state`
+  (espejo POR GABINETE de lo ya enviado) y `reference_earthquakes` (los 13 históricos del seed).
+- **Por eso no es código pendiente sino una decisión:** un job periódico exige antes un
+  **ingestor del SSN** (egress de red a un tercero, parseo de un feed cuyo formato no
+  controlamos, y **aviso legal de uso de datos del SSN**) más una tabla de instantánea vigente.
+- **Criterios de aceptación:**
+  - [ ] **DECIDIR** si TAKAB ingiere el feed del SSN, con qué acuerdo y bajo qué atribución.
+  - [ ] Si sí: ingestor + tabla de instantánea vigente + job, con la huella `catalog_published`
+        distinguiendo **«republiqué lo mismo» de «llegó catálogo nuevo»** (hoy no lo distingue,
+        así que un job periódico llenaría la bitácora de ruido).
+  - [ ] Si no: el docstring deja de prometer una periodicidad que nadie va a construir.
+
+### [ ] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE`
+- **Componente:** edge + aprovisionamiento · **Origen:** auditoría del bloqueante de T-2.67
+- **El hecho, medido:** `provision_gateway.sh` **no escribe `TAKAB_EDGE_CLOUD_SPOOL_DIR`**, así
+  que en el Pi real `cloud_spool_dir=""` y `_tmp_spool()` hace **`mkdtemp` nuevo en cada
+  arranque**. La cola «durable» de `CloudConnector` **se pierde entera al reiniciar**. Roza la
+  **regla de oro 3** (nada se pierde ni se duplica al reconectar) y es peor que el caso de la
+  evidencia, que al menos ya lo declara con `durable:false`.
+- **Agravante:** `_default_pending_dir()` cae a `/tmp/backfill-pending`, **compartido entre
+  procesos y corridas**. Si el directorio no existe al arrancar, cualquier usuario puede crearlo
+  primero y quedarse de dueño; el `mkdir(exist_ok=True)` del servicio lo acepta.
+- **Criterios de aceptación:**
+  - [ ] Ruta durable por defecto, escrita por el aprovisionamiento, con permisos propios.
+  - [ ] **Migración de los pendientes existentes** del Pi vivo — cambiar la ruta sin moverlos
+        abandonaría evidencia real.
+  - [ ] Test que demuestre que la cola sobrevive a un reinicio del proceso.
+
+### [ ] T-2.67.c · 18 evidencias atascadas: la extracción no progresa — `SOFTWARE`
+- **Componente:** edge · **Origen:** la card de T-2.67 contra el gabinete VIVO
+- **El hecho:** el Pi lleva **18 evidencias pendientes desde hace 15.3 días** con
+  `FALLO DE EXTRACCIÓN · SE REINTENTA SIN PROGRESAR`. Son ventanas de sismos reales que nunca
+  subieron. La causa raíz está en `RingBuffer.extract_window`
+  (`edge/takab_edge/buffer/__init__.py`): hace `merge(method=1)` **sin `fill_value`** y luego
+  `write(MSEED)`; con huecos, ObsPy produce salida vacía o falla, y el **descarte por ring
+  vacío borra el fichero igual que un éxito**.
+- **Criterios de aceptación:**
+  - [ ] La extracción con huecos produce evidencia utilizable, o falla **declarándolo**.
+  - [ ] **Un descarte deja de borrar la evidencia en silencio** (decisión de producto: ¿se
+        conserva la ventana parcial, se marca, se reintenta?).
+  - [ ] Las 18 del gabinete vivo, resueltas o explicadas una a una.
+  - [ ] Test con ring con huecos que hoy reproduce el atasco.
 
 ---
 

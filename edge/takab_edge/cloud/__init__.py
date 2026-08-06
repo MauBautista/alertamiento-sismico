@@ -146,22 +146,48 @@ class DurableSpool:
             (self.root / name).unlink(missing_ok=True)
 
     def load(self) -> list[tuple[str, dict]]:
-        """Recarga los mensajes pendientes en orden (backfill tras reinicio)."""
+        """Recarga los mensajes pendientes en orden (backfill tras reinicio).
+
+        Corre en el CONSTRUCTOR de `CloudConnector`, o sea dentro de
+        `EdgeSupervisor.build()`, que NO aísla por módulo: lo que se escape de
+        aquí deja al gabinete entero sin arrancar. Por eso el criterio no es
+        "que `json.loads` no lance" sino "que salga un registro USABLE".
+        """
         out: list[tuple[int, str, dict]] = []
         for path in self.root.glob("*.json"):
             counter = self._counter_of(path)
             if counter is None:
                 continue
             try:
-                out.append((counter, path.name, json.loads(path.read_text())))
-            except (OSError, ValueError):
-                # NO se descarta en silencio: cuarentena + alarma (posible corte de energía
-                # a mitad de escritura). Se conserva para inspección, no se pierde callado.
-                corrupt = path.with_suffix(".corrupt")
-                path.rename(corrupt)
-                log.error("mensaje spool corrupto en cuarentena: %s", corrupt.name)
+                record = json.loads(path.read_bytes())
+            except (OSError, ValueError, UnicodeDecodeError):
+                record = None
+            # `null`/`[]`/`42` son JSON VÁLIDO: pasaban el `except`, entraban en
+            # la cola y reventaban después en `_dedup_key`/`record["topic"]`
+            # (AttributeError/KeyError) dentro del constructor. Un objeto sin
+            # `topic` hacía lo mismo. La condición es la que el consumidor exige.
+            if not isinstance(record, dict) or "topic" not in record:
+                self._quarantine(path)
+                continue
+            out.append((counter, path.name, record))
         out.sort(key=lambda item: item[0])
         return [(name, record) for _c, name, record in out]
+
+    @staticmethod
+    def _quarantine(path: Path) -> None:
+        """NO se descarta en silencio: cuarentena + alarma (posible corte de energía
+        a mitad de escritura). Se conserva para inspección, no se pierde callado.
+
+        El `rename` estaba desprotegido dentro del `except`: en un directorio sin
+        permiso de escritura la defensa se volvía la causa de la caída.
+        """
+        corrupt = path.with_suffix(".corrupt")
+        try:
+            path.rename(corrupt)
+        except OSError:
+            log.error("mensaje spool corrupto %s (no se pudo apartar)", path.name)
+            return
+        log.error("mensaje spool corrupto en cuarentena: %s", corrupt.name)
 
     def __len__(self) -> int:
         return sum(1 for _ in self.root.glob("*.json"))

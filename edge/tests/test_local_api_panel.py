@@ -46,6 +46,7 @@ OK = "#00E676"
 WARN = "#FFC107"
 CRIT = "#FF5252"
 CYAN = "#00BFFF"
+FG3 = "#8A9CB1"
 
 _NOW = "2026-08-04T10:00:00+00:00"
 
@@ -111,6 +112,12 @@ def _base() -> dict:
                 "fail_safe": "fail_close",
             },
         ],
+        # [T-2.68] POR QUÉ la lista es esa. Nominal: los declarados = los vivos.
+        "relays_status": {
+            "reason": "ok",
+            "installed": ["gas_valve", "siren"],
+            "missing": [],
+        },
         "captured_at": _NOW,
         "site_lat": 19.0414,
         "site_lon": -98.2063,
@@ -179,6 +186,24 @@ def _base() -> dict:
             "age_s": 38.0,
         },
         "cloud": {"online": True, "mqtt_rtt_ms": 84.0, "queued": 0, "admin_state": "active"},
+        # [T-2.67] Respaldo de evidencia AL CORRIENTE: nada pendiente, nada perdido.
+        "evidence": {
+            "pending": 0,
+            "items": [],
+            "unreadable": 0,
+            "unreadable_items": [],
+            "oldest_pending_age_s": None,
+            "checked_age_s": 42.0,
+            "phase": "idle",
+            "durable": True,
+            "uploaded_total": 6,
+            "discarded_no_data_total": 0,
+            "failed_total": 0,
+            "extract_failed_total": 0,
+            "last_result": "uploaded",
+            "last_result_age_s": 1830.0,
+            "stale_after_s": 3600.0,
+        },
         "drill": None,
         "actuation_test": {"active": False, "results": None},
         "test_mode": {"active": False, "remaining_s": 0.0},
@@ -199,6 +224,10 @@ def _cold() -> dict:
             "uptime_s": 4.0,
             "last_tier": None,
             "relays": [],
+            # [T-2.68] "Arranque en frío" NO es una causa: gpio puebla sus cinco
+            # canales antes de que el panel escuche. Una lista vacía aquí no
+            # tiene explicación conocida, y eso es la PEOR causa, no la benigna.
+            "relays_status": {"reason": "unknown", "installed": None, "missing": []},
             "lora": None,
             "site_lat": None,
             "site_lon": None,
@@ -227,6 +256,8 @@ def _cold() -> dict:
                 "queued": None,
                 "admin_state": "active",
             },
+            # Módulo de respaldo aún sin arrancar: la sección degrada a null.
+            "evidence": None,
             "audio": None,
             "events": [],
         }
@@ -258,7 +289,29 @@ _CATALOG = {
         },
     ],
     "references": [{"n": "PUEBLA", "lat": 19.04, "lon": -98.20}],
+    # [T-2.66] La edad llega CALCULADA del gabinete: el arnés expone el `Date`
+    # REAL (panel_harness.js), así que una edad de navegador caducaría con el
+    # calendario. Por defecto: instantánea fresca del feed firmado.
+    "provenance": {
+        "version": 3,
+        "origin": "signed_feed",
+        "installed_at": "2026-08-04T09:05:00+00:00",
+        "captured_at": "2026-08-04T09:00:00",
+        "captured_age_s": 3600.0,
+        "installed_age_s": 3300.0,
+        "stale_after_s": 172800.0,
+    },
 }
+
+
+def _catalog(**provenance) -> dict:
+    """El catálogo de referencia con la procedencia sobrescrita campo a campo."""
+    cat = json.loads(json.dumps(_CATALOG))
+    if provenance.pop("sin_procedencia", False):
+        cat.pop("provenance")
+        return cat
+    cat["provenance"].update(provenance)
+    return cat
 
 
 # ------------------------------------------------------------------ arnés
@@ -513,6 +566,8 @@ _ZONAS = [
     "quorum-note",
     "salud-age",
     "salud-grid",
+    "evi-state",
+    "evi-rows",
     "lora-rows",
     "event-rows",
     "ssn-meta",
@@ -779,9 +834,157 @@ def test_latencia_fuera_de_presupuesto_se_pinta_critica(tmp_path):
 def test_sin_reles_se_declara_sd(tmp_path):
     st = _base()
     st["relays"] = []
+    st["relays_status"] = {"reason": "unknown", "installed": None, "missing": []}
     out = _render(tmp_path, status=st)
     assert "RELÉS" in _txt(out, "relays")
     assert "S/D" in _txt(out, "relays")
+
+
+# ------------------------------------------- T-2.68 · las causas del `RELÉS · S/D`
+#
+# El rótulo único "arranque en frío" era, además de ambiguo, el único estado que
+# NUNCA ocurre: gpio puebla sus cinco canales —síncrono, bajo lock, índice 0 del
+# toposort— antes de que el panel (índice 15) abra su socket. El panel acertaba
+# cero veces de cada cuatro y la lectura que inducía ("todo bien, espera") era la
+# más peligrosa posible mientras el proceso que toca la sirena podía estar roto.
+
+
+def _con_reles(reason: str, *, relays=None, installed=None, missing=()) -> dict:
+    """`_base()` con la lista de relés y su diagnóstico puestos a mano."""
+    st = _base()
+    st["relays"] = [] if relays is None else relays
+    st["relays_status"] = {
+        "reason": reason,
+        "installed": installed,
+        "missing": list(missing),
+    }
+    return st
+
+
+def test_el_panel_ya_no_dice_arranque_en_frio(tmp_path):
+    """El rótulo que mentía desaparece: no hay estado del gabinete que lo cumpla."""
+    st = _con_reles("gpio_error", installed=["siren"], missing=["siren"])
+    out = _render(tmp_path, status=st)
+    assert "arranque en frío" not in _txt(out, "relays")
+
+
+def test_gpio_averiado_no_se_lee_como_una_espera(tmp_path):
+    """Causa (a): `relay_states()` LANZÓ con el módulo en marcha. Avería en rojo."""
+    st = _con_reles("gpio_error", installed=["siren", "gas_valve"], missing=["gas_valve", "siren"])
+    out = _render(tmp_path, status=st)
+    texto = _txt(out, "relays")
+    assert "AVERÍA" in texto
+    assert "journal" in texto, "una avería sin acción no le sirve a quien está de pie ahí"
+    assert _value_color(out, "relays", "AVERÍA") == CRIT
+
+
+def test_gpio_detenido_se_distingue_de_gpio_averiado(tmp_path):
+    """Causa (b): módulo detenido. NO lanza (regresión 2026-07-30), así que
+    ningún `except` lo veía: solo `gpio.running` lo delata. Pide otra acción que
+    una avería en caliente, y por eso no puede pintarse igual."""
+    detenido = _txt(_render(tmp_path, status=_con_reles("gpio_stopped")), "relays")
+    averiado = _txt(_render(tmp_path, status=_con_reles("gpio_error")), "relays")
+    assert "DETENIDO" in detenido
+    assert "NO puede accionar" in detenido
+    assert detenido != averiado, "dos causas con reacciones distintas, un solo rótulo"
+
+
+def test_config_ilegible_avisa_que_la_lista_no_se_filtro(tmp_path):
+    """Causa (c): el `try` único cubría gpio Y config, así que un store corrupto
+    se pintaba como gpio roto. El estado eléctrico sí se midió: se pinta, con la
+    advertencia de que el filtro de equipamiento no se pudo aplicar."""
+    st = _con_reles("config_error", relays=_base()["relays"], installed=None)
+    out = _render(tmp_path, status=st)
+    texto = _txt(out, "relays")
+    assert "SIRENA" in texto, "el estado medido no se tira por un rótulo que falta"
+    assert "PERFIL" in texto
+    assert "no instalados" in texto
+    assert _value_color(out, "relays", "PERFIL") == CRIT
+
+
+def test_un_sitio_sin_actuadores_no_se_pinta_como_averia(tmp_path):
+    """Causa (d): los cinco declarados `false`. Lista vacía LEGÍTIMA — ni la
+    consola ni el env exigen "al menos uno". Es ámbar (revisa el perfil), no
+    rojo (el gabinete está roto)."""
+    out = _render(tmp_path, status=_con_reles("no_actuators_installed", installed=[]))
+    texto = _txt(out, "relays")
+    assert "SIN ACTUADORES" in texto
+    assert "0 instalados" in texto
+    assert _value_color(out, "relays", "SIN ACTUADORES") == WARN
+
+
+def test_la_lista_parcial_delata_los_reles_que_faltan(tmp_path):
+    """La lista CORTA miente igual que la vacía y nada la disparaba: con los
+    cinco declarados y dos vivos, el panel pintaba dos filas y callaba las
+    otras tres."""
+    st = _con_reles(
+        "partial",
+        relays=_base()["relays"],
+        installed=["door_retainer", "elevator", "gas_valve", "siren", "strobe"],
+        missing=["door_retainer", "elevator", "strobe"],
+    )
+    out = _render(tmp_path, status=st)
+    texto = _txt(out, "relays")
+    assert "SIRENA" in texto  # las filas vivas siguen ahí
+    assert "INCOMPLETO" in texto
+    for etiqueta in ("PUERTAS", "ASCENSORES", "ESTROBO"):
+        assert etiqueta in texto, f"el relé ausente {etiqueta} no se nombra"
+    assert "revisar journal" in texto
+    assert _value_color(out, "relays", "INCOMPLETO") == CRIT
+
+
+def test_sin_causa_conocida_el_panel_asume_lo_peor(tmp_path):
+    """El default es la PEOR causa. Sin explicación, la lista vacía se trata como
+    avería del proceso que toca la sirena — jamás como una espera benigna."""
+    out = _render(tmp_path, status=_con_reles("unknown"))
+    texto = _txt(out, "relays")
+    assert "S/D" in texto
+    assert "sin causa conocida" in texto
+    assert _value_color(out, "relays", "S/D") == CRIT, "un ámbar aquí invita a esperar"
+
+
+def test_una_causa_desconocida_por_el_panel_tambien_es_lo_peor(tmp_path):
+    """Razón que este panel no conoce (servidor más nuevo) ⇒ peor caso, no hueco."""
+    out = _render(tmp_path, status=_con_reles("causa_del_futuro"))
+    assert _value_color(out, "relays", "S/D") == CRIT
+
+
+def test_un_status_sin_relays_status_no_deja_muda_la_zona(tmp_path):
+    """El contrato es ADITIVO: un servidor viejo (sin el hermano) no puede dejar
+    la zona en blanco ni pintar la lista vacía como si no pasara nada."""
+    st = _base()
+    st["relays"] = []
+    del st["relays_status"]
+    out = _render(tmp_path, status=st)
+    assert "RELÉS" in _txt(out, "relays")
+    assert _value_color(out, "relays", "S/D") == CRIT
+
+
+def test_la_escena_demo_de_gpio_caido_pinta_la_averia(tmp_path):
+    """Las escenas demo son la TERCERA copia del contrato y el test de `status()`
+    no las cubre: un olvido ahí pasa el CI pintando `undefined`. Esta se ejecuta
+    de verdad."""
+    out = _render(tmp_path, search="?demo=gpio_caido", clicks=["frame"])
+    assert "AVERÍA" in _txt(out, "relays")
+    assert _value_color(out, "relays", "AVERÍA") == CRIT
+
+
+def test_la_escena_demo_de_arranque_frio_ya_no_miente(tmp_path):
+    """La escena conserva su nombre histórico; el rótulo que inducía a esperar,
+    no. Ese estado no existe en el gabinete real."""
+    out = _render(tmp_path, search="?demo=arranque_frio", clicks=["frame"])
+    assert "arranque en frío" not in _txt(out, "relays")
+    assert _value_color(out, "relays", "S/D") == CRIT
+
+
+def test_con_reles_vivos_el_panel_no_inventa_un_diagnostico(tmp_path):
+    """Nominal: ni una línea de más. El diagnóstico solo aparece cuando hay algo
+    que diagnosticar — un aviso permanente se vuelve invisible."""
+    out = _render(tmp_path, status=_base())
+    texto = _txt(out, "relays")
+    assert "SIRENA" in texto and "GAS" in texto
+    for rotulo in ("S/D", "AVERÍA", "INCOMPLETO", "DETENIDO", "SIN ACTUADORES"):
+        assert rotulo not in texto, f"{rotulo} pintado con el gabinete sano"
 
 
 def test_solo_se_pintan_los_reles_instalados(tmp_path):
@@ -840,6 +1043,159 @@ def test_sin_enlace_a_nube_dice_que_la_proteccion_local_sigue(tmp_path):
     assert "sin enlace" in _txt(out, "salud-grid")
 
 
+# ------------------------------------------------ evidencia / backfill (T-2.67)
+#
+# La consola de nube ve la evidencia desde T-2.43; el panel del gabinete —lo
+# único que queda CUANDO NO HAY NUBE— no veía nada. Y "no veía nada" era peor que
+# un hueco: el mejor caso (subida confirmada) y el peor (descarte por ring vacío,
+# que PIERDE la evidencia) borran el mismo fichero, así que desde fuera se veían
+# idénticos. Estos tests fijan que cada causa tenga su rótulo y su color.
+
+
+def _con_evidencia(**cambios) -> dict:
+    st = _base()
+    st["evidence"] = {**st["evidence"], **cambios}
+    return st
+
+
+def test_la_evidencia_al_corriente_no_alarma(tmp_path):
+    out = _render(tmp_path, status=_base())
+    assert "SIN EVIDENCIA PENDIENTE" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == OK
+    assert "ATASCADA" not in _txt(out, "evi-state")
+    assert "6" in _txt(out, "evi-rows")  # las archivadas se declaran
+
+
+def test_la_evidencia_atascada_se_delata_con_su_edad(tmp_path):
+    """El gabinete real lleva semanas con evidencia pendiente y el panel callaba.
+
+    Un pendiente más viejo que su umbral NO está "en camino": está atascado, y
+    el operador tiene que enterarse aquí porque es el único sitio donde se ve
+    sin nube.
+    """
+    st = _con_evidencia(
+        pending=18,
+        items=[{"event_id": "37af89a4", "age_s": 15.3 * 86400}],
+        oldest_pending_age_s=15.3 * 86400,
+        last_result="extract_failed",
+        last_result_age_s=120.0,
+        extract_failed_total=42,
+        uploaded_total=0,
+    )
+    out = _render(tmp_path, status=st)
+
+    assert "ATASCADA" in _txt(out, "evi-state")
+    assert "15.3 d" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == CRIT
+    assert OK not in _colors(_node(out["tree"], "evi-state"))
+    # …y con la causa medida, no un "falló" genérico: se reintenta sin progresar.
+    assert "EXTRACCIÓN" in _txt(out, "evi-rows")
+    assert "37af89a4" in _txt(out, "evi-rows")  # la evidencia LISTADA por evento
+
+
+def test_la_evidencia_descartada_por_ring_vacio_se_llama_perdida(tmp_path):
+    """Sin datos en el ring el fichero se borra igual que tras una subida OK.
+
+    Si el panel solo contara "pendientes", una evidencia perdida se vería
+    exactamente igual que una archivada: cola a cero y ni una palabra.
+    """
+    st = _con_evidencia(pending=0, discarded_no_data_total=2, uploaded_total=1)
+    out = _render(tmp_path, status=st)
+
+    assert "2 · EVIDENCIA PERDIDA" in _txt(out, "evi-rows")
+    assert _value_color(out, "evi-rows", "EVIDENCIA PERDIDA") == CRIT
+
+
+def test_la_evidencia_pendiente_sin_enlace_espera_y_no_es_un_fallo(tmp_path):
+    """Sin nube, tener evidencia en cola es lo CORRECTO — no una avería."""
+    st = _con_evidencia(pending=3, oldest_pending_age_s=300.0, last_result=None)
+    st["cloud"] = {"online": False, "mqtt_rtt_ms": None, "queued": 47, "admin_state": "active"}
+    out = _render(tmp_path, status=st)
+
+    assert "EN ESPERA DE ENLACE" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == WARN
+    assert CRIT not in _colors(_node(out["tree"], "evi-state"))
+    assert "ATASCADA" not in _txt(out, "evi-state")
+    # …y el número de la cola MQTT (47) no se cuela en la sección de evidencia:
+    # dos "EN COLA" con significados distintos serían un rótulo que desinforma.
+    assert "47" not in _txt(out, "evi-state")
+
+
+def test_el_respaldo_en_curso_se_distingue_del_atasco(tmp_path):
+    st = _con_evidencia(pending=2, oldest_pending_age_s=90.0, phase="uploading")
+    out = _render(tmp_path, status=st)
+    assert "BACKFILL EN CURSO" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == CYAN
+
+
+def test_la_cola_de_evidencia_no_durable_se_declara(tmp_path):
+    """Sin `cloud_spool_dir` la evidencia se evapora al reiniciar y el conteo
+    diría 0 para siempre. El panel no puede callar eso: es el hueco de
+    `provision_gateway.sh`, y afecta a todo gabinete recién aprovisionado."""
+    out = _render(tmp_path, status=_con_evidencia(durable=False))
+    assert "COLA NO DURABLE" in _txt(out, "evi-rows")
+    assert _value_color(out, "evi-rows", "COLA NO DURABLE") == WARN
+
+
+def test_sin_seccion_de_evidencia_el_panel_lo_dice(tmp_path):
+    """Módulo caído ⇒ S/D honesto; jamás un verde por defecto ni un hueco mudo."""
+    out = _render(tmp_path, status=_con_evidencia() | {"evidence": None})
+    assert "S/D" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == WARN
+    assert _txt(out, "evi-rows").strip()
+
+
+def test_un_pendiente_ilegible_se_nombra_en_el_panel(tmp_path):
+    """El fichero apartado no puede desaparecer en silencio (regla de oro 7).
+
+    Un `.json` que no es un objeto reventaba el arranque del gabinete ENTERO.
+    Ya no revienta — pero "no revienta" no basta: si el panel callara, el
+    directorio se llenaría de basura invisible. El operador está de pie frente
+    al kiosco y sin shell: necesita el NOMBRE del fichero y la acción.
+    """
+    st = _con_evidencia(
+        pending=2, oldest_pending_age_s=300.0, unreadable=1, unreadable_items=["evt-envenenado"]
+    )
+    out = _render(tmp_path, status=st)
+
+    assert "PENDIENTE ILEGIBLE" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == CRIT
+    assert OK not in _colors(_node(out["tree"], "evi-state"))
+    assert "evt-enve" in _txt(out, "evi-rows")  # NOMBRADO, no un número anónimo
+    assert "BÓRRALO" in _txt(out, "evi-rows")  # …y con la acción concreta
+
+
+def test_un_ilegible_no_lo_tapa_un_backfill_en_curso(tmp_path):
+    """Una avería PERMANENTE que pide una persona gana a un estado transitorio."""
+    st = _con_evidencia(
+        pending=2,
+        oldest_pending_age_s=90.0,
+        phase="uploading",
+        unreadable=1,
+        unreadable_items=["evt-envenenado"],
+    )
+    out = _render(tmp_path, status=st)
+    assert "ILEGIBLE" in _txt(out, "evi-state")
+    assert "BACKFILL EN CURSO" not in _txt(out, "evi-state")
+
+
+def test_un_ilegible_con_la_cola_vacia_sigue_gritando(tmp_path):
+    """Cola a cero + fichero apartado NO es "al corriente": sería un verde falso."""
+    st = _con_evidencia(pending=0, unreadable=2, unreadable_items=["evt-a", "evt-b"])
+    out = _render(tmp_path, status=st)
+    assert "SIN EVIDENCIA PENDIENTE" not in _txt(out, "evi-state")
+    assert "2 PENDIENTES ILEGIBLES" in _txt(out, "evi-state")
+    assert _node(out["tree"], "evi-state")["color"] == CRIT
+
+
+def test_una_edad_de_evidencia_ilegible_no_se_pinta_como_recien_llegada(tmp_path):
+    """`age_s = None` es "no se sabe", no "hace un momento": S/D, y sin verde."""
+    st = _con_evidencia(pending=4, oldest_pending_age_s=None, items=[])
+    out = _render(tmp_path, status=st)
+    assert "S/D" in _txt(out, "evi-state")
+    assert OK not in _colors(_node(out["tree"], "evi-state"))
+
+
 def test_catalogo_ssn_no_disponible_se_declara_en_los_dos_sitios(tmp_path):
     out = _render(tmp_path, catalog={"available": False, "events": [], "references": []})
     for zona in ("ssn-meta", "ssn-meta-big"):
@@ -853,6 +1209,77 @@ def test_catalogo_ssn_disponible_declara_su_instantanea(tmp_path):
     assert "INSTANTÁNEA DEL CATÁLOGO" in _txt(out, "ssn-meta")
     assert "MÁS CERCANO" in _txt(out, "ssn-nearest")
     assert "M 5.4" in _txt(out, "ssn-rows")
+
+
+# --- T-2.66 · el catálogo declara su edad y su procedencia -------------------
+
+
+def test_catalogo_fresco_declara_edad_y_origen_en_tono_neutro(tmp_path):
+    """Fresco NO es silencio: la edad exacta se ve siempre, para que nadie
+    dependa del umbral para razonar. Pero el tono es neutro (no alarma)."""
+    out = _render(tmp_path, catalog=_catalog(captured_age_s=3600.0))
+    for zona in ("ssn-meta", "ssn-meta-big"):
+        assert "HACE 60 m" in _txt(out, zona), _txt(out, zona)
+        assert "FEED FIRMADO v3" in _txt(out, zona)
+        assert "CATÁLOGO VIEJO" not in _txt(out, zona)
+        assert _node(out["tree"], zona)["color"] == FG3
+    # Las dos afirmaciones que implican ACTUALIDAD siguen siendo absolutas.
+    assert _txt(out, "ssn-count") == "2"
+    assert _txt(out, "ssn-nearest").startswith("MÁS CERCANO:")
+
+
+def test_catalogo_viejo_se_rotula_ambar_sin_apagar_el_mapa(tmp_path):
+    """Umbral cruzado ⇒ ÁMBAR y las dos afirmaciones de actualidad se
+    relativizan a la captura. Pero NO se borra: a diferencia de un canal de
+    señal (T-2.58), el catálogo es una instantánea FECHADA cuyos datos no se
+    pudren — el mapa se ancla en `references` y la comparativa es teórica.
+    Borrarlo apagaría las dos para castigar una afirmación que se arregla con
+    un rótulo."""
+    viejo = _catalog(captured_age_s=6 * 86400.0, stale_after_s=172800.0)
+    out = _render(
+        tmp_path, catalog=viejo, clicks=["#open-map", "frame", "row:ssn-rows-big", "frame"]
+    )
+    for zona in ("ssn-meta", "ssn-meta-big"):
+        assert "CATÁLOGO VIEJO" in _txt(out, zona), _txt(out, zona)
+        assert "6.0 d" in _txt(out, zona)  # no "144.0 h": ilegible justo donde importa
+        assert "UMBRAL 2.0 d" in _txt(out, zona)
+        assert _node(out["tree"], zona)["color"] == WARN
+    assert "EN LA CAPTURA" in _txt(out, "ssn-count")
+    assert _node(out["tree"], "ssn-count")["color"] == WARN
+    assert "MÁS CERCANO EN LA CAPTURA" in _txt(out, "ssn-nearest")
+    assert _node(out["tree"], "ssn-nearest")["color"] == WARN
+    # …y todo lo que NO envejece sigue vivo: filas, comparativa y mapa.
+    assert "M 5.4" in _txt(out, "ssn-rows-big")
+    assert _txt(out, "cmp-facts").strip()
+    assert any("ALCANCE" in t for t in out["canvasText"])
+
+
+def test_catalogo_sin_edad_conocida_no_se_pinta_como_fresco(tmp_path):
+    """Dos caminos a lo mismo: un gabinete viejo que no manda procedencia, y un
+    `capturado` ilegible (es un string LIBRE). Ninguno puede afirmar frescura."""
+    for cat in (_catalog(sin_procedencia=True), _catalog(captured_age_s=None)):
+        out = _render(tmp_path, catalog=cat)
+        assert "EDAD DESCONOCIDA" in _txt(out, "ssn-meta")
+        assert _node(out["tree"], "ssn-meta")["color"] == WARN
+        assert "EN LA CAPTURA" in _txt(out, "ssn-nearest")
+
+
+def test_el_origen_distingue_feed_firmado_de_archivo_provisionado(tmp_path):
+    """«De dónde vino» cambia la reacción: un archivo provisionado a mano no se
+    actualiza solo, y `_load_once` solo lo relee al REINICIAR el servicio."""
+    out = _render(tmp_path, catalog=_catalog(origin="provisioned_file", version=0))
+    assert "ARCHIVO PROVISIONADO" in _txt(out, "ssn-meta")
+    assert "FEED FIRMADO" not in _txt(out, "ssn-meta")
+
+
+def test_el_muro_hereda_el_ambar_del_catalogo_viejo(tmp_path):
+    """El muro es la pantalla que se ve DE LEJOS y copiaba el texto sin el
+    color: el rótulo ámbar se perdía justo donde más se mira."""
+    out = _render(tmp_path, catalog=_catalog(captured_age_s=6 * 86400.0), clicks=["data:mode:muro"])
+    assert "CATÁLOGO VIEJO" in _txt(out, "muro-ssnmeta")
+    assert _node(out["tree"], "muro-ssnmeta")["color"] == WARN
+    assert "EN LA CAPTURA" in _txt(out, "muro-nearest")
+    assert _node(out["tree"], "muro-nearest")["color"] == WARN
 
 
 def test_lora_distingue_sin_radio_de_sin_secundarios(tmp_path):

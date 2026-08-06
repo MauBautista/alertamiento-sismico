@@ -38,7 +38,7 @@ import threading
 import time
 import urllib.parse
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
@@ -77,6 +77,30 @@ _FALLBACK_HTML = (
     "<!doctype html><meta charset='utf-8'><title>TAKAB Ailert</title>"
     "<p>Panel sin index.html empaquetado; usa /api/status.</p>"
 )
+
+#: [T-2.68] Diagnóstico de relés cuando NINGUNA causa conocida explica la lista.
+#: Es el default a propósito: sin explicación se asume la PEOR causa (avería del
+#: proceso que toca la sirena), jamás la más benigna.
+_RELAYS_UNKNOWN = {"reason": "unknown", "installed": None, "missing": []}
+
+
+def _age_s(raw: object, now: datetime) -> float | None:
+    """[T-2.67] Edad en segundos de una fecha ISO; ``None`` si no se puede leer.
+
+    La aritmética de relojes se hace AQUÍ y no en el navegador: el kiosco puede
+    ir corrido y una edad calculada allí caducaría con su calendario (misma
+    doctrina que la procedencia del catálogo, T-2.66). Una fecha ilegible es
+    ``None`` — es decir "S/D" en pantalla — jamás un cero que parezca reciente.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        stamp = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    return max(0.0, (now - stamp).total_seconds())
 
 
 class ActionUnavailable(RuntimeError):
@@ -287,7 +311,7 @@ class LocalDashboard(EdgeModule):
     """Mini-consola LAN del inmueble: estado vivo + acciones con PIN (T-1.53)."""
 
     name = "local_api"
-    depends_on = ("gpio", "rules", "health", "signal", "cloud")
+    depends_on = ("gpio", "rules", "health", "signal", "cloud", "backfill")
 
     def __init__(
         self,
@@ -314,6 +338,7 @@ class LocalDashboard(EdgeModule):
         drill: object | None = None,
         dispatch: object | None = None,
         lora: object | None = None,
+        backfill: object | None = None,
     ) -> None:
         super().__init__()
         self._gpio = gpio
@@ -331,6 +356,9 @@ class LocalDashboard(EdgeModule):
         self._dispatch = dispatch
         # [T-2.33] Enlace a gabinetes secundarios LoRa (salud + CLEAR/TEST).
         self._lora = lora
+        # [T-2.67] Respaldo de evidencia miniSEED: se lee su INSTANTANEA EN
+        # MEMORIA, nunca su directorio (ver `_evidence_section`).
+        self._backfill = backfill
         self._gateway_id = gateway_id
         self._site_name = site_name
         self._refresh_ms = refresh_ms
@@ -358,12 +386,24 @@ class LocalDashboard(EdgeModule):
         self._rose_zero = RoseZeroStore(rose_zero_path)  # T-2.29
 
     def catalog(self) -> dict:
-        """[T-2.23/24] Instantánea SSN normalizada (§5.1). Lectura pura del store."""
+        """[T-2.23/24] Instantánea SSN normalizada (§5.1). Lectura pura del store.
+
+        [T-2.66] Viaja además su PROCEDENCIA (`provenance`): edad de la captura,
+        edad de la instalación, origen y umbral de vejez — resueltos en Python,
+        que es lo único determinista (el navegador del kiosco puede ir corrido).
+        Si la procedencia fallara, el catálogo SE SIGUE SIRVIENDO sin ella: es
+        peor apagar el mapa y la comparativa que perder un rótulo.
+        """
         try:
-            return self._catalog_store.current()
+            snapshot = dict(self._catalog_store.current())
         except Exception:  # noqa: BLE001 — sección no-crítica
             log.warning("panel LAN: catálogo no disponible", exc_info=True)
             return dict(_CATALOG_DEGRADED)
+        try:
+            snapshot["provenance"] = self._catalog_store.provenance()
+        except Exception:  # noqa: BLE001 — el panel lo rotula EDAD DESCONOCIDA
+            log.warning("panel LAN: procedencia del catálogo no disponible", exc_info=True)
+        return snapshot
 
     def authorize_action(self, provided: str | None) -> int:
         """Autoriza un POST del panel (T-1.43). Devuelve el status HTTP.
@@ -475,8 +515,8 @@ class LocalDashboard(EdgeModule):
                 "channels": {},
             }
 
-    def _relays_section(self) -> list[dict]:
-        """Relés para el panel — era la ÚNICA pieza de status() sin cinturón.
+    def _relays_view(self) -> tuple[list[dict], dict]:
+        """Relés para el panel: las filas Y **por qué** son las que son.
 
         gpio.relay_states() ya es seguro en shutdown (devuelve []); este guard
         cubre cualquier otro fallo: roto ⇒ [] y el panel pinta S/D, jamás un 500
@@ -486,16 +526,89 @@ class LocalDashboard(EdgeModule):
         config store): mostrar un relé de gas en un sitio sin gas es un dato
         falso (regla de oro 7). gpio conserva sus 5 relés; el filtro es de
         presentación.
+
+        [T-2.68] Una lista vacía significaba cuatro cosas distintas bajo un solo
+        rótulo, y la reacción correcta del operador es distinta en cada una. Peor:
+        el `try` era UNO SOLO sobre DOS módulos —gpio y config—, así que un store
+        de config corrupto se disfrazaba de gpio averiado. Aquí van en cajas
+        separadas y el diagnóstico viaja en `relays_status` (hermano aditivo,
+        molde de `siren_reason`):
+
+        - ``gpio_stopped``  el módulo no corre. Camino SIN excepción y por diseño
+          (regresión 2026-07-30): solo ``gpio.running`` lo delata — el guard que
+          `health._relay_states()` ya tenía y el panel no.
+        - ``gpio_error``    ``relay_states()`` LANZÓ estando en marcha: avería en
+          caliente del proceso que toca la sirena.
+        - ``config_error``  el perfil de equipamiento no se pudo leer. El estado
+          eléctrico SÍ se midió: se sirve sin filtrar y se declara que el filtro
+          no se aplicó (tirarlo perdería el dato bueno por culpa del rótulo).
+        - ``no_actuators_installed``  el sitio declara los cinco en ``false``.
+          Lista vacía LEGÍTIMA — ni la consola ni el env exigen "al menos uno".
+        - ``partial``       el perfil declara canales que gpio no reporta. La
+          lista corta miente igual que la vacía y nada la disparaba.
+        - ``unknown``       nadie sabe. Es el DEFAULT a propósito: el rótulo que
+          había ("arranque en frío") se leía como "todo bien, espera" y era el
+          único estado que nunca ocurre — gpio puebla sus cinco canales, síncrono
+          y bajo lock, antes de que este panel abra su socket.
+
+        Diagnóstico puro sobre memoria ya viva: cero disco, cero red, y NO toca
+        el camino SASMEX→relé (regla de oro 4).
         """
         try:
-            states = self._gpio.relay_states()
-            if self._config is not None:
-                equipment = self._config.current().equipment
-                states = [r for r in states if equipment.has(r.channel)]
-            return [r.model_dump(mode="json") for r in states]
-        except Exception:  # noqa: BLE001 — sección no-crítica
+            return self._relays_view_inner()
+        except Exception:  # noqa: BLE001 — sección no-crítica: degrada a lo PEOR
             log.warning("panel LAN: relés no disponibles", exc_info=True)
-            return []
+            return [], dict(_RELAYS_UNKNOWN)
+
+    def _relays_view_inner(self) -> tuple[list[dict], dict]:
+        # --- caja 1: gpio (estado eléctrico medido) ---
+        running: bool | None = None
+        gpio_failed = False
+        states: list = []
+        try:
+            running = bool(self._gpio.running)
+            states = list(self._gpio.relay_states())
+        except Exception:  # noqa: BLE001 — el diagnóstico distingue esto de config
+            log.warning("panel LAN: estado de relés no disponible", exc_info=True)
+            gpio_failed = True
+            states = []
+
+        # --- caja 2: config (perfil declarado del sitio) ---
+        # Sin config (panel suelto) el perfil es DESCONOCIDO, no vacío: no se
+        # filtra nada y no hay contra qué cruzar la lista.
+        installed: list[str] | None = None
+        config_failed = False
+        if self._config is not None:
+            try:
+                equipment = self._config.current().equipment
+                installed = sorted(c.value for c in equipment.installed())
+                # Si `has()` reventara a mitad, la asignación no ocurre y `states`
+                # conserva la lista COMPLETA de gpio — nunca un filtro a medias.
+                states = [r for r in states if equipment.has(r.channel)]
+            except Exception:  # noqa: BLE001 — ya no se disfraza de gpio roto
+                log.warning("panel LAN: perfil de equipamiento no disponible", exc_info=True)
+                config_failed = True
+                installed = None
+
+        rows = [r.model_dump(mode="json") for r in states]
+        presentes = {r.get("channel") for r in rows}
+        missing = [c for c in (installed or ()) if c not in presentes]
+
+        if running is False:
+            reason = "gpio_stopped"
+        elif gpio_failed:
+            reason = "gpio_error"
+        elif config_failed:
+            reason = "config_error"
+        elif installed is not None and not installed:
+            reason = "no_actuators_installed"
+        elif missing:
+            reason = "partial"
+        elif not rows:
+            reason = "unknown"
+        else:
+            reason = "ok"
+        return rows, {"reason": reason, "installed": installed, "missing": missing}
 
     def _thresholds_section(self) -> dict | None:
         """[T-2.16] Umbrales VIGENTES en el motor (T-1.71: se reemplazan en vivo).
@@ -681,6 +794,62 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: sección cloud falló", exc_info=True)
             return {"online": False, "mqtt_rtt_ms": None, "queued": None, "admin_state": "active"}
 
+    def _evidence_section(self, now: datetime) -> dict | None:
+        """[T-2.67] Evidencia miniSEED pendiente y desenlace del respaldo.
+
+        La consola de nube tiene vista de evidencia desde T-2.43; el panel del
+        gabinete —lo único que queda CUANDO NO HAY NUBE, que es cuando importa—
+        no tenía ninguna: en el gabinete real hay evidencia pendiente de más de
+        dos semanas y `/api/status` no traía ni la palabra.
+
+        Es una vista de ESTADO, no de dato (regla de oro 9): aquí no viaja ni
+        una muestra ni la key de S3 (que lleva el `tenant_id`, y el GET del
+        panel es abierto en la LAN). Y no toca disco: lee la instantánea en
+        memoria del `BackfillManager`, que se re-verifica contra el directorio
+        al arrancar y al cerrar cada pasada — `status()` corre a la cadencia del
+        kiosco. Las EDADES se resuelven aquí (ver `_age_s`).
+        """
+        try:
+            if self._backfill is None:
+                return None
+            snap = self._backfill.evidence_snapshot()
+            items = [
+                {
+                    "event_id": str(item.get("event_id", "")),
+                    "age_s": _age_s(item.get("start"), now),
+                }
+                for item in snap.get("items", ())
+            ]
+            return {
+                "pending": int(snap["pending"]),
+                "items": items,
+                # Pendientes que NO se pueden leer (contenido irreparable ya
+                # apartado + errores de E/S). Van NOMBRADOS: quien está de pie
+                # frente al gabinete necesita saber QUÉ fichero borrar, y este
+                # panel es el único sitio donde se ve sin nube. Es un `event_id`
+                # ya conocido por el gabinete, no la key de S3 (que lleva el
+                # tenant_id y jamás sale por este GET abierto en la LAN).
+                "unreadable": int(snap.get("unreadable") or 0),
+                "unreadable_items": [str(name) for name in snap.get("unreadable_items", ())],
+                "oldest_pending_age_s": _age_s(snap.get("oldest_pending_at"), now),
+                "checked_age_s": _age_s(snap.get("checked_at"), now),
+                "phase": str(snap.get("phase") or "idle"),
+                "durable": bool(snap.get("durable")),
+                "uploaded_total": int(snap["uploaded_total"]),
+                # El descarte por ring vacío PIERDE la evidencia y borra el
+                # pendiente igual que un éxito: sin su propio contador, el panel
+                # no podría distinguir "archivada" de "perdida para siempre".
+                "discarded_no_data_total": int(snap["discarded_no_data_total"]),
+                "failed_total": int(snap["failed_total"]),
+                "extract_failed_total": int(snap["extract_failed_total"]),
+                "last_result": snap.get("last_result"),
+                "last_result_age_s": _age_s(snap.get("last_result_at"), now),
+                "stale_after_s": float(snap["stale_after_s"]),
+            }
+        except Exception:  # noqa: BLE001 — sección no-crítica
+            log.warning("panel LAN: sección evidencia no disponible", exc_info=True)
+            return None
+
     def _drill_section(self) -> dict | None:
         """[T-1.60] Estado del simulacro: banner NO-real y aborto visible."""
         if self._drill is None:
@@ -719,6 +888,10 @@ class LocalDashboard(EdgeModule):
             last_tier = None
         health = self._health_section(now)
         uptime = (now - self._started_at).total_seconds() if self._started_at else None
+        # [T-2.68] Filas y diagnóstico salen de UNA sola lectura: pedirlos por
+        # separado los dejaría desincronizados entre sí (dos snapshots distintos
+        # del mismo lock) y el rótulo explicaría una lista que ya no es esa.
+        relays, relays_status = self._relays_view()
         return {
             # Identidad VIVA (settings), no del snapshot: sobrevive a health caído.
             "gateway_id": self._gateway_id
@@ -738,7 +911,10 @@ class LocalDashboard(EdgeModule):
             "network_alert": self._network_alert_section(),
             "lora": self._lora_section(),
             "last_tier": last_tier,
-            "relays": self._relays_section(),
+            "relays": relays,
+            # [T-2.68] POR QUÉ la lista es esa. `relays` es un hecho eléctrico y
+            # no explica nada: vacía significaba cuatro cosas y corta, ninguna.
+            "relays_status": relays_status,
             # Compat con el panel previo: hora del último dato de salud (o ahora).
             "captured_at": (health or {}).get("captured_at", now.isoformat()),
             # Fase 2.1 (contrato §5.1 de la spec del panel): memoria viva expuesta.
@@ -756,6 +932,8 @@ class LocalDashboard(EdgeModule):
             "signal": self._signal_section(now),
             "health": health,
             "cloud": self._cloud_section(),
+            # [T-2.67] Respaldo de evidencia: estado, jamás muestras (regla 9).
+            "evidence": self._evidence_section(now),
             "drill": self._drill_section(),
             "actuation_test": self._actuation_test_section(),
             "test_mode": self._test_mode_section(),
