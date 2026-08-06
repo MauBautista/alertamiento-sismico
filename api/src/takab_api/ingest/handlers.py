@@ -587,12 +587,44 @@ ON CONFLICT (ts, gateway_id) DO NOTHING
 # Guarda monotónica: SQS standard reordena y reentrega, así que un LWT viejo
 # NUNCA debe pisar un estado más nuevo (regla de oro 7: dato congelado ≠ live).
 # El último ts aplicado vive en gateways.metadata->>'status_ts'.
+#
+# [T-2.65 · B1] `status <> 'retired'`: el retiro es un acto ADMINISTRATIVO de la
+# consola y esto es un mensaje del PROPIO aparato — dejarlo escribir aquí era una
+# inversión de autoridad, y deshacía T-2.65 sola. La cadena medida contra Postgres
+# el 2026-08-06: retiro → sobre firmado con cloud_admin_state='retired' y cartel
+# DADO DE BAJA en el panel → el gabinete (que sigue vivo A PROPÓSITO, opción (A))
+# flapea su sesión MQTT → beacon retenido `{"status":"online"}` → esta UPDATE
+# borraba el retiro → trigger 0027 → sobre FIRMADO v+1 con
+# cloud_admin_state='active' que APAGABA el cartel. Sin que nadie restaurara nada.
+# El agujero es PREEXISTENTE (T-1.17): el mismo camino borraba el retiro que
+# T-2.60.a usa para detectar fantasmas y el que T-2.35 usa para dejar de mandar
+# comandos a hardware fuera de catálogo. Sobrevivió sin que se notara porque el
+# beacon solo se publica al CONECTAR (edge/cloud::_publish_online), no en el
+# latido de 60 s (`takab/health` no toca esta columna): el 2026-08-04 `gw-dev-0001`
+# se quedó en 'retired' horas por no flapear, no por estar protegido.
+#
+# El beacon informa de que el gabinete está VIVO, no de que esté dado de alta:
+# la vida se sigue registrando abajo (device_health + bitácora).
 _STATUS_SQL = """
 UPDATE gateways
    SET status = %(status)s,
        metadata = metadata || jsonb_build_object('status_ts', %(ts)s::timestamptz)
  WHERE gateway_id = %(gateway_id)s
+   AND status <> 'retired'
    AND COALESCE((metadata->>'status_ts')::timestamptz, '-infinity') < %(ts)s
+"""
+
+# Consume el ts del mensaje suprimido SIN mover `status`: hace la huella
+# idempotente (SQS reentrega; la reentrega ya no pasa la guarda monotónica) y
+# distingue "lo bloqueó el retiro" de "llegó viejo", que son cosas distintas.
+# `RETURNING` ⇒ una fila solo cuando de verdad era un mensaje nuevo de un retirado.
+_STATUS_RETIRED_SQL = """
+UPDATE gateways
+   SET metadata = metadata || jsonb_build_object('status_ts', %(ts)s::timestamptz)
+ WHERE gateway_id = %(gateway_id)s
+   AND status = 'retired'
+   AND COALESCE((metadata->>'status_ts')::timestamptz, '-infinity') < %(ts)s
+RETURNING 1
 """
 
 
@@ -603,14 +635,34 @@ def handle_status(
 
     Un mensaje con ts ≤ al último aplicado no toca gateways.status (no-op
     idempotente); su fila histórica en device_health sí se conserva.
+
+    [T-2.65 · B1] Un gabinete RETIRADO sigue retirado aunque reconecte, pero no se
+    le calla: la fila de ``device_health`` (abajo, incondicional) es de donde salen
+    "retirado + latiendo" de T-2.60.a y el contador de fantasmas de T-2.65. Encima
+    de eso, cada RECONEXIÓN de un retirado deja constancia en la bitácora
+    append-only — es la señal de "sigue vivo ahí fuera" y la evidencia de que un
+    mensaje del aparato intentó revertir a la consola. Solo el beacon 'online' la
+    escribe: el LWT 'offline' no dice nada sobre seguir vivo y duplicaría el
+    volumen en cada flap (regla de oro 10: por transición, no por intervalo).
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "status")) is not None:
         return rej
     ts = _fallback_ts(meta)
-    conn.execute(
+    cur = conn.execute(
         _STATUS_SQL,
         {"status": payload["status"], "gateway_id": ctx.gateway_id, "ts": ts},
     )
+    if cur.rowcount == 0 and payload["status"] == "online":
+        params = {"gateway_id": ctx.gateway_id, "ts": ts}
+        if conn.execute(_STATUS_RETIRED_SQL, params).fetchone() is not None:
+            audit(
+                conn,
+                tenant_id=str(ctx.tenant_id),
+                actor=f"edge:{ctx.gateway_serial}",
+                verb="gateway_alive_while_retired",
+                obj=f"gateway:{ctx.gateway_id}",
+                meta={"ignored_status": payload["status"], "topic": meta.topic},
+            )
     conn.execute(_STATUS_HEALTH_SQL, (ts, ctx.tenant_id, ctx.gateway_id))
     return OK
 

@@ -43,6 +43,18 @@ describe("syncView · qué le pasa a la config firmada [T-2.37]", () => {
     expect(view.title).toMatch(/Multi-Tenant/);
   });
 
+  // [B3] `has_edge_config` es el espejo del gate de publicación del worker
+  // (`base IS NOT NULL`), no "el rule_set activo trae bloque edge". El worker
+  // recompone la base desde el último doc publicado, así que un rule_set
+  // inactivo NO basta para que no haya nada que mandar. El título tenía que
+  // nombrar las DOS causas o el operador iba a Multi-Tenant a arreglar algo que
+  // no era el problema.
+  it("el título nombra las DOS causas de que no haya nada que publicar", () => {
+    const view = syncView(state({ has_edge_config: false, in_sync: false }));
+    expect(view.title).toMatch(/edge/i);
+    expect(view.title).toMatch(/anterior|previo/i);
+  });
+
   // Regla de oro 7: si la consulta falla, NO se asume que esté sincronizado.
   it("sin dato dice S/D y no inventa un estado", () => {
     const view = syncView(undefined);

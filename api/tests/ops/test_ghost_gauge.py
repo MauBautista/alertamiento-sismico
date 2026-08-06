@@ -35,7 +35,13 @@ import pytest
 
 from conftest import _dsn
 from takab_api.db import pool
-from takab_api.ops.metrics import GhostGauge, count_ghosts
+from takab_api.ops.metrics import (
+    METRIC_NAME,
+    METRIC_NAME_RETIRED_ALIVE,
+    GhostGauge,
+    count_ghosts,
+    count_retired_alive,
+)
 from takab_api.schemas.fleet import SIN_ENLACE, derive_fleet_state
 from takab_api.settings import Settings
 
@@ -394,7 +400,7 @@ _ALIVE_S = Settings().sin_enlace_min * 60.0
 
 def _limpia(conn: psycopg.Connection) -> None:
     # En orden de FK: salud → gabinetes → sitios → tenant.
-    for tabla in ("device_health", "gateways", "sites", "tenants"):
+    for tabla in ("device_health", "gateway_config_state", "gateways", "sites", "tenants"):
         conn.execute(f"DELETE FROM {tabla} WHERE tenant_id = %s", (_TENANT,))
 
 
@@ -465,8 +471,35 @@ def _retira_sitio(conn: psycopg.Connection, site_id: str) -> None:
     conn.execute("UPDATE sites SET status = 'retired' WHERE site_id = %s", (site_id,))
 
 
+def _ya_avisado(
+    conn: psycopg.Connection, gateway_id: str, *, publicado_hace_s: float = 0.0
+) -> None:
+    """[T-2.65] La nube PUBLICÓ el sobre firmado de baja: su último doc declara
+    `cloud_admin_state='retired'`. Es lo que escribe `commands/sync.py`.
+
+    [B3] `publicado_hace_s` mueve el INSTANTE de la publicación, que es el dato
+    que separa "se le publicó" de "pudo llegarle": el sobre viaja sin `retain` y
+    sin ack, así que solo hay constancia de alcance si el gabinete estaba vivo
+    justo antes de ese instante. El nombre del helper se conserva —dice lo que
+    la nube hizo, no lo que el gabinete recibió— porque esa es exactamente la
+    distinción que estos tests defienden.
+    """
+    conn.execute(
+        "INSERT INTO gateway_config_state "
+        "(gateway_id, tenant_id, version, payload, sig, published_at) "
+        "VALUES (%s, %s, 3, %s::jsonb, 'sig-t265', now() - make_interval(secs => %s)) "
+        "ON CONFLICT (gateway_id) DO UPDATE "
+        "SET payload = EXCLUDED.payload, published_at = EXCLUDED.published_at",
+        (gateway_id, _TENANT, '{"cloud_admin_state": "retired"}', publicado_hace_s),
+    )
+
+
 def _cuenta(conn: psycopg.Connection) -> int:
     return count_ghosts(conn, alive_s=_ALIVE_S)
+
+
+def _total(conn: psycopg.Connection) -> int:
+    return count_retired_alive(conn, alive_s=_ALIVE_S)
 
 
 # La cifra es de PLATAFORMA: `_COUNT_SQL` no filtra por tenant a propósito
@@ -631,12 +664,19 @@ def test_la_metrica_y_la_consola_llaman_fantasma_a_LO_MISMO(
     implementaciones de la misma frase, en dos lenguajes, en dos archivos: la
     única defensa contra que diverjan es compararlas. Aquí el veredicto de la
     consola NO se copia — se calcula con `derive_fleet_state`, la función real.
+
+    [B3] El cruce se hace contra `count_retired_alive`, no contra `count_ghosts`.
+    Desde T-2.65 la segunda es un SUBCONJUNTO deliberado —solo el fantasma del
+    que no consta que se haya enterado— y compararla con `is_ghost` obligaría a
+    empatar dos cosas que a propósito ya no son la misma. La que SÍ tiene que
+    seguir siendo palabra por palabra el `is_ghost` de la consola es la total:
+    ese empate es lo que impide que "fantasma" signifique dos cosas.
     """
-    base = _cuenta(db)
+    base = _total(db)
     _latido(db, _GW, hace_s=hace_s, power=power)
     _retira_gateway(db, _GW)
 
-    metrica = (_cuenta(db) - base) == 1
+    metrica = (_total(db) - base) == 1
 
     # Las mismas entradas que el router pasa a `derive_fleet_state`, leídas con
     # la misma forma que `queries/fleet.py::_LIST` (último heartbeat por LATERAL).
@@ -749,3 +789,390 @@ def test_el_gauge_PUBLICA_con_la_conexion_REAL_del_worker(
         f"(row_factory=dict_row). Warnings: {[r.message for r in caplog.records]}"
     )
     assert cw.puestas[0]["MetricData"][0]["Value"] >= 1
+
+
+# --- T-2.65 · el fantasma que ya fue avisado deja de serlo -------------------
+#
+# Con la opción (A) ratificada el 2026-08-05, «retirado + latiendo» pasa a ser un
+# estado LEGÍTIMO Y PERMANENTE: el gabinete sigue protegiendo a propósito. Si la
+# métrica siguiera contándolo, esta alarma quedaría encendida para siempre — y
+# este mismo archivo ya lo dice del caso mudo: «una alarma que siempre suena deja
+# de leerse». Lo que la alarma vigila desde ahora es el fantasma INVISIBLE: el que
+# late sin que nadie le haya dicho que fue dado de baja. Ese es exactamente el
+# estado del 2026-08-04, y el único que un humano tiene que ir a mirar.
+
+
+def test_el_retirado_que_YA_RECIBIO_su_baja_deja_de_contarse(db: psycopg.Connection) -> None:
+    base = _cuenta(db)
+    _latido(db, _GW, hace_s=5)
+    _retira_gateway(db, _GW)
+    assert _cuenta(db) - base == 1  # todavía no le han dicho nada
+
+    _ya_avisado(db, _GW)
+
+    assert _cuenta(db) - base == 0, (
+        "un gabinete retirado que YA recibió su sobre de baja sigue latiendo A "
+        "PROPÓSITO (opción A): contarlo dejaría la alarma encendida para siempre"
+    )
+
+
+def test_el_retirado_que_AUN_NO_FUE_AVISADO_se_sigue_contando(db: psycopg.Connection) -> None:
+    """El fantasma para el que se escribió la alarma: late e ES INVISIBLE.
+
+    Su doc publicado todavía dice `active` (o no hay doc): el gabinete no sabe
+    que fue dado de baja, el panel no lo declara y la consola no lo muestra.
+    """
+    base = _cuenta(db)
+    _latido(db, _GW, hace_s=5)
+    _retira_gateway(db, _GW)
+    db.execute(
+        "INSERT INTO gateway_config_state (gateway_id, tenant_id, version, payload, sig) "
+        "VALUES (%s, %s, 2, %s::jsonb, 'sig-t265') "
+        "ON CONFLICT (gateway_id) DO UPDATE SET payload = EXCLUDED.payload",
+        (_GW, _TENANT, '{"cloud_admin_state": "active"}'),
+    )
+
+    assert _cuenta(db) - base == 1
+
+
+def test_el_retirado_sin_ningun_doc_publicado_se_cuenta(db: psycopg.Connection) -> None:
+    """Sin fila en `gateway_config_state` no hay forma de que le hayan avisado."""
+    base = _cuenta(db)
+    _latido(db, _GW, hace_s=5)
+    _retira_gateway(db, _GW)
+
+    assert _cuenta(db) - base == 1
+
+
+# --- B3 · PUBLICADO no es ENTREGADO -----------------------------------------
+#
+# `gateway_config_state` registra lo que la nube PUBLICÓ. No hay ack de config
+# (los COMANDOS sí lo tienen; la config no), el sobre viaja SIN `retain` y el
+# latido no carga la versión aplicada: la nube no tiene, hoy, forma de saber qué
+# config corre el gabinete. Silenciar la alarma con la sola existencia de la fila
+# convertía "lo intentamos" en "ya se enteró" — y eso reabre, en silencio y para
+# siempre, el mismo agujero del 2026-08-04.
+#
+# Lo que sí se puede afirmar sin cambiar el contrato edge→nube: si el gabinete
+# estaba VIVO justo antes de que publicáramos, el sobre tuvo por dónde llegarle;
+# si llevaba horas apagado, el mensaje se descartó y no hay nada que suponer. La
+# frontera de "vivo" es la misma `alive_s` de siempre, aplicada al INSTANTE de la
+# publicación en vez de a ahora.
+
+
+def test_el_sobre_publicado_A_UN_GABINETE_APAGADO_no_apaga_la_alarma(
+    db: psycopg.Connection,
+) -> None:
+    """El escenario medido: se retira un gabinete que en ese momento está apagado.
+
+    El publish "tiene éxito" (nadie al otro lado lo contradice), se persiste
+    `cloud_admin_state='retired'` y el mensaje se descarta —sin `retain` no hay
+    nada que entregar cuando el aparato vuelva—. Semanas después el sitio lo
+    enciende: late, sigue leyendo el Shake y actuando la sirena, y su panel no
+    declara nada porque nunca recibió el sobre. Es EXACTAMENTE el fantasma
+    invisible que esta alarma existe para delatar, y hasta B3 la fila publicada
+    la dejaba callada para siempre.
+    """
+    base = _cuenta(db)
+    # El sobre salió hace dos horas; el gabinete llevaba entonces un día apagado
+    # (no hay un solo latido en la ventana de vida anterior a la publicación).
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+    _latido(db, _GW, hace_s=5)  # y hoy volvió a la vida
+
+    assert _cuenta(db) - base == 1, (
+        "la alarma se apagó con un sobre que el gabinete NO pudo recibir: estaba "
+        "apagado cuando se publicó, el mensaje va sin retain y no hay ack de "
+        "config. 'Publicado' se está leyendo como 'entregado'"
+    )
+
+
+def test_el_sobre_publicado_A_UN_GABINETE_VIVO_si_apaga_la_alarma(
+    db: psycopg.Connection,
+) -> None:
+    """La contrapartida, y la razón de no revertir sin más la acotación.
+
+    Bajo la opción (A) «retirado + latiendo» es un estado LEGÍTIMO y permanente:
+    el gabinete sigue protegiendo a propósito. Si la alarma siguiera sonando por
+    ese estado se quedaría encendida para siempre, y una alarma que siempre suena
+    deja de leerse — el mismo criterio con el que este archivo ya excluye al
+    retirado mudo. Con el gabinete vivo en el instante del publish, el sobre tuvo
+    por dónde llegar y el caso sale del canal urgente (sigue contado en la cifra
+    total, ver más abajo).
+    """
+    base = _cuenta(db)
+    _latido(db, _GW, hace_s=7210)  # latía 10 s antes de que se publicara
+    _latido(db, _GW, hace_s=5)  # y sigue latiendo hoy
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+
+    assert _cuenta(db) - base == 0, (
+        "la alarma sigue sonando por un gabinete al que se le publicó la baja "
+        "estando vivo: ese es el estado legítimo de la opción (A) y dejarlo "
+        "encendido para siempre es cómo se pierde una alarma"
+    )
+
+
+def test_el_sobre_publicado_MIENTRAS_llevaba_callado_mas_de_alive_s_no_apaga_la_alarma(
+    db: psycopg.Connection,
+) -> None:
+    """El borde: la frontera de 'estaba vivo al publicar' es la MISMA `alive_s`.
+
+    Un latido un segundo MÁS VIEJO que el umbral, medido contra `published_at`,
+    ya no acredita nada: en ese momento la consola lo habría pintado SIN ENLACE.
+    Este test impide que la ventana se ensanche a ojo hasta volver a tragarse el
+    caso del gabinete apagado.
+    """
+    base = _cuenta(db)
+    _latido(db, _GW, hace_s=7200 + _ALIVE_S + 1.0)
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+    _latido(db, _GW, hace_s=5)
+
+    assert _cuenta(db) - base == 1
+
+
+def test_un_latido_POSTERIOR_a_la_publicacion_no_acredita_que_le_llegara(
+    db: psycopg.Connection,
+) -> None:
+    """Conectarse DESPUÉS no rescata un mensaje que ya se descartó.
+
+    Sin `retain` y sin sesión persistente viva, el sobre publicado a un gabinete
+    ausente se pierde en el instante: que apareciera treinta segundos más tarde
+    no cambia nada. La ventana mira hacia ATRÁS a propósito.
+    """
+    base = _cuenta(db)
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _latido(db, _GW, hace_s=7170)  # 30 s DESPUÉS del publish
+    _latido(db, _GW, hace_s=5)
+    _retira_gateway(db, _GW)
+
+    assert _cuenta(db) - base == 1, (
+        "un latido posterior al publish se tomó como acuse: el mensaje ya se "
+        "había descartado cuando ese latido ocurrió"
+    )
+
+
+# --- B3 · la cifra que NO se puede apagar ------------------------------------
+#
+# La acotación de arriba es correcta para una alarma que pagina, pero deja el
+# estado permanente («retirado, avisado y protegiendo a propósito») sin ninguna
+# cifra agregada. Ese estado SIGUE exigiendo acción —o se desmonta de verdad, o
+# se restaura: el criterio 3 de T-2.60.a— solo que sin urgencia horaria. Por eso
+# son DOS condiciones con destinos distintos, no una:
+#
+#   GhostGatewaysAlive   → urgente, con alarma: late y NO consta que se enterara.
+#   RetiredGatewaysAlive → informativa: TODO retirado que late, avisado o no. Es
+#                          la que empata palabra por palabra con el `is_ghost` de
+#                          la consola.
+
+
+def test_la_cifra_TOTAL_cuenta_tambien_al_que_YA_fue_avisado(db: psycopg.Connection) -> None:
+    """Lo que la alarma calla, la cifra total lo sigue diciendo.
+
+    Sin esta segunda cifra, acotar la alarma equivaldría a borrar el estado: no
+    quedaría ningún número, fuera de la consola, que dijera que hay un edificio
+    con hardware dado de baja y enchufado.
+    """
+    base_urgente, base_total = _cuenta(db), _total(db)
+    _latido(db, _GW, hace_s=7210)
+    _latido(db, _GW, hace_s=5)
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+
+    assert _cuenta(db) - base_urgente == 0, "el avisado no puede paginar para siempre"
+    assert _total(db) - base_total == 1, (
+        "el retirado avisado y latiendo desapareció de TODA cifra: el estado "
+        "sigue exigiendo acción (desmontar o restaurar) y se quedó sin testigo"
+    )
+
+
+def test_la_cifra_TOTAL_tampoco_cuenta_al_retirado_MUDO(db: psycopg.Connection) -> None:
+    """Informativa no significa "cuenta todo": el desmontado de verdad no está."""
+    base = _total(db)
+    _latido(db, _GW, hace_s=3600)
+    _retira_gateway(db, _GW)
+
+    assert _total(db) - base == 0
+
+
+def test_la_cifra_TOTAL_no_cuenta_al_gabinete_EN_SERVICIO(db: psycopg.Connection) -> None:
+    base = _total(db)
+    _latido(db, _GW, hace_s=5)
+
+    assert _total(db) - base == 0
+
+
+def test_la_urgente_es_SUBCONJUNTO_de_la_total(db: psycopg.Connection) -> None:
+    """Invariante estructural: no puede haber un urgente que la total no vea.
+
+    Si alguien estrecha la total, o ensancha la urgente, este test lo dice antes
+    de que la alarma paginara por un gabinete que ninguna pantalla muestra.
+    """
+    _latido(db, _GW, hace_s=5)
+    _retira_gateway(db, _GW)  # fantasma invisible: urgente y total
+    _latido(db, _GW_2, hace_s=7210)
+    _latido(db, _GW_2, hace_s=5)
+    _ya_avisado(db, _GW_2, publicado_hace_s=7200)
+    _retira_sitio(db, _SITIO_2)  # avisado y vivo: solo total
+
+    assert _cuenta(db) <= _total(db)
+    assert _total(db) - _cuenta(db) >= 1
+
+
+def test_la_cifra_TOTAL_y_el_is_ghost_de_la_consola_coinciden_TRAS_el_aviso(
+    db: psycopg.Connection,
+) -> None:
+    """El empate que la acotación de T-2.65 rompió, restituido donde corresponde.
+
+    La consola sigue pintando FANTASMA al retirado que late aunque ya se le haya
+    publicado la baja (`routers/fleet.py`), porque el hecho no cambia: está dado
+    de baja y sigue enchufado. La cifra que tiene que decir ese mismo número es
+    la total. Con `count_ghosts` esto valía 0 contra un `is_ghost=true`: dos
+    respuestas distintas a la misma pregunta.
+    """
+    base = _total(db)
+    _latido(db, _GW, hace_s=7210)
+    _latido(db, _GW, hace_s=5)
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+
+    fila = db.execute(
+        """
+        SELECT g.status, s.status AS site_status,
+               EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
+        FROM gateways g
+        JOIN sites s ON s.site_id = g.site_id
+        LEFT JOIN LATERAL (
+            SELECT dh.ts FROM device_health dh
+            WHERE dh.gateway_id = g.gateway_id ORDER BY dh.ts DESC LIMIT 1
+        ) h ON true
+        WHERE g.gateway_id = %s
+        """,
+        (_GW,),
+    ).fetchone()
+    assert fila is not None
+    s = Settings()
+    estado = derive_fleet_state(
+        age_s=fila["age_s"],
+        power_status=None,
+        battery_pct=None,
+        cert_days_remaining=None,
+        mqtt_rtt_ms=None,
+        seedlink_lag_s=None,
+        ntp_offset_ms=None,
+        sin_enlace_s=s.sin_enlace_min * 60.0,
+        battery_min_pct=s.fleet_battery_min_pct,
+        cert_min_days=s.fleet_cert_min_days,
+        mqtt_rtt_max_ms=s.fleet_mqtt_rtt_max_ms,
+        seedlink_lag_max_s=s.fleet_seedlink_lag_max_s,
+        ntp_offset_max_ms=s.fleet_ntp_offset_max_ms,
+    )
+    consola = (fila["status"] == "retired" or fila["site_status"] == "retired") and (
+        estado != SIN_ENLACE
+    )
+
+    assert consola is True
+    assert _total(db) - base == 1, (
+        "la consola pinta FANTASMA y la cifra total dice 0: 'fantasma' volvió a "
+        "significar dos cosas distintas en dos archivos"
+    )
+
+
+def test_el_gauge_publica_LAS_DOS_cifras_en_UNA_sola_llamada() -> None:
+    """Dos condiciones, un `put_metric_data`.
+
+    Que sea una sola llamada no es cosmética: son dos datos de la misma
+    fotografía, y publicarlos por separado abriría la puerta a que uno saliera y
+    el otro no (justo lo que hace ilegible una alarma comparada con su total).
+    """
+    cw, clock = _FakeCW(), _FakeClock()
+    gauge = GhostGauge(
+        namespace="Takab/Test",
+        every_s=60.0,
+        client=cw,
+        clock=clock,
+        counter=lambda _c: 1,
+        total_counter=lambda _c: 4,
+    )
+    gauge.maybe_publish(conn=object())
+
+    assert len(cw.puestas) == 1, "publicó en dos llamadas lo que es una sola fotografía"
+    datos = {d["MetricName"]: d for d in cw.puestas[0]["MetricData"]}
+    assert datos[METRIC_NAME]["Value"] == 1
+    assert datos[METRIC_NAME_RETIRED_ALIVE]["Value"] == 4
+    assert datos[METRIC_NAME_RETIRED_ALIVE]["Unit"] == "Count"
+
+
+def test_el_gauge_publica_el_CERO_de_la_total_igual_que_el_de_la_urgente() -> None:
+    """Misma lección de siempre: sin el cero, "sin datos" vuelve a ser ambiguo."""
+    cw, clock = _FakeCW(), _FakeClock()
+    GhostGauge(
+        namespace="Takab/Test",
+        every_s=60.0,
+        client=cw,
+        clock=clock,
+        counter=lambda _c: 0,
+        total_counter=lambda _c: 0,
+    ).maybe_publish(conn=object())
+
+    datos = {d["MetricName"]: d for d in cw.puestas[0]["MetricData"]}
+    assert datos[METRIC_NAME_RETIRED_ALIVE]["Value"] == 0
+
+
+def test_un_fallo_contando_la_TOTAL_no_publica_una_urgente_a_medias(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Las dos cifras salen juntas o no sale ninguna.
+
+    Publicar la urgente con la total caída dejaría en CloudWatch un "0 fantasmas
+    urgentes" junto a un hueco, que se lee como flota sana. El mismo criterio del
+    fallo de la consulta: callar nunca es la opción segura, se REGISTRA.
+    """
+    cw, clock = _FakeCW(), _FakeClock()
+
+    def _explota(_conn: object) -> int:
+        raise RuntimeError("la DB dice que no")
+
+    GhostGauge(
+        namespace="Takab/Test",
+        every_s=60.0,
+        client=cw,
+        clock=clock,
+        counter=lambda _c: 0,
+        total_counter=_explota,
+    ).maybe_publish(conn=object())
+
+    assert cw.puestas == [], "publicó media fotografía tras fallar una de las dos cuentas"
+
+
+def test_el_worker_cablea_LAS_DOS_cuentas(db: psycopg.Connection, monkeypatch) -> None:
+    """El cableado real, con la conexión real: `build_ghost_gauge` → CloudWatch.
+
+    Sin esto, `count_retired_alive` podía existir, estar impecable y no llegar
+    nunca a publicarse — que es literalmente la forma del fallo del 2026-08-05:
+    el arnés en verde y la cifra sin salir jamás.
+    """
+    import boto3
+
+    from takab_api.notify.worker import build_ghost_gauge
+
+    _latido(db, _GW, hace_s=7210)
+    _latido(db, _GW, hace_s=5)
+    _ya_avisado(db, _GW, publicado_hace_s=7200)
+    _retira_gateway(db, _GW)
+
+    cw = _FakeCW()
+    monkeypatch.setattr(boto3, "client", lambda *_a, **_k: cw)
+    build_ghost_gauge(Settings(ops_metrics_enabled=True)).maybe_publish(conn=db)
+
+    assert cw.puestas, "el medidor cableado no publicó nada"
+    datos = {d["MetricName"]: d for d in cw.puestas[0]["MetricData"]}
+    assert METRIC_NAME_RETIRED_ALIVE in datos, (
+        "`build_ghost_gauge` no cableó la cifra total: la alarma quedó acotada y "
+        "el estado permanente sin ningún testigo agregado"
+    )
+    assert datos[METRIC_NAME_RETIRED_ALIVE]["Value"] >= 1
+    # Y las dos cuentas son la MISMA consulta con y sin la acotación: la urgente
+    # jamás puede superar a la total.
+    assert datos[METRIC_NAME]["Value"] <= datos[METRIC_NAME_RETIRED_ALIVE]["Value"]

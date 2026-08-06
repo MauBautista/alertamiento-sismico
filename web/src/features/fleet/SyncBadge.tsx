@@ -6,7 +6,7 @@
 //
 //   PENDIENTE            → el worker lo publicará (≤60 s)
 //   NO SINCRONIZABLE     → le falta el iot_thing; NUNCA llegará hasta vincularlo
-//   SIN CONFIG EDGE      → el rule_set activo no trae bloque `edge`; tampoco llegará
+//   SIN CONFIG EDGE      → no hay documento que publicarle; tampoco llegará
 //   DESCONOCIDO          → la consulta falló; NO se asume que esté sincronizado
 //
 // Los tres últimos se veían iguales ("pendiente para siempre") y el operador no tenía
@@ -47,8 +47,13 @@ export function syncView(state: GatewayConfigStateOut | undefined): {
       label: "SIN CONFIG EDGE",
       tone: "warn",
       title:
-        "El rule_set activo no trae bloque 'edge': no hay nada que publicar. " +
-        "Publica umbrales desde Multi-Tenant.",
+        // [B3] El servidor responde este campo con el gate de publicación del
+        // worker, que arranca de un COALESCE: rule_set activo con bloque 'edge' O
+        // el último documento publicado. Este rótulo solo sale cuando NO hay
+        // ninguna de las dos, así que nombrarlas las dos es lo que evita que el
+        // operador se vaya a Multi-Tenant a arreglar lo que no era.
+        "No hay ningún documento que publicarle: ni el rule_set activo trae bloque 'edge' " +
+        "ni existe un documento anterior del que partir. Publica umbrales desde Multi-Tenant.",
     };
   }
   if (state.in_sync) {

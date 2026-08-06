@@ -269,10 +269,19 @@ export const restoreGatewayFleetGatewaysGatewayIdRestorePost = <ThrowOnError ext
  * Retire Gateway
  * Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).
  *
- * Retirar un gabinete lo saca del config sync firmado y de los comandos de
- * actuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,
- * teclear el ``serial`` exacto (visible en pantalla) y el código de retiro del
- * cliente (secreto que entrega TAKAB).
+ * Retirar un gabinete lo saca de los comandos de actuación de la nube y, tras
+ * entregarle un último sobre firmado que se lo DICE, del config sync.
+ *
+ * **El edificio NO deja de estar protegido** (T-2.65, opción A ratificada el
+ * 2026-08-05): el gabinete sigue leyendo el sensor y el reflejo SASMEX→sirena
+ * sigue actuando, porque ese camino no depende de la nube ni puede hacerlo
+ * (reglas de oro 1 y 2). Que un clic de inventario apagara la protección física
+ * de un edificio con gente dentro sería el fallo, no la función. Lo que cambia
+ * es que ahora el gabinete lo declara en su panel local en vez de quedar
+ * latiendo invisible, que es lo que pasó con `gw-dev-0001` el 2026-08-04.
+ *
+ * Exige, además de ``manage_fleet``, teclear el ``serial`` exacto (visible en
+ * pantalla) y el código de retiro del cliente (secreto que entrega TAKAB).
  *
  * Es ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo
  * no atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.

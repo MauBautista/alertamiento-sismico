@@ -304,6 +304,9 @@ def test_status_includes_health_cloud_and_identity(supervisor):
     # enlace a nube: en dev sin transporte no hay conexión — se dice tal cual
     assert status["cloud"]["online"] is False
     assert isinstance(status["cloud"]["queued"], int)
+    # [T-2.65] …y el estado ADMINISTRATIVO, que NO se infiere del enlace: un
+    # gabinete sano arranca `active` aunque el MQTT esté caído.
+    assert status["cloud"]["admin_state"] == "active"
     # identidad viva desde settings (no depende del snapshot)
     assert status["gateway_id"] == supervisor.settings.gateway_id
     assert status["uptime_s"] >= 0.0
@@ -612,12 +615,16 @@ _DEMO_SCENES = (
     "dato_retenido",
 )
 
+# [T-2.65] Escena AÑADIDA, fuera de la tupla de las 10 de §13.2 para no reescribir
+# lo que ese test congela. Precedente: `aviso` (T-2.32).
+_DEMO_SCENES_EXTRA = ("retirado",)
+
 
 def test_index_declares_demo_scenes(supervisor):
     """Las 10 escenas de §13.2 se pueden forzar con ?demo=<escena>."""
     _, body = _get(supervisor.local_api, "/")
     html = body.decode()
-    for scene in _DEMO_SCENES:
+    for scene in _DEMO_SCENES + _DEMO_SCENES_EXTRA:
         assert f"{scene}:" in html or f"'{scene}'" in html or f'"{scene}"' in html, scene
     assert "DEMO · NO ES ESTADO REAL" in html  # el modo demo se declara, jamás se disfraza
 
@@ -648,6 +655,14 @@ def test_index_contains_frozen_contract_hooks(supervisor):
         # desde el panel cuando el tier decae con relés aún enclavados.
         "alert_latched",
         "ACTUADORES ENCLAVADOS",
+        # [T-2.65] El aviso de baja administrativa. El volcado del arnés no lleva
+        # atributos, así que este es el ÚNICO sitio donde se puede congelar que el
+        # banner es role="status" y no aria-live="assertive": es un hecho
+        # administrativo, no una emergencia, y no debe interrumpir al lector de
+        # pantalla por encima de una alerta real.
+        "DADO DE BAJA EN LA NUBE",
+        "SIGUE PROTEGIENDO",
+        '<div id="banner-baja" class="hide" role="status">',
     )
     for hook in hooks:
         assert hook in html, hook
@@ -1087,3 +1102,60 @@ def test_index_declara_el_motivo_de_la_sirena_y_los_tonos(supervisor):
         "SIN TONO DE PRUEBA",
     ):
         assert hook in html, hook
+
+
+# --- T-2.65 · el estado administrativo llega al panel ------------------------
+
+
+def test_la_baja_de_la_nube_aparece_y_desaparece_en_el_panel(supervisor):
+    """CRITERIO 5, mitad edge: retirar ⇒ el aviso aparece; restaurar ⇒ desaparece.
+
+    Recorre el camino REAL —sobre firmado → `ConfigStore.apply_signed_update` →
+    `status()`— y no un fixture. Es la única prueba posible de que el aviso llegó:
+    la config NO tiene ack y `config_version` no viaja en el latido, así que la
+    nube jamás sabe qué versión corre el gabinete (por eso `in_sync` es
+    nube-contra-nube). Quien lo sabe es este panel.
+    """
+    store, security = supervisor.config, supervisor.security
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"
+
+    def _publicar(admin: str, version: int) -> None:
+        raw = store.current().model_copy(update={"cloud_admin_state": admin}).model_dump_json()
+        store.apply_signed_update(
+            raw.encode(), security.sign_config(raw.encode(), version), version
+        )
+
+    _publicar("retired", store.version + 1)
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "retired"
+
+    _publicar("active", store.version + 1)
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"
+
+
+def test_el_panel_lee_el_estado_administrativo_del_store_vivo(supervisor):
+    """LA TRAMPA DE CAPTURA. `LocalDashboard` congela valores de `settings` en su
+    constructor (`gateway_id`, `site_name`); si `admin_state` se hubiera leído de
+    ahí, quedaría clavado en "active" PARA SIEMPRE, porque `apply_signed_update`
+    REEMPLAZA el objeto `settings` entero en vez de mutarlo.
+    """
+    store, security = supervisor.config, supervisor.security
+    arranque = store.current()
+
+    raw = arranque.model_copy(update={"cloud_admin_state": "retired"}).model_dump_json()
+    store.apply_signed_update(raw.encode(), security.sign_config(raw.encode(), 1), 1)
+
+    assert store.current() is not arranque  # el objeto se rebindeó, no se mutó
+    assert arranque.cloud_admin_state == "active"  # la copia vieja NUNCA cambia
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "retired"
+
+
+def test_un_valor_administrativo_desconocido_se_lee_como_activo(supervisor):
+    """Fail-open hacia proteger-y-callar: solo un "retired" EXACTO enciende el
+    cartel. Cualquier otra cosa (una nube que dejara de colapsar el enum) se
+    reporta activa — el panel no adivina una baja que nadie declaró."""
+    store, security = supervisor.config, supervisor.security
+    raw = store.current().model_copy(update={"cloud_admin_state": "degraded"}).model_dump_json()
+    store.apply_signed_update(raw.encode(), security.sign_config(raw.encode(), 1), 1)
+
+    assert store.current().cloud_admin_state == "degraded"  # el doc se aplicó entero
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"

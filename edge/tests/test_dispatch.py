@@ -73,9 +73,19 @@ def _sign_command(security: SecurityManager, payload: dict, nonce: str, ts: date
     return json.dumps(envelope).encode()
 
 
-def _dispatcher(*, command_enabled: bool = True, equipment: dict | None = None):
+def _dispatcher(
+    *,
+    command_enabled: bool = True,
+    equipment: dict | None = None,
+    cloud_admin_state: str = "active",
+):
     extra = {"equipment": equipment} if equipment is not None else {}
-    settings = EdgeSettings(dev_mode=True, command_enabled=command_enabled, **extra)
+    settings = EdgeSettings(
+        dev_mode=True,
+        command_enabled=command_enabled,
+        cloud_admin_state=cloud_admin_state,
+        **extra,
+    )
     security = SecurityManager(KEY, clock=lambda: NOW)
     signer = SecurityManager(KEY, clock=lambda: NOW)  # lado "nube" (nonce-store aparte)
     config_store = ConfigStore(settings, security=security)
@@ -136,6 +146,55 @@ def test_command_on_uninstalled_channel_is_rejected_with_honest_ack() -> None:
     assert acks[0]["success"] is False
     assert "no instalado" in acks[0]["detail"]
     assert actuators.executed == []
+
+
+def test_gabinete_retirado_sigue_obedeciendo_el_comando_firmado_del_quorum() -> None:
+    """[T-2.65 · REGLA DE ORO 1] La baja administrativa tampoco cierra ESTE canal.
+
+    Tercer primo hermano de la familia, y el menos evidente: desde T-2.32 la
+    actuación instrumental ya no la decide el gabinete solo — **la comanda la nube**
+    con una orden FIRMADA cuando el quórum ≥3 confirma (regla de oro 8). Es decir,
+    este dispatcher es hoy una vía de actuación de pleno derecho, no un canal
+    administrativo. Un `if …current().is_retired: rechazar` puesto junto a los dos
+    filtros legítimos que ya viven aquí sería la línea más natural del mundo de
+    escribir —y dejaba al gabinete sordo al quórum con la suite del edge en «661
+    passed, 5 skipped», ya con los guardianes nuevos del reflejo y de
+    `_act_and_publish` dentro.
+
+    La misma distinción que en `test_e2e.py`, medida en la misma corrida:
+
+    * `command_enabled=false` (default de fábrica) y **equipamiento ausente** SÍ
+      rechazan: el primero es una habilitación explícita de seguridad, el segundo un
+      hecho físico. Los dos tienen ya sus tests y siguen vivos.
+    * **`cloud_admin_state='retired'` NO rechaza**: es inventario. El edificio sigue
+      en pie mientras el quórum de la red confirma un sismo.
+    """
+    dispatcher, signer, cloud, store, actuators = _dispatcher(
+        cloud_admin_state="retired", equipment={"gas_valve": False}
+    )
+    assert store.current().is_retired is True  # guardarraíl del escenario
+
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _siren_payload(), "n-ret", NOW))
+    acks = _acks(cloud)
+    assert len(acks) == 1
+    assert acks[0]["success"] is True, (
+        f"el gabinete RETIRADO rechazó la orden firmada del quórum: {acks[0]['detail']!r}. "
+        "Desde T-2.32 el quórum de red es la vía por la que llega la actuación "
+        "instrumental; cerrarla por un acto de inventario deja al edificio sin la "
+        "única actuación que la política dejó viva fuera de SASMEX."
+    )
+    assert [c.channel for c in actuators.executed] == [ActuatorChannel.SIREN]
+
+    # …y el filtro FÍSICO de T-2.31 sigue rechazando lo que no existe.
+    gas = {"channel": "gas_valve", "action": "activate", "event_id": "EVT-RET-2"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, gas, "n-ret-2", NOW))
+    acks = _acks(cloud)
+    assert len(acks) == 2
+    assert acks[1]["success"] is False and "no instalado" in acks[1]["detail"], (
+        "se perdió el rechazo honesto del canal no instalado al blindar el estado "
+        "administrativo: equipamiento (físico) y baja (inventario) son cosas distintas"
+    )
+    assert len(actuators.executed) == 1  # el gas jamás se tocó
 
 
 def test_quorum_command_sets_network_alert_and_clear() -> None:

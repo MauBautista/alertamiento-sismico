@@ -33,22 +33,49 @@ logger = logging.getLogger("takab_api.commands")
 # Advisory lock propio (≠ engine/dictamen/notify).
 _SYNC_LOCK_KEY = 0x7A4B_1123
 
-# Gateways comandables cuyo rule_set activo trae 'edge' y difiere del último
-# estado publicado (o nunca se publicó). El rule_set se resuelve por gateway:
+# Gateways comandables cuyo documento fusionado difiere del último estado
+# publicado (o que nunca se publicó). El rule_set se resuelve por gateway:
 # scope site (el del gateway) preferente sobre tenant, versión más alta.
+#
 # [T-2.31] El doc publicado FUSIONA gateways.equipment server-side: una sola
 # firma cubre config + equipamiento, y editar el equipamiento re-publica solo
 # (IS DISTINCT contra la misma fusión). El espejo de lectura vive en
 # queries/fleet.py::_CONFIG_STATE (in_sync) — cambiar uno exige cambiar el otro.
+#
+# [T-2.65] El doc también transporta el ESTADO ADMINISTRATIVO, y por eso este
+# SQL tiene tres piezas que parecen barrocas y no lo son:
+#
+#  (a) `cloud_admin_state` colapsa a DOS valores. Si viajara el `g.status` crudo,
+#      un valor nuevo del enum (`degraded`…) reventaría la validación del
+#      DOCUMENTO ENTERO en el edge y el gabinete se quedaría SIN UMBRALES.
+#
+#  (b) `base` sale de un COALESCE de DOS ramas (rule_set activo, o el último doc
+#      publicado despojado de las claves que fusionamos aquí) y el WHERE exige
+#      que NO sea nula. `ConfigStore.apply_signed_update` es REEMPLAZO TOTAL, no
+#      merge: publicar un doc sin la base apagaría `command_enabled` —la
+#      actuación por quórum— y devolvería los umbrales a la banda por defecto.
+#      Una tercera rama `'{}'::jsonb` sería PEOR que el bug que arregla: haría
+#      candidatos a gabinetes ACTIVOS que hoy se saltan a propósito (sin rule_set
+#      activo, o con uno que no trae 'edge') y les mandaría ese doc vacío. Si no
+#      hay ni rule_set ni doc previo NO hay nada seguro que enviar: se salta.
+#
+#  (c) El retirado entra a la lista EXACTAMENTE UNA VEZ: mientras el último doc
+#      publicado no diga ya 'retired'. Antes, `g.status <> 'retired'` lo sacaba
+#      ANTES de poder avisarle y el aviso no salía nunca (T-2.58 §2.3; víctima
+#      real el 2026-08-04). Recibido el sobre, vuelve a quedar fuera del flujo de
+#      config —sigue sin recibir comandos de actuación, eso no cambia— y al
+#      restaurarlo `g.status <> 'retired'` lo readmite y republica 'active'.
+#      Si el publish falla no hay upsert, así que sigue candidato y se reintenta.
 _CANDIDATES_SQL = """
 SELECT g.gateway_id,
        g.tenant_id,
        g.iot_thing,
-       rs.config->'edge' || jsonb_build_object('equipment', g.equipment) AS edge_config,
+       d.doc AS edge_config,
+       b.admin_state,
        st.version AS state_version,
        st.payload AS state_payload
 FROM gateways g
-JOIN LATERAL (
+LEFT JOIN LATERAL (
   SELECT r.config
   FROM rule_sets r
   WHERE r.is_active
@@ -56,12 +83,20 @@ JOIN LATERAL (
        OR (r.scope_type = 'tenant' AND r.scope_id = g.tenant_id) )
   ORDER BY (r.scope_type = 'site') DESC, r.version DESC
   LIMIT 1
-) rs ON rs.config ? 'edge'
+) rs ON true
 LEFT JOIN gateway_config_state st ON st.gateway_id = g.gateway_id
-WHERE g.status <> 'retired'
-  AND g.iot_thing IS NOT NULL
-  AND (st.gateway_id IS NULL OR st.payload IS DISTINCT FROM
-       (rs.config->'edge' || jsonb_build_object('equipment', g.equipment)))
+CROSS JOIN LATERAL (
+  SELECT COALESCE(rs.config->'edge', st.payload - 'equipment' - 'cloud_admin_state') AS base,
+         CASE WHEN g.status = 'retired' THEN 'retired' ELSE 'active' END AS admin_state
+) b
+CROSS JOIN LATERAL (
+  SELECT b.base || jsonb_build_object(
+           'equipment', g.equipment, 'cloud_admin_state', b.admin_state) AS doc
+) d
+WHERE g.iot_thing IS NOT NULL
+  AND b.base IS NOT NULL
+  AND (g.status <> 'retired' OR st.payload->>'cloud_admin_state' IS DISTINCT FROM 'retired')
+  AND st.payload IS DISTINCT FROM d.doc
 ORDER BY g.gateway_id
 """
 
@@ -146,7 +181,14 @@ def run_config_sync_pass(
             actor="system:config_sync",
             verb="config_published",
             obj=f"gateway:{row['gateway_id']}",
-            meta={"version": version, "sig": signature[:16]},
+            # [T-2.65] `admin_state`: un sobre de retiro es un acto con
+            # consecuencia física. Sin esto la bitácora no dice POR QUÉ salió esa
+            # versión y habría que reconstruir el payload para saberlo.
+            meta={
+                "version": version,
+                "sig": signature[:16],
+                "admin_state": row["admin_state"],
+            },
         )
         published.append(str(row["gateway_id"]))
         logger.info("config sync: gw %s → v%d (%s)", row["gateway_id"], version, row["iot_thing"])

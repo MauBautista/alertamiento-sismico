@@ -1231,10 +1231,23 @@
 }
 
 /* [T-2.36] Diálogo de retiro con doble fricción. Deliberadamente austero y sin
-   acentos de color salvo la advertencia: apagar la protección de un edificio no es
-   una acción que deba verse cómoda. */
+   acentos de color salvo la advertencia: dar de baja el equipo sísmico de un
+   edificio no es una acción que deba verse cómoda.
+
+   [B3] …y una línea, la primera, en verde: la que dice que el edificio SIGUE
+   PROTEGIDO. Es la pregunta que el operador trae en la cabeza y la única del
+   diálogo que tranquiliza; en el mismo gris que las consecuencias se leía como
+   una advertencia más y se saltaba. */
 .retire { display: flex; flex-direction: column; gap: 12px; min-width: 340px; }
 .retire__target { margin: 0; font-size: 12px; color: var(--tk-fg-1); }
+.retire__keeps {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--tk-fg-2);
+  border-left: 2px solid var(--tk-status-normal);
+  padding-left: 8px;
+}
 .retire__id {
   font-family: var(--tk-font-mono);
   color: var(--tk-fg-2);

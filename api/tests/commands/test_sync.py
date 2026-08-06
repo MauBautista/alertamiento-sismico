@@ -36,7 +36,11 @@ EQUIP_ALL = {
     "elevator": True,
     "door_retainer": True,
 }
-MERGED_DOC = {**EDGE_DOC, "equipment": EQUIP_ALL}
+# [T-2.65] El doc firmado también transporta el ESTADO ADMINISTRATIVO del
+# gabinete. Colapsado a DOS valores en el SQL a propósito: si viajara el
+# `gateways.status` crudo (`provisioned`/`online`/`degraded`…), un valor nuevo
+# tumbaría el DOCUMENTO ENTERO en el edge y el gabinete se quedaría sin umbrales.
+MERGED_DOC = {**EDGE_DOC, "equipment": EQUIP_ALL, "cloud_admin_state": "active"}
 
 
 def _dsn() -> str:
@@ -93,6 +97,37 @@ class _Scenario:
             (json.dumps(equipment), self.gateway),
         )
         self.conn.commit()
+
+    def set_status(self, status: str) -> None:
+        """Espeja lo ÚNICO que hacen `retire_gateway`/`restore_gateway`: mover
+        `gateways.status`. Ninguno de los dos publica nada ni toca
+        `gateway_config_state` — el aviso tiene que salir por el config sync."""
+        self.conn.execute(
+            "UPDATE gateways SET status = %s WHERE gateway_id = %s", (status, self.gateway)
+        )
+        self.conn.commit()
+
+    def retire(self) -> None:
+        self.set_status("retired")
+
+    def restore(self) -> None:
+        self.set_status("provisioned")
+
+    def deactivate_rule_sets(self) -> None:
+        """Deja al gateway SIN rule_set resoluble (no hace falta retirar el sitio:
+        `retire_site` jamás toca `rule_sets`)."""
+        self.conn.execute(
+            "UPDATE rule_sets SET is_active = false WHERE tenant_id = %s", (self.tenant,)
+        )
+        self.conn.commit()
+
+    def audit_meta(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT meta FROM audit_log WHERE verb = 'config_published' AND object = %s "
+            "ORDER BY audit_id",
+            (f"gateway:{self.gateway}",),
+        ).fetchall()
+        return [r["meta"] for r in rows]
 
     def activate_rule_set(self, config: dict, *, version: int = 1) -> None:
         self.conn.execute(
@@ -196,7 +231,11 @@ def test_config_change_bumps_monotonic_version(scenario: _Scenario) -> None:
 
     mine = scenario.mine(publisher)
     assert [p["version"] for _t, p in mine] == [1, 2]
-    assert mine[1][1]["payload"] == {**new_doc, "equipment": EQUIP_ALL}
+    assert mine[1][1]["payload"] == {
+        **new_doc,
+        "equipment": EQUIP_ALL,
+        "cloud_admin_state": "active",
+    }
     assert scenario.state()["version"] == 2
 
 
@@ -319,6 +358,193 @@ def test_publish_failure_keeps_candidate_for_retry(scenario: _Scenario) -> None:
     assert scenario.mine(ok)[0][1]["version"] == 1
 
 
+# --- T-2.65 · el sobre firmado transporta el estado administrativo -----------
+#
+# Opción (A) ratificada 2026-08-05: un gabinete retirado en la nube SIGUE
+# PROTEGIENDO y lo DECLARA. El retiro es un acto administrativo que viaja por la
+# nube; que apagara la protección convertiría un clic de inventario en la
+# desprotección física de un edificio con gente dentro (reglas de oro 1 y 2).
+#
+# El defecto que cierran estos tests: `WHERE g.status <> 'retired'` sacaba al
+# gabinete de la lista de candidatos ANTES de poder avisarle, así que el aviso no
+# salía nunca. El 2026-08-04 `gw-dev-0001` siguió latiendo invisible y lo detectó
+# un operador preguntando por su estación, no el sistema.
+
+#: Doc con umbrales REALES: lo que un sobre de retiro jamás debe borrar.
+RICH_DOC = {
+    **EDGE_DOC,
+    "thresholds": {"pga_trip_g": 0.15, "pga_watch_g": 0.04},
+}
+
+
+def _merged(doc: dict, admin: str = "active", equipment: dict | None = None) -> dict:
+    return {**doc, "equipment": equipment or EQUIP_ALL, "cloud_admin_state": admin}
+
+
+def test_retiro_publica_un_sobre_que_declara_la_baja_sin_tocar_los_umbrales(
+    scenario: _Scenario,
+) -> None:
+    """CRITERIO 2: el sobre del retiro se publica ANTES de sacar al gabinete de
+    la lista de candidatos, y conserva los umbrales con los que protege."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": RICH_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    scenario.retire()
+    published = run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    assert published == [scenario.gateway]
+    mine = scenario.mine(publisher)
+    assert [p["version"] for _t, p in mine] == [1, 2]
+    envelope = mine[1][1]
+    # Ningún topic nuevo (CRITERIO 1): viaja en el sobre firmado de siempre.
+    assert mine[1][0] == f"takab/cfg/{scenario.thing}"
+    assert envelope["kind"] == "config_update"
+    assert envelope["payload"] == _merged(RICH_DOC, "retired")
+    # Lo que de verdad importa: sigue protegiendo con SUS umbrales, no con defaults.
+    assert envelope["payload"]["thresholds"] == {"pga_trip_g": 0.15, "pga_watch_g": 0.04}
+    assert envelope["payload"]["command_enabled"] is True
+    expected = sign_config(KEY.encode(), canonical_payload(envelope["payload"]), 2)
+    assert envelope["sig"] == expected
+
+
+def test_el_sobre_del_retiro_sale_exactamente_una_vez(scenario: _Scenario) -> None:
+    """Avisado el gabinete, sale del flujo de config: no se republica en bucle."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    scenario.retire()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == []
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == []
+    assert [p["version"] for _t, p in scenario.mine(publisher)] == [1, 2]
+    assert scenario.state()["version"] == 2
+
+
+def test_nunca_publicado_y_retirado_recibe_su_sobre_de_baja(scenario: _Scenario) -> None:
+    """El retiro llega ANTES de la primera publicación: el aviso sale igual."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    scenario.retire()
+    publisher = _FakePublisher()
+
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == [
+        scenario.gateway
+    ]
+    mine = scenario.mine(publisher)
+    assert len(mine) == 1
+    assert mine[0][1]["payload"]["cloud_admin_state"] == "retired"
+
+
+def test_restaurar_publica_el_estado_activo_con_version_mayor(scenario: _Scenario) -> None:
+    """CRITERIO 5 (mitad nube): restaurar re-publica 'active'. El contador de
+    versión SOBREVIVE al retiro — si `gateway_config_state` se borrara, la
+    versión reiniciaría en 1 y el edge la rechazaría por replay PARA SIEMPRE."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": RICH_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    scenario.retire()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    scenario.restore()
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == [
+        scenario.gateway
+    ]
+
+    mine = scenario.mine(publisher)
+    assert [p["version"] for _t, p in mine] == [1, 2, 3]  # monótona, jamás reinicia
+    assert mine[2][1]["payload"] == _merged(RICH_DOC, "active")
+    assert scenario.state()["version"] == 3
+    # Y no vuelve a hablar hasta que algo cambie de verdad.
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == []
+
+
+def test_retirado_sin_rule_set_resoluble_conserva_los_umbrales_ya_publicados(
+    scenario: _Scenario,
+) -> None:
+    """El guardarraíl del COALESCE. `apply_signed_update` es REEMPLAZO TOTAL: un
+    sobre de retiro sin la base del último doc apagaría `command_enabled` (la
+    actuación por quórum) y devolvería los umbrales a la banda hospital."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": RICH_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    scenario.deactivate_rule_sets()  # ya no hay rule_set activo que resolver
+    scenario.retire()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    mine = scenario.mine(publisher)
+    assert len(mine) == 2
+    payload = mine[1][1]["payload"]
+    assert payload == _merged(RICH_DOC, "retired")
+    assert payload["thresholds"] == {"pga_trip_g": 0.15, "pga_watch_g": 0.04}
+    assert payload["command_enabled"] is True
+
+
+def test_sin_rule_set_y_sin_payload_previo_no_publica_nada(scenario: _Scenario) -> None:
+    """No hay NADA seguro que enviar: saltar, jamás mandar un doc vacío. Un `{}`
+    de reemplazo total borraría los umbrales de hardware VIVO."""
+    scenario.seed_gateway()
+    scenario.retire()
+    publisher = _FakePublisher()
+
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == []
+    assert scenario.mine(publisher) == []
+    assert scenario.state() is None
+
+
+def test_activo_sin_rule_set_resoluble_sigue_sin_recibir_nada(scenario: _Scenario) -> None:
+    """El mismo guardarraíl, del lado que más duele: un gabinete ACTIVO cuyo
+    rule_set no resuelve NO puede convertirse en candidato por el cambio de
+    T-2.65 (el radio de explosión del worker es toda la flota de TODOS los
+    tenants: corre como `takab_ingest`, BYPASSRLS)."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"quorum": {"min_nodes": 3}})
+    publisher = _FakePublisher()
+
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == []
+    assert scenario.state() is None
+
+
+def test_retirado_con_publish_fallido_reintenta_y_acaba_avisando(scenario: _Scenario) -> None:
+    """El sobre del retiro hereda el fail-closed: IoT caído no quema la versión
+    ni consume el único aviso — el gabinete sigue candidato hasta que llegue."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    scenario.retire()
+    failing = _FakePublisher(fail=True)
+    assert run_config_sync_pass(scenario.conn, _settings(), failing, _keys(scenario)) == []
+    assert scenario.state()["version"] == 1  # versión intacta
+
+    assert run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario)) == [
+        scenario.gateway
+    ]
+    assert scenario.mine(publisher)[1][1]["payload"]["cloud_admin_state"] == "retired"
+
+
+def test_la_auditoria_declara_por_que_salio_ese_sobre(scenario: _Scenario) -> None:
+    """Un sobre de retiro es un acto con consecuencia física: la bitácora de
+    compliance tiene que poder leerse sin reconstruir el payload."""
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    publisher = _FakePublisher()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+    scenario.retire()
+    run_config_sync_pass(scenario.conn, _settings(), publisher, _keys(scenario))
+
+    metas = scenario.audit_meta()
+    assert [m["version"] for m in metas] == [1, 2]
+    assert [m["admin_state"] for m in metas] == ["active", "retired"]
+
+
 def test_expires_stale_pending_commands(scenario: _Scenario) -> None:
     scenario.seed_gateway()
     scenario.conn.execute(
@@ -333,3 +559,70 @@ def test_expires_stale_pending_commands(scenario: _Scenario) -> None:
     run_config_sync_pass(scenario.conn, _settings(), _FakePublisher(), StaticKeyProvider({}))
     row = scenario.conn.execute("SELECT status FROM commands WHERE nonce = 'n-sync-exp'").fetchone()
     assert row["status"] == "expired"
+
+
+# --- T-2.65 · el retiro despierta al worker (SLA del aviso) ------------------
+
+
+def _notifies(conn: psycopg.Connection, do: object) -> list[str]:
+    """Escucha `takab_live` en una conexión APARTE mientras `do()` commitea."""
+    import select
+
+    listener = psycopg.connect(_dsn(), autocommit=True)
+    try:
+        listener.execute("LISTEN takab_live")
+        do()  # type: ignore[operator]
+        select.select([listener], [], [], 3.0)
+        gen = listener.notifies(timeout=0.2)
+        return [n.payload for n in gen]
+    finally:
+        listener.close()
+
+
+def test_retirar_un_gabinete_despierta_al_worker(scenario: _Scenario) -> None:
+    """Sin el trigger de la migración 0027 esto salía por el poll de respaldo:
+    hasta 30 s entre el clic en la consola y el aviso en el panel del gabinete.
+
+    Medido en vivo antes de arreglarlo: `UPDATE gateways SET status='retired'` no
+    emitía NADA (el único trigger sobre `gateways` era el de `equipment`, 0022).
+    """
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+
+    cargas = _notifies(scenario.conn, scenario.retire)
+
+    assert any(str(scenario.gateway) in c for c in cargas), (
+        f"retirar no despertó al worker de config sync: {cargas}"
+    )
+    assert any('"t": "rule_set"' in c or '"t":"rule_set"' in c for c in cargas)
+
+
+def test_restaurar_un_gabinete_tambien_despierta_al_worker(scenario: _Scenario) -> None:
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    scenario.retire()
+
+    cargas = _notifies(scenario.conn, scenario.restore)
+
+    assert any(str(scenario.gateway) in c for c in cargas)
+
+
+def test_el_vaiven_online_offline_NO_despierta_al_worker_de_config(
+    scenario: _Scenario,
+) -> None:
+    """El `WHEN` del trigger es estrecho A PROPÓSITO.
+
+    `gateways.status` no solo lo mueven retire/restore: la ingesta lo reescribe
+    con CADA LWT de conexión y desconexión (`ingest/handlers.py::_STATUS_SQL`).
+    Un trigger sobre cualquier transición despertaría al worker de config en cada
+    flap de MQTT de CADA gabinete de la plataforma, para no publicar nada.
+    """
+    scenario.seed_gateway()
+    scenario.activate_rule_set({"edge": EDGE_DOC})
+    scenario.set_status("online")
+
+    cargas = _notifies(scenario.conn, lambda: scenario.set_status("offline"))
+
+    assert not any(str(scenario.gateway) in c for c in cargas), (
+        f"un flap de MQTT despertó al worker de config sync: {cargas}"
+    )

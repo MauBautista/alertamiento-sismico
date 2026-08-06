@@ -89,6 +89,11 @@ canvas{display:block}
 #banner-aviso .big{font:700 20px/1.1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-warn)}
 #banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
 #banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
+/* [T-2.65] Baja administrativa: ámbar como los demás informativos. PROHIBIDO
+   --tk-fg-3 aquí dentro: sobre este tinte (=#393F2E) mide 3.88:1 y REPRUEBA AA,
+   y el test de contraste solo cruza los grises contra surface-0/1/2, así que no
+   lo cazaría nadie. El subtítulo usa --tk-fg-2 (4.66:1 sobre el tinte fuerte). */
+#banner-baja{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 20px;background:rgba(255,193,7,0.18);border-bottom:1px solid var(--tk-warn)}
 #demo-ribbon{display:flex;align-items:center;gap:14px;padding:6px 16px;background:#08171f;border-bottom:1px solid var(--tk-border-strong)}
 /* Rechazo de una ORDEN (401/403/429/red): se GRITA — a distancia de kiosco el
    mensajito junto al PIN es invisible (incidente 2026-07-31: un armado falló en
@@ -266,6 +271,18 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-cyan)">🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL</span>
   <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">Sirena y estrobo sostenidos · gas, ascensores y puertas en pulso de verificación con lectura de retorno</span>
   <span class="mono" id="cyan-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-cyan)"></span>
+</div>
+<!-- [T-2.65] Baja administrativa. Va DELIBERADAMENTE al fondo de la pila de
+     banners: la precedencia real de este panel no es una tabla ni un z-index,
+     es el ORDEN FÍSICO aquí más el guard de cada uno. Colocarlo último cumple
+     «nunca por encima de una alerta sísmica real» POR CONSTRUCCIÓN.
+     role="status" y NO aria-live="assertive": es un hecho administrativo, no una
+     emergencia; interrumpir al lector de pantalla lo pondría por encima de la
+     alerta en el canal auditivo aunque esté abajo en el visual. -->
+<div id="banner-baja" class="hide" role="status">
+  <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">📋 DADO DE BAJA EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO</span>
+  <span style="font:400 12px/1.3 var(--f-ui);color:var(--tk-fg-2);max-width:520px">SASMEX sigue actuando la sirena y los relés · deja de recibir config firmada y comandos de la nube · avise a TAKAB si no era intencional</span>
+  <span class="mono" id="baja-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-warn)"></span>
 </div>
 <div id="action-toast" class="hide" role="alert">
   <span class="big" id="action-toast-txt">ORDEN RECHAZADA</span>
@@ -610,7 +627,7 @@ function baseStatus(){
     health: { ntp_offset_s:0.0031, seedlink_lag_s:0.42, packet_loss_pct:0.2, mqtt_rtt_ms:84,
       ups_status:'line', battery_pct:100, ups_runtime_s:2460, temperature_c:58.4,
       cert_days_remaining:213, disk_used_pct:62, captured_at: now, age_s: 38 },
-    cloud: {online:true, mqtt_rtt_ms:84, queued:0},
+    cloud: {online:true, mqtt_rtt_ms:84, queued:0, admin_state:'active'},
     drill: null, actuation_test: {active:false, results:null},
     test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false},
     events: [ {at: now, action:'boot', via:'boot'} ],
@@ -650,12 +667,15 @@ const SCENES = {
     s.health.seedlink_lag_s = 54200; s.shake_history = null; return s; },
   sin_nube: () => { const s = baseStatus(); s.cloud = {online:false, mqtt_rtt_ms:null, queued:47};
     s.health.mqtt_rtt_ms = null; return s; },
+  /* [T-2.65] Baja administrativa: el gabinete sigue protegiendo y lo declara.
+     Escena NUEVA — las 10 originales quedan intactas (precedente: `aviso`, T-2.32). */
+  retirado: () => { const s = baseStatus(); s.cloud = {...s.cloud, admin_state:'retired'}; return s; },
   arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
     now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
     audible_silenced:false, last_tier:null, relays:[], site_lat:null, site_lon:null, neighbors:[],
     config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200},
     seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
-    shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null},
+    shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null, admin_state:'active'},
     drill:null, actuation_test:{active:false, results:null}, test_mode:{active:false, remaining_s:0},
     audio:null, events:[] }),
   dato_retenido: () => baseStatus(),
@@ -858,6 +878,20 @@ function render(){
   if (test) $('cyan-meta').textContent = 'EN CURSO';
   $('banner-wr1').classList.toggle('hide', !wr1); /* SIEMPRE visible si armado, aun bajo alerta */
   if (wr1) $('wr1-left').textContent = Math.ceil(st.test_mode.remaining_s) + ' s RESTANTES';
+  /* [T-2.65] Baja administrativa. Dato POSITIVO del último doc firmado, no una
+     inferencia de edad ni de silencio: NO caduca y NO se oculta por viejo
+     (ocultarlo devolvería el bug original — silencio indistinguible de avería).
+     Sí se califica: sin enlace, un `restore` de la nube no puede alcanzar al
+     gabinete, así que se declara la versión de config que respalda la afirmación
+     en vez de afirmarla en presente. Guard `&& !alert`: lo real siempre gana. */
+  const baja = (cloud.admin_state === 'retired');
+  $('banner-baja').classList.toggle('hide', !(baja && !alert));
+  if (baja){
+    const ver = (st.config_version == null) ? 'S/D' : ('v' + st.config_version);
+    $('baja-meta').textContent = cloud.online
+      ? ('CONFIG FIRMADA ' + ver)
+      : ('SEGÚN LA ÚLTIMA CONFIG FIRMADA ' + ver + ' · SIN ENLACE CON LA NUBE');
+  }
 
   /* tier + relés */
   $('tier-label').textContent = tier.label; $('tier-label').style.color = tier.color;

@@ -267,6 +267,25 @@ async def list_gateways(
                 # [T-2.60.a] Retirado —él o su sitio— y sin embargo hablando. Se
                 # deriva de `state` y no de `age_s` para que "vivo" tenga UNA sola
                 # definición en todo el producto: la frontera de SIN ENLACE.
+                #
+                # [B3] NO se acota con "…y todavía no lo sabe", como sí se acotó la
+                # métrica de CloudWatch. La asimetría es deliberada:
+                #
+                #  · `is_ghost` es un HECHO —dado de baja y aun así enchufado y
+                #    hablando—, no un nivel de urgencia, y ese hecho no cambia
+                #    porque al gabinete se le haya publicado su sobre de baja.
+                #    Sigue exigiendo una decisión: o se desmonta, o se restaura.
+                #  · La métrica se acota porque PAGINA: una alarma encendida para
+                #    siempre deja de leerse. La consola no paga ese coste — se mira
+                #    cuando hay alguien delante, que es cuando se puede actuar.
+                #  · Y tras T-2.65 esta es la ÚLTIMA señal automática que le queda
+                #    al retirado que late y ya fue avisado. Apagarla "por
+                #    coherencia con la métrica" volvería a esconder un edificio con
+                #    hardware vivo, que es exactamente el fallo del 2026-08-04.
+                #
+                # La cifra agregada que dice este MISMO número —y que por eso no
+                # puede divergir— es `ops/metrics.py::count_retired_alive`.
+                # Anclado en `tests/api/test_fleet_ghosts.py`.
                 is_ghost=(m["status"] == "retired" or m["site_status"] == "retired")
                 and state != SIN_ENLACE,
                 retired_at=m["retired_at"],
@@ -367,10 +386,19 @@ async def retire_gateway(
 ) -> GatewayRowOut:
     """Retiro lógico (idempotente) con DOBLE FRICCIÓN (T-2.36).
 
-    Retirar un gabinete lo saca del config sync firmado y de los comandos de
-    actuación: el edificio deja de estar protegido. Exige, además de ``manage_fleet``,
-    teclear el ``serial`` exacto (visible en pantalla) y el código de retiro del
-    cliente (secreto que entrega TAKAB).
+    Retirar un gabinete lo saca de los comandos de actuación de la nube y, tras
+    entregarle un último sobre firmado que se lo DICE, del config sync.
+
+    **El edificio NO deja de estar protegido** (T-2.65, opción A ratificada el
+    2026-08-05): el gabinete sigue leyendo el sensor y el reflejo SASMEX→sirena
+    sigue actuando, porque ese camino no depende de la nube ni puede hacerlo
+    (reglas de oro 1 y 2). Que un clic de inventario apagara la protección física
+    de un edificio con gente dentro sería el fallo, no la función. Lo que cambia
+    es que ahora el gabinete lo declara en su panel local en vez de quedar
+    latiendo invisible, que es lo que pasó con `gw-dev-0001` el 2026-08-04.
+
+    Exige, además de ``manage_fleet``, teclear el ``serial`` exacto (visible en
+    pantalla) y el código de retiro del cliente (secreto que entrega TAKAB).
 
     Es ``POST`` y no ``DELETE`` porque ahora lleva cuerpo, y un ``DELETE`` con cuerpo
     no atraviesa proxies de forma fiable. Espeja el ``POST …/restore`` ya existente.

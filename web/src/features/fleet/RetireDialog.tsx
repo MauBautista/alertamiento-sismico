@@ -1,8 +1,23 @@
 // Diálogo de retiro con doble fricción (T-2.36).
 //
-// Retirar una estación apaga la protección sísmica de un edificio: el gabinete deja
-// de recibir config firmada y de ser destinatario de comandos de actuación. Un botón
-// de confirmación no basta, así que se piden dos cosas independientes:
+// [B3 · T-2.65] La cabecera de este archivo decía que retirar "apaga la protección
+// sísmica de un edificio". Es lo contrario de la decisión (A), ratificada el
+// 2026-08-05: el retiro es ADMINISTRATIVO. El gabinete sigue leyendo el sensor y el
+// reflejo SASMEX→sirena sigue actuando, porque ese camino no depende de la nube ni
+// puede hacerlo (reglas de oro 1 y 2). Que un clic de inventario desprotegiera un
+// edificio con gente dentro sería el fallo, no la función.
+//
+// Lo que el retiro apaga es la GESTIÓN EN LA NUBE: config firmada y comandos de
+// actuación. Y desde T-2.65 el gabinete recibe un último sobre que se lo dice, para
+// declararlo en su panel local en vez de quedar latiendo invisible (lo que le pasó a
+// `gw-dev-0001` el 2026-08-04).
+//
+// Eso tiene que estar EN EL COPY, no solo aquí: este es el último texto que alguien
+// lee antes de pulsar. Quien creyera que apaga la sirena no retiraría nunca; quien
+// creyera que desmonta el equipo dejaría un edificio contando con una protección que
+// ya no gestiona nadie. Las dos lecturas equivocadas salían del mismo silencio.
+//
+// La fricción sigue siendo doble, porque la consecuencia sigue siendo seria:
 //
 //   1. Teclear el identificador EXACTO del objeto (serial del gabinete, código del
 //      sitio). Está en pantalla: no es un secreto, es un freno contra el clic
@@ -37,16 +52,27 @@ const COPY = {
     title: "RETIRAR GABINETE",
     what: "gabinete",
     field: "serial",
+    keeps:
+      "El gabinete SIGUE PROTEGIENDO el edificio: el reflejo SASMEX→sirena es local y no " +
+      "se apaga desde esta pantalla.",
     consequence:
-      "Dejará de recibir configuración firmada y de ser destinatario de comandos de actuación.",
+      "Lo que se apaga es su gestión en la nube — dejará de recibir configuración firmada y " +
+      "de ser destinatario de comandos de actuación — y el propio gabinete lo declarará en " +
+      "su panel local. Para dejar el edificio sin protección hay que ir a desmontarlo. " +
+      "Se deshace desde la consola con RESTAURAR.",
   },
   site: {
     title: "RETIRAR ESTACIÓN",
     what: "estación",
     field: "código",
+    keeps:
+      "Sus gabinetes SIGUEN PROTEGIENDO los edificios: el reflejo SASMEX→sirena es local y " +
+      "no se apaga desde esta pantalla.",
     consequence:
-      "Se retirarán también TODOS sus gabinetes. Restaurar la estación NO los devuelve: " +
-      "volver a encender hardware es un acto explícito.",
+      "Se retirarán también TODOS sus gabinetes: dejarán de recibir configuración firmada y " +
+      "de ser destinatarios de comandos de actuación, y cada uno lo declarará en su panel " +
+      "local. Restaurar la estación NO los devuelve, y para dejar los edificios sin " +
+      "protección hay que ir a desmontar el hardware.",
   },
 } as const;
 
@@ -83,8 +109,14 @@ export default function RetireDialog({
         <p className="retire__target">
           {label} · <span className="retire__id">{confirmValue}</span>
         </p>
+        {/* Lo que NO se apaga va PRIMERO y aparte: es la pregunta que el operador
+            trae en la cabeza, y enterrarla al final de un párrafo de consecuencias
+            equivale a no contestarla. */}
+        <p className="retire__keeps" data-testid="retire-keeps">
+          {copy.keeps}
+        </p>
         <p className="retire__warn">
-          Esta acción es de retiro lógico e irreversible desde la consola. {copy.consequence}
+          Esta acción es un retiro lógico: cambia el inventario, no el hardware. {copy.consequence}
         </p>
 
         {blocked && (

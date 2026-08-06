@@ -119,12 +119,20 @@ class GatewayConfigStateOut(BaseModel):
     entrega es el worker de T-1.23. Este modelo es lo único que autoriza a la
     consola a decir "SINCRONIZADO" en vez de "PENDIENTE".
 
-    - ``in_sync``: el payload publicado coincide con ``config.edge`` del rule_set
-      activo. Es la negación del predicado de publicación del worker.
-    - ``has_edge_config``: el rule_set activo trae bloque ``edge``. Si es falso el
-      worker no publicará nunca — pintar PENDIENTE para siempre sería mentir.
-    - ``is_syncable``: gateway no retirado y con ``iot_thing`` (el worker lo excluye
-      en caso contrario).
+    - ``in_sync``: el payload publicado coincide con el documento que el worker
+      volvería a publicar (``config.edge`` fusionado con ``equipment`` y
+      ``cloud_admin_state``). Es la negación del predicado de publicación.
+    - ``has_edge_config``: hay un documento que publicarle. [B3] Es el espejo del
+      gate de publicación del worker (``base IS NOT NULL``), no "el rule_set
+      activo trae bloque ``edge``": el worker también recompone la base desde el
+      último doc publicado, así que un rule_set inactivo NO implica que no haya
+      nada que mandar. Falso ⇒ no se publicará nunca —ni rule_set con ``edge`` ni
+      doc anterior del que partir— y pintar PENDIENTE para siempre sería mentir.
+    - ``is_syncable``: el gateway PUEDE recibir config firmada — tiene ``iot_thing``
+      y no está retirado *y ya avisado*. [T-2.65] Un gabinete recién retirado sigue
+      siendo sincronizable hasta que reciba su último sobre, el que le declara la
+      baja: sacarlo de la lista ANTES de avisarle es justo el defecto que dejaba al
+      gabinete latiendo invisible. Recibido el sobre, deja el flujo de config.
     - ``version``/``published_at``: los del último documento firmado; ``None`` si
       nunca se publicó.
     """

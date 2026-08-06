@@ -26,6 +26,15 @@ Tres decisiones que este archivo defiende:
 
 3. **Estrangulada.** El bucle de ``notify`` despierta cada 2 s; publicar ahí serían
    ~43 000 llamadas diarias por una cifra que CloudWatch agrega por minuto.
+
+4. **Son DOS cifras, no una** (B3, 2026-08-06). ``GhostGatewaysAlive`` pagina y
+   cuenta solo el fantasma del que NO consta que se haya enterado de su baja;
+   ``RetiredGatewaysAlive`` no pagina y cuenta todos los retirados que laten. Con
+   una sola había que elegir entre una alarma encendida para siempre —bajo la
+   opción (A) el retirado avisado sigue protegiendo a propósito— y un punto ciego
+   permanente. Y "enterarse" NO puede leerse de ``gateway_config_state``, que
+   registra lo que la nube publicó: ver ``_UNREACHED``, donde está escrito qué se
+   aproxima, qué se pierde y cuál es el arreglo de raíz.
 """
 
 from __future__ import annotations
@@ -38,7 +47,14 @@ from typing import Any, Protocol
 logger = logging.getLogger("takab_api.ops")
 
 #: Nombre en CloudWatch. Se lee en la alarma de Terraform: si cambia aquí, cambia allí.
+#: [B3] Cuenta el fantasma URGENTE: el que late y del que NO consta que se haya
+#: enterado de su baja. Ver `_UNREACHED` para qué es "constar".
 METRIC_NAME = "GhostGatewaysAlive"
+
+#: [B3] La cifra INFORMATIVA: todo retirado que late, se le haya avisado o no.
+#: Es la que empata palabra por palabra con el `is_ghost` de la consola. No lleva
+#: alarma a propósito (ver la nota de las DOS condiciones, más abajo).
+METRIC_NAME_RETIRED_ALIVE = "RetiredGatewaysAlive"
 
 # Un gabinete cuenta como fantasma cuando él —o su sitio— está retirado y su
 # último heartbeat sigue siendo fresco. La frontera de "fresco" es la MISMA que
@@ -52,7 +68,59 @@ METRIC_NAME = "GhostGatewaysAlive"
 # El alias `AS ghosts` NO es cosmético: la fila se lee por NOMBRE porque la
 # conexión real del worker viene de `db/pool.py::connect`, que la abre con
 # `row_factory=dict_row`. Ver la trampa completa en `count_ghosts`.
-_COUNT_SQL = """
+#
+# [T-2.65] …y que TODAVÍA NO LO SABE. Desde la opción (A) (ratificada 2026-08-05)
+# un gabinete retirado SIGUE PROTEGIENDO a propósito, así que "retirado + latiendo"
+# es un estado legítimo y PERMANENTE: contarlo dejaría esta alarma encendida para
+# siempre, y una alarma que siempre suena deja de leerse (el mismo criterio que ya
+# excluye al retirado mudo en T-2.35). Lo que queda vigilado es el fantasma
+# INVISIBLE: el que late sin que nadie le haya entregado su sobre de baja — que es
+# exactamente el estado de `gw-dev-0001` el 2026-08-04, detectado porque un
+# operador preguntó por su estación y no porque el sistema lo dijera.
+#
+# [B3 · 2026-08-06] Esa acotación se apoyaba en la SOLA existencia del doc firmado
+# en `gateway_config_state`, y esa tabla registra lo que la nube PUBLICÓ, no lo que
+# el gabinete APLICÓ. Hoy no hay forma de saber lo segundo:
+#
+#   · no existe ack de config (los COMANDOS sí lo tienen; la config no),
+#   · el sobre se publica SIN `retain`, así que a un gabinete ausente se le
+#     descarta en el instante y no queda nada que entregar cuando vuelva,
+#   · el latido NO carga la versión de config aplicada (`config_version` solo
+#     existe en el panel LAN del propio Pi).
+#
+# Con "publicado ⇒ avisado" bastaba retirar un gabinete apagado para que el
+# publish "tuviera éxito", el mensaje se perdiera y la alarma quedara callada PARA
+# SIEMPRE sobre el mismo estado que existe para delatar. Se cambia por lo único
+# que sí se puede afirmar sin tocar el contrato edge→nube:
+_UNREACHED = """
+      AND ( st.payload->>'cloud_admin_state' IS DISTINCT FROM 'retired'
+            OR NOT EXISTS (
+                SELECT 1 FROM device_health dh
+                WHERE dh.gateway_id = g.gateway_id
+                  AND dh.ts <= st.published_at
+                  AND dh.ts > st.published_at - make_interval(secs => %(alive_s)s)
+            ) )
+"""
+# …es decir: la baja se le publicó Y el gabinete estaba VIVO justo antes de ese
+# instante (misma frontera `alive_s` de siempre, aplicada al momento del publish en
+# vez de a ahora). La ventana mira hacia ATRÁS a propósito: conectarse después no
+# rescata un mensaje ya descartado.
+#
+# LO QUE ESTA APROXIMACIÓN NO CUBRE, escrito para que nadie lo descubra en campo:
+# el gabinete estaba conectado, el sobre salió, y aun así no se aplicó —sesión MQTT
+# reciclada entre el ack del broker y la entrega, firma rechazada, el edge cayó
+# procesándolo—. Ese residuo lo cierra el arreglo de raíz, que es que el LATIDO
+# cargue la versión/huella de la config aplicada y la alarma se silencie con la
+# RECEPCIÓN confirmada. Exige cambiar el contrato del edge (aditivo) y no cabía en
+# este lote. Mientras tanto la contradicción no desaparece de ningún sitio: la
+# cuenta total (`METRIC_NAME_RETIRED_ALIVE`) y el `is_ghost` de la consola la
+# siguen mostrando; lo que se acota es a quién se despierta de madrugada.
+#
+# Y hay un segundo agujero, en `commands/sync.py` y por tanto fuera de este lote:
+# una vez persistido el doc 'retired', el gabinete deja de ser candidato para
+# siempre, así que el sobre perdido NUNCA se reintenta. Por eso esta alarma vuelve
+# a encenderse cuando el fantasma resucita: no hay nadie más que lo note.
+_COUNT_BASE = """
     SELECT count(*) AS ghosts
     FROM gateways g
     JOIN sites s ON s.site_id = g.site_id
@@ -61,9 +129,24 @@ _COUNT_SQL = """
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
     ) h ON true
+    LEFT JOIN gateway_config_state st ON st.gateway_id = g.gateway_id
     WHERE (g.status = 'retired' OR s.status = 'retired')
       AND h.ts > now() - make_interval(secs => %(alive_s)s)
+    {acotacion}
 """
+
+# DOS CONDICIONES, DOS DESTINOS — y esto es el corazón del arreglo, no un detalle
+# de despliegue. «Retirado y todavía sin avisar» es urgente y pagina: hay un
+# edificio cuya supervisión nadie mira y que ni siquiera lo declara en su panel.
+# «Retirado, avisado y protegiendo a propósito» es la opción (A) funcionando, pero
+# NO es un estado en el que se pueda dejar la instalación: o se desmonta el
+# hardware, o se restaura el gabinete (criterio 3 de T-2.60.a). Eso exige acción
+# humana sin urgencia horaria, así que su destino es la cifra informativa + el
+# `is_ghost` de la consola, no el correo de guardia. Fundir las dos en una sola
+# métrica obliga a elegir entre una alarma encendida para siempre y un punto ciego
+# permanente; las dos opciones ya nos costaron un incidente cada una.
+_COUNT_SQL = _COUNT_BASE.format(acotacion=_UNREACHED)
+_COUNT_RETIRED_ALIVE_SQL = _COUNT_BASE.format(acotacion="")
 
 
 class _MetricClient(Protocol):
@@ -72,22 +155,43 @@ class _MetricClient(Protocol):
     def put_metric_data(self, **kwargs: Any) -> Any: ...
 
 
-def count_ghosts(conn: Any, *, alive_s: float) -> int:
-    """Gabinetes retirados cuyo último latido sigue siendo fresco.
+def _count(conn: Any, sql: str, alive_s: float) -> int:
+    """Ejecuta una de las dos cuentas y lee la fila POR NOMBRE, nunca por posición.
 
-    La fila se lee por NOMBRE, nunca por posición. La conexión que llega aquí en
-    producción sale de ``db/pool.py::connect`` —``row_factory=dict_row``— y viaja
-    intacta hasta el bucle (``notify/__main__.py`` arma el ``conn_factory`` →
-    ``worker.py`` saca de él la ``work_conn`` y se la pasa a ``maybe_publish``):
-    nadie cambia el ``row_factory`` por el camino. Con ``row[0]`` esto lanzaba
-    ``KeyError: 0`` en CADA llamada; el ``except`` de ``maybe_publish`` lo
-    registraba y retornaba antes del ``put_metric_data``, así que la métrica no
-    se publicó nunca —ni el cero— y la alarma de Terraform no podía sonar.
-    Detectado por auditoría el 2026-08-05; los tests de entonces inyectaban el
-    contador y jamás ejecutaban esta función.
+    La conexión que llega aquí en producción sale de ``db/pool.py::connect``
+    —``row_factory=dict_row``— y viaja intacta hasta el bucle
+    (``notify/__main__.py`` arma el ``conn_factory`` → ``worker.py`` saca de él la
+    ``work_conn`` y se la pasa a ``maybe_publish``): nadie cambia el
+    ``row_factory`` por el camino. Con ``row[0]`` esto lanzaba ``KeyError: 0`` en
+    CADA llamada; el ``except`` de ``maybe_publish`` lo registraba y retornaba
+    antes del ``put_metric_data``, así que la métrica no se publicó nunca —ni el
+    cero— y la alarma de Terraform no podía sonar. Detectado por auditoría el
+    2026-08-05; los tests de entonces inyectaban el contador y jamás ejecutaban
+    esta función.
     """
-    row = conn.execute(_COUNT_SQL, {"alive_s": alive_s}).fetchone()
+    row = conn.execute(sql, {"alive_s": alive_s}).fetchone()
     return int(row["ghosts"]) if row else 0
+
+
+def count_ghosts(conn: Any, *, alive_s: float) -> int:
+    """Retirados que siguen latiendo y de los que NO CONSTA que lo sepan (B3).
+
+    La cifra urgente: la que pagina. "No consta" = o no se le publicó la baja, o
+    se le publicó cuando llevaba más de ``alive_s`` sin dar señales de vida — y
+    entonces el sobre, que va sin ``retain``, se descartó sin que nadie lo note.
+    """
+    return _count(conn, _COUNT_SQL, alive_s)
+
+
+def count_retired_alive(conn: Any, *, alive_s: float) -> int:
+    """TODOS los retirados que siguen latiendo, avisados o no (B3).
+
+    La cifra informativa, y la única que dice el mismo número que el ``is_ghost``
+    de la consola. Existe para que acotar la alarma no equivalga a borrar el
+    estado: un gabinete dado de baja y enchufado sigue exigiendo una decisión
+    —desmontarlo de verdad o restaurarlo— aunque ya se haya enterado de su baja.
+    """
+    return _count(conn, _COUNT_RETIRED_ALIVE_SQL, alive_s)
 
 
 class GhostGauge:
@@ -104,12 +208,14 @@ class GhostGauge:
         every_s: float,
         client: _MetricClient | None,
         counter: Callable[[Any], int],
+        total_counter: Callable[[Any], int] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._namespace = namespace
         self._every_s = every_s
         self._client = client
         self._counter = counter
+        self._total_counter = total_counter
         self._clock = clock
         self._last: float | None = None
 
@@ -127,14 +233,19 @@ class GhostGauge:
         self._last = now
         try:
             valor = self._counter(conn)
+            # Las dos cifras son la MISMA fotografía: si una falla no sale
+            # ninguna. Publicar "0 urgentes" junto a un hueco donde va el total se
+            # lee como flota sana, que es justo la mentira que esta métrica existe
+            # para no contar.
+            total = self._total_counter(conn) if self._total_counter is not None else None
         except Exception:
             logger.warning("no se pudo contar los gabinetes fantasma", exc_info=True)
             return
+        datos: list[dict[str, Any]] = [{"MetricName": METRIC_NAME, "Value": valor, "Unit": "Count"}]
+        if total is not None:
+            datos.append({"MetricName": METRIC_NAME_RETIRED_ALIVE, "Value": total, "Unit": "Count"})
         try:
-            self._client.put_metric_data(
-                Namespace=self._namespace,
-                MetricData=[{"MetricName": METRIC_NAME, "Value": valor, "Unit": "Count"}],
-            )
+            self._client.put_metric_data(Namespace=self._namespace, MetricData=datos)
         except Exception:
             # Se registra a propósito: un fallo mudo aquí deja la alarma con cara
             # de sana mientras deja de recibir datos.
@@ -142,7 +253,8 @@ class GhostGauge:
             return
         if valor:
             logger.warning(
-                "%s gabinete(s) RETIRADO(S) siguen reportando: hay que decidir "
+                "%s gabinete(s) RETIRADO(S) siguen reportando SIN CONSTANCIA de "
+                "haber recibido su baja: su panel no la declara. Hay que decidir "
                 "si se restauran o se desmonta el hardware",
                 valor,
             )

@@ -394,6 +394,22 @@ class EdgeSettings(BaseSettings):
     #: o del comando FIRMADO de quórum ≥3 de la nube. `True` = opt-in explícito
     #: por sitio que restaura la actuación instrumental autónoma de Fase 1.
     instrumental_actuation: bool = False
+    #: [T-2.65] Estado ADMINISTRATIVO del gabinete en la nube, transportado dentro
+    #: del mismo sobre firmado del config sync (ningún topic nuevo). Un gabinete
+    #: retirado SIGUE PROTEGIENDO —el retiro es un acto de inventario que viaja
+    #: por la nube, y apagar la protección convertiría un clic en la desprotección
+    #: física de un edificio con gente dentro (reglas de oro 1 y 2)—; esto solo lo
+    #: DECLARA en el panel, para que el silencio deje de ser indistinguible de una
+    #: avería. NO actúa sobre nada: el reflejo SASMEX→sirena ni siquiera lo ve.
+    #:
+    #: `str` PELADO Y A PROPÓSITO, jamás `Literal[...]` ni Enum: `ConfigStore`
+    #: valida el documento COMPLETO antes de aplicarlo, así que un valor fuera del
+    #: enum (si la nube dejara de colapsar `gateways.status` a dos valores) tiraría
+    #: el doc ENTERO —umbrales y `command_enabled` incluidos— y, como `_high_water`
+    #: solo sube tras validar, se reintentaría idéntico para siempre. Fail-open
+    #: hacia PROTEGER en los dos lados: aquí, todo lo que no sea exactamente
+    #: "retired" es activo; allá, el CASE de SQL colapsa a dos valores.
+    cloud_admin_state: str = "active"
     thresholds: ThresholdBand = Field(default_factory=ThresholdBand)
     #: [T-2.49] Perfil de tonos. ANIDADO dentro de `config.edge`, de modo que
     #: `commands/sync.py` y el espejo `in_sync` de la nube no cambian.
@@ -416,6 +432,16 @@ class EdgeSettings(BaseSettings):
     health_heartbeat_s: float = Field(default=60.0, gt=0)
     #: Punto de montaje que reporta la sonda de disco del panel (T-1.53).
     health_disk_path: str = "/"
+
+    @property
+    def is_retired(self) -> bool:
+        """[T-2.65] ¿La nube dio de baja este gabinete? (declarativo, no actúa).
+
+        Comparación EXACTA, sin `strip()` ni `lower()`: un `RETIRED` inesperado
+        debe leerse como ACTIVO, no adivinarse. Adivinar aquí solo puede pintar un
+        cartel de baja en un gabinete sano.
+        """
+        return self.cloud_admin_state == "retired"
 
 
 def load_settings() -> EdgeSettings:

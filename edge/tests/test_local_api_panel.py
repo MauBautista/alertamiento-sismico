@@ -178,7 +178,7 @@ def _base() -> dict:
             "captured_at": _NOW,
             "age_s": 38.0,
         },
-        "cloud": {"online": True, "mqtt_rtt_ms": 84.0, "queued": 0},
+        "cloud": {"online": True, "mqtt_rtt_ms": 84.0, "queued": 0, "admin_state": "active"},
         "drill": None,
         "actuation_test": {"active": False, "results": None},
         "test_mode": {"active": False, "remaining_s": 0.0},
@@ -221,7 +221,12 @@ def _cold() -> dict:
             "shake_history": None,
             "signal": None,
             "health": None,
-            "cloud": {"online": False, "mqtt_rtt_ms": None, "queued": None},
+            "cloud": {
+                "online": False,
+                "mqtt_rtt_ms": None,
+                "queued": None,
+                "admin_state": "active",
+            },
             "audio": None,
             "events": [],
         }
@@ -464,6 +469,13 @@ def test_contrato_el_status_del_gabinete_real_alimenta_el_panel(supervisor, tmp_
     sobran = set(_base()) - set(real)
     assert not faltan, f"claves nuevas de status() que el panel no conoce: {sorted(faltan)}"
     assert not sobran, f"claves del fixture que status() ya no sirve: {sorted(sobran)}"
+    # [T-2.65] …y también DENTRO de `cloud`: el contrato solo se comparaba en el
+    # primer nivel, así que un campo anidado nuevo (o desaparecido) no rompía
+    # nada y el panel lo habría pintado como `undefined` en silencio.
+    assert set(real["cloud"]) == set(_base()["cloud"]), (
+        f"contrato de status()['cloud'] desalineado: "
+        f"real={sorted(real['cloud'])} fixture={sorted(_base()['cloud'])}"
+    )
     out = _render(tmp_path, status=real)
     # Un gabinete recién arrancado no tiene señal ni salud: debe DECIRLO.
     assert "S/D" in _txt(out, "salud-grid") or "SIN DIAGNÓSTICO" in _txt(out, "salud-age")
@@ -1139,3 +1151,83 @@ def test_el_panel_no_lanza_un_segundo_bucle_de_poll(tmp_path):
     """Un `setTimeout` de más = dos ticks concurrentes contra un servidor de hilos."""
     out = _render(tmp_path, clicks=["tick", "tick"])
     assert out["pendingTimeouts"] == 1
+
+
+# ------------------------------------------- T-2.65 · baja administrativa
+#
+# Un gabinete retirado en la nube SIGUE PROTEGIENDO y lo DECLARA. Antes el panel
+# decía `ENLACE NUBE · CONECTADO` y era verdad —el MQTT vive—, pero era media
+# verdad: la consola ya no lo veía. La única huella local era que `config_version`
+# dejaba de subir, sin edad: invisible. El 2026-08-04 `gw-dev-0001` siguió
+# latiendo así y lo detectó un operador preguntando por su estación.
+
+
+def test_baja_en_la_nube_se_declara_sin_dejar_de_prometer_proteccion(tmp_path):
+    st = _base()
+    st["cloud"] = {**st["cloud"], "admin_state": "retired"}
+    out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-baja")
+    texto = _txt(out, "banner-baja")
+    assert "DADO DE BAJA EN LA NUBE" in texto
+    assert "SIGUE PROTEGIENDO" in texto
+    # La mitad que de verdad importa al que está parado frente al gabinete.
+    assert "SASMEX" in texto
+
+
+def test_gabinete_activo_no_pinta_la_baja(tmp_path):
+    """El default no puede inventar un cartel de baja en un gabinete sano."""
+    assert _hidden(_render(tmp_path, status=_base()), "banner-baja")
+
+
+def test_status_sin_admin_state_no_pinta_la_baja(tmp_path):
+    """Nube vieja (o sección caída): la AUSENCIA del dato jamás enciende el aviso."""
+    st = _base()
+    st["cloud"] = {"online": True, "mqtt_rtt_ms": 84.0, "queued": 0}
+    out = _render(tmp_path, status=st)
+    assert _hidden(out, "banner-baja")
+
+
+def test_una_alerta_sismica_real_tapa_el_aviso_de_baja(tmp_path):
+    """CRITERIO 3: nunca por encima de una alerta sísmica real."""
+    st = _base()
+    st["cloud"] = {**st["cloud"], "admin_state": "retired"}
+    st["sasmex_active"] = True
+    out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-alert")
+    assert _hidden(out, "banner-baja")
+
+
+def test_el_aviso_de_baja_va_por_debajo_de_todos_los_banners(tmp_path):
+    """La precedencia REAL del panel no es una tabla ni un z-index: es el ORDEN
+    FÍSICO en el marcado (los banners son hermanos directos de <body>) más un
+    guard por banner. Este es el primer test del repo que afirma esa posición —
+    los ocho de arriba solo afirman visible/oculto, así que un banner insertado
+    encima de la alerta roja no habría roto nada.
+    """
+    st = _base()
+    st["cloud"] = {**st["cloud"], "admin_state": "retired"}
+    out = _render(tmp_path, status=st)
+    kids = [k["id"] for k in _node(out["tree"], "__body__")["kids"] if k.get("id")]
+    assert "banner-baja" in kids
+    for encima in ("banner-wr1", "banner-alert", "banner-aviso", "banner-latched"):
+        assert kids.index("banner-baja") > kids.index(encima), (
+            f"#banner-baja se pinta por ENCIMA de #{encima}"
+        )
+
+
+def test_sin_enlace_el_aviso_de_baja_no_se_afirma_en_presente(tmp_path):
+    """Regla de oro 7 traducida a este dato. `cloud_admin_state` NO caduca —es un
+    hecho administrativo enclavado, firmado y persistido, no una medición— así que
+    NO se oculta por viejo: ocultarlo volvería el silencio indistinguible de una
+    avería, que es el bug original. Pero sin enlace un `restore` de la nube no
+    puede alcanzar al gabinete, así que el aviso se CALIFICA con la versión de
+    config que lo respalda en vez de afirmarse en presente.
+    """
+    st = _base()
+    st["cloud"] = {"online": False, "mqtt_rtt_ms": None, "queued": 3, "admin_state": "retired"}
+    st["config_version"] = 41
+    out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-baja")
+    meta = _txt(out, "baja-meta")
+    assert "v41" in meta
+    assert "SIN ENLACE" in meta

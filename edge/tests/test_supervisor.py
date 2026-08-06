@@ -170,6 +170,56 @@ def test_sasmex_actuates_with_cloud_offline(supervisor):
     assert supervisor.cloud.sent == 0
 
 
+def test_la_config_viva_de_la_nube_jamas_se_cablea_al_reflejo(settings, tmp_path):
+    """[T-2.65 · REGLA DE ORO 1] El estado administrativo no puede llegar al reflejo.
+
+    Su hermano `test_config.py::test_gabinete_retirado_sigue_actuando_la_sirena_por_sasmex`
+    prueba el invariante sobre un `GpioController` suelto; ESTE lo prueba sobre el
+    CABLEADO REAL, y por eso existe: los apply-listeners se registran en
+    `EdgeSupervisor.build()`, así que un `setattr(self.gpio, "settings", cfg)`
+    añadido ahí —«que gpio también vea la config nueva», ordenar el edge— no lo
+    vería NINGÚN test que construya el controlador a mano, y dejaría al módulo del
+    camino de vida leyendo la config viva que publica la nube.
+
+    Hostil por los dos extremos, como el hermano: el gabinete arranca retirado (así
+    queda al reiniciar con la caché firmada de T-2.34) y la nube aplica encima otro
+    sobre retirado, con el equipamiento declarado todo-ausente. Sirena y estrobo se
+    MIDEN.
+    """
+    from takab_edge.config import EquipmentProfile
+
+    s = settings.model_copy(
+        update={
+            "cloud_admin_state": "retired",
+            "equipment": EquipmentProfile(
+                siren=False, strobe=False, gas_valve=False, elevator=False, door_retainer=False
+            ),
+            # Caché propia: el default apunta a /var/lib/takab (estado del gabinete real).
+            "config_cache_path": str(tmp_path / "config-cache.json"),
+        }
+    )
+    sup = EdgeSupervisor(s, seedlink_source=None)
+    sup.start()
+    try:
+        boot = sup.gpio.settings
+        assert boot.is_retired is True  # el objeto del módulo del reflejo SÍ dice 'retired'
+
+        raw = s.model_copy(update={"tenant_id": "tenant-retirado"}).model_dump_json().encode()
+        version = sup.config.version + 1
+        sup.config.apply_signed_update(raw, sup.security.sign_config(raw, version), version)
+        assert sup.config.current().is_retired is True
+
+        WR1Simulator(sup.gpio).alert()
+
+        assert sup.gpio.is_activated(ActuatorChannel.SIREN) is True
+        assert sup.gpio.is_activated(ActuatorChannel.STROBE) is True
+        # Ningún listener acercó la config viva al módulo del reflejo.
+        assert sup.gpio.settings is boot
+        assert sup.config.current() is not sup.gpio.settings
+    finally:
+        sup.stop()
+
+
 def test_instrumental_event_drives_tier(supervisor):
     # Sismo local: varios canales sobre disparo (corroboración ≥2), SIN SASMEX.
     sim = RS4DSimulator(station=supervisor.settings.station)

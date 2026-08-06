@@ -644,18 +644,42 @@ class LocalDashboard(EdgeModule):
             return None
 
     def _cloud_section(self) -> dict:
+        """Enlace con la nube + estado ADMINISTRATIVO del gabinete (T-2.65).
+
+        `online` es el flag de la sesión MQTT y nada más: por eso el panel decía
+        `ENLACE NUBE · CONECTADO` mientras la consola ya no veía al gabinete —
+        media verdad. `admin_state` es el otro dato, y NO se infiere de la edad ni
+        del silencio: es un hecho positivo del último documento firmado.
+
+        Se lee del ConfigStore VIVO en cada llamada, jamás de un `EdgeSettings`
+        capturado en `__init__`: `apply_signed_update` REEMPLAZA el objeto entero,
+        así que una copia guardada se quedaría clavada en "active" para siempre.
+
+        Fail-open hacia proteger-y-callar: sin ConfigStore, con el módulo caído o
+        con un valor que no sea exactamente "retired", se reporta `active`. Un
+        módulo averiado no puede inventar un `DADO DE BAJA` en un gabinete sano.
+        """
         try:
+            admin = "active"
+            if self._config is not None and self._config.current().is_retired:
+                admin = "retired"
             if self._cloud is None:
-                return {"online": False, "mqtt_rtt_ms": None, "queued": None}
+                return {
+                    "online": False,
+                    "mqtt_rtt_ms": None,
+                    "queued": None,
+                    "admin_state": admin,
+                }
             rtt = getattr(self._cloud, "mqtt_rtt_ms", None)
             return {
                 "online": bool(getattr(self._cloud, "online", False)),
                 "mqtt_rtt_ms": float(rtt) if rtt is not None else None,
                 "queued": int(getattr(self._cloud, "queued", 0)),
+                "admin_state": admin,
             }
         except Exception:  # noqa: BLE001
             log.warning("panel LAN: sección cloud falló", exc_info=True)
-            return {"online": False, "mqtt_rtt_ms": None, "queued": None}
+            return {"online": False, "mqtt_rtt_ms": None, "queued": None, "admin_state": "active"}
 
     def _drill_section(self) -> dict | None:
         """[T-1.60] Estado del simulacro: banner NO-real y aborto visible."""

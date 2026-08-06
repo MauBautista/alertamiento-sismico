@@ -118,24 +118,55 @@ async def list_gateways_with_health(
 # en ``commands/sync.py`` (scope site preferente sobre tenant, versión más alta,
 # LIMIT 1 ANTES de exigir el bloque 'edge'), para que ``in_sync`` sea la negación
 # del predicado de publicación del worker y no una segunda opinión.
+#
+# [B3] Este bloque es UN ESPEJO, no una segunda opinión: las expresiones de `base`,
+# `admin_state` y `doc` de abajo son textualmente las de `_CANDIDATES_SQL`, y
+# `tests/commands/test_sync_mirror.py` lo verifica para que una corrección en el
+# original no pueda aterrizar en un solo lado. Ahí está anotada la deuda conocida:
+# `admin_state` mira solo `g.status`, mientras `is_ghost` y la métrica de fantasmas
+# miran `g.status OR s.status` — hay un estado alcanzable (sitio retirado, gabinete
+# sin propagar) en el que el panel del gabinete diría ACTIVO y la consola lo pinta
+# fantasma. Arreglarlo exige mover las DOS copias en el mismo commit; cambiar solo
+# esta dejaría `in_sync` en falso permanente.
 _CONFIG_STATE = text(
     """
-    -- COALESCE obligatorio: sin rule_set activo el LEFT JOIN deja rs.config NULL, y
-    -- `NULL::jsonb ? 'edge'` es NULL (jsonb_exists es STRICT), no false. Ese NULL
-    -- reventaría los bool no-opcionales de GatewayConfigStateOut con un 500 en un
-    -- endpoint que promete 200 + PENDIENTE.
+    -- El COALESCE de `base` es obligatorio por partida doble: sin rule_set activo
+    -- el LEFT JOIN deja rs.config NULL, y un NULL colándose a los bool
+    -- no-opcionales de GatewayConfigStateOut reventaría con un 500 el endpoint
+    -- que promete 200 + PENDIENTE.
     SELECT g.gateway_id,
            st.version,
            st.published_at,
            st.sig,
-           COALESCE(rs.config ? 'edge', false)        AS has_edge_config,
-           (g.status <> 'retired' AND g.iot_thing IS NOT NULL) AS is_syncable,
-           -- [T-2.31] El worker publica el doc FUSIONADO con equipment: in_sync
-           -- compara contra esa misma fusión o mentiría PENDIENTE para siempre.
+           -- [B3] "¿hay algo que publicarle?" — el espejo EXACTO del gate de
+           -- publicación del worker (`commands/sync.py`: `b.base IS NOT NULL`),
+           -- no `rs.config ? 'edge'`. Desde que la base sale de un COALESCE (el
+           -- rule_set activo O el último doc publicado, despojado de lo que se
+           -- fusiona aquí), las dos frases dejaron de ser la misma: un gabinete
+           -- sin rule_set activo pero con doc previo SÍ se publica —al cambiarle
+           -- el equipamiento, por ejemplo— y la consola lo pintaba «SIN CONFIG
+           -- EDGE», cuyo copy afirma "no hay nada que publicar". El operador
+           -- veía negado, sobre su propio cambio, justo lo que el worker estaba
+           -- haciendo. El nombre del campo se conserva (es contrato publicado y
+           -- el SDK lo consume); lo que se corrige es que vuelva a significarlo.
+           (b.base IS NOT NULL)                       AS has_edge_config,
+           -- [T-2.65] is_syncable responde "¿PUEDE este gabinete recibir config
+           -- firmada?" (identidad IoT + estado administrativo); has_edge_config
+           -- responde la otra mitad, "¿hay algo que publicarle?". Mantenerlas
+           -- separadas es lo que deja al operador saber a quién llamar.
+           -- El retirado sigue siendo sincronizable MIENTRAS no haya recibido su
+           -- sobre de baja: ese aviso es justo lo que T-2.65 hace salir. Una vez
+           -- avisado (payload con cloud_admin_state='retired') deja el flujo.
+           (g.iot_thing IS NOT NULL
+            AND (g.status <> 'retired'
+                 OR st.payload->>'cloud_admin_state' IS DISTINCT FROM 'retired')) AS is_syncable,
+           -- [T-2.31/T-2.65] El worker publica el doc FUSIONADO (equipment +
+           -- cloud_admin_state) sobre una base que puede venir del rule_set activo
+           -- o del último doc publicado: in_sync compara contra esa MISMA fusión o
+           -- mentiría PENDIENTE para siempre. Es la negación exacta del predicado
+           -- de diferencia de commands/sync.py::_CANDIDATES_SQL.
            COALESCE(st.gateway_id IS NOT NULL
-            AND rs.config ? 'edge'
-            AND st.payload IS NOT DISTINCT FROM
-                (rs.config->'edge' || jsonb_build_object('equipment', g.equipment)),
+            AND st.payload IS NOT DISTINCT FROM d.doc,
             false) AS in_sync
     FROM gateways g
     LEFT JOIN LATERAL (
@@ -148,6 +179,15 @@ _CONFIG_STATE = text(
         LIMIT 1
     ) rs ON true
     LEFT JOIN gateway_config_state st ON st.gateway_id = g.gateway_id
+    CROSS JOIN LATERAL (
+        SELECT COALESCE(rs.config->'edge',
+                        st.payload - 'equipment' - 'cloud_admin_state') AS base,
+               CASE WHEN g.status = 'retired' THEN 'retired' ELSE 'active' END AS admin_state
+    ) b
+    CROSS JOIN LATERAL (
+        SELECT b.base || jsonb_build_object(
+                 'equipment', g.equipment, 'cloud_admin_state', b.admin_state) AS doc
+    ) d
     WHERE g.gateway_id = :gateway_id
     """
 )

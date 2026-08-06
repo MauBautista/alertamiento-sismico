@@ -4096,6 +4096,35 @@ las dos mitades del sistema. Regla dura de la fase: **el edge no gana ni un topi
         le corresponde: **nunca por encima de una alerta sísmica real**.
   - [ ] La sirena sigue actuando por SASMEX con el gabinete retirado. Test que lo demuestre.
   - [ ] E2E: retirar desde la consola ⇒ el aviso aparece en el panel; restaurar ⇒ desaparece.
+- **Notas de implementación (medidas contra el código real, no supuestas):**
+  - **Predicado elegido: "exactamente una vez".** El `WHERE` de `_CANDIDATES_SQL` pasa a
+    `(g.status <> 'retired' OR st.payload->>'cloud_admin_state' IS DISTINCT FROM 'retired')`.
+    Quitar el filtro a secas habría dejado al retirado DENTRO del flujo de config para
+    siempre. Recibido el sobre, sale; al restaurar, vuelve a entrar y republica `active`.
+  - **La base del documento lleva COALESCE de DOS ramas, jamás una tercera `'{}'`.**
+    Medido: la variante de tres ramas convierte en candidatos a gabinetes **activos** que
+    hoy se saltan a propósito (sin rule_set activo, o con uno sin bloque `edge`) y —al ser
+    `apply_signed_update` reemplazo total— les apagaría `command_enabled` (la actuación por
+    quórum) y devolvería los umbrales a la banda por defecto. Rompe además el guardarraíl
+    preexistente `test_ruleset_without_edge_key_publishes_nothing`.
+  - **Falso que el retiro despertara al worker.** El único trigger sobre `gateways` era el de
+    `equipment` (0022). Sin la migración `0027` el aviso salía por el poll de respaldo, hasta
+    30 s tarde. El `WHEN` de `0027` se acota a transiciones que entran o salen de `retired`
+    porque la ingesta reescribe `gateways.status` con cada LWT.
+  - **La alarma de T-2.60.a se acotó** a los que aún no recibieron su sobre: con la opción (A),
+    "retirado + latiendo" es legítimo y permanente, y una alarma siempre encendida deja de
+    leerse.
+  - **Primera pasada tras el despliegue = republicación de TODA la flota** (el doc gana una
+    clave): un bump de versión y un publish por gabinete, y la consola pinta PENDIENTE durante
+    una pasada. Benigno, pero hay que anticiparlo.
+  - **Orden de despliegue: la nube puede ir primero** — `EdgeSettings` usa `extra="ignore"`.
+    Si alguien lo cambiara a `forbid`, este mismo cambio tumbaría la config de toda la flota.
+  - **`PENDIENTE`: el sobre de `cfg` se publica SIN `retain`.** Si el Pi está apagado más que
+    la sesión persistente de IoT Core, el mensaje se descarta y `gateway_config_state` ya se
+    actualizó ⇒ **no se republica jamás**. Es una laguna preexistente de TODO el config sync
+    (T-1.23), no creada aquí, y `CommandPublisher.publish` es el mismo Protocol que usan los
+    comandos de actuación —donde un `retain` sería catastrófico—, así que arreglarlo exige un
+    kwarg por llamada y su propia tarea. Anotado, no cerrado.
 
 ### [ ] T-2.66 · El catálogo SSN declara edad y procedencia — `SOFTWARE`
 - **Componente:** edge (panel) + api · **Depende de:** T-2.24 · **Origen:** T-2.58 §2.5

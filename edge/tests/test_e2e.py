@@ -225,3 +225,153 @@ def test_load_many_noise_packets_no_spurious_alert(supervisor):
     queued_batches = supervisor.cloud.queued_by_topic(FEATURES_BATCH_TOPIC)
     assert queued_batches >= 300 // batch_max
     assert queued_batches * batch_max + supervisor.telemetry.pending >= 300
+
+
+# ---------------------------------------------------------------------------
+# [T-2.65 · REGLA DE ORO 1] La baja administrativa no desarma NADA
+# ---------------------------------------------------------------------------
+
+
+def test_gabinete_retirado_actua_todos_los_canales_instalados_y_vocea(settings, tmp_path):
+    """El criterio 4 de T-2.65, extendido a los canales que el reflejo NO cubre.
+
+    El reflejo in-process solo toca DOS de los cinco canales (sirena y estrobo) y
+    ya tiene sus dos guardianes (`test_config.py::…sigue_actuando_la_sirena…` sobre
+    un `GpioController` suelto y `test_supervisor.py::…jamas_se_cablea_al_reflejo`
+    sobre el cableado real). **Gas, ascensor, retenedores de puerta, voceo A-6 y
+    espejo LoRa cuelgan de `EdgeSupervisor._act_and_publish`**, que sí lee la config
+    VIVA que publica la nube (`self.config.current()`), y ahí no había un solo test
+    que impidiera un gate administrativo. Medido antes de escribir esto: dos líneas
+    (`if live.is_retired: return`) dejan mudo todo eso con la suite del edge en
+    «657 passed, 5 skipped» — verde, y un edificio sin gas cerrado ni ascensores en
+    planta porque alguien hizo clic en «retirar» en la consola.
+
+    **EL MATIZ, que es la parte difícil**: en `_act_and_publish` SÍ existe —y debe
+    seguir existiendo— una arista desde la config de la nube hasta la actuación: el
+    filtro de equipamiento de T-2.31 (`live.equipment.has(c.channel)`). Así que el
+    invariante NO es «ninguna config puede tocar estos canales» (eso rompería
+    T-2.31), sino uno más fino, y este test lo separa MIDIENDO las dos cosas a la vez
+    en el mismo escenario:
+
+    * **equipamiento = hecho FÍSICO.** Este sitio no tiene relé de gas cableado;
+      mandarle la orden no protegería a nadie. GAS **no** se energiza.
+    * **estado administrativo = acto de INVENTARIO.** Alguien dio de baja el
+      gabinete en la consola; el edificio sigue en pie y con gente dentro. Sirena,
+      estrobo, ascensor y puertas se energizan IGUAL, el voceo suena y los
+      secundarios LoRa replican.
+
+    Un test que confundiera ambas cosas o no cazaría nada (con el equipamiento
+    completo, un gate administrativo sería indistinguible del filtro legítimo) o
+    rompería T-2.31 (si exigiera que el gas actuara). Por eso el sitio está retirado
+    **y** sin gas a la vez.
+
+    Hostil por los dos extremos, como sus hermanos: arranca retirado (así queda tras
+    un reinicio, con la caché firmada de T-2.34 y `TAKAB_EDGE_CLOUD_ADMIN_STATE` en
+    `edge.env`) y la nube aplica encima otro sobre retirado — este además con
+    umbrales absurdos de 99 g, para que el filtro de equipamiento copiado hacia los
+    umbrales («si el sitio no dispararía por instrumentación, no actúes») tampoco
+    pase por aquí.
+    """
+    import time as _time
+
+    from simulators.lora import FakeSecondaryCabinet, SimulatedLoraTransport
+    from takab_edge.config import EquipmentProfile, LoraConfig, SecondaryCabinet, ThresholdBand
+    from takab_edge.supervisor import EdgeSupervisor
+
+    sismo = tmp_path / "sismo.wav"
+    sismo.write_bytes(b"RIFF-sismo-fake-wav")
+    simulacro = tmp_path / "simulacro.wav"
+    simulacro.write_bytes(b"RIFF-simulacro-fake-wav")
+
+    site_key = b"clave-lora-de-sitio-0123456789ab"
+    transport = SimulatedLoraTransport()
+    secundario = transport.attach(FakeSecondaryCabinet(site_key, 258))
+
+    retirado = settings.model_copy(
+        update={
+            "cloud_admin_state": "retired",
+            # Sitio SIN gas cableado: el filtro de T-2.31 tiene que seguir vivo.
+            "equipment": EquipmentProfile(gas_valve=False),
+            # Voceo A-6 encendido con assets propios: sin esto el canal no es medible.
+            "audio_enabled": True,
+            "audio_sismo_path": str(sismo),
+            "audio_simulacro_path": str(simulacro),
+            "lora": LoraConfig(
+                enabled=True,
+                alarm_retry_s=0.05,
+                secondaries=[SecondaryCabinet(id=258, name="AZOTEA")],
+            ),
+            # Caché propia: el default apunta a /var/lib/takab (gabinete real).
+            "config_cache_path": str(tmp_path / "config-cache.json"),
+        }
+    )
+    sup = EdgeSupervisor(
+        retirado, seedlink_source=None, lora_transport=transport, lora_site_key=site_key
+    )
+    sup.start()
+    try:
+        # Guardarraíles del propio test: si alguien "simplifica" el escenario y deja
+        # de ser hostil, esto cae AQUÍ en vez de seguir pasando sin proteger nada.
+        assert sup.gpio.settings.is_retired is True
+        assert sup.audio.enabled is True
+
+        doc = retirado.model_copy(
+            update={"thresholds": ThresholdBand(pga_trip_g=99.0, pgv_trip_cms=99.0)}
+        )
+        raw = doc.model_dump_json().encode()
+        version = sup.config.version + 1
+        sup.config.apply_signed_update(raw, sup.security.sign_config(raw, version), version)
+        live = sup.config.current()
+        assert live.is_retired is True
+        assert live.equipment.gas_valve is False
+        assert live.thresholds.pga_trip_g == 99.0
+
+        WR1Simulator(sup.gpio).alert()  # SASMEX real sobre un gabinete dado de baja
+
+        instalados = (
+            ActuatorChannel.SIREN,
+            ActuatorChannel.STROBE,
+            ActuatorChannel.ELEVATOR,
+            ActuatorChannel.DOOR_RETAINER,
+        )
+        mudos = [c.value for c in instalados if not sup.gpio.is_activated(c)]
+        assert not mudos, (
+            f"el gabinete RETIRADO dejó de proteger estos canales: {mudos}. "
+            "La baja en la nube es un acto de INVENTARIO, no una orden de desarme: "
+            "el edificio sigue en pie y con gente dentro (reglas de oro 1 y 2). "
+            "Si lo que se quería era filtrar hardware ausente, eso es `equipment` "
+            "(T-2.31), que es un hecho físico y se comprueba aquí mismo."
+        )
+        # …y el filtro de equipamiento de T-2.31 SIGUE VIVO: un canal no instalado
+        # no se energiza. Esta es la mitad del test que impide "ignorar toda la
+        # config" como forma barata de pasar la mitad de arriba.
+        assert sup.gpio.is_activated(ActuatorChannel.GAS_VALVE) is False, (
+            "se energizó el relé de GAS en un sitio que no lo tiene instalado: el "
+            "filtro de equipamiento de T-2.31 se perdió al blindar el estado "
+            "administrativo. Son cosas distintas: el equipamiento es físico "
+            "(no existe el relé), la baja administrativa es de inventario."
+        )
+        acked = {ack.channel for ack in sup.actuators.last_acks}
+        assert acked == set(instalados), (
+            f"la secuencia de tier ACKeó {sorted(c.value for c in acked)}; "
+            f"se esperaba exactamente {sorted(c.value for c in instalados)}"
+        )
+
+        # Voceo A-6: se MIDE en el backend (qué asset exacto salió), no se afirma.
+        assert sup.audio.sounding is True, (
+            "el voceo «protéjase» quedó mudo en un gabinete retirado: es el mismo "
+            "acto de inventario, y el mensaje hablado es lo que la gente entiende "
+            "cuando la sirena suena"
+        )
+        assert sup.audio._backend.plays == [str(sismo)]
+
+        # Espejo LoRa (T-2.33): los secundarios son protección LOCAL a distancia.
+        deadline = _time.monotonic() + 3.0
+        while _time.monotonic() < deadline and not secundario.alarm_active:
+            _time.sleep(0.01)
+        assert secundario.alarm_active is True, (
+            "el gabinete secundario no replicó la alarma: un gabinete retirado dejó "
+            "sin sirena a la zona que cubre el espejo LoRa"
+        )
+    finally:
+        sup.stop()

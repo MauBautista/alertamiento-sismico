@@ -487,3 +487,189 @@ def test_relay_states_tras_stop_queda_vacio_sin_keyerror(gpio):
     assert gpio.relay_states() == []  # detenido: vacío, JAMÁS un KeyError
     gpio.stop()  # doble stop sigue siendo inocuo
     assert gpio.relay_states() == []
+
+
+# ---------------------------------------------------------------------------
+# [T-2.65 · REGLA DE ORO 1] Ninguna config de la nube alcanza el reflejo
+# ---------------------------------------------------------------------------
+
+
+def _sin_equipamiento():
+    from takab_edge.config import EquipmentProfile
+
+    return EquipmentProfile(
+        siren=False, strobe=False, gas_valve=False, elevator=False, door_retainer=False
+    )
+
+
+def test_el_traspaso_hw_software_tras_reinicio_no_lo_gatea_el_estado_administrativo(settings):
+    """SPOF-02 con el gabinete DADO DE BAJA — y con el flanco perdido DE VERDAD.
+
+    Escenario real: el Pi se reinicia **durante** una alerta. El contacto del WR-1
+    sigue cerrado, la sirena ya suena por la ruta eléctrica y el software tiene que
+    recogerla al arrancar; si no lo hace, el estado queda inconsistente justo en el
+    peor momento (y el operador no puede ni silenciarla desde el panel). `_on_start`
+    lo resuelve leyendo el NIVEL del contacto — `_seed_from_held_contact`.
+
+    Dos agujeros medidos que este test cierra:
+
+    1. **El gate administrativo.** Un `if self.settings.is_retired: return` al
+       principio de `_seed_from_held_contact` deja mudo ese traspaso y la suite
+       entera sigue en «657 passed, 5 skipped»: ningún test le daba a `gpio` una
+       config retirada EN ESTE camino.
+    2. **Que el test que ya existía no mide el traspaso.** En
+       `test_held_alert_contact_seeds_reflex`, el `drive_low()` sobre un controlador
+       YA ARRANCADO dispara `when_pressed` —el flanco llega al software— así que el
+       reflejo ya está encendido antes de llamar a `_seed_from_held_contact()`, y la
+       aserción pasa aunque la siembra no haga nada. Medido: BORRAR el cuerpo entero
+       de `_seed_from_held_contact` (`return` a secas) deja la suite en «657 passed,
+       5 skipped». Aquí el manejador de flanco se desconecta ANTES de cerrar el
+       contacto: eso es exactamente lo que pasa en el reinicio real —el flanco
+       ocurrió con el Pi apagado y NADIE se lo entregó al software— y se comprueba
+       midiendo que la sirena sigue apagada hasta que la siembra corre.
+    """
+    from takab_edge.gpio import GpioController
+
+    retirado = settings.model_copy(
+        update={"cloud_admin_state": "retired", "equipment": _sin_equipamiento()}
+    )
+    controller = GpioController(retirado)
+    controller.start()
+    try:
+        assert controller.settings.is_retired is True  # guardarraíl del escenario
+
+        # El flanco ocurrió con el Pi APAGADO: el software no lo ve nunca.
+        controller._button.when_pressed = None
+        controller._button.pin.drive_low()  # contacto de alerta sostenido
+        assert controller._button.is_pressed is True
+        assert controller.siren_sounding is False, (
+            "el flanco llegó al software: este test estaría midiendo `when_pressed` "
+            "y no el traspaso HW→software, que es lo único que corre tras el reinicio"
+        )
+
+        controller._seed_from_held_contact()  # lo que invoca `_on_start` al arrancar
+
+        assert controller.sasmex_active is True, (
+            "el gabinete se reinició con el contacto SOSTENIDO y el software no "
+            "recogió la alerta: el estado administrativo no puede gatear el "
+            "traspaso HW→software (SPOF-02)"
+        )
+        assert controller.siren_sounding is True, "la sirena quedó muda tras el reinicio"
+        assert controller.is_activated(ActuatorChannel.STROBE) is True
+    finally:
+        controller.stop()
+
+
+class _SettingsEspiadas:
+    """Proxy que registra QUÉ campos de `EdgeSettings` lee quien lo sostiene.
+
+    No es un mock: delega TODO en el objeto real, así que el controlador se
+    comporta exactamente igual. Solo mide.
+    """
+
+    def __init__(self, real) -> None:  # noqa: ANN001 — EdgeSettings, sin importarlo aquí
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "leidos", [])
+
+    def __getattr__(self, nombre: str):
+        self.leidos.append(nombre)
+        return getattr(self._real, nombre)
+
+
+#: Únicos campos que el reflejo puede consultar: el CABLEADO FÍSICO del gabinete,
+#: que vive en `edge.env` y describe cómo está conectado cada relé. `failsafe` dice
+#: si el canal es NO/NC/fail-close, o sea qué nivel eléctrico significa "protegiendo";
+#: sin leerlo el reflejo no sabría ni en qué dirección mover el relé.
+_CAMPOS_DE_CABLEADO_FISICO = frozenset({"failsafe"})
+
+
+def test_el_reflejo_no_lee_ni_un_campo_que_publique_la_nube(settings):
+    """La versión EXHAUSTIVA del invariante, en vez de una config hostil por campo.
+
+    Los guardianes previos son campo-a-campo: uno da a `gpio` umbrales de 99 g
+    (`test_config.py::test_threshold_config_never_affects_sasmex_path`), otro un
+    `cloud_admin_state='retired'` y un `equipment` todo-ausente. Eso deja impune
+    cualquier OTRO campo del documento firmado, y el documento firmado es un
+    `EdgeSettings` COMPLETO: `commands/sync.py` publica `rule_sets.config->'edge'`
+    tal cual, así que la consola puede autorizar cualquier clave del modelo. Ir
+    campo por campo nunca termina.
+
+    Aquí se mide al revés: se registran TODOS los atributos que el reflejo lee del
+    `EdgeSettings` y se exige que sean solo los del cableado físico. Cualquier
+    lectura nueva —`is_retired`, `equipment`, `thresholds`, `command_enabled`,
+    `instrumental_actuation`, `lora`, la que sea— cae aquí aunque su gate esté
+    escrito de forma que hoy no dispare con los defaults (que es justo como se
+    cuela: latente, verde, y mortal el día que la nube empuje el valor).
+
+    Complementa —no sustituye— a `test_supervisor.py::…jamas_se_cablea_al_reflejo`:
+    aquel prueba que `gpio` sostiene el objeto de ARRANQUE y que la nube nunca se lo
+    rebindea; este, que ni siquiera el objeto de arranque se usa para decidir si
+    proteger. Hacen falta los dos: el de arranque también viene de un archivo que se
+    aprovisiona.
+    """
+    from takab_edge.gpio import GpioController
+
+    espia = _SettingsEspiadas(settings)
+    controller = GpioController(espia)
+    controller.start()
+    try:
+        espia.leidos.clear()  # lo que lee `_on_start` (pines, factory) no es el reflejo
+        controller.simulate_sasmex(active=True)
+
+        # Guardarraíl: sin esto, "no leyó nada" pasaría también con el reflejo roto.
+        assert controller.siren_sounding is True
+        assert controller.is_activated(ActuatorChannel.STROBE) is True
+
+        leidos = set(espia.leidos)
+        intrusos = sorted(leidos - _CAMPOS_DE_CABLEADO_FISICO)
+        assert not intrusos, (
+            f"el reflejo SASMEX→relé consultó {intrusos} de la configuración. Todo "
+            "campo de `EdgeSettings` puede llegar EMPUJADO POR LA NUBE (el doc "
+            "firmado del config sync es un EdgeSettings entero), así que leerlo en "
+            "el camino de vida crea un interruptor remoto para la sirena — aunque "
+            "el gate no dispare con los valores de hoy. Solo se permite "
+            f"{sorted(_CAMPOS_DE_CABLEADO_FISICO)}: cableado físico de `edge.env`."
+        )
+    finally:
+        controller.stop()
+
+
+def test_inventario_de_lo_que_estos_guardianes_NO_cubren(settings):
+    """Inventario HONESTO: un "todo cerrado" falso es peor que un agujero conocido.
+
+    Lo que SÍ queda medido contra un gate administrativo: el reflejo in-process
+    (aquí y en `test_config.py`/`test_supervisor.py`), el traspaso HW→software tras
+    reinicio (arriba), la secuencia de tier completa + voceo A-6 + espejo LoRa
+    (`test_e2e.py::test_gabinete_retirado_actua_todos_los_canales_instalados_y_vocea`)
+    y el comando FIRMADO del quórum de red
+    (`test_dispatch.py::test_gabinete_retirado_sigue_obedeciendo_el_comando_firmado_del_quorum`).
+
+    Lo que NO, y por qué:
+
+    - **Canales enrutados a BACnet/IP.** Con `bacnet_channels` no vacío, gas /
+      ascensor / puertas salen por la pasarela del sitio y no por el relé local, así
+      que no se leen en `gpio`. Un gate administrativo dentro de `BacnetActuator`
+      quedaría fuera de todo lo anterior. Se deja abierto porque el default es vacío
+      (todo por relé local) y el simulador BACnet no representa una pasarela real;
+      lo cubre el gate #4 con hardware. La aserción de abajo lo ancla: si el default
+      dejara de ser vacío, este inventario deja de ser cierto y el test lo dice.
+    - **La sirena por el jack 3.5 mm (T-1.68).** Su watcher sigue
+      `gpio.siren_sounding` cada 50 ms; medirla exige una ventana de polling y hoy
+      nace apagada (`audio_siren_enabled=False`). La sirena de RELÉ es la primaria y
+      esa sí está medida.
+    - **El firmware de los gabinetes secundarios LoRa (ESP32).** El espejo se mide
+      hasta el ACK del secundario simulado; lo que el secundario real haga con la
+      orden vive fuera de este repo.
+    - **El panel LAN.** Silenciar, cerrar alerta o armar una prueba desde el kiosco
+      va con PIN y es una acción del operador PRESENTE en el sitio: no es un valor
+      empujado por la nube, que es la familia que estos guardianes vigilan.
+    """
+    assert settings.bacnet_channels == [], (
+        "el default dejó de ser 'todo por relé local': con canales por BACnet, los "
+        "guardianes de T-2.65 ya no ven gas/ascensor/puertas y este inventario "
+        "miente. Extiende la medición al actuador BACnet antes de cambiarlo."
+    )
+    assert settings.audio_siren_enabled is False, (
+        "la sirena por jack ya nace encendida: pasa a ser un canal de protección "
+        "vivo y sin red — mídela contra el gate administrativo o documenta por qué no"
+    )
