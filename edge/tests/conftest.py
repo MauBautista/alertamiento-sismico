@@ -32,10 +32,58 @@ def mock_pin_factory() -> Iterator[None]:
         Device.pin_factory = previous
 
 
+@pytest.fixture(autouse=True)
+def cerrojo_de_pines_por_test(tmp_path: Path) -> Iterator[None]:
+    """[T-2.70.a·D1.1] Cada test es un GABINETE distinto: su propio cerrojo.
+
+    El dueño de los pines toma un `flock` EXCLUSIVO sobre `gpio_lock_file` al
+    arrancar, y `flock` colisiona **incluso entre dos descriptores del mismo
+    proceso** (medido: `BlockingIOError`). Sin esto, todos los tests que no
+    tocan `gateway_id` caerían en el MISMO cerrojo derivado de dev y el segundo
+    controlador de cada corrida moriría.
+
+    OJO — este fixture es también un PUNTO CIEGO, y ya escondió un defecto: con
+    él puesto, la suite entera no mide nunca el arranque que ven `make edge` y
+    `demo/gabinete.py`, que no tienen fixture ninguno. Los tests que lo apagan a
+    propósito viven en `test_gpio_ownership.py` (sección B1) y son los que
+    obligan a que el default derivado sea arrancable fuera del Pi.
+
+    Va por ENTORNO y no sólo en el fixture `settings` a propósito: hay tests que
+    construyen su config con `load_settings()`/`EdgeSettings()` por dentro
+    (`test_config.py`, `test_dispatch.py`…) y subprocesos que la cargan de cero
+    (`test_gpio_process.py`), y el entorno los alcanza a todos — `os.environ` se
+    hereda. `tmp_path` es único por test, así que dos tests jamás se pisan; dos
+    controladores DEL MISMO test sí comparten cerrojo, que es exactamente la
+    semántica real (un gabinete, unos pines, un dueño).
+
+    NO usa `monkeypatch` A PROPÓSITO, y es una trampa MEDIDA: pedirlo desde el
+    primer fixture autouse adelanta la construcción de `monkeypatch` y con ella
+    RETRASA su `undo()` hasta después del teardown de `mock_pin_factory`, que
+    entonces encuentra una pin factory ajena (`_FakeLGPIO`, o `None`) y revienta
+    en `.reset()`. Cinco tests de `test_pin_factory.py` cayeron así por añadir un
+    fixture que no tiene nada que ver con pines. Guardar y restaurar el entorno a
+    mano no toca ese orden.
+    """
+    clave = "TAKAB_EDGE_GPIO_LOCK_PATH"
+    previo = os.environ.get(clave)
+    os.environ[clave] = str(tmp_path / "gpio.lock")
+    try:
+        yield
+    finally:
+        if previo is None:
+            os.environ.pop(clave, None)
+        else:
+            os.environ[clave] = previo
+
+
 @pytest.fixture
-def settings() -> EdgeSettings:
+def settings(tmp_path: Path) -> EdgeSettings:
     # Puerto 0 = efímero: el dashboard LAN no colisiona entre tests ni con servicios reales.
-    return load_settings().model_copy(update={"local_api_port": 0})  # dev_mode=True por defecto
+    # `gpio_lock_path` explícito además del entorno de arriba: quien lea este fixture
+    # tiene que ver que el cerrojo de pines está aislado, sin ir a buscarlo.
+    return load_settings().model_copy(
+        update={"local_api_port": 0, "gpio_lock_path": str(tmp_path / "gpio.lock")}
+    )  # dev_mode=True por defecto
 
 
 @pytest.fixture

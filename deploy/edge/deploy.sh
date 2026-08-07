@@ -15,8 +15,9 @@
 #      `takab_edge.gpio.__main__` — los dos entry points de las unidades) y sus
 #      dependencias críticas (lgpio, awsiot). Aborta SIN reiniciar si falla;
 #   6. instala/refresca las unidades systemd versionadas y reinicia takab-edge;
-#   7. verificación: unidad activa (ESTO sí puede tumbar el despliegue) +
-#      últimas líneas del journal (INFORMATIVO: su fallo no lo tumba).
+#   7. verificación: PROPIEDAD DE LOS PINES — quién sostiene el cerrojo del GPIO
+#      (ESTO sí puede tumbar el despliegue) + últimas líneas del journal
+#      (INFORMATIVO: su fallo no lo tumba).
 #
 # [T-2.70·rev] POR QUÉ HAY DOS GATES Y NO UNO. El gate original era
 # `python -c 'import lgpio, awsiot'`: DOS DEPENDENCIAS DE TERCEROS que viven en
@@ -79,6 +80,17 @@ RAIZ_REMOTA="${TAKAB_REMOTE_ROOT:-/opt/takab}"
 # esta misma raíz; aquí sólo hace falta el destino del rsync de ensayo.
 ARBOL_ENSAYO="${RAIZ_REMOTA}/edge.incoming"
 
+# [T-2.70.a·D1.5] Cerrojo de PROPIEDAD DE LOS PINES del gabinete: el archivo
+# sobre el que el dueño del GPIO sostiene un flock exclusivo (ver el paso 7 y
+# `EdgeSettings.gpio_lock_file`). Variable por la misma razón que la raíz remota:
+# el sandbox de edge/tests/test_deploy_sh.py necesita apuntarlo a un tmp_path. En
+# producción nadie la exporta y vale /var/lib/takab/gpio.lock — que es lo que
+# `gpio_lock_file` resuelve para un GABINETE (`dev_mode=false`, que es lo que
+# ponen explícitamente las dos unidades). Fuera del Pi ese mismo campo deriva un
+# cerrojo por gabinete en el directorio temporal, pero este script no despliega
+# fuera del Pi.
+CERROJO_GPIO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
+
 # ---------------------------------------------------------------------------
 # EXTRAS DEL PI. `uv sync` DESINSTALA lo que no esté en el set resuelto, así que
 # esta lista no es "qué añadir": es "qué debe existir en el venv". Sincronizar
@@ -136,7 +148,7 @@ echo "→ pre-vuelo, swap, dependencias, gate, unidades y reinicio en ${HOST}"
 # remota, como variables de entorno del `bash -s` remoto, para que cada valor
 # viva en UN solo sitio.
 ssh "$HOST" \
-  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' bash -s" <<'REMOTO'
+  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' bash -s" <<'REMOTO'
 set -euo pipefail
 # SSH no interactivo no carga el PATH de login: uv vive en ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
@@ -293,8 +305,86 @@ sudo install -m 0644 systemd/takab-edge.service systemd/takab-gpio.service /etc/
 sudo systemctl daemon-reload
 sudo systemctl restart takab-edge
 sleep 3
-# LA verificación del despliegue, y la única de este bloque que PUEDE tumbarlo.
-systemctl is-active takab-edge
+
+# --- 7. VERIFICACIÓN: ¿QUIÉN ES DUEÑO DE LOS PINES? --------------------------
+# [T-2.70.a·D1.5] Aquí decía `systemctl is-active takab-edge`, y eso mide EL
+# PROCESO EQUIVOCADO por construcción: comprueba que una unidad CON NOMBRE PROPIO
+# esté arriba, no que alguien esté sosteniendo el GPIO del gabinete. El día que
+# `takab-edge` deje de tocar los pines —que es literalmente el objetivo de
+# T-2.70.a— esa línea seguiría saliendo verde con la sirena sin dueño. Y ni
+# siquiera hoy distingue «arrancó y protege» de «arrancó y `gpio` no pudo tomar
+# los pines»: `is-active` sale `active` en los dos casos.
+#
+# El cerrojo de propiedad (T-2.70.a·D1.1) da la prueba DIRECTA: quien tiene los
+# pines sostiene un `flock` EXCLUSIVO sobre este archivo y deja escrito dentro su
+# PID y su unidad. Así que aquí no se nombra ninguna unidad: se PREGUNTA quién
+# manda, y por eso esta verificación sobrevive intacta al día en que la respuesta
+# pase a ser `takab-gpio`.
+#
+# `TAKAB_EDGE_GPIO_LOCK_PATH` es el mismo seam que `TAKAB_REMOTE_ROOT`: en
+# producción nadie lo exporta y vale el default, que es lo que
+# `EdgeSettings.gpio_lock_file` resuelve para un gabinete (`dev_mode=false`) —
+# dentro de /var/lib/takab, que es `WorkingDirectory=` y `ReadWritePaths=` de
+# LAS DOS unidades.
+CERROJO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
+
+# El síntoma más probable de un arranque que murió antes de `gpio`: el archivo
+# ni existe. Se distingue del resto porque el diagnóstico es distinto (no es «se
+# soltó», es «nunca llegó a reclamarse»), y porque `flock` lo CREARÍA y borraría
+# la pista.
+if [ ! -e "$CERROJO" ]; then
+  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE reclamó los pines — el cerrojo" >&2
+  echo "  ${CERROJO} ni siquiera existe. Ningún proceso del edge llegó a la" >&2
+  echo "  primera línea de gpio._on_start desde el reinicio." >&2
+  echo "  Diagnóstico: journalctl -u takab-edge -u takab-gpio -n 50 --no-pager" >&2
+  exit 1
+fi
+
+# `flock -n -E 9`: 9 = «está tomado» (lo que queremos), 0 = «lo tomé yo, o sea
+# que NADIE lo tenía», cualquier otro = no se pudo interrogar. Los tres casos son
+# distintos y ninguno puede confundirse con los otros.
+ESTADO_CERROJO=0
+flock -n -E 9 "$CERROJO" true || ESTADO_CERROJO=$?
+
+if [ "$ESTADO_CERROJO" = 0 ]; then
+  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE es dueño de los pines." >&2
+  echo "  El cerrojo ${CERROJO} está LIBRE, así que ningún proceso vivo sostiene" >&2
+  echo "  el GPIO: el gabinete NO está protegiendo (ni sirena, ni gas, ni" >&2
+  echo "  retenedores). La unidad puede estar 'active' y aun así ser cierto —" >&2
+  echo "  por eso esto ya no se comprueba con 'systemctl is-active'." >&2
+  echo "  Diagnóstico: journalctl -u takab-edge -u takab-gpio -n 50 --no-pager" >&2
+  exit 1
+elif [ "$ESTADO_CERROJO" != 9 ]; then
+  echo "✗ DESPLIEGUE NO VERIFICADO: no se pudo interrogar el cerrojo ${CERROJO}" >&2
+  echo "  (flock salió ${ESTADO_CERROJO}). Sin poder medir la propiedad de los" >&2
+  echo "  pines, este despliegue no se declara bueno: ¿existe /var/lib/takab?" >&2
+  echo "  ¿está util-linux instalado?" >&2
+  exit 1
+fi
+
+# El cerrojo está tomado. El registro dice POR QUIÉN. `tail -1` porque gana la
+# última línea, igual que en systemd y en bash.
+DUENO_PID="$(sed -n 's/^pid=//p' "$CERROJO" | tail -1)"
+DUENO_UNIDAD="$(sed -n 's/^unit=//p' "$CERROJO" | tail -1)"
+if [ -z "$DUENO_PID" ] || [ -z "$DUENO_UNIDAD" ]; then
+  echo "✗ DESPLIEGUE NO VERIFICADO: alguien sostiene el cerrojo ${CERROJO} pero" >&2
+  echo "  el registro no dice quién. Los pines los tiene un proceso que no es" >&2
+  echo "  el edge (¿un 'flock' suelto de una sesión SSH?)." >&2
+  exit 1
+fi
+# `/proc` y no `kill -0`: el proceso corre como root y el usuario del deploy no,
+# así que `kill -0` daría EPERM y abortaría un despliegue sano.
+if [ ! -d "/proc/${DUENO_PID}" ]; then
+  echo "✗ DESPLIEGUE NO VERIFICADO: el registro de ${CERROJO} nombra al pid" >&2
+  echo "  ${DUENO_PID}, que no existe. El cerrojo lo sostiene otro proceso: el" >&2
+  echo "  gabinete no está en un estado que se pueda declarar bueno." >&2
+  exit 1
+fi
+# Y que la unidad que DICE ser dueña esté viva para systemd: si los pines los
+# sostiene un proceso suelto (un `python -m takab_edge.gpio` de una sesión SSH),
+# el gabinete no sobrevive al próximo reinicio y esto tiene que salir en rojo.
+systemctl is-active "$DUENO_UNIDAD"
+echo "✓ pines del gabinete en poder de ${DUENO_UNIDAD} (pid ${DUENO_PID})"
 # PASO INFORMATIVO — por eso termina en `|| true`. Es el último comando del
 # bloque remoto y corre bajo `set -euo pipefail`, así que su código de salida
 # ERA el del despliegue entero: un journal recortado (`Storage=volatile` tras un
@@ -305,7 +395,7 @@ systemctl is-active takab-edge
 journalctl -u takab-edge -n 8 --no-pager | tail -8 || true
 REMOTO
 
-echo "✓ edge desplegado y takab-edge activo en ${HOST}"
-echo "  OJO: 'activo' NO es 'corriendo el código nuevo'. Eso lo confirma el"
+echo "✓ edge desplegado en ${HOST}, con los pines del gabinete RECLAMADOS"
+echo "  OJO: 'con dueño' NO es 'corriendo el código nuevo'. Eso lo confirma el"
 echo "  siguiente latido en la consola (columna del gabinete en /fleet): el"
 echo "  estado de versión debe quedar AL DÍA, no SIN REINICIAR."

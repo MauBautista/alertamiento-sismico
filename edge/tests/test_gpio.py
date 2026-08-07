@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 from takab_edge.contracts import ActuatorChannel, FailSafeMode, SasmexSignal
-from takab_edge.gpio import LOCAL_RELAY_CHANNELS, REFLEX_CHANNELS, GpioController
+from takab_edge.gpio import (
+    LOCAL_RELAY_CHANNELS,
+    REFLEX_CHANNELS,
+    GpioController,
+    UndeclaredFailSafeError,
+)
 
 
 @pytest.fixture
@@ -673,3 +678,128 @@ def test_inventario_de_lo_que_estos_guardianes_NO_cubren(settings):
         "la sirena por jack ya nace encendida: pasa a ser un canal de protección "
         "vivo y sin red — mídela contra el gate administrativo o documenta por qué no"
     )
+
+
+# ---------------------------------------------------------------------------
+# [T-2.70.a · D1.2] El default silencioso de `_failsafe` INVERTÍA la polaridad
+# ---------------------------------------------------------------------------
+
+
+def _pin_de(settings, canal: ActuatorChannel):
+    """Pin de gpiozero (MockFactory) del relé de un canal."""
+    from gpiozero import Device
+
+    numero = {
+        ActuatorChannel.SIREN: settings.pins.relay_siren,
+        ActuatorChannel.STROBE: settings.pins.relay_strobe,
+        ActuatorChannel.GAS_VALVE: settings.pins.relay_gas_valve,
+        ActuatorChannel.ELEVATOR: settings.pins.relay_elevator,
+        ActuatorChannel.DOOR_RETAINER: settings.pins.relay_door_retainer,
+    }[canal]
+    return Device.pin_factory.pin(numero)
+
+
+def _reposo_y_protegido(config, canal: ActuatorChannel) -> tuple[bool, bool]:
+    """`(nivel del pin en reposo, nivel del pin protegiendo)` MEDIDOS en el pin.
+
+    Arranca un controlador, lee el pin, ordena la protección del canal, lo vuelve
+    a leer y para. Se lee el PIN y no `_energized` a propósito: lo que mueve una
+    válvula de gas es el nivel eléctrico, no la contabilidad interna.
+    """
+    controller = GpioController(config)
+    controller.start()
+    try:
+        pin = _pin_de(config, canal)
+        reposo = pin.state
+        controller.activate(canal)
+        return reposo, pin.state
+    finally:
+        controller.stop()
+
+
+def test_el_default_de_failsafe_invertia_el_gas_y_ahora_truena(settings):
+    """[D1.2] `settings.failsafe.get(canal, NORMALLY_OPEN)` no era un default
+    benigno: para `GAS_VALVE` (FAIL_CLOSE) INVIERTE LOS DOS EXTREMOS del canal.
+
+    Primero la EVIDENCIA, medida en el pin y no afirmada: un `GAS_VALVE`
+    declarado `NORMALLY_OPEN` —que es EXACTAMENTE lo que devolvía ese default— y
+    el mismo canal declarado `FAIL_CLOSE` producen niveles eléctricos OPUESTOS
+    en reposo y OPUESTOS protegiendo. O sea: con el default, un gabinete cuyo
+    `failsafe` llegara sin la clave `gas_valve` arrancaba con la válvula al revés
+    y, ante una alerta real, la comandaba al revés — con la suite en verde,
+    porque ningún test le quitaba nunca una clave al mapa.
+
+    Y por eso ahora un canal DE RELÉ sin modo declarado no cae en ningún default:
+    truena en el arranque, que es `critical=True` (regla de oro 4: si no puedo
+    tocar los pines con la polaridad declarada, crasheo ruidoso).
+
+    OJO con la lectura fácil de este criterio: NO es «truena ante canal
+    desconocido». `ActuatorChannel.SYSTEM` es un canal LÓGICO (self_test /
+    drill_start) que por diseño jamás entra en `LOCAL_RELAY_CHANNELS` y no
+    gobierna ningún relé: no hay polaridad suya que invertir. El gate es sobre
+    canales de RELÉ, que es donde el defecto es FÍSICO.
+    """
+    from takab_edge.contracts import FailSafeMode
+
+    canal = ActuatorChannel.GAS_VALVE
+    assert settings.failsafe[canal] is FailSafeMode.FAIL_CLOSE  # premisa del escenario
+
+    # (a) LA INVERSIÓN, medida. Los dos controladores van EN SERIE (arranca,
+    #     mide, para) — comparten gabinete y por tanto cerrojo de pines.
+    como_el_default = settings.model_copy(
+        update={"failsafe": {**settings.failsafe, canal: FailSafeMode.NORMALLY_OPEN}}
+    )
+    reposo_default, protegido_default = _reposo_y_protegido(como_el_default, canal)
+    reposo_real, protegido_real = _reposo_y_protegido(settings, canal)
+
+    assert reposo_default is not reposo_real, (
+        "premisa rota: el default NORMALLY_OPEN y el FAIL_CLOSE real deberían dejar "
+        "la válvula de gas en niveles OPUESTOS en reposo"
+    )
+    assert protegido_default is not protegido_real, (
+        "premisa rota: protegiendo, el default y el modo real deberían ser OPUESTOS"
+    )
+    assert (reposo_real, protegido_real) == (True, False), (
+        "FAIL_CLOSE: la válvula reposa ENERGIZADA (abierta) y se de-energiza para CERRAR"
+    )
+
+    # (b) Con la clave ausente, ese default ya no existe: el arranque truena…
+    mutilado = settings.model_copy(
+        update={"failsafe": {c: m for c, m in settings.failsafe.items() if c is not canal}}
+    )
+    pin = _pin_de(mutilado, canal)
+    estados_antes = len(pin.states)
+    with pytest.raises(UndeclaredFailSafeError, match="gas_valve"):
+        GpioController(mutilado).start()
+
+    # (c) …y truena SIN haber movido el pin (el modo se consulta al construir el
+    #     relé, así que la avería se ve antes de energizar nada).
+    assert len(pin.states) == estados_antes, (
+        "el arranque tronó DESPUÉS de mover el pin de la válvula de gas: el modo "
+        "fail-safe hay que resolverlo antes de tocar hardware"
+    )
+
+
+def test_el_canal_logico_system_no_truena_porque_no_es_un_rele(settings):
+    """[D1.2] El gate es sobre canales DE RELÉ, y esta es la mitad que lo acota.
+
+    `ActuatorChannel.SYSTEM` no está en `DEFAULT_FAILSAFE` y nunca lo estará: es
+    el canal lógico de `self_test`/`drill_start` del dispatcher firmado.
+
+    Lo que este test NO dice (y decía, falsamente, hasta T-2.70.a·D1): que hoy
+    llegue aquí un comando de nube con `channel=system`. No llega — `dispatch`
+    lo resuelve antes (`self_test`/`drill_*` recorren `LOCAL_RELAY_CHANNELS`; el
+    resto se rechaza con ack) y `set_relay` levanta `KeyError` antes de mirar el
+    modo. Lo que se ancla es que `_failsafe` siga siendo TOTAL sobre el enum
+    para los caminos de LECTURA y para el próximo canal lógico, sin inventarle
+    una polaridad a algo que no toca hardware.
+    """
+    controller = GpioController(settings)
+    controller.start()
+    try:
+        assert ActuatorChannel.SYSTEM not in settings.failsafe  # premisa
+        assert ActuatorChannel.SYSTEM not in LOCAL_RELAY_CHANNELS
+        # No truena: devuelve el modo inocuo de un canal que no gobierna ningún relé.
+        assert controller._failsafe(ActuatorChannel.SYSTEM) is FailSafeMode.NORMALLY_OPEN
+    finally:
+        controller.stop()

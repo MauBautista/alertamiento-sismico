@@ -4425,6 +4425,31 @@ FICHADO — refinamientos que NO se persiguieron, cada uno con su razón:
    `door_retainer` reposando energizados, un SIGKILL suelta los pines sin pasar por
    `drive_all_safe()`). `HUMANO-HW`.
 
+**D2/P1 — la costura `GpioLink` (2026-08-07) — y la DEUDA DE CONTRATO que deja fichada.**
+
+`edge/takab_edge/gpio_link.py`: cuatro operaciones (`snapshot`/`apply`/`action`/`subscribe`), una
+sola implementación (`LocalGpioLink` = llamada directa, un proceso, ni un pin movido), y los cinco
+consumidores más los dos observadores migrados a ella. El reflejo SASMEX→sirena **no** cruza —
+anclado por `test_el_reflejo_sasmex_no_cruza_la_costura`, que cablea una costura MUERTA a los
+cinco consumidores, dispara el pin del WR-1 y lee los cinco relés (sirena y estrobo protegen; gas,
+ascensor y puertas NO, que es la no-vacuidad).
+
+FICHADO — la deuda que D2/P1 deja declarada, con su razón:
+
+1. **`HealthSnapshot.relays` no sabe decir «sin dato», y esto lo empeora.** `[]` significaba
+   «módulo detenido»; desde D2/P1 significa además «no pude preguntar al dueño de los pines»
+   (`health/__init__.py::_relay_states`). Son dos averías distintas con dos reacciones distintas y
+   la nube no puede distinguirlas: es exactamente el defecto que T-2.68 cerró para el panel del
+   gabinete, reabierto en el latido. Hoy la distinción sólo vive donde SÍ se puede actuar sobre
+   ella —el `log.critical` del edge y el `relays_status.reason = gpio_unreachable` del panel LAN—,
+   **no en el contrato**. Cerrarlo es un cambio de schema: `relays: list | None` (o un
+   `relays_status` hermano del del panel) + bump de `SCHEMA_VERSION` (`edge/takab_edge/schemas.py`,
+   hoy `1.9.0`) a `1.10.0`, ingest de la nube que lo lea, y la columna/vista donde aterrice. **NO
+   se hizo aquí a propósito**: D2/P1 se declaró «la costura y NADA más» para que cualquier
+   diferencia de comportamiento posterior fuera atribuible al IPC, y tocar el contrato edge→nube
+   habría roto esa propiedad. Va **con D2/P2**, que es cuando `gpio_unreachable` deja de ser
+   inalcanzable y el dato empieza a existir de verdad.
+
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
 - **Criterios de aceptación:**

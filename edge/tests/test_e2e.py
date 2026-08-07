@@ -84,6 +84,75 @@ def test_actuation_latency_within_budget(supervisor):
     assert supervisor.rules.last_latency_s < 0.2  # presupuesto §4.3
 
 
+def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
+    """[T-2.70.a·D1.4] EL <100 ms MEDIDO PUNTA A PUNTA, con relés leídos.
+
+    Lo que había medía otra cosa. `gpio._dispatch_sasmex` calcula su propia
+    latencia ANTES de invocar los callbacks, así que `last_reflex_latency_s` es,
+    POR CONSTRUCCIÓN, el coste de dos `_apply()` sobre sirena y estrobo — un
+    número que no puede empeorar aunque todo lo que viene después se hunda, y que
+    en particular NO cruzaría un IPC el día que `rules`/`actuators` vivan en otro
+    proceso. Anclar el presupuesto §4.3 a él es anclarlo a una constante.
+
+    Aquí el cronómetro abarca la cadena entera y REAL:
+
+        flanco del contacto seco WR-1  (pin BCM, `drive_low()`)
+          → `when_pressed` → `_dispatch_sasmex` → reflejo sirena+estrobo
+          → callbacks del supervisor → `rules.evaluate_sasmex`
+          → `actuators.execute_sequence` → `RelayActuator` → `gpio.set_relay`
+          → gas, ascensor y retenedores de puerta
+
+    y el veredicto se lee en los CINCO PINES, no en la contabilidad interna: lo
+    que salva vidas es el nivel eléctrico del relé, y cada canal se comprueba
+    contra la polaridad que le toca por su modo fail-safe (gas y puertas
+    PROTEGEN de-energizándose; sirena, estrobo y ascensor energizándose).
+    """
+    from time import perf_counter
+
+    from gpiozero import Device
+    from takab_edge.gpio import active_energized, normal_energized
+
+    s = supervisor.settings
+    pines = {
+        ActuatorChannel.SIREN: Device.pin_factory.pin(s.pins.relay_siren),
+        ActuatorChannel.STROBE: Device.pin_factory.pin(s.pins.relay_strobe),
+        ActuatorChannel.GAS_VALVE: Device.pin_factory.pin(s.pins.relay_gas_valve),
+        ActuatorChannel.ELEVATOR: Device.pin_factory.pin(s.pins.relay_elevator),
+        ActuatorChannel.DOOR_RETAINER: Device.pin_factory.pin(s.pins.relay_door_retainer),
+    }
+    # Premisa: los cinco reposan donde su modo dice, y ninguno está protegiendo.
+    for canal, pin in pines.items():
+        assert pin.state is normal_energized(s.failsafe[canal]), (
+            f"premisa rota: {canal.value} no arrancó en su nivel de reposo"
+        )
+
+    contacto = Device.pin_factory.pin(s.pins.wr1_contact)
+    inicio = perf_counter()
+    contacto.drive_low()  # WR-1: contacto seco CERRADO = alerta SASMEX
+    transcurrido = perf_counter() - inicio
+
+    for canal, pin in pines.items():
+        assert pin.state is active_energized(s.failsafe[canal]), (
+            f"{canal.value}: el pin NO quedó en su nivel de protección tras el "
+            "flanco del WR-1. La cadena punta a punta está rota, y el número de "
+            "latencia de arriba no significaría nada"
+        )
+
+    assert transcurrido < 0.100, (
+        f"SASMEX→los 5 canales tardó {transcurrido * 1000:.1f} ms (presupuesto "
+        "§4.3: <100 ms). Esto es el camino de vida completo, no sólo el reflejo."
+    )
+    # Guardarraíl anti-teatro: lo medido aquí tiene que CONTENER al reflejo
+    # in-process. Si algún día este número fuera menor que aquél, es que se está
+    # cronometrando otra cosa (o que el reflejo dejó de estar dentro).
+    assert supervisor.gpio.last_reflex_latency_s is not None
+    assert transcurrido >= supervisor.gpio.last_reflex_latency_s, (
+        f"punta a punta ({transcurrido * 1000:.3f} ms) salió MENOR que el reflejo "
+        f"solo ({supervisor.gpio.last_reflex_latency_s * 1000:.3f} ms): el "
+        "cronómetro no está midiendo la cadena que dice medir"
+    )
+
+
 def test_sasmex_reflex_and_sequence_cloud_off(supervisor):
     assert supervisor.cloud.online is False
     WR1Simulator(supervisor.gpio).alert()

@@ -33,11 +33,14 @@ Cómo funciona el sandbox
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import textwrap
+import time
 
 import pytest
 
@@ -138,10 +141,50 @@ def gabinete(tmp_path: pathlib.Path):
         """,
     )
 
-    _escribir_ejecutable(binarios / "sudo", f'echo "sudo $*" >> "{bitacora}"')  # NO ejecuta
+    # sudo falso: registra y NO ejecuta… salvo `systemctl`, porque el reinicio
+    # del gabinete va por `sudo systemctl restart` y sin delegarlo el arranque
+    # simulado nunca ocurriría (y con él, nadie reclamaría los pines). `install`
+    # y `chown` siguen siendo puro registro: ningún test escribe en
+    # /etc/systemd/system.
+    _escribir_ejecutable(
+        binarios / "sudo",
+        f"""
+        echo "sudo $*" >> "{bitacora}"
+        [ "$1" = systemctl ] && exec "$@"
+        exit 0
+        """,
+    )
+
+    # El cerrojo de propiedad de pines del gabinete de mentira (T-2.70.a·D1.1).
+    cerrojo = tmp_path / "gpio.lock"
+
+    # systemctl falso. Su `restart` RECLAMA LOS PINES, que es lo que hace de
+    # verdad el proceso que arranca: `GpioController._on_start` toma un flock
+    # EXCLUSIVO sobre el cerrojo y escribe su PID y su unidad. Sin modelar eso,
+    # la verificación de propiedad no se podría probar en absoluto.
+    #
+    #   NO_RECLAMA_PINES=1 → el servicio arranca pero NADIE toma el GPIO. Es el
+    #     escenario que `systemctl is-active` no puede ver: unidad viva, sirena
+    #     sin dueño.
+    #   UNIDAD_DUENA=... → los pines los reclama OTRA unidad (mañana: takab-gpio).
     _escribir_ejecutable(
         binarios / "systemctl",
-        f'echo "systemctl $*" >> "{bitacora}"; [ "$1" = is-active ] && echo active; exit 0',
+        f"""
+        echo "systemctl $*" >> "{bitacora}"
+        if [ "$1" = restart ] && [ -z "${{NO_RECLAMA_PINES:-}}" ]; then
+          # `exec` y no `flock -n <archivo> sleep 120`: util-linux hace fork, así
+          # que ahí `$!` era el PID de FLOCK y el que se queda con el descriptor
+          # (y con el cerrojo) es el `sleep` hijo. El teardown mataba al padre y
+          # dejaba vivo al `sleep` dos minutos más, sosteniendo el cerrojo. Con
+          # el subshell + `exec`, `$!` ES el proceso que tiene el fd 9 abierto:
+          # el registro nombra al dueño de verdad y matarlo lo suelta.
+          ( flock -n 9 || exit 1; exec sleep 120 ) 9>"{cerrojo}" </dev/null >/dev/null 2>&1 &
+          sleep 0.3
+          printf 'pid=%s\\nunit=%s\\n' "$!" "${{UNIDAD_DUENA:-$2}}" > "{cerrojo}"
+        fi
+        [ "$1" = is-active ] && echo active
+        exit 0
+        """,
     )
     # journalctl falso: el paso INFORMATIVO del final. `FALLA_JOURNALCTL` simula
     # el journal recortado/sin permisos que en el Pi devuelve != 0.
@@ -160,6 +203,7 @@ def gabinete(tmp_path: pathlib.Path):
             self.vivo = vivo
             self.previo = raiz / "edge.prev"
             self.bitacora = bitacora
+            self.cerrojo = cerrojo
 
         def desplegar(self, **entorno: str) -> subprocess.CompletedProcess[str]:
             env = dict(os.environ)
@@ -173,6 +217,10 @@ def gabinete(tmp_path: pathlib.Path):
             env["HOME"] = str(hogar)
             env["PATH"] = f"{binarios}:{env['PATH']}"
             env["TAKAB_REMOTE_ROOT"] = str(raiz)
+            # Mismo seam que la raíz remota: en producción nadie lo exporta y el
+            # script cae a /var/lib/takab/gpio.lock, que es el que usan las DOS
+            # unidades (WorkingDirectory=/var/lib/takab, ReadWritePaths=).
+            env["TAKAB_EDGE_GPIO_LOCK_PATH"] = str(cerrojo)
             env.update(entorno)
             return subprocess.run(
                 ["bash", str(_DEPLOY), "gabinete-falso"],
@@ -200,7 +248,30 @@ def gabinete(tmp_path: pathlib.Path):
         def codigo_nuevo_en_el_arbol_vivo(self) -> bool:
             return (self.vivo / "takab_edge" / "supervisor.py").exists()
 
-    return Gabinete()
+        def dueno_de_los_pines(self) -> dict[str, str]:
+            """`{'pid': ..., 'unit': ...}` del registro del cerrojo (vacío si no hay)."""
+            if not self.cerrojo.exists():
+                return {}
+            return dict(
+                linea.split("=", 1)
+                for linea in self.cerrojo.read_text().splitlines()
+                if "=" in linea
+            )
+
+    gabinete = Gabinete()
+    try:
+        yield gabinete
+    finally:
+        # El proceso que sostiene el flock es un `sleep 120` de verdad: matarlo o
+        # la suite se queda con procesos colgados DOS MINUTOS, y sosteniendo un
+        # cerrojo. Que el PID del registro sea EXACTAMENTE ese proceso lo
+        # garantiza el `exec` del systemctl falso (ver arriba): con `flock -n
+        # <archivo> sleep 120` este `kill` mataba al padre `flock` y el `sleep`
+        # heredero seguía con el descriptor.
+        pid = gabinete.dueno_de_los_pines().get("pid", "")
+        if pid.isdigit():
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(int(pid), signal.SIGKILL)
 
 
 # --------------------------------------------------------------- camino feliz
@@ -391,3 +462,125 @@ def test_un_journal_ilegible_no_convierte_un_despliegue_bueno_en_fallido(gabinet
         f"\nstderr:\n{r.stderr}"
     )
     assert "edge desplegado" in r.stdout
+
+
+# ------------- D1.5: la verificación medía el proceso EQUIVOCADO
+
+
+def test_el_despliegue_verifica_quien_ES_DUENO_DE_LOS_PINES(gabinete) -> None:
+    """[T-2.70.a·D1.5] LA VERIFICACIÓN, ahora sobre lo que importa.
+
+    Lo que había era `systemctl is-active takab-edge`: mide que UNA UNIDAD
+    CONCRETA esté arriba, no que alguien esté sosteniendo el GPIO. El día que
+    `takab-edge` deje de tocar los pines —que es literalmente el objetivo de
+    T-2.70.a— esa línea seguiría saliendo verde con la sirena sin dueño, porque
+    está anclada a un nombre y no a un hecho.
+
+    Aquí el despliegue no nombra ninguna unidad: PREGUNTA al cerrojo de
+    propiedad quién manda, y lo dice.
+    """
+    r = gabinete.desplegar()
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+
+    dueno = gabinete.dueno_de_los_pines()
+    assert dueno.get("unit"), "premisa: el arranque simulado dejó su unidad en el registro"
+    assert f"pid {dueno['pid']}" in r.stdout, "el despliegue debe decir QUIÉN tiene los pines"
+    assert dueno["unit"] in r.stdout
+
+
+def test_el_pid_del_registro_ES_el_proceso_que_sostiene_el_cerrojo(gabinete) -> None:
+    """El arnés tiene que modelar UN dueño, no un padre y un hijo.
+
+    El systemctl falso lanzaba `flock -n <archivo> sleep 120 &` y anotaba `$!`.
+    util-linux hace fork: `$!` era el PID de **flock**, y quien se queda con el
+    descriptor —o sea con el cerrojo— es el `sleep` HIJO. Consecuencias medidas:
+    el teardown del fixture mataba al padre y dejaba el `sleep` vivo dos minutos
+    sosteniendo un cerrojo, y el registro nombraba a un proceso que no era el
+    dueño (que es exactamente el fallo que `deploy.sh` existe para delatar).
+
+    Se mide matando al PID del registro: si ES el dueño, el cerrojo queda libre.
+    """
+    assert gabinete.desplegar().returncode == 0
+    pid = int(gabinete.dueno_de_los_pines()["pid"])
+    assert pathlib.Path(f"/proc/{pid}").is_dir(), "premisa: el registro nombra a un proceso vivo"
+
+    libre = ["flock", "-n", str(gabinete.cerrojo), "true"]
+    assert subprocess.run(libre, timeout=30).returncode != 0, "premisa: el cerrojo está tomado"
+
+    os.kill(pid, signal.SIGKILL)
+    for _ in range(50):  # el kernel suelta el flock al cerrar el fd, no instantáneamente
+        if subprocess.run(libre, timeout=30).returncode == 0:
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail(
+            "matar al PID del registro NO soltó el cerrojo: quien lo sostiene es "
+            "OTRO proceso (el hijo de `flock`), así que el registro miente y el "
+            "teardown de este fixture deja procesos colgados"
+        )
+
+
+def test_un_servicio_vivo_que_NO_tiene_los_pines_tumba_el_despliegue(gabinete) -> None:
+    """LA NO-VACUIDAD, y el fallo concreto que el `is-active` no ve.
+
+    `NO_RECLAMA_PINES=1` deja el escenario exacto: `systemctl restart` devuelve
+    0, `systemctl is-active` dice `active`… y NADIE sostiene el cerrojo. Con la
+    verificación anterior este despliegue salía en VERDE y el operador se iba del
+    sitio con un edificio sin alertamiento.
+    """
+    r = gabinete.desplegar(NO_RECLAMA_PINES="1")
+
+    assert "systemctl restart takab-edge" in gabinete.registro(), (
+        "premisa: el despliegue llegó hasta el reinicio; sólo falta el dueño de los pines"
+    )
+    assert r.returncode != 0, (
+        "un gabinete cuyos pines no tiene NADIE es un gabinete que no protege; "
+        "el despliegue no puede reportarlo como bueno.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "NADIE reclamó los pines" in r.stderr
+    assert "ni siquiera existe" in r.stderr, (
+        "el diagnóstico tiene que distinguir «nunca se reclamó» de «se soltó»: "
+        "son dos averías distintas y el operador actúa distinto"
+    )
+
+
+def test_la_verificacion_no_esta_anclada_al_nombre_takab_edge(gabinete) -> None:
+    """El criterio 1 de T-2.70.a en cuanto se cumpla: los pines pasan a
+    `takab-gpio` y el despliegue tiene que seguir verificándolos SIN cambiar.
+
+    Si la verificación siguiera escrita contra `takab-edge`, este despliegue
+    —pines en poder de otra unidad, que es el estado FINAL deseado— saldría en
+    rojo o, peor, en verde midiendo a quien ya no toca el GPIO.
+    """
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert gabinete.dueno_de_los_pines()["unit"] == "takab-gpio"
+    assert "takab-gpio" in r.stdout, (
+        "el despliegue debe REPORTAR la unidad que de verdad tiene los pines, "
+        "no la que el script trae escrita"
+    )
+
+
+def test_el_cerrojo_se_interroga_con_flock_y_no_leyendo_el_archivo(gabinete) -> None:
+    """El registro del cerrojo es TEXTO: sobrevive al proceso que lo escribió.
+
+    Una verificación que se conformara con leerlo daría por bueno un gabinete
+    cuyo dueño murió por SIGKILL hace media hora. Lo que prueba propiedad es el
+    `flock`, que muere con el proceso pase lo que pase. Aquí se siembra un
+    registro con aspecto perfecto y sin nadie detrás.
+    """
+    gabinete.cerrojo.write_text("pid=1\nunit=takab-edge\n")
+    r = gabinete.desplegar(NO_RECLAMA_PINES="1")
+
+    assert r.returncode != 0, (
+        "el despliegue se creyó un registro de texto sin comprobar el cerrojo: "
+        "un dueño muerto se está reportando como vivo.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    # Y aborta por la rama del CERROJO, no por la de «el archivo no existe»: el
+    # archivo está ahí, con aspecto impecable. Sin esta aserción los dos
+    # escenarios colapsarían en el mismo camino y este test no probaría el flock.
+    assert "ni siquiera existe" not in r.stderr
+    assert "está LIBRE" in r.stderr

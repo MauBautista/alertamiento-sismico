@@ -28,7 +28,7 @@ from typing import Protocol, TypeVar
 
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
-from takab_edge.gpio import GpioController
+from takab_edge.gpio_link import GpioLink, as_link
 from takab_edge.module import EdgeModule
 from takab_edge.version import fw_version, running_version
 
@@ -291,7 +291,7 @@ class HealthMonitor(EdgeModule):
     def __init__(
         self,
         settings: EdgeSettings,
-        gpio: GpioController | None = None,
+        gpio: GpioLink | None = None,
         seedlink: object | None = None,
         probes: HealthProbes | None = None,
         cloud: object | None = None,
@@ -300,7 +300,7 @@ class HealthMonitor(EdgeModule):
     ) -> None:
         super().__init__()
         self.settings = settings
-        self._gpio = gpio
+        self._link = as_link(gpio)
         # [T-2.49] Opcional: sin módulo de audio el snapshot reporta `audio=None`,
         # que es «este gabinete no tiene voceo», no «no sé qué tono suena».
         self._audio = audio
@@ -335,9 +335,37 @@ class HealthMonitor(EdgeModule):
         return self._last_snapshot
 
     def _relay_states(self) -> list[RelayState]:
-        if self._gpio is not None and self._gpio.running:
-            return self._gpio.relay_states()
-        return []
+        """Estado eléctrico de los relés para el latido. NUNCA propaga.
+
+        [T-2.70.a·D2/P1] Antes leía `gpio.running` y `gpio.relay_states()` sin
+        guarda, y eso escondía dos defectos:
+
+        1. **El grave.** Una lectura que LANCE mataba el snapshot entero, y
+           `_on_start` llama a `snapshot("startup")` fuera de cualquier try: el
+           latido no arrancaría NUNCA y el gabinete se vería FANTASMA desde la
+           nube — sin poder distinguirlo de un gabinete apagado, que es
+           exactamente lo que T-2.60 puso a vigilar.
+        2. **El honesto.** `[]` significaba «módulo detenido» y ahora también
+           puede significar «no pude preguntar», que no es lo mismo. El contrato
+           `HealthSnapshot.relays: list[RelayState]` no tiene forma de decir «sin
+           dato» —añadirla es un cambio de schema, y este paso no toca la nube—,
+           así que la distinción vive donde SÍ se puede actuar sobre ella: el log
+           CRÍTICO de aquí y el `relays_status` del panel del gabinete.
+        """
+        if self._link is None:
+            return []
+        try:
+            snap = self._link.snapshot()
+        except Exception:  # noqa: BLE001 — el latido sobrevive a cualquier lectura
+            log.critical(
+                "no se pudo leer el estado de los relés; el latido sale SIN filas de "
+                "relé (que en el contrato de la nube es indistinguible de «módulo "
+                "detenido»). Revisa el journal del gabinete: esto NO es un módulo "
+                "parado, es una lectura que falló.",
+                exc_info=True,
+            )
+            return []
+        return list(snap.relays) if snap.running else []
 
     def _packet_loss_pct(self) -> float:
         if self._seedlink is None:

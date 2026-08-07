@@ -172,6 +172,15 @@ class CommandDispatcher(EdgeModule):
                     ok, reason = self._drill.start_drill(drill_id, float(duration))
                 except (TypeError, ValueError):
                     ok, reason = False, f"duration_s inválido: {duration!r}"
+                except Exception as exc:  # noqa: BLE001 — un comando FIRMADO siempre se ACKea
+                    # [T-2.70.a·D2/P1] El `except` de arriba nombraba dos tipos, y
+                    # cualquier otro escapaba al `except` genérico de `on_command`,
+                    # que registra y CALLA: la nube se quedaba sin ack esperando el
+                    # TTL, sin poder distinguir «rechazado» de «el gabinete no
+                    # contestó». `start_drill` ya falla cerrado por su cuenta; esto
+                    # es el cinturón para todo lo demás que pueda romperse ahí.
+                    log.exception("drill_start %s reventó; se ACKea el fallo", command_id)
+                    ok, reason = False, f"el simulacro no pudo arrancar: {exc}"
                 self._ack(command_id, nonce, channel, action, ok, reason)
             else:
                 ended = self._drill.end_drill(drill_id, reason="drill_stop firmado")

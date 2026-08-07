@@ -39,6 +39,7 @@ from takab_edge.contracts import (
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
 from takab_edge.gpio import GpioController
+from takab_edge.gpio_link import LocalGpioLink
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
@@ -176,13 +177,21 @@ class EdgeSupervisor:
 
         s = self.settings
         self.gpio = GpioController(s)
+        # [T-2.70.a·D2/P1] LA COSTURA. Se construye UNA vez y es lo único que
+        # reciben los cinco consumidores; el `GpioController` de arriba se queda
+        # como el DUEÑO de los pines y nadie más que esta costura le habla.
+        # Todavía en un solo proceso: `LocalGpioLink` es una llamada directa y el
+        # gabinete se comporta exactamente igual. Lo que cambia es que a partir de
+        # aquí existe UN sitio por donde pasa todo, que es el que el paso
+        # siguiente convierte en IPC.
+        self.gpio_link = LocalGpioLink(self.gpio)
         self.seedlink = self._build_seedlink(s)
         self.signal = FeatureExtractor(s.signal)
         self.buffer = RingBuffer(s.buffer)
         self.rules = RuleEngine(s.thresholds)
         self.bacnet = BacnetSimulator()
         self.actuators = ActuatorManager(
-            RelayActuator(self.gpio), BacnetActuator(self.bacnet), s.bacnet_channels
+            RelayActuator(self.gpio_link), BacnetActuator(self.bacnet), s.bacnet_channels
         )
         self.cloud = CloudConnector(
             s,
@@ -203,7 +212,7 @@ class EdgeSupervisor:
         self.telemetry = FeatureBatcher(s, cloud=self.cloud)
         self.health = HealthMonitor(
             s,
-            gpio=self.gpio,
+            gpio=self.gpio_link,
             seedlink=self.seedlink,
             cloud=self.cloud,  # RTT del PUBACK real en el heartbeat (T-1.40)
             heartbeat_s=s.health_heartbeat_s,
@@ -223,7 +232,7 @@ class EdgeSupervisor:
         self.config.add_apply_listener(self.location.on_config_applied)
         # Voceo por audio (A-6): canal ADVISORY subordinado al camino de vida —
         # se dispara DESPUÉS de actuar y jamás bloquea ni condiciona los relés.
-        self.audio = AudioNotifier(s, gpio=self.gpio)
+        self.audio = AudioNotifier(s, gpio=self.gpio_link)
         # [T-2.49] El latido reporta QUÉ tonos puede sonar este gabinete, para poder
         # ver desde la flota quién se quedó atrás de un cambio de catálogo.
         self.health.set_audio(self.audio)
@@ -234,7 +243,7 @@ class EdgeSupervisor:
         # Simulacro institucional (T-1.60): observador puro — banner + voceo,
         # CERO relés; lo real (SASMEX o tier instrumental) lo aborta. Se crea
         # ANTES que dispatch (que le enruta drill_start/drill_stop).
-        self.drill = DrillController(s, gpio=self.gpio, audio=self.audio)
+        self.drill = DrillController(s, gpio=self.gpio_link, audio=self.audio)
         # T-2.24: catálogo SSN con feed firmado — el archivo provisionado sigue
         # siendo la base; el feed solo lo REFRESCA (mismo HMAC, dominio propio).
         self.catalog = CatalogStore(s.catalog_path, security=self.security)
@@ -258,7 +267,7 @@ class EdgeSupervisor:
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
         self.local_api = LocalDashboard(
-            self.gpio,
+            self.gpio_link,
             self.rules,
             self.health,
             host=s.local_api_host,
@@ -318,9 +327,13 @@ class EdgeSupervisor:
     # --- Cableado del pipeline ---
     def _wire(self) -> None:
         self.seedlink.on_packet(self._on_packet)
-        self.gpio.on_sasmex(self._on_sasmex)
+        # [T-2.70.a·D2/P1] Los DOS observadores se registran por la costura. El
+        # reflejo SASMEX→sirena NO pasa por aquí: vive entero dentro de
+        # `gpio._dispatch_sasmex`, bajo su lock y con la latencia medida ANTES de
+        # invocar callbacks (gate #6). Lo que cruza es lo que ocurre DESPUÉS.
+        self.gpio_link.subscribe("sasmex", self._on_sasmex)
         # T-1.60: un SASMEX real aborta el simulacro (observador aislado en gpio).
-        self.gpio.on_sasmex(self.drill.on_sasmex)
+        self.gpio_link.subscribe("sasmex", self.drill.on_sasmex)
         # Salud → nube: transición Y heartbeat (T-1.17 G6; sin event_id → sin dedup).
         self.health.on_snapshot(self._on_health_snapshot)
         # Comandos/config firmados nube→edge (T-1.23): el conector (re)suscribe
@@ -373,6 +386,78 @@ class EdgeSupervisor:
         except Exception:  # noqa: BLE001 — el conteo del panel nunca tumba el pipeline
             log.warning("agregador de sacudida no disponible (aislado)", exc_info=True)
 
+    def _modo_prueba_activo(self, decision: TierDecision) -> bool:
+        """¿Hay ventana de prueba del WR-1 armada? (T-1.69) — y JAMÁS lanza.
+
+        [T-2.70.a·D2/P1] Esta lectura ocurre EN EL HILO DE SEEDLINK. La cadena es
+        `_transport.run(...)` → `ingest` → `feed` (sin try) → `_on_packet` →
+        `_act_and_publish`, y `_run_transport` atrapa `except Exception`
+        rotulándolo «SeedLink desconectado» con reconexión y backoff: una lectura
+        que lanzara haría que el gabinete **reportara el Shake caído y encendiera
+        la alarma de sensor mudo —la del 14-jul— con el sensor perfectamente
+        vivo**. Es el peor de los sitios que cruzan la costura.
+
+        Falla ABIERTO, y la dirección está elegida, no heredada. Las dos ramas, sin
+        adornos:
+
+        * Tratarlo como ARMADO suprimiría la publicación de un sismo REAL — la
+          nube no abriría incidente ni notificaría a nadie. Irrecuperable.
+        * Tratarlo como DESARMADO **despierta el edificio**. No es «ruido», y
+          escribirlo así sería mentir en el registro sobre el que se decide D2/P2:
+          el `LocalEvent` abre `incidents`, el trigger `trg_incidents_notify`
+          levanta al orquestador, y su consulta de incidentes nuevos **no filtra
+          por severidad ni por disparo** (`notify/orchestrator.py`); `plan_jobs`
+          emite la push **en paralelo a t0, clase CRISIS**, y esa push es
+          «ALERTA SÍSMICA» con `interruption-level: time-sensitive`, sonido
+          `seismic_alert.caf` a volumen 1.0 y `critical: 1` en APNS, canal Android
+          `seismic_alert` en prioridad alta, a **todos** los dispositivos
+          registrados del sitio; al abrir la app, `mobile-state` deriva
+          `phase = alert_active` y la pantalla se toma entera. Encima va la
+          cascada configurada (correo, SMS, webhook).
+
+        Y **no hay filtro aguas abajo que lo recorte**: `LocalEvent` no lleva
+        `is_test` ni `drill` —ni el contrato Pydantic ni `local_event.schema.json`
+        tienen dónde ponerlo— y T-2.05 fija la garantía como **server-side, «cero
+        lógica local de modo prueba»**. El `return` de esta función es la ÚNICA
+        defensa que existe hoy contra despertar un edificio por una prueba del
+        WR-1.
+
+        Aun así se publica, porque la otra rama es peor y porque la premisa que
+        justificaba callar tampoco se sostiene: **es falso que «la protección local
+        ya ocurrió» en el caso que hará fallar esta lectura**. Con el IPC de D2/P2,
+        que `snapshot()` no conteste significa que el dueño de los pines no
+        contesta, y entonces `RelayActuator` tampoco pudo comandar gas, ascensor ni
+        retenedores — cruzan exactamente la misma costura. Lo único que sobrevive
+        es el reflejo SASMEX→sirena+estrobo, que vive DENTRO del dueño de los pines
+        (gate #6). O sea: en el escenario real de este `except`, la protección local
+        está a medias y la nube es lo último que queda para que alguien se entere.
+
+        [T-2.70.a·D2/P1] Endurecimiento PROSPECTIVO: con `LocalGpioLink` esta
+        lectura es una llamada directa en el mismo proceso, sin transporte que
+        pueda caerse, y hoy no hay camino que la haga lanzar. Se escribe ahora
+        —mientras no puede fallar— precisamente porque después no habrá tiempo.
+        """
+        try:
+            snap = self.gpio_link.snapshot()
+        except Exception:  # noqa: BLE001 — jamás al hilo de SeedLink
+            log.exception(
+                "no se pudo leer el modo prueba del WR-1; se PUBLICA a la nube. "
+                "Fail-open DELIBERADO: esto puede abrir incidente y disparar la "
+                "push CRISIS a los teléfonos del sitio, y aun así callar un sismo "
+                "real es peor. event_id=%s",
+                decision.event_id,
+            )
+            return False
+        if not snap.test_mode_active:
+            return False
+        log.warning(
+            "MODO PRUEBA WR-1: actuación LOCAL ejecutada, NADA publicado a la nube "
+            "(tier=%s, %.0fs restantes)",
+            decision.tier.value,
+            snap.test_mode_remaining_s,
+        )
+        return True
+
     def _act_and_publish(self, decision: TierDecision, feature: Feature1s | None) -> None:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:
         # en la ruta SASMEX es idempotente con el reflejo in-process de gpio; en la
@@ -408,7 +493,16 @@ class EdgeSupervisor:
         # y sus fallos se aíslan dentro del propio módulo. En solo-aviso NO hay
         # voceo: «no activa nada, solo un aviso visual en la pantalla».
         if not visual_only:
-            self.audio.on_tier(decision)
+            # [T-2.70.a·D2/P1] AISLADO. Iba sin try, y dentro `audio._play`
+            # consultaba el silencio del operador FUERA de su propio try: una
+            # excepción ahí abortaba TODO lo que viene después —espejo LoRa a los
+            # secundarios, aborto del simulacro, ACKs a la nube, `LocalEvent` y
+            # encolado de evidencia—. Un canal declarado ADVISORY (A-6) no puede
+            # tumbar la publicación del evento.
+            try:
+                self.audio.on_tier(decision)
+            except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+                log.exception("voceo del tier falló (aislado); la actuación sigue")
         # [T-2.33] Espejo a gabinetes secundarios SOLO cuando el principal ACTÚA
         # (SASMEX u opt-in instrumental): evacuate ⇒ sirena+estrobo remotos;
         # restricted ⇒ estrobo. Fire-and-forget tras la actuación local — y ANTES
@@ -425,13 +519,7 @@ class EdgeSupervisor:
         # reflejo + voceo); se SUPRIME todo lo que va a la nube (acks + evento +
         # evidencia) para probar el WR-1 sin abrir incidente ni notificar. La
         # ventana auto-expira: ante una alerta REAL, el local protege igual.
-        if self.gpio.test_mode_active:
-            log.warning(
-                "MODO PRUEBA WR-1: actuación LOCAL ejecutada, NADA publicado a la nube "
-                "(tier=%s, %.0fs restantes)",
-                decision.tier.value,
-                self.gpio.test_mode_remaining_s,
-            )
+        if self._modo_prueba_activo(decision):
             return
         # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
         for ack in acks:

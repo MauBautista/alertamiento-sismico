@@ -8,10 +8,26 @@ defaults de arranque. Prefijo de entorno: ``TAKAB_EDGE_``.
 
 from __future__ import annotations
 
+import os
+import re
+import tempfile
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from takab_edge.contracts import ActuatorChannel, FailSafeMode
+
+#: [T-2.70.a·D1.1] Cerrojo de propiedad de los pines EN UN GABINETE DE PRODUCCIÓN.
+#: Ruta FIJA y aprovisionada: los DOS procesos que pueden pelearse por el GPIO
+#: (`takab-edge` y `takab-gpio`) tienen que aterrizar en el MISMO archivo o el
+#: cerrojo no protege nada. Vive dentro del /var/lib/takab que ambas unidades
+#: declaran como `WorkingDirectory=` y `ReadWritePaths=`.
+GPIO_LOCK_PATH_PROD = "/var/lib/takab/gpio.lock"
+
+#: Caracteres que se conservan al meter la identidad del gabinete en un nombre de
+#: archivo; el resto se sustituye (un `gateway_id` con `/` no puede abrir nada).
+_RE_NOMBRE_DE_ARCHIVO = re.compile(r"[^A-Za-z0-9._-]")
 
 # Estado seguro por canal ante falla del Pi (SPOF-07).
 DEFAULT_FAILSAFE: dict[ActuatorChannel, FailSafeMode] = {
@@ -378,6 +394,68 @@ class EdgeSettings(BaseSettings):
     #: pausa entre relés. ~4 relés × (pulso+pausa) ≈ 1.6 s por recorrido.
     self_test_pulse_ms: int = Field(default=250, gt=0)
     self_test_gap_ms: int = Field(default=150, ge=0)
+    #: [T-2.70.a·D1.1] CERROJO DE PROPIEDAD DE LOS PINES. Archivo sobre el que el
+    #: dueño del GPIO toma un `flock(LOCK_EX|LOCK_NB)` como PRIMERA operación de
+    #: su arranque —antes de instanciar la pin factory, o sea antes de abrir el
+    #: gpiochip— y que deja escrito con su PID y su unidad systemd. Dos procesos
+    #: que reclamen los mismos pines dejan de ser un daño físico silencioso y
+    #: pasan a ser un arranque que truena SIN TOCAR UN PIN.
+    #:
+    #: Es una RUTA DE APROVISIONAMIENTO, no una perilla de operación: se lee UNA
+    #: vez en `_on_start` y jamás en el reflejo. **VACÍO = derivada**; la ruta
+    #: efectiva la da `gpio_lock_file`, que es la que hay que leer siempre. En
+    #: los tests se fija a un `tmp_path` POR TEST (ver `tests/conftest.py`), que
+    #: es lo que hace que cada test sea un gabinete distinto.
+    gpio_lock_path: str = ""
+
+    @property
+    def gpio_lock_file(self) -> str:
+        """Ruta EFECTIVA del cerrojo de propiedad de los pines. Tres casos, cero fallbacks.
+
+        1. **Configurada** (`TAKAB_EDGE_GPIO_LOCK_PATH` o el campo): manda, en
+           cualquier modo. Es el seam del despliegue y el de los tests.
+        2. **Gabinete de producción** (`dev_mode=False`, que es lo que ponen
+           EXPLÍCITAMENTE las dos unidades systemd): `GPIO_LOCK_PATH_PROD`. Ruta
+           fija y aprovisionada, la MISMA para `takab-edge` y para `takab-gpio`
+           — si cada proceso mirara un archivo distinto, ambos creerían ser
+           dueños y volveríamos a dos `DigitalOutputDevice` sobre la válvula de
+           gas.
+        3. **dev/demo** (`dev_mode=True`): un archivo POR GABINETE en el
+           directorio temporal del sistema.
+
+        Por qué el caso 3 existe: abrir el cerrojo es fail-closed —tiene que
+        serlo: «no puedo comprobar quién es dueño del GPIO» no puede resolverse
+        tocando pines—, y con la ruta de producción como default el camino de
+        vida dejaba de arrancar en cualquier máquina sin /var/lib/takab: `make
+        edge` y `demo/gabinete.py` incluidos. La salida NO es volver benigno el
+        fallo de apertura (eso es exactamente «ante lo desconocido, asume la
+        causa más benigna»); es que en dev el cerrojo viva donde el
+        desarrollador sí puede escribir. El fallo de apertura sigue tronando en
+        los tres casos.
+
+        Y por qué el caso 3 va indexado por `gateway_id` y no es un archivo
+        único: `demo/run.py` levanta TRES gabinetes simulados en el mismo host,
+        y son tres gabinetes DISTINTOS —tres edificios, tres juegos de pines—.
+        Con una ruta común arrancaría uno y morirían dos. Dos procesos del MISMO
+        gabinete siguen chocando, que es la semántica que el cerrojo defiende.
+        En producción NO se indexa por gabinete: un Pi tiene un gabinete y dos
+        procesos, y lo que hay que hacer colisionar es a los dos procesos.
+
+        Nota sobre el peor caso: si un Pi arrancara con `dev_mode` mal puesto,
+        `takab-edge` y `takab-gpio` SEGUIRÍAN colisionando —comparten
+        `gateway_id`, luego comparten cerrojo derivado—, así que ni siquiera esa
+        mala configuración abre la puerta a dos dueños. (Con `dev_mode=True` el
+        Pi tampoco tocaría pines reales: usaría la MockFactory.)
+        """
+        if self.gpio_lock_path:
+            return self.gpio_lock_path
+        if not self.dev_mode:
+            return GPIO_LOCK_PATH_PROD
+        gabinete = _RE_NOMBRE_DE_ARCHIVO.sub("_", self.gateway_id) or "sin-identidad"
+        # El uid en el nombre porque el directorio temporal es COMPARTIDO entre
+        # usuarios: sin él, el cerrojo de otro usuario sería un archivo que este
+        # proceso no puede abrir — y fail-closed, con razón, no arrancaría.
+        return str(Path(tempfile.gettempdir()) / f"takab-gpio-{os.getuid()}-{gabinete}.lock")
 
     # --- Perfil de relés, umbrales y pines ---
     failsafe: dict[ActuatorChannel, FailSafeMode] = Field(

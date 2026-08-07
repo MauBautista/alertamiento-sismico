@@ -26,11 +26,14 @@ La polaridad eléctrica real de cada relé se re-valida con hardware (**gate #3*
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import os
+import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from time import perf_counter
 
 from takab_edge.config import EdgeSettings
@@ -41,6 +44,7 @@ from takab_edge.contracts import (
     SasmexSignal,
     SirenReason,
 )
+from takab_edge.gpio_link import ChannelOutcome, GpioSnapshot
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.gpio")
@@ -64,6 +68,45 @@ REFLEX_CHANNELS: tuple[ActuatorChannel, ...] = (
 AUDIBLE_CHANNELS: tuple[ActuatorChannel, ...] = (ActuatorChannel.SIREN,)
 
 SasmexCallback = Callable[[SasmexSignal], None]
+
+
+class UndeclaredFailSafeError(KeyError):
+    """[T-2.70.a·D1.2] Canal de RELÉ sin modo fail-safe declarado en la config.
+
+    Hereda de ``KeyError`` por continuidad: ``set_relay`` ya lanzaba ``KeyError``
+    ante un canal fuera del mapa de relés y quien lo capturaba sigue capturándolo.
+    """
+
+
+class GpioOwnershipError(RuntimeError):
+    """[T-2.70.a·D1.1] Otro proceso VIVO ya es dueño de los pines del gabinete."""
+
+
+#: Variable de entorno que nombra la unidad systemd de este proceso en el
+#: registro del cerrojo. Sin ella se deriva de ``sys.argv[0]``, que en el Pi es
+#: ``/opt/takab/edge/.venv/bin/takab-edge`` o ``…/takab-gpio`` — o sea, el nombre
+#: de la unidad. NO es un campo de `EdgeSettings` a propósito: es una etiqueta de
+#: diagnóstico, y meterla en el documento firmado la convertiría en algo que la
+#: nube puede reescribir.
+UNIT_ENV_VAR = "TAKAB_GPIO_UNIT"
+
+
+def _unidad_de_este_proceso() -> str:
+    """Nombre con el que este proceso se identifica como dueño de los pines."""
+    override = os.environ.get(UNIT_ENV_VAR, "").strip()
+    if override:
+        return override
+    return Path(sys.argv[0]).name or "desconocida"
+
+
+def _proceso_vivo(pid: int) -> bool:
+    """¿Sigue existiendo ese PID? (Linux: `/proc/<pid>`.)
+
+    Un registro rancio —el proceso murió por SIGKILL sin poder limpiar— señalaría
+    a un PID que hoy puede ser de otro programa. Reportarlo como dueño vivo manda
+    al operador a matar a un inocente.
+    """
+    return pid > 0 and Path(f"/proc/{pid}").exists()
 
 
 def normal_energized(mode: FailSafeMode) -> bool:
@@ -186,6 +229,8 @@ class GpioController(EdgeModule):
         self._test_timer: threading.Timer | None = None
         self._actuation_test_timer: threading.Timer | None = None
         self._test_mode_until = 0.0  # [T-1.69] deadline monotónico del modo prueba WR-1
+        #: [D1.1] Descriptor del cerrojo de propiedad de pines mientras se sostiene.
+        self._lock_fd: int | None = None
 
     # --- Observadores + silencio ---
     def on_sasmex(self, callback: SasmexCallback) -> None:
@@ -269,8 +314,152 @@ class GpioController(EdgeModule):
         """Debounce del contacto WR-1 en segundos (parte del presupuesto §4.3)."""
         return self.settings.debounce_ms / 1000.0
 
+    # --- [D1.1] Propiedad de los pines: un cerrojo del KERNEL, no una promesa ---
+    def _acquire_pin_ownership(self) -> None:
+        """Reclama la propiedad EXCLUSIVA de los pines, o truena sin tocar nada.
+
+        `flock(LOCK_EX|LOCK_NB)` y no una bandera de proceso: el escenario real es
+        un SEGUNDO PROCESO —`takab-gpio.service` frente a `takab-edge`, o un
+        `python -m takab_edge.gpio` a mano por SSH— y una variable de Python no
+        cruza la frontera del proceso. Hoy lo único que separa a esos dos es
+        `Conflicts=takab-gpio.service` en las unidades: una promesa que sólo se
+        cumple si systemd arranca a los dos y que T-2.70.a va a RETIRAR.
+
+        `flock` colisiona incluso entre dos descriptores del MISMO proceso (son
+        dos «open file descriptions» distintas), así que también atrapa a un
+        supervisor que instanciara dos `GpioController`.
+
+        La ruta sale de `EdgeSettings.gpio_lock_file` (la EFECTIVA, no el campo
+        crudo): en el gabinete es el archivo aprovisionado de /var/lib/takab y
+        en dev/demo uno por gabinete en el directorio temporal. Ver allí por qué
+        — y por qué eso no relaja en nada el fail-closed de aquí abajo.
+        """
+        ruta = Path(self.settings.gpio_lock_file)
+        unidad = _unidad_de_este_proceso()
+        try:
+            fd = os.open(ruta, os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError as exc:
+            # Fail-closed y con remediación, como `ensure_prod_pin_factory`: si no
+            # se puede ni ABRIR el cerrojo, no hay forma de saber si otro proceso
+            # tiene los pines, y arrancar a ciegas es lo único inaceptable.
+            raise GpioOwnershipError(
+                f"no se pudo abrir el cerrojo de pines {ruta} ({exc}). El camino de "
+                "vida no arranca sin poder comprobar quién es dueño del GPIO. "
+                "¿Existe el directorio (las unidades usan WorkingDirectory="
+                "/var/lib/takab y ReadWritePaths=/var/lib/takab)? ¿`gpio_lock_path` "
+                "(TAKAB_EDGE_GPIO_LOCK_PATH) está bien provisionado en "
+                "/etc/takab/edge.env? Nadie elige otra ruta por su cuenta: si esta "
+                "no se puede abrir, no se toca un pin."
+            ) from exc
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            detalle = self._describir_dueno(fd)
+            os.close(fd)
+            log.critical(
+                "PINES YA RECLAMADOS: %s (pid %s) NO tomará el GPIO porque %s "
+                "sostiene el cerrojo %s. NO se ha tocado un solo pin — dos dueños "
+                "sobre la válvula de gas es peor que un proceso que no arranca.",
+                unidad,
+                os.getpid(),
+                detalle,
+                ruta,
+            )
+            raise GpioOwnershipError(
+                f"los pines del gabinete ya tienen dueño: {detalle} sostiene el "
+                f"cerrojo {ruta}; este proceso ({unidad}, pid {os.getpid()}) aborta "
+                "sin tocar hardware"
+            ) from exc
+        # PRIMERO el descriptor, que es lo que ES la propiedad: desde el `flock`
+        # de arriba estos pines ya son nuestros, y cualquier `raise` que ocurra
+        # sin haberlo guardado deja el fd colgado en un proceso VIVO —
+        # `_release_pin_ownership()` es un no-op con `_lock_fd = None`— y con
+        # `Restart=always` el reintento se bloquea contra su propio cerrojo.
+        self._lock_fd = fd
+        # El registro es informativo (quién manda ahora); el veredicto de
+        # propiedad lo da SIEMPRE el flock, que muere con el proceso pase lo que
+        # pase — incluido un SIGKILL, donde este texto quedaría rancio.
+        #
+        # Por eso su E/S va guardada y NO tumba la propiedad: `ENOSPC` con
+        # /var/lib/takab lleno (spool offline, evidencia, journal) o un `EIO` de
+        # una microSD muriéndose son fallos REALES de este gabinete, y ninguno
+        # es razón para dejar la sirena, el gas y los retenedores sin dueño.
+        # Ruidoso, eso sí: sin este WARNING el operador leería un cerrojo con el
+        # dueño ANTERIOR escrito —o vacío— y no sabría por qué.
+        try:
+            os.ftruncate(fd, 0)
+            os.pwrite(fd, f"pid={os.getpid()}\nunit={unidad}\n".encode(), 0)
+        except OSError as exc:
+            log.warning(
+                "PINES TOMADOS por %s (pid %s), pero el registro informativo de %s "
+                "NO se pudo escribir (%s): el cerrojo es válido (lo sostiene el "
+                "kernel), pero su contenido puede estar vacío o nombrar al dueño "
+                "anterior. Revisa el disco del gabinete.",
+                unidad,
+                os.getpid(),
+                ruta,
+                exc,
+            )
+        log.info("propiedad de los pines tomada por %s (pid %s) en %s", unidad, os.getpid(), ruta)
+
+    @staticmethod
+    def _describir_dueno(fd: int) -> str:
+        """`'<unidad> (pid N, vivo)'` leído del registro, o lo que se sepa.
+
+        Se lee del MISMO descriptor que ya está abierto (no se re-abre el
+        archivo) y se comprueba `/proc`: un registro rancio no puede reportarse
+        como dueño vivo — el PID pudo reciclarse y el operador iría a matar a
+        otro programa.
+        """
+        try:
+            crudo = os.pread(fd, 4096, 0).decode("utf-8", "replace")
+        except OSError:
+            crudo = ""
+        campos = dict(linea.split("=", 1) for linea in crudo.splitlines() if linea.count("=") >= 1)
+        unidad = campos.get("unit", "").strip() or "un proceso sin unidad declarada"
+        crudo_pid = campos.get("pid", "").strip()
+        if not crudo_pid.isdigit():
+            return f"{unidad} (sin PID en el registro; el cerrojo lo sostiene alguien VIVO)"
+        pid = int(crudo_pid)
+        estado = (
+            "vivo"
+            if _proceso_vivo(pid)
+            else "RANCIO en el registro, pero el cerrojo lo sostiene alguien VIVO"
+        )
+        return f"{unidad} (pid {pid}, {estado})"
+
+    def _release_pin_ownership(self) -> None:
+        """Suelta el cerrojo. Idempotente: llamarlo dos veces no rompe nada."""
+        fd = self._lock_fd
+        if fd is None:
+            return
+        self._lock_fd = None
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:  # cerrar el fd lo suelta igual; no hay nada que rescatar
+            log.warning("flock(LOCK_UN) falló al soltar los pines; se cierra el descriptor")
+        finally:
+            os.close(fd)
+
     # --- Ciclo de vida ---
     def _on_start(self) -> None:
+        # PRIMERA SENTENCIA, y el orden es el mecanismo: `ensure_*_pin_factory()`
+        # instancia LGPIOFactory y con ella ABRE el gpiochip. Reclamar la
+        # propiedad después significaría que el intruso ya tocó el hardware
+        # cuando se entera de que no le tocaba.
+        self._acquire_pin_ownership()
+        try:
+            self._arrancar_hardware()
+        except BaseException:
+            # `EdgeModule.start()` sólo marca `_running` si `_on_start` VOLVIÓ, y
+            # `stop()` retorna en seco si no está `_running`: sin esto el
+            # descriptor quedaría colgado en un proceso TODAVÍA VIVO y, con
+            # `Restart=always`, el reintento se bloquearía contra su propio
+            # cerrojo para siempre.
+            self._release_pin_ownership()
+            raise
+
+    def _arrancar_hardware(self) -> None:
         if self.settings.dev_mode:
             ensure_dev_pin_factory()
         else:
@@ -321,22 +510,30 @@ class GpioController(EdgeModule):
             self._dispatch_sasmex(active=True, is_test=False)
 
     def _on_stop(self) -> None:
-        with self._lock:
-            for attr in ("_test_timer", "_actuation_test_timer"):
-                timer = getattr(self, attr)
-                if timer is not None:
-                    timer.cancel()
-                    setattr(self, attr, None)
-            # Parada limpia → todo a estado seguro (de-energizado) antes de soltar pines.
-            self.drive_all_safe()
-            for device in (self._button, self._silence_button, self._test_button):
-                if device is not None:
-                    device.close()
-            for relay in self._relays.values():
-                relay.close()
-            self._relays.clear()
-            self._energized.clear()
-            self._button = self._silence_button = self._test_button = None
+        try:
+            with self._lock:
+                for attr in ("_test_timer", "_actuation_test_timer"):
+                    timer = getattr(self, attr)
+                    if timer is not None:
+                        timer.cancel()
+                        setattr(self, attr, None)
+                # Parada limpia → todo a estado seguro (de-energizado) antes de soltar pines.
+                self.drive_all_safe()
+                for device in (self._button, self._silence_button, self._test_button):
+                    if device is not None:
+                        device.close()
+                for relay in self._relays.values():
+                    relay.close()
+                self._relays.clear()
+                self._energized.clear()
+                self._button = self._silence_button = self._test_button = None
+        finally:
+            # [D1.1] DESPUÉS del bucle de `close()`, y en `finally`. Soltar el
+            # cerrojo antes abriría una ventana en la que el proceso entrante
+            # puede reclamar unos pines que éste todavía sostiene abiertos; no
+            # soltarlo ante una excepción del cierre dejaría el gabinete sin
+            # poder sucederse a sí mismo.
+            self._release_pin_ownership()
 
     # --- Reflejo (camino de vida, in-process, con latencia medida) ---
     def _on_contact_closed(self) -> None:
@@ -591,25 +788,100 @@ class GpioController(EdgeModule):
     def activate(self, channel: ActuatorChannel) -> None:
         """Ordena la PROTECCIÓN (emergencia) del canal desde `rules`/`actuators`."""
         with self._lock:
-            # Una orden NUEVA de alarma audible (flanco de la demanda de rules) re-suena,
-            # aun si el operador silenció un episodio anterior (§4.5 instrumental; NFPA-72).
-            # La semántica de episodio para alertas rules sostenidas se afina en T-1.8.
-            if channel in AUDIBLE_CHANNELS and not self._rules_demand.get(channel, False):
-                self._audible_silenced = False
-            self._rules_demand[channel] = True
-            self._apply(channel)
+            self._activate_locked(channel)
+
+    def _activate_locked(self, channel: ActuatorChannel) -> None:
+        # Una orden NUEVA de alarma audible (flanco de la demanda de rules) re-suena,
+        # aun si el operador silenció un episodio anterior (§4.5 instrumental; NFPA-72).
+        # La semántica de episodio para alertas rules sostenidas se afina en T-1.8.
+        if channel in AUDIBLE_CHANNELS and not self._rules_demand.get(channel, False):
+            self._audible_silenced = False
+        self._rules_demand[channel] = True
+        self._apply(channel)
 
     def deactivate(self, channel: ActuatorChannel) -> None:
         """Retira la orden de protección de `rules` (vuelve a normal si nadie más la exige)."""
         with self._lock:
-            self._rules_demand[channel] = False
-            self._apply(channel)
+            self._deactivate_locked(channel)
+
+    def _deactivate_locked(self, channel: ActuatorChannel) -> None:
+        self._rules_demand[channel] = False
+        self._apply(channel)
 
     def set_relay(self, channel: ActuatorChannel, on: bool) -> None:
         """Comanda un canal (usado por `actuators`/`rules`): on=activar la protección."""
+        with self._lock:
+            self._set_relay_locked(channel, on)
+
+    def _set_relay_locked(self, channel: ActuatorChannel, on: bool) -> None:
         if channel not in self._energized:
             raise KeyError(f"canal de relé desconocido: {channel}")
-        self.activate(channel) if on else self.deactivate(channel)
+        self._activate_locked(channel) if on else self._deactivate_locked(channel)
+
+    def apply_demands(
+        self, demands: Sequence[tuple[ActuatorChannel, bool]]
+    ) -> list[ChannelOutcome]:
+        """[T-2.70.a·D2/P1] La secuencia de tier ENTERA, bajo UNA sola toma del lock.
+
+        Hoy `ActuatorManager` llama a `set_relay` canal a canal y cada llamada toma
+        el lock por su cuenta: cinco ventanas en las que el resultado físico se
+        decide en cinco sitios que pueden intercalarse entre sí. Aquí se decide en
+        uno. En memoria la diferencia es sutil; con un socket detrás son cinco
+        round-trips que ninguna capa de arriba puede volver a juntar.
+
+        Aislamiento POR CANAL, que es el que `ActuatorManager` ya tenía: un canal
+        que lanza no aborta el lote — devuelve su :class:`ChannelOutcome` fallido y
+        el resto se aplica igual. Un lote todo-o-nada dejaría el gas, el ascensor y
+        las puertas sin comandar por culpa de un canal desconocido.
+
+        NO respeta `_safed` ni ninguna otra regla por su cuenta: delega en
+        `_set_relay_locked` → `_apply`, o sea el MISMO recálculo desde demandas de
+        siempre (polaridad NO/NC/fail_close incluida).
+        """
+        resultados: list[ChannelOutcome] = []
+        with self._lock:
+            for channel, on in demands:
+                try:
+                    self._set_relay_locked(channel, on)
+                except Exception as exc:  # noqa: BLE001 — vida: nunca abortar el resto del lote
+                    log.warning("canal %s no se pudo comandar en el lote: %s", channel, exc)
+                    resultados.append(
+                        ChannelOutcome(channel=channel, ok=False, detail=f"excepción: {exc}")
+                    )
+                else:
+                    resultados.append(ChannelOutcome(channel=channel, ok=True, detail="relay"))
+        return resultados
+
+    def snapshot(self) -> GpioSnapshot:
+        """[T-2.70.a·D2/P1] TODO el estado del gabinete, bajo UNA sola toma del lock.
+
+        Los consumidores leían propiedad a propiedad —`sasmex_active`,
+        `siren_sounding`, `siren_reason`, `audible_silenced`, `alert_latched`,
+        `relay_states()`…— y cada lectura tomaba el lock por separado. Entre dos de
+        ellas cabe un cambio de demanda, así que el panel podía pintar un enclave
+        vivo con la sirena en reposo: una incoherencia que no existe en el gabinete
+        y que el operador leería como avería. Con un socket detrás son además dos
+        respuestas de dos momentos distintos.
+
+        `running` se lee DENTRO del lock a propósito: `_on_stop` vacía `_relays` y
+        `_energized` bajo el mismo lock, así que «detenido» y «lista vacía» salen
+        del mismo instante y no de dos.
+        """
+        with self._lock:
+            ahora = time.monotonic()
+            return GpioSnapshot(
+                running=self.running,
+                sasmex_active=self._sasmex_latched,
+                siren_sounding=self._siren_sounding_locked(),
+                siren_reason=self._siren_reason_locked(),
+                audible_silenced=self._audible_silenced,
+                alert_latched=self._sasmex_latched or any(self._rules_demand.values()),
+                actuation_test_active=self._actuation_test_active,
+                test_mode_active=ahora < self._test_mode_until,
+                test_mode_remaining_s=max(0.0, self._test_mode_until - ahora),
+                last_reflex_latency_s=self._last_reflex_latency_s,
+                relays=tuple(self._relay_states_locked()),
+            )
 
     def drive_all_safe(self) -> None:
         """Estado seguro DURABLE: de-energiza todo (corte de energía) hasta `reset()`.
@@ -672,7 +944,53 @@ class GpioController(EdgeModule):
         self._energized[channel] = target
 
     def _failsafe(self, channel: ActuatorChannel) -> FailSafeMode:
-        return self.settings.failsafe.get(channel, FailSafeMode.NORMALLY_OPEN)
+        """Modo fail-safe DECLARADO del canal. Sin default silencioso para relés.
+
+        [T-2.70.a·D1.2] Aquí vivía `.get(channel, NORMALLY_OPEN)`, y ese default
+        NO era benigno: para `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER`
+        (NORMALLY_CLOSED) **invierte los dos extremos del canal** — el nivel de
+        reposo y el de protección. Un mapa `failsafe` al que le faltara una clave
+        (edge.env mal provisionado, o el doc firmado del config sync, que es un
+        `EdgeSettings` entero) dejaba la válvula de gas al revés en reposo y la
+        comandaba al revés ante una alerta real, en silencio y con la suite en
+        verde. Medido en `tests/test_gpio.py::test_el_default_de_failsafe_
+        invertia_el_gas_y_ahora_truena`.
+
+        El gate es sobre canales **de relé**, NO sobre «canal desconocido»:
+        `ActuatorChannel.SYSTEM` es un canal LÓGICO (self_test / drill_start del
+        dispatcher firmado) que por diseño jamás entra en `LOCAL_RELAY_CHANNELS`
+        ni tiene entrada en `DEFAULT_FAILSAFE`, y para él `NORMALLY_OPEN` es el
+        modo inocuo correcto: no gobierna ningún relé, así que no hay polaridad
+        que invertir.
+
+        CORRECCIÓN de la justificación que había aquí, que era falsa: decía que
+        tronar ante cualquier miembro del enum «convertiría en avería consultas
+        legítimas que llegan desde FUERA (payload de un comando de nube)», y ese
+        camino NO EXISTE. Un comando firmado con `channel=system` lo resuelve
+        `dispatch` antes de tocar `gpio`: `self_test`/`drill_*` van a
+        `_run_self_test`/`_drill`, que sólo recorren `LOCAL_RELAY_CHANNELS`, y
+        cualquier otra acción sobre `system` se rechaza con ack («canal system
+        solo admite self_test»); además `set_relay` levanta `KeyError` antes de
+        consultar el modo. Lo que este `return` sostiene es otra cosa: que
+        `_failsafe` siga siendo TOTAL sobre el enum para los caminos de LECTURA
+        (`relay_state`, `is_activated`) y para el próximo canal lógico que se
+        declare, sin obligar a inventarle una polaridad a algo que no toca
+        hardware. El gate vive donde el defecto es FÍSICO, y sólo ahí.
+        """
+        mode = self.settings.failsafe.get(channel)
+        if mode is not None:
+            return mode
+        if channel in LOCAL_RELAY_CHANNELS:
+            raise UndeclaredFailSafeError(
+                f"canal de relé sin modo fail-safe declarado: {channel.value}. "
+                f"El perfil `failsafe` de este gabinete declara "
+                f"{sorted(c.value for c in self.settings.failsafe)} y le falta "
+                f"{channel.value}. NO se elige un default: para FAIL_CLOSE/"
+                "NORMALLY_CLOSED eso INVIERTE la polaridad de reposo y la de "
+                "protección (gas y retenedores de puerta reposan ENERGIZADOS). "
+                "Declara el modo en /etc/takab/edge.env (TAKAB_EDGE_FAILSAFE)."
+            )
+        return FailSafeMode.NORMALLY_OPEN
 
     def is_activated(self, channel: ActuatorChannel) -> bool:
         """True si el canal está en su estado de protección (agnóstico de polaridad)."""
@@ -701,15 +1019,18 @@ class GpioController(EdgeModule):
         preserva el orden canónico de LOCAL_RELAY_CHANNELS.
         """
         with self._lock:
-            return [
-                RelayState(
-                    channel=channel,
-                    energized=energized,
-                    activated=energized == active_energized(self._failsafe(channel)),
-                    fail_safe=self._failsafe(channel),
-                )
-                for channel, energized in self._energized.items()
-            ]
+            return self._relay_states_locked()
+
+    def _relay_states_locked(self) -> list[RelayState]:
+        return [
+            RelayState(
+                channel=channel,
+                energized=energized,
+                activated=energized == active_energized(self._failsafe(channel)),
+                fail_safe=self._failsafe(channel),
+            )
+            for channel, energized in self._energized.items()
+        ]
 
     @property
     def sasmex_active(self) -> bool:
@@ -734,8 +1055,11 @@ class GpioController(EdgeModule):
     def siren_sounding(self) -> bool:
         """¿La sirena audible está sonando físicamente ahora mismo?"""
         with self._lock:
-            energized = self._energized.get(ActuatorChannel.SIREN, False)
-            return energized == active_energized(self._failsafe(ActuatorChannel.SIREN))
+            return self._siren_sounding_locked()
+
+    def _siren_sounding_locked(self) -> bool:
+        energized = self._energized.get(ActuatorChannel.SIREN, False)
+        return energized == active_energized(self._failsafe(ActuatorChannel.SIREN))
 
     @property
     def siren_reason(self) -> SirenReason | None:
@@ -749,17 +1073,19 @@ class GpioController(EdgeModule):
         el gabinete tranquilizara a un edificio que se está moviendo.
         """
         with self._lock:
-            energized = self._energized.get(ActuatorChannel.SIREN, False)
-            if energized != active_energized(self._failsafe(ActuatorChannel.SIREN)):
-                return None
-            if self._sasmex_latched or self._rules_demand.get(ActuatorChannel.SIREN, False):
-                return SirenReason.ALERT
-            if self._safed:
-                return SirenReason.SAFE_STATE
-            if self._siren_test_active or self._actuation_test_active:
-                return SirenReason.TEST
-            # Suena pero ninguna demanda conocida lo explica: es un estado que no
-            # debería existir. Se reporta como ALERTA a propósito — ante la duda, el
-            # sonido que NO minimiza lo que está pasando.
-            log.warning("sirena sonando sin demanda conocida; se rotula como ALERTA")
+            return self._siren_reason_locked()
+
+    def _siren_reason_locked(self) -> SirenReason | None:
+        if not self._siren_sounding_locked():
+            return None
+        if self._sasmex_latched or self._rules_demand.get(ActuatorChannel.SIREN, False):
             return SirenReason.ALERT
+        if self._safed:
+            return SirenReason.SAFE_STATE
+        if self._siren_test_active or self._actuation_test_active:
+            return SirenReason.TEST
+        # Suena pero ninguna demanda conocida lo explica: es un estado que no
+        # debería existir. Se reporta como ALERTA a propósito — ante la duda, el
+        # sonido que NO minimiza lo que está pasando.
+        log.warning("sirena sonando sin demanda conocida; se rotula como ALERTA")
+        return SirenReason.ALERT
