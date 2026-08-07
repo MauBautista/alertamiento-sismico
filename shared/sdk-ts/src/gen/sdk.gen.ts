@@ -714,6 +714,27 @@ export const openWindowMaintenanceWindowsPost = <ThrowOnError extends boolean = 
  * Quién puede cerrar lo decide la RLS sobre ``tenant_id``, que desde el arreglo
  * de la fuga es el del gabinete INTERVENIDO: el dueño del edificio recupera su
  * vigilancia, y el tenant de quien operó no puede tocarla.
+ *
+ * **Cerrar es una AFIRMACIÓN, no un botón.** Dice "la vigilancia volvió", y la
+ * fila deja de salir en pantalla. Este cierre llegó a hacer lo simétrico del
+ * bloqueante de la apertura: cerraba la fila y luego intentaba el borrado dentro
+ * de un ``try`` que solo dejaba un ``warning``, así que la ventana DESAPARECÍA de
+ * la consola con las alarmas todavía mudas hasta que expirase la ``Duration`` —
+ * hasta 4 h de edificio sin vigilancia y sin nada en pantalla que lo dijera.
+ *
+ * Ahora solo se cierra si la afirmación es cierta, con el mismo criterio que la
+ * apertura (ante la duda, el estado más PELIGROSO: sigue muda):
+ *
+ * - el borrado salió bien ⇒ desilenciado, se cierra;
+ * - el borrado falló, o no hay cliente con el que hacerlo, y la ventana **seguía
+ * activa** ⇒ 5xx y la transacción se revierte: la fila sigue abierta, con su
+ * ``mute_rule``, y REABRIR VIGILANCIA se puede reintentar (``DeleteAlarmMuteRule``
+ * es idempotente);
+ * - la ventana **ya había vencido** ⇒ se cierra igual. Vencida la fila, vencida
+ * la regla: la ``Duration`` de AWS y el ``ends_at`` cuentan desde el mismo borde
+ * (``mute_start``), así que ahí no queda nada que desilenciar y el cierre es
+ * contabilidad, no una afirmación sobre el presente. Sin esta salida, un
+ * registro abierto con AWS caído no se podría cerrar nunca.
  */
 export const closeWindowMaintenanceWindowsWindowIdClosePost = <ThrowOnError extends boolean = false>(options: Options<CloseWindowMaintenanceWindowsWindowIdClosePostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<CloseWindowMaintenanceWindowsWindowIdClosePostResponse, CloseWindowMaintenanceWindowsWindowIdClosePostError, ThrowOnError>({
