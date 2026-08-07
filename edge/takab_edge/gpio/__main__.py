@@ -16,14 +16,37 @@ import threading
 
 from takab_edge.config import EdgeSettings, load_settings
 from takab_edge.gpio import GpioController
+from takab_edge.pinlink.server import notificar_systemd
 
 log = logging.getLogger("takab_edge.gpio")
 
 
 def run_gpio_process(settings: EdgeSettings | None = None, *, block: bool = True) -> GpioController:
-    """Arranca el controlador GPIO. Si ``block``, espera hasta SIGINT/SIGTERM."""
-    controller = GpioController(settings or load_settings())
+    """Arranca el controlador GPIO. Si ``block``, espera hasta SIGINT/SIGTERM.
+
+    [T-2.70.a·D2/P2] `controller.start()` deja hechas, EN ESTE ORDEN, las cuatro
+    cosas que definen ser dueño: tomar el cerrojo de pines (D1.1), fijar la pin
+    factory, construir los cinco relés y armar los tres botones, y sembrar el
+    reflejo si el contacto ya estaba cerrado (SPOF-02). Sólo DESPUÉS abre la
+    puerta de servicio y sólo DESPUÉS se avisa a systemd.
+
+    `sd_notify(READY=1)` aquí y no antes: con `Type=simple`, `systemctl start`
+    vuelve cuando el proceso arrancó, no cuando es DUEÑO — y el traspaso de
+    propiedad de D3 se daría por terminado antes de serlo.
+
+    Y la puerta de servicio va FORZADA aquí, aunque de fábrica esté cerrada
+    (`gpio_serve_enabled=False` desde el cierre de la auditoría de D2/P2): este
+    proceso existe para SER el dueño de los pines de todo lo demás. Un dueño con
+    el que nadie puede hablar no es un traspaso, es un apagón — `takab-edge` sin
+    lectura de estado ni actuación posterior, y `deploy.sh` sin `takab-gpioctl`
+    para preguntar quién manda.
+    """
+    cfg = settings or load_settings()
+    if not cfg.gpio_serve_enabled:
+        cfg = cfg.model_copy(update={"gpio_serve_enabled": True})
+    controller = GpioController(cfg)
     controller.start()
+    notificar_systemd("READY=1")
     if not block:
         return controller
 

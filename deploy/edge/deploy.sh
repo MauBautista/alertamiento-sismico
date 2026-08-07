@@ -256,12 +256,12 @@ echo "→ GATE DEL CÓDIGO DESPLEGADO (antes de reiniciar)"
 if ! .venv/bin/python -c 'import lgpio, awsiot' 2>&1; then
   echo "✗ ABORTADO: el venv no puede importar lgpio y/o awsiot." >&2
   FALLO_GATE="dependencias del venv (revisa el 'uv sync': ¿red? ¿extras?)"
-elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__' 2>&1; then
+elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__, takab_edge.pinlink.cli' 2>&1; then
   echo "✗ ABORTADO: el CÓDIGO DESPLEGADO no importa." >&2
   FALLO_GATE="el árbol recién copiado (los ExecStart de las unidades no arrancarían)"
-elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ]; then
+elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ] || [ ! -x .venv/bin/takab-gpioctl ]; then
   echo "✗ ABORTADO: faltan los ejecutables que lanzan las unidades systemd." >&2
-  FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio}"
+  FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio,gpioctl}"
 else
   FALLO_GATE=""
 fi

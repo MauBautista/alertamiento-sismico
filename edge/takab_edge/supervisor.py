@@ -39,7 +39,7 @@ from takab_edge.contracts import (
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
 from takab_edge.gpio import GpioController
-from takab_edge.gpio_link import LocalGpioLink
+from takab_edge.gpio_link import build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
@@ -184,7 +184,11 @@ class EdgeSupervisor:
         # gabinete se comporta exactamente igual. Lo que cambia es que a partir de
         # aquí existe UN sitio por donde pasa todo, que es el que el paso
         # siguiente convierte en IPC.
-        self.gpio_link = LocalGpioLink(self.gpio)
+        # [T-2.70.a·D2/P2] `local` de fábrica: exactamente la llamada directa de
+        # D2/P1. Con `TAKAB_EDGE_GPIO_LINK=ipc` la misma costura pasa a ir por el
+        # socket del dueño — que hoy es ESTE proceso, así que el gabinete es dueño
+        # y cliente a la vez y no se mueve un pin. Eso es lo que D3 enciende.
+        self.gpio_link = build_gpio_link(s, self.gpio)
         self.seedlink = self._build_seedlink(s)
         self.signal = FeatureExtractor(s.signal)
         self.buffer = RingBuffer(s.buffer)
@@ -296,10 +300,17 @@ class EdgeSupervisor:
             backfill=self.backfill,
         )
 
+        # [T-2.70.a·D2/P2] Si la costura es la del socket, es un módulo NO
+        # crítico y arranca JUSTO DESPUÉS del dueño: los cinco consumidores
+        # dependen de `gpio` pero no de ella, así que sin este orden `health`
+        # tomaría su instantánea de arranque contra una caché todavía vacía y el
+        # primer latido saldría sin relés.
+        costura = self.gpio_link if isinstance(self.gpio_link, EdgeModule) else None
         self._modules: dict[str, EdgeModule] = {
             m.name: m
             for m in (
                 self.gpio,
+                *((costura,) if costura is not None else ()),
                 self.seedlink,
                 self.signal,
                 self.buffer,

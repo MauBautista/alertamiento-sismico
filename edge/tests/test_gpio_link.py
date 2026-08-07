@@ -468,7 +468,24 @@ def test_el_supervisor_cablea_la_COSTURA_a_los_cinco_y_a_los_dos_observadores(
         assert recibido is costura, f"{nombre} no recibió la costura del supervisor"
         assert recibido is not supervisor.gpio, f"{nombre} sigue con el controlador crudo"
     # …y los DOS observadores `on_sasmex` siguen cableados (supervisor + drill).
-    assert len(supervisor.gpio._sasmex_callbacks) == 2
+    #
+    # [T-2.70.a·D2/P2] Se comprueban por IDENTIDAD y no por CUENTA, y el cambio
+    # no relaja nada: desde D2/P2 el dueño de los pines tiene un tercer
+    # observador legítimo —el `PinLinkServer` que sirve su propia puerta— y un
+    # `== 2` se habría "arreglado" subiendo el número, que es como se pierde una
+    # guarda. Aquí se exige que los dos del supervisor estén Y que cualquier otro
+    # sea del transporte: un consumidor que se colara enganchándose al
+    # controlador crudo sigue cayendo.
+    callbacks = supervisor.gpio._sasmex_callbacks
+    assert supervisor._on_sasmex in callbacks, "el observador del supervisor se perdió"
+    assert supervisor.drill.on_sasmex in callbacks, "el observador del simulacro se perdió"
+    ajenos = [
+        cb
+        for cb in callbacks
+        if cb not in (supervisor._on_sasmex, supervisor.drill.on_sasmex)
+        and type(getattr(cb, "__self__", None)).__name__ != "PinLinkServer"
+    ]
+    assert ajenos == [], f"observadores enganchados al controlador CRUDO: {ajenos}"
 
 
 # ---------------------------------------------------------------------------

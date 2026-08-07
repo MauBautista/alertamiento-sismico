@@ -231,10 +231,25 @@ def test_el_gate_ejercita_el_codigo_recien_desplegado() -> None:
         )
 
 
+#: [T-2.70.a·D2/P2] Console scripts que NO son un servicio, con su razón. Es una
+#: lista de EXCEPCIONES declaradas: un entry point nuevo se presume unidad de
+#: systemd y, si no lo es, hay que escribir aquí por qué — un `takab-*` que
+#: arranca solo y que nadie supervisa sería justo el defecto que esto vigila.
+_SCRIPTS_SIN_UNIDAD: dict[str, str] = {
+    "takab-gpioctl": (
+        "es una CLI de shell (interroga al dueño de los pines para `deploy.sh` y "
+        "para el traspaso de D3), no un proceso de larga vida: no tiene ni debe "
+        "tener unidad. El gate del despliegue sí la importa: si no importa, el "
+        "despliegue se queda sin su único instrumento de diagnóstico."
+    ),
+}
+
+
 def test_los_entry_points_del_gate_son_los_de_las_unidades_systemd() -> None:
     """DERIVADO de `pyproject.toml`, no enumerado: el gate importa los módulos
-    de los console scripts que los `ExecStart=` lanzan. Si alguien renombra un
-    entry point, el gate dejaría de probar lo que arranca — y este test lo ve.
+    de TODOS los console scripts, y los que son servicio los lanza su unidad.
+    Si alguien renombra un entry point, el gate dejaría de probar lo que arranca
+    — y este test lo ve.
     """
     scripts = tomllib.loads(_PYPROJECT.read_text())["project"]["scripts"]
     guion = _deploy()
@@ -244,9 +259,18 @@ def test_los_entry_points_del_gate_son_los_de_las_unidades_systemd() -> None:
         assert modulo in bloque, (
             f"el console script `{nombre}` apunta a `{modulo}` y el gate no lo importa"
         )
+        if nombre in _SCRIPTS_SIN_UNIDAD:
+            assert nombre not in _UNIDADES, (
+                f"`{nombre}` está declarado como CLI y sin embargo tiene unidad"
+            )
+            continue
         assert f".venv/bin/{nombre}" in _unidad(nombre), (
             f"{nombre}.service debería ejecutar .venv/bin/{nombre}"
         )
+    # …y la inversa: toda unidad que exista tiene que lanzar un script DECLARADO.
+    # Sin esto, borrar un entry point dejaría un `ExecStart=` apuntando a nada.
+    for nombre in _UNIDADES:
+        assert nombre in scripts, f"{nombre}.service lanza un console script que ya no existe"
 
 
 def test_hay_un_prevuelo_antes_del_rsync_destructivo() -> None:

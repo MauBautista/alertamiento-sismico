@@ -25,6 +25,13 @@ from takab_edge.contracts import ActuatorChannel, FailSafeMode
 #: declaran como `WorkingDirectory=` y `ReadWritePaths=`.
 GPIO_LOCK_PATH_PROD = "/var/lib/takab/gpio.lock"
 
+#: [T-2.70.a·D2/P2] Socket del transporte de pines EN PRODUCCIÓN. Vive en un
+#: DIRECTORIO PROPIO 0700 —el aislamiento lo da el directorio, no el archivo—
+#: dentro del mismo /var/lib/takab que las dos unidades declaran escribible.
+#: Ruta fija por la misma razón que el cerrojo: si cada proceso mirase una ruta
+#: distinta, el cliente hablaría solo y creería que el dueño está mudo.
+GPIO_SOCKET_PATH_PROD = "/var/lib/takab/pinlink/gpio.sock"
+
 #: Caracteres que se conservan al meter la identidad del gabinete en un nombre de
 #: archivo; el resto se sustituye (un `gateway_id` con `/` no puede abrir nada).
 _RE_NOMBRE_DE_ARCHIVO = re.compile(r"[^A-Za-z0-9._-]")
@@ -456,6 +463,86 @@ class EdgeSettings(BaseSettings):
         # usuarios: sin él, el cerrojo de otro usuario sería un archivo que este
         # proceso no puede abrir — y fail-closed, con razón, no arrancaría.
         return str(Path(tempfile.gettempdir()) / f"takab-gpio-{os.getuid()}-{gabinete}.lock")
+
+    #: [T-2.70.a·D2/P2] Socket `AF_UNIX` por el que el dueño de los pines sirve
+    #: las cuatro operaciones de la costura. **VACÍO = derivada** (ver
+    #: `gpio_socket_file`), misma disciplina que el cerrojo.
+    #:
+    #: NO es una perilla de operación: se lee al arrancar el servidor y jamás en
+    #: el reflejo, que no cruza este socket (gate #6).
+    gpio_socket_path: str = ""
+
+    #: [T-2.70.a·D2/P2] Forzar ABIERTA la puerta de servicio del dueño.
+    #:
+    #: **`False` de fábrica, y es una corrección.** Venía en `True` con el
+    #: argumento «encenderlo no cambia lo que el gabinete hace hoy», y sí lo
+    #: cambiaba: TODO gabinete ataba el socket, levantaba el hilo aceptador y
+    #: —esto es lo que importa— registraba `PinLinkServer._al_sasmex` como
+    #: **callback #0 del reflejo**. Con un suscriptor, el coste medido en el hilo
+    #: del botón pasó de 0.093 ms a 1.415 ms p50 / 2.124 ms máx, y **la latencia
+    #: anclada del gate #6 no lo ve** (0.027 ms constante) porque esa medición
+    #: termina antes de invocar callbacks. Un coste sin medir dentro del camino
+    #: de vida no se despliega «porque total, nadie se conecta»; y el paso
+    #: declaraba por escrito «D2/P2 construye el transporte, NO lo enciende».
+    #:
+    #: No hace falta tocarla para D3: la puerta se abre SOLA cuando alguien de
+    #: este gabinete va a usarla (`gpio_link == "ipc"` ⇒ ver
+    #: :attr:`gpio_serves_pins`), y el proceso dedicado `takab-gpio` sirve
+    #: siempre — un dueño de pines con el que nadie puede hablar no es un
+    #: traspaso, es un apagón. Esta perilla queda para el caso raro: dejar la
+    #: puerta abierta con `GPIO_LINK=local` para diagnosticar con
+    #: `takab-gpioctl` sin desplegar código.
+    gpio_serve_enabled: bool = False
+
+    #: [T-2.70.a·D2/P2] POR DÓNDE le habla `takab-edge` al dueño de los pines.
+    #:
+    #: * ``local`` (defecto) — llamada directa al `GpioController` de este mismo
+    #:   proceso. Es lo que corre hoy en el gabinete y no cambia con D2/P2.
+    #: * ``ipc`` — por el socket. **D2/P2 lo construye; D3 lo enciende.** Con
+    #:   ``ipc`` y el dueño todavía en este proceso, el gabinete es dueño y
+    #:   cliente a la vez: se acredita el transporte en el Pi real SIN traspasar
+    #:   la propiedad de los pines, que es un paso aparte y con gate físico.
+    #:
+    #: `str` pelado y no `Literal`, por la misma razón que `cloud_admin_state`:
+    #: un valor inesperado tiene que degradar a lo SEGURO —aquí, la llamada
+    #: directa de siempre— y no tirar el documento de config entero.
+    gpio_link: str = "local"
+
+    @property
+    def gpio_serves_pins(self) -> bool:
+        """¿Este dueño de pines abre su puerta de servicio? **Derivado.**
+
+        Se abre cuando alguien de este gabinete va a llamar a ella —`GPIO_LINK`
+        en `ipc`, que es el interruptor de D3— o cuando se fuerza a mano
+        (`gpio_serve_enabled`, para diagnosticar con `takab-gpioctl` sin cambiar
+        la costura). Derivarlo evita el peor de los dos fallos posibles: encender
+        el cliente y dejar el servidor apagado, que sería un gabinete hablándole
+        a una puerta que nadie ató.
+        """
+        return bool(self.gpio_serve_enabled) or self.gpio_link == "ipc"
+
+    @property
+    def gpio_socket_file(self) -> str:
+        """Ruta EFECTIVA del socket del transporte de pines. Misma forma que el cerrojo.
+
+        1. **Configurada** (`TAKAB_EDGE_GPIO_SOCKET_PATH`): manda.
+        2. **Producción** (`dev_mode=False`): `GPIO_SOCKET_PATH_PROD`, fija y la
+           MISMA para los dos procesos.
+        3. **dev/demo**: un directorio propio por GABINETE en el temporal —
+           `demo/run.py` levanta tres gabinetes en un host y son tres edificios
+           distintos, con tres juegos de pines y tres dueños.
+
+        El uid va en el nombre porque el directorio temporal es COMPARTIDO entre
+        usuarios: sin él, el directorio 0700 de otro usuario sería una ruta que
+        este proceso no puede ni mirar.
+        """
+        if self.gpio_socket_path:
+            return self.gpio_socket_path
+        if not self.dev_mode:
+            return GPIO_SOCKET_PATH_PROD
+        gabinete = _RE_NOMBRE_DE_ARCHIVO.sub("_", self.gateway_id) or "sin-identidad"
+        raiz = Path(tempfile.gettempdir()) / f"takab-pinlink-{os.getuid()}-{gabinete}"
+        return str(raiz / "gpio.sock")
 
     # --- Perfil de relés, umbrales y pines ---
     failsafe: dict[ActuatorChannel, FailSafeMode] = Field(

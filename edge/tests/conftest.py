@@ -36,6 +36,15 @@ def mock_pin_factory() -> Iterator[None]:
 def cerrojo_de_pines_por_test(tmp_path: Path) -> Iterator[None]:
     """[T-2.70.a·D1.1] Cada test es un GABINETE distinto: su propio cerrojo.
 
+    [T-2.70.a·D2/P2] Y su propio SOCKET, por la misma razón y en el mismo sitio:
+    dos tests que compartieran el socket derivado de dev (uno por `gateway_id`,
+    y casi todos usan `gw-dev-0001`) se pisarían el archivo si uno dejara un
+    servidor vivo. Va aquí y no en un fixture nuevo a propósito — ver la trampa
+    de `monkeypatch` documentada abajo: añadir un autouse cambia el orden de
+    teardown y ya tumbó cinco tests de `test_pin_factory.py`.
+    OJO con la longitud: `AF_UNIX` corta la ruta en ~108 bytes y el `tmp_path`
+    de pytest ya gasta ~60; por eso el nombre del archivo es corto.
+
     El dueño de los pines toma un `flock` EXCLUSIVO sobre `gpio_lock_file` al
     arrancar, y `flock` colisiona **incluso entre dos descriptores del mismo
     proceso** (medido: `BlockingIOError`). Sin esto, todos los tests que no
@@ -64,16 +73,20 @@ def cerrojo_de_pines_por_test(tmp_path: Path) -> Iterator[None]:
     fixture que no tiene nada que ver con pines. Guardar y restaurar el entorno a
     mano no toca ese orden.
     """
-    clave = "TAKAB_EDGE_GPIO_LOCK_PATH"
-    previo = os.environ.get(clave)
-    os.environ[clave] = str(tmp_path / "gpio.lock")
+    rutas = {
+        "TAKAB_EDGE_GPIO_LOCK_PATH": str(tmp_path / "gpio.lock"),
+        "TAKAB_EDGE_GPIO_SOCKET_PATH": str(tmp_path / "g.sock"),
+    }
+    previos = {clave: os.environ.get(clave) for clave in rutas}
+    os.environ.update(rutas)
     try:
         yield
     finally:
-        if previo is None:
-            os.environ.pop(clave, None)
-        else:
-            os.environ[clave] = previo
+        for clave, previo in previos.items():
+            if previo is None:
+                os.environ.pop(clave, None)
+            else:
+                os.environ[clave] = previo
 
 
 @pytest.fixture
@@ -82,7 +95,11 @@ def settings(tmp_path: Path) -> EdgeSettings:
     # `gpio_lock_path` explícito además del entorno de arriba: quien lea este fixture
     # tiene que ver que el cerrojo de pines está aislado, sin ir a buscarlo.
     return load_settings().model_copy(
-        update={"local_api_port": 0, "gpio_lock_path": str(tmp_path / "gpio.lock")}
+        update={
+            "local_api_port": 0,
+            "gpio_lock_path": str(tmp_path / "gpio.lock"),
+            "gpio_socket_path": str(tmp_path / "g.sock"),
+        }
     )  # dev_mode=True por defecto
 
 
@@ -846,6 +863,44 @@ def skips_no_declarados(stats: dict[str, list]) -> list[tuple[str, str]]:
             continue
         huerfanos.add((corto, motivo))
     return sorted(huerfanos)
+
+
+# ---------------------------------------------------------------------------
+# [T-2.70.a·D2/P2] Censo de VARIANTES COLECTADAS (guarda de conformidad)
+# ---------------------------------------------------------------------------
+#
+# `tests/test_gpio_conformance.py` exige que TODO test suyo corra contra las dos
+# costuras. La guarda original leía `inspect.signature(...)` sobre las funciones
+# del módulo, y una firma no sabe distinguir «pide el fixture» de «lo pisa»: un
+# `@parametrize("enlace", [...])` que SOMBREA el fixture aparecía conforme y
+# jamás instanciaba las variantes `local`/`ipc`; y un método dentro de una clase
+# `TestX` no era `inspect.isfunction`, así que ni se miraba. Con esas dos vías
+# coladas: 62 passed y la guarda muda.
+#
+# Esto mide lo que pytest COLECTÓ de verdad. Va en `pytest_itemcollected` —no en
+# `pytest_collection_modifyitems`— porque ese hook corre ANTES de la deselección
+# por `-k`/`-m`: el censo es el mismo se filtre la corrida o no.
+
+#: `{nombre del test: {variante del fixture `enlace` observada, …}}` por módulo.
+VARIANTES_COLECTADAS: dict[str, dict[str, set]] = {}
+
+#: Marca del ítem que no lleva parámetro `enlace` ninguno. Un objeto propio y no
+#: `None`, que es un valor que alguien podría parametrizar de verdad.
+SIN_ENLACE = "«sin el fixture `enlace`»"
+
+
+def pytest_itemcollected(item) -> None:  # noqa: ANN001 — firma del hook
+    """Anota, por módulo y test, con qué variante de `enlace` se colectó cada ítem."""
+    try:
+        modulo = item.nodeid.split("::", 1)[0].rsplit("/", 1)[-1]
+        nombre = getattr(item, "originalname", None) or item.name.split("[", 1)[0]
+        params = getattr(getattr(item, "callspec", None), "params", {}) or {}
+        variante = params.get("enlace", SIN_ENLACE)
+        if not isinstance(variante, (str, int, float, bool, type(None))):
+            variante = repr(variante)  # una variante inhashable no puede tumbar la colección
+        VARIANTES_COLECTADAS.setdefault(modulo, {}).setdefault(nombre, set()).add(variante)
+    except Exception:  # noqa: BLE001 — un censo jamás impide colectar la suite
+        return
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001 — firma del hook

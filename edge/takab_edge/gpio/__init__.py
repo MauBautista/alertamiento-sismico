@@ -231,6 +231,11 @@ class GpioController(EdgeModule):
         self._test_mode_until = 0.0  # [T-1.69] deadline monotónico del modo prueba WR-1
         #: [D1.1] Descriptor del cerrojo de propiedad de pines mientras se sostiene.
         self._lock_fd: int | None = None
+        #: [D2/P2] Puerta de servicio del dueño (socket AF_UNIX). Se construye UNA
+        #: vez por controlador y se reutiliza entre arranques: `gpio` no sabe
+        #: desregistrar observadores, y un servidor nuevo por arranque los iría
+        #: acumulando en `_sasmex_callbacks`.
+        self._servidor_de_pines = None
 
     # --- Observadores + silencio ---
     def on_sasmex(self, callback: SasmexCallback) -> None:
@@ -458,6 +463,10 @@ class GpioController(EdgeModule):
             # cerrojo para siempre.
             self._release_pin_ownership()
             raise
+        # DESPUÉS del hardware, y NO crítico: quien conteste por el socket ya es
+        # dueño de los pines, con los cinco relés construidos, los tres botones
+        # armados y el seed del contacto sostenido corrido (SPOF-02).
+        self.arrancar_servidor_de_pines()
 
     def _arrancar_hardware(self) -> None:
         if self.settings.dev_mode:
@@ -499,6 +508,61 @@ class GpioController(EdgeModule):
 
         self._seed_from_held_contact()
 
+    # --- [D2/P2] La puerta de servicio del dueño ---
+    @property
+    def servidor_de_pines(self):  # noqa: ANN201 — PinLinkServer | None (import perezoso)
+        """El servidor si está atado, o `None` si no pudo/no debe estarlo."""
+        return self._servidor_de_pines
+
+    def arrancar_servidor_de_pines(self) -> None:
+        """Abre el socket del transporte. **Hilo NO crítico: jamás tumba el reflejo.**
+
+        Es lo que hace este paso desplegable sin riesgo. Un socket que no se puede
+        atar —directorio ausente, ruta demasiado larga para `AF_UNIX`, permisos,
+        un dueño anterior VIVO— deja al gabinete exactamente como está hoy:
+        protegiendo, con `takab-edge` hablándole a su `GpioController` por la
+        costura LOCAL. Lo único que se pierde es la puerta de servicio, y eso se
+        grita en el journal en vez de callarse.
+
+        El import es PEREZOSO y a propósito: mantiene el grafo de `takab_edge.gpio`
+        libre de sorpresas para quien lo lea, aunque `pinlink` no añada ninguna
+        dependencia nueva y la allowlist de D1.3 lo vigile de todos modos.
+        """
+        if not getattr(self.settings, "gpio_serves_pins", False):
+            log.info(
+                "gpio: puerta de servicio CERRADA (GPIO_LINK=%s, GPIO_SERVE_ENABLED=%s). "
+                "Se abre sola con GPIO_LINK=ipc; el proceso dedicado `takab-gpio` "
+                "sirve siempre.",
+                getattr(self.settings, "gpio_link", "?"),
+                getattr(self.settings, "gpio_serve_enabled", "?"),
+            )
+            return
+        try:
+            from takab_edge.pinlink.server import PinLinkServer
+
+            if self._servidor_de_pines is None:
+                self._servidor_de_pines = PinLinkServer(self, self.settings.gpio_socket_file)
+            self._servidor_de_pines.start()
+        except Exception as exc:  # noqa: BLE001 — NO crítico por diseño
+            self._servidor_de_pines = None
+            log.error(  # noqa: TRY400 — el stacktrace va en el exc_info, el titular no
+                "gpio: la puerta de servicio NO se pudo abrir (%s). El gabinete "
+                "sigue protegiendo y el reflejo SASMEX→sirena es intocado; lo que "
+                "no habrá es lectura ni actuación posterior desde otro proceso.",
+                exc,
+                exc_info=True,
+            )
+
+    def detener_servidor_de_pines(self) -> None:
+        """Cierra la puerta de servicio. Idempotente y nunca lanza."""
+        servidor, self._servidor_de_pines = self._servidor_de_pines, None
+        if servidor is None:
+            return
+        try:
+            servidor.stop()
+        except Exception:  # noqa: BLE001 — parar la puerta jamás impide parar los pines
+            log.warning("gpio: la puerta de servicio no cerró limpio", exc_info=True)
+
     def _seed_from_held_contact(self) -> None:
         """Siembra el reflejo si el contacto de alerta ya está cerrado al arrancar (SPOF-02).
 
@@ -510,6 +574,12 @@ class GpioController(EdgeModule):
             self._dispatch_sasmex(active=True, is_test=False)
 
     def _on_stop(self) -> None:
+        # PRIMERO la puerta de servicio, y FUERA del lock. Antes, porque a partir
+        # de aquí el gabinete va a estado seguro y cerrar dispositivos: un cliente
+        # comandando a media parada escribiría sobre relés que ya se están
+        # cerrando. Fuera del lock, porque parar el servidor JOINea hilos que
+        # pueden estar dentro de `snapshot()` esperando ese mismo lock.
+        self.detener_servidor_de_pines()
         try:
             with self._lock:
                 for attr in ("_test_timer", "_actuation_test_timer"):
@@ -566,8 +636,22 @@ class GpioController(EdgeModule):
                     self._last_reflex_latency_s * 1000.0,
                 )
             callbacks = list(self._sasmex_callbacks)
-        for callback in callbacks:  # fuera del lock: pueden re-entrar (rules/cloud)
-            callback(signal)
+        # Fuera del lock: pueden re-entrar (rules/cloud). Y AISLADOS uno a uno,
+        # igual que `on_silence` desde siempre.
+        #
+        # [T-2.70.a·D2/P2] Iban sin `try`, y desde D2/P2 el callback #0 de esta
+        # lista es `PinLinkServer._al_sasmex` —el dueño se suscribe a sí mismo
+        # para servir su propia puerta—. Si ese primero lanzaba, los que vienen
+        # detrás no llegaban a correr: `supervisor._on_sasmex` (que publica el
+        # evento a la NUBE y abre incidente) y `drill.on_sasmex` (que aborta el
+        # simulacro ante una alerta real). Un fallo del transporte apagando la
+        # notificación de un sismo es exactamente lo que el hilo NO crítico
+        # existe para impedir.
+        for callback in callbacks:
+            try:
+                callback(signal)
+            except Exception:  # noqa: BLE001 — un observer jamás corta a los demás
+                log.exception("observer de SASMEX falló (aislado); los demás siguen")
         return signal
 
     # --- Botones locales ---

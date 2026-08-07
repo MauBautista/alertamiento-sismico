@@ -52,6 +52,14 @@ _DEPLOY = _RAIZ / "deploy" / "edge" / "deploy.sh"
 _CENTINELA = "CODIGO_ANTERIOR.txt"
 
 
+def _console_scripts() -> list[str]:
+    """Los console scripts DECLARADOS hoy en `edge/pyproject.toml`."""
+    import tomllib
+
+    datos = tomllib.loads((_RAIZ / "edge" / "pyproject.toml").read_text(encoding="utf-8"))
+    return list(datos["project"]["scripts"])
+
+
 def _escribir_ejecutable(ruta: pathlib.Path, cuerpo: str) -> None:
     ruta.write_text("#!/usr/bin/env bash\n" + textwrap.dedent(cuerpo))
     ruta.chmod(0o755)
@@ -130,14 +138,21 @@ def gabinete(tmp_path: pathlib.Path):
 
     # uv falso: materializa los console scripts que el gate exige. NO reescribe
     # .venv/bin/python cuando ya viene del gabinete simulado.
+    # [T-2.70.a·D2/P2] Los console scripts salen de `pyproject.toml`, no de una
+    # lista escrita aquí: el gate del despliegue los exige TODOS, y una lista a
+    # mano deja el sandbox una versión por detrás del proyecto — el primer script
+    # nuevo hace fallar diez tests por un motivo que en el Pi no existe.
+    materializar = "\n        ".join(
+        f": > .venv/bin/{nombre} && chmod +x .venv/bin/{nombre}"
+        for nombre in sorted(_console_scripts())
+    )
     _escribir_ejecutable(
         binarios / "uv",
         f"""
         echo "uv $*" >> "{bitacora}"
         mkdir -p .venv/bin
         [ -x .venv/bin/python ] || cp "{plantilla_py}" .venv/bin/python
-        : > .venv/bin/takab-edge && chmod +x .venv/bin/takab-edge
-        : > .venv/bin/takab-gpio && chmod +x .venv/bin/takab-gpio
+        {materializar}
         """,
     )
 

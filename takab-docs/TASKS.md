@@ -4450,6 +4450,174 @@ FICHADO — la deuda que D2/P1 deja declarada, con su razón:
    habría roto esa propiedad. Va **con D2/P2**, que es cuando `gpio_unreachable` deja de ser
    inalcanzable y el dato empieza a existir de verdad.
 
+**D2/P2 — el TRANSPORTE (2026-08-07). Construido y APAGADO: `GPIO_LINK` sigue en `local`.**
+
+`edge/takab_edge/pinlink/{codec,server,client,cli}.py`, sin dependencias nuevas (socket `AF_UNIX`
++ `json` de la stdlib; `codec` importa `pydantic` porque los contratos lo son — ver M12 abajo),
+más el servidor DENTRO del dueño actual (`GpioController.arrancar_servidor_de_pines`, hilo **NO
+crítico**: sin socket el reflejo vive igual) y `IpcGpioLink`, cliente **CACHÉ-FIRST** con
+`critical = False`. Tampoco mueve un pin: el mismo proceso es dueño y cliente. Lo que D3 enciende
+es una línea (`TAKAB_EDGE_GPIO_LINK=ipc`, dueño todavía en `takab-edge`), y su ensayo general ya
+corre en `tests/test_pinlink.py::test_el_gabinete_ENTERO_funciona_hablando_por_el_socket`.
+
+Lo que sostiene el paso, y dónde mirarlo:
+
+- **La suite de conformidad** (`tests/test_gpio_conformance.py`): todo test del archivo corre DOS
+  veces —contra `LocalGpioLink` y contra un cliente conectado a un servidor que envuelve **ese
+  mismo** `GpioController`—. **Derivada, no enumerada**, por tres vías: el fixture parametrizado
+  con una guarda que exige que TODO test del módulo lo pida (lista de EXCEPCIONES declaradas, no
+  de miembros); los casos que salen de `GPIO_ACTIONS`, `GPIO_EVENTS` y
+  `GpioSnapshot.__dataclass_fields__`; y un oráculo campo a campo probado contra una costura que
+  miente en CADA campo, uno por caso. Medido con dos mutaciones: una divergencia silenciosa en
+  `siren_sounding` pone en rojo 4 casos `[ipc]` y ninguno `[local]`; un servidor que traga la
+  acción `silence` pone en rojo su caso derivado y ninguno más.
+- **La EDAD de la instantánea** (`GpioSnapshot.age_s`): se mide en el reloj de QUIEN LEE (no viaja
+  por el cable — `time.monotonic()` no es comparable entre procesos) y **fuera de plazo el dato NO
+  EXISTE**: `GpioLinkUnavailable`, que es la causa que los consumidores ya tratan desde D2/P1.
+- **Reconciliación por `episode_id`**: una reconexión durante un sismo NO reabre el incidente en la
+  nube, y un episodio nacido con el enlace caído se entrega exactamente UNA vez.
+
+FICHADO — lo que D2/P2 decide y lo que deja abierto:
+
+1. **La deuda 1 de D2/P1 (`HealthSnapshot.relays` sin «sin dato») SIGUE ABIERTA**, y su razón
+   cambió: se dijo «va con D2/P2, cuando `gpio_unreachable` deje de ser inalcanzable», pero D2/P2
+   **no enciende el cliente** — con `GPIO_LINK=local` esa causa sigue sin poder ocurrir en
+   producción. Bumpear `SCHEMA_VERSION` para un estado que aún nadie puede alcanzar sería mover el
+   contrato edge→nube sin un solo caso real que lo justifique. Va **con D3**, que es el paso que lo
+   vuelve alcanzable, y con el mismo alcance ya fichado (schema 1.10.0 + ingest + columna/vista).
+2. **La latencia del transporte NO está medida en ARM.** El p50 de `AF_UNIX` del reconocimiento
+   (0.017 ms) es de x86-64. El diseño **no depende de ese número**: las lecturas no cruzan el
+   socket (caché-first) y el reflejo no lo cruza en absoluto (gate #6). Lo que sí depende es el
+   coste de las ESCRITURAS —un lote de tier, una acción del panel—, anclado con una cota de orden
+   de magnitud (p50 < 10 ms) en `test_una_ida_y_vuelta_por_el_socket_es_barata`. Medirlo en el Pi 4
+   es trabajo de D3/`GATE-HW`.
+3. **`Type=notify` en la unidad, sin poner.** `run_gpio_process` ya emite `sd_notify(READY=1)` tras
+   ser dueño (cerrojo + pin factory + 5 relés + 3 botones + seed), y sin `NOTIFY_SOCKET` es un
+   no-op. Cambiar `Type=simple`→`notify` en `takab-gpio.service` toca el arranque del camino de
+   vida y va con D3, junto con retirar `Conflicts=`.
+4. **`takab-gpioctl` INTERROGA, no acciona** (anclado por test). Una CLI capaz de comandar relés
+   sería una segunda puerta a los actuadores sin PIN, sin registro de acciones y sin ack firmado.
+
+**D2/P2 · cierre de la auditoría adversarial (2026-08-07). Dos BLOQUEANTES y siete menores.**
+
+La auditoría RECHAZÓ el paso. Mucho de lo que fue a romper aguantó y está medido —el reflejo no
+cruza el transporte (0.027 ms constante con el servidor apagado, encendido y con suscriptor), los
+cinco modos de fallo del bind dejan el gabinete protegiendo, `drive_all_safe` es inalcanzable por
+siete vías, y no hay caché vieja servida como fresca ni con `SIGSTOP` de 12 s—, pero lo que no
+aguantó habría convertido D3 en un desastre silencioso.
+
+**B1 · EL OBSERVADOR DE SASMEX SE AUTOBLOQUEABA.** `IpcGpioLink._avisar` despachaba los
+observadores en su **único hilo lector**. `supervisor._on_sasmex` se registra ahí y ACTÚA
+(`_act_and_publish` → `RelayActuator` → `link.apply`), y `apply` espera una respuesta que **sólo
+ese hilo puede leer**: interbloqueo con timeout garantizado en cada sismo. Medido con un
+`EdgeSupervisor` real y `simulate_sasmex`:
+
+| | ACKs con éxito | ACKs fallidos | relés gas/elev/puertas |
+|---|---|---|---|
+| `GPIO_LINK=local` | 5 | 0 | `True` |
+| `GPIO_LINK=ipc` (antes) | 0 | **5** | **`True`** |
+
+Mentía en las **dos** direcciones a la vez: la nube veía la protección caída de un gabinete que
+había protegido (el servidor ejecutó el lote; el cliente nunca leyó la respuesta). Daños
+colaterales medidos: la caché llegaba a 1.99 s (0.14 s de `gpio_unreachable` **en pleno sismo** —
+panel a `S/D`, latido con relés vacíos) y el aborto del simulacro se retrasaba 2.003 s.
+
+*Arreglo:* los observadores corren en un hilo propio (`pinlink-observadores`), FIFO, con el orden
+de registro conservado — no se prohibió la reentrada, porque prohibirla dejaría a D3 sin actuación
+posterior por SASMEX, que es justo lo que el paso existe para transportar. La prohibición queda
+como **cable trampa**: `ReentradaDelHiloLector` (hereda de `GpioLinkUnavailable`, así que todos los
+consumidores la degradan igual) declara el defecto **en 0 ms y por su nombre** si alguien vuelve a
+meter una orden en el hilo lector, en vez de en 2 s disfrazado de «el dueño no contestó» —que
+apunta al dueño, y el dueño estaba perfecto.
+
+**B1-bis · el test que decía acreditar D3 era TEATRO.**
+`test_el_gabinete_ENTERO_funciona_hablando_por_el_socket` recorría ese camino exacto y pasaba,
+porque sólo miraba si el evento llegó a `takab/events`; los cinco ACKs de la secuencia que la
+alerta disparó no los leía nadie, y la actuación que sí verificaba se lanzaba desde el hilo
+principal, donde no hay reentrada. Ahora asierta los ACKs, y la prueba que de verdad cierra D3 es
+`test_un_SASMEX_actua_IGUAL_por_las_dos_costuras[local|ipc]`: mismo `EdgeSupervisor`, mismos cinco
+ACKs, mismos relés, mismo evento a la nube y mismo aborto del simulacro (<1 s) por las dos vías.
+
+**B2 · la guarda de pertenencia de la conformidad tenía DOS agujeros**, y uno evadía **pareciendo
+conforme**. Infería la pertenencia de `inspect.signature(...)` sobre `vars(modulo)` filtrado por
+`inspect.isfunction`: un método dentro de `class TestIntruso:` no era `isfunction` (ni se miraba),
+y un `@parametrize("enlace", [...])` que **SOMBREA** el fixture tenía el nombre en la firma y
+jamás instanciaba las variantes `local`/`ipc`. Con las dos coladas: 62 passed y la guarda muda.
+Ahora se mide lo que pytest **colectó** (`item.callspec.params`, censado en
+`conftest.pytest_itemcollected` — antes de la deselección por `-k`, así que el censo no depende de
+cómo se invoque la suite), exigiendo variante `local` **y** `ipc` por ítem. Verificado poniendo las
+dos evasiones en el archivo: las caza las dos, nombrando con qué se colectó cada una.
+
+CERRADOS en el mismo paso, cada uno con su test y su mutación de no-vacuidad:
+
+- **M7 · `TIMEOUT_ACTION_S` se justificaba con una premisa FALSA.** El *hold* de 5 s de
+  `actuation_test` va en un `threading.Timer` y **no bloquea la llamada**; lo que bloquea son los
+  bucles de pulsos (1.207 s y 1.606 s medidos con los tiempos de fábrica). 30 s eran ~19× el peor
+  caso real. Ahora **5 s**, y el número lo ancla
+  `test_el_plazo_de_las_acciones_sale_de_lo_que_TARDAN`, que MIDE cada acción de `GPIO_ACTIONS` en
+  vez de creerse el comentario.
+- **M3 · el rate-limit ahogaba el journal que lo diagnostica** (1 línea por petición frenada, 417
+  líneas/s medidas). Autolímite a ~1/s por conexión, con el contador de las que calló — mismo
+  patrón que `audio._reconcile_siren`, regla de oro 10.
+- **M2 · el backoff no enganchaba nunca**: `intento = 0` se reseteaba tras un `connect()`, no tras
+  una *sesión*, y en `AF_UNIX` el kernel completa el `connect` aunque el servidor cierre acto
+  seguido. Con el dueño rechazando por uid: 20.6 reconexiones/s indefinidamente. Ahora sólo cuenta
+  una sesión que sirvió algún mensaje. (El cap del exponente sí cumplía `737dd73`.)
+- **M5 · sin cota de conexiones ni corte del ocioso**: 200 conexiones parqueadas a media trama eran
+  **+400 hilos** en el proceso que toca la sirena, sostenidos indefinidamente — `listen(8)` es
+  backlog, no cota. Ahora `MAX_CONEXIONES=16` y corte a los 30 s del que abre, manda medio marco y
+  se calla. Un suscriptor sano y CALLADO no se corta (el flujo va del dueño al cliente): anclado
+  aparte, porque ese cierre habría sido peor que el agujero.
+- **M9 · `PinLinkServer._al_sasmex` es el callback #0 del reflejo y no estaba aislado.**
+  `gpio._dispatch_sasmex` invocaba sin `try` y `_empujar_estado` leía el estado sin guarda: si esa
+  lectura reventaba, no llegaban a correr ni `supervisor._on_sasmex` (la nube) ni
+  `drill.on_sasmex` (el aborto del simulacro). Las dos defensas puestas y **probadas por
+  separado** — con sólo la de `gpio`, el caso del servidor quedaba verde sin medir nada.
+- **M11 · D2/P2 no estaba del todo apagado**: `gpio_serve_enabled=True` de fábrica, así que TODO
+  gabinete ataba el socket y registraba `_al_sasmex` como callback #0, con un coste en el hilo del
+  botón de 0.093 → 1.415 ms p50 / 2.124 ms máx (con suscriptor) que **la latencia anclada del gate
+  #6 no puede ver**, porque esa medición termina antes de invocar callbacks. **Decisión: apagado
+  de fábrica.** Un coste sin medir dentro del camino de vida no se despliega «porque total, nadie
+  se conecta», y el paso declaraba por escrito «construye el transporte, NO lo enciende». D3 sigue
+  siendo UN interruptor: la puerta se abre SOLA con `GPIO_LINK=ipc`
+  (`EdgeSettings.gpio_serves_pins`, derivada) y el proceso dedicado `takab-gpio` sirve siempre — un
+  dueño de pines con el que nadie puede hablar no es un traspaso, es un apagón. La perilla queda
+  para forzarla abierta con `GPIO_LINK=local` y diagnosticar con `takab-gpioctl`.
+- **M12 · «stdlib puro» era literalmente falso**: `codec.py` importa `pydantic`. Es inocuo (la
+  allowlist lo permite y **sí caza** dependencias nuevas nombrando la cadena), pero el rótulo era
+  enfático y erróneo: corregido a «ninguna dependencia NUEVA» en los cuatro sitios donde estaba.
+
+FICHADO — lo que la auditoría dejó abierto y NO se cerró aquí, con su reproducción:
+
+5. **M1 · `action()` esquiva el códec.** `_despachar` devuelve
+   `getattr(self._gpio, metodo)(**params)` tal cual, y `enmarcar` hace `json.dumps` sin el `_a_json`
+   que sí protege a la instantánea. Hoy las siete acciones declaradas devuelven `None` o `dict` de
+   primitivos, así que es LATENTE. *Reproducción:* declarar en `GPIO_ACTIONS` una acción octava que
+   devuelva un `Enum` o un `dataclass` ⇒ `TypeError` dentro del hilo lector del servidor en vez del
+   `ProtocolError` que nombra el tipo. *Cierre:* pasar el resultado por `cd._a_json` antes de
+   responder.
+6. **M4 · una inundación desborda la cola de 64 con sus propios errores.** Las respuestas de error
+   son `critico=True` y comparten cola con los empujes: un cliente que dispara más rápido de lo que
+   drena se desahucia por las respuestas *a sus propias* peticiones frenadas. Acotado por M3+M5,
+   pero la cola sigue siendo una sola. *Cierre:* cola aparte para respuestas, o descartar empujes
+   antes que respuestas al llenarse.
+7. **M6 · bloqueo en cabeza de línea.** Mientras una acción cuelga en el dueño, `snapshot()` sigue
+   FRESCO (0.427 s medido — lo refresca el hilo emisor) y **todo `apply` muere**; y nadie lo
+   detecta porque `snapshot()` es justo lo que todos usan para decidir «¿está bien gpio?». M7 acota
+   el daño a 5 s; la causa (una sola conexión, una petición en vuelo) sigue ahí. *Cierre:* declarar
+   en la instantánea que hay una acción en curso, o un canal aparte para las que duermen.
+8. **M8 · el cliente escribe sin cerrojo.** `_pedir` hace `sock.sendall` desde el hilo del
+   llamador; dos escrituras concurrentes podrían intercalar marcos. LATENTE: hoy sólo hay un
+   consumidor a la vez en cada camino. *Cierre:* un `Lock` alrededor del `sendall`.
+9. **M10 · `READY=1` es código muerto.** Las unidades siguen en `Type=simple`, así que
+   `notificar_systemd` no avisa a nadie. Va con retirar `Conflicts=` — ya estaba fichado como
+   punto 3 de D2/P2 y aquí se confirma que sigue abierto.
+10. **M13 · el `0700` no se impone sobre un directorio PREEXISTENTE.** `mkdir(mode=0o700)` no toca
+    los permisos de lo que ya existe, y el aislamiento del socket se apoya en ese directorio (el
+    `SO_PEERCRED` sí protege, así que el fallo es de defensa en profundidad, no de acceso).
+    *Reproducción:* crear el directorio con `0755` antes de arrancar ⇒ sigue en `0755`. *Cierre:*
+    `chmod` explícito tras el `mkdir`.
+
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
 - **Criterios de aceptación:**

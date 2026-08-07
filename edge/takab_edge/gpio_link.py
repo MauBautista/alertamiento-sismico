@@ -93,6 +93,18 @@ class GpioSnapshot:
     test_mode_remaining_s: float
     last_reflex_latency_s: float | None
     relays: tuple[RelayState, ...]
+    #: [T-2.70.a·D2/P2] EDAD del estado, en el reloj de QUIEN LO LEE.
+    #:
+    #: `0.0` cuando el dueño de los pines está en este proceso (`LocalGpioLink`
+    #: acaba de leerlo bajo su lock). Con el transporte de por medio es el tiempo
+    #: transcurrido desde que la instantánea LLEGÓ, y es lo que decide si el dato
+    #: existe: pasada la edad máxima del cliente, la lectura deja de devolver
+    #: estado y pasa a ser `GpioLinkUnavailable` (doctrina de T-2.58 — fuera de
+    #: plazo el dato NO se pinta viejo, no existe).
+    #:
+    #: Va con default porque el DUEÑO no tiene nada que declarar aquí: lo pone
+    #: quien lo lee a través del transporte.
+    age_s: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +203,34 @@ class LocalGpioLink:
                 f"Admitidos: {sorted(GPIO_EVENTS)}."
             )
         getattr(self._gpio, registrador)(callback)
+
+
+def build_gpio_link(settings: Any, controller: Any) -> Any:
+    """[T-2.70.a·D2/P2] La costura que este gabinete va a usar, según su config.
+
+    `local` (defecto) es la llamada directa de D2/P1: lo que corre hoy en el Pi.
+    `ipc` devuelve el cliente del socket — construido, probado y **apagado de
+    fábrica**: D2/P2 monta el transporte y D3 lo enciende, primero con el dueño
+    todavía dentro de este mismo proceso (`GPIO_LINK=ipc`, `GPIO_OWNER=edge`),
+    que es como se acredita el transporte en el Pi real sin traspasar la
+    propiedad de los pines.
+
+    Cualquier valor desconocido cae a `local`, RUIDOSAMENTE: es la opción segura
+    —la que no depende de ningún transporte— y quedarse sin costura por una
+    errata en `/etc/takab/edge.env` sería peor que ignorarla.
+    """
+    modo = getattr(settings, "gpio_link", "local")
+    if modo == "ipc":
+        from takab_edge.pinlink import IpcGpioLink
+
+        return IpcGpioLink(settings)
+    if modo != "local":
+        log.error(
+            "TAKAB_EDGE_GPIO_LINK=%r no existe; se usa la costura LOCAL (llamada "
+            "directa). Valores admitidos: 'local', 'ipc'.",
+            modo,
+        )
+    return LocalGpioLink(controller)
 
 
 def as_link(target: Any) -> Any:
