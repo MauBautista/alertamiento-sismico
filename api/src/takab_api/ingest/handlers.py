@@ -339,18 +339,59 @@ UPDATE gateways SET fw_version = %s
 WHERE gateway_id = %s AND fw_version IS DISTINCT FROM %s
 """
 
+#: [T-2.70] Idem para el codigo que el proceso EJECUTA. Columna aparte porque son
+#: dos hechos distintos: fundirlos hacia indetectable el despliegue a medias.
+_FW_RUNNING_SQL = """
+UPDATE gateways SET fw_running = %s
+WHERE gateway_id = %s AND fw_running IS DISTINCT FROM %s
+"""
+
 #: Un SHA corto o una etiqueta. La ingesta NO confia en el dispositivo: un payload
 #: manipulado no puede escribir un parrafo en la ficha de la flota.
 _FW_VERSION_MAX_LEN = 64
 
 
-def _fw_version(payload: dict) -> str | None:
-    """Version declarada por el gabinete, o None si no la declara o es absurda."""
-    crudo = payload.get("fw_version")
+def _fw_field(payload: dict, key: str = "fw_version") -> tuple[bool, str | None]:
+    """(¿el gabinete OPINA sobre este campo de versión?, valor).
+
+    [T-2.70] Sirve a los DOS campos de versión del latido —``fw_version`` (qué
+    código hay en el disco) y ``fw_running`` (cuál ejecuta el proceso)— porque la
+    disciplina ausente/null/basura tiene que ser LA MISMA en ambos. Si difiriera,
+    el campo más laxo decidiría el criterio de éxito de una actualización.
+
+    [T-2.69] Antes esto devolvía un solo ``None`` y con él colapsaba DOS hechos
+    incompatibles:
+
+    · **La clave NO viene** — contrato pre-1.6.0. El gabinete no sabe hablar de
+      versiones; no opina, y lo conocido se conserva.
+    · **La clave viene con ``null``** — contrato 1.6.0 diciendo *«late y NO SABE
+      qué versión corre»* (``FW_VERSION`` borrado por un ``rsync --delete`` a
+      medias, un reaprovisionamiento, un archivo ilegible). **Eso SÍ es un hecho
+      nuevo**: la ficha pasa a S/D. Conservar el valor viejo lo congelaba para
+      siempre y la consola lo pintaba como actual — el defecto que T-2.69
+      prohíbe (regla de oro 7: un dato de hace tres semanas no es "lo que corre").
+
+    La distinción es posible porque ``edge/takab_edge/cloud`` publica con
+    ``model_dump(mode="json")`` **sin** ``exclude_none``, así que el ``null``
+    explícito llega al cable. Si alguien añadiera ``exclude_none`` "por limpieza",
+    esta separación moriría EN SILENCIO — por eso hay un test del lado del edge
+    que afirma que la clave viaja aunque valga null.
+
+    Basura (tipo raro, cadena vacía, 200 caracteres) NO opina: un payload
+    manipulado no puede escribir un párrafo en la ficha **ni borrar** la versión
+    buena — eso convertiría el vandalismo en un botón de S/D remoto.
+    """
+    if key not in payload:
+        return (False, None)
+    crudo = payload[key]
+    if crudo is None:
+        return (True, None)
     if not isinstance(crudo, str):
-        return None
+        return (False, None)
     version = crudo.strip()
-    return version if version and len(version) <= _FW_VERSION_MAX_LEN else None
+    if not version or len(version) > _FW_VERSION_MAX_LEN:
+        return (False, None)
+    return (True, version)
 
 
 def handle_health_snapshot(
@@ -404,9 +445,22 @@ def handle_health_snapshot(
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se
     # llenaba a mano y se quedaba obsoleta en silencio en el siguiente despliegue.
-    # Un None NO pisa lo conocido: «no se» jamas borra un dato bueno (regla de oro 7).
-    if (version := _fw_version(payload)) is not None:
+    # [T-2.69] Se escribe SOLO cuando el gabinete opina — y entonces se escribe lo
+    # que diga, incluido el NULL de «no se que version corro». `IS DISTINCT FROM`
+    # sigue haciendo que esto no toque la fila en el 99.99% de los latidos, y
+    # tambien cubre la transicion a NULL (regla de oro 10: por transicion, no por
+    # intervalo). Ver `_fw_version` para por que ausencia != null.
+    opina, version = _fw_field(payload, "fw_version")
+    if opina:
         conn.execute(_FW_VERSION_SQL, (version, ctx.gateway_id, version))
+    # [T-2.70] Y el codigo que el proceso EJECUTA, en su propia columna. Cuando
+    # difiere del de arriba hay codigo escrito que nadie corre: un despliegue a
+    # medias. Ese es el unico criterio honesto de "la actualizacion se aplico" —
+    # el ack del comando solo dice que la orden llego (llega ANTES de reiniciar,
+    # y tras el reinicio el nonce ya no existe para re-ackear).
+    opina, corriendo = _fw_field(payload, "fw_running")
+    if opina:
+        conn.execute(_FW_RUNNING_SQL, (corriendo, ctx.gateway_id, corriendo))
     return OK
 
 
@@ -587,12 +641,44 @@ ON CONFLICT (ts, gateway_id) DO NOTHING
 # Guarda monotónica: SQS standard reordena y reentrega, así que un LWT viejo
 # NUNCA debe pisar un estado más nuevo (regla de oro 7: dato congelado ≠ live).
 # El último ts aplicado vive en gateways.metadata->>'status_ts'.
+#
+# [T-2.65 · B1] `status <> 'retired'`: el retiro es un acto ADMINISTRATIVO de la
+# consola y esto es un mensaje del PROPIO aparato — dejarlo escribir aquí era una
+# inversión de autoridad, y deshacía T-2.65 sola. La cadena medida contra Postgres
+# el 2026-08-06: retiro → sobre firmado con cloud_admin_state='retired' y cartel
+# DADO DE BAJA en el panel → el gabinete (que sigue vivo A PROPÓSITO, opción (A))
+# flapea su sesión MQTT → beacon retenido `{"status":"online"}` → esta UPDATE
+# borraba el retiro → trigger 0027 → sobre FIRMADO v+1 con
+# cloud_admin_state='active' que APAGABA el cartel. Sin que nadie restaurara nada.
+# El agujero es PREEXISTENTE (T-1.17): el mismo camino borraba el retiro que
+# T-2.60.a usa para detectar fantasmas y el que T-2.35 usa para dejar de mandar
+# comandos a hardware fuera de catálogo. Sobrevivió sin que se notara porque el
+# beacon solo se publica al CONECTAR (edge/cloud::_publish_online), no en el
+# latido de 60 s (`takab/health` no toca esta columna): el 2026-08-04 `gw-dev-0001`
+# se quedó en 'retired' horas por no flapear, no por estar protegido.
+#
+# El beacon informa de que el gabinete está VIVO, no de que esté dado de alta:
+# la vida se sigue registrando abajo (device_health + bitácora).
 _STATUS_SQL = """
 UPDATE gateways
    SET status = %(status)s,
        metadata = metadata || jsonb_build_object('status_ts', %(ts)s::timestamptz)
  WHERE gateway_id = %(gateway_id)s
+   AND status <> 'retired'
    AND COALESCE((metadata->>'status_ts')::timestamptz, '-infinity') < %(ts)s
+"""
+
+# Consume el ts del mensaje suprimido SIN mover `status`: hace la huella
+# idempotente (SQS reentrega; la reentrega ya no pasa la guarda monotónica) y
+# distingue "lo bloqueó el retiro" de "llegó viejo", que son cosas distintas.
+# `RETURNING` ⇒ una fila solo cuando de verdad era un mensaje nuevo de un retirado.
+_STATUS_RETIRED_SQL = """
+UPDATE gateways
+   SET metadata = metadata || jsonb_build_object('status_ts', %(ts)s::timestamptz)
+ WHERE gateway_id = %(gateway_id)s
+   AND status = 'retired'
+   AND COALESCE((metadata->>'status_ts')::timestamptz, '-infinity') < %(ts)s
+RETURNING 1
 """
 
 
@@ -603,14 +689,34 @@ def handle_status(
 
     Un mensaje con ts ≤ al último aplicado no toca gateways.status (no-op
     idempotente); su fila histórica en device_health sí se conserva.
+
+    [T-2.65 · B1] Un gabinete RETIRADO sigue retirado aunque reconecte, pero no se
+    le calla: la fila de ``device_health`` (abajo, incondicional) es de donde salen
+    "retirado + latiendo" de T-2.60.a y el contador de fantasmas de T-2.65. Encima
+    de eso, cada RECONEXIÓN de un retirado deja constancia en la bitácora
+    append-only — es la señal de "sigue vivo ahí fuera" y la evidencia de que un
+    mensaje del aparato intentó revertir a la consola. Solo el beacon 'online' la
+    escribe: el LWT 'offline' no dice nada sobre seguir vivo y duplicaría el
+    volumen en cada flap (regla de oro 10: por transición, no por intervalo).
     """
     if (rej := _identity_reject(conn, payload, meta, ctx, "status")) is not None:
         return rej
     ts = _fallback_ts(meta)
-    conn.execute(
+    cur = conn.execute(
         _STATUS_SQL,
         {"status": payload["status"], "gateway_id": ctx.gateway_id, "ts": ts},
     )
+    if cur.rowcount == 0 and payload["status"] == "online":
+        params = {"gateway_id": ctx.gateway_id, "ts": ts}
+        if conn.execute(_STATUS_RETIRED_SQL, params).fetchone() is not None:
+            audit(
+                conn,
+                tenant_id=str(ctx.tenant_id),
+                actor=f"edge:{ctx.gateway_serial}",
+                verb="gateway_alive_while_retired",
+                obj=f"gateway:{ctx.gateway_id}",
+                meta={"ignored_status": payload["status"], "topic": meta.topic},
+            )
     conn.execute(_STATUS_HEALTH_SQL, (ts, ctx.tenant_id, ctx.gateway_id))
     return OK
 

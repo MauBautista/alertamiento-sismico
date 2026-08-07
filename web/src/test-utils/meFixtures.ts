@@ -43,6 +43,8 @@ export const ACTIONS_NONE: MeActions = {
   panic_vote: false,
   dictamen_read: false,
   panel_read: false,
+  maintenance_window: false,
+  platform_maintenance_window: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";

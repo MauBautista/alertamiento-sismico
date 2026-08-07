@@ -1,9 +1,10 @@
 """actuators — interfaz `Actuator` única + driver de relés + adaptador BACnet/IP.
 
-[SUPUESTO plan-maestro-01 #4] Driver primario = **relés fail-safe** del módulo
-`gpio`; el adaptador **BACnet/IP** (gas, ascensores, puertas) vive detrás de la
-MISMA interfaz `Actuator`, **activable por contrato** (`bacnet_channels`). Un override
-del supuesto sólo cambia qué driver es el primario, nunca el motor de reglas.
+[RATIFICADO 2026-07-09 · T-1.45 · gate #4] Driver primario = **relés fail-safe** del
+módulo `gpio`; el adaptador **BACnet/IP** (gas, ascensores, puertas) vive detrás de la
+MISMA interfaz `Actuator`, **activable por contrato** (`bacnet_channels`). La decisión
+está cerrada, pero la interfaz la sigue aislando: reabrirla cambiaría qué driver es el
+primario, nunca el motor de reglas.
 
 La **sirena y el estrobo** (alerta audible/visual de vida) van SIEMPRE por relé local
 directo — nunca por BACnet, para no depender de una pasarela de terceros en el camino

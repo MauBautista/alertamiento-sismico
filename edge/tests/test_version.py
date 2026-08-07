@@ -13,7 +13,17 @@ DECLARA, no algo que alguien recordó anotar.
 
 from __future__ import annotations
 
-from takab_edge.version import fw_version
+import pytest
+from takab_edge import version as version_mod
+from takab_edge.version import fw_version, running_version
+
+
+@pytest.fixture(autouse=True)
+def _restaura_la_captura():
+    """La captura del arranque es estado de PROCESO: se restaura entre tests."""
+    previo = version_mod._RUNNING
+    yield
+    version_mod._RUNNING = previo
 
 
 def test_sin_archivo_no_inventa_version(tmp_path):
@@ -49,3 +59,42 @@ def test_no_revienta_si_el_archivo_es_ilegible(tmp_path):
     ruta = tmp_path / "FW_VERSION"
     ruta.mkdir()  # un directorio donde se espera un archivo: OSError al leer
     assert fw_version(tmp_path) is None
+
+
+# --------------------------------------------------------------------------
+# [T-2.70] ESCRITO != CORRIENDO. `fw_version()` lee el ARCHIVO en cada latido —
+# a propósito, porque T-1.74 pregunta "¿alguien tocó el disco?". Una
+# actualización remota pregunta lo contrario: "¿corre el código nuevo?", y esa
+# el archivo NO la responde. `deploy.sh` escribe FW_VERSION ANTES de reiniciar,
+# así que durante hasta un latido entero (y para siempre si el restart falla)
+# el proceso VIEJO publica la versión NUEVA. Un canary cuyo criterio de éxito
+# fuera `fw_version` daría VERDE a una actualización que nunca se aplicó.
+# --------------------------------------------------------------------------
+
+
+def test_la_version_que_corre_se_congela_al_arrancar(tmp_path):
+    """El proceso declara el código que CARGÓ, no el que hay ahora en el disco."""
+    (tmp_path / "FW_VERSION").write_text("aaaaaaa\n")
+    version_mod._capture(tmp_path)  # el proceso arranca con aaaaaaa
+
+    # Llega un deploy: reescribe el archivo bajo los pies del proceso vivo.
+    (tmp_path / "FW_VERSION").write_text("bbbbbbb\n")
+
+    assert fw_version(tmp_path) == "bbbbbbb", "el ARCHIVO ya es el nuevo"
+    assert running_version() == "aaaaaaa", "el PROCESO sigue siendo el viejo"
+
+
+def test_sin_archivo_al_arrancar_la_version_que_corre_es_sin_dato(tmp_path):
+    """«No sé qué corro» se conserva aunque después aparezca un FW_VERSION."""
+    version_mod._capture(tmp_path)  # arranca sin archivo (dev local)
+    (tmp_path / "FW_VERSION").write_text("ccccccc\n")
+
+    assert fw_version(tmp_path) == "ccccccc"
+    assert running_version() is None
+
+
+def test_la_captura_ocurre_al_importar_el_modulo():
+    """Nadie tiene que acordarse de llamarla: si dependiera de la primera
+    llamada, un proceso que preguntara por primera vez DESPUÉS de un deploy
+    capturaría la versión nueva sin haberla cargado nunca."""
+    assert version_mod._RUNNING is not version_mod._SIN_CAPTURAR

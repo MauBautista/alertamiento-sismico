@@ -748,8 +748,28 @@ web y en la app móvil; el panel debe hablar el mismo idioma.
 | `--tk-surface-3` | `#1F3D5C` |
 | `--tk-surface-overlay` | `rgba(14, 35, 54, 0.92)` |
 
-**Texto:** `--tk-fg-1 #F0F2F5` · `--tk-fg-2 #B8C2CE` · `--tk-fg-3 #6F7E8F` ·
+**Texto:** `--tk-fg-1 #F0F2F5` · `--tk-fg-2 #B8C2CE` · `--tk-fg-3 #8A9CB1` ·
 `--tk-fg-disabled #4A5765`
+
+> **`--tk-fg-3` subió de `#6F7E8F` a `#8A9CB1` el 2026-08-05 (T-2.64) y no vuelve a bajar.**
+> Medido sobre `--tk-surface-1 #122B44`: **3.48:1 → 5.14:1**. WCAG 2.1 §1.4.3 pide 4.5:1 para
+> texto normal, y este token pinta justo los rótulos de 8–10 px del panel y de la consola —
+> los más pequeños del producto, los que se leen en un gabinete con luz de tubo. El hex
+> anterior es el único valor de esta §10.1 que llegó a divergir del código; queda escrito con
+> su razón porque un token de contraste sin la medición al lado se "corrige" de vuelta al mes.
+>
+> **`--tk-fg-4` no aparece en esta tabla y no es un olvido:** nunca fue un token del paquete,
+> vivía **solo** en la paleta hardcodeada del panel del gabinete (`#8A97A6`, 4.40:1 sobre
+> `--tk-surface-2` — también por debajo de AA). El nuevo `--tk-fg-3` es más claro de lo que
+> `--tk-fg-4` llegó a ser, así que el matiz que aportaba desapareció con el arreglo y quedó
+> **fusionado en `--tk-fg-3`**. La constancia vive en el propio panel
+> (`edge/takab_edge/local_api/index.html`, comentario de la paleta).
+>
+> Un test de contrato lo vigila desde T-2.61: si esta tabla y
+> `shared/design-tokens/css/tokens.css` vuelven a divergir, rompe
+> `api/tests/test_docs_consistency.py::test_la_spec_del_panel_declara_los_hex_que_el_codigo_usa_hoy`.
+> Esta spec es entrada de diseño **normativa** (T-2.15…T-2.23 se verificaron contra ella con
+> un checklist 44/44); un hex muerto aquí manda mal a quien la obedezca.
 
 **Acento único (interacción):** `--tk-cyan #00BFFF` · hover `#33CCFF` · press `#009ACC` ·
 tintes `rgba(0,191,255,0.15)` y `rgba(0,191,255,0.08)`
@@ -777,6 +797,21 @@ Tintes al 15/18 % y 8 % para fondos de pill.
 ### 10.2 · Escala tipográfica y espacio
 
 **Tamaños:** 11 · 13 · 14 · 16 · 18 · 22 · 28 · 40 · 56 · 72 px
+
+> **Divergencia medida el 2026-08-05, anotada y no ratificada.** Lo construido baja de esta
+> escala: `edge/takab_edge/local_api/index.html` declara **38 de 101** tamaños por debajo de
+> 11 px (9 y 10 px), y la consola web otros **92** entre `soc.css` y `soc-tabs.css`. La escala
+> de arriba sigue siendo la referencia; lo que se registra aquí es que **el producto no la
+> respetó** en los rótulos secundarios, y que ese es exactamente el tramo donde el contraste
+> se vuelve crítico — de ahí el token `--tk-fg-3` de §10.1 y su corrección en T-2.64. Si algún
+> día se ratifica un escalón por debajo de 11 px, se escribe aquí con su razón; mientras tanto
+> esto es deuda declarada, no permiso.
+
+<!-- La línea en blanco de arriba es NORMATIVA, no formato: sin ella, CommonMark aplica
+     continuación laxa y mete las cinco declaraciones de abajo DENTRO de la nota de deuda.
+     Valores normativos leídos como deuda declarada. Lo vigila
+     `api/tests/test_docs_consistency.py::test_ningun_valor_normativo_queda_dentro_de_un_blockquote_por_descuido`. -->
+
 **Interlineado:** ajustado 1.1 · cómodo 1.25 · normal 1.45 · **dato 1.0**
 **Tracking:** ajustado −0.02em · normal 0 · ancho 0.04em
 **Espaciado:** 4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 px

@@ -169,6 +169,14 @@ class ConfigStore(EdgeModule):
         self._high_water = max(self._high_water, high_water)
         if payload is None:
             return
+        # Fail-closed también con los TIPOS. El `except` de arriba cubre un `doc`
+        # que no sea objeto, pero no un objeto BIEN formado con `payload`/`sig` no
+        # textuales: `payload.encode()` levantaba AttributeError fuera del `try` y
+        # el módulo se quedaba sin arrancar (aislado por `start()`, pero mudo y
+        # sin caché). Mismo pecado que `_scan_pending` en backfill.
+        if not isinstance(payload, str) or not isinstance(sig, (str, type(None))):
+            log.warning("caché de config con payload/firma no textual: se ignora")
+            return
         raw = payload.encode()
         if self._security is None or not self._security.verify_config(raw, sig or "", version):
             log.warning("caché de config NO verifica (¿alterada o clave rotada?): se ignora")

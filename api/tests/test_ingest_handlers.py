@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
@@ -471,15 +471,40 @@ def test_health_actualiza_la_version_al_desplegar(fleet, ctx, meta) -> None:
     assert _fw(fleet) == "86ea606"
 
 
-def test_health_sin_version_no_pisa_la_conocida(fleet, ctx, meta) -> None:
-    """«No sé» JAMÁS borra un dato bueno. Un gabinete con un deploy a medias, o uno
-    viejo con contrato 1.5.0, no puede dejar la ficha de la flota en blanco
-    (regla de oro 7: mejor un dato ausente que uno degradado sin avisar)."""
+def test_health_sin_la_clave_no_pisa_la_conocida(fleet, ctx, meta) -> None:
+    """CLAVE AUSENTE = «no opino» (contrato pre-1.6.0, que ni siquiera conoce el
+    campo). Un edge que no sabe hablar de versiones no puede dejar en blanco la
+    ficha de la flota — eso sería castigar a la nube por la vejez del gabinete.
+
+    [T-2.69] Este test y el siguiente eran UNO SOLO, y su docstring justificaba a
+    la vez «contrato viejo» y «deploy sin marcar» — dos hechos que el código no
+    sabía separar. Se parten a propósito: las expectativas son OPUESTAS.
+    """
     assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
-    payload = _health()  # sin la clave: contrato viejo o deploy sin marcar
+    payload = _health()  # sin la clave: contrato viejo
     payload["captured_at"] = "2026-07-06T10:02:03+00:00"
     assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
     assert _fw(fleet) == "737dd73"
+
+
+def test_health_con_null_explicito_la_version_pasa_a_sin_dato(fleet, ctx, meta) -> None:
+    """NULL EXPLÍCITO = «late y declara que NO SABE qué versión corre».
+
+    Es un HECHO NUEVO, no un silencio: pasa cuando un ``rsync --delete`` a medias,
+    un reaprovisionamiento o un archivo ilegible se lleva el ``FW_VERSION`` del
+    gabinete. Conservar el valor viejo dejaba `gateways.fw_version` congelado PARA
+    SIEMPRE y la consola lo pintaba como actual — exactamente lo que el criterio 3
+    de T-2.69 prohíbe por escrito.
+
+    Se puede distinguir porque el edge publica con ``model_dump(mode='json')`` SIN
+    ``exclude_none``: la clave viaja con ``null``. Lo protege
+    ``edge/tests/test_cloud.py::test_el_heartbeat_publica_la_clave_fw_version_aunque_valga_null``.
+    """
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health(fw_version=None)  # la clave ESTÁ, y vale null
+    payload["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) is None
 
 
 def test_health_version_absurda_se_rechaza_sin_tumbar_la_ingesta(fleet, ctx, meta) -> None:
@@ -488,6 +513,16 @@ def test_health_version_absurda_se_rechaza_sin_tumbar_la_ingesta(fleet, ctx, met
     assert handle_health_snapshot(fleet, _health(fw_version="x" * 200), meta, ctx).is_ok
     assert _fw(fleet) is None
     assert _count(fleet, "SELECT count(*) FROM device_health") == 1
+
+
+def test_health_version_absurda_tampoco_borra_la_conocida(fleet, ctx, meta) -> None:
+    """Basura ≠ «no sé». Un payload manipulado no puede BORRAR la versión buena de
+    la ficha: eso convertiría el vandalismo en un botón de S/D remoto."""
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health(fw_version="x" * 200)
+    payload["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "737dd73"
 
 
 def test_health_gateway_mismatch_rejected_and_audited(fleet, ctx, meta) -> None:
@@ -624,6 +659,201 @@ def test_status_stale_message_does_not_regress_gateway_status(fleet, ctx) -> Non
 
 
 # --------------------------------------------------------------------------
+# [T-2.65 · B1] El retiro es un acto ADMINISTRATIVO: no lo deshace el aparato
+# --------------------------------------------------------------------------
+
+
+#: Origen de los ts de presencia; `_presencia(n)` es "n segundos después".
+TS_PRESENCIA = datetime(2026, 8, 4, 10, 0, 0, tzinfo=UTC)
+
+
+def _presencia(offset_s: int) -> Meta:
+    """Meta de un mensaje del topic de presencia (`takab/status/<thing>`)."""
+    return Meta(
+        principal="gw-dev-0001",
+        topic="takab/status/gw-dev-0001",
+        ts_iot=TS_PRESENCIA + timedelta(seconds=offset_s),
+    )
+
+
+def _retire(conn: psycopg.Connection) -> None:
+    """Lo que hace la consola al retirar (`queries/fleet.py::set_gateway_status`)."""
+    conn.execute("RESET ROLE")
+    conn.execute("UPDATE gateways SET status = 'retired' WHERE gateway_id = %s", (GW,))
+    use(conn, "takab_ingest")
+
+
+def _alive_while_retired(conn: psycopg.Connection) -> list[tuple]:
+    return conn.execute(
+        "SELECT actor, object, meta FROM audit_log "
+        "WHERE verb = 'gateway_alive_while_retired' ORDER BY ts"
+    ).fetchall()
+
+
+def test_status_beacon_no_resucita_un_gabinete_retirado(fleet, ctx) -> None:
+    """La cadena de 6 pasos que deshacía T-2.65 sola, sin que nadie restaurara.
+
+    1. El operador retira `gw-dev-0001` desde la consola  → status='retired'.
+    2. El sync publica el sobre con cloud_admin_state='retired' y el panel del
+       gabinete pinta DADO DE BAJA.
+    3. El gabinete SIGUE VIVO (premisa de la opción (A) ratificada el 2026-08-05)
+       y su sesión MQTT flapea, cosa rutinaria.
+    4. Al reconectar publica su beacon de presencia retenido `{"status":"online"}`
+       (`edge/cloud/__init__.py::_publish_online`, uno por CONEXIÓN) → IoT Rule
+       `takab/status/+` → SQS → aquí.  <-- ESTE es el único eslabón escribible.
+    5. El trigger 0027 (`AFTER UPDATE OF status … OLD.status = 'retired'`) despierta
+       al worker de config.
+    6. El worker publica un sobre FIRMADO v+1 con cloud_admin_state='active' que
+       APAGA el cartel del panel.
+
+    Cerrado el paso 4, los pasos 5 y 6 son inalcanzables por construcción: el
+    `WHEN` del trigger exige `OLD.status IS DISTINCT FROM NEW.status`, y si el
+    beacon no mueve la columna no hay transición que notificar.
+    """
+    _retire(fleet)
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+
+    assert _gw_status(fleet) == "retired", (
+        "el beacon de presencia del propio gabinete deshizo el retiro de la consola: "
+        "un mensaje del dispositivo revirtió un acto administrativo"
+    )
+
+
+def test_status_lwt_offline_tampoco_borra_el_retiro(fleet, ctx) -> None:
+    """El otro lado del mismo `_STATUS_SQL`: el LWT lo publica el BROKER en cada
+    desconexión sucia, así que es aún más frecuente que el beacon. Un gabinete
+    retirado que se desconecta seguía cayendo a 'offline' — y con eso dejaba de
+    ser fantasma para T-2.60.a y dejaba de ser candidato de aviso para T-2.65.
+    """
+    _retire(fleet)
+
+    assert handle_status(fleet, {"status": "offline"}, _presencia(30), ctx).is_ok
+
+    assert _gw_status(fleet) == "retired"
+
+
+def test_status_de_retirado_deja_la_huella_de_que_sigue_vivo(fleet, ctx) -> None:
+    """Ignorar el mensaje NO es callarlo: 'retirado + latiendo' es justo la señal
+    que T-2.60.a y T-2.65 vigilan.
+
+    Quedan DOS huellas y son distintas:
+    - `device_health` (reason='transition'), que es de donde `ops/metrics.py::
+      count_ghosts` y la consola sacan "la última vez que se le oyó";
+    - una fila en la bitácora append-only por CADA reconexión de un gabinete
+      retirado — evidencia de que un mensaje del aparato intentó revertir un acto
+      de la consola. Solo el beacon 'online' la escribe: el LWT 'offline' no
+      aporta nada sobre "sigue vivo" y duplicaría el volumen en cada flap
+      (regla de oro 10: por transición, no por intervalo).
+    """
+    _retire(fleet)
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+    assert handle_status(fleet, {"status": "offline"}, _presencia(31), ctx).is_ok
+
+    salud = fleet.execute(
+        "SELECT ts, reason FROM device_health WHERE gateway_id = %s ORDER BY ts", (GW,)
+    ).fetchall()
+    assert [(r[0], r[1]) for r in salud] == [
+        (TS_PRESENCIA + timedelta(seconds=30), "transition"),
+        (TS_PRESENCIA + timedelta(seconds=31), "transition"),
+    ]
+
+    filas = _alive_while_retired(fleet)
+    assert len(filas) == 1, f"una huella por reconexión, no por mensaje: {filas}"
+    actor, obj, meta_row = filas[0]
+    assert actor == "edge:gw-dev-0001"
+    assert obj == f"gateway:{GW}"
+    assert meta_row["ignored_status"] == "online"
+
+
+def test_status_la_huella_del_retirado_es_idempotente(fleet, ctx) -> None:
+    """SQS es at-least-once (regla de oro 3): la REENTREGA del mismo beacon no
+    puede inflar la bitácora, que es la tabla que nunca se poda (regla 11). El
+    mensaje suprimido consume su `status_ts`, así que su copia ya no pasa la
+    guarda monotónica. Dos reconexiones DISTINTAS sí son dos hechos distintos.
+    """
+    _retire(fleet)
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok  # reentrega
+    assert len(_alive_while_retired(fleet)) == 1
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(90), ctx).is_ok  # reconexión
+    assert len(_alive_while_retired(fleet)) == 2
+    assert _gw_status(fleet) == "retired"
+
+
+def test_status_no_deja_huella_cuando_el_gabinete_no_esta_retirado(fleet, ctx) -> None:
+    """Sin retiro no hay nada que defender: el camino normal no audita (regla 10)."""
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+    assert _gw_status(fleet) == "online"
+    assert _alive_while_retired(fleet) == []
+
+
+def test_status_viejo_de_gabinete_vivo_no_inventa_una_huella_de_retiro(fleet, ctx) -> None:
+    """Las DOS razones por las que el UPDATE no aplica son distintas y no se
+    confunden: "lo bloqueó el retiro" (se audita) y "llegó viejo" (no).
+
+    Sin las guardas de `_STATUS_RETIRED_SQL` —si bastara con que el gabinete
+    exista— cada beacon reordenado por SQS, cosa rutinaria en una cola standard,
+    escribiría en la bitácora que un gabinete perfectamente dado de alta "sigue
+    vivo estando retirado". Justo en la tabla que nunca se poda (regla 11).
+    """
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+    assert handle_status(fleet, {"status": "online"}, _presencia(10), ctx).is_ok  # viejo
+
+    assert _gw_status(fleet) == "online"
+    assert _alive_while_retired(fleet) == []
+
+
+def test_status_beacon_asciende_provisioned_a_online(fleet, ctx) -> None:
+    """El ALTA normal de un gabinete nuevo no puede romperse: nace 'provisioned'
+    (`queries/fleet.py::_INSERT`) y es su primer beacon quien lo pone 'online'.
+    """
+    assert _gw_status(fleet) == "provisioned"  # default del DDL
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+
+    assert _gw_status(fleet) == "online"
+
+
+def test_status_degraded_sigue_al_beacon(fleet, ctx) -> None:
+    """'degraded' no es administrativo (nadie lo escribe hoy; el DDL lo admite y
+    lo derivaría el heartbeat): el beacon lo mueve como a cualquier otro estado.
+    """
+    fleet.execute("RESET ROLE")
+    fleet.execute("UPDATE gateways SET status = 'degraded' WHERE gateway_id = %s", (GW,))
+    use(fleet, "takab_ingest")
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+
+    assert _gw_status(fleet) == "online"
+
+
+def test_status_tras_restaurar_el_gabinete_vuelve_a_seguir_al_beacon(fleet, ctx) -> None:
+    """El retiro no es una lápida: restaurar desde la consola devuelve el gabinete
+    al flujo normal de presencia. Sin esto, el arreglo dejaría cualquier gabinete
+    restaurado congelado en 'provisioned' para siempre.
+
+    Ojo a la guarda monotónica: el beacon suprimido durante el retiro NO avanza
+    `metadata->>'status_ts'` (el UPDATE entero no ocurre), así que el primer
+    beacon posterior a la restauración sigue siendo "más nuevo" y sí aplica.
+    """
+    assert handle_status(fleet, {"status": "online"}, _presencia(10), ctx).is_ok
+    _retire(fleet)
+    assert handle_status(fleet, {"status": "online"}, _presencia(30), ctx).is_ok
+    assert _gw_status(fleet) == "retired"
+
+    fleet.execute("RESET ROLE")
+    fleet.execute("UPDATE gateways SET status = 'provisioned' WHERE gateway_id = %s", (GW,))
+    use(fleet, "takab_ingest")
+
+    assert handle_status(fleet, {"status": "online"}, _presencia(50), ctx).is_ok
+    assert _gw_status(fleet) == "online"
+
+
+# --------------------------------------------------------------------------
 # check_identity puro (sin DB)
 # --------------------------------------------------------------------------
 
@@ -649,3 +879,67 @@ def test_ack_kind_map_covers_all_channel_action_pairs() -> None:
     channels = {"siren", "strobe", "gas_valve", "elevator", "door_retainer"}
     actions = {"activate", "deactivate"}
     assert set(ACK_KIND) == {(c, a) for c in channels for a in actions}
+
+
+# --------------------------------------------------------------------------
+# [T-2.70] `fw_running`: qué código EJECUTA el gabinete, junto al que TIENE en
+# disco. Misma disciplina que `fw_version` (ausente != null != basura), porque
+# el hecho que separa a los dos campos es justo el que delata un despliegue a
+# medias y no puede depender de un default benigno.
+# --------------------------------------------------------------------------
+
+
+def _fw_run(fleet) -> str | None:
+    return fleet.execute("SELECT fw_running FROM gateways WHERE gateway_id = %s", (GW,)).fetchone()[
+        0
+    ]
+
+
+def test_health_persiste_por_separado_el_codigo_del_disco_y_el_que_corre(fleet, ctx, meta) -> None:
+    """El caso que hasta hoy era INDETECTABLE: `deploy.sh` escribió el código
+    nuevo y el reinicio no ocurrió. El gabinete late declarando las dos cosas y
+    la nube las guarda SIN fundirlas."""
+    payload = _health(fw_version="bbbbbbb")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "bbbbbbb", "el disco"
+    assert _fw_run(fleet) == "aaaaaaa", "el proceso"
+
+
+def test_health_sin_la_clave_fw_running_no_pisa_la_conocida(fleet, ctx, meta) -> None:
+    """Contrato pre-1.9.0: un edge que no sabe hablar de «qué corre» no opina, y
+    su silencio no puede borrar lo que ya se sabía."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    viejo = _health(fw_version="aaaaaaa")  # sin la clave fw_running
+    viejo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, viejo, meta, ctx).is_ok
+    assert _fw_run(fleet) == "aaaaaaa"
+
+
+def test_health_con_null_explicito_el_codigo_que_corre_pasa_a_sin_dato(fleet, ctx, meta) -> None:
+    """NULL EXPLÍCITO = «late y NO SABE qué está ejecutando». Hecho nuevo, no
+    silencio: conservar el valor viejo daría por aplicada una actualización sobre
+    un gabinete que ya no puede confirmarla."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    nuevo = _health(fw_version="aaaaaaa")
+    nuevo["fw_running"] = None  # la clave ESTÁ, y vale null
+    nuevo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, nuevo, meta, ctx).is_ok
+    assert _fw_run(fleet) is None
+
+
+def test_health_fw_running_absurdo_no_borra_lo_conocido(fleet, ctx, meta) -> None:
+    """Basura ≠ «no sé»: un payload manipulado no convierte el vandalismo en un
+    botón remoto de S/D sobre el criterio de éxito de una actualización."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    malo = _health(fw_version="aaaaaaa")
+    malo["fw_running"] = "x" * 200
+    malo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, malo, meta, ctx).is_ok
+    assert _fw_run(fleet) == "aaaaaaa"

@@ -38,8 +38,12 @@ GW_SYNCED = "9d000000-0000-0000-0000-0000000000d1"  # publicado y al día
 GW_STALE = "9d000000-0000-0000-0000-0000000000d2"  # publicado, rule_set cambió
 GW_NEVER = "9d000000-0000-0000-0000-0000000000d3"  # nunca publicado
 GW_NOEDGE = "9d000000-0000-0000-0000-0000000000d4"  # rule_set sin bloque 'edge'
-GW_RETIRED = "9d000000-0000-0000-0000-0000000000d5"  # no comandable
+GW_RETIRED = "9d000000-0000-0000-0000-0000000000d5"  # retirado y SIN iot_thing
 GW_B = "9d000000-0000-0000-0000-0000000000d6"  # otro tenant (RLS)
+# [T-2.65] Retirado CON identidad IoT: el aviso de baja todavía tiene que salirle.
+GW_RETIRED_PENDING = "9d000000-0000-0000-0000-0000000000d7"
+# [T-2.65] Retirado y YA avisado (su doc publicado declara la baja).
+GW_RETIRED_TOLD = "9d000000-0000-0000-0000-0000000000d8"
 
 _GEOM = "ST_SetSRID(ST_MakePoint(-99.13,19.43),4326)::geography"
 _TENANTS = (T_A, T_B)
@@ -104,6 +108,8 @@ async def seed() -> None:
             (GW_NEVER, T_A, S_A, "GW-NEVER", "online", "thing-3"),
             (GW_NOEDGE, T_A, S_A_NOEDGE, "GW-NOEDGE", "online", "thing-4"),
             (GW_RETIRED, T_A, S_A, "GW-RETIRED", "retired", None),
+            (GW_RETIRED_PENDING, T_A, S_A, "GW-RET-PEND", "retired", "thing-5"),
+            (GW_RETIRED_TOLD, T_A, S_A, "GW-RET-TOLD", "retired", "thing-6"),
             (GW_B, T_B, S_B, "GW-B", "online", "thing-b"),
         ):
             await conn.execute(
@@ -151,10 +157,23 @@ async def seed() -> None:
             "elevator": True,
             "door_retainer": True,
         }
+        # [T-2.65] …y con `cloud_admin_state`, que el doc firmado ahora transporta.
         for gw, tid, ver, payload in (
-            (GW_SYNCED, T_A, 7, {**EDGE_CFG, "equipment": _EQ_ALL}),
-            (GW_STALE, T_A, 3, {**EDGE_CFG_NEW, "equipment": _EQ_ALL}),
-            (GW_B, T_B, 1, {**EDGE_CFG, "equipment": _EQ_ALL}),
+            (GW_SYNCED, T_A, 7, {**EDGE_CFG, "equipment": _EQ_ALL, "cloud_admin_state": "active"}),
+            (
+                GW_STALE,
+                T_A,
+                3,
+                {**EDGE_CFG_NEW, "equipment": _EQ_ALL, "cloud_admin_state": "active"},
+            ),
+            (GW_B, T_B, 1, {**EDGE_CFG, "equipment": _EQ_ALL, "cloud_admin_state": "active"}),
+            # Ya avisado: su doc publicado DECLARA la baja.
+            (
+                GW_RETIRED_TOLD,
+                T_A,
+                9,
+                {**EDGE_CFG, "equipment": _EQ_ALL, "cloud_admin_state": "retired"},
+            ),
         ):
             await conn.execute(
                 text(
@@ -239,21 +258,159 @@ async def test_gateway_without_any_active_rule_set_is_200_not_500(seed: None) ->
     resp = await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["has_edge_config"] is False
-    assert body["in_sync"] is False
+    # [B3] …y aquí `has_edge_config` es TRUE, no false. Sin rule_set activo el
+    # worker recompone la base desde el último doc publicado (T-2.31/T-2.65), así
+    # que SÍ hay documento que publicar: decir "SIN CONFIG EDGE" —cuyo copy afirma
+    # "no hay nada que publicar"— era negar lo que el worker está haciendo. Lo que
+    # el operador ve pasa a ser SINCRONIZADO v7, que es la verdad: el gabinete
+    # tiene exactamente el documento que la nube volvería a mandarle. Que su
+    # rule_set esté inactivo es un hecho de otra pantalla (Multi-Tenant).
+    assert body["has_edge_config"] is True
+    # [T-2.65] `in_sync` es la negación EXACTA del predicado de diferencia del
+    # worker: no hay nada pendiente ⇒ True.
+    assert body["in_sync"] is True
     assert body["version"] == 7  # el gabinete sigue con su config vieja
 
-    # Y sin estado publicado tampoco explota.
+    # Y sin estado publicado tampoco explota: ahí sí no hay NADA que publicar
+    # (ni rule_set del que sacar la base ni doc anterior) y el badge acierta.
     never = await _get(GW_NEVER, au.make_token("soc_operator", tenant=T_A))
     assert never.status_code == 200
     assert never.json()["has_edge_config"] is False
     assert never.json()["in_sync"] is False
 
 
-async def test_retired_gateway_is_not_syncable(seed: None) -> None:
-    """El worker excluye status='retired' e iot_thing NULL; la UI no debe prometer sync."""
+# ---- B3 · `has_edge_config` significa "hay algo que publicar" ----------------
+#
+# El contrato publicado del campo decía «el rule_set activo trae bloque edge» y
+# `SyncBadge` traduce su falsedad a "no hay nada que publicar". Desde que el
+# worker recompone la base con un COALESCE (rule_set activo O último doc
+# publicado), las dos frases dejaron de ser la misma: había gabinetes a los que
+# el worker estaba publicando MIENTRAS la consola pintaba SIN CONFIG EDGE.
+#
+# El campo pasa a ser el espejo exacto del gate de publicación del worker
+# (`commands/sync.py`: `b.base IS NOT NULL`). El nombre se conserva —es contrato
+# publicado y el SDK lo consume— pero su documentación ya no promete otra cosa.
+
+
+async def _candidatos_del_worker() -> set[str]:
+    """Los gateways que `commands/sync.py` publicaría AHORA, con su SQL real.
+
+    Se importa el SQL en vez de copiarlo: una copia se desincroniza y este test
+    empezaría a validar código muerto.
+    """
+    from takab_api.commands.sync import _CANDIDATES_SQL
+
+    async with get_engine().connect() as conn:
+        rows = (await conn.exec_driver_sql(_CANDIDATES_SQL)).all()
+    return {str(r.gateway_id) for r in rows}
+
+
+async def test_has_edge_config_no_dice_que_NO_HAY_NADA_QUE_PUBLICAR_mientras_el_worker_publica(
+    seed: None,
+) -> None:
+    """El gabinete al que el worker le está publicando en este mismo instante.
+
+    Se desactiva el rule_set (así `rs.config ? 'edge'` es falso) y se cambia el
+    equipamiento, que es un cambio real que el worker firma y entrega apoyándose
+    en el último doc publicado. Con el contrato viejo la consola decía "no hay
+    nada que publicar" sobre un gabinete que estaba en la cola de publicación:
+    el operador no tenía forma de saber que su cambio SÍ iba a llegar.
+    """
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text("UPDATE rule_sets SET is_active = false WHERE tenant_id = :t"), {"t": T_A}
+        )
+        await conn.execute(
+            text("UPDATE gateways SET equipment = CAST(:e AS jsonb) WHERE gateway_id = :g"),
+            {"g": GW_SYNCED, "e": json.dumps({"siren": True, "gas_valve": False})},
+        )
+
+    assert GW_SYNCED in await _candidatos_del_worker(), (
+        "el montaje del test no reproduce el caso: el worker no considera candidato a este gabinete"
+    )
+
+    body = (await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))).json()
+    assert body["has_edge_config"] is True, (
+        "la consola pinta SIN CONFIG EDGE ('no hay nada que publicar') sobre un "
+        "gabinete que el worker tiene EN COLA de publicación ahora mismo"
+    )
+    assert body["in_sync"] is False
+
+
+async def test_has_edge_config_sigue_siendo_falso_cuando_no_hay_NADA_de_donde_partir(
+    seed: None,
+) -> None:
+    """La otra mitad: sin rule_set con 'edge' y sin doc previo no habrá publish nunca.
+
+    Es el caso para el que se inventó el rótulo, y tiene que seguir distinguiéndose
+    de un PENDIENTE que sí se va a resolver solo.
+    """
+    body = (await _get(GW_NOEDGE, au.make_token("soc_operator", tenant=T_A))).json()
+    assert body["has_edge_config"] is False
+    assert GW_NOEDGE not in await _candidatos_del_worker()
+
+
+async def test_has_edge_config_es_el_espejo_del_gate_de_publicacion_del_worker(
+    seed: None,
+) -> None:
+    """El invariante, sobre TODA la flota visible y sin enumerar casos a mano.
+
+    `has_edge_config=false` tiene que implicar que el worker NO publicará: si un
+    gabinete apareciera a la vez como "sin nada que publicar" y como candidato,
+    la consola estaría contradiciendo al worker sobre su propio trabajo.
+    """
+    async with get_engine().begin() as conn:
+        # Se ensucia el inventario de varias maneras a la vez para que el barrido
+        # tenga algo que barrer: sin rule_set, con doc previo, sin nada.
+        await conn.execute(
+            text("UPDATE rule_sets SET is_active = false WHERE scope_type = 'tenant'"),
+        )
+        await conn.execute(
+            text("UPDATE gateways SET equipment = CAST(:e AS jsonb) WHERE tenant_id = :t"),
+            {"t": T_A, "e": json.dumps({"siren": False})},
+        )
+
+    candidatos = await _candidatos_del_worker()
+    lote = (await _get_all(au.make_token("soc_operator", tenant=T_A))).json()
+    assert lote, "el lote vino vacío: el test no está midiendo nada"
+
+    sin_nada_que_publicar = {r["gateway_id"] for r in lote if r["has_edge_config"] is False}
+    assert sin_nada_que_publicar & candidatos == set(), (
+        "hay gabinetes marcados 'sin nada que publicar' que el worker tiene en "
+        f"cola: {sorted(sin_nada_que_publicar & candidatos)}"
+    )
+
+
+async def test_gateway_sin_identidad_iot_nunca_es_sincronizable(seed: None) -> None:
+    """Sin ``iot_thing`` no hay topic al que publicar: la UI no debe prometer sync.
+
+    [T-2.65] Antes este test se llamaba ``test_retired_gateway_is_not_syncable`` y
+    afirmaba las DOS cosas a la vez sobre un gabinete que además no tenía
+    ``iot_thing``, así que la mitad del retiro nunca se probó de verdad.
+    """
     body = (await _get(GW_RETIRED, au.make_token("soc_operator", tenant=T_A))).json()
     assert body["is_syncable"] is False
+
+
+async def test_el_retirado_que_aun_no_recibio_su_baja_sigue_siendo_sincronizable(
+    seed: None,
+) -> None:
+    """[T-2.65] REESCRITO A PROPÓSITO. Retirar ya no lo saca del flujo de config
+    de inmediato: primero hay que AVISARLE. Mientras el aviso no salga, la consola
+    debe decir PENDIENTE, no ``NO SINCRONIZABLE`` — que es justo lo que dejaba al
+    gabinete latiendo invisible (víctima real: `gw-dev-0001`, 2026-08-04)."""
+    body = (await _get(GW_RETIRED_PENDING, au.make_token("soc_operator", tenant=T_A))).json()
+    assert body["is_syncable"] is True
+    assert body["in_sync"] is False  # el sobre de baja está pendiente
+
+
+async def test_el_retirado_ya_avisado_deja_el_flujo_de_config(seed: None) -> None:
+    """[T-2.65] Recibido el sobre de baja, el gabinete sale de la lista: el aviso
+    sale EXACTAMENTE UNA VEZ y la consola deja de prometer más config."""
+    body = (await _get(GW_RETIRED_TOLD, au.make_token("soc_operator", tenant=T_A))).json()
+    assert body["is_syncable"] is False
+    assert body["in_sync"] is True  # su doc publicado ya declara la baja
+    assert body["version"] == 9
 
 
 # ---- seguridad --------------------------------------------------------------

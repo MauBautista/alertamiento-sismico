@@ -30,7 +30,7 @@ from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
 from takab_edge.gpio import GpioController
 from takab_edge.module import EdgeModule
-from takab_edge.version import fw_version
+from takab_edge.version import fw_version, running_version
 
 log = logging.getLogger("takab_edge.health")
 
@@ -388,6 +388,10 @@ class HealthMonitor(EdgeModule):
             # sin reiniciar, el heartbeat siguiente ya dice la verdad. Es una lectura
             # de un archivo diminuto, y `fw_version()` nunca lanza.
             fw_version=fw_version(),
+            # [T-2.70] …y ESTA es la contraria: congelada al arrancar el proceso.
+            # Las dos juntas son las que responden «¿se aplicó la actualización?»:
+            # el disco solo, no. Ver el bloque de `takab_edge/version.py`.
+            fw_running=running_version(),
             # [T-2.49] Perfil de tonos efectivo. `None` si no hay módulo de audio
             # (getattr: los fakes de los tests y los edges sin audio no lo traen).
             audio=self._audio_report(),

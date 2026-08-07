@@ -19,6 +19,7 @@ from takab_api.routers.incidents import actions_router as incident_actions_route
 from takab_api.routers.incidents import router as incidents_router
 from takab_api.routers.incidents_ack import router as incidents_ack_router
 from takab_api.routers.incidents_ops import router as incidents_ops_router
+from takab_api.routers.maintenance import router as maintenance_router
 from takab_api.routers.me import router as me_router
 from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
@@ -76,6 +77,10 @@ def create_app() -> FastAPI:
 
     # Simulacro institucional (Fase 1.8 · T-1.60).
     app.include_router(drills_router)
+
+    # Ventanas de mantenimiento: silencian alarmas de OPERACIÓN, jamás la
+    # actuación (Fase 2.5 · T-2.71).
+    app.include_router(maintenance_router)
 
     # Telemetría (B3), exportación de evidencia (B4) y reporte PDF (B5).
     app.include_router(telemetry_router)

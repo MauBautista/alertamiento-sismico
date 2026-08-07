@@ -172,6 +172,18 @@
       "default": null,
       "title": "Fw Version"
     },
+    "fw_running": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fw Running"
+    },
     "audio": {
       "anyOf": [
         {
@@ -204,6 +216,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.8.0",
-  "version": "1.8.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.9.0",
+  "version": "1.9.0"
 }

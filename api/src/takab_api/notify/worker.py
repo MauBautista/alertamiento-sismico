@@ -20,7 +20,7 @@ import psycopg
 from takab_api.db import pool
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.providers import NotifyProvider, build_providers
-from takab_api.ops.metrics import GhostGauge, count_ghosts
+from takab_api.ops.metrics import GhostGauge, count_ghosts, count_retired_alive
 
 if TYPE_CHECKING:
     from takab_api.settings import Settings
@@ -47,11 +47,16 @@ def build_ghost_gauge(settings: Settings) -> GhostGauge:
             # Sin cliente el medidor queda inerte y el worker sigue notificando:
             # perder una métrica de inventario no puede costar un aviso de sismo.
             logger.warning("no se pudo crear el cliente de CloudWatch", exc_info=True)
+    # [B3] Las DOS cifras del mismo instante: la urgente (la que tiene alarma) y
+    # la total (la que impide que acotar la alarma equivalga a borrar el estado).
+    # El umbral de "vivo" es UNO —el de SIN ENLACE— para las dos.
+    alive_s = settings.sin_enlace_min * 60.0
     return GhostGauge(
         namespace=settings.ops_metrics_namespace,
         every_s=settings.ops_metrics_interval_s,
         client=client,
-        counter=partial(count_ghosts, alive_s=settings.sin_enlace_min * 60.0),
+        counter=partial(count_ghosts, alive_s=alive_s),
+        total_counter=partial(count_retired_alive, alive_s=alive_s),
     )
 
 

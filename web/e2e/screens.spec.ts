@@ -132,7 +132,7 @@ const SCREENS: readonly Screen[] = [
   },
   {
     path: `/building/${SITE_DEV}`,
-    label: "05 Dashboard Edificio",
+    label: "06 Dashboard Edificio",
     heading: "DASHBOARD EDIFICIO",
     root: ".bld",
     list: ".bld__card",

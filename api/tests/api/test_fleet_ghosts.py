@@ -273,8 +273,17 @@ async def test_el_inventario_ordena_por_nombre_de_sitio(seed: None) -> None:
 # ---- consecuencias aguas abajo ----------------------------------------------
 
 
-async def test_retirar_el_sitio_deja_su_gabinete_no_sincronizable(seed: None) -> None:
-    """``is_syncable`` es el espejo del predicado de publicación de ``commands/sync.py``."""
+async def test_retirar_el_sitio_deja_a_su_gabinete_pendiente_de_recibir_la_baja(
+    seed: None,
+) -> None:
+    """``is_syncable`` es el espejo del predicado de publicación de ``commands/sync.py``.
+
+    [T-2.65] REESCRITO A PROPÓSITO (antes: ``…deja_su_gabinete_no_sincronizable``).
+    Retirar el sitio ya NO lo saca del flujo de config de inmediato: el gabinete
+    sigue siendo candidato hasta que reciba su sobre de baja — el aviso que
+    T-2.58 §2.3 documentó como imposible y que costó el fantasma del 2026-08-04.
+    Que salga de la lista ANTES de avisarle es exactamente el defecto arreglado.
+    """
     before = await _get(f"/fleet/gateways/{G_A}/config-state")
     assert before.json()["is_syncable"] is True
 
@@ -282,7 +291,8 @@ async def test_retirar_el_sitio_deja_su_gabinete_no_sincronizable(seed: None) ->
 
     after = await _get(f"/fleet/gateways/{G_A}/config-state")
     assert after.status_code == 200, after.text
-    assert after.json()["is_syncable"] is False
+    assert after.json()["is_syncable"] is True  # queda el aviso por entregar
+    assert after.json()["in_sync"] is False
 
 
 async def test_el_retiro_del_sitio_audita_cada_gabinete(seed: None) -> None:
@@ -482,3 +492,55 @@ async def test_el_tenant_B_no_ve_el_fantasma_del_tenant_A(seed: None) -> None:
     await _latido(G_A, T_A, hace_s=5)
     assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
     assert G_A not in await _ids(token=_tok("tenant_admin", tenant=T_B))
+
+
+# ---- B3 · `is_ghost` NO se acota con el aviso -------------------------------
+#
+# T-2.65 acotó la MÉTRICA (deja de paginar cuando consta que el sobre pudo
+# llegarle) y no tocó `is_ghost`. La asimetría es deliberada y hasta hoy no la
+# fijaba ningún test, así que una limpieza futura "por coherencia" habría apagado
+# el rótulo sin que nada se quejara — y es la ÚLTIMA señal automática que le
+# queda al retirado que late y ya fue avisado.
+#
+# La razón: `is_ghost` no es un nivel de urgencia, es un HECHO —"dado de baja y
+# aun así enchufado y hablando"— y ese hecho no cambia porque el gabinete se haya
+# enterado. Bajo la opción (A) sigue protegiendo (correcto) y sigue exigiendo una
+# decisión: o se desmonta de verdad, o se restaura. Quitarlo de la pantalla sería
+# volver a esconder un edificio, que es el fallo del 2026-08-04. La alarma se
+# calla porque pagina a las 3 de la mañana; la consola no, porque se mira cuando
+# alguien está delante y ahí no hay coste de fatiga.
+
+
+async def _publica_baja(gateway_id: str, tenant: str) -> None:
+    """La nube publicó el sobre firmado que le DECLARA la baja (T-2.65)."""
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO gateway_config_state (gateway_id, tenant_id, version, "
+                "payload, sig) VALUES (:g, :t, 5, CAST(:p AS jsonb), 'sig-b3') "
+                "ON CONFLICT (gateway_id) DO UPDATE SET payload = EXCLUDED.payload"
+            ),
+            {"g": gateway_id, "t": tenant, "p": '{"cloud_admin_state": "retired"}'},
+        )
+
+
+async def test_el_retirado_YA_AVISADO_que_late_SIGUE_siendo_fantasma_en_la_consola(
+    seed: None,
+) -> None:
+    """El estado que quedó sin ninguna otra señal automática tras T-2.65."""
+    await _latido(G_A, T_A, hace_s=5)
+    assert (await _retire_gateway(G_A, "SN-GHOST-A1")).status_code == 200
+    await _publica_baja(G_A, T_A)
+
+    fila = await _fila(G_A)
+    assert fila is not None, (
+        "el gabinete retirado, ya avisado y SIGUIENDO PROTEGIENDO desapareció del "
+        "inventario: volver a esconder un edificio con hardware enchufado es el "
+        "fallo del 2026-08-04, no su arreglo"
+    )
+    assert fila["is_ghost"] is True, (
+        "se apagó el rótulo de fantasma porque al gabinete ya se le avisó. El "
+        "aviso no desmonta el hardware ni cierra la contradicción de inventario: "
+        "es la ÚLTIMA señal automática de ese estado (la métrica ya no pagina por "
+        "él a propósito) y sin ella el edificio vuelve a ser invisible"
+    )

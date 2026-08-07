@@ -1,0 +1,778 @@
+"""Los artefactos que DESPLIEGAN el gabinete, bajo test — hasta hoy no lo estaban.
+
+CERO tests leían `deploy/edge/deploy.sh` y CERO leían `edge/systemd/*.service`.
+Son los dos archivos que deciden si el gabinete arranca, y sus fallos no se ven
+en ninguna suite: se ven en el edificio.
+
+Lo que estos tests cierran (todos son fallos ya OCURRIDOS o medidos, no hipótesis):
+
+1. **La lista literal de extras de `uv sync`.** El primer deploy real sincronizó
+   con un solo extra, `uv` PODÓ `awsiotsdk` —desinstala lo que no está en el set
+   resuelto— y el gabinete se quedó offline spooleando. Hoy la línea dice
+   `--extra hardware --extra aws`, correcta, pero es una lista LITERAL: ya hay
+   dos extras más declarados (`bacnet`, `lora`) que al activarse repetirían el
+   fallo, y nada obliga a decidir sobre el siguiente que alguien declare. El test
+   DERIVA los extras de `pyproject.toml` en vez de enumerarlos (si enumerara, se
+   quedaría ciego ante el próximo, que es justo el defecto que persigue).
+
+2. **El orden rsync → FW_VERSION → restart.** `rsync --delete` borra
+   `FW_VERSION` porque no está en el fuente; por eso se escribe DESPUÉS. Es un
+   invariante frágil que solo vivía en un comentario.
+
+3. **Una unidad que se rinde para siempre — y su precio al no rendirse.** Con el
+   default de systemd (5 arranques en 10 s) y `RestartSec=2`/`1`, un crash al
+   arrancar agota el burst en ~10 s y la unidad queda en `failed` PARA SIEMPRE:
+   un edificio sin alertamiento hasta que alguien conduzca hasta el sitio. Por
+   eso ambas unidades llevan `StartLimitIntervalSec=0`.
+
+   Lo que ESO cuesta se pasó por alto al escribirlo, y aquí queda MEDIDO: el
+   ciclo de vida del proceso **mueve físicamente el gas y los retenedores de
+   puerta**. `GAS_VALVE` es `FAIL_CLOSE` y `DOOR_RETAINER` es `NORMALLY_CLOSED`,
+   y ambos reposan ENERGIZADOS (`normal_energized`), así que `_on_start` los
+   energiza y la muerte del proceso los suelta. Sin límite de arranques Y sin
+   backoff, `RestartSec=1` convierte un ciclo ACOTADO de actuación física sobre
+   el edificio en uno INFINITO a 3600 ciclos/hora. El argumento original —«lo
+   peor que hace un bucle de reintentos es gastar CPU»— es falso en su premisa:
+   no es CPU, es una válvula de gas. La salida no es rendirse: es ESPACIAR
+   (`RestartSteps=` + `RestartMaxDelaySec=`, systemd ≥ 254).
+
+4. **La ventana de desprotección no declarada.** Ninguna unidad fija
+   `TimeoutStopSec`, así que la cota superior de "cuánto tiempo el gabinete no
+   protege durante un despliegue" es el default de systemd (90 s) — un número que
+   nadie eligió y que no aparece escrito en ninguna parte.
+
+5. **La guarda que vigilaba UNA de cuatro directivas** (A1/A2, la ronda de
+   cierre). Los puntos 3 y 4 descubrieron, documentaron y midieron que systemd
+   IGNORA EN SILENCIO una directiva puesta en la sección equivocada… y el
+   `_seccion_de()` que se escribió para vigilarlo se aplicó a UNA sola
+   directiva. Medido: mover `RestartSteps=`, `RestartMaxDelaySec=` y
+   `TimeoutStopSec=` de `[Service]` a `[Unit]` —un reordenamiento cosmético que
+   el comentario de la propia unidad invita a hacer— dejaba la suite en verde
+   mientras `systemd-analyze verify` decía «Unknown key … in section [Unit],
+   ignoring.» ×3 y salía 0 igual: sin backoff, `Restart=always` +
+   `StartLimitIntervalSec=0` + `RestartSec=1` devolvían el crash-loop a 3600
+   ciclos/hora sobre la válvula de gas.
+
+   Y el mismo lector ingenuo cometía el otro defecto de la casa: `_directiva()`
+   leía la PRIMERA asignación donde systemd aplica la ÚLTIMA — el gemelo exacto
+   de `declValue` en la hoja de estilos (T-2.64), que leía la primera
+   declaración donde el navegador aplica la última. Añadir un segundo
+   `RestartSteps=0` al final de `[Service]` no ponía nada en rojo.
+
+   Los dos se cierran ABAJO DEL PARSER (`_asignaciones_de()`), no test a test,
+   y la sección se le pregunta a SYSTEMD (no a una lista escrita a mano) para
+   que la guarda cubra también las directivas que nadie enumeró.
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import tomllib
+
+import pytest
+from takab_edge.contracts import ActuatorChannel
+from takab_edge.gpio import GpioController
+
+_RAIZ = pathlib.Path(__file__).resolve().parents[2]
+_DEPLOY = _RAIZ / "deploy" / "edge" / "deploy.sh"
+_PYPROJECT = _RAIZ / "edge" / "pyproject.toml"
+_UNIDADES = {
+    "takab-edge": _RAIZ / "edge" / "systemd" / "takab-edge.service",
+    "takab-gpio": _RAIZ / "edge" / "systemd" / "takab-gpio.service",
+}
+
+
+def _deploy() -> str:
+    return _DEPLOY.read_text()
+
+
+def _pos_comando(patron: str) -> int:
+    """Posición de un COMANDO real, ignorando comentarios.
+
+    `str.index` sobre el archivo entero encuentra la primera MENCIÓN, y el
+    encabezado del script nombra varios de estos comandos al explicarlos. Un test
+    anclado a esa mención mide el orden del texto, no el del despliegue — y eso
+    ya dio un rojo engañoso al añadir un párrafo de documentación.
+    """
+    m = re.search(rf"^\s*(sudo )?{patron}", _deploy(), re.MULTILINE)
+    assert m is not None, f"no hay ningún comando `{patron}` en {_DEPLOY}"
+    return m.start()
+
+
+def _array_bash(nombre: str) -> list[str]:
+    """Lee un array bash `NOMBRE=(a b c)` del script de despliegue.
+
+    Se leen del SCRIPT y no de un comentario a propósito: un comentario puede
+    divergir del comando que se ejecuta, y esa divergencia es exactamente el
+    fallo que este archivo persigue.
+
+    Y se exige que la asignación sea ÚNICA, porque bash tiene la misma semántica
+    que systemd y que CSS: **gana la última**. Un `EDGE_EXTRAS=(...)` repetido
+    más abajo sería invisible para este `re.search` —que lee la primera— y
+    decisivo para el `uv sync` que PODA el venv del Pi; o sea, un gabinete
+    offline spooleando con la suite en verde. Es el mismo defecto que
+    `_directiva()` tenía con las unidades systemd y `declValue` con la hoja de
+    estilos (T-2.64), aquí anclado en el único array que este archivo lee.
+    """
+    asignaciones = re.findall(rf"^{nombre}=\(([^)]*)\)", _deploy(), re.MULTILINE)
+    assert asignaciones, f"`{nombre}=(...)` no está en {_DEPLOY}"
+    assert len(asignaciones) == 1, (
+        f"`{nombre}=(...)` se asigna {len(asignaciones)} veces en {_DEPLOY}: bash aplica la "
+        "ÚLTIMA y este test leería la primera. Deja una sola asignación."
+    )
+    return asignaciones[0].split()
+
+
+def _extras_declarados() -> set[str]:
+    datos = tomllib.loads(_PYPROJECT.read_text())
+    return set(datos["project"]["optional-dependencies"])
+
+
+# ---------------------------------------------------------------- extras
+
+
+def test_todo_extra_declarado_esta_decidido_en_el_despliegue() -> None:
+    """DERIVADO de `pyproject.toml`, no enumerado: declarar un extra nuevo obliga
+    a decidir si va al Pi o no, y el olvido sale en rojo aquí en vez de salir en
+    un gabinete mudo.
+
+    `uv sync` DESINSTALA lo que no está en el set resuelto, así que "no decidir"
+    no es neutro: es podar.
+    """
+    instalados = set(_array_bash("EDGE_EXTRAS"))
+    omitidos = set(_array_bash("EDGE_EXTRAS_OMITIDOS"))
+    declarados = _extras_declarados()
+
+    sin_decidir = declarados - instalados - omitidos
+    assert not sin_decidir, (
+        f"extras declarados en pyproject.toml que el deploy no menciona: {sorted(sin_decidir)}. "
+        "Añádelos a EDGE_EXTRAS (van al Pi) o a EDGE_EXTRAS_OMITIDOS (con su razón)."
+    )
+    inventados = (instalados | omitidos) - declarados
+    assert not inventados, f"el deploy nombra extras que no existen: {sorted(inventados)}"
+    assert not (instalados & omitidos), "un extra no puede estar instalado y omitido a la vez"
+
+
+def test_los_dos_extras_del_pi_real_siguen_instalandose() -> None:
+    """`hardware` (lgpio, backend GPIO nativo) y `aws` (awsiotsdk, transporte
+    mTLS). Sin el primero el camino de vida no arranca; sin el segundo el
+    gabinete queda offline spooleando — que es lo que pasó de verdad."""
+    assert {"hardware", "aws"} <= set(_array_bash("EDGE_EXTRAS"))
+
+
+def test_el_uv_sync_usa_la_lista_y_no_una_enumeracion_a_mano() -> None:
+    """Si el comando volviera a llevar los extras escritos a mano, el test de
+    arriba pasaría y el Pi seguiría recibiendo otra cosa."""
+    guion = _deploy()
+    assert "uv sync" in guion
+    assert re.search(r"uv sync[^\n]*\$\{EDGE_EXTRA_FLAGS", guion), (
+        "el `uv sync` del Pi debe construir sus flags desde EDGE_EXTRAS, no repetir la lista a mano"
+    )
+
+
+# ---------------------------------------------------------------- orden
+
+
+def test_la_marca_de_version_se_escribe_despues_del_swap() -> None:
+    """`FW_VERSION` no está en el fuente, así que el `--delete` del swap lo
+    BORRA. Escribirla antes la perdería y el gabinete reportaría «no sé» para
+    siempre."""
+    swap = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{ENSAYO\}/\"")
+    marca = _pos_comando(r"printf '%s\\n' \"\$FW_VERSION\" >")
+    assert swap < marca, "FW_VERSION debe escribirse DESPUÉS del swap (--delete la borraría)"
+
+
+def test_el_gate_se_ejecuta_antes_de_reiniciar_el_camino_de_vida() -> None:
+    """El orden que convierte un despliegue roto en un no-evento.
+
+    `gpio` es `critical=True` y el supervisor hace fail-fast: si el arranque
+    truena, el proceso crashea, cicla gas y puertas (ver la sección del backoff)
+    y el gabinete queda sin alertamiento. Comprobarlo ANTES del restart hace que
+    ese deploy ABORTE con el gabinete todavía CORRIENDO el código viejo.
+    """
+    gate = _deploy().index("GATE DEL CÓDIGO DESPLEGADO")
+    restart = _pos_comando("systemctl restart takab-edge")
+    assert gate < restart, "el gate corre ANTES de tocar el proceso que actúa"
+
+
+@pytest.mark.parametrize("modulo", ["lgpio", "awsiot"])
+def test_el_gate_cubre_las_dependencias_que_matan_el_arranque(modulo: str) -> None:
+    """Se busca DENTRO del bloque del gate, no en todo el archivo: ambos nombres
+    aparecen también en comentarios, y un test que los encontrara ahí pasaría
+    sin que el deploy comprobara nada."""
+    guion = _deploy()
+    bloque = guion[guion.index("GATE DEL CÓDIGO DESPLEGADO") : _pos_comando("systemctl restart")]
+    assert modulo in bloque, f"el deploy debe comprobar que `{modulo}` importa antes de reiniciar"
+
+
+# ------------------------------- el gate ciego y el gate que corría tarde (B2/B3)
+
+
+def test_el_gate_ejercita_el_codigo_recien_desplegado() -> None:
+    """B2. El gate original era `import lgpio, awsiot` — DOS DEPENDENCIAS DE
+    TERCEROS que viven en el `.venv`, y el `.venv` está EXCLUIDO del rsync.
+
+    O sea: el único gate que protegía el despliegue no podía fallar por culpa
+    del código que se estaba desplegando. Era estructuralmente ciego justo a la
+    causa más probable de que un gabinete no arranque tras un update. El gate
+    tiene que importar el ÁRBOL RECIÉN COPIADO, y en concreto los dos entry
+    points que ejecutan los `ExecStart=` de las unidades.
+    """
+    guion = _deploy()
+    bloque = guion[guion.index("GATE DEL CÓDIGO DESPLEGADO") : _pos_comando("systemctl restart")]
+    for entrada in ("takab_edge.supervisor", "takab_edge.gpio.__main__"):
+        assert entrada in bloque, (
+            f"el gate debe importar `{entrada}` (entry point de una unidad systemd): "
+            "sin eso sólo comprueba paquetes de terceros que el rsync ni siquiera copia"
+        )
+
+
+def test_los_entry_points_del_gate_son_los_de_las_unidades_systemd() -> None:
+    """DERIVADO de `pyproject.toml`, no enumerado: el gate importa los módulos
+    de los console scripts que los `ExecStart=` lanzan. Si alguien renombra un
+    entry point, el gate dejaría de probar lo que arranca — y este test lo ve.
+    """
+    scripts = tomllib.loads(_PYPROJECT.read_text())["project"]["scripts"]
+    guion = _deploy()
+    bloque = guion[guion.index("GATE DEL CÓDIGO DESPLEGADO") : _pos_comando("systemctl restart")]
+    for nombre, destino in scripts.items():
+        modulo = destino.split(":")[0]
+        assert modulo in bloque, (
+            f"el console script `{nombre}` apunta a `{modulo}` y el gate no lo importa"
+        )
+        assert f".venv/bin/{nombre}" in _unidad(nombre), (
+            f"{nombre}.service debería ejecutar .venv/bin/{nombre}"
+        )
+
+
+def test_hay_un_prevuelo_antes_del_rsync_destructivo() -> None:
+    """B3. El gate corría DESPUÉS del `rsync --delete` y DESPUÉS de escribir
+    FW_VERSION: al abortar, el disco YA tenía el código nuevo sin verificar.
+
+    Ahora el código nuevo aterriza primero en un árbol de ENSAYO y se compila
+    ahí. Ese pre-vuelo es lo único que corre con el árbol vivo todavía intacto,
+    así que tiene que ir ANTES del swap.
+    """
+    guion = _deploy()
+    prevuelo = guion.index("compileall")
+    swap = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{ENSAYO\}/\"")
+    assert prevuelo < swap, "el pre-vuelo debe correr ANTES del swap destructivo"
+
+    instantanea = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{VIVO\}/\"")
+    assert prevuelo < instantanea < swap, (
+        "la instantánea de reversión (edge.prev) se toma entre el pre-vuelo y el swap"
+    )
+
+
+def test_el_prevuelo_compila_el_codigo_desplegado_y_no_otra_cosa() -> None:
+    """El pre-vuelo es SINTÁCTICO a propósito: corre antes del `uv sync`, con el
+    venv VIEJO, así que un `import` daría falsos abortos cada vez que el commit
+    nuevo añada una dependencia. `compileall` no depende de nada instalado.
+
+    Lo que sí exige este test es que compile el árbol de ENSAYO —el código que
+    acaba de viajar— y no el vivo, que es el que todavía no se ha tocado.
+    """
+    m = re.search(r"^\s*if ! \S+ -m compileall[^\n]*", _deploy(), re.MULTILINE)
+    assert m is not None, "el pre-vuelo debe compilar el árbol de ensayo"
+    linea = m.group(0)
+    assert '"${ENSAYO}/takab_edge"' in linea, (
+        "compileall debe apuntar al árbol de ENSAYO; sobre el vivo no verifica lo que llega"
+    )
+    # Y con el intérprete DEL VENV, no con el del sistema: en el Pi son 3.12 y
+    # 3.13, y compilar con el que no ejecuta es un gate que aprueba lo que no
+    # arranca. `PY_PREVUELO` cae a `python3` sólo si el venv aún no existe.
+    assert '"$PY_PREVUELO"' in linea, "el pre-vuelo debe compilar con el intérprete del venv"
+    assert re.search(r'^PY_PREVUELO="\$\{VIVO\}/\.venv/bin/python"', _deploy(), re.MULTILINE)
+
+
+def test_el_mensaje_de_aborto_del_prevuelo_puede_prometer_estado_seguro() -> None:
+    """Antes del swap NADA se destruyó, así que aquí el mensaje SÍ puede decir
+    que el gabinete sigue con el código anterior — y debe decirlo."""
+    guion = _deploy()
+    bloque = guion[guion.index("ABORTADO EN PRE-VUELO") : guion.index("INSTANTÁNEA + SWAP")]
+    assert "NADA se ha destruido" in bloque
+    assert "sigue corriendo el código anterior" in bloque
+
+
+def test_el_aborto_posterior_al_swap_ya_no_miente_sobre_el_disco() -> None:
+    """B3, el corazón. El mensaje decía literalmente «El gabinete NO se ha
+    reiniciado y sigue con el código anterior» — y era FALSO: el proceso en
+    memoria sí, pero EL DISCO YA TENÍA EL CÓDIGO NUEVO sin verificar, y el
+    próximo arranque (corte de luz, `Restart=always`, un `systemctl`) lo
+    ejecutaría solo. La falsedad es peligrosa porque invita a irse del sitio.
+    """
+    guion = _deploy()
+    bloque = guion[guion.index("ESTADO REAL DEL GABINETE") : _pos_comando("sudo install")]
+
+    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" in bloque, (
+        "el aborto posterior al swap debe declarar que el disco ya cambió"
+    )
+    assert "próximo" in bloque and "arranque" in bloque, (
+        "debe advertir que el PRÓXIMO arranque ejecutará el código sin verificar"
+    )
+    assert "NO queda en un" in bloque and "estado seguro" in bloque, (
+        "debe decir que el gabinete no queda en estado seguro"
+    )
+    assert "${PREVIO}/" in bloque, "debe dar el comando de restauración desde la instantánea"
+
+    # LA MENTIRA CONCRETA, prohibida por su literal: la frase antigua prometía a
+    # la vez que no se reinició Y que sigue con el código anterior, sin matizar
+    # que eso sólo vale para el proceso en memoria.
+    assert "sigue con el código anterior" not in bloque, (
+        "esa frase es la que mentía: tras el swap el disco NO sigue con el código anterior"
+    )
+
+
+# ---------------------------------------------------------------- unidades
+
+
+def _unidad(nombre: str) -> str:
+    return _UNIDADES[nombre].read_text()
+
+
+def _asignaciones_de(nombre: str) -> list[tuple[str, str, str]]:
+    """`(sección, clave, valor)` de CADA asignación de la unidad, EN ORDEN.
+
+    Todo lo que este archivo afirma sobre las unidades cuelga de aquí, porque
+    los dos errores que comete un lector ingenuo de un `.service` ya costaron
+    una ronda cada uno en este proyecto:
+
+    · **la sección importa** — systemd descarta con «Unknown key … ignoring» lo
+      que esté en la sección equivocada y `systemd-analyze verify` SIGUE SALIENDO
+      0. "La línea existe" no es "systemd la lee".
+    · **manda la ÚLTIMA asignación, no la primera** — leer la primera es el
+      defecto exacto de `declValue` en la hoja de estilos (T-2.64). Una segunda
+      línea al final del archivo es invisible para un `re.search` y decisiva
+      para systemd.
+
+    Un parser único los cierra para TODAS las directivas a la vez; cerrarlos
+    test a test es cómo se llegó a vigilar una de cuatro.
+
+    Se ignoran comentarios (`#`/`;`) a propósito: `# WatchdogSec=10` en
+    takab-gpio.service es una línea comentada de verdad, y contarla como
+    asignación haría afirmar a esta suite algo que systemd no lee.
+    """
+    fuera: list[tuple[str, str, str]] = []
+    seccion = ""
+    for linea in _unidad(nombre).splitlines():
+        limpia = linea.strip()
+        if not limpia or limpia.startswith(("#", ";")):
+            continue
+        if limpia.startswith("[") and limpia.endswith("]"):
+            seccion = limpia[1:-1]
+        elif "=" in limpia:
+            clave, valor = limpia.split("=", 1)
+            fuera.append((seccion, clave.strip(), valor.strip()))
+    return fuera
+
+
+#: Sección en la que systemd LEE cada directiva de la que esta suite afirma algo.
+#:
+#: Es un RESPALDO OFFLINE, no la fuente de verdad: la fuente es systemd, y
+#: `test_systemd_no_ignora_en_silencio_ninguna_directiva` se la pregunta a él
+#: para TODAS las claves del archivo (también las que nadie enumeró aquí). Este
+#: mapa existe para que la guarda siga viva en una máquina sin
+#: `systemd-analyze`, y su COBERTURA no depende de que alguien se acuerde:
+#: `_directiva()` se niega a leer una clave que no esté declarada, así que no se
+#: puede afirmar nada sobre una directiva nueva sin decir dónde la lee systemd.
+_SECCION_CANONICA = {
+    "StartLimitIntervalSec": "Unit",
+    "Restart": "Service",
+    "RestartSec": "Service",
+    "RestartSteps": "Service",
+    "RestartMaxDelaySec": "Service",
+    "TimeoutStopSec": "Service",
+}
+
+#: Claves que systemd ACUMULA en vez de sobrescribir (`Environment=`,
+#: `ReadWritePaths=`, `ExecStartPre=`…). Hoy ninguna unidad repite ninguna, y
+#: por eso está vacío: el día que haga falta repetir una, se declara AQUÍ con su
+#: razón y el test de duplicados deja de verla como una sobrescritura silenciosa.
+_CLAVES_ACUMULABLES: frozenset[str] = frozenset()
+
+
+def _directiva(nombre: str, clave: str) -> str | None:
+    """Valor EFECTIVO de una directiva: el de la ÚLTIMA asignación.
+
+    systemd aplica la última; leer la primera fue el defecto de `declValue`.
+    """
+    assert clave in _SECCION_CANONICA, (
+        f"`{clave}` no está en _SECCION_CANONICA: declara en qué sección la lee systemd antes "
+        "de afirmar nada sobre su valor. Una directiva en la sección equivocada no la lee "
+        "nadie y el test pasaría igual — que es exactamente cómo se vigiló una de cuatro."
+    )
+    valores = [v for _s, c, v in _asignaciones_de(nombre) if c == clave]
+    return valores[-1] if valores else None
+
+
+def _seccion_de(nombre: str, clave: str) -> str | None:
+    """Sección `[...]` en la que cae una directiva (la de su última asignación).
+
+    "La última" sólo es una respuesta sin ambigüedad porque
+    `test_ninguna_directiva_se_asigna_dos_veces_en_la_misma_unidad` prohíbe que
+    haya más de una.
+    """
+    secciones = [s for s, c, _v in _asignaciones_de(nombre) if c == clave]
+    return secciones[-1] if secciones else None
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_ninguna_unidad_del_gabinete_se_rinde_para_siempre(unidad: str) -> None:
+    """`StartLimitIntervalSec=0` desactiva el límite de arranques.
+
+    Con el default (5 en 10 s) y `RestartSec` de 1–2 s, un fallo al arrancar deja
+    la unidad en `failed` DEFINITIVAMENTE: systemd no vuelve a intentarlo aunque
+    la causa desaparezca (una partición que montó tarde, un venv a medio
+    sincronizar que se completó luego, el reloj). Para un aparato que sostiene el
+    alertamiento de un edificio, rendirse deja el edificio sin protección hasta
+    que alguien viaje al sitio.
+
+    Reintentar para siempre NO es gratis —cada intento mueve gas y puertas, ver
+    `test_cada_ciclo_de_proceso_es_un_ciclo_fisico_de_gas_y_puertas`— y por eso
+    esta directiva SOLO es aceptable acompañada del backoff que la de al lado
+    exige. Las dos se leen juntas o ninguna de las dos dice la verdad.
+    """
+    assert _directiva(unidad, "StartLimitIntervalSec") == "0", (
+        f"{unidad}: sin StartLimitIntervalSec=0, un update malo la deja en `failed` para siempre"
+    )
+
+
+@pytest.mark.parametrize("clave", sorted(_SECCION_CANONICA))
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_cada_directiva_vigilada_vive_donde_systemd_la_lee(unidad: str, clave: str) -> None:
+    """A1. La trampa de la sección, aplicada a las SEIS directivas y no a una.
+
+    Medido con systemd 259: una directiva en la sección equivocada imprime
+    «Unknown key 'X' in section [Y], ignoring.» y `systemd-analyze verify` SIGUE
+    SALIENDO 0 igual. O sea: un "orden" cosmético que mueva unas líneas de
+    `[Service]` a `[Unit]` —justo debajo de `StartLimitIntervalSec=0`, que es
+    donde el comentario de la unidad invita a ponerlas— devuelve el gabinete a
+    los defaults sin que nada se queje.
+
+    Lo que cuesta cada una:
+      · `StartLimitIntervalSec` fuera de `[Unit]` ⇒ vuelve el límite de arranques
+        (5 en 10 s) ⇒ un update malo deja la unidad en `failed` PARA SIEMPRE y el
+        edificio sin alertamiento hasta que alguien conduzca al sitio.
+      · `RestartSteps`/`RestartMaxDelaySec` fuera de `[Service]` ⇒ se evapora el
+        backoff ⇒ crash-loop a `RestartSec` fijo, o sea la válvula de gas y los
+        retenedores de puerta ciclando 1800–3600 veces por hora INDEFINIDAMENTE
+        (medido en "el precio físico de reintentar", más arriba).
+      · `Restart`/`RestartSec` fuera de `[Service]` ⇒ el gabinete no se reinicia:
+        una caída y se queda muerto.
+      · `TimeoutStopSec` fuera de `[Service]` ⇒ vuelve el default de 90 s no
+        declarado, que es el punto 4 de la cabecera de este archivo.
+
+    El caso `StartLimitIntervalSec` fue el único vigilado durante una ronda
+    entera; los otros cinco viajaban sin guarda.
+    """
+    seccion = _seccion_de(unidad, clave)
+    esperada = _SECCION_CANONICA[clave]
+    assert seccion is not None, f"{unidad}: la directiva {clave}= no está en la unidad"
+    assert seccion == esperada, (
+        f"{unidad}: {clave}= está en [{seccion}]; systemd solo la lee en [{esperada}] "
+        "y en cualquier otra sección la ignora EN SILENCIO (verify sale 0 igual)"
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_ninguna_directiva_se_asigna_dos_veces_en_la_misma_unidad(unidad: str) -> None:
+    """A2. El gemelo de `declValue`: systemd aplica la ÚLTIMA asignación.
+
+    Reproducción medida: añadir un segundo `RestartSteps=0` al final de
+    `[Service]` cambiaba el comportamiento real (systemd trata 0 como "intervalo
+    constante" ⇒ adiós backoff ⇒ gas cada segundo) y la suite seguía en verde,
+    porque el helper leía la PRIMERA. El valor efectivo ya lo arregla
+    `_directiva()`; este test ataca la otra mitad: una unidad donde la misma
+    clave aparece dos veces es AMBIGUA para quien la lee, aunque systemd tenga
+    clara cuál gana.
+
+    DERIVADO del archivo, no de una lista: cubre las seis directivas vigiladas y
+    también `ExecStart=`, `WorkingDirectory=`, `EnvironmentFile=`… — toda clave
+    presente, incluidas las que nadie enumeró.
+    """
+    vistas: dict[str, list[str]] = {}
+    for seccion, clave, _valor in _asignaciones_de(unidad):
+        if clave in _CLAVES_ACUMULABLES:
+            continue
+        vistas.setdefault(clave, []).append(seccion)
+
+    repetidas = {clave: secs for clave, secs in vistas.items() if len(secs) > 1}
+    assert not repetidas, (
+        f"{unidad}: claves asignadas más de una vez {repetidas}. systemd aplica la ÚLTIMA, "
+        "así que una segunda línea al final del archivo sobrescribe EN SILENCIO lo que dice "
+        "el comentario de la primera. Si la clave es de las que systemd ACUMULA "
+        "(Environment=, ReadWritePaths=…), decláralo en _CLAVES_ACUMULABLES con su razón."
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+@pytest.mark.skipif(
+    shutil.which("systemd-analyze") is None,
+    reason="sin systemd-analyze: queda el respaldo offline de _SECCION_CANONICA",
+)
+def test_systemd_no_ignora_en_silencio_ninguna_directiva(unidad: str) -> None:
+    """A1, la mitad DERIVADA: la sección canónica se la preguntamos a systemd.
+
+    `_SECCION_CANONICA` es una lista escrita a mano, y esta sesión lleva cinco
+    casos de guardas que enumeran y se quedan ciegas ante el siguiente elemento.
+    El único mapa completo de "qué directiva se lee en qué sección" lo tiene
+    systemd, así que se lo pedimos: cualquier clave que caiga donde no la lee
+    —hoy o dentro de tres tareas, esté o no en el mapa— sale aquí.
+
+    De regalo cubre el otro descarte silencioso ya medido: un `RestartSteps=` sin
+    `RestartMaxDelaySec=` imprime «Service has RestartSteps= but no
+    RestartMaxDelaySec= setting. Ignoring.» — misma familia, mismo `Ignoring.`.
+
+    PUNTO CIEGO DECLARADO, y es la razón de que esto lea TEXTO y no el código de
+    salida: `systemd-analyze verify` sale **1** en cualquier máquina que no sea
+    el Pi, porque `ExecStart=/opt/takab/edge/.venv/bin/takab-edge` no existe
+    aquí. El código de salida no distingue "la unidad está mal escrita" de "esta
+    no es la máquina de destino", así que como gate no sirve; lo que sí es
+    inequívoco es que systemd anuncie que ESTÁ IGNORANDO algo.
+    """
+    r = subprocess.run(
+        ["systemd-analyze", "verify", str(_UNIDADES[unidad])],
+        capture_output=True,
+        text=True,
+        # Mensajes en inglés pase lo que pase: el `strerror` del ExecStart
+        # inexistente SÍ se traduce, y un match sobre texto localizado es una
+        # guarda que sólo funciona en la máquina de quien la escribió.
+        env={**os.environ, "LC_ALL": "C"},
+    )
+    ignoradas = [
+        linea
+        for linea in (r.stdout + r.stderr).splitlines()
+        if "ignoring" in linea.lower() or "Unknown section" in linea
+    ]
+    assert not ignoradas, (
+        f"{unidad}: systemd DESCARTA directivas de esta unidad y no falla al hacerlo:\n  "
+        + "\n  ".join(ignoradas)
+        + "\nUna directiva ignorada es una directiva que no existe: el gabinete corre con el "
+        "default, no con lo que dice el archivo."
+    )
+
+
+# ------------------------------------------------- el precio físico de reintentar
+#
+# La justificación del backoff no es una opinión: es la medición de abajo. Vive
+# en este archivo A PROPÓSITO, pegada a las directivas que la usan de excusa —
+# el día que alguien cambie los modos fail-safe, el test que guarda el backoff
+# es el que se pone rojo y obliga a releer por qué existe.
+
+#: Canales cuyo modo fail-safe los hace reposar ENERGIZADOS: el ciclo de vida del
+#: proceso los mueve. `GAS_VALVE` es FAIL_CLOSE, `DOOR_RETAINER` NORMALLY_CLOSED.
+_CANALES_QUE_REPOSAN_ENERGIZADOS = (ActuatorChannel.GAS_VALVE, ActuatorChannel.DOOR_RETAINER)
+
+
+def _pin_mock(settings, canal: ActuatorChannel):
+    """Pin de gpiozero (MockFactory) del relé de un canal, con su historial."""
+    from gpiozero import Device
+
+    numero = {
+        ActuatorChannel.GAS_VALVE: settings.pins.relay_gas_valve,
+        ActuatorChannel.DOOR_RETAINER: settings.pins.relay_door_retainer,
+    }[canal]
+    return Device.pin_factory.pin(numero)
+
+
+def _transiciones(pin) -> list[bool]:
+    """Estados eléctricos por los que pasó el pin, en orden (MockPin.states)."""
+    return [estado.state for estado in pin.states]
+
+
+@pytest.mark.parametrize("canal", _CANALES_QUE_REPOSAN_ENERGIZADOS)
+def test_arrancar_el_gabinete_energiza_gas_y_retenedores(settings, canal) -> None:
+    """LA PREMISA, medida: arrancar el proceso ACTÚA sobre el edificio.
+
+    No es un efecto secundario sutil — `_on_start` construye cada relé con
+    `initial_value=normal_energized(modo)`, y para FAIL_CLOSE/NORMALLY_CLOSED eso
+    es `True`. El pin se DRIVEA alto en la construcción del dispositivo.
+    """
+    pin = _pin_mock(settings, canal)
+    assert pin.state is False, "premisa del test: el pin arranca de-energizado"
+
+    controlador = GpioController(settings)
+    controlador.start()
+    try:
+        assert pin.state is True, f"{canal.value}: arrancar el proceso debería energizarlo"
+        assert controlador.relay_state(canal).energized is True
+    finally:
+        controlador.stop()
+
+
+@pytest.mark.parametrize("canal", _CANALES_QUE_REPOSAN_ENERGIZADOS)
+def test_cada_ciclo_de_proceso_es_un_ciclo_fisico_de_gas_y_puertas(settings, canal) -> None:
+    """LA MEDICIÓN QUE JUSTIFICA EL BACKOFF.
+
+    Tres arranques y tres paradas del proceso producen SEIS transiciones
+    eléctricas en el mismo pin: energiza-desenergiza, energiza-desenergiza,
+    energiza-desenergiza. Con `Restart=always`, `StartLimitIntervalSec=0` y
+    `RestartSec=1`, un crash-loop es exactamente este bucle a 3600 ciclos/hora
+    INDEFINIDAMENTE — sobre una válvula de gas y unos retenedores de puerta.
+
+    Esto es lo que convierte «reintentar para siempre» de gratis en caro, y lo
+    que obliga a que el reintento venga ESPACIADO.
+    """
+    pin = _pin_mock(settings, canal)
+    ciclos = 3
+    for _ in range(ciclos):
+        controlador = GpioController(settings)
+        controlador.start()
+        controlador.stop()
+
+    # El estado inicial (False) abre el historial; cada ciclo añade True y False.
+    assert _transiciones(pin) == [False] + [True, False] * ciclos, (
+        f"{canal.value}: se esperaban {2 * ciclos} transiciones físicas en {ciclos} ciclos de "
+        "proceso; si esto cambia, el argumento del backoff en las unidades cambia con él"
+    )
+
+
+def test_un_arranque_que_falla_antes_de_los_reles_no_mueve_nada(settings, monkeypatch) -> None:
+    """LA CORRECCIÓN AL DIAGNÓSTICO: no es cierto que CADA arranque fallido
+    mueva el gas.
+
+    El fallo de despliegue más probable —y el único que el gate de `deploy.sh`
+    vigila— es que el venv no pueda importar `lgpio`/`awsiot`. Ese fallo revienta
+    en `ensure_*_pin_factory()`, que corre ANTES del bucle que construye los
+    relés: no se llega a energizar nada y el crash-loop resultante es
+    eléctricamente MUDO.
+
+    El ciclado físico aparece en los fallos que pasan de esa línea (o en los
+    crashes posteriores a un arranque completo, que son los que
+    `Restart=always` sirve de verdad). El backoff sigue siendo necesario por
+    ESOS; que no lo sea por éste es parte de la verdad y queda anclado aquí.
+    """
+    import takab_edge.gpio as modulo_gpio
+
+    def revienta() -> None:
+        raise RuntimeError("lgpio ausente (venv podado)")
+
+    monkeypatch.setattr(modulo_gpio, "ensure_dev_pin_factory", revienta)
+    pines = {canal: _pin_mock(settings, canal) for canal in _CANALES_QUE_REPOSAN_ENERGIZADOS}
+
+    with pytest.raises(RuntimeError):
+        GpioController(settings).start()
+
+    for canal, pin in pines.items():
+        assert _transiciones(pin) == [False], (
+            f"{canal.value}: un fallo anterior a la construcción de los relés no debe "
+            "moverlos; si mueve, el diagnóstico del backoff hay que reescribirlo"
+        )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_reintentar_para_siempre_viene_con_backoff_creciente(unidad: str) -> None:
+    """El reintento infinito debe ESPACIARSE, o el gabinete cicla gas y puertas
+    cada segundo para siempre (ver la medición de arriba).
+
+    `RestartSteps=` + `RestartMaxDelaySec=` (systemd ≥ 254) suben el intervalo
+    desde `RestartSec=` hasta el techo. El gabinete NUNCA se rinde —eso lo
+    garantiza `StartLimitIntervalSec=0`— pero la actuación física se espacia
+    hasta ser irrelevante en vez de repetirse 3600 veces por hora.
+    """
+    pasos = _directiva(unidad, "RestartSteps")
+    assert pasos is not None, (
+        f"{unidad}: con StartLimitIntervalSec=0 y sin RestartSteps=, un crash-loop "
+        "cicla gas y retenedores cada RestartSec para siempre"
+    )
+    assert pasos.isdigit() and int(pasos) > 0, (
+        f"{unidad}: RestartSteps={pasos!r}; systemd trata 0 como «intervalo constante»"
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_el_backoff_no_queda_ignorado_en_silencio_por_systemd(unidad: str) -> None:
+    """LA TRAMPA, medida con systemd 259 y anclada aquí.
+
+    Las dos directivas del backoff se necesitan MUTUAMENTE y systemd descarta el
+    par incompleto sin fallar:
+
+      · `RestartSteps=` sin `RestartMaxDelaySec=`
+        → «Service has RestartSteps= but no RestartMaxDelaySec= setting. Ignoring.»
+      · `RestartMaxDelaySec=` sin `RestartSteps=`
+        → «Service has RestartMaxDelaySec= but no RestartSteps= setting. Ignoring.»
+      · `RestartMaxDelaySec=` < `RestartSec=`
+        → «RestartMaxDelaySec= has a value smaller than RestartSec=, resetting…»
+
+    En los tres casos `systemd-analyze verify` sale 0. O sea: media configuración
+    de backoff se lee igual de bien que la completa y el gabinete vuelve a ciclar
+    el gas cada segundo. Este test es lo único que separa un backoff real de uno
+    escrito.
+    """
+    techo = _directiva(unidad, "RestartMaxDelaySec")
+    assert techo is not None, (
+        f"{unidad}: RestartSteps= sin RestartMaxDelaySec= lo IGNORA systemd entero (sin error)"
+    )
+    assert techo.isdigit(), f"{unidad}: RestartMaxDelaySec debe ser segundos, no {techo!r}"
+
+    inicial = _directiva(unidad, "RestartSec")
+    assert inicial is not None and inicial.isdigit(), f"{unidad}: RestartSec debe ser explícito"
+    assert int(techo) > int(inicial), (
+        f"{unidad}: RestartMaxDelaySec={techo} no es mayor que RestartSec={inicial}; "
+        "systemd resetea RestartSec al techo y el backoff se evapora"
+    )
+
+    # A régimen, el ciclado físico es 1 por techo. Con RestartSec=1 y sin techo son
+    # 3600/hora; 60 s ya lo baja dos órdenes de magnitud. Es un SUELO, no el valor
+    # elegido (hoy 300 s ⇒ 12 ciclos/hora), para no anclar el número a un test.
+    assert int(techo) >= 60, (
+        f"{unidad}: RestartMaxDelaySec={techo}s deja el ciclado de gas/puertas en "
+        f"{3600 / int(techo):.0f} veces por hora a régimen; el suelo acordado son 60 s"
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_la_ventana_de_desproteccion_esta_declarada(unidad: str) -> None:
+    """La cota superior de "cuánto tiempo el gabinete no protege" durante un
+    reinicio NO es el arranque (0.62 s medidos): es el TIMEOUT DE PARADA. Sin
+    `TimeoutStopSec` explícito rige el default de systemd —90 s— que nadie eligió
+    y que no está escrito en ninguna parte. Declararlo no lo hace más corto: lo
+    hace REVISABLE, y obliga a que el número salga de una medición y no de un
+    silencio."""
+    valor = _directiva(unidad, "TimeoutStopSec")
+    assert valor is not None, f"{unidad}: TimeoutStopSec debe ser explícito, no heredado"
+    assert valor.isdigit(), f"{unidad}: TimeoutStopSec debe ser un número de segundos, no {valor!r}"
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_el_camino_de_vida_se_reinicia_siempre(unidad: str) -> None:
+    assert _directiva(unidad, "Restart") == "always"
+
+
+def test_las_dos_unidades_siguen_siendo_mutuamente_excluyentes() -> None:
+    """PIN DE REALIDAD, no un deseo. `takab-edge` declara
+    `Conflicts=takab-gpio.service` porque ambos reclaman los mismos pines BCM, y
+    el gate #6 del plan maestro (RATIFICADO 2026-07-09) eligió el supervisor
+    único: el reflejo SASMEX→sirena vive DENTRO de `takab-edge`.
+
+    Consecuencia que este test deja por escrito: **`takab-gpio` NO corre en
+    producción**, y por tanto el criterio 1 de T-2.70 —«takab-gpio no se detiene
+    durante la actualización»— se cumple de forma VACÍA. Lo que sí se detiene en
+    cada despliegue es `takab-edge`, que es el proceso que toca la sirena.
+
+    Si alguien revierte el gate #6 y separa los procesos de verdad, este test se
+    pone rojo — y eso es lo que se quiere: la topología del camino de vida no
+    puede cambiar sin que T-2.70 se vuelva a mirar.
+    """
+    assert "Conflicts=takab-gpio.service" in _unidad("takab-edge")
+
+
+def test_takab_gpio_no_leeria_su_identidad_si_alguien_lo_arrancara() -> None:
+    """El corolario incómodo del test anterior, también anclado.
+
+    `takab-gpio.service` no tiene `EnvironmentFile=/etc/takab/edge.env`, así que
+    arrancaría con los DEFAULTS DE CÓDIGO: `tenant-dev`/`site-dev`/`gw-dev-0001`,
+    sin HMAC, sin endpoint MQTT, sin lat/lon — mientras el `edge.env` real tiene
+    unas 15 claves fusionadas. Hoy no importa porque no corre (`Conflicts=`).
+    Importaría el día que alguien lo encienda para «no detener el camino de vida
+    durante un update», que es precisamente lo que la ficha de T-2.70 propone.
+    """
+    assert "EnvironmentFile" not in _unidad("takab-gpio"), (
+        "si takab-gpio gana EnvironmentFile es que la topología cambió: "
+        "revisa el criterio 1 de T-2.70 antes de borrar este test"
+    )
+    assert "EnvironmentFile=/etc/takab/edge.env" in _unidad("takab-edge")

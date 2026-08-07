@@ -13,7 +13,10 @@
 > (2 internos + 7 de tenant + 1 gobierno) — también en el snapshot de junio. Las **identidades
 > máquina** (certificado X.509 por gateway, clientes M2M `client_credentials`, rol de DB
 > `takab_ingest`) son identidades de servicio, **no roles RBAC**, y viven en blueprint §8 y
-> schema §0/§8. `[SUPUESTO — confirmar/override: si faltaba un 11º rol humano, añadirlo aquí.]`
+> schema §0/§8. `[RATIFICADO 2026-07-09 · T-1.45 — 10 roles; las identidades máquina no son
+> roles RBAC]` (`PLAN-MAESTRO-TAKAB.md:59-65`: no existía un 11º rol humano planeado; toda la
+> Fase 1 —`matrix.py`, Cognito, los E2E de T-1.30— se construyó y acreditó con 10 sin que
+> faltara ninguno).
 
 ### Internos de TAKAB
 | Rol | Descripción | Superficie primaria |
@@ -28,7 +31,7 @@
 | `soc_operator` | Operador de centro de monitoreo 24/7. **Puede ser servicio TAKAB o rol del propio tenant** — mismo rol, distinto alcance según a qué tenant pertenece el usuario. | Web |
 | `inspector` | Ingeniero estructural. Firma dictámenes de reingreso. | Web + Móvil |
 | `building_admin` | Responsable de un edificio específico. | Web + Móvil |
-| `brigadista` | Personal de respuesta en campo. | **Móvil** (web fase posterior) |
+| `brigadista` | Personal de respuesta en campo. | **Móvil** (sin superficie web hoy) |
 | `security_guard` | Seguridad/vigilancia del inmueble. | Móvil |
 | `occupant` | Ocupante común del edificio. Rol más numeroso, menor privilegio. | **Móvil only** |
 
@@ -162,6 +165,34 @@
   como evidencia para Protección Civil (RLS `drills_read` con `app_gov_can_see`), sin
   escribir. Un SASMEX real o un tier ≥ restricted ABORTAN el drill en el edge. Ancla:
   `tests/auth/test_matrix.py::test_drill_start_is_institutional_admin_action`.
+- **[DECISION 2026-08-06 · T-2.71] `maintenance_window` / `platform_maintenance_window`
+  (ventanas de mantenimiento, extensión de §2):** abrir una ventana **silencia las alarmas
+  de on-call** de un gabinete mientras dure la intervención. No mueve un relé, pero apaga la
+  vigilancia de un edificio, así que se trata como acción sensible.
+  - `maintenance_window` (ventana de GABINETE) = `takab_superadmin`, `tenant_admin` — el
+    MISMO círculo que `drill_start`, y **deliberadamente NO el de `self_test`**. La
+    diferencia importa: `building_admin` sí prueba los relés de SU inmueble, pero §2 le da
+    "—" en Flota Edge y el control vive en `/fleet`; concedérsela pintaría un botón en una
+    ruta que no tiene (regla de oro 7). Y lo que se apaga no es un dispositivo del edificio:
+    es el correo que despierta al on-call de TAKAB. `soc_operator` DENEGADO por el mismo
+    criterio que `self_test` (opera incidentes, no mantenimiento); `gov_operator` tampoco —
+    lee evidencia, no apaga vigilancia ajena.
+  - `platform_maintenance_window` (alarmas `ec2_*` de la instancia de la nube) = **SOLO**
+    `takab_superadmin`, mismo criterio que `manage_tenants`/`manage_visibility`/
+    `manage_retire_code`: vigilan la infraestructura común de TODOS los clientes, así que
+    ningún tenant puede callarlas ni un rato.
+  - **La frontera multi-tenant NO es la matriz, es el ORIGEN de los nombres de alarma.** Las
+    alarmas de CloudWatch se identifican por nombre y no llevan `tenant_id`: el API los
+    DERIVA de las filas `gateways` visibles bajo RLS y el body los tiene prohibidos
+    (`extra="forbid"` → 422). Tres alarmas son intocables para cualquier rol
+    (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`) y la política IAM tampoco las
+    concede — AWS comprueba `PutAlarmMuteRule` sobre CADA alarma apuntada.
+  - La LECTURA de ventanas (`GET /maintenance-windows`) es de CONSOLA y se concede ancho
+    (incluye `soc_operator`/`takab_support`) a propósito: una ventana invisible es
+    exactamente el fallo que el criterio 2 existe para evitar.
+  - Anclas: `tests/auth/test_matrix.py::test_maintenance_window_is_tenant_admin_action_not_a_field_role`,
+    `::test_platform_maintenance_window_is_superadmin_only`,
+    `::test_toda_ventana_de_mantenimiento_se_abre_desde_una_ruta_que_el_rol_tiene`.
 
 ---
 
@@ -358,7 +389,8 @@ acción — añadir una ruta obliga a tocar `auth/matrix.py`, y estas ya están 
 | Visibilidad entre clientes (T-1.73) | `/tenants` | `manage_visibility` |
 | Gestión de usuarios (T-2.54) | `/tenants` | `manage_users` |
 
-**Móvil (`mobile/` — fase posterior, ver `TASKS.md` T-1.31):**
+**Móvil (`mobile/` — CONSTRUIDA Y MERGEADA en la Fase 2, T-2.00…T-2.14; `TASKS.md` T-1.31
+quedó "CUBIERTA POR LA FASE 2 COMPLETA"):**
 | Stack de navegación | Pantallas | Roles |
 |---|---|---|
 | Ocupante | Reposo · Crisis · Check-in | `occupant` (y todos como base) |
@@ -382,4 +414,13 @@ Heredados de Fase 0, siguen abiertos:
    (auditoría, evidencia y dictámenes inmutables, nunca podados) es requisito TAKAB y NO cambia;
    el marco legal citable se define con el primer cliente/abogado. Ver blueprint §9 y
    `ANALISIS-ARQUITECTURA-TAKAB.md` pregunta abierta #1.
-4. **Disparador del pop-up automático de waveform:** propuesta STA/LTA > 3.5 sostenido 2 s.
+
+### Salidos de PENDIENTES (implementados; se quedan aquí para que no se vuelvan a "proponer")
+
+4. **Disparador del pop-up de waveform — IMPLEMENTADO en T-1.27** (reconciliado 2026-08-05,
+   T-2.61). La propuesta era "STA/LTA > 3.5 sostenido 2 s" y eso es exactamente lo que corre:
+   `web/src/features/console/useAutoPopup.ts:11-12` define `STALTA_THRESHOLD = 3.5` y
+   `STALTA_CONSECUTIVE = 2` (= 2 muestras de 1 s consecutivas = los 2 s), con **latch por
+   episodio**: dispara una vez y se rearma cuando la señal baja del umbral, para que un temblor
+   largo no reabra el panel en cada muestra (`:29,39-46`). Llevaba **desde el 2026-07-08**
+   escrito en el repo mientras este documento lo seguía llamando "propuesta".

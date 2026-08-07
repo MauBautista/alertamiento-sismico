@@ -1,7 +1,7 @@
 import { DERIVED_STATE_PILL, UNKNOWN_DERIVED_STATE_KIND } from "@takab/design-tokens";
 import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
 
-import type { GatewayConfigStateOut, GatewayHealthOut } from "@takab/sdk";
+import type { GatewayConfigStateOut, GatewayHealthOut, MaintenanceWindowOut } from "@takab/sdk";
 
 import Sparkline from "../../components/Sparkline";
 import { useSessionStore } from "../../auth/session.store";
@@ -10,6 +10,8 @@ import LinkPill from "./LinkPill";
 import RelayGrid from "./RelayGrid";
 import SyncBadge from "./SyncBadge";
 import UpsGauge from "./UpsGauge";
+import VersionBadge from "./VersionBadge";
+import { maintenanceLabel, muteAckLine, muteHeadline, muteOutcome } from "../console/maintenance";
 import { useSelfTest } from "./useSelfTest";
 import type { FleetCabinet } from "./useFleet";
 
@@ -19,6 +21,15 @@ export interface SiteCardProps {
   syncState?: GatewayConfigStateOut;
   /** [T-2.38] Historia de 24 h: tendencia y REINCIDENCIA de caídas. */
   health?: GatewayHealthOut;
+  /**
+   * [T-2.71] Ventana de mantenimiento que tapa a ESTE gabinete, si la hay.
+   *
+   * ADITIVA, jamás sustitutiva: el `derived_state` NO se toca. Un gabinete en
+   * mantenimiento sigue diciendo `SIN ENLACE` y ADEMÁS lleva este rótulo.
+   * Reemplazarlo por un estado neutro reproduciría el cero tranquilizador que
+   * cerró T-2.59: un número apacible que nadie comprobó (regla de oro 7).
+   */
+  maintenance?: MaintenanceWindowOut;
   /** [T-2.37] Acciones de administración; ausentes para quien no tiene manage_fleet. */
   onEdit?: () => void;
   onRetire?: () => void;
@@ -31,6 +42,7 @@ export default function SiteCard({
   cabinet,
   syncState,
   health,
+  maintenance,
   onEdit,
   onRetire,
   onRestore,
@@ -93,6 +105,21 @@ export default function SiteCard({
             <span className="soc-dot" /> {gw.derived_state}
           </span>
           <SyncBadge state={syncState} />
+          {maintenance !== undefined && (
+            <span
+              className="fleet-card__maint"
+              data-testid="maintenance-badge"
+              // El tooltip afirmaba «Alarmas de operación silenciadas» pasara lo
+              // que pasara — incluso con el `0/N` del propio payload delante, que
+              // es el estado de TODA ventana con `ops_muting_enabled=False`.
+              // Ahora lleva el mismo acuse que el banner: dos pantallas, una
+              // sola verdad.
+              data-mute={muteOutcome(maintenance)}
+              title={`${muteHeadline(maintenance)} · ${muteAckLine(maintenance)} · MOTIVO: ${maintenance.reason}`}
+            >
+              {maintenanceLabel(maintenance)}
+            </span>
+          )}
           <span className="fleet-card__sid">{gw.serial}</span>
         </div>
       </header>
@@ -166,8 +193,12 @@ export default function SiteCard({
 
       <footer className="fleet-card__ft">
         <div className="fleet-card__meta">
+          {/* [T-2.69] Antes esto era `{gw.fw_version ?? "fw s/d"}`: un chip mudo
+              que pintaba IGUAL la versión que un gabinete acababa de confirmar y
+              la que otro reportó por última vez hace tres semanas. El badge trae
+              la edad del dato y el estado derivado por el servidor. */}
           <span>
-            <Cpu size={11} aria-hidden /> {gw.fw_version ?? "fw s/d"}
+            <Cpu size={11} aria-hidden /> <VersionBadge gateway={gw} />
           </span>
           <span className="tk-sep">·</span>
           <span>

@@ -94,6 +94,54 @@ def test_durable_queue_survives_restart(settings, tmp_path):
     assert transport.event_ids == ["a", "b"]
 
 
+# ------------------------- el HERMANO del pendiente ilegible (auditoría T-2.67)
+#
+# `DurableSpool.load()` ya tenía la doctrina buena para un fichero ROTO
+# (cuarentena `.corrupt` + log.error), pero sólo la aplicaba cuando `json.loads`
+# LANZABA. Un fichero con `null`/`[]`/`42` es JSON VÁLIDO: pasaba el `except`,
+# entraba como registro y reventaba en `_dedup_key`/`record["topic"]` — dentro
+# del CONSTRUCTOR de `CloudConnector`, o sea dentro de `EdgeSupervisor.build()`,
+# que NO aísla por módulo. Mismo desenlace que el del backfill: el gabinete
+# entero no arranca. Un `.json` sin `topic` hacía lo mismo por KeyError.
+
+_SPOOL_BASURA = [b"null", b"[]", b'"x"', b"42", b"true", b"{trunc", b"\xff\xfe", b""]
+
+
+def test_un_mensaje_de_spool_que_no_es_objeto_no_tumba_el_arranque(settings, tmp_path):
+    """JSON válido pero no un objeto: el `except` no lo veía y el conector moría."""
+    for i, contenido in enumerate(_SPOOL_BASURA, start=1):
+        (tmp_path / f"{i:012d}-evt.json").write_bytes(contenido)
+    (tmp_path / "000000000099-evt.json").write_text('{"payload": {}}')  # objeto SIN topic
+    bueno, _t = _connector(settings, tmp_path, online=False)
+    bueno.publish("takab/events", _decision("superviviente"))
+
+    restarted = CloudConnector(settings, transport=FakeMqttTransport(), spool_dir=str(tmp_path))
+
+    assert restarted.queued == 1  # sólo el mensaje BUENO vuelve a la cola
+    # …y la basura se aparta con el mismo sufijo de siempre, sin borrarse.
+    apartados = sorted(p.name for p in tmp_path.glob("*.corrupt"))
+    assert len(apartados) == len(_SPOOL_BASURA) + 1
+    restarted.set_online(True)
+    assert restarted.sent == 1
+
+
+def test_un_spool_de_solo_lectura_no_tumba_el_arranque(settings, tmp_path):
+    """El `rename` de la cuarentena también puede fallar: no puede propagar.
+
+    Estaba DENTRO del `except`, sin protección: un directorio sin permiso de
+    escritura convertía la defensa en la causa de la caída.
+    """
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    (spool / "000000000001-evt.json").write_bytes(b"null")
+    spool.chmod(0o500)  # lectura+listado, sin escritura ⇒ el rename falla
+    try:
+        cloud = CloudConnector(settings, transport=FakeMqttTransport(), spool_dir=str(spool))
+        assert cloud.queued == 0  # el registro basura NO entra en la cola
+    finally:
+        spool.chmod(0o700)
+
+
 def test_publish_never_blocks_on_transport_error(settings, tmp_path):
     class _Raising(FakeMqttTransport):
         def publish(self, topic, payload, qos=1):
@@ -121,6 +169,47 @@ def test_publishes_health_and_ack_payloads(settings, tmp_path):
         ),
     )
     assert len(transport.published) == 2
+
+
+def test_el_heartbeat_publica_la_clave_fw_version_aunque_valga_null(settings, tmp_path):
+    """[T-2.69] La clave DEBE viajar aunque no haya versión, con `null` explícito.
+
+    De esa asimetría depende que la nube pueda separar dos hechos que se veían
+    iguales: *«contrato pre-1.6.0, no opina»* (clave ausente ⇒ conserva lo
+    conocido) de *«late y NO SABE qué versión corre»* (null ⇒ la ficha pasa a
+    S/D). Sin la separación, un gabinete al que un `rsync --delete` a medias le
+    borró el `FW_VERSION` dejaba `gateways.fw_version` congelado PARA SIEMPRE y la
+    consola lo pintaba como actual — el defecto que T-2.69 prohíbe.
+
+    La distinción vive en un detalle frágil: `model_dump(mode="json")` **sin**
+    `exclude_none`. Añadir `exclude_none` "por limpieza" mataría la separación EN
+    SILENCIO, sin que nada más se pusiera rojo. Este test es lo único que lo impide.
+    """
+    cloud, transport = _connector(settings, tmp_path)
+    cloud.set_online(True)
+    cloud.publish("takab/health", HealthSnapshot(gateway_id="gw-1", fw_version=None))
+    _topic, message = transport.published[0]
+    assert "fw_version" in message, "exclude_none mataría la distinción ausente/null"
+    assert message["fw_version"] is None
+
+
+def test_el_heartbeat_publica_la_clave_fw_running_aunque_valga_null(settings, tmp_path):
+    """[T-2.70] Lo mismo para el código que el proceso EJECUTA, y por lo mismo.
+
+    `fw_running` hereda entera la disciplina de `fw_version`: la ingesta separa
+    *«contrato ≤1.8.0, no opina»* (clave ausente ⇒ conserva lo conocido) de
+    *«late y NO SABE qué está ejecutando»* (null ⇒ pasa a S/D). Si un
+    `exclude_none` matara ESTA clave, un gabinete que dejó de saber qué corre
+    conservaría para siempre el SHA de la última actualización que sí aplicó — y
+    esa es exactamente la señal con la que se decide si una actualización
+    funcionó. El campo más laxo de los dos decidiría el criterio de éxito.
+    """
+    cloud, transport = _connector(settings, tmp_path)
+    cloud.set_online(True)
+    cloud.publish("takab/health", HealthSnapshot(gateway_id="gw-1", fw_running=None))
+    _topic, message = transport.published[0]
+    assert "fw_running" in message, "exclude_none mataría la distinción ausente/null"
+    assert message["fw_running"] is None
 
 
 def test_ack_success_transition_same_actuation_not_collapsed(settings, tmp_path):

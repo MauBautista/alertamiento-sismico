@@ -123,3 +123,51 @@ describe("RetireDialog · doble fricción [T-2.36]", () => {
     expect(screen.getByLabelText(/Escribe el código/i)).toBeInTheDocument();
   });
 });
+
+// [B3] Este diálogo es el último texto que alguien lee antes de dar de baja el
+// hardware sísmico de un edificio con gente dentro. Hasta hoy decía que el
+// gabinete "deja de recibir configuración firmada y comandos de actuación" y
+// callaba lo único que el operador necesita saber para decidir: que el edificio
+// SIGUE PROTEGIDO. Quien lo leyera creería que está apagando la sirena, y quien
+// creyera lo contrario tampoco tenía aquí de dónde sacarlo.
+//
+// Decisión (A), ratificada el 2026-08-05: el retiro es ADMINISTRATIVO. El
+// reflejo SASMEX→sirena no pasa por la nube y no puede apagarse desde una
+// pantalla (reglas de oro 1 y 2). Desproteger de verdad exige ir al sitio.
+describe("RetireDialog · qué se apaga y qué NO [B3 · T-2.65]", () => {
+  function texto(over: Partial<React.ComponentProps<typeof RetireDialog>> = {}) {
+    arrange(over);
+    return screen.getByTestId("retire-dialog").textContent ?? "";
+  }
+
+  it("dice que el gabinete SIGUE PROTEGIENDO el edificio", () => {
+    expect(texto()).toMatch(/sigue protegiendo/i);
+  });
+
+  it("nombra el camino que no se apaga: SASMEX → sirena", () => {
+    const t = texto();
+    expect(t).toMatch(/SASMEX/);
+    expect(t).toMatch(/sirena/i);
+  });
+
+  it("dice qué SÍ se apaga, para que no parezca que no pasa nada", () => {
+    const t = texto();
+    expect(t).toMatch(/configuración firmada/i);
+    expect(t).toMatch(/comandos de actuación/i);
+  });
+
+  it("dice que desproteger de verdad exige ir a desmontarlo", () => {
+    expect(texto()).toMatch(/desmontar/i);
+  });
+
+  it("no promete que el retiro sea irreversible: la consola tiene RESTAURAR", () => {
+    // `POST /fleet/gateways/{id}/restore` existe y `SiteCard` pinta el botón.
+    // Llamarlo "irreversible desde la consola" empujaba al operador a pedir
+    // ayuda —o a no retirar nunca— por una limitación que no existe.
+    expect(texto()).not.toMatch(/irreversible/i);
+  });
+
+  it("el copy del SITIO también dice que sus gabinetes siguen protegiendo", () => {
+    expect(texto({ kind: "site", confirmValue: "TORRE-A" })).toMatch(/sigue[n]? protegiendo/i);
+  });
+});

@@ -118,7 +118,16 @@ CREATE TABLE gateways (
   tenant_id    uuid NOT NULL REFERENCES tenants,
   site_id      uuid NOT NULL REFERENCES sites,
   serial       text NOT NULL UNIQUE,
+  -- Qué código HAY EN EL DISCO del gabinete (lo escribe `deploy.sh` en FW_VERSION
+  -- y el latido lo declara). Cambia con el `rsync`, ANTES del reinicio.
   fw_version   text,
+  -- [T-2.70] Qué código EJECUTA el proceso, congelado al arrancar. Cambia SOLO
+  -- con un reinicio efectivo. Son dos hechos distintos y hay que guardarlos por
+  -- separado: cuando difieren, hay código escrito que nadie está corriendo — un
+  -- despliegue que se quedó a medias (el `uv sync` reventó, la unidad quedó en
+  -- `failed`, el restart nunca ocurrió). Fundirlos en una sola columna hacía ese
+  -- estado indetectable y daba por buena una actualización no aplicada.
+  fw_running   text,
   iot_thing    text UNIQUE,
   status       text NOT NULL DEFAULT 'provisioned'
                CHECK (status IN ('provisioned','online','degraded','offline','retired')),
@@ -903,6 +912,45 @@ CREATE POLICY gateway_catalog_state_read ON gateway_catalog_state FOR SELECT
 CREATE POLICY gateway_catalog_state_admin ON gateway_catalog_state FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
+-- [T-2.69] Registro de releases de firmware: contra QUÉ se mide la deriva de la
+-- flota. `gateways.fw_version` dice qué corre cada gabinete, pero no si eso es lo
+-- actual: `deploy/edge/deploy.sh` escribe `git describe --always --dirty
+-- --abbrev=7` sobre un repo SIN TAGS, así que el valor es un SHA de 7 hex (a veces
+-- con sufijo `-dirty`) — no es semver, no es monótono, NO ES ORDENABLE, y la única
+-- relación decidible entre dos valores es la IGUALDAD. Sin esta tabla, "cuántos
+-- releases atrás y cuánto tiempo" no tiene respuesta honesta y "corre una versión
+-- que nadie publicó" es indetectable.
+-- [EXCEPCIÓN DOCUMENTADA] a "tenant_id en toda tabla", misma familia que
+-- reference_earthquakes: qué firmware existe lo decide TAKAB, no el cliente. Cada
+-- tenant sigue viendo solo la deriva de SUS gabinetes porque eso lo acota la RLS
+-- de `gateways`. Lectura: cualquier rol autenticado. Escritura: takab_superadmin.
+-- APPEND-ONLY POR PRIVILEGIO (sin UPDATE/DELETE concedidos): reescribir la fecha
+-- de un release reescribiría a posteriori la deriva de toda la flota.
+CREATE TABLE fw_releases (
+  release_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  version      text NOT NULL UNIQUE CHECK (length(version) BETWEEN 1 AND 64),  -- = _FW_VERSION_MAX_LEN de la ingesta
+  released_at  timestamptz NOT NULL DEFAULT now(),
+  seq          bigint GENERATED ALWAYS AS IDENTITY,   -- desempate estable de `released_at`
+  notes        text,
+  published_by text
+);
+CREATE INDEX idx_fw_releases_order ON fw_releases (released_at DESC, seq DESC);
+-- Append-only por privilegio: sin UPDATE ni DELETE. Reescribir la fecha de un
+-- release reescribiría A POSTERIORI la deriva de toda la flota.
+-- OJO: este GRANT por sí solo NO basta en una base nueva. La migración 0001
+-- aplica ESTE archivo y después hace `GRANT ... ON ALL TABLES IN SCHEMA public
+-- TO takab_app`, que devuelve UPDATE/DELETE a esta tabla. El REVOKE que cierra
+-- el agujero vive en la migración 0028 (que corre en ambos caminos, nuevo e
+-- incremental); ver su cabecera. Medido en una base nueva: `takab_app=arwd`.
+GRANT SELECT, INSERT ON fw_releases TO takab_app;
+
+ALTER TABLE fw_releases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fw_releases FORCE  ROW LEVEL SECURITY;
+CREATE POLICY fw_rel_read ON fw_releases FOR SELECT
+  USING (app_role() IS NOT NULL);
+CREATE POLICY fw_rel_publish ON fw_releases FOR INSERT
+  WITH CHECK (app_role() = 'takab_superadmin');
+
 -- [T-2.36] Segundo factor para RETIRAR una estación. Retirar un gabinete lo saca
 -- del config sync firmado y de los comandos de actuación: deja un edificio sin
 -- protección, así que exige un código que TAKAB entrega fuera de banda y solo el
@@ -1281,3 +1329,93 @@ CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
 -- ROUTER vía audit.py (single-writer).
 GRANT SELECT, INSERT, UPDATE ON seismic_events TO takab_ingest;
 GRANT SELECT, UPDATE ON incidents TO takab_ingest;
+
+-- [T-2.71] Ventanas de mantenimiento: silenciar alarmas de OPERACIÓN, jamás la
+-- actuación. El efecto real vive en AWS (una CloudWatch alarm mute rule); esta
+-- tabla es el registro de QUIÉN apagó QUÉ vigilancia, CUÁNTO y POR QUÉ.
+--
+-- Tres decisiones que este DDL defiende, y que no se pueden mover sin romperlo:
+--
+-- 1. `active` NO es una columna: es un PREDICADO derivado (`now() < starts_at +
+--    duration`), calcado de `drills` — "sin worker de cierre". Una ventana no
+--    puede quedarse abierta porque un job muriera, porque no hay job. Y AWS
+--    aplica su propio vencimiento en paralelo (`Duration` obligatoria, tope
+--    P15D): doble candado independiente. Si la DB miente, AWS cierra; si AWS no
+--    se enteró, la fila expira y las alarmas nunca estuvieron mudas.
+-- 2. `duration_s` tope 4 h en el CHECK, igual que `drills.duration_s BETWEEN 30
+--    AND 3600`. Dentro de la ventana la alarma está muda en los TRES estados
+--    (OK/ALARM/INSUFFICIENT_DATA): corta por política, no solo por AWS.
+-- 3. `reason` OBLIGATORIO y no vacío. Una ventana sin motivo escrito es una
+--    alarma apagada sin dueño — el modo de fallo real no es técnico: alguien
+--    silencia "para que no moleste" y el edificio deja de contar que se queda
+--    ciego en cada despliegue.
+--
+-- `starts_at` es el minuto en que la mute rule se ACTIVA (`at()` tiene
+-- granularidad de minuto). La fila y AWS cuentan desde el MISMO borde, así que
+-- el "TERMINA HH:MM UTC" del banner no es una aproximación.
+--
+-- `tenant_id`/`gateway_id` NULL = ventana de PLATAFORMA (ec2_*): no tiene dueño
+-- de cliente y solo la ve/abre `takab_superadmin` (la rama `tenant_id =
+-- app_tenant_id()` da NULL para esas filas, así que la RLS ya las esconde —
+-- mismo mecanismo que las filas sin tenant de `audit_log`).
+CREATE TABLE maintenance_windows (
+  window_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid REFERENCES tenants(tenant_id),
+  gateway_id   uuid REFERENCES gateways(gateway_id),
+  scope        text NOT NULL CHECK (scope IN ('gateway','platform')),
+  opened_by    uuid NOT NULL,
+  reason       text NOT NULL CHECK (length(btrim(reason)) >= 8),
+  duration_s   integer NOT NULL CHECK (duration_s BETWEEN 300 AND 14400),
+  opened_at    timestamptz NOT NULL DEFAULT now(),
+  starts_at    timestamptz NOT NULL,
+  closed_at    timestamptz,
+  -- Qué se PIDIÓ silenciar (derivado de las filas visibles, jamás del body) y
+  -- qué quedó silenciado DE VERDAD tras releer la regla. Los dos números viven
+  -- separados a propósito: "no había alarma que silenciar" es un hecho distinto
+  -- de "no se silenció" (misma lección que `drill_sites.commandable`, T-2.48).
+  alarm_names  text[] NOT NULL DEFAULT '{}',
+  -- QUÉ nombre concreto no quedó mudo. Se GUARDA, no se adivina: al releer la
+  -- fila no se vuelve a llamar a AWS, y reconstruir los nombres a partir de la
+  -- cifra (`requested - silenced`) devolvería un dato INVENTADO que se lee como
+  -- medido. Es la misma familia de mentira que esta tabla existe para no contar.
+  missing_names text[] NOT NULL DEFAULT '{}',
+  requested    integer NOT NULL DEFAULT 0,
+  silenced     integer NOT NULL DEFAULT 0,
+  mute_rule    text,
+  -- ¿Las tres cifras de arriba se MIDIERON? `false` = el `PutAlarmMuteRule` se
+  -- emitió y el acuse no se pudo leer, así que `silenced` es una suposición
+  -- deliberadamente pesimista (se asume silencio, el estado peligroso) y
+  -- `mute_rule` es lo único con lo que se puede deshacer. Sin esta columna la
+  -- fila no puede distinguir "medido" de "supuesto" y la consola pintaría una
+  -- suposición como un hecho.
+  mute_verified boolean NOT NULL DEFAULT true,
+  CONSTRAINT mw_scope_coherente CHECK (
+    (scope = 'gateway'  AND tenant_id IS NOT NULL AND gateway_id IS NOT NULL) OR
+    (scope = 'platform' AND tenant_id IS     NULL AND gateway_id IS     NULL)
+  )
+);
+CREATE INDEX idx_mw_tenant ON maintenance_windows (tenant_id, starts_at DESC);
+-- La consulta caliente es "¿qué ventana tapa a ESTE gabinete ahora?": el banner
+-- y la tarjeta de flota la hacen en cada refresco.
+CREATE INDEX idx_mw_gateway ON maintenance_windows (gateway_id, starts_at DESC)
+  WHERE gateway_id IS NOT NULL;
+
+GRANT SELECT, INSERT, UPDATE ON maintenance_windows TO takab_app;
+-- El 0001 concede `... ON ALL TABLES` DESPUÉS de aplicar este archivo, así que
+-- conceder de menos NO basta en una base nueva: hace falta REVOKE explícito
+-- (misma trampa que reparó la 0028 para `fw_releases`).
+REVOKE DELETE ON maintenance_windows FROM takab_app;
+-- Los workers de ingesta no tienen nada que hacer aquí: esta superficie es de
+-- consola. Y menos aún BORRAR el rastro de una vigilancia apagada.
+REVOKE ALL ON maintenance_windows FROM takab_ingest;
+
+ALTER TABLE maintenance_windows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE maintenance_windows FORCE  ROW LEVEL SECURITY;
+CREATE POLICY mw_read ON maintenance_windows FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id));
+CREATE POLICY mw_write ON maintenance_windows FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY mw_admin ON maintenance_windows FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());

@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     # agrega por minuto, así que publicar más a menudo solo cuesta dinero.
     ops_metrics_interval_s: float = 60.0
 
+    # --- [T-2.71] Ventanas de mantenimiento (silenciar alarmas de operación) ---
+    # APAGADO por defecto, y ese default es la decisión: sin él, un despliegue que
+    # olvidara configurar la nube seguiría creando ventanas… que no silencian nada
+    # mientras la consola dice que sí. Con `false` la ventana se registra y declara
+    # `0/N SILENCIADAS`, que es la verdad medible.
+    ops_muting_enabled: bool = False
+    # Prefijo con el que Terraform nombra las alarmas (`takab-dev-...`). Es la
+    # ÚNICA cuerda entre este código y `infra/terraform/modules/observability`:
+    # si divergen, la ventana pide silenciar nombres que no existen y el acuse lo
+    # dirá — ruidoso, pero del lado seguro (las alarmas siguen sonando).
+    ops_alarm_prefix: str = "takab-dev"
+
     # --- Flota / fleet-status derivado server-side (T-1.22 · G7) ---
     # Minutos sin heartbeat en device_health → estado SIN ENLACE (el gateway dejó
     # de reportar). Debe holgar sobre el espaciado real del heartbeat del edge.

@@ -108,12 +108,20 @@ def test_rollback_does_not_reopen_replay_window():
 # --- T-2.34: la config firmada SOBREVIVE reinicios (caché en disco) ---
 
 
-def _cached_store(tmp_path, *, key: bytes = b"clave-de-config-inyectada"):
+def _cached_store(
+    tmp_path,
+    *,
+    key: bytes = b"clave-de-config-inyectada",
+    settings: EdgeSettings | None = None,
+):
+    """`settings` permite arrancar el store con una config YA aplicada — es como
+    queda tras un reinicio, cuando `_load_cache` restaura el sobre firmado."""
     from takab_edge.security import SecurityManager as _SM
 
     security = _SM(key)
     path = str(tmp_path / "config-cache.json")
-    return ConfigStore(load_settings(), security=security, cache_path=path), security, path
+    store = ConfigStore(settings or load_settings(), security=security, cache_path=path)
+    return store, security, path
 
 
 def test_applied_config_survives_restart(tmp_path):
@@ -199,6 +207,34 @@ def test_corrupt_or_missing_cache_boots_with_defaults(tmp_path):
     corrupt = ConfigStore(load_settings(), security=security, cache_path=path)
     corrupt.start()
     assert corrupt.version == 0
+
+
+def test_cache_con_payload_o_firma_no_textual_arranca_con_defaults(tmp_path):
+    """Fail-closed también con los TIPOS, no sólo con el contenido.
+
+    El `except (OSError, ValueError, KeyError, TypeError)` cubría un `doc` que no
+    fuera objeto, pero no un objeto BIEN formado con `payload` no textual:
+    `payload.encode()` levantaba AttributeError y el módulo `config` no
+    arrancaba. `start()` lo aísla (no es crítico) y el gabinete sobrevive, pero
+    se quedaba SIN caché de config y en silencio — el hermano suave del
+    pendiente ilegible del backfill.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    security = SecurityManager(b"clave-de-config-inyectada")
+    for doc in (
+        {"high_water": 1, "applied_version": 1, "payload": 42, "sig": "x"},
+        {"high_water": 1, "applied_version": 1, "payload": ["a"], "sig": "x"},
+        {"high_water": 1, "applied_version": 1, "payload": "{}", "sig": {"no": "texto"}},
+    ):
+        path = str(tmp_path / "config-cache.json")
+        _Path(path).write_text(_json.dumps(doc))
+        store = ConfigStore(load_settings(), security=security, cache_path=path)
+        store.start()  # antes: AttributeError/TypeError ⇒ el módulo no arrancaba
+        assert store.running
+        assert store.version == 0
+        assert store._high_water == 1  # el piso anti-replay SÍ se respeta  # noqa: SLF001
 
 
 def test_replay_rejected_across_restart(tmp_path):
@@ -347,8 +383,22 @@ def test_config_listener_applies_thresholds_live_to_rule_engine():
 
 
 def test_threshold_config_never_affects_sasmex_path():
-    """Subir los umbrales por config JAMÁS silencia SASMEX (los ignora)."""
-    from takab_edge.contracts import SasmexSignal, Tier
+    """Subir los umbrales por config JAMÁS silencia SASMEX — ni la decisión NI EL RELÉ.
+
+    El camino que promete el nombre tiene DOS capas, y las dos se miden aquí sobre
+    objetos que de verdad llevan la banda absurda:
+
+    1. `rules`, que ignora los umbrales al evaluar SASMEX (el motor ADOPTÓ la banda
+       de 99 g por el apply-listener — se comprueba antes de evaluar), y
+    2. el RELÉ, que es lo que salva vidas. El `GpioController` sostiene un
+       `EdgeSettings` con esa misma banda absurda: hasta que se midió, un
+       `if self.settings.thresholds.pga_trip_g > 1.0: return` dentro de
+       `_dispatch_sasmex` —el mismo filtro que ya existe en la capa de arriba,
+       copiado una capa más abajo— dejaba la sirena MUDA con la suite entera en
+       verde, porque ningún test daba al gpio una config hostil.
+    """
+    from takab_edge.contracts import ActuatorChannel, SasmexSignal, Tier
+    from takab_edge.gpio import GpioController
     from takab_edge.rules import RuleEngine
 
     store, security = _store()
@@ -363,6 +413,16 @@ def test_threshold_config_never_affects_sasmex_path():
     decision = rules.evaluate_sasmex(SasmexSignal(active=True))
     assert decision is not None
     assert decision.tier is Tier.EVACUATE_OR_HOLD
+
+    gpio = GpioController(store.current())
+    gpio.start()
+    try:
+        assert gpio.settings.thresholds.pga_trip_g == 99.0  # la banda hostil llegó al gpio
+        gpio.simulate_sasmex(active=True)
+        assert gpio.is_activated(ActuatorChannel.SIREN) is True
+        assert gpio.is_activated(ActuatorChannel.STROBE) is True
+    finally:
+        gpio.stop()
 
 
 def test_rollback_restores_previous_thresholds_to_rule_engine():
@@ -380,3 +440,188 @@ def test_rollback_restores_previous_thresholds_to_rule_engine():
 
     store.rollback()
     assert rules.thresholds.pga_trip_g == default_trip
+
+
+# --- T-2.65 · el estado administrativo llega en el sobre firmado -------------
+#
+# Un gabinete retirado en la nube SIGUE PROTEGIENDO (opción A, ratificada
+# 2026-08-05) y lo DECLARA. El estado viaja DENTRO del doc de `takab/cfg/{thing}`
+# — ningún topic nuevo: ese sobre ya es firmado, versionado, monótono y
+# persistido, e inventar otro sería dominio HMAC, anti-replay y ack nuevos para
+# transportar un enum de dos valores.
+
+
+def test_cloud_admin_state_defaults_to_active():
+    """Sin nube que diga nada, el gabinete se considera ACTIVO. Fail-open hacia
+    PROTEGER: un default 'retired' pondría un cartel de baja en un gabinete sano."""
+    assert load_settings().cloud_admin_state == "active"
+    assert load_settings().is_retired is False
+
+
+def test_unknown_admin_state_never_tumba_el_documento():
+    """LA BARRERA DE REGRESIÓN de esta tarea: `cloud_admin_state` es `str` PELADO,
+    jamás `Literal["active","retired"]` ni Enum.
+
+    `ConfigStore.apply_signed_update` hace `EdgeSettings.model_validate_json(raw)`
+    y valida ANTES de mutar nada. Con un `Literal`, un valor que la nube no
+    colapsara (`provisioned`, `degraded`…) lanzaría `ValidationError` y el
+    DOCUMENTO ENTERO se caería: ni umbrales, ni `command_enabled`, ni equipment.
+    Y como `_high_water` solo sube DESPUÉS de validar, el mismo doc se
+    reintentaría idéntico para siempre — rechazo en bucle, silencioso.
+    """
+    s = EdgeSettings.model_validate_json(
+        '{"cloud_admin_state": "provisioned", "command_enabled": true, '
+        '"thresholds": {"pga_trip_g": 0.031}}'
+    )
+    # Los TRES campos llegaron: el valor raro no se llevó por delante al resto.
+    assert s.cloud_admin_state == "provisioned"
+    assert s.command_enabled is True
+    assert s.thresholds.pga_trip_g == 0.031
+    # Todo lo que no sea EXACTAMENTE 'retired' se lee como activo (sin strip/lower:
+    # un 'RETIRED' inesperado debe leerse como activo, no adivinarse).
+    assert s.is_retired is False
+    assert EdgeSettings.model_validate_json('{"cloud_admin_state": "RETIRED"}').is_retired is False
+    assert EdgeSettings.model_validate_json('{"cloud_admin_state": "retired"}').is_retired is True
+
+
+def test_partial_doc_sin_admin_state_es_active():
+    """Retrocompat con una nube vieja que aún no manda la clave (y con la propia
+    conducta `extra="ignore"` de la que cuelga el orden de despliegue)."""
+    s = EdgeSettings.model_validate_json('{"equipment": {"gas_valve": false}}')
+    assert s.cloud_admin_state == "active"
+    assert s.is_retired is False
+
+
+def test_admin_state_applies_hot_and_survives_restart(tmp_path):
+    """El aviso de baja no puede evaporarse en el siguiente corte de energía: el
+    sobre firmado completo se persiste crudo, así que el campo viaja gratis."""
+    store, security, path = _cached_store(tmp_path)
+    store.start()
+    raw = (
+        load_settings()
+        .model_copy(update={"cloud_admin_state": "retired", "command_enabled": True})
+        .model_dump_json()
+        .encode()
+    )
+    store.apply_signed_update(raw, security.sign_config(raw, 14), 14)
+    assert store.current().is_retired is True  # en caliente
+
+    store.stop()
+    reborn = ConfigStore(load_settings(), security=security, cache_path=path)
+    reborn.start()
+    assert reborn.version == 14
+    assert reborn.current().cloud_admin_state == "retired"
+    assert reborn.current().is_retired is True
+    # …y la restauración administrativa vuelve a 'active' con versión mayor.
+    back = load_settings().model_copy(update={"cloud_admin_state": "active"}).model_dump_json()
+    reborn.apply_signed_update(back.encode(), security.sign_config(back.encode(), 15), 15)
+    assert reborn.current().is_retired is False
+
+
+def _sin_equipamiento():
+    """Perfil hostil: el sitio DECLARA que no tiene ni un actuador instalado."""
+    from takab_edge.config import EquipmentProfile
+
+    return EquipmentProfile(
+        siren=False, strobe=False, gas_valve=False, elevator=False, door_retainer=False
+    )
+
+
+def test_gabinete_retirado_sigue_actuando_la_sirena_por_sasmex(tmp_path):
+    """REGLA DE ORO 1 HECHA TEST (criterio de aceptación de T-2.65).
+
+    Hermano de `test_threshold_config_never_affects_sasmex_path`: aquel demuestra
+    que subir los umbrales no silencia SASMEX; este, que DARLO DE BAJA EN LA NUBE
+    tampoco. Se mide, no se afirma: se dispara el reflejo y se LEEN los relés.
+
+    El escenario es hostil en los DOS `EdgeSettings` que un descuido futuro podría
+    acercar al reflejo:
+
+    * el que **sostiene** el `GpioController` — aquí el gabinete ARRANCA sabiéndose
+      retirado, que es exactamente como queda tras un reinicio (la caché firmada de
+      T-2.34 persiste `cloud_admin_state`, y `TAKAB_EDGE_CLOUD_ADMIN_STATE` lo fija
+      desde `edge.env`), y además con el equipamiento declarado todo-ausente;
+    * el **vivo**, el que la nube aplica encima — también retirado.
+
+    Da igual cuál de los dos leyera el reflejo: sirena y estrobo tienen que quedar
+    ACTIVADOS. Y ese "da igual" es el punto: un test cuyo `EdgeSettings` de arranque
+    no dijera nunca `retired` pasaría en verde con un `if self.settings.is_retired:
+    return` metido en `_dispatch_sasmex` —o con el filtro de `equipment` que ya
+    existe una capa más arriba (`supervisor._act_and_publish`) copiado al reflejo—.
+    Es decir: sería un test del criterio 4 incapaz de cazar la única regresión que
+    existe para cazar, y un clic de inventario en la consola acabaría
+    desprotegiendo un edificio con gente dentro, con CI y review en verde.
+    """
+    from takab_edge.contracts import ActuatorChannel
+    from takab_edge.gpio import GpioController
+
+    retirado = load_settings().model_copy(
+        update={"cloud_admin_state": "retired", "equipment": _sin_equipamiento()}
+    )
+    store, security, _path = _cached_store(tmp_path, settings=retirado)
+    boot = store.current()
+    # Guardarraíl del propio test: si alguien "simplifica" el escenario y el objeto
+    # que sostiene gpio deja de decir 'retired', el test se cae AQUÍ en vez de
+    # seguir pasando sin proteger nada.
+    assert boot.is_retired is True
+    assert boot.equipment.installed() == frozenset()
+
+    gpio = GpioController(boot)  # como el supervisor: con el settings de ARRANQUE
+    gpio.start()
+    try:
+        nuevo = retirado.model_copy(update={"tenant_id": "tenant-retirado"})
+        raw = nuevo.model_dump_json().encode()
+        store.apply_signed_update(raw, security.sign_config(raw, 1), 1)
+        vivo = store.current()
+        assert vivo.is_retired is True and vivo is not boot
+
+        gpio.simulate_sasmex(active=True)
+
+        assert gpio.is_activated(ActuatorChannel.SIREN) is True
+        assert gpio.is_activated(ActuatorChannel.STROBE) is True
+        # Y la razón ESTRUCTURAL de que siga siendo así: gpio sostiene el objeto de
+        # ARRANQUE y nadie lo rebindea — `apply_signed_update` REEMPLAZA
+        # `ConfigStore.settings` en vez de mutarlo. El camino SASMEX→relé no tiene
+        # ni una arista hacia la config de la nube; el día que alguien se la
+        # cablee, esta identidad es lo primero que cae.
+        assert gpio.settings is boot
+        assert store.current() is not gpio.settings
+    finally:
+        gpio.stop()
+
+
+def test_el_doc_exacto_que_publica_la_nube_aplica_entero(tmp_path):
+    """La costura nube↔edge, con la forma LITERAL que arma `commands/sync.py`:
+    la base del rule_set FUSIONADA con `equipment` y `cloud_admin_state`.
+
+    Nada en el repo valida el doc publicado contra `EdgeSettings`
+    (`config_update.schema.json` tipa `payload` como objeto libre) y el edge usa
+    `extra="ignore"`, así que una clave mal escrita se descartaría en silencio
+    para siempre. Aquí se comprueba que el sobre del retiro aplica ENTERO: el
+    estado administrativo llega y los umbrales con los que protege sobreviven.
+    """
+    import json
+
+    store, security, _path = _cached_store(tmp_path)
+    store.start()
+    doc = {
+        "command_enabled": True,
+        "command_ttl_s": 30.0,
+        "thresholds": {"pga_watch_g": 0.04, "pga_trip_g": 0.15},
+        "equipment": {
+            "siren": True,
+            "strobe": True,
+            "gas_valve": False,
+            "elevator": True,
+            "door_retainer": True,
+        },
+        "cloud_admin_state": "retired",
+    }
+    raw = json.dumps(doc).encode()
+    store.apply_signed_update(raw, security.sign_config(raw, 5), 5)
+
+    live = store.current()
+    assert live.is_retired is True
+    assert live.thresholds.pga_trip_g == 0.15  # sigue protegiendo con SUS umbrales
+    assert live.command_enabled is True  # y con la actuación por quórum viva
+    assert live.equipment.gas_valve is False

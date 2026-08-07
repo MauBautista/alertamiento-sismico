@@ -56,3 +56,64 @@ def fw_version(root: pathlib.Path | None = None) -> str | None:
         )
         return None
     return version
+
+
+# --------------------------------------------------------------------------
+# [T-2.70] Qué código CORRE, que no es lo mismo que qué código HAY EN DISCO.
+#
+# `fw_version()` relee el archivo en cada latido A PROPÓSITO: T-1.74 pregunta
+# «¿alguien tocó el disco?» y ahí releer es la respuesta correcta.
+#
+# Una actualización remota pregunta lo CONTRARIO: «¿corre ya el código nuevo?».
+# Y ahí el archivo miente, por una razón estructural, no por un descuido:
+# `deploy/edge/deploy.sh` escribe FW_VERSION (L44) ANTES de reiniciar (L61),
+# porque el `rsync --delete` de la línea 31 lo borraría si se escribiera antes.
+# En esa ventana —hasta un latido entero, y PARA SIEMPRE si el restart nunca
+# ocurre, si el `uv sync` revienta antes, o si la unidad queda en `failed`— el
+# proceso VIEJO publica la versión NUEVA.
+#
+# Consecuencia para T-2.70: un canary cuyo criterio de éxito sea «volvió el
+# fw_version esperado» daría VERDE a una actualización no aplicada, y un
+# rollback automático colgado de esa señal no dispararía nunca. Por eso el
+# gabinete declara AMBAS cosas y la nube las cruza:
+#
+#   fw_version()      → qué código hay en el disco   (puede haber cambiado hoy)
+#   running_version() → qué código cargó este proceso (congelado al arrancar)
+#
+# Si difieren, hay código escrito que nadie está ejecutando. Eso no es un
+# detalle cosmético: es exactamente el estado en el que un despliegue se quedó
+# a medias, y hasta hoy era INDETECTABLE desde la nube.
+# --------------------------------------------------------------------------
+
+#: Centinela: distingue «aún no se capturó» de «se capturó y era None».
+_SIN_CAPTURAR = object()
+
+_RUNNING: object | str | None = _SIN_CAPTURAR
+
+
+def _capture(root: pathlib.Path | None = None) -> str | None:
+    """Congela la versión del código que este proceso acaba de cargar.
+
+    Se llama UNA vez, al importar el módulo (ver el final del archivo), que es lo
+    más temprano que el proceso puede saberlo y —lo que importa— mucho antes de
+    que cualquier despliegue posterior pueda tocar el disco.
+    """
+    global _RUNNING
+    _RUNNING = fw_version(root)
+    return _RUNNING
+
+
+def running_version() -> str | None:
+    """SHA del código que ESTE PROCESO cargó, o ``None`` si no se puede saber.
+
+    Inmutable durante toda la vida del proceso: un despliegue que reescriba
+    ``FW_VERSION`` no lo cambia. Solo un reinicio lo cambia — que es justo el
+    hecho que una actualización remota necesita comprobar.
+    """
+    return None if _RUNNING is _SIN_CAPTURAR else _RUNNING  # type: ignore[return-value]
+
+
+# Captura AL IMPORTAR. No se delega a la primera llamada: un proceso que
+# preguntara por primera vez DESPUÉS de un deploy capturaría la versión nueva
+# sin haberla ejecutado jamás, que es precisamente la mentira que esto cierra.
+_capture()

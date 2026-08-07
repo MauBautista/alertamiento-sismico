@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { secondsSince, utcClock, utcStamp } from "./time";
+import { ageLabel, secondsSince, utcClock, utcStamp } from "./time";
 
 describe("utcClock", () => {
   it("formatea epoch ms como HH:MM:SS UTC", () => {
@@ -27,5 +27,32 @@ describe("secondsSince", () => {
 
   it("nunca es negativo (reloj adelantado del dato)", () => {
     expect(secondsSince(1000, 0)).toBe(0);
+  });
+});
+
+describe("ageLabel", () => {
+  it("da la EDAD del dato, no su hora: segundos, minutos, horas y días", () => {
+    expect(ageLabel(0)).toBe("0 s");
+    expect(ageLabel(59)).toBe("59 s");
+    expect(ageLabel(60)).toBe("1 min");
+    expect(ageLabel(3599)).toBe("59 min");
+    expect(ageLabel(3600)).toBe("1 h");
+    expect(ageLabel(86_399)).toBe("23 h");
+    expect(ageLabel(86_400)).toBe("1 d");
+    expect(ageLabel(21 * 86_400)).toBe("21 d");
+  });
+
+  it("sin dato es S/D, jamás 0 s (un cero se lee como 'recién visto')", () => {
+    expect(ageLabel(null)).toBe("S/D");
+    expect(ageLabel(undefined)).toBe("S/D");
+  });
+
+  it("un reloj adelantado no produce edades negativas", () => {
+    expect(ageLabel(-5)).toBe("0 s");
+  });
+
+  it("no enumera umbrales: cualquier magnitud cae en su unidad", () => {
+    // Derivado, no una lista de casos: 1 000 días siguen siendo días.
+    expect(ageLabel(1000 * 86_400)).toBe("1000 d");
   });
 });

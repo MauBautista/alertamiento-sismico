@@ -7,9 +7,13 @@
 > fuente); este plan lo referencia, nunca lo copia. Jerarquía documental: el blueprint gobierna
 > la arquitectura; `db/schema.sql` el DDL; `RBAC-TAKAB.md` los roles; `TASKS.md` el backlog;
 > este plan, la secuencia y los gates.
-> **Convención de supuestos:** toda decisión aún no ratificada por Mauricio va marcada
+> **Convención de supuestos:** toda decisión **aún no ratificada** por Mauricio va marcada
 > `[SUPUESTO plan-maestro-01 — confirmar/override]`. Un override NO invalida el plan: cada
-> supuesto está aislado (ver gates §3).
+> supuesto está aislado (ver gates §3). **En cuanto un gate se ratifica, el marcador se
+> sustituye por `[RATIFICADO <fecha> · <tarea> · gate #N]` en todo el repo, en el mismo
+> commit** — un supuesto ya cerrado que se sigue leyendo "confirmar/override" invita a
+> reabrir un contrato congelado. §3 es el censo: **ratificados #2, #4, #5, #6, #7; abiertos
+> #1, #3, #8, #9.** Lo verifica `api/tests/test_docs_consistency.py`.
 
 ---
 
@@ -44,16 +48,16 @@ El análisis dejó ~13 residuos menores entre documentos. Esta rama los corrige 
 | R1 | `CLAUDE.md` §1.3 | quórum "ventana de 2–5 s" | ventana consciente de distancia (blueprint §4.5) |
 | R2 | `CLAUDE.md` regla 9 | "waveform 200 Hz" | waveform crudo (100 sps) |
 | R3 | `CLAUDE.md` regla 11 | "(NOM-003-SCT)" | requisito TAKAB; marco citable por confirmar (blueprint §9) |
-| R4 | `CLAUDE.md` §4 | módulo `quorum`; sin `local_api`; `sasmex`/`actuators` separados | módulos con `gpio` consolidado + `local_api` [SUPUESTO #6] |
+| R4 | `CLAUDE.md` §4 | módulo `quorum`; sin `local_api`; `sasmex`/`actuators` separados | módulos con `gpio` consolidado + `local_api` (gate #6, hoy RATIFICADO — ver §3) |
 | R5 | `CLAUDE.md` §5 | "11 roles" | 10 roles |
-| R6 | `edge/README.md` | `quorum` + BACnet como única actuación | módulos actualizados; relés fail-safe primarios [SUPUESTO #4] |
+| R6 | `edge/README.md` | `quorum` + BACnet como única actuación | módulos actualizados; relés fail-safe primarios (gate #4, hoy RATIFICADO — ver §3) |
 | R7 | `TASKS.md` T-1.7 | buffer "~10–16 GB" | ~0.5–4 GB reales a 100 sps ×4 canales (NVMe 64 GB ≥15× holgura) |
 | R8 | `TASKS.md` T-1.18 | "los 11 roles" | los 10 roles |
 | R9 | Blueprint §8 y B8 | "11 roles" | 10 roles + identidades máquina fuera de RBAC |
 | R10 | `infra/terraform/README.md` | "implementación en T-1.2" | T-1.15 |
 | R11 | `jsx/*` (3 copias) | NATS/Mapbox/T-MINUS | **sin editar** — declarado referencia visual (ver §1); mover a `takab-docs/design/` = limpieza opcional |
 | R12 | `ANALISIS:311` | "los 11 roles" (errata) | los roles de RBAC §1 |
-| R13 | `CLAUDE.md` §3 stack | "GraphQL (subscriptions)" sin matiz | GraphQL pos-MVP; REST+WS en MVP [SUPUESTO #5] |
+| R13 | `CLAUDE.md` §3 stack | "GraphQL (subscriptions)" sin matiz | REST+WS nativo en MVP; GraphQL pos-MVP `[RATIFICADO 2026-07-06 · gate #5]` |
 | R14 | Blueprint §4.1 (hardware) | NVMe "uso real ~10–16 GB" | ~0.5–4 GB a 100 sps (cazado por el grep de verificación de esta rama) |
 
 **Reconciliación 10-vs-11 roles** `[RATIFICADO 2026-07-09 · T-1.45]`: la lista
@@ -74,7 +78,7 @@ acreditó con 10 sin que faltara ninguno.
 | #2 Quórum en NUBE + ventana distance-aware | Adoptado y ya en docs (v_P 6.5 km/s, margen 3 s, tope 30 s, en `rule_sets.config`). **Soft-gate CERRADO (T-1.46, 2026-07-09): parámetros RATIFICADOS contra 13 sismos con valores oficiales SSN/USGS** — ver `ANALISIS §4-bis` | ~~Soft-gate T-1.19~~ cerrado; regresión anclada en `api/tests/incident/test_ssn_validation.py` |
 | #3 Datos de proveedor (SeedLink real, semántica WR-1, 100 sps) | **Los simuladores desbloquean todo el edge.** Tareas marcadas "a validar con hardware" en TASKS: T-1.3, T-1.4, T-1.5, T-1.7, T-1.14 | Hard-gate SOLO para aceptación con hardware real y para congelar el SLA instrumental (§4.3). No frena ninguna implementación |
 | #4 Actuadores del MVP | `[RATIFICADO 2026-07-09 · T-1.45]` **Relés fail-safe primero** (NO/NC/fail-close por canal); BACnet detrás de la misma interfaz `Actuator`, activable por contrato. Implementado así de facto en T-1.8/T-1.9 y acreditado en el hito de Fase 1; ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (el contrato rules→actuador se congeló en T-1.8 bajo este diseño) |
-| #5 API en vivo | `[SUPUESTO]` **REST + WebSocket nativo** en MVP; GraphQL subscriptions pos-MVP | Antes de **T-1.22**. No toca el edge |
+| #5 API en vivo | `[RATIFICADO 2026-07-06 · T-1.22]` **REST + WebSocket nativo, SIN GraphQL.** Implementado y verificado E2E vivo (commit→frame 214 ms; fan-out LISTEN/NOTIFY con RLS como autoridad de tenancy) — `TASKS.md` T-1.22 | Gate cerrado. GraphQL subscriptions queda pos-MVP como **T-3.15**, solo si un cliente lo pide |
 | #6 Proceso `gpio` consolidado | `[RATIFICADO 2026-07-09 · T-1.45]` un solo proceso mínimo: WR-1 in + relés out + **reflejo SASMEX→sirena in-process** (<100 ms); `actuators` = adaptador BACnet aparte. Implementado así de facto (el `takab-edge.service` en producción documenta la propiedad de pines con `Conflicts=takab-gpio.service`); ratificado con la aprobación del plan de Fase 1.6 | Gate cumplido (contrato congelado en T-1.8) |
 | #7 MFA del `occupant` | `[RATIFICADO 2026-07-15 · T-2.00, decisión de Mauricio]` occupant con **login simple, SIN MFA obligatorio y MFA OPCIONAL** (opt-in TOTP desde la app). Implementación: **pool de ocupantes separado** `mfa=OPTIONAL` (Cognito no da MFA por grupo — `specs/cognito-pool-v1.md §5.2`); el pool táctico/web queda `ON` intacto (MFA garantizado para roles con actuadores). Compensaciones vigentes: quórum de 2 + rate-limit + auditoría + enrolamiento acotado al sitio; **geofence best-effort** (voto con GPS fuera de radio se descarta; sin GPS cuenta — RBAC §4.3) | Gate cumplido (2026-07-15): el split de pools se ejecuta en T-2.02; la validación dual-issuer en T-2.03 |
 | #8 Feed externo CIRES/SSN | Pregunta abierta; el fail-open ya está definido con corroboración interna de la red | Soft-gate T-1.21 (lo mejora, no lo bloquea) |
@@ -119,7 +123,7 @@ holgura, sin violar edge-first: es DDL local ya verificado por el smoke test).
 Luego: T-1.17 (ingesta IoT→SQS→Timescale, valida contra `shared/schemas`, DLQ) → T-1.18
 (Cognito **10 grupos** + claims + RLS E2E; MFA por grupo con supuesto #7) → en ramas:
 T-1.19 (incident engine + quórum distance-aware) → T-1.20 (dictamen inmutable + PDF)
-‖ T-1.21 (notificaciones + fail-open) ‖ T-1.22 (API REST + WS [SUPUESTO #5]) ‖ T-1.23
+‖ T-1.21 (notificaciones + fail-open) ‖ T-1.22 (API REST + WS nativo, gate #5 ratificado) ‖ T-1.23
 (config sync + comandos firmados) → T-1.24 (audit/billing) ‖ T-1.25 (backfill S3).
 
 **DoD de Fase C:** ingesta E2E idempotente desde el edge simulado; test cross-tenant y

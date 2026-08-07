@@ -54,7 +54,12 @@ from takab_edge.contracts import (
 #: (`battery_min_left` deja de ser siempre NULL).
 #: 1.8.0 (T-2.33): + lora_secondary_state (estado por gabinete secundario LoRa,
 #: sección ``lora`` del panel; ancla del firmware ESP32). ADITIVO: familia nueva.
-SCHEMA_VERSION = "1.8.0"
+#: 1.9.0 (T-2.70): HealthSnapshot + `fw_running` — el SHA que el PROCESO cargó al
+#: arrancar, junto al `fw_version` del DISCO que ya viajaba. Las dos juntas son lo
+#: único que responde «¿se aplicó la actualización?»: el disco cambia con el
+#: `rsync`, el proceso solo con el reinicio. ADITIVO: clave opcional nullable; un
+#: payload 1.8.0 sigue validando y la nube trata su ausencia como «sin dato».
+SCHEMA_VERSION = "1.9.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

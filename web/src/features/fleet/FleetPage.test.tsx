@@ -15,6 +15,7 @@ import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { seedAuthenticated } from "../../test-utils/renderRoutes";
 import { expectFourStates } from "../../test-utils/states";
 import FleetPage from "./FleetPage";
+import type { MaintenanceData } from "../console/useMaintenanceWindows";
 import type { FleetCabinet, FleetData } from "./useFleet";
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   useFleetSyncStates: vi.fn(),
   useFleetHealth: vi.fn(),
   useRetireCodeConfigured: vi.fn(),
+  useMaintenanceWindows: vi.fn(),
   updateMutate: vi.fn(),
   retireMutate: vi.fn(),
   restoreMutate: vi.fn(),
@@ -30,6 +32,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./useFleet", () => ({
   useFleet: mocks.useFleet,
   FLEET_STALE_MS: 90_000,
+}));
+
+// [C3] Hasta aquí esta suite NO mockeaba las ventanas: el hook real salía a la
+// red desde jsdom en cada test. Con el doble se puede escribir el caso que
+// importa —la lectura FALLA— y de paso la suite deja de depender de un fetch.
+vi.mock("../console/useMaintenanceWindows", () => ({
+  useMaintenanceWindows: (...args: unknown[]) => mocks.useMaintenanceWindows(...args),
+  MAINTENANCE_POLL_MS: 30_000,
 }));
 
 const idleMutation = (mutate: ReturnType<typeof vi.fn>) => ({
@@ -65,7 +75,12 @@ function cabinet(id: string, state: string): FleetCabinet {
       site_code: `C-${id}`,
       site_status: "active",
       serial: `TKB-${id}`,
-      fw_version: "edge-1.4.0",
+      // [T-2.69] SHA de 7 hex: el único formato que produce `deploy/edge/deploy.sh`.
+      fw_version: "62f3f1e",
+      version_state: "AL DÍA",
+      releases_behind: 0,
+      release_age_s: 7200,
+      version_age_s: 42,
       iot_thing: null,
       status: "active",
       has_wr1: true,
@@ -97,6 +112,111 @@ function fleetData(over: Partial<FleetData> = {}): FleetData {
     ...over,
   };
 }
+
+function maintData(over: Partial<MaintenanceData> = {}): MaintenanceData {
+  return {
+    items: [],
+    loading: false,
+    readError: null,
+    updatedAt: Date.now(),
+    refetch: vi.fn(),
+    close: vi.fn(),
+    pending: false,
+    error: null,
+    ...over,
+  };
+}
+
+// Raíz, no dentro de un `describe`: hay tres bloques en este archivo y solo dos
+// tienen `beforeEach`. Un doble sin valor por defecto devolvería `undefined` y
+// la página reventaría en el bloque que no lo prepara.
+beforeEach(() => {
+  mocks.useMaintenanceWindows.mockReturnValue(maintData());
+});
+
+// --- [C3] El fallo de lectura de ventanas no se puede TRAGAR -----------------
+//
+// `FleetPage` tomaba `useMaintenanceWindows(...)` y usaba SOLO `items`. Con la
+// llamada fallando `items` es `[]`, ninguna tarjeta lleva rótulo y la pantalla
+// dice, sin decirlo, "aquí no hay ninguna ventana abierta" — que es el cero
+// tranquilizador que cerró T-2.59, reproducido tres tareas después en la
+// pantalla que este mismo lote acababa de tocar.
+//
+// Lo que se pierde es concreto: un gabinete puede estar con las alarmas mudas y
+// su tarjeta se ve exactamente igual que la de uno vigilado.
+describe("FleetPage · ventanas de mantenimiento ilegibles [C3]", () => {
+  beforeEach(() => {
+    resetSessionStoreForTests();
+    mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useFleetHealth.mockReturnValue(new Map());
+    mocks.useRetireCodeConfigured.mockReturnValue(true);
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [cabinet("1", "OPERATIVO")] }));
+  });
+
+  it("declara que NO pudo leerlas, en vez de callar", () => {
+    mocks.useMaintenanceWindows.mockReturnValue(
+      maintData({ readError: "GET /maintenance-windows falló (503)" }),
+    );
+    render(<FleetPage />);
+    const aviso = screen.getByTestId("fleet-maint-error");
+    expect(aviso.textContent).toContain("VENTANAS DE MANTENIMIENTO");
+    // La consecuencia, no el código HTTP: puede haber gabinetes mudos sin rótulo.
+    expect(aviso.textContent).toContain("SIN RÓTULO");
+    // Y la tarjeta sigue sin badge — eso no cambia; lo que cambia es que ahora
+    // esa ausencia está EXPLICADA en vez de leerse como "no hay ventanas".
+    expect(screen.queryByTestId("maintenance-badge")).toBeNull();
+  });
+
+  it("con rótulos en caché avisa de que son el ÚLTIMO dato conocido", () => {
+    // El refetch de fondo falla y react-query conserva `data`: los badges siguen
+    // pintados. Sin este aviso serían un dato congelado presentado como vivo
+    // (regla de oro 7) — la ventana pudo cerrarse hace media hora.
+    const ventana = {
+      window_id: "w-1",
+      tenant_id: "t-1",
+      gateway_id: "1",
+      gateway_serial: "TKB-1",
+      site_name: "Sitio 1",
+      scope: "gateway",
+      opened_by: "u-1",
+      reason: "cambio del cable de red del Shake",
+      duration_s: 1800,
+      opened_at: "2026-08-06T03:30:12Z",
+      starts_at: "2026-08-06T03:31:00Z",
+      ends_at: new Date(Date.now() + 1_800_000).toISOString(),
+      closed_at: null,
+      active: true,
+      alarm_names: ["a", "b"],
+      requested: 2,
+      silenced: 2,
+      missing_names: [],
+      missing: 0,
+      mute_rule: "takab-dev-mw-w-1",
+    };
+    mocks.useMaintenanceWindows.mockReturnValue(
+      maintData({ items: [ventana] as never, readError: "GET /maintenance-windows falló (503)" }),
+    );
+    render(<FleetPage />);
+    expect(screen.getByTestId("maintenance-badge")).toBeTruthy();
+    expect(screen.getByTestId("fleet-maint-error").textContent).toContain("ÚLTIMO DATO CONOCIDO");
+  });
+
+  it("el aviso ofrece reintentar y llama al refetch de LAS VENTANAS", () => {
+    // Botón propio, nombre propio: el REINTENTAR del StateFrame reintenta la
+    // FLOTA, que no es lo que ha fallado aquí.
+    const m = maintData({ readError: "GET /maintenance-windows falló (503)" });
+    mocks.useMaintenanceWindows.mockReturnValue(m);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR VENTANAS" }));
+    expect(m.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin fallo no inventa el aviso: un cero legítimo sigue siendo un cero", () => {
+    mocks.useMaintenanceWindows.mockReturnValue(maintData());
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-maint-error")).toBeNull();
+  });
+});
 
 describe("FleetPage", () => {
   beforeEach(() => {
@@ -492,5 +612,175 @@ describe("FleetPage · fantasmas vivos", () => {
     render(<FleetPage />);
     const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
     expect(kpis[0]).toBe("1GABINETES");
+  });
+
+  // La leyenda "MOSTRANDO n DE m" solo existe para avisar de que hay un FILTRO
+  // escondiendo gabinetes. Sin filtro no debe aparecer: si lo hace, el operador
+  // busca un filtro que no ha puesto.
+  it("sin filtro NO aparece 'MOSTRANDO' aunque haya un fantasma apartado", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [fantasma("1"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-shown")).toBeNull();
+  });
+
+  // Y cuando sí hay filtro, el "DE m" tiene que ser el MISMO número que el KPI
+  // GABINETES que se pinta tres centímetros más arriba. Dos cifras del mismo
+  // conjunto discrepando en la misma pantalla es la regla de oro 7 al revés.
+  it("con filtro, el 'DE m' coincide con el KPI GABINETES (sin el fantasma)", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [fantasma("1"), cabinet("2", "OPERATIVO"), cabinet("3", "OPERATIVO")],
+      }),
+    );
+    render(<FleetPage />);
+    fireEvent.change(screen.getByLabelText("Buscar en la flota"), {
+      target: { value: "TKB-2" },
+    });
+    const kpis = screen.getAllByTestId("fleet-kpi").map((el) => el.textContent);
+    expect(kpis[0]).toBe("2GABINETES");
+    expect(screen.getByTestId("fleet-shown")).toHaveTextContent("MOSTRANDO 1 DE 2");
+  });
+});
+
+// [T-2.69] La deriva de versiones en la tira de KPI. Criterio 2 de la ficha:
+// "se ve la deriva: cuántos gabinetes están atrás y cuánto".
+describe("FleetPage · inventario de versiones", () => {
+  beforeEach(() => {
+    resetSessionStoreForTests();
+    vi.clearAllMocks();
+    mocks.useFleetSyncStates.mockReturnValue(new Map());
+    mocks.useFleetHealth.mockReturnValue(new Map());
+    mocks.useRetireCodeConfigured.mockReturnValue(true);
+  });
+
+  function conVersion(id: string, over: Record<string, unknown>): FleetCabinet {
+    const c = cabinet(id, "OPERATIVO");
+    return { ...c, gateway: { ...c.gateway, ...over } };
+  }
+
+  function kpiTexts(): string[] {
+    return screen.getAllByTestId("fleet-kpi").map((el) => el.textContent ?? "");
+  }
+
+  it("cuenta cuántos gabinetes están atrás", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [
+          cabinet("1", "OPERATIVO"),
+          conVersion("2", { version_state: "ATRASADA", releases_behind: 2 }),
+          conVersion("3", { version_state: "ATRASADA", releases_behind: 1 }),
+        ],
+      }),
+    );
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k === "2ATRASADOS")).toBe(true);
+  });
+
+  it("cuenta aparte los gabinetes cuya versión NO se puede afirmar", () => {
+    // Cuatro formas distintas de no saber, un solo contador: lo que el operador
+    // necesita de la tira es "de cuántos no puedo responder", y el porqué de cada
+    // uno vive en su tarjeta.
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [
+          cabinet("1", "OPERATIVO"),
+          conVersion("2", { version_state: "ÚLTIMA CONOCIDA" }),
+          conVersion("3", { version_state: "NO DECLARA" }),
+          conVersion("4", { version_state: "SIN REPORTAR" }),
+          conVersion("5", { version_state: "DESCONOCIDA" }),
+        ],
+      }),
+    );
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k === "4VERSIÓN S/D")).toBe(true);
+  });
+
+  it("el que escribió el código nuevo y no lo aplicó cuenta como ATRASADO [T-2.70]", () => {
+    // SIN REINICIAR no es una forma de "no saber": se sabe exactamente qué corre
+    // (lo viejo) y que no es lo publicado. Contarlo en VERSIÓN S/D lo escondería
+    // entre los que no se pueden diagnosticar, cuando es de los pocos con una
+    // acción concreta y urgente: ir a ver por qué la unidad no arrancó.
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [
+          cabinet("1", "OPERATIVO"),
+          conVersion("2", { version_state: "ATRASADA", releases_behind: 1 }),
+          conVersion("3", {
+            version_state: "SIN REINICIAR",
+            fw_version: "62f3f1e",
+            fw_running: "d082095",
+            releases_behind: 1,
+          }),
+        ],
+      }),
+    );
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k === "2ATRASADOS")).toBe(true);
+    expect(kpiTexts().some((k) => k?.includes("VERSIÓN S/D"))).toBe(false);
+  });
+
+  it("una plataforma sin releases publicados no se pinta como flota al día", () => {
+    // Todos SIN REFERENCIA: se sabe qué corre cada uno, no si es lo actual. Si esto
+    // contara como certeza, la tira diría "0 ATRASADOS" sobre un vacío.
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [
+          conVersion("1", { version_state: "SIN REFERENCIA", releases_behind: null }),
+          conVersion("2", { version_state: "SIN REFERENCIA", releases_behind: null }),
+        ],
+      }),
+    );
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k === "2VERSIÓN S/D")).toBe(true);
+  });
+
+  it("con toda la flota al día no aparece ningún contador de versiones", () => {
+    // Un contador clavado en cero deja de leerse a las dos semanas, y estos dos
+    // tienen que dar un salto (mismo criterio que FANTASMAS).
+    mocks.useFleet.mockReturnValue(
+      fleetData({ cabinets: [cabinet("1", "OPERATIVO"), cabinet("2", "OPERATIVO")] }),
+    );
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k.includes("ATRASADOS"))).toBe(false);
+    expect(kpiTexts().some((k) => k.includes("VERSIÓN"))).toBe(false);
+  });
+
+  it("sin respuesta de la API no se afirma nada sobre las versiones", () => {
+    // [T-2.59] La tira vive FUERA del StateFrame: con la API caída, `cabinets` es
+    // `[]` y "0 ATRASADOS" se leería como "flota entera al día".
+    mocks.useFleet.mockReturnValue(fleetData({ error: "GET /fleet/gateways falló (503)" }));
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k.includes("ATRASADOS"))).toBe(false);
+    expect(kpiTexts().some((k) => k.includes("VERSIÓN"))).toBe(false);
+  });
+
+  it("el fantasma no engorda la deriva: está dado de baja", () => {
+    const c = cabinet("1", "OPERATIVO");
+    const ghost: FleetCabinet = {
+      ...c,
+      gateway: { ...c.gateway, status: "retired", is_ghost: true, version_state: "ATRASADA" },
+    };
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [ghost, cabinet("2", "OPERATIVO")] }));
+    render(<FleetPage />);
+    expect(kpiTexts().some((k) => k.includes("ATRASADOS"))).toBe(false);
+  });
+
+  it("la tarjeta dice qué versión corre y de cuándo es el dato", () => {
+    mocks.useFleet.mockReturnValue(
+      fleetData({
+        cabinets: [
+          conVersion("1", {
+            version_state: "ATRASADA",
+            releases_behind: 3,
+            release_age_s: 21 * 86_400,
+            version_age_s: 30,
+          }),
+        ],
+      }),
+    );
+    render(<FleetPage />);
+    expect(screen.getByTestId("version-badge")).toHaveTextContent(/62f3f1e.*3 ATRÁS/);
   });
 });

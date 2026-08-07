@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from datetime import UTC
+from datetime import UTC, timedelta
 
 import pytest
 
@@ -304,6 +304,9 @@ def test_status_includes_health_cloud_and_identity(supervisor):
     # enlace a nube: en dev sin transporte no hay conexión — se dice tal cual
     assert status["cloud"]["online"] is False
     assert isinstance(status["cloud"]["queued"], int)
+    # [T-2.65] …y el estado ADMINISTRATIVO, que NO se infiere del enlace: un
+    # gabinete sano arranca `active` aunque el MQTT esté caído.
+    assert status["cloud"]["admin_state"] == "active"
     # identidad viva desde settings (no depende del snapshot)
     assert status["gateway_id"] == supervisor.settings.gateway_id
     assert status["uptime_s"] >= 0.0
@@ -583,6 +586,10 @@ def test_status_relays_empty_when_gpio_stopped(supervisor):
     payload = json.loads(body)
     assert payload["relays"] == []
     assert payload["gateway_id"] == supervisor.settings.gateway_id  # el resto vive
+    # [T-2.68] …y la lista vacía DICE por qué: módulo detenido, no "arranque en
+    # frío". Es un camino SIN excepción (relay_states devuelve [] a propósito),
+    # así que solo `gpio.running` lo distingue.
+    assert payload["relays_status"]["reason"] == "gpio_stopped"
 
 
 def test_status_relays_degrade_when_gpio_broken(supervisor, monkeypatch):
@@ -594,7 +601,141 @@ def test_status_relays_degrade_when_gpio_broken(supervisor, monkeypatch):
     monkeypatch.setattr(supervisor.gpio, "relay_states", _kaput)
     code, body = _get(supervisor.local_api, "/api/status")
     assert code == 200
-    assert json.loads(body)["relays"] == []
+    payload = json.loads(body)
+    assert payload["relays"] == []
+    # [T-2.68] Avería EN CALIENTE del proceso que toca la sirena: `gpio.running`
+    # sigue en True. No es lo mismo que el módulo detenido y no pide lo mismo.
+    assert payload["relays_status"]["reason"] == "gpio_error"
+
+
+# --- T-2.68 · `RELÉS · S/D` deja de colapsar sus causas -----------------------
+#
+# La lista vacía (o corta) tenía UN solo rótulo —"arranque en frío"— para cuatro
+# situaciones que piden reacciones distintas del operador de pie frente al
+# gabinete. Peor: el `try` era UNO SOLO sobre DOS módulos (gpio y config), así
+# que un config store corrupto se disfrazaba de gpio roto.
+#
+# Esto es diagnóstico puro sobre memoria ya viva: no toca el camino SASMEX→relé.
+
+
+def test_status_relays_status_nominal_declara_ok_y_lo_instalado(supervisor):
+    """Gabinete sano: razón `ok` y el perfil declarado viaja para poder cruzarlo."""
+    payload = supervisor.local_api.status()["relays_status"]
+    assert payload["reason"] == "ok"
+    assert sorted(payload["installed"]) == [
+        "door_retainer",
+        "elevator",
+        "gas_valve",
+        "siren",
+        "strobe",
+    ]
+    assert payload["missing"] == []
+
+
+def test_status_relays_status_distingue_config_ilegible_de_gpio_roto(supervisor, monkeypatch):
+    """Un ConfigStore corrupto NO puede seguir disfrazándose de gpio averiado.
+
+    El `try` único cubría `relay_states()` Y `config.current()`: ambos producían
+    exactamente el mismo `[]`. Partirlo en dos es lo que hace honesto al rótulo.
+    Además, el estado ELÉCTRICO de los relés sí se midió — tirarlo sería perder
+    el dato bueno por culpa del filtro: se sirve sin filtrar y se declara que el
+    filtro no se pudo aplicar.
+    """
+
+    def _kaput():
+        raise RuntimeError("config ilegible")
+
+    monkeypatch.setattr(supervisor.config, "current", _kaput)
+    status = supervisor.local_api.status()
+    assert status["relays_status"]["reason"] == "config_error"
+    assert status["relays_status"]["installed"] is None  # no se pudo leer el perfil
+    assert len(status["relays"]) == 5, "el estado eléctrico medido no se tira"
+
+
+def test_status_relays_status_distingue_el_sitio_sin_actuadores(supervisor):
+    """Cinco `false` en el perfil = lista vacía LEGÍTIMA, y se dice así.
+
+    `HardwareForm` de la consola no exige "al menos uno" y el env tampoco, así
+    que este sitio existe. No es una avería: es ámbar, no rojo. Y `config_version`
+    no lo desambigua (puede seguir en 0 tanto aquí como sin sync).
+    """
+    from takab_edge.config import EquipmentProfile
+
+    supervisor.config.settings = supervisor.config.settings.model_copy(
+        update={
+            "equipment": EquipmentProfile(
+                siren=False,
+                strobe=False,
+                gas_valve=False,
+                elevator=False,
+                door_retainer=False,
+            )
+        }
+    )
+    status = supervisor.local_api.status()
+    assert status["relays"] == []
+    assert status["relays_status"]["reason"] == "no_actuators_installed"
+    assert status["relays_status"]["installed"] == []
+
+
+def test_status_relays_status_delata_la_lista_parcial(supervisor, monkeypatch):
+    """La lista CORTA miente igual que la vacía, y nada la disparaba.
+
+    Perfil con los 5 instalados y gpio conservando solo 2 canales: el panel
+    pintaba 2 filas sin decir que faltan 3. Se cruza el perfil declarado contra
+    los canales que gpio devolvió — ambos ya existían.
+    """
+    completos = supervisor.gpio.relay_states()
+    monkeypatch.setattr(supervisor.gpio, "relay_states", lambda: completos[:2])
+    status = supervisor.local_api.status()
+    assert len(status["relays"]) == 2
+    assert status["relays_status"]["reason"] == "partial"
+    assert sorted(status["relays_status"]["missing"]) == [
+        "door_retainer",
+        "elevator",
+        "gas_valve",
+    ]
+
+
+def test_status_relays_status_sin_causa_conocida_asume_lo_peor(supervisor, monkeypatch):
+    """Vacía sin causa conocida ⇒ `unknown`, que la UI pinta como avería.
+
+    "Arranque en frío" se leía como "todo bien, espera" mientras el proceso que
+    toca la sirena podía estar roto — y encima era el único estado que NUNCA
+    ocurre (gpio puebla sus 5 canales, síncrono y bajo lock, antes de que el
+    panel abra su socket). El default tiene que ser la peor causa.
+    """
+    from takab_edge.local_api import LocalDashboard
+
+    dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health)
+    monkeypatch.setattr(supervisor.gpio, "relay_states", list)
+    status = dash.status()
+    assert status["relays"] == []
+    assert status["relays_status"] == {"reason": "unknown", "installed": None, "missing": []}
+
+
+def test_status_relays_status_ante_un_fallo_imprevisto_degrada_a_lo_peor(supervisor, monkeypatch):
+    """Un fallo que no cae en ninguna de las dos cajas ⇒ 200 + `unknown`.
+
+    Invariante del panel: un módulo roto degrada su sección, jamás un 500 al
+    kiosco de quien está de pie frente al gabinete. Y el default de esa
+    degradación es la PEOR causa: si nadie sabe por qué no hay filas, se trata
+    como avería del proceso que toca la sirena.
+    """
+    from takab_edge.contracts import ActuatorChannel
+
+    class _RelayIlegible:
+        channel = ActuatorChannel.SIREN
+
+        def model_dump(self, **_kw):
+            raise RuntimeError("contrato de relé ilegible")
+
+    monkeypatch.setattr(supervisor.gpio, "relay_states", lambda: [_RelayIlegible()])
+    code, body = _get(supervisor.local_api, "/api/status")
+    assert code == 200
+    payload = json.loads(body)
+    assert payload["relays"] == []
+    assert payload["relays_status"]["reason"] == "unknown"
 
 
 # --- Fase 2.1 · T-2.23: panel rediseñado + estáticos + catálogo ----------------
@@ -612,12 +753,18 @@ _DEMO_SCENES = (
     "dato_retenido",
 )
 
+# [T-2.65] Escena AÑADIDA, fuera de la tupla de las 10 de §13.2 para no reescribir
+# lo que ese test congela. Precedente: `aviso` (T-2.32).
+# [T-2.68] `gpio_caido`: la avería en caliente del proceso de relés, que hasta
+# ahora se pintaba igual que un arranque en frío que nunca ocurre.
+_DEMO_SCENES_EXTRA = ("retirado", "gpio_caido")
+
 
 def test_index_declares_demo_scenes(supervisor):
     """Las 10 escenas de §13.2 se pueden forzar con ?demo=<escena>."""
     _, body = _get(supervisor.local_api, "/")
     html = body.decode()
-    for scene in _DEMO_SCENES:
+    for scene in _DEMO_SCENES + _DEMO_SCENES_EXTRA:
         assert f"{scene}:" in html or f"'{scene}'" in html or f'"{scene}"' in html, scene
     assert "DEMO · NO ES ESTADO REAL" in html  # el modo demo se declara, jamás se disfraza
 
@@ -648,6 +795,14 @@ def test_index_contains_frozen_contract_hooks(supervisor):
         # desde el panel cuando el tier decae con relés aún enclavados.
         "alert_latched",
         "ACTUADORES ENCLAVADOS",
+        # [T-2.65] El aviso de baja administrativa. El volcado del arnés no lleva
+        # atributos, así que este es el ÚNICO sitio donde se puede congelar que el
+        # banner es role="status" y no aria-live="assertive": es un hecho
+        # administrativo, no una emergencia, y no debe interrumpir al lector de
+        # pantalla por encima de una alerta real.
+        "DADO DE BAJA EN LA NUBE",
+        "SIGUE PROTEGIENDO",
+        '<div id="banner-baja" class="hide" role="status">',
     )
     for hook in hooks:
         assert hook in html, hook
@@ -874,6 +1029,50 @@ def test_catalog_endpoint_degrades_honestly(supervisor, tmp_path):
         catalog_path=str(catalog_file),
     )
     assert broken.catalog()["available"] is False
+    assert broken.catalog()["provenance"]["origin"] == "absent"
+
+
+def test_catalog_endpoint_declares_age_and_provenance(supervisor, tmp_path):
+    """[T-2.66] La instantánea dice CUÁNDO se capturó, DE DÓNDE vino y su umbral.
+
+    Sin esto, un catálogo de hace tres semanas se ve idéntico a uno recién
+    firmado (regla de oro 7). La edad se calcula EN PYTHON: el navegador del
+    kiosco puede tener la hora corrida, y el arnés del panel no tiene reloj
+    congelado — un age_s del servidor es lo único determinista.
+    """
+    from takab_edge.local_api import LocalDashboard
+
+    snapshot = {
+        "fuente": "SSN · UNAM",
+        "capturado": "2026-05-17T08:11:22-06:00",
+        "eventos": [],
+        "referencias": [{"n": "CDMX", "lat": 19.4326, "lon": -99.1332}],
+    }
+    catalog_file = tmp_path / "ssn-catalog.json"
+    catalog_file.write_text(json.dumps(snapshot), "utf-8")
+    dash = LocalDashboard(
+        supervisor.gpio,
+        supervisor.rules,
+        supervisor.health,
+        catalog_path=str(catalog_file),
+    )
+    served = dash.catalog()
+    prov = served["provenance"]
+    assert prov["origin"] == "provisioned_file"
+    assert prov["captured_at"] == "2026-05-17T08:11:22-06:00"
+    # El entregable del repo se capturó en mayo: es VIEJO por cualquier umbral.
+    assert prov["captured_age_s"] > prov["stale_after_s"] > 0
+    assert prov["installed_age_s"] is not None  # llegó al gabinete al provisionar
+
+    # Sección DEFENSIVA: si la procedencia revienta, el catálogo SE SIGUE SIRVIENDO
+    # (borrarlo apagaría el mapa y la comparativa por un rótulo que falta).
+    def _boom() -> dict:
+        raise RuntimeError("procedencia rota")
+
+    dash._catalog_store.provenance = _boom  # type: ignore[method-assign]
+    degraded = dash.catalog()
+    assert degraded["available"] is True
+    assert degraded["references"][0]["n"] == "CDMX"
 
 
 # --- T-2.31 · perfil de equipamiento ----------------------------------------
@@ -1085,5 +1284,201 @@ def test_index_declara_el_motivo_de_la_sirena_y_los_tonos(supervisor):
         "ESTADO SEGURO",
         "Tonos de voceo",
         "SIN TONO DE PRUEBA",
+    ):
+        assert hook in html, hook
+
+
+# --- T-2.65 · el estado administrativo llega al panel ------------------------
+
+
+def test_la_baja_de_la_nube_aparece_y_desaparece_en_el_panel(supervisor):
+    """CRITERIO 5, mitad edge: retirar ⇒ el aviso aparece; restaurar ⇒ desaparece.
+
+    Recorre el camino REAL —sobre firmado → `ConfigStore.apply_signed_update` →
+    `status()`— y no un fixture. Es la única prueba posible de que el aviso llegó:
+    la config NO tiene ack y `config_version` no viaja en el latido, así que la
+    nube jamás sabe qué versión corre el gabinete (por eso `in_sync` es
+    nube-contra-nube). Quien lo sabe es este panel.
+    """
+    store, security = supervisor.config, supervisor.security
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"
+
+    def _publicar(admin: str, version: int) -> None:
+        raw = store.current().model_copy(update={"cloud_admin_state": admin}).model_dump_json()
+        store.apply_signed_update(
+            raw.encode(), security.sign_config(raw.encode(), version), version
+        )
+
+    _publicar("retired", store.version + 1)
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "retired"
+
+    _publicar("active", store.version + 1)
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"
+
+
+def test_el_panel_lee_el_estado_administrativo_del_store_vivo(supervisor):
+    """LA TRAMPA DE CAPTURA. `LocalDashboard` congela valores de `settings` en su
+    constructor (`gateway_id`, `site_name`); si `admin_state` se hubiera leído de
+    ahí, quedaría clavado en "active" PARA SIEMPRE, porque `apply_signed_update`
+    REEMPLAZA el objeto `settings` entero en vez de mutarlo.
+    """
+    store, security = supervisor.config, supervisor.security
+    arranque = store.current()
+
+    raw = arranque.model_copy(update={"cloud_admin_state": "retired"}).model_dump_json()
+    store.apply_signed_update(raw.encode(), security.sign_config(raw.encode(), 1), 1)
+
+    assert store.current() is not arranque  # el objeto se rebindeó, no se mutó
+    assert arranque.cloud_admin_state == "active"  # la copia vieja NUNCA cambia
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "retired"
+
+
+def test_un_valor_administrativo_desconocido_se_lee_como_activo(supervisor):
+    """Fail-open hacia proteger-y-callar: solo un "retired" EXACTO enciende el
+    cartel. Cualquier otra cosa (una nube que dejara de colapsar el enum) se
+    reporta activa — el panel no adivina una baja que nadie declaró."""
+    store, security = supervisor.config, supervisor.security
+    raw = store.current().model_copy(update={"cloud_admin_state": "degraded"}).model_dump_json()
+    store.apply_signed_update(raw.encode(), security.sign_config(raw.encode(), 1), 1)
+
+    assert store.current().cloud_admin_state == "degraded"  # el doc se aplicó entero
+    assert supervisor.local_api.status()["cloud"]["admin_state"] == "active"
+
+
+# --- T-2.67 · evidencia/backfill en el panel local --------------------------
+
+
+class _FakeBackfill:
+    """Gestor de respaldo de mentira: la instantánea SIN disco que sirve el panel."""
+
+    def __init__(self, **cambios) -> None:
+        from takab_edge.contracts import utcnow
+
+        ahora = utcnow()
+        self.snapshot = {
+            "pending": 2,
+            "items": [
+                {"event_id": "evt-viejo", "start": (ahora - timedelta(days=15)).isoformat()},
+                {"event_id": "evt-nuevo", "start": (ahora - timedelta(minutes=4)).isoformat()},
+            ],
+            "oldest_pending_at": (ahora - timedelta(days=15)).isoformat(),
+            "checked_at": (ahora - timedelta(seconds=30)).isoformat(),
+            "phase": "idle",
+            "durable": True,
+            "uploaded_total": 3,
+            "discarded_no_data_total": 1,
+            "failed_total": 4,
+            "extract_failed_total": 2,
+            "last_result": "extract_failed",
+            "last_result_at": (ahora - timedelta(minutes=2)).isoformat(),
+            "stale_after_s": 3600.0,
+        }
+        self.snapshot.update(cambios)
+        self.snapshots_servidas = 0
+
+    def evidence_snapshot(self) -> dict:
+        self.snapshots_servidas += 1
+        return dict(self.snapshot)
+
+    def pending_evidence(self) -> list[str]:
+        raise AssertionError("status() recorrió el directorio de evidencia (toca disco)")
+
+
+def test_status_trae_el_estado_de_la_evidencia_con_sus_edades(supervisor):
+    """[T-2.67] El panel es lo único que queda sin nube, y no sabía NADA del
+    respaldo: en el gabinete real hay evidencia atascada de 15 días y ni un
+    rótulo lo dice. Las EDADES se calculan aquí (el reloj del kiosco puede ir
+    corrido), igual que la procedencia del catálogo (T-2.66).
+    """
+    from takab_edge.local_api import LocalDashboard
+
+    backfill = _FakeBackfill()
+    dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health, backfill=backfill)
+    evi = dash.status()["evidence"]
+
+    assert evi["pending"] == 2
+    assert evi["uploaded_total"] == 3
+    assert evi["discarded_no_data_total"] == 1  # la que SE PERDIÓ, aparte de las fallidas
+    assert evi["extract_failed_total"] == 2
+    assert evi["last_result"] == "extract_failed"
+    assert evi["stale_after_s"] == 3600.0
+    # Edades, no fechas: el panel no vuelve a hacer aritmética de relojes.
+    assert evi["oldest_pending_age_s"] > 15 * 86400 - 60
+    assert 0 <= evi["checked_age_s"] < 120
+    assert 60 < evi["last_result_age_s"] < 300
+    assert [item["event_id"] for item in evi["items"]] == ["evt-viejo", "evt-nuevo"]
+    assert evi["items"][0]["age_s"] > evi["items"][1]["age_s"]
+    # El GET del panel es ABIERTO en la LAN y la key canónica lleva el tenant_id.
+    assert "s3_key" not in json.dumps(evi)
+    # …y jamás toca disco: la instantánea vive en memoria (regla del kiosco).
+    assert backfill.snapshots_servidas == 1
+
+
+def test_la_seccion_de_evidencia_es_defensiva(supervisor):
+    """Un módulo de respaldo roto degrada su sección a null, jamás un 500."""
+    from takab_edge.local_api import LocalDashboard
+
+    class _Roto:
+        def evidence_snapshot(self):
+            raise RuntimeError("respaldo muerto")
+
+    roto = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health, backfill=_Roto())
+    assert roto.status()["evidence"] is None
+    # Sin módulo (arranques parciales/tests): tampoco inventa nada.
+    suelto = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health)
+    assert suelto.status()["evidence"] is None
+
+
+def test_una_instantanea_de_evidencia_ilegible_no_tumba_la_seccion(supervisor):
+    """Fechas basura ⇒ edad `None` (S/D en pantalla), no una excepción ni un 0."""
+    from takab_edge.local_api import LocalDashboard
+
+    backfill = _FakeBackfill(
+        oldest_pending_at="no-es-una-fecha",
+        checked_at=None,
+        last_result_at="",
+        items=[{"event_id": "evt-raro", "start": "ayer"}],
+    )
+    dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health, backfill=backfill)
+    evi = dash.status()["evidence"]
+    assert evi["oldest_pending_age_s"] is None
+    assert evi["checked_age_s"] is None
+    assert evi["last_result_age_s"] is None
+    assert evi["items"][0]["age_s"] is None
+
+
+def test_el_gabinete_real_sirve_la_seccion_de_evidencia(supervisor):
+    """[T-2.67] Cableado real: el supervisor le pasa su BackfillManager al panel.
+
+    El conteo EN MEMORIA que sirve el panel se compara contra el directorio real:
+    si divergieran, el panel estaría pintando un número inventado (que es
+    justamente el modo de fallo que esta tarea persigue).
+    """
+    evi = supervisor.local_api.status()["evidence"]
+    assert evi is not None
+    assert evi["pending"] == len(supervisor.backfill.pending_evidence())
+    assert evi["uploaded_total"] == 0
+    assert evi["last_result"] is None
+    # HALLAZGO: sin `TAKAB_EDGE_CLOUD_SPOOL_DIR` —que `provision_gateway.sh` NO
+    # escribe— el pendiente cae en un directorio que no sobrevive al reinicio, y
+    # el conteo diría 0 honestamente para siempre. El panel lo DECLARA.
+    assert evi["durable"] is False
+
+
+def test_index_evidence_hooks(supervisor):
+    """[T-2.67] Rótulos congelados de la card de evidencia."""
+    _, body = _get(supervisor.local_api, "/")
+    html = body.decode()
+    for hook in (
+        'id="evi-card"',
+        'id="evi-state"',
+        'id="evi-rows"',
+        "Evidencia miniSEED · respaldo a la nube",
+        "SIN EVIDENCIA PENDIENTE",
+        "ATASCADA",
+        "EVIDENCIA PERDIDA",
+        "EN ESPERA DE ENLACE",
+        "COLA NO DURABLE",
+        "evidence:",  # escena demo (baseStatus) — si no, el panel pinta undefined
     ):
         assert hook in html, hook

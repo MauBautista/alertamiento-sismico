@@ -56,7 +56,7 @@ def test_bacnet_actuator_writes_via_simulator():
 
 
 def test_manager_routes_to_relay_by_default(gpio):
-    # [SUPUESTO #4] sin contrato BACnet, todo va por relé local fail-safe.
+    # [RATIFICADO 2026-07-09 · T-1.45 · gate #4] sin contrato BACnet, todo por relé local.
     manager = ActuatorManager(RelayActuator(gpio), BacnetActuator(BacnetSimulator()))
     ack = manager.execute(_cmd(ActuatorChannel.GAS_VALVE))
     assert ack.detail == "relay"

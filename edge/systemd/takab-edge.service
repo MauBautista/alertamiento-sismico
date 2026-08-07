@@ -13,6 +13,28 @@ Documentation=file:///opt/takab/takab-docs/BLUEPRINT-TECNICO-TAKAB.md
 After=network-online.target time-sync.target
 Wants=network-online.target
 Conflicts=takab-gpio.service
+# [T-2.70] SIN LÍMITE DE ARRANQUES. Con el default de systemd (5 en 10 s) y
+# RestartSec=2, un fallo al arrancar agota el burst en ~10 s y la unidad queda en
+# `failed` PARA SIEMPRE: systemd no reintenta aunque la causa desaparezca. Este
+# proceso sostiene el reflejo SASMEX→sirena (gate #6: supervisor único), así que
+# rendirse significa un edificio sin alertamiento hasta que alguien conduzca al
+# sitio. Es la diferencia entre "el update malo dejó el gabinete reintentando" y
+# "el update malo dejó el gabinete MUERTO", que fue el escenario medido en T-2.70.
+#
+# VA EN [Unit] Y NO EN [Service]: en [Service] systemd la descarta con un
+# «Unknown key … ignoring» y `systemd-analyze verify` SIGUE SALIENDO 0 — o sea,
+# moverla de sección devuelve el gabinete al default sin que nada se queje.
+#
+# EL PRECIO DE ESTA LÍNEA, y por qué NO viaja sola: ver `RestartSteps=` abajo.
+# PERO NO TE LLEVES SUS COMPAÑERAS AQUÍ. `RestartSteps=`, `RestartMaxDelaySec=`
+# y `TimeoutStopSec=` son de [Service]: subirlas a esta sección "para tenerlas
+# juntas" es un reordenamiento COSMÉTICO que systemd descarta en silencio ×3 y
+# que devuelve el crash-loop a 3600 ciclos/hora sobre la válvula de gas. Las
+# seis directivas están ancladas en test_deploy_artifacts.py
+# (test_cada_directiva_vigilada_vive_donde_systemd_la_lee, y
+# test_systemd_no_ignora_en_silencio_ninguna_directiva se lo pregunta a systemd
+# para las que nadie enumeró).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -37,6 +59,67 @@ ExecStart=/opt/takab/edge/.venv/bin/takab-edge
 
 Restart=always
 RestartSec=2
+# [T-2.70·rev] REINTENTO INFINITO **ESPACIADO**. Corrige la regresión que
+# introdujo `StartLimitIntervalSec=0` al viajar sola.
+#
+# El argumento con el que se escribió aquel «sin límite» era: «lo peor que hace
+# un bucle de reintentos es gastar CPU». ES FALSO EN SU PREMISA, y está MEDIDO
+# (edge/tests/test_deploy_artifacts.py, sección "el precio físico de
+# reintentar"): el CICLO DE VIDA DEL PROCESO MUEVE EL EDIFICIO.
+#   · `GAS_VALVE` es FAIL_CLOSE y `DOOR_RETAINER` es NORMALLY_CLOSED, y ambos
+#     REPOSAN ENERGIZADOS (`gpio.normal_energized`).
+#   · `GpioController._on_start` los construye con `initial_value=True` ⇒ los
+#     ENERGIZA; la muerte del proceso suelta los pines ⇒ los DE-ENERGIZA (gas
+#     cerrado, retenedores sueltos).
+#   · Medido: 3 ciclos de proceso = 6 transiciones eléctricas por pin.
+# Sin límite de arranques Y sin backoff, un crash-loop deja de ser "CPU" y pasa
+# a ser una válvula de gas abriendo y cerrando ~1800 veces por hora, para
+# siempre. Eso convierte un ciclo ACOTADO de actuación física en uno INFINITO.
+#
+# La salida NO es rendirse (eso deja el edificio sin protección): es espaciar.
+# `RestartSteps=` interpola GEOMÉTRICAMENTE el intervalo desde RestartSec= hasta
+# RestartMaxDelaySec=, con razón (max/sec)^(1/steps) — systemd.service(5), que
+# además recomienda valores de 3 a 5. Con 2 s → 300 s en 5 pasos la razón es
+# 150^(1/5) ≈ 2.72 y la escalera queda:
+#
+#     2 s · 5 s · 15 s · 40 s · 110 s · 300 s · 300 s · …
+#
+# El gabinete sigue intentando volver PARA SIEMPRE, pero el ciclado físico pasa
+# de 1800 veces por hora a 6 ciclos en los primeros ~3 min y 12/hora a régimen.
+# El PRIMER reintento sigue siendo a los 2 s: una caída transitoria se recupera
+# igual de rápido que antes; sólo los fallos ENCADENADOS se espacian.
+#
+# LAS DOS DIRECTIVAS SON UN PAR INDIVISIBLE. Medido con systemd 259: si falta
+# una, systemd descarta la otra con «Ignoring.» y `systemd-analyze verify` SALE
+# 0 igual — media configuración de backoff se lee como si fuera correcta y el
+# gabinete vuelve a ciclar el gas cada 2 s. Anclado en
+# test_el_backoff_no_queda_ignorado_en_silencio_por_systemd.
+#
+# DISPONIBILIDAD: ambas existen desde systemd v254. El Pi corre Debian 13
+# (trixie) = systemd 257 ⇒ soportadas. Verificado con `systemd-analyze verify`,
+# que acepta el par sin «Unknown key».
+RestartSteps=5
+RestartMaxDelaySec=300
+# [T-2.70] VENTANA DE DESPROTECCIÓN, declarada en vez de heredada.
+#
+# La cota superior de "cuánto tiempo el gabinete no protege" durante un
+# despliegue NO es el arranque (0.62 s medidos hasta 16/16 módulos): es el
+# TIMEOUT DE PARADA, porque hasta que el proceso viejo no muere no arranca el
+# nuevo. Sin esta línea regía el default de systemd —90 s— que nadie eligió y
+# que no estaba escrito en ninguna parte.
+#
+# Se fija en 90 s A PROPÓSITO: es el mismo valor efectivo de hoy, así que esta
+# línea NO cambia el comportamiento del camino de vida. Lo que cambia es que el
+# número pasa a ser explícito, revisable y anclado por un test.
+#
+# ACORTARLO EXIGE MEDIR EN EL PI, y esa medición está pendiente (T-2.70 no pudo
+# tocar el gabinete real). Son dos números, y ninguno está medido: cuánto tarda
+# `supervisor.stop()` con los 16 módulos (seedlink y cloud pueden tardar), y qué
+# le pasa a los relés si systemd manda SIGKILL por timeout — con
+# `gas_valve=FAIL_CLOSE` y `door_retainer=NORMALLY_CLOSED` reposando
+# ENERGIZADOS, un SIGKILL suelta los pines sin pasar por `drive_all_safe()`.
+# Bajarlo a ciegas cambiaría el comportamiento FÍSICO de gas y puertas.
+TimeoutStopSec=90
 
 # Endurecimiento (paridad con takab-gpio.service): sin escrituras fuera del spool.
 # PrivateTmp: /tmp propio y escribible (ProtectSystem=strict deja el global de solo

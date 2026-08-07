@@ -9,6 +9,14 @@
 // heartbeat y `retired` se alcanza por el diálogo de retiro con doble fricción. Un
 // desplegable que dijera "online" haría que la Flota Edge mintiera sobre un gabinete
 // muerto.
+//
+// [T-2.69] `fw_version` salió por la misma razón, y era el caso más grave. Este PUT
+// es de reemplazo TOTAL y el formulario reenviaba el valor prellenado con CADA
+// edición: un operador podía anotar —o borrar, dejándolo vacío— una versión que el
+// gabinete nunca corrió. En un gabinete vivo el siguiente latido lo corregía en
+// ≤60 s; en uno SIN ENLACE la mentira era PERMANENTE, y es justo ese sobre el que
+// más importa saber la verdad. El propio placeholder ya decía "la reporta el propio
+// gabinete": ahora es la única forma. El servidor lo rechaza con 422.
 
 import { useState } from "react";
 
@@ -19,7 +27,6 @@ import { EQUIPMENT_FIELDS, equipmentOf } from "./equipment";
 export interface GatewayEditValues {
   serial: string;
   iot_thing: string;
-  fw_version: string;
   has_wr1: boolean;
   equipment: Required<EquipmentProfile>;
 }
@@ -44,7 +51,6 @@ export default function GatewayForm({
   const [values, setValues] = useState<GatewayEditValues>({
     serial: gateway.serial,
     iot_thing: gateway.iot_thing ?? "",
-    fw_version: gateway.fw_version ?? "",
     has_wr1: gateway.has_wr1,
     equipment: equipmentOf(gateway.equipment),
   });
@@ -81,16 +87,6 @@ export default function GatewayForm({
           Terraform (<code>infra/scripts/provision_gateway.sh</code>) y pega aquí su nombre.
         </p>
       )}
-
-      <label>
-        <span>VERSIÓN DE FIRMWARE</span>
-        <input
-          value={values.fw_version}
-          placeholder="la reporta el propio gabinete"
-          onChange={(e) => setValues({ ...values, fw_version: e.target.value })}
-          maxLength={32}
-        />
-      </label>
 
       <label className="fleet__checkbox">
         <input
@@ -141,7 +137,6 @@ export default function GatewayForm({
               ...values,
               serial: values.serial.trim(),
               iot_thing: values.iot_thing.trim(),
-              fw_version: values.fw_version.trim(),
             })
           }
         >
