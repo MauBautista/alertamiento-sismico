@@ -648,7 +648,6 @@ export type GatewayConfigStateOut = {
  */
 export type GatewayCreate = {
     equipment?: EquipmentProfile;
-    fw_version?: string | null;
     has_wr1?: boolean;
     installed_at?: string | null;
     iot_thing?: string | null;
@@ -688,6 +687,7 @@ export type GatewayOut = {
     degrade_reasons?: Array<string>;
     derived_state: string;
     equipment?: EquipmentProfile;
+    fw_running?: string | null;
     fw_version?: string | null;
     gateway_id: string;
     has_wr1: boolean;
@@ -698,6 +698,8 @@ export type GatewayOut = {
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
     power_status?: string | null;
+    release_age_s?: number | null;
+    releases_behind?: number | null;
     retired_at?: string | null;
     retired_by?: string | null;
     row_version: string;
@@ -708,6 +710,8 @@ export type GatewayOut = {
     site_name: string;
     site_status: string;
     status: string;
+    version_age_s?: number | null;
+    version_state?: string;
 };
 
 /**
@@ -741,16 +745,24 @@ export type GatewayRowOut = {
 };
 
 /**
- * Edición de gabinete. ``status`` no aparece a propósito.
+ * Edición de gabinete. ``status`` y ``fw_version`` no aparecen a propósito.
  *
  * ``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y
  * ``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera "online"
  * haría que la Flota Edge mintiera sobre un gabinete muerto.
+ *
+ * [T-2.69] ``fw_version`` sale por la misma razón, y era el caso más grave. Este
+ * PUT es de REEMPLAZO TOTAL y la consola reenviaba el campo prellenado con CADA
+ * edición, así que cualquier operador podía anotar —o borrar— una versión que el
+ * gabinete nunca corrió. En un gabinete vivo el siguiente latido lo corregía en
+ * ≤60 s; en uno SIN ENLACE la mentira era PERMANENTE, y es justo ese sobre el que
+ * más importa saber la verdad. La versión la declara el aparato en cada latido
+ * (T-1.74) y ese es su ÚNICO escritor. ``extra='forbid'`` ⇒ un cliente viejo que
+ * lo mande recibe 422, no un silencio.
  */
 export type GatewayUpdate = {
     base_row_version?: string | null;
     equipment?: EquipmentProfile;
-    fw_version?: string | null;
     has_wr1?: boolean;
     installed_at?: string | null;
     iot_thing?: string | null;
@@ -887,6 +899,55 @@ export type LonLat = {
 };
 
 /**
+ * Apertura. ``scope='platform'`` no lleva ``gateway_id`` (no tiene dueño).
+ */
+export type MaintenanceWindowIn = {
+    duration_s?: number;
+    gateway_id?: string | null;
+    reason: string;
+    scope?: 'gateway' | 'platform';
+};
+
+export type MaintenanceWindowList = {
+    items: Array<MaintenanceWindowOut>;
+};
+
+/**
+ * Lo que la consola pinta. Los cuatro números del acuse van SEPARADOS.
+ *
+ * ``requested``/``silenced``/``missing`` no se colapsan en un solo "ok": una
+ * ventana que creyó silenciar 3 alarmas y solo silenció 1 tiene que poder
+ * decirlo (mismo criterio que ``drill_sites.commandable``, T-2.48).
+ */
+export type MaintenanceWindowOut = {
+    active: boolean;
+    alarm_names: Array<string>;
+    closed_at: string | null;
+    duration_s: number;
+    ends_at: string;
+    gateway_id: string | null;
+    gateway_serial?: string | null;
+    /**
+     * Pedidas que NO quedaron mudas. Sale en el JSON a propósito: si la
+     * consola tuviera que restar, cada pantalla podría restar distinto.
+     */
+    readonly missing: number;
+    missing_names?: Array<string>;
+    mute_rule: string | null;
+    mute_verified?: boolean;
+    opened_at: string;
+    opened_by: string;
+    reason: string;
+    requested: number;
+    scope: string;
+    silenced: number;
+    site_name?: string | null;
+    starts_at: string;
+    tenant_id: string | null;
+    window_id: string;
+};
+
+/**
  * Dónde se ORIGINÓ el sismo. No es ningún edificio.
  *
  * Sale de ``seismic_events.epicenter``: catálogo SSN/USGS, motor de quórum o
@@ -966,6 +1027,7 @@ export type MeActions = {
     evidence_upload: boolean;
     export: boolean;
     generate_report: boolean;
+    maintenance_window: boolean;
     manage_fleet: boolean;
     manage_retire_code: boolean;
     manage_tenants: boolean;
@@ -974,6 +1036,7 @@ export type MeActions = {
     manual_activate: boolean;
     panel_read: boolean;
     panic_vote: boolean;
+    platform_maintenance_window: boolean;
     read_audit: boolean;
     relocate_epicenter: boolean;
     request_dictamen: boolean;
@@ -1242,6 +1305,41 @@ export type QuorumVoteOut = {
  */
 export type ReadyFrame = {
     type?: 'ready';
+};
+
+/**
+ * Publicar un release en el registro (``POST /fleet/releases``).
+ *
+ * ``version`` es el valor que ``deploy/edge/deploy.sh`` escribirá en el
+ * ``FW_VERSION`` del gabinete, y la comparación con lo que el aparato declara es
+ * por IGUALDAD EXACTA. Se recorta el espacio en blanco por la MISMA razón por la
+ * que lo recortan las dos puntas del otro camino —``edge/takab_edge/version.py``
+ * al leer el archivo y ``ingest/handlers.py`` al recibir el latido—: si aquí no
+ * se recortara, un ``"62f3f1e "` pegado desde una terminal quedaría en el
+ * registro para siempre (la tabla no admite UPDATE) sin poder coincidir JAMÁS
+ * con ningún gabinete, y toda la flota que corriera ese código saldría
+ * ``DESCONOCIDA``. Dos normalizaciones que no coinciden son un fallo silencioso;
+ * el ``max_length`` también es el mismo (64) que el de la ingesta.
+ *
+ * ``released_at`` se puede fijar para dar de alta releases ya desplegados sin
+ * falsear su antigüedad (corregirla después sería imposible).
+ */
+export type ReleaseCreate = {
+    notes?: string | null;
+    released_at?: string | null;
+    version: string;
+};
+
+/**
+ * Un release del registro de plataforma (``GET /fleet/releases``).
+ */
+export type ReleaseOut = {
+    age_s?: number | null;
+    notes?: string | null;
+    published_by?: string | null;
+    release_id: string;
+    released_at: string;
+    version: string;
 };
 
 /**
@@ -2270,6 +2368,47 @@ export type FleetHealthHistoryFleetHealthHistoryGetResponses = {
 
 export type FleetHealthHistoryFleetHealthHistoryGetResponse = FleetHealthHistoryFleetHealthHistoryGetResponses[keyof FleetHealthHistoryFleetHealthHistoryGetResponses];
 
+export type ListReleasesFleetReleasesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/fleet/releases';
+};
+
+export type ListReleasesFleetReleasesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<ReleaseOut>;
+};
+
+export type ListReleasesFleetReleasesGetResponse = ListReleasesFleetReleasesGetResponses[keyof ListReleasesFleetReleasesGetResponses];
+
+export type PublishReleaseFleetReleasesPostData = {
+    body: ReleaseCreate;
+    path?: never;
+    query?: never;
+    url: '/fleet/releases';
+};
+
+export type PublishReleaseFleetReleasesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PublishReleaseFleetReleasesPostError = PublishReleaseFleetReleasesPostErrors[keyof PublishReleaseFleetReleasesPostErrors];
+
+export type PublishReleaseFleetReleasesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ReleaseOut;
+};
+
+export type PublishReleaseFleetReleasesPostResponse = PublishReleaseFleetReleasesPostResponses[keyof PublishReleaseFleetReleasesPostResponses];
+
 export type PushCatalogGatewaysGatewayIdCatalogPostData = {
     body: CatalogPushIn;
     path: {
@@ -2870,6 +3009,86 @@ export type IncidentRosterIncidentsIncidentIdRosterGetResponses = {
 };
 
 export type IncidentRosterIncidentsIncidentIdRosterGetResponse = IncidentRosterIncidentsIncidentIdRosterGetResponses[keyof IncidentRosterIncidentsIncidentIdRosterGetResponses];
+
+export type ListWindowsMaintenanceWindowsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        active?: boolean;
+        limit?: number;
+    };
+    url: '/maintenance-windows';
+};
+
+export type ListWindowsMaintenanceWindowsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListWindowsMaintenanceWindowsGetError = ListWindowsMaintenanceWindowsGetErrors[keyof ListWindowsMaintenanceWindowsGetErrors];
+
+export type ListWindowsMaintenanceWindowsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MaintenanceWindowList;
+};
+
+export type ListWindowsMaintenanceWindowsGetResponse = ListWindowsMaintenanceWindowsGetResponses[keyof ListWindowsMaintenanceWindowsGetResponses];
+
+export type OpenWindowMaintenanceWindowsPostData = {
+    body: MaintenanceWindowIn;
+    path?: never;
+    query?: never;
+    url: '/maintenance-windows';
+};
+
+export type OpenWindowMaintenanceWindowsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OpenWindowMaintenanceWindowsPostError = OpenWindowMaintenanceWindowsPostErrors[keyof OpenWindowMaintenanceWindowsPostErrors];
+
+export type OpenWindowMaintenanceWindowsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MaintenanceWindowOut;
+};
+
+export type OpenWindowMaintenanceWindowsPostResponse = OpenWindowMaintenanceWindowsPostResponses[keyof OpenWindowMaintenanceWindowsPostResponses];
+
+export type CloseWindowMaintenanceWindowsWindowIdClosePostData = {
+    body?: never;
+    path: {
+        window_id: string;
+    };
+    query?: never;
+    url: '/maintenance-windows/{window_id}/close';
+};
+
+export type CloseWindowMaintenanceWindowsWindowIdClosePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CloseWindowMaintenanceWindowsWindowIdClosePostError = CloseWindowMaintenanceWindowsWindowIdClosePostErrors[keyof CloseWindowMaintenanceWindowsWindowIdClosePostErrors];
+
+export type CloseWindowMaintenanceWindowsWindowIdClosePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MaintenanceWindowOut;
+};
+
+export type CloseWindowMaintenanceWindowsWindowIdClosePostResponse = CloseWindowMaintenanceWindowsWindowIdClosePostResponses[keyof CloseWindowMaintenanceWindowsWindowIdClosePostResponses];
 
 export type MeMeGetData = {
     body?: never;

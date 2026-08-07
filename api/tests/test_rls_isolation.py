@@ -88,3 +88,48 @@ def test_ingest_bypasses_rls(seeded: psycopg.Connection) -> None:
     use(seeded, "takab_ingest")
     n = seeded.execute("SELECT count(*) FROM device_health").fetchone()[0]
     assert n == 2, "ingest ve las filas de ambos tenants"
+
+
+# --- fw_releases (T-2.69): registro de PLATAFORMA, no de tenant ---------------
+#
+# La API ya acota el POST a takab_superadmin. Estas pruebas son la SEGUNDA
+# cerradura: qué firmware corre el gabinete que protege un edificio no lo decide
+# el cliente, y si un router se despistara la base lo tiene que negar igual.
+
+
+def test_fw_releases_lo_lee_cualquier_rol_autenticado(seeded: psycopg.Connection) -> None:
+    """El catálogo de firmware no es secreto: sin poder leerlo, la deriva que la
+    consola pinta a cada cliente no significaría nada. Lo que sí está acotado por
+    tenant es QUÉ gabinete corre qué, y eso vive en `gateways`."""
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="takab_superadmin")
+    seeded.execute("INSERT INTO fw_releases (version) VALUES ('rls0001')")
+    # …y lo lee un rol de cliente cualquiera, de OTRO tenant: el registro no es
+    # de nadie en particular. (El dueño de la tabla queda sujeto igual por FORCE
+    # RLS: ni takab_migrator publica sin ser superadmin de aplicación.)
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    n = seeded.execute("SELECT count(*) FROM fw_releases WHERE version = 'rls0001'").fetchone()
+    assert n[0] == 1
+
+
+@pytest.mark.parametrize("app_role", ["tenant_admin", "soc_operator", "takab_support"])
+def test_fw_releases_solo_las_publica_el_dueno_de_la_plataforma(
+    seeded: psycopg.Connection, app_role: str
+) -> None:
+    use(seeded, "takab_app", tenant=TENANT_A, app_role=app_role)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute("INSERT INTO fw_releases (version) VALUES ('rls0002')")
+
+
+@pytest.mark.parametrize(
+    "dml", ["UPDATE fw_releases SET released_at = now()", "DELETE FROM fw_releases"]
+)
+def test_fw_releases_es_append_only_por_privilegio(seeded: psycopg.Connection, dml: str) -> None:
+    """Ni siquiera el superadmin reescribe el registro. Cambiar la fecha —o borrar—
+    un release reescribiría A POSTERIORI la deriva de TODA la flota: el "cuánto
+    lleva corriendo código viejo" de cada gabinete dejaría de ser comprobable.
+    Se consigue no concediendo el privilegio, no con un trigger: el trigger
+    `forbid_update_delete` está reservado a evidencia/compliance (regla de oro 11).
+    """
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="takab_superadmin")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(dml)

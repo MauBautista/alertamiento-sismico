@@ -28,7 +28,7 @@ from takab_api.auth.scope import ConsoleScope, apply_scope
 # `NOT NULL REFERENCES sites` (db/schema.sql). Tampoco ensancha la visibilidad:
 # `sites_read` y `gateways_read` tienen políticas equivalentes.
 _LIST_SQL = """
-    SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.iot_thing,
+    SELECT g.gateway_id, g.site_id, g.serial, g.fw_version, g.fw_running, g.iot_thing,
            g.status, g.has_wr1, g.equipment, g.installed_at, g.xmin::text AS row_version,
            s.name   AS site_name,
            s.code   AS site_code,
@@ -222,16 +222,22 @@ _GET_ROW = text(f"SELECT {_ROW_COLS} FROM gateways WHERE gateway_id = :id")
 
 # Alta SIEMPRE en 'provisioned': el gabinete no está online hasta que su primer
 # heartbeat lo demuestre. La API no crea certificados X.509 (eso es Terraform).
+# [T-2.69] Sin `fw_version` en NINGUNA de las dos: el único escritor de esa columna
+# es el latido del propio gabinete (`ingest/handlers.py`). Cuando estaba aquí, el
+# PUT —que es de reemplazo TOTAL— reenviaba el valor prellenado del formulario con
+# cada edición, así que la consola podía anotar o borrar una versión que el aparato
+# nunca corrió; en un gabinete SIN ENLACE esa mentira era permanente. En el alta la
+# columna queda NULL, que es la verdad: nadie ha visto latir a ese gabinete todavía.
 _INSERT = text(
-    "INSERT INTO gateways (tenant_id, site_id, serial, fw_version, iot_thing, "
+    "INSERT INTO gateways (tenant_id, site_id, serial, iot_thing, "
     "status, has_wr1, equipment, installed_at) "
-    "VALUES (CAST(:tenant_id AS uuid), :site_id, :serial, :fw_version, :iot_thing, "
+    "VALUES (CAST(:tenant_id AS uuid), :site_id, :serial, :iot_thing, "
     "'provisioned', :has_wr1, CAST(:equipment AS jsonb), :installed_at) "
     f"RETURNING {_ROW_COLS}"
 )
 
 _UPDATE = text(
-    "UPDATE gateways SET site_id = :site_id, serial = :serial, fw_version = :fw_version, "
+    "UPDATE gateways SET site_id = :site_id, serial = :serial, "
     "iot_thing = :iot_thing, has_wr1 = :has_wr1, equipment = CAST(:equipment AS jsonb), "
     "installed_at = :installed_at "
     "WHERE gateway_id = :id "

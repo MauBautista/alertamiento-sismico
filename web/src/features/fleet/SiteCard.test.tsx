@@ -40,7 +40,16 @@ const GW: GatewayOut = {
   site_code: "CHL-A",
   site_status: "active",
   serial: "TKB-0001",
-  fw_version: "edge-1.4.0",
+  // [T-2.69] SHA de 7 hex: el ÚNICO formato que produce `deploy/edge/deploy.sh`
+  // (`git describe --always --dirty --abbrev=7` sobre un repo SIN TAGS). El
+  // `edge-1.4.0` que vivía aquí no lo puede generar producción jamás, y cualquier
+  // lógica de deriva escrita contra él se habría validado contra un semver
+  // ordenable para luego comportarse distinto con SHAs reales.
+  fw_version: "62f3f1e",
+  version_state: "AL DÍA",
+  releases_behind: 0,
+  release_age_s: 7200,
+  version_age_s: 42,
   iot_thing: "gw-dev-0001",
   status: "active",
   has_wr1: true,
@@ -242,7 +251,153 @@ describe("SiteCard", () => {
 
   it("footer con fw y último heartbeat en UTC", () => {
     render(<SiteCard cabinet={cabinet()} />);
-    expect(screen.getByText(/edge-1\.4\.0/)).toBeInTheDocument();
+    expect(screen.getByTestId("version-badge")).toHaveTextContent(/62f3f1e/);
     expect(screen.getByText(/HB 10:41:00 UTC/)).toBeInTheDocument();
+  });
+
+  // [T-2.69] El chip antiguo pintaba `gw.fw_version` a secas: un gabinete callado
+  // tres semanas mostraba su versión EXACTAMENTE igual que uno que acababa de
+  // confirmarla. Es el defecto del 14-jul en su forma de versiones.
+  it("un gabinete SIN ENLACE no pinta su versión como si fuera la que corre", () => {
+    render(
+      <SiteCard
+        cabinet={cabinet(
+          {},
+          {
+            derived_state: "SIN ENLACE",
+            version_state: "ÚLTIMA CONOCIDA",
+            version_age_s: 21 * 86_400,
+          },
+        )}
+      />,
+    );
+    const badge = screen.getByTestId("version-badge");
+    expect(badge).toHaveTextContent(/ÚLTIMA CONOCIDA/);
+    expect(badge).toHaveTextContent(/21 d/); // la edad del dato, en el rótulo
+    expect(badge).not.toHaveTextContent(/AL DÍA/);
+  });
+
+  it("un gabinete que late y no declara versión dice S/D, no la versión vieja", () => {
+    render(<SiteCard cabinet={cabinet({}, { version_state: "NO DECLARA" })} />);
+    const badge = screen.getByTestId("version-badge");
+    expect(badge).toHaveTextContent(/S\/D/);
+    expect(badge).not.toHaveTextContent(/62f3f1e/);
+  });
+});
+
+// --- [T-2.71] Ventana de mantenimiento: ADITIVA, jamás sustitutiva ------------
+
+const MW = {
+  window_id: "w-1",
+  tenant_id: "t-1",
+  gateway_id: "g-1",
+  gateway_serial: "TKB-0001",
+  site_name: "Planta Cholula",
+  scope: "gateway",
+  opened_by: "u-1",
+  reason: "cambio del cable de red del Shake",
+  duration_s: 1800,
+  opened_at: "2026-08-06T03:30:12Z",
+  starts_at: "2026-08-06T03:31:00Z",
+  ends_at: "2026-08-06T04:01:00Z",
+  closed_at: null,
+  active: true,
+  alarm_names: ["a", "b"],
+  requested: 2,
+  silenced: 2,
+  missing_names: [],
+  missing: 0,
+  mute_rule: "takab-dev-mw-w-1",
+};
+
+describe("ventana de mantenimiento en la tarjeta", () => {
+  it("añade el rótulo con la hora UTC de cierre", () => {
+    render(<SiteCard cabinet={cabinet()} maintenance={MW as never} />);
+    expect(screen.getByText(/EN MANTENIMIENTO HASTA 04:01 UTC/)).toBeTruthy();
+  });
+
+  it("NO toca el derived_state: el gabinete sigue diciendo SIN ENLACE", () => {
+    // Este es el test que importa. Sustituir el estado por uno neutro/verde
+    // reproduciría exactamente el bug que cerró T-2.59: un cero tranquilizador
+    // que nadie comprobó (regla de oro 7). Un gabinete en mantenimiento SIGUE
+    // sin enlace — lo que cambia es que ahora se sabe por qué.
+    render(
+      <SiteCard cabinet={cabinet({}, { derived_state: "SIN ENLACE" })} maintenance={MW as never} />,
+    );
+    expect(screen.getByText("SIN ENLACE")).toBeTruthy();
+    expect(screen.getByText(/EN MANTENIMIENTO HASTA/)).toBeTruthy();
+  });
+
+  it("sin ventana no inventa ningún rótulo", () => {
+    render(<SiteCard cabinet={cabinet()} />);
+    expect(screen.queryByText(/EN MANTENIMIENTO/)).toBeNull();
+  });
+
+  // --- [B8] El tooltip afirmaba el silencio pasara lo que pasara -------------
+
+  it("con TODAS mudas el tooltip lo afirma, y el DOM lo declara", () => {
+    render(<SiteCard cabinet={cabinet()} maintenance={MW as never} />);
+    const badge = screen.getByTestId("maintenance-badge");
+    expect(badge.getAttribute("title")).toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
+    expect(badge.getAttribute("title")).toContain("2/2 ALARMAS SILENCIADAS");
+    expect(badge.getAttribute("data-mute")).toBe("all");
+  });
+
+  it("con el silenciador APAGADO la tarjeta NO afirma que las alarmas están mudas", () => {
+    // `ops_muting_enabled=False` (el default de producción) ⇒ `mute_rule` NULL y
+    // 0 silenciadas. La tarjeta decía «Alarmas de operación silenciadas» en el
+    // tooltip pasara lo que pasara, y el rótulo visible «EN MANTENIMIENTO» se
+    // lee exactamente igual. Quien está de guardia deduciría que ese gabinete
+    // está callado cuando sus alarmas siguen sonando.
+    const apagado = {
+      ...MW,
+      requested: 2,
+      silenced: 0,
+      missing: 2,
+      missing_names: ["a", "b"],
+      mute_rule: null,
+    };
+    render(<SiteCard cabinet={cabinet()} maintenance={apagado as never} />);
+    const badge = screen.getByTestId("maintenance-badge");
+    expect(badge.textContent).toContain("ALARMAS SIN SILENCIAR");
+    expect(badge.getAttribute("title")).toContain("LAS ALARMAS DE OPERACIÓN SIGUEN SONANDO");
+    expect(badge.getAttribute("title")).not.toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
+    // La causa tampoco se disfraza de "esa alarma no existe" (B9).
+    expect(badge.getAttribute("title")).toContain("SILENCIADOR APAGADO O CON FALLO");
+    expect(badge.getAttribute("title")).not.toContain("SIN ALARMA EXISTENTE");
+    expect(badge.getAttribute("data-mute")).toBe("none");
+  });
+
+  it("con ALGUNAS mudas la tarjeta no lo redondea a silencio", () => {
+    const parcial = { ...MW, requested: 2, silenced: 1, missing: 1, missing_names: ["a"] };
+    render(<SiteCard cabinet={cabinet()} maintenance={parcial as never} />);
+    const badge = screen.getByTestId("maintenance-badge");
+    expect(badge.textContent).toContain("SILENCIADAS EN PARTE");
+    expect(badge.getAttribute("title")).not.toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
+    expect(badge.getAttribute("data-mute")).toBe("partial");
+  });
+
+  // --- [C2] La tarjeta tampoco puede pintar la suposición como medida --------
+
+  it("con el acuse SIN COMPROBAR el rótulo declara la duda, no el silencio", () => {
+    // `mute_verified=false` llega con la misma forma que un éxito (`2/2`,
+    // `missing 0`, regla con nombre) porque el servidor asume lo peor a
+    // propósito. Sin leer el flag, la tarjeta pintaba el rótulo CORTO —el que se
+    // reserva para la afirmación cierta— y quien barre la flota daba por hecho
+    // que ese edificio está callado y comprobado.
+    render(<SiteCard cabinet={cabinet()} maintenance={{ ...MW, mute_verified: false } as never} />);
+    const badge = screen.getByTestId("maintenance-badge");
+    expect(badge.textContent).toContain("SILENCIO SIN COMPROBAR");
+    expect(badge.getAttribute("data-mute")).toBe("assumed");
+    expect(badge.getAttribute("title")).toContain("SILENCIO SUPUESTO");
+    expect(badge.getAttribute("title")).not.toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
+    expect(badge.getAttribute("title")).not.toContain("2/2 ALARMAS SILENCIADAS");
+  });
+
+  it("el motivo sigue en el tooltip: una ventana sin dueño visible no existe", () => {
+    render(<SiteCard cabinet={cabinet()} maintenance={MW as never} />);
+    expect(screen.getByTestId("maintenance-badge").getAttribute("title")).toContain(
+      "cambio del cable de red del Shake",
+    );
   });
 });

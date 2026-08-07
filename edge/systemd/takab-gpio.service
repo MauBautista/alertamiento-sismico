@@ -5,6 +5,16 @@
 Description=TAKAB Ailert — proceso GPIO del camino de vida (SASMEX->sirena)
 Documentation=file:///opt/takab/takab-docs/runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md
 After=network.target time-sync.target
+# [T-2.70] SIN LÍMITE DE ARRANQUES — ver la nota gemela en takab-edge.service.
+# Con el default (5 en 10 s) y RestartSec=1, este proceso agota el burst en 5 s
+# y queda en `failed` definitivamente. Es el proceso MÁS crítico del gabinete:
+# rendirse no es una opción. Pero reintentar SIN ESPACIAR tampoco: ver
+# `RestartSteps=` en [Service]. Va en [Unit]: en [Service] systemd la ignora
+# en silencio y `systemd-analyze verify` sale 0 igual. Y al revés también:
+# RestartSteps=/RestartMaxDelaySec=/TimeoutStopSec= NO se suben aquí (systemd
+# las descartaría igual de callado). Las seis están ancladas en
+# test_cada_directiva_vigilada_vive_donde_systemd_la_lee.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -23,6 +33,27 @@ ExecStart=/opt/takab/edge/.venv/bin/takab-gpio
 # El camino de vida se reinicia SIEMPRE y rápido ante cualquier caída (SPOF-02).
 Restart=always
 RestartSec=1
+# [T-2.70·rev] REINTENTO INFINITO **ESPACIADO** — nota completa y medición en
+# takab-edge.service. Resumen: el ciclo de vida de este proceso ENERGIZA y
+# DE-ENERGIZA `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER` (NORMALLY_CLOSED),
+# porque ambos reposan energizados; medido en test_deploy_artifacts.py como
+# 2 transiciones eléctricas por ciclo de proceso. Con RestartSec=1 y sin techo,
+# un crash-loop mueve la válvula de gas 3600 veces por hora INDEFINIDAMENTE.
+# Interpolación geométrica de razón 300^(1/5) ≈ 3.13 (systemd.service(5)):
+#
+#     1 s · 3 s · 10 s · 31 s · 96 s · 300 s · 300 s · …
+#
+# El PRIMER reintento sigue siendo a 1 s (SPOF-02: las caídas transitorias se
+# recuperan igual de rápido que antes); sólo los reintentos ENCADENADOS se
+# espacian ⇒ 6 ciclos en los primeros ~2.3 min y 12/hora a régimen.
+# Par indivisible: sin RestartMaxDelaySec=, systemd IGNORA RestartSteps= sin
+# error. Ambas desde systemd v254; el Pi (Debian 13 trixie) trae 257.
+RestartSteps=5
+RestartMaxDelaySec=300
+# [T-2.70] Ventana de parada declarada, no heredada del default de systemd.
+# 90 s = el valor efectivo de hoy: la línea documenta y ancla, no cambia nada.
+# Acortarlo exige medir en el Pi (ver la nota extensa en takab-edge.service).
+TimeoutStopSec=90
 # Endurecimiento mínimo (proceso auditable; sin escrituras al sistema salvo
 # /var/lib/takab, que además es el CWD que lgpio necesita escribible).
 NoNewPrivileges=true

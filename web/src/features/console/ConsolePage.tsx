@@ -23,6 +23,7 @@ import ComparePanel from "./ComparePanel";
 import DetailPanel from "./DetailPanel";
 import EpicenterModal from "./EpicenterModal";
 import DrillBanner from "./DrillBanner";
+import MaintenanceBanner from "./MaintenanceBanner";
 import IncidentTable from "./IncidentTable";
 import KpiStrip from "./KpiStrip";
 import MapPanel from "./MapPanel";
@@ -188,6 +189,11 @@ function ConsoleWall() {
         {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
             incidente vivo se degrada a badge (lo real domina también visualmente). */}
         <DrillBanner hasLiveIncident={critical !== null} />
+        {/* [T-2.71] Ventana de mantenimiento: alarmas de OPERACIÓN mudas. A
+            diferencia del simulacro NO se degrada con incidente vivo — el
+            momento en que más falta hace saber que una alarma no va a sonar es
+            justo el sismo (precedente: banner-wr1 violeta del panel LAN, T-1.69). */}
+        <MaintenanceBanner hasLiveIncident={critical !== null} />
         <StateFrame
           label="MONITOREO"
           className="soc-wall"

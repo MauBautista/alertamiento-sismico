@@ -291,3 +291,108 @@ def test_local_api_wired_with_signal_and_cloud(supervisor):
     assert "EHZ" in status["signal"]["channels"]
     assert status["site_name"] == supervisor.settings.site_name
     assert status["cloud"] is not None
+
+
+def _sobre_con_ventana(settings) -> dict:
+    """Sobre de config con TODOS los nombres plausibles de "ventana abierta".
+
+    Enumerar aquí es correcto AL REVÉS que en el resto de la suite: no se lista lo
+    que hay que aceptar, se amplía la superficie del ataque. Un nombre más solo
+    puede hacer el test más estricto.
+    """
+    import json
+
+    sobre = json.loads(settings.model_dump_json())
+    sobre.update(
+        {
+            "maintenance_window": True,
+            "maintenance_window_until": "2099-01-01T00:00:00Z",
+            "maintenance_mode": True,
+            "in_maintenance": True,
+            "alarms_muted": True,
+            "muted": True,
+            "silenced": True,
+            "suppress_actuation": True,
+        }
+    )
+    return sobre
+
+
+def _mide_reles(sup) -> None:
+    """RELÉS, no afirmaciones: la demanda Y el pin, sirena Y estrobo."""
+    WR1Simulator(sup.gpio).alert()
+    assert sup.gpio.is_activated(ActuatorChannel.SIREN) is True
+    assert sup.gpio.relay_state(ActuatorChannel.SIREN).energized is True
+    assert sup.gpio.is_activated(ActuatorChannel.STROBE) is True
+    assert sup.gpio.relay_state(ActuatorChannel.STROBE).energized is True
+
+
+def test_una_ventana_de_mantenimiento_EN_EL_ARRANQUE_no_calla_la_sirena(settings, tmp_path):
+    """[T-2.71 · REGLA DE ORO 1 · vector 1 de 2: la config DE ARRANQUE]
+
+    Este es el vector que casi se me escapa, y por eso está separado del otro. El
+    hermano de T-2.65 (`test_la_config_viva_de_la_nube_jamas_se_cablea_al_reflejo`)
+    mide que ningún apply-listener acerque la config VIVA al módulo del reflejo —
+    y eso deja fuera el camino más probable: `GpioController` lee `self.settings`,
+    que es el objeto de ARRANQUE, y desde T-2.34 el arranque se hidrata de una
+    caché de config FIRMADA persistida en disco. Una ventana que llegara por ahí
+    estaría en `gpio.settings` desde el primer segundo, y un test que solo mirase
+    los listeners lo daría por bueno.
+
+    Se mide construyendo el `EdgeSettings` de arranque desde un diccionario que SÍ
+    trae los campos de ventana (que es como llegan: la nube publica un dict). Hoy
+    `extra="ignore"` los descarta; si alguien los declara para pintarlos en el
+    panel LAN, este test es lo que obliga a comprobar los relés antes de seguir.
+    """
+    arranque = type(settings).model_validate(
+        {**_sobre_con_ventana(settings), "config_cache_path": str(tmp_path / "cache.json")}
+    )
+    sup = EdgeSupervisor(arranque, seedlink_source=None)
+    sup.start()
+    try:
+        _mide_reles(sup)
+    finally:
+        sup.stop()
+
+
+def test_una_ventana_de_mantenimiento_DE_LA_NUBE_no_calla_la_sirena(settings, tmp_path):
+    """[T-2.71 · REGLA DE ORO 1 · vector 2 de 2: la config VIVA]
+
+    Clon de `test_la_config_viva_de_la_nube_jamas_se_cablea_al_reflejo` cambiando
+    el vector: allí el sobre hostil declaraba `cloud_admin_state="retired"`; aquí
+    declara una VENTANA DE MANTENIMIENTO ABIERTA. Mide relés y además la IDENTIDAD
+    del objeto — que ningún apply-listener haya acercado la config viva al módulo
+    del camino de vida.
+    """
+    import json
+
+    s = settings.model_copy(update={"config_cache_path": str(tmp_path / "cache.json")})
+    sup = EdgeSupervisor(s, seedlink_source=None)
+    sup.start()
+    try:
+        boot = sup.gpio.settings
+        raw = json.dumps(_sobre_con_ventana(s)).encode()
+        version = sup.config.version + 1
+        sup.config.apply_signed_update(raw, sup.security.sign_config(raw, version), version)
+
+        _mide_reles(sup)
+
+        assert sup.gpio.settings is boot
+        assert sup.config.current() is not sup.gpio.settings
+    finally:
+        sup.stop()
+
+
+def test_la_ventana_de_mantenimiento_ni_siquiera_existe_para_el_edge(settings):
+    """El invariante de raíz, medido una vez: el edge NO tiene dónde guardar una
+    ventana de mantenimiento.
+
+    `EdgeSettings` declara `extra="ignore"`, así que un campo de ventana en el
+    sobre de config se descarta. Este test lo mide en vez de confiar en el
+    `model_config`: si alguien lo cambiara a `extra="allow"` —o declarara el
+    campo— el atributo aparecería y esto se pondría rojo, obligando a mirar los
+    dos tests de relés de arriba antes de seguir.
+    """
+    reconstruido = type(settings).model_validate(_sobre_con_ventana(settings))
+    for campo in ("maintenance_window", "maintenance_window_until", "suppress_actuation"):
+        assert not hasattr(reconstruido, campo), campo

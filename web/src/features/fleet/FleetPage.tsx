@@ -8,6 +8,9 @@ import FleetToolbar from "./FleetToolbar";
 import GatewayForm from "./GatewayForm";
 import RetireDialog from "./RetireDialog";
 import SiteCard from "./SiteCard";
+import { windowCovering } from "../console/maintenance";
+import { useMaintenanceWindows } from "../console/useMaintenanceWindows";
+import { isVersionAtrasada, isVersionCierta } from "./VersionBadge";
 import { DEFAULT_FILTERS, applyFilters, isFiltering } from "./fleetFilter";
 import type { FleetFilters } from "./fleetFilter";
 import { FLEET_STALE_MS, useFleet } from "./useFleet";
@@ -89,6 +92,36 @@ function countStates(cabinets: FleetCabinet[]) {
   };
 }
 
+/**
+ * [T-2.69] La deriva de versiones de la flota, en las dos cifras que un operador
+ * puede accionar:
+ *
+ * · `behind`  — cuántos están CIERTAMENTE atrás. Es la lista de trabajo de una ola
+ *   de actualización (T-2.70).
+ * · `unknown` — de cuántos la consola NO puede afirmar si corren lo actual. Sale
+ *   por EXCLUSIÓN (`isVersionCierta`), no enumerando las formas de no saber: así
+ *   un estado nuevo del servidor cae aquí por defecto en vez de colarse como
+ *   certeza. Son cuatro causas distintas —callado, no declara, nunca reportó,
+ *   fuera del registro— y el porqué de cada una vive en su tarjeta; lo que la
+ *   tira tiene que decir es de cuántos no se puede responder.
+ *
+ * Un gabinete SIN ENLACE con una versión vieja NO cuenta como `behind`: lo que se
+ * guarda de él es la última versión que reportó, no la que corre, y meterlo en la
+ * lista de "atrasados" sería afirmar algo que nadie ha comprobado.
+ */
+function countVersions(cabinets: FleetCabinet[]) {
+  return {
+    // [T-2.70] DERIVADO (`isVersionAtrasada` = certeza menos "AL DÍA"), no
+    // comparado contra "ATRASADA". Enumerar dejó fuera a `SIN REINICIAR` en
+    // cuanto el servidor lo empezó a emitir: un gabinete con el código nuevo
+    // escrito y sin aplicar desaparecía de la cuenta de pendientes y se colaba
+    // entre los "no se sabe". Cualquier estado futuro en el que SÍ se pueda
+    // afirmar la deriva entra aquí solo.
+    behind: cabinets.filter((c) => isVersionAtrasada(c.gateway.version_state)).length,
+    unknown: cabinets.filter((c) => !isVersionCierta(c.gateway.version_state)).length,
+  };
+}
+
 /** T-1.28 · Flota Edge — inventario de gabinetes (mockup 2, FleetEdge.jsx). */
 type GatewayAction =
   | { kind: "none" }
@@ -109,6 +142,16 @@ export default function FleetPage() {
   const [filters, setFilters] = useState<FleetFilters>(DEFAULT_FILTERS);
   const [action, setAction] = useState<GatewayAction>({ kind: "none" });
   const health = useFleetHealth(fleet.cabinets.length > 0);
+  // [T-2.71] Ventanas de mantenimiento ABIERTAS. Alimentan un badge ADITIVO:
+  // el `derived_state` de la tarjeta NO se toca (ver SiteCard).
+  //
+  // [C3] Y su `readError` se PINTA. Esta página usaba solo `items`, así que un
+  // fallo de lectura dejaba las tarjetas sin rótulo y la pantalla afirmaba en
+  // silencio "aquí no hay ninguna ventana abierta". La degradación NO era hacia
+  // "no sé si hay ventana" como decía este comentario: era hacia "no hay", que
+  // es el cero tranquilizador que cerró T-2.59 — y aquí el cero significa que
+  // un edificio puede tener las alarmas mudas sin que nada lo indique.
+  const maintenance = useMaintenanceWindows(fleet.cabinets.length > 0);
   const updateGateway = useUpdateGateway();
   const retireGateway = useRetireGateway();
   const restoreGateway = useRestoreGateway();
@@ -133,6 +176,7 @@ export default function FleetPage() {
   const ghosts = fleet.cabinets.filter((c) => c.gateway.is_ghost === true);
   const activos = fleet.cabinets.filter((c) => c.gateway.is_ghost !== true);
   const counts = countStates(activos);
+  const versions = countVersions(activos);
   const visible = applyFilters(activos, filters);
 
   return (
@@ -154,6 +198,17 @@ export default function FleetPage() {
               deja de leerse a las dos semanas, y este tiene que dar un salto. */}
           {!sinDato && ghosts.length > 0 && (
             <Kpi label="FANTASMAS" value={ghosts.length} kind="crit" />
+          )}
+          {/* [T-2.69] Mismo criterio que FANTASMAS: solo cuando hay algo que
+              decir. Un contador clavado en cero deja de leerse a las dos semanas,
+              y estos dos tienen que dar un salto cuando una ola de actualización
+              se queda a medias. Y `sinDato` los tapa igual que a los demás: con la
+              API caída, "0 ATRASADOS" se leería como "flota entera al día". */}
+          {!sinDato && versions.behind > 0 && (
+            <Kpi label="ATRASADOS" value={versions.behind} kind="warn" />
+          )}
+          {!sinDato && versions.unknown > 0 && (
+            <Kpi label="VERSIÓN S/D" value={versions.unknown} kind="warn" />
           )}
         </div>
       </header>
@@ -177,6 +232,30 @@ export default function FleetPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {/* [C3] El fallo de LECTURA de las ventanas, dicho por su consecuencia y
+          no por su código HTTP. Va aquí —encima de la reja, fuera del
+          StateFrame de la flota— porque describe a TODAS las tarjetas de abajo:
+          la flota puede haber cargado perfectamente y aun así ninguna tarjeta
+          sabe si su gabinete está mudo. Y lleva su propio botón: el REINTENTAR
+          del StateFrame reintenta la flota, que no es lo que ha fallado. */}
+      {maintenance.readError !== null && (
+        <div className="fleet__maintfail" data-testid="fleet-maint-error" role="alert">
+          <span>
+            VENTANAS DE MANTENIMIENTO SIN LECTURA ·{" "}
+            {maintenance.items.length > 0
+              ? "LOS RÓTULOS DE ABAJO SON EL ÚLTIMO DATO CONOCIDO, NO EL DE AHORA"
+              : "PUEDE HABER GABINETES CON LA ALARMA MUDA Y SIN RÓTULO"}
+          </span>
+          <button
+            type="button"
+            className="soc-btn soc-btn--secondary"
+            onClick={maintenance.refetch}
+          >
+            REINTENTAR VENTANAS
+          </button>
+        </div>
       )}
 
       <FleetToolbar
@@ -215,6 +294,9 @@ export default function FleetPage() {
               cabinet={c}
               syncState={syncStates.get(c.gateway.gateway_id)}
               health={health.get(c.gateway.gateway_id)}
+              maintenance={
+                windowCovering(maintenance.items, c.gateway.gateway_id, now) ?? undefined
+              }
               onEdit={canManage ? () => setAction({ kind: "edit", cabinet: c }) : undefined}
               onRetire={canManage ? () => setAction({ kind: "retire", cabinet: c }) : undefined}
               onRestore={canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined}
@@ -247,7 +329,8 @@ export default function FleetPage() {
                   site_id: action.cabinet.gateway.site_id,
                   serial: values.serial,
                   iot_thing: values.iot_thing === "" ? null : values.iot_thing,
-                  fw_version: values.fw_version === "" ? null : values.fw_version,
+                  // Sin `fw_version` (T-2.69): el servidor lo rechaza con 422 y
+                  // solo el latido del gabinete escribe esa columna.
                   has_wr1: values.has_wr1,
                   equipment: values.equipment,
                   installed_at: action.cabinet.gateway.installed_at,

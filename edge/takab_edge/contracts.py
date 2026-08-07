@@ -293,6 +293,14 @@ class HealthSnapshot(BaseModel):
     # persiste en `gateways.fw_version` y NUNCA pisa lo que ya tenga con un None:
     # ese campo se llenaba a mano y se habría quedado obsoleto en silencio.
     fw_version: str | None = None
+    # [T-2.70] SHA que ESTE PROCESO cargó al arrancar, congelado (no se relee).
+    # ADITIVO (schema 1.9.0). `fw_version` de arriba dice qué código hay EN EL
+    # DISCO; este dice cuál se está EJECUTANDO. Difieren exactamente cuando un
+    # despliegue escribió el código y el reinicio no ocurrió (o falló), que es
+    # el estado que una actualización remota tiene que detectar y hasta ahora
+    # era invisible desde la nube. `None` = no se puede saber, jamás se rellena
+    # con el del disco.
+    fw_running: str | None = None
     # [T-2.49] Perfil de tonos EFECTIVO del gabinete: qué IDs de catálogo se
     # aplicaron y cuáles se rechazaron (por desconocidos o reservados). ADITIVO,
     # mismo patrón que `disk_used_pct`: el ingest de la nube lo ignora mientras no

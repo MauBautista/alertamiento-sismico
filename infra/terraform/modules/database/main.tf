@@ -14,6 +14,7 @@ terraform {
 }
 
 data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
 
 data "aws_subnet" "db" {
   id = var.subnet_id
@@ -128,6 +129,62 @@ resource "aws_iam_role_policy" "db" {
             "cloudwatch:namespace" = "Takab/Ops"
           }
         }
+      },
+      # [T-2.71] Ventanas de mantenimiento: silenciar alarmas de OPERACION.
+      #
+      # DOS statements, y la separacion es la frontera de seguridad, no estilo.
+      # Doc de AWS (verificada contra el CLI 2.35.16 instalado, no supuesta):
+      # "To create or update a mute rule, you must have the
+      # cloudwatch:PutAlarmMuteRule permission on TWO types of resources: the
+      # alarm mute rule resource itself, AND each alarm that the rule targets."
+      #
+      # Eso convierte a IAM en la SEGUNDA linea de defensa. Hasta descubrirlo, la
+      # unica frontera entre "silencio mi gabinete" y "apago el detector de
+      # fallos de la plataforma" era el codigo de `ops/muting.py`. Ahora, si un
+      # bug del API pidiera callar `takab-dev-dlq-*`, `takab-dev-iot-rule-errors`
+      # o `takab-dev-gateway-retirado-sigue-reportando`, AWS lo DENIEGA: esos
+      # nombres no estan aqui y ningun comodin los alcanza.
+      {
+        Sid    = "ManageOwnMuteRules"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutAlarmMuteRule",
+          "cloudwatch:GetAlarmMuteRule",
+          "cloudwatch:DeleteAlarmMuteRule",
+        ]
+        # Solo las reglas que crea ESTE sistema (`takab-dev-mw-<window_id>`): no
+        # puede pisar ni borrar una ventana abierta a mano por un humano.
+        Resource = "arn:aws:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm-mute-rule:takab-${var.env}-mw-*"
+      },
+      {
+        Sid    = "MuteOnlySilenceableAlarms"
+        Effect = "Allow"
+        Action = "cloudwatch:PutAlarmMuteRule"
+        # ENUMERACION EXPLICITA de lo silenciable, espejo de `ALARM_CATALOG` en
+        # api/src/takab_api/ops/muting.py. Las tres intocables NO estan y no hay
+        # comodin que las roce:
+        #   - takab-dev-dlq-*                            (instrumento del canary)
+        #   - takab-dev-iot-rule-errors                  (instrumento del canary)
+        #   - takab-dev-gateway-retirado-sigue-reportando (vigila al vigilante)
+        # El comodin de `gateway-offline-*` es por gabinete (`for_each` sobre
+        # paged_gateways); NO alcanza a `gateway-retirado-...` porque el prefijo
+        # completo es `gateway-offline-`.
+        Resource = [
+          "arn:aws:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm:takab-${var.env}-gateway-offline-*",
+          "arn:aws:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm:takab-${var.env}-sensor-mudo-*",
+          "arn:aws:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm:takab-${var.env}-ec2-status-check",
+          "arn:aws:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm:takab-${var.env}-ec2-cpu-sostenida",
+        ]
+      },
+      {
+        Sid    = "DescribeAlarmsForMuteAck"
+        Effect = "Allow"
+        # El ACUSE: `PutAlarmMuteRule` con 200 NO es "silenciado" — el nombre
+        # puede no existir. Se contrasta contra DescribeAlarms, que NO admite
+        # nivel de recurso (es una API de listado): `*` es obligado. Es LECTURA
+        # de metadatos de alarma, no capacidad de callarlas.
+        Action   = "cloudwatch:DescribeAlarms"
+        Resource = "*"
       },
       # Pull de la imagen takab/cloud desde ECR (GetAuthorizationToken exige "*").
       {

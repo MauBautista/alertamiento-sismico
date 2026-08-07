@@ -47,6 +47,12 @@ class MeActions(BaseModel):
     dictamen_read: bool
     #: [T-2.08] Dashboard táctico 2.1 (RBAC §3): traza BMS + canal live móvil.
     panel_read: bool
+    #: [T-2.71] Abrir una ventana de mantenimiento sobre UN gabinete: silencia sus
+    #: alarmas de on-call mientras dure la intervención (superadmin/tenant_admin).
+    maintenance_window: bool
+    #: [T-2.71] Ventana de PLATAFORMA (alarmas ec2_* de la instancia de la nube):
+    #: SOLO takab_superadmin — vigilan infra común de todos los clientes.
+    platform_maintenance_window: bool
 
 
 class MeResponse(BaseModel):

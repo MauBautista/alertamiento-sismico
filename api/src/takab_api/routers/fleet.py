@@ -29,6 +29,7 @@ from takab_api.auth.matrix import FLEET, ROLE_ACTION_MATRIX, ROLE_ROUTE_MATRIX
 from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import fleet as q
 from takab_api.queries import fleet_health as qh
+from takab_api.queries import fw_releases as qr
 from takab_api.retire_code import check_confirmation, require_retire_code
 from takab_api.routers._common import (
     http_error,
@@ -46,7 +47,11 @@ from takab_api.schemas.fleet import (
     GatewayRowOut,
     GatewayUpdate,
     HealthBucket,
+    ReleaseCreate,
+    ReleaseOut,
+    ReleaseRef,
     derive_fleet_state,
+    derive_version_drift,
     fleet_degrade_reasons,
     sig_fingerprint,
 )
@@ -68,10 +73,16 @@ router = APIRouter(
     dependencies=[Depends(require_web_surface), Depends(require_roles(*_FLEET_ROLES))]
 )
 
+# [T-2.69] Sin ``fw_version``: la versión la DECLARA el gabinete en cada latido y
+# ese es su único escritor (``ingest/handlers.py``). Este PUT es de reemplazo total
+# y la consola reenviaba el campo prellenado con cada edición, así que un operador
+# podía anotar —o borrar— una versión que el aparato nunca corrió; en un gabinete
+# SIN ENLACE la mentira era permanente. El schema ya lo rechaza con 422
+# (``extra='forbid'``); esta tupla es la segunda cerradura, para que reañadirlo al
+# schema no baste para que vuelva a escribirse.
 _WRITE_FIELDS = (
     "site_id",
     "serial",
-    "fw_version",
     "iot_thing",
     "has_wr1",
     "equipment",
@@ -210,6 +221,10 @@ async def list_gateways(
     rows = await q.list_gateways_with_health(
         conn, include_retired=include_retired, alive_s=alive_s, scope=scope
     )
+    # [T-2.69] El registro se lee UNA vez por petición, no una por gabinete: es una
+    # tabla de plataforma con decenas de filas y la comparación es en memoria (los
+    # SHAs solo admiten igualdad, así que no hay nada que empujar al SQL).
+    releases = [ReleaseRef(version=r.version, age_s=r.age_s) for r in await qr.list_releases(conn)]
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)
@@ -247,6 +262,21 @@ async def list_gateways(
             if state == DEGRADADO
             else []
         )
+        # [T-2.69] Mismo umbral de "vivo" que `derive_fleet_state`, y a propósito:
+        # si SIN ENLACE y "la versión ya no es de fiar" divergieran, habría una
+        # franja en la que la consola diría "sin enlace" y aun así pintaría la
+        # versión como actual.
+        drift = derive_version_drift(
+            fw_version=m["fw_version"],
+            # [T-2.70] Qué EJECUTA el proceso, que no es lo que hay en el disco
+            # mientras un despliegue no haya reiniciado de verdad. La deriva se
+            # mide contra esto; el desajuste entre ambos ES el estado
+            # `SIN REINICIAR`. `None` en gabinetes con contrato ≤1.8.0.
+            fw_running=m["fw_running"],
+            age_s=m["age_s"],
+            sin_enlace_s=alive_s,
+            releases=releases,
+        )
         out.append(
             GatewayOut(
                 gateway_id=m["gateway_id"],
@@ -256,6 +286,7 @@ async def list_gateways(
                 site_status=m["site_status"],
                 serial=m["serial"],
                 fw_version=m["fw_version"],
+                fw_running=m["fw_running"],
                 iot_thing=m["iot_thing"],
                 status=m["status"],
                 has_wr1=m["has_wr1"],
@@ -297,9 +328,84 @@ async def list_gateways(
                 mqtt_rtt_ms=m["mqtt_rtt_ms"],
                 seedlink_lag_s=m["seedlink_lag_s"],
                 ntp_offset_ms=m["ntp_offset_ms"],
+                version_state=drift.state,
+                releases_behind=drift.releases_behind,
+                release_age_s=drift.release_age_s,
+                # La versión cabalga en CADA latido, así que su dato es tan viejo
+                # como el último latido… pero solo cuando HAY versión. Sin versión
+                # no hay nada que fechar y esto vale None (la consola pinta S/D en
+                # vez de una antigüedad de un dato inexistente).
+                version_age_s=None if m["fw_version"] is None else m["age_s"],
             )
         )
     return out
+
+
+# --- Registro de releases de firmware (T-2.69) -------------------------------
+#
+# El registro es DE PLATAFORMA, no de tenant: qué firmware existe lo decide TAKAB,
+# no el cliente. Por eso lo lee cualquier rol con /fleet (necesita el registro para
+# que su propia deriva signifique algo) y lo escribe SOLO el superadmin.
+#
+# La escritura NO tiene acción de matriz propia, a diferencia de `manage_fleet` o
+# `manage_tenants`, y es deliberado: la matriz existe para no pintar botones que
+# darían 403 (regla de oro 7), y aquí no hay botón — publicar un release es una
+# superficie de herramienta/CI (el despliegue lo hará T-2.70), no de consola. Si
+# algún día la consola publica releases, entonces sí hará falta la acción.
+_PUBLISH_RELEASE_ROLES: tuple[str, ...] = ("takab_superadmin",)
+_require_publish_release = require_roles(*_PUBLISH_RELEASE_ROLES)
+
+
+@router.get("/fleet/releases", response_model=list[ReleaseOut])
+async def list_releases(
+    conn: AsyncConnection = Depends(read_session),
+) -> list[ReleaseOut]:
+    """Releases publicados, MÁS NUEVO PRIMERO.
+
+    Es la referencia contra la que ``GET /fleet/gateways`` deriva ``version_state``
+    y ``releases_behind``. Vacío es un estado legítimo —una plataforma que aún no
+    ha publicado nada— y la flota entera sale ``SIN REFERENCIA``: se sabe qué corre
+    cada gabinete, no si eso es lo actual.
+    """
+    return [ReleaseOut(**dict(r._mapping)) for r in await qr.list_releases(conn)]
+
+
+@router.post("/fleet/releases", response_model=ReleaseOut, status_code=201)
+async def publish_release(
+    body: ReleaseCreate,
+    claims: Claims = Depends(_require_publish_release),
+    conn: AsyncConnection = Depends(read_session),
+) -> ReleaseOut:
+    """Registra un release de firmware. Solo el dueño de la plataforma.
+
+    ``version`` debe ser el valor EXACTO que ``deploy/edge/deploy.sh`` escribirá en
+    el ``FW_VERSION`` del gabinete: la comparación con lo que declara el aparato es
+    por IGUALDAD, así que un espacio de más aquí volvería ``DESCONOCIDA`` a toda la
+    flota que corra ese código.
+
+    Republicar la misma versión da 409: la tabla no admite UPDATE (append-only por
+    privilegio) porque reescribir la fecha de un release reescribiría a posteriori
+    la deriva de toda la flota.
+    """
+    try:
+        row = await qr.insert_release(
+            conn,
+            version=body.version,
+            released_at=body.released_at,
+            notes=body.notes,
+            published_by=f"user:{claims.sub}",
+        )
+    except IntegrityError as exc:
+        raise integrity_error(exc) from exc
+    await audit_async(
+        conn,
+        tenant_id=None,
+        actor=f"user:{claims.sub}",
+        verb="fw_release_publish",
+        obj=f"fw_release:{body.version}",
+        meta={"version": body.version},
+    )
+    return ReleaseOut(**dict(row._mapping))
 
 
 # --- Administración del inventario (T-1.32) ----------------------------------

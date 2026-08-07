@@ -1166,6 +1166,24 @@
 .fleet-sync--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
 .fleet-sync--idle { color: var(--tk-fg-3); }
 
+/* [T-2.69] Versión de firmware del gabinete. Mismos cuatro tonos y el mismo motivo
+   que el chip de sync: "no ha llegado", "no puede llegar" y "llegó hace tres
+   semanas" son hechos distintos, y el chip anterior (`fw s/d` en minúsculas) los
+   pintaba todos igual. Va en el pie de la tarjeta, dentro de .fleet-card__meta,
+   así que hereda su tipografía mono y solo aporta el borde y el tono. */
+.fleet-fw {
+  font-family: var(--tk-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border: 1px solid var(--tk-border);
+  white-space: nowrap;
+}
+.fleet-fw--ok { color: var(--tk-status-normal); border-color: var(--tk-status-normal); }
+.fleet-fw--warn { color: var(--tk-status-warning); border-color: var(--tk-status-warning); }
+.fleet-fw--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.fleet-fw--idle { color: var(--tk-fg-3); }
+
 /* Acciones de administración de la tarjeta (solo con manage_fleet). */
 .fleet-card__admin {
   display: flex;
@@ -2254,6 +2272,31 @@
    El fallo que motiva esto (2026-08-04) fue de SILENCIO, no de ruido: la
    estación llevaba horas latiendo invisible. Aquí el pecado es pasar
    desapercibido, así que el bloque pesa deliberadamente en la pantalla. */
+/* [C3] «No pude leer las ventanas de mantenimiento».
+ *
+ * Ámbar, no rojo: rojo es el fantasma de arriba —una contradicción medida que
+ * exige decisión— y esto es una INCERTIDUMBRE. Pero se pinta con borde y peso
+ * porque la alternativa que había era no pintar nada, y no pintar nada aquí se
+ * lee como «ninguno de estos gabinetes está en mantenimiento». Igual que
+ * `.fleet-ghosts`: no se encoge, porque el pecado de esta pantalla es pasar
+ * desapercibida. */
+.fleet__maintfail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  border: 1px solid var(--tk-status-warning);
+  border-left-width: 4px;
+  border-radius: var(--tk-radius-md);
+  background: var(--tk-surface-1);
+  padding: 8px 14px;
+  font: 700 11px/1.4 var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  color: var(--tk-status-warning);
+}
+
 .fleet-ghosts {
   border: 1px solid var(--tk-status-critical);
   border-left-width: 4px;

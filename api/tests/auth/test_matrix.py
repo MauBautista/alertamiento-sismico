@@ -89,6 +89,8 @@ DENY_ALL = {
     "panic_vote": False,
     "dictamen_read": False,
     "panel_read": False,
+    "maintenance_window": False,
+    "platform_maintenance_window": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -332,3 +334,48 @@ def test_platform_roles_have_no_field_actions() -> None:
     for role in ("takab_superadmin", "takab_support", "soc_operator", "gov_operator"):
         granted = {a for a, ok in allowed_actions(role).items() if ok}
         assert granted.isdisjoint(field_only), (role, granted & field_only)
+
+
+def test_maintenance_window_is_tenant_admin_action_not_a_field_role() -> None:
+    """[T-2.71] Abrir una ventana de mantenimiento silencia las alarmas de on-call
+    de un gabinete. Es un acto ADMINISTRATIVO del tenant — mismo círculo que
+    ``drill_start``, NO el de ``self_test``.
+
+    La diferencia con ``self_test`` es deliberada y hay que poder leerla aquí:
+    ``building_admin`` sí prueba los relés de SU inmueble, pero §2 le da "—" en
+    Flota Edge, así que concederle esta acción pintaría un control en una ruta que
+    no tiene (regla de oro 7). Y lo que se apaga no es un dispositivo del
+    edificio: es el correo que despierta al on-call de TAKAB.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["maintenance_window"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
+    assert can == {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
+    # …y NO es el círculo de self_test: building_admin queda fuera a propósito.
+    assert can != {r for r in RBAC_SECTION_2 if allowed_actions(r)["self_test"]}
+
+
+def test_toda_ventana_de_mantenimiento_se_abre_desde_una_ruta_que_el_rol_tiene() -> None:
+    """Regla de oro 7 medida: el control vive en ``/fleet``. Un rol con la acción
+    y sin la ruta sería un botón invisible o un 403 garantizado."""
+    for role in RBAC_SECTION_2:
+        if allowed_actions(role)["maintenance_window"]:
+            assert FLEET in ROLE_ROUTE_MATRIX[role], role
+
+
+def test_platform_maintenance_window_is_superadmin_only() -> None:
+    """[T-2.71] Las alarmas ``ec2_*`` vigilan la instancia donde corren la API, la
+    DB y los workers de TODOS los clientes. Ningún tenant puede callarlas, ni
+    siquiera un rato: mismo criterio que ``manage_tenants``/``manage_visibility``/
+    ``manage_retire_code``."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["platform_maintenance_window"]}
+    assert can == {"takab_superadmin"}
+    assert can == {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_tenants"]}
+
+
+def test_la_ventana_de_plataforma_es_un_subconjunto_estricto_de_la_de_gabinete() -> None:
+    """Quien puede callar la plataforma puede callar un gabinete, nunca al revés.
+    Si algún día se invirtiera, un tenant_admin apagaría la vigilancia de la infra
+    común desde el mismo botón."""
+    plataforma = {r for r in RBAC_SECTION_2 if allowed_actions(r)["platform_maintenance_window"]}
+    gabinete = {r for r in RBAC_SECTION_2 if allowed_actions(r)["maintenance_window"]}
+    assert plataforma < gabinete

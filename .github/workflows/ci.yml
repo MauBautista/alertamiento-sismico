@@ -211,6 +211,13 @@ jobs:
       # (credenciales falsas, sin red) y por eso el job sigue siendo hermético.
       - name: Test de semántica de alarmas (plan-only, sin AWS)
         run: terraform -chdir=infra/terraform/modules/observability init -backend=false && terraform -chdir=infra/terraform/modules/observability test
+      # [T-2.71] La otra mitad del silenciador de alarmas. Las mute rules son
+      # objetos AWS efímeros creados por API, así que terraform no puede asertar
+      # sobre ELLAS — pero sí sobre el permiso que las hace posibles. Este test
+      # falla si la política IAM concede `PutAlarmMuteRule` sobre alguna de las
+      # tres alarmas intocables (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`).
+      - name: Test del alcance IAM del silenciador (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/database init -backend=false && terraform -chdir=infra/terraform/modules/database test
       # Re-aprovisionar un gabinete NO puede borrarle la configuración. Sin este test
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)

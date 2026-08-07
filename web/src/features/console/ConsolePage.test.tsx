@@ -202,6 +202,8 @@ describe("ConsolePage", () => {
           panic_vote: false,
           roster_read: false,
           siren_silence: false,
+          maintenance_window: false,
+          platform_maintenance_window: false,
         },
       },
     });
@@ -452,6 +454,8 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           panic_vote: false,
           roster_read: false,
           siren_silence: false,
+          maintenance_window: false,
+          platform_maintenance_window: false,
         },
       },
     });

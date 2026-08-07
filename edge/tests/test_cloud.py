@@ -171,6 +171,47 @@ def test_publishes_health_and_ack_payloads(settings, tmp_path):
     assert len(transport.published) == 2
 
 
+def test_el_heartbeat_publica_la_clave_fw_version_aunque_valga_null(settings, tmp_path):
+    """[T-2.69] La clave DEBE viajar aunque no haya versión, con `null` explícito.
+
+    De esa asimetría depende que la nube pueda separar dos hechos que se veían
+    iguales: *«contrato pre-1.6.0, no opina»* (clave ausente ⇒ conserva lo
+    conocido) de *«late y NO SABE qué versión corre»* (null ⇒ la ficha pasa a
+    S/D). Sin la separación, un gabinete al que un `rsync --delete` a medias le
+    borró el `FW_VERSION` dejaba `gateways.fw_version` congelado PARA SIEMPRE y la
+    consola lo pintaba como actual — el defecto que T-2.69 prohíbe.
+
+    La distinción vive en un detalle frágil: `model_dump(mode="json")` **sin**
+    `exclude_none`. Añadir `exclude_none` "por limpieza" mataría la separación EN
+    SILENCIO, sin que nada más se pusiera rojo. Este test es lo único que lo impide.
+    """
+    cloud, transport = _connector(settings, tmp_path)
+    cloud.set_online(True)
+    cloud.publish("takab/health", HealthSnapshot(gateway_id="gw-1", fw_version=None))
+    _topic, message = transport.published[0]
+    assert "fw_version" in message, "exclude_none mataría la distinción ausente/null"
+    assert message["fw_version"] is None
+
+
+def test_el_heartbeat_publica_la_clave_fw_running_aunque_valga_null(settings, tmp_path):
+    """[T-2.70] Lo mismo para el código que el proceso EJECUTA, y por lo mismo.
+
+    `fw_running` hereda entera la disciplina de `fw_version`: la ingesta separa
+    *«contrato ≤1.8.0, no opina»* (clave ausente ⇒ conserva lo conocido) de
+    *«late y NO SABE qué está ejecutando»* (null ⇒ pasa a S/D). Si un
+    `exclude_none` matara ESTA clave, un gabinete que dejó de saber qué corre
+    conservaría para siempre el SHA de la última actualización que sí aplicó — y
+    esa es exactamente la señal con la que se decide si una actualización
+    funcionó. El campo más laxo de los dos decidiría el criterio de éxito.
+    """
+    cloud, transport = _connector(settings, tmp_path)
+    cloud.set_online(True)
+    cloud.publish("takab/health", HealthSnapshot(gateway_id="gw-1", fw_running=None))
+    _topic, message = transport.published[0]
+    assert "fw_running" in message, "exclude_none mataría la distinción ausente/null"
+    assert message["fw_running"] is None
+
+
 def test_ack_success_transition_same_actuation_not_collapsed(settings, tmp_path):
     # fallo→éxito del MISMO (event_id, channel, action) dentro de un episodio es
     # evidencia DISTINTA: colapsarla dejaría al SOC creyendo que el gas quedó

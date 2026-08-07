@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-05)
 
-**Conteo de tareas:** total **196** · `[x]` **140** · `[~]` **2** · `[ ]` **54**
+**Conteo de tareas:** total **197** · `[x]` **141** · `[~]` **4** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4295,32 +4295,404 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 Hoy actualizar un gabinete es **`ssh` + `deploy.sh` a mano**. Con un gabinete es incómodo; con
 veinte es imposible; con veinte y una regresión, es peligroso.
 
-### [ ] T-2.69 · Inventario de versiones de flota — `SOFTWARE`
+### [x] T-2.69 · Inventario de versiones de flota — `SOFTWARE` · COMPLETA (2026-08-07)
 - **Componente:** api + web · **Depende de:** —
 - **Criterios de aceptación:**
   - [ ] La consola dice **qué versión corre cada gabinete**, con edad del dato.
   - [ ] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
   - [ ] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
-### [ ] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE`
+### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · BLOQUEADA por T-2.70.a
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
 - **Criterios de aceptación:**
   - [ ] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
         sirena (regla de oro 4); una ventana de actualización no puede ser una ventana de
-        desprotección.
+        desprotección. **BLOQUEADO: hoy este criterio es VACÍO** — ver la nota de abajo y
+        `T-2.70.a`, que es quien lo desbloquea.
+  - [x] **El criterio de éxito que un canary necesita, y que no existía.** El latido MENTÍA
+        sobre qué código corre: `fw_version()` relee el archivo `FW_VERSION` en cada snapshot
+        y `deploy.sh` lo escribe ANTES de reiniciar, así que el proceso **VIEJO** publicaba la
+        versión **NUEVA** — y para siempre si el restart no ocurría. Cualquier canary colgado
+        de esa señal habría dado VERDE a una actualización no aplicada. Ahora el gabinete
+        congela el SHA **al importar** (`running_version()`), publica los dos, la ingesta
+        persiste `gateways.fw_running` y la nube deriva el estado `SIN REINICIAR`.
   - [ ] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
         vez es un incidente a toda la flota a la vez.
   - [ ] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal").
   - [ ] Comando firmado + nonce + ack (regla de oro 8).
   - [ ] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior.
 
-### [ ] T-2.71 · Ventanas de mantenimiento — `SOFTWARE`
+> **DECISIÓN RATIFICADA (2026-08-07) — separar los procesos.** El criterio 1 no se podía
+> cumplir ni incumplir: `takab-edge.service` declara `Conflicts=takab-gpio.service` porque
+> ambos reclaman los mismos pines BCM, así que **no son procesos independientes, son
+> excluyentes**.
+>
+> **Y separar NO revierte el gate #6: lo IMPLEMENTA.** El gate ratificó (`PLAN-MAESTRO §3`)
+> *«un solo proceso **mínimo**: WR-1 in + relés out + reflejo SASMEX→sirena in-process
+> (<100 ms)»*. Ese proceso **existe y es funcional** —`edge/takab_edge/gpio/__main__.py`, que
+> NO importa `supervisor`/`seedlink`/`signal` (ObsPy/NumPy/SciPy), arranca en <1 s y sostiene
+> el reflejo «aunque el resto del edge no exista»— pero **no es el que corre**. En el Pi corre
+> `takab-edge`, el supervisor de 16 módulos, que instancia su propio `GpioController`
+> (`supervisor.py:178`). O sea: **la sirena la toca hoy el mismo proceso que hace SeedLink,
+> sincronía con la nube, backfill, audio, LoRa y la API local** — contra la regla de oro 4.
+> `deploy/edge/deploy.sh:51` documenta el gate como «supervisor único», cuando su texto dice
+> «proceso mínimo». Esa divergencia entre lo ratificado y lo construido es el defecto.
+>
+> El propio plan maestro ya había tasado el cambio (*«interfaz `Actuator` estable; `gpio`
+> autocontenido; costo = driver/rename»*), pero **el acoplamiento medido es mayor**: cinco
+> módulos reciben `gpio` directamente (`RelayActuator`, `AudioNotifier`, `DrillController` y
+> dos más), más dos observadores `on_sasmex` y el modo prueba. Lo tranquilizador: **el reflejo
+> <100 ms no cruza el IPC** —vive entero dentro de `gpio`—; lo que cruzaría es actuación
+> posterior (gas, ascensor, puertas), lectura de estado para el panel, simulacro y modo prueba.
+> Ninguno está en el camino crítico. Por tamaño y por tocar el camino de vida, va como fase
+> propia: **`T-2.70.a`**.
+
+### [ ] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge (arquitectura de procesos) · **Depende de:** — · **Desbloquea:** T-2.70
+- **`DECISIÓN` RATIFICADA (2026-08-07): separar los procesos.** No es un override del gate #6;
+  es cerrar la brecha entre lo que el gate ratificó y lo que se construyó (ver la nota de
+  T-2.70). Hoy la sirena la toca el supervisor de 16 módulos.
+- **Lo que hay que romper, medido:** cinco módulos reciben `gpio` directamente
+  (`RelayActuator`, `AudioNotifier`, `DrillController` y dos más, `supervisor.py:178-293`),
+  más dos observadores `on_sasmex` (`:321-323`) y el modo prueba (`:428-433`).
+- **Lo que NO cruza el IPC, y por eso esto es viable:** el reflejo SASMEX→sirena vive **entero
+  dentro de `gpio`**. Cruzarían actuación posterior (gas, ascensor, puertas), lectura de estado
+  para el panel, simulacro y modo prueba. **Ninguno está en el camino crítico de <100 ms.**
+- **Criterios de aceptación:**
+  - [ ] `takab-gpio` es el **dueño de los pines** y corre como servicio propio; `takab-edge`
+        deja de instanciar su `GpioController` y le habla por IPC.
+  - [ ] **`takab-gpio.service` gana su `EnvironmentFile`.** Hoy NO lo tiene, así que arrancaría
+        con los **defaults de código, incluido el mapa de pines de `GpioPins`** — energizar el
+        pin equivocado en un gabinete cableado es el peor fallo imaginable de esta tarea.
+  - [ ] Se retira `Conflicts=takab-gpio.service` y **un test demuestra que ya no son
+        excluyentes** (hoy hay uno que exige lo contrario y habrá que invertirlo).
+  - [ ] **La transición no desenergiza los relés.** `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER`
+        (NORMALLY_CLOSED) **reposan energizados**: si el dueño de los pines cambia de proceso,
+        hay que demostrar por test que no existe una ventana en que se suelten.
+  - [ ] **SPOF-02 intacto**: el traspaso hardware→software tras un reinicio con el contacto
+        SOSTENIDO (`_seed_from_held_contact`) sigue funcionando con los procesos separados.
+  - [ ] El reflejo sigue midiendo **<100 ms**, y el test lo MIDE con relés, no lo afirma.
+  - [ ] Reiniciar `takab-edge` **NO detiene la protección** — que es lo que desbloquea T-2.70.
+  - [ ] **`FÍSICO`**: acreditación en el Pi real. Toca el camino de vida; no se cierra con
+        tests en verde.
+- **Nota de secuencia:** el plan maestro tasó este cambio como «driver/rename» porque `gpio` es
+  autocontenido y la interfaz `Actuator` es estable. El acoplamiento medido dice que es más:
+  va como fase, con reconocimiento, diseño del IPC y gate físico.
+
+**Endurecimiento previo del despliegue manual (2026-08-07) — y lo que queda FICHADO aquí.**
+
+La ficha sigue abierta: nada de esto es el canary ni el rollback automático. Lo que se cerró es el
+`deploy.sh` de hoy y sus unidades, porque el criterio 1 se cumple **de forma vacía** (`takab-gpio`
+no corre en producción: `Conflicts=takab-gpio.service`, gate #6 supervisor único — anclado en
+`test_las_dos_unidades_siguen_siendo_mutuamente_excluyentes`), así que lo que se detiene en cada
+despliegue es `takab-edge`, el proceso que toca la sirena.
+
+Cerrado en `edge/tests/test_deploy_artifacts.py` + `edge/tests/test_deploy_sh.py`: la trampa de la
+sección de systemd aplicada a **las seis** directivas y no a una (mover `RestartSteps=` a `[Unit]`
+evapora el backoff ⇒ 3600 ciclos/hora de válvula de gas, y `systemd-analyze verify` sale 0 igual);
+la lectura de la **última** asignación y no la primera; el mensaje de aborto que ofrecía restaurar
+desde una instantánea que en el primer despliegue no existe; y el `journalctl` informativo que
+tumbaba despliegues ya terminados.
+
+FICHADO — refinamientos que NO se persiguieron, cada uno con su razón:
+
+1. **El oráculo de systemd se salta en silencio.**
+   `test_systemd_no_ignora_en_silencio_ninguna_directiva` lleva `skipif` cuando falta
+   `systemd-analyze`. `ubuntu-latest` lo trae hoy, pero el job `edge` **no lo declara** como
+   declara `node --version`. Añadir un paso `systemd-analyze --version` al job (misma familia que
+   los 67 tests del panel que se saltaban anónimos). Sin él queda el respaldo offline
+   (`_SECCION_CANONICA`), que cubre seis directivas y no todas.
+2. **`systemd-analyze verify` sale 1 en cualquier máquina que no sea el Pi**, porque
+   `ExecStart=/opt/takab/edge/.venv/bin/takab-edge` no existe fuera de él. El código de salida no
+   distingue "unidad mal escrita" de "no es la máquina de destino", así que como gate no sirve y el
+   test lee TEXTO (`Ignoring.`). **Verificar las unidades EN EL PI**, donde el `ExecStart` sí
+   existe, es trabajo de `GATE-HW`/G-01.
+3. **`systemctl is-active` a los 3 s no es un canary.** Un proceso que arranca y crashea al
+   segundo 4 se reporta como despliegue exitoso, y con `Restart=always` el gabinete queda ciclando
+   mientras el operador se va del sitio. Es exactamente el criterio 2 de esta ficha; no se
+   improvisa aquí.
+4. **Rollback automático: sigue sin existir.** `edge.prev` es manual, sólo fuente (no revierte el
+   `.venv`) y el despliegue es in-place sobre un venv editable. Lo que lo cierra es el despliegue
+   A/B con symlink descrito en la cabecera de `deploy/edge/deploy.sh` — cambia el arranque del
+   camino de vida y exige acreditación en el Pi real (G-01). Criterios 3 y 5.
+5. **"Gana la última" en bash, generalizado.** `_array_bash()` ya exige asignación única para
+   `EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`; el resto de variables del script (`PY_PREVUELO`,
+   `RAIZ_REMOTA`…) se siguen leyendo con `re.search` = la primera. Con un script de 280 líneas y
+   una asignación por variable es teórico; si el script crece, generalizar el parser.
+6. **`TimeoutStopSec=90` sigue sin medirse en el Pi.** Está declarado y anclado, pero el número
+   salió del default de systemd, no de una medición. Bajarlo exige medir `supervisor.stop()` con
+   los 16 módulos y qué le pasa a los relés ante un `SIGKILL` por timeout (con `gas_valve` y
+   `door_retainer` reposando energizados, un SIGKILL suelta los pines sin pasar por
+   `drive_all_safe()`). `HUMANO-HW`.
+
+### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
 - **Criterios de aceptación:**
-  - [ ] Una ventana de mantenimiento **silencia alarmas de operación, jamás la actuación**.
-  - [ ] La consola lo dice en pantalla mientras dure; nadie debe deducirlo.
-  - [ ] Vencimiento automático: una ventana que se olvida abierta es una alarma apagada para
-        siempre.
+  - [x] **Silencia alarmas de operación, JAMÁS la actuación.** Anclado por test que MIDE
+        relés: cablear una ventana al reflejo pone en rojo dos tests que leen
+        `relay_state(...).energized` de sirena y estrobo, no aserciones.
+  - [x] La consola lo dice mientras dure, **y dice la verdad**: el banner afirmaba
+        «ALARMAS SILENCIADAS» incondicionalmente, incluso con el servidor declarando `0/N` —
+        que es el estado de TODA ventana con el default de producción. Ahora distingue
+        silenciadas todas / algunas / ninguna, y además **silencio MEDIDO de silencio
+        SUPUESTO** (`mute_verified`): un acuse a ciegas se pinta `SIN ACUSE: SE SUPONEN
+        MUDAS, NADIE LO MIDIÓ`, no como un éxito.
+  - [x] **Vencimiento por DOS candados independientes**: predicado SQL que no necesita worker
+        + `Duration` que expira en AWS. Falla hacia «la ventana se cierra».
+- **`[ ]` PENDIENTE — no bloquea el núcleo de seguridad, y por eso la ficha queda `[~]`:**
+  - [ ] **Superficie de APERTURA en la consola.** La API existe y está probada; la web solo
+        LEE y CIERRA. Falta el modal en `/fleet` con motivo obligatorio.
+  - [ ] **`HUMANO-AWS`**: confirmar que `PutAlarmMuteRule` está disponible en `us-east-2` con
+        las credenciales del proyecto **y su coste** (el presupuesto son $50/mes); `terraform
+        apply` de los tres statements IAM; y `TAKAB_API_OPS_MUTING_ENABLED=true` en
+        `deploy.sh`. **Está APAGADO por defecto a propósito**: con él apagado la ventana se
+        registra y declara `0/N SILENCIADAS`, que es honesto.
+  - [ ] **`HUMANO-AWS`**: medir qué pasa cuando la ventana **VENCE SOLA** — forzar `ALARM` con
+        `set-alarm-state`, dejar que expire por `Duration`, y ver si llega el correo. El
+        código asume que NO llega; si se confirma, hay que cerrar la ventana activamente antes
+        de que expire.
+- **Fuga cross-tenant CERRADA, y era peor de lo reportado** (regla de oro 5): la ventana se
+  archivaba bajo el tenant del **operador**, no del gabinete intervenido. No se quedaba en «el
+  dueño no la ve»: con un grant de metadatos (T-1.73), un `tenant_admin` **llegaba a silenciar
+  de verdad las alarmas del edificio de otro cliente**. Anclado con el test cross-tenant que
+  debe fallar.
+- **Una cita inventada sostenía la decisión central.** La elección de la mute rule sobre
+  `actions_enabled=false` se justificaba con una frase **atribuida a la documentación de AWS
+  que no está en la documentación de AWS**. Se borró de los tres sitios y la decisión se
+  re-tomó contra el **modelo de servicio del CLI instalado**, legible sin credenciales: la
+  razón que sí se sostiene es que `Schedule.required == ["Expression","Duration"]`, o sea que
+  **la regla no puede no vencer**. Las citas verdaderas quedan ancladas al modelo por test,
+  para que la siguiente no pueda volver a ser inventada.
+
+**Implementado (2026-08-06) — mecanismo elegido y lo que se REFUTÓ por el camino.**
+
+`POST/GET /maintenance-windows` + `POST /maintenance-windows/{id}/close`. El silencio real lo
+aplica una **CloudWatch alarm mute rule** (`api/src/takab_api/ops/muting.py`), no
+`actions_enabled` ni dejar de publicar la métrica. Apagar la métrica **pagina** en dos de las tres
+alarmas por gabinete (`gateway_offline` está en `breaching`, `ghost_gateways` en `missing` **con**
+`insufficient_data_actions`), o sea lo contrario de lo que se busca.
+
+**La decisión se volvió a tomar (2026-08-07)** porque la razón que la sostenía —«al terminar la
+ventana CloudWatch RE-DISPARA las acciones silenciadas», entrecomillada como cita literal de la
+documentación de AWS— **no está en la documentación de AWS**. Se borró de los tres sitios donde
+estaba escrita. Con lo que sí se puede comprobar sin credenciales (el modelo de servicio del CLI
+instalado, `ops/muting.CLI_SERVICE_MODEL`), la mute rule **sigue ganando**, por otras razones:
+
+1. **`Schedule` declara `required = ["Expression", "Duration"]`**: una mute rule no puede existir
+   sin vencimiento, y lo enforza AWS. `actions_enabled=false` no tiene vencimiento de ninguna
+   clase y aquí no hay worker que lo repare (a propósito). **Es la razón decisiva.**
+2. **`DeleteAlarmMuteRule`**, literal: *«any alarms that are currently being muted by that rule
+   are immediately unmuted. If those alarms are in an ALARM state, their configured actions will
+   trigger. This operation is idempotent.»* Cerrar a mano hace que el correo pendiente SALGA;
+   volver a poner `actions_enabled=true` no promete nada equivalente.
+3. **El permiso se comprueba sobre cada alarma apuntada** (ver abajo), así que IAM queda como
+   segunda línea. La vía `actions_enabled` pasaría por `PutMetricAlarm`, cuyo permiso además deja
+   reescribir umbral, métrica y acciones: radio de daño incomparable para lo mismo.
+
+**El agujero que deja la cita borrada, dicho en voz alta:** qué pasa cuando la ventana **vence
+sola** no está documentado en ninguna parte legible offline. Se trata como que NO re-dispara —las
+acciones de CloudWatch disparan en transición, y esa transición ya ocurrió con la regla activa—,
+así que una ventana dejada expirar puede perder el correo igual que `actions_enabled`. Sigue
+ganando porque el daño está **acotado a 4 h** y la alarma queda visible en ALARM, mientras que
+`actions_enabled=false` no tiene techo. **Consecuencia operativa: cerrar la ventana, no dejarla
+expirar** — es la única vía con re-disparo documentado. Medirlo contra la cuenta real es
+`HUMANO-AWS`.
+
+Qué se puede callar, y qué no (`ALARM_CATALOG`, derivado del Terraform por test):
+
+| Alcance | Alarmas | Rol |
+|---|---|---|
+| Gabinete | `gateway_offline`, `sensor_mute` **del gabinete intervenido** | `maintenance_window` (superadmin/tenant_admin) |
+| Plataforma | `ec2_status`, `ec2_cpu` | `platform_maintenance_window` (**solo** superadmin) |
+| **JAMÁS** | `dlq_depth`, `iot_rule_errors` (instrumento del canary de T-2.70), `ghost_gateways` (vigila al vigilante) | — |
+
+**Tres correcciones al diseño previsto, verificadas de primera mano** en el modelo de servicio del
+CLI 2.35.16 instalado (`.../botocore/data/cloudwatch/2010-08-01/service-2.json`), que se lee sin
+credenciales y sin red — es el archivo del que el propio CLI saca el contrato, no una página que
+lo describe:
+
+1. `Rule.Schedule.Expression` es **OBLIGATORIA** (`required = ["Expression","Duration"]`). No se
+   puede mandar solo `Duration`. Admite `cron(...)` recurrente —que **no expira jamás** sin
+   `ExpireDate`— y `at(yyyy-MM-ddThh:mm)` de una sola vez. Se emite siempre un `at()` derivado del
+   reloj, nunca aceptado de nadie.
+2. `DeleteAlarmMuteRule` **existe** y es idempotente: desilencia en el acto y, si la alarma quedó
+   en ALARM, sus acciones disparan. Por eso el cierre anticipado va por ahí — la dirección segura
+   es que el correo pendiente SALGA.
+3. `cloudwatch:PutAlarmMuteRule` se comprueba *«on two types of resources: the alarm mute rule
+   resource itself, and each alarm that the rule targets»*. Eso convierte a IAM en segunda línea
+   de defensa: las tres intocables no están en la política y AWS denegaría el intento aunque el
+   código fallara (`modules/database/tests/mute_rules_iam.tftest.hcl`).
+
+**La ventana es del edificio INTERVENIDO, no de quien interviene (regla de oro 5).** La fila se
+archivaba bajo `claims.tenant_id`, o sea el del OPERADOR: el dueño del edificio cuyas alarmas
+quedaban mudas **no la veía**, y un tenant ajeno **sí, y podía cerrarla**. Peor: con un grant de
+metadatos (T-1.73) `gateways_read` deja VER inventario ajeno, así que un `tenant_admin` llegaba a
+**silenciar de verdad las alarmas del gabinete de otro cliente**. El arreglo separa *quién opera*
+de *a quién pertenece lo intervenido*: `tenant_id` sale de la fila del gabinete, el operador queda
+en `opened_by` + `meta.operator_*`, y solo un rol interno (`takab_*`) cruza de tenant — que es el
+caso legítimo del soporte que va físicamente al gabinete de un cliente.
+
+**Un éxito parcial ya no se reporta como fracaso total.** Si AWS fallaba DESPUÉS del
+`PutAlarmMuteRule`, las alarmas quedaban MUDAS y la fila declaraba `0/N SILENCIADAS` con
+`mute_rule = NULL`: la consola afirmaba que la vigilancia seguía viva **con la vigilancia
+apagada**, y REABRIR VIGILANCIA era un no-op durante hasta 4 h porque se había perdido el nombre
+de la regla. Ahora, ante la duda, se asume el estado más peligroso —silenciado— y se conserva lo
+necesario para deshacerlo; la columna nueva `mute_verified` (migración `0031`) marca esas cifras
+como SUPUESTAS para que nadie las lea como medidas. Solo se declara `0/N` cuando está medido: sin
+cliente de CloudWatch, cuando AWS **contestó** con un 4xx, o cuando la petición **ni salió de la
+máquina** (ver la reauditoría de abajo). Y si lo que falla es la escritura de la FILA, el silencio
+se DESHACE: alarmas mudas sin registro son peores que una ventana que no se pudo abrir.
+
+**Vencimiento (criterio 3): DOS candados independientes y ningún job.** `active` es un predicado
+SQL (`closed_at IS NULL AND now() < starts_at + duration`), calcado de `drills` —"sin worker de
+cierre"— con `CHECK (duration_s BETWEEN 300 AND 14400)` en el DDL; y AWS expira la mute rule por
+su `Duration`. La pregunta "¿y si el job de vencimiento muere?" se contesta borrando el job. El
+tope de la casa son **4 h**, muy por debajo del P15D de AWS: dentro de la ventana la alarma está
+muda en los TRES estados.
+
+**Criterio 4 medido con RELÉS, no afirmado.** Dos vectores en `edge/tests/test_supervisor.py`: la
+ventana en la config de ARRANQUE (el camino probable — `GpioController` lee `self.settings`, que
+desde T-2.34 se hidrata de una caché firmada en disco) y en la config VIVA de la nube. Los dos
+miden `is_activated` **y** `relay_state(...).energized` de sirena y estrobo.
+
+**PENDIENTE `HUMANO-AWS` antes de confiar en esto en producción:** (a) confirmar que
+`PutAlarmMuteRule` está disponible en us-east-2 con las credenciales del proyecto y su coste (no
+verificable offline; budget $50/mes); (b) `TAKAB_API_OPS_MUTING_ENABLED=true` en
+`deploy/cloud/deploy.sh` — **apagado por defecto**, y con él apagado la ventana se registra pero
+declara `0/N SILENCIADAS`, que es la verdad. (c) La recomendación del reconocimiento sigue en
+pie: correr el canary de T-2.70 **sin ventana** la primera vez. Los umbrales predicen que un
+reinicio de `takab-edge` (segundos) no llega a disparar `sensor_mute` (>120 s) ni
+`gateway_offline` (>10 min); si suenan, el hallazgo no es que falte una ventana — es que la
+actualización está tumbando el camino de detección, y la ventana convertiría esa señal en
+silencio. (d) **Medir qué pasa al VENCER la ventana sola** (la pregunta que dejó abierta la cita
+borrada): forzar una alarma a ALARM con `set-alarm-state` estando la mute rule activa, dejarla
+expirar por `Duration`, y ver si llega correo. Si no llega —que es lo que este código asume—, el
+cierre explícito deja de ser cortesía y pasa a ser obligación de runbook; si llega, se puede
+escribir por fin como hecho medido, con fecha, igual que se hizo con `missing` el 29-jul-2026.
+
+**Reauditoría del 2026-08-07 · la consola pintaba la suposición como medida (lote C).** El
+servidor había ganado `mute_verified` justamente para separar *silenciado medido* de *silenciado
+supuesto*, y `grep -rn mute_verified web/` devolvía **CERO**: el arreglo no llegaba al operador,
+que es quien decide si se fía. Tres cierres en `web/`:
+
+- **El acuse A CIEGAS se pintaba como uno medido.** Cuando el `PutAlarmMuteRule` sale y el
+  `GetAlarmMuteRule` que lo comprueba no se puede leer, el servidor rellena `silenced = requested`
+  **a propósito** (asume el estado peligroso y conserva `mute_rule` para deshacerlo), así que el
+  payload llega con la MISMA forma que un éxito: `2/2`, `missing 0`, regla con nombre. `MuteOutcome`
+  gana el miembro `assumed`, que gana a las cifras: no imprime el molde de lo medido
+  (`N/M ALARMAS SILENCIADAS`) sino `N ALARMAS PEDIDAS · SIN ACUSE: SE SUPONEN MUDAS, NADIE LO MIDIÓ`,
+  y el rótulo CORTO de la tarjeta de flota queda reservado a la afirmación cierta.
+- **`/fleet` se tragaba el fallo de lectura de las ventanas.** Tomaba `useMaintenanceWindows(...)`
+  y usaba solo `items`: con la llamada fallando ninguna tarjeta llevaba rótulo y la pantalla
+  afirmaba en silencio «aquí no hay ninguna ventana abierta» — el cero tranquilizador de T-2.59,
+  reproducido en la pantalla que este mismo lote acababa de tocar. Ahora el `readError` se declara
+  encima de la reja, con `REINTENTAR VENTANAS` propio (el del `StateFrame` reintenta la FLOTA, que
+  no es lo que falló) y distinguiendo «no sé» de «los rótulos son el último dato conocido».
+- **El «guardia de clase» de `maintenance.test.ts` era teatro:** se vendía como exhaustivo e
+  iteraba **cuatro fixtures escritas a mano**, así que `assumed` entró sin que se quejara nadie.
+  Se invirtió la relación —`MUTE_OUTCOMES` es el dato y `MuteOutcome = (typeof MUTE_OUTCOMES)[number]`—
+  y el guardia recorre la lista con tres candados de distinta naturaleza: `Record<MuteOutcome, …>`
+  (lo caza `tsc`, que no bloquea merges), las claves de esa tabla contra la lista **en ejecución**
+  (vitest, que sí bloquea) y una frase propia y no vacía por miembro en las tres funciones.
+  Comprobado con un miembro falso: caen 4 tests y 3 errores de tipo, dos de ellos por los `switch`
+  incompletos.
+- **Y un cuarto de la misma familia, encontrado al cerrar los otros tres y ANCLADO en vez de
+  perseguido:** un `REABRIR VIGILANCIA` que FALLA. El banner ya pintaba el error de la mutación,
+  pero no había nada que lo sujetara —borrar ese `error !== null` no ponía roja ninguna prueba—, y
+  es la dirección más cara de todas: `DeleteAlarmMuteRule` es la única vía con re-disparo
+  documentado, así que un fallo tragado deja al operador convencido de haber devuelto la vigilancia
+  mientras el edificio sigue mudo hasta que la regla expire sola (hasta 4 h). El test comprueba
+  además que la ventana NO desaparece del banner por haber intentado cerrarla.
+
+**Reauditoría del 2026-08-07 · el sistema afirmaba como medido lo que solo suponía (lote B, en
+`api/`).** Los tres primos hermanos que quedaban vivos del mismo defecto, ninguno visible desde el
+lote anterior porque los tres estaban en el otro extremo del ciclo o debajo de la prosa:
+
+- **El CIERRE que no pudo desilenciar se declaraba REABIERTO.** Simétrico exacto del bloqueante de
+  la apertura: `close_window` cerraba la fila (`closed_at = now()`) y **después** intentaba el
+  `DeleteAlarmMuteRule` dentro de un `try/except` que solo dejaba un `logger.warning`. La ventana
+  DESAPARECÍA de la consola —`active` pasa a false— con las alarmas todavía mudas hasta que
+  expirase la `Duration`: hasta **4 h de edificio sin vigilancia y sin nada en pantalla que lo
+  dijera**. Y el `if client is not None` de al lado saltaba el borrado entero, así que una ventana
+  abierta con `ops_muting` encendido y cerrada después de apagarlo reabría la vigilancia **solo en
+  pantalla**. Ahora el cierre es una AFIRMACIÓN que se sostiene o no se escribe
+  (`_reabrir_o_fallar`): borrado OK ⇒ 200; borrado fallido ⇒ **502** y la transacción se revierte,
+  así que la fila sigue abierta **con su `mute_rule`** y REABRIR VIGILANCIA se reintenta (el
+  borrado es idempotente); sin cliente ⇒ **503**. Contrapeso para no crear un registro incerrable:
+  una ventana **ya vencida** se cierra igual —vencida la fila, vencida la regla, porque el `ends_at`
+  y la `Duration` cuentan desde el mismo borde (`mute_start`)—. El rastro va con la afirmación: un
+  cierre fallido **no escribe** `maintenance_window_close` en la bitácora.
+- **Un fallo que se SABE que no silenció se contaba como silencio.** `aws_rechazo_definitivo`
+  discriminaba por `exc.response` —o sea *«¿contestó AWS?»*— y partía el mundo en dos: contestó
+  (4xx ⇒ no hay nada mudo) o no contestó (ambiguo ⇒ ante la duda, se asume mudo). Falta la
+  **tercera familia**: la petición que **ni se envió** (sin credenciales, región/endpoint sin
+  resolver, conexión que no llegó a abrirse, parámetro rechazado por el propio cliente). Ahí no hay
+  duda ninguna, y contarlo como silencio es la inferencia inválida de esta fase **con el signo
+  cambiado** —antes se daba por entregado lo publicado; aquí se daba por silenciado lo que ni
+  salió—: la consola pintaría «vigilancia apagada» con las alarmas sonando, y nadie iría a mirar
+  por qué no llegan correos que sí van a llegar. Nace `AWS_PREVUELO` + `peticion_nunca_salio`, con
+  un criterio de entrada **estrecho y de un solo sentido**: solo el fallo anterior a escribir la
+  petición en el cable. `ConnectionClosedError`, `ReadTimeoutError` y `SSLError` **quedan fuera a
+  propósito** (pudieron ocurrir con la petición ya enviada) y hay un test que impide que alguien
+  los meta «porque también son de red». Los nombres se comparan por FORMA —igual que
+  `exc.response`, para no volverse un `ImportError` el día que falte boto3— y se **anclan contra
+  `botocore.exceptions`**: un nombre inventado no filtraría nada y ese fallo volvería a contarse
+  como silencio, en silencio.
+- **Las citas de AWS no estaban ancladas al modelo de servicio: eran teatro.** El test comparaba el
+  modelo del CLI contra su **propia copia** de la frase, no contra la que el código enseña a quien
+  lo lee. Dos mutaciones lo probaron **en verde**: invertir la cita de `DeleteAlarmMuteRule` dentro
+  de `delete_mute` (*«…will NOT trigger»*) o parafrasear a falso la del permiso IAM dejaba los 82
+  tests pasando. Esta fase **nació de una cita inventada**, así que una cita verdadera sin anclar
+  es la siguiente cita inventada esperando su turno. El ancla tiene ahora **dos eslabones y los dos
+  hacen falta**: (1) toda frase de AWS del código va marcada `*"…"*` y un escáner exige que
+  coincida palabra por palabra con una entrada de `AWS_CITAS` —en los **dos sentidos**: cita en
+  prosa sin declarar = nunca se comprueba; entrada declarada que nadie cita = ancla amarrada a
+  nada—; (2) cada entrada de `AWS_CITAS` se confronta **literal** contra su ruta dentro del
+  `service-2.json` del CLI instalado. Las citas van **sin elipsis** a propósito: una cita recortada
+  por el medio no se puede confrontar por máquina. Comprobado con las dos mutaciones del hallazgo:
+  la de solo-prosa cae por el escáner; la que muta prosa **y** declaración a la vez cae por el
+  modelo de servicio.
+
+**Fichado a propósito, no perseguido** (un punto ciego escrito es un activo; uno perseguido hasta
+el infinito es una sesión que no converge):
+
+1. **`mute_verified` ausente se lee como MEDIDO.** El campo es opcional en el SDK porque tiene
+   default en Pydantic y el servidor lo emite siempre; ausente solo puede venir de una respuesta
+   anterior a la migración `0031`, y aquel servidor no tenía el camino del acuse a ciegas. Es
+   cierto HOY y está **anclado con un test que lo declara** (`maintenance.test.ts`, «un payload SIN
+   el campo se lee como MEDIDO»). Si el servidor pudiera algún día omitirlo sin haber medido, ese
+   test es el que hay que venir a romper.
+2. **El CIERRE se cree el 200 del borrado; la apertura no se cree el del PUT** *(revisado por el
+   lote B: era el punto 2 «el cierre no tiene su `mute_verified`»)*. La asimetría **es deliberada y
+   está en la FORMA de las dos operaciones**, no en la comodidad: el `PutAlarmMuteRule` acepta una
+   LISTA de N nombres y su resultado es parcial por naturaleza —un nombre que no existe no muta
+   nada—, así que «200» y «cuántas quedaron mudas» son dos hechos distintos y el segundo hay que
+   medirlo; el `DeleteAlarmMuteRule` actúa sobre **UN objeto** y no tiene un `N/M` que releer. Lo
+   que sigue sin cubrir: un 200 al borrar que no hubiera surtido efecto cerraría la ventana —la
+   quita de pantalla— con el edificio mudo hasta que expire la `Duration`, que es el mismo daño del
+   cierre tragado por otra puerta. **No se persigue** porque la comprobación exige una segunda
+   llamada a AWS en el camino de cierre y **su** fallo deja la ventana atascada; cuál de los dos
+   riesgos es real se mide en `HUMANO-AWS`, junto al vencimiento de la ventana. Queda **anclado con
+   un test que lo declara y que se pone rojo si alguien añade la relectura sin reescribir la
+   decisión** (`test_muting.test_el_cierre_CONFIA_en_el_200_del_borrado…`), y ese mismo test fija de
+   antemano la forma que tendría el arreglo: `GetAlarmMuteRule` declara `ResourceNotFoundException`
+   en su contrato, así que «la regla ya no está» es consultable y no habrá que inventarlo.
+3. **Si el `audit_async` del cierre falla, la mute rule ya se borró.** La transacción se revierte y
+   `closed_at` vuelve a `NULL`: la consola sigue pintando la ventana como ACTIVA con las alarmas ya
+   sonando. Es la dirección **segura** —dice «muda» de algo que suena, no al revés— y el reintento
+   del cierre es idempotente, así que se ficha en vez de perseguirlo. La dirección peligrosa (rastro
+   escrito con el edificio todavía mudo) sí está cerrada y medida.
+4. **`_cloudwatch()` cachea su propio fracaso** (`lru_cache(maxsize=1)`): si `boto3.client(...)`
+   revienta una vez —credenciales que aún no montaban, por ejemplo—, el proceso devuelve `None`
+   para siempre y **toda** ventana posterior declara `0/N SILENCIADAS`. No miente (ese `0/N` es
+   verdad: no se llamó a nadie) y por eso no es bloqueante, pero convierte un fallo transitorio en
+   permanente hasta el siguiente despliegue. Refinamiento de arranque.
+5. **La tarjeta no dice «no sé» por gabinete** cuando la lectura de ventanas falla: lo dice la
+   página entera, encima de la reja. Por gabinete sería un rótulo en cada tarjeta de la flota para
+   una sola causa, y el ruido tiene su propio coste. Refinamiento.
+6. **`assumed` no se distingue por COLOR**, solo por texto (`.fleet-card__maint` es violeta para
+   los cinco estados; el gancho `data-mute` ya está en el DOM y los tests lo miden). Refinamiento
+   de diseño visual.
 
 ## Fase 2.6 · Backup y DR
 

@@ -164,6 +164,27 @@ ACTIONS: tuple[str, ...] = (
     # El occupant NO lo recibe (§3 da "—"): su superficie es crisis/check-in, no la
     # operación del gabinete. Gatea GET /incidents/{id}/actions en superficie móvil.
     "panel_read",
+    # [T-2.71] Abrir una VENTANA DE MANTENIMIENTO sobre un gabinete: silencia las
+    # alarmas de on-call de ESE aparato mientras dure la intervención. Es un acto
+    # administrativo del tenant (superadmin/tenant_admin), el mismo círculo que
+    # ``drill_start`` — y NO el de ``self_test``, pese a ser mantenimiento.
+    #
+    # La diferencia con ``self_test`` es deliberada: ``building_admin`` sí prueba
+    # los relés de SU inmueble, pero su superficie es MÓVIL y §2 le da "—" en
+    # Flota Edge. Concederle esta acción pintaría un control en una ruta que no
+    # tiene (regla de oro 7). Y lo que se apaga no es un dispositivo del edificio:
+    # es el correo que despierta al on-call de TAKAB.
+    #
+    # ``soc_operator`` DENEGADO por el mismo criterio que ``self_test``: opera
+    # incidentes, no mantenimiento del gabinete. ``gov_operator`` tampoco — lee
+    # evidencia, no apaga vigilancia ajena.
+    "maintenance_window",
+    # [T-2.71] Ventana de PLATAFORMA (alarmas ``ec2_*`` de la instancia de la
+    # nube): SOLO ``takab_superadmin``, mismo criterio que ``manage_tenants`` /
+    # ``manage_visibility`` / ``manage_retire_code``. Esas alarmas no tienen dueño
+    # de cliente: vigilan la infraestructura común de TODOS los tenants, así que
+    # ningún tenant puede callarlas — ni siquiera "solo un rato".
+    "platform_maintenance_window",
 )
 
 
@@ -195,6 +216,8 @@ def _actions(
     panic_vote: bool = False,
     dictamen_read: bool = False,
     panel_read: bool = False,
+    maintenance_window: bool = False,
+    platform_maintenance_window: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -223,6 +246,8 @@ def _actions(
         "panic_vote": panic_vote,
         "dictamen_read": dictamen_read,
         "panel_read": panel_read,
+        "maintenance_window": maintenance_window,
+        "platform_maintenance_window": platform_maintenance_window,
     }
 
 
@@ -247,6 +272,10 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # (check-in/roster/daños/silenciar) NO — exigen presencia con identidad
         # de roster en el inmueble, no "Total" de plataforma.
         enrollment_manage=True,
+        # [T-2.71] Ventanas de mantenimiento: la de gabinete y la de PLATAFORMA.
+        # La segunda solo aquí — apaga la vigilancia de la infra común.
+        maintenance_window=True,
+        platform_maintenance_window=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -261,6 +290,8 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         drill_start=True,
         manage_users=True,
         enrollment_manage=True,
+        # [T-2.71] Su propio gabinete, jamás las alarmas ec2_* de la plataforma.
+        maintenance_window=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.

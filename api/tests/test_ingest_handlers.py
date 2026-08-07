@@ -471,15 +471,40 @@ def test_health_actualiza_la_version_al_desplegar(fleet, ctx, meta) -> None:
     assert _fw(fleet) == "86ea606"
 
 
-def test_health_sin_version_no_pisa_la_conocida(fleet, ctx, meta) -> None:
-    """«No sé» JAMÁS borra un dato bueno. Un gabinete con un deploy a medias, o uno
-    viejo con contrato 1.5.0, no puede dejar la ficha de la flota en blanco
-    (regla de oro 7: mejor un dato ausente que uno degradado sin avisar)."""
+def test_health_sin_la_clave_no_pisa_la_conocida(fleet, ctx, meta) -> None:
+    """CLAVE AUSENTE = «no opino» (contrato pre-1.6.0, que ni siquiera conoce el
+    campo). Un edge que no sabe hablar de versiones no puede dejar en blanco la
+    ficha de la flota — eso sería castigar a la nube por la vejez del gabinete.
+
+    [T-2.69] Este test y el siguiente eran UNO SOLO, y su docstring justificaba a
+    la vez «contrato viejo» y «deploy sin marcar» — dos hechos que el código no
+    sabía separar. Se parten a propósito: las expectativas son OPUESTAS.
+    """
     assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
-    payload = _health()  # sin la clave: contrato viejo o deploy sin marcar
+    payload = _health()  # sin la clave: contrato viejo
     payload["captured_at"] = "2026-07-06T10:02:03+00:00"
     assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
     assert _fw(fleet) == "737dd73"
+
+
+def test_health_con_null_explicito_la_version_pasa_a_sin_dato(fleet, ctx, meta) -> None:
+    """NULL EXPLÍCITO = «late y declara que NO SABE qué versión corre».
+
+    Es un HECHO NUEVO, no un silencio: pasa cuando un ``rsync --delete`` a medias,
+    un reaprovisionamiento o un archivo ilegible se lleva el ``FW_VERSION`` del
+    gabinete. Conservar el valor viejo dejaba `gateways.fw_version` congelado PARA
+    SIEMPRE y la consola lo pintaba como actual — exactamente lo que el criterio 3
+    de T-2.69 prohíbe por escrito.
+
+    Se puede distinguir porque el edge publica con ``model_dump(mode='json')`` SIN
+    ``exclude_none``: la clave viaja con ``null``. Lo protege
+    ``edge/tests/test_cloud.py::test_el_heartbeat_publica_la_clave_fw_version_aunque_valga_null``.
+    """
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health(fw_version=None)  # la clave ESTÁ, y vale null
+    payload["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) is None
 
 
 def test_health_version_absurda_se_rechaza_sin_tumbar_la_ingesta(fleet, ctx, meta) -> None:
@@ -488,6 +513,16 @@ def test_health_version_absurda_se_rechaza_sin_tumbar_la_ingesta(fleet, ctx, met
     assert handle_health_snapshot(fleet, _health(fw_version="x" * 200), meta, ctx).is_ok
     assert _fw(fleet) is None
     assert _count(fleet, "SELECT count(*) FROM device_health") == 1
+
+
+def test_health_version_absurda_tampoco_borra_la_conocida(fleet, ctx, meta) -> None:
+    """Basura ≠ «no sé». Un payload manipulado no puede BORRAR la versión buena de
+    la ficha: eso convertiría el vandalismo en un botón de S/D remoto."""
+    assert handle_health_snapshot(fleet, _health(fw_version="737dd73"), meta, ctx).is_ok
+    payload = _health(fw_version="x" * 200)
+    payload["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "737dd73"
 
 
 def test_health_gateway_mismatch_rejected_and_audited(fleet, ctx, meta) -> None:
@@ -844,3 +879,67 @@ def test_ack_kind_map_covers_all_channel_action_pairs() -> None:
     channels = {"siren", "strobe", "gas_valve", "elevator", "door_retainer"}
     actions = {"activate", "deactivate"}
     assert set(ACK_KIND) == {(c, a) for c in channels for a in actions}
+
+
+# --------------------------------------------------------------------------
+# [T-2.70] `fw_running`: qué código EJECUTA el gabinete, junto al que TIENE en
+# disco. Misma disciplina que `fw_version` (ausente != null != basura), porque
+# el hecho que separa a los dos campos es justo el que delata un despliegue a
+# medias y no puede depender de un default benigno.
+# --------------------------------------------------------------------------
+
+
+def _fw_run(fleet) -> str | None:
+    return fleet.execute("SELECT fw_running FROM gateways WHERE gateway_id = %s", (GW,)).fetchone()[
+        0
+    ]
+
+
+def test_health_persiste_por_separado_el_codigo_del_disco_y_el_que_corre(fleet, ctx, meta) -> None:
+    """El caso que hasta hoy era INDETECTABLE: `deploy.sh` escribió el código
+    nuevo y el reinicio no ocurrió. El gabinete late declarando las dos cosas y
+    la nube las guarda SIN fundirlas."""
+    payload = _health(fw_version="bbbbbbb")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    assert _fw(fleet) == "bbbbbbb", "el disco"
+    assert _fw_run(fleet) == "aaaaaaa", "el proceso"
+
+
+def test_health_sin_la_clave_fw_running_no_pisa_la_conocida(fleet, ctx, meta) -> None:
+    """Contrato pre-1.9.0: un edge que no sabe hablar de «qué corre» no opina, y
+    su silencio no puede borrar lo que ya se sabía."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    viejo = _health(fw_version="aaaaaaa")  # sin la clave fw_running
+    viejo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, viejo, meta, ctx).is_ok
+    assert _fw_run(fleet) == "aaaaaaa"
+
+
+def test_health_con_null_explicito_el_codigo_que_corre_pasa_a_sin_dato(fleet, ctx, meta) -> None:
+    """NULL EXPLÍCITO = «late y NO SABE qué está ejecutando». Hecho nuevo, no
+    silencio: conservar el valor viejo daría por aplicada una actualización sobre
+    un gabinete que ya no puede confirmarla."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    nuevo = _health(fw_version="aaaaaaa")
+    nuevo["fw_running"] = None  # la clave ESTÁ, y vale null
+    nuevo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, nuevo, meta, ctx).is_ok
+    assert _fw_run(fleet) is None
+
+
+def test_health_fw_running_absurdo_no_borra_lo_conocido(fleet, ctx, meta) -> None:
+    """Basura ≠ «no sé»: un payload manipulado no convierte el vandalismo en un
+    botón remoto de S/D sobre el criterio de éxito de una actualización."""
+    payload = _health(fw_version="aaaaaaa")
+    payload["fw_running"] = "aaaaaaa"
+    assert handle_health_snapshot(fleet, payload, meta, ctx).is_ok
+    malo = _health(fw_version="aaaaaaa")
+    malo["fw_running"] = "x" * 200
+    malo["captured_at"] = "2026-07-06T10:02:03+00:00"
+    assert handle_health_snapshot(fleet, malo, meta, ctx).is_ok
+    assert _fw_run(fleet) == "aaaaaaa"

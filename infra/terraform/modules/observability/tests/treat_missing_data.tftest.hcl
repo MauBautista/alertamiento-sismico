@@ -302,3 +302,96 @@ run "ghost_gateways_no_miente_cuando_no_sabe" {
     error_message = "ghost_gateways debe mandar sus TRES estados al topic de on-call (aws_sns_topic.ops_alerts): con un destino equivocado la alarma queda verde y muda para quien esta de guardia."
   }
 }
+
+# --- [T-2.71] Por que NINGUNA alarma cambia aqui al llegar las ventanas -------
+#
+# T-2.71 anade la posibilidad de SILENCIAR alarmas durante un mantenimiento. La
+# tentacion obvia era implementarlo aqui —"que la alarma no dispare mientras
+# tanto"— y esta medido que las tres formas de hacerlo desde este archivo son
+# peores que no hacer nada:
+#
+#   (a) Dejar de publicar la metrica. NO silencia: PAGINA. `gateway_offline`
+#       esta en `breaching`, asi que el silencio de `Takab/Sensor/<gw>` ES la
+#       condicion de alarma — 10 min y correo. Y `ghost_gateways` esta en
+#       `missing` CON `insufficient_data_actions`, asi que su silencio tambien
+#       manda correo. De las tres alarmas por gabinete, apagar la metrica pagina
+#       en DOS y calla UNA. Exactamente al reves de lo que se pretende.
+#
+#   (b) `actions_enabled = false`. Deja la alarma apagada SIN FECHA DE CADUCIDAD.
+#       Es un atributo gestionado por terraform (apagarlo por API es drift que el
+#       siguiente apply revierte, o que nadie revierte), y nada en el sistema la
+#       vuelve a encender: aqui no hay worker de cierre, a proposito.
+#
+#   (c) Cambiar `treat_missing_data` "solo mientras dure". No existe tal cosa: es
+#       configuracion permanente del recurso, y ya fallo de cuatro maneras.
+#
+# LA SOLUCION VIVE FUERA DE TERRAFORM: una alarm mute rule creada por API
+# (api/src/takab_api/ops/muting.py). Las razones, todas comprobables SIN
+# credenciales en el modelo de servicio que trae el CLI instalado
+# (.../botocore/data/cloudwatch/2010-08-01/service-2.json — ver
+# `ops/muting.CLI_SERVICE_MODEL`):
+#
+#   1. `Schedule` declara `required = ["Expression", "Duration"]`. Una mute rule
+#      NO PUEDE existir sin vencimiento; `actions_enabled = false` no tiene
+#      ninguno. Esa asimetria es la razon decisiva.
+#   2. `DeleteAlarmMuteRule`, literal: "any alarms that are currently being muted
+#      by that rule are immediately unmuted. If those alarms are in an ALARM
+#      state, their configured actions will trigger. This operation is
+#      idempotent." Cerrar la ventana a mano hace que el correo pendiente SALGA.
+#   3. `PutAlarmMuteRule` exige el permiso "on two types of resources: the alarm
+#      mute rule resource itself, and each alarm that the rule targets" — o sea
+#      que IAM vigila CADA objetivo. La via `actions_enabled` pasaria por
+#      `PutMetricAlarm`, cuyo permiso ademas deja reescribir umbral, metrica y
+#      acciones: radio de dano incomparable para lo mismo.
+#
+# LO QUE NO SE PUEDE AFIRMAR, y aqui se decia como si fuera cita textual de AWS:
+# que al VENCER sola la ventana CloudWatch re-dispare las acciones silenciadas.
+# Esa frase no esta en el modelo de servicio ni en ninguna doc legible offline —
+# lo unico documentado es el re-disparo al BORRAR la regla (punto 2). Asi que se
+# trata como que NO ocurre: una ventana que se deja expirar puede dejar una
+# alarma en ALARM sin correo, igual que (b), con dos diferencias que siguen
+# haciendo ganar a la mute rule: el dano esta acotado a la Duration (tope de la
+# casa: 4 h) y la alarma sigue visible en ALARM. Consecuencia operativa: CERRAR
+# la ventana, no dejarla expirar. Medirlo contra la cuenta real es HUMANO-AWS.
+#
+# COSTE HONESTO de esa decision: las mute rules son objetos efimeros creados por
+# API, NO gestionados por terraform, asi que este archivo no puede asertar nada
+# sobre ellas. La red de seguridad se reparte en dos sitios y conviene saber
+# donde mirar:
+#   - `infra/terraform/modules/database/tests/mute_rules_iam.tftest.hcl` — que la
+#     politica IAM NO conceda PutAlarmMuteRule sobre las tres intocables
+#     (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`). Es la unica mitad que
+#     terraform puede blindar, y se apoya en el punto 3 de arriba.
+#   - `api/tests/ops/test_muting.py` — que el catalogo de lo silenciable se
+#     DERIVE de este mismo archivo: una alarma nueva aqui sin clasificar alli
+#     pone ese test en rojo. Por eso anadir una alarma a este modulo obliga a
+#     decidir si se puede callar; el default seguro es NUNCA.
+#
+# La asercion de abajo fija lo unico que este archivo puede fijar: que las cuatro
+# silenciables NO tocaron su `treat_missing_data` para "ayudar" al silenciador.
+run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
+  command = plan
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.sensor_mute["gw-test-0001"].treat_missing_data == "notBreaching"
+      && aws_cloudwatch_metric_alarm.ec2_status.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.ghost_gateways.treat_missing_data == "missing"
+    )
+    error_message = "Alguna alarma cambio su treat_missing_data. Si el motivo fue 'para que no moleste durante un mantenimiento', la respuesta es NO: eso la debilita para siempre. El silencio acotado lo da una alarm mute rule (api/src/takab_api/ops/muting.py), que no puede existir sin Duration y que al BORRARLA desilencia en el acto disparando lo que quedara en ALARM."
+  }
+
+  # Y que las alarmas por gabinete siguen llamandose como el catalogo del API
+  # cree. El nombre ES la frontera: si divergen, la ventana pide silenciar algo
+  # que no existe (ruidoso pero seguro) y —peor— el guardia de intocables deja de
+  # reconocerlas. `test_el_catalogo_conoce_los_nombres_reales_del_terraform`
+  # vigila el otro extremo del mismo cable.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.gateway_offline["gw-test-0001"].alarm_name == "takab-dev-gateway-offline-gw-test-0001"
+      && aws_cloudwatch_metric_alarm.sensor_mute["gw-test-0001"].alarm_name == "takab-dev-sensor-mudo-gw-test-0001"
+    )
+    error_message = "Cambio el nombre de una alarma silenciable: ALARM_CATALOG (api/src/takab_api/ops/muting.py) quedaria huerfano y la ventana silenciaria un nombre inexistente."
+  }
+}

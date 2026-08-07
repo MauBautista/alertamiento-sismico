@@ -339,18 +339,59 @@ UPDATE gateways SET fw_version = %s
 WHERE gateway_id = %s AND fw_version IS DISTINCT FROM %s
 """
 
+#: [T-2.70] Idem para el codigo que el proceso EJECUTA. Columna aparte porque son
+#: dos hechos distintos: fundirlos hacia indetectable el despliegue a medias.
+_FW_RUNNING_SQL = """
+UPDATE gateways SET fw_running = %s
+WHERE gateway_id = %s AND fw_running IS DISTINCT FROM %s
+"""
+
 #: Un SHA corto o una etiqueta. La ingesta NO confia en el dispositivo: un payload
 #: manipulado no puede escribir un parrafo en la ficha de la flota.
 _FW_VERSION_MAX_LEN = 64
 
 
-def _fw_version(payload: dict) -> str | None:
-    """Version declarada por el gabinete, o None si no la declara o es absurda."""
-    crudo = payload.get("fw_version")
+def _fw_field(payload: dict, key: str = "fw_version") -> tuple[bool, str | None]:
+    """(¿el gabinete OPINA sobre este campo de versión?, valor).
+
+    [T-2.70] Sirve a los DOS campos de versión del latido —``fw_version`` (qué
+    código hay en el disco) y ``fw_running`` (cuál ejecuta el proceso)— porque la
+    disciplina ausente/null/basura tiene que ser LA MISMA en ambos. Si difiriera,
+    el campo más laxo decidiría el criterio de éxito de una actualización.
+
+    [T-2.69] Antes esto devolvía un solo ``None`` y con él colapsaba DOS hechos
+    incompatibles:
+
+    · **La clave NO viene** — contrato pre-1.6.0. El gabinete no sabe hablar de
+      versiones; no opina, y lo conocido se conserva.
+    · **La clave viene con ``null``** — contrato 1.6.0 diciendo *«late y NO SABE
+      qué versión corre»* (``FW_VERSION`` borrado por un ``rsync --delete`` a
+      medias, un reaprovisionamiento, un archivo ilegible). **Eso SÍ es un hecho
+      nuevo**: la ficha pasa a S/D. Conservar el valor viejo lo congelaba para
+      siempre y la consola lo pintaba como actual — el defecto que T-2.69
+      prohíbe (regla de oro 7: un dato de hace tres semanas no es "lo que corre").
+
+    La distinción es posible porque ``edge/takab_edge/cloud`` publica con
+    ``model_dump(mode="json")`` **sin** ``exclude_none``, así que el ``null``
+    explícito llega al cable. Si alguien añadiera ``exclude_none`` "por limpieza",
+    esta separación moriría EN SILENCIO — por eso hay un test del lado del edge
+    que afirma que la clave viaja aunque valga null.
+
+    Basura (tipo raro, cadena vacía, 200 caracteres) NO opina: un payload
+    manipulado no puede escribir un párrafo en la ficha **ni borrar** la versión
+    buena — eso convertiría el vandalismo en un botón de S/D remoto.
+    """
+    if key not in payload:
+        return (False, None)
+    crudo = payload[key]
+    if crudo is None:
+        return (True, None)
     if not isinstance(crudo, str):
-        return None
+        return (False, None)
     version = crudo.strip()
-    return version if version and len(version) <= _FW_VERSION_MAX_LEN else None
+    if not version or len(version) > _FW_VERSION_MAX_LEN:
+        return (False, None)
+    return (True, version)
 
 
 def handle_health_snapshot(
@@ -404,9 +445,22 @@ def handle_health_snapshot(
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se
     # llenaba a mano y se quedaba obsoleta en silencio en el siguiente despliegue.
-    # Un None NO pisa lo conocido: «no se» jamas borra un dato bueno (regla de oro 7).
-    if (version := _fw_version(payload)) is not None:
+    # [T-2.69] Se escribe SOLO cuando el gabinete opina — y entonces se escribe lo
+    # que diga, incluido el NULL de «no se que version corro». `IS DISTINCT FROM`
+    # sigue haciendo que esto no toque la fila en el 99.99% de los latidos, y
+    # tambien cubre la transicion a NULL (regla de oro 10: por transicion, no por
+    # intervalo). Ver `_fw_version` para por que ausencia != null.
+    opina, version = _fw_field(payload, "fw_version")
+    if opina:
         conn.execute(_FW_VERSION_SQL, (version, ctx.gateway_id, version))
+    # [T-2.70] Y el codigo que el proceso EJECUTA, en su propia columna. Cuando
+    # difiere del de arriba hay codigo escrito que nadie corre: un despliegue a
+    # medias. Ese es el unico criterio honesto de "la actualizacion se aplico" —
+    # el ack del comando solo dice que la orden llego (llega ANTES de reiniciar,
+    # y tras el reinicio el nonce ya no existe para re-ackear).
+    opina, corriendo = _fw_field(payload, "fw_running")
+    if opina:
+        conn.execute(_FW_RUNNING_SQL, (corriendo, ctx.gateway_id, corriendo))
     return OK
 
 

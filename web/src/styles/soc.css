@@ -1731,3 +1731,47 @@ body {
     overflow-y: auto;
   }
 }
+
+/* [T-2.71] Ventana de mantenimiento: VIOLETA, y visible incluso bajo alerta.
+   ==========================================================================
+   El violeta no es decorativo: es el mismo color que el `banner-wr1` del panel
+   LAN, que declara "MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS". Los dos
+   dicen lo mismo con vocabularios distintos — algo se está callando hacia
+   fuera — y por eso comparten señal. Ámbar es el simulacro (suena en los
+   edificios) y cian es la agenda; ninguno de los dos es esto.
+
+   A diferencia del simulacro, este banner NO se degrada a badge con un
+   incidente vivo: el momento en que más falta hace saber que la alarma de un
+   gabinete no va a sonar es justo el sismo. `data-live` queda en el DOM para
+   que el e2e pueda medirlo. */
+.soc-maint {
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid var(--tk-violet, #a78bfa);
+  color: var(--tk-violet, #a78bfa);
+  flex-wrap: wrap;
+}
+.soc-maint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Badge ADITIVO de la tarjeta de flota. NUNCA sustituye a la pill de
+   `derived_state`: el gabinete en mantenimiento sigue diciendo SIN ENLACE y
+   ADEMÁS lleva esto. Sustituirlo reproduciría el cero tranquilizador que cerró
+   T-2.59 — un estado neutro que nadie comprobó. */
+.fleet-card__maint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid var(--tk-violet, #a78bfa);
+  color: var(--tk-violet, #a78bfa);
+  font-size: var(--tk-text-2xs, 10px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}

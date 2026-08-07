@@ -68,3 +68,14 @@ variable "notify_ses_identity_arns" {
   type    = list(string)
   default = []
 }
+
+# [T-2.71] Prefijo de entorno de los nombres de alarma de CloudWatch. El modulo
+# `observability` los escribe hardcodeados como `takab-dev-...`; aqui es una
+# variable porque estos ARN son la FRONTERA de qué se puede silenciar, y una
+# frontera que no se puede parametrizar acaba copiándose mal al siguiente
+# entorno. Default `dev` para que el env actual no cambie de comportamiento.
+variable "env" {
+  description = "Entorno (prefijo de los nombres de alarma: takab-<env>-...)."
+  type        = string
+  default     = "dev"
+}

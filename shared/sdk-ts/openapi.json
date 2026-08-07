@@ -2744,18 +2744,6 @@
           "equipment": {
             "$ref": "#/components/schemas/EquipmentProfile"
           },
-          "fw_version": {
-            "anyOf": [
-              {
-                "maxLength": 32,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fw Version"
-          },
           "has_wr1": {
             "default": true,
             "title": "Has Wr1",
@@ -2900,6 +2888,17 @@
           "equipment": {
             "$ref": "#/components/schemas/EquipmentProfile"
           },
+          "fw_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Running"
+          },
           "fw_version": {
             "anyOf": [
               {
@@ -2993,6 +2992,28 @@
             ],
             "title": "Power Status"
           },
+          "release_age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Age S"
+          },
+          "releases_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releases Behind"
+          },
           "retired_at": {
             "anyOf": [
               {
@@ -3054,6 +3075,22 @@
           },
           "status": {
             "title": "Status",
+            "type": "string"
+          },
+          "version_age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Age S"
+          },
+          "version_state": {
+            "default": "SIN REPORTAR",
+            "title": "Version State",
             "type": "string"
           }
         },
@@ -3182,7 +3219,7 @@
       },
       "GatewayUpdate": {
         "additionalProperties": false,
-        "description": "Edición de gabinete. ``status`` no aparece a propósito.\n\n``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y\n``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera \"online\"\nharía que la Flota Edge mintiera sobre un gabinete muerto.",
+        "description": "Edición de gabinete. ``status`` y ``fw_version`` no aparecen a propósito.\n\n``online``/``degraded``/``offline`` los deriva el heartbeat, no el operador; y\n``retired`` se alcanza por ``DELETE``. Dejar que un formulario escribiera \"online\"\nharía que la Flota Edge mintiera sobre un gabinete muerto.\n\n[T-2.69] ``fw_version`` sale por la misma razón, y era el caso más grave. Este\nPUT es de REEMPLAZO TOTAL y la consola reenviaba el campo prellenado con CADA\nedición, así que cualquier operador podía anotar —o borrar— una versión que el\ngabinete nunca corrió. En un gabinete vivo el siguiente latido lo corregía en\n≤60 s; en uno SIN ENLACE la mentira era PERMANENTE, y es justo ese sobre el que\nmás importa saber la verdad. La versión la declara el aparato en cada latido\n(T-1.74) y ese es su ÚNICO escritor. ``extra='forbid'`` ⇒ un cliente viejo que\nlo mande recibe 422, no un silencio.",
         "properties": {
           "base_row_version": {
             "anyOf": [
@@ -3197,18 +3234,6 @@
           },
           "equipment": {
             "$ref": "#/components/schemas/EquipmentProfile"
-          },
-          "fw_version": {
-            "anyOf": [
-              {
-                "maxLength": 32,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fw Version"
           },
           "has_wr1": {
             "default": true,
@@ -3778,6 +3803,237 @@
         "title": "LonLat",
         "type": "object"
       },
+      "MaintenanceWindowIn": {
+        "additionalProperties": false,
+        "description": "Apertura. ``scope='platform'`` no lleva ``gateway_id`` (no tiene dueño).",
+        "properties": {
+          "duration_s": {
+            "default": 1800,
+            "maximum": 14400.0,
+            "minimum": 300.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "gateway_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Id"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Reason",
+            "type": "string"
+          },
+          "scope": {
+            "default": "gateway",
+            "enum": [
+              "gateway",
+              "platform"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "MaintenanceWindowIn",
+        "type": "object"
+      },
+      "MaintenanceWindowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceWindowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MaintenanceWindowList",
+        "type": "object"
+      },
+      "MaintenanceWindowOut": {
+        "description": "Lo que la consola pinta. Los cuatro números del acuse van SEPARADOS.\n\n``requested``/``silenced``/``missing`` no se colapsan en un solo \"ok\": una\nventana que creyó silenciar 3 alarmas y solo silenció 1 tiene que poder\ndecirlo (mismo criterio que ``drill_sites.commandable``, T-2.48).",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "alarm_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alarm Names",
+            "type": "array"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "gateway_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Id"
+          },
+          "gateway_serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Serial"
+          },
+          "missing": {
+            "description": "Pedidas que NO quedaron mudas. Sale en el JSON a propósito: si la\nconsola tuviera que restar, cada pantalla podría restar distinto.",
+            "readOnly": true,
+            "title": "Missing",
+            "type": "integer"
+          },
+          "missing_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Names",
+            "type": "array"
+          },
+          "mute_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mute Rule"
+          },
+          "mute_verified": {
+            "default": true,
+            "title": "Mute Verified",
+            "type": "boolean"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "opened_by": {
+            "format": "uuid",
+            "title": "Opened By",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "silenced": {
+            "title": "Silenced",
+            "type": "integer"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "window_id": {
+            "format": "uuid",
+            "title": "Window Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_id",
+          "tenant_id",
+          "gateway_id",
+          "scope",
+          "opened_by",
+          "reason",
+          "duration_s",
+          "opened_at",
+          "starts_at",
+          "ends_at",
+          "closed_at",
+          "active",
+          "alarm_names",
+          "requested",
+          "silenced",
+          "mute_rule",
+          "missing"
+        ],
+        "title": "MaintenanceWindowOut",
+        "type": "object"
+      },
       "MapEpicenter": {
         "description": "Dónde se ORIGINÓ el sismo. No es ningún edificio.\n\nSale de ``seismic_events.epicenter``: catálogo SSN/USGS, motor de quórum o\nreubicación manual del operador. Un incidente puede no tener evento asociado\n(una alerta SASMEX sola no dice dónde fue), y un evento puede no tener\nepicentro conocido: en ambos casos NO aparece aquí y el mapa lo DECLARA en\nvez de inventar un punto.",
         "properties": {
@@ -4117,6 +4373,10 @@
             "title": "Generate Report",
             "type": "boolean"
           },
+          "maintenance_window": {
+            "title": "Maintenance Window",
+            "type": "boolean"
+          },
           "manage_fleet": {
             "title": "Manage Fleet",
             "type": "boolean"
@@ -4147,6 +4407,10 @@
           },
           "panic_vote": {
             "title": "Panic Vote",
+            "type": "boolean"
+          },
+          "platform_maintenance_window": {
+            "title": "Platform Maintenance Window",
             "type": "boolean"
           },
           "read_audit": {
@@ -4208,7 +4472,9 @@
           "enrollment_manage",
           "panic_vote",
           "dictamen_read",
-          "panel_read"
+          "panel_read",
+          "maintenance_window",
+          "platform_maintenance_window"
         ],
         "title": "MeActions",
         "type": "object"
@@ -5258,6 +5524,106 @@
           }
         },
         "title": "ReadyFrame",
+        "type": "object"
+      },
+      "ReleaseCreate": {
+        "additionalProperties": false,
+        "description": "Publicar un release en el registro (``POST /fleet/releases``).\n\n``version`` es el valor que ``deploy/edge/deploy.sh`` escribirá en el\n``FW_VERSION`` del gabinete, y la comparación con lo que el aparato declara es\npor IGUALDAD EXACTA. Se recorta el espacio en blanco por la MISMA razón por la\nque lo recortan las dos puntas del otro camino —``edge/takab_edge/version.py``\nal leer el archivo y ``ingest/handlers.py`` al recibir el latido—: si aquí no\nse recortara, un ``\"62f3f1e \"` pegado desde una terminal quedaría en el\nregistro para siempre (la tabla no admite UPDATE) sin poder coincidir JAMÁS\ncon ningún gabinete, y toda la flota que corriera ese código saldría\n``DESCONOCIDA``. Dos normalizaciones que no coinciden son un fallo silencioso;\nel ``max_length`` también es el mismo (64) que el de la ingesta.\n\n``released_at`` se puede fijar para dar de alta releases ya desplegados sin\nfalsear su antigüedad (corregirla después sería imposible).",
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "ReleaseCreate",
+        "type": "object"
+      },
+      "ReleaseOut": {
+        "description": "Un release del registro de plataforma (``GET /fleet/releases``).",
+        "properties": {
+          "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age S"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "published_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "released_at": {
+            "format": "date-time",
+            "title": "Released At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "version",
+          "released_at"
+        ],
+        "title": "ReleaseOut",
         "type": "object"
       },
       "ReportOut": {
@@ -8731,6 +9097,66 @@
         "summary": "Fleet Health History"
       }
     },
+    "/fleet/releases": {
+      "get": {
+        "description": "Releases publicados, MÁS NUEVO PRIMERO.\n\nEs la referencia contra la que ``GET /fleet/gateways`` deriva ``version_state``\ny ``releases_behind``. Vacío es un estado legítimo —una plataforma que aún no\nha publicado nada— y la flota entera sale ``SIN REFERENCIA``: se sabe qué corre\ncada gabinete, no si eso es lo actual.",
+        "operationId": "list_releases_fleet_releases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReleaseOut"
+                  },
+                  "title": "Response List Releases Fleet Releases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Releases"
+      },
+      "post": {
+        "description": "Registra un release de firmware. Solo el dueño de la plataforma.\n\n``version`` debe ser el valor EXACTO que ``deploy/edge/deploy.sh`` escribirá en\nel ``FW_VERSION`` del gabinete: la comparación con lo que declara el aparato es\npor IGUALDAD, así que un espacio de más aquí volvería ``DESCONOCIDA`` a toda la\nflota que corra ese código.\n\nRepublicar la misma versión da 409: la tabla no admite UPDATE (append-only por\nprivilegio) porque reescribir la fecha de un release reescribiría a posteriori\nla deriva de toda la flota.",
+        "operationId": "publish_release_fleet_releases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Release"
+      }
+    },
     "/gateways/{gateway_id}/catalog": {
       "post": {
         "description": "Firma y publica la instantánea SSN a ``takab/catalog/<thing>`` (T-2.24).\n\nVersión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza\ntoda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503\n(fail-closed, jamás se firma con una compartida). La periodicidad es una\nllamada programada a este endpoint; el contrato de ``GET /api/catalog`` en\nel panel no cambia.",
@@ -9842,6 +10268,143 @@
           }
         },
         "summary": "Incident Roster"
+      }
+    },
+    "/maintenance-windows": {
+      "get": {
+        "description": "Ventanas visibles para el llamante (la RLS acota; plataforma solo interno).",
+        "operationId": "list_windows_maintenance_windows_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Active",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceWindowList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Windows",
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "post": {
+        "operationId": "open_window_maintenance_windows_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceWindowIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceWindowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Window",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/maintenance-windows/{window_id}/close": {
+      "post": {
+        "description": "Cierre ANTICIPADO: reabre la vigilancia, y es la ÚNICA vía que lo garantiza.\n\n``DeleteAlarmMuteRule`` desilencia en el acto y, si alguna alarma quedó en\nALARM, sus acciones disparan — literal en el modelo de servicio del CLI\n(``ops/muting.CLI_SERVICE_MODEL``). Lo que **no** dice ninguna documentación\nlegible offline es que eso pase cuando la ventana expira sola, así que cerrar\na mano no es solo cortesía: es el camino con re-disparo documentado.\n\nQuién puede cerrar lo decide la RLS sobre ``tenant_id``, que desde el arreglo\nde la fuga es el del gabinete INTERVENIDO: el dueño del edificio recupera su\nvigilancia, y el tenant de quien operó no puede tocarla.",
+        "operationId": "close_window_maintenance_windows__window_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "window_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Window Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceWindowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Window",
+        "tags": [
+          "maintenance"
+        ]
       }
     },
     "/me": {

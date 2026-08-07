@@ -12,6 +12,10 @@ TOKENS_DIR := shared/design-tokens
 # Los tests de este módulo son plan-only (credenciales falsas, sin red): corren en
 # `make test` como cualquier otra suite, no necesitan sesión de AWS.
 TF_OBSERVABILITY := infra/terraform/modules/observability
+# [T-2.71] Alcance IAM del silenciador de alarmas: la única mitad de las
+# ventanas de mantenimiento que terraform puede blindar (las mute rules en sí
+# las crea el API y no están en el estado).
+TF_DATABASE := infra/terraform/modules/database
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
@@ -122,6 +126,7 @@ test: test-db
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q -rs
 	cd $(MOBILE_DIR) && npm test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
+	cd $(TF_DATABASE) && terraform init -backend=false -input=false >/dev/null && terraform test
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 

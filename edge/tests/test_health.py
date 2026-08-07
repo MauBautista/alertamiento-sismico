@@ -265,3 +265,32 @@ def test_sin_marca_de_despliegue_el_heartbeat_dice_sin_dato(settings, monkeypatc
     monkeypatch.setattr("takab_edge.health.fw_version", lambda: None)
     snap = HealthMonitor(settings, probes=_FakeProbes()).snapshot()
     assert snap.fw_version is None
+
+
+# --------------------------------------------------------------------------
+# [T-2.70] El latido lleva DOS versiones, y la diferencia entre ellas es el
+# hecho que una actualización remota necesita comprobar.
+# --------------------------------------------------------------------------
+
+
+def test_el_latido_declara_el_codigo_del_DISCO_y_el_del_PROCESO(settings, monkeypatch):
+    """Un deploy que escribió el archivo y no llegó a reiniciar es DETECTABLE.
+
+    `deploy.sh` escribe FW_VERSION antes del restart, así que el proceso viejo
+    publica la versión nueva hasta un latido entero — y para siempre si el
+    restart falla. Con una sola versión en el latido eso era invisible desde la
+    nube y un canary lo habría dado por bueno.
+    """
+    monkeypatch.setattr("takab_edge.health.fw_version", lambda: "bbbbbbb")  # disco
+    monkeypatch.setattr("takab_edge.health.running_version", lambda: "aaaaaaa")  # proceso
+    snap = HealthMonitor(settings, probes=_FakeProbes()).snapshot()
+    assert snap.fw_version == "bbbbbbb"
+    assert snap.fw_running == "aaaaaaa"
+
+
+def test_la_version_que_corre_no_se_inventa_cuando_no_se_sabe(settings, monkeypatch):
+    """Sin marca de despliegue, «no sé» — jamás se rellena con la del disco."""
+    monkeypatch.setattr("takab_edge.health.fw_version", lambda: "bbbbbbb")
+    monkeypatch.setattr("takab_edge.health.running_version", lambda: None)
+    snap = HealthMonitor(settings, probes=_FakeProbes()).snapshot()
+    assert snap.fw_running is None

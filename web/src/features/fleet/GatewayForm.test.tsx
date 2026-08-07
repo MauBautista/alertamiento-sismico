@@ -12,7 +12,7 @@ const GW: GatewayOut = {
   site_code: "CHL-A",
   site_status: "active",
   serial: "TKB-0001",
-  fw_version: "edge-1.4.0",
+  fw_version: "62f3f1e",
   iot_thing: "gw-dev-0001",
   status: "online",
   has_wr1: true,
@@ -55,6 +55,18 @@ function arrange(gw: Partial<GatewayOut> = {}) {
 const save = () => screen.getByRole("button", { name: /GUARDAR GABINETE/ });
 
 describe("GatewayForm · edición de gabinete [T-2.37]", () => {
+  // [T-2.69] El campo VERSIÓN DE FIRMWARE ya no existe, y su ausencia es la
+  // corrección. El PUT es de reemplazo TOTAL y este formulario reenviaba el valor
+  // prellenado con CADA edición, así que un operador podía anotar —o borrar, con
+  // el campo vacío— una versión que el gabinete nunca corrió. En un gabinete vivo
+  // el siguiente latido lo corregía en ≤60 s; en uno SIN ENLACE la mentira era
+  // PERMANENTE, y es justo ese sobre el que más importa saber la verdad. Su propio
+  // placeholder ya decía "la reporta el propio gabinete".
+  it("NO deja anotar la versión de firmware a mano", () => {
+    arrange();
+    expect(screen.queryByText("VERSIÓN DE FIRMWARE")).toBeNull();
+  });
+
   it("precarga el equipamiento del gabinete", () => {
     arrange({ equipment: { ...GW.equipment!, gas_valve: false } });
     expect(screen.getByLabelText("VÁLVULA DE GAS")).not.toBeChecked();
