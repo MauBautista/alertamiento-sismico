@@ -1007,8 +1007,12 @@ CREATE TABLE notification_jobs (
   channel     text NOT NULL CHECK (channel IN ('webhook','whatsapp','sms','email','push')),
   mode        text NOT NULL CHECK (mode IN ('cascade','parallel')),
   position    integer NOT NULL DEFAULT 0,
+  -- [T-2.75] 'simulated' = canal SIN proveedor real: nadie recibió nada. No es
+  -- 'sent' (sería mentir) ni 'failed' (no hay proveedor que arreglar ni al que
+  -- reintentar). Es TERMINAL y deja `sent_at` en NULL, de modo que cualquier
+  -- consulta de entregados lo excluya sin tener que conocerlo.
   status      text NOT NULL DEFAULT 'pending'
-              CHECK (status IN ('pending','sent','failed','skipped')),
+              CHECK (status IN ('pending','sent','failed','skipped','simulated')),
   target      jsonb NOT NULL DEFAULT '{}',
   due_at      timestamptz NOT NULL,
   deadline_at timestamptz,

@@ -1683,6 +1683,11 @@
 }
 .timeline__ts { color: var(--tk-fg-3); font-size: 9px; }
 .timeline__kind { color: var(--tk-fg-1); letter-spacing: 0.04em; }
+/* [T-2.75] Una notificación que nadie recibió no puede leerse igual que una
+   entregada en la bitácora que un perito usa para reconstruir lo ocurrido.
+   Va DESPUÉS de .timeline__kind y en el mismo archivo: misma especificidad,
+   gana el orden (la @media de soc.css no habría añadido peso ninguno). */
+.timeline__kind--undelivered { color: var(--tk-status-warning); }
 .timeline__actor { color: var(--tk-fg-3); font-size: 9px; }
 
 @media (max-width: 1100px) {

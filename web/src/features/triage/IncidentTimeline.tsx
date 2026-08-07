@@ -8,6 +8,8 @@
 // Orden cronológico del SERVIDOR: no se reordena en cliente. Una bitácora que el
 // cliente reordena deja de ser una bitácora.
 
+import { isSimulatedAction } from "@takab/sdk";
+
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 
@@ -22,6 +24,11 @@ const KIND_LABEL: Record<string, string> = {
   headcount_closed: "PASE DE LISTA CERRADO",
   headcount_notify: "AVISO A NO REPORTADOS",
   notify_sent: "NOTIFICACIÓN ENVIADA",
+  // [T-2.75] Tres verbos, no uno. Un canal sin proveedor real no envió nada, y
+  // un envío agotado tampoco: leerlos como "ENVIADA" en la bitácora que un
+  // perito usa para reconstruir lo ocurrido es falsear la evidencia.
+  notify_simulated: "NOTIFICACIÓN SIMULADA · NADIE LA RECIBIÓ",
+  notify_failed: "NOTIFICACIÓN NO ENTREGADA",
   drill_start: "SIMULACRO INICIADO",
   drill_stop: "SIMULACRO TERMINADO",
 };
@@ -31,6 +38,26 @@ export interface TimelineAction {
   ts: string;
   kind: string;
   actor: string;
+  /** [T-2.75] Evidencia del desenlace; lleva la bandera `simulated`. */
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * Verbo de la acción. La bandera `simulated` del payload manda sobre el mapa:
+ * un rótulo que enumera se queda ciego ante el canal siguiente, y ese canal
+ * caería en el fallback crudo sin decir que nadie lo recibió.
+ */
+export function kindLabel(action: TimelineAction): string {
+  const base = KIND_LABEL[action.kind] ?? action.kind.toUpperCase();
+  if (isSimulatedAction({ payload: action.payload ?? {} }) && !base.includes("SIMULAD")) {
+    return `${base} · SIMULADA, NADIE LA RECIBIÓ`;
+  }
+  return base;
+}
+
+/** ¿Esta línea documenta algo que NO llegó a nadie? (marca visual propia) */
+function isUndelivered(action: TimelineAction): boolean {
+  return isSimulatedAction({ payload: action.payload ?? {} }) || action.kind === "notify_failed";
 }
 
 export interface IncidentTimelineProps {
@@ -77,7 +104,11 @@ export default function IncidentTimeline({ actions, onRetry }: IncidentTimelineP
           {(actions.data ?? []).map((a) => (
             <li key={a.action_id} className="timeline__item">
               <span className="timeline__ts soc-mono">{utcStamp(Date.parse(a.ts))}</span>
-              <span className="timeline__kind">{KIND_LABEL[a.kind] ?? a.kind.toUpperCase()}</span>
+              <span
+                className={`timeline__kind${isUndelivered(a) ? " timeline__kind--undelivered" : ""}`}
+              >
+                {kindLabel(a)}
+              </span>
               <span className="timeline__actor soc-mono">{actorLabel(a.actor)}</span>
             </li>
           ))}

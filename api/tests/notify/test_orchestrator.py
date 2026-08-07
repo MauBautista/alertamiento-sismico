@@ -18,6 +18,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from takab_api.notify.orchestrator import run_notify_pass
+from takab_api.notify.plan import CASCADE_ORDER
 from takab_api.notify.providers import NotifyError
 from takab_api.settings import Settings
 
@@ -42,6 +43,11 @@ def _dsn() -> str:
 
 
 class _FakeProvider:
+    """Stand-in de un proveedor REAL (entrega o revienta). [T-2.75] Lo declara:
+    quien no se declara real se trata como simulado (default = peor causa)."""
+
+    simulated = False
+
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.sent: list[tuple[dict, dict]] = []
@@ -139,6 +145,7 @@ def _cleanup(conn: psycopg.Connection, tenant: str) -> None:
     try:
         conn.execute("SET session_replication_role = 'replica'")
         conn.execute("DELETE FROM notification_jobs WHERE tenant_id = %s", (tenant,))
+        conn.execute("DELETE FROM push_tokens WHERE tenant_id = %s", (tenant,))
         conn.execute("DELETE FROM incident_actions WHERE tenant_id = %s", (tenant,))
         conn.execute("DELETE FROM incidents WHERE tenant_id = %s", (tenant,))
         conn.execute("DELETE FROM rule_sets WHERE tenant_id = %s", (tenant,))
@@ -592,3 +599,227 @@ def test_personas_en_riesgo_no_duplica_el_correo(scenario: _Scenario) -> None:
     _run(scenario, providers, now=BASE + timedelta(seconds=30))
     assert len(_action_jobs(scenario, action)) == 1
     assert len(providers["email"].sent) == 1
+
+
+# --- T-2.75 · Un canal simulado deja de mentir ----------------------------------
+# Un canal sin proveedor real no entrega nada. Marcarlo 'sent' convertía el
+# tablero en un mentiroso ("notificado" sin notificar) Y —peor— SATISFACÍA la
+# cascada: el salto simulado "triunfaba", el orquestador marcaba `skipped` el
+# resto y el canal REAL que venía detrás no llegaba a dispararse jamás.
+
+
+class _SimProvider:
+    """Canal sin proveedor real: se declara simulado (contrato NotifyProvider)."""
+
+    simulated = True
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[dict, dict]] = []
+
+    def send(self, target: dict, message: dict) -> None:  # pragma: no cover - no debe llamarse
+        self.sent.append((target, message))
+
+
+def _mixed(*simulated: str, fail: tuple[str, ...] = ()) -> dict:
+    """Registro con los canales de ``simulated`` sin proveedor real."""
+    providers = _providers(**{ch: True for ch in fail})
+    for channel in simulated:
+        providers[channel] = _SimProvider()  # type: ignore[assignment]
+    return providers
+
+
+def _actions_by_kind(scenario: _Scenario, incident_id: str, kind: str) -> list[dict]:
+    return scenario.conn.execute(
+        "SELECT payload FROM incident_actions WHERE incident_id = %s AND kind = %s ORDER BY ts",
+        (incident_id, kind),
+    ).fetchall()
+
+
+def _sim_actions(scenario: _Scenario, incident_id: str) -> list[dict]:
+    return _actions_by_kind(scenario, incident_id, "notify_simulated")
+
+
+def test_canal_simulado_no_marca_sent(scenario: _Scenario) -> None:
+    """Criterio 1: el job queda 'simulated' y SIN ``sent_at``. Dos candados: el
+    estado, y la marca de tiempo de entrega que nadie puede rellenar."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed("webhook"), now=BASE)
+
+    job = scenario.job(iid, "webhook")
+    assert job["status"] == "simulated"
+    assert job["sent_at"] is None
+
+
+def test_simulado_deja_huella_propia_en_incident_actions(scenario: _Scenario) -> None:
+    """Criterio 1: la evidencia lo dice con un verbo PROPIO. Un `notify_sent`
+    con una bandera dentro se lee como enviado en cualquier consulta que agrupe
+    por `kind` — y `incident_actions` es evidencia que jamás se poda."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed("webhook"), now=BASE)
+
+    sims = _sim_actions(scenario, iid)
+    assert len(sims) == 1
+    payload = sims[0]["payload"]
+    assert payload["channel"] == "webhook"
+    assert payload["simulated"] is True
+    # Medir el plazo de una entrega que no ocurrió es inventar un dato: null es
+    # "no aplica", y no se confunde con el False de "llegó tarde" (regla de oro 7).
+    assert payload["deadline_met"] is None
+    # Y NO existe un notify_sent de ese canal: la mentira no entra por otra puerta.
+    assert [a["payload"]["channel"] for a in scenario.notify_actions(iid)] != ["webhook"]
+
+
+def test_simulado_no_satisface_la_cascada_y_escala_al_canal_real(scenario: _Scenario) -> None:
+    """LA CASCADA. Config de dev real: whatsapp y sms SIMULADOS, webhook caído.
+
+    Antes: webhook falla → whatsapp simulado "triunfa" → sms y email `skipped`.
+    El correo REAL —el único canal que llegaba a un humano— no se disparaba.
+    Ahora: los dos simulados escalan y el email sale en el MISMO pass.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _mixed("whatsapp", "sms", fail=("webhook",))
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "failed"
+    assert scenario.job(iid, "whatsapp")["status"] == "simulated"
+    assert scenario.job(iid, "sms")["status"] == "simulated"
+    email = scenario.job(iid, "email")
+    assert email["status"] == "sent"
+    assert email["sent_at"] == BASE  # adelantado: escaló dentro del mismo pass
+    assert len(providers["email"].sent) == 1
+    # Ningún canal simulado tocó a su proveedor: no hay a quién entregar.
+    assert providers["whatsapp"].sent == []
+    assert providers["sms"].sent == []
+
+
+def test_toda_la_cascada_simulada_no_deja_ni_un_entregado(scenario: _Scenario) -> None:
+    """Criterio 3: con los cuatro canales simulados, NADA aparece entregado —
+    ni un 'sent', ni un `sent_at`, ni un `notify_sent`. Y quedan cuatro huellas."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed(*CASCADE_ORDER), now=BASE)
+
+    jobs = scenario.jobs(iid)
+    assert len(jobs) == len(CASCADE_ORDER)
+    assert {j["status"] for j in jobs} == {"simulated"}
+    assert all(j["sent_at"] is None for j in jobs)
+    assert scenario.notify_actions(iid) == []
+    assert {a["payload"]["channel"] for a in _sim_actions(scenario, iid)} == set(CASCADE_ORDER)
+
+
+def test_simulado_es_terminal_y_no_consume_reintentos(scenario: _Scenario) -> None:
+    """La distinción cara: `failed` es transitorio (el proveedor existe y puede
+    volver) ⇒ reintento con backoff. `simulated` es TERMINAL (no hay proveedor
+    que pueda volver) ⇒ ni un intento consumido, ni un martilleo contra la nada.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _mixed("email")  # el paralelo crítico no tiene a quién escalar
+    _run(scenario, providers, now=BASE)
+
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "simulated"
+    assert par["attempts"] == 0
+    # Un pass posterior no lo re-despacha ni lo revive: es terminal, no pendiente.
+    _run(scenario, providers, now=BASE + timedelta(seconds=600))
+    par = scenario.job(iid, "email", mode="parallel")
+    assert (par["status"], par["attempts"]) == ("simulated", 0)
+
+
+def test_provider_que_no_se_declara_real_se_trata_como_simulado(scenario: _Scenario) -> None:
+    """El default ante lo desconocido es la PEOR causa. Un provider que no
+    declara `simulated` no ha demostrado que entregue: se le trata como
+    simulado. Así el sexto canal que alguien enchufe sin declararse no hereda
+    la presunción de entrega."""
+
+    class _Indeclarado:
+        def send(self, target: dict, message: dict) -> None:
+            return None
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers()
+    providers["webhook"] = _Indeclarado()  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "simulated"
+
+
+def test_push_simulado_tampoco_entrega(scenario: _Scenario) -> None:
+    """El canal push despacha por una rama PROPIA (``deliver()``, no ``send()``).
+    La regla se aplica antes de bifurcar: no se enumeran canales, se pregunta al
+    proveedor."""
+    from takab_api.notify.push import SimulatedPushProvider
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    site = scenario.conn.execute(
+        "SELECT site_id FROM incidents WHERE incident_id = %s", (iid,)
+    ).fetchone()["site_id"]
+    scenario.conn.execute("RESET ROLE")  # takab_ingest lee y actualiza tokens, no los crea
+    scenario.conn.execute(
+        "INSERT INTO push_tokens (tenant_id, site_id, user_sub, token, platform) "
+        "VALUES (%s,%s,%s,%s,'android')",
+        (scenario.tenant, site, str(uuid.uuid4()), f"tok-{uuid.uuid4()}"),
+    )
+    scenario.conn.execute("SET ROLE takab_ingest")
+    scenario.conn.commit()
+
+    providers = _providers()
+    providers["push"] = SimulatedPushProvider()  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    push_job = scenario.job(iid, "push", mode="parallel")
+    assert push_job["status"] == "simulated"
+    assert push_job["sent_at"] is None
+    assert providers["push"].delivered == []
+
+
+def test_las_tres_cosas_dejan_verbos_DISTINTOS_en_la_evidencia(scenario: _Scenario) -> None:
+    """Entregado, simulado y no entregado son TRES cosas con tres reacciones
+    del operador: nada / contratar el canal / el proveedor está caído AHORA.
+    En un mismo incidente, tres verbos distintos en `incident_actions`.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    # webhook cae (y escala: fallo terminal), whatsapp simulado, sms entrega.
+    providers = _mixed("whatsapp", fail=("webhook",))
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "failed"
+    assert scenario.job(iid, "whatsapp")["status"] == "simulated"
+    assert scenario.job(iid, "sms")["status"] == "sent"
+
+    sent = _actions_by_kind(scenario, iid, "notify_sent")
+    simulated = _actions_by_kind(scenario, iid, "notify_simulated")
+    failed = _actions_by_kind(scenario, iid, "notify_failed")
+    assert [a["payload"]["channel"] for a in sent] == ["sms"]
+    assert [a["payload"]["channel"] for a in simulated] == ["whatsapp"]
+    assert [a["payload"]["channel"] for a in failed] == ["webhook"]
+    # El fallo dice POR QUÉ (avería concreta); el simulado dice que no hay canal.
+    assert failed[0]["payload"]["error"] == "fallo simulado"
+    assert failed[0]["payload"]["deadline_met"] is None
+
+
+def test_el_reintento_no_escribe_evidencia_hasta_agotarse(scenario: _Scenario) -> None:
+    """`incident_actions` es append-only y EXENTA de poda por retención (regla
+    de oro 11): una fila por intento inflaría para siempre la tabla que existe
+    para reconstruir lo ocurrido. Se escribe UNA vez, al desenlace terminal."""
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _providers(email=True)  # paralelo crítico: reintenta, no escala
+
+    _run(scenario, providers, now=BASE)  # intento 1 → pending
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))  # intento 2 → pending
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "pending"
+    assert _actions_by_kind(scenario, iid, "notify_failed") == []  # aún puede volver
+
+    _run(scenario, providers, now=BASE + timedelta(seconds=150))  # intento 3: agotado
+    assert scenario.job(iid, "email", mode="parallel")["status"] == "failed"
+    failed = _actions_by_kind(scenario, iid, "notify_failed")
+    assert len(failed) == 1
+    assert failed[0]["payload"]["attempts"] == 3

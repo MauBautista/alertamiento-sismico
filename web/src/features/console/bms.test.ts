@@ -68,4 +68,47 @@ describe("groupActions", () => {
   it("lista vacía ⇒ sin grupos", () => {
     expect(groupActions([])).toEqual([]);
   });
+
+  // [T-2.75] Entregado, simulado y no entregado son TRES cosas, y el operador
+  // reacciona distinto a cada una: nada / contratar el canal / el proveedor
+  // está caído AHORA. Pintarlas iguales es el tablero mentiroso otra vez.
+  describe("notificaciones: enviada ≠ simulada ≠ no entregada", () => {
+    it("cada desenlace tiene su propia fila, su propia palabra y su propio color", () => {
+      const groups = groupActions([
+        action("notify_sent", "2026-07-10T03:00:00Z"),
+        action("notify_simulated", "2026-07-10T03:00:01Z"),
+        action("notify_failed", "2026-07-10T03:00:02Z"),
+      ]);
+      const byKind = new Map(groups.map((g) => [g.kind, g]));
+      expect(byKind.get("notify_sent")?.view).toEqual({ state: "ENVIADA", kind: "ok" });
+      expect(byKind.get("notify_simulated")?.view.kind).toBe("warning");
+      expect(byKind.get("notify_failed")?.view.kind).toBe("critical");
+      // Tres etiquetas distintas: no se funden en una sola fila "NOTIFICACIONES".
+      const labels = groups.map((g) => g.label);
+      expect(new Set(labels).size).toBe(3);
+      // Y ninguna de las dos que NO llegaron dice "ENVIADA".
+      expect(byKind.get("notify_simulated")?.view.state).not.toContain("ENVIADA");
+      expect(byKind.get("notify_failed")?.view.state).not.toContain("ENVIADA");
+    });
+
+    it("la bandera `simulated` del payload MANDA sobre el mapa de kinds", () => {
+      // Derivado, no enumerado: el sexto canal que alguien enchufe mañana
+      // escribirá un kind que este mapa no conoce. Si el estado saliera del
+      // mapa, caería en el fallback `ok` — verde, "todo bien", justo la mentira.
+      const futuro = {
+        ...action("notify_telegram_algo", "2026-07-10T03:00:00Z"),
+        payload: { simulated: true },
+      };
+      expect(groupActions([futuro])[0].view.kind).toBe("warning");
+      expect(groupActions([futuro])[0].view.state).not.toContain("ENVIADA");
+    });
+
+    it("un notify_sent legítimo NO se contagia de la bandera", () => {
+      const real = {
+        ...action("notify_sent", "2026-07-10T03:00:00Z"),
+        payload: { simulated: false, deadline_met: true },
+      };
+      expect(groupActions([real])[0].view).toEqual({ state: "ENVIADA", kind: "ok" });
+    });
+  });
 });

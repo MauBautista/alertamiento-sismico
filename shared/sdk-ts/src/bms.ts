@@ -13,6 +13,13 @@ export interface ActionStateView {
   kind: 'critical' | 'warning' | 'ok';
 }
 
+/**
+ * [T-2.75] El estado de una notificación SIMULADA: el canal no tiene proveedor
+ * real, así que nadie recibió nada. Es `warning` y no `critical` a propósito —
+ * no hay avería que atender, hay un canal que falta contratar.
+ */
+export const SIMULATED_VIEW: ActionStateView = { state: 'SIMULADA · SIN ENTREGAR', kind: 'warning' };
+
 /** Mapeo kind→estado visual (se comparte con la traza expandida). */
 export const ACTION_STATE: Record<string, ActionStateView> = {
   siren_on: { state: 'ACTIVADA', kind: 'critical' },
@@ -25,8 +32,23 @@ export const ACTION_STATE: Record<string, ActionStateView> = {
   dictamen_request: { state: 'SOLICITADO', kind: 'ok' },
   epicenter_relocate: { state: 'REUBICADO', kind: 'ok' },
   notify_sent: { state: 'ENVIADA', kind: 'ok' },
+  // [T-2.75] Tres desenlaces, tres reacciones del operador: nada / falta
+  // contratar el canal / el proveedor está caído AHORA. Pintarlos iguales fue
+  // el tablero que decía "notificado" sin haber notificado a nadie.
+  notify_simulated: SIMULATED_VIEW,
+  notify_failed: { state: 'NO ENTREGADA', kind: 'critical' },
   siren_test: { state: 'PROBADA', kind: 'ok' },
 };
+
+/**
+ * [T-2.75] ¿Esta acción declara que NO hubo entrega? Se lee del payload que
+ * escribe el orquestador, no de una lista de `kind` — un rótulo que enumera se
+ * queda ciego ante el canal siguiente, y ese canal caería en el fallback `ok`
+ * (verde, "todo bien"), que es exactamente la mentira que esta tarea cierra.
+ */
+export function isSimulatedAction(action: Pick<IncidentActionOut, 'payload'>): boolean {
+  return action.payload?.simulated === true;
+}
 
 /** Etiqueta humana por canal/acción (fallback: el kind crudo en mayúsculas). */
 export const CHANNEL_LABEL: Record<string, string> = {
@@ -40,6 +62,8 @@ export const CHANNEL_LABEL: Record<string, string> = {
   dictamen_request: 'DICTAMEN SOLICITADO',
   epicenter_relocate: 'EPICENTRO',
   notify_sent: 'NOTIFICACIONES',
+  notify_simulated: 'NOTIFICACIONES SIMULADAS',
+  notify_failed: 'NOTIFICACIONES NO ENTREGADAS',
   siren_test: 'PRUEBA DE SIRENA',
 };
 
@@ -54,8 +78,13 @@ export interface ActuatorGroup {
   trace: IncidentActionOut[];
 }
 
-function viewOf(kind: string): ActionStateView {
-  return ACTION_STATE[kind] ?? { state: kind.toUpperCase(), kind: 'ok' };
+function viewOf(action: IncidentActionOut): ActionStateView {
+  // La bandera del payload MANDA sobre el mapa: una acción que se declara
+  // simulada no puede pintarse de verde por no estar dada de alta arriba.
+  if (isSimulatedAction(action)) {
+    return ACTION_STATE[action.kind] ?? SIMULATED_VIEW;
+  }
+  return ACTION_STATE[action.kind] ?? { state: action.kind.toUpperCase(), kind: 'ok' };
 }
 
 function labelOf(kind: string): string {
@@ -80,7 +109,7 @@ export function groupActions(actions: IncidentActionOut[]): ActuatorGroup[] {
     groups.push({
       kind,
       label: labelOf(kind),
-      view: viewOf(kind),
+      view: viewOf(trace[0]),
       last: trace[0],
       count: trace.length,
       trace,

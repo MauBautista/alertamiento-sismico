@@ -156,7 +156,10 @@ def test_sns_provider_sin_platform_application_reporta_error() -> None:
 
 
 class _FakePushProvider:
-    """deliver() controlable: registra lotes y devuelve el outcome configurado."""
+    """deliver() controlable: registra lotes y devuelve el outcome configurado.
+    [T-2.75] Stand-in de SNS real: se declara no-simulado."""
+
+    simulated = False
 
     def __init__(self) -> None:
         self.calls: list[tuple[list[PushDevice], dict]] = []
@@ -170,6 +173,8 @@ class _FakePushProvider:
 
 
 class _NullProvider:
+    simulated = False  # [T-2.75] real: su contrato es reventar si lo despachan
+
     def send(self, target: dict, message: dict) -> None:  # pragma: no cover - no usado
         raise AssertionError("no debería despacharse")
 

@@ -120,6 +120,7 @@ class SnsPushProvider:
     para REVOCAR el token — limpieza honesta, sin martillar muertos."""
 
     channel = "push"
+    simulated = False
 
     def __init__(self, *, region: str, apns_application_arn: str, fcm_application_arn: str) -> None:
         self._region = region
@@ -164,34 +165,42 @@ class SnsPushProvider:
 
 
 class SimulatedPushProvider:
-    """Sin platform applications configuradas: registra y GRITA (patrón T-1.62 —
-    marcar 'sent' en silencio sería mentir que los teléfonos sonaron)."""
+    """Sin platform applications configuradas: NADA despierta un teléfono.
+
+    [T-2.75] Se declara ``simulated`` y el orquestador ni siquiera llega a
+    llamar ``deliver()``: el job queda ``simulated``, jamás ``sent``. Antes
+    devolvía ``delivered=len(devices)`` —contaba como entrega el simple hecho
+    de tener dispositivos registrados— y el tablero decía que sonaron.
+    """
 
     channel = "push"
+    simulated = True
+    hint = "TAKAB_API_PUSH_APNS/FCM_APPLICATION_ARN"
 
     def __init__(self) -> None:
         self.delivered: list[tuple[list[PushDevice], dict]] = []
 
     def deliver(self, devices: list[PushDevice], payload: dict[str, str]) -> PushOutcome:
         logger.warning(
-            "push SIMULADO a %d dispositivo(s) — sin TAKAB_API_PUSH_*_APPLICATION_ARN "
-            "ningún teléfono recibe nada. En la nube esto es un fallo.",
+            "push SIMULADO a %d dispositivo(s) — sin %s ningún teléfono recibe nada.",
             len(devices),
+            self.hint,
         )
         self.delivered.append((devices, payload))
         return PushOutcome(delivered=len(devices))
 
 
 def build_push_provider(settings) -> SnsPushProvider | SimulatedPushProvider:
-    """SNS real si hay al menos una platform application; si no, simulado ruidoso."""
+    """SNS real si hay al menos una platform application; si no, simulado.
+
+    El grito de arranque NO va aquí: lo emite ``warn_simulated_channels`` sobre
+    el registro completo, para que ningún canal simulado dependa de que su
+    constructor se haya acordado de avisar.
+    """
     if settings.push_apns_application_arn or settings.push_fcm_application_arn:
         return SnsPushProvider(
             region=settings.aws_region,
             apns_application_arn=settings.push_apns_application_arn,
             fcm_application_arn=settings.push_fcm_application_arn,
         )
-    logger.warning(
-        "TAKAB_API_PUSH_APNS/FCM_APPLICATION_ARN vacíos: canal push SIMULADO — "
-        "los jobs se marcarán 'sent' sin despertar teléfono alguno."
-    )
     return SimulatedPushProvider()

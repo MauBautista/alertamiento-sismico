@@ -31,9 +31,26 @@ class NotifyError(Exception):
 class NotifyProvider(Protocol):
     """Contrato mínimo de un canal de notificación."""
 
+    #: [T-2.75] ¿Este canal entrega de verdad? Es parte del CONTRATO, no un
+    #: detalle: el orquestador no puede afirmar "notificado" sin que alguien
+    #: se haga responsable de la entrega.
+    simulated: bool
+
     def send(self, target: dict, message: dict) -> None:
         """Entrega ``message`` a ``target``; levanta ``NotifyError`` si falla."""
         ...
+
+
+def is_simulated(provider: object) -> bool:
+    """¿El provider NO entrega nada? Se deriva del propio provider — jamás de
+    una lista de canales (una lista se queda ciega ante el sexto canal).
+
+    **El default ante lo desconocido es la peor causa**: quien no se declara
+    real no ha demostrado que entregue, así que se le trata como simulado. Al
+    revés —presumir entrega— es exactamente la mentira que cuesta vidas: un
+    tablero que dice "notificado" cuando nadie recibió nada.
+    """
+    return bool(getattr(provider, "simulated", True))
 
 
 def _canonical_body(message: dict) -> bytes:
@@ -44,6 +61,8 @@ def _canonical_body(message: dict) -> bytes:
 class WebhookProvider:
     """POST JSON firmado: ``X-Takab-Signature`` = HMAC-SHA256 hex del body con
     el secret del tenant (re-resuelto del rule_set al despachar, nunca del job)."""
+
+    simulated = False
 
     def __init__(self, timeout_s: float, transport: httpx.BaseTransport | None = None) -> None:
         self._timeout_s = timeout_s
@@ -68,6 +87,8 @@ class WebhookProvider:
 
 class SesEmailProvider:
     """Correo vía AWS SES (sandbox en dev: remitente y destinos verificados)."""
+
+    simulated = False
 
     def __init__(self, sender: str, region: str) -> None:
         self._sender = sender
@@ -94,11 +115,18 @@ class SesEmailProvider:
 
 
 class SimulatedProvider:
-    """Canal simulado (WhatsApp/SMS en dev; email sin SES configurado):
-    registra la entrega y triunfa. La ruta real se enchufa sin tocar nada más."""
+    """Canal SIN proveedor real (WhatsApp/SMS hasta T-2.76/T-2.77; email sin SES).
 
-    def __init__(self, channel: str) -> None:
+    [T-2.75] No "triunfa": se declara simulado y el orquestador marca el job
+    ``simulated`` — nunca ``sent``. ``hint`` dice QUÉ falta configurar, y viaja
+    con el provider para que el aviso de arranque no tenga que enumerar canales.
+    """
+
+    simulated = True
+
+    def __init__(self, channel: str, *, hint: str = "") -> None:
         self.channel = channel
+        self.hint = hint
         self.sent: list[tuple[dict, dict]] = []
 
     def send(self, target: dict, message: dict) -> None:
@@ -111,6 +139,26 @@ class SimulatedProvider:
         self.sent.append((target, message))
 
 
+# [T-1.62 · T-2.75] El grito de arranque. El 13/07 hubo correos "enviados" que
+# nadie recibió porque el simulado marcaba 'sent' en silencio; desde entonces el
+# email grita. Ahora grita CUALQUIER canal simulado, y no porque esté en una
+# lista: porque se le pregunta al registro ya construido. El sexto canal que
+# alguien enchufe sin proveedor real hereda el grito sin tocar esta función.
+_SIMULATED_WARNING = (
+    "canal %s SIMULADO — los jobs quedarán 'simulated' (NUNCA 'sent') y nadie "
+    "recibirá nada por esta vía. En producción esto es un fallo.%s"
+)
+
+
+def warn_simulated_channels(providers: dict[str, NotifyProvider]) -> list[str]:
+    """Grita una vez por canal simulado del registro; devuelve sus nombres."""
+    simulated = [channel for channel, p in providers.items() if is_simulated(p)]
+    for channel in simulated:
+        hint = str(getattr(providers[channel], "hint", "") or "")
+        logger.warning(_SIMULATED_WARNING, channel, f" Falta: {hint}." if hint else "")
+    return simulated
+
+
 def build_providers(settings) -> dict[str, NotifyProvider]:
     """Providers por canal según Settings (SES si hay remitente; si no, simulado)."""
     # Import tardío: push.py importa boto3/dataclasses propios y este módulo se
@@ -121,20 +169,15 @@ def build_providers(settings) -> dict[str, NotifyProvider]:
     if settings.notify_email_from:
         email = SesEmailProvider(sender=settings.notify_email_from, region=settings.aws_region)
     else:
-        # [T-1.62] El simulado marca los jobs como 'sent' SIN enviar nada: en la
-        # nube eso es una mentira silenciosa (pasó el 13/07 — correos "enviados"
-        # que nadie recibió). Si falta el remitente, que se grite.
-        logger.warning(
-            "TAKAB_API_NOTIFY_EMAIL_FROM vacío: canal email SIMULADO — los jobs se "
-            "marcarán 'sent' sin enviar correo alguno. En la nube esto es un fallo."
-        )
-        email = SimulatedProvider("email")
-    return {
+        email = SimulatedProvider("email", hint="TAKAB_API_NOTIFY_EMAIL_FROM")
+    providers: dict[str, NotifyProvider] = {
         "webhook": WebhookProvider(timeout_s=settings.notify_webhook_timeout_s),
-        "whatsapp": SimulatedProvider("whatsapp"),
-        "sms": SimulatedProvider("sms"),
+        "whatsapp": SimulatedProvider("whatsapp", hint="proveedor de WhatsApp Business (T-2.77)"),
+        "sms": SimulatedProvider("sms", hint="proveedor de SMS (T-2.76)"),
         "email": email,
         # [T-2.04] El canal push usa deliver() (lote + resultado por dispositivo);
         # el orquestador lo despacha por una rama propia, no por send().
         "push": build_push_provider(settings),  # type: ignore[dict-item]
     }
+    warn_simulated_channels(providers)
+    return providers
