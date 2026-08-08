@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **212** · `[x]` **145** · `[~]` **5** · `[ ]` **62**
+**Conteo de tareas:** total **214** · `[x]` **145** · `[~]` **5** · `[ ]` **64**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5623,6 +5623,49 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   - [ ] Un consentimiento **retirado** deja de autorizar el envío, sin tocar el provider.
   - [ ] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
   - [ ] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
+
+### [ ] T-2.79.b · El stack de onboarding no tiene guarda de sesión — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
+  (2026-08-08)
+- **La causa raíz que el arreglo de hoy NO cerró.** `mobile/src/app/index.tsx:34` es el **único**
+  punto de la app que reacciona a quedarse anónimo, y `mobile/src/app/onboarding/_layout.tsx` es
+  un `Stack` pelado, **sin guarda**. Cualquier `signOut()` disparado durante el onboarding —hoy
+  el 401 exento, mañana otro— deja a la persona **en la pantalla, sin token y en silencio**:
+  nadie la lleva al login.
+- **Lo que se hizo hoy fue tapar el disparador conocido**, no la causa: se eximió a
+  `/privacy/consent` y `/privacy/notice` de cerrar sesión (`mobile/src/services/sdk.ts`). Esa
+  exención es correcta —una vía de cumplimiento no debe poder expulsar a la flota— pero solo
+  cubre las dos rutas que hoy sabemos que se llaman desde ahí.
+- **Criterios de aceptación:**
+  - [ ] Quedarse anónimo dentro del onboarding **lleva al login**, desde cualquier pantalla del
+        stack.
+  - [ ] Test que dispare `signOut()` en cada pantalla del onboarding y exija la redirección.
+        Enumerar las pantallas de hoy no vale: **derívalo del stack**.
+  - [ ] La exención de `sdk.ts` sigue en pie y **con su test**: quitar la causa raíz no es
+        excusa para devolverle a una ruta de cumplimiento el poder de expulsar.
+
+### [ ] T-2.79.c · La salida del enrolamiento se llama «Ya estoy vinculado», y para quien falla es mentira — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
+  (2026-08-08)
+- **Medido, y menos grave de lo que parecía.** El occupant **no** marca el onboarding como hecho
+  en la pantalla de privacidad: `privacidad.tsx:68` lo empuja a `/onboarding/enrolamiento` y solo
+  la rama táctica llama a `markOnboardingDone()`. Para el occupant esa llamada vive en
+  `enrolamiento.tsx:43`. Y como `app/index.tsx:53-55` redirige mientras `!onboarded`, la sospecha
+  era un cerrojo idéntico al de privacidad, un paso más adelante.
+- **No lo es: hay salida.** `enrolamiento.tsx:79` ofrece un botón que llama a `finish()` sin
+  necesidad de canjear el código. **Pero se rotula «Ya estoy vinculado · continuar»**, es
+  secundario (`ghostBtn`), y aparece junto al mensaje «Sin conexión con el servidor. Intente de
+  nuevo.» — o sea: a la persona que la nube dejó tirada se le ofrece una salida cuyo texto
+  **afirma algo falso sobre ella**, con estilo de opción descartable. Quien lee que no está
+  vinculado no la pulsa. La puerta existe y está mal señalizada, que en una app de vida cuenta.
+- **Criterios de aceptación:**
+  - [ ] Cuando el enrolamiento falla por causa de red o servidor, la salida se rotula por lo que
+        hace —seguir sin vincular, y vincular después desde Cuenta—, no por una condición del
+        usuario que el sistema no puede afirmar.
+  - [ ] Test: con el servidor caído, existe un camino visible al final del onboarding, y el texto
+        del control **no afirma** que el usuario ya esté vinculado.
+  - [ ] Queda escrito qué pierde quien continúa sin vincular (sin sitio vigilado no hay
+        check-in de zona), porque continuar a ciegas también es una forma de mentir.
 
 ### [ ] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE`
 - **Componente:** api + db · **Depende de:** T-2.79
