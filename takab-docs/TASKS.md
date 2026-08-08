@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **219** · `[x]` **148** · `[~]` **5** · `[ ]` **66**
+**Conteo de tareas:** total **223** · `[x]` **151** · `[~]` **5** · `[ ]` **67**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5742,13 +5742,29 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 El motor es `SOFTWARE`; **el texto legal es `LEGAL`**. No se bloquean entre sí: se construye
 el motor con un texto provisional versionado y se sustituye el texto cuando llegue.
 
-### [ ] T-2.79 · Aviso de privacidad versionado + consentimiento — `SOFTWARE` (texto: `LEGAL`)
+### [x] T-2.79 · Aviso de privacidad versionado + consentimiento — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + web + mobile · **Depende de:** —
 - **Criterios de aceptación:**
-  - [ ] El aviso es un **objeto versionado**; el consentimiento guarda **qué versión** aceptó
+  - [x] El aviso es un **objeto versionado**; el consentimiento guarda **qué versión** aceptó
         cada usuario y cuándo.
-  - [ ] Cambiar el aviso **no reescribe** consentimientos anteriores.
-  - [ ] Registro append-only del consentimiento.
+  - [x] Cambiar el aviso **no reescribe** consentimientos anteriores.
+  - [x] Registro append-only del consentimiento.
+
+> **El motor aguantó dos auditorías independientes; las superficies no, y esa es la historia
+> de esta ficha.** El DDL, la RLS y el sellado se dictaminaron bien hechos a la primera:
+> el digest se **copia**, no se deriva por JOIN, así que editar el aviso por detrás sigue siendo
+> **detectable**; y el append-only son **tres capas** —trigger `BEFORE UPDATE OR DELETE`,
+> `REVOKE UPDATE, DELETE` y RLS `ENABLE`+`FORCE`—, con los tests parametrizados sobre las dos
+> tablas e incluyendo el `UPDATE` que no cambia nada.
+>
+> Lo que estaba roto era lo que la persona ve, y era grave: el móvil **encerraba al ocupante**
+> sin check-in de vida ni botón de pánico (T-2.79.b/c), y la consola **acusaba de no haber
+> consentido a quien sí consintió**. Cerrado el 2026-08-08.
+>
+> **Queda exactamente un hueco, y está fichado:** con `notice === null` **y** dato viejo se
+> pinta una franja muda. Se recorrió el espacio de estados **completo** contra la precedencia de
+> `StateFrame` para confirmar que es el único, y que en móvil **no existe** la combinación
+> equivalente. Es `T-2.79.d`, y no bloquea porque no miente: no dice nada.
 
 ### [ ] T-2.79.a · El opt-in de WhatsApp sigue saliendo del `rule_set`, no del consentimiento — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-2.79 · **Detectada por:** auditoría de la Fase 2.8
@@ -5860,6 +5876,42 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         lista de componentes.
   - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
 
+### [ ] T-2.79.e · `NOTICE_ROLES` sigue a mano en el router, y su razón ya caducó — `SOFTWARE`
+- **Componente:** api (auth) · **Desbloquea:** el primer criterio de `T-2.80.b` ·
+  **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
+- **La deuda estaba justificada y su justificación ya no es cierta.**
+  `api/src/takab_api/routers/privacy.py:73-88` declara los roles a mano, contra la convención de
+  `auth/matrix.py`, y el comentario dice que es porque «`auth/matrix.py` lo está tocando otra
+  tarea en paralelo (T-2.82)». **Medido:** T-2.82 aterrizó **sin tocar** `matrix.py` —reutiliza
+  `roles_with_action("manage_tenants")`— y el último commit de ese fichero es de T-2.61…T-2.71.
+  La condición «mover al integrar» **ya se cumplió y nadie movió nada**.
+- **Por qué esto merece ficha propia:** hasta hoy solo estaba referenciada de refilón, como línea
+  de dependencia dentro de `T-2.80.b`. Es la misma lección de `T-2.79.a`: **una deuda sin ficha
+  es una deuda no fichada**, por bien razonada que esté el comentario.
+- **No es un agujero de seguridad hoy:** la frontera real la impone la política RLS `pn_publish`,
+  no la lista del router. Es coherencia y mantenibilidad — y el bloqueo de `T-2.80.b`.
+- **Criterios de aceptación:**
+  - [ ] La acción `manage_privacy_notice` existe en `auth/matrix.py`, con su línea en
+        `RBAC-TAKAB.md`, y el router la consulta en vez de enumerar roles.
+  - [ ] El test de matriz (`api/tests/auth/test_matrix.py`) la cubre como a las demás.
+  - [ ] Ninguna superficie de privacidad enumera roles a mano.
+
+### [ ] T-2.79.f · La parte de la pantalla móvil que le habla a la persona no la asserta nadie — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada por:** reauditoría de la Fase 2.8
+  (2026-08-08)
+- La suite de `privacidad.tsx` cubre a fondo **los dos bloqueantes** que se cerraron el
+  2026-08-08 —el cerrojo del onboarding y el falso vacío— usando el `testID` `privacy-accept`.
+  Pero **nadie comprueba que se pinte el aviso servido ni su sello** (`privacy-notice`), ni el
+  texto del estado en que **el aviso cambió** (`privacy-changed`).
+- **Lo que queda sin cubrir es justo lo que la persona lee** antes de decidir. El criterio 2 de
+  T-2.79 («cambiar el aviso no reescribe consentimientos») está probado **en el motor**, que es
+  donde importa para la integridad del registro; lo que no está probado es que la pantalla se lo
+  **cuente** a quien tiene que decidir.
+- **Criterios de aceptación:**
+  - [ ] Un test asserta que el cuerpo del aviso servido y su versión/sello se pintan.
+  - [ ] Un test asserta el texto del estado «este aviso cambió», que es el que pide una decisión
+        nueva a alguien que ya había consentido.
+
 ### [x] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + db · **Depende de:** T-2.79
 - **Criterios de aceptación:**
@@ -5969,20 +6021,106 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   - [ ] Test: el job intenta podar una tabla protegida ⇒ **falla ruidosamente**.
   - [ ] Simulacro (`dry-run`) obligatorio con conteos antes de podar nada.
 
-### [ ] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE`
-- **Componente:** api + web · **Depende de:** T-2.81
+### [x] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE` · COMPLETA (2026-08-08)
+- **Componente:** api + web · **Depende de:** T-2.80 *(corregido: la ficha declaraba `T-2.81`, y
+  es falso. La cadena 2.82→2.81→2.80 era **temática, no técnica**: T-2.81 es el job de retención
+  de PII, `compliance_labels` **no es PII**, no está en la lista de tablas protegidas, y ninguna
+  de las tres superficies de esta tarea pasa por ese job. La dependencia real es T-2.80, que está
+  cerrada. Dejarlo como estaba hacía que la ficha afirmara que esto se construyó sobre algo que
+  todavía no existe.)*
 - **Criterios de aceptación:**
-  - [ ] La tabla existe desde el schema (`db/schema.sql:1204`) y **nadie la carga**. Alta y
+  - [x] La tabla existe desde el schema (`db/schema.sql:1323`) y **nadie la carga**. Alta y
         edición por tenant desde la consola, auditada.
-  - [ ] Las etiquetas se ven donde importan (dictamen, evidencia), no solo en un formulario.
+  - [x] Las etiquetas se ven donde importan (dictamen, evidencia), no solo en un formulario.
 
-### [ ] T-2.83 · Residencia de datos: evaluar región MX — `DECISIÓN` (+ `LEGAL`)
-- **Componente:** infra + docs · **Depende de:** —
+> **Lo que hace fiable el criterio 2 es que las tres superficies salen del MISMO
+> `compliance_block`**: el dictamen PDF (§12, inmediatamente antes de la firma, y repetido en el
+> ejecutivo), la pantalla de Triage donde el inspector **firma**, y el móvil del ocupante. Papel
+> y pantalla no pueden divergir porque no hay dos funciones que puedan discrepar.
+>
+> La auditoría se hizo dos veces. La primera dictaminó `[~]` por tres defectos de la pantalla de
+> firma; la segunda los re-midió tras arreglar el contrato y **corrigió a la primera** en dos
+> puntos: el `empty` que afirmaba una ausencia no comprobada **ya no es alcanzable**, y la falta
+> de `stale` **no es deuda de esta tarea** — `TriageDetail` clava `staleSince={null}` a mano en
+> los tres paneles, o sea que **ninguno** de esa página lo tiene. Arreglarlo solo aquí sería la
+> deriva por componente que denuncia T-2.79.d. Fichado aparte como `T-2.82.a`.
+>
+> La auditoría **verifica el texto íntegro en la bitácora**, no un «cambió», y lo archiva bajo el
+> tenant **tocado**, no bajo el del operador — que es la fuga que T-2.71 ya pagó una vez.
+
+### [ ] T-2.82.a · Ningún panel de la pantalla donde se FIRMA tiene `stale` — `SOFTWARE`
+- **Componente:** web · **Depende de:** — · **Hermana de `T-2.79.d`, y conviene resolverlas
+  juntas** · **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
+- **Regla de oro 7, en la peor pantalla posible.** `TriageDetail.tsx` monta sus tres paneles con
+  `staleSince={null}` **clavado a mano**, y `useForensics.ts` ni siquiera expone
+  `dataUpdatedAt`. O sea: en la pantalla donde el inspector **firma un dictamen**, ningún panel
+  puede decir que su dato está viejo. Un dato congelado se pinta como vivo, que es exactamente lo
+  que la regla prohíbe.
+- **No es deuda de T-2.82**, y la reauditoría corrigió a la primera auditoría en esto: no es que
+  `ComplianceDeclared` se montara mal, es que **la página entera** no tiene el concepto.
+  Arreglarlo solo en un componente sería la deriva que denuncia `T-2.79.d`.
 - **Criterios de aceptación:**
-  - [ ] Documento con coste, latencia y servicios disponibles en la región MX **medidos**, no
+  - [ ] `useForensics` expone la edad del dato, y los paneles de `TriageDetail` la reciben.
+  - [ ] Un test que recorra los paneles de esa página y exija que **ninguno** clave `staleSince`
+        a `null`. Derivado del árbol de la página, no una lista de tres.
+  - [ ] La precedencia que decida `T-2.79.d` se aplica aquí sin excepciones locales.
+
+### [ ] T-2.82.b · Cuatro sitios se escribieron tipos a mano, y el SDK ya los trae — `SOFTWARE`
+- **Componente:** web + mobile · **Depende de:** — · **Detectada por:** reauditoría de la
+  Fase 2.8 (2026-08-08)
+- **La condición para pagar esta deuda ya se cumplió.** Cada uno de esos sitios lleva un
+  comentario diciendo «sustituir cuando el SDK se regenere». El SDK **se regeneró** el
+  2026-08-08 y ahora publica `ComplianceDocOut`, `ComplianceLabelsOut`, `ConsentStatusOut`,
+  `NoticeOut` y las funciones de `/privacy/*`, todos con sus campos **requeridos**. Los cuatro:
+  `web/src/features/triage/ComplianceDeclared.tsx`, `web/src/features/tenants/useComplianceLabels.ts`,
+  `web/src/features/privacy/usePrivacyConsent.ts` y `mobile/src/services/privacy.ts`.
+- **Por qué importa y no es limpieza:** un tipo escrito a mano es una **segunda verdad sobre el
+  mismo cable**. Ya pasó: la consola afirmaba que `provenance` siempre viene y el contrato decía
+  que podía faltar. La consola tenía razón — y aun así, tener dos fuentes es lo que permitió que
+  la discrepancia viviera meses sin que nadie la viera.
+- **Hueco de cobertura del mismo lote:** `useComplianceLabels` y `useSaveComplianceLabels`
+  **no se ejecutan en ningún test** — su único consumidor mockea el módulo entero. El mapeo de
+  errores 403/404/409/422 y el umbral de 5 minutos son código de producción que **nunca ha
+  corrido**.
+- **Criterios de aceptación:**
+  - [ ] Los cuatro sitios consumen los tipos generados; cero interfaces de respuesta a mano.
+  - [ ] Un test ejercita `useComplianceLabels` de verdad, incluido el mapeo de errores.
+  - [ ] Una guardia que impida reintroducirlo: ninguna superficie declara a mano la forma de una
+        respuesta que el SDK ya publica.
+
+### [x] T-2.83 · Residencia de datos: evaluar región MX — `DECISIÓN` (+ `LEGAL`) · COMPLETA (2026-08-08)
+- **Componente:** infra + docs · **Depende de:** —
+- **Documento:** [`RESIDENCIA-DE-DATOS-TAKAB.md`](RESIDENCIA-DE-DATOS-TAKAB.md) — es **la
+  respuesta que se le lee al cliente que pregunta**, y §2 trae el guion literal para leerlo en
+  voz alta. Estuvo huérfano hasta el 2026-08-08: existía y no lo enlazaba nadie, que para un
+  criterio cuya finalidad es «que el primer cliente que pregunte tenga respuesta» es casi lo
+  mismo que no existir.
+- **Criterios de aceptación:**
+  - [x] Documento con coste, latencia y servicios disponibles en la región MX **medidos**, no
         supuestos.
-  - [ ] Recomendación explícita y su razón; si es "no migrar", queda escrito por qué, para que
+  - [x] Recomendación explícita y su razón; si es "no migrar", queda escrito por qué, para que
         el primer cliente que pregunte tenga respuesta.
+
+> **La recomendación: NO migrar a `mx-central-1` hoy.** Razón en una línea: **AWS IoT Core no
+> existe en la región de México** — y es el servicio por el que entra cada latido de cada
+> gabinete. El coste (+5 %) y la latencia (−48 ms, y **fuera del camino crítico**, que es local
+> por diseño) no mueven la decisión ni en un sentido ni en el otro.
+>
+> **Un auditor independiente re-derivó las mediciones el 2026-08-08 y cuadraron cifra por
+> cifra**: `iot.mx-central-1` → NXDOMAIN mientras `us-east-2` resuelve; mediana TCP 11.9 ms
+> contra 59.8 ms; y los dos SKU de S3 dando exactamente +5.00 %. Eso es lo que convierte «medido»
+> en algo comprobable en vez de en una palabra.
+>
+> **Matiz honesto sobre «medido», que el propio documento declara:** el coste es **precio de
+> lista** de la Price List API, no una factura. Un coste medido de `mx-central-1` exigiría
+> desplegar allí — que es justamente lo que se está decidiendo no hacer. El antónimo que pone el
+> criterio es «supuesto», y aquí no hay nada supuesto.
+>
+> **Reserva material saneada al cerrar:** §9 citaba como evidencia cinco ficheros en `/tmp` que
+> ya no existen. Los comandos que re-derivan las cifras sí viven **dentro** del documento
+> versionado (§8.3) — se comprobó — así que lo que estaba mal era el puntero, no el hecho. No es
+> la familia de la cita de AWS inventada que esta fase cazó en T-2.71; es más leve, y se corrige
+> igual: una cita de procedencia muerta es una que nadie puede seguir.
 
 ## Fase 2.9 · Trazabilidad y paquete de entrega
 

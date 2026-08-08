@@ -147,6 +147,10 @@ takab/
   `api/tests/test_docs_consistency.py`.
 - **`takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md`** — hallazgos del red-team, changelog de
   correcciones `[ANALISIS-00]` y preguntas abiertas.
+- **`takab-docs/RESIDENCIA-DE-DATOS-TAKAB.md`** — **la respuesta al cliente que pregunta si sus
+  datos se quedan en México** (T-2.83). Recomendación: **no migrar a `mx-central-1` hoy**, porque
+  **AWS IoT Core no existe en esa región** y es por donde entra cada latido de cada gabinete. §2
+  trae el guion para leérselo en voz alta; §8.3, los comandos que re-derivan las cifras.
 
 ## 6. Método de trabajo (cómo ejecutamos cada tarea)
 

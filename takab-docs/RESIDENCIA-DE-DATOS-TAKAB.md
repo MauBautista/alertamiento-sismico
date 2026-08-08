@@ -741,9 +741,19 @@ publica §3.2**.
 - AWS Price List Bulk API — https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json
 - Tabla de servicios por región (fuente JSON, **con reservas** — ver 8.2.3) — https://api.regional-table.region-services.aws.a2z.com/index.json
 
-**Mediciones propias (2026-08-08):** `/tmp/takab_lat.sh` + `/tmp/takab_lat_raw.csv` (240
-muestras), `/tmp/takab_sock_lat.py` (120 muestras), `/tmp/takab_verify_price.py`.
-Reproducibles con §8.3.
+**Mediciones propias (2026-08-08).** Se tomaron con guiones desechables en `/tmp` que **ya no
+existen**, así que **esa cita se retira**: un puntero a evidencia que nadie puede seguir no es
+una fuente. Lo que sí sobrevive —y es lo que sostiene el argumento— son **los comandos de §8.3,
+que viven dentro de este documento versionado**.
+
+No es una salvedad de trámite: un auditor independiente los re-ejecutó el **2026-08-08** y las
+tres cifras que deciden la recomendación cuadraron —`iot.mx-central-1` en NXDOMAIN mientras
+`us-east-2` resuelve; mediana TCP **11.9 ms** contra **59.8 ms**; y los dos SKU de S3 dando
+exactamente **+5.00 %**—. La verificación de §8.4 registra esa re-derivación.
+
+**Lo que NO tiene receta de reproducción, dicho sin adornos:** el **Método B** de §4.2 (socket
+puro sobre el 8883) —§8.3 no trae su comando— y 13 de las 15 filas de precio de §5.2, de las que
+§5.3 solo re-verifica dos. Quien necesite apoyarse en esas dos cosas tiene que volver a medirlas.
 
 **Fuentes internas:** `infra/terraform/` (inventario de servicios),
 `infra/terraform/envs/dev/providers.tf` (región actual `us-east-2`),
