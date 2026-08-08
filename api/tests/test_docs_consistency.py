@@ -607,6 +607,44 @@ def _bloques() -> dict[str, tuple[str, str]]:
     return out
 
 
+#: Casilla de criterio dentro de una ficha: `  - [x] ...` / `  - [ ] ...`.
+CRITERIO_RE = re.compile(r"^  - \[(?P<estado>[x ~])\] ", re.M)
+
+
+def test_una_tarea_cerrada_no_deja_TODOS_sus_criterios_sin_marcar() -> None:
+    """Una ficha `[x]` con **cero** de sus N criterios marcados es contabilidad sin hacer.
+
+    Lo destapó la matriz de trazabilidad (T-2.84) contando el archivo entero: de 442
+    criterios bajo tareas `[x]`, 34 seguían sin marcar, y **cinco tareas cerradas
+    tenían sus criterios ENTEROS en `[ ]`** — T-2.61, T-2.62, T-2.63, T-2.64 y T-2.69.
+    Las cinco estaban de verdad hechas; lo que faltaba era el registro. Y un registro
+    que no se lleva es el que produjo la cabecera que decía «9 de 9 tareas en verde»
+    con 134 tareas dentro.
+
+    **La variante ingenua —«toda tarea `[x]` tiene TODOS sus criterios `[x]`»— sería
+    un test nacido en rojo sin razón**, y está descartada a propósito: T-2.57 está
+    `[x]` con cuatro `[ ]` **deliberados**, bajo un epígrafe que declara que son
+    pendientes de AWS. Esa mezcla es una declaración, no un olvido.
+
+    Lo que no puede ser una declaración es el **cero**: si nadie marcó ni uno, nadie
+    revisó. Por eso el umbral es «al menos uno», que distingue el olvido del matiz.
+    """
+    fallos: list[str] = []
+    for tid, (estado, cuerpo) in _bloques().items():
+        if estado != "x":
+            continue
+        marcas = [m.group("estado") for m in CRITERIO_RE.finditer(cuerpo)]
+        if marcas and not any(m in "x~" for m in marcas):
+            fallos.append(f"{tid}: {len(marcas)} criterios, NINGUNO marcado")
+    assert not fallos, (
+        "Tareas cerradas cuya contabilidad no se llevó:\n  "
+        + "\n  ".join(fallos)
+        + "\n  Marcar la ficha y no sus criterios deja el archivo afirmando dos cosas a la\n"
+        "  vez. Si algún criterio sigue realmente pendiente, márcalo como tal y dilo —\n"
+        "  eso es una declaración; cero de N es un descuido."
+    )
+
+
 def test_una_tarea_hecha_no_puede_cerrar_una_tarea_abierta() -> None:
     """Una tarea `[x]` no declara cerrado —ni cerrada por— nada que siga abierto.
 

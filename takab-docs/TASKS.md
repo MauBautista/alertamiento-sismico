@@ -4013,11 +4013,11 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
     (`web/src/features/console/useAutoPopup.ts:11-12`);
   - la app móvil seguía siendo *"fase posterior"* en cuatro sitios con la Fase 2 mergeada.
 - **Criterios de aceptación:**
-  - [ ] `api/tests/test_docs_consistency.py` con 5 asserts que **fallan por separado y dicen
+  - [x] `api/tests/test_docs_consistency.py` con 5 asserts que **fallan por separado y dicen
         por qué**: marcadores muertos, "fase posterior" en RBAC, cruce pop-up docs↔código,
         cabecera vs. conteo real de `^### [.]`, y coherencia de cierres cruzados.
-  - [ ] Las 7 reconciliaciones aplicadas y citadas.
-  - [ ] Esta ruta escrita, con etiquetas de bloqueo, ruta crítica e invariantes.
+  - [x] Las 7 reconciliaciones aplicadas y citadas.
+  - [x] Esta ruta escrita, con etiquetas de bloqueo, ruta crítica e invariantes.
 - **Trampa que deja escrita:** el assert del conteo **impone una obligación permanente** —
   ver "Conteo de tareas" en la cabecera de este archivo. No es fricción arbitraria: es lo
   único que impide que la cabecera vuelva a mentir 36 tareas.
@@ -4028,10 +4028,10 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   y `make lint` **no**. Un error de tipos o de build llega a verde local y muere en el PR, que
   es el peor momento para descubrirlo y el más caro de diagnosticar.
 - **Criterios de aceptación:**
-  - [ ] Un test de paridad **lee `ci.yml` y el `Makefile`** y exige que todo paso de CI tenga
+  - [x] Un test de paridad **lee `ci.yml` y el `Makefile`** y exige que todo paso de CI tenga
         su equivalente local. Comparar prosa no sirve: hay que comparar los comandos.
-  - [ ] `make test` (o el target que el test declare) incluye el build de web.
-  - [ ] El test falla si mañana alguien añade un paso al CI y no al `Makefile`.
+  - [x] `make test` (o el target que el test declare) incluye el build de web.
+  - [x] El test falla si mañana alguien añade un paso al CI y no al `Makefile`.
 
 ### [x] T-2.63 · Skips mudos del job `edge` — `SOFTWARE` · COMPLETA (2026-08-05)
 - **Componente:** edge/tests · **Depende de:** —
@@ -4039,10 +4039,10 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   alcanzable por socket, y el job sigue verde. Es exactamente el patrón que T-2.58 ya cazó en
   el CI con los 67 tests del panel (`node --version`): un job verde que no cubre nada.
 - **Criterios de aceptación:**
-  - [ ] Censo explícito: un `skipif` de alcanzabilidad de socket **sin registrar rompe el
+  - [x] Censo explícito: un `skipif` de alcanzabilidad de socket **sin registrar rompe el
         build** (`edge/tests/test_hardware_gates.py`).
-  - [ ] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
-  - [ ] Ningún test se salta sin que el resultado del job lo **declare**.
+  - [x] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
+  - [x] Ningún test se salta sin que el resultado del job lo **declare**.
 
 ### [ ] T-2.64.d · `soc.css` cita tres tokens que no existen — `SOFTWARE`
 - **Componente:** web + design system · **Depende de:** T-2.64 · **Detectada por:** la guardia
@@ -4077,10 +4077,10 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
     web, el gabinete se queda con el defecto justo donde no hay nube que ayude;
   - la **columna de detalle de `/console` reserva 320–408 px** aunque esté vacía.
 - **Criterios de aceptación:**
-  - [ ] Numeración única, verificada por test sobre los rótulos reales.
-  - [ ] Contraste ≥ 4.5:1 en los dos espejos (token web **y** copia del panel del edge), con
+  - [x] Numeración única, verificada por test sobre los rótulos reales.
+  - [x] Contraste ≥ 4.5:1 en los dos espejos (token web **y** copia del panel del edge), con
         el test que lo bloquee — hoy `axe.spec.ts` no lo caza.
-  - [ ] La columna vacía deja de reservar ancho; medido en los 3 viewports.
+  - [x] La columna vacía deja de reservar ancho; medido en los 3 viewports.
 
 **DoD de la Fase 2.3:** cero afirmaciones documentales falsas (probado, no revisado a ojo);
 paridad local↔CI verificada por test; ningún test se salta sin declararlo; y la consola ya no
@@ -4321,9 +4321,9 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 ### [x] T-2.69 · Inventario de versiones de flota — `SOFTWARE` · COMPLETA (2026-08-07)
 - **Componente:** api + web · **Depende de:** —
 - **Criterios de aceptación:**
-  - [ ] La consola dice **qué versión corre cada gabinete**, con edad del dato.
-  - [ ] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
-  - [ ] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
+  - [x] La consola dice **qué versión corre cada gabinete**, con edad del dato.
+  - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
+  - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
 ### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · BLOQUEADA por T-2.70.a
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
