@@ -407,6 +407,74 @@ def test_un_message_status_paused_en_un_200_tambien_tumba_el_canal(tmp_path: Pat
     assert is_simulated(provider) is True
 
 
+# --- el corte del 4xx es ESTRUCTURAL, no una propiedad de _handle_error -------
+#
+# [T-2.75 · residuo 2] `send()` hacía:
+#
+#     if response.status_code >= 400:
+#         self._handle_error(...)
+#     self._handle_success(...)
+#
+# sin `return` ni `raise` entre las dos líneas: el 4xx no seguía a éxito solo
+# porque las TRES ramas de `_handle_error` levantaban. Eso no es una garantía,
+# es una coincidencia mantenida a mano — una cuarta rama futura que retorne
+# (un `continue` suave, un "esto lo reintentamos luego") marcaría el 4xx como
+# enviado. Los dos tests siguientes SUSTITUYEN `_handle_error` por esa rama
+# futura hipotética y exigen que aun así el envío no cuente. No prueban el
+# presente: prueban que el arreglo protege del futuro.
+
+
+def _handle_error_que_NO_levanta(provider: WhatsAppTemplateProvider, monkeypatch) -> None:
+    """La rama futura del enunciado: hace su trabajo y retorna sin levantar."""
+    monkeypatch.setattr(provider, "_handle_error", lambda *a, **kw: None)
+
+
+def test_un_4xx_no_llega_a_la_rama_de_exito_aunque_handle_error_retorne(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariante estructural: para un HTTP ≥ 400, `_handle_success` no se
+    ejecuta JAMÁS — lo impide la forma del código, no la buena conducta de
+    `_handle_error`."""
+    provider = _provider(_Meta(_error(131026)), tmp_path)
+    visto: list[int] = []
+    monkeypatch.setattr(provider, "_handle_success", lambda *a, **kw: visto.append(1))
+    _handle_error_que_NO_levanta(provider, monkeypatch)
+
+    with pytest.raises(NotifyError):
+        provider.send(TARGET, MESSAGE)
+
+    assert visto == [], "un 4xx alcanzó la rama de éxito: el corte no es estructural"
+
+
+def test_un_4xx_no_acaba_marcado_como_enviado_aunque_handle_error_retorne(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El daño concreto, en la moneda del orquestador. `_dispatch_one` marca
+    `sent` exactamente cuando `send()` retorna sin levantar (orchestrator.py,
+    `_MARK_SENT_SQL`), así que «el job no acaba en sent» se prueba aquí como
+    «send() levanta NotifyError y no queda recibo».
+
+    El cuerpo de la respuesta es adversario a propósito —un 400 que por dentro
+    parece un `accepted` limpio, con wamid y todo— para que ninguna validación
+    del payload salve la situación por accidente: lo único que puede detener
+    esto es que el 4xx nunca llegue a la rama de éxito.
+    """
+    respuesta_tramposa = httpx.Response(
+        400,
+        json={
+            "messaging_product": "whatsapp",
+            "messages": [{"id": "wamid.MENTIRA", "message_status": "accepted"}],
+        },
+    )
+    provider = _provider(_Meta(respuesta_tramposa), tmp_path)
+    _handle_error_que_NO_levanta(provider, monkeypatch)
+
+    with pytest.raises(NotifyError):
+        provider.send(TARGET, MESSAGE)
+
+    assert provider.last_receipt is None, "se guardó recibo de un envío que Meta RECHAZÓ"
+
+
 # =============================================================================
 # CRITERIO 3 · evidencia de entrega, con el mismo rasero que los demás canales
 # =============================================================================

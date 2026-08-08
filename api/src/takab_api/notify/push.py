@@ -168,9 +168,13 @@ class SimulatedPushProvider:
     """Sin platform applications configuradas: NADA despierta un teléfono.
 
     [T-2.75] Se declara ``simulated`` y el orquestador ni siquiera llega a
-    llamar ``deliver()``: el job queda ``simulated``, jamás ``sent``. Antes
-    devolvía ``delivered=len(devices)`` —contaba como entrega el simple hecho
-    de tener dispositivos registrados— y el tablero decía que sonaron.
+    llamar ``deliver()``: el job queda ``simulated``, jamás ``sent``.
+
+    Y si llegara —porque alguien mueva ese guard, o porque otro llamador use
+    ``deliver()`` directamente—, lo que devuelve es la verdad: ``delivered=0``.
+    Devolvía ``delivered=len(devices)``, contando como entrega el simple hecho
+    de tener dispositivos registrados, y el tablero decía que sonaron. El guard
+    del orquestador es un cortafuegos; esto es el contrato (regla de oro 7).
     """
 
     channel = "push"
@@ -187,7 +191,9 @@ class SimulatedPushProvider:
             self.hint,
         )
         self.delivered.append((devices, payload))
-        return PushOutcome(delivered=len(devices))
+        # Se registra el intento (arriba) pero NO se cuenta ni una entrega: sin
+        # platform application no salió un solo push.
+        return PushOutcome(delivered=0)
 
 
 def build_push_provider(settings) -> SnsPushProvider | SimulatedPushProvider:

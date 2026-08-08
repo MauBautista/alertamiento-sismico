@@ -185,6 +185,7 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NoReturn
 
 import httpx
 
@@ -667,11 +668,29 @@ class WhatsAppTemplateProvider:
 
         if response.status_code >= 400:
             self._handle_error(response, template, key)
+            # [T-2.75] CERROJO. `_handle_error` está tipado ``NoReturn`` y sus
+            # ramas levantan, pero eso es conducta de OTRA función: si mañana
+            # alguien añade una rama que retorne, el flujo caería en
+            # `_handle_success` y el orquestador marcaría `sent` un mensaje que
+            # Meta RECHAZÓ. Este raise hace que la estructura lo garantice.
+            # Envío INCIERTO: no se sabe qué hizo esa rama nueva ⇒ se recuerda
+            # la clave para no duplicar (mismo criterio que el 5xx).
+            self._guard.remember(key, template.ttl_s)
+            raise NotifyError(
+                self._scrub(
+                    f"whatsapp: HTTP {response.status_code} sin desenlace declarado "
+                    "(envío incierto)"
+                )
+            )
         self._handle_success(response, template, key)
 
     # -- desenlaces ------------------------------------------------------------
 
-    def _handle_error(self, response: httpx.Response, template: TemplateSpec, key) -> None:
+    def _handle_error(self, response: httpx.Response, template: TemplateSpec, key) -> NoReturn:
+        """SIEMPRE levanta ``NotifyError`` — de ahí el ``NoReturn``: un desenlace
+        de error no puede devolver el control al camino de éxito. El llamador
+        NO se fía de esta promesa (ver el cerrojo en ``send``), pero el tipo la
+        deja escrita para quien venga a añadir la cuarta rama."""
         code, detail = _error_of(response)
         motivo = self._scrub(f"whatsapp: HTTP {response.status_code} [{code}] {detail}")
         if is_template_fault(code):
