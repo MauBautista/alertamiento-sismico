@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **216** · `[x]` **147** · `[~]` **5** · `[ ]` **64**
+**Conteo de tareas:** total **219** · `[x]` **148** · `[~]` **5** · `[ ]` **66**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4691,12 +4691,49 @@ proceso que ya no toca el GPIO**. Es literalmente el fallo que D1.5 dice haber c
    diccionario en vez de fusionarlo — o sea que una variable de entorno puede dejar un canal de
    relé sin modo declarado y tumbar el arranque.
 
+   > **RESUELTO (2026-08-08) fusionando, no fallando al construir — y eso contradice la
+   > preferencia con la que se encargó la tarea.** La razón que la cambió: `EdgeSettings` no es
+   > solo el `edge.env`, es también **el documento firmado** que aplica
+   > `ConfigStore.apply_signed_update` con `model_validate_json`, y `_high_water` solo sube tras
+   > validar. Lanzar en la construcción tiraría el documento **entero** —umbrales,
+   > `command_enabled`, `cloud_admin_state`— y se reintentaría idéntico **para siempre**: es
+   > exactamente el fallo que este repo ya razonó por escrito al tipar `cloud_admin_state` como
+   > `str` en vez de `Literal`. Y en el gabinete, «fallar al construir la config» y «fallar al
+   > tocar un pin» tienen el **mismo desenlace físico** (`gpio` es `critical=True`): edificio sin
+   > alertamiento. Fusionar es lo único que hace el fallo duro **inalcanzable por configuración**,
+   > que era lo que la auditoría pedía.
+   >
+   > **No resucita lo que D1.2 quitó:** aquel default respondía `NORMALLY_OPEN` a **todo** —lo que
+   > invertía gas y retenedores—; `DEFAULT_FAILSAFE` da a cada canal **su** modo, que es propiedad
+   > del actuador, no del sitio. Anclado con un test que explota el hueco a propósito:
+   > `model_copy(update=...)` **no pasa por validadores**, así que un perfil mutilado sigue siendo
+   > construible y `_failsafe` sigue tronando. Nadie puede borrar el gate de D1.2 alegando que la
+   > configuración ya lo garantiza.
+
 **Menores que condicionan D3:**
 6. **El cronómetro de latencia para cuando `drive_low()` retorna**, no cuando el quinto pin llega
    a su nivel de protección. Con la actuación posterior en un hilo sin `join`, el test pasa
    reportando **1.3 ms** y el guardarraíl anti-teatro no lo ve. D3 mueve justamente esa actuación
    al otro lado del socket: sería reintroducir un nivel más arriba el defecto que D1.4 existe
    para corregir.
+
+   > **CORRECCIÓN (2026-08-08): la premisa de este punto era falsa, y medirla lo demostró.**
+   > Se dio por hecho que sondear los cinco pines bastaría para cazar el hilo sin `join`.
+   > **No basta:** con el hilo suelto **los cinco pines llegan igual, en 1.0 ms**, así que un
+   > cronómetro honesto mide 1.0 ms y **aprueba con razón** — el hecho físico ocurrió dentro del
+   > presupuesto. Lo que el fire-and-forget se lleva por delante no es la latencia: son los
+   > **`ActuatorAck`**. Una actuación disparada y olvidada llega a los pines igual de rápido y
+   > deja a `_act_and_publish` sin saber si un canal falló y a la nube sin acuse.
+   >
+   > Por eso el arreglo tiene **dos mitades**: el reloj para en el instante eléctrico de los
+   > cinco pines (con `sleep(0)` en cada vuelta, cediendo el GIL **a propósito**, para que una
+   > implementación en hilo o socket quede *medida y no penalizada*), y la cadena **rinde
+   > cuentas**: 5 de 5 acuses, fuera del cronómetro porque encolar acuses no es §4.3.
+   >
+   > La alternativa —exigir que la cadena termine dentro de la llamada— **prohibiría D3 en vez
+   > de medirlo**. Y con la travesía degradada a 250 ms el número sube y **lo dice**:
+   > «tardó 250.7 ms, de los cuales 249.9 ocurrieron DESPUÉS de que `drive_low()` retornara».
+   > Cuando D3 mueva la actuación al socket, **este test no hay que reescribirlo**.
 7. **El presupuesto de dependencias solo censa el montaje de DEV.** Una dependencia de terceros
    importada en la rama de **producción** (`dev_mode=False`) es invisible para la allowlist — y
    producción es justamente el proceso que corre en el Pi.
@@ -5796,14 +5833,106 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         lista de componentes.
   - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
 
-### [ ] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE`
+### [x] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + db · **Depende de:** T-2.79
 - **Criterios de aceptación:**
-  - [ ] **Jamás `DELETE`.** Anonimización + `tombstone`: el derecho ARCO se ejerce sin borrar
+  - [x] **Jamás `DELETE`.** Anonimización + `tombstone`: el derecho ARCO se ejerce sin borrar
         una fila de auditoría, evidencia ni dictamen — **regla de oro 11**, que es restricción
         dura, no preferencia.
-  - [ ] Un check-in de vida anonimizado sigue contando para el histórico del incidente.
-  - [ ] Test: tras ejercer ARCO, el `audit_log` del incidente sigue íntegro y verificable.
+  - [x] Un check-in de vida anonimizado sigue contando para el histórico del incidente.
+  - [x] Test: tras ejercer ARCO, el `audit_log` del incidente sigue íntegro y verificable.
+
+> **El conflicto era aparente, y ahí está toda la tarea.** El derecho es sobre la **persona**; la
+> obligación de la regla de oro 11 es sobre el **hecho**. La bisagra: `life_checkins.user_id` es
+> un `sub` de Cognito — un UUID **opaco**, que solo es dato personal mientras exista el mapeo
+> `sub → nombre` en `user_profiles`. **ARCO destruye el mapeo y deja el UUID en pie.**
+>
+> Por eso **no** se sustituye el `sub` por un seudónimo: `COUNT(DISTINCT user_id)` es «cuántas
+> personas confirmaron estar bien en el piso 8», y colapsarlas a un valor común **hundiría un
+> número que se usa para decidir dónde buscar**. Lo que sí muere del check-in es `geom`, el GPS
+> exacto de una persona, que el conteo no necesita.
+>
+> **Qué impide FÍSICAMENTE borrar — tres capas, ninguna es un comentario:**
+> 1. **Privilegio ausente.** `REVOKE DELETE` sobre 12 tablas + `REVOKE UPDATE` en `life_checkins`
+>    seguido de `GRANT UPDATE (geom)`: privilegio **por columna**. Reescribir `status` o
+>    `user_id` es un error de permisos de PostgreSQL, no una convención.
+> 2. **Triggers con eventos SEPARADOS.** El `DELETE` conserva el guard canónico; el `UPDATE`
+>    compara la fila entera vía `to_jsonb(NEW) - 'geom'`, así que cubre las columnas de hoy **y
+>    las que se añadan mañana**.
+> 3. **La firma.** `privacy_erase_subject(p_right, p_via)` **no recibe sujeto**: opera sobre
+>    `app_user_id()`. Ejercer ARCO sobre un tercero o cruzar tenants no está *prohibido* — es
+>    **inexpresable**.
+>
+> **El inventario de PII es DERIVADO**, con test recíproco: un detector recorre el esquema
+> **vivo** y toda columna que huela a persona debe estar clasificada; el reverso caza entradas
+> muertas, porque un inventario con fantasmas miente igual que uno corto. Verificado quitando
+> `user_profiles.display_name`: el detector la encuentra y **la nombra**.
+>
+> **Distinción que evita un desastre:** `device_keys` se **REVOCA**, no se borra. Confundirlas
+> llevaría a alguien a «completar» la anonimización destruyendo la llave pública que **verifica
+> la evidencia firmada**.
+>
+> **Decisiones fijadas por test:** ARCO durante incidente **abierto** se difiere con 409 —la
+> ubicación es dato de rescate en vivo— y la petición se audita **fuera de banda** para que el
+> plazo legal corra igual. Ejercerlo dos veces es idempotente, con la misma lápida.
+>
+> **La verificación sobre base NUEVA (cadena 0001→0034) cazó dos bugs invisibles en local:** una
+> función usada 300 líneas antes de definirse, y el `GRANT ... ON ALL TABLES` de la 0001
+> **re-concediendo `DELETE`** después de `schema.sql`. Por eso los `REVOKE` viven en la migración.
+
+### [ ] T-2.80.a · El teléfono en claro del consentimiento no lo alcanza ARCO — `SOFTWARE` + `LEGAL`
+- **Componente:** api + db · **Depende de:** T-2.80 · **Declarada por el propio T-2.80 como hueco**
+- **El hueco, medido.** ARCO alcanza al titular identificado por `sub` de Cognito. Un sujeto
+  identificado por **teléfono** (`msisdn`) tiene su número **en claro** en
+  `privacy_consents.subject_ref` — y esa tabla es **append-only** por el motor de T-2.79.
+- **Por qué no se cerró de refilón, que es lo correcto:** anonimizarlo exige **abrir un hueco en
+  el guard de la tabla hermana** y decidir algo que no es técnico: si destruir el número destruye
+  también **la prueba de la base legal** del envío que ese consentimiento autoriza. Hacerlo sin
+  decidirlo habría cambiado el significado del registro de consentimientos por un efecto
+  colateral.
+- **Criterios de aceptación:**
+  - [ ] Queda **decidido y escrito** qué prevalece: el derecho del titular sobre su número, o la
+        prueba de la base legal. Con su razón, no con una preferencia.
+  - [ ] Si se anonimiza, el guard de `privacy_consents` admite **exactamente** esa transición y
+        ninguna otra — la misma disciplina de columna que usa `life_checkins`.
+  - [ ] La lápida cubre al sujeto `msisdn` igual que al `sub`, y el digest lo sigue probando.
+
+### [ ] T-2.80.b · El responsable no puede ejercer un ARCO recibido por escrito — `SOFTWARE`
+- **Componente:** api + auth · **Depende de:** T-2.80 · **Bloqueada de hecho por la deuda de
+  `auth/matrix.py`** que T-2.79 dejó abierta
+- **Hoy solo el titular puede ejercerlo**, y eso no cubre el caso real: una persona manda su
+  solicitud ARCO **por escrito** al responsable del tratamiento, que es quien tiene que
+  ejecutarla. La firma `privacy_erase_subject(p_right, p_via)` sin sujeto —que es una **virtud**
+  de T-2.80, porque hace inexpresable el ARCO cruzado— es justo lo que hay que ensanchar **sin
+  perder** esa garantía.
+- **Criterios de aceptación:**
+  - [ ] Existe una acción `manage_privacy_erasure` en `auth/matrix.py` (no una lista de roles
+        escrita a mano en el router — ver la deuda de `routers/privacy.py`), y su línea en
+        `RBAC-TAKAB.md`.
+  - [ ] Ejercerlo por cuenta de otro **exige constancia** de la solicitud y queda en el
+        `audit_log` con quién lo pidió, quién lo ejecutó y con qué prueba.
+  - [ ] **La garantía de T-2.80 no se debilita:** sigue siendo imposible alcanzar a un titular de
+        otro tenant. Test cross-tenant que debe fallar.
+  - [ ] Queda escrito qué NO hace esta tarea: **borrar la cuenta en Cognito** no es parte del
+        acto de anonimización y necesita su propio camino.
+
+### [ ] T-2.80.c · El verificador de restore ya no comprueba la rendija de ARCO — `SOFTWARE`
+- **Componente:** api (`ops/restore_check.py`) · **Depende de:** T-2.80 · **Regresión declarada
+  por el propio T-2.80**
+- **Qué se perdió y por qué es correcto que se perdiera.** El verificador de DR reconocía
+  «append-only» ejerciendo un `UPDATE` sobre `life_checkins` y exigiendo que fuera rechazado.
+  T-2.80 abrió ahí una **rendija de una sola columna** (`geom`), así que esa tabla ya no es
+  append-only puro y el verificador tuvo que dejar de tratarla como tal.
+- **El riesgo que queda:** tras un restore, **nadie comprueba que la rendija siga siendo del
+  tamaño que era**. Una base restaurada con el `GRANT UPDATE` a nivel de tabla en vez de por
+  columna pasaría el chequeo de DR y permitiría reescribir `status` o `user_id` de un check-in de
+  vida — sin que ninguna alarma lo dijera.
+- **Criterios de aceptación:**
+  - [ ] El verificador de restore comprueba que el privilegio de `life_checkins` es **por
+        columna** y que la única columna concedida es `geom`.
+  - [ ] Comprueba que el guard de `UPDATE` sigue rechazando cualquier otro cambio, incluido el
+        `UPDATE SET c = c` que no cambia nada.
+  - [ ] Un `SKIP` no cuenta como `PASS` (la lección de la Fase 2.6).
 
 ### [ ] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE`
 - **Componente:** api (job) + db · **Depende de:** T-2.80
