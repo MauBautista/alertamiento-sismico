@@ -36,6 +36,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import re
 import shutil
 import signal
 import subprocess
@@ -76,6 +77,7 @@ def gabinete(tmp_path: pathlib.Path):
 
     rsync_real = shutil.which("rsync")
     python_real = shutil.which("python3")
+    flock_real = shutil.which("flock")
 
     # El intérprete falso del venv. Lo usan DOS caminos del script: el pre-vuelo
     # (`compileall`, que aquí delega en el python real y compila el árbol de
@@ -172,6 +174,12 @@ def gabinete(tmp_path: pathlib.Path):
 
     # El cerrojo de propiedad de pines del gabinete de mentira (T-2.70.a·D1.1).
     cerrojo = tmp_path / "gpio.lock"
+    # Contabilidad DEL ARNÉS, no del script: el PID del proceso que sostiene el
+    # cerrojo, para que el teardown pueda matarlo SIEMPRE. Antes se leía del
+    # registro del propio cerrojo, y eso deja de funcionar en cuanto un test
+    # simula un registro vacío (ENOSPC) o un registro que MIENTE sobre el pid:
+    # el `sleep 120` quedaba vivo dos minutos sosteniendo un cerrojo.
+    pid_dueno = tmp_path / "dueno-real.pid"
 
     # systemctl falso. Su `restart` RECLAMA LOS PINES, que es lo que hace de
     # verdad el proceso que arranca: `GpioController._on_start` toma un flock
@@ -182,6 +190,21 @@ def gabinete(tmp_path: pathlib.Path):
     #     escenario que `systemctl is-active` no puede ver: unidad viva, sirena
     #     sin dueño.
     #   UNIDAD_DUENA=... → los pines los reclama OTRA unidad (mañana: takab-gpio).
+    #   UNIDADES_VIVAS=... → qué unidades conoce systemd Y están activas.
+    #   RETRASO_CERROJO=N → el arranque tarda N segundos en tomar el cerrojo.
+    #   REGISTRO_VACIO=1 → toma el cerrojo pero NO escribe el registro (ENOSPC).
+    #   REGISTRO_RANCIO=1 → escribe primero una línea de un dueño ANTERIOR.
+    #   PID_FALSO=N → el registro nombra a N en vez de al dueño de verdad.
+    #
+    # [T-2.70.a·D1·BLOQUEANTE] `is-active` es una ALLOWLIST, no un `echo active`
+    # incondicional. Esa era la vacuidad que dejaba pasar dos mutaciones del paso
+    # 7 con los 14 tests en verde: un doble que dice `active` y sale 0 para
+    # CUALQUIER cadena no puede distinguir «se interrogó a la unidad dueña» de
+    # «se interrogó a `takab-edge`» ni de «no se interrogó a nadie». Y una
+    # DENYLIST (`UNIDADES_MUERTAS=…`) no arreglaría el fondo: seguiría diciendo
+    # `active` por defecto para un nombre que no es una unidad —justo el caso
+    # del `python -m takab_edge.gpio` suelto de una sesión SSH—, que es el
+    # escenario que esta verificación existe para delatar.
     _escribir_ejecutable(
         binarios / "systemctl",
         f"""
@@ -191,16 +214,63 @@ def gabinete(tmp_path: pathlib.Path):
           # que ahí `$!` era el PID de FLOCK y el que se queda con el descriptor
           # (y con el cerrojo) es el `sleep` hijo. El teardown mataba al padre y
           # dejaba vivo al `sleep` dos minutos más, sosteniendo el cerrojo. Con
-          # el subshell + `exec`, `$!` ES el proceso que tiene el fd 9 abierto:
-          # el registro nombra al dueño de verdad y matarlo lo suelta.
-          ( flock -n 9 || exit 1; exec sleep 120 ) 9>"{cerrojo}" </dev/null >/dev/null 2>&1 &
+          # el subshell + `exec`, `$BASHPID` ES el proceso que tiene el fd 9
+          # abierto: el registro nombra al dueño de verdad y matarlo lo suelta.
+          #
+          # El cerrojo se ABRE dentro del subshell (`exec 9>`) y no en la
+          # redirección del `&`, porque con `RETRASO_CERROJO` el archivo no debe
+          # existir hasta que el arranque llegue de verdad a `gpio._on_start`:
+          # así el sondeo del paso 7 ve la secuencia REAL de un arranque lento
+          # —no hay archivo, luego hay archivo y cerrojo libre, luego dueño— y no
+          # una toma instantánea que ningún test podría distinguir de un `sleep`.
+          (
+            sleep "${{RETRASO_CERROJO:-0}}"
+            exec 9>"{cerrojo}"
+            flock -n 9 || exit 1
+            echo "$BASHPID" > "{pid_dueno}"
+            if [ -z "${{REGISTRO_VACIO:-}}" ]; then
+              if [ -n "${{REGISTRO_RANCIO:-}}" ]; then
+                printf 'pid=1\\nunit=impostor.service\\n' > "{cerrojo}"
+              fi
+              printf 'pid=%s\\nunit=%s\\n' \\
+                "${{PID_FALSO:-$BASHPID}}" "${{UNIDAD_DUENA:-$2}}" >> "{cerrojo}"
+            fi
+            exec sleep 120
+          ) </dev/null >/dev/null 2>&1 &
           sleep 0.3
-          printf 'pid=%s\\nunit=%s\\n' "$!" "${{UNIDAD_DUENA:-$2}}" > "{cerrojo}"
         fi
-        [ "$1" = is-active ] && echo active
+        if [ "$1" = is-active ]; then
+          case " ${{UNIDADES_VIVAS:-takab-edge takab-gpio}} " in
+            *" $2 "*) echo active; exit 0 ;;
+          esac
+          echo inactive
+          exit 3
+        fi
         exit 0
         """,
     )
+    # flock falso: delega SIEMPRE en el real salvo para simular la tercera rama
+    # del veredicto — «no se pudo interrogar el cerrojo», que no es ni 0 (libre)
+    # ni 9 (tomado). El discriminante es `-E`, que sólo usa la INTERROGACIÓN de
+    # `deploy.sh`; la toma del cerrojo del `systemctl` falso (`flock -n 9`) sigue
+    # yendo al binario de verdad, con su fd 9 heredado a través de este wrapper.
+    #
+    # No se reproduce con un cerrojo que sea un DIRECTORIO —lo primero que se
+    # probó—: `flock` bloquea un directorio sin pestañear y sale 0, o sea que ese
+    # escenario cae en «está LIBRE», que es la avería CONTRARIA. Tampoco con un
+    # `chmod 000`: en un CI que corra como root eso no falla y el test se
+    # volvería vacío sin avisar.
+    _escribir_ejecutable(
+        binarios / "flock",
+        f"""
+        if [ -n "${{FLOCK_ILEGIBLE:-}}" ] && [ "$2" = -E ]; then
+          echo "flock: no se pudo abrir el cerrojo (simulado)" >&2
+          exit "${{FLOCK_ILEGIBLE}}"
+        fi
+        exec "{flock_real}" "$@"
+        """,
+    )
+
     # journalctl falso: el paso INFORMATIVO del final. `FALLA_JOURNALCTL` simula
     # el journal recortado/sin permisos que en el Pi devuelve != 0.
     _escribir_ejecutable(
@@ -219,6 +289,7 @@ def gabinete(tmp_path: pathlib.Path):
             self.previo = raiz / "edge.prev"
             self.bitacora = bitacora
             self.cerrojo = cerrojo
+            self.pid_dueno = pid_dueno
 
         def desplegar(self, **entorno: str) -> subprocess.CompletedProcess[str]:
             env = dict(os.environ)
@@ -279,11 +350,17 @@ def gabinete(tmp_path: pathlib.Path):
     finally:
         # El proceso que sostiene el flock es un `sleep 120` de verdad: matarlo o
         # la suite se queda con procesos colgados DOS MINUTOS, y sosteniendo un
-        # cerrojo. Que el PID del registro sea EXACTAMENTE ese proceso lo
-        # garantiza el `exec` del systemctl falso (ver arriba): con `flock -n
-        # <archivo> sleep 120` este `kill` mataba al padre `flock` y el `sleep`
-        # heredero seguía con el descriptor.
-        pid = gabinete.dueno_de_los_pines().get("pid", "")
+        # cerrojo. Que el PID sea EXACTAMENTE ese proceso lo garantiza el `exec`
+        # del systemctl falso (ver arriba): con `flock -n <archivo> sleep 120`
+        # este `kill` mataba al padre `flock` y el `sleep` heredero seguía con el
+        # descriptor.
+        #
+        # Se lee del archivo de contabilidad DEL ARNÉS y no del registro del
+        # cerrojo: hay tests que simulan un registro vacío o un registro que
+        # miente sobre el pid, y ahí el registro no sirve para limpiar.
+        pid = ""
+        if pid_dueno.exists():
+            pid = pid_dueno.read_text().strip()
         if pid.isdigit():
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.kill(int(pid), signal.SIGKILL)
@@ -543,7 +620,7 @@ def test_un_servicio_vivo_que_NO_tiene_los_pines_tumba_el_despliegue(gabinete) -
     verificación anterior este despliegue salía en VERDE y el operador se iba del
     sitio con un edificio sin alertamiento.
     """
-    r = gabinete.desplegar(NO_RECLAMA_PINES="1")
+    r = gabinete.desplegar(NO_RECLAMA_PINES="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
 
     assert "systemctl restart takab-edge" in gabinete.registro(), (
         "premisa: el despliegue llegó hasta el reinicio; sólo falta el dueño de los pines"
@@ -587,7 +664,7 @@ def test_el_cerrojo_se_interroga_con_flock_y_no_leyendo_el_archivo(gabinete) -> 
     registro con aspecto perfecto y sin nadie detrás.
     """
     gabinete.cerrojo.write_text("pid=1\nunit=takab-edge\n")
-    r = gabinete.desplegar(NO_RECLAMA_PINES="1")
+    r = gabinete.desplegar(NO_RECLAMA_PINES="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
 
     assert r.returncode != 0, (
         "el despliegue se creyó un registro de texto sin comprobar el cerrojo: "
@@ -599,3 +676,247 @@ def test_el_cerrojo_se_interroga_con_flock_y_no_leyendo_el_archivo(gabinete) -> 
     # escenarios colapsarían en el mismo camino y este test no probaría el flock.
     assert "ni siquiera existe" not in r.stderr
     assert "está LIBRE" in r.stderr
+
+
+# ---- D1·BLOQUEANTE: la unidad DUEÑA tiene que estar viva PARA SYSTEMD -------
+#
+# Estos dos tests son los que matan las mutaciones M-E4 (`systemctl is-active
+# "$DUENO_UNIDAD"` → `systemctl is-active takab-edge`) y M-E5 (esa línea → `:`),
+# que con los 14 tests anteriores salían en `14 passed`. La vacuidad no estaba
+# en el script sino AQUÍ: el `systemctl` falso decía `active` y salía 0 para
+# cualquier cadena, así que lo único comprobable era que «takab-gpio» apareciera
+# en el stdout — y esa cadena la imprime el `echo` que lee el REGISTRO, aunque
+# el `is-active` interrogue a otra unidad o no interrogue a nadie.
+
+
+def test_una_unidad_duena_que_systemd_da_por_MUERTA_tumba_el_despliegue(gabinete) -> None:
+    """El día del criterio 1 de T-2.70.a, con `takab-gpio` caído.
+
+    Los pines los reclamó `takab-gpio` (el registro lo dice) pero systemd NO la
+    tiene activa. Es el escenario que separa «hay dueño» de «hay dueño que
+    sobrevive al próximo reinicio», y el que delata a una verificación anclada
+    al nombre viejo: preguntar por `takab-edge` —que aquí SÍ está activa,
+    haciendo todo lo demás— saldría verde midiendo a un proceso que ya no toca
+    el GPIO.
+    """
+    r = gabinete.desplegar(
+        UNIDAD_DUENA="takab-gpio",
+        UNIDADES_VIVAS="takab-edge",  # takab-gpio NO está activa para systemd
+        TAKAB_DEPLOY_PLAZO_PROPIEDAD="2",
+    )
+
+    assert gabinete.dueno_de_los_pines()["unit"] == "takab-gpio", (
+        "premisa: los pines los tiene takab-gpio, y es lo que dice el registro"
+    )
+    assert r.returncode != 0, (
+        "la verificación NO interrogó a la unidad que de verdad tiene los pines: "
+        "o pregunta por un nombre escrito a mano, o no pregunta.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "takab-gpio" in r.stderr, (
+        "el diagnóstico debe NOMBRAR a la unidad que systemd da por muerta"
+    )
+    assert "no sobrevive" in r.stderr, (
+        "el mensaje tiene que decir POR QUÉ importa: sin unidad, el gabinete no "
+        "vuelve a proteger tras el próximo reinicio"
+    )
+    assert "✓ pines del gabinete en poder" not in r.stdout, (
+        "declaró el despliegue bueno pese a que nadie garantiza el próximo arranque"
+    )
+
+
+def test_los_pines_en_manos_de_un_proceso_SUELTO_tumban_el_despliegue(gabinete) -> None:
+    """Un `python -m takab_edge.gpio` lanzado a mano desde una sesión SSH.
+
+    Ese proceso sostiene el cerrojo de verdad —el edificio está protegido AHORA
+    MISMO—, pero no lo gobierna systemd: el registro nombra lo que
+    `_unidad_de_este_proceso()` sepa decir (`TAKAB_GPIO_UNIT` o `sys.argv[0]`),
+    que no es ninguna unidad. Al primer reinicio, o al cerrar la sesión SSH, el
+    gabinete se queda sin sirena, sin gas y sin retenedores, y el despliegue lo
+    habría declarado bueno.
+
+    Aquí NO se toca `UNIDADES_VIVAS`: el arnés da por muerto todo lo que no sea
+    una unidad conocida, que es justo lo que hace `systemctl is-active` con una
+    cadena que no es una unidad. Por eso este caso mata las mismas dos
+    mutaciones sin ningún seam extra.
+    """
+    r = gabinete.desplegar(
+        UNIDAD_DUENA="/opt/takab/edge/.venv/bin/python",
+        TAKAB_DEPLOY_PLAZO_PROPIEDAD="2",
+    )
+
+    assert r.returncode != 0, (
+        "los pines los sostiene un proceso que systemd no conoce y el despliegue "
+        "salió en verde.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "no sobrevive" in r.stderr
+
+
+# ---- D1·MENOR-1: SONDEAR, no dormir 3 s y disparar una vez ------------------
+
+
+def test_un_arranque_LENTO_pero_sano_no_se_reporta_como_gabinete_sin_dueno(gabinete) -> None:
+    """El falso rojo más caro que tiene este script.
+
+    La verificación pasó de medir «systemd forkeó» (t≈0) a medir «`gpio._on_start`
+    corrió su primera sentencia» —intérprete, numpy/scipy, `supervisor.build()`—
+    conservando el mismo `sleep 3` de un solo disparo. Un gabinete SANO que tarde
+    4 s en tomar el cerrojo se reportaba como «NADIE es dueño de los pines… el
+    gabinete NO está protegiendo», y ese mensaje empuja al operador a revertir:
+    revertir es reiniciar, y reiniciar mueve `GAS_VALVE` y `DOOR_RETAINER`.
+
+    NO se pasa `TAKAB_DEPLOY_PLAZO_PROPIEDAD` A PROPÓSITO: lo que se está
+    anclando es que el plazo POR DEFECTO tolere un arranque lento. Con el plazo
+    en 3 s este test vuelve a rojo, que es lo que debe pasar si alguien recorta
+    la constante a ciegas en vez de sondear.
+    """
+    r = gabinete.desplegar(RETRASO_CERROJO="4")
+
+    assert r.returncode == 0, (
+        "un gabinete que tarda 4 s en tomar los pines está SANO y se reportó "
+        "como sin dueño.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "✓ pines del gabinete en poder de takab-edge" in r.stdout
+    assert "NO está protegiendo" not in r.stderr
+
+
+def test_el_sondeo_no_declara_bueno_un_gabinete_que_nunca_toma_los_pines(gabinete) -> None:
+    """La no-vacuidad del sondeo: esperar no puede convertirse en perdonar.
+
+    Con `NO_RECLAMA_PINES` el cerrojo no se toma nunca; el sondeo tiene que
+    agotar el plazo y ABORTAR con el mismo veredicto de antes, no rendirse en
+    verde por cansancio.
+    """
+    r = gabinete.desplegar(NO_RECLAMA_PINES="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
+
+    assert r.returncode != 0
+    assert "NADIE reclamó los pines" in r.stderr
+    espera = re.search(r"tras esperar (\d+) s", r.stderr)
+    assert espera, (
+        "el mensaje debe decir CUÁNTO se esperó antes de rendirse: sin eso el "
+        f"operador no sabe si el gabinete es lento o está muerto.\nstderr:\n{r.stderr}"
+    )
+    assert int(espera.group(1)) >= 1, "y el número tiene que ser el plazo REAL, no un literal"
+
+
+# ---- D1·MENOR-2: el registro es INFORMATIVO; un disco lleno no es un intruso
+
+
+def test_un_registro_ILEGIBLE_apunta_al_disco_y_no_tumba_un_gabinete_que_protege(
+    gabinete,
+) -> None:
+    """Las dos mitades de D1 se contradecían sobre el registro.
+
+    `gpio._registrar_dueno` escribe el registro en un `try/except` y CONSERVA la
+    propiedad si su E/S falla —`ENOSPC` con `/var/lib/takab` lleno de spool y
+    evidencia, o un `EIO` de una microSD muriéndose—, y eso está anclado por
+    `test_un_registro_que_no_se_puede_escribir_no_tumba_la_propiedad`.
+    `deploy.sh` leía ese mismo registro vacío y abortaba acusando a «un `flock`
+    suelto de una sesión SSH».
+
+    O sea: un gabinete que protege perfectamente, con su cerrojo tomado, se
+    declaraba secuestrado, y el operador salía a buscar un intruso que no existe
+    en vez de mirar el disco. El `flock` YA demostró que hay dueño; el texto es
+    un extra.
+    """
+    r = gabinete.desplegar(REGISTRO_VACIO="1")
+
+    assert gabinete.cerrojo.exists() and not gabinete.dueno_de_los_pines(), (
+        "premisa: el cerrojo está tomado y su registro está VACÍO"
+    )
+    assert r.returncode == 0, (
+        "un registro que no se pudo escribir tumbó un gabinete que SÍ tiene "
+        "dueño de los pines.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "df -h" in r.stderr, "el aviso tiene que mandar al operador AL DISCO"
+    assert "suelto de una sesión SSH" not in r.stderr, (
+        "seguía acusando a un intruso que no existe: el operador sale a buscar "
+        "un `flock` de una sesión SSH en vez de mirar el disco"
+    )
+    assert "⚠" in r.stderr, "y tiene que ser un AVISO visible, no un silencio"
+
+
+def test_un_registro_que_nombra_un_PID_MUERTO_sigue_tumbando_el_despliegue(gabinete) -> None:
+    """El límite del perdón de MENOR-2, y la rama `/proc` anclada.
+
+    Un registro vacío es un disco enfermo; un registro que nombra a un pid que
+    NO EXISTE es un registro DESMENTIDO — el cerrojo lo sostiene alguien que no
+    es quien dice el texto. Ahí sí hay que abortar, y por eso el perdón del
+    registro ilegible no se puede generalizar a «el registro no importa».
+    """
+    muerto = subprocess.Popen(["true"])
+    muerto.wait()
+    assert not pathlib.Path(f"/proc/{muerto.pid}").is_dir(), (
+        "premisa: el pid sembrado en el registro no corresponde a ningún proceso"
+    )
+
+    r = gabinete.desplegar(PID_FALSO=str(muerto.pid), TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
+
+    assert r.returncode != 0, (
+        "el registro nombra a un pid muerto y el despliegue salió en verde.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert str(muerto.pid) in r.stderr
+    assert "que no existe" in r.stderr
+
+
+# ---- D1·MENOR-7: las ramas del paso 7 que nadie anclaba ---------------------
+
+
+def test_un_cerrojo_que_no_se_puede_INTERROGAR_tumba_el_despliegue(gabinete) -> None:
+    """La tercera rama del `flock`: ni 0 (libre) ni 9 (tomado).
+
+    Sin poder medir la propiedad de los pines, este despliegue no se declara
+    bueno — y el mensaje NO puede colapsar con el de «está LIBRE», que es la
+    avería contraria: ahí se sabe que no hay dueño, aquí no se sabe nada.
+
+    Y no se sondea: que `flock` no pueda interrogar el cerrojo no es una
+    cuestión de tiempo (falta `util-linux`, no existe `/var/lib/takab`), así que
+    esperar 45 s no cambiaría la respuesta. Este test corre con el plazo LARGO
+    por defecto a propósito: si tardara, es que se está sondeando algo que no
+    va a cambiar.
+    """
+    arranque = time.monotonic()
+    r = gabinete.desplegar(FLOCK_ILEGIBLE="42")
+    tardanza = time.monotonic() - arranque
+
+    assert r.returncode != 0, (
+        "un cerrojo que no se puede interrogar se dio por bueno.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "no se pudo interrogar el cerrojo" in r.stderr
+    assert "flock salió 42" in r.stderr, "el código de salida real es el diagnóstico"
+    assert "está LIBRE" not in r.stderr, (
+        "«no se pudo medir» y «no hay dueño» son averías distintas y el operador "
+        "actúa distinto; no pueden compartir mensaje"
+    )
+    assert tardanza < 30, (
+        f"tardó {tardanza:.1f} s: se está sondeando una avería que no depende del "
+        "tiempo, y eso alarga cada despliegue roto sin cambiar el veredicto"
+    )
+
+
+def test_del_registro_del_cerrojo_gana_la_ULTIMA_linea(gabinete) -> None:
+    """`tail -1`, y por qué no da igual.
+
+    El registro se reescribe con `ftruncate`+`pwrite`, pero un relevo que
+    escribiera un registro más corto sobre uno más largo dejaría cola del dueño
+    ANTERIOR. Quien manda es el último en escribir —igual que en systemd y en
+    bash—, así que la lectura tiene que quedarse con la última línea. Con `head
+    -1` este despliegue reportaría al impostor: un pid 1 que existe siempre y una
+    unidad que systemd no conoce.
+    """
+    r = gabinete.desplegar(REGISTRO_RANCIO="1")
+
+    assert "impostor.service" in gabinete.cerrojo.read_text(), (
+        "premisa: el registro trae la línea del dueño anterior por delante"
+    )
+    assert r.returncode == 0, (
+        "leyó el registro por la línea RANCIA en vez de por la última.\n"
+        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "✓ pines del gabinete en poder de takab-edge" in r.stdout
+    assert "impostor" not in r.stdout, "reportó al dueño ANTERIOR como si mandara"

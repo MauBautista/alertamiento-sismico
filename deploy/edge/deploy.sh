@@ -91,6 +91,18 @@ ARBOL_ENSAYO="${RAIZ_REMOTA}/edge.incoming"
 # fuera del Pi.
 CERROJO_GPIO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
 
+# [T-2.70.a·D1·MENOR-1] Cuánto se SONDEA la propiedad de los pines tras el
+# reinicio, en segundos. No es un `sleep`: es el techo de una espera que termina
+# en cuanto hay dueño (ver paso 7). Generoso a propósito —el arranque real mide
+# 0.60 s en x86 y ~1.0 s con los imports de producción, y el margen en el Pi 4
+# no es medible sin el Pi—, porque el coste de pasarse es esperar unos segundos
+# de más en un gabinete AVERIADO, y el coste de quedarse corto es declarar «el
+# gabinete NO está protegiendo» sobre un gabinete SANO: eso empuja a revertir,
+# revertir es reiniciar, y reiniciar mueve GAS_VALVE y DOOR_RETAINER.
+# Variable por la misma razón que las dos de arriba: el sandbox necesita
+# acortarla para probar la rama de agotamiento sin tardar 45 s por test.
+PLAZO_PROPIEDAD="${TAKAB_DEPLOY_PLAZO_PROPIEDAD:-45}"
+
 # ---------------------------------------------------------------------------
 # EXTRAS DEL PI. `uv sync` DESINSTALA lo que no esté en el set resuelto, así que
 # esta lista no es "qué añadir": es "qué debe existir en el venv". Sincronizar
@@ -148,7 +160,7 @@ echo "→ pre-vuelo, swap, dependencias, gate, unidades y reinicio en ${HOST}"
 # remota, como variables de entorno del `bash -s` remoto, para que cada valor
 # viva en UN solo sitio.
 ssh "$HOST" \
-  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' bash -s" <<'REMOTO'
+  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' TAKAB_DEPLOY_PLAZO_PROPIEDAD='${PLAZO_PROPIEDAD}' bash -s" <<'REMOTO'
 set -euo pipefail
 # SSH no interactivo no carga el PATH de login: uv vive en ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
@@ -304,7 +316,6 @@ fi
 sudo install -m 0644 systemd/takab-edge.service systemd/takab-gpio.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl restart takab-edge
-sleep 3
 
 # --- 7. VERIFICACIÓN: ¿QUIÉN ES DUEÑO DE LOS PINES? --------------------------
 # [T-2.70.a·D1.5] Aquí decía `systemctl is-active takab-edge`, y eso mide EL
@@ -327,64 +338,180 @@ sleep 3
 # dentro de /var/lib/takab, que es `WorkingDirectory=` y `ReadWritePaths=` de
 # LAS DOS unidades.
 CERROJO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
+PLAZO="${TAKAB_DEPLOY_PLAZO_PROPIEDAD:-45}"
 
-# El síntoma más probable de un arranque que murió antes de `gpio`: el archivo
-# ni existe. Se distingue del resto porque el diagnóstico es distinto (no es «se
-# soltó», es «nunca llegó a reclamarse»), y porque `flock` lo CREARÍA y borraría
-# la pista.
-if [ ! -e "$CERROJO" ]; then
-  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE reclamó los pines — el cerrojo" >&2
-  echo "  ${CERROJO} ni siquiera existe. Ningún proceso del edge llegó a la" >&2
-  echo "  primera línea de gpio._on_start desde el reinicio." >&2
-  echo "  Diagnóstico: journalctl -u takab-edge -u takab-gpio -n 50 --no-pager" >&2
-  exit 1
-fi
-
-# `flock -n -E 9`: 9 = «está tomado» (lo que queremos), 0 = «lo tomé yo, o sea
-# que NADIE lo tenía», cualquier otro = no se pudo interrogar. Los tres casos son
-# distintos y ninguno puede confundirse con los otros.
+# [T-2.70.a·D1·MENOR-1] SE SONDEA, NO SE DUERME. Aquí había un `sleep 3` tras el
+# `systemctl restart` y UN SOLO disparo del veredicto. Eso medía bien mientras lo
+# verificado era «systemd forkeó el proceso» —satisfecho en t≈0—, pero desde
+# D1.5 lo verificado es «`gpio._on_start` corrió su primera sentencia», que llega
+# DESPUÉS del intérprete, de numpy/scipy y de `supervisor.build()`. Con el mismo
+# plazo y sin reintento, un gabinete SANO que tarde 4 s se reportaba como «NADIE
+# es dueño de los pines… el gabinete NO está protegiendo».
+#
+# Ese falso rojo es el daño de segundo orden más caro del script: empuja al
+# operador a revertir, revertir es reiniciar, y reiniciar mueve GAS_VALVE y
+# DOOR_RETAINER (la lección que este mismo archivo documenta arriba); y entrena a
+# ignorar la ÚNICA comprobación que dice si la sirena tiene dueño. Medido
+# exec→cerrojo: 0.60 s en x86/dev y ~1.0 s con los imports de producción — el
+# margen en el Pi 4 no es medible sin el Pi, y ése es justo el argumento para
+# SONDEAR en vez de subir la constante a ciegas.
+#
+# El veredicto es EL MISMO de antes; lo único que cambia es que se re-pregunta
+# hasta que haya dueño o hasta agotar el plazo, y los mensajes de abajo pasan a
+# ser los de la rama de AGOTAMIENTO. Dos matices que no son de tiempo:
+#   · «no se pudo interrogar el cerrojo» sale del bucle EN EL ACTO: que falte
+#     util-linux o no exista /var/lib/takab no se arregla esperando 45 s.
+#   · el registro (que es informativo, ver abajo) sólo se re-lee durante una
+#     GRACIA corta desde que el cerrojo aparece tomado, porque lo único que
+#     puede tardar ahí es el hueco de microsegundos entre el `flock` y el
+#     `pwrite` de `gpio._registrar_dueno`. Su causa realista —ENOSPC— es
+#     permanente, y su desenlace es un AVISO, no un aborto: esperar no compra
+#     nada y alargaría cada despliegue sobre un disco lleno.
+GRACIA_REGISTRO=2
+INICIO_ESPERA=$SECONDS
+TOMADO_EN=""
 ESTADO_CERROJO=0
-flock -n -E 9 "$CERROJO" true || ESTADO_CERROJO=$?
+DUENO_PID=""
+DUENO_UNIDAD=""
+PROPIEDAD=""
 
-if [ "$ESTADO_CERROJO" = 0 ]; then
-  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE es dueño de los pines." >&2
-  echo "  El cerrojo ${CERROJO} está LIBRE, así que ningún proceso vivo sostiene" >&2
-  echo "  el GPIO: el gabinete NO está protegiendo (ni sirena, ni gas, ni" >&2
-  echo "  retenedores). La unidad puede estar 'active' y aun así ser cierto —" >&2
-  echo "  por eso esto ya no se comprueba con 'systemctl is-active'." >&2
+while : ; do
+  # El síntoma más probable de un arranque que murió antes de `gpio`: el archivo
+  # ni existe. Se distingue del resto porque el diagnóstico es distinto (no es
+  # «se soltó», es «nunca llegó a reclamarse»), y porque `flock` lo CREARÍA y
+  # borraría la pista.
+  if [ ! -e "$CERROJO" ]; then
+    PROPIEDAD=sin_archivo
+  else
+    # `flock -n -E 9`: 9 = «está tomado» (lo que queremos), 0 = «lo tomé yo, o
+    # sea que NADIE lo tenía», cualquier otro = no se pudo interrogar. Los tres
+    # casos son distintos y ninguno puede confundirse con los otros.
+    ESTADO_CERROJO=0
+    flock -n -E 9 "$CERROJO" true || ESTADO_CERROJO=$?
+
+    if [ "$ESTADO_CERROJO" = 0 ]; then
+      PROPIEDAD=libre
+    elif [ "$ESTADO_CERROJO" != 9 ]; then
+      PROPIEDAD=ilegible
+    else
+      [ -n "$TOMADO_EN" ] || TOMADO_EN=$SECONDS
+      # El cerrojo está tomado. El registro dice POR QUIÉN. `tail -1` porque gana
+      # la última línea, igual que en systemd y en bash: un relevo que escribiera
+      # un registro más corto sobre uno más largo dejaría cola del dueño ANTERIOR
+      # y con `head -1` se reportaría al que ya no manda. `|| true` porque un
+      # registro que no se puede ni leer es el caso de abajo, no un fallo del
+      # `set -e`.
+      DUENO_PID="$(sed -n 's/^pid=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
+      DUENO_UNIDAD="$(sed -n 's/^unit=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
+
+      # `/proc` y no `kill -0`: el proceso corre como root y el usuario del
+      # deploy no, así que `kill -0` daría EPERM y abortaría un despliegue sano.
+      if [ -n "$DUENO_PID" ] && [ ! -d "/proc/${DUENO_PID}" ]; then
+        PROPIEDAD=pid_fantasma
+      elif [ -z "$DUENO_PID" ] || [ -z "$DUENO_UNIDAD" ]; then
+        PROPIEDAD=registro_mudo
+      elif ! systemctl is-active "$DUENO_UNIDAD" >/dev/null 2>&1; then
+        # Que la unidad que DICE ser dueña esté viva para systemd: si los pines
+        # los sostiene un proceso suelto (un `python -m takab_edge.gpio` de una
+        # sesión SSH), el gabinete no sobrevive al próximo reinicio y esto tiene
+        # que salir en rojo. Se interroga a `$DUENO_UNIDAD` y JAMÁS a un nombre
+        # escrito aquí: el día del criterio 1 de T-2.70.a los pines pasan a
+        # `takab-gpio` mientras `takab-edge` sigue activa haciendo todo lo demás,
+        # y preguntar por el nombre viejo declararía ✓ midiendo a un proceso que
+        # ya no toca el GPIO.
+        PROPIEDAD=unidad_muerta
+      else
+        PROPIEDAD=con_dueno
+      fi
+    fi
+  fi
+
+  ESPERADO=$(( SECONDS - INICIO_ESPERA ))
+  if [ "$PROPIEDAD" = con_dueno ] || [ "$PROPIEDAD" = ilegible ]; then
+    break
+  fi
+  if [ "$PROPIEDAD" = registro_mudo ] &&
+     [ $(( SECONDS - TOMADO_EN )) -ge "$GRACIA_REGISTRO" ]; then
+    break
+  fi
+  if [ "$ESPERADO" -ge "$PLAZO" ]; then
+    break
+  fi
+  sleep 0.25
+done
+
+case "$PROPIEDAD" in
+sin_archivo)
+  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE reclamó los pines — el cerrojo" >&2
+  echo "  ${CERROJO} ni siquiera existe tras esperar ${ESPERADO} s. Ningún" >&2
+  echo "  proceso del edge llegó a la primera línea de gpio._on_start desde" >&2
+  echo "  el reinicio." >&2
   echo "  Diagnóstico: journalctl -u takab-edge -u takab-gpio -n 50 --no-pager" >&2
   exit 1
-elif [ "$ESTADO_CERROJO" != 9 ]; then
+  ;;
+libre)
+  echo "✗ DESPLIEGUE NO VERIFICADO: NADIE es dueño de los pines." >&2
+  echo "  Tras esperar ${ESPERADO} s el cerrojo ${CERROJO} está LIBRE, así que" >&2
+  echo "  ningún proceso vivo sostiene el GPIO: el gabinete NO está protegiendo" >&2
+  echo "  (ni sirena, ni gas, ni retenedores). La unidad puede estar 'active' y" >&2
+  echo "  aun así ser cierto — por eso esto ya no se comprueba con" >&2
+  echo "  'systemctl is-active'." >&2
+  echo "  Diagnóstico: journalctl -u takab-edge -u takab-gpio -n 50 --no-pager" >&2
+  exit 1
+  ;;
+ilegible)
   echo "✗ DESPLIEGUE NO VERIFICADO: no se pudo interrogar el cerrojo ${CERROJO}" >&2
   echo "  (flock salió ${ESTADO_CERROJO}). Sin poder medir la propiedad de los" >&2
   echo "  pines, este despliegue no se declara bueno: ¿existe /var/lib/takab?" >&2
   echo "  ¿está util-linux instalado?" >&2
   exit 1
-fi
-
-# El cerrojo está tomado. El registro dice POR QUIÉN. `tail -1` porque gana la
-# última línea, igual que en systemd y en bash.
-DUENO_PID="$(sed -n 's/^pid=//p' "$CERROJO" | tail -1)"
-DUENO_UNIDAD="$(sed -n 's/^unit=//p' "$CERROJO" | tail -1)"
-if [ -z "$DUENO_PID" ] || [ -z "$DUENO_UNIDAD" ]; then
-  echo "✗ DESPLIEGUE NO VERIFICADO: alguien sostiene el cerrojo ${CERROJO} pero" >&2
-  echo "  el registro no dice quién. Los pines los tiene un proceso que no es" >&2
-  echo "  el edge (¿un 'flock' suelto de una sesión SSH?)." >&2
-  exit 1
-fi
-# `/proc` y no `kill -0`: el proceso corre como root y el usuario del deploy no,
-# así que `kill -0` daría EPERM y abortaría un despliegue sano.
-if [ ! -d "/proc/${DUENO_PID}" ]; then
+  ;;
+pid_fantasma)
   echo "✗ DESPLIEGUE NO VERIFICADO: el registro de ${CERROJO} nombra al pid" >&2
   echo "  ${DUENO_PID}, que no existe. El cerrojo lo sostiene otro proceso: el" >&2
   echo "  gabinete no está en un estado que se pueda declarar bueno." >&2
   exit 1
+  ;;
+unidad_muerta)
+  echo "✗ DESPLIEGUE NO VERIFICADO: los pines los tiene '${DUENO_UNIDAD}'" >&2
+  echo "  (pid ${DUENO_PID}), y systemd NO la da por activa tras ${ESPERADO} s." >&2
+  echo "  El edificio está protegido AHORA, pero por algo que systemd no" >&2
+  echo "  gobierna: el gabinete no sobrevive al próximo reinicio — ni a que se" >&2
+  echo "  cierre la sesión SSH que lo lanzó. Salidas: reiniciar la unidad que" >&2
+  echo "  debe tener los pines, o matar al proceso suelto y dejar que arranque" >&2
+  echo "  la unidad (OJO: eso mueve GAS_VALVE y DOOR_RETAINER)." >&2
+  echo "  Diagnóstico: systemctl status '${DUENO_UNIDAD}'; ps -o pid,cmd -p ${DUENO_PID}" >&2
+  exit 1
+  ;;
+esac
+
+# [T-2.70.a·D1·MENOR-2] Cerrojo tomado y registro MUDO: AVISO, no aborto. Aquí se
+# abortaba acusando a «un 'flock' suelto de una sesión SSH», y eso contradecía a
+# la otra mitad de D1: `gpio._registrar_dueno` escribe el registro dentro de un
+# try/except y CONSERVA la propiedad si su E/S falla —está anclado por
+# `test_un_registro_que_no_se_puede_escribir_no_tumba_la_propiedad`—, porque un
+# ENOSPC con /var/lib/takab lleno o un EIO de una microSD muriéndose no son razón
+# para dejar la sirena, el gas y los retenedores sin dueño. Un gabinete así
+# protege perfectamente y se declaraba secuestrado, mandando al operador a buscar
+# un intruso que no existe en vez de al disco.
+#
+# El `flock` YA demostró que HAY dueño; el texto es un extra. Lo que sí sigue
+# abortando (arriba) es un registro DESMENTIDO por /proc: ahí el texto no está
+# ausente, está contradicho.
+if [ "$PROPIEDAD" = registro_mudo ]; then
+  echo "⚠ pines TOMADOS, pero el registro de ${CERROJO} no dice quién los tiene." >&2
+  echo "  Esto NO tumba el despliegue: el flock lo sostiene el kernel y ya" >&2
+  echo "  demostró que hay dueño; el registro es informativo y gpio conserva la" >&2
+  echo "  propiedad cuando su E/S falla. Un registro vacío apunta AL DISCO de" >&2
+  echo "  este gabinete, no a un intruso:" >&2
+  echo "    revisa df -h /var/lib/takab   (ENOSPC: spool offline, evidencia)" >&2
+  echo "    y dmesg | tail                (EIO de la microSD)" >&2
+  echo "  Lo que queda SIN verificar es que el dueño sea una unidad systemd, o" >&2
+  echo "  sea que este gabinete puede no sobrevivir al próximo reinicio." >&2
+  echo "✓ pines del gabinete RECLAMADOS (dueño anónimo: registro ilegible)"
+else
+  echo "✓ pines del gabinete en poder de ${DUENO_UNIDAD} (pid ${DUENO_PID})"
 fi
-# Y que la unidad que DICE ser dueña esté viva para systemd: si los pines los
-# sostiene un proceso suelto (un `python -m takab_edge.gpio` de una sesión SSH),
-# el gabinete no sobrevive al próximo reinicio y esto tiene que salir en rojo.
-systemctl is-active "$DUENO_UNIDAD"
-echo "✓ pines del gabinete en poder de ${DUENO_UNIDAD} (pid ${DUENO_PID})"
 # PASO INFORMATIVO — por eso termina en `|| true`. Es el último comando del
 # bloque remoto y corre bajo `set -euo pipefail`, así que su código de salida
 # ERA el del despliegue entero: un journal recortado (`Storage=volatile` tras un
