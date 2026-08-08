@@ -4662,6 +4662,33 @@ día del criterio 1 de esta misma ficha: los pines pasan a `takab-gpio`, `takab-
 haciendo todo lo demás, y un `deploy.sh` anclado al nombre viejo declara ✓ **midiendo a un
 proceso que ya no toca el GPIO**. Es literalmente el fallo que D1.5 dice haber cerrado.
 
+> **CERRADO (2026-08-08), y la causa no estaba donde esta ficha la situó.** `deploy.sh:386` era
+> **correcto**; lo vacío era el **doble de `systemctl` del arnés**. El arreglo va ahí.
+>
+> Y no se usó la denylist que proponía la auditoría, sino una **allowlist**, por una razón que
+> cambia el resultado: una denylist **sigue diciendo `active` por defecto para un nombre que no
+> es una unidad** — que es exactamente el caso del `python -m takab_edge.gpio` suelto por SSH,
+> el escenario que esta verificación existe para delatar y que **no tenía ningún test**.
+>
+> **La prueba del contraste, que es lo que acredita el arreglo:** con las dos mutaciones puestas
+> (hardcodear `takab-edge`, y borrar el gate entero) **los 14 tests originales siguen dando
+> `14 passed`**. Solo los dos tests nuevos las matan. `bash -n` salió 0 con ambas — el análisis
+> sintáctico es ciego a esta clase de defecto y el sandbox que **ejecuta** el script es lo único
+> que la caza.
+>
+> **Los tres menores de despliegue, cerrados con él:** el `sleep 3` es ahora un **sondeo acotado**
+> sobre el mismo veredicto (y el arnés ganó la capacidad de simular un arranque lento: antes
+> modelaba la toma del cerrojo como instantánea, así que **ningún test podía distinguir sondeo de
+> `sleep`**); un registro mudo con el cerrojo tomado **avisa y apunta al disco** en vez de
+> abortar, pero se sigue abortando si `/proc` **desmiente** al registro; y quedaron ancladas las
+> ramas de ilegible, `/proc` y el «gana la última».
+>
+> **Decisión que conviene conocer:** una unidad que systemd da por muerta **se sondea** hasta
+> agotar el plazo en vez de abortar en el acto. Cuesta 45 s en un gabinete ya roto, y compra que
+> un futuro `Type=notify` —unidad en `activating` mientras ya sostiene el cerrojo— no produzca un
+> **aborto falso**: y un aborto falso empuja a revertir, revertir es reiniciar, y reiniciar mueve
+> `GAS_VALVE` y `DOOR_RETAINER`.
+
 **Los dos menores que hay que cerrar ANTES de la ventana en el Pi:**
 1. **El `sleep 3` mide ahora algo que ocurre mucho más tarde.** La verificación pasó de «systemd
    forkeó» (t≈0) a «`gpio._on_start` corrió su primera sentencia», con el mismo plazo de un solo
