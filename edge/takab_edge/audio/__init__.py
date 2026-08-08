@@ -2,8 +2,10 @@
 
 La alerta primaria audible es y seguirá siendo la SIRENA DE RELÉ (camino de vida,
 determinista, `gpio`). Este módulo solo la COMPLEMENTA con un mensaje hablado por
-la salida de audio del Pi (DAC/amplificador/bocina externos — el Pi 5 no trae
-jack 3.5 mm): instrucciones de SISMO en alerta real y de SIMULACRO en drills.
+la salida de audio del Pi: instrucciones de SISMO en alerta real y de SIMULACRO
+en drills. El cerebro es un **Pi 4** y **sí trae jack 3.5 mm** —la sirena por jack
+está en producción desde T-1.68—; este docstring decía «el Pi 5 no trae jack»,
+que era falso por partida doble (ni es un Pi 5, ni carece de jack).
 
 Reglas del canal:
 - **Nunca en el camino crítico**: se dispara DESPUÉS de actuar los relés
