@@ -5742,6 +5742,37 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 El motor es `SOFTWARE`; **el texto legal es `LEGAL`**. No se bloquean entre sí: se construye
 el motor con un texto provisional versionado y se sustituye el texto cuando llegue.
 
+> ### CERRADA EN SU ALCANCE (2026-08-08) — y con 12 deudas declaradas, no escondidas
+>
+> **Las cinco tareas de la fase están `[x]`:** T-2.79 (aviso versionado + consentimiento),
+> T-2.80 (ARCO por anonimización), T-2.81 (retención con la excepción codificada), T-2.82
+> (`compliance_labels` por tenant) y T-2.83 (residencia de datos). Cada una pasó por **auditoría
+> independiente**, y dos de ellas por **dos**.
+>
+> **Lo que la fase demostró, en una frase:** el motor de datos aguantó todas las auditorías a la
+> primera —append-only en tres capas, digest copiado y no derivado, borrado imposible por
+> privilegio y no por convención—, y **lo que estaba roto era siempre lo que la persona ve**. El
+> peor defecto de toda la fase no fue de compliance: fue que la pantalla de consentimiento
+> **encerraba al ocupante** sin check-in de vida ni botón de pánico cuando la nube fallaba a
+> medias.
+>
+> **Las 12 fichas abiertas de esta fase son deuda declarada durante el trabajo, no alcance sin
+> hacer.** Ninguna se cierra escribiendo código a ciegas:
+>
+> - **Necesitan decisión humana (2):** `T-2.80.a` — `LEGAL`: si anonimizar el teléfono del
+>   consentimiento destruye la prueba de la base legal del envío que autoriza. `T-2.79.d` —
+>   `DECISIÓN`: qué gana entre `empty` y `stale` en el contrato de `StateFrame`, que gobierna
+>   **toda** la consola y no solo un banner.
+> - **Riesgo operativo real (1):** `T-2.79.a` — el opt-in de WhatsApp sale de un `rule_set`
+>   editable en vez del registro que sabe decir que el consentimiento se **retiró**. Es la única
+>   que puede **tumbar un canal de notificación para todos los tenants a la vez**.
+> - **Deuda declarada por el propio trabajo (9):** `T-2.79.e/f`, `T-2.80.b/c`, `T-2.81.a/b/c`,
+>   `T-2.82.a/b`.
+>
+> **Dos de ellas conviene mirarlas juntas:** `T-2.79.d` y `T-2.82.a` nacen de lo mismo —el
+> contrato de `StateFrame` no dice quién gana ni de dónde sale `staleSince`—, y la segunda revela
+> que **ningún panel de la pantalla donde se FIRMA un dictamen** puede declarar su dato viejo.
+
 ### [x] T-2.79 · Aviso de privacidad versionado + consentimiento — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + web + mobile · **Depende de:** —
 - **Criterios de aceptación:**
