@@ -244,9 +244,7 @@ class NoticeCatalog:
                 )
         for spec in found:
             if spec.defect:
-                logger.error(
-                    "aviso de privacidad %s INSERVIBLE: %s", spec.source, spec.defect
-                )
+                logger.error("aviso de privacidad %s INSERVIBLE: %s", spec.source, spec.defect)
         return cls(notices=tuple(found))
 
     def get(self, purpose: str, locale: str) -> NoticeSpec | None:

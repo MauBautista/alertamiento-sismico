@@ -89,7 +89,12 @@ describe("PrivacyConsentBanner", () => {
     const { container } = render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("current"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("current"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -106,7 +111,12 @@ describe("PrivacyConsentBanner", () => {
     render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado(state), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado(state),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -117,7 +127,12 @@ describe("PrivacyConsentBanner", () => {
     const { container: a, unmount } = render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("missing"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("missing"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -126,7 +141,12 @@ describe("PrivacyConsentBanner", () => {
     const { container: b } = render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("stale"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("stale"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -139,7 +159,12 @@ describe("PrivacyConsentBanner", () => {
     const { unmount } = render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("missing"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("missing"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -162,7 +187,12 @@ describe("PrivacyConsentBanner", () => {
     render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("missing"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("missing"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );
@@ -173,7 +203,12 @@ describe("PrivacyConsentBanner", () => {
     render(
       wrap(
         <PrivacyConsentBanner
-          override={{ status: estado("missing"), loading: false, error: null, dataUpdatedAt: Date.now() }}
+          override={{
+            status: estado("missing"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
         />,
       ),
     );

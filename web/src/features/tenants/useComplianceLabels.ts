@@ -117,8 +117,7 @@ export function useComplianceLabels(tenantId: string | null): ComplianceData {
     doc: query.data ?? null,
     loading: tenantId !== null && query.isPending,
     error: query.error ? query.error.message : null,
-    staleSince:
-      query.dataUpdatedAt > 0 && age > COMPLIANCE_STALE_MS ? query.dataUpdatedAt : null,
+    staleSince: query.dataUpdatedAt > 0 && age > COMPLIANCE_STALE_MS ? query.dataUpdatedAt : null,
     refetch: () => void query.refetch(),
   };
 }

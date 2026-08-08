@@ -65,7 +65,9 @@ describe("ComplianceDeclared · lo que ve QUIEN FIRMA", () => {
 
   it("el firmante ve la afirmación, su clase y dónde lo dice", () => {
     render(
-      <ComplianceDeclared forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })} />,
+      <ComplianceDeclared
+        forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })}
+      />,
     );
     const row = screen.getByTestId("declared-claim");
     expect(within(row).getByText(CLAIM.title)).toBeTruthy();
@@ -75,7 +77,9 @@ describe("ComplianceDeclared · lo que ve QUIEN FIRMA", () => {
 
   it("el firmante ve SIEMPRE de quién es la afirmación", () => {
     render(
-      <ComplianceDeclared forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })} />,
+      <ComplianceDeclared
+        forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })}
+      />,
     );
     expect(screen.getByTestId("declared-provenance").textContent).toContain(
       "DECLARACIÓN DEL CLIENTE",
@@ -84,7 +88,9 @@ describe("ComplianceDeclared · lo que ve QUIEN FIRMA", () => {
 
   it("el deslinde lo dicta el servidor, no la pantalla", () => {
     render(
-      <ComplianceDeclared forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })} />,
+      <ComplianceDeclared
+        forensics={forensics({ ...EMPTY_DOC, items: [CLAIM], notes: [NOTICE] })}
+      />,
     );
     expect(screen.getByTestId("declared-notes").textContent).toBe(NOTICE);
   });

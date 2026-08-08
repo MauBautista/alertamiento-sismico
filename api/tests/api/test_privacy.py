@@ -55,9 +55,7 @@ OPERADOR_SUB = "7e000000-0000-0000-0000-00000000op01".replace("op", "0b")
 
 def _admin(tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
     sub = ADMIN_SUB if tenant == au.DB_TENANT_PRIV else ADMIN_SUB_B
-    return au.bearer(
-        au.make_token("tenant_admin", tenant=tenant, site_scope="*", user_id=sub)
-    )
+    return au.bearer(au.make_token("tenant_admin", tenant=tenant, site_scope="*", user_id=sub))
 
 
 def _operador(tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
@@ -134,9 +132,7 @@ async def test_el_aviso_del_tenant_tapa_al_de_plataforma_y_solo_para_ese_tenant(
         assert alta.status_code == 201
 
         propio = (await client.get("/privacy/notice", headers=_admin())).json()
-        ajeno = (
-            await client.get("/privacy/notice", headers=_admin(au.DB_TENANT_PRIV2))
-        ).json()
+        ajeno = (await client.get("/privacy/notice", headers=_admin(au.DB_TENANT_PRIV2))).json()
 
     assert propio["source"] == "tenant"
     assert propio["version"] == "1.0.0"
@@ -162,9 +158,7 @@ async def test_el_mismo_texto_con_otra_etiqueta_no_es_una_version_nueva(
         assert (
             await client.post("/privacy/notices", json=_publicar("1.0.0"), headers=_admin())
         ).status_code == 201
-        repetido = await client.post(
-            "/privacy/notices", json=_publicar("1.0.1"), headers=_admin()
-        )
+        repetido = await client.post("/privacy/notices", json=_publicar("1.0.1"), headers=_admin())
         etiqueta_repetida = await client.post(
             "/privacy/notices",
             json=_publicar("1.0.0", body=_CUERPO_TENANT + " Parrafo nuevo."),
@@ -319,13 +313,17 @@ async def test_la_bitacora_guarda_el_sello_y_no_el_cuerpo(limpia_privacidad) -> 
     engine = get_engine()
     async with engine.begin() as conn:
         fila = (
-            await conn.execute(
-                text(
-                    "SELECT verb, meta FROM audit_log WHERE verb = 'privacy_consent_accept' "
-                    "ORDER BY ts DESC LIMIT 1"
+            (
+                await conn.execute(
+                    text(
+                        "SELECT verb, meta FROM audit_log WHERE verb = 'privacy_consent_accept' "
+                        "ORDER BY ts DESC LIMIT 1"
+                    )
                 )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
     meta = fila["meta"]
     assert meta["notice_digest"] == aviso["digest"]
     assert meta["state_before"] == "missing"

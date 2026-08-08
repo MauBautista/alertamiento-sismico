@@ -89,11 +89,24 @@ TEXT_SUFFIXES = frozenset(
 )
 
 
-def _repo_text_files() -> list[Path]:
+def _es_otro_checkout(d: Path) -> bool:
+    """¿`d` es un checkout de git DISTINTO del que estamos auditando?
+
+    Un worktree anidado (`git worktree add`) o un submódulo llevan su propio `.git`
+    —fichero en el worktree, directorio en el submódulo— y su contenido pertenece a
+    OTRA rama. Escanearlo hace que este censo mida código que no es el de esta rama.
+
+    Se deriva de la estructura en vez de enumerar rutas: `.claude/worktrees/` es solo
+    el sitio donde el harness los pone hoy, y el siguiente aparecerá en otro lado.
+    """
+    return (d / ".git").exists()
+
+
+def _repo_text_files(root: Path = REPO) -> list[Path]:
     """Todos los archivos de texto del repo menos generados, dependencias y este test."""
     me = Path(__file__).resolve()
     out: list[Path] = []
-    stack = [REPO]
+    stack = [root]
     while stack:
         d = stack.pop()
         for entry in d.iterdir():
@@ -101,6 +114,8 @@ def _repo_text_files() -> list[Path]:
                 continue
             if entry.is_dir():
                 if entry.name in SKIP_DIRS or entry in SKIP_PATHS:
+                    continue
+                if _es_otro_checkout(entry):
                     continue
                 stack.append(entry)
             elif entry.suffix in TEXT_SUFFIXES and entry.resolve() != me:
@@ -1369,6 +1384,60 @@ def test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes() -> N
         "INVARIANTES\n  (`TASKS.md`, sección INVARIANTES: 'se rechaza sin discusión'). "
         "Deroga la viñeta, no la sección."
     )
+
+
+# ---------------------------------------------------------------------------
+# 10.bis · El censo mide ESTA rama, no un checkout ajeno
+# ---------------------------------------------------------------------------
+#
+# Caso medido el 2026-08-08: una sesión murió dejando un `git worktree` vivo en
+# `.claude/worktrees/t2-70a-d1/`, que es un checkout COMPLETO del monorepo **dentro** del
+# monorepo. `_repo_text_files()` descendió a él y encontró los marcadores literales que
+# esta misma suite lleva dentro (`[SUPUESTO #4]`, `[SUPUESTO plan-maestro-01 #6]`, …), que
+# ahí no son marcadores muertos: son las cadenas que el test busca.
+#
+# Resultado: **5 tests en rojo denunciando ficheros que no son de esta rama.** El censo se
+# excluye a sí mismo por ruta exacta (`entry.resolve() != me`), y una copia en otro
+# checkout tiene otra ruta, así que la autoexclusión no la cubría.
+#
+# El arreglo no enumera `.claude/worktrees/`: deriva la propiedad estructural —un checkout
+# ajeno lleva su propio `.git`—, porque el sitio donde el harness pone los worktrees es una
+# convención de hoy y el siguiente aparecerá en otro lado.
+
+
+def _finge_un_worktree(raiz: Path, nombre: str, contenido: str) -> Path:
+    """Un checkout anidado creíble: su propio `.git` (fichero, como los worktrees reales)."""
+    d = raiz / nombre
+    (d / "takab-docs").mkdir(parents=True)
+    (d / ".git").write_text("gitdir: /otro/lado/.git/worktrees/x\n", encoding="utf-8")
+    (d / "takab-docs" / "TASKS.md").write_text(contenido, encoding="utf-8")
+    return d
+
+
+def test_el_censo_no_desciende_a_un_checkout_anidado(tmp_path: Path) -> None:
+    """Un worktree dentro del repo es de OTRA rama: su contenido no es evidencia de esta."""
+    (tmp_path / "takab-docs").mkdir()
+    propio = tmp_path / "takab-docs" / "TASKS.md"
+    propio.write_text("archivo de esta rama\n", encoding="utf-8")
+    ajeno = _finge_un_worktree(tmp_path, "worktree-vecino", "[SUPUESTO #4] de otra rama\n")
+
+    censados = _repo_text_files(tmp_path)
+
+    assert propio in censados, "el censo debe seguir viendo los ficheros de esta rama"
+    assert (ajeno / "takab-docs" / "TASKS.md") not in censados, (
+        "el censo descendió a un checkout anidado: sus marcadores no son de esta rama y "
+        "pondrían en rojo tests que no tienen nada que ver con el código auditado."
+    )
+
+
+def test_el_censo_no_confunde_un_directorio_normal_con_un_checkout(tmp_path: Path) -> None:
+    """No vacuo: sin `.git` dentro, el mismo árbol SÍ se censa. Prueba que la guardia
+    discrimina por la propiedad estructural y no por el nombre del directorio."""
+    (tmp_path / "worktree-vecino" / "takab-docs").mkdir(parents=True)
+    normal = tmp_path / "worktree-vecino" / "takab-docs" / "TASKS.md"
+    normal.write_text("subdirectorio corriente, no un checkout\n", encoding="utf-8")
+
+    assert normal in _repo_text_files(tmp_path)
 
 
 # ---------------------------------------------------------------------------

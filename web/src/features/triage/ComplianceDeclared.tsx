@@ -70,8 +70,8 @@ export default function ComplianceDeclared({
 
       {missing ? (
         <p className="cmp-unreadable" role="note">
-          MARCO DECLARADO NO DISPONIBLE · este servidor no lo publica todavía. No se
-          afirma nada sobre lo que el cliente haya declarado o dejado de declarar.
+          MARCO DECLARADO NO DISPONIBLE · este servidor no lo publica todavía. No se afirma nada
+          sobre lo que el cliente haya declarado o dejado de declarar.
         </p>
       ) : (
         <StateFrame

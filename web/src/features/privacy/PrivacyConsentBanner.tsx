@@ -115,8 +115,8 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
 
           <p className="privacy-banner__why">{EXPLICACION[state] ?? EXPLICACION.missing}</p>
           <p className="privacy-banner__nonblocking">
-            Esto NO bloquea la operación: puede seguir acusando incidentes y pasar lista aunque
-            no lo acepte ahora.
+            Esto NO bloquea la operación: puede seguir acusando incidentes y pasar lista aunque no
+            lo acepte ahora.
           </p>
 
           <button
