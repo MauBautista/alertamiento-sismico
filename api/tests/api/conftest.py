@@ -63,7 +63,8 @@ _TRUNCATE_WRITTEN = text(
     "manual_activation_votes, push_tokens, device_keys, damage_reports, "
     "compliance_labels, site_assets, rule_evaluations, "
     # [T-2.79] aviso + consentimiento: append-only por trigger, igual que arriba.
-    "privacy_consents, privacy_notices CASCADE"
+    # [T-2.80] la lápida de ARCO, por el mismo motivo.
+    "privacy_consents, privacy_notices, privacy_erasures CASCADE"
 )
 
 

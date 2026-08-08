@@ -132,3 +132,73 @@ class NoticePublishedOut(BaseModel):
     version: str
     effective_at: datetime
     published_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# T-2.80 · ARCO por anonimización con tombstone
+# ---------------------------------------------------------------------------
+
+Right = Literal["cancelacion", "oposicion"]
+
+
+class ErasureIn(BaseModel):
+    """Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**
+
+    El titular del borrado es siempre el portador del token: ejercer ARCO sobre
+    un tercero no está prohibido, es inexpresable — ni en este contrato ni en la
+    función de base de datos que lo ejecuta.
+
+    ``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda
+    en ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no
+    puede deshacerse. Que el cliente tenga que escribir ``true`` es lo único que
+    separa un botón mal pulsado de un dato que no vuelve.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    right: Right = "cancelacion"
+    via: Literal["mobile", "web"] = "web"
+    confirm: Literal[True]
+
+
+class ErasureOut(BaseModel):
+    """La lápida. Dice QUÉ pasó y CUÁNTO, jamás A QUIÉN se llamaba.
+
+    ``affected`` son conteos por tabla ("se anonimizaron 3 check-ins"), no las
+    filas ni su contenido. La base lo impone con un CHECK que rechaza cualquier
+    valor que no sea un número: sin él, este objeto sería el sitio obvio donde
+    alguien guardaría el nombre "por trazabilidad" y desharía la tarea entera.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    erasure_id: UUID
+    user_sub: UUID
+    right_exercised: Right
+    via: Via
+    affected: dict[str, int]
+    #: Último ``audit_id`` del tenant en el instante del borrado.
+    audit_watermark: int
+    #: SHA-256 de toda la bitácora anterior a esa marca, sellado ese día.
+    audit_digest: str
+    erased_at: datetime
+    #: ``False`` = ya se había ejercido. No es un fallo: es idempotencia.
+    created: bool = False
+
+
+class ErasureProofOut(BaseModel):
+    """La lápida MÁS la comprobación de que la bitácora sigue cuadrando HOY.
+
+    Un sello guardado que nadie recalcula no prueba nada. Por eso la respuesta no
+    devuelve solo lo que se selló: recalcula el digest en esta misma petición y
+    responde si coinciden. El criterio 3 de la ficha ("el `audit_log` sigue
+    íntegro y verificable") deja así de ser una afirmación del día del
+    despliegue y pasa a ser una medición que cualquiera puede pedir.
+    """
+
+    erasure: ErasureOut
+    #: Recalculado AHORA sobre `audit_watermark`.
+    audit_digest_now: str
+    #: La comparación la hace el SERVIDOR (regla de oro 7: si la hiciera la UI,
+    #: habría dos verdades y una podría pintar "íntegro" sobre un log tocado).
+    audit_intact: bool

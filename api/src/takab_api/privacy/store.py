@@ -49,7 +49,6 @@ instante, su digest y su vía, que es lo que lo hace probable.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -401,24 +400,8 @@ async def whatsapp_opt_in_at(
     return fila["decided_at"]
 
 
-def audit_meta(notice: ResolvedNotice, *, decision: str, via: str, state_before: str) -> str:
-    """`meta` de la fila de auditoría, en JSON. **Sin el cuerpo del aviso.**
-
-    Lo que hace auditable el acto es el digest, no una copia del texto: la copia
-    engorda cada fila del `audit_log` (que no se poda jamás — regla de oro 11)
-    con miles de caracteres repetidos, y el texto ya está en el artefacto de git
-    o en la fila del tenant, ambos inmutables.
-    """
-    return json.dumps(
-        {
-            "decision": decision,
-            "via": via,
-            "state_before": state_before,
-            "notice_source": notice.source,
-            "notice_id": notice.notice_id,
-            "notice_version": notice.version,
-            "notice_locale": notice.locale,
-            "notice_digest": notice.digest,
-            "provisional": notice.provisional,
-        }
-    )
+# [T-2.80] Aquí vivía `audit_meta()`: declarada, nunca llamada y además
+# incompatible con su consumidor (devolvía `str` vía `json.dumps` mientras
+# `audit_async` espera `meta: dict | None`). El router escribió su propio
+# `_meta` en `routers/privacy.py` y esta quedó huérfana. Se borra en vez de
+# "arreglarse": el único `meta` de privacidad es el del router.

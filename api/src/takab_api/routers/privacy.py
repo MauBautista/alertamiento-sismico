@@ -34,14 +34,15 @@ de plataforma es un artefacto de git que se sustituye con un despliegue.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from takab_api.audit import audit_async
+from takab_api.audit import audit_async, audit_out_of_band_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
-from takab_api.privacy import store
+from takab_api.db.session import SessionCtx
+from takab_api.privacy import erasure, store
 from takab_api.privacy.store import ResolvedNotice
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.schemas.privacy import (
@@ -49,6 +50,9 @@ from takab_api.schemas.privacy import (
     ConsentIn,
     ConsentOut,
     ConsentStatusOut,
+    ErasureIn,
+    ErasureOut,
+    ErasureProofOut,
     NoticeIn,
     NoticeOut,
     NoticePublishedOut,
@@ -344,6 +348,115 @@ def _meta(
         "notice_digest": notice.digest,
         "provisional": notice.provisional,
     }
+
+
+# ---------------------------------------------------------------------------
+# T-2.80 · ARCO por anonimización con tombstone
+# ---------------------------------------------------------------------------
+
+
+@router.post("/erasure", response_model=ErasureOut, status_code=201)
+async def exercise_erasure(
+    body: ErasureIn,
+    response: Response,
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> ErasureOut:
+    """Ejerce cancelación u oposición SOBRE UNO MISMO. Anonimiza; jamás borra.
+
+    Sin ``require_roles``, igual que ``POST /consent``: es un derecho del titular
+    del dato, no un permiso que se concede. Y sin sujeto en el cuerpo: la función
+    de base de datos opera sobre ``app_user_id()``, así que ejercer ARCO sobre un
+    tercero —o cruzar tenants— no está prohibido, es **inexpresable**.
+
+    Tres respuestas y ninguna ambigua:
+
+    * **201** — se ejerció ahora. ``affected`` dice cuántas filas se anonimizaron
+      por tabla; ninguna se borró.
+    * **200** — ya se había ejercido. Es idempotencia (regla de oro 3), no un
+      fallo: se devuelve la MISMA lápida, testigo sellado del primer acto.
+    * **409** — hay un incidente ABIERTO en un sitio del titular y la
+      anonimización se DIFIERE. Ver ``privacy_erase_subject`` en el schema: la
+      ubicación de un check-in es dato de rescate en vivo y anularla a mitad de
+      una búsqueda es un fallo de seguridad. El derecho no se niega, se aplaza —
+      y la petición queda auditada FUERA DE BANDA para que el plazo legal corra
+      igual (el 409 hace rollback y se llevaría la fila por delante).
+    """
+    try:
+        fila = await erasure.erase_self(conn, right=body.right, via=body.via)
+    except DBAPIError as exc:
+        estado = getattr(exc.orig, "sqlstate", None)
+        if estado == erasure.SQLSTATE_DEFERRED:
+            await audit_out_of_band_async(
+                SessionCtx.from_claims(claims),
+                tenant_id=claims.tenant_id,
+                actor=f"user:{claims.sub}",
+                verb="privacy_erasure_deferred",
+                obj=f"privacy_erasure:{claims.sub}",
+                meta={"right": body.right, "via": body.via, "reason": "incidente_abierto"},
+            )
+            raise http_error(
+                409,
+                "hay un incidente abierto en un sitio asociado a tu cuenta: la "
+                "anonimización se difiere hasta que cierre, porque la ubicación de un "
+                "check-in de vida es dato de rescate en vivo. Tu solicitud queda "
+                "registrada; vuelve a intentarlo cuando el incidente se cierre",
+            ) from exc
+        if estado == erasure.SQLSTATE_FORBIDDEN:
+            raise http_error(
+                403, "el token no identifica a un titular: ARCO se ejerce sobre uno mismo"
+            ) from exc
+        raise
+
+    if not fila["created"]:
+        # 200 y no 409: pedir dos veces lo mismo no es un conflicto, y devolver un
+        # error haría creer que el borrado no ocurrió.
+        response.status_code = 200
+    else:
+        await audit_async(
+            conn,
+            tenant_id=claims.tenant_id,
+            actor=f"user:{claims.sub}",
+            verb="privacy_erasure",
+            obj=f"privacy_erasure:{fila['erasure_id']}",
+            # Conteos y sello, NUNCA el dato anonimizado: el `audit_log` no se
+            # poda jamás (regla de oro 11), así que una copia del nombre aquí
+            # sería PII eterna — y además desharía la anonimización.
+            meta={
+                "right": fila["right_exercised"],
+                "via": fila["via"],
+                "affected": fila["affected"],
+                "audit_watermark": fila["audit_watermark"],
+                "audit_digest": fila["audit_digest"],
+            },
+        )
+    return ErasureOut(**fila)
+
+
+@router.get("/erasure", response_model=ErasureProofOut)
+async def get_erasure_proof(
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> ErasureProofOut:
+    """La lápida propia MÁS la comprobación de que la bitácora sigue cuadrando.
+
+    No devuelve solo lo que se selló el día del borrado: **recalcula** el digest
+    en esta misma petición y responde si coincide. Un sello guardado que nadie
+    recomputa no prueba nada; esto convierte "el ``audit_log`` sigue íntegro y
+    verificable" en una medición que cualquiera puede pedir, y no en una
+    afirmación del día del despliegue.
+    """
+    fila = await erasure.tombstone(conn, tenant_id=claims.tenant_id, user_sub=claims.sub)
+    if fila is None:
+        raise http_error(404, "no hay constancia de ARCO para este titular")
+    ahora = await erasure.audit_digest_now(
+        conn, tenant_id=claims.tenant_id, watermark=fila["audit_watermark"]
+    )
+    return ErasureProofOut(
+        erasure=ErasureOut(**dict(fila)),
+        audit_digest_now=ahora,
+        audit_intact=(ahora == fila["audit_digest"]),
+    )
 
 
 async def _leer_consentimiento(
