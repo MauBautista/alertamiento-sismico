@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-05)
+## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **209** · `[x]` **143** · `[~]` **4** · `[ ]` **62**
+**Conteo de tareas:** total **211** · `[x]` **145** · `[~]` **5** · `[ ]` **61**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5095,7 +5095,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 
 ## Fase 2.7 · Canales reales de notificación
 
-### [ ] T-2.75 · Un canal simulado deja de mentir — `SOFTWARE`
+### [x] T-2.75 · Un canal simulado deja de mentir — `SOFTWARE`
 - **Componente:** api · **Depende de:** —
 - **La más importante y la más barata de toda la ruta.** Hoy
   `api/src/takab_api/notify/providers.py:134-135` registra `SimulatedProvider("whatsapp")` y
@@ -5105,19 +5105,67 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   callando**. Un tablero que dice "notificado" cuando no se notificó a nadie es peor que uno
   que no dice nada.
 - **Criterios de aceptación:**
-  - [ ] Un canal simulado **no puede marcar `sent`**: marca `simulated` y se ve como tal en la
+  - [x] Un canal simulado **no puede marcar `sent`**: marca `simulated` y se ve como tal en la
         consola y en `incident_actions`.
-  - [ ] En producción, un canal simulado **grita** al arrancar, como ya hace email.
-  - [ ] Test: job por canal simulado ⇒ jamás aparece como entregado.
+  - [x] En producción, un canal simulado **grita** al arrancar, como ya hace email.
+  - [x] Test: job por canal simulado ⇒ jamás aparece como entregado.
 
-### [ ] T-2.76 · SMS real — `SOFTWARE` (+ `HUMANO-AWS` para credenciales)
+> **Cerrada (2026-08-08), y la pregunta se le hace al PROVIDER, no a una lista de canales.**
+> El guard vive en `orchestrator.py:546`, **antes** de bifurcar entre push y send, y lee
+> `getattr(provider, "simulated", True)` (`providers.py:46-55`): el default bajo incertidumbre
+> es la peor causa — un provider que no se declara **no hereda presunción de entrega**. El
+> `UPDATE` a `simulated` no toca `sent_at` ni `attempts` (`:230-237`), el dominio del CHECK se
+> **amplió** en vez de relajarse (`0032_notification_simulated.py:42-59`, cuyo `downgrade`
+> degrada `simulated`→`failed`, jamás a `sent`), y la cascada **no se da por satisfecha con un
+> simulado**: el SQL de "ya satisfecha" exige `status='sent'`.
+
+### [ ] T-2.75.a · La consola no sabe qué canal es real, y el día que lo sea mentirá al revés — `SOFTWARE`
+- **Componente:** api + web · **Depende de:** T-2.75 · **Detectada por:** auditoría de la Fase 2.7
+  (2026-08-08)
+- **El defecto, medido.** `web/src/features/tenants/NotificationChannels.tsx:16-25` rotula
+  WhatsApp y SMS con **«SIMULADO en el MVP» como texto ESTÁTICO**. Hoy es verdad. El día que
+  `T-2.76.a`/`T-2.77.a` carguen credenciales, el canal pasará a ser real **y el rótulo seguirá
+  diciendo que es simulado** — la regla de oro 7 al revés: un operador que necesita avisar por
+  SMS leerá que no sirve y buscará otra vía.
+- **La causa raíz no es el rótulo: es que no hay a quién preguntar.** Ningún endpoint expone el
+  estado real de los providers. `build_providers()` ya lo sabe en el arranque del worker —
+  incluso lo **grita** (T-2.75) — pero esa verdad muere en el log.
+- **Asimetría hermana, en la otra superficie.** `shared/sdk-ts/src/bms.ts:84-85` promete en su
+  comentario que «la bandera del payload MANDA sobre el mapa», y para un `kind` **conocido** el
+  mapa gana: un `notify_sent` con `payload.simulated:true` se pintaría «ENVIADA». Hoy el
+  orquestador nunca escribe eso, así que es latente — pero `IncidentTimeline.tsx:50-57` sí da
+  prioridad a la bandera, o sea que **las dos superficies discrepan**. Se arregla con el mismo
+  cambio o se queda como trampa para el siguiente.
+- **Criterios de aceptación:**
+  - [ ] Un endpoint declara, por canal, si el provider es real o simulado — **derivado del
+        registro ya construido**, jamás una lista escrita a mano en la web.
+  - [ ] La consola lo pinta desde ese dato. Un canal sin dato se pinta `S/D`, **nunca «real»**.
+  - [ ] Test: cambiar un provider de simulado a real **cambia lo que pinta la consola**, sin
+        tocar la web. Es el test que hoy no puede existir.
+  - [ ] `bms.ts` y `IncidentTimeline.tsx` resuelven `simulated` con la misma regla, anclado por
+        un test que use un `kind` conocido **con** la bandera puesta.
+
+### [x] T-2.76 · SMS real — `SOFTWARE` (+ `HUMANO-AWS` para credenciales)
 - **Componente:** api + infra · **Depende de:** T-2.75
 - **Criterios de aceptación:**
-  - [ ] Proveedor real detrás de la misma interfaz `NotifyProvider`; el orquestador no cambia.
-  - [ ] Reintentos, coste por mensaje y límite de tasa **declarados**, no descubiertos en la
+  - [x] Proveedor real detrás de la misma interfaz `NotifyProvider`; el orquestador no cambia.
+  - [x] Reintentos, coste por mensaje y límite de tasa **declarados**, no descubiertos en la
         factura.
-  - [ ] Evidencia de entrega en `incident_actions` con latencia y `deadline_met`, como el resto.
-  - [ ] Sin secretos en git (regla de oro 6).
+  - [x] Evidencia de entrega en `incident_actions` con latencia y `deadline_met`, como el resto.
+  - [x] Sin secretos en git (regla de oro 6).
+
+> **Cerrada en código (2026-08-08).** El alta de la cuenta y del número mexicano NO es parte de
+> esta ficha: tiene la suya, **T-2.76.a**, que sigue `[ ]`. Lo acreditado aquí: enchufe de una
+> línea (`providers.py:229`) y un test que **lee la fuente del orquestador** y se pone rojo si
+> aparece una rama `"sms"` dentro de él; el headroom del SLA se **deriva** de `CASCADE_ORDER` en
+> vez de copiarse; el provider **no reintenta por dentro** y hay un test que cuenta las llamadas;
+> la guarda de duplicados distingue *ambiguo* (5xx/timeout/2xx sin sid ⇒ recuerda y escala) de
+> *rechazo explícito* (4xx ⇒ sí reintenta); y el token se **depura** de errores y logs, con un
+> test que lo inyecta en un 401 y comprueba que no sale.
+>
+> **RESERVA declarada, no defecto:** `notify_sent` de SMS significa «aceptado por Twilio», no
+> «entregado en el teléfono» — está escrito en el módulo. El `MessageSid` **no se persiste**;
+> queda pendiente de `T-2.77.b`, que sigue abierta.
 
 > **Proveedor: TWILIO** (decisión ratificada 2026-08-07). Código en
 > `api/src/takab_api/notify/twilio.py`; sin credenciales el canal cae a `SimulatedProvider`
@@ -5211,12 +5259,32 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
         SOC, no los ocupantes), pero **si el producto quiere algún día SMS a ocupantes, esa
         aritmética cambia entera** y hay que decidir el tope antes, no en la factura.
 
-### [ ] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
+### [~] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
 - **Componente:** api · **Depende de:** T-2.75
 - **Criterios de aceptación:**
-  - [ ] Plantillas aprobadas y versionadas en el repo (WhatsApp no deja improvisar texto).
-  - [ ] Degradación explícita si la plantilla es rechazada: **el canal cae, no finge**.
-  - [ ] Evidencia de entrega igual que los demás canales.
+  - [~] Plantillas **versionadas** en el repo: sí, y con candado real (el sello es el digest
+        SHA-256 del bloque `template`, y un test mueve una coma y comprueba que la plantilla se
+        **desaprueba**). **APROBADAS: no**, y a propósito: la única del repo está `PENDING`
+        porque nadie la ha sometido a Meta. Es lo que cierra `T-2.77.a`, y es la razón —la
+        única— de que esta ficha sea `[~]` y no `[x]`.
+  - [x] Degradación explícita si la plantilla es rechazada: **el canal cae, no finge**.
+  - [x] Evidencia de entrega igual que los demás canales.
+
+> **Por qué `[~]` y no `[x]` (2026-08-08).** El criterio dice literalmente «plantillas
+> **APROBADAS**». Sellar ese criterio sin la aprobación de Meta sería la misma clase de mentira
+> que T-2.75 existe para erradicar. El código está completo y probado; lo que falta es un gate
+> externo.
+>
+> **Lo acreditado, que es lo fino de esta ficha:** `simulated` es una **propiedad derivada**, no
+> un atributo — por eso el canal cae **en caliente** cuando Meta pausa la plantilla. Se atienden
+> las dos puertas, y la segunda es la que nadie ve venir: un **HTTP 200 que dice `paused` por
+> dentro**. Un `if response.is_success: return` lo habría contado como enviado. Los 4xx de
+> plantilla se tratan **por rango** (132xxx), no por lista, así que un código nuevo de Meta
+> tampoco se cuela. Y sin `opt_in.at` en el destino el provider **se niega a enviar** y lo deja
+> escrito como `notify_failed`.
+>
+> **RESERVA declarada, no defecto:** `notify_sent` significa «aceptado por Meta». El `wamid`
+> **no se persiste**; queda pendiente de `T-2.77.b`, que sigue abierta.
 
 > **Decisión: WhatsApp Business Cloud API directa de Meta** (`notify/whatsapp.py`), enchufada
 > donde estaba `SimulatedProvider("whatsapp")`, mismo contrato `NotifyProvider`, **cero líneas
@@ -5409,6 +5477,30 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
         de proveedor).
   - [ ] Test: un job `sent` que recibe `failed`/`undelivered` **acaba en rojo en la consola**, no
         se queda verde para siempre. Ese es el caso que hoy no se ve y es el que más duele.
+
+### [ ] T-2.77.c · La cuarentena y la guarda de duplicados viven en la memoria de UN worker — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-2.76, T-2.77 · **Detectada por:** auditoría de la
+  Fase 2.7 (2026-08-08)
+- **El defecto, medido.** La cuarentena de plantillas de WhatsApp (`whatsapp.py:456-466`) y la
+  guarda de duplicados de Twilio (`providers.py:63-104`) son **estado en proceso**. Dos
+  consecuencias reales, ninguna teórica:
+  1. **Al reiniciar el worker se olvida la cuarentena** y se vuelve a martillear una plantilla
+     que Meta pausó — que es exactamente lo que **degrada su calificación de calidad** y termina
+     costando el canal entero. La degradación en caliente de T-2.77 funciona; lo que no
+     sobrevive es el recuerdo de haberla sufrido.
+  2. **Con más de una instancia del worker la guarda de duplicados no existe entre instancias**,
+     así que un SMS o un WhatsApp duplicado sigue siendo posible. Y el orquestador **ya asume
+     varias instancias**: usa `pg_advisory_xact_lock` (`orchestrator.py:312`). O sea que el
+     supuesto de "un solo worker" que sostiene esta guarda ya está contradicho por el código de
+     al lado.
+- **Criterios de aceptación:**
+  - [ ] La cuarentena sobrevive al reinicio del worker (persistida, no en memoria).
+  - [ ] La guarda de duplicados es **compartida entre instancias**, con la misma idempotencia por
+        `event_id`/nonce que ya gobierna el edge→nube (regla de oro 3).
+  - [ ] Test que arranque **dos** orquestadores contra la misma DB y demuestre que el mensaje
+        sale **una vez**. Sin ese test esto vuelve.
+  - [ ] Test que reinicie el provider y demuestre que la plantilla en cuarentena **sigue** en
+        cuarentena.
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
