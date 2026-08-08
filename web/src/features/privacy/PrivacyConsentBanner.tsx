@@ -3,7 +3,7 @@ import { useState } from "react";
 import StateFrame from "../../components/StateFrame";
 import { useNow } from "../../lib/useNow";
 import { CONSENT_STALE_MS, usePrivacyConsent } from "./usePrivacyConsent";
-import type { ConsentStatus } from "./usePrivacyConsent";
+import type { ConsentState, ConsentStatus } from "./usePrivacyConsent";
 
 /**
  * T-2.79 · Aviso de privacidad: banner NO BLOQUEANTE.
@@ -30,14 +30,40 @@ import type { ConsentStatus } from "./usePrivacyConsent";
  * congelado es exactamente la mentira que la regla de oro 7 prohíbe.
  */
 
-const TITULO: Record<string, string> = {
+/**
+ * Los CUATRO estados del consentimiento, exhaustivos por tipo.
+ *
+ * Eran `Record<string, string>` sin la clave `current` y se leían con
+ * `TITULO[state] ?? TITULO.missing`. El resultado, medido: con el consentimiento
+ * AL DÍA y el dato viejo —`sereno` es falso, así que el early-return de abajo no
+ * dispara— el banner reaparecía diciéndole "ACEPTE EL AVISO DE PRIVACIDAD ·
+ * Todavía no ha dado su consentimiento" a un operador que SÍ lo había dado. Y no
+ * hace falta nada raro para llegar ahí: el refetch va cada 5 min contra un
+ * umbral de 15, y con la red caída el error se suprime a propósito.
+ *
+ * `Record<ConsentState, …>` sin `??` de respaldo es el arreglo ESTRUCTURAL: el
+ * quinto estado que alguien añada mañana al contrato no cae en el texto del que
+ * no consintió — no compila. Un `??` sobre un mapa incompleto es exactamente la
+ * herramienta que convierte "me falta un caso" en "acuso al usuario en silencio".
+ */
+const TITULO: Record<ConsentState, string> = {
   missing: "ACEPTE EL AVISO DE PRIVACIDAD",
+  current: "CONSENTIMIENTO REGISTRADO · SIN RECONFIRMAR",
   stale: "EL AVISO DE PRIVACIDAD CAMBIÓ",
   withdrawn: "CONSENTIMIENTO RETIRADO",
 };
 
-const EXPLICACION: Record<string, string> = {
+const EXPLICACION: Record<ConsentState, string> = {
   missing: "Todavía no ha dado su consentimiento sobre el tratamiento de sus datos.",
+  // Regla de oro 7: "no lo he podido reconfirmar" y "no lo has dado" son cosas
+  // distintas y el operador actúa distinto ante cada una. Este texto solo se ve
+  // con el dato viejo (al día y fresco, el banner no existe), así que dice las
+  // dos cosas: que el consentimiento está dado y que la consola no lo ha podido
+  // volver a preguntar.
+  current:
+    "Su consentimiento está registrado y sigue vigente. Lo que no se ha podido es " +
+    "volver a confirmarlo con el servidor: el dato es de la hora que marca arriba. " +
+    "No se le está pidiendo nada.",
   stale:
     "Aceptó una versión anterior. Su consentimiento anterior se conserva tal como lo dio; " +
     "este es un texto nuevo y se pide de nuevo.",
@@ -101,7 +127,7 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
         <section aria-live="polite" className="privacy-banner__box" data-consent-state={state}>
           <header className="privacy-banner__hd">
             <span className="privacy-banner__tag">CUMPLIMIENTO</span>
-            <h2 className="privacy-banner__title">{TITULO[state] ?? TITULO.missing}</h2>
+            <h2 className="privacy-banner__title">{TITULO[state]}</h2>
             <span className="privacy-banner__version">
               {notice.title} · v{notice.version} ·{" "}
               {notice.source === "tenant" ? "de su organización" : "de la plataforma"}
@@ -113,7 +139,7 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
             )}
           </header>
 
-          <p className="privacy-banner__why">{EXPLICACION[state] ?? EXPLICACION.missing}</p>
+          <p className="privacy-banner__why">{EXPLICACION[state]}</p>
           <p className="privacy-banner__nonblocking">
             Esto NO bloquea la operación: puede seguir acusando incidentes y pasar lista aunque no
             lo acepte ahora.
@@ -147,7 +173,17 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
               onClick={() => live.decide("accept")}
               type="button"
             >
-              {live.deciding ? "REGISTRANDO…" : "ACEPTO ESTE AVISO"}
+              {/* Con `current` el consentimiento YA está dado: un botón que diga
+                  "ACEPTO ESTE AVISO" al lado de "CONSENTIMIENTO REGISTRADO" se
+                  lee como un trámite pendiente, que es la misma mentira que el
+                  título acaba de dejar de contar. Aquí sirve de reintento
+                  explícito: al registrar, el hook invalida la consulta y el dato
+                  vuelve a estar fresco. */}
+              {live.deciding
+                ? "REGISTRANDO…"
+                : state === "current"
+                  ? "VOLVER A CONFIRMAR"
+                  : "ACEPTO ESTE AVISO"}
             </button>
             {state === "current" || state === "stale" ? (
               <button

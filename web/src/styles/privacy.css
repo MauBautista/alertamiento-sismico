@@ -9,6 +9,54 @@
  * Nada de `position: fixed` ni de overlay: este aviso NO tapa la consola. Es
  * una franja que empuja el contenido, se lee y se va. */
 
+/* =====================================================================
+   [D3] EL SITIO DEL BANNER EN LA REJA DEL SHELL
+   =====================================================================
+   `AppShell` monta el banner como PRIMER hijo de `<main class="soc-main">`, y
+   `soc.css` le da a ese grid `grid-template-rows: minmax(0, 1fr) auto`: la fila
+   elástica va al PRIMER hijo. Con el banner delante, el banner se quedaba con
+   todo el alto libre de la ventana y la PÁGINA ENTERA —mapa incluido— caía a su
+   altura de contenido.
+
+   Es la TERCERA vez en este repo: T-1.62 (el control de simulacro) y T-2.57 (la
+   tira de KPIs), misma causa. El número de hijos cambia con el tiempo y EL ORDEN
+   NO ES UN CONTRATO; quien crece se declara.
+
+   El arreglo vive aquí y no en `soc.css` (hoja compartida con otro trabajo).
+   Puede vivir aquí porque `main.tsx` importa esta hoja la ÚLTIMA y porque
+   `.soc-app > .soc-main` (0,2,0) le gana a `.soc-main` (0,1,0) — incluso al
+   `gap` de `@media (max-height: 800px)`, ya que una @media no añade
+   especificidad (la trampa de T-2.58, esta vez a favor).
+
+   El `>` acota al <main> del SHELL: el <main> interno de la consola es
+   `.soc-shell > .soc-main`, es flex y no lo toca ninguna de estas tres reglas.
+
+   Lo vigilan `src/styles/layoutInvariants.test.ts` (la hoja),
+   `src/shell/AppShell.layout.test.tsx` (la forma del árbol que estos selectores
+   dan por supuesta) y `e2e/layout.spec.ts` (el alto real, en un navegador). */
+.soc-app > .soc-main {
+  grid-template-rows: auto minmax(0, 1fr);
+  /* Un `gap` cobra el hueco entre filas AUNQUE la fila 1 esté vacía, y vacía es
+     el caso NORMAL: sin esto quedaría una banda muerta permanente arriba de las
+     seis pantallas. La separación la pone el `margin-bottom` del banner, que
+     solo existe cuando el banner existe. */
+  row-gap: 0;
+}
+
+/* La página va CLAVADA a la fila elástica, no colocada por orden: el banner
+   desaparece en cuanto el consentimiento está al día, y entonces "el primer
+   hijo" y "el que crece" dejan de ser el mismo elemento. El banner recibe la
+   fila 1 por auto-colocación (es la única celda libre) — por eso NO declara
+   `grid-row` él mismo.
+
+   Si algún día hace falta un tercer hijo en el shell, hay que darle su propia
+   fila: dos hijos no-banner se apilarían en esta misma celda. Lo asserta
+   `AppShell.layout.test.tsx`. */
+.soc-app > .soc-main > *:not(.privacy-banner) {
+  grid-row: 2;
+  min-height: 0;
+}
+
 .privacy-banner {
   display: block;
   margin: 0 0 12px;
@@ -16,7 +64,7 @@
 
 .privacy-banner__box {
   border: 1px solid var(--tk-border);
-  border-left: 3px solid var(--tk-warn, #d9a441);
+  border-left: 3px solid var(--tk-status-warning);
   border-radius: 8px;
   background: var(--tk-surface-2);
   padding: 12px 14px;
@@ -54,9 +102,9 @@
 }
 
 .privacy-banner__provisional {
-  border: 1px dashed var(--tk-warn, #d9a441);
+  border: 1px dashed var(--tk-status-warning);
   border-radius: 4px;
-  color: var(--tk-warn, #d9a441);
+  color: var(--tk-status-warning);
   font-size: 11px;
   letter-spacing: 1px;
   padding: 1px 6px;
@@ -78,7 +126,7 @@
 .privacy-banner__toggle {
   background: none;
   border: none;
-  color: var(--tk-accent, #4cc9f0);
+  color: var(--tk-cyan);
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 1px;
@@ -106,7 +154,7 @@
  * permite decir, mañana, que el aviso de hoy ya no es el mismo. */
 .privacy-banner__digest {
   color: var(--tk-fg-3);
-  font-family: var(--tk-font-mono, monospace);
+  font-family: var(--tk-font-mono);
   font-size: 11px;
   margin: 0;
 }
@@ -129,9 +177,9 @@
 }
 
 .privacy-banner__accept {
-  background: var(--tk-accent, #4cc9f0);
-  border: 1px solid var(--tk-accent, #4cc9f0);
-  color: var(--tk-bg, #0b0f14);
+  background: var(--tk-cyan);
+  border: 1px solid var(--tk-cyan);
+  color: var(--tk-navy-900);
 }
 
 .privacy-banner__withdraw {
@@ -147,7 +195,7 @@
 }
 
 .privacy-banner__err {
-  color: var(--tk-danger, #e5484d);
+  color: var(--tk-status-critical);
   font-size: 12px;
   margin: 10px 0 0;
 }

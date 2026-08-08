@@ -79,11 +79,15 @@ function read(name: string): string {
 const SOC = read("soc.css");
 const TABS = read("soc-tabs.css");
 const APP = read("app.css");
-/** Orden de `main.tsx`: soc.css → soc-tabs.css → app.css. Concatenar en ESE
- * orden no es cosmético: entre dos reglas de igual especificidad gana la última,
- * y la última es la del archivo importado después. T-2.58 cazó una @media muerta
- * desde T-1.54 exactamente por eso. */
-const ALL = `${SOC}\n${TABS}\n${APP}`;
+/** [D3] `privacy.css` es la CUARTA hoja del shell y entra la ÚLTIMA. Estaba
+ * fuera de este archivo, y por eso el banner pudo aterrizar en la fila elástica
+ * de `.soc-main` sin que nada se pusiera rojo. */
+const PRIV = read("privacy.css");
+/** Orden de `main.tsx`: soc.css → soc-tabs.css → app.css → privacy.css.
+ * Concatenar en ESE orden no es cosmético: entre dos reglas de igual
+ * especificidad gana la última, y la última es la del archivo importado después.
+ * T-2.58 cazó una @media muerta desde T-1.54 exactamente por eso. */
+const ALL = `${SOC}\n${TABS}\n${APP}\n${PRIV}`;
 
 /**
  * La hoja SIN ninguna at-rule: lo que aplica en 1920×1080, la línea base del
@@ -150,7 +154,7 @@ function baseScope(css: string): string {
  * `.soc-shell { grid-template-columns: … }` añadida a `app.css` gana la cascada
  * y con el ámbito acotado a soc.css era invisible.
  */
-const ALL_BASE = [SOC, TABS, APP].map(baseScope).join("\n");
+const ALL_BASE = [SOC, TABS, APP, PRIV].map(baseScope).join("\n");
 
 /**
  * TODAS las declaraciones que la hoja aplica a `selector`, concatenadas.
@@ -745,6 +749,7 @@ describe("sanidad del CSS — un error de sintaxis no lo grita nadie", () => {
     ["soc.css", SOC],
     ["soc-tabs.css", TABS],
     ["app.css", APP],
+    ["privacy.css", PRIV],
   ])("%s: llaves balanceadas y sin comentarios abiertos", (name, stripped) => {
     const raw = readFileSync(resolve(process.cwd(), "src/styles", name), "utf8");
     // `read()` retira los comentarios BIEN formados; si el conteo de aperturas
@@ -805,6 +810,136 @@ describe("reglas muertas — la @media que nunca gana", () => {
       ).toEqual([]);
     },
   );
+});
+
+/**
+ * [D3] El banner de privacidad se comió la fila elástica de `.soc-main`.
+ *
+ * `AppShell` monta `<PrivacyConsentBanner>` como PRIMER hijo de
+ * `<main className="soc-main">`, y `soc.css` le da a ese grid
+ * `grid-template-rows: minmax(0, 1fr) auto`: la fila elástica va al PRIMER hijo
+ * y el `auto` al segundo. Resultado: el banner se queda con todo el alto libre
+ * de la ventana y la PÁGINA ENTERA —mapa incluido— cae a su altura de contenido.
+ *
+ * Es literalmente el fallo de T-1.62 (el control de simulacro robándole el alto
+ * al mapa) y el de T-2.57 (la tira de KPIs haciendo lo mismo dentro del wall).
+ * Tercera vez, misma causa: el número de hijos cambia con el tiempo y el ORDEN
+ * NO ES UN CONTRATO. jsdom no hace layout y ningún test de componente lo ve.
+ *
+ * El arreglo NO toca `soc.css` (lo comparte otro trabajo) ni el marcado: vive en
+ * `privacy.css`, que es la última hoja importada. Tres piezas, y las tres se
+ * afirman aquí porque quitar cualquiera reabre el bug:
+ *
+ *   1. `.soc-app > .soc-main` invierte las filas a `auto minmax(0, 1fr)`. El
+ *      selector con `>` acota al <main> del SHELL: el <main> interno de la
+ *      consola (`.soc-shell > .soc-main`) es flex y no se toca.
+ *   2. Todo hijo que NO sea el banner queda CLAVADO en la fila 2, la elástica.
+ *      Sin esto, el día que el banner no se pinta —que es el caso normal— la
+ *      página auto-colocaría en la fila 1 (`auto`) y colapsaría igual. El que
+ *      crece se declara EXPLÍCITAMENTE, que es la lección de T-1.62/T-2.57.
+ *   3. `row-gap: 0`. Un `gap: 14px` deja el hueco entre filas AUNQUE la fila 1
+ *      esté vacía: sin banner quedaría una banda muerta permanente en las seis
+ *      pantallas — justo el "hueco de layout permanente" que el componente
+ *      documenta que no quiere. La separación la pone el `margin-bottom` del
+ *      propio banner, que solo existe cuando el banner existe.
+ *
+ * LA OTRA MITAD (que el marcado satisfaga estos selectores: el <main> como hijo
+ * directo de `.soc-app`, el banner como hijo directo suyo y con la clase
+ * `.privacy-banner`) se asserta en `src/shell/AppShell.layout.test.tsx`, porque
+ * aquí solo se lee el TEXTO de la hoja. Si se toca una mitad, hay que mirar la
+ * otra.
+ */
+describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => {
+  it("la premisa que causa el bug sigue en pie: `.soc-main` da la fila elástica al PRIMER hijo", () => {
+    // Si algún día `soc.css` cambia esto, el arreglo de privacy.css pasa de
+    // necesario a peligroso y hay que REVISARLO, no borrarlo.
+    expect(declValue(rulesFor(baseScope(SOC), ".soc-main"), "grid-template-rows")).toBe(
+      "minmax(0, 1fr) auto",
+    );
+  });
+
+  it("la hoja del banner entra DESPUÉS de soc.css: sin eso la regla es letra muerta", () => {
+    // La trampa de T-2.58, aplicada al revés. `.soc-app > .soc-main` (0,2,0) le
+    // gana a `.soc-main` (0,1,0) por especificidad, pero la corrección de
+    // `row-gap` compite contra `@media (max-height: 800px) { .soc-main { gap } }`
+    // y una @media NO añade especificidad: el orden de import es parte del
+    // arreglo, no un detalle de main.tsx.
+    const main = readFileSync(resolve(process.cwd(), "src", "main.tsx"), "utf8");
+    const orden = [...main.matchAll(/import\s+"\.\/styles\/([\w-]+\.css)"/g)].map((m) => m[1]);
+    expect(orden, "main.tsx dejó de importar alguna hoja del shell").toContain("privacy.css");
+    expect(
+      orden.indexOf("privacy.css"),
+      "privacy.css se importa ANTES que soc.css: sus reglas de layout no ganan nada",
+    ).toBeGreaterThan(orden.indexOf("soc.css"));
+  });
+
+  it("el <main> del shell invierte las filas: el banner al `auto`, la página a la elástica", () => {
+    expect(
+      declValue(rulesFor(ALL_BASE, ".soc-app > .soc-main"), "grid-template-rows"),
+      "el banner vuelve a caer en la fila elástica y la página entera en `auto`",
+    ).toBe("auto minmax(0, 1fr)");
+  });
+
+  it("la página va CLAVADA a la fila elástica, no colocada por orden", () => {
+    const pagina = rulesFor(ALL_BASE, ".soc-app > .soc-main > *:not(.privacy-banner)");
+    expect(
+      pagina,
+      "sin esta regla, el caso normal (sin banner) auto-coloca la página en la fila `auto`",
+    ).not.toBe("");
+    expect(declValue(pagina, "grid-row")).toBe("2");
+    // Un item de grid con contenido indivisible no baja de su altura mínima
+    // automática y desborda la pista en vez de ceder: el mismo motivo por el que
+    // este archivo prohíbe `1fr` desnudo en las columnas.
+    expect(declValue(pagina, "min-height")).toBe("0");
+  });
+
+  it("sin banner no queda una banda muerta: el hueco entre filas es CERO", () => {
+    // `gap` y `row-gap` son propiedades distintas y `declarations()` ancla el
+    // nombre: `row-gap` NO satisface una búsqueda de `gap` (el `-` no es
+    // frontera de declaración). Se afirma la que decide.
+    expect(
+      declValue(rulesFor(ALL_BASE, ".soc-app > .soc-main"), "row-gap"),
+      "una fila vacía sigue cobrando su gap: sin banner queda una banda muerta arriba",
+    ).toBe("0");
+    // Y la separación tiene que venir de algún sitio cuando el banner SÍ está.
+    expect(declValue(rulesFor(ALL_BASE, ".privacy-banner"), "margin")).toBe("0 0 12px");
+  });
+
+  it("y son los DOS ÚNICOS selectores de las cuatro hojas que deciden esas filas", () => {
+    // Misma defensa que T-2.64.c hizo con el ancho del shell: no se compara un
+    // valor, se PROHÍBE al tercero en discordia. `rulesFor` agrupa por selector
+    // EXACTO, así que un `.soc-app .soc-main` (0,2,0) o un
+    // `main.soc-main` colado desde cualquier hoja no entraría en NINGÚN grupo
+    // que este archivo mire — y ganaría en el navegador.
+    const decisores = new Set<string>();
+    for (const [, selectors, body] of ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const decide =
+        declValues(body, "grid-template-rows").length > 0 ||
+        declValues(body, "grid-row").length > 0 ||
+        declValues(body, "row-gap").length > 0;
+      if (!decide) continue;
+      for (const parte of selectors.split(",").map((s) => s.trim().replace(/\s+/g, " "))) {
+        if (/\.soc-main(?![\w-])/.test(parte)) decisores.add(parte);
+      }
+    }
+    expect([...decisores].sort()).toEqual([
+      ".soc-app > .soc-main",
+      ".soc-app > .soc-main > *:not(.privacy-banner)",
+      ".soc-main",
+    ]);
+  });
+
+  it("el banner no se ancla ni se superpone: sigue siendo una franja que EMPUJA", () => {
+    // Un `position: fixed/absolute` lo sacaría de la reja y volvería a tapar la
+    // consola — lo contrario de lo que el componente promete. Negación con la
+    // guarda de no-vacuidad del archivo: sobre una cadena vacía pasaría siempre.
+    const banner = rulesFor(ALL, ".privacy-banner");
+    expect(banner, ".privacy-banner perdió su regla: la negación pasaría vacía").not.toBe("");
+    expect(banner).not.toMatch(/position:\s*(fixed|absolute|sticky)/);
+    // Y no se pinta a sí mismo en una fila: la 1 la recibe por auto-colocación,
+    // que es lo que hace que el arreglo funcione con y sin banner.
+    expect(declValues(banner, "grid-row")).toEqual([]);
+  });
 });
 
 describe("un botón apagado tiene que PARECER apagado", () => {

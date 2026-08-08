@@ -58,13 +58,21 @@ export interface ConsentStatus {
   blocks_emergency_actions: false;
 }
 
+/**
+ * Fallo de TRANSPORTE, y solo eso.
+ *
+ * Tenía una rama `status === 404` que devolvía "esta organización no tiene aviso
+ * de privacidad publicado". Era doblemente falsa: `GET /privacy/consent`
+ * responde **200 con `notice: null`** cuando no hay aviso —el estado `empty` sale
+ * de ahí, no de un 404 (`api/src/takab_api/routers/privacy.py`)—, así que la rama
+ * no se alcanzaba nunca; y el día que se alcanzara sería por un prefijo mal
+ * montado, un proxy o un gateway, y le contaría al operador una historia sobre su
+ * organización que la API jamás dijo. Un fallo de infraestructura se cuenta como
+ * lo que es.
+ */
 class ConsentRequestError extends Error {
   constructor(status: number) {
-    super(
-      status === 404
-        ? "SIN AVISO · esta organización no tiene aviso de privacidad publicado."
-        : `GET /privacy/consent falló (${status})`,
-    );
+    super(`GET /privacy/consent falló (${status})`);
     this.name = "ConsentRequestError";
   }
 }
@@ -78,7 +86,13 @@ export interface PrivacyConsentData {
   deciding: boolean;
   decideError: string | null;
   decide: (decision: "accept" | "withdraw") => void;
-  refetch: () => void;
+  // SIN `refetch`. Se exponía y no lo llamaba nadie: el único consumidor es el
+  // banner, y el banner quitó su botón REINTENTAR a propósito (vive en el shell,
+  // encima de todas las pantallas, y competiría con el REINTENTAR de la pantalla
+  // de debajo — lo cazó `BuildingPage.test.tsx`). Una API pública que nadie usa
+  // invita a cablear justo el botón que se decidió no tener. La recuperación va
+  // por `refetchInterval` y, a mano, por el POST de `decide`, que invalida la
+  // consulta al registrar.
 }
 
 export function usePrivacyConsent(): PrivacyConsentData {
@@ -133,6 +147,5 @@ export function usePrivacyConsent(): PrivacyConsentData {
     deciding: mutation.isPending,
     decideError: mutation.error ? mutation.error.message : null,
     decide: (decision) => mutation.mutate(decision),
-    refetch: () => void query.refetch(),
   };
 }

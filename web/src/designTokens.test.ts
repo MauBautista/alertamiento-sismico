@@ -174,6 +174,76 @@ describe("design tokens · contraste WCAG AA (rótulos de 8–10 px)", () => {
   });
 });
 
+/* =====================================================================
+   [D2] TOKENS FANTASMA — la hoja cita `--tk-algo` que no existe
+   ===================================================================== */
+
+/**
+ * Guardia DERIVADA, no enumerada.
+ *
+ * El defecto: `privacy.css` citaba `--tk-warn`, `--tk-accent`, `--tk-danger` y
+ * `--tk-bg`, cuatro nombres que NO están en `@takab/design-tokens`. Como todas
+ * llevaban fallback (`var(--tk-warn, #d9a441)`), el navegador pintaba el hex
+ * duro y el banner quedaba fuera del design system SIN romper nada: el mismo
+ * modo de fallo silencioso que la fuga `--soc-*` de T-2.55, que vivió dos ciclos.
+ *
+ * Enumerar los cuatro nombres de hoy no impide el quinto de mañana: lo que se
+ * cruza es el CONJUNTO COMPLETO de `var(--tk-*)` de las hojas contra el
+ * CONJUNTO COMPLETO de variables del paquete. Cualquier nombre nuevo que no
+ * exista sale por aquí, se llame como se llame.
+ *
+ * El fallback es justamente lo que hace falta vigilarlo y no lo que lo excusa:
+ * sin él la declaración se caería y alguien lo vería; con él la hoja miente en
+ * silencio y el tema deja de mandar sobre ese color.
+ */
+const CSS_DIR = path.resolve(process.cwd(), "src", "styles");
+
+/**
+ * Deuda MEDIDA (2026-08-08) que este ciclo no puede tocar: `soc.css` está en
+ * manos de otro trabajo en paralelo. Se listan una a una y la comparación es de
+ * IGUALDAD, no de superconjunto: si alguien las arregla, este test se pone rojo
+ * y obliga a borrar la línea — una excepción que puede crecer sola no es una
+ * excepción, es un agujero. `--tk-amber` es `--tk-status-warning` (mismo
+ * #FFC107), `--tk-violet` no tiene equivalente en el paquete y `--tk-text-2xs`
+ * tampoco (la escala tipográfica empieza en `--tk-text-xs`).
+ */
+const DEUDA_HEREDADA = ["soc.css: --tk-amber", "soc.css: --tk-text-2xs", "soc.css: --tk-violet"];
+
+function tokensCitadosPorHoja(): string[] {
+  const fuera = new Set<string>();
+  for (const name of readdirSync(CSS_DIR).filter((f) => f.endsWith(".css"))) {
+    // Los comentarios de estas hojas citan CSS literal (documentan el porqué de
+    // cada regla): contarlos daría por usado un token que solo aparece en prosa.
+    const css = readFileSync(path.join(CSS_DIR, name), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const [, token] of css.matchAll(/var\(\s*(--tk-[a-z0-9-]+)/g)) {
+      if (!(token in cssVariables)) fuera.add(`${name}: ${token}`);
+    }
+  }
+  return [...fuera].sort();
+}
+
+describe("design tokens · ninguna hoja cita un token que no existe", () => {
+  it("el barrido encuentra hojas y tokens (si esto falla, el resto miente)", () => {
+    // Sin esta guarda, un `CSS_DIR` mal resuelto daría cero ofensores y el test
+    // pasaría en verde sin mirar nada — que es la forma exacta en que una red
+    // deja de ser una red.
+    const hojas = readdirSync(CSS_DIR).filter((f) => f.endsWith(".css"));
+    expect(hojas.length).toBeGreaterThanOrEqual(4);
+    expect(Object.keys(cssVariables).length).toBeGreaterThan(50);
+  });
+
+  it("toda `var(--tk-*)` de src/styles resuelve a una variable del paquete", () => {
+    const desconocidos = tokensCitadosPorHoja();
+    expect(
+      desconocidos,
+      "hojas que citan un token inexistente (siempre caen al fallback duro y el " +
+        "tema deja de mandar). Busca el nombre REAL en " +
+        "shared/design-tokens/css/tokens.css — no lo inventes, y no lo añadas a " +
+        `DEUDA_HEREDADA:\n${desconocidos.join("\n")}`,
+    ).toEqual(DEUDA_HEREDADA);
+  });
+});
+
 describe("design tokens · contratos semánticos (web ≡ móvil)", () => {
   it("severidad de incidente → tono/etiqueta (contrato de SevTag)", () => {
     expect(INCIDENT_SEVERITY).toEqual({

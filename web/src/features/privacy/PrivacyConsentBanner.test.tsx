@@ -155,6 +155,103 @@ describe("PrivacyConsentBanner", () => {
     expect(textoStale).toContain("Su consentimiento anterior se conserva");
   });
 
+  /**
+   * [D1] El banner ACUSABA de no haber consentido a quien SÍ consintió.
+   *
+   * `TITULO`/`EXPLICACION` no tenían clave `current`, y el early-return que
+   * esconde el banner exige `sereno` — que a su vez exige `staleSince === null`.
+   * Con `state === "current"` y el dato viejo el banner reaparecía y caía a
+   * `?? TITULO.missing`: "ACEPTE EL AVISO DE PRIVACIDAD" y "Todavía no ha dado
+   * su consentimiento" sobre un operador que lo había dado.
+   *
+   * No es teórico: el refetch va cada 5 min contra un umbral de 15 (`usePrivacy
+   * Consent.ts`), y con la red caída el error se suprime a propósito para no
+   * tapar un consentimiento que sigue siendo cierto. Basta con que la API no
+   * conteste tres veces seguidas.
+   *
+   * Regla de oro 7 al revés de como se suele leer: el dato congelado no se
+   * puede pintar como live, pero tampoco se puede pintar como AUSENTE. "No lo
+   * he podido reconfirmar" y "no lo has dado" son cosas distintas y el operador
+   * actúa distinto ante cada una.
+   */
+  it("[D1] consintió y el dato está viejo: NO se le acusa de no haber consentido", () => {
+    const { container } = render(
+      wrap(
+        <PrivacyConsentBanner
+          override={{
+            status: estado("current"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now() - CONSENT_STALE_MS - 1000,
+          }}
+        />,
+      ),
+    );
+
+    const texto = container.textContent ?? "";
+    // El banner SÍ aparece: esconderlo sería afirmar frescura que no hay.
+    expect(container.querySelector(".privacy-banner__box")).not.toBeNull();
+    expect(texto).toContain("DATOS RETENIDOS");
+    // Pero lo que dice no puede ser el texto del que nunca consintió.
+    expect(texto, "acusa de no haber consentido a quien consintió").not.toContain(
+      "ACEPTE EL AVISO DE PRIVACIDAD",
+    );
+    expect(texto, "acusa de no haber consentido a quien consintió").not.toContain(
+      "Todavía no ha dado su consentimiento",
+    );
+  });
+
+  it("[D1] `current` sin reconfirmar dice algo DISTINTO de `missing`, no lo mismo", () => {
+    // La red no es "que no diga la palabra prohibida": es que los dos estados
+    // se distingan. Si mañana alguien cambia la redacción de `missing`, la
+    // negación de arriba se volvería verde vacía; esto no.
+    const { container: viejo, unmount } = render(
+      wrap(
+        <PrivacyConsentBanner
+          override={{
+            status: estado("current"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now() - CONSENT_STALE_MS - 1000,
+          }}
+        />,
+      ),
+    );
+    const textoCurrent = (viejo.querySelector(".privacy-banner__box")?.textContent ?? "").trim();
+    unmount();
+
+    const { container: nunca } = render(
+      wrap(
+        <PrivacyConsentBanner
+          override={{
+            status: estado("missing"),
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
+        />,
+      ),
+    );
+    const textoMissing = (nunca.querySelector(".privacy-banner__box")?.textContent ?? "").trim();
+
+    expect(textoCurrent, "el banner de `current` no se renderizó").not.toBe("");
+    expect(textoCurrent).not.toBe(textoMissing);
+  });
+
+  it("[D1] un 404 del endpoint NO se cuenta como “esta organización no tiene aviso”", async () => {
+    // `GET /privacy/consent` responde 200 con `notice: null` cuando no hay aviso
+    // (api/src/takab_api/routers/privacy.py). Un 404 solo puede venir de la
+    // infraestructura —prefijo mal montado, gateway, proxy— y traducirlo a una
+    // frase de negocio le cuenta al operador una historia falsa sobre su propia
+    // organización. El estado `empty` sale del `notice: null`, no de un 404.
+    get.mockResolvedValue({ data: undefined, response: { status: 404 } });
+    render(wrap(<PrivacyConsentBanner />));
+
+    const aviso = await screen.findByRole("alert");
+    expect(aviso.textContent ?? "").not.toContain("no tiene aviso de privacidad publicado");
+    expect(aviso.textContent ?? "").toContain("404");
+  });
+
   it("dice que el texto es PROVISIONAL cuando lo es, y no cuando no lo es", () => {
     const { unmount } = render(
       wrap(
