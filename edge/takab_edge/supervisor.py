@@ -17,6 +17,7 @@ import signal as _signal
 import threading
 from collections.abc import Iterator
 from datetime import timedelta
+from pathlib import Path
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.audio import AudioNotifier
@@ -38,7 +39,7 @@ from takab_edge.contracts import (
 )
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
-from takab_edge.gpio import GpioController
+from takab_edge.gpio import GpioController, _proceso_vivo
 from takab_edge.gpio_link import build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
@@ -65,6 +66,40 @@ def _resolve_hmac_key(settings: EdgeSettings) -> bytes:
     if settings.dev_mode:
         return os.urandom(32)  # efímera, sólo desarrollo
     raise RuntimeError("TAKAB_EDGE_HMAC_KEY es obligatoria en producción")
+
+
+def _dueno_segun_el_registro_del_cerrojo(ruta: str) -> str | None:
+    """`'<unidad> (pid N)'` si el registro del cerrojo nombra a un proceso VIVO.
+
+    [T-2.70.a·D3·m2] Es la mitad barata de lo que hace `deploy.sh` en su paso 7:
+    leer el texto que el dueño dejó escrito (`pid=`/`unit=`) y preguntarle a
+    `/proc` si sigue existiendo. Lo que NO hace —y es deliberado— es el `flock`:
+    interrogar el cerrojo exige TOMARLO, y en esa ventana el arranque legítimo
+    de `takab-gpio` fracasaría. Aquí sólo se necesita distinguir «no contesta»
+    de «no hay nadie», y para eso el registro basta.
+
+    Gana la ÚLTIMA línea, igual que en `deploy.sh`, en systemd y en bash: un
+    relevo que escribiera un registro más corto sobre uno más largo dejaría cola
+    del dueño ANTERIOR.
+
+    Devuelve `None` ante cualquier duda —sin archivo, ilegible, sin pid, pid que
+    /proc desmiente—: el registro es INFORMATIVO (`gpio._acquire_pin_ownership`
+    conserva la propiedad si su E/S falla), así que su silencio no prueba que no
+    haya dueño. Por eso el mensaje del caso `None` habla en condicional.
+    """
+    try:
+        crudo = Path(ruta).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    campos: dict[str, str] = {}
+    for linea in crudo.splitlines():
+        clave, sep, valor = linea.partition("=")
+        if sep:
+            campos[clave.strip()] = valor.strip()
+    pid = campos.get("pid", "")
+    if not pid.isdigit() or not _proceso_vivo(int(pid)):
+        return None
+    return f"{campos.get('unit') or 'un proceso sin unidad declarada'} (pid {pid})"
 
 
 def _toposort(modules: dict[str, EdgeModule]) -> list[EdgeModule]:
@@ -176,7 +211,20 @@ class EdgeSupervisor:
         from simulators.bacnet import BacnetSimulator
 
         s = self.settings
-        self.gpio = GpioController(s)
+        # [T-2.70.a·D3] EL TRASPASO. `gpio_owner` decide si este proceso es el
+        # dueño de los pines o sólo un cliente suyo.
+        if s.gpio_owner not in ("edge", "gpio"):
+            # Se avisa AQUÍ y no en la propiedad: `edge_owns_pins` se consulta a
+            # menudo y un log por lectura sería registro por intervalo (regla de
+            # oro 10). La dirección del degradado y su razón, en `EdgeSettings`.
+            log.error(
+                "TAKAB_EDGE_GPIO_OWNER=%r no existe; el dueño de los pines se queda "
+                "donde está hoy (este proceso). Valores admitidos: 'edge', 'gpio'. "
+                "Degradar hacia 'gpio' con `takab-gpio` caído dejaría el gabinete SIN "
+                "NADIE gobernando sirena, gas y puertas, y en silencio.",
+                s.gpio_owner,
+            )
+        self.gpio = GpioController(s) if s.edge_owns_pins else None
         # [T-2.70.a·D2/P1] LA COSTURA. Se construye UNA vez y es lo único que
         # reciben los cinco consumidores; el `GpioController` de arriba se queda
         # como el DUEÑO de los pines y nadie más que esta costura le habla.
@@ -187,8 +235,20 @@ class EdgeSupervisor:
         # [T-2.70.a·D2/P2] `local` de fábrica: exactamente la llamada directa de
         # D2/P1. Con `TAKAB_EDGE_GPIO_LINK=ipc` la misma costura pasa a ir por el
         # socket del dueño — que hoy es ESTE proceso, así que el gabinete es dueño
-        # y cliente a la vez y no se mueve un pin. Eso es lo que D3 enciende.
-        self.gpio_link = build_gpio_link(s, self.gpio)
+        # y cliente a la vez y no se mueve un pin.
+        if self.gpio is not None:
+            self.gpio_link = build_gpio_link(s, self.gpio)
+        else:
+            # [T-2.70.a·D3] Sin controlador local no existe la llamada directa, se
+            # haya escrito o no `GPIO_LINK=ipc` en el `edge.env`. No se consulta
+            # `gpio_link` a propósito: un despliegue que cambie el dueño y olvide
+            # la otra línea obtendría `LocalGpioLink(None)`, o sea un gabinete que
+            # revienta con `AttributeError` en cada lectura de estado y en cada
+            # orden a gas, ascensor y puertas. La costura la decide QUIÉN es el
+            # dueño, no una segunda variable que puede faltar.
+            from takab_edge.pinlink import IpcGpioLink
+
+            self.gpio_link = IpcGpioLink(s)
         self.seedlink = self._build_seedlink(s)
         self.signal = FeatureExtractor(s.signal)
         self.buffer = RingBuffer(s.buffer)
@@ -305,11 +365,14 @@ class EdgeSupervisor:
         # dependen de `gpio` pero no de ella, así que sin este orden `health`
         # tomaría su instantánea de arranque contra una caché todavía vacía y el
         # primer latido saldría sin relés.
+        # [T-2.70.a·D3] …y `gpio` sólo está entre los módulos si este proceso es
+        # el dueño. `IpcGpioLink.depends_on = ("gpio",)` no se rompe por su
+        # ausencia: `_toposort` ignora una dependencia que no existe.
         costura = self.gpio_link if isinstance(self.gpio_link, EdgeModule) else None
         self._modules: dict[str, EdgeModule] = {
             m.name: m
             for m in (
-                self.gpio,
+                *((self.gpio,) if self.gpio is not None else ()),
                 *((costura,) if costura is not None else ()),
                 self.seedlink,
                 self.signal,
@@ -585,6 +648,85 @@ class EdgeSupervisor:
                     raise
                 log.exception("módulo no-crítico %s no arrancó; el gabinete sigue", module.name)
         log.info("gabinete arrancado (%d/%d módulos)", started, len(self._modules))
+        self._declarar_si_los_pines_no_tienen_dueno()
+
+    def _declarar_si_los_pines_no_tienen_dueno(self) -> None:
+        """[T-2.70.a·D3] El peor estado alcanzable del traspaso, dicho en voz alta.
+
+        `gpio_owner=gpio` con `takab-gpio` caído (o no habilitado, que es el
+        estado de todo gabinete desplegado hasta hoy) significa que **NADIE**
+        gobierna la sirena, el gas, los ascensores ni los retenedores. El
+        supervisor arranca perfectamente: por eso hay que decirlo.
+
+        Y NO se arregla tomando los pines aquí, aunque se pudiera. Hacerlo (a)
+        devolvería el camino de vida al proceso de 16 módulos en silencio,
+        deshaciendo la tarea entera sin que nadie se entere, y (b) bloquearía con
+        este cerrojo el arranque del dueño de verdad —el que tiene
+        `Restart=always`, cero dependencias pesadas y arranca en <1 s—, que es
+        justo quien está intentando volver. Se declara y se sigue degradado: el
+        panel LAN ya pinta `S/D` y el latido sale sin filas de relé.
+
+        Lectura por la costura y NO un `flock` sobre el cerrojo: interrogar el
+        cerrojo exige TOMARLO, y en esa ventana de microsegundos el arranque
+        legítimo de `takab-gpio` fracasaría. Se pregunta al dueño; si contesta,
+        existe.
+
+        [D3·m2] Y SI NO CONTESTA, ESO TODAVÍA NO ES «NO HAY DUEÑO». Este método
+        gritaba «el gabinete no tiene sirena, ni cierre de gas, ni retorno de
+        ascensores, ni retenedores» ante CUALQUIER fallo de la costura — incluido
+        el de un dueño de pie y protegiendo cuya puerta de servicio no se pudo
+        atar (medido: `siren_sounding=True`, gas y retenedores energizados). Peor
+        que impreciso: el remedio que ofrecía (`TAKAB_EDGE_GPIO_OWNER=edge`)
+        dejaba a este proceso en bucle contra un cerrojo ajeno para siempre, y el
+        movimiento natural que sigue —`systemctl stop takab-gpio` para «liberar»
+        los pines— SÍ es una actuación física sobre gas y puertas. Un mensaje de
+        alarma que induce a provocar el daño que denuncia.
+
+        La distinción no necesita nada nuevo: el REGISTRO del cerrojo dice quién
+        manda (pid + unidad) y `/proc` dice si sigue vivo — es exactamente lo que
+        `deploy.sh` interroga en su paso 7, y se lee SIN tocar el `flock`.
+        """
+        if self.settings.edge_owns_pins:
+            return
+        try:
+            self.gpio_link.snapshot()
+        except Exception as exc:  # noqa: BLE001 — un diagnóstico jamás tumba el arranque
+            cerrojo = getattr(self.settings, "gpio_lock_file", "?")
+            dueno = _dueno_segun_el_registro_del_cerrojo(cerrojo)
+            if dueno is not None:
+                log.critical(
+                    "EL DUEÑO DE LOS PINES ESTÁ DE PIE Y NO CONTESTA: %s sostiene "
+                    "el cerrojo %s, pero este proceso no pudo hablarle por %s (%s). "
+                    "El gabinete SÍ protege —el reflejo SASMEX→sirena vive entero "
+                    "del lado del dueño y no cruza el socket—; lo que falta es la "
+                    "PUERTA DE SERVICIO, y sin ella no hay lectura de estado para "
+                    "el panel ni el latido, ni actuación posterior sobre gas, "
+                    "ascensores y retenedores, ni evento a la nube. NO detengas a "
+                    "`takab-gpio` para «liberar» los pines, ni devuelvas la "
+                    "propiedad a este proceso: lo primero mueve GAS_VALVE y "
+                    "DOOR_RETAINER, lo segundo deja a este proceso en bucle contra "
+                    "un cerrojo ajeno, y ninguna de las dos abre la puerta. "
+                    "Mira por qué no está el socket: journalctl -u takab-gpio | "
+                    "grep 'puerta de servicio'.",
+                    dueno,
+                    cerrojo,
+                    getattr(self.settings, "gpio_socket_file", "?"),
+                    exc,
+                )
+                return
+            log.critical(
+                "NADIE contesta como dueño de los pines en %s (%s) y el registro "
+                "del cerrojo %s no nombra a ningún proceso vivo. Este proceso "
+                "arrancó con TAKAB_EDGE_GPIO_OWNER=%r, o sea que NO los reclama: si "
+                "de verdad no hay dueño, el gabinete no tiene sirena, ni cierre de "
+                "gas, ni retorno de ascensores, ni retenedores. Arranca "
+                "`takab-gpio` (`systemctl status takab-gpio`) o devuelve el dueño a "
+                "este proceso con TAKAB_EDGE_GPIO_OWNER=edge.",
+                getattr(self.settings, "gpio_socket_file", "?"),
+                exc,
+                cerrojo,
+                self.settings.gpio_owner,
+            )
 
     def stop(self) -> None:
         for module in reversed(self.modules()):

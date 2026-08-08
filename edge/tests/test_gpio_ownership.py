@@ -1,11 +1,19 @@
 """[T-2.70.a · D1.1] EL CERROJO DE PROPIEDAD DE LOS PINES.
 
-Hoy nada impide que DOS procesos abran los mismos pines BCM a la vez. Lo único
-que lo evita es `Conflicts=takab-gpio.service` en las unidades — una promesa de
-systemd que se cumple sólo si systemd es quien arranca los dos procesos y si
-nadie edita esa línea. Un `python -m takab_edge.gpio` a mano en una sesión SSH
-mientras `takab-edge` corre, o el propio T-2.70.a el día que RETIRE ese
-`Conflicts=`, abre dos `DigitalOutputDevice` sobre la válvula de gas.
+Nada impide por sí solo que DOS procesos abran los mismos pines BCM a la vez.
+Hasta D3, lo único que lo evitaba era `Conflicts=takab-gpio.service` en las
+unidades — una promesa de systemd que se cumplía sólo si systemd era quien
+arrancaba los dos procesos y si nadie editaba esa línea. Un
+`python -m takab_edge.gpio` a mano en una sesión SSH mientras `takab-edge` corre
+abría dos `DigitalOutputDevice` sobre la válvula de gas, y `Conflicts=` no lo
+veía siquiera.
+
+**Y desde D3 esa promesa YA NO EXISTE**: el `Conflicts=` se retiró, porque con el
+dueño de los pines en `takab-gpio` la exclusión mutua convertía cada arranque del
+otro servicio en una ventana de desprotección
+(`test_deploy_artifacts.py::test_las_dos_unidades_YA_NO_son_mutuamente_
+excluyentes`). Lo que separa hoy a los dos procesos es EXCLUSIVAMENTE lo que
+ancla este archivo.
 
 Lo que este archivo ancla:
 
@@ -258,8 +266,8 @@ def test_el_cerrojo_lo_sostiene_el_KERNEL_y_no_una_bandera_de_clase(settings) ->
 
     Un `set()` de módulo con los paths ya reclamados haría pasar (a) y (b) y
     NO PROTEGERÍA NADA: el escenario real es un segundo PROCESO —un
-    `python -m takab_edge.gpio` a mano por SSH, o `takab-gpio.service` el día que
-    se retire el `Conflicts=`— y una variable de Python no cruza la frontera del
+    `python -m takab_edge.gpio` a mano por SSH, o `takab-gpio.service` desde que
+    D3 retiró el `Conflicts=`— y una variable de Python no cruza la frontera del
     proceso. Aquí el veredicto lo da el kernel, desde fuera.
 
     Las dos mitades importan: ocupado mientras el dueño vive (o el cerrojo no

@@ -771,6 +771,13 @@ def test_la_salud_sobrevive_a_un_estado_de_reles_ilegible(settings) -> None:  # 
     preguntar», y una lectura que LANCE mataba el snapshot entero: `_on_start`
     llama a `snapshot("startup")` sin try, así que el latido no arrancaría nunca
     y el gabinete se vería FANTASMA desde la nube.
+
+    [T-2.70.a·B1] La segunda mitad de eso ya no se conforma con sobrevivir. El
+    `[]` que este test afirmaba era el compromiso de D2/P1 —«el contrato no sabe
+    decir sin dato y este paso no toca la nube»— y desde D3 tiene un coste
+    medido: un gabinete sin dueño de pines publicaba un latido indistinguible del
+    de uno sano. Ahora el `except` devuelve `None`, y la distinción completa se
+    mide en `tests/test_health_reles_sin_dueno.py`.
     """
     controlador = GpioController(settings)
     controlador.start()
@@ -781,7 +788,7 @@ def test_la_salud_sobrevive_a_un_estado_de_reles_ilegible(settings) -> None:  # 
         try:
             assert monitor.running is True
             snap = monitor.snapshot("test")
-            assert snap.relays == []
+            assert snap.relays is None  # «no pude preguntar», no «no hay relés»
             assert snap.gateway_id == settings.gateway_id  # el resto del latido, intacto
             assert roto.lecturas_rotas > 0
         finally:

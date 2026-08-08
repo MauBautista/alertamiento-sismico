@@ -11,10 +11,16 @@
 #   --site-lat/--site-lon (T-2.20, JUNTOS): añade TAKAB_EDGE_SITE_LAT/LON a las
 #   claves gestionadas. Sin flags NO se tocan: unas coordenadas puestas a mano
 #   en edge.env sobreviven al re-aprovisionamiento (merge_env.py las preserva).
+#   --gpio-owner edge|gpio (T-2.70.a·D3): QUIÉN sostiene los pines del gabinete
+#   (sirena, gas, ascensores, retenedores). Misma disciplina que las
+#   coordenadas: SIN la bandera no se toca, porque forzar un valor aquí
+#   volcaría a `edge` un gabinete ya traspasado y lo dejaría con DOS procesos
+#   reclamando el mismo cerrojo.
 set -euo pipefail
 
 SITE_LAT=""
 SITE_LON=""
+GPIO_OWNER=""
 CATALOG=""
 POSITIONAL=()
 while [ $# -gt 0 ]; do
@@ -25,6 +31,10 @@ while [ $# -gt 0 ]; do
     ;;
   --site-lon)
     SITE_LON="${2:?--site-lon requiere un valor}"
+    shift 2
+    ;;
+  --gpio-owner)
+    GPIO_OWNER="${2:?--gpio-owner requiere edge|gpio}"
     shift 2
     ;;
   --catalog)
@@ -42,6 +52,18 @@ set -- ${POSITIONAL+"${POSITIONAL[@]}"}
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
   echo "uso: $0 <thing_name> [ssh_host] [--site-lat LAT --site-lon LON] [--catalog FILE]" >&2
+  echo "     [--gpio-owner edge|gpio]" >&2
+  exit 1
+fi
+
+# [T-2.70.a·D3] El valor se valida AQUÍ y no se degrada en silencio. `EdgeSettings`
+# degrada cualquier cosa que no sea exactamente `gpio` a `edge` —dirección
+# correcta para un documento firmado que llega de la nube— pero aquí el operador
+# está TECLEANDO: un `--gpio-owner gpo` escribiría `edge` en el archivo mientras
+# el operador cree haber traspasado los pines, y acabaría con `takab-gpio`
+# habilitada y `takab-edge` reclamando el mismo cerrojo.
+if [ -n "$GPIO_OWNER" ] && [ "$GPIO_OWNER" != edge ] && [ "$GPIO_OWNER" != gpio ]; then
+  echo "error: --gpio-owner acepta 'edge' o 'gpio', no '$GPIO_OWNER'" >&2
   exit 1
 fi
 
@@ -139,6 +161,17 @@ if [ -n "$SITE_LAT" ]; then
     "$SITE_LAT" "$SITE_LON" >>"$TMP/edge.env.managed"
 fi
 
+# T-2.70.a·D3: el DUEÑO DE LOS PINES. Igual que las coordenadas, sólo entra a lo
+# gestionado si el operador lo pidió — y por una razón más dura que la de T-2.20:
+# escribir `edge` por omisión en cada re-aprovisionamiento volcaría a la
+# topología vieja un gabinete ya traspasado, y como `deploy.sh` deshabilita
+# `takab-gpio` cuando el archivo dice `edge`, el siguiente despliegue dejaría el
+# edificio SIN DUEÑO DE PINES tras el próximo reinicio. Sin bandera,
+# `merge_env.py` conserva lo que el gabinete ya tenga.
+if [ -n "$GPIO_OWNER" ]; then
+  printf 'TAKAB_EDGE_GPIO_OWNER=%s\n' "$GPIO_OWNER" >>"$TMP/edge.env.managed"
+fi
+
 if [ -z "$SSH_HOST" ]; then
   OUT_DIR="./certs-$THING"
   mkdir -p "$OUT_DIR"
@@ -188,6 +221,14 @@ else
   fi
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
   echo "reinicia el servicio para que tome las claves nuevas: ssh $SSH_HOST 'sudo systemctl restart takab-edge'"
+  if [ -n "$GPIO_OWNER" ]; then
+    echo "TAKAB_EDGE_GPIO_OWNER=$GPIO_OWNER escrito en el edge.env del gabinete."
+    echo "  · Habilitar/levantar (o deshabilitar) takab-gpio según este valor lo"
+    echo "    hace deploy/edge/deploy.sh: lo LEE de este archivo, no lo adivina."
+    echo "  · El proceso que YA sostiene los pines no lee el archivo hasta que se"
+    echo "    reinicie, y reiniciarlo CICLA GAS_VALVE y DOOR_RETAINER: eso va con"
+    echo "    el edificio avisado (deploy.sh --ventana-de-mantenimiento)."
+  fi
 fi
 
 echo "PIN del panel local de $THING: $LOCAL_PIN — entrégalo al responsable del edificio"

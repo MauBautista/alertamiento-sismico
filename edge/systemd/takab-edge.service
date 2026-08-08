@@ -2,17 +2,32 @@
 # Módulos: gpio, seedlink, signal, buffer, rules, actuators, cloud, health, security,
 # config, dispatch, backfill, local_api — arranque en orden topológico, watchdog interno.
 #
-# PROPIEDAD DE PINES (pre gate #3): este proceso instancia su PROPIO GpioController
-# (reflejo SASMEX→sirena in-process, regla de oro 1), así que NO puede convivir con
-# takab-gpio.service — ambos reclaman los mismos pines BCM. `Conflicts=` lo hace
-# imposible por construcción. Cuando llegue el hardware WR-1/relés (gate #3) se decide
-# la topología final: supervisor único vs proceso mínimo takab-gpio + supervisor sin gpio.
+# PROPIEDAD DE PINES [T-2.70.a·D3]: con `TAKAB_EDGE_GPIO_OWNER=gpio` en
+# /etc/takab/edge.env este proceso YA NO instancia su `GpioController` — los pines
+# los sostiene takab-gpio.service y aquí sólo vive un cliente del socket. Por eso
+# se RETIRÓ `Conflicts=takab-gpio.service`: con la exclusión mutua, arrancar el
+# dueño de los pines detendría este servicio y arrancar este mataría al dueño, que
+# es justo la ventana de desprotección que D3 elimina.
+# Lo que impide dos dueños ya no es una promesa de systemd sino un cerrojo del
+# KERNEL (`flock` exclusivo sobre gpio_lock_file, T-2.70.a·D1.1), que además
+# atrapa lo que `Conflicts=` nunca vio: un `python -m takab_edge.gpio` suelto de
+# una sesión SSH.
+# Con `TAKAB_EDGE_GPIO_OWNER=edge` (el defecto, y el estado de todo gabinete
+# desplegado hasta hoy) este proceso sigue siendo el dueño y takab-gpio.service no
+# debe estar habilitado: si lo estuviera, uno de los dos arrancaría y el otro
+# tronaría contra el cerrojo SIN TOCAR UN PIN.
 [Unit]
 Description=TAKAB Ailert — supervisor del gabinete (edge completo)
 Documentation=file:///opt/takab/takab-docs/BLUEPRINT-TECNICO-TAKAB.md
-After=network-online.target time-sync.target
+# `After=takab-gpio.service` es lo que ocupa el sitio del `Conflicts=` retirado: un
+# ORDEN, no una exclusión y NO un `Requires=`. Sin ninguna relación declarada, en
+# un arranque en frío systemd lanza las dos en paralelo y este proceso pasa sus
+# primeros segundos hablándole a un socket que nadie ató (panel en S/D, latido sin
+# relés). Con `After=` a secas, un gabinete que todavía no tenga takab-gpio
+# habilitado arranca exactamente igual que hoy, y lo único que puede retrasarse es
+# la nube/SeedLink/panel — jamás la protección, que es la que va primero.
+After=network-online.target time-sync.target takab-gpio.service
 Wants=network-online.target
-Conflicts=takab-gpio.service
 # [T-2.70] SIN LÍMITE DE ARRANQUES. Con el default de systemd (5 en 10 s) y
 # RestartSec=2, un fallo al arrancar agota el burst en ~10 s y la unidad queda en
 # `failed` PARA SIEMPRE: systemd no reintenta aunque la causa desaparezca. Este
@@ -120,6 +135,12 @@ RestartMaxDelaySec=300
 # ENERGIZADOS, un SIGKILL suelta los pines sin pasar por `drive_all_safe()`.
 # Bajarlo a ciegas cambiaría el comportamiento FÍSICO de gas y puertas.
 TimeoutStopSec=90
+# [T-2.70.a·D3] La gemela de arriba, declarada por simetría con takab-gpio.service
+# (donde `Type=notify` la vuelve decisiva — ver la nota extensa allí). Aquí el
+# `Type=simple` la deja INERTE: systemd da la unidad por arrancada en el fork. Se
+# escribe igual para que el número esté revisado ANTES de que alguien añada un
+# `ExecStartPre=` o cambie el `Type=` y la vuelva real sin darse cuenta.
+TimeoutStartSec=90
 
 # Endurecimiento (paridad con takab-gpio.service): sin escrituras fuera del spool.
 # PrivateTmp: /tmp propio y escribible (ProtectSystem=strict deja el global de solo

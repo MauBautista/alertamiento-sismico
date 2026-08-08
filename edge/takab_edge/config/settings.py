@@ -520,6 +520,51 @@ class EdgeSettings(BaseSettings):
     #: directa de siempre— y no tirar el documento de config entero.
     gpio_link: str = "local"
 
+    #: [T-2.70.a·D3] QUIÉN sostiene el cerrojo, los cinco relés y los tres botones.
+    #:
+    #: * ``edge`` (defecto) — `takab-edge` instancia su propio `GpioController`.
+    #:   Es la topología de hoy y la que el gate #6 acabó teniendo construida.
+    #: * ``gpio`` — el dueño es el proceso dedicado `takab-gpio`, y `takab-edge`
+    #:   NO instancia controlador ninguno: le habla por el socket.
+    #:
+    #: Es una perilla DISTINTA de `gpio_link`, y las dos hacen falta: `gpio_link`
+    #: dice POR DÓNDE se habla y `gpio_owner` dice QUIÉN escucha. La etapa
+    #: intermedia con la que se acredita el transporte en el Pi real —dueño
+    #: todavía dentro de `takab-edge`, pero hablándose por el socket— es
+    #: exactamente `gpio_link=ipc` + `gpio_owner=edge`, y sin dos perillas no
+    #: existiría.
+    #:
+    #: `str` pelado y no `Literal`, por la misma razón que `gpio_link` y
+    #: `cloud_admin_state`: llega dentro del documento firmado del config sync y
+    #: un valor inesperado no puede tirar el documento entero. Degrada a `edge`
+    #: — ver :attr:`edge_owns_pins`, donde está la razón de esa dirección.
+    gpio_owner: str = "edge"
+
+    @property
+    def edge_owns_pins(self) -> bool:
+        """¿Instancia `takab-edge` su propio dueño de pines? **Derivado.**
+
+        La comparación es contra `"gpio"` y no a favor de `"edge"` A PROPÓSITO:
+        cualquier valor que no sea exactamente `gpio` deja el dueño donde está
+        hoy. Las dos direcciones del degradado, y por qué ésta:
+
+        * degradar hacia `gpio` con `takab-gpio` caído (o inexistente, que es el
+          estado de todo gabinete desplegado hasta hoy) deja **a NADIE** al
+          mando de la sirena, el gas y los retenedores, y en silencio: el
+          supervisor arranca perfectamente, sólo que hablándole a un socket que
+          nadie ató;
+        * degradar hacia `edge` hace que el supervisor reclame el cerrojo. Si ya
+          lo tiene `takab-gpio`, el arranque TRUENA sin tocar un pin (D1.1,
+          `gpio` es `critical=True`) y el edificio sigue protegido por quien ya
+          lo protegía; si no lo tiene nadie, el gabinete queda exactamente como
+          está hoy.
+
+        O sea: la errata puede costar un `takab-edge` en bucle de reintentos —
+        ruidoso y sin consecuencia física— pero nunca un edificio sin dueño de
+        pines.
+        """
+        return self.gpio_owner != "gpio"
+
     @property
     def gpio_serves_pins(self) -> bool:
         """¿Este dueño de pines abre su puerta de servicio? **Derivado.**

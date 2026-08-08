@@ -17,12 +17,34 @@ After=network.target time-sync.target
 StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+# [T-2.70.a·D3] `notify` y no `simple`. Con `simple`, `systemctl start` vuelve
+# cuando systemd forkeó el proceso — no cuando el proceso es DUEÑO de los pines,
+# que es lo único que el traspaso puede aceptar como terminado. `run_gpio_process`
+# ya emite `sd_notify(READY=1)` DESPUÉS de tomar el cerrojo, fijar la pin factory,
+# construir los cinco relés, armar los tres botones y sembrar el contacto
+# sostenido (SPOF-02); hasta hoy ese aviso era código muerto (M10 de la auditoría
+# de D1). `takab-edge` se queda en `simple`: no emite READY y con `notify` se
+# quedaría en `activating` hasta que systemd lo matara.
+Type=notify
 # El proceso corre en producción (sin simuladores): usa el backend GPIO nativo (lgpio).
+# OJO al orden de precedencia, que NO es el del archivo: systemd.exec(5) dice
+# «Settings from these files override settings made with Environment=», así que si
+# /etc/takab/edge.env declarase TAKAB_EDGE_DEV_MODE, GANA EL ARCHIVO. Es la misma
+# exposición que ya tiene takab-edge.service, y ahora la comparten: provisionar
+# dev_mode en edge.env pondría a los DOS procesos en MockFactory a la vez (un
+# gabinete que no protege), nunca a uno solo — que era el fallo peor.
 Environment=TAKAB_EDGE_DEV_MODE=false
-# El camino de vida NO consume secretos ni la nube (reglas de oro 1 y 2): el reflejo
-# SASMEX→sirena debe arrancar SIEMPRE. La clave HMAC de comandos remotos la usa el
-# servicio de nube/comandos aparte (supervisor), NUNCA este proceso mínimo.
+# [T-2.70.a·D3 · CRITERIO 2] LA IDENTIDAD DEL GABINETE, Y SOBRE TODO EL MAPA DE
+# PINES. Sin esta línea el DUEÑO DE LOS PINES arrancaría con los defaults de
+# código —`GpioPins`, `failsafe`, tenant/site/gateway de dev—, o sea energizando
+# los pines EQUIVOCADOS de un gabinete cableado: el peor fallo imaginable de esta
+# tarea. Antes no importaba porque esta unidad no corría (`Conflicts=`); desde D3
+# es la que sostiene la sirena, el gas y los retenedores.
+# Las dos unidades leen EL MISMO archivo a propósito: es lo que impide que
+# discrepen sobre qué pin es cuál y sobre qué canal reposa energizado.
+# El camino de vida sigue sin CONSUMIR secretos ni nube (reglas de oro 1 y 2): la
+# clave HMAC de comandos remotos la usa el supervisor, nunca este proceso mínimo.
+EnvironmentFile=/etc/takab/edge.env
 # CWD escribible: lgpio crea .lgd-nfy* en el directorio de trabajo y /opt es
 # de solo lectura bajo ProtectSystem=strict (misma trampa que takab-edge).
 # Desde A-2: el proceso fija LGPIOFactory EXPLÍCITA y truena si no puede
@@ -54,6 +76,21 @@ RestartMaxDelaySec=300
 # 90 s = el valor efectivo de hoy: la línea documenta y ancla, no cambia nada.
 # Acortarlo exige medir en el Pi (ver la nota extensa en takab-edge.service).
 TimeoutStopSec=90
+# [T-2.70.a·D3] VENTANA DE ARRANQUE, que `Type=notify` acaba de volver REAL.
+# Con `simple` este plazo era inerte (systemd da la unidad por arrancada en el
+# fork). Con `notify`, si el `READY=1` no llega, systemd MATA el proceso al
+# vencer — y ese proceso puede estar sano y sosteniendo los pines, con lo que su
+# muerte cicla gas y retenedores cada plazo + backoff.
+# Las dos direcciones cuestan, y por eso el número se declara:
+#   · corto  ⇒ mata a un dueño sano que tardó en anunciarse (medido exec→cerrojo:
+#              0.60 s en x86/dev, ~1.0 s con los imports de producción; el margen
+#              del Pi 4 NO está medido — GATE-HW);
+#   · infinity ⇒ un arranque colgado a mitad de `_arrancar_hardware` (relés a
+#              medio construir, sin reflejo) no se rescata NUNCA: un edificio sin
+#              alertamiento en silencio, que es el peor desenlace de la ficha.
+# 90 s es el default de systemd: esta línea no cambia el comportamiento, lo hace
+# revisable — misma doctrina que `TimeoutStopSec=`.
+TimeoutStartSec=90
 # Endurecimiento mínimo (proceso auditable; sin escrituras al sistema salvo
 # /var/lib/takab, que además es el CWD que lgpio necesita escribible).
 NoNewPrivileges=true

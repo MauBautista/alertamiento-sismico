@@ -326,9 +326,12 @@ class GpioController(EdgeModule):
         `flock(LOCK_EX|LOCK_NB)` y no una bandera de proceso: el escenario real es
         un SEGUNDO PROCESO —`takab-gpio.service` frente a `takab-edge`, o un
         `python -m takab_edge.gpio` a mano por SSH— y una variable de Python no
-        cruza la frontera del proceso. Hoy lo único que separa a esos dos es
-        `Conflicts=takab-gpio.service` en las unidades: una promesa que sólo se
-        cumple si systemd arranca a los dos y que T-2.70.a va a RETIRAR.
+        cruza la frontera del proceso. Hasta D3 lo único que separaba a esos dos
+        era `Conflicts=takab-gpio.service` en las unidades: una promesa que sólo
+        se cumplía si systemd arrancaba a los dos —nunca frente a la sesión SSH—
+        y que **D3 RETIRÓ**, porque con el dueño de los pines en `takab-gpio` la
+        exclusión mutua convertía cada arranque del otro servicio en una ventana
+        de desprotección. Desde entonces esto es lo ÚNICO que lo impide.
 
         `flock` colisiona incluso entre dos descriptores del MISMO proceso (son
         dos «open file descriptions» distintas), así que también atrapa a un
@@ -455,7 +458,35 @@ class GpioController(EdgeModule):
         self._acquire_pin_ownership()
         try:
             self._arrancar_hardware()
+            # DESPUÉS del hardware, y NO crítico: quien conteste por el socket ya
+            # es dueño de los pines, con los cinco relés construidos y los tres
+            # botones armados.
+            self.arrancar_servidor_de_pines()
+            # [T-2.70.a·D3] …y la semilla de SPOF-02 va DESPUÉS de la puerta.
+            #
+            # Estaba al final de `_arrancar_hardware`, o sea antes de que el
+            # servidor existiera, y con el dueño en OTRO PROCESO eso deja mudo el
+            # traspaso hardware→software: `PinLinkServer._al_sasmex` todavía no
+            # está registrado, así que el episodio nace sin `episode_id`, y el
+            # cliente que conecta después recibe una instantánea con
+            # `sasmex_active=True` y `episode_id: None` — que
+            # `_reconciliar_episodio` descarta POR DISEÑO (sin identidad de
+            # episodio, sintetizar por estado abriría un incidente nuevo por cada
+            # instantánea, veinte por segundo). Resultado: sirena sonando en el
+            # edificio y CERO incidente, notificación y push.
+            #
+            # Lo que se pierde con el orden nuevo es que un cliente que conecte en
+            # el hueco de microsegundos entre el bind y la semilla vea una
+            # instantánea sin la alerta. Es inocuo: el evento le llega detrás por
+            # el mismo socket, y esa es la vía por la que llegan todas las demás.
+            self._seed_from_held_contact()
         except BaseException:
+            # La puerta PRIMERO, como en `_on_stop` y por la misma razón: soltar
+            # el cerrojo con el socket todavía atado dejaría al sucesor sin poder
+            # atarlo (`_preparar_ruta` ve a alguien vivo detrás y se niega a
+            # robarle la ruta), o sea un dueño de pines con el que nadie puede
+            # hablar. Es idempotente y no lanza.
+            self.detener_servidor_de_pines()
             # [D1·auditoría 2026-08-08] PRIMERO el hardware a seguro, DESPUÉS el
             # cerrojo — el MISMO orden que `_on_stop` documenta en su `finally`,
             # y por la misma razón. Aquí sólo se soltaba el cerrojo: quedaba
@@ -474,10 +505,6 @@ class GpioController(EdgeModule):
             # cerrojo para siempre.
             self._release_pin_ownership()
             raise
-        # DESPUÉS del hardware, y NO crítico: quien conteste por el socket ya es
-        # dueño de los pines, con los cinco relés construidos, los tres botones
-        # armados y el seed del contacto sostenido corrido (SPOF-02).
-        self.arrancar_servidor_de_pines()
 
     def _rescatar_hardware_a_medio_montar(self) -> None:
         """[D1·auditoría] Deja en SEGURO lo que el arranque alcanzó a construir.
@@ -573,8 +600,10 @@ class GpioController(EdgeModule):
         self._silence_button.when_pressed = self._on_silence_button
         self._test_button = Button(pins.test_button, pull_up=True, bounce_time=bounce_s)
         self._test_button.when_pressed = self._on_test_button
-
-        self._seed_from_held_contact()
+        # [T-2.70.a·D3] La semilla de SPOF-02 ya NO va aquí: la invoca `_on_start`
+        # DESPUÉS de abrir la puerta de servicio, para que el episodio nazca con
+        # `episode_id` y el traspaso hardware→software cruce hasta la nube con el
+        # dueño en otro proceso. La razón larga está en `_on_start`.
 
     # --- [D2/P2] La puerta de servicio del dueño ---
     @property
@@ -608,6 +637,7 @@ class GpioController(EdgeModule):
         try:
             from takab_edge.pinlink.server import PinLinkServer
 
+            self._asegurar_directorio_del_socket()
             if self._servidor_de_pines is None:
                 self._servidor_de_pines = PinLinkServer(self, self.settings.gpio_socket_file)
             self._servidor_de_pines.start()
@@ -619,6 +649,34 @@ class GpioController(EdgeModule):
                 "no habrá es lectura ni actuación posterior desde otro proceso.",
                 exc,
                 exc_info=True,
+            )
+
+    def _asegurar_directorio_del_socket(self) -> None:
+        """[T-2.70.a · M13] El 0700 del directorio del socket, IMPUESTO.
+
+        `Path.mkdir(mode=0o700, exist_ok=True)` sólo aplica el modo cuando CREA:
+        un directorio preexistente con 0755 —un despliegue viejo, un `mkdir -p` a
+        mano, otro `umask`— se quedaba en 0755 y nadie lo decía. El aislamiento
+        del socket son DOS capas (directorio + `SO_PEERCRED`) y la primera tiene
+        que valer lo que dice; con `SO_PEERCRED` intacto, el fallo es de defensa
+        en profundidad y no de acceso, pero es un `chmod`.
+
+        Vive en el DUEÑO y no en el servidor a propósito: así cubre a los dos
+        dueños posibles —`takab-gpio` y el `takab-edge` de la etapa intermedia—
+        sin tocar el transporte. Nunca lanza: la puerta de servicio no es crítica
+        y un `chmod` que no se pueda hacer (directorio de otro usuario) lo decide
+        el `bind` de después, no esto.
+        """
+        directorio = Path(self.settings.gpio_socket_file).parent
+        try:
+            directorio.mkdir(parents=True, exist_ok=True, mode=0o700)
+            directorio.chmod(0o700)
+        except OSError as exc:
+            log.warning(
+                "gpio: no se pudo imponer 0700 sobre %s (%s); el aislamiento del "
+                "socket queda sólo en `SO_PEERCRED`",
+                directorio,
+                exc,
             )
 
     def detener_servidor_de_pines(self) -> None:

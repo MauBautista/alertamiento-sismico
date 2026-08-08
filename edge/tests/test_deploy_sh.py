@@ -79,10 +79,19 @@ def gabinete(tmp_path: pathlib.Path):
     python_real = shutil.which("python3")
     flock_real = shutil.which("flock")
 
-    # El intérprete falso del venv. Lo usan DOS caminos del script: el pre-vuelo
+    # El intérprete falso del venv. Lo usan TRES caminos del script: el pre-vuelo
     # (`compileall`, que aquí delega en el python real y compila el árbol de
-    # verdad) y el gate (`-c '<imports>'`). Las tres variables de entorno
-    # separan los tres modos de fallo que el script debe distinguir.
+    # verdad), el gate (`-c '<imports>'`) y la HUELLA DEL DUEÑO DE LOS PINES
+    # (`-c '<script con HUELLA-DEL-DUENO>'`). Las variables de entorno separan
+    # los modos de fallo que el script debe distinguir.
+    #
+    # [T-2.70.a·D3·B2] La huella va PRIMERO en el `case`: su script menciona
+    # `takab_edge` (importa el entry point del dueño) y sin este orden caería en
+    # la rama de `FALLA_CODIGO`, que sale 0 sin imprimir nada — o sea que el
+    # veredicto se leería como «no se pudo medir». `DUENO_MISMO_CODIGO=1` es la
+    # respuesta «el dueño ya corre este mismo código»; SIN esa variable el falso
+    # no imprime nada, que es como el script ve a un intérprete que revienta y
+    # que por tanto NO puede probar que el dueño esté al día.
     py_venv = f"""
         case "$1 $2" in
           "-m compileall")
@@ -90,6 +99,9 @@ def gabinete(tmp_path: pathlib.Path):
             exec "{python_real}" "$@" ;;
         esac
         case "$2" in
+          *HUELLA-DEL-DUENO*)
+            [ -n "${{DUENO_MISMO_CODIGO:-}}" ] && echo "DUENO-IGUAL"
+            exit 0 ;;
           *lgpio*)
             [ -n "${{FALLA_DEPS:-}}" ] && {{ echo "No module named lgpio" >&2; exit 1; }} ;;
           *takab_edge*)
@@ -195,6 +207,16 @@ def gabinete(tmp_path: pathlib.Path):
     #   REGISTRO_VACIO=1 → toma el cerrojo pero NO escribe el registro (ENOSPC).
     #   REGISTRO_RANCIO=1 → escribe primero una línea de un dueño ANTERIOR.
     #   PID_FALSO=N → el registro nombra a N en vez de al dueño de verdad.
+    #   UNIDADES_HABILITADAS=... → qué unidades tiene systemd habilitadas al
+    #     arrancar (`is-enabled`). Por defecto SOLO `takab-edge`, que es el
+    #     estado de todo gabinete desplegado hasta hoy.
+    #
+    # [T-2.70.a·D3·B2] `start` reclama los pines igual que `restart`: el
+    # despliegue de un gabinete provisionado con el dueño dedicado usa `start`
+    # (no-op si ya corre) y NUNCA `restart`, porque reiniciar a un dueño VIVO
+    # cicla GAS_VALVE y DOOR_RETAINER. Si el falso no modelara `start`, ese
+    # camino no reclamaría nada y el test no podría distinguirlo de un `enable`
+    # a secas.
     #
     # [T-2.70.a·D1·BLOQUEANTE] `is-active` es una ALLOWLIST, no un `echo active`
     # incondicional. Esa era la vacuidad que dejaba pasar dos mutaciones del paso
@@ -209,7 +231,47 @@ def gabinete(tmp_path: pathlib.Path):
         binarios / "systemctl",
         f"""
         echo "systemctl $*" >> "{bitacora}"
-        if [ "$1" = restart ] && [ -z "${{NO_RECLAMA_PINES:-}}" ]; then
+        # FALLA_START_GPIO=1 → la unidad del dueño no arranca (ExecStart que
+        # revienta, unidad mal escrita, dependencia sin montar). El despliegue NO
+        # puede abortar por el código de salida de systemctl: el veredicto lo da
+        # el paso 7, que MIDE quién tiene los pines.
+        if [ -n "${{FALLA_START_GPIO:-}}" ] && [ "$2" = takab-gpio ]; then
+          case "$1" in
+            start|restart|enable) echo "Job for takab-gpio.service failed" >&2; exit 1 ;;
+          esac
+        fi
+        # QUÉ UNIDAD RECLAMA LOS PINES lo decide el `edge.env` del gabinete, no
+        # una constante del arnés: con `TAKAB_EDGE_GPIO_OWNER=gpio`, `takab-edge`
+        # NO instancia su GpioController y arrancarlo no toca el cerrojo. Sin
+        # modelar eso, cualquier `restart takab-edge` «reclamaba» los pines y un
+        # `takab-gpio` que no arranca salía en verde — el escenario (a) de la
+        # auditoría, invisible. Se lee del archivo, con la misma semántica de
+        # «gana la última» que systemd, pero con un lector INDEPENDIENTE del que
+        # usa deploy.sh: así el script se mide contra el gabinete y no contra sí
+        # mismo.
+        DUENO_CFG="$(sed -n 's/^ *TAKAB_EDGE_GPIO_OWNER=//p' \\
+          "${{TAKAB_EDGE_ENV_FILE:-/dev/null}}" 2>/dev/null | tail -1 || true)"
+        case "$DUENO_CFG" in gpio) RECLAMANTE=takab-gpio ;; *) RECLAMANTE=takab-edge ;; esac
+
+        case "$1" in restart|start) ARRANCA=1 ;; *) ARRANCA=0 ;; esac
+        [ "$2" = "$RECLAMANTE" ] || ARRANCA=0
+        # `restart` DETIENE antes de arrancar, y detener al dueño de los pines
+        # suelta el cerrojo: sin modelarlo, un `restart takab-gpio` sobre un
+        # dueño vivo no cambiaba nada y la ventana de mantenimiento no se podía
+        # distinguir de no hacer nada. Sólo se mata al proceso si el registro
+        # dice que los pines los tiene ESTA unidad — `restart takab-edge` no
+        # detiene a `takab-gpio`.
+        if [ "$1" = restart ] && [ -s "{pid_dueno}" ]; then
+          DUENO_ACTUAL="$(sed -n 's/^unit=//p' "{cerrojo}" 2>/dev/null | tail -1 || true)"
+          if [ "$DUENO_ACTUAL" = "$2" ]; then
+            kill -9 "$(cat "{pid_dueno}")" 2>/dev/null || true
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+              flock -n "{cerrojo}" true && break
+              sleep 0.05
+            done
+          fi
+        fi
+        if [ "$ARRANCA" = 1 ] && [ -z "${{NO_RECLAMA_PINES:-}}" ]; then
           # `exec` y no `flock -n <archivo> sleep 120`: util-linux hace fork, así
           # que ahí `$!` era el PID de FLOCK y el que se queda con el descriptor
           # (y con el cerrojo) es el `sleep` hijo. El teardown mataba al padre y
@@ -217,15 +279,22 @@ def gabinete(tmp_path: pathlib.Path):
           # el subshell + `exec`, `$BASHPID` ES el proceso que tiene el fd 9
           # abierto: el registro nombra al dueño de verdad y matarlo lo suelta.
           #
-          # El cerrojo se ABRE dentro del subshell (`exec 9>`) y no en la
+          # El cerrojo se ABRE dentro del subshell (`exec 9<>`) y no en la
           # redirección del `&`, porque con `RETRASO_CERROJO` el archivo no debe
           # existir hasta que el arranque llegue de verdad a `gpio._on_start`:
           # así el sondeo del paso 7 ve la secuencia REAL de un arranque lento
           # —no hay archivo, luego hay archivo y cerrojo libre, luego dueño— y no
           # una toma instantánea que ningún test podría distinguir de un `sleep`.
+          #
+          # `9<>` y NO `9>` [T-2.70.a·D3·B2]: `>` TRUNCA el archivo antes de
+          # intentar el `flock`, así que un arranque que llega tarde y NO
+          # consigue el cerrojo borraba igualmente el registro del dueño que sí
+          # lo tiene. `GpioController._acquire_pin_ownership` abre con
+          # `O_RDWR|O_CREAT` —sin truncar— y trunca DESPUÉS del flock; el arnés
+          # tiene que hacer lo mismo o modela una avería que el código no tiene.
           (
             sleep "${{RETRASO_CERROJO:-0}}"
-            exec 9>"{cerrojo}"
+            exec 9<>"{cerrojo}"
             flock -n 9 || exit 1
             echo "$BASHPID" > "{pid_dueno}"
             if [ -z "${{REGISTRO_VACIO:-}}" ]; then
@@ -245,6 +314,13 @@ def gabinete(tmp_path: pathlib.Path):
           esac
           echo inactive
           exit 3
+        fi
+        if [ "$1" = is-enabled ]; then
+          case " ${{UNIDADES_HABILITADAS:-takab-edge}} " in
+            *" $2 "*) echo enabled; exit 0 ;;
+          esac
+          echo disabled
+          exit 1
         fi
         exit 0
         """,
@@ -282,6 +358,15 @@ def gabinete(tmp_path: pathlib.Path):
         """,
     )
 
+    # [T-2.70.a·D3·B2] El `/etc/takab/edge.env` del gabinete de mentira. Es la
+    # IDENTIDAD (mapa de pines, tenant/site, dev_mode) y desde D3 también dice
+    # QUIÉN es el dueño de los pines (`TAKAB_EDGE_GPIO_OWNER`), que es lo que el
+    # despliegue tiene que leer para decidir a quién habilitar. Existe por
+    # defecto porque un gabinete SIN él no arranca: las dos unidades lo declaran
+    # `EnvironmentFile=` sin `-`.
+    entorno = tmp_path / "edge.env"
+    entorno.write_text("TAKAB_EDGE_GATEWAY_ID=gw-falso-0001\nTAKAB_EDGE_DEV_MODE=false\n")
+
     class Gabinete:
         def __init__(self) -> None:
             self.raiz = raiz
@@ -290,8 +375,49 @@ def gabinete(tmp_path: pathlib.Path):
             self.bitacora = bitacora
             self.cerrojo = cerrojo
             self.pid_dueno = pid_dueno
+            self.entorno = entorno
 
-        def desplegar(self, **entorno: str) -> subprocess.CompletedProcess[str]:
+        def provisionar(self, **claves: str) -> None:
+            """Reescribe el `edge.env` del gabinete con estas claves añadidas."""
+            lineas = ["TAKAB_EDGE_GATEWAY_ID=gw-falso-0001", "TAKAB_EDGE_DEV_MODE=false"]
+            lineas += [f"{k}={v}" for k, v in claves.items()]
+            entorno.write_text("\n".join(lineas) + "\n")
+
+        def dueno_preexistente(self, unidad: str = "takab-gpio") -> int:
+            """Un dueño de pines que YA estaba corriendo ANTES de este despliegue.
+
+            Es el estado normal de un gabinete con `TAKAB_EDGE_GPIO_OWNER=gpio`:
+            `takab-gpio` lleva días de pie y el despliegue NO lo reinicia (eso
+            costaría un ciclo eléctrico de gas y retenedores). Modelarlo es lo
+            único que permite medir si el script se da cuenta de que el dueño se
+            quedó con el CÓDIGO ANTERIOR.
+
+            Mismo `exec` que el systemctl falso: `$BASHPID` ES el proceso que
+            sostiene el descriptor, así que el registro nombra al dueño de verdad
+            y el teardown puede matarlo.
+            """
+            guion = f"""
+            (
+              exec 9<>"{cerrojo}"
+              flock -n 9 || exit 1
+              echo "$BASHPID" > "{pid_dueno}"
+              printf 'pid=%s\\nunit=%s\\n' "$BASHPID" "{unidad}" > "{cerrojo}"
+              exec sleep 120
+            ) </dev/null >/dev/null 2>&1 &
+            """
+            subprocess.run(["bash", "-c", textwrap.dedent(guion)], check=True, timeout=30)
+            # El arranque del dueño tiene que quedar en un SEGUNDO distinto al del
+            # swap: el veredicto compara epochs enteros y sin esta separación un
+            # dueño rancio podría leerse como recién arrancado. En el Pi la
+            # distancia real son días; aquí, 1.2 s.
+            for _ in range(100):
+                if pid_dueno.exists() and pid_dueno.read_text().strip().isdigit():
+                    break
+                time.sleep(0.05)
+            time.sleep(1.2)
+            return int(pid_dueno.read_text().strip())
+
+        def desplegar(self, *args: str, **entorno_extra: str) -> subprocess.CompletedProcess[str]:
             env = dict(os.environ)
             # HOME apunta al sandbox A PROPÓSITO: el bloque remoto hace
             # `export PATH="$HOME/.local/bin:$PATH"` (en el Pi, uv vive ahí), y
@@ -307,9 +433,13 @@ def gabinete(tmp_path: pathlib.Path):
             # script cae a /var/lib/takab/gpio.lock, que es el que usan las DOS
             # unidades (WorkingDirectory=/var/lib/takab, ReadWritePaths=).
             env["TAKAB_EDGE_GPIO_LOCK_PATH"] = str(cerrojo)
-            env.update(entorno)
+            # Mismo seam: en producción nadie lo exporta y vale
+            # /etc/takab/edge.env, que es el `EnvironmentFile=` de LAS DOS
+            # unidades. El sandbox no puede escribir ahí.
+            env["TAKAB_EDGE_ENV_FILE"] = str(entorno)
+            env.update(entorno_extra)
             return subprocess.run(
-                ["bash", str(_DEPLOY), "gabinete-falso"],
+                ["bash", str(_DEPLOY), "gabinete-falso", *args],
                 capture_output=True,
                 text=True,
                 env=env,
@@ -920,3 +1050,304 @@ def test_del_registro_del_cerrojo_gana_la_ULTIMA_linea(gabinete) -> None:
     )
     assert "✓ pines del gabinete en poder de takab-edge" in r.stdout
     assert "impostor" not in r.stdout, "reportó al dueño ANTERIOR como si mandara"
+
+
+# ---- D3·B2: el despliegue no reiniciaba NI HABILITABA al dueño de los pines --
+#
+# Medido por la auditoría de D3: el script instala LAS DOS unidades, hace
+# `daemon-reload` y reinicia `takab-edge`. No hay un solo `systemctl enable
+# takab-gpio` en el repo y nada provisiona `TAKAB_EDGE_GPIO_OWNER`, así que:
+#
+#   (a) la topología de D3 no es ALCANZABLE por el camino documentado — su
+#       criterio 1 sólo se cumple dentro de los tests;
+#   (b) si alguien la alcanza a mano, cada despliegue actualiza el código,
+#       reinicia al CLIENTE y deja al DUEÑO DE LOS PINES con el código anterior
+#       indefinidamente… imprimiendo ✓;
+#   (c) sin `enable`, el siguiente reinicio del Pi arranca SIN dueño de pines:
+#       un edificio sin ninguna de las cuatro protecciones.
+#
+# LA DECISIÓN, y por qué ésta. Reiniciar al dueño es una ACTUACIÓN FÍSICA (2
+# transiciones por pin en `GAS_VALVE` y `DOOR_RETAINER`, medidas en
+# test_deploy_artifacts.py) y una ventana sin sirena. Si `deploy.sh` lo
+# reiniciara en cada despliegue, D3 no habría comprado NADA: seguiría costando
+# un ciclo eléctrico por despliegue, sólo que en otro proceso. Así que el
+# reinicio del dueño va en VENTANA DE MANTENIMIENTO declarada
+# (`--ventana-de-mantenimiento`), y el despliegue de todos los días:
+#
+#   · HABILITA la unidad del dueño (symlink; no toca un pin) — cierra (c);
+#   · la ARRANCA con `start`, que es no-op si ya corre y NUNCA cicla a un dueño
+#     vivo — cierra (a), porque hace la topología alcanzable sin coste físico;
+#   · y si el dueño se queda con CÓDIGO ANTERIOR, NO imprime ✓ y sale != 0 —
+#     cierra (b).
+
+
+def test_un_gabinete_provisionado_con_el_dueno_dedicado_lo_HABILITA_y_lo_LEVANTA(
+    gabinete,
+) -> None:
+    """(a) y (c). El camino documentado tiene que poder LLEGAR a la topología D3.
+
+    Con `TAKAB_EDGE_GPIO_OWNER=gpio` en el `edge.env`, `takab-edge` ya no
+    instancia su `GpioController`: si nadie habilita ni arranca `takab-gpio`, el
+    gabinete queda sin sirena, sin cierre de gas, sin retorno de ascensores y sin
+    retenedores — y el script de hoy lo dejaba así reportando el despliegue como
+    bueno.
+
+    `enable` cierra el agujero del PRÓXIMO REINICIO (sin él, el Pi arranca sin
+    dueño de pines); `start` cierra el de AHORA. Y `start` y no `restart`: sobre
+    un dueño ya vivo `start` es un no-op y no mueve un solo pin.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    registro = gabinete.registro()
+    assert "systemctl enable takab-gpio" in registro, (
+        "el gabinete está provisionado con el dueño dedicado y NADIE habilita su "
+        "unidad: al próximo reinicio del Pi el edificio arranca sin sirena, sin "
+        "gas, sin ascensores y sin retenedores"
+    )
+    assert "systemctl start takab-gpio" in registro, (
+        "se habilitó la unidad del dueño pero no se levantó: hasta el próximo "
+        "reinicio el gabinete sigue sin nadie sosteniendo los pines"
+    )
+    assert "systemctl restart takab-gpio" not in registro, (
+        "el despliegue de todos los días REINICIÓ al dueño de los pines: eso es "
+        "una actuación física sobre gas y retenedores en cada deploy, que es "
+        "justo lo que D3 existe para eliminar"
+    )
+    assert gabinete.dueno_de_los_pines()["unit"] == "takab-gpio"
+
+
+def test_un_gabinete_de_hoy_no_habilita_al_dueno_dedicado(gabinete) -> None:
+    """LA NO-VACUIDAD del test de arriba, y el daño de habilitar a ciegas.
+
+    Todo gabinete desplegado hasta hoy tiene `gpio_owner=edge` (el defecto): el
+    dueño de los pines es `takab-edge`. Habilitar `takab-gpio` ahí deja DOS
+    unidades reclamando el mismo cerrojo en el próximo arranque en frío, y como
+    `takab-edge` declara `After=takab-gpio.service`, el que gana es el dedicado
+    y `takab-edge` queda en crash-loop PARA SIEMPRE contra el cerrojo: sin nube,
+    sin SeedLink y sin panel. Eléctricamente mudo (D1.1), operativamente ciego.
+    """
+    r = gabinete.desplegar()
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    registro = gabinete.registro()
+    assert "enable takab-gpio" not in registro, (
+        "habilitó al dueño dedicado en un gabinete cuyo `edge.env` dice que el "
+        "dueño es `takab-edge`: dos reclamantes del mismo cerrojo y un "
+        "`takab-edge` en crash-loop tras el próximo reinicio"
+    )
+    assert "start takab-gpio" not in registro
+    assert "systemctl restart takab-edge" in registro
+
+
+def test_un_takab_gpio_habilitado_por_ERROR_se_deshabilita(gabinete) -> None:
+    """La otra mitad de (c): el gabinete que volvió atrás y nadie lo deshabilitó.
+
+    Un sitio que probó D3 y revirtió `TAKAB_EDGE_GPIO_OWNER` a `edge` se queda
+    con la unidad del dueño dedicado HABILITADA. No pasa nada hasta el siguiente
+    corte de luz; entonces arrancan las dos, gana `takab-gpio` (por el `After=`)
+    y `takab-edge` cicla contra el cerrojo sin nube, sin SeedLink y sin panel.
+
+    Deshabilitar es borrar un symlink: no toca un pin, no detiene nada y es
+    idempotente. Detener al dueño NO se hace desde aquí — eso sí sería actuación
+    física, y encima sobre el proceso que en ese momento puede tener los pines.
+    """
+    r = gabinete.desplegar(UNIDADES_HABILITADAS="takab-edge takab-gpio")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert "systemctl disable takab-gpio" in gabinete.registro(), (
+        "`takab-gpio` quedó habilitada en un gabinete con el dueño en "
+        "`takab-edge`: el próximo arranque en frío deja al supervisor en "
+        "crash-loop y nadie lo dice"
+    )
+    assert "systemctl stop takab-gpio" not in gabinete.registro(), (
+        "detener al dueño desde un despliegue es actuación física sobre gas y "
+        "retenedores; deshabilitar basta y no mueve nada"
+    )
+    assert "⚠" in r.stderr, "y tiene que DECIRLO: un symlink corregido en silencio no enseña nada"
+
+
+def test_el_dueno_de_los_pines_en_CODIGO_VIEJO_no_se_declara_bueno(gabinete) -> None:
+    """(b), EL BLOQUEANTE. El ✓ que mentía.
+
+    `takab-gpio` lleva días de pie; el despliegue le cambia el código BAJO LOS
+    PIES (el venv es editable e in-place), reinicia al CLIENTE y el paso 7
+    imprime `✓ pines del gabinete en poder de takab-gpio (pid N)`. Verde. El
+    proceso que sostiene la sirena, el gas y los retenedores sigue ejecutando el
+    código anterior indefinidamente — incluido el `Type=notify` que el
+    `daemon-reload` escribió y no aplicó.
+
+    Es el mismo defecto que D1.5 cerró para la VERIFICACIÓN, reabierto en el
+    REINICIO: la comprobación mide un hecho verdadero («hay dueño») y lo reporta
+    como el hecho que importa («el despliegue llegó al dueño»).
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    pid = gabinete.dueno_preexistente("takab-gpio")
+    r = gabinete.desplegar()
+
+    assert gabinete.dueno_de_los_pines()["pid"] == str(pid), (
+        "premisa: los pines los sigue teniendo el proceso que ya estaba de pie "
+        "ANTES del despliegue (el `start` de un dueño vivo es un no-op)"
+    )
+    assert r.returncode != 0, (
+        "el dueño de los pines se quedó con el código anterior y el despliegue "
+        f"salió en VERDE.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "✓ pines del gabinete en poder" not in r.stdout, (
+        "imprimió el ✓ del paso 7 midiendo a un proceso que no ejecuta lo que acabamos de desplegar"
+    )
+    assert "CÓDIGO ANTERIOR" in r.stderr
+    # Y dice qué hacer, sin empujar a lo que hace daño: revertir también es
+    # reiniciar, y reiniciar mueve GAS_VALVE y DOOR_RETAINER.
+    assert "--ventana-de-mantenimiento" in r.stderr, (
+        "el mensaje tiene que dar el camino sancionado (que reinicia al dueño "
+        "bajo la MISMA verificación de propiedad), no mandar a teclear un "
+        "`systemctl restart` a pelo"
+    )
+    assert "NO REVIERTAS" in r.stderr
+
+
+def test_un_dueno_de_pines_VIEJO_con_el_MISMO_codigo_no_obliga_a_ciclar_gas(gabinete) -> None:
+    """El límite del gate de arriba, y lo que lo hace usable.
+
+    Un gate que dijera «el dueño no se reinició ⇒ rojo» saldría rojo en TODOS los
+    despliegues de un gabinete D3, porque el dueño no se reinicia nunca por
+    diseño. Eso entrena al operador a ignorar el único rojo que importa — el
+    daño de segundo orden que este mismo script ya documenta dos veces.
+
+    Lo que se mide no es «¿se reinició?» sino «¿corre código distinto del que
+    acabamos de poner?». La mayoría de los despliegues tocan el supervisor, la
+    nube o el panel: el código del dueño de los pines no cambia y no hay nada
+    que ciclar.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    gabinete.dueno_preexistente("takab-gpio")
+    r = gabinete.desplegar(DUENO_MISMO_CODIGO="1")
+
+    assert r.returncode == 0, (
+        "el código del dueño de los pines NO cambió en este despliegue y aun así "
+        f"se declaró no verificado.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "✓ pines del gabinete en poder de takab-gpio" in r.stdout
+    assert "CÓDIGO ANTERIOR" not in r.stderr
+    assert "systemctl restart takab-gpio" not in gabinete.registro(), (
+        "no había nada que actualizar en el dueño y se le reinició igual: un "
+        "ciclo de gas y retenedores gratis"
+    )
+
+
+def test_la_ventana_de_mantenimiento_reinicia_al_dueno_ANTES_que_al_cliente(gabinete) -> None:
+    """El camino sancionado, con el edificio avisado.
+
+    Cuando el operador declara la ventana, el dueño SÍ se reinicia — y va
+    PRIMERO: `takab-edge` declara `After=takab-gpio.service`, así que el orden
+    correcto es dueño y luego cliente; al revés, el cliente pasaría sus primeros
+    segundos hablándole a un socket que nadie ató (panel en `S/D`, latido sin
+    relés) y encima el reinicio del dueño lo dejaría sin suscripción.
+
+    Y el reinicio va por AQUÍ y no a mano por SSH a propósito: así queda bajo la
+    MISMA verificación de propiedad del paso 7, que es lo que dice si el dueño
+    volvió a tomar los pines.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    gabinete.dueno_preexistente("takab-gpio")
+    r = gabinete.desplegar("--ventana-de-mantenimiento", UNIDAD_DUENA="takab-gpio")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    registro = gabinete.registro()
+    assert "systemctl restart takab-gpio" in registro, (
+        "se declaró la ventana de mantenimiento y el dueño de los pines siguió "
+        "con el código anterior"
+    )
+    assert registro.index("restart takab-gpio") < registro.index("restart takab-edge"), (
+        "reinició al CLIENTE antes que al DUEÑO: `takab-edge` arranca contra un "
+        "socket que su dueño está a punto de cerrar"
+    )
+    # …y la propiedad se vuelve a verificar sobre el dueño NUEVO, no sobre el
+    # que había: el pid del registro es el del proceso que arrancó ahora.
+    assert "✓ pines del gabinete en poder de takab-gpio" in r.stdout
+    assert "el edificio está avisado" in r.stdout.lower() or "VENTANA DE MANTENIMIENTO" in r.stdout
+
+
+def test_del_edge_env_gana_la_ULTIMA_asignacion_del_dueno(gabinete) -> None:
+    """`EnvironmentFile=` tiene la semántica de siempre en esta casa: gana la
+    última. Un `edge.env` con la clave repetida —el resultado natural de una
+    fusión de `merge_env.py` sobre un archivo editado a mano— se leería al revés
+    con un `grep | head -1`, y el despliegue habilitaría exactamente la unidad
+    equivocada: la que deja al gabinete con dos reclamantes o sin ninguno.
+    """
+    gabinete.entorno.write_text(
+        "TAKAB_EDGE_GATEWAY_ID=gw-falso-0001\n"
+        "TAKAB_EDGE_GPIO_OWNER=edge\n"
+        "TAKAB_EDGE_GPIO_OWNER=gpio\n"
+    )
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert "systemctl enable takab-gpio" in gabinete.registro(), (
+        "leyó la PRIMERA asignación de TAKAB_EDGE_GPIO_OWNER; systemd lee la "
+        "última y el gabinete arranca con el dueño dedicado"
+    )
+
+
+def test_si_el_dueno_no_arranca_el_veredicto_lo_da_la_MEDICION_y_no_systemctl(
+    gabinete,
+) -> None:
+    """Quién decide que un despliegue es malo.
+
+    `systemctl start takab-gpio` puede salir != 0 por mil razones y el script
+    corre bajo `set -euo pipefail`: dejar que abortara ahí cambiaría una
+    comprobación MEDIDA —«¿quién sostiene el cerrojo?»— por el código de salida
+    de un comando que sólo sabe decir «no arrancó», y encima dejaría al cliente
+    sin reiniciar con el disco ya cambiado.
+
+    Así que se avisa y se sigue: el paso 7 es el que dicta, y lo hace con el
+    diagnóstico bueno. Con `Restart=always` + `StartLimitIntervalSec=0`, además,
+    un fallo transitorio se cura solo mientras el sondeo espera.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    r = gabinete.desplegar(FALLA_START_GPIO="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
+
+    assert "systemctl restart takab-edge" in gabinete.registro(), (
+        "abortó en el paso 6 por el código de salida de systemctl: el cliente se "
+        "quedó sin reiniciar con el disco ya cambiado"
+    )
+    assert r.returncode != 0, "nadie tiene los pines y el despliegue salió en verde"
+    assert "NADIE reclamó los pines" in r.stderr, (
+        "el veredicto tiene que venir de MEDIR la propiedad, no del error de "
+        f"systemctl.\nstderr:\n{r.stderr}"
+    )
+
+
+# ---- D3·m5: sin identidad no se despliega ----------------------------------
+
+
+def test_un_gabinete_SIN_identidad_no_llega_a_tocar_el_arbol_vivo(gabinete) -> None:
+    """[T-2.70.a·D3·m5] `EnvironmentFile=` va SIN `-`, y esto lo hace visible.
+
+    Las dos unidades exigen `/etc/takab/edge.env`: sin él no arrancan. Es la
+    dirección correcta —un dueño de pines que arranca SIN identidad lo hace con
+    el mapa de pines de `GpioPins` por defecto, o sea energizando los pines
+    equivocados de un gabinete cableado, y encima con la unidad en verde— pero
+    el despliegue no lo comprobaba: instalaba las unidades, reiniciaba, y el
+    operador descubría el problema 45 s después con «NADIE reclamó los pines»,
+    un diagnóstico que apunta al cerrojo en vez de al archivo que falta.
+
+    Se comprueba en el PRE-VUELO, que es donde todavía no se ha destruido nada.
+    """
+    gabinete.entorno.unlink()
+    r = gabinete.desplegar()
+
+    assert r.returncode != 0, (
+        "desplegó sobre un gabinete sin identidad: las dos unidades declaran "
+        f"`EnvironmentFile=` sin `-` y ninguna arrancaría.\nstdout:\n{r.stdout}"
+        f"\nstderr:\n{r.stderr}"
+    )
+    assert gabinete.centinela_intacto(), (
+        "abortó DESPUÉS de destruir el árbol vivo: la comprobación de identidad "
+        "tiene que correr en el pre-vuelo"
+    )
+    assert "systemctl restart" not in gabinete.registro()
+    assert str(gabinete.entorno) in r.stderr, "el mensaje debe nombrar el archivo que falta"
+    assert "provision_gateway.sh" in r.stderr, "y el script que lo instala"

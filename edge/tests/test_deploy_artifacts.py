@@ -79,6 +79,9 @@ from takab_edge.gpio import GpioController
 
 _RAIZ = pathlib.Path(__file__).resolve().parents[2]
 _DEPLOY = _RAIZ / "deploy" / "edge" / "deploy.sh"
+#: El script que INSTALA `/etc/takab/edge.env` (y que lo FUSIONA en vez de
+#: pisarlo — lección del PR #13). `deploy.sh` sólo LEE ese archivo.
+_PROVISION = _RAIZ / "infra" / "scripts" / "provision_gateway.sh"
 _PYPROJECT = _RAIZ / "edge" / "pyproject.toml"
 _UNIDADES = {
     "takab-edge": _RAIZ / "edge" / "systemd" / "takab-edge.service",
@@ -410,6 +413,11 @@ _SECCION_CANONICA = {
     "RestartSteps": "Service",
     "RestartMaxDelaySec": "Service",
     "TimeoutStopSec": "Service",
+    # [T-2.70.a·D3] El traspaso de propiedad de los pines toca estas cuatro.
+    "Type": "Service",
+    "TimeoutStartSec": "Service",
+    "EnvironmentFile": "Service",
+    "After": "Unit",
 }
 
 #: Claves que systemd ACUMULA en vez de sobrescribir (`Environment=`,
@@ -767,36 +775,293 @@ def test_el_camino_de_vida_se_reinicia_siempre(unidad: str) -> None:
     assert _directiva(unidad, "Restart") == "always"
 
 
-def test_las_dos_unidades_siguen_siendo_mutuamente_excluyentes() -> None:
-    """PIN DE REALIDAD, no un deseo. `takab-edge` declara
-    `Conflicts=takab-gpio.service` porque ambos reclaman los mismos pines BCM, y
-    el gate #6 del plan maestro (RATIFICADO 2026-07-09) eligió el supervisor
-    único: el reflejo SASMEX→sirena vive DENTRO de `takab-edge`.
+def test_las_dos_unidades_YA_NO_son_mutuamente_excluyentes() -> None:
+    """[T-2.70.a·D3 · CRITERIO 3] INVERTIDO. Antes exigía lo contrario.
 
-    Consecuencia que este test deja por escrito: **`takab-gpio` NO corre en
-    producción**, y por tanto el criterio 1 de T-2.70 —«takab-gpio no se detiene
-    durante la actualización»— se cumple de forma VACÍA. Lo que sí se detiene en
-    cada despliegue es `takab-edge`, que es el proceso que toca la sirena.
+    Lo que decía este test hasta hoy —`Conflicts=takab-gpio.service` en
+    `takab-edge`— era un PIN DE REALIDAD correcto mientras el gate #6 se
+    implementó como «supervisor único»: ambos procesos reclamaban los mismos
+    pines BCM y `Conflicts=` lo hacía imposible por construcción. Su corolario,
+    escrito aquí mismo, era que `takab-gpio` NO CORRE en producción y que por
+    tanto el criterio 1 de T-2.70 («takab-gpio no se detiene durante la
+    actualización») se cumplía de forma VACÍA.
 
-    Si alguien revierte el gate #6 y separa los procesos de verdad, este test se
-    pone rojo — y eso es lo que se quiere: la topología del camino de vida no
-    puede cambiar sin que T-2.70 se vuelva a mirar.
+    D3 separa la propiedad de los pines, así que la exclusión mutua deja de ser
+    la garantía y pasa a ser el obstáculo: con `Conflicts=`, arrancar el dueño
+    de los pines DETENDRÍA a `takab-edge`, y arrancar `takab-edge` MATARÍA al
+    dueño de los pines — la desprotección que D3 existe para eliminar.
+
+    Lo que sustituye a la promesa de systemd es un cerrojo del KERNEL
+    (`flock` exclusivo sobre `gpio_lock_file`, D1.1), que a diferencia de
+    `Conflicts=` también atrapa al `python -m takab_edge.gpio` suelto de una
+    sesión SSH — el caso que `Conflicts=` nunca cubrió. Ver
+    `tests/test_gpio_ownership.py`.
     """
-    assert "Conflicts=takab-gpio.service" in _unidad("takab-edge")
+    for unidad in sorted(_UNIDADES):
+        # Por el PARSER y no por `in texto`: la razón de haber retirado esta
+        # directiva está escrita en un comentario de la propia unidad, y un
+        # `in` la encontraría ahí. Es el mismo defecto que `_pos_comando()`
+        # documenta para `deploy.sh`.
+        claves = {clave for _s, clave, _v in _asignaciones_de(unidad)}
+        assert "Conflicts" not in claves, (
+            f"{unidad} sigue declarando `Conflicts=`. Con el dueño de los pines en "
+            "`takab-gpio`, la exclusión mutua convierte cada arranque del otro "
+            "servicio en una ventana de desprotección: quien queda vivo es uno solo, "
+            "y systemd elige. La exclusión la impone el `flock` de D1.1, no la unidad."
+        )
 
 
-def test_takab_gpio_no_leeria_su_identidad_si_alguien_lo_arrancara() -> None:
-    """El corolario incómodo del test anterior, también anclado.
+def test_el_edge_arranca_DESPUES_del_dueno_de_los_pines() -> None:
+    """Lo que ocupa el sitio del `Conflicts=` retirado: un ORDEN, no una exclusión.
 
-    `takab-gpio.service` no tiene `EnvironmentFile=/etc/takab/edge.env`, así que
-    arrancaría con los DEFAULTS DE CÓDIGO: `tenant-dev`/`site-dev`/`gw-dev-0001`,
-    sin HMAC, sin endpoint MQTT, sin lat/lon — mientras el `edge.env` real tiene
-    unas 15 claves fusionadas. Hoy no importa porque no corre (`Conflicts=`).
-    Importaría el día que alguien lo encienda para «no detener el camino de vida
-    durante un update», que es precisamente lo que la ficha de T-2.70 propone.
+    Sin ninguna relación declarada, en un arranque en frío systemd lanza las dos
+    unidades en paralelo y `takab-edge` puede pasar sus primeros segundos
+    hablándole a un socket que nadie ató todavía (panel en `S/D`, latido sin
+    relés). `After=` sólo ORDENA —no es `Requires=`—, así que un gabinete que
+    todavía no tenga `takab-gpio` habilitado arranca exactamente igual que hoy.
+
+    Y la dirección importa: lo que se retrasa es el edge (nube, SeedLink,
+    panel), jamás la protección — que es lo que arranca primero.
     """
-    assert "EnvironmentFile" not in _unidad("takab-gpio"), (
-        "si takab-gpio gana EnvironmentFile es que la topología cambió: "
-        "revisa el criterio 1 de T-2.70 antes de borrar este test"
+    despues = _directiva("takab-edge", "After") or ""
+    assert "takab-gpio.service" in despues, (
+        "`takab-edge` no declara `After=takab-gpio.service`: al retirar el "
+        f"`Conflicts=` la relación entre las dos unidades se quedó sin declarar "
+        f"(After={despues!r})"
+    )
+    # Por el PARSER, no por `in texto`: `Requires=` aparece en el comentario que
+    # explica por qué NO se usa.
+    claves = {clave for _s, clave, _v in _asignaciones_de("takab-edge")}
+    assert not claves & {"Requires", "BindsTo", "Requisite"}, (
+        "`takab-edge` no puede REQUERIR a `takab-gpio`: un gabinete todavía sin "
+        "el dueño separado dejaría de arrancar, y un fallo del dueño se llevaría "
+        f"por delante la nube, el SeedLink y el panel ({sorted(claves)})"
+    )
+
+
+def test_takab_gpio_lee_la_identidad_del_gabinete(settings, monkeypatch) -> None:
+    """[T-2.70.a·D3 · CRITERIO 2] INVERTIDO, y con el daño MEDIDO.
+
+    Hasta hoy este test exigía que `takab-gpio.service` NO tuviera
+    `EnvironmentFile`, porque no corría (`Conflicts=`). El día que corre, arrancar
+    con los defaults de código no es una molestia de inventario: **es el mapa de
+    pines**. `GpioPins` sale de `EdgeSettings`, o sea de `/etc/takab/edge.env`, y
+    un dueño de pines que no lo lea energiza los pines EQUIVOCADOS de un gabinete
+    cableado — el peor fallo imaginable de esta tarea.
+
+    La medición va aquí abajo y no en un comentario: con el mapa provisionado por
+    entorno, el pin del relé de gas cambia. Un proceso sin `EnvironmentFile` se
+    queda con el default de código y dispara otra cosa.
+    """
+    assert "EnvironmentFile=/etc/takab/edge.env" in _unidad("takab-gpio"), (
+        "`takab-gpio` es el DUEÑO DE LOS PINES y no lee /etc/takab/edge.env: "
+        "arrancaría con el mapa de pines de `GpioPins` por defecto"
+    )
+    # …y las dos unidades leen EL MISMO archivo, que es lo que impide que
+    # difieran en `dev_mode`, en el mapa de pines o en el perfil fail-safe.
+    assert _directiva("takab-gpio", "EnvironmentFile") == _directiva(
+        "takab-edge", "EnvironmentFile"
+    ), (
+        "las dos unidades leen archivos de entorno DISTINTOS: pueden discrepar "
+        "sobre el mapa de pines y sobre qué canal reposa energizado"
+    )
+
+    # NO-VACUIDAD: el mapa de pines SÍ viene del entorno, así que la diferencia
+    # entre leer el archivo y no leerlo es física.
+    from takab_edge.config import EdgeSettings
+
+    por_defecto = EdgeSettings().pins.relay_gas_valve
+    monkeypatch.setenv("TAKAB_EDGE_PINS__RELAY_GAS_VALVE", str(por_defecto + 1))
+    provisionado = EdgeSettings().pins.relay_gas_valve
+    assert provisionado != por_defecto, (
+        "el mapa de pines dejó de ser configurable por entorno; si es así, revisa "
+        "por qué este test exige el EnvironmentFile"
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_ninguna_unidad_TOLERA_arrancar_sin_la_identidad_del_gabinete(unidad: str) -> None:
+    """[T-2.70.a·D3·m5] `EnvironmentFile=` SIN el prefijo `-`, y por qué ésa es
+    la dirección.
+
+    Con `-`, systemd arranca la unidad aunque el archivo falte o no se pueda
+    leer. Para el DUEÑO DE LOS PINES eso significa arrancar con los defaults de
+    código —**el mapa de `GpioPins` incluido**— y energizar los pines
+    EQUIVOCADOS de un gabinete cableado, en silencio y con la unidad en verde.
+    Y el degradado se realimenta: sin `edge.env` no hay `TAKAB_EDGE_GPIO_OWNER`,
+    así que `gpio_owner` cae a `edge` y el que se queda con los pines por el mapa
+    por defecto es el supervisor de 16 módulos.
+
+    LA DECISIÓN, y por qué no repite el defecto que la auditoría de D1 rechazó en
+    `_failsafe`. Aquello era un modo de fallo NUEVO; esto no lo es:
+    `takab-edge.service` ya exigía este mismo archivo desde T-1.40, así que un
+    gabinete sin `/etc/takab/edge.env` es, desde antes de D3, un gabinete que no
+    arranca. Lo que D3 añade es un segundo proceso que lo exige, no una razón
+    nueva para no arrancar.
+
+    Y entre los dos desenlaces posibles el orden está claro:
+      · exigirlo ⇒ la unidad no arranca, systemd lo dice, `Restart=always` +
+        `StartLimitIntervalSec=0` la dejan reintentando PARA SIEMPRE (así que
+        reponer el archivo la levanta sola) y el paso 7 de `deploy.sh` sale en
+        rojo con «NADIE reclamó los pines»;
+      · tolerarlo ⇒ un proceso VERDE gobernando los pines equivocados de un
+        edificio real, que nada vuelve a corregir.
+    Fail-closed, como todo lo que decide quién toca la válvula de gas.
+
+    Se lee por el PARSER: `-EnvironmentFile=…` contiene la subcadena
+    `EnvironmentFile=/etc/takab/edge.env`, así que un `assert … in texto` —que es
+    lo que había— NO ve el prefijo. Con el parser, la clave pasa a llamarse
+    `-EnvironmentFile` y `_directiva()` devuelve `None`.
+    """
+    assert _directiva(unidad, "EnvironmentFile") == "/etc/takab/edge.env", (
+        f"{unidad}: la identidad del gabinete no se lee de /etc/takab/edge.env "
+        f"(EnvironmentFile={_directiva(unidad, 'EnvironmentFile')!r})"
+    )
+    claves = {clave for _s, clave, _v in _asignaciones_de(unidad)}
+    assert "-EnvironmentFile" not in claves, (
+        f"{unidad} usa `-EnvironmentFile=`: con el `-`, un /etc/takab/edge.env "
+        "ausente o ilegible NO impide arrancar, y el dueño de los pines se "
+        "levanta con el mapa de `GpioPins` por defecto sobre un gabinete "
+        "cableado. Un proceso verde energizando el pin equivocado es peor que "
+        "una unidad que no arranca y lo grita."
+    )
+
+
+def test_lo_que_el_despliegue_LEE_del_edge_env_alguien_sabe_ESCRIBIRLO() -> None:
+    """[T-2.70.a·D3·B2] `grep -rn "GPIO_OWNER" deploy/` no devolvía nada, y
+    tampoco lo escribía nadie.
+
+    D3 introdujo `TAKAB_EDGE_GPIO_OWNER` como la perilla que decide qué proceso
+    sostiene la sirena, el gas, los ascensores y los retenedores… y no había
+    forma DOCUMENTADA de ponerla en un gabinete: ni `deploy.sh` la leía ni
+    `provision_gateway.sh` la escribía. El resultado es el criterio 1 de la
+    ficha cumpliéndose sólo dentro de los tests.
+
+    La regla es DERIVADA: toda clave `TAKAB_EDGE_*` que el despliegue extraiga
+    del `edge.env` tiene que ser una clave que el aprovisionamiento sepa
+    escribir. Así, leer una perilla nueva obliga a decidir cómo se provisiona, y
+    el olvido sale en rojo aquí en vez de salir en un gabinete a medio traspasar.
+    """
+    # Las que `deploy.sh` saca del archivo de identidad con su `sed -n 's/…=//p'`.
+    leidas = set(re.findall(r"(TAKAB_EDGE_[A-Z0-9_]+)=//p", _deploy()))
+    assert leidas, (
+        "el despliegue ya no lee NINGUNA clave del edge.env; si eso es cierto, "
+        "revisa cómo decide a qué unidad habilitar"
+    )
+
+    # Y las que el aprovisionamiento ESCRIBE de verdad: sólo cuentan los `printf`
+    # cuyo destino es `edge.env.managed`, que es el bloque que `merge_env.py`
+    # aplica sobre el archivo del gabinete. Un `echo` informativo que mencione la
+    # clave NO es escribirla — y sin este recorte el test se daba por satisfecho
+    # con el mensaje final del script (medido: borrar el `printf` dejaba los 92
+    # tests en verde).
+    escritas: set[str] = set()
+    for formato in re.findall(
+        r"printf '([^']*)'[^\n]*(?:\\\n[^\n]*)*edge\.env\.managed", _PROVISION.read_text()
+    ):
+        escritas |= set(re.findall(r"(TAKAB_EDGE_[A-Z0-9_]+)=", formato))
+    assert "TAKAB_EDGE_GATEWAY_ID" in escritas, (
+        "el extractor de claves gestionadas no encontró ni la identidad del "
+        f"gabinete: se quedó con {sorted(escritas)} y estaría aprobando por vacío"
+    )
+
+    for clave in sorted(leidas):
+        assert clave in escritas, (
+            f"`deploy.sh` decide qué hacer según `{clave}` del edge.env y "
+            f"{_PROVISION.name} no sabe escribirla (gestionadas: "
+            f"{sorted(escritas)}): la única vía de ponerla sería editar "
+            "/etc/takab/edge.env a mano en el Pi, que es justo lo que el "
+            "aprovisionamiento existe para no tener que hacer"
+        )
+
+
+def test_la_cabecera_del_despliegue_no_afirma_una_exclusion_que_ya_no_existe() -> None:
+    """[T-2.70.a·D3·B2] La narrativa del archivo que se lee ANTES de desplegar.
+
+    `deploy/edge/deploy.sh` afirmaba COMO HECHO que «`takab-edge` es el proceso
+    que sostiene el reflejo SASMEX→sirena (gate #6: supervisor único,
+    `Conflicts=takab-gpio.service`)». D3 retiró esa directiva: hoy el dueño de
+    los pines puede ser `takab-gpio` y quien lo decide es `TAKAB_EDGE_GPIO_OWNER`
+    en el `edge.env` del gabinete. Un operador que lee esa cabecera antes de
+    tocar un edificio se lleva el modelo mental equivocado de qué reinicia qué.
+
+    DERIVADO de las unidades, no de una lista de frases prohibidas: la premisa
+    (nadie declara `Conflicts=`) se mide aquí mismo, así que el día que alguien
+    la reponga este test deja de exigir nada — y el que la vigila es
+    `test_las_dos_unidades_YA_NO_son_mutuamente_excluyentes`.
+    """
+    declaran_exclusion = any(
+        "Conflicts" in {clave for _s, clave, _v in _asignaciones_de(unidad)} for unidad in _UNIDADES
+    )
+    assert not declaran_exclusion, (
+        "premisa: ninguna unidad declara `Conflicts=` (si esto cambia, es la "
+        "topología la que volvió atrás, no la cabecera)"
+    )
+    assert "Conflicts=takab-gpio.service" not in _deploy(), (
+        "la cabecera de deploy.sh sigue afirmando la exclusión mutua que D3 "
+        "retiró: se lee antes de desplegar y describe un gabinete que ya no "
+        "existe"
+    )
+    assert "TAKAB_EDGE_GPIO_OWNER" in _deploy(), (
+        "y tiene que nombrar lo que HOY decide quién sostiene la sirena, el gas "
+        "y los retenedores: la cabecera no puede quedarse muda sobre el dueño"
+    )
+
+
+def test_el_dueno_de_los_pines_avisa_a_systemd_cuando_YA_es_dueno() -> None:
+    """[T-2.70.a·D3] `Type=notify` (punto 3 de D2/P2 · M10 de la auditoría D1).
+
+    `run_gpio_process` emite `sd_notify(READY=1)` DESPUÉS de tomar el cerrojo,
+    fijar la pin factory, construir los cinco relés, armar los tres botones y
+    sembrar el contacto sostenido. Con `Type=simple` ese aviso era código muerto
+    (sin `NOTIFY_SOCKET` es un no-op) y `systemctl start takab-gpio` volvía
+    cuando el proceso EXISTÍA — no cuando era DUEÑO. Un traspaso que se declara
+    terminado antes de serlo es un gabinete sin dueño de pines durante el hueco.
+
+    `takab-edge` se queda en `Type=simple` a propósito: no emite READY y ponerle
+    `notify` lo dejaría en `activating` para siempre.
+    """
+    assert _directiva("takab-gpio", "Type") == "notify", (
+        "`takab-gpio` sigue en Type=simple: `systemctl start` vuelve cuando el "
+        "proceso arrancó, no cuando sostiene los pines, y el `READY=1` que "
+        "`run_gpio_process` ya emite no lo escucha nadie"
+    )
+    assert _directiva("takab-edge", "Type") == "simple", (
+        "`takab-edge` no emite `sd_notify(READY=1)`: con Type=notify se quedaría "
+        "en `activating` hasta agotar el plazo y systemd lo mataría"
+    )
+
+
+@pytest.mark.parametrize("unidad", sorted(_UNIDADES))
+def test_la_ventana_de_ARRANQUE_esta_declarada(unidad: str) -> None:
+    """[T-2.70.a·D3] La gemela de `TimeoutStopSec`, que `Type=notify` hace real.
+
+    Con `Type=simple` el plazo de arranque es inerte (systemd da la unidad por
+    arrancada en el `fork`). Con `Type=notify` deja de serlo: si el `READY=1` no
+    llega, systemd MATA el proceso al vencer el plazo — y ese proceso puede estar
+    perfectamente sano y sosteniendo los pines, con lo que su muerte cicla gas y
+    retenedores cada plazo + backoff.
+
+    Las dos direcciones tienen coste y por eso el número se declara en vez de
+    heredarse:
+      · demasiado corto ⇒ mata a un dueño sano que tardó en anunciarse;
+      · infinito ⇒ un arranque colgado a mitad de `_arrancar_hardware` (relés a
+        medio construir, sin reflejo) no se rescata NUNCA, y eso es un edificio
+        sin alertamiento en silencio — el peor desenlace de la ficha.
+
+    90 s es el default de systemd: la línea no cambia el comportamiento, lo hace
+    revisable. Medirlo en el Pi 4 es `GATE-HW` (exec→cerrojo: 0.60 s en x86/dev,
+    ~1.0 s con los imports de producción).
+    """
+    valor = _directiva(unidad, "TimeoutStartSec")
+    assert valor is not None, f"{unidad}: TimeoutStartSec debe ser explícito, no heredado"
+    assert valor.isdigit(), (
+        f"{unidad}: TimeoutStartSec={valor!r}. `infinity` deja sin rescate un "
+        "arranque colgado con los relés a medio construir"
+    )
+    assert int(valor) > 5, (
+        f"{unidad}: TimeoutStartSec={valor}s está por debajo del arranque medido "
+        "(~1 s con los imports de producción en x86; el Pi 4 no está medido): "
+        "systemd mataría a un dueño de pines sano"
     )
     assert "EnvironmentFile=/etc/takab/edge.env" in _unidad("takab-edge")

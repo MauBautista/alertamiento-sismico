@@ -44,6 +44,24 @@ def run_gpio_process(settings: EdgeSettings | None = None, *, block: bool = True
     cfg = settings or load_settings()
     if not cfg.gpio_serve_enabled:
         cfg = cfg.model_copy(update={"gpio_serve_enabled": True})
+    # [T-2.70.a·D3] Este proceso SIEMPRE reclama los pines: no consulta
+    # `gpio_owner` para decidir si arranca, y es deliberado. Rechazar el arranque
+    # por lo que diga un archivo de configuración añadiría un segundo modo de «el
+    # camino de vida no arranca» al que la auditoría de D1 ya dijo que no
+    # (`_failsafe`, punto 5): en el gabinete, «fallar al leer la config» y «fallar
+    # al tocar un pin» tienen el mismo desenlace físico. Quien arbitra la
+    # propiedad es el cerrojo del kernel (D1.1), que no se puede teclear mal.
+    # Lo que sí se hace es DECIRLO, porque un `edge.env` que nombre a otro dueño
+    # significa que `takab-edge` también va a reclamar y uno de los dos va a morir.
+    if cfg.edge_owns_pins:
+        log.warning(
+            "takab-gpio arranca como DUEÑO DEDICADO de los pines, pero la config de "
+            "este gabinete dice TAKAB_EDGE_GPIO_OWNER=%r: `takab-edge` va a reclamar "
+            "el mismo cerrojo y uno de los dos NO arrancará (sin tocar un pin, D1.1). "
+            "Pon TAKAB_EDGE_GPIO_OWNER=gpio en /etc/takab/edge.env o deshabilita esta "
+            "unidad.",
+            cfg.gpio_owner,
+        )
     controller = GpioController(cfg)
     controller.start()
     notificar_systemd("READY=1")
