@@ -60,8 +60,8 @@ def resolve_destinations(config: dict | None) -> dict[str, dict]:
             # **Por qué el cambio no se hace AQUÍ:** esta función es PURA sobre
             # el `rule_set` y no tiene conexión a la base — enchufarla obliga a
             # mover la construcción del destino al orquestador, que es superficie
-            # de T-2.77 y tiene su propia ficha (`T-2.77.b`). Hacerlo de refilón
-            # rompería los tests de T-2.77 sin que esta tarea lo cubriera.
+            # de T-2.77. Hacerlo de refilón rompería los tests de T-2.77 sin que
+            # esta tarea lo cubriera. El trabajo está fichado en `T-2.79.a`.
             #
             # **La forma exacta del cambio**, para que no haya que redescubrirla:
             # quien mueva esto pasa el `tenant_id` y una conexión hasta aquí (o

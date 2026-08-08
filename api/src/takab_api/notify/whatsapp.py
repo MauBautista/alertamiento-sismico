@@ -148,7 +148,7 @@ que se RETIRÓ.
 falta es de dónde sale el destino, y eso es superficie de T-2.77: hoy lo arma
 ``notify/config.resolve_destinations``, una función PURA sobre el ``rule_set``
 sin conexión a la base. La forma exacta del cambio está escrita en el comentario
-``[COSTURA T-2.79]`` de ese archivo, y el trabajo queda fichado en ``T-2.77.b``.
+``[COSTURA T-2.79]`` de ese archivo, y el trabajo queda fichado en ``T-2.79.a``.
 
 Mientras tanto, este provider **exige una constancia mínima en el destino**
 (``opt_in.at``, el instante del consentimiento) y **se niega a enviar sin ella**.

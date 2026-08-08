@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **211** · `[x]` **145** · `[~]` **5** · `[ ]` **61**
+**Conteo de tareas:** total **212** · `[x]` **145** · `[~]` **5** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5594,6 +5594,35 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         cada usuario y cuándo.
   - [ ] Cambiar el aviso **no reescribe** consentimientos anteriores.
   - [ ] Registro append-only del consentimiento.
+
+### [ ] T-2.79.a · El opt-in de WhatsApp sigue saliendo del `rule_set`, no del consentimiento — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-2.79 · **Detectada por:** auditoría de la Fase 2.8
+  (2026-08-08)
+- **Existe porque una referencia era falsa.** Tres sitios del código
+  —`notify/config.py:63`, `notify/whatsapp.py:151` y `privacy/store.py:392`— declaraban que
+  este trabajo «queda fichado en `T-2.77.b`». **No lo estaba:** `T-2.77.b` son los webhooks de
+  estado de entrega de Meta y Twilio, y ninguno de sus seis criterios cubre mover el opt-in al
+  motor de consentimiento. La deuda estaba razonada, argumentada y **apuntando a una ficha que
+  no la contenía** — que en la práctica es igual a no ficharla. Esta es la ficha real.
+- **El estado, medido.** `privacy.store.whatsapp_opt_in_at()` está **implementado y probado**, y
+  **solo lo llaman los tests**. El destino real lo sigue armando
+  `notify/config.resolve_destinations`, una función **pura** sobre el `rule_set` sin conexión a
+  la base — por eso no se enchufó de refilón, y esa decisión fue correcta: hacerlo desde ahí
+  habría roto los tests de T-2.77 sin que aquella tarea lo cubriera.
+- **La forma exacta del cambio ya está escrita** en el comentario `[COSTURA T-2.79]` de
+  `notify/config.py`: pasar `tenant_id` y una conexión hasta ahí (o resolver el destino en el
+  orquestador), sustituir la lectura de `opt_in` del `rule_set` por la llamada a
+  `whatsapp_opt_in_at`, y dejar de leerlo del `rule_set`. **El provider no cambia**: sigue
+  exigiendo `opt_in.at` en el destino y sigue negándose a enviar sin él.
+- **Por qué importa y no es burocracia:** enviar sin opt-in no rebota un mensaje — degrada la
+  calificación de calidad del número y puede **tumbar el canal para todos los tenants a la vez**.
+  Hoy la constancia que autoriza ese envío vive en un `rule_set` editable, no en el registro
+  append-only que sabe además decir que el consentimiento se **retiró**.
+- **Criterios de aceptación:**
+  - [ ] El destino de WhatsApp toma `opt_in.at` del motor de consentimiento, no del `rule_set`.
+  - [ ] Un consentimiento **retirado** deja de autorizar el envío, sin tocar el provider.
+  - [ ] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
+  - [ ] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
 
 ### [ ] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE`
 - **Componente:** api + db · **Depende de:** T-2.79
