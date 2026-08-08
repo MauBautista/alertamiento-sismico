@@ -11,7 +11,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from takab_api.schemas.compliance import ComplianceDocOut
 
 
 class ChannelPeak(BaseModel):
@@ -131,3 +133,9 @@ class ForensicsOut(BaseModel):
     #: ``False`` si ALGÚN sensor activo carece de procedencia de calibración.
     #: Default-deny: sin sensores no se afirma que esté calibrado.
     calibrated: bool = False
+
+    #: [T-2.82] Marco normativo DECLARADO por el cliente dueño del incidente. Es la
+    #: única parte de esta respuesta que TAKAB no midió, y por eso viaja con su
+    #: procedencia y su deslinde pegados: la pantalla que la pinta es la misma en la
+    #: que el inspector FIRMA el dictamen.
+    compliance: ComplianceDocOut = Field(default_factory=ComplianceDocOut)

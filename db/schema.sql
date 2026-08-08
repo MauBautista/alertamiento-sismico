@@ -1423,3 +1423,180 @@ CREATE POLICY mw_write ON maintenance_windows FOR ALL
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 CREATE POLICY mw_admin ON maintenance_windows FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- ---------------------------------------------------------------------------
+-- Fase 2.8 (migración 0033 · T-2.79): AVISO DE PRIVACIDAD VERSIONADO +
+-- CONSENTIMIENTO APPEND-ONLY.
+--
+-- La trampa que este diseño evita, escrita para quien venga después: un
+-- `privacy_notices(version, body)` con una FK desde los consentimientos cumple
+-- "el aviso es versionado" y "se guarda qué versión aceptó cada quien", y falla
+-- EN SILENCIO el tercer criterio. Basta con que alguien edite el texto de la
+-- versión 3 —una errata, una reescritura, un UPDATE mal hecho— para que todos
+-- los consentimientos que apuntaban a esa fila pasen a apuntar a un texto
+-- distinto del que se aceptó. La FK sigue íntegra y el registro miente.
+--
+-- Por eso la identidad de un aviso es el DIGEST de lo que la persona lee, el
+-- consentimiento guarda una COPIA de ese digest, y la columna es GENERATED:
+-- quien inserta no elige el sello. Mismo candado que
+-- `notify/whatsapp_templates/*.json` (T-2.77).
+--
+-- Y el aviso de PLATAFORMA no vive aquí: vive en `api/src/takab_api/privacy/
+-- texts/*.json`, versionado en git. Aquí solo hay avisos de TENANT (un hospital
+-- o una dependencia es el responsable de los datos de su propia gente y publica
+-- el suyo). El más específico gana. Así el texto legal no acaba duplicado
+-- dentro de una migración, y la identidad por contenido hace innecesaria la
+-- fila para el caso de plataforma.
+-- ---------------------------------------------------------------------------
+
+-- Forma canónica con LONGITUD por campo. Sin los prefijos de longitud,
+-- (title='A\nB', body='C') y (title='A', body='B\nC') dan la misma cadena: dos
+-- avisos distintos con el mismo sello. `char_length` cuenta puntos de código,
+-- igual que `len()` en Python — espejo exacto de
+-- `takab_api.privacy.artifacts.notice_digest` (probado sobre 7 entradas con
+-- acentos, emoji fuera del BMP y saltos de línea).
+CREATE FUNCTION privacy_notice_digest(p_locale text, p_title text, p_body text)
+  RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$
+  SELECT encode(sha256(convert_to(
+    'takab.privacy-notice.v1' || E'\n' ||
+    char_length(p_locale) || ':' || p_locale || E'\n' ||
+    char_length(p_title)  || ':' || p_title  || E'\n' ||
+    char_length(p_body)   || ':' || p_body, 'UTF8')), 'hex')
+$$;
+
+CREATE TABLE privacy_notices (
+  notice_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants,      -- regla de oro 5
+  -- 'privacy_notice' = el aviso; 'whatsapp_alerts' = el opt-in que Meta exige
+  -- antes de escribir a un número (T-2.77). Un opt-in es un consentimiento más.
+  purpose      text NOT NULL CHECK (purpose IN ('privacy_notice','whatsapp_alerts')),
+  locale       text NOT NULL CHECK (locale ~ '^[a-z]{2}-[A-Z]{2}$'),
+  -- Etiqueta HUMANA para citar el aviso ("1.2.0", "2026-08 v2"). NO es la
+  -- identidad: dos filas con la misma etiqueta y distinto texto son avisos
+  -- distintos, y el digest lo dice.
+  version      text NOT NULL CHECK (char_length(btrim(version)) BETWEEN 1 AND 40),
+  title        text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 8 AND 200),
+  -- El mínimo no es cosmética: impide publicar un marcador de posición ("TODO")
+  -- como si fuera el aviso de un cliente.
+  body         text NOT NULL CHECK (char_length(btrim(body)) >= 40),
+  digest       text GENERATED ALWAYS AS (privacy_notice_digest(locale, title, body)) STORED,
+  -- `vigente` es un PREDICADO, no una columna (mismo criterio que `drills` y
+  -- `maintenance_windows`): el aviso en vigor es el de mayor `effective_at` que
+  -- ya pasó. Sin worker de rotación — la pregunta "¿y si el job muere?" se
+  -- contesta borrando el job.
+  effective_at timestamptz NOT NULL DEFAULT now(),
+  -- `clock_timestamp()` y NO `now()`: `now()` devuelve el instante de INICIO de
+  -- la transacción, así que dos avisos publicados en la misma transacción
+  -- empatarían y "el vigente" dejaría de estar definido.
+  published_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  -- Orden TOTAL de publicación. Sin él, dos filas con el mismo `effective_at`
+  -- (mismo segundo, o una corrección publicada en la misma transacción) dejan
+  -- "¿cuál es el aviso vigente?" sin respuesta única — y un aviso vigente
+  -- ambiguo es un consentimiento que no se puede probar contra nada.
+  seq          bigint GENERATED ALWAYS AS IDENTITY,
+  published_by uuid NOT NULL
+);
+-- Republicar el MISMO texto con otra etiqueta no es una versión nueva: se
+-- rechaza. Y la etiqueta no se puede reutilizar para un texto distinto.
+CREATE UNIQUE INDEX uq_privacy_notices_digest
+  ON privacy_notices (tenant_id, purpose, locale, digest);
+CREATE UNIQUE INDEX uq_privacy_notices_version
+  ON privacy_notices (tenant_id, purpose, locale, version);
+CREATE INDEX idx_privacy_notices_vigente
+  ON privacy_notices (tenant_id, purpose, locale, effective_at DESC);
+-- Corregir un aviso publicado NO es editarlo: es publicar otra versión. El
+-- trigger convierte esa frase en una garantía.
+CREATE TRIGGER trg_privacy_notices_append_only
+  BEFORE UPDATE OR DELETE ON privacy_notices
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_notices TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_notices FROM takab_app;
+REVOKE ALL ON privacy_notices FROM takab_ingest;
+
+ALTER TABLE privacy_notices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_notices FORCE  ROW LEVEL SECURITY;
+-- Lee CUALQUIERA del tenant: el aviso está para mostrarse, y un ocupante tiene
+-- que poder leer el que va a aceptar. Sin rama gov: el aviso de un cliente no
+-- es evidencia de protección civil.
+CREATE POLICY pn_read ON privacy_notices FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+-- Publicar es acto del DUEÑO del tenant, y siempre sobre su propio tenant: ni
+-- soporte ni la plataforma publican el aviso de un cliente en su nombre.
+CREATE POLICY pn_publish ON privacy_notices FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'));
+
+CREATE TABLE privacy_consents (
+  consent_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants,    -- regla de oro 5
+  purpose        text NOT NULL CHECK (purpose IN ('privacy_notice','whatsapp_alerts')),
+  -- El sujeto de un opt-in de WhatsApp es un TELÉFONO, no un usuario (T-2.77):
+  -- el motor lo admite sin migración.
+  subject_kind   text NOT NULL CHECK (subject_kind IN ('user','msisdn')),
+  user_sub       uuid,
+  subject_ref    text NOT NULL,
+  -- Retirar es una FILA NUEVA, jamás un borrado: el registro tiene que poder
+  -- decir que entre el día 1 y el día 2 sí había consentimiento (art. 8
+  -- LFPDPPP: la revocación opera hacia adelante, no reescribe el pasado).
+  decision       text NOT NULL CHECK (decision IN ('accept','withdraw')),
+  notice_source  text NOT NULL CHECK (notice_source IN ('repo','tenant')),
+  notice_id      uuid REFERENCES privacy_notices,
+  -- LA COLUMNA QUE SOSTIENE LA TAREA: copia sellada del contenido aceptado. No
+  -- se deriva por JOIN a propósito — si se derivara, editar el aviso reescribiría
+  -- hacia atrás lo que cada quien aceptó, que es exactamente lo prohibido.
+  notice_digest  text NOT NULL CHECK (notice_digest ~ '^[0-9a-f]{64}$'),
+  notice_version text NOT NULL,
+  notice_locale  text NOT NULL,
+  -- Evidencia MÍNIMA defendible: por dónde se dio el acto. Distingue "la persona
+  -- aceptó en su propia app" de "un administrador lo registró por ella", que es
+  -- la diferencia legalmente relevante. Deliberadamente NO se guarda IP ni
+  -- user-agent: el `sub` autenticado prueba más y una IP es PII adicional que
+  -- habría que justificar (y geolocaliza).
+  via            text NOT NULL CHECK (via IN ('mobile','web','console_admin','out_of_band')),
+  actor_sub      uuid NOT NULL,   -- quién REGISTRÓ (≠ sujeto en el caso delegado)
+  decided_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT pc_sujeto_coherente CHECK (
+    (subject_kind = 'user'   AND user_sub IS NOT NULL AND subject_ref = user_sub::text) OR
+    (subject_kind = 'msisdn' AND user_sub IS     NULL AND subject_ref ~ '^\+[1-9][0-9]{7,14}$')
+  ),
+  -- 'repo' = aviso de plataforma (artefacto de git, sin fila); 'tenant' = fila.
+  -- Sin este CHECK, un consentimiento podría declarar un origen que no tiene.
+  CONSTRAINT pc_origen_coherente CHECK (
+    (notice_source = 'repo'   AND notice_id IS     NULL) OR
+    (notice_source = 'tenant' AND notice_id IS NOT NULL)
+  )
+);
+CREATE INDEX idx_privacy_consents_sujeto
+  ON privacy_consents (tenant_id, purpose, subject_ref, decided_at DESC);
+CREATE INDEX idx_privacy_consents_user
+  ON privacy_consents (tenant_id, user_sub, decided_at DESC) WHERE user_sub IS NOT NULL;
+CREATE TRIGGER trg_privacy_consents_append_only
+  BEFORE UPDATE OR DELETE ON privacy_consents
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_consents TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_consents FROM takab_app;
+-- El worker de notify LEE el opt-in (costura de T-2.77: hoy lo lee del
+-- `rule_set`, que no sabe quién ni cuándo). Escribir un consentimiento jamás es
+-- cosa de un worker.
+GRANT SELECT ON privacy_consents TO takab_ingest;
+REVOKE INSERT, UPDATE, DELETE ON privacy_consents FROM takab_ingest;
+
+ALTER TABLE privacy_consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_consents FORCE  ROW LEVEL SECURITY;
+-- La fila propia: leerla y escribirla es del titular del dato.
+CREATE POLICY pc_self ON privacy_consents FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+-- El dueño del tenant ve el registro de SU gente (necesidad de cumplimiento) y
+-- registra el consentimiento de un tercero que no tiene sesión (un número de
+-- WhatsApp de la guardia). Nunca el de otro tenant.
+CREATE POLICY pc_admin ON privacy_consents FOR ALL
+  USING      (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'))
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'));
+-- Interno: SOLO lectura. La plataforma audita el registro, no lo escribe.
+CREATE POLICY pc_internal_read ON privacy_consents FOR SELECT
+  USING (app_is_takab_internal());

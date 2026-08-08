@@ -44,6 +44,31 @@ def resolve_destinations(config: dict | None) -> dict[str, dict]:
             # constancia de que se puede escribir a ese número. Si se cayera por
             # el camino, el provider se negaría a enviar SIEMPRE y el canal
             # estaría muerto sin que nadie supiera por qué.
+            #
+            # [COSTURA T-2.79 · el interruptor de este canal]
+            # Este `opt_in` es el PARCHE de T-2.77: un instante suelto que
+            # cualquiera puede teclear en el `rule_set`, sin decir quién lo dio,
+            # sobre qué texto ni quién lo registró. T-2.79 ya construyó el motor
+            # que sí lo sabe, y su lector es
+            # ``takab_api.privacy.store.whatsapp_opt_in_at(conn, tenant_id=…,
+            # msisdn=…)`` — devuelve el instante del opt-in VIGENTE (y ``None``
+            # si se retiró, que es algo que una fecha en el `rule_set` no puede
+            # decir jamás). Está implementado y probado
+            # (``tests/api/test_privacy.py::
+            # test_optin_de_whatsapp_de_un_tercero_y_la_costura_que_lo_lee``).
+            #
+            # **Por qué el cambio no se hace AQUÍ:** esta función es PURA sobre
+            # el `rule_set` y no tiene conexión a la base — enchufarla obliga a
+            # mover la construcción del destino al orquestador, que es superficie
+            # de T-2.77 y tiene su propia ficha (`T-2.77.b`). Hacerlo de refilón
+            # rompería los tests de T-2.77 sin que esta tarea lo cubriera.
+            #
+            # **La forma exacta del cambio**, para que no haya que redescubrirla:
+            # quien mueva esto pasa el `tenant_id` y una conexión hasta aquí (o
+            # resuelve el destino en el orquestador), sustituye estas dos líneas
+            # por la llamada a `whatsapp_opt_in_at`, y deja de leer `opt_in` del
+            # `rule_set`. El provider NO cambia: sigue exigiendo `opt_in.at` en
+            # el destino y sigue negándose a enviar sin él.
             if channel == "whatsapp" and isinstance(dest.get("opt_in"), dict):
                 out[channel]["opt_in"] = dict(dest["opt_in"])
         elif dest is not None:

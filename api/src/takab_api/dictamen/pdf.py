@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from fpdf.enums import XPos, YPos
 
+from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
 from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
@@ -69,6 +70,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _chain_section(pdf, m)
     _custody_section(pdf, m)
     _narrative_section(pdf, m)
+    _compliance_section(pdf, m)
     _closing(pdf, m)
     return bytes(pdf.output())
 
@@ -402,8 +404,26 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.para(f"NARRATIVA DEGRADADA · {m.narrative_degraded}", size=7, muted=True)
 
 
+def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-2.82] Marco normativo DECLARADO por el cliente.
+
+    Va INMEDIATAMENTE antes de la firma y del deslinde, y no en la portada, a
+    propósito: quien firma tiene que leer, en el mismo golpe de vista, que este
+    apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
+    que no haga falta llegar a la nota para saber de quién son.
+    """
+    pdf.section("12", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    block = compliance_block(m.compliance)
+    for label, value in block.rows:
+        pdf.field(label, value)
+    if block.rows:
+        pdf.ln(1)
+    for note in block.notes:
+        pdf.callout(note)
+
+
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("12", "FIRMA Y DESLINDE")
+    pdf.section("13", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)
@@ -455,6 +475,16 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.field("ESTACIONES QUE CORROBORARON", str(m.station_count))
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("FOLIO", m.folio)
+
+    # [T-2.82] También en el ejecutivo: es el documento que lee quien DECIDE, y quien
+    # decide es justo el que más fácilmente confundiría una declaración del cliente
+    # con una certificación de la plataforma.
+    pdf.section("", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    block = compliance_block(m.compliance)
+    for label, value in block.rows:
+        pdf.field(label, value)
+    for note in block.notes:
+        pdf.callout(note)
 
     pdf.ln(3)
     pdf.callout(DISCLAIMER, (20, 24, 30))

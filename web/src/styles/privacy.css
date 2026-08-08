@@ -1,0 +1,153 @@
+/* T-2.79 · Banner del aviso de privacidad.
+ *
+ * Hoja PROPIA y no un bloque en `soc.css` por dos motivos: el archivo lo están
+ * tocando otras tareas en paralelo, y este banner vive en el shell (encima de
+ * todas las rutas), no dentro de una pantalla. Se importa DESPUÉS de `soc.css`
+ * en `main.tsx` — el orden importa: una @media no añade especificidad y una
+ * regla escrita antes se pierde sin avisar (lección de T-2.58/59).
+ *
+ * Nada de `position: fixed` ni de overlay: este aviso NO tapa la consola. Es
+ * una franja que empuja el contenido, se lee y se va. */
+
+.privacy-banner {
+  display: block;
+  margin: 0 0 12px;
+}
+
+.privacy-banner__box {
+  border: 1px solid var(--tk-border);
+  border-left: 3px solid var(--tk-warn, #d9a441);
+  border-radius: 8px;
+  background: var(--tk-surface-2);
+  padding: 12px 14px;
+}
+
+/* El consentimiento retirado no es "un aviso pendiente": es una decisión
+ * expresa del titular, y la consola no la pinta como si fuera un despiste. */
+.privacy-banner__box[data-consent-state="withdrawn"] {
+  border-left-color: var(--tk-fg-3);
+}
+
+.privacy-banner__hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.privacy-banner__tag {
+  color: var(--tk-fg-3);
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+.privacy-banner__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.privacy-banner__version {
+  color: var(--tk-fg-2);
+  font-size: 12px;
+}
+
+.privacy-banner__provisional {
+  border: 1px dashed var(--tk-warn, #d9a441);
+  border-radius: 4px;
+  color: var(--tk-warn, #d9a441);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+}
+
+.privacy-banner__why,
+.privacy-banner__nonblocking {
+  color: var(--tk-fg-2);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+
+.privacy-banner__nonblocking {
+  color: var(--tk-fg-3);
+  font-size: 12px;
+}
+
+.privacy-banner__toggle {
+  background: none;
+  border: none;
+  color: var(--tk-accent, #4cc9f0);
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.privacy-banner__body {
+  border-top: 1px solid var(--tk-border);
+  margin-top: 10px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-top: 10px;
+}
+
+.privacy-banner__p {
+  color: var(--tk-fg-2);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+/* El sello del texto, visible: es lo que identifica QUÉ se aceptó y lo que
+ * permite decir, mañana, que el aviso de hoy ya no es el mismo. */
+.privacy-banner__digest {
+  color: var(--tk-fg-3);
+  font-family: var(--tk-font-mono, monospace);
+  font-size: 11px;
+  margin: 0;
+}
+
+.privacy-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.privacy-banner__accept,
+.privacy-banner__withdraw {
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 7px 14px;
+}
+
+.privacy-banner__accept {
+  background: var(--tk-accent, #4cc9f0);
+  border: 1px solid var(--tk-accent, #4cc9f0);
+  color: var(--tk-bg, #0b0f14);
+}
+
+.privacy-banner__withdraw {
+  background: none;
+  border: 1px solid var(--tk-border);
+  color: var(--tk-fg-2);
+}
+
+.privacy-banner__accept:disabled,
+.privacy-banner__withdraw:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.privacy-banner__err {
+  color: var(--tk-danger, #e5484d);
+  font-size: 12px;
+  margin: 10px 0 0;
+}

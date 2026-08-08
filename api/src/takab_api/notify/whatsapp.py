@@ -134,11 +134,23 @@ is opting in to receive communication from the business" y "clearly state the
 business's name" (https://developers.facebook.com/documentation/business-messaging/
 whatsapp/getting-opt-in).
 
-**Hoy TAKAB no tiene modelo de consentimiento**: ``notifications.whatsapp.to`` es
-un teléfono suelto en el ``rule_set``, sin quién, sin cuándo y sin prueba. Eso no
-es un detalle de este canal: es la Fase 2.8 (T-2.79) llamando a la puerta.
+Cuando esto se escribió, TAKAB no tenía modelo de consentimiento:
+``notifications.whatsapp.to`` era un teléfono suelto en el ``rule_set``, sin
+quién, sin cuándo y sin prueba. **T-2.79 ya construyó ese modelo** y el opt-in de
+WhatsApp es uno de sus propósitos (``privacy_consents.purpose =
+'whatsapp_alerts'``, sujeto ``msisdn``): quién autorizó, sobre qué texto —sellado
+por digest, con el nombre del negocio dentro, como exige Meta—, cuándo, por qué
+vía y quién lo registró, todo en un registro append-only que además sabe decir
+que se RETIRÓ.
 
-Mientras llega, este provider **exige una constancia mínima en el destino**
+**El interruptor todavía no está puesto, y es deliberado.** El lector es
+``takab_api.privacy.store.whatsapp_opt_in_at`` (implementado y probado); lo que
+falta es de dónde sale el destino, y eso es superficie de T-2.77: hoy lo arma
+``notify/config.resolve_destinations``, una función PURA sobre el ``rule_set``
+sin conexión a la base. La forma exacta del cambio está escrita en el comentario
+``[COSTURA T-2.79]`` de ese archivo, y el trabajo queda fichado en ``T-2.77.b``.
+
+Mientras tanto, este provider **exige una constancia mínima en el destino**
 (``opt_in.at``, el instante del consentimiento) y **se niega a enviar sin ella**.
 No es burocracia: enviar sin opt-in no rebota un mensaje — degrada la calidad del
 número y puede **tumbar el canal para todos los tenants a la vez**. Y la fecha no
