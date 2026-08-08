@@ -920,3 +920,204 @@ def test_twilio_caido_escala_al_correo_sin_duplicar_el_sms(scenario: _Scenario) 
     assert len(intentos) == 1
     fallidos = _actions_by_kind(scenario, iid, "notify_failed")
     assert "sms" in [a["payload"]["channel"] for a in fallidos]
+
+
+# --- T-2.77 · WhatsApp por plantilla contra el orquestador SIN TOCARLO -----------
+#
+# El canal cuya degradación NO es un fallo del proveedor sino un veredicto de
+# Meta sobre un texto. Aquí se acredita de punta a punta que ese veredicto se
+# traduce en el desenlace correcto de `notification_jobs`.
+
+WA_CONFIG = {
+    "notifications": {
+        "webhook": {"url": "https://soc.example.mx/hook", "secret": "s3cr3t"},
+        # [T-2.77] El opt-in viaja con el destino: sin él el provider se niega.
+        "whatsapp": {"to": "+525511111111", "opt_in": {"at": "2026-08-01T12:00:00Z"}},
+        "sms": {"to": "+525522222222"},
+        "email": {"to": ["ops@example.mx"]},
+    }
+}
+
+
+def _wa_settings(tmp_path, *, aprobada: bool):
+    """Settings con credenciales de mentira y un catálogo de plantillas propio.
+
+    ``aprobada=False`` es el estado REAL del repo hoy (nadie las ha mandado a
+    Meta); ``aprobada=True`` simula el día después de la aprobación sellando el
+    digest del texto sin tocar una coma.
+    """
+    import json
+    from pathlib import Path
+
+    from takab_api.notify.whatsapp import TEMPLATES_DIR, template_digest
+
+    directorio = Path(tmp_path) / "wa"
+    directorio.mkdir()
+    for src in sorted(TEMPLATES_DIR.glob("*.json")):
+        doc = json.loads(src.read_text(encoding="utf-8"))
+        if aprobada:
+            doc["approval"] = {
+                "status": "APPROVED",
+                "approved_digest": template_digest(doc["template"]),
+            }
+        (directorio / src.name).write_text(json.dumps(doc, ensure_ascii=False))
+    return Settings(  # type: ignore[call-arg]
+        notify_whatsapp_phone_number_id="1234567890",
+        notify_whatsapp_access_token="EAAtest",
+        notify_whatsapp_graph_version="v23.0",
+        notify_whatsapp_templates_dir=str(directorio),
+    )
+
+
+def _whatsapp(tmp_path, handler, *, aprobada: bool = True) -> object:
+    """Provider de WhatsApp con transporte falso. CERO red a Meta."""
+    import httpx
+
+    from takab_api.notify.whatsapp import build_whatsapp_provider
+
+    return build_whatsapp_provider(
+        _wa_settings(tmp_path, aprobada=aprobada), transport=httpx.MockTransport(handler)
+    )
+
+
+def _wa_ok(request):
+    import httpx
+
+    return httpx.Response(
+        200,
+        json={
+            "messaging_product": "whatsapp",
+            "messages": [{"id": "wamid.OK", "message_status": "accepted"}],
+        },
+    )
+
+
+def test_whatsapp_entrega_por_la_misma_interfaz_y_deja_la_evidencia(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """Criterios 1 y 3 juntos: la plantilla aprobada se enchufa donde estaba el
+    simulado —sin una línea del orquestador— y la evidencia sale con la misma
+    forma que el resto de canales."""
+    peticiones: list = []
+
+    def handler(request):
+        peticiones.append(request)
+        return _wa_ok(request)
+
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)  # el webhook cae y le toca a whatsapp
+    providers["whatsapp"] = _whatsapp(tmp_path, handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    wa = scenario.job(iid, "whatsapp")
+    assert wa["status"] == "sent"
+    assert wa["sent_at"] == BASE + timedelta(seconds=10)
+    assert len(peticiones) == 1
+
+    evidencia = [
+        a["payload"] for a in scenario.notify_actions(iid) if a["payload"]["channel"] == "whatsapp"
+    ]
+    assert len(evidencia) == 1
+    assert evidencia[0]["latency_s"] == 10.0
+    # Sin deadline para este canal el plan pone NULL: `deadline_met` es True
+    # porque no hay plazo que incumplir, no porque se haya medido una entrega.
+    assert evidencia[0]["deadline_met"] is True
+    # Y la cascada se satisface: el SMS de pago ya no sale.
+    assert scenario.job(iid, "sms")["status"] == "skipped"
+
+
+def test_whatsapp_sin_plantilla_aprobada_queda_SIMULADO_no_enviado(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """🚨 El criterio 2, de punta a punta y en el estado REAL de hoy. Hay
+    credenciales, hay red, hay provider real — y aun así nadie puede recibir
+    nada, porque WhatsApp no deja improvisar texto y Meta no ha aprobado la
+    plantilla. El canal CAE: 'simulated', `sent_at` en NULL, verbo propio en la
+    evidencia y escalada al SMS. No finge."""
+
+    def handler(request):  # pragma: no cover - no debe llamarse jamás
+        raise AssertionError("sin plantilla aprobada no puede salir una petición")
+
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, handler, aprobada=False)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    wa = scenario.job(iid, "whatsapp")
+    assert wa["status"] == "simulated"
+    assert wa["sent_at"] is None
+    assert "whatsapp" not in [a["payload"]["channel"] for a in scenario.notify_actions(iid)]
+    assert [a["payload"]["channel"] for a in _sim_actions(scenario, iid)] == ["whatsapp"]
+    # `deadline_met` es NULL, no False: sin entrega no hay plazo que incumplir.
+    assert _sim_actions(scenario, iid)[0]["payload"]["deadline_met"] is None
+    # Y escala: el SMS sale igual, porque un simulado no satisface nada.
+    assert scenario.job(iid, "sms")["status"] == "sent"
+
+
+def test_si_meta_PAUSA_la_plantilla_el_canal_cae_para_el_siguiente_incidente(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """El escenario que da nombre al criterio 2, medido donde importa.
+
+    Meta pausa una plantilla por calidad SIN avisar (error 132015). El incidente
+    en curso da `failed` —el proveedor sí existía y sí respondió— pero el canal
+    queda tumbado, así que el incidente SIGUIENTE ya no se estrella contra una
+    plantilla muerta: se declara `simulated` y escala en el acto. La diferencia
+    importa: `failed` reintenta con backoff, `simulated` no; martillear una
+    plantilla pausada solo empeora su calificación de calidad en Meta.
+    """
+    import httpx
+
+    intentos: list = []
+
+    def handler(request):
+        intentos.append(request)
+        return httpx.Response(
+            400, json={"error": {"code": 132015, "message": "Template is paused"}}
+        )
+
+    scenario.seed_config(WA_CONFIG)
+    provider = _whatsapp(tmp_path, handler)
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = provider  # type: ignore[assignment]
+
+    primero = scenario.seed_incident()
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+    assert scenario.job(primero, "whatsapp")["status"] == "failed"
+    assert "132015" in scenario.job(primero, "whatsapp")["error"]
+
+    segundo = scenario.seed_incident(opened_at=BASE + timedelta(minutes=1))
+    _run(scenario, providers, now=BASE + timedelta(minutes=1, seconds=10))
+
+    assert scenario.job(segundo, "whatsapp")["status"] == "simulated"
+    assert len(intentos) == 1  # ni una petición más contra la plantilla muerta
+    assert scenario.job(segundo, "sms")["status"] == "sent"  # el humano llega igual
+
+
+def test_whatsapp_sin_opt_in_no_sale_y_lo_deja_ESCRITO(scenario: _Scenario, tmp_path) -> None:
+    """El hallazgo de compliance, medido: un tenant con el teléfono configurado
+    pero SIN constancia de consentimiento no produce un silencio — produce un
+    `notify_failed` rojo en la consola, con el motivo dentro, y escala al SMS."""
+    sin_opt_in = {
+        "notifications": {
+            **WA_CONFIG["notifications"],
+            "whatsapp": {"to": "+525511111111"},
+        }
+    }
+
+    def handler(request):  # pragma: no cover - no debe llamarse jamás
+        raise AssertionError("sin opt-in no puede salir una petición")
+
+    scenario.seed_config(sin_opt_in)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "opt-in" in motivo
+    assert scenario.job(iid, "sms")["status"] == "sent"

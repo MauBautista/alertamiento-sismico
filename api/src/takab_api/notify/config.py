@@ -8,7 +8,7 @@ Forma esperada::
 
     {"notifications": {
        "webhook":  {"url": "https://...", "secret": "..."},
-       "whatsapp": {"to": "+52..."},
+       "whatsapp": {"to": "+52...", "opt_in": {"at": "2026-08-01T12:00:00Z"}},
        "sms":      {"to": "+52..."},
        "email":    {"to": ["ops@...", ...]}   # o string único
     }}
@@ -38,6 +38,14 @@ def resolve_destinations(config: dict | None) -> dict[str, dict]:
         dest = raw.get(channel)
         if isinstance(dest, dict) and isinstance(dest.get("to"), str) and dest["to"]:
             out[channel] = {"to": dest["to"]}
+            # [T-2.77] El opt-in viaja con el destino porque WhatsApp condiciona
+            # CUALQUIER contacto a un consentimiento previo. No es un secreto (no
+            # se poda como el `secret` del webhook): es justo lo contrario, la
+            # constancia de que se puede escribir a ese número. Si se cayera por
+            # el camino, el provider se negaría a enviar SIEMPRE y el canal
+            # estaría muerto sin que nadie supiera por qué.
+            if channel == "whatsapp" and isinstance(dest.get("opt_in"), dict):
+                out[channel]["opt_in"] = dict(dest["opt_in"])
         elif dest is not None:
             logger.warning("notifications.%s inválido (falta to) → omitido", channel)
 

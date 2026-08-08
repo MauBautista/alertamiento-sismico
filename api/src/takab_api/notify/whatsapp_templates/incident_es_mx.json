@@ -1,0 +1,72 @@
+{
+  "_": [
+    "T-2.77 · Plantilla de aviso de incidente sísmico para WhatsApp Business.",
+    "",
+    "El bloque `template` es LITERALMENTE el cuerpo de POST /<WABA_ID>/message_templates:",
+    "no hay traducción en medio, y por eso lo que se revisa en este diff es lo mismo que",
+    "Meta revisa. Cambiar una coma de `text` obliga a volver a pedir aprobación — el",
+    "candado que lo impone es `approval.approved_digest` (ver notify/whatsapp.py).",
+    "",
+    "Categoría UTILITY, no MARKETING: Meta clasifica como utility lo no promocional que",
+    "es esencial o crítico, y nombra ahí 'public safety (severe weather, crisis response)'",
+    "— https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-categorization",
+    "Si acabara en MARKETING, un destinatario que haya rechazado marketing dejaría de",
+    "recibir el aviso (error 131050) y nadie se enteraría hasta el sismo siguiente.",
+    "",
+    "message_send_ttl_seconds se fija AL CREAR la plantilla, no al enviar. Rango de",
+    "utility: 30 s .. 43 200 s (12 h) — https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/time-to-live",
+    "Aquí 300 s por la misma razón que el ValidityPeriod del SMS (T-2.76): un aviso de",
+    "sismo entregado horas después no es tarde, es desinformación."
+  ],
+  "template": {
+    "name": "takab_alerta_sismica_incidente",
+    "language": "es_MX",
+    "category": "UTILITY",
+    "parameter_format": "positional",
+    "message_send_ttl_seconds": 300,
+    "allow_category_change": false,
+    "components": [
+      {
+        "type": "BODY",
+        "text": "TAKAB Ailert. ALERTA SÍSMICA: incidente activo en {{1}}. Severidad: {{2}}. Referencia del incidente: {{3}}. Protéjase y siga el protocolo de su inmueble. Consulte la consola de operación para el estado actualizado.",
+        "example": {
+          "body_text": [
+            [
+              "Torre Poniente",
+              "critical",
+              "1a2b3c4d"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "binding": {
+    "kind": "incident",
+    "parameters": [
+      {
+        "index": 1,
+        "source": "site_name",
+        "fallback": "sitio sin nombre"
+      },
+      {
+        "index": 2,
+        "source": "severity",
+        "fallback": "sin clasificar"
+      },
+      {
+        "index": 3,
+        "source": "incident_id",
+        "transform": "short_id",
+        "fallback": "sin referencia"
+      }
+    ]
+  },
+  "approval": {
+    "status": "PENDING",
+    "approved_digest": "",
+    "meta_template_id": "",
+    "reviewed_at": "",
+    "note": "Nadie la ha enviado todavía a Meta: falta el alta del WhatsApp Business Account (T-2.77.a). Mientras el estado no sea APPROVED y el digest no cuadre, el canal WhatsApp se declara SIMULADO y el orquestador escala al SMS. No se pone APPROVED 'para probar': eso es exactamente la mentira que T-2.75 erradicó."
+  }
+}

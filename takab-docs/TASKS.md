@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-05)
 
-**Conteo de tareas:** total **197** · `[x]` **141** · `[~]` **4** · `[ ]` **52**
+**Conteo de tareas:** total **202** · `[x]` **141** · `[~]` **4** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5012,12 +5012,231 @@ el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis*
 >   de `TAKAB_API_NOTIFY_SMS_AUTH_TOKEN` en Secrets Manager. **Nunca en `deploy/cloud/deploy.sh`
 >   ni en ningún archivo del repo** (regla de oro 6).
 
+### [ ] T-2.76.a · Alta de la cuenta Twilio y del número mexicano — `HUMANO-AWS` + `LEGAL`
+- **Componente:** cuenta de terceros + Secrets Manager · **Depende de:** T-2.76 (código listo)
+- **Por qué es tarea propia y no una nota:** el código de T-2.76 está completo y probado, pero
+  **sin credenciales el canal SMS cae a `simulated`** — escala al correo y deja huella honesta,
+  que es lo correcto, pero significa que **hoy nadie recibe un SMS**. Mientras esto no se cierre,
+  la cadena de notificación tiene un canal menos del que el tablero da por disponible.
+- **Criterios de aceptación:**
+  - [ ] **Alta de la cuenta Twilio** y verificación de la identidad del negocio.
+  - [ ] **Compra del número mexicano.** Long code: 6.50 USD/mes local o 15 USD/mes con prefijo
+        móvil. Ojo: Twilio documenta que la entrega doméstica en México por long code es
+        *«best-effort and may be unreliable»* — si eso no basta para un canal de vida, la
+        alternativa es **short code** (100 MPS) con **~14 semanas de alta**, y entonces esta
+        ficha se convierte en un plazo de calendario, no en un trámite.
+  - [ ] **`TAKAB_API_NOTIFY_SMS_AUTH_TOKEN` en Secrets Manager**, y el resto de ajustes en el
+        despliegue. **Nunca en `deploy/cloud/deploy.sh` ni en ningún archivo del repo**
+        (regla de oro 6).
+  - [ ] **Verificar tras el alta que el canal ASCIENDE a real**: el arranque deja de gritar
+        «SMS simulado» y un incidente de prueba produce `notify_sent` con su latencia, no
+        `notify_simulated`. Media credencial es cero credencial y grita en ERROR — está
+        anclado por test, pero hay que verlo en el entorno desplegado.
+  - [ ] **Decidir el tope de gasto.** $50/mes ÷ $0.1819 por segmento = **274 segmentos al mes**.
+        El código **no corta el canal por presupuesto a propósito**: cortar un canal de vida por
+        dinero es una decisión con firma, no de un provider. Hoy el gasto masivo es imposible
+        por construcción (`notifications.sms.to` es UN destinatario por tenant: la guardia del
+        SOC, no los ocupantes), pero **si el producto quiere algún día SMS a ocupantes, esa
+        aritmética cambia entera** y hay que decidir el tope antes, no en la factura.
+
 ### [ ] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
 - **Componente:** api · **Depende de:** T-2.75
 - **Criterios de aceptación:**
   - [ ] Plantillas aprobadas y versionadas en el repo (WhatsApp no deja improvisar texto).
   - [ ] Degradación explícita si la plantilla es rechazada: **el canal cae, no finge**.
   - [ ] Evidencia de entrega igual que los demás canales.
+
+> **Decisión: WhatsApp Business Cloud API directa de Meta** (`notify/whatsapp.py`), enchufada
+> donde estaba `SimulatedProvider("whatsapp")`, mismo contrato `NotifyProvider`, **cero líneas
+> del orquestador** (hay un test que lee su fuente y exige que no aparezca ninguna rama
+> `"whatsapp"` entrecomillada). Todo lo de abajo se verificó contra la documentación de Meta el
+> **2026-08-07**, con la URL pegada a cada dato.
+>
+> **Lo que hace este canal distinto a todos los demás: NO SE PUEDE IMPROVISAR TEXTO.** *"Template
+> messages are the only type of message that can be sent to WhatsApp users outside of a customer
+> service window"* (`developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview`).
+> Esa ventana la abre **el usuario**: *"When a WhatsApp user messages you or calls you, a 24-hour
+> timer called a customer service window starts... When the window closes, you can only send
+> pre-approved template messages"* (`.../whatsapp/messages/send-messages`). Aquí el destinatario
+> es la guardia del SOC y **nunca escribe primero**, así que **la ventana está SIEMPRE cerrada**:
+> este canal es 100 % plantilla, sin caso alterno. Un texto libre rebotaría con el error 131047.
+>
+> | Dato | Valor verificado | Fuente |
+> |---|---|---|
+> | Endpoint | `POST https://graph.facebook.com/{Version}/{Phone-Number-ID}/messages` | `.../reference/whatsapp-business-phone-number/message-api` |
+> | Respuesta del POST | `messages[0].message_status` ∈ `accepted` \| `held_for_quality_assessment` \| `paused`; `accepted` = *"accepted by WhatsApp and is being processed"* | ídem |
+> | Categorías (enum de alta) | `AUTHENTICATION`, `FREE_SERVICE`, `MARKETING`, `UTILITY` | `.../reference/whatsapp-business-account/message-template-api` |
+> | Estados de plantilla (enum) | `APPROVED, ARCHIVED, DELETED, DISABLED, IN_APPEAL, LIMIT_EXCEEDED, PAUSED, PENDING, PENDING_DELETION, REJECTED` | ídem |
+> | Campos de alta | `name` (*"lowercase alphanumeric and underscores only"*), `language`, `category`, `components`, `parameter_format`, `message_send_ttl_seconds` | ídem |
+> | Cuerpo | *"The only required component is the body component"* · *"Maximum of 1024 characters"* | `.../whatsapp/templates/components/` |
+> | TTL de una utility | default **30 días**; configurable **30 s .. 12 h**; se fija **al crear**, no al enviar | `.../whatsapp/templates/time-to-live` |
+> | Facturación | **"You are only charged when a template message is delivered"**, por mensaje desde el 2025-07-01 | `.../whatsapp/pricing` |
+> | Opt-in | *"You may only contact people on WhatsApp if: (a) they have given you their mobile phone number; and (b) you have received opt-in permission..."* | `whatsappbusiness.com/es-la/policy/` (301 de `business.whatsapp.com/policy`) |
+> | Webhooks de estado | *"each outgoing message can have up to three separate webhooks (one for a status of sent, one for delivered, and one for read)"* | `developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components` |
+>
+> **NO existe una categoría de emergencia — se comprobó, no se supuso.** El enum solo admite
+> `AUTHENTICATION`, `FREE_SERVICE`, `MARKETING` y `UTILITY`, y de las creables Meta dice *"Each
+> template must be categorized as authentication, marketing, or utility"*. La correcta es
+> **`UTILITY`**, que es donde Meta pone explícitamente lo no promocional *esencial o crítico*:
+> **public safety (severe weather, crisis response)**
+> (`.../whatsapp/templates/template-categorization`). **Y la categoría no es contabilidad: es
+> entregabilidad.** Si la plantilla acabara en `MARKETING`, un destinatario que haya rechazado
+> marketing **dejaría de recibir el aviso de un terremoto** (error 131050, *"Recipient opted out
+> of marketing messages"*). Peor: Meta **recategoriza sola** — *"WhatsApp introduced a recurring
+> process to identify and update approved templates that should be of a different category"*.
+> Por eso el artefacto lleva `allow_category_change: false` y hay un test que se pone rojo si
+> alguna plantilla de alerta deja de ser `UTILITY`.
+>
+> **El artefacto de plantilla: `api/src/takab_api/notify/whatsapp_templates/*.json`.** Un fichero
+> por plantilla, con tres bloques: `template` —**literalmente** el cuerpo de
+> `POST /<WABA_ID>/message_templates`—, `binding` —de dónde sale cada `{{n}}`, nuestro— y
+> `approval` —el sello—. **JSON y no YAML ni un literal de Python justamente por eso**: si el
+> fichero del repo no es *exactamente* lo que se le manda a Meta hay una traducción en medio, y
+> la traducción es el sitio donde el texto aprobado y el texto del repo se separan sin que nadie
+> lo note; un literal de Python, además, invita a meter f-strings dentro de lo que tiene que
+> estar congelado.
+>
+> **El candado que hace que cambiar el texto EXIJA volver a aprobar.** Meta guarda el texto;
+> nosotros solo enviamos el **nombre**. Editar el cuerpo en el repo sin volver a pasar por Meta
+> **no cambia lo que lee la gente**: crea una divergencia silenciosa entre lo que el repo afirma
+> y lo que llega al teléfono. Por eso el sello es el **digest SHA-256 del bloque que Meta
+> revisó**: mover una coma mueve el digest y la plantilla deja de estar aprobada en el acto
+> (test: `test_tocar_el_texto_de_una_plantilla_aprobada_la_DESAPRUEBA`). Dicho con honestidad:
+> atrapa la deriva accidental, que es la que ocurre; no a quien reescriba el digest a propósito.
+>
+> **Hoy la plantilla está `PENDING` a propósito, y por eso el canal está caído.** Nadie la ha
+> mandado a Meta (falta `T-2.77.a`). No se pone `APPROVED` "para probar": eso es exactamente la
+> mentira que `T-2.75` erradicó. El resultado es que el criterio 2 **funciona desde el minuto
+> cero**: hay credenciales o no, pero sin plantilla aprobada el canal se declara `simulated`, el
+> job queda `simulated` con `sent_at` en NULL, escribe `notify_simulated` (ámbar) y **escala al
+> SMS**.
+>
+> **Degradación DERIVADA, no enumerada.** `simulated` es una **propiedad**, no un atributo:
+> vale "no hay ninguna plantilla utilizable". De ahí sale que el canal caiga **en caliente**
+> cuando Meta mata la plantilla, por dos puertas distintas que hay que atender las dos:
+> 1. **Un 4xx de la familia 132xxx** — `132015` *"Template paused due to low quality"*, `132016`
+>    *"Template permanently disabled after repeated pauses"*, `132001` no existe o no aprobada,
+>    `132007` viola la política, `132000` número de parámetros, `132012` formato
+>    (`developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes/`). Se cuarentena
+>    **por familia, no por lista**: el 132xxx que Meta añada mañana hereda el trato solo.
+> 2. **Un HTTP 200 que dice `paused` por dentro** — trampa fina de esta API: la respuesta trae
+>    `message_status` y uno de sus tres valores documentados es `paused`. Un
+>    `if response.is_success: return` lo habría contado como enviado.
+>
+> Y la distinción importa: `failed` reintenta con backoff, `simulated` no. **Martillear una
+> plantilla pausada no la despausa — solo empeora su calificación de calidad en Meta.**
+>
+> **Publicado ≠ entregado, otra vez.** De los tres valores del POST, **ninguno significa "llegó
+> al teléfono"**; el mejor, `accepted`, es literalmente *"accepted by WhatsApp and is being
+> processed"*. `delivered` solo llega **después y por webhook**. La prueba más fuerte de que la
+> distinción es real la da la propia facturación de Meta: **solo cobra los mensajes
+> entregados**. Nuestra contabilidad no puede ser más generosa que la suya. Así que hoy un
+> `notify_sent` de whatsapp significa **"aceptado por Meta"**, igual que el de sms significa
+> "aceptado por Twilio" y el de email "SES lo aceptó". El `wamid` se guarda desde el minuto uno
+> aunque no haya webhook: es lo único con lo que ese día se podrá casar el desenlace tardío.
+> `held_for_quality_assessment` **no cuenta como envío**: Meta lo retuvo y puede salir o no —
+> el default ante lo desconocido es la peor causa.
+>
+> **Coste: declarado hasta donde se pudo verificar, y NO más.** Meta factura por mensaje
+> entregado, por categoría, desde el 2025-07-01, y las utility dentro de una ventana de servicio
+> abierta son gratis — aquí la ventana está siempre cerrada, luego **siempre se paga**. La
+> tarifa concreta de México (código 52) vive en un CSV/PDF descargable que **no se pudo leer**,
+> así que **no se declara una cifra**: va en `T-2.77.a` junto al alta. Lo que sí está acotado por
+> construcción, como en el SMS, es el volumen: `notifications.whatsapp.to` es **un** destino por
+> tenant y el provider rechaza listas o comas. Un incidente = un mensaje.
+>
+> - **HALLAZGO DE COMPLIANCE — el opt-in, y no cabe entero aquí.** WhatsApp condiciona
+>   **cualquier** contacto a un consentimiento previo, y el opt-in debe *"clearly state that a
+>   person is opting in to receive communication from the business"* y *"clearly state the
+>   business's name"* (`.../whatsapp/getting-opt-in`). **Hoy TAKAB no tiene modelo de
+>   consentimiento**: `notifications.whatsapp.to` es un teléfono suelto en el `rule_set`, sin
+>   quién, sin cuándo y sin prueba. Eso es la **Fase 2.8 llamando a la puerta** (`T-2.79`, aviso
+>   versionado + consentimiento con versión aceptada y registro append-only): **el opt-in de
+>   WhatsApp es un consentimiento más de ese motor**, y cuando `T-2.79` exista, este canal debe
+>   leerlo de ahí en vez de del `rule_set`. Mientras tanto se exige una constancia mínima en el
+>   destino (`opt_in.at`, el instante) y **sin ella el provider se niega a enviar**. No es
+>   burocracia: enviar sin opt-in no rebota un mensaje — degrada la calidad del número y puede
+>   **tumbar el canal para todos los tenants a la vez**. Y la fecha no es adorno: un
+>   consentimiento sin instante no se puede probar anterior al mensaje, luego no es un
+>   consentimiento. El fallo queda **escrito** (`notify_failed`, rojo en la consola), no en
+>   silencio.
+> - **HALLAZGO `LEGAL` — a quién NO le deja Meta usar esta plataforma.** *"Prohibimos que
+>   organismos de las fuerzas del orden, servicios militares, organismos de inteligencia y
+>   agencias de seguridad nacional usen la Plataforma de WhatsApp Business"*
+>   (`whatsappbusiness.com/es-la/policy/`). El producto se vende a **"Protección Civil, gobierno
+>   y empresas"** (`CLAUDE.md §1`). Protección Civil no es fuerza del orden ni servicio militar,
+>   pero **la frontera la traza Meta, no nosotros**, y el coste de equivocarse no es un mensaje
+>   rebotado: es la cuenta cerrada y el canal muerto para toda la flota. **Antes de vender este
+>   canal a un cliente de gobierno hay que confirmarlo por escrito con Meta** — va en
+>   `T-2.77.a`. Para un hospital, una universidad o un corporativo no hay duda.
+> - **PENDIENTE DERIVADO — la entrega CONFIRMADA no está en esta ficha**, exactamente igual que
+>   en `T-2.76` y por el mismo motivo. Lo cierra `T-2.77.b`, que unifica los dos canales.
+> - **PENDIENTE `HUMANO-AWS`/`LEGAL`:** alta del WhatsApp Business Account, número, aprobación de
+>   la plantilla y `TAKAB_API_NOTIFY_WHATSAPP_ACCESS_TOKEN` en Secrets Manager. **Nunca en
+>   `deploy/cloud/deploy.sh` ni en ningún archivo del repo** (regla de oro 6). Lo cierra
+>   `T-2.77.a`.
+
+### [ ] T-2.77.a · Alta del WhatsApp Business Account y aprobación de la plantilla — `HUMANO-AWS` + `LEGAL`
+- **Componente:** cuenta de terceros + Secrets Manager · **Depende de:** T-2.77 (código listo)
+- **Por qué es tarea propia y no una nota:** el código de T-2.77 está completo y probado, pero
+  **hoy el canal WhatsApp está caído por partida doble**: no hay credenciales y, aunque las
+  hubiera, la plantilla del repo está `PENDING` porque nadie la ha sometido a Meta. Cae a
+  `simulated`, escala al correo y deja huella honesta — que es lo correcto—, pero significa que
+  **hoy nadie recibe un WhatsApp**. Y aquí el trámite no es solo administrativo: **la aprobación
+  de una plantilla es revisión humana de Meta y puede tardar hasta 24 h... o ser rechazada**.
+- **Criterios de aceptación:**
+  - [ ] **Alta del WhatsApp Business Account** y del número asociado (Cloud API).
+  - [ ] **`LEGAL` — confirmar por escrito con Meta que Protección Civil / la dependencia de
+        gobierno concreta NO cae en la prohibición** de *"organismos de las fuerzas del orden,
+        servicios militares, organismos de inteligencia y agencias de seguridad nacional"*
+        (`whatsappbusiness.com/es-la/policy/`). Si cae, **este canal no existe para ese cliente**
+        y hay que decirlo antes de venderlo, no después.
+  - [ ] **Someter la plantilla del repo** (`notify/whatsapp_templates/*.json`, bloque `template`
+        tal cual) y, **cuando Meta la apruebe**, escribir el sello en el bloque `approval`:
+        `status: APPROVED` + `approved_digest` = el digest del bloque sometido + `meta_template_id`.
+        **Si Meta la rechaza, el texto se corrige y se vuelve a someter — no se sella a mano.**
+  - [ ] **Verificar la categoría con la que Meta la aprobó de verdad.** Se pide `UTILITY`; Meta
+        recategoriza por su cuenta y una alerta de sismo en `MARKETING` deja de llegar a quien
+        haya rechazado marketing (131050). Volver a comprobarlo periódicamente.
+  - [ ] **`TAKAB_API_NOTIFY_WHATSAPP_ACCESS_TOKEN` en Secrets Manager**, más
+        `..._PHONE_NUMBER_ID` y `..._GRAPH_VERSION` en el despliegue. **Nunca en
+        `deploy/cloud/deploy.sh` ni en ningún archivo del repo** (regla de oro 6).
+  - [ ] **Averiguar y ESCRIBIR la tarifa de una utility a México** (código 52). T-2.77 la dejó
+        sin declarar a propósito porque solo está en un CSV/PDF descargable: mejor un hueco
+        explícito que una cifra inventada. Con ella, la aritmética del presupuesto como en
+        `T-2.76.a`.
+  - [ ] **Verificar tras el alta que el canal ASCIENDE a real**: el arranque deja de gritar
+        "ninguna plantilla aprobada" y un incidente de prueba produce `notify_sent` con su
+        latencia, no `notify_simulated`.
+  - [ ] **Registrar el opt-in de cada destinatario** antes de encender el canal para un tenant:
+        sin `opt_in.at` en `notifications.whatsapp`, el provider se niega y deja `notify_failed`.
+
+### [ ] T-2.77.b · Webhooks de estado de entrega (Meta + Twilio) — `SOFTWARE` + infra
+- **Componente:** api + infra · **Depende de:** T-2.76, T-2.77
+- **Por qué existe:** `T-2.76` lo pidió con todas las letras ("necesita **su propia ficha, con su
+  conteo**") y `T-2.77` se topó con lo mismo. Hoy **tres canales dicen `notify_sent` queriendo
+  decir "el proveedor lo aceptó"**: email ("SES lo aceptó"), sms ("Twilio lo encoló") y whatsapp
+  ("Meta lo aceptó"). Ninguno de los tres puede afirmar que un humano lo tenga en la mano. Es
+  honesto —está escrito en los tres sitios— pero es **una tarea sin hacer**, no un estado final.
+- **Es una ficha sola y no dos porque el trabajo es el mismo tres veces**: un endpoint público
+  que recibe un callback, valida su firma, casa un identificador de proveedor con un job y
+  escribe un desenlace **tardío** — que es lo verdaderamente nuevo: hoy `notification_jobs` no
+  tiene dónde poner "salió a las 12:00:03 y llegó a las 12:00:19".
+- **Criterios de aceptación:**
+  - [ ] Endpoint público por proveedor, con **validación de firma**: `X-Twilio-Signature` en
+        Twilio; el `hub.verify_token` + firma `X-Hub-Signature-256` de Meta.
+  - [ ] Mapeo **`MessageSid` → job** y **`wamid` → job**: hoy el `wamid` ya se guarda en el
+        recibo del provider pero **no se persiste**; sin persistirlo no hay con qué casar nada.
+  - [ ] Columna(s) de desenlace tardío en `notification_jobs` (`delivered_at`, `last_status`) y
+        **evidencia propia**: un `notify_delivered` distinto de `notify_sent`, porque son dos
+        hechos distintos y la consola tiene que poder mostrar los dos.
+  - [ ] **Solo `delivered`/`read` cuentan como entrega.** `queued`, `sent`, `accepted` y
+        `held_for_quality_assessment` no. Ya hay `is_delivery_confirmed()` en los dos providers
+        con esa regla: este endpoint la reusa, no la reinventa.
+  - [ ] Un webhook **no autenticado o repetido** no altera nada (idempotencia por identificador
+        de proveedor).
+  - [ ] Test: un job `sent` que recibe `failed`/`undelivered` **acaba en rojo en la consola**, no
+        se queda verde para siempre. Ese es el caso que hoy no se ve y es el que más duele.
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
@@ -5027,6 +5246,77 @@ el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis*
         alguien reciba el aviso, cronometrado. A-4 dejó el topic SNS aplicado y confirmado
         (2026-07-13/14); esto acredita que **la persona** llega, no solo el mensaje.
   - [ ] Escalamiento escrito: quién es el segundo si el primero no acusa.
+- **Procedimiento preparado (2026-08-07):**
+  `takab-docs/runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md`. Trae los registros DNS con
+  la doc de AWS citada por URL, el comando que provoca la alarma
+  (`set-alarm-state` sobre `takab-dev-dlq-backfill`, la única del catálogo que ninguna ventana
+  de mantenimiento puede silenciar), los **cuatro instantes** a cronometrar y la plantilla del
+  escalamiento con sus huecos. Engancha además la verificación pendiente de T-2.60.a: es el
+  mismo procedimiento.
+- **Tres cosas que el runbook dejó por escrito y conviene saber antes de empezar:**
+  - **No hay dominio.** La consola vive en `sslip.io` *"sin Route53 ni dominio propio"*
+    (`modules/serve/outputs.tf:9`), y la solicitud de producción de SES pide un `Website URL`.
+    El dominio es una decisión de producto pendiente, no un trámite del runbook.
+  - **No hay acuse.** `POST /incidents/{id}/ack` acusa un INCIDENTE, no una alarma de
+    operación; el cuarto instante se anota a mano. Ficha propia: `T-2.78.a`.
+  - **Son dos cadenas.** CloudWatch→SNS→on-call no comparte código, destinatario ni permiso
+    con `notify/orchestrator.py`. Acreditar una no dice nada de la otra — el hueco de
+    `ses:SendEmail` de julio-2026 estuvo tapado exactamente por eso.
+
+### [ ] T-2.78.a · Acuse y evidencia de entrega de la cadena de operación — `SOFTWARE`
+- **Componente:** infra + api · **Depende de:** —
+- **Por qué es tarea propia:** `T-2.78` tiene que cronometrar el instante en que **una persona
+  acusa**, y hoy no hay dónde escribirlo. La cadena de operación (CloudWatch → SNS → correo)
+  no deja rastro en ninguna tabla de TAKAB, y AWS tampoco lo da: el registro de estado de
+  entrega de SNS soporta Firehose, SQS, Lambda, HTTPS y endpoints de aplicación — **email y
+  email-json no están en la lista**
+  (`https://docs.aws.amazon.com/sns/latest/dg/sns-topic-attributes.html`). Así que hoy
+  "publicado" es todo lo que se puede afirmar, y "leído por una persona" no se puede afirmar
+  jamás. `T-2.78` se puede acreditar una vez a mano; como régimen permanente, no.
+- **Reproducción del hueco:** provocar una alarma con `aws cloudwatch set-alarm-state` y luego
+  buscar en la DB, en los logs o en la consola de AWS **cuándo** la leyó alguien. No aparece en
+  ningún sitio: `notification_jobs` es de la otra cadena y no tiene ninguna columna de acuse
+  (`db/schema.sql:1002-1030`: `created_at`, `due_at`, `deadline_at`, `sent_at`, `attempts`,
+  `error` — y nada más).
+- **Criterios de aceptación:**
+  - [ ] **Evidencia de máquina de que el aviso salió del topic.** Suscribir al mismo topic un
+        endpoint que SÍ admita registro de entrega (HTTPS o Lambda, por la lista de arriba), de
+        modo que quede un rastro con hora sin depender del buzón de nadie.
+  - [ ] **Un acuse con hora.** Un humano confirma "lo tengo" y queda registrado. Reutilizar el
+        camino de `incidents_ack` sería mezclar dos cadenas distintas (ver T-2.78): decidir
+        explícitamente si es una tabla propia o un objeto de operación aparte, y escribir por
+        qué.
+  - [ ] **El tiempo hasta el acuse es consultable**, no reconstruible a mano desde cabeceras de
+        correo.
+  - [ ] **Si nadie acusa, eso también se registra.** Un salto sin acuse que no deja fila es una
+        anécdota, no una métrica: a la tercera vez nadie recuerda las dos primeras.
+  - [ ] Test: un aviso sin acuse **jamás** aparece como atendido (mismo principio que T-2.75 —
+        el canal que no entrega no finge).
+
+### [ ] T-2.78.b · Identidad de DOMINIO de SES en Terraform — `SOFTWARE`
+- **Componente:** infra · **Depende de:** —
+- **Por qué es tarea propia:** el único recurso SES de toda la infra es
+  `aws_sesv2_email_identity` **por dirección** (`modules/identity/main.tf:139-144`); grep de
+  `dkim|configuration_set|mail_from` sobre `infra/terraform/` devuelve **cero**. O sea que el
+  primer criterio de `T-2.78` —DKIM/SPF de dominio real— hoy solo se puede cumplir a base de
+  clics en la consola, y lo que se hace a clics no se vuelve a hacer igual ni se revisa en un
+  diff. El código puede escribirse YA, con el dominio como variable vacía por defecto (patrón
+  del módulo `push/`: sin credenciales, el apply no crea nada).
+- **Reproducción:** `grep -rn "aws_ses" infra/terraform/` → una sola línea, de dirección.
+- **Criterios de aceptación:**
+  - [ ] Identidad de **dominio** con Easy DKIM, MAIL FROM propio y su registro DMARC,
+        condicionados a una variable de dominio: vacía ⇒ no se crea nada y el `apply` de hoy no
+        cambia.
+  - [ ] **El ARN de la identidad de dominio entra en `notify_ses_identity_arns`.** Hoy esa
+        lista se construye iterando `ses_verified_emails` (`envs/dev/main.tf:79-82`): cambiar
+        el remitente al dominio sin tocar esto deja al worker con `AccessDenied` mientras los
+        correos de CloudWatch siguen llegando — el fallo del 2026-07-14, calcado.
+  - [ ] **Bounces y quejas con destino.** La solicitud de producción exige declarar que existe
+        un proceso para tratarlos
+        (`https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html`); hoy no hay
+        ni topic de feedback. Declararlo sin tenerlo es firmar algo falso.
+  - [ ] Los valores literales de los registros DNS **no se hornean en el repo**: varían por
+        región y celda, y la fuente es la respuesta de la API.
 
 ## Fase 2.8 · Compliance como producto
 

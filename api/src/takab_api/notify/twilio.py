@@ -121,7 +121,7 @@ from dataclasses import dataclass
 import httpx
 
 from takab_api.notify.plan import CASCADE_ORDER
-from takab_api.notify.providers import NotifyError, SimulatedProvider
+from takab_api.notify.providers import DuplicateGuard, NotifyError, SimulatedProvider
 
 logger = logging.getLogger("takab_api.notify")
 
@@ -389,10 +389,12 @@ class TwilioSmsProvider:
         self._validity_period_s = validity_period_s
         self._status_callback_url = status_callback_url
         self._transport = transport
-        self._clock = clock or time.monotonic
         self._url = f"{_API_ROOT}/Accounts/{account_sid}/Messages.json"
-        # (destino, incidente) → instante en que deja de poder duplicar.
-        self._issued: dict[tuple[str, str], float] = {}
+        # (destino, incidente) → instante en que deja de poder duplicar. El TTL
+        # es el ValidityPeriod: pasado ese instante Twilio ya descartó lo
+        # encolado, luego no queda nada vivo que duplicar. [T-2.77] La mecánica
+        # es común con WhatsApp y vive en providers.DuplicateGuard.
+        self._guard = DuplicateGuard(clock=clock or time.monotonic)
         self.last_receipt: TwilioReceipt | None = None
 
     # -- guarda de duplicados --------------------------------------------------
@@ -400,20 +402,14 @@ class TwilioSmsProvider:
     @property
     def pending_keys(self) -> int:
         """Claves vivas en la guarda (para comprobar que no se acumulan)."""
-        return len(self._issued)
-
-    def _purge(self) -> float:
-        now = self._clock()
-        self._issued = {k: exp for k, exp in self._issued.items() if exp > now}
-        return now
+        return self._guard.pending
 
     def _already_issued(self, key: tuple[str, str]) -> bool:
-        self._purge()
-        return key in self._issued
+        return self._guard.seen(key)
 
     def _remember(self, key: tuple[str, str]) -> None:
         """Marca que ese (destino, incidente) puede tener un mensaje VIVO."""
-        self._issued[key] = self._clock() + self._validity_period_s
+        self._guard.remember(key, self._validity_period_s)
 
     # -- envío -----------------------------------------------------------------
 

@@ -45,6 +45,10 @@ dev = [
 # [T-2.41] Tipografía Unicode del PDF. Las fuentes core de fpdf2 son latin-1 y
 # degradaban Δ, ≥ y ≈ a interrogantes en un documento de compliance.
 "takab_api.dictamen" = ["fonts/*.ttf", "fonts/LICENSE"]
+# [T-2.77] Los artefactos de plantilla de WhatsApp. Sin esta línea el wheel sale
+# sin ellos y el canal se declara simulado en producción "sin motivo": el catálogo
+# estaría vacío porque el directorio no viajó, no porque Meta no haya aprobado.
+"takab_api.notify" = ["whatsapp_templates/*.json"]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -15,6 +15,8 @@ import hashlib
 import hmac
 import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Protocol
 
 import boto3
@@ -56,6 +58,50 @@ def is_simulated(provider: object) -> bool:
 def _canonical_body(message: dict) -> bytes:
     """JSON canónico (claves ordenadas, sin espacios): base estable de la firma."""
     return json.dumps(message, separators=(",", ":"), sort_keys=True).encode()
+
+
+class DuplicateGuard:
+    """Memoria corta de "esto pudo salir ya" (T-2.76 · T-2.77).
+
+    Ni Twilio ni la Cloud API de Meta ofrecen clave de idempotencia en su
+    endpoint de envío, así que la pone el dominio: ``(destino, incidente)``. Un
+    fallo AMBIGUO —5xx, timeout, respuesta ilegible— pudo haber creado el
+    mensaje, así que se recuerda la clave y el siguiente intento **no sale**:
+    escala al canal siguiente en vez de arriesgar un aviso duplicado durante un
+    sismo. Un rechazo EXPLÍCITO (4xx) demuestra que no se creó nada, y ese sí se
+    puede reintentar — por eso recordar es una decisión de quien llama.
+
+    **Lo que cuesta esa elección, dicho en voz alta:** si el mensaje NO se había
+    creado, la guarda convierte un reintento que habría funcionado en un fallo.
+    Se acepta porque (a) el orquestador escala al canal siguiente en el acto, y
+    (b) el fallo queda ESCRITO (``notify_failed``, rojo en la consola). El caso
+    simétrico —duplicar— no lo ve nadie hasta que el teléfono suena dos veces en
+    mitad de una evacuación.
+
+    El TTL lo pone el llamante con la ventana de vida real del mensaje en el
+    proveedor (``ValidityPeriod`` en Twilio, ``message_send_ttl_seconds`` en
+    Meta): pasado ese instante el proveedor ya descartó lo encolado, luego no
+    queda nada vivo que duplicar. Así la memoria tampoco crece sin fin en un
+    worker residente.
+    """
+
+    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+        self._clock = clock or time.monotonic
+        self._issued: dict[tuple[str, str], float] = {}
+
+    @property
+    def pending(self) -> int:
+        """Claves vivas (para comprobar que no se acumulan)."""
+        return len(self._issued)
+
+    def seen(self, key: tuple[str, str]) -> bool:
+        now = self._clock()
+        self._issued = {k: exp for k, exp in self._issued.items() if exp > now}
+        return key in self._issued
+
+    def remember(self, key: tuple[str, str], ttl_s: float) -> None:
+        """Marca que esa clave puede tener un mensaje VIVO durante ``ttl_s``."""
+        self._issued[key] = self._clock() + ttl_s
 
 
 class WebhookProvider:
@@ -161,10 +207,12 @@ def warn_simulated_channels(providers: dict[str, NotifyProvider]) -> list[str]:
 
 def build_providers(settings) -> dict[str, NotifyProvider]:
     """Providers por canal según Settings (SES si hay remitente; si no, simulado)."""
-    # Import tardío: push.py/twilio.py traen dependencias propias y este módulo
-    # se importa desde tests puros del plan — sin ciclo y sin costo si no se usa.
+    # Import tardío: push.py/twilio.py/whatsapp.py traen dependencias propias y
+    # este módulo se importa desde tests puros del plan — sin ciclo (whatsapp.py
+    # importa de aquí) y sin costo si no se usa.
     from takab_api.notify.push import build_push_provider
     from takab_api.notify.twilio import build_sms_provider
+    from takab_api.notify.whatsapp import build_whatsapp_provider
 
     email: NotifyProvider
     if settings.notify_email_from:
@@ -173,7 +221,9 @@ def build_providers(settings) -> dict[str, NotifyProvider]:
         email = SimulatedProvider("email", hint="TAKAB_API_NOTIFY_EMAIL_FROM")
     providers: dict[str, NotifyProvider] = {
         "webhook": WebhookProvider(timeout_s=settings.notify_webhook_timeout_s),
-        "whatsapp": SimulatedProvider("whatsapp", hint="proveedor de WhatsApp Business (T-2.77)"),
+        # [T-2.77] WhatsApp Cloud si hay credenciales Y una plantilla APROBADA;
+        # si falta cualquiera de las dos, el canal se declara simulado él solo.
+        "whatsapp": build_whatsapp_provider(settings),
         # [T-2.76] Twilio si hay credenciales; si no, simulado — la presunción
         # de no-entrega se hereda sola, sin que este registro sepa nada de SMS.
         "sms": build_sms_provider(settings),

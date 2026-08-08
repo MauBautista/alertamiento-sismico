@@ -260,6 +260,26 @@ class Settings(BaseSettings):
     #: "Twilio lo aceptó", no "el teléfono lo tiene". Ver notify/twilio.py.
     notify_sms_status_callback_url: str = ""
 
+    # --- WhatsApp Business Cloud API (T-2.77) ---
+    # Las TRES piezas o el canal cae a SIMULADO (T-2.75). La VERSIÓN DE GRAPH
+    # cuenta como credencial y no lleva default a propósito: va dentro de la
+    # ruta `/{version}/{phone_number_id}/messages` y Meta retira versiones con
+    # el tiempo, así que un default adivinado se vuelve un 400 el día que
+    # caduque. El token es SECRETO: entorno / Secrets Manager, nunca en git.
+    # Y aunque estén las tres, el canal sigue caído hasta que haya una plantilla
+    # APROBADA por Meta: WhatsApp no deja improvisar texto (ver notify/whatsapp.py).
+    notify_whatsapp_phone_number_id: str = ""
+    notify_whatsapp_access_token: str = ""
+    notify_whatsapp_graph_version: str = ""
+    notify_whatsapp_timeout_s: float = 5.0
+    #: Idioma de la plantilla a usar (debe existir APROBADA en ese idioma; si no,
+    #: Meta responde 132001 y aquí ni se intenta).
+    notify_whatsapp_language: str = "es_MX"
+    #: Directorio de artefactos de plantilla. Vacío ⇒ los que viajan con el
+    #: paquete (`notify/whatsapp_templates/`). Se puede apuntar a otro sitio para
+    #: cargar el sello de aprobación sin reconstruir la imagen.
+    notify_whatsapp_templates_dir: str = ""
+
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
     # clave del gateway DESTINO, jamás una compartida de flota.
