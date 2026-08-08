@@ -343,9 +343,12 @@ CREATE POLICY pe_admin_read ON privacy_erasures FOR SELECT
 CREATE POLICY pe_internal_read ON privacy_erasures FOR SELECT
   USING (app_is_takab_internal());
 
--- La ÚNICA política de UPDATE de life_checkins, y solo sobre las filas propias.
--- Junto al GRANT por columna y al trigger, la superficie total es: "el titular
--- puede anular la geometría de sus propios check-ins". Nada más.
+-- El UPDATE del TITULAR sobre sus propias filas. Junto al GRANT por columna y al
+-- trigger, la superficie que abre es: "el titular puede anular la geometría de sus
+-- propios check-ins". Nada más.
+-- [T-2.81] Decía "la ÚNICA política de UPDATE" y dejó de ser cierto en la 0035, que
+-- añade la del job de retención. La política dice QUIÉN puede pedir el UPDATE; el
+-- trigger sigue decidiendo QUÉ, y solo admite `geom → NULL`.
 CREATE POLICY lc_arco_geom ON life_checkins FOR UPDATE
   USING      (tenant_id = app_tenant_id() AND user_id = app_user_id())
   WITH CHECK (tenant_id = app_tenant_id() AND user_id = app_user_id());

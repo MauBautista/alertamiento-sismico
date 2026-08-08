@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **223** · `[x]` **151** · `[~]` **5** · `[ ]` **67**
+**Conteo de tareas:** total **226** · `[x]` **152** · `[~]` **5** · `[ ]` **69**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6013,13 +6013,91 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         `UPDATE SET c = c` que no cambia nada.
   - [ ] Un `SKIP` no cuenta como `PASS` (la lección de la Fase 2.6).
 
-### [ ] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE`
+### [x] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api (job) + db · **Depende de:** T-2.80
 - **Criterios de aceptación:**
-  - [ ] La excepción de compliance está **codificada en el job**, no escrita en un comentario.
+  - [x] La excepción de compliance está **codificada en el job**, no escrita en un comentario.
         Un comentario no impide que un `DELETE` mal escrito pode evidencia.
-  - [ ] Test: el job intenta podar una tabla protegida ⇒ **falla ruidosamente**.
-  - [ ] Simulacro (`dry-run`) obligatorio con conteos antes de podar nada.
+  - [x] Test: el job intenta podar una tabla protegida ⇒ **falla ruidosamente**.
+  - [x] Simulacro (`dry-run`) obligatorio con conteos antes de podar nada.
+
+> **El hallazgo que gobernó el diseño: el job NO puede heredar el rol del DSN.** El de tests —y
+> el de una consola SSM de emergencia— es `takab`, que es **SUPERUSER + BYPASSRLS**: se salta el
+> `REVOKE DELETE` de T-2.80, se salta la RLS y, vía `session_replication_role`, podría saltarse
+> los triggers. Heredarlo habría dejado la excepción de compliance apoyada en que **nadie invoque
+> el job desde la consola equivocada**.
+>
+> Así que **el job se degrada a sí mismo**. Antes de leer un solo dato: `SET LOCAL ROLE
+> takab_app`, aborta si el rol efectivo es superusuario o tiene BYPASSRLS, y **deriva del
+> catálogo vivo** qué mecanismo le niega el `DELETE` a cada tabla protegida —privilegio ausente o
+> trigger activo— negándose a arrancar si falta alguna. **Correr exige demostrarle a PostgreSQL
+> que no se puede podar evidencia.** No es un `if` alrededor de un `DELETE`: es el permiso de
+> arranque. Si alguien revierte el `REVOKE` de T-2.80, el job deja de funcionar y lo dice.
+>
+> **`COMPLIANCE_ANCHOR` es el suelo, y su razón es la parte fina:** una derivación sola **se
+> aprueba a sí misma**. Conceder `DELETE` sobre `audit_log` y quitarle el trigger la sacaría del
+> conjunto derivado **en silencio**, y lo que ya no se deriva ya no se revisa. Cinco tablas
+> nombradas, un test por cada una.
+>
+> **Anonimiza, no borra:** el plan despachado tiene **cero** reglas que borren filas, y hay test
+> que lo fija. El modo `DELETE_ROWS` existe igualmente, y **no por simetría**: sin él «el job
+> intenta podar una tabla protegida» sería **inexpresable** y el criterio 2 no probaría nada — el
+> mismo defecto de test vacío que esta fase lleva cazando. La regla asesina se construye en el
+> test y el job rechaza **el plan entero** antes de contar nada.
+>
+> **El simulacro es el modo por defecto Y es la autorización:** cuenta, ejecuta con el mismo
+> predicado, y si `ROW_COUNT` no cuadra **revierte la corrida entera**. No es decorativo —
+> detectó un hueco de RLS real durante el desarrollo, y hay un test que reproduce ese fallo.
+>
+> Sin plazo configurado la regla queda **deshabilitada** y el informe lo grita; un valor inválido
+> tampoco cae a un default. **Por defecto no se borra nada.** Mutar la degradación de rol pone 23
+> tests en rojo con el mensaje correcto: «el rol efectivo `takab` es SUPERUSER».
+
+### [ ] T-2.81.a · El job de retención existe y nadie lo llama — `SOFTWARE` + infra
+- **Componente:** api + infra · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
+- **El job es invocable** (`python -m takab_api.ops.prune_pii`), igual que `ops.restore_drill`,
+  **y no hay ningún scheduler**: no existe módulo de cron, Lambda ni EventBridge en
+  `infra/terraform/modules/`. Una retención que nadie ejecuta es una política escrita, no una
+  cumplida — y la diferencia importa el día que un cliente pregunte cuánto tiempo guardamos su
+  teléfono.
+- **Segundo asunto, del mismo fichero:** la corrida entera es **una sola transacción**. Es
+  correcto y atómico, pero sobre millones de filas mantiene una transacción larga, y eso **no se
+  ha medido con volumen real**.
+- **Criterios de aceptación:**
+  - [ ] El job corre solo, con su cadencia declarada, y **deja constancia** de cada corrida
+        (incluido el simulacro que no borró nada).
+  - [ ] Un fallo del job **se ve**: alarma o registro que alguien mire, no un exit code perdido.
+  - [ ] El comportamiento con volumen está medido, o el lote está acotado y **declarado**.
+
+### [ ] T-2.81.b · El nombre y el teléfono no tienen reloj honesto — `SOFTWARE`
+- **Componente:** api + db · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
+- **Por qué se dejaron fuera, que es la parte que hay que conservar.** `user_profiles.display_name`
+  y `phone` son PII con caducidad, pero **no hay ninguna columna que diga cuándo dejó de ser
+  necesaria**. `updated_at` describe a un empleado **estable**, no a uno que se fue: usarla como
+  reloj **borraría antes los nombres de quien más tiempo lleva en el edificio** — exactamente al
+  revés de lo que la retención pretende.
+- Está declarado en `SIN_RELOJ` con su razón y con test recíproco, así que no es un olvido
+  silencioso. **El reloj correcto es la baja de la cuenta, y hoy no se registra en ninguna parte.**
+- **Criterios de aceptación:**
+  - [ ] Existe el hecho «esta persona ya no está» con su instante, y se registra cuando ocurre.
+  - [ ] La regla de retención de nombre y teléfono cuelga de **ese** reloj, no de `updated_at`.
+  - [ ] `SIN_RELOJ` queda vacío para estas dos columnas, y el test recíproco lo exige.
+
+### [ ] T-2.81.c · `rule_evaluations` conserva el `DELETE` que sus once hermanas no tienen — `SOFTWARE`
+- **Componente:** db · **Depende de:** — · **Detectada por el guard de T-2.81**, que es justo
+  para lo que se escribió
+- **Medido:** de las doce tablas con trigger append-only, `takab_app` conserva el privilegio
+  `DELETE` sobre `rule_evaluations`. **No es explotable hoy** —el trigger lo deniega con P0001—,
+  pero es la única donde falta el `REVOKE`, o sea que la protección descansa en **una** capa
+  donde las demás tienen dos.
+- **Vale la pena registrar cómo apareció:** no lo encontró una revisión, lo encontró el
+  precondición del job de retención al derivar del catálogo vivo qué mecanismo niega el `DELETE`
+  en cada tabla. Una guarda derivada delata lo que una lista escrita a mano habría dado por bueno.
+- **Criterios de aceptación:**
+  - [ ] `REVOKE DELETE ON rule_evaluations FROM takab_app`, en migración idempotente y con su
+        espejo en `db/schema.sql`.
+  - [ ] Un test que exija **las dos** capas —privilegio ausente **y** trigger activo— en las doce
+        tablas, derivado del catálogo y no de una lista.
 
 ### [x] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + web · **Depende de:** T-2.80 *(corregido: la ficha declaraba `T-2.81`, y
