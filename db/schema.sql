@@ -1884,10 +1884,22 @@ FROM takab_app;
 REVOKE UPDATE ON life_checkins FROM takab_app;
 GRANT UPDATE (geom) ON life_checkins TO takab_app;
 
--- La ÚNICA política de UPDATE de `life_checkins`, y solo sobre las filas propias.
--- Junto al GRANT por columna y al trigger, la superficie total del UPDATE es:
--- "el titular puede anular la geometría de sus propios check-ins". Nada más.
--- Vive aquí y no junto a `lc_read`/`lc_insert` porque necesita `app_user_id()`.
+-- Las políticas de UPDATE de `life_checkins`. Junto al GRANT por columna y al
+-- trigger, la superficie TOTAL del UPDATE sobre esta tabla es "anular la
+-- geometría", y nada más: quien lo limita es `life_checkin_arco_guard()`, que
+-- compara la fila entera con `to_jsonb` y cubre también al dueño de la tabla.
+-- Estas políticas solo deciden QUIÉN puede pedir esa única mutación.
+-- Viven aquí y no junto a `lc_read`/`lc_insert` porque necesitan `app_user_id()`
+-- / `app_is_takab_internal()`.
+--
+-- [T-2.80] A petición del TITULAR, y solo sobre sus propias filas.
 CREATE POLICY lc_arco_geom ON life_checkins FOR UPDATE
   USING      (tenant_id = app_tenant_id() AND user_id = app_user_id())
   WITH CHECK (tenant_id = app_tenant_id() AND user_id = app_user_id());
+-- [T-2.81] Por RELOJ: el job de retención (`ops/prune_pii`) anula la geometría
+-- de los check-ins caducados. Un job no actúa en nombre de ninguna persona, así
+-- que no puede usar la política de arriba. El confinamiento por tenant va DENTRO
+-- de la política, no en el WHERE del job: lo impone la base (regla de oro 5).
+CREATE POLICY lc_retention_geom ON life_checkins FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_is_takab_internal())
+  WITH CHECK (tenant_id = app_tenant_id() AND app_is_takab_internal());
