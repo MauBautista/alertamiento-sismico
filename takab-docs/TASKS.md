@@ -4641,6 +4641,74 @@ FICHADO — lo que la auditoría dejó abierto y NO se cerró aquí, con su repr
     *Reproducción:* crear el directorio con `0755` antes de arrancar ⇒ sigue en `0755`. *Cierre:*
     `chmod` explícito tras el `mkdir`.
 
+**D1 · auditoría adversarial (2026-08-08). Las seis mutaciones reclamadas se reproducen; el
+gate #3 se ejecutó de verdad; y aun así hay UN BLOQUEANTE y nueve menores.**
+
+La lente `el-edificio` intentó refutar D1 con 14 mutaciones sobre una copia completa del árbol.
+Las seis que el informe reclamaba **se reproducen literalmente**, con los mismos nombres de test
+y los mismos números, y una séptima más dura (`import certifi`, dependencia *ligera* que la vieja
+blacklist dejaba pasar) confirma que el cambio blacklist→allowlist **no es cosmético**. Línea
+base reproducida: **997 pasan**, con `GATE #3: 5/5 EJECUTADOS contra el Shake real`. Verificado
+también que el cerrojo **no añade un modo nuevo de «no arranca»**: con EROFS y ENOSPC el arranque
+ya moría antes de D1, porque `LGPIOFactory` necesita su FIFO en el mismo directorio.
+
+**BLOQUEANTE · el test que se cita como prueba de que la verificación no está anclada, no ancla
+nada.** `test_la_verificacion_no_esta_anclada_al_nombre_takab_edge` sigue **verde** si se
+hardcodea `systemctl is-active takab-edge` **o si se borra la línea entera**: `14 passed` en los
+dos casos. La causa es el doble del `systemctl` del arnés, que responde `active` y sale 0 **para
+cualquier nombre de unidad**, así que el test solo puede comprobar que la cadena «takab-gpio»
+aparece en el stdout — y esa cadena la imprime otro `echo` que lee el registro. Consecuencia el
+día del criterio 1 de esta misma ficha: los pines pasan a `takab-gpio`, `takab-edge` sigue activo
+haciendo todo lo demás, y un `deploy.sh` anclado al nombre viejo declara ✓ **midiendo a un
+proceso que ya no toca el GPIO**. Es literalmente el fallo que D1.5 dice haber cerrado.
+
+**Los dos menores que hay que cerrar ANTES de la ventana en el Pi:**
+1. **El `sleep 3` mide ahora algo que ocurre mucho más tarde.** La verificación pasó de «systemd
+   forkeó» (t≈0) a «`gpio._on_start` corrió su primera sentencia», con el mismo plazo de un solo
+   disparo y sin reintento. Reproducido: un gabinete **sano** que tarda 4 s se reporta como
+   «NADIE es dueño de los pines… el gabinete NO está protegiendo». Medido exec→cerrojo en 0.60 s
+   (x86, dev) y ~1.0 s con los imports de producción; **el margen en el Pi 4 no es medible sin el
+   Pi**, que es justo el argumento para **sondear en vez de dormir**. El daño de segundo orden es
+   el peor: entrena al operador a ignorar la única comprobación que dice si la sirena tiene dueño
+   — y revertir es reiniciar, y reiniciar mueve `GAS_VALVE` y `DOOR_RETAINER`.
+2. **Las dos mitades de D1 se contradicen sobre el registro.** `gpio` lo declara **informativo** y
+   conserva la propiedad cuando su E/S falla (anclado por test); `deploy.sh` convierte ese mismo
+   registro vacío en un **aborto** que acusa a «un `flock` suelto de una sesión SSH». Un gabinete
+   con `/var/lib/takab` lleno protege perfectamente y el despliegue lo declara secuestrado,
+   mandando al operador a buscar un intruso que no existe en vez de al disco.
+
+**Menores de seguridad en el propio `gpio` (no de despliegue):**
+3. El rescate del arranque fallido **suelta el cerrojo sin cerrar los relés ni pasar por
+   `drive_all_safe()`**: deja el cerrojo LIBRE mientras el proceso sigue gobernando cinco pines,
+   con gas y retenedores **energizados**. Es exactamente la ventana que `_on_stop` documenta y
+   ordena su `finally` para evitar.
+4. Si al perfil `failsafe` le falta un canal que **no** sea de los primeros, el bucle de
+   construcción **ya energizó los anteriores —`GAS_VALVE` incluido—** antes de tronar, y la ruta
+   de fallo no llama `drive_all_safe()` ni `close()`. El único test del caso quita `GAS_VALVE`
+   (posición 3) y **solo mira ese pin**.
+5. El nuevo fallo duro de `_failsafe` **no tiene guarda propia**: nada ancla
+   `LOCAL_RELAY_CHANNELS ⊆ EdgeSettings.failsafe`, y `TAKAB_EDGE_FAILSAFE` **sustituye** el
+   diccionario en vez de fusionarlo — o sea que una variable de entorno puede dejar un canal de
+   relé sin modo declarado y tumbar el arranque.
+
+**Menores que condicionan D3:**
+6. **El cronómetro de latencia para cuando `drive_low()` retorna**, no cuando el quinto pin llega
+   a su nivel de protección. Con la actuación posterior en un hilo sin `join`, el test pasa
+   reportando **1.3 ms** y el guardarraíl anti-teatro no lo ve. D3 mueve justamente esa actuación
+   al otro lado del socket: sería reintroducir un nivel más arriba el defecto que D1.4 existe
+   para corregir.
+7. **El presupuesto de dependencias solo censa el montaje de DEV.** Una dependencia de terceros
+   importada en la rama de **producción** (`dev_mode=False`) es invisible para la allowlist — y
+   producción es justamente el proceso que corre en el Pi.
+
+**Menores de forma:** otras tres ramas del paso 7 y el «gana la última» del registro se pueden
+borrar o invertir con los 14 tests en verde (solo las dos ramas de `flock` están ancladas); y el
+docstring del cerrojo derivado afirma que dos unidades con `dev_mode` mal puesto «seguirían
+colisionando», que es **falso** — `takab-edge` lleva `PrivateTmp` y `takab-gpio` no.
+
+*Corrección factual al informe de implementación, sin consecuencia:* `_unidad_de_este_proceso()`
+no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_proceso_vivo()`.
+
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
 - **Criterios de aceptación:**
