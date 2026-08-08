@@ -45,8 +45,12 @@ export default function Privacidad() {
       setStatus(await fetchConsentStatus());
     } catch {
       // "No se pudo preguntar" NO es "no hay aviso": mezclarlos pintaría
-      // "nada que aceptar" con la red caída.
-      setError("No se pudo consultar el aviso de privacidad.");
+      // "nada que aceptar" con la red caída. Se dice lo que pasa —y se dice
+      // también que no impide seguir, porque no lo impide.
+      setStatus(null);
+      setError(
+        "No se pudo consultar el aviso de privacidad. Puede continuar; se le pedirá desde Cuenta.",
+      );
     } finally {
       setCargando(false);
     }
@@ -74,25 +78,25 @@ export default function Privacidad() {
     if (notice && needsConsent(status?.state ?? "missing")) {
       setEnviando(true);
       try {
-        const ok = await decideConsent("accept", notice.digest);
-        if (!ok) {
-          // 409: el aviso cambió mientras estaba en pantalla. Se relee y se
-          // vuelve a pedir; NO se sigue como si se hubiera aceptado.
-          setEnviando(false);
-          await cargar();
-          setError("El aviso cambió mientras lo leía. Vuelva a leerlo, por favor.");
-          return;
-        }
-      } catch {
-        // El registro falló, pero el onboarding NO se detiene: dejar a alguien
-        // fuera de la app de emergencias por esto sería el peor intercambio
-        // posible. Se reintenta desde Cuenta.
+        // Los TRES desenlaces —`recorded`, `superseded` (409) y `unrecorded`—
+        // siguen adelante. Pulsar el botón ES decidir, y a partir de ahí lo
+        // único que está en juego es si la nube pudo anotarlo; retener aquí a
+        // quien ya decidió no arregla el registro y sí lo deja sin check-in de
+        // vida ni botón de pánico (reglas de oro 1 y 2 · fail-open hacia
+        // proteger, la misma doctrina que gobierna el gabinete).
+        //
+        // Lo que NO se hace es mentir: si no se registró, el servidor sigue
+        // diciendo `missing`/`stale` y la app lo vuelve a pedir desde Cuenta,
+        // que es un sitio donde negarse no cuesta vidas.
+        await decideConsent("accept", notice.digest);
       } finally {
         setEnviando(false);
       }
     }
+    // El único desenlace que retiene a alguien en esta pantalla es no haber
+    // pulsado todavía. No hay `return` en este camino, y no debe haberlo.
     await continuar();
-  }, [cargar, continuar, status]);
+  }, [continuar, status]);
 
   const notice = status?.notice ?? null;
   const estado = status?.state ?? "missing";
@@ -105,7 +109,11 @@ export default function Privacidad() {
 
       <View style={styles.frame}>
         <StateFrame
-          empty={!cargando && error === null && notice === null}
+          // "Vacío" = SE PREGUNTÓ y no hay aviso (`status` contestó con
+          // `notice: null`). Con la nube caída `status` es null y manda el
+          // `error`: afirmar la ausencia sin haberla comprobado es peor que
+          // no decir nada (regla de oro 7).
+          empty={!cargando && error === null && status !== null && notice === null}
           emptyText="SU ORGANIZACIÓN NO TIENE AVISO PUBLICADO. PUEDE CONTINUAR."
           error={error}
           loading={cargando}

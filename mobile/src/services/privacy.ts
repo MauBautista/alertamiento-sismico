@@ -40,33 +40,94 @@ export interface ConsentStatus {
   blocks_emergency_actions: false;
 }
 
-/** Estado del consentimiento del portador, o `null` si el servidor no contesta.
+/** El servidor no pudo decir en qué estado está el consentimiento.
  *
- * `null` NO se disfraza de "sin aviso": quien llama distingue "no hay aviso"
- * (`notice === null`, un `empty` honesto) de "no se pudo preguntar" (`null`, un
- * `error`). Confundirlos pintaría "no tiene nada que aceptar" con la red caída.
+ * Es un desenlace DISTINTO de "no hay aviso publicado", y por eso es una
+ * excepción y no un `null`: un `null` se colaba hasta la pantalla y se pintaba
+ * como "su organización no tiene aviso" — una ausencia AFIRMADA sin haberla
+ * comprobado (regla de oro 7).
  */
-export async function fetchConsentStatus(): Promise<ConsentStatus | null> {
-  const { data } = await client.get<ConsentStatus>({ url: "/privacy/consent" });
-  return data ?? null;
+export class ConsentUnavailableError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`no se pudo consultar el aviso de privacidad (HTTP ${status || "sin respuesta"})`);
+    this.name = "ConsentUnavailableError";
+    this.status = status;
+  }
 }
+
+function esExitosa(status: number): boolean {
+  return status >= 200 && status < 300;
+}
+
+/** Estado del consentimiento del portador.
+ *
+ * LANZA `ConsentUnavailableError` si el servidor no lo pudo decir. El cliente
+ * del SDK NO lanza en errores HTTP (solo con `throwOnError`, que la app no
+ * activa: `services/sdk.ts`), así que un 500 llegaba aquí como `data:
+ * undefined` y salía como `null` indistinguible de "no hay aviso". Quien llama
+ * tiene que poder separar "no hay aviso" (200 con `notice: null`, un `empty`
+ * honesto) de "no se pudo preguntar" (esta excepción, un `error`).
+ */
+export async function fetchConsentStatus(): Promise<ConsentStatus> {
+  const { data, response } = await client.get<ConsentStatus>({ url: "/privacy/consent" });
+  const status = response?.status ?? 0;
+  if (!esExitosa(status) || data === undefined || data === null) {
+    throw new ConsentUnavailableError(status);
+  }
+  return data;
+}
+
+/** Desenlace de registrar la decisión. NUNCA un booleano.
+ *
+ * `false` valía igual para un 409 (el aviso cambió bajo el lector) que para un
+ * 503 (la nube no escribe) que para un 403, y quien llamaba los trataba a los
+ * tres como "no puedes pasar". Eso dejaba al ocupante encerrado en el
+ * onboarding —sin check-in de vida ni botón de pánico— con la nube medio
+ * caída. Son tres cosas distintas y solo una habla del consentimiento.
+ *
+ * - `recorded`: 201, quedó registrado con su digest.
+ * - `superseded`: 409, el aviso cambió entre la lectura y el botón; no se
+ *   registró nada, y el servidor seguirá diciendo `missing`/`stale` — se
+ *   vuelve a pedir desde Cuenta, que es un sitio que no bloquea.
+ * - `unrecorded`: no se pudo registrar (red, 5xx, 4xx). Igual que arriba: el
+ *   servidor conserva la verdad y la app volverá a preguntar.
+ *
+ * El cuarto desenlace posible del flujo —que la persona **no haya decidido**—
+ * no cabe aquí: es el estado previo a pulsar, y es el ÚNICO que legítimamente
+ * retiene a alguien en la pantalla.
+ */
+export type ConsentOutcome = "recorded" | "superseded" | "unrecorded";
 
 /** Registra la decisión sobre el texto que se tenía EN PANTALLA.
  *
  * El `digest` viaja siempre: sin él, el servidor tendría que adivinar sobre qué
  * texto se decidió, y si el aviso cambió entre la lectura y el botón se estaría
- * firmando algo que nadie leyó. El servidor responde 409 en ese caso y aquí se
- * devuelve `false` — la pantalla vuelve a pedir el aviso.
+ * firmando algo que nadie leyó (el servidor responde 409 en ese caso).
+ *
+ * Es una función TOTAL: no lanza ni siquiera con la red caída. Si lo hiciera,
+ * cualquier `await decideConsent(...)` sin `try` sería otro cerrojo posible
+ * sobre el camino al check-in de vida.
  */
 export async function decideConsent(
   decision: "accept" | "withdraw",
   digest: string,
-): Promise<boolean> {
-  const { response } = await client.post({
-    url: "/privacy/consent",
-    body: { decision, digest, via: "mobile" },
-  });
-  return response.status === 201;
+): Promise<ConsentOutcome> {
+  try {
+    const { response } = await client.post({
+      url: "/privacy/consent",
+      body: { decision, digest, via: "mobile" },
+    });
+    const status = response?.status ?? 0;
+    if (status === 201) {
+      return "recorded";
+    }
+    return status === 409 ? "superseded" : "unrecorded";
+  } catch {
+    // `fetch` rechazado: sin red no hay registro, y no hay nada que decidir.
+    return "unrecorded";
+  }
 }
 
 /** ¿Hay que volver a pedir el consentimiento?
