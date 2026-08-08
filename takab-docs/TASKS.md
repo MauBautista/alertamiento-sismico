@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **216** · `[x]` **145** · `[~]` **5** · `[ ]` **66**
+**Conteo de tareas:** total **216** · `[x]` **147** · `[~]` **5** · `[ ]` **64**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5647,7 +5647,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   - [ ] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
   - [ ] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
 
-### [ ] T-2.79.b · El stack de onboarding no tiene guarda de sesión — `SOFTWARE`
+### [x] T-2.79.b · El stack de onboarding no tiene guarda de sesión — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
   (2026-08-08)
 - **La causa raíz que el arreglo de hoy NO cerró.** `mobile/src/app/index.tsx:34` es el **único**
@@ -5660,14 +5660,14 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   exención es correcta —una vía de cumplimiento no debe poder expulsar a la flota— pero solo
   cubre las dos rutas que hoy sabemos que se llaman desde ahí.
 - **Criterios de aceptación:**
-  - [ ] Quedarse anónimo dentro del onboarding **lleva al login**, desde cualquier pantalla del
+  - [x] Quedarse anónimo dentro del onboarding **lleva al login**, desde cualquier pantalla del
         stack.
-  - [ ] Test que dispare `signOut()` en cada pantalla del onboarding y exija la redirección.
+  - [x] Test que dispare `signOut()` en cada pantalla del onboarding y exija la redirección.
         Enumerar las pantallas de hoy no vale: **derívalo del stack**.
-  - [ ] La exención de `sdk.ts` sigue en pie y **con su test**: quitar la causa raíz no es
+  - [x] La exención de `sdk.ts` sigue en pie y **con su test**: quitar la causa raíz no es
         excusa para devolverle a una ruta de cumplimiento el poder de expulsar.
 
-### [ ] T-2.79.c · La salida del enrolamiento se llama «Ya estoy vinculado», y para quien falla es mentira — `SOFTWARE`
+### [x] T-2.79.c · La salida del enrolamiento se llama «Ya estoy vinculado», y para quien falla es mentira — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
   (2026-08-08)
 - **Medido, y menos grave de lo que parecía.** El occupant **no** marca el onboarding como hecho
@@ -5682,13 +5682,30 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   **afirma algo falso sobre ella**, con estilo de opción descartable. Quien lee que no está
   vinculado no la pulsa. La puerta existe y está mal señalizada, que en una app de vida cuenta.
 - **Criterios de aceptación:**
-  - [ ] Cuando el enrolamiento falla por causa de red o servidor, la salida se rotula por lo que
+  - [x] Cuando el enrolamiento falla por causa de red o servidor, la salida se rotula por lo que
         hace —seguir sin vincular, y vincular después desde Cuenta—, no por una condición del
         usuario que el sistema no puede afirmar.
-  - [ ] Test: con el servidor caído, existe un camino visible al final del onboarding, y el texto
+  - [x] Test: con el servidor caído, existe un camino visible al final del onboarding, y el texto
         del control **no afirma** que el usuario ya esté vinculado.
-  - [ ] Queda escrito qué pierde quien continúa sin vincular (sin sitio vigilado no hay
+  - [x] Queda escrito qué pierde quien continúa sin vincular (sin sitio vigilado no hay
         check-in de zona), porque continuar a ciegas también es una forma de mentir.
+
+> **Cerradas (2026-08-08).** La cobertura de pantallas es **derivada del directorio de rutas**,
+> no una lista: expo-router enruta por ficheros, así que el directorio **es** el stack.
+> Verificado creando una pantalla que nadie añadió a ninguna parte — la corrida pasó de 11 a 13
+> tests, con los dos casos nombrados por el fichero nuevo. Dos tests más impiden que la
+> derivación salga vacía y pase en falso.
+>
+> **`booting` NO expulsa**, y hay test que lo fija: sesión desconocida no es sesión muerta, o
+> cada arranque en frío echaría a gente con sesión válida.
+>
+> **Las dos defensas se quedan:** la guarda del stack y la exención de `sdk.ts` para las rutas de
+> cumplimiento. Retirar la guarda pone 4 tests en rojo.
+>
+> **Bug extra cerrado de paso, de la misma familia que la ficha:** un **503 se rotulaba «Código
+> inválido, vencido o agotado»**, mandando a la persona a pedir un código nuevo que no arreglaba
+> nada. Ahora se distingue quién falló — el código o la nube — y la salida solo se destaca cuando
+> falló la nube: con un 404 lo correcto sigue siendo pedir otro código.
 
 ### [ ] T-2.79.d · `StateFrame` no dice quién gana entre `empty` y `stale` — `SOFTWARE` + `DECISIÓN`
 - **Componente:** web (contrato de estados) · **Depende de:** — · **Detectada al arreglar el
