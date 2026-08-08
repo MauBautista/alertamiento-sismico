@@ -78,7 +78,18 @@ class ComplianceDocOut(BaseModel):
     incidente (``ForensicsOut.compliance``), que es lo que ve el inspector en la misma
     pantalla en la que FIRMA. Un solo shape para las dos: si cada una compusiera su
     propio marco, tarde o temprano una de ellas se quedaría sin él.
+
+    ``json_schema_serialization_defaults_required`` hace que el CONTRATO diga lo mismo
+    que este docstring. Todos los campos de abajo llevan default, y un campo con
+    default no es ``required`` en el esquema de serialización: el OpenAPI publicado
+    declaraba que ``provenance`` y ``notice`` **pueden faltar**, cuando el servidor los
+    manda siempre. De ese esquema salen los tipos del SDK, así que la consola tuvo que
+    escribir a mano un tipo afirmando lo contrario — dos verdades sobre el mismo cable,
+    y la que mentía era la publicada. Anclado en
+    ``test_el_marco_declarado_viaja_ENTERO_o_no_viaja``.
     """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     #: Única procedencia posible mientras GATE-LEGAL siga abierto.
     provenance: str = PROVENANCE

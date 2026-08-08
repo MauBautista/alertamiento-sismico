@@ -192,3 +192,37 @@ async def test_el_movil_nunca_recibe_el_texto_crudo_del_cliente(base_data: None)
     etiquetas = (await _mobile_state())["compliance_labels"]
     assert CLAIM not in etiquetas.values()
     assert all(valor.endswith(DECLARED_SHORT) for valor in etiquetas.values())
+
+
+# ---------------------------------------------------------------------------
+# El contrato publicado tiene que prometer lo mismo que el docstring
+# ---------------------------------------------------------------------------
+#
+# `ComplianceDocOut` declara por escrito: «Documento del cliente + su marco. Nunca sale
+# uno sin el otro.» Pero todos sus campos llevan default, y un campo con default NO es
+# `required` en el esquema de serialización — así que el OpenAPI publicado decía que
+# `provenance` y `notice` **pueden faltar**.
+#
+# No es cosmético: de ahí salen los tipos TS del SDK. El cliente generado los daba como
+# `string | undefined`, y la consola tuvo que escribir su propio tipo a mano afirmando
+# que siempre vienen. Dos verdades sobre el mismo cable, y la de la consola era la
+# correcta — la que mentía era la que se publica.
+
+
+def test_el_marco_declarado_viaja_ENTERO_o_no_viaja() -> None:
+    """Cada campo de `ComplianceDocOut` es `required` en el esquema de RESPUESTA.
+
+    Derivado, no enumerado: se compara el conjunto de propiedades contra el de
+    requeridos. Un campo nuevo con default entra solo en la comprobación, que es lo
+    que impide que el contrato vuelva a prometer menos de lo que el servidor cumple.
+    """
+    from takab_api.schemas.compliance import ComplianceDocOut
+
+    esquema = ComplianceDocOut.model_json_schema(mode="serialization")
+    faltan = sorted(set(esquema["properties"]) - set(esquema.get("required", [])))
+    assert not faltan, (
+        f"el contrato publica como opcionales campos que el servidor SIEMPRE manda: {faltan}. "
+        "El docstring de ComplianceDocOut promete que el documento y su marco no se "
+        "separan; el esquema tiene que prometer lo mismo, o el SDK generado obliga a "
+        "cada consumidor a inventarse su propio tipo."
+    )

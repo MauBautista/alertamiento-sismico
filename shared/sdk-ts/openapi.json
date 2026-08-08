@@ -938,6 +938,419 @@
         "title": "CommandOut",
         "type": "object"
       },
+      "ComplianceClaimIn": {
+        "additionalProperties": false,
+        "description": "Una afirmación tal como llega del formulario.\n\n``extra=\"forbid\"`` es una cerradura, no higiene: rechaza de plano un cuerpo con\n``verified: true`` o ``provenance: \"verified_by_takab\"``. Ignorarlo en silencio\ndejaría creer al operador que su marca de verificación se guardó.",
+        "properties": {
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "claim",
+          "reference"
+        ],
+        "title": "ComplianceClaimIn",
+        "type": "object"
+      },
+      "ComplianceClaimOut": {
+        "description": "Afirmación servida. ``title`` lo pone el catálogo del SERVIDOR.\n\nSin el título, ``claim`` es un string suelto que cada pantalla enmarcaría a su\nmanera. Con él, la frase completa es siempre \"de esta clase, el cliente declara\nesto, y aquí está escrito\".",
+        "properties": {
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "claim",
+          "reference"
+        ],
+        "title": "ComplianceClaimOut",
+        "type": "object"
+      },
+      "ComplianceDocOut": {
+        "description": "Documento del cliente + su marco. Nunca sale uno sin el otro.\n\nLo consumen dos superficies: la ficha del cliente en ``/tenants`` y el forense del\nincidente (``ForensicsOut.compliance``), que es lo que ve el inspector en la misma\npantalla en la que FIRMA. Un solo shape para las dos: si cada una compusiera su\npropio marco, tarde o temprano una de ellas se quedaría sin él.\n\n``json_schema_serialization_defaults_required`` hace que el CONTRATO diga lo mismo\nque este docstring. Todos los campos de abajo llevan default, y un campo con\ndefault no es ``required`` en el esquema de serialización: el OpenAPI publicado\ndeclaraba que ``provenance`` y ``notice`` **pueden faltar**, cuando el servidor los\nmanda siempre. De ese esquema salen los tipos del SDK, así que la consola tuvo que\nescribir a mano un tipo afirmando lo contrario — dos verdades sobre el mismo cable,\ny la que mentía era la publicada. Anclado en\n``test_el_marco_declarado_viaja_ENTERO_o_no_viaja``.",
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ComplianceClaimOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "notice": {
+            "default": "Las afirmaciones de este apartado las DECLARA el cliente. TAKAB Ailert no las verifica, no las certifica y no emite dictamen de cumplimiento normativo. El marco normativo citable de la plataforma está pendiente de confirmación (GATE-LEGAL); ninguna referencia de este apartado procede de TAKAB.",
+            "title": "Notice",
+            "type": "string"
+          },
+          "provenance": {
+            "default": "declared_by_tenant",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "unreadable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable"
+          }
+        },
+        "required": [
+          "provenance",
+          "notice",
+          "items",
+          "notes",
+          "unreadable"
+        ],
+        "title": "ComplianceDocOut",
+        "type": "object"
+      },
+      "ComplianceLabelsIn": {
+        "additionalProperties": false,
+        "description": "Reemplazo COMPLETO del documento del cliente.\n\nNo es un PATCH: las etiquetas se leen juntas (en un dictamen se imprimen juntas),\nasí que se editan juntas y el testigo de concurrencia protege al conjunto.",
+        "properties": {
+          "base_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Updated At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ComplianceClaimIn"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ComplianceLabelsIn",
+        "type": "object"
+      },
+      "ComplianceLabelsOut": {
+        "description": "El documento del cliente en su ficha, con quién lo tocó y cuándo.",
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ComplianceClaimOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "notice": {
+            "default": "Las afirmaciones de este apartado las DECLARA el cliente. TAKAB Ailert no las verifica, no las certifica y no emite dictamen de cumplimiento normativo. El marco normativo citable de la plataforma está pendiente de confirmación (GATE-LEGAL); ninguna referencia de este apartado procede de TAKAB.",
+            "title": "Notice",
+            "type": "string"
+          },
+          "provenance": {
+            "default": "declared_by_tenant",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "unreadable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "provenance",
+          "notice",
+          "items",
+          "notes",
+          "unreadable",
+          "tenant_id",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "ComplianceLabelsOut",
+        "type": "object"
+      },
+      "ConsentHistoryOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConsentHistoryOut",
+        "type": "object"
+      },
+      "ConsentIn": {
+        "additionalProperties": false,
+        "description": "Aceptar o retirar. Sin cuerpo del aviso: el servidor resuelve el vigente.\n\nEl cliente manda el ``digest`` que tenía en pantalla y el servidor rechaza\nsi ya no es el vigente (409). Sin eso, alguien que dejó la pantalla abierta\nmientras el aviso cambiaba firmaría el texto NUEVO habiendo leído el viejo —\nque es exactamente la clase de mentira que esta tarea existe para impedir.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "accept",
+              "withdraw"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "locale": {
+            "default": "es-MX",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "privacy_notice",
+            "enum": [
+              "privacy_notice",
+              "whatsapp_alerts"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "via": {
+            "default": "web",
+            "enum": [
+              "mobile",
+              "web"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "digest"
+        ],
+        "title": "ConsentIn",
+        "type": "object"
+      },
+      "ConsentOut": {
+        "description": "Una decisión del registro append-only, tal como se escribió.",
+        "properties": {
+          "actor_sub": {
+            "format": "uuid",
+            "title": "Actor Sub",
+            "type": "string"
+          },
+          "consent_id": {
+            "format": "uuid",
+            "title": "Consent Id",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "accept",
+              "withdraw"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "notice_digest": {
+            "title": "Notice Digest",
+            "type": "string"
+          },
+          "notice_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice Id"
+          },
+          "notice_locale": {
+            "title": "Notice Locale",
+            "type": "string"
+          },
+          "notice_source": {
+            "enum": [
+              "repo",
+              "tenant"
+            ],
+            "title": "Notice Source",
+            "type": "string"
+          },
+          "notice_version": {
+            "title": "Notice Version",
+            "type": "string"
+          },
+          "via": {
+            "enum": [
+              "mobile",
+              "web",
+              "console_admin",
+              "out_of_band"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consent_id",
+          "decision",
+          "notice_source",
+          "notice_digest",
+          "notice_version",
+          "notice_locale",
+          "via",
+          "actor_sub",
+          "decided_at"
+        ],
+        "title": "ConsentOut",
+        "type": "object"
+      },
+      "ConsentStatusOut": {
+        "description": "Lo que la UI necesita para pintar los cuatro estados sin adivinar.\n\n``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula\nnada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto\nel aviso cambiara entre dos peticiones.",
+        "properties": {
+          "blocks_emergency_actions": {
+            "const": false,
+            "default": false,
+            "title": "Blocks Emergency Actions",
+            "type": "boolean"
+          },
+          "consent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoticeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "missing",
+              "current",
+              "stale",
+              "withdrawn"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notice",
+          "state"
+        ],
+        "title": "ConsentStatusOut",
+        "type": "object"
+      },
       "DamageCategoryIn": {
         "properties": {
           "key": {
@@ -1984,6 +2397,133 @@
         "title": "EquipmentProfile",
         "type": "object"
       },
+      "ErasureIn": {
+        "additionalProperties": false,
+        "description": "Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**\n\nEl titular del borrado es siempre el portador del token: ejercer ARCO sobre\nun tercero no está prohibido, es inexpresable — ni en este contrato ni en la\nfunción de base de datos que lo ejecuta.\n\n``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda\nen ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no\npuede deshacerse. Que el cliente tenga que escribir ``true`` es lo único que\nsepara un botón mal pulsado de un dato que no vuelve.",
+        "properties": {
+          "confirm": {
+            "const": true,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "right": {
+            "default": "cancelacion",
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right",
+            "type": "string"
+          },
+          "via": {
+            "default": "web",
+            "enum": [
+              "mobile",
+              "web"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "ErasureIn",
+        "type": "object"
+      },
+      "ErasureOut": {
+        "description": "La lápida. Dice QUÉ pasó y CUÁNTO, jamás A QUIÉN se llamaba.\n\n``affected`` son conteos por tabla (\"se anonimizaron 3 check-ins\"), no las\nfilas ni su contenido. La base lo impone con un CHECK que rechaza cualquier\nvalor que no sea un número: sin él, este objeto sería el sitio obvio donde\nalguien guardaría el nombre \"por trazabilidad\" y desharía la tarea entera.",
+        "properties": {
+          "affected": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Affected",
+            "type": "object"
+          },
+          "audit_digest": {
+            "title": "Audit Digest",
+            "type": "string"
+          },
+          "audit_watermark": {
+            "title": "Audit Watermark",
+            "type": "integer"
+          },
+          "created": {
+            "default": false,
+            "title": "Created",
+            "type": "boolean"
+          },
+          "erased_at": {
+            "format": "date-time",
+            "title": "Erased At",
+            "type": "string"
+          },
+          "erasure_id": {
+            "format": "uuid",
+            "title": "Erasure Id",
+            "type": "string"
+          },
+          "right_exercised": {
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right Exercised",
+            "type": "string"
+          },
+          "user_sub": {
+            "format": "uuid",
+            "title": "User Sub",
+            "type": "string"
+          },
+          "via": {
+            "enum": [
+              "mobile",
+              "web",
+              "console_admin",
+              "out_of_band"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "erasure_id",
+          "user_sub",
+          "right_exercised",
+          "via",
+          "affected",
+          "audit_watermark",
+          "audit_digest",
+          "erased_at"
+        ],
+        "title": "ErasureOut",
+        "type": "object"
+      },
+      "ErasureProofOut": {
+        "description": "La lápida MÁS la comprobación de que la bitácora sigue cuadrando HOY.\n\nUn sello guardado que nadie recalcula no prueba nada. Por eso la respuesta no\ndevuelve solo lo que se selló: recalcula el digest en esta misma petición y\nresponde si coinciden. El criterio 3 de la ficha (\"el `audit_log` sigue\níntegro y verificable\") deja así de ser una afirmación del día del\ndespliegue y pasa a ser una medición que cualquiera puede pedir.",
+        "properties": {
+          "audit_digest_now": {
+            "title": "Audit Digest Now",
+            "type": "string"
+          },
+          "audit_intact": {
+            "title": "Audit Intact",
+            "type": "boolean"
+          },
+          "erasure": {
+            "$ref": "#/components/schemas/ErasureOut"
+          }
+        },
+        "required": [
+          "erasure",
+          "audit_digest_now",
+          "audit_intact"
+        ],
+        "title": "ErasureProofOut",
+        "type": "object"
+      },
       "ErrorFrame": {
         "description": "Error de protocolo (topic/JSON inválido); no cierra el socket.",
         "properties": {
@@ -2556,6 +3096,9 @@
             },
             "title": "Channels",
             "type": "array"
+          },
+          "compliance": {
+            "$ref": "#/components/schemas/ComplianceDocOut"
           },
           "felt_band": {
             "default": "unknown",
@@ -5114,6 +5657,193 @@
           "calibrated"
         ],
         "title": "MultiChannelFeatures",
+        "type": "object"
+      },
+      "NoticeIn": {
+        "additionalProperties": false,
+        "description": "Publicar el aviso del TENANT. No hay endpoint de edición y no lo habrá.",
+        "properties": {
+          "body": {
+            "minLength": 40,
+            "title": "Body",
+            "type": "string"
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At"
+          },
+          "locale": {
+            "default": "es-MX",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "privacy_notice",
+            "enum": [
+              "privacy_notice",
+              "whatsapp_alerts"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "body"
+        ],
+        "title": "NoticeIn",
+        "type": "object"
+      },
+      "NoticeOut": {
+        "description": "El aviso vigente, con su sello y su origen.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At"
+          },
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "notice_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice Id"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "provisional_reason": {
+            "default": "",
+            "title": "Provisional Reason",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "privacy_notice",
+              "whatsapp_alerts"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "repo",
+              "tenant"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose",
+          "locale",
+          "version",
+          "title",
+          "body",
+          "paragraphs",
+          "digest",
+          "source",
+          "provisional"
+        ],
+        "title": "NoticeOut",
+        "type": "object"
+      },
+      "NoticePublishedOut": {
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "notice_id": {
+            "format": "uuid",
+            "title": "Notice Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notice_id",
+          "digest",
+          "version",
+          "effective_at",
+          "published_at"
+        ],
+        "title": "NoticePublishedOut",
         "type": "object"
       },
       "PanicVoteIn": {
@@ -7704,6 +8434,61 @@
           }
         },
         "title": "TenantUpdate",
+        "type": "object"
+      },
+      "ThirdPartyConsentIn": {
+        "additionalProperties": false,
+        "description": "Constancia del consentimiento de un tercero SIN sesión (un teléfono).\n\nEs el caso del opt-in de WhatsApp (T-2.77): el sujeto es un número, la\npersona no entra a la app y quien lo registra es el administrador del\ntenant. Por eso ``via`` se limita a los dos valores que describen ese acto y\n``actor_sub`` queda escrito por separado: quién registra no es quién\nconsiente, y confundirlos borraría la diferencia legalmente relevante.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "accept",
+              "withdraw"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "locale": {
+            "default": "es-MX",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "msisdn": {
+            "pattern": "^\\+[1-9][0-9]{7,14}$",
+            "title": "Msisdn",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "whatsapp_alerts",
+            "enum": [
+              "privacy_notice",
+              "whatsapp_alerts"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "via": {
+            "default": "out_of_band",
+            "enum": [
+              "console_admin",
+              "out_of_band"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "digest",
+          "msisdn"
+        ],
+        "title": "ThirdPartyConsentIn",
         "type": "object"
       },
       "UserActionOut": {
@@ -10673,6 +11458,356 @@
         "summary": "Revoke Push Token"
       }
     },
+    "/privacy/consent": {
+      "get": {
+        "description": "Aviso vigente + estado del consentimiento del portador, en una respuesta.\n\nVan juntos a propósito: separarlos obligaría a la UI a comparar digests, y\nentre las dos peticiones el aviso puede cambiar — pintaría ``current`` sobre\nun texto que ya no es el vigente.",
+        "operationId": "get_consent_status_privacy_consent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "default": "privacy_notice",
+              "title": "Purpose",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "default": "es-MX",
+              "title": "Locale",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Consent Status",
+        "tags": [
+          "privacy"
+        ]
+      },
+      "post": {
+        "description": "Acepta o RETIRA. Siempre una fila nueva; jamás un UPDATE.\n\nCualquier sesión autenticada puede hacerlo sobre SU propia fila —es un\nderecho del titular del dato, no un permiso que se concede— y la RLS\n``pc_self`` la acota. Por eso no lleva ``require_roles``.",
+        "operationId": "record_consent_privacy_consent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Consent",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/consent/history": {
+      "get": {
+        "description": "El historial del portador. Un registro append-only que no se puede leer\nno prueba nada: \"acepté la v1, la retiré, acepté la v2\" es la respuesta a\nuna reclamación.",
+        "operationId": "get_consent_history_privacy_consent_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "default": "privacy_notice",
+              "title": "Purpose",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Consent History",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/consents/third-party": {
+      "post": {
+        "description": "Constancia del consentimiento de un TERCERO sin sesión (un teléfono).\n\nEs el opt-in de WhatsApp (T-2.77): la guardia del SOC da su número y su\nautorización fuera de la app, y alguien tiene que dejar constancia de qué\ntexto se le enseñó y cuándo. ``actor_sub`` guarda quién lo registró, separado\ndel sujeto: confundirlos borraría la diferencia entre \"la persona autorizó\"\ny \"un administrador lo dio por hecho\".",
+        "operationId": "record_third_party_consent_privacy_consents_third_party_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThirdPartyConsentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Third Party Consent",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/erasure": {
+      "get": {
+        "description": "La lápida propia MÁS la comprobación de que la bitácora sigue cuadrando.\n\nNo devuelve solo lo que se selló el día del borrado: **recalcula** el digest\nen esta misma petición y responde si coincide. Un sello guardado que nadie\nrecomputa no prueba nada; esto convierte \"el ``audit_log`` sigue íntegro y\nverificable\" en una medición que cualquiera puede pedir, y no en una\nafirmación del día del despliegue.",
+        "operationId": "get_erasure_proof_privacy_erasure_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureProofOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Erasure Proof",
+        "tags": [
+          "privacy"
+        ]
+      },
+      "post": {
+        "description": "Ejerce cancelación u oposición SOBRE UNO MISMO. Anonimiza; jamás borra.\n\nSin ``require_roles``, igual que ``POST /consent``: es un derecho del titular\ndel dato, no un permiso que se concede. Y sin sujeto en el cuerpo: la función\nde base de datos opera sobre ``app_user_id()``, así que ejercer ARCO sobre un\ntercero —o cruzar tenants— no está prohibido, es **inexpresable**.\n\nTres respuestas y ninguna ambigua:\n\n* **201** — se ejerció ahora. ``affected`` dice cuántas filas se anonimizaron\n  por tabla; ninguna se borró.\n* **200** — ya se había ejercido. Es idempotencia (regla de oro 3), no un\n  fallo: se devuelve la MISMA lápida, testigo sellado del primer acto.\n* **409** — hay un incidente ABIERTO en un sitio del titular y la\n  anonimización se DIFIERE. Ver ``privacy_erase_subject`` en el schema: la\n  ubicación de un check-in es dato de rescate en vivo y anularla a mitad de\n  una búsqueda es un fallo de seguridad. El derecho no se niega, se aplaza —\n  y la petición queda auditada FUERA DE BANDA para que el plazo legal corra\n  igual (el 409 hace rollback y se llevaría la fila por delante).",
+        "operationId": "exercise_erasure_privacy_erasure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exercise Erasure",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/notice": {
+      "get": {
+        "description": "El aviso vigente para el tenant del portador (el suyo si lo publicó).",
+        "operationId": "get_notice_privacy_notice_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "default": "privacy_notice",
+              "title": "Purpose",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "default": "es-MX",
+              "title": "Locale",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Notice",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/notices": {
+      "post": {
+        "description": "Publica el aviso del TENANT. No existe el equivalente para editar.\n\nLos dos 409 posibles dicen cosas distintas y las dos son útiles: el mismo\ntexto con otra etiqueta (no es una versión nueva) y la misma etiqueta con\notro texto (sería una versión que miente).",
+        "operationId": "publish_notice_privacy_notices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticePublishedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Notice",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
     "/rule-sets": {
       "get": {
         "description": "rule_sets del tenant (RLS): versiones activas primero. Secretos redactados.",
@@ -12138,6 +13273,96 @@
           }
         },
         "summary": "Update Tenant"
+      }
+    },
+    "/tenants/{tenant_id}/compliance-labels": {
+      "get": {
+        "description": "Marco normativo DECLARADO por el cliente, con su deslinde pegado.\n\nSin fila devuelve un documento vacío —con su ``notice``—, no un 404: el cliente\nexiste y no ha declarado nada, que es el estado normal mientras GATE-LEGAL siga\nabierto.",
+        "operationId": "get_compliance_labels_tenants__tenant_id__compliance_labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceLabelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Compliance Labels"
+      },
+      "put": {
+        "description": "Reemplaza el documento completo del cliente. SOLO ``takab_superadmin``.\n\nLa bitácora se lleva el TEXTO ÍNTEGRO de lo declarado, no un \"cambió\": el\n``audit_log`` no se poda nunca (regla de oro 11) y es lo único que permitirá\nsaber, dentro de dos años, qué decía exactamente la etiqueta el día en que se\nfirmó un dictamen que la imprimió. Y va al tenant TOCADO, no al de los claims del\noperador: el cliente afectado tiene que tener el rastro en su propia bitácora.",
+        "operationId": "put_compliance_labels_tenants__tenant_id__compliance_labels_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComplianceLabelsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceLabelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Compliance Labels"
       }
     },
     "/tenants/{tenant_id}/retire-code": {

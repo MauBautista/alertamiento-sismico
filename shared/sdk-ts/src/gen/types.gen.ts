@@ -226,6 +226,133 @@ export type CommandOut = {
     tenant_id: string;
 };
 
+/**
+ * Una afirmación tal como llega del formulario.
+ *
+ * ``extra="forbid"`` es una cerradura, no higiene: rechaza de plano un cuerpo con
+ * ``verified: true`` o ``provenance: "verified_by_takab"``. Ignorarlo en silencio
+ * dejaría creer al operador que su marca de verificación se guardó.
+ */
+export type ComplianceClaimIn = {
+    claim: string;
+    key: string;
+    reference: string;
+};
+
+/**
+ * Afirmación servida. ``title`` lo pone el catálogo del SERVIDOR.
+ *
+ * Sin el título, ``claim`` es un string suelto que cada pantalla enmarcaría a su
+ * manera. Con él, la frase completa es siempre "de esta clase, el cliente declara
+ * esto, y aquí está escrito".
+ */
+export type ComplianceClaimOut = {
+    claim: string;
+    key: string;
+    reference: string;
+    title: string;
+};
+
+/**
+ * Documento del cliente + su marco. Nunca sale uno sin el otro.
+ *
+ * Lo consumen dos superficies: la ficha del cliente en ``/tenants`` y el forense del
+ * incidente (``ForensicsOut.compliance``), que es lo que ve el inspector en la misma
+ * pantalla en la que FIRMA. Un solo shape para las dos: si cada una compusiera su
+ * propio marco, tarde o temprano una de ellas se quedaría sin él.
+ *
+ * ``json_schema_serialization_defaults_required`` hace que el CONTRATO diga lo mismo
+ * que este docstring. Todos los campos de abajo llevan default, y un campo con
+ * default no es ``required`` en el esquema de serialización: el OpenAPI publicado
+ * declaraba que ``provenance`` y ``notice`` **pueden faltar**, cuando el servidor los
+ * manda siempre. De ese esquema salen los tipos del SDK, así que la consola tuvo que
+ * escribir a mano un tipo afirmando lo contrario — dos verdades sobre el mismo cable,
+ * y la que mentía era la publicada. Anclado en
+ * ``test_el_marco_declarado_viaja_ENTERO_o_no_viaja``.
+ */
+export type ComplianceDocOut = {
+    items: Array<ComplianceClaimOut>;
+    notes: Array<string>;
+    notice: string;
+    provenance: string;
+    unreadable: string | null;
+};
+
+/**
+ * Reemplazo COMPLETO del documento del cliente.
+ *
+ * No es un PATCH: las etiquetas se leen juntas (en un dictamen se imprimen juntas),
+ * así que se editan juntas y el testigo de concurrencia protege al conjunto.
+ */
+export type ComplianceLabelsIn = {
+    base_updated_at?: string | null;
+    items: Array<ComplianceClaimIn>;
+};
+
+/**
+ * El documento del cliente en su ficha, con quién lo tocó y cuándo.
+ */
+export type ComplianceLabelsOut = {
+    items: Array<ComplianceClaimOut>;
+    notes: Array<string>;
+    notice: string;
+    provenance: string;
+    tenant_id: string;
+    unreadable: string | null;
+    updated_at: string | null;
+    updated_by: string | null;
+};
+
+export type ConsentHistoryOut = {
+    items: Array<ConsentOut>;
+};
+
+/**
+ * Aceptar o retirar. Sin cuerpo del aviso: el servidor resuelve el vigente.
+ *
+ * El cliente manda el ``digest`` que tenía en pantalla y el servidor rechaza
+ * si ya no es el vigente (409). Sin eso, alguien que dejó la pantalla abierta
+ * mientras el aviso cambiaba firmaría el texto NUEVO habiendo leído el viejo —
+ * que es exactamente la clase de mentira que esta tarea existe para impedir.
+ */
+export type ConsentIn = {
+    decision: 'accept' | 'withdraw';
+    digest: string;
+    locale?: string;
+    purpose?: 'privacy_notice' | 'whatsapp_alerts';
+    via?: 'mobile' | 'web';
+};
+
+/**
+ * Una decisión del registro append-only, tal como se escribió.
+ */
+export type ConsentOut = {
+    actor_sub: string;
+    consent_id: string;
+    decided_at: string;
+    decision: 'accept' | 'withdraw';
+    notice_digest: string;
+    notice_id?: string | null;
+    notice_locale: string;
+    notice_source: 'repo' | 'tenant';
+    notice_version: string;
+    via: 'mobile' | 'web' | 'console_admin' | 'out_of_band';
+};
+
+/**
+ * Lo que la UI necesita para pintar los cuatro estados sin adivinar.
+ *
+ * ``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula
+ * nada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto
+ * el aviso cambiara entre dos peticiones.
+ */
+export type ConsentStatusOut = {
+    blocks_emergency_actions?: false;
+    consent?: ConsentOut | null;
+    notice: NoticeOut | null;
+    state: 'missing' | 'current' | 'stale' | 'withdrawn';
+};
+
 export type DamageCategoryIn = {
     key: string;
     note?: string | null;
@@ -453,6 +580,61 @@ export type EquipmentProfile = {
 };
 
 /**
+ * Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**
+ *
+ * El titular del borrado es siempre el portador del token: ejercer ARCO sobre
+ * un tercero no está prohibido, es inexpresable — ni en este contrato ni en la
+ * función de base de datos que lo ejecuta.
+ *
+ * ``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda
+ * en ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no
+ * puede deshacerse. Que el cliente tenga que escribir ``true`` es lo único que
+ * separa un botón mal pulsado de un dato que no vuelve.
+ */
+export type ErasureIn = {
+    confirm: true;
+    right?: 'cancelacion' | 'oposicion';
+    via?: 'mobile' | 'web';
+};
+
+/**
+ * La lápida. Dice QUÉ pasó y CUÁNTO, jamás A QUIÉN se llamaba.
+ *
+ * ``affected`` son conteos por tabla ("se anonimizaron 3 check-ins"), no las
+ * filas ni su contenido. La base lo impone con un CHECK que rechaza cualquier
+ * valor que no sea un número: sin él, este objeto sería el sitio obvio donde
+ * alguien guardaría el nombre "por trazabilidad" y desharía la tarea entera.
+ */
+export type ErasureOut = {
+    affected: {
+        [key: string]: number;
+    };
+    audit_digest: string;
+    audit_watermark: number;
+    created?: boolean;
+    erased_at: string;
+    erasure_id: string;
+    right_exercised: 'cancelacion' | 'oposicion';
+    user_sub: string;
+    via: 'mobile' | 'web' | 'console_admin' | 'out_of_band';
+};
+
+/**
+ * La lápida MÁS la comprobación de que la bitácora sigue cuadrando HOY.
+ *
+ * Un sello guardado que nadie recalcula no prueba nada. Por eso la respuesta no
+ * devuelve solo lo que se selló: recalcula el digest en esta misma petición y
+ * responde si coinciden. El criterio 3 de la ficha ("el `audit_log` sigue
+ * íntegro y verificable") deja así de ser una afirmación del día del
+ * despliegue y pasa a ser una medición que cualquiera puede pedir.
+ */
+export type ErasureProofOut = {
+    audit_digest_now: string;
+    audit_intact: boolean;
+    erasure: ErasureOut;
+};
+
+/**
  * Error de protocolo (topic/JSON inválido); no cierra el socket.
  */
 export type ErrorFrame = {
@@ -587,6 +769,7 @@ export type ForensicsOut = {
     catalog?: CatalogMatch | null;
     catalog_delta?: CatalogDelta | null;
     channels?: Array<ChannelPeak>;
+    compliance?: ComplianceDocOut;
     felt_band?: string;
     incident_id: string;
     lead_time_reason?: string | null;
@@ -1195,6 +1378,44 @@ export type MultiChannelFeatures = {
 };
 
 /**
+ * Publicar el aviso del TENANT. No hay endpoint de edición y no lo habrá.
+ */
+export type NoticeIn = {
+    body: string;
+    effective_at?: string | null;
+    locale?: string;
+    purpose?: 'privacy_notice' | 'whatsapp_alerts';
+    title: string;
+    version: string;
+};
+
+/**
+ * El aviso vigente, con su sello y su origen.
+ */
+export type NoticeOut = {
+    body: string;
+    digest: string;
+    effective_at?: string | null;
+    locale: string;
+    notice_id?: string | null;
+    paragraphs: Array<string>;
+    provisional: boolean;
+    provisional_reason?: string;
+    purpose: 'privacy_notice' | 'whatsapp_alerts';
+    source: 'repo' | 'tenant';
+    title: string;
+    version: string;
+};
+
+export type NoticePublishedOut = {
+    digest: string;
+    effective_at: string;
+    notice_id: string;
+    published_at: string;
+    version: string;
+};
+
+/**
  * [T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional
  * (geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin
  * GPS cuenta (LFPDPPP + RBAC §4.3).
@@ -1770,6 +1991,24 @@ export type TenantUpdate = {
     status?: ('trial' | 'active' | 'suspended') | null;
     vertical?: string | null;
     visibility?: ('private' | 'gov_shared') | null;
+};
+
+/**
+ * Constancia del consentimiento de un tercero SIN sesión (un teléfono).
+ *
+ * Es el caso del opt-in de WhatsApp (T-2.77): el sujeto es un número, la
+ * persona no entra a la app y quien lo registra es el administrador del
+ * tenant. Por eso ``via`` se limita a los dos valores que describen ese acto y
+ * ``actor_sub`` queda escrito por separado: quién registra no es quién
+ * consiente, y confundirlos borraría la diferencia legalmente relevante.
+ */
+export type ThirdPartyConsentIn = {
+    decision: 'accept' | 'withdraw';
+    digest: string;
+    locale?: string;
+    msisdn: string;
+    purpose?: 'privacy_notice' | 'whatsapp_alerts';
+    via?: 'console_admin' | 'out_of_band';
 };
 
 /**
@@ -3281,6 +3520,206 @@ export type RevokePushTokenMePushTokensPushTokenIdDeleteResponses = {
 
 export type RevokePushTokenMePushTokensPushTokenIdDeleteResponse = RevokePushTokenMePushTokensPushTokenIdDeleteResponses[keyof RevokePushTokenMePushTokensPushTokenIdDeleteResponses];
 
+export type GetConsentStatusPrivacyConsentGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        purpose?: string;
+        locale?: string;
+    };
+    url: '/privacy/consent';
+};
+
+export type GetConsentStatusPrivacyConsentGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetConsentStatusPrivacyConsentGetError = GetConsentStatusPrivacyConsentGetErrors[keyof GetConsentStatusPrivacyConsentGetErrors];
+
+export type GetConsentStatusPrivacyConsentGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConsentStatusOut;
+};
+
+export type GetConsentStatusPrivacyConsentGetResponse = GetConsentStatusPrivacyConsentGetResponses[keyof GetConsentStatusPrivacyConsentGetResponses];
+
+export type RecordConsentPrivacyConsentPostData = {
+    body: ConsentIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/consent';
+};
+
+export type RecordConsentPrivacyConsentPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordConsentPrivacyConsentPostError = RecordConsentPrivacyConsentPostErrors[keyof RecordConsentPrivacyConsentPostErrors];
+
+export type RecordConsentPrivacyConsentPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ConsentOut;
+};
+
+export type RecordConsentPrivacyConsentPostResponse = RecordConsentPrivacyConsentPostResponses[keyof RecordConsentPrivacyConsentPostResponses];
+
+export type GetConsentHistoryPrivacyConsentHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        purpose?: string;
+        limit?: number;
+    };
+    url: '/privacy/consent/history';
+};
+
+export type GetConsentHistoryPrivacyConsentHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetConsentHistoryPrivacyConsentHistoryGetError = GetConsentHistoryPrivacyConsentHistoryGetErrors[keyof GetConsentHistoryPrivacyConsentHistoryGetErrors];
+
+export type GetConsentHistoryPrivacyConsentHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConsentHistoryOut;
+};
+
+export type GetConsentHistoryPrivacyConsentHistoryGetResponse = GetConsentHistoryPrivacyConsentHistoryGetResponses[keyof GetConsentHistoryPrivacyConsentHistoryGetResponses];
+
+export type RecordThirdPartyConsentPrivacyConsentsThirdPartyPostData = {
+    body: ThirdPartyConsentIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/consents/third-party';
+};
+
+export type RecordThirdPartyConsentPrivacyConsentsThirdPartyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordThirdPartyConsentPrivacyConsentsThirdPartyPostError = RecordThirdPartyConsentPrivacyConsentsThirdPartyPostErrors[keyof RecordThirdPartyConsentPrivacyConsentsThirdPartyPostErrors];
+
+export type RecordThirdPartyConsentPrivacyConsentsThirdPartyPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ConsentOut;
+};
+
+export type RecordThirdPartyConsentPrivacyConsentsThirdPartyPostResponse = RecordThirdPartyConsentPrivacyConsentsThirdPartyPostResponses[keyof RecordThirdPartyConsentPrivacyConsentsThirdPartyPostResponses];
+
+export type GetErasureProofPrivacyErasureGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/privacy/erasure';
+};
+
+export type GetErasureProofPrivacyErasureGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ErasureProofOut;
+};
+
+export type GetErasureProofPrivacyErasureGetResponse = GetErasureProofPrivacyErasureGetResponses[keyof GetErasureProofPrivacyErasureGetResponses];
+
+export type ExerciseErasurePrivacyErasurePostData = {
+    body: ErasureIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/erasure';
+};
+
+export type ExerciseErasurePrivacyErasurePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExerciseErasurePrivacyErasurePostError = ExerciseErasurePrivacyErasurePostErrors[keyof ExerciseErasurePrivacyErasurePostErrors];
+
+export type ExerciseErasurePrivacyErasurePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ErasureOut;
+};
+
+export type ExerciseErasurePrivacyErasurePostResponse = ExerciseErasurePrivacyErasurePostResponses[keyof ExerciseErasurePrivacyErasurePostResponses];
+
+export type GetNoticePrivacyNoticeGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        purpose?: string;
+        locale?: string;
+    };
+    url: '/privacy/notice';
+};
+
+export type GetNoticePrivacyNoticeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNoticePrivacyNoticeGetError = GetNoticePrivacyNoticeGetErrors[keyof GetNoticePrivacyNoticeGetErrors];
+
+export type GetNoticePrivacyNoticeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NoticeOut;
+};
+
+export type GetNoticePrivacyNoticeGetResponse = GetNoticePrivacyNoticeGetResponses[keyof GetNoticePrivacyNoticeGetResponses];
+
+export type PublishNoticePrivacyNoticesPostData = {
+    body: NoticeIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/notices';
+};
+
+export type PublishNoticePrivacyNoticesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PublishNoticePrivacyNoticesPostError = PublishNoticePrivacyNoticesPostErrors[keyof PublishNoticePrivacyNoticesPostErrors];
+
+export type PublishNoticePrivacyNoticesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: NoticePublishedOut;
+};
+
+export type PublishNoticePrivacyNoticesPostResponse = PublishNoticePrivacyNoticesPostResponses[keyof PublishNoticePrivacyNoticesPostResponses];
+
 export type ListRuleSetsRuleSetsGetData = {
     body?: never;
     path?: never;
@@ -4116,6 +4555,60 @@ export type UpdateTenantTenantsTenantIdPatchResponses = {
 };
 
 export type UpdateTenantTenantsTenantIdPatchResponse = UpdateTenantTenantsTenantIdPatchResponses[keyof UpdateTenantTenantsTenantIdPatchResponses];
+
+export type GetComplianceLabelsTenantsTenantIdComplianceLabelsGetData = {
+    body?: never;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/compliance-labels';
+};
+
+export type GetComplianceLabelsTenantsTenantIdComplianceLabelsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetComplianceLabelsTenantsTenantIdComplianceLabelsGetError = GetComplianceLabelsTenantsTenantIdComplianceLabelsGetErrors[keyof GetComplianceLabelsTenantsTenantIdComplianceLabelsGetErrors];
+
+export type GetComplianceLabelsTenantsTenantIdComplianceLabelsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ComplianceLabelsOut;
+};
+
+export type GetComplianceLabelsTenantsTenantIdComplianceLabelsGetResponse = GetComplianceLabelsTenantsTenantIdComplianceLabelsGetResponses[keyof GetComplianceLabelsTenantsTenantIdComplianceLabelsGetResponses];
+
+export type PutComplianceLabelsTenantsTenantIdComplianceLabelsPutData = {
+    body: ComplianceLabelsIn;
+    path: {
+        tenant_id: string;
+    };
+    query?: never;
+    url: '/tenants/{tenant_id}/compliance-labels';
+};
+
+export type PutComplianceLabelsTenantsTenantIdComplianceLabelsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutComplianceLabelsTenantsTenantIdComplianceLabelsPutError = PutComplianceLabelsTenantsTenantIdComplianceLabelsPutErrors[keyof PutComplianceLabelsTenantsTenantIdComplianceLabelsPutErrors];
+
+export type PutComplianceLabelsTenantsTenantIdComplianceLabelsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ComplianceLabelsOut;
+};
+
+export type PutComplianceLabelsTenantsTenantIdComplianceLabelsPutResponse = PutComplianceLabelsTenantsTenantIdComplianceLabelsPutResponses[keyof PutComplianceLabelsTenantsTenantIdComplianceLabelsPutResponses];
 
 export type GetRetireCodeStateTenantsTenantIdRetireCodeGetData = {
     body?: never;
