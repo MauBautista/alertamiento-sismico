@@ -345,10 +345,15 @@ export type ConsentOut = {
  * ``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula
  * nada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto
  * el aviso cambiara entre dos peticiones.
+ *
+ * ``json_schema_serialization_defaults_required``: la respuesta viaja entera, así
+ * que ``blocks_emergency_actions`` **siempre** va — y publicarlo como opcional
+ * invitaba justo a lo que el propio campo existe para impedir, que una UI se
+ * inventara qué hacer sin él.
  */
 export type ConsentStatusOut = {
-    blocks_emergency_actions?: false;
-    consent?: ConsentOut | null;
+    blocks_emergency_actions: false;
+    consent: ConsentOut | null;
     notice: NoticeOut | null;
     state: 'missing' | 'current' | 'stale' | 'withdrawn';
 };
@@ -763,24 +768,32 @@ export type FeaturesFrame = {
  * incidente disparado por umbral local la "alerta" ES la sacudida, y el número sería
  * cero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y
  * ``lead_time_reason`` dice por qué; nunca 0.
+ *
+ * ``json_schema_serialization_defaults_required``: esta respuesta se serializa
+ * ENTERA —el router no usa ``exclude_none`` ni ``exclude_unset``—, así que todo
+ * campo con default viaja igual, con su ``null`` o su lista vacía. Sin esta línea
+ * el contrato los publicaba como **ausentes posibles** y el SDK los generaba
+ * ``?: T``, que es una ausencia que nunca ocurre: obliga a cada consumidor a
+ * escribir una rama muerta. Es lo que dejó inalcanzable —y a la vez formalmente
+ * justificada— la rama «NO DISPONIBLE» de ``ComplianceDeclared``.
  */
 export type ForensicsOut = {
-    calibrated?: boolean;
-    catalog?: CatalogMatch | null;
-    catalog_delta?: CatalogDelta | null;
-    channels?: Array<ChannelPeak>;
-    compliance?: ComplianceDocOut;
-    felt_band?: string;
+    calibrated: boolean;
+    catalog: CatalogMatch | null;
+    catalog_delta: CatalogDelta | null;
+    channels: Array<ChannelPeak>;
+    compliance: ComplianceDocOut;
+    felt_band: string;
     incident_id: string;
-    lead_time_reason?: string | null;
-    lead_time_s?: number | null;
-    peak_pga_g?: number | null;
-    peak_pgv_cms?: number | null;
-    peak_ts?: string | null;
-    peers?: Array<QuorumPeer>;
-    sensors?: Array<SensorInfo>;
-    site?: SiteGeo | null;
-    station_count?: number;
+    lead_time_reason: string | null;
+    lead_time_s: number | null;
+    peak_pga_g: number | null;
+    peak_pgv_cms: number | null;
+    peak_ts: string | null;
+    peers: Array<QuorumPeer>;
+    sensors: Array<SensorInfo>;
+    site: SiteGeo | null;
+    station_count: number;
     window_from: string;
     window_to: string;
 };

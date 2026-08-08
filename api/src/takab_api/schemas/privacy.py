@@ -61,7 +61,14 @@ class ConsentStatusOut(BaseModel):
     ``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula
     nada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto
     el aviso cambiara entre dos peticiones.
+
+    ``json_schema_serialization_defaults_required``: la respuesta viaja entera, así
+    que ``blocks_emergency_actions`` **siempre** va — y publicarlo como opcional
+    invitaba justo a lo que el propio campo existe para impedir, que una UI se
+    inventara qué hacer sin él.
     """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     notice: NoticeOut | None
     state: ConsentState

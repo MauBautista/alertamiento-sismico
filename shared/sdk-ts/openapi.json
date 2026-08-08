@@ -1305,7 +1305,7 @@
         "type": "object"
       },
       "ConsentStatusOut": {
-        "description": "Lo que la UI necesita para pintar los cuatro estados sin adivinar.\n\n``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula\nnada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto\nel aviso cambiara entre dos peticiones.",
+        "description": "Lo que la UI necesita para pintar los cuatro estados sin adivinar.\n\n``state`` lo decide el SERVIDOR comparando digests. El cliente no recalcula\nnada: si lo hiciera habría dos verdades y la del cliente mentiría en cuanto\nel aviso cambiara entre dos peticiones.\n\n``json_schema_serialization_defaults_required``: la respuesta viaja entera, así\nque ``blocks_emergency_actions`` **siempre** va — y publicarlo como opcional\ninvitaba justo a lo que el propio campo existe para impedir, que una UI se\ninventara qué hacer sin él.",
         "properties": {
           "blocks_emergency_actions": {
             "const": false,
@@ -1346,7 +1346,9 @@
         },
         "required": [
           "notice",
-          "state"
+          "state",
+          "consent",
+          "blocks_emergency_actions"
         ],
         "title": "ConsentStatusOut",
         "type": "object"
@@ -3062,7 +3064,7 @@
         "type": "object"
       },
       "ForensicsOut": {
-        "description": "Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.\n\n``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el\npico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un\nincidente disparado por umbral local la \"alerta\" ES la sacudida, y el número sería\ncero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y\n``lead_time_reason`` dice por qué; nunca 0.",
+        "description": "Hechos medidos de un incidente. Una sola fuente para pantalla y PDF.\n\n``lead_time_s`` es el tiempo de aviso GANADO: cuánto pasó entre la alerta y el\npico de la sacudida. Solo tiene sentido con ``trigger='sasmex'`` — en un\nincidente disparado por umbral local la \"alerta\" ES la sacudida, y el número sería\ncero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y\n``lead_time_reason`` dice por qué; nunca 0.\n\n``json_schema_serialization_defaults_required``: esta respuesta se serializa\nENTERA —el router no usa ``exclude_none`` ni ``exclude_unset``—, así que todo\ncampo con default viaja igual, con su ``null`` o su lista vacía. Sin esta línea\nel contrato los publicaba como **ausentes posibles** y el SDK los generaba\n``?: T``, que es una ausencia que nunca ocurre: obliga a cada consumidor a\nescribir una rama muerta. Es lo que dejó inalcanzable —y a la vez formalmente\njustificada— la rama «NO DISPONIBLE» de ``ComplianceDeclared``.",
         "properties": {
           "calibrated": {
             "default": false,
@@ -3210,8 +3212,23 @@
         },
         "required": [
           "incident_id",
+          "site",
           "window_from",
-          "window_to"
+          "window_to",
+          "channels",
+          "peak_pga_g",
+          "peak_pgv_cms",
+          "peak_ts",
+          "felt_band",
+          "lead_time_s",
+          "lead_time_reason",
+          "station_count",
+          "peers",
+          "catalog",
+          "catalog_delta",
+          "sensors",
+          "calibrated",
+          "compliance"
         ],
         "title": "ForensicsOut",
         "type": "object"

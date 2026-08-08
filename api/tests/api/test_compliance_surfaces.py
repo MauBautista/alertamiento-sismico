@@ -226,3 +226,42 @@ def test_el_marco_declarado_viaja_ENTERO_o_no_viaja() -> None:
         "separan; el esquema tiene que prometer lo mismo, o el SDK generado obliga a "
         "cada consumidor a inventarse su propio tipo."
     )
+
+
+async def test_el_contrato_declara_obligatorio_TODO_lo_que_el_servidor_manda(
+    make_incident,
+) -> None:
+    """Derivado del COMPORTAMIENTO, no de una lista de modelos.
+
+    Se toma una respuesta REAL de `/forensics` y se exige que cada clave que trae
+    esté en el `required` del esquema publicado. Es la forma general del defecto
+    que ya se arregló una vez a mano: `ComplianceDocOut` se selló, pero el campo
+    que lo CONTIENE (`ForensicsOut.compliance`) siguió publicándose opcional, así
+    que el SDK lo generaba `?: T` y la rama «NO DISPONIBLE» de la consola quedaba
+    inalcanzable **y a la vez formalmente justificada por el contrato**.
+
+    Un modelo nuevo que se sirva por esta ruta entra solo en la comprobación; una
+    lista de modelos habría vuelto a dejar fuera al de arriba.
+    """
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    async with au.client_for(create_app()) as c:
+        resp = await c.get(
+            f"/incidents/{incident_id}/forensics",
+            headers=au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV)),
+        )
+    assert resp.status_code == 200, resp.text
+    cuerpo = resp.json()
+
+    esquema = create_app().openapi()
+    ref = esquema["paths"]["/incidents/{incident_id}/forensics"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"]
+    publicado = esquema["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+
+    opcionales_que_siempre_llegan = sorted(set(cuerpo) - set(publicado.get("required", [])))
+    assert not opcionales_que_siempre_llegan, (
+        "el contrato publica como opcionales campos que el servidor SIEMPRE manda: "
+        f"{opcionales_que_siempre_llegan}. El SDK los genera `?: T` — una ausencia que "
+        "nunca ocurre — y obliga a cada consumidor a escribir una rama muerta que "
+        "ningún test puede alcanzar."
+    )
