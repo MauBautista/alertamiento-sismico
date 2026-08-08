@@ -4947,6 +4947,71 @@ el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis*
   - [ ] Evidencia de entrega en `incident_actions` con latencia y `deadline_met`, como el resto.
   - [ ] Sin secretos en git (regla de oro 6).
 
+> **Proveedor: TWILIO** (decisión ratificada 2026-08-07). Código en
+> `api/src/takab_api/notify/twilio.py`; sin credenciales el canal cae a `SimulatedProvider`
+> y los jobs quedan `simulated`, jamás `sent` (T-2.75). El orquestador **no se tocó**: hay un
+> test que se pone rojo si aparece una rama `"sms"` dentro de él.
+>
+> **Números declarados** (verificados contra la documentación de Twilio el 2026-08-07; fijados
+> en `TWILIO_LIMITS` con un test que se pone rojo si cambian):
+>
+> | Qué | Cuánto | Fuente |
+> |---|---|---|
+> | Coste por **segmento** a MX (long code) | **USD 0.1819** | `twilio.com/en-us/sms/pricing/mx` |
+> | Número mexicano | USD 6.50/mes (local) · 15/mes (móvil) | ídem |
+> | Límite de tasa asumido | **1 segmento/s** (peor caso documentado) | `docs/messaging/guides/scaling-queueing-latency` |
+> | Caducidad en cola por defecto | **10 h (36 000 s)**, luego error 30001 | `docs/messaging/guides/account-based-throughput-overview` |
+> | `ValidityPeriod` que se envía | **300 s** (rango legal 1..36 000) | `docs/messaging/api/message-resource` |
+>
+> **El coste, que es un criterio y no un comentario.** Con el presupuesto de USD 50/mes, a
+> 0.1819 el segmento, la cuenta entera compra **274 segmentos al mes**. **No se impone un tope
+> duro que corte el canal**: cortar el aviso de un sismo por presupuesto es una decisión de
+> producto y se toma con nombre y firma, no dentro de un provider. Lo que sí se hace es (a)
+> **declarar** la cifra en el log de arranque y (b) hacer el gasto masivo **imposible por
+> construcción**: `notifications.sms.to` es **un solo número** por tenant (la guardia del SOC,
+> no el altavoz de los ocupantes — a los ocupantes los despierta el push, que no cuesta por
+> mensaje), y el provider **rechaza** un destino con lista o comas. Un incidente = un SMS.
+> Si algún día se quiere SMS masivo a ocupantes, es otra ficha y empieza por el presupuesto.
+>
+> **Coste oculto medido:** se cobra por SEGMENTO y **un solo acento fuera de GSM-7 pasa el SMS
+> entero a UCS-2** (160 → 70 caracteres por segmento): «ALERTA SÍSMICA» (la `Í` no está en
+> GSM-7; la `É` y la `Ñ` sí) **duplica** la factura, y **triplica** si el texto llenaba el
+> segmento. Y como el límite de Twilio se cuenta en *segmentos* por segundo, también duplica
+> el consumo del plazo. Por eso el cuerpo se pliega a GSM-7 y se acota a **un** segmento.
+>
+> **El plazo, contra el límite de tasa.** El plan da al SMS la ventana
+> `notify_sms_deadline_s − notify_step_s × posición` = **10 s**. A 1 MPS eso son **10
+> segmentos**: el SLA de 30 s es **alcanzable** mientras no coincidan más de ~10 SMS sobre el
+> mismo número. Por encima queda **declarado inalcanzable** (`sms_deadline_headroom()` lo
+> calcula y lo dice; no se promete en silencio). Si se llega ahí, las salidas son comprar
+> throughput (short code: 100 MPS, **14 semanas** de alta) o repartir en varios números —
+> ficha aparte, no un parche. Twilio **no publica** el MPS de long code en México y sí
+> documenta que la entrega doméstica por long code allí es *best-effort and may be unreliable*
+> (`twilio.com/en-us/guidelines/mx/sms`): de ahí el peor caso.
+>
+> **Reintentos.** El provider **no reintenta por dentro** (Twilio ya reintenta contra la
+> operadora y el orquestador ya reintenta con backoff; una tercera capa multiplicaría
+> duplicados). Twilio **no ofrece clave de idempotencia** en el recurso Message, así que la
+> pone el dominio: `(destino, incidente)`. Un fallo **ambiguo** (5xx, timeout, respuesta
+> ilegible) pudo haber creado el mensaje ⇒ se recuerda y el siguiente intento **escala al
+> correo en vez de duplicar**; un rechazo **explícito** (4xx) demuestra que no se creó nada ⇒
+> sí se reintenta. La memoria caduca con el `ValidityPeriod`.
+>
+> - **PENDIENTE DERIVADO — la entrega CONFIRMADA no está en esta ficha.** El `POST` devuelve
+>   `queued`/`accepted`; la única palabra de Twilio que significa «llegó al teléfono» es
+>   `delivered`, y **no viaja en esa respuesta**: llega por *status callback*. Por eso, hoy,
+>   **un `notify_sent` de sms significa «aceptado por Twilio», no «entregado»** — igual que un
+>   `notify_sent` de email significa «SES lo aceptó», no «está en la bandeja». El parámetro
+>   `StatusCallback` ya viaja si hay URL configurada, para que ese día no haya que tocar el
+>   provider. Lo que falta —y necesita **su propia ficha, con su conteo**— es: endpoint público
+>   que reciba el callback, validación de `X-Twilio-Signature`, mapeo `MessageSid` → job y
+>   dónde escribir el desenlace tardío. **`T-2.78` no puede acreditar «entrega» por SMS hasta
+>   entonces**: puede acreditar que el mensaje salió y que la persona contestó, que es lo que
+>   de verdad mide esa tarea, pero no puede llamar «entregado» a un `queued`.
+> - **PENDIENTE `HUMANO-AWS`:** alta de la cuenta Twilio, compra del número mexicano y carga
+>   de `TAKAB_API_NOTIFY_SMS_AUTH_TOKEN` en Secrets Manager. **Nunca en `deploy/cloud/deploy.sh`
+>   ni en ningún archivo del repo** (regla de oro 6).
+
 ### [ ] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
 - **Componente:** api · **Depende de:** T-2.75
 - **Criterios de aceptación:**

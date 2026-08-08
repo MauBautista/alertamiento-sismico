@@ -241,6 +241,25 @@ class Settings(BaseSettings):
     #: un salto de cascada con siguiente canal falla en el acto, como siempre.
     notify_max_attempts: int = 3
 
+    # --- SMS real por Twilio (T-2.76) ---
+    # Las TRES piezas (sid + token + from|messaging_service) o el canal cae a
+    # SIMULADO y los jobs quedan 'simulated', jamás 'sent' (T-2.75). El token es
+    # SECRETO: entorno / Secrets Manager, nunca en git (regla de oro 6).
+    # Límites declarados (coste, MPS, tope) en notify/twilio.py.
+    notify_sms_account_sid: str = ""
+    notify_sms_auth_token: str = ""
+    notify_sms_from: str = ""
+    notify_sms_messaging_service_sid: str = ""
+    notify_sms_timeout_s: float = 5.0
+    #: Twilio guarda un SMS encolado 10 h por defecto: un aviso de sismo que
+    #: aterriza mañana es ruido. 300 s = el mensaje muere antes de volverse
+    #: desinformación. Rango legal de Twilio: 1..36 000 s.
+    notify_sms_validity_period_s: float = 300.0
+    #: Endpoint público del status callback de Twilio. VACÍO HOY: sin él NO hay
+    #: confirmación de entrega, solo aceptación — un `notify_sent` de sms dice
+    #: "Twilio lo aceptó", no "el teléfono lo tiene". Ver notify/twilio.py.
+    notify_sms_status_callback_url: str = ""
+
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
     # clave del gateway DESTINO, jamás una compartida de flota.

@@ -823,3 +823,100 @@ def test_el_reintento_no_escribe_evidencia_hasta_agotarse(scenario: _Scenario) -
     failed = _actions_by_kind(scenario, iid, "notify_failed")
     assert len(failed) == 1
     assert failed[0]["payload"]["attempts"] == 3
+
+
+# --- T-2.76 · el SMS real de Twilio contra el orquestador SIN TOCARLO ------------
+
+
+def _twilio(handler) -> object:
+    """Provider de Twilio con transporte falso. CERO red (no hay credenciales)."""
+    import httpx
+
+    from takab_api.notify.twilio import TwilioSmsProvider
+
+    return TwilioSmsProvider(
+        account_sid="ACtest",
+        auth_token="tok",
+        from_number="+525599999999",
+        messaging_service_sid="",
+        timeout_s=2.0,
+        validity_period_s=300,
+        status_callback_url="",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_twilio_entrega_por_la_misma_interfaz_y_deja_la_evidencia(scenario: _Scenario) -> None:
+    """Criterios 1 y 3 juntos: el proveedor REAL se enchufa donde estaba el
+    simulado —sin una línea del orquestador— y la evidencia sale con la misma
+    forma que el resto (latencia + `deadline_met`)."""
+    import httpx
+
+    peticiones: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        peticiones.append(request)
+        return httpx.Response(201, json={"sid": "SM1", "status": "queued", "num_segments": "1"})
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)  # los dos previos caen
+    providers["sms"] = _twilio(handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))  # t0+20: le toca al sms
+
+    sms = scenario.job(iid, "sms")
+    assert sms["status"] == "sent"
+    assert sms["sent_at"] == BASE + timedelta(seconds=20)
+    assert len(peticiones) == 1
+
+    acciones = scenario.notify_actions(iid)
+    evidencia = [a["payload"] for a in acciones if a["payload"]["channel"] == "sms"]
+    assert len(evidencia) == 1
+    assert evidencia[0]["latency_s"] == 20.0
+    assert evidencia[0]["deadline_met"] is True  # t0+20 ≤ deadline t0+30
+
+
+def test_twilio_sin_credenciales_deja_el_sms_SIMULADO_no_enviado(scenario: _Scenario) -> None:
+    """🚨 El invariante que T-2.75 compró: sin credenciales el canal NO finge.
+    `build_providers` con un Settings pelado devuelve un simulado, y el job
+    termina 'simulated' con `sent_at` en NULL — jamás 'sent'."""
+    from takab_api.notify.providers import build_providers
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)
+    providers["sms"] = build_providers(Settings())["sms"]  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))
+
+    sms = scenario.job(iid, "sms")
+    assert sms["status"] == "simulated"
+    assert sms["sent_at"] is None
+    assert "sms" not in [a["payload"]["channel"] for a in scenario.notify_actions(iid)]
+    assert [a["payload"]["channel"] for a in _sim_actions(scenario, iid)] == ["sms"]
+    # Y escala: el email real sale igual, porque un simulado no satisface nada.
+    assert scenario.job(iid, "email")["status"] == "sent"
+
+
+def test_twilio_caido_escala_al_correo_sin_duplicar_el_sms(scenario: _Scenario) -> None:
+    """Un 5xx es AMBIGUO (el mensaje pudo crearse). El orquestador escala al
+    email —el humano llega igual— y el SMS no se repite en el mismo incidente:
+    un duplicado durante un sismo es ruido en el peor momento posible."""
+    import httpx
+
+    intentos: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        intentos.append(request)
+        return httpx.Response(500, json={"message": "twilio caído"})
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)
+    providers["sms"] = _twilio(handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))
+
+    assert scenario.job(iid, "sms")["status"] == "failed"
+    assert scenario.job(iid, "email")["status"] == "sent"  # el humano SÍ es avisado
+    assert len(intentos) == 1
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    assert "sms" in [a["payload"]["channel"] for a in fallidos]

@@ -161,9 +161,10 @@ def warn_simulated_channels(providers: dict[str, NotifyProvider]) -> list[str]:
 
 def build_providers(settings) -> dict[str, NotifyProvider]:
     """Providers por canal según Settings (SES si hay remitente; si no, simulado)."""
-    # Import tardío: push.py importa boto3/dataclasses propios y este módulo se
-    # importa desde tests puros del plan — sin ciclo y sin costo si no se usa.
+    # Import tardío: push.py/twilio.py traen dependencias propias y este módulo
+    # se importa desde tests puros del plan — sin ciclo y sin costo si no se usa.
     from takab_api.notify.push import build_push_provider
+    from takab_api.notify.twilio import build_sms_provider
 
     email: NotifyProvider
     if settings.notify_email_from:
@@ -173,7 +174,9 @@ def build_providers(settings) -> dict[str, NotifyProvider]:
     providers: dict[str, NotifyProvider] = {
         "webhook": WebhookProvider(timeout_s=settings.notify_webhook_timeout_s),
         "whatsapp": SimulatedProvider("whatsapp", hint="proveedor de WhatsApp Business (T-2.77)"),
-        "sms": SimulatedProvider("sms", hint="proveedor de SMS (T-2.76)"),
+        # [T-2.76] Twilio si hay credenciales; si no, simulado — la presunción
+        # de no-entrega se hereda sola, sin que este registro sepa nada de SMS.
+        "sms": build_sms_provider(settings),
         "email": email,
         # [T-2.04] El canal push usa deliver() (lote + resultado por dispositivo);
         # el orquestador lo despacha por una rama propia, no por send().
