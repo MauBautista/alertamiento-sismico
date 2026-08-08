@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **214** · `[x]` **145** · `[~]` **5** · `[ ]` **64**
+**Conteo de tareas:** total **216** · `[x]` **145** · `[~]` **5** · `[ ]` **66**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4044,6 +4044,29 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   - [ ] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
   - [ ] Ningún test se salta sin que el resultado del job lo **declare**.
 
+### [ ] T-2.64.d · `soc.css` cita tres tokens que no existen — `SOFTWARE`
+- **Componente:** web + design system · **Depende de:** T-2.64 · **Detectada por:** la guardia
+  derivada que se escribió para `privacy.css` (2026-08-08)
+- **Cómo apareció, que es la parte que importa.** El arreglo de `privacy.css` no se hizo
+  cambiando cuatro nombres: se escribió una guardia que **cruza todas las `var(--tk-*)` de
+  `web/src/styles/*.css` contra todas las variables del paquete de tokens**. Al correrla, además
+  de los cuatro nombres buscados, salió sola la misma deuda en la hoja principal. Una lista de
+  cuatro nombres no habría encontrado nada de esto.
+- **Lo que hay, medido:** `soc.css` usa `--tk-amber` (líneas 980-981), `--tk-violet` (1749-1750,
+  1771-1772) y `--tk-text-2xs` (1773). Ninguno existe en `shared/design-tokens`, así que los
+  tres caen siempre a su fallback hardcodeado y **no responden al tema**.
+  - `--tk-amber` es **idéntico** a `--tk-status-warning` (mismo `#FFC107`): es un renombrado.
+  - `--tk-violet` y `--tk-text-2xs` **no tienen equivalente**: hay que crear el token en el
+    paquete o elegir uno existente, que es una decisión de design system, no un `sed`.
+- **Ya está acotada, no suelta.** Vive en `DEUDA_HEREDADA` (`web/src/designTokens.test.ts`),
+  comparada por **igualdad**: si alguien la paga, el test se pone rojo y **obliga a borrar la
+  línea**. Una excepción que puede crecer sola no es una excepción.
+- **Criterios de aceptación:**
+  - [ ] Los tres nombres se resuelven contra el paquete (renombrando o creando el token).
+  - [ ] `DEUDA_HEREDADA` queda **vacía**, y el test sigue siendo derivado.
+  - [ ] Si se crea un token nuevo, se regenera `shared/design-tokens` en el MISMO commit o
+        `make drift` truena.
+
 ### [x] T-2.64 · Deuda visual heredada de T-2.59 — `SOFTWARE` · COMPLETA (2026-08-05)
 - **Componente:** web + edge (panel) · **Depende de:** T-2.59
 - **Defecto:** T-2.59 los anotó y no los corrigió, a propósito. Son tres:
@@ -5666,6 +5689,27 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         del control **no afirma** que el usuario ya esté vinculado.
   - [ ] Queda escrito qué pierde quien continúa sin vincular (sin sitio vigilado no hay
         check-in de zona), porque continuar a ciegas también es una forma de mentir.
+
+### [ ] T-2.79.d · `StateFrame` no dice quién gana entre `empty` y `stale` — `SOFTWARE` + `DECISIÓN`
+- **Componente:** web (contrato de estados) · **Depende de:** — · **Detectada al arreglar el
+  banner de privacidad** (2026-08-08)
+- **El síntoma concreto.** En `PrivacyConsentBanner`, con `notice === null` **y** el dato viejo,
+  el `empty` exige `sereno` (que exige dato fresco), así que se pinta la franja
+  `DATOS RETENIDOS · hh:mm UTC` **sin nada debajo**. No miente —y por eso no se arregló de
+  refilón—, pero **no dice nada**: una banda muda en la consola de un SOC.
+- **Por qué esto no es un arreglo local.** La regla de oro 7 obliga a manejar `loading`, `error`,
+  `empty` y `stale`, pero **no declara la precedencia** cuando dos son ciertos a la vez. Cada
+  componente la está resolviendo por su cuenta, y esa deriva es la que produce franjas mudas.
+  Elegir aquí decide el comportamiento de **toda** la consola, no de un banner.
+- **La pregunta a decidir, en una línea:** cuando no hay dato **y** lo poco que hay está viejo,
+  ¿se dice «no hay» (arriesgando afirmar una ausencia que quizá solo es desconexión) o se dice
+  «no lo sé desde las hh:mm» (que es más honesto y menos accionable)?
+- **Criterios de aceptación:**
+  - [ ] La precedencia queda **decidida y escrita** en el contrato de `StateFrame`, con su razón.
+  - [ ] Ningún componente puede quedar en una combinación sin texto: un test que recorra las
+        combinaciones de estados y exija contenido en todas. **Derivado del contrato**, no una
+        lista de componentes.
+  - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
 
 ### [ ] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE`
 - **Componente:** api + db · **Depende de:** T-2.79
