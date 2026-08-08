@@ -84,17 +84,49 @@ def test_actuation_latency_within_budget(supervisor):
     assert supervisor.rules.last_latency_s < 0.2  # presupuesto §4.3
 
 
-def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
-    """[T-2.70.a·D1.4] EL <100 ms MEDIDO PUNTA A PUNTA, con relés leídos.
+#: Cota del sondeo de pines del cronómetro punta a punta. Es 5× el presupuesto
+#: §4.3 a propósito: no es un plazo que se pueda cumplir por los pelos, es el
+#: techo tras el cual se declara que la cadena NO llegó — y el número que salga
+#: de ahí revienta el presupuesto por sí solo, con los canales que faltan
+#: nombrados. Un `sleep` fijo mediría el sleep; esto mide el hecho.
+COTA_SONDEO_S = 0.5
 
-    Lo que había medía otra cosa. `gpio._dispatch_sasmex` calcula su propia
+#: Lo mismo para la rendición de cuentas de la actuación (los `ActuatorAck`).
+#: Va aparte del cronómetro FÍSICO a propósito: el presupuesto §4.3 es el nivel
+#: eléctrico del relé, no el encolado a la nube.
+COTA_ACUSES_S = 0.25
+
+
+def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
+    """[T-2.70.a·D1.4 · RE-ANCLADO por la auditoría adversarial D1, 2026-08-08]
+
+    EL <100 ms MEDIDO PUNTA A PUNTA, y medido sobre el HECHO FÍSICO.
+
+    Antes de D1.4 esto medía otra cosa: `gpio._dispatch_sasmex` calcula su propia
     latencia ANTES de invocar los callbacks, así que `last_reflex_latency_s` es,
     POR CONSTRUCCIÓN, el coste de dos `_apply()` sobre sirena y estrobo — un
-    número que no puede empeorar aunque todo lo que viene después se hunda, y que
-    en particular NO cruzaría un IPC el día que `rules`/`actuators` vivan en otro
-    proceso. Anclar el presupuesto §4.3 a él es anclarlo a una constante.
+    número que no puede empeorar aunque todo lo que viene después se hunda.
 
-    Aquí el cronómetro abarca la cadena entera y REAL:
+    D1.4 amplió el cronómetro a la cadena entera, pero lo paraba **cuando
+    `contacto.drive_low()` RETORNABA**, que es la misma constante con otro
+    disfraz: sólo coincide con el final de la cadena mientras la cadena sea
+    síncrona y viva en este proceso. MEDIDO por la auditoría sobre una copia del
+    árbol: moviendo `supervisor._act_and_publish` → `actuators.execute_sequence`
+    a un `threading.Thread` **sin `join`**, el test pasaba 5/5 declarando 0.9 ms
+    — el coste del reflejo más el de ARRANCAR un hilo — y el guardarraíl
+    anti-teatro no lo veía (0.9 ms ≥ 0.02 ms). D3 mueve exactamente esa
+    actuación posterior (gas, ascensor, puertas) al otro lado de un socket, con
+    el round-trip en un hilo: el test habría seguido verde declarando «<100 ms
+    punta a punta» mientras cronometraba el reflejo más el envío de un mensaje.
+
+    Aquí el reloj **para cuando los CINCO PINES están en su nivel de
+    protección**, sondeados con una cota. El número es el instante del hecho
+    eléctrico, no la duración de una llamada, así que sigue significando lo mismo
+    el día que la actuación posterior cruce un hilo, un socket o una red — y si
+    esa travesía se hunde, el número SUBE, que es justo lo que un presupuesto
+    tiene que poder hacer.
+
+    Cadena cronometrada, completa y real:
 
         flanco del contacto seco WR-1  (pin BCM, `drive_low()`)
           → `when_pressed` → `_dispatch_sasmex` → reflejo sirena+estrobo
@@ -102,15 +134,23 @@ def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
           → `actuators.execute_sequence` → `RelayActuator` → `gpio.set_relay`
           → gas, ascensor y retenedores de puerta
 
-    y el veredicto se lee en los CINCO PINES, no en la contabilidad interna: lo
-    que salva vidas es el nivel eléctrico del relé, y cada canal se comprueba
-    contra la polaridad que le toca por su modo fail-safe (gas y puertas
-    PROTEGEN de-energizándose; sirena, estrobo y ascensor energizándose).
+    El veredicto se lee en los CINCO PINES, no en la contabilidad interna: lo que
+    salva vidas es el nivel eléctrico del relé, y cada canal se comprueba contra
+    la polaridad que le toca por su modo fail-safe (gas y puertas PROTEGEN
+    de-energizándose; sirena, estrobo y ascensor energizándose).
+
+    Y la última aserción cierra la otra mitad del hilo suelto, que un cronómetro
+    honesto NO puede ver: una actuación disparada y olvidada llega a los pines
+    igual (medido: en ~1 ms), pero no devuelve `ActuatorAck` a nadie — así que
+    `_act_and_publish` se queda sin saber si algún canal falló, la nube sin
+    acuse, y el operador con una latencia preciosa de una actuación que nadie
+    comprobó. Actuar a ciegas rápido no es actuar medido.
     """
-    from time import perf_counter
+    from time import perf_counter, sleep
 
     from gpiozero import Device
     from takab_edge.gpio import active_energized, normal_energized
+    from takab_edge.supervisor import ACKS_TOPIC
 
     s = supervisor.settings
     pines = {
@@ -126,21 +166,41 @@ def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
             f"premisa rota: {canal.value} no arrancó en su nivel de reposo"
         )
 
+    def sin_proteger() -> list[str]:
+        """Canales que TODAVÍA no están en su nivel de protección, por polaridad."""
+        return [
+            canal.value
+            for canal, pin in pines.items()
+            if pin.state is not active_energized(s.failsafe[canal])
+        ]
+
     contacto = Device.pin_factory.pin(s.pins.wr1_contact)
     inicio = perf_counter()
     contacto.drive_low()  # WR-1: contacto seco CERRADO = alerta SASMEX
+    retorno = perf_counter()  # …y esto es SÓLO cuando la llamada volvió
+    # El reloj de verdad: se para cuando los CINCO pines llegaron, no cuando la
+    # llamada volvió. `sleep(0)` cede el GIL en cada vuelta a propósito: una
+    # implementación que actúe desde otro hilo tiene que quedar MEDIDA, no
+    # penalizada por un sondeo que la deja sin intérprete.
+    faltan = sin_proteger()
+    while faltan and perf_counter() - inicio < COTA_SONDEO_S:
+        sleep(0)
+        faltan = sin_proteger()
     transcurrido = perf_counter() - inicio
+    despues_del_retorno = transcurrido - (retorno - inicio)
 
-    for canal, pin in pines.items():
-        assert pin.state is active_energized(s.failsafe[canal]), (
-            f"{canal.value}: el pin NO quedó en su nivel de protección tras el "
-            "flanco del WR-1. La cadena punta a punta está rota, y el número de "
-            "latencia de arriba no significaría nada"
-        )
-
+    assert not faltan, (
+        f"{COTA_SONDEO_S * 1000:.0f} ms después del flanco del WR-1 estos canales "
+        f"seguían SIN protección: {faltan}. La cadena punta a punta está rota o "
+        "quedó colgada en algo que nadie espera; el número de latencia no "
+        "significaría nada."
+    )
     assert transcurrido < 0.100, (
         f"SASMEX→los 5 canales tardó {transcurrido * 1000:.1f} ms (presupuesto "
-        "§4.3: <100 ms). Esto es el camino de vida completo, no sólo el reflejo."
+        f"§4.3: <100 ms), de los cuales {despues_del_retorno * 1000:.1f} ms "
+        "ocurrieron DESPUÉS de que `drive_low()` retornara. Esto es el camino de "
+        "vida completo medido en los pines, no sólo el reflejo ni la duración de "
+        "una llamada."
     )
     # Guardarraíl anti-teatro: lo medido aquí tiene que CONTENER al reflejo
     # in-process. Si algún día este número fuera menor que aquél, es que se está
@@ -150,6 +210,21 @@ def test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto(supervisor):
         f"punta a punta ({transcurrido * 1000:.3f} ms) salió MENOR que el reflejo "
         f"solo ({supervisor.gpio.last_reflex_latency_s * 1000:.3f} ms): el "
         "cronómetro no está midiendo la cadena que dice medir"
+    )
+    # La otra mitad: la cadena RINDIÓ CUENTAS de los cinco canales. Un
+    # fire-and-forget llega a los pines igual de rápido y se lleva por delante
+    # los `ActuatorAck` — la detección de fallo de actuación (`failed`) y el
+    # acuse a la nube. Fuera del cronómetro: encolar acuses no es §4.3.
+    limite = perf_counter() + COTA_ACUSES_S
+    while supervisor.cloud.queued_by_topic(ACKS_TOPIC) < len(pines) and perf_counter() < limite:
+        sleep(0)
+    assert supervisor.cloud.queued_by_topic(ACKS_TOPIC) == len(pines), (
+        f"los 5 pines llegaron a protección en {transcurrido * 1000:.1f} ms, pero "
+        f"la actuación sólo rindió {supervisor.cloud.queued_by_topic(ACKS_TOPIC)} "
+        f"de {len(pines)} `ActuatorAck`. Una actuación disparada y olvidada mide "
+        "una latencia preciosa y deja a `_act_and_publish` sin saber si algún "
+        "canal falló y a la nube sin acuse: el número de arriba estaría "
+        "cronometrando una cadena que nadie comprobó."
     )
 
 

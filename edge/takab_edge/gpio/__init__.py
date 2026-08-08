@@ -456,6 +456,17 @@ class GpioController(EdgeModule):
         try:
             self._arrancar_hardware()
         except BaseException:
+            # [D1·auditoría 2026-08-08] PRIMERO el hardware a seguro, DESPUÉS el
+            # cerrojo — el MISMO orden que `_on_stop` documenta en su `finally`,
+            # y por la misma razón. Aquí sólo se soltaba el cerrojo: quedaba
+            # LIBRE mientras este proceso seguía gobernando cinco pines, con
+            # `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER` (NORMALLY_CLOSED)
+            # ENERGIZADOS, que es su nivel de reposo. El sucesor —`Restart=always`
+            # en segundos, o un `takab-gpio` a mano— tomaba el cerrojo y abría sus
+            # propios `DigitalOutputDevice` sobre esos mismos pines: dos procesos
+            # gobernando la válvula de gas, que es lo único que el cerrojo existe
+            # para impedir.
+            self._rescatar_hardware_a_medio_montar()
             # `EdgeModule.start()` sólo marca `_running` si `_on_start` VOLVIÓ, y
             # `stop()` retorna en seco si no está `_running`: sin esto el
             # descriptor quedaría colgado en un proceso TODAVÍA VIVO y, con
@@ -468,7 +479,62 @@ class GpioController(EdgeModule):
         # armados y el seed del contacto sostenido corrido (SPOF-02).
         self.arrancar_servidor_de_pines()
 
+    def _rescatar_hardware_a_medio_montar(self) -> None:
+        """[D1·auditoría] Deja en SEGURO lo que el arranque alcanzó a construir.
+
+        Se llama con el cerrojo TODAVÍA en la mano, que es lo que hace legítimo
+        tocar los pines: mientras este proceso es el dueño, nadie más los
+        gobierna. Nunca lanza — el arranque ya viene con una excepción viva y
+        taparla dejaría al operador sin la causa —, pero un rescate que no pueda
+        completarse es CRITICAL: significa un relé posiblemente energizado por un
+        proceso que se está muriendo.
+        """
+        try:
+            with self._lock:
+                self._apagar_hardware_locked()
+        except Exception:
+            log.critical(  # noqa: TRY400 — el stacktrace va en exc_info; el titular es este
+                "gpio: el arranque falló y el rescate a estado seguro TAMPOCO pudo "
+                "completarse. Puede quedar algún relé energizado por un proceso que "
+                "ya no existe: revisa físicamente sirena, gas, ascensores y puertas.",
+                exc_info=True,
+            )
+
+    def _apagar_hardware_locked(self) -> None:
+        """De-energiza TODO y cierra los dispositivos. **Llamar con `_lock` tomado.**
+
+        Compartido por la parada limpia (`_on_stop`) y por el rescate del arranque
+        fallido: eran el mismo trabajo escrito una sola vez, y el camino de
+        arranque se quedó sin él.
+
+        `drive_all_safe()` va PRIMERO y explícito. Cerrar un `DigitalOutputDevice`
+        devuelve el pin a entrada, que en este cableado también de-energiza, pero
+        apoyarse en eso sería apoyarse en un efecto colateral del backend: el
+        estado seguro se ORDENA, no se hereda de un `close()`.
+        """
+        self.drive_all_safe()
+        for device in (self._button, self._silence_button, self._test_button):
+            if device is not None:
+                device.close()
+        for relay in self._relays.values():
+            relay.close()
+        self._relays.clear()
+        self._energized.clear()
+        self._button = self._silence_button = self._test_button = None
+
     def _arrancar_hardware(self) -> None:
+        # [D1·auditoría 2026-08-08] EL PERFIL COMPLETO, ANTES DE ENERGIZAR NADA.
+        # El bucle de abajo resolvía el modo relé a relé, así que un perfil al que
+        # le faltara un canal que NO fuera el primero ya había energizado los
+        # anteriores —`GAS_VALVE` incluido, que reposa ENERGIZADO— cuando tronaba.
+        # De las dos salidas posibles se elige la fuerte: validar entero antes de
+        # tocar hardware. La otra —de-energizar en la ruta de fallo— convierte un
+        # `edge.env` mal tecleado en un ciclo REAL sobre contactores de gas,
+        # ascensores y retenedores: las puertas se sueltan de verdad. Esto no
+        # sustituye al rescate de `_on_start`, que sigue siendo la red para los
+        # fallos que no se pueden prever leyendo la config (un pin ocupado, lgpio).
+        modos = {canal: self._failsafe(canal) for canal in LOCAL_RELAY_CHANNELS}
+
         if self.settings.dev_mode:
             ensure_dev_pin_factory()
         else:
@@ -488,7 +554,9 @@ class GpioController(EdgeModule):
             for channel, pin in relay_pins.items():
                 # Estado inicial = operación normal por modo (NC/fail_close arrancan
                 # energizados = reteniendo/abierto; NO arranca de-energizado = inactivo).
-                initial = normal_energized(self._failsafe(channel))
+                # El modo ya está resuelto ARRIBA para los cinco canales: aquí no
+                # puede aparecer una consulta que truene a mitad del bucle.
+                initial = normal_energized(modos[channel])
                 self._relays[channel] = DigitalOutputDevice(
                     pin, active_high=True, initial_value=initial
                 )
@@ -587,16 +655,11 @@ class GpioController(EdgeModule):
                     if timer is not None:
                         timer.cancel()
                         setattr(self, attr, None)
-                # Parada limpia → todo a estado seguro (de-energizado) antes de soltar pines.
-                self.drive_all_safe()
-                for device in (self._button, self._silence_button, self._test_button):
-                    if device is not None:
-                        device.close()
-                for relay in self._relays.values():
-                    relay.close()
-                self._relays.clear()
-                self._energized.clear()
-                self._button = self._silence_button = self._test_button = None
+                # Parada limpia → todo a estado seguro (de-energizado) antes de soltar
+                # pines. Es el MISMO trabajo que el rescate del arranque fallido, y
+                # por eso vive en un solo sitio: el camino de arranque se quedó sin
+                # él precisamente porque estaba escrito sólo aquí.
+                self._apagar_hardware_locked()
         finally:
             # [D1.1] DESPUÉS del bucle de `close()`, y en `finally`. Soltar el
             # cerrojo antes abriría una ventana en la que el proceso entrante

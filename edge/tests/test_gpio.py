@@ -803,3 +803,58 @@ def test_el_canal_logico_system_no_truena_porque_no_es_un_rele(settings):
         assert controller._failsafe(ActuatorChannel.SYSTEM) is FailSafeMode.NORMALLY_OPEN
     finally:
         controller.stop()
+
+
+def test_un_perfil_incompleto_no_energiza_NI_UN_rele_antes_de_tronar(settings):
+    """[D1·auditoría 2026-08-08] EL CANAL QUE FALTA CASI NUNCA ES EL PRIMERO.
+
+    El test de arriba quita `GAS_VALVE`, que ocupa la POSICIÓN 3 del bucle de
+    construcción, y sólo mira ESE pin. Con eso, `SIREN` y `STROBE` ya estaban
+    construidos cuando el bucle tronaba y nadie los miraba nunca. Peor: si el
+    canal ausente es el ÚLTIMO (`DOOR_RETAINER`), el bucle ya energizó la
+    válvula de gas —`FAIL_CLOSE` reposa ENERGIZADO— y la ruta de fallo no
+    llamaba a `drive_all_safe()` ni a `close()`: el proceso muere dejando
+    cuatro relés abiertos y el gas gobernado por un `DigitalOutputDevice` de un
+    arranque que fracasó.
+
+    Aquí se mide EL PERFIL ENTERO: los cinco pines, antes y después, incluidos
+    los que la construcción alcanzó a tocar. El criterio es el fuerte de los
+    dos posibles —validar el perfil COMPLETO antes de energizar nada— porque el
+    otro (de-energizar en la ruta de fallo) convierte un `edge.env` mal escrito
+    en un ciclo REAL sobre contactores de gas, ascensores y retenedores: las
+    puertas se sueltan y el gas se mueve por un error de tecleo.
+    """
+    ausente = ActuatorChannel.DOOR_RETAINER  # el ÚLTIMO del orden de construcción
+    mutilado = settings.model_copy(
+        update={"failsafe": {c: m for c, m in settings.failsafe.items() if c is not ausente}}
+    )
+    assert ActuatorChannel.GAS_VALVE in mutilado.failsafe, (
+        "premisa: el canal ausente NO es el gas — lo que se mide es el daño a los "
+        "canales que SÍ estaban declarados y se construyeron antes de tronar"
+    )
+
+    pines = {canal: _pin_de(mutilado, canal) for canal in LOCAL_RELAY_CHANNELS}
+    transiciones_antes = {canal: len(pin.states) for canal, pin in pines.items()}
+
+    with pytest.raises(UndeclaredFailSafeError, match="door_retainer"):
+        GpioController(mutilado).start()
+
+    energizados = sorted(c.value for c, pin in pines.items() if pin.state)
+    assert energizados == [], (
+        f"el arranque tronó dejando {energizados} ENERGIZADOS: el bucle de "
+        "construcción ya había pasado por ellos y la ruta de fallo no los devuelve "
+        "a su estado seguro"
+    )
+    movidos = sorted(
+        c.value for c, pin in pines.items() if len(pin.states) != transiciones_antes[c]
+    )
+    assert movidos == [], (
+        f"el perfil incompleto movió los pines {movidos} antes de tronar. El modo "
+        "fail-safe de LOS CINCO canales se resuelve leyendo la config: se valida "
+        "ENTERO antes de energizar el primero, no relé a relé"
+    )
+    gobernados = sorted(c.value for c, pin in pines.items() if str(pin.function) == "output")
+    assert gobernados == [], (
+        f"los pines {gobernados} quedaron en 'output' tras un arranque que falló: "
+        "los sostiene un proceso que ya no existe"
+    )

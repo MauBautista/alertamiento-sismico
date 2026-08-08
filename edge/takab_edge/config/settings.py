@@ -13,7 +13,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from takab_edge.contracts import ActuatorChannel, FailSafeMode
@@ -448,11 +448,23 @@ class EdgeSettings(BaseSettings):
         En producción NO se indexa por gabinete: un Pi tiene un gabinete y dos
         procesos, y lo que hay que hacer colisionar es a los dos procesos.
 
-        Nota sobre el peor caso: si un Pi arrancara con `dev_mode` mal puesto,
-        `takab-edge` y `takab-gpio` SEGUIRÍAN colisionando —comparten
-        `gateway_id`, luego comparten cerrojo derivado—, así que ni siquiera esa
-        mala configuración abre la puerta a dos dueños. (Con `dev_mode=True` el
-        Pi tampoco tocaría pines reales: usaría la MockFactory.)
+        Nota sobre el peor caso, CORREGIDA (2026-08-08, auditoría adversarial de
+        D1). Aquí se afirmaba que un Pi arrancado con `dev_mode` mal puesto
+        dejaría a `takab-edge` y `takab-gpio` «colisionando igual, porque
+        comparten `gateway_id` y por tanto cerrojo derivado». **Es falso.**
+        `takab-edge.service` corre con `PrivateTmp=true` y `takab-gpio.service`
+        no, así que los dos procesos derivarían la MISMA ruta sobre DOS `/tmp`
+        distintos: dos archivos, dos `flock`, dos dueños que no se ven. El
+        cerrojo DERIVADO no protege contra esa mala configuración y no puede —
+        depende de un `/tmp` que systemd les da separado.
+
+        Lo que de verdad hace inalcanzable ese escenario es otra cosa, y conviene
+        no confundirla con el cerrojo: las dos unidades ponen
+        `Environment=TAKAB_EDGE_DEV_MODE=false`, o sea que ambas caen en el caso
+        2 —la ruta FIJA de `/var/lib/takab`, que no es privada para nadie— y ahí
+        sí se ven. Y si aun así arrancaran en `dev_mode`, ninguno tocaría pines
+        reales (MockFactory): serían dos simulaciones, o sea un gabinete que NO
+        protege — un fallo distinto, y ruidoso.
         """
         if self.gpio_lock_path:
             return self.gpio_lock_path
@@ -545,9 +557,48 @@ class EdgeSettings(BaseSettings):
         return str(raiz / "gpio.sock")
 
     # --- Perfil de relés, umbrales y pines ---
+    #: Modo fail-safe por canal. Lo que se declare aquí MANDA; lo que no se
+    #: declare se COMPLETA con `DEFAULT_FAILSAFE` (ver el validador de abajo).
     failsafe: dict[ActuatorChannel, FailSafeMode] = Field(
         default_factory=lambda: dict(DEFAULT_FAILSAFE)
     )
+
+    @field_validator("failsafe", mode="after")
+    @classmethod
+    def _completar_los_modos_no_declarados(
+        cls, declarado: dict[ActuatorChannel, FailSafeMode]
+    ) -> dict[ActuatorChannel, FailSafeMode]:
+        """[T-2.70.a·D1·auditoría] Un perfil parcial COMPLETA; no SUSTITUYE.
+
+        `TAKAB_EDGE_FAILSAFE` y el documento firmado del config sync reemplazaban
+        el diccionario ENTERO. Así, un `edge.env` que sólo quisiera corregir la
+        polaridad de la sirena borraba las otras cuatro entradas y, desde D1.2,
+        `gpio._failsafe` truena ante un canal de relé sin modo — o sea que una
+        variable de entorno a medio escribir dejaba el edificio SIN alertamiento
+        sísmico (`gpio` es `critical=True`).
+
+        **Por qué completar y no fallar al construir**, que sería la regla
+        general. `EdgeSettings` es también el documento firmado que aplica
+        `ConfigStore.apply_signed_update` con `model_validate_json`, y
+        `_high_water` sólo sube tras validar: lanzar aquí tiraría el documento
+        COMPLETO —umbrales, `command_enabled`, `cloud_admin_state`— y se
+        reintentaría idéntico para siempre. Es el mismo razonamiento ya escrito
+        para `cloud_admin_state`: lo que puede volcar el documento entero degrada
+        hacia PROTEGER. Y en el gabinete, la alternativa a completar es un
+        edificio sin alertamiento por un JSON incompleto.
+
+        **Y por qué esto NO resucita el default que D1.2 quitó.** Aquel respondía
+        `NORMALLY_OPEN` a TODO: inventaba una polaridad uniforme e INVERTÍA los
+        dos extremos de `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER`
+        (NORMALLY_CLOSED). `DEFAULT_FAILSAFE` da a cada canal SU modo, que es una
+        propiedad del actuador —una solenoide fail-close lo es en todos los
+        edificios—, no del sitio. El fallo duro de `gpio._failsafe` se queda
+        donde está: `model_copy(update=...)` no pasa por validadores, así que un
+        perfil mutilado sigue siendo construible y sigue haciendo falta la última
+        línea antes del pin. Anclado en `tests/test_failsafe_declarado.py`.
+        """
+        return {**DEFAULT_FAILSAFE, **declarado}
+
     #: [T-2.31] Actuadores INSTALADOS en el sitio (la nube lo declara y viaja
     #: fusionado en el doc firmado del config sync). Default todo-true = compat
     #: retro. gpio conserva sus 5 relés (hardware); el perfil filtra la

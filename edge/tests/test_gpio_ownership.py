@@ -54,11 +54,26 @@ from pathlib import Path
 
 import pytest
 from takab_edge.config import load_settings
-from takab_edge.gpio import GpioController, GpioOwnershipError
+from takab_edge.contracts import ActuatorChannel
+from takab_edge.gpio import LOCAL_RELAY_CHANNELS, GpioController, GpioOwnershipError
 
 #: La variable con la que `tests/conftest.py` le da a CADA test su propio
 #: gabinete. Los tests de la sección B1 la quitan a propósito.
 _ENV_CERROJO = "TAKAB_EDGE_GPIO_LOCK_PATH"
+
+
+def _pines_de_los_reles(settings) -> dict[ActuatorChannel, object]:  # noqa: ANN001 — EdgeSettings
+    """Los pines REALES (MockFactory) de los cinco relés, por canal.
+
+    Derivado de `LOCAL_RELAY_CHANNELS` y del perfil de pines: un sexto relé
+    mañana entra aquí solo, sin que nadie recuerde ampliar una lista.
+    """
+    from gpiozero import Device
+
+    return {
+        canal: Device.pin_factory.pin(getattr(settings.pins, f"relay_{canal.value}"))
+        for canal in LOCAL_RELAY_CHANNELS
+    }
 
 
 def _pid_que_no_puede_existir() -> int:
@@ -394,6 +409,108 @@ def test_un_arranque_que_truena_despues_del_cerrojo_lo_suelta(settings, monkeypa
     sucesor.stop()
 
 
+class _EspiaDelRescate(GpioController):
+    """Fotografía el NIVEL ELÉCTRICO REAL de los cinco pines al soltar el cerrojo.
+
+    No mira `_relays` ni `_energized` a propósito: la contabilidad interna se
+    vacía en el propio rescate, así que apoyarse en ella daría verde con los
+    pines todavía energizados. Lo que se lee es el pin de la MockFactory —
+    `state` (nivel) y `function` ('output' = este proceso lo está gobernando).
+    """
+
+    def __init__(self, settings) -> None:  # noqa: ANN001 — EdgeSettings
+        super().__init__(settings)
+        self.pines_al_soltar: dict[ActuatorChannel, tuple[bool, str]] = {}
+        self.liberaciones = 0
+
+    def _release_pin_ownership(self) -> None:
+        # LA PRIMERA liberación, por la misma razón que `_ControladorEspia`:
+        # `_release_pin_ownership` es idempotente y la segunda llamada ya no
+        # suelta nada, así que sobrescribir dejaría la medida en una invocación
+        # inocua.
+        self.liberaciones += 1
+        if self.liberaciones == 1:
+            self.pines_al_soltar = {
+                canal: (bool(pin.state), str(pin.function))
+                for canal, pin in _pines_de_los_reles(self.settings).items()
+            }
+        super()._release_pin_ownership()
+
+
+def test_un_arranque_fallido_deja_los_reles_EN_SEGURO_antes_de_soltar_el_cerrojo(
+    settings, monkeypatch
+) -> None:
+    """[D1·auditoría 2026-08-08] (d) SOLTAR EL CERROJO NO ERA SUFICIENTE.
+
+    El rescate de (d) soltaba el cerrojo y ya: ni `drive_all_safe()` ni
+    `close()`. O sea que dejaba el cerrojo LIBRE mientras este proceso seguía
+    gobernando los cinco pines, y con `GAS_VALVE` (FAIL_CLOSE) y
+    `DOOR_RETAINER` (NORMALLY_CLOSED) **ENERGIZADOS**, que es su nivel de
+    reposo. El sucesor —`Restart=always` en dos segundos, o `takab-gpio` a
+    mano— toma el cerrojo, se cree dueño, y hay DOS procesos gobernando la
+    válvula de gas: exactamente la ventana que `_on_stop` documenta y ordena su
+    `finally` para evitar, sólo que en el camino de arranque, que es el que
+    corre cada vez que systemd reintenta.
+
+    El fallo inyectado es real y del gabinete: el pin del contacto WR-1 ocupado
+    (`Button` no se puede abrir) DESPUÉS de que los cinco relés ya se
+    construyeron. Es el orden del código: relés primero, entradas después.
+
+    Se mide EN EL PIN y en el instante exacto de soltar, no después: después,
+    cualquier `close()` tardío lo taparía.
+    """
+    # (premisa, medida) En un gabinete SANO el gas y el retenedor reposan
+    # ENERGIZADOS. Sin esto, «ningún pin energizado» podría ser trivialmente
+    # cierto y el test no mediría nada.
+    sano = GpioController(settings)
+    sano.start()
+    try:
+        pines = _pines_de_los_reles(settings)
+        assert pines[ActuatorChannel.GAS_VALVE].state is True, (
+            "premisa rota: FAIL_CLOSE reposa ENERGIZADO (válvula abierta)"
+        )
+        assert pines[ActuatorChannel.DOOR_RETAINER].state is True, (
+            "premisa rota: NORMALLY_CLOSED reposa ENERGIZADO (reteniendo la puerta)"
+        )
+    finally:
+        sano.stop()
+
+    def contacto_ocupado(*_args, **_kwargs):
+        raise RuntimeError("GPIO busy: el pin del contacto WR-1 ya está tomado")
+
+    monkeypatch.setattr("gpiozero.Button", contacto_ocupado)
+    controlador = _EspiaDelRescate(settings)
+    with pytest.raises(RuntimeError, match="GPIO busy"):
+        controlador.start()
+    monkeypatch.undo()
+
+    assert controlador.liberaciones >= 1, "el arranque fallido no soltó el cerrojo"
+    assert controlador.pines_al_soltar, "no se llegó a fotografiar el estado de los pines"
+
+    energizados = sorted(c.value for c, (nivel, _f) in controlador.pines_al_soltar.items() if nivel)
+    assert energizados == [], (
+        f"el cerrojo se soltó con {energizados} TODAVÍA ENERGIZADOS por este "
+        "proceso: en ese instante el sucesor puede tomar el cerrojo y abrir sus "
+        "propios DigitalOutputDevice sobre la válvula de gas y los retenedores"
+    )
+    gobernados = sorted(
+        c.value for c, (_n, funcion) in controlador.pines_al_soltar.items() if funcion == "output"
+    )
+    assert gobernados == [], (
+        f"el cerrojo se soltó con los pines {gobernados} todavía en 'output': el "
+        "proceso los sigue gobernando y ya no tiene con qué defenderlos"
+    )
+
+    # Y lo que (d) ya exigía sigue en pie: el sucesor puede arrancar de verdad.
+    assert _cerrojo_libre(Path(settings.gpio_lock_file))
+    sucesor = GpioController(settings)
+    sucesor.start()
+    try:
+        assert len(sucesor.relay_states()) == 5
+    finally:
+        sucesor.stop()
+
+
 def test_un_cerrojo_que_no_se_puede_abrir_no_arranca_a_ciegas(settings, tmp_path) -> None:
     """Fail-CLOSED, no fail-open. Si el archivo del cerrojo no se puede ni abrir
     (directorio inexistente, permisos, ruta mal provisionada), NO se sabe si otro
@@ -629,6 +746,45 @@ def test_en_produccion_el_cerrojo_sigue_siendo_el_aprovisionado(sin_ruta_por_tes
     # Y no se indexa por gabinete: un Pi tiene UN gabinete y DOS procesos.
     otro = produccion.model_copy(update={"gateway_id": "gw-prod-9999"})
     assert otro.gpio_lock_file == produccion.gpio_lock_file
+
+
+def test_el_cerrojo_DERIVADO_no_cruza_un_tmp_privado(sin_ruta_por_test, tmp_path, monkeypatch):
+    """[D1·auditoría 2026-08-08] LA AFIRMACIÓN QUE ERA FALSA, ahora medida.
+
+    El docstring de `gpio_lock_file` sostenía que un Pi con `dev_mode` mal puesto
+    dejaría a `takab-edge` y `takab-gpio` «colisionando igual, porque comparten
+    `gateway_id` y por tanto cerrojo derivado». No: `takab-edge.service` corre
+    con `PrivateTmp=true` y `takab-gpio.service` no, así que la MISMA ruta
+    derivada aterriza en DOS `/tmp` distintos — dos archivos, dos `flock`, dos
+    dueños que no se ven.
+
+    Aquí se mide esa dependencia del temporal, que es la razón de fondo, sin
+    tocar las unidades: el cerrojo derivado NO es un mecanismo entre espacios de
+    nombres de `/tmp`, y quien vuelva a escribir lo contrario se encontrará este
+    test. Lo que sí protege a los dos procesos es la ruta FIJA de producción, que
+    es la que ambas unidades usan (`TAKAB_EDGE_DEV_MODE=false`).
+    """
+    import tempfile
+
+    base = load_settings()
+    assert base.dev_mode is True, "premisa: es el cerrojo DERIVADO el que se mide"
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp-privado-de-takab-edge"))
+    desde_edge = base.gpio_lock_file
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp-global-de-takab-gpio"))
+    desde_gpio = base.gpio_lock_file
+
+    assert desde_edge != desde_gpio, (
+        "el cerrojo derivado NO depende del temporal: si eso cambiara, la nota del "
+        "docstring habría que reescribirla otra vez — y hoy es al revés"
+    )
+
+    produccion = base.model_copy(update={"dev_mode": False})
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "otro-tmp-todavia"))
+    assert produccion.gpio_lock_file == "/var/lib/takab/gpio.lock", (
+        "la ruta de producción tiene que ser INDIFERENTE al temporal: es lo único "
+        "que hace que los dos procesos del Pi se vean"
+    )
 
 
 def test_en_produccion_un_cerrojo_inabrible_tampoco_cae_a_un_scratch(settings, tmp_path) -> None:
