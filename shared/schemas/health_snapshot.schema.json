@@ -198,11 +198,19 @@
       "title": "Audio"
     },
     "relays": {
-      "items": {
-        "$ref": "#/$defs/RelayState"
-      },
-      "title": "Relays",
-      "type": "array"
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/RelayState"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Relays"
     },
     "transition_reason": {
       "default": "heartbeat",
@@ -216,6 +224,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.9.0",
-  "version": "1.9.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.10.0",
+  "version": "1.10.0"
 }

@@ -87,6 +87,9 @@ async def _site_health(
                     mqtt_rtt_ms=r.mqtt_rtt_ms,
                     seedlink_lag_s=r.seedlink_lag_s,
                     ntp_offset_ms=r.ntp_offset_ms,
+                    # [T-2.70.a·B1] Sin dueño de pines no hay sirena en ese
+                    # edificio, y el gabinete late igual: la app tiene que verlo.
+                    relays_state=r.relays_state,
                     sin_enlace_s=settings.sin_enlace_min * 60.0,
                     battery_min_pct=settings.fleet_battery_min_pct,
                     cert_min_days=settings.fleet_cert_min_days,

@@ -20,6 +20,21 @@ OPERATIVO = "OPERATIVO"
 DEGRADADO = "DEGRADADO"
 SIN_ENLACE = "SIN ENLACE"
 
+# --------------------------------------------------------------------------
+# [T-2.70.a·B1] Censo de relés del último latido (`device_health.relays_state`)
+# --------------------------------------------------------------------------
+#: El gabinete publicó el estado de sus relés.
+RELAYS_REPORTED = "reported"
+#: Preguntó al dueño de los pines y no hay filas (módulo detenido / sin relés).
+RELAYS_STOPPED = "stopped"
+#: **No pudo preguntar**: nadie contesta como dueño de los pines.
+RELAYS_UNREADABLE = "unreadable"
+#: Pill de la UI. Es la ÚNICA señal que delata a un gabinete con
+#: `gpio_owner=gpio` y `takab-gpio` caído: sin sirena, sin cierre de gas, sin
+#: retorno de ascensores y sin retenedores, con `takab-edge` latiendo cada 60 s y
+#: todas las demás métricas en verde.
+RELAYS_ILEGIBLES = "RELÉS ILEGIBLES"
+
 
 def derive_fleet_state(
     *,
@@ -31,6 +46,7 @@ def derive_fleet_state(
     seedlink_lag_s: float | None,
     ntp_offset_ms: float | None,
     sin_enlace_s: float,
+    relays_state: str | None = None,
     battery_min_pct: float,
     cert_min_days: int,
     mqtt_rtt_max_ms: float,
@@ -46,6 +62,15 @@ def derive_fleet_state(
 
     Una métrica ``None`` («sin dato», contrato honesto de T-1.40) NUNCA degrada:
     no tener UPS no es lo mismo que estar en batería.
+
+    [T-2.70.a·B1] ``relays_state`` es la excepción aparente y no lo es: lo que
+    degrada no es la AUSENCIA del dato sino la afirmación ``unreadable``, que es
+    el gabinete diciendo *«no pude preguntar quién gobierna la sirena»*. Ver
+    ``fleet_degrade_reasons``.
+
+    El orden importa: ``SIN ENLACE`` sigue mandando. El censo de relés de un
+    gabinete que lleva horas callado es un dato viejo y no describe lo que pasa
+    ahora — misma doctrina que ``derive_version_drift`` (T-2.69).
     """
     if age_s is None or age_s > sin_enlace_s:
         return SIN_ENLACE
@@ -56,6 +81,7 @@ def derive_fleet_state(
         mqtt_rtt_ms=mqtt_rtt_ms,
         seedlink_lag_s=seedlink_lag_s,
         ntp_offset_ms=ntp_offset_ms,
+        relays_state=relays_state,
         battery_min_pct=battery_min_pct,
         cert_min_days=cert_min_days,
         mqtt_rtt_max_ms=mqtt_rtt_max_ms,
@@ -73,6 +99,7 @@ def fleet_degrade_reasons(
     mqtt_rtt_ms: float | None,
     seedlink_lag_s: float | None,
     ntp_offset_ms: float | None,
+    relays_state: str | None = None,
     battery_min_pct: float,
     cert_min_days: int,
     mqtt_rtt_max_ms: float,
@@ -84,8 +111,31 @@ def fleet_degrade_reasons(
     Es la MISMA verdad que ``derive_fleet_state`` (que la llama): si esta lista
     no está vacía, el estado es DEGRADADO. La UI pinta cada razón como pill en
     vez de dejar al operador adivinar cuál de seis métricas se salió de rango.
+
+    **[T-2.70.a·B1] ``RELÉS ILEGIBLES``, y por qué SÓLO ``unreadable``.** Desde
+    que D3 sacó al dueño de los pines a `takab-gpio`, un gabinete con
+    `gpio_owner=gpio` y ese proceso caído se queda sin sirena, sin cierre de gas,
+    sin retorno de ascensores y sin retenedores **mientras `takab-edge` late cada
+    60 s con todas estas métricas perfectas**. Ninguna alarma lo veía;
+    `gateway_offline` tampoco, porque el que late está vivo. Este es el único
+    campo que lo delata, y por eso tiene que degradar: sin degradar, la tarjeta
+    del SOC se pinta verde y el operador no tiene motivo para abrirla.
+
+    Los otros dos valores NO degradan, y la razón es la honestidad, no la
+    prudencia:
+
+    · ``stopped`` (``relays: []``) es **ambiguo en firmware ≤1.9.0**, que no sabe
+      emitir el ``null``: su `[]` puede ser «módulo detenido» o «lectura fallida»
+      y no hay forma de saberlo desde aquí. Degradar sobre un dato ambiguo pinta
+      de ámbar a la flota vieja sin saber si le pasa algo, y una pantalla que
+      grita sin motivo enseña a no mirarla. Se registra y la consola lo pinta
+      S/D — que no es verde.
+    · ``None`` es ausencia de opinión (misma disciplina que ``fw_running``): el
+      gabinete no habla de relés. Ausencia nunca es diagnóstico.
     """
     reasons: list[str] = []
+    if relays_state == RELAYS_UNREADABLE:
+        reasons.append(RELAYS_ILEGIBLES)
     if power_status == "battery":
         reasons.append("EN BATERÍA")
     if battery_pct is not None and battery_pct < battery_min_pct:
@@ -386,6 +436,15 @@ class GatewayOut(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
     ntp_offset_ms: float | None = None
+    # [T-2.70.a·B1] Si el gabinete pudo leer el censo de sus relés en el ÚLTIMO
+    # latido: `reported` · `stopped` · `unreadable` · `None` (no opina). Viaja
+    # crudo además de la pill `RELÉS ILEGIBLES` porque la consola necesita los
+    # cuatro casos, no sólo el que degrada: con `stopped` y con `None` los
+    # actuadores se pintan **S/D**, jamás ARMADO. Hasta esta tarea el grid de
+    # relés derivaba `armed` de que el enlace estuviera vivo, así que un gabinete
+    # sin dueño de pines —que late perfectamente— mostraba sus cinco actuadores
+    # en ARMADO. Regla de oro 7: un dato que no se pudo obtener no se pinta bueno.
+    relays_state: str | None = None
     # [T-2.60.a] Retirado PERO sigue latiendo. No es un estado más del gabinete:
     # es una CONTRADICCIÓN entre lo que la organización cree (dado de baja) y lo
     # que el aparato hace (reportar). Por eso va aparte de `status` y de

@@ -18,7 +18,14 @@ export interface FleetRelay {
   label: string;
   /** Cableado declarado en rule_sets.config.relays (NO/NC/fail_close…). */
   wiring: string;
-  /** true = armado (enlace vivo); null = S/D (SIN ENLACE). Nunca se inventa. */
+  /**
+   * true = ARMADO; null = S/D. Nunca se inventa.
+   *
+   * [T-2.70.a·B1] Armar exige DOS cosas: enlace vivo Y que el gabinete haya
+   * podido publicar el censo de sus relés. Antes bastaba el enlace, y por eso un
+   * gabinete sin dueño de pines —que late igual de bien— mostraba sus cinco
+   * actuadores en ARMADO sin que nadie gobernara ninguno.
+   */
   armed: boolean | null;
 }
 
@@ -93,6 +100,17 @@ const EQUIPMENT_KEY: Record<string, string> = {
  * oculta aunque el rule_set declare su cableado (mostrar gas en un sitio sin
  * gas es un dato falso), y un canal instalado sin cableado declarado aparece
  * con wiring "S/D". Sin `equipment` (SDK/flota vieja) la conducta no cambia.
+ *
+ * [T-2.70.a·B1] «Proceso vivo ⇒ reglas armadas» DEJÓ DE SER CIERTO cuando D3 sacó
+ * al dueño de los pines a su propio proceso. Con `gpio_owner=gpio` y `takab-gpio`
+ * caído, `takab-edge` late cada 60 s —el enlace está vivo, `derived_state` no es
+ * SIN ENLACE— y NADIE gobierna la sirena, el gas, los ascensores ni los
+ * retenedores. Esta función pintaba los cinco actuadores en ARMADO justo ahí.
+ *
+ * Ahora `armed` sale del censo que el gabinete publica en su latido
+ * (`relays_state`): sólo `reported` arma. `unreadable` (no pudo preguntar),
+ * `stopped` (preguntó y no hay filas) y `null` (firmware que no opina) son S/D.
+ * Regla de oro 7: un dato que no se pudo obtener no se pinta como bueno.
  */
 function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRelay[] | null {
   if (!ruleSets) {
@@ -115,6 +133,12 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
     return typeof flag === "boolean" ? flag : true;
   };
   const linked = gw.derived_state !== "SIN ENLACE";
+  // El censo VIAJA en el latido; `null` = flota/SDK anterior a 1.10.0, que no
+  // opina — y ahí se conserva la conducta previa (el enlace es lo único que se
+  // sabe). Un `null` NO se lee como avería: sería marcar S/D a toda la flota
+  // vieja por un campo que su firmware no sabe emitir.
+  const censo = gw.relays_state ?? null;
+  const armed: boolean | null = linked && (censo === null || censo === "reported") ? true : null;
   const declared = Object.entries(relays as Record<string, unknown>)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .filter(([key]) => installed(key))
@@ -122,7 +146,7 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
       key,
       label: RELAY_LABEL[key] ?? key.toUpperCase(),
       wiring,
-      armed: linked ? true : null,
+      armed,
     }));
   if (!equipment) {
     return declared;
@@ -134,7 +158,7 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
       key,
       label: RELAY_LABEL[key] ?? key.toUpperCase(),
       wiring: "S/D",
-      armed: linked ? true : null,
+      armed,
     }));
   return [...declared, ...undeclared];
 }

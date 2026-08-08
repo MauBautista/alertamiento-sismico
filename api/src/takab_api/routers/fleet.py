@@ -236,6 +236,9 @@ async def list_gateways(
             mqtt_rtt_ms=m["mqtt_rtt_ms"],
             seedlink_lag_s=m["seedlink_lag_s"],
             ntp_offset_ms=m["ntp_offset_ms"],
+            # [T-2.70.a·B1] Sin esto un gabinete sin dueño de pines sale
+            # OPERATIVO: late cada 60 s y todas las demás métricas son perfectas.
+            relays_state=m["relays_state"],
             sin_enlace_s=s.sin_enlace_min * 60.0,
             battery_min_pct=s.fleet_battery_min_pct,
             cert_min_days=s.fleet_cert_min_days,
@@ -253,6 +256,7 @@ async def list_gateways(
                 mqtt_rtt_ms=m["mqtt_rtt_ms"],
                 seedlink_lag_s=m["seedlink_lag_s"],
                 ntp_offset_ms=m["ntp_offset_ms"],
+                relays_state=m["relays_state"],
                 battery_min_pct=s.fleet_battery_min_pct,
                 cert_min_days=s.fleet_cert_min_days,
                 mqtt_rtt_max_ms=s.fleet_mqtt_rtt_max_ms,
@@ -287,6 +291,10 @@ async def list_gateways(
                 serial=m["serial"],
                 fw_version=m["fw_version"],
                 fw_running=m["fw_running"],
+                # [T-2.70.a·B1] Crudo además de la pill: la consola pinta S/D en
+                # el grid de actuadores con `stopped` y con `None`, no sólo con
+                # el `unreadable` que degrada.
+                relays_state=m["relays_state"],
                 iot_thing=m["iot_thing"],
                 status=m["status"],
                 has_wr1=m["has_wr1"],

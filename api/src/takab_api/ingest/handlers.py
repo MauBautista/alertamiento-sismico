@@ -326,10 +326,61 @@ def handle_local_event(
 _HEALTH_SQL = """
 INSERT INTO device_health
   (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
-   cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+   cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left,
+   relays_state)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
+
+# --------------------------------------------------------------------------
+# [T-2.70.a·B1] El censo de relés: tres hechos que eran uno
+# --------------------------------------------------------------------------
+
+#: El gabinete publicó su censo de relés.
+RELAYS_REPORTED = "reported"
+#: Preguntó al dueño de los pines y no hay filas: el módulo no corre, o este
+#: gabinete no tiene relés cableados. Es un HECHO.
+RELAYS_STOPPED = "stopped"
+#: **No pudo preguntar.** Nadie contesta como dueño de los pines. Con
+#: `gpio_owner=gpio` y `takab-gpio` caído esto significa un edificio sin sirena,
+#: sin cierre de gas, sin retorno de ascensores y sin retenedores — mientras
+#: `takab-edge` late perfectamente y `gateway_offline` no dispara.
+RELAYS_UNREADABLE = "unreadable"
+
+
+def _relays_state(payload: dict) -> str | None:
+    """Qué dice el latido sobre los relés. ``None`` = el gabinete no opina.
+
+    Misma disciplina ausente/null/basura que ``_fw_field``, y por la misma razón:
+    la nube NO confía en el dispositivo, y las tres situaciones piden respuestas
+    distintas.
+
+    · **La clave no viene** — no opina. Se persiste NULL y la consola pinta S/D.
+    · **``null``** — contrato 1.10.0 diciendo *«no pude preguntar al dueño de los
+      pines»*. Es el hecho grave y el único que degrada el estado de flota.
+    · **``[]``** — *«pregunté y no hay filas»*. Neutro. Es TAMBIÉN lo que manda un
+      gabinete ≤1.9.0 cuando su lectura falla (ese firmware no sabe emitir el
+      ``null``), así que degradar sobre este valor sería degradar sobre un dato
+      ambiguo y teñiría de ámbar a la flota vieja sin saber si le pasa algo.
+    · **lista con filas** — el censo medido.
+    · **cualquier otra cosa** — basura. NO opina: un payload manipulado no puede
+      escribir en la columna un rótulo que la consola sabe pintar.
+
+    La distinción sólo existe porque ``edge/takab_edge/cloud`` publica con
+    ``model_dump(mode="json")`` **sin** ``exclude_none``: el ``null`` explícito
+    llega al cable. Hay un test del lado del edge que lo vigila.
+    """
+    if "relays" not in payload:
+        return None
+    crudo = payload["relays"]
+    if crudo is None:
+        return RELAYS_UNREADABLE
+    # `bool` es subclase de `int` pero no de `list`; aun así se excluye cualquier
+    # cosa que no sea lista para que el rótulo no dependa de una coerción.
+    if not isinstance(crudo, list):
+        return None
+    return RELAYS_REPORTED if crudo else RELAYS_STOPPED
+
 
 #: `IS DISTINCT FROM` ⇒ el UPDATE no escribe fila cuando la version no cambio, que es
 #: el 99.99% de los heartbeats (llega 1/min por gabinete). Registro por TRANSICION, no
@@ -405,8 +456,11 @@ def handle_health_snapshot(
     default del contrato: 'heartbeat'). Desde T-1.40 el contrato es honesto:
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
     persisten como NULL — la flota pinta S/D, no un invento. Sin columna
-    destino: packet_loss_pct, relays, disk_used_pct (T-1.53, consumo local del
-    panel LAN). `ups_runtime_s` (T-2.22, segundos) aterriza en
+    destino: packet_loss_pct, disk_used_pct (T-1.53, consumo local del panel
+    LAN). De ``relays`` no se persiste el censo canal a canal (sin consumidor en
+    la nube) sino **si el gabinete pudo obtenerlo**, en ``relays_state``
+    (T-2.70.a·B1) — ver ``_relays_state`` para los tres hechos que ese campo
+    separa y por qué. `ups_runtime_s` (T-2.22, segundos) aterriza en
     `battery_min_left` (minutos): la columna existía desde el schema inicial y
     era SIEMPRE NULL porque el edge no mandaba la fuente.
     """
@@ -441,6 +495,12 @@ def handle_health_snapshot(
             payload.get("battery_pct"),
             payload.get("cert_days_remaining"),
             battery_min_left,
+            # [T-2.70.a·B1] Y si el gabinete pudo mirarse los relés siquiera. Va
+            # en la fila FECHADA, no en `gateways`: importa cuándo se quedó sin
+            # dueño de pines y cuándo volvió. Como la fila es idempotente por
+            # `(ts, gateway_id)`, un reenvío no pisa lo escrito y este valor no
+            # puede borrar un censo bueno anterior — sólo añade su instante.
+            _relays_state(payload),
         ),
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se

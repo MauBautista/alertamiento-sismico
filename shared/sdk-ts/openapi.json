@@ -3552,6 +3552,17 @@
             ],
             "title": "Power Status"
           },
+          "relays_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relays State"
+          },
           "release_age_s": {
             "anyOf": [
               {

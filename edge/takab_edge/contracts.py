@@ -307,7 +307,25 @@ class HealthSnapshot(BaseModel):
     # haya columna destino, y el panel LAN ya lo muestra. Sirve para responder
     # "¿qué gabinetes se quedaron atrás de un cambio de catálogo?" sin ir uno a uno.
     audio: dict | None = None
-    relays: list[RelayState] = Field(default_factory=list)
+    # [T-2.70.a·B1] Censo eléctrico de los relés, y su AUSENCIA. RELAJANTE
+    # (schema 1.10.0): un payload 1.9.0 con `[]` o con filas sigue validando.
+    #
+    # · lista con filas — el censo MEDIDO.
+    # · `[]`  — pregunté al dueño de los pines y no hay filas que reportar (el
+    #   módulo no corre, o este gabinete no tiene relés cableados). Es un HECHO.
+    # · `None` — **no pude preguntar**. Ni sé qué relés hay, ni en qué estado.
+    #
+    # La tercera no existía, y hasta D3 tampoco hacía falta: el dueño de los
+    # pines vivía en este mismo proceso y una lectura suya no tenía transporte
+    # que caerse. Desde que `takab-gpio` es un proceso aparte (`gpio_owner=gpio`)
+    # el caso es alcanzable en producción, y es el PEOR alcanzable: nadie
+    # gobierna la sirena, el gas, los ascensores ni los retenedores mientras
+    # `takab-edge` sigue latiendo como si nada. Fundido con `[]`, la nube lo leía
+    # como «módulo detenido» y el SOC pintaba verde un edificio sin proteger.
+    #
+    # `None` es el DEFAULT a propósito (regla de oro 7): un snapshot que no
+    # preguntó no puede afirmar que no hay relés.
+    relays: list[RelayState] | None = None
     transition_reason: str = "heartbeat"
 
 

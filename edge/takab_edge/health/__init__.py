@@ -334,7 +334,7 @@ class HealthMonitor(EdgeModule):
         """
         return self._last_snapshot
 
-    def _relay_states(self) -> list[RelayState]:
+    def _relay_states(self) -> list[RelayState] | None:
         """Estado eléctrico de los relés para el latido. NUNCA propaga.
 
         [T-2.70.a·D2/P1] Antes leía `gpio.running` y `gpio.relay_states()` sin
@@ -346,11 +346,32 @@ class HealthMonitor(EdgeModule):
            nube — sin poder distinguirlo de un gabinete apagado, que es
            exactamente lo que T-2.60 puso a vigilar.
         2. **El honesto.** `[]` significaba «módulo detenido» y ahora también
-           puede significar «no pude preguntar», que no es lo mismo. El contrato
-           `HealthSnapshot.relays: list[RelayState]` no tiene forma de decir «sin
-           dato» —añadirla es un cambio de schema, y este paso no toca la nube—,
-           así que la distinción vive donde SÍ se puede actuar sobre ella: el log
-           CRÍTICO de aquí y el `relays_status` del panel del gabinete.
+           puede significar «no pude preguntar», que no es lo mismo.
+
+        [T-2.70.a·B1] El (2) se cerró aquí, que es donde tenía que cerrarse. El
+        parche de D2/P1 dejó la distinción en un `log.critical` del journal del
+        Pi porque el contrato `relays: list[RelayState]` no sabía decir «sin
+        dato» y aquel paso no tocaba la nube. El resultado medido: con
+        `gpio_owner=gpio` y `takab-gpio` caído, el latido salía IDÉNTICO al de un
+        gabinete sano salvo `relays: []`, ninguna alarma miraba los relés,
+        `gateway_offline` no disparaba —el que late está vivo— y el SOC pintaba
+        verde un edificio sin sirena, sin cierre de gas, sin retorno de
+        ascensores y sin retenedores. El único aviso vivía en un journal que
+        nadie está mirando a las 3 de la mañana.
+
+        Los tres retornos, y por qué son tres:
+
+        · `None`  **no pude preguntar**. Cualquier lectura que lance. El panel
+          del gabinete sí separa `gpio_unreachable` de `gpio_error` (T-2.68)
+          porque quien está de pie delante tiene dos journals distintos que
+          revisar; la nube no tiene esa acción disponible y lo que necesita
+          saber es que el censo NO SE PUDO OBTENER.
+        · `[]`    pregunté y el módulo NO CORRE. Un hecho, no un hueco.
+        · lista   el censo medido.
+
+        `self._link is None` devuelve `[]` y no `None`: no es que la lectura
+        fallara, es que este monitor se construyó sin costura a los pines
+        (fakes, `demo/gabinete.py`). Se SABE que no hay nada que reportar.
         """
         if self._link is None:
             return []
@@ -358,13 +379,14 @@ class HealthMonitor(EdgeModule):
             snap = self._link.snapshot()
         except Exception:  # noqa: BLE001 — el latido sobrevive a cualquier lectura
             log.critical(
-                "no se pudo leer el estado de los relés; el latido sale SIN filas de "
-                "relé (que en el contrato de la nube es indistinguible de «módulo "
-                "detenido»). Revisa el journal del gabinete: esto NO es un módulo "
-                "parado, es una lectura que falló.",
+                "no se pudo leer el estado de los relés; el latido sale con «sin "
+                "dato» en `relays` (contrato 1.10.0) y la nube marcará este "
+                "gabinete DEGRADADO. Revisa el journal: esto NO es un módulo "
+                "parado, es una lectura que falló — con `gpio_owner=gpio` lo más "
+                "probable es que `takab-gpio` no esté corriendo.",
                 exc_info=True,
             )
-            return []
+            return None
         return list(snap.relays) if snap.running else []
 
     def _packet_loss_pct(self) -> float:
@@ -447,7 +469,12 @@ class HealthMonitor(EdgeModule):
         # Clave de estado DISCRETO: relés + UPS + banderas de umbral. Nunca el drift de
         # valores continuos (temp/lag) → sin logging por intervalo (regla de oro 10).
         key = (
-            tuple((r.channel, r.energized) for r in snap.relays),
+            # [T-2.70.a·B1] `None` («no pude preguntar») entra en la clave TAL
+            # CUAL y no colapsado a `()`: quedarse sin dueño de pines es una
+            # transición de estado discreto —de las que esta función existe para
+            # registrar— y con `snap.relays or ()` el paso de «módulo detenido» a
+            # «nadie contesta» no se escribiría nunca en el journal.
+            None if snap.relays is None else tuple((r.channel, r.energized) for r in snap.relays),
             snap.ups_status,
             snap.cert_days_remaining is not None and snap.cert_days_remaining < CERT_WARN_DAYS,
             snap.temperature_c > TEMP_WARN_C,

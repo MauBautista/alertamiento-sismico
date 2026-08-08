@@ -39,6 +39,11 @@ _LIST_SQL = """
            h.mqtt_rtt_ms::float8       AS mqtt_rtt_ms,
            h.seedlink_lag_s::float8    AS seedlink_lag_s,
            h.ntp_offset_ms::float8     AS ntp_offset_ms,
+           -- [T-2.70.a·B1] Si el gabinete pudo mirarse los relés en su último
+           -- latido. `unreadable` = nadie contesta como dueño de los pines: sin
+           -- sirena, sin cierre de gas, sin retorno de ascensores y sin
+           -- retenedores, con todas las demás métricas perfectas.
+           h.relays_state,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s,
            r.ts    AS retired_at,
            r.actor AS retired_by
@@ -46,7 +51,7 @@ _LIST_SQL = """
     JOIN sites s ON s.site_id = g.site_id
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
-               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
+               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.relays_state
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
         ORDER BY dh.ts DESC

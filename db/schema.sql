@@ -435,6 +435,15 @@ CREATE TABLE device_health (
   mqtt_rtt_ms real, seedlink_lag_s real, ntp_offset_ms real,
   cpu_temp_c real, power_status text, battery_pct real, battery_min_left int,
   cert_days_remaining int,
+  -- [T-2.70.a·B1 · migración 0036] ¿Pudo el gabinete leer el censo de sus relés?
+  -- reported = lo publicó · stopped = preguntó y no hay filas (módulo detenido)
+  -- unreadable = NO PUDO PREGUNTAR: nadie contesta como dueño de los pines
+  --   (`gpio_owner=gpio` con `takab-gpio` caído ⇒ sin sirena, sin cierre de gas,
+  --   sin retorno de ascensores y sin retenedores, mientras `takab-edge` late
+  --   perfectamente y ninguna alarma de flota se entera).
+  -- NULL = el gabinete no opina (contrato ≤1.9.0 o clave ausente) ⇒ S/D.
+  relays_state text CHECK (relays_state IS NULL
+                           OR relays_state IN ('reported','stopped','unreadable')),
   PRIMARY KEY (ts, gateway_id)
 );
 SELECT create_hypertable('device_health','ts');

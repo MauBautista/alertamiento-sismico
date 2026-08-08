@@ -133,6 +133,10 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        lk.mqtt_rtt_ms      AS link_mqtt_rtt_ms,
        lk.seedlink_lag_s   AS link_seedlink_lag_s,
        lk.ntp_offset_ms    AS link_ntp_offset_ms,
+       -- [T-2.70.a·B1] Va con las demás métricas del enlace por la misma razón
+       -- que ellas: `derive_fleet_state` es la verdad única y el mapa no puede
+       -- pintar verde una estación que la Flota marca DEGRADADO.
+       lk.relays_state     AS link_relays_state,
        th.pga_watch_g   AS pga_watch_g,
        th.pga_trip_g    AS pga_trip_g,
        th.pgv_watch_cms AS pgv_watch_cms,
@@ -206,11 +210,12 @@ LEFT JOIN LATERAL (
            h.mqtt_rtt_ms::float8    AS mqtt_rtt_ms,
            h.seedlink_lag_s::float8 AS seedlink_lag_s,
            h.ntp_offset_ms::float8  AS ntp_offset_ms,
+           h.relays_state,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
     FROM gateways g
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
-               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms
+               dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.relays_state
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
         ORDER BY dh.ts DESC

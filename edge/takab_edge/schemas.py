@@ -59,7 +59,18 @@ from takab_edge.contracts import (
 #: único que responde «¿se aplicó la actualización?»: el disco cambia con el
 #: `rsync`, el proceso solo con el reinicio. ADITIVO: clave opcional nullable; un
 #: payload 1.8.0 sigue validando y la nube trata su ausencia como «sin dato».
-SCHEMA_VERSION = "1.9.0"
+#: 1.10.0 (T-2.70.a·B1): HealthSnapshot · `relays` pasa a ser NULLABLE. `null` =
+#: «no pude preguntar al dueño de los pines»; `[]` sigue siendo «pregunté y no
+#: hay filas» (módulo detenido). Hasta D3 la distinción no hacía falta porque el
+#: dueño vivía en el mismo proceso; desde que `takab-gpio` es un proceso aparte,
+#: `gpio_owner=gpio` con ese proceso caído deja al edificio sin sirena, sin
+#: cierre de gas, sin retorno de ascensores y sin retenedores mientras
+#: `takab-edge` late como si nada — y fundido con `[]` la nube lo leía como
+#: «módulo detenido», que es benigno. RELAJANTE, no rompedor: todo payload 1.9.0
+#: (`[]` o lista con filas) sigue validando contra 1.10.0. Lo que un gabinete
+#: ≤1.9.0 NO puede emitir es el `null`, así que la nube nunca le atribuye el
+#: rótulo grave por error — su `[]` aterriza como el hecho neutro de siempre.
+SCHEMA_VERSION = "1.10.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

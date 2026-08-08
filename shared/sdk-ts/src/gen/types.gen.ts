@@ -894,6 +894,7 @@ export type GatewayOut = {
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
     power_status?: string | null;
+    relays_state?: string | null;
     release_age_s?: number | null;
     releases_behind?: number | null;
     retired_at?: string | null;
