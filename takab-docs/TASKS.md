@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **226** · `[x]` **152** · `[~]` **5** · `[ ]` **69**
+**Conteo de tareas:** total **228** · `[x]` **153** · `[~]` **5** · `[ ]` **70**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6244,12 +6244,73 @@ sería documentar intenciones.
         matriz que miente: el valor está justo en los huecos.
   - [ ] Un test mantiene la matriz honesta (si el test citado desaparece, la matriz rompe).
 
-### [ ] T-2.85 · Manual de operación de cliente — `SOFTWARE`
+### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
+- **Documento:** [`MANUAL-OPERACION-TAKAB.md`](MANUAL-OPERACION-TAKAB.md) — 642 líneas, con ficha
+  de sitio rellenable y un resumen de una página para imprimir y colgar.
 - **Criterios de aceptación:**
-  - [ ] Escrito para un operador, no para un desarrollador.
-  - [ ] Qué hacer **cuando cae la nube** (regla de oro 2 explicada en lenguaje de operación).
-  - [ ] Qué significa cada estado del panel del gabinete y qué acción pide.
+  - [x] Escrito para un operador, no para un desarrollador.
+  - [x] Qué hacer **cuando cae la nube** (regla de oro 2 explicada en lenguaje de operación).
+  - [x] Qué significa cada estado del panel del gabinete y qué acción pide.
+
+> **Cada estado lleva columna «Qué haces» y urgencia `AHORA` / `HOY` / `ANOTAR`.** Un manual que
+> solo traduce tokens no sirve a quien lo lee de noche con el edificio temblando: «
+> `gpio_unreachable`» no le dice nada; «el gabinete no controla los relés: la sirena podría no
+> sonar — avisa a soporte AHORA» sí.
+>
+> **§6.0 está dedicada a los tres ejes que este repo lleva tres tareas separando** (T-2.58,
+> T-2.68) y que un manual descuidado habría vuelto a colapsar: `S/D` (no hay dato) ·
+> `DATO RETENIDO` (el dato es viejo) · `NO CONTESTA` (la pieza está caída). **Cada una pide una
+> acción distinta.** Y §5 desambigua el error que un operador cometerá una vez: confundir
+> `SIN ENLACE` (Pi↔nube, ámbar, poco grave) con `SIN CONEXIÓN CON EL GABINETE` (navegador↔Pi,
+> rojo, grave).
+>
+> Todos los estados están **derivados del panel real con `fichero:línea`**, no inventados ni
+> copiados de memoria — incluidos los siete umbrales de vejez, que salen de siete sitios
+> distintos del código y de Terraform.
+>
+> **Ocho huecos declarados en vez de rellenados con prosa tranquilizadora**, y el más incómodo es
+> H-2: el manual dice «avisa a soporte» unas 25 veces y **ese teléfono no existe en el repo** —
+> el runbook de on-call declara que hoy solo se entrega un correo y que el salto 2 es un hueco.
+> Lo cierra el criterio de escalamiento de `T-2.78`. Los otros siete son de hardware sin
+> acreditar (gate #3), de ajustes de instalación no fijados, o de superficie que no existe.
+
+### [ ] T-2.85.a · El panel calcula el resultado de la prueba de actuadores y no lo pinta — `SOFTWARE`
+- **Componente:** edge (panel) · **Depende de:** — · **Detectada al escribir el manual**
+  (2026-08-08)
+- **El defecto, con las dos mitades a la vista.** `local_api/__init__.py:1106` promete por
+  escrito: *«El resultado por relé aflora en `status()` para que el panel lo pinte»*. El panel
+  **solo lee `actuation_test.active`** (`index.html:914`). Los `results` —`held`, `pulsed`,
+  `readback_ok` por relé— viajan en el JSON y **aparecen únicamente en los datos de prueba** del
+  propio HTML, nunca en un camino de render.
+- **Por qué duele operativamente:** `PROBAR ACTUADORES` hace **lectura de retorno** sobre el gas
+  y los ascensores —o sea, ejerce físicamente el equipamiento del edificio— **y no te enseña si
+  pasó**. El manual de operación no puede decirle al operador cómo saber el resultado de la única
+  prueba que puede hacer él solo. Es el hueco más accionable que destapó T-2.85.
+- **Misma familia, mismo sitio:** `calibration.source` tampoco se pinta. El panel dice
+  `SIN CALIBRAR`, pero cuando **sí** hay calibración nunca dice de dónde vino — y de eso depende
+  que el PGA esté en `g` o sea un número relativo.
+- **Criterios de aceptación:**
+  - [ ] El resultado por relé se pinta tras `PROBAR ACTUADORES`, con su lectura de retorno.
+  - [ ] Un relé que **no** confirma se distingue de uno que no se probó. Regla de oro 7.
+  - [ ] `calibration.source` se pinta cuando existe.
+  - [ ] Test que falle si un campo declarado en `status()` **no tiene camino de render** — la
+        clase de defecto, no el caso.
+
+### [ ] T-2.85.b · El panel y la consola hablan idiomas distintos del mismo estado — `SOFTWARE`
+- **Componente:** edge (panel) + web · **Depende de:** — · **Detectada al escribir el manual**
+  (2026-08-08)
+- El panel del gabinete dice `NO CONTESTA`, `DATO RETENIDO`, `S/D`. La consola de la nube dice
+  `OPERATIVO`, `DEGRADADO`, `SIN DATO` (`BLUEPRINT:105`). **Son vocabularios distintos para la
+  misma realidad**, y quien opera mira las dos pantallas: primero el panel en el sitio, luego la
+  consola desde el SOC — o al revés, en plena madrugada.
+- No es cosmético: el manual de operación tuvo que **elegir uno** y advertir del otro. Cada
+  traducción que un operador hace mentalmente bajo presión es un sitio donde se equivoca.
+- **Criterios de aceptación:**
+  - [ ] Un glosario único, y las dos superficies salen de él.
+  - [ ] Donde el estado no pueda ser idéntico (el panel ve cosas que la nube no), la diferencia
+        **está declarada** y el manual la explica una sola vez.
+  - [ ] Un test que impida que una superficie estrene un literal de estado fuera del glosario.
 
 ### [ ] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`)
 - **Componente:** docs · **Depende de:** T-2.85
