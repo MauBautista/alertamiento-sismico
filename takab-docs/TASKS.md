@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **231** · `[x]` **154** · `[~]` **6** · `[ ]` **71**
+**Conteo de tareas:** total **234** · `[x]` **155** · `[~]` **6** · `[ ]` **73**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6289,6 +6289,27 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 Va **después** de 2.3–2.8 porque **documenta lo que esas fases producen**. Escribirla antes
 sería documentar intenciones.
 
+> ### CERRADA (2026-08-08) — y documentar resultó ser un método de auditoría
+>
+> **Las tres tareas están `[x]`:** T-2.84 (matriz generada), T-2.85 (manual de operación) y
+> T-2.86 (entrega y aceptación). El paquete de entrega existe y **cada afirmación que contiene
+> es defendible**, porque lo que no lo era se dejó fuera y se dijo por qué.
+>
+> **Lo que nadie esperaba de esta fase: encontró defectos que ninguna revisión de código había
+> visto.** Para explicar un estado hay que ir a buscarlo, y ahí se ve lo que la pantalla **no**
+> hace. Salieron así:
+> - **el panel calcula el resultado de `PROBAR ACTUADORES` y nunca lo pinta** (`T-2.85.a`) — una
+>   prueba que ejerce físicamente gas y ascensores y no te enseña si pasó;
+> - **cinco tareas cerradas tenían sus criterios enteros sin marcar**, contadas por la matriz;
+> - **una actuación con el enlace caído no deja rastro auditable en ninguna parte**
+>   (`T-2.86.a`), que es el caso exacto para el que existe el gabinete.
+>
+> **La matriz declara 18 huecos y ése es su producto.** Tres subieron a ficha en `T-2.84.a/b/c`
+> y tres más en `T-2.86.a/b/c`; el resto siguen nombrados en la matriz, que es donde se ven. Los
+> tres peores, por si se lee esto y nada más: **nada impide el streaming crudo continuo**, **MFA
+> no tiene una sola línea de prueba**, y **el proceso mínimo probado no es el que corre de
+> fábrica**.
+
 ### [x] T-2.84 · Matriz requisito→test — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs + tests · **Depende de:** Fases 2.3–2.8
 - **Documento:** [`MATRIZ-REQUISITO-TEST.md`](MATRIZ-REQUISITO-TEST.md), **generado** por
@@ -6430,12 +6451,81 @@ sería documentar intenciones.
         **está declarada** y el manual la explica una sola vez.
   - [ ] Un test que impida que una superficie estrene un literal de estado fuera del glosario.
 
-### [ ] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`)
+### [x] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`) · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.85
+- **Documento:** [`ENTREGA-Y-ACEPTACION-TAKAB.md`](ENTREGA-Y-ACEPTACION-TAKAB.md), con campos y
+  firmas **en blanco**. La firma sigue siendo `LEGAL`.
 - **Criterios de aceptación:**
-  - [ ] Dice **qué hace y qué NO hace** el sistema, con la misma claridad las dos cosas.
-  - [ ] Incluye la sección de **invariantes** (abajo) como parte del alcance contratado.
-  - [ ] Enlaza la matriz de T-2.84, huecos incluidos.
+  - [x] Dice **qué hace y qué NO hace** el sistema, con la misma claridad las dos cosas.
+  - [x] Incluye la sección de **invariantes** como parte del alcance contratado.
+  - [x] Enlaza la matriz de T-2.84, huecos incluidos.
+
+> **«Con la misma claridad las dos cosas» no se resolvió con dos listas simétricas**, porque el
+> «no» **no es una sola cosa**. Se parte en cuatro clases que se leen distinto en un juzgado:
+> **invariantes** (nunca lo va a hacer, con su razón en una línea de no-técnico — no se pueden
+> pedir después) · **diferidos** (podría construirse) · **bloqueado fuera del software** (los 10
+> gates con columna de firma, terceros, residencia, marco normativo) · **lo hace pero nadie lo
+> prueba** (los 8 huecos del manual y los 18 de la matriz, dentro del documento y en lenguaje de
+> cliente, no escondidos en un anexo).
+>
+> **Lo que NO se escribió importa tanto como lo que sí**, y quedó dicho con esas palabras:
+> CCTV/ONVIF (está en el deck, el código no existe), mapa MMI, **llaves KMS por tenant** —el
+> propio blueprint declara que en RDS compartida sería un over-claim—, **ECS Fargate**
+> (`CLAUDE.md §3` lo nombra y en Terraform **no hay ni un recurso**), la entrega en ≤30 s por SMS,
+> y cualquier cifra de RTO o disponibilidad. Ninguna se puede defender hoy.
+>
+> Y **«el gabinete corre el proceso mínimo y auditable» quedó como HUECO, no como capacidad**:
+> el valor de fábrica es el contrario.
+
+### [ ] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
+- **Componente:** edge + api · **Depende de:** — · **Hueco `RO-4.e` de la matriz** · **El de más
+  peso contractual de los 18, y no tenía ficha** (2026-08-08)
+- **Verificado de primera mano:** `ActuatorAck` (`edge/takab_edge/contracts.py:196`) lleva canal,
+  acción, `event_id`, éxito y latencia — **pero no lleva actor**. Y **no existe ningún
+  `audit_log` en todo `edge/takab_edge/`**: la bitácora vive **solo** en la nube.
+- **Por qué es el peor de la lista para un contrato.** El caso exacto para el que existe el
+  gabinete —regla de oro 2, el edge opera sin nube— es precisamente el que **no deja
+  constancia**. Si el gas se cierra durante un corte de internet, después nadie puede decir
+  **quién lo ordenó ni con qué causa**. Es lo primero que pediría un perito o un seguro, y el
+  documento de entrega ha tenido que declararlo como hueco.
+- Es la **mitad no construida de la regla de oro 4**: «el proceso GPIO es mínimo **y auditable**».
+- **Criterios de aceptación:**
+  - [ ] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
+  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3).
+  - [ ] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**.
+  - [ ] La matriz pasa `RO-4.e` a `CUBIERTO` sola.
+
+### [ ] T-2.86.b · La bitácora de los actuadores registra lo que salió bien y calla lo que se intentó — `SOFTWARE`
+- **Componente:** api + edge · **Depende de:** — · **Huecos `RO-8.g` y `RO-8.k` de la matriz**
+  (2026-08-08)
+- Los dos juntos son un titular que un cliente de Protección Civil pregunta literalmente: **la
+  superficie que abre válvulas de gas solo audita el camino feliz**.
+  - `RO-8.g` — el **replay se rechaza pero no se audita**, ni en el edge ni en la nube. Un
+    atacante que sondee con comandos repetidos es **invisible** en el `audit_log`.
+  - `RO-8.k` — solo se audita el éxito. Lo que se **intentó** y no pasó no queda escrito.
+- La regla de oro 8 llama a esto «la superficie más sensible» y exige nonce y rate-limit **sin
+  excepción**; los mecanismos existen, lo que falta es que **dejen huella cuando actúan**.
+- **Criterios de aceptación:**
+  - [ ] Un comando rechazado por replay, por rate-limit o por firma **queda auditado**, con su
+        motivo.
+  - [ ] Test que dispare cada rechazo y exija su fila en el `audit_log`.
+  - [ ] `RO-8.e` de paso: el límite por sitio (`command_rate_site_per_min`) está implementado y
+        **sin probar** — dos operadores coordinados agotan el presupuesto sin rojo.
+
+### [ ] T-2.86.c · No existe barrido de secretos en ningún sitio — `SOFTWARE`
+- **Componente:** CI · **Depende de:** — · **Hueco `RO-6.a` de la matriz** (2026-08-08)
+- **Medido:** ni test, ni paso de CI, ni pre-commit, ni `gitleaks`/`trufflehog`/`detect-secrets`.
+  **La regla de oro 6 es la única que hoy se sostiene sobre la disciplina de quien escribe el
+  diff.**
+- Y es la clase de cosa que **un cuestionario de seguridad de hospital pregunta literalmente**,
+  así que bloquea comercialmente antes que técnicamente.
+- **Hermano del mismo hueco (`RO-6.c`):** `Settings` no valida el entorno y **sus defaults son
+  credenciales de dev**, así que un secreto ausente en producción **cae al default en silencio**
+  en vez de impedir el arranque.
+- **Criterios de aceptación:**
+  - [ ] Un barrido de secretos corre en un job que **bloquea el merge**.
+  - [ ] En producción, un secreto ausente **impide arrancar**; no cae a un default de dev.
+  - [ ] Test que lo demuestre con un secreto retirado.
 
 ---
 
@@ -6472,6 +6562,10 @@ sería documentar intenciones.
 - **Componente:** api + operación · **Depende de:** T-2.54
 - **Es la única brecha multi-tenant viva en producción.** `api/src/takab_api/settings.py:212`
   lo tiene en `False`.
+- **⚠️ AVISO MEDIDO (matriz `RO-5.g`, 2026-08-08): encenderlo PONDRÁ LA SUITE EN ROJO.** Dos
+  tests HTTP fijan hoy la conducta **no** impuesta. No es una regresión: es que la conducta
+  cambia y los tests la anclan como está. **Que no lo descubra nadie en mitad de la ventana** —
+  hay que invertir esos dos tests **en el mismo cambio**, no después.
 - **SECUENCIA OBLIGADA** (invertirla deja a cada `soc_operator` con **cero estaciones**, que
   es una caída de servicio autoinfligida):
   1. recorrer los `scope_gap` del `audit_log` — dicen exactamente quién quedaría fuera;
