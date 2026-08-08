@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **228** · `[x]` **153** · `[~]` **5** · `[ ]` **70**
+**Conteo de tareas:** total **231** · `[x]` **154** · `[~]` **6** · `[ ]` **71**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4370,8 +4370,61 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 > Ninguno está en el camino crítico. Por tamaño y por tocar el camino de vida, va como fase
 > propia: **`T-2.70.a`**.
 
-### [ ] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
+### [~] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge (arquitectura de procesos) · **Depende de:** — · **Desbloquea:** T-2.70
+
+> ### D3 CERRADO EN SOFTWARE (2026-08-08) — seis criterios cumplidos, y el cuarto es de HARDWARE
+>
+> **Seis de siete `CUMPLE`, todos anclados y auditados adversarialmente.** El séptimo es el que
+> desbloquea T-2.70 y está medido: **reiniciar `takab-edge` cuesta CERO transiciones** en los
+> cinco relés, contra las 6 por pin que costaban tres ciclos antes.
+>
+> **El criterio 4 es `IMPOSIBLE EN SOFTWARE`, y esta ficha lo declara como tal en vez de
+> fingirlo.** La ventana existe: mover el dueño cuesta **exactamente 2 transiciones por pin**, o
+> sea **un ciclo eléctrico de `GAS_VALVE` y `DOOR_RETAINER`** — el gas se cierra y las puertas se
+> sueltan. La causa, verificada contra el código instalado y no de memoria: `LGPIOPin.close()`
+> **re-reclama la línea como ENTRADA** con el bias deshabilitado. **Es gpiozero quien
+> desenergiza, no el kernel** —matiz que corrigió la auditoría: no hace falta ninguna bandera del
+> uAPI para conservar un nivel, lo decide si el driver devuelve el pad a entrada al liberar.
+>
+> **El encuadre que convierte esto en decisión y no en bloqueo:** ese ciclo cuesta **lo mismo que
+> cualquier `deploy.sh` de hoy**. La diferencia es que **este es el último**. Las dos salidas
+> son: una **ventana de mantenimiento con el edificio avisado, una sola vez**; o **hardware**
+> —enclavamiento del relé, o un pull-up que sostenga la bobina con la línea liberada— que
+> **cambia SPOF-07**, porque entonces un Pi colgado dejaría de fail-safear gas y puertas. Eso no
+> se decide desde el software. **`GATE-HW` / `G-05`.**
+>
+> **SPOF-02 ESTABA ROTO, y ese es el hallazgo que justifica el paso entero.**
+> `_seed_from_held_contact` corría **antes** de que existiera el servidor, así que con el dueño
+> en otro proceso el episodio nacía **sin `episode_id`** y el cliente lo descartaba por diseño.
+> Medido: **sirena sonando en el edificio, y cero incidente, cero notificación, cero push.** Es
+> el traspaso hardware→software tras un reinicio con el contacto **sostenido** — el caso de un
+> sismo largo.
+>
+> **B2 · el despliegue mentía sobre el dueño, y la solución no fue ninguna de las dos que se
+> plantearon.** Reiniciar al dueño en cada despliegue **anula el valor entero de D3**; y fallar
+> siempre que no se reinició saldría rojo en **todos** los despliegues, entrenando al operador a
+> ignorar el único rojo que dice si la sirena tiene dueño. Así que el gate mide **«¿corre código
+> distinto del que acabamos de poner?»** —arranque desde `/proc/<pid>/stat` + `btime`, y si
+> arrancó antes, comparación byte a byte de los módulos que el entry point **arrastra**, derivados
+> de sus imports—. El `restart` va solo bajo `--ventana-de-mantenimiento`; `enable` y `start` van
+> siempre, porque no cuestan un ciclo y sin ellos el siguiente reinicio del Pi deja al edificio
+> **sin dueño de pines**.
+>
+> **El arnés de tests tenía dos vacuidades** que había que cerrar o no medía nada: el `systemctl`
+> falso **truncaba** el registro del dueño legítimo, y **reclamaba los pines con cualquier
+> unidad** — así que un `takab-gpio` que no arranca salía **verde** porque «reiniciar
+> `takab-edge`» fingía tomar el GPIO.
+>
+> **`FDSTORE` evaluado y descartado, con el contra que decide y que no es de implementación:** un
+> fd retenido **congela el último nivel sin nadie que lo gobierne**. Si el dueño muere en mitad de
+> una alerta, **la sirena queda sonando** y nadie puede pedirle `silence`; hoy esa muerte cae al
+> fail-safe. Va fichado aparte con su política por canal — congelar el gas puede ser correcto;
+> congelar la sirena no.
+>
+> **Lo que queda para `GATE-HW`:** la duración real de la ventana en el Pi; la latencia del
+> transporte en ARM; `TimeoutStartSec=90` con `Type=notify` contra el systemd real; el criterio 4
+> físico; y el gate de código viejo, que **nunca se ha ejercitado con un intérprete de verdad**.
 - **`DECISIÓN` RATIFICADA (2026-08-07): separar los procesos.** No es un override del gate #6;
   es cerrar la brecha entre lo que el gate ratificó y lo que se construyó (ver la nota de
   T-2.70). Hoy la sirena la toca el supervisor de 16 módulos.
@@ -6236,13 +6289,78 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 Va **después** de 2.3–2.8 porque **documenta lo que esas fases producen**. Escribirla antes
 sería documentar intenciones.
 
-### [ ] T-2.84 · Matriz requisito→test — `SOFTWARE`
+### [x] T-2.84 · Matriz requisito→test — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs + tests · **Depende de:** Fases 2.3–2.8
+- **Documento:** [`MATRIZ-REQUISITO-TEST.md`](MATRIZ-REQUISITO-TEST.md), **generado** por
+  `api/tests/test_matriz_trazabilidad.py --escribir`. No se edita a mano.
 - **Criterios de aceptación:**
-  - [ ] Cada requisito enlaza al test que lo demuestra, con `archivo:línea`.
-  - [ ] **Los huecos se marcan `SIN COBERTURA` explícitamente.** Una matriz sin huecos es una
+  - [x] Cada requisito enlaza al test que lo demuestra, con `archivo:línea`.
+  - [x] **Los huecos se marcan `SIN COBERTURA` explícitamente.** Una matriz sin huecos es una
         matriz que miente: el valor está justo en los huecos.
-  - [ ] Un test mantiene la matriz honesta (si el test citado desaparece, la matriz rompe).
+  - [x] Un test mantiene la matriz honesta (si el test citado desaparece, la matriz rompe).
+
+> **17 requisitos · 66 afirmaciones · 48 cubiertas · 18 huecos.** Los requisitos se **derivan** de
+> tres fuentes que se parsean en cada corrida: las 11 reglas de oro de `CLAUDE.md §2`, los
+> invariantes del `BLUEPRINT §14` y los 10 gates físicos del runbook de cierre. Añadir una regla
+> 12ª pone el censo en rojo.
+>
+> **`TASKS.md` se descartó como fuente, y por una razón medida: sus casillas mienten.** De 442
+> criterios bajo tareas `[x]`, 34 seguían sin marcar y **cinco tareas cerradas tenían los suyos
+> enteros en `[ ]`**. Se corrigió, y ahora lo vigila un test propio.
+>
+> **`CUBIERTO` se calcula, nunca se teclea.** Una cita solo acredita si existe, **no puede
+> saltarse**, ejercita código y corre en un job que **bloquea el merge**. De ahí dos
+> consecuencias que nadie habría escrito a mano: `web/e2e` **informa pero no acredita** (es
+> `workflow_dispatch` + `continue-on-error`, a propósito), y los tres tests del gate `G-03`
+> salen `SIN COBERTURA` **aunque existan**, porque el `skipif` del Shake los apaga en CI.
+>
+> **El ancla es el nombre del test; la línea se deriva por AST.** La asimetría es deliberada:
+> renombrar un test citado pone **siete** en rojo; moverlo de línea pone **uno** y te da el
+> comando para regenerar. Moverse cuesta un comando, desaparecer rompe la matriz.
+>
+> **Punto ciego declarado, y es el que hay que tener presente:** la **semántica no se comprueba**.
+> Que un test citado *demuestre* su fila es juicio humano; lo mecánico es que exista, no se
+> salte, y lo corra un job bloqueante.
+
+### [ ] T-2.84.a · Nada impide el streaming crudo continuo — `SOFTWARE`
+- **Componente:** edge + api · **Depende de:** — · **Hueco `RO-9.a` de la matriz** (2026-08-08)
+- **El hueco más grave que destapó la matriz.** Cero asserts sobre un conjunto cerrado de topics,
+  sobre volumen publicado, o sobre que un `WaveformPacket` jamás llegue a
+  `CloudConnector.publish`. **Añadir hoy un publicador continuo no rompería un solo test.**
+- Es **regla de oro 9** *y* **invariante permanente** —prohibición, no diferido—, escrita en tres
+  documentos y **sostenida por ninguna prueba**. `CLAUDE.md §8` la mantiene en párrafo aparte del
+  mini-ShakeMap justamente para que nadie se la lleve por delante de arrastre: iban pegadas en una
+  sola línea, y así las dos se levantaban juntas.
+- **Cómo se descubriría hoy: en la factura de AWS.**
+- **Criterios de aceptación:**
+  - [ ] Un test que falle si un `WaveformPacket` alcanza el camino de publicación continua.
+  - [ ] La dirección complementaria (`RO-9.b`): el miniSEED crudo **solo** sube en eventos
+        confirmados; bajar el umbral por accidente tiene que ponerse rojo.
+  - [ ] Derivado, no enumerado: un publicador nuevo entra solo en la comprobación.
+
+### [ ] T-2.84.b · MFA no tiene una sola línea de prueba en ninguna capa — `SOFTWARE`
+- **Componente:** api + infra · **Depende de:** — · **Hueco `RO-8.c` de la matriz** (2026-08-08)
+- **Regla de oro 8, sobre la superficie que abre válvulas de gas, dice «sin excepción».** No hay
+  comprobación de `acr`, `amr` ni `auth_time` en ninguna capa; el router lo documenta como
+  delegado al pool (`mfa_configuration = "ON"`), y el módulo `identity` es **el único de los
+  cuatro sin `.tftest.hcl`**: una deriva a `OPTIONAL` no la vería nadie.
+- **Criterios de aceptación:**
+  - [ ] Un test rechaza un token sin la constancia de MFA en el camino de comando de actuadores.
+  - [ ] `identity` gana su `.tftest.hcl` y `mfa_configuration` queda anclado.
+  - [ ] La matriz pasa `RO-8.c` a `CUBIERTO` sola, sin editarla a mano.
+
+### [ ] T-2.84.c · Nada obliga al componente número 28 a manejar los cuatro estados — `SOFTWARE`
+- **Componente:** web · **Depende de:** — · **Hueco `RO-7.a` de la matriz** (2026-08-08) ·
+  **Hermana de `T-2.79.d` y `T-2.82.a`**
+- **Medido por la matriz:** **27 componentes usan `StateFrame`, solo 14 tienen la prueba de los
+  cuatro estados, y ≥12 pintan dato de servidor fuera de `StateFrame`.** No hay censo derivado que
+  obligue al siguiente. **El bug de T-2.59 fue exactamente eso**, y T-2.82.a acaba de encontrar la
+  misma clase en la pantalla donde se firma un dictamen.
+- **Criterios de aceptación:**
+  - [ ] Un censo **derivado** del árbol de componentes: quien pinte dato de servidor sin los
+        cuatro estados, rojo.
+  - [ ] Las excepciones legítimas se **declaran** con su razón, no se omiten.
+  - [ ] Se resuelve junto con la precedencia que decida `T-2.79.d`.
 
 ### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
