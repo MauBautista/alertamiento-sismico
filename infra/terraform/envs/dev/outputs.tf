@@ -107,6 +107,39 @@ output "dlq_urls" {
   value = module.messaging.dlq_urls
 }
 
+# --- [T-2.72] PITR: el RPO que produce la maquina -----------------------------
+#
+# Existe para que el runbook de backup pueda CITAR una cifra en vez de teclearla.
+# Hasta hoy el §2 de `RUNBOOK-backup-restore-db.md` decia "RPO ≤ 24 h" y
+# "objetivos PROPUESTOS: RPO ≤ 15 min" — dos numeros escritos por un humano que
+# nada obligaba a seguir siendo ciertos. `terraform output rpo_seconds` sale de
+# los atributos de la alarma que lo sostiene.
+output "rpo_seconds" {
+  value = module.observability.rpo_seconds
+
+  # La costura entre los dos modulos es el unico sitio donde el RPO puede volver
+  # a ser una promesa: si alguien pasara un literal a `observability` en vez del
+  # output de `database`, cada modulo seguiria coherente consigo mismo y el
+  # conjunto mentiria. Los dos tests de modulo son ciegos a esto por
+  # construccion —cada uno solo ve su lado—, asi que la guardia vive aqui.
+  #
+  # CUANDO SE COMPRUEBA, dicho sin adornos: SOLO en el `apply`. `terraform
+  # validate` no evalua preconditions, y meter un `plan` de este entorno en CI
+  # choca con el `profile = "takab-dev"` cableado en `providers.tf` (exige
+  # credenciales SSO). O sea que esta guardia no es vacua —se ha visto fallar a
+  # mano— pero su unica ocasion real de dispararse es la ventana HUMANO-AWS de
+  # T-2.74. No es un sustituto de los tests de modulo: es el ultimo filtro antes
+  # de que el numero salga publicado.
+  precondition {
+    condition     = module.observability.wal_archive_alarm_threshold_s == module.database.wal_archive_max_age_s
+    error_message = "El umbral de la alarma de archivado y la edad maxima que declara la DB han divergido: la DB estaria validando su archive_timeout contra un numero que no vigila nadie, y rpo_seconds describiria a una alarma que no existe."
+  }
+}
+
+output "pitr" {
+  value = module.database.pitr
+}
+
 # --- Push móvil (T-2.04) ------------------------------------------------------
 
 output "push_apns_application_arn" {

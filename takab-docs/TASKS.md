@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-05)
 
-**Conteo de tareas:** total **202** · `[x]` **141** · `[~]` **4** · `[ ]` **57**
+**Conteo de tareas:** total **209** · `[x]` **143** · `[~]` **4** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4889,36 +4889,208 @@ el infinito es una sesión que no converge):
 
 ## Fase 2.6 · Backup y DR
 
-`RUNBOOK-backup-restore-db.md:3` dice literalmente **"RESTORE JAMÁS PROBADO (gate G-09)"** y
-el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis**, no un respaldo.
+`RUNBOOK-backup-restore-db.md:3` decía literalmente **"RESTORE JAMÁS PROBADO (gate G-09)"** y
+el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipótesis**.
 
-### [ ] T-2.72 · PITR/WAL-G en IaC — `SOFTWARE`
+> **Lo que apareció al mirar (2026-08-08).** No era solo que el restore no se hubiera probado:
+> **el procedimiento que el runbook documentaba perdía datos en silencio, y el checklist de
+> verificación que traía salía ENTERO EN VERDE sobre la base mutilada.** Faltaban
+> `timescaledb_pre/post_restore()` (aborta el `COPY` de al menos un chunk: decenas de miles de
+> filas y las 3 PRIMARY KEY de las hypertables) y sobraba `--no-owner` (traslada ~46 objetos a
+> quien restaura ⇒ `takab_migrator` deja de poder migrar ⇒ **el siguiente despliegue muere**).
+> Medido y reproducido de forma independiente por un segundo revisor con su propio montaje.
+> Sin PK, además, muere la idempotencia del edge (regla de oro 3): un restore mal hecho no solo
+> pierde filas, desarma el mecanismo que iba a reponerlas.
+>
+> De regalo, dos defectos vivos desde julio-2026: la regla de lifecycle `expira-60d` **nunca
+> borró un byte** (sobre un bucket versionado `Expiration` solo pone un delete marker, y la
+> versión anterior se queda facturándose para siempre — peor para el PITR: el delete marker
+> **esconde el objeto al restaurador**), y **la instancia no podía leer sus propios respaldos**
+> (`s3:PutObject` y nada más), o sea que el restore era imposible de ejecutar donde vive la DB.
+
+### [x] T-2.72 · PITR en IaC — `SOFTWARE`
 - **Componente:** infra · **Depende de:** —
+- **La herramienta es `barman-cloud`, no WAL-G**, y el cambio de nombre de la tarea es
+  deliberado: la imagen `timescale/timescaledb-ha:pg16` que corre en producción **ya lo trae
+  instalado y no trae wal-g** (verificado contra el contenedor real). Meter wal-g exigiría
+  reconstruir la imagen o montar un binario descargado dentro del contenedor: **un eslabón de
+  suministro nuevo justo en el camino de recuperación**, el último sitio donde conviene tener
+  uno. El diseño no dependía de la herramienta.
 - **Criterios de aceptación:**
-  - [ ] WAL archiving continuo declarado en Terraform (no a mano en la instancia).
-  - [ ] RPO objetivo declarado y **derivable de la configuración**, no de una promesa.
-  - [ ] Alarma si el archivado se atasca — extensión natural del módulo `observability`
-        (`RUNBOOK-backup-restore-db.md:120`).
-  - [ ] `terraform fmt/validate` verde. El `apply` es **`HUMANO-AWS`** y va en T-2.74.
+  - [x] WAL archiving continuo declarado en Terraform (no a mano en la instancia). Vía
+        `aws_ssm_document` + `aws_ssm_association`, **no `user_data`**: el user_data corre una
+        sola vez en el primer boot y sale antes de tiempo por su marcador, así que habría dado
+        un Terraform verde que no toca la máquina que existe hoy. Coste declarado: hasta 24 h de
+        convergencia (`aws ssm start-associations-once` lo fuerza).
+  - [x] RPO objetivo declarado y **derivable de la configuración**, no de una promesa.
+        `terraform output rpo_seconds` → **900 s**, calculado de los ATRIBUTOS del recurso de
+        alarma: `umbral (600) + period (60) × evaluation_periods (5)`. El segundo término no es
+        adorno — CloudWatch avisa tras N periodos seguidos por encima, y durante esos 5 minutos
+        se sigue acumulando WAL que no está en S3. **El RPO real no es lo que promete la
+        configuración feliz: es la edad del archivado a la que alguien SE ENTERA.**
+  - [x] Alarma si el archivado se atasca: `takab-dev-wal-archivado-atascado`,
+        `treat_missing_data = "breaching"` (sin eso la derivación del RPO es mentira: si el
+        publicador muere, el silencio pasaría por salud), `Maximum > umbral`, 5×60 s, los TRES
+        estados al topic de on-call. Clasificada **INTOCABLE** en `ALARM_CATALOG` y negada
+        también por IAM.
+  - [x] `terraform fmt/validate` verde, más `terraform test` en los TRES módulos. El `apply` es
+        **`HUMANO-AWS`** y va en T-2.74.
+- **Lo que el ejercicio de no-vacuidad enseñó, y vale más que el código:** aparecieron **tres**
+  aserciones vacuas, y las tres eran del mismo par de patrones. (a) *Comparar por subcadenas*:
+  un `strcontains` sobre una política IAM casi siempre encuentra su subcadena en OTRO statement,
+  así que responde "sí" a una pregunta que nadie hizo — una de ellas juraba que no se concedía
+  borrado enumerando `s3:DeleteObject`/`s3:Delete*` y **se la saltaba un `s3:*`**. (b)
+  *Comprobar una igualdad con un solo valor de entrada*: no distingue una función de una
+  constante que hoy coincide, que es literalmente la diferencia entre derivar el RPO y
+  prometerlo. Quedan como método escrito en la cabecera de `pitr.tftest.hcl`.
 
-### [ ] T-2.73 · Script de restore ensayable que mide su propio RTO — `SOFTWARE`
+### [x] T-2.73 · Ensayo de restore que mide su propio RTO — `SOFTWARE`
 - **Componente:** db + deploy · **Depende de:** T-2.72
 - **Criterios de aceptación:**
-  - [ ] Un solo comando restaura a una instancia limpia y **imprime el RTO medido**.
-  - [ ] Verifica la integridad de lo restaurado (no solo que el proceso terminó en 0).
-  - [ ] Ensayable **contra la DB local**, para que el ensayo no dependa de la ventana AWS.
-  - [ ] Guardia anti-restore-sobre-producción, del mismo estilo que
-        `demo/run.py::_assert_exclusive_db`.
+  - [x] Un solo comando (`make restore-drill`) restaura a una instancia limpia e **imprime el
+        RTO medido**, desglosado por fase. El reloj para en el VERDE del verificador, no en el
+        `rc=0` de `pg_restore`: una base restaurada y no verificada no es un servicio
+        recuperado. Y arranca cuando el dump ya existe, porque en el incidente real lleva en S3
+        desde las 08:00; fabricarlo es andamiaje y se cronometra aparte.
+  - [x] Verifica la integridad de lo restaurado: **22 comprobaciones** con veredicto de tres
+        estados y salida 0/1/2. Las expectativas se DERIVAN de `db/schema.sql` y del catálogo
+        (extensiones, tablas append-only, RLS y su FORCE, políticas, hypertables, vistas
+        barrera, roles, políticas de Timescale): ninguna tabla está escrita a mano.
+  - [x] Ensayable **contra la DB local** — que corre la MISMA imagen que producción, así que el
+        ensayo es fiel y no un simulacro.
+  - [x] Guardia anti-restore-sobre-producción **positiva**, no lista negra: solo escribe en una
+        base que él mismo creó en esta corrida, con nombre generado y marcador propio releído
+        del catálogo antes de cada paso destructivo. `takab_restore` —el nombre que usaba el
+        propio runbook— es rechazado como cualquier otro. No hace swap, y hay un test sobre el
+        AST que lo impide.
+- **Las tres cosas que la auditoría adversarial encontró y hubo que cerrar**, todas de la misma
+  familia —*un verde que no significa lo que parece*—:
+  1. **Sin `--baseline` el verificador decía VERDE y salía 0** con seis comprobaciones saltadas,
+     sobre una base a la que le faltaba el 75 % de la telemetría y una tabla entera. Hoy eso es
+     **INDETERMINADO** y salida 2: *un SKIP no es un PASS*.
+  2. **`append_only_enforced` pasaba por la razón equivocada**: trataba cualquier error de
+     Postgres como "la guarda lo rechazó", así que con la guarda rota y la conexión en solo
+     lectura —justo como se verifica una base lateral antes del swap— daba verde. Hoy exige el
+     SQLSTATE de la guarda.
+  3. **Seis clases de daño real salían verdes** (job de retención desprogramado, CHECK y FK
+     borradas, columna desaparecida, cagg vaciado, y un `REVOKE` que deja a `takab_app` sin
+     leer `incidents`). Hoy el baseline lleva columnas, constraints, ACL y filas de cagg
+     materializado.
+- **Una afirmación del obrero hubo que retirarla, y conviene que quede escrita**: no es cierto
+  que «el FORCE de todas las tablas de negocio nos salva de un restore con `--no-owner`».
+  `FORCE ROW LEVEL SECURITY` obliga al dueño **normal**; un superusuario (o `BYPASSRLS`) se
+  salta la RLS con FORCE o sin él. Lo que sí es cierto, y es otra cosa, es que el camino de la
+  API sigue aislado — pero porque `takab_app` no es dueño de nada ni tiene BYPASSRLS, no por el
+  FORCE. Confundir la conclusión con su causa es como esa frase acaba en un runbook.
+
+### [ ] T-2.73.a · La huella del origen viaja junto al dump — `SOFTWARE`
+- **Componente:** infra + db · **Depende de:** T-2.73 · **BLOQUEA `T-2.74`.**
+- El cron de las 08:00 sube el `.dump` y nada más. **Sin la huella del origen el verificador
+  devuelve INDETERMINADO** y sus seis comprobaciones más fuertes (inventario, columnas,
+  constraints, privilegios, propiedad, conteos) no se pueden ejercer. Intentar acreditar `G-09`
+  sin esto es gastar la ventana AWS para obtener medio veredicto.
+- **Criterios de aceptación:**
+  - [ ] El mismo cron escribe `restore_check --save-baseline` y lo sube al mismo prefijo S3.
+  - [ ] El vehículo es el **documento SSM**, no `user_data.sh.tpl`: tocar el user_data fuerza al
+        provider a parar y arrancar la instancia en el siguiente apply, y la DB caería.
+  - [ ] Confirmado que el contenedor de la nube co-locada tiene el código del API para
+        invocarlo (es la incógnita real de esta ficha).
+
+### [ ] T-2.72.a · Comprobar que el WAL llegó de verdad a S3 — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- `pg_stat_archiver.last_archived_time` mide el último `archive_command` que devolvió 0, no que
+  el objeto esté en el bucket. La propia doc de PostgreSQL da el contraejemplo:
+  `archive_command = /bin/true` «effectively disables archiving, but also breaks the chain of
+  WAL files needed for archive recovery» — y reportaría salud perfecta con cero WAL en S3.
+- **Criterios de aceptación:**
+  - [ ] `last_archived_wal` da el NOMBRE del segmento: un `head-object` **O(1)** contra la clave
+        esperada, sin listar el prefijo (que crece sin cota).
+  - [ ] Resuelto el acoplamiento con el sufijo de compresión y el layout interno de barman
+        (hay que medirlo contra el bucket real, en la ventana de T-2.74).
+
+### [ ] T-2.72.b · Alarma de backup base ausente — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- `WalArchiveAgeSeconds` mide la cadena de WAL, **no su ancla**. Un backup base que falla cada
+  semana es invisible hasta el día del restore, que es el modo de fallo que la Fase 2.6 existe
+  para eliminar.
+- **Criterios de aceptación:**
+  - [ ] `BaseBackupAgeSeconds` publicada a diario desde `barman-cloud-backup-list`.
+  - [ ] Alarma por encima de `base_backup_interval_days × chain_margin`, derivada de las mismas
+        variables que gobiernan la retención.
+
+### [ ] T-2.72.c · Alarma de espacio en disco de la instancia DB — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- El PITR introduce un modo de fallo nuevo: con el archivado atascado Postgres **no recicla** su
+  WAL y `pg_wal` crece ~16 MiB/min sobre el mismo volumen de 40 GiB donde viven los datos —
+  **menos de dos días hasta llenar el disco y tumbar la DB**. Hoy lo cubre por accidente la
+  alarma de atasco (900 s ≪ 48 h) y su descripción ya nombra el reloj corto, pero **no hay
+  vigilancia de disco**: `disk_used_percent` no existe en las métricas nativas de EC2.
+- **Criterios de aceptación:**
+  - [ ] Agente CloudWatch en la instancia, o publicación propia de espacio libre en `/data`.
+  - [ ] Alarma con `treat_missing_data` clasificado y su entrada en `ALARM_CATALOG`.
+
+### [ ] T-2.72.d · Derivar la guardia de `treat_missing_data`, no enumerarla — `SOFTWARE`
+- **Componente:** infra + api · **Depende de:** —
+- `modules/observability/tests/treat_missing_data.tftest.hcl` **enumera** las alarmas: una
+  alarma nueva no obtiene automáticamente su aserción y puede nacer sin que nada lo diga. El
+  patrón correcto ya existe al lado: `api/tests/ops/test_muting.py` deriva la lista del propio
+  `.tf` y pone en rojo cualquier alarma sin clasificar.
+- Y esa guardia derivada tiene su propio límite, que va en la misma ficha: **su ámbito es UN
+  solo archivo** (`observability/main.tf`). Una alarma declarada en otro módulo nace sin
+  clasificar y nada lo delata. Hoy no hay ninguna — comprobado por grep — y por eso es deuda y
+  no defecto.
+- **Criterios de aceptación:**
+  - [ ] La lista de alarmas se deriva del `.tf`; una alarma sin aserción de `treat_missing_data`
+        pone el test en rojo.
+  - [ ] El ámbito deja de ser un solo archivo.
+
+### [ ] T-2.73.b · Higiene de RLS: `tenant_retire_codes` sin FORCE y 7 tablas con dueño superusuario — `SOFTWARE`
+- **Componente:** db · **Depende de:** —
+- Los sacó a la luz el verificador de T-2.73 y **no son deuda de restore**, son de esquema:
+  - `tenant_retire_codes` (migración 0025) tiene RLS `ENABLE` **sin FORCE** y no es ninguna de
+    las dos excepciones documentadas de Timescale. **No explotable hoy** —su dueño es
+    `takab_migrator`, que no es superusuario ni tiene `BYPASSRLS`, medido `AJENAS=0`— pero el
+    verificador lo avisa en cada corrida y la asimetría no tiene razón de ser.
+  - 7 tablas pertenecen a `takab` (superusuario) en vez de a `takab_migrator`:
+    `billing_meters_daily`, `commands`, `drills`, `drill_sites`, `gateway_config_state`,
+    `notification_jobs`, `user_profiles` — migraciones posteriores a la 0001 que crean objetos
+    sin `SET ROLE takab_migrator`. Riesgo **latente**: una migración futura con
+    `SET ROLE takab_migrator; ALTER TABLE notification_jobs …` moriría con `must be owner`.
+- **Criterios de aceptación:**
+  - [ ] Migración idempotente que pone FORCE y devuelve la propiedad, respetando los dos
+        invariantes de `migrations-must-be-idempotent`.
+  - [ ] Confirmado contra la NUBE (allí el conector ya es `takab_migrator`, así que puede no
+        diverger) antes de asumir que el defecto existe en producción.
+
+### [ ] T-2.73.c · El cuelgue intermitente de `test_retire_code.py` — `SOFTWARE`
+- **Componente:** api (tests) · **Depende de:** —
+- Reproducido **5/5** por el auditor: `test_solo_el_superadmin_rota_el_codigo` deja una conexión
+  `idle in transaction` tras `app_verify_retire_code`, y el TRUNCATE del teardown se bloquea
+  para siempre pidiendo el `ACCESS EXCLUSIVE` de `audit_log`. En la suite completa no se
+  manifiesta, así que es una carrera, no un fallo determinista. **Misma familia que el hallazgo
+  A-3** de la auditoría de cierre.
+- **Criterios de aceptación:**
+  - [ ] La conexión lateral cierra su transacción, o el fixture la cierra por ella.
+  - [ ] El fichero corre en aislamiento 10 veces seguidas sin colgarse.
 
 ### [ ] T-2.74 · `G-09` · restore real, RTO medido y publicado — `HUMANO-AWS`
-- **Componente:** operación · **Depende de:** T-2.73 · **Cubre `G-09`.**
+- **Componente:** operación · **Depende de:** T-2.73, **T-2.73.a** · **Cubre `G-09`.**
 - **Vive fuera del carril de gates a propósito:** es el único de los diez que **no exige manos
   en el gabinete** — se acredita con una ventana AWS sobre software que sí controlamos
   (`T-2.72`/`T-2.73`). Está anotado en la nota de la Fase 2.11 para que quien busque los diez
   gates ahí lo encuentre.
+- **No entres a la ventana sin `T-2.73.a`**: sin la huella del origen el verificador devuelve
+  INDETERMINADO y la acreditación sale a medias.
 - **Criterios de aceptación:**
-  - [ ] Procedimientos **A y B** ejecutados de verdad contra el entorno real.
-  - [ ] RPO/RTO **medidos** y escritos en el §6 del runbook de backup.
+  - [ ] Procedimientos **A, B y C (PITR)** ejecutados de verdad contra el entorno real. El C es
+        nuevo y el que más sorpresas puede dar: el sufijo de compresión de los WAL y el layout
+        interno de barman hay que medirlos contra el bucket real.
+  - [ ] El **primer `barman-cloud-backup`** lanzado a mano y supervisado (es pesado sobre un
+        `t4g.small`; el cron semanal lo tomaría en ≤7 días si nadie lo lanza).
+  - [ ] Confirmado a los ~15 min que la alarma de archivado **salió de INSUFFICIENT_DATA** — la
+        lección de `ghost_gateways`: una alarma nacida ahí se queda ahí para siempre, sin
+        transición y sin correo.
+  - [ ] RPO/RTO **medidos** y escritos en el §8 del runbook de backup.
   - [ ] `G-09` marcado en la tabla de gates de `RUNBOOK-auditoria-cierre.md`.
 
 ## Fase 2.7 · Canales reales de notificación

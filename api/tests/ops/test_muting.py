@@ -102,16 +102,32 @@ def test_el_catalogo_conoce_los_nombres_reales_del_terraform() -> None:
         )
 
 
-def test_las_tres_intocables_lo_son_por_escrito() -> None:
-    """Las tres que NUNCA se callan, con su razón — no por gusto:
+def test_las_intocables_lo_son_por_escrito() -> None:
+    """Las que NUNCA se callan, con su razón — no por gusto:
 
     ``dlq_depth`` y ``iot_rule_errors`` son el INSTRUMENTO del canary de T-2.70
     (una actualización que rompe el contrato de payload se manifiesta ahí);
     ``ghost_gateways`` vigila al vigilante y su ``insufficient_data_actions`` es
-    la única señal de que el worker que cuenta está muerto.
+    la única señal de que el worker que cuenta está muerto;
+    ``wal_archive_stalled`` (T-2.72) es lo único que acota el RPO — el número que
+    publica ``terraform output rpo_seconds`` no lo garantiza la configuración de
+    Postgres, lo garantiza que esa alarma suene.
+
+    Este conjunto se ENUMERA a propósito, al revés que
+    ``test_toda_alarma_del_terraform_esta_clasificada``. Ahí enumerar sería
+    quedarse ciego ante la siguiente alarma; aquí la lista ES la decisión, y que
+    haga falta tocar este test para ampliar el silencio permitido —o para
+    retirarlo— es justo la fricción que se busca. Lo que sí se deriva es que cada
+    una lleve su razón escrita, para que nadie herede una clasificación sin
+    entenderla.
     """
     nunca = {k.resource for k in ALARM_CATALOG if k.scope == NEVER}
-    assert nunca == {"dlq_depth", "iot_rule_errors", "ghost_gateways"}
+    assert nunca == {
+        "dlq_depth",
+        "iot_rule_errors",
+        "ghost_gateways",
+        "wal_archive_stalled",
+    }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:
             assert len(kind.why) > 40, f"{kind.resource} intocable sin razón escrita"

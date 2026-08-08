@@ -79,3 +79,138 @@ variable "env" {
   type        = string
   default     = "dev"
 }
+
+# --- [T-2.72] PITR: archivado continuo de WAL --------------------------------
+
+variable "dump_key_prefix" {
+  description = "Prefijo de clave del dump logico (espejo de `db_dump_key_prefix` en modules/storage). Aqui solo se usa para conceder LECTURA sobre ese prefijo: hasta hoy el rol podia escribir sus dumps y no podia leerlos, o sea que el restore no se podia ejecutar donde vive la DB."
+  type        = string
+  default     = "takab-"
+}
+
+variable "pitr" {
+  description = <<-EOT
+    Cadena PITR: donde vive y cuanto dura. Los numeros los decide
+    `modules/storage` (el unico podador) y bajan aqui para programar el backup
+    base y para NEGARSE a configurar el archivado si la cadena no se sostiene.
+  EOT
+  type = object({
+    prefix                    = string
+    server_name               = string
+    wal_retention_days        = number
+    base_backup_interval_days = number
+    chain_margin              = number
+  })
+  default = {
+    prefix                    = "pitr/"
+    server_name               = "takab-dev-db"
+    wal_retention_days        = 14
+    base_backup_interval_days = 7
+    chain_margin              = 2
+  }
+
+  # La desigualdad que mantiene viva la cadena, DERIVADA de las tres cifras y no
+  # comprobada contra dos literales que hoy coinciden.
+  #
+  # Por que >= intervalo * margen y no solo >= intervalo: justo antes de que
+  # expire el backup base mas viejo, el siguiente es `intervalo` dias mas nuevo.
+  # Con margen 1, en ese instante el unico base con WAL vivo es el que esta
+  # expirando: la ventana de recuperacion se cierra a cero cada `intervalo` dias
+  # y nadie lo nota. El margen 2 garantiza que SIEMPRE haya una cadena completa
+  # (base + todos sus WAL) mientras la anterior se apaga.
+  validation {
+    condition     = var.pitr.chain_margin >= 2
+    error_message = "pitr.chain_margin debe ser >= 2: con margen 1, el backup base mas antiguo expira junto con los WAL que lo continuan y la ventana de recuperacion se cierra a cero periodicamente sin que nada falle."
+  }
+
+  validation {
+    condition     = var.pitr.wal_retention_days >= var.pitr.base_backup_interval_days * var.pitr.chain_margin
+    error_message = "La retencion de WAL debe cubrir al menos `base_backup_interval_days * chain_margin` dias. Por debajo de eso, la cadena queda partida: hay backups base sin los WAL que los continuan, y eso no se nota hasta el dia del restore."
+  }
+
+  validation {
+    condition     = endswith(var.pitr.prefix, "/") && length(var.pitr.prefix) > 1
+    error_message = "pitr.prefix debe terminar en '/' y no puede ser la raiz del bucket: un prefijo vacio mezclaria la cadena PITR con el dump bajo la misma regla de expiracion."
+  }
+}
+
+variable "wal_archive_timeout_s" {
+  description = <<-EOT
+    `archive_timeout` de Postgres: cada cuanto se fuerza el cierre de un segmento
+    de WAL aunque no se haya llenado.
+
+    NO es opcional, y por que no lo es esta escrito literal en la doc de
+    PostgreSQL 16 (runtime-config-wal, `archive_timeout`): "The archive_command
+    or archive_library is only invoked for completed WAL segments. Hence, if your
+    server generates little WAL traffic (or has slack periods where it does so),
+    there could be a long delay between the completion of a transaction and its
+    safe recording in archive storage. To limit how old unarchived data can be,
+    you can set archive_timeout to force the server to switch to a new WAL
+    segment file periodically. When this parameter is greater than zero, the
+    server will switch to a new segment file whenever this amount of time has
+    elapsed since the last segment file switch, and there has been any database
+    activity, including a single checkpoint (checkpoints are skipped if there is
+    no database activity)."
+
+    Un segmento son 16 MiB. Esta base escribe telemetria a goteo: sin
+    `archive_timeout`, el ultimo segmento puede pasar HORAS a medio llenar con el
+    `archive_command` "funcionando" perfectamente, y todo lo escrito desde el
+    ultimo cierre se pierde en un desastre.
+
+    Y OJO CON LA CONCLUSION FACIL, porque la primera version de este comentario la
+    tenia al reves: sin `archive_timeout` el fallo NO seria silencioso. La alarma
+    de atasco mide la edad del ultimo archivado, asi que un segmento tardando
+    horas en llenarse la hace SONAR igual que un archivado roto — la alarma no
+    sabria distinguir "el respaldo esta averiado" de "hoy se ha escrito poco", y
+    una alarma que suena por el volumen de escritura se deja de leer en una
+    semana. `archive_timeout` es lo que convierte esa edad en un RELOJ DE RPO en
+    vez de en un proxy del trafico.
+
+    LA CARA B, que sale de la clausula del "database activity" citada arriba: con
+    la base COMPLETAMENTE ociosa no hay cambio forzado de segmento (los
+    checkpoints se saltan), `last_archived_time` se congela y la alarma dispara
+    aunque no haya nada roto. Es un falso positivo, no una ceguera —el error va
+    hacia el lado seguro—, y aqui es poco probable porque los latidos de la flota
+    escriben cada minuto. Si algun dia la nube se queda sin gabinetes conectados,
+    esta es la explicacion del correo.
+
+    Coste, tambien literal de esa doc: "Note that archived files that are closed
+    early due to a forced switch are still the same length as completely full
+    files. Therefore, it is unwise to use a very short archive_timeout — it will
+    bloat your archive storage." Cada minuto sube 16 MiB comprimidos. Es el precio
+    del RPO.
+  EOT
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.wal_archive_timeout_s > 0
+    error_message = "wal_archive_timeout_s debe ser > 0: con 0 Postgres solo archiva segmentos LLENOS y el RPO deja de estar acotado (y el atasco es indistinguible del reposo)."
+  }
+
+  # Si el timeout alcanza la edad tolerada, la alarma dispara en operacion
+  # NORMAL: el segmento se cierra justo cuando la edad ya cruzo el umbral. Una
+  # alarma que suena sin que pase nada es una alarma que alguien acaba
+  # silenciando — y esta es intocable a proposito, asi que lo unico que quedaria
+  # es que se deje de leer.
+  validation {
+    condition     = var.wal_archive_timeout_s < var.wal_archive_max_age_s
+    error_message = "wal_archive_timeout_s debe ser estrictamente menor que wal_archive_max_age_s: si no, la alarma de atasco dispara en operacion normal y se convierte en ruido."
+  }
+}
+
+variable "wal_archive_max_age_s" {
+  description = <<-EOT
+    Edad maxima tolerada del archivado, en segundos. Es el umbral de la alarma de
+    `modules/observability` y, por tanto, el termino dominante del RPO: el RPO no
+    es lo que promete la configuracion feliz, es la edad del archivado a la que
+    alguien SE ENTERA.
+  EOT
+  type        = number
+  default     = 600
+
+  validation {
+    condition     = var.wal_archive_max_age_s > 0
+    error_message = "wal_archive_max_age_s debe ser > 0."
+  }
+}

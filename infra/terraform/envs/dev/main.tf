@@ -42,6 +42,20 @@ module "database" {
   db_backups_bucket = module.storage.db_backups_bucket
   instance_type     = var.instance_type
 
+  # [T-2.72] PITR. Los prefijos y la retencion los DECIDE `storage` (es el unico
+  # podador de la cadena) y bajan aqui enteros: escribir literales en este punto
+  # es exactamente como se parte una cadena de recuperacion sin que ningun plan
+  # se ponga rojo — el archivador escribiria bajo un prefijo y la expiracion
+  # gobernaria otro.
+  dump_key_prefix = module.storage.db_backups_prefixes.dump_key
+  pitr = {
+    prefix                    = module.storage.db_backups_prefixes.pitr
+    server_name               = module.storage.pitr_server_name
+    wal_retention_days        = module.storage.pitr_retention.wal_days
+    base_backup_interval_days = module.storage.pitr_retention.base_backup_interval_days
+    chain_margin              = module.storage.pitr_retention.chain_margin
+  }
+
   # Workers de ingesta co-locados en la instancia (default dev — plan §C.1).
   worker_queue_arns = concat(
     [for q in module.messaging.queues : q.arn],
@@ -162,4 +176,11 @@ module "observability" {
   instance_id               = module.database.instance_id
   iot_rule_errors_log_group = module.iot_core.rule_errors_log_group_name
   paged_gateways            = var.paged_gateways
+
+  # [T-2.72] El umbral de la alarma de atasco del archivado SALE de la DB, que es
+  # quien valida su `archive_timeout` contra el. Un literal aqui haria que la DB
+  # se validara contra un numero y la alarma vigilara otro, y el RPO publicado
+  # describiria a una alarma que no existe. El output `rpo_seconds` de abajo lo
+  # comprueba antes de dejar terminar el apply.
+  wal_archive_max_age_s = module.database.wal_archive_max_age_s
 }

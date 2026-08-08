@@ -218,6 +218,13 @@ jobs:
       # tres alarmas intocables (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`).
       - name: Test del alcance IAM del silenciador (plan-only, sin AWS)
         run: terraform -chdir=infra/terraform/modules/database init -backend=false && terraform -chdir=infra/terraform/modules/database test
+      # [T-2.72] La retención de los respaldos. `Expiration` sobre un bucket
+      # VERSIONADO no borra un byte: pone un delete marker y la versión anterior
+      # se queda facturándose para siempre. Peor para el PITR — el delete marker
+      # esconde el objeto al restaurador. Este módulo vivió desde julio sin un
+      # solo test, así que la corrección se podía borrar entera y CI seguía verde.
+      - name: Test de la retención de respaldos (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/storage init -backend=false && terraform -chdir=infra/terraform/modules/storage test
       # Re-aprovisionar un gabinete NO puede borrarle la configuración. Sin este test
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)

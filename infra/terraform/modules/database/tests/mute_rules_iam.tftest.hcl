@@ -127,8 +127,9 @@ run "el_silenciador_no_puede_tocar_las_alarmas_intocables" {
       !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-dlq")
       && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-iot-rule-errors")
       && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-gateway-retirado")
+      && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-wal-archivado")
     )
-    error_message = "La politica concede PutAlarmMuteRule sobre una alarma INTOCABLE. dlq_depth e iot_rule_errors son el instrumento del canary de T-2.70 (silenciarlas durante un despliegue es apagar el detector del fallo que el despliegue puede causar) y ghost_gateways vigila al vigilante. Ver ALARM_CATALOG en api/src/takab_api/ops/muting.py."
+    error_message = "La politica concede PutAlarmMuteRule sobre una alarma INTOCABLE. dlq_depth e iot_rule_errors son el instrumento del canary de T-2.70 (silenciarlas durante un despliegue es apagar el detector del fallo que el despliegue puede causar), ghost_gateways vigila al vigilante y wal_archive_stalled (T-2.72) es lo unico que acota el RPO. Ver ALARM_CATALOG en api/src/takab_api/ops/muting.py."
   }
 
   # Y que las cuatro silenciables SI esten: sin esto, la asercion de arriba

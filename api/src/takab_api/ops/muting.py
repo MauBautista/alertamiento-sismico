@@ -283,6 +283,35 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
             "existe para cerrar."
         ),
     ),
+    AlarmKind(
+        resource="wal_archive_stalled",
+        scope=NEVER,
+        name_template="takab-dev-wal-archivado-atascado",
+        why=(
+            "[T-2.72] Es el ÚNICO instrumento que acota el RPO. El número que publica "
+            "`terraform output rpo_seconds` no lo garantiza la configuración de Postgres: "
+            "lo garantiza que esta alarma suene. Silenciarla no pausa el riesgo — lo "
+            "vuelve invisible mientras sigue creciendo, y el RPO real pasa a ser "
+            "ilimitado durante toda la ventana. "
+            "EL CONTRAARGUMENTO, tomado en serio: durante un mantenimiento planificado "
+            "de la DB el archivado SE PARA legítimamente (la instancia baja, el "
+            "contenedor se recrea, un ensayo de restore la ocupa), así que esta alarma "
+            "VA A SONAR y el operador va a recibir un correo por algo que él mismo "
+            "provocó. Aun así es intocable, por tres razones. (1) El momento más "
+            "probable de que el archivado se rompa PARA SIEMPRE es justo después de una "
+            "ventana: config revertida, contenedor recreado sin `archive_mode`, "
+            "credenciales que ya no resuelven. Callarla durante la ventana es callar "
+            "exactamente la señal de que la ventana rompió el respaldo — el mismo "
+            "argumento que hace intocables a dlq_depth e iot_rule_errors frente al "
+            "canary de T-2.70. (2) El ruido es acotado y se cierra solo: un correo al "
+            "entrar en ALARM y otro al volver a OK cuando el archivado se reanuda. Si "
+            "el correo de OK NO llega, eso ES el hallazgo, y es la única forma barata "
+            "de tenerlo. (3) La asimetría del daño: el ruido cuesta un correo de más; "
+            "el silencio cuesta descubrir en el peor momento posible que el respaldo "
+            "llevaba semanas sin funcionar — que es literalmente el estado que la "
+            "Fase 2.6 existe para dejar atrás (`RUNBOOK-backup-restore-db.md:3`)."
+        ),
+    ),
 )
 
 

@@ -34,6 +34,9 @@ BLUEPRINT = REPO / "takab-docs" / "BLUEPRINT-TECNICO-TAKAB.md"
 PLAN_MAESTRO = REPO / "takab-docs" / "PLAN-MAESTRO-TAKAB.md"
 CLAUDE_MD = REPO / "CLAUDE.md"
 AUTO_POPUP = REPO / "web" / "src" / "features" / "console" / "useAutoPopup.ts"
+RUNBOOK_BACKUP = REPO / "takab-docs" / "runbooks" / "RUNBOOK-backup-restore-db.md"
+TF_DB_VARS = REPO / "infra" / "terraform" / "modules" / "database" / "variables.tf"
+TF_OBSERVABILITY = REPO / "infra" / "terraform" / "modules" / "observability" / "main.tf"
 
 #: Los documentos que `CLAUDE.md §5` declara fuente de verdad del proyecto. Es donde una
 #: afirmación falsa **gobierna**: quien lea aquí no va a ir a comprobarla al código.
@@ -1476,6 +1479,93 @@ def test_ningun_valor_normativo_queda_dentro_de_un_blockquote_por_descuido(path:
 # L5. **El detector de continuación laxa solo mira declaraciones `**Clave:**`.** Una tabla,
 #     una viñeta o un párrafo de prosa absorbidos por un blockquote no se detectan.
 #
+# ---------------------------------------------------------------------------
+# El RPO del runbook de backup sale de la configuración, no de una promesa
+# ---------------------------------------------------------------------------
+#
+# T-2.72 pedía un RPO "derivable de la configuración, no de una promesa". Terraform lo deriva
+# de los atributos del recurso de alarma y lo publica como `rpo_seconds`. Pero el sitio donde
+# el proyecto DECLARA su RPO —donde va a mirarlo un humano— es el runbook, y ahí la cifra
+# vuelve a ser un número tecleado a mano. Ese es el eslabón que este test cierra.
+#
+# No es hipotético: hasta el 2026-08-08 el §2 de ese runbook decía "RPO actual ≤ 24 h" y
+# "objetivos PROPUESTOS: RPO ≤ 15 min" con el PITR ya escrito en el terraform. Una cifra
+# obsoleta en el documento de gobierno vale menos que ninguna: quien la lea no va a ir a
+# comprobarla al `.tf`.
+#
+# LA DERIVACIÓN, que es la parte que hay que entender antes de tocar los números:
+#
+#     RPO = umbral_de_la_alarma + period × evaluation_periods
+#
+# El primer término es obvio. El segundo NO es adorno y por eso se comprueba: CloudWatch no
+# avisa al cruzar el umbral, avisa tras `evaluation_periods` periodos SEGUIDOS por encima, y
+# durante esos minutos se sigue acumulando WAL que no está en S3. Tomar solo el umbral sería
+# el mismo error que tomar `archive_timeout`, un escalón más arriba: confundir el caso feliz
+# de la detección con el peor caso.
+_RPO_RUNBOOK_RE = re.compile(r"^### RPO: (\d+) s ", re.M)
+_MAX_AGE_RE = re.compile(r'variable "wal_archive_max_age_s".*?^\s*default\s*=\s*(\d+)', re.S | re.M)
+_ALARM_RE = re.compile(
+    r'resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled".*?^\}', re.S | re.M
+)
+
+
+def _atributo_numerico(bloque: str, nombre: str) -> int:
+    match = re.search(rf"^\s*{nombre}\s*=\s*(\d+)\s*$", bloque, re.M)
+    assert match, f"la alarma `wal_archive_stalled` ya no declara `{nombre}` como literal"
+    return int(match.group(1))
+
+
+def test_el_rpo_del_runbook_de_backup_es_el_que_deriva_el_terraform() -> None:
+    runbook = RUNBOOK_BACKUP.read_text(encoding="utf-8")
+    declarado = _RPO_RUNBOOK_RE.search(runbook)
+    assert declarado, (
+        "El runbook de backup ya no declara su RPO en la forma `### RPO: <n> s `. "
+        "Ese encabezado es el ancla de este test: si cambia la redacción, cambia también "
+        "`_RPO_RUNBOOK_RE` — no borres el ancla y dejes la cifra suelta."
+    )
+
+    umbral = _MAX_AGE_RE.search(TF_DB_VARS.read_text(encoding="utf-8"))
+    assert umbral, "no se pudo leer el default de `wal_archive_max_age_s`: el test estaría vacío"
+
+    alarma = _ALARM_RE.search(TF_OBSERVABILITY.read_text(encoding="utf-8"))
+    assert alarma, (
+        "no se encontró el recurso `aws_cloudwatch_metric_alarm.wal_archive_stalled`: "
+        "sin la alarma, `rpo_seconds` no describe nada y el RPO del runbook es una promesa"
+    )
+    bloque = alarma.group(0)
+    derivado = int(umbral.group(1)) + _atributo_numerico(bloque, "period") * _atributo_numerico(
+        bloque, "evaluation_periods"
+    )
+
+    assert int(declarado.group(1)) == derivado, (
+        "El RPO que declara `RUNBOOK-backup-restore-db.md` §2 no es el que deriva la "
+        "configuración.\n"
+        f"  runbook:  {declarado.group(1)} s\n"
+        f"  terraform: {derivado} s  (umbral {umbral.group(1)} + period × evaluation_periods)\n"
+        "  El runbook es donde un humano BUSCA el RPO. Una cifra tecleada que ya no cuadra "
+        "con la alarma que la sostiene es exactamente la 'promesa' que T-2.72 existía para "
+        "eliminar. Actualiza el runbook en el MISMO commit que mueva los números."
+    )
+
+
+def test_el_rpo_declarado_se_apoya_en_una_alarma_que_no_puede_callarse() -> None:
+    """La derivación del RPO es MENTIRA si el silencio de la métrica no alarma.
+
+    Si el publicador de `WalArchiveAgeSeconds` muere, la métrica desaparece. Con `missing` o
+    `notBreaching` la alarma se quedaría callada para siempre y el RPO pasaría a ser
+    ilimitado — el runbook seguiría anunciando 900 s con el archivado parado hace semanas.
+    Los tests de terraform ya lo exigen en dos archivos; esto ata el tercer extremo: que el
+    NÚMERO PUBLICADO en el documento de gobierno dependa de esa decisión y no la sobreviva.
+    """
+    alarma = _ALARM_RE.search(TF_OBSERVABILITY.read_text(encoding="utf-8"))
+    assert alarma, "no se encontró la alarma `wal_archive_stalled`"
+    assert 'treat_missing_data  = "breaching"' in alarma.group(0), (
+        "La alarma del archivado dejó de estar en `breaching`. El RPO que publica el runbook "
+        "se apoya en que la AUSENCIA de la métrica alarme: sin eso, el publicador puede morir "
+        "y el silencio pasa por salud."
+    )
+
+
 # --- Límites de fondo: qué clase de verdad se está comprobando ---------------------------
 #
 # F1. **`TECNOLOGIAS` es una lista de seis, no un descubridor.** Una tecnología inventada de
@@ -1501,3 +1591,16 @@ def test_ningun_valor_normativo_queda_dentro_de_un_blockquote_por_descuido(path:
 # F5. **La cabecera de conteo se verifica contra `^### [.] T-…`, que es la definición de
 #     "tarea" de este archivo.** Una tarea escrita con otro encabezado no existe para el
 #     conteo ni para los cierres cruzados.
+#
+# F6. **El cruce del RPO ata el runbook a los DEFAULTS del `.tf`, no al valor aplicado.** Si
+#     `envs/dev` pasara un `wal_archive_max_age_s` distinto del default de `modules/database`,
+#     este test seguiría verde comparando contra el default y el runbook publicaría un número
+#     que la cuenta real no tiene. Quien vigila esa costura es la `precondition` de
+#     `envs/dev/outputs.tf` — y esa **solo se evalúa en el `apply`** (`validate` no mira
+#     preconditions, y meter un plan de ese entorno en CI choca con el `profile` cableado en
+#     `providers.tf`). O sea: entre los dos se cubre el camino entero, pero el último tramo no
+#     lo comprueba nadie hasta la ventana HUMANO-AWS de `T-2.74`.
+#
+# F7. **Y ata el número, no la realidad.** Que el runbook, las variables y la alarma digan 900
+#     no prueba que se esté archivando un solo WAL. Eso lo dice la alarma en AWS, y hasta el
+#     `apply` de `T-2.74` no lo dice nadie.

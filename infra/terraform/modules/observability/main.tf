@@ -48,7 +48,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "notBreaching"
+  treat_missing_data  = "breaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
@@ -81,10 +81,10 @@ resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
   dimensions          = { InstanceId = var.instance_id }
   statistic           = "Average"
   period              = 300
-  evaluation_periods  = 3
+  evaluation_periods  = 5
   threshold           = 90
   comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
+  treat_missing_data  = "breaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
@@ -114,7 +114,7 @@ resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "notBreaching"
+  treat_missing_data  = "breaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 
@@ -222,6 +222,79 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
 # 12 periodos de 5 min = 1 h sostenida. Retirar un gabinete que sigue enchufado y
 # luego ir a desmontarlo es una secuencia legitima; lo que no es legitimo es que
 # ese estado se quede ahi. Una hora separa el tramite del olvido.
+# --- [T-2.72] El archivado del WAL se atasco: el RPO deja de estar acotado -----
+#
+# Esta es la alarma de la que SE DERIVA el RPO, no una alarma sobre el RPO. La
+# diferencia importa: "RPO <= 15 min" no sale de que `archive_timeout` valga 60 s
+# —eso describe el caso feliz— sino de que la edad del archivado no pueda pasar de
+# `wal_archive_max_age_s` sin que suene un telefono. El numero publicado
+# (`output.rpo_seconds`) se calcula de los atributos de ESTE recurso:
+#
+#     RPO = threshold + period * evaluation_periods
+#
+# El segundo termino no es un detalle: CloudWatch no avisa al cruzar el umbral,
+# avisa tras `evaluation_periods` periodos SEGUIDOS por encima. Durante esos
+# minutos se sigue acumulando WAL que no esta en S3.
+#
+# QUE PUBLICA LA METRICA: un cron en la instancia (documento SSM de
+# `modules/database`) que cada 60 s lee `pg_stat_archiver.last_archived_time` y
+# publica su antiguedad. SIEMPRE, tambien cuando vale 0.
+#
+# POR QUE `breaching` Y NO `missing`, que fue lo correcto en `ghost_gateways`:
+# alli la ausencia de la metrica no decia nada sobre fantasmas —solo que el que
+# contaba estaba callado— y afirmar "hay fantasmas" habria sido afirmar lo que no
+# se sabe. Aqui la ausencia SI es la condicion vigilada, y por una razon precisa:
+# lo que esta alarma mide no es "cuanto WAL falta" sino "hasta que instante se
+# puede recuperar". Cuando la metrica desaparece —DB que no responde, publicador
+# muerto, instancia caida— ese instante pasa a ser DESCONOCIDO, y un RPO
+# desconocido es, operativamente, un RPO ilimitado. "No lo se" y "esta roto" son
+# aqui la misma frase.
+#
+# Con `missing` o `notBreaching` toda la derivacion de arriba seria falsa: el
+# publicador muere, la metrica se apaga, la alarma calla para siempre y el RPO
+# real deja de tener techo mientras el `terraform output` sigue diciendo 900.
+#
+# COSTE ACEPTADO: parar la instancia a proposito (`make cloud-stop`, un ensayo de
+# restore, una ventana de mantenimiento) hace sonar esta alarma. Se acepta, y por
+# eso esta clasificada como INTOCABLE en `api/src/takab_api/ops/muting.py` — la
+# razon larga vive alli.
+#
+# LO QUE ESTA ALARMA VIGILA POR ACCIDENTE, y conviene saberlo: el disco. Un
+# archivado atascado impide que Postgres recicle su WAL, asi que `pg_wal` crece
+# ~16 MiB/min y en menos de dos dias llena el volumen de 40 GiB que comparte con
+# los datos. Esta alarma llega mucho antes (900 s) y por eso el riesgo esta
+# cubierto, pero lo esta por la via indirecta: mide el archivado, no el disco. La
+# alarma de espacio libre DE VERDAD exige el agente de CloudWatch en la instancia
+# (`disk_used_percent` no existe en las metricas nativas de EC2) y no cabia en
+# esta tarea. Queda FICHADA: sin ella, cualquier otra causa de disco lleno —un log
+# desbocado, una restauracion a base lateral— sigue siendo invisible.
+#
+# TAMPOCO vigila el BACKUP BASE. Mide la cadena de WAL, no su ancla: un
+# `barman-cloud-backup` que falle cada semana no mueve esta metrica ni un segundo.
+# Fichado con su forma: publicar `BaseBackupAgeSeconds` una vez al dia desde
+# `barman-cloud-backup-list` y alarmar por encima de
+# `base_backup_interval_days * chain_margin`.
+resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled" {
+  alarm_name          = "takab-dev-wal-archivado-atascado"
+  alarm_description   = "El archivado continuo de WAL lleva demasiado tiempo sin avanzar (o no se sabe cuanto): a partir de aqui, un desastre pierde todo lo escrito desde el ultimo segmento que llego a S3. Y HAY UN RELOJ MAS CORTO QUE EL DEL RPO: con el archivado atascado, Postgres NO recicla su WAL y `pg_wal` crece ~16 MiB por minuto (archive_timeout fuerza segmentos de tamaño completo) sobre el mismo volumen de 40 GiB donde viven los datos — menos de dos dias hasta llenar el disco y tumbar la DB. Lo primero es mirar el espacio libre en /data; despues `pg_stat_archiver` (last_failed_time/failed_count dicen si el archive_command falla en bucle) y /var/log/takab-pitr.log. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es la memoria de la nube y, en 48 h, la nube entera."
+  namespace           = "Takab/Ops"
+  metric_name         = "WalArchiveAgeSeconds"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  threshold           = var.wal_archive_max_age_s
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+
+  # Los tres estados. El OK es la unica senal de que el archivado se recupero — y,
+  # tras el primer apply, la unica senal de que la metrica llego a publicarse
+  # alguna vez (la leccion de `ghost_gateways`: una alarma nacida en
+  # INSUFFICIENT_DATA se queda ahi sin transicion y sin correo).
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
   alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie."
