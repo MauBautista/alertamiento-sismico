@@ -305,6 +305,41 @@ def test_el_despliegue_de_hoy_activa_el_perfil_de_produccion() -> None:
     )
 
 
+def test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar() -> None:
+    """Un backtick en un heredoc SIN comillas no es tipografía: es un `exec`.
+
+    Ocurrió el 2026-08-09. Un comentario recién escrito dentro del heredoc de
+    `CLOUD_ENV` citaba tres identificadores entre backticks, y como ese heredoc
+    va sin comillas (`<<EOF`, no `<<'EOF'` — tiene que expandir los `$(tf …)`),
+    bash intentó EJECUTARLOS: tres «orden no encontrada» en mitad de un
+    despliegue de producción. Esta vez cayeron en líneas de comentario y el daño
+    fue ruido; el mismo descuido sobre una línea de valor habría metido la salida
+    de un comando ajeno dentro de `cloud.env`.
+
+    `shellcheck` no lo ve —un backtick ahí es sintaxis perfectamente válida— y
+    los comentarios que ya vivían en ese heredoc evitaban backticks por esta
+    razón, sin que nadie lo hubiera escrito en ninguna parte. Ahora está escrito
+    y además se comprueba.
+
+    Se permiten los escapados (`\\``), que es como el propio archivo cita
+    `git rev-parse` sin ejecutarlo.
+    """
+    texto = (REPO_ROOT / "deploy" / "cloud" / "deploy.sh").read_text()
+    heredocs = re.findall(r"<<EOF\n(.*?)\nEOF\n", texto, re.S)
+    assert heredocs, "el patrón de heredoc cambió: este test dejó de mirar nada"
+
+    culpables: list[str] = []
+    for cuerpo in heredocs:
+        for numero, linea in enumerate(cuerpo.splitlines(), 1):
+            if re.search(r"(?<!\\)`", linea):
+                culpables.append(f"{numero}: {linea.strip()}")
+    assert not culpables, (
+        "hay backticks SIN ESCAPAR dentro de un heredoc sin comillas de "
+        "deploy/cloud/deploy.sh: el despliegue ejecutará lo que hay entre ellos "
+        "en vez de escribirlo.\n" + "\n".join(culpables)
+    )
+
+
 def test_todo_lo_que_el_despliegue_embebe_esta_en_git() -> None:
     """Un fichero que `deploy.sh` embebe y que git no tiene = nube irreproducible.
 
