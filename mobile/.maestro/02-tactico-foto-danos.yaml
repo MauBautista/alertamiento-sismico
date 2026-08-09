@@ -1,13 +1,16 @@
 # E2E · Táctico: cámara forense → formulario de daños → llega a Triage.
 # Precondición: incidente ACTIVO; el táctico enrolado con dictamen_read/damage.
 appId: com.takab.ailert
-env:
-  TACTICO_EMAIL: ${TACTICO_EMAIL}
-  TACTICO_PASSWORD: ${TACTICO_PASSWORD}
 ---
 - launchApp:
     clearState: true
 - runFlow: shared/login-tactico.yaml
+# El táctico también pasa por el onboarding tras `clearState`, pero SIN código:
+# su alcance viene del claim, no de un enrolamiento.
+- runFlow: shared/onboarding-tactico.yaml
+# Tras una sacudida concluida, el check-in de vida TOMA la pantalla y tapa las
+# pestañas. Responderlo primero es la secuencia real, no un rodeo.
+- runFlow: shared/atender-checkin.yaml
 
 # 2.4 · Formulario de daños con foto forense (2.3).
 - tapOn: "TRIAGE"

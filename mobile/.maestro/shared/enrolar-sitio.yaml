@@ -1,0 +1,62 @@
+# Subflujo · onboarding del occupant DESPUÉS de `clearState`.
+#
+# Por qué existe: `launchApp: clearState` borra el estado local, y el vínculo del
+# ocupante con su edificio vive EN PARTE ahí. `/me` construye `site_scope`
+# únicamente con los claims del token (`routers/me.py`), y un ocupante NO lleva
+# `custom:site_scope` — es default-deny a propósito (R2, decisión T-2.00): su
+# alcance lo resuelve el servidor contra `user_zone_assignments`, y el sitio
+# VIGILADO que pinta la app lo escribe el propio enrolamiento en el dispositivo.
+# Así que tras un `clearState` la app vuelve al onboarding aunque el usuario ya
+# esté enrolado en el servidor, y los flujos que iban directos a la pantalla de
+# inicio se quedaban mirando una pantalla que no era esa.
+#
+# Cada paso va condicionado: si la app YA está vinculada, este subflujo no hace
+# nada. Así sirve igual tras un `clearState` que en una corrida encadenada.
+#
+# Se pulsa "Continuar" y NO "PERMITIR NOTIFICACIONES" a propósito: el segundo
+# abre un diálogo del SISTEMA, que no es de la app y cuyo texto cambia con la
+# versión de Android. Ningún flujo de esta carpeta prueba la push — es un
+# despertador best-effort y la protección de vida es la sirena del edificio.
+appId: com.takab.ailert
+---
+- assertTrue: ${SITE_CODE != null && SITE_CODE.length > 3}
+- runFlow:
+    when:
+      visible: "CONFIGURACIÓN · PASO 1 DE 3"
+    commands:
+      - tapOn: "Continuar"
+
+- runFlow:
+    when:
+      visible:
+        id: "privacy-accept"
+    commands:
+      - tapOn:
+          id: "privacy-accept"
+
+- runFlow:
+    when:
+      visible: "CONFIGURACIÓN · PASO 3 DE 3"
+    commands:
+      - tapOn: "CÓDIGO-DE-SITIO"
+      - inputText: ${SITE_CODE}
+      - tapOn:
+          id: "enrolamiento-vincular"
+      # El servidor confirma con el nombre del sitio y la POLÍTICA de la zona
+      # (evacuate|shelter), que es la que decide el texto de la toma de crisis.
+      #
+      # OPCIONAL, y la razón importa: si en ese momento hay una alerta activa, el
+      # `CrisisWatcher` TOMA LA PANTALLA en cuanto el enrolamiento propaga el
+      # sitio (T-2.103), y la tarjeta de confirmación no llega a verse. Eso no es
+      # un fallo: una instrucción de evacuación manda sobre una pantalla de
+      # configuración. Exigir "TERMINAR" convertía el comportamiento correcto en
+      # rojo — medido en device el 2026-08-09, con un incidente real abierto.
+      - extendedWaitUntil:
+          visible: "TERMINAR"
+          timeout: 20000
+          optional: true
+      - runFlow:
+          when:
+            visible: "TERMINAR"
+          commands:
+            - tapOn: "TERMINAR"

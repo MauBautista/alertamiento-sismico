@@ -1,0 +1,27 @@
+# Subflujo · descarta la hoja «¿guardar esta contraseña?» del gestor del sistema.
+#
+# No es cosmético. Android la muestra tras enviar un formulario de credenciales
+# (Bitwarden, Google Password Manager, el que el usuario tenga), es MODAL y
+# atenúa toda la app: mientras está arriba, cualquier `tapOn` posterior falla con
+# «element not found» aunque el elemento esté ahí, y cualquier `notVisible`
+# devuelve un verde falso porque la hoja tapa lo que se estaba midiendo.
+#
+# Peor todavía: SOBREVIVE al `launchApp: clearState`. En la corrida del
+# 2026-08-09 la hoja que dejó un flujo bloqueó el ARRANQUE del siguiente, y el
+# fallo se leía como «la app no llega a la pantalla de login».
+#
+# Por eso se invoca DOS veces en cada login: antes de empezar (por si quedó de
+# una corrida anterior) y después de enviar el formulario.
+#
+# `android:id/autofill_save_no` es un id de PLATAFORMA: no cambia con el idioma
+# del teléfono ni con el gestor de contraseñas instalado, que es justo lo que
+# hacía frágil buscarlo por texto.
+appId: com.takab.ailert
+---
+- runFlow:
+    when:
+      visible:
+        id: "android:id/autofill_save_no"
+    commands:
+      - tapOn:
+          id: "android:id/autofill_save_no"

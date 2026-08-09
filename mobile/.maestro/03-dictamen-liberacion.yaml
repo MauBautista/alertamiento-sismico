@@ -2,9 +2,6 @@
 # Precondición: un inspector firma un dictamen HABITABLE en la consola web
 # ANTES o DURANTE este flujo (el push despierta la app).
 appId: com.takab.ailert
-env:
-  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
-  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
 ---
 - launchApp:
     clearState: true

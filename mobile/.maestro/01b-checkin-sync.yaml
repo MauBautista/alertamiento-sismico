@@ -1,0 +1,36 @@
+# E2E · 2/2 · Check-in de vida → cola de sync (occupant).
+#
+# PRECONDICIÓN: el servidor YA concluyó la sacudida del incidente activo.
+#     make cloud-staging-incident PHASE=conclude
+#
+# VIENE DE: `01a-crisis.yaml`. Se puede correr suelto: hace su propio login, y
+# `enrolar-sitio.yaml` no hace nada si la app ya está vinculada.
+#
+# Qué acredita: que el check-in declara DÓNDE está — "guardado en este
+# dispositivo" no es "recibido por el servidor", y la app no puede fingir lo
+# segundo. Es la regla de oro 7 aplicada al dato que dice si una persona está
+# viva.
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- runFlow: shared/enrolar-sitio.yaml
+
+# 1.4 · Concluida la sacudida, la app pide el check-in de vida.
+- extendedWaitUntil:
+    visible: "¿Se encuentra bien?"
+    timeout: 40000
+- tapOn: "ESTOY BIEN"
+- assertVisible:
+    text: ".*(GUARDADO EN ESTE DISPOSITIVO|RECIBIDO POR EL SERVIDOR).*"
+
+# NOTA · el flujo original terminaba con `tapOn: "CUENTA"` + `assertVisible:
+# "SINCRONIZACIÓN.*"`, y llevaba escrito al lado «ajustar si aplica». No aplica:
+# la pestaña SYNC es del BRIGADISTA (`app/(brigadista)/sync.tsx`); el occupant
+# tiene INICIO · RUTAS · DIRECTORIO · CUENTA, y su pantalla de Cuenta no muestra
+# ninguna sección de sincronización. Esa aserción no podía pasar nunca.
+# La cobertura no se pierde: para el occupant, el estado de la cola ES la
+# etiqueta de arriba —«guardado en este dispositivo» frente a «recibido por el
+# servidor»—, que es justo lo que no se puede fingir. La cola vista COMO cola la
+# ejercita `05-offline-avion.yaml`, que corre con el táctico y sí tiene SYNC.

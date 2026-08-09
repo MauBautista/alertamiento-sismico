@@ -1,19 +1,88 @@
-# Subflujo · login del táctico (pool con MFA obligatorio: pide TOTP).
+# Subflujo · login del táctico (pool PRINCIPAL, con MFA obligatorio: pide TOTP).
+#
+# LOS CAMPOS SE SELECCIONAN POR `id`, NO POR TEXTO. Cognito expone los ids de su
+# propio HTML —`signInFormUsername` y `signInFormPassword`— a través del árbol de
+# accesibilidad de la Custom Tab, y eso los hace INDEPENDIENTES DEL IDIOMA.
+#
+# Los dos intentos anteriores fallaron por lo mismo, mirado desde ángulos
+# distintos, y quedan escritos para que nadie los repita:
+#   1. `tapOn: "Email"` — la Hosted UI se sirve en el idioma del dispositivo, y
+#      en un teléfono en español los campos son «Correo electrónico» y
+#      «Contraseña». Los cinco flujos morían en el primer campo.
+#   2. `tapOn: ".*(Email|Correo electrónico).*"` — bilingüe, y aun así mal: casa
+#      con la ETIQUETA y hasta con el encabezado «Inicia sesión con tu correo
+#      electrónico y contraseña», no con el `EditText`. Tocar una etiqueta no da
+#      el foco, así que `inputText` escribía en el vacío y Chrome respondía
+#      «Completa este campo».
+#
+# `eraseText` ANTES de cada `inputText`, y tampoco es rutina: el gestor de
+# contraseñas del teléfono (Bitwarden, Google, el que sea) autocompleta el
+# formulario en cuanto un campo toma el foco. Sin borrar, lo tecleado se SUMA a
+# lo autocompletado y Cognito responde «Nombre de usuario o contraseña
+# incorrectos» — un fallo que se lee como credenciales malas y no lo es.
+# Verificado en un Pixel 8 Pro el 2026-08-09: las mismas credenciales entran por
+# el camino headless en el mismo momento.
+#
+# El botón de envío sí va por texto: es el único de los tres que NO tiene id
+# propio en el árbol de accesibilidad.
 appId: com.takab.ailert
 ---
+# GUARDIA. Maestro NO hereda el entorno del shell: si estas variables no llegan
+# por `-e`, `${TACTICO_EMAIL}` se evalúa a la CADENA "undefined" y se teclea tal cual
+# en el formulario. Cognito responde «Nombre de usuario o contraseña
+# incorrectos», que se lee como credenciales mal sembradas y no lo es. Pasó el
+# 2026-08-09 y costó cuatro corridas encontrarlo. Usa `.maestro/run.sh`.
+- assertTrue: ${TACTICO_EMAIL != null && TACTICO_EMAIL.includes("@")}
+- assertTrue: ${TACTICO_PASSWORD != null && TACTICO_PASSWORD.length > 8}
+# La hoja del gestor de contraseñas SOBREVIVE al `clearState`: si la dejó la
+# corrida anterior, bloquea el arranque de ésta.
+- runFlow: descartar-autofill.yaml
+
+# EL BOTÓN DEL TÁCTICO, no el del ocupante. Los dos conviven en la pantalla de
+# login y este subflujo tapeaba el primero — el de «INICIAR SESIÓN · Ocupante».
+# Con la sesión de Cognito del ocupante viva en Chrome, entraba como OCUPANTE sin
+# pedir credenciales ni MFA, y el flujo moría después buscando una pestaña que
+# ese rol no tiene. Un login que entra con el rol equivocado y en silencio es
+# peor que uno que falla. Medido en un Pixel 8 Pro el 2026-08-09.
 - tapOn:
-    text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
+    text: ".*(Acceso personal operativo|Operational staff access).*"
+# La Hosted UI puede NO pedir credenciales: Chrome conserva la sesión de Cognito
+# entre corridas, y entonces `/oauth2/authorize` redirige solo. Por eso la espera
+# es OPCIONAL y el tecleo va condicionado: exigir el formulario hacía fallar el
+# segundo flujo de una misma corrida por haber entrado bien en el primero.
 - extendedWaitUntil:
-    visible: "Email"
-    timeout: 20000
-- tapOn: "Email"
-- inputText: ${TACTICO_EMAIL}
-- tapOn: "Password"
-- inputText: ${TACTICO_PASSWORD}
-- tapOn:
-    text: ".*(Sign in|Iniciar sesión).*"
-# MFA obligatorio del pool táctico (RBAC §4.3): el TOTP se ingresa a mano en la
-# corrida de aceptación (Maestro no genera el código; usar `maestro --env TOTP`).
+    visible:
+      id: "signInFormUsername"
+    timeout: 15000
+    optional: true
+
+- runFlow:
+    when:
+      visible:
+        id: "signInFormUsername"
+    commands:
+      - tapOn:
+          id: "signInFormUsername"
+      - eraseText
+      - inputText: ${TACTICO_EMAIL}
+      - tapOn:
+          id: "signInFormPassword"
+      - eraseText
+      - inputText: ${TACTICO_PASSWORD}
+      - hideKeyboard
+      - tapOn:
+          text: ".*(Sign in|Iniciar sesión).*"
+
+- runFlow: descartar-autofill.yaml
+
+# Se espera a que desaparezca el campo de USUARIO y no el de contraseña: la hoja
+# del gestor sale por abajo y tapa el segundo mientras el primero sigue visible,
+# así que esperar por el de contraseña daba un verde falso y el flujo seguía con
+# el formulario todavía en pantalla.
+# MFA obligatorio del pool táctico (RBAC §4.3): el TOTP lo teclea una PERSONA —
+# Maestro no genera el código. El timeout largo es por eso, no por lentitud de
+# red: hay alguien mirando su authenticator y escribiendo seis dígitos.
 - extendedWaitUntil:
-    notVisible: "Password"
-    timeout: 40000
+    notVisible:
+      id: "signInFormUsername"
+    timeout: 120000

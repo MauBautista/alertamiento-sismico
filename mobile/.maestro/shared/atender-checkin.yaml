@@ -1,0 +1,26 @@
+# Subflujo · responde el check-in de vida si la app lo está pidiendo.
+#
+# `CrisisWatcher` enruta a `/checkin` en cuanto el servidor pasa a
+# `shaking_concluded` y esta persona todavía no ha respondido. Es una TOMA DE
+# PANTALLA: tapa las pestañas, así que cualquier flujo que intente navegar
+# después de una sacudida concluida se queda mirando esta pantalla y falla con un
+# «no encuentro la pestaña» que apunta al sitio equivocado.
+#
+# Responder aquí no es un rodeo para llegar a la pantalla que interesa: es la
+# secuencia real. Un brigadista también declara primero que está bien y trabaja
+# después; el orden lo impone la app a propósito.
+#
+# Condicional: si no hay check-in pendiente, no hace nada.
+appId: com.takab.ailert
+---
+- runFlow:
+    when:
+      visible: "¿Se encuentra bien?"
+    commands:
+      - tapOn: "ESTOY BIEN"
+      # La app declara DÓNDE quedó el dato — «guardado en este dispositivo» no es
+      # «recibido por el servidor», y no puede fingir lo segundo.
+      - extendedWaitUntil:
+          visible:
+            text: ".*(GUARDADO EN ESTE DISPOSITIVO|RECIBIDO POR EL SERVIDOR).*"
+          timeout: 20000

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **239** · `[x]` **167** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **241** · `[x]` **169** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6620,6 +6620,85 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.103 · Tras enrolarse, el vigilante de crisis se quedaba ciego — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile · **Depende de:** — · **Origen:** la primera corrida del E2E `01a` en
+  un Pixel 8 Pro, con un incidente REAL abierto por el gabinete
+- **El defecto:** `useWatchedSiteId()` guardaba el sitio en un `useState` por instancia y solo
+  releía SecureStore cuando cambiaban `status` o `me`. **Enrolarse no toca ninguno de los dos**,
+  así que `setWatchedSite()` escribía el disco y ningún componente ya montado se enteraba.
+- **Por qué importa, y no es una molestia de UI:** `CrisisWatcher` se monta en el layout **raíz**,
+  antes del onboarding. En una instalación nueva resuelve `siteId = null` (SecureStore vacío) y
+  **se queda así toda la sesión**. Sin sitio no se consulta `mobile-state`; sin fase no hay toma
+  de pantalla de crisis. Un ocupante que se enrola y sufre un sismo **antes de reiniciar la app**
+  no recibe la instrucción de evacuar. Y esa es, en todo edificio nuevo, la primera sesión de
+  todo el mundo.
+- **Medido, no supuesto (2026-08-09):** con el servidor devolviendo `phase: "alert_active"` e
+  `evac_policy: "evacuate"` para ese mismo ocupante, la app mostraba **SEGURO · Monitoreo
+  sísmico activo**. Un `force-stop` + arranque, sin borrar estado, pintaba de inmediato
+  `ALERTA SÍSMICA SASMEX · EVACÚE AHORA · ZONA PB-A · T+391m10s`. La toma funcionaba; lo que no
+  llegaba era el sitio.
+- **El arreglo:** el sitio vigilado pasa a un store observable (zustand, el mismo patrón que
+  `session.store`), y `setWatchedSite` **avisa** además de persistir. El disco sigue siendo la
+  persistencia; lo que faltaba era la propagación. Cerrar sesión lo suelta, para que la sesión
+  siguiente no herede el edificio de la anterior.
+- **Criterios de aceptación:**
+  - [x] Un consumidor montado ANTES del enrolamiento ve el sitio al vincular
+        (`mySite.test.tsx`). Verificado en las dos direcciones: revertir la propagación pone el
+        test en rojo.
+  - [x] `signOut()` suelta el sitio.
+  - [x] Acreditado en device: el E2E `01a` pinta la toma de crisis sin reiniciar la app.
+
+### [x] T-2.102 · Los cinco flujos E2E no podían correr, y no era la app — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile/e2e · **Depende de:** — · **Origen:** la primera corrida REAL de la
+  suite Maestro en un Pixel 8 Pro, para `GATE-HW` móvil
+- **Tres defectos, todos DE LOS FLUJOS:**
+  1. **`clearState` deja al dev-client en el DevLauncher.** Todos los flujos empiezan con
+     `launchApp: clearState`, que borra también la configuración del dev launcher: un
+     dev-client se queda esperando a que alguien le diga a qué Metro conectarse. El fallo se
+     leía como «no encuentro el botón de login», que apunta a la app en vez de al build. La
+     suite exige un **APK de release**, y el README decía justo lo contrario.
+  2. **Los subflujos de login buscaban `"Email"` y `"Password"`.** La Hosted UI de Cognito se
+     sirve en el idioma del dispositivo: en un teléfono en español son «Correo electrónico» y
+     «Contraseña». Los cinco flujos morían en el primer campo. Selectores bilingües: fijar el
+     español sería cambiar un supuesto por otro.
+  3. **Tras `clearState` el occupant pierde su sitio vigilado.** `routers/me.py` construye
+     `site_scope` **solo** con los claims del token, y un occupant no lleva `custom:site_scope`
+     — es default-deny a propósito (R2). El vínculo vive en `user_zone_assignments` **y** en
+     estado local que `clearState` borra, así que reaparece el onboarding y ningún flujo lo
+     contemplaba. Subflujo `shared/enrolar-sitio.yaml`, condicionado paso a paso: no hace nada
+     si la app ya está vinculada.
+- **Y un cuarto, de diseño:** `01` afirmaba la toma de crisis **y después** el check-in de
+  vida, que solo aparece cuando el servidor concluye la sacudida. Maestro no puede pausar para
+  que alguien cambie la fase del incidente, así que la segunda mitad no podía pasar nunca.
+  Partido en `01a-crisis` y `01b-checkin-sync`, cada uno verde por sí solo y **declarando en su
+  cabecera** qué fase necesita antes: un flujo que solo pasa si alguien ejecuta algo a mano sin
+  que el archivo lo diga es un flujo que miente.
+- **Cobertura retirada, y dicho:** el `01` original terminaba con `tapOn: "CUENTA"` +
+  `assertVisible: "SINCRONIZACIÓN.*"`, con un «ajustar si aplica» al lado. No aplica: la
+  pestaña SYNC es del BRIGADISTA y la pantalla de Cuenta del occupant no tiene sección de
+  sincronización — esa aserción no podía pasar nunca. Para el occupant el estado de la cola ES
+  la etiqueta «guardado en este dispositivo» / «recibido por el servidor», que sigue asertada;
+  la cola vista como cola la ejercita `05`, que corre con el táctico.
+- **Criterios de aceptación:**
+  - [x] Los tres defectos arreglados, cada uno con su razón escrita dentro del archivo.
+  - [x] README con el requisito REAL (release, arm64) y la tabla de precondiciones por flujo.
+  - [x] **Tres de cinco acreditados en un Pixel 8 Pro real (2026-08-09):**
+        · `04` — el pánico declara «NO es la alerta sísmica» y **un solo voto no dispara**
+          (`1 DE 2 CONFIRMACIONES` + expiración).
+        · `01a` — toma de crisis con el verbo de la zona, **sin magnitud** (`M ?[0-9]` ausente)
+          y con contador **ascendente**, no cuenta regresiva.
+        · `01b` — check-in de vida declarando dónde quedó el dato.
+  - [x] El login del táctico **con MFA real** funciona: se enrola el TOTP a mano y el flujo
+        continúa solo. También se arregló que tapeaba el botón del OCUPANTE — con la sesión de
+        Cognito del occupant viva, entraba con el rol equivocado y en silencio.
+  - [ ] **`02` y `05` quedan bloqueados en una pregunta de PRODUCTO, no de automatización:**
+        con un incidente abierto y el reingreso bloqueado, la app mantiene una toma de pantalla
+        (check-in → línea de tiempo «REINGRESO PROHIBIDO») **sin barra de pestañas**, así que un
+        brigadista no puede llegar a TRIAGE — que es justo su trabajo durante un incidente.
+        Hay que decidir si esa toma debe aplicar al rol táctico o solo al occupant. Hasta
+        entonces, automatizar el resto sería fabricar un verde.
+  - [ ] `03` necesita además la firma de un inspector en la consola web (otro usuario con MFA).
 
 ### [x] T-2.101 · El despliegue al gabinete leía su identidad sin `sudo` — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** deploy · **Depende de:** — · **Origen:** el primer despliegue REAL del edge
