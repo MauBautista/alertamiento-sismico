@@ -198,8 +198,16 @@ drift:
 # El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
 # suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que
 # CI corre desde siempre (job `web`) y que en local no corría nadie.
+# `build` empaqueta las DOS superficies. El bundle de móvil es el equivalente del
+# `vite build` de web, y no existía: jest, tsc y eslint pueden estar los tres en
+# verde con una app QUE NO ARRANCA. `expo-router` arma su tabla de rutas con un
+# `require.context` sobre `src/app`, así que cualquier fichero que caiga ahí entra
+# en el bundle; el 2026-08-08 entraron tres `*.test.tsx`, arrastraron el `console`
+# de Node y el bundle dejó de construirse durante un día sin que nada se pusiera
+# rojo. Sale a /tmp porque aquí interesa que COMPILE, no el artefacto.
 build:
 	cd $(WEB_DIR) && npm run build
+	cd $(MOBILE_DIR) && npx expo export --platform android --output-dir /tmp/expo-export
 
 # Lo que corre CI, de una sola vez: el desarrollador no debería tener que saberse
 # qué target cubre qué job. Precio explícito y aceptado: `tsc` corre dos veces

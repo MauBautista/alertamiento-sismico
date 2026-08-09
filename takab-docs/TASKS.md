@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **237** · `[x]` **165** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **238** · `[x]` **166** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6614,6 +6614,31 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.100 · La app no arrancaba, y ningún gate lo veía — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile + CI · **Depende de:** — · **Origen:** compilar el APK para el
+  GATE-HW móvil, un día después de que el defecto entrara
+- **El defecto:** `expo-router` construye su tabla de rutas con un `require.context` sobre
+  `src/app`, que barre **todos** los ficheros de ahí. `T-2.79.b/c` (2026-08-08) añadió tres
+  `*.test.tsx` dentro de `src/app/onboarding/`, que arrastraron
+  `@testing-library/react-native` → el `console` de Node al bundle. React Native no trae la
+  librería estándar de Node ⇒ **`Android Bundling failed`: la app no arranca en absoluto**.
+- **Por qué nadie lo vio:** el job `mobile` corría eslint, tsc y jest, y **ninguno construye un
+  bundle**. Los tres estaban en verde con una app que no se podía abrir. Web sí tenía su
+  `vite build` desde el principio; móvil no tenía equivalente. El APK del teléfono era del
+  18-jul —anterior al defecto— así que tampoco se notó al usar el dispositivo.
+- **Arreglo:** los tres tests salen a `mobile/tests/app/onboarding/` (fuera de la raíz del
+  router), cada uno con la razón escrita dentro para que no vuelvan. `guard.test.tsx` deriva la
+  lista de pantallas del directorio del stack, así que se le declara la ruta REAL una sola vez
+  y la comparten sus dos mitades — si se separan, una podría mirar a un directorio vacío y el
+  `it.each` pasaría por vacuidad.
+- **El gate que faltaba:** `npx expo export --platform android` en `make build` y en el job
+  `mobile` de CI. La paridad CI↔make lo exigió sola: al añadirlo solo a CI,
+  `test_ci_parity.sh` se puso rojo.
+- **Criterios de aceptación:**
+  - [x] El bundle de Android compila (1750 módulos) y la app abre en un Pixel 8 Pro real.
+  - [x] jest 248/248 y `tsc` en verde tras mover los tests.
+  - [x] `make build` y CI construyen el bundle; quitarlo de uno pone en rojo la paridad.
 
 ### [~] T-2.99 · El pool de ocupantes nunca llegó al despliegue — `SOFTWARE`
 - **Componente:** deploy + api · **Depende de:** — · **Origen:** revisión de sincronía
