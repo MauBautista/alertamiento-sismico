@@ -136,6 +136,22 @@ class RingBuffer(EdgeModule):
             return b""
         stream.trim(UTCDateTime(start), UTCDateTime(end))
         stream.merge(method=1)
+        # [T-2.67.c] `merge` deja un array ENMASCARADO en cuanto la ventana tiene
+        # un hueco, y `write(MSEED)` lo rechaza con `NotImplementedError`. Sin
+        # esto, el pendiente ni sube ni se descarta: se reintenta cada dos minutos
+        # PARA SIEMPRE. Medido en `gw-dev-0001`: 20 evidencias de sismos reales
+        # atascadas, la más vieja de 9 días, y creciendo.
+        #
+        # `split()` y NO `fill_value=0`: rellenar con ceros escribe «el suelo
+        # estuvo quieto» justo donde no hubo medición, dentro de un fichero que
+        # es prueba forense. miniSEED admite tramos no contiguos del mismo canal,
+        # así que el hueco puede seguir siendo un hueco y no cuesta una mentira.
+        stream = stream.split()
+        if len(stream) == 0:
+            # Toda la ventana era hueco. Devolver b"" enruta al camino de «sin
+            # datos en el ring» del llamador, que ya lo declara; escribir aquí
+            # levantaría `ObsPyException: Can not write empty stream to file`.
+            return b""
         buf = BytesIO()
         stream.write(buf, format="MSEED")
         return buf.getvalue()

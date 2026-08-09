@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **237** · `[x]` **164** · `[~]` **8** · `[ ]` **65**
+**Conteo de tareas:** total **237** · `[x]` **164** · `[~]` **9** · `[ ]` **64**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4280,20 +4280,39 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         abandonaría evidencia real.
   - [ ] Test que demuestre que la cola sobrevive a un reinicio del proceso.
 
-### [ ] T-2.67.c · 18 evidencias atascadas: la extracción no progresa — `SOFTWARE`
+### [~] T-2.67.c · 20 evidencias atascadas: **eran DOS fallos, no uno** — `SOFTWARE`
 - **Componente:** edge · **Origen:** la card de T-2.67 contra el gabinete VIVO
-- **El hecho:** el Pi lleva **18 evidencias pendientes desde hace 15.3 días** con
-  `FALLO DE EXTRACCIÓN · SE REINTENTA SIN PROGRESAR`. Son ventanas de sismos reales que nunca
-  subieron. La causa raíz está en `RingBuffer.extract_window`
-  (`edge/takab_edge/buffer/__init__.py`): hace `merge(method=1)` **sin `fill_value`** y luego
-  `write(MSEED)`; con huecos, ObsPy produce salida vacía o falla, y el **descarte por ring
-  vacío borra el fichero igual que un éxito**.
+- **El hecho, re-medido el 2026-08-09 sobre `gw-dev-0001`:** ya no son 18 sino **20**, la más
+  vieja del **31-jul** y la más nueva **del mismo día del censo** — o sea que **crecen y ninguna
+  drena**. Cada una es una ventana de 3 minutos de un sismo real.
+- **Fallo 1 — array enmascarado (CERRADO).** Traza sacada del journal del Pi, no supuesta:
+  `NotImplementedError: Masked array writing is not supported`, en
+  `buffer/__init__.py:extract_window` → `stream.write(buf, format="MSEED")`. `merge(method=1)`
+  sin `fill_value` deja un array enmascarado en cuanto la ventana tiene un hueco. El pendiente
+  ni sube ni se descarta: **se reintenta cada ~2 min para siempre**.
+  Arreglado con **`Stream.split()`** y NO con `fill_value=0`: rellenar con ceros escribe «el
+  suelo estuvo quieto» justo donde no hubo medición, dentro de un fichero que es prueba
+  forense. miniSEED admite tramos no contiguos del mismo canal ⇒ el hueco sigue siendo un hueco
+  y no cuesta una mentira.
+- **Fallo 2 — el grant, y es el grande (ABIERTO).** El censo de las 20 contra el ring real dice:
+  **solo 4 fallan por el array enmascarado; las otras 16 extraen perfectamente** (155–213 KB de
+  miniSEED válido cada una) y llevan igualmente 9 días sin subir. No hay una sola línea de
+  grant ni de PUT en 48 h de journal, porque el `_request_grant` **desplegado devuelve `None`
+  sin registrar nada**. La versión de esta rama (T-2.67) ya añadió ese `log.warning`, así que
+  **el diagnóstico del fallo 2 llega solo en cuanto se redespliegue el edge**.
+  ⇒ La causa raíz que esta ficha daba por única explicaba **el 20 %** del atasco.
 - **Criterios de aceptación:**
-  - [ ] La extracción con huecos produce evidencia utilizable, o falla **declarándolo**.
+  - [x] La extracción con huecos produce evidencia utilizable, o falla **declarándolo**.
+  - [x] Test con ring con huecos que reproduce el atasco
+        (`test_extract_window_con_hueco_produce_evidencia_utilizable`): sin el arreglo levanta
+        el mismo `NotImplementedError` que el gabinete.
+  - [x] Las 20 del gabinete vivo, explicadas una a una: 4 por array enmascarado, 16 por el
+        grant. Censo re-derivable con el script del PR.
+  - [ ] **El fallo 2:** por qué la nube no concede el grant. Necesita el edge redesplegado
+        (para que hable) y la nube al día.
   - [ ] **Un descarte deja de borrar la evidencia en silencio** (decisión de producto: ¿se
-        conserva la ventana parcial, se marca, se reintenta?).
-  - [ ] Las 18 del gabinete vivo, resueltas o explicadas una a una.
-  - [ ] Test con ring con huecos que hoy reproduce el atasco.
+        conserva la ventana parcial, se marca, se reintenta?). Hoy **no está firing** —el censo
+        dio `0 sin dato`—, así que es riesgo latente y no pérdida en curso.
 
 ---
 
