@@ -50,6 +50,15 @@ PROD_OK = {
     "TAKAB_API_AUTH_JWKS_URL": (
         "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_abc/.well-known/jwks.json"
     ),
+    # [T-2.99] Segundo pool. Está aquí porque un despliegue SIN él no es "mínimo":
+    # es uno donde ningún ocupante puede entrar.
+    "TAKAB_API_AUTH_OCCUPANTS_ISSUER": (
+        "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_occ"
+    ),
+    "TAKAB_API_AUTH_OCCUPANTS_AUDIENCE": "cliente-ocupantes",
+    "TAKAB_API_AUTH_OCCUPANTS_JWKS_URL": (
+        "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_occ/.well-known/jwks.json"
+    ),
     "TAKAB_API_COMMAND_HMAC_SECRET_PREFIX": "takab/dev/gateway-hmac",
 }
 
@@ -293,6 +302,33 @@ def test_el_despliegue_de_hoy_activa_el_perfil_de_produccion() -> None:
     assert {m.upper() for m in MARCADORES_DE_NUBE} & del_despliegue, (
         "el despliegue no escribe ni un MARCADOR_DE_NUBE: `es_produccion` daría "
         "False en la nube y todo este fichero sería decorativo"
+    )
+
+
+def test_el_deploy_real_habilita_el_pool_de_ocupantes() -> None:
+    """[T-2.99] El pool de OCUPANTES tiene que llegar al despliegue, o nadie entra.
+
+    El defecto que cierra este test: `deploy.sh` cableaba el pool principal
+    (issuer/audience/jwks) y NUNCA el de ocupantes. Con `auth_occupants_issuer`
+    vacío, `decode_verify_any` ni siquiera mira el segundo pool —cae al
+    `decode_verify` del principal— y el id_token de CUALQUIER ocupante muere con
+    `invalid token`: 401 en `/me`, la app se queda en la pantalla de login y el
+    mensaje no dice por qué. El pool existía en Terraform desde T-2.02 y la app
+    lo apuntaba desde `mobile/.env`; lo único que faltaba eran tres líneas.
+
+    Por qué no lo vio ningún test: `api/tests/api/conftest.py` acuña los tokens
+    de los DOS pools contra el mismo JWKS inline, así que el dual-issuer siempre
+    tuvo issuer configurado en la suite. El hueco vivía en el camino de
+    despliegue, que es justo lo que estos anclajes miran.
+    """
+    faltan = {
+        "AUTH_OCCUPANTS_ISSUER",
+        "AUTH_OCCUPANTS_AUDIENCE",
+        "AUTH_OCCUPANTS_JWKS_URL",
+    } - _vars_del_despliegue()
+    assert not faltan, (
+        f"el camino de despliegue no inyecta {sorted(faltan)}: el pool de ocupantes "
+        "queda DESHABILITADO en la nube y ningún ocupante puede iniciar sesión"
     )
 
 

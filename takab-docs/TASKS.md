@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **236** · `[x]` **164** · `[~]` **7** · `[ ]` **65**
+**Conteo de tareas:** total **237** · `[x]` **164** · `[~]` **8** · `[ ]` **65**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6585,6 +6585,35 @@ sería documentar intenciones.
 
 ## Fase 2.10 · Ventana AWS
 
+### [~] T-2.99 · El pool de ocupantes nunca llegó al despliegue — `SOFTWARE`
+- **Componente:** deploy + api · **Depende de:** — · **Origen:** revisión de sincronía
+  edge↔nube↔app del 2026-08-09 (nadie lo había fichado, y ningún test lo vigilaba)
+- **El defecto:** `deploy/cloud/deploy.sh` cableaba `TAKAB_API_AUTH_ISSUER/AUDIENCE/JWKS_URL`
+  del pool **principal** y **nunca** los tres `TAKAB_API_AUTH_OCCUPANTS_*`. Con
+  `auth_occupants_issuer` vacío, `decode_verify_any` (`auth/tokens.py:117-131`) ni siquiera
+  mira el segundo pool: cae al `decode_verify` del principal y **el id_token de cualquier
+  ocupante muere con `invalid token` ⇒ 401 en `/me`**. El pool existía en Terraform desde
+  `T-2.02` y `mobile/.env` lo apuntaba; lo único que faltaban eran tres líneas.
+- **Por qué importa:** el ocupante es el usuario más numeroso del producto y **nunca ha podido
+  entrar a la nube desplegada**. La app no puede decir por qué: solo enseña "no se pudo
+  verificar la sesión". Además deja cojo el **ancla pool→rol** (`auth/deps.py:91-94`), que para
+  rechazar el cruce necesita los DOS pools configurados: con uno solo, el rechazo del ocupante
+  es un accidente de configuración, no una guarda.
+- **Por qué no lo vio ningún test:** `api/tests/api/conftest.py` acuña los tokens de ambos
+  pools contra el **mismo** JWKS inline, así que en la suite el dual-issuer siempre tuvo
+  issuer. El hueco vivía en el camino de despliegue. Es el mismo patrón que el 401 de audience
+  del táctico (2026-07-18): los tests acuñaban el token móvil con el audience del web.
+- **Criterios de aceptación:**
+  - [x] Los tres `TAKAB_API_AUTH_OCCUPANTS_*` cableados en `deploy.sh` desde los outputs de
+        Terraform que ya existían (`occupants_issuer`, `occupants_client_id`).
+  - [x] Los tres en `REQUERIDOS_EN_PRODUCCION`: en producción su ausencia **impide arrancar**
+        en vez de producir un lockout silencioso.
+  - [x] Test de anclaje contra el `deploy.sh` real
+        (`test_el_deploy_real_habilita_el_pool_de_ocupantes`), rojo si alguien borra las líneas.
+  - [ ] **Verificado contra la nube:** `GET /me` con un id_token del pool de ocupantes
+        devuelve 200 (hoy 401). Falta el despliegue.
+  - [ ] El cruce de pools sigue dando 401 en ambas direcciones **con ambos pools activos**.
+
 ### [ ] T-2.87 · Apply de Cognito — `HUMANO-AWS`
 - **Componente:** infra + deploy · **Depende de:** T-2.54 · **Origen:** T-2.57, pendiente 1
 - **Por qué importa:** sin `TAKAB_API_COGNITO_USER_POOL_ID` cableado en `deploy.sh` y sin
@@ -6605,8 +6634,9 @@ sería documentar intenciones.
 
 ### [ ] T-2.89 · Encender `console_scope_enforced` — `HUMANO-AWS`
 - **Componente:** api + operación · **Depende de:** T-2.54
-- **Es la única brecha multi-tenant viva en producción.** `api/src/takab_api/settings.py:212`
-  lo tiene en `False`.
+- **Es la única brecha multi-tenant viva en producción.**
+  `api/src/takab_api/settings.py · console_scope_enforced` lo tiene en `False`. (Citado por
+  símbolo y no por línea a propósito: la cita `:212` llevaba meses apuntando a otra cosa.)
 - **⚠️ AVISO MEDIDO (matriz `RO-5.g`, 2026-08-08): encenderlo PONDRÁ LA SUITE EN ROJO.** Dos
   tests HTTP fijan hoy la conducta **no** impuesta. No es una regresión: es que la conducta
   cambia y los tests la anclan como está. **Que no lo descubra nadie en mitad de la ventana** —
@@ -6629,7 +6659,9 @@ sería documentar intenciones.
   - [ ] Resultado registrado con fecha y commit desplegado.
 
 ### [ ] T-2.91 · Sembrar un occupant real — `HUMANO-AWS`
-- **Componente:** operación + mobile · **Depende de:** T-2.87
+- **Componente:** operación + mobile · **Depende de:** T-2.87, **T-2.99**
+- **⚠️ El orden no es intercambiable:** sembrar el occupant **antes** de que `T-2.99` esté
+  desplegada no sirve de nada — el usuario existirá en Cognito y su token seguirá dando 401.
 - **Criterios de aceptación:**
   - [ ] Un `occupant` real, con **código de enrolamiento acotado a su sitio** (no lleva
         `site_scope` por claim: se enrola).

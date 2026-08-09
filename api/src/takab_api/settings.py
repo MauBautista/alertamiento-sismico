@@ -120,6 +120,24 @@ REQUERIDOS_EN_PRODUCCION: dict[str, str] = {
         "sin prefijo no hay clave HMAC resoluble para ningún gabinete: la superficie de "
         "comandos responde 503 entera (fail-closed, sí, pero sin un solo aviso al arrancar)"
     ),
+    # [T-2.99] El pool de ocupantes es OPCIONAL en el código —issuer vacío ⇒
+    # comportamiento single-issuer intacto, que es lo correcto para un test— y por
+    # eso su ausencia en la nube no rompió nada visible: simplemente ningún ocupante
+    # volvió a entrar. Aquí abajo deja de ser opcional, porque en producción la app
+    # del ocupante ES el producto y un lockout total no puede ser un default.
+    "auth_occupants_issuer": (
+        "sin issuer del pool de OCUPANTES, `decode_verify_any` ni siquiera mira ese pool: "
+        "todo id_token de ocupante se verifica contra el pool principal y muere en 401. "
+        "El fallo es total y silencioso — la app solo dice «no se pudo verificar la sesión»"
+    ),
+    "auth_occupants_audience": (
+        "sin audience de ese pool se aceptaría cualquier token suyo, incluidos los de otro "
+        "cliente del mismo pool: es la misma razón que `auth_audience`, para el segundo pool"
+    ),
+    "auth_occupants_jwks_url": (
+        "sin JWKS remoto propio la verificación cae al del pool principal (conveniencia de "
+        "dev/test en `select_jwks_occupants`) y ninguna firma de ocupante casaría"
+    ),
 }
 
 #: Campo → por qué su PRESENCIA en producción es una credencial de dev viva.

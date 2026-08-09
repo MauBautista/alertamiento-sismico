@@ -46,6 +46,16 @@ TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).
 TAKAB_API_AUTH_AUDIENCE=$(tf client_id),$(tf mobile_tactical_client_id)
 TAKAB_API_AUTH_JWKS_URL=$(tf issuer)/.well-known/jwks.json
+# [T-2.99] Pool de OCUPANTES (decision #7, T-2.02): SEGUNDO issuer verificable.
+# Sin estas tres lineas `auth_occupants_issuer` queda vacio, `decode_verify_any`
+# no llega a mirar este pool y el id_token de cualquier ocupante muere con
+# `invalid token` = 401 en /me. Estuvo asi desde el primer despliegue de la app:
+# el pool existia en Terraform y la app lo apuntaba, pero la API no lo conocia.
+# El ancla pool->rol (auth/deps.py) exige AMBOS pools configurados para poder
+# rechazar el cruce; con uno solo, el rechazo es un accidente y no una guarda.
+TAKAB_API_AUTH_OCCUPANTS_ISSUER=$(tf occupants_issuer)
+TAKAB_API_AUTH_OCCUPANTS_AUDIENCE=$(tf occupants_client_id)
+TAKAB_API_AUTH_OCCUPANTS_JWKS_URL=$(tf occupants_issuer)/.well-known/jwks.json
 TAKAB_API_QUEUE_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
 TAKAB_API_QUEUE_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')
 TAKAB_API_QUEUE_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["backfill"])')
