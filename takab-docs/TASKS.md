@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **234** · `[x]` **155** · `[~]` **6** · `[ ]` **73**
+**Conteo de tareas:** total **234** · `[x]` **159** · `[~]` **6** · `[ ]` **69**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6343,7 +6343,7 @@ sería documentar intenciones.
 > Que un test citado *demuestre* su fila es juicio humano; lo mecánico es que exista, no se
 > salte, y lo corra un job bloqueante.
 
-### [ ] T-2.84.a · Nada impide el streaming crudo continuo — `SOFTWARE`
+### [x] T-2.84.a · Nada impide el streaming crudo continuo — `SOFTWARE`
 - **Componente:** edge + api · **Depende de:** — · **Hueco `RO-9.a` de la matriz** (2026-08-08)
 - **El hueco más grave que destapó la matriz.** Cero asserts sobre un conjunto cerrado de topics,
   sobre volumen publicado, o sobre que un `WaveformPacket` jamás llegue a
@@ -6354,10 +6354,10 @@ sería documentar intenciones.
   sola línea, y así las dos se levantaban juntas.
 - **Cómo se descubriría hoy: en la factura de AWS.**
 - **Criterios de aceptación:**
-  - [ ] Un test que falle si un `WaveformPacket` alcanza el camino de publicación continua.
-  - [ ] La dirección complementaria (`RO-9.b`): el miniSEED crudo **solo** sube en eventos
+  - [x] Un test que falle si un `WaveformPacket` alcanza el camino de publicación continua.
+  - [x] La dirección complementaria (`RO-9.b`): el miniSEED crudo **solo** sube en eventos
         confirmados; bajar el umbral por accidente tiene que ponerse rojo.
-  - [ ] Derivado, no enumerado: un publicador nuevo entra solo en la comprobación.
+  - [x] Derivado, no enumerado: un publicador nuevo entra solo en la comprobación.
 
 ### [ ] T-2.84.b · MFA no tiene una sola línea de prueba en ninguna capa — `SOFTWARE`
 - **Componente:** api + infra · **Depende de:** — · **Hueco `RO-8.c` de la matriz** (2026-08-08)
@@ -6370,7 +6370,7 @@ sería documentar intenciones.
   - [ ] `identity` gana su `.tftest.hcl` y `mfa_configuration` queda anclado.
   - [ ] La matriz pasa `RO-8.c` a `CUBIERTO` sola, sin editarla a mano.
 
-### [ ] T-2.84.c · Nada obliga al componente número 28 a manejar los cuatro estados — `SOFTWARE`
+### [x] T-2.84.c · Nada obliga al componente número 28 a manejar los cuatro estados — `SOFTWARE`
 - **Componente:** web · **Depende de:** — · **Hueco `RO-7.a` de la matriz** (2026-08-08) ·
   **Hermana de `T-2.79.d` y `T-2.82.a`**
 - **Medido por la matriz:** **27 componentes usan `StateFrame`, solo 14 tienen la prueba de los
@@ -6378,10 +6378,10 @@ sería documentar intenciones.
   obligue al siguiente. **El bug de T-2.59 fue exactamente eso**, y T-2.82.a acaba de encontrar la
   misma clase en la pantalla donde se firma un dictamen.
 - **Criterios de aceptación:**
-  - [ ] Un censo **derivado** del árbol de componentes: quien pinte dato de servidor sin los
+  - [x] Un censo **derivado** del árbol de componentes: quien pinte dato de servidor sin los
         cuatro estados, rojo.
-  - [ ] Las excepciones legítimas se **declaran** con su razón, no se omiten.
-  - [ ] Se resuelve junto con la precedencia que decida `T-2.79.d`.
+  - [x] Las excepciones legítimas se **declaran** con su razón, no se omiten.
+  - [x] Se resuelve junto con la precedencia que decida `T-2.79.d`.
 
 ### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
@@ -6495,7 +6495,7 @@ sería documentar intenciones.
   - [ ] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**.
   - [ ] La matriz pasa `RO-4.e` a `CUBIERTO` sola.
 
-### [ ] T-2.86.b · La bitácora de los actuadores registra lo que salió bien y calla lo que se intentó — `SOFTWARE`
+### [x] T-2.86.b · La bitácora de los actuadores registra lo que salió bien y calla lo que se intentó — `SOFTWARE`
 - **Componente:** api + edge · **Depende de:** — · **Huecos `RO-8.g` y `RO-8.k` de la matriz**
   (2026-08-08)
 - Los dos juntos son un titular que un cliente de Protección Civil pregunta literalmente: **la
@@ -6506,13 +6506,13 @@ sería documentar intenciones.
 - La regla de oro 8 llama a esto «la superficie más sensible» y exige nonce y rate-limit **sin
   excepción**; los mecanismos existen, lo que falta es que **dejen huella cuando actúan**.
 - **Criterios de aceptación:**
-  - [ ] Un comando rechazado por replay, por rate-limit o por firma **queda auditado**, con su
+  - [x] Un comando rechazado por replay, por rate-limit o por firma **queda auditado**, con su
         motivo.
-  - [ ] Test que dispare cada rechazo y exija su fila en el `audit_log`.
-  - [ ] `RO-8.e` de paso: el límite por sitio (`command_rate_site_per_min`) está implementado y
+  - [x] Test que dispare cada rechazo y exija su fila en el `audit_log`.
+  - [x] `RO-8.e` de paso: el límite por sitio (`command_rate_site_per_min`) está implementado y
         **sin probar** — dos operadores coordinados agotan el presupuesto sin rojo.
 
-### [ ] T-2.86.c · No existe barrido de secretos en ningún sitio — `SOFTWARE`
+### [x] T-2.86.c · No existe barrido de secretos en ningún sitio — `SOFTWARE`
 - **Componente:** CI · **Depende de:** — · **Hueco `RO-6.a` de la matriz** (2026-08-08)
 - **Medido:** ni test, ni paso de CI, ni pre-commit, ni `gitleaks`/`trufflehog`/`detect-secrets`.
   **La regla de oro 6 es la única que hoy se sostiene sobre la disciplina de quien escribe el
@@ -6523,9 +6523,9 @@ sería documentar intenciones.
   credenciales de dev**, así que un secreto ausente en producción **cae al default en silencio**
   en vez de impedir el arranque.
 - **Criterios de aceptación:**
-  - [ ] Un barrido de secretos corre en un job que **bloquea el merge**.
-  - [ ] En producción, un secreto ausente **impide arrancar**; no cae a un default de dev.
-  - [ ] Test que lo demuestre con un secreto retirado.
+  - [x] Un barrido de secretos corre en un job que **bloquea el merge**.
+  - [x] En producción, un secreto ausente **impide arrancar**; no cae a un default de dev.
+  - [x] Test que lo demuestre con un secreto retirado.
 
 ---
 

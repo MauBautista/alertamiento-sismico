@@ -4,8 +4,8 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-09 · **26 pendientes** · Estado del backlog al escribirlo:
-> 234 tareas · 155 `[x]` · 6 `[~]` · 73 `[ ]`, de las cuales **60 son `SOFTWARE`** y las demás
+> **Última actualización:** 2026-08-09 · **27 pendientes** · Estado del backlog al escribirlo:
+> 234 tareas · 159 `[x]` · 6 `[~]` · 69 `[ ]`, de las cuales **56 son `SOFTWARE`** y las demás
 > están aquí.
 
 ---
@@ -70,6 +70,23 @@ automatiza contra el SSN, si se sube a mano con cadencia, o si se declara que no
 ### 1.5 · Mini-ShakeMap y la arquitectura de CCTV — [`T-3.09`](TASKS.md), [`T-3.10`](TASKS.md)
 Van con el Bloque IV; no bloquean nada hoy. `T-3.09` **exige derogar por su nombre** la viñeta
 diferida del blueprint — y solo esa.
+
+### 1.6 · `main` NO tiene protección de rama — 5 minutos en GitHub
+
+**Comprobado con `gh api` el 2026-08-09: el repositorio no tiene branch protection ni rulesets.**
+O sea que **hoy ningún job bloquea nada**: el CI corre, se pone rojo, y se puede mergear igual.
+
+Importa ahora más que ayer, porque el barrido de secretos que se acaba de construir **es un
+gate** —pone el PR en rojo cuando encuentra una credencial— y **un gate que no bloquea es un
+aviso**. Lo mismo vale para los 2118 tests de api, los 1353 de web y los 1071 del edge.
+
+**Qué hacer:** en `Settings → Branches` (o `Rulesets`), exigir como *required status checks* los
+jobs `api`, `web`, `edge`, `mobile` y `secretos`.
+
+**Consecuencia colateral que conviene saber:** la matriz de trazabilidad acredita `CUBIERTO`
+solo si el test *«lo corre un job que bloquea el merge»*, y hoy modela eso como «está en
+`ci.yml` y no es `continue-on-error`». Mientras no haya protección de rama, **el modelo es más
+optimista que la realidad**.
 
 ---
 
@@ -179,7 +196,11 @@ takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerroj
 
 ## Si solo se pueden hacer tres cosas
 
-1. **Las decisiones de §1.1 y §1.2.** Cuestan pensar, no herramientas, y desbloquean cinco fichas
+1. **Proteger `main` (§1.6).** Cinco minutos, y sin eso **nada de lo demás bloquea nada**: hoy
+   los 4 542 tests y el barrido de secretos son un aviso, no un gate.
+2. **Las decisiones de §1.1 y §1.2.** Cuestan pensar, no herramientas, y desbloquean cinco fichas
    de software entre las dos.
-2. **Arrancar §4.1 y §4.2.** Son las de plazo externo. Todo lo demás se puede acelerar; esto no.
-3. **La sesión de vida (§3.1).** Es la que dice si el producto es real, y no espera a nada.
+3. **Arrancar §4.1 y §4.2.** Son las de plazo externo. Todo lo demás se puede acelerar; esto no.
+
+Y en cuanto haya un hueco con el edificio: **la sesión de vida (§3.1)**, que es la que dice si el
+producto es real y no espera a nada.
