@@ -52,14 +52,29 @@ cd "$ROOT"
 # ---------------------------------------------------------------------------
 # 1. El árbol está limpio (EL gate)
 # ---------------------------------------------------------------------------
-echo "== no hay secretos en el árbol de trabajo =="
-if salida="$(python3 "$SCAN" 2>&1)"; then
-  printf '%s\n' "$salida" | while IFS= read -r l; do nota "$l"; done
-  ok "barrido limpio"
-else
-  fallo "el barrido encontró secretos en el árbol"
-  printf '%s\n' "$salida" >&2
-fi
+#
+# Va en una FUNCIÓN CON NOMBRE, y no suelto, por una razón que no es de estilo:
+# la matriz de trazabilidad (T-2.84) ancla sus citas de bash a
+# `^\s*(?:function\s+)?<nombre>\s*\(\)\s*\{`, así que un script lineal **no se
+# puede citar**. Sin nombre, `RO-6.a` seguiría figurando como hueco aunque el
+# control exista y corra en cada PR — y citar `ok`/`fallo` (los únicos nombres
+# que había) sería exactamente la mentira que la matriz existe para impedir.
+#
+# Los tres scripts de `infra/scripts/tests/` eran lineales, así que la rama bash
+# del resolutor nunca se había ejercitado contra el árbol real. Ésta es la
+# primera. Los otros dos siguen sin poder citarse; está fichado.
+test_el_arbol_de_trabajo_no_tiene_secretos() {
+  echo "== no hay secretos en el árbol de trabajo =="
+  if salida="$(python3 "$SCAN" 2>&1)"; then
+    printf '%s\n' "$salida" | while IFS= read -r l; do nota "$l"; done
+    ok "barrido limpio"
+  else
+    fallo "el barrido encontró secretos en el árbol"
+    printf '%s\n' "$salida" >&2
+  fi
+}
+
+test_el_arbol_de_trabajo_no_tiene_secretos
 
 # ---------------------------------------------------------------------------
 # 2-4. Mutaciones, controles negativos y exclusiones no vacuas

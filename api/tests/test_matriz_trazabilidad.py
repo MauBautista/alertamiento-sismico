@@ -867,13 +867,17 @@ _RO = (
             Afirmacion(
                 "RO-6.a",
                 "Ningún secreto vive en el árbol: alguien barre el repo buscándolos.",
-                (),
-                hueco=(
-                    "**No existe barrido de secretos en ninguna parte.** Ni test, ni paso de "
-                    "CI, ni `.pre-commit-config.yaml` (no hay), ni `gitleaks`/`trufflehog`/"
-                    "`detect-secrets` en todo el repo. La regla 6 se sostiene hoy sólo sobre "
-                    "la disciplina de quien escribe el diff — que es exactamente la clase de "
-                    "garantía que este proyecto no acepta en ninguna otra regla."
+                (
+                    Evidencia(
+                        "infra/scripts/tests/test_secret_scan.sh",
+                        "test_el_arbol_de_trabajo_no_tiene_secretos",
+                        "Barre el árbol ENTERO —rastreados y no-rastreados-no-ignorados— con "
+                        "14 reglas ancladas a la forma del emisor, y falla el gate si "
+                        "encuentra uno. No es teatro: la misma corrida prueba que cada regla "
+                        "caza su secreto sintético, que 12 valores legítimos del repo NO se "
+                        "marcan, y que las exclusiones declaradas siguen haciendo falta. "
+                        "Corre en el job `secretos` de `ci.yml` y está espejado en `make test`.",
+                    ),
                 ),
             ),
             Afirmacion(
@@ -899,13 +903,32 @@ _RO = (
                 "RO-6.c",
                 "En producción, un secreto ausente hace ruido en el arranque en vez de caer "
                 "al valor por defecto de desarrollo.",
-                (),
-                hueco=(
-                    "`Settings` no tiene ningún validador de entorno: sus valores por defecto "
-                    "**son credenciales de desarrollo**, así que una variable que falte en "
-                    "producción no truena — se resuelve silenciosamente al default de dev. Lo "
-                    "cubierto en `RO-6.b` es *fail-closed por endpoint* para dos secretos "
-                    "concretos; no hay guarda de arranque para el resto."
+                (
+                    Evidencia(
+                        "api/tests/test_settings_produccion.py",
+                        "test_un_secreto_retirado_impide_arrancar",
+                        "Parametrizado sobre `REQUERIDOS_EN_PRODUCCION`: retirar cualquiera "
+                        "levanta `ConfiguracionInvalida` nombrando la variable que falta.",
+                    ),
+                    Evidencia(
+                        "api/tests/test_settings_produccion.py",
+                        "test_el_dsn_por_defecto_no_cuenta_como_configurado",
+                        "El caso exacto del hueco: el DSN igual al default de dev se rechaza "
+                        "en vez de arrancar contra la base equivocada.",
+                    ),
+                    Evidencia(
+                        "api/tests/test_settings_produccion.py",
+                        "test_una_credencial_de_dev_presente_en_produccion_impide_arrancar",
+                        "La mitad simétrica: un `PROHIBIDO_EN_PRODUCCION` presente (llave de "
+                        "`/dev/token`, JWKS inline, mapa HMAC inline) también impide arrancar.",
+                    ),
+                    Evidencia(
+                        "api/tests/test_settings_produccion.py",
+                        "test_el_deploy_real_inyecta_la_senal_de_produccion",
+                        "Anclaje anti-fail-open: si `deploy/cloud/deploy.sh` dejara de poner "
+                        "`TAKAB_API_BUILD_SHA`, el guardia se apagaría en la nube — y esto "
+                        "se pone rojo antes.",
+                    ),
                 ),
             ),
         ),
@@ -913,8 +936,12 @@ _RO = (
     Requisito(
         "RO-7",
         nota=(
-            "Cobertura por muestreo, no sistemática: cada superficie tiene su prueba "
-            "ejemplar, y **no hay nada que obligue a la número 28**."
+            "Desde `T-2.84.c` la consola web ya no depende del muestreo: un censo derivado "
+            "del árbol obliga al componente siguiente a tener su prueba o a aparecer en una "
+            "lista de deuda comparada **por igualdad**. Lo que el censo mide hoy es deuda "
+            "real y con nombre —21 componentes con dato de servidor, 12 con la prueba de los "
+            "cuatro estados, 11 `<StateFrame>` que se callan una entrada—, no ausencia de "
+            "guarda. Fuera de `web/src` (panel del gabinete, móvil) sigue siendo muestreo."
         ),
         afirmaciones=(
             Afirmacion(
@@ -923,24 +950,34 @@ _RO = (
                 "declare sus cuatro estados.",
                 (
                     Evidencia(
+                        "web/src/serverDataCensus.test.ts",
+                        "`expectFourStates` cubre a todos los censados",
+                        "Cierre transitivo por AST desde los transportes (hooks de lectura + "
+                        "`useLiveSocket`): quién POSEE dato de servidor se deriva, y se cruza "
+                        "contra quién tiene la prueba de los cuatro estados. Comparación por "
+                        "IGUALDAD contra la deuda declarada — el componente 22 tiene que "
+                        "escribir su prueba o ponerse en la lista a la vista de todos.",
+                    ),
+                    Evidencia(
+                        "web/src/serverDataCensus.test.ts",
+                        "el censo cuadra con la deuda declarada, identificador a identificador",
+                        "Y la otra mitad, la del bug de `T-2.59`: quien pinte dato de "
+                        "servidor FUERA de `StateFrame` sale nombrado con fichero y línea.",
+                    ),
+                    Evidencia(
+                        "web/src/serverDataCensus.test.ts",
+                        "ninguno se calla una",
+                        "Un `<StateFrame>` sin `staleSince` AFIRMA que el dato no puede "
+                        "envejecer: los marcos que se callan una entrada están censados uno "
+                        "a uno y uno nuevo sale rojo.",
+                    ),
+                    Evidencia(
                         "web/e2e/screens.spec.ts",
                         "declara los estados obligatorios: nunca una caja en blanco",
                         "Por pantalla, exige ≥1 `[data-state]` con valor del conjunto "
                         "permitido; nunca exige que exista `stale`.",
                         apagable="suite no bloqueante (e2e.yml)",
                     ),
-                ),
-                hueco=(
-                    "No existe censo derivado. La guarda real es el ayudante opt-in "
-                    "`web/src/test-utils/states.ts::expectFourStates()`, que cada test tiene "
-                    "que acordarse de llamar. Medido el 2026-08-08: **27** componentes de "
-                    "`web/src` usan `StateFrame` y sólo **14** tienen la prueba de los cuatro "
-                    "estados; y hay **al menos 12 componentes que pintan dato de servidor "
-                    "FUERA de `StateFrame`** (`KpiStrip`, `MapPanel`, `Topbar`, `SiteCard`, "
-                    "`UpsGauge`, `SyncBadge`…), cada uno con su propio `S/D` a mano. El bug de "
-                    "`T-2.59` fue exactamente eso. La única cita posible vive en la matriz de "
-                    "Playwright, que **no bloquea un merge** — y aun así nunca exige un "
-                    "estado `stale`."
                 ),
             ),
             Afirmacion(
@@ -1054,12 +1091,31 @@ _RO = (
             Afirmacion(
                 "RO-8.e",
                 "Hay rate-limit por sitio, independiente del usuario.",
-                (),
-                hueco=(
-                    "`command_rate_site_per_min` está implementado "
-                    "(`api/src/takab_api/commands/service.py`) y **no lo prueba nadie**: "
-                    "sólo se prueba el límite usuario+sitio. Dos operadores coordinados "
-                    "agotan el presupuesto del sitio sin que ningún test lo vea."
+                (
+                    Evidencia(
+                        "api/tests/api/test_command_rate_limit_site.py",
+                        "test_dos_operadores_coordinados_agotan_el_presupuesto_del_sitio",
+                        "Cuota de usuario ANCHA (10/min) y de sitio estrecha (3/min): dos "
+                        "operadores, ninguno rebasa la suya, el cuarto comando es 429 y no "
+                        "sale al gabinete.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rate_limit_site.py",
+                        "test_un_tercer_operador_con_su_cuota_intacta_tambien_queda_fuera",
+                        "El presupuesto es del edificio: un operador que nunca comandó se "
+                        "topa igual con el techo del sitio.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rate_limit_site.py",
+                        "test_el_429_del_sitio_se_distingue_del_429_del_usuario_en_la_bitacora",
+                        "Dos techos, dos motivos: `rate_limit_user_site` y `rate_limit_site` "
+                        "en `audit_log`, no un 429 mudo.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rate_limit_site.py",
+                        "test_agotar_un_sitio_no_derrama_al_vecino",
+                        "Y no prohíbe de más: agotado el sitio A, el sitio B sigue comandable.",
+                    ),
                 ),
             ),
             Afirmacion(
@@ -1081,16 +1137,33 @@ _RO = (
             Afirmacion(
                 "RO-8.g",
                 "El rechazo por replay queda AUDITADO.",
-                (),
-                hueco=(
-                    "Se rechaza pero no se apunta. En el edge el camino de replay sólo emite "
-                    "`log.warning` (no hay sumidero de auditoría); en la nube el 409 sale sin "
-                    "llamada a auditoría y el test comprueba únicamente el código de estado. "
-                    "**Un atacante que sondee con comandos repetidos es invisible en el "
-                    "`audit_log`** — que es donde se investigaría el incidente. "
-                    "`api/tests/commands/test_ack_ingest.py"
-                    "::test_wrong_gateway_is_rejected_with_audit` "
-                    "sí audita, pero un *ack* falsificado, no un replay de comando: no cuenta."
+                (
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_replay_rechazado_queda_auditado_con_su_motivo",
+                        "El camino feliz no ensucia la bitácora; el replay deja UNA fila con "
+                        "`reason=nonce_replay`, status 409, el sitio tocado y el actor — y "
+                        "el comando jamás sale al gabinete.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_el_replay_no_archiva_el_nonce_ni_la_firma_en_claro",
+                        "Se archiva el HECHO, no la credencial: ni nonce ni firma en claro, "
+                        "sólo un `nonce_sha256` para correlacionar sondeos.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_el_sondeo_repetido_no_puede_inflar_la_bitacora_sin_techo",
+                        "Auditar el rechazo no puede ser el vector: `audit_log` es "
+                        "append-only y nunca se poda (regla 11), así que hay presupuesto por "
+                        "(tenant, actor, ventana) y la última fila MARCA el agotamiento.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_el_rechazo_se_archiva_bajo_el_tenant_TOCADO_no_el_del_operador",
+                        "Quien pregunta «¿quién intentó abrir MI válvula?» es el dueño del "
+                        "edificio: la fila vive en su bitácora, no en la del operador.",
+                    ),
                 ),
             ),
             Afirmacion(
@@ -1134,13 +1207,35 @@ _RO = (
             Afirmacion(
                 "RO-8.k",
                 "Un comando DENEGADO (403/409/429/503) queda auditado.",
-                (),
-                hueco=(
-                    "Sólo se audita el camino feliz. Ningún test cubre la auditoría de una "
-                    "denegación, y para el 429 y el 409 no hay ni siquiera llamada a "
-                    "auditoría en el código. Junto con `RO-8.g`: **la bitácora de la "
-                    "superficie más sensible del sistema registra lo que salió bien y calla "
-                    "lo que se intentó.**"
+                (
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_firma_de_intencion_invalida_queda_auditada_sin_creerse_el_dispositivo",
+                        "403 auditado con `intent_signature_invalid`, y el `key_id` de una "
+                        "firma que NO verifica se archiva como *reclamado*: un rechazo no "
+                        "asciende a hecho lo que no se probó.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_llave_de_dispositivo_desconocida_queda_auditada",
+                        "403 por llave ajena al operador, con su motivo `device_key_unknown`.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_rate_limit_por_usuario_queda_auditado",
+                        "429 auditado con `rate_limit_user_site` y el sitio como objeto.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_sin_clave_hmac_el_503_queda_auditado",
+                        "503 fail-closed por gabinete: el comando que NO ocurrió se ve en la "
+                        "bitácora del edificio, no sólo en un log de servidor.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_rejection_audit.py",
+                        "test_un_intento_rechazado_escribe_exactamente_una_fila",
+                        "Una denegación = una fila: ni cero ni duplicada.",
+                    ),
                 ),
             ),
         ),
@@ -1148,38 +1243,61 @@ _RO = (
     Requisito(
         "RO-9",
         nota=(
-            "Es la regla de oro con la brecha más limpia entre lo declarado y lo verificado: "
-            "está escrita en tres documentos, clasificada como invariante permanente en "
-            "`BLUEPRINT §14`… y **no la sostiene ni un test**."
+            "Era la regla con la brecha más limpia entre lo declarado y lo verificado —tres "
+            "documentos, ni un test— y desde `T-2.84.a` la sostiene una propiedad DERIVADA "
+            "del esquema, no una lista de nombres: un payload sólo es publicable en continuo "
+            "si su tamaño está acotado por su propio esquema, y una serie de muestras no lo "
+            "está. Queda declarado en el propio fichero lo que la guarda no ve: los campos "
+            "`dict` libres (censados y anclados) y la ruta S3 pre-firmada, cuyo control es "
+            "`RO-9.b`."
         ),
         afirmaciones=(
             Afirmacion(
                 "RO-9.a",
                 "El enlace edge→nube nunca publica forma de onda cruda en continuo.",
-                (),
-                hueco=(
-                    "**Nada lo impide ni lo detecta.** No hay assert sobre un conjunto CERRADO "
-                    "de topics publicados, ninguno sobre volumen o tasa, y ninguno que diga "
-                    "que un `WaveformPacket` jamás se entrega a `CloudConnector.publish`. "
-                    "Añadir hoy un publicador continuo de crudo **no rompería un solo test**. "
-                    "Lo más parecido que existe protege la superficie del cliente "
-                    "(`web/src/features/triage/model.test.ts`, `mobile/.../panel.test.tsx`: no "
-                    "se ofrece pedir el crudo), no el enlace. Como la regla es una restricción "
-                    "de costo y de red, su violación se descubriría en la factura."
+                (
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_ningun_publicador_del_edge_pasa_una_serie_de_muestras",
+                        "Censo por AST de TODO `takab_edge/**`: cada `.publish(...)` tiene "
+                        "que enseñar un payload de tipo resoluble y acotado por su esquema. "
+                        "*Fail-closed* — un publicador nuevo entra solo y, sin tipo, sale "
+                        "rojo.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_el_conector_rechaza_una_serie_de_muestras_en_la_puerta",
+                        "El invariante se IMPONE, no sólo se observa: `publish` y "
+                        "`publish_direct` devuelven `False`, nada alcanza el transporte y "
+                        "nada queda en el spool (un rechazo no es un aplazamiento).",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_el_clasificador_distingue_serie_de_muestras_de_payload_acotado",
+                        "No-vacuidad: el clasificador ve la serie de `WaveformPacket.samples` "
+                        "y no confunde con ella a `FeatureBatch`/`HealthSnapshot`; tampoco se "
+                        "rodea envolviendo, aplanando ni mandando `bytes`.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_el_camino_legitimo_sigue_publicando",
+                        "Y no prohíbe de más: salud y eventos siguen encolándose con cero "
+                        "rechazos, que es la diferencia entre una guarda y un gabinete mudo.",
+                    ),
                 ),
             ),
             Afirmacion(
                 "RO-9.b",
                 "El miniSEED crudo sube a S3 SÓLO en eventos confirmados.",
-                (),
-                hueco=(
-                    "La compuerta existe en el código (`EdgeSupervisor` sólo encola "
-                    "evidencia con tier "
-                    "`RESTRICTED`/`EVACUATE_OR_HOLD`) y **la dirección «sólo» no la prueba "
-                    "nadie**: todos los tests de evidencia recorren el camino del evento "
-                    "confirmado hacia adelante y comprueban que funciona. Ninguno comprueba "
-                    "que un tier `normal` produce cero PUT. Bajar el umbral por accidente "
-                    "convierte esto en el streaming continuo que la regla 9 prohíbe, sin rojo."
+                (
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_el_miniseed_crudo_solo_se_encola_en_tiers_que_comandan_actuacion",
+                        "Barre los tiers y exige IGUALDAD contra el conjunto que comanda "
+                        "actuación, leído de `rules.TIER_ACTUATION` — «confirmado» no es un "
+                        "literal copiado: bajar el umbral (meter `watch`) se pone rojo solo, "
+                        "y perder evidencia de un evento real también.",
+                    ),
                 ),
             ),
         ),
@@ -1363,13 +1481,24 @@ _INV = (
             Afirmacion(
                 "INV-streaming.a",
                 "No se sube forma de onda cruda en continuo a la nube.",
-                (),
-                hueco=(
-                    "Igual que `RO-9.a`: la prohibición está declarada en tres documentos y "
-                    "**no la sostiene ningún test**. Que sea `[INVARIANTE]` —una tarea futura "
-                    "que lo proponga «se rechaza sin discusión»— hace la ausencia más "
-                    "llamativa, no menos: es la única viñeta de `§14` cuya violación sería "
-                    "silenciosa en el CI."
+                (
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_ningun_publicador_del_edge_pasa_una_serie_de_muestras",
+                        "Mismo censo derivado que `RO-9.a`: la viñeta `[INVARIANTE]` deja de "
+                        "ser una prohibición sólo escrita y pasa a romper el build.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_el_conector_rechaza_una_serie_de_muestras_en_la_puerta",
+                        "Y la puerta que la impone en tiempo de ejecución.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_cloud_streaming_crudo.py",
+                        "test_los_topics_del_gabinete_son_un_conjunto_cerrado_y_declarado",
+                        "El topic que necesitaría un publicador de waveform entra solo en el "
+                        "censo y sale rojo hasta que alguien lo declare con su razón.",
+                    ),
                 ),
             ),
         ),
