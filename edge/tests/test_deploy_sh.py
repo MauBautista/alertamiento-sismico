@@ -466,13 +466,38 @@ def gabinete(tmp_path: pathlib.Path):
                 timeout=300,
             )
 
-        def gabinete_virgen(self) -> None:
-            """Borra el árbol vivo: PRIMER despliegue de este gabinete.
+        def soltar_los_pines(self) -> None:
+            """Mata al dueño de los pines y limpia su registro, si lo hay."""
+            if pid_dueno.exists():
+                pid = pid_dueno.read_text().strip()
+                if pid.isdigit():
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.kill(int(pid), signal.SIGKILL)
+                pid_dueno.unlink()
+            if self.cerrojo.exists():
+                self.cerrojo.write_text("")
 
-            No es un caso de laboratorio — es el estado de todo gabinete nuevo, y
-            el de cualquiera al que le hayan borrado `/opt/takab/edge`.
+        def gabinete_virgen(self) -> None:
+            """PRIMER despliegue de este gabinete: ni código en disco ni dueño.
+
+            No es un caso de laboratorio — es el estado de todo gabinete nuevo.
+
+            **También suelta los pines, y eso no es limpieza: es la premisa.** Un
+            gabinete sin `/opt/takab/edge` no puede tener un proceso ejecutando
+            ese código. Modelar lo contrario producía un escenario imposible —
+            árbol borrado + dueño vivo— en el que el script hace lo correcto
+            (sin instantánea con la que comparar, el veredicto es rojo
+            conservador) y el test esperaba verde. Que el test pasara o no lo
+            decidía una carrera de un segundo: `INICIO_DUENO >= MARCA_SWAP` son
+            dos relojes de segundo ENTERO, y aquí el despliegue entero cabe en
+            uno. En CI, más lento, no cabía, y el test parpadeaba.
+
+            El escenario que SÍ existe —árbol borrado a mano con el servicio
+            todavía en pie— tiene ahora su propio test, y ahí el rojo es lo
+            correcto.
             """
             shutil.rmtree(self.vivo)
+            self.soltar_los_pines()
 
         def registro(self) -> str:
             return bitacora.read_text()
