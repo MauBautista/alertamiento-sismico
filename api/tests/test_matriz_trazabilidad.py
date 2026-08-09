@@ -755,7 +755,13 @@ _RO = (
                         "test_sin_cloud_spool_dir_el_directorio_sigue_siendo_EL_MISMO",
                         "No cae en la trampa de T-2.67.b: el directorio se deriva, nunca es "
                         "un `mkdtemp` — que es por lo que la evidencia se evapora en cada "
-                        "arranque del Pi real. **Reserva declarada:** la SUBIDA a la nube está construida y probada pero su `sink` va a `None` a propósito —publicar en un topic no autorizado desconecta al gabinete en cada publish, visto en producción el 2026-07-12—, así que la copia permanente sigue pendiente de las cuatro piezas de nube que ficha `T-2.86.a`. Y el reflejo SASMEX→sirena no pasa por aquí: vive dentro de `gpio` y no cruza la costura (gate #6).",
+                        "arranque del Pi real. **Reserva declarada:** la SUBIDA a la nube "
+                        "está construida y probada pero su `sink` va a `None` a "
+                        "propósito: publicar en un topic no autorizado desconecta al "
+                        "gabinete en cada publish (visto en producción el 2026-07-12), "
+                        "así que la copia permanente sigue pendiente de las cuatro piezas "
+                        "de nube que ficha `T-2.86.a`. Y el reflejo SASMEX→sirena no pasa "
+                        "por aquí: vive dentro de `gpio` y no cruza la costura (gate #6).",
                     ),
                 ),
             ),
