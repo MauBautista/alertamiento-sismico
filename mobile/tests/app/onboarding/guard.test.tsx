@@ -1,3 +1,12 @@
+// UBICACIÓN: este test vive FUERA de `src/app/` a propósito, y no es estilo.
+// `expo-router` construye su tabla de rutas con un `require.context` sobre
+// `src/app`, que barre TODOS los ficheros de ahí — los `*.test.tsx` incluidos.
+// Con este archivo dentro, el bundle arrastraba `@testing-library/react-native`
+// → `console` de Node, que no existe en el runtime de React Native, y la app
+// NO ARRANCABA. Estuvo así desde el 2026-08-08 sin que nadie lo viera: la suite
+// de móvil corre jest, tsc y eslint, y ninguno construye un bundle.
+// Lo vigila ahora el gate `expo export` del job `mobile` en CI.
+//
 // Ninguna pantalla del onboarding puede dejar a alguien sin sesión y EN SILENCIO.
 //
 // [T-2.79.b] `app/index.tsx:34` era el ÚNICO punto de la app que reaccionaba a
@@ -22,7 +31,7 @@ import type { ComponentType, ReactNode } from "react";
 
 import { useSessionStore } from "@/auth/session.store";
 
-import OnboardingLayout, { OnboardingSessionGuard } from "./_layout";
+import OnboardingLayout, { OnboardingSessionGuard } from "@/app/onboarding/_layout";
 
 declare const __dirname: string;
 
@@ -98,10 +107,16 @@ function pantallasDelStack(dir: string, prefijo = ""): string[] {
   });
 }
 
-const PANTALLAS = pantallasDelStack(__dirname);
+/** El directorio REAL del stack, que ya no es el de este archivo.
+ *
+ * Se declara UNA vez y lo usan las dos mitades —listar las pantallas y
+ * cargarlas—, porque si se separan, una puede quedarse mirando a un directorio
+ * vacío y el `it.each` pasaría por vacuidad: cero casos, cero fallos, verde. */
+const DIR_STACK = "../../../src/app/onboarding";
+const PANTALLAS = pantallasDelStack(`${__dirname}/${DIR_STACK}`);
 
 function cargarPantalla(archivo: string): ComponentType {
-  const modulo = jest.requireActual(`./${archivo}`) as { default: ComponentType };
+  const modulo = jest.requireActual(`${DIR_STACK}/${archivo}`) as { default: ComponentType };
   return modulo.default;
 }
 

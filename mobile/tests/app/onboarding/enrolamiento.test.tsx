@@ -1,3 +1,12 @@
+// UBICACIÓN: este test vive FUERA de `src/app/` a propósito, y no es estilo.
+// `expo-router` construye su tabla de rutas con un `require.context` sobre
+// `src/app`, que barre TODOS los ficheros de ahí — los `*.test.tsx` incluidos.
+// Con este archivo dentro, el bundle arrastraba `@testing-library/react-native`
+// → `console` de Node, que no existe en el runtime de React Native, y la app
+// NO ARRANCABA. Estuvo así desde el 2026-08-08 sin que nadie lo viera: la suite
+// de móvil corre jest, tsc y eslint, y ninguno construye un bundle.
+// Lo vigila ahora el gate `expo export` del job `mobile` en CI.
+//
 // La salida del enrolamiento tiene que decir LO QUE HACE, no afirmar algo del
 // usuario que el sistema no puede saber.
 //
@@ -18,7 +27,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { setWatchedSite } from "@/services/mySite";
 import { markOnboardingDone } from "@/services/onboarding";
 
-import Enrolamiento from "./enrolamiento";
+import Enrolamiento from "@/app/onboarding/enrolamiento";
 
 jest.mock("@takab/sdk", () => ({
   enrollMeEnrollmentPost: jest.fn(),

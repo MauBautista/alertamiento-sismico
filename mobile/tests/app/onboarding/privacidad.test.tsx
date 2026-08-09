@@ -1,3 +1,12 @@
+// UBICACIÓN: este test vive FUERA de `src/app/` a propósito, y no es estilo.
+// `expo-router` construye su tabla de rutas con un `require.context` sobre
+// `src/app`, que barre TODOS los ficheros de ahí — los `*.test.tsx` incluidos.
+// Con este archivo dentro, el bundle arrastraba `@testing-library/react-native`
+// → `console` de Node, que no existe en el runtime de React Native, y la app
+// NO ARRANCABA. Estuvo así desde el 2026-08-08 sin que nadie lo viera: la suite
+// de móvil corre jest, tsc y eslint, y ninguno construye un bundle.
+// Lo vigila ahora el gate `expo export` del job `mobile` en CI.
+//
 // La pantalla de privacidad NO puede encerrar a nadie en el onboarding.
 //
 // Este fichero existe porque `privacidad.tsx` prometía en su cabecera y en su
@@ -15,7 +24,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { markOnboardingDone, setGpsConsent } from "@/services/onboarding";
 
-import Privacidad from "./privacidad";
+import Privacidad from "@/app/onboarding/privacidad";
 
 jest.mock("@takab/sdk", () => ({
   client: { get: jest.fn(), post: jest.fn() },

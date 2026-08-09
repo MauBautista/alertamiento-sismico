@@ -162,7 +162,7 @@ jobs:
         run: uv run pytest -q -rs
 
   mobile:
-    name: mobile · eslint + tsc + jest
+    name: mobile · eslint + tsc + jest + bundle
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -191,6 +191,16 @@ jobs:
         run: npm run typecheck
       - name: Tests (jest)
         run: npm test
+      # El gate que faltaba. jest, tsc y eslint pueden estar los tres en verde
+      # con una app QUE NO ARRANCA: `expo-router` construye su tabla de rutas con
+      # un `require.context` sobre `src/app`, así que cualquier fichero que caiga
+      # ahí entra en el bundle. El 2026-08-08 entraron tres `*.test.tsx`, que
+      # arrastraron `@testing-library/react-native` → `console` de Node, y el
+      # bundle dejó de construirse. Nadie lo vio hasta que se compiló un APK un
+      # día después, porque nada en el proyecto construía la app: web tiene su
+      # `vite build` y móvil no tenía equivalente. Esto lo es.
+      - name: Bundle (expo export)
+        run: npx expo export --platform android --output-dir /tmp/expo-export
 
   # [T-2.86.c · hueco RO-6.a] La regla de oro 6 ("nada de secretos hardcodeados")
   # era la ÚNICA de las once sin un solo test, paso de CI ni pre-commit: se
