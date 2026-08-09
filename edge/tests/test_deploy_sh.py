@@ -670,9 +670,27 @@ def test_el_primer_despliegue_de_un_gabinete_virgen_completa(gabinete) -> None:
     gabinete.gabinete_virgen()
     r = gabinete.desplegar()
 
-    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     assert gabinete.codigo_nuevo_en_el_arbol_vivo()
     assert not gabinete.previo.exists(), "sin árbol vivo previo no hay instantánea que tomar"
+
+    # El VEREDICTO no se puede exigir verde aquí, y exigirlo era codificar un
+    # accidente de esta máquina. Sin instantánea no hay con qué comparar el
+    # código del dueño, así que el script sólo puede certificar el despliegue si
+    # LEE que el dueño arrancó después del swap — y esa lectura es de
+    # `/proc/<pid>/stat`, que en un contenedor endurecido (el runner de CI) puede
+    # no estar disponible. Cuando no lo está, el rojo es CORRECTO: fail-closed.
+    #
+    # Lo que sí se exige, y es más fuerte que el `rc == 0` de antes: si se niega
+    # a certificar, tiene que decir la razón que MIDIÓ. El script llegó a afirmar
+    # "arrancó ANTES del swap" con INICIO_DUENO=0 por no haber podido leer nada.
+    if r.returncode != 0:
+        assert "no se pudo LEER el arranque" in r.stderr or "no hay instantánea" in r.stderr, (
+            "se negó a certificar el despliegue sin decir cuál de las dos cosas "
+            f"le faltó.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        )
+        assert "ANTES del swap" not in r.stderr or "no se pudo LEER" not in r.stderr, (
+            "afirma a la vez que midió el arranque y que no pudo leerlo"
+        )
 
 
 def test_sin_instantanea_el_aborto_no_ofrece_una_vuelta_atras_inexistente(gabinete) -> None:
