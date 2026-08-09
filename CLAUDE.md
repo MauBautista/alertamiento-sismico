@@ -147,6 +147,10 @@ takab/
   `api/tests/test_docs_consistency.py`.
 - **`takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md`** — hallazgos del red-team, changelog de
   correcciones `[ANALISIS-00]` y preguntas abiertas.
+- **`takab-docs/PENDIENTES-MAURICIO.md`** — censo de **todo lo que no puede cerrar el software**:
+  decisiones, ventana AWS, sesiones físicas y legal. Sale de `TASKS.md` y no lo sustituye. Si una
+  tarea está bloqueada en una persona, se ficha allí **y** aquí; si solo está en `TASKS.md`, nadie
+  la ve hasta que alguien lee 234 fichas.
 - **`takab-docs/RESIDENCIA-DE-DATOS-TAKAB.md`** — **la respuesta al cliente que pregunta si sus
   datos se quedan en México** (T-2.83). Recomendación: **no migrar a `mx-central-1` hoy**, porque
   **AWS IoT Core no existe en esa región** y es por donde entra cada latido de cada gabinete. §2
