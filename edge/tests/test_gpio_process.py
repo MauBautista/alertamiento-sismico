@@ -120,6 +120,15 @@ _NO_SON_DEPENDENCIAS: dict[str, str] = {
     "__main__": "el propio `python -c` de esta medición; no es un paquete",
     "_virtualenv": "lo inyecta el .pth del venv ANTES de cualquier import nuestro",
     "_distutils_hack": "lo inyecta `distutils-precedence.pth` de setuptools, igual",
+    # Los inyecta `site` en el arranque del intérprete, antes de la primera línea
+    # de código nuestro: son el gancho de personalización de CPython, no algo que
+    # `takab_edge.gpio` importe. Misma clase que los dos de arriba, y por eso van
+    # aquí y no en `_EXTERNOS_PERMITIDOS` (autorizar es para lo que SÍ elegimos).
+    # No están en este árbol y por eso no aparecían: los inyecta el runner de
+    # GitHub, así que estos tres tests pasaban en local y sólo se ponían rojos en
+    # CI — que es donde nadie los estaba mirando, porque esta rama nunca tuvo PR.
+    "sitecustomize": "gancho de `site` del intérprete que hospeda la corrida",
+    "usercustomize": "el gemelo por-usuario de `sitecustomize`, mismo gancho",
 }
 
 #: `_sysconfigdata__linux_x86_64-linux-gnu` (y su gemelo `…aarch64…` en el Pi):
@@ -536,7 +545,17 @@ def test_la_allowlist_no_tiene_comodines(censo_del_proceso_gpio: _CensoConjunto)
         "como se distribuye una extensión C de terceros"
     )
 
-    benignos = {"__main__", "_virtualenv", "_distutils_hack", "_sysconfigdata__linux_aarch64-gnu"}
+    benignos = {
+        "__main__",
+        "_virtualenv",
+        "_distutils_hack",
+        "_sysconfigdata__linux_aarch64-gnu",
+        # Los pone el intérprete que hospeda la corrida (el runner de CI trae uno
+        # y esta máquina no): sin ellos aquí, la guarda es verde en el portátil y
+        # roja en CI, que es la peor de las dos combinaciones.
+        "sitecustomize",
+        "usercustomize",
+    }
     assert _dependencias_no_autorizadas(benignos) == []
     # …y lo declarado se declara de verdad: nada de la lista es un comodín.
     assert _dependencias_no_autorizadas(censo_del_proceso_gpio.raices()) == []

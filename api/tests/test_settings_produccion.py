@@ -305,6 +305,45 @@ def test_el_despliegue_de_hoy_activa_el_perfil_de_produccion() -> None:
     )
 
 
+def test_todo_lo_que_el_despliegue_embebe_esta_en_git() -> None:
+    """Un fichero que `deploy.sh` embebe y que git no tiene = nube irreproducible.
+
+    El defecto real: la regla `*secrets*` de `.gitignore` se tragó
+    `deploy/cloud/takab-secrets.sh` y `takab-secrets.service`. **Ninguno de los
+    dos contiene un secreto** —el primero los PIDE a Secrets Manager, el segundo
+    es una unidad systemd—, pero el nombre bastó. Consecuencias medidas:
+
+    * `make cloud-deploy` desde un clon limpio no puede embeberlos: la nube
+      quedaría sin materializar sus DSN, es decir sin arrancar.
+    * los cuatro anclajes de este fichero, que existen justamente para vigilar
+      el camino de despliegue, **no podían correr en CI** — leen un fichero que
+      allí no existe. El guardia que vigila el despliegue estaba, a su vez, sin
+      vigilar.
+
+    Se comprueba `git ls-files` y no `Path.exists()` a propósito: en la máquina
+    donde se escribió el fallo, los dos ficheros existían.
+    """
+    import subprocess
+
+    embebidos = set(
+        re.findall(r"\$\(b64 ([^)]+)\)", (REPO_ROOT / "deploy" / "cloud" / "deploy.sh").read_text())
+    )
+    assert embebidos, "el patrón `$(b64 …)` cambió: este test dejó de mirar nada"
+    rastreados = set(
+        subprocess.run(  # noqa: S603
+            ["git", "-C", str(REPO_ROOT), "ls-files", *sorted(embebidos)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+    )
+    faltan = embebidos - rastreados
+    assert not faltan, (
+        f"`deploy.sh` embebe {sorted(faltan)} y git NO los tiene: un clon limpio "
+        "no puede desplegar la nube"
+    )
+
+
 def test_el_deploy_real_habilita_el_pool_de_ocupantes() -> None:
     """[T-2.99] El pool de OCUPANTES tiene que llegar al despliegue, o nadie entra.
 

@@ -1097,7 +1097,15 @@ def test_un_gabinete_provisionado_con_el_dueno_dedicado_lo_HABILITA_y_lo_LEVANTA
     un dueño ya vivo `start` es un no-op y no mueve un solo pin.
     """
     gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
-    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
+    # `DUENO_MISMO_CODIGO=1` NO es decorado: sin él, este test dependía de que el
+    # arranque del dueño y el `MARCA_SWAP` cayeran en el MISMO segundo entero
+    # (`INICIO_DUENO = btime + ticks/HZ` trunca a segundos). Aquí eso pasaba
+    # —el test dura ~1 s— y en el runner de CI, más lento, no: el gate entraba en
+    # la huella del dueño, el intérprete falso no contestaba nada y el despliegue
+    # salía en rojo. Verde en el portátil, rojo en CI, y por una carrera.
+    # Lo que este test mide es la topología D3 (`enable`+`start`, jamás
+    # `restart`), no la frescura del dueño: eso lo miden sus dos tests propios.
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio", DUENO_MISMO_CODIGO="1")
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     registro = gabinete.registro()
@@ -1128,7 +1136,9 @@ def test_un_gabinete_de_hoy_no_habilita_al_dueno_dedicado(gabinete) -> None:
     y `takab-edge` queda en crash-loop PARA SIEMPRE contra el cerrojo: sin nube,
     sin SeedLink y sin panel. Eléctricamente mudo (D1.1), operativamente ciego.
     """
-    r = gabinete.desplegar()
+    # Ver la nota del test de arriba: sin esto, el veredicto dependía de que dos
+    # relojes de segundo entero cayeran del mismo lado.
+    r = gabinete.desplegar(DUENO_MISMO_CODIGO="1")
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     registro = gabinete.registro()
@@ -1282,7 +1292,9 @@ def test_del_edge_env_gana_la_ULTIMA_asignacion_del_dueno(gabinete) -> None:
         "TAKAB_EDGE_GPIO_OWNER=edge\n"
         "TAKAB_EDGE_GPIO_OWNER=gpio\n"
     )
-    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
+    # Ver la nota de `test_un_gabinete_provisionado_…`: lo que se mide aquí es
+    # qué asignación del `edge.env` gana, no la frescura del dueño.
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio", DUENO_MISMO_CODIGO="1")
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     assert "systemctl enable takab-gpio" in gabinete.registro(), (
