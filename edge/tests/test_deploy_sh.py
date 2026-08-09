@@ -189,17 +189,25 @@ def gabinete(tmp_path: pathlib.Path):
         """,
     )
 
-    # sudo falso: registra y NO ejecuta… salvo `systemctl`, porque el reinicio
-    # del gabinete va por `sudo systemctl restart` y sin delegarlo el arranque
-    # simulado nunca ocurriría (y con él, nadie reclamaría los pines). `install`
-    # y `chown` siguen siendo puro registro: ningún test escribe en
-    # /etc/systemd/system.
+    # sudo falso: registra SIEMPRE y delega TODO salvo lo que escribiría fuera del
+    # sandbox (`install` en /etc/systemd/system, `chown`). La lista está invertida
+    # a propósito: antes era una allowlist de un solo comando (`systemctl`) y
+    # cualquier `sudo` nuevo se convertía en un `exit 0` mudo. Eso escondió el
+    # defecto que `gw-dev-0001` destapó el 2026-08-09 — la identidad del gabinete
+    # se leía SIN sudo, y en un Pi real (`edge.env` es 0600 root:root) abortaba
+    # todo despliegue. Con la allowlist, un `sudo sed` de arreglo habría devuelto
+    # cadena vacía y el dueño habría caído al default `edge` con los tests en
+    # verde: exactamente el fallo que D3 existe para impedir.
     _escribir_ejecutable(
         binarios / "sudo",
         f"""
-        echo "sudo $*" >> "{bitacora}"
-        [ "$1" = systemctl ] && exec "$@"
-        exit 0
+        REAL="$@"
+        case "$1" in -n) shift ;; esac
+        echo "sudo $REAL" >> "{bitacora}"
+        case "$1" in
+          install|chown) exit 0 ;;
+          *) exec "$@" ;;
+        esac
         """,
     )
 

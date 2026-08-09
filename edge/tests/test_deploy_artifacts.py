@@ -927,6 +927,39 @@ def test_ninguna_unidad_TOLERA_arrancar_sin_la_identidad_del_gabinete(unidad: st
     )
 
 
+def test_la_identidad_del_gabinete_se_lee_SIEMPRE_con_sudo() -> None:
+    """En un Pi real `edge.env` es 0600 root:root, y el despliegue NO corre como root.
+
+    El defecto, medido contra `gw-dev-0001` el 2026-08-09: el pre-vuelo hacía
+    `[ -r "$ENTORNO" ]` y `sed … "$ENTORNO"` a pelo. Como el bloque remoto corre
+    con el usuario de despliegue —igual que `sudo install` y `sudo systemctl` de
+    más abajo—, la lectura daba `Permission denied`, el script concluía «este
+    gabinete no tiene identidad» y **abortaba todo despliegue a un gabinete de
+    verdad**. Nunca se vio porque el arnés usa un fichero temporal que el usuario
+    de test SÍ puede leer.
+
+    Y el daño peor estaba detrás del guard: sin él, la lectura de
+    `TAKAB_EDGE_GPIO_OWNER` habría fallado igual de callada y caído al default
+    `edge` — en un gabinete D3 eso DESHABILITA `takab-gpio` y lo deja sin dueño de
+    pines tras el siguiente reinicio.
+
+    Se comprueba sobre el TEXTO del script y no ejecutándolo, porque en el arnés
+    ambas formas funcionan: el sandbox no puede reproducir un root:root.
+    """
+    texto = _deploy()
+    lecturas = [
+        linea.strip()
+        for linea in texto.splitlines()
+        if '"$ENTORNO"' in linea and not linea.lstrip().startswith("#")
+    ]
+    assert lecturas, "nadie lee ya `$ENTORNO`: revisa si el pre-vuelo de identidad sigue ahí"
+    sin_sudo = [linea for linea in lecturas if "sudo" not in linea]
+    assert not sin_sudo, (
+        "el despliegue toca la identidad del gabinete SIN sudo, y en un Pi real ese "
+        f"archivo es 0600 root:root: {sin_sudo}"
+    )
+
+
 def _claves_gestionadas() -> set[str]:
     """Claves `TAKAB_EDGE_*` que el aprovisionamiento ESCRIBE de verdad.
 
