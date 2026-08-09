@@ -88,10 +88,24 @@ def gabinete(tmp_path: pathlib.Path):
     # [T-2.70.a·D3·B2] La huella va PRIMERO en el `case`: su script menciona
     # `takab_edge` (importa el entry point del dueño) y sin este orden caería en
     # la rama de `FALLA_CODIGO`, que sale 0 sin imprimir nada — o sea que el
-    # veredicto se leería como «no se pudo medir». `DUENO_MISMO_CODIGO=1` es la
-    # respuesta «el dueño ya corre este mismo código»; SIN esa variable el falso
-    # no imprime nada, que es como el script ve a un intérprete que revienta y
-    # que por tanto NO puede probar que el dueño esté al día.
+    # veredicto se leería como «no se pudo medir».
+    #
+    # EL DEFAULT ES `DUENO-IGUAL`, y esto no es comodidad: en este arnés nada
+    # cambia los bytes de los módulos del dueño, así que «su código es el que
+    # acabamos de desplegar» es LO CIERTO. Lo contrario —callar por omisión— hacía
+    # que el veredicto de CADA test de despliegue sano dependiera de si el gate
+    # llegaba a preguntar, y eso lo decide una CARRERA DE UN SEGUNDO:
+    # `INICIO_DUENO = btime + ticks/HZ` trunca a segundos enteros y `MARCA_SWAP`
+    # es `date +%s`. En un portátil el test dura ~1 s, los dos caen en el mismo
+    # segundo, el gate se salta la huella y todo sale verde; en un runner más
+    # lento caen en segundos distintos, el gate SÍ pregunta, el falso no
+    # contestaba nada y ocho tests se ponían rojos. Verde por velocidad no es
+    # verde, y el rojo estaba en el único sitio donde nadie miraba.
+    #
+    # Los dos escenarios que sí quieren medir la frescura lo DECLARAN:
+    #   DUENO_CODIGO_CAMBIO=1 → el dueño se quedó con el código anterior.
+    #   DUENO_HUELLA_MUDA=1   → el intérprete revienta y NO se puede medir; el
+    #                           gate tiene que salir rojo igual (fail-closed).
     py_venv = f"""
         case "$1 $2" in
           "-m compileall")
@@ -100,7 +114,12 @@ def gabinete(tmp_path: pathlib.Path):
         esac
         case "$2" in
           *HUELLA-DEL-DUENO*)
-            [ -n "${{DUENO_MISMO_CODIGO:-}}" ] && echo "DUENO-IGUAL"
+            [ -n "${{DUENO_HUELLA_MUDA:-}}" ] && exit 0
+            if [ -n "${{DUENO_CODIGO_CAMBIO:-}}" ]; then
+              echo "DUENO-CAMBIO takab_edge/gpio/__main__.py"
+            else
+              echo "DUENO-IGUAL"
+            fi
             exit 0 ;;
           *lgpio*)
             [ -n "${{FALLA_DEPS:-}}" ] && {{ echo "No module named lgpio" >&2; exit 1; }} ;;
@@ -1097,15 +1116,7 @@ def test_un_gabinete_provisionado_con_el_dueno_dedicado_lo_HABILITA_y_lo_LEVANTA
     un dueño ya vivo `start` es un no-op y no mueve un solo pin.
     """
     gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
-    # `DUENO_MISMO_CODIGO=1` NO es decorado: sin él, este test dependía de que el
-    # arranque del dueño y el `MARCA_SWAP` cayeran en el MISMO segundo entero
-    # (`INICIO_DUENO = btime + ticks/HZ` trunca a segundos). Aquí eso pasaba
-    # —el test dura ~1 s— y en el runner de CI, más lento, no: el gate entraba en
-    # la huella del dueño, el intérprete falso no contestaba nada y el despliegue
-    # salía en rojo. Verde en el portátil, rojo en CI, y por una carrera.
-    # Lo que este test mide es la topología D3 (`enable`+`start`, jamás
-    # `restart`), no la frescura del dueño: eso lo miden sus dos tests propios.
-    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio", DUENO_MISMO_CODIGO="1")
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     registro = gabinete.registro()
@@ -1136,9 +1147,7 @@ def test_un_gabinete_de_hoy_no_habilita_al_dueno_dedicado(gabinete) -> None:
     y `takab-edge` queda en crash-loop PARA SIEMPRE contra el cerrojo: sin nube,
     sin SeedLink y sin panel. Eléctricamente mudo (D1.1), operativamente ciego.
     """
-    # Ver la nota del test de arriba: sin esto, el veredicto dependía de que dos
-    # relojes de segundo entero cayeran del mismo lado.
-    r = gabinete.desplegar(DUENO_MISMO_CODIGO="1")
+    r = gabinete.desplegar()
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     registro = gabinete.registro()
@@ -1194,7 +1203,9 @@ def test_el_dueno_de_los_pines_en_CODIGO_VIEJO_no_se_declara_bueno(gabinete) -> 
     """
     gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
     pid = gabinete.dueno_preexistente("takab-gpio")
-    r = gabinete.desplegar()
+    # DECLARADO y no heredado del silencio del falso: este test mide el veredicto
+    # ante un dueño cuyo código SÍ cambió, y eso tiene que decirlo el escenario.
+    r = gabinete.desplegar(DUENO_CODIGO_CAMBIO="1")
 
     assert gabinete.dueno_de_los_pines()["pid"] == str(pid), (
         "premisa: los pines los sigue teniendo el proceso que ya estaba de pie "
@@ -1218,6 +1229,35 @@ def test_el_dueno_de_los_pines_en_CODIGO_VIEJO_no_se_declara_bueno(gabinete) -> 
     assert "NO REVIERTAS" in r.stderr
 
 
+def test_si_la_huella_del_dueno_NO_SE_PUEDE_MEDIR_el_gate_sale_rojo(gabinete) -> None:
+    """Fail-closed: «no lo sé» no puede resolverse imprimiendo un ✓.
+
+    El script lo dice en su comentario —«ante cualquier duda se asume CAMBIÓ»— y
+    hasta ahora **ningún test lo ejercitaba a propósito**: se cumplía de rebote,
+    porque el intérprete falso callaba por omisión y una carrera de un segundo
+    decidía si el gate llegaba a preguntarle. Al hacer determinista el arnés esa
+    cobertura accidental habría desaparecido en silencio, que es exactamente el
+    modo en que una guarda se queda sin quien la vigile.
+
+    Aquí el intérprete revienta (no imprime nada) con el dueño de pie desde antes
+    del despliegue: el veredicto tiene que ser ROJO y tiene que decir que no pudo
+    comparar, no inventarse un ✓ sobre el proceso que sostiene la sirena.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    gabinete.dueno_preexistente("takab-gpio")
+    r = gabinete.desplegar(DUENO_HUELLA_MUDA="1")
+
+    assert r.returncode != 0, (
+        "no se pudo medir si el dueño de los pines corre el código nuevo y el "
+        f"despliegue salió en VERDE.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "no se pudo comparar" in r.stderr, (
+        "salió rojo, sí, pero sin decir que la causa es que NO PUDO MEDIR: un "
+        "operador no puede distinguirlo de un dueño realmente rancio"
+    )
+    assert "✓ pines del gabinete en poder" not in r.stdout
+
+
 def test_un_dueno_de_pines_VIEJO_con_el_MISMO_codigo_no_obliga_a_ciclar_gas(gabinete) -> None:
     """El límite del gate de arriba, y lo que lo hace usable.
 
@@ -1233,7 +1273,9 @@ def test_un_dueno_de_pines_VIEJO_con_el_MISMO_codigo_no_obliga_a_ciclar_gas(gabi
     """
     gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
     gabinete.dueno_preexistente("takab-gpio")
-    r = gabinete.desplegar(DUENO_MISMO_CODIGO="1")
+    # Sin variables: «el código del dueño no cambió» es el default del arnés, y
+    # aquí el dueño es además PREEXISTENTE, así que el gate llega a preguntar.
+    r = gabinete.desplegar()
 
     assert r.returncode == 0, (
         "el código del dueño de los pines NO cambió en este despliegue y aun así "
@@ -1292,9 +1334,7 @@ def test_del_edge_env_gana_la_ULTIMA_asignacion_del_dueno(gabinete) -> None:
         "TAKAB_EDGE_GPIO_OWNER=edge\n"
         "TAKAB_EDGE_GPIO_OWNER=gpio\n"
     )
-    # Ver la nota de `test_un_gabinete_provisionado_…`: lo que se mide aquí es
-    # qué asignación del `edge.env` gana, no la frescura del dueño.
-    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio", DUENO_MISMO_CODIGO="1")
+    r = gabinete.desplegar(UNIDAD_DUENA="takab-gpio")
 
     assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     assert "systemctl enable takab-gpio" in gabinete.registro(), (
