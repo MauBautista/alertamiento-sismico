@@ -256,25 +256,16 @@ def test_si_una_tabla_del_suelo_se_cae_de_la_derivacion_el_job_no_arranca(
         retention.validar_proteccion(informe)
 
 
-def test_un_guard_deshabilitado_no_cuenta_como_proteccion(
-    seeded: psycopg.Connection,
-) -> None:
-    """Un trigger con ``tgenabled='D'`` sigue en el catálogo y no para nada.
-
-    Se desactiva el guard de `rule_evaluations` —la única tabla donde el
-    privilegio DELETE quedó concedido y es el trigger quien la salva— y se
-    comprueba que la derivación deja de considerarla protegida.
-    """
-    reset(seeded)
-    protegida_antes = retention.protection_report(seeded, role=retention.JOB_ROLE)
-    assert protegida_antes.get("rule_evaluations") == ("guard_activo",)
-
-    seeded.execute("ALTER TABLE rule_evaluations DISABLE TRIGGER trg_rule_evaluations_append_only")
-    despues = retention.protection_report(seeded, role=retention.JOB_ROLE)
-    assert "rule_evaluations" not in despues, (
-        "un guard DESHABILITADO se está contando como protección: la derivación "
-        "mira el catálogo pero no si el trigger está vivo"
-    )
+# [T-2.81.c] Aquí vivía `test_un_guard_deshabilitado_no_cuenta_como_proteccion`, y se
+# retiró porque **su premisa dejó de existir**, no porque estorbara. Aquel test elegía
+# `rule_evaluations` por ser «la única tabla donde el privilegio DELETE quedó concedido y
+# es el trigger quien la salva» — y T-2.81.c le quitó ese privilegio.
+#
+# La propiedad que medía sigue haciendo falta y está mejor medida en
+# `test_append_only_dos_capas.py::test_un_guard_deshabilitado_deja_de_contar_como_capa`,
+# que **elige la tabla del catálogo en vez de nombrarla** y comprueba algo más fuerte: en
+# una tabla con las DOS capas, deshabilitar el guard tira una y deja la otra, que es
+# exactamente la razón de tener dos.
 
 
 # ---------------------------------------------------------------------------

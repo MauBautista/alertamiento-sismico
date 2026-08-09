@@ -1893,6 +1893,16 @@ FROM takab_app;
 REVOKE UPDATE ON life_checkins FROM takab_app;
 GRANT UPDATE (geom) ON life_checkins TO takab_app;
 
+-- [T-2.81.c] La lista de arriba enumeró doce tablas y se dejó fuera la única
+-- otra que lleva guard `BEFORE DELETE` append-only desde el 0001:
+-- `rule_evaluations`. No era explotable —su RLS solo tiene política de lectura,
+-- así que el DELETE de takab_app volvía con cero filas y sin error— pero la
+-- protección descansaba en la ausencia de una política, no en el guard, y una
+-- política `FOR ALL` añadida mañana la habría quitado en silencio. Va en línea
+-- aparte y no dentro de la lista de la T-2.80 para que se lea POR QUÉ llegó
+-- tarde: la enumeró una mano, la encontró una derivación del catálogo.
+REVOKE DELETE ON rule_evaluations FROM takab_app;
+
 -- Las políticas de UPDATE de `life_checkins`. Junto al GRANT por columna y al
 -- trigger, la superficie TOTAL del UPDATE sobre esta tabla es "anular la
 -- geometría", y nada más: quien lo limita es `life_checkin_arco_guard()`, que
