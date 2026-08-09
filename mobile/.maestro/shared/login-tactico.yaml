@@ -38,8 +38,14 @@ appId: com.takab.ailert
 # corrida anterior, bloquea el arranque de ésta.
 - runFlow: descartar-autofill.yaml
 
+# EL BOTÓN DEL TÁCTICO, no el del ocupante. Los dos conviven en la pantalla de
+# login y este subflujo tapeaba el primero — el de «INICIAR SESIÓN · Ocupante».
+# Con la sesión de Cognito del ocupante viva en Chrome, entraba como OCUPANTE sin
+# pedir credenciales ni MFA, y el flujo moría después buscando una pestaña que
+# ese rol no tiene. Un login que entra con el rol equivocado y en silencio es
+# peor que uno que falla. Medido en un Pixel 8 Pro el 2026-08-09.
 - tapOn:
-    text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
+    text: ".*(Acceso personal operativo|Operational staff access).*"
 # La Hosted UI puede NO pedir credenciales: Chrome conserva la sesión de Cognito
 # entre corridas, y entonces `/oauth2/authorize` redirige solo. Por eso la espera
 # es OPCIONAL y el tecleo va condicionado: exigir el formulario hacía fallar el

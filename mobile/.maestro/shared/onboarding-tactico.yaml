@@ -1,0 +1,35 @@
+# Subflujo · onboarding del TÁCTICO tras `clearState`.
+#
+# Es hermano de `enrolar-sitio.yaml` y se separa por una razón de fondo: el
+# táctico NO se vincula con un código. Su alcance sale de `custom:site_scope` en
+# el token (el occupant es el que lo tiene default-deny y se enrola, R2). Meterle
+# el `SITE_CODE` del occupant sería consumir un código que no es suyo.
+#
+# Cada paso va condicionado: si ya pasó el onboarding, no hace nada.
+#
+# «Continuar sin vincular» no es una puerta trasera: es la salida que T-2.79.c
+# añadió con su consecuencia escrita en pantalla, y para el táctico es el camino
+# correcto, no el atajo.
+appId: com.takab.ailert
+---
+- runFlow:
+    when:
+      visible: "CONFIGURACIÓN · PASO 1 DE 3"
+    commands:
+      - tapOn: "Continuar"
+
+- runFlow:
+    when:
+      visible:
+        id: "privacy-accept"
+    commands:
+      - tapOn:
+          id: "privacy-accept"
+
+- runFlow:
+    when:
+      visible:
+        id: "enrolamiento-continuar-sin-vincular"
+    commands:
+      - tapOn:
+          id: "enrolamiento-continuar-sin-vincular"
