@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **238** · `[x]` **166** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **239** · `[x]` **167** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4319,8 +4319,14 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         el mismo `NotImplementedError` que el gabinete.
   - [x] Las 20 del gabinete vivo, explicadas una a una: 4 por array enmascarado, 16 por el
         grant. Censo re-derivable con el script del PR.
-  - [ ] **El fallo 2:** por qué la nube no concede el grant. Necesita el edge redesplegado
-        (para que hable) y la nube al día.
+  - [~] **El fallo 2, ya NOMBRADO (2026-08-09, edge redesplegado a `7f1c278`):** la card de
+        evidencia del gabinete declara `extract_failed_total: 0` —el arreglo de `split()`
+        funciona en producción, las 20 extraen bien— y `last_result: grant_timeout`, con el
+        journal repitiendo «evidencia … **sin grant a tiempo**; sigue pendiente» para las 20.
+        **La nube nunca concede el grant.** Queda por determinar si el publish al topic de
+        request lo deniega la política de flota de AWS IoT (trampa conocida: toda regla IoT
+        nueva exige su línea o el gabinete se desconecta en cada publish), si el worker de
+        nube no responde, o si el grant vuelve por un topic al que el edge no está suscrito.
   - [ ] **Un descarte deja de borrar la evidencia en silencio** (decisión de producto: ¿se
         conserva la ventana parcial, se marca, se reintenta?). Hoy **no está firing** —el censo
         dio `0 sin dato`—, así que es riesgo latente y no pérdida en curso.
@@ -6614,6 +6620,33 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.101 · El despliegue al gabinete leía su identidad sin `sudo` — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** deploy · **Depende de:** — · **Origen:** el primer despliegue REAL del edge
+  tras `T-2.70.a·D3`
+- **El defecto:** el pre-vuelo de identidad (`D3·m5`) hacía `[ -r "$ENTORNO" ]` y
+  `sed … "$ENTORNO"` **a pelo**. En un gabinete real `/etc/takab/edge.env` es `0600 root:root`
+  —lleva la clave HMAC y el PIN del panel— y el bloque remoto corre con el usuario de
+  despliegue, igual que los `sudo install` y `sudo systemctl` de más abajo. Resultado:
+  `Permission denied` → «este gabinete no tiene identidad» → **abortaba TODO despliegue a un
+  gabinete de verdad**. Medido contra `gw-dev-0001`.
+- **El daño peor, detrás del guard:** sin él, la lectura de `TAKAB_EDGE_GPIO_OWNER` habría
+  fallado igual de callada y caído al default `edge`. En un gabinete D3 eso hace que el
+  despliegue **DESHABILITE `takab-gpio`** y lo deje sin dueño de pines tras el siguiente
+  reinicio — el escenario (a) que D3 existe para impedir.
+- **Por qué el arnés no lo vio, y por qué ahora sí:** el `sudo` falso era una allowlist de UN
+  comando (`systemctl`) y todo lo demás salía `exit 0` mudo. Con eso, hasta el arreglo habría
+  sido invisible: un `sudo sed` habría devuelto cadena vacía y el dueño habría caído al default
+  con los tests en verde. La lista está **invertida**: se delega todo salvo `install` y `chown`,
+  que son los únicos que escribirían fuera del sandbox.
+- **Criterios de aceptación:**
+  - [x] Identidad leída con `sudo -n`, distinguiendo «no existe» de «existe y no se puede leer
+        ni con sudo» — el segundo apunta a permisos/sudoers, no a un gabinete sin provisionar.
+  - [x] Ancla estática (`test_la_identidad_del_gabinete_se_lee_SIEMPRE_con_sudo`): se comprueba
+        sobre el TEXTO porque en el arnés ambas formas funcionan — el sandbox no puede
+        reproducir un `root:root`. Verificada en las dos direcciones.
+  - [x] Despliegue real completado contra `gw-dev-0001`: `✓ pines del gabinete en poder de
+        takab-edge`, y el panel pasa de 33 a 35 claves (`evidence`, `relays_status`).
 
 ### [x] T-2.100 · La app no arrancaba, y ningún gate lo veía — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile + CI · **Depende de:** — · **Origen:** compilar el APK para el

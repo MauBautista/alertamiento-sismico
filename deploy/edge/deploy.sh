@@ -258,7 +258,23 @@ PY_PREVUELO="${VIVO}/.venv/bin/python"
 # reclamó los pines» — un diagnóstico que apunta al cerrojo cuando lo que falta
 # es el archivo de identidad. Va en el pre-vuelo porque aquí todavía no se ha
 # destruido nada.
-if [ ! -r "$ENTORNO" ]; then
+# CON SUDO, y no es un detalle: en un gabinete real este archivo es `0600
+# root:root` —lleva la clave HMAC y el PIN del panel— y este bloque corre como el
+# usuario de despliegue, igual que `sudo install` y `sudo systemctl` de más abajo.
+# Leerlo a pelo daba `Permission denied` y el pre-vuelo concluía «este gabinete no
+# tiene identidad», abortando TODO despliegue a un gabinete de verdad. Y el daño
+# peor estaba detrás del guard: la lectura de `TAKAB_EDGE_GPIO_OWNER` habría
+# fallado igual de callada y caído al default `edge`, con lo que en un gabinete D3
+# el despliegue DESHABILITA `takab-gpio` y lo deja sin dueño de pines tras el
+# siguiente reinicio. Medido contra `gw-dev-0001` el 2026-08-09.
+if ! sudo -n test -r "$ENTORNO" 2>/dev/null; then
+  if sudo -n test -e "$ENTORNO" 2>/dev/null; then
+    echo "✗ ABORTADO EN PRE-VUELO: la identidad de este gabinete existe en" >&2
+    echo "  ${ENTORNO} pero NI SIQUIERA CON SUDO se puede leer." >&2
+    echo "  Revisa permisos/propietario (esperado: 0600 root:root) y el sudoers" >&2
+    echo "  del usuario de despliegue. NADA se ha destruido." >&2
+    exit 1
+  fi
   echo "✗ ABORTADO EN PRE-VUELO: este gabinete no tiene identidad legible en" >&2
   echo "  ${ENTORNO}." >&2
   echo "  Las dos unidades lo declaran EnvironmentFile= SIN '-', así que ninguna" >&2
@@ -276,7 +292,11 @@ fi
 # para bash; leer la primera habilitaría la unidad equivocada. Vacío ⇒ `edge`,
 # que es el default de `EdgeSettings.gpio_owner` y el estado de todo gabinete
 # desplegado hasta hoy.
-DUENO_CONFIGURADO="$(sed -n 's/^[[:space:]]*TAKAB_EDGE_GPIO_OWNER=//p' "$ENTORNO" |
+# `sudo -n` por lo mismo que el guard de arriba: el archivo es 0600 root:root. Un
+# fallo de lectura aquí NO puede quedar en silencio —caería al default `edge` y
+# deshabilitaría al dueño dedicado de un gabinete D3—, así que el guard de arriba
+# ya garantizó que se puede leer antes de llegar aquí.
+DUENO_CONFIGURADO="$(sudo -n sed -n 's/^[[:space:]]*TAKAB_EDGE_GPIO_OWNER=//p' "$ENTORNO" |
   tail -1 | tr -d "\"' " || true)"
 [ -n "$DUENO_CONFIGURADO" ] || DUENO_CONFIGURADO=edge
 echo "→ dueño de los pines declarado por ${ENTORNO}: ${DUENO_CONFIGURADO}"
