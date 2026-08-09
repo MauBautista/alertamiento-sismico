@@ -1,17 +1,32 @@
 # Subflujo · login del occupant (Hosted UI del pool de ocupantes, PKCE).
+#
+# SELECTORES BILINGÜES, y no es cosmética. La Hosted UI de Cognito se sirve en el
+# idioma del navegador del dispositivo: en un teléfono en español los campos son
+# "Correo electrónico" y "Contraseña", no "Email" y "Password". Con los nombres
+# en inglés a secas, TODOS los flujos de esta carpeta morían en el primer campo
+# —medido en un Pixel 8 Pro real el 2026-08-09— y el fallo se leía como "no
+# aparece el login", que apunta a la app en vez de al idioma.
+#
+# Fijar el español tampoco vale: sería cambiar un supuesto por otro, y el
+# dispositivo de la corrida de aceptación no tiene por qué estar en el mismo
+# idioma que el de quien escribe el flujo.
 appId: com.takab.ailert
 ---
 - tapOn:
     text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
 - extendedWaitUntil:
-    visible: "Email"
+    visible:
+      text: ".*(Email|Correo electrónico).*"
     timeout: 20000
-- tapOn: "Email"
+- tapOn:
+    text: ".*(Email|Correo electrónico).*"
 - inputText: ${OCCUPANT_EMAIL}
-- tapOn: "Password"
+- tapOn:
+    text: ".*(Password|Contraseña).*"
 - inputText: ${OCCUPANT_PASSWORD}
 - tapOn:
     text: ".*(Sign in|Iniciar sesión).*"
 - extendedWaitUntil:
-    notVisible: "Password"
+    notVisible:
+      text: ".*(Password|Contraseña).*"
     timeout: 20000

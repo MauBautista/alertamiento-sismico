@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **239** · `[x]` **167** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **240** · `[x]` **168** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6620,6 +6620,44 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.102 · Los cinco flujos E2E no podían correr, y no era la app — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile/e2e · **Depende de:** — · **Origen:** la primera corrida REAL de la
+  suite Maestro en un Pixel 8 Pro, para `GATE-HW` móvil
+- **Tres defectos, todos DE LOS FLUJOS:**
+  1. **`clearState` deja al dev-client en el DevLauncher.** Todos los flujos empiezan con
+     `launchApp: clearState`, que borra también la configuración del dev launcher: un
+     dev-client se queda esperando a que alguien le diga a qué Metro conectarse. El fallo se
+     leía como «no encuentro el botón de login», que apunta a la app en vez de al build. La
+     suite exige un **APK de release**, y el README decía justo lo contrario.
+  2. **Los subflujos de login buscaban `"Email"` y `"Password"`.** La Hosted UI de Cognito se
+     sirve en el idioma del dispositivo: en un teléfono en español son «Correo electrónico» y
+     «Contraseña». Los cinco flujos morían en el primer campo. Selectores bilingües: fijar el
+     español sería cambiar un supuesto por otro.
+  3. **Tras `clearState` el occupant pierde su sitio vigilado.** `routers/me.py` construye
+     `site_scope` **solo** con los claims del token, y un occupant no lleva `custom:site_scope`
+     — es default-deny a propósito (R2). El vínculo vive en `user_zone_assignments` **y** en
+     estado local que `clearState` borra, así que reaparece el onboarding y ningún flujo lo
+     contemplaba. Subflujo `shared/enrolar-sitio.yaml`, condicionado paso a paso: no hace nada
+     si la app ya está vinculada.
+- **Y un cuarto, de diseño:** `01` afirmaba la toma de crisis **y después** el check-in de
+  vida, que solo aparece cuando el servidor concluye la sacudida. Maestro no puede pausar para
+  que alguien cambie la fase del incidente, así que la segunda mitad no podía pasar nunca.
+  Partido en `01a-crisis` y `01b-checkin-sync`, cada uno verde por sí solo y **declarando en su
+  cabecera** qué fase necesita antes: un flujo que solo pasa si alguien ejecuta algo a mano sin
+  que el archivo lo diga es un flujo que miente.
+- **Cobertura retirada, y dicho:** el `01` original terminaba con `tapOn: "CUENTA"` +
+  `assertVisible: "SINCRONIZACIÓN.*"`, con un «ajustar si aplica» al lado. No aplica: la
+  pestaña SYNC es del BRIGADISTA y la pantalla de Cuenta del occupant no tiene sección de
+  sincronización — esa aserción no podía pasar nunca. Para el occupant el estado de la cola ES
+  la etiqueta «guardado en este dispositivo» / «recibido por el servidor», que sigue asertada;
+  la cola vista como cola la ejercita `05`, que corre con el táctico.
+- **Criterios de aceptación:**
+  - [x] Los tres defectos arreglados, cada uno con su razón escrita dentro del archivo.
+  - [x] README con el requisito REAL (release, arm64) y la tabla de precondiciones por flujo.
+  - [x] `04` acredita en device que el pánico declara «NO es la alerta sísmica» y que **un solo
+        voto no dispara** (`1 DE 2 CONFIRMACIONES`).
+  - [ ] `02`, `03` y `05`: bloqueados en MFA/firma humana, declarados en el README.
 
 ### [x] T-2.101 · El despliegue al gabinete leía su identidad sin `sudo` — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** deploy · **Depende de:** — · **Origen:** el primer despliegue REAL del edge

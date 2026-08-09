@@ -1,19 +1,29 @@
 # Subflujo · login del táctico (pool con MFA obligatorio: pide TOTP).
+#
+# Selectores bilingües por la misma razón que en `login-occupant.yaml`: la Hosted
+# UI de Cognito sigue el idioma del dispositivo, y con los nombres en inglés a
+# secas el flujo muere en el primer campo.
 appId: com.takab.ailert
 ---
 - tapOn:
     text: ".*(INICIAR SESIÓN|ENTRAR|CONTINUAR).*"
 - extendedWaitUntil:
-    visible: "Email"
+    visible:
+      text: ".*(Email|Correo electrónico).*"
     timeout: 20000
-- tapOn: "Email"
+- tapOn:
+    text: ".*(Email|Correo electrónico).*"
 - inputText: ${TACTICO_EMAIL}
-- tapOn: "Password"
+- tapOn:
+    text: ".*(Password|Contraseña).*"
 - inputText: ${TACTICO_PASSWORD}
 - tapOn:
     text: ".*(Sign in|Iniciar sesión).*"
 # MFA obligatorio del pool táctico (RBAC §4.3): el TOTP se ingresa a mano en la
 # corrida de aceptación (Maestro no genera el código; usar `maestro --env TOTP`).
+# El timeout es más largo que el del occupant justamente por eso: aquí hay una
+# persona escribiendo seis dígitos, no solo una redirección.
 - extendedWaitUntil:
-    notVisible: "Password"
+    notVisible:
+      text: ".*(Password|Contraseña).*"
     timeout: 40000

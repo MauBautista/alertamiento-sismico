@@ -1,14 +1,21 @@
 # E2E · Pánico por quórum-de-2 (occupant). Requiere DOS occupants del mismo
 # sitio (este flujo cubre el primer voto; el 2º se dispara desde otro
 # dispositivo/sesión en la corrida de aceptación).
+#
+# NO necesita incidente activo, y por eso es el primero de la corrida: es el
+# único que se puede acreditar sin conducir el staging.
 appId: com.takab.ailert
 env:
   OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
   OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
+  SITE_CODE: ${SITE_CODE}
 ---
 - launchApp:
     clearState: true
 - runFlow: shared/login-occupant.yaml
+# El botón de alarma vive en la pantalla de inicio, y esa pantalla exige sitio
+# vigilado: sin enrolar, el occupant solo ve "Sin sitio vigilado".
+- runFlow: shared/enrolar-sitio.yaml
 - tapOn: "ALARMA DEL INMUEBLE (NO SÍSMICA) →"
 
 # El disclaimer DEBE dejar claro que NO es la alerta sísmica.

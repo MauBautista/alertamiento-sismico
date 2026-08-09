@@ -1,0 +1,38 @@
+# E2E · 1/2 · Toma total de crisis (occupant).
+#
+# PRECONDICIÓN: incidente ACTIVO en el sitio del occupant.
+#     make cloud-staging-incident PHASE=crisis
+#
+# CONTINÚA EN: `01b-checkin-sync.yaml`, y en medio el servidor tiene que concluir
+# la sacudida:
+#     make cloud-staging-incident PHASE=conclude
+#
+# Por qué está partido: este flujo era uno solo y afirmaba la toma de crisis Y
+# DESPUÉS el check-in de vida, que solo aparece cuando el servidor concluye la
+# sacudida. Maestro no puede pausar para que alguien cambie la fase, así que la
+# segunda mitad no podía pasar nunca — y un flujo que solo pasa si alguien
+# ejecuta algo a mano SIN QUE EL ARCHIVO LO DIGA es un flujo que miente. Ahora
+# cada mitad es verde por sí sola y declara qué necesita antes.
+appId: com.takab.ailert
+env:
+  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
+  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
+  SITE_CODE: ${SITE_CODE}
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- runFlow: shared/enrolar-sitio.yaml
+
+# 1.2/1.3 · Toma total de crisis: instrucción gigante, SIN magnitud/ETA.
+# El verbo (EVACÚE/REPLIÉGUESE/PROTÉJASE) lo decide `zones.evac_policy`, no la
+# fase: el sitio de staging tiene la zona PB-A con política `evacuate`.
+- extendedWaitUntil:
+    visible:
+      text: ".*(EVACÚE|REPLIÉGUESE|PROTÉJASE).*"
+    timeout: 40000
+- assertNotVisible: "magnitud"
+- assertNotVisible:
+    text: "M ?[0-9]"          # jamás magnitud preliminar (§2.1-A)
+- assertVisible:
+    text: "T\\+.*"            # contador ASCENDENTE, nunca cuenta regresiva
