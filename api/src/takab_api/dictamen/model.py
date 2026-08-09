@@ -14,6 +14,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
+from takab_api.compliance import ComplianceDocument
+
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
     "inhabit_monitor": "HABITAR · MONITOREO",
@@ -195,6 +197,12 @@ class ReportModel:
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None
     narrative_degraded: str | None = None
+    #: [T-2.82] Marco normativo DECLARADO por el cliente (``compliance_labels``). Es
+    #: la única parte del documento que TAKAB no midió ni verificó, y por eso viaja
+    #: como documento con su propio estado de legibilidad en vez de como lista suelta.
+    #: Entra en ``content_sha256``: cambiar lo que el dictamen afirma tiene que mover
+    #: la huella, o la huella no sirve para comparar dos exportaciones.
+    compliance: ComplianceDocument = field(default_factory=ComplianceDocument)
 
     def content_sha256(self) -> str:
         """Huella del CONTENIDO (no del archivo): identifica qué se afirmó.

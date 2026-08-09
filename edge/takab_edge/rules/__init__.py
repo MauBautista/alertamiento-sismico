@@ -132,9 +132,27 @@ def tier_from_sasmex(signal: SasmexSignal) -> TierDecision:
 
 
 def commands_for(decision: TierDecision) -> list[ActuatorCommand]:
-    """Mapea la decisión de tier a comandos de actuador (secuencia no-refleja)."""
+    """Mapea la decisión de tier a comandos de actuador (secuencia no-refleja).
+
+    [T-2.86.a · RO-4.e] Cada comando sale ya marcado con su CAUSA (derivada del
+    `AlertSource` de la decisión) y su ACTOR. Aquí y no en el `ActuatorManager`
+    porque es aquí donde se sabe por qué: aguas abajo sólo hay canales y acciones,
+    y una bitácora que adivinara la causa sería peor que no tenerla.
+
+    El actor de una secuencia de tier no es una persona y no se finge que lo sea:
+    es el WR-1 (contacto seco) o el motor de reglas determinista de este gabinete.
+    """
+    from takab_edge.audit import ACTOR_RULES, ACTOR_WR1, cause_for_alert_source
+
+    actor = ACTOR_WR1 if decision.source is AlertSource.SASMEX else ACTOR_RULES
     return [
-        ActuatorCommand(channel=channel, action=ActuatorAction.ACTIVATE, event_id=decision.event_id)
+        ActuatorCommand(
+            channel=channel,
+            action=ActuatorAction.ACTIVATE,
+            event_id=decision.event_id,
+            cause=cause_for_alert_source(decision.source),
+            actor=actor,
+        )
         for channel in TIER_ACTUATION.get(decision.tier, ())
     ]
 

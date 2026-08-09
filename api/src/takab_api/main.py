@@ -9,6 +9,7 @@ from takab_api.health import router as health_router
 from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.commands import router as commands_router
+from takab_api.routers.compliance import router as compliance_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
@@ -24,6 +25,7 @@ from takab_api.routers.me import router as me_router
 from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
+from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
 from takab_api.routers.sensors import router as sensors_router
@@ -55,6 +57,8 @@ def create_app() -> FastAPI:
     app.include_router(sensors_router)
     app.include_router(fleet_router)
     app.include_router(tenants_router)
+    # Marco normativo DECLARADO por el cliente (Fase 2.8 · T-2.82).
+    app.include_router(compliance_router)
     # Visibilidad configurable entre clientes (T-1.73, superadmin).
     app.include_router(visibility_router)
     # Gestión de usuarios: proxy del Admin API de Cognito (T-2.54).
@@ -81,6 +85,10 @@ def create_app() -> FastAPI:
     # Ventanas de mantenimiento: silencian alarmas de OPERACIÓN, jamás la
     # actuación (Fase 2.5 · T-2.71).
     app.include_router(maintenance_router)
+
+    # Aviso de privacidad versionado + consentimiento append-only (Fase 2.8 ·
+    # T-2.79). JAMÁS gatea el camino crítico: ver el docstring del router.
+    app.include_router(privacy_router)
 
     # Telemetría (B3), exportación de evidencia (B4) y reporte PDF (B5).
     app.include_router(telemetry_router)

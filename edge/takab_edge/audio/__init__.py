@@ -2,8 +2,10 @@
 
 La alerta primaria audible es y seguirá siendo la SIRENA DE RELÉ (camino de vida,
 determinista, `gpio`). Este módulo solo la COMPLEMENTA con un mensaje hablado por
-la salida de audio del Pi (DAC/amplificador/bocina externos — el Pi 5 no trae
-jack 3.5 mm): instrucciones de SISMO en alerta real y de SIMULACRO en drills.
+la salida de audio del Pi: instrucciones de SISMO en alerta real y de SIMULACRO
+en drills. El cerebro es un **Pi 4** y **sí trae jack 3.5 mm** —la sirena por jack
+está en producción desde T-1.68—; este docstring decía «el Pi 5 no trae jack»,
+que era falso por partida doble (ni es un Pi 5, ni carece de jack).
 
 Reglas del canal:
 - **Nunca en el camino crítico**: se dispara DESPUÉS de actuar los relés
@@ -32,10 +34,11 @@ from typing import TYPE_CHECKING, Protocol
 from takab_edge.audio import catalog
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import SirenReason, Tier, TierDecision
+from takab_edge.gpio_link import as_link
 from takab_edge.module import EdgeModule
 
 if TYPE_CHECKING:
-    from takab_edge.gpio import GpioController
+    from takab_edge.gpio_link import GpioLink
 
 log = logging.getLogger("takab_edge.audio")
 
@@ -43,6 +46,29 @@ log = logging.getLogger("takab_edge.audio")
 #: ``gpio.siren_sounding``. 50 ms ⇒ arranque casi inmediato y hueco de bucle
 #: imperceptible (la sirena de RELÉ es la primaria; esto es advisory).
 _SIREN_POLL_S = 0.05
+
+#: [T-2.70.a·D2/P1] Cuántas conciliaciones seguidas pueden fallar antes de CALLAR
+#: el WAV de la sirena. A 20 Hz son ~1 s.
+#:
+#: Ni 0 ni infinito, y los dos extremos son defectos reales:
+#:
+#: * **Infinito** era lo de antes: `_reconcile_siren` atrapaba todo y, al fallar,
+#:   omitía la reconciliación SIN parar el WAV. Con `siren_reason` al otro lado de
+#:   un enlace caído, el altavoz sigue sonando después de cerrarse la alerta y
+#:   nadie en el edificio puede distinguirlo de una alerta viva.
+#: * **0** (cortar al primer fallo) convertiría un parpadeo de 50 ms en un
+#:   tartamudeo del altavoz de un inmueble: `stop()` + `play()` reinicia el WAV
+#:   desde el principio.
+#:
+#: La sirena de RELÉ —la primaria— no depende de esto: la sostiene el dueño de los
+#: pines con su enclave, así que callar el altavoz advisory nunca deja al edificio
+#: sin alerta audible.
+#:
+#: Es un SUELO, no un instante: cruzado el umbral se reintenta el corte en cada
+#: conciliación mientras el altavoz siga sonando. Con una igualdad, un `stop()`
+#: que fallara justo en la conciliación número 20 dejaba el altavoz sonando para
+#: siempre — el mismo defecto que la constante venía a cerrar.
+_SIREN_FALLOS_ANTES_DE_CALLAR = 20
 
 
 class AudioBackend(Protocol):
@@ -133,13 +159,13 @@ class AudioNotifier(EdgeModule):
     def __init__(
         self,
         settings: EdgeSettings,
-        gpio: GpioController,
+        gpio: GpioLink,
         backend: AudioBackend | None = None,
         siren_backend: AudioBackend | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
-        self._gpio = gpio
+        self._link = as_link(gpio)
 
         def _default_backend() -> AudioBackend:
             return (
@@ -167,6 +193,8 @@ class AudioNotifier(EdgeModule):
         }
         self._siren_stop = threading.Event()
         self._siren_thread: threading.Thread | None = None
+        #: [T-2.70.a·D2/P1] Conciliaciones seguidas que no pudieron leer el estado.
+        self._siren_fallos = 0
 
     @property
     def enabled(self) -> bool:
@@ -208,7 +236,7 @@ class AudioNotifier(EdgeModule):
             digest = hashlib.sha256(p.read_bytes()).hexdigest()
             log.info("asset de voceo %s: %s sha256=%s", kind, path, digest)
         # El silencio (botón físico o panel) calla TAMBIÉN la voz, no solo la sirena.
-        self._gpio.on_silence(self._on_silence)
+        self._link.subscribe("silence", self._on_silence)
 
     def _start_siren(self) -> None:
         """[T-1.68] Sirena por el jack: watcher que sigue ``gpio.siren_sounding``."""
@@ -316,11 +344,57 @@ class AudioNotifier(EdgeModule):
 
         `gpio` ya integra silencio y reset, así que un solo poll cubre el reflejo real,
         la prueba de sirena y la de actuación. Advisory: cualquier fallo se aísla.
+
+        [T-2.70.a·D2/P1] Y el fallo YA NO deja el altavoz sonando para siempre: tras
+        `_SIREN_FALLOS_ANTES_DE_CALLAR` conciliaciones seguidas sin poder leer el
+        estado, se CALLA — y se SIGUE intentando mientras el altavoz suene, porque
+        el corte también puede fallar. Un sonido que ya no representa nada medido es
+        indistinguible de una alerta viva para quien está en el edificio, y este
+        watcher de 20 Hz es además el mayor consumidor del futuro IPC.
         """
         if not self.siren_enabled:
             return
         try:
-            reason = self._gpio.siren_reason
+            reason = self._link.snapshot().siren_reason
+        except Exception:  # noqa: BLE001 — advisory: jamás propaga al camino de vida
+            self._siren_fallos += 1
+            if self._siren_fallos < _SIREN_FALLOS_ANTES_DE_CALLAR:
+                return
+            # Umbral CRUZADO ⇒ el corte se intenta en CADA conciliación a partir de
+            # aquí. La condición era `== _SIREN_FALLOS_ANTES_DE_CALLAR`, o sea UN
+            # solo intento, y el `stop()` va envuelto en un `except` que traga: un
+            # corte que falla justo en ese instante —`AplayBackend` deja `_proc`
+            # vivo si `terminate()`/`wait()`/`kill()` lanzan— dejaba el contador
+            # subiendo y la igualdad no volvía a cumplirse jamás. El altavoz se
+            # quedaba sonando PARA SIEMPRE: exactamente el fallo que este umbral
+            # existe para cerrar.
+            #
+            # El guard del reintento es `playing`, no un contador: en cuanto el
+            # altavoz calla, no hay `stop()` que repetir a 20 Hz.
+            ruidoso = self._siren_fallos % _SIREN_FALLOS_ANTES_DE_CALLAR == 0
+            try:
+                if self._siren_backend.playing is None:
+                    return
+                if ruidoso:
+                    # Cada ~1 s mientras dure, no 20 veces por segundo (regla de
+                    # oro 10): un gabinete ya averiado no puede además ahogar su
+                    # propio journal, que es donde se diagnostica la avería.
+                    log.exception(
+                        "sirena por audio: %d conciliaciones seguidas sin poder leer "
+                        "el estado del gabinete; se CALLA el altavoz (la sirena de "
+                        "RELÉ, que es la primaria, sigue con su enclave)",
+                        self._siren_fallos,
+                    )
+                self._siren_backend.stop()
+            except Exception:  # noqa: BLE001 — advisory
+                if ruidoso:
+                    log.exception(
+                        "sirena por audio: no se pudo callar el altavoz; se REINTENTA "
+                        "en la siguiente conciliación"
+                    )
+            return
+        self._siren_fallos = 0
+        try:
             wanted = self.asset_for(reason) if reason is not None else None
             playing = self._siren_backend.playing
             if wanted is None:
@@ -369,12 +443,23 @@ class AudioNotifier(EdgeModule):
             log.exception("audio.stop_playback() falló (aislado)")
 
     def _play(self, kind: str, path: str) -> None:
+        """[T-2.70.a·D2/P1] La lectura del silencio va DENTRO del try.
+
+        Estaba fuera, y `supervisor._act_and_publish` llama a `on_tier` SIN try:
+        una excepción aquí abortaba todo lo que venía después —espejo LoRa a los
+        secundarios, aborto del simulacro, ACKs a la nube, `LocalEvent` y encolado
+        de evidencia—. Un canal declarado ADVISORY tumbando la publicación del
+        evento.
+
+        Fail-CERRADO en el advisory: sin poder comprobar si el operador silenció,
+        NO se vocea. La sirena de RELÉ es la alerta primaria y no depende de esto.
+        """
         if not self.enabled:
             return
-        if self._gpio.audible_silenced:
-            log.warning("voceo %s omitido: audibles SILENCIADOS por el operador", kind)
-            return
         try:
+            if self._link.snapshot().audible_silenced:
+                log.warning("voceo %s omitido: audibles SILENCIADOS por el operador", kind)
+                return
             self._backend.stop()
             self._backend.play(path)
             log.warning("voceo %s reproduciendo (%s)", kind, path)

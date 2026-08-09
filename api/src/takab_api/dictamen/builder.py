@@ -29,6 +29,7 @@ from takab_api.dictamen.model import (
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
 from takab_api.forensics import build_forensics
+from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as qf
 from takab_api.schemas.forensics import ForensicsOut
 from takab_api.settings import Settings
@@ -201,6 +202,11 @@ async def build_model(
         spectrum_peak_hz=peak_hz,
         raw_unavailable_reason=reason,
         verdict_basis=head_basis,
+        # [T-2.82] Marco DECLARADO por el cliente. Sale de la MISMA función que lo
+        # sirve a la pantalla de Triage (`queries.compliance.document_for_incident`):
+        # si el papel y la pantalla lo leyeran cada uno a su manera, acabarían
+        # discrepando — y aquí el que discrepa lleva una firma debajo.
+        compliance=await qc.document_for_incident(conn, incident_id),
     )
 
 

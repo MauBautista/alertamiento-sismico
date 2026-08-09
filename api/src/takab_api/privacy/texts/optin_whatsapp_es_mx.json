@@ -1,0 +1,40 @@
+{
+  "_": [
+    "T-2.79 / costura de T-2.77 · OPT-IN DE WHATSAPP — TEXTO PROVISIONAL.",
+    "",
+    "POR QUÉ EXISTE ESTE SEGUNDO ARTEFACTO. T-2.77 se topó con que Meta condiciona",
+    "CUALQUIER contacto a un consentimiento previo: 'You may only contact people on",
+    "WhatsApp if: (a) they have given you their mobile phone number; and (b) you have",
+    "received opt-in permission from the recipient confirming that they wish to receive",
+    "subsequent messages or calls from you' (https://whatsappbusiness.com/es-la/policy/),",
+    "y el opt-in debe 'clearly state that a person is opting in to receive communication",
+    "from the business' y 'clearly state the business's name'",
+    "(https://developers.facebook.com/documentation/business-messaging/whatsapp/getting-opt-in).",
+    "",
+    "Ese opt-in ES un consentimiento del mismo motor: por eso el cuerpo de abajo nombra",
+    "sellado por digest igual que el aviso. Hasta T-2.79.a el canal lo leía de",
+    "`notifications.whatsapp.opt_in.at` en el `rule_set` — un instante suelto, sin quién,",
+    "sin qué texto se le enseñó, y sobre todo incapaz de decir que el consentimiento se",
+    "RETIRÓ. Desde T-2.79.a la constancia sale de este motor: la resuelve el ORQUESTADOR",
+    "en el instante del despacho vía `whatsapp_opt_in_at_sync`, no al encolar — lo que",
+    "autoriza tiene que estar vigente, no congelado en el job.",
+    "",
+    "SUSTITUIR ESTE TEXTO ES UNA VERSIÓN NUEVA, no una edición: el digest cambia y los",
+    "opt-in dados sobre el texto anterior quedan marcados obsoletos. Es exactamente lo",
+    "que hay que hacer si Meta cambia lo que exige que diga el opt-in."
+  ],
+  "purpose": "whatsapp_alerts",
+  "notice": {
+    "locale": "es-MX",
+    "version": "0.1.0-provisional",
+    "title": "Aviso de contacto por WhatsApp — TAKAB Ailert",
+    "body": "Al aceptar, usted autoriza a TAKAB Ailert a enviarle mensajes de WhatsApp con avisos de alerta sísmica e incidentes del inmueble que vigila. Los mensajes los envía TAKAB Ailert por cuenta de la organización responsable de ese inmueble.\n\nQUÉ SE LE ENVIARÁ. Únicamente avisos operativos de emergencia: sitio afectado, severidad y referencia del incidente. Nunca publicidad ni promociones.\n\nSU NÚMERO. Se usa solo para enviarle esos avisos. No se comparte con terceros ajenos a la operación de la plataforma ni se usa para ningún otro fin.\n\nCÓMO SE DA DE BAJA. Puede retirar esta autorización en cualquier momento pidiéndolo a la organización responsable de su inmueble; a partir de ese momento el canal deja de escribirle. Retirarla no le deja sin aviso: la alerta sigue llegando por los demás canales configurados.\n\nTEXTO PROVISIONAL. Este texto es un marcador de posición mientras la revisión jurídica entrega el definitivo y mientras se completa el alta del WhatsApp Business Account. Cuando cambie, se le pedirá la autorización de nuevo sobre el texto nuevo."
+  },
+  "legal_review": {
+    "status": "PROVISIONAL",
+    "approved_digest": "",
+    "approved_by": "",
+    "reviewed_at": "",
+    "note": "Sin revisar por LEGAL y sin el alta de Meta (T-2.77.a). El canal WhatsApp sigue exigiendo su constancia mínima (`opt_in.at`) y sigue cayendo a `simulated` sin plantilla aprobada: nada de esto cambia el comportamiento de T-2.77."
+  }
+}

@@ -27,6 +27,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
+from takab_api.compliance import mobile_projection, parse_document
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
@@ -86,6 +87,9 @@ async def _site_health(
                     mqtt_rtt_ms=r.mqtt_rtt_ms,
                     seedlink_lag_s=r.seedlink_lag_s,
                     ntp_offset_ms=r.ntp_offset_ms,
+                    # [T-2.70.a·B1] Sin dueño de pines no hay sirena en ese
+                    # edificio, y el gabinete late igual: la app tiene que verlo.
+                    relays_state=r.relays_state,
                     sin_enlace_s=settings.sin_enlace_min * 60.0,
                     battery_min_pct=settings.fleet_battery_min_pct,
                     cert_min_days=settings.fleet_cert_min_days,
@@ -206,7 +210,13 @@ async def mobile_state(
             dictamen_signed=dictamen_signed,
         ),
         assembly_point=_asset_out(assembly_row, settings) if assembly_row else None,
-        compliance_labels=dict(labels_row.labels) if labels_row else {},
+        # [T-2.82] El contrato publicado sigue siendo `dict[str, str]` — no cambia—,
+        # pero cada valor sale ya ENMARCADO: la pantalla 1.5 pinta el valor y descarta
+        # la clave, así que un `dict(labels)` crudo dejaba al ocupante leyendo una
+        # afirmación normativa desnuda bajo un letrero de "REINGRESO PROHIBIDO".
+        compliance_labels=mobile_projection(
+            parse_document(labels_row.labels if labels_row else None)
+        ),
         drill=MobileDrillOut(
             active=drill_active,
             next_scheduled_at=next_row.scheduled_at if next_row else None,

@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.felt import felt_band
 from takab_api.geo import bearing16, haversine_km
+from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as q
+from takab_api.schemas.compliance import doc_out
 from takab_api.schemas.forensics import (
     CatalogDelta,
     CatalogMatch,
@@ -121,6 +123,9 @@ async def build_forensics(
         catalog_delta=delta,
         sensors=sensors,
         calibrated=calibrated,
+        # [T-2.82] Lo declarado por el cliente viaja PEGADO a lo medido por TAKAB, pero
+        # nunca mezclado: va en su propio bloque, con su procedencia y su deslinde.
+        compliance=doc_out(await qc.document_for_incident(conn, incident_id)),
     )
 
 

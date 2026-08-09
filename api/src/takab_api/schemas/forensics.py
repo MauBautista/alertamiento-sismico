@@ -11,7 +11,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+from takab_api.schemas.compliance import ComplianceDocOut
 
 
 class ChannelPeak(BaseModel):
@@ -105,7 +107,17 @@ class ForensicsOut(BaseModel):
     incidente disparado por umbral local la "alerta" ES la sacudida, y el número sería
     cero por construcción, no un logro. Cuando no se puede calcular vale ``None`` y
     ``lead_time_reason`` dice por qué; nunca 0.
+
+    ``json_schema_serialization_defaults_required``: esta respuesta se serializa
+    ENTERA —el router no usa ``exclude_none`` ni ``exclude_unset``—, así que todo
+    campo con default viaja igual, con su ``null`` o su lista vacía. Sin esta línea
+    el contrato los publicaba como **ausentes posibles** y el SDK los generaba
+    ``?: T``, que es una ausencia que nunca ocurre: obliga a cada consumidor a
+    escribir una rama muerta. Es lo que dejó inalcanzable —y a la vez formalmente
+    justificada— la rama «NO DISPONIBLE» de ``ComplianceDeclared``.
     """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     incident_id: UUID
     site: SiteGeo | None = None
@@ -131,3 +143,9 @@ class ForensicsOut(BaseModel):
     #: ``False`` si ALGÚN sensor activo carece de procedencia de calibración.
     #: Default-deny: sin sensores no se afirma que esté calibrado.
     calibrated: bool = False
+
+    #: [T-2.82] Marco normativo DECLARADO por el cliente dueño del incidente. Es la
+    #: única parte de esta respuesta que TAKAB no midió, y por eso viaja con su
+    #: procedencia y su deslinde pegados: la pantalla que la pinta es la misma en la
+    #: que el inspector FIRMA el dictamen.
+    compliance: ComplianceDocOut = Field(default_factory=ComplianceDocOut)

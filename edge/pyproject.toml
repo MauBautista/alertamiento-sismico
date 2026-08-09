@@ -50,6 +50,9 @@ dev = [
 [project.scripts]
 takab-edge = "takab_edge.supervisor:main"
 takab-gpio = "takab_edge.gpio.__main__:main"  # proceso mínimo del camino de vida (T-1.3)
+# [T-2.70.a·D2/P2] Interroga al dueño de los pines desde el shell (solo lectura):
+# es lo que `deploy.sh` y el traspaso de propiedad necesitan para decidir.
+takab-gpioctl = "takab_edge.pinlink.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -34,6 +34,9 @@ BLUEPRINT = REPO / "takab-docs" / "BLUEPRINT-TECNICO-TAKAB.md"
 PLAN_MAESTRO = REPO / "takab-docs" / "PLAN-MAESTRO-TAKAB.md"
 CLAUDE_MD = REPO / "CLAUDE.md"
 AUTO_POPUP = REPO / "web" / "src" / "features" / "console" / "useAutoPopup.ts"
+RUNBOOK_BACKUP = REPO / "takab-docs" / "runbooks" / "RUNBOOK-backup-restore-db.md"
+TF_DB_VARS = REPO / "infra" / "terraform" / "modules" / "database" / "variables.tf"
+TF_OBSERVABILITY = REPO / "infra" / "terraform" / "modules" / "observability" / "main.tf"
 
 #: Los documentos que `CLAUDE.md §5` declara fuente de verdad del proyecto. Es donde una
 #: afirmación falsa **gobierna**: quien lea aquí no va a ir a comprobarla al código.
@@ -86,11 +89,24 @@ TEXT_SUFFIXES = frozenset(
 )
 
 
-def _repo_text_files() -> list[Path]:
+def _es_otro_checkout(d: Path) -> bool:
+    """¿`d` es un checkout de git DISTINTO del que estamos auditando?
+
+    Un worktree anidado (`git worktree add`) o un submódulo llevan su propio `.git`
+    —fichero en el worktree, directorio en el submódulo— y su contenido pertenece a
+    OTRA rama. Escanearlo hace que este censo mida código que no es el de esta rama.
+
+    Se deriva de la estructura en vez de enumerar rutas: `.claude/worktrees/` es solo
+    el sitio donde el harness los pone hoy, y el siguiente aparecerá en otro lado.
+    """
+    return (d / ".git").exists()
+
+
+def _repo_text_files(root: Path = REPO) -> list[Path]:
     """Todos los archivos de texto del repo menos generados, dependencias y este test."""
     me = Path(__file__).resolve()
     out: list[Path] = []
-    stack = [REPO]
+    stack = [root]
     while stack:
         d = stack.pop()
         for entry in d.iterdir():
@@ -98,6 +114,8 @@ def _repo_text_files() -> list[Path]:
                 continue
             if entry.is_dir():
                 if entry.name in SKIP_DIRS or entry in SKIP_PATHS:
+                    continue
+                if _es_otro_checkout(entry):
                     continue
                 stack.append(entry)
             elif entry.suffix in TEXT_SUFFIXES and entry.resolve() != me:
@@ -587,6 +605,44 @@ def _bloques() -> dict[str, tuple[str, str]]:
         fin = marcas[i + 1].start() if i + 1 < len(marcas) else len(text)
         out[m.group("id")] = (m.group("estado"), text[m.start() : fin])
     return out
+
+
+#: Casilla de criterio dentro de una ficha: `  - [x] ...` / `  - [ ] ...`.
+CRITERIO_RE = re.compile(r"^  - \[(?P<estado>[x ~])\] ", re.M)
+
+
+def test_una_tarea_cerrada_no_deja_TODOS_sus_criterios_sin_marcar() -> None:
+    """Una ficha `[x]` con **cero** de sus N criterios marcados es contabilidad sin hacer.
+
+    Lo destapó la matriz de trazabilidad (T-2.84) contando el archivo entero: de 442
+    criterios bajo tareas `[x]`, 34 seguían sin marcar, y **cinco tareas cerradas
+    tenían sus criterios ENTEROS en `[ ]`** — T-2.61, T-2.62, T-2.63, T-2.64 y T-2.69.
+    Las cinco estaban de verdad hechas; lo que faltaba era el registro. Y un registro
+    que no se lleva es el que produjo la cabecera que decía «9 de 9 tareas en verde»
+    con 134 tareas dentro.
+
+    **La variante ingenua —«toda tarea `[x]` tiene TODOS sus criterios `[x]`»— sería
+    un test nacido en rojo sin razón**, y está descartada a propósito: T-2.57 está
+    `[x]` con cuatro `[ ]` **deliberados**, bajo un epígrafe que declara que son
+    pendientes de AWS. Esa mezcla es una declaración, no un olvido.
+
+    Lo que no puede ser una declaración es el **cero**: si nadie marcó ni uno, nadie
+    revisó. Por eso el umbral es «al menos uno», que distingue el olvido del matiz.
+    """
+    fallos: list[str] = []
+    for tid, (estado, cuerpo) in _bloques().items():
+        if estado != "x":
+            continue
+        marcas = [m.group("estado") for m in CRITERIO_RE.finditer(cuerpo)]
+        if marcas and not any(m in "x~" for m in marcas):
+            fallos.append(f"{tid}: {len(marcas)} criterios, NINGUNO marcado")
+    assert not fallos, (
+        "Tareas cerradas cuya contabilidad no se llevó:\n  "
+        + "\n  ".join(fallos)
+        + "\n  Marcar la ficha y no sus criterios deja el archivo afirmando dos cosas a la\n"
+        "  vez. Si algún criterio sigue realmente pendiente, márcalo como tal y dilo —\n"
+        "  eso es una declaración; cero de N es un descuido."
+    )
 
 
 def test_una_tarea_hecha_no_puede_cerrar_una_tarea_abierta() -> None:
@@ -1369,6 +1425,60 @@ def test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes() -> N
 
 
 # ---------------------------------------------------------------------------
+# 10.bis · El censo mide ESTA rama, no un checkout ajeno
+# ---------------------------------------------------------------------------
+#
+# Caso medido el 2026-08-08: una sesión murió dejando un `git worktree` vivo en
+# `.claude/worktrees/t2-70a-d1/`, que es un checkout COMPLETO del monorepo **dentro** del
+# monorepo. `_repo_text_files()` descendió a él y encontró los marcadores literales que
+# esta misma suite lleva dentro (`[SUPUESTO #4]`, `[SUPUESTO plan-maestro-01 #6]`, …), que
+# ahí no son marcadores muertos: son las cadenas que el test busca.
+#
+# Resultado: **5 tests en rojo denunciando ficheros que no son de esta rama.** El censo se
+# excluye a sí mismo por ruta exacta (`entry.resolve() != me`), y una copia en otro
+# checkout tiene otra ruta, así que la autoexclusión no la cubría.
+#
+# El arreglo no enumera `.claude/worktrees/`: deriva la propiedad estructural —un checkout
+# ajeno lleva su propio `.git`—, porque el sitio donde el harness pone los worktrees es una
+# convención de hoy y el siguiente aparecerá en otro lado.
+
+
+def _finge_un_worktree(raiz: Path, nombre: str, contenido: str) -> Path:
+    """Un checkout anidado creíble: su propio `.git` (fichero, como los worktrees reales)."""
+    d = raiz / nombre
+    (d / "takab-docs").mkdir(parents=True)
+    (d / ".git").write_text("gitdir: /otro/lado/.git/worktrees/x\n", encoding="utf-8")
+    (d / "takab-docs" / "TASKS.md").write_text(contenido, encoding="utf-8")
+    return d
+
+
+def test_el_censo_no_desciende_a_un_checkout_anidado(tmp_path: Path) -> None:
+    """Un worktree dentro del repo es de OTRA rama: su contenido no es evidencia de esta."""
+    (tmp_path / "takab-docs").mkdir()
+    propio = tmp_path / "takab-docs" / "TASKS.md"
+    propio.write_text("archivo de esta rama\n", encoding="utf-8")
+    ajeno = _finge_un_worktree(tmp_path, "worktree-vecino", "[SUPUESTO #4] de otra rama\n")
+
+    censados = _repo_text_files(tmp_path)
+
+    assert propio in censados, "el censo debe seguir viendo los ficheros de esta rama"
+    assert (ajeno / "takab-docs" / "TASKS.md") not in censados, (
+        "el censo descendió a un checkout anidado: sus marcadores no son de esta rama y "
+        "pondrían en rojo tests que no tienen nada que ver con el código auditado."
+    )
+
+
+def test_el_censo_no_confunde_un_directorio_normal_con_un_checkout(tmp_path: Path) -> None:
+    """No vacuo: sin `.git` dentro, el mismo árbol SÍ se censa. Prueba que la guardia
+    discrimina por la propiedad estructural y no por el nombre del directorio."""
+    (tmp_path / "worktree-vecino" / "takab-docs").mkdir(parents=True)
+    normal = tmp_path / "worktree-vecino" / "takab-docs" / "TASKS.md"
+    normal.write_text("subdirectorio corriente, no un checkout\n", encoding="utf-8")
+
+    assert normal in _repo_text_files(tmp_path)
+
+
+# ---------------------------------------------------------------------------
 # 11 · Un blockquote no puede tragarse valores normativos
 # ---------------------------------------------------------------------------
 #
@@ -1476,6 +1586,93 @@ def test_ningun_valor_normativo_queda_dentro_de_un_blockquote_por_descuido(path:
 # L5. **El detector de continuación laxa solo mira declaraciones `**Clave:**`.** Una tabla,
 #     una viñeta o un párrafo de prosa absorbidos por un blockquote no se detectan.
 #
+# ---------------------------------------------------------------------------
+# El RPO del runbook de backup sale de la configuración, no de una promesa
+# ---------------------------------------------------------------------------
+#
+# T-2.72 pedía un RPO "derivable de la configuración, no de una promesa". Terraform lo deriva
+# de los atributos del recurso de alarma y lo publica como `rpo_seconds`. Pero el sitio donde
+# el proyecto DECLARA su RPO —donde va a mirarlo un humano— es el runbook, y ahí la cifra
+# vuelve a ser un número tecleado a mano. Ese es el eslabón que este test cierra.
+#
+# No es hipotético: hasta el 2026-08-08 el §2 de ese runbook decía "RPO actual ≤ 24 h" y
+# "objetivos PROPUESTOS: RPO ≤ 15 min" con el PITR ya escrito en el terraform. Una cifra
+# obsoleta en el documento de gobierno vale menos que ninguna: quien la lea no va a ir a
+# comprobarla al `.tf`.
+#
+# LA DERIVACIÓN, que es la parte que hay que entender antes de tocar los números:
+#
+#     RPO = umbral_de_la_alarma + period × evaluation_periods
+#
+# El primer término es obvio. El segundo NO es adorno y por eso se comprueba: CloudWatch no
+# avisa al cruzar el umbral, avisa tras `evaluation_periods` periodos SEGUIDOS por encima, y
+# durante esos minutos se sigue acumulando WAL que no está en S3. Tomar solo el umbral sería
+# el mismo error que tomar `archive_timeout`, un escalón más arriba: confundir el caso feliz
+# de la detección con el peor caso.
+_RPO_RUNBOOK_RE = re.compile(r"^### RPO: (\d+) s ", re.M)
+_MAX_AGE_RE = re.compile(r'variable "wal_archive_max_age_s".*?^\s*default\s*=\s*(\d+)', re.S | re.M)
+_ALARM_RE = re.compile(
+    r'resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled".*?^\}', re.S | re.M
+)
+
+
+def _atributo_numerico(bloque: str, nombre: str) -> int:
+    match = re.search(rf"^\s*{nombre}\s*=\s*(\d+)\s*$", bloque, re.M)
+    assert match, f"la alarma `wal_archive_stalled` ya no declara `{nombre}` como literal"
+    return int(match.group(1))
+
+
+def test_el_rpo_del_runbook_de_backup_es_el_que_deriva_el_terraform() -> None:
+    runbook = RUNBOOK_BACKUP.read_text(encoding="utf-8")
+    declarado = _RPO_RUNBOOK_RE.search(runbook)
+    assert declarado, (
+        "El runbook de backup ya no declara su RPO en la forma `### RPO: <n> s `. "
+        "Ese encabezado es el ancla de este test: si cambia la redacción, cambia también "
+        "`_RPO_RUNBOOK_RE` — no borres el ancla y dejes la cifra suelta."
+    )
+
+    umbral = _MAX_AGE_RE.search(TF_DB_VARS.read_text(encoding="utf-8"))
+    assert umbral, "no se pudo leer el default de `wal_archive_max_age_s`: el test estaría vacío"
+
+    alarma = _ALARM_RE.search(TF_OBSERVABILITY.read_text(encoding="utf-8"))
+    assert alarma, (
+        "no se encontró el recurso `aws_cloudwatch_metric_alarm.wal_archive_stalled`: "
+        "sin la alarma, `rpo_seconds` no describe nada y el RPO del runbook es una promesa"
+    )
+    bloque = alarma.group(0)
+    derivado = int(umbral.group(1)) + _atributo_numerico(bloque, "period") * _atributo_numerico(
+        bloque, "evaluation_periods"
+    )
+
+    assert int(declarado.group(1)) == derivado, (
+        "El RPO que declara `RUNBOOK-backup-restore-db.md` §2 no es el que deriva la "
+        "configuración.\n"
+        f"  runbook:  {declarado.group(1)} s\n"
+        f"  terraform: {derivado} s  (umbral {umbral.group(1)} + period × evaluation_periods)\n"
+        "  El runbook es donde un humano BUSCA el RPO. Una cifra tecleada que ya no cuadra "
+        "con la alarma que la sostiene es exactamente la 'promesa' que T-2.72 existía para "
+        "eliminar. Actualiza el runbook en el MISMO commit que mueva los números."
+    )
+
+
+def test_el_rpo_declarado_se_apoya_en_una_alarma_que_no_puede_callarse() -> None:
+    """La derivación del RPO es MENTIRA si el silencio de la métrica no alarma.
+
+    Si el publicador de `WalArchiveAgeSeconds` muere, la métrica desaparece. Con `missing` o
+    `notBreaching` la alarma se quedaría callada para siempre y el RPO pasaría a ser
+    ilimitado — el runbook seguiría anunciando 900 s con el archivado parado hace semanas.
+    Los tests de terraform ya lo exigen en dos archivos; esto ata el tercer extremo: que el
+    NÚMERO PUBLICADO en el documento de gobierno dependa de esa decisión y no la sobreviva.
+    """
+    alarma = _ALARM_RE.search(TF_OBSERVABILITY.read_text(encoding="utf-8"))
+    assert alarma, "no se encontró la alarma `wal_archive_stalled`"
+    assert 'treat_missing_data  = "breaching"' in alarma.group(0), (
+        "La alarma del archivado dejó de estar en `breaching`. El RPO que publica el runbook "
+        "se apoya en que la AUSENCIA de la métrica alarme: sin eso, el publicador puede morir "
+        "y el silencio pasa por salud."
+    )
+
+
 # --- Límites de fondo: qué clase de verdad se está comprobando ---------------------------
 #
 # F1. **`TECNOLOGIAS` es una lista de seis, no un descubridor.** Una tecnología inventada de
@@ -1501,3 +1698,16 @@ def test_ningun_valor_normativo_queda_dentro_de_un_blockquote_por_descuido(path:
 # F5. **La cabecera de conteo se verifica contra `^### [.] T-…`, que es la definición de
 #     "tarea" de este archivo.** Una tarea escrita con otro encabezado no existe para el
 #     conteo ni para los cierres cruzados.
+#
+# F6. **El cruce del RPO ata el runbook a los DEFAULTS del `.tf`, no al valor aplicado.** Si
+#     `envs/dev` pasara un `wal_archive_max_age_s` distinto del default de `modules/database`,
+#     este test seguiría verde comparando contra el default y el runbook publicaría un número
+#     que la cuenta real no tiene. Quien vigila esa costura es la `precondition` de
+#     `envs/dev/outputs.tf` — y esa **solo se evalúa en el `apply`** (`validate` no mira
+#     preconditions, y meter un plan de ese entorno en CI choca con el `profile` cableado en
+#     `providers.tf`). O sea: entre los dos se cubre el camino entero, pero el último tramo no
+#     lo comprueba nadie hasta la ventana HUMANO-AWS de `T-2.74`.
+#
+# F7. **Y ata el número, no la realidad.** Que el runbook, las variables y la alarma digan 900
+#     no prueba que se esté archivando un solo WAL. Eso lo dice la alarma en AWS, y hasta el
+#     `apply` de `T-2.74` no lo dice nadie.

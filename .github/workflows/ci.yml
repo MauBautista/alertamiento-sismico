@@ -192,6 +192,21 @@ jobs:
       - name: Tests (jest)
         run: npm test
 
+  # [T-2.86.c · hueco RO-6.a] La regla de oro 6 ("nada de secretos hardcodeados")
+  # era la ÚNICA de las once sin un solo test, paso de CI ni pre-commit: se
+  # sostenía en que nadie se olvidara. Va en su PROPIO job, no como un paso más
+  # del job `infra`, por dos razones: aparece con nombre propio en la lista de
+  # checks del PR (que es lo que se marca como required en la protección de rama)
+  # y no se queda esperando a que terraform descargue providers. Sin dependencias:
+  # git + el python3 del runner, cero red.
+  secretos:
+    name: secretos · barrido de la regla de oro 6
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Barrido de secretos (árbol completo + batería de mutaciones)
+        run: bash infra/scripts/tests/test_secret_scan.sh
+
   infra:
     name: infra · terraform fmt + validate + test
     runs-on: ubuntu-latest
@@ -218,6 +233,24 @@ jobs:
       # tres alarmas intocables (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`).
       - name: Test del alcance IAM del silenciador (plan-only, sin AWS)
         run: terraform -chdir=infra/terraform/modules/database init -backend=false && terraform -chdir=infra/terraform/modules/database test
+      # [T-2.72] La retención de los respaldos. `Expiration` sobre un bucket
+      # VERSIONADO no borra un byte: pone un delete marker y la versión anterior
+      # se queda facturándose para siempre. Peor para el PITR — el delete marker
+      # esconde el objeto al restaurador. Este módulo vivió desde julio sin un
+      # solo test, así que la corrección se podía borrar entera y CI seguía verde.
+      - name: Test de la retención de respaldos (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/storage init -backend=false && terraform -chdir=infra/terraform/modules/storage test
+      # [T-2.84.b] El pool que exige el segundo factor. La regla de oro 8 pide MFA
+      # "sin excepción" sobre la superficie que abre válvulas de gas, y el ID token
+      # de Cognito NO lleva `amr` ni `acr` (son claims reservados que ni un Lambda
+      # propio puede poner), así que lo único que la API puede exigir es la
+      # PROCEDENCIA del token. Eso convierte la configuración del pool en la mitad
+      # del control — y `identity` era el único de los cuatro módulos sin test: una
+      # deriva a OPTIONAL no la veía nadie. Este paso corre porque, sin él, la
+      # matriz acreditaría el .tftest.hcl como cobertura bloqueante mientras CI
+      # jamás lo invoca: el falso verde de T-2.63, otra vez.
+      - name: Test del pool que exige el segundo factor (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/identity init -backend=false && terraform -chdir=infra/terraform/modules/identity test
       # Re-aprovisionar un gabinete NO puede borrarle la configuración. Sin este test
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)

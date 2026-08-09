@@ -33,6 +33,15 @@ variables {
   instance_id               = "i-0000000000test000"
   iot_rule_errors_log_group = "/aws/iot/takab-test"
   paged_gateways            = ["gw-test-0001"]
+
+  # [T-2.72] La alarma de atasco del archivado no tiene default (su dueño es
+  # `modules/database`): sin este valor, el modulo entero no planifica y ESTE
+  # archivo dejaria de comprobar nada. La decision sobre su `treat_missing_data`
+  # —`breaching`, porque ahi la ausencia de metrica SI es la condicion vigilada—
+  # se razona y se comprueba en `tests/wal_archive_rpo.tftest.hcl`, que es donde
+  # vive todo lo de esa alarma. La linea de abajo lo fija tambien desde aqui para
+  # que el archivo que gobierna el significado del SILENCIO no tenga un hueco.
+  wal_archive_max_age_s = 600
 }
 
 run "el_silencio_significa_lo_correcto_en_cada_alarma" {
@@ -378,6 +387,7 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
       && aws_cloudwatch_metric_alarm.sensor_mute["gw-test-0001"].treat_missing_data == "notBreaching"
       && aws_cloudwatch_metric_alarm.ec2_status.treat_missing_data == "breaching"
       && aws_cloudwatch_metric_alarm.ghost_gateways.treat_missing_data == "missing"
+      && aws_cloudwatch_metric_alarm.wal_archive_stalled.treat_missing_data == "breaching"
     )
     error_message = "Alguna alarma cambio su treat_missing_data. Si el motivo fue 'para que no moleste durante un mantenimiento', la respuesta es NO: eso la debilita para siempre. El silencio acotado lo da una alarm mute rule (api/src/takab_api/ops/muting.py), que no puede existir sin Duration y que al BORRARLA desilencia en el acto disparando lo que quedara en ALARM."
   }

@@ -29,6 +29,7 @@ from takab_api.notify.push import (
     PUSH_CLASS_OPS,
     PushDevice,
     PushOutcome,
+    SimulatedPushProvider,
     SnsPushProvider,
     build_push_payload,
 )
@@ -152,11 +153,54 @@ def test_sns_provider_sin_platform_application_reporta_error() -> None:
     assert outcome.errors  # declarado, no silencioso
 
 
+# ------------------------------------------------------------------ provider simulado
+
+
+@pytest.mark.parametrize("n_devices", [0, 1, 5])
+def test_el_provider_simulado_no_entrego_nada_y_asi_lo_devuelve(n_devices: int) -> None:
+    """[T-2.75 · residuo 1] Un provider simulado NO despertó ningún teléfono,
+    luego su ``delivered`` es 0 — sin importar cuántos dispositivos hubiera.
+
+    Devolver ``delivered=len(devices)`` contaba como entrega el simple hecho de
+    tener tokens registrados: la mentira exacta que T-2.75 vino a matar (regla
+    de oro 7). Hoy el guard de ``orchestrator._dispatch_one`` corta antes de
+    llegar aquí, pero eso es un cortafuegos, no un contrato: quien mueva el
+    guard, o quien llame ``deliver()`` desde otro sitio, se lleva el número.
+    Aquí se fija el contrato del PROPIO provider, sin depender del llamador.
+    """
+    provider = SimulatedPushProvider()
+    devices = [
+        PushDevice(push_token_id=f"t{i}", token=f"tok-{i}", platform="android", endpoint_arn=None)
+        for i in range(n_devices)
+    ]
+    payload = build_push_payload(
+        push_class=PUSH_CLASS_CRISIS, site_id="S", incident_id="I", phase="alert_active"
+    )
+
+    outcome = provider.deliver(devices, payload)
+
+    assert outcome.delivered == 0
+    # Tampoco inventa efectos secundarios: ni ARNs sellados ni tokens revocados.
+    assert outcome.created_arns == {}
+    assert outcome.disabled_ids == []
+    # Pero sí deja rastro del intento: se sabe QUE se pidió, no que se entregó.
+    assert provider.delivered == [(devices, payload)]
+
+
+def test_el_provider_simulado_se_declara_simulado() -> None:
+    """El guard del orquestador pregunta ESTO. Si algún día se apagara, el test
+    anterior sigue impidiendo que la respuesta sea una entrega falsa."""
+    assert SimulatedPushProvider.simulated is True
+
+
 # ------------------------------------------------------------------ orquestador
 
 
 class _FakePushProvider:
-    """deliver() controlable: registra lotes y devuelve el outcome configurado."""
+    """deliver() controlable: registra lotes y devuelve el outcome configurado.
+    [T-2.75] Stand-in de SNS real: se declara no-simulado."""
+
+    simulated = False
 
     def __init__(self) -> None:
         self.calls: list[tuple[list[PushDevice], dict]] = []
@@ -170,6 +214,8 @@ class _FakePushProvider:
 
 
 class _NullProvider:
+    simulated = False  # [T-2.75] real: su contrato es reventar si lo despachan
+
     def send(self, target: dict, message: dict) -> None:  # pragma: no cover - no usado
         raise AssertionError("no debería despacharse")
 

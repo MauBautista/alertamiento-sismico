@@ -40,6 +40,14 @@ vi.mock("./VisibilityCard", () => ({ default: () => <div>VISIBILITY_CARD_STUB</d
 // [T-2.54] Mismo criterio: aquí se prueba QUIÉN ve la tarjeta de usuarios, no
 // su lógica (que vive en UsersCard.test).
 vi.mock("./UsersCard", () => ({ default: () => <div>USERS_CARD_STUB</div> }));
+// [T-2.82] Igual: el marco declarado tiene su propia suite
+// (ComplianceLabelsCard.test). Aquí solo importa que se MONTE, y que se monte
+// para todos — leerlo no depende de poder editarlo.
+vi.mock("./ComplianceLabelsCard", () => ({
+  default: ({ canEdit }: { canEdit: boolean }) => (
+    <div>COMPLIANCE_CARD_STUB{canEdit ? "_EDITABLE" : "_SOLO_LECTURA"}</div>
+  ),
+}));
 
 const TENANT: TenantOut = {
   tenant_id: TENANT_ID, // el tenant de la sesión: es el único editable
@@ -683,4 +691,24 @@ describe("TenantsPage · gestión de usuarios (T-2.54, solo manage_users)", () =
     render(<TenantsPage />);
     expect(screen.queryByText("USERS_CARD_STUB")).toBeNull();
   });
+});
+
+describe("TenantsPage · marco normativo declarado (T-2.82)", () => {
+  it("el superadmin lo edita: cargar el marco es administrar la ficha del cliente", () => {
+    seedRole("takab_superadmin");
+    render(<TenantsPage />);
+    expect(screen.getByText("COMPLIANCE_CARD_STUB_EDITABLE")).toBeTruthy();
+  });
+
+  it.each(["tenant_admin", "takab_support"])(
+    "%s LO VE pero no lo edita: se imprime en SU dictamen, así que tiene que poder leerlo",
+    (role) => {
+      seedRole(role as "tenant_admin");
+      render(<TenantsPage />);
+      // Se monta —a diferencia de usuarios/visibilidad, que desaparecen— porque la
+      // lectura no está gateada: lo que está gateado es escribir una afirmación
+      // normativa en la ficha de un cliente (GATE-LEGAL, escritura interna).
+      expect(screen.getByText("COMPLIANCE_CARD_STUB_SOLO_LECTURA")).toBeTruthy();
+    },
+  );
 });

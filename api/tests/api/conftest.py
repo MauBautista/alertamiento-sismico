@@ -61,7 +61,10 @@ _TRUNCATE_WRITTEN = text(
     # DELETE lo veta el trigger, TRUNCATE no — mismo criterio que arriba).
     "life_checkins, user_zone_assignments, site_enrollment_codes, "
     "manual_activation_votes, push_tokens, device_keys, damage_reports, "
-    "compliance_labels, site_assets, rule_evaluations CASCADE"
+    "compliance_labels, site_assets, rule_evaluations, "
+    # [T-2.79] aviso + consentimiento: append-only por trigger, igual que arriba.
+    # [T-2.80] la lápida de ARCO, por el mismo motivo.
+    "privacy_consents, privacy_notices, privacy_erasures CASCADE"
 )
 
 

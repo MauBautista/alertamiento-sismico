@@ -11,10 +11,16 @@
 #   --site-lat/--site-lon (T-2.20, JUNTOS): añade TAKAB_EDGE_SITE_LAT/LON a las
 #   claves gestionadas. Sin flags NO se tocan: unas coordenadas puestas a mano
 #   en edge.env sobreviven al re-aprovisionamiento (merge_env.py las preserva).
+#   --gpio-owner edge|gpio (T-2.70.a·D3): QUIÉN sostiene los pines del gabinete
+#   (sirena, gas, ascensores, retenedores). Misma disciplina que las
+#   coordenadas: SIN la bandera no se toca, porque forzar un valor aquí
+#   volcaría a `edge` un gabinete ya traspasado y lo dejaría con DOS procesos
+#   reclamando el mismo cerrojo.
 set -euo pipefail
 
 SITE_LAT=""
 SITE_LON=""
+GPIO_OWNER=""
 CATALOG=""
 POSITIONAL=()
 while [ $# -gt 0 ]; do
@@ -25,6 +31,10 @@ while [ $# -gt 0 ]; do
     ;;
   --site-lon)
     SITE_LON="${2:?--site-lon requiere un valor}"
+    shift 2
+    ;;
+  --gpio-owner)
+    GPIO_OWNER="${2:?--gpio-owner requiere edge|gpio}"
     shift 2
     ;;
   --catalog)
@@ -42,6 +52,18 @@ set -- ${POSITIONAL+"${POSITIONAL[@]}"}
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
   echo "uso: $0 <thing_name> [ssh_host] [--site-lat LAT --site-lon LON] [--catalog FILE]" >&2
+  echo "     [--gpio-owner edge|gpio]" >&2
+  exit 1
+fi
+
+# [T-2.70.a·D3] El valor se valida AQUÍ y no se degrada en silencio. `EdgeSettings`
+# degrada cualquier cosa que no sea exactamente `gpio` a `edge` —dirección
+# correcta para un documento firmado que llega de la nube— pero aquí el operador
+# está TECLEANDO: un `--gpio-owner gpo` escribiría `edge` en el archivo mientras
+# el operador cree haber traspasado los pines, y acabaría con `takab-gpio`
+# habilitada y `takab-edge` reclamando el mismo cerrojo.
+if [ -n "$GPIO_OWNER" ] && [ "$GPIO_OWNER" != edge ] && [ "$GPIO_OWNER" != gpio ]; then
+  echo "error: --gpio-owner acepta 'edge' o 'gpio', no '$GPIO_OWNER'" >&2
   exit 1
 fi
 
@@ -129,14 +151,34 @@ LOCAL_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**6):06d}"
 # `DEV_MODE=false` por la misma razon: el default es `true` y un gabinete de campo que
 # lo herede corre en modo desarrollo sin que nadie lo note. Si estamos bajando
 # credenciales REALES de Secrets Manager, esto no es un entorno de desarrollo.
-printf 'TAKAB_EDGE_GATEWAY_ID=%s\nTAKAB_EDGE_DEV_MODE=false\nTAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\n' \
-  "$THING" "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" >"$TMP/edge.env.managed"
+# T-2.67.b: `TAKAB_EDGE_CLOUD_SPOOL_DIR` va en lo GESTIONADO, no detrás de una
+# bandera. Sin la clave, `cloud_spool_dir` vale "" y el edge hace un `mkdtemp`
+# NUEVO en cada arranque: el spool a la nube y las evidencias pendientes se
+# evaporan al reiniciar. Eso roza la regla de oro 3 y es el hueco H-1 del manual
+# ("mientras el panel diga COLA NO DURABLE, no reinicies el gabinete").
+# El directorio de pendientes NO se declara: el edge lo deriva como hermano de
+# este (`<padre>/backfill-pending`), y dos rutas que puedan desincronizarse son
+# dos sitios donde buscar la misma evidencia.
+SPOOL_DIR="${SPOOL_DIR:-/var/lib/takab/spool}"
+printf 'TAKAB_EDGE_GATEWAY_ID=%s\nTAKAB_EDGE_DEV_MODE=false\nTAKAB_EDGE_HMAC_KEY=%s\nTAKAB_EDGE_MQTT_ENDPOINT=%s\nTAKAB_EDGE_LOCAL_API_PIN=%s\nTAKAB_EDGE_CLOUD_SPOOL_DIR=%s\n' \
+  "$THING" "$(cat "$TMP/hmac.key")" "$MQTT_ENDPOINT" "$LOCAL_PIN" "$SPOOL_DIR" >"$TMP/edge.env.managed"
 
 # T-2.20: la ubicación SOLO entra a lo gestionado si el operador la pidió con
 # flags. Sin flags, merge_env.py preserva lo que el edge.env ya tenga.
 if [ -n "$SITE_LAT" ]; then
   printf 'TAKAB_EDGE_SITE_LAT=%s\nTAKAB_EDGE_SITE_LON=%s\n' \
     "$SITE_LAT" "$SITE_LON" >>"$TMP/edge.env.managed"
+fi
+
+# T-2.70.a·D3: el DUEÑO DE LOS PINES. Igual que las coordenadas, sólo entra a lo
+# gestionado si el operador lo pidió — y por una razón más dura que la de T-2.20:
+# escribir `edge` por omisión en cada re-aprovisionamiento volcaría a la
+# topología vieja un gabinete ya traspasado, y como `deploy.sh` deshabilita
+# `takab-gpio` cuando el archivo dice `edge`, el siguiente despliegue dejaría el
+# edificio SIN DUEÑO DE PINES tras el próximo reinicio. Sin bandera,
+# `merge_env.py` conserva lo que el gabinete ya tenga.
+if [ -n "$GPIO_OWNER" ]; then
+  printf 'TAKAB_EDGE_GPIO_OWNER=%s\n' "$GPIO_OWNER" >>"$TMP/edge.env.managed"
 fi
 
 if [ -z "$SSH_HOST" ]; then
@@ -165,12 +207,40 @@ if [ -z "$SSH_HOST" ]; then
 else
   # El edge.env que ya viva en el gabinete manda sobre todo lo que no generamos aqui.
   ssh "$SSH_HOST" 'sudo cat /etc/takab/edge.env 2>/dev/null || true' >"$TMP/edge.env.existing"
+
+  # T-2.67.b: lo gestionado GANA sobre lo existente, asi que un gabinete que ya
+  # tenga otra ruta de spool se la veria cambiada — y sus pendientes quedarian
+  # huerfanos en la ruta vieja, que es abandonar evidencia de sismos reales sin
+  # decirlo. Se aborta y se manda mover primero. Es el unico caso del script en
+  # el que lo gestionado NO puede imponerse solo: las demas claves gestionadas
+  # son identidad o credenciales, y ahi pisar es justo lo que se quiere.
+  SPOOL_PREVIO="$(sed -n 's/^TAKAB_EDGE_CLOUD_SPOOL_DIR=//p' "$TMP/edge.env.existing" | tail -1)"
+  if [ -n "$SPOOL_PREVIO" ] && [ "$SPOOL_PREVIO" != "$SPOOL_DIR" ]; then
+    echo "ERROR: este gabinete ya tiene la cola en '$SPOOL_PREVIO' y este" >&2
+    echo "       aprovisionamiento la pondria en '$SPOOL_DIR'." >&2
+    echo "       Cambiar la ruta sin mover lo que hay ABANDONA la evidencia" >&2
+    echo "       pendiente (spool a la nube + ventanas de sismo sin subir)." >&2
+    echo "       Mueve primero, con el servicio parado:" >&2
+    echo "         sudo systemctl stop takab-edge" >&2
+    echo "         sudo mv '$SPOOL_PREVIO' '$SPOOL_DIR'" >&2
+    echo "         sudo mv '$(dirname "$SPOOL_PREVIO")/backfill-pending' '$(dirname "$SPOOL_DIR")/backfill-pending'" >&2
+    echo "       …o vuelve a lanzar esto con SPOOL_DIR='$SPOOL_PREVIO'." >&2
+    exit 1
+  fi
+
   python3 "$ROOT/infra/scripts/merge_env.py" \
     --managed "$TMP/edge.env.managed" \
     --existing "$TMP/edge.env.existing" \
     --out "$TMP/edge.env"
 
   ssh "$SSH_HOST" 'sudo mkdir -p /etc/takab/certs'
+  # T-2.67.b: la cola y su hermano de pendientes, creados AQUI y con permisos
+  # propios. El agravante que cierra esto: con la ruta cayendo a `/tmp`, el
+  # directorio es compartido entre procesos y corridas, y CUALQUIER usuario
+  # puede crearlo primero y quedarse de dueno — el `mkdir(exist_ok=True)` del
+  # servicio lo acepta tal cual. `install -d -m 0700` es idempotente y no toca
+  # el contenido si el directorio ya existe.
+  ssh "$SSH_HOST" "sudo install -d -m 0700 '$SPOOL_DIR' '$(dirname "$SPOOL_DIR")/backfill-pending'"
   for f in cert.pem key.pem ca.pem; do
     ssh "$SSH_HOST" "sudo tee /etc/takab/certs/$f >/dev/null && sudo chmod 600 /etc/takab/certs/$f" <"$TMP/$f"
   done
@@ -188,6 +258,14 @@ else
   fi
   echo "credenciales de $THING instaladas en $SSH_HOST:/etc/takab"
   echo "reinicia el servicio para que tome las claves nuevas: ssh $SSH_HOST 'sudo systemctl restart takab-edge'"
+  if [ -n "$GPIO_OWNER" ]; then
+    echo "TAKAB_EDGE_GPIO_OWNER=$GPIO_OWNER escrito en el edge.env del gabinete."
+    echo "  · Habilitar/levantar (o deshabilitar) takab-gpio según este valor lo"
+    echo "    hace deploy/edge/deploy.sh: lo LEE de este archivo, no lo adivina."
+    echo "  · El proceso que YA sostiene los pines no lee el archivo hasta que se"
+    echo "    reinicie, y reiniciarlo CICLA GAS_VALVE y DOOR_RETAINER: eso va con"
+    echo "    el edificio avisado (deploy.sh --ventana-de-mantenimiento)."
+  fi
 fi
 
 echo "PIN del panel local de $THING: $LOCAL_PIN — entrégalo al responsable del edificio"

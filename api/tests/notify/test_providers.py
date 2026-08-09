@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 
 import boto3
 import httpx
@@ -12,11 +13,16 @@ import pytest
 from moto import mock_aws
 
 from takab_api.notify.providers import (
+    _SIMULATED_WARNING,
     NotifyError,
     SesEmailProvider,
     SimulatedProvider,
     WebhookProvider,
+    build_providers,
+    is_simulated,
+    warn_simulated_channels,
 )
+from takab_api.settings import Settings
 
 MESSAGE = {
     "incident_id": "11111111-0000-0000-0000-000000000001",
@@ -118,3 +124,62 @@ def test_simulated_provider_records_and_succeeds() -> None:
     provider = SimulatedProvider("whatsapp")
     provider.send({"to": "+5255"}, MESSAGE)
     assert provider.sent == [({"to": "+5255"}, MESSAGE)]
+
+
+# --- T-2.75 · quién entrega de verdad, y quién grita al arrancar -----------------
+
+
+def test_los_providers_reales_se_declaran_reales() -> None:
+    """Solo quien entrega puede decir que entrega."""
+    assert is_simulated(WebhookProvider(timeout_s=1.0)) is False
+    assert is_simulated(SesEmailProvider(sender="a@b.mx", region=_REGION)) is False
+    assert is_simulated(SimulatedProvider("sms")) is True
+
+
+def test_provider_que_no_se_declara_cuenta_como_simulado() -> None:
+    """El default ante lo desconocido es la PEOR causa: quien no se declara real
+    no ha demostrado que entregue. Al revés —presumir entrega— es la mentira."""
+
+    class _Indeclarado:
+        def send(self, target: dict, message: dict) -> None: ...
+
+    assert is_simulated(_Indeclarado()) is True
+
+
+def test_arranque_grita_por_cada_canal_simulado_del_registro(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Criterio 2: el patrón del email (grito en ``build_providers``) aplicado a
+    TODOS. Sin remitente ni platform applications, los cuatro simulados gritan
+    y los reales callan."""
+    caplog.set_level(logging.WARNING, logger="takab_api.notify")
+    providers = build_providers(Settings())
+
+    gritados = {r.args[0] for r in caplog.records if r.msg is _SIMULATED_WARNING}
+    assert gritados == {"whatsapp", "sms", "email", "push"}
+    assert "webhook" not in gritados  # el único con proveedor real por defecto
+    assert all("SIMULADO" in r.getMessage() for r in caplog.records if r.args)
+    assert is_simulated(providers["webhook"]) is False
+
+
+def test_el_grito_se_deriva_del_registro_no_de_una_lista(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """La prueba de que no hay enumeración: un canal que NO existe hoy —el sexto,
+    el que alguien enchufe mañana— grita sin que nadie lo dé de alta aquí."""
+    caplog.set_level(logging.WARNING, logger="takab_api.notify")
+    registro = {
+        "webhook": WebhookProvider(timeout_s=1.0),
+        "telegram": SimulatedProvider("telegram", hint="proveedor de Telegram"),
+    }
+    assert warn_simulated_channels(registro) == ["telegram"]  # type: ignore[arg-type]
+    mensaje = next(r.getMessage() for r in caplog.records if r.args and r.args[0] == "telegram")
+    assert "SIMULADO" in mensaje
+    assert "proveedor de Telegram" in mensaje  # el hint viaja con el provider
+
+
+def test_el_grito_no_promete_sent() -> None:
+    """El texto del aviso también aprendió: prometía "se marcarán 'sent'", que
+    era justo la mentira. Ahora dice lo que de verdad va a pasar."""
+    assert "'sent'" not in _SIMULATED_WARNING.replace("NUNCA 'sent'", "")
+    assert "'simulated'" in _SIMULATED_WARNING

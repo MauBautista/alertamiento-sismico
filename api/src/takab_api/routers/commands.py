@@ -2,8 +2,14 @@
 
 Superficie MÁS sensible del sistema (regla de oro 8 / RBAC §4.3). No negociable:
 1. **Firmado**: HMAC byte-idéntico al framing del edge (vectores compartidos).
-2. **MFA**: garantizado a nivel de pool Cognito (``mfa=ON`` solo-TOTP, gate #7
-   ratificado en T-1.18) — todo ID token de rol web implica TOTP superado.
+2. **MFA**: exigido POR PROCEDENCIA — ``require_mfa`` (``auth/mfa.py``, T-2.84.b)
+   rechaza todo token que no venga de un pool con ``mfa_configuration = "ON"``.
+   Hasta T-2.84.b esto era una nota que decía «garantizado a nivel de pool… todo
+   ID token de rol web implica TOTP superado», y era falso por dos motivos: el ID
+   token de Cognito **no lleva ``amr`` ni ``acr``**, así que nadie lo comprobaba; y
+   AWS documenta que el PRIMER inicio de sesión de un usuario nuevo emite tokens
+   aunque el pool exija MFA. Ver ``auth/mfa.py`` §1-§4 para lo que se cubre y lo
+   que no.
 3. **Rate-limit** por usuario+sitio Y por sitio (ventana deslizante en DB).
 4. **Nonce** UNIQUE en emisión (+ nonce un-solo-uso en el edge, T-1.12).
 5. **ACK de ejecución obligatorio**: el edge responde ``command_ack`` (la
@@ -28,8 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.deps import get_session, require_roles
+from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions, roles_with_action
+from takab_api.auth.mfa import require_mfa
 from takab_api.commands.intent import (
     canonical_intent,
     intent_sha256,
@@ -43,6 +50,12 @@ from takab_api.commands.keys import (
     build_key_provider,
 )
 from takab_api.commands.publisher import CommandPublisher, IotDataPublisher, PublishError
+from takab_api.commands.rejection_audit import (
+    PROOF_SESSION,
+    PROOF_SESSION_DEVICE,
+    audit_command_rejection,
+    fingerprint,
+)
 from takab_api.commands.service import issue_signed_command
 from takab_api.commands.signing import canonical_payload as _canonical_catalog
 from takab_api.commands.signing import sign_catalog
@@ -78,7 +91,17 @@ COMMAND_ROLES: tuple[str, ...] = tuple(
     )
 )
 
-_require_command = require_roles(*COMMAND_ROLES)
+#: Guarda de LECTURA: sólo el rol. Listar los comandos de un sitio no mueve nada,
+#: y la regla de oro 8 habla de la superficie de ACTUACIÓN — extenderle el MFA a
+#: una consulta sería prohibir de más sin ganar nada.
+_require_command_role = require_roles(*COMMAND_ROLES)
+
+#: Guarda de EMISIÓN: constancia de MFA **y luego** rol (regla de oro 8, `RO-8.c`).
+#: El orden es la mitad del control: si el rol se mirara primero, un rol sin
+#: acciones de comando se caería ahí y la guarda de MFA no llegaría a correr nunca
+#: — el rechazo seguiría siendo un accidente del catálogo de roles, que es el
+#: defecto que `RO-8.c` describe. Ver `auth/mfa.py`.
+_require_command = require_roles(*COMMAND_ROLES, inner=require_mfa(get_claims))
 
 # [T-2.09] Acción de matriz exigida por comando en la ruta táctica (RBAC §4):
 # activar = deslizar-para-activar individual; desactivar = retirada de la
@@ -157,15 +180,50 @@ async def issue_command(
     if site is None:
         raise http_error(404, "sitio no encontrado")
 
+    # [T-2.86.b · RO-8.g/RO-8.k] A partir de AQUÍ se conoce el tenant TOCADO, así
+    # que todo rechazo puede archivarse en la bitácora de su dueño (no en la del
+    # operador — T-2.71). Los rechazos de más arriba (matriz de rol, alcance,
+    # sitio invisible) no llegan a saber a quién se le intentó tocar el gabinete;
+    # ver §4 del docstring de commands/rejection_audit.py.
+    tenant_id = str(site.tenant_id)
+
+    async def rejected(reason: str, status: int, **extra: object) -> None:
+        await audit_command_rejection(
+            claims=claims,
+            tenant_id=tenant_id,
+            site_id=site_id,
+            reason=reason,
+            status=status,
+            channel=body.channel,
+            action=body.action,
+            extra=extra or None,
+        )
+
     audit_meta = None
     nonce_override = None
+    # Prueba de identidad detrás del intento: la sesión SIEMPRE (el JWT ya validó
+    # contra Cognito y `require_mfa` ya exigió que venga de un pool con MFA ON —
+    # T-2.84.b); el DISPOSITIVO solo tras verificar la firma de la intención, más
+    # abajo.
+    actor_proof = PROOF_SESSION
     if tactical:
         intent = body.intent
         if intent is None:
+            await rejected("intent_missing", 403)
             raise http_error(403, "se requiere intención firmada (RBAC §4.3)")
         if not settings.command_intent_secret:
             # FAIL-CLOSED: sin secreto configurado no hay ruta táctica.
+            await rejected("intent_secret_unconfigured", 503)
             raise http_error(503, "intención firmada no configurada en el servidor")
+        # Lo que la intención DICE ser, mientras no esté probado. Ni la firma ni
+        # el nonce se archivan en claro: son credenciales, y `audit_log` no se
+        # poda jamás (regla de oro 11). Van sus huellas, que bastan para
+        # correlacionar sondeos repetidos.
+        claimed = {
+            "claimed_intent_key_id": str(intent.key_id),
+            "nonce_sha256": fingerprint(intent.nonce),
+            "intent_sha256": intent_sha256(intent.signature),
+        }
         reason = nonce_error(
             settings.command_intent_secret,
             intent.nonce,
@@ -174,13 +232,20 @@ async def issue_command(
             now=datetime.now(tz=UTC),
         )
         if reason is not None:
+            await rejected("intent_nonce_rejected", 403, detail=reason, **claimed)
             raise http_error(403, f"nonce de intención rechazado: {reason}")
         if (await conn.execute(q.NONCE_EXISTS, {"nonce": intent.nonce})).first() is not None:
+            # El replay se corta ANTES de verificar la firma: así un nonce ya
+            # quemado no es un oráculo para quien tiene sesión pero no el
+            # teléfono. Corolario honesto para la bitácora: en este punto el
+            # dispositivo NO está probado y el key_id queda como reclamado.
+            await rejected("nonce_replay", 409, **claimed)
             raise http_error(409, "nonce de intención ya usado (replay rechazado)")
         key_row = (
             await conn.execute(q.DEVICE_KEY, {"key_id": str(intent.key_id), "sub": claims.sub})
         ).first()
         if key_row is None:
+            await rejected("device_key_unknown", 403, **claimed)
             raise http_error(403, "llave de dispositivo no registrada o revocada")
         message = canonical_intent(
             key_id=str(intent.key_id),
@@ -190,7 +255,10 @@ async def issue_command(
             nonce=intent.nonce,
         )
         if not intent_signature_valid(key_row.public_key, intent.signature, message):
+            await rejected("intent_signature_invalid", 403, **claimed)
             raise http_error(403, "firma de intención inválida")
+        # Dispositivo PROBADO: solo ahora el key_id deja de ser "reclamado".
+        actor_proof = PROOF_SESSION_DEVICE
         nonce_override = intent.nonce
         audit_meta = {
             "intent_key_id": str(intent.key_id),
@@ -198,7 +266,8 @@ async def issue_command(
         }
 
     # [T-1.60] La emisión (rate-limit + clave por gateway + firma + insert +
-    # publish + audit) vive en commands/service.py — compartida con /drills.
+    # publish + audit, incluida la de sus rechazos) vive en commands/service.py
+    # — compartida con /drills.
     try:
         row = await issue_signed_command(
             conn,
@@ -207,15 +276,29 @@ async def issue_command(
             keys=keys,
             claims=claims,
             site_id=site_id,
-            tenant_id=str(site.tenant_id),
+            tenant_id=tenant_id,
             channel=body.channel,
             action=body.action,
             event_id=body.event_id,
             nonce_override=nonce_override,
             audit_meta=audit_meta,
+            actor_proof=actor_proof,
         )
     except IntegrityError as exc:
-        # Backstop del UNIQUE de commands.nonce ante replays concurrentes.
+        # Backstop del UNIQUE de commands.nonce ante replays concurrentes. Aquí
+        # la intención YA verificó, así que —a diferencia del 409 temprano— este
+        # replay sí llega con el dispositivo probado.
+        if getattr(getattr(exc, "orig", None), "sqlstate", None) == "23505":
+            await audit_command_rejection(
+                claims=claims,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason="nonce_replay_race",
+                status=409,
+                channel=body.channel,
+                action=body.action,
+                actor_proof=actor_proof,
+            )
         raise integrity_error(exc) from exc
     return CommandOut(**row)
 
@@ -253,7 +336,7 @@ async def issue_command_nonce(
 @router.get("/sites/{site_id}/commands", response_model=CommandList)
 async def list_commands(
     site_id: UUID,
-    claims: Claims = Depends(_require_command),
+    claims: Claims = Depends(_require_command_role),
     conn: AsyncConnection = Depends(get_session),
 ) -> CommandList:
     """Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).
@@ -276,6 +359,15 @@ async def list_commands(
 
 
 _PANIC_ROLES: tuple[str, ...] = roles_with_action("panic_vote")
+
+# [T-2.84.b · `RO-8.c`] La ÚNICA excepción declarada al MFA en esta superficie, y
+# va sin `require_mfa` a propósito: el votante es un `occupant` del pool con
+# `mfa_configuration = "OPTIONAL"` (decisión #7), o sea que puede legítimamente no
+# tener TOTP. Exigirle segundo factor a quien pide auxilio con el edificio
+# temblando invertiría el sentido de la regla de oro 8. Queda ACOTADA por otros
+# tres controles —quórum de 2 votantes DISTINTOS en ventana, geofence y
+# rate-limit por usuario— y por el hecho de que el comando emitido es siempre
+# `siren/activate`, cableado abajo: este camino no puede tocar gas ni ascensores.
 _require_panic = require_roles(*_PANIC_ROLES)
 
 

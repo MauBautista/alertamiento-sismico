@@ -549,6 +549,11 @@ const FS_SHORT = { normally_open:'NO', normally_closed:'NC', fail_close:'fail_cl
 const RELAY_STATUS = {
   gpio_stopped:           {st:'DETENIDO',       crit:true,  meta:'módulo gpio sin correr · el gabinete NO puede accionar — revisar takab-edge.service'},
   gpio_error:             {st:'AVERÍA',         crit:true,  meta:'falló la lectura de estado con el módulo en marcha · revisar journal del gabinete'},
+  /* [T-2.70.a·D2/P1] El dueño de los pines no contesta. NO es «parado» (eso se
+     sabría) ni «reventó en marcha» (eso es una avería del proceso que sí
+     tenemos delante): es que no hubo respuesta. Los relés pueden estar
+     perfectamente en su sitio — lo que se perdió es la LECTURA. */
+  gpio_unreachable:       {st:'NO CONTESTA',    crit:true,  meta:'el proceso que gobierna los pines no respondió · el estado eléctrico de abajo NO se pudo medir — revisar takab-gpio/takab-edge'},
   config_error:           {st:'PERFIL S/D',     crit:true,  meta:'config ilegible: la lista NO está filtrada y puede incluir actuadores no instalados'},
   no_actuators_installed: {st:'SIN ACTUADORES', crit:false, meta:'este sitio declara 0 instalados · revisar equipamiento en la consola'},
   partial:                {st:'INCOMPLETO',     crit:true,  meta:''},
@@ -953,8 +958,17 @@ function render(){
   $('tier-label').textContent = tier.label; $('tier-label').style.color = tier.color;
   $('tierline').style.borderLeftColor = tier.color;
   const why = st.siren_reason ? (SIREN_REASON[st.siren_reason] || String(st.siren_reason).toUpperCase()) : null;
-  $('tier-sub').textContent = 'SIRENA: ' + (st.siren_sounding ? ('SONANDO' + (why ? ' · ' + why : '')) : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO')) +
-    ' · SASMEX: ' + (st.sasmex_active ? 'ACTIVO' : 'NO') + ' · TIER ' + (st.last_tier || 'S/D');
+  /* [T-2.70.a·D2/P1] `null` NO es `false`. Estos campos valen null cuando el
+     panel no pudo MEDIRLOS (el dueño de los pines no contestó), y leerlos por
+     verdad simple pintaba «SIRENA: EN REPOSO · SASMEX: NO»: un "no pasa nada"
+     afirmado sobre un dato que nadie midió, que es peor que no decir nada
+     (regla de oro 7). Se distingue null de false explícitamente. */
+  const sirena = st.siren_sounding == null ? 'S/D'
+    : (st.siren_sounding ? ('SONANDO' + (why ? ' · ' + why : ''))
+       : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO'));
+  const sasmex = st.sasmex_active == null ? 'S/D' : (st.sasmex_active ? 'ACTIVO' : 'NO');
+  $('tier-sub').textContent = 'SIRENA: ' + sirena + ' · SASMEX: ' + sasmex +
+    ' · TIER ' + (st.last_tier || 'S/D');
   const relays = $('relays'); relays.textContent = '';
   (st.relays || []).forEach(r => {
     const meta = RELAY_META[r.channel] || {label: String(r.channel||'?').toUpperCase()};

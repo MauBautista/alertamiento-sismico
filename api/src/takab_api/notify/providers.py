@@ -15,6 +15,8 @@ import hashlib
 import hmac
 import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Protocol
 
 import boto3
@@ -31,9 +33,26 @@ class NotifyError(Exception):
 class NotifyProvider(Protocol):
     """Contrato mínimo de un canal de notificación."""
 
+    #: [T-2.75] ¿Este canal entrega de verdad? Es parte del CONTRATO, no un
+    #: detalle: el orquestador no puede afirmar "notificado" sin que alguien
+    #: se haga responsable de la entrega.
+    simulated: bool
+
     def send(self, target: dict, message: dict) -> None:
         """Entrega ``message`` a ``target``; levanta ``NotifyError`` si falla."""
         ...
+
+
+def is_simulated(provider: object) -> bool:
+    """¿El provider NO entrega nada? Se deriva del propio provider — jamás de
+    una lista de canales (una lista se queda ciega ante el sexto canal).
+
+    **El default ante lo desconocido es la peor causa**: quien no se declara
+    real no ha demostrado que entregue, así que se le trata como simulado. Al
+    revés —presumir entrega— es exactamente la mentira que cuesta vidas: un
+    tablero que dice "notificado" cuando nadie recibió nada.
+    """
+    return bool(getattr(provider, "simulated", True))
 
 
 def _canonical_body(message: dict) -> bytes:
@@ -41,9 +60,55 @@ def _canonical_body(message: dict) -> bytes:
     return json.dumps(message, separators=(",", ":"), sort_keys=True).encode()
 
 
+class DuplicateGuard:
+    """Memoria corta de "esto pudo salir ya" (T-2.76 · T-2.77).
+
+    Ni Twilio ni la Cloud API de Meta ofrecen clave de idempotencia en su
+    endpoint de envío, así que la pone el dominio: ``(destino, incidente)``. Un
+    fallo AMBIGUO —5xx, timeout, respuesta ilegible— pudo haber creado el
+    mensaje, así que se recuerda la clave y el siguiente intento **no sale**:
+    escala al canal siguiente en vez de arriesgar un aviso duplicado durante un
+    sismo. Un rechazo EXPLÍCITO (4xx) demuestra que no se creó nada, y ese sí se
+    puede reintentar — por eso recordar es una decisión de quien llama.
+
+    **Lo que cuesta esa elección, dicho en voz alta:** si el mensaje NO se había
+    creado, la guarda convierte un reintento que habría funcionado en un fallo.
+    Se acepta porque (a) el orquestador escala al canal siguiente en el acto, y
+    (b) el fallo queda ESCRITO (``notify_failed``, rojo en la consola). El caso
+    simétrico —duplicar— no lo ve nadie hasta que el teléfono suena dos veces en
+    mitad de una evacuación.
+
+    El TTL lo pone el llamante con la ventana de vida real del mensaje en el
+    proveedor (``ValidityPeriod`` en Twilio, ``message_send_ttl_seconds`` en
+    Meta): pasado ese instante el proveedor ya descartó lo encolado, luego no
+    queda nada vivo que duplicar. Así la memoria tampoco crece sin fin en un
+    worker residente.
+    """
+
+    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+        self._clock = clock or time.monotonic
+        self._issued: dict[tuple[str, str], float] = {}
+
+    @property
+    def pending(self) -> int:
+        """Claves vivas (para comprobar que no se acumulan)."""
+        return len(self._issued)
+
+    def seen(self, key: tuple[str, str]) -> bool:
+        now = self._clock()
+        self._issued = {k: exp for k, exp in self._issued.items() if exp > now}
+        return key in self._issued
+
+    def remember(self, key: tuple[str, str], ttl_s: float) -> None:
+        """Marca que esa clave puede tener un mensaje VIVO durante ``ttl_s``."""
+        self._issued[key] = self._clock() + ttl_s
+
+
 class WebhookProvider:
     """POST JSON firmado: ``X-Takab-Signature`` = HMAC-SHA256 hex del body con
     el secret del tenant (re-resuelto del rule_set al despachar, nunca del job)."""
+
+    simulated = False
 
     def __init__(self, timeout_s: float, transport: httpx.BaseTransport | None = None) -> None:
         self._timeout_s = timeout_s
@@ -68,6 +133,8 @@ class WebhookProvider:
 
 class SesEmailProvider:
     """Correo vía AWS SES (sandbox en dev: remitente y destinos verificados)."""
+
+    simulated = False
 
     def __init__(self, sender: str, region: str) -> None:
         self._sender = sender
@@ -94,11 +161,18 @@ class SesEmailProvider:
 
 
 class SimulatedProvider:
-    """Canal simulado (WhatsApp/SMS en dev; email sin SES configurado):
-    registra la entrega y triunfa. La ruta real se enchufa sin tocar nada más."""
+    """Canal SIN proveedor real (WhatsApp/SMS hasta T-2.76/T-2.77; email sin SES).
 
-    def __init__(self, channel: str) -> None:
+    [T-2.75] No "triunfa": se declara simulado y el orquestador marca el job
+    ``simulated`` — nunca ``sent``. ``hint`` dice QUÉ falta configurar, y viaja
+    con el provider para que el aviso de arranque no tenga que enumerar canales.
+    """
+
+    simulated = True
+
+    def __init__(self, channel: str, *, hint: str = "") -> None:
         self.channel = channel
+        self.hint = hint
         self.sent: list[tuple[dict, dict]] = []
 
     def send(self, target: dict, message: dict) -> None:
@@ -111,30 +185,52 @@ class SimulatedProvider:
         self.sent.append((target, message))
 
 
+# [T-1.62 · T-2.75] El grito de arranque. El 13/07 hubo correos "enviados" que
+# nadie recibió porque el simulado marcaba 'sent' en silencio; desde entonces el
+# email grita. Ahora grita CUALQUIER canal simulado, y no porque esté en una
+# lista: porque se le pregunta al registro ya construido. El sexto canal que
+# alguien enchufe sin proveedor real hereda el grito sin tocar esta función.
+_SIMULATED_WARNING = (
+    "canal %s SIMULADO — los jobs quedarán 'simulated' (NUNCA 'sent') y nadie "
+    "recibirá nada por esta vía. En producción esto es un fallo.%s"
+)
+
+
+def warn_simulated_channels(providers: dict[str, NotifyProvider]) -> list[str]:
+    """Grita una vez por canal simulado del registro; devuelve sus nombres."""
+    simulated = [channel for channel, p in providers.items() if is_simulated(p)]
+    for channel in simulated:
+        hint = str(getattr(providers[channel], "hint", "") or "")
+        logger.warning(_SIMULATED_WARNING, channel, f" Falta: {hint}." if hint else "")
+    return simulated
+
+
 def build_providers(settings) -> dict[str, NotifyProvider]:
     """Providers por canal según Settings (SES si hay remitente; si no, simulado)."""
-    # Import tardío: push.py importa boto3/dataclasses propios y este módulo se
-    # importa desde tests puros del plan — sin ciclo y sin costo si no se usa.
+    # Import tardío: push.py/twilio.py/whatsapp.py traen dependencias propias y
+    # este módulo se importa desde tests puros del plan — sin ciclo (whatsapp.py
+    # importa de aquí) y sin costo si no se usa.
     from takab_api.notify.push import build_push_provider
+    from takab_api.notify.twilio import build_sms_provider
+    from takab_api.notify.whatsapp import build_whatsapp_provider
 
     email: NotifyProvider
     if settings.notify_email_from:
         email = SesEmailProvider(sender=settings.notify_email_from, region=settings.aws_region)
     else:
-        # [T-1.62] El simulado marca los jobs como 'sent' SIN enviar nada: en la
-        # nube eso es una mentira silenciosa (pasó el 13/07 — correos "enviados"
-        # que nadie recibió). Si falta el remitente, que se grite.
-        logger.warning(
-            "TAKAB_API_NOTIFY_EMAIL_FROM vacío: canal email SIMULADO — los jobs se "
-            "marcarán 'sent' sin enviar correo alguno. En la nube esto es un fallo."
-        )
-        email = SimulatedProvider("email")
-    return {
+        email = SimulatedProvider("email", hint="TAKAB_API_NOTIFY_EMAIL_FROM")
+    providers: dict[str, NotifyProvider] = {
         "webhook": WebhookProvider(timeout_s=settings.notify_webhook_timeout_s),
-        "whatsapp": SimulatedProvider("whatsapp"),
-        "sms": SimulatedProvider("sms"),
+        # [T-2.77] WhatsApp Cloud si hay credenciales Y una plantilla APROBADA;
+        # si falta cualquiera de las dos, el canal se declara simulado él solo.
+        "whatsapp": build_whatsapp_provider(settings),
+        # [T-2.76] Twilio si hay credenciales; si no, simulado — la presunción
+        # de no-entrega se hereda sola, sin que este registro sepa nada de SMS.
+        "sms": build_sms_provider(settings),
         "email": email,
         # [T-2.04] El canal push usa deliver() (lote + resultado por dispositivo);
         # el orquestador lo despacha por una rama propia, no por send().
         "push": build_push_provider(settings),  # type: ignore[dict-item]
     }
+    warn_simulated_channels(providers)
+    return providers

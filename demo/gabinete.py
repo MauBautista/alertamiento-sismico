@@ -60,6 +60,11 @@ class Gabinete:
         buffer_root = Path(args.workdir) / "buffer"
         buffer_root.mkdir(parents=True, exist_ok=True)
 
+        # [T-2.70.a·D1.1] `dev_mode` + `gateway_id` DISTINTO por gabinete es lo
+        # que le da a cada uno su propio cerrojo de pines: `run.py` levanta los
+        # tres en el mismo host y, con un cerrojo común, arrancaría uno y
+        # morirían dos (ver `EdgeSettings.gpio_lock_file`). Dos procesos del
+        # mismo `--thing` siguen chocando, que es la semántica correcta.
         self.settings = EdgeSettings(
             dev_mode=True,  # relés mock (no hay hardware; gate #3 abierto)
             tenant_id=args.tenant,

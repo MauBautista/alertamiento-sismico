@@ -31,6 +31,21 @@ def _post(dashboard, path: str, pin: str | None = None) -> int:
         return exc.code
 
 
+def _snap_con_reles(gpio, relays):
+    """Instantánea REAL del gabinete con las filas de relé sustituidas.
+
+    [T-2.70.a·D2/P1] El panel dejó de leer `gpio.relay_states()` y `gpio.running`
+    por separado: lee UNA instantánea por request a través de la costura. Estos
+    tests siguen midiendo exactamente lo mismo —qué pinta el panel ante una lista
+    vacía, corta o ilegible— pero pinchan donde el panel lee de verdad; parchear
+    `relay_states` ya no cambiaría nada y el test se habría quedado verde SIN
+    medir nada, que es peor que romperse.
+    """
+    from dataclasses import replace
+
+    return replace(gpio.snapshot(), relays=tuple(relays))
+
+
 # --- Lógica de estado/control ---
 
 
@@ -598,7 +613,7 @@ def test_status_relays_degrade_when_gpio_broken(supervisor, monkeypatch):
     def _kaput():
         raise RuntimeError("kaput")
 
-    monkeypatch.setattr(supervisor.gpio, "relay_states", _kaput)
+    monkeypatch.setattr(supervisor.gpio, "snapshot", _kaput)
     code, body = _get(supervisor.local_api, "/api/status")
     assert code == 200
     payload = json.loads(body)
@@ -685,8 +700,8 @@ def test_status_relays_status_delata_la_lista_parcial(supervisor, monkeypatch):
     pintaba 2 filas sin decir que faltan 3. Se cruza el perfil declarado contra
     los canales que gpio devolvió — ambos ya existían.
     """
-    completos = supervisor.gpio.relay_states()
-    monkeypatch.setattr(supervisor.gpio, "relay_states", lambda: completos[:2])
+    parcial = _snap_con_reles(supervisor.gpio, supervisor.gpio.relay_states()[:2])
+    monkeypatch.setattr(supervisor.gpio, "snapshot", lambda: parcial)
     status = supervisor.local_api.status()
     assert len(status["relays"]) == 2
     assert status["relays_status"]["reason"] == "partial"
@@ -708,7 +723,8 @@ def test_status_relays_status_sin_causa_conocida_asume_lo_peor(supervisor, monke
     from takab_edge.local_api import LocalDashboard
 
     dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health)
-    monkeypatch.setattr(supervisor.gpio, "relay_states", list)
+    vacia = _snap_con_reles(supervisor.gpio, ())
+    monkeypatch.setattr(supervisor.gpio, "snapshot", lambda: vacia)
     status = dash.status()
     assert status["relays"] == []
     assert status["relays_status"] == {"reason": "unknown", "installed": None, "missing": []}
@@ -730,7 +746,8 @@ def test_status_relays_status_ante_un_fallo_imprevisto_degrada_a_lo_peor(supervi
         def model_dump(self, **_kw):
             raise RuntimeError("contrato de relé ilegible")
 
-    monkeypatch.setattr(supervisor.gpio, "relay_states", lambda: [_RelayIlegible()])
+    ilegible = _snap_con_reles(supervisor.gpio, (_RelayIlegible(),))
+    monkeypatch.setattr(supervisor.gpio, "snapshot", lambda: ilegible)
     code, body = _get(supervisor.local_api, "/api/status")
     assert code == 200
     payload = json.loads(body)

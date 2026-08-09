@@ -21,6 +21,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher, PublishError
+from takab_api.commands.rejection_audit import PROOF_SESSION, audit_command_rejection
 from takab_api.commands.signing import canonical_payload, sign_command
 from takab_api.queries import commands as q
 from takab_api.routers._common import http_error
@@ -45,6 +46,7 @@ async def issue_signed_command(
     now: datetime | None = None,
     nonce_override: str | None = None,
     audit_meta: dict[str, Any] | None = None,
+    actor_proof: str = PROOF_SESSION,
 ) -> dict[str, Any]:
     """Firma, registra ``pending``, publica y audita UN comando. Devuelve la fila.
 
@@ -52,9 +54,26 @@ async def issue_signed_command(
     acciones. ``payload_extra`` viaja DENTRO del payload canónico firmado (p.ej.
     ``duration_s`` del drill): el edge re-canonicaliza el dict recibido tal
     cual, así que la firma cubre cada clave extra.
+
+    [T-2.86.b] Todo camino de salida por rechazo deja fila en ``audit_log`` con
+    su motivo (``RO-8.k``). Al vivir aquí y no en cada router, drills y quórum de
+    pánico lo heredan sin duplicar la superficie sensible. ``actor_proof`` lo
+    aporta el llamador: solo la ruta táctica llega con el DISPOSITIVO probado.
     """
     now = now or datetime.now(tz=UTC)
     await conn.execute(q.EXPIRE_SITE, {"site_id": site_id, "now": now})
+
+    async def _rejected(reason: str, status: int) -> None:
+        await audit_command_rejection(
+            claims=claims,
+            tenant_id=tenant_id,
+            site_id=site_id,
+            reason=reason,
+            status=status,
+            channel=channel,
+            action=action,
+            actor_proof=actor_proof,
+        )
 
     since = now - timedelta(seconds=_RATE_WINDOW_S)
     per_user = (
@@ -63,19 +82,25 @@ async def issue_signed_command(
         )
     ).scalar_one()
     if per_user >= settings.command_rate_user_site_per_min:
+        await _rejected("rate_limit_user_site", 429)
         raise http_error(429, "rate-limit de comandos por usuario+sitio excedido")
     per_site = (await conn.execute(q.COUNT_SITE, {"site_id": site_id, "since": since})).scalar_one()
     if per_site >= settings.command_rate_site_per_min:
+        # [RO-8.e] Presupuesto del EDIFICIO: dos operadores coordinados lo agotan
+        # sin que ninguno rebase el suyo, y el motivo lo distingue del de usuario.
+        await _rejected("rate_limit_site", 429)
         raise http_error(429, "rate-limit de comandos del sitio excedido")
 
     gateway = (await conn.execute(q.SELECT_GATEWAY, {"site_id": site_id})).first()
     if gateway is None:
+        await _rejected("no_commandable_gateway", 409)
         raise http_error(409, "el sitio no tiene gateway comandable (iot_thing)")
 
     # Fail-closed POR GATEWAY (T-1.38): sin clave resoluble no se firma nada.
     # key_for puede tocar Secrets Manager (bloqueante) ⇒ thread pool.
     key = await anyio.to_thread.run_sync(keys.key_for, gateway.iot_thing)
     if key is None:
+        await _rejected("hmac_key_unresolvable", 503)
         raise http_error(503, f"sin clave HMAC para el gateway {gateway.iot_thing}")
 
     # [T-2.09] La intención firmada aporta SU nonce (emitido por el servidor):
@@ -112,7 +137,9 @@ async def issue_signed_command(
         publisher.publish(f"takab/cmd/{gateway.iot_thing}", json.dumps(envelope).encode())
     except PublishError as exc:
         # Se revierte la fila (rollback de la sesión): no queda un pending
-        # fantasma de un comando que jamás salió.
+        # fantasma de un comando que jamás salió. Pero el intento SÍ queda
+        # escrito: "la sirena no sonó" es la pregunta que se hace después.
+        await _rejected("publish_failed", 502)
         raise http_error(502, "no se pudo publicar el comando al gateway") from exc
 
     await audit_async(

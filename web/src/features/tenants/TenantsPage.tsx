@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
+import ComplianceLabelsCard from "./ComplianceLabelsCard";
 import NotificationChannels from "./NotificationChannels";
 import SyncFooter from "./SyncFooter";
 import TenantEditForm from "./TenantEditForm";
@@ -567,6 +568,11 @@ export default function TenantsPage() {
                   onReset={reset}
                 />
               </StateFrame>
+
+              {/* [T-2.82] Se monta SIEMPRE: el marco declarado lo LEE cualquiera que
+                  llegue a /tenants (acaba impreso en el dictamen de su cliente); solo
+                  el dueño de la plataforma lo edita. */}
+              <ComplianceLabelsCard tenant={selected} canEdit={canManageTenants} />
 
               {canManageUsers && <UsersCard tenant={selected} sites={data.sites} />}
 

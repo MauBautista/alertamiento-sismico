@@ -120,6 +120,10 @@ def _map_link(r: Any, s: Settings) -> tuple[str, list[str]]:
         "mqtt_rtt_ms": r.link_mqtt_rtt_ms,
         "seedlink_lag_s": r.link_seedlink_lag_s,
         "ntp_offset_ms": r.link_ntp_offset_ms,
+        # [T-2.70.a·B1] Un gabinete sin dueño de pines late perfectamente: sin
+        # esta clave el mapa lo pintaría OPERATIVO mientras la Flota lo marca
+        # DEGRADADO, y serían dos opiniones del mismo hecho.
+        "relays_state": r.link_relays_state,
     }
     limits = {
         "battery_min_pct": s.fleet_battery_min_pct,

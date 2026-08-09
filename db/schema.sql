@@ -62,6 +62,51 @@ BEGIN
   RAISE EXCEPTION 'tabla append-only: % no permite %', TG_TABLE_NAME, TG_OP;
 END $$;
 
+-- [T-2.80] Guard de UPDATE para `life_checkins`. Abre UNA sola rendija: anular
+-- `geom` (anonimización ARCO). El DELETE no pasa por aquí — lo sigue vetando
+-- `forbid_update_delete()`, sin excepción alguna.
+--
+-- El ocupante tiene derecho a que su ubicación exacta desaparezca y el sistema
+-- tiene la obligación de conservar el check-in, que es evidencia de incidente y
+-- además el conteo del que depende una decisión de rescate. Se anonimiza a la
+-- persona sin borrar el hecho.
+--
+-- La comparación es `to_jsonb(NEW) - 'geom'` contra `to_jsonb(OLD) - 'geom'` y no
+-- una lista de columnas a mano: así el guard cubre AUTOMÁTICAMENTE toda columna
+-- que se añada a la tabla en el futuro. Una lista enumerada envejece en silencio
+-- y el día que envejece deja pasar una reescritura de evidencia.
+CREATE FUNCTION life_checkin_arco_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  -- Red de seguridad: si alguien colgara esta función del evento DELETE en vez
+  -- de `forbid_update_delete()`, el borrado seguiría sin pasar.
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'tabla append-only: % no permite %', TG_TABLE_NAME, TG_OP;
+  END IF;
+  -- La ÚNICA mutación admitida: `geom` pasa de TENER VALOR a NULL, con el resto
+  -- de la fila idéntica. Dos exigencias, y las dos importan:
+  --
+  --   · exigir la transición real (no basta con que NEW.geom sea NULL) deja
+  --     fuera el `UPDATE ... SET c = c` que no cambia nada. Un no-op sobre una
+  --     tabla de evidencia no tiene por qué aceptarse, y aceptarlo hacía que el
+  --     verificador de restore (`ops/restore_check.py`, que ejerce justo ese
+  --     UPDATE) leyera "la guarda no existe o está desactivada";
+  --   · comparar la fila entera menos `geom` vía `to_jsonb` —y no una lista de
+  --     columnas— hace que el guard cubra SOLO las columnas que hoy existen y
+  --     también las que se añadan mañana, sin que nadie vuelva a tocarlo.
+  --
+  -- El mensaje conserva el texto de `forbid_update_delete()` a propósito: para
+  -- todo lo que no sea la anonimización de ARCO, esta tabla ES append-only, y el
+  -- verificador de restore reconoce la guarda por ese texto y por su SQLSTATE.
+  IF NOT (OLD.geom IS NOT NULL AND NEW.geom IS NULL)
+     OR (to_jsonb(NEW) - 'geom') IS DISTINCT FROM (to_jsonb(OLD) - 'geom') THEN
+    RAISE EXCEPTION
+      'tabla append-only: % no permite % (unica excepcion: anular geom, '
+      'anonimizacion ARCO)', TG_TABLE_NAME, TG_OP;
+  END IF;
+  RETURN NEW;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- 1. MULTI-TENANT CORE
 -- ---------------------------------------------------------------------------
@@ -333,9 +378,25 @@ CREATE TABLE life_checkins (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 -- [ANALISIS-00] Cambios de estado = fila nueva (historial de rescate auditable).
+-- [T-2.80] DOS triggers y no uno, con los eventos SEPARADOS a propósito:
+--
+--   · DELETE → `forbid_update_delete()`, el guard CANÓNICO, el mismo que protege
+--     auditoría, dictámenes y evidencia. No hay excepción de ARCO para borrar, y
+--     por eso el borrado no merece un guard propio: usa exactamente el de todos.
+--   · UPDATE → `life_checkin_arco_guard()`, que abre UNA rendija (geom → NULL).
+--
+-- Partirlos no es cosmética. `ops/restore_check.py` DERIVA de este DDL qué tablas
+-- son append-only buscando `BEFORE UPDATE OR DELETE`, y el contract-test de
+-- compliance cuenta triggers cuya función es `forbid_update_delete`. Con los
+-- eventos juntos, un guard propio habría dicho "esta tabla dejó de ser
+-- append-only" (falso: sigue siéndolo para DELETE) y habría tapado la garantía
+-- que sí se conserva. Separados, cada verificador ve la verdad exacta.
 CREATE TRIGGER trg_life_checkins_append_only
-  BEFORE UPDATE OR DELETE ON life_checkins
+  BEFORE DELETE ON life_checkins
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+CREATE TRIGGER trg_life_checkins_arco_guard
+  BEFORE UPDATE ON life_checkins
+  FOR EACH ROW EXECUTE FUNCTION life_checkin_arco_guard();
 
 -- ---------------------------------------------------------------------------
 -- 6. SERIES DE TIEMPO (TimescaleDB)
@@ -374,6 +435,15 @@ CREATE TABLE device_health (
   mqtt_rtt_ms real, seedlink_lag_s real, ntp_offset_ms real,
   cpu_temp_c real, power_status text, battery_pct real, battery_min_left int,
   cert_days_remaining int,
+  -- [T-2.70.a·B1 · migración 0036] ¿Pudo el gabinete leer el censo de sus relés?
+  -- reported = lo publicó · stopped = preguntó y no hay filas (módulo detenido)
+  -- unreadable = NO PUDO PREGUNTAR: nadie contesta como dueño de los pines
+  --   (`gpio_owner=gpio` con `takab-gpio` caído ⇒ sin sirena, sin cierre de gas,
+  --   sin retorno de ascensores y sin retenedores, mientras `takab-edge` late
+  --   perfectamente y ninguna alarma de flota se entera).
+  -- NULL = el gabinete no opina (contrato ≤1.9.0 o clave ausente) ⇒ S/D.
+  relays_state text CHECK (relays_state IS NULL
+                           OR relays_state IN ('reported','stopped','unreadable')),
   PRIMARY KEY (ts, gateway_id)
 );
 SELECT create_hypertable('device_health','ts');
@@ -793,12 +863,18 @@ CREATE POLICY lc_read ON life_checkins FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 CREATE POLICY lc_insert ON life_checkins FOR INSERT
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+-- [T-2.80] La política de UPDATE (`lc_arco_geom`) NO va aquí: necesita
+-- `app_user_id()`, que este fichero define ~300 líneas más abajo. Está en el
+-- bloque de ARCO, al final.
 
 -- [T-2.03] Privilegios del DDL latente móvil (las políticas de arriba existían,
 -- pero sin GRANT takab_app no podía tocar las tablas).
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_zone_assignments TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON site_enrollment_codes TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON manual_activation_votes TO takab_app;
+-- [T-2.80] El `UPDATE (geom)` por columna NO va aquí: se concede al final del
+-- fichero, después del `REVOKE UPDATE` que lo hace efectivo (un GRANT a nivel de
+-- tabla concede todas las columnas y el GRANT por columna no lo estrecha).
 GRANT SELECT, INSERT ON life_checkins TO takab_app;
 
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
@@ -1007,8 +1083,12 @@ CREATE TABLE notification_jobs (
   channel     text NOT NULL CHECK (channel IN ('webhook','whatsapp','sms','email','push')),
   mode        text NOT NULL CHECK (mode IN ('cascade','parallel')),
   position    integer NOT NULL DEFAULT 0,
+  -- [T-2.75] 'simulated' = canal SIN proveedor real: nadie recibió nada. No es
+  -- 'sent' (sería mentir) ni 'failed' (no hay proveedor que arreglar ni al que
+  -- reintentar). Es TERMINAL y deja `sent_at` en NULL, de modo que cualquier
+  -- consulta de entregados lo excluya sin tener que conocerlo.
   status      text NOT NULL DEFAULT 'pending'
-              CHECK (status IN ('pending','sent','failed','skipped')),
+              CHECK (status IN ('pending','sent','failed','skipped','simulated')),
   target      jsonb NOT NULL DEFAULT '{}',
   due_at      timestamptz NOT NULL,
   deadline_at timestamptz,
@@ -1419,3 +1499,426 @@ CREATE POLICY mw_write ON maintenance_windows FOR ALL
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 CREATE POLICY mw_admin ON maintenance_windows FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- ---------------------------------------------------------------------------
+-- Fase 2.8 (migración 0033 · T-2.79): AVISO DE PRIVACIDAD VERSIONADO +
+-- CONSENTIMIENTO APPEND-ONLY.
+--
+-- La trampa que este diseño evita, escrita para quien venga después: un
+-- `privacy_notices(version, body)` con una FK desde los consentimientos cumple
+-- "el aviso es versionado" y "se guarda qué versión aceptó cada quien", y falla
+-- EN SILENCIO el tercer criterio. Basta con que alguien edite el texto de la
+-- versión 3 —una errata, una reescritura, un UPDATE mal hecho— para que todos
+-- los consentimientos que apuntaban a esa fila pasen a apuntar a un texto
+-- distinto del que se aceptó. La FK sigue íntegra y el registro miente.
+--
+-- Por eso la identidad de un aviso es el DIGEST de lo que la persona lee, el
+-- consentimiento guarda una COPIA de ese digest, y la columna es GENERATED:
+-- quien inserta no elige el sello. Mismo candado que
+-- `notify/whatsapp_templates/*.json` (T-2.77).
+--
+-- Y el aviso de PLATAFORMA no vive aquí: vive en `api/src/takab_api/privacy/
+-- texts/*.json`, versionado en git. Aquí solo hay avisos de TENANT (un hospital
+-- o una dependencia es el responsable de los datos de su propia gente y publica
+-- el suyo). El más específico gana. Así el texto legal no acaba duplicado
+-- dentro de una migración, y la identidad por contenido hace innecesaria la
+-- fila para el caso de plataforma.
+-- ---------------------------------------------------------------------------
+
+-- Forma canónica con LONGITUD por campo. Sin los prefijos de longitud,
+-- (title='A\nB', body='C') y (title='A', body='B\nC') dan la misma cadena: dos
+-- avisos distintos con el mismo sello. `char_length` cuenta puntos de código,
+-- igual que `len()` en Python — espejo exacto de
+-- `takab_api.privacy.artifacts.notice_digest` (probado sobre 7 entradas con
+-- acentos, emoji fuera del BMP y saltos de línea).
+CREATE FUNCTION privacy_notice_digest(p_locale text, p_title text, p_body text)
+  RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$
+  SELECT encode(sha256(convert_to(
+    'takab.privacy-notice.v1' || E'\n' ||
+    char_length(p_locale) || ':' || p_locale || E'\n' ||
+    char_length(p_title)  || ':' || p_title  || E'\n' ||
+    char_length(p_body)   || ':' || p_body, 'UTF8')), 'hex')
+$$;
+
+CREATE TABLE privacy_notices (
+  notice_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants,      -- regla de oro 5
+  -- 'privacy_notice' = el aviso; 'whatsapp_alerts' = el opt-in que Meta exige
+  -- antes de escribir a un número (T-2.77). Un opt-in es un consentimiento más.
+  purpose      text NOT NULL CHECK (purpose IN ('privacy_notice','whatsapp_alerts')),
+  locale       text NOT NULL CHECK (locale ~ '^[a-z]{2}-[A-Z]{2}$'),
+  -- Etiqueta HUMANA para citar el aviso ("1.2.0", "2026-08 v2"). NO es la
+  -- identidad: dos filas con la misma etiqueta y distinto texto son avisos
+  -- distintos, y el digest lo dice.
+  version      text NOT NULL CHECK (char_length(btrim(version)) BETWEEN 1 AND 40),
+  title        text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 8 AND 200),
+  -- El mínimo no es cosmética: impide publicar un marcador de posición ("TODO")
+  -- como si fuera el aviso de un cliente.
+  body         text NOT NULL CHECK (char_length(btrim(body)) >= 40),
+  digest       text GENERATED ALWAYS AS (privacy_notice_digest(locale, title, body)) STORED,
+  -- `vigente` es un PREDICADO, no una columna (mismo criterio que `drills` y
+  -- `maintenance_windows`): el aviso en vigor es el de mayor `effective_at` que
+  -- ya pasó. Sin worker de rotación — la pregunta "¿y si el job muere?" se
+  -- contesta borrando el job.
+  effective_at timestamptz NOT NULL DEFAULT now(),
+  -- `clock_timestamp()` y NO `now()`: `now()` devuelve el instante de INICIO de
+  -- la transacción, así que dos avisos publicados en la misma transacción
+  -- empatarían y "el vigente" dejaría de estar definido.
+  published_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  -- Orden TOTAL de publicación. Sin él, dos filas con el mismo `effective_at`
+  -- (mismo segundo, o una corrección publicada en la misma transacción) dejan
+  -- "¿cuál es el aviso vigente?" sin respuesta única — y un aviso vigente
+  -- ambiguo es un consentimiento que no se puede probar contra nada.
+  seq          bigint GENERATED ALWAYS AS IDENTITY,
+  published_by uuid NOT NULL
+);
+-- Republicar el MISMO texto con otra etiqueta no es una versión nueva: se
+-- rechaza. Y la etiqueta no se puede reutilizar para un texto distinto.
+CREATE UNIQUE INDEX uq_privacy_notices_digest
+  ON privacy_notices (tenant_id, purpose, locale, digest);
+CREATE UNIQUE INDEX uq_privacy_notices_version
+  ON privacy_notices (tenant_id, purpose, locale, version);
+CREATE INDEX idx_privacy_notices_vigente
+  ON privacy_notices (tenant_id, purpose, locale, effective_at DESC);
+-- Corregir un aviso publicado NO es editarlo: es publicar otra versión. El
+-- trigger convierte esa frase en una garantía.
+CREATE TRIGGER trg_privacy_notices_append_only
+  BEFORE UPDATE OR DELETE ON privacy_notices
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_notices TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_notices FROM takab_app;
+REVOKE ALL ON privacy_notices FROM takab_ingest;
+
+ALTER TABLE privacy_notices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_notices FORCE  ROW LEVEL SECURITY;
+-- Lee CUALQUIERA del tenant: el aviso está para mostrarse, y un ocupante tiene
+-- que poder leer el que va a aceptar. Sin rama gov: el aviso de un cliente no
+-- es evidencia de protección civil.
+CREATE POLICY pn_read ON privacy_notices FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+-- Publicar es acto del DUEÑO del tenant, y siempre sobre su propio tenant: ni
+-- soporte ni la plataforma publican el aviso de un cliente en su nombre.
+CREATE POLICY pn_publish ON privacy_notices FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'));
+
+CREATE TABLE privacy_consents (
+  consent_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants,    -- regla de oro 5
+  purpose        text NOT NULL CHECK (purpose IN ('privacy_notice','whatsapp_alerts')),
+  -- El sujeto de un opt-in de WhatsApp es un TELÉFONO, no un usuario (T-2.77):
+  -- el motor lo admite sin migración.
+  subject_kind   text NOT NULL CHECK (subject_kind IN ('user','msisdn')),
+  user_sub       uuid,
+  subject_ref    text NOT NULL,
+  -- Retirar es una FILA NUEVA, jamás un borrado: el registro tiene que poder
+  -- decir que entre el día 1 y el día 2 sí había consentimiento (art. 8
+  -- LFPDPPP: la revocación opera hacia adelante, no reescribe el pasado).
+  decision       text NOT NULL CHECK (decision IN ('accept','withdraw')),
+  notice_source  text NOT NULL CHECK (notice_source IN ('repo','tenant')),
+  notice_id      uuid REFERENCES privacy_notices,
+  -- LA COLUMNA QUE SOSTIENE LA TAREA: copia sellada del contenido aceptado. No
+  -- se deriva por JOIN a propósito — si se derivara, editar el aviso reescribiría
+  -- hacia atrás lo que cada quien aceptó, que es exactamente lo prohibido.
+  notice_digest  text NOT NULL CHECK (notice_digest ~ '^[0-9a-f]{64}$'),
+  notice_version text NOT NULL,
+  notice_locale  text NOT NULL,
+  -- Evidencia MÍNIMA defendible: por dónde se dio el acto. Distingue "la persona
+  -- aceptó en su propia app" de "un administrador lo registró por ella", que es
+  -- la diferencia legalmente relevante. Deliberadamente NO se guarda IP ni
+  -- user-agent: el `sub` autenticado prueba más y una IP es PII adicional que
+  -- habría que justificar (y geolocaliza).
+  via            text NOT NULL CHECK (via IN ('mobile','web','console_admin','out_of_band')),
+  actor_sub      uuid NOT NULL,   -- quién REGISTRÓ (≠ sujeto en el caso delegado)
+  decided_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT pc_sujeto_coherente CHECK (
+    (subject_kind = 'user'   AND user_sub IS NOT NULL AND subject_ref = user_sub::text) OR
+    (subject_kind = 'msisdn' AND user_sub IS     NULL AND subject_ref ~ '^\+[1-9][0-9]{7,14}$')
+  ),
+  -- 'repo' = aviso de plataforma (artefacto de git, sin fila); 'tenant' = fila.
+  -- Sin este CHECK, un consentimiento podría declarar un origen que no tiene.
+  CONSTRAINT pc_origen_coherente CHECK (
+    (notice_source = 'repo'   AND notice_id IS     NULL) OR
+    (notice_source = 'tenant' AND notice_id IS NOT NULL)
+  )
+);
+CREATE INDEX idx_privacy_consents_sujeto
+  ON privacy_consents (tenant_id, purpose, subject_ref, decided_at DESC);
+CREATE INDEX idx_privacy_consents_user
+  ON privacy_consents (tenant_id, user_sub, decided_at DESC) WHERE user_sub IS NOT NULL;
+CREATE TRIGGER trg_privacy_consents_append_only
+  BEFORE UPDATE OR DELETE ON privacy_consents
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_consents TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_consents FROM takab_app;
+-- El worker de notify LEE el opt-in (costura de T-2.77: hoy lo lee del
+-- `rule_set`, que no sabe quién ni cuándo). Escribir un consentimiento jamás es
+-- cosa de un worker.
+GRANT SELECT ON privacy_consents TO takab_ingest;
+REVOKE INSERT, UPDATE, DELETE ON privacy_consents FROM takab_ingest;
+
+ALTER TABLE privacy_consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_consents FORCE  ROW LEVEL SECURITY;
+-- La fila propia: leerla y escribirla es del titular del dato.
+CREATE POLICY pc_self ON privacy_consents FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+-- El dueño del tenant ve el registro de SU gente (necesidad de cumplimiento) y
+-- registra el consentimiento de un tercero que no tiene sesión (un número de
+-- WhatsApp de la guardia). Nunca el de otro tenant.
+CREATE POLICY pc_admin ON privacy_consents FOR ALL
+  USING      (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'))
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'));
+-- Interno: SOLO lectura. La plataforma audita el registro, no lo escribe.
+CREATE POLICY pc_internal_read ON privacy_consents FOR SELECT
+  USING (app_is_takab_internal());
+
+-- ---------------------------------------------------------------------------
+-- [T-2.80] ARCO POR ANONIMIZACIÓN CON TOMBSTONE
+--
+-- El titular tiene derecho a que sus datos personales desaparezcan; el sistema
+-- tiene la obligación dura de conservar auditoría, evidencia y dictámenes
+-- (regla de oro 11). No es un conflicto: el derecho es sobre la PERSONA y la
+-- obligación es sobre el HECHO. Se anonimiza a la persona sin borrar el hecho.
+--
+-- La bisagra: `life_checkins.user_id` es un `sub` de Cognito, un UUID opaco que
+-- solo es dato personal mientras exista el mapeo `sub → nombre` en
+-- `user_profiles`. ARCO destruye ese mapeo y deja el UUID en pie. Por eso
+-- COUNT(DISTINCT user_id) —"cuántas PERSONAS confirmaron estar bien en el piso
+-- 8"— no se mueve: en un sismo ese número decide si sube o no una brigada.
+-- ---------------------------------------------------------------------------
+
+-- El sello que hace VERIFICABLE la bitácora, no solo íntegra. Length-prefixing
+-- en cada campo (mismo criterio que `privacy_notice_digest`) para que un '|' o
+-- un salto de línea dentro de `actor`/`object` no pueda fabricar una colisión.
+-- `extract(epoch ...)` y no `ts::text`: el texto de un timestamptz depende de
+-- los GUC `TimeZone`/`DateStyle` de la sesión, así que el mismo dato daría
+-- digests distintos según quién pregunte — y entonces no verificaría nada.
+CREATE FUNCTION privacy_audit_digest(p_tenant uuid, p_watermark bigint)
+  RETURNS text LANGUAGE sql STABLE AS $$
+  SELECT encode(sha256(convert_to(
+    'takab.audit-chain.v1' || E'\n' ||
+    coalesce(string_agg(linea, E'\n' ORDER BY audit_id), '(bitacora vacia)'),
+    'UTF8')), 'hex')
+  FROM (
+    SELECT a.audit_id,
+           'i' || a.audit_id::text ||
+           '|t' || extract(epoch from a.ts)::text ||
+           '|n' || char_length(coalesce(a.tenant_id::text, '')) || ':'
+                || coalesce(a.tenant_id::text, '') ||
+           '|a' || char_length(a.actor)  || ':' || a.actor ||
+           '|v' || char_length(a.verb)   || ':' || a.verb ||
+           '|o' || char_length(a.object) || ':' || a.object ||
+           '|m' || char_length(a.meta::text) || ':' || a.meta::text AS linea
+    FROM audit_log a
+    WHERE a.tenant_id = p_tenant AND a.audit_id <= p_watermark
+  ) s
+$$;
+
+-- LA LÁPIDA. Deja constancia del acto SIN conservar el dato: qué derecho, cuándo,
+-- por qué vía y CUÁNTAS filas se anonimizaron por tabla. Ni una copia del nombre,
+-- del teléfono ni del token — guardar eso "para trazabilidad" convertiría la
+-- anonimización en una seudonimización reversible, que es lo que no puede ser.
+CREATE TABLE privacy_erasures (
+  erasure_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       uuid NOT NULL REFERENCES tenants,      -- regla de oro 5
+  -- El sujeto es SIEMPRE `app_user_id()`: no hay parámetro por donde nombrar a
+  -- un tercero (ver `privacy_erase_subject`). El `sub` se conserva porque es la
+  -- clave de idempotencia y, destruido el mapeo, no remonta a nadie.
+  user_sub        uuid NOT NULL,
+  right_exercised text NOT NULL CHECK (right_exercised IN ('cancelacion','oposicion')),
+  requested_by    uuid NOT NULL,
+  via             text NOT NULL CHECK (via IN ('mobile','web','console_admin','out_of_band')),
+  -- Conteos por tabla, p.ej. {"life_checkins": 3}. El CHECK de abajo impide
+  -- FÍSICAMENTE meter aquí un string: sin él, este jsonb sería el sitio obvio
+  -- donde alguien "guardaría el nombre por si acaso" y desharía la tarea entera.
+  affected        jsonb NOT NULL DEFAULT '{}',
+  -- El par que hace VERIFICABLE la bitácora: último `audit_id` del tenant en el
+  -- instante del borrado, y el hash de todo lo anterior. Cualquiera puede
+  -- recalcular `privacy_audit_digest(tenant_id, audit_watermark)` años después y
+  -- comparar. "Íntegro" pasa a ser algo que se mide, no que se afirma.
+  audit_watermark bigint NOT NULL,
+  audit_digest    text NOT NULL CHECK (audit_digest ~ '^[0-9a-f]{64}$'),
+  erased_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT pe_afectados_son_conteos CHECK (
+    NOT jsonb_path_exists(affected, '$.* ? (@.type() <> "number")')
+  ),
+  -- Idempotencia (regla de oro 3): un titular se anonimiza UNA vez. Ejercer ARCO
+  -- dos veces devuelve la MISMA lápida, testigo sellado del primer acto.
+  CONSTRAINT uq_privacy_erasures_sujeto UNIQUE (tenant_id, user_sub)
+);
+CREATE INDEX idx_privacy_erasures_tenant ON privacy_erasures (tenant_id, erased_at DESC);
+CREATE TRIGGER trg_privacy_erasures_append_only
+  BEFORE UPDATE OR DELETE ON privacy_erasures
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_erasures TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_erasures FROM takab_app;
+REVOKE ALL ON privacy_erasures FROM takab_ingest;
+
+ALTER TABLE privacy_erasures ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_erasures FORCE  ROW LEVEL SECURITY;
+-- Ejercer ARCO y consultar la propia lápida es acto del TITULAR, igual que dar o
+-- retirar el consentimiento: un derecho, no un permiso que se concede.
+CREATE POLICY pe_self ON privacy_erasures FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+-- El responsable del tenant LEE su registro de borrados (necesidad de
+-- cumplimiento). Nunca escribe: nadie ejerce ARCO en nombre de otro.
+CREATE POLICY pe_admin_read ON privacy_erasures FOR SELECT
+  USING (tenant_id = app_tenant_id()
+         AND app_role() IN ('tenant_admin','takab_superadmin'));
+CREATE POLICY pe_internal_read ON privacy_erasures FOR SELECT
+  USING (app_is_takab_internal());
+
+-- EL ACTO. Sin parámetro de sujeto a propósito: opera sobre `app_user_id()`, así
+-- que ejercer ARCO sobre un tercero —o cruzar tenants— no está *prohibido*, es
+-- INEXPRESABLE. Todo ocurre en una sentencia: una anonimización a medias no es
+-- un estado alcanzable. SECURITY INVOKER (el default): corre bajo la RLS del
+-- request, no la esquiva.
+CREATE FUNCTION privacy_erase_subject(p_right text, p_via text)
+  RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+  v_tenant  uuid := app_tenant_id();
+  v_user    uuid := app_user_id();
+  v_af      jsonb := '{}'::jsonb;
+  v_n       integer;
+  v_wm      bigint;
+  v_row     privacy_erasures%ROWTYPE;
+  v_created boolean := true;
+BEGIN
+  IF v_tenant IS NULL OR v_user IS NULL THEN
+    RAISE EXCEPTION
+      'ARCO exige una sesion con titular identificado: el sujeto del borrado '
+      'es siempre app_user_id(), nunca un parametro'
+      USING ERRCODE = 'TK403';
+  END IF;
+
+  -- DECISIÓN: con un incidente ABIERTO en un sitio del titular, se DIFIERE. La
+  -- ubicación de un check-in es dato de rescate EN VIVO y anularla a mitad de
+  -- una búsqueda es un fallo de seguridad — la clase de fallo que las reglas de
+  -- oro 1 y 2 existen para impedir. El derecho no se niega: se aplaza hasta el
+  -- cierre (horas), y la petición queda auditada para que el plazo legal corra.
+  IF EXISTS (
+    SELECT 1 FROM incidents i
+     WHERE i.tenant_id = v_tenant
+       AND i.state <> 'closed' AND i.closed_at IS NULL
+       AND (i.site_id IN (SELECT c.site_id FROM life_checkins c
+                           WHERE c.tenant_id = v_tenant AND c.user_id = v_user)
+         OR i.site_id IN (SELECT z.site_id FROM user_zone_assignments z
+                           WHERE z.tenant_id = v_tenant AND z.user_id = v_user))
+  ) THEN
+    RAISE EXCEPTION
+      'hay un incidente ABIERTO en un sitio del titular: la anonimizacion se '
+      'difiere hasta que cierre, porque la ubicacion de un check-in es dato '
+      'de rescate en vivo'
+      USING ERRCODE = 'TK409';
+  END IF;
+
+  -- El mapeo `sub → persona`. Destruirlo es lo que anonimiza todo lo demás.
+  UPDATE user_profiles
+     SET display_name = '(titular anonimizado)', phone = NULL, updated_at = now()
+   WHERE tenant_id = v_tenant AND user_sub = v_user
+     AND (display_name IS DISTINCT FROM '(titular anonimizado)' OR phone IS NOT NULL);
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('user_profiles', v_n);
+
+  -- La FILA se queda (hubo un dispositivo registrado: es un hecho); muere el
+  -- identificador que enruta a la persona.
+  UPDATE push_tokens
+     SET token = 'arco:' || push_token_id::text,
+         endpoint_arn = NULL,
+         revoked_at = coalesce(revoked_at, now())
+   WHERE tenant_id = v_tenant AND user_sub = v_user
+     AND token IS DISTINCT FROM 'arco:' || push_token_id::text;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('push_tokens', v_n);
+
+  -- Se REVOCA, no se destruye: `public_key` verifica la firma de intención de
+  -- `damage_reports` (evidencia). Borrarla dejaría esa evidencia sin poder
+  -- verificarse, que es podar su integridad por la puerta de atrás.
+  UPDATE device_keys SET revoked_at = now()
+   WHERE tenant_id = v_tenant AND user_sub = v_user AND revoked_at IS NULL;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('device_keys', v_n);
+
+  -- La ubicación GPS exacta de una persona. La FILA no se toca: por eso el
+  -- check-in anonimizado sigue contando para el histórico del incidente.
+  UPDATE life_checkins SET geom = NULL
+   WHERE tenant_id = v_tenant AND user_id = v_user AND geom IS NOT NULL;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('life_checkins', v_n);
+
+  SELECT coalesce(max(audit_id), 0) INTO v_wm FROM audit_log WHERE tenant_id = v_tenant;
+
+  INSERT INTO privacy_erasures
+    (tenant_id, user_sub, right_exercised, requested_by, via,
+     affected, audit_watermark, audit_digest)
+  VALUES
+    (v_tenant, v_user, p_right, v_user, p_via,
+     v_af, v_wm, privacy_audit_digest(v_tenant, v_wm))
+  ON CONFLICT (tenant_id, user_sub) DO NOTHING
+  RETURNING * INTO v_row;
+
+  -- Repetir el acto re-barre (por si hubo un alta posterior) pero NO escribe una
+  -- segunda lápida: la primera es el testigo sellado y no se reescribe.
+  IF v_row.erasure_id IS NULL THEN
+    v_created := false;
+    SELECT * INTO v_row FROM privacy_erasures
+     WHERE tenant_id = v_tenant AND user_sub = v_user;
+  END IF;
+
+  RETURN to_jsonb(v_row) || jsonb_build_object('created', v_created);
+END $$;
+
+REVOKE ALL ON FUNCTION privacy_erase_subject(text,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION privacy_audit_digest(uuid,bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION privacy_erase_subject(text,text) TO takab_app;
+GRANT EXECUTE ON FUNCTION privacy_audit_digest(uuid,bigint) TO takab_app;
+
+-- [T-2.80] Regla de oro 11 hecha PRIVILEGIO, no comentario. Un comentario no
+-- impide un DELETE; un privilegio ausente sí. Va al final del fichero a
+-- propósito: los GRANT de arriba (y el `GRANT ... ON ALL TABLES` que el 0001
+-- ejecuta DESPUÉS de aplicar este schema) tienen que haber pasado ya.
+REVOKE DELETE ON
+  audit_log, incident_actions, dictamens, evidence_objects, damage_reports,
+  life_checkins, privacy_notices, privacy_consents, user_profiles,
+  push_tokens, device_keys
+FROM takab_app;
+-- Y el UPDATE de `life_checkins` queda SOLO a nivel de columna (`geom`).
+REVOKE UPDATE ON life_checkins FROM takab_app;
+GRANT UPDATE (geom) ON life_checkins TO takab_app;
+
+-- [T-2.81.c] La lista de arriba enumeró doce tablas y se dejó fuera la única
+-- otra que lleva guard `BEFORE DELETE` append-only desde el 0001:
+-- `rule_evaluations`. No era explotable —su RLS solo tiene política de lectura,
+-- así que el DELETE de takab_app volvía con cero filas y sin error— pero la
+-- protección descansaba en la ausencia de una política, no en el guard, y una
+-- política `FOR ALL` añadida mañana la habría quitado en silencio. Va en línea
+-- aparte y no dentro de la lista de la T-2.80 para que se lea POR QUÉ llegó
+-- tarde: la enumeró una mano, la encontró una derivación del catálogo.
+REVOKE DELETE ON rule_evaluations FROM takab_app;
+
+-- Las políticas de UPDATE de `life_checkins`. Junto al GRANT por columna y al
+-- trigger, la superficie TOTAL del UPDATE sobre esta tabla es "anular la
+-- geometría", y nada más: quien lo limita es `life_checkin_arco_guard()`, que
+-- compara la fila entera con `to_jsonb` y cubre también al dueño de la tabla.
+-- Estas políticas solo deciden QUIÉN puede pedir esa única mutación.
+-- Viven aquí y no junto a `lc_read`/`lc_insert` porque necesitan `app_user_id()`
+-- / `app_is_takab_internal()`.
+--
+-- [T-2.80] A petición del TITULAR, y solo sobre sus propias filas.
+CREATE POLICY lc_arco_geom ON life_checkins FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND user_id = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_id = app_user_id());
+-- [T-2.81] Por RELOJ: el job de retención (`ops/prune_pii`) anula la geometría
+-- de los check-ins caducados. Un job no actúa en nombre de ninguna persona, así
+-- que no puede usar la política de arriba. El confinamiento por tenant va DENTRO
+-- de la política, no en el WHERE del job: lo impone la base (regla de oro 5).
+CREATE POLICY lc_retention_geom ON life_checkins FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_is_takab_internal())
+  WITH CHECK (tenant_id = app_tenant_id() AND app_is_takab_internal());

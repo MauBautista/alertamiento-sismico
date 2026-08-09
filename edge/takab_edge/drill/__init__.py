@@ -21,6 +21,7 @@ import logging
 import threading
 
 from takab_edge.contracts import SasmexSignal, Tier, TierDecision, utcnow
+from takab_edge.gpio_link import as_link
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.drill")
@@ -39,7 +40,7 @@ class DrillController(EdgeModule):
     def __init__(self, settings, gpio, audio=None) -> None:
         super().__init__()
         self._settings = settings
-        self._gpio = gpio
+        self._link = as_link(gpio)
         self._audio = audio
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
@@ -58,8 +59,26 @@ class DrillController(EdgeModule):
 
     # ------------------------------------------------------------------ control
     def start_drill(self, drill_id: str, duration_s: float) -> tuple[bool, str]:
-        """Arranca el simulacro. (ok, motivo) — rechaza con alerta real viva."""
-        if self._gpio.sasmex_active:
+        """Arranca el simulacro. (ok, motivo) — rechaza con alerta real viva.
+
+        [T-2.70.a·D2/P1] El guard falla CERRADO. La lectura del enclave SASMEX
+        cruza la costura, y si no se puede hacer el simulacro se RECHAZA: abrir
+        arrancaría un simulacro institucional encima de un sismo real.
+
+        Y devuelve `(False, motivo)` en vez de propagar: `dispatch` sólo atrapaba
+        `(TypeError, ValueError)` alrededor de esta llamada, así que un `OSError`
+        escapaba a su `except` genérico de `on_command` y el comando FIRMADO de la
+        nube se quedaba SIN ACK — esperando el TTL sin saber por qué.
+        """
+        try:
+            alerta_real = self._link.snapshot().sasmex_active
+        except Exception:  # noqa: BLE001 — fail-closed: sin poder comprobar, no hay simulacro
+            log.exception("no se pudo comprobar el enclave SASMEX; simulacro RECHAZADO")
+            return False, (
+                "no se pudo comprobar si hay una alerta SASMEX viva; simulacro "
+                "rechazado (fail-closed)"
+            )
+        if alerta_real:
             return False, "alerta SASMEX real en curso; simulacro rechazado"
         duration = max(1.0, float(duration_s))
         started = utcnow()

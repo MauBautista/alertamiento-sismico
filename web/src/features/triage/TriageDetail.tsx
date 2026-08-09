@@ -12,6 +12,7 @@ import { Link } from "react-router";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
+import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
 import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
@@ -297,6 +298,12 @@ export default function TriageDetail({
           <Printer size={13} aria-hidden /> DICTAMEN PDF
         </button>
       </footer>
+
+      {/* [T-2.82] Entre el PDF y la firma: son los dos actos que este apartado
+          cualifica. Quien firma se lleva detrás las afirmaciones normativas del
+          cliente y tiene que leer, en el mismo golpe de vista, que TAKAB no las
+          verificó. Sale del MISMO `forensics` que alimenta el PDF. */}
+      <ComplianceDeclared forensics={forensics} />
 
       <StateFrame
         label="DICTAMEN"

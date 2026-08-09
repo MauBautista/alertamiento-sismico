@@ -27,6 +27,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from takab_edge.cloud.continuo import serie_de_muestras
 from takab_edge.config import EdgeSettings
 from takab_edge.module import EdgeModule
 
@@ -217,6 +218,9 @@ class CloudConnector(EdgeModule):
         self._topic_caps: dict[str, int] = dict(topic_caps or {})
         self._topic_counts: Counter[str] = Counter()
         self._dropped = 0
+        #: [T-2.84.a] Publicaciones rechazadas por la regla de oro 9 (streaming crudo).
+        #: Un valor >0 es un DEFECTO DE PROGRAMACIÓN vivo, no una condición de campo.
+        self._rechazos_regla_9 = 0
         self._seen = _BoundedSeen()
         self._sent = 0
         self._lock = threading.RLock()
@@ -292,6 +296,43 @@ class CloudConnector(EdgeModule):
         transporte (fake de tests) no lo expone. La salud lo reporta tal cual.
         """
         return getattr(self._transport, "last_puback_rtt_ms", None)
+
+    @property
+    def rechazos_regla_9(self) -> int:
+        """Cuántas publicaciones se rechazaron por llevar una serie de muestras."""
+        return self._rechazos_regla_9
+
+    def _pasa_la_regla_9(self, topic: str, payload: BaseModel) -> bool:
+        """[T-2.84.a] LA PUERTA. Regla de oro 9: sin streaming de forma de onda cruda.
+
+        El waveform crudo (100 sps × 4 canales) no cruza el enlace en continuo. Sube
+        como **evidencia miniSEED a S3 en un evento CONFIRMADO** y solo ahí
+        (`BackfillManager.queue_evidence`), donde el volumen es el de una ventana
+        acotada por evento y no el de un caudal permanente.
+
+        El criterio se **deriva del esquema** del payload, no de una lista de tipos
+        prohibidos: cualquier modelo cuyo tamaño crezca con el flujo de muestras se
+        rechaza aunque nadie lo hubiera previsto. Ver `takab_edge.cloud.continuo`.
+
+        NO lanza —regla de oro 4.2: publicar jamás propaga a la vía de actuación— pero
+        grita en CRITICAL con el campo culpable: esto no es una condición de campo que
+        se resuelva sola, es un defecto que alguien tiene que quitar del código.
+        """
+        motivo = serie_de_muestras(type(payload))
+        if motivo is None:
+            return True
+        self._rechazos_regla_9 += 1
+        log.critical(
+            "REGLA DE ORO 9 · publicación RECHAZADA en la puerta: %s no está acotado "
+            "por su esquema (%s) y habría subido forma de onda cruda EN CONTINUO por "
+            "'%s'. El waveform crudo sube como evidencia miniSEED a S3 en un evento "
+            "confirmado, nunca por el enlace continuo. Rechazos acumulados: %d.",
+            type(payload).__name__,
+            motivo,
+            topic,
+            self._rechazos_regla_9,
+        )
+        return False
 
     def queued_by_topic(self, topic: str) -> int:
         """Pendientes de UN topic (separa eventos de la telemetría health/acks/features)."""
@@ -416,6 +457,8 @@ class CloudConnector(EdgeModule):
         """Publica DIRECTO al transporte, sin spool (mensajes punto-en-tiempo:
         requests de backfill T-1.25, como el beacon de presencia). Best-effort:
         False si no hay enlace o el broker no confirmó; nunca lanza."""
+        if not self._pasa_la_regla_9(topic, payload):
+            return False
         if not self.online:
             return False
         try:
@@ -433,7 +476,12 @@ class CloudConnector(EdgeModule):
         o de enlace jamás propaga a la vía de actuación. La escalación de tier (mismo
         `event_id`, tier mayor) y los distintos ACKs/evidencias del mismo evento SÍ salen
         (dedup por identidad lógica). La nube garantiza exactly-once por PK (CLAUDE.md §2.3).
+
+        [T-2.84.a] Antes de nada, la regla de oro 9: una serie de muestras se rechaza
+        AQUÍ y no llega ni al spool. Encolarla sería aplazar el problema al reconectar.
         """
+        if not self._pasa_la_regla_9(topic, payload):
+            return False
         record = {
             "topic": topic,
             "event_id": getattr(payload, "event_id", None) or "",

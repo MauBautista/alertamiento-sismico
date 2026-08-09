@@ -4,6 +4,13 @@
 !.env.example
 *secrets*
 *credentials*
+# ...pero el materializador de secretos NO contiene ninguno: solo IDs de Secrets
+# Manager, que es la referencia que SÍ queremos ver en el código en vez del valor.
+# La regla de arriba se los tragó en silencio y `make cloud-deploy` acabó
+# dependiendo de dos ficheros que solo existían en un portátil. Lo ancla
+# `api/tests/test_settings_produccion.py::test_todo_lo_que_el_despliegue_embebe_esta_en_git`.
+!deploy/cloud/takab-secrets.sh
+!deploy/cloud/takab-secrets.service
 
 # Python
 __pycache__/

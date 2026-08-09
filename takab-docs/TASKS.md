@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-05)
+## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **197** · `[x]` **141** · `[~]` **4** · `[ ]` **52**
+**Conteo de tareas:** total **237** · `[x]` **165** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4013,11 +4013,11 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
     (`web/src/features/console/useAutoPopup.ts:11-12`);
   - la app móvil seguía siendo *"fase posterior"* en cuatro sitios con la Fase 2 mergeada.
 - **Criterios de aceptación:**
-  - [ ] `api/tests/test_docs_consistency.py` con 5 asserts que **fallan por separado y dicen
+  - [x] `api/tests/test_docs_consistency.py` con 5 asserts que **fallan por separado y dicen
         por qué**: marcadores muertos, "fase posterior" en RBAC, cruce pop-up docs↔código,
         cabecera vs. conteo real de `^### [.]`, y coherencia de cierres cruzados.
-  - [ ] Las 7 reconciliaciones aplicadas y citadas.
-  - [ ] Esta ruta escrita, con etiquetas de bloqueo, ruta crítica e invariantes.
+  - [x] Las 7 reconciliaciones aplicadas y citadas.
+  - [x] Esta ruta escrita, con etiquetas de bloqueo, ruta crítica e invariantes.
 - **Trampa que deja escrita:** el assert del conteo **impone una obligación permanente** —
   ver "Conteo de tareas" en la cabecera de este archivo. No es fricción arbitraria: es lo
   único que impide que la cabecera vuelva a mentir 36 tareas.
@@ -4028,10 +4028,10 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   y `make lint` **no**. Un error de tipos o de build llega a verde local y muere en el PR, que
   es el peor momento para descubrirlo y el más caro de diagnosticar.
 - **Criterios de aceptación:**
-  - [ ] Un test de paridad **lee `ci.yml` y el `Makefile`** y exige que todo paso de CI tenga
+  - [x] Un test de paridad **lee `ci.yml` y el `Makefile`** y exige que todo paso de CI tenga
         su equivalente local. Comparar prosa no sirve: hay que comparar los comandos.
-  - [ ] `make test` (o el target que el test declare) incluye el build de web.
-  - [ ] El test falla si mañana alguien añade un paso al CI y no al `Makefile`.
+  - [x] `make test` (o el target que el test declare) incluye el build de web.
+  - [x] El test falla si mañana alguien añade un paso al CI y no al `Makefile`.
 
 ### [x] T-2.63 · Skips mudos del job `edge` — `SOFTWARE` · COMPLETA (2026-08-05)
 - **Componente:** edge/tests · **Depende de:** —
@@ -4039,10 +4039,33 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   alcanzable por socket, y el job sigue verde. Es exactamente el patrón que T-2.58 ya cazó en
   el CI con los 67 tests del panel (`node --version`): un job verde que no cubre nada.
 - **Criterios de aceptación:**
-  - [ ] Censo explícito: un `skipif` de alcanzabilidad de socket **sin registrar rompe el
+  - [x] Censo explícito: un `skipif` de alcanzabilidad de socket **sin registrar rompe el
         build** (`edge/tests/test_hardware_gates.py`).
-  - [ ] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
-  - [ ] Ningún test se salta sin que el resultado del job lo **declare**.
+  - [x] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
+  - [x] Ningún test se salta sin que el resultado del job lo **declare**.
+
+### [ ] T-2.64.d · `soc.css` cita tres tokens que no existen — `SOFTWARE`
+- **Componente:** web + design system · **Depende de:** T-2.64 · **Detectada por:** la guardia
+  derivada que se escribió para `privacy.css` (2026-08-08)
+- **Cómo apareció, que es la parte que importa.** El arreglo de `privacy.css` no se hizo
+  cambiando cuatro nombres: se escribió una guardia que **cruza todas las `var(--tk-*)` de
+  `web/src/styles/*.css` contra todas las variables del paquete de tokens**. Al correrla, además
+  de los cuatro nombres buscados, salió sola la misma deuda en la hoja principal. Una lista de
+  cuatro nombres no habría encontrado nada de esto.
+- **Lo que hay, medido:** `soc.css` usa `--tk-amber` (líneas 980-981), `--tk-violet` (1749-1750,
+  1771-1772) y `--tk-text-2xs` (1773). Ninguno existe en `shared/design-tokens`, así que los
+  tres caen siempre a su fallback hardcodeado y **no responden al tema**.
+  - `--tk-amber` es **idéntico** a `--tk-status-warning` (mismo `#FFC107`): es un renombrado.
+  - `--tk-violet` y `--tk-text-2xs` **no tienen equivalente**: hay que crear el token en el
+    paquete o elegir uno existente, que es una decisión de design system, no un `sed`.
+- **Ya está acotada, no suelta.** Vive en `DEUDA_HEREDADA` (`web/src/designTokens.test.ts`),
+  comparada por **igualdad**: si alguien la paga, el test se pone rojo y **obliga a borrar la
+  línea**. Una excepción que puede crecer sola no es una excepción.
+- **Criterios de aceptación:**
+  - [ ] Los tres nombres se resuelven contra el paquete (renombrando o creando el token).
+  - [ ] `DEUDA_HEREDADA` queda **vacía**, y el test sigue siendo derivado.
+  - [ ] Si se crea un token nuevo, se regenera `shared/design-tokens` en el MISMO commit o
+        `make drift` truena.
 
 ### [x] T-2.64 · Deuda visual heredada de T-2.59 — `SOFTWARE` · COMPLETA (2026-08-05)
 - **Componente:** web + edge (panel) · **Depende de:** T-2.59
@@ -4054,10 +4077,10 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
     web, el gabinete se queda con el defecto justo donde no hay nube que ayude;
   - la **columna de detalle de `/console` reserva 320–408 px** aunque esté vacía.
 - **Criterios de aceptación:**
-  - [ ] Numeración única, verificada por test sobre los rótulos reales.
-  - [ ] Contraste ≥ 4.5:1 en los dos espejos (token web **y** copia del panel del edge), con
+  - [x] Numeración única, verificada por test sobre los rótulos reales.
+  - [x] Contraste ≥ 4.5:1 en los dos espejos (token web **y** copia del panel del edge), con
         el test que lo bloquee — hoy `axe.spec.ts` no lo caza.
-  - [ ] La columna vacía deja de reservar ancho; medido en los 3 viewports.
+  - [x] La columna vacía deja de reservar ancho; medido en los 3 viewports.
 
 **DoD de la Fase 2.3:** cero afirmaciones documentales falsas (probado, no revisado a ojo);
 paridad local↔CI verificada por test; ningún test se salta sin declararlo; y la consola ya no
@@ -4241,7 +4264,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         así que un job periódico llenaría la bitácora de ruido).
   - [ ] Si no: el docstring deja de prometer una periodicidad que nadie va a construir.
 
-### [ ] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE`
+### [x] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** edge + aprovisionamiento · **Origen:** auditoría del bloqueante de T-2.67
 - **El hecho, medido:** `provision_gateway.sh` **no escribe `TAKAB_EDGE_CLOUD_SPOOL_DIR`**, así
   que en el Pi real `cloud_spool_dir=""` y `_tmp_spool()` hace **`mkdtemp` nuevo en cada
@@ -4252,25 +4275,55 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   procesos y corridas**. Si el directorio no existe al arrancar, cualquier usuario puede crearlo
   primero y quedarse de dueño; el `mkdir(exist_ok=True)` del servicio lo acepta.
 - **Criterios de aceptación:**
-  - [ ] Ruta durable por defecto, escrita por el aprovisionamiento, con permisos propios.
-  - [ ] **Migración de los pendientes existentes** del Pi vivo — cambiar la ruta sin moverlos
-        abandonaría evidencia real.
-  - [ ] Test que demuestre que la cola sobrevive a un reinicio del proceso.
+  - [x] Ruta durable por defecto (`/var/lib/takab/spool`, `SPOOL_DIR=` la cambia), escrita por
+        el aprovisionamiento en el bloque GESTIONADO, con `install -d -m 0700` para el
+        directorio y su hermano de pendientes. Eso cierra también el agravante: con la ruta
+        cayendo a `/tmp`, cualquier usuario podía crear el directorio primero y quedarse de
+        dueño, y el `mkdir(exist_ok=True)` del servicio lo aceptaba.
+  - [x] **Migración de los pendientes existentes:** si el gabinete ya declara OTRA ruta, el
+        aprovisionamiento **aborta** y da los `mv` exactos, en vez de moverla y dejar la
+        evidencia huérfana en la ruta vieja. Es la única clave gestionada que no puede
+        imponerse sola — las demás son identidad y credenciales, y ahí pisar es lo que se
+        quiere. Verificado en los tres casos: gabinete nuevo, ruta distinta, ruta ya correcta.
+  - [x] Test derivado (`test_el_aprovisionamiento_escribe_la_ruta_DURABLE_de_la_cola`): rojo si
+        alguien quita el `printf` del bloque gestionado.
+- **Nota de campo (2026-08-09):** `gw-dev-0001` **ya tenía la clave puesta a mano**
+  (`/var/lib/takab/spool`, con su `backfill-pending` hermano). Por eso el defecto no se veía en
+  el único gabinete que miramos: el que nacía roto era el gabinete SIGUIENTE.
 
-### [ ] T-2.67.c · 18 evidencias atascadas: la extracción no progresa — `SOFTWARE`
+### [~] T-2.67.c · 20 evidencias atascadas: **eran DOS fallos, no uno** — `SOFTWARE`
 - **Componente:** edge · **Origen:** la card de T-2.67 contra el gabinete VIVO
-- **El hecho:** el Pi lleva **18 evidencias pendientes desde hace 15.3 días** con
-  `FALLO DE EXTRACCIÓN · SE REINTENTA SIN PROGRESAR`. Son ventanas de sismos reales que nunca
-  subieron. La causa raíz está en `RingBuffer.extract_window`
-  (`edge/takab_edge/buffer/__init__.py`): hace `merge(method=1)` **sin `fill_value`** y luego
-  `write(MSEED)`; con huecos, ObsPy produce salida vacía o falla, y el **descarte por ring
-  vacío borra el fichero igual que un éxito**.
+- **El hecho, re-medido el 2026-08-09 sobre `gw-dev-0001`:** ya no son 18 sino **20**, la más
+  vieja del **31-jul** y la más nueva **del mismo día del censo** — o sea que **crecen y ninguna
+  drena**. Cada una es una ventana de 3 minutos de un sismo real.
+- **Fallo 1 — array enmascarado (CERRADO).** Traza sacada del journal del Pi, no supuesta:
+  `NotImplementedError: Masked array writing is not supported`, en
+  `buffer/__init__.py:extract_window` → `stream.write(buf, format="MSEED")`. `merge(method=1)`
+  sin `fill_value` deja un array enmascarado en cuanto la ventana tiene un hueco. El pendiente
+  ni sube ni se descarta: **se reintenta cada ~2 min para siempre**.
+  Arreglado con **`Stream.split()`** y NO con `fill_value=0`: rellenar con ceros escribe «el
+  suelo estuvo quieto» justo donde no hubo medición, dentro de un fichero que es prueba
+  forense. miniSEED admite tramos no contiguos del mismo canal ⇒ el hueco sigue siendo un hueco
+  y no cuesta una mentira.
+- **Fallo 2 — el grant, y es el grande (ABIERTO).** El censo de las 20 contra el ring real dice:
+  **solo 4 fallan por el array enmascarado; las otras 16 extraen perfectamente** (155–213 KB de
+  miniSEED válido cada una) y llevan igualmente 9 días sin subir. No hay una sola línea de
+  grant ni de PUT en 48 h de journal, porque el `_request_grant` **desplegado devuelve `None`
+  sin registrar nada**. La versión de esta rama (T-2.67) ya añadió ese `log.warning`, así que
+  **el diagnóstico del fallo 2 llega solo en cuanto se redespliegue el edge**.
+  ⇒ La causa raíz que esta ficha daba por única explicaba **el 20 %** del atasco.
 - **Criterios de aceptación:**
-  - [ ] La extracción con huecos produce evidencia utilizable, o falla **declarándolo**.
+  - [x] La extracción con huecos produce evidencia utilizable, o falla **declarándolo**.
+  - [x] Test con ring con huecos que reproduce el atasco
+        (`test_extract_window_con_hueco_produce_evidencia_utilizable`): sin el arreglo levanta
+        el mismo `NotImplementedError` que el gabinete.
+  - [x] Las 20 del gabinete vivo, explicadas una a una: 4 por array enmascarado, 16 por el
+        grant. Censo re-derivable con el script del PR.
+  - [ ] **El fallo 2:** por qué la nube no concede el grant. Necesita el edge redesplegado
+        (para que hable) y la nube al día.
   - [ ] **Un descarte deja de borrar la evidencia en silencio** (decisión de producto: ¿se
-        conserva la ventana parcial, se marca, se reintenta?).
-  - [ ] Las 18 del gabinete vivo, resueltas o explicadas una a una.
-  - [ ] Test con ring con huecos que hoy reproduce el atasco.
+        conserva la ventana parcial, se marca, se reintenta?). Hoy **no está firing** —el censo
+        dio `0 sin dato`—, así que es riesgo latente y no pérdida en curso.
 
 ---
 
@@ -4298,9 +4351,9 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 ### [x] T-2.69 · Inventario de versiones de flota — `SOFTWARE` · COMPLETA (2026-08-07)
 - **Componente:** api + web · **Depende de:** —
 - **Criterios de aceptación:**
-  - [ ] La consola dice **qué versión corre cada gabinete**, con edad del dato.
-  - [ ] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
-  - [ ] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
+  - [x] La consola dice **qué versión corre cada gabinete**, con edad del dato.
+  - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
+  - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
 ### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · BLOQUEADA por T-2.70.a
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
@@ -4347,8 +4400,61 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 > Ninguno está en el camino crítico. Por tamaño y por tocar el camino de vida, va como fase
 > propia: **`T-2.70.a`**.
 
-### [ ] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
+### [~] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge (arquitectura de procesos) · **Depende de:** — · **Desbloquea:** T-2.70
+
+> ### D3 CERRADO EN SOFTWARE (2026-08-08) — seis criterios cumplidos, y el cuarto es de HARDWARE
+>
+> **Seis de siete `CUMPLE`, todos anclados y auditados adversarialmente.** El séptimo es el que
+> desbloquea T-2.70 y está medido: **reiniciar `takab-edge` cuesta CERO transiciones** en los
+> cinco relés, contra las 6 por pin que costaban tres ciclos antes.
+>
+> **El criterio 4 es `IMPOSIBLE EN SOFTWARE`, y esta ficha lo declara como tal en vez de
+> fingirlo.** La ventana existe: mover el dueño cuesta **exactamente 2 transiciones por pin**, o
+> sea **un ciclo eléctrico de `GAS_VALVE` y `DOOR_RETAINER`** — el gas se cierra y las puertas se
+> sueltan. La causa, verificada contra el código instalado y no de memoria: `LGPIOPin.close()`
+> **re-reclama la línea como ENTRADA** con el bias deshabilitado. **Es gpiozero quien
+> desenergiza, no el kernel** —matiz que corrigió la auditoría: no hace falta ninguna bandera del
+> uAPI para conservar un nivel, lo decide si el driver devuelve el pad a entrada al liberar.
+>
+> **El encuadre que convierte esto en decisión y no en bloqueo:** ese ciclo cuesta **lo mismo que
+> cualquier `deploy.sh` de hoy**. La diferencia es que **este es el último**. Las dos salidas
+> son: una **ventana de mantenimiento con el edificio avisado, una sola vez**; o **hardware**
+> —enclavamiento del relé, o un pull-up que sostenga la bobina con la línea liberada— que
+> **cambia SPOF-07**, porque entonces un Pi colgado dejaría de fail-safear gas y puertas. Eso no
+> se decide desde el software. **`GATE-HW` / `G-05`.**
+>
+> **SPOF-02 ESTABA ROTO, y ese es el hallazgo que justifica el paso entero.**
+> `_seed_from_held_contact` corría **antes** de que existiera el servidor, así que con el dueño
+> en otro proceso el episodio nacía **sin `episode_id`** y el cliente lo descartaba por diseño.
+> Medido: **sirena sonando en el edificio, y cero incidente, cero notificación, cero push.** Es
+> el traspaso hardware→software tras un reinicio con el contacto **sostenido** — el caso de un
+> sismo largo.
+>
+> **B2 · el despliegue mentía sobre el dueño, y la solución no fue ninguna de las dos que se
+> plantearon.** Reiniciar al dueño en cada despliegue **anula el valor entero de D3**; y fallar
+> siempre que no se reinició saldría rojo en **todos** los despliegues, entrenando al operador a
+> ignorar el único rojo que dice si la sirena tiene dueño. Así que el gate mide **«¿corre código
+> distinto del que acabamos de poner?»** —arranque desde `/proc/<pid>/stat` + `btime`, y si
+> arrancó antes, comparación byte a byte de los módulos que el entry point **arrastra**, derivados
+> de sus imports—. El `restart` va solo bajo `--ventana-de-mantenimiento`; `enable` y `start` van
+> siempre, porque no cuestan un ciclo y sin ellos el siguiente reinicio del Pi deja al edificio
+> **sin dueño de pines**.
+>
+> **El arnés de tests tenía dos vacuidades** que había que cerrar o no medía nada: el `systemctl`
+> falso **truncaba** el registro del dueño legítimo, y **reclamaba los pines con cualquier
+> unidad** — así que un `takab-gpio` que no arranca salía **verde** porque «reiniciar
+> `takab-edge`» fingía tomar el GPIO.
+>
+> **`FDSTORE` evaluado y descartado, con el contra que decide y que no es de implementación:** un
+> fd retenido **congela el último nivel sin nadie que lo gobierne**. Si el dueño muere en mitad de
+> una alerta, **la sirena queda sonando** y nadie puede pedirle `silence`; hoy esa muerte cae al
+> fail-safe. Va fichado aparte con su política por canal — congelar el gas puede ser correcto;
+> congelar la sirena no.
+>
+> **Lo que queda para `GATE-HW`:** la duración real de la ventana en el Pi; la latencia del
+> transporte en ARM; `TimeoutStartSec=90` con `Type=notify` contra el systemd real; el criterio 4
+> físico; y el gate de código viejo, que **nunca se ha ejercitado con un intérprete de verdad**.
 - **`DECISIÓN` RATIFICADA (2026-08-07): separar los procesos.** No es un override del gate #6;
   es cerrar la brecha entre lo que el gate ratificó y lo que se construyó (ver la nota de
   T-2.70). Hoy la sirena la toca el supervisor de 16 módulos.
@@ -4424,6 +4530,331 @@ FICHADO — refinamientos que NO se persiguieron, cada uno con su razón:
    los 16 módulos y qué le pasa a los relés ante un `SIGKILL` por timeout (con `gas_valve` y
    `door_retainer` reposando energizados, un SIGKILL suelta los pines sin pasar por
    `drive_all_safe()`). `HUMANO-HW`.
+
+**D2/P1 — la costura `GpioLink` (2026-08-07) — y la DEUDA DE CONTRATO que deja fichada.**
+
+`edge/takab_edge/gpio_link.py`: cuatro operaciones (`snapshot`/`apply`/`action`/`subscribe`), una
+sola implementación (`LocalGpioLink` = llamada directa, un proceso, ni un pin movido), y los cinco
+consumidores más los dos observadores migrados a ella. El reflejo SASMEX→sirena **no** cruza —
+anclado por `test_el_reflejo_sasmex_no_cruza_la_costura`, que cablea una costura MUERTA a los
+cinco consumidores, dispara el pin del WR-1 y lee los cinco relés (sirena y estrobo protegen; gas,
+ascensor y puertas NO, que es la no-vacuidad).
+
+FICHADO — la deuda que D2/P1 deja declarada, con su razón:
+
+1. **`HealthSnapshot.relays` no sabe decir «sin dato», y esto lo empeora.** `[]` significaba
+   «módulo detenido»; desde D2/P1 significa además «no pude preguntar al dueño de los pines»
+   (`health/__init__.py::_relay_states`). Son dos averías distintas con dos reacciones distintas y
+   la nube no puede distinguirlas: es exactamente el defecto que T-2.68 cerró para el panel del
+   gabinete, reabierto en el latido. Hoy la distinción sólo vive donde SÍ se puede actuar sobre
+   ella —el `log.critical` del edge y el `relays_status.reason = gpio_unreachable` del panel LAN—,
+   **no en el contrato**. Cerrarlo es un cambio de schema: `relays: list | None` (o un
+   `relays_status` hermano del del panel) + bump de `SCHEMA_VERSION` (`edge/takab_edge/schemas.py`,
+   hoy `1.9.0`) a `1.10.0`, ingest de la nube que lo lea, y la columna/vista donde aterrice. **NO
+   se hizo aquí a propósito**: D2/P1 se declaró «la costura y NADA más» para que cualquier
+   diferencia de comportamiento posterior fuera atribuible al IPC, y tocar el contrato edge→nube
+   habría roto esa propiedad. Va **con D2/P2**, que es cuando `gpio_unreachable` deja de ser
+   inalcanzable y el dato empieza a existir de verdad.
+
+**D2/P2 — el TRANSPORTE (2026-08-07). Construido y APAGADO: `GPIO_LINK` sigue en `local`.**
+
+`edge/takab_edge/pinlink/{codec,server,client,cli}.py`, sin dependencias nuevas (socket `AF_UNIX`
++ `json` de la stdlib; `codec` importa `pydantic` porque los contratos lo son — ver M12 abajo),
+más el servidor DENTRO del dueño actual (`GpioController.arrancar_servidor_de_pines`, hilo **NO
+crítico**: sin socket el reflejo vive igual) y `IpcGpioLink`, cliente **CACHÉ-FIRST** con
+`critical = False`. Tampoco mueve un pin: el mismo proceso es dueño y cliente. Lo que D3 enciende
+es una línea (`TAKAB_EDGE_GPIO_LINK=ipc`, dueño todavía en `takab-edge`), y su ensayo general ya
+corre en `tests/test_pinlink.py::test_el_gabinete_ENTERO_funciona_hablando_por_el_socket`.
+
+Lo que sostiene el paso, y dónde mirarlo:
+
+- **La suite de conformidad** (`tests/test_gpio_conformance.py`): todo test del archivo corre DOS
+  veces —contra `LocalGpioLink` y contra un cliente conectado a un servidor que envuelve **ese
+  mismo** `GpioController`—. **Derivada, no enumerada**, por tres vías: el fixture parametrizado
+  con una guarda que exige que TODO test del módulo lo pida (lista de EXCEPCIONES declaradas, no
+  de miembros); los casos que salen de `GPIO_ACTIONS`, `GPIO_EVENTS` y
+  `GpioSnapshot.__dataclass_fields__`; y un oráculo campo a campo probado contra una costura que
+  miente en CADA campo, uno por caso. Medido con dos mutaciones: una divergencia silenciosa en
+  `siren_sounding` pone en rojo 4 casos `[ipc]` y ninguno `[local]`; un servidor que traga la
+  acción `silence` pone en rojo su caso derivado y ninguno más.
+- **La EDAD de la instantánea** (`GpioSnapshot.age_s`): se mide en el reloj de QUIEN LEE (no viaja
+  por el cable — `time.monotonic()` no es comparable entre procesos) y **fuera de plazo el dato NO
+  EXISTE**: `GpioLinkUnavailable`, que es la causa que los consumidores ya tratan desde D2/P1.
+- **Reconciliación por `episode_id`**: una reconexión durante un sismo NO reabre el incidente en la
+  nube, y un episodio nacido con el enlace caído se entrega exactamente UNA vez.
+
+FICHADO — lo que D2/P2 decide y lo que deja abierto:
+
+1. **La deuda 1 de D2/P1 (`HealthSnapshot.relays` sin «sin dato») SIGUE ABIERTA**, y su razón
+   cambió: se dijo «va con D2/P2, cuando `gpio_unreachable` deje de ser inalcanzable», pero D2/P2
+   **no enciende el cliente** — con `GPIO_LINK=local` esa causa sigue sin poder ocurrir en
+   producción. Bumpear `SCHEMA_VERSION` para un estado que aún nadie puede alcanzar sería mover el
+   contrato edge→nube sin un solo caso real que lo justifique. Va **con D3**, que es el paso que lo
+   vuelve alcanzable, y con el mismo alcance ya fichado (schema 1.10.0 + ingest + columna/vista).
+2. **La latencia del transporte NO está medida en ARM.** El p50 de `AF_UNIX` del reconocimiento
+   (0.017 ms) es de x86-64. El diseño **no depende de ese número**: las lecturas no cruzan el
+   socket (caché-first) y el reflejo no lo cruza en absoluto (gate #6). Lo que sí depende es el
+   coste de las ESCRITURAS —un lote de tier, una acción del panel—, anclado con una cota de orden
+   de magnitud (p50 < 10 ms) en `test_una_ida_y_vuelta_por_el_socket_es_barata`. Medirlo en el Pi 4
+   es trabajo de D3/`GATE-HW`.
+3. **`Type=notify` en la unidad, sin poner.** `run_gpio_process` ya emite `sd_notify(READY=1)` tras
+   ser dueño (cerrojo + pin factory + 5 relés + 3 botones + seed), y sin `NOTIFY_SOCKET` es un
+   no-op. Cambiar `Type=simple`→`notify` en `takab-gpio.service` toca el arranque del camino de
+   vida y va con D3, junto con retirar `Conflicts=`.
+4. **`takab-gpioctl` INTERROGA, no acciona** (anclado por test). Una CLI capaz de comandar relés
+   sería una segunda puerta a los actuadores sin PIN, sin registro de acciones y sin ack firmado.
+
+**D2/P2 · cierre de la auditoría adversarial (2026-08-07). Dos BLOQUEANTES y siete menores.**
+
+La auditoría RECHAZÓ el paso. Mucho de lo que fue a romper aguantó y está medido —el reflejo no
+cruza el transporte (0.027 ms constante con el servidor apagado, encendido y con suscriptor), los
+cinco modos de fallo del bind dejan el gabinete protegiendo, `drive_all_safe` es inalcanzable por
+siete vías, y no hay caché vieja servida como fresca ni con `SIGSTOP` de 12 s—, pero lo que no
+aguantó habría convertido D3 en un desastre silencioso.
+
+**B1 · EL OBSERVADOR DE SASMEX SE AUTOBLOQUEABA.** `IpcGpioLink._avisar` despachaba los
+observadores en su **único hilo lector**. `supervisor._on_sasmex` se registra ahí y ACTÚA
+(`_act_and_publish` → `RelayActuator` → `link.apply`), y `apply` espera una respuesta que **sólo
+ese hilo puede leer**: interbloqueo con timeout garantizado en cada sismo. Medido con un
+`EdgeSupervisor` real y `simulate_sasmex`:
+
+| | ACKs con éxito | ACKs fallidos | relés gas/elev/puertas |
+|---|---|---|---|
+| `GPIO_LINK=local` | 5 | 0 | `True` |
+| `GPIO_LINK=ipc` (antes) | 0 | **5** | **`True`** |
+
+Mentía en las **dos** direcciones a la vez: la nube veía la protección caída de un gabinete que
+había protegido (el servidor ejecutó el lote; el cliente nunca leyó la respuesta). Daños
+colaterales medidos: la caché llegaba a 1.99 s (0.14 s de `gpio_unreachable` **en pleno sismo** —
+panel a `S/D`, latido con relés vacíos) y el aborto del simulacro se retrasaba 2.003 s.
+
+*Arreglo:* los observadores corren en un hilo propio (`pinlink-observadores`), FIFO, con el orden
+de registro conservado — no se prohibió la reentrada, porque prohibirla dejaría a D3 sin actuación
+posterior por SASMEX, que es justo lo que el paso existe para transportar. La prohibición queda
+como **cable trampa**: `ReentradaDelHiloLector` (hereda de `GpioLinkUnavailable`, así que todos los
+consumidores la degradan igual) declara el defecto **en 0 ms y por su nombre** si alguien vuelve a
+meter una orden en el hilo lector, en vez de en 2 s disfrazado de «el dueño no contestó» —que
+apunta al dueño, y el dueño estaba perfecto.
+
+**B1-bis · el test que decía acreditar D3 era TEATRO.**
+`test_el_gabinete_ENTERO_funciona_hablando_por_el_socket` recorría ese camino exacto y pasaba,
+porque sólo miraba si el evento llegó a `takab/events`; los cinco ACKs de la secuencia que la
+alerta disparó no los leía nadie, y la actuación que sí verificaba se lanzaba desde el hilo
+principal, donde no hay reentrada. Ahora asierta los ACKs, y la prueba que de verdad cierra D3 es
+`test_un_SASMEX_actua_IGUAL_por_las_dos_costuras[local|ipc]`: mismo `EdgeSupervisor`, mismos cinco
+ACKs, mismos relés, mismo evento a la nube y mismo aborto del simulacro (<1 s) por las dos vías.
+
+**B2 · la guarda de pertenencia de la conformidad tenía DOS agujeros**, y uno evadía **pareciendo
+conforme**. Infería la pertenencia de `inspect.signature(...)` sobre `vars(modulo)` filtrado por
+`inspect.isfunction`: un método dentro de `class TestIntruso:` no era `isfunction` (ni se miraba),
+y un `@parametrize("enlace", [...])` que **SOMBREA** el fixture tenía el nombre en la firma y
+jamás instanciaba las variantes `local`/`ipc`. Con las dos coladas: 62 passed y la guarda muda.
+Ahora se mide lo que pytest **colectó** (`item.callspec.params`, censado en
+`conftest.pytest_itemcollected` — antes de la deselección por `-k`, así que el censo no depende de
+cómo se invoque la suite), exigiendo variante `local` **y** `ipc` por ítem. Verificado poniendo las
+dos evasiones en el archivo: las caza las dos, nombrando con qué se colectó cada una.
+
+CERRADOS en el mismo paso, cada uno con su test y su mutación de no-vacuidad:
+
+- **M7 · `TIMEOUT_ACTION_S` se justificaba con una premisa FALSA.** El *hold* de 5 s de
+  `actuation_test` va en un `threading.Timer` y **no bloquea la llamada**; lo que bloquea son los
+  bucles de pulsos (1.207 s y 1.606 s medidos con los tiempos de fábrica). 30 s eran ~19× el peor
+  caso real. Ahora **5 s**, y el número lo ancla
+  `test_el_plazo_de_las_acciones_sale_de_lo_que_TARDAN`, que MIDE cada acción de `GPIO_ACTIONS` en
+  vez de creerse el comentario.
+- **M3 · el rate-limit ahogaba el journal que lo diagnostica** (1 línea por petición frenada, 417
+  líneas/s medidas). Autolímite a ~1/s por conexión, con el contador de las que calló — mismo
+  patrón que `audio._reconcile_siren`, regla de oro 10.
+- **M2 · el backoff no enganchaba nunca**: `intento = 0` se reseteaba tras un `connect()`, no tras
+  una *sesión*, y en `AF_UNIX` el kernel completa el `connect` aunque el servidor cierre acto
+  seguido. Con el dueño rechazando por uid: 20.6 reconexiones/s indefinidamente. Ahora sólo cuenta
+  una sesión que sirvió algún mensaje. (El cap del exponente sí cumplía `737dd73`.)
+- **M5 · sin cota de conexiones ni corte del ocioso**: 200 conexiones parqueadas a media trama eran
+  **+400 hilos** en el proceso que toca la sirena, sostenidos indefinidamente — `listen(8)` es
+  backlog, no cota. Ahora `MAX_CONEXIONES=16` y corte a los 30 s del que abre, manda medio marco y
+  se calla. Un suscriptor sano y CALLADO no se corta (el flujo va del dueño al cliente): anclado
+  aparte, porque ese cierre habría sido peor que el agujero.
+- **M9 · `PinLinkServer._al_sasmex` es el callback #0 del reflejo y no estaba aislado.**
+  `gpio._dispatch_sasmex` invocaba sin `try` y `_empujar_estado` leía el estado sin guarda: si esa
+  lectura reventaba, no llegaban a correr ni `supervisor._on_sasmex` (la nube) ni
+  `drill.on_sasmex` (el aborto del simulacro). Las dos defensas puestas y **probadas por
+  separado** — con sólo la de `gpio`, el caso del servidor quedaba verde sin medir nada.
+- **M11 · D2/P2 no estaba del todo apagado**: `gpio_serve_enabled=True` de fábrica, así que TODO
+  gabinete ataba el socket y registraba `_al_sasmex` como callback #0, con un coste en el hilo del
+  botón de 0.093 → 1.415 ms p50 / 2.124 ms máx (con suscriptor) que **la latencia anclada del gate
+  #6 no puede ver**, porque esa medición termina antes de invocar callbacks. **Decisión: apagado
+  de fábrica.** Un coste sin medir dentro del camino de vida no se despliega «porque total, nadie
+  se conecta», y el paso declaraba por escrito «construye el transporte, NO lo enciende». D3 sigue
+  siendo UN interruptor: la puerta se abre SOLA con `GPIO_LINK=ipc`
+  (`EdgeSettings.gpio_serves_pins`, derivada) y el proceso dedicado `takab-gpio` sirve siempre — un
+  dueño de pines con el que nadie puede hablar no es un traspaso, es un apagón. La perilla queda
+  para forzarla abierta con `GPIO_LINK=local` y diagnosticar con `takab-gpioctl`.
+- **M12 · «stdlib puro» era literalmente falso**: `codec.py` importa `pydantic`. Es inocuo (la
+  allowlist lo permite y **sí caza** dependencias nuevas nombrando la cadena), pero el rótulo era
+  enfático y erróneo: corregido a «ninguna dependencia NUEVA» en los cuatro sitios donde estaba.
+
+FICHADO — lo que la auditoría dejó abierto y NO se cerró aquí, con su reproducción:
+
+5. **M1 · `action()` esquiva el códec.** `_despachar` devuelve
+   `getattr(self._gpio, metodo)(**params)` tal cual, y `enmarcar` hace `json.dumps` sin el `_a_json`
+   que sí protege a la instantánea. Hoy las siete acciones declaradas devuelven `None` o `dict` de
+   primitivos, así que es LATENTE. *Reproducción:* declarar en `GPIO_ACTIONS` una acción octava que
+   devuelva un `Enum` o un `dataclass` ⇒ `TypeError` dentro del hilo lector del servidor en vez del
+   `ProtocolError` que nombra el tipo. *Cierre:* pasar el resultado por `cd._a_json` antes de
+   responder.
+6. **M4 · una inundación desborda la cola de 64 con sus propios errores.** Las respuestas de error
+   son `critico=True` y comparten cola con los empujes: un cliente que dispara más rápido de lo que
+   drena se desahucia por las respuestas *a sus propias* peticiones frenadas. Acotado por M3+M5,
+   pero la cola sigue siendo una sola. *Cierre:* cola aparte para respuestas, o descartar empujes
+   antes que respuestas al llenarse.
+7. **M6 · bloqueo en cabeza de línea.** Mientras una acción cuelga en el dueño, `snapshot()` sigue
+   FRESCO (0.427 s medido — lo refresca el hilo emisor) y **todo `apply` muere**; y nadie lo
+   detecta porque `snapshot()` es justo lo que todos usan para decidir «¿está bien gpio?». M7 acota
+   el daño a 5 s; la causa (una sola conexión, una petición en vuelo) sigue ahí. *Cierre:* declarar
+   en la instantánea que hay una acción en curso, o un canal aparte para las que duermen.
+8. **M8 · el cliente escribe sin cerrojo.** `_pedir` hace `sock.sendall` desde el hilo del
+   llamador; dos escrituras concurrentes podrían intercalar marcos. LATENTE: hoy sólo hay un
+   consumidor a la vez en cada camino. *Cierre:* un `Lock` alrededor del `sendall`.
+9. **M10 · `READY=1` es código muerto.** Las unidades siguen en `Type=simple`, así que
+   `notificar_systemd` no avisa a nadie. Va con retirar `Conflicts=` — ya estaba fichado como
+   punto 3 de D2/P2 y aquí se confirma que sigue abierto.
+10. **M13 · el `0700` no se impone sobre un directorio PREEXISTENTE.** `mkdir(mode=0o700)` no toca
+    los permisos de lo que ya existe, y el aislamiento del socket se apoya en ese directorio (el
+    `SO_PEERCRED` sí protege, así que el fallo es de defensa en profundidad, no de acceso).
+    *Reproducción:* crear el directorio con `0755` antes de arrancar ⇒ sigue en `0755`. *Cierre:*
+    `chmod` explícito tras el `mkdir`.
+
+**D1 · auditoría adversarial (2026-08-08). Las seis mutaciones reclamadas se reproducen; el
+gate #3 se ejecutó de verdad; y aun así hay UN BLOQUEANTE y nueve menores.**
+
+La lente `el-edificio` intentó refutar D1 con 14 mutaciones sobre una copia completa del árbol.
+Las seis que el informe reclamaba **se reproducen literalmente**, con los mismos nombres de test
+y los mismos números, y una séptima más dura (`import certifi`, dependencia *ligera* que la vieja
+blacklist dejaba pasar) confirma que el cambio blacklist→allowlist **no es cosmético**. Línea
+base reproducida: **997 pasan**, con `GATE #3: 5/5 EJECUTADOS contra el Shake real`. Verificado
+también que el cerrojo **no añade un modo nuevo de «no arranca»**: con EROFS y ENOSPC el arranque
+ya moría antes de D1, porque `LGPIOFactory` necesita su FIFO en el mismo directorio.
+
+**BLOQUEANTE · el test que se cita como prueba de que la verificación no está anclada, no ancla
+nada.** `test_la_verificacion_no_esta_anclada_al_nombre_takab_edge` sigue **verde** si se
+hardcodea `systemctl is-active takab-edge` **o si se borra la línea entera**: `14 passed` en los
+dos casos. La causa es el doble del `systemctl` del arnés, que responde `active` y sale 0 **para
+cualquier nombre de unidad**, así que el test solo puede comprobar que la cadena «takab-gpio»
+aparece en el stdout — y esa cadena la imprime otro `echo` que lee el registro. Consecuencia el
+día del criterio 1 de esta misma ficha: los pines pasan a `takab-gpio`, `takab-edge` sigue activo
+haciendo todo lo demás, y un `deploy.sh` anclado al nombre viejo declara ✓ **midiendo a un
+proceso que ya no toca el GPIO**. Es literalmente el fallo que D1.5 dice haber cerrado.
+
+> **CERRADO (2026-08-08), y la causa no estaba donde esta ficha la situó.** `deploy.sh:386` era
+> **correcto**; lo vacío era el **doble de `systemctl` del arnés**. El arreglo va ahí.
+>
+> Y no se usó la denylist que proponía la auditoría, sino una **allowlist**, por una razón que
+> cambia el resultado: una denylist **sigue diciendo `active` por defecto para un nombre que no
+> es una unidad** — que es exactamente el caso del `python -m takab_edge.gpio` suelto por SSH,
+> el escenario que esta verificación existe para delatar y que **no tenía ningún test**.
+>
+> **La prueba del contraste, que es lo que acredita el arreglo:** con las dos mutaciones puestas
+> (hardcodear `takab-edge`, y borrar el gate entero) **los 14 tests originales siguen dando
+> `14 passed`**. Solo los dos tests nuevos las matan. `bash -n` salió 0 con ambas — el análisis
+> sintáctico es ciego a esta clase de defecto y el sandbox que **ejecuta** el script es lo único
+> que la caza.
+>
+> **Los tres menores de despliegue, cerrados con él:** el `sleep 3` es ahora un **sondeo acotado**
+> sobre el mismo veredicto (y el arnés ganó la capacidad de simular un arranque lento: antes
+> modelaba la toma del cerrojo como instantánea, así que **ningún test podía distinguir sondeo de
+> `sleep`**); un registro mudo con el cerrojo tomado **avisa y apunta al disco** en vez de
+> abortar, pero se sigue abortando si `/proc` **desmiente** al registro; y quedaron ancladas las
+> ramas de ilegible, `/proc` y el «gana la última».
+>
+> **Decisión que conviene conocer:** una unidad que systemd da por muerta **se sondea** hasta
+> agotar el plazo en vez de abortar en el acto. Cuesta 45 s en un gabinete ya roto, y compra que
+> un futuro `Type=notify` —unidad en `activating` mientras ya sostiene el cerrojo— no produzca un
+> **aborto falso**: y un aborto falso empuja a revertir, revertir es reiniciar, y reiniciar mueve
+> `GAS_VALVE` y `DOOR_RETAINER`.
+
+**Los dos menores que hay que cerrar ANTES de la ventana en el Pi:**
+1. **El `sleep 3` mide ahora algo que ocurre mucho más tarde.** La verificación pasó de «systemd
+   forkeó» (t≈0) a «`gpio._on_start` corrió su primera sentencia», con el mismo plazo de un solo
+   disparo y sin reintento. Reproducido: un gabinete **sano** que tarda 4 s se reporta como
+   «NADIE es dueño de los pines… el gabinete NO está protegiendo». Medido exec→cerrojo en 0.60 s
+   (x86, dev) y ~1.0 s con los imports de producción; **el margen en el Pi 4 no es medible sin el
+   Pi**, que es justo el argumento para **sondear en vez de dormir**. El daño de segundo orden es
+   el peor: entrena al operador a ignorar la única comprobación que dice si la sirena tiene dueño
+   — y revertir es reiniciar, y reiniciar mueve `GAS_VALVE` y `DOOR_RETAINER`.
+2. **Las dos mitades de D1 se contradicen sobre el registro.** `gpio` lo declara **informativo** y
+   conserva la propiedad cuando su E/S falla (anclado por test); `deploy.sh` convierte ese mismo
+   registro vacío en un **aborto** que acusa a «un `flock` suelto de una sesión SSH». Un gabinete
+   con `/var/lib/takab` lleno protege perfectamente y el despliegue lo declara secuestrado,
+   mandando al operador a buscar un intruso que no existe en vez de al disco.
+
+**Menores de seguridad en el propio `gpio` (no de despliegue):**
+3. El rescate del arranque fallido **suelta el cerrojo sin cerrar los relés ni pasar por
+   `drive_all_safe()`**: deja el cerrojo LIBRE mientras el proceso sigue gobernando cinco pines,
+   con gas y retenedores **energizados**. Es exactamente la ventana que `_on_stop` documenta y
+   ordena su `finally` para evitar.
+4. Si al perfil `failsafe` le falta un canal que **no** sea de los primeros, el bucle de
+   construcción **ya energizó los anteriores —`GAS_VALVE` incluido—** antes de tronar, y la ruta
+   de fallo no llama `drive_all_safe()` ni `close()`. El único test del caso quita `GAS_VALVE`
+   (posición 3) y **solo mira ese pin**.
+5. El nuevo fallo duro de `_failsafe` **no tiene guarda propia**: nada ancla
+   `LOCAL_RELAY_CHANNELS ⊆ EdgeSettings.failsafe`, y `TAKAB_EDGE_FAILSAFE` **sustituye** el
+   diccionario en vez de fusionarlo — o sea que una variable de entorno puede dejar un canal de
+   relé sin modo declarado y tumbar el arranque.
+
+   > **RESUELTO (2026-08-08) fusionando, no fallando al construir — y eso contradice la
+   > preferencia con la que se encargó la tarea.** La razón que la cambió: `EdgeSettings` no es
+   > solo el `edge.env`, es también **el documento firmado** que aplica
+   > `ConfigStore.apply_signed_update` con `model_validate_json`, y `_high_water` solo sube tras
+   > validar. Lanzar en la construcción tiraría el documento **entero** —umbrales,
+   > `command_enabled`, `cloud_admin_state`— y se reintentaría idéntico **para siempre**: es
+   > exactamente el fallo que este repo ya razonó por escrito al tipar `cloud_admin_state` como
+   > `str` en vez de `Literal`. Y en el gabinete, «fallar al construir la config» y «fallar al
+   > tocar un pin» tienen el **mismo desenlace físico** (`gpio` es `critical=True`): edificio sin
+   > alertamiento. Fusionar es lo único que hace el fallo duro **inalcanzable por configuración**,
+   > que era lo que la auditoría pedía.
+   >
+   > **No resucita lo que D1.2 quitó:** aquel default respondía `NORMALLY_OPEN` a **todo** —lo que
+   > invertía gas y retenedores—; `DEFAULT_FAILSAFE` da a cada canal **su** modo, que es propiedad
+   > del actuador, no del sitio. Anclado con un test que explota el hueco a propósito:
+   > `model_copy(update=...)` **no pasa por validadores**, así que un perfil mutilado sigue siendo
+   > construible y `_failsafe` sigue tronando. Nadie puede borrar el gate de D1.2 alegando que la
+   > configuración ya lo garantiza.
+
+**Menores que condicionan D3:**
+6. **El cronómetro de latencia para cuando `drive_low()` retorna**, no cuando el quinto pin llega
+   a su nivel de protección. Con la actuación posterior en un hilo sin `join`, el test pasa
+   reportando **1.3 ms** y el guardarraíl anti-teatro no lo ve. D3 mueve justamente esa actuación
+   al otro lado del socket: sería reintroducir un nivel más arriba el defecto que D1.4 existe
+   para corregir.
+
+   > **CORRECCIÓN (2026-08-08): la premisa de este punto era falsa, y medirla lo demostró.**
+   > Se dio por hecho que sondear los cinco pines bastaría para cazar el hilo sin `join`.
+   > **No basta:** con el hilo suelto **los cinco pines llegan igual, en 1.0 ms**, así que un
+   > cronómetro honesto mide 1.0 ms y **aprueba con razón** — el hecho físico ocurrió dentro del
+   > presupuesto. Lo que el fire-and-forget se lleva por delante no es la latencia: son los
+   > **`ActuatorAck`**. Una actuación disparada y olvidada llega a los pines igual de rápido y
+   > deja a `_act_and_publish` sin saber si un canal falló y a la nube sin acuse.
+   >
+   > Por eso el arreglo tiene **dos mitades**: el reloj para en el instante eléctrico de los
+   > cinco pines (con `sleep(0)` en cada vuelta, cediendo el GIL **a propósito**, para que una
+   > implementación en hilo o socket quede *medida y no penalizada*), y la cadena **rinde
+   > cuentas**: 5 de 5 acuses, fuera del cronómetro porque encolar acuses no es §4.3.
+   >
+   > La alternativa —exigir que la cadena termine dentro de la llamada— **prohibiría D3 en vez
+   > de medirlo**. Y con la travesía degradada a 250 ms el número sube y **lo dice**:
+   > «tardó 250.7 ms, de los cuales 249.9 ocurrieron DESPUÉS de que `drive_low()` retornara».
+   > Cuando D3 mueva la actuación al socket, **este test no hay que reescribirlo**.
+7. **El presupuesto de dependencias solo censa el montaje de DEV.** Una dependencia de terceros
+   importada en la rama de **producción** (`dev_mode=False`) es invisible para la allowlist — y
+   producción es justamente el proceso que corre en el Pi.
+
+**Menores de forma:** otras tres ramas del paso 7 y el «gana la última» del registro se pueden
+borrar o invertir con los 14 tests en verde (solo las dos ramas de `flock` están ancladas); y el
+docstring del cerrojo derivado afirma que dos unidades con `dev_mode` mal puesto «seguirían
+colisionando», que es **falso** — `takab-edge` lleva `PrivateTmp` y `takab-gpio` no.
+
+*Corrección factual al informe de implementación, sin consecuencia:* `_unidad_de_este_proceso()`
+no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_proceso_vivo()`.
 
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
@@ -4696,41 +5127,213 @@ el infinito es una sesión que no converge):
 
 ## Fase 2.6 · Backup y DR
 
-`RUNBOOK-backup-restore-db.md:3` dice literalmente **"RESTORE JAMÁS PROBADO (gate G-09)"** y
-el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis**, no un respaldo.
+`RUNBOOK-backup-restore-db.md:3` decía literalmente **"RESTORE JAMÁS PROBADO (gate G-09)"** y
+el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipótesis**.
 
-### [ ] T-2.72 · PITR/WAL-G en IaC — `SOFTWARE`
+> **Lo que apareció al mirar (2026-08-08).** No era solo que el restore no se hubiera probado:
+> **el procedimiento que el runbook documentaba perdía datos en silencio, y el checklist de
+> verificación que traía salía ENTERO EN VERDE sobre la base mutilada.** Faltaban
+> `timescaledb_pre/post_restore()` (aborta el `COPY` de al menos un chunk: decenas de miles de
+> filas y las 3 PRIMARY KEY de las hypertables) y sobraba `--no-owner` (traslada ~46 objetos a
+> quien restaura ⇒ `takab_migrator` deja de poder migrar ⇒ **el siguiente despliegue muere**).
+> Medido y reproducido de forma independiente por un segundo revisor con su propio montaje.
+> Sin PK, además, muere la idempotencia del edge (regla de oro 3): un restore mal hecho no solo
+> pierde filas, desarma el mecanismo que iba a reponerlas.
+>
+> De regalo, dos defectos vivos desde julio-2026: la regla de lifecycle `expira-60d` **nunca
+> borró un byte** (sobre un bucket versionado `Expiration` solo pone un delete marker, y la
+> versión anterior se queda facturándose para siempre — peor para el PITR: el delete marker
+> **esconde el objeto al restaurador**), y **la instancia no podía leer sus propios respaldos**
+> (`s3:PutObject` y nada más), o sea que el restore era imposible de ejecutar donde vive la DB.
+
+### [x] T-2.72 · PITR en IaC — `SOFTWARE`
 - **Componente:** infra · **Depende de:** —
+- **La herramienta es `barman-cloud`, no WAL-G**, y el cambio de nombre de la tarea es
+  deliberado: la imagen `timescale/timescaledb-ha:pg16` que corre en producción **ya lo trae
+  instalado y no trae wal-g** (verificado contra el contenedor real). Meter wal-g exigiría
+  reconstruir la imagen o montar un binario descargado dentro del contenedor: **un eslabón de
+  suministro nuevo justo en el camino de recuperación**, el último sitio donde conviene tener
+  uno. El diseño no dependía de la herramienta.
 - **Criterios de aceptación:**
-  - [ ] WAL archiving continuo declarado en Terraform (no a mano en la instancia).
-  - [ ] RPO objetivo declarado y **derivable de la configuración**, no de una promesa.
-  - [ ] Alarma si el archivado se atasca — extensión natural del módulo `observability`
-        (`RUNBOOK-backup-restore-db.md:120`).
-  - [ ] `terraform fmt/validate` verde. El `apply` es **`HUMANO-AWS`** y va en T-2.74.
+  - [x] WAL archiving continuo declarado en Terraform (no a mano en la instancia). Vía
+        `aws_ssm_document` + `aws_ssm_association`, **no `user_data`**: el user_data corre una
+        sola vez en el primer boot y sale antes de tiempo por su marcador, así que habría dado
+        un Terraform verde que no toca la máquina que existe hoy. Coste declarado: hasta 24 h de
+        convergencia (`aws ssm start-associations-once` lo fuerza).
+  - [x] RPO objetivo declarado y **derivable de la configuración**, no de una promesa.
+        `terraform output rpo_seconds` → **900 s**, calculado de los ATRIBUTOS del recurso de
+        alarma: `umbral (600) + period (60) × evaluation_periods (5)`. El segundo término no es
+        adorno — CloudWatch avisa tras N periodos seguidos por encima, y durante esos 5 minutos
+        se sigue acumulando WAL que no está en S3. **El RPO real no es lo que promete la
+        configuración feliz: es la edad del archivado a la que alguien SE ENTERA.**
+  - [x] Alarma si el archivado se atasca: `takab-dev-wal-archivado-atascado`,
+        `treat_missing_data = "breaching"` (sin eso la derivación del RPO es mentira: si el
+        publicador muere, el silencio pasaría por salud), `Maximum > umbral`, 5×60 s, los TRES
+        estados al topic de on-call. Clasificada **INTOCABLE** en `ALARM_CATALOG` y negada
+        también por IAM.
+  - [x] `terraform fmt/validate` verde, más `terraform test` en los TRES módulos. El `apply` es
+        **`HUMANO-AWS`** y va en T-2.74.
+- **Lo que el ejercicio de no-vacuidad enseñó, y vale más que el código:** aparecieron **tres**
+  aserciones vacuas, y las tres eran del mismo par de patrones. (a) *Comparar por subcadenas*:
+  un `strcontains` sobre una política IAM casi siempre encuentra su subcadena en OTRO statement,
+  así que responde "sí" a una pregunta que nadie hizo — una de ellas juraba que no se concedía
+  borrado enumerando `s3:DeleteObject`/`s3:Delete*` y **se la saltaba un `s3:*`**. (b)
+  *Comprobar una igualdad con un solo valor de entrada*: no distingue una función de una
+  constante que hoy coincide, que es literalmente la diferencia entre derivar el RPO y
+  prometerlo. Quedan como método escrito en la cabecera de `pitr.tftest.hcl`.
 
-### [ ] T-2.73 · Script de restore ensayable que mide su propio RTO — `SOFTWARE`
+### [x] T-2.73 · Ensayo de restore que mide su propio RTO — `SOFTWARE`
 - **Componente:** db + deploy · **Depende de:** T-2.72
 - **Criterios de aceptación:**
-  - [ ] Un solo comando restaura a una instancia limpia y **imprime el RTO medido**.
-  - [ ] Verifica la integridad de lo restaurado (no solo que el proceso terminó en 0).
-  - [ ] Ensayable **contra la DB local**, para que el ensayo no dependa de la ventana AWS.
-  - [ ] Guardia anti-restore-sobre-producción, del mismo estilo que
-        `demo/run.py::_assert_exclusive_db`.
+  - [x] Un solo comando (`make restore-drill`) restaura a una instancia limpia e **imprime el
+        RTO medido**, desglosado por fase. El reloj para en el VERDE del verificador, no en el
+        `rc=0` de `pg_restore`: una base restaurada y no verificada no es un servicio
+        recuperado. Y arranca cuando el dump ya existe, porque en el incidente real lleva en S3
+        desde las 08:00; fabricarlo es andamiaje y se cronometra aparte.
+  - [x] Verifica la integridad de lo restaurado: **22 comprobaciones** con veredicto de tres
+        estados y salida 0/1/2. Las expectativas se DERIVAN de `db/schema.sql` y del catálogo
+        (extensiones, tablas append-only, RLS y su FORCE, políticas, hypertables, vistas
+        barrera, roles, políticas de Timescale): ninguna tabla está escrita a mano.
+  - [x] Ensayable **contra la DB local** — que corre la MISMA imagen que producción, así que el
+        ensayo es fiel y no un simulacro.
+  - [x] Guardia anti-restore-sobre-producción **positiva**, no lista negra: solo escribe en una
+        base que él mismo creó en esta corrida, con nombre generado y marcador propio releído
+        del catálogo antes de cada paso destructivo. `takab_restore` —el nombre que usaba el
+        propio runbook— es rechazado como cualquier otro. No hace swap, y hay un test sobre el
+        AST que lo impide.
+- **Las tres cosas que la auditoría adversarial encontró y hubo que cerrar**, todas de la misma
+  familia —*un verde que no significa lo que parece*—:
+  1. **Sin `--baseline` el verificador decía VERDE y salía 0** con seis comprobaciones saltadas,
+     sobre una base a la que le faltaba el 75 % de la telemetría y una tabla entera. Hoy eso es
+     **INDETERMINADO** y salida 2: *un SKIP no es un PASS*.
+  2. **`append_only_enforced` pasaba por la razón equivocada**: trataba cualquier error de
+     Postgres como "la guarda lo rechazó", así que con la guarda rota y la conexión en solo
+     lectura —justo como se verifica una base lateral antes del swap— daba verde. Hoy exige el
+     SQLSTATE de la guarda.
+  3. **Seis clases de daño real salían verdes** (job de retención desprogramado, CHECK y FK
+     borradas, columna desaparecida, cagg vaciado, y un `REVOKE` que deja a `takab_app` sin
+     leer `incidents`). Hoy el baseline lleva columnas, constraints, ACL y filas de cagg
+     materializado.
+- **Una afirmación del obrero hubo que retirarla, y conviene que quede escrita**: no es cierto
+  que «el FORCE de todas las tablas de negocio nos salva de un restore con `--no-owner`».
+  `FORCE ROW LEVEL SECURITY` obliga al dueño **normal**; un superusuario (o `BYPASSRLS`) se
+  salta la RLS con FORCE o sin él. Lo que sí es cierto, y es otra cosa, es que el camino de la
+  API sigue aislado — pero porque `takab_app` no es dueño de nada ni tiene BYPASSRLS, no por el
+  FORCE. Confundir la conclusión con su causa es como esa frase acaba en un runbook.
+
+### [x] T-2.73.a · La huella del origen viaja junto al dump — `SOFTWARE`
+- **Componente:** infra + db · **Depende de:** T-2.73 · **BLOQUEA `T-2.74`.**
+- El cron de las 08:00 sube el `.dump` y nada más. **Sin la huella del origen el verificador
+  devuelve INDETERMINADO** y sus seis comprobaciones más fuertes (inventario, columnas,
+  constraints, privilegios, propiedad, conteos) no se pueden ejercer. Intentar acreditar `G-09`
+  sin esto es gastar la ventana AWS para obtener medio veredicto.
+- **Criterios de aceptación:**
+  - [x] El mismo cron escribe `restore_check --save-baseline` y lo sube al mismo prefijo S3.
+  - [x] El vehículo es el **documento SSM**, no `user_data.sh.tpl`: tocar el user_data fuerza al
+        provider a parar y arrancar la instancia en el siguiente apply, y la DB caería.
+  - [x] Confirmado que el contenedor de la nube co-locada tiene el código del API para
+        invocarlo (es la incógnita real de esta ficha).
+
+### [ ] T-2.72.a · Comprobar que el WAL llegó de verdad a S3 — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- `pg_stat_archiver.last_archived_time` mide el último `archive_command` que devolvió 0, no que
+  el objeto esté en el bucket. La propia doc de PostgreSQL da el contraejemplo:
+  `archive_command = /bin/true` «effectively disables archiving, but also breaks the chain of
+  WAL files needed for archive recovery» — y reportaría salud perfecta con cero WAL en S3.
+- **Criterios de aceptación:**
+  - [ ] `last_archived_wal` da el NOMBRE del segmento: un `head-object` **O(1)** contra la clave
+        esperada, sin listar el prefijo (que crece sin cota).
+  - [ ] Resuelto el acoplamiento con el sufijo de compresión y el layout interno de barman
+        (hay que medirlo contra el bucket real, en la ventana de T-2.74).
+
+### [ ] T-2.72.b · Alarma de backup base ausente — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- `WalArchiveAgeSeconds` mide la cadena de WAL, **no su ancla**. Un backup base que falla cada
+  semana es invisible hasta el día del restore, que es el modo de fallo que la Fase 2.6 existe
+  para eliminar.
+- **Criterios de aceptación:**
+  - [ ] `BaseBackupAgeSeconds` publicada a diario desde `barman-cloud-backup-list`.
+  - [ ] Alarma por encima de `base_backup_interval_days × chain_margin`, derivada de las mismas
+        variables que gobiernan la retención.
+
+### [ ] T-2.72.c · Alarma de espacio en disco de la instancia DB — `SOFTWARE`
+- **Componente:** infra · **Depende de:** T-2.72
+- El PITR introduce un modo de fallo nuevo: con el archivado atascado Postgres **no recicla** su
+  WAL y `pg_wal` crece ~16 MiB/min sobre el mismo volumen de 40 GiB donde viven los datos —
+  **menos de dos días hasta llenar el disco y tumbar la DB**. Hoy lo cubre por accidente la
+  alarma de atasco (900 s ≪ 48 h) y su descripción ya nombra el reloj corto, pero **no hay
+  vigilancia de disco**: `disk_used_percent` no existe en las métricas nativas de EC2.
+- **Criterios de aceptación:**
+  - [ ] Agente CloudWatch en la instancia, o publicación propia de espacio libre en `/data`.
+  - [ ] Alarma con `treat_missing_data` clasificado y su entrada en `ALARM_CATALOG`.
+
+### [ ] T-2.72.d · Derivar la guardia de `treat_missing_data`, no enumerarla — `SOFTWARE`
+- **Componente:** infra + api · **Depende de:** —
+- `modules/observability/tests/treat_missing_data.tftest.hcl` **enumera** las alarmas: una
+  alarma nueva no obtiene automáticamente su aserción y puede nacer sin que nada lo diga. El
+  patrón correcto ya existe al lado: `api/tests/ops/test_muting.py` deriva la lista del propio
+  `.tf` y pone en rojo cualquier alarma sin clasificar.
+- Y esa guardia derivada tiene su propio límite, que va en la misma ficha: **su ámbito es UN
+  solo archivo** (`observability/main.tf`). Una alarma declarada en otro módulo nace sin
+  clasificar y nada lo delata. Hoy no hay ninguna — comprobado por grep — y por eso es deuda y
+  no defecto.
+- **Criterios de aceptación:**
+  - [ ] La lista de alarmas se deriva del `.tf`; una alarma sin aserción de `treat_missing_data`
+        pone el test en rojo.
+  - [ ] El ámbito deja de ser un solo archivo.
+
+### [ ] T-2.73.b · Higiene de RLS: `tenant_retire_codes` sin FORCE y 7 tablas con dueño superusuario — `SOFTWARE`
+- **Componente:** db · **Depende de:** —
+- Los sacó a la luz el verificador de T-2.73 y **no son deuda de restore**, son de esquema:
+  - `tenant_retire_codes` (migración 0025) tiene RLS `ENABLE` **sin FORCE** y no es ninguna de
+    las dos excepciones documentadas de Timescale. **No explotable hoy** —su dueño es
+    `takab_migrator`, que no es superusuario ni tiene `BYPASSRLS`, medido `AJENAS=0`— pero el
+    verificador lo avisa en cada corrida y la asimetría no tiene razón de ser.
+  - 7 tablas pertenecen a `takab` (superusuario) en vez de a `takab_migrator`:
+    `billing_meters_daily`, `commands`, `drills`, `drill_sites`, `gateway_config_state`,
+    `notification_jobs`, `user_profiles` — migraciones posteriores a la 0001 que crean objetos
+    sin `SET ROLE takab_migrator`. Riesgo **latente**: una migración futura con
+    `SET ROLE takab_migrator; ALTER TABLE notification_jobs …` moriría con `must be owner`.
+- **Criterios de aceptación:**
+  - [ ] Migración idempotente que pone FORCE y devuelve la propiedad, respetando los dos
+        invariantes de `migrations-must-be-idempotent`.
+  - [ ] Confirmado contra la NUBE (allí el conector ya es `takab_migrator`, así que puede no
+        diverger) antes de asumir que el defecto existe en producción.
+
+### [ ] T-2.73.c · El cuelgue intermitente de `test_retire_code.py` — `SOFTWARE`
+- **Componente:** api (tests) · **Depende de:** —
+- Reproducido **5/5** por el auditor: `test_solo_el_superadmin_rota_el_codigo` deja una conexión
+  `idle in transaction` tras `app_verify_retire_code`, y el TRUNCATE del teardown se bloquea
+  para siempre pidiendo el `ACCESS EXCLUSIVE` de `audit_log`. En la suite completa no se
+  manifiesta, así que es una carrera, no un fallo determinista. **Misma familia que el hallazgo
+  A-3** de la auditoría de cierre.
+- **Criterios de aceptación:**
+  - [ ] La conexión lateral cierra su transacción, o el fixture la cierra por ella.
+  - [ ] El fichero corre en aislamiento 10 veces seguidas sin colgarse.
 
 ### [ ] T-2.74 · `G-09` · restore real, RTO medido y publicado — `HUMANO-AWS`
-- **Componente:** operación · **Depende de:** T-2.73 · **Cubre `G-09`.**
+- **Componente:** operación · **Depende de:** T-2.73, **T-2.73.a** · **Cubre `G-09`.**
 - **Vive fuera del carril de gates a propósito:** es el único de los diez que **no exige manos
   en el gabinete** — se acredita con una ventana AWS sobre software que sí controlamos
   (`T-2.72`/`T-2.73`). Está anotado en la nota de la Fase 2.11 para que quien busque los diez
   gates ahí lo encuentre.
+- **No entres a la ventana sin `T-2.73.a`**: sin la huella del origen el verificador devuelve
+  INDETERMINADO y la acreditación sale a medias.
 - **Criterios de aceptación:**
-  - [ ] Procedimientos **A y B** ejecutados de verdad contra el entorno real.
-  - [ ] RPO/RTO **medidos** y escritos en el §6 del runbook de backup.
+  - [ ] Procedimientos **A, B y C (PITR)** ejecutados de verdad contra el entorno real. El C es
+        nuevo y el que más sorpresas puede dar: el sufijo de compresión de los WAL y el layout
+        interno de barman hay que medirlos contra el bucket real.
+  - [ ] El **primer `barman-cloud-backup`** lanzado a mano y supervisado (es pesado sobre un
+        `t4g.small`; el cron semanal lo tomaría en ≤7 días si nadie lo lanza).
+  - [ ] Confirmado a los ~15 min que la alarma de archivado **salió de INSUFFICIENT_DATA** — la
+        lección de `ghost_gateways`: una alarma nacida ahí se queda ahí para siempre, sin
+        transición y sin correo.
+  - [ ] RPO/RTO **medidos** y escritos en el §8 del runbook de backup.
   - [ ] `G-09` marcado en la tabla de gates de `RUNBOOK-auditoria-cierre.md`.
 
 ## Fase 2.7 · Canales reales de notificación
 
-### [ ] T-2.75 · Un canal simulado deja de mentir — `SOFTWARE`
+### [x] T-2.75 · Un canal simulado deja de mentir — `SOFTWARE`
 - **Componente:** api · **Depende de:** —
 - **La más importante y la más barata de toda la ruta.** Hoy
   `api/src/takab_api/notify/providers.py:134-135` registra `SimulatedProvider("whatsapp")` y
@@ -4740,26 +5343,402 @@ el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis*
   callando**. Un tablero que dice "notificado" cuando no se notificó a nadie es peor que uno
   que no dice nada.
 - **Criterios de aceptación:**
-  - [ ] Un canal simulado **no puede marcar `sent`**: marca `simulated` y se ve como tal en la
+  - [x] Un canal simulado **no puede marcar `sent`**: marca `simulated` y se ve como tal en la
         consola y en `incident_actions`.
-  - [ ] En producción, un canal simulado **grita** al arrancar, como ya hace email.
-  - [ ] Test: job por canal simulado ⇒ jamás aparece como entregado.
+  - [x] En producción, un canal simulado **grita** al arrancar, como ya hace email.
+  - [x] Test: job por canal simulado ⇒ jamás aparece como entregado.
 
-### [ ] T-2.76 · SMS real — `SOFTWARE` (+ `HUMANO-AWS` para credenciales)
+> **Cerrada (2026-08-08), y la pregunta se le hace al PROVIDER, no a una lista de canales.**
+> El guard vive en `orchestrator.py:546`, **antes** de bifurcar entre push y send, y lee
+> `getattr(provider, "simulated", True)` (`providers.py:46-55`): el default bajo incertidumbre
+> es la peor causa — un provider que no se declara **no hereda presunción de entrega**. El
+> `UPDATE` a `simulated` no toca `sent_at` ni `attempts` (`:230-237`), el dominio del CHECK se
+> **amplió** en vez de relajarse (`0032_notification_simulated.py:42-59`, cuyo `downgrade`
+> degrada `simulated`→`failed`, jamás a `sent`), y la cascada **no se da por satisfecha con un
+> simulado**: el SQL de "ya satisfecha" exige `status='sent'`.
+
+### [ ] T-2.75.a · La consola no sabe qué canal es real, y el día que lo sea mentirá al revés — `SOFTWARE`
+- **Componente:** api + web · **Depende de:** T-2.75 · **Detectada por:** auditoría de la Fase 2.7
+  (2026-08-08)
+- **El defecto, medido.** `web/src/features/tenants/NotificationChannels.tsx:16-25` rotula
+  WhatsApp y SMS con **«SIMULADO en el MVP» como texto ESTÁTICO**. Hoy es verdad. El día que
+  `T-2.76.a`/`T-2.77.a` carguen credenciales, el canal pasará a ser real **y el rótulo seguirá
+  diciendo que es simulado** — la regla de oro 7 al revés: un operador que necesita avisar por
+  SMS leerá que no sirve y buscará otra vía.
+- **La causa raíz no es el rótulo: es que no hay a quién preguntar.** Ningún endpoint expone el
+  estado real de los providers. `build_providers()` ya lo sabe en el arranque del worker —
+  incluso lo **grita** (T-2.75) — pero esa verdad muere en el log.
+- **Asimetría hermana, en la otra superficie.** `shared/sdk-ts/src/bms.ts:84-85` promete en su
+  comentario que «la bandera del payload MANDA sobre el mapa», y para un `kind` **conocido** el
+  mapa gana: un `notify_sent` con `payload.simulated:true` se pintaría «ENVIADA». Hoy el
+  orquestador nunca escribe eso, así que es latente — pero `IncidentTimeline.tsx:50-57` sí da
+  prioridad a la bandera, o sea que **las dos superficies discrepan**. Se arregla con el mismo
+  cambio o se queda como trampa para el siguiente.
+- **Criterios de aceptación:**
+  - [ ] Un endpoint declara, por canal, si el provider es real o simulado — **derivado del
+        registro ya construido**, jamás una lista escrita a mano en la web.
+  - [ ] La consola lo pinta desde ese dato. Un canal sin dato se pinta `S/D`, **nunca «real»**.
+  - [ ] Test: cambiar un provider de simulado a real **cambia lo que pinta la consola**, sin
+        tocar la web. Es el test que hoy no puede existir.
+  - [ ] `bms.ts` y `IncidentTimeline.tsx` resuelven `simulated` con la misma regla, anclado por
+        un test que use un `kind` conocido **con** la bandera puesta.
+
+### [x] T-2.76 · SMS real — `SOFTWARE` (+ `HUMANO-AWS` para credenciales)
 - **Componente:** api + infra · **Depende de:** T-2.75
 - **Criterios de aceptación:**
-  - [ ] Proveedor real detrás de la misma interfaz `NotifyProvider`; el orquestador no cambia.
-  - [ ] Reintentos, coste por mensaje y límite de tasa **declarados**, no descubiertos en la
+  - [x] Proveedor real detrás de la misma interfaz `NotifyProvider`; el orquestador no cambia.
+  - [x] Reintentos, coste por mensaje y límite de tasa **declarados**, no descubiertos en la
         factura.
-  - [ ] Evidencia de entrega en `incident_actions` con latencia y `deadline_met`, como el resto.
-  - [ ] Sin secretos en git (regla de oro 6).
+  - [x] Evidencia de entrega en `incident_actions` con latencia y `deadline_met`, como el resto.
+  - [x] Sin secretos en git (regla de oro 6).
 
-### [ ] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
+> **Cerrada en código (2026-08-08).** El alta de la cuenta y del número mexicano NO es parte de
+> esta ficha: tiene la suya, **T-2.76.a**, que sigue `[ ]`. Lo acreditado aquí: enchufe de una
+> línea (`providers.py:229`) y un test que **lee la fuente del orquestador** y se pone rojo si
+> aparece una rama `"sms"` dentro de él; el headroom del SLA se **deriva** de `CASCADE_ORDER` en
+> vez de copiarse; el provider **no reintenta por dentro** y hay un test que cuenta las llamadas;
+> la guarda de duplicados distingue *ambiguo* (5xx/timeout/2xx sin sid ⇒ recuerda y escala) de
+> *rechazo explícito* (4xx ⇒ sí reintenta); y el token se **depura** de errores y logs, con un
+> test que lo inyecta en un 401 y comprueba que no sale.
+>
+> **RESERVA declarada, no defecto:** `notify_sent` de SMS significa «aceptado por Twilio», no
+> «entregado en el teléfono» — está escrito en el módulo. El `MessageSid` **no se persiste**;
+> queda pendiente de `T-2.77.b`, que sigue abierta.
+
+> **Proveedor: TWILIO** (decisión ratificada 2026-08-07). Código en
+> `api/src/takab_api/notify/twilio.py`; sin credenciales el canal cae a `SimulatedProvider`
+> y los jobs quedan `simulated`, jamás `sent` (T-2.75). El orquestador **no se tocó**: hay un
+> test que se pone rojo si aparece una rama `"sms"` dentro de él.
+>
+> **Números declarados** (verificados contra la documentación de Twilio el 2026-08-07; fijados
+> en `TWILIO_LIMITS` con un test que se pone rojo si cambian):
+>
+> | Qué | Cuánto | Fuente |
+> |---|---|---|
+> | Coste por **segmento** a MX (long code) | **USD 0.1819** | `twilio.com/en-us/sms/pricing/mx` |
+> | Número mexicano | USD 6.50/mes (local) · 15/mes (móvil) | ídem |
+> | Límite de tasa asumido | **1 segmento/s** (peor caso documentado) | `docs/messaging/guides/scaling-queueing-latency` |
+> | Caducidad en cola por defecto | **10 h (36 000 s)**, luego error 30001 | `docs/messaging/guides/account-based-throughput-overview` |
+> | `ValidityPeriod` que se envía | **300 s** (rango legal 1..36 000) | `docs/messaging/api/message-resource` |
+>
+> **El coste, que es un criterio y no un comentario.** Con el presupuesto de USD 50/mes, a
+> 0.1819 el segmento, la cuenta entera compra **274 segmentos al mes**. **No se impone un tope
+> duro que corte el canal**: cortar el aviso de un sismo por presupuesto es una decisión de
+> producto y se toma con nombre y firma, no dentro de un provider. Lo que sí se hace es (a)
+> **declarar** la cifra en el log de arranque y (b) hacer el gasto masivo **imposible por
+> construcción**: `notifications.sms.to` es **un solo número** por tenant (la guardia del SOC,
+> no el altavoz de los ocupantes — a los ocupantes los despierta el push, que no cuesta por
+> mensaje), y el provider **rechaza** un destino con lista o comas. Un incidente = un SMS.
+> Si algún día se quiere SMS masivo a ocupantes, es otra ficha y empieza por el presupuesto.
+>
+> **Coste oculto medido:** se cobra por SEGMENTO y **un solo acento fuera de GSM-7 pasa el SMS
+> entero a UCS-2** (160 → 70 caracteres por segmento): «ALERTA SÍSMICA» (la `Í` no está en
+> GSM-7; la `É` y la `Ñ` sí) **duplica** la factura, y **triplica** si el texto llenaba el
+> segmento. Y como el límite de Twilio se cuenta en *segmentos* por segundo, también duplica
+> el consumo del plazo. Por eso el cuerpo se pliega a GSM-7 y se acota a **un** segmento.
+>
+> **El plazo, contra el límite de tasa.** El plan da al SMS la ventana
+> `notify_sms_deadline_s − notify_step_s × posición` = **10 s**. A 1 MPS eso son **10
+> segmentos**: el SLA de 30 s es **alcanzable** mientras no coincidan más de ~10 SMS sobre el
+> mismo número. Por encima queda **declarado inalcanzable** (`sms_deadline_headroom()` lo
+> calcula y lo dice; no se promete en silencio). Si se llega ahí, las salidas son comprar
+> throughput (short code: 100 MPS, **14 semanas** de alta) o repartir en varios números —
+> ficha aparte, no un parche. Twilio **no publica** el MPS de long code en México y sí
+> documenta que la entrega doméstica por long code allí es *best-effort and may be unreliable*
+> (`twilio.com/en-us/guidelines/mx/sms`): de ahí el peor caso.
+>
+> **Reintentos.** El provider **no reintenta por dentro** (Twilio ya reintenta contra la
+> operadora y el orquestador ya reintenta con backoff; una tercera capa multiplicaría
+> duplicados). Twilio **no ofrece clave de idempotencia** en el recurso Message, así que la
+> pone el dominio: `(destino, incidente)`. Un fallo **ambiguo** (5xx, timeout, respuesta
+> ilegible) pudo haber creado el mensaje ⇒ se recuerda y el siguiente intento **escala al
+> correo en vez de duplicar**; un rechazo **explícito** (4xx) demuestra que no se creó nada ⇒
+> sí se reintenta. La memoria caduca con el `ValidityPeriod`.
+>
+> - **PENDIENTE DERIVADO — la entrega CONFIRMADA no está en esta ficha.** El `POST` devuelve
+>   `queued`/`accepted`; la única palabra de Twilio que significa «llegó al teléfono» es
+>   `delivered`, y **no viaja en esa respuesta**: llega por *status callback*. Por eso, hoy,
+>   **un `notify_sent` de sms significa «aceptado por Twilio», no «entregado»** — igual que un
+>   `notify_sent` de email significa «SES lo aceptó», no «está en la bandeja». El parámetro
+>   `StatusCallback` ya viaja si hay URL configurada, para que ese día no haya que tocar el
+>   provider. Lo que falta —y necesita **su propia ficha, con su conteo**— es: endpoint público
+>   que reciba el callback, validación de `X-Twilio-Signature`, mapeo `MessageSid` → job y
+>   dónde escribir el desenlace tardío. **`T-2.78` no puede acreditar «entrega» por SMS hasta
+>   entonces**: puede acreditar que el mensaje salió y que la persona contestó, que es lo que
+>   de verdad mide esa tarea, pero no puede llamar «entregado» a un `queued`.
+> - **PENDIENTE `HUMANO-AWS`:** alta de la cuenta Twilio, compra del número mexicano y carga
+>   de `TAKAB_API_NOTIFY_SMS_AUTH_TOKEN` en Secrets Manager. **Nunca en `deploy/cloud/deploy.sh`
+>   ni en ningún archivo del repo** (regla de oro 6).
+
+### [ ] T-2.76.a · Alta de la cuenta Twilio y del número mexicano — `HUMANO-AWS` + `LEGAL`
+- **Componente:** cuenta de terceros + Secrets Manager · **Depende de:** T-2.76 (código listo)
+- **Por qué es tarea propia y no una nota:** el código de T-2.76 está completo y probado, pero
+  **sin credenciales el canal SMS cae a `simulated`** — escala al correo y deja huella honesta,
+  que es lo correcto, pero significa que **hoy nadie recibe un SMS**. Mientras esto no se cierre,
+  la cadena de notificación tiene un canal menos del que el tablero da por disponible.
+- **Criterios de aceptación:**
+  - [ ] **Alta de la cuenta Twilio** y verificación de la identidad del negocio.
+  - [ ] **Compra del número mexicano.** Long code: 6.50 USD/mes local o 15 USD/mes con prefijo
+        móvil. Ojo: Twilio documenta que la entrega doméstica en México por long code es
+        *«best-effort and may be unreliable»* — si eso no basta para un canal de vida, la
+        alternativa es **short code** (100 MPS) con **~14 semanas de alta**, y entonces esta
+        ficha se convierte en un plazo de calendario, no en un trámite.
+  - [ ] **`TAKAB_API_NOTIFY_SMS_AUTH_TOKEN` en Secrets Manager**, y el resto de ajustes en el
+        despliegue. **Nunca en `deploy/cloud/deploy.sh` ni en ningún archivo del repo**
+        (regla de oro 6).
+  - [ ] **Verificar tras el alta que el canal ASCIENDE a real**: el arranque deja de gritar
+        «SMS simulado» y un incidente de prueba produce `notify_sent` con su latencia, no
+        `notify_simulated`. Media credencial es cero credencial y grita en ERROR — está
+        anclado por test, pero hay que verlo en el entorno desplegado.
+  - [ ] **Decidir el tope de gasto.** $50/mes ÷ $0.1819 por segmento = **274 segmentos al mes**.
+        El código **no corta el canal por presupuesto a propósito**: cortar un canal de vida por
+        dinero es una decisión con firma, no de un provider. Hoy el gasto masivo es imposible
+        por construcción (`notifications.sms.to` es UN destinatario por tenant: la guardia del
+        SOC, no los ocupantes), pero **si el producto quiere algún día SMS a ocupantes, esa
+        aritmética cambia entera** y hay que decidir el tope antes, no en la factura.
+
+### [~] T-2.77 · WhatsApp Business — `SOFTWARE` (+ `LEGAL`/`HUMANO-AWS` para el alta)
 - **Componente:** api · **Depende de:** T-2.75
 - **Criterios de aceptación:**
-  - [ ] Plantillas aprobadas y versionadas en el repo (WhatsApp no deja improvisar texto).
-  - [ ] Degradación explícita si la plantilla es rechazada: **el canal cae, no finge**.
-  - [ ] Evidencia de entrega igual que los demás canales.
+  - [~] Plantillas **versionadas** en el repo: sí, y con candado real (el sello es el digest
+        SHA-256 del bloque `template`, y un test mueve una coma y comprueba que la plantilla se
+        **desaprueba**). **APROBADAS: no**, y a propósito: la única del repo está `PENDING`
+        porque nadie la ha sometido a Meta. Es lo que cierra `T-2.77.a`, y es la razón —la
+        única— de que esta ficha sea `[~]` y no `[x]`.
+  - [x] Degradación explícita si la plantilla es rechazada: **el canal cae, no finge**.
+  - [x] Evidencia de entrega igual que los demás canales.
+
+> **Por qué `[~]` y no `[x]` (2026-08-08).** El criterio dice literalmente «plantillas
+> **APROBADAS**». Sellar ese criterio sin la aprobación de Meta sería la misma clase de mentira
+> que T-2.75 existe para erradicar. El código está completo y probado; lo que falta es un gate
+> externo.
+>
+> **Lo acreditado, que es lo fino de esta ficha:** `simulated` es una **propiedad derivada**, no
+> un atributo — por eso el canal cae **en caliente** cuando Meta pausa la plantilla. Se atienden
+> las dos puertas, y la segunda es la que nadie ve venir: un **HTTP 200 que dice `paused` por
+> dentro**. Un `if response.is_success: return` lo habría contado como enviado. Los 4xx de
+> plantilla se tratan **por rango** (132xxx), no por lista, así que un código nuevo de Meta
+> tampoco se cuela. Y sin `opt_in.at` en el destino el provider **se niega a enviar** y lo deja
+> escrito como `notify_failed`.
+>
+> **RESERVA declarada, no defecto:** `notify_sent` significa «aceptado por Meta». El `wamid`
+> **no se persiste**; queda pendiente de `T-2.77.b`, que sigue abierta.
+
+> **Decisión: WhatsApp Business Cloud API directa de Meta** (`notify/whatsapp.py`), enchufada
+> donde estaba `SimulatedProvider("whatsapp")`, mismo contrato `NotifyProvider`, **cero líneas
+> del orquestador** (hay un test que lee su fuente y exige que no aparezca ninguna rama
+> `"whatsapp"` entrecomillada). Todo lo de abajo se verificó contra la documentación de Meta el
+> **2026-08-07**, con la URL pegada a cada dato.
+>
+> **Lo que hace este canal distinto a todos los demás: NO SE PUEDE IMPROVISAR TEXTO.** *"Template
+> messages are the only type of message that can be sent to WhatsApp users outside of a customer
+> service window"* (`developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview`).
+> Esa ventana la abre **el usuario**: *"When a WhatsApp user messages you or calls you, a 24-hour
+> timer called a customer service window starts... When the window closes, you can only send
+> pre-approved template messages"* (`.../whatsapp/messages/send-messages`). Aquí el destinatario
+> es la guardia del SOC y **nunca escribe primero**, así que **la ventana está SIEMPRE cerrada**:
+> este canal es 100 % plantilla, sin caso alterno. Un texto libre rebotaría con el error 131047.
+>
+> | Dato | Valor verificado | Fuente |
+> |---|---|---|
+> | Endpoint | `POST https://graph.facebook.com/{Version}/{Phone-Number-ID}/messages` | `.../reference/whatsapp-business-phone-number/message-api` |
+> | Respuesta del POST | `messages[0].message_status` ∈ `accepted` \| `held_for_quality_assessment` \| `paused`; `accepted` = *"accepted by WhatsApp and is being processed"* | ídem |
+> | Categorías (enum de alta) | `AUTHENTICATION`, `FREE_SERVICE`, `MARKETING`, `UTILITY` | `.../reference/whatsapp-business-account/message-template-api` |
+> | Estados de plantilla (enum) | `APPROVED, ARCHIVED, DELETED, DISABLED, IN_APPEAL, LIMIT_EXCEEDED, PAUSED, PENDING, PENDING_DELETION, REJECTED` | ídem |
+> | Campos de alta | `name` (*"lowercase alphanumeric and underscores only"*), `language`, `category`, `components`, `parameter_format`, `message_send_ttl_seconds` | ídem |
+> | Cuerpo | *"The only required component is the body component"* · *"Maximum of 1024 characters"* | `.../whatsapp/templates/components/` |
+> | TTL de una utility | default **30 días**; configurable **30 s .. 12 h**; se fija **al crear**, no al enviar | `.../whatsapp/templates/time-to-live` |
+> | Facturación | **"You are only charged when a template message is delivered"**, por mensaje desde el 2025-07-01 | `.../whatsapp/pricing` |
+> | Opt-in | *"You may only contact people on WhatsApp if: (a) they have given you their mobile phone number; and (b) you have received opt-in permission..."* | `whatsappbusiness.com/es-la/policy/` (301 de `business.whatsapp.com/policy`) |
+> | Webhooks de estado | *"each outgoing message can have up to three separate webhooks (one for a status of sent, one for delivered, and one for read)"* | `developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components` |
+>
+> **NO existe una categoría de emergencia — se comprobó, no se supuso.** El enum solo admite
+> `AUTHENTICATION`, `FREE_SERVICE`, `MARKETING` y `UTILITY`, y de las creables Meta dice *"Each
+> template must be categorized as authentication, marketing, or utility"*. La correcta es
+> **`UTILITY`**, que es donde Meta pone explícitamente lo no promocional *esencial o crítico*:
+> **public safety (severe weather, crisis response)**
+> (`.../whatsapp/templates/template-categorization`). **Y la categoría no es contabilidad: es
+> entregabilidad.** Si la plantilla acabara en `MARKETING`, un destinatario que haya rechazado
+> marketing **dejaría de recibir el aviso de un terremoto** (error 131050, *"Recipient opted out
+> of marketing messages"*). Peor: Meta **recategoriza sola** — *"WhatsApp introduced a recurring
+> process to identify and update approved templates that should be of a different category"*.
+> Por eso el artefacto lleva `allow_category_change: false` y hay un test que se pone rojo si
+> alguna plantilla de alerta deja de ser `UTILITY`.
+>
+> **El artefacto de plantilla: `api/src/takab_api/notify/whatsapp_templates/*.json`.** Un fichero
+> por plantilla, con tres bloques: `template` —**literalmente** el cuerpo de
+> `POST /<WABA_ID>/message_templates`—, `binding` —de dónde sale cada `{{n}}`, nuestro— y
+> `approval` —el sello—. **JSON y no YAML ni un literal de Python justamente por eso**: si el
+> fichero del repo no es *exactamente* lo que se le manda a Meta hay una traducción en medio, y
+> la traducción es el sitio donde el texto aprobado y el texto del repo se separan sin que nadie
+> lo note; un literal de Python, además, invita a meter f-strings dentro de lo que tiene que
+> estar congelado.
+>
+> **El candado que hace que cambiar el texto EXIJA volver a aprobar.** Meta guarda el texto;
+> nosotros solo enviamos el **nombre**. Editar el cuerpo en el repo sin volver a pasar por Meta
+> **no cambia lo que lee la gente**: crea una divergencia silenciosa entre lo que el repo afirma
+> y lo que llega al teléfono. Por eso el sello es el **digest SHA-256 del bloque que Meta
+> revisó**: mover una coma mueve el digest y la plantilla deja de estar aprobada en el acto
+> (test: `test_tocar_el_texto_de_una_plantilla_aprobada_la_DESAPRUEBA`). Dicho con honestidad:
+> atrapa la deriva accidental, que es la que ocurre; no a quien reescriba el digest a propósito.
+>
+> **Hoy la plantilla está `PENDING` a propósito, y por eso el canal está caído.** Nadie la ha
+> mandado a Meta (falta `T-2.77.a`). No se pone `APPROVED` "para probar": eso es exactamente la
+> mentira que `T-2.75` erradicó. El resultado es que el criterio 2 **funciona desde el minuto
+> cero**: hay credenciales o no, pero sin plantilla aprobada el canal se declara `simulated`, el
+> job queda `simulated` con `sent_at` en NULL, escribe `notify_simulated` (ámbar) y **escala al
+> SMS**.
+>
+> **Degradación DERIVADA, no enumerada.** `simulated` es una **propiedad**, no un atributo:
+> vale "no hay ninguna plantilla utilizable". De ahí sale que el canal caiga **en caliente**
+> cuando Meta mata la plantilla, por dos puertas distintas que hay que atender las dos:
+> 1. **Un 4xx de la familia 132xxx** — `132015` *"Template paused due to low quality"*, `132016`
+>    *"Template permanently disabled after repeated pauses"*, `132001` no existe o no aprobada,
+>    `132007` viola la política, `132000` número de parámetros, `132012` formato
+>    (`developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes/`). Se cuarentena
+>    **por familia, no por lista**: el 132xxx que Meta añada mañana hereda el trato solo.
+> 2. **Un HTTP 200 que dice `paused` por dentro** — trampa fina de esta API: la respuesta trae
+>    `message_status` y uno de sus tres valores documentados es `paused`. Un
+>    `if response.is_success: return` lo habría contado como enviado.
+>
+> Y la distinción importa: `failed` reintenta con backoff, `simulated` no. **Martillear una
+> plantilla pausada no la despausa — solo empeora su calificación de calidad en Meta.**
+>
+> **Publicado ≠ entregado, otra vez.** De los tres valores del POST, **ninguno significa "llegó
+> al teléfono"**; el mejor, `accepted`, es literalmente *"accepted by WhatsApp and is being
+> processed"*. `delivered` solo llega **después y por webhook**. La prueba más fuerte de que la
+> distinción es real la da la propia facturación de Meta: **solo cobra los mensajes
+> entregados**. Nuestra contabilidad no puede ser más generosa que la suya. Así que hoy un
+> `notify_sent` de whatsapp significa **"aceptado por Meta"**, igual que el de sms significa
+> "aceptado por Twilio" y el de email "SES lo aceptó". El `wamid` se guarda desde el minuto uno
+> aunque no haya webhook: es lo único con lo que ese día se podrá casar el desenlace tardío.
+> `held_for_quality_assessment` **no cuenta como envío**: Meta lo retuvo y puede salir o no —
+> el default ante lo desconocido es la peor causa.
+>
+> **Coste: declarado hasta donde se pudo verificar, y NO más.** Meta factura por mensaje
+> entregado, por categoría, desde el 2025-07-01, y las utility dentro de una ventana de servicio
+> abierta son gratis — aquí la ventana está siempre cerrada, luego **siempre se paga**. La
+> tarifa concreta de México (código 52) vive en un CSV/PDF descargable que **no se pudo leer**,
+> así que **no se declara una cifra**: va en `T-2.77.a` junto al alta. Lo que sí está acotado por
+> construcción, como en el SMS, es el volumen: `notifications.whatsapp.to` es **un** destino por
+> tenant y el provider rechaza listas o comas. Un incidente = un mensaje.
+>
+> - **HALLAZGO DE COMPLIANCE — el opt-in, y no cabe entero aquí.** WhatsApp condiciona
+>   **cualquier** contacto a un consentimiento previo, y el opt-in debe *"clearly state that a
+>   person is opting in to receive communication from the business"* y *"clearly state the
+>   business's name"* (`.../whatsapp/getting-opt-in`). **Hoy TAKAB no tiene modelo de
+>   consentimiento**: `notifications.whatsapp.to` es un teléfono suelto en el `rule_set`, sin
+>   quién, sin cuándo y sin prueba. Eso es la **Fase 2.8 llamando a la puerta** (`T-2.79`, aviso
+>   versionado + consentimiento con versión aceptada y registro append-only): **el opt-in de
+>   WhatsApp es un consentimiento más de ese motor**, y cuando `T-2.79` exista, este canal debe
+>   leerlo de ahí en vez de del `rule_set`. Mientras tanto se exige una constancia mínima en el
+>   destino (`opt_in.at`, el instante) y **sin ella el provider se niega a enviar**. No es
+>   burocracia: enviar sin opt-in no rebota un mensaje — degrada la calidad del número y puede
+>   **tumbar el canal para todos los tenants a la vez**. Y la fecha no es adorno: un
+>   consentimiento sin instante no se puede probar anterior al mensaje, luego no es un
+>   consentimiento. El fallo queda **escrito** (`notify_failed`, rojo en la consola), no en
+>   silencio.
+> - **HALLAZGO `LEGAL` — a quién NO le deja Meta usar esta plataforma.** *"Prohibimos que
+>   organismos de las fuerzas del orden, servicios militares, organismos de inteligencia y
+>   agencias de seguridad nacional usen la Plataforma de WhatsApp Business"*
+>   (`whatsappbusiness.com/es-la/policy/`). El producto se vende a **"Protección Civil, gobierno
+>   y empresas"** (`CLAUDE.md §1`). Protección Civil no es fuerza del orden ni servicio militar,
+>   pero **la frontera la traza Meta, no nosotros**, y el coste de equivocarse no es un mensaje
+>   rebotado: es la cuenta cerrada y el canal muerto para toda la flota. **Antes de vender este
+>   canal a un cliente de gobierno hay que confirmarlo por escrito con Meta** — va en
+>   `T-2.77.a`. Para un hospital, una universidad o un corporativo no hay duda.
+> - **PENDIENTE DERIVADO — la entrega CONFIRMADA no está en esta ficha**, exactamente igual que
+>   en `T-2.76` y por el mismo motivo. Lo cierra `T-2.77.b`, que unifica los dos canales.
+> - **PENDIENTE `HUMANO-AWS`/`LEGAL`:** alta del WhatsApp Business Account, número, aprobación de
+>   la plantilla y `TAKAB_API_NOTIFY_WHATSAPP_ACCESS_TOKEN` en Secrets Manager. **Nunca en
+>   `deploy/cloud/deploy.sh` ni en ningún archivo del repo** (regla de oro 6). Lo cierra
+>   `T-2.77.a`.
+
+### [ ] T-2.77.a · Alta del WhatsApp Business Account y aprobación de la plantilla — `HUMANO-AWS` + `LEGAL`
+- **Componente:** cuenta de terceros + Secrets Manager · **Depende de:** T-2.77 (código listo)
+- **Por qué es tarea propia y no una nota:** el código de T-2.77 está completo y probado, pero
+  **hoy el canal WhatsApp está caído por partida doble**: no hay credenciales y, aunque las
+  hubiera, la plantilla del repo está `PENDING` porque nadie la ha sometido a Meta. Cae a
+  `simulated`, escala al correo y deja huella honesta — que es lo correcto—, pero significa que
+  **hoy nadie recibe un WhatsApp**. Y aquí el trámite no es solo administrativo: **la aprobación
+  de una plantilla es revisión humana de Meta y puede tardar hasta 24 h... o ser rechazada**.
+- **Criterios de aceptación:**
+  - [ ] **Alta del WhatsApp Business Account** y del número asociado (Cloud API).
+  - [ ] **`LEGAL` — confirmar por escrito con Meta que Protección Civil / la dependencia de
+        gobierno concreta NO cae en la prohibición** de *"organismos de las fuerzas del orden,
+        servicios militares, organismos de inteligencia y agencias de seguridad nacional"*
+        (`whatsappbusiness.com/es-la/policy/`). Si cae, **este canal no existe para ese cliente**
+        y hay que decirlo antes de venderlo, no después.
+  - [ ] **Someter la plantilla del repo** (`notify/whatsapp_templates/*.json`, bloque `template`
+        tal cual) y, **cuando Meta la apruebe**, escribir el sello en el bloque `approval`:
+        `status: APPROVED` + `approved_digest` = el digest del bloque sometido + `meta_template_id`.
+        **Si Meta la rechaza, el texto se corrige y se vuelve a someter — no se sella a mano.**
+  - [ ] **Verificar la categoría con la que Meta la aprobó de verdad.** Se pide `UTILITY`; Meta
+        recategoriza por su cuenta y una alerta de sismo en `MARKETING` deja de llegar a quien
+        haya rechazado marketing (131050). Volver a comprobarlo periódicamente.
+  - [ ] **`TAKAB_API_NOTIFY_WHATSAPP_ACCESS_TOKEN` en Secrets Manager**, más
+        `..._PHONE_NUMBER_ID` y `..._GRAPH_VERSION` en el despliegue. **Nunca en
+        `deploy/cloud/deploy.sh` ni en ningún archivo del repo** (regla de oro 6).
+  - [ ] **Averiguar y ESCRIBIR la tarifa de una utility a México** (código 52). T-2.77 la dejó
+        sin declarar a propósito porque solo está en un CSV/PDF descargable: mejor un hueco
+        explícito que una cifra inventada. Con ella, la aritmética del presupuesto como en
+        `T-2.76.a`.
+  - [ ] **Verificar tras el alta que el canal ASCIENDE a real**: el arranque deja de gritar
+        "ninguna plantilla aprobada" y un incidente de prueba produce `notify_sent` con su
+        latencia, no `notify_simulated`.
+  - [ ] **Registrar el opt-in de cada destinatario** antes de encender el canal para un tenant:
+        sin `opt_in.at` en `notifications.whatsapp`, el provider se niega y deja `notify_failed`.
+
+### [ ] T-2.77.b · Webhooks de estado de entrega (Meta + Twilio) — `SOFTWARE` + infra
+- **Componente:** api + infra · **Depende de:** T-2.76, T-2.77
+- **Por qué existe:** `T-2.76` lo pidió con todas las letras ("necesita **su propia ficha, con su
+  conteo**") y `T-2.77` se topó con lo mismo. Hoy **tres canales dicen `notify_sent` queriendo
+  decir "el proveedor lo aceptó"**: email ("SES lo aceptó"), sms ("Twilio lo encoló") y whatsapp
+  ("Meta lo aceptó"). Ninguno de los tres puede afirmar que un humano lo tenga en la mano. Es
+  honesto —está escrito en los tres sitios— pero es **una tarea sin hacer**, no un estado final.
+- **Es una ficha sola y no dos porque el trabajo es el mismo tres veces**: un endpoint público
+  que recibe un callback, valida su firma, casa un identificador de proveedor con un job y
+  escribe un desenlace **tardío** — que es lo verdaderamente nuevo: hoy `notification_jobs` no
+  tiene dónde poner "salió a las 12:00:03 y llegó a las 12:00:19".
+- **Criterios de aceptación:**
+  - [ ] Endpoint público por proveedor, con **validación de firma**: `X-Twilio-Signature` en
+        Twilio; el `hub.verify_token` + firma `X-Hub-Signature-256` de Meta.
+  - [ ] Mapeo **`MessageSid` → job** y **`wamid` → job**: hoy el `wamid` ya se guarda en el
+        recibo del provider pero **no se persiste**; sin persistirlo no hay con qué casar nada.
+  - [ ] Columna(s) de desenlace tardío en `notification_jobs` (`delivered_at`, `last_status`) y
+        **evidencia propia**: un `notify_delivered` distinto de `notify_sent`, porque son dos
+        hechos distintos y la consola tiene que poder mostrar los dos.
+  - [ ] **Solo `delivered`/`read` cuentan como entrega.** `queued`, `sent`, `accepted` y
+        `held_for_quality_assessment` no. Ya hay `is_delivery_confirmed()` en los dos providers
+        con esa regla: este endpoint la reusa, no la reinventa.
+  - [ ] Un webhook **no autenticado o repetido** no altera nada (idempotencia por identificador
+        de proveedor).
+  - [ ] Test: un job `sent` que recibe `failed`/`undelivered` **acaba en rojo en la consola**, no
+        se queda verde para siempre. Ese es el caso que hoy no se ve y es el que más duele.
+
+### [ ] T-2.77.c · La cuarentena y la guarda de duplicados viven en la memoria de UN worker — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-2.76, T-2.77 · **Detectada por:** auditoría de la
+  Fase 2.7 (2026-08-08)
+- **El defecto, medido.** La cuarentena de plantillas de WhatsApp (`whatsapp.py:456-466`) y la
+  guarda de duplicados de Twilio (`providers.py:63-104`) son **estado en proceso**. Dos
+  consecuencias reales, ninguna teórica:
+  1. **Al reiniciar el worker se olvida la cuarentena** y se vuelve a martillear una plantilla
+     que Meta pausó — que es exactamente lo que **degrada su calificación de calidad** y termina
+     costando el canal entero. La degradación en caliente de T-2.77 funciona; lo que no
+     sobrevive es el recuerdo de haberla sufrido.
+  2. **Con más de una instancia del worker la guarda de duplicados no existe entre instancias**,
+     así que un SMS o un WhatsApp duplicado sigue siendo posible. Y el orquestador **ya asume
+     varias instancias**: usa `pg_advisory_xact_lock` (`orchestrator.py:312`). O sea que el
+     supuesto de "un solo worker" que sostiene esta guarda ya está contradicho por el código de
+     al lado.
+- **Criterios de aceptación:**
+  - [ ] La cuarentena sobrevive al reinicio del worker (persistida, no en memoria).
+  - [ ] La guarda de duplicados es **compartida entre instancias**, con la misma idempotencia por
+        `event_id`/nonce que ya gobierna el edge→nube (regla de oro 3).
+  - [ ] Test que arranque **dos** orquestadores contra la misma DB y demuestre que el mensaje
+        sale **una vez**. Sin ese test esto vuelve.
+  - [ ] Test que reinicie el provider y demuestre que la plantilla en cuarentena **sigue** en
+        cuarentena.
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
@@ -4769,78 +5748,859 @@ el RTO no está medido. Mientras eso siga así, **el respaldo es una hipótesis*
         alguien reciba el aviso, cronometrado. A-4 dejó el topic SNS aplicado y confirmado
         (2026-07-13/14); esto acredita que **la persona** llega, no solo el mensaje.
   - [ ] Escalamiento escrito: quién es el segundo si el primero no acusa.
+- **Procedimiento preparado (2026-08-07):**
+  `takab-docs/runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md`. Trae los registros DNS con
+  la doc de AWS citada por URL, el comando que provoca la alarma
+  (`set-alarm-state` sobre `takab-dev-dlq-backfill`, la única del catálogo que ninguna ventana
+  de mantenimiento puede silenciar), los **cuatro instantes** a cronometrar y la plantilla del
+  escalamiento con sus huecos. Engancha además la verificación pendiente de T-2.60.a: es el
+  mismo procedimiento.
+- **Tres cosas que el runbook dejó por escrito y conviene saber antes de empezar:**
+  - **No hay dominio.** La consola vive en `sslip.io` *"sin Route53 ni dominio propio"*
+    (`modules/serve/outputs.tf:9`), y la solicitud de producción de SES pide un `Website URL`.
+    El dominio es una decisión de producto pendiente, no un trámite del runbook.
+  - **No hay acuse.** `POST /incidents/{id}/ack` acusa un INCIDENTE, no una alarma de
+    operación; el cuarto instante se anota a mano. Ficha propia: `T-2.78.a`.
+  - **Son dos cadenas.** CloudWatch→SNS→on-call no comparte código, destinatario ni permiso
+    con `notify/orchestrator.py`. Acreditar una no dice nada de la otra — el hueco de
+    `ses:SendEmail` de julio-2026 estuvo tapado exactamente por eso.
+
+### [ ] T-2.78.a · Acuse y evidencia de entrega de la cadena de operación — `SOFTWARE`
+- **Componente:** infra + api · **Depende de:** —
+- **Por qué es tarea propia:** `T-2.78` tiene que cronometrar el instante en que **una persona
+  acusa**, y hoy no hay dónde escribirlo. La cadena de operación (CloudWatch → SNS → correo)
+  no deja rastro en ninguna tabla de TAKAB, y AWS tampoco lo da: el registro de estado de
+  entrega de SNS soporta Firehose, SQS, Lambda, HTTPS y endpoints de aplicación — **email y
+  email-json no están en la lista**
+  (`https://docs.aws.amazon.com/sns/latest/dg/sns-topic-attributes.html`). Así que hoy
+  "publicado" es todo lo que se puede afirmar, y "leído por una persona" no se puede afirmar
+  jamás. `T-2.78` se puede acreditar una vez a mano; como régimen permanente, no.
+- **Reproducción del hueco:** provocar una alarma con `aws cloudwatch set-alarm-state` y luego
+  buscar en la DB, en los logs o en la consola de AWS **cuándo** la leyó alguien. No aparece en
+  ningún sitio: `notification_jobs` es de la otra cadena y no tiene ninguna columna de acuse
+  (`db/schema.sql:1002-1030`: `created_at`, `due_at`, `deadline_at`, `sent_at`, `attempts`,
+  `error` — y nada más).
+- **Criterios de aceptación:**
+  - [ ] **Evidencia de máquina de que el aviso salió del topic.** Suscribir al mismo topic un
+        endpoint que SÍ admita registro de entrega (HTTPS o Lambda, por la lista de arriba), de
+        modo que quede un rastro con hora sin depender del buzón de nadie.
+  - [ ] **Un acuse con hora.** Un humano confirma "lo tengo" y queda registrado. Reutilizar el
+        camino de `incidents_ack` sería mezclar dos cadenas distintas (ver T-2.78): decidir
+        explícitamente si es una tabla propia o un objeto de operación aparte, y escribir por
+        qué.
+  - [ ] **El tiempo hasta el acuse es consultable**, no reconstruible a mano desde cabeceras de
+        correo.
+  - [ ] **Si nadie acusa, eso también se registra.** Un salto sin acuse que no deja fila es una
+        anécdota, no una métrica: a la tercera vez nadie recuerda las dos primeras.
+  - [ ] Test: un aviso sin acuse **jamás** aparece como atendido (mismo principio que T-2.75 —
+        el canal que no entrega no finge).
+
+### [ ] T-2.78.b · Identidad de DOMINIO de SES en Terraform — `SOFTWARE`
+- **Componente:** infra · **Depende de:** —
+- **Por qué es tarea propia:** el único recurso SES de toda la infra es
+  `aws_sesv2_email_identity` **por dirección** (`modules/identity/main.tf:139-144`); grep de
+  `dkim|configuration_set|mail_from` sobre `infra/terraform/` devuelve **cero**. O sea que el
+  primer criterio de `T-2.78` —DKIM/SPF de dominio real— hoy solo se puede cumplir a base de
+  clics en la consola, y lo que se hace a clics no se vuelve a hacer igual ni se revisa en un
+  diff. El código puede escribirse YA, con el dominio como variable vacía por defecto (patrón
+  del módulo `push/`: sin credenciales, el apply no crea nada).
+- **Reproducción:** `grep -rn "aws_ses" infra/terraform/` → una sola línea, de dirección.
+- **Criterios de aceptación:**
+  - [ ] Identidad de **dominio** con Easy DKIM, MAIL FROM propio y su registro DMARC,
+        condicionados a una variable de dominio: vacía ⇒ no se crea nada y el `apply` de hoy no
+        cambia.
+  - [ ] **El ARN de la identidad de dominio entra en `notify_ses_identity_arns`.** Hoy esa
+        lista se construye iterando `ses_verified_emails` (`envs/dev/main.tf:79-82`): cambiar
+        el remitente al dominio sin tocar esto deja al worker con `AccessDenied` mientras los
+        correos de CloudWatch siguen llegando — el fallo del 2026-07-14, calcado.
+  - [ ] **Bounces y quejas con destino.** La solicitud de producción exige declarar que existe
+        un proceso para tratarlos
+        (`https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html`); hoy no hay
+        ni topic de feedback. Declararlo sin tenerlo es firmar algo falso.
+  - [ ] Los valores literales de los registros DNS **no se hornean en el repo**: varían por
+        región y celda, y la fuente es la respuesta de la API.
 
 ## Fase 2.8 · Compliance como producto
 
 El motor es `SOFTWARE`; **el texto legal es `LEGAL`**. No se bloquean entre sí: se construye
 el motor con un texto provisional versionado y se sustituye el texto cuando llegue.
 
-### [ ] T-2.79 · Aviso de privacidad versionado + consentimiento — `SOFTWARE` (texto: `LEGAL`)
+> ### CERRADA EN SU ALCANCE (2026-08-08) — y con 12 deudas declaradas, no escondidas
+>
+> **Las cinco tareas de la fase están `[x]`:** T-2.79 (aviso versionado + consentimiento),
+> T-2.80 (ARCO por anonimización), T-2.81 (retención con la excepción codificada), T-2.82
+> (`compliance_labels` por tenant) y T-2.83 (residencia de datos). Cada una pasó por **auditoría
+> independiente**, y dos de ellas por **dos**.
+>
+> **Lo que la fase demostró, en una frase:** el motor de datos aguantó todas las auditorías a la
+> primera —append-only en tres capas, digest copiado y no derivado, borrado imposible por
+> privilegio y no por convención—, y **lo que estaba roto era siempre lo que la persona ve**. El
+> peor defecto de toda la fase no fue de compliance: fue que la pantalla de consentimiento
+> **encerraba al ocupante** sin check-in de vida ni botón de pánico cuando la nube fallaba a
+> medias.
+>
+> **Las 12 fichas abiertas de esta fase son deuda declarada durante el trabajo, no alcance sin
+> hacer.** Ninguna se cierra escribiendo código a ciegas:
+>
+> - **Necesitan decisión humana (2):** `T-2.80.a` — `LEGAL`: si anonimizar el teléfono del
+>   consentimiento destruye la prueba de la base legal del envío que autoriza. `T-2.79.d` —
+>   `DECISIÓN`: qué gana entre `empty` y `stale` en el contrato de `StateFrame`, que gobierna
+>   **toda** la consola y no solo un banner.
+> - **Riesgo operativo real (1):** `T-2.79.a` — el opt-in de WhatsApp sale de un `rule_set`
+>   editable en vez del registro que sabe decir que el consentimiento se **retiró**. Es la única
+>   que puede **tumbar un canal de notificación para todos los tenants a la vez**.
+> - **Deuda declarada por el propio trabajo (9):** `T-2.79.e/f`, `T-2.80.b/c`, `T-2.81.a/b/c`,
+>   `T-2.82.a/b`.
+>
+> **Dos de ellas conviene mirarlas juntas:** `T-2.79.d` y `T-2.82.a` nacen de lo mismo —el
+> contrato de `StateFrame` no dice quién gana ni de dónde sale `staleSince`—, y la segunda revela
+> que **ningún panel de la pantalla donde se FIRMA un dictamen** puede declarar su dato viejo.
+
+### [x] T-2.79 · Aviso de privacidad versionado + consentimiento — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + web + mobile · **Depende de:** —
 - **Criterios de aceptación:**
-  - [ ] El aviso es un **objeto versionado**; el consentimiento guarda **qué versión** aceptó
+  - [x] El aviso es un **objeto versionado**; el consentimiento guarda **qué versión** aceptó
         cada usuario y cuándo.
-  - [ ] Cambiar el aviso **no reescribe** consentimientos anteriores.
-  - [ ] Registro append-only del consentimiento.
+  - [x] Cambiar el aviso **no reescribe** consentimientos anteriores.
+  - [x] Registro append-only del consentimiento.
 
-### [ ] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE`
+> **El motor aguantó dos auditorías independientes; las superficies no, y esa es la historia
+> de esta ficha.** El DDL, la RLS y el sellado se dictaminaron bien hechos a la primera:
+> el digest se **copia**, no se deriva por JOIN, así que editar el aviso por detrás sigue siendo
+> **detectable**; y el append-only son **tres capas** —trigger `BEFORE UPDATE OR DELETE`,
+> `REVOKE UPDATE, DELETE` y RLS `ENABLE`+`FORCE`—, con los tests parametrizados sobre las dos
+> tablas e incluyendo el `UPDATE` que no cambia nada.
+>
+> Lo que estaba roto era lo que la persona ve, y era grave: el móvil **encerraba al ocupante**
+> sin check-in de vida ni botón de pánico (T-2.79.b/c), y la consola **acusaba de no haber
+> consentido a quien sí consintió**. Cerrado el 2026-08-08.
+>
+> **Queda exactamente un hueco, y está fichado:** con `notice === null` **y** dato viejo se
+> pinta una franja muda. Se recorrió el espacio de estados **completo** contra la precedencia de
+> `StateFrame` para confirmar que es el único, y que en móvil **no existe** la combinación
+> equivalente. Es `T-2.79.d`, y no bloquea porque no miente: no dice nada.
+
+### [x] T-2.79.a · El opt-in de WhatsApp sigue saliendo del `rule_set`, no del consentimiento — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-2.79 · **Detectada por:** auditoría de la Fase 2.8
+  (2026-08-08)
+- **Existe porque una referencia era falsa.** Tres sitios del código
+  —`notify/config.py:63`, `notify/whatsapp.py:151` y `privacy/store.py:392`— declaraban que
+  este trabajo «queda fichado en `T-2.77.b`». **No lo estaba:** `T-2.77.b` son los webhooks de
+  estado de entrega de Meta y Twilio, y ninguno de sus seis criterios cubre mover el opt-in al
+  motor de consentimiento. La deuda estaba razonada, argumentada y **apuntando a una ficha que
+  no la contenía** — que en la práctica es igual a no ficharla. Esta es la ficha real.
+- **El estado, medido.** `privacy.store.whatsapp_opt_in_at()` está **implementado y probado**, y
+  **solo lo llaman los tests**. El destino real lo sigue armando
+  `notify/config.resolve_destinations`, una función **pura** sobre el `rule_set` sin conexión a
+  la base — por eso no se enchufó de refilón, y esa decisión fue correcta: hacerlo desde ahí
+  habría roto los tests de T-2.77 sin que aquella tarea lo cubriera.
+- **La forma exacta del cambio ya está escrita** en el comentario `[COSTURA T-2.79]` de
+  `notify/config.py`: pasar `tenant_id` y una conexión hasta ahí (o resolver el destino en el
+  orquestador), sustituir la lectura de `opt_in` del `rule_set` por la llamada a
+  `whatsapp_opt_in_at`, y dejar de leerlo del `rule_set`. **El provider no cambia**: sigue
+  exigiendo `opt_in.at` en el destino y sigue negándose a enviar sin él.
+- **Por qué importa y no es burocracia:** enviar sin opt-in no rebota un mensaje — degrada la
+  calificación de calidad del número y puede **tumbar el canal para todos los tenants a la vez**.
+  Hoy la constancia que autoriza ese envío vive en un `rule_set` editable, no en el registro
+  append-only que sabe además decir que el consentimiento se **retiró**.
+- **Criterios de aceptación:**
+  - [x] El destino de WhatsApp toma `opt_in.at` del motor de consentimiento, no del `rule_set`.
+  - [x] Un consentimiento **retirado** deja de autorizar el envío, sin tocar el provider.
+  - [x] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
+  - [x] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
+
+### [x] T-2.79.b · El stack de onboarding no tiene guarda de sesión — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
+  (2026-08-08)
+- **La causa raíz que el arreglo de hoy NO cerró.** `mobile/src/app/index.tsx:34` es el **único**
+  punto de la app que reacciona a quedarse anónimo, y `mobile/src/app/onboarding/_layout.tsx` es
+  un `Stack` pelado, **sin guarda**. Cualquier `signOut()` disparado durante el onboarding —hoy
+  el 401 exento, mañana otro— deja a la persona **en la pantalla, sin token y en silencio**:
+  nadie la lleva al login.
+- **Lo que se hizo hoy fue tapar el disparador conocido**, no la causa: se eximió a
+  `/privacy/consent` y `/privacy/notice` de cerrar sesión (`mobile/src/services/sdk.ts`). Esa
+  exención es correcta —una vía de cumplimiento no debe poder expulsar a la flota— pero solo
+  cubre las dos rutas que hoy sabemos que se llaman desde ahí.
+- **Criterios de aceptación:**
+  - [x] Quedarse anónimo dentro del onboarding **lleva al login**, desde cualquier pantalla del
+        stack.
+  - [x] Test que dispare `signOut()` en cada pantalla del onboarding y exija la redirección.
+        Enumerar las pantallas de hoy no vale: **derívalo del stack**.
+  - [x] La exención de `sdk.ts` sigue en pie y **con su test**: quitar la causa raíz no es
+        excusa para devolverle a una ruta de cumplimiento el poder de expulsar.
+
+### [x] T-2.79.c · La salida del enrolamiento se llama «Ya estoy vinculado», y para quien falla es mentira — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
+  (2026-08-08)
+- **Medido, y menos grave de lo que parecía.** El occupant **no** marca el onboarding como hecho
+  en la pantalla de privacidad: `privacidad.tsx:68` lo empuja a `/onboarding/enrolamiento` y solo
+  la rama táctica llama a `markOnboardingDone()`. Para el occupant esa llamada vive en
+  `enrolamiento.tsx:43`. Y como `app/index.tsx:53-55` redirige mientras `!onboarded`, la sospecha
+  era un cerrojo idéntico al de privacidad, un paso más adelante.
+- **No lo es: hay salida.** `enrolamiento.tsx:79` ofrece un botón que llama a `finish()` sin
+  necesidad de canjear el código. **Pero se rotula «Ya estoy vinculado · continuar»**, es
+  secundario (`ghostBtn`), y aparece junto al mensaje «Sin conexión con el servidor. Intente de
+  nuevo.» — o sea: a la persona que la nube dejó tirada se le ofrece una salida cuyo texto
+  **afirma algo falso sobre ella**, con estilo de opción descartable. Quien lee que no está
+  vinculado no la pulsa. La puerta existe y está mal señalizada, que en una app de vida cuenta.
+- **Criterios de aceptación:**
+  - [x] Cuando el enrolamiento falla por causa de red o servidor, la salida se rotula por lo que
+        hace —seguir sin vincular, y vincular después desde Cuenta—, no por una condición del
+        usuario que el sistema no puede afirmar.
+  - [x] Test: con el servidor caído, existe un camino visible al final del onboarding, y el texto
+        del control **no afirma** que el usuario ya esté vinculado.
+  - [x] Queda escrito qué pierde quien continúa sin vincular (sin sitio vigilado no hay
+        check-in de zona), porque continuar a ciegas también es una forma de mentir.
+
+> **Cerradas (2026-08-08).** La cobertura de pantallas es **derivada del directorio de rutas**,
+> no una lista: expo-router enruta por ficheros, así que el directorio **es** el stack.
+> Verificado creando una pantalla que nadie añadió a ninguna parte — la corrida pasó de 11 a 13
+> tests, con los dos casos nombrados por el fichero nuevo. Dos tests más impiden que la
+> derivación salga vacía y pase en falso.
+>
+> **`booting` NO expulsa**, y hay test que lo fija: sesión desconocida no es sesión muerta, o
+> cada arranque en frío echaría a gente con sesión válida.
+>
+> **Las dos defensas se quedan:** la guarda del stack y la exención de `sdk.ts` para las rutas de
+> cumplimiento. Retirar la guarda pone 4 tests en rojo.
+>
+> **Bug extra cerrado de paso, de la misma familia que la ficha:** un **503 se rotulaba «Código
+> inválido, vencido o agotado»**, mandando a la persona a pedir un código nuevo que no arreglaba
+> nada. Ahora se distingue quién falló — el código o la nube — y la salida solo se destaca cuando
+> falló la nube: con un 404 lo correcto sigue siendo pedir otro código.
+
+### [ ] T-2.79.d · `StateFrame` no dice quién gana entre `empty` y `stale` — `SOFTWARE` + `DECISIÓN`
+- **Componente:** web (contrato de estados) · **Depende de:** — · **Detectada al arreglar el
+  banner de privacidad** (2026-08-08)
+- **El síntoma concreto.** En `PrivacyConsentBanner`, con `notice === null` **y** el dato viejo,
+  el `empty` exige `sereno` (que exige dato fresco), así que se pinta la franja
+  `DATOS RETENIDOS · hh:mm UTC` **sin nada debajo**. No miente —y por eso no se arregló de
+  refilón—, pero **no dice nada**: una banda muda en la consola de un SOC.
+- **Por qué esto no es un arreglo local.** La regla de oro 7 obliga a manejar `loading`, `error`,
+  `empty` y `stale`, pero **no declara la precedencia** cuando dos son ciertos a la vez. Cada
+  componente la está resolviendo por su cuenta, y esa deriva es la que produce franjas mudas.
+  Elegir aquí decide el comportamiento de **toda** la consola, no de un banner.
+- **La pregunta a decidir, en una línea:** cuando no hay dato **y** lo poco que hay está viejo,
+  ¿se dice «no hay» (arriesgando afirmar una ausencia que quizá solo es desconexión) o se dice
+  «no lo sé desde las hh:mm» (que es más honesto y menos accionable)?
+- **Criterios de aceptación:**
+  - [ ] La precedencia queda **decidida y escrita** en el contrato de `StateFrame`, con su razón.
+  - [ ] Ningún componente puede quedar en una combinación sin texto: un test que recorra las
+        combinaciones de estados y exija contenido en todas. **Derivado del contrato**, no una
+        lista de componentes.
+  - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
+
+### [ ] T-2.79.e · `NOTICE_ROLES` sigue a mano en el router, y su razón ya caducó — `SOFTWARE`
+- **Componente:** api (auth) · **Desbloquea:** el primer criterio de `T-2.80.b` ·
+  **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
+- **La deuda estaba justificada y su justificación ya no es cierta.**
+  `api/src/takab_api/routers/privacy.py:73-88` declara los roles a mano, contra la convención de
+  `auth/matrix.py`, y el comentario dice que es porque «`auth/matrix.py` lo está tocando otra
+  tarea en paralelo (T-2.82)». **Medido:** T-2.82 aterrizó **sin tocar** `matrix.py` —reutiliza
+  `roles_with_action("manage_tenants")`— y el último commit de ese fichero es de T-2.61…T-2.71.
+  La condición «mover al integrar» **ya se cumplió y nadie movió nada**.
+- **Por qué esto merece ficha propia:** hasta hoy solo estaba referenciada de refilón, como línea
+  de dependencia dentro de `T-2.80.b`. Es la misma lección de `T-2.79.a`: **una deuda sin ficha
+  es una deuda no fichada**, por bien razonada que esté el comentario.
+- **No es un agujero de seguridad hoy:** la frontera real la impone la política RLS `pn_publish`,
+  no la lista del router. Es coherencia y mantenibilidad — y el bloqueo de `T-2.80.b`.
+- **Criterios de aceptación:**
+  - [ ] La acción `manage_privacy_notice` existe en `auth/matrix.py`, con su línea en
+        `RBAC-TAKAB.md`, y el router la consulta en vez de enumerar roles.
+  - [ ] El test de matriz (`api/tests/auth/test_matrix.py`) la cubre como a las demás.
+  - [ ] Ninguna superficie de privacidad enumera roles a mano.
+
+### [ ] T-2.79.f · La parte de la pantalla móvil que le habla a la persona no la asserta nadie — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Detectada por:** reauditoría de la Fase 2.8
+  (2026-08-08)
+- La suite de `privacidad.tsx` cubre a fondo **los dos bloqueantes** que se cerraron el
+  2026-08-08 —el cerrojo del onboarding y el falso vacío— usando el `testID` `privacy-accept`.
+  Pero **nadie comprueba que se pinte el aviso servido ni su sello** (`privacy-notice`), ni el
+  texto del estado en que **el aviso cambió** (`privacy-changed`).
+- **Lo que queda sin cubrir es justo lo que la persona lee** antes de decidir. El criterio 2 de
+  T-2.79 («cambiar el aviso no reescribe consentimientos») está probado **en el motor**, que es
+  donde importa para la integridad del registro; lo que no está probado es que la pantalla se lo
+  **cuente** a quien tiene que decidir.
+- **Criterios de aceptación:**
+  - [ ] Un test asserta que el cuerpo del aviso servido y su versión/sello se pintan.
+  - [ ] Un test asserta el texto del estado «este aviso cambió», que es el que pide una decisión
+        nueva a alguien que ya había consentido.
+
+### [x] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api + db · **Depende de:** T-2.79
 - **Criterios de aceptación:**
-  - [ ] **Jamás `DELETE`.** Anonimización + `tombstone`: el derecho ARCO se ejerce sin borrar
+  - [x] **Jamás `DELETE`.** Anonimización + `tombstone`: el derecho ARCO se ejerce sin borrar
         una fila de auditoría, evidencia ni dictamen — **regla de oro 11**, que es restricción
         dura, no preferencia.
-  - [ ] Un check-in de vida anonimizado sigue contando para el histórico del incidente.
-  - [ ] Test: tras ejercer ARCO, el `audit_log` del incidente sigue íntegro y verificable.
+  - [x] Un check-in de vida anonimizado sigue contando para el histórico del incidente.
+  - [x] Test: tras ejercer ARCO, el `audit_log` del incidente sigue íntegro y verificable.
 
-### [ ] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE`
+> **El conflicto era aparente, y ahí está toda la tarea.** El derecho es sobre la **persona**; la
+> obligación de la regla de oro 11 es sobre el **hecho**. La bisagra: `life_checkins.user_id` es
+> un `sub` de Cognito — un UUID **opaco**, que solo es dato personal mientras exista el mapeo
+> `sub → nombre` en `user_profiles`. **ARCO destruye el mapeo y deja el UUID en pie.**
+>
+> Por eso **no** se sustituye el `sub` por un seudónimo: `COUNT(DISTINCT user_id)` es «cuántas
+> personas confirmaron estar bien en el piso 8», y colapsarlas a un valor común **hundiría un
+> número que se usa para decidir dónde buscar**. Lo que sí muere del check-in es `geom`, el GPS
+> exacto de una persona, que el conteo no necesita.
+>
+> **Qué impide FÍSICAMENTE borrar — tres capas, ninguna es un comentario:**
+> 1. **Privilegio ausente.** `REVOKE DELETE` sobre 12 tablas + `REVOKE UPDATE` en `life_checkins`
+>    seguido de `GRANT UPDATE (geom)`: privilegio **por columna**. Reescribir `status` o
+>    `user_id` es un error de permisos de PostgreSQL, no una convención.
+> 2. **Triggers con eventos SEPARADOS.** El `DELETE` conserva el guard canónico; el `UPDATE`
+>    compara la fila entera vía `to_jsonb(NEW) - 'geom'`, así que cubre las columnas de hoy **y
+>    las que se añadan mañana**.
+> 3. **La firma.** `privacy_erase_subject(p_right, p_via)` **no recibe sujeto**: opera sobre
+>    `app_user_id()`. Ejercer ARCO sobre un tercero o cruzar tenants no está *prohibido* — es
+>    **inexpresable**.
+>
+> **El inventario de PII es DERIVADO**, con test recíproco: un detector recorre el esquema
+> **vivo** y toda columna que huela a persona debe estar clasificada; el reverso caza entradas
+> muertas, porque un inventario con fantasmas miente igual que uno corto. Verificado quitando
+> `user_profiles.display_name`: el detector la encuentra y **la nombra**.
+>
+> **Distinción que evita un desastre:** `device_keys` se **REVOCA**, no se borra. Confundirlas
+> llevaría a alguien a «completar» la anonimización destruyendo la llave pública que **verifica
+> la evidencia firmada**.
+>
+> **Decisiones fijadas por test:** ARCO durante incidente **abierto** se difiere con 409 —la
+> ubicación es dato de rescate en vivo— y la petición se audita **fuera de banda** para que el
+> plazo legal corra igual. Ejercerlo dos veces es idempotente, con la misma lápida.
+>
+> **La verificación sobre base NUEVA (cadena 0001→0034) cazó dos bugs invisibles en local:** una
+> función usada 300 líneas antes de definirse, y el `GRANT ... ON ALL TABLES` de la 0001
+> **re-concediendo `DELETE`** después de `schema.sql`. Por eso los `REVOKE` viven en la migración.
+
+### [ ] T-2.80.a · El teléfono en claro del consentimiento no lo alcanza ARCO — `SOFTWARE` + `LEGAL`
+- **Componente:** api + db · **Depende de:** T-2.80 · **Declarada por el propio T-2.80 como hueco**
+- **El hueco, medido.** ARCO alcanza al titular identificado por `sub` de Cognito. Un sujeto
+  identificado por **teléfono** (`msisdn`) tiene su número **en claro** en
+  `privacy_consents.subject_ref` — y esa tabla es **append-only** por el motor de T-2.79.
+- **Por qué no se cerró de refilón, que es lo correcto:** anonimizarlo exige **abrir un hueco en
+  el guard de la tabla hermana** y decidir algo que no es técnico: si destruir el número destruye
+  también **la prueba de la base legal** del envío que ese consentimiento autoriza. Hacerlo sin
+  decidirlo habría cambiado el significado del registro de consentimientos por un efecto
+  colateral.
+- **Criterios de aceptación:**
+  - [ ] Queda **decidido y escrito** qué prevalece: el derecho del titular sobre su número, o la
+        prueba de la base legal. Con su razón, no con una preferencia.
+  - [ ] Si se anonimiza, el guard de `privacy_consents` admite **exactamente** esa transición y
+        ninguna otra — la misma disciplina de columna que usa `life_checkins`.
+  - [ ] La lápida cubre al sujeto `msisdn` igual que al `sub`, y el digest lo sigue probando.
+
+### [ ] T-2.80.b · El responsable no puede ejercer un ARCO recibido por escrito — `SOFTWARE`
+- **Componente:** api + auth · **Depende de:** T-2.80 · **Bloqueada de hecho por la deuda de
+  `auth/matrix.py`** que T-2.79 dejó abierta
+- **Hoy solo el titular puede ejercerlo**, y eso no cubre el caso real: una persona manda su
+  solicitud ARCO **por escrito** al responsable del tratamiento, que es quien tiene que
+  ejecutarla. La firma `privacy_erase_subject(p_right, p_via)` sin sujeto —que es una **virtud**
+  de T-2.80, porque hace inexpresable el ARCO cruzado— es justo lo que hay que ensanchar **sin
+  perder** esa garantía.
+- **Criterios de aceptación:**
+  - [ ] Existe una acción `manage_privacy_erasure` en `auth/matrix.py` (no una lista de roles
+        escrita a mano en el router — ver la deuda de `routers/privacy.py`), y su línea en
+        `RBAC-TAKAB.md`.
+  - [ ] Ejercerlo por cuenta de otro **exige constancia** de la solicitud y queda en el
+        `audit_log` con quién lo pidió, quién lo ejecutó y con qué prueba.
+  - [ ] **La garantía de T-2.80 no se debilita:** sigue siendo imposible alcanzar a un titular de
+        otro tenant. Test cross-tenant que debe fallar.
+  - [ ] Queda escrito qué NO hace esta tarea: **borrar la cuenta en Cognito** no es parte del
+        acto de anonimización y necesita su propio camino.
+
+### [ ] T-2.80.c · El verificador de restore ya no comprueba la rendija de ARCO — `SOFTWARE`
+- **Componente:** api (`ops/restore_check.py`) · **Depende de:** T-2.80 · **Regresión declarada
+  por el propio T-2.80**
+- **Qué se perdió y por qué es correcto que se perdiera.** El verificador de DR reconocía
+  «append-only» ejerciendo un `UPDATE` sobre `life_checkins` y exigiendo que fuera rechazado.
+  T-2.80 abrió ahí una **rendija de una sola columna** (`geom`), así que esa tabla ya no es
+  append-only puro y el verificador tuvo que dejar de tratarla como tal.
+- **El riesgo que queda:** tras un restore, **nadie comprueba que la rendija siga siendo del
+  tamaño que era**. Una base restaurada con el `GRANT UPDATE` a nivel de tabla en vez de por
+  columna pasaría el chequeo de DR y permitiría reescribir `status` o `user_id` de un check-in de
+  vida — sin que ninguna alarma lo dijera.
+- **Criterios de aceptación:**
+  - [ ] El verificador de restore comprueba que el privilegio de `life_checkins` es **por
+        columna** y que la única columna concedida es `geom`.
+  - [ ] Comprueba que el guard de `UPDATE` sigue rechazando cualquier otro cambio, incluido el
+        `UPDATE SET c = c` que no cambia nada.
+  - [ ] Un `SKIP` no cuenta como `PASS` (la lección de la Fase 2.6).
+
+### [x] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api (job) + db · **Depende de:** T-2.80
 - **Criterios de aceptación:**
-  - [ ] La excepción de compliance está **codificada en el job**, no escrita en un comentario.
+  - [x] La excepción de compliance está **codificada en el job**, no escrita en un comentario.
         Un comentario no impide que un `DELETE` mal escrito pode evidencia.
-  - [ ] Test: el job intenta podar una tabla protegida ⇒ **falla ruidosamente**.
-  - [ ] Simulacro (`dry-run`) obligatorio con conteos antes de podar nada.
+  - [x] Test: el job intenta podar una tabla protegida ⇒ **falla ruidosamente**.
+  - [x] Simulacro (`dry-run`) obligatorio con conteos antes de podar nada.
 
-### [ ] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE`
-- **Componente:** api + web · **Depende de:** T-2.81
+> **El hallazgo que gobernó el diseño: el job NO puede heredar el rol del DSN.** El de tests —y
+> el de una consola SSM de emergencia— es `takab`, que es **SUPERUSER + BYPASSRLS**: se salta el
+> `REVOKE DELETE` de T-2.80, se salta la RLS y, vía `session_replication_role`, podría saltarse
+> los triggers. Heredarlo habría dejado la excepción de compliance apoyada en que **nadie invoque
+> el job desde la consola equivocada**.
+>
+> Así que **el job se degrada a sí mismo**. Antes de leer un solo dato: `SET LOCAL ROLE
+> takab_app`, aborta si el rol efectivo es superusuario o tiene BYPASSRLS, y **deriva del
+> catálogo vivo** qué mecanismo le niega el `DELETE` a cada tabla protegida —privilegio ausente o
+> trigger activo— negándose a arrancar si falta alguna. **Correr exige demostrarle a PostgreSQL
+> que no se puede podar evidencia.** No es un `if` alrededor de un `DELETE`: es el permiso de
+> arranque. Si alguien revierte el `REVOKE` de T-2.80, el job deja de funcionar y lo dice.
+>
+> **`COMPLIANCE_ANCHOR` es el suelo, y su razón es la parte fina:** una derivación sola **se
+> aprueba a sí misma**. Conceder `DELETE` sobre `audit_log` y quitarle el trigger la sacaría del
+> conjunto derivado **en silencio**, y lo que ya no se deriva ya no se revisa. Cinco tablas
+> nombradas, un test por cada una.
+>
+> **Anonimiza, no borra:** el plan despachado tiene **cero** reglas que borren filas, y hay test
+> que lo fija. El modo `DELETE_ROWS` existe igualmente, y **no por simetría**: sin él «el job
+> intenta podar una tabla protegida» sería **inexpresable** y el criterio 2 no probaría nada — el
+> mismo defecto de test vacío que esta fase lleva cazando. La regla asesina se construye en el
+> test y el job rechaza **el plan entero** antes de contar nada.
+>
+> **El simulacro es el modo por defecto Y es la autorización:** cuenta, ejecuta con el mismo
+> predicado, y si `ROW_COUNT` no cuadra **revierte la corrida entera**. No es decorativo —
+> detectó un hueco de RLS real durante el desarrollo, y hay un test que reproduce ese fallo.
+>
+> Sin plazo configurado la regla queda **deshabilitada** y el informe lo grita; un valor inválido
+> tampoco cae a un default. **Por defecto no se borra nada.** Mutar la degradación de rol pone 23
+> tests en rojo con el mensaje correcto: «el rol efectivo `takab` es SUPERUSER».
+
+### [ ] T-2.81.a · El job de retención existe y nadie lo llama — `SOFTWARE` + infra
+- **Componente:** api + infra · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
+- **El job es invocable** (`python -m takab_api.ops.prune_pii`), igual que `ops.restore_drill`,
+  **y no hay ningún scheduler**: no existe módulo de cron, Lambda ni EventBridge en
+  `infra/terraform/modules/`. Una retención que nadie ejecuta es una política escrita, no una
+  cumplida — y la diferencia importa el día que un cliente pregunte cuánto tiempo guardamos su
+  teléfono.
+- **Segundo asunto, del mismo fichero:** la corrida entera es **una sola transacción**. Es
+  correcto y atómico, pero sobre millones de filas mantiene una transacción larga, y eso **no se
+  ha medido con volumen real**.
 - **Criterios de aceptación:**
-  - [ ] La tabla existe desde el schema (`db/schema.sql:1204`) y **nadie la carga**. Alta y
+  - [ ] El job corre solo, con su cadencia declarada, y **deja constancia** de cada corrida
+        (incluido el simulacro que no borró nada).
+  - [ ] Un fallo del job **se ve**: alarma o registro que alguien mire, no un exit code perdido.
+  - [ ] El comportamiento con volumen está medido, o el lote está acotado y **declarado**.
+
+### [ ] T-2.81.b · El nombre y el teléfono no tienen reloj honesto — `SOFTWARE`
+- **Componente:** api + db · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
+- **Por qué se dejaron fuera, que es la parte que hay que conservar.** `user_profiles.display_name`
+  y `phone` son PII con caducidad, pero **no hay ninguna columna que diga cuándo dejó de ser
+  necesaria**. `updated_at` describe a un empleado **estable**, no a uno que se fue: usarla como
+  reloj **borraría antes los nombres de quien más tiempo lleva en el edificio** — exactamente al
+  revés de lo que la retención pretende.
+- Está declarado en `SIN_RELOJ` con su razón y con test recíproco, así que no es un olvido
+  silencioso. **El reloj correcto es la baja de la cuenta, y hoy no se registra en ninguna parte.**
+- **Criterios de aceptación:**
+  - [ ] Existe el hecho «esta persona ya no está» con su instante, y se registra cuando ocurre.
+  - [ ] La regla de retención de nombre y teléfono cuelga de **ese** reloj, no de `updated_at`.
+  - [ ] `SIN_RELOJ` queda vacío para estas dos columnas, y el test recíproco lo exige.
+
+### [x] T-2.81.c · `rule_evaluations` conserva el `DELETE` que sus once hermanas no tienen — `SOFTWARE`
+- **Componente:** db · **Depende de:** — · **Detectada por el guard de T-2.81**, que es justo
+  para lo que se escribió
+- **Medido:** de las doce tablas con trigger append-only, `takab_app` conserva el privilegio
+  `DELETE` sobre `rule_evaluations`. **No es explotable hoy** —el trigger lo deniega con P0001—,
+  pero es la única donde falta el `REVOKE`, o sea que la protección descansa en **una** capa
+  donde las demás tienen dos.
+- **Vale la pena registrar cómo apareció:** no lo encontró una revisión, lo encontró el
+  precondición del job de retención al derivar del catálogo vivo qué mecanismo niega el `DELETE`
+  en cada tabla. Una guarda derivada delata lo que una lista escrita a mano habría dado por bueno.
+- **Criterios de aceptación:**
+  - [x] `REVOKE DELETE ON rule_evaluations FROM takab_app`, en migración idempotente y con su
+        espejo en `db/schema.sql`.
+  - [x] Un test que exija **las dos** capas —privilegio ausente **y** trigger activo— en las doce
+        tablas, derivado del catálogo y no de una lista.
+
+### [x] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE` · COMPLETA (2026-08-08)
+- **Componente:** api + web · **Depende de:** T-2.80 *(corregido: la ficha declaraba `T-2.81`, y
+  es falso. La cadena 2.82→2.81→2.80 era **temática, no técnica**: T-2.81 es el job de retención
+  de PII, `compliance_labels` **no es PII**, no está en la lista de tablas protegidas, y ninguna
+  de las tres superficies de esta tarea pasa por ese job. La dependencia real es T-2.80, que está
+  cerrada. Dejarlo como estaba hacía que la ficha afirmara que esto se construyó sobre algo que
+  todavía no existe.)*
+- **Criterios de aceptación:**
+  - [x] La tabla existe desde el schema (`db/schema.sql:1323`) y **nadie la carga**. Alta y
         edición por tenant desde la consola, auditada.
-  - [ ] Las etiquetas se ven donde importan (dictamen, evidencia), no solo en un formulario.
+  - [x] Las etiquetas se ven donde importan (dictamen, evidencia), no solo en un formulario.
 
-### [ ] T-2.83 · Residencia de datos: evaluar región MX — `DECISIÓN` (+ `LEGAL`)
-- **Componente:** infra + docs · **Depende de:** —
+> **Lo que hace fiable el criterio 2 es que las tres superficies salen del MISMO
+> `compliance_block`**: el dictamen PDF (§12, inmediatamente antes de la firma, y repetido en el
+> ejecutivo), la pantalla de Triage donde el inspector **firma**, y el móvil del ocupante. Papel
+> y pantalla no pueden divergir porque no hay dos funciones que puedan discrepar.
+>
+> La auditoría se hizo dos veces. La primera dictaminó `[~]` por tres defectos de la pantalla de
+> firma; la segunda los re-midió tras arreglar el contrato y **corrigió a la primera** en dos
+> puntos: el `empty` que afirmaba una ausencia no comprobada **ya no es alcanzable**, y la falta
+> de `stale` **no es deuda de esta tarea** — `TriageDetail` clava `staleSince={null}` a mano en
+> los tres paneles, o sea que **ninguno** de esa página lo tiene. Arreglarlo solo aquí sería la
+> deriva por componente que denuncia T-2.79.d. Fichado aparte como `T-2.82.a`.
+>
+> La auditoría **verifica el texto íntegro en la bitácora**, no un «cambió», y lo archiva bajo el
+> tenant **tocado**, no bajo el del operador — que es la fuga que T-2.71 ya pagó una vez.
+
+### [ ] T-2.82.a · Ningún panel de la pantalla donde se FIRMA tiene `stale` — `SOFTWARE`
+- **Componente:** web · **Depende de:** — · **Hermana de `T-2.79.d`, y conviene resolverlas
+  juntas** · **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
+- **Regla de oro 7, en la peor pantalla posible.** `TriageDetail.tsx` monta sus tres paneles con
+  `staleSince={null}` **clavado a mano**, y `useForensics.ts` ni siquiera expone
+  `dataUpdatedAt`. O sea: en la pantalla donde el inspector **firma un dictamen**, ningún panel
+  puede decir que su dato está viejo. Un dato congelado se pinta como vivo, que es exactamente lo
+  que la regla prohíbe.
+- **No es deuda de T-2.82**, y la reauditoría corrigió a la primera auditoría en esto: no es que
+  `ComplianceDeclared` se montara mal, es que **la página entera** no tiene el concepto.
+  Arreglarlo solo en un componente sería la deriva que denuncia `T-2.79.d`.
 - **Criterios de aceptación:**
-  - [ ] Documento con coste, latencia y servicios disponibles en la región MX **medidos**, no
+  - [ ] `useForensics` expone la edad del dato, y los paneles de `TriageDetail` la reciben.
+  - [ ] Un test que recorra los paneles de esa página y exija que **ninguno** clave `staleSince`
+        a `null`. Derivado del árbol de la página, no una lista de tres.
+  - [ ] La precedencia que decida `T-2.79.d` se aplica aquí sin excepciones locales.
+
+### [ ] T-2.82.b · Cuatro sitios se escribieron tipos a mano, y el SDK ya los trae — `SOFTWARE`
+- **Componente:** web + mobile · **Depende de:** — · **Detectada por:** reauditoría de la
+  Fase 2.8 (2026-08-08)
+- **La condición para pagar esta deuda ya se cumplió.** Cada uno de esos sitios lleva un
+  comentario diciendo «sustituir cuando el SDK se regenere». El SDK **se regeneró** el
+  2026-08-08 y ahora publica `ComplianceDocOut`, `ComplianceLabelsOut`, `ConsentStatusOut`,
+  `NoticeOut` y las funciones de `/privacy/*`, todos con sus campos **requeridos**. Los cuatro:
+  `web/src/features/triage/ComplianceDeclared.tsx`, `web/src/features/tenants/useComplianceLabels.ts`,
+  `web/src/features/privacy/usePrivacyConsent.ts` y `mobile/src/services/privacy.ts`.
+- **Por qué importa y no es limpieza:** un tipo escrito a mano es una **segunda verdad sobre el
+  mismo cable**. Ya pasó: la consola afirmaba que `provenance` siempre viene y el contrato decía
+  que podía faltar. La consola tenía razón — y aun así, tener dos fuentes es lo que permitió que
+  la discrepancia viviera meses sin que nadie la viera.
+- **Hueco de cobertura del mismo lote:** `useComplianceLabels` y `useSaveComplianceLabels`
+  **no se ejecutan en ningún test** — su único consumidor mockea el módulo entero. El mapeo de
+  errores 403/404/409/422 y el umbral de 5 minutos son código de producción que **nunca ha
+  corrido**.
+- **Criterios de aceptación:**
+  - [ ] Los cuatro sitios consumen los tipos generados; cero interfaces de respuesta a mano.
+  - [ ] Un test ejercita `useComplianceLabels` de verdad, incluido el mapeo de errores.
+  - [ ] Una guardia que impida reintroducirlo: ninguna superficie declara a mano la forma de una
+        respuesta que el SDK ya publica.
+
+### [x] T-2.83 · Residencia de datos: evaluar región MX — `DECISIÓN` (+ `LEGAL`) · COMPLETA (2026-08-08)
+- **Componente:** infra + docs · **Depende de:** —
+- **Documento:** [`RESIDENCIA-DE-DATOS-TAKAB.md`](RESIDENCIA-DE-DATOS-TAKAB.md) — es **la
+  respuesta que se le lee al cliente que pregunta**, y §2 trae el guion literal para leerlo en
+  voz alta. Estuvo huérfano hasta el 2026-08-08: existía y no lo enlazaba nadie, que para un
+  criterio cuya finalidad es «que el primer cliente que pregunte tenga respuesta» es casi lo
+  mismo que no existir.
+- **Criterios de aceptación:**
+  - [x] Documento con coste, latencia y servicios disponibles en la región MX **medidos**, no
         supuestos.
-  - [ ] Recomendación explícita y su razón; si es "no migrar", queda escrito por qué, para que
+  - [x] Recomendación explícita y su razón; si es "no migrar", queda escrito por qué, para que
         el primer cliente que pregunte tenga respuesta.
+
+> **La recomendación: NO migrar a `mx-central-1` hoy.** Razón en una línea: **AWS IoT Core no
+> existe en la región de México** — y es el servicio por el que entra cada latido de cada
+> gabinete. El coste (+5 %) y la latencia (−48 ms, y **fuera del camino crítico**, que es local
+> por diseño) no mueven la decisión ni en un sentido ni en el otro.
+>
+> **Un auditor independiente re-derivó las mediciones el 2026-08-08 y cuadraron cifra por
+> cifra**: `iot.mx-central-1` → NXDOMAIN mientras `us-east-2` resuelve; mediana TCP 11.9 ms
+> contra 59.8 ms; y los dos SKU de S3 dando exactamente +5.00 %. Eso es lo que convierte «medido»
+> en algo comprobable en vez de en una palabra.
+>
+> **Matiz honesto sobre «medido», que el propio documento declara:** el coste es **precio de
+> lista** de la Price List API, no una factura. Un coste medido de `mx-central-1` exigiría
+> desplegar allí — que es justamente lo que se está decidiendo no hacer. El antónimo que pone el
+> criterio es «supuesto», y aquí no hay nada supuesto.
+>
+> **Reserva material saneada al cerrar:** §9 citaba como evidencia cinco ficheros en `/tmp` que
+> ya no existen. Los comandos que re-derivan las cifras sí viven **dentro** del documento
+> versionado (§8.3) — se comprobó — así que lo que estaba mal era el puntero, no el hecho. No es
+> la familia de la cita de AWS inventada que esta fase cazó en T-2.71; es más leve, y se corrige
+> igual: una cita de procedencia muerta es una que nadie puede seguir.
 
 ## Fase 2.9 · Trazabilidad y paquete de entrega
 
 Va **después** de 2.3–2.8 porque **documenta lo que esas fases producen**. Escribirla antes
 sería documentar intenciones.
 
-### [ ] T-2.84 · Matriz requisito→test — `SOFTWARE`
+> ### CERRADA (2026-08-08) — y documentar resultó ser un método de auditoría
+>
+> **Las tres tareas están `[x]`:** T-2.84 (matriz generada), T-2.85 (manual de operación) y
+> T-2.86 (entrega y aceptación). El paquete de entrega existe y **cada afirmación que contiene
+> es defendible**, porque lo que no lo era se dejó fuera y se dijo por qué.
+>
+> **Lo que nadie esperaba de esta fase: encontró defectos que ninguna revisión de código había
+> visto.** Para explicar un estado hay que ir a buscarlo, y ahí se ve lo que la pantalla **no**
+> hace. Salieron así:
+> - **el panel calcula el resultado de `PROBAR ACTUADORES` y nunca lo pinta** (`T-2.85.a`) — una
+>   prueba que ejerce físicamente gas y ascensores y no te enseña si pasó;
+> - **cinco tareas cerradas tenían sus criterios enteros sin marcar**, contadas por la matriz;
+> - **una actuación con el enlace caído no deja rastro auditable en ninguna parte**
+>   (`T-2.86.a`), que es el caso exacto para el que existe el gabinete.
+>
+> **La matriz declara 18 huecos y ése es su producto.** Tres subieron a ficha en `T-2.84.a/b/c`
+> y tres más en `T-2.86.a/b/c`; el resto siguen nombrados en la matriz, que es donde se ven. Los
+> tres peores, por si se lee esto y nada más: **nada impide el streaming crudo continuo**, **MFA
+> no tiene una sola línea de prueba**, y **el proceso mínimo probado no es el que corre de
+> fábrica**.
+
+### [x] T-2.84 · Matriz requisito→test — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs + tests · **Depende de:** Fases 2.3–2.8
+- **Documento:** [`MATRIZ-REQUISITO-TEST.md`](MATRIZ-REQUISITO-TEST.md), **generado** por
+  `api/tests/test_matriz_trazabilidad.py --escribir`. No se edita a mano.
 - **Criterios de aceptación:**
-  - [ ] Cada requisito enlaza al test que lo demuestra, con `archivo:línea`.
-  - [ ] **Los huecos se marcan `SIN COBERTURA` explícitamente.** Una matriz sin huecos es una
+  - [x] Cada requisito enlaza al test que lo demuestra, con `archivo:línea`.
+  - [x] **Los huecos se marcan `SIN COBERTURA` explícitamente.** Una matriz sin huecos es una
         matriz que miente: el valor está justo en los huecos.
-  - [ ] Un test mantiene la matriz honesta (si el test citado desaparece, la matriz rompe).
+  - [x] Un test mantiene la matriz honesta (si el test citado desaparece, la matriz rompe).
 
-### [ ] T-2.85 · Manual de operación de cliente — `SOFTWARE`
+> **17 requisitos · 66 afirmaciones · 48 cubiertas · 18 huecos.** Los requisitos se **derivan** de
+> tres fuentes que se parsean en cada corrida: las 11 reglas de oro de `CLAUDE.md §2`, los
+> invariantes del `BLUEPRINT §14` y los 10 gates físicos del runbook de cierre. Añadir una regla
+> 12ª pone el censo en rojo.
+>
+> **`TASKS.md` se descartó como fuente, y por una razón medida: sus casillas mienten.** De 442
+> criterios bajo tareas `[x]`, 34 seguían sin marcar y **cinco tareas cerradas tenían los suyos
+> enteros en `[ ]`**. Se corrigió, y ahora lo vigila un test propio.
+>
+> **`CUBIERTO` se calcula, nunca se teclea.** Una cita solo acredita si existe, **no puede
+> saltarse**, ejercita código y corre en un job que **bloquea el merge**. De ahí dos
+> consecuencias que nadie habría escrito a mano: `web/e2e` **informa pero no acredita** (es
+> `workflow_dispatch` + `continue-on-error`, a propósito), y los tres tests del gate `G-03`
+> salen `SIN COBERTURA` **aunque existan**, porque el `skipif` del Shake los apaga en CI.
+>
+> **El ancla es el nombre del test; la línea se deriva por AST.** La asimetría es deliberada:
+> renombrar un test citado pone **siete** en rojo; moverlo de línea pone **uno** y te da el
+> comando para regenerar. Moverse cuesta un comando, desaparecer rompe la matriz.
+>
+> **Punto ciego declarado, y es el que hay que tener presente:** la **semántica no se comprueba**.
+> Que un test citado *demuestre* su fila es juicio humano; lo mecánico es que exista, no se
+> salte, y lo corra un job bloqueante.
+
+### [x] T-2.84.a · Nada impide el streaming crudo continuo — `SOFTWARE`
+- **Componente:** edge + api · **Depende de:** — · **Hueco `RO-9.a` de la matriz** (2026-08-08)
+- **El hueco más grave que destapó la matriz.** Cero asserts sobre un conjunto cerrado de topics,
+  sobre volumen publicado, o sobre que un `WaveformPacket` jamás llegue a
+  `CloudConnector.publish`. **Añadir hoy un publicador continuo no rompería un solo test.**
+- Es **regla de oro 9** *y* **invariante permanente** —prohibición, no diferido—, escrita en tres
+  documentos y **sostenida por ninguna prueba**. `CLAUDE.md §8` la mantiene en párrafo aparte del
+  mini-ShakeMap justamente para que nadie se la lleve por delante de arrastre: iban pegadas en una
+  sola línea, y así las dos se levantaban juntas.
+- **Cómo se descubriría hoy: en la factura de AWS.**
+- **Criterios de aceptación:**
+  - [x] Un test que falle si un `WaveformPacket` alcanza el camino de publicación continua.
+  - [x] La dirección complementaria (`RO-9.b`): el miniSEED crudo **solo** sube en eventos
+        confirmados; bajar el umbral por accidente tiene que ponerse rojo.
+  - [x] Derivado, no enumerado: un publicador nuevo entra solo en la comprobación.
+
+### [x] T-2.84.b · MFA no tiene una sola línea de prueba en ninguna capa — `SOFTWARE`
+- **Componente:** api + infra · **Depende de:** — · **Hueco `RO-8.c` de la matriz** (2026-08-08)
+- **Regla de oro 8, sobre la superficie que abre válvulas de gas, dice «sin excepción».** No hay
+  comprobación de `acr`, `amr` ni `auth_time` en ninguna capa; el router lo documenta como
+  delegado al pool (`mfa_configuration = "ON"`), y el módulo `identity` es **el único de los
+  cuatro sin `.tftest.hcl`**: una deriva a `OPTIONAL` no la vería nadie.
+- **Criterios de aceptación:**
+  - [x] Un test rechaza un token sin la constancia de MFA en el camino de comando de actuadores.
+  - [x] `identity` gana su `.tftest.hcl` y `mfa_configuration` queda anclado.
+  - [x] La matriz pasa `RO-8.c` a `CUBIERTO` sola, sin editarla a mano.
+
+### [x] T-2.84.c · Nada obliga al componente número 28 a manejar los cuatro estados — `SOFTWARE`
+- **Componente:** web · **Depende de:** — · **Hueco `RO-7.a` de la matriz** (2026-08-08) ·
+  **Hermana de `T-2.79.d` y `T-2.82.a`**
+- **Medido por la matriz:** **27 componentes usan `StateFrame`, solo 14 tienen la prueba de los
+  cuatro estados, y ≥12 pintan dato de servidor fuera de `StateFrame`.** No hay censo derivado que
+  obligue al siguiente. **El bug de T-2.59 fue exactamente eso**, y T-2.82.a acaba de encontrar la
+  misma clase en la pantalla donde se firma un dictamen.
+- **Criterios de aceptación:**
+  - [x] Un censo **derivado** del árbol de componentes: quien pinte dato de servidor sin los
+        cuatro estados, rojo.
+  - [x] Las excepciones legítimas se **declaran** con su razón, no se omiten.
+  - [x] Se resuelve junto con la precedencia que decida `T-2.79.d`.
+
+### [x] T-2.84.d · El censo de multi-tenancy eximía justo a la tabla infractora — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** db + api (tests) · **Depende de:** — · **Hueco `RO-5.a` de la matriz**
+- **Medido:** nadie derivaba del catálogo que toda tabla de negocio llevara `tenant_id`. El único
+  cruce que existía corría **de las tablas que tienen la columna hacia su RLS**, así que una tabla
+  nueva **sin** la columna **se auto-eximía**: no la tiene ⇒ no entra al censo ⇒ no se le exige
+  aislamiento.
+- **Criterios de aceptación:**
+  - [x] Censo derivado del catálogo vivo (`api/tests/test_censo_multitenancy.py`).
+  - [x] Exenciones declaradas con su razón y comparadas por **igualdad**.
+  - [x] **No vacuo:** una tabla de negocio de mentira sin `tenant_id` ni RLS pone el build en rojo
+        **nombrándola**, y las dos mitades disparan por separado. Creada, medida y borrada.
+
+> **El criterio de «tabla de negocio» es INCLUSIVO a propósito, y la razón está medida.** Se
+> probaron primero los criterios sustantivos —«tiene FK a `tenants`», «la crea el migrador», «tiene
+> política de escritura»— y **todos reintroducen el defecto**: cualquier criterio que se apoye en
+> una propiedad que la tabla infractora **no tiene** la exime justo por lo que la hace sospechosa.
+> El único criterio seguro es el que una tabla nueva **no puede dejar de cumplir: existir**. La
+> única resta es estructural y no falsificable por accidente —ser miembro de una extensión—, y hoy
+> se lleva exactamente `spatial_ref_sys`.
+>
+> **Tres formas de cumplir, no una**, porque TimescaleDB no admite RLS con caggs: RLS propia, o
+> vista `security_barrier` **con la base revocada al rol de la API y anclada en una tabla con
+> RLS**. Las tres condiciones juntas o no cuenta — y no es sello de goma: un test devuelve el
+> `SELECT` sobre la base dentro de una transacción y `waveform_features_1s` cae a «sin
+> aislamiento», nombrada.
+>
+> **Resultado sobre el esquema real: 43 tablas de negocio, NINGUNA desprotegida.** 7 sin
+> `tenant_id`, todas declaradas: seis son diseño (plataforma, dato regional compartido, grants que
+> tienen **dos** tenants y una columna tendría que elegir uno y mentir sobre el otro) y **una es
+> deuda** — ver `T-2.84.e`.
+
+### [ ] T-2.84.e · `site_ground_refs` aísla de verdad, pero no como la regla lo pide — `SOFTWARE`
+- **Componente:** db · **Depende de:** T-2.84.d · **Hallazgo del censo** (2026-08-09)
+- Es dato de un cliente —el punto cero del calibrador, `ATTEN-LAW`— y **le falta la columna
+  `tenant_id`** que la regla de oro 5 pide literalmente.
+- **No es un agujero, y por eso no bloquea:** su aislamiento es real y está verificado cruzando
+  tenants en base nueva (el tenant B ve **0** filas, el dueño ve **1**), por el `EXISTS` contra
+  `sites`. Es una lectura **no literal** de la regla, no una excepción a ella.
+- **Por qué merece cerrarse igual:** el censo la lleva hoy en la lista de exenciones declaradas, y
+  cada exención es una línea que alguien tiene que volver a justificar. Una menos es una menos.
+- **Criterios de aceptación:**
+  - [ ] Migración con **backfill desde `sites`** y las dos políticas correspondientes.
+  - [ ] La entrada desaparece de `SIN_TENANT_ID`, y el test lo **exige** (se compara por igualdad).
+  - [ ] El cruce de tenants sigue dando 0/1, ahora por la columna y no por el `EXISTS`.
+
+### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
+- **Documento:** [`MANUAL-OPERACION-TAKAB.md`](MANUAL-OPERACION-TAKAB.md) — 642 líneas, con ficha
+  de sitio rellenable y un resumen de una página para imprimir y colgar.
 - **Criterios de aceptación:**
-  - [ ] Escrito para un operador, no para un desarrollador.
-  - [ ] Qué hacer **cuando cae la nube** (regla de oro 2 explicada en lenguaje de operación).
-  - [ ] Qué significa cada estado del panel del gabinete y qué acción pide.
+  - [x] Escrito para un operador, no para un desarrollador.
+  - [x] Qué hacer **cuando cae la nube** (regla de oro 2 explicada en lenguaje de operación).
+  - [x] Qué significa cada estado del panel del gabinete y qué acción pide.
 
-### [ ] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`)
-- **Componente:** docs · **Depende de:** T-2.85
+> **Cada estado lleva columna «Qué haces» y urgencia `AHORA` / `HOY` / `ANOTAR`.** Un manual que
+> solo traduce tokens no sirve a quien lo lee de noche con el edificio temblando: «
+> `gpio_unreachable`» no le dice nada; «el gabinete no controla los relés: la sirena podría no
+> sonar — avisa a soporte AHORA» sí.
+>
+> **§6.0 está dedicada a los tres ejes que este repo lleva tres tareas separando** (T-2.58,
+> T-2.68) y que un manual descuidado habría vuelto a colapsar: `S/D` (no hay dato) ·
+> `DATO RETENIDO` (el dato es viejo) · `NO CONTESTA` (la pieza está caída). **Cada una pide una
+> acción distinta.** Y §5 desambigua el error que un operador cometerá una vez: confundir
+> `SIN ENLACE` (Pi↔nube, ámbar, poco grave) con `SIN CONEXIÓN CON EL GABINETE` (navegador↔Pi,
+> rojo, grave).
+>
+> Todos los estados están **derivados del panel real con `fichero:línea`**, no inventados ni
+> copiados de memoria — incluidos los siete umbrales de vejez, que salen de siete sitios
+> distintos del código y de Terraform.
+>
+> **Ocho huecos declarados en vez de rellenados con prosa tranquilizadora**, y el más incómodo es
+> H-2: el manual dice «avisa a soporte» unas 25 veces y **ese teléfono no existe en el repo** —
+> el runbook de on-call declara que hoy solo se entrega un correo y que el salto 2 es un hueco.
+> Lo cierra el criterio de escalamiento de `T-2.78`. Los otros siete son de hardware sin
+> acreditar (gate #3), de ajustes de instalación no fijados, o de superficie que no existe.
+
+### [ ] T-2.85.a · El panel calcula el resultado de la prueba de actuadores y no lo pinta — `SOFTWARE`
+- **Componente:** edge (panel) · **Depende de:** — · **Detectada al escribir el manual**
+  (2026-08-08)
+- **El defecto, con las dos mitades a la vista.** `local_api/__init__.py:1106` promete por
+  escrito: *«El resultado por relé aflora en `status()` para que el panel lo pinte»*. El panel
+  **solo lee `actuation_test.active`** (`index.html:914`). Los `results` —`held`, `pulsed`,
+  `readback_ok` por relé— viajan en el JSON y **aparecen únicamente en los datos de prueba** del
+  propio HTML, nunca en un camino de render.
+- **Por qué duele operativamente:** `PROBAR ACTUADORES` hace **lectura de retorno** sobre el gas
+  y los ascensores —o sea, ejerce físicamente el equipamiento del edificio— **y no te enseña si
+  pasó**. El manual de operación no puede decirle al operador cómo saber el resultado de la única
+  prueba que puede hacer él solo. Es el hueco más accionable que destapó T-2.85.
+- **Misma familia, mismo sitio:** `calibration.source` tampoco se pinta. El panel dice
+  `SIN CALIBRAR`, pero cuando **sí** hay calibración nunca dice de dónde vino — y de eso depende
+  que el PGA esté en `g` o sea un número relativo.
 - **Criterios de aceptación:**
-  - [ ] Dice **qué hace y qué NO hace** el sistema, con la misma claridad las dos cosas.
-  - [ ] Incluye la sección de **invariantes** (abajo) como parte del alcance contratado.
-  - [ ] Enlaza la matriz de T-2.84, huecos incluidos.
+  - [ ] El resultado por relé se pinta tras `PROBAR ACTUADORES`, con su lectura de retorno.
+  - [ ] Un relé que **no** confirma se distingue de uno que no se probó. Regla de oro 7.
+  - [ ] `calibration.source` se pinta cuando existe.
+  - [ ] Test que falle si un campo declarado en `status()` **no tiene camino de render** — la
+        clase de defecto, no el caso.
+
+### [ ] T-2.85.b · El panel y la consola hablan idiomas distintos del mismo estado — `SOFTWARE`
+- **Componente:** edge (panel) + web · **Depende de:** — · **Detectada al escribir el manual**
+  (2026-08-08)
+- El panel del gabinete dice `NO CONTESTA`, `DATO RETENIDO`, `S/D`. La consola de la nube dice
+  `OPERATIVO`, `DEGRADADO`, `SIN DATO` (`BLUEPRINT:105`). **Son vocabularios distintos para la
+  misma realidad**, y quien opera mira las dos pantallas: primero el panel en el sitio, luego la
+  consola desde el SOC — o al revés, en plena madrugada.
+- No es cosmético: el manual de operación tuvo que **elegir uno** y advertir del otro. Cada
+  traducción que un operador hace mentalmente bajo presión es un sitio donde se equivoca.
+- **Criterios de aceptación:**
+  - [ ] Un glosario único, y las dos superficies salen de él.
+  - [ ] Donde el estado no pueda ser idéntico (el panel ve cosas que la nube no), la diferencia
+        **está declarada** y el manual la explica una sola vez.
+  - [ ] Un test que impida que una superficie estrene un literal de estado fuera del glosario.
+
+### [x] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`) · COMPLETA (2026-08-08)
+- **Componente:** docs · **Depende de:** T-2.85
+- **Documento:** [`ENTREGA-Y-ACEPTACION-TAKAB.md`](ENTREGA-Y-ACEPTACION-TAKAB.md), con campos y
+  firmas **en blanco**. La firma sigue siendo `LEGAL`.
+- **Criterios de aceptación:**
+  - [x] Dice **qué hace y qué NO hace** el sistema, con la misma claridad las dos cosas.
+  - [x] Incluye la sección de **invariantes** como parte del alcance contratado.
+  - [x] Enlaza la matriz de T-2.84, huecos incluidos.
+
+> **«Con la misma claridad las dos cosas» no se resolvió con dos listas simétricas**, porque el
+> «no» **no es una sola cosa**. Se parte en cuatro clases que se leen distinto en un juzgado:
+> **invariantes** (nunca lo va a hacer, con su razón en una línea de no-técnico — no se pueden
+> pedir después) · **diferidos** (podría construirse) · **bloqueado fuera del software** (los 10
+> gates con columna de firma, terceros, residencia, marco normativo) · **lo hace pero nadie lo
+> prueba** (los 8 huecos del manual y los 18 de la matriz, dentro del documento y en lenguaje de
+> cliente, no escondidos en un anexo).
+>
+> **Lo que NO se escribió importa tanto como lo que sí**, y quedó dicho con esas palabras:
+> CCTV/ONVIF (está en el deck, el código no existe), mapa MMI, **llaves KMS por tenant** —el
+> propio blueprint declara que en RDS compartida sería un over-claim—, **ECS Fargate**
+> (`CLAUDE.md §3` lo nombra y en Terraform **no hay ni un recurso**), la entrega en ≤30 s por SMS,
+> y cualquier cifra de RTO o disponibilidad. Ninguna se puede defender hoy.
+>
+> Y **«el gabinete corre el proceso mínimo y auditable» quedó como HUECO, no como capacidad**:
+> el valor de fábrica es el contrario.
+
+### [~] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
+- **Componente:** edge + api · **Depende de:** — · **Hueco `RO-4.e` de la matriz** · **El de más
+  peso contractual de los 18, y no tenía ficha** (2026-08-08)
+- **Verificado de primera mano:** `ActuatorAck` (`edge/takab_edge/contracts.py:196`) lleva canal,
+  acción, `event_id`, éxito y latencia — **pero no lleva actor**. Y **no existe ningún
+  `audit_log` en todo `edge/takab_edge/`**: la bitácora vive **solo** en la nube.
+- **Por qué es el peor de la lista para un contrato.** El caso exacto para el que existe el
+  gabinete —regla de oro 2, el edge opera sin nube— es precisamente el que **no deja
+  constancia**. Si el gas se cierra durante un corte de internet, después nadie puede decir
+  **quién lo ordenó ni con qué causa**. Es lo primero que pediría un perito o un seguro, y el
+  documento de entrega ha tenido que declararlo como hueco.
+- Es la **mitad no construida de la regla de oro 4**: «el proceso GPIO es mínimo **y auditable**».
+- **Criterios de aceptación:**
+  - [ ] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
+  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3).
+  - [ ] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**.
+  - [ ] La matriz pasa `RO-4.e` a `CUBIERTO` sola.
+
+### [x] T-2.86.b · La bitácora de los actuadores registra lo que salió bien y calla lo que se intentó — `SOFTWARE`
+- **Componente:** api + edge · **Depende de:** — · **Huecos `RO-8.g` y `RO-8.k` de la matriz**
+  (2026-08-08)
+- Los dos juntos son un titular que un cliente de Protección Civil pregunta literalmente: **la
+  superficie que abre válvulas de gas solo audita el camino feliz**.
+  - `RO-8.g` — el **replay se rechaza pero no se audita**, ni en el edge ni en la nube. Un
+    atacante que sondee con comandos repetidos es **invisible** en el `audit_log`.
+  - `RO-8.k` — solo se audita el éxito. Lo que se **intentó** y no pasó no queda escrito.
+- La regla de oro 8 llama a esto «la superficie más sensible» y exige nonce y rate-limit **sin
+  excepción**; los mecanismos existen, lo que falta es que **dejen huella cuando actúan**.
+- **Criterios de aceptación:**
+  - [x] Un comando rechazado por replay, por rate-limit o por firma **queda auditado**, con su
+        motivo.
+  - [x] Test que dispare cada rechazo y exija su fila en el `audit_log`.
+  - [x] `RO-8.e` de paso: el límite por sitio (`command_rate_site_per_min`) está implementado y
+        **sin probar** — dos operadores coordinados agotan el presupuesto sin rojo.
+
+### [x] T-2.86.c · No existe barrido de secretos en ningún sitio — `SOFTWARE`
+- **Componente:** CI · **Depende de:** — · **Hueco `RO-6.a` de la matriz** (2026-08-08)
+- **Medido:** ni test, ni paso de CI, ni pre-commit, ni `gitleaks`/`trufflehog`/`detect-secrets`.
+  **La regla de oro 6 es la única que hoy se sostiene sobre la disciplina de quien escribe el
+  diff.**
+- Y es la clase de cosa que **un cuestionario de seguridad de hospital pregunta literalmente**,
+  así que bloquea comercialmente antes que técnicamente.
+- **Hermano del mismo hueco (`RO-6.c`):** `Settings` no valida el entorno y **sus defaults son
+  credenciales de dev**, así que un secreto ausente en producción **cae al default en silencio**
+  en vez de impedir el arranque.
+- **Criterios de aceptación:**
+  - [x] Un barrido de secretos corre en un job que **bloquea el merge**.
+  - [x] En producción, un secreto ausente **impide arrancar**; no cae a un default de dev.
+  - [x] Test que lo demuestre con un secreto retirado.
 
 ---
 
@@ -4854,6 +6614,35 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [~] T-2.99 · El pool de ocupantes nunca llegó al despliegue — `SOFTWARE`
+- **Componente:** deploy + api · **Depende de:** — · **Origen:** revisión de sincronía
+  edge↔nube↔app del 2026-08-09 (nadie lo había fichado, y ningún test lo vigilaba)
+- **El defecto:** `deploy/cloud/deploy.sh` cableaba `TAKAB_API_AUTH_ISSUER/AUDIENCE/JWKS_URL`
+  del pool **principal** y **nunca** los tres `TAKAB_API_AUTH_OCCUPANTS_*`. Con
+  `auth_occupants_issuer` vacío, `decode_verify_any` (`auth/tokens.py:117-131`) ni siquiera
+  mira el segundo pool: cae al `decode_verify` del principal y **el id_token de cualquier
+  ocupante muere con `invalid token` ⇒ 401 en `/me`**. El pool existía en Terraform desde
+  `T-2.02` y `mobile/.env` lo apuntaba; lo único que faltaban eran tres líneas.
+- **Por qué importa:** el ocupante es el usuario más numeroso del producto y **nunca ha podido
+  entrar a la nube desplegada**. La app no puede decir por qué: solo enseña "no se pudo
+  verificar la sesión". Además deja cojo el **ancla pool→rol** (`auth/deps.py:91-94`), que para
+  rechazar el cruce necesita los DOS pools configurados: con uno solo, el rechazo del ocupante
+  es un accidente de configuración, no una guarda.
+- **Por qué no lo vio ningún test:** `api/tests/api/conftest.py` acuña los tokens de ambos
+  pools contra el **mismo** JWKS inline, así que en la suite el dual-issuer siempre tuvo
+  issuer. El hueco vivía en el camino de despliegue. Es el mismo patrón que el 401 de audience
+  del táctico (2026-07-18): los tests acuñaban el token móvil con el audience del web.
+- **Criterios de aceptación:**
+  - [x] Los tres `TAKAB_API_AUTH_OCCUPANTS_*` cableados en `deploy.sh` desde los outputs de
+        Terraform que ya existían (`occupants_issuer`, `occupants_client_id`).
+  - [x] Los tres en `REQUERIDOS_EN_PRODUCCION`: en producción su ausencia **impide arrancar**
+        en vez de producir un lockout silencioso.
+  - [x] Test de anclaje contra el `deploy.sh` real
+        (`test_el_deploy_real_habilita_el_pool_de_ocupantes`), rojo si alguien borra las líneas.
+  - [ ] **Verificado contra la nube:** `GET /me` con un id_token del pool de ocupantes
+        devuelve 200 (hoy 401). Falta el despliegue.
+  - [ ] El cruce de pools sigue dando 401 en ambas direcciones **con ambos pools activos**.
 
 ### [ ] T-2.87 · Apply de Cognito — `HUMANO-AWS`
 - **Componente:** infra + deploy · **Depende de:** T-2.54 · **Origen:** T-2.57, pendiente 1
@@ -4875,8 +6664,13 @@ sería documentar intenciones.
 
 ### [ ] T-2.89 · Encender `console_scope_enforced` — `HUMANO-AWS`
 - **Componente:** api + operación · **Depende de:** T-2.54
-- **Es la única brecha multi-tenant viva en producción.** `api/src/takab_api/settings.py:212`
-  lo tiene en `False`.
+- **Es la única brecha multi-tenant viva en producción.**
+  `api/src/takab_api/settings.py · console_scope_enforced` lo tiene en `False`. (Citado por
+  símbolo y no por línea a propósito: la cita `:212` llevaba meses apuntando a otra cosa.)
+- **⚠️ AVISO MEDIDO (matriz `RO-5.g`, 2026-08-08): encenderlo PONDRÁ LA SUITE EN ROJO.** Dos
+  tests HTTP fijan hoy la conducta **no** impuesta. No es una regresión: es que la conducta
+  cambia y los tests la anclan como está. **Que no lo descubra nadie en mitad de la ventana** —
+  hay que invertir esos dos tests **en el mismo cambio**, no después.
 - **SECUENCIA OBLIGADA** (invertirla deja a cada `soc_operator` con **cero estaciones**, que
   es una caída de servicio autoinfligida):
   1. recorrer los `scope_gap` del `audit_log` — dicen exactamente quién quedaría fuera;
@@ -4895,7 +6689,9 @@ sería documentar intenciones.
   - [ ] Resultado registrado con fecha y commit desplegado.
 
 ### [ ] T-2.91 · Sembrar un occupant real — `HUMANO-AWS`
-- **Componente:** operación + mobile · **Depende de:** T-2.87
+- **Componente:** operación + mobile · **Depende de:** T-2.87, **T-2.99**
+- **⚠️ El orden no es intercambiable:** sembrar el occupant **antes** de que `T-2.99` esté
+  desplegada no sirve de nada — el usuario existirá en Cognito y su token seguirá dando 401.
 - **Criterios de aceptación:**
   - [ ] Un `occupant` real, con **código de enrolamiento acotado a su sitio** (no lleva
         `site_scope` por claim: se enrola).

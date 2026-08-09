@@ -62,6 +62,39 @@ def test_extract_window_roundtrip(tmp_path):
     assert list(trace.data[:100]) == list(range(200, 300))
 
 
+def test_extract_window_con_hueco_produce_evidencia_utilizable(tmp_path):
+    """[T-2.67.c] El atasco medido en el gabinete vivo, reproducido.
+
+    Con un hueco en la ventana, `merge(method=1)` sin `fill_value` deja un array
+    ENMASCARADO y `write(MSEED)` levanta `NotImplementedError: Masked array
+    writing is not supported`. El pendiente no se sube, no se descarta y se
+    reintenta cada dos minutos **para siempre**: en `gw-dev-0001` eran 20
+    evidencias de sismos reales, la más vieja de 9 días, creciendo.
+
+    El arreglo es `Stream.split()` y NO `fill_value=0`: rellenar el hueco con
+    ceros escribe «el suelo estuvo quieto» en un archivo que es prueba forense,
+    justo donde no hubo medición. miniSEED admite tramos no contiguos de un
+    mismo canal, así que el hueco puede seguir siendo un hueco.
+    """
+    from obspy import read
+
+    buf = _buffer(tmp_path)
+    for i in (0, 1, 2, 5, 6, 7):  # hueco DELIBERADO de 2 s entre el 2 y el 5
+        buf.append(_pkt(BASE + timedelta(seconds=i), first=i * 100))
+
+    data = buf.extract_window(BASE, BASE + timedelta(seconds=8))
+    assert data, "la ventana con hueco no produjo evidencia"
+
+    stream = read(BytesIO(data))
+    assert not any(hasattr(tr.data, "mask") for tr in stream), (
+        "quedó un array enmascarado: `write(MSEED)` lo rechazaría río abajo"
+    )
+    # El hueco SIGUE siendo un hueco, y no hay una sola muestra inventada:
+    # 6 paquetes × 100 muestras, ni una más.
+    assert sum(tr.stats.npts for tr in stream) == 600
+    assert stream.get_gaps(), "el hueco desapareció: alguien rellenó lo que no se midió"
+
+
 def test_extract_includes_all_channels(tmp_path):
     buf = _buffer(tmp_path)
     for channel in ("EHZ", "ENZ", "ENN", "ENE"):

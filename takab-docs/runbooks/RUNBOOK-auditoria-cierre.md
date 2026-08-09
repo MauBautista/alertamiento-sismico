@@ -451,9 +451,18 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
   RTO NO MEDIDO con objetivos propuestos a ratificar (RPO ≤ 15 min con PITR, RTO ≤ 60 min),
   procedimiento A (restore lógico a base lateral + swap reversible), procedimiento B (restore
   físico desde snapshot), checklist de integridad (append-only, Timescale, RLS) y plan PITR
-  con WAL-G. El registro §6 de ese runbook queda SIN marcar hasta ejecutar la restauración.
-- `[ ]` **GATE-DESPLIEGUE G-09:** ejecutar los procedimientos A y B del runbook de backup,
-  medir RTO real y llenar su registro §6.
+  con WAL-G. El registro de ese runbook queda SIN marcar hasta ejecutar la restauración.
+  **ACTUALIZADO 2026-08-08 (T-2.72/T-2.73):** aquel runbook documentaba un procedimiento que
+  PERDÍA DATOS en silencio y traía un checklist que salía verde sobre la base mutilada; está
+  medido, reproducido y corregido. Hoy hay PITR real (archivado continuo con `barman-cloud`),
+  **RPO 900 s derivado de la configuración** (`terraform output rpo_seconds`, no una promesa
+  tecleada), verificador ejecutable de 22 comprobaciones con veredicto de tres estados, y un
+  ensayo que mide su propio RTO contra la DB local. El registro pasó a ser el **§8** y ganó
+  R-4 (restore PITR), R-7 (la alarma sale de INSUFFICIENT_DATA) y R-8 (primer backup base).
+- `[ ]` **GATE-DESPLIEGUE G-09:** ejecutar los procedimientos A, B **y C (PITR)** del runbook
+  de backup, medir el RTO real y llenar su registro §8. **Bloqueante previo declarado:** la
+  huella del origen no se sube junto al dump (`T-2.73.a`), y sin ella el verificador devuelve
+  INDETERMINADO — seis de sus comprobaciones no se pueden ejercer.
 
 ## 8. BLOQUE 6 · CI y diferidos
 
@@ -574,7 +583,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | G-06 | Simulacro E2E por sitio real (E1) | Sismo simulado en sitio + cascada real | Incidente en SOC < SLO; notificación webhook/email entregada; miniSEED backfilled descargable |  |  |  |
 | G-07 | Replay HMAC en hardware (S2) | Re-emitir comando capturado al gabinete | Rechazo por nonce visto + auditoría del rechazo |  |  |  |
 | G-08 | Load-test a escala objetivo (O2) | RUNBOOK-load-test con flota comercial | SLOs p95 del blueprint en verde sostenidos |  |  |  |
-| G-09 | Restore de backup (O3) | Restaurar snapshot DLM en instancia limpia | DB íntegra; RPO/RTO medidos y publicados |  |  |  |
+| G-09 | Restore de backup (O3) | Procedimientos A (dump), B (snapshot DLM en instancia limpia) y C (PITR a un punto en el tiempo) | Verificador VERDE (22/22) en los tres; RTO de producción medido; RPO ≤ 900 s comprobado contra la hora del "desastre" |  |  |  |
 | G-10 | Panel LAN + PIN + MFA runtime (T-1.43/T-1.53/S4) | En el Pi real: GET sin PIN, POST con/sin PIN; login por rol en pool real | GET 200 público LAN; POST 401 sin PIN / 200 con PIN; lockout 5/60 s; MFA TOTP exigido por rol |  |  |  |
 
 ## 11. HALLAZGOS priorizados (tareas futuras — NO ejecutadas en esta auditoría)
@@ -587,7 +596,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 | A-2 | **REMEDIADO EN CÓDIGO 2026-07-11:** `ensure_prod_pin_factory()` fija `LGPIOFactory` explícita en prod y truena con remediación si no puede (jamás auto-selección a `native`); env/factory previa se respetan con warning (vía de tests). 7 tests nuevos (lgpio falso), suite edge 280 verde | `gpio/__init__.py` (guard + wire en `_on_start`), `edge/tests/test_pin_factory.py`, comentarios systemd actualizados | Pendiente SOLO el gate físico G-01: reboot real y journal con "pin factory de producción fijada" (el lgpio real no existe en el equipo de dev) |
 | A-3 | **REMEDIADO 2026-07-11:** los 2 fallos NO eran regresión del pipeline sino CONTAMINACIÓN de un worker `takab_api.incident` residente (soc-local mal apagado) que correlacionaba durante la demo. Limpio = **35/35**; con worker = 33·2 (reproducido); guardia fail-loud añadida (`demo/run.py::_assert_exclusive_db` + 2 tests) y **RE-ACREDITADO 35/35 ×3** | logs `demo-limpia-run1`, `demo-contaminada`, `demo-guard`, `reacred-run1..3`; `pg_stat_activity` | Nada pendiente del hallazgo. Lección incorporada: la demo aborta si la DB no es exclusiva; apagar soc-local mata TAMBIÉN el worker sin puerto |
 | A-4 | **CERRADO 2026-07-13/14** (reconciliado 2026-08-05, T-2.61 — esta celda decía "APPLY PENDIENTE" 3 semanas después del apply): módulo `observability` aplicado, SNS on-call suscrito y confirmado, alarmas DLQ/instancia/reglas-IoT/gabinete-offline vivas. T-1.66 añadió `sensor-mudo` sobre el mismo topic y el PR #12 corrigió y verificó por correo real la alarma de presencia | `envs/dev/main.tf:157`, `modules/observability/main.tf:23,38,60,76,107,135,182`, `modules/iot-core/main.tf`; cierre en §7 O1 (`:394`) | Nada de A-4 pendiente. **Rebanada aparte, NO parte de este hallazgo:** métricas desde la aplicación. Batería por gabinete y 5xx de la API: nadie las publica. El fantasma vivo de T-2.60.a **ya no** (reconciliado 2026-08-05): `api/src/takab_api/ops/metrics.py` publica `GhostGatewaysAlive` (`Takab/Ops`, 1/min, también el cero) y su alarma está escrita en `modules/observability/main.tf:225`. Existe **en código, probada** (`api/tests/ops/test_ghost_gauge.py`), y **todavía NO en AWS**: pendiente el `terraform apply` de la alarma + `PutOpsMetrics`. La celda decía "hoy la API no publica ni una métrica a CloudWatch": cierto hasta el 2026-08-05, hoy falso — y "ya está vigilado" sería igual de falso hasta el apply |
-| A-5 | **REMEDIADO DOCUMENTAL 2026-07-11:** `RUNBOOK-backup-restore-db.md` con inventario real (snapshots DLM 03:00 + `pg_dump` 08:00 a S3 que la auditoría no había visto), **RPO ≤ 24 h declarado**, RTO por medir, procedimientos A/B y plan PITR WAL-G | `takab-docs/runbooks/RUNBOOK-backup-restore-db.md`; `user_data.sh.tpl:103-104` | GATE-DESPLIEGUE G-09: ejecutar restore real (A y B), medir RTO, llenar registro §6; después, tarea PITR (WAL-G) para RPO ≤ 15 min |
+| A-5 | **REMEDIADO EN SOFTWARE 2026-08-08 (T-2.72/T-2.73)**, tras el remediado documental del 2026-07-11. Y el remediado documental resultó ser el hallazgo: **el procedimiento que aquel runbook documentaba perdía decenas de miles de filas y las 3 PRIMARY KEY de las hypertables en silencio, y su checklist de verificación salía ENTERO EN VERDE sobre la base mutilada** (faltaban `timescaledb_pre/post_restore()`; sobraba `--no-owner`, que además dejaba a `takab_migrator` sin poder migrar ⇒ el siguiente despliegue moriría). Medido y reproducido de forma independiente. Hoy: PITR real con `barman-cloud` (la imagen de la DB ya lo trae; wal-g no), **RPO 900 s DERIVADO de los atributos de la alarma** y no tecleado, alarma de archivado atascado (`breaching`, intocable), verificador de 22 comprobaciones con veredicto de tres estados (VERDE/ROJO/**INDETERMINADO** — un SKIP no es un PASS) y ensayo que mide su propio RTO. De regalo: la regla de lifecycle `expira-60d` **nunca borró un byte** desde julio (sobre un bucket versionado `Expiration` solo pone un delete marker), y la instancia **no podía leer sus propios respaldos** (`s3:PutObject` y nada más) | `RUNBOOK-backup-restore-db.md` (reescrito); `modules/{database,storage,observability}/**` + sus `*.tftest.hcl`; `api/src/takab_api/ops/restore_{check,drill}.py` | GATE-DESPLIEGUE G-09 (`T-2.74`): ejecutar A, B y C contra AWS, medir el RTO de producción, llenar el registro §8. **Bloqueante previo: `T-2.73.a`** — la huella del origen no se sube junto al dump, y sin ella el verificador devuelve INDETERMINADO |
 | A-6 | **REMEDIADO EN SOFTWARE 2026-07-11:** módulo `edge/takab_edge/audio` implementado con TDD (13 tests; edge 293 verde) — advisory tras los relés, apagado por default, subordinado al silencio, assets sismo≠simulacro con sha256, drill con PIN en panel LAN (botón solo si habilitado) | `edge/takab_edge/audio/__init__.py`, `tests/test_audio.py`, hook en `supervisor._act_and_publish`, `gpio.on_silence`, `/api/drill-audio` | GATE-HW: BOM (DAC USB/HAT I2S + ampli + bocina), grabar los 2 mensajes reales, `TAKAB_EDGE_AUDIO_ENABLED=true` en el gabinete y prueba audible presencial. Futuro: autotest periódico de bocina al heartbeat |
 
 ### MEDIO
@@ -674,6 +683,9 @@ Además de resolver §11, para que TAKAB Ailert sea un producto comercial comple
 - Remediación A-5 (mismo día, documental): `RUNBOOK-backup-restore-db.md` — inventario real
   (snapshots DLM + pg_dump 08:00 que la auditoría no había visto), RPO ≤ 24 h declarado,
   procedimientos A/B, plan PITR. Restore real = G-09 sin marcar.
+  **2026-08-08 · en software (T-2.72/T-2.73):** aquel procedimiento documentado perdía datos en
+  silencio y su checklist salía verde igualmente; hoy hay PITR, RPO derivado de la config y
+  verificador ejecutable. Restore real contra AWS = G-09 **sigue** sin marcar (`T-2.74`).
 - Remediación A-6 (mismo día, en software): módulo `edge/takab_edge/audio` con TDD — 13 tests
   nuevos, **suite edge 293 passed**, ruff/format limpios; apagado por default. Hardware
   (DAC/ampli/bocina + assets de voz reales + prueba audible) = GATE-HW sin marcar.

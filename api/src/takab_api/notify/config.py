@@ -8,7 +8,7 @@ Forma esperada::
 
     {"notifications": {
        "webhook":  {"url": "https://...", "secret": "..."},
-       "whatsapp": {"to": "+52..."},
+       "whatsapp": {"to": "+52..."},          # el opt-in NO vive aquí (T-2.79.a)
        "sms":      {"to": "+52..."},
        "email":    {"to": ["ops@...", ...]}   # o string único
     }}
@@ -37,6 +37,22 @@ def resolve_destinations(config: dict | None) -> dict[str, dict]:
     for channel in ("whatsapp", "sms"):
         dest = raw.get(channel)
         if isinstance(dest, dict) and isinstance(dest.get("to"), str) and dest["to"]:
+            # [T-2.79.a] Solo el NÚMERO. El `opt_in` que T-2.77 dejaba pasar desde
+            # aquí ya NO se lee, aunque siga escrito en el `rule_set` de algún
+            # tenant: era un instante suelto que cualquiera podía teclear, sin
+            # decir quién lo dio, sobre qué texto ni quién lo registró — y, sobre
+            # todo, incapaz de decir que el consentimiento se RETIRÓ.
+            #
+            # Un número es configuración; una base legal de envío no lo es. La
+            # constancia sale ahora de ``privacy_consents`` (append-only, con
+            # digest, vía y actor) y la pone el ORQUESTADOR en el instante del
+            # despacho —igual que re-resuelve el `secret` del webhook, y por la
+            # misma razón: lo que autoriza tiene que estar fresco, no congelado.
+            # Ver ``notify/orchestrator._whatsapp_opt_in`` y
+            # ``privacy.store.whatsapp_opt_in_at_sync``.
+            #
+            # Esta función se queda PURA a propósito: es el parser del `rule_set`,
+            # y meterle una conexión la volvería otra cosa.
             out[channel] = {"to": dest["to"]}
         elif dest is not None:
             logger.warning("notifications.%s inválido (falta to) → omitido", channel)

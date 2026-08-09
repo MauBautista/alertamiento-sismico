@@ -889,6 +889,50 @@ def test_gpio_detenido_se_distingue_de_gpio_averiado(tmp_path):
     assert detenido != averiado, "dos causas con reacciones distintas, un solo rótulo"
 
 
+def test_el_dueno_de_los_pines_mudo_no_se_lee_como_averia_ni_como_detenido(tmp_path):
+    """[T-2.70.a·D2/P1] Causa NUEVA: el dueño de los pines NO CONTESTA.
+
+    No es «el módulo está parado» (eso lo sabríamos) ni «su lectura reventó en
+    marcha» (eso es una avería del proceso que sí tenemos delante). Pintarla con
+    cualquiera de los dos rótulos manda al operador a revisar el journal
+    equivocado, que es exactamente el defecto que T-2.68 arregló para las otras.
+    """
+    mudo = _txt(_render(tmp_path, status=_con_reles("gpio_unreachable")), "relays")
+    averiado = _txt(_render(tmp_path, status=_con_reles("gpio_error")), "relays")
+    detenido = _txt(_render(tmp_path, status=_con_reles("gpio_stopped")), "relays")
+    assert "NO CONTESTA" in mudo
+    assert mudo != averiado and mudo != detenido, (
+        "tres causas con reacciones distintas compartiendo rótulo"
+    )
+    assert (
+        _value_color(
+            _render(tmp_path, status=_con_reles("gpio_unreachable")), "relays", "NO CONTESTA"
+        )
+        == CRIT
+    )
+
+
+def test_sin_poder_medir_el_gabinete_la_pantalla_dice_S_D_y_no_NO(tmp_path):
+    """[T-2.70.a·D2/P1] `null` NO es `false`.
+
+    Los cuatro booleanos del gabinete pasan a valer `null` cuando el panel no
+    pudo medirlos, y el JS los leía por verdad simple: `sasmex_active` nulo se
+    pintaba «SASMEX: NO» y `siren_sounding` nulo, «SIRENA: EN REPOSO». Un «no hay
+    alerta» afirmado sobre un dato que nadie pudo medir es exactamente la mentira
+    tranquilizadora de la regla de oro 7.
+    """
+    st = _base()
+    for campo in ("sasmex_active", "siren_sounding", "audible_silenced", "alert_latched"):
+        st[campo] = None
+    st["relays"] = []
+    st["relays_status"] = {"reason": "gpio_unreachable", "installed": None, "missing": []}
+    texto = _txt(_render(tmp_path, status=st), "tier-sub")
+    assert "SIRENA: S/D" in texto, texto
+    assert "SASMEX: S/D" in texto, texto
+    assert "EN REPOSO" not in texto
+    assert "SASMEX: NO" not in texto
+
+
 def test_config_ilegible_avisa_que_la_lista_no_se_filtro(tmp_path):
     """Causa (c): el `try` único cubría gpio Y config, así que un store corrupto
     se pintaba como gpio roto. El estado eléctrico sí se midió: se pinta, con la

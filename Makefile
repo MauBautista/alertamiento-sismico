@@ -1,7 +1,7 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
-        cloud-images cloud-deploy cloud-allow-my-ip
+        cloud-images cloud-deploy cloud-allow-my-ip restore-drill
 
 API_DIR := api
 WEB_DIR := web
@@ -16,6 +16,14 @@ TF_OBSERVABILITY := infra/terraform/modules/observability
 # ventanas de mantenimiento que terraform puede blindar (las mute rules en sí
 # las crea el API y no están en el estado).
 TF_DATABASE := infra/terraform/modules/database
+# [T-2.72] La retención de los respaldos. Este módulo existía desde julio SIN un
+# solo test, y por ahí vivió nueve meses una regla de lifecycle que parecía una
+# política de retención y era un cambio de etiqueta: `Expiration` sobre un bucket
+# VERSIONADO no borra un byte, pone un delete marker. Para el PITR es peor que un
+# coste — el delete marker esconde el objeto al restaurador aunque los bytes
+# sigan ahí. La corrección se podía borrar entera sin que nada se pusiera rojo.
+TF_STORAGE := infra/terraform/modules/storage
+TF_IDENTITY := infra/terraform/modules/identity
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
@@ -92,6 +100,49 @@ soc-local: demo-db
 	@test -f web/.env || (cp web/.env.example web/.env && echo "web/.env creado desde el example")
 	bash demo/soc_local.sh
 
+# --- Ensayo de restore (T-2.73) -----------------------------------------------
+# Un solo comando: construye un origen sintético, lo vuelca, lo restaura en una
+# base que el propio ensayo crea, VERIFICA la integridad de lo restaurado y
+# publica el RTO desglosado por fases. `RUNBOOK-backup-restore-db.md:3` dice
+# "RESTORE JAMÁS PROBADO" y su §2 dice "RTO: NO MEDIDO"; esto no cierra G-09
+# (eso es la ventana AWS de T-2.74) pero deja de ser una hipótesis.
+#
+# La DSN apunta a `postgres` A PROPÓSITO: el ensayo NO toca `takab`. Crea sus dos
+# bases con nombre generado y marcador propio, y se niega a escribir en cualquier
+# otra cosa. Para ensayar contra datos reales: DRILL_ARGS="--source-db takab"
+# (la base origen sólo se LEE). Para reproducir el §3 del runbook tal como está
+# escrito hoy —y ver qué pierde—: DRILL_ARGS=--como-el-runbook.
+#
+# POR QUÉ NO ESTÁ EN CI, y qué haría falta para que lo estuviera:
+#   1. Exige `pg_dump`/`pg_restore` del MISMO major que el servidor. El runner no
+#      pinea esa versión y un cliente de otro major produce un restore con
+#      errores que `pg_restore` reporta como "ignorados" — el verde mentiroso que
+#      esta tarea persigue, reintroducido en el vigilante. Medido en local:
+#      cliente 18.4 contra servidor 16 → `unrecognized configuration parameter
+#      "transaction_timeout"`.
+#   2. Crea y borra bases en el servidor: contra el contenedor de servicio
+#      compartido de un job, es una clase de flake nueva por un número que no es
+#      una regresión, es una medición.
+# Lo que SÍ corre en cada PR es el verificador entero, con sus 36 mutaciones
+# (`api/tests/ops/test_restore_check.py`, dentro del job `api`): la pieza que se
+# pudre es esa, no la ceremonia. Para meter el ensayo en CI bastaría con fijar
+# `postgresql-client-16` en el job `api` y añadir el paso; ~30 s.
+#
+# DESDE UN WORKTREE, este target (como `db`, `test-db` y `test`) choca con el
+# contenedor del checkout principal: `container_name: takab-db` es fijo en
+# docker-compose.yml —y tiene que serlo, porque runbooks y scripts hacen
+# `docker exec takab-db`—, así que `docker compose up -d db` responde
+# `Conflict. The container name "/takab-db" is already in use`. Es preexistente y
+# no es de este target. Con el contenedor del principal ya vivo, salta el
+# prerrequisito y llama al módulo directo:
+#   cd api && DATABASE_URL=<RESTORE_DRILL_DSN> uv run python -m takab_api.ops.restore_drill
+RESTORE_DRILL_DSN := postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/postgres
+
+restore-drill: db
+	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
+	cd $(API_DIR) && DATABASE_URL="$(RESTORE_DRILL_DSN)" \
+		uv run python -m takab_api.ops.restore_drill $(DRILL_ARGS)
+
 down:
 	docker compose down
 
@@ -127,8 +178,11 @@ test: test-db
 	cd $(MOBILE_DIR) && npm test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_DATABASE) && terraform init -backend=false -input=false >/dev/null && terraform test
+	cd $(TF_STORAGE) && terraform init -backend=false -input=false >/dev/null && terraform test
+	cd $(TF_IDENTITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
+	bash infra/scripts/tests/test_secret_scan.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
 # commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo

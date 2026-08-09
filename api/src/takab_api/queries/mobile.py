@@ -265,11 +265,16 @@ SITE_HEALTH = text(
     "h.battery_pct::float8 AS battery_pct, h.cert_days_remaining, "
     "h.mqtt_rtt_ms::float8 AS mqtt_rtt_ms, h.seedlink_lag_s::float8 AS seedlink_lag_s, "
     "h.ntp_offset_ms::float8 AS ntp_offset_ms, h.cpu_temp_c::float8 AS cpu_temp_c, "
+    # [T-2.70.a·B1] Mismo motivo que en flota y mapa: `derive_fleet_state` es la
+    # verdad única y la app del brigadista no puede decir OPERATIVO de un edificio
+    # cuyo gabinete no sabe si tiene sirena.
+    "h.relays_state, "
     "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s "
     "FROM gateways g "
     "LEFT JOIN LATERAL ("
     "  SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining, "
-    "         dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.cpu_temp_c "
+    "         dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.cpu_temp_c, "
+    "         dh.relays_state "
     "  FROM device_health dh WHERE dh.gateway_id = g.gateway_id "
     "  ORDER BY dh.ts DESC LIMIT 1"
     ") h ON true "

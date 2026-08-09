@@ -1,0 +1,51 @@
+{
+  "_": [
+    "T-2.79 · AVISO DE PRIVACIDAD DE PLATAFORMA — TEXTO PROVISIONAL.",
+    "",
+    "ESTE TEXTO NO ESTÁ REVISADO POR LEGAL. La fase lo dice con todas las letras:",
+    "el motor es SOFTWARE y el texto es LEGAL; se construye el motor con un texto",
+    "provisional versionado y se SUSTITUYE el texto cuando llegue el definitivo.",
+    "",
+    "CÓMO SE SUSTITUYE, Y POR QUÉ NO ES UNA EDICIÓN:",
+    "el `body` de abajo entra en el digest SHA-256 que identifica al aviso, y ese",
+    "digest es lo que cada consentimiento sella. Cambiar una coma cambia el digest,",
+    "y en ese instante TODOS los consentimientos dados sobre el texto anterior",
+    "quedan marcados obsoletos — automáticamente, sin que nadie tenga que acordarse",
+    "de invalidarlos. Por eso sustituir el texto ES UNA VERSIÓN NUEVA: sube",
+    "`notice.version`, cambia el `body`, y a la gente se le vuelve a pedir el",
+    "consentimiento en un momento tranquilo. NO edites el texto pensando que",
+    "'es solo una errata': para el motor no existe la corrección sin consecuencia.",
+    "",
+    "El párrafo final del cuerpo declara que el texto es provisional. Está DENTRO",
+    "del cuerpo a propósito: así viaja hasta la pantalla, entra en el digest y",
+    "desaparece —moviendo el digest— el día que LEGAL entregue el definitivo.",
+    "",
+    "CUANDO LEGAL LO APRUEBE: se escribe el sello en `legal_review` — `status`",
+    "APPROVED, `approved_digest` = el digest del bloque `notice` sellado, `approved_by`",
+    "y `reviewed_at`. Si no cuadra el digest, el aviso vuelve a declararse provisional",
+    "solo. No se pone APPROVED 'para probar': es la misma mentira que T-2.75 erradicó.",
+    "",
+    "MARCO NORMATIVO: el aviso de privacidad es una figura de la LFPDPPP. La cita",
+    "exacta de artículos y el marco citable completo están PENDIENTES de confirmar",
+    "(blueprint §9 lo deja abierto), y por eso este texto no cita artículos: una cita",
+    "inventada es peor que un hueco declarado.",
+    "",
+    "UN TENANT PUEDE PUBLICAR EL SUYO y este deja de servirse para su gente",
+    "(privacy_notices, el más específico gana). Un hospital o una dependencia es el",
+    "responsable de los datos de su propia gente."
+  ],
+  "purpose": "privacy_notice",
+  "notice": {
+    "locale": "es-MX",
+    "version": "0.1.0-provisional",
+    "title": "Aviso de privacidad — TAKAB Ailert",
+    "body": "QUIÉN TRATA SUS DATOS. La organización que opera este sistema de alertamiento sísmico y continuidad operativa en su inmueble es la responsable de sus datos personales. TAKAB opera la plataforma por cuenta de esa organización.\n\nQUÉ DATOS SE TRATAN. Su nombre para mostrar, su correo y, si lo proporciona, su teléfono; la zona del inmueble que tiene asignada; sus check-ins de vida durante un incidente (a salvo / necesito ayuda) y el instante de cada uno; los reportes de daño que envíe y las fotografías que adjunte; y el identificador de su dispositivo para poder enviarle avisos de emergencia.\n\nPARA QUÉ. Para avisarle de un sismo, para saber quién está dentro del inmueble y en qué estado durante una emergencia, para coordinar el rescate de quien pide ayuda, y para dejar constancia de lo ocurrido. No se usan para publicidad, no se venden y no se ceden a terceros con fines comerciales.\n\nSU UBICACIÓN. El GPS solo se envía si usted lo autoriza expresamente y únicamente al pulsar NECESITO AYUDA. Puede retirar esa autorización cuando quiera desde su cuenta. Sin GPS el sistema envía su zona asignada, y el botón sigue funcionando: la ayuda no depende de que comparta su ubicación.\n\nLO QUE ES EVIDENCIA NO SE BORRA. Los check-ins, los reportes de daño y los dictámenes de un incidente son evidencia de protección civil: se conservan y no se eliminan por vencimiento de plazos de retención. Si usted ejerce su derecho de supresión, sus datos se anonimizan y la evidencia del incidente permanece sin poder atribuirse a usted.\n\nSUS DERECHOS. Puede solicitar acceder a sus datos, rectificarlos, cancelarlos u oponerse a su tratamiento, y retirar su consentimiento, ante la organización responsable de su inmueble. Retirar el consentimiento opera hacia adelante: no borra el hecho de que antes lo había dado, porque ese hecho también es parte del registro.\n\nSUS DATOS NO CRUZAN A OTRA ORGANIZACIÓN. La plataforma aísla por cliente: quien opera otro inmueble no ve su nombre, su ubicación ni sus check-ins.\n\nCUANDO CAMBIE ESTE AVISO. Si el texto cambia, se le pedirá el consentimiento de nuevo sobre el texto nuevo, y el consentimiento que dio sobre el anterior se conserva tal como lo dio. En ningún caso la falta de un consentimiento nuevo le impedirá recibir la alerta sísmica, hacer un check-in de vida ni pedir ayuda: la seguridad no espera a un trámite.\n\nTEXTO PROVISIONAL. Este aviso es un marcador de posición mientras la revisión jurídica entrega el definitivo. El mecanismo que lo versiona y que registra su consentimiento sí es definitivo; el texto no. Cuando llegue el aviso revisado, este párrafo desaparecerá y se le pedirá aceptar el texto nuevo."
+  },
+  "legal_review": {
+    "status": "PROVISIONAL",
+    "approved_digest": "",
+    "approved_by": "",
+    "reviewed_at": "",
+    "note": "Nadie de LEGAL ha revisado este texto. Mientras el estado no sea APPROVED y el approved_digest no cuadre con el digest del bloque `notice`, la API lo sirve marcado `provisional: true` y la consola y la app lo pintan como provisional. Esto no bloquea nada: un aviso provisional bien etiquetado es mejor que ningún aviso, y muchísimo mejor que un texto inventado presentado como definitivo."
+  }
+}

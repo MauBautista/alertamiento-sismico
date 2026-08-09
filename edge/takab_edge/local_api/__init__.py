@@ -45,8 +45,8 @@ from pathlib import Path
 
 from takab_edge.catalog import DEGRADED as _CATALOG_DEGRADED
 from takab_edge.catalog import CatalogStore
-from takab_edge.contracts import utcnow
-from takab_edge.gpio import GpioController
+from takab_edge.contracts import ActuatorChannel, utcnow
+from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
 from takab_edge.rules import RuleEngine
@@ -82,6 +82,11 @@ _FALLBACK_HTML = (
 #: Es el default a propósito: sin explicación se asume la PEOR causa (avería del
 #: proceso que toca la sirena), jamás la más benigna.
 _RELAYS_UNKNOWN = {"reason": "unknown", "installed": None, "missing": []}
+
+#: Centinela de «este llamador no trae instantánea», distinto de `None` («no se
+#: pudo leer»). Sin él, `_relays_view(None, "gpio_unreachable")` y
+#: `_relays_view()` serían la misma llamada y la segunda no podría leer nada.
+_SIN_INSTANTANEA: object = object()
 
 
 def _age_s(raw: object, now: datetime) -> float | None:
@@ -292,6 +297,30 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # calibrar sin señal): 409 honesto, jamás un OK que no hizo nada.
             self._send(409, json.dumps({"error": str(exc)}))
             return
+        except Exception as exc:  # noqa: BLE001 — el operador merece una respuesta
+            # [T-2.70.a·D2/P1] Las SEIS acciones del panel cruzan la costura y
+            # ninguna tenía camino honesto de fallo: `do_POST` sólo traducía
+            # `ActionUnavailable`, y cualquier otra excepción escapaba a
+            # `BaseHTTPRequestHandler` — el operador que aprieta SILENCIO se
+            # quedaba con la conexión cortada y sin saber si la sirena se calló.
+            #
+            # 503 y no 500: esto no es una avería del panel, es que el servicio
+            # de abajo —el dueño de los pines— no pudo cumplir. Un 500 mandaría a
+            # reiniciar el kiosco; un 503 manda a mirar el gabinete.
+            log.exception("acción %s del panel LAN no se pudo ejecutar", self.path)
+            self._send(
+                503,
+                json.dumps(
+                    {
+                        "error": (
+                            "el gabinete no pudo ejecutar la acción "
+                            f"({type(exc).__name__}); revisa el estado del proceso "
+                            "que gobierna los pines"
+                        )
+                    }
+                ),
+            )
+            return
         self._send(200, json.dumps({"ok": True}))
 
     def log_message(self, *args: object) -> None:  # no spamear stdout del edge
@@ -315,7 +344,7 @@ class LocalDashboard(EdgeModule):
 
     def __init__(
         self,
-        gpio: GpioController,
+        gpio: GpioLink,
         rules: RuleEngine,
         health: HealthMonitor,
         host: str = "0.0.0.0",  # noqa: S104 — LAN del gabinete por diseño
@@ -339,9 +368,14 @@ class LocalDashboard(EdgeModule):
         dispatch: object | None = None,
         lora: object | None = None,
         backfill: object | None = None,
+        ledger: object | None = None,
     ) -> None:
         super().__init__()
-        self._gpio = gpio
+        self._link = as_link(gpio)
+        # [T-2.86.a · RO-4.e] Bitácora local de actuación: las acciones del panel
+        # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
+        # RAM (`_actions`), que un reinicio borra. Ver `_accion`.
+        self._ledger = ledger
         self._rules = rules
         self._health = health
         self._signal = signal
@@ -515,8 +549,39 @@ class LocalDashboard(EdgeModule):
                 "channels": {},
             }
 
-    def _relays_view(self) -> tuple[list[dict], dict]:
+    def _gpio_snapshot(self) -> tuple[GpioSnapshot | None, str | None]:
+        """[T-2.70.a·D2/P1] UNA lectura del gabinete por request, y su diagnóstico.
+
+        Devuelve ``(instantánea, None)`` o ``(None, causa)``. El panel poll­ea a 1 Hz
+        y pedía SIETE propiedades por request —cada una una toma del lock, cada una
+        un cruce del futuro IPC— y, peor, cuatro de ellas SIN envolver: una lectura
+        que lanzara caía en el `except` de `do_GET` y el kiosco recibía un **500**,
+        o sea la pantalla en blanco en vez de una sección en S/D.
+
+        La causa se separa aquí porque no todas piden lo mismo del operador:
+        `gpio_unreachable` (el dueño de los pines no contesta) manda a mirar el
+        servicio de los pines; `gpio_error` (reventó una lectura) manda al journal
+        del proceso que sí tenemos delante.
+        """
+        try:
+            return self._link.snapshot(), None
+        except GpioLinkUnavailable:
+            log.warning("panel LAN: el dueño de los pines no contesta", exc_info=True)
+            return None, "gpio_unreachable"
+        except Exception:  # noqa: BLE001 — sección no-crítica: jamás un 500 al kiosco
+            log.warning("panel LAN: estado del gabinete no disponible", exc_info=True)
+            return None, "gpio_error"
+
+    def _relays_view(
+        self,
+        snap: GpioSnapshot | None | object = _SIN_INSTANTANEA,
+        gpio_reason: str | None = None,
+    ) -> tuple[list[dict], dict]:
         """Relés para el panel: las filas Y **por qué** son las que son.
+
+        Sin argumentos toma su propia instantánea (tests y llamadas sueltas);
+        `status()` le pasa la del request para que las filas, el diagnóstico y los
+        cuatro booleanos de arriba salgan todos del MISMO instante.
 
         gpio.relay_states() ya es seguro en shutdown (devuelve []); este guard
         cubre cualquier otro fallo: roto ⇒ [] y el panel pinta S/D, jamás un 500
@@ -546,6 +611,12 @@ class LocalDashboard(EdgeModule):
           Lista vacía LEGÍTIMA — ni la consola ni el env exigen "al menos uno".
         - ``partial``       el perfil declara canales que gpio no reporta. La
           lista corta miente igual que la vacía y nada la disparaba.
+        - ``gpio_unreachable`` [T-2.70.a·D2/P1] el DUEÑO DE LOS PINES no contesta.
+          Causa NUEVA, y no es ninguna de las anteriores: no es que el módulo esté
+          parado (eso lo sabríamos) ni que su lectura reventara en marcha (eso es
+          una avería del proceso que sí tenemos delante) — es que no hubo
+          respuesta. Mapearla a `gpio_error` o a `gpio_stopped` mandaría al
+          operador a revisar el journal equivocado.
         - ``unknown``       nadie sabe. Es el DEFAULT a propósito: el rótulo que
           había ("arranque en frío") se leía como "todo bien, espera" y era el
           único estado que nunca ocurre — gpio puebla sus cinco canales, síncrono
@@ -554,24 +625,25 @@ class LocalDashboard(EdgeModule):
         Diagnóstico puro sobre memoria ya viva: cero disco, cero red, y NO toca
         el camino SASMEX→relé (regla de oro 4).
         """
+        if snap is _SIN_INSTANTANEA:
+            snap, gpio_reason = self._gpio_snapshot()
         try:
-            return self._relays_view_inner()
+            return self._relays_view_inner(snap, gpio_reason)
         except Exception:  # noqa: BLE001 — sección no-crítica: degrada a lo PEOR
             log.warning("panel LAN: relés no disponibles", exc_info=True)
             return [], dict(_RELAYS_UNKNOWN)
 
-    def _relays_view_inner(self) -> tuple[list[dict], dict]:
+    def _relays_view_inner(
+        self, snap: GpioSnapshot | None, gpio_reason: str | None
+    ) -> tuple[list[dict], dict]:
         # --- caja 1: gpio (estado eléctrico medido) ---
+        # [T-2.70.a·D2/P1] Sale de la instantánea ÚNICA del request: `running` y las
+        # filas ya no son dos lecturas que puedan contradecirse entre sí.
         running: bool | None = None
-        gpio_failed = False
         states: list = []
-        try:
-            running = bool(self._gpio.running)
-            states = list(self._gpio.relay_states())
-        except Exception:  # noqa: BLE001 — el diagnóstico distingue esto de config
-            log.warning("panel LAN: estado de relés no disponible", exc_info=True)
-            gpio_failed = True
-            states = []
+        if snap is not None:
+            running = bool(snap.running)
+            states = list(snap.relays)
 
         # --- caja 2: config (perfil declarado del sitio) ---
         # Sin config (panel suelto) el perfil es DESCONOCIDO, no vacío: no se
@@ -594,10 +666,12 @@ class LocalDashboard(EdgeModule):
         presentes = {r.get("channel") for r in rows}
         missing = [c for c in (installed or ()) if c not in presentes]
 
-        if running is False:
+        if gpio_reason is not None:
+            # «No contesta» y «reventó en marcha» llegan ya distinguidas de arriba
+            # (`_gpio_snapshot`); ninguna de las dos puede saber si el módulo corre.
+            reason = gpio_reason
+        elif running is False:
             reason = "gpio_stopped"
-        elif gpio_failed:
-            reason = "gpio_error"
         elif config_failed:
             reason = "config_error"
         elif installed is not None and not installed:
@@ -636,17 +710,13 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: versión de config no disponible", exc_info=True)
             return None
 
-    def _latencies_section(self) -> dict:
+    def _latencies_section(self, snap: GpioSnapshot | None) -> dict:
         """[T-2.17] Latencias MEDIDAS de la cadena crítica, contra presupuesto.
 
         `null` = sin medición todavía (la UI pinta S/D). JAMÁS un 0.0 fabricado:
         un cero se leería como "instantáneo" y sería una mentira.
         """
-        try:
-            reflex = self._gpio.last_reflex_latency_s
-        except Exception:  # noqa: BLE001
-            log.warning("panel LAN: latencia de reflejo no disponible", exc_info=True)
-            reflex = None
+        reflex = snap.last_reflex_latency_s if snap is not None else None
         try:
             rules = self._rules.last_latency_s
         except Exception:  # noqa: BLE001
@@ -876,6 +946,38 @@ class LocalDashboard(EdgeModule):
         with self._actions_lock:
             self._actions.append({"at": utcnow().isoformat(), "action": action, "via": "lan"})
 
+    def _accion(self, nombre: str, **kwargs):
+        """[T-2.86.a · RO-4.e] ÚNICA puerta del panel hacia el dueño de los pines.
+
+        Existe para que la bitácora no dependa de que cada endpoint se acuerde: la
+        causa se **deriva** del nombre de la acción, que es una clave de la lista
+        blanca `GPIO_ACTIONS`, y un test exige que esa lista esté cubierta entera.
+        Una acción nueva del panel entra en el registro sola o pone el build en rojo.
+
+        El registro va DESPUÉS de mover los relés y nunca antes: el operador que
+        pulsa «probar» no puede quedarse esperando a un fsync. Y un intento FALLIDO
+        también deja fila —«lo que se intentó y no pasó» es justo lo que faltaba—,
+        pero la excepción se re-lanza igual: el panel la traduce a su código HTTP.
+        """
+        from takab_edge.audit import ACTOR_LAN, cause_for_gpio_action
+
+        exito, detalle = True, ""
+        try:
+            return self._link.action(nombre, **kwargs)
+        except Exception as exc:
+            exito, detalle = False, f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            if self._ledger is not None:
+                self._ledger.record(
+                    cause=cause_for_gpio_action(nombre),
+                    actor=ACTOR_LAN,
+                    channel=ActuatorChannel.SYSTEM,
+                    action=nombre,
+                    success=exito,
+                    detail=detalle,
+                )
+
     def status(self) -> dict:
         """Snapshot para la mini-consola LAN (los 4 estados los rotula la UI)."""
         now = utcnow()
@@ -891,7 +993,12 @@ class LocalDashboard(EdgeModule):
         # [T-2.68] Filas y diagnóstico salen de UNA sola lectura: pedirlos por
         # separado los dejaría desincronizados entre sí (dos snapshots distintos
         # del mismo lock) y el rótulo explicaría una lista que ya no es esa.
-        relays, relays_status = self._relays_view()
+        # [T-2.70.a·D2/P1] Y esa lectura es AHORA la del gabinete entero: los
+        # cuatro booleanos de abajo, el motivo de la sirena, las latencias y las
+        # dos pruebas salen todos del MISMO instante — y ninguno puede ya tumbar
+        # el request entero (`None` = «no se pudo medir», que la UI pinta S/D).
+        snap, gpio_reason = self._gpio_snapshot()
+        relays, relays_status = self._relays_view(snap, gpio_reason)
         return {
             # Identidad VIVA (settings), no del snapshot: sobrevive a health caído.
             "gateway_id": self._gateway_id
@@ -901,13 +1008,13 @@ class LocalDashboard(EdgeModule):
             "uptime_s": uptime,
             "refresh_ms": self._refresh_ms,
             # Distinguir alerta REAL vs. sirena sonando vs. silenciado (regla de oro 7):
-            "sasmex_active": self._gpio.sasmex_active,
-            "siren_sounding": self._gpio.siren_sounding,
-            "siren_reason": self._siren_reason(),
-            "audible_silenced": self._gpio.audible_silenced,
+            "sasmex_active": snap.sasmex_active if snap is not None else None,
+            "siren_sounding": snap.siren_sounding if snap is not None else None,
+            "siren_reason": self._siren_reason(snap),
+            "audible_silenced": snap.audible_silenced if snap is not None else None,
             # [T-2.26] Enclave vivo (SASMEX o rules): el panel ofrece CERRAR
             # ALERTA mientras esto sea true, aunque el tier ya haya decaído.
-            "alert_latched": self._gpio.alert_latched,
+            "alert_latched": snap.alert_latched if snap is not None else None,
             "network_alert": self._network_alert_section(),
             "lora": self._lora_section(),
             "last_tier": last_tier,
@@ -923,7 +1030,7 @@ class LocalDashboard(EdgeModule):
             "neighbors": site["neighbors"],
             "config_version": self._config_version(),
             "thresholds": self._thresholds_section(),
-            "latencies": self._latencies_section(),
+            "latencies": self._latencies_section(snap),
             "seedlink": self._seedlink_section(),
             "calibration": self._calibration_section(),
             # [T-2.29] Punto 0 de la brújula (o null: el panel usa media rodante).
@@ -935,35 +1042,29 @@ class LocalDashboard(EdgeModule):
             # [T-2.67] Respaldo de evidencia: estado, jamás muestras (regla 9).
             "evidence": self._evidence_section(now),
             "drill": self._drill_section(),
-            "actuation_test": self._actuation_test_section(),
-            "test_mode": self._test_mode_section(),
+            "actuation_test": self._actuation_test_section(snap),
+            "test_mode": self._test_mode_section(snap),
             "audio": self._audio_section(),
             "events": self._events_section(),
         }
 
-    def _test_mode_section(self) -> dict:
+    def _test_mode_section(self, snap: GpioSnapshot | None) -> dict:
         """Modo prueba del WR-1 (T-1.69): banner + cuenta atrás mientras la nube está muda."""
-        try:
-            return {
-                "active": bool(self._gpio.test_mode_active),
-                "remaining_s": round(self._gpio.test_mode_remaining_s, 1),
-            }
-        except Exception:  # noqa: BLE001 — sección no-crítica del panel
-            log.warning("panel LAN: estado de modo prueba no disponible", exc_info=True)
+        if snap is None:
             return {"active": False, "remaining_s": 0.0}
+        return {
+            "active": bool(snap.test_mode_active),
+            "remaining_s": round(snap.test_mode_remaining_s, 1),
+        }
 
-    def _actuation_test_section(self) -> dict:
+    def _actuation_test_section(self, snap: GpioSnapshot | None) -> dict:
         """Prueba local de actuación (T-1.67): banner mientras sostiene + resultado."""
-        try:
-            active = bool(self._gpio.actuation_test_active)
-        except Exception:  # noqa: BLE001 — sección no-crítica del panel
-            log.warning("panel LAN: estado de prueba de actuación no disponible", exc_info=True)
-            active = False
+        active = bool(snap.actuation_test_active) if snap is not None else False
         with self._actions_lock:
             results = self._last_actuation_test
         return {"active": active, "results": results}
 
-    def _siren_reason(self) -> str | None:
+    def _siren_reason(self, snap: GpioSnapshot | None) -> str | None:
         """[T-2.49] POR QUÉ suena la sirena. `siren_sounding` es un booleano
         ELÉCTRICO y no distingue nada.
 
@@ -975,11 +1076,9 @@ class LocalDashboard(EdgeModule):
 
         Sección no-crítica: rota ⇒ ``None`` (el panel no rotula), jamás un 500.
         """
-        try:
-            reason = self._gpio.siren_reason
-        except Exception:  # noqa: BLE001 — sección no-crítica del panel
-            log.warning("panel LAN: motivo de la sirena no disponible", exc_info=True)
+        if snap is None:
             return None
+        reason = snap.siren_reason
         return None if reason is None else str(reason.value)
 
     def _audio_profile(self) -> dict | None:
@@ -1007,6 +1106,26 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: perfil de tonos no disponible", exc_info=True)
             return None
 
+    def audit_state(self) -> dict | None:
+        """[T-2.86.a] Salud de la bitácora local de actuación, para quien la pinte.
+
+        **Deliberadamente NO está en `status()` todavía.** El panel tiene una guarda
+        derivada (`test_local_api_panel.py`) que exige que toda clave de `status()`
+        se RENDERICE: añadirla sin su tarjeta sería una clave que el kiosco ignora en
+        silencio, que es la clase de defecto que T-2.59 ya costó. La declaración del
+        fallo existe mientras tanto por `log.error` en el propio `ActuationLedger`.
+
+        Defensiva como el resto: `None` = no se pudo leer, jamás un cero que parezca
+        «todo en orden».
+        """
+        try:
+            if self._ledger is None:
+                return None
+            return self._ledger.state()
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: estado de la bitácora no disponible", exc_info=True)
+            return None
+
     def _audio_section(self) -> dict | None:
         """Voceo (A-6): la UI solo muestra el botón de drill si está habilitado."""
         try:
@@ -1023,13 +1142,13 @@ class LocalDashboard(EdgeModule):
 
     def silence(self) -> None:
         """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""
-        self._gpio.silence_audibles(True)
+        self._accion("silence", silenced=True)
         self._record_action("silence")
         log.warning("silencio solicitado por LAN")
 
     def run_siren_test(self) -> None:
         """Prueba de sirena por LAN (self-test acotado, no es una alerta real)."""
-        self._gpio.run_siren_test()
+        self._accion("siren_test")
         self._record_action("siren_test")
         log.warning("prueba de sirena solicitada por LAN")
 
@@ -1043,7 +1162,7 @@ class LocalDashboard(EdgeModule):
         el pulso dura ~1 s y la sirena sigue sonando hasta que vence el sostén.
         El resultado por relé aflora en ``status()`` para que el panel lo pinte.
         """
-        result = self._gpio.run_local_actuation_test()
+        result = self._accion("actuation_test")
         with self._actions_lock:
             self._last_actuation_test = result
         if self._lora is not None:
@@ -1064,11 +1183,11 @@ class LocalDashboard(EdgeModule):
         un toggle: el primer toque arma (ventana corta auto-expirable), el segundo
         desarma. Sirve para probar el WR-1 sin generar ruido en producción.
         """
-        if self._gpio.test_mode_active:
-            self._gpio.disarm_test_mode()
+        if self._link.snapshot().test_mode_active:
+            self._accion("disarm_test_mode")
             self._record_action("test_mode_off")
         else:
-            self._gpio.arm_test_mode()
+            self._accion("arm_test_mode")
             self._record_action("test_mode_on")
 
     def reset_alert(self) -> None:
@@ -1076,7 +1195,7 @@ class LocalDashboard(EdgeModule):
         # Orden gpio→rules a propósito (falla seguro ante un disparo concurrente):
         # si un sismo vivo re-enclava entre ambas llamadas, los relés QUEDAN en
         # protección y la siguiente ventana de features re-emite el tier.
-        self._gpio.reset()
+        self._accion("reset")
         # [T-2.26] Sin esto, last_tier quedaba congelado en el tier del episodio
         # hasta la siguiente feature — con SeedLink caído, PARA SIEMPRE.
         self._rules.reset()

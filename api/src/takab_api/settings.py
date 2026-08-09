@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Orden total de tiers del motor de reglas edge (blueprint §4.5).
@@ -32,13 +33,168 @@ TIER_SEVERITY: dict[str, str] = {
 }
 
 
+#: DSN de desarrollo. Es el default de ``Settings.database_url`` y, a la vez, el
+#: valor que en producción NO puede quedarse puesto: si el secreto real no llega,
+#: caer aquí es arrancar limpio contra la base equivocada. Vive como constante
+#: para que el guardia de producción y el test lo comparen contra la MISMA cadena.
+DEFAULT_DEV_DATABASE_URL = "postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab"
+
+# --- [T-2.86.c · hueco RO-6.c] Contrato de configuración de PRODUCCIÓN ---------
+#
+# EL DEFECTO: los defaults de esta clase son credenciales de desarrollo. Un
+# secreto que no llegue a la nube no produce un error, produce un arranque
+# limpio con el valor equivocado — y un fallo silencioso no se investiga. La
+# regla de oro 6 ("nada de secretos hardcodeados") se sostenía sólo en que
+# nadie se olvidara.
+#
+# POR QUÉ FALLA AL CONSTRUIR ``Settings`` y no dentro de ``create_app``:
+# los workers (``ingest``, ``incident``, ``notify``, ``billing``, ``backfill``)
+# NO pasan por ``create_app``; cada uno hace su ``Settings()``. Un guardia en el
+# constructor cubre las seis entradas con una sola línea, y no hay forma de
+# atraparlo y seguir a medias. En el edge se decidió lo contrario para el perfil
+# de failsafe, y con razón: allí ``EdgeSettings`` es TAMBIÉN el documento
+# firmado que se sincroniza, y levantar una excepción tiraba el documento
+# entero, dejando al gabinete sin configuración por un campo malo. Aquí no hay
+# documento: ``Settings`` es sólo configuración de un proceso de nube que puede
+# —y debe— morir y reintentar. El edge, mientras tanto, sigue actuando sin nube
+# (regla de oro 2), así que un crash-loop de la API no apaga ninguna sirena.
+#
+# LA SEÑAL DE "ESTO ES PRODUCCIÓN", y por qué son DOS cosas y no una:
+#
+#   (a) ``build_sha`` distinto de ``"unknown"``. ``deploy/cloud/deploy.sh`` lo
+#       inyecta en cada despliegue desde T-1.37 (es el commit que publica
+#       ``GET /health``); en local, en la suite y en CI vale ``"unknown"``.
+#       Nadie tiene que acordarse de nada: ya estaba ahí.
+#   (b) …Y al menos un MARCADOR_DE_NUBE. Porque (a) sola es demasiado tosca: un
+#       test que quiera comprobar que /health reporta el commit desplegado pone
+#       esa variable y NADA más, y con la regla ingenua se volvía "producción" y
+#       reventaba. Pasó: ``api/tests/test_health.py`` en rojo a la primera
+#       corrida. Una variable suelta es un test; un DESPLIEGUE trae el
+#       ``cloud.env`` entero, que deploy.sh escribe de una sola pieza.
+#
+# No es fail-open: si ``cloud.env`` no llegara, tampoco llegaría ``build_sha`` y
+# no habría nube que proteger — los workers ya mueren solos sin las URLs de DLQ
+# (GAP-1, T-1.38). El fallo que esto SÍ tiene que cazar es el otro: ``cloud.env``
+# presente y el fichero de SECRETOS (takab-secrets.service) ausente o rancio, que
+# es cuando ``database_url`` cae al DSN de desarrollo. Ahí (a) y (b) se cumplen.
+#
+# Ningún marcador está en REQUERIDOS_EN_PRODUCCION, a propósito: si lo estuviera,
+# su ausencia apagaría el guardia que debería denunciarla.
+#
+# ``TAKAB_API_ENV`` fuerza el perfil en los dos sentidos, para correr una imagen
+# de nube en local o para ensayar el guardia.
+# Que la señal siga existiendo lo ancla ``api/tests/test_settings_produccion.py``
+# contra el propio ``deploy.sh``: sin ese anclaje esto sería fail-open.
+
+#: Campos que SÓLO escribe un despliegue real (`cloud.env`, deploy.sh). Ninguno
+#: es secreto y ninguno es requerido: sirven para distinguir "un proceso
+#: desplegado" de "un test que puso una variable".
+MARCADORES_DE_NUBE: tuple[str, ...] = (
+    "queue_url_events",
+    "evidence_bucket",
+    "transfer_bucket",
+    "notify_web_base_url",
+    "ops_metrics_enabled",
+)
+
+#: Campo → por qué su AUSENCIA en producción es un fallo silencioso.
+REQUERIDOS_EN_PRODUCCION: dict[str, str] = {
+    "database_url": (
+        "lo materializa takab-secrets.service desde Secrets Manager; ausente, la API "
+        "arranca contra el DSN de desarrollo (usuario `takab`, contraseña `takab_dev`) "
+        "en vez de decir que le falta el secreto"
+    ),
+    "auth_issuer": (
+        "sin issuer no se verifica un solo token contra Cognito y la nube se queda sin "
+        "ancla de identidad"
+    ),
+    "auth_audience": (
+        "sin audience se acepta cualquier token del issuer, incluidos los de otro cliente "
+        "del mismo pool"
+    ),
+    "auth_jwks_url": (
+        "sin JWKS remoto no hay con qué verificar la firma; el único JWKS que quedaría es "
+        "el inline de desarrollo, que está prohibido aquí abajo"
+    ),
+    "command_hmac_secret_prefix": (
+        "sin prefijo no hay clave HMAC resoluble para ningún gabinete: la superficie de "
+        "comandos responde 503 entera (fail-closed, sí, pero sin un solo aviso al arrancar)"
+    ),
+    # [T-2.99] El pool de ocupantes es OPCIONAL en el código —issuer vacío ⇒
+    # comportamiento single-issuer intacto, que es lo correcto para un test— y por
+    # eso su ausencia en la nube no rompió nada visible: simplemente ningún ocupante
+    # volvió a entrar. Aquí abajo deja de ser opcional, porque en producción la app
+    # del ocupante ES el producto y un lockout total no puede ser un default.
+    "auth_occupants_issuer": (
+        "sin issuer del pool de OCUPANTES, `decode_verify_any` ni siquiera mira ese pool: "
+        "todo id_token de ocupante se verifica contra el pool principal y muere en 401. "
+        "El fallo es total y silencioso — la app solo dice «no se pudo verificar la sesión»"
+    ),
+    "auth_occupants_audience": (
+        "sin audience de ese pool se aceptaría cualquier token suyo, incluidos los de otro "
+        "cliente del mismo pool: es la misma razón que `auth_audience`, para el segundo pool"
+    ),
+    "auth_occupants_jwks_url": (
+        "sin JWKS remoto propio la verificación cae al del pool principal (conveniencia de "
+        "dev/test en `select_jwks_occupants`) y ninguna firma de ocupante casaría"
+    ),
+}
+
+#: Campo → por qué su PRESENCIA en producción es una credencial de dev viva.
+#: La mitad que se olvida: no basta con que esté lo que tiene que estar.
+PROHIBIDOS_EN_PRODUCCION: dict[str, str] = {
+    "auth_dev_private_key": (
+        "es la llave que firma /dev/token: en la nube es una fábrica de identidades de "
+        "cualquier rol y cualquier tenant"
+    ),
+    "auth_jwks_json": (
+        "JWKS inline de desarrollo. deploy.sh lo omite A PROPÓSITO (y lo dice en un "
+        "comentario); esto convierte ese comentario en invariante — además de montar "
+        "/dev/token, haría verificable un token firmado en la máquina de cualquiera"
+    ),
+    "auth_occupants_jwks_json": (
+        "lo mismo para el pool de OCUPANTES (T-2.03): un JWKS inline ahí firma "
+        "identidades de ocupante de cualquier sitio"
+    ),
+    "command_hmac_keys_json": (
+        "mapa HMAC inline que GANA sobre Secrets Manager (ver command_hmac_* abajo): un "
+        "mapa olvidado suplanta la clave real de cada gabinete y firma actuaciones "
+        "válidas sobre gas, sirena y ascensores"
+    ),
+    "openrouter_api_key": (
+        "clave inline; producción resuelve la suya por openrouter_secret_id. Una clave de "
+        "API dentro de una variable de despliegue es justo lo que la regla de oro 6 prohíbe"
+    ),
+}
+
+#: Perfiles válidos de ``TAKAB_API_ENV``. Un typo (`prod`, `PRODUCTION`) NO puede
+#: degradar a "no es producción" en silencio: se rechaza al construir.
+PERFILES = ("dev", "production")
+
+
+class ConfiguracionInvalida(RuntimeError):
+    """El proceso NO puede arrancar con esta configuración.
+
+    Es un ``RuntimeError`` y no un ``ValueError`` a propósito: pydantic sólo
+    envuelve ``ValueError``/``AssertionError`` en un ``ValidationError``, y ese
+    envoltorio imprime un ``input_value=...`` con el diccionario de entrada
+    RECORTADO — o sea, un trozo del DSN con su contraseña dentro, en el journal
+    del EC2. Dejando propagar una excepción propia el mensaje es exactamente el
+    que escribimos aquí: nombres de variable, nunca valores.
+    """
+
+
 class Settings(BaseSettings):
     """Valores por defecto de desarrollo; producción los inyecta por entorno."""
 
     model_config = SettingsConfigDict(env_prefix="TAKAB_API_")
 
-    database_url: str = "postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab"
+    database_url: str = DEFAULT_DEV_DATABASE_URL
     aws_region: str = "us-east-2"
+
+    # Perfil de despliegue. VACÍO = se deriva de `build_sha` (ver `es_produccion`),
+    # que es lo que hace que nadie tenga que acordarse de ponerlo.
+    env: str = ""
 
     # SHA corto del commit con el que se construyó la imagen; lo inyecta
     # deploy/cloud/deploy.sh. Se expone en /health para poder responder "qué está
@@ -241,6 +397,45 @@ class Settings(BaseSettings):
     #: un salto de cascada con siguiente canal falla en el acto, como siempre.
     notify_max_attempts: int = 3
 
+    # --- SMS real por Twilio (T-2.76) ---
+    # Las TRES piezas (sid + token + from|messaging_service) o el canal cae a
+    # SIMULADO y los jobs quedan 'simulated', jamás 'sent' (T-2.75). El token es
+    # SECRETO: entorno / Secrets Manager, nunca en git (regla de oro 6).
+    # Límites declarados (coste, MPS, tope) en notify/twilio.py.
+    notify_sms_account_sid: str = ""
+    notify_sms_auth_token: str = ""
+    notify_sms_from: str = ""
+    notify_sms_messaging_service_sid: str = ""
+    notify_sms_timeout_s: float = 5.0
+    #: Twilio guarda un SMS encolado 10 h por defecto: un aviso de sismo que
+    #: aterriza mañana es ruido. 300 s = el mensaje muere antes de volverse
+    #: desinformación. Rango legal de Twilio: 1..36 000 s.
+    notify_sms_validity_period_s: float = 300.0
+    #: Endpoint público del status callback de Twilio. VACÍO HOY: sin él NO hay
+    #: confirmación de entrega, solo aceptación — un `notify_sent` de sms dice
+    #: "Twilio lo aceptó", no "el teléfono lo tiene". Ver notify/twilio.py.
+    notify_sms_status_callback_url: str = ""
+
+    # --- WhatsApp Business Cloud API (T-2.77) ---
+    # Las TRES piezas o el canal cae a SIMULADO (T-2.75). La VERSIÓN DE GRAPH
+    # cuenta como credencial y no lleva default a propósito: va dentro de la
+    # ruta `/{version}/{phone_number_id}/messages` y Meta retira versiones con
+    # el tiempo, así que un default adivinado se vuelve un 400 el día que
+    # caduque. El token es SECRETO: entorno / Secrets Manager, nunca en git.
+    # Y aunque estén las tres, el canal sigue caído hasta que haya una plantilla
+    # APROBADA por Meta: WhatsApp no deja improvisar texto (ver notify/whatsapp.py).
+    notify_whatsapp_phone_number_id: str = ""
+    notify_whatsapp_access_token: str = ""
+    notify_whatsapp_graph_version: str = ""
+    notify_whatsapp_timeout_s: float = 5.0
+    #: Idioma de la plantilla a usar (debe existir APROBADA en ese idioma; si no,
+    #: Meta responde 132001 y aquí ni se intenta).
+    notify_whatsapp_language: str = "es_MX"
+    #: Directorio de artefactos de plantilla. Vacío ⇒ los que viajan con el
+    #: paquete (`notify/whatsapp_templates/`). Se puede apuntar a otro sitio para
+    #: cargar el sello de aprobación sin reconstruir la imagen.
+    notify_whatsapp_templates_dir: str = ""
+
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
     # clave del gateway DESTINO, jamás una compartida de flota.
@@ -278,3 +473,55 @@ class Settings(BaseSettings):
     # Bytes promedio por fila ingerida para gb_approx (APROXIMACIÓN
     # row-count×avg del plan maestro; calibrar con pg_column_size real).
     billing_row_bytes_estimate: float = 150.0
+
+    # --- [T-2.86.c · RO-6.c] Guardia de configuración de producción ------------
+
+    @property
+    def es_produccion(self) -> bool:
+        """¿Este proceso corre en la nube? Ver el bloque de arriba para el porqué."""
+        if self.env:
+            return self.env == "production"
+        if self.build_sha == "unknown":
+            return False
+        return any(bool(getattr(self, m, None)) for m in MARCADORES_DE_NUBE)
+
+    @model_validator(mode="after")
+    def _exigir_secretos_en_produccion(self) -> Settings:
+        """En producción, un secreto ausente impide arrancar (regla de oro 6).
+
+        Los mensajes nombran la VARIABLE DE ENTORNO, nunca el valor: este error
+        acaba en el journal del EC2 y en los logs del contenedor.
+        """
+        if self.env and self.env not in PERFILES:
+            raise ConfiguracionInvalida(
+                f"TAKAB_API_ENV={self.env!r} no es un perfil válido "
+                f"({'|'.join(PERFILES)}). Un typo aquí degradaría el despliegue a "
+                "'no es producción' y apagaría este guardia en silencio."
+            )
+        if not self.es_produccion:
+            return self
+
+        problemas: list[str] = []
+        for campo, razon in REQUERIDOS_EN_PRODUCCION.items():
+            if not str(getattr(self, campo, "") or "").strip():
+                problemas.append(f"falta TAKAB_API_{campo.upper()}: {razon}")
+        if self.database_url == DEFAULT_DEV_DATABASE_URL:
+            problemas.append(
+                "TAKAB_API_DATABASE_URL es el default de desarrollo (usuario `takab`, "
+                "contraseña en claro en docker-compose): el secreto real no llegó y "
+                "arrancar así es hablar con la base equivocada sin decirlo"
+            )
+        for campo, razon in PROHIBIDOS_EN_PRODUCCION.items():
+            if str(getattr(self, campo, "") or "").strip():
+                problemas.append(
+                    f"TAKAB_API_{campo.upper()} tiene valor y es una credencial "
+                    f"de DESARROLLO: {razon}"
+                )
+        if problemas:
+            detalle = "\n  - ".join(problemas)
+            raise ConfiguracionInvalida(
+                "configuración de PRODUCCIÓN inválida (perfil derivado de "
+                f"TAKAB_API_BUILD_SHA={self.build_sha!r}; fuerza TAKAB_API_ENV=dev si "
+                f"esto es una imagen de nube corriendo en local):\n  - {detalle}"
+            )
+        return self

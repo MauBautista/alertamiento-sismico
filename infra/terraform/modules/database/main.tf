@@ -28,6 +28,56 @@ locals {
     app       = "takab_app"
     ingest    = "takab_ingest"
   }
+
+  # Namespace de las metricas propias. Vive en un local porque lo consumen DOS
+  # sitios que tienen que decir lo mismo: la condicion de IAM que acota
+  # `PutMetricData` y el publicador de la edad del archivado (T-2.72). Si
+  # divergieran, la metrica se rechazaria con AccessDenied y la alarma se quedaria
+  # ciega sin que nada pareciera roto.
+  ops_metrics_namespace = "Takab/Ops"
+
+  # [T-2.72] Nombre de la metrica que mide el RPO. El otro extremo del cable esta
+  # en `modules/observability` (alarma `wal_archive_stalled`) y hay una asercion
+  # en cada lado, porque Terraform no puede leer un script desde otro modulo.
+  wal_archive_metric_name = "WalArchiveAgeSeconds"
+
+  # Raiz de la cadena PITR tal y como la espera barman-cloud: SIN barra final —
+  # la herramienta compone `<url>/<servidor>/wals/...` por su cuenta (verificado
+  # ejecutandola contra un S3 local desde la propia imagen de la DB).
+  pitr_root = trimsuffix(var.pitr.prefix, "/")
+
+  # [T-2.73.a] El respaldo logico nocturno + la huella del origen. Comparte con
+  # el dump el bucket, el prefijo, la clave KMS y la region: si divergieran, la
+  # huella caeria fuera de la regla de expiracion y fuera del `s3:PutObject` del
+  # rol, y el cron moriria con AccessDenied sin que nada se pusiera rojo.
+  backup_setup_script = templatefile("${path.module}/backup_setup.sh.tpl", {
+    bucket      = var.db_backups_bucket.name
+    dump_prefix = var.dump_key_prefix
+    region      = data.aws_region.current.region
+    kms_key_arn = var.kms_key_arn
+    # El unico secreto que este camino necesita, y NO viaja aqui: solo su
+    # identificador. Lo resuelve la instancia en tiempo de ejecucion con su
+    # propio rol, igual que hace `user_data` desde el primer boot.
+    superuser_secret       = aws_secretsmanager_secret.db["superuser"].arn
+    coordination_timeout_s = var.dump_coordination_timeout_s
+  })
+
+  pitr_setup_script = templatefile("${path.module}/pitr_setup.sh.tpl", {
+    bucket            = var.db_backups_bucket.name
+    pitr_root         = local.pitr_root
+    server_name       = var.pitr.server_name
+    region            = data.aws_region.current.region
+    archive_timeout_s = var.wal_archive_timeout_s
+    metric_namespace  = local.ops_metrics_namespace
+    metric_name       = local.wal_archive_metric_name
+
+    # La cadencia del backup base SALE del intervalo declarado, que es el mismo
+    # numero con el que `modules/storage` calcula la retencion. `*/N` en el dia
+    # del mes tiene un hueco maximo de exactamente N dias (en el cambio de mes el
+    # hueco se acorta, nunca se alarga), asi que la desigualdad de la cadena
+    # sigue siendo valida.
+    base_backup_dom = "*/${var.pitr.base_backup_interval_days}"
+  })
 }
 
 # --- Credenciales -------------------------------------------------------------
@@ -92,12 +142,102 @@ resource "aws_iam_role_policy" "db" {
         Action   = "secretsmanager:GetSecretValue"
         Resource = concat([for s in aws_secretsmanager_secret.db : s.arn], var.worker_secret_arns)
       },
+      # [T-2.72] Escritura de respaldos, ACOTADA A LOS DOS PREFIJOS que existen.
+      # Antes era `${bucket}/*`: cualquier clave del bucket, incluida la cadena
+      # PITR entera. Los prefijos son los mismos literales que gobiernan la
+      # expiracion en `modules/storage` y llegan por variable justamente para que
+      # no haya dos copias que puedan divergir.
       {
-        Sid      = "PutBackups"
-        Effect   = "Allow"
-        Action   = "s3:PutObject"
-        Resource = "${var.db_backups_bucket.arn}/*"
+        Sid    = "PutBackups"
+        Effect = "Allow"
+        Action = "s3:PutObject"
+        Resource = [
+          "${var.db_backups_bucket.arn}/${var.dump_key_prefix}*",
+          "${var.db_backups_bucket.arn}/${var.pitr.prefix}*",
+        ]
       },
+      # El backup base sube en MULTIPART (barman parte el tar y llama a
+      # create/upload/complete_multipart_upload — leido en
+      # `barman/cloud_providers/aws_s3.py` dentro de la imagen que corre la DB).
+      # Sin el permiso de aborto, un backup que falle a la mitad deja partes
+      # invisibles en el listado y facturandose, y la herramienta no puede
+      # limpiarlas.
+      #
+      # FICHADO, y NO es regresion de T-2.72: el dump nocturno tiene el mismo
+      # agujero desde que existe. `aws s3 cp - s3://...` lee de stdin, o sea que
+      # el CLI no sabe el tamaño de antemano y sube en multipart obligatoriamente;
+      # ese prefijo no tiene ni permiso de aborto ni regla de barrido (la de la
+      # tabla de `modules/storage` cubre solo la raiz PITR). Un `pg_dump` que
+      # muera a la mitad deja partes facturandose para siempre. Arreglo: un campo
+      # `abort_multipart_days` en la fila del dump de esa tabla mas este mismo
+      # permiso sobre `${dump_key_prefix}*`. Fuera del alcance de esta tarea a
+      # proposito: toca el respaldo que hoy funciona.
+      {
+        Sid      = "PitrAbortMultipart"
+        Effect   = "Allow"
+        Action   = "s3:AbortMultipartUpload"
+        Resource = "${var.db_backups_bucket.arn}/${var.pitr.prefix}*"
+      },
+      # [T-2.72] LEER los respaldos, que es lo que hasta hoy NO se podia hacer.
+      # El rol solo tenia `s3:PutObject`: la instancia escribia sus dumps y no
+      # podia recuperarlos. Un respaldo que no se puede leer desde donde hay que
+      # restaurarlo no es un respaldo, es un gasto de S3.
+      {
+        Sid    = "GetBackups"
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = [
+          "${var.db_backups_bucket.arn}/${var.dump_key_prefix}*",
+          "${var.db_backups_bucket.arn}/${var.pitr.prefix}*",
+        ]
+      },
+      # `s3:ListBucket` es permiso de BUCKET, no de objeto: se concede sobre el
+      # ARN sin `/*` y se acota con `s3:prefix`, la unica llave que limita un
+      # listado. Doc de AWS (S3 User Guide, "Bucket policy examples using
+      # condition keys"): "You can use the s3:prefix condition key to limit the
+      # response of the ListObjectsV2 API operation to key names with a specific
+      # prefix."
+      #
+      # `s3:ListBucketVersions` va al lado porque este bucket TIENE VERSIONADO, y
+      # esa misma pagina dice: "If the bucket is versioning-enabled, to list the
+      # objects in the bucket, you must grant the s3:ListBucketVersions
+      # permission in the following policies, instead of the s3:ListBucket
+      # permission. The s3:ListBucketVersions permission also supports the
+      # s3:prefix condition key." Conceder solo uno es apostar a cual de las dos
+      # lecturas aplica, y esa apuesta se pierde en mitad de un restore.
+      #
+      # LO QUE ESTE ACOTAMIENTO DEJA FUERA, medido y no supuesto:
+      # `barman-cloud-check-wal-archive` empieza con un `HeadBucket`, que se
+      # autoriza contra `s3:ListBucket` SIN parametro de prefijo (doc de la API:
+      # "To use this operation, you must have permissions to perform the
+      # s3:ListBucket action"). Una condicion `s3:prefix` no puede satisfacerse
+      # cuando la llave no viene en la peticion, asi que ESE comando recibira
+      # AccessDenied. Se acepta a proposito: no lo usa ningun camino automatico, y
+      # las tres operaciones que si corren (`wal-archive`, `backup`, y el
+      # `backup-list`/`wal-restore` del restore) listan SIEMPRE bajo el prefijo
+      # del servidor — comprobado instrumentando boto3 y leyendo los parametros
+      # reales de cada llamada.
+      {
+        Sid      = "ListBackups"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:ListBucketVersions"]
+        Resource = var.db_backups_bucket.arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${var.dump_key_prefix}*",
+              "${var.pitr.prefix}*",
+            ]
+          }
+        }
+      },
+      # NO HAY `s3:DeleteObject` EN NINGUNA PARTE, y es una decision de diseno.
+      # La cadena PITR la poda UN solo actor: el lifecycle de S3
+      # (`modules/storage`). `barman-cloud-backup-delete` esta instalado en la
+      # imagen y podria podar tambien; dos podadores a ciegas sobre los mismos
+      # objetos son una carrera cuyo perdedor es el restore. Que el segundo no
+      # exista no se sostiene en un comentario: se sostiene en que AWS lo
+      # deniega.
       {
         Sid      = "UseDataKey"
         Effect   = "Allow"
@@ -119,6 +259,11 @@ resource "aws_iam_role_policy" "db" {
       # retirados que siguen reportando) en el namespace Takab/Ops.
       # PutMetricData no admite ARN de recurso — el alcance se acota por
       # `cloudwatch:namespace`, que es la unica llave de condicion que ofrece.
+      #
+      # [T-2.72] Por aqui pasa tambien `WalArchiveAgeSeconds`, el reloj del RPO.
+      # El namespace sale del mismo local que el publicador: si esta condicion y
+      # el script dijeran cosas distintas, la metrica se rechazaria con
+      # AccessDenied y la alarma se quedaria ciega sin que nada pareciera roto.
       {
         Sid      = "PutOpsMetrics"
         Effect   = "Allow"
@@ -126,7 +271,7 @@ resource "aws_iam_role_policy" "db" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "cloudwatch:namespace" = "Takab/Ops"
+            "cloudwatch:namespace" = local.ops_metrics_namespace
           }
         }
       },
@@ -290,6 +435,24 @@ resource "aws_instance" "db" {
 
   metadata_options {
     http_tokens = "required"
+
+    # [T-2.72] DOS saltos, no uno. `barman-cloud-*` corre DENTRO del contenedor
+    # de Postgres —el `archive_command` lo ejecuta el propio postmaster— y firma
+    # sus llamadas a S3 con el rol de esta instancia. El contenedor de la DB vive
+    # en la red bridge de Docker (`docker run -p 5432:5432`), asi que la
+    # respuesta de IMDSv2 tiene que dar un salto mas que desde el host.
+    #
+    # Doc de AWS (EC2 User Guide, "Configure the Instance Metadata Service
+    # options"): "In a container environment, a hop limit of 1 can cause issues."
+    # El valor efectivo por defecto es 1 (ejemplo 1 de esa misma pagina), y hasta
+    # hoy nadie lo habia notado porque NADA dentro del contenedor de la DB
+    # necesitaba credenciales: el dump nocturno lo sube el `aws` del HOST, y la
+    # nube co-locada corre con `network_mode: host` (deploy/cloud/
+    # docker-compose.yml).
+    #
+    # Se cambia en caliente (ModifyInstanceMetadataOptions): no recrea ni para la
+    # instancia.
+    http_put_response_hop_limit = 2
   }
 
   root_block_device {
@@ -329,6 +492,133 @@ resource "aws_volume_attachment" "data" {
 
   # destroy limpio aunque el filesystem este montado
   stop_instance_before_detaching = true
+}
+
+# --- [T-2.72] Archivado continuo de WAL (PITR) ----------------------------------
+#
+# Los dos mecanismos que ya existian —snapshot EBS diario y `pg_dump` nocturno—
+# dan DOS puntos de recuperacion al dia y ninguno da PITR: entre punto y punto la
+# perdida es total (`RUNBOOK-backup-restore-db.md` §1). Esto anade el tercero: el
+# WAL viaja a S3 de forma continua y se puede volver a cualquier instante.
+#
+# POR QUE barman-cloud Y NO WAL-G, que es lo que pedia el nombre de la tarea y el
+# §7 del runbook: la imagen que corre la DB en produccion
+# (`timescale/timescaledb-ha:pg16`) TRAE barman-cloud instalado —
+# `barman-cloud-wal-archive`, `-backup`, `-restore`, `-wal-restore`,
+# `-backup-list`, version 3.19.1 — y NO trae wal-g (comprobado listando
+# `/usr/local/bin` dentro del contenedor real). Meter wal-g exigiria o reconstruir
+# la imagen de la DB o descargar un binario y montarlo dentro del contenedor: un
+# eslabon de suministro nuevo en el camino de recuperacion, que es el ultimo sitio
+# donde conviene tener uno. La herramienta cambia; el diseno (archivado continuo,
+# RPO derivado de la alarma, un solo podador) no depende de cual sea.
+#
+# El `apply` es HUMANO-AWS y va en T-2.74, junto con el primer `backup base` y el
+# ensayo de restore.
+
+resource "aws_ssm_document" "pitr" {
+  name            = "takab-${var.env}-pitr-archivado"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  # JSON y no YAML a proposito: el script lleva comillas simples (`archive_timeout
+  # = '60s'`) y el estilo simple de YAML las duplicaria, cambiando el texto que de
+  # verdad se ejecuta.
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Configura el archivado continuo de WAL (PITR) de la DB de TAKAB: archive_mode/command/timeout, cron del backup base y publicacion de la edad del archivado."
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configurar_archivado_wal"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand     = split("\n", local.pitr_setup_script)
+      }
+    }]
+  })
+}
+
+# La ASOCIACION es lo que convierte esto en infraestructura declarada en vez de
+# un procedimiento del runbook. Un documento SSM sin asociacion es un script que
+# alguien tiene que acordarse de correr; con ella, Terraform tiene un estado
+# deseado sobre la maquina y AWS lo vuelve a imponer todos los dias.
+#
+# `rate(1 day)` no es paranoia: recrear el contenedor de la DB es una operacion
+# normal del despliegue, y un contenedor recreado sin archivado es exactamente el
+# fallo silencioso que esta tarea existe para cerrar. El script solo reinicia
+# Postgres si `archive_mode` NO esta en `on`, asi que la pasada diaria de una
+# instancia sana no cuesta nada.
+#
+# LATENCIA, declarada porque de otro modo se descubre en el peor momento: cambiar
+# `wal_archive_timeout_s` (o cualquier otra cifra que entre en el script) crea una
+# VERSION NUEVA del documento, pero no modifica ningun atributo de la asociacion.
+# Terraform informa `apply complete` sin volver a lanzarla, y el cambio aterriza
+# cuando toque la siguiente pasada — hasta 24 h despues. Para que surta efecto YA:
+#
+#   aws ssm start-associations-once --association-ids <id>
+#
+# Es un paso del runbook de T-2.74, no un defecto que se pueda arreglar aqui:
+# forzar la re-ejecucion desde Terraform exigiria un disparador artificial en la
+# asociacion, y entonces cada `apply` reconfiguraria la DB aunque nada hubiera
+# cambiado.
+resource "aws_ssm_association" "pitr" {
+  name                = aws_ssm_document.pitr.name
+  association_name    = "takab-${var.env}-pitr-archivado"
+  document_version    = "$LATEST"
+  schedule_expression = "rate(1 day)"
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.db.id]
+  }
+}
+
+# --- [T-2.73.a] La huella del origen viaja junto al dump -----------------------
+#
+# El cron de las 08:00 subia el `.dump` y nada mas. Sin la huella, seis de las
+# comprobaciones mas fuertes del verificador no se pueden ejercer y el veredicto
+# es INDETERMINADO: `T-2.74` (`G-09`) saldria a medias.
+#
+# EL VEHICULO ES ESTE DOCUMENTO, NO `user_data.sh.tpl`, y la razon no es de
+# estilo. `user_data` es un atributo de `aws_instance.db`: cambiarlo hace que el
+# provider PARE Y ARRANQUE la instancia en el siguiente apply (el atributo solo se
+# puede reescribir con la maquina detenida cuando `user_data_replace_on_change`
+# esta en false, que es nuestro caso). La DB caeria en un apply que nadie
+# esperaba que la tocara. Ademas `user_data` corre UNA vez, en el primer boot, y
+# aborta si encuentra `/var/lib/takab/.provisioned`: escribir esto alli habria
+# dado un `apply complete` que no cambia nada en la maquina que existe hoy.
+#
+# Se aplica la misma latencia declarada en la asociacion del PITR: un cambio en
+# el script crea una version nueva del documento pero NO relanza la asociacion.
+# Para que surta efecto ya: `aws ssm start-associations-once --association-ids <id>`.
+resource "aws_ssm_document" "backup" {
+  name            = "takab-${var.env}-respaldo-logico"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Instala el respaldo logico nocturno de la DB de TAKAB y la huella del origen (restore_check --save-baseline), anclados al mismo snapshot y subidos al mismo prefijo S3."
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configurar_respaldo_y_huella"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand     = split("\n", local.backup_setup_script)
+      }
+    }]
+  })
+}
+
+resource "aws_ssm_association" "backup" {
+  name                = aws_ssm_document.backup.name
+  association_name    = "takab-${var.env}-respaldo-logico"
+  document_version    = "$LATEST"
+  schedule_expression = "rate(1 day)"
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.db.id]
+  }
 }
 
 # --- Snapshots diarios (DLM) ----------------------------------------------------

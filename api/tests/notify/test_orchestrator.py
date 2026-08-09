@@ -18,6 +18,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from takab_api.notify.orchestrator import run_notify_pass
+from takab_api.notify.plan import CASCADE_ORDER
 from takab_api.notify.providers import NotifyError
 from takab_api.settings import Settings
 
@@ -42,6 +43,11 @@ def _dsn() -> str:
 
 
 class _FakeProvider:
+    """Stand-in de un proveedor REAL (entrega o revienta). [T-2.75] Lo declara:
+    quien no se declara real se trata como simulado (default = peor causa)."""
+
+    simulated = False
+
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.sent: list[tuple[dict, dict]] = []
@@ -63,6 +69,54 @@ class _Scenario:
     def __init__(self, conn: psycopg.Connection, tenant: str) -> None:
         self.conn = conn
         self.tenant = tenant
+        # Tenants extra creados por un test (barrido cross-tenant): la limpieza
+        # los purga igual que al principal, o el siguiente test hereda basura.
+        self.tenants = [tenant]
+
+    def seed_tenant(self) -> str:
+        """[T-2.79.a] Un segundo tenant, para probar que el consentimiento de uno
+        no autoriza el envío del otro (regla de oro 5)."""
+        otro = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO tenants (tenant_id, code, name) VALUES (%s,%s,'Notify Test 2')",
+            (otro, otro[:8]),
+        )
+        self.conn.commit()
+        self.tenants.append(otro)
+        return otro
+
+    def seed_consent(
+        self,
+        msisdn: str,
+        decision: str = "accept",
+        *,
+        tenant: str | None = None,
+        decided_at: datetime | None = None,
+    ) -> None:
+        """[T-2.79.a] Una fila del motor de consentimiento (``privacy_consents``).
+
+        Se inserta con ``RESET ROLE`` a propósito: ``takab_ingest`` tiene SELECT y
+        **nada más** sobre esta tabla (schema.sql). Escribir un consentimiento
+        jamás es cosa de un worker, y el test no se salta esa frontera.
+        """
+        self.conn.execute("RESET ROLE")
+        self.conn.execute(
+            "INSERT INTO privacy_consents (tenant_id, purpose, subject_kind, subject_ref, "
+            "decision, notice_source, notice_digest, notice_version, notice_locale, via, "
+            "actor_sub, decided_at) VALUES (%s,'whatsapp_alerts','msisdn',%s,%s,'repo',%s,"
+            "'1.0.0','es-MX','out_of_band',%s,%s)",
+            (
+                tenant or self.tenant,
+                msisdn,
+                decision,
+                "0" * 64,
+                str(uuid.uuid4()),
+                decided_at or (BASE - timedelta(days=1)),
+            ),
+        )
+        self.conn.commit()
+        self.conn.execute("SET ROLE takab_ingest")
+        self.conn.commit()
 
     def seed_config(self, config: dict | None = None) -> None:
         import json
@@ -120,6 +174,7 @@ class _Scenario:
 def scenario() -> Iterator[_Scenario]:
     conn = psycopg.connect(_dsn(), autocommit=False, row_factory=dict_row)
     tenant = str(uuid.uuid4())
+    sc = _Scenario(conn, tenant)
     try:
         conn.execute("SET ROLE takab_ingest")
         conn.execute(
@@ -127,23 +182,27 @@ def scenario() -> Iterator[_Scenario]:
             (tenant, tenant[:8]),
         )
         conn.commit()
-        yield _Scenario(conn, tenant)
+        yield sc
     finally:
-        _cleanup(conn, tenant)
+        _cleanup(conn, sc.tenants)
         conn.close()
 
 
-def _cleanup(conn: psycopg.Connection, tenant: str) -> None:
+def _cleanup(conn: psycopg.Connection, tenants: list[str]) -> None:
     conn.rollback()
     conn.execute("RESET ROLE")
     try:
         conn.execute("SET session_replication_role = 'replica'")
-        conn.execute("DELETE FROM notification_jobs WHERE tenant_id = %s", (tenant,))
-        conn.execute("DELETE FROM incident_actions WHERE tenant_id = %s", (tenant,))
-        conn.execute("DELETE FROM incidents WHERE tenant_id = %s", (tenant,))
-        conn.execute("DELETE FROM rule_sets WHERE tenant_id = %s", (tenant,))
-        conn.execute("DELETE FROM sites WHERE tenant_id = %s", (tenant,))
-        conn.execute("DELETE FROM tenants WHERE tenant_id = %s", (tenant,))
+        for tenant in tenants:
+            conn.execute("DELETE FROM notification_jobs WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM push_tokens WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM incident_actions WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM incidents WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM rule_sets WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM sites WHERE tenant_id = %s", (tenant,))
+            # append-only por trigger; en 'replica' los triggers de usuario callan.
+            conn.execute("DELETE FROM privacy_consents WHERE tenant_id = %s", (tenant,))
+            conn.execute("DELETE FROM tenants WHERE tenant_id = %s", (tenant,))
         conn.execute("SET session_replication_role = 'origin'")
         conn.commit()
     except psycopg.Error:
@@ -592,3 +651,722 @@ def test_personas_en_riesgo_no_duplica_el_correo(scenario: _Scenario) -> None:
     _run(scenario, providers, now=BASE + timedelta(seconds=30))
     assert len(_action_jobs(scenario, action)) == 1
     assert len(providers["email"].sent) == 1
+
+
+# --- T-2.75 · Un canal simulado deja de mentir ----------------------------------
+# Un canal sin proveedor real no entrega nada. Marcarlo 'sent' convertía el
+# tablero en un mentiroso ("notificado" sin notificar) Y —peor— SATISFACÍA la
+# cascada: el salto simulado "triunfaba", el orquestador marcaba `skipped` el
+# resto y el canal REAL que venía detrás no llegaba a dispararse jamás.
+
+
+class _SimProvider:
+    """Canal sin proveedor real: se declara simulado (contrato NotifyProvider)."""
+
+    simulated = True
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[dict, dict]] = []
+
+    def send(self, target: dict, message: dict) -> None:  # pragma: no cover - no debe llamarse
+        self.sent.append((target, message))
+
+
+def _mixed(*simulated: str, fail: tuple[str, ...] = ()) -> dict:
+    """Registro con los canales de ``simulated`` sin proveedor real."""
+    providers = _providers(**{ch: True for ch in fail})
+    for channel in simulated:
+        providers[channel] = _SimProvider()  # type: ignore[assignment]
+    return providers
+
+
+def _actions_by_kind(scenario: _Scenario, incident_id: str, kind: str) -> list[dict]:
+    return scenario.conn.execute(
+        "SELECT payload FROM incident_actions WHERE incident_id = %s AND kind = %s ORDER BY ts",
+        (incident_id, kind),
+    ).fetchall()
+
+
+def _sim_actions(scenario: _Scenario, incident_id: str) -> list[dict]:
+    return _actions_by_kind(scenario, incident_id, "notify_simulated")
+
+
+def test_canal_simulado_no_marca_sent(scenario: _Scenario) -> None:
+    """Criterio 1: el job queda 'simulated' y SIN ``sent_at``. Dos candados: el
+    estado, y la marca de tiempo de entrega que nadie puede rellenar."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed("webhook"), now=BASE)
+
+    job = scenario.job(iid, "webhook")
+    assert job["status"] == "simulated"
+    assert job["sent_at"] is None
+
+
+def test_simulado_deja_huella_propia_en_incident_actions(scenario: _Scenario) -> None:
+    """Criterio 1: la evidencia lo dice con un verbo PROPIO. Un `notify_sent`
+    con una bandera dentro se lee como enviado en cualquier consulta que agrupe
+    por `kind` — y `incident_actions` es evidencia que jamás se poda."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed("webhook"), now=BASE)
+
+    sims = _sim_actions(scenario, iid)
+    assert len(sims) == 1
+    payload = sims[0]["payload"]
+    assert payload["channel"] == "webhook"
+    assert payload["simulated"] is True
+    # Medir el plazo de una entrega que no ocurrió es inventar un dato: null es
+    # "no aplica", y no se confunde con el False de "llegó tarde" (regla de oro 7).
+    assert payload["deadline_met"] is None
+    # Y NO existe un notify_sent de ese canal: la mentira no entra por otra puerta.
+    assert [a["payload"]["channel"] for a in scenario.notify_actions(iid)] != ["webhook"]
+
+
+def test_simulado_no_satisface_la_cascada_y_escala_al_canal_real(scenario: _Scenario) -> None:
+    """LA CASCADA. Config de dev real: whatsapp y sms SIMULADOS, webhook caído.
+
+    Antes: webhook falla → whatsapp simulado "triunfa" → sms y email `skipped`.
+    El correo REAL —el único canal que llegaba a un humano— no se disparaba.
+    Ahora: los dos simulados escalan y el email sale en el MISMO pass.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _mixed("whatsapp", "sms", fail=("webhook",))
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "failed"
+    assert scenario.job(iid, "whatsapp")["status"] == "simulated"
+    assert scenario.job(iid, "sms")["status"] == "simulated"
+    email = scenario.job(iid, "email")
+    assert email["status"] == "sent"
+    assert email["sent_at"] == BASE  # adelantado: escaló dentro del mismo pass
+    assert len(providers["email"].sent) == 1
+    # Ningún canal simulado tocó a su proveedor: no hay a quién entregar.
+    assert providers["whatsapp"].sent == []
+    assert providers["sms"].sent == []
+
+
+def test_toda_la_cascada_simulada_no_deja_ni_un_entregado(scenario: _Scenario) -> None:
+    """Criterio 3: con los cuatro canales simulados, NADA aparece entregado —
+    ni un 'sent', ni un `sent_at`, ni un `notify_sent`. Y quedan cuatro huellas."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _mixed(*CASCADE_ORDER), now=BASE)
+
+    jobs = scenario.jobs(iid)
+    assert len(jobs) == len(CASCADE_ORDER)
+    assert {j["status"] for j in jobs} == {"simulated"}
+    assert all(j["sent_at"] is None for j in jobs)
+    assert scenario.notify_actions(iid) == []
+    assert {a["payload"]["channel"] for a in _sim_actions(scenario, iid)} == set(CASCADE_ORDER)
+
+
+def test_simulado_es_terminal_y_no_consume_reintentos(scenario: _Scenario) -> None:
+    """La distinción cara: `failed` es transitorio (el proveedor existe y puede
+    volver) ⇒ reintento con backoff. `simulated` es TERMINAL (no hay proveedor
+    que pueda volver) ⇒ ni un intento consumido, ni un martilleo contra la nada.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _mixed("email")  # el paralelo crítico no tiene a quién escalar
+    _run(scenario, providers, now=BASE)
+
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "simulated"
+    assert par["attempts"] == 0
+    # Un pass posterior no lo re-despacha ni lo revive: es terminal, no pendiente.
+    _run(scenario, providers, now=BASE + timedelta(seconds=600))
+    par = scenario.job(iid, "email", mode="parallel")
+    assert (par["status"], par["attempts"]) == ("simulated", 0)
+
+
+def test_provider_que_no_se_declara_real_se_trata_como_simulado(scenario: _Scenario) -> None:
+    """El default ante lo desconocido es la PEOR causa. Un provider que no
+    declara `simulated` no ha demostrado que entregue: se le trata como
+    simulado. Así el sexto canal que alguien enchufe sin declararse no hereda
+    la presunción de entrega."""
+
+    class _Indeclarado:
+        def send(self, target: dict, message: dict) -> None:
+            return None
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers()
+    providers["webhook"] = _Indeclarado()  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "simulated"
+
+
+def test_push_simulado_tampoco_entrega(scenario: _Scenario) -> None:
+    """El canal push despacha por una rama PROPIA (``deliver()``, no ``send()``).
+    La regla se aplica antes de bifurcar: no se enumeran canales, se pregunta al
+    proveedor."""
+    from takab_api.notify.push import SimulatedPushProvider
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    site = scenario.conn.execute(
+        "SELECT site_id FROM incidents WHERE incident_id = %s", (iid,)
+    ).fetchone()["site_id"]
+    scenario.conn.execute("RESET ROLE")  # takab_ingest lee y actualiza tokens, no los crea
+    scenario.conn.execute(
+        "INSERT INTO push_tokens (tenant_id, site_id, user_sub, token, platform) "
+        "VALUES (%s,%s,%s,%s,'android')",
+        (scenario.tenant, site, str(uuid.uuid4()), f"tok-{uuid.uuid4()}"),
+    )
+    scenario.conn.execute("SET ROLE takab_ingest")
+    scenario.conn.commit()
+
+    providers = _providers()
+    providers["push"] = SimulatedPushProvider()  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    push_job = scenario.job(iid, "push", mode="parallel")
+    assert push_job["status"] == "simulated"
+    assert push_job["sent_at"] is None
+    assert providers["push"].delivered == []
+
+
+def test_las_tres_cosas_dejan_verbos_DISTINTOS_en_la_evidencia(scenario: _Scenario) -> None:
+    """Entregado, simulado y no entregado son TRES cosas con tres reacciones
+    del operador: nada / contratar el canal / el proveedor está caído AHORA.
+    En un mismo incidente, tres verbos distintos en `incident_actions`.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    # webhook cae (y escala: fallo terminal), whatsapp simulado, sms entrega.
+    providers = _mixed("whatsapp", fail=("webhook",))
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "failed"
+    assert scenario.job(iid, "whatsapp")["status"] == "simulated"
+    assert scenario.job(iid, "sms")["status"] == "sent"
+
+    sent = _actions_by_kind(scenario, iid, "notify_sent")
+    simulated = _actions_by_kind(scenario, iid, "notify_simulated")
+    failed = _actions_by_kind(scenario, iid, "notify_failed")
+    assert [a["payload"]["channel"] for a in sent] == ["sms"]
+    assert [a["payload"]["channel"] for a in simulated] == ["whatsapp"]
+    assert [a["payload"]["channel"] for a in failed] == ["webhook"]
+    # El fallo dice POR QUÉ (avería concreta); el simulado dice que no hay canal.
+    assert failed[0]["payload"]["error"] == "fallo simulado"
+    assert failed[0]["payload"]["deadline_met"] is None
+
+
+def test_el_reintento_no_escribe_evidencia_hasta_agotarse(scenario: _Scenario) -> None:
+    """`incident_actions` es append-only y EXENTA de poda por retención (regla
+    de oro 11): una fila por intento inflaría para siempre la tabla que existe
+    para reconstruir lo ocurrido. Se escribe UNA vez, al desenlace terminal."""
+    scenario.seed_config()
+    iid = scenario.seed_incident(severity="critical")
+    providers = _providers(email=True)  # paralelo crítico: reintenta, no escala
+
+    _run(scenario, providers, now=BASE)  # intento 1 → pending
+    _run(scenario, providers, now=BASE + timedelta(seconds=30))  # intento 2 → pending
+    par = scenario.job(iid, "email", mode="parallel")
+    assert par["status"] == "pending"
+    assert _actions_by_kind(scenario, iid, "notify_failed") == []  # aún puede volver
+
+    _run(scenario, providers, now=BASE + timedelta(seconds=150))  # intento 3: agotado
+    assert scenario.job(iid, "email", mode="parallel")["status"] == "failed"
+    failed = _actions_by_kind(scenario, iid, "notify_failed")
+    assert len(failed) == 1
+    assert failed[0]["payload"]["attempts"] == 3
+
+
+# --- T-2.76 · el SMS real de Twilio contra el orquestador SIN TOCARLO ------------
+
+
+def _twilio(handler) -> object:
+    """Provider de Twilio con transporte falso. CERO red (no hay credenciales)."""
+    import httpx
+
+    from takab_api.notify.twilio import TwilioSmsProvider
+
+    return TwilioSmsProvider(
+        account_sid="ACtest",
+        auth_token="tok",
+        from_number="+525599999999",
+        messaging_service_sid="",
+        timeout_s=2.0,
+        validity_period_s=300,
+        status_callback_url="",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_twilio_entrega_por_la_misma_interfaz_y_deja_la_evidencia(scenario: _Scenario) -> None:
+    """Criterios 1 y 3 juntos: el proveedor REAL se enchufa donde estaba el
+    simulado —sin una línea del orquestador— y la evidencia sale con la misma
+    forma que el resto (latencia + `deadline_met`)."""
+    import httpx
+
+    peticiones: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        peticiones.append(request)
+        return httpx.Response(201, json={"sid": "SM1", "status": "queued", "num_segments": "1"})
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)  # los dos previos caen
+    providers["sms"] = _twilio(handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))  # t0+20: le toca al sms
+
+    sms = scenario.job(iid, "sms")
+    assert sms["status"] == "sent"
+    assert sms["sent_at"] == BASE + timedelta(seconds=20)
+    assert len(peticiones) == 1
+
+    acciones = scenario.notify_actions(iid)
+    evidencia = [a["payload"] for a in acciones if a["payload"]["channel"] == "sms"]
+    assert len(evidencia) == 1
+    assert evidencia[0]["latency_s"] == 20.0
+    assert evidencia[0]["deadline_met"] is True  # t0+20 ≤ deadline t0+30
+
+
+def test_twilio_sin_credenciales_deja_el_sms_SIMULADO_no_enviado(scenario: _Scenario) -> None:
+    """🚨 El invariante que T-2.75 compró: sin credenciales el canal NO finge.
+    `build_providers` con un Settings pelado devuelve un simulado, y el job
+    termina 'simulated' con `sent_at` en NULL — jamás 'sent'."""
+    from takab_api.notify.providers import build_providers
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)
+    providers["sms"] = build_providers(Settings())["sms"]  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))
+
+    sms = scenario.job(iid, "sms")
+    assert sms["status"] == "simulated"
+    assert sms["sent_at"] is None
+    assert "sms" not in [a["payload"]["channel"] for a in scenario.notify_actions(iid)]
+    assert [a["payload"]["channel"] for a in _sim_actions(scenario, iid)] == ["sms"]
+    # Y escala: el email real sale igual, porque un simulado no satisface nada.
+    assert scenario.job(iid, "email")["status"] == "sent"
+
+
+def test_twilio_caido_escala_al_correo_sin_duplicar_el_sms(scenario: _Scenario) -> None:
+    """Un 5xx es AMBIGUO (el mensaje pudo crearse). El orquestador escala al
+    email —el humano llega igual— y el SMS no se repite en el mismo incidente:
+    un duplicado durante un sismo es ruido en el peor momento posible."""
+    import httpx
+
+    intentos: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        intentos.append(request)
+        return httpx.Response(500, json={"message": "twilio caído"})
+
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True, whatsapp=True)
+    providers["sms"] = _twilio(handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=20))
+
+    assert scenario.job(iid, "sms")["status"] == "failed"
+    assert scenario.job(iid, "email")["status"] == "sent"  # el humano SÍ es avisado
+    assert len(intentos) == 1
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    assert "sms" in [a["payload"]["channel"] for a in fallidos]
+
+
+# --- T-2.77 · WhatsApp por plantilla contra el orquestador SIN TOCARLO -----------
+#
+# El canal cuya degradación NO es un fallo del proveedor sino un veredicto de
+# Meta sobre un texto. Aquí se acredita de punta a punta que ese veredicto se
+# traduce en el desenlace correcto de `notification_jobs`.
+
+WA_MSISDN = "+525511111111"
+
+WA_CONFIG = {
+    "notifications": {
+        "webhook": {"url": "https://soc.example.mx/hook", "secret": "s3cr3t"},
+        # [T-2.79.a] Este `opt_in` es una RELIQUIA y sigue aquí A PROPÓSITO: es la
+        # trampa cazabobos. El rule_set ya no autoriza nada — los envíos de abajo
+        # salen porque hay una fila en `privacy_consents`, y si alguien volviera a
+        # leer el opt-in de aquí, el test cross-tenant y el de retiro lo cazarían.
+        "whatsapp": {"to": WA_MSISDN, "opt_in": {"at": "2026-08-01T12:00:00Z"}},
+        "sms": {"to": "+525522222222"},
+        "email": {"to": ["ops@example.mx"]},
+    }
+}
+
+
+def _wa_settings(tmp_path, *, aprobada: bool):
+    """Settings con credenciales de mentira y un catálogo de plantillas propio.
+
+    ``aprobada=False`` es el estado REAL del repo hoy (nadie las ha mandado a
+    Meta); ``aprobada=True`` simula el día después de la aprobación sellando el
+    digest del texto sin tocar una coma.
+    """
+    import json
+    from pathlib import Path
+
+    from takab_api.notify.whatsapp import TEMPLATES_DIR, template_digest
+
+    directorio = Path(tmp_path) / "wa"
+    directorio.mkdir()
+    for src in sorted(TEMPLATES_DIR.glob("*.json")):
+        doc = json.loads(src.read_text(encoding="utf-8"))
+        if aprobada:
+            doc["approval"] = {
+                "status": "APPROVED",
+                "approved_digest": template_digest(doc["template"]),
+            }
+        (directorio / src.name).write_text(json.dumps(doc, ensure_ascii=False))
+    return Settings(  # type: ignore[call-arg]
+        notify_whatsapp_phone_number_id="1234567890",
+        notify_whatsapp_access_token="EAAtest",
+        notify_whatsapp_graph_version="v23.0",
+        notify_whatsapp_templates_dir=str(directorio),
+    )
+
+
+def _whatsapp(tmp_path, handler, *, aprobada: bool = True) -> object:
+    """Provider de WhatsApp con transporte falso. CERO red a Meta."""
+    import httpx
+
+    from takab_api.notify.whatsapp import build_whatsapp_provider
+
+    return build_whatsapp_provider(
+        _wa_settings(tmp_path, aprobada=aprobada), transport=httpx.MockTransport(handler)
+    )
+
+
+def _wa_ok(request):
+    import httpx
+
+    return httpx.Response(
+        200,
+        json={
+            "messaging_product": "whatsapp",
+            "messages": [{"id": "wamid.OK", "message_status": "accepted"}],
+        },
+    )
+
+
+def test_whatsapp_entrega_por_la_misma_interfaz_y_deja_la_evidencia(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """Criterios 1 y 3 juntos: la plantilla aprobada se enchufa donde estaba el
+    simulado —sin una línea del orquestador— y la evidencia sale con la misma
+    forma que el resto de canales."""
+    peticiones: list = []
+
+    def handler(request):
+        peticiones.append(request)
+        return _wa_ok(request)
+
+    scenario.seed_config(WA_CONFIG)
+    # [T-2.79.a] La constancia que autoriza el envío ya no es el rule_set: es
+    # esta fila del motor. Sin ella este test se cae, y debe caerse.
+    scenario.seed_consent(WA_MSISDN)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)  # el webhook cae y le toca a whatsapp
+    providers["whatsapp"] = _whatsapp(tmp_path, handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    wa = scenario.job(iid, "whatsapp")
+    assert wa["status"] == "sent"
+    assert wa["sent_at"] == BASE + timedelta(seconds=10)
+    assert len(peticiones) == 1
+
+    evidencia = [
+        a["payload"] for a in scenario.notify_actions(iid) if a["payload"]["channel"] == "whatsapp"
+    ]
+    assert len(evidencia) == 1
+    assert evidencia[0]["latency_s"] == 10.0
+    # Sin deadline para este canal el plan pone NULL: `deadline_met` es True
+    # porque no hay plazo que incumplir, no porque se haya medido una entrega.
+    assert evidencia[0]["deadline_met"] is True
+    # Y la cascada se satisface: el SMS de pago ya no sale.
+    assert scenario.job(iid, "sms")["status"] == "skipped"
+
+
+def test_whatsapp_sin_plantilla_aprobada_queda_SIMULADO_no_enviado(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """🚨 El criterio 2, de punta a punta y en el estado REAL de hoy. Hay
+    credenciales, hay red, hay provider real — y aun así nadie puede recibir
+    nada, porque WhatsApp no deja improvisar texto y Meta no ha aprobado la
+    plantilla. El canal CAE: 'simulated', `sent_at` en NULL, verbo propio en la
+    evidencia y escalada al SMS. No finge."""
+
+    def handler(request):  # pragma: no cover - no debe llamarse jamás
+        raise AssertionError("sin plantilla aprobada no puede salir una petición")
+
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, handler, aprobada=False)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    wa = scenario.job(iid, "whatsapp")
+    assert wa["status"] == "simulated"
+    assert wa["sent_at"] is None
+    assert "whatsapp" not in [a["payload"]["channel"] for a in scenario.notify_actions(iid)]
+    assert [a["payload"]["channel"] for a in _sim_actions(scenario, iid)] == ["whatsapp"]
+    # `deadline_met` es NULL, no False: sin entrega no hay plazo que incumplir.
+    assert _sim_actions(scenario, iid)[0]["payload"]["deadline_met"] is None
+    # Y escala: el SMS sale igual, porque un simulado no satisface nada.
+    assert scenario.job(iid, "sms")["status"] == "sent"
+
+
+def test_si_meta_PAUSA_la_plantilla_el_canal_cae_para_el_siguiente_incidente(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """El escenario que da nombre al criterio 2, medido donde importa.
+
+    Meta pausa una plantilla por calidad SIN avisar (error 132015). El incidente
+    en curso da `failed` —el proveedor sí existía y sí respondió— pero el canal
+    queda tumbado, así que el incidente SIGUIENTE ya no se estrella contra una
+    plantilla muerta: se declara `simulated` y escala en el acto. La diferencia
+    importa: `failed` reintenta con backoff, `simulated` no; martillear una
+    plantilla pausada solo empeora su calificación de calidad en Meta.
+    """
+    import httpx
+
+    intentos: list = []
+
+    def handler(request):
+        intentos.append(request)
+        return httpx.Response(
+            400, json={"error": {"code": 132015, "message": "Template is paused"}}
+        )
+
+    scenario.seed_config(WA_CONFIG)
+    scenario.seed_consent(WA_MSISDN)  # [T-2.79.a] sin consentimiento no hay envío
+    provider = _whatsapp(tmp_path, handler)
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = provider  # type: ignore[assignment]
+
+    primero = scenario.seed_incident()
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+    assert scenario.job(primero, "whatsapp")["status"] == "failed"
+    assert "132015" in scenario.job(primero, "whatsapp")["error"]
+
+    segundo = scenario.seed_incident(opened_at=BASE + timedelta(minutes=1))
+    _run(scenario, providers, now=BASE + timedelta(minutes=1, seconds=10))
+
+    assert scenario.job(segundo, "whatsapp")["status"] == "simulated"
+    assert len(intentos) == 1  # ni una petición más contra la plantilla muerta
+    assert scenario.job(segundo, "sms")["status"] == "sent"  # el humano llega igual
+
+
+def test_whatsapp_sin_opt_in_no_sale_y_lo_deja_ESCRITO(scenario: _Scenario, tmp_path) -> None:
+    """El hallazgo de compliance, medido: un tenant con el teléfono configurado
+    pero SIN constancia de consentimiento no produce un silencio — produce un
+    `notify_failed` rojo en la consola, con el motivo dentro, y escala al SMS.
+
+    [T-2.79.a] Sigue verde SIN TOCARLO tras mover el opt-in al motor: aquí no hay
+    ni `opt_in` en el rule_set ni fila en `privacy_consents`, y el desenlace es el
+    mismo. Es la prueba de que el arreglo no cambió el contrato del canal.
+    """
+    sin_opt_in = {
+        "notifications": {
+            **WA_CONFIG["notifications"],
+            "whatsapp": {"to": WA_MSISDN},
+        }
+    }
+
+    def handler(request):  # pragma: no cover - no debe llamarse jamás
+        raise AssertionError("sin opt-in no puede salir una petición")
+
+    scenario.seed_config(sin_opt_in)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "opt-in" in motivo
+    assert scenario.job(iid, "sms")["status"] == "sent"
+
+
+# --- T-2.79.a · la constancia sale del MOTOR DE CONSENTIMIENTO, no del rule_set --
+#
+# El `rule_set` es editable y solo sabe guardar un instante suelto: no dice quién
+# consintió, sobre qué texto, ni —lo decisivo— que el consentimiento se RETIRÓ.
+# `privacy_consents` es append-only y sí lo sabe. Enviar un WhatsApp sin opt-in no
+# rebota un mensaje: degrada la calificación de calidad del número y con ella el
+# canal de TODOS los tenants. Por eso el fallo aquí es SIEMPRE hacia no enviar.
+
+
+def _wa_boom(request):  # pragma: no cover - no debe llamarse jamás
+    raise AssertionError("sin consentimiento vigente no puede salir una petición")
+
+
+def test_el_rule_set_ya_no_autoriza_el_envio_de_whatsapp(scenario: _Scenario, tmp_path) -> None:
+    """🚨 El corazón de la ficha. `WA_CONFIG` TRAE `opt_in` en el rule_set —el
+    parche de T-2.77— y no hay ni una fila en `privacy_consents`. Antes esto
+    enviaba; ahora se niega, y lo deja escrito. Un instante que cualquiera puede
+    teclear en la configuración ya no es una base legal de envío."""
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, _wa_boom)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "opt-in" in motivo
+    assert scenario.job(iid, "sms")["status"] == "sent"  # el humano llega igual
+
+
+def test_la_constancia_no_se_congela_en_el_job(scenario: _Scenario, tmp_path) -> None:
+    """Con consentimiento vigente SÍ sale — y el `target` guardado NO lleva la
+    constancia dentro. Congelarla en `notification_jobs` sería el mismo defecto
+    del rule_set una capa más abajo: un instante inmune a que lo retiren."""
+    peticiones: list = []
+
+    def handler(request):
+        peticiones.append(request)
+        return _wa_ok(request)
+
+    scenario.seed_config(WA_CONFIG)
+    scenario.seed_consent(WA_MSISDN)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, handler)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "sent"
+    assert len(peticiones) == 1
+    assert "opt_in" not in scenario.job(iid, "whatsapp")["target"]
+
+
+def test_retirar_el_consentimiento_niega_el_envio_y_lo_deja_ESCRITO(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """🚨 Criterio 3, y lo que un instante en el `rule_set` no puede hacer jamás.
+
+    MISMO rule_set, MISMO provider, MISMO número: el primer incidente sale porque
+    hay consentimiento; se registra el retiro (fila nueva, nada se borra) y el
+    segundo incidente se NIEGA — con su `notify_failed` escrito y escalando al SMS.
+    El provider no se tocó: simplemente dejó de recibir la constancia.
+    """
+    peticiones: list = []
+
+    def handler(request):
+        peticiones.append(request)
+        return _wa_ok(request)
+
+    scenario.seed_config(WA_CONFIG)
+    scenario.seed_consent(WA_MSISDN, "accept", decided_at=BASE - timedelta(days=1))
+    provider = _whatsapp(tmp_path, handler)
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = provider  # type: ignore[assignment]
+
+    primero = scenario.seed_incident()
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+    assert scenario.job(primero, "whatsapp")["status"] == "sent"
+    assert len(peticiones) == 1
+
+    scenario.seed_consent(WA_MSISDN, "withdraw", decided_at=BASE + timedelta(seconds=30))
+
+    segundo = scenario.seed_incident(opened_at=BASE + timedelta(minutes=1))
+    _run(scenario, providers, now=BASE + timedelta(minutes=1, seconds=10))
+
+    assert scenario.job(segundo, "whatsapp")["status"] == "failed"
+    assert len(peticiones) == 1, "retirado el consentimiento, ni una petición más a Meta"
+    fallidos = _actions_by_kind(scenario, segundo, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "opt-in" in motivo
+    assert scenario.job(segundo, "sms")["status"] == "sent"
+    # Y el pasado NO se reescribe: el envío del primer incidente sigue en pie.
+    assert scenario.job(primero, "whatsapp")["status"] == "sent"
+
+
+def test_el_consentimiento_de_otro_tenant_no_autoriza_este_envio(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """🚨 Regla de oro 5 sobre la base legal del envío. El MISMO número puede estar
+    dado de alta en dos clientes; que la guardia de un hospital haya consentido no
+    autoriza a la universidad de al lado a escribirle. El consentimiento se lee del
+    tenant del destinatario o no se lee."""
+    otro = scenario.seed_tenant()
+    scenario.seed_consent(WA_MSISDN, "accept", tenant=otro)
+
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, _wa_boom)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "opt-in" in motivo
+
+
+def test_si_el_consentimiento_no_se_puede_LEER_tampoco_se_envia(
+    scenario: _Scenario, tmp_path, monkeypatch
+) -> None:
+    """🚨 El fallo es hacia NO ENVIAR, y queda escrito con el motivo VERDADERO.
+
+    Hay consentimiento vigente, pero la lectura revienta contra Postgres de verdad
+    (query rota ⇒ transacción envenenada). Dos cosas tienen que pasar y ninguna es
+    obvia: (1) no sale el mensaje —«ante la duda mando» costaría el canal de todos
+    los tenants—; y (2) el pass SOBREVIVE al error de base y consigue ESCRIBIR el
+    `notify_failed`, que es lo que un rollback ciego se habría llevado por delante.
+    El motivo dice que no se pudo leer, no «no consintió»: anotar una mentira en un
+    registro de cumplimiento es peor que no anotar nada.
+    """
+    from takab_api.privacy import store as privacy_store
+
+    monkeypatch.setattr(
+        privacy_store, "_OPT_IN_PG", "SELECT no_existe_esta_columna FROM privacy_consents"
+    )
+
+    scenario.seed_config(WA_CONFIG)
+    scenario.seed_consent(WA_MSISDN)
+    iid = scenario.seed_incident()
+    providers = _providers(webhook=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, _wa_boom)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"
+    fallidos = _actions_by_kind(scenario, iid, "notify_failed")
+    motivo = next(a["payload"]["error"] for a in fallidos if a["payload"]["channel"] == "whatsapp")
+    assert "no se pudo leer" in motivo
+    assert scenario.job(iid, "sms")["status"] == "sent"  # y el humano llega igual
+
+
+def test_un_job_encolado_ANTES_del_cambio_no_envia_con_su_constancia_vieja(
+    scenario: _Scenario, tmp_path
+) -> None:
+    """La ventana del despliegue, que no la cubre ningún criterio pero muerde:
+    los jobs `pending` encolados con la versión anterior llevan el `opt_in` del
+    rule_set CONGELADO en su `target` jsonb. Si el despacho se fiara de él, el
+    primer sismo tras el deploy enviaría con la constancia vieja."""
+    scenario.seed_config(WA_CONFIG)
+    iid = scenario.seed_incident()
+    # Toda la cascada cae en la primera pasada: así NADA queda 'sent' y el job de
+    # whatsapp se puede rebobinar sin que el `skipped` de la cascada satisfecha
+    # tape lo que se quiere medir.
+    providers = _providers(webhook=True, sms=True, email=True)
+    providers["whatsapp"] = _whatsapp(tmp_path, _wa_boom)  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    # Y ahora se falsifica el job "de antes del deploy": pendiente otra vez, con
+    # la constancia del rule_set congelada dentro de su `target` jsonb.
+    scenario.conn.execute(
+        "UPDATE notification_jobs SET status='pending', attempts=0, error=NULL, "
+        'due_at = %s, target = target || \'{"opt_in": {"at": "2026-08-01T12:00:00Z"}}\'::jsonb '
+        "WHERE incident_id = %s AND channel = 'whatsapp'",
+        (BASE, iid),
+    )
+    scenario.conn.commit()
+    assert "opt_in" in scenario.job(iid, "whatsapp")["target"]  # no-vacuidad del montaje
+
+    _run(scenario, providers, now=BASE + timedelta(seconds=10))
+
+    # Se niega pese a llevar la constancia dentro: el despacho no la mira.
+    assert scenario.job(iid, "whatsapp")["status"] == "failed"

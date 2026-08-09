@@ -91,6 +91,58 @@ test("el mapa conserva su alto: nadie se lo roba", async ({ page }) => {
   }
 });
 
+// [D3] El banner de privacidad, TERCERA vez que un hermano nuevo se come el alto
+// del mapa (T-1.62 el simulacro, T-2.57 la tira de KPIs). Aquí se mide de verdad.
+//
+// El banner solo se pinta si el operador tiene el consentimiento pendiente, y el
+// estado de la base del stack local no es un contrato del test: para que la
+// medida sea DETERMINISTA se inyecta una franja con la clase real
+// (`.privacy-banner`) como primer hijo del <main> del shell. Es exactamente lo
+// que renderiza `PrivacyConsentBanner` desde el punto de vista de la reja, y la
+// forma del árbol —que el banner sea ese hijo y lleve esa clase— la vigila
+// `src/shell/AppShell.layout.test.tsx`.
+//
+// OJO: esto NO es el gate. `e2e.yml` es workflow_dispatch + continue-on-error;
+// lo que bloquea es `src/styles/layoutInvariants.test.ts` en vitest. Aquí se
+// mide lo que jsdom no puede medir.
+test("el banner de privacidad es una FRANJA: no le roba el alto al mapa", async ({ page }) => {
+  await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+  await expect(page.locator(".soc-stage")).toBeVisible();
+  const sinBanner = await boxOf(page.locator(".soc-stage"));
+  expect(sinBanner, "no se encontró `.soc-stage` visible").not.toBeNull();
+
+  const inyectado = await page.evaluate(() => {
+    const main = document.querySelector(".soc-app > main.soc-main");
+    if (main === null) return false;
+    if (main.querySelector(":scope > .privacy-banner") !== null) return true;
+    const franja = document.createElement("div");
+    franja.className = "privacy-banner";
+    franja.dataset.testid = "privacy-banner-probe";
+    franja.textContent = "SONDA · ACEPTE EL AVISO DE PRIVACIDAD";
+    main.prepend(franja);
+    return true;
+  });
+  expect(inyectado, "no hay `.soc-app > main.soc-main`: la sonda no mide nada").toBe(true);
+
+  const banner = await boxOf(page.locator(".privacy-banner"));
+  expect(banner, "la franja inyectada no se renderizó").not.toBeNull();
+  expect(
+    banner!.height,
+    "el banner de privacidad se quedó con el alto libre de la ventana en vez de " +
+      "ser una franja: la fila elástica de `.soc-main` volvió al primer hijo",
+  ).toBeLessThan(200);
+
+  const conBanner = await boxOf(page.locator(".soc-stage"));
+  expect(conBanner, "el escenario desapareció al aparecer el banner").not.toBeNull();
+  expect(
+    conBanner!.height,
+    "el escenario está en su piso de 280 px con el banner presente: se lo comió él",
+  ).toBeGreaterThan(400);
+  // El mapa cede lo que ocupa la franja y ni un píxel más: si cede de más es que
+  // la fila elástica se movió de sitio otra vez.
+  expect(sinBanner!.height - conBanner!.height).toBeLessThanOrEqual(banner!.height + 20);
+});
+
 test("el último cliente de la lista es visible Y clicable", async ({ page }) => {
   // El bug real: `body { overflow: hidden }` + `.mt__list` sin scroll propio.
   // "Visible" no basta — el elemento existía en el DOM y `getByText` lo

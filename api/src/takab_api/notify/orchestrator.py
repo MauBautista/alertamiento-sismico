@@ -7,6 +7,7 @@ Dos fases por pasada, bajo un advisory lock propio (serializa instancias):
    ``ON CONFLICT DO NOTHING`` (UNIQUE (incident, channel, mode) = idempotente).
 2. **DISPATCH**: jobs ``pending`` con ``due_at ≤ now``, en bucle hasta agotar:
    - cascada ya satisfecha (algún cascade 'sent' del incidente) ⇒ ``skipped``;
+   - canal SIMULADO (sin proveedor real) ⇒ ``simulated`` (T-2.75, ver abajo);
    - éxito ⇒ ``sent`` + ``incident_actions kind='notify_sent'`` (canal, modo,
      latencia vs t0 y cumplimiento del deadline — evidencia del SLA);
    - fallo CON escalado posible ⇒ ``failed`` + el SIGUIENTE cascade pendiente se
@@ -17,6 +18,22 @@ Dos fases por pasada, bajo un advisory lock propio (serializa instancias):
      T-1.62): es la única voz que le queda al incidente, no se tira a la basura.
    El éxito de un cascade marca ``skipped`` el resto de su cascada. Los jobs
    ``parallel`` son independientes (fail-open y email crítico no se skipean).
+
+[T-2.75] **Un canal simulado no entrega, y por tanto no satisface nada.** Hasta
+aquí el simulado "triunfaba": marcaba ``sent``, la cascada se daba por cumplida
+y el canal REAL que venía detrás no llegaba a dispararse (medido: webhook caído
++ whatsapp simulado ⇒ sms y email ``skipped``, el proveedor de correo llamado
+CERO veces). Ahora el simulado es un desenlace propio:
+
+- estado ``simulated`` y ``sent_at`` intacto en NULL — dos candados contra que
+  algo aguas abajo lo lea como entregado;
+- ``incident_actions kind='notify_simulated'`` (verbo propio, no un
+  ``notify_sent`` con bandera dentro: la evidencia se agrupa por ``kind``);
+- **escala igual que un fallo** — el siguiente cascade se adelanta a ``now``;
+- pero **es TERMINAL y no consume intentos**: ``failed`` es transitorio (el
+  proveedor existe y puede volver, por eso hay backoff); ``simulated`` no puede
+  volver de ninguna parte, y reintentar contra un proveedor inexistente sería
+  martillear la nada hasta agotar los intentos por nada.
 
 Corre como ``takab_ingest`` (BYPASSRLS) en el worker ``python -m
 takab_api.notify``; cloud-only, jamás en el camino de actuación del edge.
@@ -32,8 +49,9 @@ import psycopg
 
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
-from takab_api.notify.providers import NotifyError, NotifyProvider
+from takab_api.notify.providers import NotifyError, NotifyProvider, is_simulated
 from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
+from takab_api.privacy import store as privacy_store
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -207,6 +225,17 @@ UPDATE notification_jobs SET status = 'failed', error = %(error)s, attempts = %(
 WHERE job_id = %(job)s
 """
 
+# [T-2.75] `sent_at` se queda en NULL A PROPÓSITO: es la marca de "esto llegó".
+# Rellenarla sería la misma mentira en otra columna, y así cualquier consulta de
+# entregados (`sent_at IS NOT NULL`) excluye lo simulado sin saber que existe.
+# `attempts` tampoco se toca: no hubo intento contra nadie.
+_MARK_SIMULATED_SQL = """
+UPDATE notification_jobs SET status = 'simulated', error = %(note)s
+WHERE job_id = %(job)s
+"""
+
+_SIMULATED_NOTE = "canal simulado: sin proveedor real configurado, nadie recibió nada"
+
 # [T-1.62] El job sigue 'pending': solo suma el intento, guarda el motivo y se
 # aplaza. `_dispatch` no lo re-selecciona en esta pasada (due_at > now, y `now`
 # es fijo por pass) — nada de bucles calientes.
@@ -231,10 +260,17 @@ WHERE job_id = (
 # (uq_incident_actions_ack: incident, kind, actor, ts) usa el ts de TRANSACCIÓN,
 # y varios envíos del mismo incidente en un pass comparten now() — con actor
 # plano 'system' colisionarían entre sí.
+# [T-2.75] El `kind` es parámetro: 'notify_sent' cuando alguien recibió algo,
+# 'notify_simulated' cuando no. Verbos distintos porque la evidencia se lee y se
+# agrupa por `kind`, y `incident_actions` es append-only y exenta de poda.
 _ACTION_SQL = """
 INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
-VALUES (%(incident)s, %(tenant)s, 'notify_sent', %(actor)s, %(payload)s::jsonb)
+VALUES (%(incident)s, %(tenant)s, %(kind)s, %(actor)s, %(payload)s::jsonb)
 """
+
+_KIND_SENT = "notify_sent"
+_KIND_SIMULATED = "notify_simulated"
+_KIND_FAILED = "notify_failed"
 
 # --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
 _PUSH_EXISTS_SQL = """
@@ -277,7 +313,17 @@ def run_notify_pass(
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (_NOTIFY_LOCK_KEY,))
 
     config_cache: dict[tuple[str, str], dict | None] = {}
-    counts = {"enqueued": 0, "sent": 0, "failed": 0, "skipped": 0, "retried": 0}
+    counts = {
+        "enqueued": 0,
+        "sent": 0,
+        "failed": 0,
+        "skipped": 0,
+        "retried": 0,
+        # [T-2.75] Cuenta propia: sumarlo a `sent` habría sido el mismo embuste
+        # una capa más arriba, y sumarlo a `failed` diría "hay que arreglar el
+        # proveedor" cuando lo que falta es CONTRATAR uno.
+        "simulated": 0,
+    }
 
     counts["enqueued"] = _enqueue(conn, settings, config_cache, now=now, lookback_s=lookback)
     counts["enqueued"] += _enqueue_dictamen_requests(
@@ -495,6 +541,13 @@ def _dispatch_one(
         _fail(conn, counts, row, "provider no configurado", now=now, max_attempts=max_attempts)
         return
 
+    # [T-2.75] ANTES de bifurcar por canal: la pregunta se le hace al PROVIDER,
+    # no a una lista de nombres. Así el push —que despacha por su propia rama
+    # con deliver()— y cualquier canal futuro quedan cubiertos sin tocar esto.
+    if is_simulated(provider):
+        _simulate(conn, counts, row, now=now)
+        return
+
     if row["channel"] == "push":
         _dispatch_push(conn, counts, row, provider, now=now, max_attempts=max_attempts)
         return
@@ -506,6 +559,18 @@ def _dispatch_one(
         secret = destinations.get("webhook", {}).get("secret")
         if secret:
             target["secret"] = secret
+    elif row["channel"] == "whatsapp":
+        opt_in, error = _whatsapp_opt_in(conn, row, target)
+        if error is not None:
+            _fail(conn, counts, row, error, now=now, max_attempts=max_attempts)
+            return
+        # Se PISA siempre, incluso con `opt_in` ausente: un job encolado por la
+        # versión anterior lleva la constancia del rule_set congelada en su
+        # jsonb, y fiarse de ella sería enviar con un papel viejo el primer
+        # sismo tras el despliegue.
+        target.pop("opt_in", None)
+        if opt_in is not None:
+            target["opt_in"] = {"at": opt_in.isoformat(), "source": "privacy_consents"}
 
     try:
         provider.send(target, _message(row, base_url=base_url))
@@ -529,6 +594,7 @@ def _dispatch_one(
         {
             "incident": incident_id,
             "tenant": row["tenant_id"],
+            "kind": _KIND_SENT,
             "actor": f"system:notify:{row['channel']}:{row['mode']}{actor_suffix}",
             "payload": json.dumps(
                 {
@@ -628,6 +694,7 @@ def _dispatch_push(
         {
             "incident": row["incident_id"],
             "tenant": row["tenant_id"],
+            "kind": _KIND_SENT,
             "actor": actor,
             "payload": json.dumps(
                 {
@@ -650,6 +717,59 @@ def _dispatch_push(
         outcome.delivered,
         len(outcome.disabled_ids),
         latency_s,
+    )
+
+
+def _simulate(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    *,
+    now: datetime,
+) -> None:
+    """[T-2.75] Desenlace de un canal SIN proveedor real. Nadie recibió nada.
+
+    Ni ``sent`` (sería mentir) ni ``failed`` (mandaría a arreglar un proveedor
+    que no existe, y arrastraría el backoff a martillear la nada hasta agotar
+    los tres intentos). Estado propio, terminal, con evidencia propia — y
+    escalando al siguiente canal exactamente como escala un fallo, porque a
+    efectos de "¿llegó a un humano?" un simulado es un NO ENTREGADO.
+    """
+    conn.execute(_MARK_SIMULATED_SQL, {"job": row["job_id"], "note": _SIMULATED_NOTE})
+    if row["mode"] == "cascade":
+        conn.execute(
+            _ADVANCE_NEXT_SQL,
+            {"incident": row["incident_id"], "position": row["position"], "now": now},
+        )
+    actor_suffix = f":{row['action_id']}" if row.get("action_id") else ""
+    conn.execute(
+        _ACTION_SQL,
+        {
+            "incident": row["incident_id"],
+            "tenant": row["tenant_id"],
+            "kind": _KIND_SIMULATED,
+            "actor": f"system:notify:{row['channel']}:{row['mode']}{actor_suffix}",
+            "payload": json.dumps(
+                {
+                    "job_id": str(row["job_id"]),
+                    "channel": row["channel"],
+                    "mode": row["mode"],
+                    "latency_s": (now - row["opened_at"]).total_seconds(),
+                    "simulated": True,
+                    # El SLA mide una ENTREGA. Sin entrega no hay plazo que
+                    # cumplir ni que incumplir: null es "no aplica", y no se
+                    # confunde con el False de "llegó tarde" (regla de oro 7).
+                    "deadline_met": None,
+                }
+            ),
+        },
+    )
+    counts["simulated"] += 1
+    logger.warning(
+        "notify SIMULADO %s/%s incidente %s: nadie recibió nada por este canal",
+        row["channel"],
+        row["mode"],
+        row["incident_id"],
     )
 
 
@@ -706,6 +826,35 @@ def _fail(
     conn.execute(
         _MARK_FAILED_SQL, {"job": row["job_id"], "error": error[:500], "attempts": attempts}
     )
+    # [T-2.75] Evidencia del NO ENTREGADO, solo en el desenlace TERMINAL. Un
+    # reintento todavía puede acabar entregando, y `incident_actions` es
+    # append-only y exenta de poda por retención (regla de oro 11): una fila por
+    # intento inflaría para siempre la tabla que existe para reconstruir lo
+    # ocurrido. Así el operador ve las TRES cosas y reacciona distinto a cada
+    # una — entregado (nada), simulado (falta contratar el canal), no entregado
+    # (el proveedor está caído AHORA).
+    actor_suffix = f":{row['action_id']}" if row.get("action_id") else ""
+    conn.execute(
+        _ACTION_SQL,
+        {
+            "incident": row["incident_id"],
+            "tenant": row["tenant_id"],
+            "kind": _KIND_FAILED,
+            "actor": f"system:notify:{row['channel']}:{row['mode']}{actor_suffix}",
+            "payload": json.dumps(
+                {
+                    "job_id": str(row["job_id"]),
+                    "channel": row["channel"],
+                    "mode": row["mode"],
+                    "attempts": attempts,
+                    "error": error[:500],
+                    # Sin entrega no hay plazo que cumplir: null es "no aplica",
+                    # nunca el False de "llegó tarde" (regla de oro 7).
+                    "deadline_met": None,
+                }
+            ),
+        },
+    )
     counts["failed"] += 1
     logger.warning(
         "notify failed %s/%s incidente %s (intento %d/%d): %s",
@@ -719,6 +868,65 @@ def _fail(
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _whatsapp_opt_in(
+    conn: psycopg.Connection, row: dict, target: dict
+) -> tuple[datetime | None, str | None]:
+    """[T-2.79.a] La constancia que autoriza el envío, leída FRESCA del motor.
+
+    Devuelve ``(instante, error)``:
+
+    * ``(fecha, None)`` — hay consentimiento vigente: el destino lo lleva y el
+      provider envía.
+    * ``(None, None)`` — no lo hay (nunca lo hubo, o se RETIRÓ). El destino sale
+      SIN ``opt_in`` y el provider —que no cambia— se niega con su motivo de
+      siempre. Un canal de compliance tiene una sola voz de rechazo.
+    * ``(None, motivo)`` — no se pudo LEER. También se niega, pero con el motivo
+      verdadero: anotar "no consintió" cuando lo que falló fue la base es mentir
+      en un registro de cumplimiento.
+
+    **Se lee aquí y no en `resolve_destinations` por dos razones.** Una: esa
+    función es el parser PURO del `rule_set` y no tiene conexión. Y otra, más
+    importante: lo que autoriza tiene que estar VIGENTE en el instante del
+    envío. Resolverlo al encolar lo congelaría en el `target` del job y
+    reproduciría, una capa más abajo, el defecto exacto que esta tarea cierra —
+    un instante que no puede enterarse de que lo retiraron. Es el mismo motivo
+    por el que el `secret` del webhook se re-resuelve aquí y no se guarda.
+
+    El SAVEPOINT no es decorativo: en psycopg un error deja la transacción
+    envenenada, y sin él el ``notify_failed`` que este fallo debe dejar escrito
+    moriría con ella. El desenlace tiene que quedar en la consola, no en un log.
+    """
+    msisdn = str(target.get("to") or "").strip()
+    try:
+        with conn.transaction():
+            at = privacy_store.whatsapp_opt_in_at_sync(
+                conn, tenant_id=str(row["tenant_id"]), msisdn=msisdn
+            )
+    except Exception as exc:  # noqa: BLE001 - ante la duda NO se envía, y se escribe
+        logger.exception(
+            "whatsapp: no se pudo leer el opt-in del tenant %s (job %s)",
+            row["tenant_id"],
+            row["job_id"],
+        )
+        return None, (
+            "whatsapp: no se pudo leer el opt-in en el motor de consentimiento "
+            f"({type(exc).__name__}). Sin constancia verificable no se envía: hacerlo "
+            "degradaría la calidad del número y puede tumbar el canal para todos los tenants"
+        )
+    if at is None:
+        logger.warning(
+            "whatsapp: sin consentimiento vigente para %s (tenant %s) — no se envía",
+            _mask(msisdn),
+            row["tenant_id"],
+        )
+    return at, None
+
+
+def _mask(msisdn: str) -> str:
+    """Un teléfono es dato personal: en el log van los últimos 4 dígitos."""
+    return f"…{msisdn[-4:]}" if len(msisdn) > 4 else "…"
 
 
 def _config_for(conn: psycopg.Connection, cache: dict, row: dict) -> dict | None:
