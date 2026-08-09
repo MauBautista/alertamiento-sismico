@@ -51,6 +51,7 @@ from takab_api.notify.config import resolve_destinations, resolve_inspector_emai
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import NotifyError, NotifyProvider, is_simulated
 from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
+from takab_api.privacy import store as privacy_store
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -558,6 +559,18 @@ def _dispatch_one(
         secret = destinations.get("webhook", {}).get("secret")
         if secret:
             target["secret"] = secret
+    elif row["channel"] == "whatsapp":
+        opt_in, error = _whatsapp_opt_in(conn, row, target)
+        if error is not None:
+            _fail(conn, counts, row, error, now=now, max_attempts=max_attempts)
+            return
+        # Se PISA siempre, incluso con `opt_in` ausente: un job encolado por la
+        # versión anterior lleva la constancia del rule_set congelada en su
+        # jsonb, y fiarse de ella sería enviar con un papel viejo el primer
+        # sismo tras el despliegue.
+        target.pop("opt_in", None)
+        if opt_in is not None:
+            target["opt_in"] = {"at": opt_in.isoformat(), "source": "privacy_consents"}
 
     try:
         provider.send(target, _message(row, base_url=base_url))
@@ -855,6 +868,65 @@ def _fail(
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _whatsapp_opt_in(
+    conn: psycopg.Connection, row: dict, target: dict
+) -> tuple[datetime | None, str | None]:
+    """[T-2.79.a] La constancia que autoriza el envío, leída FRESCA del motor.
+
+    Devuelve ``(instante, error)``:
+
+    * ``(fecha, None)`` — hay consentimiento vigente: el destino lo lleva y el
+      provider envía.
+    * ``(None, None)`` — no lo hay (nunca lo hubo, o se RETIRÓ). El destino sale
+      SIN ``opt_in`` y el provider —que no cambia— se niega con su motivo de
+      siempre. Un canal de compliance tiene una sola voz de rechazo.
+    * ``(None, motivo)`` — no se pudo LEER. También se niega, pero con el motivo
+      verdadero: anotar "no consintió" cuando lo que falló fue la base es mentir
+      en un registro de cumplimiento.
+
+    **Se lee aquí y no en `resolve_destinations` por dos razones.** Una: esa
+    función es el parser PURO del `rule_set` y no tiene conexión. Y otra, más
+    importante: lo que autoriza tiene que estar VIGENTE en el instante del
+    envío. Resolverlo al encolar lo congelaría en el `target` del job y
+    reproduciría, una capa más abajo, el defecto exacto que esta tarea cierra —
+    un instante que no puede enterarse de que lo retiraron. Es el mismo motivo
+    por el que el `secret` del webhook se re-resuelve aquí y no se guarda.
+
+    El SAVEPOINT no es decorativo: en psycopg un error deja la transacción
+    envenenada, y sin él el ``notify_failed`` que este fallo debe dejar escrito
+    moriría con ella. El desenlace tiene que quedar en la consola, no en un log.
+    """
+    msisdn = str(target.get("to") or "").strip()
+    try:
+        with conn.transaction():
+            at = privacy_store.whatsapp_opt_in_at_sync(
+                conn, tenant_id=str(row["tenant_id"]), msisdn=msisdn
+            )
+    except Exception as exc:  # noqa: BLE001 - ante la duda NO se envía, y se escribe
+        logger.exception(
+            "whatsapp: no se pudo leer el opt-in del tenant %s (job %s)",
+            row["tenant_id"],
+            row["job_id"],
+        )
+        return None, (
+            "whatsapp: no se pudo leer el opt-in en el motor de consentimiento "
+            f"({type(exc).__name__}). Sin constancia verificable no se envía: hacerlo "
+            "degradaría la calidad del número y puede tumbar el canal para todos los tenants"
+        )
+    if at is None:
+        logger.warning(
+            "whatsapp: sin consentimiento vigente para %s (tenant %s) — no se envía",
+            _mask(msisdn),
+            row["tenant_id"],
+        )
+    return at, None
+
+
+def _mask(msisdn: str) -> str:
+    """Un teléfono es dato personal: en el log van los últimos 4 dígitos."""
+    return f"…{msisdn[-4:]}" if len(msisdn) > 4 else "…"
 
 
 def _config_for(conn: psycopg.Connection, cache: dict, row: dict) -> dict | None:

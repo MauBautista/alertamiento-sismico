@@ -690,19 +690,26 @@ def test_este_canal_tampoco_hace_fan_out(tmp_path: Path) -> None:
     assert meta.calls == 0
 
 
-def test_el_opt_in_viaja_desde_el_rule_set_hasta_el_provider() -> None:
-    """El opt-in se configura junto al destino y tiene que LLEGAR: si
-    ``resolve_destinations`` lo tirara por el camino, el provider se negaría a
-    enviar siempre y el canal estaría caído sin que nadie supiera por qué."""
+def test_el_rule_set_ya_no_puede_declarar_el_opt_in() -> None:
+    """[T-2.79.a] La inversión de lo que T-2.77 probaba aquí.
+
+    Hasta T-2.79 este test acreditaba que el ``opt_in`` del ``rule_set`` LLEGABA
+    al provider. Ya no: el ``rule_set`` es configuración editable y no puede ser
+    la base legal de un envío, así que ``resolve_destinations`` lo TIRA. La
+    constancia la pone el orquestador leyendo ``privacy_consents`` en el instante
+    del envío (``tests/notify/test_orchestrator.py``, bloque T-2.79.a).
+
+    Lo que NO cambia —y por eso se sigue asertando— es que el destino sobrevive
+    sin constancia: tiene que existir para que el fallo se VEA como
+    ``notify_failed`` y no como un canal que desaparece en silencio.
+    """
     from takab_api.notify.config import resolve_destinations
 
     opt_in = {"at": "2026-08-01T12:00:00Z", "evidence": "alta firmada"}
     destinos = resolve_destinations(
         {"notifications": {"whatsapp": {"to": "+52551", "opt_in": opt_in}}}
     )
-    assert destinos["whatsapp"] == {"to": "+52551", "opt_in": opt_in}
-    # No-vacuidad: sin opt-in el destino sigue existiendo (para que el fallo se
-    # VEA como notify_failed y no como un canal que desaparece en silencio).
+    assert destinos["whatsapp"] == {"to": "+52551"}, "el rule_set ya no autoriza"
     assert resolve_destinations({"notifications": {"whatsapp": {"to": "+52551"}}})["whatsapp"] == {
         "to": "+52551"
     }
@@ -817,19 +824,38 @@ def test_el_registro_de_providers_usa_whatsapp_cuando_hay_plantilla(tmp_path: Pa
 
 
 def test_el_orquestador_no_sabe_que_existe_whatsapp_cloud() -> None:
-    """No-vacuidad del «el orquestador NO cambia»: si alguien mete una rama
-    ``if channel == 'whatsapp'``, esto se pone rojo. Es la única comprobación de
-    esa promesa que no depende de mirar el diff. Espejo del test de T-2.76."""
+    """No-vacuidad del «el orquestador NO cambia»: si alguien mete lógica de
+    WhatsApp Cloud en el orquestador, esto se pone rojo. Es la única comprobación
+    de esa promesa que no depende de mirar el diff. Espejo del test de T-2.76.
+
+    [T-2.79.a] Este test hubo que AFINARLO, no aflojarlo. Hasta hoy prohibía la
+    cadena ``whatsapp`` entrecomillada, y era una buena aproximación mientras el
+    orquestador no tuviera NADA que preguntarle a este canal. Dejó de ser cierto:
+    la base legal del envío —el opt-in— vive en ``privacy_consents`` y hay que
+    leerla en el instante del despacho. Esa pregunta es específica de WhatsApp
+    porque es el único canal cuyo regulador condiciona CUALQUIER contacto a un
+    consentimiento previo; generalizarla a los demás sería inventar una
+    abstracción falsa para pasar un grep.
+
+    Lo que sigue prohibido —y es lo que el test siempre quiso decir— es que el
+    orquestador sepa algo de la API de Meta: ni plantillas, ni ``wamid``, ni
+    códigos de error, ni ventana de servicio. El ENVÍO sale por ``provider.send``
+    exactamente igual que en los demás canales, sin una sola rama.
+    """
     from pathlib import Path as _Path
 
     import takab_api.notify.orchestrator as orch
 
     fuente = _Path(orch.__file__).read_text(encoding="utf-8")
+    for veneno in ("graph.facebook", "wamid", "plantilla", "messaging_product", "132015"):
+        assert veneno not in fuente.lower(), f"el orquestador no puede saber de {veneno}"
+
     # Una rama por canal se escribe con el nombre ENTRECOMILLADO (así están las
-    # de 'webhook' y 'push'). Que no exista ninguna con 'whatsapp' es la prueba
-    # de que el canal se enchufó por el contrato y no por un caso especial. El
-    # nombre suelto sí aparece: la prosa de T-2.75 narra el bug del simulado.
-    assert '"whatsapp"' not in fuente and "'whatsapp'" not in fuente
-    assert "graph.facebook" not in fuente.lower()
-    assert "plantilla" not in fuente.lower()
+    # de 'webhook' y 'push'). Solo se admite UNA con 'whatsapp', y es la del
+    # opt-in: cualquier otra sería el caso especial que este test prohíbe.
+    ramas = [ln for ln in fuente.splitlines() if '"whatsapp"' in ln or "'whatsapp'" in ln]
+    assert ramas == ['    elif row["channel"] == "whatsapp":'], (
+        "la única rama por canal de whatsapp admisible es la lectura del opt-in; "
+        f"encontradas: {ramas}"
+    )
     assert '"push"' in fuente  # no-vacuidad: así se ve una rama por canal

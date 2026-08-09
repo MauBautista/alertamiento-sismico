@@ -143,20 +143,26 @@ por digest, con el nombre del negocio dentro, como exige Meta—, cuándo, por q
 vía y quién lo registró, todo en un registro append-only que además sabe decir
 que se RETIRÓ.
 
-**El interruptor todavía no está puesto, y es deliberado.** El lector es
-``takab_api.privacy.store.whatsapp_opt_in_at`` (implementado y probado); lo que
-falta es de dónde sale el destino, y eso es superficie de T-2.77: hoy lo arma
-``notify/config.resolve_destinations``, una función PURA sobre el ``rule_set``
-sin conexión a la base. La forma exacta del cambio está escrita en el comentario
-``[COSTURA T-2.79]`` de ese archivo, y el trabajo queda fichado en ``T-2.79.a``.
+**El interruptor YA ESTÁ PUESTO (T-2.79.a).** El ``rule_set`` dejó de poder
+declarar el opt-in: ``notify/config.resolve_destinations`` se queda con el número
+y tira el ``opt_in`` aunque siga escrito en la configuración de algún tenant, y
+la constancia la pone el ORQUESTADOR en el instante del despacho leyendo
+``privacy_consents`` (``notify/orchestrator._whatsapp_opt_in`` →
+``privacy.store.whatsapp_opt_in_at_sync``). Se lee al despachar y no al encolar
+por la misma razón por la que el ``secret`` del webhook se re-resuelve ahí: lo
+que autoriza tiene que estar VIGENTE cuando sale el mensaje. Un consentimiento
+retirado deja de autorizar en el acto, y si la lectura falla el envío se niega
+igual — hacia no enviar, siempre.
 
-Mientras tanto, este provider **exige una constancia mínima en el destino**
-(``opt_in.at``, el instante del consentimiento) y **se niega a enviar sin ella**.
-No es burocracia: enviar sin opt-in no rebota un mensaje — degrada la calidad del
-número y puede **tumbar el canal para todos los tenants a la vez**. Y la fecha no
-es adorno: un consentimiento sin instante no se puede probar anterior al mensaje,
-luego no es un consentimiento. El fallo queda **escrito** (``notify_failed``, rojo
-en la consola) en vez de desaparecer en silencio.
+**Este provider no cambió una línea por eso, y es la prueba de que la costura era
+la correcta:** sigue exigiendo la constancia en el destino (``opt_in.at``, el
+instante del consentimiento) y **se niega a enviar sin ella**. Lo único distinto
+es de dónde sale. No es burocracia: enviar sin opt-in no rebota un mensaje —
+degrada la calidad del número y puede **tumbar el canal para todos los tenants a
+la vez**. Y la fecha no es adorno: un consentimiento sin instante no se puede
+probar anterior al mensaje, luego no es un consentimiento. El fallo queda
+**escrito** (``notify_failed``, rojo en la consola) en vez de desaparecer en
+silencio.
 
 ──────────────────────────────────────────────────────────────────────────────
 COSTE

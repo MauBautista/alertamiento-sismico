@@ -356,15 +356,35 @@ async def publish_notice(
 
 
 # ---------------------------------------------------------------------------
-# COSTURA T-2.77 · el opt-in de WhatsApp, leído del motor y no del rule_set
+# El opt-in de WhatsApp, leído del motor y no del rule_set (T-2.77 → T-2.79.a)
 # ---------------------------------------------------------------------------
-
-_OPT_IN = text(
+#
+# UNA sola definición de "vigente" para los DOS consumidores, porque son dos
+# drivers distintos y no dos reglas distintas: la API vive en SQLAlchemy async y
+# el worker de notify en psycopg síncrono. Duplicar el SELECT sería duplicar el
+# criterio de qué consentimiento manda, y el día que uno cambie el otro no.
+_OPT_IN_TEMPLATE = (
     "SELECT decision, decided_at FROM privacy_consents "
-    "WHERE tenant_id = CAST(:tenant AS uuid) AND purpose = 'whatsapp_alerts' "
-    "  AND subject_kind = 'msisdn' AND subject_ref = :msisdn "
+    "WHERE tenant_id = CAST({tenant} AS uuid) AND purpose = 'whatsapp_alerts' "
+    "  AND subject_kind = 'msisdn' AND subject_ref = {msisdn} "
     "ORDER BY decided_at DESC, consent_id DESC LIMIT 1"
 )
+
+_OPT_IN = text(_OPT_IN_TEMPLATE.format(tenant=":tenant", msisdn=":msisdn"))
+_OPT_IN_PG = _OPT_IN_TEMPLATE.format(tenant="%(tenant)s", msisdn="%(msisdn)s")
+
+
+def _opt_in_de(decision: str | None, decided_at: datetime | None) -> datetime | None:
+    """La regla, en un solo sitio: solo un ``accept`` vigente es un opt-in.
+
+    ``withdraw`` ⇒ ``None``: retirado el consentimiento, no hay opt-in — y el
+    provider se niega a enviar sin él (``notify_failed``, rojo en la consola),
+    que es el comportamiento correcto. Un instante suelto en el ``rule_set`` no
+    puede decir esto jamás, y de ahí sale toda la tarea.
+    """
+    if decision != "accept":
+        return None
+    return decided_at
 
 
 async def whatsapp_opt_in_at(
@@ -373,31 +393,47 @@ async def whatsapp_opt_in_at(
     """Instante del opt-in VIGENTE de un número, o ``None`` si no lo hay.
 
     Es el reemplazo exacto de ``notifications.whatsapp.opt_in.at`` del
-    ``rule_set``, que T-2.77 puso como parche declarándolo así: *"cuando T-2.79
-    exista, este canal debe leerlo de ahí en vez de del rule_set"*. La diferencia
-    no es cosmética: el ``rule_set`` guarda un instante suelto que cualquiera
-    puede teclear y que no dice sobre qué texto se consintió ni quién lo
-    registró; esto devuelve el instante de una fila append-only con su digest,
-    su vía y su actor.
+    ``rule_set``, que T-2.77 puso como parche. La diferencia no es cosmética: el
+    ``rule_set`` guarda un instante suelto que cualquiera puede teclear y que no
+    dice sobre qué texto se consintió ni quién lo registró; esto devuelve el
+    instante de una fila append-only con su digest, su vía y su actor.
 
-    ``withdraw`` devuelve ``None``: retirado el consentimiento, no hay opt-in —
-    y el provider ya se niega a enviar sin él (``notify_failed``, rojo en la
-    consola), que es el comportamiento correcto y no cambia.
-
-    **El interruptor todavía no está puesto** y es deliberado: hoy el destino se
-    arma en ``notify/config.resolve_destinations``, que es una función PURA sobre
-    el ``rule_set`` y no tiene conexión a la base. Enchufarla aquí obliga a mover
-    la construcción del destino al orquestador, que es superficie de T-2.77 y
-    tiene su propia ficha (``T-2.77.b``). Ver el comentario en ``notify/config.py``.
+    **El interruptor YA ESTÁ PUESTO** (T-2.79.a). Quien lo usa en el camino real
+    del envío es el worker de notify, por el gemelo síncrono de abajo.
     """
     fila = (
         (await conn.execute(_OPT_IN, {"tenant": tenant_id, "msisdn": msisdn}))
         .mappings()
         .one_or_none()
     )
-    if fila is None or fila["decision"] != "accept":
+    if fila is None:
         return None
-    return fila["decided_at"]
+    return _opt_in_de(fila["decision"], fila["decided_at"])
+
+
+def whatsapp_opt_in_at_sync(conn: Any, *, tenant_id: str, msisdn: str) -> datetime | None:
+    """Gemelo SÍNCRONO de :func:`whatsapp_opt_in_at`, para el worker de notify.
+
+    Existe porque los dos consumidores hablan drivers distintos: la API vive en
+    SQLAlchemy async y el orquestador de notificaciones en ``psycopg`` síncrono
+    (rol ``takab_ingest``, que tiene SELECT sobre ``privacy_consents`` y nada
+    más — escribir un consentimiento jamás es cosa de un worker). Comparten el
+    SELECT y la regla; lo único que cambia es cómo se ejecuta.
+
+    NO atrapa excepciones a propósito: quien llama decide qué hacer con un fallo
+    de lectura, y en el orquestador esa decisión es NEGAR el envío y escribirlo.
+    Tragarse el error aquí devolvería ``None`` —indistinguible de "no consintió"—
+    y convertiría un problema de base en una mentira en un registro de
+    cumplimiento.
+    """
+    fila = conn.execute(_OPT_IN_PG, {"tenant": tenant_id, "msisdn": msisdn}).fetchone()
+    if fila is None:
+        return None
+    # El `row_factory` lo elige quien abre la conexión: el worker usa `dict_row`,
+    # pero un llamador cualquiera traería tuplas. Se soportan las dos formas.
+    if isinstance(fila, dict):
+        return _opt_in_de(fila["decision"], fila["decided_at"])
+    return _opt_in_de(fila[0], fila[1])
 
 
 # [T-2.80] Aquí vivía `audit_meta()`: declarada, nunca llamada y además
