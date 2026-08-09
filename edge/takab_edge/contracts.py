@@ -81,6 +81,46 @@ class ActuatorAction(StrEnum):
     DRILL_STOP = "drill_stop"
 
 
+class ActuationCause(StrEnum):
+    """[T-2.86.a · hueco `RO-4.e`] POR QUÉ se movió un relé. No es cosmético: es la
+    mitad de la bitácora que responde a un perito o a un seguro.
+
+    `ActuatorAck` lleva canal, acción, `event_id`, éxito y latencia — y **no lleva
+    actor**; el `audit_log` vivía sólo en la nube. O sea que el caso exacto para el
+    que existe el gabinete (regla de oro 2: el edge opera sin nube) era el único que
+    no dejaba constancia de quién ordenó cerrar el gas.
+
+    **CAUSA y ACTOR no son lo mismo, y en el edge casi nunca hay una persona.** La
+    causa es este enum, cerrado; el actor es una cadena que nombra a quien lo pidió
+    (`wr-1`, `edge:rules`, `cloud:<command_id>`, `lan`). El mapeo de cada origen a su
+    causa vive en :mod:`takab_edge.audit` y se **deriva** de dos conjuntos que ya
+    existían en el código (`AlertSource` y `GPIO_ACTIONS`), no de una lista escrita
+    a mano: un origen nuevo entra solo en la comprobación.
+    """
+
+    #: Contacto seco del WR-1 — canal primario. Sin persona detrás, por diseño.
+    SASMEX = "sasmex"
+    #: Umbral instrumental de ESTA estación (visual-only salvo `instrumental_actuation`).
+    LOCAL_THRESHOLD = "local_threshold"
+    #: Disparo manual autorizado que llega como decisión de tier.
+    MANUAL = "manual"
+    #: Comando FIRMADO de la nube sin `origin` de quórum: alguien en la consola.
+    CLOUD_COMMAND = "cloud_command"
+    #: Comando FIRMADO con `origin=quorum`: ≥3 estaciones lo confirmaron (T-2.32).
+    NETWORK_QUORUM = "network_quorum"
+    #: Autodiagnóstico de relés NO audibles (T-1.59), pedido por comando firmado.
+    CABINET_SELF_TEST = "cabinet_self_test"
+    #: Acciones del panel LAN (T-1.53/T-1.67/T-1.69) — el operador de pie en el sitio.
+    LAN_SILENCE = "lan_silence"
+    LAN_SIREN_TEST = "lan_siren_test"
+    LAN_ACTUATION_TEST = "lan_actuation_test"
+    LAN_TEST_MODE = "lan_test_mode"
+    LAN_RESET = "lan_reset"
+    #: Nadie declaró la causa. Se ESCRIBE así y se grita: un hueco visible es una
+    #: pregunta para quien revisa; un hueco silencioso es el defecto `RO-4.e`.
+    UNDECLARED = "undeclared"
+
+
 class SirenReason(StrEnum):
     """[T-2.49] POR QUÉ suena la sirena. No es cosmético: decide QUÉ se oye.
 
@@ -191,6 +231,23 @@ class ActuatorCommand(BaseModel):
     action: ActuatorAction
     event_id: str
     issued_at: datetime = Field(default_factory=utcnow)
+    # [T-2.86.a] Quién lo ordenó y por qué. Viajan CON el comando, no por un canal
+    # lateral, porque `ActuatorManager._record` —el embudo único por el que pasa
+    # toda actuación, suelta o en lote— es donde se escribe la bitácora: si la causa
+    # no viene aquí, no hay dónde sacarla sin adivinar.
+    #
+    # El default es `UNDECLARED` y NO un valor plausible a propósito: un emisor
+    # nuevo que no declare su causa deja una fila que dice `undeclared` y un
+    # `log.error`, en vez de una fila que miente diciendo «sasmex».
+    #
+    # Contrato INTERNO del edge: `ActuatorCommand` no está en `MODELS`
+    # (`takab_edge/schemas.py`) y por tanto no tiene espejo en `shared/schemas/` —
+    # esto no cambia ningún payload que cruce a la nube.
+    cause: ActuationCause = ActuationCause.UNDECLARED
+    #: Quien lo pidió, tal y como el EDGE puede saberlo. Nunca se inventa una
+    #: persona: un comando de nube se identifica por su `command_id` firmado y es
+    #: la nube quien lo une a su operador en `commands`.
+    actor: str = ""
 
 
 class ActuatorAck(BaseModel):

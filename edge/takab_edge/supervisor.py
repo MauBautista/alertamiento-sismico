@@ -21,6 +21,7 @@ from pathlib import Path
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.audio import AudioNotifier
+from takab_edge.audit import ActuationLedger
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.catalog import CatalogStore
@@ -254,8 +255,28 @@ class EdgeSupervisor:
         self.buffer = RingBuffer(s.buffer)
         self.rules = RuleEngine(s.thresholds)
         self.bacnet = BacnetSimulator()
+        # [T-2.86.a · hueco `RO-4.e`] Bitácora LOCAL de actuación, con actor y causa.
+        # Es la mitad no construida de la regla de oro 4 («el proceso GPIO es mínimo
+        # y AUDITABLE»): hasta hoy el `audit_log` vivía sólo en la nube, así que el
+        # caso exacto para el que existe el gabinete —regla de oro 2, el edge opera
+        # sin nube— era el único que no dejaba constancia de quién cerró el gas.
+        #
+        # No es un `EdgeModule`: es un objeto plano sin ciclo de vida (como
+        # `SiteLocationCache`), y a propósito — un módulo que no arranca podría dejar
+        # de auditar sin que se note, y aquí la escritura tiene que estar disponible
+        # desde antes de que arranque nada.
+        #
+        # `sink=None`: la subida está DESCONECTADA hasta que exista la mitad de nube.
+        # La política IoT lista los topics uno a uno sin comodines y publicar en uno
+        # no autorizado DESCONECTA al gabinete en cada publish (visto en producción
+        # el 2026-07-12). Ver `takab_edge/audit/__init__.py` para el detalle y para
+        # lo que falta exactamente.
+        self.ledger = ActuationLedger(s, online=lambda: self.cloud.online)
         self.actuators = ActuatorManager(
-            RelayActuator(self.gpio_link), BacnetActuator(self.bacnet), s.bacnet_channels
+            RelayActuator(self.gpio_link),
+            BacnetActuator(self.bacnet),
+            s.bacnet_channels,
+            ledger=self.ledger,
         )
         self.cloud = CloudConnector(
             s,
@@ -358,7 +379,15 @@ class EdgeSupervisor:
             # T-2.67: evidencia pendiente y desenlace del respaldo (instantánea
             # EN MEMORIA del manager; el panel jamás recorre el directorio).
             backfill=self.backfill,
+            # T-2.86.a: las acciones del panel mueven relés de un edificio y hasta
+            # hoy sólo quedaban en una `deque` en RAM que un reinicio borra.
+            ledger=self.ledger,
         )
+        # [T-2.86.a] Al VOLVER el enlace, la constancia acumulada sube — y sólo lo
+        # que la nube no confirmó todavía (marca de agua durable ⇒ sin duplicar,
+        # regla de oro 3). Mismo enganche que usa la evidencia offline. Con
+        # `sink=None` es un no-op: el mecanismo está, falta el permiso de publicar.
+        self.cloud.on_online(lambda: self.ledger.drain())
 
         # [T-2.70.a·D2/P2] Si la costura es la del socket, es un módulo NO
         # crítico y arranca JUSTO DESPUÉS del dueño: los cinco consumidores

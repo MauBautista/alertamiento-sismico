@@ -26,6 +26,7 @@ import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from takab_edge.audit import cause_for_command_origin
 from takab_edge.contracts import (
     ActuatorAction,
     ActuatorChannel,
@@ -201,10 +202,18 @@ class CommandDispatcher(EdgeModule):
             return
 
         started = utcnow()
+        # [T-2.86.a · RO-4.e] La causa sale del `origin` que viaja DENTRO de la
+        # firma —nadie lo inyecta sin la clave—, así que «quórum de red» y «alguien
+        # en la consola» quedan como causas distintas en la bitácora, que es la
+        # distinción que un perito necesita. El actor es el `command_id`: el edge
+        # NO puede saber qué persona lo pulsó y no lo finge; es la nube quien une
+        # ese id con su operador en `commands`.
         command = ActuatorCommand(
             channel=channel,
             action=action,
             event_id=payload.get("event_id") or f"CMD-{command_id}",
+            cause=cause_for_command_origin(payload.get("origin")),
+            actor=f"cloud:{command_id}",
         )
         result = self._actuators.execute(command)
         latency = (utcnow() - started).total_seconds()
@@ -265,7 +274,7 @@ class CommandDispatcher(EdgeModule):
         """Corre el autodiagnóstico y ACKea con resultados. JAMÁS lanza (hilo propio)."""
         started = utcnow()
         try:
-            outcome = self._actuators.cabinet_self_test()
+            outcome = self._actuators.cabinet_self_test(actor=f"cloud:{command_id}")
         except Exception as exc:  # noqa: BLE001 — un test roto no tira el dispatcher
             log.exception("self-test lanzó excepción")
             outcome = {"ok": False, "reason": f"excepción: {exc}", "relays": {}}

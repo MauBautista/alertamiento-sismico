@@ -22,6 +22,7 @@ from typing import Protocol, runtime_checkable
 
 from takab_edge.contracts import (
     ActuatorAck,
+    ActuatorAction,
     ActuatorChannel,
     ActuatorCommand,
     utcnow,
@@ -166,10 +167,18 @@ class ActuatorManager(EdgeModule):
         relay: Actuator,
         bacnet: Actuator | None = None,
         bacnet_channels: Iterable[ActuatorChannel] = (),
+        *,
+        ledger=None,
     ) -> None:
         super().__init__()
         self._relay = relay
         self._bacnet = bacnet
+        # [T-2.86.a · RO-4.e] Bitácora local de actuación. Va aquí y no en cada
+        # llamador porque `_record` es el EMBUDO ÚNICO: `execute` y
+        # `execute_sequence` pasan los dos por él, así que no hay forma de mover un
+        # relé por esta clase sin dejar fila. `None` = sin bitácora (tests viejos y
+        # `demo/gabinete.py`), y entonces esto es un no-op silencioso.
+        self._ledger = ledger
         # La sirena/estrobo nunca van por BACnet (vida audible = relé local directo).
         self._bacnet_channels = {c for c in bacnet_channels if c not in RELAY_ONLY}
         # Ventana rodante de ACKs (evita crecimiento sin límite en un EVACUATE sostenido).
@@ -191,8 +200,18 @@ class ActuatorManager(EdgeModule):
         return self._record(command, ack)
 
     def _record(self, command: ActuatorCommand, ack: ActuatorAck) -> ActuatorAck:
-        """Anota el ACK en la ventana rodante y lo registra (éxito/fallo)."""
+        """Anota el ACK en la ventana rodante y lo registra (éxito/fallo).
+
+        [T-2.86.a] Y deja **constancia local con actor y causa**, sobreviva o no el
+        enlace: hasta aquí el ACK sólo decía QUÉ pasó, y la pregunta que hace un
+        perito es QUIÉN lo ordenó. La bitácora es informativa a propósito (misma
+        doctrina que el registro del cerrojo) y `record()` no lanza jamás, así que
+        un disco lleno no puede impedir que la sirena suene — pero el fallo se
+        declara en `ActuationLedger.state()`, que es lo que pinta el panel.
+        """
         self._acks.append(ack)
+        if self._ledger is not None:
+            self._ledger.record_ack(command, ack)
         if ack.success:
             log.info(
                 "actuador %s %s vía %s (%s)",
@@ -252,13 +271,31 @@ class ActuatorManager(EdgeModule):
                 tramos.append((driver, [command]))
         return tramos
 
-    def cabinet_self_test(self) -> dict:
+    def cabinet_self_test(self, actor: str = "") -> dict:
         """Autodiagnóstico del gabinete (T-1.59): SOLO relés locales — BACnet no
-        participa (un self-test jamás toca una pasarela de terceros)."""
+        participa (un self-test jamás toca una pasarela de terceros).
+
+        [T-2.86.a] Pulsa relés reales, así que deja fila igual que cualquier otra
+        actuación: no pasa por `_record` (no produce `ActuatorAck`) y por eso el
+        registro va explícito aquí, que es el otro embudo de esta clase.
+        """
         runner = getattr(self._relay, "cabinet_self_test", None)
         if runner is None:
-            return {"ok": False, "reason": "driver de relés sin autodiagnóstico", "relays": {}}
-        return runner()
+            outcome = {"ok": False, "reason": "driver de relés sin autodiagnóstico", "relays": {}}
+        else:
+            outcome = runner()
+        if self._ledger is not None:
+            from takab_edge.contracts import ActuationCause
+
+            self._ledger.record(
+                cause=ActuationCause.CABINET_SELF_TEST,
+                actor=actor or "cloud",
+                channel=ActuatorChannel.SYSTEM,
+                action=ActuatorAction.SELF_TEST,
+                success=bool(outcome.get("ok")),
+                detail=str(outcome.get("reason") or "self-test de relés no audibles"),
+            )
+        return outcome
 
     @property
     def last_acks(self) -> list[ActuatorAck]:

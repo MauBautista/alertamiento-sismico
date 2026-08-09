@@ -45,7 +45,7 @@ from pathlib import Path
 
 from takab_edge.catalog import DEGRADED as _CATALOG_DEGRADED
 from takab_edge.catalog import CatalogStore
-from takab_edge.contracts import utcnow
+from takab_edge.contracts import ActuatorChannel, utcnow
 from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
@@ -368,9 +368,14 @@ class LocalDashboard(EdgeModule):
         dispatch: object | None = None,
         lora: object | None = None,
         backfill: object | None = None,
+        ledger: object | None = None,
     ) -> None:
         super().__init__()
         self._link = as_link(gpio)
+        # [T-2.86.a · RO-4.e] Bitácora local de actuación: las acciones del panel
+        # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
+        # RAM (`_actions`), que un reinicio borra. Ver `_accion`.
+        self._ledger = ledger
         self._rules = rules
         self._health = health
         self._signal = signal
@@ -941,6 +946,38 @@ class LocalDashboard(EdgeModule):
         with self._actions_lock:
             self._actions.append({"at": utcnow().isoformat(), "action": action, "via": "lan"})
 
+    def _accion(self, nombre: str, **kwargs):
+        """[T-2.86.a · RO-4.e] ÚNICA puerta del panel hacia el dueño de los pines.
+
+        Existe para que la bitácora no dependa de que cada endpoint se acuerde: la
+        causa se **deriva** del nombre de la acción, que es una clave de la lista
+        blanca `GPIO_ACTIONS`, y un test exige que esa lista esté cubierta entera.
+        Una acción nueva del panel entra en el registro sola o pone el build en rojo.
+
+        El registro va DESPUÉS de mover los relés y nunca antes: el operador que
+        pulsa «probar» no puede quedarse esperando a un fsync. Y un intento FALLIDO
+        también deja fila —«lo que se intentó y no pasó» es justo lo que faltaba—,
+        pero la excepción se re-lanza igual: el panel la traduce a su código HTTP.
+        """
+        from takab_edge.audit import ACTOR_LAN, cause_for_gpio_action
+
+        exito, detalle = True, ""
+        try:
+            return self._link.action(nombre, **kwargs)
+        except Exception as exc:
+            exito, detalle = False, f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            if self._ledger is not None:
+                self._ledger.record(
+                    cause=cause_for_gpio_action(nombre),
+                    actor=ACTOR_LAN,
+                    channel=ActuatorChannel.SYSTEM,
+                    action=nombre,
+                    success=exito,
+                    detail=detalle,
+                )
+
     def status(self) -> dict:
         """Snapshot para la mini-consola LAN (los 4 estados los rotula la UI)."""
         now = utcnow()
@@ -1069,6 +1106,26 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: perfil de tonos no disponible", exc_info=True)
             return None
 
+    def audit_state(self) -> dict | None:
+        """[T-2.86.a] Salud de la bitácora local de actuación, para quien la pinte.
+
+        **Deliberadamente NO está en `status()` todavía.** El panel tiene una guarda
+        derivada (`test_local_api_panel.py`) que exige que toda clave de `status()`
+        se RENDERICE: añadirla sin su tarjeta sería una clave que el kiosco ignora en
+        silencio, que es la clase de defecto que T-2.59 ya costó. La declaración del
+        fallo existe mientras tanto por `log.error` en el propio `ActuationLedger`.
+
+        Defensiva como el resto: `None` = no se pudo leer, jamás un cero que parezca
+        «todo en orden».
+        """
+        try:
+            if self._ledger is None:
+                return None
+            return self._ledger.state()
+        except Exception:  # noqa: BLE001 — sección no-crítica del panel
+            log.warning("panel LAN: estado de la bitácora no disponible", exc_info=True)
+            return None
+
     def _audio_section(self) -> dict | None:
         """Voceo (A-6): la UI solo muestra el botón de drill si está habilitado."""
         try:
@@ -1085,13 +1142,13 @@ class LocalDashboard(EdgeModule):
 
     def silence(self) -> None:
         """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""
-        self._link.action("silence", silenced=True)
+        self._accion("silence", silenced=True)
         self._record_action("silence")
         log.warning("silencio solicitado por LAN")
 
     def run_siren_test(self) -> None:
         """Prueba de sirena por LAN (self-test acotado, no es una alerta real)."""
-        self._link.action("siren_test")
+        self._accion("siren_test")
         self._record_action("siren_test")
         log.warning("prueba de sirena solicitada por LAN")
 
@@ -1105,7 +1162,7 @@ class LocalDashboard(EdgeModule):
         el pulso dura ~1 s y la sirena sigue sonando hasta que vence el sostén.
         El resultado por relé aflora en ``status()`` para que el panel lo pinte.
         """
-        result = self._link.action("actuation_test")
+        result = self._accion("actuation_test")
         with self._actions_lock:
             self._last_actuation_test = result
         if self._lora is not None:
@@ -1127,10 +1184,10 @@ class LocalDashboard(EdgeModule):
         desarma. Sirve para probar el WR-1 sin generar ruido en producción.
         """
         if self._link.snapshot().test_mode_active:
-            self._link.action("disarm_test_mode")
+            self._accion("disarm_test_mode")
             self._record_action("test_mode_off")
         else:
-            self._link.action("arm_test_mode")
+            self._accion("arm_test_mode")
             self._record_action("test_mode_on")
 
     def reset_alert(self) -> None:
@@ -1138,7 +1195,7 @@ class LocalDashboard(EdgeModule):
         # Orden gpio→rules a propósito (falla seguro ante un disparo concurrente):
         # si un sismo vivo re-enclava entre ambas llamadas, los relés QUEDAN en
         # protección y la siguiente ventana de features re-emite el tier.
-        self._link.action("reset")
+        self._accion("reset")
         # [T-2.26] Sin esto, last_tier quedaba congelado en el tier del episodio
         # hasta la siguiente feature — con SeedLink caído, PARA SIEMPRE.
         self._rules.reset()

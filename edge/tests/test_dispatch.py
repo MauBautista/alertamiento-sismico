@@ -45,7 +45,10 @@ class _FakeActuators:
             "relays": {"gas_valve": {"pulsed": True, "readback_ok": True}},
         }
 
-    def cabinet_self_test(self) -> dict:
+    # [T-2.86.a] `actor` acompaña a la firma real de `ActuatorManager`: el self-test
+    # pulsa relés y deja fila en la bitácora local con QUIÉN lo pidió (el
+    # `command_id` firmado). Este doble sólo tiene que aceptarlo.
+    def cabinet_self_test(self, actor: str = "") -> dict:
         self.self_tests += 1
         return self.self_test_result
 
