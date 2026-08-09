@@ -88,6 +88,26 @@ variable "dump_key_prefix" {
   default     = "takab-"
 }
 
+# [T-2.73.a] Cuanto espera la huella a que el dump confirme antes de rendirse.
+#
+# Tiene que ser HOLGADAMENTE mayor que la duracion del `pg_dump` nocturno: si
+# expira antes, la huella no se escribe (fail-closed) y ese dia el verificador
+# dara INDETERMINADO. No tiene efecto sobre el `.dump`, que sube igual. La cifra
+# real de produccion se conocera al medir el RTO en `T-2.74`; hasta entonces, una
+# hora sobre una base de decenas de MiB es mas de un orden de magnitud de margen.
+variable "dump_coordination_timeout_s" {
+  description = "Segundos que la huella mantiene abierto su snapshot esperando a que el dump nocturno confirme."
+  type        = number
+  default     = 3600
+
+  validation {
+    # Un timeout corto no rompe el respaldo, pero apaga la huella en silencio: el
+    # dump seguiria subiendo y el bucket se llenaria de dias sin acreditar.
+    condition     = var.dump_coordination_timeout_s >= 600
+    error_message = "Menos de 600 s no da margen a un pg_dump real: la huella expiraria casi cada noche y el bucket acumularia dumps sin huella (INDETERMINADO) sin que nada fallara."
+  }
+}
+
 variable "pitr" {
   description = <<-EOT
     Cadena PITR: donde vive y cuanto dura. Los numeros los decide

@@ -50,7 +50,12 @@ Nada de aquí entra jamás en el camino de disparo de actuadores (regla de oro 1
 
 from __future__ import annotations
 
+import argparse
+import json
+import os
 import re
+import sys
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -226,6 +231,23 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
+def declared_roles(repo_root: Path | None = None) -> frozenset[str]:
+    """Los roles de conexión que el código declara, leídos de la migración 0001.
+
+    Vive aparte de `declared_expectations` por una razón operativa, no de estilo:
+    **la imagen de la nube co-locada lleva `api/migrations` dentro y NO lleva
+    `db/schema.sql`** (`api/Dockerfile`). `capture_baseline` corre ahí cada noche
+    (T-2.73.a) y necesita esta lista y nada más del repo; si tuviera que pasar
+    por `declared_expectations`, moriría con `FileNotFoundError` la primera
+    madrugada — y el hueco solo se vería en la ventana AWS.
+    """
+    root = repo_root or _repo_root()
+    initial = (root / "api" / "migrations" / "versions" / "0001_initial_schema.py").read_text(
+        encoding="utf-8"
+    )
+    return frozenset(re.findall(r"CREATE ROLE (\w+)", initial))
+
+
 def declared_expectations(repo_root: Path | None = None) -> Expectations:
     """Deriva las expectativas de `db/schema.sql` y de la migración inicial.
 
@@ -236,9 +258,6 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
     """
     root = repo_root or _repo_root()
     schema = (root / "db" / "schema.sql").read_text(encoding="utf-8")
-    initial = (root / "api" / "migrations" / "versions" / "0001_initial_schema.py").read_text(
-        encoding="utf-8"
-    )
 
     extensions = frozenset(re.findall(r"CREATE EXTENSION IF NOT EXISTS (\w+)", schema))
 
@@ -265,7 +284,7 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
     barrier_views = frozenset(
         re.findall(r"CREATE (?:OR REPLACE )?VIEW (\w+) WITH \(security_barrier = true\)", schema)
     )
-    roles = frozenset(re.findall(r"CREATE ROLE (\w+)", initial))
+    roles = declared_roles(root)
 
     # Políticas de TimescaleDB: el esquema las declara con su `add_*_policy` y el
     # catálogo las expone con el `proc_name` que ejecutan. La traducción es el
@@ -350,6 +369,39 @@ JOIN pg_proc p ON p.oid = t.tgfoid
 WHERE NOT t.tgisinternal AND n.nspname = 'public' AND p.proname = %s
 ORDER BY 1
 """
+
+#: `BEFORE UPDATE OR DELETE ... FOR EACH ROW`, dicho en bits de `pg_trigger.tgtype`
+#: en vez de en texto: ROW=1, BEFORE=2, DELETE=8, UPDATE=16 (`src/include/catalog/
+#: pg_trigger.h`). Es la MISMA frase que la regex de `declared_expectations` busca
+#: en `db/schema.sql`, y por eso el desacoplamiento no pierde nada:
+#: `life_checkin_arco_guard` es BEFORE UPDATE a secas y queda fuera de las dos.
+_Q_GUARD_FUNCTION = """
+SELECT DISTINCT p.proname
+FROM pg_trigger t
+JOIN pg_class c ON c.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_proc p ON p.oid = t.tgfoid
+WHERE NOT t.tgisinternal AND n.nspname = 'public'
+  AND (t.tgtype & 1) = 1 AND (t.tgtype & 2) = 2
+  AND (t.tgtype & 8) = 8 AND (t.tgtype & 16) = 16
+ORDER BY 1
+"""
+
+
+def catalog_guard_function(conn: psycopg.Connection) -> str | None:
+    """La función guarda append-only, leída del CATÁLOGO de la base que se mira.
+
+    `None` cuando no hay ningún trigger de esa forma — y `None` es la respuesta
+    correcta, no `"forbid_update_delete"`: inventar el nombre haría que la huella
+    de una base sin guardas dijera "aquí no hay tablas append-only" por la razón
+    equivocada, que es exactamente el verde mentiroso que este módulo persigue.
+
+    Se toma `[0]` del orden alfabético igual que hace `declared_expectations`, y
+    por la misma razón: si algún día hubiera dos guardas, las dos derivaciones
+    tienen que elegir la misma.
+    """
+    nombres = sorted(r[0] for r in _rows(conn, _Q_GUARD_FUNCTION))
+    return nombres[0] if nombres else None
 
 
 def _timescale_policies(conn: psycopg.Connection) -> set[tuple[str, str]]:
@@ -508,9 +560,18 @@ def capture_baseline(conn: psycopg.Connection) -> dict[str, Any]:
     compararse: el catálogo restaurado es internamente coherente y no deja hueco
     visible. `count(*)` exacto por tabla cuesta un escaneo completo — es
     deliberado: `reltuples` es una estimación y una estimación no acredita nada.
+
+    **No lee `db/schema.sql`, y eso es un requisito, no una casualidad**
+    (T-2.73.a). Quien toma esta huella todas las noches es el contenedor de la
+    nube co-locada, y su imagen no lleva el DDL dentro (`api/Dockerfile`). Una
+    huella es el retrato de lo que el origen TIENE; las expectativas —lo que el
+    esquema dice que debería tener— son cosa de `verify()`, que sí corre con el
+    repo delante. Mezclarlas acoplaba el retrato a un fichero que no está donde
+    se toma. Lo único que sigue viniendo del repo son los roles, y salen de la
+    migración 0001, que la imagen SÍ lleva.
     """
-    guard = declared_expectations().guard_function
-    append_only = {r[0] for r in _rows(conn, _Q_APPEND_ONLY, (guard,))}
+    guard = catalog_guard_function(conn)
+    append_only = {r[0] for r in _rows(conn, _Q_APPEND_ONLY, (guard,))} if guard else set()
 
     tables: dict[str, Any] = {}
     for name, owner, rls, force, policies in _rows(conn, _Q_TABLES):
@@ -570,7 +631,7 @@ def capture_baseline(conn: psycopg.Connection) -> dict[str, Any]:
         "views": views,
         "columns": _columns(conn),
         "constraints": _constraints(conn),
-        "privileges": _privileges(conn, declared_expectations().roles),
+        "privileges": _privileges(conn, declared_roles()),
         "cagg_rows": cagg_rows,
         "hypertables": hypertables,
         "continuous_aggregates": sorted(
@@ -1542,6 +1603,106 @@ def render(report: Report) -> str:
     return "\n".join(lineas)
 
 
+# --------------------------------------------------------------------------- anclaje
+# [T-2.73.a] La huella y el dump tienen que ver LA MISMA base.
+#
+# `_check_row_counts` exige igualdad EXACTA fila a fila — es lo que caza las
+# decenas de miles de filas que el procedimiento viejo perdía en silencio (§4.1
+# del runbook). Esa exactitud tiene una consecuencia que hay que respetar en el
+# otro extremo: la base de producción no está quieta. Los latidos de la flota
+# escriben cada minuto. Si la huella se toma a las 08:00:00 y el `pg_dump`
+# termina a las 08:04, el dump trae más filas que la huella y el verificador
+# declara ROJO sobre un restore perfecto.
+#
+# Aflojar la comprobación sería quitarle justo lo que la hace valer. Lo que se
+# comparte es el SNAPSHOT: aquí se abre una transacción REPEATABLE READ, se
+# exporta con `pg_export_snapshot()` y se mantiene abierta mientras
+# `pg_dump --snapshot=<id>` la consume. Coste extra sobre la base: ninguno —
+# `pg_dump` ya sostiene una transacción idéntica durante todo el volcado.
+
+#: Nombres de los dos ficheros del apretón de manos, dentro del directorio que
+#: comparten el contenedor (por bind-mount) y el script del cron.
+_COORD_SNAPSHOT = "snapshot.id"
+_COORD_DUMP_DONE = "dump.done"
+
+#: Salida propia: ni 0 (verde), ni 1 (rojo), ni 2 (indeterminado). "No hay
+#: huella" no es un veredicto sobre ninguna base.
+SALIDA_SIN_HUELLA = 3
+
+
+class AnclajeFallido(RuntimeError):
+    """No se pudo anclar la huella al dump. Entonces NO se escribe huella.
+
+    Deliberadamente asimétrico con el respaldo: el `.dump` sube igual (fail-open
+    — no se toca el mecanismo que hoy funciona) y la huella no (fail-closed).
+    Sin huella el veredicto es INDETERMINADO, que es la verdad; con una huella
+    desalineada sería ROJO, que es mentira, y un falso rojo el día del desastre
+    enseña al operador a desconfiar del verificador.
+    """
+
+
+def _escribir_atomico(destino: Path, contenido: str) -> None:
+    """Temporal en el MISMO directorio + `rename(2)`.
+
+    El `aws s3 cp` que viene detrás no sabe distinguir un JSON truncado de uno
+    entero: o sube la huella completa o no sube nada.
+    """
+    tmp = destino.with_name(f".{destino.name}.parcial")
+    tmp.write_text(contenido, encoding="utf-8")
+    os.replace(tmp, destino)
+
+
+def capture_baseline_pinned_to_dump(
+    dsn: str, coord: Path, *, timeout: float = 3600.0
+) -> dict[str, Any]:
+    """Huella del origen anclada al mismo instante que verá el `pg_dump`.
+
+    Protocolo, en dos ficheros dentro de `coord`:
+
+    1. aquí se abre la transacción y se escribe `snapshot.id`;
+    2. el script del cron lanza `pg_dump --snapshot=$(cat snapshot.id)`, sube el
+       `.dump` y sólo entonces crea `dump.done`;
+    3. al ver `dump.done` se toma la huella —dentro de la MISMA transacción, o
+       sea sobre el mismo snapshot— y se devuelve.
+
+    Si el paso 2 no llega, esto levanta `AnclajeFallido` sin escribir nada.
+    """
+    snap_path = coord / _COORD_SNAPSHOT
+    done_path = coord / _COORD_DUMP_DONE
+    if not coord.is_dir():
+        raise AnclajeFallido(f"el directorio de coordinación {coord} no existe")
+    for rancio in (snap_path, done_path):
+        if rancio.exists():
+            raise AnclajeFallido(
+                f"{rancio} ya existía: la coordinación es de una corrida anterior y la huella "
+                "quedaría anclada al dump equivocado. Usa un directorio nuevo por corrida."
+            )
+
+    with psycopg.connect(dsn) as conn:
+        # Primera sentencia de la transacción: psycopg abre el BEGIN implícito
+        # justo aquí, y `SET TRANSACTION` sólo vale antes de cualquier lectura.
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        snapshot = _scalar(conn, "SELECT pg_export_snapshot()")
+        if not snapshot:
+            raise AnclajeFallido("Postgres no devolvió ningún snapshot que exportar")
+        _escribir_atomico(snap_path, f"{snapshot}\n")
+
+        limite = time.monotonic() + timeout
+        while not done_path.exists():
+            if time.monotonic() >= limite:
+                raise AnclajeFallido(
+                    f"el dump no confirmó en {timeout:.0f} s (no apareció {done_path}). "
+                    "El respaldo puede haber subido igual; la huella NO se escribe, porque "
+                    "una huella que no corresponde a ningún dump del bucket produce un ROJO "
+                    "inexplicable el día del restore."
+                )
+            time.sleep(0.1)
+
+        huella = capture_baseline(conn)
+        conn.rollback()
+    return huella
+
+
 # --------------------------------------------------------------------------- CLI
 # Para que el §5 del runbook deje de ser SQL que un humano teclea y compara a
 # ojo, y pase a ser un comando con veredicto y código de salida:
@@ -1551,17 +1712,19 @@ def render(report: Report) -> str:
 #     uv run python -m takab_api.ops.restore_check --database takab_restore \
 #       --baseline /tmp/takab-YYYY-MM-DD.fingerprint.json
 #
-#   # y el otro lado del par: la huella que hay que guardar JUNTO al dump, para
-#   # que el día del desastre haya contra qué comparar. Hoy el cron NO la escribe;
-#   # queda recomendado en el informe de T-2.73.
-#   … --database takab --save-baseline /tmp/takab-YYYY-MM-DD.fingerprint.json
+#   # y el otro lado del par: la huella que viaja JUNTO al dump. Desde T-2.73.a
+#   # la escribe el mismo cron de las 08:00, anclada al snapshot del dump:
+#   … --database takab --save-baseline /out/huella.json --coordinate-with-dump /out
 
 
-def _cli(argv: list[str] | None = None) -> int:
-    import argparse
-    import json
-    import os
+def build_parser() -> argparse.ArgumentParser:
+    """El parser, aparte del `_cli`, para que se pueda inspeccionar sin ejecutarlo.
 
+    Lo usa la guardia que contrasta los flags que el script del cron teclea
+    contra los que este comando de verdad acepta: ese acoplamiento entre bash y
+    Python es invisible, y un flag renombrado dejaría el cron muriendo cada
+    noche contra el correo de root de un EC2, o sea contra ningún sitio.
+    """
     p = argparse.ArgumentParser(
         prog="python -m takab_api.ops.restore_check",
         description="Verifica la integridad de una base restaurada (§5 del runbook de backup).",
@@ -1569,7 +1732,30 @@ def _cli(argv: list[str] | None = None) -> int:
     p.add_argument("--database", required=True, help="base a verificar (o de la que tomar huella).")
     p.add_argument("--baseline", default=None, help="huella del ORIGEN con la que comparar.")
     p.add_argument("--save-baseline", default=None, help="escribe aquí la huella y termina.")
+    p.add_argument(
+        "--coordinate-with-dump",
+        default=None,
+        metavar="DIR",
+        help=(
+            "ancla la huella al snapshot que consumirá `pg_dump --snapshot=`. "
+            f"Escribe {_COORD_SNAPSHOT} en DIR y espera a {_COORD_DUMP_DONE}."
+        ),
+    )
+    p.add_argument(
+        "--coordination-timeout",
+        type=float,
+        default=3600.0,
+        metavar="SEGUNDOS",
+        help="cuánto esperar a que el dump confirme (por omisión 3600).",
+    )
+    return p
+
+
+def _cli(argv: list[str] | None = None) -> int:
+    p = build_parser()
     args = p.parse_args(argv)
+    if args.coordinate_with_dump and not args.save_baseline:
+        p.error("--coordinate-with-dump sólo tiene sentido junto a --save-baseline")
 
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -1577,14 +1763,31 @@ def _cli(argv: list[str] | None = None) -> int:
     dsn = psycopg.conninfo.make_conninfo(
         url.replace("postgresql+psycopg://", "postgresql://"), dbname=args.database
     )
-    with psycopg.connect(dsn) as conn:
-        if args.save_baseline:
-            huella = capture_baseline(conn)
-            Path(args.save_baseline).write_text(
-                json.dumps(huella, indent=2, ensure_ascii=False), encoding="utf-8"
+
+    if args.save_baseline:
+        destino = Path(args.save_baseline)
+        if args.coordinate_with_dump:
+            try:
+                huella = capture_baseline_pinned_to_dump(
+                    dsn, Path(args.coordinate_with_dump), timeout=args.coordination_timeout
+                )
+            except AnclajeFallido as exc:
+                print(f"HUELLA NO ESCRITA — {exc}", file=sys.stderr)
+                return SALIDA_SIN_HUELLA
+        else:
+            with psycopg.connect(dsn) as conn:
+                huella = capture_baseline(conn)
+                conn.rollback()
+            print(
+                "AVISO: huella SIN anclar a ningún dump. Sólo es comparable contra un dump "
+                "tomado sobre una base quieta (ensayo local); contra el dump de una base viva, "
+                "`row_counts` daría ROJO por la deriva. Para anclarla: --coordinate-with-dump."
             )
-            print(f"huella de {args.database} escrita en {args.save_baseline}")
-            return 0
+        _escribir_atomico(destino, json.dumps(huella, indent=2, ensure_ascii=False))
+        print(f"huella de {args.database} escrita en {destino}")
+        return 0
+
+    with psycopg.connect(dsn) as conn:
         baseline = (
             json.loads(Path(args.baseline).read_text(encoding="utf-8")) if args.baseline else None
         )

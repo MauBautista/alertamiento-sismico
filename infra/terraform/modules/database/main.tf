@@ -46,6 +46,22 @@ locals {
   # ejecutandola contra un S3 local desde la propia imagen de la DB).
   pitr_root = trimsuffix(var.pitr.prefix, "/")
 
+  # [T-2.73.a] El respaldo logico nocturno + la huella del origen. Comparte con
+  # el dump el bucket, el prefijo, la clave KMS y la region: si divergieran, la
+  # huella caeria fuera de la regla de expiracion y fuera del `s3:PutObject` del
+  # rol, y el cron moriria con AccessDenied sin que nada se pusiera rojo.
+  backup_setup_script = templatefile("${path.module}/backup_setup.sh.tpl", {
+    bucket      = var.db_backups_bucket.name
+    dump_prefix = var.dump_key_prefix
+    region      = data.aws_region.current.region
+    kms_key_arn = var.kms_key_arn
+    # El unico secreto que este camino necesita, y NO viaja aqui: solo su
+    # identificador. Lo resuelve la instancia en tiempo de ejecucion con su
+    # propio rol, igual que hace `user_data` desde el primer boot.
+    superuser_secret       = aws_secretsmanager_secret.db["superuser"].arn
+    coordination_timeout_s = var.dump_coordination_timeout_s
+  })
+
   pitr_setup_script = templatefile("${path.module}/pitr_setup.sh.tpl", {
     bucket            = var.db_backups_bucket.name
     pitr_root         = local.pitr_root
@@ -547,6 +563,55 @@ resource "aws_ssm_document" "pitr" {
 resource "aws_ssm_association" "pitr" {
   name                = aws_ssm_document.pitr.name
   association_name    = "takab-${var.env}-pitr-archivado"
+  document_version    = "$LATEST"
+  schedule_expression = "rate(1 day)"
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.db.id]
+  }
+}
+
+# --- [T-2.73.a] La huella del origen viaja junto al dump -----------------------
+#
+# El cron de las 08:00 subia el `.dump` y nada mas. Sin la huella, seis de las
+# comprobaciones mas fuertes del verificador no se pueden ejercer y el veredicto
+# es INDETERMINADO: `T-2.74` (`G-09`) saldria a medias.
+#
+# EL VEHICULO ES ESTE DOCUMENTO, NO `user_data.sh.tpl`, y la razon no es de
+# estilo. `user_data` es un atributo de `aws_instance.db`: cambiarlo hace que el
+# provider PARE Y ARRANQUE la instancia en el siguiente apply (el atributo solo se
+# puede reescribir con la maquina detenida cuando `user_data_replace_on_change`
+# esta en false, que es nuestro caso). La DB caeria en un apply que nadie
+# esperaba que la tocara. Ademas `user_data` corre UNA vez, en el primer boot, y
+# aborta si encuentra `/var/lib/takab/.provisioned`: escribir esto alli habria
+# dado un `apply complete` que no cambia nada en la maquina que existe hoy.
+#
+# Se aplica la misma latencia declarada en la asociacion del PITR: un cambio en
+# el script crea una version nueva del documento pero NO relanza la asociacion.
+# Para que surta efecto ya: `aws ssm start-associations-once --association-ids <id>`.
+resource "aws_ssm_document" "backup" {
+  name            = "takab-${var.env}-respaldo-logico"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Instala el respaldo logico nocturno de la DB de TAKAB y la huella del origen (restore_check --save-baseline), anclados al mismo snapshot y subidos al mismo prefijo S3."
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configurar_respaldo_y_huella"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand     = split("\n", local.backup_setup_script)
+      }
+    }]
+  })
+}
+
+resource "aws_ssm_association" "backup" {
+  name                = aws_ssm_document.backup.name
+  association_name    = "takab-${var.env}-respaldo-logico"
   document_version    = "$LATEST"
   schedule_expression = "rate(1 day)"
 

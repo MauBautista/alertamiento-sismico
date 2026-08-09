@@ -28,6 +28,7 @@ adjunto como `/dev/xvdf` y montado en `/data`.
 | **Backup base de la cadena PITR** | semanal | el ancla desde la que se reproduce el WAL | 14 d | `.../pitr/takab-dev-db/base/<timestamp>/` |
 | **Snapshot EBS (DLM)** | diario 03:00 UTC | instancia completa (root + datos), crash-consistent | 7 snapshots | EBS snapshots, tag `DlmBackup=true` |
 | **Dump lógico (`pg_dump -Fc`)** | diario 08:00 UTC (cron en la instancia) | la base `takab` completa, consistente (MVCC) | 60 d | `s3://takab-dev-db-backups-<ACCT>/takab-YYYY-MM-DD.dump` |
+| **Huella del origen (`restore_check --save-baseline`)** | el MISMO cron de las 08:00, anclada al mismo snapshot que el dump | contra qué comparar el restore: inventario, columnas, constraints, privilegios, propiedad, conteos | 60 d (mismo prefijo, misma regla) | `s3://takab-dev-db-backups-<ACCT>/takab-YYYY-MM-DD.fingerprint.json` |
 
 **La herramienta del PITR es `barman-cloud`, no WAL-G**, aunque el plan original decía WAL-G.
 Motivo: la imagen `timescale/timescaledb-ha:pg16` que corre en producción **ya trae barman-cloud
@@ -126,9 +127,24 @@ cd api && DATABASE_URL=postgresql+psycopg://<user>:<pass>@<host>:<port>/postgres
 **INDETERMINADO**, no verde: *un SKIP no es un PASS*. El operador que lee VERDE hace el swap, y
 lo que no se comprobó no deja de estar roto por no haberlo mirado.
 
-**Consecuencia operativa: la huella del origen tiene que viajar JUNTO al dump.** Se toma con
-`--save-baseline`. Ver el hueco declarado en §9.1 — hoy el cron todavía no la escribe, y sin ella
-un restore real solo puede acreditarse a medias.
+**Consecuencia operativa: la huella del origen viaja JUNTO al dump** (T-2.73.a). El mismo cron de
+las 08:00 la escribe con `--save-baseline` y la sube al mismo prefijo, con la misma fecha en el
+nombre: para el dump `takab-2026-08-09.dump` la huella es `takab-2026-08-09.fingerprint.json`.
+
+**Y va anclada al MISMO snapshot que el dump**, que es lo que la hace utilizable. `row_counts`
+exige igualdad exacta fila a fila —es la comprobación que caza las decenas de miles de filas
+del §4.1— y la base de producción no está quieta: los latidos de la flota escriben cada minuto.
+Una huella tomada a las 08:00:00 contra un dump que termina a las 08:04 daría **ROJO sobre un
+restore perfecto**, y un falso rojo el día del desastre enseña al operador a desconfiar del
+verificador. Por eso la huella abre una transacción `REPEATABLE READ`, exporta su snapshot con
+`pg_export_snapshot()` y `pg_dump --snapshot=<id>` lo consume. Coste extra sobre la base:
+ninguno — `pg_dump` ya sostenía una transacción idéntica durante todo el volcado.
+
+**Si algún día falta la huella de una fecha, el veredicto de ese día es INDETERMINADO y eso es
+la verdad.** El mecanismo es asimétrico a propósito: el `.dump` es *fail-open* (si la
+coordinación se rompe, el volcado sale igual, sin ancla) y la huella es *fail-closed* (si no
+queda anclada, no se sube). Una huella desalineada produciría ROJO, que sería mentira. El motivo
+concreto queda escrito en `/var/log/takab-backup.log` de la instancia.
 
 Qué mira, agrupado por lo que se pierde si no se mira:
 
@@ -345,18 +361,50 @@ al topic de on-call.
 
 ## 9. Lo que sigue faltando, con nombre
 
-### 9.1 · La huella del origen no se sube (bloquea la acreditación de G-09)
+### 9.1 · La huella del origen: CERRADO en software (T-2.73.a), pendiente de desplegar
 
-El cron de las 08:00 sube el `.dump` y nada más. **Sin la huella del origen, el verificador
-devuelve INDETERMINADO** y seis de sus comprobaciones más fuertes no se pueden ejercer — incluidas
-las que cazan columnas, constraints, privilegios y conteos.
+Ya no falta el mecanismo; falta llevarlo a la máquina. Cómo quedó:
 
-Forma exacta: que el mismo cron escriba también
-`python -m takab_api.ops.restore_check --database takab --save-baseline <fichero>` y lo suba al
-mismo prefijo. **El vehículo debe ser el documento SSM, no `user_data.sh.tpl`** — tocar el
-user_data fuerza al provider a parar y arrancar la instancia en el siguiente apply, y la DB
-caería. Hay que confirmar en la ventana que el contenedor de la nube co-locada tiene el código
-del API disponible para invocarlo. Ficha: `T-2.73.a`.
+- **Quién la escribe:** el MISMO cron de las 08:00 (`/etc/cron.d/takab-backup`), a través del
+  script `/opt/takab/bin/takab-backup.sh`. No hay una segunda entrada de cron: el script
+  *sustituye* la línea que había puesto `user_data`.
+- **El vehículo es el documento SSM `takab-dev-respaldo-logico`, con su asociación diaria**, no
+  `user_data.sh.tpl`. Tocar `user_data` cambia un atributo de `aws_instance.db` y el provider
+  responde **parando y arrancando la instancia** en el siguiente apply: la DB caería en un apply
+  que nadie esperaba que la tocara. Además `user_data` corre una sola vez, en el primer boot, y
+  aborta si encuentra `/var/lib/takab/.provisioned` — habría dado un `apply complete` que no
+  cambia nada en la máquina que existe hoy. Hay una guardia de Terraform que pone el módulo en
+  rojo si el mecanismo reaparece en `user_data.sh.tpl`
+  (`modules/database/tests/huella_del_origen.tftest.hcl`).
+- **Quién ejecuta el código:** el contenedor de la nube co-locada, con el mismo patrón que ya usa
+  el `alembic upgrade head` del despliegue —
+  `docker run --entrypoint python $TAKAB_CLOUD_IMAGE -m takab_api.ops.restore_check …`. La
+  referencia de la imagen sale de `/etc/takab/deploy.env`.
+- **Como superusuario `postgres`**, no `takab_app`: la huella tiene que ver exactamente lo mismo
+  que ve el `pg_dump`. Con RLS forzada los conteos saldrían recortados y la huella mentiría hacia
+  abajo. La contraseña se resuelve en la máquina contra Secrets Manager y vive en un env-file
+  0600 en tmpfs que muere con la corrida; nunca en la línea de comando (`ps` la delataría).
+- **Anclada al snapshot del dump** (§3), y con retención gratis: la clave comparte prefijo con la
+  del dump, así que la misma regla de expiración y el mismo `s3:PutObject` la cubren sin tocar
+  IAM ni `modules/storage`.
+
+**Lo que hacía falta en la imagen, y no estaba.** El módulo sí viaja en `takab/cloud` (`COPY
+api/src` en `api/Dockerfile`, y `psycopg[binary]` es dependencia de runtime), pero `db/schema.sql`
+**no viaja**, y `capture_baseline()` lo leía. El comando habría muerto con `FileNotFoundError` la
+primera madrugada. Se desacopló: la huella es el retrato de lo que el origen **tiene** y se toma
+del catálogo (la función guarda sale de los bits de `pg_trigger.tgtype`); las *expectativas* —lo
+que el esquema dice que debería tener— siguen siendo cosa de `verify()`, que corre con el repo
+delante. Lo único que la huella sigue leyendo del repo son los roles, y salen de la migración
+0001, que la imagen sí lleva.
+
+**Código de salida propio:** al tomar la huella, `3` significa «no se pudo anclar, así que no hay
+huella» — ni 0 (verde), ni 1 (rojo), ni 2 (indeterminado): «no hay huella» no es un veredicto
+sobre ninguna base. El `.dump` de esa noche sí está en el bucket.
+
+**Pendiente, y es lo único:** `terraform apply` del módulo + una imagen nueva de la nube. Hasta
+que la imagen desplegada acepte `--coordinate-with-dump`, el dump seguirá subiendo **sin** huella
+y el propio documento SSM lo dirá en voz alta en cada pasada (busca `AVISO: la imagen … NO
+acepta` en la salida del comando). Checklist en §9.3.
 
 ### 9.2 · Deudas menores, todas con su forma escrita
 
@@ -379,6 +427,61 @@ del API disponible para invocarlo. Ficha: `T-2.73.a`.
 - **El ensayo de restore no corre en CI.** Corre el verificador entero con sus mutaciones en cada
   PR, que es la pieza que se pudre; el ensayo en sí exige fijar `postgresql-client-16` en el job
   `api`. Está escrito en el Makefile por qué.
+- **`/var/log/takab-backup.log` no rota.** El cron del respaldo escribe ahí (antes su salida iba
+  al correo de root de un EC2 sin MTA, o sea a ningún sitio). Son unas líneas por noche, así que
+  es deuda de años, no de meses — pero está sin `logrotate`, igual que `/var/log/takab-pitr.log`.
+- **El snapshot de la huella retiene tuplas muertas mientras está abierto**, igual que el propio
+  `pg_dump` (no es coste nuevo: son dos transacciones concurrentes en vez de una). Si el script
+  del cron muriera con `SIGKILL`, el `trap` no correría y el contenedor de la huella seguiría
+  sosteniendo su snapshot hasta agotar `dump_coordination_timeout_s` (1 h). Está acotado y se
+  auto-cura; se anota para que no se investigue como un misterio si algún día se ve.
+
+### 9.3 · Puesta en marcha de la huella (para la ventana de `T-2.74`)
+
+Cinco pasos, en orden. Los tres primeros son los que dejan la huella viva; los dos últimos son
+la comprobación de que de verdad lo está.
+
+```bash
+export AWS_PROFILE=takab-dev AWS_REGION=us-east-2 ACCT=634882473845
+DB_ID=$(terraform -chdir=infra/terraform/envs/dev output -raw db_instance_id)
+
+# 1. Imagen nueva de la nube: la desplegada hoy NO conoce --coordinate-with-dump.
+#    (~40 min; renueva SSO justo antes, el token expira a mitad del build).
+make cloud-images && make cloud-deploy
+
+# 2. Terraform: crea el documento SSM `takab-dev-respaldo-logico` y su asociación.
+#    NO toca `user_data`, así que NO para la instancia. Confírmalo antes de aplicar:
+#    en el plan, `aws_instance.db` no debe aparecer ni como update ni como replace.
+terraform -chdir=infra/terraform/envs/dev plan  | grep -E 'aws_instance.db|user_data'
+terraform -chdir=infra/terraform/envs/dev apply
+
+# 3. La asociación NO se relanza sola al crearse la versión del documento: puede
+#    tardar hasta 24 h. Fuérzala (mismo paso que el PITR de T-2.72):
+aws ssm describe-instance-associations-status --instance-id "$DB_ID" \
+  --query "InstanceAssociationStatusInfos[?AssociationName=='takab-dev-respaldo-logico'].AssociationId" --output text
+aws ssm start-associations-once --association-ids <id>
+
+# 4. LA INCÓGNITA, respondida en un comando: la salida de esa pasada dice si la
+#    imagen desplegada sabe tomar la huella. Busca una de estas dos líneas:
+#      OK: la imagen <...> sabe tomar la huella anclada
+#      AVISO: la imagen <...> NO acepta --coordinate-with-dump
+aws ssm list-command-invocations --instance-id "$DB_ID" --details \
+  --query 'CommandInvocations[0].CommandPlugins[0].Output' --output text | tail -20
+
+# 5. No esperes a las 08:00: dispara el respaldo a mano. Es ASÍNCRONO — espera a
+#    que la invocación pase a Success antes de mirar el bucket.
+CMD=$(aws ssm send-command --instance-ids "$DB_ID" --document-name AWS-RunShellScript \
+  --parameters 'commands=["/opt/takab/bin/takab-backup.sh"]' \
+  --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id "$CMD" --instance-id "$DB_ID" \
+  --query '{estado:Status,salida:StandardOutputContent}' --output text
+aws s3 ls "s3://takab-dev-db-backups-$ACCT/takab-$(date +%F)"
+#   -> deben aparecer LOS DOS: .dump y .fingerprint.json
+```
+
+Y el cierre del círculo, que es lo que acredita `R-1` del §8: descargar los dos objetos y correr
+el §3 con `--baseline`. Si el veredicto sale **INDETERMINADO**, no marques nada: significa que la
+huella no estaba o no se pudo leer, y `/var/log/takab-backup.log` de la instancia dice por qué.
 
 ---
 
