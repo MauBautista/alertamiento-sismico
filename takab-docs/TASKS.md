@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **234** · `[x]` **159** · `[~]` **6** · `[ ]` **69**
+**Conteo de tareas:** total **236** · `[x]` **164** · `[~]` **7** · `[ ]` **65**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5191,17 +5191,17 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   API sigue aislado — pero porque `takab_app` no es dueño de nada ni tiene BYPASSRLS, no por el
   FORCE. Confundir la conclusión con su causa es como esa frase acaba en un runbook.
 
-### [ ] T-2.73.a · La huella del origen viaja junto al dump — `SOFTWARE`
+### [x] T-2.73.a · La huella del origen viaja junto al dump — `SOFTWARE`
 - **Componente:** infra + db · **Depende de:** T-2.73 · **BLOQUEA `T-2.74`.**
 - El cron de las 08:00 sube el `.dump` y nada más. **Sin la huella del origen el verificador
   devuelve INDETERMINADO** y sus seis comprobaciones más fuertes (inventario, columnas,
   constraints, privilegios, propiedad, conteos) no se pueden ejercer. Intentar acreditar `G-09`
   sin esto es gastar la ventana AWS para obtener medio veredicto.
 - **Criterios de aceptación:**
-  - [ ] El mismo cron escribe `restore_check --save-baseline` y lo sube al mismo prefijo S3.
-  - [ ] El vehículo es el **documento SSM**, no `user_data.sh.tpl`: tocar el user_data fuerza al
+  - [x] El mismo cron escribe `restore_check --save-baseline` y lo sube al mismo prefijo S3.
+  - [x] El vehículo es el **documento SSM**, no `user_data.sh.tpl`: tocar el user_data fuerza al
         provider a parar y arrancar la instancia en el siguiente apply, y la DB caería.
-  - [ ] Confirmado que el contenedor de la nube co-locada tiene el código del API para
+  - [x] Confirmado que el contenedor de la nube co-locada tiene el código del API para
         invocarlo (es la incógnita real de esta ficha).
 
 ### [ ] T-2.72.a · Comprobar que el WAL llegó de verdad a S3 — `SOFTWARE`
@@ -5850,7 +5850,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > `StateFrame` para confirmar que es el único, y que en móvil **no existe** la combinación
 > equivalente. Es `T-2.79.d`, y no bloquea porque no miente: no dice nada.
 
-### [ ] T-2.79.a · El opt-in de WhatsApp sigue saliendo del `rule_set`, no del consentimiento — `SOFTWARE`
+### [x] T-2.79.a · El opt-in de WhatsApp sigue saliendo del `rule_set`, no del consentimiento — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-2.79 · **Detectada por:** auditoría de la Fase 2.8
   (2026-08-08)
 - **Existe porque una referencia era falsa.** Tres sitios del código
@@ -5874,10 +5874,10 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   Hoy la constancia que autoriza ese envío vive en un `rule_set` editable, no en el registro
   append-only que sabe además decir que el consentimiento se **retiró**.
 - **Criterios de aceptación:**
-  - [ ] El destino de WhatsApp toma `opt_in.at` del motor de consentimiento, no del `rule_set`.
-  - [ ] Un consentimiento **retirado** deja de autorizar el envío, sin tocar el provider.
-  - [ ] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
-  - [ ] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
+  - [x] El destino de WhatsApp toma `opt_in.at` del motor de consentimiento, no del `rule_set`.
+  - [x] Un consentimiento **retirado** deja de autorizar el envío, sin tocar el provider.
+  - [x] Test: retirar el consentimiento ⇒ el envío se niega, y lo deja **escrito**.
+  - [x] Ninguna referencia del código apunta ya a una ficha que no contiene el trabajo.
 
 ### [x] T-2.79.b · El stack de onboarding no tiene guarda de sesión — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Detectada al arreglar el cerrojo de privacidad**
@@ -6167,7 +6167,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   - [ ] La regla de retención de nombre y teléfono cuelga de **ese** reloj, no de `updated_at`.
   - [ ] `SIN_RELOJ` queda vacío para estas dos columnas, y el test recíproco lo exige.
 
-### [ ] T-2.81.c · `rule_evaluations` conserva el `DELETE` que sus once hermanas no tienen — `SOFTWARE`
+### [x] T-2.81.c · `rule_evaluations` conserva el `DELETE` que sus once hermanas no tienen — `SOFTWARE`
 - **Componente:** db · **Depende de:** — · **Detectada por el guard de T-2.81**, que es justo
   para lo que se escribió
 - **Medido:** de las doce tablas con trigger append-only, `takab_app` conserva el privilegio
@@ -6178,9 +6178,9 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   precondición del job de retención al derivar del catálogo vivo qué mecanismo niega el `DELETE`
   en cada tabla. Una guarda derivada delata lo que una lista escrita a mano habría dado por bueno.
 - **Criterios de aceptación:**
-  - [ ] `REVOKE DELETE ON rule_evaluations FROM takab_app`, en migración idempotente y con su
+  - [x] `REVOKE DELETE ON rule_evaluations FROM takab_app`, en migración idempotente y con su
         espejo en `db/schema.sql`.
-  - [ ] Un test que exija **las dos** capas —privilegio ausente **y** trigger activo— en las doce
+  - [x] Un test que exija **las dos** capas —privilegio ausente **y** trigger activo— en las doce
         tablas, derivado del catálogo y no de una lista.
 
 ### [x] T-2.82 · Carga de `compliance_labels` por tenant — `SOFTWARE` · COMPLETA (2026-08-08)
@@ -6359,16 +6359,16 @@ sería documentar intenciones.
         confirmados; bajar el umbral por accidente tiene que ponerse rojo.
   - [x] Derivado, no enumerado: un publicador nuevo entra solo en la comprobación.
 
-### [ ] T-2.84.b · MFA no tiene una sola línea de prueba en ninguna capa — `SOFTWARE`
+### [x] T-2.84.b · MFA no tiene una sola línea de prueba en ninguna capa — `SOFTWARE`
 - **Componente:** api + infra · **Depende de:** — · **Hueco `RO-8.c` de la matriz** (2026-08-08)
 - **Regla de oro 8, sobre la superficie que abre válvulas de gas, dice «sin excepción».** No hay
   comprobación de `acr`, `amr` ni `auth_time` en ninguna capa; el router lo documenta como
   delegado al pool (`mfa_configuration = "ON"`), y el módulo `identity` es **el único de los
   cuatro sin `.tftest.hcl`**: una deriva a `OPTIONAL` no la vería nadie.
 - **Criterios de aceptación:**
-  - [ ] Un test rechaza un token sin la constancia de MFA en el camino de comando de actuadores.
-  - [ ] `identity` gana su `.tftest.hcl` y `mfa_configuration` queda anclado.
-  - [ ] La matriz pasa `RO-8.c` a `CUBIERTO` sola, sin editarla a mano.
+  - [x] Un test rechaza un token sin la constancia de MFA en el camino de comando de actuadores.
+  - [x] `identity` gana su `.tftest.hcl` y `mfa_configuration` queda anclado.
+  - [x] La matriz pasa `RO-8.c` a `CUBIERTO` sola, sin editarla a mano.
 
 ### [x] T-2.84.c · Nada obliga al componente número 28 a manejar los cuatro estados — `SOFTWARE`
 - **Componente:** web · **Depende de:** — · **Hueco `RO-7.a` de la matriz** (2026-08-08) ·
@@ -6382,6 +6382,51 @@ sería documentar intenciones.
         cuatro estados, rojo.
   - [x] Las excepciones legítimas se **declaran** con su razón, no se omiten.
   - [x] Se resuelve junto con la precedencia que decida `T-2.79.d`.
+
+### [x] T-2.84.d · El censo de multi-tenancy eximía justo a la tabla infractora — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** db + api (tests) · **Depende de:** — · **Hueco `RO-5.a` de la matriz**
+- **Medido:** nadie derivaba del catálogo que toda tabla de negocio llevara `tenant_id`. El único
+  cruce que existía corría **de las tablas que tienen la columna hacia su RLS**, así que una tabla
+  nueva **sin** la columna **se auto-eximía**: no la tiene ⇒ no entra al censo ⇒ no se le exige
+  aislamiento.
+- **Criterios de aceptación:**
+  - [x] Censo derivado del catálogo vivo (`api/tests/test_censo_multitenancy.py`).
+  - [x] Exenciones declaradas con su razón y comparadas por **igualdad**.
+  - [x] **No vacuo:** una tabla de negocio de mentira sin `tenant_id` ni RLS pone el build en rojo
+        **nombrándola**, y las dos mitades disparan por separado. Creada, medida y borrada.
+
+> **El criterio de «tabla de negocio» es INCLUSIVO a propósito, y la razón está medida.** Se
+> probaron primero los criterios sustantivos —«tiene FK a `tenants`», «la crea el migrador», «tiene
+> política de escritura»— y **todos reintroducen el defecto**: cualquier criterio que se apoye en
+> una propiedad que la tabla infractora **no tiene** la exime justo por lo que la hace sospechosa.
+> El único criterio seguro es el que una tabla nueva **no puede dejar de cumplir: existir**. La
+> única resta es estructural y no falsificable por accidente —ser miembro de una extensión—, y hoy
+> se lleva exactamente `spatial_ref_sys`.
+>
+> **Tres formas de cumplir, no una**, porque TimescaleDB no admite RLS con caggs: RLS propia, o
+> vista `security_barrier` **con la base revocada al rol de la API y anclada en una tabla con
+> RLS**. Las tres condiciones juntas o no cuenta — y no es sello de goma: un test devuelve el
+> `SELECT` sobre la base dentro de una transacción y `waveform_features_1s` cae a «sin
+> aislamiento», nombrada.
+>
+> **Resultado sobre el esquema real: 43 tablas de negocio, NINGUNA desprotegida.** 7 sin
+> `tenant_id`, todas declaradas: seis son diseño (plataforma, dato regional compartido, grants que
+> tienen **dos** tenants y una columna tendría que elegir uno y mentir sobre el otro) y **una es
+> deuda** — ver `T-2.84.e`.
+
+### [ ] T-2.84.e · `site_ground_refs` aísla de verdad, pero no como la regla lo pide — `SOFTWARE`
+- **Componente:** db · **Depende de:** T-2.84.d · **Hallazgo del censo** (2026-08-09)
+- Es dato de un cliente —el punto cero del calibrador, `ATTEN-LAW`— y **le falta la columna
+  `tenant_id`** que la regla de oro 5 pide literalmente.
+- **No es un agujero, y por eso no bloquea:** su aislamiento es real y está verificado cruzando
+  tenants en base nueva (el tenant B ve **0** filas, el dueño ve **1**), por el `EXISTS` contra
+  `sites`. Es una lectura **no literal** de la regla, no una excepción a ella.
+- **Por qué merece cerrarse igual:** el censo la lleva hoy en la lista de exenciones declaradas, y
+  cada exención es una línea que alguien tiene que volver a justificar. Una menos es una menos.
+- **Criterios de aceptación:**
+  - [ ] Migración con **backfill desde `sites`** y las dos políticas correspondientes.
+  - [ ] La entrada desaparece de `SIN_TENANT_ID`, y el test lo **exige** (se compara por igualdad).
+  - [ ] El cruce de tenants sigue dando 0/1, ahora por la columna y no por el `EXISTS`.
 
 ### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
@@ -6477,7 +6522,7 @@ sería documentar intenciones.
 > Y **«el gabinete corre el proceso mínimo y auditable» quedó como HUECO, no como capacidad**:
 > el valor de fábrica es el contrario.
 
-### [ ] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
+### [~] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
 - **Componente:** edge + api · **Depende de:** — · **Hueco `RO-4.e` de la matriz** · **El de más
   peso contractual de los 18, y no tenía ficha** (2026-08-08)
 - **Verificado de primera mano:** `ActuatorAck` (`edge/takab_edge/contracts.py:196`) lleva canal,

@@ -733,15 +733,30 @@ _RO = (
                 "RO-4.e",
                 "«Auditable»: toda acción de actuador queda registrada en el edge con quién "
                 "la ordenó y cuándo.",
-                (),
-                hueco=(
-                    "No hay bitácora de actuación en el gabinete. `ActuatorAck` "
-                    "(`edge/takab_edge/contracts.py`) lleva canal, acción, `event_id`, "
-                    "éxito y latencia — **no lleva actor**, y `GpioController.set_relay` no "
-                    "emite ni una línea de registro. El único `audit_log` vive en la nube "
-                    "(`api/src/takab_api/audit.py`), o sea que **una actuación ejecutada con "
-                    "el enlace caído —el caso para el que existe el gabinete— no deja rastro "
-                    "auditable en ninguna parte.** Es la mitad no construida de la regla 4."
+                (
+                    Evidencia(
+                        "edge/tests/test_actuation_ledger.py",
+                        "test_una_actuacion_con_la_nube_caida_deja_constancia_que_nombra_la_causa",
+                        "La bitácora vive en `ActuatorManager._record`, por donde pasan "
+                        "`execute` y `execute_sequence`: el embudo es estructural, no "
+                        "disciplinario. Las causas se DERIVAN de `AlertSource` y de la lista "
+                        "blanca `GPIO_ACTIONS`, con mapeos totales — quitar una acción del "
+                        "mapeo pone el build en rojo nombrándola.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_actuation_ledger.py",
+                        "test_con_el_registro_averiado_la_sirena_suena_igual",
+                        "Ni el constructor ni `record()` lanzan jamás: con el directorio "
+                        "imposible, el WR-1 energiza sirena y cierra gas igual. Pero no calla "
+                        "— cuenta los fallos y los grita.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_actuation_ledger.py",
+                        "test_sin_cloud_spool_dir_el_directorio_sigue_siendo_EL_MISMO",
+                        "No cae en la trampa de T-2.67.b: el directorio se deriva, nunca es "
+                        "un `mkdtemp` — que es por lo que la evidencia se evapora en cada "
+                        "arranque del Pi real. **Reserva declarada:** la SUBIDA a la nube está construida y probada pero su `sink` va a `None` a propósito —publicar en un topic no autorizado desconecta al gabinete en cada publish, visto en producción el 2026-07-12—, así que la copia permanente sigue pendiente de las cuatro piezas de nube que ficha `T-2.86.a`. Y el reflejo SASMEX→sirena no pasa por aquí: vive dentro de `gpio` y no cruza la costura (gate #6).",
+                    ),
                 ),
             ),
             Afirmacion(
@@ -770,15 +785,32 @@ _RO = (
                 "RO-5.a",
                 "Toda tabla de negocio lleva `tenant_id`, comprobado DERIVANDO la lista del "
                 "catálogo y no de una lista escrita a mano.",
-                (),
-                hueco=(
-                    "El único cruce contra el catálogo corre en la dirección opuesta —las "
-                    "tablas que YA tienen `tenant_id` deben tener RLS (`RO-5.b`)—, así que "
-                    "**una tabla de negocio nueva que nazca sin `tenant_id` no es vista por "
-                    "nadie**: no tiene la columna, luego no entra en el censo, luego no se le "
-                    "exige RLS. El punto ciego se cierra solo. La lista más parecida a un "
-                    "censo, `api/tests/test_timescale_jobs.py::test_business_tables_have_force`, "
-                    "es una tupla de cuatro nombres escrita a mano."
+                (
+                    Evidencia(
+                        "api/tests/test_censo_multitenancy.py",
+                        "test_toda_tabla_de_negocio_lleva_tenant_id",
+                        "El criterio de «tabla de negocio» es INCLUSIVO a propósito —toda "
+                        "relación ordinaria de `public` que no sea miembro de una extensión—, "
+                        "y la razón está medida: los criterios sustantivos («tiene FK a "
+                        "`tenants`», «la crea el migrador») reintroducen el defecto, porque "
+                        "eximen a la tabla infractora justo por lo que la hace sospechosa. El "
+                        "único criterio seguro es el que una tabla nueva no puede dejar de "
+                        "cumplir: existir.",
+                    ),
+                    Evidencia(
+                        "api/tests/test_censo_multitenancy.py",
+                        "test_toda_tabla_de_negocio_esta_aislada",
+                        "Tres formas de cumplir, no una: RLS propia, o vista "
+                        "`security_barrier` con la base REVOCADA al rol de la API y anclada "
+                        "en una tabla con RLS. Las tres condiciones juntas o no cuenta.",
+                    ),
+                    Evidencia(
+                        "api/tests/test_censo_multitenancy.py",
+                        "test_una_vista_barrera_sobre_una_base_legible_no_aisla_nada",
+                        "No es sello de goma: devolver el `SELECT` sobre la base dentro de "
+                        "una transacción tira `waveform_features_1s` a «sin aislamiento», "
+                        "nombrada.",
+                    ),
                 ),
             ),
             Afirmacion(
@@ -1062,19 +1094,43 @@ _RO = (
             Afirmacion(
                 "RO-8.c",
                 "El endpoint de comando exige MFA.",
-                (),
-                hueco=(
-                    "**Cero cobertura en cualquier capa.** No hay comprobación de claim "
-                    "`acr`/`amr`/`auth_time` en la petición: el docstring de "
-                    "`api/src/takab_api/routers/commands.py` documenta el control como "
-                    '*delegado* al pool de Cognito (`mfa_configuration = "ON"`, '
-                    "`infra/terraform/modules/identity/main.tf`). Eso es una **suposición, "
-                    "no un control**: el módulo `identity` es el único de los cuatro sin "
-                    "`.tftest.hcl`, así que una deriva de la configuración del pool a "
-                    "`OPTIONAL` no la detecta nadie, y un token emitido por cualquier camino "
-                    "que no pase por TOTP entra sin que la aplicación lo note. Es el hueco más "
-                    "grave de la matriz: la regla de oro 8 dice «sin excepción» sobre la "
-                    "superficie que abre válvulas de gas."
+                (
+                    Evidencia(
+                        "api/tests/api/test_command_mfa.py",
+                        "test_el_camino_de_comando_rechaza_por_falta_de_constancia_de_MFA",
+                        "**El ID token de Cognito NO lleva `amr` ni `acr`** —son claims "
+                        "reservados que ni un pre-token-generation Lambda puede poner, "
+                        "verificado contra la documentación de AWS—, así que un test sobre "
+                        "`amr` habría sido ficción. Lo único que el token certifica es la "
+                        "PROCEDENCIA, firmada; y el escenario de «dos pools» es HOY: "
+                        "principal `ON`, ocupantes `OPTIONAL`.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_mfa.py",
+                        "test_un_amr_forjado_no_compra_la_constancia_de_MFA",
+                        "Un `amr`/`acr` escrito a mano no compra acceso: la constancia no se "
+                        "lee de claims que el emisor no emite.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_mfa.py",
+                        "test_el_token_real_de_cognito_sin_amr_ni_acr_sigue_comandando",
+                        "Guarda anti-teatro: el token REAL —sin `amr` ni `acr`— sí comanda.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_mfa.py",
+                        "test_el_camino_de_vida_del_ocupante_no_queda_exigido_de_MFA",
+                        "El alcance está acotado: el quórum de pánico del `occupant` sigue "
+                        "disparando la sirena. Exigir MFA ahí rompería el camino de vida, que "
+                        "es lo contrario de lo que la regla persigue.",
+                    ),
+                    Evidencia(
+                        "api/tests/api/test_command_mfa.py",
+                        "test_todo_handler_que_firma_un_comando_declara_su_postura_de_MFA",
+                        "Censo AST por igualdad: todo handler que llame a "
+                        "`issue_signed_command` lleva guarda o está declarado. La guarda va "
+                        "DEBAJO de la de rol — compuesta al revés, un rol sin acciones de "
+                        "comando se cae por el rol y la guarda no corre nunca.",
+                    ),
                 ),
             ),
             Afirmacion(

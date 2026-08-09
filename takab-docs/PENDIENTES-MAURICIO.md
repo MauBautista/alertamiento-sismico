@@ -126,8 +126,23 @@ corrido**. El occupant necesita código de enrolamiento.
 
 ### 2.7 · [`T-2.90`](TASKS.md) · e2e contra el entorno desplegado
 ### 2.8 · [`T-2.74`](TASKS.md) · `G-09` · restore real con RTO medido
-> **No entres a esta ventana sin `T-2.73.a`** (la huella del origen viaja junto al dump). Y
-> recuerda: **un SKIP no es un PASS** — el checklist de restore salía verde perdiendo datos.
+> **DESBLOQUEADA el 2026-08-09**: `T-2.73.a` está cerrada en software y el checklist ejecutable
+> vive en el **§9.3 del runbook de backup**, con los comandos completos. En orden:
+>
+> 1. `make cloud-images && make cloud-deploy` — **la imagen desplegada hoy no conoce el flag
+>    nuevo**. Renueva el SSO justo antes: el build tarda ~40 min y el token expira a mitad.
+> 2. `terraform apply` del env dev. **Mira el plan primero**: `aws_instance.db` **no** debe
+>    aparecer ni como update ni como replace. Si aparece, para — significa que algo se movió al
+>    `user_data` y eso **tira la base**.
+> 3. `aws ssm start-associations-once` sobre la asociación nueva: no se relanza sola y puede
+>    tardar 24 h.
+> 4. **Lee la salida de esa pasada.** Dice `OK: la imagen … sabe tomar la huella anclada` o
+>    `AVISO: … NO acepta …`. **Ése es el criterio 3 de `T-2.73.a`, respondido con un comando** —
+>    en vez de descubrirlo a mitad de la ventana.
+> 5. Dispara `/opt/takab/bin/takab-backup.sh` a mano y comprueba que en S3 están **los dos**
+>    objetos del día (`.dump` **y** `.fingerprint.json`).
+>
+> Y recuerda: **un SKIP no es un PASS** — el checklist de restore salía verde perdiendo datos.
 
 ### 2.9 · [`T-2.78`](TASKS.md) · SES fuera de sandbox + cadena on-call
 > **Bloqueado por algo que no es un trámite: no hay dominio.** Sin dominio no hay DKIM/SPF.
