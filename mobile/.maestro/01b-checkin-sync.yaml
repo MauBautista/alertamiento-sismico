@@ -11,10 +11,6 @@
 # segundo. Es la regla de oro 7 aplicada al dato que dice si una persona está
 # viva.
 appId: com.takab.ailert
-env:
-  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
-  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
-  SITE_CODE: ${SITE_CODE}
 ---
 - launchApp:
     clearState: true

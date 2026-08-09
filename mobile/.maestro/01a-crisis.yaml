@@ -14,10 +14,6 @@
 # ejecuta algo a mano SIN QUE EL ARCHIVO LO DIGA es un flujo que miente. Ahora
 # cada mitad es verde por sí sola y declara qué necesita antes.
 appId: com.takab.ailert
-env:
-  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
-  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
-  SITE_CODE: ${SITE_CODE}
 ---
 - launchApp:
     clearState: true

@@ -1,9 +1,6 @@
 # E2E · Offline-first (spec §4.2): captura + formulario en MODO AVIÓN → sync
 # automática al reconectar, con estados visibles en cada paso.
 appId: com.takab.ailert
-env:
-  TACTICO_EMAIL: ${TACTICO_EMAIL}
-  TACTICO_PASSWORD: ${TACTICO_PASSWORD}
 ---
 - launchApp:
     clearState: true

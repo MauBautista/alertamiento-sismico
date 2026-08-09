@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **240** · `[x]` **168** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **241** · `[x]` **169** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6620,6 +6620,34 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.103 · Tras enrolarse, el vigilante de crisis se quedaba ciego — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile · **Depende de:** — · **Origen:** la primera corrida del E2E `01a` en
+  un Pixel 8 Pro, con un incidente REAL abierto por el gabinete
+- **El defecto:** `useWatchedSiteId()` guardaba el sitio en un `useState` por instancia y solo
+  releía SecureStore cuando cambiaban `status` o `me`. **Enrolarse no toca ninguno de los dos**,
+  así que `setWatchedSite()` escribía el disco y ningún componente ya montado se enteraba.
+- **Por qué importa, y no es una molestia de UI:** `CrisisWatcher` se monta en el layout **raíz**,
+  antes del onboarding. En una instalación nueva resuelve `siteId = null` (SecureStore vacío) y
+  **se queda así toda la sesión**. Sin sitio no se consulta `mobile-state`; sin fase no hay toma
+  de pantalla de crisis. Un ocupante que se enrola y sufre un sismo **antes de reiniciar la app**
+  no recibe la instrucción de evacuar. Y esa es, en todo edificio nuevo, la primera sesión de
+  todo el mundo.
+- **Medido, no supuesto (2026-08-09):** con el servidor devolviendo `phase: "alert_active"` e
+  `evac_policy: "evacuate"` para ese mismo ocupante, la app mostraba **SEGURO · Monitoreo
+  sísmico activo**. Un `force-stop` + arranque, sin borrar estado, pintaba de inmediato
+  `ALERTA SÍSMICA SASMEX · EVACÚE AHORA · ZONA PB-A · T+391m10s`. La toma funcionaba; lo que no
+  llegaba era el sitio.
+- **El arreglo:** el sitio vigilado pasa a un store observable (zustand, el mismo patrón que
+  `session.store`), y `setWatchedSite` **avisa** además de persistir. El disco sigue siendo la
+  persistencia; lo que faltaba era la propagación. Cerrar sesión lo suelta, para que la sesión
+  siguiente no herede el edificio de la anterior.
+- **Criterios de aceptación:**
+  - [x] Un consumidor montado ANTES del enrolamiento ve el sitio al vincular
+        (`mySite.test.tsx`). Verificado en las dos direcciones: revertir la propagación pone el
+        test en rojo.
+  - [x] `signOut()` suelta el sitio.
+  - [x] Acreditado en device: el E2E `01a` pinta la toma de crisis sin reiniciar la app.
 
 ### [x] T-2.102 · Los cinco flujos E2E no podían correr, y no era la app — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile/e2e · **Depende de:** — · **Origen:** la primera corrida REAL de la

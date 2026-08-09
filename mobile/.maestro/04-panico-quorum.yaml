@@ -5,10 +5,6 @@
 # NO necesita incidente activo, y por eso es el primero de la corrida: es el
 # único que se puede acreditar sin conducir el staging.
 appId: com.takab.ailert
-env:
-  OCCUPANT_EMAIL: ${OCCUPANT_EMAIL}
-  OCCUPANT_PASSWORD: ${OCCUPANT_PASSWORD}
-  SITE_CODE: ${SITE_CODE}
 ---
 - launchApp:
     clearState: true
