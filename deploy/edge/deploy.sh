@@ -700,6 +700,14 @@ DUENO_RANCIO=0
 CAMBIOS_DEL_DUENO=""
 if [ "$PROPIEDAD" = con_dueno ]; then
   INICIO_DUENO=0
+  # ¿LLEGAMOS A MEDIR el arranque, o sólo no pudimos? Sin esta distinción, un
+  # `/proc/<pid>/stat` ilegible (contenedor con hidepid, kernel endurecido) dejaba
+  # INICIO_DUENO=0, y 0 es "antes" que cualquier swap: el script pasaba a AFIRMAR
+  # "arrancó ANTES del swap", que es un hecho que no había medido. El veredicto
+  # rojo es correcto en los dos casos —fail-closed—, pero la razón que se le da al
+  # operador no puede ser inventada: mandarlo a una ventana de mantenimiento a
+  # ciclar gas y retenedores por un dato que nadie leyó es caro y es mentira.
+  ARRANQUE_MEDIDO=0
   if [ -r "/proc/${DUENO_PID}/stat" ]; then
     ARRANQUE_CRUDO="$(cat "/proc/${DUENO_PID}/stat" 2>/dev/null || true)"
     # El `comm` del campo 2 puede llevar espacios y paréntesis: se corta por el
@@ -719,10 +727,14 @@ if [ "$PROPIEDAD" = con_dueno ]; then
     case "$HZ" in "" | 0 | *[!0-9]*) HZ=100 ;; esac
     if [ -n "$TICKS" ] && [ -n "$BOOT" ]; then
       INICIO_DUENO=$((BOOT + TICKS / HZ))
+      ARRANQUE_MEDIDO=1
     fi
   fi
 
-  if [ "$INICIO_DUENO" -ge "$MARCA_SWAP" ]; then
+  if [ "$ARRANQUE_MEDIDO" != 1 ]; then
+    DUENO_RANCIO=1
+    CAMBIOS_DEL_DUENO="(no se pudo LEER el arranque del dueño en /proc/${DUENO_PID}/stat)"
+  elif [ "$INICIO_DUENO" -ge "$MARCA_SWAP" ]; then
     : # arrancó DESPUÉS del swap: corre lo que acabamos de poner
   elif [ "$HAY_INSTANTANEA" != 1 ]; then
     DUENO_RANCIO=1
@@ -768,9 +780,20 @@ print("DUENO-CAMBIO " + " ".join(sorted(cambiados)) if cambiados else "DUENO-IGU
 fi
 
 if [ "$DUENO_RANCIO" = 1 ]; then
-  echo "✗ DESPLIEGUE NO VERIFICADO: el DUEÑO DE LOS PINES corre CÓDIGO ANTERIOR." >&2
-  echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}), que arrancó" >&2
-  echo "  ANTES del swap de este despliegue y cuyo código SÍ cambió:" >&2
+  if [ "${ARRANQUE_MEDIDO:-0}" = 1 ]; then
+    echo "✗ DESPLIEGUE NO VERIFICADO: el DUEÑO DE LOS PINES corre CÓDIGO ANTERIOR." >&2
+    echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}), que arrancó" >&2
+    echo "  ANTES del swap de este despliegue y cuyo código SÍ cambió:" >&2
+  else
+    # Sin medición NO se afirma cuándo arrancó ni que su código cambiara: sólo
+    # que no se pudo comprobar. El desenlace es el mismo —rojo— y el operador
+    # sigue teniendo que ir a la ventana de mantenimiento; lo que cambia es que
+    # ya no se le da como hecho algo que nadie leyó.
+    echo "✗ DESPLIEGUE NO VERIFICADO: no consta que el DUEÑO DE LOS PINES corra" >&2
+    echo "  el código que acabamos de desplegar." >&2
+    echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}) y NO SE PUDO" >&2
+    echo "  COMPROBAR que ejecute lo recién desplegado:" >&2
+  fi
   echo "    ${CAMBIOS_DEL_DUENO}" >&2
   echo "" >&2
   echo "  LO QUE ESTO ES Y LO QUE NO ES:" >&2

@@ -251,6 +251,14 @@ CLOUD_TAG  ?= $(shell git rev-parse --short HEAD)
 #   docker run --privileged --rm tonistiigi/binfmt --install arm64
 cloud-images:
 	@set -e; \
+	if ! ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -qiE 'aarch64|arm64'; then \
+		echo "ERROR: no hay interprete binfmt para arm64 en este equipo." >&2; \
+		echo "       El build cruzado moriria dentro del contenedor con un" >&2; \
+		echo "       'exec /bin/sh: exec format error' que no dice esto." >&2; \
+		echo "       Se pierde en CADA reinicio del equipo; hay que reinstalarlo:" >&2; \
+		echo "         docker run --privileged --rm tonistiigi/binfmt --install arm64" >&2; \
+		exit 1; \
+	fi; \
 	ACC=$$(AWS_PROFILE=$(AWS_PROFILE) aws sts get-caller-identity --query Account --output text); \
 	REG="$$ACC.dkr.ecr.$(AWS_REGION).amazonaws.com"; \
 	AWS_PROFILE=$(AWS_PROFILE) aws ecr get-login-password --region $(AWS_REGION) \

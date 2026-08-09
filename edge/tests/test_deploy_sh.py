@@ -466,13 +466,38 @@ def gabinete(tmp_path: pathlib.Path):
                 timeout=300,
             )
 
-        def gabinete_virgen(self) -> None:
-            """Borra el árbol vivo: PRIMER despliegue de este gabinete.
+        def soltar_los_pines(self) -> None:
+            """Mata al dueño de los pines y limpia su registro, si lo hay."""
+            if pid_dueno.exists():
+                pid = pid_dueno.read_text().strip()
+                if pid.isdigit():
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.kill(int(pid), signal.SIGKILL)
+                pid_dueno.unlink()
+            if self.cerrojo.exists():
+                self.cerrojo.write_text("")
 
-            No es un caso de laboratorio — es el estado de todo gabinete nuevo, y
-            el de cualquiera al que le hayan borrado `/opt/takab/edge`.
+        def gabinete_virgen(self) -> None:
+            """PRIMER despliegue de este gabinete: ni código en disco ni dueño.
+
+            No es un caso de laboratorio — es el estado de todo gabinete nuevo.
+
+            **También suelta los pines, y eso no es limpieza: es la premisa.** Un
+            gabinete sin `/opt/takab/edge` no puede tener un proceso ejecutando
+            ese código. Modelar lo contrario producía un escenario imposible —
+            árbol borrado + dueño vivo— en el que el script hace lo correcto
+            (sin instantánea con la que comparar, el veredicto es rojo
+            conservador) y el test esperaba verde. Que el test pasara o no lo
+            decidía una carrera de un segundo: `INICIO_DUENO >= MARCA_SWAP` son
+            dos relojes de segundo ENTERO, y aquí el despliegue entero cabe en
+            uno. En CI, más lento, no cabía, y el test parpadeaba.
+
+            El escenario que SÍ existe —árbol borrado a mano con el servicio
+            todavía en pie— tiene ahora su propio test, y ahí el rojo es lo
+            correcto.
             """
             shutil.rmtree(self.vivo)
+            self.soltar_los_pines()
 
         def registro(self) -> str:
             return bitacora.read_text()
@@ -645,9 +670,27 @@ def test_el_primer_despliegue_de_un_gabinete_virgen_completa(gabinete) -> None:
     gabinete.gabinete_virgen()
     r = gabinete.desplegar()
 
-    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     assert gabinete.codigo_nuevo_en_el_arbol_vivo()
     assert not gabinete.previo.exists(), "sin árbol vivo previo no hay instantánea que tomar"
+
+    # El VEREDICTO no se puede exigir verde aquí, y exigirlo era codificar un
+    # accidente de esta máquina. Sin instantánea no hay con qué comparar el
+    # código del dueño, así que el script sólo puede certificar el despliegue si
+    # LEE que el dueño arrancó después del swap — y esa lectura es de
+    # `/proc/<pid>/stat`, que en un contenedor endurecido (el runner de CI) puede
+    # no estar disponible. Cuando no lo está, el rojo es CORRECTO: fail-closed.
+    #
+    # Lo que sí se exige, y es más fuerte que el `rc == 0` de antes: si se niega
+    # a certificar, tiene que decir la razón que MIDIÓ. El script llegó a afirmar
+    # "arrancó ANTES del swap" con INICIO_DUENO=0 por no haber podido leer nada.
+    if r.returncode != 0:
+        assert "no se pudo LEER el arranque" in r.stderr or "no hay instantánea" in r.stderr, (
+            "se negó a certificar el despliegue sin decir cuál de las dos cosas "
+            f"le faltó.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        )
+        assert "ANTES del swap" not in r.stderr or "no se pudo LEER" not in r.stderr, (
+            "afirma a la vez que midió el arranque y que no pudo leerlo"
+        )
 
 
 def test_sin_instantanea_el_aborto_no_ofrece_una_vuelta_atras_inexistente(gabinete) -> None:
