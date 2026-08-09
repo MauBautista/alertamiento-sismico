@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **237** · `[x]` **164** · `[~]` **9** · `[ ]` **64**
+**Conteo de tareas:** total **237** · `[x]` **165** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4264,7 +4264,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         así que un job periódico llenaría la bitácora de ruido).
   - [ ] Si no: el docstring deja de prometer una periodicidad que nadie va a construir.
 
-### [ ] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE`
+### [x] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** edge + aprovisionamiento · **Origen:** auditoría del bloqueante de T-2.67
 - **El hecho, medido:** `provision_gateway.sh` **no escribe `TAKAB_EDGE_CLOUD_SPOOL_DIR`**, así
   que en el Pi real `cloud_spool_dir=""` y `_tmp_spool()` hace **`mkdtemp` nuevo en cada
@@ -4275,10 +4275,21 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   procesos y corridas**. Si el directorio no existe al arrancar, cualquier usuario puede crearlo
   primero y quedarse de dueño; el `mkdir(exist_ok=True)` del servicio lo acepta.
 - **Criterios de aceptación:**
-  - [ ] Ruta durable por defecto, escrita por el aprovisionamiento, con permisos propios.
-  - [ ] **Migración de los pendientes existentes** del Pi vivo — cambiar la ruta sin moverlos
-        abandonaría evidencia real.
-  - [ ] Test que demuestre que la cola sobrevive a un reinicio del proceso.
+  - [x] Ruta durable por defecto (`/var/lib/takab/spool`, `SPOOL_DIR=` la cambia), escrita por
+        el aprovisionamiento en el bloque GESTIONADO, con `install -d -m 0700` para el
+        directorio y su hermano de pendientes. Eso cierra también el agravante: con la ruta
+        cayendo a `/tmp`, cualquier usuario podía crear el directorio primero y quedarse de
+        dueño, y el `mkdir(exist_ok=True)` del servicio lo aceptaba.
+  - [x] **Migración de los pendientes existentes:** si el gabinete ya declara OTRA ruta, el
+        aprovisionamiento **aborta** y da los `mv` exactos, en vez de moverla y dejar la
+        evidencia huérfana en la ruta vieja. Es la única clave gestionada que no puede
+        imponerse sola — las demás son identidad y credenciales, y ahí pisar es lo que se
+        quiere. Verificado en los tres casos: gabinete nuevo, ruta distinta, ruta ya correcta.
+  - [x] Test derivado (`test_el_aprovisionamiento_escribe_la_ruta_DURABLE_de_la_cola`): rojo si
+        alguien quita el `printf` del bloque gestionado.
+- **Nota de campo (2026-08-09):** `gw-dev-0001` **ya tenía la clave puesta a mano**
+  (`/var/lib/takab/spool`, con su `backfill-pending` hermano). Por eso el defecto no se veía en
+  el único gabinete que miramos: el que nacía roto era el gabinete SIGUIENTE.
 
 ### [~] T-2.67.c · 20 evidencias atascadas: **eran DOS fallos, no uno** — `SOFTWARE`
 - **Componente:** edge · **Origen:** la card de T-2.67 contra el gabinete VIVO

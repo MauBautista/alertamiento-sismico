@@ -927,6 +927,49 @@ def test_ninguna_unidad_TOLERA_arrancar_sin_la_identidad_del_gabinete(unidad: st
     )
 
 
+def _claves_gestionadas() -> set[str]:
+    """Claves `TAKAB_EDGE_*` que el aprovisionamiento ESCRIBE de verdad.
+
+    Sólo cuentan los `printf` cuyo destino es `edge.env.managed`, que es el
+    bloque que `merge_env.py` aplica sobre el archivo del gabinete. Un `echo`
+    informativo que mencione la clave NO es escribirla — y sin este recorte el
+    extractor se daba por satisfecho con el mensaje final del script (medido:
+    borrar el `printf` dejaba los 92 tests en verde).
+    """
+    escritas: set[str] = set()
+    for formato in re.findall(
+        r"printf '([^']*)'[^\n]*(?:\\\n[^\n]*)*edge\.env\.managed", _PROVISION.read_text()
+    ):
+        escritas |= set(re.findall(r"(TAKAB_EDGE_[A-Z0-9_]+)=", formato))
+    return escritas
+
+
+def test_el_aprovisionamiento_escribe_la_ruta_DURABLE_de_la_cola() -> None:
+    """[T-2.67.b] Sin esta clave, la cola «durable» muere en cada reinicio.
+
+    `cloud_spool_dir` vale `""` por defecto —y así debe seguir, porque es lo que
+    deja correr la suite y el portátil sin tocar `/var/lib`—, pero entonces
+    `_tmp_spool()` y `_default_pending_dir()` hacen un **`mkdtemp` NUEVO en cada
+    arranque**: el spool a la nube y las evidencias pendientes se evaporan al
+    reiniciar el gabinete. Roza la regla de oro 3, y es el hueco **H-1** del
+    manual de operación, ese que hoy obliga a decirle al cliente «mientras el
+    panel diga COLA NO DURABLE, no reinicies el gabinete».
+
+    El gabinete de referencia lo tiene puesto **a mano**: por eso el defecto no
+    se veía en el único Pi que miramos. Un gabinete nuevo aprovisionado hoy
+    nacería sin él.
+
+    Se escribe desde el aprovisionamiento y no como default del código porque es
+    una decisión de INSTALACIÓN (qué disco, qué punto de montaje), y porque el
+    default de `Settings` lo heredarían también los tests y el portátil.
+    """
+    assert "TAKAB_EDGE_CLOUD_SPOOL_DIR" in _claves_gestionadas(), (
+        "el aprovisionamiento no escribe TAKAB_EDGE_CLOUD_SPOOL_DIR: el gabinete "
+        "nace con la cola en un tempdir y pierde spool y evidencia en cada "
+        "reinicio, en silencio"
+    )
+
+
 def test_lo_que_el_despliegue_LEE_del_edge_env_alguien_sabe_ESCRIBIRLO() -> None:
     """[T-2.70.a·D3·B2] `grep -rn "GPIO_OWNER" deploy/` no devolvía nada, y
     tampoco lo escribía nadie.
@@ -949,17 +992,7 @@ def test_lo_que_el_despliegue_LEE_del_edge_env_alguien_sabe_ESCRIBIRLO() -> None
         "revisa cómo decide a qué unidad habilitar"
     )
 
-    # Y las que el aprovisionamiento ESCRIBE de verdad: sólo cuentan los `printf`
-    # cuyo destino es `edge.env.managed`, que es el bloque que `merge_env.py`
-    # aplica sobre el archivo del gabinete. Un `echo` informativo que mencione la
-    # clave NO es escribirla — y sin este recorte el test se daba por satisfecho
-    # con el mensaje final del script (medido: borrar el `printf` dejaba los 92
-    # tests en verde).
-    escritas: set[str] = set()
-    for formato in re.findall(
-        r"printf '([^']*)'[^\n]*(?:\\\n[^\n]*)*edge\.env\.managed", _PROVISION.read_text()
-    ):
-        escritas |= set(re.findall(r"(TAKAB_EDGE_[A-Z0-9_]+)=", formato))
+    escritas = _claves_gestionadas()
     assert "TAKAB_EDGE_GATEWAY_ID" in escritas, (
         "el extractor de claves gestionadas no encontró ni la identidad del "
         f"gabinete: se quedó con {sorted(escritas)} y estaría aprobando por vacío"
