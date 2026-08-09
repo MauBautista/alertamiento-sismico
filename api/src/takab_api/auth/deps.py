@@ -25,7 +25,12 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.jwks import JWKSProvider, select_jwks, select_jwks_occupants
 from takab_api.auth.scope import ConsoleScope, console_scope
-from takab_api.auth.tokens import AuthError, decode_verify_any
+from takab_api.auth.tokens import (
+    POOL_OCUPANTES,
+    POOL_PRINCIPAL,
+    AuthError,
+    decode_verify_any,
+)
 from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.settings import Settings
 
@@ -79,10 +84,13 @@ def get_claims(request: Request) -> Claims:
         )
     try:
         verified, pool = decode_verify_any(token.strip(), _settings(), _jwks(), _jwks_occupants())
-        claims = Claims.from_verified(verified)
-        if pool == "occupants" and claims.role != "occupant":
+        # [T-2.84.b] La procedencia entra en el contexto de seguridad, no se
+        # descarta aquí: el pool es quien porta la política de MFA y el camino de
+        # comando de actuadores la exige (`auth/mfa.py`, regla de oro 8).
+        claims = Claims.from_verified(verified, pool=pool)
+        if pool == POOL_OCUPANTES and claims.role != "occupant":
             raise AuthError("el pool de ocupantes solo emite occupant")
-        if pool == "main" and claims.role == "occupant" and _jwks_occupants() is not None:
+        if pool == POOL_PRINCIPAL and claims.role == "occupant" and _jwks_occupants() is not None:
             raise AuthError("occupant debe autenticarse en el pool de ocupantes")
         return claims
     except AuthError as exc:
@@ -91,11 +99,20 @@ def get_claims(request: Request) -> Claims:
         ) from exc
 
 
-def require_roles(*roles: str) -> Callable[[Claims], Claims]:
-    """Devuelve una dependencia que exige ``claims.role`` ∈ ``roles`` (o 403)."""
+def require_roles(
+    *roles: str, inner: Callable[..., Claims] = get_claims
+) -> Callable[[Claims], Claims]:
+    """Devuelve una dependencia que exige ``claims.role`` ∈ ``roles`` (o 403).
+
+    ``inner`` permite anteponer otra guarda sobre el mismo ``Claims`` sin duplicar
+    la resolución del token (FastAPI cachea ``get_claims`` por request). Lo usa el
+    camino de comando de actuadores para exigir la constancia de MFA **antes** que
+    el rol: la fuerza de la autenticación es una propiedad de la credencial y no
+    puede quedar condicionada al catálogo de roles (T-2.84.b, ``auth/mfa.py``).
+    """
     allowed = frozenset(roles)
 
-    def _dep(claims: Claims = Depends(get_claims)) -> Claims:
+    def _dep(claims: Claims = Depends(inner)) -> Claims:
         if claims.role not in allowed:
             raise HTTPException(status_code=403, detail="rol sin acceso a este recurso")
         return claims

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from takab_api.auth.tokens import AuthError
+from takab_api.auth.tokens import POOL_PRINCIPAL, AuthError
 
 _SURFACES = frozenset({"web", "mobile", "both"})
 
@@ -54,9 +54,16 @@ class Claims:
     site_scope: frozenset[str] | _AllSites
     zone_id: str
     surface: str
+    #: [T-2.84.b · `RO-8.c`] Pool de Cognito que EMITIÓ el token, tal como lo
+    #: resuelve ``tokens.decode_verify_any`` a partir del ``iss`` verificado. Es
+    #: parte del contexto de seguridad porque **el pool es quien porta la política
+    #: de MFA**: el ID token no trae ``amr`` ni ``acr`` (ver ``auth/mfa.py`` §1),
+    #: así que la procedencia es lo único que la API puede exigir. Por defecto el
+    #: pool principal — es lo que verifica el camino single-issuer (``ws.py``).
+    pool: str = POOL_PRINCIPAL
 
     @classmethod
-    def from_verified(cls, claims: dict[str, Any]) -> Claims:
+    def from_verified(cls, claims: dict[str, Any], *, pool: str = POOL_PRINCIPAL) -> Claims:
         groups = tuple(claims.get("cognito:groups") or ())
         role = claims.get("custom:role") or ""
         if role not in groups:
@@ -79,6 +86,7 @@ class Claims:
             site_scope=_parse_site_scope(claims.get("custom:site_scope")),
             zone_id=claims.get("custom:zone_id") or "",
             surface=surface,
+            pool=pool,
         )
 
 

@@ -16,6 +16,14 @@ from takab_api.auth.jwks import JWKSProvider
 # Único algoritmo aceptado: rechazamos 'none'/'HS*' antes de decodificar.
 _ALG = "RS256"
 
+# Etiquetas de PROCEDENCIA que devuelve ``decode_verify_any``. No son cosmética:
+# el pool es quien porta la política de MFA (el principal está en
+# ``mfa_configuration = "ON"``, el de ocupantes en ``"OPTIONAL"`` a propósito), y
+# el ID token de Cognito no trae ``amr`` ni ``acr`` con los que distinguirlo de
+# otra forma. Ver ``auth/mfa.py`` §1-§2 y T-2.84.b.
+POOL_PRINCIPAL = "main"
+POOL_OCUPANTES = "occupants"
+
 
 class AuthError(Exception):
     """Fallo de autenticación. ``status`` = HTTP, ``reason`` = causa legible."""
@@ -119,5 +127,5 @@ def decode_verify_any(
                 audience=_parse_aud(settings.auth_occupants_audience),
                 jwks=jwks_occupants,
             )
-            return claims, "occupants"
-    return decode_verify(token, settings, jwks_main), "main"
+            return claims, POOL_OCUPANTES
+    return decode_verify(token, settings, jwks_main), POOL_PRINCIPAL

@@ -240,6 +240,17 @@ jobs:
       # solo test, así que la corrección se podía borrar entera y CI seguía verde.
       - name: Test de la retención de respaldos (plan-only, sin AWS)
         run: terraform -chdir=infra/terraform/modules/storage init -backend=false && terraform -chdir=infra/terraform/modules/storage test
+      # [T-2.84.b] El pool que exige el segundo factor. La regla de oro 8 pide MFA
+      # "sin excepción" sobre la superficie que abre válvulas de gas, y el ID token
+      # de Cognito NO lleva `amr` ni `acr` (son claims reservados que ni un Lambda
+      # propio puede poner), así que lo único que la API puede exigir es la
+      # PROCEDENCIA del token. Eso convierte la configuración del pool en la mitad
+      # del control — y `identity` era el único de los cuatro módulos sin test: una
+      # deriva a OPTIONAL no la veía nadie. Este paso corre porque, sin él, la
+      # matriz acreditaría el .tftest.hcl como cobertura bloqueante mientras CI
+      # jamás lo invoca: el falso verde de T-2.63, otra vez.
+      - name: Test del pool que exige el segundo factor (plan-only, sin AWS)
+        run: terraform -chdir=infra/terraform/modules/identity init -backend=false && terraform -chdir=infra/terraform/modules/identity test
       # Re-aprovisionar un gabinete NO puede borrarle la configuración. Sin este test
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)

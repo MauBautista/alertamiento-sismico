@@ -23,6 +23,7 @@ TF_DATABASE := infra/terraform/modules/database
 # coste — el delete marker esconde el objeto al restaurador aunque los bytes
 # sigan ahí. La corrección se podía borrar entera sin que nada se pusiera rojo.
 TF_STORAGE := infra/terraform/modules/storage
+TF_IDENTITY := infra/terraform/modules/identity
 
 install:
 	cd $(API_DIR) && python -m pip install -e ".[dev]"
@@ -178,6 +179,7 @@ test: test-db
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_DATABASE) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_STORAGE) && terraform init -backend=false -input=false >/dev/null && terraform test
+	cd $(TF_IDENTITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh

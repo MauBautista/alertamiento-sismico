@@ -2,8 +2,14 @@
 
 Superficie MÁS sensible del sistema (regla de oro 8 / RBAC §4.3). No negociable:
 1. **Firmado**: HMAC byte-idéntico al framing del edge (vectores compartidos).
-2. **MFA**: garantizado a nivel de pool Cognito (``mfa=ON`` solo-TOTP, gate #7
-   ratificado en T-1.18) — todo ID token de rol web implica TOTP superado.
+2. **MFA**: exigido POR PROCEDENCIA — ``require_mfa`` (``auth/mfa.py``, T-2.84.b)
+   rechaza todo token que no venga de un pool con ``mfa_configuration = "ON"``.
+   Hasta T-2.84.b esto era una nota que decía «garantizado a nivel de pool… todo
+   ID token de rol web implica TOTP superado», y era falso por dos motivos: el ID
+   token de Cognito **no lleva ``amr`` ni ``acr``**, así que nadie lo comprobaba; y
+   AWS documenta que el PRIMER inicio de sesión de un usuario nuevo emite tokens
+   aunque el pool exija MFA. Ver ``auth/mfa.py`` §1-§4 para lo que se cubre y lo
+   que no.
 3. **Rate-limit** por usuario+sitio Y por sitio (ventana deslizante en DB).
 4. **Nonce** UNIQUE en emisión (+ nonce un-solo-uso en el edge, T-1.12).
 5. **ACK de ejecución obligatorio**: el edge responde ``command_ack`` (la
@@ -28,8 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.deps import get_session, require_roles
+from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import ROLE_ACTION_MATRIX, allowed_actions, roles_with_action
+from takab_api.auth.mfa import require_mfa
 from takab_api.commands.intent import (
     canonical_intent,
     intent_sha256,
@@ -84,7 +91,17 @@ COMMAND_ROLES: tuple[str, ...] = tuple(
     )
 )
 
-_require_command = require_roles(*COMMAND_ROLES)
+#: Guarda de LECTURA: sólo el rol. Listar los comandos de un sitio no mueve nada,
+#: y la regla de oro 8 habla de la superficie de ACTUACIÓN — extenderle el MFA a
+#: una consulta sería prohibir de más sin ganar nada.
+_require_command_role = require_roles(*COMMAND_ROLES)
+
+#: Guarda de EMISIÓN: constancia de MFA **y luego** rol (regla de oro 8, `RO-8.c`).
+#: El orden es la mitad del control: si el rol se mirara primero, un rol sin
+#: acciones de comando se caería ahí y la guarda de MFA no llegaría a correr nunca
+#: — el rechazo seguiría siendo un accidente del catálogo de roles, que es el
+#: defecto que `RO-8.c` describe. Ver `auth/mfa.py`.
+_require_command = require_roles(*COMMAND_ROLES, inner=require_mfa(get_claims))
 
 # [T-2.09] Acción de matriz exigida por comando en la ruta táctica (RBAC §4):
 # activar = deslizar-para-activar individual; desactivar = retirada de la
@@ -185,8 +202,9 @@ async def issue_command(
     audit_meta = None
     nonce_override = None
     # Prueba de identidad detrás del intento: la sesión SIEMPRE (el JWT ya validó
-    # contra Cognito, MFA a nivel de pool); el DISPOSITIVO solo tras verificar la
-    # firma de la intención, más abajo.
+    # contra Cognito y `require_mfa` ya exigió que venga de un pool con MFA ON —
+    # T-2.84.b); el DISPOSITIVO solo tras verificar la firma de la intención, más
+    # abajo.
     actor_proof = PROOF_SESSION
     if tactical:
         intent = body.intent
@@ -318,7 +336,7 @@ async def issue_command_nonce(
 @router.get("/sites/{site_id}/commands", response_model=CommandList)
 async def list_commands(
     site_id: UUID,
-    claims: Claims = Depends(_require_command),
+    claims: Claims = Depends(_require_command_role),
     conn: AsyncConnection = Depends(get_session),
 ) -> CommandList:
     """Comandos recientes del sitio (RLS decide visibilidad; 404 si no visible).
@@ -341,6 +359,15 @@ async def list_commands(
 
 
 _PANIC_ROLES: tuple[str, ...] = roles_with_action("panic_vote")
+
+# [T-2.84.b · `RO-8.c`] La ÚNICA excepción declarada al MFA en esta superficie, y
+# va sin `require_mfa` a propósito: el votante es un `occupant` del pool con
+# `mfa_configuration = "OPTIONAL"` (decisión #7), o sea que puede legítimamente no
+# tener TOTP. Exigirle segundo factor a quien pide auxilio con el edificio
+# temblando invertiría el sentido de la regla de oro 8. Queda ACOTADA por otros
+# tres controles —quórum de 2 votantes DISTINTOS en ventana, geofence y
+# rate-limit por usuario— y por el hecho de que el comando emitido es siempre
+# `siren/activate`, cableado abajo: este camino no puede tocar gas ni ascensores.
 _require_panic = require_roles(*_PANIC_ROLES)
 
 
