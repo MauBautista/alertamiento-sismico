@@ -69,10 +69,22 @@ export default function QuorumNodes({
         )}
       </div>
 
+      {/* [T-2.84.c] Era un `<div className="soc-stateframe" data-state="empty">`
+          copiado a mano: mismas clases, mismo atributo, precedencia propia. Una
+          copia del marco es una precedencia paralela que `T-2.79.d` no podría
+          cambiar de una vez, y el censo derivado la caza (`serverDataCensus.test.ts`
+          exige que sólo `StateFrame.tsx` materialice `data-state`). */}
       {eventState === "absent" ? (
-        <div className="soc-stateframe soc-stateframe--status" data-state="empty">
-          <span>INCIDENTE SIN EVENTO SÍSMICO ASOCIADO</span>
-        </div>
+        <StateFrame
+          label="QUÓRUM"
+          loading={false}
+          error={null}
+          empty
+          emptyText="INCIDENTE SIN EVENTO SÍSMICO ASOCIADO"
+          staleSince={null}
+        >
+          {null}
+        </StateFrame>
       ) : (
         <StateFrame
           label="QUÓRUM"
