@@ -192,6 +192,21 @@ jobs:
       - name: Tests (jest)
         run: npm test
 
+  # [T-2.86.c · hueco RO-6.a] La regla de oro 6 ("nada de secretos hardcodeados")
+  # era la ÚNICA de las once sin un solo test, paso de CI ni pre-commit: se
+  # sostenía en que nadie se olvidara. Va en su PROPIO job, no como un paso más
+  # del job `infra`, por dos razones: aparece con nombre propio en la lista de
+  # checks del PR (que es lo que se marca como required en la protección de rama)
+  # y no se queda esperando a que terraform descargue providers. Sin dependencias:
+  # git + el python3 del runner, cero red.
+  secretos:
+    name: secretos · barrido de la regla de oro 6
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Barrido de secretos (árbol completo + batería de mutaciones)
+        run: bash infra/scripts/tests/test_secret_scan.sh
+
   infra:
     name: infra · terraform fmt + validate + test
     runs-on: ubuntu-latest
