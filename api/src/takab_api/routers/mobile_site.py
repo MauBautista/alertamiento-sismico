@@ -27,6 +27,8 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
+from takab_api.commands.alarma_inmueble import OrdenSirena, fase_del_sitio, suena_la_alarma
+from takab_api.commands.quorum_actuation import QUORUM_ACTOR_UUID
 from takab_api.compliance import mobile_projection, parse_document
 from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.queries import mobile as q
@@ -37,6 +39,7 @@ from takab_api.schemas.mobile import (
     DirectoryEntryOut,
     EnrollmentCodeIn,
     EnrollmentCodeOut,
+    MobileBuildingAlarmOut,
     MobileDrillOut,
     MobileIncidentOut,
     MobileReentryOut,
@@ -119,6 +122,18 @@ async def _site_health(
     )
 
 
+def _orden_de_sirena(row: Any) -> OrdenSirena | None:
+    """Fila de ``q.SIREN_ORDER`` → la orden que juzga ``suena_la_alarma``."""
+    if row is None:
+        return None
+    return OrdenSirena(
+        action=row.action,
+        issued_at=row.issued_at,
+        relays_state=row.relays_state,
+        gateway_age_s=row.gateway_age_s,
+    )
+
+
 def _asset_out(row: Any, settings: Settings) -> SiteAssetOut:
     """Fila → asset con URL presignada (o None si es textual/sin bucket)."""
     url: str | None = None
@@ -196,6 +211,29 @@ async def mobile_state(
         else:
             phase = "alert_active"
 
+    # [T-2.106] ALARMA DEL INMUEBLE. El quórum de pánico emite un `siren/activate`
+    # firmado y NO crea incidente, así que hasta aquí no llegaba nada: el edificio
+    # sonaba y el teléfono del ocupante no decía por qué. Es superficie NUEVA, no
+    # una regresión. La derivación entera está documentada en `MobileStateOut`;
+    # la regla vive en `commands/alarma_inmueble.py`, pura y default-deny.
+    #
+    # Se consulta SIEMPRE (no solo cuando no hay sismo) porque el coste es una
+    # fila por índice existente y así la precedencia se decide en UN sitio, con
+    # los dos hechos delante, en vez de repartirse en dos ramas del router.
+    alarma_desde = suena_la_alarma(
+        _orden_de_sirena(
+            (
+                await conn.execute(
+                    q.SIREN_ORDER, {"site": str(site_id), "actor_sistema": QUORUM_ACTOR_UUID}
+                )
+            ).first()
+        ),
+        ahora=datetime.now(tz=UTC),
+        vigencia_s=settings.building_alarm_max_s,
+        sin_enlace_s=settings.sin_enlace_min * 60.0,
+    )
+    phase = fase_del_sitio(phase, alarma_desde)
+
     my_zone: MobileZoneOut | None = None
     assignment = await q.my_assignment(conn, claims.sub, site_id)
     if assignment is not None and assignment.zone_id is not None:
@@ -243,6 +281,13 @@ async def mobile_state(
             last_note=last_row.note if last_row else None,
         ),
         site_health=await _site_health(conn, site_id, settings),
+        # [T-2.106] Solo con la fase puesta: si un sismo ganó la precedencia, el
+        # hecho de la alarma NO viaja. Devolver los dos sería pedirle al cliente
+        # que decida cuál pinta — misma disciplina que T-2.105 con el incidente
+        # que no autoriza (el teléfono jamás decide fases, spec móvil §4.1).
+        building_alarm=(
+            MobileBuildingAlarmOut(since=alarma_desde) if phase == "building_alarm" else None
+        ),
     )
 
 

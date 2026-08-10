@@ -256,6 +256,37 @@ CONSUME_PANIC_VOTES = text(
     "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
 )
 
+# --- [T-2.106] alarma del inmueble: la última orden EJECUTADA sobre la sirena ----------
+
+# La señal que sostiene `phase="building_alarm"`. Tres filtros, cada uno cargado:
+#
+# · `status = 'acked'` — el ACK DE EJECUCIÓN (regla de oro 8). Es lo único que
+#   dice que la orden llegó al relé. Se aplica en las DOS direcciones para que
+#   mande "lo último que TOCÓ el relé", no "lo último que alguien pidió".
+# · `issued_by <> :actor_sistema` — el burst del cuórum sísmico también emite
+#   `siren/activate`, y ése NO es una activación manual: llega a la app por su
+#   incidente, como `alert_active`. Sin este filtro, un sismo confirmado se
+#   anunciaría además como alarma del inmueble.
+# · `channel = 'siren'` — el self_test va por `system` y los drills también
+#   (`drill_start`/`drill_stop` con `channel='system'`), así que ninguno entra.
+#
+# El LATERAL trae el último latido DE ESE gabinete —no del sitio— porque la
+# corroboración tiene que ser del que ejecutó: en un edificio de dos gabinetes,
+# que a uno no le lean los relés no desmiente lo que el otro confirmó.
+# Índice: `idx_commands_site (site_id, issued_at DESC)` ya existe.
+SIREN_ORDER = text(
+    "SELECT c.action, c.issued_at, h.relays_state, "
+    "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS gateway_age_s "
+    "FROM commands c "
+    "LEFT JOIN LATERAL ("
+    "  SELECT dh.ts, dh.relays_state FROM device_health dh "
+    "  WHERE dh.gateway_id = c.gateway_id ORDER BY dh.ts DESC LIMIT 1"
+    ") h ON true "
+    "WHERE c.site_id = CAST(:site AS uuid) AND c.channel = 'siren' "
+    "AND c.status = 'acked' AND c.issued_by <> CAST(:actor_sistema AS uuid) "
+    "ORDER BY c.issued_at DESC LIMIT 1"
+)
+
 # --- salud del sitio + directorio (T-2.07 · 1.1/1.7) -----------------------------------
 
 # Último heartbeat por gabinete ACTIVO del sitio (patrón LATERAL de fleet.py);

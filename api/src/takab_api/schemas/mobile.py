@@ -102,7 +102,11 @@ class EnrollmentCodeOut(BaseModel):
 
 # --- mobile-state (spec §4.1/§5) ----------------------------------------------
 
-Phase = Literal["idle", "alert_active", "shaking_concluded", "reentry_approved"]
+#: [T-2.106] ``building_alarm`` es fase PROPIA y no un booleano suelto a
+#: propósito: el teléfono jamás decide fases (spec móvil §4.1), y un `Literal`
+#: nuevo obliga al `switch` de la app a declarar el caso en vez de inferirlo del
+#: `trigger`. Su lugar en la precedencia lo fija ``commands/alarma_inmueble.py``.
+Phase = Literal["idle", "alert_active", "shaking_concluded", "reentry_approved", "building_alarm"]
 
 
 class MobileIncidentOut(BaseModel):
@@ -198,6 +202,22 @@ class DirectoryEntryOut(BaseModel):
     phone: str | None
 
 
+class MobileBuildingAlarmOut(BaseModel):
+    """[T-2.106] La alarma del inmueble que está sonando AHORA (fase
+    ``building_alarm``). Sale del ack de ejecución de un ``siren/activate`` que
+    ordenó una persona — no de un sismo.
+
+    Viaja SOLO cuando ``phase == "building_alarm"``, por la misma disciplina con
+    la que T-2.105 esconde el incidente que no autoriza: exponer los dos hechos
+    a la vez sería pedirle al cliente que decida cuál pinta.
+    """
+
+    #: ``commands.issued_at`` de la orden EJECUTADA. La app lo pinta como HORA DE
+    #: RELOJ, jamás como cronómetro T+: el T+ es de la toma de crisis sísmica
+    #: (§2.1-A) y esto no es un sismo.
+    since: datetime
+
+
 class MobileStateOut(BaseModel):
     """Estado consolidado por sitio para la app (spec §5).
 
@@ -218,6 +238,37 @@ class MobileStateOut(BaseModel):
       muestra check-in o bloqueo según su propio check-in)
     - dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →
       ``reentry_approved`` (hasta que el incidente cierre → idle)
+    - **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una
+      persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación
+      sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su
+      diseño— y la app lo anuncia SIN instrucción de evacuación sísmica y SIN el
+      contador T+ de sismo. Existe porque el quórum de pánico emite un
+      ``siren/activate`` firmado y **no crea incidente**, así que hasta hoy el
+      edificio sonaba y el teléfono del ocupante no decía nada.
+
+      · **De dónde sale la verdad de «está sonando»:** del ACK DE EJECUCIÓN del
+        gabinete (``commands.status = 'acked'`` sobre ``siren/activate``), que es
+        el ack que exige la regla de oro 8. Un comando ``pending`` se publicó y
+        nadie confirmó nada; pintarlo como sirena sonando sería la regla de oro 7
+        al revés. Se excluye el actor sistema del cuórum sísmico: esa actuación
+        llega a la app por su incidente, como ``alert_active``.
+      · **Se corrobora contra el gabinete que la ejecutó:** si lleva más de
+        ``sin_enlace_min`` sin latir, o si su ``device_health.relays_state`` dice
+        ``unreadable`` —*«no pude preguntar quién gobierna los pines»*, T-2.70.a—
+        la app NO dice que suena. La nube no persiste el censo de relés canal a
+        canal (migración 0036, a propósito), así que ésta es la corroboración más
+        fuerte que los datos sostienen, y la pantalla está redactada para decir
+        exactamente eso y no más.
+      · **Se apaga** con un ``siren/deactivate`` ejecutado (manda lo último que
+        TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma
+        sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:
+        la app deja de afirmar lo que ya no puede corroborar.
+      · **Precedencia: LO SÍSMICO MANDA SIEMPRE** — ``alert_active`` >
+        ``shaking_concluded`` > ``reentry_approved`` > ``building_alarm`` >
+        ``idle``. Una alarma de inmueble jamás tapa una fase sísmica, y por este
+        camino un pánico **no puede producir ``alert_active`` jamás**. La regla
+        vive en ``commands/alarma_inmueble.fase_del_sitio``.
+
     Los ingredientes crudos (incident/state, latest_tier, reentry) viajan junto
     a la derivación.
     """
@@ -237,6 +288,8 @@ class MobileStateOut(BaseModel):
     drill: MobileDrillOut
     #: [T-2.07] Banner del edificio (1.1) — verdad única de Flota Edge.
     site_health: MobileSiteHealthOut
+    #: [T-2.106] No None SOLO cuando ``phase == "building_alarm"``.
+    building_alarm: MobileBuildingAlarmOut | None = None
 
 
 # --- check-ins (life_checkins) --------------------------------------------------

@@ -10,9 +10,17 @@
 // función no tiene NINGÚN otro insumo — no existe camino local para "salir de
 // IDLE por una prueba" (los tests del edge fijan la supresión; aquí se fija
 // que la firma de la función no admite más entradas).
+import type { MobileStateOut } from "@takab/sdk";
 
-/** Fase servida por GET /sites/{id}/mobile-state (el servidor es la autoridad). */
-export type ServerPhase = "idle" | "alert_active" | "shaking_concluded" | "reentry_approved";
+/** Fase servida por GET /sites/{id}/mobile-state (el servidor es la autoridad).
+ *
+ * [T-2.106] Sale del SDK generado y ya no se transcribe a mano: así, una fase
+ * nueva en el contrato deja el `switch` de abajo NO EXHAUSTIVO y el typecheck
+ * cae. Antes esta lista era una copia manual, y una fase que el servidor
+ * empezara a servir se habría colado hasta el `deriveAlertState` sin que nada
+ * chistara — el teléfono habría tenido que ADIVINAR qué hacer con ella, que es
+ * exactamente lo que la spec §4.1 prohíbe. */
+export type ServerPhase = MobileStateOut["phase"];
 
 /** Estado de la app (spec §4.1). CHECKIN_SENT del diagrama ≡ reentry_blocked:
  * enviado el check-in, lo que queda es el bloqueo hasta el dictamen. */
@@ -21,7 +29,8 @@ export type AlertState =
   | "alert_active"
   | "checkin_pending"
   | "reentry_blocked"
-  | "reentry_approved";
+  | "reentry_approved"
+  | "building_alarm";
 
 /** §2.1-A: el WR-1 entrega un BOOLEANO — no hay dato de magnitud/ETA que
  * mostrar. Si una fuente futura transporta ETA POR DATO, este flag activa el
@@ -40,6 +49,13 @@ export function deriveAlertState(phase: ServerPhase, hasOwnCheckin: boolean): Al
       return hasOwnCheckin ? "reentry_blocked" : "checkin_pending";
     case "reentry_approved":
       return "reentry_approved";
+    // [T-2.106] ALARMA DEL INMUEBLE: la sirena la ordenó una persona, no un
+    // sismo. Pasa TAL CUAL porque el check-in de vida, el bloqueo de reingreso
+    // y el dictamen son consecuencias de un sismo y aquí no hay ninguno; la
+    // precedencia (lo sísmico gana) ya la resolvió el servidor, que es quien
+    // decide las fases (§4.1) — aquí no se recalcula nada.
+    case "building_alarm":
+      return "building_alarm";
   }
 }
 
