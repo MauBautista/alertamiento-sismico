@@ -18,14 +18,19 @@ credencial nunca es un bypass.
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 import auth_utils as au
+from takab_api.audit import audit_out_of_band_async
 from takab_api.auth import deps
 from takab_api.db.engine import get_engine
+from takab_api.db.session import SessionCtx
 from takab_api.routers.fleet import router as fleet_router
 from takab_api.routers.sites import router as sites_router
 from takab_api.routers.tenants import router as tenants_router
@@ -44,12 +49,27 @@ SITE_CODE_A = "TORRE-RC"
 
 _GEOM = "ST_SetSRID(ST_MakePoint(-99.13,19.43),4326)::geography"
 _TENANTS = (T_A, T_B)
+
+# El TRUNCATE pide el ACCESS EXCLUSIVE de audit_log. Si una conexión ajena tiene una
+# transacción abierta sobre la tabla, sin tope esperaría PARA SIEMPRE y el fichero se
+# colgaría sin decir por qué (T-2.73.c). Con tope falla en segundos y el except de
+# ``_cleanup`` nombra al culpable.
+_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = 5000")
 _CLEANUP = (
     text("DELETE FROM tenant_retire_codes WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM gateways WHERE tenant_id = ANY(:t)"),
     text("DELETE FROM sites WHERE tenant_id = ANY(:t)"),
     text("TRUNCATE audit_log"),
     text("DELETE FROM tenants WHERE tenant_id = ANY(:t)"),
+)
+
+# Quién sostiene el lock que nos frena. Se imprime en el fallo: sin esto, diagnosticar
+# el cuelgue exige reproducirlo con un psql al lado.
+_BLOQUEADORES = text(
+    "SELECT pid, state, left(replace(query, chr(10), ' '), 90) AS q "
+    "  FROM pg_stat_activity "
+    " WHERE datname = current_database() AND pid <> pg_backend_pid() "
+    "   AND state IS DISTINCT FROM 'idle'"
 )
 
 
@@ -68,16 +88,42 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def _cleanup() -> None:
-    async with get_engine().begin() as conn:
-        for stmt in _CLEANUP:
-            await conn.execute(stmt, {"t": list(_TENANTS)})
+    engine = get_engine()
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(_LOCK_TIMEOUT)
+            for stmt in _CLEANUP:
+                await conn.execute(stmt, {"t": list(_TENANTS)})
+    except OperationalError as exc:  # lock_timeout: alguien no soltó audit_log
+        async with engine.connect() as conn:
+            culpables = (await conn.execute(_BLOQUEADORES)).all()
+        pytest.fail(
+            "la limpieza no consiguió el lock de audit_log en 5 s — hay una "
+            "transacción abierta sobre la tabla (¿un proceso de tests zombi?).\n"
+            f"backends vivos: {[tuple(r) for r in culpables]}\n{exc}"
+        )
 
 
 @pytest.fixture
 async def seed() -> None:
-    """Dos tenants con un sitio y un gabinete cada uno. SIN código configurado."""
-    await _cleanup()
+    """Dos tenants con un sitio y un gabinete cada uno. SIN código configurado.
+
+    El ``finally`` no es adorno (T-2.73.c): si la limpieza revienta —o el test— sin él
+    el engine se quedaba sin ``dispose`` y sus conexiones del pool sobrevivían al test,
+    listas para bloquear el ``TRUNCATE`` del siguiente.
+    """
     engine = get_engine()
+    try:
+        await _seed(engine)
+        yield
+        await _cleanup()
+    finally:
+        await engine.dispose()
+        get_engine.cache_clear()
+
+
+async def _seed(engine: AsyncEngine) -> None:
+    await _cleanup()
     async with engine.begin() as conn:
         for tid, code in ((T_A, "RC_A"), (T_B, "RC_B")):
             await conn.execute(
@@ -103,10 +149,6 @@ async def seed() -> None:
                 ),
                 {"g": gid, "t": tid, "s": sid, "sn": serial},
             )
-    yield
-    await _cleanup()
-    await engine.dispose()
-    get_engine.cache_clear()
 
 
 def _app() -> FastAPI:
@@ -298,6 +340,40 @@ async def test_el_intento_fallido_queda_registrado_pese_al_rollback(seed: None) 
     await _set_code()
     await _post(f"/fleet/gateways/{G_A}/retire", _retire_gw(retire_code="MAL"))
     assert len(await _audit("retire_code_denied")) == 1
+
+
+async def test_la_lateral_cede_el_lock_en_vez_de_colgarse(seed: None) -> None:
+    """T-2.73.c: la conexión lateral CIERRA su transacción aunque no pueda escribir.
+
+    La cara oscura del test anterior. La conexión del request ya leyó ``audit_log``
+    y sostiene su ACCESS SHARE mientras espera a la lateral; si entretanto alguien
+    pide el ACCESS EXCLUSIVE de la tabla, la lateral se encola detrás de él y el
+    ciclo se cierra FUERA de PostgreSQL — request → lateral → lock → request. El
+    detector de interbloqueos no lo ve, porque la conexión del request está *idle*,
+    no esperando un lock: sin tope de espera esto colgaba el proceso para siempre y
+    dejaba la base envenenada para toda corrida posterior.
+
+    Se pierde el contador (queda en el log del servicio). No se pierde ni el 403 ni
+    la conexión, que es lo que este test fija.
+    """
+    engine = get_engine()
+    async with engine.connect() as bloqueo:
+        await bloqueo.execute(text("LOCK TABLE audit_log IN ACCESS EXCLUSIVE MODE"))
+
+        inicio = time.monotonic()
+        await audit_out_of_band_async(
+            SessionCtx(tenant_id=T_A, role="tenant_admin", user_id=T_A),
+            tenant_id=T_A,
+            actor="user:prueba",
+            verb="retire_code_denied",
+            obj=f"gateway:{G_A}",
+        )
+        tardanza = time.monotonic() - inicio
+        await bloqueo.rollback()
+
+    assert tardanza < 30, f"la lateral esperó {tardanza:.0f} s: el tope no está actuando"
+    sin_fila = await _audit("retire_code_denied")
+    assert sin_fila == [], "si no consigue el lock, la lateral cede la fila: es best-effort"
 
 
 async def test_cinco_intentos_fallidos_bloquean_con_429(seed: None) -> None:

@@ -68,15 +68,29 @@ _TRUNCATE_WRITTEN = text(
 )
 
 
+# El TRUNCATE pide el ACCESS EXCLUSIVE de cada tabla. Sin tope, una transacción ajena
+# abierta sobre cualquiera de ellas (audit_log es la que más manos toca) colgaría el
+# teardown PARA SIEMPRE, sin decir por qué — el defecto de T-2.73.c. Con tope, falla
+# en segundos y con nombre.
+_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = 5000")
+
+
 @pytest.fixture
 async def db_engine():
-    """Engine async fresco en el loop del test; limpia lo commiteado y se dispone."""
+    """Engine async fresco en el loop del test; limpia lo commiteado y se dispone.
+
+    El ``dispose`` va en ``finally``: si la limpieza revienta, dejar el engine vivo
+    convierte un fallo en una cascada de cuelgues para los tests que vengan detrás.
+    """
     yield
     if get_engine.cache_info().currsize:
         engine = get_engine()
-        async with engine.begin() as conn:
-            await conn.execute(_TRUNCATE_WRITTEN)
-        await engine.dispose()
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(_LOCK_TIMEOUT)
+                await conn.execute(_TRUNCATE_WRITTEN)
+        finally:
+            await engine.dispose()
     get_engine.cache_clear()
 
 
