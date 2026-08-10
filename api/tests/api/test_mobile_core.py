@@ -10,6 +10,7 @@ roster y daños — con los invariantes de seguridad de la spec §5/§8:
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -287,6 +288,69 @@ async def test_phase_se_deriva_de_datos_reales(base_data, make_incident) -> None
         state = (await client.get(url, headers=headers)).json()
         assert state["phase"] == "reentry_approved"
         assert state["reentry"]["blocked"] is False
+
+
+@pytest.mark.anyio
+async def test_una_estacion_sola_NO_ordena_evacuar(base_data, make_incident) -> None:
+    """[T-2.105] Un umbral instrumental de UN gabinete no es una orden de evacuar.
+
+    La regla, ratificada el 2026-08-09: alarma y aviso de evacuación SOLO con la
+    señal del WR-1 de SASMEX, o con tres o más inmuebles rebasando el umbral al
+    mismo tiempo. Una estación individual **solo advierte al SOC y al gabinete**:
+    pudo provocarlo un factor externo y no un sismo.
+
+    El defecto que cierra esto se midió en un Pixel 8 Pro moviendo el sensor con
+    la mano: la app tomaba la pantalla completa con «EVACÚE AHORA» porque la fase
+    se derivaba SIN mirar el origen del incidente.
+
+    Se comprueba también que el incidente NO se expone: devolverlo y decir `idle`
+    sería pedirle al cliente que aplique la política, y el teléfono jamás decide
+    fases (spec móvil §4.1).
+    """
+    await _seed_zone_and_code()
+    await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, trigger="local_threshold")
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+
+        await _seed_tier("evacuate_or_hold")
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "idle", "una estación sola ordenó evacuar"
+        assert state["incident"] is None
+        # Y sin bloqueo de reingreso: no hubo alerta que bloquear.
+        assert state["reentry"]["blocked"] is False
+
+
+@pytest.mark.anyio
+async def test_el_cuorum_de_red_SI_ordena_evacuar(base_data, make_incident) -> None:
+    """[T-2.105] El MISMO incidente pasa a autorizar cuando la red lo corrobora.
+
+    El motor de cuórum no reescribe el trigger: enlaza el evento sísmico, y su
+    `meta.node_count` es el conteo de estaciones. Por eso el incidente nace
+    `local_threshold` y empieza a autorizar sin que nadie lo toque.
+    """
+    await _seed_zone_and_code()
+    engine = get_engine()
+    eid = f"EVT-{uuid.uuid4().hex[:12]}"
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO seismic_events (event_id, source, detected_at, meta) "
+                "VALUES (:e, 'local_quorum', now(), :m)"
+            ),
+            {"e": eid, "m": json.dumps({"node_count": 3})},
+        )
+    await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, trigger="local_threshold", event_id=eid)
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+
+        await _seed_tier("evacuate_or_hold")
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "alert_active", "el cuórum de red no llegó a ordenar evacuar"
+        assert state["incident"]["node_count"] == 3
 
 
 @pytest.mark.anyio

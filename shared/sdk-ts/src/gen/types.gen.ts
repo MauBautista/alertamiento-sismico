@@ -1346,6 +1346,15 @@ export type MobileSiteHealthOut = {
  * Estado consolidado por sitio para la app (spec §5).
  *
  * Derivación de ``phase`` (documentada; el servidor es la autoridad):
+ * - **[T-2.105] incidente que NO autoriza evacuación → ``idle``, y el incidente
+ * NO se expone.** Solo el WR-1 de SASMEX o el cuórum de red (≥
+ * ``quorum_min_nodes`` estaciones corroborantes) pueden desplegar una orden
+ * de evacuar. Una estación individual por encima del umbral es una
+ * ADVERTENCIA para el SOC y para el gabinete —pudo provocarla un factor
+ * externo y no un sismo—, así que para el ocupante el sitio sigue en calma:
+ * ni toma de pantalla, ni check-in de vida, ni bloqueo de reingreso. En
+ * cuanto la red corrobora, el MISMO incidente empieza a autorizar, porque
+ * ``node_count`` sale del evento que enlaza el motor de cuórum.
  * - sin incidente abierto → ``idle``
  * - incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``
  * - incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento

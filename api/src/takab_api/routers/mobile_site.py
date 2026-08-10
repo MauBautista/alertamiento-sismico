@@ -28,6 +28,7 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
 from takab_api.compliance import mobile_projection, parse_document
+from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
@@ -154,6 +155,24 @@ async def mobile_state(
     dictamen_status: str | None = None
     dictamen_signed = False
     phase: Phase = "idle"
+
+    # [T-2.105] UNA ESTACIÓN SOLA NO ORDENA EVACUAR. Un incidente abierto por el
+    # umbral instrumental de un único gabinete es una ADVERTENCIA para el SOC y
+    # para el propio gabinete —puede haberlo provocado un factor externo, no un
+    # sismo—, así que para el ocupante este sitio sigue en calma: ni toma de
+    # pantalla, ni check-in de vida, ni bloqueo de reingreso. Se le oculta el
+    # incidente entero y no solo la fase, porque devolver el incidente y decir
+    # `idle` sería pedirle al cliente que aplique la política, y el teléfono
+    # JAMÁS decide fases (spec móvil §4.1).
+    #
+    # En cuanto la red corrobora (≥ `quorum_min_nodes` estaciones), el mismo
+    # incidente empieza a autorizar sin que nadie reescriba nada: `node_count`
+    # sale del evento enlazado por el motor de cuórum.
+    if incident_row is not None and not autoriza_evacuacion(
+        incident_row.trigger, incident_row.node_count, settings.quorum_min_nodes
+    ):
+        incident_row = None
+
     if incident_row is not None:
         incident = MobileIncidentOut(
             incident_id=incident_row.incident_id,

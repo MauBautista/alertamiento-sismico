@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **242** · `[x]` **170** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **244** · `[x]` **171** · `[~]` **9** · `[ ]` **64**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6620,6 +6620,59 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.105 · Una estación sola ordenaba evacuar a todo el edificio — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** api + mobile · **Depende de:** — · **Origen:** Mauricio movió el sensor con la
+  mano y la app ordenó evacuar
+- **La regla, ratificada el 2026-08-09** (y ya implícita en `T-2.32`): una alarma y un aviso de
+  evacuación **solo** se despliegan si llega la señal del **WR-1 de SASMEX**, o si **tres o más
+  inmuebles** rebasan el umbral **al mismo tiempo**. Cuando una estación individual siente
+  movimiento por encima del umbral, **solo advierte al SOC y al gabinete** — pudo provocarlo un
+  factor externo y no un sismo.
+- **El defecto:** `mobile_state` derivaba la fase **sin mirar el origen**:
+  `else: phase = "alert_active"` para cualquier incidente abierto con tier ≠ normal. Un umbral
+  instrumental de un único gabinete producía **exactamente la misma toma de pantalla con
+  «EVACÚE AHORA»** que SASMEX o que un cuórum de red. Medido en un Pixel 8 Pro.
+- **El servidor ya tenía con qué distinguir y no lo usaba:** `incidents.trigger` ∈
+  `(sasmex, local_threshold, quorum, manual)` y `quorum_min_nodes = 3`. El motor de cuórum **no
+  reescribe el trigger** —solo hace `UPDATE incidents SET event_id`—, así que la corroboración
+  se reconoce por el `node_count` del evento enlazado. Por eso el MISMO incidente nace
+  `local_threshold` y **pasa a autorizar** cuando la red lo confirma, sin que nadie lo toque.
+- **El arreglo:** `incident/autoridad.py`, función pura y default-deny, consultada por
+  `mobile_state`. Un incidente que no autoriza **no se expone en absoluto**: ni fase, ni
+  incidente, ni check-in de vida, ni bloqueo de reingreso. Devolver el incidente y decir `idle`
+  sería pedirle al cliente que aplique la política, y **el teléfono jamás decide fases**
+  (spec móvil §4.1).
+- **Por qué el default-deny va en esa dirección:** equivocarse hacia «no ordeno evacuar» deja a
+  la gente donde estaba; hacia el otro lado, la saca a la calle porque pasó un camión cerca del
+  sensor.
+- **Criterios de aceptación:**
+  - [x] `sasmex` autoriza siempre; `local_threshold` sin corroborar **nunca**; con
+        `node_count ≥ quorum_min_nodes`, sí. El mínimo sale de la configuración, no de un 3 a
+        mano.
+  - [x] Test de integración contra el endpoint real: una estación sola ⇒ `phase=idle`,
+        `incident=null`, `reentry.blocked=false`. Verificado en las dos direcciones — quitar la
+        regla lo pone en rojo con «una estación sola ordenó evacuar».
+  - [x] El cuórum de red sí ordena evacuar, con el trigger todavía en `local_threshold`.
+
+### [ ] T-2.106 · La activación manual no tiene superficie propia en la app — `SOFTWARE`
+- **Componente:** api + mobile · **Depende de:** T-2.105 · **Decisión tomada (2026-08-09):**
+  una activación manual es **alarma del inmueble, no evacuación sísmica**. Suena la sirena del
+  edificio —que es su diseño— y la app debe anunciarla como tal: sin instrucción de evacuación
+  sísmica y sin el contador T+ de sismo.
+- **Hoy no hay regresión que arreglar, y conviene decirlo:** el pánico por quórum de 2 personas
+  emite un comando `siren/activate` firmado y **NO crea incidente**, así que no llega a
+  `mobile-state` en absoluto — la app no muestra nada. Y `AlertSource.MANUAL` del edge se usa
+  para **cerrar** una alerta por operador (tier `normal`), no para abrirla. Es decir: esto es
+  superficie NUEVA, no un defecto vivo.
+- **Por qué importa igual:** la sirena suena y el ocupante no tiene en el teléfono ninguna
+  explicación de por qué. Un edificio sonando sin que la app diga nada es exactamente el vacío
+  que la app existe para llenar.
+- **Criterios de aceptación:**
+  - [ ] Fase propia en el contrato (el teléfono no la infiere del `trigger`) o superficie
+        equivalente, con su derivación documentada en `schemas/mobile.py`.
+  - [ ] La pantalla dice ALARMA DEL INMUEBLE, **no** «alerta sísmica», y no ordena evacuar.
+  - [ ] Un test ancla que un pánico jamás produzca `alert_active`.
 
 ### [x] T-2.104 · La app le atribuía a SASMEX alertas que SASMEX no dio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile · **Depende de:** — · **Origen:** Mauricio movió el sensor con la mano
