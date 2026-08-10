@@ -67,7 +67,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 |---|---|---|---|---|
 | RO-3.a | El mismo `event_id` recorrido dos veces por el camino completo (SQS→consumidor→DB) produce un solo incidente. | `CUBIERTO` | `api/tests/test_ingest_e2e.py:277`<br>`test_local_event_escalates_into_single_incident` | Dos mensajes con el mismo `event_id` ⇒ una fila en `incidents`, DLQ vacía. |
 | RO-3.b | La idempotencia está en la DB, no sólo en el código de aplicación. | `CUBIERTO` | `api/tests/test_idempotency.py:34`<br>`test_incident_event_uuid_idempotent` | `ON CONFLICT (event_uuid) DO NOTHING`: rowcount 1 y luego 0. |
-| RO-3.c | La superficie de escritura HTTP tolera el reintento del cliente offline. | `CUBIERTO` | `api/tests/api/test_mobile_core.py:588`<br>`test_checkin_replay_offline_es_idempotente` | Reenviar el mismo `checkin_id` devuelve la fila idéntica; otro portador con el mismo id recibe 409. |
+| RO-3.c | La superficie de escritura HTTP tolera el reintento del cliente offline. | `CUBIERTO` | `api/tests/api/test_mobile_core.py:586`<br>`test_checkin_replay_offline_es_idempotente` | Reenviar el mismo `checkin_id` devuelve la fila idéntica; otro portador con el mismo id recibe 409. |
 | RO-3.d | El nonce de intención emitido por el servidor es de un solo uso. | `CUBIERTO` | `api/tests/api/test_command_intent.py:163`<br>`test_intencion_firmada_feliz_y_replay_rechazado` | Primera llamada 201; el replay exacto del intento firmado, 409. |
 | RO-3.e | El anti-replay de configuración firmada sobrevive a un reinicio del edge. | `CUBIERTO` | `edge/tests/test_config.py:240`<br>`test_replay_rejected_across_restart` | Un `ConfigStore` nuevo sobre la misma caché sigue rechazando la versión ya vista. |
 
