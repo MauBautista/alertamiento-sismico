@@ -53,11 +53,14 @@ export function CrisisView({ policy, source, elapsedS, zoneName }: CrisisViewPro
     <View style={[styles.wrap, { backgroundColor: variant.bg }]}>
       <View style={[styles.strip, { backgroundColor: variant.strip }]}>
         <Text style={[styles.stripEyebrow, { color: variant.stripText }]}>
-          ● ALERTA SÍSMICA ACTIVA
+          {source.eyebrow}
         </Text>
-        <Text style={[styles.stripTitle, { color: variant.stripText }]}>
-          ALERTA SÍSMICA SASMEX
-        </Text>
+        {/* [T-2.104] Del DATO, no escrito a fuego. Antes ponía siempre «ALERTA
+            SÍSMICA SASMEX», así que una detección instrumental propia o una
+            activación manual se le atribuían al servicio oficial en el texto más
+            grande de la pantalla. La decisión vive en `sourceLabel`, junto a la
+            etiqueta de abajo, porque es la misma pregunta: de dónde viene esto. */}
+        <Text style={[styles.stripTitle, { color: variant.stripText }]}>{source.title}</Text>
       </View>
 
       <View style={styles.body}>

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **241** · `[x]` **169** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **242** · `[x]` **170** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6620,6 +6620,41 @@ sería documentar intenciones.
 > Ver la excepción 2 de la regla de ordenación.
 
 ## Fase 2.10 · Ventana AWS
+
+### [x] T-2.104 · La app le atribuía a SASMEX alertas que SASMEX no dio — `SOFTWARE` · COMPLETA (2026-08-09)
+- **Componente:** mobile · **Depende de:** — · **Origen:** Mauricio movió el sensor con la mano
+  para ver si la app reaccionaba
+- **El defecto:** `CrisisView.tsx` tenía el titular **escrito a fuego** como
+  `ALERTA SÍSMICA SASMEX` para las **cuatro** fuentes. `source.ts` distingue con cuidado
+  `sasmex` / `local_threshold` / `quorum` / `manual` —su cabecera dice «solo datos REALES del
+  payload… jamás inventar»— y el texto **más grande de la pantalla** las aplastaba todas en el
+  nombre del servicio oficial.
+- **Medido, no supuesto:** al agitar el sensor, el gabinete abrió un incidente
+  `trigger=local_threshold` y la app tituló **«ALERTA SÍSMICA SASMEX»** mientras la píldora
+  inferior decía, correctamente, **«FUENTE · REGLAS LOCALES»**. La misma pantalla afirmaba dos
+  cosas incompatibles, y la falsa en cuerpo grande.
+- **Por qué es grave y no cosmético:**
+  · **TAKAB no genera la alerta oficial, la recibe.** El documento de entrega deslinda
+    expresamente la cobertura, la latencia y los falsos positivos de SASMEX (§6.1). Atribuirle
+    una detección propia **invierte ese deslinde**: el día que el umbral local se dispare de
+    más, el ocupante —y el cliente— culpan al servicio oficial.
+  · **Choca con la política ratificada en `T-2.32`**, que degradó la detección instrumental de
+    una sola estación a AVISO precisamente porque **una estación sola no es autoridad**. Mal
+    puede ser aviso en el panel y «alerta oficial» en el teléfono.
+  · Con `trigger=manual` era peor aún: una activación humana se anunciaba como alerta sísmica,
+    justo lo contrario de lo que el flujo de pánico declara a gritos («NO es la alerta sísmica»).
+- **El arreglo:** el titular y el antetítulo salen de `sourceLabel()`, junto a la etiqueta de
+  la fuente, porque es la MISMA pregunta: de dónde viene esto. Sólo el contacto seco del WR-1
+  puede llevarse el nombre del servicio oficial; la detección propia dice que es propia
+  (`SISMO DETECTADO EN ESTE EDIFICIO`), el cuórum que es de la red, y la manual que la activó
+  alguien — con antetítulo `● ALERTA ACTIVA`, sin «sísmica». **La instrucción no cambia con la
+  fuente**: lo que hay que hacer es lo mismo; lo que cambia es a quién se le atribuye.
+- **Criterios de aceptación:**
+  - [x] Ningún trigger salvo `sasmex` produce un titular con la cadena `SASMEX`.
+  - [x] Ancla a nivel de VISTA (`CrisisView.test.tsx`), que es donde vivía el defecto: las
+        pruebas de `sourceLabel` no podían verlo porque la vista no las usaba para titular.
+        Verificado en las dos direcciones — reintroducir la cadena pone el test en rojo.
+  - [x] Comprobado en el Pixel 8 Pro con un incidente `local_threshold` real.
 
 ### [x] T-2.103 · Tras enrolarse, el vigilante de crisis se quedaba ciego — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile · **Depende de:** — · **Origen:** la primera corrida del E2E `01a` en
