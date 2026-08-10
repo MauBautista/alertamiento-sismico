@@ -36,12 +36,7 @@ const DRAFTS: ChannelDraft[] = CASCADE_ORDER.map((key) => ({
 
 function renderChannels(reality: NotifyChannelOut[] | undefined) {
   render(
-    <NotificationChannels
-      drafts={DRAFTS}
-      disabled={false}
-      onChange={vi.fn()}
-      reality={reality}
-    />,
+    <NotificationChannels drafts={DRAFTS} disabled={false} onChange={vi.fn()} reality={reality} />,
   );
 }
 
