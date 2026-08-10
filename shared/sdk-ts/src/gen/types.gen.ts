@@ -588,8 +588,10 @@ export type EquipmentProfile = {
  * Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**
  *
  * El titular del borrado es siempre el portador del token: ejercer ARCO sobre
- * un tercero no está prohibido, es inexpresable — ni en este contrato ni en la
- * función de base de datos que lo ejecuta.
+ * un tercero por esta puerta no está prohibido, es inexpresable — ni en este
+ * contrato ni en la función de base de datos que lo ejecuta. La puerta del
+ * responsable es otra (``ErasureOnBehalfIn``) y tampoco lleva sujeto: lleva la
+ * constancia de la solicitud recibida.
  *
  * ``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda
  * en ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no
@@ -600,6 +602,20 @@ export type ErasureIn = {
     confirm: true;
     right?: 'cancelacion' | 'oposicion';
     via?: 'mobile' | 'web';
+};
+
+/**
+ * [T-2.80.b] Ejecutar una constancia. **Sin sujeto y sin derecho.**
+ *
+ * Las dos ausencias son la tarea entera. El sujeto, porque aceptarlo reabriría
+ * el ARCO cruzado que T-2.80 hizo inexpresable: la constancia va en la RUTA y el
+ * sujeto se resuelve dentro de la base contra el padrón del tenant de la sesión.
+ * El derecho, porque el escrito recibido ya dice qué se pidió — dejar que el
+ * ejecutor lo re-declare permitiría que el registro divergiera del documento.
+ */
+export type ErasureOnBehalfIn = {
+    confirm: true;
+    via?: 'console_admin' | 'out_of_band';
 };
 
 /**
@@ -619,6 +635,8 @@ export type ErasureOut = {
     created?: boolean;
     erased_at: string;
     erasure_id: string;
+    request_id?: string | null;
+    requested_by: string;
     right_exercised: 'cancelacion' | 'oposicion';
     user_sub: string;
     via: 'mobile' | 'web' | 'console_admin' | 'out_of_band';
@@ -637,6 +655,47 @@ export type ErasureProofOut = {
     audit_digest_now: string;
     audit_intact: boolean;
     erasure: ErasureOut;
+};
+
+/**
+ * [T-2.80.b] La CONSTANCIA de una solicitud ARCO recibida por escrito.
+ *
+ * Es lo que convierte "alguien me lo pidió" en algo verificable. ``proof_ref``
+ * dice DÓNDE está el escrito (folio, expediente, clave de objeto) y
+ * ``proof_digest`` prueba CUÁL es: sin el digest, la constancia sería la palabra
+ * del responsable contra la del titular, y con él es un documento concreto que
+ * no se puede sustituir después.
+ *
+ * ``user_sub`` viaja en claro y no es un agujero: el FK compuesto contra
+ * ``user_profiles (tenant_id, user_sub)`` solo admite a alguien del PROPIO
+ * padrón, así que nombrar a un titular de otro cliente no se rechaza por una
+ * comprobación — viola integridad referencial.
+ *
+ * Lo que este contrato NO tiene: el documento. Guardarlo aquí metería PII eterna
+ * en una tabla que la regla de oro 11 impide podar.
+ */
+export type ErasureRequestIn = {
+    channel?: 'written' | 'email' | 'in_person' | 'legal_representative';
+    proof_digest: string;
+    proof_ref: string;
+    received_at: string;
+    right?: 'cancelacion' | 'oposicion';
+    user_sub: string;
+};
+
+/**
+ * La constancia registrada. Sin PII del titular más allá de su `sub` opaco.
+ */
+export type ErasureRequestOut = {
+    channel: 'written' | 'email' | 'in_person' | 'legal_representative';
+    created_at: string;
+    created_by: string;
+    proof_digest: string;
+    proof_ref: string;
+    received_at: string;
+    request_id: string;
+    right_requested: 'cancelacion' | 'oposicion';
+    user_sub: string;
 };
 
 /**
@@ -1226,6 +1285,8 @@ export type MeActions = {
     generate_report: boolean;
     maintenance_window: boolean;
     manage_fleet: boolean;
+    manage_privacy_erasure: boolean;
+    manage_privacy_notice: boolean;
     manage_retire_code: boolean;
     manage_tenants: boolean;
     manage_users: boolean;
@@ -1273,6 +1334,19 @@ export type MetricSeries = {
     max_pga_g: Array<number | null>;
     max_pgv_cms: Array<number | null>;
     ts: Array<string>;
+};
+
+/**
+ * [T-2.106] La alarma del inmueble que está sonando AHORA (fase
+ * ``building_alarm``). Sale del ack de ejecución de un ``siren/activate`` que
+ * ordenó una persona — no de un sismo.
+ *
+ * Viaja SOLO cuando ``phase == "building_alarm"``, por la misma disciplina con
+ * la que T-2.105 esconde el incidente que no autoriza: exponer los dos hechos
+ * a la vez sería pedirle al cliente que decida cuál pinta.
+ */
+export type MobileBuildingAlarmOut = {
+    since: string;
 };
 
 /**
@@ -1362,11 +1436,43 @@ export type MobileSiteHealthOut = {
  * muestra check-in o bloqueo según su propio check-in)
  * - dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →
  * ``reentry_approved`` (hasta que el incidente cierre → idle)
+ * - **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una
+ * persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación
+ * sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su
+ * diseño— y la app lo anuncia SIN instrucción de evacuación sísmica y SIN el
+ * contador T+ de sismo. Existe porque el quórum de pánico emite un
+ * ``siren/activate`` firmado y **no crea incidente**, así que hasta hoy el
+ * edificio sonaba y el teléfono del ocupante no decía nada.
+ *
+ * · **De dónde sale la verdad de «está sonando»:** del ACK DE EJECUCIÓN del
+ * gabinete (``commands.status = 'acked'`` sobre ``siren/activate``), que es
+ * el ack que exige la regla de oro 8. Un comando ``pending`` se publicó y
+ * nadie confirmó nada; pintarlo como sirena sonando sería la regla de oro 7
+ * al revés. Se excluye el actor sistema del cuórum sísmico: esa actuación
+ * llega a la app por su incidente, como ``alert_active``.
+ * · **Se corrobora contra el gabinete que la ejecutó:** si lleva más de
+ * ``sin_enlace_min`` sin latir, o si su ``device_health.relays_state`` dice
+ * ``unreadable`` —*«no pude preguntar quién gobierna los pines»*, T-2.70.a—
+ * la app NO dice que suena. La nube no persiste el censo de relés canal a
+ * canal (migración 0036, a propósito), así que ésta es la corroboración más
+ * fuerte que los datos sostienen, y la pantalla está redactada para decir
+ * exactamente eso y no más.
+ * · **Se apaga** con un ``siren/deactivate`` ejecutado (manda lo último que
+ * TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma
+ * sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:
+ * la app deja de afirmar lo que ya no puede corroborar.
+ * · **Precedencia: LO SÍSMICO MANDA SIEMPRE** — ``alert_active`` >
+ * ``shaking_concluded`` > ``reentry_approved`` > ``building_alarm`` >
+ * ``idle``. Una alarma de inmueble jamás tapa una fase sísmica, y por este
+ * camino un pánico **no puede producir ``alert_active`` jamás**. La regla
+ * vive en ``commands/alarma_inmueble.fase_del_sitio``.
+ *
  * Los ingredientes crudos (incident/state, latest_tier, reentry) viajan junto
  * a la derivación.
  */
 export type MobileStateOut = {
     assembly_point: SiteAssetOut | null;
+    building_alarm?: MobileBuildingAlarmOut | null;
     compliance_labels: {
         [key: string]: string;
     };
@@ -1374,7 +1480,7 @@ export type MobileStateOut = {
     incident: MobileIncidentOut | null;
     latest_tier: string | null;
     my_zone: MobileZoneOut | null;
-    phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved';
+    phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved' | 'building_alarm';
     reentry: MobileReentryOut;
     server_ts: string;
     site_health: MobileSiteHealthOut;
@@ -1436,6 +1542,28 @@ export type NoticePublishedOut = {
     notice_id: string;
     published_at: string;
     version: string;
+};
+
+/**
+ * Un canal del registro de providers y su realidad, tal como arrancó.
+ */
+export type NotifyChannelOut = {
+    /**
+     * Clave del canal en el registro (webhook, sms, …).
+     */
+    channel: string;
+    /**
+     * true ⇒ este canal NO entrega nada: los jobs quedan 'simulated' y nadie recibe el aviso. Se deriva del provider (`is_simulated`), y quien no se declara real se cuenta como simulado.
+     */
+    simulated: boolean;
+};
+
+/**
+ * Registro completo. Un canal AUSENTE de esta lista no existe en el servidor;
+ * la consola lo pinta ``S/D`` — nunca «real» (regla de oro 7).
+ */
+export type NotifyChannelsOut = {
+    channels: Array<NotifyChannelOut>;
 };
 
 /**
@@ -3543,6 +3671,22 @@ export type RevokePushTokenMePushTokensPushTokenIdDeleteResponses = {
 
 export type RevokePushTokenMePushTokensPushTokenIdDeleteResponse = RevokePushTokenMePushTokensPushTokenIdDeleteResponses[keyof RevokePushTokenMePushTokensPushTokenIdDeleteResponses];
 
+export type ListNotifyChannelsNotifyChannelsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notify/channels';
+};
+
+export type ListNotifyChannelsNotifyChannelsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotifyChannelsOut;
+};
+
+export type ListNotifyChannelsNotifyChannelsGetResponse = ListNotifyChannelsNotifyChannelsGetResponses[keyof ListNotifyChannelsNotifyChannelsGetResponses];
+
 export type GetConsentStatusPrivacyConsentGetData = {
     body?: never;
     path?: never;
@@ -3689,6 +3833,58 @@ export type ExerciseErasurePrivacyErasurePostResponses = {
 };
 
 export type ExerciseErasurePrivacyErasurePostResponse = ExerciseErasurePrivacyErasurePostResponses[keyof ExerciseErasurePrivacyErasurePostResponses];
+
+export type RecordErasureRequestPrivacyErasureRequestsPostData = {
+    body: ErasureRequestIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/erasure-requests';
+};
+
+export type RecordErasureRequestPrivacyErasureRequestsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordErasureRequestPrivacyErasureRequestsPostError = RecordErasureRequestPrivacyErasureRequestsPostErrors[keyof RecordErasureRequestPrivacyErasureRequestsPostErrors];
+
+export type RecordErasureRequestPrivacyErasureRequestsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ErasureRequestOut;
+};
+
+export type RecordErasureRequestPrivacyErasureRequestsPostResponse = RecordErasureRequestPrivacyErasureRequestsPostResponses[keyof RecordErasureRequestPrivacyErasureRequestsPostResponses];
+
+export type ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostData = {
+    body: ErasureOnBehalfIn;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/privacy/erasure-requests/{request_id}/erasure';
+};
+
+export type ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostError = ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostErrors[keyof ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostErrors];
+
+export type ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ErasureOut;
+};
+
+export type ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostResponse = ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostResponses[keyof ExerciseErasureOnBehalfPrivacyErasureRequestsRequestIdErasurePostResponses];
 
 export type GetNoticePrivacyNoticeGetData = {
     body?: never;
