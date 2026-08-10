@@ -24,3 +24,18 @@ appId: com.takab.ailert
           visible:
             text: ".*(GUARDADO EN ESTE DISPOSITIVO|RECIBIDO POR EL SERVIDOR).*"
           timeout: 20000
+
+# Y SALIR de la toma. Respondido el check-in, la app se queda aparcada en la
+# línea de tiempo del incidente («REINGRESO PROHIBIDO · Dictamen técnico ·
+# Reingreso autorizado») y esa pantalla NO tiene barra de pestañas ni salida
+# propia: el único camino es el botón atrás del sistema. Mientras el incidente
+# siga abierto, un brigadista recién autenticado no puede llegar a TRIAGE —
+# que es justamente su trabajo durante el incidente. Medido en device el
+# 2026-08-09; queda fichado en `T-2.102` como decisión de producto pendiente:
+# esta toma tiene sentido para el occupant, y para el rol táctico está por
+# decidir. Este `back` documenta el rodeo, no lo legitima.
+- runFlow:
+    when:
+      visible: "LÍNEA DE TIEMPO"
+    commands:
+      - back

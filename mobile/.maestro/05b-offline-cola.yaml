@@ -1,0 +1,27 @@
+# E2E · 2/3 · Offline-first: trabajar SIN red y ver la cola.
+#
+# VIENE DE `05a` y NO hace `clearState` a propósito: la sesión y la pantalla son
+# las que dejó la parte anterior. `run-offline.sh` apaga el WiFi antes de esto.
+#
+# Qué acredita: que la app DECLARA que está sin red y que el trabajo queda
+# PENDIENTE — sin fingir que se envió. Es la regla de oro 7 sobre el dato que
+# dice si una persona fue localizada.
+appId: com.takab.ailert
+---
+# Marca "verificado en persona" del primer no reportado. Sin red, esto tiene que
+# quedar encolado: ni perdido, ni dado por enviado.
+- tapOn:
+    id: "verify-.*"
+
+- tapOn: "SYNC"
+# ESPERA y no aserción inmediata: el banner se pinta cuando la APP detecta que se
+# quedó sin red, no cuando el sistema apaga el radio. Entre las dos cosas hay
+# unos segundos, y afirmarlo de golpe medía el instante equivocado.
+- extendedWaitUntil:
+    visible:
+      id: "offline-banner"
+    timeout: 30000
+- assertVisible:
+    text: "MODO OFFLINE.*"
+- assertVisible:
+    text: ".*PENDIENTE.*"
