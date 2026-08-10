@@ -77,3 +77,22 @@ describe("CrisisView — honestidad §2.1-A", () => {
     expect(treeText(view)).not.toMatch(/magnitud/i);
   });
 });
+
+// [T-2.104] El titular sale del DATO. Este test es el ancla a nivel de vista: el
+// defecto vivía aquí —una cadena escrita a fuego— y las pruebas de `sourceLabel`
+// no podían verlo porque la vista no las usaba para titular.
+it("una detección instrumental NO se anuncia como alerta de SASMEX", async () => {
+  const LOCAL = sourceLabel({
+    trigger: "local_threshold",
+    max_pga_g: 0.12,
+    node_count: null,
+  });
+  const view = await render(
+    <CrisisView elapsedS={4} policy="evacuate" source={LOCAL} zoneName="PB-A" />,
+  );
+  expect(view.queryByText(/SASMEX/)).toBeNull();
+  expect(view.getByText("SISMO DETECTADO EN ESTE EDIFICIO")).toBeTruthy();
+  // Y la instrucción NO cambia con la fuente: lo que hay que hacer es lo mismo.
+  expect(view.getByText(/EVACÚE/)).toBeTruthy();
+});
+
