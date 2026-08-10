@@ -16,7 +16,7 @@ import {
 
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
-import { ackView } from "./ackState";
+import { ackView, type AckContext } from "./ackState";
 import type { TacticalAction } from "./service";
 
 export type Precondition = { label: string; met: boolean; detail: string };
@@ -54,7 +54,13 @@ function SlideToConfirm(props: { label: string; color: string; onConfirm: () => 
         onPanResponderRelease: (_e, g) => {
           const max = Math.max(0, width - KNOB);
           if (g.dx >= max - 8 && max > 0) {
+            // [T-2.107] Confirmado: la perilla se QUEDA al final. Devolverla al
+            // origen con un muelle animaba un nodo que la hoja está a punto de
+            // desmontar (pasa al acuse) y, mientras el POST viaja, insinuaba
+            // que el gesto no había tomado.
+            x.setValue(max);
             onConfirm();
+            return;
           }
           Animated.spring(x, { toValue: 0, useNativeDriver: false }).start();
         },
@@ -72,6 +78,7 @@ function SlideToConfirm(props: { label: string; color: string; onConfirm: () => 
       <Animated.View
         {...responder.panHandlers}
         style={[styles.knob, { backgroundColor: props.color, transform: [{ translateX: x }] }]}
+        testID="slide-knob"
       >
         {props.busy ? <ActivityIndicator color={palette.bg} /> : <Text style={styles.knobText}>→</Text>}
       </Animated.View>
@@ -83,8 +90,12 @@ export function ControlSheet(props: {
   action: TacticalAction;
   preconditions: Precondition[];
   busy: boolean;
-  /** null = aún no se emitió; si existe, se muestra su ack honesto. */
+  /** null = aún no se emitió; si existe, se muestra su ack honesto. Desde
+   *  T-2.107 es el comando MÁS FRESCO conocido (`useCommandAck`), no la 201. */
   result: CommandOut | null;
+  /** [T-2.107] Lo que la pantalla sabe y el comando no trae: techo de la
+   *  espera vencido y si hay una alerta vigente sosteniendo la sirena. */
+  ackContext?: AckContext;
   error: string | null;
   onConfirm: () => void;
   onClose: () => void;
@@ -94,14 +105,16 @@ export function ControlSheet(props: {
   const allMet = props.preconditions.every((p) => p.met);
 
   if (props.result !== null) {
-    const view = ackView(props.result);
+    const view = ackView(props.result, props.ackContext);
     const tone = { ok: palette.ok, warn: palette.warn, crit: palette.crit }[view.tone];
     return (
       <View style={styles.sheet}>
         <Text style={[styles.ackTitle, { color: tone }]} testID="ack-title">
           {view.title}
         </Text>
-        <Text style={styles.ackDetail}>{view.detail}</Text>
+        <Text style={styles.ackDetail} testID="ack-detail">
+          {view.detail}
+        </Text>
         <Pressable accessibilityRole="button" onPress={props.onClose} style={styles.closeBtn}>
           <Text style={styles.closeText}>CERRAR</Text>
         </Pressable>

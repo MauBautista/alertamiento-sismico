@@ -23,6 +23,7 @@ import { useAlertState } from "@/features/alert/useAlertState";
 import { ControlSheet } from "@/features/control/ControlSheet";
 import { preconditionsFor } from "@/features/control/preconditions";
 import { executeTacticalCommand, type TacticalAction } from "@/features/control/service";
+import { useCommandAck } from "@/features/control/useCommandAck";
 import { mergeAction } from "@/features/panel/actions";
 import { applyHealthFrame } from "@/features/panel/health";
 import { PanelView, type LivePill } from "@/features/panel/PanelView";
@@ -137,7 +138,11 @@ export default function Panel() {
   const canSilence = actions?.siren_silence === true;
   const [control, setControl] = useState<TacticalAction | null>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<CommandOut | null>(null);
+  // [T-2.107] La 201 es sólo el PUNTO DE PARTIDA (siempre nace `pending`): el
+  // acuse real se sigue con `useCommandAck` hasta un estado terminal o hasta
+  // el techo derivado del TTL del propio comando.
+  const [issued, setIssued] = useState<CommandOut | null>(null);
+  const ack = useCommandAck({ siteId, issued });
   const [controlError, setControlError] = useState<string | null>(null);
 
   // La sirena "activa" para el preflight de silenciar sale de la traza BMS.
@@ -147,8 +152,15 @@ export default function Panel() {
 
   const openControl = (action: TacticalAction) => {
     setControl(action);
-    setResult(null);
+    setIssued(null);
     setControlError(null);
+  };
+
+  // Cerrar la hoja suelta el seguimiento: el sondeo del acuse existe para la
+  // persona que lo está mirando, no como tráfico de fondo.
+  const closeControl = () => {
+    setControl(null);
+    setIssued(null);
   };
 
   const confirmControl = () => {
@@ -161,7 +173,7 @@ export default function Panel() {
       const out = await executeTacticalCommand({ siteId, action: control });
       setBusy(false);
       if (out.ok) {
-        setResult(out.command);
+        setIssued(out.command);
       } else {
         setControlError(out.reason);
       }
@@ -199,20 +211,28 @@ export default function Panel() {
           />
           <Modal
             animationType="slide"
-            onRequestClose={() => setControl(null)}
+            onRequestClose={closeControl}
             transparent
             visible={control !== null}
           >
             <View style={modalStyles.backdrop}>
               {control !== null ? (
                 <ControlSheet
+                  ackContext={{
+                    unconfirmed: ack?.unconfirmed === true,
+                    waitCeilingS: ack?.waitCeilingS,
+                    // "Alerta vigente" en el sentido de la spec §2.2: el sitio
+                    // tiene un incidente sísmico ABIERTO, cuya demanda de
+                    // sirena es independiente del canal manual que se retira.
+                    alertActive: data.phase === "alert_active",
+                  }}
                   action={control}
                   busy={busy}
                   error={controlError}
-                  onClose={() => setControl(null)}
+                  onClose={closeControl}
                   onConfirm={confirmControl}
                   preconditions={preconditionsFor(control, data, { sirenActive })}
-                  result={result}
+                  result={ack?.command ?? null}
                 />
               ) : null}
             </View>
