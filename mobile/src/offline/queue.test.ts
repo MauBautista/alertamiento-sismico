@@ -1,8 +1,11 @@
-// Tests de la LÓGICA PURA de la cola (spec §4.2 / criterios T-2.06).
+// Tests de la LÓGICA PURA de la cola (spec §4.2 / criterios T-2.06 y T-2.108).
 import { BASE_DELAY_MS, MAX_DELAY_MS, retryDelayMs } from "./backoff";
 import { canonicalJson } from "./custody";
 import {
+  blockingRefs,
+  dueForDispatch,
   hasLocalCheckin,
+  indexById,
   isDue,
   markFailed,
   markRetry,
@@ -10,9 +13,14 @@ import {
   markUploading,
   newQueueItem,
   recoverInterrupted,
+  resolveEvidenceIds,
   RETENTION_AFTER_SYNC_MS,
   shouldPurge,
+  withPriority,
   type CheckinPayload,
+  type DamageReportPayload,
+  type EvidencePayload,
+  type QueueItem,
 } from "./queue";
 
 const PAYLOAD: CheckinPayload = {
@@ -26,7 +34,36 @@ const PAYLOAD: CheckinPayload = {
 const T0 = 1_800_000_000_000;
 
 function item() {
-  return newQueueItem("id-1", PAYLOAD, "hash-1", T0);
+  return newQueueItem({ kind: "checkin", id: "id-1", payload: PAYLOAD, sha256: "hash-1", now: T0 });
+}
+
+function foto(id: string, over: Partial<QueueItem> = {}): QueueItem {
+  const payload: EvidencePayload = {
+    incident_id: "inc-1",
+    uri: `file:///priv/${id}.jpg`,
+    content_type: "image/jpeg",
+    bytes: 1024,
+    ts_device: "2026-07-16T10:00:00Z",
+  };
+  return {
+    ...newQueueItem({ kind: "evidence", id, payload, sha256: `sha-${id}`, now: T0 }),
+    ...over,
+  } as QueueItem;
+}
+
+function reporte(id: string, refs: string[], over: Partial<QueueItem> = {}): QueueItem {
+  const payload: DamageReportPayload = {
+    incident_id: "inc-1",
+    categories: [{ key: "structural", severity: "high" }],
+    notes: null,
+    zone_id: "z-1",
+    evidence_refs: refs,
+    ts_device: "2026-07-16T10:00:00Z",
+  };
+  return {
+    ...newQueueItem({ kind: "damage_report", id, payload, sha256: `sha-${id}`, now: T0 + 1 }),
+    ...over,
+  } as QueueItem;
 }
 
 describe("backoff — exponencial con jitter acotado", () => {
@@ -108,6 +145,12 @@ describe("hasLocalCheckin — el dato local cuenta, el fallido no", () => {
     expect(hasLocalCheckin([item()], "inc-OTRO")).toBe(false);
     expect(hasLocalCheckin([], "inc-1")).toBe(false);
   });
+
+  it("una FOTO del incidente no se cuenta como check-in de vida", () => {
+    // Sin el filtro por `kind`, la cola multi-tipo haría creer al ocupante que
+    // ya dijo "estoy a salvo" por haber sacado una foto.
+    expect(hasLocalCheckin([foto("ev-1")], "inc-1")).toBe(false);
+  });
 });
 
 describe("canonicalJson — huella estable (cadena de custodia)", () => {
@@ -116,5 +159,72 @@ describe("canonicalJson — huella estable (cadena de custodia)", () => {
     const b = { c: null, a: [{ x: 1, y: 2 }], b: 1 };
     expect(canonicalJson(a)).toBe(canonicalJson(b));
     expect(canonicalJson(a)).toBe('{"a":[{"x":1,"y":2}],"b":1,"c":null}');
+  });
+});
+
+// ─── [T-2.108] Cola multi-tipo ───────────────────────────────────────────────
+
+describe("dependencias: el reporte espera a SUS fotos", () => {
+  it("una foto en vuelo RETIENE al reporte que la referencia", () => {
+    const items = [foto("ev-1"), reporte("rep-1", ["ev-1"])];
+    const byId = indexById(items);
+    expect(blockingRefs(items[1], byId)).toEqual(["ev-1"]);
+    expect(dueForDispatch(items, T0 + 10).map((i) => i.id)).toEqual(["ev-1"]);
+  });
+
+  it("con la foto ya sincronizada el reporte sale y se liga al evidence_id REAL", () => {
+    const subida = markSynced(foto("ev-1"), T0 + 5, "ev-servidor-9");
+    const items = [subida, reporte("rep-1", ["ev-1"])];
+    expect(dueForDispatch(items, T0 + 10).map((i) => i.id)).toEqual(["rep-1"]);
+    expect(resolveEvidenceIds(["ev-1"], indexById(items))).toEqual({
+      ids: ["ev-servidor-9"],
+      dropped: 0,
+    });
+  });
+
+  it("una foto FALLIDA no retiene para siempre: el reporte sale y lo declara", () => {
+    // Retener el reporte por una foto que ya nunca va a subir sería esconder
+    // un daño estructural detrás de un JPEG.
+    const rota = markFailed(foto("ev-1"), "HTTP 422");
+    const items = [rota, reporte("rep-1", ["ev-1"])];
+    expect(blockingRefs(items[1], indexById(items))).toEqual([]);
+    expect(resolveEvidenceIds(["ev-1"], indexById(items))).toEqual({ ids: [], dropped: 1 });
+  });
+
+  it("una referencia ya podada (24 h) tampoco retiene", () => {
+    const items = [reporte("rep-1", ["ev-desaparecida"])];
+    expect(blockingRefs(items[0], indexById(items))).toEqual([]);
+  });
+});
+
+describe("orden de despacho — §2.4: personas atrapadas al frente", () => {
+  it("el urgente sale ANTES aunque se haya encolado después", () => {
+    const viejo = { ...item(), id: "checkin-viejo", created_at: T0 } as QueueItem;
+    const urgente = reporte("rep-urgente", [], { created_at: T0 + 1000, priority: 1 });
+    expect(dueForDispatch([viejo, urgente], T0 + 2000).map((i) => i.id)).toEqual([
+      "rep-urgente",
+      "checkin-viejo",
+    ]);
+  });
+
+  it("dentro del mismo nivel manda el orden de captura (FIFO)", () => {
+    const a = { ...item(), id: "a", created_at: T0 } as QueueItem;
+    const b = { ...item(), id: "b", created_at: T0 + 1 } as QueueItem;
+    expect(dueForDispatch([b, a], T0 + 10).map((i) => i.id)).toEqual(["a", "b"]);
+  });
+
+  it("el backoff sigue mandando sobre la prioridad (no se martillea al servidor)", () => {
+    const urgenteEnEspera = reporte("rep-urgente", [], {
+      priority: 1,
+      attempts: 1,
+      next_attempt_at: T0 + 60_000,
+    });
+    expect(dueForDispatch([urgenteEnEspera, item()], T0 + 10).map((i) => i.id)).toEqual(["id-1"]);
+  });
+
+  it("withPriority solo SUBE (una foto ya urgente no se degrada)", () => {
+    const f = foto("ev-1");
+    expect(withPriority(f, 1).priority).toBe(1);
+    expect(withPriority(withPriority(f, 1), 0).priority).toBe(1);
   });
 });

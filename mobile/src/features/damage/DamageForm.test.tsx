@@ -7,7 +7,10 @@ import { DamageForm } from "./DamageForm";
 import type { DamageKey, Severity } from "./categories";
 import { buildDamageReportBody } from "./payload";
 
-function Harness(props: { onSubmit?: (sel: Map<DamageKey, Severity>) => void }) {
+function Harness(props: {
+  onSubmit?: (sel: Map<DamageKey, Severity>) => void;
+  status?: { text: string; ok: boolean } | null;
+}) {
   const [selected, setSelected] = useState<Map<DamageKey, Severity>>(new Map());
   return (
     <DamageForm
@@ -27,6 +30,7 @@ function Harness(props: { onSubmit?: (sel: Map<DamageKey, Severity>) => void }) 
         })
       }
       selected={selected}
+      status={props.status ?? null}
     />
   );
 }
@@ -49,6 +53,25 @@ describe("DamageForm (2.4)", () => {
     const v = await render(<Harness onSubmit={onSubmit} />);
     await fireEvent.press(v.getByTestId("submit-damage"));
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // [T-2.108] El desenlace del envío se pinta en SU PROPIO banner. Vivía
+  // dentro del campo de notas —el sitio donde la persona escribe— y se leía
+  // como texto tecleado por ella; peor: decía "Reporte enviado" cuando lo que
+  // había pasado es que se guardó en la cola.
+  it("el desenlace del envío se pinta aparte, NUNCA dentro del campo de notas", async () => {
+    const v = await render(
+      <Harness status={{ ok: true, text: "Reporte guardado en este teléfono y en cola de envío." }} />,
+    );
+    expect(v.getByTestId("damage-status")).toHaveTextContent(/en cola de envío/);
+    expect(v.getByTestId("damage-notes")).toHaveProp("value", "");
+  });
+
+  it("un fallo al guardar se DECLARA, no se calla", async () => {
+    const v = await render(
+      <Harness status={{ ok: false, text: "No se pudo guardar el reporte en este teléfono." }} />,
+    );
+    expect(v.getByTestId("damage-status")).toHaveTextContent(/No se pudo guardar/);
   });
 });
 

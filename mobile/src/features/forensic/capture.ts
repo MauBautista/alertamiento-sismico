@@ -8,7 +8,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 
-import { sha256OfFile } from "./fileHash";
+import { readAndHash } from "./fileHash";
 import type { ForensicMeta } from "./watermark";
 
 export type CapturedEvidence = {
@@ -16,6 +16,8 @@ export type CapturedEvidence = {
   uri: string;
   /** SHA-256 de los bytes finales (coincide con el hash server-side). */
   sha256: string;
+  /** Tamaño en bytes: la cola offline lo suma en "tamaño pendiente" (§7·2.5). */
+  bytes: number;
   meta: ForensicMeta;
 };
 
@@ -43,6 +45,6 @@ export async function captureForensicPhoto(
     dest.delete();
   }
   new File(shotUri).move(dest);
-  const sha256 = await sha256OfFile(dest.uri);
-  return { uri: dest.uri, sha256, meta };
+  const { bytes, sha256 } = await readAndHash(dest.uri);
+  return { uri: dest.uri, sha256, bytes: bytes.length, meta };
 }
