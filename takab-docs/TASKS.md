@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-08)
 
-**Conteo de tareas:** total **244** · `[x]` **171** · `[~]` **9** · `[ ]` **64**
+**Conteo de tareas:** total **254** · `[x]` **179** · `[~]` **9** · `[ ]` **66**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5306,7 +5306,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [ ] Confirmado contra la NUBE (allí el conector ya es `takab_migrator`, así que puede no
         diverger) antes de asumir que el defecto existe en producción.
 
-### [ ] T-2.73.c · El cuelgue intermitente de `test_retire_code.py` — `SOFTWARE`
+### [x] T-2.73.c · El cuelgue intermitente de `test_retire_code.py` — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api (tests) · **Depende de:** —
 - Reproducido **5/5** por el auditor: `test_solo_el_superadmin_rota_el_codigo` deja una conexión
   `idle in transaction` tras `app_verify_retire_code`, y el TRUNCATE del teardown se bloquea
@@ -5314,8 +5314,36 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   manifiesta, así que es una carrera, no un fallo determinista. **Misma familia que el hallazgo
   A-3** de la auditoría de cierre.
 - **Criterios de aceptación:**
-  - [ ] La conexión lateral cierra su transacción, o el fixture la cierra por ella.
-  - [ ] El fichero corre en aislamiento 10 veces seguidas sin colgarse.
+  - [x] La conexión lateral cierra su transacción, o el fixture la cierra por ella.
+  - [x] El fichero corre en aislamiento 10 veces seguidas sin colgarse.
+
+> **Cerrada (2026-08-10), y la ficha se equivocaba de culpable: el test era la VÍCTIMA.**
+> Es un **interbloqueo a tres bandas que PostgreSQL no puede detectar**. El request lee
+> `audit_log` (`retire_code.py:105`) y con eso sostiene su ACCESS SHARE toda la transacción;
+> con esa transacción abierta llama a `audit_out_of_band_async`, que abre una **conexión
+> LATERAL** para escribir en la misma tabla. Si entre medias alguien pide el ACCESS EXCLUSIVE
+> (el `TRUNCATE` de un teardown, un `VACUUM FULL`, una migración), se encola detrás del request
+> y **la lateral se encola detrás de él**. El ciclo se cierra **fuera de la base**, así que el
+> detector de interbloqueos no lo ve: la conexión del request está `idle in transaction`, no
+> esperando un lock.
+>
+> `audit_out_of_band_async` declaraba «best-effort» en su docstring y **no tenía ni tope de
+> espera ni captura**: la espera era literalmente infinita. Ahora la lateral fija `lock_timeout`
+> y **cede** — se pierde el contador, que queda en el log, no el 403 ni la conexión. Captura
+> solo `SQLAlchemyError`: un error de Python debe seguir siendo ruidoso o el veto del
+> contract-test se vuelve decorativo.
+>
+> **El «5/5 reproducible» tenía su propia causa:** al colgarse, el proceso pytest **sobrevive a
+> la muerte de su padre** y envenena la base, así que la corrida siguiente se cuelga en el primer
+> `_cleanup()` — que es el del test acusado. De ahí la atribución.
+>
+> Los fixtures se blindan igual (`lock_timeout` en el TRUNCATE, `dispose` en `finally`). El test
+> de regresión **tiene dientes**: con el tope a 0 se cuelga para siempre.
+>
+> **Hermano declarado, sin revisar:** `commands/rejection_audit.py:16` dice explícitamente que
+> sigue el mismo patrón de conexión lateral — ver `T-2.112`. Y la conexión **del request** sigue
+> sin tope: un `lock_timeout` global en `get_tenant_conn` es decisión de producción, fichada en
+> `PENDIENTES-MAURICIO.md`.
 
 ### [ ] T-2.74 · `G-09` · restore real, RTO medido y publicado — `HUMANO-AWS`
 - **Componente:** operación · **Depende de:** T-2.73, **T-2.73.a** · **Cubre `G-09`.**
@@ -5363,7 +5391,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > degrada `simulated`→`failed`, jamás a `sent`), y la cascada **no se da por satisfecha con un
 > simulado**: el SQL de "ya satisfecha" exige `status='sent'`.
 
-### [ ] T-2.75.a · La consola no sabe qué canal es real, y el día que lo sea mentirá al revés — `SOFTWARE`
+### [x] T-2.75.a · La consola no sabe qué canal es real, y el día que lo sea mentirá al revés — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api + web · **Depende de:** T-2.75 · **Detectada por:** auditoría de la Fase 2.7
   (2026-08-08)
 - **El defecto, medido.** `web/src/features/tenants/NotificationChannels.tsx:16-25` rotula
@@ -5381,13 +5409,35 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   prioridad a la bandera, o sea que **las dos superficies discrepan**. Se arregla con el mismo
   cambio o se queda como trampa para el siguiente.
 - **Criterios de aceptación:**
-  - [ ] Un endpoint declara, por canal, si el provider es real o simulado — **derivado del
+  - [x] Un endpoint declara, por canal, si el provider es real o simulado — **derivado del
         registro ya construido**, jamás una lista escrita a mano en la web.
-  - [ ] La consola lo pinta desde ese dato. Un canal sin dato se pinta `S/D`, **nunca «real»**.
-  - [ ] Test: cambiar un provider de simulado a real **cambia lo que pinta la consola**, sin
+  - [x] La consola lo pinta desde ese dato. Un canal sin dato se pinta `S/D`, **nunca «real»**.
+  - [x] Test: cambiar un provider de simulado a real **cambia lo que pinta la consola**, sin
         tocar la web. Es el test que hoy no puede existir.
-  - [ ] `bms.ts` y `IncidentTimeline.tsx` resuelven `simulated` con la misma regla, anclado por
+  - [x] `bms.ts` y `IncidentTimeline.tsx` resuelven `simulated` con la misma regla, anclado por
         un test que use un `kind` conocido **con** la bandera puesta.
+
+> **Cerrada (2026-08-10).** `GET /notify/channels` publica la verdad **derivada del registro**:
+> `channel_reality()` recorre `build_providers()` y le pregunta a cada provider con el mismo
+> `is_simulated` del guard de T-2.75. **Ni una lista de canales** — el sexto que alguien enchufe
+> aparece solo, y con la presunción correcta (simulado) si no se declara. Se congela en
+> `create_app()` porque es configuración del PROCESO: cambia con un despliegue, no entre dos
+> peticiones. De paso la API hereda el grito de arranque.
+>
+> **El test del criterio 3 cierra la cadena por un fichero de escenarios** que la API produce
+> byte a byte y la consola renderiza: mover un provider a real pone rojo el test de Python, y
+> arreglarlo cambia lo que pinta la consola **sin tocar una línea de `web/`**. Un mock
+> complaciente no puede ponerse rojo por un cambio en Python.
+>
+> **La asimetría de `bms.ts` tenía TRES superficies, no dos.** La tercera es el panel táctico
+> **móvil**, que deriva de esa vista si la sirena está sonando para habilitar el preflight de
+> SILENCIAR. Al hacer que la bandera gane sin excepción, esa precondición **dejó de darse por
+> satisfecha sola** con una acción de simulacro. Un arreglo en la consola tapó un agujero en la
+> superficie que decide si se puede silenciar una sirena.
+>
+> **RESERVA declarada, no defecto:** `takab_support` y `gov_operator` llegan a `/tenants` pero no
+> tienen `edit_thresholds`, así que verán `S/D`. Es honesto —nunca «real»—, pero darles la verdad
+> exige una **acción de lectura nueva en la matriz**, y eso es decisión de producto.
 
 ### [x] T-2.76 · SMS real — `SOFTWARE` (+ `HUMANO-AWS` para credenciales)
 - **Componente:** api + infra · **Depende de:** T-2.75
@@ -5996,7 +6046,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         lista de componentes.
   - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
 
-### [ ] T-2.79.e · `NOTICE_ROLES` sigue a mano en el router, y su razón ya caducó — `SOFTWARE`
+### [x] T-2.79.e · `NOTICE_ROLES` sigue a mano en el router, y su razón ya caducó — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api (auth) · **Desbloquea:** el primer criterio de `T-2.80.b` ·
   **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
 - **La deuda estaba justificada y su justificación ya no es cierta.**
@@ -6011,10 +6061,29 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 - **No es un agujero de seguridad hoy:** la frontera real la impone la política RLS `pn_publish`,
   no la lista del router. Es coherencia y mantenibilidad — y el bloqueo de `T-2.80.b`.
 - **Criterios de aceptación:**
-  - [ ] La acción `manage_privacy_notice` existe en `auth/matrix.py`, con su línea en
+  - [x] La acción `manage_privacy_notice` existe en `auth/matrix.py`, con su línea en
         `RBAC-TAKAB.md`, y el router la consulta en vez de enumerar roles.
-  - [ ] El test de matriz (`api/tests/auth/test_matrix.py`) la cubre como a las demás.
-  - [ ] Ninguna superficie de privacidad enumera roles a mano.
+  - [x] El test de matriz (`api/tests/auth/test_matrix.py`) la cubre como a las demás.
+  - [x] Ninguna superficie de privacidad enumera roles a mano.
+
+> **Cerrada (2026-08-10).** El conjunto de roles **NO se movió** —`takab_superadmin` y
+> `tenant_admin` antes y después—, y está demostrado por un **test caracterizador escrito ANTES**
+> del refactor, en verde contra el código viejo. Si al derivarlo de la matriz hubiera cambiado,
+> eso era decisión de RBAC y había que parar; no hizo falta.
+>
+> El razonamiento se **mudó del router a la matriz** (LFPDPPP: el *responsable* es la
+> organización dueña del inmueble, así que publicar su aviso es acto SUYO; `takab_support` queda
+> fuera a propósito, que lee la plataforma pero no firma el aviso de un cliente en su nombre). Y
+> el docstring de `matrix.py` dejó de mentir: afirmaba que «ningún router vuelve a listar roles a
+> mano» mientras uno lo hacía.
+>
+> **El barrido del criterio 3 quedó como TEST**, con la lista de ficheros **calculada** por glob
+> sobre `privacy/`: un fichero nuevo de privacidad entra solo. Excepción nombrada:
+> `privacy/retention.py:122` (`JOB_APP_ROLE`) es el `app.role` de una **identidad máquina**, que
+> `CLAUDE.md §5` excluye de RBAC — no hay portador de token ni acción que derivar.
+>
+> Confirmó de paso que la excusa había caducado: `routers/compliance.py` ya estaba limpio desde
+> T-2.82.
 
 ### [ ] T-2.79.f · La parte de la pantalla móvil que le habla a la persona no la asserta nadie — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Detectada por:** reauditoría de la Fase 2.8
@@ -6096,7 +6165,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
         ninguna otra — la misma disciplina de columna que usa `life_checkins`.
   - [ ] La lápida cubre al sujeto `msisdn` igual que al `sub`, y el digest lo sigue probando.
 
-### [ ] T-2.80.b · El responsable no puede ejercer un ARCO recibido por escrito — `SOFTWARE`
+### [x] T-2.80.b · El responsable no puede ejercer un ARCO recibido por escrito — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api + auth · **Depende de:** T-2.80 · **Bloqueada de hecho por la deuda de
   `auth/matrix.py`** que T-2.79 dejó abierta
 - **Hoy solo el titular puede ejercerlo**, y eso no cubre el caso real: una persona manda su
@@ -6105,15 +6174,43 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   de T-2.80, porque hace inexpresable el ARCO cruzado— es justo lo que hay que ensanchar **sin
   perder** esa garantía.
 - **Criterios de aceptación:**
-  - [ ] Existe una acción `manage_privacy_erasure` en `auth/matrix.py` (no una lista de roles
+  - [x] Existe una acción `manage_privacy_erasure` en `auth/matrix.py` (no una lista de roles
         escrita a mano en el router — ver la deuda de `routers/privacy.py`), y su línea en
         `RBAC-TAKAB.md`.
-  - [ ] Ejercerlo por cuenta de otro **exige constancia** de la solicitud y queda en el
+  - [x] Ejercerlo por cuenta de otro **exige constancia** de la solicitud y queda en el
         `audit_log` con quién lo pidió, quién lo ejecutó y con qué prueba.
-  - [ ] **La garantía de T-2.80 no se debilita:** sigue siendo imposible alcanzar a un titular de
+  - [x] **La garantía de T-2.80 no se debilita:** sigue siendo imposible alcanzar a un titular de
         otro tenant. Test cross-tenant que debe fallar.
-  - [ ] Queda escrito qué NO hace esta tarea: **borrar la cuenta en Cognito** no es parte del
+  - [x] Queda escrito qué NO hace esta tarea: **borrar la cuenta en Cognito** no es parte del
         acto de anonimización y necesita su propio camino.
+
+> **Cerrada (2026-08-10). La clave: el tercer parámetro NO es un sujeto, es una constancia.**
+> `privacy_erase_subject(p_right, p_via)` pasa a llevar `p_request uuid` — el `request_id` de una
+> solicitud registrada. **El titular no se acepta: se PRODUCE** dentro de la función, con un JOIN
+> contra `user_profiles` del tenant de la sesión. Por eso el ARCO cruzado sigue siendo
+> **inexpresable, no prohibido**, y ninguna de las tres piezas es un `IF`:
+>
+> 1. **No hay parámetro de tenant.** La tabla lo pone por `DEFAULT app_tenant_id()` y la RLS lo
+>    vuelve a exigir en el `WITH CHECK`. El cliente no lo manda ni podría.
+> 2. **FK COMPUESTO** `(tenant_id, user_sub) → user_profiles`: nombrar a un titular ajeno
+>    **viola integridad referencial**, no una comprobación.
+> 3. **La constancia se busca SIN filtro de tenant, a propósito.** La RLS ya hace que la de otro
+>    cliente **no exista** para esa sesión; añadir el filtro habría sugerido que el confinamiento
+>    es un chequeo. Un `request_id` ajeno da 404, indistinguible de «no existe» (regla de oro 5).
+>
+> **«Exige constancia» tampoco es un `if` del router: es un PRIVILEGIO.**
+> `app_can_erase_subject()` gatea cinco políticas RLS, así que sin fila de solicitud el
+> responsable no puede tocar **un solo dato** de esa persona — y con constancia en mano, cada
+> `WITH CHECK` admite exactamente la fila anonimizada y nada más. Un CHECK impide que el
+> responsable **se fabrique su propia constancia** (`created_by <> user_sub`).
+>
+> La constancia registra `channel` (`written|email|in_person|legal_representative`),
+> `received_at` (de ahí corre el plazo legal), `proof_ref` (**dónde** está el escrito) y
+> `proof_digest` (**cuál** es). `proof_ref` **no** va al `audit_log`: es texto libre y esa
+> bitácora es eterna.
+>
+> El camino del titular queda **byte a byte** como lo dejó T-2.80, anclado por su propio test.
+> Las tres capas de T-2.80 siguen intactas: no se derogó ninguna.
 
 ### [ ] T-2.80.c · El verificador de restore ya no comprueba la rendija de ARCO — `SOFTWARE`
 - **Componente:** api (`ops/restore_check.py`) · **Depende de:** T-2.80 · **Regresión declarada
@@ -6655,7 +6752,7 @@ sería documentar intenciones.
         regla lo pone en rojo con «una estación sola ordenó evacuar».
   - [x] El cuórum de red sí ordena evacuar, con el trigger todavía en `local_threshold`.
 
-### [ ] T-2.106 · La activación manual no tiene superficie propia en la app — `SOFTWARE`
+### [x] T-2.106 · La activación manual no tiene superficie propia en la app — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api + mobile · **Depende de:** T-2.105 · **Decisión tomada (2026-08-09):**
   una activación manual es **alarma del inmueble, no evacuación sísmica**. Suena la sirena del
   edificio —que es su diseño— y la app debe anunciarla como tal: sin instrucción de evacuación
@@ -6669,10 +6766,255 @@ sería documentar intenciones.
   explicación de por qué. Un edificio sonando sin que la app diga nada es exactamente el vacío
   que la app existe para llenar.
 - **Criterios de aceptación:**
-  - [ ] Fase propia en el contrato (el teléfono no la infiere del `trigger`) o superficie
+  - [x] Fase propia en el contrato (el teléfono no la infiere del `trigger`) o superficie
         equivalente, con su derivación documentada en `schemas/mobile.py`.
-  - [ ] La pantalla dice ALARMA DEL INMUEBLE, **no** «alerta sísmica», y no ordena evacuar.
-  - [ ] Un test ancla que un pánico jamás produzca `alert_active`.
+  - [x] La pantalla dice ALARMA DEL INMUEBLE, **no** «alerta sísmica», y no ordena evacuar.
+  - [x] Un test ancla que un pánico jamás produzca `alert_active`.
+
+> **Cerrada (2026-08-10).** Fase propia `building_alarm`; **lo sísmico gana SIEMPRE** en la
+> precedencia. La señal es `commands.status = 'acked'` sobre un `siren/activate` emitido por una
+> persona: el ack de ejecución que la regla de oro 8 ya exige. Se filtra por `acked` en **las dos
+> direcciones**, para que mande *lo último que tocó el relé* y no lo último que alguien pidió; se
+> excluye el actor del cuórum sísmico (que también emite `siren/activate`, pero llega por su
+> incidente) y `channel='system'` (self-test y simulacros).
+>
+> **La corroboración que se planeó NO era posible, y medirlo es media tarea.** El estado real del
+> relé **no existe en la nube**: la migración `0036` dice literalmente que no se persiste el censo
+> canal a canal, solo **si el dato existe**. Así que lo que se puede hacer no es confirmar sino
+> **DESMENTIR**: `relays_state = 'unreadable'` —el gabinete no puede ni preguntar quién gobierna
+> sus pines— y la app calla. `stopped`/`NULL` no desmienten (mismo criterio que
+> `fleet_degrade_reasons`). El desmentido se busca contra **el gabinete que ejecutó**, no contra
+> el sitio: en un edificio de dos gabinetes, que a uno no le lean los relés no desmiente lo que
+> confirmó el otro.
+>
+> **Caduca por cuatro salidas**, tres derivadas de dato real (un `deactivate` acked posterior; el
+> gabinete que ejecutó lleva demasiado sin latir; `unreadable`) y una constante declarada de
+> 30 min, justificada porque las tres alternativas no se sostienen: el `command_ttl_s` (30 s) es
+> el TTL de **entrega** de la firma, el edge **no da duración** porque el relé **enclava** hasta
+> que alguien lo silencie, y ese silencio suele ocurrir **en el panel del gabinete** y no vuelve
+> como comando. Sin tope, un `activate` que nadie revirtió por la nube dejaría al teléfono
+> anunciando una sirena **durante días**.
+>
+> **El texto, ámbar y con el deslinde ARRIBA** (lección de T-2.104: el texto grande manda):
+> «NO ES UNA ALERTA SÍSMICA» / «ALARMA DEL INMUEBLE» / «ATIENDA A SU BRIGADA» / «TAKAB no conoce
+> el motivo de la activación». No ordena evacuar, no pone contador T+ de sismo y **no reproduce
+> el bucle de alerta** — sería la misma mentira en el único canal sin texto. 11 tests de la vista
+> con los deberes negativos (ni `EVAC`, ni `SASMEX`, ni `SISMO`, ni `T+`).
+>
+> `ServerPhase` deja de transcribirse a mano en el móvil: sale de `MobileStateOut["phase"]`, así
+> que una fase nueva deja el `switch` no exhaustivo y el typecheck cae.
+>
+> **HUECO DECLARADO:** entre el quórum y el ack la app dice `idle` **a propósito**, antes que
+> afirmar una sirena que nadie confirmó. Y **el pánico no manda push** — decisión de producto
+> fichada en `PENDIENTES-MAURICIO.md`; la app se entera en el sondeo (30 s en reposo, 5 s ya en
+> `building_alarm`).
+
+### [x] T-2.107 · El acuse del gabinete nunca volvía a la app — `SOFTWARE` · COMPLETA (2026-08-10)
+- **Componente:** mobile · **Depende de:** — · **Detectada por:** auditoría de cableado
+  app→API→edge (2026-08-10)
+- **El defecto:** `panel.tsx` guardaba el `CommandOut` de la respuesta 201 —que siempre nace
+  `pending`— y **no volvía a consultar nunca**. `GET /sites/{id}/commands` existía y estaba
+  generado en el SDK, con **cero** referencias en la app; y el WS no transporta acuses. La hoja
+  de control decía «ESPERANDO CONFIRMACIÓN DEL GABINETE» **para siempre**, sin poder distinguir
+  «no ha acusado» de «rechazó».
+- **Lo que más dolía:** las ramas `acked`/`rejected`/`expired` de `ackState.ts` eran código
+  muerto, y entre ellas la frase que la spec §2.2 exige que la UI diga en vez de fingir éxito —
+  «SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA»— escrita con cuidado y jamás mostrada.
+- **Criterios de aceptación:**
+  - [x] La app sigue el acuse real hasta un estado terminal y lo pinta.
+  - [x] La espera **tiene techo**, derivado del TTL real del comando.
+  - [x] Las ramas terminales dejan de ser código muerto, con test que las alcanza **por el camino
+        real de la UI**.
+  - [x] Silenciar con alerta vigente ⇒ la sirena sigue sonando y la UI explica el porqué.
+
+> **Cerrada (2026-08-10).** Se sigue por el endpoint REST y no por un canal WS nuevo, y no solo
+> porque el canal no exista: `list_commands` ejecuta `EXPIRE_SITE` **antes** de listar, así que
+> **preguntar** es justo lo que hace que el servidor resuelva un pendiente vencido.
+>
+> El techo sale de `expires_at − issued_at`, dos instantes del **mismo reloj del servidor**,
+> contados desde que llegó la 201 — así el desfase teléfono/servidor no entra en la cuenta —
+> más 5 s de gracia, porque el `expired` solo se escribe cuando alguien pregunta.
+>
+> `unconfirmed` se distingue a propósito de `expired`: uno es «el gabinete no acusó a tiempo, y
+> consta»; el otro, «esta app no pudo enterarse de nada». Y lo dice sin adornos: **«NO se sabe si
+> el gabinete ejecutó la orden: verifique el estado real en el sitio antes de repetir»**.
+>
+> Los tests **conducen la ruta real como una persona** —pulsan, pasan el paso 1 y deslizan de
+> verdad el `PanResponder`— porque es lo único que alcanza el texto que se lee. Verificado a la
+> inversa: con el cableado de antes, los 8 fallan.
+>
+> **HUECO DECLARADO ⇒ `T-2.116`:** el «estado recalculado del relé» que pide la spec **no existe
+> en ningún contrato**, así que `sirenStillOn()` nunca pudo dispararse con datos reales.
+
+### [x] T-2.108 · La cola offline prometía guardar capturas y reportes, y solo admitía check-ins — `SOFTWARE` · COMPLETA (2026-08-10)
+- **Componente:** mobile · **Depende de:** — · **Detectada por:** auditoría de pantallas y de
+  cableado (2026-08-10)
+- **El defecto:** `sync.tsx` decía «sus **capturas y reportes** se guardan localmente y se
+  enviarán automáticamente al recuperar la red». Era **falso**: `queue.ts` declaraba `checkin`
+  como ÚNICO tipo, así que la cámara forense y el formulario de daños hacían POST directo y **sin
+  red se perdían**. La pantalla que existe para dar confianza sobre la cola era la que mentía
+  sobre su contenido.
+- **Criterios de aceptación:**
+  - [x] La cola admite fotos y reportes además de check-ins, y `headcount` entra sin reescribirla.
+  - [x] Cámara y formulario **encolan**; el ciclo avión→captura→formulario→red→sync ocurre solo.
+  - [x] La integridad forense sobrevive al encolado.
+  - [x] «Personas atrapadas o heridas» salta al frente de la cola.
+  - [x] El banner dice la verdad.
+  - [x] `sync.tsx` cumple el contrato de 4 estados.
+
+> **Cerrada (2026-08-10).** Multi-tipo por un **censo de tipos**, no por un `kind: string` suelto:
+> las tres piezas que lo consumen son `Record<QueueKind, …>` y **no compilan incompletas**, así
+> que añadir `headcount` es imposible de dejar a medias.
+>
+> **El binario no entra en la cola:** el item guarda el puntero al archivo privado —jamás la
+> galería—, su tamaño y el SHA-256 sellado en captura. Y se añade la comprobación que la spec
+> §2.3 pedía y no existía en cliente: **se re-hashea antes de registrar nada** y se aborta si no
+> coincide. Si un byte cambió mientras la foto esperaba en el bolsillo, no se crea la fila ni se
+> sube el blob.
+>
+> **El problema difícil, bien resuelto:** un reporte de daños **no puede** llevar `evidence_ids`
+> del servidor, porque en avión no existen. Lleva `evidence_refs`, ids **locales** de items de la
+> misma cola, que se resuelven al despachar — así el enlace forense sobrevive al modo avión. Un
+> reporte espera a sus fotos, pero una foto `failed` **deja de retenerlo**: un JPEG roto no puede
+> esconder un daño estructural.
+>
+> Se reutiliza `queuePriority`/`orderByPriority`, escritos desde T-2.12 con el comentario «se usa
+> para ordenar el envío» y que solo tocaba su propio test.
+>
+> De paso, dos cuelgues silenciosos: `hydrate()` no capturaba, así que si la base local no abría
+> la pantalla decía «Cargando su cola local cifrada…» **para siempre**; y `triage.tsx` dejaba
+> `busy` en `true` tras un fallo de red.
+>
+> **HUECO DECLARADO ⇒ `T-2.113`** (idempotencia del registro de evidencia) y una reserva: `db.ts`
+> gana dos columnas por `ALTER TABLE` tolerante a duplicado, y **jest nunca carga el módulo
+> nativo**, así que merece una pasada en el Pixel del `GATE-HW`.
+
+### [x] T-2.109 · El push se registraba sin inmueble — `SOFTWARE` · COMPLETA (2026-08-10)
+- **Componente:** mobile + api · **Depende de:** — · **Detectada por:** auditoría de cableado
+  (2026-08-10)
+- **El defecto:** `registerDeviceForPush(siteId?)` se llamaba **sin argumento** desde
+  `_layout.tsx` —el único punto de llamada de toda la app—, así que el token viajaba con
+  `site_id: null`. Y el orquestador selecciona destinatarios con `WHERE site_id = %(site)s`.
+  **NULL nunca iguala a un UUID.**
+- **No era regresión viva, era una MINA.** Medido contra producción el 2026-08-10:
+  `select count(*) from push_tokens` = **0**, porque el canal real sigue detrás de `GATE-STORE`
+  (`T-2.97`). El día que ese gate aterrizara, el registro habría seguido mandando `null` y **la
+  acreditación habría salido verde sin que sonara un solo teléfono**.
+- **Criterios de aceptación:**
+  - [x] El token se registra con el inmueble, en todo el ciclo de vida.
+  - [x] Al enrolarse, se re-registra sin reinstalar ni cerrar sesión.
+  - [x] No se queda apuntando al sitio anterior; `assert_site_access` intacto.
+  - [x] Un sitio **sin destinatarios lo dice**, no calla.
+  - [x] Test explícito de la mina, con control de no-vacuidad.
+
+> **Cerrada (2026-08-10).** El parámetro pasa a ser **obligatorio**: volver a omitirlo no compila.
+> El re-registro al enrolarse no se hace con una llamada nueva, sino haciendo que el efecto
+> **dependa del sitio vigilado** — un solo punto de registro en toda la app es justo lo que
+> impide que mañana alguien se quede atrás.
+>
+> Y el otro lado: verbo propio `notify_no_recipients` (patrón de T-2.75) tanto al encolar —donde
+> el silencio era real: sin dispositivos no se encolaba y la pasada salía **verde**— como al
+> despachar, donde cero dispositivos caía en la rama de fallo y reintentaba **tres veces contra
+> una lista vacía** para acabar escribiendo `notify_failed`, que manda al operador a revisar SNS
+> por un problema que no está en SNS.
+>
+> **La firma exacta de la mina** va en el payload: `tokens_sin_inmueble` distingue «nadie instaló
+> la app todavía» (esperable hoy, a `info`) de «hay teléfonos registrados que no apuntan a ningún
+> sitio» (la avería, a `warning`).
+>
+> **RESERVA declarada ⇒ `T-2.114`:** el sitio vigilado persiste en SecureStore entre sesiones y
+> **no se limpia al cerrar sesión, a propósito** — borrarlo dejaría tirado al `occupant`, cuyo
+> edificio no viaja en el claim de Cognito.
+
+### [ ] T-2.110 · `sirenActive` es un enclavamiento que nunca se libera — `SOFTWARE`
+- **Componente:** sdk + mobile · **Detectada por:** auditoría de cableado (2026-08-10)
+- `ACTION_STATE` de `shared/sdk-ts/src/bms.ts` **no tiene `siren_off`**, así que
+  `panel.tsx:144-146` deriva `sirenActive` de un `siren_on` que nunca se cancela: basta uno
+  histórico para que la precondición «El gabinete reporta la sirena activa» quede `met=true` el
+  **resto del incidente**, y el detalle afirme que el gabinete lo reporta **sin que nadie lo haya
+  reportado**.
+- T-2.75.a mitigó la mitad (una acción **simulada** ya no la satisface), pero un `siren_on` real
+  sigue enclavando.
+- **Criterios de aceptación:**
+  - [ ] El estado de sirena se **libera** cuando corresponde, derivado de dato real.
+  - [ ] La precondición de silenciar deja de autorizarse sola.
+  - [ ] Test que ancle el ciclo encender→apagar→precondición falsa.
+
+### [ ] T-2.111 · Un fallo de red cuelga botones de vida en silencio — `SOFTWARE`
+- **Componente:** mobile · **Detectada por:** auditoría de cableado (2026-08-10)
+- El cliente del SDK **lanza** en error de red. `panic.tsx` (voto de pánico) y `lista.tsx`
+  (check-in **delegado**) no capturan: `busy` se queda en `true` y **el dato se pierde sin decir
+  nada**. (`triage.tsx` ya quedó cerrado por `T-2.108`.)
+- Del mismo género: `crisis.tsx` y `checkin.tsx` caen en **spinner infinito** cuando no hay sitio
+  vigilado —las dos pantallas de vida—, que es justo lo que el resto del código prohíbe.
+- Y `notifyUnreported`/`closeHeadcount` no muestran resultado ni error: el táctico no puede saber
+  si la notificación salió.
+- **Criterios de aceptación:**
+  - [ ] Ningún botón queda `busy` tras un fallo de red; el desenlace se pinta.
+  - [ ] Sin sitio vigilado, las dos pantallas de vida declaran el estado en vez de girar.
+  - [ ] Existe el equivalente móvil de `expectFourStates` y las pantallas lo pasan.
+
+### [ ] T-2.112 · `rejection_audit.py` declara seguir el patrón que causó T-2.73.c — `SOFTWARE`
+- **Componente:** api · **Detectada por:** `T-2.73.c` (2026-08-10)
+- `api/src/takab_api/commands/rejection_audit.py:16` dice **explícitamente** que sigue el mismo
+  patrón de conexión lateral que provocaba el interbloqueo a tres bandas. No se revisó.
+- **Criterios de aceptación:**
+  - [ ] Medido si el defecto existe ahí también, con evidencia (no por parecido).
+  - [ ] Si existe, cerrado con la misma costura que `audit_out_of_band_async`.
+
+### [ ] T-2.113 · El registro de evidencia no es idempotente, y la cola reintenta más — `SOFTWARE`
+- **Componente:** api + sdk + mobile · **Depende de:** T-2.108 · **Declarada por el propio
+  T-2.108 como hueco**
+- `POST /incidents/{id}/evidence` genera el `evidence_id` **en el servidor** y no acepta uno del
+  cliente: si el registro va bien pero el PUT a S3 falla, el reintento crea una **fila de
+  evidencia huérfana**. No es regresión —el POST directo hacía lo mismo— pero la cola reintenta
+  más, así que el hueco se ve más. Roza la **regla de oro 3**.
+- **Criterios de aceptación:**
+  - [ ] `EvidenceRegisterIn` acepta el `evidence_id` del cliente, con `ON CONFLICT DO NOTHING`.
+  - [ ] Test: registrar dos veces el mismo item no duplica fila.
+
+### [ ] T-2.114 · El sitio vigilado se hereda entre usuarios del mismo teléfono — `SOFTWARE`
+- **Componente:** mobile + api · **Declarada por el propio `T-2.109`**
+- `mySite.ts` persiste el `site_id` en SecureStore y **no lo limpia al cerrar sesión, a
+  propósito**: borrarlo dejaría tirado a cualquier `occupant`, porque su edificio **no viaja en
+  el claim de Cognito** —sale del enrolamiento— y necesitaría un código nuevo. Consecuencia: un
+  usuario distinto en el mismo teléfono hereda el edificio del anterior.
+- En el servidor lo frena `assert_site_access` (404/403) y el token no se crea, pero afecta
+  también a `CrisisWatcher`.
+- **Criterios de aceptación:**
+  - [ ] `/me` devuelve el sitio del `occupant`, para que el cliente no tenga que recordarlo.
+  - [ ] Cerrar sesión suelta el sitio sin dejar tirado a nadie.
+  - [ ] Test de dos usuarios distintos en el mismo dispositivo.
+
+### [ ] T-2.115 · El veredicto de un test depende del orden de recolección — `SOFTWARE`
+- **Componente:** api (tests) · **Detectada por:** `T-2.80.b`, confirmada en las dos direcciones
+  (2026-08-10)
+- `tests/auth/conftest.py:84` siembra `DB_SITE_PRIV` con code `'SA'` y `tests/api/conftest.py:116`
+  con `'B2SA'`, **los dos con `ON CONFLICT DO NOTHING`**: gana quien corra primero. Correr
+  `tests/auth` antes que `tests/api` pone rojo
+  `test_events.py::test_los_votos_traen_el_codigo_de_la_estacion` y produce **15 errores** en
+  `test_privacy.py`. En orden natural, verde.
+- **Misma familia que `T-2.73.c`:** la suite dice cosas distintas según cómo la invoques, y eso
+  erosiona la confianza en todos los rojos futuros.
+- **Criterios de aceptación:**
+  - [ ] La siembra es coherente entre familias, o cada una usa su propio sitio.
+  - [ ] Un test que invoque las dos familias **en el orden malo** y siga verde.
+
+### [ ] T-2.116 · El `CommandAck` no trae el estado del relé, y la spec lo exige — `SOFTWARE`
+- **Componente:** edge + api · **Declarada por el propio `T-2.107`**
+- La spec móvil §2.2 dice que el resultado real llega «en el `command_ack` **con el estado
+  recalculado del relé**». **Ese campo no existe en ningún contrato:** el edge manda
+  `{channel, action, success, latency_s, executed_at, detail, results}` —y `detail` es
+  literalmente `"relay"`— y el ingest persiste eso en `commands.ack`. Es decir, `sirenStillOn()`
+  de `ackState.ts` **nunca pudo dispararse con datos reales**, ni antes ni después de T-2.107.
+- T-2.106 lo dejó escrito desde el otro lado: «la nube no sabe si el relé de la sirena está
+  energizado ahora mismo».
+- **Criterios de aceptación:**
+  - [ ] El `CommandAck` transporta el estado del canal **tras el arbitraje de demandas**, y
+        `handle_command_ack` lo persiste.
+  - [ ] La app deja de inferirlo de la fase y lo lee del acuse.
+  - [ ] Test de extremo a extremo: silenciar con alerta vigente ⇒ el acuse dice que la sirena
+        sigue energizada.
 
 ### [x] T-2.104 · La app le atribuía a SASMEX alertas que SASMEX no dio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile · **Depende de:** — · **Origen:** Mauricio movió el sensor con la mano

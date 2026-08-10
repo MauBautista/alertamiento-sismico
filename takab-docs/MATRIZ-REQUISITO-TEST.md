@@ -67,7 +67,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 |---|---|---|---|---|
 | RO-3.a | El mismo `event_id` recorrido dos veces por el camino completo (SQS→consumidor→DB) produce un solo incidente. | `CUBIERTO` | `api/tests/test_ingest_e2e.py:277`<br>`test_local_event_escalates_into_single_incident` | Dos mensajes con el mismo `event_id` ⇒ una fila en `incidents`, DLQ vacía. |
 | RO-3.b | La idempotencia está en la DB, no sólo en el código de aplicación. | `CUBIERTO` | `api/tests/test_idempotency.py:34`<br>`test_incident_event_uuid_idempotent` | `ON CONFLICT (event_uuid) DO NOTHING`: rowcount 1 y luego 0. |
-| RO-3.c | La superficie de escritura HTTP tolera el reintento del cliente offline. | `CUBIERTO` | `api/tests/api/test_mobile_core.py:586`<br>`test_checkin_replay_offline_es_idempotente` | Reenviar el mismo `checkin_id` devuelve la fila idéntica; otro portador con el mismo id recibe 409. |
+| RO-3.c | La superficie de escritura HTTP tolera el reintento del cliente offline. | `CUBIERTO` | `api/tests/api/test_mobile_core.py:671`<br>`test_checkin_replay_offline_es_idempotente` | Reenviar el mismo `checkin_id` devuelve la fila idéntica; otro portador con el mismo id recibe 409. |
 | RO-3.d | El nonce de intención emitido por el servidor es de un solo uso. | `CUBIERTO` | `api/tests/api/test_command_intent.py:163`<br>`test_intencion_firmada_feliz_y_replay_rechazado` | Primera llamada 201; el replay exacto del intento firmado, 409. |
 | RO-3.e | El anti-replay de configuración firmada sobrevive a un reinicio del edge. | `CUBIERTO` | `edge/tests/test_config.py:240`<br>`test_replay_rejected_across_restart` | Un `ConfigStore` nuevo sobre la misma caché sigue rechazando la versión ya vista. |
 
@@ -180,8 +180,8 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 |---|---|---|---|---|
 | RO-11.a | Una regla de retención que borre filas de una tabla de compliance se rechaza, y se rechaza ANTES de borrar nada. | `CUBIERTO` | `api/tests/test_privacy_retention.py:290`<br>`test_una_regla_que_borra_filas_de_una_tabla_protegida_es_rechazada`<br>`api/tests/test_privacy_retention.py:304`<br>`test_el_rechazo_ocurre_en_el_preflight_antes_de_cualquier_conteo` | Parametrizado sobre las cinco tablas protegidas: `RetentionUnsafe` y conteo idéntico antes/después.<br>El plan entero aborta en el preflight. |
 | RO-11.b | Ni saltándose el guard puede el job borrar evidencia: lo impide la propia base. | `CUBIERTO` | `api/tests/test_privacy_retention.py:315`<br>`test_ni_saltandose_el_guard_puede_el_job_borrar_evidencia` | `DELETE` crudo en la sesión del job ⇒ 42501 o P0001 (trigger append-only). |
-| RO-11.c | ARCO anonimiza al titular sin perder una sola fila. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:367`<br>`test_arco_anonimiza_al_titular_sin_perder_una_sola_fila` | Censo de filas sobre 9 tablas idéntico antes y después. |
-| RO-11.d | El hecho sobrevive a la anonimización: el check-in sigue contando. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:409`<br>`test_el_checkin_anonimizado_sigue_contando_para_el_incidente` | El conteo del incidente no cambia; la geometría precisa sí se anula. |
+| RO-11.c | ARCO anonimiza al titular sin perder una sola fila. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:373`<br>`test_arco_anonimiza_al_titular_sin_perder_una_sola_fila` | Censo de filas sobre 9 tablas idéntico antes y después. |
+| RO-11.d | El hecho sobrevive a la anonimización: el check-in sigue contando. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:415`<br>`test_el_checkin_anonimizado_sigue_contando_para_el_incidente` | El conteo del incidente no cambia; la geometría precisa sí se anula. |
 
 ## Invariantes y diferido (`BLUEPRINT §14`)
 

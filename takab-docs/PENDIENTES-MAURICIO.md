@@ -4,9 +4,9 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-09 · **27 pendientes** · Estado del backlog al escribirlo:
-> 234 tareas · 159 `[x]` · 6 `[~]` · 69 `[ ]`, de las cuales **56 son `SOFTWARE`** y las demás
-> están aquí.
+> **Última actualización:** 2026-08-10 · **29 pendientes** · Estado del backlog al escribirlo:
+> 254 tareas · 179 `[x]` · 9 `[~]` · 66 `[ ]`, de las cuales la mayoría son `SOFTWARE` y las
+> demás están aquí.
 
 ---
 
@@ -87,6 +87,24 @@ jobs `api`, `web`, `edge`, `mobile` y `secretos`.
 solo si el test *«lo corre un job que bloquea el merge»*, y hoy modela eso como «está en
 `ci.yml` y no es `continue-on-error`». Mientras no haya protección de rama, **el modelo es más
 optimista que la realidad**.
+
+### 1.7 · ¿Un pánico despierta a todo el edificio? — [`T-2.106`](TASKS.md)
+El quórum de pánico emite el comando de sirena y **no notifica a nadie**: la ruta del voto no
+toca `notify/`. Con `T-2.106` la app ya explica la alarma, pero se entera **en el siguiente
+sondeo** — 30 s en reposo, que bajan a 5 s en cuanto entra en `building_alarm`.
+
+Mandar push por una activación manual **no es decisión técnica**: es decidir si dos personas
+pueden despertar a un edificio entero de madrugada. Las tres salidas son legítimas —push a todos,
+push solo a tácticos, o nada y que lo diga la sirena— y ninguna se puede elegir desde el código.
+
+### 1.8 · `lock_timeout` global en la conexión del request — [`T-2.73.c`](TASKS.md)
+`T-2.73.c` cerró el interbloqueo por el lado de la conexión **lateral**. La conexión **del
+request** sigue sin tope: si `audit_log` está bloqueada *antes* de que el request empiece, se
+cuelga en el primer `SELECT`.
+
+Poner un `lock_timeout` global en `get_tenant_conn` cambia el comportamiento de **toda** la API
+bajo contención —convierte esperas en errores 5xx— y eso es una decisión de producción, no un
+refactor. Decidir si se pone, con qué valor, y si aplica también a los workers.
 
 ---
 
