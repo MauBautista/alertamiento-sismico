@@ -341,9 +341,7 @@ async def test_el_cuorum_de_red_SI_ordena_evacuar(base_data, make_incident) -> N
             ),
             {"e": eid, "m": json.dumps({"node_count": 3})},
         )
-    await make_incident(
-        au.DB_TENANT_PRIV, au.DB_SITE_PRIV, trigger="local_threshold", event_id=eid
-    )
+    await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, trigger="local_threshold", event_id=eid)
     url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
     async with au.client_for(create_app()) as client:
         await _enroll(client, _occ())
