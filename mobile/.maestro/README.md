@@ -36,12 +36,24 @@ todos, y cada archivo declara la suya en su cabecera.
 export PATH="$HOME/.maestro/bin:$PATH"
 set -a && . .maestro/.env && set +a
 
-maestro test .maestro/04-panico-quorum.yaml      # no necesita incidente
+.maestro/run.sh 04-panico-quorum.yaml       # no necesita incidente
 make cloud-staging-incident PHASE=crisis
-maestro test .maestro/01a-crisis.yaml
+.maestro/run.sh 01a-crisis.yaml
 make cloud-staging-incident PHASE=conclude
-maestro test .maestro/01b-checkin-sync.yaml
+.maestro/run.sh 01b-checkin-sync.yaml
+.maestro/run.sh 02-tactico-foto-danos.yaml  # pide el TOTP del táctico
+make cloud-staging-incident PHASE=roster    # ocupantes SIN reportar
+.maestro/run-offline.sh                     # las 3 partes del offline, con el radio
 ```
+
+**Siempre por `run.sh`, nunca `maestro test` a secas**: Maestro NO hereda el entorno del shell
+—solo `-e`— y los flujos declaraban `env: FOO: ${FOO}`, una autorreferencia que produce la
+cadena literal `"undefined"` y la teclea en el formulario. Cognito respondía «credenciales
+incorrectas» con las credenciales buenas.
+
+**El offline va por `run-offline.sh`**: el modo avión de Android **no apaga el WiFi**, y Maestro
+no puede tocar ese radio. El script lo apaga entre las partes 1 y 2, lo restaura con `trap`, y
+por eso son tres archivos: el login necesita red y lo que se mide necesita no tenerla.
 
 `maestro test .maestro/` (la carpeta entera) **no** sirve para una corrida de
 aceptación: no hay forma de intercalar los cambios de fase entre flujos.
@@ -54,7 +66,7 @@ aceptación: no hay forma de intercalar los cambios de fase entre flujos.
 | Táctico: foto → daños → Triage | `02-tactico-foto-danos.yaml` | evidencia forense + reporte llegan a Triage con hash | incidente + **TOTP del táctico** |
 | Dictamen → liberación | `03-dictamen-liberacion.yaml` | consola-firma → push → PDF → reingreso liberado | **firma de un inspector en la consola** |
 | Pánico quórum-de-2 | `04-panico-quorum.yaml` | 1er voto queda en `1 DE 2`; NO es alerta sísmica | ninguna |
-| Offline en modo avión | `05-offline-avion.yaml` | captura+formulario offline → sync al reconectar | incidente + **TOTP del táctico** |
+| Offline-first (3 partes) | `05a/05b/05c` + `run-offline.sh` | declara MODO OFFLINE, deja el trabajo PENDIENTE, la cola drena sola | incidente `conclude` + `roster` + **TOTP** |
 
 **Lo que estos flujos NO acreditan solos**, y hace falta decirlo porque un gate
 que se da por cerrado sin correrse es peor que uno declarado abierto:

@@ -1,0 +1,29 @@
+# E2E · 3/3 · Al volver la red, la cola drena SOLA.
+#
+# VIENE DE `05b`, sin `clearState`. `run-offline.sh` restaura el WiFi antes.
+#
+# QUÉ SE MIDE, y por qué no es «SINCRONIZADO». La versión anterior esperaba una
+# fila con esa etiqueta y no podía pasar nunca: al confirmarse, el elemento SALE
+# de la cola y la pantalla se queda sin fila que mirar. Lo observable es que el
+# contador de PENDIENTES baja a cero **sin que aparezca ningún FALLIDO** y sin
+# que nadie pulse reintentar — que es justo el comportamiento offline-first: la
+# cola drena sola al recuperar la red.
+#
+# LO QUE ESTE FLUJO **NO** ACREDITA, y hay que decirlo: que el elemento llegara
+# al servidor. «Salió de la cola» y «lo recibió la nube» no son lo mismo, y desde
+# el teléfono no se distinguen. Comprobarlo exige mirar `life_checkins` DEL
+# INCIDENTE QUE LA APP TIENE ABIERTO —que en un gabinete vivo suele ser el que
+# abrió el propio equipo, no el sembrado por `seed_staging_incident.sh`—, así que
+# el `no_reportados` que imprime ese script mide otro incidente y no sirve aquí.
+# Queda como hueco declarado en `T-2.102`, no como verde.
+appId: com.takab.ailert
+---
+- extendedWaitUntil:
+    visible:
+      text: "SINCRONIZACIÓN · 0 PENDIENTE\\(S\\)"
+    timeout: 60000
+# Y que no haya drenado a la papelera: ni un fallido, ni un reintento pendiente.
+- assertNotVisible:
+    text: ".*FALLÓ.*"
+- assertNotVisible:
+    id: "retry-all"

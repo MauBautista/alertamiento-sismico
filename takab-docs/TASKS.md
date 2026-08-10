@@ -6683,21 +6683,33 @@ sería documentar intenciones.
 - **Criterios de aceptación:**
   - [x] Los tres defectos arreglados, cada uno con su razón escrita dentro del archivo.
   - [x] README con el requisito REAL (release, arm64) y la tabla de precondiciones por flujo.
-  - [x] **Tres de cinco acreditados en un Pixel 8 Pro real (2026-08-09):**
+  - [x] **CUATRO de los cinco flujos acreditados en un Pixel 8 Pro real (2026-08-09):**
         · `04` — el pánico declara «NO es la alerta sísmica» y **un solo voto no dispara**
           (`1 DE 2 CONFIRMACIONES` + expiración).
         · `01a` — toma de crisis con el verbo de la zona, **sin magnitud** (`M ?[0-9]` ausente)
           y con contador **ascendente**, no cuenta regresiva.
         · `01b` — check-in de vida declarando dónde quedó el dato.
-  - [x] El login del táctico **con MFA real** funciona: se enrola el TOTP a mano y el flujo
-        continúa solo. También se arregló que tapeaba el botón del OCUPANTE — con la sesión de
-        Cognito del occupant viva, entraba con el rol equivocado y en silencio.
-  - [ ] **`02` y `05` quedan bloqueados en una pregunta de PRODUCTO, no de automatización:**
-        con un incidente abierto y el reingreso bloqueado, la app mantiene una toma de pantalla
-        (check-in → línea de tiempo «REINGRESO PROHIBIDO») **sin barra de pestañas**, así que un
-        brigadista no puede llegar a TRIAGE — que es justo su trabajo durante un incidente.
-        Hay que decidir si esa toma debe aplicar al rol táctico o solo al occupant. Hasta
-        entonces, automatizar el resto sería fabricar un verde.
+        · `02` — táctico con **MFA real**: cámara forense → «PERSONAS EN RIESGO · PRIORIDAD
+          MÁXIMA» → foto → `ENVIAR REPORTE`.
+        · `05a/b/c` — offline-first con la red REALMENTE cortada: declara `MODO OFFLINE`, deja
+          el trabajo `PENDIENTE` y la cola drena sola al reconectar, sin fallidos.
+  - [x] **Dos defectos más de los flujos, destapados por la corrida real:**
+        · El login del táctico tapeaba el botón del OCUPANTE. Con la sesión de Cognito del
+          occupant viva en Chrome, **entraba con el rol equivocado y en silencio** — el peor
+          desenlace posible para un login.
+        · `05` daba por hecho que el modo avión deja el teléfono sin red. **En Android no lo
+          hace**: `wlan0` conserva su IPv4, así que la app no pintaba «MODO OFFLINE» y tenía
+          razón. Ahora el WiFi lo apaga `run-offline.sh`, que además lo restaura con `trap`:
+          un flujo abortado no puede dejar el teléfono incomunicado.
+  - [x] **Y dos de sintaxis que impedían siquiera parsear `05`:** `setAirplaneMode` es un
+        escalar (`enabled`), no un mapa; y `assertVisible` no admite `timeout` — eso es
+        `extendedWaitUntil`. Llevaban ahí desde que se escribió el flujo porque nadie lo había
+        corrido en un teléfono.
+  - [ ] **Hueco declarado en `05c`:** el flujo acredita que la cola drena sin fallidos, **no**
+        que el elemento llegara al servidor — «salió de la cola» y «lo recibió la nube» no son
+        lo mismo y desde el teléfono no se distinguen. Comprobarlo exige mirar `life_checkins`
+        del incidente que la app tiene abierto, que en un gabinete vivo suele ser el que abrió
+        el propio equipo y no el de `seed_staging_incident.sh`.
   - [ ] `03` necesita además la firma de un inspector en la consola web (otro usuario con MFA).
 
 ### [x] T-2.101 · El despliegue al gabinete leía su identidad sin `sudo` — `SOFTWARE` · COMPLETA (2026-08-09)

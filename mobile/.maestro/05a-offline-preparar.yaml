@@ -1,0 +1,32 @@
+# E2E · 1/3 · Offline-first: preparar la sesión CON red.
+#
+# PRECONDICIONES:
+#     make cloud-staging-incident PHASE=crisis
+#     make cloud-staging-incident PHASE=conclude
+#     make cloud-staging-incident PHASE=roster    # ← ocupantes SIN reportar
+# El `verify-*` del headcount solo existe si hay alguien sin reportar; con el
+# roster al día no hay a quién marcar y el flujo falla por una razón que no es
+# suya. No estaba escrito hasta la primera corrida real (2026-08-09).
+#
+# CÓRRELO CON `.maestro/run-offline.sh`, que encadena las tres partes y controla
+# el radio entre ellas. Por qué está partido en tres: el login NECESITA red y la
+# parte que se mide NECESITA no tenerla. Un solo flujo no puede ser las dos
+# cosas, y Maestro no sabe apagar el WiFi — que es lo que de verdad hay que
+# apagar, porque el modo avión de Android NO lo apaga.
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-tactico.yaml
+# Tras una sacudida concluida, el check-in de vida TOMA la pantalla y tapa las
+# pestañas. Responderlo primero es la secuencia real, no un rodeo.
+- runFlow: shared/atender-checkin.yaml
+# El onboarding va DESPUÉS: con un incidente abierto, el vigilante monta la toma
+# de check-in ENCIMA del onboarding, así que antes no es siquiera visible.
+- runFlow: shared/onboarding-tactico.yaml
+# Se deja la app EN LA LISTA, lista para trabajar sin red.
+- tapOn: "LISTA"
+- extendedWaitUntil:
+    visible:
+      id: "verify-.*"
+    timeout: 20000

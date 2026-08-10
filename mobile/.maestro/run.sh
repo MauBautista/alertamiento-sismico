@@ -41,7 +41,7 @@ fi
 FLUJO="$1"; shift
 case "$FLUJO" in /*) ;; *) FLUJO="$AQUI/$FLUJO" ;; esac
 
-exec maestro test \
+maestro test \
   -e OCCUPANT_EMAIL="$OCCUPANT_EMAIL" \
   -e OCCUPANT_PASSWORD="$OCCUPANT_PASSWORD" \
   -e TACTICO_EMAIL="$TACTICO_EMAIL" \
