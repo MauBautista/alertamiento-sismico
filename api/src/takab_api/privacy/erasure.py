@@ -44,9 +44,53 @@ Tres capas, ninguna de ellas un comentario:
    no sea exactamente "anular ``geom``" — comparando la fila entera vía
    ``to_jsonb``, así que cubre también las columnas que se añadan mañana. Los
    dos cubren al dueño de la tabla, que es a quien el privilegio no cubre.
-3. **La firma de la función.** ``privacy_erase_subject(p_right, p_via)`` no
-   recibe sujeto: opera sobre ``app_user_id()``. Ejercer ARCO sobre un tercero
-   no está prohibido, es **inexpresable**.
+3. **La firma de la función.** ``privacy_erase_subject`` no recibe sujeto. En
+   autoservicio opera sobre ``app_user_id()``; por cuenta de otro (T-2.80.b)
+   recibe el ``request_id`` de una CONSTANCIA y resuelve el sujeto uniendo
+   contra el padrón de ``app_tenant_id()``. Nombrar a un titular ajeno no está
+   prohibido, es **inexpresable**: no hay parámetro por donde formularlo.
+
+EL RESPONSABLE QUE EJECUTA UN ARCO RECIBIDO POR ESCRITO (T-2.80.b)
+──────────────────────────────────────────────────────────────────
+El caso normal bajo la LFPDPPP no es el titular pulsando un botón: es una persona
+que manda su solicitud **por escrito** al responsable del tratamiento, que es
+quien tiene que ejecutarla. Ensanchar eso sin perder la garantía de arriba se hace
+con tres piezas, y ninguna es un ``if``:
+
+* ``privacy_erasure_requests`` —la CONSTANCIA— no tiene parámetro de tenant
+  (``DEFAULT app_tenant_id()`` + WITH CHECK de RLS) y lleva un FK **compuesto**
+  ``(tenant_id, user_sub) → user_profiles``: nombrar a un titular de otro cliente
+  viola integridad referencial, no una comprobación.
+* El sujeto se **resuelve** dentro de la función uniendo contra el padrón de
+  ``app_tenant_id()``. No llega: se produce, y solo lo produce el tenant de la
+  sesión.
+* ``app_can_erase_subject(tenant, subject)`` convierte "exige constancia" en un
+  **privilegio**: cinco políticas cuelgan de él, y sin fila de solicitud el
+  responsable no puede tocar un solo dato de esa persona ni escribir su lápida.
+  Cada política admite además, en su ``WITH CHECK``, exactamente la fila
+  ANONIMIZADA: con constancia en mano, ``SET display_name = 'Otro'`` sigue siendo
+  un error de RLS.
+
+LO QUE ESTA TAREA **NO** HACE (T-2.80.b, criterio 4)
+────────────────────────────────────────────────────
+1. **No borra la cuenta en Cognito, y eso no es un olvido.** Anonimizar es
+   destruir el mapeo ``sub → persona`` en ESTA base; el directorio de identidad es
+   otro sistema, con otro efecto y otro camino. Mezclarlos sería un error en las
+   dos direcciones: borrar la cuenta **no** anonimiza nada aquí (las filas
+   seguirían con su ``display_name``), y anonimizar **no** puede darse el lujo de
+   depender de una llamada a un servicio externo dentro de la transacción que
+   sella el ``audit_digest`` — si Cognito falla, el acto se revierte y el titular
+   se queda sin su derecho. Además tiene una consecuencia que ARCO no tiene:
+   quien pierde la cuenta pierde el acceso a la app de emergencia del edificio.
+   La baja de identidad necesita su propia ficha, con su propio criterio de
+   irreversibilidad, su propio efecto sobre ``user_zone_assignments`` (el
+   denominador del headcount) y su propia auditoría.
+2. **No guarda el documento de la solicitud.** ``proof_ref`` dice DÓNDE está
+   (folio, expediente, clave de objeto) y ``proof_digest`` prueba CUÁL es. El
+   escrito vive en el expediente del responsable; almacenarlo aquí metería PII
+   eterna en una tabla que la regla de oro 11 impide podar.
+3. **No alcanza al sujeto identificado por teléfono.** El ``msisdn`` en claro de
+   ``privacy_consents.subject_ref`` sigue siendo el hueco declarado de T-2.80.a.
 
 LA LÁPIDA (`privacy_erasures`)
 ──────────────────────────────
@@ -77,10 +121,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # Códigos de error de la capa SQL (la decisión se toma en la DB, no en el router)
 # ---------------------------------------------------------------------------
 
-#: La sesión no identifica a un titular (no hay `app.user_id`).
+#: La sesión no identifica a un portador (no hay `app.user_id`).
 SQLSTATE_FORBIDDEN = "TK403"
 #: Hay un incidente ABIERTO en un sitio del titular: la anonimización se aplaza.
 SQLSTATE_DEFERRED = "TK409"
+#: [T-2.80.b] No hay constancia de esa solicitud EN ESTE CLIENTE. Un `request_id`
+#: de otro tenant produce este mismo código, y esa indistinguibilidad es el punto:
+#: la constancia ajena no está prohibida, es que no existe para esta sesión.
+SQLSTATE_NO_CONSTANCIA = "TK404"
 #: Se intentó borrar o reescribir una fila que solo admite ser anonimizada. Es el
 #: código por defecto de ``RAISE EXCEPTION``, el MISMO que levanta
 #: ``forbid_update_delete()``: el guard de `life_checkins` es una variante de ese
@@ -95,10 +143,19 @@ ERASED_DISPLAY_NAME = "(titular anonimizado)"
 #: hubo un dispositivo registrado— y muere el identificador que lo enruta.
 ERASED_TOKEN_PREFIX = "arco:"
 
-#: Firma de la función de borrado. Anclada en un test: el día que alguien añada
-#: un parámetro de sujeto para que un tercero ejerza ARCO por otro, rompe y
-#: obliga a razonar la superficie nueva (ver `tests/test_privacy_erasure.py`).
-ERASE_FN_ARGS: tuple[str, ...] = ("p_right", "p_via")
+#: Firma de la función de borrado. Anclada en un test, y el ancla YA hizo su
+#: trabajo: la T-2.80 la fijó en ``("p_right", "p_via")`` para que "un tercero
+#: ejerce ARCO por otro" no se colara sin razonarse, y T-2.80.b tuvo que venir
+#: aquí a razonarlo. El tercer parámetro **no es un sujeto**: es el ``request_id``
+#: de una constancia, y el sujeto se resuelve dentro contra el padrón del tenant
+#: de la sesión. `test_la_firma_ensanchada_sigue_sin_admitir_un_sujeto` lo mide
+#: por el nombre de los parámetros, no por su número.
+ERASE_FN_ARGS: tuple[str, ...] = ("p_right", "p_via", "p_request")
+
+#: Nombres que un parámetro de esta función NO puede llevar: el día que aparezca
+#: uno, el sujeto habrá dejado de resolverse dentro y la garantía de T-2.80 habrá
+#: pasado de "inexpresable" a "prohibido por un `if`".
+ERASE_FN_ARGS_PROHIBIDOS: tuple[str, ...] = ("user", "sub", "subject", "tenant", "titular")
 
 #: Tablas donde ARCO DESTRUYE un valor. Debe coincidir exactamente con las
 #: entradas ``erase`` del inventario — hay un test que lo comprueba.
@@ -162,6 +219,10 @@ NAMED_PII = frozenset(
         "endpoint_arn",
         "public_key",
         "notes",
+        # [T-2.80.b] Referencia al escrito de una solicitud ARCO. No es el
+        # documento (eso vive en el expediente del responsable), pero apunta a
+        # uno lleno de PII, así que entra al detector y exige decisión escrita.
+        "proof_ref",
     }
 )
 
@@ -318,7 +379,27 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
         "del acto, y no hay nada a lo que remontarlo una vez destruido el mapeo.",
     ),
     ("privacy_erasures", "requested_by"): PiiColumn(
-        _RETAIN, "Quién pidió el borrado. Hoy es siempre el propio titular. " + _R_AUDITORIA
+        _RETAIN,
+        "Quién EJERCIÓ el acto ante el sistema: el propio titular (autoservicio) "
+        "o el responsable que ejecuta una constancia (T-2.80.b). Quién lo pidió "
+        "materialmente está en `privacy_erasure_requests.user_sub`, atado por "
+        "`request_id`; en autoservicio los dos coinciden. " + _R_AUDITORIA,
+    ),
+    ("privacy_erasure_requests", "user_sub"): PiiColumn(
+        _RETAIN,
+        "El titular que PIDIÓ, en la constancia de su solicitud. Es la prueba de "
+        "que el borrado del responsable estaba autorizado: destruirla dejaría una "
+        "lápida sin más respaldo que la palabra de quien la escribió. `sub` "
+        "opaco, y el mapeo ya lo destruyó el mismo acto. " + _R_AUDITORIA,
+    ),
+    ("privacy_erasure_requests", "created_by"): PiiColumn(
+        _RETAIN, "Quién REGISTRÓ la solicitud (≠ quién la pidió). " + _R_OPERADOR
+    ),
+    ("privacy_erasure_requests", "proof_ref"): PiiColumn(
+        _RETAIN,
+        "DÓNDE está el escrito recibido (folio, expediente, clave de objeto), "
+        "nunca su contenido. Junto a `proof_digest` es lo que convierte 'hay una "
+        "solicitud' en 'es ESTA solicitud'. " + _R_AUDITORIA,
     ),
     ("commands", "issued_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("rule_sets", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
@@ -339,28 +420,116 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
 # El acto
 # ---------------------------------------------------------------------------
 
-_ERASE_SELF = text("SELECT privacy_erase_subject(:right, :via) AS lapida")
+_ERASE = text("SELECT privacy_erase_subject(:right, :via, CAST(:request AS uuid)) AS lapida")
 
 _TOMBSTONE = text(
-    "SELECT erasure_id, tenant_id, user_sub, right_exercised, requested_by, via, "
-    "       affected, audit_watermark, audit_digest, erased_at "
+    "SELECT erasure_id, tenant_id, user_sub, right_exercised, requested_by, request_id, "
+    "       via, affected, audit_watermark, audit_digest, erased_at "
     "FROM privacy_erasures "
     "WHERE tenant_id = CAST(:tenant AS uuid) AND user_sub = CAST(:user AS uuid)"
 )
 
 _VERIFY = text("SELECT privacy_audit_digest(CAST(:tenant AS uuid), :watermark) AS digest")
 
+_RECORD_REQUEST = text(
+    # `tenant_id` NO se pasa: lo pone `DEFAULT app_tenant_id()`. Que el cliente no
+    # pueda nombrar el tenant ni aquí es la primera de las tres piezas que hacen
+    # inexpresable la constancia cruzada (las otras dos: el FK compuesto contra el
+    # padrón y la resolución del sujeto dentro de `privacy_erase_subject`).
+    "INSERT INTO privacy_erasure_requests "
+    "  (user_sub, right_requested, channel, received_at, proof_ref, proof_digest, created_by) "
+    "VALUES (CAST(:user AS uuid), :right, :channel, :received_at, :proof_ref, :proof_digest, "
+    "        CAST(:actor AS uuid)) "
+    "RETURNING request_id, tenant_id, user_sub, right_requested, channel, received_at, "
+    "          proof_ref, proof_digest, created_by, created_at"
+)
+
+_REQUEST = text(
+    "SELECT request_id, tenant_id, user_sub, right_requested, channel, received_at, "
+    "       proof_ref, proof_digest, created_by, created_at "
+    "FROM privacy_erasure_requests WHERE request_id = CAST(:request AS uuid)"
+)
+
 
 async def erase_self(conn: AsyncConnection, *, right: str, via: str) -> dict[str, Any]:
     """Ejerce ARCO sobre el titular de la SESIÓN. No hay otro sujeto posible.
+
+    ``p_request => NULL`` es literalmente el camino de la T-2.80: el sujeto es
+    ``app_user_id()`` y no hay por dónde nombrar a otro.
 
     Devuelve la lápida más ``created``: ``False`` significa "ya se había
     ejercido", no "falló". Todo el acto —los cuatro anonimizados, la lápida y el
     sellado del digest— ocurre en una sola sentencia: una anonimización a medias
     no es un estado alcanzable.
     """
-    crudo = await conn.scalar(_ERASE_SELF, {"right": right, "via": via})
+    return await _erase(conn, right=right, via=via, request_id=None)
+
+
+async def erase_on_behalf(conn: AsyncConnection, *, via: str, request_id: str) -> dict[str, Any]:
+    """[T-2.80.b] Ejecuta una solicitud ARCO recibida por escrito.
+
+    **No lleva sujeto ni derecho**, y las dos ausencias son deliberadas: los dos
+    salen de la constancia. El sujeto, porque aceptarlo del cliente reabriría el
+    ARCO cruzado que la T-2.80 hizo inexpresable; el derecho, porque el escrito ya
+    dice qué se pidió y dejar que el ejecutor lo re-declare permitiría que el
+    registro divergiera del documento.
+    """
+    return await _erase(conn, right=None, via=via, request_id=request_id)
+
+
+async def _erase(
+    conn: AsyncConnection, *, right: str | None, via: str, request_id: str | None
+) -> dict[str, Any]:
+    crudo = await conn.scalar(_ERASE, {"right": right, "via": via, "request": request_id})
     return crudo if isinstance(crudo, dict) else json.loads(crudo)
+
+
+async def record_request(
+    conn: AsyncConnection,
+    *,
+    user_sub: str,
+    right: str,
+    channel: str,
+    received_at: Any,
+    proof_ref: str,
+    proof_digest: str,
+    actor_sub: str,
+) -> Any:
+    """Deja constancia de una solicitud ARCO recibida FUERA de la app.
+
+    El ``tenant_id`` no es un parámetro: lo pone la base con ``app_tenant_id()``.
+    Y ``user_sub`` puede venir del cliente sin peligro porque el FK compuesto
+    contra ``user_profiles (tenant_id, user_sub)`` solo admite a alguien del
+    propio padrón: un titular ajeno levanta ``IntegrityError``, no un 403.
+    """
+    return (
+        (
+            await conn.execute(
+                _RECORD_REQUEST,
+                {
+                    "user": user_sub,
+                    "right": right,
+                    "channel": channel,
+                    "received_at": received_at,
+                    "proof_ref": proof_ref,
+                    "proof_digest": proof_digest,
+                    "actor": actor_sub,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+
+
+async def request(conn: AsyncConnection, *, request_id: str) -> Any:
+    """La constancia, o ``None`` si no existe **para esta sesión**.
+
+    Sin filtro de tenant a propósito: la RLS ``per_admin`` ya hace que la de otro
+    cliente no exista aquí. Un ``AND tenant_id = ...`` sugeriría que el
+    confinamiento es una comprobación de este código; no lo es.
+    """
+    return (await conn.execute(_REQUEST, {"request": request_id})).mappings().one_or_none()
 
 
 async def tombstone(conn: AsyncConnection, *, tenant_id: str, user_sub: str) -> Any:

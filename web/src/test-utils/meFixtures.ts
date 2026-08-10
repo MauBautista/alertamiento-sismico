@@ -45,6 +45,8 @@ export const ACTIONS_NONE: MeActions = {
   panel_read: false,
   maintenance_window: false,
   platform_maintenance_window: false,
+  manage_privacy_notice: false,
+  manage_privacy_erasure: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";

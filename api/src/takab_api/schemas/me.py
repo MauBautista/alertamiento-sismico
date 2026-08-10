@@ -53,6 +53,15 @@ class MeActions(BaseModel):
     #: [T-2.71] Ventana de PLATAFORMA (alarmas ec2_* de la instancia de la nube):
     #: SOLO takab_superadmin — vigilan infra común de todos los clientes.
     platform_maintenance_window: bool
+    #: [T-2.79.e] Publicar el aviso de privacidad del cliente y registrar el
+    #: consentimiento de un tercero sin sesión (superadmin/tenant_admin: el
+    #: *responsable* de los datos de los ocupantes es el dueño del inmueble).
+    manage_privacy_notice: bool
+    #: [T-2.80.b] Registrar una solicitud ARCO recibida POR ESCRITO y ejecutarla
+    #: por cuenta del titular (superadmin/tenant_admin). Que la acción esté en
+    #: `true` NO significa que se pueda anonimizar a cualquiera: hace falta una
+    #: CONSTANCIA registrada, y eso lo exige la base (RLS), no esta bandera.
+    manage_privacy_erasure: bool
 
 
 class MeResponse(BaseModel):
