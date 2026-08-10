@@ -1,4 +1,10 @@
-import type { GatewayConfigStateOut, RuleSetOut, SiteOut, TenantOut } from "@takab/sdk";
+import type {
+  GatewayConfigStateOut,
+  NotifyChannelOut,
+  RuleSetOut,
+  SiteOut,
+  TenantOut,
+} from "@takab/sdk";
 
 /**
  * Defaults REALES de `ThresholdBand` del edge (`edge/takab_edge/config/settings.py`).
@@ -33,6 +39,36 @@ export type ThresholdBand = Record<ThresholdKey, ThresholdValue>;
 /** Canales de la cascada, en el ORDEN FIJO del backend (`notify/plan.py`). */
 export const CASCADE_ORDER = ["webhook", "whatsapp", "sms", "email"] as const;
 export type ChannelKey = (typeof CASCADE_ORDER)[number];
+
+/**
+ * [T-2.75.a] Realidad del provider de un canal, tal como la DECLARA el servidor.
+ *
+ * `unknown` no es un estado degradado: es el único honesto mientras
+ * `GET /notify/channels` carga, falla, o simplemente no menciona el canal. Se
+ * pinta `S/D`. El default bajo incertidumbre es la peor causa —igual que hace
+ * `is_simulated` en el servidor—, salvo que aquí ni siquiera se afirma
+ * "simulado": se dice que no se sabe, que es lo que pasa.
+ */
+export type ChannelReality = "real" | "simulated" | "unknown";
+
+/**
+ * Realidad de `key` según la respuesta de `GET /notify/channels`.
+ *
+ * NO hay ninguna lista de canales reales en la consola: si el servidor no lo
+ * dice, no se sabe. Ésa era la causa raíz de T-2.75.a — el rótulo «SIMULADO en
+ * el MVP» estaba escrito a fuego y se habría vuelto mentira, al revés, el día
+ * que el canal ascendiera a real.
+ */
+export function channelRealityOf(
+  channels: NotifyChannelOut[] | undefined,
+  key: string,
+): ChannelReality {
+  const declared = channels?.find((c) => c.channel === key);
+  if (declared === undefined) {
+    return "unknown";
+  }
+  return declared.simulated ? "simulated" : "real";
+}
 
 export interface ChannelState {
   key: ChannelKey;

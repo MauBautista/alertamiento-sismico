@@ -1,0 +1,23 @@
+{
+  "nota": "[T-2.75.a] La COSTURA entre el registro de providers y la consola. api/tests/api/test_notify_channels.py comprueba que GET /notify/channels produce exactamente estas respuestas para dos configuraciones reales; web/src/features/tenants/NotificationChannels.test.tsx comprueba que estas mismas respuestas son las que pintan REAL o SIMULADO. Un provider que pase de simulado a real rompe el test de la API, obliga a mover este fichero y con eso cambia lo que pinta la consola — sin tocar una linea de la web. No se edita a mano sin correr las dos suites.",
+  "escenarios": {
+    "sin_credenciales": {
+      "channels": [
+        { "channel": "webhook", "simulated": false },
+        { "channel": "whatsapp", "simulated": true },
+        { "channel": "sms", "simulated": true },
+        { "channel": "email", "simulated": true },
+        { "channel": "push", "simulated": true }
+      ]
+    },
+    "sms_con_credenciales": {
+      "channels": [
+        { "channel": "webhook", "simulated": false },
+        { "channel": "whatsapp", "simulated": true },
+        { "channel": "sms", "simulated": false },
+        { "channel": "email", "simulated": true },
+        { "channel": "push", "simulated": true }
+      ]
+    }
+  }
+}

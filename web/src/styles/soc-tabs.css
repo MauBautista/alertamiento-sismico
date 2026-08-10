@@ -1014,6 +1014,18 @@
   font-size: 10.5px;
   color: var(--tk-fg-3);
 }
+/* [T-2.75.a] Realidad del provider (GET /notify/channels), no un rótulo fijo.
+   Tres estados y tres lecturas distintas: entrega / no entrega nadie / no se
+   sabe. El `unknown` va en gris apagado a propósito — no es una alarma, es la
+   ausencia de dato, y pintarlo verde sería la mentira que cierra esta ficha. */
+.mt-channel__reality {
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  font-family: var(--tk-font-mono);
+}
+.mt-channel__reality--real { color: var(--tk-status-normal); }
+.mt-channel__reality--simulated { color: var(--tk-status-warning); }
+.mt-channel__reality--unknown { color: var(--tk-fg-3); }
 .mt-channel__switch {
   width: 32px; height: 18px; border-radius: 999px;
   background: var(--tk-surface-0);

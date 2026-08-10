@@ -79,10 +79,23 @@ export interface ActuatorGroup {
 }
 
 function viewOf(action: IncidentActionOut): ActionStateView {
-  // La bandera del payload MANDA sobre el mapa: una acción que se declara
-  // simulada no puede pintarse de verde por no estar dada de alta arriba.
+  // [T-2.75.a] La bandera del payload MANDA sobre el mapa, SIN excepción por
+  // estar el `kind` dado de alta arriba. Esto decía lo mismo en el comentario y
+  // hacía lo contrario: consultaba el mapa primero, así que un `notify_sent`
+  // con `payload.simulated: true` se pintaba «ENVIADA», en verde, mientras la
+  // bitácora del mismo incidente (`IncidentTimeline.kindLabel`) lo declaraba
+  // simulado. Dos superficies leyendo la misma fila y contando cosas distintas.
+  //
+  // Y hay una tercera: el panel táctico móvil deriva de esta vista si la sirena
+  // está sonando (`mobile/src/app/(brigadista)/panel.tsx`, `view.state ===
+  // 'ACTIVADA'`) para habilitar el preflight de SILENCIAR. Una acción que se
+  // declara simulada no sonó, así que tampoco hay nada que silenciar: con la
+  // regla uniforme esa precondición deja de darse por satisfecha sola.
+  //
+  // La regla se ancla en `web/src/simulatedRule.test.ts`, que la exige a las dos
+  // implementaciones para TODOS los kinds conocidos.
   if (isSimulatedAction(action)) {
-    return ACTION_STATE[action.kind] ?? SIMULATED_VIEW;
+    return SIMULATED_VIEW;
   }
   return ACTION_STATE[action.kind] ?? { state: action.kind.toUpperCase(), kind: 'ok' };
 }

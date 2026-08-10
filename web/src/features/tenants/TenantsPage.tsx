@@ -30,6 +30,7 @@ import {
   verticalOf,
 } from "./model";
 import type { ChannelDraft, ThresholdBand, ThresholdKey } from "./model";
+import { useNotifyChannels } from "./useNotifyChannels";
 import { useRuleSetPublish } from "./useRuleSetPublish";
 import {
   TENANTS_STALE_MS,
@@ -193,6 +194,13 @@ export default function TenantsPage() {
   const gateways = useTenantGateways(tenantId);
   const sync = useTenantSync(gateways.gatewayIds);
   const publish = useRuleSetPublish();
+  /**
+   * [T-2.75.a] Qué canal tiene proveedor REAL detrás. Se pregunta al servidor
+   * (registro de providers) en vez de rotularlo a fuego en la tarjeta: el
+   * rótulo estático era verdad hoy y mentira —al revés— el día que T-2.76.a /
+   * T-2.77.a carguen credenciales. Sin dato ⇒ la tarjeta pinta `S/D`.
+   */
+  const notifyChannels = useNotifyChannels();
 
   /**
    * Instantánea del servidor de la que se sembró el borrador. `dirty` se mide contra
@@ -545,7 +553,12 @@ export default function TenantsPage() {
                   </div>
                 </div>
 
-                <NotificationChannels drafts={drafts} disabled={!canEdit} onChange={setDrafts} />
+                <NotificationChannels
+                  drafts={drafts}
+                  disabled={!canEdit}
+                  onChange={setDrafts}
+                  reality={notifyChannels.channels}
+                />
 
                 {hasEditAction && !ownTenant && (
                   <p className="soc-meta">

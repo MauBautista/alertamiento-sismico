@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from takab_api.health import router as health_router
+from takab_api.notify.providers import build_providers, channel_reality
 from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.commands import router as commands_router
@@ -25,6 +26,7 @@ from takab_api.routers.me import router as me_router
 from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
+from takab_api.routers.notify import router as notify_router
 from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
@@ -107,6 +109,15 @@ def create_app() -> FastAPI:
 
     # Canal live WebSocket ``/ws`` (B4).
     app.include_router(ws_router)
+
+    # [T-2.75.a] Realidad de los canales de notificación: qué provider entrega de
+    # verdad y cuál no. Se congela AQUÍ, con el mismo ``build_providers`` que
+    # arranca el worker, porque es configuración del proceso — cambia con un
+    # despliegue, no entre dos peticiones. De paso, la API hereda el grito de
+    # arranque de T-2.75 sobre los canales simulados en vez de dejarlo solo en el
+    # worker.
+    app.state.notify_channels = channel_reality(build_providers(Settings()))
+    app.include_router(notify_router)
 
     # Guard de entorno: auth_jwks_json vacío = producción (JWKS remoto) → sin /dev/token.
     if Settings().auth_jwks_json:

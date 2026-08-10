@@ -16,7 +16,7 @@ import hmac
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Protocol
 
 import boto3
@@ -53,6 +53,22 @@ def is_simulated(provider: object) -> bool:
     tablero que dice "notificado" cuando nadie recibió nada.
     """
     return bool(getattr(provider, "simulated", True))
+
+
+def channel_reality(providers: Mapping[str, NotifyProvider]) -> dict[str, bool]:
+    """``{canal: ¿simulado?}`` DERIVADO del registro ya construido (T-2.75.a).
+
+    Ni una lista de canales: se recorre el registro y se le pregunta a cada
+    provider, con el mismo ``is_simulated`` que usa el guard del orquestador. El
+    sexto canal que alguien enchufe en ``build_providers`` aparece aquí solo, y
+    aparece con la presunción correcta (simulado) si no se declara.
+
+    Existe porque esta verdad **moría en el log**: el worker la grita al
+    arrancar y la consola no tenía a quién preguntársela, así que rotulaba
+    «SIMULADO en el MVP» a fuego — y ese rótulo se volvería mentira, al revés,
+    el día que el canal ascendiera a real.
+    """
+    return {channel: is_simulated(provider) for channel, provider in providers.items()}
 
 
 def _canonical_body(message: dict) -> bytes:
