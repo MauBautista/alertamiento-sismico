@@ -35,6 +35,24 @@ CERO veces). Ahora el simulado es un desenlace propio:
   volver de ninguna parte, y reintentar contra un proveedor inexistente sería
   martillear la nada hasta agotar los intentos por nada.
 
+[T-2.109] **Un sitio sin un solo teléfono al que despertar lo DICE.** El canal
+push elige destinatarios con ``WHERE site_id = <uuid> AND tenant_id = ... AND
+revoked_at IS NULL``. La app registraba su token con ``site_id: null`` (llamaba a
+``registerDeviceForPush()`` sin argumento, y era su único punto de registro), y
+NULL no iguala a un UUID: ningún dispositivo entraba jamás en la lista. Lo que
+hacía el orquestador ante esa lista vacía era CALLAR — no encolaba push y la
+pasada devolvía verde—, así que un edificio entero sin cobertura era
+indistinguible de uno cubierto.
+
+No era una regresión viva: ``push_tokens`` está vacía en producción porque el
+canal real sigue detrás de GATE-STORE (T-2.97). Era una MINA — el día que
+APNs/FCM aterricen, la acreditación saldría verde sin que sonara un teléfono.
+Ahora "cero destinatarios" es un desenlace propio: verbo
+``notify_no_recipients`` con el censo de tokens del tenant dentro (incluido
+cuántos están registrados SIN inmueble, que es la firma exacta del defecto),
+contador propio en la pasada, y terminal en el dispatch — no se reintenta contra
+una lista vacía ni se molesta al proveedor con ella.
+
 Corre como ``takab_ingest`` (BYPASSRLS) en el worker ``python -m
 takab_api.notify``; cloud-only, jamás en el camino de actuación del edge.
 """
@@ -271,6 +289,27 @@ VALUES (%(incident)s, %(tenant)s, %(kind)s, %(actor)s, %(payload)s::jsonb)
 _KIND_SENT = "notify_sent"
 _KIND_SIMULATED = "notify_simulated"
 _KIND_FAILED = "notify_failed"
+# [T-2.109] Cuarto verbo. No es entregado, no es simulado (el proveedor existe y
+# entrega) y no es fallo (no hay avería que arreglar ni a quién reintentar): es
+# que NO HAY A QUIÉN DESPERTAR en este sitio. La reacción del operador es otra
+# —conseguir que los teléfonos se registren con su inmueble—, así que el verbo
+# también.
+_KIND_NO_RECIPIENTS = "notify_no_recipients"
+
+# Evidencia guardada UNA vez por (incidente, actor). `incident_actions` es
+# append-only y exenta de poda por retención (regla de oro 11): un incidente que
+# se re-mira en cada pasada —tenant sin cascada configurada— no puede dejar una
+# fila por pasada en la tabla que existe para reconstruir lo ocurrido.
+_NO_RECIPIENTS_ACTION_SQL = """
+INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
+SELECT %(incident)s::uuid, %(tenant)s::uuid, %(kind)s::text, %(actor)s::text,
+       %(payload)s::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM incident_actions
+  WHERE incident_id = %(incident)s::uuid AND kind = %(kind)s::text
+    AND actor = %(actor)s::text
+)
+"""
 
 # --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
 _PUSH_EXISTS_SQL = """
@@ -284,6 +323,18 @@ SELECT push_token_id, token, platform, endpoint_arn
 FROM push_tokens
 WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
 ORDER BY created_at
+"""
+
+# [T-2.109] Censo de tokens del tenant para poder DECIR por qué no hay nadie.
+# `tokens_sin_inmueble` es la firma exacta del defecto que cerró esta ficha: la
+# app registraba con `site_id: null` y los dos filtros de arriba comparan
+# `site_id = <uuid>`, que NULL no satisface jamás. Un token así existe, parece
+# un teléfono cubierto y no recibe nada.
+_TENANT_TOKENS_SQL = """
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE site_id IS NULL) AS sin_sitio
+FROM push_tokens
+WHERE tenant_id = %(tenant)s AND revoked_at IS NULL
 """
 
 _SET_ENDPOINT_ARN_SQL = """
@@ -323,9 +374,17 @@ def run_notify_pass(
         # una capa más arriba, y sumarlo a `failed` diría "hay que arreglar el
         # proveedor" cuando lo que falta es CONTRATAR uno.
         "simulated": 0,
+        # [T-2.109] Sitios que se quedaron sin un solo teléfono al que despertar.
+        # El contador es la señal VIVA de la pasada (se repite mientras siga sin
+        # haber nadie); la fila de `incident_actions` es la evidencia permanente
+        # y se escribe una sola vez. Antes esto no existía: la push simplemente
+        # no se encolaba y la pasada devolvía verde.
+        "no_recipients": 0,
     }
 
-    counts["enqueued"] = _enqueue(conn, settings, config_cache, now=now, lookback_s=lookback)
+    counts["enqueued"] = _enqueue(
+        conn, settings, config_cache, counts, now=now, lookback_s=lookback
+    )
     counts["enqueued"] += _enqueue_dictamen_requests(
         conn, config_cache, now=now, lookback_s=lookback
     )
@@ -352,6 +411,7 @@ def _enqueue(
     conn: psycopg.Connection,
     settings: Settings,
     config_cache: dict,
+    counts: dict[str, int],
     *,
     now: datetime,
     lookback_s: float,
@@ -372,6 +432,18 @@ def _enqueue(
         ).fetchone()
         if has_devices is not None:
             destinations = {**destinations, "push": {"site_id": str(row["site_id"])}}
+        else:
+            # [T-2.109] Aquí estaba el silencio: sin dispositivos no se encolaba
+            # push y la pasada seguía como si nada, así que un edificio entero
+            # sin un solo teléfono alcanzable era indistinguible de uno cubierto.
+            _record_no_recipients(
+                conn,
+                counts,
+                incident_id=row["incident_id"],
+                tenant_id=row["tenant_id"],
+                site_id=row["site_id"],
+                actor="system:notify:push:enqueue",
+            )
         if not destinations:
             continue  # tenant sin cascada configurada: nada que encolar
         specs = plan_jobs(
@@ -647,14 +719,13 @@ def _dispatch_push(
         ).fetchall()
     ]
     if not devices:
-        _fail(
-            conn,
-            counts,
-            row,
-            "sin dispositivos activos para el sitio",
-            now=now,
-            max_attempts=max_attempts,
-        )
+        # [T-2.109] Nadie a quien entregar NO es una avería del proveedor. Antes
+        # caía en `_fail`, que sin nadie a quien escalar reintenta con backoff:
+        # tres pasadas martilleando una lista vacía para acabar escribiendo
+        # `notify_failed`, un verbo que manda al operador a revisar SNS cuando lo
+        # que falta son teléfonos registrados con su inmueble. Es el mismo
+        # argumento de T-2.75 con el canal simulado: desenlace propio y terminal.
+        _no_recipients_job(conn, counts, row)
         return
 
     # [T-2.11] La clase del push la fija el job (CRISIS al abrir incidente;
@@ -771,6 +842,116 @@ def _simulate(
         row["mode"],
         row["incident_id"],
     )
+
+
+def _no_recipients_job(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+) -> None:
+    """[T-2.109] Un job de push que se encontró el sitio VACÍO.
+
+    Termina aquí: no se reintenta (no hay proveedor caído que pueda volver, ni
+    lista que se llene en los 30 s del backoff — un teléfono se registra al abrir
+    la app o al enrolarse, no en mitad de un sismo) y no se molesta al proveedor
+    con una lista vacía. El estado del job es ``failed`` porque el schema no
+    tiene otro terminal que diga "no llegó" —añadir uno pedía migración, y el
+    candado real es que ``sent_at`` se queda en NULL—, pero el ``error`` y el
+    verbo de la evidencia dicen la verdad completa: faltan destinatarios.
+    """
+    actor = f"system:notify:push:{row['mode']}"
+    if row.get("action_id"):
+        actor = f"{actor}:{row['action_id']}"
+    site_id = (row["target"] or {}).get("site_id") or row["site_id"]
+    extra: dict[str, object] = {
+        "job_id": str(row["job_id"]),
+        "mode": row["mode"],
+        # Sin entrega no hay plazo que cumplir: null es "no aplica", nunca el
+        # False de "llegó tarde" (regla de oro 7).
+        "deadline_met": None,
+    }
+    if row.get("action_id"):
+        extra["action_id"] = str(row["action_id"])
+    detail = _record_no_recipients(
+        conn,
+        counts,
+        incident_id=row["incident_id"],
+        tenant_id=row["tenant_id"],
+        site_id=site_id,
+        actor=actor,
+        extra=extra,
+    )
+    conn.execute(
+        _MARK_FAILED_SQL,
+        {"job": row["job_id"], "error": detail[:500], "attempts": (row["attempts"] or 0) + 1},
+    )
+
+
+def _record_no_recipients(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    *,
+    incident_id,
+    tenant_id,
+    site_id,
+    actor: str,
+    extra: dict[str, object] | None = None,
+) -> str:
+    """[T-2.109] Deja ESCRITO que este sitio no tiene a quién despertar.
+
+    Devuelve el motivo en texto (sirve de ``error`` del job). El payload lleva el
+    censo de tokens del tenant porque "cero" tiene dos causas muy distintas y el
+    operador reacciona distinto a cada una:
+
+    * ``tokens_del_tenant = 0`` — nadie instaló la app todavía. Esperable
+      mientras el canal real siga detrás de GATE-STORE (T-2.97): se registra
+      igual, pero sin gritar.
+    * ``tokens_sin_inmueble > 0`` — hay teléfonos registrados que NO apuntan a
+      ningún sitio. Esa es la avería de esta ficha: el registro mandaba
+      ``site_id: null`` y ningún filtro por sitio los alcanza jamás. Se grita.
+
+    La distinción es el punto entero: sin ella, el día que GATE-STORE aterrice la
+    acreditación saldría verde con todos los teléfonos huérfanos y nadie sabría
+    por qué no sonó ninguno.
+    """
+    census = conn.execute(_TENANT_TOKENS_SQL, {"tenant": tenant_id}).fetchone()
+    total = int(census["total"]) if census else 0
+    sin_sitio = int(census["sin_sitio"]) if census else 0
+    huerfanos = sin_sitio > 0
+    detail = "sin destinatarios de push para el sitio: " + (
+        f"{sin_sitio} token(s) del tenant registrados SIN inmueble "
+        "(un token sin site_id no es destinatario de ningún sitio)"
+        if huerfanos
+        else f"{total} token(s) en el tenant, ninguno de este sitio"
+    )
+    payload: dict[str, object] = {
+        "channel": "push",
+        "site_id": str(site_id),
+        "tokens_del_sitio": 0,
+        "tokens_del_tenant": total,
+        "tokens_sin_inmueble": sin_sitio,
+        "reason": detail,
+    }
+    payload.update(extra or {})
+    conn.execute(
+        _NO_RECIPIENTS_ACTION_SQL,
+        {
+            "incident": incident_id,
+            "tenant": tenant_id,
+            "kind": _KIND_NO_RECIPIENTS,
+            "actor": actor,
+            "payload": json.dumps(payload),
+        },
+    )
+    counts["no_recipients"] += 1
+    log = logger.warning if huerfanos else logger.info
+    log(
+        "notify push SIN DESTINATARIOS sitio %s (incidente %s): %s",
+        site_id,
+        incident_id,
+        detail,
+    )
+    return detail
 
 
 def _fail(

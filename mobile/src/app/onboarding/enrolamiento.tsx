@@ -48,6 +48,12 @@ export default function Enrolamiento() {
         const res = await enrollMeEnrollmentPost({ body: { code: code.trim() } });
         if (res.data) {
           // El sitio enrolado es el que este dispositivo VIGILA (mobile-state).
+          // [T-2.109] Y también el inmueble del token de push: `setWatchedSite`
+          // publica en el store observable de T-2.103, y el efecto de
+          // `app/_layout.tsx` re-registra el token con este sitio sin que haya
+          // que reinstalar ni reiniciar sesión. No se llama aquí a
+          // `registerDeviceForPush` a propósito: un solo punto de registro en
+          // toda la app es lo que hace imposible que uno de ellos se quede atrás.
           await setWatchedSite(String(res.data.site_id));
           setResult(res.data);
         } else {

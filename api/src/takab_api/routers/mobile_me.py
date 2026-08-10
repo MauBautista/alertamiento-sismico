@@ -13,6 +13,7 @@ acotan cada fila al portador; aquí solo se orquesta y se audita.
 from __future__ import annotations
 
 import json
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -33,6 +34,8 @@ from takab_api.schemas.mobile import (
     PushTokenOut,
 )
 
+logger = logging.getLogger("takab_api.mobile")
+
 router = APIRouter(dependencies=[Depends(require_mobile_surface)])
 
 
@@ -49,6 +52,20 @@ async def register_push_token(
     # con el UUID del sitio de OTRO tenant y recibir sus push CRISIS/OPS.
     if body.site_id is not None:
         await q.assert_site_access(conn, claims, body.site_id)
+    else:
+        # [T-2.109] Se ACEPTA sin inmueble (el contrato no cambia: un dispositivo
+        # puede registrarse antes de canjear su código), pero no pasa por
+        # cubierto. La nube elige a quién despierta con `WHERE site_id = <uuid>`
+        # y NULL no iguala a un UUID: este token no es destinatario de ningún
+        # sitio hasta que vuelva con uno. Queda dicho aquí y en `meta` de abajo
+        # porque el día que GATE-STORE (T-2.97) encienda APNs/FCM y no suene
+        # ningún teléfono, la primera pregunta será cuántos se registraron así.
+        logger.warning(
+            "push_token sin inmueble (user %s, tenant %s): NO recibirá push de sitio "
+            "hasta re-registrarse con su site_id",
+            claims.sub,
+            claims.tenant_id,
+        )
     row = (
         await conn.execute(
             q.UPSERT_PUSH_TOKEN,
@@ -67,7 +84,15 @@ async def register_push_token(
         actor=f"user:{claims.sub}",
         verb="push_token_register",
         obj=f"push_token:{row.push_token_id}",
-        meta={"platform": body.platform},
+        # [T-2.109] `targetable` no es redundante con `site_id`: es la lectura
+        # OPERATIVA del dato ("¿este teléfono puede recibir algo?"), y es lo que
+        # se cuenta de un vistazo en el audit trail sin saberse de memoria cómo
+        # filtra el orquestador.
+        meta={
+            "platform": body.platform,
+            "site_id": str(body.site_id) if body.site_id else None,
+            "targetable": body.site_id is not None,
+        },
     )
     return PushTokenOut(**dict(row._mapping))
 

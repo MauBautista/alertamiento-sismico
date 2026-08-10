@@ -1370,3 +1370,160 @@ def test_un_job_encolado_ANTES_del_cambio_no_envia_con_su_constancia_vieja(
 
     # Se niega pese a llevar la constancia dentro: el despacho no la mira.
     assert scenario.job(iid, "whatsapp")["status"] == "failed"
+
+
+# --- T-2.109 · un sitio SIN destinatarios lo dice; y la mina del site_id NULL ----
+#
+# El registro del token viajaba SIEMPRE con `site_id: null` (la app llamaba a
+# `registerDeviceForPush()` sin argumento) y el orquestador filtra por
+# `site_id = %(site)s`: NULL nunca iguala a un UUID, así que ningún dispositivo
+# entraba jamás en la lista de destinatarios. Hoy no hay regresión viva —
+# `push_tokens` está VACÍA en producción porque el canal real sigue detrás de
+# GATE-STORE (T-2.97)—, y por eso es peor: es una MINA. El día que APNs/FCM
+# aterricen, el registro seguiría mandando null, el filtro seguiría descartando
+# y la acreditación saldría VERDE sin que sonara un solo teléfono.
+#
+# Lo que estos tests clavan es que ese día no pase: cero destinatarios es un
+# desenlace ESCRITO (regla de oro 7 — un dato mudo no se pinta como sano), con
+# el número de tokens sin inmueble dentro, que es la firma exacta del defecto.
+
+
+class _FakePushProvider:
+    """Provider push que SÍ entrega (declara ``simulated = False``). Cuenta las
+    llamadas a ``deliver()``: con cero dispositivos no se le debe molestar."""
+
+    simulated = False
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def deliver(self, devices: list, payload: dict):
+        from takab_api.notify.push import PushOutcome
+
+        self.calls.append((devices, payload))
+        return PushOutcome(delivered=len(devices))
+
+
+def _site_of(scenario: _Scenario, incident_id: str) -> str:
+    return str(
+        scenario.conn.execute(
+            "SELECT site_id FROM incidents WHERE incident_id = %s", (incident_id,)
+        ).fetchone()["site_id"]
+    )
+
+
+def _seed_push_token(scenario: _Scenario, *, site: str | None) -> str:
+    """Un dispositivo registrado. ``site=None`` reproduce EXACTAMENTE lo que la
+    app mandaba: ``site_id: null``."""
+    token = f"tok-{uuid.uuid4()}"
+    scenario.conn.execute("RESET ROLE")  # takab_ingest lee y actualiza tokens, no los crea
+    scenario.conn.execute(
+        "INSERT INTO push_tokens (tenant_id, site_id, user_sub, token, platform) "
+        "VALUES (%s,%s,%s,%s,'android')",
+        (scenario.tenant, site, str(uuid.uuid4()), token),
+    )
+    scenario.conn.execute("SET ROLE takab_ingest")
+    scenario.conn.commit()
+    return token
+
+
+def _no_recipients(scenario: _Scenario, incident_id: str) -> list[dict]:
+    return _actions_by_kind(scenario, incident_id, "notify_no_recipients")
+
+
+def test_token_registrado_SIN_inmueble_no_es_destinatario_y_queda_escrito(
+    scenario: _Scenario,
+) -> None:
+    """LA MINA. Un token con ``site_id NULL`` no puede pasar por destinatario de
+    ningún sitio, y el sitio que se queda sin nadie a quien despertar lo DICE —
+    con el recuento de tokens huérfanos, que es lo que delata la causa."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _seed_push_token(scenario, site=None)  # el registro que mandaba site_id: null
+
+    _run(scenario, _providers(), now=BASE)
+
+    # 1) No entra por destinatario: no hay ni job de push.
+    assert [j for j in scenario.jobs(iid) if j["channel"] == "push"] == []
+    # 2) Y el silencio queda escrito, con la causa dentro.
+    escrito = _no_recipients(scenario, iid)
+    assert len(escrito) == 1
+    payload = escrito[0]["payload"]
+    assert payload["channel"] == "push"
+    assert payload["site_id"] == _site_of(scenario, iid)
+    assert payload["tokens_del_sitio"] == 0
+    assert payload["tokens_sin_inmueble"] == 1  # la firma del defecto
+    assert payload["tokens_del_tenant"] == 1
+
+
+def test_el_token_BIEN_registrado_si_es_destinatario(scenario: _Scenario) -> None:
+    """No-vacuidad del test anterior: el MISMO montaje con el sitio dentro sí
+    encola push y NO escribe «sin destinatarios». Sin esto, el test de la mina
+    pasaría igual con el canal push roto de raíz."""
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _seed_push_token(scenario, site=_site_of(scenario, iid))
+
+    providers = _providers()
+    providers["push"] = _FakePushProvider()  # type: ignore[assignment]
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "push", mode="parallel")["status"] == "sent"
+    assert _no_recipients(scenario, iid) == []
+
+
+def test_cero_destinatarios_se_cuenta_en_cada_pasada_y_se_escribe_UNA_vez(
+    scenario: _Scenario,
+) -> None:
+    """El contador es la señal VIVA de la pasada; ``incident_actions`` es la
+    evidencia permanente (append-only y exenta de poda, regla de oro 11): se
+    escribe una sola vez aunque el incidente se re-mire en cada pasada."""
+    # Tenant SIN cascada configurada (ojo: `seed_config({})` cae en el default por
+    # el `config or NOTIF_CONFIG` del helper). Sin destinos no se encola nada, así
+    # que el incidente se vuelve a mirar en cada pasada — el caso que pone a
+    # prueba la idempotencia de la evidencia.
+    scenario.seed_config({"notifications": {}})
+    iid = scenario.seed_incident()
+
+    primera = run_notify_pass(scenario.conn, Settings(), _providers(), now=BASE)
+    segunda = run_notify_pass(
+        scenario.conn, Settings(), _providers(), now=BASE + timedelta(seconds=30)
+    )
+
+    assert primera["no_recipients"] == 1
+    assert segunda["no_recipients"] == 1  # sigue sin haber a quién despertar: se sigue diciendo
+    assert len(_no_recipients(scenario, iid)) == 1  # pero la evidencia no se duplica
+    assert primera["sent"] == 0 and primera["enqueued"] == 0
+
+
+def test_push_de_accion_sin_dispositivos_no_martillea_la_nada(scenario: _Scenario) -> None:
+    """Un push de ACCIÓN (headcount / dictamen firmado) se encola sin preguntar,
+    y al despachar puede encontrarse el sitio vacío. Eso NO es una avería del
+    proveedor: no hay nada que arreglar ni a quién reintentar (mismo argumento
+    que T-2.75 con el canal simulado). Desenlace terminal, verbo propio y sin
+    consumir la ventana de reintentos contra nadie."""
+    scenario.seed_config({"notifications": {}})
+    iid = scenario.seed_incident()
+    action = str(uuid.uuid4())
+    scenario.conn.execute(
+        "INSERT INTO incident_actions (action_id, incident_id, tenant_id, kind, actor, ts, "
+        "payload) VALUES (%s,%s,%s,'headcount_notify','user:soc',%s,'{}'::jsonb)",
+        (action, iid, scenario.tenant, BASE),
+    )
+    scenario.conn.commit()
+
+    providers = _providers()
+    providers["push"] = _FakePushProvider()  # type: ignore[assignment]
+    counts = run_notify_pass(scenario.conn, Settings(), providers, now=BASE)
+
+    job = scenario.job(iid, "push", mode="parallel")
+    assert job["status"] == "failed"  # terminal: no se queda 'pending' rebotando
+    assert job["sent_at"] is None
+    assert providers["push"].calls == []  # al proveedor no se le molesta con una lista vacía
+    # El verbo NO es 'notify_failed': el proveedor está sano, lo que falta son
+    # teléfonos. El operador reacciona distinto a cada cosa.
+    assert _actions_by_kind(scenario, iid, "notify_failed") == []
+    del_job = [a for a in _no_recipients(scenario, iid) if "job_id" in a["payload"]]
+    assert len(del_job) == 1
+    assert del_job[0]["payload"]["action_id"] == action
+    assert counts["no_recipients"] == 2  # el del incidente + el del job de la acción
