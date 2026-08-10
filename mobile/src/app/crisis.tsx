@@ -43,6 +43,12 @@ export default function Crisis() {
   if (state === "checkin_pending" || state === "reentry_blocked") {
     return <Redirect href="/checkin" />;
   }
+  // [T-2.106] El sismo pasó y lo que queda sonando es la alarma del inmueble:
+  // se entrega la pantalla que la explica, en vez de soltar al ocupante en el
+  // inicio con una sirena sonando y ninguna razón a la vista.
+  if (state === "building_alarm") {
+    return <Redirect href="/alarma-inmueble" />;
+  }
   if (state !== null && state !== "alert_active") {
     return <Redirect href="/" />;
   }

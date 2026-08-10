@@ -57,8 +57,27 @@ describe("registerDeviceForPush", () => {
       status: "denied",
       canAskAgain: true,
     } as never);
-    await expect(registerDeviceForPush()).resolves.toBe("no-permission");
+    await expect(registerDeviceForPush("site-1")).resolves.toBe("no-permission");
     expect(mocked.getDevicePushTokenAsync).not.toHaveBeenCalled();
+  });
+
+  it("[T-2.109] sin inmueble vinculado ⇒ 'no-site' y NO se registra nada", async () => {
+    // Un token con `site_id: null` NO es destinatario de nada: el orquestador
+    // filtra por `site_id = <uuid>` y NULL nunca iguala a un UUID. Registrarlo
+    // igual crearía una fila que parece un teléfono cubierto y no lo es — y el
+    // día que GATE-STORE encienda APNs/FCM la acreditación saldría verde sin
+    // que sonara un solo teléfono. Se declara y no se manda.
+    mocked.getPermissionsAsync.mockResolvedValue({
+      status: "granted",
+      canAskAgain: true,
+    } as never);
+    mocked.getDevicePushTokenAsync.mockResolvedValue({
+      type: "android",
+      data: "fcm-token-huerfano",
+    } as never);
+
+    await expect(registerDeviceForPush(null)).resolves.toBe("no-site");
+    expect(mockedRegister).not.toHaveBeenCalled();
   });
 
   it("con permiso ⇒ registra el token NATIVO con la plataforma correcta", async () => {
@@ -87,6 +106,6 @@ describe("registerDeviceForPush", () => {
     } as never);
     mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "ios", data: "apns" } as never);
     mockedRegister.mockResolvedValue({ error: { detail: "boom" } });
-    await expect(registerDeviceForPush()).resolves.toBe("error");
+    await expect(registerDeviceForPush("site-1")).resolves.toBe("error");
   });
 });
