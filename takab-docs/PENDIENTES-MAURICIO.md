@@ -8,9 +8,14 @@
 > backlog al escribirlo: 261 tareas · 186 `[x]` · 9 `[~]` · 66 `[ ]`, de las cuales la mayoría
 > son `SOFTWARE` y las demás están aquí.
 >
-> **Cambios de esta pasada:** §1.6 (protección de rama) **se cierra — ya está hecha**; entra §1.9
-> (¿arranca la consola sin base?); y §1.8 y §3.4 ganan actualización. El total no se mueve porque
-> se cerró una y entró otra.
+> **Cambios de esta pasada:** §1.6 (protección de rama) **se cierra — ya está hecha**; **§2.1 se
+> cierra: la nube está desplegada y la base en `0038`**; entra §1.9 (¿arranca la consola sin
+> base?); y §1.8 y §3.4 ganan actualización.
+>
+> **Y lo que ahora es lo siguiente, porque el despliegue de la nube lo dejó a un paso:** el
+> gabinete todavía corre el código viejo. Hasta que se despliegue el edge, `T-2.116` no existe
+> para el Pi —el acuse llega sin el estado del relé— y **`GATE-HW 02` acreditaría la conducta
+> vieja**. Ver §3.4.
 
 ---
 
@@ -145,9 +150,21 @@ refactor. Decidir si se pone, con qué valor, y si aplica también a los workers
 >   en cada publish.
 > - La IP doméstica rota a diario: si algo da **timeout** (no 403), es el firewall.
 
-### 2.1 · Aplicar lo que ya está escrito y sin desplegar
-Migraciones **0027 … 0036** y el módulo de identidad. Incluye el `terraform apply` de los tres
-statements IAM de las ventanas de mantenimiento ([`T-2.71`](TASKS.md)).
+### 2.1 · ~~Aplicar las migraciones que estaban escritas y sin desplegar~~ — ✅ **HECHO** (2026-08-11)
+
+**Desplegado y verificado en la nube**, no inferido del código de salida: los **siete**
+contenedores corriendo en `48d530f`, `/api/health` respondiendo `{"status":"ok","build":"48d530f"}`
+y `alembic_version` de la base **en `0038_privacy_erasure_on_behalf`**, que es la cabeza del repo.
+O sea que entraron las 0027…0036 que faltaban **y** las dos nuevas (0037, 0038).
+
+**Sigue pendiente de esta sección:** el `terraform apply` de los tres statements IAM de las
+ventanas de mantenimiento ([`T-2.71`](TASKS.md)) — el despliegue de imágenes no lo toca.
+
+> **La trampa del SSO se cobró este despliegue, y conviene saber cómo se reconoce.** Falló con
+> `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no es
+> que falten credenciales, es la caché del SSO caducada, y `aws sts` puede seguir contestando
+> mientras terraform ya no. `aws sso login` a secas **no lo arregla** — hace falta
+> `aws sso logout` primero.
 
 ### 2.2 · Confirmar que la alarma del gabinete fantasma **sale** de `INSUFFICIENT_DATA`
 Está escrito en tres sitios y es contraintuitivo: `insufficient_data_actions` dispara **solo al
