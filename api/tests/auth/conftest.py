@@ -21,11 +21,10 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 import auth_utils as au
+from seed_shared import seed_shared_rows
 from takab_api.auth import deps
 from takab_api.db.engine import get_engine
 from takab_api.main import create_app
-
-_GEOM = "ST_SetSRID(ST_MakePoint(-99.13,19.43),4326)::geography"
 
 
 @pytest.fixture(autouse=True)
@@ -65,34 +64,18 @@ async def db_engine():
 
 @pytest.fixture
 async def base_tenants(db_engine) -> None:
-    """Siembra 3 tenants (A/B private, G gov_shared) + un sitio por cada uno."""
+    """Siembra 3 tenants (A/B private, G gov_shared) + un sitio por cada uno.
+
+    [T-2.115] Estas filas son LAS MISMAS que siembra ``tests/api/conftest.py`` —los
+    UUIDs salen de ``auth_utils``— y no entran en el ``TRUNCATE`` de teardown, así que
+    sobreviven a todo el proceso. Mientras cada familia escribió sus propios valores
+    con ``ON CONFLICT DO NOTHING``, ganaba quien corriese primero y el veredicto de
+    un test dependía del orden de recolección. La definición única y autoritativa
+    vive ahora en ``tests/seed_shared.py``.
+    """
     engine = get_engine()
     async with engine.begin() as conn:
-        for tid, code, vis in (
-            (au.DB_TENANT_PRIV, "AUTHB_A", "private"),
-            (au.DB_TENANT_PRIV2, "AUTHB_B", "private"),
-            (au.DB_TENANT_GOV, "AUTHB_G", "gov_shared"),
-        ):
-            await conn.execute(
-                text(
-                    "INSERT INTO tenants (tenant_id, code, name, visibility) "
-                    "VALUES (:id, :code, 'Auth test', :vis) ON CONFLICT (tenant_id) DO NOTHING"
-                ),
-                {"id": tid, "code": code, "vis": vis},
-            )
-        for sid, tid, code in (
-            (au.DB_SITE_PRIV, au.DB_TENANT_PRIV, "SA"),
-            (au.DB_SITE_PRIV2, au.DB_TENANT_PRIV2, "SB"),
-            (au.DB_SITE_GOV, au.DB_TENANT_GOV, "SG"),
-        ):
-            await conn.execute(
-                text(
-                    "INSERT INTO sites (site_id, tenant_id, code, name, geom) "
-                    f"VALUES (:sid, :tid, :code, 'Sitio', {_GEOM}) "
-                    "ON CONFLICT (site_id) DO NOTHING"
-                ),
-                {"sid": sid, "tid": tid, "code": code},
-            )
+        await seed_shared_rows(conn)
 
 
 @pytest.fixture

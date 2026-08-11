@@ -36,7 +36,10 @@ _AUDIT_SQL_ASYNC = text(
     "VALUES (:tenant_id, :actor, :verb, :object, CAST(:meta AS jsonb))"
 )
 
-# Tope de espera por un lock en la conexión LATERAL (``audit_out_of_band_async``).
+# Tope de espera por un lock en una conexión LATERAL. Público a propósito: lo aplican
+# ``audit_out_of_band_async`` (aquí) y ``audit_command_rejection``
+# (``commands/rejection_audit.py``, T-2.112), y tiene que ser UNA política y no dos
+# copias que deriven — el día que este número cambie, cambia para las dos laterales.
 # Milisegundos, literal entero: ``SET LOCAL`` no admite bind params y el valor es
 # una constante del módulo, no entrada de usuario.
 #
@@ -47,8 +50,8 @@ _AUDIT_SQL_ASYNC = text(
 # PostgreSQL: request → lateral → ACCESS EXCLUSIVE → request. El detector de
 # interbloqueos no lo ve —la conexión del request está *idle*, no esperando un lock—
 # así que sin este tope la espera es literalmente para siempre.
-_LATERAL_LOCK_TIMEOUT_MS = 3000
-_LATERAL_LOCK_TIMEOUT = text(f"SET LOCAL lock_timeout = {_LATERAL_LOCK_TIMEOUT_MS}")
+LATERAL_LOCK_TIMEOUT_MS = 3000
+LATERAL_LOCK_TIMEOUT = text(f"SET LOCAL lock_timeout = {LATERAL_LOCK_TIMEOUT_MS}")
 
 
 def audit(
@@ -120,7 +123,7 @@ async def audit_out_of_band_async(
 
     try:
         async with get_tenant_conn(ctx) as conn:  # type: ignore[arg-type]
-            await conn.execute(_LATERAL_LOCK_TIMEOUT)
+            await conn.execute(LATERAL_LOCK_TIMEOUT)
             await audit_async(conn, tenant_id=tenant_id, actor=actor, verb=verb, obj=obj, meta=meta)
     except SQLAlchemyError:
         # Solo fallos de la BASE: un error de Python (contrato roto del helper) debe
