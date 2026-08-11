@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-10)
+## Estado actual (2026-08-11)
 
-**Conteo de tareas:** total **261** · `[x]` **186** · `[~]` **9** · `[ ]` **66**
+**Conteo de tareas:** total **262** · `[x]` **187** · `[~]` **9** · `[ ]` **66**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -7278,6 +7278,39 @@ sería documentar intenciones.
   - [ ] Decidido si la consola debe arrancar en degradado sin `/me`, con la razón escrita.
   - [ ] Si debe: arranca declarando qué no sabe (regla de oro 7), sin inventar alcance.
   - [ ] Test del arranque con la DB caída.
+
+### [x] T-2.124 · La imagen de consola llevaba semanas sin poder construirse — `SOFTWARE` · COMPLETA (2026-08-11)
+- **Componente:** deploy + web · **Detectada por:** un despliegue real que murió (2026-08-11)
+- **El defecto:** `T-2.75.a` añadió `shared/fixtures/notify-channels.json` —la **misma** fixture
+  que leen los dos lados del contrato de canales, `api/tests/api/test_notify_channels.py` y el
+  test de `NotificationChannels.tsx`— y `deploy/cloud/console.Dockerfile` copia `shared/sdk-ts` y
+  `shared/design-tokens`, pero **nunca `shared/fixtures`**. El `build` de la imagen encadena
+  `tsc --noEmit`, que typechequea también los `*.test.tsx`, así que la imagen dejó de compilar:
+  `TS2307: Cannot find module '../../../../shared/fixtures/notify-channels.json'`.
+- **Por qué vivió en verde desde `6cef7d4`:** `make lint` y el job `web` typechequean el checkout
+  **completo**, donde `shared/fixtures/` existe. La imagen solo ve lo que se copia — era la única
+  superficie capaz de notarlo, y la construye un comando que **nadie corre en un PR**.
+- **Y arrastró el despliegue entero:** `cloud-images` construye las **dos** imágenes y empuja al
+  final, así que el fallo de la consola dejó también `takab/cloud` sin subir; `cloud-deploy` fue
+  detrás con `manifest unknown`. **Falló seguro**: `alembic` no llegó a correr (rc=125, docker no
+  pudo arrancar el contenedor) y la API viva no se tocó — nada quedó a medias.
+- **Misma familia que la trampa del bundle de móvil** (`expo-router` barriendo los `*.test.tsx` de
+  `src/app`, 2026-08-08): un fichero de **prueba** rompiendo un artefacto de **producción**.
+- **Criterios de aceptación:**
+  - [x] La imagen de consola construye. **Verificado construyéndola**, no razonándolo.
+  - [x] Existe un gate que lo caza **en el PR**, no a los cinco minutos de build de un despliegue.
+  - [x] El gate se ha visto **fallar** contra el Dockerfile sin el arreglo.
+
+> **Cerrada (2026-08-11).** Una línea de `COPY` y un censo: `web/src/consoleImageCensus.test.ts`
+> deriva del árbol qué importa `web/src` desde **fuera** de `web/` y exige que el Dockerfile lo
+> copie. No lleva lista escrita a mano — resuelve cada import relativo contra el disco y solo
+> afirma sobre los que existen de verdad, porque de la resolución de módulos sabe `tsc` y aquí no
+> se inventa. Corre en el job `web`, que **sí** bloquea el merge.
+>
+> **Lo que este censo NO es, y está escrito en su cabecera para que nadie se confíe:** no valida
+> que la imagen construya —eso solo lo demuestra construirla—, valida la condición concreta que la
+> rompió. Si mañana el fallo es una versión de node o un lock desincronizado, seguirá verde y hará
+> bien.
 
 ### [x] T-2.104 · La app le atribuía a SASMEX alertas que SASMEX no dio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** mobile · **Depende de:** — · **Origen:** Mauricio movió el sensor con la mano

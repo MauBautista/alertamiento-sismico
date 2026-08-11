@@ -36,6 +36,18 @@ RUN cd web && npm ci
 
 COPY shared/sdk-ts shared/sdk-ts
 COPY shared/design-tokens shared/design-tokens
+# `shared/fixtures` (T-2.75.a): la MISMA fixture la leen los dos lados del
+# contrato de canales — `api/tests/api/test_notify_channels.py` y el test de
+# `NotificationChannels.tsx`. El `build` de aquí corre `tsc --noEmit`, que
+# typechequea también los `*.test.tsx`, así que sin este COPY la consola no
+# compila (TS2307) aunque la app no use la fixture para nada.
+#
+# Por qué se descubrió en un despliegue y no antes: `make lint` y el job `web`
+# typechequean el árbol COMPLETO del checkout, donde `shared/fixtures/` existe.
+# Esta imagen solo ve lo que se copia, así que era la única superficie capaz de
+# verlo — y solo la construye `make cloud-images`. El gate que lo impide repetir
+# es `web/src/consoleImageCensus.test.ts`.
+COPY shared/fixtures shared/fixtures
 COPY web web
 
 ARG VITE_COGNITO_AUTHORITY=""
