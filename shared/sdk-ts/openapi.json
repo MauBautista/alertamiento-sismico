@@ -2944,6 +2944,18 @@
             "title": "Content Type",
             "type": "string"
           },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
           "sha256": {
             "maxLength": 64,
             "minLength": 64,
@@ -5227,8 +5239,70 @@
         "title": "MeActions",
         "type": "object"
       },
+      "MeEnrolledSite": {
+        "description": "[T-2.114] Inmueble en el que el portador está ENROLADO (R2).\n\nEl enrolamiento vive en ``user_zone_assignments`` y NO viaja en el claim de\nCognito: el alcance móvil se resuelve server-side desde que existe T-2.03.\nPublicarlo aquí es lo que permite al teléfono dejar de ser la única memoria\nde a qué edificio pertenece un ocupante — y, por tanto, soltar ese dato al\ncerrar sesión sin dejar tirado a nadie.",
+        "properties": {
+          "evac_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evac Policy"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "zone_id",
+          "zone_name",
+          "evac_policy",
+          "role"
+        ],
+        "title": "MeEnrolledSite",
+        "type": "object"
+      },
       "MeResponse": {
-        "description": "Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).\n\n``site_scope``: ``\"*\"`` = todo el tenant; lista ordenada de sitios en otro\ncaso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.",
+        "description": "Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).\n\n``site_scope``: ``\"*\"`` = todo el tenant; lista ordenada de sitios en otro\ncaso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.\n\n``enrolled_sites`` (T-2.114): los inmuebles del ENROLAMIENTO, que son cosa\ndistinta de ``site_scope`` (ese sale del claim). Vacío = no enrolado, y se\ndeclara vacío en vez de adivinar.",
         "properties": {
           "allowed_actions": {
             "$ref": "#/components/schemas/MeActions"
@@ -5244,6 +5318,14 @@
             "default": false,
             "title": "Console Scope Enforced",
             "type": "boolean"
+          },
+          "enrolled_sites": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MeEnrolledSite"
+            },
+            "title": "Enrolled Sites",
+            "type": "array"
           },
           "role": {
             "title": "Role",
@@ -11048,7 +11130,7 @@
         "summary": "List Evidence"
       },
       "post": {
-        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.",
+        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.\n\n[T-2.113] IDEMPOTENTE ante los reintentos de la cola offline (regla de oro\n3). El defecto que cierra no era \"una fila duplicada\": el ``evidence_id`` lo\ninventaba el servidor, así que el reintento de la MISMA foto chocaba contra\n``uq_evidence_incident_sha256`` y devolvía un 409 de contrato — la cola lo\nmarcaba ``failed`` y **la fila se quedaba en la base sin su blob en S3 para\nsiempre** (``verified=false`` eterno). Ahora el mismo item vuelve a recibir\n200 con el MISMO id y el MISMO ``s3_key``, y termina de subir.\n\nAislamiento (regla de oro 5): la identidad forense de una foto es\n(incidente, huella). Un ``evidence_id`` que ya existe FUERA de ese par —de\notro incidente, de otro tenant, o con otra huella— es **409**, nunca un\n``DO NOTHING`` silencioso: devolver la fila existente entregaría el id y un\nPUT presignado sobre evidencia ajena. El 409 no distingue el caso (ni filtra\nde qué tenant era) y exige acertar un UUIDv4 para verse siquiera.",
         "operationId": "register_evidence_incidents__incident_id__evidence_post",
         "parameters": [
           {
@@ -11463,7 +11545,7 @@
     },
     "/me": {
       "get": {
-        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.",
+        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.\n\n[T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del\nclaim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo\nprimero, y es exactamente el dato que el teléfono guardaba en solitario.",
         "operationId": "me_me_get",
         "responses": {
           "200": {

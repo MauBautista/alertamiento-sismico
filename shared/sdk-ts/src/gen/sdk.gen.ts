@@ -587,6 +587,21 @@ export const listEvidenceIncidentsIncidentIdEvidenceGet = <ThrowOnError extends 
  * [T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)
  * y devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales
  * AWS (regla de oro 6); su huella queda guardada para verificarla después.
+ *
+ * [T-2.113] IDEMPOTENTE ante los reintentos de la cola offline (regla de oro
+ * 3). El defecto que cierra no era "una fila duplicada": el ``evidence_id`` lo
+ * inventaba el servidor, así que el reintento de la MISMA foto chocaba contra
+ * ``uq_evidence_incident_sha256`` y devolvía un 409 de contrato — la cola lo
+ * marcaba ``failed`` y **la fila se quedaba en la base sin su blob en S3 para
+ * siempre** (``verified=false`` eterno). Ahora el mismo item vuelve a recibir
+ * 200 con el MISMO id y el MISMO ``s3_key``, y termina de subir.
+ *
+ * Aislamiento (regla de oro 5): la identidad forense de una foto es
+ * (incidente, huella). Un ``evidence_id`` que ya existe FUERA de ese par —de
+ * otro incidente, de otro tenant, o con otra huella— es **409**, nunca un
+ * ``DO NOTHING`` silencioso: devolver la fila existente entregaría el id y un
+ * PUT presignado sobre evidencia ajena. El 409 no distingue el caso (ni filtra
+ * de qué tenant era) y exige acertar un UUIDv4 para verse siquiera.
  */
 export const registerEvidenceIncidentsIncidentIdEvidencePost = <ThrowOnError extends boolean = false>(options: Options<RegisterEvidenceIncidentsIncidentIdEvidencePostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<RegisterEvidenceIncidentsIncidentIdEvidencePostResponse, RegisterEvidenceIncidentsIncidentIdEvidencePostError, ThrowOnError>({
@@ -749,6 +764,10 @@ export const closeWindowMaintenanceWindowsWindowIdClosePost = <ThrowOnError exte
  *
  * ``site_scope`` sale como ``"*"`` (todo el tenant) o lista ordenada de sitios
  * (posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.
+ *
+ * [T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del
+ * claim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo
+ * primero, y es exactamente el dato que el teléfono guardaba en solitario.
  */
 export const meMeGet = <ThrowOnError extends boolean = false>(options?: Options<MeMeGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<MeMeGetResponse, unknown, ThrowOnError>({

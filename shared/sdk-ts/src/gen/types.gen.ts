@@ -760,6 +760,7 @@ export type EvidenceObject = {
  */
 export type EvidenceRegisterIn = {
     content_type?: string;
+    evidence_id?: string | null;
     sha256: string;
     ts_from?: string | null;
 };
@@ -1306,15 +1307,38 @@ export type MeActions = {
 };
 
 /**
+ * [T-2.114] Inmueble en el que el portador está ENROLADO (R2).
+ *
+ * El enrolamiento vive en ``user_zone_assignments`` y NO viaja en el claim de
+ * Cognito: el alcance móvil se resuelve server-side desde que existe T-2.03.
+ * Publicarlo aquí es lo que permite al teléfono dejar de ser la única memoria
+ * de a qué edificio pertenece un ocupante — y, por tanto, soltar ese dato al
+ * cerrar sesión sin dejar tirado a nadie.
+ */
+export type MeEnrolledSite = {
+    evac_policy: string | null;
+    role: string;
+    site_id: string;
+    site_name: string;
+    zone_id: string | null;
+    zone_name: string | null;
+};
+
+/**
  * Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).
  *
  * ``site_scope``: ``"*"`` = todo el tenant; lista ordenada de sitios en otro
  * caso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.
+ *
+ * ``enrolled_sites`` (T-2.114): los inmuebles del ENROLAMIENTO, que son cosa
+ * distinta de ``site_scope`` (ese sale del claim). Vacío = no enrolado, y se
+ * declara vacío en vez de adivinar.
  */
 export type MeResponse = {
     allowed_actions: MeActions;
     allowed_routes: Array<string>;
     console_scope_enforced?: boolean;
+    enrolled_sites?: Array<MeEnrolledSite>;
     role: string;
     site_scope: '*' | Array<string>;
     sub: string;
