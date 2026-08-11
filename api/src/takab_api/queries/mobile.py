@@ -328,12 +328,33 @@ SITE_DIRECTORY = text(
 
 # Registra la foto forense en evidence_objects (append-only): kind=photo con el
 # SHA-256 declarado en captura y el s3_key generado por el servidor.
+# [T-2.113] El ``evidence_id`` puede venir de la COLA OFFLINE del dispositivo
+# (regla de oro 3). ``ON CONFLICT DO NOTHING`` SIN blanco arbitra las DOS llaves
+# únicas que tiene la tabla —la PK ``evidence_id`` y el índice parcial
+# ``uq_evidence_incident_sha256 (incident_id, sha256)``—: nombrar solo una
+# dejaba la otra reventando con IntegrityError, que es exactamente cómo el
+# reintento de la misma foto acababa en 409 y la fila se quedaba sin blob.
+# La tabla es append-only: jamás DO UPDATE.
 INSERT_EVIDENCE = text(
     "INSERT INTO evidence_objects "
-    "(tenant_id, incident_id, kind, s3_key, sha256, ts_from) "
-    "VALUES (CAST(:tenant AS uuid), CAST(:incident AS uuid), 'photo', :s3_key, "
-    ":sha256, :ts_from) "
-    "RETURNING evidence_id"
+    "(evidence_id, tenant_id, incident_id, kind, s3_key, sha256, ts_from) "
+    "VALUES (CAST(:evidence_id AS uuid), CAST(:tenant AS uuid), "
+    "CAST(:incident AS uuid), 'photo', :s3_key, :sha256, :ts_from) "
+    "ON CONFLICT DO NOTHING "
+    "RETURNING evidence_id, s3_key"
+)
+
+# Replay LEGÍTIMO de un registro de evidencia: la identidad forense de una foto
+# es (incidente, huella) —lo dice el índice único de la tabla—, y si el cliente
+# propuso un id, además tiene que ser EL SUYO. Un id de otro incidente, de otro
+# tenant (RLS ya lo esconde) o con otra huella NO devuelve nada ⇒ 409 en el
+# router: sin fila ajena, sin ``s3_key`` ajeno y sin PUT presignado sobre él.
+EVIDENCE_REPLAY = text(
+    "SELECT evidence_id, s3_key FROM evidence_objects "
+    "WHERE incident_id = CAST(:incident AS uuid) AND kind = 'photo' "
+    "AND sha256 = :sha256 "
+    "AND (CAST(:evidence_id AS uuid) IS NULL OR evidence_id = CAST(:evidence_id AS uuid)) "
+    "LIMIT 1"
 )
 
 # Para la verificación: s3_key + huella declarada + incidente/tenant (RLS ya

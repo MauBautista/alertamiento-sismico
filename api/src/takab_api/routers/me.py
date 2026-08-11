@@ -1,9 +1,16 @@
-"""GET /me — identidad + rutas/acciones del rol (RBAC §2/§7). No toca la DB.
+"""GET /me — identidad + rutas/acciones del rol (RBAC §2/§7) + enrolamiento.
 
 /me/profile (T-1.48) — nombre de operador editable. Deliberadamente SEPARADO de
-GET /me: /me sigue siendo claims puros sin conexión a DB (latencia y contrato
-intactos); el perfil es presentación y vive en ``user_profiles`` bajo RLS
+GET /me: el perfil es presentación y vive en ``user_profiles`` bajo RLS
 self-write (cualquier rol web edita SU nombre — la política acota la fila).
+
+[T-2.114] GET /me DEJÓ de ser claims puros: añade una lectura de
+``user_zone_assignments`` (índice por ``user_id``, una fila por inmueble). Es un
+cambio consciente y el motivo es de seguridad, no de comodidad: el inmueble del
+occupant no viaja en el claim de Cognito —sale del enrolamiento—, así que hasta
+hoy la ÚNICA memoria de a qué edificio pertenece estaba en el SecureStore del
+teléfono. Ese es el defecto: no se podía borrar al cerrar sesión sin dejar
+tirado al ocupante, y el siguiente usuario del mismo aparato lo heredaba.
 """
 
 from __future__ import annotations
@@ -19,24 +26,52 @@ from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.auth.deps import get_claims, get_session
 from takab_api.auth.matrix import allowed_actions, allowed_routes
 from takab_api.auth.scope import console_scope
-from takab_api.schemas.me import MeActions, MeResponse, ProfileOut, ProfilePutIn
+from takab_api.schemas.me import (
+    MeActions,
+    MeEnrolledSite,
+    MeResponse,
+    ProfileOut,
+    ProfilePutIn,
+)
 from takab_api.settings import Settings
 
 router = APIRouter()
 
+# [T-2.114] Enrolamientos del PORTADOR. RLS (``uza_read``) ya acota al tenant de
+# la sesión, y el ``WHERE user_id`` al propio sujeto: el mismo ``sub`` con un
+# token de otro tenant no ve nada. Orden estable para que el cliente pueda
+# tomar el primero sin que cambie entre llamadas.
+_SELECT_ENROLLMENTS = text(
+    "SELECT a.site_id, s.name AS site_name, a.zone_id, z.name AS zone_name, "
+    "z.evac_policy, a.role "
+    "FROM user_zone_assignments a "
+    "JOIN sites s ON s.site_id = a.site_id "
+    "LEFT JOIN zones z ON z.zone_id = a.zone_id "
+    "WHERE a.user_id = CAST(:sub AS uuid) "
+    "ORDER BY s.name, a.site_id"
+)
+
 
 @router.get("/me", response_model=MeResponse)
-def me(claims: Claims = Depends(get_claims)) -> MeResponse:
+async def me(
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> MeResponse:
     """Perfil del portador del token: qué ve y qué puede hacer en el SOC web.
 
     ``site_scope`` sale como ``"*"`` (todo el tenant) o lista ordenada de sitios
     (posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.
+
+    [T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del
+    claim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo
+    primero, y es exactamente el dato que el teléfono guardaba en solitario.
     """
     site_scope: Literal["*"] | list[str]
     if claims.site_scope is ALL_SITES:
         site_scope = "*"
     else:
         site_scope = sorted(claims.site_scope)
+    rows = (await conn.execute(_SELECT_ENROLLMENTS, {"sub": claims.sub})).all()
     return MeResponse(
         sub=claims.sub,
         tenant_id=claims.tenant_id,
@@ -48,6 +83,7 @@ def me(claims: Claims = Depends(get_claims)) -> MeResponse:
         surface=claims.surface,
         allowed_routes=allowed_routes(claims.role),
         allowed_actions=MeActions(**allowed_actions(claims.role)),
+        enrolled_sites=[MeEnrolledSite(**dict(r._mapping)) for r in rows],
     )
 
 

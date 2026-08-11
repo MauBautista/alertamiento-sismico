@@ -64,11 +64,36 @@ class MeActions(BaseModel):
     manage_privacy_erasure: bool
 
 
+class MeEnrolledSite(BaseModel):
+    """[T-2.114] Inmueble en el que el portador está ENROLADO (R2).
+
+    El enrolamiento vive en ``user_zone_assignments`` y NO viaja en el claim de
+    Cognito: el alcance móvil se resuelve server-side desde que existe T-2.03.
+    Publicarlo aquí es lo que permite al teléfono dejar de ser la única memoria
+    de a qué edificio pertenece un ocupante — y, por tanto, soltar ese dato al
+    cerrar sesión sin dejar tirado a nadie.
+    """
+
+    site_id: UUID
+    site_name: str
+    zone_id: UUID | None
+    zone_name: str | None
+    #: Política de evacuación de la zona (``evacuate``/``shelter``/…), la misma
+    #: que devuelve el alta; ``null`` si el enrolamiento no fijó zona.
+    evac_policy: str | None
+    #: Rol que concedió el código de alta (``occupant``/``brigadista``/…).
+    role: str
+
+
 class MeResponse(BaseModel):
     """Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).
 
     ``site_scope``: ``"*"`` = todo el tenant; lista ordenada de sitios en otro
     caso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.
+
+    ``enrolled_sites`` (T-2.114): los inmuebles del ENROLAMIENTO, que son cosa
+    distinta de ``site_scope`` (ese sale del claim). Vacío = no enrolado, y se
+    declara vacío en vez de adivinar.
     """
 
     sub: str
@@ -84,6 +109,10 @@ class MeResponse(BaseModel):
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions
+    #: [T-2.114] Inmuebles del enrolamiento (R2), ordenados. Fuente de verdad
+    #: del "sitio vigilado" del ocupante: sin esto el dato solo existía en el
+    #: SecureStore del teléfono y se heredaba entre usuarios del mismo aparato.
+    enrolled_sites: list[MeEnrolledSite] = []
 
 
 class ProfileOut(BaseModel):

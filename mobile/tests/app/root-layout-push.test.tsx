@@ -30,6 +30,7 @@
 // vigilantes que no son objeto de esta prueba); `mySite` corre DE VERDAD,
 // porque la fuente del `site_id` es justo lo que se está probando.
 import { act, render, waitFor } from "@testing-library/react-native";
+import type { MeResponse } from "@takab/sdk";
 import type { ReactNode } from "react";
 
 import { useSessionStore } from "@/auth/session.store";
@@ -131,7 +132,7 @@ describe("[T-2.109] el registro del push lleva el inmueble en todo el ciclo de v
     await waitFor(() => expect(sitiosRegistrados().at(-1)).toBe("site-otro"));
   });
 
-  it("cerrar sesión suelta el sitio y la sesión siguiente RE-REGISTRA antes de nada", async () => {
+  it("[T-2.114] cerrar sesión suelta el sitio y quien vuelve lo recupera de /me", async () => {
     await render(<RootLayout />);
     await entrar();
     await act(async () => {
@@ -148,10 +149,23 @@ describe("[T-2.109] el registro del push lleva el inmueble en todo el ciclo de v
     await act(async () => {});
     expect(registrar.mock.calls.length).toBe(trasSalir);
 
-    // Y al volver a entrar NO se presume que la fila del servidor siga bien
-    // apuntada: se re-registra.
-    await entrar();
+    // [T-2.114] Y al volver a entrar NO se presume que la fila del servidor
+    // siga bien apuntada: se re-registra. Pero el inmueble YA NO sale del
+    // disco —cerrar sesión lo borró, que es justo el arreglo—: sale de `/me`,
+    // que devuelve el enrolamiento del portador. Si en su lugar viniera del
+    // SecureStore, el siguiente usuario del teléfono heredaría el edificio.
+    await act(async () => {
+      useSessionStore.getState().setAuthenticated({
+        profile: "occupant",
+        idToken: "tok",
+        me: {
+          sub: "ana",
+          site_scope: [],
+          enrolled_sites: [{ site_id: "site-abc", site_name: "Torre A" }],
+        } as unknown as MeResponse,
+      });
+    });
     await waitFor(() => expect(registrar.mock.calls.length).toBeGreaterThan(trasSalir));
-    expect(sitiosRegistrados().at(-1)).toBe("site-abc");
+    await waitFor(() => expect(sitiosRegistrados().at(-1)).toBe("site-abc"));
   });
 });

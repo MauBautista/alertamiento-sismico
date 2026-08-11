@@ -64,6 +64,34 @@ describe("registerAndUploadEvidence", () => {
     expect(fetchMock.mock.calls[0][1].body).toEqual(mockFile.bytes);
   });
 
+  it("[T-2.113] el id del item VIAJA en el registro (la idempotencia la da él)", async () => {
+    // Sin este id el servidor inventaba uno por intento: el reintento chocaba
+    // contra `uq_evidence_incident_sha256`, la cola lo marcaba failed por ser
+    // 4xx, y la fila se quedaba en la base sin su blob para siempre.
+    mockRegister.mockResolvedValue({ data: { evidence_id: "q-7", upload_url: null } });
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      evidenceId: "q-7",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({ ok: true, evidenceId: "q-7" });
+    expect(mockRegister.mock.calls[0][0].body.evidence_id).toBe("q-7");
+  });
+
+  it("[T-2.113] 409 = conflicto de identidad ⇒ NO recuperable (visible, no en bucle)", async () => {
+    // El servidor solo devuelve 409 si ese id es de OTRO incidente/tenant o
+    // trae otra huella. Reintentarlo no lo arregla nunca: se declara.
+    mockRegister.mockResolvedValue({ data: undefined, response: { status: 409 } });
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      evidenceId: "q-8",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({ ok: false, retryable: false, reason: expect.stringMatching(/409/) });
+  });
+
   it("sin bucket (dev): registrada sin subir, la huella ya quedó", async () => {
     mockRegister.mockResolvedValue({ data: { evidence_id: "ev-2", upload_url: null } });
     const out = await registerAndUploadEvidence({

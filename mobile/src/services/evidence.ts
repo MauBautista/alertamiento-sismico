@@ -9,7 +9,7 @@
 // fallo de contrato (4xx → failed visible), y por eso comprueba la huella del
 // archivo ANTES de registrar nada: entre la captura y la subida puede haber
 // pasado un día entero en el bolsillo de alguien.
-import { registerEvidenceIncidentsIncidentIdEvidencePost } from "@takab/sdk";
+import { registerEvidenceIncidentsIncidentIdEvidencePost, type EvidenceRegisterIn } from "@takab/sdk";
 
 import { readAndHash } from "@/features/forensic/fileHash";
 import { isRetryableStatus } from "@/offline/httpOutcome";
@@ -20,6 +20,10 @@ export type EvidenceResult =
 
 export async function registerAndUploadEvidence(args: {
   incidentId: string;
+  /** [T-2.113] Id del ITEM de la cola, estable entre reintentos: es lo que
+   *  hace idempotente al registro. Omitirlo devuelve al comportamiento viejo
+   *  (el servidor inventa uno por intento) y NO debe usarse desde la cola. */
+  evidenceId?: string;
   uri: string;
   sha256: string;
   contentType?: string;
@@ -46,10 +50,19 @@ export async function registerAndUploadEvidence(args: {
     return { ok: false, retryable: false, reason: "La foto ya no está en este teléfono." };
   }
 
+  // [T-2.113] `evidence_id` es el id del ITEM de la cola, no uno nuevo por
+  // intento: es lo que hace que el reintento resuelva a la MISMA fila en vez de
+  // dejar una huérfana sin blob en S3.
+  const registro: EvidenceRegisterIn = {
+    sha256: args.sha256,
+    content_type: contentType,
+    evidence_id: args.evidenceId,
+  };
+
   try {
     const reg = await registerEvidenceIncidentsIncidentIdEvidencePost({
       path: { incident_id: args.incidentId },
-      body: { sha256: args.sha256, content_type: contentType },
+      body: registro,
     });
     if (!reg.data) {
       const status = reg.response?.status ?? 0;

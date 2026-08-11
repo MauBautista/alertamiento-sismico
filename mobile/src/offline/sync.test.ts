@@ -248,6 +248,37 @@ describe("foto forense en la cola (§2.3)", () => {
     expect(item.server_id).toBe("ev-9");
   });
 
+  it("[T-2.113] el REINTENTO reusa el MISMO evidence_id: una sola fila en el servidor", async () => {
+    // El punto entero de T-2.113. Si el teléfono genera un id por intento, el
+    // `ON CONFLICT` del servidor no sirve de nada: cada reintento sería una
+    // evidencia nueva. El id que viaja es el del ITEM de la cola, que no cambia
+    // entre intentos (igual que el `checkin_id` — regla de oro 3).
+    await nuevaCola();
+    const item = await useQueueStore.getState().enqueueEvidence(FOTO, SHA_CAPTURA);
+
+    // Intento 1: el registro aterriza, pero el PUT a S3 muere. Esa es
+    // exactamente la ventana que dejaba la fila huérfana.
+    mockRegisterEvidence.mockResolvedValue({
+      data: { evidence_id: item.id, upload_url: "https://s3/put?sig" },
+      response: { status: 201 },
+    });
+    fetchMock.mockRejectedValueOnce(new TypeError("Network request failed"));
+    await drainQueue(Date.now(), () => 0.5);
+    expect(useQueueStore.getState().items[0].state).toBe("pending");
+
+    // Intento 2 (backoff cumplido): el PUT sí sube.
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    await drainQueue(Date.now() + 10 * 60_000);
+
+    expect(mockRegisterEvidence).toHaveBeenCalledTimes(2);
+    const ids = mockRegisterEvidence.mock.calls.map(
+      (c) => (c[0] as { body: { evidence_id?: string } }).body.evidence_id,
+    );
+    expect(ids).toEqual([item.id, item.id]);
+    expect(useQueueStore.getState().items[0].state).toBe("synced");
+    expect(useQueueStore.getState().items[0].server_id).toBe(item.id);
+  });
+
   it("INTEGRIDAD: si el archivo cambió tras la captura, no se sube nada", async () => {
     // Criterio de aceptación de §2.3. Comprobarlo ANTES de registrar evita
     // ensuciar la cadena de custodia del incidente con un blob que no

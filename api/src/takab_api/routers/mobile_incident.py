@@ -509,22 +509,43 @@ async def list_damage_reports(
 async def register_evidence(
     incident_id: UUID,
     body: EvidenceRegisterIn,
+    response: Response,
     claims: Claims = Depends(_require_evidence),
     conn: AsyncConnection = Depends(get_session),
 ) -> EvidenceRegisterOut:
     """[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)
     y devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales
-    AWS (regla de oro 6); su huella queda guardada para verificarla después."""
+    AWS (regla de oro 6); su huella queda guardada para verificarla después.
+
+    [T-2.113] IDEMPOTENTE ante los reintentos de la cola offline (regla de oro
+    3). El defecto que cierra no era "una fila duplicada": el ``evidence_id`` lo
+    inventaba el servidor, así que el reintento de la MISMA foto chocaba contra
+    ``uq_evidence_incident_sha256`` y devolvía un 409 de contrato — la cola lo
+    marcaba ``failed`` y **la fila se quedaba en la base sin su blob en S3 para
+    siempre** (``verified=false`` eterno). Ahora el mismo item vuelve a recibir
+    200 con el MISMO id y el MISMO ``s3_key``, y termina de subir.
+
+    Aislamiento (regla de oro 5): la identidad forense de una foto es
+    (incidente, huella). Un ``evidence_id`` que ya existe FUERA de ese par —de
+    otro incidente, de otro tenant, o con otra huella— es **409**, nunca un
+    ``DO NOTHING`` silencioso: devolver la fila existente entregaría el id y un
+    PUT presignado sobre evidencia ajena. El 409 no distingue el caso (ni filtra
+    de qué tenant era) y exige acertar un UUIDv4 para verse siquiera.
+    """
     incident = await _incident_in_scope(conn, claims, incident_id)
     settings = Settings()
-    # s3_key determinista por tenant/incidente/evidencia: aísla por tenant en
-    # el propio prefijo del objeto (nada de nombres adivinables entre clientes).
-    s3_key = f"evidence/{incident.tenant_id}/{incident_id}/photo-{uuid4().hex}.jpg"
+    # El id propuesto por el dispositivo, o uno nuevo. El s3_key se DERIVA de él
+    # (determinista) para que el reintento presigne el MISMO objeto; el prefijo
+    # tenant/incidente lo pone el servidor, así que un id ajeno jamás alcanza el
+    # espacio de nombres de otro cliente.
+    evidence_id = body.evidence_id or uuid4()
+    s3_key = f"evidence/{incident.tenant_id}/{incident_id}/photo-{evidence_id}.jpg"
     try:
         row = (
             await conn.execute(
                 q.INSERT_EVIDENCE,
                 {
+                    "evidence_id": str(evidence_id),
                     "tenant": str(incident.tenant_id),
                     "incident": str(incident_id),
                     "s3_key": s3_key,
@@ -536,8 +557,37 @@ async def register_evidence(
     except IntegrityError as exc:
         raise integrity_error(exc) from exc
 
+    if row is None:
+        # Chocó con la PK o con (incidente, huella). Solo es replay si la fila
+        # que estorba ES la misma evidencia: mismo incidente, misma huella y
+        # —si el cliente propuso id— ese id. Cualquier otra cosa: 409.
+        row = (
+            await conn.execute(
+                q.EVIDENCE_REPLAY,
+                {
+                    "evidence_id": str(body.evidence_id) if body.evidence_id else None,
+                    "incident": str(incident_id),
+                    "sha256": body.sha256,
+                },
+            )
+        ).first()
+        if row is None:
+            raise http_error(409, "evidence_id en conflicto con otro registro")
+        # Replay: MISMA fila, MISMO objeto. Se re-presigna porque el PUT es lo
+        # que faltó la primera vez; no se audita otra vez (es el MISMO evento,
+        # y el audit_log no se poda nunca — regla de oro 11).
+        response.status_code = 200
+        return EvidenceRegisterOut(
+            evidence_id=row.evidence_id,
+            upload_url=(
+                presign_put(settings, row.s3_key, content_type=body.content_type)
+                if settings.evidence_bucket
+                else None
+            ),
+        )
+
     upload_url = (
-        presign_put(settings, s3_key, content_type=body.content_type)
+        presign_put(settings, row.s3_key, content_type=body.content_type)
         if settings.evidence_bucket
         else None
     )

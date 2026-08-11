@@ -60,10 +60,17 @@ async function sendCheckin(item: QueueItemOf<"checkin">): Promise<SendOutcome> {
 
 /** La foto: se comprueba su huella, se registra y sube por el PUT presignado.
  *  El `evidence_id` que devuelve el servidor se guarda en `server_id` — es lo
- *  que después liga el reporte de daños con esta foto. */
+ *  que después liga el reporte de daños con esta foto.
+ *
+ *  [T-2.113] El id que viaja es el del ITEM, igual que el `checkin_id`: no
+ *  cambia entre intentos, así que el reintento tras un PUT a S3 que murió
+ *  resuelve a la MISMA fila y al MISMO objeto (regla de oro 3). Antes el
+ *  servidor inventaba un id por intento y el segundo chocaba contra el índice
+ *  único (incidente, huella): 4xx ⇒ `failed`, y la fila se quedaba sin blob. */
 async function sendEvidence(item: QueueItemOf<"evidence">): Promise<SendOutcome> {
   const out = await registerAndUploadEvidence({
     incidentId: item.payload.incident_id,
+    evidenceId: item.id,
     uri: item.payload.uri,
     sha256: item.sha256,
     contentType: item.payload.content_type,

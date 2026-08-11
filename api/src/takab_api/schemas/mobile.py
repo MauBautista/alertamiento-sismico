@@ -470,6 +470,16 @@ class EvidenceRegisterIn(BaseModel):
     archivo FINAL (marca de agua ya horneada) calculado en captura (§4.2); el
     backend firma el PUT y guarda la huella para verificarla después."""
 
+    #: [T-2.113] Id generado por la COLA OFFLINE del dispositivo (es el id del
+    #: item de la cola, un UUIDv4 del Keystore). El reintento tras un PUT a S3
+    #: que murió a medias repite ESTE id y el servidor resuelve a la MISMA fila
+    #: con el MISMO ``s3_key`` (regla de oro 3), en vez de dejar una evidencia
+    #: registrada que nunca podrá subir su blob. Sin id ⇒ lo genera el servidor.
+    #:
+    #: Aceptarlo NO abre puerta entre incidentes ni entre tenants: un id que ya
+    #: existe fuera de este (incidente, sha256) es 409 — nunca se devuelve la
+    #: fila ajena ni un PUT presignado sobre ella (regla de oro 5).
+    evidence_id: UUID | None = None
     #: SHA-256 hex (64) del archivo final — la verificación server-side lo
     #: confronta contra el objeto realmente subido (alterar un byte ⇒ falla).
     sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
