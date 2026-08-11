@@ -41,7 +41,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from takab_edge.contracts import ActuatorChannel, RelayState, SirenReason
+from takab_edge.contracts import ActuatorChannel, ChannelState, RelayState, SirenReason
 
 log = logging.getLogger("takab_edge.gpio_link")
 
@@ -120,6 +120,39 @@ class ChannelOutcome:
     channel: ActuatorChannel
     ok: bool
     detail: str
+
+
+def channel_state_from(snapshot: GpioSnapshot, channel: ActuatorChannel) -> ChannelState | None:
+    """[T-2.116] El estado ARBITRADO de un canal, leído de UNA instantánea.
+
+    Traduce lo que el dueño de los pines ya decidió (`GpioSnapshot`) al contrato
+    que cruza a la nube (`ChannelState`). Es una función PURA sobre la
+    instantánea a propósito: así el estado que viaja en el acuse y el que pinta
+    el panel salen del MISMO instante y de la misma cuenta, en vez de dos
+    lecturas que pueden discrepar (regla de oro 7).
+
+    `None` cuando el canal no aparece en la instantánea, y eso cubre dos casos
+    que NO son «el relé está en reposo»: `ActuatorChannel.SYSTEM`, que es un
+    canal lógico sin relé, y el módulo detenido, cuyo censo de relés es una
+    lista vacía porque los dispositivos están cerrados y su estado eléctrico ya
+    no se mide. Inventar `activated=False` para cualquiera de los dos sería
+    afirmar que la sirena no suena sin haberlo preguntado.
+
+    `reason` sólo se declara para la sirena porque es lo único que el gabinete
+    deriva (`GpioController.siren_reason`, T-2.49); rellenarlo para el gas o el
+    ascensor exigiría inventar una precedencia que nadie calculó.
+    """
+    for relay in snapshot.relays:
+        if relay.channel is channel:
+            return ChannelState(
+                channel=channel,
+                energized=relay.energized,
+                activated=relay.activated,
+                fail_safe=relay.fail_safe,
+                reason=snapshot.siren_reason if channel is ActuatorChannel.SIREN else None,
+                alert_latched=snapshot.alert_latched,
+            )
+    return None
 
 
 #: Acción de la costura → método del dueño de los pines. Lista BLANCA: lo que no

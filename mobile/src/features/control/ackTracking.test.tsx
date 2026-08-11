@@ -461,8 +461,12 @@ describe("[T-2.107 · spec §2.2] silenciar con alerta vigente NO apaga la siren
   });
 
   it("cuando el acuse SÍ trae el relé recalculado, manda el acuse", async () => {
-    // Camino que el contrato habilitará: el ack con el estado del relé. La
-    // lectura no depende de la fase — la manda el gabinete.
+    // [T-2.116] Este camino ya EXISTE: el acuse trae `channel_state`, el estado
+    // del canal tras el arbitraje (schema compartido 1.11.0). Hasta entonces la
+    // rama sondeaba `ack.siren`, un campo de ningún contrato, y esta prueba
+    // pasaba contra una ficción. El E2E de los tres lados vive en
+    // `estadoDelRele.test.tsx` + `edge/tests/vectors/`. La lectura no depende
+    // de la fase — la manda el gabinete.
     mockSdk.mobileState.mockResolvedValue({
       data: estado({ phase: "shaking_concluded", incident: INCIDENTE as never }),
     });
@@ -472,7 +476,20 @@ describe("[T-2.107 · spec §2.2] silenciar con alerta vigente NO apaga la siren
           comando({
             action: "deactivate",
             status: "acked",
-            ack: { channel: "siren", action: "deactivate", success: true, siren: "on" },
+            ack: {
+              channel: "siren",
+              action: "deactivate",
+              success: true,
+              detail: "relay",
+              channel_state: {
+                channel: "siren",
+                energized: true,
+                activated: true,
+                fail_safe: "NO",
+                reason: "alert",
+                alert_latched: true,
+              },
+            },
           }),
         ],
       },
@@ -488,7 +505,9 @@ describe("[T-2.107 · spec §2.2] silenciar con alerta vigente NO apaga la siren
         ),
       { timeout: 20_000 },
     );
-    expect(v.getByTestId("ack-detail")).toHaveTextContent(/otra demanda \(alerta vigente\) mantiene la sirena/);
+    expect(v.getByTestId("ack-detail")).toHaveTextContent(
+      /declara el relé de la sirena TODAVÍA ENERGIZADO/,
+    );
   });
 
   it("sin alerta vigente el retiro SÍ silencia: la frase no está a fuego", async () => {

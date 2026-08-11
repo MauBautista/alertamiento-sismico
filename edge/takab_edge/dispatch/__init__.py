@@ -31,6 +31,7 @@ from takab_edge.contracts import (
     ActuatorAction,
     ActuatorChannel,
     ActuatorCommand,
+    ChannelState,
     CommandAck,
     utcnow,
 )
@@ -260,6 +261,13 @@ class CommandDispatcher(EdgeModule):
                     )
                 except Exception:  # noqa: BLE001 — el espejo jamás bloquea el ack
                     log.exception("lora.propagate desde comando de red falló (aislado)")
+        # [T-2.116 · spec móvil §2.2] El acuse declara EL ESTADO DEL CANAL tras
+        # el arbitraje de demandas, no la intención del comando. `result.success`
+        # dice «la orden se ejecutó» —la demanda manual se retiró— y eso NO es lo
+        # mismo que «el relé cambió»: con una alerta vigente, el enclave de
+        # SASMEX sostiene la sirena y el `deactivate` sale con éxito sin apagar
+        # nada. Lo trae el propio ack del actuador, que lo leyó del dueño de los
+        # pines en la misma pasada que aplicó la demanda.
         self._ack(
             command_id,
             nonce,
@@ -268,6 +276,7 @@ class CommandDispatcher(EdgeModule):
             result.success,
             result.detail,
             latency_s=max(result.latency_s, latency),
+            channel_state=result.channel_state,
         )
 
     def _run_self_test(self, command_id: str, nonce: str) -> None:
@@ -311,6 +320,7 @@ class CommandDispatcher(EdgeModule):
         detail: str,
         latency_s: float = 0.0,
         results: dict | None = None,
+        channel_state: ChannelState | None = None,
     ) -> None:
         ack = CommandAck(
             command_id=command_id,
@@ -321,6 +331,10 @@ class CommandDispatcher(EdgeModule):
             latency_s=latency_s,
             detail=detail,
             results=results,
+            # [T-2.116] `None` en los acks de RECHAZO a propósito: sin ejecución
+            # no hubo arbitraje, y declarar un estado ahí sería opinar sobre un
+            # relé que este acuse no midió (regla de oro 7).
+            channel_state=channel_state,
         )
         self._cloud.publish(self._acks_topic, ack)
         log.info(

@@ -23,6 +23,16 @@ export const SIMULATED_VIEW: ActionStateView = { state: 'SIMULADA · SIN ENTREGA
 /** Mapeo kind→estado visual (se comparte con la traza expandida). */
 export const ACTION_STATE: Record<string, ActionStateView> = {
   siren_on: { state: 'ACTIVADA', kind: 'critical' },
+  // [T-2.110] El contrario de `siren_on`, que faltaba. NO es un kind inventado
+  // para poder cancelar el anterior: lo escribe el ingest desde un ACK REAL del
+  // gabinete — `ACK_KIND[('siren','deactivate')] = 'siren_off'`
+  // (`api/src/takab_api/ingest/handlers.py`) — y la bitácora del incidente ya lo
+  // rotulaba («SIRENA SILENCIADA», `IncidentTimeline.KIND_LABEL`). Sin entrada
+  // aquí caía en el fallback y se pintaba «SIREN_OFF» en verde, y —lo grave— el
+  // panel táctico móvil derivaba `sirenActive` de que EXISTIERA un `siren_on`,
+  // así que un `siren_on` histórico dejaba la precondición de silenciar
+  // satisfecha el resto del incidente.
+  siren_off: { state: 'SILENCIADA', kind: 'ok' },
   strobe_on: { state: 'ACTIVADO', kind: 'warning' },
   gas_valve_close: { state: 'CERRADAS', kind: 'warning' },
   elevator_recall: { state: 'RETORNADOS', kind: 'warning' },
@@ -53,6 +63,7 @@ export function isSimulatedAction(action: Pick<IncidentActionOut, 'payload'>): b
 /** Etiqueta humana por canal/acción (fallback: el kind crudo en mayúsculas). */
 export const CHANNEL_LABEL: Record<string, string> = {
   siren_on: 'SIRENA',
+  siren_off: 'SIRENA',
   strobe_on: 'ESTROBO',
   gas_valve_close: 'VÁLVULAS DE GAS',
   elevator_recall: 'ELEVADORES',
@@ -66,6 +77,93 @@ export const CHANNEL_LABEL: Record<string, string> = {
   notify_failed: 'NOTIFICACIONES NO ENTREGADAS',
   siren_test: 'PRUEBA DE SIRENA',
 };
+
+/**
+ * [T-2.116] El estado del canal TRAS EL ARBITRAJE, tal y como lo declara el
+ * gabinete en `ActuatorAck.channel_state` / `CommandAck.channel_state`
+ * (`edge/takab_edge/contracts.py`, schema compartido 1.11.0). No se re-deriva
+ * en el cliente: se lee.
+ */
+export interface ChannelState {
+  channel: string;
+  energized: boolean;
+  activated: boolean;
+  fail_safe: string;
+  reason: string | null;
+  alert_latched: boolean;
+}
+
+/** Lo que se sabe de la sirena, y DE DÓNDE se sabe. */
+export interface SirenEvidence {
+  /** ¿El canal está en su estado de protección (sonando)? */
+  active: boolean;
+  /** `true` = lo declara el RELÉ recalculado; `false` = sólo la última orden. */
+  fromRelay: boolean;
+  /** Momento de la evidencia (ts de la acción). */
+  at: string;
+}
+
+/** Kinds que el ingest escribe para el canal `siren` desde un ACK del gabinete. */
+const SIREN_KINDS: Record<string, boolean> = { siren_on: true, siren_off: false };
+
+function channelStateOf(action: IncidentActionOut): ChannelState | null {
+  const raw = action.payload?.channel_state;
+  if (raw === null || typeof raw !== 'object') {
+    return null;
+  }
+  const state = raw as Partial<ChannelState>;
+  return typeof state.activated === 'boolean' && state.channel === 'siren'
+    ? (state as ChannelState)
+    : null;
+}
+
+/**
+ * [T-2.110] ¿La sirena está sonando, según el ÚLTIMO dato real del gabinete?
+ *
+ * `null` = no consta ninguna actuación de sirena en la traza. Es un tercer
+ * estado a propósito: «no lo sé» no es «está apagada», y afirmar cualquiera de
+ * las dos sin dato es la regla de oro 7 al revés.
+ *
+ * PRECEDENCIA, y es el corazón de la ficha:
+ *
+ *  1. `payload.channel_state` — el estado RECALCULADO del relé. Es lo que la
+ *     spec §2.1 pide pintar: «el estado del relé recalculado por el arbitraje
+ *     de demandas, **no la última orden enviada**».
+ *  2. el `kind` (`siren_on`/`siren_off`) — la ORDEN que se ejecutó. Es lo único
+ *     que hay de un gabinete que aún no declara (1), y NO es equivalente: un
+ *     `siren/deactivate` con la alerta vigente se ejecuta con éxito, escribe
+ *     `siren_off` y deja la sirena sonando. Por eso (1) manda siempre que exista.
+ *
+ * Se descartan las acciones SIMULADAS (T-2.75.a): lo que no sonó no puede
+ * sostener ni desmentir que esté sonando.
+ *
+ * Empate exacto de `ts`: gana SONANDO. Ante dos hechos indistinguibles, el que
+ * no minimiza lo que está pasando — la misma doctrina que
+ * `GpioController.siren_reason` cuando no puede explicar por qué suena.
+ */
+export function sirenEvidence(actions: IncidentActionOut[]): SirenEvidence | null {
+  let mejor: SirenEvidence | null = null;
+  for (const action of actions) {
+    if (!(action.kind in SIREN_KINDS) || isSimulatedAction(action)) {
+      continue;
+    }
+    const state = channelStateOf(action);
+    const evidencia: SirenEvidence = {
+      active: state !== null ? state.activated : SIREN_KINDS[action.kind],
+      fromRelay: state !== null,
+      at: action.ts,
+    };
+    if (mejor === null) {
+      mejor = evidencia;
+      continue;
+    }
+    const delta = Date.parse(evidencia.at) - Date.parse(mejor.at);
+    if (delta > 0 || (delta === 0 && evidencia.active && !mejor.active)) {
+      mejor = evidencia;
+    }
+  }
+  return mejor;
+}
 
 export interface ActuatorGroup {
   kind: string;

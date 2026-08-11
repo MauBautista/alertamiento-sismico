@@ -9,17 +9,29 @@
 //     `expired` del servidor: uno es «el gabinete no acusó a tiempo, y consta»
 //     y el otro es «esta app no pudo enterarse de nada». Pintarlos igual sería
 //     atribuirle al gabinete un veredicto que nadie emitió.
-//  2. `alertActive`: de dónde sale «la sirena sigue activa» cuando el acuse no
-//     lo trae. El acuse REAL de hoy (`api/src/takab_api/ingest/handlers.py`,
-//     `handle_command_ack`) persiste `{channel, action, success, latency_s,
-//     executed_at, detail, results}` — SIN censo del relé, porque el gabinete
-//     tampoco lo manda (`edge/takab_edge/dispatch`, `detail="relay"`). T-2.106
-//     lo deja escrito: «la nube no sabe si el relé de la sirena está
-//     energizado ahora mismo». Así que el hecho que SÍ se conoce es el otro
-//     lado del arbitraje: hay una ALERTA VIGENTE, y su demanda no es la del
-//     canal manual que esta persona acaba de retirar. Eso es exactamente lo
-//     que la spec §2.2 manda comunicar, y se redacta nombrando su fuente.
-import type { CommandOut } from "@takab/sdk";
+//  2. `alertActive`: de dónde salía «la sirena sigue activa» cuando el acuse no
+//     lo traía — porque hasta T-2.116 NUNCA lo traía.
+//
+// [T-2.116] EL ACUSE YA TRAE EL RELÉ, y manda sobre todo lo demás.
+//
+// `sirenStillOn()` sondeaba `ack.siren ?? ack.relay_state ?? ack.state`: TRES
+// campos que no existían en ningún contrato. El gabinete mandaba `{channel,
+// action, success, latency_s, executed_at, detail, results}` con
+// `detail="relay"`, así que esa rama era código muerto y lo que sostenía la
+// pantalla era el respaldo (2), una INFERENCIA a partir de la fase del sitio.
+//
+// Desde el schema compartido 1.11.0 el acuse transporta `channel_state`: el
+// estado del canal TRAS EL ARBITRAJE de demandas del gabinete
+// (`edge/takab_edge/gpio/__init__.py::_desired_energized`), persistido por
+// `handle_command_ack` en `commands.ack`. Es literalmente lo que pide la spec
+// §2.2 — «el resultado real llega en el `command_ack` con el estado recalculado
+// del relé»— y por eso se LEE en vez de deducirse.
+//
+// El respaldo (2) sigue vivo, y a propósito: un gabinete que aún no se ha
+// re-desplegado no manda el campo, y entonces la pantalla explica lo que sí
+// sabe (hay una alerta vigente) nombrando esa fuente, en lugar de afirmar un
+// relé que nadie midió.
+import type { ChannelState, CommandOut } from "@takab/sdk";
 
 export type AckPhase = "pending" | "acked" | "rejected" | "expired" | "unconfirmed";
 
@@ -41,14 +53,33 @@ export type AckContext = {
   alertActive?: boolean;
 };
 
-/** ¿El relé de sirena quedó realmente sonando tras el ack? El edge devuelve
- *  el estado recalculado del arbitraje en el payload del ack. */
-function sirenStillOn(ack: Record<string, unknown> | null): boolean {
-  if (ack === null) {
-    return false;
+/**
+ * [T-2.116] El estado del canal `siren` TRAS EL ARBITRAJE, tal cual lo declara
+ * el gabinete. `null` = el acuse no lo trae (firmware anterior al schema
+ * 1.11.0, ack de rechazo sin ejecución) — que NO es «el relé está en reposo».
+ */
+function sirenChannelState(ack: Record<string, unknown> | null): ChannelState | null {
+  if (ack === null || typeof ack.channel_state !== "object" || ack.channel_state === null) {
+    return null;
   }
-  const relay = ack.siren ?? ack.relay_state ?? ack.state;
-  return relay === "on" || relay === true || relay === "active";
+  const state = ack.channel_state as Partial<ChannelState>;
+  return typeof state.activated === "boolean" && state.channel === "siren"
+    ? (state as ChannelState)
+    : null;
+}
+
+/** POR QUÉ sigue energizada, con las palabras del gabinete (`SirenReason`). */
+function sostenidaPor(reason: string | null): string {
+  if (reason === "alert") {
+    return "una alerta vigente";
+  }
+  if (reason === "test") {
+    return "una prueba en curso";
+  }
+  if (reason === "safe_state") {
+    return "el estado seguro del gabinete";
+  }
+  return "otra demanda del gabinete";
 }
 
 function segundos(ctx: AckContext): string {
@@ -94,14 +125,36 @@ export function ackView(command: CommandOut, ctx: AckContext = {}): AckView {
       tone: "crit",
     };
   }
-  // acked: distinguir "silenciar" que NO apagó por alerta vigente.
-  if (silencing && sirenStillOn(command.ack)) {
+  // [T-2.116] acked: MANDA EL RELÉ que el gabinete recalculó, no la fase ni la
+  // intención. Es el único hecho medido en el sitio, y llega dentro del acuse.
+  const rele = sirenChannelState(command.ack);
+  if (rele !== null) {
+    if (silencing && rele.activated) {
+      return {
+        phase: "acked",
+        title: "SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA",
+        detail: `El gabinete acusó el retiro de su demanda manual y, con el estado recalculado, declara el relé de la sirena TODAVÍA ENERGIZADO: lo sostiene ${sostenidaPor(rele.reason)}. Solo se apagará cuando esa demanda cese.`,
+        tone: "warn",
+      };
+    }
+    if (!silencing && !rele.activated) {
+      // El otro lado del mismo hecho: la orden viajó y el relé NO quedó
+      // energizado. Antes esto se pintaba «SIRENA ACTIVADA» sin más.
+      return {
+        phase: "acked",
+        title: "EL COMANDO SE EJECUTÓ · LA SIRENA NO QUEDÓ ACTIVA",
+        detail:
+          "El gabinete acusó la ejecución, pero declara el relé de la sirena EN REPOSO. Verifique el estado real en el sitio: la alarma audible no está sonando.",
+        tone: "crit",
+      };
+    }
     return {
       phase: "acked",
-      title: "SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA",
-      detail:
-        "El edge quitó su demanda manual, pero otra demanda (alerta vigente) mantiene la sirena. Solo se apagará cuando cese la alerta.",
-      tone: "warn",
+      title: silencing ? "SIRENA SILENCIADA" : "SIRENA ACTIVADA",
+      detail: silencing
+        ? "El gabinete confirmó el retiro de su demanda y declara el relé de la sirena EN REPOSO."
+        : "El gabinete confirmó la ejecución y declara el relé de la sirena ENERGIZADO.",
+      tone: silencing ? "ok" : "crit",
     };
   }
   if (silencing && ctx.alertActive === true) {

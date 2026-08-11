@@ -250,6 +250,55 @@ class ActuatorCommand(BaseModel):
     actor: str = ""
 
 
+class ChannelState(BaseModel):
+    """[T-2.116] Estado del canal TRAS EL ARBITRAJE de demandas. No es la orden.
+
+    La spec móvil §2.2 (`takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md:536`)
+    exige que «el resultado real llega en el ``command_ack`` con el estado
+    recalculado del relé», y §2.1 lo pide igual para el checklist BMS: «lo
+    mostrado es el estado del relé recalculado por el arbitraje de demandas, no
+    la última orden enviada». Hasta esta ficha ese campo NO EXISTÍA en ningún
+    contrato: los ACKs decían `success=true` y `detail="relay"`, o sea «la orden
+    se ejecutó», y la nube no tenía forma de distinguir eso de «el relé cambió».
+
+    La diferencia es exactamente el caso de vida de la spec: un `deactivate` de
+    sirena con una alerta vigente RETIRA la demanda manual y se ejecuta con
+    éxito, y la sirena **sigue sonando** porque el enclave de SASMEX (o de
+    `rules`) la sostiene. Con `success` a secas eso se leía «silenciada».
+
+    El arbitraje que esto declara vive ENTERO en
+    :meth:`~takab_edge.gpio.GpioController._desired_energized`: `_safed`,
+    `_sasmex_latched`, `_rules_demand`, `_audible_silenced`, `_siren_test_active`
+    y `_actuation_test_active`, más la polaridad fail-safe del canal. Aquí no se
+    recalcula nada — se TRANSPORTA lo que el dueño de los pines ya decidió,
+    leído de una sola instantánea (`GpioLink.snapshot`, un solo lock).
+
+    `activated` es la respuesta a «¿está protegiendo?» y es AGNÓSTICA de la
+    polaridad; `energized` es el nivel eléctrico crudo, que para `FAIL_CLOSE`
+    (gas) y `NORMALLY_CLOSED` (retenedores) significa lo contrario que para la
+    sirena. Van las dos, con su `fail_safe`, para que la afirmación sea
+    verificable y no haya que conocer el perfil del gabinete para leerla.
+    """
+
+    channel: ActuatorChannel
+    #: Nivel ELÉCTRICO del relé tras el recálculo.
+    energized: bool
+    #: ¿El canal quedó en su estado de PROTECCIÓN? Para la sirena esto es, letra
+    #: por letra, `GpioController.siren_sounding` (los dos comparan `energized`
+    #: contra `active_energized(fail_safe)`).
+    activated: bool
+    fail_safe: FailSafeMode
+    #: POR QUÉ (T-2.49). Hoy sólo lo declara el canal `siren`, que es el único
+    #: para el que el gabinete lo deriva; `None` en el resto significa «este
+    #: canal no declara motivo», nunca «sin motivo». Para la sirena, `None` con
+    #: `activated=False` es simplemente que no suena.
+    reason: SirenReason | None = None
+    #: ¿Queda ALGUNA demanda de alerta enclavada (SASMEX o `rules`)? Es lo que
+    #: convierte «sigue sonando» en «sigue sonando POR ALGO», sin que el
+    #: consumidor tenga que inferirlo de la fase del incidente en la nube.
+    alert_latched: bool = False
+
+
 class ActuatorAck(BaseModel):
     """ACK de ejecución con latencia relativa (T+0.42s, blueprint §4.2)."""
 
@@ -260,6 +309,12 @@ class ActuatorAck(BaseModel):
     latency_s: float  # segundos desde el comando
     executed_at: datetime = Field(default_factory=utcnow)
     detail: str = ""
+    #: [T-2.116] Estado del canal TRAS EL ARBITRAJE (schema 1.11.0). ADITIVO y
+    #: nullable: `None` = «este driver no puede leer el relé» (BACnet, o la
+    #: costura del gabinete caída), jamás «el relé está en reposo». La nube lo
+    #: persiste en `incident_actions.payload.channel_state`, que es lo que el
+    #: checklist BMS de §2.1 necesita para dejar de pintar la última orden.
+    channel_state: ChannelState | None = None
 
     @property
     def relative_label(self) -> str:
@@ -307,6 +362,12 @@ class CommandAck(BaseModel):
     #: [T-1.59] Resultados estructurados del self_test (por relé + salud del
     #: cache); None en acks de activate/deactivate. ADITIVO (schema 1.4.0).
     results: dict | None = None
+    #: [T-2.116] EL CAMPO QUE LA SPEC §2.2 EXIGE: el estado del canal tras el
+    #: arbitraje de demandas, no la intención del comando. ADITIVO y nullable
+    #: (schema 1.11.0): `None` en los acks de RECHAZO —donde no hubo ejecución y
+    #: por tanto no hay arbitraje que declarar— y en los de canal `system`, que
+    #: no gobierna ningún relé. La nube lo persiste en `commands.ack`.
+    channel_state: ChannelState | None = None
 
 
 class RelayState(BaseModel):

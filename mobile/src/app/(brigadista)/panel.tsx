@@ -8,6 +8,7 @@ import {
   TOPIC_INCIDENTS,
   TOPIC_SITE_STATE,
   groupActions,
+  sirenEvidence,
   type CommandOut,
   type FeatureRow,
   type IncidentActionOut,
@@ -114,18 +115,20 @@ export default function Panel() {
     refetchInterval: 30_000,
   });
 
-  const groups = useMemo(() => {
+  // La traza del incidente abierto: REST + live, deduplicada por action_id.
+  const acciones = useMemo(() => {
     if (incidentId === null) {
       return [];
     }
     const base = restActions.data ?? [];
     const seen = new Set(base.map((a) => a.action_id));
-    const combined = [
+    return [
       ...base,
       ...liveActions.filter((a) => a.incident_id === incidentId && !seen.has(a.action_id)),
     ];
-    return groupActions(combined);
   }, [incidentId, restActions.data, liveActions]);
+
+  const groups = useMemo(() => groupActions(acciones), [acciones]);
 
   const health = useMemo(
     () => (data ? applyHealthFrame(data.site_health, healthFrame) : null),
@@ -145,10 +148,21 @@ export default function Panel() {
   const ack = useCommandAck({ siteId, issued });
   const [controlError, setControlError] = useState<string | null>(null);
 
-  // La sirena "activa" para el preflight de silenciar sale de la traza BMS.
-  const sirenActive = groups.some(
-    (g) => g.kind === "siren_on" && g.view.state === "ACTIVADA",
-  );
+  // [T-2.110] La sirena "activa" del preflight sale del ÚLTIMO DATO REAL del
+  // canal, no de que exista un `siren_on` en la traza.
+  //
+  // EL DEFECTO: los grupos son POR KIND, así que `siren_off` —que el ingest sí
+  // escribe (`ACK_KIND[('siren','deactivate')]`)— caía en otro grupo y no
+  // cancelaba nada. Una activación histórica dejaba la precondición satisfecha
+  // el resto del incidente, y su detalle afirmaba que el gabinete reportaba la
+  // sirena activa sin que nadie lo hubiera reportado. T-2.75.a tapó la mitad
+  // (una acción SIMULADA ya no la satisface); esto suelta el enclavamiento.
+  //
+  // `sirenEvidence` (@takab/sdk, compartida) prefiere el `channel_state` que el
+  // gabinete recalcula tras arbitrar sus demandas (T-2.116) y sólo cae al verbo
+  // de la traza cuando ese censo no viaja. Devuelve `null` —«no consta»— en vez
+  // de un `false` que se leería como «está apagada».
+  const siren = useMemo(() => sirenEvidence(acciones), [acciones]);
 
   const openControl = (action: TacticalAction) => {
     setControl(action);
@@ -231,7 +245,13 @@ export default function Panel() {
                   error={controlError}
                   onClose={closeControl}
                   onConfirm={confirmControl}
-                  preconditions={preconditionsFor(control, data, { sirenActive })}
+                  preconditions={preconditionsFor(control, data, {
+                    siren,
+                    // [T-2.106] El quórum de pánico enciende la sirena SIN abrir
+                    // incidente: sin esto, la traza está vacía por diseño y el
+                    // táctico no podría silenciar la alarma que tiene delante.
+                    buildingAlarm: data.building_alarm != null,
+                  })}
                   result={ack?.command ?? null}
                 />
               ) : null}
