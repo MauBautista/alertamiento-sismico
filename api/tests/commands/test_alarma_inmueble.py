@@ -20,7 +20,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from takab_api.commands.alarma_inmueble import OrdenSirena, fase_del_sitio, suena_la_alarma
+from takab_api.commands.alarma_inmueble import (
+    AlarmaDelInmueble,
+    OrdenSirena,
+    fase_del_sitio,
+    suena_la_alarma,
+)
 
 AHORA = datetime(2026, 8, 10, 14, 32, 0, tzinfo=UTC)
 VIGENCIA_S = 1800.0
@@ -43,7 +48,12 @@ def _orden(
 
 
 def _suena(orden: OrdenSirena | None) -> datetime | None:
-    return suena_la_alarma(orden, ahora=AHORA, vigencia_s=VIGENCIA_S, sin_enlace_s=SIN_ENLACE_S)
+    """El INSTANTE que se anuncia, o None. [T-2.120] La procedencia de la
+    afirmación (medida vs. inferida) la fija
+    `test_building_alarm_desde_el_acuse.py`; aquí se sigue juzgando QUÉ la
+    sostiene, que no cambió."""
+    alarma = suena_la_alarma(orden, ahora=AHORA, vigencia_s=VIGENCIA_S, sin_enlace_s=SIN_ENLACE_S)
+    return alarma.since if alarma is not None else None
 
 
 # --- qué SOSTIENE la afirmación -------------------------------------------------
@@ -114,7 +124,7 @@ def test_una_accion_desconocida_no_afirma_nada() -> None:
 # --- precedencia: LO SÍSMICO MANDA SIEMPRE --------------------------------------
 
 
-ALARMA = AHORA - timedelta(seconds=60)
+ALARMA = AlarmaDelInmueble(since=AHORA - timedelta(seconds=60), origen="order_inferred")
 
 
 @pytest.mark.parametrize("sismica", ["alert_active", "shaking_concluded", "reentry_approved"])

@@ -226,7 +226,11 @@ describe("DetailPanel", () => {
         actions: [
           action({ action_id: "a-1", kind: "siren_on", ts: "2026-07-08T10:39:00Z" }),
           action({ action_id: "a-2", kind: "siren_on", ts: "2026-07-08T10:41:00Z" }),
-          action({ action_id: "a-3", kind: "gas_valve_close", ts: "2026-07-08T10:39:30Z" }),
+          // [T-2.119] `gas_closed` es el kind REAL que escribe el ingest
+          // (`ACK_KIND[('gas_valve','activate')]`). Esta prueba usaba
+          // `gas_valve_close`, un kind que ningún productor escribe jamás: por
+          // eso nadie vio que la fila del gas caía en el fallback crudo.
+          action({ action_id: "a-3", kind: "gas_closed", ts: "2026-07-08T10:39:30Z" }),
         ],
       }),
     });
@@ -234,6 +238,7 @@ describe("DetailPanel", () => {
     expect(screen.getByText("×2")).toBeInTheDocument();
     expect(screen.getByText("ACTIVADA")).toBeInTheDocument();
     expect(screen.getByText("VÁLVULAS DE GAS")).toBeInTheDocument();
+    expect(screen.getByText("CERRADAS")).toBeInTheDocument();
     // la hora mostrada es la de la acción MÁS RECIENTE del grupo
     expect(screen.getByText(/EDGE:GW-DEV-0001 · 10:41:00 UTC/)).toBeInTheDocument();
 
@@ -242,6 +247,72 @@ describe("DetailPanel", () => {
     fireEvent.click(groupBtn);
     expect(groupBtn).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/10:39:00 UTC · EDGE:GW-DEV-0001/)).toBeInTheDocument();
+  });
+
+  // ---- BMS: estado del canal, no la última orden (T-2.119) -----------------
+  it("BMS: el `_off` del gabinete cancela la fila del `_on` (gas, ascensores, puertas)", () => {
+    renderPanel({
+      actions: actions({
+        actions: [
+          action({ action_id: "a-1", kind: "gas_closed", ts: "2026-07-08T10:39:00Z" }),
+          action({ action_id: "a-2", kind: "gas_open", ts: "2026-07-08T10:41:00Z" }),
+          action({ action_id: "a-3", kind: "door_released", ts: "2026-07-08T10:39:10Z" }),
+          action({ action_id: "a-4", kind: "door_retained", ts: "2026-07-08T10:41:10Z" }),
+        ],
+      }),
+    });
+    // Una fila por canal, con el ÚLTIMO estado — no dos filas de órdenes.
+    expect(screen.getAllByText("VÁLVULAS DE GAS")).toHaveLength(1);
+    expect(screen.getByText("ABIERTAS")).toBeInTheDocument();
+    expect(screen.queryByText("CERRADAS")).toBeNull();
+    expect(screen.getAllByText("RETENEDORES DE PUERTA")).toHaveLength(1);
+    expect(screen.getByText("RETENIDOS")).toBeInTheDocument();
+    // Y jamás el kind crudo del fallback.
+    expect(screen.queryByText(/GAS_OPEN|DOOR_RETAINED/)).toBeNull();
+  });
+
+  it("BMS: declara si el estado sale del RELÉ medido o solo de la orden ejecutada", () => {
+    renderPanel({
+      actions: actions({
+        actions: [
+          action({
+            action_id: "a-1",
+            kind: "gas_open",
+            ts: "2026-07-08T10:41:00Z",
+            payload: {
+              channel_state: {
+                channel: "gas_valve",
+                energized: false,
+                activated: true,
+                fail_safe: "fail_close",
+                reason: null,
+                alert_latched: false,
+              },
+            },
+          }),
+          // Sin censo del relé: firmware viejo, BACnet o ack de rechazo.
+          action({ action_id: "a-2", kind: "elevator_recalled", ts: "2026-07-08T10:41:05Z" }),
+        ],
+      }),
+    });
+    // El gas: el relé DESENERGIZADO de un canal fail_close es el gas CERRADO.
+    expect(screen.getByText("CERRADAS")).toBeInTheDocument();
+    expect(screen.getByText(/RELÉ RECALCULADO POR EL GABINETE/)).toBeInTheDocument();
+    // Los ascensores: se pinta la orden, y se dice que es la orden.
+    expect(screen.getByText("RETORNADOS")).toBeInTheDocument();
+    expect(
+      screen.getByText(/ORDEN EJECUTADA · EL GABINETE NO DECLARA EL RELÉ/),
+    ).toBeInTheDocument();
+  });
+
+  it("BMS: las acciones que no son de actuador no declaran procedencia de relé", () => {
+    renderPanel({
+      actions: actions({
+        actions: [action({ action_id: "a-1", kind: "ack", actor: "user:abc" })],
+      }),
+    });
+    expect(screen.getByText("ACUSES")).toBeInTheDocument();
+    expect(screen.queryByText(/RELÉ RECALCULADO|NO DECLARA EL RELÉ/)).toBeNull();
   });
 
   // ---- Relés (T-1.50) ------------------------------------------------------

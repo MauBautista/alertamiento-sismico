@@ -274,8 +274,16 @@ CONSUME_PANIC_VOTES = text(
 # corroboración tiene que ser del que ejecutó: en un edificio de dos gabinetes,
 # que a uno no le lean los relés no desmiente lo que el otro confirmó.
 # Índice: `idx_commands_site (site_id, issued_at DESC)` ya existe.
+#
+# [T-2.120] `c.ack->'channel_state'` es el ESTADO DEL RELÉ que el gabinete
+# recalculó al ejecutar (`T-2.116`, persistido por `handle_command_ack`). Se
+# extrae la rama y no el ack entero a propósito: lo demás del acuse describe la
+# ORDEN —`success`, `latency_s`, `detail`— y ninguna de esas claves dice nada del
+# relé. `->` (no `->>`) para que llegue como jsonb y `sirena_activada` juzgue el
+# objeto; ausente ⇒ SQL NULL ⇒ Python None ⇒ «no pude preguntar», jamás «en
+# reposo».
 SIREN_ORDER = text(
-    "SELECT c.action, c.issued_at, h.relays_state, "
+    "SELECT c.action, c.issued_at, c.ack->'channel_state' AS channel_state, h.relays_state, "
     "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS gateway_age_s "
     "FROM commands c "
     "LEFT JOIN LATERAL ("

@@ -1371,6 +1371,7 @@ export type MetricSeries = {
  */
 export type MobileBuildingAlarmOut = {
     since: string;
+    source?: 'relay_measured' | 'order_inferred';
 };
 
 /**
@@ -1477,10 +1478,15 @@ export type MobileSiteHealthOut = {
  * · **Se corrobora contra el gabinete que la ejecutó:** si lleva más de
  * ``sin_enlace_min`` sin latir, o si su ``device_health.relays_state`` dice
  * ``unreadable`` —*«no pude preguntar quién gobierna los pines»*, T-2.70.a—
- * la app NO dice que suena. La nube no persiste el censo de relés canal a
- * canal (migración 0036, a propósito), así que ésta es la corroboración más
- * fuerte que los datos sostienen, y la pantalla está redactada para decir
- * exactamente eso y no más.
+ * la app NO dice que suena.
+ * · **[T-2.120] Y el relé, cuando el gabinete lo declara, MANDA.** El acuse
+ * trae ``channel_state`` desde `T-2.116` (el canal tras el arbitraje, no la
+ * orden): con ``activated=false`` no se anuncia nada aunque el ``activate``
+ * se ejecutara con éxito, y con ``activated=true`` la afirmación sale
+ * marcada como medida en ``building_alarm.source``. Sin el campo —el
+ * gabinete de campo todavía corre el código anterior— se degrada a la
+ * inferencia de arriba y **se dice** (``source="order_inferred"``). Ausencia
+ * de censo es «no pude preguntar», jamás «en reposo».
  * · **Se apaga** con un ``siren/deactivate`` ejecutado (manda lo último que
  * TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma
  * sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:

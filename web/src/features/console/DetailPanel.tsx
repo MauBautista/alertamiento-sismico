@@ -120,6 +120,10 @@ export default function DetailPanel({
   nowMs,
   onClose,
 }: DetailPanelProps) {
+  // [T-2.119] La expansión se guarda por `group.id` —el CANAL— y no por `kind`:
+  // el kind de un grupo de actuador cambia cuando el gabinete ejecuta la orden
+  // contraria (`gas_closed` → `gas_open`), y con él se habría cerrado sola la
+  // traza que el operador tenía abierta justo mientras algo se movía.
   const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
   const toggleKind = (kind: string) =>
     setExpandedKinds((prev) => {
@@ -409,14 +413,14 @@ export default function DetailPanel({
         >
           <div className="soc-bms">
             {groupActions(actions.actions).map((group) => {
-              const expanded = expandedKinds.has(group.kind);
+              const expanded = expandedKinds.has(group.id);
               return (
-                <div className="soc-bms__group" key={group.kind}>
+                <div className="soc-bms__group" key={group.id}>
                   <button
                     type="button"
                     className="soc-bms__row soc-bms__row--btn"
                     aria-expanded={expanded}
-                    onClick={() => toggleKind(group.kind)}
+                    onClick={() => toggleKind(group.id)}
                   >
                     <span className={`soc-check soc-check--${group.view.kind}`} />
                     <span>
@@ -427,6 +431,17 @@ export default function DetailPanel({
                       <div className="soc-bms__meta">
                         {group.last.actor.toUpperCase()} · {utcClock(Date.parse(group.last.ts))} UTC
                       </div>
+                      {/* [T-2.119] DE DÓNDE sale el estado de la izquierda. Sin
+                          esta línea, «CERRADAS» por una orden y «CERRADAS» por
+                          el relé medido se leen igual — y la primera es una
+                          afirmación de seguridad de vida que nadie midió. */}
+                      {group.evidence !== null && (
+                        <div className="soc-bms__meta" data-testid={`bms-src-${group.id}`}>
+                          {group.evidence.fromRelay
+                            ? "RELÉ RECALCULADO POR EL GABINETE"
+                            : "ÚLTIMA ORDEN EJECUTADA · EL GABINETE NO DECLARA EL RELÉ"}
+                        </div>
+                      )}
                     </span>
                     <span className={`soc-bms__state soc-bms__state--${group.view.kind}`}>
                       {group.view.state}

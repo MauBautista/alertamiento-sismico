@@ -16,6 +16,18 @@ export type ForensicMeta = {
   operatorId: string;
   /** Sitio del incidente (contexto). */
   siteId: string;
+  /**
+   * [T-2.118] Epoch ms del snapshot de `mobile-state` del que salieron
+   * `incident_id` y `pgaG` CUANDO ese snapshot ya no era fresco; null = se
+   * selló con dato vigente.
+   *
+   * Existe porque la cámara forense no PRESENTA el dato del servidor: lo
+   * SELLA. Un número viejo pintado en pantalla se corrige al refrescar; un
+   * número viejo horneado en el pixel entra en la cadena de custodia y ya no
+   * se corrige nunca. La política —razón larga en `app/camera.tsx`— es sellar
+   * igual y DECLARAR la edad, no negarse a sellar.
+   */
+  snapshotStaleSinceMs: number | null;
 };
 
 function fmtTs(iso: string, ntpOffsetMs: number | null): string {
@@ -37,10 +49,33 @@ function fmtPga(pgaG: number | null): string {
   return pgaG === null ? "PGA: pendiente de sync" : `PGA ${pgaG.toFixed(3)} g (gabinete)`;
 }
 
-/** Líneas de la marca de agua compuestas sobre el pixel (orden fijo). */
+/** ISO legible (mismo formato que `fmtTs`) del instante del snapshot. */
+function isoLegible(epochMs: number): string {
+  return new Date(epochMs).toISOString().replace("T", " ").replace(/\.\d+Z$/, "Z");
+}
+
+/**
+ * [T-2.118] La advertencia de procedencia, cuando el snapshot con el que se
+ * sella NO era fresco. Instante ABSOLUTO y no relativo a propósito: un exhibit
+ * se lee meses después y «hace 18 min» no significa nada en un expediente.
+ */
+function fmtSnapshot(staleSinceMs: number | null): string | null {
+  if (staleSinceMs === null) {
+    return null;
+  }
+  return `METADATOS RETENIDOS · SNAPSHOT ${isoLegible(staleSinceMs)} · sin conexión`;
+}
+
+/** Líneas de la marca de agua compuestas sobre el pixel (orden fijo).
+ *
+ *  La advertencia de snapshot retenido va en SEGUNDA posición, no al final:
+ *  la lección de T-2.104 es que lo que se lee primero manda, y un deslinde
+ *  escondido bajo cuatro líneas de metadatos no deslinda nada. */
 export function watermarkLines(meta: ForensicMeta): string[] {
+  const retenido = fmtSnapshot(meta.snapshotStaleSinceMs);
   return [
     "TAKAB AILERT · EVIDENCIA FORENSE",
+    ...(retenido === null ? [] : [retenido]),
     fmtTs(meta.tsDevice, meta.ntpOffsetMs),
     fmtGps(meta.gps),
     fmtPga(meta.pgaG),
@@ -59,6 +94,12 @@ export function forensicMetadata(meta: ForensicMeta): Record<string, unknown> {
     pga_pending: meta.pgaG === null,
     operator_id: meta.operatorId,
     site_id: meta.siteId,
+    // [T-2.118] Lo MISMO que declara el pixel: si el JSON callara la edad del
+    // snapshot mientras la marca la declara, la contradicción dentro del propio
+    // expediente valdría menos que no declarar nada.
+    snapshot_stale_since:
+      meta.snapshotStaleSinceMs === null ? null : new Date(meta.snapshotStaleSinceMs).toISOString(),
+    snapshot_retained: meta.snapshotStaleSinceMs !== null,
     integrity: "sha256",
   };
 }

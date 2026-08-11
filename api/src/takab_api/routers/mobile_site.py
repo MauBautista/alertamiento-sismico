@@ -131,6 +131,10 @@ def _orden_de_sirena(row: Any) -> OrdenSirena | None:
         issued_at=row.issued_at,
         relays_state=row.relays_state,
         gateway_age_s=row.gateway_age_s,
+        # [T-2.120] El censo del relé que viaja DENTRO del acuse (T-2.116). Se
+        # pasa crudo: quien decide si eso es una medición de ESTA sirena es
+        # `sirena_activada`, con el mismo default-deny que la app.
+        channel_state=row.channel_state,
     )
 
 
@@ -220,7 +224,7 @@ async def mobile_state(
     # Se consulta SIEMPRE (no solo cuando no hay sismo) porque el coste es una
     # fila por índice existente y así la precedencia se decide en UN sitio, con
     # los dos hechos delante, en vez de repartirse en dos ramas del router.
-    alarma_desde = suena_la_alarma(
+    alarma = suena_la_alarma(
         _orden_de_sirena(
             (
                 await conn.execute(
@@ -232,7 +236,7 @@ async def mobile_state(
         vigencia_s=settings.building_alarm_max_s,
         sin_enlace_s=settings.sin_enlace_min * 60.0,
     )
-    phase = fase_del_sitio(phase, alarma_desde)
+    phase = fase_del_sitio(phase, alarma)
 
     my_zone: MobileZoneOut | None = None
     assignment = await q.my_assignment(conn, claims.sub, site_id)
@@ -285,8 +289,14 @@ async def mobile_state(
         # hecho de la alarma NO viaja. Devolver los dos sería pedirle al cliente
         # que decida cuál pinta — misma disciplina que T-2.105 con el incidente
         # que no autoriza (el teléfono jamás decide fases, spec móvil §4.1).
+        # [T-2.120] Con la procedencia pegada al hecho: la app tiene que poder
+        # redactar distinto «el gabinete midió el relé energizado» y «el gabinete
+        # confirmó la orden y nadie la revirtió». `alarma` no es None cuando la
+        # fase es `building_alarm` — es exactamente lo que la produjo.
         building_alarm=(
-            MobileBuildingAlarmOut(since=alarma_desde) if phase == "building_alarm" else None
+            MobileBuildingAlarmOut(since=alarma.since, source=alarma.origen)
+            if phase == "building_alarm" and alarma is not None
+            else None
         ),
     )
 

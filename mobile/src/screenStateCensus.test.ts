@@ -185,21 +185,26 @@ describe("censo móvil · ninguna llamada al SDK se queda sin desenlace", () => 
    ===================================================================== */
 
 /**
- * DEUDA MEDIDA (2026-08-10): dos rutas poseen dato de servidor y no
- * materializan NINGÚN `<StateFrame>`. Se declaran, no se esconden.
+ * DEUDA SALDADA (2026-08-11, T-2.117 + T-2.118). Medía dos el 2026-08-10:
  *
- *  · `app/alarma-inmueble.tsx` — MISMO DEFECTO que esta ficha cerró en
- *    `crisis.tsx`, en su pantalla gemela: `if (!data?.building_alarm)` pinta un
- *    `ActivityIndicator` con «VERIFICANDO…» que sin sitio vigilado NO SE
- *    RESUELVE NUNCA. Queda fuera del alcance de T-2.111 porque el fichero no
- *    está en su lista de propiedad; es ficha aparte, y la costura es idéntica.
+ *  · `app/alarma-inmueble.tsx` — MISMO DEFECTO que T-2.111 cerró en
+ *    `crisis.tsx`, en su pantalla gemela: `if (!data?.building_alarm)` pintaba
+ *    un `ActivityIndicator` con «VERIFICANDO…» que sin sitio vigilado NO SE
+ *    RESOLVÍA NUNCA. **T-2.117** lo cubrió con `StateFrame`.
  *  · `app/camera.tsx` — la cámara forense no PRESENTA el dato: lo usa para
- *    SELLAR la marca de agua (`incident_id`, `max_pga_g`). Su estado real es el
- *    permiso de cámara, que sí declara. Queda censada porque sellar una foto
- *    forense con metadatos viejos es un problema distinto pero real (T-2.108
- *    dejó el `pgaG: null ⇒ "pendiente de sync"` como mitigación honesta).
+ *    SELLAR la marca de agua (`incident_id`, `max_pga_g`). **T-2.118** decidió
+ *    la política —se sella igual y se DECLARA la edad, horneada en el pixel;
+ *    la razón larga está en la cabecera de `app/camera.tsx`— y de paso cerró un
+ *    defecto real: la pantalla escribía «Sin incidente activo» ante cualquier
+ *    `incidentId === null`, confundiendo «el servidor dice que no hay» con «no
+ *    pudimos preguntar». El permiso de cámara DENEGADO queda exento con su
+ *    razón escrita en la propia pantalla: es una precondición del aparato con
+ *    remedio propio, no un estado del dato.
+ *
+ * Vacía, y así se queda: la ruta con dato de servidor que no monte marco pone
+ * este test rojo. No añadas su línea salvo que puedas escribir su razón encima.
  */
-const SIN_MARCO_DE_ESTADOS: string[] = ["app/alarma-inmueble.tsx", "app/camera.tsx"];
+const SIN_MARCO_DE_ESTADOS: string[] = [];
 
 describe("censo móvil · la ruta con dato de servidor declara sus estados", () => {
   it("cuadra con la deuda declarada", () => {
@@ -219,8 +224,9 @@ describe("censo móvil · la ruta con dato de servidor declara sus estados", () 
 
 /**
  * ÉSTE ES EL MECANISMO QUE OBLIGA A LA PANTALLA SIGUIENTE, y el producto
- * duradero de la ficha. De las 11 rutas que poseen dato de servidor, las 3 que
- * T-2.111 cierra tienen una prueba que llama a `expectFourStates`; estas 8 no.
+ * duradero de T-2.111. El 2026-08-10 medía 8 de 11; **T-2.117 y T-2.118 la
+ * dejaron en CERO**: las 11 rutas con dato de servidor tienen hoy una prueba
+ * que llama a `expectFourStates` (`tests/app/*-states.test.tsx`).
  *
  * Comparada por IGUALDAD: la pantalla de vida NÚMERO 12 —que por consumir
  * `useAlertState` entra sola en `rutasConDato`— pone este test ROJO el día que
@@ -228,25 +234,12 @@ describe("censo móvil · la ruta con dato de servidor declara sus estados", () 
  * `expectFourStates`, o añadir su línea aquí A LA VISTA DE TODOS con la razón
  * escrita encima. No hay tercera; no se puede "olvidar" llamar al ayudante.
  *
- * Y arreglar una de éstas también pone el test rojo: obliga a borrar su línea,
- * así que la deuda sólo puede bajar.
+ * Nota corregida POR MEDICIÓN: T-2.111 anotó que `panel.tsx` tenía «varios
+ * `<StateFrame>` hermanos». No los tiene — la ruta materializa UNO solo
+ * (`PanelView` es presentacional puro y no monta marcos), así que
+ * `expectFourStates` le aplica directo, y así se probó.
  */
-const SIN_PRUEBA_DE_CUATRO_ESTADOS: string[] = [
-  // Varios `<StateFrame>` HERMANOS (5): el ayudante exige exclusión mutua, así
-  // que hay que probarlos marco a marco. Además otro agente lo está tocando hoy.
-  "app/(brigadista)/panel.tsx",
-  // T-2.108 le puso el marco con las cuatro entradas, pero no la prueba.
-  "app/(brigadista)/triage.tsx",
-  // Marco completo, sin prueba. `siteId === null` ya lo declara como `empty`.
-  "app/(occupant)/directorio.tsx",
-  "app/(occupant)/inicio.tsx",
-  "app/(occupant)/rutas.tsx",
-  // Sin marco NINGUNO — ver C-3, donde está la razón larga de cada una.
-  "app/alarma-inmueble.tsx",
-  "app/camera.tsx",
-  // Marco completo, sin prueba.
-  "app/dictamen.tsx",
-];
+const SIN_PRUEBA_DE_CUATRO_ESTADOS: string[] = [];
 
 describe("censo móvil · las rutas con dato tienen la PRUEBA de los cuatro estados", () => {
   it("cuadra con la deuda declarada", () => {
@@ -262,23 +255,40 @@ describe("censo móvil · las rutas con dato tienen la PRUEBA de los cuatro esta
     );
   });
 
-  it("las cuatro pantallas de vida de T-2.111 NO están en la deuda", () => {
+  it("las pantallas que cerraron T-2.111/117/118 NO están en la deuda", () => {
     // Candado anti-regresión: la lista de arriba se compara por igualdad, así
     // que si alguien borra el test de `crisis` la ruta reaparece en `sinPrueba`
-    // y el test anterior cae. Esto lo dice además con nombre, para que el fallo
+    // y el test anterior cae. Esto lo dice además CON NOMBRE, para que el fallo
     // se lea sin tener que derivarlo.
-    const vivas = ["app/crisis.tsx", "app/checkin.tsx", "app/(brigadista)/lista.tsx"];
-    const desprotegidas = vivas.filter((v) => !CON_PRUEBA.has(v));
+    const cerradas = [
+      // T-2.111 · las pantallas de vida.
+      "app/crisis.tsx",
+      "app/checkin.tsx",
+      "app/(brigadista)/lista.tsx",
+      // T-2.117 · la gemela de crisis, que giraba para siempre.
+      "app/alarma-inmueble.tsx",
+      // T-2.118 · el resto de la deuda que el censo hizo visible.
+      "app/(brigadista)/panel.tsx",
+      "app/(brigadista)/triage.tsx",
+      "app/(occupant)/directorio.tsx",
+      "app/(occupant)/inicio.tsx",
+      "app/(occupant)/rutas.tsx",
+      "app/camera.tsx",
+      "app/dictamen.tsx",
+    ];
+    const desprotegidas = cerradas.filter((v) => !CON_PRUEBA.has(v));
     exigirIgual(
       desprotegidas,
       [],
-      "PANTALLAS DE VIDA QUE PERDIERON SU PRUEBA DE CUATRO ESTADOS. Las cerró " +
-        "T-2.111 midiendo el texto que lee la persona; volver a dejarlas sin " +
-        "prueba es reabrir la ficha.",
+      "PANTALLAS QUE PERDIERON SU PRUEBA DE CUATRO ESTADOS. Se cerraron midiendo " +
+        "el texto que lee la persona; volver a dejarlas sin prueba es reabrir la " +
+        "ficha que las cerró.",
     );
-    for (const viva of vivas) {
-      expect(SIN_PRUEBA_DE_CUATRO_ESTADOS).not.toContain(viva);
+    for (const cerrada of cerradas) {
+      expect(SIN_PRUEBA_DE_CUATRO_ESTADOS).not.toContain(cerrada);
     }
+    // Y la población entera está cubierta: hoy la deuda es CERO, no «poca».
+    expect(cerradas.sort()).toEqual([...CENSO.rutasConDato].sort());
   });
 
   it("`panic.tsx` queda FUERA de esta población, y por una razón", () => {

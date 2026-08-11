@@ -16,11 +16,23 @@ Ruta de un notify:
 
 Presupuesto <2 s edge→browser: nuestra mitad (commit→NOTIFY→fetch→push) es
 <100 ms; el resto es latencia de ingesta (T-1.17 commitea ``q-events`` ≤1.5 s).
+
+[T-2.121] **Las re-consultas del hub tienen tope de espera, y el suscriptor al
+que no se le puede servir se entera.** Medido antes de arreglarlo: con un ACCESS
+EXCLUSIVE ajeno sobre ``incidents`` (una migración, un ``VACUUM FULL``, un
+``TRUNCATE`` de mantenimiento) la re-consulta se encolaba detrás y ``dispatch``
+no volvía nunca. Como ``run_listener`` despacha los NOTIFY **en serie**, eso no
+perdía un frame: paraba el fan-out del proceso entero, para todos los tenants —
+y encima retenía conexiones del pool (5+5), así que a los 10 bloqueos el REST
+también se quedaba sin conexión (30 s hasta el ``TimeoutError`` del pool).
+Ninguna de las dos cosas se veía: el socket seguía abierto y la consola seguía
+pintando «CONECTADO · ● LIVE».
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -29,13 +41,23 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocket
 
+from takab_api.audit import LATERAL_LOCK_TIMEOUT
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
 logger = logging.getLogger("takab_api.ws")
+
+#: [T-2.121] Cierre por CANAL LIVE DEGRADADO: el hub tenía algo que entregarle a
+#: este socket y no pudo leerlo. No es un error del cliente ni de su token (4401
+#: es eso), así que el ``LiveSocket`` del SDK lo trata como cualquier caída y
+#: reconecta con backoff; entretanto la topbar pinta «CONECTANDO…» y la cola de
+#: incidentes «● SIN LIVE», que es la verdad, y el REST sigue sirviendo el dato
+#: (regla de oro 2). Callarse era dejar al operador con un «● LIVE» mintiendo.
+WS_LIVE_DEGRADED = 4503
 
 _INTERNAL_ROLES = frozenset({"takab_superadmin", "takab_support"})
 _VISIBILITY_TTL_S = 60.0
@@ -198,7 +220,21 @@ class Hub:
         need_vis = any(
             s.claims.role == "gov_operator" and str(s.claims.tenant_id) != str(tenant) for s in subs
         )
-        visibility = await self._tenant_visibility(tenant) if need_vis else "private"
+        visibility = "private"
+        if need_vis:
+            try:
+                visibility = await self._tenant_visibility(tenant)
+            except SQLAlchemyError as exc:
+                # [T-2.121] Sin poder leer `tenants` no se sabe si este tenant
+                # comparte con gobierno. Seguir con "private" entregaría de menos
+                # EN SILENCIO justo a quien depende de ese metadato, así que se
+                # le declara el canal degradado; el resto de suscriptores no
+                # necesitaba la visibilidad y no se toca.
+                await self._degradar(
+                    [s for s in subs if s.claims.role == "gov_operator"],
+                    f"visibilidad del tenant ilegible: {exc.__class__.__name__}",
+                )
+                subs = [s for s in subs if s.claims.role != "gov_operator"]
 
         candidates = [s for s in subs if _can_maybe_see(s.claims, tenant, visibility)]
         if not candidates:
@@ -210,7 +246,14 @@ class Hub:
 
         for (tenant_id, role), members in groups.items():
             ctx = SessionCtx(tenant_id=tenant_id, role=role, user_id="")
-            frame = await self._build_frame(ctx, t or "", payload)
+            try:
+                frame = await self._build_frame(ctx, t or "", payload)
+            except SQLAlchemyError as exc:
+                # [T-2.121] La base no dejó leer la fila (lock ajeno vencido por
+                # el tope, o la DB caída). Estos suscriptores acaban de perderse
+                # una invalidación y NO pueden saberlo: se les declara.
+                await self._degradar(members, f"{t}: {exc.__class__.__name__}")
+                continue
             if frame is None:
                 continue
             for s in members:
@@ -238,6 +281,12 @@ class Hub:
                 tenant_id=_uuid(tenant), site_id=_uuid(site), incident_id=_uuid(incident)
             ).model_dump(mode="json")
         async with get_tenant_conn(ctx) as conn:
+            # [T-2.121] Tope de espera por lock. Es la MISMA política que aplican
+            # las dos conexiones laterales de auditoría (`audit.py`, T-2.73.c /
+            # T-2.112) y se reutiliza a propósito en vez de inventar un número:
+            # el día que cambie, cambia para todas. Sin él, un ACCESS EXCLUSIVE
+            # ajeno paraba el fan-out del proceso entero (medido: no volvía).
+            await conn.execute(LATERAL_LOCK_TIMEOUT)
             if t == "incident":
                 row = (await conn.execute(_SQL_INCIDENT, {"id": _uuid(payload.get("id"))})).first()
                 if row is None:
@@ -274,10 +323,47 @@ class Hub:
         if hit is not None and hit[1] > now:
             return hit[0]
         async with get_tenant_conn(_VISIBILITY_CTX) as conn:
+            await conn.execute(LATERAL_LOCK_TIMEOUT)  # [T-2.121] mismo tope que arriba
             row = (await conn.execute(_SQL_VISIBILITY, {"t": _uuid(tenant_id)})).first()
         vis = row.visibility if row is not None else "private"
         self._visibility[str(tenant_id)] = (vis, now + _VISIBILITY_TTL_S)
         return vis
+
+    async def _degradar(self, subs: list[Subscriber], motivo: str) -> None:
+        """[T-2.121] Declara el canal DEGRADADO a quien no se le pudo servir.
+
+        La alternativa —seguir con el ``continue`` de siempre— deja al operador
+        con un socket abierto, una topbar que dice CONECTADO y una cola de
+        incidentes que dice ● LIVE mientras se le escapó una invalidación. Eso es
+        exactamente el dato congelado presentado como vivo que prohíbe la regla
+        de oro 7, y en la superficie donde se decide a quién se manda una brigada.
+
+        Se cierra con ``WS_LIVE_DEGRADED`` y no se manda un ``ErrorFrame``
+        porque el ``LiveSocket`` compartido (``shared/sdk-ts/src/live.ts``)
+        descarta los frames ``error`` y cualquier ``type`` que no conozca: hoy el
+        ÚNICO canal que llega a la pantalla del operador es el estado del
+        transporte. Un frame propio de degradación —más fino que tumbar el
+        socket— exige tocar el SDK compartido y la consola; queda declarado en el
+        informe de la ficha, no simulado aquí.
+
+        El cierre no pierde dato: el REST sigue sirviendo (regla de oro 2), la
+        consola refresca por TanStack Query y el SDK reconecta con backoff.
+        """
+        for sub in subs:
+            logger.error(
+                "ws: canal live DEGRADADO para tenant=%s role=%s (%s) — se cierra con %d",
+                sub.claims.tenant_id,
+                sub.claims.role,
+                motivo,
+                WS_LIVE_DEGRADED,
+            )
+            await self.unregister(sub)
+            # El socket puede estar ya medio-muerto: el cierre es cortesía, no
+            # condición del registro (que ya se limpió arriba).
+            with contextlib.suppress(Exception):
+                await sub.ws.close(
+                    code=WS_LIVE_DEGRADED, reason="canal live degradado: la nube no pudo leer"
+                )
 
     async def _send(self, sub: Subscriber, frame: dict[str, Any]) -> None:
         async with sub.send_lock:

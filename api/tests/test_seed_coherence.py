@@ -177,6 +177,15 @@ def test_el_orden_malo_de_recoleccion_sigue_verde() -> None:
     proceso de pytest, no de un test. Se envenena la fila compartida justo antes: sin
     eso, el hijo saldría verde por lo que dejó sembrado la corrida anterior —un falso
     verde— en vez de por el arreglo.
+
+    [T-2.122] Desde que ``conftest._base_sin_herencia`` vacía la base al arrancar cada
+    sesión, el hijo ya no ve el veneno: lo borra antes del primer test. El veneno se
+    queda porque no cuesta nada y porque documenta POR QUÉ hacía falta, pero **el
+    candado que sostiene T-2.115 son los dos de arriba**, no éste: el estructural (una
+    sola definición de las filas compartidas) y el funcional (envenenar y re-sembrar
+    DENTRO de una transacción, donde ningún vaciado de arranque llega). Éste sigue
+    midiendo lo suyo —que las dos familias en el orden malo dan el mismo veredicto—,
+    que es un eje distinto del residuo entre corridas.
     """
     dsn = _dsn()
     if not dsn:

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-11)
 
-**Conteo de tareas:** total **262** · `[x]` **187** · `[~]` **9** · `[ ]` **66**
+**Conteo de tareas:** total **267** · `[x]` **193** · `[~]` **9** · `[ ]` **65**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -34,13 +34,19 @@ auditoría y reforma de la consola SOC** (T-2.35…T-2.59) + T-2.60.a. Las 2 `[~
 (semántica real del WR-1: falta transmisión real de CIRES + relé físico) y **T-1.44** (rol CI
 OIDC: código listo, falta `terraform apply`) — ambas esperan a un humano, no a código.
 
-> **Por qué el conteo de abiertas no bajó (2026-08-10).** El lote `T-2.110…T-2.116` cerró **7**
-> fichas y abrió **7** (`T-2.117…T-2.123`), así que las abiertas siguen en 66. **No es
-> estancamiento y conviene no leerlo así:** cinco de las nuevas las descubrió el propio trabajo al
-> medir cosas que antes se suponían —la deuda de cuatro estados que nadie había contado, dos
-> conexiones sin tope, un modo de fallo nuevo de `/me`—, y las otras dos son huecos gemelos que
-> ya no se pueden olvidar porque los vigila un test. Un backlog que no crece cuando se toca código
-> nuevo suele significar que nadie está mirando, no que no haya nada.
+> **Por qué el conteo de abiertas apenas se mueve, y por qué eso está bien.** El lote
+> `T-2.110…T-2.116` (2026-08-10) cerró 7 y abrió 7; el lote `T-2.117…T-2.122` (2026-08-11) cerró
+> 6 y abrió 5. Neto en dos días: **13 cerradas, 12 abiertas**.
+>
+> **No es estancamiento, y conviene no leerlo así.** Casi todas las nuevas las descubrió el propio
+> trabajo **al medir cosas que antes se suponían**, y varias eran defectos vivos que nadie estaba
+> contando: la deuda de cuatro estados, tres conexiones sin tope de espera, el fan-out del
+> WebSocket despachando en serie, un gate de lint que cubría menos de lo que parecía. Un backlog
+> que **no** crece cuando se toca código nuevo suele significar que nadie está mirando.
+>
+> Y el saldo real no se mide en fichas sino en lo que dejó de estar roto: en dos días se cerraron
+> **cuatro superficies que mentían en verde** — el checklist de gas y puertas, la alarma del
+> inmueble, la imagen de consola que no construía, y un SOC que se quedaba mudo diciendo «● LIVE».
 **Qué corre en producción se le pregunta al sistema, no a este archivo** (`/api/health` para la
 nube, `FW_VERSION` para el gabinete — ver README §"¿Qué está desplegado?").
 
@@ -7190,7 +7196,7 @@ sería documentar intenciones.
 >
 > **Deja abierta `T-2.120`.**
 
-### [ ] T-2.117 · `alarma-inmueble.tsx` gira para siempre: el defecto gemelo de T-2.111 — `SOFTWARE`
+### [x] T-2.117 · `alarma-inmueble.tsx` gira para siempre: el defecto gemelo de T-2.111 — `SOFTWARE`
 - **Componente:** mobile · **Detectada por:** `T-2.111` (2026-08-10), fuera de su alcance
 - `app/alarma-inmueble.tsx` tiene el defecto **exacto** que `T-2.111` acaba de cerrar en
   `crisis.tsx`, en su pantalla gemela: `if (!data?.building_alarm)` pinta un `ActivityIndicator`
@@ -7199,10 +7205,14 @@ sería documentar intenciones.
 - Queda censada en `SIN_MARCO_DE_ESTADOS` con su razón escrita, así que **no se puede olvidar**.
 - La costura ya existe y está probada: es la de `crisis.tsx`. Media hora.
 - **Criterios de aceptación:**
-  - [ ] La pantalla declara sus cuatro estados y pasa `expectFourStates`.
-  - [ ] Sale de la lista de deuda del censo **en el mismo cambio** (se compara por igualdad).
+  - [x] La pantalla declara sus cuatro estados y pasa `expectFourStates`.
+  - [x] Sale de la lista de deuda del censo **en el mismo cambio** (se compara por igualdad).
 
-### [ ] T-2.118 · La deuda de cuatro estados que el censo acaba de hacer visible — `SOFTWARE`
+> **Cerrada (2026-08-11)**, con la costura de `T-2.111` replicada, no reinventada. Y de paso
+> quedó verificado que **la guarda muerde**: al retirar un test de estados, el censo se pone rojo
+> nombrando la ruta que dejó de declarar.
+
+### [x] T-2.118 · La deuda de cuatro estados que el censo acaba de hacer visible — `SOFTWARE`
 - **Componente:** mobile · **Detectada por:** `T-2.111` (2026-08-10)
 - El censo de `T-2.111` midió, por primera vez, cuánto falta: de **11 rutas con dato de
   servidor**, **8 no tienen prueba de cuatro estados** (`panel`, `triage`, `directorio`, `inicio`,
@@ -7214,11 +7224,47 @@ sería documentar intenciones.
   un problema **distinto y peor** que pintar un número viejo, y merece su propio criterio.
 - **Depende de:** `T-2.117` cubre una de las 8; ésta es el resto.
 - **Criterios de aceptación:**
-  - [ ] Las rutas restantes declaran sus cuatro estados, o su exención queda escrita con razón.
-  - [ ] `camera.tsx`: decidido y probado qué pasa cuando el dato con el que sella está viejo.
-  - [ ] Las listas del censo bajan; ninguna crece.
+  - [x] Las rutas restantes declaran sus cuatro estados, o su exención queda escrita con razón.
+  - [x] `camera.tsx`: decidido y probado qué pasa cuando el dato con el que sella está viejo.
+  - [x] Las listas del censo bajan; ninguna crece.
 
-### [ ] T-2.119 · Los otros cuatro `*_off` repiten el enclavamiento de T-2.110 — `SOFTWARE`
+> **Cerrada (2026-08-11). El censo quedó a CERO:** `SIN_MARCO_DE_ESTADOS` 2→0 y
+> `SIN_PRUEBA_DE_CUATRO_ESTADOS` 8→0. Las 11 rutas con dato de servidor tienen hoy marco **y**
+> prueba.
+>
+> **La decisión de `camera.tsx`, que era el criterio con sustancia.** Se descartó **negarse a
+> sellar**: la evidencia es perecedera —el muro se apuntala, el escombro se retira— y la falta de
+> red es *exactamente* el escenario para el que existe esa cámara (por eso `T-2.108` movió la
+> subida a la cola offline). Negarse convierte un problema de **etiqueta** en una **pérdida
+> total**. Se descartó **sellar sin el dato**: deja la foto huérfana, sin atribución.
+>
+> Se sella **declarando la edad**, con dos detalles que son la ficha entera:
+> 1. El aviso va **horneado en el pixel** —`METADATOS RETENIDOS · SNAPSHOT <instante> · sin
+>    conexión`—, que es el único sitio del que no se puede separar después: ni recortando, ni
+>    re-codificando, ni perdiendo un JSON adjunto. **Entra en el SHA-256 con la imagen.**
+> 2. **Instante absoluto, nunca relativo.** Un exhibit se lee meses después y «hace 18 min» no
+>    significa nada en un expediente.
+>
+> El JSON de `forensicMetadata` dice lo mismo: que el pixel declarase y el JSON callara valdría
+> menos que no declarar nada. Por eso hubo que tocar `watermark.ts`, el módulo puro donde los dos
+> espejos quedan consistentes — hacerlo ad-hoc en la pantalla habría dejado el JSON mintiendo.
+>
+> **Defecto real encontrado de camino:** `camera.tsx` escribía «Sin incidente activo» ante
+> *cualquier* fallo, confundiendo «el servidor dice que no hay» con «no pudimos preguntar» — el
+> mismo embuste que `T-2.111` cazó en `lista.tsx`, **más caro aquí**: quien se lo cree se va sin
+> levantar la evidencia.
+>
+> **Exención única, escrita y asertada:** el permiso de cámara DENEGADO no es uno de los cuatro
+> estados — es precondición del *aparato*, no del dato, y tiene remedio propio (botón CONCEDER
+> PERMISO) que `StateFrame` no sabe pintar. El permiso *sin resolver todavía* sí entra como
+> `loading`.
+>
+> **Corrección por medición:** el censo afirmaba que `panel.tsx` materializaba varios `StateFrame`
+> hermanos. Medido: **uno solo**. El comentario decía lo contrario y se corrigió.
+>
+> **Deja abiertas** `T-2.125` y `T-2.126`.
+
+### [x] T-2.119 · Los otros cuatro `*_off` repiten el enclavamiento de T-2.110 — `SOFTWARE`
 - **Componente:** sdk + web · **Detectada por:** `T-2.110` (2026-08-10), dejada fuera por alcance
 - `strobe_off`, `gas_open`, `elevator_released` y `door_retained` tienen en `ACTION_STATE` el
   hueco **idéntico** al que tenía `siren_off`: se pintan crudos y **no cancelan su grupo `_on`**,
@@ -7226,11 +7272,45 @@ sería documentar intenciones.
   y puertas**. Que son, junto a la sirena, los actuadores que importan.
 - **El dato ya existe**: `payload.channel_state` viaja desde `T-2.116`. Falta la vista.
 - **Criterios de aceptación:**
-  - [ ] Los cuatro canales derivan su estado del relé recalculado, con la misma precedencia que
+  - [x] Los cuatro canales derivan su estado del relé recalculado, con la misma precedencia que
         `sirenEvidence()` y la misma honestidad del `null` («no consta» ≠ «en reposo»).
-  - [ ] El checklist BMS de la consola deja de mostrar la orden como si fuera el estado.
+  - [x] El checklist BMS de la consola deja de mostrar la orden como si fuera el estado.
 
-### [ ] T-2.120 · `building_alarm` adivina lo que el acuse ya sabe — `SOFTWARE`
+> **Cerrada (2026-08-11). No eran cuatro kinds: eran SIETE de diez, y el defecto es de `T-1.50`.**
+> `ACTION_STATE` daba de alta `gas_valve_close`, `elevator_recall` y `door_release` — y **ningún
+> productor escribe jamás esos tres nombres**. El ingest escribe `gas_closed`,
+> `elevator_recalled`, `door_released` (`ingest/handlers.py · ACK_KIND`). O sea que las filas de
+> **gas, ascensores y puertas** llevaban meses cayendo en el fallback crudo, que devuelve
+> `{state: KIND.toUpperCase(), kind: 'ok'}`: **«GAS_CLOSED», en verde, "todo bien"**. No lo vio
+> nadie porque los tests de la consola usaban **los mismos nombres inventados**.
+>
+> **La ironía que conviene no repetir:** el propio fichero **advertía de esta trampa mientras la
+> sufría**. `T-2.75` escribió allí que «un rótulo que enumera se queda ciego ante el canal
+> siguiente, y ese canal caería en el fallback `ok` (verde, "todo bien")» — y lo cerró para los
+> canales de notificación sin ver que gas y puertas ya estaban dentro del agujero. Ahora lo ancla
+> un censo que **lee `ACK_KIND` del propio `handlers.py` en tiempo de test**, así que la lista no
+> puede volver a divergir del productor. Los tres nombres fantasma quedan como `legacyKinds` para
+> que una fila vieja no regrese al fallback.
+>
+> **La polaridad fail-safe, que es donde esto podía mentir de nuevo.** Medido en
+> `DEFAULT_FAILSAFE`: sirena y estrobo `NO`, **gas `FAIL_CLOSE`**, **retenedor
+> `NORMALLY_CLOSED`**. Se lee **solo `activated`** («¿está protegiendo?», agnóstica de polaridad),
+> nunca `energized` (el nivel eléctrico, invertido en esos dos): leer `energized` habría pintado
+> **«GAS ABIERTO» con el gas cortado**.
+>
+> **Y el matiz que NO se aplanó: la doctrina de `T-2.110` se INVIERTE al cruzar la polaridad.** En
+> la sirena, la lectura que no tranquiliza es *sonando* (`activated=true`). En gas, ascensores y
+> puertas es *abiertas / no retornados / retenidos* (`activated=false`) — decir «CERRADAS» sin
+> certeza es justo la frase que hace que **nadie vaya a cerrar la válvula**. Por eso el desempate
+> va al revés en esos canales, con su razón escrita canal por canal.
+>
+> El conocimiento de canal vive en **un registro** (`ACTUATOR_CHANNELS`) del que se derivan
+> `ACTION_STATE` y `CHANNEL_LABEL`, y hay **una** función (`channelEvidence`); `sirenEvidence()`
+> es su especialización, con un test que lo exige por igualdad para que nadie las bifurque.
+>
+> **Deja abierta** `T-2.127`.
+
+### [x] T-2.120 · `building_alarm` adivina lo que el acuse ya sabe — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.116` (2026-08-10)
 - `queries/mobile.py` deriva «la sirena suena» de `commands` —«manda lo último que TOCÓ el relé»—
   con una razón escrita que **`T-2.116` acaba de derogar**: «la nube no sabe si el relé está
@@ -7238,11 +7318,31 @@ sería documentar intenciones.
 - **Depende de:** el despliegue del edge (`T-2.116` no surte efecto hasta que el Pi corra el
   código nuevo). Con `channel_state = null` hay que seguir degradando al método de hoy.
 - **Criterios de aceptación:**
-  - [ ] `building_alarm` sale del acuse cuando el acuse lo trae, y degrada explícitamente cuando
+  - [x] `building_alarm` sale del acuse cuando el acuse lo trae, y degrada explícitamente cuando
         no — sin fingir que la inferencia es una medición.
-  - [ ] Test de los dos caminos, incluido el gabinete con firmware viejo.
+  - [x] Test de los dos caminos, incluido el gabinete con firmware viejo.
 
-### [ ] T-2.121 · Dos conexiones del WS sin tope de espera — `SOFTWARE`
+> **Cerrada (2026-08-11).** `sirena_activada()` devuelve **tres** valores, no dos: `True`/`False`
+> son medición, **`None` es «no pude preguntar»**. `suena_la_alarma()` devuelve
+> `AlarmaDelInmueble(since, origen)` — la procedencia viaja **pegada al hecho**, y el contrato lo
+> publica como `source: "relay_measured" | "order_inferred"` (aditivo, con default: `required`
+> sigue siendo solo `["since"]`).
+>
+> **El falso positivo que cerraba la ficha, medido:** un acuse que mide la sirena **en reposo**
+> (`activated=false`) ya **no anuncia nada**, aunque el `activate` esté `acked` con
+> `success=true`. Hasta hoy eso encendía la pantalla de alarma **del inmueble entero**.
+>
+> **Y el razonamiento que evita un desastre de despliegue:** un acuse **sin** censo jamás puede
+> colapsarse a «en reposo». Si se hubiera hecho, el despliegue escalonado de `T-2.116` habría
+> **apagado la alarma en toda la flota todavía sin actualizar**. Por eso el camino degradado no es
+> una rama de cortesía: **es el caso de hoy** —`gw-dev-0001` aún corre el firmware viejo— y está
+> probado con `None`, `{}`, censo de otro canal, `activated` no booleano y el `detail="relay"`
+> antiguo: **todos degradan, ninguno desmiente**.
+>
+> Las cuatro guardas de frescura de `T-2.106` se aplican **también** al camino medido: una
+> medición es de un instante pasado, no de ahora.
+
+### [x] T-2.121 · Dos conexiones del WS sin tope de espera — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.112` (2026-08-10)
 - `ws/hub.py:240` y `:276` y `ws/poller.py:46` abren `get_tenant_conn` **sin `lock_timeout`**.
 - **No es el ciclo indetectable de `T-2.73.c`** —no cuelgan de una transacción de request— pero un
@@ -7251,10 +7351,48 @@ sería documentar intenciones.
 - **Emparentada con la decisión abierta de `PENDIENTES-MAURICIO §1.8`** (el `lock_timeout` global
   en `get_tenant_conn`): si esa decisión se toma, puede absorber esta ficha entera.
 - **Criterios de aceptación:**
-  - [ ] Medido —no supuesto— qué le pasa hoy al hub con la tabla bloqueada.
-  - [ ] La degradación es **visible** en la consola, no silenciosa.
+  - [x] Medido —no supuesto— qué le pasa hoy al hub con la tabla bloqueada.
+  - [x] La degradación es **visible** en la consola, no silenciosa.
 
-### [ ] T-2.122 · La siembra con `DO NOTHING` sigue viva fuera de los conftest arreglados — `SOFTWARE`
+> **Cerrada (2026-08-11), y lo que vale de esta ficha son los NÚMEROS, no el arreglo.**
+>
+> Con un `LOCK TABLE incidents IN ACCESS EXCLUSIVE MODE` de un tercero, **antes**:
+>
+> | Hecho | Medido |
+> |---|---|
+> | El hub queda **encolado, no lento** | `pg_locks`: `AccessShareLock` con `granted=false` |
+> | `hub.dispatch` no vuelve | **25.16 s** y seguía esperando (techo del test) |
+> | **El SOC ENTERO se queda mudo** | `run_listener` despacha **en serie**: el 2.º notify —un `checkin`, que ni toca la base— no se entregó en 25 s |
+> | El operador **no se entera** | socket abierto, «CONECTADO», «● LIVE» |
+> | **Y arrastra al REST** | 10 lectores encolados agotan el pool (5+5): un request cualquiera, `TimeoutError` a los **30.0 s** exactos |
+>
+> **Después:** `dispatch` cede en **3.10 s**, el suscriptor de al lado sigue recibiendo, al
+> afectado se le **cierra el canal con code 4503** y el pool se libera — bajo la misma contención,
+> un request ajeno consigue conexión en **1.1 s**. El poller cede, lo registra, sigue vivo y **se
+> recupera solo**.
+>
+> **Cero cambios en `web/`:** la superficie ya existía. El `LiveSocket` trata el 4503 como caída
+> (solo el 4401 es auth) ⇒ «CONECTANDO…» + «● SIN LIVE», y el REST sigue sirviendo (regla de oro
+> 2).
+>
+> **⚠️ CORRECCIÓN a lo que esta misma ficha afirmaba al abrirse.** Decía que la decisión global de
+> `PENDIENTES §1.8` «puede absorber esta ficha entera». **Es falso, y lo demuestra la medición:**
+> un tope global habría convertido el silencio del hub en una excepción registrada, nada más. No
+> absorbe (a) que al suscriptor **se le diga** —el cierre 4503—, ni (b) el hallazgo de que
+> `run_listener` despacha en serie, que es lo que convierte un lock en un **apagón del SOC** en
+> vez de un frame perdido. Ese hallazgo queda fichado aparte (`T-2.128`).
+>
+> **Lo que sí sale de aquí para la decisión §1.8**, con criterio duro: **`lock_timeout` < timeout
+> del pool (30 s)**. Por debajo, un bloqueo degrada *un request*; por encima o sin tope, degrada
+> *el proceso*. Recomendado ~10 s para la conexión del request — **no** los 3 s de las conexiones
+> de segundo plano: una lateral es best-effort y se puede tirar, un request es una persona
+> esperando, y hay esperas por lock de FILA legítimas que no conviene cortar tan corto.
+>
+> **Límite declarado:** un frame propio de «LIVE DEGRADADO» es imposible hoy — `live.ts` descarta
+> los frames `error` y `parseServerFrame` descarta todo `type` fuera de su lista escrita a mano.
+> El único canal servidor→pantalla es el estado del transporte (`T-2.129`).
+
+### [x] T-2.122 · La siembra con `DO NOTHING` sigue viva fuera de los conftest arreglados — `SOFTWARE`
 - **Componente:** api (tests) · **Detectada por:** `T-2.115` (2026-08-10)
 - `T-2.115` cerró las filas compartidas, pero el patrón sigue en `tests/ws/conftest.py`,
   `tests/test_db_session.py`, `tests/api/test_sites.py` y otros. Hoy **no colisionan** porque usan
@@ -7263,9 +7401,98 @@ sería documentar intenciones.
   TRUNCATE**, así que sobreviven entre invocaciones de la suite y el veredicto puede depender del
   estado que dejó la corrida anterior. Ése es el mecanismo que hizo perder una sesión.
 - **Criterios de aceptación:**
-  - [ ] O las filas compartidas se limpian entre corridas, o toda siembra de ellas es
+  - [x] O las filas compartidas se limpian entre corridas, o toda siembra de ellas es
         autoritativa. Elegido con razón escrita, no las dos a medias.
-  - [ ] Un test que demuestre que una corrida no puede heredar el veredicto de la anterior.
+  - [x] Un test que demuestre que una corrida no puede heredar el veredicto de la anterior.
+
+> **Cerrada (2026-08-11). No eran dos tablas: son CINCO** —`sites`, `gateways`, `sensors`,
+> `tenants`, `zones`— más `visibility_grants`. Medido sobre la base tras una suite completa y
+> verde, no por grep: **55 módulos** escriben ese catálogo por su cuenta, **36** con `DO NOTHING`.
+> Están a salvo **por UUID disjunto, no por construcción**.
+>
+> **La medida que decidió el criterio 1**, y que conviene entender porque descarta la opción que
+> parecía más barata: una siembra autoritativa corrige el *valor* de una fila que alguien vuelve a
+> sembrar, pero **no puede hacer nada contra una fila que NADIE siembra**. Probado insertando
+> **una** fila en `visibility_grants` —tabla que ninguna fixture toca—: la suite dio **6 rojos,
+> todos de aislamiento multi-tenant** (regla de oro 5). Ningún `DO UPDATE` alcanza eso.
+>
+> Por eso se limpia entre corridas, **entero**, y la lista de tablas **se deriva del catálogo de
+> Postgres** (`relkind IN ('r','p')`, excluyendo lo que pertenece a una extensión — así
+> `spatial_ref_sys` sale sin nombrarla): la siguiente tabla que alguien añada **entra sola**. No es
+> «las dos a medias»: la garantía descansa en UN mecanismo. El `DO UPDATE` de `T-2.115` se queda
+> porque cubre **otro eje** —el orden de recolección dentro de un proceso— y es ficha cerrada.
+>
+> Coste asumido: un `TRUNCATE` por sesión, con `lock_timeout` para que falle **con nombre** en vez
+> de colgarse para siempre (lección de `T-2.73.c`).
+>
+> **El candado muerde, verificado tres veces:** quitar el `TRUNCATE` ⇒ 2 rojos; exentar `zones`
+> del vaciado ⇒ 1 rojo nombrando `['zones']`; y una tercera, accidental y por eso valiosa — leer
+> el censo con `import conftest` en vez de por fixture devuelve **otro módulo** (con
+> `tests/__init__.py`, pytest lo carga como `tests.conftest`) y los candados medirían la nada.
+> Queda escrito en los dos ficheros.
+>
+> **Dos corridas seguidas contra la misma base: veredicto idéntico**, que es literalmente lo que
+> la ficha perseguía.
+
+### [ ] T-2.125 · `expo lint` no cubre `mobile/tests/**` — `SOFTWARE`
+- **Componente:** mobile + CI · **Detectada por:** `T-2.118` (2026-08-11)
+- El job `mobile` de CI corre `expo lint`, y **`mobile/tests/**` queda fuera de su alcance**. Hay
+  al menos un error de eslint preexistente invisible ahí dentro (`react/display-name` en
+  `tests/app/root-layout-push.test.tsx`).
+- **Misma familia que «67 tests se saltaban en silencio»** (`T-2.58`/`T-2.59`) y que
+  `T-2.124`: un gate que **parece** cubrir más de lo que cubre. El daño no es el error suelto —
+  es que nadie puede saber cuánto más hay ahí sin mirar.
+- **Criterios de aceptación:**
+  - [ ] El lint de móvil cubre `tests/**`, o su exclusión queda **declarada con razón**.
+  - [ ] Los errores que aparezcan al ampliarlo, resueltos — con su cuenta publicada.
+
+### [ ] T-2.126 · `forensicMetadata` es código muerto que ya nadie llama — `SOFTWARE`
+- **Componente:** mobile · **Detectada por:** `T-2.118` (2026-08-11)
+- `forensicMetadata` solo lo invoca su propio test: **el JSON firmado de la spec §4.2 no está
+  cableado al flujo de captura**. `T-2.118` lo dejó consistente con el aviso horneado en el pixel
+  para cuando se conecte, pero hoy la foto viaja **solo** con la marca de agua.
+- Importa porque es evidencia forense: el pixel prueba lo que se ve, el JSON prueba la atribución
+  (quién, dónde, con qué incidente). Tener el segundo escrito y desconectado es peor que no
+  tenerlo, porque **parece** que está.
+- **Criterios de aceptación:**
+  - [ ] O se cablea al flujo de captura y viaja con la evidencia, o se declara por qué no existe.
+  - [ ] Si se cablea: test de que pixel y JSON **no pueden divergir**.
+
+### [ ] T-2.127 · La bitácora del incidente rotula solo la sirena — `SOFTWARE`
+- **Componente:** web · **Detectada por:** `T-2.119` (2026-08-11)
+- `features/triage/IncidentTimeline.tsx` (`KIND_LABEL`) solo rotula `siren_on`/`siren_off`; los
+  otros **ocho** kinds de actuador salen crudos («GAS_CLOSED»).
+- **No es la mentira que cerró `T-2.119`** —la bitácora es cronológica y cada línea sí es una
+  orden, no un estado— pero es el mismo hueco de rótulo, y a un operador «GAS_CLOSED» no le dice
+  lo mismo que «VÁLVULAS DE GAS CERRADAS».
+- **Criterios de aceptación:**
+  - [ ] Los diez kinds de actuador tienen rótulo, derivado del mismo registro que usa el
+        checklist — no una segunda lista a mano que vuelva a divergir.
+
+### [ ] T-2.128 · `run_listener` despacha los NOTIFY en serie — `SOFTWARE`
+- **Componente:** api · **Detectada por:** `T-2.121` (2026-08-11), **medido**
+- Un solo `dispatch` colgado **no pierde un frame: para el fan-out del proceso entero, para todos
+  los tenants**. Medido: con el hub esperando un lock, un segundo notify (`checkin`, que ni toca
+  la base) **no se entregó en 25 s**.
+- `T-2.121` acotó la espera a 3 s, así que hoy el apagón dura 3 s en vez de indefinido — pero **la
+  serialización sigue ahí**, y es lo que convierte cualquier tropiezo de una consulta en una
+  parada del reparto para todo el mundo.
+- **Criterios de aceptación:**
+  - [ ] Medido si el fan-out puede dejar de ser en serie sin romper el orden que alguien dependa.
+  - [ ] Un `dispatch` lento no puede detener la entrega a los demás suscriptores.
+
+### [ ] T-2.129 · El canal live no sabe decir nada que no sea «conectado o no» — `SOFTWARE`
+- **Componente:** sdk + api + web · **Detectada por:** `T-2.121` (2026-08-11)
+- `shared/sdk-ts/src/live.ts` **descarta los frames `error`**, y `parseServerFrame` descarta todo
+  `type` fuera de una lista escrita a mano. Consecuencia: **el único canal servidor→pantalla es el
+  estado del transporte**. Para decirle al operador «tu live está degradado» hay que **tirarle el
+  socket**, que es lo que `T-2.121` tuvo que hacer.
+- Es desproporcionado por diseño: un tropiezo de una consulta cierra la conexión entera porque no
+  hay forma más fina de hablar.
+- **Criterios de aceptación:**
+  - [ ] El servidor puede declarar degradación **sin** cerrar el canal.
+  - [ ] La consola lo pinta como degradación, distinta de «sin conexión».
+  - [ ] El frame nuevo no puede volver a caer en el descarte silencioso: test que lo ancle.
 
 ### [ ] T-2.123 · `GET /me` ató el arranque de la consola a Postgres — `SOFTWARE`
 - **Componente:** api + web · **Declarada por el propio `T-2.114`**

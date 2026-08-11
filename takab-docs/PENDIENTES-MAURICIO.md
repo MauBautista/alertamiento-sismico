@@ -4,13 +4,15 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-10 (lote `T-2.110…T-2.116`) · **29 pendientes** · Estado del
-> backlog al escribirlo: 261 tareas · 186 `[x]` · 9 `[~]` · 66 `[ ]`, de las cuales la mayoría
+> **Última actualización:** 2026-08-11 (lotes `T-2.110…T-2.122`) · **29 pendientes** · Estado del
+> backlog al escribirlo: 267 tareas · 193 `[x]` · 9 `[~]` · 65 `[ ]`, de las cuales la mayoría
 > son `SOFTWARE` y las demás están aquí.
 >
-> **Cambios de esta pasada:** §1.6 (protección de rama) **se cierra — ya está hecha**; **§2.1 se
+> **Cambios de estas pasadas:** §1.6 (protección de rama) **se cierra — ya está hecha**; **§2.1 se
 > cierra: la nube está desplegada y la base en `0038`**; entra §1.9 (¿arranca la consola sin
-> base?); y §1.8 y §3.4 ganan actualización.
+> base?); §3.4 gana el aviso de re-correr `GATE-HW 02`; y **§1.8 deja de ser una decisión a
+> ciegas — ahora trae las cifras medidas y una recomendación con criterio duro. Es la que más ha
+> cambiado y la que más barato sale hoy.**
 >
 > **Y lo que ahora es lo siguiente, porque el despliegue de la nube lo dejó a un paso:** el
 > gabinete todavía corre el código viejo. Hasta que se despliegue el edge, `T-2.116` no existe
@@ -127,15 +129,39 @@ Poner un `lock_timeout` global en `get_tenant_conn` cambia el comportamiento de 
 bajo contención —convierte esperas en errores 5xx— y eso es una decisión de producción, no un
 refactor. Decidir si se pone, con qué valor, y si aplica también a los workers.
 
-> **Actualización 2026-08-10 · la decisión vale más que ayer, porque ya son tres sitios.**
-> `T-2.112` midió que la lateral del rechazo tenía **el mismo defecto** (ya cerrado, con el mismo
-> tope). Y de paso aparecieron **dos conexiones más sin tope**: `ws/hub.py` y `ws/poller.py`
-> ([`T-2.121`](TASKS.md)). Ésas no forman el ciclo indetectable, pero un bloqueo ajeno **para el
-> hub del WebSocket en silencio** — y un SOC que deja de recibir sin decirlo es exactamente lo
-> que prohíbe la regla de oro 7.
+> ## ⚠️ Actualización 2026-08-11 — **esto ya no es una decisión a ciegas: está medido**
 >
-> O sea: se están tapando de una en una. **Si tomas la decisión global, absorbe `T-2.121` entera**
-> y deja de aparecer una ficha nueva cada vez que alguien abre una conexión lateral.
+> `T-2.121` reprodujo el escenario con un `LOCK TABLE incidents IN ACCESS EXCLUSIVE MODE` de un
+> tercero y midió qué pasaba **antes** de arreglarlo:
+>
+> | Hecho | Medido |
+> |---|---|
+> | El hub del WebSocket queda **encolado, no lento** | `pg_locks`: `granted=false` |
+> | El reparto no vuelve | **25.16 s** y seguía esperando (techo del test) |
+> | **El SOC entero se queda mudo** | el reparto es en serie: un segundo aviso que ni tocaba la base no llegó en 25 s |
+> | El operador **no se entera** | la consola seguía diciendo «CONECTADO» y «● LIVE» |
+> | **Y arrastra a toda la API** | 10 lectores encolados agotan el pool: cualquier petición, **`TimeoutError` a los 30 s** |
+>
+> Eso último es lo que convierte esto de «una molestia del WebSocket» en un problema de la API
+> entera: **falla también lo que ni siquiera tocaba la tabla bloqueada.**
+>
+> **La recomendación, con su criterio duro:** ponlo, y con **`lock_timeout` MENOR que el timeout
+> del pool (30 s)**. Por debajo de esa cifra un bloqueo degrada *una petición*; por encima —o sin
+> tope, como hoy— degrada *el proceso*. Valor sugerido: **~10 s** para la conexión de la petición,
+> **no** los 3 s de las conexiones de segundo plano — una auditoría lateral es best-effort y se
+> puede tirar, una petición es **una persona esperando**, y hay esperas legítimas por lock de fila
+> que no conviene cortar tan corto.
+>
+> **Y una corrección a lo que decía esta sección ayer:** escribí que la decisión global
+> «absorbería `T-2.121` entera». **Es falso**, y lo demuestra la medición: un tope global habría
+> convertido el silencio del hub en una excepción registrada, nada más. No absorbe que al
+> operador **se le diga** (hoy se le cierra el canal y la consola pinta «● SIN LIVE»), ni el
+> hallazgo de que el reparto es en serie — que es lo que convertía un lock en un **apagón del
+> SOC** en vez de un frame perdido. Eso quedó fichado aparte ([`T-2.128`](TASKS.md)).
+>
+> **Lo que sigue sin tope y por eso te toca decidir:** la conexión de la **petición**. Medido: un
+> request REST contra la tabla bloqueada **sigue esperando para siempre** (sin respuesta en 40 s
+> de techo). Ya no es teoría.
 
 ---
 

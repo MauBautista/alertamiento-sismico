@@ -8,6 +8,20 @@ oculta el sitio (otro tenant), la consulta vuelve vacía y no se envía nada.
 
 Regla de oro 9: el "sismograma live" del SOC es un strip de features 1 s
 (procesamiento edge), NO waveform crudo 100 sps.
+
+[T-2.121] **Tope de espera por lock, y por qué aquí NO se cierra el socket.**
+Un ACCESS EXCLUSIVE ajeno sobre la tabla base de la vista dejaba a cada ciclo
+dentro de la consulta indefinidamente, reteniendo su conexión: con el pool en
+5+5, diez sitios vigilados bastaban para que un request REST cualquiera se
+quedara sin conexión (medido: ``TimeoutError`` del pool a los 30 s). Con el tope
+el ciclo cede, lo registra y vuelve solo en cuanto la tabla se libera.
+
+La degradación del strip ya es VISIBLE sin tocar nada más: sin frames,
+``DetailPanel`` (``web/src/features/console``) declara «SIN LIVE» pasada
+``FEATURES_STALE_MS`` — y ese silencio es honesto, porque de este topic sí se
+espera una muestra por segundo. Tumbar el socket del SOC entero (lo que sí hace
+el hub cuando pierde una invalidación de incidente) sería desproporcionado para
+un tropiezo del sismograma.
 """
 
 from __future__ import annotations
@@ -18,6 +32,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
+from takab_api.audit import LATERAL_LOCK_TIMEOUT
 from takab_api.db.session import SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
@@ -44,6 +59,9 @@ async def poll_features(hub: Hub, sub: Subscriber, site_id: str) -> None:
     while True:
         try:
             async with get_tenant_conn(ctx) as conn:
+                # [T-2.121] Misma política que el hub y que las laterales de
+                # auditoría (`audit.LATERAL_LOCK_TIMEOUT`): una sola constante.
+                await conn.execute(LATERAL_LOCK_TIMEOUT)
                 rows = (
                     (await conn.execute(_SQL_FEATURES, {"site": site_id, "win": _WINDOW_S}))
                     .mappings()

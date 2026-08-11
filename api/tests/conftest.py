@@ -67,6 +67,78 @@ def _migrated() -> None:
     )
 
 
+# --- T-2.122 · una corrida no puede heredar el veredicto de la anterior ---------
+
+#: Única tabla de `public` que sobrevive al vaciado y que no pertenece a una
+#: extensión: ``alembic_version`` **es** el estado del esquema. Vaciarla haría que
+#: ``_migrated`` reaplicase todas las migraciones sobre un esquema ya creado.
+TABLA_DE_ESTADO_DEL_ESQUEMA = "alembic_version"
+
+#: Las tablas de negocio **derivadas del catálogo, no de una lista a mano**: todo lo
+#: que sea tabla ordinaria o particionada en ``public`` y no lo haya creado una
+#: extensión (así se excluye `spatial_ref_sys`, las 8 500 filas de referencia de
+#: PostGIS, sin nombrarla). Ser dinámica es el punto: la siguiente tabla que alguien
+#: añada entra sola, que es justo lo que falló hasta hoy.
+SQL_TABLAS_DE_NEGOCIO = """
+SELECT c.relname
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = 'public'
+   AND c.relkind IN ('r', 'p')
+   AND c.relname <> %s
+   AND NOT EXISTS (
+         SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+ ORDER BY 1
+"""
+
+#: El ``TRUNCATE`` pide el ACCESS EXCLUSIVE de cada tabla. Sin tope, una transacción
+#: ajena viva sobre cualquiera de ellas colgaría el arranque PARA SIEMPRE y sin decir
+#: por qué — el defecto de T-2.73.c. Con tope falla en segundos y con nombre.
+LOCK_TIMEOUT_ARRANQUE = "30s"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _base_sin_herencia(_migrated: None) -> dict[str, int]:
+    """Vacía TODA tabla de negocio antes del primer test. [T-2.122]
+
+    **Por qué esto y no "hacer autoritativa toda siembra"** (los dos caminos que
+    ofrecía la ficha; se elige UNO, entero):
+
+    Ni ``tenants``, ni ``sites``, ni ``sensors``, ni ``gateways``, ni ``zones``
+    entraban en ningún ``TRUNCATE`` de teardown, así que **sobrevivían a la corrida
+    entera** y la siguiente arrancaba sobre lo que dejó la anterior. Una siembra
+    autoritativa (``ON CONFLICT … DO UPDATE``, T-2.115) corrige el **valor** de una
+    fila que alguien vuelve a sembrar; **no puede hacer nada** contra una fila que
+    **nadie siembra**. Medido: una sola fila residual en ``visibility_grants``
+    —que ninguna fixture siembra— pone en rojo seis pruebas de aislamiento
+    multi-tenant (regla de oro 5). Ningún ``DO UPDATE`` alcanza a esa fila.
+
+    Y el coste del otro camino no era menor: ~60 módulos de test escriben catálogo
+    por su cuenta, así que "toda siembra autoritativa" es reescribir la suite.
+
+    Vaciar es **un** punto, cubre **toda** tabla por construcción —la lista se deriva
+    del catálogo de Postgres— y cubre la siguiente que alguien olvide. Se paga con un
+    ``TRUNCATE`` por sesión sobre tablas ya pequeñas.
+
+    Devuelve el censo ``{tabla: filas}`` tomado JUSTO DESPUÉS de vaciar. Lo pide
+    ``tests/test_arranque_limpio.py`` **como fixture y no importando este módulo**:
+    con ``tests/__init__.py`` presente, pytest carga este conftest como
+    ``tests.conftest`` y un ``import conftest`` devolvería OTRO objeto módulo, con el
+    censo vacío — un candado que mide la nada y sale verde.
+    """
+    with psycopg.connect(_dsn()) as c:
+        c.execute("RESET ROLE")
+        c.execute(f"SET lock_timeout = '{LOCK_TIMEOUT_ARRANQUE}'")
+        tablas = [
+            fila[0]
+            for fila in c.execute(SQL_TABLAS_DE_NEGOCIO, (TABLA_DE_ESTADO_DEL_ESQUEMA,)).fetchall()
+        ]
+        if tablas:
+            c.execute("TRUNCATE " + ", ".join(f'"{t}"' for t in tablas) + " CASCADE")
+        c.commit()
+        return {t: c.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0] for t in tablas}
+
+
 @pytest.fixture
 def conn() -> psycopg.Connection:
     """Conexión transaccional; se revierte al terminar el test."""

@@ -21,15 +21,16 @@ function action(kind: string, ts: string, id = `${kind}-${ts}`): IncidentActionO
 }
 
 describe("groupActions", () => {
-  it("agrupa por kind con la acción MÁS RECIENTE al mando (estado/hora/×N)", () => {
+  it("agrupa por canal con la acción MÁS RECIENTE al mando (estado/hora/×N)", () => {
     const groups = groupActions([
       action("siren_on", "2026-07-10T03:14:00Z"),
       action("siren_on", "2026-07-10T03:31:00Z"),
       action("siren_on", "2026-07-10T03:20:00Z"),
-      action("gas_valve_close", "2026-07-10T03:14:05Z"),
+      // [T-2.119] `gas_closed`, el kind que el ingest escribe de verdad.
+      action("gas_closed", "2026-07-10T03:14:05Z"),
     ]);
     expect(groups).toHaveLength(2);
-    const siren = groups.find((g) => g.kind === "siren_on");
+    const siren = groups.find((g) => g.id === "siren");
     expect(siren?.count).toBe(3);
     expect(siren?.last.ts).toBe("2026-07-10T03:31:00Z");
     expect(siren?.label).toBe("SIRENA");
@@ -44,11 +45,14 @@ describe("groupActions", () => {
 
   it("ordena los grupos por recencia de su última acción", () => {
     const groups = groupActions([
-      action("gas_valve_close", "2026-07-10T03:10:00Z"),
+      action("gas_closed", "2026-07-10T03:10:00Z"),
       action("siren_on", "2026-07-10T03:30:00Z"),
-      action("door_release", "2026-07-10T03:20:00Z"),
+      action("door_released", "2026-07-10T03:20:00Z"),
     ]);
-    expect(groups.map((g) => g.kind)).toEqual(["siren_on", "door_release", "gas_valve_close"]);
+    expect(groups.map((g) => g.id)).toEqual(["siren", "door_retainer", "gas_valve"]);
+    // `kind` sigue siendo el de la acción más reciente del grupo (lo consume el
+    // panel táctico móvil como testID; ver `PanelView.tsx`).
+    expect(groups.map((g) => g.kind)).toEqual(["siren_on", "door_released", "gas_closed"]);
   });
 
   it("kind desconocido: etiqueta cruda en mayúsculas y estado neutro (nunca revienta)", () => {

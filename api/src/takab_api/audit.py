@@ -36,10 +36,20 @@ _AUDIT_SQL_ASYNC = text(
     "VALUES (:tenant_id, :actor, :verb, :object, CAST(:meta AS jsonb))"
 )
 
-# Tope de espera por un lock en una conexión LATERAL. Público a propósito: lo aplican
-# ``audit_out_of_band_async`` (aquí) y ``audit_command_rejection``
-# (``commands/rejection_audit.py``, T-2.112), y tiene que ser UNA política y no dos
-# copias que deriven — el día que este número cambie, cambia para las dos laterales.
+# Tope de espera por un lock en una conexión de SEGUNDO PLANO. Público a propósito:
+# tiene que ser UNA política y no varias copias que deriven — el día que este número
+# cambie, cambia para todas. Consumidores hoy (T-2.121 sumó los dos últimos):
+#   · ``audit_out_of_band_async`` (aquí)
+#   · ``audit_command_rejection``  (``commands/rejection_audit.py``, T-2.112)
+#   · el hub del WebSocket         (``ws/hub.py``)
+#   · el poller                    (``ws/poller.py``)
+#
+# NO es la política de la conexión del REQUEST, que sigue sin tope y es una decisión
+# de producción abierta (``PENDIENTES-MAURICIO §1.8``). El criterio duro que salió de
+# medirlo en T-2.121: cualquier tope del request debe ser MENOR que el timeout del
+# pool (30 s), porque por encima de eso un bloqueo deja de degradar un request y pasa
+# a degradar el proceso entero — diez esperas agotan el pool y entonces falla también
+# lo que ni siquiera tocaba la tabla bloqueada.
 # Milisegundos, literal entero: ``SET LOCAL`` no admite bind params y el valor es
 # una constante del módulo, no entrada de usuario.
 #

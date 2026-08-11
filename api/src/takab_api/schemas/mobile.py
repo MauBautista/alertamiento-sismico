@@ -216,6 +216,21 @@ class MobileBuildingAlarmOut(BaseModel):
     #: RELOJ, jamás como cronómetro T+: el T+ es de la toma de crisis sísmica
     #: (§2.1-A) y esto no es un sismo.
     since: datetime
+    #: [T-2.120] CÓMO SE SUPO, porque las dos formas no valen igual:
+    #:
+    #: · ``relay_measured`` — el acuse trae ``channel_state`` (`T-2.116`) y el
+    #:   gabinete declara el canal ``siren`` ACTIVADO tras su arbitraje. Es un
+    #:   hecho medido en el sitio.
+    #: · ``order_inferred`` — el acuse NO lo trae («no pude preguntar»: firmware
+    #:   anterior al schema 1.11.0, BACnet). Se sostiene con la inferencia de
+    #:   `T-2.106` —orden ejecutada + latido corroborante— y sale etiquetada como
+    #:   tal para que ninguna pantalla la redacte como una medición.
+    #:
+    #: **Hoy el valor normal es ``order_inferred``**: el gabinete de campo aún
+    #: corre el código anterior a `T-2.116`. El default acompaña esa realidad y
+    #: es además el valor que NUNCA afirma de más — un cliente viejo que ignore
+    #: el campo se queda con la redacción prudente de `T-2.106`.
+    source: Literal["relay_measured", "order_inferred"] = "order_inferred"
 
 
 class MobileStateOut(BaseModel):
@@ -255,10 +270,15 @@ class MobileStateOut(BaseModel):
       · **Se corrobora contra el gabinete que la ejecutó:** si lleva más de
         ``sin_enlace_min`` sin latir, o si su ``device_health.relays_state`` dice
         ``unreadable`` —*«no pude preguntar quién gobierna los pines»*, T-2.70.a—
-        la app NO dice que suena. La nube no persiste el censo de relés canal a
-        canal (migración 0036, a propósito), así que ésta es la corroboración más
-        fuerte que los datos sostienen, y la pantalla está redactada para decir
-        exactamente eso y no más.
+        la app NO dice que suena.
+      · **[T-2.120] Y el relé, cuando el gabinete lo declara, MANDA.** El acuse
+        trae ``channel_state`` desde `T-2.116` (el canal tras el arbitraje, no la
+        orden): con ``activated=false`` no se anuncia nada aunque el ``activate``
+        se ejecutara con éxito, y con ``activated=true`` la afirmación sale
+        marcada como medida en ``building_alarm.source``. Sin el campo —el
+        gabinete de campo todavía corre el código anterior— se degrada a la
+        inferencia de arriba y **se dice** (``source="order_inferred"``). Ausencia
+        de censo es «no pude preguntar», jamás «en reposo».
       · **Se apaga** con un ``siren/deactivate`` ejecutado (manda lo último que
         TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma
         sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:

@@ -12,19 +12,36 @@
 // · **No es toma total sin salida:** el ocupante tiene que poder llegar al
 //   directorio para llamar a su brigada, que es justo lo que la pantalla le
 //   pide hacer.
+//
+// [T-2.117] Esta pantalla resolvía `if (!data?.building_alarm)` con un spinner y
+// el rótulo «VERIFICANDO LA ALARMA CON EL SERVIDOR…» — el defecto GEMELO del que
+// T-2.111 cerró en `crisis.tsx`. Sin sitio vigilado la consulta ni se habilita
+// (`enabled: siteId != null`) y `data` es null PARA SIEMPRE: el ocupante se
+// quedaba mirando girar la pantalla que existe para explicarle por qué suena la
+// sirena de su edificio. Ahora los cuatro estados los declara `StateFrame`.
 import { Redirect } from "expo-router";
-import { ActivityIndicator, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { BuildingAlarmView, horaDeReloj } from "@/features/alarm/BuildingAlarmView";
 import { useAlertState } from "@/features/alert/useAlertState";
 import { useWatchedSiteId } from "@/services/mySite";
-import { fontSize, palette, space } from "@/ui/theme";
+import { StateFrame } from "@/ui/StateFrame";
+
+/** Sin sitio vigilado no hay a quién preguntarle: se DICE, no se gira. Se llega
+ *  aquí por una push o por el `CrisisWatcher`, así que la salida tiene que ser
+ *  una instrucción, no un callejón. */
+const SIN_SITIO =
+  "Este teléfono no está vinculado a ningún edificio, así que no hay alarma que consultar. Vincúlese con el código de su inmueble para recibir el aviso de su edificio.";
+
+/** El servidor SÍ respondió y no hay alarma abierta. Es un vacío honesto, y hay
+ *  que distinguirlo de «no pudimos preguntar»: si suena algo y esto lo tapara
+ *  con una frase tranquilizadora, sería la mentira de `lista.tsx` (T-2.111). */
+const SIN_ALARMA = "El servidor no reporta ninguna alarma activa en su edificio.";
 
 export default function AlarmaInmueble() {
   const status = useSessionStore((s) => s.status);
   const siteId = useWatchedSiteId();
-  const { state, data } = useAlertState(siteId);
+  const { state, data, loading, error, stale, dataUpdatedAt, refetch } = useAlertState(siteId);
 
   if (status !== "authenticated") {
     return <Redirect href="/" />;
@@ -34,33 +51,31 @@ export default function AlarmaInmueble() {
   if (state !== null && state !== "building_alarm") {
     return <Redirect href="/" />;
   }
-  if (!data?.building_alarm) {
-    // La push despertó a la app; la VERDAD es mobile-state. Se declara la
-    // verificación en curso — jamás se finge una alarma que el servidor no ha
-    // confirmado (regla de oro 7).
-    return (
-      <View style={styles.verifying}>
-        <ActivityIndicator color={palette.warn} size="large" />
-        <Text style={styles.verifyingText}>VERIFICANDO LA ALARMA CON EL SERVIDOR…</Text>
-      </View>
-    );
-  }
+
+  // La push despertó a la app; la VERDAD es mobile-state. Los cuatro estados se
+  // declaran: cargando (consulta en vuelo), error (no se pudo preguntar, con
+  // reintento), vacío (sin sitio vigilado, o el servidor dice que no hay alarma)
+  // y retenido (hay alarma pero el dato es VIEJO — se pinta con el banner,
+  // jamás como si fuera de este segundo). Nunca se finge una alarma que el
+  // servidor no ha confirmado (regla de oro 7).
+  const sinSitio = siteId === null;
+  const alarma = data?.building_alarm ?? null;
 
   return (
-    <BuildingAlarmView
-      sinceLabel={horaDeReloj(data.building_alarm.since)}
-      zoneName={data.my_zone?.name ?? null}
-    />
+    <StateFrame
+      empty={sinSitio || (data !== null && alarma === null)}
+      emptyText={sinSitio ? SIN_SITIO : SIN_ALARMA}
+      error={data === null ? error : null}
+      loading={loading}
+      onRetry={refetch}
+      staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
+    >
+      {alarma !== null && data !== null ? (
+        <BuildingAlarmView
+          sinceLabel={horaDeReloj(alarma.since)}
+          zoneName={data.my_zone?.name ?? null}
+        />
+      ) : null}
+    </StateFrame>
   );
 }
-
-const styles = {
-  verifying: {
-    flex: 1,
-    backgroundColor: palette.bg,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space[3],
-  },
-  verifyingText: { color: palette.fg2, fontSize: fontSize.sm, letterSpacing: 1 },
-} as const;

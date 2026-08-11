@@ -20,23 +20,161 @@ export interface ActionStateView {
  */
 export const SIMULATED_VIEW: ActionStateView = { state: 'SIMULADA · SIN ENTREGAR', kind: 'warning' };
 
-/** Mapeo kind→estado visual (se comparte con la traza expandida). */
+/**
+ * [T-2.119] LOS CINCO CANALES DE ACTUACIÓN, con su polaridad y su vocabulario.
+ *
+ * Esto sustituye a cinco entradas sueltas de `ACTION_STATE` que se pintaban
+ * crudas y no se cancelaban entre sí. `T-2.110` cerró la sirena y dejó dicho el
+ * hallazgo que gobierna esto: **el kind de la traza es la ORDEN EJECUTADA, no
+ * el relé** — un `deactivate` arbitrado escribe `siren_off` con la sirena
+ * sonando. En gas y puertas la misma confusión es peor: «GAS CERRADO» porque
+ * alguien mandó la orden, con la válvula abierta, es una mentira en la pantalla
+ * de la que depende una decisión de seguridad de vida.
+ *
+ * POLARIDAD — el punto donde esto podía introducir una mentira nueva. Cada
+ * canal tiene SU modo fail-safe (`edge/takab_edge/config/settings.py ·
+ * DEFAULT_FAILSAFE`): la sirena y el estrobo son `NO`, el gas es `FAIL_CLOSE` y
+ * el retenedor de puerta es `NC`. En los dos últimos, `energized` significa lo
+ * CONTRARIO que en la sirena: el gas DESENERGIZADO está CERRADO, que es su
+ * estado seguro, no su estado inactivo. Por eso aquí no se lee `energized`
+ * jamás: se lee `activated`, que el contrato define como «¿está protegiendo?» y
+ * es agnóstica de la polaridad (`ChannelState`, `edge/takab_edge/contracts.py`).
+ *
+ * `tieBreakActivated` NO es uniforme, y aplanarlo habría sido el defecto: ante
+ * dos hechos indistinguibles gana **la lectura que no tranquiliza**. Para la
+ * sirena eso es «sigue sonando» (T-2.110). Para el gas es exactamente lo
+ * contrario — «sigue ABIERTO»—, porque afirmar sin certeza que el gas está
+ * cortado es la frase que hace que nadie vaya a cerrar la válvula.
+ */
+export interface ActuatorChannelSpec {
+  /** Canal del contrato del edge (`ActuatorChannel`). Es la identidad de la fila. */
+  channel: string;
+  label: string;
+  /** Modo fail-safe del canal: documenta POR QUÉ `energized` no es legible sin él. */
+  failSafe: 'NO' | 'NC' | 'fail_close';
+  /** Vista cuando el canal ESTÁ en su estado de protección (`activated`). */
+  protecting: ActionStateView;
+  /** Vista cuando NO lo está. */
+  atRest: ActionStateView;
+  /**
+   * `kind` de `incident_actions` → lo que ese VERBO afirma sobre `activated`.
+   * Espejo de `ACK_KIND` (`api/src/takab_api/ingest/handlers.py`), que es el
+   * único productor. `web/src/features/console/bmsChannels.test.ts` lo lee de
+   * ese fichero y exige que no falte ninguno.
+   */
+  kinds: Record<string, boolean>;
+  /**
+   * Nombres que ESTE MAPA daba de alta y que ningún productor escribió nunca
+   * (`gas_valve_close`, `elevator_recall`, `door_release`). Se conservan —
+   * `incident_actions` es append-only y exenta de poda— para que una fila
+   * antigua no regrese al fallback crudo. No se inventan más.
+   */
+  legacyKinds: Record<string, boolean>;
+  /** Valor de `activated` que gana un empate EXACTO de `ts`. Ver arriba. */
+  tieBreakActivated: boolean;
+}
+
+export const ACTUATOR_CHANNELS: Record<string, ActuatorChannelSpec> = {
+  siren: {
+    channel: 'siren',
+    label: 'SIRENA',
+    failSafe: 'NO',
+    protecting: { state: 'ACTIVADA', kind: 'critical' },
+    // [T-2.110] El contrario de `siren_on`, que faltaba. NO es un kind inventado
+    // para poder cancelar el anterior: lo escribe el ingest desde un ACK REAL del
+    // gabinete — `ACK_KIND[('siren','deactivate')] = 'siren_off'` — y la bitácora
+    // del incidente ya lo rotulaba («SIRENA SILENCIADA»).
+    atRest: { state: 'SILENCIADA', kind: 'ok' },
+    kinds: { siren_on: true, siren_off: false },
+    legacyKinds: {},
+    // Una alerta en curso: minimizarla es peor que exagerarla, y es además la
+    // precondición de SILENCIAR (spec móvil §2.2).
+    tieBreakActivated: true,
+  },
+  strobe: {
+    channel: 'strobe',
+    label: 'ESTROBO',
+    failSafe: 'NO',
+    protecting: { state: 'ACTIVADO', kind: 'warning' },
+    atRest: { state: 'APAGADO', kind: 'ok' },
+    kinds: { strobe_on: true, strobe_off: false },
+    legacyKinds: {},
+    tieBreakActivated: true, // misma doctrina que la sirena: el aviso sigue vivo
+  },
+  gas_valve: {
+    channel: 'gas_valve',
+    label: 'VÁLVULAS DE GAS',
+    failSafe: 'fail_close',
+    protecting: { state: 'CERRADAS', kind: 'warning' },
+    atRest: { state: 'ABIERTAS', kind: 'ok' },
+    kinds: { gas_closed: true, gas_open: false },
+    legacyKinds: { gas_valve_close: true },
+    // INVERTIDO respecto a la sirena, a propósito: la lectura que no tranquiliza
+    // es «el gas SIGUE ABIERTO». Decir «CERRADAS» sin certeza manda a nadie a
+    // cerrar la válvula.
+    tieBreakActivated: false,
+  },
+  elevator: {
+    channel: 'elevator',
+    label: 'ELEVADORES',
+    failSafe: 'NO',
+    protecting: { state: 'RETORNADOS', kind: 'warning' },
+    atRest: { state: 'LIBERADOS', kind: 'ok' },
+    kinds: { elevator_recalled: true, elevator_released: false },
+    legacyKinds: { elevator_recall: true },
+    // Igual que el gas: «no retornados» significa que puede haber gente en una
+    // cabina, y es lo que hay que ir a comprobar.
+    tieBreakActivated: false,
+  },
+  door_retainer: {
+    channel: 'door_retainer',
+    label: 'RETENEDORES DE PUERTA',
+    failSafe: 'NC',
+    protecting: { state: 'LIBERADOS', kind: 'ok' },
+    atRest: { state: 'RETENIDOS', kind: 'ok' },
+    kinds: { door_released: true, door_retained: false },
+    legacyKinds: { door_release: true },
+    // La lectura que no tranquiliza es «la puerta SIGUE retenida»: la salida no
+    // está garantizada mientras no conste que se liberó.
+    tieBreakActivated: false,
+  },
+};
+
+/** `kind` → canal que lo emitió. Derivado del registro, nunca escrito a mano. */
+const CHANNEL_OF_KIND: Record<string, ActuatorChannelSpec> = {};
+for (const spec of Object.values(ACTUATOR_CHANNELS)) {
+  for (const kind of [...Object.keys(spec.kinds), ...Object.keys(spec.legacyKinds)]) {
+    CHANNEL_OF_KIND[kind] = spec;
+  }
+}
+
+/** ¿Qué afirma este VERBO sobre `activated`? `undefined` = no es de actuador. */
+function verbSaysActivated(kind: string): boolean | undefined {
+  const spec = CHANNEL_OF_KIND[kind];
+  if (spec === undefined) {
+    return undefined;
+  }
+  return kind in spec.kinds ? spec.kinds[kind] : spec.legacyKinds[kind];
+}
+
+/** Vistas de los kinds de actuador, DERIVADAS del registro (no duplicadas). */
+function actuatorViews(): Record<string, ActionStateView> {
+  const views: Record<string, ActionStateView> = {};
+  for (const [kind, spec] of Object.entries(CHANNEL_OF_KIND)) {
+    views[kind] = verbSaysActivated(kind) === true ? spec.protecting : spec.atRest;
+  }
+  return views;
+}
+
+/**
+ * Mapeo kind→estado visual (se comparte con la traza expandida).
+ *
+ * Es lo que ese VERBO afirma por sí solo. El estado de una FILA del checklist
+ * no sale de aquí cuando el gabinete declara el relé: sale de `groupActions`,
+ * que prefiere `payload.channel_state`.
+ */
 export const ACTION_STATE: Record<string, ActionStateView> = {
-  siren_on: { state: 'ACTIVADA', kind: 'critical' },
-  // [T-2.110] El contrario de `siren_on`, que faltaba. NO es un kind inventado
-  // para poder cancelar el anterior: lo escribe el ingest desde un ACK REAL del
-  // gabinete — `ACK_KIND[('siren','deactivate')] = 'siren_off'`
-  // (`api/src/takab_api/ingest/handlers.py`) — y la bitácora del incidente ya lo
-  // rotulaba («SIRENA SILENCIADA», `IncidentTimeline.KIND_LABEL`). Sin entrada
-  // aquí caía en el fallback y se pintaba «SIREN_OFF» en verde, y —lo grave— el
-  // panel táctico móvil derivaba `sirenActive` de que EXISTIERA un `siren_on`,
-  // así que un `siren_on` histórico dejaba la precondición de silenciar
-  // satisfecha el resto del incidente.
-  siren_off: { state: 'SILENCIADA', kind: 'ok' },
-  strobe_on: { state: 'ACTIVADO', kind: 'warning' },
-  gas_valve_close: { state: 'CERRADAS', kind: 'warning' },
-  elevator_recall: { state: 'RETORNADOS', kind: 'warning' },
-  door_release: { state: 'LIBERADOS', kind: 'ok' },
+  ...actuatorViews(),
   ack: { state: 'ACUSADO', kind: 'ok' },
   dictamen: { state: 'EMITIDO', kind: 'ok' },
   dictamen_request: { state: 'SOLICITADO', kind: 'ok' },
@@ -47,6 +185,11 @@ export const ACTION_STATE: Record<string, ActionStateView> = {
   // el tablero que decía "notificado" sin haber notificado a nadie.
   notify_simulated: SIMULATED_VIEW,
   notify_failed: { state: 'NO ENTREGADA', kind: 'critical' },
+  // [T-2.119] `siren_test` NO se pliega al canal `siren`, y es deliberado: no
+  // sale de `ACK_KIND` (no es un activate/deactivate) y una prueba no es el
+  // estado operativo de la sirena. El gabinete ya los distingue en el origen
+  // (`SirenReason.TEST` vs `ALERT`); fundirlos aquí haría que una prueba
+  // cancelara —o sostuviera— la fila de una alerta real.
   siren_test: { state: 'PROBADA', kind: 'ok' },
 };
 
@@ -60,14 +203,18 @@ export function isSimulatedAction(action: Pick<IncidentActionOut, 'payload'>): b
   return action.payload?.simulated === true;
 }
 
+/** Etiquetas de los kinds de actuador, DERIVADAS del registro. */
+function actuatorLabels(): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const [kind, spec] of Object.entries(CHANNEL_OF_KIND)) {
+    labels[kind] = spec.label;
+  }
+  return labels;
+}
+
 /** Etiqueta humana por canal/acción (fallback: el kind crudo en mayúsculas). */
 export const CHANNEL_LABEL: Record<string, string> = {
-  siren_on: 'SIRENA',
-  siren_off: 'SIRENA',
-  strobe_on: 'ESTROBO',
-  gas_valve_close: 'VÁLVULAS DE GAS',
-  elevator_recall: 'ELEVADORES',
-  door_release: 'RETENEDORES DE PUERTA',
+  ...actuatorLabels(),
   ack: 'ACUSES',
   dictamen: 'DICTAMEN AUTOMÁTICO',
   dictamen_request: 'DICTAMEN SOLICITADO',
@@ -93,9 +240,16 @@ export interface ChannelState {
   alert_latched: boolean;
 }
 
-/** Lo que se sabe de la sirena, y DE DÓNDE se sabe. */
-export interface SirenEvidence {
-  /** ¿El canal está en su estado de protección (sonando)? */
+/**
+ * Lo que se sabe de UN canal de actuación, y DE DÓNDE se sabe.
+ *
+ * La forma es EXACTAMENTE `{active, fromRelay, at}` y no lleva el canal: móvil
+ * la compara con `toEqual` (`mobile/src/features/control/estadoDelRele.test.tsx`),
+ * y una clave de más la pondría en rojo. Quien pregunta ya sabe por qué canal
+ * preguntó.
+ */
+export interface ChannelEvidence {
+  /** ¿El canal está en su estado de PROTECCIÓN? (sonando, gas cerrado, puerta liberada) */
   active: boolean;
   /** `true` = lo declara el RELÉ recalculado; `false` = sólo la última orden. */
   fromRelay: boolean;
@@ -103,53 +257,68 @@ export interface SirenEvidence {
   at: string;
 }
 
-/** Kinds que el ingest escribe para el canal `siren` desde un ACK del gabinete. */
-const SIREN_KINDS: Record<string, boolean> = { siren_on: true, siren_off: false };
+/** [T-2.110] Alias histórico: la evidencia de la sirena es la de cualquier canal. */
+export type SirenEvidence = ChannelEvidence;
 
-function channelStateOf(action: IncidentActionOut): ChannelState | null {
+function channelStateOf(action: IncidentActionOut, channel: string): ChannelState | null {
   const raw = action.payload?.channel_state;
   if (raw === null || typeof raw !== 'object') {
+    // `channel_state: null` es «no pude preguntar» (firmware viejo, BACnet, ack
+    // de rechazo), JAMÁS «en reposo». Devolver null aquí degrada al verbo — y
+    // quien lo consuma se entera por `fromRelay: false`, no por un `false`
+    // indistinguible de una medición.
     return null;
   }
   const state = raw as Partial<ChannelState>;
-  return typeof state.activated === 'boolean' && state.channel === 'siren'
+  // El censo de OTRO canal no decide por éste.
+  return typeof state.activated === 'boolean' && state.channel === channel
     ? (state as ChannelState)
     : null;
 }
 
 /**
- * [T-2.110] ¿La sirena está sonando, según el ÚLTIMO dato real del gabinete?
+ * [T-2.110 · generalizada en T-2.119] ¿Este canal está protegiendo, según el
+ * ÚLTIMO dato real del gabinete?
  *
- * `null` = no consta ninguna actuación de sirena en la traza. Es un tercer
- * estado a propósito: «no lo sé» no es «está apagada», y afirmar cualquiera de
- * las dos sin dato es la regla de oro 7 al revés.
+ * `null` = no consta ninguna actuación del canal en la traza. Es un tercer
+ * estado a propósito: «no lo sé» no es «está en reposo», y afirmar cualquiera
+ * de las dos sin dato es la regla de oro 7 al revés.
  *
  * PRECEDENCIA, y es el corazón de la ficha:
  *
  *  1. `payload.channel_state` — el estado RECALCULADO del relé. Es lo que la
  *     spec §2.1 pide pintar: «el estado del relé recalculado por el arbitraje
- *     de demandas, **no la última orden enviada**».
- *  2. el `kind` (`siren_on`/`siren_off`) — la ORDEN que se ejecutó. Es lo único
- *     que hay de un gabinete que aún no declara (1), y NO es equivalente: un
- *     `siren/deactivate` con la alerta vigente se ejecuta con éxito, escribe
+ *     de demandas, **no la última orden enviada**». Se lee `activated`, nunca
+ *     `energized`: en `gas_valve` (FAIL_CLOSE) y `door_retainer` (NC) el nivel
+ *     eléctrico significa lo contrario que en la sirena.
+ *  2. el `kind` (`gas_closed`/`gas_open`, …) — la ORDEN que se ejecutó. Es lo
+ *     único que hay de un gabinete que aún no declara (1), y NO es equivalente:
+ *     un `siren/deactivate` con la alerta vigente se ejecuta con éxito, escribe
  *     `siren_off` y deja la sirena sonando. Por eso (1) manda siempre que exista.
  *
- * Se descartan las acciones SIMULADAS (T-2.75.a): lo que no sonó no puede
- * sostener ni desmentir que esté sonando.
+ * Se descartan las acciones SIMULADAS (T-2.75.a): lo que no se ejecutó no puede
+ * sostener ni desmentir el estado del canal.
  *
- * Empate exacto de `ts`: gana SONANDO. Ante dos hechos indistinguibles, el que
- * no minimiza lo que está pasando — la misma doctrina que
- * `GpioController.siren_reason` cuando no puede explicar por qué suena.
+ * Empate exacto de `ts`: gana `spec.tieBreakActivated` — la lectura que NO
+ * tranquiliza, que en la sirena es «sonando» y en el gas es «abierto».
  */
-export function sirenEvidence(actions: IncidentActionOut[]): SirenEvidence | null {
-  let mejor: SirenEvidence | null = null;
+export function channelEvidence(
+  actions: IncidentActionOut[],
+  channel: string,
+): ChannelEvidence | null {
+  const spec = ACTUATOR_CHANNELS[channel];
+  if (spec === undefined) {
+    return null;
+  }
+  let mejor: ChannelEvidence | null = null;
   for (const action of actions) {
-    if (!(action.kind in SIREN_KINDS) || isSimulatedAction(action)) {
+    const verbo = verbSaysActivated(action.kind);
+    if (verbo === undefined || CHANNEL_OF_KIND[action.kind] !== spec || isSimulatedAction(action)) {
       continue;
     }
-    const state = channelStateOf(action);
-    const evidencia: SirenEvidence = {
-      active: state !== null ? state.activated : SIREN_KINDS[action.kind],
+    const state = channelStateOf(action, channel);
+    const evidencia: ChannelEvidence = {
+      active: state !== null ? state.activated : verbo,
       fromRelay: state !== null,
       at: action.ts,
     };
@@ -158,14 +327,38 @@ export function sirenEvidence(actions: IncidentActionOut[]): SirenEvidence | nul
       continue;
     }
     const delta = Date.parse(evidencia.at) - Date.parse(mejor.at);
-    if (delta > 0 || (delta === 0 && evidencia.active && !mejor.active)) {
+    const desempata =
+      delta === 0 &&
+      evidencia.active === spec.tieBreakActivated &&
+      mejor.active !== spec.tieBreakActivated;
+    if (delta > 0 || desempata) {
       mejor = evidencia;
     }
   }
   return mejor;
 }
 
+/**
+ * [T-2.110] ¿La sirena está sonando, según el ÚLTIMO dato real del gabinete?
+ * Es `channelEvidence(_, 'siren')` — no una quinta copia que pueda derivar.
+ */
+export function sirenEvidence(actions: IncidentActionOut[]): SirenEvidence | null {
+  return channelEvidence(actions, 'siren');
+}
+
 export interface ActuatorGroup {
+  /**
+   * [T-2.119] Identidad ESTABLE de la fila: el CANAL del actuador
+   * (`siren`, `gas_valve`, …) o, si no es de actuador, el propio `kind`. Es lo
+   * que hace que `gas_open` cancele la fila de `gas_closed` en vez de abrir
+   * otra: dos órdenes del mismo canal son una sola fila con un solo estado.
+   */
+  id: string;
+  /**
+   * `kind` de la acción MÁS RECIENTE del grupo. Para un grupo de un solo verbo
+   * es lo de siempre; para un canal es el último verbo ejecutado — que NO es el
+   * estado (por eso existe `view`, que sale de `evidence`).
+   */
   kind: string;
   label: string;
   view: ActionStateView;
@@ -174,6 +367,13 @@ export interface ActuatorGroup {
   count: number;
   /** Traza completa del grupo, más reciente primero (auditoría expandible). */
   trace: IncidentActionOut[];
+  /**
+   * [T-2.119] Qué se sabe del canal y DE DÓNDE. `null` = el grupo no es de
+   * actuador, o no consta ninguna actuación real (todas simuladas). La UI
+   * DEBE declarar `fromRelay`: pintar la orden como si fuera el relé es
+   * exactamente el defecto que esta ficha cierra.
+   */
+  evidence: ChannelEvidence | null;
 }
 
 function viewOf(action: IncidentActionOut): ActionStateView {
@@ -203,27 +403,48 @@ function labelOf(kind: string): string {
 }
 
 /**
- * Agrupa la traza por `kind`: una fila por actuador/acción con el último
- * estado. Orden: grupos por recencia de su última acción (lo más nuevo
- * arriba); dentro del grupo la traza también va de más nueva a más vieja.
+ * Agrupa la traza por CANAL de actuación (y por `kind` lo que no es actuador):
+ * una fila por actuador con su ESTADO, no con su última orden. Orden: grupos
+ * por recencia de su última acción (lo más nuevo arriba); dentro del grupo la
+ * traza también va de más nueva a más vieja.
+ *
+ * [T-2.119] Agrupaba por `kind` a secas, así que `gas_open` abría una fila
+ * propia y no cancelaba la de `gas_closed`: el checklist mostraba las dos
+ * órdenes y la más reciente ganaba por hora, con la palabra cruda
+ * («GAS_OPEN», en verde) porque esos kinds ni siquiera estaban dados de alta.
+ * Ahora la fila es el canal y su estado sale de `channelEvidence`, que prefiere
+ * el relé recalculado y sólo cae al verbo cuando el gabinete no lo declara.
  */
 export function groupActions(actions: IncidentActionOut[]): ActuatorGroup[] {
-  const byKind = new Map<string, IncidentActionOut[]>();
+  const byId = new Map<string, IncidentActionOut[]>();
   for (const action of actions) {
-    const list = byKind.get(action.kind) ?? [];
+    const id = CHANNEL_OF_KIND[action.kind]?.channel ?? action.kind;
+    const list = byId.get(id) ?? [];
     list.push(action);
-    byKind.set(action.kind, list);
+    byId.set(id, list);
   }
   const groups: ActuatorGroup[] = [];
-  for (const [kind, list] of byKind) {
+  for (const [id, list] of byId) {
     const trace = [...list].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
+    const spec = ACTUATOR_CHANNELS[id];
+    const evidence = spec === undefined ? null : channelEvidence(list, spec.channel);
     groups.push({
-      kind,
-      label: labelOf(kind),
-      view: viewOf(trace[0]),
+      id,
+      kind: trace[0].kind,
+      label: spec?.label ?? labelOf(trace[0].kind),
+      // Sin evidencia real (no es actuador, o todo lo del canal es SIMULADO) se
+      // cae a la vista de la acción más reciente, que es quien sabe declararse
+      // simulada. Con evidencia manda el canal, no el verbo.
+      view:
+        spec !== undefined && evidence !== null
+          ? evidence.active
+            ? spec.protecting
+            : spec.atRest
+          : viewOf(trace[0]),
       last: trace[0],
       count: trace.length,
       trace,
+      evidence,
     });
   }
   return groups.sort((a, b) => Date.parse(b.last.ts) - Date.parse(a.last.ts));
