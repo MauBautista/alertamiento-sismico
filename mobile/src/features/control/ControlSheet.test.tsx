@@ -40,18 +40,47 @@ const CB = { onConfirm: jest.fn(), onClose: jest.fn() };
 
 describe("preconditionsFor — estado REAL prellenado", () => {
   it("activar: en evacuación + gabinete enlazado ⇒ todas cumplidas", () => {
-    const pre = preconditionsFor("activate", state(), { sirenActive: false });
+    const pre = preconditionsFor("activate", state(), { siren: null });
     expect(pre.every((p) => p.met)).toBe(true);
   });
 
   it("activar sin incidente: precondición NO cumplida (no checkbox ciego)", () => {
-    const pre = preconditionsFor("activate", state({ phase: "idle" }), { sirenActive: false });
+    const pre = preconditionsFor("activate", state({ phase: "idle" }), { siren: null });
     expect(pre.find((p) => /evacuación/.test(p.label))?.met).toBe(false);
   });
 
+  // [T-2.110] Antes entraba un `sirenActive: boolean` y con él se perdía DE
+  // DÓNDE salía: el detalle decía «El gabinete reporta la sirena activa» tanto
+  // si el gabinete había medido el relé como si sólo había un `siren_on` viejo
+  // en la traza. Ahora entra la EVIDENCIA y cada procedencia tiene su frase.
+  const evidencia = (active: boolean, fromRelay: boolean) => ({
+    active,
+    fromRelay,
+    at: "2026-07-16T10:00:00Z",
+  });
+
   it("silenciar refleja si la sirena suena de verdad", () => {
-    expect(preconditionsFor("deactivate", state(), { sirenActive: true })[0].met).toBe(true);
-    expect(preconditionsFor("deactivate", state(), { sirenActive: false })[0].met).toBe(false);
+    expect(
+      preconditionsFor("deactivate", state(), { siren: evidencia(true, true) })[0].met,
+    ).toBe(true);
+    expect(
+      preconditionsFor("deactivate", state(), { siren: evidencia(false, true) })[0].met,
+    ).toBe(false);
+  });
+
+  it("silenciar sin evidencia alguna NO se autoriza sola", () => {
+    const pre = preconditionsFor("deactivate", state(), { siren: null })[0];
+    expect(pre.met).toBe(false);
+    expect(pre.detail).toMatch(/No consta ninguna actuación de sirena/);
+  });
+
+  it("el detalle sólo atribuye al gabinete lo que el gabinete midió", () => {
+    expect(
+      preconditionsFor("deactivate", state(), { siren: evidencia(true, true) })[0].detail,
+    ).toMatch(/El gabinete reporta el relé/);
+    expect(
+      preconditionsFor("deactivate", state(), { siren: evidencia(true, false) })[0].detail,
+    ).toMatch(/última orden ejecutada/);
   });
 });
 
@@ -64,7 +93,7 @@ describe("ControlSheet (2.2)", () => {
         busy={false}
         error={null}
         preconditions={preconditionsFor("activate", state({ phase: "idle" }), {
-          sirenActive: false,
+          siren: null,
         })}
         result={null}
       />,
@@ -81,7 +110,7 @@ describe("ControlSheet (2.2)", () => {
         action="activate"
         busy={false}
         error={null}
-        preconditions={preconditionsFor("activate", state(), { sirenActive: false })}
+        preconditions={preconditionsFor("activate", state(), { siren: null })}
         result={null}
       />,
     );
@@ -103,7 +132,21 @@ describe("ControlSheet (2.2)", () => {
       issued_at: "2026-07-16T10:00:00Z",
       expires_at: "2026-07-16T10:00:30Z",
       status: "acked",
-      ack: { siren: "on" },
+      // [T-2.116] El acuse REAL: el estado del canal tras el arbitraje.
+      ack: {
+        channel: "siren",
+        action: "deactivate",
+        success: true,
+        detail: "relay",
+        channel_state: {
+          channel: "siren",
+          energized: true,
+          activated: true,
+          fail_safe: "NO",
+          reason: "alert",
+          alert_latched: true,
+        },
+      },
       error: null,
     } as CommandOut;
     const v = await render(

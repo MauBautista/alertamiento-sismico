@@ -1,7 +1,13 @@
 // 2.3 · Cámara forense — captura con marca de agua HORNEADA en el pixel.
 // Flujo: CameraView toma la foto → se compone con la marca (watermarkLines) en
-// un View capturado por view-shot → archivo privado + SHA-256 → registro y
-// subida por el PUT presignado. La foto JAMÁS va a la galería del sistema.
+// un View capturado por view-shot → archivo privado + SHA-256 → A LA COLA
+// OFFLINE. La foto JAMÁS va a la galería del sistema.
+//
+// [T-2.108] Antes se registraba y subía AQUÍ mismo (POST directo). Sin red la
+// llamada moría, el botón mostraba un error y la foto forense —ya capturada,
+// ya con su huella— se quedaba en un archivo que nadie volvía a mirar. Ahora
+// se encola: la subida la hace `offline/sync.ts` cuando hay red, y el archivo
+// no se toca en el camino (la huella sellada aquí es la que se verifica).
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
@@ -13,7 +19,8 @@ import { useAlertState } from "@/features/alert/useAlertState";
 import { captureForensicPhoto } from "@/features/forensic/capture";
 import { watermarkLines, type ForensicMeta } from "@/features/forensic/watermark";
 import { useDamageDraft } from "@/features/damage/draft.store";
-import { registerAndUploadEvidence } from "@/services/evidence";
+import { useQueueStore } from "@/offline/queue.store";
+import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
@@ -90,21 +97,29 @@ export default function Camera() {
       try {
         const id = Crypto.randomUUID();
         const captured = await captureForensicPhoto(composeRef as never, meta, id);
-        const out = await registerAndUploadEvidence({
-          incidentId,
-          uri: captured.uri,
-          sha256: captured.sha256,
-        });
+        // La cola guarda el PUNTERO al archivo privado y la huella sellada
+        // aquí; el binario no se copia ni se reescribe.
+        const item = await useQueueStore.getState().enqueueEvidence(
+          {
+            incident_id: incidentId,
+            uri: captured.uri,
+            content_type: "image/jpeg",
+            bytes: captured.bytes,
+            ts_device: meta.tsDevice,
+          },
+          captured.sha256,
+        );
+        // El reporte de daños referencia el id LOCAL: el `evidence_id` del
+        // servidor no existe todavía y puede tardar horas en existir.
+        addEvidence(item.id);
+        // Con red se va ya; sin red, el listener de `OfflineSyncGate` lo hace
+        // solo al reconectar (§7·2.5: "sin intervención").
+        void drainQueue();
         setBusy(false);
-        if (out.ok) {
-          addEvidence(out.evidenceId);
-          router.back();
-        } else {
-          setError(out.reason);
-        }
+        router.back();
       } catch {
         setBusy(false);
-        setError("No se pudo procesar la evidencia.");
+        setError("No se pudo guardar la evidencia en este teléfono.");
       }
     })();
   };

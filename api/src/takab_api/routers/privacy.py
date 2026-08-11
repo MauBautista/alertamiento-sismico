@@ -30,17 +30,27 @@ Lo que este router deliberadamente NO tiene: un ``PUT`` de aviso, un ``DELETE``
 de consentimiento, y un endpoint para publicar el aviso de PLATAFORMA. Los dos
 primeros serían un 500 contra el trigger; el tercero no existe porque el aviso
 de plataforma es un artefacto de git que se sustituye con un despliegue.
+
+Y desde T-2.80.b tampoco tiene —ni tendrá por aquí— un endpoint que **borre la
+cuenta en Cognito**. Anonimizar es destruir el mapeo ``sub → persona`` en esta
+base; dar de baja la identidad es otro acto, en otro sistema, con otra
+consecuencia (quien pierde la cuenta pierde el acceso a la app de emergencia del
+edificio) y necesita su propia ficha. El razonamiento completo está en
+``takab_api.privacy.erasure``, sección "LO QUE ESTA TAREA NO HACE".
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async, audit_out_of_band_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
+from takab_api.auth.matrix import roles_with_action
 from takab_api.db.session import SessionCtx
 from takab_api.privacy import erasure, store
 from takab_api.privacy.store import ResolvedNotice
@@ -51,8 +61,11 @@ from takab_api.schemas.privacy import (
     ConsentOut,
     ConsentStatusOut,
     ErasureIn,
+    ErasureOnBehalfIn,
     ErasureOut,
     ErasureProofOut,
+    ErasureRequestIn,
+    ErasureRequestOut,
     NoticeIn,
     NoticeOut,
     NoticePublishedOut,
@@ -61,31 +74,32 @@ from takab_api.schemas.privacy import (
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 
-# Publicar el aviso del tenant y registrar el consentimiento de un tercero sin
-# sesión son el mismo círculo de confianza: el DUEÑO del cliente. Bajo la
-# LFPDPPP el *responsable* de los datos de los ocupantes de un inmueble es la
-# organización dueña del inmueble, así que publicar su aviso es un acto suyo —
-# el mismo círculo que ``edit_thresholds``/``drill_start``.
+# [T-2.79.e] Publicar el aviso del tenant y registrar el consentimiento de un
+# tercero sin sesión son el mismo círculo de confianza —el DUEÑO del cliente— y
+# por eso son UNA acción de la matriz, no dos listas. El razonamiento (por qué
+# ``takab_support`` queda fuera, por qué es el círculo de ``drill_start``) vive
+# junto a la acción en ``auth/matrix.py``, que es donde alguien va a buscarlo.
 #
-# ``takab_support`` queda fuera a propósito: soporte lee la plataforma, no firma
-# el aviso de privacidad de un cliente en su nombre.
-#
-# [DEUDA DECLARADA · T-2.79] Esta tupla PERTENECE a ``auth/matrix.py`` como una
-# acción ``manage_privacy_notice``, igual que ``maintenance_window``, y el propio
-# módulo de la matriz dice "ningún router vuelve a listar roles a mano". Está
-# aquí porque ``auth/matrix.py`` lo está tocando otra tarea en paralelo (T-2.82)
-# y dos ediciones simultáneas de la firma de ``_actions()`` chocan seguro.
-# **Mover al integrar**: añadir la acción a ``ACTIONS`` + ``_actions()`` +
-# ``ROLE_ACTION_MATRIX`` (superadmin y tenant_admin) y su línea en el `DENY_ALL`
-# de ``tests/auth/test_matrix.py``, y sustituir esto por
-# ``roles_with_action("manage_privacy_notice")``.
-#
-# Lo que NO depende de esta deuda: la frontera de seguridad real es la RLS
+# Lo que esta línea NO es: la frontera de seguridad. Esa la impone la RLS
 # ``pn_publish``, que exige ``app_role() IN ('tenant_admin','takab_superadmin')``
-# **y** que la fila sea del propio tenant. Esta lista solo hace que el 403 llegue
-# limpio y que la consola no pinte un botón que siempre fallaría (regla de oro 7).
-NOTICE_ROLES: tuple[str, ...] = ("takab_superadmin", "tenant_admin")
+# **y** que la fila sea del propio tenant — una condición que ninguna matriz de
+# roles sabe expresar. Derivar de la matriz solo hace que el 403 llegue limpio y
+# que la consola no pinte un botón que siempre fallaría (regla de oro 7).
+NOTICE_ROLES: tuple[str, ...] = roles_with_action("manage_privacy_notice")
 _require_notice_admin = require_roles(*NOTICE_ROLES)
+
+# [T-2.80.b] Registrar y ejecutar una solicitud ARCO recibida por escrito. Acción
+# APARTE de la de arriba aunque hoy comparta roles: publicar un aviso se deshace
+# publicando otra versión, anonimizar a una persona no se deshace.
+#
+# Y esta línea es todavía menos la frontera que la anterior. Lo que impide que un
+# responsable anonimice a quien le apetezca es la CONSTANCIA: sin fila en
+# `privacy_erasure_requests`, `app_can_erase_subject` es falso y las cinco
+# políticas RLS que cuelgan de él no dejan tocar un solo dato de esa persona. Y a
+# quién puede nombrar una constancia lo decide un FK compuesto contra el padrón
+# del propio cliente, no un rol.
+ERASURE_ROLES: tuple[str, ...] = roles_with_action("manage_privacy_erasure")
+_require_erasure_admin = require_roles(*ERASURE_ROLES)
 
 
 def _out(notice: ResolvedNotice) -> NoticeOut:
@@ -385,27 +399,12 @@ async def exercise_erasure(
     try:
         fila = await erasure.erase_self(conn, right=body.right, via=body.via)
     except DBAPIError as exc:
-        estado = getattr(exc.orig, "sqlstate", None)
-        if estado == erasure.SQLSTATE_DEFERRED:
-            await audit_out_of_band_async(
-                SessionCtx.from_claims(claims),
-                tenant_id=claims.tenant_id,
-                actor=f"user:{claims.sub}",
-                verb="privacy_erasure_deferred",
-                obj=f"privacy_erasure:{claims.sub}",
-                meta={"right": body.right, "via": body.via, "reason": "incidente_abierto"},
-            )
-            raise http_error(
-                409,
-                "hay un incidente abierto en un sitio asociado a tu cuenta: la "
-                "anonimización se difiere hasta que cierre, porque la ubicación de un "
-                "check-in de vida es dato de rescate en vivo. Tu solicitud queda "
-                "registrada; vuelve a intentarlo cuando el incidente se cierre",
-            ) from exc
-        if estado == erasure.SQLSTATE_FORBIDDEN:
-            raise http_error(
-                403, "el token no identifica a un titular: ARCO se ejerce sobre uno mismo"
-            ) from exc
+        await _traducir_fallo_de_arco(
+            exc,
+            claims,
+            deferred_obj=f"privacy_erasure:{claims.sub}",
+            deferred_meta={"right": body.right, "via": body.via, "reason": "incidente_abierto"},
+        )
         raise
 
     if not fila["created"]:
@@ -422,15 +421,69 @@ async def exercise_erasure(
             # Conteos y sello, NUNCA el dato anonimizado: el `audit_log` no se
             # poda jamás (regla de oro 11), así que una copia del nombre aquí
             # sería PII eterna — y además desharía la anonimización.
-            meta={
-                "right": fila["right_exercised"],
-                "via": fila["via"],
-                "affected": fila["affected"],
-                "audit_watermark": fila["audit_watermark"],
-                "audit_digest": fila["audit_digest"],
-            },
+            meta=_meta_de_lapida(fila),
         )
     return ErasureOut(**fila)
+
+
+def _meta_de_lapida(fila) -> dict:
+    """Conteos y sello. Nunca el dato anonimizado (regla de oro 11)."""
+    return {
+        "right": fila["right_exercised"],
+        "via": fila["via"],
+        "affected": fila["affected"],
+        "audit_watermark": fila["audit_watermark"],
+        "audit_digest": fila["audit_digest"],
+    }
+
+
+async def _traducir_fallo_de_arco(
+    exc: DBAPIError,
+    claims: Claims,
+    *,
+    deferred_obj: str,
+    deferred_meta: dict,
+) -> None:
+    """Los tres fallos que decide la BASE, traducidos a HTTP. Vuelve sin lanzar si
+    no es ninguno de ellos, para que quien llame re-lance el error original — un
+    500 honesto es mejor que un 4xx inventado.
+
+    Vive fuera de los handlers porque las dos puertas de ARCO —el titular y el
+    responsable— fallan por lo mismo y tienen que fallar igual. Duplicarlo era el
+    camino corto a que una de las dos dejara de auditar el diferimiento.
+    """
+    estado = getattr(exc.orig, "sqlstate", None)
+    if estado == erasure.SQLSTATE_DEFERRED:
+        # El 409 hace rollback y se llevaría la fila por delante: la petición se
+        # audita FUERA DE BANDA para que el plazo legal corra igual.
+        await audit_out_of_band_async(
+            SessionCtx.from_claims(claims),
+            tenant_id=claims.tenant_id,
+            actor=f"user:{claims.sub}",
+            verb="privacy_erasure_deferred",
+            obj=deferred_obj,
+            meta=deferred_meta,
+        )
+        raise http_error(
+            409,
+            "hay un incidente abierto en un sitio asociado a ese titular: la "
+            "anonimización se difiere hasta que cierre, porque la ubicación de un "
+            "check-in de vida es dato de rescate en vivo. La solicitud queda "
+            "registrada; vuelve a intentarlo cuando el incidente se cierre",
+        ) from exc
+    if estado == erasure.SQLSTATE_FORBIDDEN:
+        raise http_error(
+            403, "el token no identifica a un portador: ARCO exige una sesión con sujeto"
+        ) from exc
+    if estado == erasure.SQLSTATE_NO_CONSTANCIA:
+        # 404 y no 403: una constancia de otro cliente no está prohibida, es que
+        # NO EXISTE para esta sesión. Distinguirlas filtraría la existencia de una
+        # solicitud ajena (regla de oro 5).
+        raise http_error(
+            404,
+            "no hay constancia de esa solicitud: ejercer ARCO por cuenta de otro exige "
+            "registrarla antes en POST /privacy/erasure-requests",
+        ) from exc
 
 
 @router.get("/erasure", response_model=ErasureProofOut)
@@ -457,6 +510,157 @@ async def get_erasure_proof(
         audit_digest_now=ahora,
         audit_intact=(ahora == fila["audit_digest"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# T-2.80.b · El responsable ejecuta un ARCO recibido POR ESCRITO
+#
+# Dos endpoints y no uno, y la separación es la tarea. Recibir la solicitud y
+# ejecutarla son dos actos con dos fechas distintas —de la primera corre el plazo
+# legal— y con dos auditorías. Fundirlos habría convertido la constancia en un
+# campo del cuerpo del borrado: algo que se teclea al vuelo para que el POST pase,
+# en vez de el registro de un escrito que llegó.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/erasure-requests", response_model=ErasureRequestOut, status_code=201)
+async def record_erasure_request(
+    body: ErasureRequestIn,
+    claims: Claims = Depends(_require_erasure_admin),
+    conn: AsyncConnection = Depends(get_session),
+) -> ErasureRequestOut:
+    """Deja constancia de una solicitud ARCO recibida fuera de la app.
+
+    No anonimiza nada: registra que llegó un escrito, de quién, cuándo, por qué
+    canal y con qué prueba. La ejecución es el endpoint de abajo, a propósito.
+
+    El ``user_sub`` viaja en el cuerpo y **no abre el ARCO cruzado**: la fila lleva
+    un FK compuesto ``(tenant_id, user_sub) → user_profiles`` y el ``tenant_id`` no
+    es un parámetro (lo pone ``app_tenant_id()``), así que nombrar a un titular de
+    otro cliente no se rechaza por una comprobación — viola integridad
+    referencial, y se responde 404 igual que si no existiera. Que las dos
+    situaciones sean indistinguibles es deliberado (regla de oro 5).
+    """
+    try:
+        fila = await erasure.record_request(
+            conn,
+            user_sub=str(body.user_sub),
+            right=body.right,
+            channel=body.channel,
+            received_at=body.received_at,
+            proof_ref=body.proof_ref,
+            proof_digest=body.proof_digest,
+            actor_sub=claims.sub,
+        )
+    except IntegrityError as exc:
+        estado = getattr(exc.orig, "sqlstate", None)
+        if estado == "23503":  # foreign_key_violation → no está en el padrón
+            raise http_error(
+                404,
+                "ese titular no está en el padrón de este cliente: una constancia solo "
+                "puede nombrar a alguien de tu propio tenant",
+            ) from exc
+        if estado == "23514":  # check_violation → created_by = user_sub
+            raise http_error(
+                400,
+                "quien registra la constancia no puede ser el propio titular: para "
+                "ejercer tu propio ARCO está POST /privacy/erasure",
+            ) from exc
+        raise integrity_error(exc) from exc
+
+    await audit_async(
+        conn,
+        tenant_id=claims.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="privacy_erasure_request",
+        obj=f"privacy_erasure_request:{fila['request_id']}",
+        # `proof_ref` NO va a la bitácora: es texto libre que un operador puede
+        # llenar con un correo o un nombre, y el `audit_log` no se poda jamás
+        # (regla de oro 11). El `proof_digest` identifica el documento sin
+        # copiarlo, que es exactamente lo que hace falta para probarlo.
+        meta={
+            "subject_sub": str(fila["user_sub"]),
+            "right": fila["right_requested"],
+            "channel": fila["channel"],
+            "received_at": fila["received_at"].isoformat(),
+            "proof_digest": fila["proof_digest"],
+        },
+    )
+    return ErasureRequestOut(**dict(fila))
+
+
+@router.post("/erasure-requests/{request_id}/erasure", response_model=ErasureOut, status_code=201)
+async def exercise_erasure_on_behalf(
+    body: ErasureOnBehalfIn,
+    response: Response,
+    request_id: UUID = Path(...),
+    claims: Claims = Depends(_require_erasure_admin),
+    conn: AsyncConnection = Depends(get_session),
+) -> ErasureOut:
+    """Ejecuta la constancia. **El cuerpo no lleva sujeto, y la ruta tampoco.**
+
+    Lo que la ruta lleva es el ``request_id`` de una solicitud ya registrada; el
+    sujeto y el derecho salen de ella, resueltos DENTRO de la base contra el padrón
+    del tenant de la sesión. Por eso ejercer ARCO sobre un titular ajeno sigue sin
+    poder formularse: no hay parámetro que lo nombre en ninguna capa.
+
+    Mismas tres respuestas que el autoservicio (201 / 200 idempotente / 409
+    diferido por incidente abierto), más un **404** cuando no hay constancia — que
+    es también la respuesta a una constancia de otro cliente, porque para esta
+    sesión no existe.
+    """
+    constancia = await erasure.request(conn, request_id=str(request_id))
+    if constancia is None:
+        raise http_error(
+            404,
+            "no hay constancia de esa solicitud: ejercer ARCO por cuenta de otro exige "
+            "registrarla antes en POST /privacy/erasure-requests",
+        )
+    try:
+        fila = await erasure.erase_on_behalf(conn, via=body.via, request_id=str(request_id))
+    except DBAPIError as exc:
+        await _traducir_fallo_de_arco(
+            exc,
+            claims,
+            deferred_obj=f"privacy_erasure_request:{request_id}",
+            deferred_meta={
+                "subject_sub": str(constancia["user_sub"]),
+                "right": constancia["right_requested"],
+                "via": body.via,
+                "request_id": str(request_id),
+                "reason": "incidente_abierto",
+            },
+        )
+        raise
+
+    if not fila["created"]:
+        # Ya se había ejercido (por el titular o por otra constancia). 200, no 409.
+        response.status_code = 200
+    else:
+        await audit_async(
+            conn,
+            tenant_id=claims.tenant_id,
+            # `actor` = quién lo EJECUTÓ. Es el campo canónico de la bitácora.
+            actor=f"user:{claims.sub}",
+            verb="privacy_erasure_on_behalf",
+            obj=f"privacy_erasure:{fila['erasure_id']}",
+            meta={
+                **_meta_de_lapida(fila),
+                # Criterio 2 de la ficha, las tres piezas y en claro:
+                #  · quién lo PIDIÓ  → el titular de la constancia (`sub` opaco,
+                #    cuyo mapeo destruye esta misma transacción);
+                #  · quién lo EJECUTÓ → repetido aquí además de en `actor` para
+                #    que la fila se lea sola, sin cruzar columnas;
+                #  · con qué PRUEBA  → la constancia y el digest del escrito.
+                "requested_by_subject": str(constancia["user_sub"]),
+                "executed_by": claims.sub,
+                "request_id": str(request_id),
+                "request_channel": constancia["channel"],
+                "request_received_at": constancia["received_at"].isoformat(),
+                "proof_digest": constancia["proof_digest"],
+            },
+        )
+    return ErasureOut(**fila)
 
 
 async def _leer_consentimiento(

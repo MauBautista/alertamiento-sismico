@@ -463,6 +463,28 @@ class Settings(BaseSettings):
     panic_quorum_window_s: float = 30.0
     panic_geofence_radius_m: float = 500.0
     panic_vote_rate_per_min: int = 4
+    # [T-2.106] Cuánto tiempo sostiene la app la frase «la alarma del inmueble
+    # está sonando» a partir de un `siren/activate` que el gabinete confirmó
+    # haber ejecutado. Es una CONSTANTE DECLARADA, y aquí está por qué:
+    #
+    # · No sale de `command_ttl_s` (30 s), que es el TTL de ENTREGA del comando
+    #   —cuánto vale la firma en el cable—, no cuánto suena una sirena. Usarlo
+    #   apagaría el aviso medio minuto después de ordenarlo.
+    # · No sale del gabinete, porque el relé de sirena ENCLAVA: se sostiene
+    #   "hasta que el operador silencie/re-arme" (`edge/takab_edge/gpio`,
+    #   semántica de latching real). No existe duración que derivar de él.
+    # · No sale de `panic_quorum_window_s`, que es la ventana de asociación de
+    #   los DOS votos, y no tiene nada que ver con cuánto dura la emergencia.
+    #
+    # 30 minutos: holgado para cubrir una evacuación real del inmueble sin que
+    # la app enmudezca a mitad del evento, y corto para que un `activate` que
+    # nadie revirtió por la nube —el caso común, porque el operador silencia la
+    # sirena EN EL PANEL del gabinete y ese silencio no vuelve como comando— no
+    # deje al teléfono anunciando una sirena durante días. Caducar NO silencia
+    # nada: la app deja de AFIRMAR lo que ya no puede corroborar (regla de oro
+    # 7). Los desmentidos fuertes —silencio ejecutado, gabinete mudo, relés
+    # ilegibles— llegan antes y por dato real (ver `commands/alarma_inmueble.py`).
+    building_alarm_max_s: float = 1800.0
 
     # --- Backfill por S3 (T-1.25) ---
     # TTL corto del presigned PUT (anti-thundering-herd: un grant caducado se

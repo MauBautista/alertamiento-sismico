@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   useRuleSetPublish: vi.fn(),
   useCreateTenant: vi.fn(),
   useUpdateTenant: vi.fn(),
+  useNotifyChannels: vi.fn(),
 }));
 
 vi.mock("./useTenants", () => ({
@@ -33,6 +34,13 @@ vi.mock("./useTenants", () => ({
   TENANTS_STALE_MS: 120_000,
 }));
 vi.mock("./useRuleSetPublish", () => ({ useRuleSetPublish: mocks.useRuleSetPublish }));
+// [T-2.75.a] La realidad de los providers tiene su propia suite
+// (NotificationChannels.test.tsx, anclada al fixture compartido con la API).
+// Aquí solo hace falta que el hook exista para que la página monte.
+vi.mock("./useNotifyChannels", () => ({
+  useNotifyChannels: mocks.useNotifyChannels,
+  NOTIFY_CHANNELS_STALE_MS: 600_000,
+}));
 // Stub: aísla el gating de la tarjeta de su lógica (probada en VisibilityCard.test).
 // Va envuelto en un <div>: desde T-2.54 tiene una tarjeta hermana y dos stubs de
 // texto pelado se funden en el textContent del mismo padre.
@@ -180,6 +188,8 @@ beforeEach(() => {
   mocks.useRuleSetPublish.mockReturnValue(publishState());
   mocks.useCreateTenant.mockReturnValue(createState());
   mocks.useUpdateTenant.mockReturnValue(updateState());
+  // Sin dato de providers: la tarjeta pinta S/D, que es el default honesto.
+  mocks.useNotifyChannels.mockReturnValue({ channels: undefined, loading: true, error: null });
 });
 
 describe("TenantsPage · regla de oro 7", () => {

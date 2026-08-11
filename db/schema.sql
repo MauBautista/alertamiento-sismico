@@ -1226,7 +1226,13 @@ CREATE TABLE user_profiles (
   -- [T-2.03·R4] Teléfono para la llamada de un toque del roster (PII, con
   -- consentimiento registrado; lo cura building_admin/tenant_admin).
   phone        text,
-  updated_at   timestamptz NOT NULL DEFAULT now()
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  -- [T-2.80.b] Redundante con el PK (un `sub` vive en UN solo tenant) y aun así
+  -- obligatoria: es el ANCLA del FK compuesto de `privacy_erasure_requests`. Sin
+  -- ella ese FK no se puede declarar, y sin ese FK una constancia de ARCO podría
+  -- nombrar a un titular de otro cliente. Esta línea es lo que convierte el
+  -- confinamiento por tenant en integridad referencial en vez de en un `IF`.
+  CONSTRAINT uq_user_profiles_tenant_sub UNIQUE (tenant_id, user_sub)
 );
 CREATE INDEX idx_user_profiles_tenant ON user_profiles (tenant_id);
 GRANT SELECT, INSERT, UPDATE ON user_profiles TO takab_app;
@@ -1719,6 +1725,98 @@ CREATE FUNCTION privacy_audit_digest(p_tenant uuid, p_watermark bigint)
   ) s
 $$;
 
+-- [T-2.80.b] LA CONSTANCIA. El caso real de ARCO no es el titular pulsando un
+-- botón: es una persona que manda su solicitud POR ESCRITO al responsable del
+-- tratamiento, que es quien tiene que ejecutarla. Esta tabla es esa solicitud
+-- convertida en fila, y es el ÚNICO modo de nombrar a un tercero en todo el
+-- sistema.
+--
+-- POR QUÉ EL ARCO CRUZADO SIGUE SIENDO INEXPRESABLE (no "prohibido")
+-- ─────────────────────────────────────────────────────────────────
+-- 1. **No hay parámetro de tenant.** `tenant_id` lo pone `app_tenant_id()` por
+--    DEFAULT y la RLS lo vuelve a exigir en el WITH CHECK: el cliente no lo
+--    manda, ni podría.
+-- 2. **El FK COMPUESTO `(tenant_id, user_sub) → user_profiles`.** Una constancia
+--    solo puede nombrar a alguien del PROPIO padrón. Intentarlo con un titular
+--    ajeno no se rechaza por una comprobación: viola integridad referencial.
+-- 3. **`privacy_erase_subject` sigue sin recibir sujeto.** Recibe el
+--    `request_id` de una constancia y RESUELVE el sujeto uniendo contra el padrón
+--    de `app_tenant_id()`. Un UUID ajeno no tiene por dónde llegar a ser sujeto.
+--
+-- Y la PRUEBA es una columna, no una promesa: `proof_digest` (SHA-256 del
+-- documento recibido) es lo que separa "hay una solicitud" de "es ESTA solicitud
+-- y no otra". `proof_ref` dice DÓNDE está el documento —folio, expediente, clave
+-- de objeto—, nunca su contenido: el `audit_log` no se poda jamás y una copia
+-- del escrito ahí sería PII eterna.
+--
+-- LO QUE ESTE ACTO NO HACE: **no borra la cuenta en Cognito.** Anonimizar es
+-- destruir el mapeo `sub → persona` en ESTA base; la identidad del directorio es
+-- otro sistema, con otro efecto (quien pierde la cuenta pierde el acceso a la
+-- app de emergencia) y otro camino. Ver `takab_api.privacy.erasure` para el
+-- razonamiento completo y las otras dos cosas que quedan fuera.
+CREATE TABLE privacy_erasure_requests (
+  request_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Sin parámetro: el tenant de una constancia es SIEMPRE el de la sesión.
+  tenant_id       uuid NOT NULL DEFAULT app_tenant_id() REFERENCES tenants,
+  -- El titular que PIDIÓ. Atado al padrón del tenant por el FK compuesto de abajo.
+  user_sub        uuid NOT NULL,
+  right_requested text NOT NULL CHECK (right_requested IN ('cancelacion','oposicion')),
+  -- Cómo LLEGÓ la solicitud. No confundir con `privacy_erasures.via`, que es cómo
+  -- se EJERCIÓ: son dos actos distintos y separarlos es la mitad del registro.
+  channel         text NOT NULL
+    CHECK (channel IN ('written','email','in_person','legal_representative')),
+  received_at     timestamptz NOT NULL,
+  proof_ref       text NOT NULL CHECK (char_length(proof_ref) BETWEEN 3 AND 200),
+  proof_digest    text NOT NULL CHECK (proof_digest ~ '^[0-9a-f]{64}$'),
+  -- Quién la REGISTRÓ (≠ quién la pidió). Confundirlos borraría la diferencia
+  -- entre "la persona lo solicitó" y "un administrador lo dio por hecho".
+  created_by      uuid NOT NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_per_padron_del_tenant FOREIGN KEY (tenant_id, user_sub)
+    REFERENCES user_profiles (tenant_id, user_sub),
+  -- Una constancia es la solicitud de OTRO. El titular que quiere ejercer su
+  -- propio ARCO tiene el autoservicio; dejarle fabricarse una constancia
+  -- convertiría el registro del responsable en un trámite que se firma solo.
+  CONSTRAINT per_no_es_autoservicio CHECK (created_by <> user_sub)
+);
+CREATE INDEX idx_privacy_erasure_requests_sujeto
+  ON privacy_erasure_requests (tenant_id, user_sub);
+CREATE TRIGGER trg_privacy_erasure_requests_append_only
+  BEFORE UPDATE OR DELETE ON privacy_erasure_requests
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
+GRANT SELECT, INSERT ON privacy_erasure_requests TO takab_app;
+REVOKE UPDATE, DELETE ON privacy_erasure_requests FROM takab_app;
+REVOKE ALL ON privacy_erasure_requests FROM takab_ingest;
+
+ALTER TABLE privacy_erasure_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_erasure_requests FORCE  ROW LEVEL SECURITY;
+-- Registrar y leer constancias es acto del RESPONSABLE del tratamiento. Los roles
+-- salen del mismo círculo que `pe_admin_read` (el dueño del cliente); la acción
+-- de matriz `manage_privacy_erasure` solo hace que el 403 llegue limpio.
+CREATE POLICY per_admin ON privacy_erasure_requests FOR ALL
+  USING      (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'))
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND app_role() IN ('tenant_admin','takab_superadmin'));
+CREATE POLICY per_internal_read ON privacy_erasure_requests FOR SELECT
+  USING (app_is_takab_internal());
+
+-- [T-2.80.b] "Este portador tiene constancia para este titular." Es el criterio 2
+-- de la ficha —"ejercerlo por cuenta de otro EXIGE constancia"— convertido en un
+-- privilegio de base de datos: sin fila de solicitud, las políticas de abajo no
+-- dejan tocar un solo dato de esa persona. SECURITY INVOKER (el default): el
+-- EXISTS corre bajo la RLS de quien pregunta, así que la constancia de otro
+-- cliente no existe para él.
+CREATE FUNCTION app_can_erase_subject(p_tenant uuid, p_subject uuid) RETURNS boolean
+  LANGUAGE sql STABLE AS $$
+  SELECT p_tenant = app_tenant_id()
+     AND app_role() IN ('tenant_admin','takab_superadmin')
+     AND EXISTS (
+           SELECT 1 FROM privacy_erasure_requests r
+            WHERE r.tenant_id = p_tenant AND r.user_sub = p_subject)
+$$;
+
 -- LA LÁPIDA. Deja constancia del acto SIN conservar el dato: qué derecho, cuándo,
 -- por qué vía y CUÁNTAS filas se anonimizaron por tabla. Ni una copia del nombre,
 -- del teléfono ni del token — guardar eso "para trazabilidad" convertiría la
@@ -1726,12 +1824,19 @@ $$;
 CREATE TABLE privacy_erasures (
   erasure_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL REFERENCES tenants,      -- regla de oro 5
-  -- El sujeto es SIEMPRE `app_user_id()`: no hay parámetro por donde nombrar a
-  -- un tercero (ver `privacy_erase_subject`). El `sub` se conserva porque es la
-  -- clave de idempotencia y, destruido el mapeo, no remonta a nadie.
+  -- El sujeto NUNCA llega crudo del cliente: es `app_user_id()` (autoservicio) o
+  -- se RESUELVE dentro de `privacy_erase_subject` contra el padrón del tenant de
+  -- la sesión (constancia, T-2.80.b). El `sub` se conserva porque es la clave de
+  -- idempotencia y, destruido el mapeo, no remonta a nadie.
   user_sub        uuid NOT NULL,
   right_exercised text NOT NULL CHECK (right_exercised IN ('cancelacion','oposicion')),
+  -- Quién EJERCIÓ el acto ante el sistema: el titular (autoservicio) o el
+  -- responsable que ejecuta una constancia. Quién lo PIDIÓ materialmente está en
+  -- `privacy_erasure_requests.user_sub`, atado por `request_id`; en autoservicio
+  -- los dos coinciden por construcción.
   requested_by    uuid NOT NULL,
+  -- [T-2.80.b] La constancia que autoriza el acto, o NULL en autoservicio.
+  request_id      uuid REFERENCES privacy_erasure_requests,
   via             text NOT NULL CHECK (via IN ('mobile','web','console_admin','out_of_band')),
   -- Conteos por tabla, p.ej. {"life_checkins": 3}. El CHECK de abajo impide
   -- FÍSICAMENTE meter aquí un string: sin él, este jsonb sería el sitio obvio
@@ -1746,6 +1851,13 @@ CREATE TABLE privacy_erasures (
   erased_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT pe_afectados_son_conteos CHECK (
     NOT jsonb_path_exists(affected, '$.* ? (@.type() <> "number")')
+  ),
+  -- [T-2.80.b] La vía y la autoría tienen que contar la MISMA historia: una
+  -- lápida "por cuenta de otro" sin constancia, o una de autoservicio marcada
+  -- `console_admin`, serían un registro que miente sobre quién ejerció el
+  -- derecho. Es la mitad no-negociable del criterio 2 de la ficha.
+  CONSTRAINT pe_la_via_cuadra_con_la_constancia CHECK (
+    (request_id IS NULL) = (via IN ('mobile','web'))
   ),
   -- Idempotencia (regla de oro 3): un titular se anonimiza UNA vez. Ejercer ARCO
   -- dos veces devuelve la MISMA lápida, testigo sellado del primer acto.
@@ -1768,34 +1880,70 @@ CREATE POLICY pe_self ON privacy_erasures FOR ALL
   USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
   WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
 -- El responsable del tenant LEE su registro de borrados (necesidad de
--- cumplimiento). Nunca escribe: nadie ejerce ARCO en nombre de otro.
+-- cumplimiento).
 CREATE POLICY pe_admin_read ON privacy_erasures FOR SELECT
   USING (tenant_id = app_tenant_id()
          AND app_role() IN ('tenant_admin','takab_superadmin'));
 CREATE POLICY pe_internal_read ON privacy_erasures FOR SELECT
   USING (app_is_takab_internal());
+-- [T-2.80.b] Y ESCRIBE una lápida por cuenta de otro SOLO con constancia. El
+-- `request_id IS NOT NULL` no es decorativo: sin él, el responsable podría
+-- fabricar una lápida sin solicitud registrada y el criterio 2 dependería del
+-- router. Aquí depende de la base.
+CREATE POLICY pe_on_behalf ON privacy_erasures FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND request_id IS NOT NULL
+              AND app_can_erase_subject(tenant_id, user_sub));
 
--- EL ACTO. Sin parámetro de sujeto a propósito: opera sobre `app_user_id()`, así
--- que ejercer ARCO sobre un tercero —o cruzar tenants— no está *prohibido*, es
--- INEXPRESABLE. Todo ocurre en una sentencia: una anonimización a medias no es
--- un estado alcanzable. SECURITY INVOKER (el default): corre bajo la RLS del
--- request, no la esquiva.
-CREATE FUNCTION privacy_erase_subject(p_right text, p_via text)
+-- EL ACTO. **Sigue sin recibir un sujeto.** En autoservicio opera sobre
+-- `app_user_id()` (T-2.80, intacto); por cuenta de otro recibe el `request_id` de
+-- una CONSTANCIA y resuelve el sujeto uniendo contra el padrón de
+-- `app_tenant_id()`. Nombrar a un titular ajeno —o cruzar tenants— no está
+-- *prohibido*: no hay parámetro por donde formularlo. Todo ocurre en una
+-- sentencia: una anonimización a medias no es un estado alcanzable. SECURITY
+-- INVOKER (el default): corre bajo la RLS del request, no la esquiva.
+CREATE FUNCTION privacy_erase_subject(p_right text, p_via text, p_request uuid)
   RETURNS jsonb LANGUAGE plpgsql AS $$
 DECLARE
   v_tenant  uuid := app_tenant_id();
-  v_user    uuid := app_user_id();
+  v_actor   uuid := app_user_id();
+  v_user    uuid;
+  v_right   text := p_right;
   v_af      jsonb := '{}'::jsonb;
   v_n       integer;
   v_wm      bigint;
   v_row     privacy_erasures%ROWTYPE;
   v_created boolean := true;
 BEGIN
-  IF v_tenant IS NULL OR v_user IS NULL THEN
+  IF v_tenant IS NULL OR v_actor IS NULL THEN
     RAISE EXCEPTION
-      'ARCO exige una sesion con titular identificado: el sujeto del borrado '
-      'es siempre app_user_id(), nunca un parametro'
+      'ARCO exige una sesion con portador identificado: el sujeto del borrado '
+      'sale de app_user_id() o de una constancia, nunca de un parametro'
       USING ERRCODE = 'TK403';
+  END IF;
+
+  IF p_request IS NULL THEN
+    -- AUTOSERVICIO. El sujeto ES la sesión: exactamente lo que hacía la T-2.80.
+    v_user := v_actor;
+  ELSE
+    -- POR CUENTA DE OTRO. El sujeto no se acepta: se RESUELVE. El JOIN contra
+    -- `user_profiles` por `app_tenant_id()` es lo que lo PRODUCE, así que el
+    -- único universo del que puede salir un sujeto es el padrón del tenant de la
+    -- sesión. Y la constancia se busca SIN filtro de tenant a propósito: la RLS
+    -- ya hace que la de otro cliente no exista para esta sesión. Añadir aquí un
+    -- `AND r.tenant_id = v_tenant` sugeriría que el confinamiento es una
+    -- comprobación; no lo es, es el único universo que la sesión tiene.
+    SELECT u.user_sub, r.right_requested INTO v_user, v_right
+      FROM privacy_erasure_requests r
+      JOIN user_profiles u
+        ON u.tenant_id = app_tenant_id() AND u.user_sub = r.user_sub
+     WHERE r.request_id = p_request;
+    IF v_user IS NULL THEN
+      RAISE EXCEPTION
+        'no hay constancia de esa solicitud en este cliente: ejercer ARCO por '
+        'cuenta de otro exige registrar antes la solicitud recibida'
+        USING ERRCODE = 'TK404';
+    END IF;
   END IF;
 
   -- DECISIÓN: con un incidente ABIERTO en un sitio del titular, se DIFIERE. La
@@ -1856,10 +2004,10 @@ BEGIN
   SELECT coalesce(max(audit_id), 0) INTO v_wm FROM audit_log WHERE tenant_id = v_tenant;
 
   INSERT INTO privacy_erasures
-    (tenant_id, user_sub, right_exercised, requested_by, via,
+    (tenant_id, user_sub, right_exercised, requested_by, request_id, via,
      affected, audit_watermark, audit_digest)
   VALUES
-    (v_tenant, v_user, p_right, v_user, p_via,
+    (v_tenant, v_user, v_right, v_actor, p_request, p_via,
      v_af, v_wm, privacy_audit_digest(v_tenant, v_wm))
   ON CONFLICT (tenant_id, user_sub) DO NOTHING
   RETURNING * INTO v_row;
@@ -1875,10 +2023,15 @@ BEGIN
   RETURN to_jsonb(v_row) || jsonb_build_object('created', v_created);
 END $$;
 
-REVOKE ALL ON FUNCTION privacy_erase_subject(text,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION privacy_erase_subject(text,text,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION privacy_audit_digest(uuid,bigint) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION privacy_erase_subject(text,text) TO takab_app;
+GRANT EXECUTE ON FUNCTION privacy_erase_subject(text,text,uuid) TO takab_app;
 GRANT EXECUTE ON FUNCTION privacy_audit_digest(uuid,bigint) TO takab_app;
+-- `app_can_erase_subject` NO se revoca de PUBLIC, y es a propósito: se evalúa
+-- DENTRO de políticas RLS, y una política que llama a una función sin EXECUTE
+-- hace fallar la sentencia entera del rol que la toque (incluido el worker de
+-- notificaciones sobre `push_tokens`). No filtra nada: el EXISTS de dentro corre
+-- bajo la RLS del que pregunta, igual que `app_role()` y compañía.
 
 -- [T-2.80] Regla de oro 11 hecha PRIVILEGIO, no comentario. Un comentario no
 -- impide un DELETE; un privilegio ausente sí. Va al final del fichero a
@@ -1903,6 +2056,11 @@ GRANT UPDATE (geom) ON life_checkins TO takab_app;
 -- tarde: la enumeró una mano, la encontró una derivación del catálogo.
 REVOKE DELETE ON rule_evaluations FROM takab_app;
 
+-- [T-2.80.b] Y la constancia de la solicitud, por el mismo criterio: es la prueba
+-- de que un titular pidió, y sin ella la lápida del responsable sería su palabra.
+-- Regla de oro 11: se registra, no se edita ni se poda.
+REVOKE DELETE ON privacy_erasure_requests FROM takab_app;
+
 -- Las políticas de UPDATE de `life_checkins`. Junto al GRANT por columna y al
 -- trigger, la superficie TOTAL del UPDATE sobre esta tabla es "anular la
 -- geometría", y nada más: quien lo limita es `life_checkin_arco_guard()`, que
@@ -1922,3 +2080,35 @@ CREATE POLICY lc_arco_geom ON life_checkins FOR UPDATE
 CREATE POLICY lc_retention_geom ON life_checkins FOR UPDATE
   USING      (tenant_id = app_tenant_id() AND app_is_takab_internal())
   WITH CHECK (tenant_id = app_tenant_id() AND app_is_takab_internal());
+
+-- ---------------------------------------------------------------------------
+-- [T-2.80.b] EL RESPONSABLE EJECUTA UNA CONSTANCIA
+--
+-- El responsable del tratamiento no hereda "editar al ocupante". Cada política de
+-- abajo abre exactamente UNA fila-destino: la ANONIMIZADA. El `USING` dice a quién
+-- se puede tocar (solo a alguien con constancia registrada) y el `WITH CHECK` dice
+-- en qué estado puede quedar la fila — que es el mismo que escribe
+-- `privacy_erase_subject`, y ningún otro. Un `UPDATE ... SET display_name = 'Otro'`
+-- con constancia en mano sigue siendo un error de RLS.
+--
+-- Sin constancia, `app_can_erase_subject` es falso y estas políticas no existen:
+-- "exige constancia" deja de ser una condición del router y pasa a ser una
+-- condición de la base.
+-- ---------------------------------------------------------------------------
+CREATE POLICY up_arco_on_behalf ON user_profiles FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub))
+  WITH CHECK (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub)
+              AND display_name = '(titular anonimizado)' AND phone IS NULL);
+CREATE POLICY pt_arco_on_behalf ON push_tokens FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub))
+  WITH CHECK (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub)
+              AND token = 'arco:' || push_token_id::text
+              AND endpoint_arn IS NULL AND revoked_at IS NOT NULL);
+CREATE POLICY dk_arco_on_behalf ON device_keys FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub))
+  WITH CHECK (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub)
+              AND revoked_at IS NOT NULL);
+CREATE POLICY lc_arco_on_behalf ON life_checkins FOR UPDATE
+  USING      (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_id))
+  WITH CHECK (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_id)
+              AND geom IS NULL);

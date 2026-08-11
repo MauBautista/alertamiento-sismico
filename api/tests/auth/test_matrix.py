@@ -6,7 +6,11 @@ transcribió celda por celda de §2: True = la celda NO es "—".
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 from takab_api.auth.matrix import (
+    ACTIONS,
     AUDIT,
     BUILDING,
     CONSOLE,
@@ -16,7 +20,9 @@ from takab_api.auth.matrix import (
     TRIAGE,
     allowed_actions,
     allowed_routes,
+    roles_with_action,
 )
+from takab_api.routers import privacy as privacy_router
 
 # Columnas §2 → (MONITOREO, Flota Edge, EVALUACIÓN, Multi-Tenant, Auditoría,
 # Dash Edificio).
@@ -91,6 +97,12 @@ DENY_ALL = {
     "panel_read": False,
     "maintenance_window": False,
     "platform_maintenance_window": False,
+    # [T-2.79.e] Publicar el aviso de privacidad del cliente y registrar el
+    # consentimiento de un tercero sin sesión (mismo círculo: el DUEÑO del cliente).
+    "manage_privacy_notice": False,
+    # [T-2.80.b] Registrar una solicitud ARCO recibida por escrito y ejecutarla por
+    # cuenta del titular (mismo círculo, acción aparte: esta no se deshace).
+    "manage_privacy_erasure": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -379,3 +391,161 @@ def test_la_ventana_de_plataforma_es_un_subconjunto_estricto_de_la_de_gabinete()
     plataforma = {r for r in RBAC_SECTION_2 if allowed_actions(r)["platform_maintenance_window"]}
     gabinete = {r for r in RBAC_SECTION_2 if allowed_actions(r)["maintenance_window"]}
     assert plataforma < gabinete
+
+
+# ---------------------------------------------------------------------------
+# [T-2.79.e] Superficie de PRIVACIDAD: publicar el aviso del tenant.
+# ---------------------------------------------------------------------------
+
+#: Copia A MANO del conjunto que gobernaba ``routers/privacy`` **antes** de que la
+#: acción existiera, cuando ``NOTICE_ROLES`` era una tupla literal en el router.
+#:
+#: Es un test CARACTERIZADOR y por eso no se deriva de nada: no dice lo que la
+#: frontera *debería* ser, dice lo que **era** el día que se movió a la matriz. Si
+#: derivarla de ``ROLE_ACTION_MATRIX`` hubiera cambiado quién publica el aviso de un
+#: cliente, esto lo habría gritado — que es justo lo que una "mera refactorización"
+#: no puede permitirse callar.
+PRIVACY_NOTICE_ROLES_ANTES = {"takab_superadmin", "tenant_admin"}
+
+
+def test_publicar_aviso_conserva_exactamente_los_roles_que_tenia_el_router() -> None:
+    """La frontera de ``POST /privacy/notices`` no se movió al salir del router."""
+    assert set(privacy_router.NOTICE_ROLES) == PRIVACY_NOTICE_ROLES_ANTES
+
+
+def test_manage_privacy_notice_is_the_tenant_owner_circle() -> None:
+    """[T-2.79.e] Bajo la LFPDPPP el *responsable* de los datos de los ocupantes de
+    un inmueble es la organización dueña del inmueble: publicar su aviso —y dejar
+    constancia del consentimiento de un tercero sin sesión— es un acto SUYO.
+
+    ``takab_support`` queda fuera a propósito, pese a su "Total" en §2: soporte lee
+    la plataforma, no firma el aviso de privacidad de un cliente en su nombre. Misma
+    disciplina que ``manage_fleet`` y ``manage_users``.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_privacy_notice"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
+    assert allowed_actions("takab_support")["manage_privacy_notice"] is False
+    # Mismo círculo que los otros actos administrativos del dueño del cliente.
+    assert can == {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
+
+
+def test_el_router_de_privacidad_consulta_la_matriz_y_no_su_propia_lista() -> None:
+    """[T-2.79.e] ``NOTICE_ROLES`` es DERIVADO, no declarado.
+
+    El test caracterizador de arriba fija el VALOR; este fija el ORIGEN. Sin los dos,
+    alguien podría "arreglar" la coherencia copiando el mismo par de roles otra vez a
+    mano y los dos tests seguirían en verde.
+    """
+    assert privacy_router.NOTICE_ROLES == roles_with_action("manage_privacy_notice")
+
+
+def test_manage_privacy_erasure_is_the_responsible_circle() -> None:
+    """[T-2.80.b] Una solicitud ARCO por escrito se le manda AL RESPONSABLE del
+    tratamiento —la organización dueña del inmueble—, no a TAKAB. Mismo círculo
+    que publicar su aviso, y ``takab_support`` fuera por el mismo criterio:
+    soporte lee la plataforma, no anonimiza al ocupante de un cliente en su
+    nombre.
+    """
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_privacy_erasure"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
+    assert allowed_actions("takab_support")["manage_privacy_erasure"] is False
+    assert can == {r for r in RBAC_SECTION_2 if allowed_actions(r)["manage_privacy_notice"]}
+
+
+def test_ejercer_arco_por_otro_es_una_accion_APARTE_de_publicar_el_aviso() -> None:
+    """[T-2.80.b] Comparten roles HOY y siguen siendo dos acciones, a propósito.
+
+    Publicar un aviso se deshace publicando otra versión; anonimizar a una persona
+    no se deshace. Fundirlas obligaría a conceder la irreversible para dar la
+    reversible el día que los círculos dejen de coincidir — y ese día nadie se
+    acordaría de que el fusionado era una casualidad de 2026.
+    """
+    assert "manage_privacy_erasure" in ACTIONS
+    assert "manage_privacy_notice" in ACTIONS
+    assert privacy_router.ERASURE_ROLES == roles_with_action("manage_privacy_erasure")
+
+
+def test_el_derecho_del_titular_sigue_sin_llevar_rol() -> None:
+    """[T-2.80.b] La acción nueva NO gatea ``POST /privacy/erasure``.
+
+    Ejercer ARCO sobre uno mismo es un derecho, no un permiso: si la puerta del
+    responsable hubiera acabado gateando también la del titular, la tarea habría
+    convertido un derecho en un privilegio — exactamente lo que ``RBAC-TAKAB.md``
+    dice que no puede pasar.
+    """
+
+    def _guardas(path: str, metodo: str) -> set[str]:
+        ruta = next(
+            r
+            for r in privacy_router.router.routes
+            if getattr(r, "path", "") == path and metodo in getattr(r, "methods", set())
+        )
+        return {
+            d.call.__name__
+            for d in ruta.dependant.dependencies  # type: ignore[attr-defined]
+            if getattr(d, "call", None) is not None
+        }
+
+    # `require_roles` devuelve una closure llamada `_dep`: su presencia ES la guarda.
+    assert "_dep" not in _guardas("/privacy/erasure", "POST"), (
+        "`POST /privacy/erasure` ganó una guarda de rol: el ARCO del titular sobre "
+        "sí mismo es un derecho, no un permiso que se concede"
+    )
+    # Y el contraste, que es lo que hace útil al assert de arriba: la puerta del
+    # RESPONSABLE sí la lleva, en los dos actos.
+    assert "_dep" in _guardas("/privacy/erasure-requests", "POST")
+    assert "_dep" in _guardas("/privacy/erasure-requests/{request_id}/erasure", "POST")
+
+
+# ---------------------------------------------------------------------------
+# [T-2.79.e · criterio 3] Barrido: ninguna superficie de privacidad lista roles.
+# ---------------------------------------------------------------------------
+
+_SRC = Path(privacy_router.__file__).resolve().parents[1]
+
+#: Excepción NOMBRADA y única. ``privacy/retention.py`` declara el ``app.role`` con
+#: el que se degrada la sesión del JOB de retención: es una identidad **máquina**
+#: (RBAC-TAKAB.md — las identidades máquina no son roles RBAC), no una respuesta a
+#: "quién puede pulsar esto". No hay portador de token ni acción de matriz que
+#: derivar, así que no tiene sitio en ``ROLE_ACTION_MATRIX``.
+LITERALES_DE_ROL_PERMITIDOS: frozenset[tuple[str, str]] = frozenset(
+    {("privacy/retention.py", "takab_support")}
+)
+
+
+def _superficies_de_privacidad() -> list[Path]:
+    """Se calcula, no se lista: un fichero nuevo en ``privacy/`` entra solo."""
+    rutas = [
+        *sorted((_SRC / "privacy").glob("*.py")),
+        _SRC / "routers" / "privacy.py",
+        _SRC / "routers" / "compliance.py",
+        _SRC / "schemas" / "privacy.py",
+        _SRC / "schemas" / "compliance.py",
+        _SRC / "queries" / "compliance.py",
+        _SRC / "compliance.py",
+    ]
+    return [r for r in rutas if r.exists()]
+
+
+def test_ninguna_superficie_de_privacidad_enumera_roles_a_mano() -> None:
+    """[T-2.79.e] La deuda cerrada no puede volver por otra puerta.
+
+    Se mira el AST y se compara por IGUALDAD, así que la PROSA sigue libre: un
+    comentario que explique por qué ``takab_support`` queda fuera no es una lista de
+    roles, es la razón de una. Lo que se prohíbe es que un nombre de rol sea un
+    VALOR del código en estos ficheros — ahí es donde deja de haber una sola verdad.
+    """
+    encontrados: set[tuple[str, str]] = set()
+    for ruta in _superficies_de_privacidad():
+        rel = ruta.relative_to(_SRC).as_posix()
+        arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+        for nodo in ast.walk(arbol):
+            if not isinstance(nodo, ast.Constant) or not isinstance(nodo.value, str):
+                continue
+            if nodo.value in RBAC_SECTION_2:
+                encontrados.add((rel, nodo.value))
+    assert encontrados <= LITERALES_DE_ROL_PERMITIDOS, (
+        "una superficie de privacidad volvió a enumerar roles a mano: "
+        f"{sorted(encontrados - LITERALES_DE_ROL_PERMITIDOS)}. "
+        "Deriva de `auth/matrix.roles_with_action(...)`."
+    )

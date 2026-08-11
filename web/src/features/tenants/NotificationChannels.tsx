@@ -1,7 +1,19 @@
 import { ChevronRight, Mail, MessageCircle, Smartphone, Webhook } from "lucide-react";
 
-import type { ChannelDraft, ChannelKey } from "./model";
+import type { NotifyChannelOut } from "@takab/sdk";
 
+import { channelRealityOf } from "./model";
+import type { ChannelDraft, ChannelKey, ChannelReality } from "./model";
+
+/**
+ * Lo FIJO del canal: cómo se llama, qué destino admite y con qué icono se pinta.
+ *
+ * [T-2.75.a] Lo que YA NO vive aquí es si el canal entrega. `sub` decía
+ * «SIMULADO en el MVP» para WhatsApp y SMS: verdad escrita a fuego, que el día
+ * que T-2.76.a/T-2.77.a carguen credenciales se convierte en la mentira
+ * inversa. Eso se le pregunta al servidor (`GET /notify/channels`), que lo
+ * deriva del registro de providers.
+ */
 const META: Record<
   ChannelKey,
   { label: string; sub: string; placeholder: string; Icon: typeof Webhook }
@@ -14,13 +26,13 @@ const META: Record<
   },
   whatsapp: {
     label: "WhatsApp Business",
-    sub: "SIMULADO en el MVP",
+    sub: "Cloud API · plantilla aprobada por Meta",
     placeholder: "+52 55 0000 0000",
     Icon: MessageCircle,
   },
   sms: {
     label: "SMS",
-    sub: "SIMULADO en el MVP · SLA de entrega ≤30 s",
+    sub: "SLA de entrega ≤30 s",
     placeholder: "+52 55 0000 0000",
     Icon: Smartphone,
   },
@@ -32,10 +44,24 @@ const META: Record<
   },
 };
 
+/** Rótulo de la realidad del provider. Tres estados, y el tercero NO es «real». */
+const REALITY_LABEL: Record<ChannelReality, string> = {
+  real: "REAL · ENTREGA DE VERDAD",
+  simulated: "SIMULADO · NADIE LO RECIBE",
+  unknown: "S/D · EL SERVIDOR NO LO DECLARA",
+};
+
 export interface NotificationChannelsProps {
   drafts: ChannelDraft[];
   disabled: boolean;
   onChange: (drafts: ChannelDraft[]) => void;
+  /**
+   * [T-2.75.a] Realidad de cada provider según `GET /notify/channels`.
+   * `undefined` = cargando o la consulta falló ⇒ todos los canales se pintan
+   * `S/D`. No se inventa un default optimista: afirmar que un canal entrega
+   * cuando no se sabe es exactamente el tablero mentiroso de T-2.75.
+   */
+  reality: NotifyChannelOut[] | undefined;
 }
 
 /**
@@ -57,6 +83,7 @@ export default function NotificationChannels({
   drafts,
   disabled,
   onChange,
+  reality,
 }: NotificationChannelsProps) {
   const active = drafts.filter((d) => d.enabled && d.destination.trim() !== "");
 
@@ -81,6 +108,7 @@ export default function NotificationChannels({
           const { label, sub, placeholder, Icon } = META[d.key];
           const incomplete = d.enabled && d.destination.trim() === "";
           const on = d.enabled && !incomplete;
+          const providerReality = channelRealityOf(reality, d.key);
           return (
             <div
               key={d.key}
@@ -94,6 +122,12 @@ export default function NotificationChannels({
                 <span className="mt-channel__label">{label}</span>
                 <span className="mt-channel__sub">
                   {incomplete ? "INCOMPLETO · sin destino, el backend lo omite" : sub}
+                </span>
+                <span
+                  className={`mt-channel__reality mt-channel__reality--${providerReality}`}
+                  data-testid={`channel-reality-${d.key}`}
+                >
+                  {REALITY_LABEL[providerReality]}
                 </span>
                 {d.enabled && (
                   <input

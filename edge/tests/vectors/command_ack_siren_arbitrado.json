@@ -1,0 +1,20 @@
+{
+  "kind": "command_ack",
+  "command_id": "cid-nonce-si",
+  "nonce": "nonce-silencio-01",
+  "channel": "siren",
+  "action": "deactivate",
+  "success": true,
+  "latency_s": 0.0,
+  "executed_at": "2026-08-10T12:00:00Z",
+  "detail": "relay",
+  "results": null,
+  "channel_state": {
+    "channel": "siren",
+    "energized": true,
+    "activated": true,
+    "fail_safe": "NO",
+    "reason": "alert",
+    "alert_latched": true
+  }
+}

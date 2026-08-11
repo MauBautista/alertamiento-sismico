@@ -256,6 +256,37 @@ CONSUME_PANIC_VOTES = text(
     "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
 )
 
+# --- [T-2.106] alarma del inmueble: la última orden EJECUTADA sobre la sirena ----------
+
+# La señal que sostiene `phase="building_alarm"`. Tres filtros, cada uno cargado:
+#
+# · `status = 'acked'` — el ACK DE EJECUCIÓN (regla de oro 8). Es lo único que
+#   dice que la orden llegó al relé. Se aplica en las DOS direcciones para que
+#   mande "lo último que TOCÓ el relé", no "lo último que alguien pidió".
+# · `issued_by <> :actor_sistema` — el burst del cuórum sísmico también emite
+#   `siren/activate`, y ése NO es una activación manual: llega a la app por su
+#   incidente, como `alert_active`. Sin este filtro, un sismo confirmado se
+#   anunciaría además como alarma del inmueble.
+# · `channel = 'siren'` — el self_test va por `system` y los drills también
+#   (`drill_start`/`drill_stop` con `channel='system'`), así que ninguno entra.
+#
+# El LATERAL trae el último latido DE ESE gabinete —no del sitio— porque la
+# corroboración tiene que ser del que ejecutó: en un edificio de dos gabinetes,
+# que a uno no le lean los relés no desmiente lo que el otro confirmó.
+# Índice: `idx_commands_site (site_id, issued_at DESC)` ya existe.
+SIREN_ORDER = text(
+    "SELECT c.action, c.issued_at, h.relays_state, "
+    "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS gateway_age_s "
+    "FROM commands c "
+    "LEFT JOIN LATERAL ("
+    "  SELECT dh.ts, dh.relays_state FROM device_health dh "
+    "  WHERE dh.gateway_id = c.gateway_id ORDER BY dh.ts DESC LIMIT 1"
+    ") h ON true "
+    "WHERE c.site_id = CAST(:site AS uuid) AND c.channel = 'siren' "
+    "AND c.status = 'acked' AND c.issued_by <> CAST(:actor_sistema AS uuid) "
+    "ORDER BY c.issued_at DESC LIMIT 1"
+)
+
 # --- salud del sitio + directorio (T-2.07 · 1.1/1.7) -----------------------------------
 
 # Último heartbeat por gabinete ACTIVO del sitio (patrón LATERAL de fleet.py);
@@ -297,12 +328,33 @@ SITE_DIRECTORY = text(
 
 # Registra la foto forense en evidence_objects (append-only): kind=photo con el
 # SHA-256 declarado en captura y el s3_key generado por el servidor.
+# [T-2.113] El ``evidence_id`` puede venir de la COLA OFFLINE del dispositivo
+# (regla de oro 3). ``ON CONFLICT DO NOTHING`` SIN blanco arbitra las DOS llaves
+# únicas que tiene la tabla —la PK ``evidence_id`` y el índice parcial
+# ``uq_evidence_incident_sha256 (incident_id, sha256)``—: nombrar solo una
+# dejaba la otra reventando con IntegrityError, que es exactamente cómo el
+# reintento de la misma foto acababa en 409 y la fila se quedaba sin blob.
+# La tabla es append-only: jamás DO UPDATE.
 INSERT_EVIDENCE = text(
     "INSERT INTO evidence_objects "
-    "(tenant_id, incident_id, kind, s3_key, sha256, ts_from) "
-    "VALUES (CAST(:tenant AS uuid), CAST(:incident AS uuid), 'photo', :s3_key, "
-    ":sha256, :ts_from) "
-    "RETURNING evidence_id"
+    "(evidence_id, tenant_id, incident_id, kind, s3_key, sha256, ts_from) "
+    "VALUES (CAST(:evidence_id AS uuid), CAST(:tenant AS uuid), "
+    "CAST(:incident AS uuid), 'photo', :s3_key, :sha256, :ts_from) "
+    "ON CONFLICT DO NOTHING "
+    "RETURNING evidence_id, s3_key"
+)
+
+# Replay LEGÍTIMO de un registro de evidencia: la identidad forense de una foto
+# es (incidente, huella) —lo dice el índice único de la tabla—, y si el cliente
+# propuso un id, además tiene que ser EL SUYO. Un id de otro incidente, de otro
+# tenant (RLS ya lo esconde) o con otra huella NO devuelve nada ⇒ 409 en el
+# router: sin fila ajena, sin ``s3_key`` ajeno y sin PUT presignado sobre él.
+EVIDENCE_REPLAY = text(
+    "SELECT evidence_id, s3_key FROM evidence_objects "
+    "WHERE incident_id = CAST(:incident AS uuid) AND kind = 'photo' "
+    "AND sha256 = :sha256 "
+    "AND (CAST(:evidence_id AS uuid) IS NULL OR evidence_id = CAST(:evidence_id AS uuid)) "
+    "LIMIT 1"
 )
 
 # Para la verificación: s3_key + huella declarada + incidente/tenant (RLS ya

@@ -3,7 +3,7 @@
 // lo que se muestra es viejo). Mostrar un dato congelado como "live" es peor
 // que mostrar "sin datos".
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
@@ -29,6 +29,13 @@ export function StateFrame(props: {
   emptyText: string;
   /** Epoch ms del dato mostrado cuando NO es fresco; null = fresco. */
   staleSinceMs: number | null;
+  /**
+   * [T-2.111] Reintento del estado `error`, espejo del `onRetry` de la consola.
+   * En una pantalla de VIDA un error tiene que ser accionable: decir que no se
+   * pudo y ofrecer volver a intentarlo, no dejar a la persona sin salida.
+   * Opcional: un error del que no se puede reintentar nada no pinta el botón.
+   */
+  onRetry?: () => void;
   /** Override SOLO para tests deterministas. */
   nowMs?: number;
   children: React.ReactNode;
@@ -46,6 +53,16 @@ export function StateFrame(props: {
       <View style={styles.center} testID="state-error">
         <Text style={styles.errorTitle}>SIN CONEXIÓN CON EL SERVIDOR</Text>
         <Text style={styles.errorBody}>{props.error}</Text>
+        {props.onRetry ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={props.onRetry}
+            style={styles.retryBtn}
+            testID="state-retry"
+          >
+            <Text style={styles.retryText}>REINTENTAR</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -82,6 +99,15 @@ const styles = StyleSheet.create({
   errorTitle: { color: palette.warn, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 1 },
   errorBody: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center" },
   emptyText: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center" },
+  retryBtn: {
+    borderColor: palette.cyan,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[4],
+    marginTop: space[2],
+  },
+  retryText: { color: palette.cyan, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 1 },
   staleBanner: {
     backgroundColor: palette.card,
     borderColor: palette.warn,

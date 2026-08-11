@@ -7,7 +7,13 @@ import {
   type ServerPhase,
 } from "./machine";
 
-const PHASES: ServerPhase[] = ["idle", "alert_active", "shaking_concluded", "reentry_approved"];
+const PHASES: ServerPhase[] = [
+  "idle",
+  "alert_active",
+  "shaking_concluded",
+  "reentry_approved",
+  "building_alarm",
+];
 
 describe("deriveAlertState — el servidor manda", () => {
   it.each([
@@ -19,8 +25,28 @@ describe("deriveAlertState — el servidor manda", () => {
     ["shaking_concluded", true, "reentry_blocked"],
     ["reentry_approved", false, "reentry_approved"],
     ["reentry_approved", true, "reentry_approved"],
+    // [T-2.106] Alarma del inmueble: no hay sismo, así que el check-in de vida
+    // no la modifica (no hay de qué dar parte).
+    ["building_alarm", false, "building_alarm"],
+    ["building_alarm", true, "building_alarm"],
   ] as const)("phase=%s, checkin=%s ⇒ %s", (phase, checkin, expected) => {
     expect(deriveAlertState(phase, checkin)).toBe(expected);
+  });
+
+  it("[T-2.106] una alarma del inmueble JAMÁS se convierte en alert_active", () => {
+    // Criterio 3 en el borde del cliente: aunque el servidor es quien decide, la
+    // máquina tampoco puede ASCENDER una alarma de inmueble a crisis sísmica.
+    for (const checkin of [false, true]) {
+      expect(deriveAlertState("building_alarm", checkin)).not.toBe("alert_active");
+    }
+  });
+
+  it("[T-2.106] ningún camino local produce building_alarm sin que el servidor lo diga", () => {
+    for (const phase of PHASES.filter((p) => p !== "building_alarm")) {
+      for (const checkin of [false, true]) {
+        expect(deriveAlertState(phase, checkin)).not.toBe("building_alarm");
+      }
+    }
   });
 
   it("NINGÚN camino local produce reentry_approved (solo la fase del servidor)", () => {

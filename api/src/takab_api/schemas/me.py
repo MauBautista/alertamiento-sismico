@@ -53,6 +53,36 @@ class MeActions(BaseModel):
     #: [T-2.71] Ventana de PLATAFORMA (alarmas ec2_* de la instancia de la nube):
     #: SOLO takab_superadmin — vigilan infra común de todos los clientes.
     platform_maintenance_window: bool
+    #: [T-2.79.e] Publicar el aviso de privacidad del cliente y registrar el
+    #: consentimiento de un tercero sin sesión (superadmin/tenant_admin: el
+    #: *responsable* de los datos de los ocupantes es el dueño del inmueble).
+    manage_privacy_notice: bool
+    #: [T-2.80.b] Registrar una solicitud ARCO recibida POR ESCRITO y ejecutarla
+    #: por cuenta del titular (superadmin/tenant_admin). Que la acción esté en
+    #: `true` NO significa que se pueda anonimizar a cualquiera: hace falta una
+    #: CONSTANCIA registrada, y eso lo exige la base (RLS), no esta bandera.
+    manage_privacy_erasure: bool
+
+
+class MeEnrolledSite(BaseModel):
+    """[T-2.114] Inmueble en el que el portador está ENROLADO (R2).
+
+    El enrolamiento vive en ``user_zone_assignments`` y NO viaja en el claim de
+    Cognito: el alcance móvil se resuelve server-side desde que existe T-2.03.
+    Publicarlo aquí es lo que permite al teléfono dejar de ser la única memoria
+    de a qué edificio pertenece un ocupante — y, por tanto, soltar ese dato al
+    cerrar sesión sin dejar tirado a nadie.
+    """
+
+    site_id: UUID
+    site_name: str
+    zone_id: UUID | None
+    zone_name: str | None
+    #: Política de evacuación de la zona (``evacuate``/``shelter``/…), la misma
+    #: que devuelve el alta; ``null`` si el enrolamiento no fijó zona.
+    evac_policy: str | None
+    #: Rol que concedió el código de alta (``occupant``/``brigadista``/…).
+    role: str
 
 
 class MeResponse(BaseModel):
@@ -60,6 +90,10 @@ class MeResponse(BaseModel):
 
     ``site_scope``: ``"*"`` = todo el tenant; lista ordenada de sitios en otro
     caso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.
+
+    ``enrolled_sites`` (T-2.114): los inmuebles del ENROLAMIENTO, que son cosa
+    distinta de ``site_scope`` (ese sale del claim). Vacío = no enrolado, y se
+    declara vacío en vez de adivinar.
     """
 
     sub: str
@@ -75,6 +109,10 @@ class MeResponse(BaseModel):
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions
+    #: [T-2.114] Inmuebles del enrolamiento (R2), ordenados. Fuente de verdad
+    #: del "sitio vigilado" del ocupante: sin esto el dato solo existía en el
+    #: SecureStore del teléfono y se heredaba entre usuarios del mismo aparato.
+    enrolled_sites: list[MeEnrolledSite] = []
 
 
 class ProfileOut(BaseModel):

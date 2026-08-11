@@ -353,6 +353,88 @@ async def test_el_cuorum_de_red_SI_ordena_evacuar(base_data, make_incident) -> N
         assert state["incident"]["node_count"] == 3
 
 
+async def _seed_orden_de_sirena(action: str, *, nonce: str) -> None:
+    """Una orden de sirena YA EJECUTADA por el gabinete (status='acked'), emitida
+    por una persona — que es lo que la distingue del burst del cuórum sísmico."""
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO commands (tenant_id, site_id, gateway_id, issued_by, channel, "
+                "action, nonce, issued_at, expires_at, status) VALUES "
+                "(:t, :s, :g, :u, 'siren', :a, :n, now(), now() + interval '30 seconds', 'acked')"
+            ),
+            {
+                "t": au.DB_TENANT_PRIV,
+                "s": au.DB_SITE_PRIV,
+                "g": GW_PRIV,
+                "u": OCC_USER,
+                "a": action,
+                "n": nonce,
+            },
+        )
+
+
+@pytest.mark.anyio
+async def test_lo_sismico_gana_a_la_alarma_del_inmueble(gw_sandbox, make_incident) -> None:
+    """[T-2.106] Precedencia, contra el endpoint real: una alarma de inmueble
+    JAMÁS tapa una fase sísmica.
+
+    Con la sirena del edificio sonando por una activación manual **y** un
+    incidente que SÍ autoriza evacuación (SASMEX), la app tiene que recibir
+    `alert_active` — y el `building_alarm` no se expone en absoluto, por la misma
+    razón que T-2.105 esconde el incidente que no autoriza: devolver las dos
+    cosas sería pedirle al cliente que decida cuál pinta, y el teléfono jamás
+    decide fases (spec móvil §4.1).
+    """
+    await _seed_zone_and_code()
+    await _seed_gateway(has_wr1=True)
+    await _heartbeat("mains", 100.0)
+    await _seed_orden_de_sirena("activate", nonce="nonce-alarma-precedencia")
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+
+        # Sin sismo: la alarma del inmueble es lo único que hay que contar.
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "building_alarm"
+        assert state["building_alarm"]["since"] is not None
+
+        # Llega SASMEX: lo sísmico manda y la alarma del inmueble calla.
+        await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, trigger="sasmex")
+        await _seed_tier("evacuate_or_hold")
+        state = (await client.get(url, headers=headers)).json()
+        assert state["phase"] == "alert_active"
+        assert state["building_alarm"] is None
+
+
+@pytest.mark.anyio
+async def test_alarma_de_inmueble_con_gabinete_mudo_no_se_afirma(gw_sandbox) -> None:
+    """[T-2.106] El gabinete lleva horas callado: cualquier cosa que dijéramos de
+    su sirena es un dato congelado pintado como vivo (regla de oro 7). Sin latido
+    fresco no hay alarma que anunciar, aunque el `acked` siga en la tabla."""
+    await _seed_zone_and_code()
+    await _seed_gateway(has_wr1=True)
+    await _seed_orden_de_sirena("activate", nonce="nonce-alarma-mudo")
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO device_health (ts, tenant_id, gateway_id, reason) "
+                "VALUES (now() - interval '6 hours', :t, :g, 'heartbeat')"
+            ),
+            {"t": au.DB_TENANT_PRIV, "g": GW_PRIV},
+        )
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        state = (
+            await client.get(f"/sites/{au.DB_SITE_PRIV}/mobile-state", headers=au.bearer(_occ()))
+        ).json()
+        assert state["phase"] == "idle"
+        assert state["building_alarm"] is None
+
+
 @pytest.mark.anyio
 async def test_drills_agenda_no_deriva_activo(base_data) -> None:
     """Una fila con scheduled_at es ANUNCIO: aparece como próximo, jamás activa."""
@@ -458,6 +540,9 @@ async def _cleanup_gateway() -> None:
             ),
             {"s": au.DB_SITE_PRIV},
         )
+        # [T-2.106] Los comandos de sirena del sitio referencian al gabinete por
+        # FK: sin esto, el DELETE de abajo revienta el teardown.
+        await conn.execute(text("DELETE FROM commands WHERE site_id = :s"), {"s": au.DB_SITE_PRIV})
         await conn.execute(text("DELETE FROM gateways WHERE site_id = :s"), {"s": au.DB_SITE_PRIV})
 
 

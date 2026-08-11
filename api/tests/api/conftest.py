@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 import auth_utils as au
+from seed_shared import seed_shared_rows
 from takab_api.auth import deps
 from takab_api.db.engine import get_engine
 from takab_api.main import create_app
@@ -68,49 +69,47 @@ _TRUNCATE_WRITTEN = text(
 )
 
 
+# El TRUNCATE pide el ACCESS EXCLUSIVE de cada tabla. Sin tope, una transacción ajena
+# abierta sobre cualquiera de ellas (audit_log es la que más manos toca) colgaría el
+# teardown PARA SIEMPRE, sin decir por qué — el defecto de T-2.73.c. Con tope, falla
+# en segundos y con nombre.
+_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = 5000")
+
+
 @pytest.fixture
 async def db_engine():
-    """Engine async fresco en el loop del test; limpia lo commiteado y se dispone."""
+    """Engine async fresco en el loop del test; limpia lo commiteado y se dispone.
+
+    El ``dispose`` va en ``finally``: si la limpieza revienta, dejar el engine vivo
+    convierte un fallo en una cascada de cuelgues para los tests que vengan detrás.
+    """
     yield
     if get_engine.cache_info().currsize:
         engine = get_engine()
-        async with engine.begin() as conn:
-            await conn.execute(_TRUNCATE_WRITTEN)
-        await engine.dispose()
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(_LOCK_TIMEOUT)
+                await conn.execute(_TRUNCATE_WRITTEN)
+        finally:
+            await engine.dispose()
     get_engine.cache_clear()
 
 
 @pytest.fixture
 async def base_data(db_engine) -> None:
-    """Siembra tenants (A/B private, G gov_shared) + un sitio y sensor por tenant."""
+    """Siembra tenants (A/B private, G gov_shared) + un sitio y sensor por tenant.
+
+    [T-2.115] Tenants y sitios son LAS MISMAS filas que siembra
+    ``tests/auth/conftest.py`` —los UUIDs salen de ``auth_utils``— y no entran en el
+    ``TRUNCATE`` de teardown, así que sobreviven a todo el proceso. Mientras cada
+    familia escribió sus propios valores con ``ON CONFLICT DO NOTHING``, ganaba quien
+    corriese primero: ``tests/auth`` antes que ``tests/api`` ponía rojo
+    ``test_events.py::test_los_votos_traen_el_codigo_de_la_estacion``. La definición
+    única y autoritativa vive ahora en ``tests/seed_shared.py``.
+    """
     engine = get_engine()
     async with engine.begin() as conn:
-        for tid, code, vis in (
-            (au.DB_TENANT_PRIV, "B2_A", "private"),
-            (au.DB_TENANT_PRIV2, "B2_B", "private"),
-            (au.DB_TENANT_GOV, "B2_G", "gov_shared"),
-        ):
-            await conn.execute(
-                text(
-                    "INSERT INTO tenants (tenant_id, code, name, visibility) "
-                    "VALUES (:id, :code, 'B2 test', :vis) "
-                    "ON CONFLICT (tenant_id) DO NOTHING"
-                ),
-                {"id": tid, "code": code, "vis": vis},
-            )
-        for sid, tid, code in (
-            (au.DB_SITE_PRIV, au.DB_TENANT_PRIV, "B2SA"),
-            (au.DB_SITE_PRIV2, au.DB_TENANT_PRIV2, "B2SB"),
-            (au.DB_SITE_GOV, au.DB_TENANT_GOV, "B2SG"),
-        ):
-            await conn.execute(
-                text(
-                    "INSERT INTO sites (site_id, tenant_id, code, name, geom) "
-                    f"VALUES (:sid, :tid, :code, 'Sitio', {_GEOM}) "
-                    "ON CONFLICT (site_id) DO NOTHING"
-                ),
-                {"sid": sid, "tid": tid, "code": code},
-            )
+        await seed_shared_rows(conn)
         for snid, tid, sid in (
             (SENSOR_PRIV, au.DB_TENANT_PRIV, au.DB_SITE_PRIV),
             (SENSOR_PRIV2, au.DB_TENANT_PRIV2, au.DB_SITE_PRIV2),

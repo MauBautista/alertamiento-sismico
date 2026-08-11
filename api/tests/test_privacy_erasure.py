@@ -49,6 +49,11 @@ from takab_api.privacy import erasure
 USER_A = "aaaa0000-0000-0000-0000-0000000a1c01"
 USER_A2 = "aaaa0000-0000-0000-0000-0000000a1c02"
 USER_B = "bbbb0000-0000-0000-0000-0000000b1c01"
+# [T-2.80.b] Los RESPONSABLES del tratamiento: quienes registran y ejecutan una
+# solicitud recibida por escrito. Nunca coinciden con el titular (la base lo
+# impide con un CHECK: una constancia es la solicitud de OTRO).
+ADMIN_A = "aaaa0000-0000-0000-0000-0000000a1ad1"
+ADMIN_B = "bbbb0000-0000-0000-0000-0000000b1ad1"
 
 # Cadenas deliberadamente raras: si sobreviven en cualquier rincón de la base, el
 # barrido de `test_no_queda_rastro_del_titular_en_toda_la_base` las encuentra.
@@ -112,7 +117,8 @@ def _cierra_incidentes(conn: psycopg.Connection) -> None:
 
 
 def _arco(conn: psycopg.Connection, *, right: str = "cancelacion", via: str = "mobile") -> dict:
-    fila = conn.execute("SELECT privacy_erase_subject(%s, %s)", (right, via)).fetchone()
+    # [T-2.80.b] `p_request => NULL` es el camino de la T-2.80, intacto.
+    fila = conn.execute("SELECT privacy_erase_subject(%s, %s, NULL::uuid)", (right, via)).fetchone()
     return fila[0] if isinstance(fila[0], dict) else json.loads(fila[0])
 
 
@@ -574,13 +580,321 @@ def test_una_sesion_sin_titular_no_puede_ejercer_arco(seeded: psycopg.Connection
     seeded.rollback()
 
 
-def test_la_funcion_no_admite_un_sujeto_como_parametro() -> None:
-    """Anclaje de la garantía anterior contra una "mejora" futura.
+def test_la_firma_ensanchada_sigue_sin_admitir_un_sujeto(seeded: psycopg.Connection) -> None:
+    """[T-2.80.b] El ancla de la T-2.80 hizo su trabajo: obligó a razonar aquí.
 
-    Si mañana alguien añade `p_user_sub` para que un administrador pueda ejercer
-    ARCO por otro, este test rompe y obliga a razonar la superficie nueva.
+    La firma creció a tres parámetros y la garantía NO se movió, porque el tercero
+    no es un sujeto: es el ``request_id`` de una constancia, y el sujeto se
+    resuelve dentro contra el padrón de `app_tenant_id()`. Este test mide las dos
+    cosas —el ancla declarada y la firma REAL del catálogo— y además prohíbe por
+    NOMBRE la familia de parámetros que degradaría la garantía. Sin la segunda
+    mitad, alguien podría añadir `p_user_sub` y actualizar la constante.
     """
-    assert erasure.ERASE_FN_ARGS == ("p_right", "p_via")
+    assert erasure.ERASE_FN_ARGS == ("p_right", "p_via", "p_request")
+
+    reset(seeded)
+    firmas = seeded.execute(
+        "SELECT pg_get_function_arguments(p.oid) "
+        "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'public' AND p.proname = 'privacy_erase_subject'"
+    ).fetchall()
+    assert len(firmas) == 1, f"hay más de una puerta de ARCO en la base: {firmas}"
+    partes = [a.strip().split() for a in firmas[0][0].split(",")]
+    nombres = [p[0] for p in partes]
+    assert tuple(nombres) == erasure.ERASE_FN_ARGS
+    # El tercero es un `uuid` de CONSTANCIA, no de sujeto: el sujeto se resuelve
+    # dentro con un JOIN contra el padrón de `app_tenant_id()`.
+    assert [p[1] for p in partes] == ["text", "text", "uuid"]
+    for prohibido in erasure.ERASE_FN_ARGS_PROHIBIDOS:
+        assert not any(prohibido in n for n in nombres), (
+            f"`privacy_erase_subject` ganó un parámetro {prohibido!r}: el sujeto "
+            "dejó de resolverse dentro y la garantía pasó de inexpresable a "
+            "prohibida-por-un-if"
+        )
+
+
+# ---------------------------------------------------------------------------
+# B.2 · [T-2.80.b] El responsable ejecuta un ARCO recibido POR ESCRITO
+#
+# La ficha pide ensanchar la firma SIN perder la garantía de la T-2.80. Lo que se
+# mide aquí es exactamente eso: que el ARCO cruzado siga siendo inexpresable (no
+# "rechazado"), y que sin CONSTANCIA no se pueda tocar un solo dato de nadie.
+# ---------------------------------------------------------------------------
+
+
+def _constancia(
+    conn: psycopg.Connection,
+    *,
+    user: str = USER_A,
+    right: str = "cancelacion",
+    proof: str = "expediente ARCO-2026-014",
+    digest: str = "a" * 64,
+) -> str:
+    """Registra la constancia con la sesión ACTUAL (la del responsable)."""
+    return conn.execute(
+        "INSERT INTO privacy_erasure_requests "
+        "  (user_sub, right_requested, channel, received_at, proof_ref, proof_digest, "
+        "   created_by) "
+        "VALUES (%s,%s,'written', now(), %s, %s, %s) RETURNING request_id",
+        (user, right, proof, digest, ADMIN_A),
+    ).fetchone()[0]
+
+
+def _responsable(conn: psycopg.Connection, *, tenant: str = TENANT_A, user: str = ADMIN_A) -> None:
+    use(conn, "takab_app", tenant=tenant, app_role="tenant_admin", user_id=user)
+
+
+def _arco_por_cuenta_de(conn: psycopg.Connection, request_id: str, *, via: str = "console_admin"):
+    fila = conn.execute(
+        "SELECT privacy_erase_subject(NULL::text, %s::text, %s::uuid)", (via, request_id)
+    ).fetchone()
+    return fila[0] if isinstance(fila[0], dict) else json.loads(fila[0])
+
+
+def test_una_constancia_no_puede_nombrar_a_un_titular_de_otro_tenant(
+    seeded: psycopg.Connection,
+) -> None:
+    """CRITERIO 3. Y fíjate en CÓMO falla: no es un 403 ni un `IF` que compara
+    tenants, es una violación de integridad referencial del FK compuesto contra
+    el padrón del propio cliente. El ARCO cruzado no está prohibido: no se puede
+    escribir.
+    """
+    reset(seeded)
+    _persona(seeded, tenant=TENANT_A, user=USER_A)
+    _persona(
+        seeded,
+        tenant=TENANT_B,
+        user=USER_B,
+        site=SITE_B,
+        incidente=None,
+        nombre="Persona De B",
+        telefono="+525500000001",
+        token="ExponentPushToken[bbb]",
+        llave="-----BEGIN PUBLIC KEY-----bbb-----",
+    )
+    _cierra_incidentes(seeded)
+
+    _responsable(seeded)
+    seeded.execute("SAVEPOINT antes")
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        _constancia(seeded, user=USER_B)
+    seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+
+def test_la_constancia_de_otro_cliente_no_existe_para_este_responsable(
+    seeded: psycopg.Connection,
+) -> None:
+    """CRITERIO 3, la otra mitad: adivinar el `request_id` ajeno tampoco sirve.
+
+    El responsable de A recibe el MISMO error que si la constancia no existiera
+    —y esa indistinguibilidad es la propiedad, no un descuido—: la RLS hace que la
+    fila de B no exista para su sesión, así que el JOIN que produce el sujeto no
+    produce nada. No hay comparación de tenants en ninguna parte del camino.
+    """
+    reset(seeded)
+    _persona(seeded, tenant=TENANT_A, user=USER_A)
+    _persona(
+        seeded,
+        tenant=TENANT_B,
+        user=USER_B,
+        site=SITE_B,
+        incidente=None,
+        nombre="Persona De B",
+        telefono="+525500000001",
+        token="ExponentPushToken[bbb]",
+        llave="-----BEGIN PUBLIC KEY-----bbb-----",
+    )
+    _cierra_incidentes(seeded)
+
+    _responsable(seeded, tenant=TENANT_B, user=ADMIN_B)
+    ajena = seeded.execute(
+        "INSERT INTO privacy_erasure_requests "
+        "  (user_sub, right_requested, channel, received_at, proof_ref, proof_digest, "
+        "   created_by) "
+        "VALUES (%s,'cancelacion','written', now(), 'exp-B', %s, %s) RETURNING request_id",
+        (USER_B, "b" * 64, ADMIN_B),
+    ).fetchone()[0]
+
+    _responsable(seeded, tenant=TENANT_A, user=ADMIN_A)
+    seeded.execute("SAVEPOINT antes")
+    with pytest.raises(psycopg.errors.DatabaseError) as exc:
+        _arco_por_cuenta_de(seeded, ajena)
+    assert exc.value.sqlstate == erasure.SQLSTATE_NO_CONSTANCIA
+    seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+    reset(seeded)
+    b = seeded.execute(
+        "SELECT display_name, phone FROM user_profiles WHERE user_sub = %s", (USER_B,)
+    ).fetchone()
+    assert b == ("Persona De B", "+525500000001"), "el ARCO de A alcanzó al titular de B"
+
+
+def test_sin_constancia_el_responsable_no_puede_tocar_un_solo_dato(
+    seeded: psycopg.Connection,
+) -> None:
+    """CRITERIO 2, medido donde se decide. "Exige constancia" no es un `if` del
+    router: sin fila de solicitud, `app_can_erase_subject` es falso y las
+    políticas RLS que cuelgan de él no existen. Un `UPDATE` directo del
+    responsable sobre el perfil del titular vuelve con CERO filas.
+    """
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+
+    _responsable(seeded)
+    assert (
+        seeded.execute(
+            "SELECT app_can_erase_subject(%s::uuid, %s::uuid)", (TENANT_A, USER_A)
+        ).fetchone()[0]
+        is False
+    )
+    tocadas = seeded.execute(
+        "UPDATE user_profiles SET display_name = %s, phone = NULL "
+        "WHERE user_sub = %s AND tenant_id = %s",
+        (erasure.ERASED_DISPLAY_NAME, USER_A, TENANT_A),
+    ).rowcount
+    assert tocadas == 0, "el responsable anonimizó a alguien sin constancia registrada"
+
+    reset(seeded)
+    assert (
+        seeded.execute(
+            "SELECT display_name FROM user_profiles WHERE user_sub = %s", (USER_A,)
+        ).fetchone()[0]
+        == NOMBRE
+    )
+
+
+def test_con_constancia_el_responsable_ejerce_y_la_lapida_dice_con_que_prueba(
+    seeded: psycopg.Connection,
+) -> None:
+    """El camino feliz, con las tres piezas del criterio 2 en la lápida."""
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+
+    _responsable(seeded)
+    peticion = _constancia(seeded, right="oposicion")
+    lapida = _arco_por_cuenta_de(seeded, peticion)
+
+    assert lapida["created"] is True
+    assert lapida["user_sub"] == USER_A, "el sujeto tiene que salir de la constancia"
+    assert lapida["requested_by"] == ADMIN_A, "quién EJERCIÓ"
+    assert lapida["request_id"] == str(peticion), "con qué PRUEBA"
+    assert lapida["via"] == "console_admin"
+    # El derecho sale del escrito recibido, no de quien ejecuta: si lo pusiera el
+    # ejecutor, el registro podría divergir del documento.
+    assert lapida["right_exercised"] == "oposicion"
+    assert lapida["affected"]["life_checkins"] == 2
+    assert lapida["affected"]["user_profiles"] == 1
+
+    reset(seeded)
+    fila = seeded.execute(
+        "SELECT display_name, phone FROM user_profiles WHERE user_sub = %s", (USER_A,)
+    ).fetchone()
+    assert fila == (erasure.ERASED_DISPLAY_NAME, None)
+
+
+def test_la_constancia_no_autoriza_a_reescribir_el_perfil(seeded: psycopg.Connection) -> None:
+    """La rendija tiene el tamaño exacto del acto, no el del rol.
+
+    Con constancia en mano el responsable puede dejar la fila ANONIMIZADA y nada
+    más: el `WITH CHECK` de `up_arco_on_behalf` solo admite ese estado. Sin este
+    límite, "puedo ejercer tu ARCO" se habría convertido en "puedo editarte".
+    """
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+
+    _responsable(seeded)
+    _constancia(seeded)
+    seeded.execute("SAVEPOINT antes")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(
+            "UPDATE user_profiles SET display_name = 'Nombre Inventado' WHERE user_sub = %s",
+            (USER_A,),
+        )
+    seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+
+def test_la_constancia_es_append_only(seeded: psycopg.Connection) -> None:
+    """Una constancia que se puede editar después no prueba nada (regla de oro 11)."""
+    reset(seeded)
+    _persona(seeded)
+    _responsable(seeded)
+    peticion = _constancia(seeded)
+
+    for sentencia in (
+        f"UPDATE privacy_erasure_requests SET proof_digest = '{'c' * 64}'",
+        "DELETE FROM privacy_erasure_requests",
+    ):
+        seeded.execute("SAVEPOINT antes")
+        with pytest.raises(psycopg.errors.Error):
+            seeded.execute(sentencia)
+        seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+    assert peticion is not None
+
+
+def test_el_autoservicio_de_la_t280_no_se_movio(seeded: psycopg.Connection) -> None:
+    """La firma se ensanchó; el camino del titular es el MISMO.
+
+    `p_request => NULL` es literalmente la T-2.80: sujeto = `app_user_id()`,
+    `requested_by` = el propio titular, `request_id` nulo.
+    """
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    _titular(seeded)
+    lapida = _arco(seeded)
+    assert lapida["user_sub"] == USER_A
+    assert lapida["requested_by"] == USER_A
+    assert lapida["request_id"] is None
+    assert lapida["via"] == "mobile"
+
+
+def test_la_via_no_puede_mentir_sobre_quien_ejercio(seeded: psycopg.Connection) -> None:
+    """Un CHECK ata `via` a la existencia de constancia en las dos direcciones.
+
+    Sin él, una lápida `console_admin` sin `request_id` diría "lo ejerció el
+    responsable" sin que existiera la solicitud que lo autorizó — y una `mobile`
+    con constancia diría lo contrario. El registro no puede admitir esas dos
+    formas de mentir.
+    """
+    reset(seeded)
+    _persona(seeded)
+    # Constancia real (como superusuario: aquí se prueba el CHECK, no la RLS).
+    peticion = seeded.execute(
+        "INSERT INTO privacy_erasure_requests "
+        "  (tenant_id, user_sub, right_requested, channel, received_at, proof_ref, "
+        "   proof_digest, created_by) "
+        "VALUES (%s,%s,'cancelacion','written', now(), 'exp-1', %s, %s) RETURNING request_id",
+        (TENANT_A, USER_A, "e" * 64, ADMIN_A),
+    ).fetchone()[0]
+
+    for via, request_id in (("console_admin", None), ("mobile", peticion)):
+        seeded.execute("SAVEPOINT antes")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            seeded.execute(
+                "INSERT INTO privacy_erasures "
+                "  (tenant_id, user_sub, right_exercised, requested_by, request_id, via, "
+                "   audit_watermark, audit_digest) "
+                "VALUES (%s,%s,'cancelacion',%s,%s,%s,0,%s)",
+                (TENANT_A, USER_A, ADMIN_A, request_id, via, "d" * 64),
+            )
+        seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+
+def test_lo_que_esta_tarea_no_hace_esta_escrito_y_nombra_a_cognito() -> None:
+    """CRITERIO 4. Un límite que no está escrito se cruza sin darse cuenta.
+
+    Se comprueba el docstring del módulo porque es donde alguien mira antes de
+    "completar" la anonimización borrando la cuenta del directorio — que es
+    exactamente el error que este párrafo existe para evitar.
+    """
+    doc = erasure.__doc__ or ""
+    assert "LO QUE ESTA TAREA **NO** HACE" in doc
+    assert "Cognito" in doc
+    assert "app de emergencia" in doc, "falta la CONSECUENCIA de dar de baja la cuenta"
 
 
 # ---------------------------------------------------------------------------

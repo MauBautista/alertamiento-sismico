@@ -18,6 +18,20 @@ escribe en una conexión propia que sí commitea. Aquí no se reutiliza aquel he
 porque el conteo del presupuesto y el INSERT tienen que compartir conexión —y por
 tanto contexto RLS— para que cuenten exactamente las filas que van a escribirse.
 
+**Y con la conexión lateral se heredaba su defecto (T-2.112, medido).** El
+`except Exception` de abajo decía "best-effort" pero no lo era: sin tope de espera
+no hay excepción que capturar, solo una espera infinita. Con la transacción del
+request abierta —y sosteniendo el ACCESS SHARE de `audit_log` en cuanto la haya
+leído—, si un tercero pide entretanto el ACCESS EXCLUSIVE de la tabla (el TRUNCATE
+de un teardown, un `VACUUM FULL`, una migración) la lateral se encola detrás de él
+y el ciclo se cierra FUERA de PostgreSQL: request → lateral → ACCESS EXCLUSIVE →
+request. El detector de interbloqueos no lo ve, porque la conexión del request no
+espera un lock: está *idle in transaction*. Reproducido antes del arreglo en
+`tests/api/test_rejection_audit_deadlock.py` (las dos formas se colgaban 25 s hasta
+que el tope del test las cortaba; sin él, para siempre). La costura es la misma que
+cerró T-2.73.c: la lateral fija `lock_timeout` y CEDE — se pierde el contador, que
+queda en el log del servicio, no el 403 ni la conexión.
+
 ## 2. Por qué hay presupuesto, y por qué la última fila es una MARCA
 
 `audit_log` es append-only (trigger `forbid_update_delete` + `REVOKE UPDATE,
@@ -77,7 +91,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from takab_api.audit import audit_async
+from takab_api.audit import LATERAL_LOCK_TIMEOUT, audit_async
 from takab_api.db.session import SessionCtx, get_tenant_conn
 
 if TYPE_CHECKING:
@@ -135,6 +149,13 @@ async def audit_command_rejection(
     ``tenant_id`` es el del sitio TOCADO. Best-effort por diseño: si la conexión
     secundaria falla, la decisión de seguridad del request no cambia — perder una
     fila de bitácora es preferible a convertir un 403 en un 500.
+
+    [T-2.112] Ese "best-effort" ahora incluye **no esperar para siempre**: la lateral
+    fija el mismo ``lock_timeout`` que ``audit.audit_out_of_band_async`` (§1 del
+    docstring del módulo). El ``except`` sigue siendo ancho aquí —a diferencia del de
+    ``audit.py``, que se estrechó a ``SQLAlchemyError``— porque esta ruta se invoca en
+    mitad de un camino de RECHAZO: un fallo de Python en el helper no puede convertir
+    un 403 en un 500. Divergencia deliberada, no descuido.
     """
     actor = f"user:{claims.sub}"
     # El contexto RLS es el del tenant TOCADO a propósito: así el conteo ve
@@ -143,6 +164,10 @@ async def audit_command_rejection(
     ctx = SessionCtx(tenant_id=tenant_id, role=claims.role, user_id=claims.sub)
     try:
         async with get_tenant_conn(ctx) as conn:
+            # [T-2.112] Tope de espera de la LATERAL, antes de tocar `audit_log`. Se
+            # importa el de `audit.py` a propósito: es UNA sola política para las dos
+            # conexiones laterales del proyecto, y dos copias derivarían en silencio.
+            await conn.execute(LATERAL_LOCK_TIMEOUT)
             used = await conn.scalar(
                 _RECENT,
                 {

@@ -39,8 +39,10 @@ Acciones (derivadas de §2 + notas §4):
   depende de la distancia entre sitios): es una acción de dueño, no de soporte.
 
 Esta tabla es la fuente ÚNICA: ``routers/dictamens`` deriva de ella ``SIGN_ROLES``,
-``routers/exports`` deriva ``EXPORT_ROLES`` y ``routers/reports`` deriva
-``REPORT_ROLES``. Ningún router vuelve a listar roles a mano.
+``routers/exports`` deriva ``EXPORT_ROLES``, ``routers/reports`` deriva
+``REPORT_ROLES`` y ``routers/privacy`` deriva ``NOTICE_ROLES`` (T-2.79.e cerró la
+última excepción, que llevaba desde T-2.79 declarada como deuda en el propio
+router) y ``ERASURE_ROLES`` (T-2.80.b). Ningún router vuelve a listar roles a mano.
 """
 
 from __future__ import annotations
@@ -185,6 +187,44 @@ ACTIONS: tuple[str, ...] = (
     # de cliente: vigilan la infraestructura común de TODOS los tenants, así que
     # ningún tenant puede callarlas — ni siquiera "solo un rato".
     "platform_maintenance_window",
+    # [T-2.79.e] Publicar el AVISO DE PRIVACIDAD del tenant (POST /privacy/notices) y
+    # dejar constancia del consentimiento de un TERCERO sin sesión (un teléfono: el
+    # opt-in de WhatsApp de T-2.77). Van juntas porque son el mismo círculo de
+    # confianza — el DUEÑO del cliente. Bajo la LFPDPPP el *responsable* de los datos
+    # de los ocupantes de un inmueble es la organización dueña del inmueble, así que
+    # publicar su aviso es un acto SUYO: superadmin/tenant_admin, el mismo círculo
+    # que ``edit_thresholds`` / ``drill_start``.
+    #
+    # ``takab_support`` queda fuera a propósito, pese a su "Total" en §2: soporte lee
+    # la plataforma, no firma el aviso de privacidad de un cliente en su nombre.
+    # Misma disciplina que ``manage_fleet`` y ``manage_users``.
+    #
+    # La frontera de seguridad REAL es la RLS ``pn_publish`` (``tenant_id =
+    # app_tenant_id() AND app_role() IN ('tenant_admin','takab_superadmin')``), que
+    # además exige que la fila sea del PROPIO tenant — algo que ninguna matriz de
+    # roles puede expresar. Esta acción solo hace que el 403 llegue limpio y que la
+    # consola no pinte un botón que siempre fallaría (regla de oro 7).
+    "manage_privacy_notice",
+    # [T-2.80.b] Registrar una solicitud ARCO recibida POR ESCRITO y ejecutarla por
+    # cuenta del titular (``POST /privacy/erasure-requests`` y su ``/erasure``).
+    # Mismo círculo y misma razón que la anterior: bajo la LFPDPPP una solicitud
+    # ARCO se le manda AL RESPONSABLE del tratamiento —la organización dueña del
+    # inmueble—, no a TAKAB. ``takab_support`` fuera por el mismo criterio: soporte
+    # lee la plataforma, no anonimiza al ocupante de un cliente en su nombre.
+    #
+    # Va SEPARADA de ``manage_privacy_notice`` aunque compartan roles, y no por
+    # simetría: publicar un aviso es reversible publicando otra versión; anonimizar
+    # a una persona no se deshace. Fundirlas obligaría a conceder la irreversible
+    # para dar la reversible el día que los círculos dejen de coincidir.
+    #
+    # Lo que esta acción NO es —y aquí importa más que en ninguna otra— es la
+    # frontera. Ejercer ARCO por cuenta de otro exige CONSTANCIA registrada, y eso
+    # lo impone la base: ``app_can_erase_subject`` gatea cinco políticas RLS. El
+    # confinamiento por tenant tampoco vive aquí: la constancia lleva un FK
+    # compuesto contra el padrón del propio cliente, así que nombrar a un titular
+    # ajeno viola integridad referencial. Esta acción solo hace que el 403 llegue
+    # limpio (regla de oro 7).
+    "manage_privacy_erasure",
 )
 
 
@@ -218,6 +258,8 @@ def _actions(
     panel_read: bool = False,
     maintenance_window: bool = False,
     platform_maintenance_window: bool = False,
+    manage_privacy_notice: bool = False,
+    manage_privacy_erasure: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -248,6 +290,8 @@ def _actions(
         "panel_read": panel_read,
         "maintenance_window": maintenance_window,
         "platform_maintenance_window": platform_maintenance_window,
+        "manage_privacy_notice": manage_privacy_notice,
+        "manage_privacy_erasure": manage_privacy_erasure,
     }
 
 
@@ -276,6 +320,13 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # La segunda solo aquí — apaga la vigilancia de la infra común.
         maintenance_window=True,
         platform_maintenance_window=True,
+        # [T-2.79.e] Publica el aviso de privacidad del cliente. La RLS ``pn_publish``
+        # lo acota además a filas del PROPIO tenant del token.
+        manage_privacy_notice=True,
+        # [T-2.80.b] Ejecuta una solicitud ARCO recibida por escrito. A quién
+        # alcanza no lo decide esta celda: lo decide la CONSTANCIA, y su FK contra
+        # el padrón del cliente.
+        manage_privacy_erasure=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -292,6 +343,12 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         enrollment_manage=True,
         # [T-2.71] Su propio gabinete, jamás las alarmas ec2_* de la plataforma.
         maintenance_window=True,
+        # [T-2.79.e] El *responsable* de los datos de sus ocupantes es él: su aviso
+        # de privacidad lo publica él, no TAKAB en su nombre.
+        manage_privacy_notice=True,
+        # [T-2.80.b] Y por lo mismo, la solicitud ARCO por escrito se la mandan A
+        # ÉL: es quien tiene la obligación de ejecutarla.
+        manage_privacy_erasure=True,
     ),
     "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.

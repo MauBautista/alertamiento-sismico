@@ -148,12 +148,20 @@ class NoticePublishedOut(BaseModel):
 Right = Literal["cancelacion", "oposicion"]
 
 
+#: [T-2.80.b] Cómo LLEGÓ la solicitud escrita. No confundir con ``Via``, que es
+#: cómo se EJERCIÓ el borrado: son dos actos distintos y separarlos es la mitad
+#: del registro que exige el criterio 2 de la ficha.
+RequestChannel = Literal["written", "email", "in_person", "legal_representative"]
+
+
 class ErasureIn(BaseModel):
     """Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**
 
     El titular del borrado es siempre el portador del token: ejercer ARCO sobre
-    un tercero no está prohibido, es inexpresable — ni en este contrato ni en la
-    función de base de datos que lo ejecuta.
+    un tercero por esta puerta no está prohibido, es inexpresable — ni en este
+    contrato ni en la función de base de datos que lo ejecuta. La puerta del
+    responsable es otra (``ErasureOnBehalfIn``) y tampoco lleva sujeto: lleva la
+    constancia de la solicitud recibida.
 
     ``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda
     en ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no
@@ -165,6 +173,72 @@ class ErasureIn(BaseModel):
 
     right: Right = "cancelacion"
     via: Literal["mobile", "web"] = "web"
+    confirm: Literal[True]
+
+
+class ErasureRequestIn(BaseModel):
+    """[T-2.80.b] La CONSTANCIA de una solicitud ARCO recibida por escrito.
+
+    Es lo que convierte "alguien me lo pidió" en algo verificable. ``proof_ref``
+    dice DÓNDE está el escrito (folio, expediente, clave de objeto) y
+    ``proof_digest`` prueba CUÁL es: sin el digest, la constancia sería la palabra
+    del responsable contra la del titular, y con él es un documento concreto que
+    no se puede sustituir después.
+
+    ``user_sub`` viaja en claro y no es un agujero: el FK compuesto contra
+    ``user_profiles (tenant_id, user_sub)`` solo admite a alguien del PROPIO
+    padrón, así que nombrar a un titular de otro cliente no se rechaza por una
+    comprobación — viola integridad referencial.
+
+    Lo que este contrato NO tiene: el documento. Guardarlo aquí metería PII eterna
+    en una tabla que la regla de oro 11 impide podar.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_sub: UUID
+    right: Right = "cancelacion"
+    channel: RequestChannel = "written"
+    #: Cuándo LLEGÓ la solicitud. Es de donde corre el plazo legal, así que lo
+    #: pone quien la recibió y no el reloj del servidor.
+    received_at: datetime
+    proof_ref: str = Field(min_length=3, max_length=200)
+    proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ErasureRequestOut(BaseModel):
+    """La constancia registrada. Sin PII del titular más allá de su `sub` opaco."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    request_id: UUID
+    user_sub: UUID
+    right_requested: Right
+    channel: RequestChannel
+    received_at: datetime
+    proof_ref: str
+    proof_digest: str
+    #: Quién la REGISTRÓ. Nunca es el titular (la base lo impide con un CHECK):
+    #: confundirlos borraría la diferencia entre "la persona lo solicitó" y "un
+    #: administrador lo dio por hecho".
+    created_by: UUID
+    created_at: datetime
+
+
+class ErasureOnBehalfIn(BaseModel):
+    """[T-2.80.b] Ejecutar una constancia. **Sin sujeto y sin derecho.**
+
+    Las dos ausencias son la tarea entera. El sujeto, porque aceptarlo reabriría
+    el ARCO cruzado que T-2.80 hizo inexpresable: la constancia va en la RUTA y el
+    sujeto se resuelve dentro de la base contra el padrón del tenant de la sesión.
+    El derecho, porque el escrito recibido ya dice qué se pidió — dejar que el
+    ejecutor lo re-declare permitiría que el registro divergiera del documento.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Cómo se EJERCIÓ (≠ ``channel``, que es cómo llegó la solicitud).
+    via: Literal["console_admin", "out_of_band"] = "console_admin"
     confirm: Literal[True]
 
 
@@ -182,6 +256,14 @@ class ErasureOut(BaseModel):
     erasure_id: UUID
     user_sub: UUID
     right_exercised: Right
+    #: [T-2.80.b] Quién EJERCIÓ el acto ante el sistema: el titular (autoservicio)
+    #: o el responsable que ejecutó una constancia. Quién lo pidió materialmente
+    #: está en la constancia; en autoservicio los dos coinciden por construcción.
+    requested_by: UUID
+    #: [T-2.80.b] La constancia que autoriza el acto, o ``null`` en autoservicio.
+    #: La base impide que esa correspondencia mienta: un CHECK exige que
+    #: ``request_id IS NULL`` sea exactamente ``via IN ('mobile','web')``.
+    request_id: UUID | None = None
     via: Via
     affected: dict[str, int]
     #: Último ``audit_id`` del tenant en el instante del borrado.

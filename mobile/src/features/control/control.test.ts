@@ -8,6 +8,7 @@ import { derToPem } from "@/security/deviceKey";
 
 import { ackView } from "./ackState";
 import { executeTacticalCommand } from "./service";
+import { ACK_FALLBACK_TTL_MS, ACK_GRACE_MS, ackCeilingMs } from "./useCommandAck";
 
 jest.mock("expo-secure-store", () => {
   const store = new Map<string, string>();
@@ -101,17 +102,54 @@ describe("ackView — jamás finge éxito (spec 2.2)", () => {
     expect(ackView(cmd({ status: "pending" })).phase).toBe("pending");
   });
 
+  // [T-2.116] Estos dos casos usaban `ack: { siren: "on"|"off" }`, un campo que
+  // NINGÚN contrato tuvo jamás: el acuse real lleva `channel_state`, el estado
+  // del canal tras el arbitraje de demandas del gabinete (schema 1.11.0). El
+  // vector completo, producido por el gabinete real, vive en
+  // `edge/tests/vectors/command_ack_siren_arbitrado.json`.
+  const rele = (activated: boolean) => ({
+    channel: "siren",
+    action: "deactivate",
+    success: true,
+    detail: "relay",
+    channel_state: {
+      channel: "siren",
+      energized: activated,
+      activated,
+      fail_safe: "NO",
+      reason: activated ? "alert" : null,
+      alert_latched: activated,
+    },
+  });
+
   it("silenciar CON alerta vigente: la sirena SIGUE activa, se explica", () => {
-    const v = ackView(cmd({ action: "deactivate", status: "acked", ack: { siren: "on" } }));
+    const v = ackView(cmd({ action: "deactivate", status: "acked", ack: rele(true) }));
     expect(v.title).toMatch(/LA SIRENA SIGUE ACTIVA/);
+    expect(v.detail).toMatch(/relé de la sirena TODAVÍA ENERGIZADO/);
     expect(v.detail).toMatch(/alerta vigente/);
     expect(v.tone).toBe("warn");
   });
 
   it("silenciar sin otra demanda: sirena silenciada", () => {
-    const v = ackView(cmd({ action: "deactivate", status: "acked", ack: { siren: "off" } }));
+    const v = ackView(cmd({ action: "deactivate", status: "acked", ack: rele(false) }));
     expect(v.title).toBe("SIRENA SILENCIADA");
     expect(v.tone).toBe("ok");
+  });
+
+  it("el relé del acuse MANDA sobre la fase: apagado en alerta ⇒ silenciada", () => {
+    // Sin esto, `alertActive` (inferencia de T-2.107) taparía un hecho medido.
+    const v = ackView(cmd({ action: "deactivate", status: "acked", ack: rele(false) }), {
+      alertActive: true,
+    });
+    expect(v.title).toBe("SIRENA SILENCIADA");
+  });
+
+  it("activar y que el relé NO quede energizado se DECLARA, no se celebra", () => {
+    const v = ackView(
+      cmd({ action: "activate", status: "acked", ack: { ...rele(false), action: "activate" } }),
+    );
+    expect(v.title).toMatch(/LA SIRENA NO QUEDÓ ACTIVA/);
+    expect(v.tone).toBe("crit");
   });
 
   it("rejected/expired se declaran con su causa", () => {
@@ -119,6 +157,56 @@ describe("ackView — jamás finge éxito (spec 2.2)", () => {
       /relé abierto/,
     );
     expect(ackView(cmd({ status: "expired" })).phase).toBe("expired");
+  });
+
+  // [T-2.107] El acuse REAL no trae censo del relé (`handle_command_ack`
+  // persiste channel/action/success/latency/detail); la fuente de «sigue
+  // sonando» es entonces la alerta vigente, y se nombra.
+  it("silenciar con ALERTA VIGENTE (acuse sin relé): tampoco finge éxito", () => {
+    const v = ackView(
+      cmd({ action: "deactivate", status: "acked", ack: { success: true, detail: "relay" } }),
+      { alertActive: true },
+    );
+    expect(v.title).toMatch(/LA SIRENA SIGUE ACTIVA/);
+    expect(v.detail).toMatch(/ALERTA VIGENTE/);
+    expect(v.tone).toBe("warn");
+  });
+
+  it("sin alerta vigente el mismo acuse SÍ silencia (la frase no está a fuego)", () => {
+    const v = ackView(
+      cmd({ action: "deactivate", status: "acked", ack: { success: true, detail: "relay" } }),
+      { alertActive: false },
+    );
+    expect(v.title).toBe("SIRENA SILENCIADA");
+  });
+
+  it("techo vencido ⇒ «sin confirmación», que NO es el `expired` del servidor", () => {
+    const v = ackView(cmd({ status: "pending" }), { unconfirmed: true, waitCeilingS: 35 });
+    expect(v.phase).toBe("unconfirmed");
+    expect(v.title).toBe("SIN CONFIRMACIÓN DEL GABINETE");
+    expect(v.detail).toMatch(/35 s/);
+    expect(v.detail).toMatch(/NO se sabe si el gabinete ejecutó la orden/);
+    // El veredicto del servidor manda sobre el techo local: si el servidor ya
+    // dijo algo, se dice lo del servidor.
+    expect(ackView(cmd({ status: "expired" }), { unconfirmed: true }).phase).toBe("expired");
+  });
+
+  it("la espera declara su techo desde el primer instante", () => {
+    expect(ackView(cmd({ status: "pending" }), { waitCeilingS: 35 }).detail).toMatch(/hasta 35 s/);
+  });
+});
+
+describe("ackCeilingMs — el techo sale del TTL REAL del comando", () => {
+  it("mide `expires_at − issued_at` (tiempo del SERVIDOR) + gracia de sondeo", () => {
+    // 30 s es `Settings.command_ttl_s`; la resta se hace entre dos instantes
+    // del MISMO reloj, así que el desfase del teléfono no entra en la cuenta.
+    expect(ackCeilingMs(cmd({}))).toBe(30_000 + ACK_GRACE_MS);
+  });
+
+  it("marcas de tiempo ilegibles ⇒ el TTL declarado, jamás una espera infinita", () => {
+    expect(ackCeilingMs(cmd({ expires_at: "", issued_at: "" }))).toBe(
+      ACK_FALLBACK_TTL_MS + ACK_GRACE_MS,
+    );
   });
 });
 

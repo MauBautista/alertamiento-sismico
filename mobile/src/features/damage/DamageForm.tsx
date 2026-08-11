@@ -34,6 +34,10 @@ export function DamageForm(props: {
   notes: string;
   evidenceCount: number;
   busy: boolean;
+  /** [T-2.108] Desenlace del último envío, en el idioma de la persona. Antes
+   *  se colaba dentro del propio campo de notas ("Reporte enviado…"), que es
+   *  el sitio donde ella escribe: se leía como si lo hubiera tecleado. */
+  status: { text: string; ok: boolean } | null;
   onToggle: (key: DamageKey) => void;
   onSeverity: (key: DamageKey, sev: Severity) => void;
   onNotes: (t: string) => void;
@@ -50,6 +54,17 @@ export function DamageForm(props: {
   return (
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <Text style={styles.eyebrow}>REPORTE RÁPIDO DE DAÑOS</Text>
+
+      {props.status ? (
+        <View
+          style={[styles.statusBanner, props.status.ok ? styles.statusOk : styles.statusBad]}
+          testID="damage-status"
+        >
+          <Text style={[styles.statusText, { color: props.status.ok ? palette.ok : palette.crit }]}>
+            {props.status.text}
+          </Text>
+        </View>
+      ) : null}
 
       {urgent ? (
         <View style={styles.urgentBanner} testID="urgent-banner">
@@ -141,6 +156,15 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: palette.bg },
   wrap: { padding: space[4], paddingTop: 64, gap: space[2] },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
+  statusBanner: {
+    backgroundColor: palette.card,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: space[3],
+  },
+  statusOk: { borderColor: palette.ok },
+  statusBad: { borderColor: palette.crit },
+  statusText: { fontSize: fontSize.sm, lineHeight: 20 },
   urgentBanner: {
     backgroundColor: palette.crit,
     borderRadius: radius.md,

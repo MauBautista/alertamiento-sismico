@@ -1,15 +1,22 @@
 // 2.4 · Formulario de daños del táctico → alimenta el Triage de la consola.
-// Las fotos forenses (2.3) se capturan en /camera y quedan ligadas por
-// evidence_id. people_trapped ⇒ prioridad máxima (el backend notifica al SOC).
-import { submitDamageReportIncidentsIncidentIdDamageReportsPost } from "@takab/sdk";
+// Las fotos forenses (2.3) se capturan en /camera y quedan ligadas por su id
+// LOCAL en la cola. people_trapped ⇒ prioridad máxima: el reporte salta al
+// frente de la cola (§2.4) y el backend notifica al SOC.
+//
+// [T-2.108] Antes esto hacía POST directo. Dos fallos en uno: sin red el
+// reporte se PERDÍA, y el cliente del SDK LANZA al morir `fetch`, así que el
+// `catch` inexistente dejaba `busy` en true para siempre — el botón se
+// quedaba en "ENVIANDO…" sin decir nada. Ahora se encola (escritura local, no
+// red) y todos los desenlaces se declaran.
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
 import { useAlertState } from "@/features/alert/useAlertState";
-import type { DamageKey, Severity } from "@/features/damage/categories";
+import { queuePriority, type DamageKey, type Severity } from "@/features/damage/categories";
 import { DamageForm } from "@/features/damage/DamageForm";
 import { useDamageDraft } from "@/features/damage/draft.store";
-import { buildDamageReportBody } from "@/features/damage/payload";
+import { useQueueStore } from "@/offline/queue.store";
+import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 
@@ -24,7 +31,7 @@ export default function Triage() {
   const [selected, setSelected] = useState<Map<DamageKey, Severity>>(new Map());
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null);
 
   const toggle = (key: DamageKey) => {
     setSelected((prev) => {
@@ -46,24 +53,41 @@ export default function Triage() {
       return;
     }
     setBusy(true);
+    setStatus(null);
     void (async () => {
-      const body = buildDamageReportBody({
-        categories: [...selected.entries()].map(([key, severity]) => ({ key, severity })),
-        notes,
-        zoneId: data?.my_zone?.zone_id ?? null,
-        evidenceIds,
-        tsDevice: new Date().toISOString(),
-      });
-      const res = await submitDamageReportIncidentsIncidentIdDamageReportsPost({
-        path: { incident_id: incidentId },
-        body,
-      });
-      setBusy(false);
-      if (res.data) {
+      try {
+        const categories = [...selected.entries()].map(([key, severity]) => ({ key, severity }));
+        await useQueueStore.getState().enqueueDamageReport(
+          {
+            incident_id: incidentId,
+            categories,
+            notes: notes.trim() || null,
+            zone_id: data?.my_zone?.zone_id ?? null,
+            // Ids LOCALES de las fotos de esta cola: el `evidence_id` del
+            // servidor se resuelve al despachar (en avión aún no existe).
+            evidence_refs: evidenceIds,
+            ts_device: new Date().toISOString(),
+          },
+          queuePriority(categories),
+        );
         resetDraft();
         setSelected(new Map());
         setNotes("");
-        setSent(true);
+        setStatus({
+          ok: true,
+          text: "Reporte guardado en este teléfono y en cola de envío. Se enviará solo al haber red — véalo en Sincronización.",
+        });
+        // Con red sale en el acto; sin red lo hará el listener al reconectar.
+        void drainQueue();
+      } catch {
+        // Encolar es una escritura LOCAL: si falla, el dato no existe en
+        // ninguna parte y callarlo sería lo peor que puede hacer esta pantalla.
+        setStatus({
+          ok: false,
+          text: "No se pudo guardar el reporte en este teléfono. No se ha enviado nada: vuelva a intentarlo.",
+        });
+      } finally {
+        setBusy(false);
       }
     })();
   };
@@ -79,16 +103,17 @@ export default function Triage() {
       <DamageForm
         busy={busy}
         evidenceCount={evidenceIds.length}
-        notes={sent ? "Reporte enviado. Puede levantar otro." : notes}
+        notes={notes}
         onAddPhoto={() => router.push("/camera")}
         onNotes={(t) => {
-          setSent(false);
+          setStatus(null);
           setNotes(t);
         }}
         onSeverity={setSeverity}
         onSubmit={submit}
         onToggle={toggle}
         selected={selected}
+        status={status}
       />
     </StateFrame>
   );

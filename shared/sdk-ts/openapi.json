@@ -2401,7 +2401,7 @@
       },
       "ErasureIn": {
         "additionalProperties": false,
-        "description": "Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**\n\nEl titular del borrado es siempre el portador del token: ejercer ARCO sobre\nun tercero no está prohibido, es inexpresable — ni en este contrato ni en la\nfunción de base de datos que lo ejecuta.\n\n``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda\nen ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no\npuede deshacerse. Que el cliente tenga que escribir ``true`` es lo único que\nsepara un botón mal pulsado de un dato que no vuelve.",
+        "description": "Ejercer cancelación u oposición. **No lleva sujeto, y es a propósito.**\n\nEl titular del borrado es siempre el portador del token: ejercer ARCO sobre\nun tercero por esta puerta no está prohibido, es inexpresable — ni en este\ncontrato ni en la función de base de datos que lo ejecuta. La puerta del\nresponsable es otra (``ErasureOnBehalfIn``) y tampoco lleva sujeto: lleva la\nconstancia de la solicitud recibida.\n\n``confirm`` no es burocracia: la anonimización es IRREVERSIBLE (no se guarda\nen ningún sitio el mapeo que se destruye), así que un ``POST`` accidental no\npuede deshacerse. Que el cliente tenga que escribir ``true`` es lo único que\nsepara un botón mal pulsado de un dato que no vuelve.",
         "properties": {
           "confirm": {
             "const": true,
@@ -2431,6 +2431,31 @@
           "confirm"
         ],
         "title": "ErasureIn",
+        "type": "object"
+      },
+      "ErasureOnBehalfIn": {
+        "additionalProperties": false,
+        "description": "[T-2.80.b] Ejecutar una constancia. **Sin sujeto y sin derecho.**\n\nLas dos ausencias son la tarea entera. El sujeto, porque aceptarlo reabriría\nel ARCO cruzado que T-2.80 hizo inexpresable: la constancia va en la RUTA y el\nsujeto se resuelve dentro de la base contra el padrón del tenant de la sesión.\nEl derecho, porque el escrito recibido ya dice qué se pidió — dejar que el\nejecutor lo re-declare permitiría que el registro divergiera del documento.",
+        "properties": {
+          "confirm": {
+            "const": true,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "via": {
+            "default": "console_admin",
+            "enum": [
+              "console_admin",
+              "out_of_band"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "ErasureOnBehalfIn",
         "type": "object"
       },
       "ErasureOut": {
@@ -2466,6 +2491,23 @@
             "title": "Erasure Id",
             "type": "string"
           },
+          "request_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
           "right_exercised": {
             "enum": [
               "cancelacion",
@@ -2494,6 +2536,7 @@
           "erasure_id",
           "user_sub",
           "right_exercised",
+          "requested_by",
           "via",
           "affected",
           "audit_watermark",
@@ -2524,6 +2567,130 @@
           "audit_intact"
         ],
         "title": "ErasureProofOut",
+        "type": "object"
+      },
+      "ErasureRequestIn": {
+        "additionalProperties": false,
+        "description": "[T-2.80.b] La CONSTANCIA de una solicitud ARCO recibida por escrito.\n\nEs lo que convierte \"alguien me lo pidió\" en algo verificable. ``proof_ref``\ndice DÓNDE está el escrito (folio, expediente, clave de objeto) y\n``proof_digest`` prueba CUÁL es: sin el digest, la constancia sería la palabra\ndel responsable contra la del titular, y con él es un documento concreto que\nno se puede sustituir después.\n\n``user_sub`` viaja en claro y no es un agujero: el FK compuesto contra\n``user_profiles (tenant_id, user_sub)`` solo admite a alguien del PROPIO\npadrón, así que nombrar a un titular de otro cliente no se rechaza por una\ncomprobación — viola integridad referencial.\n\nLo que este contrato NO tiene: el documento. Guardarlo aquí metería PII eterna\nen una tabla que la regla de oro 11 impide podar.",
+        "properties": {
+          "channel": {
+            "default": "written",
+            "enum": [
+              "written",
+              "email",
+              "in_person",
+              "legal_representative"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "proof_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proof Digest",
+            "type": "string"
+          },
+          "proof_ref": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Proof Ref",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "right": {
+            "default": "cancelacion",
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right",
+            "type": "string"
+          },
+          "user_sub": {
+            "format": "uuid",
+            "title": "User Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_sub",
+          "received_at",
+          "proof_ref",
+          "proof_digest"
+        ],
+        "title": "ErasureRequestIn",
+        "type": "object"
+      },
+      "ErasureRequestOut": {
+        "description": "La constancia registrada. Sin PII del titular más allá de su `sub` opaco.",
+        "properties": {
+          "channel": {
+            "enum": [
+              "written",
+              "email",
+              "in_person",
+              "legal_representative"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "proof_digest": {
+            "title": "Proof Digest",
+            "type": "string"
+          },
+          "proof_ref": {
+            "title": "Proof Ref",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "right_requested": {
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right Requested",
+            "type": "string"
+          },
+          "user_sub": {
+            "format": "uuid",
+            "title": "User Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "user_sub",
+          "right_requested",
+          "channel",
+          "received_at",
+          "proof_ref",
+          "proof_digest",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ErasureRequestOut",
         "type": "object"
       },
       "ErrorFrame": {
@@ -2776,6 +2943,18 @@
             "maxLength": 120,
             "title": "Content Type",
             "type": "string"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
           },
           "sha256": {
             "maxLength": 64,
@@ -4952,6 +5131,14 @@
             "title": "Manage Fleet",
             "type": "boolean"
           },
+          "manage_privacy_erasure": {
+            "title": "Manage Privacy Erasure",
+            "type": "boolean"
+          },
+          "manage_privacy_notice": {
+            "title": "Manage Privacy Notice",
+            "type": "boolean"
+          },
           "manage_retire_code": {
             "title": "Manage Retire Code",
             "type": "boolean"
@@ -5045,13 +5232,77 @@
           "dictamen_read",
           "panel_read",
           "maintenance_window",
-          "platform_maintenance_window"
+          "platform_maintenance_window",
+          "manage_privacy_notice",
+          "manage_privacy_erasure"
         ],
         "title": "MeActions",
         "type": "object"
       },
+      "MeEnrolledSite": {
+        "description": "[T-2.114] Inmueble en el que el portador está ENROLADO (R2).\n\nEl enrolamiento vive en ``user_zone_assignments`` y NO viaja en el claim de\nCognito: el alcance móvil se resuelve server-side desde que existe T-2.03.\nPublicarlo aquí es lo que permite al teléfono dejar de ser la única memoria\nde a qué edificio pertenece un ocupante — y, por tanto, soltar ese dato al\ncerrar sesión sin dejar tirado a nadie.",
+        "properties": {
+          "evac_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evac Policy"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "zone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "zone_id",
+          "zone_name",
+          "evac_policy",
+          "role"
+        ],
+        "title": "MeEnrolledSite",
+        "type": "object"
+      },
       "MeResponse": {
-        "description": "Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).\n\n``site_scope``: ``\"*\"`` = todo el tenant; lista ordenada de sitios en otro\ncaso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.",
+        "description": "Perfil del portador del token: qué ve y qué puede hacer (RBAC §2/§7).\n\n``site_scope``: ``\"*\"`` = todo el tenant; lista ordenada de sitios en otro\ncaso (vacía = default-deny). Rol móvil-only ⇒ ``allowed_routes`` vacías.\n\n``enrolled_sites`` (T-2.114): los inmuebles del ENROLAMIENTO, que son cosa\ndistinta de ``site_scope`` (ese sale del claim). Vacío = no enrolado, y se\ndeclara vacío en vez de adivinar.",
         "properties": {
           "allowed_actions": {
             "$ref": "#/components/schemas/MeActions"
@@ -5067,6 +5318,14 @@
             "default": false,
             "title": "Console Scope Enforced",
             "type": "boolean"
+          },
+          "enrolled_sites": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MeEnrolledSite"
+            },
+            "title": "Enrolled Sites",
+            "type": "array"
           },
           "role": {
             "title": "Role",
@@ -5168,6 +5427,21 @@
           "calibrated"
         ],
         "title": "MetricSeries",
+        "type": "object"
+      },
+      "MobileBuildingAlarmOut": {
+        "description": "[T-2.106] La alarma del inmueble que está sonando AHORA (fase\n``building_alarm``). Sale del ack de ejecución de un ``siren/activate`` que\nordenó una persona — no de un sismo.\n\nViaja SOLO cuando ``phase == \"building_alarm\"``, por la misma disciplina con\nla que T-2.105 esconde el incidente que no autoriza: exponer los dos hechos\na la vez sería pedirle al cliente que decida cuál pinta.",
+        "properties": {
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since"
+        ],
+        "title": "MobileBuildingAlarmOut",
         "type": "object"
       },
       "MobileDictamenOut": {
@@ -5521,12 +5795,22 @@
         "type": "object"
       },
       "MobileStateOut": {
-        "description": "Estado consolidado por sitio para la app (spec §5).\n\nDerivación de ``phase`` (documentada; el servidor es la autoridad):\n- **[T-2.105] incidente que NO autoriza evacuación → ``idle``, y el incidente\n  NO se expone.** Solo el WR-1 de SASMEX o el cuórum de red (≥\n  ``quorum_min_nodes`` estaciones corroborantes) pueden desplegar una orden\n  de evacuar. Una estación individual por encima del umbral es una\n  ADVERTENCIA para el SOC y para el gabinete —pudo provocarla un factor\n  externo y no un sismo—, así que para el ocupante el sitio sigue en calma:\n  ni toma de pantalla, ni check-in de vida, ni bloqueo de reingreso. En\n  cuanto la red corrobora, el MISMO incidente empieza a autorizar, porque\n  ``node_count`` sale del evento que enlaza el motor de cuórum.\n- sin incidente abierto → ``idle``\n- incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``\n- incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento\n  terminado; el reingreso queda BLOQUEADO durante la evaluación — la app\n  muestra check-in o bloqueo según su propio check-in)\n- dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →\n  ``reentry_approved`` (hasta que el incidente cierre → idle)\nLos ingredientes crudos (incident/state, latest_tier, reentry) viajan junto\na la derivación.",
+        "description": "Estado consolidado por sitio para la app (spec §5).\n\nDerivación de ``phase`` (documentada; el servidor es la autoridad):\n- **[T-2.105] incidente que NO autoriza evacuación → ``idle``, y el incidente\n  NO se expone.** Solo el WR-1 de SASMEX o el cuórum de red (≥\n  ``quorum_min_nodes`` estaciones corroborantes) pueden desplegar una orden\n  de evacuar. Una estación individual por encima del umbral es una\n  ADVERTENCIA para el SOC y para el gabinete —pudo provocarla un factor\n  externo y no un sismo—, así que para el ocupante el sitio sigue en calma:\n  ni toma de pantalla, ni check-in de vida, ni bloqueo de reingreso. En\n  cuanto la red corrobora, el MISMO incidente empieza a autorizar, porque\n  ``node_count`` sale del evento que enlaza el motor de cuórum.\n- sin incidente abierto → ``idle``\n- incidente abierto + último tier del sitio ≠ ``normal`` → ``alert_active``\n- incidente abierto + tier ``normal`` → ``shaking_concluded`` (movimiento\n  terminado; el reingreso queda BLOQUEADO durante la evaluación — la app\n  muestra check-in o bloqueo según su propio check-in)\n- dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →\n  ``reentry_approved`` (hasta que el incidente cierre → idle)\n- **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una\n  persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación\n  sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su\n  diseño— y la app lo anuncia SIN instrucción de evacuación sísmica y SIN el\n  contador T+ de sismo. Existe porque el quórum de pánico emite un\n  ``siren/activate`` firmado y **no crea incidente**, así que hasta hoy el\n  edificio sonaba y el teléfono del ocupante no decía nada.\n\n  · **De dónde sale la verdad de «está sonando»:** del ACK DE EJECUCIÓN del\n    gabinete (``commands.status = 'acked'`` sobre ``siren/activate``), que es\n    el ack que exige la regla de oro 8. Un comando ``pending`` se publicó y\n    nadie confirmó nada; pintarlo como sirena sonando sería la regla de oro 7\n    al revés. Se excluye el actor sistema del cuórum sísmico: esa actuación\n    llega a la app por su incidente, como ``alert_active``.\n  · **Se corrobora contra el gabinete que la ejecutó:** si lleva más de\n    ``sin_enlace_min`` sin latir, o si su ``device_health.relays_state`` dice\n    ``unreadable`` —*«no pude preguntar quién gobierna los pines»*, T-2.70.a—\n    la app NO dice que suena. La nube no persiste el censo de relés canal a\n    canal (migración 0036, a propósito), así que ésta es la corroboración más\n    fuerte que los datos sostienen, y la pantalla está redactada para decir\n    exactamente eso y no más.\n  · **Se apaga** con un ``siren/deactivate`` ejecutado (manda lo último que\n    TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma\n    sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:\n    la app deja de afirmar lo que ya no puede corroborar.\n  · **Precedencia: LO SÍSMICO MANDA SIEMPRE** — ``alert_active`` >\n    ``shaking_concluded`` > ``reentry_approved`` > ``building_alarm`` >\n    ``idle``. Una alarma de inmueble jamás tapa una fase sísmica, y por este\n    camino un pánico **no puede producir ``alert_active`` jamás**. La regla\n    vive en ``commands/alarma_inmueble.fase_del_sitio``.\n\nLos ingredientes crudos (incident/state, latest_tier, reentry) viajan junto\na la derivación.",
         "properties": {
           "assembly_point": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SiteAssetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "building_alarm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MobileBuildingAlarmOut"
               },
               {
                 "type": "null"
@@ -5579,7 +5863,8 @@
               "idle",
               "alert_active",
               "shaking_concluded",
-              "reentry_approved"
+              "reentry_approved",
+              "building_alarm"
             ],
             "title": "Phase",
             "type": "string"
@@ -5872,6 +6157,44 @@
           "published_at"
         ],
         "title": "NoticePublishedOut",
+        "type": "object"
+      },
+      "NotifyChannelOut": {
+        "description": "Un canal del registro de providers y su realidad, tal como arrancó.",
+        "properties": {
+          "channel": {
+            "description": "Clave del canal en el registro (webhook, sms, …).",
+            "title": "Channel",
+            "type": "string"
+          },
+          "simulated": {
+            "description": "true ⇒ este canal NO entrega nada: los jobs quedan 'simulated' y nadie recibe el aviso. Se deriva del provider (`is_simulated`), y quien no se declara real se cuenta como simulado.",
+            "title": "Simulated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "simulated"
+        ],
+        "title": "NotifyChannelOut",
+        "type": "object"
+      },
+      "NotifyChannelsOut": {
+        "description": "Registro completo. Un canal AUSENTE de esta lista no existe en el servidor;\nla consola lo pinta ``S/D`` — nunca «real» (regla de oro 7).",
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NotifyChannelOut"
+            },
+            "title": "Channels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "title": "NotifyChannelsOut",
         "type": "object"
       },
       "PanicVoteIn": {
@@ -10807,7 +11130,7 @@
         "summary": "List Evidence"
       },
       "post": {
-        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.",
+        "description": "[T-2.10 · 2.3] Registra una foto forense (SHA-256 declarado en captura)\ny devuelve un PUT presignado. La foto sube DIRECTO a S3 sin credenciales\nAWS (regla de oro 6); su huella queda guardada para verificarla después.\n\n[T-2.113] IDEMPOTENTE ante los reintentos de la cola offline (regla de oro\n3). El defecto que cierra no era \"una fila duplicada\": el ``evidence_id`` lo\ninventaba el servidor, así que el reintento de la MISMA foto chocaba contra\n``uq_evidence_incident_sha256`` y devolvía un 409 de contrato — la cola lo\nmarcaba ``failed`` y **la fila se quedaba en la base sin su blob en S3 para\nsiempre** (``verified=false`` eterno). Ahora el mismo item vuelve a recibir\n200 con el MISMO id y el MISMO ``s3_key``, y termina de subir.\n\nAislamiento (regla de oro 5): la identidad forense de una foto es\n(incidente, huella). Un ``evidence_id`` que ya existe FUERA de ese par —de\notro incidente, de otro tenant, o con otra huella— es **409**, nunca un\n``DO NOTHING`` silencioso: devolver la fila existente entregaría el id y un\nPUT presignado sobre evidencia ajena. El 409 no distingue el caso (ni filtra\nde qué tenant era) y exige acertar un UUIDv4 para verse siquiera.",
         "operationId": "register_evidence_incidents__incident_id__evidence_post",
         "parameters": [
           {
@@ -11222,7 +11545,7 @@
     },
     "/me": {
       "get": {
-        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.",
+        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.\n\n[T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del\nclaim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo\nprimero, y es exactamente el dato que el teléfono guardaba en solitario.",
         "operationId": "me_me_get",
         "responses": {
           "200": {
@@ -11486,6 +11809,25 @@
         "summary": "Revoke Push Token"
       }
     },
+    "/notify/channels": {
+      "get": {
+        "description": "Realidad de cada canal de notificación, según el registro de este proceso.",
+        "operationId": "list_notify_channels_notify_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChannelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Notify Channels"
+      }
+    },
     "/privacy/consent": {
       "get": {
         "description": "Aviso vigente + estado del consentimiento del portador, en una respuesta.\n\nVan juntos a propósito: separarlos obligaría a la UI a comparar digests, y\nentre las dos peticiones el aviso puede cambiar — pintaría ``current`` sobre\nun texto que ya no es el vigente.",
@@ -11735,6 +12077,102 @@
           }
         },
         "summary": "Exercise Erasure",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/erasure-requests": {
+      "post": {
+        "description": "Deja constancia de una solicitud ARCO recibida fuera de la app.\n\nNo anonimiza nada: registra que llegó un escrito, de quién, cuándo, por qué\ncanal y con qué prueba. La ejecución es el endpoint de abajo, a propósito.\n\nEl ``user_sub`` viaja en el cuerpo y **no abre el ARCO cruzado**: la fila lleva\nun FK compuesto ``(tenant_id, user_sub) → user_profiles`` y el ``tenant_id`` no\nes un parámetro (lo pone ``app_tenant_id()``), así que nombrar a un titular de\notro cliente no se rechaza por una comprobación — viola integridad\nreferencial, y se responde 404 igual que si no existiera. Que las dos\nsituaciones sean indistinguibles es deliberado (regla de oro 5).",
+        "operationId": "record_erasure_request_privacy_erasure_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Erasure Request",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/erasure-requests/{request_id}/erasure": {
+      "post": {
+        "description": "Ejecuta la constancia. **El cuerpo no lleva sujeto, y la ruta tampoco.**\n\nLo que la ruta lleva es el ``request_id`` de una solicitud ya registrada; el\nsujeto y el derecho salen de ella, resueltos DENTRO de la base contra el padrón\ndel tenant de la sesión. Por eso ejercer ARCO sobre un titular ajeno sigue sin\npoder formularse: no hay parámetro que lo nombre en ninguna capa.\n\nMismas tres respuestas que el autoservicio (201 / 200 idempotente / 409\ndiferido por incidente abierto), más un **404** cuando no hay constancia — que\nes también la respuesta a una constancia de otro cliente, porque para esta\nsesión no existe.",
+        "operationId": "exercise_erasure_on_behalf_privacy_erasure_requests__request_id__erasure_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureOnBehalfIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exercise Erasure On Behalf",
         "tags": [
           "privacy"
         ]

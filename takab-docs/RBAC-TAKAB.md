@@ -193,6 +193,85 @@
   - Anclas: `tests/auth/test_matrix.py::test_maintenance_window_is_tenant_admin_action_not_a_field_role`,
     `::test_platform_maintenance_window_is_superadmin_only`,
     `::test_toda_ventana_de_mantenimiento_se_abre_desde_una_ruta_que_el_rol_tiene`.
+- **[DECISION 2026-08-10 · T-2.79.e] `manage_privacy_notice` (aviso de privacidad del
+  cliente, extensión de §2):** publicar el aviso del tenant (`POST /privacy/notices`) y
+  dejar constancia del consentimiento de un **tercero sin sesión** (un teléfono: el
+  opt-in de WhatsApp de T-2.77, `POST /privacy/consents/third-party`) =
+  `takab_superadmin`, `tenant_admin`. Son **una sola acción** porque son el mismo acto
+  jurídico: bajo la LFPDPPP el *responsable* de los datos de los ocupantes de un inmueble
+  es la organización dueña del inmueble, así que publicar su aviso —y registrar a quién
+  se le enseñó qué texto— es un acto SUYO. Mismo círculo que `edit_thresholds` /
+  `drill_start`.
+  - **NO** la recibe `takab_support`, pese a su "Total" en §2: soporte lee la plataforma,
+    no firma el aviso de privacidad de un cliente en su nombre. Misma disciplina que
+    `manage_fleet` y `manage_users`.
+  - **La frontera de seguridad no es esta acción, es la RLS `pn_publish`**
+    (`tenant_id = app_tenant_id() AND app_role() IN ('tenant_admin','takab_superadmin')`):
+    la matriz no sabe decir "y además la fila tiene que ser de TU cliente". La acción
+    existe para que el 403 llegue limpio y la consola no pinte un botón que siempre
+    fallaría (regla de oro 7).
+  - **Consentir NO es una acción de esta matriz.** `POST /privacy/consent` y
+    `POST /privacy/erasure` (ARCO) no llevan guarda de rol a propósito: son derechos del
+    titular del dato, no permisos que se conceden — cualquier sesión autenticada los
+    ejerce **sobre sí misma** y la RLS (`pc_self`, `app_user_id()`) los acota. Ponerles un
+    rol convertiría un derecho en un privilegio.
+  - **`POST /privacy/erasure` (ARCO del titular) tampoco la lleva a ella**, y desde
+    T-2.80.b tampoco lleva `manage_privacy_erasure`: la puerta del responsable es otra
+    ruta. Ver la decisión de abajo.
+  - Esta acción cerró la última lista de roles escrita a mano fuera de `auth/matrix.py`
+    (declarada como deuda en `routers/privacy.py` desde T-2.79). Anclas:
+    `tests/auth/test_matrix.py::test_manage_privacy_notice_is_the_tenant_owner_circle`,
+    `::test_publicar_aviso_conserva_exactamente_los_roles_que_tenia_el_router` (test
+    caracterizador: prueba que mover la lista a la matriz **no movió la frontera**),
+    `::test_el_router_de_privacidad_consulta_la_matriz_y_no_su_propia_lista` y
+    `::test_ninguna_superficie_de_privacidad_enumera_roles_a_mano` (barrido AST de toda
+    la superficie de privacidad/compliance).
+- **[DECISION 2026-08-10 · T-2.80.b] `manage_privacy_erasure` (ejercer un ARCO recibido
+  POR ESCRITO, extensión de §2):** registrar la constancia de una solicitud
+  (`POST /privacy/erasure-requests`) y ejecutarla por cuenta del titular
+  (`POST /privacy/erasure-requests/{request_id}/erasure`) = `takab_superadmin`,
+  `tenant_admin`. Bajo la LFPDPPP una solicitud ARCO se le manda **al responsable del
+  tratamiento** —la organización dueña del inmueble—, no a TAKAB; hasta T-2.80 solo el
+  titular podía ejercerla desde la app, y eso no cubría el caso normal.
+  - **NO** la recibe `takab_support`, por el mismo criterio que `manage_privacy_notice`:
+    soporte lee la plataforma, no anonimiza al ocupante de un cliente en su nombre.
+  - **Es una acción APARTE de `manage_privacy_notice` aunque hoy compartan roles.**
+    Publicar un aviso se deshace publicando otra versión; anonimizar a una persona no se
+    deshace. Fundirlas obligaría a conceder la irreversible para dar la reversible el día
+    que los círculos dejen de coincidir.
+  - **Ejercerlo por cuenta de otro EXIGE CONSTANCIA, y eso no lo decide esta acción.** Lo
+    decide la base: `app_can_erase_subject(tenant, subject)` —"este portador tiene una
+    solicitud registrada para este titular"— gatea cinco políticas RLS
+    (`up_arco_on_behalf`, `pt_arco_on_behalf`, `dk_arco_on_behalf`, `lc_arco_on_behalf`,
+    `pe_on_behalf`). Sin fila en `privacy_erasure_requests` el responsable no puede tocar
+    **un solo dato** de esa persona, y cada política admite en su `WITH CHECK`
+    exactamente la fila ANONIMIZADA: con constancia en mano, `SET display_name = 'Otro'`
+    sigue siendo un error de RLS. El responsable no hereda "editar al ocupante".
+  - **La garantía multi-tenant de T-2.80 no se debilita, y sigue sin ser un `if`.** La
+    firma `privacy_erase_subject` **no recibe sujeto**: recibe el `request_id` de una
+    constancia y resuelve el sujeto uniendo contra el padrón de `app_tenant_id()`. Y una
+    constancia no puede nombrar a un titular ajeno porque lleva un FK **compuesto**
+    `(tenant_id, user_sub) → user_profiles` con el `tenant_id` puesto por
+    `DEFAULT app_tenant_id()`: el ARCO cruzado sigue siendo **inexpresable**, no
+    rechazado. Un `request_id` de otro cliente responde 404 —el mismo que si no
+    existiera—, porque para esa sesión no existe.
+  - **Consentir y ejercer el ARCO PROPIO siguen sin llevar rol.** `POST /privacy/consent`
+    y `POST /privacy/erasure` son derechos del titular sobre sí mismo y la RLS los acota
+    (`pc_self`, `pe_self`, `app_user_id()`). Ponerles esta acción habría convertido un
+    derecho en un privilegio.
+  - **Lo que esta decisión NO cubre: borrar la cuenta en Cognito.** Anonimizar destruye el
+    mapeo `sub → persona` en la base; dar de baja la identidad es otro sistema, con otra
+    consecuencia (quien pierde la cuenta pierde el acceso a la app de emergencia del
+    edificio) y necesita su propia ficha. Razonamiento completo en
+    `api/src/takab_api/privacy/erasure.py`, sección «LO QUE ESTA TAREA NO HACE».
+  - Anclas: `tests/auth/test_matrix.py::test_manage_privacy_erasure_is_the_responsible_circle`,
+    `::test_ejercer_arco_por_otro_es_una_accion_APARTE_de_publicar_el_aviso`,
+    `::test_el_derecho_del_titular_sigue_sin_llevar_rol`,
+    `tests/test_privacy_erasure.py::test_una_constancia_no_puede_nombrar_a_un_titular_de_otro_tenant`,
+    `::test_la_constancia_de_otro_cliente_no_existe_para_este_responsable`,
+    `::test_sin_constancia_el_responsable_no_puede_tocar_un_solo_dato`,
+    `::test_la_constancia_no_autoriza_a_reescribir_el_perfil`,
+    `tests/api/test_privacy_erasure.py::test_el_audit_log_dice_quien_pidio_quien_ejecuto_y_con_que_prueba`.
 
 ---
 
@@ -388,6 +467,7 @@ acción — añadir una ruta obliga a tocar `auth/matrix.py`, y estas ya están 
 | Códigos de enrolamiento (T-2.53) | `/fleet` | `enrollment_manage` |
 | Visibilidad entre clientes (T-1.73) | `/tenants` | `manage_visibility` |
 | Gestión de usuarios (T-2.54) | `/tenants` | `manage_users` |
+| Solicitudes ARCO recibidas por escrito (T-2.80.b) | `/tenants` | `manage_privacy_erasure` |
 
 **Móvil (`mobile/` — CONSTRUIDA Y MERGEADA en la Fase 2, T-2.00…T-2.14; `TASKS.md` T-1.31
 quedó "CUBIERTA POR LA FASE 2 COMPLETA"):**

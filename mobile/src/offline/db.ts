@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS queue_items (
   next_attempt_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
   synced_at INTEGER,
-  last_error TEXT
+  last_error TEXT,
+  priority INTEGER NOT NULL DEFAULT 0,
+  server_id TEXT
 );
 CREATE TABLE IF NOT EXISTS doc_cache (
   key TEXT PRIMARY KEY,
@@ -47,6 +49,21 @@ async function dbKeyHex(): Promise<string> {
   return hex;
 }
 
+/** [T-2.108] Columnas nuevas de la cola multi-tipo sobre una base YA creada:
+ *  `CREATE TABLE IF NOT EXISTS` no las añade a un teléfono que ya venía con la
+ *  tabla vieja, y perder la cola de alguien para migrarla no es opción (dentro
+ *  puede haber un check-in de vida sin sincronizar). SQLite no tiene
+ *  `ADD COLUMN IF NOT EXISTS`: se intenta y se ignora el "duplicate column". */
+async function migrateQueueColumns(db: SQLite.SQLiteDatabase): Promise<void> {
+  const adds = [
+    "ALTER TABLE queue_items ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE queue_items ADD COLUMN server_id TEXT",
+  ];
+  for (const sql of adds) {
+    await db.execAsync(sql).catch(() => undefined);
+  }
+}
+
 let opened: Promise<OfflineDb> | null = null;
 
 /** Abre (una sola vez) la base cifrada compartida del modo offline. */
@@ -65,6 +82,7 @@ export function openOfflineDb(): Promise<OfflineDb> {
         ? { active: true, cipher: `SQLCipher ${row.cipher_version} (AES-256)` }
         : { active: false, cipher: null };
       await db.execAsync(SCHEMA_SQL);
+      await migrateQueueColumns(db);
       return { db, encryption };
     })();
   }

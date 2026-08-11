@@ -22,6 +22,69 @@
       ],
       "title": "ActuatorChannel",
       "type": "string"
+    },
+    "ChannelState": {
+      "description": "[T-2.116] Estado del canal TRAS EL ARBITRAJE de demandas. No es la orden.\n\nLa spec móvil §2.2 (`takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md:536`)\nexige que «el resultado real llega en el ``command_ack`` con el estado\nrecalculado del relé», y §2.1 lo pide igual para el checklist BMS: «lo\nmostrado es el estado del relé recalculado por el arbitraje de demandas, no\nla última orden enviada». Hasta esta ficha ese campo NO EXISTÍA en ningún\ncontrato: los ACKs decían `success=true` y `detail=\"relay\"`, o sea «la orden\nse ejecutó», y la nube no tenía forma de distinguir eso de «el relé cambió».\n\nLa diferencia es exactamente el caso de vida de la spec: un `deactivate` de\nsirena con una alerta vigente RETIRA la demanda manual y se ejecuta con\néxito, y la sirena **sigue sonando** porque el enclave de SASMEX (o de\n`rules`) la sostiene. Con `success` a secas eso se leía «silenciada».\n\nEl arbitraje que esto declara vive ENTERO en\n:meth:`~takab_edge.gpio.GpioController._desired_energized`: `_safed`,\n`_sasmex_latched`, `_rules_demand`, `_audible_silenced`, `_siren_test_active`\ny `_actuation_test_active`, más la polaridad fail-safe del canal. Aquí no se\nrecalcula nada — se TRANSPORTA lo que el dueño de los pines ya decidió,\nleído de una sola instantánea (`GpioLink.snapshot`, un solo lock).\n\n`activated` es la respuesta a «¿está protegiendo?» y es AGNÓSTICA de la\npolaridad; `energized` es el nivel eléctrico crudo, que para `FAIL_CLOSE`\n(gas) y `NORMALLY_CLOSED` (retenedores) significa lo contrario que para la\nsirena. Van las dos, con su `fail_safe`, para que la afirmación sea\nverificable y no haya que conocer el perfil del gabinete para leerla.",
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/ActuatorChannel"
+        },
+        "energized": {
+          "title": "Energized",
+          "type": "boolean"
+        },
+        "activated": {
+          "title": "Activated",
+          "type": "boolean"
+        },
+        "fail_safe": {
+          "$ref": "#/$defs/FailSafeMode"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SirenReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "alert_latched": {
+          "default": false,
+          "title": "Alert Latched",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "channel",
+        "energized",
+        "activated",
+        "fail_safe"
+      ],
+      "title": "ChannelState",
+      "type": "object"
+    },
+    "FailSafeMode": {
+      "description": "Estado seguro por canal ante falla del Pi (SPOF-07, blueprint §4.7).",
+      "enum": [
+        "NO",
+        "NC",
+        "fail_close"
+      ],
+      "title": "FailSafeMode",
+      "type": "string"
+    },
+    "SirenReason": {
+      "description": "[T-2.49] POR QUÉ suena la sirena. No es cosmético: decide QUÉ se oye.\n\nHasta ahora el voceo miraba solo ``gpio.siren_sounding`` —un booleano eléctrico— y\nreproducía el mismo ``siren.wav`` en todos los casos. Consecuencia: el self-test de\nsirena de un operador sonaba **byte a byte idéntico** a un sismo real dentro de un\nedificio con gente. Eso es una falsa alarma provocada por el propio sistema.\n\nEl orden de precedencia importa y es el de la seguridad: si una alerta real llega\nDURANTE una prueba, la razón es ``ALERT``. Nunca al revés.",
+      "enum": [
+        "alert",
+        "safe_state",
+        "test"
+      ],
+      "title": "SirenReason",
+      "type": "string"
     }
   },
   "description": "ACK de ejecución con latencia relativa (T+0.42s, blueprint §4.2).",
@@ -53,6 +116,17 @@
       "default": "",
       "title": "Detail",
       "type": "string"
+    },
+    "channel_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChannelState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
@@ -65,6 +139,6 @@
   "title": "ActuatorAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/actuator_ack/v1.10.0",
-  "version": "1.10.0"
+  "$id": "https://takab.mx/schemas/actuator_ack/v1.11.0",
+  "version": "1.11.0"
 }

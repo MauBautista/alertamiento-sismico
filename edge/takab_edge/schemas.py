@@ -70,7 +70,18 @@ from takab_edge.contracts import (
 #: (`[]` o lista con filas) sigue validando contra 1.10.0. Lo que un gabinete
 #: ≤1.9.0 NO puede emitir es el `null`, así que la nube nunca le atribuye el
 #: rótulo grave por error — su `[]` aterriza como el hecho neutro de siempre.
-SCHEMA_VERSION = "1.10.0"
+#: 1.11.0 (T-2.116): ActuatorAck y CommandAck + `channel_state` — el ESTADO DEL
+#: CANAL tras el arbitraje de demandas, que la spec móvil §2.2 exige desde el
+#: día uno («el resultado real llega en el `command_ack` con el estado
+#: recalculado del relé») y que no existía en ningún contrato. Los acks decían
+#: `success=true` + `detail="relay"`, o sea «la orden se ejecutó», y eso NO es
+#: «el relé cambió»: un `deactivate` de sirena con la alerta vigente retira la
+#: demanda manual con éxito y la sirena sigue sonando. ADITIVO y nullable: clave
+#: opcional, un payload 1.10.0 sigue validando, y `null` significa «no pude
+#: preguntar al dueño de los pines» (BACnet, costura caída, ack de rechazo sin
+#: ejecución) — nunca «el relé está en reposo». Un gabinete ≤1.10.0 no lo emite,
+#: así que la nube nunca le atribuye un estado que no declaró.
+SCHEMA_VERSION = "1.11.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

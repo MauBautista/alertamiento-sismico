@@ -78,7 +78,18 @@ async def test_me_openapi_publishes_typed_response(client) -> None:
         "surface",
         "allowed_routes",
         "allowed_actions",
+        # [T-2.114] Inmuebles del ENROLAMIENTO (R2). No es `site_scope`: aquél
+        # sale del claim de Cognito y éste de `user_zone_assignments`. Sin este
+        # campo el edificio del ocupante solo existía en el SecureStore del
+        # teléfono y se heredaba entre usuarios del mismo aparato.
+        "enrolled_sites",
     }
+    assert (
+        spec["components"]["schemas"]["MeResponse"]["properties"]["enrolled_sites"]["items"].get(
+            "$ref"
+        )
+        == "#/components/schemas/MeEnrolledSite"
+    )
     # allowed_actions con claves fijas (espejo de matrix.ACTIONS), no dict libre.
     action_props = spec["components"]["schemas"]["MeActions"]["properties"]
     assert set(action_props) == set(ACTIONS)

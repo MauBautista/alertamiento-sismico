@@ -606,6 +606,15 @@ def handle_actuator_ack(
                     "success": payload["success"],
                     "latency_s": payload["latency_s"],
                     "detail": payload.get("detail", ""),
+                    # [T-2.116] El estado RECALCULADO del relé, junto al verbo.
+                    # `kind` (siren_on/siren_off) es la ORDEN que se ejecutó, y
+                    # la spec §2.1 pide justo lo contrario para el checklist
+                    # BMS: «lo mostrado es el estado del relé recalculado por el
+                    # arbitraje de demandas, no la última orden enviada». Sin
+                    # esto, un `siren_off` de una orden arbitrada (alerta
+                    # vigente) pintaba la sirena apagada mientras sonaba.
+                    # `None` = el gabinete no lo declara (firmware viejo, BACnet).
+                    "channel_state": payload.get("channel_state"),
                 }
             ),
         ),
@@ -674,6 +683,20 @@ def handle_command_ack(
                     # [T-1.59] Resultados del self_test (por relé + salud del
                     # cache); None en acks de activate/deactivate.
                     "results": payload.get("results"),
+                    # [T-2.116 · spec móvil §2.2] EL ESTADO DEL CANAL TRAS EL
+                    # ARBITRAJE, que es lo que la app necesita para dejar de
+                    # inferirlo de la fase: «el resultado real llega en el
+                    # command_ack con el estado recalculado del relé».
+                    #
+                    # `status='acked'` describe LA ORDEN («la demanda manual se
+                    # retiró»), no el relé: un `siren/deactivate` con la alerta
+                    # vigente se ejecuta con éxito y la sirena sigue sonando.
+                    # Colapsar las dos cosas era leer «silenciada» un edificio
+                    # que seguía sonando (regla de oro 7).
+                    #
+                    # `None` = el gabinete NO lo declara (firmware ≤ schema
+                    # 1.10.0, o ack de rechazo sin ejecución). Jamás «en reposo».
+                    "channel_state": payload.get("channel_state"),
                 }
             ),
         },

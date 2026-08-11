@@ -1,20 +1,46 @@
-// 2.3 — registro + subida de evidencia: firma el PUT, sube los bytes del
-// archivo privado (jamás la galería) y traduce fallos con honestidad.
+// 2.3 — registro + subida de evidencia: comprueba la huella, firma el PUT,
+// sube los bytes del archivo privado (jamás la galería) y traduce fallos con
+// honestidad.
+//
+// [T-2.108] Este módulo dejó de llamarse desde la cámara: lo llama el motor de
+// la cola offline. Por eso ahora cada fallo dice además si es RECUPERABLE
+// (reintentar tiene sentido) o de contrato (queda visible como fallido), y por
+// eso comprueba el SHA-256 del archivo ANTES de registrar nada — entre la
+// captura y la subida puede haber pasado un día.
 import { registerAndUploadEvidence } from "./evidence";
 
 const mockRegister = jest.fn();
 jest.mock("@takab/sdk", () => ({
   registerEvidenceIncidentsIncidentIdEvidencePost: (...a: unknown[]) => mockRegister(...a),
 }));
+
+const mockFile = { bytes: new Uint8Array([1, 2, 3]) as Uint8Array | null };
 jest.mock("expo-file-system", () => ({
   File: jest.fn().mockImplementation(() => ({
-    bytes: async () => new Uint8Array([1, 2, 3]),
+    bytes: async () => {
+      if (mockFileRef.bytes === null) {
+        throw new Error("ENOENT");
+      }
+      return mockFileRef.bytes;
+    },
   })),
 }));
+const mockFileRef = mockFile;
+
+jest.mock("expo-crypto", () => ({
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digest: jest.fn(async (_alg: string, data: Uint8Array) =>
+    Uint8Array.from([data.length, ...Array.from(data).slice(0, 3)]),
+  ),
+}));
+
+/** Huella de `[1,2,3]` con el mock de digest: longitud 3 + los tres bytes. */
+const SHA_OK = "03010203";
 
 const fetchMock = jest.fn();
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFile.bytes = new Uint8Array([1, 2, 3]);
   (globalThis as { fetch: unknown }).fetch = fetchMock;
 });
 
@@ -28,12 +54,42 @@ describe("registerAndUploadEvidence", () => {
     const out = await registerAndUploadEvidence({
       incidentId: "inc-1",
       uri: "file:///priv/evidence-1.jpg",
-      sha256: "a".repeat(64),
+      sha256: SHA_OK,
     });
     expect(out).toEqual({ ok: true, evidenceId: "ev-1" });
-    expect(mockRegister.mock.calls[0][0].body.sha256).toBe("a".repeat(64));
+    expect(mockRegister.mock.calls[0][0].body.sha256).toBe(SHA_OK);
     expect(fetchMock.mock.calls[0][0]).toBe("https://s3/put?sig");
     expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
+    // Los bytes que se suben son EXACTAMENTE los que se hashearon.
+    expect(fetchMock.mock.calls[0][1].body).toEqual(mockFile.bytes);
+  });
+
+  it("[T-2.113] el id del item VIAJA en el registro (la idempotencia la da él)", async () => {
+    // Sin este id el servidor inventaba uno por intento: el reintento chocaba
+    // contra `uq_evidence_incident_sha256`, la cola lo marcaba failed por ser
+    // 4xx, y la fila se quedaba en la base sin su blob para siempre.
+    mockRegister.mockResolvedValue({ data: { evidence_id: "q-7", upload_url: null } });
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      evidenceId: "q-7",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({ ok: true, evidenceId: "q-7" });
+    expect(mockRegister.mock.calls[0][0].body.evidence_id).toBe("q-7");
+  });
+
+  it("[T-2.113] 409 = conflicto de identidad ⇒ NO recuperable (visible, no en bucle)", async () => {
+    // El servidor solo devuelve 409 si ese id es de OTRO incidente/tenant o
+    // trae otra huella. Reintentarlo no lo arregla nunca: se declara.
+    mockRegister.mockResolvedValue({ data: undefined, response: { status: 409 } });
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      evidenceId: "q-8",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({ ok: false, retryable: false, reason: expect.stringMatching(/409/) });
   });
 
   it("sin bucket (dev): registrada sin subir, la huella ya quedó", async () => {
@@ -41,30 +97,77 @@ describe("registerAndUploadEvidence", () => {
     const out = await registerAndUploadEvidence({
       incidentId: "inc-1",
       uri: "file:///priv/x.jpg",
-      sha256: "b".repeat(64),
+      sha256: SHA_OK,
     });
     expect(out).toEqual({ ok: true, evidenceId: "ev-2" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("PUT falla ⇒ error declarado con el status", async () => {
+  it("PUT falla con 403 ⇒ error declarado con el status, y NO recuperable", async () => {
     mockRegister.mockResolvedValue({ data: { evidence_id: "ev", upload_url: "https://s3/put" } });
     fetchMock.mockResolvedValue({ ok: false, status: 403 });
     const out = await registerAndUploadEvidence({
       incidentId: "inc-1",
       uri: "file:///priv/x.jpg",
-      sha256: "c".repeat(64),
+      sha256: SHA_OK,
     });
-    expect(out).toEqual({ ok: false, reason: expect.stringMatching(/403/) });
+    expect(out).toEqual({
+      ok: false,
+      retryable: false,
+      reason: expect.stringMatching(/403/),
+    });
   });
 
-  it("sin red ⇒ error honesto, nada subido", async () => {
+  it("5xx al registrar ⇒ RECUPERABLE (la cola lo reintenta con backoff)", async () => {
+    mockRegister.mockResolvedValue({ data: undefined, response: { status: 503 } });
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({ ok: false, retryable: true, reason: expect.stringMatching(/503/) });
+  });
+
+  it("sin red ⇒ error honesto y RECUPERABLE, nada subido", async () => {
     mockRegister.mockRejectedValue(new TypeError("Network request failed"));
     const out = await registerAndUploadEvidence({
       incidentId: "inc-1",
       uri: "file:///priv/x.jpg",
-      sha256: "d".repeat(64),
+      sha256: SHA_OK,
     });
-    expect(out.ok).toBe(false);
+    expect(out).toEqual({ ok: false, retryable: true, reason: expect.stringMatching(/Sin conexión/) });
+  });
+
+  it("el archivo cambió tras la captura ⇒ ni se registra ni se sube (§2.3)", async () => {
+    mockFile.bytes = new Uint8Array([9, 9, 9]);
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({
+      ok: false,
+      retryable: false,
+      reason: expect.stringMatching(/huella SHA-256 no coincide/),
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("el archivo ya no está en el teléfono ⇒ fallo declarado, sin reintentos", async () => {
+    // Reintentar mil veces no devuelve un fichero que el SO borró: se declara
+    // y queda visible en la cola en vez de girar para siempre.
+    mockFile.bytes = null;
+    const out = await registerAndUploadEvidence({
+      incidentId: "inc-1",
+      uri: "file:///priv/x.jpg",
+      sha256: SHA_OK,
+    });
+    expect(out).toEqual({
+      ok: false,
+      retryable: false,
+      reason: expect.stringMatching(/ya no está en este teléfono/),
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
   });
 });

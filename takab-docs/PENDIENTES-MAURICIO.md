@@ -4,9 +4,13 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-09 · **27 pendientes** · Estado del backlog al escribirlo:
-> 234 tareas · 159 `[x]` · 6 `[~]` · 69 `[ ]`, de las cuales **56 son `SOFTWARE`** y las demás
-> están aquí.
+> **Última actualización:** 2026-08-10 (lote `T-2.110…T-2.116`) · **29 pendientes** · Estado del
+> backlog al escribirlo: 261 tareas · 186 `[x]` · 9 `[~]` · 66 `[ ]`, de las cuales la mayoría
+> son `SOFTWARE` y las demás están aquí.
+>
+> **Cambios de esta pasada:** §1.6 (protección de rama) **se cierra — ya está hecha**; entra §1.9
+> (¿arranca la consola sin base?); y §1.8 y §3.4 ganan actualización. El total no se mueve porque
+> se cerró una y entró otra.
 
 ---
 
@@ -71,22 +75,62 @@ automatiza contra el SSN, si se sube a mano con cadencia, o si se declara que no
 Van con el Bloque IV; no bloquean nada hoy. `T-3.09` **exige derogar por su nombre** la viñeta
 diferida del blueprint — y solo esa.
 
-### 1.6 · `main` NO tiene protección de rama — 5 minutos en GitHub
+### 1.6 · ~~`main` NO tiene protección de rama~~ — ✅ **HECHO** (verificado 2026-08-10)
 
-**Comprobado con `gh api` el 2026-08-09: el repositorio no tiene branch protection ni rulesets.**
-O sea que **hoy ningún job bloquea nada**: el CI corre, se pone rojo, y se puede mergear igual.
+**Ya está puesta, y bien.** `gh api` confirma protección viva sobre `main` con los **siete**
+checks exigidos, y **verifiqué que los nombres coinciden literalmente con los `name:` de
+`ci.yml`** — importa, porque un nombre que no case no bloquea: deja los PR *pendientes para
+siempre*, que se siente como un fallo distinto y se diagnostica peor.
 
-Importa ahora más que ayer, porque el barrido de secretos que se acaba de construir **es un
-gate** —pone el PR en rojo cuando encuentra una credencial— y **un gate que no bloquea es un
-aviso**. Lo mismo vale para los 2118 tests de api, los 1353 de web y los 1071 del edge.
+Con esto, la matriz de trazabilidad deja de ser más optimista que la realidad: su modelo de
+`CUBIERTO` («lo corre un job que bloquea el merge») por fin describe lo que pasa de verdad.
 
-**Qué hacer:** en `Settings → Branches` (o `Rulesets`), exigir como *required status checks* los
-jobs `api`, `web`, `edge`, `mobile` y `secretos`.
+**Lo único que queda, y es decisión tuya, no trámite:** `enforce_admins` está en **`false`**. Tú
+eres el único admin, así que **puedes mergear con el gate en rojo**. Hoy eso es una válvula de
+escape útil trabajando solo; el día que entre alguien más al repositorio, es un agujero. No hace
+falta cerrarlo ahora — hace falta que sea una elección y no un olvido.
 
-**Consecuencia colateral que conviene saber:** la matriz de trazabilidad acredita `CUBIERTO`
-solo si el test *«lo corre un job que bloquea el merge»*, y hoy modela eso como «está en
-`ci.yml` y no es `continue-on-error`». Mientras no haya protección de rama, **el modelo es más
-optimista que la realidad**.
+### 1.9 · ¿Debe arrancar la consola con la base caída? — [`T-2.123`](TASKS.md)
+**Nuevo el 2026-08-10, y sale de un cambio que ya está hecho.** `T-2.114` necesitaba que `/me`
+devolviera el inmueble del ocupante —el dato no viaja en el claim de Cognito—, así que **`/me`
+dejó de ser claims puros y ahora abre sesión de base de datos**.
+
+El efecto secundario es real: **con Postgres caído, la consola web ya no arranca**, donde antes
+arrancaba con los claims. En la app móvil no hay regresión, porque conserva la sesión y resuelve
+desde el caché (regla de oro 2).
+
+La decisión: **¿la consola debe arrancar en degradado, declarando lo que no sabe, o negarse?**
+Las dos son defendibles. Arrancar sin saber el alcance del operador roza la regla de oro 5; no
+arrancar deja al SOC sin pantalla justo cuando algo grande está pasando. **No la puede tomar el
+código**, porque es una elección sobre qué falla peor.
+
+### 1.7 · ¿Un pánico despierta a todo el edificio? — [`T-2.106`](TASKS.md)
+El quórum de pánico emite el comando de sirena y **no notifica a nadie**: la ruta del voto no
+toca `notify/`. Con `T-2.106` la app ya explica la alarma, pero se entera **en el siguiente
+sondeo** — 30 s en reposo, que bajan a 5 s en cuanto entra en `building_alarm`.
+
+Mandar push por una activación manual **no es decisión técnica**: es decidir si dos personas
+pueden despertar a un edificio entero de madrugada. Las tres salidas son legítimas —push a todos,
+push solo a tácticos, o nada y que lo diga la sirena— y ninguna se puede elegir desde el código.
+
+### 1.8 · `lock_timeout` global en la conexión del request — [`T-2.73.c`](TASKS.md)
+`T-2.73.c` cerró el interbloqueo por el lado de la conexión **lateral**. La conexión **del
+request** sigue sin tope: si `audit_log` está bloqueada *antes* de que el request empiece, se
+cuelga en el primer `SELECT`.
+
+Poner un `lock_timeout` global en `get_tenant_conn` cambia el comportamiento de **toda** la API
+bajo contención —convierte esperas en errores 5xx— y eso es una decisión de producción, no un
+refactor. Decidir si se pone, con qué valor, y si aplica también a los workers.
+
+> **Actualización 2026-08-10 · la decisión vale más que ayer, porque ya son tres sitios.**
+> `T-2.112` midió que la lateral del rechazo tenía **el mismo defecto** (ya cerrado, con el mismo
+> tope). Y de paso aparecieron **dos conexiones más sin tope**: `ws/hub.py` y `ws/poller.py`
+> ([`T-2.121`](TASKS.md)). Ésas no forman el ciclo indetectable, pero un bloqueo ajeno **para el
+> hub del WebSocket en silencio** — y un SOC que deja de recibir sin decirlo es exactamente lo
+> que prohíbe la regla de oro 7.
+>
+> O sea: se están tapando de una en una. **Si tomas la decisión global, absorbe `T-2.121` entera**
+> y deja de aparecer una ficha nueva cada vez que alguien abre una conexión lateral.
 
 ---
 
@@ -173,6 +217,17 @@ suite **lo declara en voz alta** en vez de callarlo.
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 
+> **Nuevo el 2026-08-10 — y hay que re-correr un flujo ya acreditado.** `T-2.116` hace que el
+> acuse del gabinete traiga por fin **el estado real del relé tras el arbitraje**, que es lo que
+> la spec móvil §2.2 pedía desde siempre y ningún contrato transportaba. El flujo **`GATE-HW 02`**
+> se acreditó contra la conducta vieja, así que **merece re-correrse después de desplegar el
+> edge**. Lo que se ve distinto: silenciar durante una alerta vigente ahora dice
+> «SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA» en vez de fingir éxito.
+>
+> **Y el orden importa:** hasta que `gw-dev-0001` corra el código nuevo, el campo llega vacío y la
+> app degrada al respaldo de `T-2.107` — honesto, pero **no es lo que hay que acreditar**. Primero
+> el despliegue al Pi, después el gate.
+
 ### 3.5 · El traspaso del dueño de los pines
 Depende de la decisión §1.1. Si es (A), va en esta misma visita. **Orden correcto y no
 intercambiable:** `TAKAB_EDGE_GPIO_OWNER=gpio` en `edge.env` → `systemctl enable --now
@@ -211,11 +266,12 @@ takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerroj
 
 ## Si solo se pueden hacer tres cosas
 
-1. **Proteger `main` (§1.6).** Cinco minutos, y sin eso **nada de lo demás bloquea nada**: hoy
-   los 4 542 tests y el barrido de secretos son un aviso, no un gate.
+1. **Arrancar §4.1 y §4.2.** Son las de **plazo externo** —las contesta un tercero—, así que son
+   las únicas que no se pueden acelerar después. Ahora encabezan la lista porque lo que estaba
+   antes en este puesto (proteger `main`, §1.6) **ya está hecho**.
 2. **Las decisiones de §1.1 y §1.2.** Cuestan pensar, no herramientas, y desbloquean cinco fichas
    de software entre las dos.
-3. **Arrancar §4.1 y §4.2.** Son las de plazo externo. Todo lo demás se puede acelerar; esto no.
+3. **La sesión de vida (§3.1).** Es la que dice si el producto es real, y no espera a nada.
 
 Y en cuanto haya un hueco con el edificio: **la sesión de vida (§3.1)**, que es la que dice si el
 producto es real y no espera a nada.

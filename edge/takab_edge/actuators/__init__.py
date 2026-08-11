@@ -25,9 +25,10 @@ from takab_edge.contracts import (
     ActuatorAction,
     ActuatorChannel,
     ActuatorCommand,
+    ChannelState,
     utcnow,
 )
-from takab_edge.gpio_link import GpioLink, as_link
+from takab_edge.gpio_link import GpioLink, as_link, channel_state_from
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.actuators")
@@ -36,7 +37,13 @@ log = logging.getLogger("takab_edge.actuators")
 RELAY_ONLY: tuple[ActuatorChannel, ...] = (ActuatorChannel.SIREN, ActuatorChannel.STROBE)
 
 
-def _ack(command: ActuatorCommand, *, success: bool, detail: str) -> ActuatorAck:
+def _ack(
+    command: ActuatorCommand,
+    *,
+    success: bool,
+    detail: str,
+    channel_state: ChannelState | None = None,
+) -> ActuatorAck:
     # Latencia = tiempo desde que `rules` emitió el comando hasta su ejecución (T+X.XXs).
     latency_s = max(0.0, (utcnow() - command.issued_at).total_seconds())
     return ActuatorAck(
@@ -46,6 +53,7 @@ def _ack(command: ActuatorCommand, *, success: bool, detail: str) -> ActuatorAck
         success=success,
         latency_s=latency_s,
         detail=detail,
+        channel_state=channel_state,
     )
 
 
@@ -115,10 +123,47 @@ class RelayActuator:
             return [
                 _ack(command, success=False, detail="costura incoherente") for command in commands
             ]
+        estados = self._estados_tras_el_arbitraje()
         return [
-            _ack(command, success=outcome.ok, detail=outcome.detail)
+            _ack(
+                command,
+                success=outcome.ok,
+                detail=outcome.detail,
+                channel_state=estados.get(command.channel),
+            )
             for command, outcome in zip(commands, outcomes, strict=True)
         ]
+
+    def _estados_tras_el_arbitraje(self) -> dict[ActuatorChannel, ChannelState]:
+        """[T-2.116] El censo de relés RECALCULADO, en UNA sola lectura.
+
+        Va después de `apply` y no dentro: lo que hay que declarar es el estado
+        que quedó, y el arbitraje de `GpioController._desired_energized` no se
+        conoce hasta que la demanda entró. Una sola instantánea para todo el
+        lote —no una por canal— porque con el dueño de los pines en otro proceso
+        cada lectura es un round-trip, y T-2.70.a redujo la secuencia entera del
+        tier a UN cruce justo para eso.
+
+        Falla CERRADO y en silencio para el acuse: si la costura no contesta, el
+        ack sale sin `channel_state` (`None` = «no pude preguntar») en vez de
+        romper la actuación. El relé ya se movió; perder el censo no puede
+        impedir que la sirena suene ni que el ack viaje (regla de oro 4).
+        """
+        try:
+            snapshot = self._link.snapshot()
+        except Exception:  # noqa: BLE001 — vida: el censo jamás bloquea el acuse
+            log.warning(
+                "no se pudo leer el estado arbitrado de los canales; el acuse "
+                "viaja sin censo del relé (None = «no pude preguntar»)",
+                exc_info=True,
+            )
+            return {}
+        estados: dict[ActuatorChannel, ChannelState] = {}
+        for relay in snapshot.relays:
+            estado = channel_state_from(snapshot, relay.channel)
+            if estado is not None:
+                estados[relay.channel] = estado
+        return estados
 
     def cabinet_self_test(self) -> dict:
         """Recorrido de relés NO audibles (T-1.59) — delega en gpio, el dueño
