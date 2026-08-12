@@ -12,7 +12,25 @@ import {
 import { getMe, MeRequestError, type MeResponse } from "./me";
 import { buildLogoutUrl, cognitoConfigured, getUserManager } from "./userManager";
 
-export type SessionStatus = "booting" | "anonymous" | "authenticating" | "authenticated" | "error";
+/**
+ * `degraded` [T-2.123]: hay token, pero `GET /me` no contesta por algo que no es
+ * un 401 (5xx, red). Desde que `T-2.114` ató `/me` a la base, ese "no contesta"
+ * es sobre todo *Postgres caído*, y no puede tratarse ni como sesión válida ni
+ * como sesión cerrada: es **alcance desconocido**. La consola arranca igual y lo
+ * declara, sin pintar dato de tenant alguno — el porqué completo está en
+ * `app/DegradedSessionScreen.tsx`.
+ */
+export type SessionStatus =
+  | "booting"
+  | "anonymous"
+  | "authenticating"
+  | "authenticated"
+  | "degraded"
+  /** Sin productor desde `T-2.123`: el único fallo de `/me` que existía ahora es
+   * `degraded`. Sobrevive porque `RequireSession`/`LoginPage` aún ramifican por
+   * él; se retira junto con `pages/StatusScreens.tsx::ErrorScreen`. NO usar para
+   * fallos nuevos sin decidir antes qué declara la pantalla. */
+  | "error";
 
 export interface SessionState {
   status: SessionStatus;
@@ -58,7 +76,15 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         get().handleUnauthorized();
         return;
       }
-      set({ status: "error", error: err instanceof Error ? err.message : String(err) });
+      // [T-2.123] Alcance desconocido, NO sesión cerrada. `me: null` es la mitad
+      // que hace segura a la otra: si un `/me` viejo sobreviviera al fallo, los
+      // guards seguirían abriendo rutas con un alcance que ya nadie puede
+      // reverificar — adivinarlo es la brecha multi-tenant (regla de oro 5).
+      set({
+        status: "degraded",
+        me: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -156,7 +182,12 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     },
 
     refreshMe: async () => {
-      set({ status: "booting", error: null });
+      // [T-2.123] Desde el degradado NO se pasa por "booting": eso desmontaría la
+      // pantalla que está declarando el problema y remontaría el router entero en
+      // cada reintento. El botón lleva su propio indicador.
+      if (get().status !== "degraded") {
+        set({ status: "booting", error: null });
+      }
       await fetchMe();
     },
 

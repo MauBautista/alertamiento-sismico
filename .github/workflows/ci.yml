@@ -185,8 +185,14 @@ jobs:
         working-directory: shared/sdk-ts
       - name: Instalar dependencias
         run: npm ci
+      # [T-2.125] `npm run lint`, NO `npx expo lint` a pelo. El CLI de Expo linta
+      # sólo `src`, `app` y `components` — está a fuego en su `DEFAULT_INPUTS` y no
+      # lee ninguna clave de configuración—, así que invocarlo sin ruta dejaba fuera
+      # 21 ficheros lintables de este árbol, `mobile/tests/**` incluido. El script de
+      # npm pasa `.` y cubre el paquete entero. Un gate que parece cubrir más de lo
+      # que cubre es la misma familia que T-2.58/T-2.59 y T-2.124.
       - name: Lint (eslint)
-        run: npx expo lint
+        run: npm run lint
       - name: Typecheck (tsc)
         run: npm run typecheck
       - name: Tests (jest)

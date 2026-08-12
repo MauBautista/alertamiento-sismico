@@ -28,7 +28,11 @@ const AHORA = 1_800_000_000_000;
 // ------------------------------------------------------------------ mocks
 
 jest.mock("expo-router", () => {
-  const { Text } = require("react-native");
+  // [T-2.125] `requireActual` y no `require()`: dentro de una factoría de
+  // `jest.mock` no se puede importar arriba (se hoistea), pero sí se puede pedir
+  // el módulo REAL — que aquí es además la misma instancia, porque
+  // `react-native` no está moqueado.
+  const { Text } = jest.requireActual("react-native") as typeof import("react-native");
   return {
     Redirect: (p: { href: string }) => <Text testID="redirect">{p.href}</Text>,
   };

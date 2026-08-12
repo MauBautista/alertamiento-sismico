@@ -1,7 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DictamenOut, IncidentOut, SeismicEventOut } from "@takab/sdk";
+import type {
+  DictamenOut,
+  EventDetailOut,
+  EvidenceObject,
+  IncidentOut,
+  SeismicEventOut,
+} from "@takab/sdk";
 
 import TriageDetail from "./TriageDetail";
 import type { TriageDetailProps } from "./TriageDetail";
@@ -46,6 +52,18 @@ const ROW: TriageRow = {
   nodeCount: 3,
 };
 
+/** Cabeza de cadena preliminar (`signed_by: null`), como la que se lee al firmar. */
+const DICTAMEN = {
+  dictamen_id: "d-1",
+  tenant_id: "t-1",
+  incident_id: INCIDENT.incident_id,
+  status: "inhabit_monitor",
+  basis: {},
+  signed_by: null,
+  supersedes_dictamen_id: null,
+  created_at: "2026-08-03T10:30:00Z",
+} as unknown as DictamenOut;
+
 const FORENSICS = {
   data: undefined,
   loading: false,
@@ -53,12 +71,20 @@ const FORENSICS = {
   refetch: vi.fn(),
 } as unknown as TriageDetailProps["forensics"];
 
-function resource<T>(over: Partial<{ data: T; loading: boolean; error: string | null }> = {}) {
+function resource<T>(
+  over: Partial<{
+    data: T;
+    loading: boolean;
+    error: string | null;
+    staleSince: number | null;
+  }> = {},
+) {
   return {
     data: undefined as T | undefined,
     loading: false,
     error: null,
     disabled: false,
+    staleSince: null,
     ...over,
   };
 }
@@ -90,6 +116,7 @@ function arrange(
       detail={detail}
       forensics={FORENSICS}
       minNodes={3}
+      incidentStaleSince={null}
       canSign={false}
       canExport={false}
       canGenerateReport={false}
@@ -155,6 +182,7 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
         }
         forensics={FORENSICS}
         minNodes={3}
+        incidentStaleSince={null}
         canSign={false}
         canExport={false}
         canGenerateReport={false}
@@ -179,5 +207,89 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
   it("sin epicentro no se pinta la nota", () => {
     arrange({}, { row: { ...ROW, event: { ...EVENT, epicenter_lat: null } } });
     expect(screen.queryByTestId("epicenter-note")).not.toBeInTheDocument();
+  });
+});
+
+/* =====================================================================
+   T-2.82.a · la frescura del dato en la pantalla donde se FIRMA
+   ===================================================================== */
+
+const HORA = Date.UTC(2026, 7, 3, 10, 41, 30);
+
+function conForensics(over: Partial<{ staleSince: number | null }>) {
+  return {
+    ...FORENSICS,
+    dataUpdatedAt: over.staleSince ?? 0,
+    staleSince: over.staleSince ?? null,
+  } as unknown as TriageDetailProps["forensics"];
+}
+
+describe("TriageDetail · la edad del dato llega a los paneles [T-2.82.a]", () => {
+  it("el marco normativo declarado RECIBE la frescura del forense", () => {
+    // Antes recibía el valor por defecto de su propia prop (`= null`): el panel
+    // aceptaba una edad y nadie se la pasaba nunca, así que afirmaba «este dato
+    // no puede envejecer» en la pantalla donde el inspector firma.
+    arrange({}, { forensics: conForensics({ staleSince: HORA }) });
+    const tarjeta = screen.getByTestId("declared-card");
+    expect(tarjeta.textContent ?? "").toContain("DATOS RETENIDOS · 10:41:30 UTC");
+  });
+
+  it("y con el dato viejo NO afirma que el cliente no declaró nada", () => {
+    // El par en disputa de T-2.79.d, en su peor sitio: sin marco declarado Y
+    // con el dato viejo, «SIN MARCO NORMATIVO DECLARADO POR EL CLIENTE» sería
+    // una acusación sobre el cliente que no se puede comprobar. Gana `stale` y
+    // la ausencia va FECHADA.
+    arrange({}, { forensics: conForensics({ staleSince: HORA }) });
+    const tarjeta = screen.getByTestId("declared-card");
+    expect(tarjeta.textContent ?? "").toContain("desde entonces no se ha podido confirmar");
+  });
+
+  it("con el dato fresco, el panel se comporta igual que siempre", () => {
+    arrange({}, { forensics: conForensics({ staleSince: null }) });
+    const tarjeta = screen.getByTestId("declared-card");
+    expect(tarjeta.textContent ?? "").not.toContain("DATOS RETENIDOS");
+    expect(tarjeta.textContent ?? "").toContain("SIN MARCO NORMATIVO DECLARADO POR EL CLIENTE");
+  });
+
+  it("la EVIDENCIA archivada declara su edad, y su ausencia va fechada", () => {
+    // «SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE» junto al botón de descargar
+    // el miniSEED es justo la ausencia no verificable que T-2.79.d decidió no
+    // afirmar: con la lista congelada, la consola no sabe si no hay evidencia o
+    // si lleva un cuarto de hora sin poder preguntar.
+    arrange({ evidence: resource<EvidenceObject[]>({ data: [], staleSince: HORA }) });
+    const panel = screen.getByText(/SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE/);
+    expect(panel.textContent ?? "").toContain("así estaba a las 10:41:30 UTC");
+    expect(panel.textContent ?? "").toContain("desde entonces no se ha podido confirmar");
+  });
+
+  it("el marco del botón FIRMAR DICTAMEN declara la edad de la cadena", () => {
+    // Éste es EL marco: dentro está el botón que firma. La cadena de custodia
+    // que se enseña ahí puede haber crecido una versión desde la última
+    // respuesta, y firmar sobre una cadena vieja es el acto exacto que la regla
+    // de oro 7 protege.
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN], staleSince: HORA }) });
+    const marco = screen.getByText(/FIRMAR DICTAMEN/).closest('[data-state="stale"]');
+    expect(marco).not.toBeNull();
+    expect(marco?.textContent ?? "").toContain("DATOS RETENIDOS · 10:41:30 UTC");
+    expect(marco?.textContent ?? "").toContain("CADENA DE CUSTODIA");
+  });
+
+  it("la edad del INCIDENTE baja hasta el panel del quórum", () => {
+    // La rama `absent` de `QuorumNodes` no habla del evento (no hay): habla del
+    // incidente, cuya frescura sólo conoce la página.
+    arrange(
+      { event: resource<EventDetailOut>({ data: undefined }) },
+      {
+        row: { ...ROW, incident: { ...INCIDENT, event_id: null } },
+        incidentStaleSince: HORA,
+      },
+    );
+    const panel = screen.getByText(/INCIDENTE SIN EVENTO SÍSMICO ASOCIADO/);
+    expect(panel.textContent ?? "").toContain("así estaba a las 10:41:30 UTC");
+  });
+
+  it("con todo fresco, ni un solo panel anuncia datos retenidos", () => {
+    arrange({}, { forensics: conForensics({ staleSince: null }) });
+    expect(screen.queryByText(/DATOS RETENIDOS/)).toBeNull();
   });
 });

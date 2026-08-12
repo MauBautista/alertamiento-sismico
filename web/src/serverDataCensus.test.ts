@@ -132,21 +132,23 @@ describe("censo de dato de servidor · el barrido encuentra el árbol", () => {
    ===================================================================== */
 
 /**
- * `T-2.79.d` decidirá qué gana entre `empty` y `stale` cuando los dos son
- * ciertos. Esa decisión NO se toma aquí — se PREPARA: la precedencia es un
- * parámetro del contrato (`STATE_PRECEDENCE` + `resolveState`, en
- * `components/StateFrame.tsx`) y nadie más puede materializar un `data-state`.
- * El día que llegue la decisión se cambia una tabla, no 27 componentes.
+ * La precedencia es un parámetro del contrato (`STATE_PRECEDENCE` +
+ * `resolveState`, en `components/StateFrame.tsx`) y nadie más puede
+ * materializar un `data-state`. Por eso `T-2.79.d` se cerró cambiando UNA
+ * tabla, no 27 componentes.
  */
 describe("censo · la precedencia vive en UN solo sitio", () => {
   it("`STATE_PRECEDENCE` es la tabla, y `resolveState` la única que decide", () => {
-    expect([...STATE_PRECEDENCE]).toEqual(["loading", "error", "empty", "stale"]);
+    expect([...STATE_PRECEDENCE]).toEqual(["loading", "error", "stale", "empty"]);
     expect(resolveState({ loading: true, error: "x", empty: true, stale: true })).toBe("loading");
     expect(resolveState({ loading: false, error: "x", empty: true, stale: true })).toBe("error");
-    // [T-2.79.d] Éste es el par en disputa: una lista vacía que además lleva
-    // diez minutos sin refrescar. Hoy gana `empty`; cuando Mauricio decida se
-    // cambia el orden de STATE_PRECEDENCE y este caso con él.
-    expect(resolveState({ loading: false, error: null, empty: true, stale: true })).toBe("empty");
+    // [T-2.79.d · DECIDIDO 2026-08-11] El par en disputa: una lista vacía que
+    // además lleva diez minutos sin refrescar. GANA `stale`, y la razón está
+    // escrita entera sobre `STATE_PRECEDENCE`: «no hay» es un hecho sobre el
+    // mundo y «no lo sé desde las hh:mm» es un hecho sobre nuestro
+    // conocimiento; con los dos ciertos, sólo el segundo se puede verificar.
+    expect(resolveState({ loading: false, error: null, empty: true, stale: true })).toBe("stale");
+    expect(resolveState({ loading: false, error: null, empty: true, stale: false })).toBe("empty");
     expect(resolveState({ loading: false, error: null, empty: false, stale: true })).toBe("stale");
     expect(resolveState({ loading: false, error: null, empty: false, stale: false })).toBe("ready");
   });
@@ -253,6 +255,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "detail",
     "forensics",
     "matrix",
+    "staleSince",
     "triage",
   ],
   "shell/OperatorMenu.tsx::OperatorMenu": ["label"],
@@ -331,7 +334,12 @@ const RAZONES: Record<string, string> = {
     'SIN DATO · HISTORIAL NO DISPONIBLE) existe porque anunciaba "0 INCIDENTES CARGADOS" al ' +
     "lado del propio mensaje de error, y cero incidentes tras un sismo es la afirmación más " +
     "tranquilizadora de esta pantalla. `InspectionMatrix` y `TriageDetail` son paneles " +
-    "hermanos con marco propio; `deepLinkMiss` es un aviso de navegación, no un dato.",
+    "hermanos con marco propio; `deepLinkMiss` es un aviso de navegación, no un dato. " +
+    "[T-2.82.a] `staleSince` es la EDAD del historial, y no se pinta: baja a `TriageDetail` " +
+    "para que el panel del quórum pueda fechar lo que afirma cuando el incidente no " +
+    "referencia evento — el dato de esa rama es la fila del incidente, que sale de esta " +
+    "consulta. Contarla aquí es correcto (viaja fuera del marco) y es justo lo que hay que " +
+    "vigilar: el día que alguien la PINTE en vez de pasarla, sigue censada.",
   "shell/OperatorMenu.tsx::OperatorMenu":
     '(c) DEUDA menor pero real. `label = profile.data?.display_name ?? me?.role ?? ""` se ' +
     "pinta en la topbar de TODAS las pantallas sin marco ni prueba de cuatro estados. El " +
@@ -403,7 +411,8 @@ const MARCOS_INCOMPLETOS: string[] = [
   "features/console/IncidentTable.tsx#INCIDENTES ABIERTOS falta error,staleSince",
   "features/fleet/FleetAdmin.tsx#ESTACIONES falta staleSince",
   "features/triage/CatalogPanel.tsx#CATÁLOGO falta staleSince",
-  "features/triage/StructuralTriage.tsx#Evaluación de campo falta staleSince",
+  // `StructuralTriage.tsx#Evaluación de campo` salió de esta lista en T-2.82.a:
+  // `useDamageReports` ya deriva la edad de su consulta y el marco la declara.
 ];
 
 describe("censo · todo `<StateFrame>` cablea las cuatro entradas", () => {
@@ -448,7 +457,9 @@ const SIN_PRUEBA_DE_CUATRO_ESTADOS: string[] = [
   "features/tenants/VisibilityCard.tsx::VisibilityCard",
   // Marco completo salvo `staleSince`; el catálogo es de referencia, no vivo.
   "features/triage/CatalogPanel.tsx::CatalogPanel",
-  // Marco sin `staleSince` en la pantalla donde se firma un dictamen (T-2.82.a).
+  // [T-2.82.a] Ya NO le falta `staleSince` —su marco declara las cuatro
+  // entradas y `StructuralTriage.test.tsx` ejerce el estado `stale` con reloj
+  // falso—, pero nadie recorre los cuatro con `expectFourStates`.
   "features/triage/StructuralTriage.tsx::StructuralTriage",
   // Sin marco: el nombre del operador en la topbar de TODAS las pantallas.
   "shell/OperatorMenu.tsx::OperatorMenu",

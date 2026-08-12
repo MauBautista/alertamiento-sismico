@@ -22,6 +22,8 @@ from psycopg.types.json import Jsonb
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from takab_api.db.session import BACKGROUND_LOCK_TIMEOUT_MS, lock_timeout_stmt
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -36,22 +38,19 @@ _AUDIT_SQL_ASYNC = text(
     "VALUES (:tenant_id, :actor, :verb, :object, CAST(:meta AS jsonb))"
 )
 
-# Tope de espera por un lock en una conexión de SEGUNDO PLANO. Público a propósito:
-# tiene que ser UNA política y no varias copias que deriven — el día que este número
-# cambie, cambia para todas. Consumidores hoy (T-2.121 sumó los dos últimos):
+# Tope de espera por un lock en una conexión de SEGUNDO PLANO.
+#
+# [T-2.130] **El número ya no se declara aquí**: la política —los dos escalones,
+# request y segundo plano— vive en ``db/session.py``, que es donde se abre la
+# conexión que la aplica. Esto son alias, y se conservan porque los importan por su
+# nombre ``commands/rejection_audit.py`` (T-2.112) y los tests de T-2.121; el número
+# es el mismo objeto, así que las dos políticas no pueden derivar por construcción.
+#
+# Consumidores del escalón de segundo plano hoy:
 #   · ``audit_out_of_band_async`` (aquí)
 #   · ``audit_command_rejection``  (``commands/rejection_audit.py``, T-2.112)
-#   · el hub del WebSocket         (``ws/hub.py``)
-#   · el poller                    (``ws/poller.py``)
-#
-# NO es la política de la conexión del REQUEST, que sigue sin tope y es una decisión
-# de producción abierta (``PENDIENTES-MAURICIO §1.8``). El criterio duro que salió de
-# medirlo en T-2.121: cualquier tope del request debe ser MENOR que el timeout del
-# pool (30 s), porque por encima de eso un bloqueo deja de degradar un request y pasa
-# a degradar el proceso entero — diez esperas agotan el pool y entonces falla también
-# lo que ni siquiera tocaba la tabla bloqueada.
-# Milisegundos, literal entero: ``SET LOCAL`` no admite bind params y el valor es
-# una constante del módulo, no entrada de usuario.
+#   · el hub del WebSocket         (``ws/hub.py``, T-2.121)
+#   · el poller                    (``ws/poller.py``, T-2.121)
 #
 # Por qué existe (T-2.73.c): la conexión del request ya leyó ``audit_log`` y sostiene
 # su ACCESS SHARE mientras Python espera a la lateral. Si alguien pide entretanto el
@@ -60,8 +59,8 @@ _AUDIT_SQL_ASYNC = text(
 # PostgreSQL: request → lateral → ACCESS EXCLUSIVE → request. El detector de
 # interbloqueos no lo ve —la conexión del request está *idle*, no esperando un lock—
 # así que sin este tope la espera es literalmente para siempre.
-LATERAL_LOCK_TIMEOUT_MS = 3000
-LATERAL_LOCK_TIMEOUT = text(f"SET LOCAL lock_timeout = {LATERAL_LOCK_TIMEOUT_MS}")
+LATERAL_LOCK_TIMEOUT_MS = BACKGROUND_LOCK_TIMEOUT_MS
+LATERAL_LOCK_TIMEOUT = lock_timeout_stmt(BACKGROUND_LOCK_TIMEOUT_MS)
 
 
 def audit(

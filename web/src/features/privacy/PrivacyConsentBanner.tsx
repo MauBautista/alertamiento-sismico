@@ -118,7 +118,15 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
       // with the role button and name REINTENTAR") en cuanto se montó aquí.
       // No se pierde recuperación: `usePrivacyConsent` reintenta solo cada
       // CONSENT_REFETCH_MS, y el estado `error` sigue viéndose.
-      empty={sereno && (status === null || notice === null)}
+      // [T-2.79.d] `empty` se DECLARA tal cual es; ya no lleva `sereno &&`.
+      //
+      // Ese `sereno` era una precedencia LOCAL: apagaba el `empty` porque el
+      // dato estuviera viejo, y el resultado medido era la franja muda —
+      // `DATOS RETENIDOS · hh:mm UTC` y debajo NADA, porque sin aviso los hijos
+      // tampoco pintan. Quien decide entre `empty` y `stale` es la tabla
+      // `STATE_PRECEDENCE`, no cada componente; y decidió que gana `stale`, con
+      // la ausencia FECHADA debajo. Lo vigila `statePrecedenceCensus.test.ts`.
+      empty={!loading && !error && (status === null || notice === null)}
       emptyText="SIN AVISO · esta organización no tiene aviso de privacidad publicado."
       staleSince={staleSince}
       className="privacy-banner"

@@ -238,6 +238,68 @@ describe("PrivacyConsentBanner", () => {
     expect(textoCurrent).not.toBe(textoMissing);
   });
 
+  /**
+   * [T-2.79.d] LA FRANJA MUDA — el hueco que dejó abierto T-2.79.
+   *
+   * Sin aviso publicado (`notice === null`) Y con el dato viejo, el banner
+   * pintaba `DATOS RETENIDOS · hh:mm UTC` y debajo NADA: una banda muda en la
+   * consola de un SOC. No mentía; simplemente no decía nada. La causa era una
+   * precedencia LOCAL: `empty` exigía `sereno`, o sea que el componente apagaba
+   * su propio `empty` porque el dato estaba viejo, y con ello se comía el único
+   * texto que ese estado tenía.
+   *
+   * Ahora `empty` se declara tal cual es y la tabla decide: gana `stale`, y el
+   * marco FECHA la ausencia en vez de callarla.
+   */
+  it("[T-2.79.d] sin aviso Y con el dato viejo: la franja deja de estar muda", () => {
+    const { container } = render(
+      wrap(
+        <PrivacyConsentBanner
+          override={{
+            status: { ...estado("missing"), notice: null },
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now() - CONSENT_STALE_MS - 1000,
+          }}
+        />,
+      ),
+    );
+
+    const marco = container.querySelector("[data-state]");
+    expect(marco?.getAttribute("data-state")).toBe("stale");
+
+    const banda = container.querySelector(".soc-stateframe__stale")?.textContent ?? "";
+    expect(banda).toContain("DATOS RETENIDOS");
+
+    // LO QUE ESTA FICHA CIERRA: debajo de la banda hay texto.
+    const salvoLaBanda = (container.textContent ?? "").replace(banda, "").trim();
+    expect(salvoLaBanda, "la franja sigue muda: banda de edad y debajo nada").not.toBe("");
+    expect(salvoLaBanda).toContain("no tiene aviso de privacidad publicado");
+    // Y la ausencia va FECHADA, no afirmada en presente: lo que se puede
+    // verificar es lo que se vio a esa hora, no lo que hay ahora.
+    expect(salvoLaBanda).toContain("desde entonces no se ha podido confirmar");
+  });
+
+  it("[T-2.79.d] el `empty` del banner ya no depende de que el dato esté fresco", () => {
+    // La misma ausencia, con el dato FRESCO, sigue siendo el `empty` de toda la
+    // vida. Sin esta mitad, el arreglo de arriba podría haber sido «encender
+    // empty siempre» y romper el estado vacío normal.
+    const { container } = render(
+      wrap(
+        <PrivacyConsentBanner
+          override={{
+            status: { ...estado("missing"), notice: null },
+            loading: false,
+            error: null,
+            dataUpdatedAt: Date.now(),
+          }}
+        />,
+      ),
+    );
+    expect(container.querySelector("[data-state]")?.getAttribute("data-state")).toBe("empty");
+    expect(container.textContent ?? "").toContain("no tiene aviso de privacidad publicado");
+  });
+
   it("[D1] un 404 del endpoint NO se cuenta como “esta organización no tiene aviso”", async () => {
     // `GET /privacy/consent` responde 200 con `notice: null` cuando no hay aviso
     // (api/src/takab_api/routers/privacy.py). Un 404 solo puede venir de la

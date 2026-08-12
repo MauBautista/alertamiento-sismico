@@ -32,8 +32,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from takab_api.audit import LATERAL_LOCK_TIMEOUT
-from takab_api.db.session import SessionCtx, get_tenant_conn
+from takab_api.db.session import BACKGROUND_LOCK_TIMEOUT_MS, SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
 if TYPE_CHECKING:
@@ -58,10 +57,10 @@ async def poll_features(hub: Hub, sub: Subscriber, site_id: str) -> None:
     ctx = SessionCtx.from_claims(sub.claims)
     while True:
         try:
-            async with get_tenant_conn(ctx) as conn:
-                # [T-2.121] Misma política que el hub y que las laterales de
-                # auditoría (`audit.LATERAL_LOCK_TIMEOUT`): una sola constante.
-                await conn.execute(LATERAL_LOCK_TIMEOUT)
+            # [T-2.121] Misma política que el hub y que las laterales de
+            # auditoría: una sola constante, declarada en `db/session.py`
+            # (T-2.130) y pedida por parámetro.
+            async with get_tenant_conn(ctx, lock_timeout_ms=BACKGROUND_LOCK_TIMEOUT_MS) as conn:
                 rows = (
                     (await conn.execute(_SQL_FEATURES, {"site": site_id, "win": _WINDOW_S}))
                     .mappings()

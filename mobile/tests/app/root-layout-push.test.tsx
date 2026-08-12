@@ -43,7 +43,14 @@ jest.mock("expo-router", () => {
   const React = jest.requireActual("react") as typeof import("react");
   const Stack = ({ children }: { children?: ReactNode }) =>
     React.createElement(React.Fragment, null, children);
-  (Stack as unknown as { Screen: () => null }).Screen = () => null;
+  // [T-2.125] `Screen` con nombre, no una flecha anónima colgada de `Stack`:
+  // `react/display-name` lo exigía y nadie lo veía porque `expo lint` no
+  // alcanzaba `tests/**`. No es cosmética — un componente sin nombre sale como
+  // `<Unknown>` en el árbol renderizado, que es justo lo que se lee cuando uno
+  // de estos tests falla.
+  const Screen = () => null;
+  Screen.displayName = "Stack.Screen";
+  (Stack as unknown as { Screen: typeof Screen }).Screen = Screen;
   return { Stack, useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) };
 });
 

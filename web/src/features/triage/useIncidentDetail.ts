@@ -13,6 +13,8 @@ import {
 import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } from "@takab/sdk";
 
 import { openPendingDownload, type PendingDownload } from "../../lib/download";
+import { useNow } from "../../lib/useNow";
+import { staleSinceOf } from "./staleness";
 
 class DetailRequestError extends Error {
   constructor(resource: string, status: number) {
@@ -71,6 +73,21 @@ export interface Resource<T> {
   error: string | null;
   /** true sólo si la consulta ni siquiera se lanzó (no hay nada que pedir). */
   disabled: boolean;
+  /**
+   * [T-2.82.a] Epoch ms de la última respuesta buena CUANDO ya se considera
+   * vieja; null = fresca.
+   *
+   * Va en el recurso y no en cada panel a propósito. Cuatro marcos de la
+   * pantalla donde se FIRMA un dictamen —evidencia, dictamen, bitácora y
+   * quórum— clavaban `staleSince={null}` porque su recurso no llevaba la marca
+   * de tiempo de la consulta; fabricársela en el marcado habría sido inventar
+   * cuatro relojes distintos para cuatro consultas que ya tienen el suyo dentro
+   * de react-query. Es el veredicto ya resuelto, no la materia prima: un panel
+   * que reciba `dataUpdatedAt` a secas puede volver a decidir por su cuenta, y
+   * quién gana entre `empty` y `stale` lo decide `STATE_PRECEDENCE` para toda
+   * la consola (T-2.79.d).
+   */
+  staleSince: number | null;
 }
 
 export interface IncidentDetailData {
@@ -195,11 +212,16 @@ export function useIncidentDetail(
 
   const exportError = pdfMutation.error?.message ?? downloadMutation.error?.message ?? null;
 
+  // Un único "ahora" para los cuatro recursos: nada los refresca solo en esta
+  // pantalla, así que envejecen juntos y tienen que decirlo juntos.
+  const now = useNow(30_000);
+
   const wrap = <T>(q: UseQueryResult<T>, isEnabled: boolean): Resource<T> => ({
     data: q.data,
     loading: isEnabled && q.isPending,
     error: q.error ? q.error.message : null,
     disabled: !isEnabled,
+    staleSince: staleSinceOf(q.dataUpdatedAt, now),
   });
 
   return {

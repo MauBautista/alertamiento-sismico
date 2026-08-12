@@ -212,6 +212,11 @@ export default function TriagePage() {
             detail={detail}
             forensics={forensics}
             minNodes={triage.minNodesFor(current.incident.site_id)}
+            // [T-2.82.a] La misma edad que fecha el HISTORIAL: la fila del
+            // incidente sale de esa consulta y de ninguna otra, así que el panel
+            // del quórum —que sin evento asociado no habla del evento sino del
+            // incidente— tiene que fechar con este reloj y no inventarse otro.
+            incidentStaleSince={staleSince}
             canSign={me?.allowed_actions.sign_dictamen === true}
             canExport={me?.allowed_actions.export === true}
             canGenerateReport={me?.allowed_actions.generate_report === true}
