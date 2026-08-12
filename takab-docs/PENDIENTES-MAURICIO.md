@@ -336,16 +336,23 @@ suite **lo declara en voz alta** en vez de callarlo.
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 
-> **Nuevo el 2026-08-10 — y hay que re-correr un flujo ya acreditado.** `T-2.116` hace que el
-> acuse del gabinete traiga por fin **el estado real del relé tras el arbitraje**, que es lo que
-> la spec móvil §2.2 pedía desde siempre y ningún contrato transportaba. El flujo **`GATE-HW 02`**
-> se acreditó contra la conducta vieja, así que **merece re-correrse después de desplegar el
-> edge**. Lo que se ve distinto: silenciar durante una alerta vigente ahora dice
-> «SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA» en vez de fingir éxito.
+> ## ✅ El bloqueo se levantó: el gabinete YA corre el código nuevo (2026-08-12)
 >
-> **Y el orden importa:** hasta que `gw-dev-0001` corra el código nuevo, el campo llega vacío y la
-> app degrada al respaldo de `T-2.107` — honesto, pero **no es lo que hay que acreditar**. Primero
-> el despliegue al Pi, después el gate.
+> **`gw-dev-0001` está `online` con `fw_version` = `fw_running` = `2d12c3a`** —las dos columnas
+> existen precisamente para cazar «código escrito que nadie corre», y coinciden— y con
+> `SCHEMA_VERSION 1.11.0`. La nube va en el mismo commit. **`T-2.116` y `T-2.120` dejan de ser
+> teoría: el acuse ya trae el estado real del relé tras el arbitraje.**
+>
+> **Lo que te toca a ti, y ahora sí se puede:** re-correr el flujo **`GATE-HW 02`**, que se
+> acreditó contra la conducta vieja. Lo que verás distinto: silenciar durante una alerta vigente
+> ahora dice **«SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA»** en vez de fingir éxito. Necesita
+> un dispositivo físico, así que no lo puede correr el software.
+>
+> **Del despliegue quedó una medición que vale para §1.1:** este gabinete **no lleva `GAS_VALVE`
+> ni `DOOR_RETAINER`** (`relays_status.installed = ["siren","strobe"]`), así que el reinicio de
+> `takab-edge` **no cicló nada** — sirena y estrobo siguieron desenergizados antes y después. El
+> coste de un ciclo que describe §1.1 es real **solo en un gabinete que los tenga instalados**;
+> en el de desarrollo, desplegar es gratis.
 
 ### 3.5 · El traspaso del dueño de los pines
 Depende de la decisión §1.1. Si es (A), va en esta misma visita. **Orden correcto y no
