@@ -96,7 +96,12 @@ export default function PostEventSummary({ forensics }: { forensics: ForensicsSt
         onRetry={forensics.refetch}
         empty={f !== undefined && (f.channels ?? []).length === 0 && (f.station_count ?? 0) === 0}
         emptyText="SIN MEDICIONES NI VOTOS PARA ESTE INCIDENTE"
-        staleSince={null}
+        // [T-2.82.a] El tiempo de aviso ganado y las estaciones que
+        // contribuyeron son los números que se citan como desempeño de la red
+        // ante una Protección Civil — y congelados se citan exactamente igual.
+        // La edad la resuelve `useForensics` con el reloj de toda la pantalla;
+        // aquí sólo se declara.
+        staleSince={forensics.staleSince}
       >
         {f && (
           <div className="postevent__grid">

@@ -4,15 +4,20 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-11 (lotes `T-2.110…T-2.122`) · **29 pendientes** · Estado del
-> backlog al escribirlo: 267 tareas · 193 `[x]` · 9 `[~]` · 65 `[ ]`, de las cuales la mayoría
+> **Última actualización:** 2026-08-12 (lotes `T-2.110…T-2.130`) · **26 pendientes** · Estado del
+> backlog al escribirlo: 273 tareas · 201 `[x]` · 9 `[~]` · 63 `[ ]`, de las cuales la mayoría
 > son `SOFTWARE` y las demás están aquí.
 >
-> **Cambios de estas pasadas:** §1.6 (protección de rama) **se cierra — ya está hecha**; **§2.1 se
-> cierra: la nube está desplegada y la base en `0038`**; entra §1.9 (¿arranca la consola sin
-> base?); §3.4 gana el aviso de re-correr `GATE-HW 02`; y **§1.8 deja de ser una decisión a
-> ciegas — ahora trae las cifras medidas y una recomendación con criterio duro. Es la que más ha
-> cambiado y la que más barato sale hoy.**
+> **Bajaste de 29 a 26 sin hacer nada**, porque el 2026-08-12 se cerraron por delegación las tres
+> decisiones que no exigían ni herramientas ni terceros (§1.2, §1.8, §1.9). Las que quedan **no
+> se delegaron a propósito**: cuestan dinero, tiempo de un tercero, o afectan a un edificio con
+> gente dentro.
+>
+> **Cambios de estas pasadas:** §1.6 (protección de rama) **cerrada — ya estaba hecha**; **§2.1
+> cerrada: la nube desplegada y la base en `0038`**; §3.4 gana el aviso de re-correr
+> `GATE-HW 02`; y **§1.2, §1.8 y §1.9 quedan DECIDIDAS por delegación explícita**, cada una con
+> su razón escrita para poder revocarla. Entre las tres desbloquearon cinco fichas de software,
+> todas ya cerradas el mismo día (`T-2.79.d`, `T-2.82.a`, `T-2.123`, `T-2.130`, `T-2.128`).
 >
 > **Y lo que ahora es lo siguiente, porque el despliegue de la nube lo dejó a un paso:** el
 > gabinete todavía corre el código viejo. Hasta que se despliegue el edge, `T-2.116` no existe
@@ -38,6 +43,26 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 Son las más baratas y las que **desbloquean software inmediatamente**. Ninguna requiere AWS, ni
 el gabinete, ni un tercero.
 
+> **Estado de esta sección (2026-08-12).** Cuatro puntos ya no piden nada:
+>
+> | | Punto | Estado |
+> |---|---|---|
+> | ✅ | §1.2 · ¿gana `empty` o `stale`? | **DECIDIDA** — gana `stale` |
+> | ✅ | §1.6 · protección de rama | **HECHA** por Mauricio |
+> | ✅ | §1.8 · `lock_timeout` del request | **DECIDIDA** — ~10 s, con cifras medidas |
+> | ✅ | §1.9 · ¿arranca la consola sin base? | **DECIDIDA** — en degradado, declarando |
+> | ⏳ | **§1.1 · ventana de mantenimiento vs hardware** | **abierta — cuesta un ciclo real de gas y puertas en un edificio con gente** |
+> | ⏳ | **§1.7 · ¿un pánico despierta al edificio?** | **abierta — no es una decisión técnica** |
+> | ⏳ | §1.3 · el teléfono del consentimiento | abierta (también legal) |
+> | ⏳ | §1.4 · ¿quién actualiza el catálogo SSN? | abierta |
+> | ⏳ | §1.5 · mini-ShakeMap y CCTV | abierta, no bloquea nada hoy |
+>
+> **Las tres decididas el 2026-08-12 lo fueron por delegación explícita** («decide por mí»), y
+> cada una lleva su razón escrita **para que se pueda revocar con conocimiento**. Las dos que
+> siguen en negrita **no se delegaron a propósito**: §1.1 cuesta un ciclo eléctrico real de gas y
+> puertas en un edificio ocupado, y §1.7 es decidir si dos personas pueden despertar a un
+> edificio entero de madrugada. Ninguna de las dos la puede tomar quien no responde por ella.
+
 ### 1.1 · ¿Ventana de mantenimiento, o hardware? — [`T-2.70.a`](TASKS.md), criterio 4
 **La decisión:** pasar el dueño de los pines a su propio proceso cuesta **un ciclo eléctrico** de
 `GAS_VALVE` y `DOOR_RETAINER`. En el edificio: el gas se cierra y las puertas se sueltan, una vez.
@@ -56,16 +81,29 @@ negocio.
 
 **Desbloquea:** el traspaso real en el gabinete, y con él `T-2.70` (canary + rollback).
 
-### 1.2 · ¿Qué gana, `empty` o `stale`? — [`T-2.79.d`](TASKS.md)
-**La decisión:** cuando **no hay dato** *y* **lo poco que hay está viejo**, ¿la pantalla dice «no
-hay» —arriesgando afirmar una ausencia que quizá solo es desconexión— o dice «no lo sé desde las
-hh:mm», que es más honesto y menos accionable?
+### 1.2 · ~~¿Qué gana, `empty` o `stale`?~~ — ✅ **DECIDIDA: gana `stale`** (2026-08-12)
 
-No es un banner: **gobierna toda la consola**. Hoy cada componente lo resuelve por su cuenta, y
-esa deriva ya produjo una franja muda y que **ningún panel de la pantalla donde se firma un
-dictamen** pueda declarar su dato viejo.
+> **Decidida por delegación explícita de Mauricio** («decide por mí»), no por omisión. Queda aquí
+> para que se pueda **revocar con conocimiento**, que es lo contrario de que se pierda.
+>
+> **La razón:** `empty` afirma un hecho **sobre el mundo** («no hay»). `stale` afirma un hecho
+> **sobre nuestro conocimiento** («no lo sé desde las hh:mm»). Cuando los dos son ciertos a la
+> vez, **solo el segundo se puede verificar**. Afirmar una ausencia que no puedes comprobar, en la
+> consola de un SOC, es el modo de fallo que produce «no hay heridos» cuando lo que pasa es que
+> el enlace está caído.
+>
+> Que sea **menos accionable es la virtud, no el defecto**: manda al operador a revisar el enlace
+> en vez de a concluir. Es la regla de oro 7 —«un dato congelado presentado como vivo es peor que
+> sin datos»— llevada al caso en que ambas cosas ocurren a la vez.
+>
+> **Desbloquea** `T-2.79.d` y `T-2.82.a` (`T-2.84.c` ya se había cerrado por otra vía).
 
-**Desbloquea:** `T-2.79.d`, `T-2.82.a` y `T-2.84.c` — las tres son la misma raíz.
+> **La pregunta tal como estaba planteada**, para que la decisión se pueda revisar contra ella:
+> cuando **no hay dato** *y* **lo poco que hay está viejo**, ¿la pantalla dice «no hay»
+> —arriesgando afirmar una ausencia que quizá solo es desconexión— o dice «no lo sé desde las
+> hh:mm», que es más honesto y menos accionable? No es un banner: **gobierna toda la consola**.
+> La deriva de que cada componente lo resolviera por su cuenta ya había producido una franja muda
+> y que **ningún panel de la pantalla donde se firma un dictamen** pudiera declarar su dato viejo.
 
 ### 1.3 · El teléfono del consentimiento — [`T-2.80.a`](TASKS.md) *(también `LEGAL`)*
 **La decisión:** un sujeto identificado por teléfono tiene su número **en claro** en el registro
@@ -97,19 +135,33 @@ eres el único admin, así que **puedes mergear con el gate en rojo**. Hoy eso e
 escape útil trabajando solo; el día que entre alguien más al repositorio, es un agujero. No hace
 falta cerrarlo ahora — hace falta que sea una elección y no un olvido.
 
-### 1.9 · ¿Debe arrancar la consola con la base caída? — [`T-2.123`](TASKS.md)
-**Nuevo el 2026-08-10, y sale de un cambio que ya está hecho.** `T-2.114` necesitaba que `/me`
-devolviera el inmueble del ocupante —el dato no viaja en el claim de Cognito—, así que **`/me`
-dejó de ser claims puros y ahora abre sesión de base de datos**.
+### 1.9 · ~~¿Debe arrancar la consola con la base caída?~~ — ✅ **DECIDIDA: arranca en degradado** (2026-08-12)
 
-El efecto secundario es real: **con Postgres caído, la consola web ya no arranca**, donde antes
-arrancaba con los claims. En la app móvil no hay regresión, porque conserva la sesión y resuelve
-desde el caché (regla de oro 2).
+**El contexto.** `T-2.114` necesitaba que `/me` devolviera el inmueble del ocupante —el dato no
+viaja en el claim de Cognito—, así que **`/me` dejó de ser claims puros y abre sesión de base**.
+Efecto: con Postgres caído, la consola web ya no arrancaba. En móvil no hay regresión (conserva
+la sesión y resuelve del caché, regla de oro 2).
 
-La decisión: **¿la consola debe arrancar en degradado, declarando lo que no sabe, o negarse?**
-Las dos son defendibles. Arrancar sin saber el alcance del operador roza la regla de oro 5; no
-arrancar deja al SOC sin pantalla justo cuando algo grande está pasando. **No la puede tomar el
-código**, porque es una elección sobre qué falla peor.
+> **Decidida por delegación explícita de Mauricio** («decide por mí»). Revocable con esto escrito.
+>
+> **LA DECISIÓN: la consola ARRANCA, DECLARANDO que no puede establecer el alcance del operador,
+> y sin pintar NI UN dato de tenant.**
+>
+> Es la única combinación que respeta las dos reglas que aquí tiran en direcciones opuestas:
+> - **No arrancar es inaceptable** porque una caída de base **coincide a menudo con un incidente**:
+>   deja al SOC sin pantalla justo cuando hace falta.
+> - **Arrancar mostrando datos sin alcance resuelto es inaceptable** (regla de oro 5): adivinar el
+>   alcance de un `soc_operator` es exactamente la brecha multi-tenant.
+> - Arrancar el armazón y **declarar lo que no se sabe** (regla de oro 7) es verdadero, seguro y
+>   accionable: el operador ve que el sistema vive y que **no puede establecer su identidad**.
+>
+> **El riesgo que hay que vigilar, y por eso lleva test propio:** que el degradado se convierta en
+> **puerta trasera**. Sin `/me` no hay alcance, así que no puede haber ninguna ruta que pinte
+> datos. Si alguna pantalla resulta accesible en degradado y consulta la API, es un fallo.
+>
+> **Lo que la decisión NO cambia:** `/me` sigue abriendo sesión de base, y debe seguir haciéndolo
+> — volver a claims puros reabriría `T-2.114` y dejaría al ocupante móvil sin edificio. Lo que se
+> arregla es **cómo reacciona el cliente cuando `/me` no contesta**.
 
 ### 1.7 · ¿Un pánico despierta a todo el edificio? — [`T-2.106`](TASKS.md)
 El quórum de pánico emite el comando de sirena y **no notifica a nadie**: la ruta del voto no
@@ -120,7 +172,31 @@ Mandar push por una activación manual **no es decisión técnica**: es decidir 
 pueden despertar a un edificio entero de madrugada. Las tres salidas son legítimas —push a todos,
 push solo a tácticos, o nada y que lo diga la sirena— y ninguna se puede elegir desde el código.
 
-### 1.8 · `lock_timeout` global en la conexión del request — [`T-2.73.c`](TASKS.md)
+### 1.8 · ~~`lock_timeout` global en la conexión del request~~ — ✅ **DECIDIDA: se pone, ~10 s** (2026-08-12)
+
+> **Decidida por delegación explícita de Mauricio** («decide por mí»), **con las cifras de
+> `T-2.121` sobre la mesa** — que es lo que la convirtió de corazonada en decisión. Se implementa
+> en `T-2.130`. Revocable con todo esto escrito.
+>
+> **El criterio duro, y es el que manda sobre el número exacto:** `lock_timeout` **< timeout del
+> pool (30 s)**. Por debajo, un bloqueo degrada *una petición*; por encima —o sin tope, como
+> hasta hoy— degrada *el proceso entero*, porque diez esperas agotan el pool y entonces **falla
+> también lo que ni siquiera tocaba la tabla bloqueada**. Eso está medido, no supuesto.
+>
+> **Valor: ~10 s**, y no los 3 s de las conexiones de segundo plano. La diferencia tiene razón:
+> una auditoría lateral es best-effort y se puede tirar; **una petición es una persona
+> esperando**, y hay esperas legítimas por lock de **fila** —serialización de acuses— que cortar
+> a 3 s rompería.
+>
+> **Lo que esta decisión NO absorbe**, y conviene no darlo por hecho: `T-2.128` (el fan-out del
+> WebSocket es en serie) sigue abierta. Un tope global habría convertido el silencio del hub en
+> una excepción registrada, nada más.
+>
+> **Queda una pregunta dentro de la ficha, no de esta lista:** si el tope aplica también a los
+> **workers**. Un worker de ingesta que aborta por un lock puede perder un lote si no reintenta;
+> lo resuelve `T-2.130` con su razón escrita.
+
+### 1.8.bis · El planteamiento original — [`T-2.73.c`](TASKS.md)
 `T-2.73.c` cerró el interbloqueo por el lado de la conexión **lateral**. La conexión **del
 request** sigue sin tope: si `audit_log` está bloqueada *antes* de que el request empiece, se
 cuelga en el primer `SELECT`.

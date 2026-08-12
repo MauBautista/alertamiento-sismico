@@ -162,7 +162,7 @@ lint:
 	cd $(API_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(WEB_DIR) && npm run lint && npm run format:check && npm run typecheck
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
-	cd $(MOBILE_DIR) && npx expo lint && npm run typecheck
+	cd $(MOBILE_DIR) && npm run lint && npm run typecheck
 	terraform fmt -check -recursive infra/terraform
 
 # Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de

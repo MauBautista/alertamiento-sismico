@@ -7,7 +7,9 @@ tengan derecho a verlo. El payload del NOTIFY es SOLO una señal de invalidació
 Postgres/RLS decide qué se ve — el payload crudo NUNCA se reenvía al cliente.
 
 Ruta de un notify:
-1. ``_dispatch`` mapea el tipo a un topic (``incident``/``incident_action`` →
+0. ``dispatch`` lo encola en el carril de su ``(tenant, topic)`` y VUELVE; una
+   tarea por carril reparte en orden (T-2.128, ver abajo).
+1. ``_repartir`` mapea el tipo a un topic (``incident``/``incident_action`` →
    ``incidents``; ``device_health``/``rule_evaluation`` → ``site_state``).
 2. Prefiltra suscriptores por visibilidad de tenant (propio ∪ takab-interno ∪
    gov sobre tenants ``gov_shared``), cacheando ``tenants.visibility`` ~60 s.
@@ -27,6 +29,17 @@ y encima retenía conexiones del pool (5+5), así que a los 10 bloqueos el REST
 también se quedaba sin conexión (30 s hasta el ``TimeoutError`` del pool).
 Ninguna de las dos cosas se veía: el socket seguía abierto y la consola seguía
 pintando «CONECTADO · ● LIVE».
+
+[T-2.128] **El reparto ya no es una sola fila india: hay un carril por
+``(tenant, topic)``.** El tope de T-2.121 dejó el apagón en 3 s en vez de
+indefinido, pero la serialización seguía entera — medido: con ``incidents``
+bloqueada, el frame de OTRO tenant que ni tocaba la base tardaba **3.06 s**.
+Ahora sale en <0.05 s porque va por su propio carril.
+
+El corte es ``(tenant, topic)`` y no más fino a propósito: dentro de un carril el
+orden queda igual que siempre, que es lo que necesita una consola que indexa por
+id y se queda con el ÚLTIMO frame. Ver ``_lane_key`` para el censo de quién
+depende del orden.
 """
 
 from __future__ import annotations
@@ -34,7 +47,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
@@ -44,9 +57,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocket
 
-from takab_api.audit import LATERAL_LOCK_TIMEOUT
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.db.session import SessionCtx, get_tenant_conn
+from takab_api.db.session import BACKGROUND_LOCK_TIMEOUT_MS, SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
 logger = logging.getLogger("takab_api.ws")
@@ -121,6 +133,51 @@ class Subscriber:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
+@dataclass(eq=False)
+class _Lane:
+    """[T-2.128] Cola ordenada de un ``(tenant, topic)`` + su tarea drenadora."""
+
+    cola: deque[dict[str, Any]] = field(default_factory=deque)
+    tarea: asyncio.Task[Any] | None = None
+    descartados: int = 0
+
+
+def _lane_key(payload: dict[str, Any]) -> str | None:
+    """Carril de un notify: ``(tenant, topic)``. ``None`` = payload que se descarta.
+
+    **El corte es el resultado del criterio 1 de T-2.128, no una comodidad.** El
+    topic es exactamente la unidad a la que un cliente se suscribe, así que:
+
+    · Dentro del carril el orden queda **idéntico al de hoy**. Eso es obligatorio:
+      la consola indexa por id y **el último frame gana** (``mergeIncidents``,
+      ``liveHealth.store``), así que adelantar dos invalidaciones de la misma
+      entidad dejaría pintado el estado viejo hasta el refetch de 30 s — regla de
+      oro 7 en la pantalla donde se manda una brigada. Y conserva además la
+      secuencia CRUZADA que hoy se asume y se prueba: el frame del incidente va
+      antes que las acciones de ese incidente.
+    · Entre carriles no hay nada que correlacionar: todo estado de cliente está
+      indexado por un id que pertenece a un solo tenant y viaja por un solo
+      topic, así que ningún consumidor puede observar el reordenamiento.
+
+    Cortar más fino (un carril por entidad) rompería lo primero para ganar poco;
+    cortar más grueso (un carril y ya) es exactamente el defecto que cierra la
+    ficha.
+    """
+    topic = _TOPIC_BY_TYPE.get(payload.get("t") or "")
+    tenant = payload.get("tenant")
+    if topic is None or tenant is None:
+        return None
+    return f"{tenant}|{topic}"
+
+
+#: Notifies en espera que aguanta UN carril antes de tirar los más viejos. Un
+#: carril solo se llena si su tabla lleva rato bloqueada, y entonces la cola es
+#: memoria que crece sin techo con un proceso que no puede vaciarla: 32 sobra
+#: para cualquier ráfaga real (el presupuesto edge→browser es <2 s) y acota el
+#: daño de la patológica.
+_LANE_MAX = 32
+
+
 class Hub:
     """Singleton de proceso: LISTEN de fondo + registro de sockets + fan-out."""
 
@@ -130,6 +187,9 @@ class Hub:
         self._ready = asyncio.Event()
         self._visibility: dict[str, tuple[str, float]] = {}
         self._running = False
+        #: [T-2.128] Un carril por ``(tenant, topic)`` vivo; se crean al vuelo y
+        #: se recogen en cuanto se vacían (si no, serían una fuga por tenant).
+        self._lanes: dict[str, _Lane] = {}
 
     # ---- ciclo de vida (lo llama el lifespan de la app) -------------------
     async def start(self) -> None:
@@ -149,7 +209,7 @@ class Hub:
             logger.warning("ws: LISTEN takab_live no listo en %ss", _LISTEN_READY_TIMEOUT_S)
 
     async def stop(self) -> None:
-        """Cancela la tarea LISTEN y todos los pollers; limpia el registro."""
+        """Cancela la tarea LISTEN, los carriles y los pollers; limpia el registro."""
         self._running = False
         if self._listener is not None:
             self._listener.cancel()
@@ -158,6 +218,14 @@ class Hub:
             except asyncio.CancelledError:
                 pass
             self._listener = None
+        # [T-2.128] Los carriles se cancelan, no se drenan: al parar el proceso lo
+        # que queda en cola es reparto que ya no tiene a quién llegar.
+        for lane in list(self._lanes.values()):
+            if lane.tarea is not None:
+                lane.tarea.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await lane.tarea
+        self._lanes.clear()
         for sub in list(self._subs):
             await self._cancel_pollers(sub)
         self._subs.clear()
@@ -207,6 +275,72 @@ class Hub:
 
     # ---- fan-out ----------------------------------------------------------
     async def dispatch(self, payload: dict[str, Any]) -> None:
+        """[T-2.128] Encola el notify en SU carril y vuelve. No espera al reparto.
+
+        Antes esto repartía en línea, y como ``run_listener`` hace ``await
+        hub.dispatch`` notify a notify, un solo reparto lento paraba el fan-out
+        del proceso entero — todos los topics, todos los tenants, incluidos los
+        frames que ni tocaban la tabla en cuestión (medido en T-2.121: 25 s sin
+        tope, 3.06 s con él). Volver rápido de aquí es lo que rompe esa cadena
+        sin tocar ``listener.py``: la cola vive en el hub, que es de quien es el
+        problema.
+
+        Quien necesite el reparto TERMINADO (los tests) llama a ``drain()``.
+        """
+        key = _lane_key(payload)
+        if key is None:
+            return  # tipo desconocido o sin tenant: mismo descarte de siempre
+        lane = self._lanes.get(key)
+        if lane is None:
+            lane = _Lane()
+            self._lanes[key] = lane
+        if len(lane.cola) >= _LANE_MAX:
+            # Tirar el MÁS VIEJO y no el nuevo: cada frame se re-consulta contra
+            # la fila actual, así que el reciente describe mejor la realidad que
+            # el que lleva minutos en la cola. Se registra porque una cola llena
+            # significa que algo lleva mucho rato sin poder leer.
+            lane.cola.popleft()
+            lane.descartados += 1
+            logger.warning(
+                "ws: carril %s lleno (%d): se descarta el notify más viejo (%d en total)",
+                key,
+                _LANE_MAX,
+                lane.descartados,
+            )
+        lane.cola.append(payload)
+        if lane.tarea is None:
+            lane.tarea = asyncio.create_task(self._drenar_carril(key))
+
+    async def _drenar_carril(self, key: str) -> None:
+        """Reparte los notifies de UN carril, en orden y de uno en uno."""
+        lane = self._lanes.get(key)
+        if lane is None:
+            return
+        try:
+            while lane.cola:
+                payload = lane.cola.popleft()
+                try:
+                    await self._repartir(payload)
+                except Exception:  # noqa: BLE001 - un notify no puede matar el carril
+                    logger.exception("ws: fallo despachando notify en el carril %s", key)
+        finally:
+            # Sin await entre la salida del ``while`` y esto: ningún ``dispatch``
+            # puede colarse en medio y quedarse con un carril sin drenador.
+            lane.tarea = None
+            if not lane.cola:
+                self._lanes.pop(key, None)
+
+    async def drain(self, timeout_s: float = 30.0) -> None:
+        """Espera a que todos los carriles queden vacíos (tests y ``stop``)."""
+        limite = monotonic() + timeout_s
+        while monotonic() < limite:
+            tareas = [ln.tarea for ln in self._lanes.values() if ln.tarea is not None]
+            if not tareas:
+                return
+            await asyncio.wait(tareas, timeout=max(0.0, limite - monotonic()))
+        logger.warning("ws: drain no vació los carriles en %.1f s", timeout_s)
+
+    async def _repartir(self, payload: dict[str, Any]) -> None:
         t = payload.get("t")
         tenant = payload.get("tenant")
         topic = _TOPIC_BY_TYPE.get(t or "")
@@ -280,13 +414,14 @@ class Hub:
             return p.RosterSignalFrame(
                 tenant_id=_uuid(tenant), site_id=_uuid(site), incident_id=_uuid(incident)
             ).model_dump(mode="json")
-        async with get_tenant_conn(ctx) as conn:
-            # [T-2.121] Tope de espera por lock. Es la MISMA política que aplican
-            # las dos conexiones laterales de auditoría (`audit.py`, T-2.73.c /
-            # T-2.112) y se reutiliza a propósito en vez de inventar un número:
-            # el día que cambie, cambia para todas. Sin él, un ACCESS EXCLUSIVE
-            # ajeno paraba el fan-out del proceso entero (medido: no volvía).
-            await conn.execute(LATERAL_LOCK_TIMEOUT)
+        # [T-2.121] Tope de espera por lock, escalón de SEGUNDO PLANO. Es la MISMA
+        # política que aplican las dos laterales de auditoría (`audit.py`,
+        # T-2.73.c / T-2.112) y se reutiliza a propósito en vez de inventar un
+        # número: el día que cambie, cambia para todas. Sin él, un ACCESS
+        # EXCLUSIVE ajeno paraba el fan-out del proceso entero (medido: no
+        # volvía). [T-2.130] la política se declara ahora en `db/session.py` y se
+        # pide por parámetro: una llamada menos y un sitio menos donde derivar.
+        async with get_tenant_conn(ctx, lock_timeout_ms=BACKGROUND_LOCK_TIMEOUT_MS) as conn:
             if t == "incident":
                 row = (await conn.execute(_SQL_INCIDENT, {"id": _uuid(payload.get("id"))})).first()
                 if row is None:
@@ -322,8 +457,10 @@ class Hub:
         hit = self._visibility.get(str(tenant_id))
         if hit is not None and hit[1] > now:
             return hit[0]
-        async with get_tenant_conn(_VISIBILITY_CTX) as conn:
-            await conn.execute(LATERAL_LOCK_TIMEOUT)  # [T-2.121] mismo tope que arriba
+        # [T-2.121] mismo tope de segundo plano que arriba.
+        async with get_tenant_conn(
+            _VISIBILITY_CTX, lock_timeout_ms=BACKGROUND_LOCK_TIMEOUT_MS
+        ) as conn:
             row = (await conn.execute(_SQL_VISIBILITY, {"t": _uuid(tenant_id)})).first()
         vis = row.visibility if row is not None else "private"
         self._visibility[str(tenant_id)] = (vis, now + _VISIBILITY_TTL_S)

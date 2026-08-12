@@ -8,15 +8,71 @@
 // Orden cronológico del SERVIDOR: no se reordena en cliente. Una bitácora que el
 // cliente reordena deja de ser una bitácora.
 
-import { isSimulatedAction } from "@takab/sdk";
+import { ACTION_STATE, ACTUATOR_CHANNELS, CHANNEL_LABEL, isSimulatedAction } from "@takab/sdk";
 
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 
-/** Etiquetas de `incident_actions.kind` (espejo de los verbos que escribe la API). */
+/**
+ * [T-2.127] Rótulos de los kinds de ACTUADOR, derivados de `ACTUATOR_CHANNELS`
+ * — el mismo registro del que el checklist BMS saca `ACTION_STATE` y
+ * `CHANNEL_LABEL` (`shared/sdk-ts/src/bms.ts`, T-2.119).
+ *
+ * Aquí había dos entradas a mano —`siren_on` y `siren_off`— y NADA MÁS, así que
+ * los otros ocho kinds de actuador caían en el fallback crudo: la bitácora que
+ * un perito lee para reconstruir lo ocurrido decía «GAS_CLOSED». Escribir los
+ * ocho que faltaban habría sido repetir el error de `T-1.50`, que es el que
+ * `T-2.119` acaba de pagar: dos listas de canales, una de ellas con tres
+ * nombres que ningún productor escribe jamás, y gas/ascensores/puertas meses en
+ * el fallback verde.
+ *
+ * El rótulo es `«CANAL» + «lo que ese VERBO afirma»`: `gas_closed` ⇒ «VÁLVULAS
+ * DE GAS CERRADAS». Ni el canal ni el vocabulario se escriben aquí; los dos
+ * salen del registro, y `ACTION_STATE[kind].state` ya resuelve si el verbo
+ * protege o suelta (incluidos los `legacyKinds`), así que tampoco se duplica esa
+ * decisión.
+ *
+ * OJO A LA DIFERENCIA CON EL CHECKLIST, que es lo que esta función NO hace: el
+ * checklist prefiere `payload.channel_state` sobre el verbo porque una fila suya
+ * afirma «cómo está el canal AHORA». Una línea de la bitácora afirma otra cosa
+ * —«a esta hora se ejecutó esta orden»— y es cronológica y append-only. Dejar
+ * que el censo del relé reescribiera el rótulo convertiría la evidencia en un
+ * estado con marca de tiempo.
+ */
+function actuatorKindLabels(): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const spec of Object.values(ACTUATOR_CHANNELS)) {
+    for (const kind of [...Object.keys(spec.kinds), ...Object.keys(spec.legacyKinds)]) {
+      labels[kind] = `${CHANNEL_LABEL[kind]} ${ACTION_STATE[kind].state}`;
+    }
+  }
+  return labels;
+}
+
+/**
+ * La derivación es PEREZOSA, y no es una micro-optimización: hacerla al cargar
+ * el módulo tumbaba dos suites enteras.
+ *
+ * `useFleet.test.tsx` y `useSiteRelays.test.tsx` sustituyen `@takab/sdk`
+ * COMPLETO (`vi.mock("@takab/sdk", () => mocks)`, sin `importOriginal`), y
+ * alcanzan este fichero de rebote por `TriageDetail` → `renderRoutes`. Leer
+ * `ACTUATOR_CHANNELS` en el cuerpo del módulo reventaba la carga —«No
+ * "ACTUATOR_CHANNELS" export is defined on the "@takab/sdk" mock»— y las dos
+ * suites pasaban de verdes a «0 test», sin que ninguna asserción hablara de
+ * rótulos. `isSimulatedAction` ya se importaba aquí y nunca dio guerra porque
+ * sólo se INVOCA dentro de `kindLabel`; esto se comporta igual.
+ */
+let ACTUATOR_LABELS: Record<string, string> | null = null;
+
+function actuatorLabel(kind: string): string | undefined {
+  ACTUATOR_LABELS ??= actuatorKindLabels();
+  return ACTUATOR_LABELS[kind];
+}
+
+/** Etiquetas de `incident_actions.kind` (espejo de los verbos que escribe la API).
+ *  Los de actuador se DERIVAN (arriba); éstos son los verbos que no pertenecen a
+ *  ningún canal y no tienen registro del que salir. */
 const KIND_LABEL: Record<string, string> = {
-  siren_on: "SIRENA ACTIVADA",
-  siren_off: "SIRENA SILENCIADA",
   ack: "ACUSE DE OPERADOR",
   dictamen: "DICTAMEN EMITIDO",
   dictamen_request: "DICTAMEN SOLICITADO",
@@ -48,7 +104,7 @@ export interface TimelineAction {
  * caería en el fallback crudo sin decir que nadie lo recibió.
  */
 export function kindLabel(action: TimelineAction): string {
-  const base = KIND_LABEL[action.kind] ?? action.kind.toUpperCase();
+  const base = actuatorLabel(action.kind) ?? KIND_LABEL[action.kind] ?? action.kind.toUpperCase();
   if (isSimulatedAction({ payload: action.payload ?? {} }) && !base.includes("SIMULAD")) {
     return `${base} · SIMULADA, NADIE LA RECIBIÓ`;
   }
@@ -61,7 +117,18 @@ function isUndelivered(action: TimelineAction): boolean {
 }
 
 export interface IncidentTimelineProps {
-  actions: { data: TimelineAction[] | undefined; loading: boolean; error: string | null };
+  actions: {
+    data: TimelineAction[] | undefined;
+    loading: boolean;
+    error: string | null;
+    /**
+     * [T-2.82.a] Epoch ms de la última respuesta buena cuando ya es vieja; el
+     * `Resource<T>` de `useIncidentDetail` la trae ya resuelta. Se declara en el
+     * mismo objeto que el dato a propósito: una bitácora y su edad no se pueden
+     * separar sin que alguien acabe pintando la una sin la otra.
+     */
+    staleSince: number | null;
+  };
   onRetry: () => void;
 }
 
@@ -98,7 +165,12 @@ export default function IncidentTimeline({ actions, onRetry }: IncidentTimelineP
         onRetry={onRetry}
         empty={actions.data?.length === 0}
         emptyText="SIN ACCIONES REGISTRADAS PARA ESTE INCIDENTE"
-        staleSince={null}
+        // [T-2.82.a] Esto es lo que se lee para reconstruir lo ocurrido antes de
+        // firmar. Una bitácora a la que le faltan las últimas acciones porque el
+        // enlace se cayó, pintada como completa, es una reconstrucción falsa de
+        // un incidente; y con la lista vacía, `stale` gana a `empty` y la
+        // ausencia sale FECHADA en vez de afirmada (T-2.79.d).
+        staleSince={actions.staleSince}
       >
         <ol className="timeline__list">
           {(actions.data ?? []).map((a) => (

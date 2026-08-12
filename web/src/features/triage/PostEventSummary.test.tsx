@@ -31,10 +31,21 @@ function forensics(over: Partial<ForensicsOut> = {}): ForensicsOut {
 function arrange(data: ForensicsOut | undefined, over = {}) {
   render(
     <PostEventSummary
-      forensics={{ data, loading: false, error: null, refetch: vi.fn(), ...over }}
+      forensics={{
+        data,
+        loading: false,
+        error: null,
+        refetch: vi.fn(),
+        dataUpdatedAt: Date.now(),
+        staleSince: null,
+        ...over,
+      }}
     />,
   );
 }
+
+/** 2026-08-03 10:41:30 UTC — la hora que el marco tiene que imprimir. */
+const HORA = Date.UTC(2026, 7, 3, 10, 41, 30);
 
 describe("leadTimeView · el tiempo de aviso ganado [T-2.40]", () => {
   it("con SASMEX y pico medido da los segundos", () => {
@@ -131,5 +142,28 @@ describe("PostEventSummary", () => {
   it("el error de la consulta se declara con reintento", () => {
     arrange(undefined, { error: "GET /forensics falló (503)" });
     expect(screen.getByRole("alert")).toHaveTextContent(/503/);
+  });
+});
+
+describe("PostEventSummary · el desempeño congelado se cita igual [T-2.82.a]", () => {
+  it("con el dato viejo lo DICE, con la hora en que se supo", () => {
+    // "35 s de aviso ganado" y "4 estaciones contribuyeron" son los números que
+    // una Protección Civil cita como desempeño de la red. Congelados se citan
+    // exactamente igual: nada en el panel distinguía la medición de hace un
+    // segundo de la de hace media hora.
+    arrange(forensics(), { staleSince: HORA });
+    expect(screen.getByTestId("post-event-summary")).toHaveTextContent(
+      "DATOS RETENIDOS · 10:41:30 UTC",
+    );
+  });
+
+  it("y sigue enseñando los números bajo la franja, no en su lugar", () => {
+    arrange(forensics(), { staleSince: HORA });
+    expect(screen.getByTestId("post-event-summary")).toHaveTextContent("35.0 s");
+  });
+
+  it("con el dato fresco no hay franja que leer", () => {
+    arrange(forensics());
+    expect(screen.getByTestId("post-event-summary")).not.toHaveTextContent("DATOS RETENIDOS");
   });
 });

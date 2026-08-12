@@ -45,12 +45,18 @@ jest.mock("expo-crypto", () => ({ randomUUID: () => "ev-1" }));
 
 let mockPermiso: { granted: boolean } | null = { granted: true };
 jest.mock("expo-camera", () => {
-  const { View } = require("react-native");
-  const React = require("react");
+  // [T-2.125] `requireActual` y no `require()`: dentro de una factoría de
+  // `jest.mock` no se puede importar arriba (se hoistea), pero sí se puede pedir
+  // el módulo REAL — que aquí es además la misma instancia, porque ni
+  // `react-native` ni `react` están moqueados.
+  const { View } = jest.requireActual("react-native") as typeof import("react-native");
+  const React = jest.requireActual("react") as typeof import("react");
   // `forwardRef` + `useImperativeHandle` para que `cameraRef.current` exista:
   // sin eso el disparador no llega nunca a la vista de revisión, que es
   // justamente la que view-shot hornea.
-  function Visor(_p: unknown, ref: unknown) {
+  // El `ref` va tipado desde que `React` dejó de entrar como `any` por un
+  // `require()` sin tipos (T-2.125): `unknown` ya no cuela en `useImperativeHandle`.
+  function Visor(_p: unknown, ref: import("react").Ref<unknown>) {
     React.useImperativeHandle(ref, () => ({
       takePictureAsync: async () => ({ uri: "file:///shot.jpg" }),
     }));

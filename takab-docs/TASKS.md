@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-11)
+## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **267** · `[x]` **193** · `[~]` **9** · `[ ]` **65**
+**Conteo de tareas:** total **273** · `[x]` **201** · `[~]` **9** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -47,6 +47,13 @@ OIDC: código listo, falta `terraform apply`) — ambas esperan a un humano, no 
 > Y el saldo real no se mide en fichas sino en lo que dejó de estar roto: en dos días se cerraron
 > **cuatro superficies que mentían en verde** — el checklist de gas y puertas, la alarma del
 > inmueble, la imagen de consola que no construía, y un SOC que se quedaba mudo diciendo «● LIVE».
+>
+> **Tercer lote (2026-08-12): 8 cerradas, 6 abiertas**, y por primera vez el neto baja (65 → 63).
+> Se cerraron además **tres decisiones que llevaban semanas bloqueando software** (`PENDIENTES`
+> §1.2, §1.8, §1.9), las tres con su razón escrita para poder revocarlas. Lo que se arregló de
+> fondo: **la pantalla donde se firma un dictamen** ya puede declarar dato viejo en sus 8 paneles,
+> **la consola arranca con la base caída** sin convertirse en puerta trasera, y **una petición
+> bloqueada dejó de tumbar a las que no tocaban esa tabla**.
 **Qué corre en producción se le pregunta al sistema, no a este archivo** (`/api/health` para la
 nube, `FW_VERSION` para el gabinete — ver README §"¿Qué está desplegado?").
 
@@ -6038,7 +6045,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > nada. Ahora se distingue quién falló — el código o la nube — y la salida solo se destaca cuando
 > falló la nube: con un 404 lo correcto sigue siendo pedir otro código.
 
-### [ ] T-2.79.d · `StateFrame` no dice quién gana entre `empty` y `stale` — `SOFTWARE` + `DECISIÓN`
+### [x] T-2.79.d · `StateFrame` no dice quién gana entre `empty` y `stale` — `SOFTWARE` + `DECISIÓN`
 - **Componente:** web (contrato de estados) · **Depende de:** — · **Detectada al arreglar el
   banner de privacidad** (2026-08-08)
 - **El síntoma concreto.** En `PrivacyConsentBanner`, con `notice === null` **y** el dato viejo,
@@ -6053,11 +6060,38 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   ¿se dice «no hay» (arriesgando afirmar una ausencia que quizá solo es desconexión) o se dice
   «no lo sé desde las hh:mm» (que es más honesto y menos accionable)?
 - **Criterios de aceptación:**
-  - [ ] La precedencia queda **decidida y escrita** en el contrato de `StateFrame`, con su razón.
-  - [ ] Ningún componente puede quedar en una combinación sin texto: un test que recorra las
+  - [x] La precedencia queda **decidida y escrita** en el contrato de `StateFrame`, con su razón.
+  - [x] Ningún componente puede quedar en una combinación sin texto: un test que recorra las
         combinaciones de estados y exija contenido en todas. **Derivado del contrato**, no una
         lista de componentes.
-  - [ ] `PrivacyConsentBanner` deja de pintar la franja muda.
+  - [x] `PrivacyConsentBanner` deja de pintar la franja muda.
+
+> **Cerrada (2026-08-12).** `STATE_PRECEDENCE = ["loading", "error", "stale", "empty"]` — **gana
+> `stale`**, por delegación explícita de Mauricio (`PENDIENTES §1.2`, con la razón allí y en
+> `StateFrame.tsx`).
+>
+> **La pregunta estaba mal planteada, y la solución lo demuestra.** Se formuló como binaria —o
+> dices «no hay» o dices «no lo sé»— y no lo era: **el «no hay» no se pierde, se FECHA**.
+> `staleEmptyText(...)` imprime la ausencia en pasado —*«SIN AVISO… — así estaba a las 10:41:30
+> UTC; desde entonces no se ha podido confirmar»*—, que es exactamente lo que era verdad. Vive en
+> el contrato para que ningún panel escriba su propia versión del deslinde.
+>
+> **Lo que impide sortear la tabla** son dos piezas mecánicas, no una convención:
+> 1. **Tipo:** la tabla de activación es un `Record<(typeof STATE_PRECEDENCE)[number], …>` **sin
+>    `Partial` ni `??`**. Un quinto estado **no compila** hasta que alguien diga cómo se enciende.
+> 2. **Barrido:** el test enumera las **2^n** combinaciones derivadas de la tabla (16 hoy, 32 con
+>    un quinto) y renderiza **con hijos nulos** —porque en `stale`+`empty` los hijos son justo lo
+>    que no hay—, exigiendo texto en todas **descontada la franja de edad**: esa segunda parte es
+>    la franja muda literal.
+>
+> Más un censo que denuncia el patrón local: un marco cuyo `empty` dependa del valor que él mismo
+> pasa como `staleSince`. Medido, no teórico: al revertir la línea del banner, el censo lo nombró.
+> **Componentes que sorteaban la precedencia: 1**, el banner. Pagado.
+>
+> **Nota de método que conviene recordar:** el analizador nació con **la dirección del tinte
+> invertida** y producía **13 falsos positivos**, incluidos 7 paneles que solo comparten su
+> consulta. Lo cazaron **sus propios tests sintéticos** antes de que acusara a nadie. Un censo sin
+> pruebas contra fuentes fabricadas es un censo en el que no se puede confiar.
 
 ### [x] T-2.79.e · `NOTICE_ROLES` sigue a mano en el router, y su razón ya caducó — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api (auth) · **Desbloquea:** el primer criterio de `T-2.80.b` ·
@@ -6356,7 +6390,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > La auditoría **verifica el texto íntegro en la bitácora**, no un «cambió», y lo archiva bajo el
 > tenant **tocado**, no bajo el del operador — que es la fuga que T-2.71 ya pagó una vez.
 
-### [ ] T-2.82.a · Ningún panel de la pantalla donde se FIRMA tiene `stale` — `SOFTWARE`
+### [x] T-2.82.a · Ningún panel de la pantalla donde se FIRMA tiene `stale` — `SOFTWARE`
 - **Componente:** web · **Depende de:** — · **Hermana de `T-2.79.d`, y conviene resolverlas
   juntas** · **Detectada por:** reauditoría de la Fase 2.8 (2026-08-08)
 - **Regla de oro 7, en la peor pantalla posible.** `TriageDetail.tsx` monta sus tres paneles con
@@ -6368,10 +6402,44 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   `ComplianceDeclared` se montara mal, es que **la página entera** no tiene el concepto.
   Arreglarlo solo en un componente sería la deriva que denuncia `T-2.79.d`.
 - **Criterios de aceptación:**
-  - [ ] `useForensics` expone la edad del dato, y los paneles de `TriageDetail` la reciben.
-  - [ ] Un test que recorra los paneles de esa página y exija que **ninguno** clave `staleSince`
+  - [x] `useForensics` expone la edad del dato, y los paneles de `TriageDetail` la reciben.
+  - [x] Un test que recorra los paneles de esa página y exija que **ninguno** clave `staleSince`
         a `null`. Derivado del árbol de la página, no una lista de tres.
-  - [ ] La precedencia que decida `T-2.79.d` se aplica aquí sin excepciones locales.
+  - [x] La precedencia que decida `T-2.79.d` se aplica aquí sin excepciones locales.
+
+> **Cerrada (2026-08-12): 8 marcos de 8.** `FRESCURA_CLAVADA` queda **vacía**. La pantalla donde
+> se firma un dictamen puede por fin declarar que su dato está viejo, panel a panel.
+>
+> **El plan que parecía obvio era falso, y de un modo que importaba.** «Una línea:
+> `updatedAt: q.dataUpdatedAt`» habría expuesto la marca **cruda**, obligando a cada uno de los 4
+> paneles a derivar **su propio** veredicto —su umbral y su `now`—, que es **exactamente la deriva
+> que `T-2.79.d` acaba de cerrar**. `Resource<T>` lleva el **veredicto ya resuelto**, calculado
+> una vez con un solo reloj. Y no era una línea: sin el guard de `dataUpdatedAt <= 0`, los paneles
+> dirían **«viejo desde 1970»** mientras la consulta está en vuelo o deshabilitada.
+> Igual de falso: `QuorumNodes` necesitaba **dos** edades (la del incidente y la del evento, datos
+> distintos), y copiar `useForensics` en `useDamageReports` habría **triplicado** el deslinde.
+>
+> **El umbral se midió, no se eligió:** `queryClient` desactiva `refetchOnWindowFocus` y ninguna
+> consulta del triage lleva `refetchInterval` — en esa pantalla **nada se refresca solo**, así que
+> los marcos envejecen a la vez desde que se abrió el detalle. Un umbral (900 s, mayor que el
+> `staleTime` más largo para que el aviso no viva encendido), con una excepción deliberada: la
+> fila del incidente conserva el reloj con el que `TriagePage` ya fecha el HISTORIAL — un dato, un
+> veredicto.
+>
+> **Dos guardas que evitan un verde falso:**
+> - **No-vacuidad del censo:** una lista vacía también «cuadra» si el analizador se queda ciego,
+>   así que se exige que la derivación siga viendo los **ocho** marcos por su clave.
+> - La guarda heredada decía «la pieza que bloquea SIGUE faltando» y se ponía roja **al pagar la
+>   deuda**; invertida a «SIGUE en su sitio», que es el riesgo nuevo — quitar la edad de
+>   `Resource<T>` no rompería ninguna prueba de panel.
+>
+> **Falso positivo cazado en el propio analizador:** buscaba un atributo llamado literalmente
+> `staleSince`, así que un panel bien cableado con otro nombre salía acusado — **presión para
+> renombrar props solo para contentar al test**.
+>
+> **Deuda declarada:** `StructuralTriage` tiene la prueba del estado `stale` con reloj falso, no
+> el barrido de los cuatro estados; forzarlos en un `render` síncrono pide reestructurar el
+> ayudante. Sigue listado en `serverDataCensus` C-4, con la razón corregida.
 
 ### [ ] T-2.82.b · Cuatro sitios se escribieron tipos a mano, y el SDK ya los trae — `SOFTWARE`
 - **Componente:** web + mobile · **Depende de:** — · **Detectada por:** reauditoría de la
@@ -7434,7 +7502,7 @@ sería documentar intenciones.
 > **Dos corridas seguidas contra la misma base: veredicto idéntico**, que es literalmente lo que
 > la ficha perseguía.
 
-### [ ] T-2.125 · `expo lint` no cubre `mobile/tests/**` — `SOFTWARE`
+### [x] T-2.125 · `expo lint` no cubre `mobile/tests/**` — `SOFTWARE`
 - **Componente:** mobile + CI · **Detectada por:** `T-2.118` (2026-08-11)
 - El job `mobile` de CI corre `expo lint`, y **`mobile/tests/**` queda fuera de su alcance**. Hay
   al menos un error de eslint preexistente invisible ahí dentro (`react/display-name` en
@@ -7443,10 +7511,33 @@ sería documentar intenciones.
   `T-2.124`: un gate que **parece** cubrir más de lo que cubre. El daño no es el error suelto —
   es que nadie puede saber cuánto más hay ahí sin mirar.
 - **Criterios de aceptación:**
-  - [ ] El lint de móvil cubre `tests/**`, o su exclusión queda **declarada con razón**.
-  - [ ] Los errores que aparezcan al ampliarlo, resueltos — con su cuenta publicada.
+  - [x] El lint de móvil cubre `tests/**`, o su exclusión queda **declarada con razón**.
+  - [x] Los errores que aparezcan al ampliarlo, resueltos — con su cuenta publicada.
 
-### [ ] T-2.126 · `forensicMetadata` es código muerto que ya nadie llama — `SOFTWARE`
+> **Cerrada (2026-08-12). El alcance de `expo lint` está A FUEGO en el CLI de Expo**
+> (`DEFAULT_INPUTS`: `src`, `app`, `components`) y **no lee ninguna clave de configuración**, así
+> que la única palanca es pasarle una ruta. Por eso el arreglo aterriza en **quien invoca el
+> comando**, no en la config de eslint: `ci.yml` y el `Makefile` pasan a `npm run lint`
+> (`expo lint .`).
+>
+> **LA CUENTA, que es el punto de la ficha:** quedaban **21 ficheros lintables** fuera. Al
+> ampliar aparecieron **8 problemas — 1 error + 7 avisos**, en 6 ficheros. **Los 8 arreglados,
+> cero `eslint-disable`, cero excepciones.** Los siete `require()` estaban en factorías de
+> `jest.mock` (hoisting), donde la excepción habría sido legítima — pero no hacía falta:
+> `jest.requireActual` es la misma instancia y el fichero ya usaba ese patrón. **Y un noveno de
+> rebote:** un `TS2345` que llevaba oculto porque `React` entraba como `any`.
+>
+> Además del arreglo en los invocadores, hay **candado propio**: un test corre eslint con
+> `--max-warnings=0` sobre exactamente lo que cae fuera del alcance implícito, **calculando** el
+> conjunto —lee `DEFAULT_INPUTS` del propio CLI y los ficheros de `git ls-files`—, así que un
+> `e2e/` futuro entra solo. Verificado que muerde: un fichero nuevo con un `require()` en
+> `tests/` lo pone rojo nombrándolo.
+>
+> **Tercera vez de la misma familia** (`T-2.58`/`T-2.59`, `T-2.124`): un gate que **parece**
+> cubrir más de lo que cubre. El daño nunca es el error suelto — es que nadie puede saber cuánto
+> más hay ahí sin mirar.
+
+### [x] T-2.126 · `forensicMetadata` es código muerto que ya nadie llama — `SOFTWARE`
 - **Componente:** mobile · **Detectada por:** `T-2.118` (2026-08-11)
 - `forensicMetadata` solo lo invoca su propio test: **el JSON firmado de la spec §4.2 no está
   cableado al flujo de captura**. `T-2.118` lo dejó consistente con el aviso horneado en el pixel
@@ -7455,10 +7546,10 @@ sería documentar intenciones.
   (quién, dónde, con qué incidente). Tener el segundo escrito y desconectado es peor que no
   tenerlo, porque **parece** que está.
 - **Criterios de aceptación:**
-  - [ ] O se cablea al flujo de captura y viaja con la evidencia, o se declara por qué no existe.
-  - [ ] Si se cablea: test de que pixel y JSON **no pueden divergir**.
+  - [x] O se cablea al flujo de captura y viaja con la evidencia, o se declara por qué no existe.
+  - [x] Si se cablea: test de que pixel y JSON **no pueden divergir**.
 
-### [ ] T-2.127 · La bitácora del incidente rotula solo la sirena — `SOFTWARE`
+### [x] T-2.127 · La bitácora del incidente rotula solo la sirena — `SOFTWARE`
 - **Componente:** web · **Detectada por:** `T-2.119` (2026-08-11)
 - `features/triage/IncidentTimeline.tsx` (`KIND_LABEL`) solo rotula `siren_on`/`siren_off`; los
   otros **ocho** kinds de actuador salen crudos («GAS_CLOSED»).
@@ -7466,10 +7557,10 @@ sería documentar intenciones.
   orden, no un estado— pero es el mismo hueco de rótulo, y a un operador «GAS_CLOSED» no le dice
   lo mismo que «VÁLVULAS DE GAS CERRADAS».
 - **Criterios de aceptación:**
-  - [ ] Los diez kinds de actuador tienen rótulo, derivado del mismo registro que usa el
+  - [x] Los diez kinds de actuador tienen rótulo, derivado del mismo registro que usa el
         checklist — no una segunda lista a mano que vuelva a divergir.
 
-### [ ] T-2.128 · `run_listener` despacha los NOTIFY en serie — `SOFTWARE`
+### [x] T-2.128 · `run_listener` despacha los NOTIFY en serie — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.121` (2026-08-11), **medido**
 - Un solo `dispatch` colgado **no pierde un frame: para el fan-out del proceso entero, para todos
   los tenants**. Medido: con el hub esperando un lock, un segundo notify (`checkin`, que ni toca
@@ -7478,8 +7569,35 @@ sería documentar intenciones.
   serialización sigue ahí**, y es lo que convierte cualquier tropiezo de una consulta en una
   parada del reparto para todo el mundo.
 - **Criterios de aceptación:**
-  - [ ] Medido si el fan-out puede dejar de ser en serie sin romper el orden que alguien dependa.
-  - [ ] Un `dispatch` lento no puede detener la entrega a los demás suscriptores.
+  - [x] Medido si el fan-out puede dejar de ser en serie sin romper el orden que alguien dependa.
+  - [x] Un `dispatch` lento no puede detener la entrega a los demás suscriptores.
+
+> **Cerrada (2026-08-12). Se pudo desacoplar, pero no a lo bruto**, y el censo de quién depende
+> del orden se leyó **en los consumidores**, no se supuso:
+>
+> | Consumidor | ¿Depende del orden? |
+> |---|---|
+> | `useLiveIncidents` (`byId.set(...)`) | **Sí** — último que llega gana, por incidente |
+> | `liveHealth.store` / `useSiteSoh` | **Sí**, por gateway |
+> | `useIncidentActions` | No: dedup por `action_id` y re-ordena por `ts` |
+> | Expectativa **cruzada** | **Sí**: el frame del incidente llega antes que sus acciones — y **no hay `seq` en el protocolo** |
+>
+> **Corte: un carril por `(tenant, topic)`.** Dentro del carril el orden queda **idéntico al de
+> hoy**, incluida la secuencia incidente→acciones; entre carriles no hay nada que correlacionar,
+> porque todo estado de cliente está indexado por un id que pertenece a un solo tenant y viaja por
+> un solo topic. Cortar por entidad rompería la expectativa cruzada para ganar poco; **no cortar
+> es el defecto**. `run_listener` no cambia una línea: la cola vive en el hub.
+>
+> **Medido:** con `incidents` bloqueada, el frame del **otro tenant** pasó de **3.058 s** a
+> entregarse **antes de que el carril bloqueado llegue siquiera a encolarse** en Postgres. Y el
+> corte fino también: la salud del gabinete del **mismo tenant** ya no espera detrás de la cola de
+> incidentes.
+>
+> Cola acotada a 32 tirando **el más viejo** —cada frame se re-consulta contra la fila actual, así
+> que el reciente describe mejor la realidad— y registrando el descarte.
+>
+> **Tres tests se invirtieron, y ninguno era regresión:** los tres afirmaban `await dispatch` ==
+> «ya se entregó», que **es la serialización en persona** — la conducta que esta ficha cambia.
 
 ### [ ] T-2.129 · El canal live no sabe decir nada que no sea «conectado o no» — `SOFTWARE`
 - **Componente:** sdk + api + web · **Detectada por:** `T-2.121` (2026-08-11)
@@ -7494,7 +7612,100 @@ sería documentar intenciones.
   - [ ] La consola lo pinta como degradación, distinta de «sin conexión».
   - [ ] El frame nuevo no puede volver a caer en el descarte silencioso: test que lo ancle.
 
-### [ ] T-2.123 · `GET /me` ató el arranque de la consola a Postgres — `SOFTWARE`
+### [x] T-2.130 · La conexión del request no tenía tope de espera — `SOFTWARE` · COMPLETA (2026-08-12)
+- **Componente:** api · **Origen:** la decisión `PENDIENTES §1.8`, tomada con las cifras de `T-2.121`
+- **Criterios de aceptación:**
+  - [x] `get_tenant_conn` aplica el tope, y el valor sale de **una sola** política declarada.
+  - [x] Un bloqueo produce un **error con nombre** y el cliente recibe algo interpretable.
+  - [x] **Medido** que bajo contención el pool ya no se agota.
+  - [x] Las esperas por lock de **fila** legítimas siguen funcionando.
+
+> **Cerrada (2026-08-12).** **10 000 ms** para el request, **3 000 ms** para el segundo plano, los
+> dos declarados en `db/session.py`. El criterio duro no es un número copiado: un test **lee el
+> timeout real del pool** (`pool._timeout`, 30.0 s medido) y **se pone rojo si alguien sube el
+> tope por encima**.
+>
+> | | Antes (sin tope) | Después |
+> |---|---|---|
+> | `GET /incidents` con la tabla en ACCESS EXCLUSIVE ajeno | **sin respuesta a los 25.08 s** | **503 + `Retry-After`** |
+> | `GET /sites` — **que no toca esa tabla** | `QueuePool limit … timeout 30.00` a los **30.01 s** | **200 OK en 9.96 s** |
+>
+> **`LockTimeout` hereda de `HTTPException` Y de `SQLAlchemyError`, y eso no es coquetería:** hay
+> cuatro sitios que ya tratan el fallo de base como best-effort con `except SQLAlchemyError` —los
+> arreglos de `T-2.73.c`, `T-2.112` y `T-2.121`—. Si la excepción nueva fuera solo
+> `HTTPException`, **se les escaparía por debajo y esos tres arreglos se romperían en silencio**.
+>
+> **Los workers NO llevan tope, y la razón invierte lo que parecía obvio.** (1) No pasan por aquí:
+> conectan por `db/pool.py`, con conexión propia por proceso — el criterio que obliga al tope es
+> que el pool del request es **compartido y finito**, y un worker bloqueado no puede quitarle una
+> conexión a la API. (2) **Ponérselo haría daño:** `LockNotAvailable` es subclase de
+> `OperationalError`, así que el `except` del consumidor lo trataría como **RETRY**; con un lock
+> que dure, esos reintentos **queman recepciones de SQS** y a las cinco **un mensaje válido acaba
+> en la DLQ**. Esperar cuesta latencia; abortar en bucle cuesta datos. Acotarlos exige antes una
+> política de reintento — ficha `T-2.132`.
+>
+> **Cero tests se pusieron rojos por el tope**, dato que refuerza que 10 s es holgado.
+>
+> **Deja abierta** `T-2.131` (`statement_timeout` sigue sin tope: **la misma forma de agotamiento
+> del pool, por otra causa**, que este tope no toca).
+
+### [ ] T-2.131 · `statement_timeout` sigue sin tope — `SOFTWARE`
+- **Componente:** api · **Detectada por:** `T-2.130` (2026-08-12)
+- `T-2.130` acotó las esperas **por lock**. Una consulta **lenta** —no bloqueada— retiene su
+  conexión del pool **sin límite**: es **la misma forma de agotamiento** que se acaba de cerrar,
+  por una causa distinta, y el tope de lock no la alcanza.
+- **Criterios de aceptación:**
+  - [ ] Medido si hoy existe alguna consulta capaz de retener una conexión más que el tope de lock.
+  - [ ] Decidido si `statement_timeout` se pone, con qué valor y con la misma disciplina de
+        `T-2.130`: menor que el timeout del pool, y sin cortar trabajo legítimo largo.
+
+### [ ] T-2.132 · Los workers esperan sin límite, y acotarlos quema mensajes — `SOFTWARE`
+- **Componente:** api (workers) · **Detectada por:** `T-2.130` (2026-08-12), **con evidencia**
+- Los workers conservan espera ilimitada por lock **a propósito**: acotarlos hoy convertiría el
+  bloqueo en `LockNotAvailable` ⇒ `OperationalError` ⇒ **RETRY** ⇒ recepciones quemadas ⇒ un
+  mensaje válido en la **DLQ** a la quinta.
+- **Riesgo residual honesto:** un worker bloqueado sostiene una transacción abierta que puede ser
+  el extremo lejano de un ciclo tipo `T-2.73.c`.
+- **Criterios de aceptación:**
+  - [ ] Política de reintento que **no queme `maxReceiveCount`** ante un fallo transitorio de lock.
+  - [ ] Solo entonces, tope de espera en los workers.
+
+### [ ] T-2.133 · `siren_test` no tiene productor: o le falta rótulo, o es una entrada muerta — `SOFTWARE`
+- **Componente:** sdk + api · **Detectada por:** `T-2.127` (2026-08-12)
+- `siren_test` está en el registro del checklist (`ACTION_STATE` «PROBADA», `CHANNEL_LABEL`
+  «PRUEBA DE SIRENA») pero **no es un kind de `ACK_KIND`**, así que quedó fuera de la derivación
+  de rótulos y se pintaría crudo. **No se encontró ningún productor** que escriba ese kind en
+  `incident_actions` — en `api/src` solo existe como acción RBAC.
+- Importa saber cuál de las dos es: una entrada muerta en el registro ensucia el censo que impide
+  que los rótulos deriven; un productor sin rótulo es un «SIREN_TEST» en pantalla.
+- **Criterios de aceptación:**
+  - [ ] Medido si existe productor. Si existe, rótulo derivado como los demás; si no, se retira
+        del registro con su razón escrita.
+
+### [ ] T-2.134 · El degradado no reintenta solo, y `status: "error"` quedó sin productor — `SOFTWARE`
+- **Componente:** web · **Detectada por:** `T-2.123` (2026-08-12)
+- **(a)** El modo degradado espera **un clic humano**. En un incidente puede que nadie mire la
+  pantalla cuando la base vuelva. La mitad está hecha: `refreshMe` desde degradado **no** pasa por
+  `booting`, así que reintentar no desmonta la pantalla ni remonta el router.
+- **(b)** `status: "error"` se quedó **sin productor**: es código muerto junto con `ErrorScreen` y
+  una rama de `LoginPage`. Quedó con un aviso en la unión en vez de retirarse, por no invadir
+  ficheros ajenos.
+- **Criterios de aceptación:**
+  - [ ] Reintento con backoff, sin desmontar la pantalla degradada.
+  - [ ] `status: "error"` retirado, o con productor y razón.
+
+### [ ] T-2.135 · El JSON forense no puede nombrar el incidente — `SOFTWARE`
+- **Componente:** mobile · **Detectada por:** `T-2.126` (2026-08-12)
+- `ForensicMeta` existe para probar la atribución «quién, dónde, **con qué incidente**» — y **no
+  lleva `incident_id`**. Hoy esa mitad vive solo en el item de la cola.
+- No se añadió al cerrar `T-2.126` porque la spec §2.3 enumera lo que va **en el pixel** y el
+  incidente no está: meterlo cambiaría **lo que entra en el SHA-256**. Va con la costura de
+  `T-2.126` (cablear el JSON firmado), no antes.
+- **Criterios de aceptación:**
+  - [ ] Decidido si el incidente entra en el pixel, solo en el JSON, o en ninguno — con su razón.
+  - [ ] Si entra en el pixel, la spec §2.3 se actualiza **en el mismo cambio**.
+
+### [x] T-2.123 · `GET /me` ató el arranque de la consola a Postgres — `SOFTWARE`
 - **Componente:** api + web · **Declarada por el propio `T-2.114`**
 - `GET /me` **dejó de ser claims puros**: ahora abre sesión de DB para devolver `enrolled_sites`.
   Es deliberado y necesario —es de donde sale el inmueble del ocupante— pero **cambió el modo de
@@ -7502,9 +7713,41 @@ sería documentar intenciones.
   arrancaba con los claims. En móvil no hay regresión (la app conserva la sesión con `me = null`).
 - No es un defecto de `T-2.114`: es una consecuencia que hay que **decidir**, no heredar.
 - **Criterios de aceptación:**
-  - [ ] Decidido si la consola debe arrancar en degradado sin `/me`, con la razón escrita.
-  - [ ] Si debe: arranca declarando qué no sabe (regla de oro 7), sin inventar alcance.
-  - [ ] Test del arranque con la DB caída.
+  - [x] Decidido si la consola debe arrancar en degradado sin `/me`, con la razón escrita.
+  - [x] Si debe: arranca declarando qué no sabe (regla de oro 7), sin inventar alcance.
+  - [x] Test del arranque con la DB caída.
+
+> **Cerrada (2026-08-12).** Decisión tomada por delegación explícita (`PENDIENTES §1.9`): **la
+> consola arranca, DECLARA que no puede establecer el alcance del operador, y no pinta ni un dato
+> de tenant**. `/me` **queda byte-idéntico**: no había que tocarlo — lo que se arregla es **cómo
+> reacciona el cliente cuando no contesta**, no que dependa de la base.
+>
+> **El arreglo es estructural, no defensivo:** `App` **no monta el router** en degradado. No es
+> que las rutas denieguen — es que **no existen**, así que ninguna pantalla puede pedir un dato.
+> El test hace deep-link a las **6** rutas y comprueba que **`fetch` no se llama ni una vez**;
+> cualquier petición sería un fallo de la ficha. `RequireSession` repite la denegación como
+> segunda capa, **in-place**: mandar al login diría «no estás dentro» cuando la verdad es «no se
+> sabe quién eres», y quemaría el `returnTo` de una sesión válida.
+>
+> **Un defecto que se llevó por delante:** un `/me` viejo **sobrevivía al fallo**, y los guards
+> leían `allowed_routes` de ahí — alcance no reverificable. Ahora se borra.
+>
+> **Y una decisión de honestidad:** no se añadió un código de causa a `/me`. Un 500 por bug y un
+> 500 por Postgres caído son **indistinguibles desde el servidor**, así que el cliente estaría
+> *adivinando el diagnóstico*. Declara la **consecuencia** (regla de oro 7) y enseña el detalle
+> verificable (`GET /me falló (503)`) para soporte. «No tienes alcance» sí se distingue **por
+> construcción**: es un 200 con `site_scope: []`, no la ausencia de 200.
+>
+> **Escrito para que nadie lo «arregle» copiando móvil:** allí el caché sellado por `sub` es
+> correcto —regla de oro 2, el ocupante necesita su pantalla de crisis sin red y el dato es uno y
+> suyo—. Aquí «alcance» es **autorización sobre el tenant entero**, y con la base caída **tampoco
+> habría a quién pedirle los datos que ese alcance abriría**: cachearlo solo compraría el riesgo
+> de pintar el tenant equivocado.
+>
+> **Bonus:** `/auth/callback` dejó de colgarse para siempre — su rama de error solo cubría el
+> fallo del intercambio OIDC, no el de `/me`.
+>
+> **Deja abierta** `T-2.134`.
 
 ### [x] T-2.124 · La imagen de consola llevaba semanas sin poder construirse — `SOFTWARE` · COMPLETA (2026-08-11)
 - **Componente:** deploy + web · **Detectada por:** un despliegue real que murió (2026-08-11)

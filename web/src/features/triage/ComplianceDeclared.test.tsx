@@ -32,7 +32,18 @@ function forensics(compliance: unknown, over: Partial<ForensicsState> = {}): For
     calibrated: false,
     compliance,
   } as unknown as ForensicsOut;
-  return { data, loading: false, error: null, refetch: vi.fn(), ...over };
+  // [T-2.82.a] `dataUpdatedAt`/`staleSince` son parte del contrato del hook: un
+  // panel de esta pantalla tiene que poder decir que su dato está viejo. Aquí
+  // el dato es fresco salvo que la prueba diga otra cosa.
+  return {
+    data,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+    dataUpdatedAt: Date.now(),
+    staleSince: null,
+    ...over,
+  };
 }
 
 const EMPTY_DOC = {

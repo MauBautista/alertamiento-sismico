@@ -38,7 +38,7 @@ function EvidenceVerifier({ evidenceId }: { evidenceId: string }) {
 }
 
 export default function StructuralTriage({ incidentId }: { incidentId: string }) {
-  const { reports, loading, error } = useDamageReports(incidentId);
+  const { reports, loading, error, staleSince } = useDamageReports(incidentId);
   const ordered = reports ? orderedDamageReports(reports) : [];
 
   return (
@@ -50,6 +50,13 @@ export default function StructuralTriage({ incidentId }: { incidentId: string })
         error={error}
         empty={reports !== undefined && ordered.length === 0}
         emptyText="Sin reportes de daños para este incidente."
+        // [T-2.82.a] Era el único marco de esta pantalla que ni siquiera
+        // DECLARABA la entrada, y callarse que un dato puede envejecer es
+        // afirmar que no puede. Estos reportes son los únicos que siguen
+        // llegando durante la emergencia: «sin reportes de daños» dicho en
+        // presente sobre una lista de hace un cuarto de hora puede significar
+        // que nadie ha podido mandarlos.
+        staleSince={staleSince}
       >
         <ul className="structural__list">
           {ordered.map((r) => (

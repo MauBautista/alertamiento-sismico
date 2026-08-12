@@ -66,7 +66,9 @@ function triageData(over: Partial<TriageData> = {}): TriageData {
 }
 
 function res<T>(data: T | undefined, over: Partial<Resource<T>> = {}): Resource<T> {
-  return { data, loading: false, error: null, disabled: false, ...over };
+  // `staleSince: null` = dato fresco. [T-2.82.a] Es parte del recurso, no un
+  // extra opcional: un recurso que puede omitir su edad vuelve a poder callarla.
+  return { data, loading: false, error: null, disabled: false, staleSince: null, ...over };
 }
 
 function detailData(over: Partial<IncidentDetailData> = {}): IncidentDetailData {

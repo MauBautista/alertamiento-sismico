@@ -39,9 +39,14 @@ function props(over: Partial<QuorumNodesProps> = {}): QuorumNodesProps {
     eventError: null,
     corroborated: true,
     minNodes: 3,
+    eventStaleSince: null,
+    incidentStaleSince: null,
     ...over,
   };
 }
+
+/** 2026-08-03 10:41:30 UTC — la hora que el marco tiene que imprimir. */
+const HORA = Date.UTC(2026, 7, 3, 10, 41, 30);
 
 describe("QuorumNodes · offsets", () => {
   it("pinta los offsets del servidor VERBATIM (no los fabrica)", () => {
@@ -168,5 +173,61 @@ describe("QuorumNodes · regla de oro 7 (los 4 estados del evento)", () => {
     );
     expect(container.querySelector('[data-state="empty"]')).not.toBeNull();
     expect(screen.getByText(/SIN VOTOS DE QUÓRUM/)).toBeTruthy();
+  });
+});
+
+/* =====================================================================
+   T-2.82.a · DOS ramas, DOS datos, DOS edades
+   ===================================================================== */
+
+describe("QuorumNodes · la corroboración también envejece [T-2.82.a]", () => {
+  it("evento cargado y viejo: la franja lleva la edad DEL EVENTO", () => {
+    // Es el panel que dice qué estaciones corroboraron, o sea el que sostiene
+    // si hubo quórum. Presentarlo congelado como vigente afirma una
+    // corroboración que no se ha vuelto a comprobar.
+    const { container } = render(<QuorumNodes {...props({ eventStaleSince: HORA })} />);
+    expect(container.querySelector('[data-state="stale"]')).not.toBeNull();
+    expect(screen.getByText(/DATOS RETENIDOS · 10:41:30 UTC/)).toBeTruthy();
+    // …y los offsets siguen visibles bajo la franja.
+    expect(screen.getByText("+1.42s")).toBeTruthy();
+  });
+
+  it("la rama SIN evento usa la edad DEL INCIDENTE, no la del evento", () => {
+    // Aquí el dato no es el evento —no hay— sino el incidente, que dice que no
+    // referencia ninguno. Su frescura la calcula la página y baja por
+    // `TriageDetail`. Sin ella, «INCIDENTE SIN EVENTO SÍSMICO ASOCIADO» se
+    // afirma en presente sobre un incidente que pudo cambiar hace un rato.
+    render(
+      <QuorumNodes
+        {...props({
+          eventState: "absent",
+          view: quorumView([]),
+          eventStaleSince: null,
+          incidentStaleSince: HORA,
+        })}
+      />,
+    );
+    expect(screen.getByText(/INCIDENTE SIN EVENTO SÍSMICO ASOCIADO/)).toBeTruthy();
+    expect(screen.getByText(/así estaba a las 10:41:30 UTC/)).toBeTruthy();
+    expect(screen.getByText(/desde entonces no se ha podido confirmar/)).toBeTruthy();
+  });
+
+  it("una edad NO contamina a la otra rama", () => {
+    // Un solo `staleSince` para las dos ramas sería fechar el evento con el
+    // reloj del incidente (o al revés): dos datos distintos, dos edades.
+    render(
+      <QuorumNodes
+        {...props({ eventState: "absent", view: quorumView([]), eventStaleSince: HORA })}
+      />,
+    );
+    expect(screen.queryByText(/DATOS RETENIDOS/)).toBeNull();
+  });
+
+  it("con todo fresco no hay franja en ninguna de las dos ramas", () => {
+    const { unmount } = render(<QuorumNodes {...props()} />);
+    expect(screen.queryByText(/DATOS RETENIDOS/)).toBeNull();
+    unmount();
+    render(<QuorumNodes {...props({ eventState: "absent", view: quorumView([]) })} />);
+    expect(screen.queryByText(/DATOS RETENIDOS/)).toBeNull();
   });
 });

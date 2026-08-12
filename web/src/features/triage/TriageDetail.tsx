@@ -89,6 +89,15 @@ export interface TriageDetailProps {
   /** [T-2.40] Hechos medidos; el MISMO objeto que consume el dictamen PDF. */
   forensics: ForensicsState;
   minNodes: number | null;
+  /**
+   * [T-2.82.a] Edad de la FILA del incidente (la lista de `/incidents` que
+   * `TriagePage` ya fecha), no la de ninguna consulta de este panel.
+   *
+   * Baja hasta aquí porque el quórum, cuando el incidente no referencia evento,
+   * está afirmando algo que sale de esa fila y de ninguna otra parte. El resto
+   * de los marcos usan la edad de SU propio recurso.
+   */
+  incidentStaleSince: number | null;
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
   canExport: boolean;
@@ -119,6 +128,7 @@ export default function TriageDetail({
   detail,
   forensics,
   minNodes,
+  incidentStaleSince,
   canSign,
   canExport,
   canGenerateReport,
@@ -217,6 +227,11 @@ export default function TriageDetail({
         eventError={event.error}
         corroborated={isCorroborated(event.data)}
         minNodes={minNodes}
+        // [T-2.82.a] Dos ramas, dos datos, dos edades: la del evento para los
+        // votos que sostienen si hubo corroboración, la del incidente para la
+        // rama que afirma que no hay evento ninguno.
+        eventStaleSince={event.staleSince}
+        incidentStaleSince={incidentStaleSince}
         onRetry={detail.refetch}
       />
 
@@ -237,7 +252,11 @@ export default function TriageDetail({
           onRetry={detail.refetch}
           empty={evidence.data?.length === 0}
           emptyText="SIN EVIDENCIA ARCHIVADA PARA ESTE INCIDENTE"
-          staleSince={null}
+          // [T-2.82.a] Con la lista congelada, «SIN EVIDENCIA ARCHIVADA» es la
+          // ausencia no verificable que T-2.79.d decidió no afirmar — y aquí se
+          // afirmaría al lado del botón que descarga el miniSEED, en la pantalla
+          // donde se firma. `stale` gana y la ausencia sale fechada.
+          staleSince={evidence.staleSince}
         >
           {miniseed?.sha256 && (
             <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
@@ -302,8 +321,14 @@ export default function TriageDetail({
       {/* [T-2.82] Entre el PDF y la firma: son los dos actos que este apartado
           cualifica. Quien firma se lleva detrás las afirmaciones normativas del
           cliente y tiene que leer, en el mismo golpe de vista, que TAKAB no las
-          verificó. Sale del MISMO `forensics` que alimenta el PDF. */}
-      <ComplianceDeclared forensics={forensics} />
+          verificó. Sale del MISMO `forensics` que alimenta el PDF.
+          [T-2.82.a] Y con la EDAD de ese forense: el panel siempre supo recibir
+          `staleSince`, pero nadie se la pasaba, así que su valor por defecto
+          (`= null`) afirmaba «este dato no puede envejecer» — en la pantalla
+          donde se firma. Con el dato viejo gana `stale` (T-2.79.d) y la
+          ausencia de marco declarado se FECHA en vez de acusar al cliente de no
+          haber declarado nada. */}
+      <ComplianceDeclared forensics={forensics} staleSince={forensics.staleSince} />
 
       <StateFrame
         label="DICTAMEN"
@@ -312,7 +337,11 @@ export default function TriageDetail({
         onRetry={detail.refetch}
         empty={!dictamens.loading && !dictamens.error && head === null}
         emptyText="SIN DICTAMEN REGISTRADO PARA ESTE INCIDENTE"
-        staleSince={null}
+        // [T-2.82.a] Dentro de este marco está el botón FIRMAR DICTAMEN. La
+        // cadena de custodia que se enseña aquí puede haber crecido una versión
+        // desde la última respuesta, y firmar sobre una cadena vieja creyéndola
+        // vigente es exactamente el acto que la regla de oro 7 protege.
+        staleSince={dictamens.staleSince}
       >
         {verdict && head && (
           <>

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SIGNING_STALE_MS } from "./staleness";
 import { useIncidentDetail } from "./useIncidentDetail";
 
 const mocks = vi.hoisted(() => ({
@@ -155,6 +156,42 @@ describe("useIncidentDetail", () => {
     await waitFor(() => expect(result.current.exportError).toMatch(/503/));
     expect(mocks.resolve).not.toHaveBeenCalled();
     await waitFor(() => expect(mocks.cancel).toHaveBeenCalled());
+  });
+});
+
+describe("useIncidentDetail · cada recurso lleva SU EDAD [T-2.82.a]", () => {
+  it("recién llegado no es viejo, y sin incidente NO se inventa una edad", async () => {
+    // `dataUpdatedAt` es 0 mientras no llega nada: calcular la frescura a ciegas
+    // diría "viejo desde 1970" en un panel que ni siquiera tiene dato del que
+    // hablar. Inventar una edad es la misma mentira que ocultarla.
+    const vacio = renderHook(() => useIncidentDetail(null, null), { wrapper });
+    expect(vacio.result.current.dictamens.staleSince).toBeNull();
+    expect(vacio.result.current.event.staleSince).toBeNull();
+
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
+    expect(result.current.dictamens.staleSince).toBeNull();
+    expect(result.current.evidence.staleSince).toBeNull();
+  });
+
+  it("pasado el umbral, CADA recurso marca la hora en que se supo", async () => {
+    // Los cuatro recursos de esta pantalla envejecen a la vez porque nada los
+    // refresca solo (`refetchOnWindowFocus:false`, sin `refetchInterval`): la
+    // hora es el contenido, «viejo» a secas no le sirve al que va a firmar.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    await waitFor(() => expect(result.current.event.data).toBeDefined());
+    const llegada = result.current.dictamens.staleSince;
+    expect(llegada).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(SIGNING_STALE_MS + 60_000);
+    });
+
+    for (const r of ["dictamens", "actions", "evidence", "event"] as const) {
+      expect(result.current[r].staleSince, `${r} no declara su edad`).toBeGreaterThan(0);
+    }
+    vi.useRealTimers();
   });
 });
 

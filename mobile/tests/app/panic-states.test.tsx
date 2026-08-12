@@ -23,7 +23,11 @@ const SITE = "11111111-1111-1111-1111-111111111111";
 // ------------------------------------------------------------------ mocks
 
 jest.mock("expo-router", () => {
-  const { Text } = require("react-native");
+  // [T-2.125] `requireActual` y no `require()`: dentro de una factoría de
+  // `jest.mock` no se puede importar arriba (se hoistea), pero sí se puede pedir
+  // el módulo REAL — que aquí es además la misma instancia, porque
+  // `react-native` no está moqueado.
+  const { Text } = jest.requireActual("react-native") as typeof import("react-native");
   return { Redirect: (p: { href: string }) => <Text testID="redirect">{p.href}</Text> };
 });
 
@@ -51,7 +55,9 @@ jest.mock("@takab/sdk", () => ({
 // sustituye por un pulsador simple que CONSERVA las dos props que sí importan
 // —`label` y `disabled`—, que son las que delatan el botón colgado.
 jest.mock("@/features/panic/PanicButton", () => {
-  const { Pressable, Text } = require("react-native");
+  const { Pressable, Text } = jest.requireActual(
+    "react-native",
+  ) as typeof import("react-native");
   return {
     PanicButton: (p: { disabled: boolean; label: string; onConfirm: () => void }) => (
       <Pressable disabled={p.disabled} onPress={p.onConfirm} testID="panic-hold">

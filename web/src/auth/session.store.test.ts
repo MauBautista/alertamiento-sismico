@@ -137,15 +137,21 @@ describe("session.store", () => {
     expect(window.sessionStorage.getItem(DEV_STORAGE_KEY)).toBeNull();
   });
 
-  it("error de red en /me ⇒ status error, y refreshMe recupera", async () => {
+  // [T-2.123] Un /me que no contesta por algo que NO es 401 (5xx de Postgres
+  // caído, red) es "alcance desconocido", no "sesión cerrada": la consola
+  // arranca en degradado y lo declara. Ver app/DegradedSessionScreen.tsx.
+  it("error de red en /me ⇒ status degraded, y refreshMe recupera", async () => {
     saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
     mocks.getMe.mockRejectedValueOnce(new Error("ECONNREFUSED"));
 
     await useSessionStore.getState().bootstrap();
 
     let state = useSessionStore.getState();
-    expect(state.status).toBe("error");
+    expect(state.status).toBe("degraded");
     expect(state.error).toContain("ECONNREFUSED");
+    // El token sigue siendo bueno: la sesión NO se quema por una caída de base.
+    expect(state.idToken).toBe("dev-tok");
+    expect(window.sessionStorage.getItem(DEV_STORAGE_KEY)).not.toBeNull();
 
     mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
     await useSessionStore.getState().refreshMe();
@@ -153,6 +159,35 @@ describe("session.store", () => {
     state = useSessionStore.getState();
     expect(state.status).toBe("authenticated");
     expect(state.me).toEqual(ME_FIXTURES.soc_operator);
+  });
+
+  it("un /me caído tras haber cargado alcance lo BORRA (no se adivina el viejo)", async () => {
+    saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
+    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+    expect(useSessionStore.getState().me).not.toBeNull();
+
+    mocks.getMe.mockRejectedValueOnce(new MeRequestError(503));
+    await useSessionStore.getState().refreshMe();
+
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("degraded");
+    expect(state.me).toBeNull();
+  });
+
+  it("reintentar desde el degradado NO pasa por booting (no remonta el router)", async () => {
+    saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
+    mocks.getMe.mockRejectedValueOnce(new MeRequestError(503));
+    await useSessionStore.getState().bootstrap();
+
+    const vistos: string[] = [];
+    const unsub = useSessionStore.subscribe((s) => vistos.push(s.status));
+    mocks.getMe.mockRejectedValueOnce(new MeRequestError(503));
+    await useSessionStore.getState().refreshMe();
+    unsub();
+
+    expect(vistos).not.toContain("booting");
+    expect(useSessionStore.getState().status).toBe("degraded");
   });
 
   it("loginDev persiste la sesión y un bootstrap posterior la retoma", async () => {

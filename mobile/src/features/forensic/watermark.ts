@@ -83,7 +83,53 @@ export function watermarkLines(meta: ForensicMeta): string[] {
   ];
 }
 
-/** Metadatos duplicados en el JSON firmado adjunto al reporte (§4.2). */
+/**
+ * Metadatos duplicados en el JSON firmado adjunto al reporte (§4.2).
+ *
+ * ===========================================================================
+ * [T-2.126] ESTO TODAVÍA NO VIAJA CON LA EVIDENCIA, Y AQUÍ ESTÁ POR QUÉ.
+ * ===========================================================================
+ *
+ * Medido el 2026-08-12: **cero llamadas en producción**. El único invocador es
+ * el test de al lado. La foto sale de este teléfono con la marca HORNEADA en el
+ * pixel (`watermarkLines`, `app/camera.tsx`) y con su SHA-256 — y con nada más.
+ *
+ * El pixel prueba LO QUE SE VE; este JSON prueba LA ATRIBUCIÓN (quién, dónde,
+ * con qué instante y con qué procedencia del dato). Son piezas distintas del
+ * mismo expediente, y hoy sólo viaja la primera.
+ *
+ * NO SE CABLEA EN ESTA FICHA PORQUE NO HAY POR DÓNDE. La costura entera, con el
+ * cambio exacto — ninguna de las cuatro piezas vive en `mobile/`:
+ *
+ *  1. **El contrato no tiene campo.** `EvidenceRegisterIn`
+ *     (`api/src/takab_api/schemas/mobile.py`) declara `evidence_id`, `sha256`,
+ *     `content_type` y `ts_from`. Haría falta un campo de metadatos + regenerar
+ *     `shared/sdk-ts`. Lo vigila el test de al lado, que se pone rojo el día que
+ *     el campo aparezca.
+ *  2. **La tabla no tiene columna.** `evidence_objects` (`db/schema.sql`) no
+ *     lleva JSONB y es **append-only** por trigger: no es «un UPDATE luego»,
+ *     es una migración y una decisión de retención (regla de oro 11: la
+ *     evidencia no se poda).
+ *  3. **No hay segundo objeto en S3.** `register_evidence`
+ *     (`api/src/takab_api/routers/mobile_incident.py`) DERIVA la clave como
+ *     `evidence/{tenant}/{incident}/photo-{id}.jpg`, una sola por registro. Un
+ *     sidecar `.json` no cabe sin cambiar esa derivación — y colar el JSON como
+ *     si fuera otra «foto» ensuciaría `kind` y la verificación de huella.
+ *  4. **«FIRMADO» no es adorno: hoy no se puede firmar esto.** La spec §2.3/§4.2
+ *     pide un JSON *firmado*. La llave de hardware existe (`security/deviceKey.ts`,
+ *     `signIntent`) y el servidor ya verifica firmas contra `device_keys` para
+ *     `POST /sites/{id}/commands` — pero para la evidencia no hay ni canonicalización
+ *     acordada ni verificación server-side. Publicar el JSON **sin** firma sería
+ *     repetir el defecto que esta ficha denuncia: una pieza que *parece* que
+ *     está.
+ *
+ * NO SE BORRA, y ésa es la otra mitad de la decisión: `T-2.118` lo dejó
+ * consistente con el aviso horneado en el pixel, y esa consistencia es la parte
+ * cara. Borrarlo la tiraría para tener que reescribirla el día de la costura.
+ * Lo que sí cambia hoy es que la consistencia deja de depender de que alguien se
+ * acuerde: el JSON lleva las LÍNEAS EXACTAS del pixel, así que ninguna de las
+ * dos piezas puede moverse sin la otra.
+ */
 export function forensicMetadata(meta: ForensicMeta): Record<string, unknown> {
   return {
     schema: "takab-forensic-v1",
@@ -100,6 +146,14 @@ export function forensicMetadata(meta: ForensicMeta): Record<string, unknown> {
     snapshot_stale_since:
       meta.snapshotStaleSinceMs === null ? null : new Date(meta.snapshotStaleSinceMs).toISOString(),
     snapshot_retained: meta.snapshotStaleSinceMs !== null,
+    // [T-2.126] Las líneas EXACTAS que se hornean en el bitmap y entran en el
+    // SHA-256. No es un campo más: es lo que hace que los dos espejos no puedan
+    // divergir POR CONSTRUCCIÓN. Duplicar los campos en paralelo —como estaba—
+    // deja abierta la puerta de siempre: se añade una línea al pixel (lo hizo
+    // T-2.118 con el aviso de retenidos) y el JSON se queda callado sin que
+    // ningún test lo eche de menos. Además le da al verificador algo que puede
+    // confrontar contra la foto carácter a carácter.
+    watermark_lines: watermarkLines(meta),
     integrity: "sha256",
   };
 }

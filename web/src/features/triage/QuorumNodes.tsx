@@ -19,6 +19,21 @@ export interface QuorumNodesProps {
   corroborated: boolean;
   /** `config.quorum.min_nodes` ACTUAL. Contexto, no veredicto del evento pasado. */
   minNodes: number | null;
+  /**
+   * [T-2.82.a] Edad del EVENTO (`detail.event`), para la rama que pinta votos.
+   * Epoch ms de la última respuesta buena cuando ya es vieja; null = fresca.
+   */
+  eventStaleSince: number | null;
+  /**
+   * [T-2.82.a] Edad del INCIDENTE, para la rama `absent`.
+   *
+   * Son DOS entradas y no una porque son dos datos distintos: cuando no hay
+   * evento, lo que este panel afirma («este incidente no referencia ninguno»)
+   * sale de la fila del incidente, cuya frescura sólo conoce `TriagePage` y baja
+   * por `TriageDetail`. Fechar esa afirmación con el reloj del evento —una
+   * consulta que ni siquiera se lanzó— sería inventarle una edad.
+   */
+  incidentStaleSince: number | null;
   onRetry?: () => void;
 }
 
@@ -45,6 +60,8 @@ export default function QuorumNodes({
   eventError,
   corroborated,
   minNodes,
+  eventStaleSince,
+  incidentStaleSince,
   onRetry,
 }: QuorumNodesProps) {
   return (
@@ -81,7 +98,7 @@ export default function QuorumNodes({
           error={null}
           empty
           emptyText="INCIDENTE SIN EVENTO SÍSMICO ASOCIADO"
-          staleSince={null}
+          staleSince={incidentStaleSince}
         >
           {null}
         </StateFrame>
@@ -93,7 +110,7 @@ export default function QuorumNodes({
           onRetry={onRetry}
           empty={eventState === "ready" && view.nodes.length === 0}
           emptyText="SIN VOTOS DE QUÓRUM PARA ESTE EVENTO"
-          staleSince={null}
+          staleSince={eventStaleSince}
         >
           <div className="triage-nodes">
             {view.nodes.map((n) => (

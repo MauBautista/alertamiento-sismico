@@ -24,11 +24,18 @@ Lo medido (2026-08-11, contra el código anterior al arreglo):
       IncidentTable.tsx`). Un SOC que dejó de recibir sin decirlo es la regla de
       oro 7 en el peor sitio posible.
 
-Lo que fija este archivo tras el arreglo: la espera es ACOTADA (la política
-`LATERAL_LOCK_TIMEOUT` de `audit.py`, 3 s — la misma que ya usan las dos
-laterales, no un número nuevo), el fan-out del resto SIGUE, y al suscriptor al
-que no se le pudo servir **se le dice**, cerrando su canal con un code propio en
-vez de dejarlo creyéndose al día.
+Lo que fija este archivo tras el arreglo: la espera es ACOTADA (la política de
+segundo plano, 3 s — la misma que ya usan las dos laterales, no un número
+nuevo), el fan-out del resto SIGUE, y al suscriptor al que no se le pudo servir
+**se le dice**, cerrando su canal con un code propio en vez de dejarlo
+creyéndose al día.
+
+[T-2.128] La serialización que se describe arriba **ya no existe**: `dispatch`
+encola en el carril de su `(tenant, topic)` y vuelve, y quien quiera el reparto
+terminado llama a `hub.drain()`. Los tres tests de este fichero que esperaban a
+`dispatch` para dar por entregado el frame documentaban exactamente esa
+conducta, así que esperan a `drain`. La política del tope vive ahora en
+`db/session.py` (T-2.130); `audit.LATERAL_LOCK_TIMEOUT_MS` sigue siendo su alias.
 """
 
 from __future__ import annotations
@@ -173,9 +180,11 @@ async def test_MEDIDO_el_hub_encolado_CEDE_en_vez_de_colgarse(ws_seed) -> None:
         await bloqueo.execute(_LOCK_INCIDENTS)
 
         inicio = time.monotonic()
-        despacho = asyncio.create_task(
-            hub.dispatch({"t": "incident", "tenant": WS_TENANT_A, "id": ids["incident_id"]})
-        )
+        # [T-2.128] `dispatch` encola y vuelve; quien espera al reparto es
+        # `drain`. Antes de la ficha, esperar a `dispatch` era lo mismo — y ESO
+        # era el defecto: el listener también esperaba, y con él todo lo demás.
+        await hub.dispatch({"t": "incident", "tenant": WS_TENANT_A, "id": ids["incident_id"]})
+        despacho = asyncio.create_task(hub.drain())
         try:
             await _esperar_encolado("incidents")
             assert not despacho.done(), "el hub no debería tener el lock: el tercero lo veta"
@@ -211,11 +220,9 @@ async def test_al_suscriptor_al_que_no_se_le_pudo_servir_SE_LE_DICE(ws_seed) -> 
     engine = get_engine()
     async with engine.connect() as bloqueo:
         await bloqueo.execute(_LOCK_INCIDENTS)
-        despacho = asyncio.create_task(
-            hub.dispatch({"t": "incident", "tenant": WS_TENANT_A, "id": ids["incident_id"]})
-        )
+        await hub.dispatch({"t": "incident", "tenant": WS_TENANT_A, "id": ids["incident_id"]})
         await _esperar_encolado("incidents")
-        await asyncio.wait_for(despacho, _TOPE_TEST_S)
+        await asyncio.wait_for(hub.drain(), _TOPE_TEST_S)  # [T-2.128] el reparto va por carril
         await bloqueo.rollback()
 
     assert ws.cerrado is not None, "el socket siguió abierto creyéndose al día (regla de oro 7)"
@@ -282,6 +289,7 @@ async def test_sin_bloqueo_el_hub_reparte_como_siempre(ws_seed) -> None:
     ids = await asyncio.to_thread(_quake)
     _, ws = _suscriptor("incidents")
     await hub.dispatch({"t": "incident", "tenant": WS_TENANT_A, "id": ids["incident_id"]})
+    await hub.drain()  # [T-2.128] el reparto ocurre en el carril, no en el `dispatch`
     assert [f["type"] for f in ws.frames] == ["incident"]
     assert ws.cerrado is None
 
