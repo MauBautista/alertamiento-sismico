@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { client } from "@takab/sdk";
+import type { ConsentOut, ConsentStatusOut, NoticeOut } from "@takab/sdk";
 
 /**
  * T-2.79 · Estado del consentimiento del operador sobre el aviso VIGENTE.
@@ -10,10 +11,16 @@ import { client } from "@takab/sdk";
  * verdades y la del cliente mentiría en cuanto el aviso cambiara entre dos
  * peticiones — que es justo el modo de fallo que la tarea existe para cerrar.
  *
- * Tipos a mano y `client.get` en crudo (y no una función generada del SDK) por
- * una razón de coordinación, no de diseño: el contrato se regenera al integrar
- * y dos ramas regenerándolo a la vez chocan seguro. **Al regenerar, sustituir
- * por las funciones tipadas de `@takab/sdk`** y borrar estas interfaces.
+ * [T-2.82.b] Las interfaces a mano se fueron: `ConsentStatusOut`, `NoticeOut` y
+ * `ConsentOut` ya viajan en `@takab/sdk`. Los nombres locales quedan como ALIAS
+ * porque el banner los importa por ese nombre — un alias no es una segunda
+ * verdad, es un nombre para la única que hay.
+ *
+ * Se conserva `client.get`/`client.post` en crudo y NO las funciones generadas:
+ * `PrivacyConsentBanner.test.tsx` sustituye `@takab/sdk` entero con `vi.mock`
+ * sin `importOriginal`, así que una función generada llegaría `undefined` y el
+ * fichero de test moriría entero. Los tipos entran por `import type`, que se
+ * borra al compilar y no crea arista en tiempo de ejecución.
  */
 
 /** Umbral de dato viejo. Alto a propósito: el aviso cambia con un despliegue o
@@ -21,42 +28,32 @@ import { client } from "@takab/sdk";
 export const CONSENT_STALE_MS = 900_000;
 export const CONSENT_REFETCH_MS = 300_000;
 
-export type ConsentState = "missing" | "current" | "stale" | "withdrawn";
+/** Los cuatro estados, DERIVADOS del contrato: no se reescriben aquí. */
+export type ConsentState = ConsentStatusOut["state"];
 
-export interface PrivacyNotice {
-  purpose: string;
-  locale: string;
-  version: string;
-  title: string;
-  body: string;
-  paragraphs: string[];
-  digest: string;
-  source: "repo" | "tenant";
-  notice_id: string | null;
-  effective_at: string | null;
-  provisional: boolean;
-  provisional_reason: string;
-}
+/**
+ * [T-2.82.b] DISCREPANCIA REAL, anotada y no silenciada.
+ *
+ * El tipo a mano declaraba `notice_id`, `effective_at` y `provisional_reason`
+ * como SIEMPRE presentes y `purpose` como un `string` cualquiera. El contrato
+ * publicado dice otra cosa: los tres primeros son opcionales (`?:`) y `purpose`
+ * es la unión `'privacy_notice' | 'whatsapp_alerts'`.
+ *
+ * Es la misma familia que el `provenance` que cuenta la ficha: son campos CON
+ * DEFAULT, y un campo con default no sale `required` en el esquema de
+ * serialización salvo que el modelo lleve `json_schema_serialization_defaults_required`.
+ * `ComplianceDocOut`, `ConsentStatusOut` y `ForensicsOut` ya lo llevan; `NoticeOut`
+ * **no**. Manda el contrato —es la única verdad publicada— y ningún consumidor
+ * se rompe: el único que lee uno de esos campos es el banner, y lo pasa a un
+ * `title` de HTML, que admite `undefined` sin fingir nada. No se ha puesto ni un
+ * `!` ni un cast. Lo que queda por decidir está fuera de esta consola: si el
+ * servidor los manda siempre, quien falta por corregir es `NoticeOut` en la API.
+ */
+export type PrivacyNotice = NoticeOut;
 
-export interface PrivacyConsent {
-  consent_id: string;
-  decision: "accept" | "withdraw";
-  notice_source: "repo" | "tenant";
-  notice_id: string | null;
-  notice_digest: string;
-  notice_version: string;
-  notice_locale: string;
-  via: string;
-  actor_sub: string;
-  decided_at: string;
-}
+export type PrivacyConsent = ConsentOut;
 
-export interface ConsentStatus {
-  notice: PrivacyNotice | null;
-  state: ConsentState;
-  consent: PrivacyConsent | null;
-  blocks_emergency_actions: false;
-}
+export type ConsentStatus = ConsentStatusOut;
 
 /**
  * Fallo de TRANSPORTE, y solo eso.

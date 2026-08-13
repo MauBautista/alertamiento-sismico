@@ -14,10 +14,33 @@ import psycopg
 from psycopg.rows import dict_row
 
 
-def connect(dsn: str) -> psycopg.Connection:
-    """Conexión transaccional con filas dict. Acepta DSN estilo SQLAlchemy."""
+def connect(dsn: str, *, lock_timeout_ms: int | None = None) -> psycopg.Connection:
+    """Conexión transaccional con filas dict. Acepta DSN estilo SQLAlchemy.
+
+    [T-2.132] ``lock_timeout_ms`` fija el tope de espera por lock de la conexión.
+    Tres decisiones que no se ven en la firma:
+
+    · **El valor NO se escribe aquí.** Sale de ``db/session.py``
+      (``WORKER_LOCK_TIMEOUT_MS``), donde ya viven el del request y el del
+      segundo plano: la única forma de que dos políticas no deriven es que sean
+      una.
+    · **Va como parámetro de arranque** (``-c lock_timeout=…``), no como
+      ``SET``. Un ``SET`` no local es transaccional: el ``rollback()`` que el
+      worker hace en cada RETRY lo desharía, y la conexión se quedaría sin tope
+      justo después del primer fallo — que es cuando hace falta.
+    · **El defecto es ``None``, o sea el comportamiento de siempre.** Ponerlo
+      por defecto se lo daría también a los workers de notify/commands/incident/
+      backfill, que comparten esta fábrica y **no tienen** la política de
+      reintento de ``ingest/consumer.py``: en ellos el tope convertiría un lock
+      ocupado en recepciones de SQS quemadas. Se activa donde ya hay red debajo.
+    """
     dsn = dsn.replace("postgresql+psycopg://", "postgresql://", 1)
-    return psycopg.connect(dsn, autocommit=False, row_factory=dict_row)
+    kwargs: dict[str, object] = {}
+    if lock_timeout_ms is not None:
+        # int() explícito: es lo que impide que esto sea una inyección de opciones
+        # el día que el valor deje de ser una constante del módulo de política.
+        kwargs["options"] = f"-c lock_timeout={int(lock_timeout_ms)}"
+    return psycopg.connect(dsn, autocommit=False, row_factory=dict_row, **kwargs)  # type: ignore[call-overload]
 
 
 def with_retry[T](

@@ -1,15 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { client } from "@takab/sdk";
+import type {
+  ComplianceClaimIn as ComplianceClaimInGen,
+  ComplianceClaimOut,
+  ComplianceLabelsIn,
+  ComplianceLabelsOut,
+} from "@takab/sdk";
 
 /*
  * [T-2.82] Etiquetas de cumplimiento del cliente.
  *
- * Se llama con el `client` de `@takab/sdk` en vez de con una función generada porque
- * el SDK se regenera en la integración, no aquí: los tipos de abajo son el contrato
- * de `api/src/takab_api/schemas/compliance.py` escrito a mano mientras tanto. Cuando
- * `shared/sdk-ts` se regenere, esto se sustituye por la función generada y los tipos
- * se importan de `@takab/sdk` — el resto del fichero no cambia.
+ * [T-2.82.b] Los tipos ya NO se escriben aquí. Eran el contrato de
+ * `api/src/takab_api/schemas/compliance.py` copiado a mano «mientras el SDK se
+ * regenera»; el SDK se regeneró el 2026-08-08 y publica `ComplianceLabelsOut`,
+ * `ComplianceClaimOut`, `ComplianceClaimIn` y `ComplianceLabelsIn` con sus campos
+ * requeridos. Los nombres locales se conservan como ALIAS —no como declaraciones—
+ * para no obligar a las pantallas que ya los importan a renombrar nada: son un
+ * nombre para la misma verdad, no una segunda.
+ *
+ * Se sigue llamando con `client.get`/`client.put` y NO con las funciones generadas:
+ * los tests de esta zona sustituyen `@takab/sdk` entero con `vi.mock` sin
+ * `importOriginal`, así que una función generada llegaría como `undefined`. Los
+ * tipos viajan por `import type`, que se borra al compilar.
  *
  * NADA de lo que se pinta se compone aquí: `notice`, `notes` y `title` los sirve el
  * servidor. Es deliberado. Las palabras con las que se presenta una afirmación
@@ -28,36 +41,18 @@ export const COMPLIANCE_CATALOG: Readonly<Record<string, string>> = {
   contractual_obligation: "Obligación contractual del cliente",
 };
 
-export interface ComplianceClaim {
-  key: string;
-  title: string;
-  claim: string;
-  reference: string;
-}
+export type ComplianceClaim = ComplianceClaimOut;
 
-export interface ComplianceDoc {
-  tenant_id: string;
-  provenance: string;
-  /** Deslinde PERMANENTE: acompaña al formulario mientras se teclea. */
-  notice: string;
-  items: ComplianceClaim[];
-  /** Lo que hay que imprimir de ESTE documento, ya resuelto por el servidor. */
-  notes: string[];
-  unreadable: string | null;
-  updated_at: string | null;
-  updated_by: string | null;
-}
+/**
+ * El documento del cliente en su ficha. `notice` es el deslinde PERMANENTE (acompaña
+ * al formulario mientras se teclea) y `notes` es lo que hay que imprimir de ESTE
+ * documento, ya resuelto por el servidor.
+ */
+export type ComplianceDoc = ComplianceLabelsOut;
 
-export interface ComplianceClaimIn {
-  key: string;
-  claim: string;
-  reference: string;
-}
+export type ComplianceClaimIn = ComplianceClaimInGen;
 
-export interface ComplianceLabelsBody {
-  items: ComplianceClaimIn[];
-  base_updated_at: string | null;
-}
+export type ComplianceLabelsBody = ComplianceLabelsIn;
 
 /**
  * Sin relectura tras este umbral el documento pasa a DATOS RETENIDOS.

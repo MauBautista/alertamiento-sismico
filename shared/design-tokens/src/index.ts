@@ -50,6 +50,18 @@ export const tokens = {
       normal: v("--tk-status-normal"),
       warning: v("--tk-status-warning"),
       critical: v("--tk-status-critical"),
+      /**
+       * [T-2.64.d] VIOLETA — "este equipo NO va a alertar, y es a propósito":
+       * ventana de mantenimiento en la consola y MODO PRUEBA WR-1 en el panel
+       * LAN. NO entra en `StatusKind` (ok/warn/crit): el semáforo dice cómo
+       * está el equipo y esto dice que alguien lo silenció a sabiendas.
+       *
+       * No se reusó ámbar ni cian a propósito, y no es estética: ámbar ya es
+       * el SIMULACRO —que sí hace sonar los edificios— y pintar de ámbar una
+       * ventana de mantenimiento haría iguales en pantalla dos estados
+       * opuestos. Cian es la agenda.
+       */
+      maintenance: v("--tk-status-maintenance"),
       normal15: v("--tk-status-normal-15"),
       normal08: v("--tk-status-normal-08"),
       warning15: v("--tk-status-warning-15"),
@@ -86,6 +98,14 @@ export const tokens = {
     mono: v("--tk-font-mono"),
   },
   fontSize: {
+    /**
+     * [T-2.64.d] El escalón que la consola YA usaba sin nombre: 55 reglas de
+     * `soc.css`/`soc-tabs.css`/`app.css` llevan un `10px` literal, contra 8
+     * usos de `--tk-text-xs`. No es un tamaño nuevo, es el que faltaba
+     * declarar — y es el de los rótulos de 8–10 px por los que T-2.64.b tuvo
+     * que subir los grises.
+     */
+    "2xs": v("--tk-text-2xs"),
     xs: v("--tk-text-xs"),
     sm: v("--tk-text-sm"),
     base: v("--tk-text-base"),

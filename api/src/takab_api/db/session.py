@@ -86,6 +86,38 @@ BACKGROUND_LOCK_TIMEOUT_MS = 3_000
 #:   pusiera rojo**. Lo ancla un test, no este comentario.
 REQUEST_STATEMENT_TIMEOUT_MS = 20_000
 
+#: [T-2.132] TERCER escalón de la misma política: los **workers de cola**.
+#: `T-2.130` los dejó sin tope a propósito y con evidencia; esto es lo que hacía
+#: falta antes, y por qué el techo de aquí NO es el de los otros dos escalones.
+#:
+#: · **Por qué no le aplica el criterio del pool.** Un worker abre su propia
+#:   conexión por proceso (`db/pool.py`) y no puede quitarle ninguna a la API.
+#:   El argumento de `T-2.130` —«diez esperas agotan el pool»— simplemente no
+#:   existe aquí, así que no es el que fija el número.
+#: · **El techo real es el `VisibilityTimeout` de SQS.** Un mensaje en vuelo más
+#:   tiempo del que su cola tolera se hace visible, otro worker lo toma y esa
+#:   reentrega **quema una recepción del `maxReceiveCount`**: a la quinta, un
+#:   mensaje VÁLIDO acaba en la DLQ. Por eso el orden de la ficha no es un
+#:   capricho — con el tope pero sin la política de reintento de
+#:   `ingest/consumer.py`, este número convierte un lock ocupado en pérdida de
+#:   mensajes::
+#:
+#:     WORKER_LOCK_TIMEOUT_MS  <  TransientPolicy.budget_s  <  VisibilityTimeout
+#:             3 s                       20 s                   30 s (q-events)
+#:
+#: · **Por qué 3 s y no más.** El worker no es una persona esperando y, a
+#:   diferencia del request, **ceder no le cuesta nada**: detrás tiene reintento
+#:   en el sitio, así que rendir el lock rápido no pierde el mensaje, solo lo
+#:   retrasa. Y ceder rápido es justamente lo que compra el tope: mientras
+#:   espera, el worker sostiene una transacción ABIERTA que puede ser el extremo
+#:   lejano de un ciclo que PostgreSQL no detecta —el `idle in transaction` de
+#:   `T-2.73.c`—. Con tope, ese extremo se suelta solo a los 3 s.
+#:
+#: Viaja como **parámetro de arranque de la conexión** (`-c lock_timeout=…`), no
+#: como sentencia: un `SET` no local se DESHACE con el rollback, y el worker hace
+#: rollback en cada RETRY — se quedaría sin tope justo después del primer fallo.
+WORKER_LOCK_TIMEOUT_MS = 3_000
+
 
 class LockTimeout(HTTPException, SQLAlchemyError):
     """La base no concedió un lock dentro de la política. Error CON NOMBRE.
@@ -252,9 +284,12 @@ async def get_tenant_conn(
       donde la transacción ya está abierta, y por eso ``get_healthcheck_conn``
       (sin transacción) no lo lleva; tampoco lo necesita, ``SELECT 1`` no pide
       locks.
-    · NO llega a los workers de ingesta/notify/config-sync: conectan por
-      ``db/pool.py`` (psycopg síncrono, conexión propia por proceso) y no pasan
-      por aquí. Es deliberado — ver la ficha T-2.130.
+    · NO llega a los workers: conectan por ``db/pool.py`` (psycopg síncrono,
+      conexión propia por proceso) y no pasan por aquí. Es deliberado — ver la
+      ficha T-2.130. [T-2.132] Los workers tienen SU escalón,
+      ``WORKER_LOCK_TIMEOUT_MS``, que ``pool.connect`` aplica al que se lo pide;
+      hoy solo se lo pide el de ingesta, que es el único con política de
+      reintento capaz de absorberlo sin quemar recepciones de SQS.
 
     [T-2.131] ``statement_timeout_ms`` cubre el OTRO modo de fallo: la consulta
     que nadie bloquea y simplemente tarda. Es un parámetro y no una constante

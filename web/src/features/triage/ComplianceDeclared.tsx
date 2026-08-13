@@ -1,32 +1,29 @@
-import type { ForensicsOut } from "@takab/sdk";
+// [T-2.82.b] Import SOLO de tipos, y a propósito. Este fichero lo alcanza
+// `IncidentTimeline`, y los tests de `useFleet`/`useSiteRelays` sustituyen
+// `@takab/sdk` entero con `vi.mock` sin `importOriginal`: un import de VALOR
+// aquí los deja en «0 test» sin una sola marca de fallo. Un `import type` se
+// borra al compilar, así que no crea arista en tiempo de ejecución.
+import type { ComplianceDocOut } from "@takab/sdk";
 
 import StateFrame from "../../components/StateFrame";
 import type { ForensicsState } from "./useForensics";
 
-/**
- * `ForensicsOut` + el bloque de cumplimiento (T-2.82).
+/*
+ * [T-2.82.b] Aquí vivían `DeclaredClaim` y `DeclaredDoc`, escritos a mano
+ * «hasta que el SDK se regenere». El SDK se regeneró: `ComplianceDocOut` y
+ * `ComplianceClaimOut` los publican con sus campos requeridos, y el tipo local
+ * desapareció en vez de quedarse de segunda verdad sobre el mismo cable.
  *
- * El SDK se regenera en la integración, no aquí, así que el campo se declara a mano
- * como intersección: cuando `shared/sdk-ts` se regenere, `compliance` pasará a ser
- * propio de `ForensicsOut` y esta intersección seguirá compilando sin tocar nada.
- * Espejo de `api/src/takab_api/schemas/compliance.py`.
+ * DISCREPANCIA REAL que apareció al sustituirlo, y no se ha tapado: el contrato
+ * declara `ForensicsOut.compliance` **requerido** —el propio docstring generado
+ * dice que esta rama «NO DISPONIBLE» quedó «inalcanzable y a la vez formalmente
+ * justificada»—, mientras que este componente sigue tratando su ausencia. Se
+ * conserva el tratamiento, sin `!` y sin cast: un servidor anterior a T-2.82
+ * responde sin el bloque, y pintar entonces «SIN MARCO DECLARADO» sería AFIRMAR
+ * sobre el cliente algo que nadie comprobó (regla de oro 7) — exactamente el
+ * error que este componente existe para no cometer. El tipo dice lo que dice el
+ * contrato; el código se defiende del despliegue viejo.
  */
-export interface DeclaredClaim {
-  key: string;
-  title: string;
-  claim: string;
-  reference: string;
-}
-
-export interface DeclaredDoc {
-  provenance: string;
-  notice: string;
-  items: DeclaredClaim[];
-  notes: string[];
-  unreadable: string | null;
-}
-
-export type ForensicsWithCompliance = ForensicsOut & { compliance?: DeclaredDoc };
 
 /**
  * [T-2.82] Marco normativo DECLARADO por el cliente, en la pantalla donde se FIRMA.
@@ -52,7 +49,10 @@ export default function ComplianceDeclared({
   forensics: ForensicsState;
   staleSince?: number | null;
 }) {
-  const doc = (forensics.data as ForensicsWithCompliance | undefined)?.compliance;
+  // `compliance` es requerido en el contrato, así que esto tipa
+  // `ComplianceDocOut | undefined` por el `?.` de `data` y no hace falta cast.
+  // El `undefined` que de verdad se atiende es el del servidor viejo.
+  const doc: ComplianceDocOut | undefined = forensics.data?.compliance;
   const missing = forensics.data !== undefined && doc === undefined;
   const items = doc?.items ?? [];
   const unreadable = doc?.unreadable ?? null;

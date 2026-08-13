@@ -1,18 +1,22 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForensicsOut } from "@takab/sdk";
+import type { ComplianceClaimOut, ComplianceDocOut, ForensicsOut } from "@takab/sdk";
 
 import { expectFourStates } from "../../test-utils/states";
 import ComplianceDeclared from "./ComplianceDeclared";
-import type { ForensicsWithCompliance } from "./ComplianceDeclared";
 import type { ForensicsState } from "./useForensics";
 
 const NOTICE = "TAKAB no verifica ni certifica.";
 const ABSENCE = "SIN MARCO NORMATIVO DECLARADO POR EL CLIENTE · la ausencia no es conformidad.";
 const ILEGIBLE = "ETIQUETAS ILEGIBLES · no se transcribe nada.";
 
-const CLAIM = {
+// [T-2.82.b] Los fixtures van TIPADOS contra el contrato, no sueltos. Es lo que
+// sustituye a la vieja «guarda de compilación» de este fichero, que esperaba a
+// que el SDK publicara `compliance` — ya lo publica. Si el contrato gana un
+// campo requerido, estos literales dejan de compilar y el `typecheck` lo dice;
+// un fixture `unknown` habría seguido en verde mintiendo sobre el cable.
+const CLAIM: ComplianceClaimOut = {
   key: "regulatory_framework",
   title: "Marco al que el cliente declara estar sujeto",
   claim: "Reglamento de Construcciones del DF, Título Sexto",
@@ -46,7 +50,7 @@ function forensics(compliance: unknown, over: Partial<ForensicsState> = {}): For
   };
 }
 
-const EMPTY_DOC = {
+const EMPTY_DOC: ComplianceDocOut = {
   provenance: "declared_by_tenant",
   notice: NOTICE,
   items: [],
@@ -132,10 +136,14 @@ describe("ComplianceDeclared · lo que ve QUIEN FIRMA", () => {
     expect(box.textContent).not.toMatch(/SIN MARCO NORMATIVO DECLARADO/);
   });
 
-  it("el tipo local admite el campo que el SDK todavía no declara", () => {
-    // Guarda de compilación: si el SDK se regenera y `compliance` pasa a ser propio
-    // de ForensicsOut, esta intersección sigue siendo válida y el fichero no rompe.
-    const typed: ForensicsWithCompliance = { ...(forensics(EMPTY_DOC).data as ForensicsOut) };
-    expect(typed.compliance?.notes).toEqual([ABSENCE]);
+  it("[T-2.82.b] el bloque que se pinta es el del contrato, sin tipo local de por medio", () => {
+    // Lo que antes era una guarda de compilación esperando al SDK ahora es una
+    // afirmación sobre el contrato YA publicado: `compliance` es propio de
+    // `ForensicsOut` y su forma es `ComplianceDocOut`. La asignación de abajo es
+    // el ancla — si el contrato dejara de declararlo, no compilaría.
+    const { data } = forensics(EMPTY_DOC);
+    if (data === undefined) throw new Error("fixture sin `data`");
+    const doc: ComplianceDocOut = data.compliance;
+    expect(doc.notes).toEqual([ABSENCE]);
   });
 });

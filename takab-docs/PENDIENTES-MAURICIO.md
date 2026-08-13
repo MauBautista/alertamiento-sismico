@@ -259,8 +259,17 @@ contenedores corriendo en `48d530f`, `/api/health` respondiendo `{"status":"ok",
 y `alembic_version` de la base **en `0038_privacy_erasure_on_behalf`**, que es la cabeza del repo.
 O sea que entraron las 0027…0036 que faltaban **y** las dos nuevas (0037, 0038).
 
-**Sigue pendiente de esta sección:** el `terraform apply` de los tres statements IAM de las
-ventanas de mantenimiento ([`T-2.71`](TASKS.md)) — el despliegue de imágenes no lo toca.
+**Sigue pendiente de esta sección**, y son **dos** cosas, las dos de IAM y las dos invisibles
+hasta que fallan:
+
+1. El `terraform apply` de los tres statements IAM de las ventanas de mantenimiento
+   ([`T-2.71`](TASKS.md)) — el despliegue de imágenes **no lo toca**.
+2. **Nuevo (2026-08-13, `T-2.132`): `sqs:ChangeMessageVisibility`** en el rol de los workers. Ya
+   está escrito en el Terraform; **sin el `apply` el arreglo es decorativo**. El worker no se cae
+   —la llamada es best-effort— pero el mensaje se hace visible a mitad del reintento y otro worker
+   **gasta justo la recepción que se estaba ahorrando**, que es el defecto entero de esa ficha.
+   Es de la misma familia que la trampa ya pagada de las reglas IoT: **un permiso que falta no da
+   error, da una conducta silenciosamente peor**.
 
 > **La trampa del SSO se cobró este despliegue, y conviene saber cómo se reconoce.** Falló con
 > `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no es

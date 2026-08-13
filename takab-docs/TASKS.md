@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **273** · `[x]` **205** · `[~]` **9** · `[ ]` **59**
+**Conteo de tareas:** total **275** · `[x]` **208** · `[~]` **9** · `[ ]` **58**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4064,7 +4064,7 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   - [x] El censo distingue un gate de hardware de un skip que no lo es (el `skipif` de `node`).
   - [x] Ningún test se salta sin que el resultado del job lo **declare**.
 
-### [ ] T-2.64.d · `soc.css` cita tres tokens que no existen — `SOFTWARE`
+### [x] T-2.64.d · `soc.css` cita tres tokens que no existen — `SOFTWARE`
 - **Componente:** web + design system · **Depende de:** T-2.64 · **Detectada por:** la guardia
   derivada que se escribió para `privacy.css` (2026-08-08)
 - **Cómo apareció, que es la parte que importa.** El arreglo de `privacy.css` no se hizo
@@ -4082,9 +4082,9 @@ todas las demás: mientras un `make test` verde no signifique lo mismo que un CI
   comparada por **igualdad**: si alguien la paga, el test se pone rojo y **obliga a borrar la
   línea**. Una excepción que puede crecer sola no es una excepción.
 - **Criterios de aceptación:**
-  - [ ] Los tres nombres se resuelven contra el paquete (renombrando o creando el token).
-  - [ ] `DEUDA_HEREDADA` queda **vacía**, y el test sigue siendo derivado.
-  - [ ] Si se crea un token nuevo, se regenera `shared/design-tokens` en el MISMO commit o
+  - [x] Los tres nombres se resuelven contra el paquete (renombrando o creando el token).
+  - [x] `DEUDA_HEREDADA` queda **vacía**, y el test sigue siendo derivado.
+  - [x] Si se crea un token nuevo, se regenera `shared/design-tokens` en el MISMO commit o
         `make drift` truena.
 
 ### [x] T-2.64 · Deuda visual heredada de T-2.59 — `SOFTWARE` · COMPLETA (2026-08-05)
@@ -6441,7 +6441,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > el barrido de los cuatro estados; forzarlos en un `render` síncrono pide reestructurar el
 > ayudante. Sigue listado en `serverDataCensus` C-4, con la razón corregida.
 
-### [ ] T-2.82.b · Cuatro sitios se escribieron tipos a mano, y el SDK ya los trae — `SOFTWARE`
+### [x] T-2.82.b · Cuatro sitios se escribieron tipos a mano, y el SDK ya los trae — `SOFTWARE`
 - **Componente:** web + mobile · **Depende de:** — · **Detectada por:** reauditoría de la
   Fase 2.8 (2026-08-08)
 - **La condición para pagar esta deuda ya se cumplió.** Cada uno de esos sitios lleva un
@@ -6459,9 +6459,9 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   errores 403/404/409/422 y el umbral de 5 minutos son código de producción que **nunca ha
   corrido**.
 - **Criterios de aceptación:**
-  - [ ] Los cuatro sitios consumen los tipos generados; cero interfaces de respuesta a mano.
-  - [ ] Un test ejercita `useComplianceLabels` de verdad, incluido el mapeo de errores.
-  - [ ] Una guardia que impida reintroducirlo: ninguna superficie declara a mano la forma de una
+  - [x] Los cuatro sitios consumen los tipos generados; cero interfaces de respuesta a mano.
+  - [x] Un test ejercita `useComplianceLabels` de verdad, incluido el mapeo de errores.
+  - [x] Una guardia que impida reintroducirlo: ninguna superficie declara a mano la forma de una
         respuesta que el SDK ya publica.
 
 ### [x] T-2.83 · Residencia de datos: evaluar región MX — `DECISIÓN` (+ `LEGAL`) · COMPLETA (2026-08-08)
@@ -7771,7 +7771,7 @@ sería documentar intenciones.
 > **el error de diseño es anterior: un test no debe inferir el estado de su propio andamio de una
 > vista del servidor.** Si el arnés no se monta, quien tiene que decirlo es el arnés.
 
-### [ ] T-2.132 · Los workers esperan sin límite, y acotarlos quema mensajes — `SOFTWARE`
+### [x] T-2.132 · Los workers esperan sin límite, y acotarlos quema mensajes — `SOFTWARE`
 - **Componente:** api (workers) · **Detectada por:** `T-2.130` (2026-08-12), **con evidencia**
 - Los workers conservan espera ilimitada por lock **a propósito**: acotarlos hoy convertiría el
   bloqueo en `LockNotAvailable` ⇒ `OperationalError` ⇒ **RETRY** ⇒ recepciones quemadas ⇒ un
@@ -7779,8 +7779,90 @@ sería documentar intenciones.
 - **Riesgo residual honesto:** un worker bloqueado sostiene una transacción abierta que puede ser
   el extremo lejano de un ciclo tipo `T-2.73.c`.
 - **Criterios de aceptación:**
-  - [ ] Política de reintento que **no queme `maxReceiveCount`** ante un fallo transitorio de lock.
-  - [ ] Solo entonces, tope de espera en los workers.
+  - [x] Política de reintento que **no queme `maxReceiveCount`** ante un fallo transitorio de lock.
+  - [x] Solo entonces, tope de espera en los workers.
+
+> **Cerrada (2026-08-13).** La distinción se hace **por SQLSTATE, no por clase de excepción** —
+> que es justo donde estaba el defecto (`LockNotAvailable ⊂ OperationalError`). **Transitorio:**
+> `55P03` (lock), `40P01` (interbloqueo), `40001` (serialización); lo que comparten es que dejan
+> la conexión **viva** y el mismo mensaje volvería a entrar. **Real:** todo lo demás — `57P01`
+> (base caída) y `23505` (dato malo) **no entran**: gastan sus recepciones y van a la DLQ, que es
+> para lo que existe.
+>
+> **La palanca es que el mensaje NO vuelve a la cola.** SQS solo incrementa
+> `ApproximateReceiveCount` al **recibir**, así que los reintentos caben **dentro de la recepción
+> ya gastada**; `ChangeMessageVisibility` sostiene la invisibilidad mientras tanto. Best-effort:
+> si falla, se degrada a una recepción de más, **nunca a un mensaje sin procesar**.
+>
+> **Rojo medido** sobre un mensaje **válido**, con el consumidor sin tocar:
+>
+> | `55P03` seguidos | Recepciones (máx 5) | DLQ | Commits |
+> |---|---|---|---|
+> | 3 | **4** | 0 | 1 |
+> | 5 | **5** | **1** | **0** |
+>
+> Verde: **1 recepción y DLQ vacía** en los dos casos.
+>
+> **El tope se puso a UN worker, no a los cinco**, y ésa es la ficha cumpliéndose en orden: solo
+> `ingest` tiene la política de reintento. Los otros cuatro comparten `pool.connect` y darles el
+> tope **reproduciría exactamente el daño que `T-2.130` midió**; por eso el defecto del parámetro
+> es `None`. `backfill/consumer.py` es el siguiente candidato natural.
+>
+> **El criterio duro del worker NO es el del request:** no le limita el pool (tiene conexión
+> propia) sino el `VisibilityTimeout` de su cola — y el test **lee el número del Terraform real**,
+> no de una copia:
+>
+>     WORKER_LOCK_TIMEOUT_MS (3 s) < presupuesto (20 s) < VisibilityTimeout (30 s)
+>
+> El tope viaja como **parámetro de arranque** (`-c lock_timeout=…`) y no como `SET`, que es
+> transaccional y **se desharía en el primer reintento**.
+>
+> **⚠️ Y la trampa de la ficha era un permiso IAM:** `sqs:ChangeMessageVisibility` **no estaba** en
+> el rol de los workers. Sin él la llamada da `AccessDenied`, el mensaje se hace visible a mitad
+> del reintento y otro worker gasta **justo la recepción que se estaba ahorrando** — o sea, el
+> permiso que falta convierte el arreglo en decorativo. Añadido al Terraform; **requiere `apply`**
+> (ver `PENDIENTES-MAURICIO §2`). Misma familia que la trampa de las reglas IoT.
+>
+> **Tres cosas que no se ven y rompen si faltan**, cada una con su test: el **rollback** antes de
+> reintentar; **rehacer los `pending`** del modo batch tras el rollback (o el bloqueo quema una
+> recepción **por cada mensaje del lote**); y cubrir también el **commit del batch**.
+>
+> **Hallazgo de paso:** el camino viejo **tiraba una conexión sana** — un `55P03` caía en
+> `except OperationalError` → `_drop_conn()`, o sea reconectar por un lock que ya había cedido.
+>
+> **Deja abierta** `T-2.136`.
+
+### [ ] T-2.136 · Los workers tampoco tienen `statement_timeout` — `SOFTWARE`
+- **Componente:** api (workers) · **Detectada por:** `T-2.132` (2026-08-13), medida
+- `T-2.131` puso tope de sentencia a `get_tenant_conn` — **la conexión del request**. Los workers
+  conectan por `db/pool.py` y `SHOW statement_timeout` sigue dando **`0`**.
+- **Y aquí el modo de fallo es distinto y peor:** una consulta lenta —no bloqueada— puede pasarse
+  del **`VisibilityTimeout` de la cola**, y entonces SQS entrega el mensaje **otra vez** mientras
+  el primero sigue trabajando: **procesamiento duplicado**. No es que se degrade el servicio, es
+  que el mismo hecho puede entrar dos veces.
+- La regla de oro 3 (idempotencia) debería absorberlo, pero **conviene medirlo antes de confiar**:
+  no todo lo que escribe un worker pasa por una PK natural.
+- **Criterios de aceptación:**
+  - [ ] Medido si hoy alguna consulta de worker puede pasarse del `VisibilityTimeout` de su cola.
+  - [ ] Si puede: tope de sentencia con el mismo criterio de `T-2.132` —dentro del presupuesto de
+        la cola, leído del Terraform real— o la razón escrita de por qué no.
+  - [ ] Comprobado que el duplicado, si ocurre, no deja rastro doble.
+
+### [ ] T-2.137 · El violeta del panel y el de la consola no son el mismo color, y el comentario dice que sí — `SOFTWARE`
+- **Componente:** edge (panel) + web · **Detectada por:** `T-2.64.d` (2026-08-13)
+- `soc.css` afirma por escrito que su violeta «es el mismo color que el `banner-wr1` del panel
+  LAN». **No lo es:** el panel define `#7C4DFF` y la consola pinta `#A78BFA`.
+- **Las dos superficies que dicen «este equipo NO va a alertar» se pintan distinto**, y quien
+  opera mira las dos. Es el mismo género que `T-2.85.b` —dos vocabularios para una realidad—,
+  aquí en color en vez de en palabras.
+- `T-2.64.d` eligió `#A78BFA` para el token nuevo porque es lo que la consola ya envía (cero
+  cambio visual) y porque `#7C4DFF` es oscuro: como color de texto tendría mal contraste. **La
+  decisión de cuál gana es de design system**, y hay que tomarla mirando las dos pantallas.
+- **Criterios de aceptación:**
+  - [ ] Un solo valor, elegido con su razón (contraste medido en la superficie donde se use).
+  - [ ] El comentario de `soc.css` deja de afirmar algo falso.
+  - [ ] Si el panel no puede consumir el token, la copia queda **vigilada por un test**, como el
+        glosario de `T-2.85.b`.
 
 ### [ ] T-2.133 · `siren_test` no tiene productor: o le falta rótulo, o es una entrada muerta — `SOFTWARE`
 - **Componente:** sdk + api · **Detectada por:** `T-2.127` (2026-08-12)
