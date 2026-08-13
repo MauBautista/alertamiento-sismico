@@ -187,6 +187,12 @@ class Expectations:
     append_only: frozenset[str] = frozenset()
     guard_function: str = "forbid_update_delete"
     rls: Mapping[str, tuple[bool, bool]] = field(default_factory=dict)
+    #: [T-2.73.b] Tablas cuyo esquema **declara EXPLÍCITAMENTE** que no llevan
+    #: FORCE (`ALTER TABLE … NO FORCE ROW LEVEL SECURITY`). No es lo mismo que
+    #: «no aparece su línea de FORCE»: eso es un olvido y tiene que seguir
+    #: avisando. Esto es una decisión escrita en la fuente de verdad, y por eso
+    #: es lo único que exime del aviso de `rls_on_tenant_tables`.
+    no_force: frozenset[str] = frozenset()
     policies: Mapping[str, int] = field(default_factory=dict)
     hypertables: frozenset[str] = frozenset()
     barrier_views: frozenset[str] = frozenset()
@@ -205,6 +211,7 @@ class Expectations:
             append_only=self.append_only | other.append_only,
             guard_function=other.guard_function or self.guard_function,
             rls=rls,
+            no_force=self.no_force | other.no_force,
             policies=policies,
             hypertables=self.hypertables | other.hypertables,
             barrier_views=self.barrier_views | other.barrier_views,
@@ -274,6 +281,10 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
 
     enabled = set(re.findall(r"ALTER TABLE (\w+) ENABLE ROW LEVEL SECURITY", schema))
     forced = set(re.findall(r"ALTER TABLE (\w+) FORCE\s+ROW LEVEL SECURITY", schema))
+    # [T-2.73.b] El `NO FORCE` EXPLÍCITO es otra cosa que la ausencia de FORCE:
+    # es la decisión escrita. (La regex de arriba no lo confunde: exige el nombre
+    # de tabla pegado a `FORCE`, y aquí en medio va el `NO`.)
+    no_force = frozenset(re.findall(r"ALTER TABLE (\w+) NO FORCE\s+ROW LEVEL SECURITY", schema))
     rls = {table: (True, table in forced) for table in enabled}
 
     policies: dict[str, int] = {}
@@ -300,6 +311,7 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
         append_only=frozenset(append_only),
         guard_function=sorted(guards)[0] if guards else "forbid_update_delete",
         rls=rls,
+        no_force=no_force,
         policies=policies,
         hypertables=hypertables,
         barrier_views=barrier_views,
@@ -847,7 +859,7 @@ def _check_rls_flags(conn: psycopg.Connection, exp: Expectations) -> Check:
     )
 
 
-def _check_rls_on_tenant_tables(conn: psycopg.Connection) -> Check:
+def _check_rls_on_tenant_tables(conn: psycopg.Connection, exp: Expectations) -> Check:
     """Derivada del catálogo: toda tabla con `tenant_id` debe llevar RLS.
 
     No enumera ni las tablas ni sus excepciones: las DEDUCE, y por eso una tabla
@@ -859,9 +871,23 @@ def _check_rls_on_tenant_tables(conn: psycopg.Connection) -> Check:
     * Una hypertable **sin** caggs lleva RLS pero NO FORCE: los jobs de
       TimescaleDB (retención, refresh) corren como el OWNER y con FORCE verían
       0 filas, así que la retención dejaría de podar.
+    * [T-2.73.b] Y una tabla cuyo esquema declara **explícitamente** el
+      `NO FORCE` (`exp.no_force`). Hoy solo `tenant_retire_codes`, y su razón se
+      midió antes de exentarla: su `SELECT` lo hacen funciones `SECURITY
+      DEFINER` que corren como el DUEÑO, y `SECURITY DEFINER` cambia el usuario
+      pero **no los GUC** — con FORCE el dueño queda sujeto a una política que
+      exige `takab_superadmin`, y `app_verify_retire_code` devuelve **false para
+      un código correcto**. Poner FORCE ahí no endurece nada: deja sin poder
+      retirar un gabinete a quien tiene derecho. Lo mide
+      `tests/ops/test_rls_no_force_declarada.py`, no este párrafo.
+
+    La exención sale de `db/schema.sql`, **no de una lista dentro de este
+    módulo**, y del `NO FORCE` ESCRITO — no de la ausencia de la línea de FORCE,
+    que es lo que produce un olvido. Para saltarse esta comprobación hay que
+    declararlo en la fuente de verdad, que es donde se revisa.
 
     Una tabla normal que aparezca con RLS y sin FORCE no encaja en ninguna de
-    las dos y sale como AVISO, que es lo que se quiere: su dueño se salta su
+    las tres y sale como AVISO, que es lo que se quiere: su dueño se salta su
     propia política.
     """
     sin_rls: list[str] = []
@@ -877,7 +903,7 @@ def _check_rls_on_tenant_tables(conn: psycopg.Connection) -> Check:
         )
     }
     exentas_rls = con_cagg
-    exentas_force = hts - con_cagg
+    exentas_force = (hts - con_cagg) | set(exp.no_force)
     filas = _rows(
         conn,
         "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
@@ -902,12 +928,14 @@ def _check_rls_on_tenant_tables(conn: psycopg.Connection) -> Check:
             "rls_on_tenant_tables",
             WARN,
             f"{len(filas)} tablas con tenant_id llevan RLS; sin FORCE (su DUEÑO se salta la "
-            f"política) y fuera de la excepción documentada: {', '.join(sin_force)}",
+            f"política), sin ser hypertable y sin `NO FORCE` declarado en db/schema.sql: "
+            f"{', '.join(sin_force)}",
         )
     return Check(
         "rls_on_tenant_tables",
         PASS,
-        f"{len(filas)} tablas con tenant_id llevan RLS; las excepciones son las documentadas",
+        f"{len(filas)} tablas con tenant_id llevan RLS; las excepciones son las documentadas "
+        f"({len(exentas_force)} sin FORCE: hypertables + {len(exp.no_force)} declaradas)",
     )
 
 
@@ -1567,7 +1595,7 @@ def verify(
         _check_append_only_triggers(conn, exp),
         _check_append_only_enforced(conn, exp),
         _check_rls_flags(conn, exp),
-        _check_rls_on_tenant_tables(conn),
+        _check_rls_on_tenant_tables(conn, exp),
         _check_rls_policies(conn, exp),
         _check_rls_owner_escape(conn),
         _check_barrier_views(conn, exp),

@@ -34,7 +34,14 @@
   --tk-fg-1:#F0F2F5;--tk-fg-2:#B8C2CE;--tk-fg-3:#8A9CB1;--tk-fg-disabled:#4A5765;
   --tk-cyan:#00BFFF;--tk-cyan-hover:#33CCFF;--tk-cyan-press:#009ACC;
   --tk-cyan-tint:rgba(0,191,255,0.15);--tk-cyan-tint-soft:rgba(0,191,255,0.08);
-  --tk-ok:#00E676;--tk-warn:#FFC107;--tk-crit:#FF5252;--tk-geo:#7CE7FF;--tk-violet:#7C4DFF;
+  --tk-ok:#00E676;--tk-warn:#FFC107;--tk-crit:#FF5252;--tk-geo:#7CE7FF;
+  /* [T-2.137] Era `--tk-violet:#7C4DFF`, un nombre que el paquete de tokens no
+     conoce y un valor que la consola no usa: las dos pantallas que dicen «este
+     equipo NO va a alertar» se pintaban distinto. Medido, `#7C4DFF` reprueba AA
+     en los tres roles que tiene aquí (2.86:1 como texto sobre su propio tinte,
+     2.86:1 como borde contra él); `#A78BFA` da 4.53:1 y además ya vive en el
+     paquete. Copia vigilada por `tests/test_local_api_panel.py`. */
+  --tk-status-maintenance:#A78BFA;
   --tk-border:rgba(240,242,245,0.08);--tk-border-strong:rgba(240,242,245,0.16);
   --tk-shadow-critical:0 0 0 1px #FF5252,0 0 24px -6px rgba(255,82,82,0.45);
   --tk-shadow-warning:0 0 0 1px #FFC107,0 0 16px -8px rgba(255,193,7,0.35);
@@ -88,7 +95,7 @@ canvas{display:block}
 #banner-aviso{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 20px;background:rgba(255,193,7,0.28);border-bottom:2px solid var(--tk-warn)}
 #banner-aviso .big{font:700 20px/1.1 var(--f-ui);letter-spacing:-0.01em;color:var(--tk-warn)}
 #banner-cyan{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--tk-cyan-tint);border-bottom:1px solid var(--tk-cyan)}
-#banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid var(--tk-violet)}
+#banner-wr1{display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(167,139,250,0.16);border-bottom:1px solid var(--tk-status-maintenance)}
 /* [T-2.65] Baja administrativa: ámbar como los demás informativos. PROHIBIDO
    --tk-fg-3 aquí dentro: sobre este tinte (=#393F2E) mide 3.88:1 y REPRUEBA AA,
    y el test de contraste solo cruza los grises contra surface-0/1/2, así que no
@@ -244,7 +251,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
 
 <!-- precedencia §9.1: alerta real tapa simulacro y prueba; WR-1 SIEMPRE visible -->
 <div id="banner-wr1" class="hide">
-  <span style="font:700 13px/1 var(--f-ui);letter-spacing:0.10em;color:#B79CFF">🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
+  <span style="font:700 13px/1 var(--f-ui);letter-spacing:0.10em;color:var(--tk-status-maintenance)">🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
   <span class="mono" id="wr1-left" style="font-weight:700;font-size:13px">—</span>
   <span style="font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)">La protección local sigue armada · la ventana expira sola</span>
 </div>

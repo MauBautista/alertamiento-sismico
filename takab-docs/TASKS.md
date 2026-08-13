@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **275** · `[x]` **208** · `[~]` **9** · `[ ]` **58**
+**Conteo de tareas:** total **278** · `[x]` **212** · `[~]` **9** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5308,7 +5308,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
         pone el test en rojo.
   - [ ] El ámbito deja de ser un solo archivo.
 
-### [ ] T-2.73.b · Higiene de RLS: `tenant_retire_codes` sin FORCE y 7 tablas con dueño superusuario — `SOFTWARE`
+### [x] T-2.73.b · Higiene de RLS: `tenant_retire_codes` sin FORCE y 7 tablas con dueño superusuario — `SOFTWARE`
 - **Componente:** db · **Depende de:** —
 - Los sacó a la luz el verificador de T-2.73 y **no son deuda de restore**, son de esquema:
   - `tenant_retire_codes` (migración 0025) tiene RLS `ENABLE` **sin FORCE** y no es ninguna de
@@ -5321,10 +5321,37 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
     sin `SET ROLE takab_migrator`. Riesgo **latente**: una migración futura con
     `SET ROLE takab_migrator; ALTER TABLE notification_jobs …` moriría con `must be owner`.
 - **Criterios de aceptación:**
-  - [ ] Migración idempotente que pone FORCE y devuelve la propiedad, respetando los dos
+  - [x] Migración idempotente que pone FORCE y devuelve la propiedad, respetando los dos
         invariantes de `migrations-must-be-idempotent`.
-  - [ ] Confirmado contra la NUBE (allí el conector ya es `takab_migrator`, así que puede no
+  - [x] Confirmado contra la NUBE (allí el conector ya es `takab_migrator`, así que puede no
         diverger) antes de asumir que el defecto existe en producción.
+
+> **Cerrada (2026-08-13), y el último criterio salvó la ficha: EL DEFECTO NO EXISTÍA EN
+> PRODUCCIÓN.** Medido con `SET ROLE takab_migrator` —que es exactamente el conector de la nube,
+> `rolsuper = f`—: una tabla creada por él **sin `SET ROLE`** ya queda a su nombre. Las 7 (más
+> `reference_earthquakes`, **que la ficha no listaba**) son un **artefacto local** de migrar como
+> superusuario. Y un `ALTER TABLE … OWNER TO` a ciegas **habría matado el `apply`**: sobre una
+> tabla ajena da `must be owner of table`.
+>
+> Por eso `0039` **no transfiere a ciegas**: guarda con `pg_has_role` y degrada a `RAISE NOTICE`.
+> Verificado con el conector de la nube simulado: *«0 movidas, 1 saltadas»*, **sin ERROR**. El
+> alcance se deriva del catálogo, no de la lista de la ficha — que estaba corta.
+>
+> **⚠️ Y EL `FORCE` QUE PEDÍA ESTA FICHA HABRÍA SIDO UNA REGRESIÓN FUNCIONAL.** Medido con
+> `app.role='tenant_admin'`:
+>
+>     app_verify_retire_code(tenant,'SECRETO-123')  SIN FORCE → t
+>     ALTER TABLE tenant_retire_codes FORCE ROW LEVEL SECURITY;
+>     app_verify_retire_code(tenant,'SECRETO-123')  CON FORCE → f
+>
+> `SECURITY DEFINER` cambia el **usuario**, no los GUC: con `FORCE`, el dueño queda sujeto a la
+> única política, que exige `takab_superadmin`. Poner `FORCE` **no endurece nada — deja sin poder
+> retirar un gabinete a quien tiene derecho**. La decisión ya estaba escrita en la migración 0025
+> y en `db/schema.sql` (el ÚNICO `NO FORCE` explícito del esquema).
+>
+> El arreglo fue **al verificador**: `Expectations.no_force` se deriva del `NO FORCE` **escrito**,
+> no de la ausencia de la línea de `FORCE` —que es lo que produce un olvido—, así que una tabla no
+> declarada **sigue avisando**.
 
 ### [x] T-2.73.c · El cuelgue intermitente de `test_retire_code.py` — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api (tests) · **Depende de:** —
@@ -6132,7 +6159,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > Confirmó de paso que la excusa había caducado: `routers/compliance.py` ya estaba limpio desde
 > T-2.82.
 
-### [ ] T-2.79.f · La parte de la pantalla móvil que le habla a la persona no la asserta nadie — `SOFTWARE`
+### [x] T-2.79.f · La parte de la pantalla móvil que le habla a la persona no la asserta nadie — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Detectada por:** reauditoría de la Fase 2.8
   (2026-08-08)
 - La suite de `privacidad.tsx` cubre a fondo **los dos bloqueantes** que se cerraron el
@@ -6144,8 +6171,8 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   donde importa para la integridad del registro; lo que no está probado es que la pantalla se lo
   **cuente** a quien tiene que decidir.
 - **Criterios de aceptación:**
-  - [ ] Un test asserta que el cuerpo del aviso servido y su versión/sello se pintan.
-  - [ ] Un test asserta el texto del estado «este aviso cambió», que es el que pide una decisión
+  - [x] Un test asserta que el cuerpo del aviso servido y su versión/sello se pintan.
+  - [x] Un test asserta el texto del estado «este aviso cambió», que es el que pide una decisión
         nueva a alguien que ya había consentido.
 
 ### [x] T-2.80 · ARCO por anonimización con tombstone — `SOFTWARE` · COMPLETA (2026-08-08)
@@ -7832,7 +7859,7 @@ sería documentar intenciones.
 >
 > **Deja abierta** `T-2.136`.
 
-### [ ] T-2.136 · Los workers tampoco tienen `statement_timeout` — `SOFTWARE`
+### [x] T-2.136 · Los workers tampoco tienen `statement_timeout` — `SOFTWARE`
 - **Componente:** api (workers) · **Detectada por:** `T-2.132` (2026-08-13), medida
 - `T-2.131` puso tope de sentencia a `get_tenant_conn` — **la conexión del request**. Los workers
   conectan por `db/pool.py` y `SHOW statement_timeout` sigue dando **`0`**.
@@ -7843,12 +7870,51 @@ sería documentar intenciones.
 - La regla de oro 3 (idempotencia) debería absorberlo, pero **conviene medirlo antes de confiar**:
   no todo lo que escribe un worker pasa por una PK natural.
 - **Criterios de aceptación:**
-  - [ ] Medido si hoy alguna consulta de worker puede pasarse del `VisibilityTimeout` de su cola.
-  - [ ] Si puede: tope de sentencia con el mismo criterio de `T-2.132` —dentro del presupuesto de
+  - [x] Medido si hoy alguna consulta de worker puede pasarse del `VisibilityTimeout` de su cola.
+  - [x] Si puede: tope de sentencia con el mismo criterio de `T-2.132` —dentro del presupuesto de
         la cola, leído del Terraform real— o la razón escrita de por qué no.
-  - [ ] Comprobado que el duplicado, si ocurre, no deja rastro doble.
+  - [x] Comprobado que el duplicado, si ocurre, no deja rastro doble.
+        ⚠️ **Comprobado, y la respuesta es que SÍ lo deja — en 1 de 7 caminos.** El criterio se
+        cumple como *medición*, no como veredicto limpio. Ver la nota de cierre y `T-2.138`.
 
-### [ ] T-2.137 · El violeta del panel y el de la consola no son el mismo color, y el comentario dice que sí — `SOFTWARE`
+> **Cerrada (2026-08-13).** **Sí puede pasarse, medido:** conexión de worker con
+> `statement_timeout = '0'`, un `pg_sleep(31)` **corre entero** (31.03 s) contra un
+> `VisibilityTimeout` de **30 s** en `q-events` — leído del Terraform real, no de una copia.
+>
+>     WORKER_LOCK_TIMEOUT_MS  <  WORKER_STATEMENT_TIMEOUT_MS  ≤  presupuesto  <  VisibilityTimeout
+>              3 s                        15 s                      20 s              30 s
+>
+> **La asimetría se REHÍZO, no se heredó:** solo **2 de los 6** workers consumen cola (`ingest` y
+> `backfill`). Los otros cuatro son pollers de la base o pasadas one-shot — **sin
+> `VisibilityTimeout` no hay reentrega, no hay duplicado y no hay presupuesto del que derivar un
+> número**. `backfill` sí consume cola y **aun así queda fuera**, con razón medida: su VT es 300 s,
+> su trabajo es a granel y **no tiene política de reintento**, así que un `57014` allí sería una
+> recepción quemada por una sentencia quizá legítima (`T-2.139`).
+>
+> **Por qué este tope no cuesta lo que costaba el de lock**, que es lo que autoriza la asimetría:
+> esperar un lock **funciona** —`T-2.132` lo midió, el mensaje entra cuando el lock cede—. Esperar
+> una consulta más lenta que la visibilidad **no**: cuando termina, **el mensaje ya se reentregó y
+> la recepción ya se gastó**. El tope no añade daño; **quita trabajo duplicado**.
+>
+> **⚠️ El límite de ABAJO, medido en las dos direcciones, y es la misma trampa que `T-2.131`:** con
+> el orden correcto un bloqueo sale **`55P03`** (∈ transitorios ⇒ reintento en el sitio, 0
+> recepciones); **invertido, el MISMO bloqueo sale `57014`**, que **no** está en el censo ⇒ **el
+> arreglo entero de `T-2.132` queda desactivado** y cada lock vuelve a quemar recepciones hasta la
+> DLQ. `57014` se deja fuera del censo a propósito: una consulta cancelada no es «la base
+> ocupada», y reintentarla re-corre el mismo coste.
+>
+> **El duplicado, medido entregando el mismo mensaje dos veces contra la base real:** 6 de 7
+> caminos quedan en **una** fila (PK natural, UPSERT por `event_uuid`, guarda de estado). El
+> séptimo —`ingest_reject`— deja **dos**, porque `audit_log` **no tiene clave natural**. No se
+> arregló aquí y la razón importa: una clave sobre `(tenant, actor, verb, object, meta)`
+> **colapsaría rechazos genuinamente distintos**, que es peor que duplicar uno. Queda `T-2.138`, y
+> el test **fija el 2 medido** para que se ponga rojo el día que se arregle.
+>
+> **Residual honesto:** el tope acota **una sentencia, no una recepción entera**. Un lote de 10
+> mensajes a 15 s cada uno seguiría pasándose de los 30 s. La defensa real hoy es que el tope es
+> ~1000× el coste observado de una inserción de ingesta.
+
+### [x] T-2.137 · El violeta del panel y el de la consola no son el mismo color, y el comentario dice que sí — `SOFTWARE`
 - **Componente:** edge (panel) + web · **Detectada por:** `T-2.64.d` (2026-08-13)
 - `soc.css` afirma por escrito que su violeta «es el mismo color que el `banner-wr1` del panel
   LAN». **No lo es:** el panel define `#7C4DFF` y la consola pinta `#A78BFA`.
@@ -7859,10 +7925,49 @@ sería documentar intenciones.
   cambio visual) y porque `#7C4DFF` es oscuro: como color de texto tendría mal contraste. **La
   decisión de cuál gana es de design system**, y hay que tomarla mirando las dos pantallas.
 - **Criterios de aceptación:**
-  - [ ] Un solo valor, elegido con su razón (contraste medido en la superficie donde se use).
-  - [ ] El comentario de `soc.css` deja de afirmar algo falso.
-  - [ ] Si el panel no puede consumir el token, la copia queda **vigilada por un test**, como el
+  - [x] Un solo valor, elegido con su razón (contraste medido en la superficie donde se use).
+  - [x] El comentario de `soc.css` deja de afirmar algo falso.
+  - [x] Si el panel no puede consumir el token, la copia queda **vigilada por un test**, como el
         glosario de `T-2.85.b`.
+
+### [ ] T-2.138 · `ingest_reject` duplica renglón en `audit_log` — `SOFTWARE`
+- **Componente:** api · **Detectada por:** `T-2.136` (2026-08-13), **medida**
+- De los 7 caminos de ingesta, 6 son idempotentes ante una reentrega (PK natural, UPSERT por
+  `event_uuid`, guarda de estado). El séptimo **no**: `_audit_reject` inserta **por entrega, no
+  por hecho**, porque `audit_log` es `audit_id GENERATED ALWAYS AS IDENTITY` + `ts DEFAULT now()`
+  y **no tiene clave natural**.
+- **Consecuencia acotada, no dramática:** ningún consumidor programático lee `ingest_reject`
+  (solo `GET /audit`), así que no infla contadores ni alarmas. **Pero la tabla es append-only por
+  trigger y NUNCA se poda** (regla de oro 11), así que el renglón de más es **permanente**.
+- **La razón por la que no se arregló al medirlo, y hay que respetarla:** el escritor único es
+  `audit.py` —vetado por contract-test— y una clave sobre `(tenant, actor, verb, object, meta)`
+  **colapsaría rechazos genuinamente distintos**, que es **peor** que duplicar uno. Hace falta un
+  índice único parcial con clave por **hash del mensaje**.
+- El test de `T-2.136` **fija el 2 medido**: el día que se arregle, se pone rojo y avisa.
+- **Criterios de aceptación:**
+  - [ ] Un rechazo reentregado deja **una** fila, sin colapsar rechazos distintos.
+  - [ ] El escritor único sigue siendo `audit.py` y su contract-test sigue vetando lo demás.
+
+### [ ] T-2.139 · `backfill` consume cola y no tiene tope de sentencia — `SOFTWARE`
+- **Componente:** api (worker) · **Detectada por:** `T-2.136` (2026-08-13)
+- `T-2.136` puso tope de sentencia **solo a `ingest`**, y dejó `backfill` fuera **con razón
+  medida**: su `VisibilityTimeout` es 300 s (10× el de eventos), su trabajo es a granel (S3 →
+  miniSEED → filas) y **no tiene política de reintento**, así que un `57014` allí sería una
+  **recepción quemada por una sentencia quizá legítima**.
+- Acotarlo exige **medir antes cuánto tarda un objeto real**, no elegir un número.
+- **Criterios de aceptación:**
+  - [ ] Medido el tiempo de una pasada real de backfill sobre un objeto representativo.
+  - [ ] Política de reintento como la de `T-2.132`, **y solo entonces** el tope.
+
+### [ ] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
+- **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)
+- `takab-docs/design/edge-panel/Panel Gabinete.dc.html` conserva `#7C4DFF`, el valor que
+  `T-2.137` retiró por **reprobar el contraste en los tres roles**, incluido el de borde.
+  **Ninguna guardia lo mira.**
+- Importa poco hoy y mucho el día que alguien implemente una pantalla nueva copiando del comp:
+  reintroduciría un color que ya se midió que no pasa.
+- **Criterios de aceptación:**
+  - [ ] El comp usa el valor vigente, o queda declarado como histórico con su fecha.
 
 ### [ ] T-2.133 · `siren_test` no tiene productor: o le falta rótulo, o es una entrada muerta — `SOFTWARE`
 - **Componente:** sdk + api · **Detectada por:** `T-2.127` (2026-08-12)

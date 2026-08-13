@@ -16,7 +16,7 @@ from functools import partial
 import psycopg
 
 from takab_api.db import pool
-from takab_api.db.session import WORKER_LOCK_TIMEOUT_MS
+from takab_api.db.session import WORKER_LOCK_TIMEOUT_MS, WORKER_STATEMENT_TIMEOUT_MS
 from takab_api.ingest.consumer import SqsConsumer
 from takab_api.ingest.registry import Registry
 from takab_api.settings import Settings
@@ -46,8 +46,15 @@ def build_consumer(queue: str, settings: Settings) -> SqsConsumer:
     # convierte cada bloqueo en una recepción de SQS quemada y, a la quinta, un
     # mensaje válido en la DLQ (medido en T-2.130). El número sale de
     # `db/session.py`, donde vive la política entera.
+    # [T-2.136] Y el tope de SENTENCIA, que ataja el otro modo de fallo: una
+    # consulta lenta que se pasa del `VisibilityTimeout` hace que SQS entregue el
+    # mensaje OTRA VEZ mientras ésta sigue. Va al mismo worker por razones
+    # PROPIAS —no heredadas del de lock—, escritas en `WORKER_STATEMENT_TIMEOUT_MS`.
     conn_factory: partial[psycopg.Connection] = partial(
-        pool.connect, settings.database_url, lock_timeout_ms=WORKER_LOCK_TIMEOUT_MS
+        pool.connect,
+        settings.database_url,
+        lock_timeout_ms=WORKER_LOCK_TIMEOUT_MS,
+        statement_timeout_ms=WORKER_STATEMENT_TIMEOUT_MS,
     )
     registry = Registry(conn_factory, ttl_s=settings.registry_ttl_s)
     return SqsConsumer(

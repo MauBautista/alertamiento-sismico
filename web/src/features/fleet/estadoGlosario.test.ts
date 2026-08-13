@@ -222,21 +222,33 @@ describe("glosario · los términos que produce la nube se leen del productor", 
     });
   });
 
-  it("la divergencia de `RELÉS ILEGIBLES` sigue siendo exactamente la declarada", () => {
-    // La consola PINTA esta cadena tal cual llega en `degrade_reasons`, así que
-    // no aparece en sus fuentes y el censo de arriba no puede verla. Se vigila
-    // aquí, contra el productor: el día que alguien la alinee, este test se pone
-    // rojo y obliga a borrar la entrada del glosario en vez de dejarla
-    // eternizada como deuda.
-    const div = G.divergencias.find((d) => d.eje === "pieza_muda");
-    expect(div, "la divergencia de `pieza_muda` desapareció del glosario").toBeDefined();
-    expect(constante("RELAYS_ILEGIBLES")).toBe(div!.consola);
-    expect(div!.dueno).toBe("api/src/takab_api/schemas/fleet.py");
-    expect(div!.arreglo).toContain("NO CONTESTA");
+  it("el relé mudo se llama `NO CONTESTA` en el productor, como en el panel", () => {
+    // [T-2.85.b · deuda 2 · PAGADA 2026-08-13] Era una divergencia declarada:
+    // la nube emitía `RELÉS ILEGIBLES` donde el panel dice `NO CONTESTA`, para
+    // el MISMO hecho —el módulo que gobierna los relés no responde—. La consola
+    // PINTA esta cadena tal cual llega en `degrade_reasons`, así que no aparece
+    // en sus fuentes y el censo de arriba no puede verla: se vigila aquí,
+    // contra el productor.
+    //
+    // El prefijo `RELÉS ·` se queda porque `degrade_reasons` es una lista de
+    // pills sin contexto —`NO CONTESTA` a secas junto a `EN BATERÍA` no dice
+    // QUÉ no contesta—, y el glosario pide que la frase CONTENGA el término
+    // canónico, no que sea exactamente él.
+    const emitido = constante("RELAYS_ILEGIBLES");
+    expect(emitido).toContain(G.ejes.pieza_muda.consola);
+    expect(emitido).toBe("RELÉS · NO CONTESTA");
+    expect(intrusas(new Set([emitido]), G.ejes)).toEqual({});
   });
 
   it("cada divergencia abierta lleva su arreglo exacto y su dueño", () => {
-    expect(G.divergencias.map((d) => d.eje).sort()).toEqual(["pieza_muda", "vejez"]);
+    // Esta lista SOLO PUEDE BAJAR. Se compara por igualdad justamente para que
+    // pagar una deuda obligue a borrar su entrada en el mismo cambio: una
+    // divergencia que sobrevive a su arreglo es peor que no haberla declarado,
+    // porque documenta un defecto que ya no existe y esconde que quedó uno.
+    //
+    // Queda `vejez`, y su `por_que_sigue_abierta` dice lo que se midió al
+    // intentar pagarla (T-2.137, 2026-08-13).
+    expect(G.divergencias.map((d) => d.eje).sort()).toEqual(["vejez"]);
     for (const d of G.divergencias) {
       expect(Object.keys(G.ejes)).toContain(d.eje);
       expect(d.panel).not.toEqual(d.consola);

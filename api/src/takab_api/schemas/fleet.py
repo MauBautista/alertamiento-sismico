@@ -33,7 +33,20 @@ RELAYS_UNREADABLE = "unreadable"
 #: `gpio_owner=gpio` y `takab-gpio` caído: sin sirena, sin cierre de gas, sin
 #: retorno de ascensores y sin retenedores, con `takab-edge` latiendo cada 60 s y
 #: todas las demás métricas en verde.
-RELAYS_ILEGIBLES = "RELÉS ILEGIBLES"
+#:
+#: [T-2.85.b · deuda 2 · 2026-08-13] Decía ``RELÉS ILEGIBLES``. Es el MISMO
+#: hecho que el panel del gabinete rotula ``NO CONTESTA`` —el módulo que
+#: gobierna los relés no responde—, y quien opera mira LAS DOS pantallas: la del
+#: Pi en el sitio y ésta desde el SOC, o al revés en plena madrugada. Cada
+#: traducción que hace de cabeza bajo presión es un sitio donde se equivoca.
+#: El vocabulario único vive en ``shared/glossary/estados.json`` (eje
+#: ``pieza_muda``) y lo vigila ``web/src/features/fleet/estadoGlosario.test.ts``,
+#: que LEE esta constante en vez de copiarla.
+#:
+#: El prefijo ``RELÉS ·`` se conserva a propósito: ``degrade_reasons`` es una
+#: lista de pills sin más contexto, y un ``NO CONTESTA`` a secas junto a
+#: ``EN BATERÍA`` no dice QUÉ es lo que no contesta.
+RELAYS_ILEGIBLES = "RELÉS · NO CONTESTA"
 
 
 def derive_fleet_state(
@@ -112,7 +125,7 @@ def fleet_degrade_reasons(
     no está vacía, el estado es DEGRADADO. La UI pinta cada razón como pill en
     vez de dejar al operador adivinar cuál de seis métricas se salió de rango.
 
-    **[T-2.70.a·B1] ``RELÉS ILEGIBLES``, y por qué SÓLO ``unreadable``.** Desde
+    **[T-2.70.a·B1] ``RELÉS · NO CONTESTA``, y por qué SÓLO ``unreadable``.** Desde
     que D3 sacó al dueño de los pines a `takab-gpio`, un gabinete con
     `gpio_owner=gpio` y ese proceso caído se queda sin sirena, sin cierre de gas,
     sin retorno de ascensores y sin retenedores **mientras `takab-edge` late cada
@@ -438,7 +451,7 @@ class GatewayOut(BaseModel):
     ntp_offset_ms: float | None = None
     # [T-2.70.a·B1] Si el gabinete pudo leer el censo de sus relés en el ÚLTIMO
     # latido: `reported` · `stopped` · `unreadable` · `None` (no opina). Viaja
-    # crudo además de la pill `RELÉS ILEGIBLES` porque la consola necesita los
+    # crudo además de la pill `RELÉS · NO CONTESTA` porque la consola necesita los
     # cuatro casos, no sólo el que degrada: con `stopped` y con `None` los
     # actuadores se pintan **S/D**, jamás ARMADO. Hasta esta tarea el grid de
     # relés derivaba `armed` de que el enlace estuviera vivo, así que un gabinete

@@ -118,6 +118,63 @@ REQUEST_STATEMENT_TIMEOUT_MS = 20_000
 #: rollback en cada RETRY — se quedaría sin tope justo después del primer fallo.
 WORKER_LOCK_TIMEOUT_MS = 3_000
 
+#: [T-2.136] Tope de SENTENCIA del worker — el escalón que faltaba. `T-2.131`
+#: acotó la consulta LENTA (no bloqueada) del request; los workers conectan por
+#: ``db/pool.py`` y su ``statement_timeout`` seguía en ``0``.
+#:
+#: · **El modo de fallo aquí no es agotar el pool: es procesar DOS VECES.** Una
+#:   consulta que se pasa del ``VisibilityTimeout`` de la cola hace que SQS
+#:   entregue el mensaje otra vez **mientras el primero sigue trabajando**. No es
+#:   que el servicio se degrade; es que el mismo hecho entra dos veces. Medido
+#:   sin tope: ``SHOW statement_timeout`` = ``0`` y un ``pg_sleep(31)`` completo
+#:   en 31.03 s contra un ``VisibilityTimeout`` de 30 s en ``q-events``.
+#: · **Y por eso el tope aquí no cuesta lo que costaba el de lock.** `T-2.130`
+#:   midió que acotar la espera por lock convertía un mensaje bueno en DLQ:
+#:   esperar FUNCIONABA —el lock cede y el mensaje entra—. Una consulta más lenta
+#:   que la visibilidad NO se arregla esperando: para cuando termina, el mensaje
+#:   YA se reentregó y la recepción YA se gastó. El tope no añade recepciones
+#:   quemadas en ese caso; solo evita el trabajo duplicado y suelta al worker.
+#:   El daño colateral es la franja [tope, VisibilityTimeout] —consultas que
+#:   habrían acabado a tiempo y ahora mueren—, y por eso el tope se pone lejos
+#:   de lo observado (las sentencias de la ingesta son de milisegundos).
+#:
+#: El número está encajonado por los DOS lados, y abajo está lo que no se ve::
+#:
+#:     WORKER_LOCK_TIMEOUT_MS < WORKER_STATEMENT_TIMEOUT_MS ≤ budget_s < VisibilityTimeout
+#:              3 s                        15 s                20 s        30 s (q-events)
+#:
+#: · **Por arriba**, el techo de `T-2.132`: el ``VisibilityTimeout`` de la cola
+#:   más apretada, leído del Terraform real por un test, no copiado aquí.
+#: · **Y ≤ ``TransientPolicy.budget_s``**: una sola sentencia no puede sobrevivir
+#:   al presupuesto de reintento que protege al mensaje dentro de su recepción.
+#: · **Por abajo es donde se pierde la ficha anterior entera.** Si este tope
+#:   fuera ≤ el de lock, el reloj de la sentencia vencería SIEMPRE primero y una
+#:   espera por lock saldría como ``57014`` en vez de ``55P03``. Y ``57014``
+#:   **no está** en ``TRANSIENT_SQLSTATES``: el reintento en el sitio de
+#:   `T-2.132` no se dispararía, cada lock volvería a quemar una recepción y a la
+#:   quinta un mensaje VÁLIDO acabaría en la DLQ — el daño exacto que aquella
+#:   ficha midió y arregló, **desactivado sin que nada se pusiera rojo**. Es la
+#:   misma trampa de `T-2.131`, aquí con pérdida de datos en vez de un error peor
+#:   nombrado. Lo mide un test contra Postgres, no este comentario.
+#:
+#: **A QUIÉN se le pone, y por qué no a los cinco.** Solo a ``ingest``, igual que
+#: el tope de lock — pero la razón NO se hereda, se rehace:
+#:
+#: · ``backfill`` también consume SQS, así que el modo de fallo existe; pero su
+#:   cola da **300 s** (10× la de eventos), su trabajo es a granel (objeto de S3
+#:   → miniSEED → filas) y **no tiene política de reintento**. Un ``57014`` allí
+#:   sí sería una recepción quemada por una sentencia que quizá era legítima.
+#:   Ponerle tope exige medir antes cuánto tarda de verdad un objeto real.
+#: · ``incident``, ``notify`` y ``commands`` **no consumen cola**: son pollers de
+#:   la base. Sin ``VisibilityTimeout`` no hay reentrega, no hay duplicado y no
+#:   hay presupuesto del que derivar un número — dárselo sería inventarlo.
+#: · ``billing`` es una pasada ONE-SHOT de agregación: su trabajo ES largo por
+#:   diseño y nadie lo reentrega.
+#:
+#: Viaja como parámetro de arranque de la conexión, por lo mismo que el de lock:
+#: un ``SET`` no local se deshace con el ``rollback()`` de cada RETRY.
+WORKER_STATEMENT_TIMEOUT_MS = 15_000
+
 
 class LockTimeout(HTTPException, SQLAlchemyError):
     """La base no concedió un lock dentro de la política. Error CON NOMBRE.
