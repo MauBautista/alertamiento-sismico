@@ -27,8 +27,17 @@ Lo medido (2026-08-11, contra el código anterior al arreglo):
 Lo que fija este archivo tras el arreglo: la espera es ACOTADA (la política de
 segundo plano, 3 s — la misma que ya usan las dos laterales, no un número
 nuevo), el fan-out del resto SIGUE, y al suscriptor al que no se le pudo servir
-**se le dice**, cerrando su canal con un code propio en vez de dejarlo
-creyéndose al día.
+**se le dice**.
+
+[T-2.129] **CÓMO se le dice cambió, y por eso tres asserts de este fichero se
+invirtieron sin que ninguno fuera una regresión.** T-2.121 lo dijo cerrando el
+canal (code 4503) porque era literalmente lo único que llegaba a la pantalla: el
+SDK descartaba los frames `error` y todo `type` desconocido. Ahora el hub manda
+un `live_health` con `degraded: true` y **el socket sigue abierto**, así que aquí
+se exige lo contrario que antes — `ws.cerrado is None` y el suscriptor DENTRO del
+registro—, y la conducta que sí se conserva (que no se calle, que el resto siga
+recibiendo, que la espera esté acotada) se mide igual. El detalle del frame y su
+apagado viven en `test_ws_live_health.py`.
 
 [T-2.128] La serialización que se describe arriba **ya no existe**: `dispatch`
 encola en el carril de su `(tenant, topic)` y vuelve, y quien quiera el reparto
@@ -43,6 +52,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 import time
 from typing import Any
 
@@ -53,7 +63,7 @@ from starlette.websockets import WebSocketState
 from takab_api.audit import LATERAL_LOCK_TIMEOUT_MS
 from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.db.engine import get_engine
-from takab_api.ws.hub import WS_LIVE_DEGRADED, hub
+from takab_api.ws.hub import hub
 from tests.ws import _wsutil as w
 from tests.ws.conftest import (
     WS_GW_A,
@@ -157,11 +167,26 @@ def _suscriptor(topic: str, tenant: str = WS_TENANT_A) -> tuple[Any, _SocketDeMe
 
 
 @pytest.fixture(autouse=True)
-def _hub_limpio():
-    """El hub es un singleton de proceso: ningún test puede heredar suscriptores."""
+def _sonda_dormida(monkeypatch: pytest.MonkeyPatch):
+    """[T-2.129] Este fichero mide el TOPE, no la sonda de recuperación.
+
+    Sin apartarla, la sonda podría entregar el frame recuperado entre el
+    `rollback` y el `assert` y convertir estos tests en una lotería. Lo suyo se
+    mide en `test_ws_live_health.py`, con reloj propio.
+    """
+    monkeypatch.setattr(sys.modules[type(hub).__module__], "_RECOVERY_PROBE_S", 3600.0)
+
+
+@pytest.fixture(autouse=True)
+async def _hub_limpio():
+    """El hub es un singleton de proceso: ni suscriptores ni sondas heredadas."""
+    await hub._cancelar_sondas()
     hub._subs.clear()
     hub._visibility.clear()
     yield
+    # [T-2.129] Las sondas de recuperación viven en el loop del test que las
+    # armó: dejarlas sueltas contaminaría el siguiente con frames de otro caso.
+    await hub._cancelar_sondas()
     hub._subs.clear()
     hub._visibility.clear()
 
@@ -202,8 +227,12 @@ async def test_MEDIDO_el_hub_encolado_CEDE_en_vez_de_colgarse(ws_seed) -> None:
         await bloqueo.rollback()
 
     assert tardanza < _TOPE_TEST_S, f"el hub esperó {tardanza:.1f} s: el tope no actúa"
-    assert ws.frames == [], "no había fila legible: no se inventa un frame"
-    assert sub not in hub._subs
+    # [T-2.129] El único frame que sale es el aviso de degradación: NINGÚN frame
+    # de DATOS, que es lo que este assert siempre midió (no se inventa una fila
+    # que no se pudo leer).
+    assert [f["type"] for f in ws.frames] == ["live_health"]
+    assert ws.frames[0]["degraded"] is True
+    assert sub in hub._subs, "el suscriptor sigue vivo: el canal ya no se cierra por esto"
 
 
 async def test_al_suscriptor_al_que_no_se_le_pudo_servir_SE_LE_DICE(ws_seed) -> None:
@@ -211,9 +240,12 @@ async def test_al_suscriptor_al_que_no_se_le_pudo_servir_SE_LE_DICE(ws_seed) -> 
 
     El hub tenía una invalidación para este socket y no pudo leerla. Callarse
     deja al operador con una consola que dice «CONECTADO · ● LIVE» mientras se
-    le escapa un incidente. Se le cierra el canal con un code propio: el
-    `LiveSocket` del SDK reconecta con backoff y, entretanto, la topbar pinta
-    «CONECTANDO…» y la cola de incidentes «● SIN LIVE» — que es la verdad.
+    le escapa un incidente.
+
+    [T-2.129] Se le manda un `live_health` y el canal SIGUE ABIERTO. Antes se le
+    cerraba con 4503 y la consola pintaba «CONECTANDO…» — verdad, pero la verdad
+    equivocada: su sesión estaba sana, lo que falló fue una lectura. El assert se
+    invierte a propósito: cerrar aquí es hoy el defecto.
     """
     ids = await asyncio.to_thread(_quake)
     sub, ws = _suscriptor("incidents")
@@ -225,9 +257,15 @@ async def test_al_suscriptor_al_que_no_se_le_pudo_servir_SE_LE_DICE(ws_seed) -> 
         await asyncio.wait_for(hub.drain(), _TOPE_TEST_S)  # [T-2.128] el reparto va por carril
         await bloqueo.rollback()
 
-    assert ws.cerrado is not None, "el socket siguió abierto creyéndose al día (regla de oro 7)"
-    assert ws.cerrado[0] == WS_LIVE_DEGRADED
-    assert sub not in hub._subs, "un canal degradado no se queda en el registro del hub"
+    assert ws.frames, "el socket siguió abierto creyéndose al día (regla de oro 7)"
+    assert ws.frames[0] == {
+        "type": "live_health",
+        "degraded": True,
+        "topic": "incidents",
+        "detail": "incident: LockTimeout",
+    }
+    assert ws.cerrado is None, "tirar la conexión por una consulta es lo que quita T-2.129"
+    assert sub in hub._subs, "el suscriptor sigue en el registro: no perdió su sesión live"
 
 
 async def test_el_bloqueo_no_deja_MUDO_al_resto_del_SOC(ws_seed) -> None:
@@ -240,9 +278,9 @@ async def test_el_bloqueo_no_deja_MUDO_al_resto_del_SOC(ws_seed) -> None:
     la base (`checkin`)— y se exige que el segundo llegue.
 
     El segundo suscriptor es de OTRO tenant a propósito: al primero se le declara
-    el canal degradado (es a quien no se pudo servir) y sale del registro. Que el
-    de al lado siga recibiendo es justamente la diferencia entre «se perdió una
-    invalidación» y «se apagó el SOC».
+    el canal degradado (es a quien no se pudo servir). Que el de al lado siga
+    recibiendo es justamente la diferencia entre «se perdió una invalidación» y
+    «se apagó el SOC».
     """
     ids = await asyncio.to_thread(_quake)
     _, ws_incidente = _suscriptor("incidents")
@@ -275,12 +313,21 @@ async def test_el_bloqueo_no_deja_MUDO_al_resto_del_SOC(ws_seed) -> None:
                 f"tras {_TOPE_TEST_S:.0f} s el segundo notify seguía sin despacharse: un lock "
                 "sobre `incidents` deja mudo al SOC entero (T-2.121)."
             )
+        # [T-2.129] Esperar al REPARTO, no sólo a los `dispatch`. Faltaba, y no se
+        # notaba porque lo que este test afirmaba del suscriptor bloqueado era
+        # `frames == []` — cierto también cuando el carril aún no había llegado a
+        # él. Al empezar a exigirle un frame, la carrera salió a la luz: el test
+        # fallaba y encima dejaba el carril vivo, con su conexión reteniendo el
+        # ACCESS SHARE que el TRUNCATE del `ws_seed` esperaba para siempre.
+        await asyncio.wait_for(hub.drain(), _TOPE_TEST_S)
         await bloqueo.rollback()
     tardanza = time.monotonic() - inicio
 
     assert ws_roster.frames, "el frame que NO tocaba la tabla bloqueada nunca salió"
     assert ws_roster.frames[-1]["type"] == "roster"
-    assert ws_incidente.frames == []
+    # [T-2.129] Al de la tabla bloqueada no le llega DATO ninguno —eso no cambia—
+    # pero sí el aviso de que se le escapó algo, que es la ficha entera.
+    assert [f["type"] for f in ws_incidente.frames] == ["live_health"]
     assert tardanza < _TOPE_TEST_S
 
 
@@ -297,12 +344,17 @@ async def test_sin_bloqueo_el_hub_reparte_como_siempre(ws_seed) -> None:
 async def test_el_poller_bloqueado_no_se_queda_colgado_y_SE_RECUPERA(ws_seed) -> None:
     """El poller de features, que degrada por otra vía y a propósito.
 
-    Aquí no se cierra el canal: la ausencia de frames de features YA es visible
-    —`DetailPanel` declara «SIN LIVE» pasada `FEATURES_STALE_MS`— y tumbar el
-    socket del SOC por un tropiezo del strip sería desproporcionado. Lo que el
-    tope arregla es lo otro: que el ciclo no se quede indefinidamente dentro de
-    la consulta reteniendo su conexión del pool (5+5) y que vuelva solo en
-    cuanto la tabla se libere.
+    Aquí no se cierra el canal: tumbar el socket del SOC por un tropiezo del
+    strip sería desproporcionado. Lo que el tope arregla es lo otro: que el ciclo
+    no se quede indefinidamente dentro de la consulta reteniendo su conexión del
+    pool (5+5) y que vuelva solo en cuanto la tabla se libere.
+
+    [T-2.129] Lo que sí cambia es que ya no se calla. Antes su degradación sólo
+    se notaba por AUSENCIA de frames («SIN LIVE» pasada `FEATURES_STALE_MS`), que
+    no distingue «el gabinete dejó de mandar» de «la nube no puede leer lo que
+    mandó» — dos averías con dos sitios distintos donde ir a mirar. Ahora declara
+    `live_health` sobre su propio topic, y el ciclo bueno siguiente lo apaga: la
+    recuperación se ve en ≤1 s y sin sonda, porque este bucle YA es una sonda.
     """
     await asyncio.to_thread(_feature)
     ws = _SocketDeMentira()
@@ -318,7 +370,15 @@ async def test_el_poller_bloqueado_no_se_queda_colgado_y_SE_RECUPERA(ws_seed) ->
         # ni tarea muerta.
         await asyncio.sleep(LATERAL_LOCK_TIMEOUT_MS / 1000.0 + 1.5)
         assert not tarea.done(), "el poller murió con la tabla bloqueada"
-        assert ws.frames == [], "no se pudo leer: no se inventa un strip"
+        assert [f["type"] for f in ws.frames] == ["live_health"], (
+            "no se pudo leer: no se inventa un strip, pero tampoco se calla (T-2.129)"
+        )
+        assert ws.frames[0] == {
+            "type": "live_health",
+            "degraded": True,
+            "topic": topic,
+            "detail": "features: LockTimeout",
+        }
         await bloqueo.rollback()
 
     # Liberada la tabla, el ciclo siguiente vuelve a empujar sin que nadie
@@ -327,8 +387,14 @@ async def test_el_poller_bloqueado_no_se_queda_colgado_y_SE_RECUPERA(ws_seed) ->
     # aparecer (esa parte de la regla de oro 7 la fija el propio `_WINDOW_S`).
     await asyncio.to_thread(_feature)
     for _ in range(60):
-        if ws.frames:
+        if any(f["type"] == "features" for f in ws.frames):
             break
         await asyncio.sleep(0.1)
     await hub.unregister(sub)
-    assert ws.frames and ws.frames[0]["type"] == "features", "el poller no se recuperó"
+    tipos = [f["type"] for f in ws.frames]
+    assert "features" in tipos, "el poller no se recuperó"
+    # [T-2.129] Y el aviso se apagó SOLO, antes del strip: el `degraded: false`
+    # es lo que impide que «SIN LIVE» se quede pegado tras un bloqueo pasajero.
+    apagados = [f for f in ws.frames if f["type"] == "live_health" and f["degraded"] is False]
+    assert apagados == [{"type": "live_health", "degraded": False, "topic": topic, "detail": None}]
+    assert tipos.index("live_health") < tipos.index("features")

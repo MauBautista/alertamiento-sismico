@@ -22,6 +22,7 @@
 import type { GatewayOut } from "@takab/sdk";
 
 import { ageLabel } from "../../lib/time";
+import { SD } from "./estadoGlosario";
 
 type Tone = "ok" | "warn" | "crit" | "idle";
 
@@ -102,7 +103,7 @@ export function versionView(gw: GatewayOut): VersionView {
       };
     case "NO DECLARA":
       return {
-        label: "FW S/D · NO DECLARA",
+        label: `FW ${SD} · NO DECLARA`,
         tone: "warn",
         title:
           "El gabinete late pero declara que no sabe qué versión corre (falta su " +
@@ -111,7 +112,7 @@ export function versionView(gw: GatewayOut): VersionView {
       };
     case "SIN REPORTAR":
       return {
-        label: "FW S/D · SIN REPORTAR",
+        label: `FW ${SD} · SIN REPORTAR`,
         tone: "idle",
         title:
           "Nunca ha llegado un latido de este gabinete, así que nunca ha declarado " +
@@ -151,7 +152,7 @@ export function versionView(gw: GatewayOut): VersionView {
       };
     default:
       return {
-        label: "FW S/D",
+        label: `FW ${SD}`,
         tone: "warn",
         title:
           `Estado de versión no reconocido por esta consola (${gw.version_state ?? "ausente"}). ` +

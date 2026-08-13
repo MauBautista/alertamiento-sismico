@@ -1148,6 +1148,31 @@ export type IncidentPage = {
 };
 
 /**
+ * [T-2.129] Estado del CANAL live de este socket, dicho SIN cerrarlo.
+ *
+ * Es la respuesta al defecto que dejó fichado ``T-2.121``: cuando el hub tenía
+ * algo que entregar y no pudo leerlo, la única forma de avisar al operador era
+ * tumbarle la conexión (cierre 4503), porque el estado del transporte era el
+ * ÚNICO canal servidor→pantalla que existía. Cerrar por un tropiezo de una
+ * consulta es desproporcionado —arrastra re-handshake, re-subscribe y ventana
+ * de backoff— y además dice la verdad equivocada: la sesión estaba sana.
+ *
+ * ``degraded: false`` es tan importante como el ``true``: un aviso que no sabe
+ * apagarse es otra mentira en pantalla (regla de oro 7). ``topic`` acota el
+ * daño — que falle ``features:<site>`` no es que el SOC esté ciego.
+ *
+ * ``detail`` es el nombre TÉCNICO de lo que falló (``LockTimeout``,
+ * ``OperationalError``…), para el soporte y el log. La pantalla no lo lee como
+ * frase: rotula la degradación por su cuenta.
+ */
+export type LiveHealthFrame = {
+    degraded: boolean;
+    detail?: string | null;
+    topic: string;
+    type?: 'live_health';
+};
+
+/**
  * Punto geográfico plano (lon/lat WGS84).
  */
 export type LonLat = {

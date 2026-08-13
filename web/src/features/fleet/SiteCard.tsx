@@ -14,6 +14,7 @@ import VersionBadge from "./VersionBadge";
 import { maintenanceLabel, muteAckLine, muteHeadline, muteOutcome } from "../console/maintenance";
 import { useSelfTest } from "./useSelfTest";
 import type { FleetCabinet } from "./useFleet";
+import { DEGRADADO, RETIRADO, SD, SIN_ENLACE } from "./estadoGlosario";
 
 export interface SiteCardProps {
   cabinet: FleetCabinet;
@@ -52,7 +53,7 @@ export default function SiteCard({
   // [T-2.35/37] Un gabinete retirado (o cuyo sitio lo está) solo aparece con el
   // toggle VER RETIRADOS. Se rotula sin ambigüedad: sus métricas son historia.
   const retired = gw.status === "retired" || cabinet.siteStatus === "retired";
-  const offline = gw.derived_state === "SIN ENLACE";
+  const offline = gw.derived_state === SIN_ENLACE;
   // T-1.59: autodiagnóstico remoto — gate por matriz (self_test), no por rol.
   const canSelfTest = useSessionStore((s) => s.me?.allowed_actions.self_test === true);
   const selfTest = useSelfTest(gw.site_id);
@@ -78,7 +79,8 @@ export default function SiteCard({
     >
       {retired && (
         <div className="fleet-card__retired" data-testid="card-retired">
-          RETIRADO{cabinet.siteStatus === "retired" ? " · LA ESTACIÓN TAMBIÉN" : ""}
+          {RETIRADO}
+          {cabinet.siteStatus === "retired" ? " · LA ESTACIÓN TAMBIÉN" : ""}
           {onRestore && (
             <button
               type="button"
@@ -124,7 +126,7 @@ export default function SiteCard({
         </div>
       </header>
 
-      {gw.derived_state === "DEGRADADO" && (gw.degrade_reasons?.length ?? 0) > 0 && (
+      {gw.derived_state === DEGRADADO && (gw.degrade_reasons?.length ?? 0) > 0 && (
         <div className="fleet-card__reasons" aria-label="métricas degradadas">
           {(gw.degrade_reasons ?? []).map((reason) => (
             <span key={reason} className="fleet-card__reason">
@@ -163,7 +165,9 @@ export default function SiteCard({
           </>
         ) : (
           <div className="fleet-card__derived">
-            {offline ? "ACTUADORES · S/D (SIN ENLACE)" : "ARMADOS · CONFIG DE RELAYS NO VISIBLE"}
+            {offline
+              ? `ACTUADORES · ${SD} (${SIN_ENLACE})`
+              : "ARMADOS · CONFIG DE RELAYS NO VISIBLE"}
           </div>
         )}
       </div>
@@ -185,7 +189,7 @@ export default function SiteCard({
           <span className="fleet-card__completeness">
             LATIDOS{" "}
             {health.heartbeat_completeness == null
-              ? "S/D"
+              ? SD
               : `${Math.round(health.heartbeat_completeness * 100)}%`}
           </span>
         </div>

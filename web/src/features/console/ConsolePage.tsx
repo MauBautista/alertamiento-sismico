@@ -243,6 +243,9 @@ function ConsoleWall() {
             epicenter={map.epicenters[0] ?? null}
             nowMs={now}
             liveStatus={incidents.liveStatus}
+            // [T-2.129] Lo que el SERVIDOR declara degradado, sin haber tenido
+            // que cerrar el socket para poder decirlo.
+            degraded={incidents.degraded}
             operatorLabel={
               me
                 ? (profile.data?.display_name?.toUpperCase() ??

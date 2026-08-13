@@ -13,6 +13,7 @@
 // forma de saber a quién llamar.
 
 import type { GatewayConfigStateOut } from "@takab/sdk";
+import { SD } from "./estadoGlosario";
 
 export interface SyncBadgeProps {
   /** `undefined` = aún no se sabe (query en vuelo o fallida). */
@@ -28,7 +29,7 @@ export function syncView(state: GatewayConfigStateOut | undefined): {
 } {
   if (state === undefined) {
     return {
-      label: "SYNC S/D",
+      label: `SYNC ${SD}`,
       tone: "idle",
       title: "No se pudo leer el estado del config firmado; no se asume nada.",
     };

@@ -114,6 +114,8 @@ function incidentsData(over: Partial<LiveIncidentsData> = {}): LiveIncidentsData
     dataUpdatedAt: Date.now(),
     liveStatus: "ready",
     lastFrameAt: Date.now(),
+    // [T-2.129] Canal sano por defecto: la degradación es la excepción y se pide.
+    degraded: [],
     refetch: vi.fn(),
     ...over,
   };

@@ -8,6 +8,7 @@
 // subconjunto y la leyenda dice cuántos de cuántos.
 
 import type { FleetCabinet } from "./useFleet";
+import { DEGRADADO, OPERATIVO, SIN_ENLACE } from "./estadoGlosario";
 
 export const SORT_KEYS = ["estado", "nombre", "latido", "serial"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
@@ -21,9 +22,9 @@ export const SORT_LABEL: Record<SortKey, string> = {
 
 /** Peor primero: el operador abre la pantalla para ver qué está roto. */
 const STATE_RANK: Record<string, number> = {
-  "SIN ENLACE": 0,
-  DEGRADADO: 1,
-  OPERATIVO: 2,
+  [SIN_ENLACE]: 0,
+  [DEGRADADO]: 1,
+  [OPERATIVO]: 2,
 };
 
 export interface FleetFilters {
@@ -53,7 +54,7 @@ export function matchesQuery(cabinet: FleetCabinet, query: string): boolean {
 export function applyFilters(cabinets: FleetCabinet[], f: FleetFilters): FleetCabinet[] {
   const filtered = cabinets
     .filter((c) => matchesQuery(c, f.query))
-    .filter((c) => !f.hideOffline || c.gateway.derived_state !== "SIN ENLACE");
+    .filter((c) => !f.hideOffline || c.gateway.derived_state !== SIN_ENLACE);
 
   const sorted = [...filtered];
   sorted.sort((a, b) => {

@@ -817,7 +817,7 @@ def test_index_contains_frozen_contract_hooks(supervisor):
         # banner es role="status" y no aria-live="assertive": es un hecho
         # administrativo, no una emergencia, y no debe interrumpir al lector de
         # pantalla por encima de una alerta real.
-        "DADO DE BAJA EN LA NUBE",
+        "RETIRADO EN LA NUBE",
         "SIGUE PROTEGIENDO",
         '<div id="banner-baja" class="hide" role="status">',
     )
@@ -948,7 +948,7 @@ def test_index_comparativa_hooks(supervisor):
         "SSN_UTC_OFFSET_H",
         "SELECCIONE UN SISMO PARA COMPARAR",
         "SOLO LA ESTACIÓN PROPIA MIDE",
-        "SIN DATO MEDIDO EN ESTA VENTANA",
+        "S/D · NO MEDIDO EN ESTA VENTANA",
         "PGA RELATIVO · SIN CALIBRAR — NO COMPARABLE",
         "SIN PROFUNDIDAD REPORTADA",
         "BANDA ILUSTRATIVA",

@@ -1,4 +1,5 @@
 import { BatteryLow, PlugZap } from "lucide-react";
+import { SD } from "./estadoGlosario";
 
 export interface UpsGaugeProps {
   /** power_status del último device_health: line | battery | unknown | null. */
@@ -23,7 +24,7 @@ export default function UpsGauge({ powerStatus, batteryPct }: UpsGaugeProps) {
       <div className="fleet-ups__hd">
         {onBattery ? <BatteryLow size={13} aria-hidden /> : <PlugZap size={13} aria-hidden />}
         <span className="fleet-ups__lbl">
-          {onBattery ? "EN BATERÍA" : known ? "RED ELÉCTRICA" : "UPS · S/D"}
+          {onBattery ? "EN BATERÍA" : known ? "RED ELÉCTRICA" : `UPS · ${SD}`}
         </span>
         <span className={`fleet-ups__pct fleet-ups__pct--${kind}`}>
           {pct === null ? "—" : `${pct}%`}

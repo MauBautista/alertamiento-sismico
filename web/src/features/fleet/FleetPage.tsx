@@ -15,6 +15,7 @@ import { DEFAULT_FILTERS, applyFilters, isFiltering } from "./fleetFilter";
 import type { FleetFilters } from "./fleetFilter";
 import { FLEET_STALE_MS, useFleet } from "./useFleet";
 import type { FleetCabinet } from "./useFleet";
+import { DEGRADADO, OPERATIVO, RETIRADO, SD, SIN_ENLACE } from "./estadoGlosario";
 import {
   useFleetHealth,
   useFleetSyncStates,
@@ -40,7 +41,7 @@ function Kpi({ label, value, kind }: { label: string; value: number | null; kind
       className={`fleet__kpi${kind && !sinDato ? ` fleet__kpi--${kind}` : ""}`}
       data-testid="fleet-kpi"
     >
-      <span className="fleet__kpi-val">{sinDato ? "S/D" : value}</span>
+      <span className="fleet__kpi-val">{sinDato ? SD : value}</span>
       <span className="fleet__kpi-lbl">{label}</span>
     </div>
   );
@@ -86,9 +87,9 @@ function GhostCard({ cabinet }: { cabinet: FleetCabinet }) {
 function countStates(cabinets: FleetCabinet[]) {
   return {
     total: cabinets.length,
-    ok: cabinets.filter((c) => c.gateway.derived_state === "OPERATIVO").length,
-    warn: cabinets.filter((c) => c.gateway.derived_state === "DEGRADADO").length,
-    crit: cabinets.filter((c) => c.gateway.derived_state === "SIN ENLACE").length,
+    ok: cabinets.filter((c) => c.gateway.derived_state === OPERATIVO).length,
+    warn: cabinets.filter((c) => c.gateway.derived_state === DEGRADADO).length,
+    crit: cabinets.filter((c) => c.gateway.derived_state === SIN_ENLACE).length,
   };
 }
 
@@ -193,7 +194,7 @@ export default function FleetPage() {
           <Kpi label="GABINETES" value={sinDato ? null : counts.total} />
           <Kpi label="OPERATIVOS" value={sinDato ? null : counts.ok} kind="ok" />
           <Kpi label="DEGRADADOS" value={sinDato ? null : counts.warn} kind="warn" />
-          <Kpi label="SIN ENLACE" value={sinDato ? null : counts.crit} kind="crit" />
+          <Kpi label={SIN_ENLACE} value={sinDato ? null : counts.crit} kind="crit" />
           {/* Solo aparece cuando hay alguno: un contador que está siempre a cero
               deja de leerse a las dos semanas, y este tiene que dar un salto. */}
           {!sinDato && ghosts.length > 0 && (
@@ -208,7 +209,7 @@ export default function FleetPage() {
             <Kpi label="ATRASADOS" value={versions.behind} kind="warn" />
           )}
           {!sinDato && versions.unknown > 0 && (
-            <Kpi label="VERSIÓN S/D" value={versions.unknown} kind="warn" />
+            <Kpi label={`VERSIÓN ${SD}`} value={versions.unknown} kind="warn" />
           )}
         </div>
       </header>
@@ -218,7 +219,7 @@ export default function FleetPage() {
       {ghosts.length > 0 && (
         <section className="fleet-ghosts" data-testid="fleet-ghosts" role="alert">
           <header className="fleet-ghosts__hd">
-            <span className="fleet-ghosts__badge">RETIRADO · PERO SIGUE REPORTANDO</span>
+            <span className="fleet-ghosts__badge">{RETIRADO} · PERO SIGUE REPORTANDO</span>
             <span className="soc-meta">
               {ghosts.length}{" "}
               {ghosts.length === 1

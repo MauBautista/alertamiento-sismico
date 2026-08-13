@@ -1,4 +1,5 @@
 import type { FleetRelay } from "./useFleet";
+import { SD } from "./estadoGlosario";
 
 /**
  * Actuadores del gabinete desde la config activa. armed=true ⇒ ARMADO (enlace
@@ -16,7 +17,7 @@ export default function RelayGrid({ relays }: { relays: FleetRelay[] }) {
         >
           <span className="fleet-relay__id">R{i + 1}</span>
           <span className="fleet-relay__label">{relay.label}</span>
-          <span className="fleet-relay__state">{relay.armed ? "ARMADO" : "S/D"}</span>
+          <span className="fleet-relay__state">{relay.armed ? "ARMADO" : SD}</span>
         </div>
       ))}
     </div>

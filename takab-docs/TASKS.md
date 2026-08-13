@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **273** · `[x]` **201** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **273** · `[x]` **205** · `[~]` **9** · `[ ]` **59**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6673,7 +6673,7 @@ sería documentar intenciones.
 > Lo cierra el criterio de escalamiento de `T-2.78`. Los otros siete son de hardware sin
 > acreditar (gate #3), de ajustes de instalación no fijados, o de superficie que no existe.
 
-### [ ] T-2.85.a · El panel calcula el resultado de la prueba de actuadores y no lo pinta — `SOFTWARE`
+### [x] T-2.85.a · El panel calcula el resultado de la prueba de actuadores y no lo pinta — `SOFTWARE`
 - **Componente:** edge (panel) · **Depende de:** — · **Detectada al escribir el manual**
   (2026-08-08)
 - **El defecto, con las dos mitades a la vista.** `local_api/__init__.py:1106` promete por
@@ -6689,13 +6689,33 @@ sería documentar intenciones.
   `SIN CALIBRAR`, pero cuando **sí** hay calibración nunca dice de dónde vino — y de eso depende
   que el PGA esté en `g` o sea un número relativo.
 - **Criterios de aceptación:**
-  - [ ] El resultado por relé se pinta tras `PROBAR ACTUADORES`, con su lectura de retorno.
-  - [ ] Un relé que **no** confirma se distingue de uno que no se probó. Regla de oro 7.
-  - [ ] `calibration.source` se pinta cuando existe.
-  - [ ] Test que falle si un campo declarado en `status()` **no tiene camino de render** — la
+  - [x] El resultado por relé se pinta tras `PROBAR ACTUADORES`, con su lectura de retorno.
+  - [x] Un relé que **no** confirma se distingue de uno que no se probó. Regla de oro 7.
+  - [x] `calibration.source` se pinta cuando existe.
+  - [x] Test que falle si un campo declarado en `status()` **no tiene camino de render** — la
         clase de defecto, no el caso.
 
-### [ ] T-2.85.b · El panel y la consola hablan idiomas distintos del mismo estado — `SOFTWARE`
+> **Cerrada (2026-08-13), y el defecto era CUATRO VECES mayor que la ficha.** El último criterio
+> —«la clase de defecto, no el caso»— se cumplió con un censo que **muta cada hoja del `status()`
+> real, re-renderiza y compara el DOM**: ~170 rutas, dos mutaciones por hoja. **Rojo medido: 53
+> rutas mudas**, de las que las 13 de `actuation_test.results.*` y `calibration.source` eran solo
+> las que alguien había mirado. Nadie sabía el resto porque nadie había preguntado *qué más
+> calcula el gabinete que no enseña*.
+>
+> Lo que ve el operador distingue ahora **tres cosas que antes eran una sola**:
+> `PULSO · NO CONFIRMÓ EL RETORNO` / `SIN RELÉ DETRÁS · NO SE PUDO PROBAR` / `NO SE PROBÓ` — esto
+> último derivado de cruzar `relays_status.installed` con las claves del resultado.
+>
+> **Y se añadió la FECHA de la prueba** (`finished_at` + `age_s`, derivados en el gabinete), con
+> su razón: **un `RETORNO CONFIRMADO` sin fecha sobre el gas y los ascensores es dato congelado
+> en verde** — el defecto del 14-jul otra vez, visto venir.
+>
+> Tres hallazgos del censo que se arreglaron de paso: una promesa rechazada dentro de `render()`
+> **mataba el proceso del arnés en silencio**; el arnés no miraba `style.cssText`, donde el panel
+> pinta el color de cada gabinete LoRa; y `events_by_tier.manual_only` se contaba y no se
+> enseñaba nunca.
+
+### [x] T-2.85.b · El panel y la consola hablan idiomas distintos del mismo estado — `SOFTWARE`
 - **Componente:** edge (panel) + web · **Depende de:** — · **Detectada al escribir el manual**
   (2026-08-08)
 - El panel del gabinete dice `NO CONTESTA`, `DATO RETENIDO`, `S/D`. La consola de la nube dice
@@ -6705,10 +6725,35 @@ sería documentar intenciones.
 - No es cosmético: el manual de operación tuvo que **elegir uno** y advertir del otro. Cada
   traducción que un operador hace mentalmente bajo presión es un sitio donde se equivoca.
 - **Criterios de aceptación:**
-  - [ ] Un glosario único, y las dos superficies salen de él.
-  - [ ] Donde el estado no pueda ser idéntico (el panel ve cosas que la nube no), la diferencia
+  - [x] Un glosario único, y las dos superficies salen de él.
+  - [x] Donde el estado no pueda ser idéntico (el panel ve cosas que la nube no), la diferencia
         **está declarada** y el manual la explica una sola vez.
-  - [ ] Un test que impida que una superficie estrene un literal de estado fuera del glosario.
+  - [x] Un test que impida que una superficie estrene un literal de estado fuera del glosario.
+
+> **Cerrada (2026-08-13).** El glosario vive en `shared/glossary/estados.json` —JSON y no módulo
+> **porque el panel no puede importar nada**: es un fichero estático de un Pi sin build, mismo
+> patrón físico que `design-tokens/tokens.json`—. La consola lo deriva **en ejecución** (un test
+> compara módulo↔JSON por igualdad en los dos sentidos); el panel, **en tiempo de test**.
+>
+> **Lo que más vale es lo que se negó a unificar.** Tres ejes quedan declarados como
+> legítimamente asimétricos, con su razón escrita y un test que exige que cada lado en `null`
+> traiga el porqué:
+>
+> | Eje | Solo en | Por qué |
+> |---|---|---|
+> | `OPERATIVO`, `DEGRADADO` | consola | Es un veredicto **sobre el latido**. **Un gabinete no puede afirmar de sí mismo que la nube lo ve operativo** — eso fue exactamente el fallo del 14-jul: 15 h ciego con la consola en verde. |
+> | `DETENIDO` vs `AVERÍA` | panel | Distinguir «no corre» de «corre y falla al leerse» exige estar **dentro**; por el latido se ven iguales. |
+> | `SIN CONEXIÓN CON EL GABINETE` | panel | La consola no habla con un gabinete, habla con la nube: el eje **no existe** al otro lado. |
+>
+> **El candado no enumera literales, declara raíces** (`RETENID`, `CONGELAD`, `NO RESPONDE`,
+> `ILEGIBLE`, `DEGRADAD`…) y exige que toda frase en mayúsculas que toque una raíz use el término
+> canónico de su eje. Probado **contra frases sintéticas antes de creerle**: 5 que debe cazar, 4
+> que no debe acusar.
+>
+> **Deuda declarada, ya vigilada por test para que no se eternice:** `StateFrame.tsx` dice
+> `DATOS RETENIDOS` donde el glosario dice `DATO RETENIDO`, y `schemas/fleet.py` dice
+> `RELÉS ILEGIBLES` donde el panel dice `NO CONTESTA`. Y **el manual de operación hay que
+> actualizarlo** — que es de donde salió esta ficha.
 
 ### [x] T-2.86 · Documento de entrega y aceptación — `SOFTWARE` (firma: `LEGAL`) · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.85
@@ -7443,6 +7488,12 @@ sería documentar intenciones.
 > (solo el 4401 es auth) ⇒ «CONECTANDO…» + «● SIN LIVE», y el REST sigue sirviendo (regla de oro
 > 2).
 >
+> ⚠️ **SUPERADO por `T-2.129` (2026-08-13): el cierre 4503 ya no existe.** Lo de arriba describe
+> lo que era cierto al cerrar esta ficha, y se conserva porque explica **por qué** hubo que
+> cerrar el canal: no había otra forma de hablarle al operador. Hoy el hub declara la degradación
+> con un frame `live_health` y **el socket sigue abierto**. Si buscas la conducta vigente, es la
+> de `T-2.129`.
+>
 > **⚠️ CORRECCIÓN a lo que esta misma ficha afirmaba al abrirse.** Decía que la decisión global de
 > `PENDIENTES §1.8` «puede absorber esta ficha entera». **Es falso, y lo demuestra la medición:**
 > un tope global habría convertido el silencio del hub en una excepción registrada, nada más. No
@@ -7599,7 +7650,7 @@ sería documentar intenciones.
 > **Tres tests se invirtieron, y ninguno era regresión:** los tres afirmaban `await dispatch` ==
 > «ya se entregó», que **es la serialización en persona** — la conducta que esta ficha cambia.
 
-### [ ] T-2.129 · El canal live no sabe decir nada que no sea «conectado o no» — `SOFTWARE`
+### [x] T-2.129 · El canal live no sabe decir nada que no sea «conectado o no» — `SOFTWARE`
 - **Componente:** sdk + api + web · **Detectada por:** `T-2.121` (2026-08-11)
 - `shared/sdk-ts/src/live.ts` **descarta los frames `error`**, y `parseServerFrame` descarta todo
   `type` fuera de una lista escrita a mano. Consecuencia: **el único canal servidor→pantalla es el
@@ -7608,9 +7659,40 @@ sería documentar intenciones.
 - Es desproporcionado por diseño: un tropiezo de una consulta cierra la conexión entera porque no
   hay forma más fina de hablar.
 - **Criterios de aceptación:**
-  - [ ] El servidor puede declarar degradación **sin** cerrar el canal.
-  - [ ] La consola lo pinta como degradación, distinta de «sin conexión».
-  - [ ] El frame nuevo no puede volver a caer en el descarte silencioso: test que lo ancle.
+  - [x] El servidor puede declarar degradación **sin** cerrar el canal.
+  - [x] La consola lo pinta como degradación, distinta de «sin conexión».
+  - [x] El frame nuevo no puede volver a caer en el descarte silencioso: test que lo ancle.
+
+> **Cerrada (2026-08-13).** Frame nuevo `live_health`
+> `{degraded, topic, detail}`, y **`WS_LIVE_DEGRADED = 4503` desaparece**: el hub lo manda con el
+> socket **abierto**. `topic` acota el daño —que falle `features:<site>` no es que el SOC esté
+> ciego— y `detail` lleva el nombre técnico al log, **no al rótulo que se lee en voz alta**.
+>
+> La píldora pasa de dos estados a **tres**: `● LIVE` · **`● LIVE DEGRADADO`** · `● SIN LIVE`, con
+> «sin conexión» mandando sobre «degradado» —sin canal no hay nada que degradar—. **Y sabe
+> apagarse por tres caminos**, que era el riesgo de convertir esto en otra mentira: el siguiente
+> notify que sí lee, una **sonda** que reintenta *la misma lectura* con espera creciente y al
+> apagar el aviso **entrega la invalidación perdida**, y el olvido al reconectar.
+>
+> **Lo que impide que el próximo `type` muera en silencio son tres cierres, ninguno de
+> intención:** un `Record<ServerFrameType, FrameRoute>` **exhaustivo sobre la unión** (un miembro
+> sin ruta **no compila**), un censo del servidor derivado por señal estructural en
+> `protocol.py`, y un test de web que **lee `protocol.py`** y cruza los dos censos. **Medido:**
+> inyectar un frame fantasma dio **3 rojos con el nombre del arreglo dentro**.
+>
+> **Tres cosas que el trabajo destapó y que valen más que la ficha:**
+> 1. **La trampa del SDK en cuerpo de módulo se disparó de verdad**: derivar el prefijo con
+>    `featuresTopic("")` tumbó `useFleet.test.tsx` y `useSiteRelays.test.tsx` a **cero tests** —
+>    111→109 ficheros, 1595→1573, **y ni una `×`**. Revertido, con el porqué en el código.
+> 2. **Carrera latente en un test de `T-2.121`**: no esperaba a `drain()` y pasaba porque afirmaba
+>    una lista vacía, cierto también con el carril a medias. Además dejaba el carril vivo
+>    reteniendo el ACCESS SHARE que el TRUNCATE del seed esperaba **para siempre**.
+> 3. **Un agujero fino que casi entra:** `checkin` se arma del payload **sin tocar la base** y
+>    viaja por el topic `incidents` — habría **apagado el aviso sin demostrar nada**. Cerrado con
+>    su propio test.
+>
+> **Riesgo declarado:** la sonda podría ser la próxima `T-2.130` — cada reintento retiene una
+> conexión del pool. Acotado con espera exponencial hasta 30 s (ciclo de trabajo ~10 %).
 
 ### [x] T-2.130 · La conexión del request no tenía tope de espera — `SOFTWARE` · COMPLETA (2026-08-12)
 - **Componente:** api · **Origen:** la decisión `PENDIENTES §1.8`, tomada con las cifras de `T-2.121`
@@ -7649,15 +7731,45 @@ sería documentar intenciones.
 > **Deja abierta** `T-2.131` (`statement_timeout` sigue sin tope: **la misma forma de agotamiento
 > del pool, por otra causa**, que este tope no toca).
 
-### [ ] T-2.131 · `statement_timeout` sigue sin tope — `SOFTWARE`
+### [x] T-2.131 · `statement_timeout` sigue sin tope — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.130` (2026-08-12)
 - `T-2.130` acotó las esperas **por lock**. Una consulta **lenta** —no bloqueada— retiene su
   conexión del pool **sin límite**: es **la misma forma de agotamiento** que se acaba de cerrar,
   por una causa distinta, y el tope de lock no la alcanza.
 - **Criterios de aceptación:**
-  - [ ] Medido si hoy existe alguna consulta capaz de retener una conexión más que el tope de lock.
-  - [ ] Decidido si `statement_timeout` se pone, con qué valor y con la misma disciplina de
+  - [x] Medido si hoy existe alguna consulta capaz de retener una conexión más que el tope de lock.
+  - [x] Decidido si `statement_timeout` se pone, con qué valor y con la misma disciplina de
         `T-2.130`: menor que el timeout del pool, y sin cortar trabajo legítimo largo.
+
+> **Cerrada (2026-08-13).** Medido antes de tocar nada: `SHOW statement_timeout` valía **`0` en
+> toda la instalación**, y una consulta de 20 s por `get_tenant_conn` **corría entera**.
+>
+> **El número está encajonado por los DOS lados, y el de abajo es el que no se ve venir:**
+>
+>     lock_timeout (10 s)  <  statement_timeout (20 s)  <  timeout del pool (30 s)
+>
+> Por arriba, lo de `T-2.130`: por encima del pool, un tope deja de degradar *una petición* y pasa
+> a degradar *el proceso*. **Por abajo:** si el tope de sentencia fuera ≤ el de lock, el reloj de
+> la sentencia vencería **siempre primero** y el `lock_timeout` de `T-2.130` **no podría
+> dispararse nunca** — el 503 con nombre se convertiría en un `57014` anónimo y aquel arreglo
+> quedaría **desactivado sin que nada se pusiera rojo**. Lo ancla un test, no este párrafo.
+>
+> `StatementTimeout` hereda de `HTTPException` **y** de `SQLAlchemyError` por la misma razón que
+> `LockTimeout`. Y se mantiene **separado** de él a propósito, aunque el cliente reciba 503 en los
+> dos casos: **no son el mismo problema para quien opera**. «El recurso está ocupado» se arregla
+> esperando; «la consulta tarda demasiado» apunta a un dato que creció, a un índice que falta o a
+> un filtro que se olvidó. Fundirlos ahorraría diez líneas y borraría esa pista.
+>
+> El tope va **por parámetro**: el trabajo legítimo largo necesita una salida **explícita en el
+> sitio de llamada**, no resolverse subiendo el tope para todos.
+>
+> **Cero tests existentes se pusieron rojos** — dato que refuerza que 20 s es holgado.
+>
+> **Y un defecto del propio arnés, que vale como lección de método:** el test medía «0 de 10
+> backends» mientras las diez tareas corrían perfectamente. Preguntaba a `pg_stat_activity` y la
+> vista no reflejaba lo que él mismo acababa de montar. Da igual la causa exacta de esa ceguera —
+> **el error de diseño es anterior: un test no debe inferir el estado de su propio andamio de una
+> vista del servidor.** Si el arnés no se monta, quien tiene que decirlo es el arnés.
 
 ### [ ] T-2.132 · Los workers esperan sin límite, y acotarlos quema mensajes — `SOFTWARE`
 - **Componente:** api (workers) · **Detectada por:** `T-2.130` (2026-08-12), **con evidencia**

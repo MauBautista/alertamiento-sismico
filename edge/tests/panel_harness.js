@@ -18,6 +18,13 @@
  * Uso:  node panel_harness.js <ruta index.html> <ruta config.json>
  * Sale: JSON por stdout con el árbol renderizado, las peticiones observadas y
  *       los errores; cualquier excepción se reporta, jamás se traga.
+ *
+ * [T-2.85.a] MODO LOTE. Si la configuración trae `cases: [{id, ...cfg}, …]` se
+ * renderiza CADA caso en su propio contexto (mismo proceso) y sale
+ * `{cases: [{id, tree, errors, …}, …]}`. Lo pide el censo de campos sin camino
+ * de render: son ~120 renders y a 78 ms de proceso serían 9 s de suite.
+ * `cfg.now` congela el reloj del panel — sin eso dos renders del MISMO status
+ * difieren en el `hh:mm:ss` de la cabecera y todo el censo sería ruido.
  */
 
 'use strict';
@@ -230,25 +237,7 @@ function parseBody(html) {
 /* ============================ arranque ============================ */
 const [, , htmlPath, cfgPath] = process.argv;
 const html = fs.readFileSync(htmlPath, 'utf8');
-const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-
-const { root: body, byId, withData } = parseBody(html);
-
-/* Guarda de sanidad del parser: si el esqueleto trae un id que el parser no
-   registró, TODO lo demás sería un falso verde. Mejor romper aquí. */
-const declaredIds = Array.from(html.slice(0, html.indexOf('<script>')).matchAll(/\sid="([^"]+)"/g))
-  .map((x) => x[1])
-  .filter((x) => x !== 'pin' || true);
-const missing = declaredIds.filter((i) => !byId[i]);
-if (missing.length) {
-  process.stdout.write(JSON.stringify({ fatal: 'ids no parseados: ' + missing.join(',') }));
-  process.exit(0);
-}
-
-const errors = [];
-const fetches = [];
-const timeouts = [];
-const rafs = [];
+const cfgRoot = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
 
 function jsonResponse(status, payload) {
   return {
@@ -258,89 +247,142 @@ function jsonResponse(status, payload) {
   };
 }
 
-const document = {
-  body,
-  getElementById: (id) => byId[id] || null,
-  createElement: (tag) => new Element(tag),
-  querySelectorAll: (sel) => {
-    const m = /^\[data-([a-z-]+)\]$/.exec(sel);
-    if (!m) return [];
-    const key = m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    return withData.filter((el) => el.dataset[key] !== undefined);
-  },
-  addEventListener: () => {},
-};
-
-const windowObj = {
-  innerWidth: cfg.innerWidth || 1920,
-  devicePixelRatio: 1,
-  addEventListener: () => {},
-};
-
-const sandbox = {
-  document,
-  window: windowObj,
-  location: { search: cfg.search || '' },
-  performance: { now: () => Date.now() },
-  console: { log: () => {}, warn: () => {}, error: () => {} },
-  URLSearchParams,
-  Math,
-  Date,
-  JSON,
-  Set,
-  Map,
-  Object,
-  Array,
-  String,
-  Number,
-  Boolean,
-  Error,
-  isNaN,
-  parseInt,
-  parseFloat,
-  Float32Array,
-  Uint8Array,
-  Promise,
-  setTimeout: (fn) => {
-    /* El tick se re-arma solo (`setTimeout(tick, backoff)`). Encolar en vez de
-       ejecutar es lo que impide que el arnés gire para siempre. */
-    timeouts.push(fn);
-    return timeouts.length;
-  },
-  clearTimeout: () => {},
-  requestAnimationFrame: (fn) => {
-    rafs.push(fn);
-    return rafs.length;
-  },
-  cancelAnimationFrame: () => {},
-  fetch: async (url, opts) => {
-    const method = (opts && opts.method) || 'GET';
-    /* Las cabeceras se registran a propósito: "sin PIN capturado NO se manda el
-       header" es un invariante del panel (un header vacío quemaba intentos del
-       lockout), y solo se puede afirmar viéndolas. */
-    fetches.push({ url: String(url), method, headers: (opts && opts.headers) || {} });
-    const path = String(url).split('?')[0];
-    if (method === 'POST') {
-      const st = (cfg.actionStatus || {})[path];
-      if (st === 'network') throw new Error('sin red');
-      return jsonResponse(st || 200, { ok: true });
+/* [T-2.85.a] Reloj congelado. El panel estampa `hh:mm:ss UTC` en la cabecera y
+   en varios rótulos: sin congelarlo, dos renders del MISMO status difieren y el
+   censo de campos sin camino de render mediría el segundero, no el campo. */
+function frozenDate(iso) {
+  const FIXED = new Date(iso).getTime();
+  return class extends Date {
+    constructor(...args) {
+      if (args.length === 0) super(FIXED);
+      else super(...args);
     }
-    if (path === 'api/status') {
-      if (cfg.statusStatus && cfg.statusStatus !== 200) return jsonResponse(cfg.statusStatus, {});
-      if (cfg.statusNetworkFail) throw new Error('sin red');
-      return jsonResponse(200, cfg.status);
+    static now() {
+      return FIXED;
     }
-    if (path === 'api/waveform') return jsonResponse(200, cfg.waveform || { cursor: 0, reset: false, channels: {} });
-    if (path === 'api/catalog') return jsonResponse(200, cfg.catalog || { available: false });
-    return jsonResponse(404, {});
-  },
-};
-sandbox.globalThis = sandbox;
-sandbox.self = sandbox;
+  };
+}
 
-const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+const SCRIPT = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
 
-(async () => {
+/* `tick()` es async: una excepción dentro de `render()` sale como PROMESA
+   RECHAZADA, y node mata el proceso entero. El arnés la recoge y la reporta como
+   un error del caso — que es la verdad operativa: el panel se quedó a medio
+   repintar mostrando el estado ANTERIOR (regla de oro 7). Antes esto era un
+   `Node.js v24` en stderr y ningún test que lo nombrara. */
+const REJECTIONS = [];
+process.on('unhandledRejection', (err) => {
+  REJECTIONS.push('promesa: ' + (err && err.message ? err.message : String(err)));
+});
+
+/**
+ * Renderiza el panel UNA vez con esta configuración, en su propio contexto.
+ *
+ * Todo el estado (DOM, colas, errores) es local a la llamada: es lo que permite
+ * el modo lote sin que un caso contamine al siguiente.
+ */
+async function render(cfg) {
+  CANVAS_TEXT.length = 0;
+  REJECTIONS.length = 0;
+  const { root: body, byId, withData } = parseBody(html);
+
+  /* Guarda de sanidad del parser: si el esqueleto trae un id que el parser no
+     registró, TODO lo demás sería un falso verde. Mejor romper aquí. */
+  const declaredIds = Array.from(html.slice(0, html.indexOf('<script>')).matchAll(/\sid="([^"]+)"/g))
+    .map((x) => x[1])
+    .filter((x) => x !== 'pin' || true);
+  const missing = declaredIds.filter((i) => !byId[i]);
+  if (missing.length) return { fatal: 'ids no parseados: ' + missing.join(',') };
+
+  const errors = [];
+  const fetches = [];
+  const timeouts = [];
+  const rafs = [];
+
+  const document = {
+    body,
+    getElementById: (id) => byId[id] || null,
+    createElement: (tag) => new Element(tag),
+    querySelectorAll: (sel) => {
+      const m = /^\[data-([a-z-]+)\]$/.exec(sel);
+      if (!m) return [];
+      const key = m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      return withData.filter((el) => el.dataset[key] !== undefined);
+    },
+    addEventListener: () => {},
+  };
+
+  const windowObj = {
+    innerWidth: cfg.innerWidth || 1920,
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+  };
+
+  const Reloj = cfg.now ? frozenDate(cfg.now) : Date;
+
+  const sandbox = {
+    document,
+    window: windowObj,
+    location: { search: cfg.search || '' },
+    performance: { now: () => Reloj.now() },
+    console: { log: () => {}, warn: () => {}, error: () => {} },
+    URLSearchParams,
+    Math,
+    Date: Reloj,
+    JSON,
+    Set,
+    Map,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    Error,
+    isNaN,
+    parseInt,
+    parseFloat,
+    Float32Array,
+    Uint8Array,
+    Promise,
+    setTimeout: (fn) => {
+      /* El tick se re-arma solo (`setTimeout(tick, backoff)`). Encolar en vez de
+         ejecutar es lo que impide que el arnés gire para siempre. */
+      timeouts.push(fn);
+      return timeouts.length;
+    },
+    clearTimeout: () => {},
+    requestAnimationFrame: (fn) => {
+      rafs.push(fn);
+      return rafs.length;
+    },
+    cancelAnimationFrame: () => {},
+    fetch: async (url, opts) => {
+      const method = (opts && opts.method) || 'GET';
+      /* Las cabeceras se registran a propósito: "sin PIN capturado NO se manda el
+         header" es un invariante del panel (un header vacío quemaba intentos del
+         lockout), y solo se puede afirmar viéndolas. */
+      fetches.push({ url: String(url), method, headers: (opts && opts.headers) || {} });
+      const path = String(url).split('?')[0];
+      if (method === 'POST') {
+        const st = (cfg.actionStatus || {})[path];
+        if (st === 'network') throw new Error('sin red');
+        return jsonResponse(st || 200, { ok: true });
+      }
+      if (path === 'api/status') {
+        if (cfg.statusStatus && cfg.statusStatus !== 200) return jsonResponse(cfg.statusStatus, {});
+        if (cfg.statusNetworkFail) throw new Error('sin red');
+        return jsonResponse(200, cfg.status);
+      }
+      if (path === 'api/waveform') return jsonResponse(200, cfg.waveform || { cursor: 0, reset: false, channels: {} });
+      if (path === 'api/catalog') return jsonResponse(200, cfg.catalog || { available: false });
+      return jsonResponse(404, {});
+    },
+  };
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+
+  const script = SCRIPT;
+
   try {
     vm.createContext(sandbox);
     vm.runInContext(script, sandbox, { filename: 'panel.js' });
@@ -458,16 +500,45 @@ const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.las
     txt: el._text,
     color: el.style.color || '',
     bg: el.style.background || '',
+    /* [T-2.85.a] `cssText` también. El panel señaliza estado por ahí (el punto
+       de color de cada gabinete LoRa se pinta con `style.cssText = '…background:'
+       + dotColor`), y sin esto el censo de campos sin camino de render leía como
+       "no se pinta" un campo que sí cambia de color. */
+    css: el.style.cssText || '',
     kids: depth > 0 ? el.children.map((c) => dump(c, depth - 1)) : [],
   });
 
-  process.stdout.write(
-    JSON.stringify({
-      tree: dump(body, 12),
-      canvasText: CANVAS_TEXT,
-      fetches,
-      pendingTimeouts: timeouts.length,
-      errors,
-    })
-  );
+  /* Las promesas rechazadas se drenan al final: node las entrega en un turno
+     posterior al `await`, así que antes de este punto todavía no están. */
+  await new Promise((r) => setImmediate(r));
+
+  return {
+    tree: dump(body, 12),
+    canvasText: CANVAS_TEXT.slice(),
+    fetches,
+    pendingTimeouts: timeouts.length,
+    errors: errors.concat(REJECTIONS),
+  };
+}
+
+(async () => {
+  if (Array.isArray(cfgRoot.cases)) {
+    /* Modo lote (T-2.85.a). El `id` viaja de vuelta SIEMPRE: quien lo lee tiene
+       que poder confirmar que el caso que pidió es el caso que se renderizó, en
+       vez de inferirlo del orden de la lista. */
+    const out = [];
+    for (const caso of cfgRoot.cases) {
+      const base = Object.assign({}, cfgRoot.base || {}, caso);
+      let res;
+      try {
+        res = await render(base);
+      } catch (err) {
+        res = { fatal: 'render: ' + err.message, errors: [] };
+      }
+      out.push(Object.assign({ id: caso.id }, res));
+    }
+    process.stdout.write(JSON.stringify({ cases: out }));
+    return;
+  }
+  process.stdout.write(JSON.stringify(await render(cfgRoot)));
 })();

@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "tarea": "T-2.85.b",
+  "que_es": [
+    "VOCABULARIO ÚNICO DE ESTADO de TAKAB Ailert. Quien opera mira DOS pantallas:",
+    "el panel del gabinete (edge/takab_edge/local_api/index.html, servido por el propio",
+    "Pi, sin nube y sin internet) y la consola SOC (web/src/features/fleet). Primero una",
+    "y luego la otra, o al revés en plena madrugada. Cada traducción que hace de cabeza",
+    "bajo presión es un sitio donde se equivoca.",
+    "",
+    "Este fichero es JSON y no un módulo porque el panel NO PUEDE IMPORTAR NADA: se",
+    "sirve como un único archivo estático desde un Pi sin build. Las dos superficies",
+    "salen de aquí por DERIVACIÓN COMPROBADA, no por import compartido:",
+    "  · la consola lo importa de verdad, vía web/src/features/fleet/estadoGlosario.ts,",
+    "    que es una copia literal y un test la compara con este fichero por igualdad;",
+    "  · el panel lleva sus literales en el HTML, y un censo (edge/tests/",
+    "    test_glosario_de_estados.py) exige que toda frase suya que hable de uno de",
+    "    estos ejes use el término canónico.",
+    "Mismo patrón que shared/design-tokens/tokens.json, por la misma razón física.",
+    "",
+    "REGLA DE LECTURA: `detecta` son las RAÍCES que marcan una frase como perteneciente",
+    "al eje. Cualquier frase en mayúsculas de cualquiera de las dos superficies que",
+    "contenga una raíz TIENE que contener también un término canónico del eje. Así, el",
+    "día que alguien escriba `DATOS CONGELADOS` o `NO RESPONDE`, el censo se pone rojo",
+    "y le obliga a usar la palabra que ya existe — o a añadirla aquí con su razón."
+  ],
+  "ejes": {
+    "ausencia": {
+      "significa": "No hay dato. Nunca se midió, o el módulo que lo mide no está.",
+      "que_pide": "Depende de qué dato sea. Nunca se pinta en verde.",
+      "panel": "S/D",
+      "consola": "S/D",
+      "detecta": ["S/D", "SIN DATO", "SIN DATOS", "N/D", "NO DISPONIBLE", "SIN MEDICIÓN"]
+    },
+    "vejez": {
+      "significa": "El dato existe, pero es viejo: se está mirando una foto congelada.",
+      "que_pide": "No creerse nada de lo que se ve hasta que vuelva a refrescar.",
+      "panel": "DATO RETENIDO",
+      "consola": "DATOS RETENIDOS",
+      "detecta": ["RETENID", "CONGELAD", "OBSOLET", "CADUCAD", "DESACTUALIZAD", "STALE"]
+    },
+    "pieza_muda": {
+      "significa": "El módulo que GOBIERNA algo no responde. No es que falte el dato: es que la pieza no contesta.",
+      "que_pide": "AHORA. Es lo más grave que puede decir cualquiera de las dos pantallas.",
+      "panel": "NO CONTESTA",
+      "consola": "NO CONTESTA",
+      "detecta": [
+        "NO CONTESTA",
+        "NO RESPONDE",
+        "SIN RESPUESTA",
+        "ILEGIBLE",
+        "ILEGIBLES",
+        "INALCANZABLE",
+        "NO ALCANZABLE"
+      ]
+    },
+    "modulo_detenido": {
+      "significa": "El módulo de relés no está corriendo. El gabinete no puede accionar nada.",
+      "que_pide": "AHORA. Alarma manual del edificio lista.",
+      "panel": "DETENIDO",
+      "consola": null,
+      "solo_en_el_panel_porque": [
+        "La nube ve al gabinete POR EL LATIDO y nada más. Un gabinete que late con su",
+        "módulo de pines detenido es, desde la nube, un gabinete que late: el hecho",
+        "'takab-gpio no está corriendo' es interior al gabinete y sólo lo ve el panel.",
+        "La consola tiene una señal DISTINTA y más pobre para lo mismo (el censo de",
+        "relés del último latido), y por eso no comparte término: inventarle un",
+        "`DETENIDO` a la nube sería afirmar algo que la nube no puede saber."
+      ],
+      "detecta": ["DETENIDO", "DETENIDA", "PARADO", "NO ESTÁ CORRIENDO"]
+    },
+    "modulo_averiado": {
+      "significa": "El módulo corre pero falló al leer su propio estado.",
+      "que_pide": "AHORA. Alarma manual del edificio lista.",
+      "panel": "AVERÍA",
+      "consola": null,
+      "solo_en_el_panel_porque": [
+        "Misma frontera que `modulo_detenido`: distinguir 'corre y falla al leerse' de",
+        "'no corre' exige estar DENTRO del gabinete. Por el latido las dos se ven igual."
+      ],
+      "detecta": ["AVERÍA", "AVERIADO", "AVERIADA", "FALLA DEL MÓDULO"]
+    },
+    "enlace_nube": {
+      "significa": "El gabinete y la nube no se hablan. El edificio SIGUE PROTEGIDO (regla de oro 2).",
+      "que_pide": "ANOTAR desde el panel; en la consola, mirar si son muchos a la vez.",
+      "panel": "SIN ENLACE",
+      "consola": "SIN ENLACE",
+      "detecta": [
+        "SIN ENLACE",
+        "OFFLINE",
+        "FUERA DE LÍNEA",
+        "SIN NUBE",
+        "DESCONECTADO DE LA NUBE",
+        "SIN CONTACTO CON LA NUBE"
+      ],
+      "ojo": [
+        "Es el MISMO hecho visto desde los dos extremos, y por eso comparte término.",
+        "Lo que NO es: el enlace entre el navegador del operador y el gabinete (eje",
+        "`enlace_navegador`). Confundirlos es el error que el manual §5 dice que",
+        "cualquiera comete una vez."
+      ]
+    },
+    "veredicto_sano": {
+      "significa": "La nube lleva latido fresco de ese gabinete y todas sus métricas están en rango.",
+      "que_pide": "Nada.",
+      "panel": null,
+      "consola": "OPERATIVO",
+      "solo_en_la_consola_porque": [
+        "Es un VEREDICTO SOBRE EL LATIDO, calculado en la nube por `derive_fleet_state`",
+        "con los umbrales del tenant. Un gabinete no puede afirmar de sí mismo que la",
+        "nube lo ve operativo: eso fue exactamente el fallo del 14-jul-2026 (15 horas",
+        "ciego con la consola en OPERATIVO). El panel dice lo que MIDE, no lo que",
+        "cree que otro piensa de él."
+      ],
+      "detecta": ["OPERATIVO", "OPERATIVA", "OPERATIVOS", "EN SERVICIO", "SANO"]
+    },
+    "veredicto_degradado": {
+      "significa": "La nube tiene latido fresco pero alguna métrica está fuera de rango.",
+      "que_pide": "HOY. La consola nombra las razones.",
+      "panel": null,
+      "consola": "DEGRADADO",
+      "solo_en_la_consola_porque": [
+        "Misma razón que `veredicto_sano`: se deriva de los umbrales del tenant, que",
+        "viven en la nube. El panel enseña la métrica cruda (temperatura, batería,",
+        "certificado) y deja el veredicto a quien tiene los umbrales."
+      ],
+      "detecta": ["DEGRADADO", "DEGRADADA", "DEGRADADOS", "DEGRADADAS"]
+    },
+    "baja_administrativa": {
+      "significa": "Alguien dio de baja este gabinete en la consola central. Sigue protegiendo el edificio; deja de recibir config firmada y órdenes.",
+      "que_pide": "Si no fue intencional, avisar a TAKAB. No caduca solo.",
+      "panel": "RETIRADO",
+      "consola": "RETIRADO",
+      "detecta": ["RETIRADO", "RETIRADA", "RETIRADOS", "DADO DE BAJA", "DADA DE BAJA", "DE BAJA"]
+    },
+    "enlace_navegador": {
+      "significa": "La pantalla del operador no habla con el gabinete. El gabinete puede estar perfectamente y ser la red de quien mira.",
+      "que_pide": "AHORA: comprobar la red, ir físicamente al gabinete, avisar a soporte.",
+      "panel": "SIN CONEXIÓN CON EL GABINETE",
+      "consola": null,
+      "solo_en_el_panel_porque": [
+        "La consola SOC no tiene ningún enlace directo con un gabinete: habla con la",
+        "nube. Este eje no existe al otro lado, y darle un término sería inventarlo."
+      ],
+      "detecta": ["SIN CONEXIÓN CON EL GABINETE", "SIN CONEXIÓN AL GABINETE"]
+    }
+  },
+  "divergencias": [
+    {
+      "eje": "vejez",
+      "panel": "DATO RETENIDO",
+      "consola": "DATOS RETENIDOS",
+      "por_que_sigue_abierta": "El literal de la consola vive en web/src/components/StateFrame.tsx, fuera de la superficie de flota.",
+      "arreglo": "En web/src/components/StateFrame.tsx, `DATOS RETENIDOS` → `DATO RETENIDO` (y su test).",
+      "dueno": "web/src/components/StateFrame.tsx"
+    },
+    {
+      "eje": "pieza_muda",
+      "panel": "NO CONTESTA",
+      "consola": "RELÉS ILEGIBLES",
+      "por_que_sigue_abierta": "El literal lo PRODUCE la nube (api/src/takab_api/schemas/fleet.py::RELAYS_ILEGIBLES) y la consola solo lo pinta; cambiarlo es un cambio de API.",
+      "arreglo": "En api/src/takab_api/schemas/fleet.py: `RELAYS_ILEGIBLES = \"RELÉS · NO CONTESTA\"` (y sus tests).",
+      "dueno": "api/src/takab_api/schemas/fleet.py"
+    }
+  ]
+}

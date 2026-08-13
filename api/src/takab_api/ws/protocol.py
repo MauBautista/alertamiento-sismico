@@ -5,10 +5,15 @@ Modelos Pydantic de cada frame del protocolo ``/ws``. Se exportan al OpenAPI
 canal live sin escribirlos a mano.
 
 Handshake cliente→servidor: ``auth`` (primer frame, obligatorio) y ``subscribe``.
-Servidor→cliente: ``ready`` (tras auth ok), ``error``, y los frames de datos
-(``incident``/``incident_action``/``site_state``/``features``). El frame de datos
-NUNCA es el payload crudo del NOTIFY: el hub re-consulta la fila con los GUCs del
-suscriptor y serializa estos modelos.
+Servidor→cliente: ``ready`` (tras auth ok), ``error``, ``live_health`` y los
+frames de datos (``incident``/``incident_action``/``site_state``/``features``).
+El frame de datos NUNCA es el payload crudo del NOTIFY: el hub re-consulta la
+fila con los GUCs del suscriptor y serializa estos modelos.
+
+[T-2.129] ``SERVER_FRAME_TYPES`` (al final del módulo) es el CENSO de lo que el
+servidor puede empujar, y se **deriva** de las clases de aquí en vez de
+escribirse. El SDK lo lee en tiempo de test (``web/src/serverFrameCensus.test.ts``)
+para que un frame nuevo no pueda nacer muerto en el cliente.
 """
 
 from __future__ import annotations
@@ -51,6 +56,31 @@ class ErrorFrame(BaseModel):
 
     type: Literal["error"] = "error"
     detail: str
+
+
+class LiveHealthFrame(BaseModel):
+    """[T-2.129] Estado del CANAL live de este socket, dicho SIN cerrarlo.
+
+    Es la respuesta al defecto que dejó fichado ``T-2.121``: cuando el hub tenía
+    algo que entregar y no pudo leerlo, la única forma de avisar al operador era
+    tumbarle la conexión (cierre 4503), porque el estado del transporte era el
+    ÚNICO canal servidor→pantalla que existía. Cerrar por un tropiezo de una
+    consulta es desproporcionado —arrastra re-handshake, re-subscribe y ventana
+    de backoff— y además dice la verdad equivocada: la sesión estaba sana.
+
+    ``degraded: false`` es tan importante como el ``true``: un aviso que no sabe
+    apagarse es otra mentira en pantalla (regla de oro 7). ``topic`` acota el
+    daño — que falle ``features:<site>`` no es que el SOC esté ciego.
+
+    ``detail`` es el nombre TÉCNICO de lo que falló (``LockTimeout``,
+    ``OperationalError``…), para el soporte y el log. La pantalla no lo lee como
+    frase: rotula la degradación por su cuenta.
+    """
+
+    type: Literal["live_health"] = "live_health"
+    degraded: bool
+    topic: str
+    detail: str | None = None
 
 
 class IncidentFrame(BaseModel):
@@ -146,3 +176,35 @@ class RosterSignalFrame(BaseModel):
     tenant_id: UUID
     site_id: UUID
     incident_id: UUID
+
+
+# ---- censo de la dirección del cable --------------------------------------
+def _server_frame_types() -> frozenset[str]:
+    """[T-2.129] Discriminantes de los frames SERVIDOR→CLIENTE, DERIVADOS.
+
+    La regla es estructural, no una lista: un frame que el servidor construye
+    declara su ``type`` con DEFAULT (``= "incident"``), y uno que el servidor
+    RECIBE lo exige (``auth``/``subscribe``). Por eso la dirección se lee del
+    modelo y no hace falta apuntarla en ningún sitio donde pueda quedar vieja.
+
+    Que esto se derive es el corazón de ``T-2.129``: el otro extremo del cable
+    (``shared/sdk-ts/src/ws.ts``) descartaba en silencio todo ``type`` fuera de
+    una lista escrita a mano, así que cualquier frame nuevo nacía muerto y nadie
+    se enteraba. El censo del SDK se compara contra ESTE, leyendo este fichero.
+    """
+    censo: set[str] = set()
+    for obj in list(globals().values()):
+        if not isinstance(obj, type) or not issubclass(obj, BaseModel) or obj is BaseModel:
+            continue
+        if obj.__module__ != __name__:
+            continue
+        campo = obj.model_fields.get("type")
+        if campo is None or campo.is_required():
+            continue  # cliente→servidor (exige su `type`) o fila sin discriminante
+        censo.add(str(campo.default))
+    return frozenset(censo)
+
+
+#: Todo lo que el servidor puede empujar por ``/ws``. Se deriva de las clases de
+#: arriba; ver ``_server_frame_types``.
+SERVER_FRAME_TYPES: frozenset[str] = _server_frame_types()

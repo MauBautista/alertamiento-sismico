@@ -40,6 +40,16 @@ El corte es ``(tenant, topic)`` y no más fino a propósito: dentro de un carril
 orden queda igual que siempre, que es lo que necesita una consola que indexa por
 id y se queda con el ÚLTIMO frame. Ver ``_lane_key`` para el censo de quién
 depende del orden.
+
+[T-2.129] **La degradación ya no se dice cerrando el socket.** T-2.121 lo hizo
+así porque no había otra forma de hablar: el SDK descartaba los frames ``error``
+y todo ``type`` desconocido, así que el estado del transporte era el único canal
+servidor→pantalla. Ahora el hub manda un ``LiveHealthFrame`` (``degraded``
+true/false, con el topic afectado) y el canal SIGUE ABIERTO — el resto de topics
+ni se entera, y el aviso sabe apagarse: con el siguiente notify que sí lea, o
+solo, por la sonda de recuperación (``_sondear``). El cierre 4503 desapareció;
+el 4401 del handshake (``routers/ws.py``) sigue igual, porque un token vencido
+no es una degradación del canal.
 """
 
 from __future__ import annotations
@@ -48,6 +58,7 @@ import asyncio
 import contextlib
 import logging
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
@@ -63,17 +74,26 @@ from takab_api.ws import protocol as p
 
 logger = logging.getLogger("takab_api.ws")
 
-#: [T-2.121] Cierre por CANAL LIVE DEGRADADO: el hub tenía algo que entregarle a
-#: este socket y no pudo leerlo. No es un error del cliente ni de su token (4401
-#: es eso), así que el ``LiveSocket`` del SDK lo trata como cualquier caída y
-#: reconecta con backoff; entretanto la topbar pinta «CONECTANDO…» y la cola de
-#: incidentes «● SIN LIVE», que es la verdad, y el REST sigue sirviendo el dato
-#: (regla de oro 2). Callarse era dejar al operador con un «● LIVE» mintiendo.
-WS_LIVE_DEGRADED = 4503
-
 _INTERNAL_ROLES = frozenset({"takab_superadmin", "takab_support"})
 _VISIBILITY_TTL_S = 60.0
 _LISTEN_READY_TIMEOUT_S = 5.0
+
+#: [T-2.129] Primera espera de la SONDA antes de reintentar la lectura que falló.
+#: Existe para que el aviso sepa apagarse SIN depender de que llegue otro notify:
+#: un SOC pasa horas sin una sola invalidación —es su estado normal—, así que
+#: atar el apagado al tráfico dejaría «LIVE DEGRADADO» encendido hasta el próximo
+#: sismo.
+_RECOVERY_PROBE_S = 2.0
+
+#: Y el tope al que crece esa espera, que NO es cosmético. Cada intento retiene
+#: una conexión del pool del request (5+5) hasta que vence el tope de segundo
+#: plano (3 s). Con espera fija de 2 s, un lock que afecte a muchos grupos
+#: ``(tenant, rol, topic)`` tendría a casi todas las sondas dentro de la base a
+#: la vez: la sonda de recuperación se convertiría en la misma forma de
+#: agotamiento del pool que acaban de cerrar `T-2.130` y `T-2.131`. Con el
+#: crecimiento exponencial hasta 30 s, el ciclo de trabajo de cada sonda cae a
+#: ~10 % y el apagado sigue llegando en menos de medio minuto.
+_RECOVERY_PROBE_MAX_S = 30.0
 
 # tipo de NOTIFY → topic del suscriptor.
 _TOPIC_BY_TYPE: dict[str, str] = {
@@ -85,6 +105,12 @@ _TOPIC_BY_TYPE: dict[str, str] = {
     # táctico ya está suscrito ahí); el frame es una invalidación sin PII.
     "checkin": p.TOPIC_INCIDENTS,
 }
+
+#: [T-2.129] Tipos que ``_build_frame`` resuelve SIN tocar la base. Su éxito no
+#: es evidencia de que el canal pueda leer, así que no apaga una degradación.
+#: Es el espejo de la rama ``t == "checkin"`` de ``_build_frame``: si algún día
+#: hay un segundo frame sin re-consulta, tiene que aparecer aquí.
+_TIPOS_SIN_LECTURA = frozenset({"checkin"})
 
 _SQL_INCIDENT = text(
     "SELECT incident_id, tenant_id, site_id, event_id, opened_at, closed_at, "
@@ -131,6 +157,10 @@ class Subscriber:
     topics: set[str] = field(default_factory=set)
     pollers: dict[str, asyncio.Task[Any]] = field(default_factory=dict)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    #: [T-2.129] Topics que YA se le declararon degradados. Sin esta memoria el
+    #: aviso saldría por cada notify perdido: una tormenta de frames diciendo lo
+    #: mismo, y ningún `degraded: false` que la cierre.
+    degradado: set[str] = field(default_factory=set)
 
 
 @dataclass(eq=False)
@@ -190,6 +220,9 @@ class Hub:
         #: [T-2.128] Un carril por ``(tenant, topic)`` vivo; se crean al vuelo y
         #: se recogen en cuanto se vacían (si no, serían una fuga por tenant).
         self._lanes: dict[str, _Lane] = {}
+        #: [T-2.129] Sondas de recuperación vivas, una por ``(tenant, rol, topic)``
+        #: degradado. Se auto-recogen al apagar su degradación.
+        self._sondas: dict[str, asyncio.Task[Any]] = {}
 
     # ---- ciclo de vida (lo llama el lifespan de la app) -------------------
     async def start(self) -> None:
@@ -226,10 +259,19 @@ class Hub:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await lane.tarea
         self._lanes.clear()
+        await self._cancelar_sondas()
         for sub in list(self._subs):
             await self._cancel_pollers(sub)
         self._subs.clear()
         self._visibility.clear()
+
+    async def _cancelar_sondas(self) -> None:
+        """[T-2.129] Mata las sondas de recuperación (parada del proceso y tests)."""
+        for tarea in list(self._sondas.values()):
+            tarea.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await tarea
+        self._sondas.clear()
 
     # ---- registro de sockets ---------------------------------------------
     def register(self, ws: WebSocket, claims: Claims) -> Subscriber:
@@ -364,8 +406,14 @@ class Hub:
                 # EN SILENCIO justo a quien depende de ese metadato, así que se
                 # le declara el canal degradado; el resto de suscriptores no
                 # necesitaba la visibilidad y no se toca.
+                #
+                # [T-2.129] Esta rama NO arma sonda: los afectados pueden ser de
+                # varios tenants a la vez y la sonda es por grupo. Se apaga en la
+                # primera repartición que vuelva a leer `tenants` — que ocurre en
+                # el notify siguiente de este mismo topic, unas líneas más abajo.
                 await self._degradar(
                     [s for s in subs if s.claims.role == "gov_operator"],
+                    topic,
                     f"visibilidad del tenant ilegible: {exc.__class__.__name__}",
                 )
                 subs = [s for s in subs if s.claims.role != "gov_operator"]
@@ -386,8 +434,29 @@ class Hub:
                 # [T-2.121] La base no dejó leer la fila (lock ajeno vencido por
                 # el tope, o la DB caída). Estos suscriptores acaban de perderse
                 # una invalidación y NO pueden saberlo: se les declara.
-                await self._degradar(members, f"{t}: {exc.__class__.__name__}")
+                # [T-2.129] Y se arma la sonda con ESTA MISMA lectura: cuando
+                # vuelva a funcionar, además de apagar el aviso entrega la
+                # invalidación que se había perdido.
+                await self._degradar(
+                    members,
+                    topic,
+                    f"{t}: {exc.__class__.__name__}",
+                    reintento=lambda ctx=ctx: self._build_frame(ctx, t or "", payload),
+                    grupo=(tenant_id, role),
+                )
                 continue
+            # La lectura funcionó: eso APAGA el aviso, lo haya o no. Va antes de
+            # `frame is None` a propósito — que la fila no sea visible tras RLS no
+            # quita que el canal esté leyendo bien.
+            #
+            # ...pero SOLO si de verdad hubo lectura. `checkin` se arma del propio
+            # payload sin tocar la base (T-2.11), así que un check-in llegando con
+            # `incidents` bloqueada apagaría el aviso sin haber demostrado nada:
+            # el operador vería «canal sano» mientras sigue perdiendo
+            # invalidaciones de incidentes. La degradación sólo la levanta una
+            # lectura real.
+            if t not in _TIPOS_SIN_LECTURA:
+                await self._recuperar(members, topic)
             if frame is None:
                 continue
             for s in members:
@@ -466,8 +535,15 @@ class Hub:
         self._visibility[str(tenant_id)] = (vis, now + _VISIBILITY_TTL_S)
         return vis
 
-    async def _degradar(self, subs: list[Subscriber], motivo: str) -> None:
-        """[T-2.121] Declara el canal DEGRADADO a quien no se le pudo servir.
+    async def _degradar(
+        self,
+        subs: list[Subscriber],
+        topic: str,
+        motivo: str,
+        reintento: Callable[[], Awaitable[dict[str, Any] | None]] | None = None,
+        grupo: tuple[str, str] | None = None,
+    ) -> None:
+        """[T-2.121 · rehecho en T-2.129] Declara DEGRADADO el topic, sin cerrar.
 
         La alternativa —seguir con el ``continue`` de siempre— deja al operador
         con un socket abierto, una topbar que dice CONECTADO y una cola de
@@ -475,32 +551,121 @@ class Hub:
         exactamente el dato congelado presentado como vivo que prohíbe la regla
         de oro 7, y en la superficie donde se decide a quién se manda una brigada.
 
-        Se cierra con ``WS_LIVE_DEGRADED`` y no se manda un ``ErrorFrame``
-        porque el ``LiveSocket`` compartido (``shared/sdk-ts/src/live.ts``)
-        descarta los frames ``error`` y cualquier ``type`` que no conozca: hoy el
-        ÚNICO canal que llega a la pantalla del operador es el estado del
-        transporte. Un frame propio de degradación —más fino que tumbar el
-        socket— exige tocar el SDK compartido y la consola; queda declarado en el
-        informe de la ficha, no simulado aquí.
+        **T-2.121 lo dijo cerrando el socket (code 4503), y no por elección:** el
+        ``LiveSocket`` compartido descartaba los frames ``error`` y todo ``type``
+        que no conociera, así que el estado del transporte era el único canal
+        servidor→pantalla que existía. Tirar la conexión por un tropiezo de UNA
+        consulta arrastra re-handshake, re-subscribe de todos los topics y una
+        ventana de backoff — y encima dice la verdad equivocada: la sesión estaba
+        sana. Ahora se manda un ``LiveHealthFrame`` y el canal sigue vivo, con lo
+        que el resto de topics ni se entera.
 
-        El cierre no pierde dato: el REST sigue sirviendo (regla de oro 2), la
-        consola refresca por TanStack Query y el SDK reconecta con backoff.
+        El aviso se manda UNA vez por topic (``sub.degradado``): un bloqueo largo
+        pierde muchas invalidaciones y ninguna añade información a la primera.
+
+        ``reintento`` es la lectura que falló. Con ella se arma la sonda que
+        apaga el aviso sola —ver ``_sondear``—; sin ella el apagado espera al
+        siguiente notify que sí pueda leer.
         """
-        for sub in subs:
+        nuevos = [s for s in subs if topic not in s.degradado]
+        for sub in nuevos:
+            sub.degradado.add(topic)
             logger.error(
-                "ws: canal live DEGRADADO para tenant=%s role=%s (%s) — se cierra con %d",
+                "ws: canal live DEGRADADO en topic=%s para tenant=%s role=%s (%s)",
+                topic,
                 sub.claims.tenant_id,
                 sub.claims.role,
                 motivo,
-                WS_LIVE_DEGRADED,
             )
-            await self.unregister(sub)
-            # El socket puede estar ya medio-muerto: el cierre es cortesía, no
-            # condición del registro (que ya se limpió arriba).
-            with contextlib.suppress(Exception):
-                await sub.ws.close(
-                    code=WS_LIVE_DEGRADED, reason="canal live degradado: la nube no pudo leer"
-                )
+            await self._send(
+                sub, p.LiveHealthFrame(degraded=True, topic=topic, detail=motivo).model_dump()
+            )
+        if reintento is not None and grupo is not None:
+            self._armar_sonda(grupo, topic, reintento)
+
+    async def _recuperar(self, subs: list[Subscriber], topic: str) -> None:
+        """[T-2.129] Apaga el aviso: el canal volvió a poder leer este topic.
+
+        Un banner que se enciende y no sabe apagarse es la misma regla de oro 7
+        del revés — al tercer día el operador deja de leerlo.
+        """
+        for sub in subs:
+            if topic not in sub.degradado:
+                continue
+            sub.degradado.discard(topic)
+            logger.info(
+                "ws: canal live RECUPERADO en topic=%s para tenant=%s role=%s",
+                topic,
+                sub.claims.tenant_id,
+                sub.claims.role,
+            )
+            await self._send(sub, p.LiveHealthFrame(degraded=False, topic=topic).model_dump())
+
+    def _armar_sonda(
+        self,
+        grupo: tuple[str, str],
+        topic: str,
+        reintento: Callable[[], Awaitable[dict[str, Any] | None]],
+    ) -> None:
+        """Una sola sonda por ``(tenant, rol, topic)``; la primera manda."""
+        key = f"{grupo[0]}|{grupo[1]}|{topic}"
+        if key in self._sondas:
+            return
+        self._sondas[key] = asyncio.create_task(self._sondear(key, grupo, topic, reintento))
+
+    async def _sondear(
+        self,
+        key: str,
+        grupo: tuple[str, str],
+        topic: str,
+        reintento: Callable[[], Awaitable[dict[str, Any] | None]],
+    ) -> None:
+        """[T-2.129] Reintenta LA MISMA lectura hasta que vuelva a funcionar.
+
+        Reintentar la lectura concreta —y no un ``SELECT 1`` de cortesía— tiene
+        una consecuencia que justifica la sonda por sí sola: al apagar el aviso
+        **entrega la invalidación que se había perdido**, en vez de dejar al
+        operador esperando al refetch REST de 30 s.
+
+        El grupo ``(tenant, rol)`` acota a quién se le entrega ese frame: se
+        construyó con los GUCs de ESE grupo y mandárselo a otro sería una fuga
+        entre tenants. Que el aviso se apague sólo para su grupo es correcto: el
+        de al lado tiene su propia sonda si de verdad falló.
+
+        La espera CRECE (``_RECOVERY_PROBE_MAX_S``) porque cada reintento retiene
+        una conexión del pool del request mientras dura el tope de lock: una
+        sonda impaciente por grupo sería la misma forma de agotamiento del pool
+        que cerraron ``T-2.130`` y ``T-2.131``, reintroducida por el lado del WS.
+        """
+        intento = 0
+        try:
+            while True:
+                # Espera creciente: ver `_RECOVERY_PROBE_MAX_S`. Cada reintento
+                # cuesta una conexión del pool durante el tope de lock.
+                await asyncio.sleep(min(_RECOVERY_PROBE_S * 2**intento, _RECOVERY_PROBE_MAX_S))
+                intento += 1
+                afectados = [
+                    s
+                    for s in self._subs
+                    if topic in s.degradado
+                    and (s.claims.tenant_id, s.claims.role) == grupo
+                    and topic in s.topics
+                ]
+                if not afectados:
+                    return  # se fueron o ya se recuperaron por otra vía
+                try:
+                    frame = await reintento()
+                except SQLAlchemyError:
+                    continue  # sigue bloqueado: se vuelve a intentar
+                await self._recuperar(afectados, topic)
+                if frame is None:
+                    return
+                for sub in afectados:
+                    if _frame_in_scope(sub.claims, frame):
+                        await self._send(sub, frame)
+                return
+        finally:
+            self._sondas.pop(key, None)
 
     async def _send(self, sub: Subscriber, frame: dict[str, Any]) -> None:
         async with sub.send_lock:

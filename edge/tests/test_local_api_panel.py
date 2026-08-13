@@ -205,7 +205,14 @@ def _base() -> dict:
             "stale_after_s": 3600.0,
         },
         "drill": None,
-        "actuation_test": {"active": False, "results": None},
+        # [T-2.85.a] `finished_at`/`age_s`: sin fecha, un `RETORNO CONFIRMADO`
+        # de hace nueve días se pinta igual que uno de hace tres segundos.
+        "actuation_test": {
+            "active": False,
+            "results": None,
+            "finished_at": None,
+            "age_s": None,
+        },
         "test_mode": {"active": False, "remaining_s": 0.0},
         "audio": {
             "enabled": True,
@@ -568,6 +575,10 @@ _ZONAS = [
     "salud-grid",
     "evi-state",
     "evi-rows",
+    # [T-2.85.a] Resultado de PROBAR ACTUADORES. Ni con prueba ni sin ella puede
+    # quedarse muda: "aquí no pone nada" se lee como "no pasa nada".
+    "test-state",
+    "test-rows",
     "lora-rows",
     "event-rows",
     "ssn-meta",
@@ -676,6 +687,163 @@ def test_prueba_de_actuadores_tiene_su_propio_banner(tmp_path):
     out = _render(tmp_path, status=st)
     assert not _hidden(out, "banner-cyan")
     assert _hidden(out, "banner-alert")
+
+
+# ------------------------------- T-2.85.a · el resultado de PROBAR ACTUADORES
+#
+# El botón hace lectura de retorno sobre el gas y los ascensores —ejerce
+# físicamente el equipamiento del edificio— y hasta aquí no enseñaba si había
+# pasado: `held`/`pulsed`/`readback_ok` viajaban en `status()` y sólo aparecían
+# en los datos de demo del propio HTML. Es la única prueba que el operador puede
+# hacer él solo, y el manual de operación no podía decirle cómo leer su
+# resultado. La CLASE de defecto la vigila `test_panel_render_census.py`.
+
+
+def _con_prueba(**cambios) -> dict:
+    """Status con una prueba TERMINADA: cuatro desenlaces + uno sin probar."""
+    st = _base()
+    st["relays_status"] = {
+        "reason": "ok",
+        "installed": ["door_retainer", "elevator", "gas_valve", "siren", "strobe"],
+        "missing": [],
+    }
+    st["actuation_test"] = {
+        "active": False,
+        "finished_at": _NOW,
+        "age_s": 6.0,
+        "results": {
+            "ok": False,
+            "reason": "readback falló en: elevator, door_retainer",
+            "relays": {
+                "siren": {
+                    "held": True,
+                    "readback_ok": True,
+                    "fail_safe": "normally_open",
+                    "energized": True,
+                },
+                "gas_valve": {
+                    "pulsed": True,
+                    "readback_ok": True,
+                    "fail_safe": "fail_close",
+                    "energized": True,
+                },
+                "elevator": {
+                    "pulsed": True,
+                    "readback_ok": False,
+                    "fail_safe": "normally_open",
+                    "energized": False,
+                },
+                "door_retainer": {
+                    "pulsed": False,
+                    "readback_ok": False,
+                    "fail_safe": "normally_closed",
+                    "energized": None,
+                },
+            },
+        },
+    }
+    st["actuation_test"].update(cambios)
+    return st
+
+
+def test_el_resultado_de_la_prueba_se_pinta_rele_a_rele(tmp_path):
+    """Criterio 1: el resultado por relé, CON su lectura de retorno."""
+    texto = _txt(_render(tmp_path, status=_con_prueba()), "test-rows")
+    assert "SIRENA" in texto and "SOSTENIDO · RETORNO OK" in texto
+    assert "GAS" in texto and "PULSO · RETORNO OK" in texto
+    # El fail-safe y el estado eléctrico en que quedó: el gas cierra sin
+    # corriente y las puertas liberan, y eso no se deduce del veredicto.
+    assert "fail-safe fail_close" in texto
+    assert "ENERGIZADO" in texto
+
+
+def test_un_rele_que_no_confirma_se_distingue_de_uno_que_no_se_probo(tmp_path):
+    """Criterio 2 (regla de oro 7). Son tres cosas, no una.
+
+    `NO CONFIRMÓ` manda a llamar a soporte; `NO SE PROBÓ` no es un fallo y
+    pintarlo como tal manda a buscar una avería que no existe.
+    """
+    texto = _txt(_render(tmp_path, status=_con_prueba()), "test-rows")
+    assert "ASCENSORES" in texto and "NO CONFIRMÓ EL RETORNO" in texto
+    assert "PUERTAS" in texto and "SIN RELÉ DETRÁS" in texto
+    # `strobe` está DECLARADO instalado y la prueba no lo tocó.
+    assert "NO SE PROBÓ" in texto
+    assert texto.count("NO SE PROBÓ") == 1, "solo el estrobo quedó sin probar"
+    # …y la píldora resume sin colapsar: dos relés sin confirmar, en rojo.
+    assert "2 RELÉS SIN CONFIRMAR" in _txt(_render(tmp_path, status=_con_prueba()), "test-state")
+
+
+def test_una_prueba_en_verde_lo_dice_y_cuenta_los_reles(tmp_path):
+    st = _con_prueba()
+    for canal in st["actuation_test"]["results"]["relays"].values():
+        canal["readback_ok"] = True
+        canal.pop("pulsed", None)
+        canal["held"] = True
+    st["actuation_test"]["results"]["ok"] = True
+    st["actuation_test"]["results"]["reason"] = None
+    assert "RETORNO CONFIRMADO" in _txt(_render(tmp_path, status=st), "test-state")
+
+
+def test_un_resultado_sin_hora_no_se_pinta_como_reciente(tmp_path):
+    """Regla de oro 7: un `RETORNO CONFIRMADO` sin fecha es un dato congelado."""
+    fresco = _txt(_render(tmp_path, status=_con_prueba()), "test-rows")
+    assert "10:00:00 UTC" in fresco and "hace 6 s" in fresco
+    viejo = _txt(_render(tmp_path, status=_con_prueba(finished_at=None, age_s=None)), "test-rows")
+    assert "HORA S/D" in viejo and "hace S/D" in viejo
+
+
+def test_sin_prueba_la_tarjeta_lo_declara_en_vez_de_callar(tmp_path):
+    """Una tarjeta muda se lee como «aquí no pasa nada»."""
+    out = _render(tmp_path, status=_base())
+    assert "SIN PRUEBA DESDE EL ARRANQUE" in _txt(out, "test-state")
+    assert "PROBAR ACTUADORES" in _txt(out, "test-rows")
+
+
+def test_una_prueba_rechazada_no_se_lee_como_un_fallo_del_equipamiento(tmp_path):
+    """El gpio se niega a probar con una alerta viva: eso no es un relé roto."""
+    st = _con_prueba()
+    st["actuation_test"]["results"] = {
+        "ok": False,
+        "reason": "alerta o protección viva; prueba local rechazada",
+        "relays": {},
+    }
+    out = _render(tmp_path, status=st)
+    assert "PRUEBA RECHAZADA" in _txt(out, "test-state")
+    assert "alerta o protección viva" in _txt(out, "test-rows")
+    assert "NO CONFIRMÓ" not in _txt(out, "test-rows")
+
+
+def test_mientras_sostiene_la_tarjeta_no_promete_un_resultado(tmp_path):
+    st = _con_prueba(active=True)
+    out = _render(tmp_path, status=st)
+    assert "EN CURSO" in _txt(out, "test-state")
+    assert "RETORNO OK" not in _txt(out, "test-rows")
+
+
+def test_la_calibracion_dice_de_donde_viene(tmp_path):
+    """Criterio 3: `calibration.source` se pinta cuando existe.
+
+    De la procedencia depende que el PGA esté en `g` o sea un número relativo:
+    el panel gritaba `SIN CALIBRAR` y, cuando SÍ había calibración, callaba.
+    """
+    out = _render(tmp_path, status=_base())
+    assert _hidden(out, "nocal-pill")
+    assert not _hidden(out, "cal-pill")
+    assert "CALIBRADO · StationXML" in _txt(out, "cal-pill")
+
+    frio = _render(tmp_path, status=_cold())
+    assert not _hidden(frio, "nocal-pill")
+    assert _hidden(frio, "cal-pill")
+
+
+def test_una_calibracion_sin_procedencia_se_declara_en_vez_de_afirmarse(tmp_path):
+    """`calibrated` se DERIVA de la procedencia: las dos cosas a la vez es una
+    contradicción del servidor, y el panel la delata en vez de callarla."""
+    st = _base()
+    st["calibration"] = {**st["calibration"], "source": None}
+    out = _render(tmp_path, status=st)
+    assert "PROCEDENCIA S/D" in _txt(out, "cal-pill")
+    assert _value_color(out, "cal-pill", "PROCEDENCIA S/D") == WARN
 
 
 def test_el_modo_demo_se_declara_siempre(tmp_path):
@@ -1595,7 +1763,7 @@ def test_la_comparativa_sin_dato_medido_lo_dice(tmp_path):
     st = _base()
     st["shake_history"] = None  # sin agregado no hay bucket que comparar
     out = _render(tmp_path, status=st, catalog=_CATALOG, clicks=["#open-map", "row:ssn-rows-big"])
-    assert "SIN DATO MEDIDO" in _txt(out, "cmp-facts")
+    assert "S/D · NO MEDIDO" in _txt(out, "cmp-facts")
 
 
 def test_una_estacion_vecina_no_finge_medir(tmp_path):
@@ -1639,7 +1807,7 @@ def test_baja_en_la_nube_se_declara_sin_dejar_de_prometer_proteccion(tmp_path):
     out = _render(tmp_path, status=st)
     assert not _hidden(out, "banner-baja")
     texto = _txt(out, "banner-baja")
-    assert "DADO DE BAJA EN LA NUBE" in texto
+    assert "RETIRADO EN LA NUBE" in texto
     assert "SIGUE PROTEGIENDO" in texto
     # La mitad que de verdad importa al que está parado frente al gabinete.
     assert "SASMEX" in texto
