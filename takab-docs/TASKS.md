@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **273** · `[x]` **201** · `[~]` **9** · `[ ]` **63**
+**Conteo de tareas:** total **273** · `[x]` **202** · `[~]` **9** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -7649,15 +7649,45 @@ sería documentar intenciones.
 > **Deja abierta** `T-2.131` (`statement_timeout` sigue sin tope: **la misma forma de agotamiento
 > del pool, por otra causa**, que este tope no toca).
 
-### [ ] T-2.131 · `statement_timeout` sigue sin tope — `SOFTWARE`
+### [x] T-2.131 · `statement_timeout` sigue sin tope — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.130` (2026-08-12)
 - `T-2.130` acotó las esperas **por lock**. Una consulta **lenta** —no bloqueada— retiene su
   conexión del pool **sin límite**: es **la misma forma de agotamiento** que se acaba de cerrar,
   por una causa distinta, y el tope de lock no la alcanza.
 - **Criterios de aceptación:**
-  - [ ] Medido si hoy existe alguna consulta capaz de retener una conexión más que el tope de lock.
-  - [ ] Decidido si `statement_timeout` se pone, con qué valor y con la misma disciplina de
+  - [x] Medido si hoy existe alguna consulta capaz de retener una conexión más que el tope de lock.
+  - [x] Decidido si `statement_timeout` se pone, con qué valor y con la misma disciplina de
         `T-2.130`: menor que el timeout del pool, y sin cortar trabajo legítimo largo.
+
+> **Cerrada (2026-08-13).** Medido antes de tocar nada: `SHOW statement_timeout` valía **`0` en
+> toda la instalación**, y una consulta de 20 s por `get_tenant_conn` **corría entera**.
+>
+> **El número está encajonado por los DOS lados, y el de abajo es el que no se ve venir:**
+>
+>     lock_timeout (10 s)  <  statement_timeout (20 s)  <  timeout del pool (30 s)
+>
+> Por arriba, lo de `T-2.130`: por encima del pool, un tope deja de degradar *una petición* y pasa
+> a degradar *el proceso*. **Por abajo:** si el tope de sentencia fuera ≤ el de lock, el reloj de
+> la sentencia vencería **siempre primero** y el `lock_timeout` de `T-2.130` **no podría
+> dispararse nunca** — el 503 con nombre se convertiría en un `57014` anónimo y aquel arreglo
+> quedaría **desactivado sin que nada se pusiera rojo**. Lo ancla un test, no este párrafo.
+>
+> `StatementTimeout` hereda de `HTTPException` **y** de `SQLAlchemyError` por la misma razón que
+> `LockTimeout`. Y se mantiene **separado** de él a propósito, aunque el cliente reciba 503 en los
+> dos casos: **no son el mismo problema para quien opera**. «El recurso está ocupado» se arregla
+> esperando; «la consulta tarda demasiado» apunta a un dato que creció, a un índice que falta o a
+> un filtro que se olvidó. Fundirlos ahorraría diez líneas y borraría esa pista.
+>
+> El tope va **por parámetro**: el trabajo legítimo largo necesita una salida **explícita en el
+> sitio de llamada**, no resolverse subiendo el tope para todos.
+>
+> **Cero tests existentes se pusieron rojos** — dato que refuerza que 20 s es holgado.
+>
+> **Y un defecto del propio arnés, que vale como lección de método:** el test medía «0 de 10
+> backends» mientras las diez tareas corrían perfectamente. Preguntaba a `pg_stat_activity` y la
+> vista no reflejaba lo que él mismo acababa de montar. Da igual la causa exacta de esa ceguera —
+> **el error de diseño es anterior: un test no debe inferir el estado de su propio andamio de una
+> vista del servidor.** Si el arnés no se monta, quien tiene que decirlo es el arnés.
 
 ### [ ] T-2.132 · Los workers esperan sin límite, y acotarlos quema mensajes — `SOFTWARE`
 - **Componente:** api (workers) · **Detectada por:** `T-2.130` (2026-08-12), **con evidencia**
