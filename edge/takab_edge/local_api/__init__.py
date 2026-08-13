@@ -411,6 +411,10 @@ class LocalDashboard(EdgeModule):
         self._actions: deque[dict] = deque(maxlen=_ACTIONS_MAX)
         self._actions_lock = threading.Lock()
         self._last_actuation_test: dict | None = None  # T-1.67: resultado por relé
+        # [T-2.85.a] …y cuándo acabó. Un resultado sin fecha no se puede pintar
+        # sin mentir: no hay forma de distinguir el de hace tres segundos del de
+        # la semana pasada.
+        self._last_actuation_test_at: datetime | None = None
         self.index_html = _load_index_html()
         # T-2.23: estáticos y catálogo se cargan UNA vez — servir jamás toca disco.
         # T-2.24: el store compartido del supervisor trae el feed firmado; un
@@ -1042,7 +1046,7 @@ class LocalDashboard(EdgeModule):
             # [T-2.67] Respaldo de evidencia: estado, jamás muestras (regla 9).
             "evidence": self._evidence_section(now),
             "drill": self._drill_section(),
-            "actuation_test": self._actuation_test_section(snap),
+            "actuation_test": self._actuation_test_section(snap, now),
             "test_mode": self._test_mode_section(snap),
             "audio": self._audio_section(),
             "events": self._events_section(),
@@ -1057,12 +1061,31 @@ class LocalDashboard(EdgeModule):
             "remaining_s": round(snap.test_mode_remaining_s, 1),
         }
 
-    def _actuation_test_section(self, snap: GpioSnapshot | None) -> dict:
-        """Prueba local de actuación (T-1.67): banner mientras sostiene + resultado."""
+    def _actuation_test_section(self, snap: GpioSnapshot | None, now: datetime) -> dict:
+        """Prueba local de actuación (T-1.67): banner mientras sostiene + resultado.
+
+        [T-2.85.a] Viaja además CUÁNDO acabó. Sin eso, el panel pintaba —o mejor
+        dicho, podía pintar— un resultado sin saber si era de hace tres segundos
+        o de la semana pasada, y un `TODOS CONFIRMARON` de hace nueve días sobre
+        el gas y los ascensores es exactamente el dato congelado en verde que
+        prohíbe la regla de oro 7.
+
+        `age_s` se deriva aquí y no en el navegador a propósito: el reloj del
+        equipo del operador no tiene por qué coincidir con el del gabinete, y
+        restar dos relojes distintos ya costó una corrección en este panel.
+        """
         active = bool(snap.actuation_test_active) if snap is not None else False
         with self._actions_lock:
             results = self._last_actuation_test
-        return {"active": active, "results": results}
+            acabada = self._last_actuation_test_at
+        return {
+            "active": active,
+            "results": results,
+            "finished_at": None if acabada is None else acabada.isoformat(),
+            "age_s": None
+            if acabada is None
+            else round(max(0.0, (now - acabada).total_seconds()), 1),
+        }
 
     def _siren_reason(self, snap: GpioSnapshot | None) -> str | None:
         """[T-2.49] POR QUÉ suena la sirena. `siren_sounding` es un booleano
@@ -1160,11 +1183,14 @@ class LocalDashboard(EdgeModule):
         (el gpio jamás dispara los callbacks SASMEX). Corre síncrono en el hilo
         de ESTE request (el servidor es multihilo; el reflejo nunca lo espera);
         el pulso dura ~1 s y la sirena sigue sonando hasta que vence el sostén.
-        El resultado por relé aflora en ``status()`` para que el panel lo pinte.
+        El resultado por relé aflora en ``status()`` —con la hora en que acabó—
+        y el panel lo pinta relé a relé (tarjeta «Última prueba de actuadores»,
+        T-2.85.a). Un campo que viaja y no se pinta lo caza `test_panel_render_census`.
         """
         result = self._accion("actuation_test")
         with self._actions_lock:
             self._last_actuation_test = result
+            self._last_actuation_test_at = utcnow()
         if self._lora is not None:
             # [T-2.33] Los secundarios también se prueban: TEST hace destellar el
             # estrobo remoto SIN sirena (verificación de enlace + actuador).

@@ -7,8 +7,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-import { listIncidentsIncidentsGet, TOPIC_INCIDENTS } from "@takab/sdk";
-import type { IncidentFrame, IncidentOut } from "@takab/sdk";
+import { listIncidentsIncidentsGet, TOPIC_INCIDENTS, TOPIC_LIVE_HEALTH } from "@takab/sdk";
+import type { IncidentFrame, IncidentOut, LiveHealthFrame } from "@takab/sdk";
 
 import type { LiveStatus } from "../../lib/ws";
 import { useLiveSocket } from "./socket";
@@ -92,6 +92,44 @@ async function fetchOpenIncidents(): Promise<LiveIncident[]> {
   return data.items.map(fromOut);
 }
 
+/**
+ * [T-2.129] Un topic del canal live que el servidor declara DEGRADADO: se le
+ * escapó algo que debía entregar, pero el canal sigue abierto.
+ *
+ * No es «sin conexión», y confundirlos cuesta la decisión equivocada: sin
+ * conexión el operador sabe que no le llega nada; degradado el canal SÍ entrega,
+ * así que la cola puede estar incompleta pareciendo completa — que es la forma
+ * exacta de la regla de oro 7 que esta ficha cierra.
+ */
+export interface LiveDegradation {
+  /** Topic del protocolo (`incidents`, `site_state`, `features:<site_id>`). */
+  topic: string;
+  /** Rótulo para el operador; se calcula aquí para que la tabla no dependa del SDK. */
+  label: string;
+  /** Nombre técnico de lo que falló (`LockTimeout`…) — para soporte, no para el rótulo. */
+  detail: string | null;
+}
+
+/**
+ * Topic → lo que significa para quien opera. La familia `features:<site_id>` se
+ * rotula por lo que es (el sismograma del sitio) en vez de escupir un UUID en
+ * pantalla. El fallback imprime el topic crudo: un topic nuevo sin rótulo se ve
+ * feo, que es infinitamente mejor que no verse.
+ *
+ * `site_state` y `features:` van como literales y NO derivados del SDK, y está
+ * MEDIDO: derivar el prefijo con `featuresTopic("")` en el cuerpo del módulo
+ * tumbó `useFleet.test.tsx` y `useSiteRelays.test.tsx` a CERO tests —fallo de
+ * suite, no de aserción— porque sus `vi.mock("@takab/sdk")` sustituyen el SDK
+ * entero sin `importOriginal` y `featuresTopic` llegaba `undefined`. Tres
+ * cadenas del protocolo comparadas aquí valen menos que dos suites mudas.
+ */
+export function degradationLabel(topic: string): string {
+  if (topic === TOPIC_INCIDENTS) return "INCIDENTES";
+  if (topic === "site_state") return "SALUD DE GABINETES";
+  if (topic.startsWith("features:")) return "SISMOGRAMA";
+  return topic.toUpperCase();
+}
+
 export interface LiveIncidentsData {
   incidents: LiveIncident[];
   loading: boolean;
@@ -100,6 +138,8 @@ export interface LiveIncidentsData {
   liveStatus: LiveStatus;
   /** Epoch ms del último frame del topic incidents, o null (para staleness). */
   lastFrameAt: number | null;
+  /** [T-2.129] Topics que el servidor declara degradados, ordenados por topic. */
+  degraded: LiveDegradation[];
   refetch: () => void;
 }
 
@@ -112,19 +152,38 @@ export function useLiveIncidents(): LiveIncidentsData {
   });
   const [frames, setFrames] = useState<ReadonlyMap<string, LiveIncident>>(new Map());
   const [liveStatus, setLiveStatus] = useState<LiveStatus>(socket?.status ?? "closed");
+  const [degradedBy, setDegradedBy] = useState<ReadonlyMap<string, string | null>>(new Map());
 
   useEffect(() => {
     if (!socket) return undefined;
     setLiveStatus(socket.status);
-    const offStatus = socket.onStatus(setLiveStatus);
+    const offStatus = socket.onStatus((status) => {
+      setLiveStatus(status);
+      // [T-2.129] Al perder el socket se OLVIDA lo declarado: al reconectar, el
+      // hub registra un suscriptor nuevo y limpio, así que su `degraded: false`
+      // nunca llegaría y el aviso se quedaría encendido para siempre.
+      if (status !== "ready") setDegradedBy(new Map());
+    });
     const offFrames = socket.subscribe(TOPIC_INCIDENTS, (frame) => {
       if (frame.type !== "incident") return; // incident_action vive en otro hook
       const live = fromFrame(frame as IncidentFrame);
       setFrames((prev) => new Map(prev).set(live.incident_id, live));
     });
+    // [T-2.129] El canal ya sabe declarar su propia salud sin cerrarse. Este
+    // topic es LOCAL: no viaja ningún `subscribe` al servidor (ver `ws.ts`).
+    const offHealth = socket.subscribe(TOPIC_LIVE_HEALTH, (frame) => {
+      const health = frame as LiveHealthFrame;
+      setDegradedBy((prev) => {
+        const next = new Map(prev);
+        if (health.degraded) next.set(health.topic, health.detail ?? null);
+        else next.delete(health.topic);
+        return next;
+      });
+    });
     return () => {
       offStatus();
       offFrames();
+      offHealth();
     };
   }, [socket]);
 
@@ -134,6 +193,13 @@ export function useLiveIncidents(): LiveIncidentsData {
   }, [query.dataUpdatedAt]);
 
   const incidents = useMemo(() => mergeIncidents(query.data ?? [], frames), [query.data, frames]);
+  const degraded = useMemo(
+    () =>
+      [...degradedBy.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([topic, detail]) => ({ topic, label: degradationLabel(topic), detail })),
+    [degradedBy],
+  );
 
   return {
     incidents,
@@ -142,6 +208,7 @@ export function useLiveIncidents(): LiveIncidentsData {
     dataUpdatedAt: query.dataUpdatedAt,
     liveStatus,
     lastFrameAt: socket?.lastFrameAt(TOPIC_INCIDENTS) ?? null,
+    degraded,
     refetch: () => {
       void query.refetch();
     },

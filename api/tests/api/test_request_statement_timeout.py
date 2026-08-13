@@ -255,9 +255,7 @@ async def test_el_tope_sale_de_UNA_politica_y_no_de_numeros_sueltos() -> None:
     for fichero in src.rglob("*.py"):
         if fichero == politica:
             continue
-        hallazgos = re.findall(
-            r"statement_timeout\s*=\s*\d+", fichero.read_text(encoding="utf-8")
-        )
+        hallazgos = re.findall(r"statement_timeout\s*=\s*\d+", fichero.read_text(encoding="utf-8"))
         if hallazgos:
             sueltos[str(fichero.relative_to(src))] = hallazgos
     assert sueltos == {}, (

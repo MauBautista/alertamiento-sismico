@@ -14,7 +14,7 @@ import StateFrame from "../../components/StateFrame";
 import { secondsSince, utcClock } from "../../lib/time";
 import type { LiveStatus } from "../../lib/ws";
 import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats";
-import type { LiveIncident } from "./useLiveIncidents";
+import type { LiveDegradation, LiveIncident } from "./useLiveIncidents";
 
 const SEV_DOT: Record<string, string> = {
   critical: "var(--tk-status-critical)",
@@ -50,6 +50,11 @@ export interface IncidentTableProps {
   sites?: MapSiteState[];
   /** [T-2.50] Epicentro de referencia del orden por distancia (null = no hay). */
   epicenter?: MapEpicenter | null;
+  /**
+   * [T-2.129] Topics que el SERVIDOR declara degradados (frames `live_health`).
+   * Vacío = el canal entrega todo lo que debe.
+   */
+  degraded?: LiveDegradation[];
 }
 
 /** Explica el gate del botón (regla de oro 7: un disabled mudo no informa). */
@@ -89,8 +94,24 @@ export default function IncidentTable({
   onRequestDictamen,
   sites = [],
   epicenter = null,
+  degraded = [],
 }: IncidentTableProps) {
   const live = liveStatus === "ready";
+  // [T-2.129] TRES estados, no dos. «SIN LIVE» dice «no me llega nada» y manda
+  // al operador al refresco REST; «DEGRADADO» dice «el canal entrega, pero se
+  // perdió algo» — la única de las dos en la que esta cola puede estar
+  // INCOMPLETA PARECIENDO COMPLETA, que es la regla de oro 7 en la pantalla
+  // donde se decide a quién se manda una brigada.
+  //
+  // Sin conexión gana sobre degradado: sin canal no hay nada que degradar, y
+  // apilar los dos avisos sólo diluye el que hay que atender primero.
+  const degradadoVisible = live && degraded.length > 0;
+  const pill = degradadoVisible ? "● LIVE DEGRADADO" : live ? "● LIVE" : "● SIN LIVE";
+  const pillColor = degradadoVisible
+    ? "var(--tk-status-critical)"
+    : live
+      ? "var(--tk-status-normal)"
+      : "var(--tk-status-warning)";
   // [T-2.50] El orden vive AQUÍ, no en el servidor: es una preferencia de lectura
   // del operador, no un hecho del incidente. La cola sigue siendo la misma.
   const [order, setOrder] = useState<IncidentOrderKey>("severity");
@@ -137,14 +158,29 @@ export default function IncidentTable({
             </select>
           </label>
           <span>WS · LIVE</span>
-          <span
-            data-testid="live-pill"
-            style={{ color: live ? "var(--tk-status-normal)" : "var(--tk-status-warning)" }}
-          >
-            {live ? "● LIVE" : "● SIN LIVE"}
+          <span data-testid="live-pill" style={{ color: pillColor }}>
+            {pill}
           </span>
         </div>
       </header>
+
+      {/* [T-2.129] El aviso nombra QUÉ se degradó. El detalle técnico
+          (`LockTimeout`…) va al `title`: en una sala de crisis el rótulo que se
+          lee en voz alta tiene que decir qué falta, no cómo se llama la
+          excepción. Y el aviso se apaga solo — el servidor manda su
+          `degraded: false` en cuanto vuelve a poder leer. */}
+      {degradadoVisible && (
+        <p
+          className="soc-incidents__note"
+          data-testid="live-degraded"
+          role="status"
+          title={degraded.map((d) => `${d.topic}: ${d.detail ?? "sin detalle"}`).join(" · ")}
+          style={{ color: "var(--tk-status-critical)" }}
+        >
+          {`CANAL LIVE DEGRADADO · ${degraded.map((d) => d.label).join(" · ")} · ` +
+            "PUEDE FALTAR INFORMACIÓN EN VIVO · EL REFRESCO PERIÓDICO SIGUE"}
+        </p>
+      )}
 
       {/* [T-2.55] Estado VACÍO explícito. Sin él, cero incidentes producía un
           <tbody> hueco bajo los encabezados: indistinguible de "la cola no

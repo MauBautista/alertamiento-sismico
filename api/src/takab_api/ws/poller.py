@@ -16,12 +16,15 @@ dentro de la consulta indefinidamente, reteniendo su conexión: con el pool en
 quedara sin conexión (medido: ``TimeoutError`` del pool a los 30 s). Con el tope
 el ciclo cede, lo registra y vuelve solo en cuanto la tabla se libera.
 
-La degradación del strip ya es VISIBLE sin tocar nada más: sin frames,
-``DetailPanel`` (``web/src/features/console``) declara «SIN LIVE» pasada
-``FEATURES_STALE_MS`` — y ese silencio es honesto, porque de este topic sí se
-espera una muestra por segundo. Tumbar el socket del SOC entero (lo que sí hace
-el hub cuando pierde una invalidación de incidente) sería desproporcionado para
-un tropiezo del sismograma.
+[T-2.129] **Y ahora además lo DICE.** Hasta esta ficha la degradación del strip
+sólo se notaba por ausencia: ``DetailPanel`` declara «SIN LIVE» pasada
+``FEATURES_STALE_MS``, que es honesto pero no distingue «el gabinete dejó de
+mandar» de «la nube no puede leer lo que el gabinete mandó» — y esas dos cosas
+se atienden en sitios distintos. El ciclo fallido declara ``live_health`` sobre
+SU topic (``features:<site_id>``) y el ciclo bueno siguiente lo apaga, así que
+aquí la recuperación se ve en ≤1 s sin sonda ninguna. El socket no se toca: era
+desproporcionado tumbar el SOC entero por un tropiezo del sismograma, y con el
+frame ya no hay que elegir entre callarse y cerrar.
 """
 
 from __future__ import annotations
@@ -55,6 +58,7 @@ _SQL_FEATURES = text(
 async def poll_features(hub: Hub, sub: Subscriber, site_id: str) -> None:
     """Bucle 1 Hz: consulta la vista segura y empuja un ``features`` frame."""
     ctx = SessionCtx.from_claims(sub.claims)
+    topic = f"{p.TOPIC_FEATURES_PREFIX}{site_id}"
     while True:
         try:
             # [T-2.121] Misma política que el hub y que las laterales de
@@ -66,6 +70,10 @@ async def poll_features(hub: Hub, sub: Subscriber, site_id: str) -> None:
                     .mappings()
                     .all()
                 )
+            # [T-2.129] El ciclo leyó: si venía de un tropiezo, se apaga el aviso.
+            # Va antes de `if rows` a propósito — una ventana sin muestras es una
+            # respuesta legítima de la base, no una degradación del canal.
+            await hub._recuperar([sub], topic)
             if rows:
                 frame = p.FeaturesFrame(
                     site_id=site_id,
@@ -74,6 +82,9 @@ async def poll_features(hub: Hub, sub: Subscriber, site_id: str) -> None:
                 await hub._send(sub, frame)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 - un ciclo fallido no mata el poller
+        except Exception as exc:  # noqa: BLE001 - un ciclo fallido no mata el poller
             logger.exception("ws: poller de features falló")
+            # [T-2.129] Sin sonda: este bucle YA es la sonda (1 Hz). Se declara y
+            # el ciclo siguiente que lea apaga el aviso solo.
+            await hub._degradar([sub], topic, f"features: {exc.__class__.__name__}")
         await asyncio.sleep(_POLL_INTERVAL_S)

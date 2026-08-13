@@ -11,6 +11,9 @@ import { fromFrame, fromOut, mergeIncidents, useLiveIncidents } from "./useLiveI
 const mocks = vi.hoisted(() => ({
   listIncidentsIncidentsGet: vi.fn(),
   TOPIC_INCIDENTS: "incidents",
+  // [T-2.129] El topic LOCAL de la salud del canal. Sin él en el doble, el hook
+  // se suscribiría a `undefined` y los tests de abajo pasarían por accidente.
+  TOPIC_LIVE_HEALTH: "live_health",
 }));
 
 vi.mock("@takab/sdk", () => mocks);
@@ -103,5 +106,71 @@ describe("useLiveIncidents", () => {
     const { result } = renderHook(() => useLiveIncidents(), { wrapper: makeWrapper(socket) });
     await waitFor(() => expect(result.current.error).toMatch(/503/));
     expect(result.current.incidents).toEqual([]);
+  });
+});
+
+/* =====================================================================
+   [T-2.129] SALUD DEL CANAL — degradado NO es «sin conexión»
+   ===================================================================== */
+
+function salud(topic: string, degraded: boolean, detail: string | null = null) {
+  return { type: "live_health", topic, degraded, detail } as unknown as IncidentFrame;
+}
+
+describe("[T-2.129] useLiveIncidents · degradación del canal live", () => {
+  async function montado() {
+    mocks.listIncidentsIncidentsGet.mockResolvedValue({
+      data: { items: [out("a")] },
+      response: { status: 200 },
+    });
+    const socket = new FakeLiveSocket();
+    const { result } = renderHook(() => useLiveIncidents(), { wrapper: makeWrapper(socket) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    return { socket, result };
+  }
+
+  it("un canal sano no declara nada", async () => {
+    const { result } = await montado();
+    expect(result.current.degraded).toEqual([]);
+    expect(result.current.liveStatus).toBe("ready");
+  });
+
+  it("el frame `live_health` enciende el aviso CON el topic traducido", async () => {
+    const { socket, result } = await montado();
+    act(() => socket.emit("live_health", salud("incidents", true, "incident: LockTimeout")));
+    expect(result.current.degraded).toEqual([
+      { topic: "incidents", label: "INCIDENTES", detail: "incident: LockTimeout" },
+    ]);
+    // Y NO es «sin conexión»: el transporte sigue listo, que es justo la
+    // distinción que esta ficha existe para poder hacer.
+    expect(result.current.liveStatus).toBe("ready");
+  });
+
+  it("`degraded: false` lo APAGA (un aviso perpetuo es otra mentira)", async () => {
+    const { socket, result } = await montado();
+    act(() => socket.emit("live_health", salud("incidents", true, "x")));
+    act(() => socket.emit("live_health", salud("incidents", false)));
+    expect(result.current.degraded).toEqual([]);
+  });
+
+  it("acumula topics distintos y cada uno se apaga por su cuenta", async () => {
+    const { socket, result } = await montado();
+    act(() => socket.emit("live_health", salud("incidents", true, "a")));
+    act(() => socket.emit("live_health", salud("features:s-1", true, "b")));
+    // Orden ESTABLE por topic (no por llegada): dos degradaciones simultáneas no
+    // pueden bailar en pantalla según cuál avisó primero.
+    expect(result.current.degraded.map((d) => d.label)).toEqual(["SISMOGRAMA", "INCIDENTES"]);
+    act(() => socket.emit("live_health", salud("incidents", false)));
+    expect(result.current.degraded.map((d) => d.topic)).toEqual(["features:s-1"]);
+  });
+
+  it("al caerse el socket se OLVIDA la degradación: el servidor no la recuerda", async () => {
+    // Al reconectar, el hub registra un suscriptor NUEVO y limpio. Arrastrar el
+    // aviso del socket anterior pintaría una degradación que ya no existe —y que
+    // nadie podría apagar, porque su `degraded: false` nunca llegará.
+    const { socket, result } = await montado();
+    act(() => socket.emit("live_health", salud("incidents", true, "x")));
+    act(() => socket.setStatus("connecting"));
+    expect(result.current.degraded).toEqual([]);
   });
 });

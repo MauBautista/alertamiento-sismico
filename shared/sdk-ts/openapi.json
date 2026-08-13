@@ -4534,6 +4534,43 @@
         "title": "IncidentPage",
         "type": "object"
       },
+      "LiveHealthFrame": {
+        "description": "[T-2.129] Estado del CANAL live de este socket, dicho SIN cerrarlo.\n\nEs la respuesta al defecto que dejó fichado ``T-2.121``: cuando el hub tenía\nalgo que entregar y no pudo leerlo, la única forma de avisar al operador era\ntumbarle la conexión (cierre 4503), porque el estado del transporte era el\nÚNICO canal servidor→pantalla que existía. Cerrar por un tropiezo de una\nconsulta es desproporcionado —arrastra re-handshake, re-subscribe y ventana\nde backoff— y además dice la verdad equivocada: la sesión estaba sana.\n\n``degraded: false`` es tan importante como el ``true``: un aviso que no sabe\napagarse es otra mentira en pantalla (regla de oro 7). ``topic`` acota el\ndaño — que falle ``features:<site>`` no es que el SOC esté ciego.\n\n``detail`` es el nombre TÉCNICO de lo que falló (``LockTimeout``,\n``OperationalError``…), para el soporte y el log. La pantalla no lo lee como\nfrase: rotula la degradación por su cuenta.",
+        "properties": {
+          "degraded": {
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "type": {
+            "const": "live_health",
+            "default": "live_health",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "degraded",
+          "topic"
+        ],
+        "title": "LiveHealthFrame",
+        "type": "object"
+      },
       "LonLat": {
         "description": "Punto geográfico plano (lon/lat WGS84).",
         "properties": {

@@ -280,7 +280,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
      emergencia; interrumpir al lector de pantalla lo pondría por encima de la
      alerta en el canal auditivo aunque esté abajo en el visual. -->
 <div id="banner-baja" class="hide" role="status">
-  <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">📋 DADO DE BAJA EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO</span>
+  <span style="font:700 15px/1 var(--f-ui);letter-spacing:0.06em;color:var(--tk-warn)">📋 RETIRADO EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO</span>
   <span style="font:400 12px/1.3 var(--f-ui);color:var(--tk-fg-2);max-width:520px">SASMEX sigue actuando la sirena y los relés · deja de recibir config firmada y comandos de la nube · avise a TAKAB si no era intencional</span>
   <span class="mono" id="baja-meta" style="margin-left:auto;font-weight:700;font-size:12px;color:var(--tk-warn)"></span>
 </div>
@@ -308,6 +308,11 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
         <span class="seclabel">Movimiento del suelo · 4 canales · ventana 60 s</span>
         <span class="meta" id="decim-note">S/D</span>
         <span id="nocal-pill" class="hide" style="padding:3px 8px;border-radius:4px;background:rgba(255,193,7,0.18);font:700 10px/1 var(--f-ui);letter-spacing:0.10em;color:var(--tk-warn);white-space:nowrap">SIN CALIBRAR · UNIDADES rel.</span>
+        <!-- [T-2.85.a] La OTRA mitad. El panel gritaba `SIN CALIBRAR` y, cuando
+             SÍ había calibración, jamás decía de dónde venía — y de esa
+             procedencia depende que el PGA esté en `g` o sea un número
+             relativo. `calibration.source` viajaba en `status()` sin pintarse. -->
+        <span id="cal-pill" class="hide" style="padding:3px 8px;border-radius:4px;background:rgba(240,242,245,0.06);font:700 10px/1 var(--f-ui);letter-spacing:0.10em;color:var(--tk-fg-3)"></span>
         <div style="margin-left:auto;display:flex;gap:4px" role="group" aria-label="Variante de ondas y mapa">
           <button class="chip" data-variant="A">A · trazas</button>
           <button class="chip" data-variant="B">B · envolvente</button>
@@ -416,6 +421,20 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
         <span id="lora-meta" class="meta" style="margin-left:auto"></span>
       </div>
       <div id="lora-rows" style="display:flex;flex-direction:column;gap:7px"></div>
+    </div>
+
+    <!-- [T-2.85.a] Resultado de PROBAR ACTUADORES, relé a relé.
+         El botón hace LECTURA DE RETORNO sobre el gas y los ascensores —ejerce
+         físicamente el equipamiento del edificio— y hasta aquí no enseñaba si
+         había pasado: los `held`/`pulsed`/`readback_ok` viajaban en `status()` y
+         sólo aparecían en los datos de demo de este mismo archivo.
+         Es la única prueba que el operador puede hacer él solo. -->
+    <div class="card stat-card" id="test-card">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="seclabel">Última prueba de actuadores</span>
+        <span id="test-state" class="mono" style="margin-left:auto;padding:3px 8px;border-radius:4px;background:rgba(240,242,245,0.06);font-weight:700;font-size:10px;color:var(--tk-fg-3)">S/D</span>
+      </div>
+      <div id="test-rows" style="display:flex;flex-direction:column;gap:7px"></div>
     </div>
 
     <div class="card" id="bitacora">
@@ -669,7 +688,7 @@ function baseStatus(){
       oldest_pending_age_s:null, checked_age_s:42, phase:'idle',
       durable:true, uploaded_total:6, discarded_no_data_total:0, failed_total:0,
       extract_failed_total:0, last_result:'uploaded', last_result_age_s:1830, stale_after_s:3600},
-    drill: null, actuation_test: {active:false, results:null},
+    drill: null, actuation_test: {active:false, results:null, finished_at:null, age_s:null},
     test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false},
     events: [ {at: now, action:'boot', via:'boot'} ],
   };
@@ -698,8 +717,15 @@ const SCENES = {
   simulacro: () => { const s = baseStatus(); s.siren_sounding=true;
     s.drill = {active:true, drill_id:'DRILL-2026-0730-01', elapsed_s:252, total_s:480}; return s; },
   prueba_actuadores: () => { const s = baseStatus(); s.siren_sounding=true;
-    s.actuation_test = {active:true, results:{ok:true, reason:null, relays:{siren:{held:true,readback_ok:true},
-      gas_valve:{pulsed:true,readback_ok:true}, elevator:{pulsed:true,readback_ok:true}, door_retainer:{pulsed:true,readback_ok:true}}}};
+    /* [T-2.85.a] La demo trae un relé que NO confirma y otro que ni se probó:
+       la escena existe para enseñar la TARJETA de resultado, y una en la que
+       todo sale bien no enseña la única distinción que importa. */
+    s.actuation_test = {active:false, finished_at:new Date().toISOString(), age_s:6,
+      results:{ok:false, reason:'readback falló en: gas_valve', relays:{
+        siren:{held:true, readback_ok:true, fail_safe:'normally_open', energized:true},
+        strobe:{held:true, readback_ok:true, fail_safe:'normally_open', energized:true},
+        gas_valve:{pulsed:true, readback_ok:false, fail_safe:'fail_close', energized:true},
+        elevator:{pulsed:true, readback_ok:true, fail_safe:'normally_open', energized:false}}}};
     return s; },
   wr1: () => { const s = baseStatus(); s.test_mode = {active:true, remaining_s:87}; return s; },
   sin_senal: () => { const s = baseStatus(); s.last_tier='manual_only';
@@ -737,7 +763,7 @@ const SCENES = {
     seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
     shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null, admin_state:'active'},
     evidence:null, /* [T-2.67] módulo de respaldo aún sin arrancar ⇒ S/D honesto */
-    drill:null, actuation_test:{active:false, results:null}, test_mode:{active:false, remaining_s:0},
+    drill:null, actuation_test:{active:false, results:null, finished_at:null, age_s:null}, test_mode:{active:false, remaining_s:0},
     audio:null, events:[] }),
   dato_retenido: () => baseStatus(),
 };
@@ -1006,6 +1032,16 @@ function render(){
 
   /* ondas: cabecera + carriles */
   $('nocal-pill').classList.toggle('hide', cal);
+  /* [T-2.85.a] Con calibración, DE DÓNDE vino. `calibrated` se deriva de que la
+     procedencia no esté vacía (`_calibration_section`), así que una calibración
+     sin fuente es una contradicción del servidor: se declara en ámbar en vez de
+     callarla — un `g` sin procedencia no es comparable con nada. */
+  const calSrc = (st.calibration && st.calibration.source) || '';
+  $('cal-pill').classList.toggle('hide', !cal);
+  if (cal){
+    $('cal-pill').textContent = calSrc ? ('CALIBRADO · ' + calSrc) : 'CALIBRADO · PROCEDENCIA S/D';
+    $('cal-pill').style.color = calSrc ? C.fg3 : C.warn;
+  }
   $('decim-note').textContent = S.nominalSr ? (S.nominalSr.toFixed(0) + ' sps del sensor · la decimación de lo servido se declara por petición') : 'S/D';
   renderLanes(st, cal);
 
@@ -1015,6 +1051,7 @@ function render(){
   renderRoseInfo(st);
   renderSalud(st);
   renderEvidence(st);
+  renderActuationTest(st);
   renderLora(st);
   renderEvents(st);
   renderSsn();
@@ -1113,7 +1150,10 @@ function renderHistory(st, cal){
   const noise = sh.noise_floor || {};
   const trendGlyph = noise.trend === 'rising' ? '↗ rising' : noise.trend === 'falling' ? '↘ falling' : '→ stable';
   const items = [
-    ['Eventos watch / restringido / evacuar', (ev.watch||0)+' / '+(ev.restricted||0)+' / '+(ev.evacuate_or_hold||0), C.fg1],
+    /* [T-2.85.a] `manual_only` entra en la cuenta: es el tier que dice que los
+       SENSORES se degradaron —el gabinete dejó de poder decidir por instrumento—
+       y quedaba fuera del rótulo, contado por el gabinete y nunca enseñado. */
+    ['Eventos watch / restringido / evacuar / manual', (ev.watch||0)+' / '+(ev.restricted||0)+' / '+(ev.evacuate_or_hold||0)+' / '+(ev.manual_only||0), C.fg1],
     ['Ruido de fondo ahora', noise.current_mg == null ? 'S/D' : noise.current_mg.toFixed(2)+' mg', noise.current_mg == null ? C.warn : C.ok],
     ['Tendencia del piso', trendGlyph, noise.trend === 'stable' ? C.ok : C.warn],
     ['Piso conocido del sensor', (noise.baseline_low_mg != null ? noise.baseline_low_mg : 0.6)+' – '+(noise.baseline_high_mg != null ? noise.baseline_high_mg : 1.1)+' mg (medido)', C.fg3],
@@ -1394,6 +1434,102 @@ function renderEvidence(st){
     ' · el panel jamás recorre el directorio';
   box.appendChild(meta);
 }
+/* [T-2.85.a] Resultado de la prueba local de actuación, relé a relé.
+ *
+ * Cuatro desenlaces que NO se pueden colapsar en "falló", porque cada uno pide
+ * una acción distinta (regla de oro 7 y §6.0 del manual de operación):
+ *
+ *   · RETORNO OK       — el relé fue y volvió, y el gabinete lo LEYÓ.
+ *   · NO CONFIRMÓ      — se le ordenó y la lectura de retorno no cuadró. Rojo:
+ *                        puede que ese canal no actúe en un sismo.
+ *   · SIN RELÉ         — la config declara el canal y no hay relé detrás.
+ *   · NO SE PROBÓ      — la prueba ni llegó a tocarlo (se abortó por una alerta
+ *                        real, o el canal se instaló después). NO es un fallo, y
+ *                        pintarlo como tal mandaría a alguien a buscar una
+ *                        avería que no existe.
+ */
+function actuationTestView(at){
+  if (!at) return {label:'S/D · SIN MÓDULO DE PRUEBA', color:C.warn};
+  if (at.active) return {label:'EN CURSO', color:C.cyan};
+  const r = at.results;
+  if (!r) return {label:'SIN PRUEBA DESDE EL ARRANQUE', color:C.fg3};
+  const canales = Object.keys(r.relays || {});
+  /* Rechazo en seco: el gpio se niega a probar con una alerta o una protección
+     viva. No es un fallo del equipamiento y no puede leerse como tal. */
+  if (!canales.length) return {label:'PRUEBA RECHAZADA · NO SE EJERCITÓ NADA', color:C.warn};
+  const fallidos = canales.filter(c => r.relays[c].readback_ok !== true).length;
+  if (fallidos) return {label:fallidos + (fallidos === 1 ? ' RELÉ SIN CONFIRMAR' : ' RELÉS SIN CONFIRMAR'), color:C.crit};
+  return {label:canales.length + ' RELÉS · RETORNO CONFIRMADO', color:C.ok};
+}
+function renderActuationTest(st){
+  const box = $('test-rows'); if (!box) return; box.textContent = '';
+  const at = st.actuation_test;
+  const view = actuationTestView(at);
+  const pill = $('test-state');
+  pill.textContent = view.label; pill.style.color = view.color;
+  pill.style.background = view.color === C.ok ? 'rgba(240,242,245,0.06)'
+    : view.color === C.crit ? 'rgba(255,82,82,0.15)'
+    : view.color === C.cyan ? 'var(--tk-cyan-tint-soft)' : 'rgba(255,193,7,0.18)';
+  const nota = (txt, color) => { const s = document.createElement('span');
+    s.style.cssText = 'font:400 11px/1.4 var(--f-ui);color:' + (color || C.fg3);
+    s.textContent = txt; box.appendChild(s); };
+  const fila = (lbl, val, color) => {
+    const r = document.createElement('div'); r.className = 'kv';
+    const d = document.createElement('span'); d.className = 'statdot'; d.style.background = color;
+    const a = document.createElement('span'); a.className = 'lbl'; a.textContent = lbl;
+    const f = document.createElement('span'); f.className = 'fill';
+    const v = document.createElement('span'); v.className = 'val'; v.textContent = val; v.style.color = color;
+    r.append(d, a, f, v); box.appendChild(r);
+  };
+  if (!at){ nota('PRUEBA DE ACTUADORES NO DISPONIBLE EN ESTE ARRANQUE', C.warn); return; }
+  if (at.active){ nota('EJERCITANDO EL GABINETE · el resultado por relé aparece al terminar', C.cyan); return; }
+  const res = at.results;
+  if (!res){
+    nota('Nadie ha pulsado PROBAR ACTUADORES desde que arrancó el gabinete · ' +
+         'la prueba ejercita sirena, estrobo, gas, ascensores y puertas con lectura de retorno', C.fg3);
+    return;
+  }
+  /* CUÁNDO. Un `RETORNO CONFIRMADO` sin fecha es un dato congelado pintado en
+     verde, que es peor que no pintar nada. La edad la deriva el GABINETE
+     (`_actuation_test_section`): restar el reloj del navegador contra el del Pi
+     ya costó una corrección en esta pantalla. */
+  const hora = at.finished_at ? String(at.finished_at).slice(11, 19) + ' UTC' : 'HORA S/D';
+  fila('Terminó', hora + ' · hace ' + fmtAge(at.age_s), at.finished_at ? C.fg2 : C.warn);
+  if (res.reason) nota(String(res.reason), res.ok ? C.fg3 : C.crit);
+  const relays = res.relays || {};
+  /* Los canales que la CONFIG declara instalados, no sólo los que la prueba
+     alcanzó a tocar: es la única forma de distinguir "no confirmó" de "ni se
+     probó", y esa diferencia es la que decide si alguien llama a soporte. */
+  const declarados = (st.relays_status && st.relays_status.installed) || [];
+  const canales = declarados.slice();
+  Object.keys(relays).forEach(c => { if (canales.indexOf(c) < 0) canales.push(c); });
+  if (!canales.length){ nota('SIN CANALES QUE PROBAR · el sitio no declara actuadores', C.warn); return; }
+  canales.forEach(c => {
+    const lbl = (RELAY_META[c] || {}).label || String(c).toUpperCase();
+    const m = relays[c];
+    if (!m){ fila(lbl, 'NO SE PROBÓ', C.warn); return; }
+    /* El estado ELÉCTRICO en que quedó, que no se deduce del veredicto: el gas
+       está en `fail_close` y las puertas en NC, así que "desenergizado" es la
+       posición de PROTECCIÓN en unos canales y la de reposo en otros (§6.3 del
+       manual). Se pinta el hecho, no una interpretación. */
+    const modo = (m.fail_safe ? ' · fail-safe ' + m.fail_safe : '') +
+      (m.energized == null ? '' : (m.energized ? ' · ENERGIZADO' : ' · DESENERGIZADO'));
+    /* QUÉ se le hizo al relé, dicho por el propio resultado y no supuesto: los
+       del reflejo se SOSTIENEN (para oírlos/verlos), los protectores hacen un
+       PULSO. Un canal sin ninguna de las dos marcas no se ejercitó — y entonces
+       un `readback_ok` no significa nada, así que tampoco se pinta en verde. */
+    const acto = m.held ? 'SOSTENIDO' : (m.pulsed ? 'PULSO' : 'SIN EJERCITAR');
+    if (m.readback_ok === true){
+      fila(lbl, acto + ' · RETORNO OK' + modo, acto === 'SIN EJERCITAR' ? C.warn : C.ok);
+    } else if (acto === 'SIN EJERCITAR'){
+      fila(lbl, 'SIN RELÉ DETRÁS · NO SE PUDO PROBAR' + modo, C.crit);
+    } else {
+      fila(lbl, acto + ' · NO CONFIRMÓ EL RETORNO' + modo, C.crit);
+    }
+  });
+  nota('La prueba NO es una alerta: no abre incidente ni notifica. ' +
+       'Un relé sin confirmar puede no actuar en un sismo — avisa a soporte.', C.fg3);
+}
 function renderEvents(st){
   const box = $('event-rows'); box.textContent = '';
   const events = (st.events || []).slice(0, 10);
@@ -1474,11 +1610,11 @@ function cmpModel(){
     measured: null, measuredNote: null, measuredRelative: false,
   };
   if (!sta.self){
-    model.measuredNote = 'SIN DATO MEDIDO — SOLO LA ESTACIÓN PROPIA MIDE';
+    model.measuredNote = 'S/D · NO MEDIDO — SOLO LA ESTACIÓN PROPIA MIDE';
   } else {
     const bucket = measuredBucketFor(ev.at);
     if (!bucket){
-      model.measuredNote = 'SIN DATO MEDIDO EN ESTA VENTANA (24 h · DESDE EL ARRANQUE)';
+      model.measuredNote = 'S/D · NO MEDIDO EN ESTA VENTANA (24 h · DESDE EL ARRANQUE)';
     } else if (st.calibration && st.calibration.calibrated === false){
       /* sin calibrar el PGA es RELATIVO: jamás se pinta sobre el eje en g */
       model.measuredRelative = true;

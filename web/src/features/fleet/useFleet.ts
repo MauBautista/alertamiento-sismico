@@ -5,6 +5,7 @@ import { listGatewaysFleetGatewaysGet, listRuleSetsRuleSetsGet } from "@takab/sd
 import type { GatewayOut, RuleSetOut } from "@takab/sdk";
 
 import { useSessionStore } from "../../auth/session.store";
+import { SD, SIN_ENLACE } from "./estadoGlosario";
 
 /** Cadencia del inventario; los heartbeats de device_health son por transición
  * + latido periódico, no hay nada que ganar refrescando más rápido. */
@@ -132,7 +133,7 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
     const flag = equipment[EQUIPMENT_KEY[key] ?? key];
     return typeof flag === "boolean" ? flag : true;
   };
-  const linked = gw.derived_state !== "SIN ENLACE";
+  const linked = gw.derived_state !== SIN_ENLACE;
   // El censo VIAJA en el latido; `null` = flota/SDK anterior a 1.10.0, que no
   // opina — y ahí se conserva la conducta previa (el enlace es lo único que se
   // sabe). Un `null` NO se lee como avería: sería marcar S/D a toda la flota
@@ -157,7 +158,7 @@ function relaysFor(gw: GatewayOut, ruleSets: RuleSetOut[] | undefined): FleetRel
     .map(([key]) => ({
       key,
       label: RELAY_LABEL[key] ?? key.toUpperCase(),
-      wiring: "S/D",
+      wiring: SD,
       armed,
     }));
   return [...declared, ...undeclared];

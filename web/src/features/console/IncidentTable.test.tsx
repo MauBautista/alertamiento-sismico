@@ -184,6 +184,62 @@ describe("IncidentTable", () => {
   });
 });
 
+/* =====================================================================
+   [T-2.129] DEGRADADO ≠ SIN CONEXIÓN — tres estados, no dos
+   ===================================================================== */
+
+describe("[T-2.129] la pastilla del canal live distingue degradado de desconectado", () => {
+  const DEGRADADO = [{ topic: "incidents", label: "INCIDENTES", detail: "incident: LockTimeout" }];
+
+  it("canal sano: ● LIVE, sin aviso", () => {
+    renderTable();
+    expect(screen.getByTestId("live-pill")).toHaveTextContent("● LIVE");
+    expect(screen.queryByTestId("live-degraded")).toBeNull();
+  });
+
+  it("canal DEGRADADO: la pastilla lo dice y NO dice «SIN LIVE»", () => {
+    // La diferencia importa y no es cosmética: «SIN LIVE» le dice al operador
+    // que no le llega nada —y por tanto que mire el REST—; «DEGRADADO» le dice
+    // que el canal SÍ está entregando pero que se perdió algo por el camino, que
+    // es la única de las dos situaciones en la que la cola puede estar
+    // incompleta pareciendo completa.
+    renderTable({ liveStatus: "ready", degraded: DEGRADADO });
+    const pill = screen.getByTestId("live-pill");
+    expect(pill).toHaveTextContent("● LIVE DEGRADADO");
+    expect(pill.textContent).not.toContain("SIN LIVE");
+  });
+
+  it("y explica QUÉ se degradó, sin escupir el error técnico como rótulo", () => {
+    renderTable({ liveStatus: "ready", degraded: DEGRADADO });
+    const aviso = screen.getByTestId("live-degraded");
+    expect(aviso).toHaveTextContent("INCIDENTES");
+    expect(aviso).toHaveAttribute("role", "status");
+    // El detalle técnico va al `title` (soporte), no al texto que se lee a
+    // gritos en una sala de crisis.
+    expect(aviso).toHaveAttribute("title", expect.stringContaining("LockTimeout"));
+  });
+
+  it("varios topics degradados se enumeran, no se resumen en «algo falla»", () => {
+    renderTable({
+      liveStatus: "ready",
+      degraded: [
+        { topic: "incidents", label: "INCIDENTES", detail: null },
+        { topic: "features:s-a", label: "SISMOGRAMA", detail: null },
+      ],
+    });
+    const aviso = screen.getByTestId("live-degraded");
+    expect(aviso).toHaveTextContent("INCIDENTES");
+    expect(aviso).toHaveTextContent("SISMOGRAMA");
+  });
+
+  it("SIN CONEXIÓN manda sobre degradado: primero recupera el canal", () => {
+    // Con el socket caído, «DEGRADADO» sería ruido: no hay canal que degradar.
+    renderTable({ liveStatus: "connecting", degraded: DEGRADADO });
+    expect(screen.getByTestId("live-pill")).toHaveTextContent("● SIN LIVE");
+    expect(screen.queryByTestId("live-degraded")).toBeNull();
+  });
+});
+
 describe("formatPga (T-1.50)", () => {
   it("null = sin medición; un pico real diminuto jamás se imprime como 0.000g", async () => {
     const { formatPga } = await import("./IncidentTable");
