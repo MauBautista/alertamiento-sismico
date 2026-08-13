@@ -217,8 +217,16 @@ def test_las_divergencias_estan_declaradas_con_su_arreglo_exacto():
     """Lo que todavía NO está unificado se declara, con el fichero y la línea.
 
     Igualdad contra la lista de ejes: una divergencia no puede aparecer sin que
-    el eje exista, y cada una lleva quién es su dueño — las dos abiertas hoy caen
-    fuera de esta superficie (`StateFrame` y el productor de la nube)."""
+    el eje exista, y cada una lleva quién es su dueño — la que sigue abierta cae
+    fuera de esta superficie (`StateFrame`, en la consola).
+
+    **[2026-08-13] `pieza_muda` PAGADA.** El productor de la nube emitía
+    `RELÉS ILEGIBLES` donde el panel dice `NO CONTESTA`; ahora emite
+    `RELÉS · NO CONTESTA` (`api/src/takab_api/schemas/fleet.py`) y su entrada se
+    borró aquí en el mismo cambio. **ESTA LISTA SOLO PUEDE BAJAR**, y por eso se
+    compara por igualdad: una divergencia que sobrevive a su arreglo documenta
+    un defecto que ya no existe y esconde el que sí queda.
+    """
     g = _glosario()
     for div in g["divergencias"]:
         assert div["eje"] in g["ejes"], f"divergencia sobre un eje que no existe: {div['eje']}"
@@ -227,7 +235,59 @@ def test_las_divergencias_estan_declaradas_con_su_arreglo_exacto():
         assert div["panel"] != div["consola"], (
             f"{div['eje']}: declarada como divergencia y los dos términos son iguales"
         )
-    assert {d["eje"] for d in g["divergencias"]} == {"vejez", "pieza_muda"}, (
+    assert {d["eje"] for d in g["divergencias"]} == {"vejez"}, (
         "las divergencias abiertas cambiaron: si arreglaste una, borra su entrada "
         "del glosario; si apareció otra, decláralas todas"
+    )
+
+
+# ------------------------------------------------- el manual (T-2.85.b · §6.0)
+#
+# El manual de operación es la TERCERA copia del glosario, y la que lee una
+# persona que no puede consultar el código. La §4 llevaba `DADO DE BAJA EN LA
+# NUBE` cuando el banner del panel decía ya `RETIRADO EN LA NUBE`: exactamente
+# el modo de fallo que esta ficha existe para cerrar, sólo que en papel. Una
+# copia sin vigilar diverge; ésta ya lo había hecho.
+
+_MANUAL = _RAIZ / "takab-docs" / "MANUAL-OPERACION-TAKAB.md"
+
+
+@pytest.mark.parametrize("eje", sorted(_glosario()["ejes"]))
+def test_el_manual_de_operacion_ensena_el_termino_de_cada_eje(eje):
+    """§6.0 nombra los diez ejes con la palabra exacta de las dos pantallas.
+
+    Se comprueban los DOS lados: el operador llama a soporte, y quien contesta
+    mira la consola. Si el manual sólo enseñara el vocabulario del panel, la
+    conversación seguiría siendo una traducción hecha de memoria.
+    """
+    texto = _MANUAL.read_text("utf-8")
+    d = _glosario()["ejes"][eje]
+    for lado in ("panel", "consola"):
+        termino = d[lado]
+        if termino:
+            assert termino in texto, (
+                f"el manual de operación no enseña «{termino}» ({lado}, eje «{eje}»). "
+                "§6.0 es el único sitio donde un operador puede aprender este "
+                "vocabulario; si el glosario cambia y el manual no, la persona que "
+                "está frente al gabinete y la que mira la consola dejan de hablar igual."
+            )
+
+
+def test_el_manual_no_conserva_el_vocabulario_viejo_de_los_banners():
+    """Los rótulos que el panel ya no dice tampoco pueden seguir en el manual.
+
+    Medido: el manual mandaba buscar `📋 DADO DE BAJA EN LA NUBE`, un letrero
+    que el panel dejó de pintar. Un manual que nombra un letrero inexistente
+    hace dudar de la pantalla, que es lo último que debe pasar frente a un
+    gabinete.
+    """
+    manual = _MANUAL.read_text("utf-8")
+    panel = _INDEX.read_text("utf-8")
+    huerfanos = [
+        rotulo
+        for rotulo in re.findall(r"`(📋|🧪|🔧|🔶|🔒)\s*([^`]+)`", manual)
+        if (texto := rotulo[1].split(" · ")[0].strip()) and texto not in panel
+    ]
+    assert not huerfanos, "el manual nombra letreros que el panel ya no pinta:\n" + "\n".join(
+        f"  · {e} {t}" for e, t in huerfanos
     )

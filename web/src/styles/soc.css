@@ -1756,7 +1756,35 @@ body {
    descarta ámbar (es el simulacro) y cian (es la agenda) por escrito— así que
    el concepto que faltaba se declaró: `--tk-status-maintenance`, el cuarto
    estado que no es del semáforo porque no dice cómo está el equipo, dice que
-   alguien lo silenció a sabiendas. Mismo #A78BFA: cero cambio visual. */
+   alguien lo silenció a sabiendas. Mismo #A78BFA: cero cambio visual.
+
+   [T-2.137 · 2026-08-13] EL PRIMER PÁRRAFO DE ARRIBA AFIRMABA ALGO FALSO, y lo
+   afirmó un ciclo entero: no era el mismo color que el `banner-wr1` del panel.
+   El panel declaraba `--tk-violet` `#7C4DFF` —un nombre que el paquete de
+   tokens no conoce— y pintaba el TEXTO de su banner con un TERCER violeta a
+   fuego, `#B79CFF`, inline en el marcado y por tanto invisible para cualquier
+   guardia que sólo mire custom properties. Tres tonos para la única señal que
+   dice "este equipo NO va a alertar", que es justo la que se lee en las dos
+   pantallas y bajo presión.
+
+   Se unificó en UN valor, `#A78BFA`, y la razón es medida, no estética (WCAG
+   2.x, cada color sobre el tinte de su propio banner):
+
+     rol                                       #7C4DFF   #A78BFA   umbral
+     texto del banner sobre su tinte (panel)     2.86      4.53     4.5  (AA)
+     texto de `.soc-maint` (esta regla)          2.65      4.69     4.5  (AA)
+     borde del banner contra su propio tinte     2.86      4.53     3.0  (no-texto)
+
+   `#7C4DFF` REPRUEBA en los tres roles; sólo sobrevivía porque el panel nunca
+   lo usó como texto. El panel no puede importar `@takab/design-tokens` (se
+   sirve como un único fichero estático desde un Pi sin build ni red), así que
+   su copia queda vigilada por `edge/tests/test_local_api_panel.py`, con el
+   mismo patrón que el glosario de T-2.85.b: un censo por TONO y no una lista
+   de hexes conocidos —una lista sólo caza el violeta que ya sabíamos que
+   existía, y el defecto de esta ficha fue un cuarto que nadie enumeró—.
+
+   Aquí no cambia un píxel: la consola ya pintaba `#A78BFA`. Lo que cambia es
+   que ahora el panel pinta el mismo, y que este comentario dice la verdad. */
 .soc-maint {
   background: rgba(167, 139, 250, 0.14);
   border: 1px solid var(--tk-status-maintenance);

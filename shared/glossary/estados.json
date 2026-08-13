@@ -150,17 +150,9 @@
       "eje": "vejez",
       "panel": "DATO RETENIDO",
       "consola": "DATOS RETENIDOS",
-      "por_que_sigue_abierta": "El literal de la consola vive en web/src/components/StateFrame.tsx, fuera de la superficie de flota.",
-      "arreglo": "En web/src/components/StateFrame.tsx, `DATOS RETENIDOS` → `DATO RETENIDO` (y su test).",
+      "por_que_sigue_abierta": "MEDIDO el 2026-08-13 (T-2.137): el literal se RENDERIZA en un solo sitio —web/src/components/StateFrame.tsx— pero se ASSERTA en diez pruebas repartidas por ocho ficheros de cuatro superficies ajenas (console/DetailPanel, console/DrillBanner, privacy/PrivacyConsentBanner, triage/IncidentTimeline, triage/PostEventSummary, triage/QuorumNodes, triage/StructuralTriage, triage/TriageDetail). Cambiar la palabra sin tocarlas deja la suite web en 12 ficheros rojos. No es un cambio de una línea: es un cambio de una línea y diez aserciones que hay que mover a la vez, y por eso pide su propio lote.",
+      "arreglo": "En web/src/components/StateFrame.tsx, `DATOS RETENIDOS` → `DATO RETENIDO`, Y las diez aserciones listadas arriba en el MISMO cambio (medidas con `npx vitest --run` tras cambiar el literal).",
       "dueno": "web/src/components/StateFrame.tsx"
-    },
-    {
-      "eje": "pieza_muda",
-      "panel": "NO CONTESTA",
-      "consola": "RELÉS ILEGIBLES",
-      "por_que_sigue_abierta": "El literal lo PRODUCE la nube (api/src/takab_api/schemas/fleet.py::RELAYS_ILEGIBLES) y la consola solo lo pinta; cambiarlo es un cambio de API.",
-      "arreglo": "En api/src/takab_api/schemas/fleet.py: `RELAYS_ILEGIBLES = \"RELÉS · NO CONTESTA\"` (y sus tests).",
-      "dueno": "api/src/takab_api/schemas/fleet.py"
     }
   ]
 }

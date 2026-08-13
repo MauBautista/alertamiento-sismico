@@ -411,8 +411,16 @@ def _value_color(out: dict, node_id: str, needle: str) -> str:
 
 
 def _root_vars() -> dict[str, str]:
-    """Custom properties declaradas en el `:root` del propio `index.html`."""
-    html = _INDEX.read_text("utf-8")
+    """Custom properties DECLARADAS en el `:root` del propio `index.html`.
+
+    Los comentarios CSS se quitan antes de leer: el `:root` de este panel
+    documenta por qué vale cada color, y varias de esas explicaciones citan el
+    valor viejo que reemplazaron. Contarlas convertiría cada explicación en una
+    declaración fantasma —`--tk-violet` seguía «existiendo» sólo porque el
+    comentario de T-2.137 cuenta que dejó de existir—. Misma disciplina que
+    `estadoGlosario.test.ts` con la prosa de la consola.
+    """
+    html = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
     inicio = html.index(":root{")
     bloque = html[inicio + len(":root{") : html.index("}", inicio)]
     return {m[1]: m[2].strip() for m in re.finditer(r"(--tk-[a-z0-9-]+)\s*:\s*([^;]+)", bloque)}
@@ -513,6 +521,147 @@ def test_la_paleta_js_de_los_canvas_no_se_separa_de_la_css():
         elif valor.upper() != root[css].upper():
             divergen.append(f"C.{clave} = {valor} ≠ {css} = {root[css]}")
     assert not divergen, "las dos paletas del panel se separaron:\n" + "\n".join(divergen)
+
+
+# ------------------------------------------------- [T-2.137] el violeta único
+#
+# `soc.css` AFIRMABA POR ESCRITO que su violeta «es el mismo color que el
+# `banner-wr1` del panel LAN». No lo era, y de tres formas a la vez:
+#
+#   · el panel declaraba `--tk-violet:#7C4DFF`, un nombre que el paquete de
+#     tokens no conoce (por eso el espejo de arriba no lo veía: solo cruzaba
+#     `--tk-fg-*` y `--tk-surface-*`);
+#   · la consola pinta `--tk-status-maintenance` = `#A78BFA`;
+#   · y el TEXTO del banner del panel no era ninguno de los dos, sino un
+#     tercer violeta a fuego, `#B79CFF`, inline en el marcado — invisible para
+#     cualquier espejo que solo mire custom properties.
+#
+# Las dos superficies dicen lo mismo —«este equipo NO va a alertar»— y quien
+# opera mira las dos. Medido (WCAG 2.x, sobre el tinte de cada banner):
+#
+#   rol                                     #7C4DFF   #A78BFA   umbral
+#   texto del banner sobre su tinte (panel)   2.86      4.53      4.5 (AA)
+#   texto de `.soc-maint` (consola)           2.65      4.69      4.5 (AA)
+#   borde del banner contra su propio tinte   2.86      4.53      3.0 (no-texto)
+#
+# `#7C4DFF` REPRUEBA en los tres roles; solo sobrevivía porque el panel jamás
+# lo usó como texto. Gana `#A78BFA`, que es además el que ya vive en el
+# paquete. El panel no puede importarlo (se sirve como un único fichero
+# estático desde un Pi sin build ni red), así que su copia queda vigilada aquí.
+
+
+def _hex_a_rgb(color: str) -> tuple[int, int, int]:
+    crudo = color.lstrip("#")
+    return (int(crudo[0:2], 16), int(crudo[2:4], 16), int(crudo[4:6], 16))
+
+
+def _es_violeta(r: int, g: int, b: int) -> bool:
+    """Azul-violeta saturado: el rango del que hablan las dos pantallas.
+
+    Se mide por TONO y no por lista de hexes conocidos: una lista solo caza el
+    violeta que ya sabíamos que existía, y el defecto de esta ficha fue
+    justamente un cuarto tono que nadie había enumerado.
+    """
+    return b > 120 and b - max(r, g) > 40 and r > g
+
+
+def _violetas_del_panel() -> dict[str, str]:
+    """Todo violeta del panel —`#RRGGBB` y `rgba()`— con dónde aparece.
+
+    Sin comentarios (HTML, CSS y JS): citar el color que se retiró no es
+    pintarlo, y contarlo dejaría el censo imposible de documentar.
+    """
+    html = _INDEX.read_text("utf-8")
+    sin_comentarios = re.sub(r"<!--[\s\S]*?-->", "", html)
+    sin_comentarios = re.sub(r"/\*[\s\S]*?\*/", "", sin_comentarios)
+    hallados: dict[str, str] = {}
+    for m in re.finditer(r"#[0-9a-fA-F]{6}", sin_comentarios):
+        r, g, b = _hex_a_rgb(m.group(0))
+        if _es_violeta(r, g, b):
+            hallados[m.group(0).upper()] = "hex"
+    for m in re.finditer(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", sin_comentarios):
+        r, g, b = (int(m.group(i)) for i in (1, 2, 3))
+        if _es_violeta(r, g, b):
+            hallados[f"#{r:02X}{g:02X}{b:02X}"] = m.group(0)
+    return hallados
+
+
+def test_el_panel_no_tiene_mas_que_un_violeta_y_es_el_del_paquete():
+    """UN solo violeta en el panel, y el que manda el design system.
+
+    Eran tres: `--tk-violet:#7C4DFF`, el tinte `rgba(124,77,255,…)` y un
+    `#B79CFF` a fuego en el `<span>` del banner. El tercero es el que enseña la
+    lección: un espejo que solo compara custom properties no ve un color
+    escrito inline, y ahí es donde vivía el texto que la persona lee.
+    """
+    paquete = json.loads(_TOKENS_JSON.read_text("utf-8"))
+    canonico = paquete["--tk-status-maintenance"].upper()
+    hallados = _violetas_del_panel()
+    assert hallados, "el barrido no encontró NINGÚN violeta: si esto pasa, el resto miente"
+    intrusos = {c: donde for c, donde in hallados.items() if c != canonico}
+    assert not intrusos, (
+        "el panel pinta un violeta que no es `--tk-status-maintenance` "
+        f"({canonico}) del paquete:\n"
+        + "\n".join(f"  · {c} (como {donde})" for c, donde in sorted(intrusos.items()))
+        + "\nEl panel no puede importar el paquete: su copia se corrige aquí, "
+        "nunca al revés."
+    )
+
+
+def test_el_violeta_de_mantenimiento_del_panel_se_declara_con_el_nombre_del_paquete():
+    """La copia lleva el NOMBRE del token, no un alias local.
+
+    Con `--tk-violet` el espejo `test_la_paleta_del_panel_no_inventa_su_propia_
+    verdad` no tenía contra qué compararlo y la divergencia sobrevivió un ciclo
+    entero. Con el nombre del paquete, cualquier futuro cambio de valor en
+    `tokens.json` se ve desde aquí.
+    """
+    paquete = json.loads(_TOKENS_JSON.read_text("utf-8"))
+    root = _root_vars()
+    assert "--tk-violet" not in root, (
+        "`--tk-violet` no existe en `@takab/design-tokens`: el panel volvería a "
+        "tener un color propio que el design system no gobierna."
+    )
+    assert "--tk-status-maintenance" in root, (
+        "el panel dejó de declarar `--tk-status-maintenance`; el banner del modo "
+        "prueba WR-1 se pintaría desde un fallback."
+    )
+    assert root["--tk-status-maintenance"].upper() == paquete["--tk-status-maintenance"].upper(), (
+        f"panel {root['--tk-status-maintenance']} ≠ paquete {paquete['--tk-status-maintenance']}"
+    )
+
+
+def test_el_banner_wr1_se_lee_de_pie_frente_al_gabinete():
+    """El rótulo que dice «LA NUBE NO RECIBE ALERTAS» tiene que LEERSE.
+
+    Es de 13 px en negrita —no es «texto grande» de WCAG, que empieza en 18.66
+    px en negrita—, así que le toca el 4.5:1 de AA. Se mide sobre el tinte REAL
+    del banner (el violeta al 16 % compuesto sobre `--tk-surface-0`), no sobre
+    el fondo de la página: componer el alfa a mano es de donde salía la
+    impresión de que `#7C4DFF` valía como color de texto (2.86:1).
+    """
+    html = _INDEX.read_text("utf-8")
+    root = _root_vars()
+    violeta = root["--tk-status-maintenance"]
+
+    regla = re.search(r"#banner-wr1\{([^}]*)\}", html)
+    assert regla, "el banner del modo prueba WR-1 perdió su regla CSS"
+    alfa_txt = re.search(r"background:\s*rgba\([^)]*,\s*([0-9.]+)\s*\)", regla.group(1))
+    assert alfa_txt, f"el tinte del banner ya no es un rgba(): {regla.group(1)}"
+
+    alfa = float(alfa_txt.group(1))
+    vr, vg, vb = _hex_a_rgb(violeta)
+    sr, sg, sb = _hex_a_rgb(root["--tk-surface-0"])
+    tinte = "#{:02X}{:02X}{:02X}".format(
+        *(round(alfa * v + (1 - alfa) * s) for v, s in ((vr, sr), (vg, sg), (vb, sb)))
+    )
+
+    medido = _contraste(violeta, tinte)
+    assert medido >= _AA, (
+        f"el rótulo del banner WR-1 ({violeta}) sobre su propio tinte ({tinte}) "
+        f"mide {medido:.2f}:1, por debajo de AA ({_AA}). Es el letrero que avisa "
+        "de que la nube está ciega: si no se lee, no avisa."
+    )
 
 
 # --------------------------------------------------- contrato con el servidor

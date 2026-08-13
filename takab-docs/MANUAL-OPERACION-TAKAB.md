@@ -152,7 +152,7 @@ tapa al simulacro y a la prueba.
 | `🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL` | Ámbar | Hay un simulacro de voceo en curso | Nada. Si entra una alerta real, el simulacro se aborta solo y el letrero cambia a `SIMULACRO ABORTADO — ALERTA REAL EN CURSO` |
 | `🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL` | Cian | Alguien está probando sirena, gas, ascensores y puertas | Nada, pero **avisa por radio a la gente del edificio** antes de que alguien vea la sirena y se asuste |
 | `🧪 MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS` + `N s RESTANTES` | Violeta, con cuenta atrás | Un técnico armó una ventana de prueba. **El edificio sigue protegido igual en local**, pero durante esa ventana la nube no se entera de nada | Nada. **La ventana se apaga sola a los 120 segundos.** Este letrero se ve incluso encima de una alerta real, a propósito: para que sepas que la nube está ciega |
-| `📋 DADO DE BAJA EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO` | Ámbar | Alguien dio de baja este gabinete en la consola central. Sigue sonando la sirena y cerrando el gas, pero ya no recibe configuración ni órdenes de la nube | **Si no fue intencional, avisa a TAKAB.** Este letrero no caduca solo |
+| `📋 RETIRADO EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO` | Ámbar | Alguien **retiró** este gabinete en la consola central. Sigue sonando la sirena y cerrando el gas, pero ya no recibe configuración ni órdenes de la nube | **Si no fue intencional, avisa a TAKAB.** Este letrero no caduca solo |
 | `ORDEN RECHAZADA` | Ámbar, se va solo | El botón que pulsaste no se ejecutó | Ver §7, tabla de mensajes del PIN |
 
 `edge/takab_edge/local_api/index.html:246-290` (los letreros) y `:919-949` (cuándo sale cada uno).
@@ -288,6 +288,53 @@ Y una regla de color que vale para toda la pantalla:
 
 > **Ámbar = el sistema no sabe. Rojo = el sistema sabe que algo está mal. Verde = medido y
 > bueno.** Nunca verás verde sobre un dato que nadie midió.
+
+#### El vocabulario completo — y por qué la consola del SOC dice lo mismo
+
+Las tres palabras de arriba son las que más se confunden, pero no son todas. **El vocabulario
+de estado del sistema está escrito en un solo sitio**, `shared/glossary/estados.json`, y de ahí
+salen **las dos pantallas**: este panel y la consola web del SOC.
+
+Eso importa para ti aunque no uses la consola. Cuando llames a soporte, **la persona al otro
+lado está mirando la consola, no tu panel.** Si tú dices una palabra y su pantalla dice otra
+para el mismo hecho, los dos creéis que habláis de cosas distintas — y esa traducción, hecha de
+cabeza y bajo presión, es donde se cometen los errores caros. Por eso las dos pantallas usan la
+misma palabra siempre que puedan, y **cuando no pueden, es porque las dos no saben lo mismo**.
+
+| Qué pasa | En **este panel** | En la **consola** del SOC | Qué pide |
+|---|---|---|---|
+| No hay dato: nunca se midió, o el módulo que lo mide no está | `S/D` | `S/D` | Depende del dato. **Nunca se pinta en verde** |
+| El dato existe pero es viejo: es una foto congelada | `DATO RETENIDO` | `DATOS RETENIDOS` \* | No creerte nada de lo que ves hasta que refresque |
+| El módulo que **gobierna** algo no responde | `NO CONTESTA` | `NO CONTESTA` | **AHORA.** Lo más grave que dice cualquiera de las dos |
+| El módulo de relés no está corriendo | `DETENIDO` | — (no puede saberlo) | **AHORA.** Alarma manual del edificio lista |
+| El módulo de relés corre pero falló al leerse | `AVERÍA` | — (no puede saberlo) | **AHORA.** Alarma manual del edificio lista |
+| El gabinete y la nube no se hablan | `SIN ENLACE` | `SIN ENLACE` | Anotar. **El edificio sigue protegido** (§5) |
+| Alguien retiró el gabinete en la consola central | `RETIRADO` | `RETIRADO` | Si no fue intencional, avisar a TAKAB. No caduca solo |
+| **Tu pantalla** no habla con el gabinete | `SIN CONEXIÓN CON EL GABINETE` | — (la consola no habla con gabinetes) | **AHORA.** Ver §6.1 — y §5, es el error que todos cometen una vez |
+| El gabinete late y todo está en rango | — (no puede saberlo) | `OPERATIVO` | Nada |
+| El gabinete late pero algo está fuera de rango | — (no puede saberlo) | `DEGRADADO` | Hoy. La consola nombra las razones |
+
+\* Deuda conocida y declarada: la consola dice `DATOS RETENIDOS` en plural donde este panel dice
+`DATO RETENIDO`. Es el **mismo estado**; está fichada en el propio glosario (`divergencias`) y
+un test impide que crezca la lista.
+
+**Los guiones de esa tabla no son huecos, son la parte importante.** Donde pone "no puede
+saberlo" es literal:
+
+- **La consola no puede decir `DETENIDO` ni `AVERÍA`.** La nube ve a tu gabinete **por el
+  latido y nada más**. Un gabinete cuyo módulo de relés está caído **sigue latiendo**: desde la
+  nube se ve un gabinete que late. Que la sirena no vaya a sonar **solo lo ve este panel**. Es
+  la razón entera por la que este manual existe y por la que vas físicamente al gabinete.
+- **Este panel no puede decir `OPERATIVO` ni `DEGRADADO`.** Son veredictos que la nube calcula
+  con los umbrales de tu organización. Un gabinete no puede afirmar de sí mismo que la nube lo
+  ve bien — **eso fue exactamente el fallo del 14 de julio de 2026: quince horas ciego con la
+  consola en `OPERATIVO`.** Este panel dice lo que **mide**, no lo que cree que otro piensa de
+  él.
+
+> **Si soporte te dice `OPERATIVO` y tu panel dice `NO CONTESTA` en los relés, no os
+> contradecís: los dos tenéis razón y el que manda es el tuyo.** El gabinete late (por eso la
+> consola lo ve bien) y a la vez no puede accionar nada (por eso tu panel grita). Ten lista la
+> alarma manual del edificio y díselo con esas palabras.
 
 ### 6.1 · Conexión entre tu pantalla y el gabinete
 
@@ -600,7 +647,11 @@ Frases como *"revisar takab-edge.service"* o *"revisar takab-gpio/takab-edge"* e
 al técnico. **Tu acción no es ejecutar nada: es copiar esa frase tal cual y dársela a soporte.**
 
 **H-7 · Este manual no cubre la consola web ni la app móvil.**
-Solo cubre el panel del gabinete y la operación en sitio.
+Solo cubre el panel del gabinete y la operación en sitio. La única excepción es la tabla de
+§6.0, que pone al lado la palabra que usa la consola para **cada estado que tú ves**: no está
+ahí para enseñarte a usar la consola, sino porque **quien te contesta el teléfono está mirando
+esa pantalla** y los dos tenéis que llamar igual a la misma cosa. El vocabulario de las dos
+sale de un solo fichero (`shared/glossary/estados.json`) y lo vigilan sendos tests.
 
 **H-8 · El reloj con batería del gabinete no está verificado en el código.**
 La documentación de arquitectura dice que hay un reloj de tiempo real con batería (RTC DS3231)
