@@ -18,6 +18,15 @@ sería pérdida de datos):
 
 Errores inesperados (handler/DB) ⇒ rollback + RETRY conservador: los
 handlers son idempotentes por PK (G2), reprocesar tras rollback es seguro.
+
+[T-2.132] **Un fallo transitorio de base no es un RETRY.** «La base estaba
+ocupada» y «el mensaje está roto» tenían aquí el mismo desenlace, y no deben:
+devolver el mensaje a la cola **quema una recepción del `maxReceiveCount`**, así
+que cinco bloqueos pasajeros mandaban a la DLQ un mensaje perfectamente válido
+(medido: 5 bloqueos ⇒ 5 recepciones ⇒ DLQ, 0 commits). Ahora los SQLSTATE de
+«ocupada» se reintentan **en el sitio**, dentro de la MISMA recepción, alargando
+la visibilidad con ``ChangeMessageVisibility`` mientras dura. Esperar cuesta
+latencia; abortar en bucle cuesta datos.
 """
 
 from __future__ import annotations
@@ -27,6 +36,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,6 +55,83 @@ REJECT = "reject"
 RETRY = "retry"
 
 _STATUS_PREFIX = "takab/status/"
+
+#: [T-2.132] SQLSTATE que significan «la base estaba OCUPADA», no «esto está
+#: roto». Los tres comparten lo único que importa para decidir: dejan la conexión
+#: VIVA con la transacción abortada, y **el mismo mensaje volvería a entrar** si
+#: se reintenta. Nada más entra aquí — una conexión caída (57P01) o un dato malo
+#: (23505) no se arreglan reintentando y deben gastar sus recepciones e irse a la
+#: DLQ, que es para lo que existe.
+#:
+#: El 55P03 es el MISMO que dispara el ``lock_timeout`` de ``db/session.py``; lo
+#: ancla un test, no este comentario.
+TRANSIENT_SQLSTATES = frozenset(
+    {
+        "55P03",  # lock_not_available — venció el tope de espera por lock
+        "40P01",  # deadlock_detected — Postgres eligió a esta víctima
+        "40001",  # serialization_failure — dos transacciones se pisaron
+    }
+)
+
+
+def _sqlstate(exc: BaseException) -> str | None:
+    """SQLSTATE del error, venga crudo de psycopg o envuelto por SQLAlchemy."""
+    estado = getattr(exc, "sqlstate", None)
+    if estado is None:
+        estado = getattr(getattr(exc, "orig", None), "sqlstate", None)
+    return estado
+
+
+def es_transitorio(exc: BaseException) -> bool:
+    """True si el fallo es «la base está ocupada» y el mensaje sigue siendo bueno.
+
+    Esta función ES la distinción que pedía la ficha. Todo lo que devuelva False
+    conserva el camino de siempre: RETRY, reentrega, y DLQ a la quinta.
+    """
+    return _sqlstate(exc) in TRANSIENT_SQLSTATES
+
+
+@dataclass(frozen=True, slots=True)
+class TransientPolicy:
+    """Presupuesto del reintento EN EL SITIO ante un fallo transitorio.
+
+    ``budget_s`` es el techo de verdad, y no es arbitrario: tiene que caber en el
+    ``VisibilityTimeout`` de la cola (30 s en ``q-events``, 90 en
+    ``q-telemetry``). Si los reintentos duraran más, el mensaje se haría visible
+    a mitad, otro worker lo tomaría y se gastaría **justo la recepción que
+    estábamos ahorrando** — además de duplicar el trabajo. Lo ancla un test que
+    lee el número del Terraform real.
+
+    ``inflight_visibility_s`` es el alargue que se pide antes de cada reintento:
+    cubre el presupuesto entero, así que el mensaje no se escapa aunque los
+    reintentos lleguen al final. ``giveup_visibility_s`` es distinto y sirve a
+    otra cosa: cuando el bloqueo NO cede, el mensaje vuelve a la cola con un
+    respiro para que las cinco recepciones se repartan en minutos en vez de
+    quemarse en cinco segundos contra una tabla que sigue bloqueada.
+    """
+
+    budget_s: float = 20.0
+    base_delay_s: float = 0.1
+    max_delay_s: float = 2.0
+    inflight_visibility_s: int = 60
+    giveup_visibility_s: int = 60
+
+
+class _TransitorioAgotado(Exception):
+    """El bloqueo no cedió dentro del presupuesto: ya no es transitorio.
+
+    Excepción propia y no un ``OperationalError`` más: el desenlace no es el
+    mismo. Aquí se sabe que el mensaje es bueno y que la conexión está sana, así
+    que **no se tira la conexión** (el camino operacional sí lo hace, y con
+    razón) y el batch pendiente se devuelve con respiro en vez de a martillazos.
+    """
+
+    def __init__(self, intentos: int, esperado_s: float, causa: BaseException) -> None:
+        super().__init__(
+            f"la base siguió ocupada tras {intentos} intentos en {esperado_s:.1f} s: {causa}"
+        )
+        self.intentos = intentos
+
 
 # Handler: (conn, payload, meta, ctx) → HandlerResult (duck-typed, ver _outcome).
 Handler = Callable[[psycopg.Connection, dict, Meta, Any], Any]
@@ -81,6 +168,7 @@ class SqsConsumer:
         *,
         sqs_client: Any | None = None,
         wait_time_s: int = 20,
+        transient_policy: TransientPolicy | None = None,
     ) -> None:
         self._queue_url = queue_url
         self._dlq_url = dlq_url
@@ -92,6 +180,7 @@ class SqsConsumer:
         self._sqs = sqs_client or boto3.client("sqs", region_name=settings.aws_region)
         self._conn: psycopg.Connection | None = None
         self._stop = threading.Event()
+        self._transient = transient_policy or TransientPolicy()
 
     # ------------------------------------------------------------------ loop
 
@@ -131,6 +220,7 @@ class SqsConsumer:
             "n_ok": 0,
             "n_reject": 0,
             "n_retry": 0,
+            "n_lock_retries": 0,  # [T-2.132] reintentos EN EL SITIO: latencia, no datos
             "lag_max_s": None,
         }
         if not messages:
@@ -139,8 +229,9 @@ class SqsConsumer:
         pending: list[dict] = []  # OKs de telemetry a la espera del commit de batch
         for msg in messages:
             try:
-                conn = self._ensure_conn()
-                outcome, reason, meta, handler_ran = self._handle_message(conn, msg["Body"])
+                conn, outcome, reason, meta, handler_ran = self._handle_con_reintento(
+                    msg, pending, stats
+                )
                 self._track_lag(stats, meta)
                 if outcome == OK:
                     if self._per_message_commit:
@@ -167,6 +258,21 @@ class SqsConsumer:
                         conn.rollback()
                     log.warning("RETRY: %s", reason or "sin razón")
                     stats["n_retry"] += 1
+            except _TransitorioAgotado:
+                # [T-2.132] El bloqueo no cedió dentro del presupuesto: deja de
+                # ser «transitorio». El mensaje sigue siendo bueno, así que ni
+                # DLQ ni delete — pero tampoco se tira la conexión: está sana.
+                # Los pending se devuelven CON él: su trabajo se fue en el
+                # rollback, y borrarlos tras un commit que ya no los incluye
+                # sería pérdida de datos. Se rehacen en la reentrega (G2).
+                log.exception("bloqueo persistente; el mensaje vuelve a la cola con respiro")
+                self._safe_rollback()
+                self._cambiar_visibilidad(
+                    [msg, *pending], self._transient.giveup_visibility_s, "respiro"
+                )
+                stats["n_retry"] += 1 + len(pending)
+                stats["n_ok"] -= len(pending)
+                pending.clear()
             except psycopg.OperationalError:
                 # DB caída a mitad de batch: se pierde lo no commiteado; los
                 # pending se reentregan y reprocesan idempotentemente (G2).
@@ -184,9 +290,20 @@ class SqsConsumer:
 
         if pending:
             try:
-                self._ensure_conn().commit()  # primero durable…
-                if pending:
-                    self._delete_batch(pending)  # …luego borrar. NUNCA al revés.
+                # [T-2.132] El commit del batch es DONDE aterrizan todas las
+                # escrituras de q-telemetry, así que es el sitio más probable de
+                # un 40001. Sin esta red, un fallo aquí reentregaría el batch
+                # ENTERO y quemaría una recepción por cada uno de los 10.
+                self._reintentando(
+                    lambda conn: conn.commit(), pending, stats, rehacer=pending
+                )  # primero durable…
+                self._delete_batch(pending)  # …luego borrar. NUNCA al revés.
+            except _TransitorioAgotado:
+                log.exception("el commit de batch no cedió; los mensajes vuelven con respiro")
+                self._safe_rollback()
+                self._cambiar_visibilidad(pending, self._transient.giveup_visibility_s, "respiro")
+                stats["n_retry"] += len(pending)
+                stats["n_ok"] -= len(pending)
             except psycopg.OperationalError:
                 log.exception("commit de batch falló; los mensajes se reentregan")
                 stats["n_retry"] += len(pending)
@@ -195,6 +312,99 @@ class SqsConsumer:
 
         log.info(json.dumps(stats, default=str))
         return stats
+
+    # ---------------------------------------------- reintento transitorio (T-2.132)
+
+    def _reintentando[T](
+        self,
+        accion: Callable[[psycopg.Connection], T],
+        en_vuelo: list[dict],
+        stats: dict[str, Any],
+        *,
+        rehacer: list[dict],
+    ) -> T:
+        """Ejecuta ``accion`` reintentando EN EL SITIO mientras la base esté ocupada.
+
+        La clave del criterio 1 está en lo que NO se hace: no se devuelve el
+        mensaje a la cola. SQS solo incrementa ``ApproximateReceiveCount`` al
+        **recibir**, así que todos estos intentos caben dentro de la ÚNICA
+        recepción que ya se gastó y el ``maxReceiveCount`` no se mueve. Lo que sí
+        hay que hacer es sostener la invisibilidad de ``en_vuelo`` mientras tanto
+        (``ChangeMessageVisibility``), o el mensaje se escaparía por el otro lado
+        y otro worker gastaría justo la recepción que estábamos ahorrando.
+
+        ``rehacer`` son los mensajes cuyo trabajo se llevó por delante el
+        rollback (los ``pending`` del modo batch): se vuelven a aplicar antes de
+        cada reintento. Es seguro y barato por idempotencia de PK (regla de oro
+        3), y es lo único que evita que un bloqueo a mitad de batch queme una
+        recepción por CADA mensaje del batch.
+        """
+        limite = time.monotonic() + self._transient.budget_s
+        intentos = 0
+        while True:
+            conn = self._ensure_conn()
+            try:
+                if intentos:
+                    for previo in rehacer:
+                        self._handle_message(conn, previo["Body"])
+                return accion(conn)
+            except Exception as exc:
+                if not es_transitorio(exc):
+                    raise
+                intentos += 1
+                # La transacción quedó ABORTADA: sin esto, el siguiente intento
+                # fallaría por «current transaction is aborted» y el reintento
+                # no serviría de nada.
+                self._safe_rollback()
+                restante = limite - time.monotonic()
+                if restante <= 0:
+                    raise _TransitorioAgotado(intentos, self._transient.budget_s, exc) from exc
+                stats["n_lock_retries"] += 1
+                self._cambiar_visibilidad(
+                    en_vuelo, self._transient.inflight_visibility_s, "reintento"
+                )
+                espera = min(
+                    self._transient.base_delay_s * 2 ** (intentos - 1),
+                    self._transient.max_delay_s,
+                    restante,
+                )
+                log.warning(
+                    "base ocupada (%s); reintento %d en el sitio en %.2fs (0 recepciones)",
+                    _sqlstate(exc),
+                    intentos,
+                    espera,
+                )
+                time.sleep(espera)
+
+    def _handle_con_reintento(
+        self, msg: dict, pending: list[dict], stats: dict[str, Any]
+    ) -> tuple[psycopg.Connection, str, str, Meta | None, bool]:
+        """Pipeline del mensaje con la red de ``_reintentando`` debajo."""
+        return self._reintentando(
+            lambda conn: (conn, *self._handle_message(conn, msg["Body"])),
+            [msg, *pending],
+            stats,
+            rehacer=pending,
+        )
+
+    def _cambiar_visibilidad(self, msgs: list[dict], segundos: int, motivo: str) -> None:
+        """Ajusta la invisibilidad de los mensajes EN VUELO.
+
+        Best-effort a propósito: si la llamada falla, lo peor que pasa es que el
+        mensaje se haga visible antes de tiempo y alguien lo reprocese —
+        idempotente (G2), a costa de una recepción. Convertir ese fallo en una
+        excepción cambiaría un contratiempo de coste conocido por un mensaje sin
+        procesar, que es peor.
+        """
+        for m in msgs:
+            try:
+                self._sqs.change_message_visibility(
+                    QueueUrl=self._queue_url,
+                    ReceiptHandle=m["ReceiptHandle"],
+                    VisibilityTimeout=segundos,
+                )
+            except Exception:  # noqa: BLE001 - ver docstring: es best-effort
+                log.warning("no se pudo ajustar la visibilidad (%s); se sigue", motivo)
 
     # ------------------------------------------------------------- pipeline
 

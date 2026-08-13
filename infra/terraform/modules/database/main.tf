@@ -252,6 +252,13 @@ resource "aws_iam_role_policy" "db" {
         Action = [
           "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:DeleteMessageBatch",
           "sqs:SendMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl",
+          # [T-2.132] El reintento EN EL SITIO sostiene la invisibilidad del
+          # mensaje mientras la base esta ocupada por un lock pasajero. Sin esta
+          # accion la llamada da AccessDenied: el worker no se cae (es
+          # best-effort), pero el mensaje se hace visible a mitad del reintento y
+          # otro worker gasta justo la recepcion que se estaba ahorrando — o sea,
+          # el permiso que falta convierte el arreglo en decorativo.
+          "sqs:ChangeMessageVisibility",
         ]
         Resource = var.worker_queue_arns
       },

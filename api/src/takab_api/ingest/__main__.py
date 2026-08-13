@@ -16,6 +16,7 @@ from functools import partial
 import psycopg
 
 from takab_api.db import pool
+from takab_api.db.session import WORKER_LOCK_TIMEOUT_MS
 from takab_api.ingest.consumer import SqsConsumer
 from takab_api.ingest.registry import Registry
 from takab_api.settings import Settings
@@ -39,7 +40,15 @@ def build_consumer(queue: str, settings: Settings) -> SqsConsumer:
             f"faltan URLs de cola/DLQ para {queue!r} (TAKAB_API_QUEUE_URL_* / TAKAB_API_DLQ_URL_*)"
         )
 
-    conn_factory: partial[psycopg.Connection] = partial(pool.connect, settings.database_url)
+    # [T-2.132] El tope de espera por lock del worker. Va aquí y no en
+    # `pool.connect` por defecto porque este worker es el ÚNICO que tiene detrás
+    # la política de reintento en el sitio que lo hace seguro: sin ella, el tope
+    # convierte cada bloqueo en una recepción de SQS quemada y, a la quinta, un
+    # mensaje válido en la DLQ (medido en T-2.130). El número sale de
+    # `db/session.py`, donde vive la política entera.
+    conn_factory: partial[psycopg.Connection] = partial(
+        pool.connect, settings.database_url, lock_timeout_ms=WORKER_LOCK_TIMEOUT_MS
+    )
     registry = Registry(conn_factory, ttl_s=settings.registry_ttl_s)
     return SqsConsumer(
         queue_url,

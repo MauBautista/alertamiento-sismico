@@ -10,35 +10,32 @@
 // El estado (`missing`/`current`/`stale`/`withdrawn`) lo decide el SERVIDOR
 // comparando digests. La app no lo recalcula: si lo hiciera habría dos verdades.
 //
-// Tipos a mano y `client.get`/`client.post` en crudo (en vez de las funciones
-// generadas de `@takab/sdk`) por coordinación, no por diseño: el contrato se
-// regenera al integrar y dos ramas regenerándolo a la vez chocan. **Al
-// regenerar, sustituir por las funciones tipadas y borrar estas interfaces.**
-// Se sigue usando el `client` del SDK, así que la app no duplica cliente HTTP
-// (spec §13.5).
+// [T-2.82.b] Los tipos ya NO se escriben aquí. Estaban a mano «hasta que el
+// contrato se regenere»; se regeneró el 2026-08-08 y `@takab/sdk` publica
+// `ConsentStatusOut` y `NoticeOut` con sus campos requeridos. Los nombres
+// locales quedan como ALIAS —un nombre para la única verdad, no una segunda—
+// para que la pantalla de onboarding siga importando lo que importaba.
+//
+// Se mantiene `client.get`/`client.post` en crudo, y no las funciones
+// generadas: la app no duplica cliente HTTP (spec §13.5) y los tests de esta
+// zona sustituyen el módulo del SDK. Los tipos entran por `import type`, que se
+// borra al compilar.
 import { client } from "@takab/sdk";
+import type { ConsentStatusOut, NoticeOut } from "@takab/sdk";
 
-export type ConsentState = "missing" | "current" | "stale" | "withdrawn";
+/** Los cuatro estados, DERIVADOS del contrato: no se reescriben aquí. */
+export type ConsentState = ConsentStatusOut["state"];
 
-export interface PrivacyNotice {
-  purpose: string;
-  locale: string;
-  version: string;
-  title: string;
-  body: string;
-  paragraphs: string[];
-  digest: string;
-  source: "repo" | "tenant";
-  provisional: boolean;
-  provisional_reason: string;
-}
+export type PrivacyNotice = NoticeOut;
 
-export interface ConsentStatus {
-  notice: PrivacyNotice | null;
-  state: ConsentState;
-  consent: { notice_digest: string; notice_version: string; decided_at: string } | null;
-  blocks_emergency_actions: false;
-}
+/**
+ * [T-2.82.b] El tipo a mano recortaba `consent` a tres campos
+ * (`notice_digest`/`notice_version`/`decided_at`). El contrato manda el
+ * `ConsentOut` entero: la app leía un subconjunto y lo DECLARABA como si fuera
+ * la respuesta completa, que es la misma segunda verdad en versión recortada.
+ * Se adopta el contrato; los tres campos que la pantalla usa siguen ahí.
+ */
+export type ConsentStatus = ConsentStatusOut;
 
 /** El servidor no pudo decir en qué estado está el consentimiento.
  *

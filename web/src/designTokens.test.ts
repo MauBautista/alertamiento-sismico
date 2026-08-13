@@ -199,15 +199,19 @@ describe("design tokens · contraste WCAG AA (rótulos de 8–10 px)", () => {
 const CSS_DIR = path.resolve(process.cwd(), "src", "styles");
 
 /**
- * Deuda MEDIDA (2026-08-08) que este ciclo no puede tocar: `soc.css` está en
- * manos de otro trabajo en paralelo. Se listan una a una y la comparación es de
- * IGUALDAD, no de superconjunto: si alguien las arregla, este test se pone rojo
- * y obliga a borrar la línea — una excepción que puede crecer sola no es una
- * excepción, es un agujero. `--tk-amber` es `--tk-status-warning` (mismo
- * #FFC107), `--tk-violet` no tiene equivalente en el paquete y `--tk-text-2xs`
- * tampoco (la escala tipográfica empieza en `--tk-text-xs`).
+ * Deuda PAGADA (T-2.64.d, 2026-08-13). Aquí vivían las tres de `soc.css` que
+ * la guardia sacó sola el 2026-08-08 y que aquel ciclo no podía tocar:
+ * `--tk-amber`, `--tk-violet` y `--tk-text-2xs`. Se resolvieron contra el
+ * paquete —renombrado el primero a `--tk-status-warning`, y creados
+ * `--tk-status-maintenance` y `--tk-text-2xs`— así que la lista queda VACÍA.
+ *
+ * Se queda como constante vacía, y no como un `[]` suelto en la aserción, por
+ * dos razones: la comparación sigue siendo de IGUALDAD (una excepción que
+ * puede crecer sola no es una excepción, es un agujero) y el test de más abajo
+ * vigila que nadie la vuelva a llenar. La salida legítima de una deuda nueva
+ * es arreglarla o ponerla en una ficha, nunca añadir una línea aquí.
  */
-const DEUDA_HEREDADA = ["soc.css: --tk-amber", "soc.css: --tk-text-2xs", "soc.css: --tk-violet"];
+const DEUDA_HEREDADA: string[] = [];
 
 function tokensCitadosPorHoja(): string[] {
   const fuera = new Set<string>();
@@ -241,6 +245,19 @@ describe("design tokens · ninguna hoja cita un token que no existe", () => {
         "shared/design-tokens/css/tokens.css — no lo inventes, y no lo añadas a " +
         `DEUDA_HEREDADA:\n${desconocidos.join("\n")}`,
     ).toEqual(DEUDA_HEREDADA);
+  });
+
+  it("[T-2.64.d] la lista de excepciones sigue VACÍA — nadie la rellena por la puerta de atrás", () => {
+    // Sin esto, el arreglo de T-2.64.d dura hasta el primer atajo: la guardia
+    // seguiría siendo derivada y aun así admitiría un token fantasma nuevo con
+    // solo añadirle una línea, que es exactamente cómo murió el `--soc-*` de
+    // T-2.55. La deuda se paga o se ficha; no se apunta aquí.
+    expect(
+      DEUDA_HEREDADA,
+      "la deuda de tokens fantasma se pagó en T-2.64.d. Si has llegado aquí " +
+        "para añadir una línea, para: crea o renombra el token en " +
+        "shared/design-tokens/tokens.json.",
+    ).toEqual([]);
   });
 });
 

@@ -968,7 +968,12 @@ body {
 .triage__deeplink-miss { color: var(--tk-status-warning); }
 
 /* T-1.60: banner del SIMULACRO — ámbar, sin parpadeo: jamás se confunde con la
-   alerta real (que sí parpadea en rojo y siempre pinta encima). */
+   alerta real (que sí parpadea en rojo y siempre pinta encima).
+
+   [T-2.64.d] Citaba `var(--tk-amber, #ffc107)`, y `--tk-amber` NO EXISTE en
+   `@takab/design-tokens`: caía siempre al hex duro. Era un renombrado, no un
+   color nuevo — `--tk-status-warning` es el MISMO #FFC107. Se va el fallback
+   con el nombre: es lo que hacía silenciosa la mentira, no lo que la excusa. */
 .soc-drill {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px;
@@ -977,8 +982,8 @@ body {
 }
 .soc-drill--on {
   background: rgba(255, 193, 7, 0.14);
-  border: 1px solid var(--tk-amber, #ffc107);
-  color: var(--tk-amber, #ffc107);
+  border: 1px solid var(--tk-status-warning);
+  color: var(--tk-status-warning);
 }
 /* En reposo el simulacro es una TIRA, no un panel: el mapa manda. */
 .soc-drill--idle { justify-content: flex-end; padding: 0; gap: 8px; }
@@ -1743,11 +1748,19 @@ body {
    A diferencia del simulacro, este banner NO se degrada a badge con un
    incidente vivo: el momento en que más falta hace saber que la alarma de un
    gabinete no va a sonar es justo el sismo. `data-live` queda en el DOM para
-   que el e2e pueda medirlo. */
+   que el e2e pueda medirlo.
+
+   [T-2.64.d] Citaba `var(--tk-violet, #a78bfa)`, un nombre que NO EXISTE en el
+   paquete: el color se pintaba SIEMPRE desde el fallback y el design system no
+   mandaba sobre él. Aquí no había renombrado posible —el párrafo de arriba
+   descarta ámbar (es el simulacro) y cian (es la agenda) por escrito— así que
+   el concepto que faltaba se declaró: `--tk-status-maintenance`, el cuarto
+   estado que no es del semáforo porque no dice cómo está el equipo, dice que
+   alguien lo silenció a sabiendas. Mismo #A78BFA: cero cambio visual. */
 .soc-maint {
   background: rgba(167, 139, 250, 0.14);
-  border: 1px solid var(--tk-violet, #a78bfa);
-  color: var(--tk-violet, #a78bfa);
+  border: 1px solid var(--tk-status-maintenance);
+  color: var(--tk-status-maintenance);
   flex-wrap: wrap;
 }
 .soc-maint-list {
@@ -1768,9 +1781,9 @@ body {
   padding: 1px 6px;
   border-radius: 4px;
   background: rgba(167, 139, 250, 0.14);
-  border: 1px solid var(--tk-violet, #a78bfa);
-  color: var(--tk-violet, #a78bfa);
-  font-size: var(--tk-text-2xs, 10px);
+  border: 1px solid var(--tk-status-maintenance);
+  color: var(--tk-status-maintenance);
+  font-size: var(--tk-text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
