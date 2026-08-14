@@ -6257,6 +6257,175 @@
         "title": "NotifyWebhookAck",
         "type": "object"
       },
+      "OpsAlertChain": {
+        "description": "Los avisos más recientes, del más nuevo al más viejo.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpsAlertNoticeOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "OpsAlertChain",
+        "type": "object"
+      },
+      "OpsAlertNoticeOut": {
+        "description": "Un aviso de operación con su desenlace.",
+        "properties": {
+          "ack_deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Deadline At"
+          },
+          "ack_latency_publicado_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Latency Publicado S"
+          },
+          "ack_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Latency S"
+          },
+          "acked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acked At"
+          },
+          "acked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acked By"
+          },
+          "alarm_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alarm Name"
+          },
+          "alarm_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alarm State"
+          },
+          "notice_id": {
+            "title": "Notice Id",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "requires_ack": {
+            "title": "Requires Ack",
+            "type": "boolean"
+          },
+          "state_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Reason"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "unacked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unacked At"
+          }
+        },
+        "required": [
+          "notice_id",
+          "received_at",
+          "requires_ack",
+          "outcome"
+        ],
+        "title": "OpsAlertNoticeOut",
+        "type": "object"
+      },
       "PanicVoteIn": {
         "description": "[T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional\n(geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin\nGPS cuenta (LFPDPPP + RBAC §4.3).",
         "properties": {
@@ -11941,6 +12110,104 @@
           }
         },
         "summary": "Twilio Status Callback"
+      }
+    },
+    "/ops/alerts/ack": {
+      "get": {
+        "description": "La página del acuse. **No enseña ni un dato** sin credencial.\n\nEs un `GET` y por eso no puede acusar nada: los escáneres de los buzones\npulsan los enlaces de los correos, y si esto acusara al abrirse, cada alarma\nllegaría ya «atendida» por una máquina.",
+        "operationId": "ack_form_ops_alerts_ack_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ack Form"
+      },
+      "post": {
+        "description": "El acuse, con hora y con nombre.\n\nUna credencial que no vale y «no había nada abierto» contestan LO MISMO\n(404): desde fuera no se puede saber si una credencial existe ni si hay\navisos sin atender. Adentro sí se distinguen, en el log.\n\nEl cuerpo se parsea a mano (``parse_qsl``) y no con ``Form``: el paquete que\nFastAPI necesita para formularios no es dependencia de esta API, y añadir uno\npara leer un campo sería pagar un despliegue por comodidad. Es además lo que\nya hace el otro endpoint público con el formulario de Twilio.",
+        "operationId": "ack_submit_ops_alerts_ack_post",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ack Submit"
+      }
+    },
+    "/ops/alerts/chain": {
+      "get": {
+        "description": "Aviso → acuse → silencio, con el tiempo hasta el acuse ya calculado.\n\nRoles internos y nada más: la cadena de operación es de TAKAB. Que el on-call\nde la plataforma no contestara a las tres de la mañana no es dato de ningún\ncliente — y la RLS de `ops_alert_notices` lo impone por debajo aunque alguien\nse dejara esta guarda.",
+        "operationId": "read_chain_ops_alerts_chain_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAlertChain"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Chain"
+      }
+    },
+    "/ops/alerts/sns": {
+      "post": {
+        "description": "Mensaje del topic de operación, firmado por AWS.\n\nEl orden de las puertas importa y es de fuera hacia dentro: primero lo que\nno cuesta nada (configuración, tamaño, JSON, `TopicArn`), después la puerta\nde la URL del certificado —que es la que evita la SSRF— y solo entonces la\nsalida a la red y la firma. La base se toca **la última**.",
+        "operationId": "sns_endpoint_ops_alerts_sns_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sns Endpoint Ops Alerts Sns Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sns Endpoint"
       }
     },
     "/privacy/consent": {

@@ -107,6 +107,17 @@ output "dlq_urls" {
   value = module.messaging.dlq_urls
 }
 
+# --- [T-2.78.a] El topic de on-call, para que la API pueda RECHAZAR lo demas ---
+#
+# `deploy/cloud/deploy.sh` lo escribe en `cloud.env` como
+# `TAKAB_API_OPS_ALERT_TOPIC_ARN`. No es un secreto (es un identificador publico
+# de AWS) y no es opcional: de este ARN sale la region del UNICO host al que el
+# suscriptor tiene permitido salir, y la comparacion que descarta un sobre
+# firmado que venga de otro topic. Vacio ⇒ el endpoint responde 503 y lo grita.
+output "ops_topic_arn" {
+  value = module.observability.ops_topic_arn
+}
+
 # --- [T-2.72] PITR: el RPO que produce la maquina -----------------------------
 #
 # Existe para que el runbook de backup pueda CITAR una cifra en vez de teclearla.

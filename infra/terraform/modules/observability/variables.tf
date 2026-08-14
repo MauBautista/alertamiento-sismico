@@ -3,6 +3,31 @@ variable "ops_alert_email" {
   type        = string
 }
 
+# [T-2.78.a] Endpoint HTTPS que se suscribe al MISMO topic para dejar rastro de
+# maquina de cada aviso. VACIO POR DEFECTO a proposito: sin el, el apply de hoy no
+# cambia ni un recurso (mismo patron que el modulo `push/` y que la identidad de
+# dominio de T-2.78.b). El valor real es la ruta publica de la API,
+# `https://<consola>/api/ops/alerts/sns`.
+#
+# Que sea una URL de NUESTRA API no es un detalle: el correo del on-call no deja
+# rastro consultable (AWS no ofrece registro de entrega para `email`), asi que la
+# unica forma de saber a que hora salio un aviso —y de tener donde escribir el
+# acuse y el silencio— es que el mismo mensaje llegue a un endpoint que SI lo
+# admita.
+variable "ops_alert_https_endpoint" {
+  description = "URL https del suscriptor que registra los avisos (POST /ops/alerts/sns de la API). Vacia = no se crea la suscripcion ni el registro de entrega."
+  type        = string
+  default     = ""
+
+  validation {
+    # `http` a secas no vale y conviene que falle en el plan y no seis meses
+    # despues: SNS acepta el protocolo `http`, y por ahi viajarian en claro el
+    # nombre de cada alarma y el motivo de cada fallo de la plataforma.
+    condition     = var.ops_alert_https_endpoint == "" || startswith(var.ops_alert_https_endpoint, "https://")
+    error_message = "ops_alert_https_endpoint debe empezar por https:// (o quedar vacia). Con http, el nombre de cada alarma y el motivo de cada fallo de la plataforma viajarian en claro."
+  }
+}
+
 variable "dlq_names" {
   description = "Nombre de cada DLQ por clave logica (events/telemetry/backfill) para alarmar profundidad > 0."
   type        = map(string)

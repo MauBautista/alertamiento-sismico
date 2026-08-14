@@ -282,6 +282,26 @@ class Settings(BaseSettings):
     # dirá — ruidoso, pero del lado seguro (las alarmas siguen sonando).
     ops_alarm_prefix: str = "takab-dev"
 
+    # --- [T-2.78.a] Cadena de OPERACIÓN acreditada (CloudWatch → SNS → on-call) ---
+    # El ARN del topic de operación. VACÍO ⇒ el suscriptor HTTPS responde 503 y
+    # GRITA: sin él no hay con qué comparar el remitente de un sobre firmado ni de
+    # dónde sacar el ÚNICO host al que este servidor tiene permitido salir
+    # (`ops/alerts.py` — la puerta de la SSRF deriva la región de este ARN, jamás
+    # del cuerpo). No es un secreto: es un identificador público de AWS.
+    ops_alert_topic_arn: str = ""
+    #: Plazo para que una persona acuse un aviso de operación, en segundos.
+    #:
+    #: 900 s (15 min) es un DEFAULT, no la política ratificada: la pregunta P-3 del
+    #: `RUNBOOK-ses-produccion-y-cadena-oncall.md §4.3` sigue abierta y es la que
+    #: fija el número de verdad. Se calibra contra el rasero de esa misma pregunta
+    #: —`gateway_offline` detecta en ~10 min por diseño— y NO contra el SLA de
+    #: notificación de un sismo (30 s), que es otra cadena. Lo único que este
+    #: número decide es cuándo el silencio deja de ser espera; no silencia nada.
+    ops_ack_deadline_s: float = 900.0
+    #: Tope de las DOS únicas salidas a la red del suscriptor (certificado de firma
+    #: y confirmación del alta). Corto a propósito: cuelga un request público.
+    ops_sns_timeout_s: float = 5.0
+
     # --- Flota / fleet-status derivado server-side (T-1.22 · G7) ---
     # Minutos sin heartbeat en device_health → estado SIN ENLACE (el gateway dejó
     # de reportar). Debe holgar sobre el espaciado real del heartbeat del edge.

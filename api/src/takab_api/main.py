@@ -28,6 +28,7 @@ from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
 from takab_api.routers.notify import router as notify_router
 from takab_api.routers.notify_webhooks import router as notify_webhooks_router
+from takab_api.routers.ops_alerts import router as ops_alerts_router
 from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
@@ -126,6 +127,15 @@ def create_app() -> FastAPI:
     # autenticación. Va montado aquí como cualquier otro router y su seguridad
     # entera vive en `routers/notify_webhooks.py`; léelo antes de tocar la ruta.
     app.include_router(notify_webhooks_router)
+
+    # [T-2.78.a] La cadena de OPERACIÓN (CloudWatch → SNS → on-call), que es OTRA
+    # cadena: no comparte código, destinatario ni permiso con `notify`. Trae dos
+    # rutas públicas más —el suscriptor HTTPS de SNS y el acuse humano— y una
+    # detrás de Cognito. Un suscriptor HTTPS de SNS es una SSRF esperando: las
+    # dos URLs que llegan DENTRO del cuerpo (`SubscribeURL`, `SigningCertURL`)
+    # las elige quien lo manda. Cómo se cierran está en `ops/alerts.py`; léelo
+    # antes de tocar la ruta.
+    app.include_router(ops_alerts_router)
 
     # Guard de entorno: auth_jwks_json vacío = producción (JWKS remoto) → sin /dev/token.
     if Settings().auth_jwks_json:
