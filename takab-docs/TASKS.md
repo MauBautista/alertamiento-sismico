@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **280** · `[x]` **218** · `[~]` **9** · `[ ]` **53**
+**Conteo de tareas:** total **282** · `[x]` **225** · `[~]` **9** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5330,6 +5330,39 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > script **publica una primera medida en el acto**: el correo de `ok_actions` es la señal de que
 > arrancó, y su ausencia es el indicio. Queda como paso escrito en el runbook.
 
+### [ ] T-2.144 · Cinco verbos reales se pintan crudos y EN VERDE, y uno dice «personas en riesgo» — `SOFTWARE`
+- **Componente:** sdk + web · **Detectada por:** `T-2.133` (2026-08-14), al barrer los productores
+- Hay **siete productores reales** de `incident_actions` sin rótulo en el checklist BMS:
+  `fail_open`, `in_review`, `close`, `dictamen_signed`, `damage_people_at_risk`,
+  `headcount_closed`, `headcount_notify`. Los dos últimos sí los rotula la bitácora; **los cinco
+  primeros caen en el fallback crudo y VERDE en las dos superficies**.
+- **Y uno de ellos es `damage_people_at_risk`**: la consola pinta **«DAMAGE PEOPLE AT RISK» con
+  `kind: 'ok'`** — personas en riesgo, en verde, con el nombre de la constante en inglés. Es la
+  misma familia que `T-2.119` (gas y puertas crudos y en verde) y que el
+  `notify_no_recipients` que `T-2.133` arregló de paso.
+- **Por qué el censo existente no los caza, declarado en el propio ayudante:** va **del registro
+  al productor**, y el censo en dirección contraria **no se puede hacer con un barrido honesto** —
+  `headcount_*` los fija un router sobre una sentencia de otro módulo, y `lifecycle.py` los saca
+  de un `dict`. Un barrido que los buscara literalmente **daría falsos negativos y nadie lo
+  sabría**.
+- **Criterios de aceptación:**
+  - [ ] Los siete tienen rótulo en las dos superficies, derivado del mismo registro.
+  - [ ] Ninguno cae en el fallback `ok`: el que no se sepa clasificar **no se pinta en verde**.
+  - [ ] El fallback deja de ser `ok` **por defecto**, o queda escrito por qué es seguro que lo sea.
+
+### [ ] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
+- **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**
+- El reloj de retención de nombre y teléfono lo escriben `PATCH {"enabled": false}` y `DELETE`
+  de la API. **Una cuenta retirada directamente en el pool de Cognito no pasa por ahí**, así que
+  esa persona **conserva nombre y teléfono indefinidamente**.
+- **Falla en la dirección segura** —se conserva de más, nunca de menos— y por eso `T-2.81.b` se
+  cerró con el hueco declarado y su query de reconciliación escrita en el runbook. Pero **una
+  reconciliación que hay que acordarse de correr no es retención cumplida**, que es exactamente
+  el argumento de `T-2.81.a`.
+- **Criterios de aceptación:**
+  - [ ] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
+  - [ ] Test de una cuenta que desaparece del pool sin pasar por la API.
+
 ### [ ] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
 - **Componente:** api (tests) · **Detectada por:** `T-2.78.a` (2026-08-14)
 - `tests/ops/test_restore_check.py` hace `ALTER ROLE takab_app RENAME TO takab_app_probe`. Los
@@ -6441,7 +6474,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > El camino del titular queda **byte a byte** como lo dejó T-2.80, anclado por su propio test.
 > Las tres capas de T-2.80 siguen intactas: no se derogó ninguna.
 
-### [ ] T-2.80.c · El verificador de restore ya no comprueba la rendija de ARCO — `SOFTWARE`
+### [x] T-2.80.c · El verificador de restore ya no comprueba la rendija de ARCO — `SOFTWARE`
 - **Componente:** api (`ops/restore_check.py`) · **Depende de:** T-2.80 · **Regresión declarada
   por el propio T-2.80**
 - **Qué se perdió y por qué es correcto que se perdiera.** El verificador de DR reconocía
@@ -6453,11 +6486,35 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   columna pasaría el chequeo de DR y permitiría reescribir `status` o `user_id` de un check-in de
   vida — sin que ninguna alarma lo dijera.
 - **Criterios de aceptación:**
-  - [ ] El verificador de restore comprueba que el privilegio de `life_checkins` es **por
+  - [x] El verificador de restore comprueba que el privilegio de `life_checkins` es **por
         columna** y que la única columna concedida es `geom`.
-  - [ ] Comprueba que el guard de `UPDATE` sigue rechazando cualquier otro cambio, incluido el
+  - [x] Comprueba que el guard de `UPDATE` sigue rechazando cualquier otro cambio, incluido el
         `UPDATE SET c = c` que no cambia nada.
-  - [ ] Un `SKIP` no cuenta como `PASS` (la lección de la Fase 2.6).
+  - [x] Un `SKIP` no cuenta como `PASS` (la lección de la Fase 2.6).
+
+> **Cerrada (2026-08-14), y la causa raíz es una función de Postgres que engaña:**
+> **`has_table_privilege` devuelve `false` con un grant de COLUMNA** (medido), y `_check_privileges`
+> **solo mira en la dirección de lo que falta, nunca de lo que sobra**. Por eso el origen sano y
+> la base restaurada mal **se veían iguales**.
+>
+> La comprobación nueva exige que el conjunto de columnas con UPDATE efectivo sea **exactamente**
+> el declarado, y **falla en los dos sentidos**: si creció (la rendija se ensanchó) **y si se
+> cerró** (entonces ARCO deja de poder anonimizar). La expectativa se **deriva del `GRANT` de
+> `db/schema.sql`** y **viaja en la huella**, porque la imagen de la nube no lleva ese fichero
+> dentro.
+>
+> **El test de la base restaurada mal es el que lo prueba:** ensancha la rendija a nivel de tabla,
+> **confirma que se ensanchó**, y exige `column_grants == FAIL` **y `privileges == PASS`** — o sea,
+> deja constancia de que **la comprobación vieja seguía diciendo que todo estaba bien**.
+>
+> Con el verificador de ayer sobre esa misma base rota: `PASS privileges · PASS
+> append_only_triggers · PASS ownership · PASS rls_policies · PASS columns`. **Cinco verdes sobre
+> una base donde se podía reescribir el `status` de un check-in de vida.**
+>
+> **Hallazgo de paso:** `life_checkins` **no tenía expectativa declarada** de append-only —entraba
+> en la comprobación solo por el catálogo—, así que **si alguien tirase el trigger de DELETE salía
+> de las dos comprobaciones a la vez**. La comprobación nueva la nombra desde el `GRANT`, y tapa
+> también ese hueco.
 
 ### [x] T-2.81 · Retención de PII con la excepción de compliance en el job — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** api (job) + db · **Depende de:** T-2.80
@@ -6499,7 +6556,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > tampoco cae a un default. **Por defecto no se borra nada.** Mutar la degradación de rol pone 23
 > tests en rojo con el mensaje correcto: «el rol efectivo `takab` es SUPERUSER».
 
-### [ ] T-2.81.a · El job de retención existe y nadie lo llama — `SOFTWARE` + infra
+### [x] T-2.81.a · El job de retención existe y nadie lo llama — `SOFTWARE` + infra
 - **Componente:** api + infra · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
 - **El job es invocable** (`python -m takab_api.ops.prune_pii`), igual que `ops.restore_drill`,
   **y no hay ningún scheduler**: no existe módulo de cron, Lambda ni EventBridge en
@@ -6510,12 +6567,39 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   correcto y atómico, pero sobre millones de filas mantiene una transacción larga, y eso **no se
   ha medido con volumen real**.
 - **Criterios de aceptación:**
-  - [ ] El job corre solo, con su cadencia declarada, y **deja constancia** de cada corrida
+  - [x] El job corre solo, con su cadencia declarada, y **deja constancia** de cada corrida
         (incluido el simulacro que no borró nada).
-  - [ ] Un fallo del job **se ve**: alarma o registro que alguien mire, no un exit code perdido.
-  - [ ] El comportamiento con volumen está medido, o el lote está acotado y **declarado**.
+  - [x] Un fallo del job **se ve**: alarma o registro que alguien mire, no un exit code perdido.
+  - [x] El comportamiento con volumen está medido, o el lote está acotado y **declarado**.
 
-### [ ] T-2.81.b · El nombre y el teléfono no tienen reloj honesto — `SOFTWARE`
+> **Cerrada (2026-08-14). MEDIDO con 1 000 000 de filas:** commit en **38.90 s** (re-medida
+> 41.80 s), transacción abierta 38.64 s vista desde `pg_stat_activity`, **~39–42 µs/fila, lineal**,
+> 57 locks pico.
+>
+> **Se CONSERVA la transacción única**, y la razón es de producto: el conteo previo **es la
+> autorización de la poda**, y **media poda con informe en verde es peor que ninguna**.
+>
+> **Sobre los topes, el hallazgo importa: el job no conecta ni por `db/session.py` ni por
+> `db/pool.py`** —abre su propio `psycopg.connect`—, así que **ninguno** de `T-2.130`/`T-2.131`/
+> `T-2.132`/`T-2.136` le aplicaba. Comprobado, no supuesto. Y el veredicto **difiere por reloj**:
+> - **`statement_timeout`: NO.** Los 20 s del request o los 15 s del worker **matarían esa corrida
+>   legítima a mitad** — el fallo nuevo que la ficha advertía.
+> - **`lock_timeout`: SÍ, 30 s.** No mide trabajo útil, **mide espera**: sin él una fila bloqueada
+>   deja al job esperando para siempre **dentro** de una transacción que ya sostiene el horizonte
+>   de `xmin` — el `idle in transaction` de `T-2.73.c`. Y **30 s < 38.9 s medidos**: esperar más de
+>   lo que dura el trabajo sería estar abierto **por no trabajar**.
+>
+> El scheduler es **documento SSM + asociación `rate(1 day)`**, el **mismo vehículo que el PITR y
+> el respaldo lógico** — no EventBridge/Lambda. Corre a las **06:00 UTC**, entre el scan del backup
+> base y el dump, **para que el respaldo del día se lleve la PII ya podada**. Y con el DSN de
+> `takab_app`, no del superusuario: **la autodegradación pasa a ser un no-op comprobable**.
+>
+> **La constancia se escribe FUERA de la transacción del job, y ése es el punto entero:** escrita
+> dentro, **el rollback se llevaría justo el registro de la corrida que falló**. La métrica de la
+> alarma sale de `max(finished_at) WHERE ok`, **no del exit code**: un job que falla a diario **no
+> refresca la edad y la alarma sube sola**.
+
+### [x] T-2.81.b · El nombre y el teléfono no tienen reloj honesto — `SOFTWARE`
 - **Componente:** api + db · **Depende de:** T-2.81 · **Declarada por el propio T-2.81**
 - **Por qué se dejaron fuera, que es la parte que hay que conservar.** `user_profiles.display_name`
   y `phone` son PII con caducidad, pero **no hay ninguna columna que diga cuándo dejó de ser
@@ -6525,9 +6609,35 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 - Está declarado en `SIN_RELOJ` con su razón y con test recíproco, así que no es un olvido
   silencioso. **El reloj correcto es la baja de la cuenta, y hoy no se registra en ninguna parte.**
 - **Criterios de aceptación:**
-  - [ ] Existe el hecho «esta persona ya no está» con su instante, y se registra cuando ocurre.
-  - [ ] La regla de retención de nombre y teléfono cuelga de **ese** reloj, no de `updated_at`.
-  - [ ] `SIN_RELOJ` queda vacío para estas dos columnas, y el test recíproco lo exige.
+  - [x] Existe el hecho «esta persona ya no está» con su instante, y se registra cuando ocurre.
+  - [x] La regla de retención de nombre y teléfono cuelga de **ese** reloj, no de `updated_at`.
+  - [x] `SIN_RELOJ` queda vacío para estas dos columnas, y el test recíproco lo exige.
+
+> **Cerrada (2026-08-14).** El reloj lo escribe **el administrador del cliente, en el instante de
+> la baja**, desde los **dos actos que YA existían** —`PATCH {"enabled": false}` y `DELETE`—, así
+> que **no se estrena ninguna ceremonia** que alguien tenga que acordarse de hacer. Y **`PATCH
+> {"enabled": true}` PARA el reloj**: sin eso, una readmisión **seguiría contando plazo y perdería
+> su nombre estando en el edificio**. Se escribe en la **misma transacción** que ya dejaba la fila
+> de `audit_log`: «hay bitácora» y «hay reloj» **no pueden divergir**.
+>
+> **Tabla propia y no una columna, y la razón es de PRIVILEGIO — es lo mejor de la ficha.** El
+> `tenant_admin` no es rol interno: sobre `user_profiles` solo tiene «mi propia fila». Poner el
+> reloj como columna habría exigido darle UPDATE sobre las filas de otros y, como `WITH CHECK`
+> **no puede comparar contra la fila vieja**, esa misma política **le habría dejado reescribir
+> `display_name` y `phone` de cualquiera** — o sea, ensanchar la escritura sobre **las dos
+> columnas exactas que esta ficha existe para proteger**. Escribe el HECHO, no el dato. Y **quién**
+> lo hizo no se copia: ya está en `audit_log`, que no se poda.
+>
+> **Rojo medido:** con `updated_at` como reloj salen **5 rojos**, incluido
+> `test_el_reloj_del_roster_no_toca_a_quien_sigue_dentro` («se podó el roster de alguien que sigue
+> dentro») — que es literalmente el defecto que la ficha describía.
+>
+> La regla se **difiere con incidente abierto**, mismo criterio que la geometría: con un incidente
+> abierto **el roster es la lista con la que una brigada pregunta «¿quién falta?»**.
+>
+> **Hueco declarado, y se conserva de MÁS, nunca de menos:** una cuenta retirada **directamente en
+> el pool de Cognito** no pasa por la API y no deja reloj — esa persona conserva nombre y
+> teléfono. Query de reconciliación en el runbook; la automática queda en `T-2.143`.
 
 ### [x] T-2.81.c · `rule_evaluations` conserva el `DELETE` que sus once hermanas no tienen — `SOFTWARE`
 - **Componente:** db · **Depende de:** — · **Detectada por el guard de T-2.81**, que es justo
@@ -8114,7 +8224,7 @@ sería documentar intenciones.
   - [ ] Medido el tiempo de una pasada real de backfill sobre un objeto representativo.
   - [ ] Política de reintento como la de `T-2.132`, **y solo entonces** el tope.
 
-### [ ] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
+### [x] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
 - **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)
 - `takab-docs/design/edge-panel/Panel Gabinete.dc.html` conserva `#7C4DFF`, el valor que
   `T-2.137` retiró por **reprobar el contraste en los tres roles**, incluido el de borde.
@@ -8122,9 +8232,9 @@ sería documentar intenciones.
 - Importa poco hoy y mucho el día que alguien implemente una pantalla nueva copiando del comp:
   reintroduciría un color que ya se midió que no pasa.
 - **Criterios de aceptación:**
-  - [ ] El comp usa el valor vigente, o queda declarado como histórico con su fecha.
+  - [x] El comp usa el valor vigente, o queda declarado como histórico con su fecha.
 
-### [ ] T-2.133 · `siren_test` no tiene productor: o le falta rótulo, o es una entrada muerta — `SOFTWARE`
+### [x] T-2.133 · `siren_test` no tiene productor: o le falta rótulo, o es una entrada muerta — `SOFTWARE`
 - **Componente:** sdk + api · **Detectada por:** `T-2.127` (2026-08-12)
 - `siren_test` está en el registro del checklist (`ACTION_STATE` «PROBADA», `CHANNEL_LABEL`
   «PRUEBA DE SIRENA») pero **no es un kind de `ACK_KIND`**, así que quedó fuera de la derivación
@@ -8133,10 +8243,10 @@ sería documentar intenciones.
 - Importa saber cuál de las dos es: una entrada muerta en el registro ensucia el censo que impide
   que los rótulos deriven; un productor sin rótulo es un «SIREN_TEST» en pantalla.
 - **Criterios de aceptación:**
-  - [ ] Medido si existe productor. Si existe, rótulo derivado como los demás; si no, se retira
+  - [x] Medido si existe productor. Si existe, rótulo derivado como los demás; si no, se retira
         del registro con su razón escrita.
 
-### [ ] T-2.134 · El degradado no reintenta solo, y `status: "error"` quedó sin productor — `SOFTWARE`
+### [x] T-2.134 · El degradado no reintenta solo, y `status: "error"` quedó sin productor — `SOFTWARE`
 - **Componente:** web · **Detectada por:** `T-2.123` (2026-08-12)
 - **(a)** El modo degradado espera **un clic humano**. En un incidente puede que nadie mire la
   pantalla cuando la base vuelva. La mitad está hecha: `refreshMe` desde degradado **no** pasa por
@@ -8145,10 +8255,10 @@ sería documentar intenciones.
   una rama de `LoginPage`. Quedó con un aviso en la unión en vez de retirarse, por no invadir
   ficheros ajenos.
 - **Criterios de aceptación:**
-  - [ ] Reintento con backoff, sin desmontar la pantalla degradada.
-  - [ ] `status: "error"` retirado, o con productor y razón.
+  - [x] Reintento con backoff, sin desmontar la pantalla degradada.
+  - [x] `status: "error"` retirado, o con productor y razón.
 
-### [ ] T-2.135 · El JSON forense no puede nombrar el incidente — `SOFTWARE`
+### [x] T-2.135 · El JSON forense no puede nombrar el incidente — `SOFTWARE`
 - **Componente:** mobile · **Detectada por:** `T-2.126` (2026-08-12)
 - `ForensicMeta` existe para probar la atribución «quién, dónde, **con qué incidente**» — y **no
   lleva `incident_id`**. Hoy esa mitad vive solo en el item de la cola.
@@ -8156,8 +8266,8 @@ sería documentar intenciones.
   incidente no está: meterlo cambiaría **lo que entra en el SHA-256**. Va con la costura de
   `T-2.126` (cablear el JSON firmado), no antes.
 - **Criterios de aceptación:**
-  - [ ] Decidido si el incidente entra en el pixel, solo en el JSON, o en ninguno — con su razón.
-  - [ ] Si entra en el pixel, la spec §2.3 se actualiza **en el mismo cambio**.
+  - [x] Decidido si el incidente entra en el pixel, solo en el JSON, o en ninguno — con su razón.
+  - [x] Si entra en el pixel, la spec §2.3 se actualiza **en el mismo cambio**.
 
 ### [x] T-2.123 · `GET /me` ató el arranque de la consola a Postgres — `SOFTWARE`
 - **Componente:** api + web · **Declarada por el propio `T-2.114`**

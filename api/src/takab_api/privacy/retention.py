@@ -40,7 +40,10 @@ caduca vive dentro de filas que tienen que sobrevivir:
 * el token de push está en una fila que documenta que hubo un dispositivo
   registrado — el hecho se conserva, muere el identificador que enruta;
 * la geometría del check-in está en una fila de rescate cuyo ``COUNT(DISTINCT
-  user_id)`` es "cuántas personas confirmaron estar bien en el piso 8".
+  user_id)`` es "cuántas personas confirmaron estar bien en el piso 8";
+* [T-2.81.b] el nombre y el teléfono están en la fila que ata el ``sub`` a su
+  tenant — borrarla dejaría huérfanas las constancias de ARCO y descoseria las
+  tablas de hechos. Muere el mapeo `sub → persona`, no el perfil.
 
 Por eso el plan que se despacha **no contiene ni una regla que borre filas**, y
 un test lo fija. El modo ``DELETE_ROWS`` existe de todas formas, y no por
@@ -60,10 +63,22 @@ datos con buena intención.
 LO QUE NO TIENE RELOJ HONESTO SE DECLARA, NO SE INVENTA
 ───────────────────────────────────────────────────────
 ``user_profiles`` guarda nombre y teléfono del roster. Su única columna temporal
-es ``updated_at``, y un perfil sin tocar en dos años es lo normal en un empleado
-que sigue trabajando ahí: usarla como reloj borraría el roster de la gente más
-estable del edificio. ``SIN_RELOJ`` deja eso escrito con su razón, y el test
-recíproco impide que la ausencia pase por descuido.
+era ``updated_at``, y un perfil sin tocar en dos años es lo normal en un empleado
+que sigue trabajando ahí: usarla como reloj habría borrado el roster de la gente
+más estable del edificio. ``SIN_RELOJ`` dejó eso escrito con su razón, y el test
+recíproco impidió que la ausencia pasara por descuido.
+
+**[T-2.81.b] Ese reloj ya existe y ``SIN_RELOJ`` está vacío.** No se buscó una
+columna temporal mejor: se registró el hecho que faltaba. ``user_deactivations``
+guarda la BAJA DE LA CUENTA con su instante, y la escriben los dos actos que ya
+significaban "esta persona ya no está" —deshabilitar la cuenta y borrarla del
+directorio—, en la misma transacción en que ya dejaban su fila de auditoría
+(``routers/users.py``). Volver a habilitarla PARA el reloj (``reactivated_at``):
+sin eso, una persona readmitida seguiría contando plazo y perdería su nombre
+estando en el edificio.
+
+``SIN_RELOJ`` se conserva vacío, con su validación: es la rendija por la que la
+siguiente columna de PII sin reloj tendrá que declararse en vez de colarse.
 """
 
 from __future__ import annotations
@@ -73,7 +88,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .erasure import ERASED_TOKEN_PREFIX, PII_INVENTORY
+from .erasure import ERASED_DISPLAY_NAME, ERASED_TOKEN_PREFIX, PII_INVENTORY
 
 # ---------------------------------------------------------------------------
 # Errores. Los dos son ruidosos a propósito (criterio 2 de la ficha).
@@ -191,6 +206,16 @@ _R_TOKEN = (
     "revocada. La FILA sobrevive: documenta que hubo un dispositivo registrado."
 )
 
+_R_IDENTIDAD = (
+    "Nombre y teléfono del roster: el mapeo `sub → persona`, o sea lo que hace "
+    "personales a todos los UUID opacos del resto del esquema. Caduca cuando la "
+    "persona deja de estar —no cuando su perfil deja de tocarse—, así que el "
+    "reloj es `user_deactivations.deactivated_at` y no `updated_at`. Van las dos "
+    "columnas en la misma regla porque van en la misma fila: separarlas daría un "
+    "perfil con teléfono y sin nombre, o al revés. La FILA sobrevive: es lo que "
+    "mantiene el `sub` atado a su tenant y las tablas de hechos coherentes."
+)
+
 _R_GEOM = (
     "Ubicación GPS EXACTA de una persona dentro de un edificio. Es dato de "
     "RESCATE mientras el incidente está abierto y puro dato personal en cuanto "
@@ -209,6 +234,38 @@ NOT EXISTS (
    WHERE i.tenant_id = life_checkins.tenant_id
      AND i.site_id   = life_checkins.site_id
      AND i.state <> 'closed' AND i.closed_at IS NULL
+)
+"""
+
+#: [T-2.81.b] El mismo diferimiento para el NOMBRE, y por la misma razón: con un
+#: incidente abierto, el roster es la lista con la que una brigada pregunta
+#: "¿quién falta?", y sustituir un nombre por `(titular anonimizado)` a mitad de
+#: una búsqueda es el fallo que las reglas de oro 1 y 2 existen para impedir.
+#:
+#: Se acota al TENANT y no al sitio porque `user_profiles` no tiene sitio: un
+#: perfil no vive en un edificio. Es más grosero que el de `life_checkins` a
+#: propósito — de los dos errores posibles, aplazar de más solo retrasa la poda,
+#: y podar de menos-de-más borra un nombre que alguien está buscando.
+_SIN_INCIDENTE_ABIERTO_EN_EL_TENANT = """
+NOT EXISTS (
+  SELECT 1 FROM incidents i
+   WHERE i.tenant_id = user_profiles.tenant_id
+     AND i.state <> 'closed' AND i.closed_at IS NULL
+)
+"""
+
+#: [T-2.81.b] EL RELOJ DE LA BAJA. No es una columna temporal de `user_profiles`
+#: —esa era `updated_at`, y describía al empleado estable, no al que se fue—:
+#: es el hecho «esta persona ya no está», con su instante, escrito por quien da
+#: de baja la cuenta (`routers/users.py`). `reactivated_at IS NULL` es la mitad
+#: que impide que una readmisión siga contando plazo.
+_BAJA_HACE_MAS_DE = """
+EXISTS (
+  SELECT 1 FROM user_deactivations d
+   WHERE d.tenant_id = user_profiles.tenant_id
+     AND d.user_sub  = user_profiles.user_sub
+     AND d.reactivated_at IS NULL
+     AND d.deactivated_at < %(cutoff)s
 )
 """
 
@@ -245,26 +302,41 @@ RETENTION_PLAN: tuple[RetentionRule, ...] = (
         clock=("geom IS NOT NULL AND created_at < %(cutoff)s AND " + _SIN_INCIDENTE_ABIERTO),
         why=_R_GEOM,
     ),
+    RetentionRule(
+        key="user_profiles.identity",
+        table="user_profiles",
+        columns=("display_name", "phone"),
+        mode=REDACT,
+        # El MISMO estado final que escribe `privacy_erase_subject`, y no uno
+        # propio: el dato muerto tiene que verse igual lo haya matado el titular
+        # o el reloj. Además hace inerte el orden — ARCO después de la poda (o al
+        # revés) encuentra la fila ya en su sitio y no vuelve a tocarla.
+        set_clause=(f"display_name = '{ERASED_DISPLAY_NAME}', phone = NULL, updated_at = now()"),
+        # Tres mitades y ninguna sobra: la baja vencida (el reloj), la de la
+        # idempotencia —una fila ya redactada deja de cumplir el predicado, así
+        # que la segunda corrida ve cero— y el diferimiento por incidente abierto.
+        clock=(
+            _BAJA_HACE_MAS_DE + f"AND (display_name IS DISTINCT FROM '{ERASED_DISPLAY_NAME}' "
+            "OR phone IS NOT NULL) AND " + _SIN_INCIDENTE_ABIERTO_EN_EL_TENANT
+        ),
+        why=_R_IDENTIDAD,
+    ),
 )
 
 #: Columnas que ARCO destruye y la retención NO puede tocar por falta de un reloj
 #: honesto. Declararlas es la mitad del trabajo: el test recíproco compara este
 #: conjunto con el inventario y no deja que una columna se quede sin decisión.
-SIN_RELOJ: dict[tuple[str, str], str] = {
-    ("user_profiles", "display_name"): (
-        "El roster no tiene reloj. La única columna temporal es `updated_at`, y "
-        "un perfil sin tocar en dos años describe a un empleado ESTABLE, no a uno "
-        "que se fue: usarla como caducidad borraría antes los nombres de la gente "
-        "que más tiempo lleva en el edificio. El reloj correcto es la baja de la "
-        "cuenta, que hoy no se registra en ninguna columna. Mientras tanto el "
-        "nombre se destruye por ARCO (T-2.80), a petición, no por tiempo."
-    ),
-    ("user_profiles", "phone"): (
-        "Mismo reloj ausente que `display_name`, y va en la misma fila: "
-        "separarlos daría un perfil con teléfono y sin nombre, o al revés. Se "
-        "declara junto y se poda junto el día que exista la baja de cuenta."
-    ),
-}
+#:
+#: **[T-2.81.b] Está VACÍO, y eso es el resultado de la ficha, no un descuido.**
+#: Las dos únicas entradas que tuvo —`user_profiles.display_name` y `phone`—
+#: decían "el reloj correcto es la baja de la cuenta, que hoy no se registra en
+#: ninguna columna". Se registró (`user_deactivations`) y la regla
+#: `user_profiles.identity` cuelga de él. La estructura se conserva porque su
+#: valor no era la lista: es que `_validar_plan` obliga a que TODA columna
+#: `erase` del inventario tenga regla **o** exclusión declarada, así que la
+#: siguiente PII sin reloj honesto tendrá que escribir aquí su razón en vez de
+#: colarse en silencio.
+SIN_RELOJ: dict[tuple[str, str], str] = {}
 
 
 def _validar_plan() -> None:

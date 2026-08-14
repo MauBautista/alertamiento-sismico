@@ -17,6 +17,18 @@ export type ForensicMeta = {
   /** Sitio del incidente (contexto). */
   siteId: string;
   /**
+   * [T-2.135] Incidente al que se atribuye la captura. `null` = no consta.
+   *
+   * Va al MANIFIESTO (`forensicMetadata`) y NO al pixel: la razón de custodia,
+   * entera, está en el docblock de `forensicMetadata`. Añadirlo aquí no cambia
+   * `watermarkLines` ni, por tanto, el SHA-256 — hay un test que lo exige.
+   *
+   * `string | null` y no `""`: sale del mismo snapshot de `mobile-state` que
+   * `pgaG`, y una cadena vacía en un manifiesto forense es una afirmación falsa
+   * con aspecto de dato.
+   */
+  incidentId: string | null;
+  /**
    * [T-2.118] Epoch ms del snapshot de `mobile-state` del que salieron
    * `incident_id` y `pgaG` CUANDO ese snapshot ya no era fresco; null = se
    * selló con dato vigente.
@@ -123,6 +135,51 @@ export function watermarkLines(meta: ForensicMeta): string[] {
  *     repetir el defecto que esta ficha denuncia: una pieza que *parece* que
  *     está.
  *
+ * ===========================================================================
+ * [T-2.135] EL INCIDENTE ENTRA AQUÍ, EN EL MANIFIESTO — Y NO EN EL PIXEL
+ * ===========================================================================
+ *
+ * `ForensicMeta` existe para probar «quién, dónde, CON QUÉ INCIDENTE» y no
+ * llevaba el incidente: esa mitad vivía sólo en `offline/queue.ts::EvidencePayload`,
+ * que es el TRANSPORTE (lo que se le dice al servidor para archivar), no el
+ * manifiesto (lo que el expediente afirma por sí mismo). La decisión era de
+ * custodia, no de código, y por eso `T-2.126` no la tomó: la spec §2.3 enumera
+ * lo que va EN EL PIXEL, y el incidente no está — meterlo ahí cambiaría lo que
+ * entra en el SHA-256.
+ *
+ * VA AL JSON. La spec §2.3 NO se toca, y el sello sigue significando exactamente
+ * lo que significaba. Las tres razones, en orden de peso:
+ *
+ *  1. **El vínculo foto→incidente ya existe y es verificable sin el pixel.**
+ *     `evidence_objects` guarda `(incident_id, sha256)`, es append-only por
+ *     trigger y está exenta de poda (regla de oro 11), y
+ *     `POST /evidence/{id}/verify` recalcula la huella del blob y la compara.
+ *     Dado el archivo se llega al incidente por su hash. Lo que faltaba no era
+ *     el vínculo: era que el MANIFIESTO —la pieza que existe justamente para
+ *     probar la atribución— supiera decirlo.
+ *
+ *  2. **Lo que `T-2.118` horneó era de otra naturaleza.** El aviso de
+ *     «METADATOS RETENIDOS» es una advertencia sobre la fiabilidad del propio
+ *     sello: separada de la imagen, la imagen MIENTE por omisión. El incidente
+ *     no advierte de nada, atribuye — y la atribución es precisamente lo que el
+ *     JSON *firmado* de la spec §4.2 existe para sostener. Ponerla en el pixel
+ *     sería ponerla donde no se puede firmar, y dejar sin trabajo a la pieza que
+ *     sí va a llevar firma.
+ *
+ *  3. **La que decide, y es la que impide la tentación:** el `incidentId` sale
+ *     del MISMO snapshot de `mobile-state` que `T-2.118` ya declaró que puede
+ *     estar viejo. Un snapshot retenido puede nombrar el incidente ANTERIOR. En
+ *     el item de la cola eso es corregible —el servidor valida el alcance y
+ *     puede rechazar (404/409)—; horneado en el pixel sería PERMANENTE: un
+ *     exhibit que afirma, dentro del sello y para siempre, una atribución que
+ *     puede ser falsa. Frente a eso, `snapshot_retained` califica al incidente
+ *     igual que al PGA: el manifiesto dice de qué snapshot salió, y quien lo
+ *     lea sabe cuánta fe darle. Un pixel no puede matizarse después.
+ *
+ * Sigue sin viajar, como todo este JSON, y eso no cambia con esta ficha: el
+ * campo nace CONSISTENTE para el día de la costura, que es exactamente lo que
+ * `T-2.118` hizo con el aviso de retenidos. La ficha pedía decidir, no cablear.
+ *
  * NO SE BORRA, y ésa es la otra mitad de la decisión: `T-2.118` lo dejó
  * consistente con el aviso horneado en el pixel, y esa consistencia es la parte
  * cara. Borrarlo la tiraría para tener que reescribirla el día de la costura.
@@ -140,6 +197,10 @@ export function forensicMetadata(meta: ForensicMeta): Record<string, unknown> {
     pga_pending: meta.pgaG === null,
     operator_id: meta.operatorId,
     site_id: meta.siteId,
+    // [T-2.135] La tercera pata de la atribución: «con qué incidente». Va aquí y
+    // no en el pixel — razón completa arriba. Queda calificada por
+    // `snapshot_retained`, igual que `pga_g`: las dos salen del mismo snapshot.
+    incident_id: meta.incidentId,
     // [T-2.118] Lo MISMO que declara el pixel: si el JSON callara la edad del
     // snapshot mientras la marca la declara, la contradicción dentro del propio
     // expediente valdría menos que no declarar nada.

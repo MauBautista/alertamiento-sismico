@@ -200,6 +200,12 @@ class Expectations:
     #: (proc_name, hypertable) de cada política de TimescaleDB: retención,
     #: compresión y refresco de caggs. Se pierden sin dejar hueco visible.
     timescale_policies: frozenset[tuple[str, str]] = frozenset()
+    #: [T-2.80.c] LA RENDIJA. ``(rol, tabla) → columnas`` sobre las que el esquema
+    #: concede ``UPDATE`` **por columna**. Hoy solo hay una —``life_checkins.geom``,
+    #: la anonimización de ARCO— y por eso mismo hace falta declararla: es la
+    #: única excepción al «esta tabla no se toca», y su TAMAÑO es lo que nadie
+    #: comprobaba tras un restore. Ver ``_check_column_grants``.
+    column_grants: Mapping[tuple[str, str], frozenset[str]] = field(default_factory=dict)
 
     def merged_with(self, other: Expectations) -> Expectations:
         rls = {**self.rls, **other.rls}
@@ -217,6 +223,16 @@ class Expectations:
             barrier_views=self.barrier_views | other.barrier_views,
             roles=self.roles | other.roles,
             timescale_policies=self.timescale_policies | other.timescale_policies,
+            # UNIÓN por clave y no `{**a, **b}`: si el esquema y el origen
+            # declararan rendijas distintas sobre la misma tabla, quedarse con
+            # una de las dos ENSANCHARÍA o ESTRECHARÍA la expectativa en
+            # silencio. Con la unión, cualquier discrepancia se convierte en un
+            # FAIL que alguien tiene que leer.
+            column_grants={
+                clave: frozenset(self.column_grants.get(clave, ()))
+                | frozenset(other.column_grants.get(clave, ()))
+                for clave in set(self.column_grants) | set(other.column_grants)
+            },
         )
 
 
@@ -306,6 +322,19 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
         for ht in re.findall(rf"{fn}\s*\(\s*'(\w+)'", schema)
     }
 
+    # [T-2.80.c] La rendija de ARCO, derivada del DDL igual que todo lo demás.
+    # `GRANT UPDATE (geom) ON life_checkins TO takab_app` es la ÚNICA excepción
+    # al «esta tabla no se toca», y lo que hay que conservar tras un restore no
+    # es que exista sino que sea del MISMO TAMAÑO. Se deriva y no se enumera por
+    # lo de siempre: la segunda rendija que alguien abra entra sola.
+    column_grants: dict[tuple[str, str], frozenset[str]] = {}
+    for columnas, tabla, rol in re.findall(
+        r"GRANT\s+UPDATE\s*\(([^)]*)\)\s+ON\s+(\w+)\s+TO\s+(\w+)", schema
+    ):
+        clave = (rol, tabla)
+        cols = frozenset(c.strip() for c in columnas.split(",") if c.strip())
+        column_grants[clave] = column_grants.get(clave, frozenset()) | cols
+
     return Expectations(
         extensions=extensions,
         append_only=frozenset(append_only),
@@ -317,6 +346,7 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
         barrier_views=barrier_views,
         roles=roles,
         timescale_policies=frozenset(ts_policies),
+        column_grants=column_grants,
     )
 
 
@@ -334,6 +364,11 @@ def _baseline_expectations(baseline: Mapping[str, Any]) -> Expectations:
         ),
         roles=frozenset(baseline.get("roles", ())),
         timescale_policies=frozenset((p[0], p[1]) for p in baseline.get("timescale_policies", ())),
+        # [T-2.80.c] La rendija tal y como estaba EN EL ORIGEN. Cubre el hueco
+        # que `db/schema.sql` no puede cubrir —una rendija abierta por una
+        # migración 0002+— y, sobre todo, existe porque la imagen de la nube
+        # co-locada NO lleva `db/schema.sql` dentro (ver `declared_roles`).
+        column_grants={(g[0], g[1]): frozenset(g[2]) for g in baseline.get("column_grants", ())},
     )
 
 
@@ -525,6 +560,47 @@ def _privileges(conn: psycopg.Connection, roles: Iterable[str]) -> dict[str, dic
     return salida
 
 
+#: [T-2.80.c] Columnas sobre las que un rol tiene `UPDATE` EFECTIVO.
+#:
+#: `has_column_privilege` responde `true` tanto por un grant de columna como por
+#: uno de TABLA, y eso es exactamente lo que hace falta: el conjunto que devuelve
+#: es la superficie real de escritura. Si alguien restaura con `GRANT UPDATE ON
+#: life_checkins` a nivel de tabla, aquí salen TODAS las columnas y la
+#: comprobación lo canta. Con `information_schema.column_privileges` no valdría:
+#: esa vista solo muestra los grants donde el usuario que pregunta es el
+#: concedente o el concedido, así que desde una sesión de verificación puede
+#: devolver el conjunto vacío y dar verde sobre una base rota.
+_Q_COLUMNAS_CON_UPDATE = """
+SELECT a.attname
+FROM pg_attribute a
+WHERE a.attrelid = %s::regclass AND a.attnum > 0 AND NOT a.attisdropped
+  AND has_column_privilege(%s, a.attrelid, a.attnum, 'UPDATE')
+ORDER BY a.attnum
+"""
+
+
+def _column_grants(conn: psycopg.Connection) -> list[list]:
+    """`[[rol, tabla, [columnas]], …]` de toda rendija de UPDATE por columna.
+
+    Se deriva del catálogo, para la huella del ORIGEN. Solo aparecen las tablas
+    donde el rol NO tiene `UPDATE` de tabla pero SÍ sobre alguna columna: eso es,
+    por definición, una rendija — y es lo que hay que poder comparar después.
+    """
+    roles = sorted(declared_roles())
+    existentes = {r[0] for r in _rows(conn, "SELECT rolname FROM pg_roles")}
+    salida: list[list] = []
+    for table, *_ in _rows(conn, _Q_TABLES):
+        for rol in roles:
+            if rol not in existentes:
+                continue
+            if _scalar(conn, "SELECT has_table_privilege(%s, %s, 'UPDATE')", (rol, table)):
+                continue
+            cols = [r[0] for r in _rows(conn, _Q_COLUMNAS_CON_UPDATE, (table, rol))]
+            if cols:
+                salida.append([rol, table, cols])
+    return salida
+
+
 def _hypertables(conn: psycopg.Connection) -> set[str]:
     if not _scalar(conn, "SELECT count(*) FROM pg_extension WHERE extname = 'timescaledb'"):
         return set()
@@ -644,6 +720,12 @@ def capture_baseline(conn: psycopg.Connection) -> dict[str, Any]:
         "columns": _columns(conn),
         "constraints": _constraints(conn),
         "privileges": _privileges(conn, declared_roles()),
+        # [T-2.80.c] La rendija de ARCO. `privileges` NO la ve: usa
+        # `has_table_privilege`, que responde `false` para un grant de columna —
+        # medido, `has_table_privilege('takab_app','life_checkins','UPDATE')` es
+        # `f` con la rendija abierta. O sea que sin esta línea el origen no
+        # registra que la rendija existía y nada puede comparar su tamaño.
+        "column_grants": _column_grants(conn),
         "cagg_rows": cagg_rows,
         "hypertables": hypertables,
         "continuous_aggregates": sorted(
@@ -830,6 +912,198 @@ def _check_append_only_enforced(conn: psycopg.Connection, exp: Expectations) -> 
     if not ejercidas:
         return Check("append_only_enforced", SKIP, "no hay ninguna tabla append-only que ejercer")
     return Check("append_only_enforced", PASS, detalle)
+
+
+# --------------------------------------------------------------------------- [T-2.80.c]
+# LA RENDIJA DE ARCO: que siga siendo del TAMAÑO que era
+#
+# T-2.80 abrió en `life_checkins` una excepción de UNA sola columna —anular
+# `geom`, la anonimización del titular— y por eso esa tabla dejó de ser
+# append-only puro. El verificador tuvo que dejar de tratarla como tal: correcto
+# entonces, hueco ahora. Lo que quedó sin comprobar tras un restore es el TAMAÑO
+# de la rendija.
+#
+# El escenario concreto, y no es teórico: `pg_restore` reconstruye los ACL a
+# partir del dump. Una base restaurada con `GRANT UPDATE ON life_checkins TO
+# takab_app` —a nivel de TABLA en vez de por columna— pasaba TODAS las
+# comprobaciones. Y no por descuido de `_check_privileges`: esa función compara
+# contra el origen con `has_table_privilege`, que devuelve `false` para un grant
+# de columna (medido), así que el origen registraba «takab_app no tiene UPDATE
+# sobre life_checkins» y la base rota registraba «sí lo tiene» — una diferencia
+# que solo se mira en la dirección de lo que FALTA, nunca de lo que SOBRA.
+#
+# Con la tabla entera abierta, `status` y `user_id` de un check-in de vida serían
+# reescribibles desde la API: se podría cambiar «necesito ayuda» por «estoy bien»
+# en la evidencia de un rescate. Lo pararía el trigger, sí — pero entonces la
+# protección de esa tabla habría pasado de dos capas a una, en silencio, y el
+# chequeo de DR habría dicho VERDE.
+
+
+def _check_column_grants(conn: psycopg.Connection, exp: Expectations) -> Check:
+    """El privilegio de la rendija es POR COLUMNA, y son EXACTAMENTE éstas.
+
+    Dos aserciones y las dos hacen falta:
+
+    * ``has_table_privilege(..., 'UPDATE')`` tiene que ser **falso**. Si es
+      cierto, el grant volvió a ser de tabla y la rendija es la tabla entera;
+    * el conjunto de columnas con ``UPDATE`` efectivo tiene que ser **igual** al
+      declarado. Ni una de más (la rendija creció) ni una de menos (la rendija se
+      cerró y ARCO dejó de poder anonimizar, que también es un restore roto).
+    """
+    if not exp.column_grants:
+        return Check(
+            "column_grants", SKIP, _SIN_EXPECTATIVA.format(que="rendijas de UPDATE por columna")
+        )
+    malas: list[str] = []
+    revisadas: list[str] = []
+    for (rol, tabla), esperadas in sorted(exp.column_grants.items()):
+        if not _scalar(
+            conn, "SELECT count(*) FROM pg_class WHERE relname = %s AND relkind = 'r'", (tabla,)
+        ):
+            continue  # la ausencia de la tabla la reporta `object_inventory`
+        if not _scalar(conn, "SELECT count(*) FROM pg_roles WHERE rolname = %s", (rol,)):
+            continue  # la ausencia del rol la reporta `roles`
+        if _scalar(conn, "SELECT has_table_privilege(%s, %s, 'UPDATE')", (rol, tabla)):
+            malas.append(
+                f"{rol} tiene UPDATE de TABLA sobre {tabla}: la rendija de ARCO "
+                f"(solo {', '.join(sorted(esperadas))}) es ahora la tabla entera"
+            )
+            continue
+        actuales = {r[0] for r in _rows(conn, _Q_COLUMNAS_CON_UPDATE, (tabla, rol))}
+        if actuales != set(esperadas):
+            sobran = sorted(actuales - set(esperadas))
+            faltan = sorted(set(esperadas) - actuales)
+            detalle = "; ".join(
+                p
+                for p in (
+                    f"columnas de MÁS: {', '.join(sobran)}" if sobran else "",
+                    f"columnas de MENOS: {', '.join(faltan)}" if faltan else "",
+                )
+                if p
+            )
+            malas.append(f"{rol} sobre {tabla} — {detalle}")
+            continue
+        revisadas.append(f"{rol}:{tabla}({', '.join(sorted(esperadas))})")
+    if malas:
+        return Check(
+            "column_grants",
+            FAIL,
+            "la rendija de UPDATE cambió de tamaño (regla de oro 11): " + "; ".join(malas),
+        )
+    if not revisadas:
+        return Check(
+            "column_grants",
+            SKIP,
+            "ninguna de las rendijas declaradas se pudo ejercer: ni la tabla ni el rol "
+            "existen en esta base (lo reportan `object_inventory` y `roles`)",
+        )
+    return Check(
+        "column_grants",
+        PASS,
+        f"{len(revisadas)} rendija(s) de UPDATE siguen siendo por COLUMNA y del mismo "
+        f"tamaño: {', '.join(revisadas)}",
+    )
+
+
+def _updatable_column_outside(
+    conn: psycopg.Connection, table: str, excluidas: Iterable[str]
+) -> str | None:
+    """Una columna escribible que NO esté en la rendija.
+
+    Escribir sobre la columna de la rendija probaría lo contrario de lo que hace
+    falta: hay que ejercer lo que el guard tiene que RECHAZAR.
+    """
+    fuera = set(excluidas)
+    for fila in _rows(
+        conn,
+        "SELECT a.attname FROM pg_attribute a "
+        "WHERE a.attrelid = %s::regclass AND a.attnum > 0 AND NOT a.attisdropped "
+        "AND a.attidentity = '' AND a.attgenerated = '' ORDER BY a.attnum",
+        (table,),
+    ):
+        if fila[0] not in fuera:
+            return fila[0]
+    return None
+
+
+def _check_column_grant_enforced(conn: psycopg.Connection, exp: Expectations) -> Check:
+    """Aserción NEGATIVA sobre la tabla de la rendija: todo lo demás sigue vetado.
+
+    El privilegio es una capa; el trigger es la otra. Esta comprobación ejerce la
+    segunda **con el mismo UPDATE que la ficha nombra**: ``SET c = c``, el que no
+    cambia nada. Es el caso importante y el que más fácil se cuela — un no-op
+    sobre una tabla de evidencia parece inofensivo, y aceptarlo significaría que
+    el guard compara mal (`life_checkin_arco_guard` exige la transición REAL
+    ``geom`` con valor → NULL, no solo que ``NEW.geom`` sea NULL).
+
+    Y el DELETE también, porque la rendija es de UPDATE: para borrar, la tabla
+    sigue siendo append-only sin excepción alguna.
+    """
+    if not exp.column_grants:
+        return Check(
+            "column_grant_enforced",
+            SKIP,
+            _SIN_EXPECTATIVA.format(que="rendijas de UPDATE por columna"),
+        )
+    rotas: list[str] = []
+    vacias: list[str] = []
+    ejercidas: list[str] = []
+    sin_columna: list[str] = []
+
+    for tabla in sorted({t for _, t in exp.column_grants}):
+        if not _scalar(
+            conn, "SELECT count(*) FROM pg_class WHERE relname = %s AND relkind = 'r'", (tabla,)
+        ):
+            continue
+        if not _scalar(conn, sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(tabla))):
+            vacias.append(tabla)
+            continue
+        rendija = set().union(*(c for (_, t), c in exp.column_grants.items() if t == tabla))
+        pk = _pk_columns(conn, tabla)
+        col = _updatable_column_outside(conn, tabla, rendija)
+        if not pk or not col:
+            sin_columna.append(
+                f"{tabla} (con filas y sin PK o sin columna fuera de la rendija: "
+                "no se puede ejercer el rechazo)"
+            )
+            continue
+        cols = sql.SQL(", ").join(sql.Identifier(c) for c in pk)
+        where = sql.SQL("({}) IN (SELECT {} FROM {} LIMIT 1)").format(
+            cols, cols, sql.Identifier(tabla)
+        )
+        upd = sql.SQL("UPDATE {} SET {} = {} WHERE {}").format(
+            sql.Identifier(tabla), sql.Identifier(col), sql.Identifier(col), where
+        )
+        dele = sql.SQL("DELETE FROM {} WHERE {}").format(sql.Identifier(tabla), where)
+        fallos = [
+            f"{verbo} {razon}"
+            for verbo, stmt in (("UPDATE (no-op)", upd), ("DELETE", dele))
+            if (razon := _rejection_reason(conn, stmt)) is not None
+        ]
+        if fallos:
+            rotas.append(f"{tabla}: " + "; ".join(fallos))
+        else:
+            ejercidas.append(f"{tabla} (columna ejercida: {col})")
+
+    if rotas or sin_columna:
+        return Check(
+            "column_grant_enforced",
+            FAIL,
+            "la tabla de la rendija acepta lo que tenía que rechazar (regla de oro 11): "
+            + "; ".join([*rotas, *sin_columna]),
+        )
+    detalle = f"{len(ejercidas)} tabla(s) siguen rechazando el UPDATE que no cambia nada y el "
+    detalle += f"DELETE: {', '.join(ejercidas)}"
+    if vacias:
+        return Check(
+            "column_grant_enforced",
+            SKIP,
+            detalle + " · NO EJERCIDAS por estar VACÍAS (el guard es FOR EACH ROW): "
+            f"{', '.join(vacias)}. Sin filas la aserción negativa no prueba nada.",
+        )
+    if not ejercidas:
+        return Check("column_grant_enforced", SKIP, "no hay ninguna tabla con rendija que ejercer")
+    return Check("column_grant_enforced", PASS, detalle)
 
 
 def _check_rls_flags(conn: psycopg.Connection, exp: Expectations) -> Check:
@@ -1594,6 +1868,8 @@ def verify(
         _check_data_tip(conn, baseline),
         _check_append_only_triggers(conn, exp),
         _check_append_only_enforced(conn, exp),
+        _check_column_grants(conn, exp),
+        _check_column_grant_enforced(conn, exp),
         _check_rls_flags(conn, exp),
         _check_rls_on_tenant_tables(conn, exp),
         _check_rls_policies(conn, exp),

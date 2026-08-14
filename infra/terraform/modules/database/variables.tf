@@ -249,3 +249,57 @@ variable "wal_archive_max_age_s" {
     error_message = "wal_archive_max_age_s debe ser > 0."
   }
 }
+
+# --- [T-2.81.a] Retencion de PII ------------------------------------------------
+
+variable "pii_retention_windows_days" {
+  description = <<-EOT
+    Plazo de cada regla de retencion de PII, en dias, con la CLAVE DE LA REGLA
+    (`api/src/takab_api/privacy/retention.RETENTION_PLAN`) como llave del mapa:
+    `push_tokens.token`, `life_checkins.geom`, `user_profiles.identity`.
+
+    VACIO POR DEFECTO Y ESO ES LA DECISION, no un hueco: sin plazo la regla queda
+    DESHABILITADA y la corrida no toca una sola fila. Cuanto tiempo se guarda el
+    telefono de una persona no lo decide quien escribe el terraform — sale de la
+    ficha legal y del contrato con cada cliente. Mientras tanto el job corre a
+    diario, no poda nada, y deja constancia de que el reloj se reviso.
+
+    Una clave que no exista en el plan no rompe nada (el job ignora las variables
+    de entorno que no reconoce) pero tampoco poda nada: es un error silencioso, y
+    por eso la validacion de abajo solo admite las claves del plan de hoy.
+  EOT
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for k in keys(var.pii_retention_windows_days) :
+      contains(["push_tokens.token", "life_checkins.geom", "user_profiles.identity"], k)
+    ])
+    error_message = "pii_retention_windows_days solo admite claves del plan de retencion: push_tokens.token, life_checkins.geom, user_profiles.identity."
+  }
+
+  validation {
+    condition     = alltrue([for d in values(var.pii_retention_windows_days) : d > 0])
+    error_message = "un plazo de retencion debe ser > 0 dias: el job trata 0 o negativo como 'sin configurar' y la regla quedaria deshabilitada sin que nadie lo notara."
+  }
+}
+
+variable "pii_retention_chain_margin" {
+  description = <<-EOT
+    Cuantas corridas diarias seguidas pueden fallar antes de que suene la alarma.
+    Es el mismo criterio que `pitr.chain_margin`: el umbral de la alarma sale de
+    multiplicar la cadencia por este margen, no de un numero elegido a mano.
+
+    2 = dos dias sin una corrida correcta. Con 1 cualquier reintento tardio o un
+    reinicio de la instancia a las 06:00 daria un correo; con 3 la retencion
+    podria estar tres dias parada antes de que alguien se entere.
+  EOT
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.pii_retention_chain_margin >= 2
+    error_message = "pii_retention_chain_margin debe ser >= 2: con 1, una sola corrida perdida (un reinicio a las 06:00) manda un correo y las alarmas se dejan de leer."
+  }
+}

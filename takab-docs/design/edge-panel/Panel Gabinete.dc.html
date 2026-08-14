@@ -80,9 +80,19 @@ input{font-family:inherit}
       </div>
     </div>
 
+    <!-- [T-2.140 · 2026-08-14] Este banner llevaba TRES violetas distintos —el
+         tinte, el borde y el texto— y los tres se retiraron en `T-2.137` por
+         reprobar el contraste medido (WCAG 2.x, cada color sobre el tinte del
+         propio banner): 2.86:1 como texto y 2.86:1 como borde, contra el 4.5 de
+         AA y el 3.0 de no-texto. El valor vigente es `--tk-status-maintenance`
+         = #A78BFA (4.53:1), que es además el que ya pinta la consola y el que
+         sirve hoy el panel real (`edge/takab_edge/local_api/index.html`).
+         Un comp es la fuente de la que se copia: dejarlo con el color viejo
+         garantizaba que la próxima pantalla naciera reprobando.
+         Vigilado por `web/src/styles/compGabinete.test.ts`. -->
     <sc-if value="{{ showWr1 }}" hint-placeholder-val="{{ false }}">
-      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(124,77,255,0.16);border-bottom:1px solid #7C4DFF">
-        <span style="font:700 13px/1 'Geist',system-ui;letter-spacing:0.10em;color:#B79CFF">MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:9px 20px;background:rgba(167,139,250,0.16);border-bottom:1px solid #A78BFA">
+        <span style="font:700 13px/1 'Geist',system-ui;letter-spacing:0.10em;color:#A78BFA">MODO PRUEBA WR-1 — LA NUBE NO RECIBE ALERTAS</span>
         <span style="font:700 13px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#F0F2F5">{{ wr1Remaining }}</span>
         <span style="font:400 12px/1 'Geist',system-ui;color:#B8C2CE">La protección local sigue armada · la ventana expira sola</span>
       </div>

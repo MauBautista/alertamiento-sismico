@@ -14,7 +14,7 @@
  *   2. No es una puerta trasera (regla de oro 5): sin `/me` no hay alcance, y
  *      sin alcance NINGUNA ruta llega a pintar un dato de tenant ni a pedirlo.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ getMe: vi.fn() }));
@@ -33,6 +33,7 @@ import { MeRequestError } from "../auth/me";
 import { resetSessionStoreForTests, useSessionStore } from "../auth/session.store";
 import { ALL_ROUTES, ME_FIXTURES, TENANT_ID } from "../test-utils/meFixtures";
 import { renderRoutesAt, seedAuthenticated } from "../test-utils/renderRoutes";
+import { TOPE_MS } from "./degradedRetry";
 
 const DEGRADED_TITLE = "CONSOLA EN MODO DEGRADADO";
 
@@ -118,7 +119,7 @@ describe("T-2.123 · arranque con la base de datos caída", () => {
     expect(screen.getByText(/ECONNREFUSED/)).toBeInTheDocument();
   });
 
-  it("REINTENTAR: con la base de vuelta la consola entra normal", async () => {
+  it("REINTENTAR AHORA: con la base de vuelta la consola entra normal", async () => {
     saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
     mocks.getMe.mockRejectedValue(new MeRequestError(503));
 
@@ -127,7 +128,10 @@ describe("T-2.123 · arranque con la base de datos caída", () => {
 
     mocks.getMe.mockReset();
     mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
-    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR" }));
+    // [T-2.134] El botón pasó a llamarse «REINTENTAR AHORA»: desde que la
+    // pantalla reintenta sola, «REINTENTAR» a secas sugería que sin pulsarlo no
+    // pasa nada.
+    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR AHORA" }));
 
     await waitFor(() => {
       expect(useSessionStore.getState().status).toBe("authenticated");
@@ -220,5 +224,109 @@ describe("T-2.123 · el degradado NO es una puerta trasera (regla de oro 5)", ()
     expect(texto).not.toMatch(/ALCANCE ·/);
     expect(texto).not.toMatch(/ESTACION(ES)?\b/);
     expect(texto).not.toContain(TENANT_ID);
+  });
+});
+
+/**
+ * T-2.134 (a) · EL DEGRADADO SE RECUPERA SOLO.
+ *
+ * `T-2.123` dejó un botón, y un botón exige que alguien mire la pantalla. Esto
+ * ocurre durante un incidente: puede que nadie la mire en media hora, y la
+ * consola seguiría degradada con la base ya de vuelta.
+ *
+ * Las dos restricciones tiran en direcciones opuestas, y por eso se prueban
+ * juntas: reintentar SIN martillear una base que está arrancando (`degradedRetry.ts`
+ * fija el backoff) y SIN desmontar la pantalla en cada intento (un parpadeo cada
+ * pocos segundos en la pantalla que declara el problema).
+ */
+describe("T-2.134 · el degradado reintenta solo, con backoff y sin parpadear", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function avanzar(ms: number): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  async function arrancarDegradada(): Promise<void> {
+    saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 3_600_000 });
+    mocks.getMe.mockRejectedValue(new MeRequestError(503));
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: DEGRADED_TITLE })).toBeInTheDocument();
+  }
+
+  it("CRITERIO · vuelve a preguntar solo, sin que nadie toque el botón", async () => {
+    await arrancarDegradada();
+    expect(mocks.getMe).toHaveBeenCalledTimes(1); // el del arranque
+
+    await avanzar(TOPE_MS + 1_000);
+
+    expect(mocks.getMe.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("CRITERIO · no martillea: entre intentos hay espera medible", async () => {
+    await arrancarDegradada();
+
+    // Justo después de fallar no hay un segundo intento: el suelo del backoff
+    // existe para no añadir carga a una base que está arrancando.
+    await avanzar(1_000);
+    expect(mocks.getMe).toHaveBeenCalledTimes(1);
+
+    // Y en una caída larga los intentos se espacian en vez de acumularse: diez
+    // minutos de caída no son cientos de peticiones.
+    await avanzar(10 * 60 * 1_000);
+    expect(mocks.getMe.mock.calls.length).toBeLessThanOrEqual(20);
+  });
+
+  it("CRITERIO · reintentar NO desmonta la pantalla degradada", async () => {
+    await arrancarDegradada();
+    const nodo = screen.getByRole("heading", { name: DEGRADED_TITLE });
+
+    await avanzar(TOPE_MS + 1_000);
+
+    // Identidad del nodo, no sólo su presencia: si `refreshMe` pasara por
+    // `booting`, `App` desmontaría la pantalla y volvería a montarla — y el
+    // operador vería un parpadeo por intento. Este `toBe` es el que lo fija.
+    expect(screen.getByRole("heading", { name: DEGRADED_TITLE })).toBe(nodo);
+    expect(useSessionStore.getState().status).toBe("degraded");
+  });
+
+  it("cuando la base vuelve, entra sola: sin clic humano", async () => {
+    await arrancarDegradada();
+
+    mocks.getMe.mockReset();
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await avanzar(TOPE_MS + 1_000);
+
+    expect(useSessionStore.getState().status).toBe("authenticated");
+    expect(screen.queryByRole("heading", { name: DEGRADED_TITLE })).not.toBeInTheDocument();
+  });
+
+  it("la pantalla DECLARA que reintenta sola (regla de oro 7)", async () => {
+    await arrancarDegradada();
+    // Un reintento invisible es indistinguible de una pantalla colgada: quien
+    // mira tiene que saber que el sistema está trabajando por su cuenta.
+    expect(screen.getByText(/reintent\w+ (sola|autom)/i)).toBeInTheDocument();
+  });
+
+  it("y deja de reintentar al salir del degradado (no queda un bucle huérfano)", async () => {
+    await arrancarDegradada();
+
+    mocks.getMe.mockReset();
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await avanzar(TOPE_MS + 1_000);
+    const trasEntrar = mocks.getMe.mock.calls.length;
+
+    await avanzar(10 * TOPE_MS);
+    expect(mocks.getMe.mock.calls.length).toBe(trasEntrar);
   });
 });

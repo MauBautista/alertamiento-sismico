@@ -62,13 +62,51 @@ además filtra por ``tenant_id`` en cada sentencia. Sobre ``life_checkins`` el
 confinamiento es estructural: su política de retención exige ``tenant_id =
 app_tenant_id()``, así que la RLS misma acota la sentencia. Sobre ``push_tokens``
 la política interna preexistente (``pt_admin``) es global, y ahí el confinamiento
-es el ``WHERE`` explícito más el informe por tenant, donde una fuga se ve.
+es el ``WHERE`` explícito más el informe por tenant, donde una fuga se ve. Con
+``user_profiles`` pasa lo mismo y por la misma razón (``user_profiles_admin`` es
+``FOR ALL USING (app_is_takab_internal())``, sin filtro de cliente): estrechar
+esa política para este job rompería el acceso interno que ya existe, así que se
+declara cuál es el mecanismo en vez de fingir que es estructural.
 
-LO QUE ESTE ARCHIVO NO HACE
-───────────────────────────
-No se programa solo. No hay scheduler en ``infra/terraform/modules/`` y esta
-tarea no lo añade: el job queda **invocable**, como ``ops/restore_drill``, y
-colgarlo de un EventBridge/cron es trabajo de infraestructura aparte.
+[T-2.81.a] QUIÉN LO LLAMA, Y DÓNDE QUEDA ESCRITO QUE CORRIÓ
+──────────────────────────────────────────────────────────
+Este bloque decía "no se programa solo… colgarlo de un EventBridge/cron es
+trabajo de infraestructura aparte". Ya está hecho: lo llama a diario el documento
+SSM ``takab-<env>-retencion-pii`` (``infra/terraform/modules/database``), con el
+mismo vehículo que el respaldo lógico y el PITR, y con el DSN de ``takab_app``
+—el rol al que el job se degradaría de todas formas—, así que en la nube la
+degradación es un no-op comprobable en vez de una red que nadie ejerce.
+
+Corre con ``--apply``, y es seguro: sin ``TAKAB_API_RETENTION_*_DAYS`` cada regla
+queda **deshabilitada** y la corrida no toca una fila. O sea que el cron se puede
+desplegar antes de que los plazos estén decididos (son decisión de negocio, no de
+programador), y lo único que hace mientras tanto es dejar constancia de que el
+reloj se revisó.
+
+**Cada corrida deja fila en ``pii_retention_runs``, incluido el simulacro que no
+borró nada, e incluido el fallo.** Y se escribe **fuera** de la transacción del
+job: la corrida se revierte entera si algo no cuadra, así que una constancia
+escrita dentro desaparecería con el rollback justo en el caso que alguien
+necesita leer. De esa tabla sale la métrica ``PiiRetentionAgeSeconds`` (edad de
+la última corrida que terminó BIEN) y de la métrica, la alarma.
+
+TOPES DE ESPERA: EL DE LOCK SÍ, EL DE SENTENCIA NO
+──────────────────────────────────────────────────
+Este job no conecta ni por ``db/session.py`` (request) ni por ``db/pool.py``
+(workers): abre su propio ``psycopg.connect``, así que ninguno de los topes de
+``T-2.130``/``T-2.131``/``T-2.132``/``T-2.136`` le aplicaba. Comprobado, no
+supuesto — y la respuesta no es la misma para los dos relojes:
+
+* **``statement_timeout`` no**, y no es pereza. La corrida es UNA transacción por
+  diseño (el conteo previo es la autorización de la poda). **Medido el
+  2026-08-14 sobre 1 000 000 de filas: 38.9 s**, lineales. Cualquiera de los
+  topes de sentencia existentes (20 s / 15 s) mataría esa corrida legítima a
+  mitad: convertir trabajo correcto en fallo no es una mejora.
+* **``lock_timeout`` sí**, porque es otro modo de fallo: no mide lo que tarda la
+  sentencia sino lo que pasa ESPERANDO. Sin él, una fila bloqueada por otra
+  sesión deja al job esperando para siempre dentro de una transacción que ya
+  sostiene el horizonte de ``xmin`` y los locks de todo lo podado. El número
+  vive en ``db/session.JOB_LOCK_TIMEOUT_MS`` con el resto de la política.
 """
 
 from __future__ import annotations
@@ -78,11 +116,13 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
 from psycopg import sql
 
+from ..db.session import JOB_LOCK_TIMEOUT_MS
 from ..privacy.retention import (
     COMPLIANCE_ANCHOR,
     DELETE_ROWS,
@@ -183,6 +223,15 @@ def harden_session(conn: psycopg.Connection, *, role: str = JOB_ROLE) -> Session
             f"el job no pudo degradarse al rol {role!r} ({exc}). Correr con el rol "
             "del DSN es exactamente lo que este job no hace."
         ) from exc
+
+    # [T-2.81.a] El tope de ESPERA POR LOCK, dentro de la transacción del job y
+    # antes de leer nada. `SET LOCAL` y no `SET`: si el llamador (los tests, una
+    # consola) tenía el suyo, se lo devolvemos al salir.
+    #
+    # No lleva `statement_timeout` a propósito y la razón está medida, no
+    # supuesta: la corrida entera es UNA transacción por diseño y tarda 38.9 s
+    # sobre un millón de filas. Ver `db/session.JOB_LOCK_TIMEOUT_MS`.
+    conn.execute(sql.SQL("SET LOCAL lock_timeout = {}").format(sql.Literal(JOB_LOCK_TIMEOUT_MS)))
 
     fila = conn.execute(_Q_YO).fetchone()
     if fila is None:  # pragma: no cover - current_user siempre está en pg_roles
@@ -393,6 +442,58 @@ def run(
 
 
 # ---------------------------------------------------------------------------
+# [T-2.81.a] LA CONSTANCIA · una fila por corrida, incluida la que falló
+# ---------------------------------------------------------------------------
+
+_Q_CONSTANCIA = """
+INSERT INTO pii_retention_runs
+  (started_at, finished_at, mode, ok, total_due, total_applied, report, error)
+VALUES (%(started)s, now(), %(mode)s, %(ok)s, %(due)s, %(applied)s, %(report)s, %(error)s)
+RETURNING run_id
+"""
+
+
+def registrar_corrida(
+    conn: psycopg.Connection,
+    *,
+    started_at: datetime,
+    informe: Informe | None = None,
+    error: str | None = None,
+    mode: str | None = None,
+) -> str | None:
+    """Deja fila de esta corrida y devuelve su ``run_id``.
+
+    **Va en su PROPIA transacción, y ahí está todo el asunto.** La corrida se
+    revierte entera cuando algo no cuadra; una constancia escrita dentro de esa
+    transacción desaparecería con el rollback justo en el caso que alguien
+    necesita leer. Así que se escribe después, cuando la del job ya se cerró —
+    por commit o por rollback, da igual.
+
+    El contexto de aplicación se vuelve a fijar porque el ``set_config(...,
+    true)`` del job era LOCAL a aquella transacción: sin esto, la RLS de
+    ``pii_retention_runs`` (interna, default-deny) rechazaría la fila cuando el
+    DSN sea ``takab_app``, que es como corre en la nube.
+    """
+    with conn.transaction():
+        conn.execute("SELECT set_config('app.role', %s, true)", (JOB_APP_ROLE,))
+        fila = conn.execute(
+            _Q_CONSTANCIA,
+            {
+                "started": started_at,
+                "mode": mode or (informe.mode if informe else SIMULACRO),
+                "ok": error is None,
+                "due": informe.total_due if informe else 0,
+                "applied": informe.total_applied if informe else 0,
+                "report": json.dumps(_informe_json(informe), ensure_ascii=False)
+                if informe
+                else "{}",
+                "error": error,
+            },
+        ).fetchone()
+    return str(fila[0]) if fila else None
+
+
+# ---------------------------------------------------------------------------
 # Presentación
 # ---------------------------------------------------------------------------
 
@@ -493,6 +594,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="acota a un tenant (repetible). Por defecto, todos.",
     )
     p.add_argument("--json", default=None, help="además, escribe el informe como JSON aquí.")
+    p.add_argument(
+        "--sin-constancia",
+        action="store_true",
+        help="NO escribe la fila de `pii_retention_runs`. Solo para depurar a mano: sin "
+        "constancia, la métrica que vigila la retención no se mueve y la alarma suena.",
+    )
     return p
 
 
@@ -506,6 +613,11 @@ def _dsn(valor: str | None) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     plazos = {r.key: args.days for r in RETENTION_PLAN} if args.days is not None else None
+    modo = APLICADO if args.apply else SIMULACRO
+    arranque = datetime.now(UTC)
+    informe: Informe | None = None
+    fallo: str | None = None
+
     with psycopg.connect(_dsn(args.dsn), autocommit=False) as conn:
         try:
             informe = run(
@@ -515,12 +627,34 @@ def main(argv: list[str] | None = None) -> int:
                 days=plazos,
                 tenants=tuple(args.tenants) if args.tenants else None,
             )
-        except RetentionUnsafe as exc:
+            conn.commit()
+        # `psycopg.Error` además de `RetentionUnsafe`: el criterio 2 de la ficha
+        # es "un fallo del job SE VE", y un fallo de la base —un `lock_timeout`
+        # agotado, la conexión caída a mitad— es tan fallo como una regla ilegal.
+        # Sin esta rama, la traza subía y NO quedaba constancia de nada.
+        except (RetentionUnsafe, psycopg.Error) as exc:
+            fallo = f"{type(exc).__name__}: {exc}"
             print(f"RETENCIÓN ABORTADA · {exc}", file=sys.stderr)
             conn.rollback()
-            return 2
-        conn.commit()
 
+        if not args.sin_constancia:
+            try:
+                registrar_corrida(
+                    conn, started_at=arranque, informe=informe, error=fallo, mode=modo
+                )
+                conn.commit()
+            except psycopg.Error as exc:
+                # Que la constancia falle NO puede enmascarar el resultado real de
+                # la corrida, pero tampoco puede pasar callando: sin fila, la
+                # métrica no se mueve y la alarma va a sonar sin que nadie sepa
+                # por qué. Se dice aquí, que es donde el cron lo escribe al log.
+                conn.rollback()
+                print(f"AVISO · no se pudo dejar constancia de la corrida: {exc}", file=sys.stderr)
+
+    if fallo is not None:
+        return 2
+
+    assert informe is not None
     print(render(informe))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:

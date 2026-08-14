@@ -29,6 +29,7 @@ from takab_api.ops.restore_check import (
     FAIL,
     INDETERMINADO,
     PASS,
+    ROJO,
     SKIP,
     WARN,
     Report,
@@ -673,3 +674,154 @@ def test_sin_PK_la_guarda_de_compliance_no_se_ejerce_y_eso_es_FALLO(
     assert check.status == FAIL
     assert "audit_log" in check.detail
     assert "SIN PK" in check.detail
+
+
+# ===========================================================================
+# [T-2.80.c] LA RENDIJA DE ARCO: que siga siendo del TAMAÑO que era
+#
+# T-2.80 abrió en `life_checkins` una excepción de UNA sola columna (anular
+# `geom`, la anonimización del titular) y esa tabla dejó de ser append-only puro.
+# El verificador tuvo que dejar de tratarla como tal — correcto entonces, hueco
+# ahora: tras un restore nadie comprobaba el TAMAÑO de la rendija.
+# ===========================================================================
+
+
+def _rendija(conn: psycopg.Connection) -> set[str]:
+    """Columnas de `life_checkins` sobre las que `takab_app` puede escribir HOY."""
+    return {
+        r[0]
+        for r in conn.execute(
+            "SELECT a.attname FROM pg_attribute a "
+            "WHERE a.attrelid = 'life_checkins'::regclass AND a.attnum > 0 "
+            "AND NOT a.attisdropped "
+            "AND has_column_privilege('takab_app', a.attrelid, a.attnum, 'UPDATE')"
+        ).fetchall()
+    }
+
+
+def test_la_rendija_se_deriva_del_esquema_y_es_exactamente_geom() -> None:
+    """La expectativa sale de `db/schema.sql`, no de un literal en el verificador."""
+    exp = declared_expectations()
+    assert exp.column_grants[("takab_app", "life_checkins")] == frozenset({"geom"})
+
+
+def test_sobre_una_base_sana_la_rendija_esta_donde_tiene_que_estar(
+    seeded: psycopg.Connection,
+) -> None:
+    report = verify(seeded)
+    assert _check(report, "column_grants").status == PASS, render(report)
+    assert _check(report, "column_grant_enforced").status == PASS, render(report)
+
+
+def test_una_base_restaurada_con_el_GRANT_A_NIVEL_DE_TABLA_es_ROJA(
+    seeded: psycopg.Connection,
+) -> None:
+    """EL escenario de la ficha, y con la prueba de que antes NO se veía.
+
+    `pg_restore` reconstruye los ACL del dump. Una base restaurada con `GRANT
+    UPDATE ON life_checkins` a nivel de TABLA en vez de por columna deja
+    `status` y `user_id` de un check-in de vida reescribibles desde la API: se
+    podría cambiar «necesito ayuda» por «estoy bien» en la evidencia de un
+    rescate. Lo pararía el trigger, sí — pero la protección habría pasado de dos
+    capas a una, EN SILENCIO.
+
+    La segunda mitad del test es la que hace que valga: se toma la huella del
+    ORIGEN sano y se comprueba que `privileges` —la comprobación que ya existía—
+    sigue en PASS sobre la base rota. No es un defecto suyo: compara con
+    `has_table_privilege`, que devuelve `false` para un grant de columna, y solo
+    mira en la dirección de lo que FALTA. Lo que sobra no lo veía nadie.
+    """
+    baseline = capture_baseline(seeded)
+    assert _rendija(seeded) == {"geom"}, "el arnés no partió de la rendija esperada"
+
+    seeded.execute("GRANT UPDATE ON life_checkins TO takab_app")
+    assert len(_rendija(seeded)) > 1, "el arnés NO ensanchó la rendija: no se está midiendo nada"
+
+    report = verify(seeded, baseline=baseline)
+    check = _check(report, "column_grants")
+    assert check.status == FAIL, render(report)
+    assert "life_checkins" in check.detail and "TABLA" in check.detail
+    assert report.verdict == ROJO
+
+    assert _check(report, "privileges").status == PASS, (
+        "si `privileges` cazara esto, la comprobación nueva sobraría — y no lo caza: "
+        "compara con has_table_privilege y solo mira lo que FALTA"
+    )
+
+
+def test_una_rendija_que_CRECIO_una_columna_es_ROJA(seeded: psycopg.Connection) -> None:
+    """Sin llegar al grant de tabla: basta con una columna de más.
+
+    `status` es «estoy bien» / «necesito ayuda» en la evidencia de un rescate.
+    """
+    seeded.execute("GRANT UPDATE (status) ON life_checkins TO takab_app")
+    check = _check(verify(seeded), "column_grants")
+    assert check.status == FAIL
+    assert "status" in check.detail and "MÁS" in check.detail
+
+
+def test_una_rendija_que_se_CERRO_tambien_es_roja(seeded: psycopg.Connection) -> None:
+    """El otro lado, que es igual de restore roto: sin la rendija, ARCO deja de
+    poder anonimizar y el titular pierde su derecho sin que nada se queje."""
+    seeded.execute("REVOKE UPDATE (geom) ON life_checkins FROM takab_app")
+    check = _check(verify(seeded), "column_grants")
+    assert check.status == FAIL
+    assert "geom" in check.detail and "MENOS" in check.detail
+
+
+def test_el_guard_de_la_rendija_sigue_rechazando_el_UPDATE_QUE_NO_CAMBIA_NADA(
+    seeded: psycopg.Connection,
+) -> None:
+    """La segunda capa, ejercida con el caso que más fácil se cuela.
+
+    Un `SET c = c` sobre una tabla de evidencia parece inofensivo, y aceptarlo
+    significaría que `life_checkin_arco_guard()` compara mal: exige la
+    transición REAL (`geom` con valor → NULL), no solo que `NEW.geom` sea NULL.
+    """
+    seeded.execute("ALTER TABLE life_checkins DISABLE TRIGGER trg_life_checkins_arco_guard")
+    check = _check(verify(seeded), "column_grant_enforced")
+    assert check.status == FAIL, "un guard DESACTIVADO sigue en pg_trigger y no para nada"
+    assert "life_checkins" in check.detail and "UPDATE (no-op)" in check.detail
+
+
+def test_para_BORRAR_la_tabla_de_la_rendija_no_tiene_excepcion_alguna(
+    seeded: psycopg.Connection,
+) -> None:
+    """La rendija es de UPDATE. El DELETE lo sigue vetando el guard canónico."""
+    seeded.execute("DROP TRIGGER trg_life_checkins_append_only ON life_checkins")
+    check = _check(verify(seeded), "column_grant_enforced")
+    assert check.status == FAIL
+    assert "DELETE" in check.detail
+
+
+def test_un_SKIP_de_la_rendija_no_cuenta_como_PASS(seeded: psycopg.Connection) -> None:
+    """La lección de la Fase 2.6, aplicada a esta comprobación concreta.
+
+    Si la expectativa no se puede derivar —`db/schema.sql` ilegible, el DDL
+    reformateado de forma que la regex no case— la comprobación NO se da por
+    buena: pasaría sobre cualquier base. Se declara SALTADA con su razón, y una
+    base con comprobaciones sin ejercer no está verificada.
+    """
+    from dataclasses import replace
+
+    exp = replace(declared_expectations(), column_grants={})
+    report = verify(seeded, expectations=exp)
+
+    for nombre in ("column_grants", "column_grant_enforced"):
+        check = _check(report, nombre)
+        assert check.status == SKIP and check.detail, nombre
+    assert report.verdict == INDETERMINADO
+    assert not report.ok
+
+
+def test_la_huella_del_origen_registra_la_rendija(seeded: psycopg.Connection) -> None:
+    """`privileges` no la ve (usa `has_table_privilege`), así que si la huella no
+    la llevara aparte, una base restaurada en la nube —donde el verificador no
+    tiene `db/schema.sql` dentro de la imagen— no tendría contra qué compararla."""
+    huella = capture_baseline(seeded)
+    rendijas = {(g[0], g[1]): set(g[2]) for g in huella["column_grants"]}
+    assert rendijas[("takab_app", "life_checkins")] == {"geom"}
+    assert "UPDATE" not in huella["privileges"]["life_checkins"].get("takab_app", []), (
+        "si `privileges` registrara el UPDATE de la rendija, el origen y la base rota "
+        "se verían iguales"
+    )

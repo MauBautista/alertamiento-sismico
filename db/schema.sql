@@ -1400,6 +1400,86 @@ CREATE POLICY user_profiles_self_write ON user_profiles FOR ALL
 CREATE POLICY user_profiles_admin ON user_profiles FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
+-- [T-2.81.b · 0042] EL RELOJ QUE LE FALTABA AL NOMBRE Y AL TELÉFONO
+--
+-- `user_profiles.display_name` y `phone` son PII con caducidad y la T-2.81 los
+-- dejó FUERA del plan de retención con su razón escrita: la única columna
+-- temporal de la tabla era `updated_at`, y un perfil sin tocar en dos años
+-- describe a un empleado ESTABLE, no a uno que se fue. Usarla como caducidad
+-- habría borrado antes los nombres de quien más tiempo lleva en el edificio —
+-- exactamente al revés de lo que la retención pretende.
+--
+-- El reloj correcto es la BAJA DE LA CUENTA, y hasta hoy no se registraba en
+-- ninguna parte. Aquí se registra.
+--
+-- POR QUÉ UNA TABLA Y NO UNA COLUMNA EN `user_profiles`
+-- ─────────────────────────────────────────────────────
+-- La razón no es de estilo, es de privilegio. Quien da de baja es el
+-- `tenant_admin` (acción `manage_users`), que **no** es un rol interno de
+-- TAKAB: sobre `user_profiles` sus únicas políticas son "mi propia fila"
+-- (`user_profiles_self_write`) e "interno" (`user_profiles_admin`). Poner el
+-- reloj como columna habría exigido abrir una política de UPDATE del
+-- `tenant_admin` sobre las filas de OTROS — y como `WITH CHECK` no puede
+-- comparar contra la fila vieja, esa misma política le habría dejado reescribir
+-- `display_name` y `phone` de cualquiera del padrón. Se habría ensanchado la
+-- escritura sobre las dos columnas de PII que esta ficha existe para proteger.
+--
+-- Con tabla propia, la superficie de escritura de `user_profiles` **no cambia
+-- ni un bit**: el administrador escribe el HECHO, no el dato personal.
+--
+-- Y el hecho es un acto, no un atributo: tiene instante y tiene vía. **QUIÉN lo
+-- hizo no se copia aquí**: ya está en `audit_log` (`user_update`/`user_delete`,
+-- escrito en la MISMA transacción), que es append-only y no se poda jamás.
+-- Duplicarlo en una columna mutable sería guardar la versión peor del mismo dato.
+--
+-- El FK COMPUESTO contra el padrón es el mismo candado de
+-- `privacy_erasure_requests` (T-2.80.b): dar de baja a alguien de otro cliente
+-- no se rechaza por una comprobación, viola integridad referencial.
+--
+-- LA VUELTA TAMBIÉN ES UN HECHO. `PATCH {"enabled": false}` es la baja
+-- REVERSIBLE que la consola ofrece primero (`routers/users.py`), así que sin
+-- `reactivated_at` una persona readmitida seguiría con el reloj corriendo y la
+-- retención le borraría el nombre estando en el edificio. Se para el reloj, no
+-- se borra la fila: quién la dio de baja y cuándo es información de operación.
+CREATE TABLE user_deactivations (
+  tenant_id      uuid NOT NULL REFERENCES tenants,
+  user_sub       uuid NOT NULL,
+  deactivated_at timestamptz NOT NULL DEFAULT now(),
+  -- Cómo dejó de estar: cuenta deshabilitada (reversible) o cuenta borrada del
+  -- directorio. No se admite un tercer valor "manual" — un reloj que alguien
+  -- pueda poner a mano sin dar de baja la cuenta deja de ser el reloj de la baja.
+  via            text NOT NULL CHECK (via IN ('account_disabled','account_deleted')),
+  reactivated_at timestamptz,
+  PRIMARY KEY (tenant_id, user_sub),
+  CONSTRAINT fk_baja_del_padron_del_tenant FOREIGN KEY (tenant_id, user_sub)
+    REFERENCES user_profiles (tenant_id, user_sub) ON DELETE CASCADE,
+  CONSTRAINT ud_la_vuelta_es_posterior
+    CHECK (reactivated_at IS NULL OR reactivated_at >= deactivated_at)
+);
+-- El job de retención pregunta "quién lleva de baja más de N días, sin volver".
+CREATE INDEX idx_user_deactivations_reloj
+  ON user_deactivations (tenant_id, deactivated_at)
+  WHERE reactivated_at IS NULL;
+
+GRANT SELECT, INSERT, UPDATE ON user_deactivations TO takab_app;
+-- La vuelta se ESCRIBE (`reactivated_at`), no se borra: una baja que se puede
+-- hacer desaparecer es un reloj que se puede parar sin dejar rastro.
+REVOKE DELETE ON user_deactivations FROM takab_app;
+
+ALTER TABLE user_deactivations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_deactivations FORCE  ROW LEVEL SECURITY;
+-- Mismo círculo que `manage_users` en `auth/matrix.py`. La acción de matriz solo
+-- hace que el 403 llegue limpio; quien confina es esto.
+CREATE POLICY ud_admin ON user_deactivations FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() = 'tenant_admin')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() = 'tenant_admin');
+-- Los roles internos, exactamente como en `user_profiles_admin`: el superadmin
+-- da de baja en cualquier cliente (`routers/users.py` ya se lo permite) y el job
+-- de retención —que corre como `takab_support`— tiene que LEER el reloj de todos
+-- los tenants para poder recorrerlos.
+CREATE POLICY ud_internal ON user_deactivations FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
 -- ---------------------------------------------------------------------------
 -- SUPERFICIE MÓVIL (T-2.03 · Fase 2, spec §5/§5.1)
 -- push_tokens/device_keys = PII de dispositivo: SOLO la fila propia
@@ -2484,3 +2564,54 @@ $fn$;
 -- El dueño, otra vez, lo pone la 0041 y no este fichero (ver la nota de arriba).
 REVOKE ALL ON FUNCTION app_ops_alert_ack(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_ops_alert_ack(text) TO takab_app;
+
+-- ---------------------------------------------------------------------------
+-- [T-2.81.a · 0043] LA CONSTANCIA DE CADA CORRIDA DE RETENCIÓN
+--
+-- El job de retención existía y era invocable, y no lo llamaba nadie. Una
+-- retención que nadie ejecuta es una política escrita, no una cumplida — y la
+-- diferencia importa el día que un cliente pregunta cuánto tiempo guardamos su
+-- teléfono. Ahora lo llama un cron (documento SSM `takab-<env>-retencion-pii`),
+-- y esta tabla es lo que hace COMPROBABLE que corrió.
+--
+-- SIN TENANT, como `ops_alert_notices`: una corrida recorre a todos los clientes
+-- y es un hecho de la PLATAFORMA. El detalle por cliente viaja dentro de
+-- `report` (el mismo JSON que imprime el simulacro), que es donde un auditor lo
+-- lee sin que ningún cliente pueda ver las cifras de otro.
+--
+-- LA FILA SE ESCRIBE FUERA DE LA TRANSACCIÓN DEL JOB, y ése es el punto entero:
+-- la corrida es UNA transacción que se revierte ENTERA si algo no cuadra
+-- (`ops/prune_pii`). Escribir aquí dentro habría hecho desaparecer, con el
+-- rollback, justo la constancia de la corrida que falló — la única que alguien
+-- necesita leer. Por eso `ok` puede ser `false`: una corrida abortada deja fila.
+--
+-- El CHECK es el candado de "un fallo se ve": no se puede declarar fallo sin
+-- decir por qué, ni éxito arrastrando un error. Un `UPDATE` a mano lo intenta y
+-- la base lo rechaza.
+CREATE TABLE pii_retention_runs (
+  run_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  started_at    timestamptz NOT NULL,
+  finished_at   timestamptz NOT NULL DEFAULT now(),
+  -- El simulacro TAMBIÉN deja constancia. Es la corrida que no borró nada, y es
+  -- exactamente la que hay que poder enseñar: prueba que el reloj se revisó.
+  mode          text NOT NULL CHECK (mode IN ('simulacro','aplicado')),
+  ok            boolean NOT NULL,
+  total_due     bigint NOT NULL DEFAULT 0,
+  total_applied bigint NOT NULL DEFAULT 0,
+  report        jsonb  NOT NULL DEFAULT '{}'::jsonb,
+  error         text,
+  CONSTRAINT prr_el_fallo_lleva_su_razon CHECK (ok = (error IS NULL))
+);
+-- La consulta del publicador de la métrica: "¿cuánto hace de la última corrida
+-- que SÍ terminó?". La alarma cuelga de ahí, así que el índice también.
+CREATE INDEX idx_pii_retention_runs_ok ON pii_retention_runs (finished_at DESC) WHERE ok;
+
+GRANT SELECT, INSERT ON pii_retention_runs TO takab_app;
+-- Una corrida no se edita ni se borra: es el registro de que la retención se
+-- ejecutó. Editarlo sería poder afirmar que se podó lo que no se podó.
+REVOKE UPDATE, DELETE ON pii_retention_runs FROM takab_app;
+
+ALTER TABLE pii_retention_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pii_retention_runs FORCE  ROW LEVEL SECURITY;
+CREATE POLICY pii_retention_runs_internal ON pii_retention_runs FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());

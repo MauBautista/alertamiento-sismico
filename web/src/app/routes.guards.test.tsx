@@ -1,5 +1,5 @@
-import { fireEvent, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { resetSessionStoreForTests, useSessionStore } from "../auth/session.store";
 import { ALL_ROUTES, ME_FIXTURES, MOBILE_ONLY_ROLES, WEB_ROLES } from "../test-utils/meFixtures";
@@ -73,14 +73,18 @@ describe("estados de sesión en rutas protegidas", () => {
     expect(screen.getByRole("heading", { name: "CONSOLA SOC" })).toBeInTheDocument();
   });
 
-  it("error ⇒ ErrorScreen y REINTENTAR llama refreshMe", () => {
-    const refreshMe = vi.fn().mockResolvedValue(undefined);
-    useSessionStore.setState({ status: "error", error: "ECONNREFUSED", refreshMe });
-    renderRoutesAt("/console");
-    expect(screen.getByRole("heading", { name: "ERROR DE SESIÓN" })).toBeInTheDocument();
+  // [T-2.134] Aquí vivía «error ⇒ ErrorScreen y REINTENTAR llama refreshMe». El
+  // estado `"error"` se retiró por no tener productor desde `T-2.123`, y con él
+  // la pantalla. Lo que este caso cubría —«/me no contesta ⇒ el muro responde
+  // in-place, con reintento»— lo cubre hoy el degradado, que es el estado que sí
+  // se produce, y con más exigencia: `degraded-session.test.tsx` comprueba
+  // además que no se pide ni un dato en las 6 rutas.
+  it("degraded ⇒ el muro deniega IN-PLACE, sin rebotar al login", () => {
+    useSessionStore.setState({ status: "degraded", error: "ECONNREFUSED", me: null });
+    const router = renderRoutesAt("/console");
+    expect(router.state.location.pathname).toBe("/console");
+    expect(screen.getByRole("heading", { name: "CONSOLA EN MODO DEGRADADO" })).toBeInTheDocument();
     expect(screen.getByText("ECONNREFUSED")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR" }));
-    expect(refreshMe).toHaveBeenCalledTimes(1);
   });
 
   it("el dashboard de edificio muestra el siteId del deep-link", () => {

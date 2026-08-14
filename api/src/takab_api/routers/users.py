@@ -22,6 +22,31 @@ T-2.45**. Con esta pantalla desplegada y los usuarios ya aprovisionados,
 acotados. **No se activa en esta tarea**: encenderlo antes de que cada usuario web
 tenga su claim escrito es exactamente el escenario que el cutover en dos fases
 existe para evitar.
+
+[T-2.81.b] AQUÍ SE ESCRIBE EL RELOJ DE LA RETENCIÓN DE PII
+──────────────────────────────────────────────────────────
+`user_profiles.display_name` y `phone` caducan cuando la persona deja de estar, y
+el único sitio del sistema donde ese hecho ocurre es este fichero: dar de baja la
+cuenta. No se estrena un acto nuevo — se escribe en la MISMA transacción en la
+que estas tres rutas ya dejan su fila de `audit_log`, así que "hay bitácora" y
+"hay reloj" no pueden divergir.
+
+* `PATCH {"enabled": false}` → baja **reversible** (la que la consola ofrece
+  primero) ⇒ arranca el reloj.
+* `PATCH {"enabled": true}` → la persona volvió ⇒ **para** el reloj. Sin esto,
+  una readmisión seguiría contando plazo y perdería su nombre estando dentro.
+* `DELETE /users/{u}` → baja definitiva ⇒ arranca el reloj.
+
+El reloj vive en `user_deactivations`, no en una columna de `user_profiles`, y la
+razón es de privilegio: el `tenant_admin` no es rol interno, así que darle UPDATE
+sobre las filas de otros le habría dado también reescribir sus `display_name` y
+`phone` (un `WITH CHECK` no puede comparar contra la fila vieja). Escribe el
+HECHO, no el dato personal. La razón larga, en `0042_user_deactivation_clock`.
+
+**Lo que este fichero NO cierra, declarado:** una cuenta retirada directamente en
+el pool de Cognito no pasa por aquí y no deja reloj — esa persona conserva nombre
+y teléfono, que es el estado de hoy para todo el mundo. Se conserva de más, nunca
+se borra de menos.
 """
 
 from __future__ import annotations
@@ -78,6 +103,56 @@ _SITES_OF_TENANT = text(
     "SELECT site_id::text FROM sites "
     "WHERE site_id = ANY(CAST(:ids AS uuid[])) AND tenant_id = CAST(:t AS uuid)"
 )
+
+# --- [T-2.81.b] El reloj de la baja -------------------------------------------
+#
+# El sujeto se BUSCA en el padrón, no se construye: `INSERT ... SELECT` sobre
+# `user_profiles`. Tres cosas salen de ahí y ninguna es un `if`:
+#
+#   · el `username` de Cognito se compara como TEXTO (`user_sub::text`). Un
+#     usuario cuyo nombre no sea un UUID —los hay en el directorio simulado, y
+#     los habría el día que alguien cree una cuenta con alias— haría reventar un
+#     `CAST(:u AS uuid)` y tumbaría la baja entera. Aquí simplemente no casa;
+#   · sin fila en el padrón no se escribe reloj, y es correcto: quien nunca entró
+#     no tiene nombre ni teléfono guardados, o sea no hay PII que caduque;
+#   · el `tenant_id` sale del propio padrón, así que el FK compuesto no puede
+#     apuntar a un titular de otro cliente ni por error de quien llama.
+_START_CLOCK = text(
+    "INSERT INTO user_deactivations (tenant_id, user_sub, deactivated_at, via) "
+    "SELECT p.tenant_id, p.user_sub, now(), :via "
+    "  FROM user_profiles p "
+    " WHERE p.tenant_id = CAST(:t AS uuid) AND p.user_sub::text = :u "
+    "ON CONFLICT (tenant_id, user_sub) DO UPDATE SET "
+    # Repetir la baja NO reinicia el plazo: la persona se fue el día que se fue.
+    # Pero si había vuelto (`reactivated_at`), ésta es una baja NUEVA y el reloj
+    # arranca hoy — el ciclo anterior ya terminó.
+    "  deactivated_at = CASE WHEN user_deactivations.reactivated_at IS NULL "
+    "    THEN user_deactivations.deactivated_at ELSE excluded.deactivated_at END, "
+    "  reactivated_at = NULL, via = excluded.via"
+)
+
+#: La vuelta PARA el reloj; no borra la baja. Una baja que se puede hacer
+#: desaparecer es un reloj que se puede parar sin dejar rastro (por eso
+#: ``takab_app`` tampoco tiene ``DELETE`` sobre esta tabla).
+_STOP_CLOCK = text(
+    "UPDATE user_deactivations SET reactivated_at = now() "
+    " WHERE tenant_id = CAST(:t AS uuid) AND user_sub::text = :u AND reactivated_at IS NULL"
+)
+
+
+#: Las dos vías por las que una cuenta deja de estar. No hay una tercera
+#: "manual": un reloj que alguien pueda arrancar sin dar de baja la cuenta deja
+#: de ser el reloj de la baja.
+VIA_DISABLED = "account_disabled"
+VIA_DELETED = "account_deleted"
+
+
+async def _clock_start(conn: AsyncConnection, *, tenant: str, username: str, via: str) -> None:
+    await conn.execute(_START_CLOCK, {"t": tenant, "u": username, "via": via})
+
+
+async def _clock_stop(conn: AsyncConnection, *, tenant: str, username: str) -> None:
+    await conn.execute(_STOP_CLOCK, {"t": tenant, "u": username})
 
 
 def get_user_directory() -> UserDirectory:
@@ -260,6 +335,16 @@ async def update_user(
     except DirectoryError as exc:
         raise _directory_error(exc) from exc
 
+    # [T-2.81.b] El reloj de la retención de PII, en la misma transacción que la
+    # bitácora de abajo. Solo en la TRANSICIÓN: un PATCH que no toca `enabled` no
+    # dice nada sobre si la persona está o no, y reescribir el reloj en cada
+    # edición de `site_scope` lo volvería inservible.
+    if body.enabled is not None and body.enabled != current.enabled:
+        if body.enabled:
+            await _clock_stop(conn, tenant=current.tenant_id, username=username)
+        else:
+            await _clock_start(conn, tenant=current.tenant_id, username=username, via=VIA_DISABLED)
+
     # Diff explícito: el valor ANTERIOR y el nuevo de cada campo tocado. El estado
     # final ya se puede leer del pool; lo que solo existe si se registra es qué
     # cambió, cuándo y quién lo cambió.
@@ -355,6 +440,10 @@ async def delete_user(
         await _off_thread(directory.delete_user, username=username)
     except DirectoryError as exc:
         raise _directory_error(exc) from exc
+    # [T-2.81.b] La identidad se va del directorio; el perfil se queda (es lo que
+    # ata el `sub` a su tenant). Lo que arranca aquí es el plazo tras el cual su
+    # nombre y su teléfono dejan de ser necesarios.
+    await _clock_start(conn, tenant=current.tenant_id, username=username, via=VIA_DELETED)
     await audit_async(
         conn,
         tenant_id=current.tenant_id,

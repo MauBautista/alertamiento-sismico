@@ -77,3 +77,25 @@ output "pitr" {
     ssm_document              = aws_ssm_document.pitr.name
   }
 }
+
+# [T-2.81.a] El umbral de la alarma de la retencion de PII, DERIVADO de la
+# cadencia del cron que vive en este modulo (diaria) por el margen declarado. Un
+# literal en `modules/observability` se desincronizaria el dia que la cadencia
+# cambie, y la alarma pasaria a vigilar una periodicidad que no ocurre.
+output "pii_retention_max_age_s" {
+  description = "Edad maxima tolerada de la ultima corrida CORRECTA de retencion de PII, en segundos: cadencia diaria x `pii_retention_chain_margin`."
+  value       = var.pii_retention_chain_margin * 86400
+}
+
+# Lo que produce la maquina, para que el runbook pueda CITARLO en vez de repetir
+# lo que alguien tecleo.
+output "pii_retention" {
+  value = {
+    ssm_document   = aws_ssm_document.prune_pii.name
+    schedule_utc   = "06:00"
+    metric_name    = local.pii_retention_metric_name
+    max_age_s      = var.pii_retention_chain_margin * 86400
+    windows_days   = var.pii_retention_windows_days
+    reglas_activas = length(var.pii_retention_windows_days)
+  }
+}

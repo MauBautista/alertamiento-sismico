@@ -134,6 +134,14 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # volumen de los datos en menos de dos días.
         "base_backup_missing",
         "db_disk_space",
+        # [T-2.81.a] La retención de PII que se para. No entra aquí por inercia:
+        # su umbral ya son DOS DÍAS sin una corrida correcta, así que ninguna
+        # ventana de mantenimiento razonable la hace sonar — no hay ruido que
+        # evitar callándola, solo el aviso que se perdería. Y lo que avisa no es
+        # un síntoma operativo: es que se está incumpliendo la política de
+        # privacidad que se le prometió a un cliente, un fallo que no tumba nada
+        # y que por eso solo se descubre cuando alguien pregunta.
+        "pii_retention_stalled",
     }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:

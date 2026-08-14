@@ -85,6 +85,11 @@ const KIND_LABEL: Record<string, string> = {
   // perito usa para reconstruir lo ocurrido es falsear la evidencia.
   notify_simulated: "NOTIFICACIÓN SIMULADA · NADIE LA RECIBIÓ",
   notify_failed: "NOTIFICACIÓN NO ENTREGADA",
+  // [T-2.133] El CUARTO verbo de `T-2.109`, que llevaba sin rótulo desde que se
+  // añadió: en la bitácora que un perito lee salía «NOTIFY_NO_RECIPIENTS». No es
+  // fallo (el proveedor entrega) ni simulación (el canal es real): es que en ese
+  // inmueble no había un solo teléfono registrado al que despertar.
+  notify_no_recipients: "NOTIFICACIÓN SIN DESTINATARIOS · NADIE REGISTRADO EN EL INMUEBLE",
   drill_start: "SIMULACRO INICIADO",
   drill_stop: "SIMULACRO TERMINADO",
 };
@@ -113,7 +118,13 @@ export function kindLabel(action: TimelineAction): string {
 
 /** ¿Esta línea documenta algo que NO llegó a nadie? (marca visual propia) */
 function isUndelivered(action: TimelineAction): boolean {
-  return isSimulatedAction({ payload: action.payload ?? {} }) || action.kind === "notify_failed";
+  return (
+    isSimulatedAction({ payload: action.payload ?? {} }) ||
+    action.kind === "notify_failed" ||
+    // [T-2.133] La marca no dice «hubo una avería», dice «esto no llegó a
+    // nadie». Un sitio sin teléfonos registrados es exactamente ese caso.
+    action.kind === "notify_no_recipients"
+  );
 }
 
 export interface IncidentTimelineProps {

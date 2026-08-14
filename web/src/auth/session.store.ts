@@ -20,17 +20,33 @@ import { buildLogoutUrl, cognitoConfigured, getUserManager } from "./userManager
  * declara, sin pintar dato de tenant alguno — el porqué completo está en
  * `app/DegradedSessionScreen.tsx`.
  */
+/*
+ * [T-2.134] `"error"` SE RETIRÓ DE ESTE UNION, con `pages/StatusScreens.tsx::
+ * ErrorScreen` y la rama de `LoginPage` que lo miraba.
+ *
+ * `T-2.123` lo dejó sin productor —convirtió el único fallo de `/me` que existía
+ * en `degraded`— y con un aviso escrito en vez de retirarlo, por no invadir
+ * ficheros ajenos. Medido ahora: cero escrituras en producción, dos lectores
+ * (`RequireSession` y `LoginPage`) y una pantalla entera (`ErrorScreen`) que
+ * ningún camino podía alcanzar.
+ *
+ * Un estado muerto no es inocuo: se lee como una rama viva, así que quien
+ * mantenga esto creerá que existe un modo de fallo con su propia pantalla, y
+ * quien añada un fallo nuevo lo enchufará ahí «porque ya está» — sin decidir qué
+ * declara esa pantalla, que es exactamente la decisión que `T-2.123` tomó con
+ * razones. El fallo de `/me` tiene UNA conducta acordada y una sola pantalla que
+ * la explica: `DegradedSessionScreen`.
+ *
+ * La guardia que impide que vuelva un estado sin escritor es el censo de
+ * `session.store.test.ts`: todo miembro de este union tiene que tener productor
+ * en el código de producción.
+ */
 export type SessionStatus =
   | "booting"
   | "anonymous"
   | "authenticating"
   | "authenticated"
-  | "degraded"
-  /** Sin productor desde `T-2.123`: el único fallo de `/me` que existía ahora es
-   * `degraded`. Sobrevive porque `RequireSession`/`LoginPage` aún ramifican por
-   * él; se retira junto con `pages/StatusScreens.tsx::ErrorScreen`. NO usar para
-   * fallos nuevos sin decidir antes qué declara la pantalla. */
-  | "error";
+  | "degraded";
 
 export interface SessionState {
   status: SessionStatus;
