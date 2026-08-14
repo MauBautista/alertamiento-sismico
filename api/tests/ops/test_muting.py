@@ -127,6 +127,13 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         "iot_rule_errors",
         "ghost_gateways",
         "wal_archive_stalled",
+        # [T-2.72.b/c] Las dos de la Fase 2.6. `wal_archive_stalled` vigila la
+        # CADENA de WAL; `base_backup_missing`, su ANCLA — sin ancla, la cadena no
+        # recupera nada. Y `db_disk_space` vigila el modo de fallo que el PITR
+        # trajo consigo: con el archivado atascado el WAL no se recicla y llena el
+        # volumen de los datos en menos de dos días.
+        "base_backup_missing",
+        "db_disk_space",
     }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:

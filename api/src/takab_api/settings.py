@@ -436,6 +436,20 @@ class Settings(BaseSettings):
     #: cargar el sello de aprobación sin reconstruir la imagen.
     notify_whatsapp_templates_dir: str = ""
 
+    # --- Webhooks de estado de entrega (T-2.77.b) ---
+    # LOS DOS SON SECRETOS y son la ÚNICA autenticación de la única superficie
+    # pública de la API: entorno / Secrets Manager, jamás en git (regla de oro 6).
+    # Vacíos ⇒ el endpoint responde 503 y GRITA al recibir un callback: sin con
+    # qué verificar, aceptar sería dejar que cualquiera marque "entregado" lo que
+    # no salió. El de Twilio no lleva campo propio: es el mismo
+    # `notify_sms_auth_token` con el que Twilio firma `X-Twilio-Signature`, y la
+    # URL sobre la que se valida es `notify_sms_status_callback_url` — la MISMA
+    # que viaja en cada envío, nunca una reconstruida de las cabeceras.
+    #: App secret de la app de Meta: firma `X-Hub-Signature-256` del cuerpo crudo.
+    notify_whatsapp_app_secret: str = ""
+    #: `hub.verify_token` del alta de la suscripción del webhook de Meta.
+    notify_whatsapp_verify_token: str = ""
+
     # --- Command service + config sync (T-1.23 · B9, RBAC §4.3) ---
     # Clave HMAC POR GABINETE (T-1.38): la firma de un comando/config usa la
     # clave del gateway DESTINO, jamás una compartida de flota.

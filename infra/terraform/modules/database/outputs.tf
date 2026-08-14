@@ -39,6 +39,30 @@ output "wal_archive_max_age_s" {
   value = var.wal_archive_max_age_s
 }
 
+# [T-2.72.b] El umbral de la alarma del BACKUP BASE, derivado de las MISMAS
+# variables que gobiernan la retencion.
+#
+# No es un numero de politica: es un termino de la desigualdad que mantiene viva
+# la cadena (`wal_retention_days >= base_backup_interval_days * chain_margin`,
+# validada en `variables.tf`). Se calcula aqui —y no en `modules/observability`—
+# porque este es el unico modulo donde estan las dos cifras y donde se programa el
+# cron que produce esos backups. Un literal en la alarma se desincroniza el dia
+# que cambie la politica de retencion y la vigilancia pasaria a describir una
+# cadena distinta de la que el lifecycle de S3 poda.
+#
+# LO QUE ESTE UMBRAL NO ES, y conviene tenerlo escrito: NO es un aviso temprano.
+# Cuando la edad del ancla supera `intervalo * margen`, ya han fallado `margen`
+# backups base SEGUIDOS, y con los valores por defecto ese producto (7 x 2 = 14
+# dias) es EXACTAMENTE `wal_retention_days` — o sea que el correo llega justo
+# cuando la ventana de recuperacion se esta cerrando, no antes. Es lo que pide la
+# ficha (T-2.72.b) y es lo unico que se puede derivar de las variables de
+# retencion; un aviso temprano de verdad seria una segunda alarma a `intervalo`
+# dias, que caza el PRIMER backup base fallido. Queda fichado, no supuesto.
+output "base_backup_max_age_s" {
+  description = "Edad maxima tolerada del ultimo backup base, en segundos: `base_backup_interval_days * chain_margin` dias."
+  value       = var.pitr.base_backup_interval_days * var.pitr.chain_margin * 86400
+}
+
 # La configuracion PITR tal y como quedo, para que el runbook pueda CITAR lo que
 # produce la maquina en vez de lo que tecleo un humano.
 output "pitr" {

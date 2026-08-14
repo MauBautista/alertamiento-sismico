@@ -94,6 +94,25 @@ module "database" {
     for email in var.ses_verified_emails :
     "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${email}"
   ]
+
+  # [T-2.78.b] El REMITENTE DE DOMINIO, por la MISMA variable que crea la
+  # identidad en `module.identity`. Esta linea es la ficha entera: la lista de
+  # arriba itera `ses_verified_emails`, o sea identidades POR DIRECCION, asi que
+  # mover el remitente a un dominio sin tocar esto deja al worker `notify` con
+  # AccessDenied en cada envio — y los correos de CloudWatch (SNS, permiso propio)
+  # siguen llegando y tapan el hueco. Es el fallo del 2026-07-14, calcado.
+  #
+  # Se pasa el DOMINIO y no el ARN a proposito: `modules/database` compone el ARN
+  # con su propia region y cuenta, igual que hace con los topics de IoT de arriba,
+  # y asi no hace falta leer un output de `module.identity` — identity -> serve ->
+  # database ya es una cadena y eso cerraria el ciclo.
+  #
+  # Y hay un borde medido en `modules/database/tests/pitr.tftest.hcl`: el
+  # statement de envio se emite si hay ALGUNA identidad, no solo si la lista de
+  # direcciones no esta vacia. El dia que el remitente sea solo el dominio, vaciar
+  # `ses_verified_emails` es lo natural — y con la condicion escrita sobre la
+  # lista, eso borraria el permiso entero.
+  notify_ses_domain = var.ses_domain
 }
 
 module "identity" {
@@ -101,6 +120,21 @@ module "identity" {
 
   account_id          = data.aws_caller_identity.current.account_id
   ses_verified_emails = var.ses_verified_emails
+
+  # [T-2.78.b] Identidad de DOMINIO (DKIM + MAIL FROM + DMARC + rebotes con
+  # destino). Vacia = no se crea nada, el apply de hoy no cambia. El mismo
+  # `var.ses_domain` baja tambien a `module.database` (permiso de envio): son las
+  # dos mitades de una sola decision y por eso comparten variable.
+  #
+  # El buzon de rebotes es el de on-call y no una variable propia: quien recibe
+  # las alarmas operativas es quien tiene que enterarse de que el correo del
+  # sistema esta rebotando. Un buzon distinto seria un segundo sitio que mirar.
+  ses_domain              = var.ses_domain
+  ses_mail_from_subdomain = var.ses_mail_from_subdomain
+  ses_feedback_email      = var.ops_alert_email
+  ses_dmarc_policy        = var.ses_dmarc_policy
+  ses_dmarc_rua           = var.ses_dmarc_rua
+  ses_route53_zone_id     = var.ses_route53_zone_id
 
   # El callback de localhost se conserva SIEMPRE (modules/identity): el `make dev`
   # local debe seguir funcionando aunque la consola este publicada.
@@ -183,4 +217,12 @@ module "observability" {
   # describiria a una alarma que no existe. El output `rpo_seconds` de abajo lo
   # comprueba antes de dejar terminar el apply.
   wal_archive_max_age_s = module.database.wal_archive_max_age_s
+
+  # [T-2.72.b] Y el umbral del ANCLA de esa misma cadena, por el mismo camino y
+  # por la misma razon: `modules/database` lo deriva de
+  # `pitr.base_backup_interval_days * pitr.chain_margin`, que son las cifras con
+  # las que `modules/storage` calcula la retencion. Escribir aqui el numero de
+  # dias seria exactamente como se rompe una cadena PITR sin que ningun plan se
+  # ponga rojo: la alarma vigilaria una cadena y el lifecycle podaria otra.
+  base_backup_max_age_s = module.database.base_backup_max_age_s
 }

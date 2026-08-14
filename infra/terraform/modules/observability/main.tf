@@ -295,6 +295,121 @@ resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled" {
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
 
+# --- [T-2.72.b] El ANCLA de la cadena: un backup base que dejo de tomarse ------
+#
+# Esto es lo que la alarma de arriba dejaba FICHADO en su propio comentario:
+# `wal_archive_stalled` mide la cadena de WAL, no su ancla. Un `barman-cloud-backup`
+# que falle todas las semanas no mueve `WalArchiveAgeSeconds` ni un segundo — el
+# archivado sigue impecable — y la cadena esta rota igual, porque un WAL sin
+# backup base no arranca. Eso no se descubre hasta el dia del restore, que es EL
+# modo de fallo que la Fase 2.6 existe para eliminar
+# (`RUNBOOK-backup-restore-db.md:3`: "RESTORE JAMAS PROBADO").
+#
+# EL UMBRAL SALE DE LAS VARIABLES DE RETENCION, no de un numero elegido aqui:
+# `base_backup_interval_days * chain_margin` dias, calculado en `modules/database`
+# (que es donde viven esas cifras y donde se programa el cron del backup base) y
+# recibido entero. Es el MISMO producto que aparece en la desigualdad que mantiene
+# viva la cadena, `wal_retention_days >= intervalo * margen`. Con un literal aqui,
+# cambiar la politica de retencion dejaria a la alarma vigilando una cadena que ya
+# no es la que S3 poda.
+#
+# LO QUE ESTE UMBRAL NO ES —y es un limite declarado, no un descuido—: un aviso
+# TEMPRANO. Cuando la edad del ancla lo supera ya han fallado `margen` backups
+# base seguidos, y con los valores por defecto ese producto (7 x 2 = 14 dias) es
+# EXACTAMENTE `wal_retention_days`: el correo llega justo cuando la ventana de
+# recuperacion se cierra. Cazar el PRIMER backup base fallido exigiria una segunda
+# alarma a `intervalo` dias. Fichado.
+#
+# `breaching`, Y NO ES LA RESPUESTA DE `ghost_gateways`. Alli el silencio se
+# clasifico `missing` porque la ausencia de la metrica no decia nada sobre
+# fantasmas. Aqui si dice, por dos razones independientes:
+#   (a) lo que se mide no es "cuantos backups hay" sino "hasta que punto se puede
+#       recuperar". Sin metrica, la edad del ancla es DESCONOCIDA — y un ancla
+#       desconocida es, para un restore, lo mismo que no tener ancla. Igual que en
+#       `wal_archive_stalled`: "no lo se" y "esta roto" son aqui la misma frase;
+#   (b) el que publica y el que respalda son EL MISMO HOST. Si esto calla, el
+#       `barman-cloud-backup` de las 04:00 tampoco se esta ejecutando. El silencio
+#       no es solo ceguera: es tambien la averia.
+#
+# NACE EN ALARM, a proposito. El dia del primer apply todavia no existe ningun
+# backup base (el primero se toma en T-2.74) y el publicador lo dice con la verdad:
+# mide la edad desde que se configuro el PITR. Asi que la alarma dispara, y esta
+# BIEN que dispare. El correo de OK al completarse el primer backup base es el
+# ACUSE de que la cadena consiguio ancla — y es la unica senal automatica y barata
+# de que el respaldo base funciono alguna vez.
+resource "aws_cloudwatch_metric_alarm" "base_backup_missing" {
+  alarm_name          = "takab-dev-backup-base-ausente"
+  alarm_description   = "El ultimo backup base de la cadena PITR es demasiado viejo (o no se sabe cuanto): a partir de aqui los WAL archivados NO se pueden aplicar sobre nada y el respaldo continuo no sirve para restaurar. Han fallado varios `barman-cloud-backup` seguidos sin que nada mas lo notara — el archivado de WAL sigue impecable, por eso su alarma esta en verde. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list`. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no se ha tomado el primer backup base (T-2.74). La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube."
+  namespace           = "Takab/Ops"
+  metric_name         = "BaseBackupAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.base_backup_max_age_s
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
+# --- [T-2.72.c] El DISCO, que hasta hoy solo se vigilaba POR ACCIDENTE ---------
+#
+# El otro fichado del comentario de `wal_archive_stalled`. Con el archivado
+# atascado Postgres no recicla su WAL: `pg_wal` crece ~16 MiB/min sobre el mismo
+# volumen de 40 GiB donde vive el datadir, y en menos de dos dias llena el disco y
+# tumba la DB. Esa via ya estaba cubierta —la alarma de atasco llega a los 900 s,
+# muchisimo antes que las 48 h— pero INDIRECTAMENTE: mide el archivado, no el
+# disco. Cualquier otra causa de disco lleno (un log desbocado, un restore a base
+# lateral, imagenes de docker acumuladas) seguia siendo invisible.
+#
+# `disk_used_percent` no existe en las metricas nativas de EC2 —AWS/EC2 solo trae
+# CPU, red, EBS y status checks: el hipervisor no ve dentro del filesystem—, asi
+# que o se instala el agente de CloudWatch o se publica desde la instancia. Se
+# publica desde la instancia, por el cron que ya existe (`/etc/cron.d/takab-pitr`,
+# documento SSM de `modules/database`): un demonio mas en la maquina que sostiene
+# la DB, la API y los workers es un demonio mas que puede morir en silencio.
+#
+# `missing` Y NO `breaching`, al reves que su vecina de arriba, y la razon es la
+# de `ghost_gateways` palabra por palabra: lo que esta alarma AFIRMA en su correo
+# es una medida —"el disco de /data paso del N %"—. Si no hay datapoint, esa
+# medida no existe: el disco puede estar al 3 %. Una alarma que afirma lo que no
+# sabe se deja de creer, y arrastra consigo a las que si saben.
+#
+# Y la ceguera no queda tapada, que es lo que haria peligroso a `missing`: las dos
+# causas posibles del silencio ya paginan por otro lado — la instancia caida la
+# coge `ec2_status` (breaching) y el cron muerto lo coge `wal_archive_stalled`
+# (breaching; mismo `/etc/cron.d/takab-pitr`, mismo `/opt/takab/bin`). Lo unico
+# que queda solo para esta alarma es que falle SU publicador y no los otros dos —
+# el caso mas importante de todos, porque el publicador se niega a publicar
+# cuando `/data` NO ESTA MONTADO (`df` responderia con las cifras del volumen
+# raiz, que se ven sanas) — y para ese hueco esta `insufficient_data_actions`.
+#
+# EL DIA QUE SE CREA: una alarma en `missing` NACE en INSUFFICIENT_DATA, y
+# `insufficient_data_actions` solo dispara AL TRANSITAR. Si la metrica no arranca
+# NUNCA, la alarma se queda aparcada ahi sin avisar a nadie (la leccion de
+# `ghost_gateways`, medida el 2026-08-05). Por eso el script de configuracion
+# publica una primera medida en el acto: la alarma sale a OK y ese correo es el
+# acuse. Su AUSENCIA tras el apply es el indicio, y comprobarlo una vez es un paso
+# escrito de la ventana de T-2.74.
+resource "aws_cloudwatch_metric_alarm" "db_disk_space" {
+  alarm_name          = "takab-dev-disco-datos-lleno"
+  alarm_description   = "El volumen /data de la instancia (40 GiB: datadir de Postgres + pg_wal) supero el umbral de ocupacion. A 16 MiB/min —el ritmo al que crece pg_wal cuando el archivado se atasca— cada punto porcentual son ~25 min, asi que al 80 % quedan ~8,5 h antes de que Postgres se quede sin sitio y la base caiga. Primero `df -h /data` y `du -sh /data/pgdata/pg_wal`; si pg_wal es lo que crece, la causa esta en el archivado (ver la alarma de atasco y /var/log/takab-pitr.log), no en el disco. Si esta alarma queda en INSUFFICIENT_DATA, el publicador esta callado o /data NO ESTA MONTADO — que es peor que el disco lleno."
+  namespace           = "Takab/Ops"
+  metric_name         = "DataDiskUsedPercent"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.db_disk_used_max_pct
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
   alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie."

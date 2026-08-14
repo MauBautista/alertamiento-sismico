@@ -119,6 +119,20 @@ run "el_silenciador_no_puede_tocar_las_alarmas_intocables" {
   #   ghost_gateways  — vigila al vigilante; su insufficient_data_actions es la
   #                     unica senal de que el worker que cuenta esta muerto.
   #
+  # [T-2.72.b · T-2.72.c] Y las dos nuevas, tambien intocables y por razones
+  # simetricas a las de `wal_archive_stalled`:
+  #   base_backup_missing — es el ANCLA de la cadena PITR. Su umbral ya es el
+  #                     ULTIMO instante util (intervalo x margen, que con los
+  #                     valores por defecto coincide con la retencion de WAL):
+  #                     callarla no pausa nada, se come el margen que queda.
+  #   db_disk_space   — el reloj corto. `pg_wal` crece ~16 MiB/min con el
+  #                     archivado atascado, asi que una ventana de 4 h puede
+  #                     comerse la mitad del margen del umbral. Ademas su
+  #                     INSUFFICIENT_DATA es la unica senal de que `/data` no
+  #                     esta montado.
+  # Ninguna de las dos aparece en la politica, y ningun comodin las roza: el
+  # prefijo silenciable mas cercano es `takab-dev-gateway-offline-`.
+  #
   # Se comprueba sobre el JSON RENDERIZADO de la politica, no sobre la lista de
   # una variable: es lo que de verdad se manda a IAM. Un ARN nuevo mal puesto en
   # cualquier statement pone esto en rojo, venga de donde venga.
@@ -128,6 +142,8 @@ run "el_silenciador_no_puede_tocar_las_alarmas_intocables" {
       && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-iot-rule-errors")
       && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-gateway-retirado")
       && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-wal-archivado")
+      && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-backup-base-ausente")
+      && !strcontains(aws_iam_role_policy.db.policy, "alarm:takab-dev-disco-datos-lleno")
     )
     error_message = "La politica concede PutAlarmMuteRule sobre una alarma INTOCABLE. dlq_depth e iot_rule_errors son el instrumento del canary de T-2.70 (silenciarlas durante un despliegue es apagar el detector del fallo que el despliegue puede causar), ghost_gateways vigila al vigilante y wal_archive_stalled (T-2.72) es lo unico que acota el RPO. Ver ALARM_CATALOG en api/src/takab_api/ops/muting.py."
   }

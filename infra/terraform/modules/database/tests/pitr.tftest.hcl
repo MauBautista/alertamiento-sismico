@@ -398,3 +398,200 @@ run "un_archive_timeout_por_encima_de_la_edad_tolerada_no_se_puede_aplicar" {
 
   expect_failures = [var.wal_archive_timeout_s]
 }
+
+# --- [T-2.72.b] El ANCLA de la cadena, y de donde sale su umbral ---------------
+#
+# `WalArchiveAgeSeconds` mide la CADENA de WAL, no su ancla: un
+# `barman-cloud-backup` que falle cada semana no mueve esa metrica ni un segundo y
+# la cadena esta rota igual. La alarma que lo ve vive en `modules/observability`,
+# pero el UMBRAL se calcula aqui a proposito — es el unico sitio donde estan las
+# mismas variables que gobiernan la retencion (`pitr.base_backup_interval_days` y
+# `pitr.chain_margin`, las dos de `modules/storage`) y donde se programa el cron
+# que produce esos backups. Un numero copiado en la alarma se desincroniza el dia
+# que cambie la politica de retencion, y entonces la vigilancia describiria una
+# cadena distinta de la que S3 poda.
+run "el_umbral_del_backup_base_se_deriva_de_las_variables_de_retencion" {
+  command = plan
+
+  # Centinelas del bloque de archivo: 5 dias de intervalo x margen 3 = 15 dias.
+  # Ningun numero de produccion coincide con eso.
+  assert {
+    condition     = output.base_backup_max_age_s == 5 * 3 * 86400
+    error_message = "El umbral del backup base debe ser `pitr.base_backup_interval_days * pitr.chain_margin` en SEGUNDOS. Es la misma desigualdad que mantiene viva la cadena (`wal_retention_days >= intervalo * margen`): si la alarma vigilara otro numero, se estaria comprobando una cadena que el lifecycle de S3 no poda."
+  }
+
+  # Y que se DERIVE, no que hoy coincida: la forma, contra las propias variables.
+  assert {
+    condition     = output.base_backup_max_age_s == var.pitr.base_backup_interval_days * var.pitr.chain_margin * 86400
+    error_message = "El umbral del backup base debe derivarse de las variables de `pitr`, no de un literal."
+  }
+}
+
+# La otra mitad, sin la cual lo de arriba es vacuo: una igualdad comprobada con UN
+# solo juego de entradas no distingue una funcion de una constante que hoy
+# coincide. Es la leccion medida de `wal_archive_rpo.tftest.hcl` (donde el literal
+# `1077` pasaba los cinco tests). Con un segundo juego, ninguna constante puede
+# satisfacer los dos bloques a la vez.
+run "el_umbral_del_backup_base_se_mueve_con_la_politica_de_retencion" {
+  command = plan
+
+  variables {
+    pitr = {
+      prefix                    = "PITRSENT/"
+      server_name               = "SRVSENT"
+      wal_retention_days        = 40
+      base_backup_interval_days = 4
+      chain_margin              = 2
+    }
+  }
+
+  assert {
+    condition     = output.base_backup_max_age_s == 4 * 2 * 86400
+    error_message = "El umbral no siguio a las variables de retencion: es una constante disfrazada de derivacion, y el dia que se alargue el intervalo entre backups base la alarma seguira vigilando el intervalo viejo."
+  }
+}
+
+# --- [T-2.72.b · T-2.72.c] Los DOS publicadores que faltaban -------------------
+#
+# La alarma no puede inventarse el dato: alguien tiene que publicarlo. Los dos
+# viven en el mismo documento SSM que el reloj del RPO, y por la misma razon que
+# aquel: `user_data` corre UNA vez en el primer boot y ademas cambiarlo PARA Y
+# ARRANCA la instancia en el siguiente apply.
+run "el_documento_ssm_publica_el_ancla_y_el_disco" {
+  command = plan
+
+  # El otro extremo del cable de `base_backup_missing`. Terraform no puede leer el
+  # script desde `modules/observability`, asi que el par namespace+metrica se ancla
+  # en los dos lados: si divergen, la alarma vigila una metrica que nadie escribe
+  # y —al estar en `breaching`— grita para siempre.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "BaseBackupAgeSeconds")
+      && strcontains(aws_ssm_document.pitr.content, "barman-cloud-backup-list")
+    )
+    error_message = "El documento SSM debe publicar Takab/Ops/BaseBackupAgeSeconds a partir de `barman-cloud-backup-list`. La fuente importa: `pg_stat_archiver` no sabe nada del backup base, y un backup base que falla no mueve ninguna metrica de las que ya existen."
+  }
+
+  # El otro extremo del cable de `db_disk_space`. `disk_used_percent` no existe en
+  # las metricas nativas de EC2 —el hipervisor no ve dentro del filesystem—, asi
+  # que o hay agente de CloudWatch o se publica desde la instancia. Y tiene que
+  # mirar `/data`, que es donde vive el datadir (`/data/pgdata`) y donde crece
+  # `pg_wal`: medir el volumen raiz seria vigilar el disco equivocado.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "DataDiskUsedPercent")
+      && strcontains(aws_ssm_document.pitr.content, "df -P /data")
+    )
+    error_message = "El documento SSM debe publicar Takab/Ops/DataDiskUsedPercent midiendo `/data`, que es donde estan `/data/pgdata` y su `pg_wal`. Medir el volumen RAIZ seria vigilar un disco de 20 GiB que no se llena, mientras el de 40 GiB que sostiene la base se acaba."
+  }
+
+  # Los dos publican POR MINUTO aunque el listado de backups sea diario. La cadencia
+  # es parte del contrato con `treat_missing_data`: `base_backup_missing` esta en
+  # `breaching`, asi que una metrica publicada UNA vez al dia sobre un periodo de un
+  # dia produciria ventanas vacias en cuanto el cron se desplazara un minuto — y
+  # cada ventana vacia es un correo afirmando que no hay respaldo. El listado
+  # (`barman-cloud-backup-list`, la parte cara) sigue siendo diario; lo que se
+  # publica cada minuto es la EDAD, que es funcion del reloj y no del listado.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "* * * * * root /opt/takab/bin/takab-base-backup-age.sh")
+      && strcontains(aws_ssm_document.pitr.content, "* * * * * root /opt/takab/bin/takab-disk-usage.sh")
+    )
+    error_message = "Las dos metricas nuevas deben publicarse cada minuto. Con la cadencia diaria del LISTADO, un desplazamiento del cron dejaria ventanas de CloudWatch sin ningun datapoint, y sobre `breaching` eso es un correo diciendo que no hay respaldo cuando si lo hay."
+  }
+
+  # Y una primera medida YA, la leccion de `ghost_gateways`: una alarma cuya
+  # metrica no ha existido NUNCA nace en INSUFFICIENT_DATA y se queda aparcada ahi
+  # —`insufficient_data_actions` solo dispara AL TRANSITAR—, sin correo y con cara
+  # de "todavia no hay datos". Publicar una vez al configurar obliga a las dos
+  # alarmas a pronunciarse.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-disk-usage.sh || log")
+      && strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-base-backup-age.sh || log")
+    )
+    error_message = "El script debe publicar una primera medida de cada metrica nueva al configurar. Sin ella las alarmas nacen en INSUFFICIENT_DATA y —como `insufficient_data_actions` solo dispara EN TRANSICION— se quedan aparcadas ahi para siempre, sin correo y con aspecto de 'aun no hay datos'."
+  }
+
+  # El scan diario NO puede ser el podador disfrazado. `barman-cloud-backup-list`
+  # solo lee; que siga siendo asi es lo que impide que este documento se convierta
+  # en el segundo podador de la cadena (asercion 6 de este mismo archivo).
+  assert {
+    condition     = !strcontains(aws_ssm_document.pitr.content, "barman-cloud-backup-delete")
+    error_message = "El scan del backup base debe LISTAR, no podar. La retencion de la cadena la decide UN solo actor —el lifecycle de S3 de modules/storage— y el rol de la instancia ni siquiera tiene `s3:Delete*`."
+  }
+}
+
+# --- [T-2.78.b] El remitente de DOMINIO y el permiso de envio del worker -------
+#
+# Una identidad SES VERIFICADA no concede envio: son dos cosas distintas, y el
+# hueco estuvo tapado en produccion porque los avisos de CloudWatch los manda SNS
+# (permiso propio) y SI llegaban — el fallo del 2026-07-14.
+#
+# Hasta hoy `notify_ses_identity_arns` se construia en el entorno iterando
+# `ses_verified_emails`, o sea POR DIRECCION. Mover el remitente a un dominio sin
+# tocar esa lista deja al worker con AccessDenied en cada envio. El arreglo no es
+# "acordarse de anadirlo": es que la MISMA variable del entorno (`var.ses_domain`)
+# alimente la creacion de la identidad y este permiso.
+run "el_remitente_de_dominio_entra_en_el_permiso_de_envio" {
+  command = plan
+
+  variables {
+    notify_ses_identity_arns = ["arn:aws:ses:us-east-2:000000000000:identity/soc@example.test"]
+    notify_ses_domain        = "DOMSENT.test"
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.db.policy).Statement : s
+      if try(s.Sid, "") == "WorkerSesSend"
+      && try(contains(tolist(s.Resource), "arn:aws:ses:us-east-2:000000000000:identity/DOMSENT.test"), false)
+      && try(contains(tolist(s.Resource), "arn:aws:ses:us-east-2:000000000000:identity/soc@example.test"), false)
+    ]) == 1
+    error_message = "El ARN de la identidad de DOMINIO tiene que entrar en `WorkerSesSend` junto a las direcciones. Sin el, el worker `notify` recibe AccessDenied al primer envio desde el dominio y el job del dictamen muere en silencio mientras los correos de CloudWatch siguen llegando."
+  }
+}
+
+# EL BORDE QUE SE COME LA MITAD DEL ARREGLO, y que hay que medir aparte: el
+# statement `WorkerSesSend` solo se emite si la lista de ARNs no esta vacia (una
+# `Resource` vacia es IAM invalido). El dia que el remitente pase a ser SOLO el
+# dominio, lo natural es vaciar `ses_verified_emails` — y con la condicion escrita
+# sobre la lista, el statement DESAPARECERIA entero llevandose tambien el permiso
+# sobre el dominio. El worker se quedaria sin enviar por haber hecho lo correcto.
+run "un_remitente_solo_de_dominio_no_deja_al_worker_sin_permiso" {
+  command = plan
+
+  variables {
+    notify_ses_identity_arns = []
+    notify_ses_domain        = "DOMSENT.test"
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.db.policy).Statement : s
+      if try(s.Sid, "") == "WorkerSesSend"
+      && try(contains(tolist(s.Resource), "arn:aws:ses:us-east-2:000000000000:identity/DOMSENT.test"), false)
+    ]) == 1
+    error_message = "Con `ses_verified_emails` vacia y el dominio puesto, el statement `WorkerSesSend` sigue siendo obligatorio. Si la condicion mira solo a la lista de direcciones, vaciarla —que es lo que se hace al migrar al dominio— borra el statement entero y el worker se queda sin permiso justo por haber hecho lo correcto."
+  }
+}
+
+# Y al reves: sin remitente de ninguna clase, NO puede haber statement. Una
+# `Resource` vacia no es "sin permiso": es un documento IAM invalido que revienta
+# el apply.
+run "sin_ninguna_identidad_no_se_emite_el_statement_de_envio" {
+  command = plan
+
+  variables {
+    notify_ses_identity_arns = []
+    notify_ses_domain        = ""
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.db.policy).Statement : s
+      if try(s.Sid, "") == "WorkerSesSend"
+    ]) == 0
+    error_message = "Sin identidades ni dominio no debe emitirse `WorkerSesSend`: un statement con `Resource` vacia es IAM invalido y revienta el apply."
+  }
+}

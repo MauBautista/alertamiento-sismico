@@ -203,6 +203,13 @@ def _cleanup(conn: psycopg.Connection, tenants: list[str]) -> None:
             # append-only por trigger; en 'replica' los triggers de usuario callan.
             conn.execute("DELETE FROM privacy_consents WHERE tenant_id = %s", (tenant,))
             conn.execute("DELETE FROM tenants WHERE tenant_id = %s", (tenant,))
+        # [T-2.77.c] La cuarentena dejó de ser memoria de proceso y pasó a la
+        # base, así que ya no se la lleva el final del test: sin este borrado, el
+        # 132015 de `test_una_plantilla_pausada_...` deja el canal caído para
+        # todo lo que corra después (medido: 7 tests en rojo por herencia). No
+        # lleva `tenant_id` a propósito —la plantilla es del despliegue, no de un
+        # cliente—, así que se limpia entera.
+        conn.execute("DELETE FROM notify_template_quarantine")
         conn.execute("SET session_replication_role = 'origin'")
         conn.commit()
     except psycopg.Error:

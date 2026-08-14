@@ -41,6 +41,30 @@ locals {
   # en cada lado, porque Terraform no puede leer un script desde otro modulo.
   wal_archive_metric_name = "WalArchiveAgeSeconds"
 
+  # [T-2.72.b] La edad del ANCLA de la cadena. `WalArchiveAgeSeconds` mide la
+  # cadena de WAL y no su ancla: un `barman-cloud-backup` que falle cada semana no
+  # la mueve ni un segundo y la cadena esta rota igual.
+  base_backup_metric_name = "BaseBackupAgeSeconds"
+
+  # [T-2.72.c] El disco. `disk_used_percent` NO existe en las metricas nativas de
+  # EC2 (AWS/EC2 solo trae CPU, red, EBS y status checks: el hipervisor no ve
+  # dentro del filesystem). Se publica desde la instancia por el mismo cron que ya
+  # publica el reloj del RPO, en vez de instalar el agente de CloudWatch: un
+  # demonio mas en la maquina que sostiene la DB, la API y los workers es un
+  # demonio mas que puede morir en silencio.
+  data_disk_metric_name = "DataDiskUsedPercent"
+
+  # [T-2.78.b] Identidades desde las que el worker `notify` puede enviar. El ARN
+  # del dominio se COMPONE aqui (no llega hecho) por la misma razon que los topics
+  # de IoT: leer el output de `module.identity` cerraria el ciclo
+  # `identity -> serve -> database`.
+  notify_ses_arns = concat(
+    var.notify_ses_identity_arns,
+    var.notify_ses_domain != "" ? [
+      "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${var.notify_ses_domain}"
+    ] : [],
+  )
+
   # Raiz de la cadena PITR tal y como la espera barman-cloud: SIN barra final —
   # la herramienta compone `<url>/<servidor>/wals/...` por su cuenta (verificado
   # ejecutandola contra un S3 local desde la propia imagen de la DB).
@@ -70,6 +94,12 @@ locals {
     archive_timeout_s = var.wal_archive_timeout_s
     metric_namespace  = local.ops_metrics_namespace
     metric_name       = local.wal_archive_metric_name
+
+    # [T-2.72.b · T-2.72.c] Los otros dos relojes: el del ANCLA y el del DISCO.
+    # Sus nombres bajan desde el mismo sitio que el del RPO para que el par
+    # namespace+metrica no pueda divergir de las alarmas que los vigilan.
+    base_backup_metric_name = local.base_backup_metric_name
+    data_disk_metric_name   = local.data_disk_metric_name
 
     # La cadencia del backup base SALE del intervalo declarado, que es el mismo
     # numero con el que `modules/storage` calcula la retencion. `*/N` en el dia
@@ -384,12 +414,20 @@ resource "aws_iam_role_policy" "db" {
       # SI llegaban. Sin este grant: AccessDenied, el job muere y el inspector
       # jamas recibe la solicitud de dictamen (visto en produccion el 2026-07-14).
       # Lista vacia ⇒ sin statement (una Resource vacia seria IAM invalido).
-      length(var.notify_ses_identity_arns) > 0 ? [
+      #
+      # [T-2.78.b] La condicion mira `local.notify_ses_arns`, que incluye el ARN
+      # del DOMINIO, y no `var.notify_ses_identity_arns`. La diferencia no es de
+      # estilo: el dia que el remitente pase a ser SOLO el dominio, lo natural es
+      # vaciar `ses_verified_emails` — y escrita sobre la lista de direcciones,
+      # esa limpieza borraria el statement ENTERO llevandose tambien el permiso
+      # sobre el dominio. El worker se quedaria mudo por haber hecho lo correcto.
+      # Medido en `tests/pitr.tftest.hcl`.
+      length(local.notify_ses_arns) > 0 ? [
         {
           Sid      = "WorkerSesSend"
           Effect   = "Allow"
           Action   = ["ses:SendEmail", "ses:SendRawEmail"]
-          Resource = var.notify_ses_identity_arns
+          Resource = local.notify_ses_arns
         },
     ] : [])
   })

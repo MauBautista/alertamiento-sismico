@@ -321,7 +321,98 @@ de eso, pero lo primero que hay que mirar al recibirla es el espacio libre en `/
 
 ---
 
-## 7. La alarma que vigila todo esto
+## 7. Las alarmas que vigilan todo esto
+
+> **Son TRES, y cada una mira una cosa distinta.** Hasta T-2.72.b/c había una sola
+> (`wal-archivado-atascado`) y su propio comentario dejaba fichadas las dos ausencias: mide la
+> **cadena** de WAL, no su **ancla** ni el **disco** sobre el que vive todo.
+>
+> | Alarma | Qué mide | `treat_missing_data` |
+> |---|---|---|
+> | `takab-dev-wal-archivado-atascado` | la cadena de WAL (RPO) | `breaching` |
+> | `takab-dev-backup-base-ausente` | el ancla de la cadena | `breaching` |
+> | `takab-dev-disco-datos-lleno` | ocupación de `/data` | `missing` |
+
+### 7.0 · `takab-dev-backup-base-ausente` (T-2.72.b)
+
+`Takab/Ops/BaseBackupAgeSeconds`, `Maximum > base_backup_interval_days × chain_margin` (14 días
+con los valores de hoy), 2 periodos de 5 min, `treat_missing_data = "breaching"`, los TRES estados
+al topic de on-call.
+
+- **Por qué hacía falta:** un `barman-cloud-backup` que falle cada semana **no mueve
+  `WalArchiveAgeSeconds` ni un segundo**. El archivado sigue impecable y la cadena está rota,
+  porque un WAL sin backup base no arranca. Es invisible hasta el día del restore.
+- **El umbral NO es un número tecleado:** sale de las mismas variables que gobiernan la retención
+  (`modules/database` lo deriva; `terraform output -json` del entorno lo enseña). Cambiar la
+  política de retención mueve la alarma en el mismo commit.
+- **NO es un aviso temprano, y hay que saberlo:** cuando dispara ya han fallado `chain_margin`
+  backups base seguidos, y con los valores por defecto `7 × 2 = 14` días es **exactamente**
+  `wal_retention_days` — o sea que el correo llega justo cuando la ventana de recuperación se
+  cierra. Cazar el PRIMER backup base fallido exigiría una segunda alarma a `intervalo` días.
+- **NACE EN ALARM el día del despliegue inicial, y es correcto:** todavía no se ha tomado ningún
+  backup base. El publicador mide la edad **desde que se configuró el PITR**, no desde cero.
+  **El correo de OK al terminar el primer `barman-cloud-backup` es el acuse de que la cadena
+  consiguió ancla** — y es la única señal automática de que el respaldo base funcionó alguna vez.
+- **Qué hacer cuando suena:** `/var/log/takab-pitr.log` en la instancia → ejecutar
+  `/opt/takab/bin/takab-base-backup.sh` a mano → confirmar con `barman-cloud-backup-list`.
+- **Cómo se publica:** dos piezas separadas a propósito. El *scan* (diario, 05:00) pregunta a
+  `barman-cloud-backup-list` y guarda el instante en `/var/lib/takab/base-backup-last-epoch`; la
+  *publicación* (cada minuto) deriva la edad de ese instante, porque la edad es función del reloj
+  y no del listado. Publicar solo una vez al día sobre un periodo de un día dejaría ventanas de
+  CloudWatch vacías en cuanto el cron se desplazara un minuto — y sobre `breaching`, cada ventana
+  vacía es un correo diciendo que no hay respaldo.
+- **Es INTOCABLE** (no silenciable por ventana de mantenimiento): callarla no pausa el riesgo, se
+  come el margen que ya no queda.
+
+### 7.1 · `takab-dev-disco-datos-lleno` (T-2.72.c)
+
+`Takab/Ops/DataDiskUsedPercent`, `Maximum > 80 %`, 2 periodos de 5 min,
+`treat_missing_data = "missing"` **con** `insufficient_data_actions`.
+
+- **Por qué hacía falta:** con el archivado atascado Postgres **no recicla** su WAL y `pg_wal`
+  crece ~16 MiB/min sobre el mismo volumen de 40 GiB donde vive el datadir: menos de dos días
+  hasta llenar el disco. Eso ya lo cubría `wal-archivado-atascado` **por accidente** (900 s ≪ 48 h),
+  pero por la vía indirecta — mide el archivado, no el disco. Cualquier **otra** causa de disco
+  lleno (un log desbocado, un restore a base lateral, imágenes de docker acumuladas) era invisible.
+- **`disk_used_percent` no existe en las métricas nativas de EC2:** el hipervisor no ve dentro del
+  filesystem. Se publica desde la instancia por el cron que ya existe (`/etc/cron.d/takab-pitr`),
+  no con el agente de CloudWatch: un demonio más en la máquina que sostiene DB + API + workers es
+  un demonio más que puede morir en silencio.
+- **`missing` y no `breaching`, al revés que sus dos vecinas:** el correo de esta alarma **afirma
+  una medida** ("el disco pasó del 80 %"). Sin datapoint esa medida no existe. Una alarma que
+  afirma lo que no sabe se deja de creer, y arrastra a las que sí saben.
+- **La ceguera no queda tapada:** las dos causas del silencio ya paginan por otro lado — instancia
+  caída ⇒ `ec2-status-check`, cron muerto ⇒ `wal-archivado-atascado`, las dos en `breaching`.
+- **INSUFFICIENT_DATA aquí significa algo concreto y peor que el disco lleno:** el publicador se
+  NIEGA a publicar si `/data` **no está montado** (`df /data` respondería con las cifras del
+  volumen raíz, que se ven sanas). Si esta alarma queda en INSUFFICIENT_DATA, comprobar el montaje
+  antes que nada.
+- **Aritmética del margen:** cada punto porcentual son ~25 min a 16 MiB/min. Al 80 % quedan ~8 GiB
+  ≈ 8,5 h. Por eso el umbral está validado a `(0, 90]`: por encima del 90 % el aviso llega
+  demasiado tarde para hacer algo con la base en marcha.
+- **Es INTOCABLE**: una ventana de 4 h puede comerse la mitad del margen del umbral.
+
+### 7.2 · Comprobación POST-APPLY, obligatoria (~15 min después)
+
+`insufficient_data_actions` **solo dispara al TRANSITAR**. Una métrica que no arranca NUNCA deja
+la alarma **nacida** en INSUFFICIENT_DATA y aparcada ahí: sin correo, y con cara de "todavía no
+hay datos". El script de configuración publica una primera medida de las tres métricas justo al
+terminar, precisamente para forzar la transición — pero **eso hay que verificarlo una vez**:
+
+```bash
+aws cloudwatch describe-alarms --profile takab-dev --region us-east-2 \
+  --alarm-names takab-dev-wal-archivado-atascado takab-dev-backup-base-ausente \
+                takab-dev-disco-datos-lleno \
+  --query 'MetricAlarms[].[AlarmName,StateValue]' --output table
+```
+
+Ninguna debe seguir en `INSUFFICIENT_DATA`. Estados esperados el primer día:
+`wal-archivado-atascado` → `OK`; `backup-base-ausente` → **`ALARM`** (aún no hay backup base:
+es correcto, y pasa a OK al terminar el primero); `disco-datos-lleno` → `OK`.
+Si alguna sigue en `INSUFFICIENT_DATA`, el publicador no está corriendo: mirar
+`/etc/cron.d/takab-pitr` y `/var/log/takab-pitr.log`.
+
+### 7.3 · `takab-dev-wal-archivado-atascado`
 
 `takab-dev-wal-archivado-atascado` — namespace `Takab/Ops`, `Maximum > 600 s`, 5 periodos de 60 s
 seguidos, `treat_missing_data = "breaching"`, y los TRES estados (ALARM, OK, INSUFFICIENT_DATA)

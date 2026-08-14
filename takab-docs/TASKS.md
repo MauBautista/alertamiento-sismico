@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **278** · `[x]` **212** · `[~]` **9** · `[ ]` **57**
+**Conteo de tareas:** total **279** · `[x]` **217** · `[~]` **9** · `[ ]` **53**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5272,17 +5272,38 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [ ] Resuelto el acoplamiento con el sufijo de compresión y el layout interno de barman
         (hay que medirlo contra el bucket real, en la ventana de T-2.74).
 
-### [ ] T-2.72.b · Alarma de backup base ausente — `SOFTWARE`
+### [x] T-2.72.b · Alarma de backup base ausente — `SOFTWARE`
 - **Componente:** infra · **Depende de:** T-2.72
 - `WalArchiveAgeSeconds` mide la cadena de WAL, **no su ancla**. Un backup base que falla cada
   semana es invisible hasta el día del restore, que es el modo de fallo que la Fase 2.6 existe
   para eliminar.
 - **Criterios de aceptación:**
-  - [ ] `BaseBackupAgeSeconds` publicada a diario desde `barman-cloud-backup-list`.
-  - [ ] Alarma por encima de `base_backup_interval_days × chain_margin`, derivada de las mismas
+  - [x] `BaseBackupAgeSeconds` publicada a diario desde `barman-cloud-backup-list`.
+        > **Desviación declarada:** el *listado* es diario; la *edad* se publica **por minuto**,
+        > porque una métrica diaria sobre periodo diario deja ventanas vacías y, sobre
+        > `breaching`, **cada ventana vacía es un correo falso**.
+  - [x] Alarma por encima de `base_backup_interval_days × chain_margin`, derivada de las mismas
         variables que gobiernan la retención.
 
-### [ ] T-2.72.c · Alarma de espacio en disco de la instancia DB — `SOFTWARE`
+> **Cerrada (2026-08-13).** `treat_missing_data = breaching`, y **nace en ALARM a propósito**: el
+> día del `apply` todavía no hay backup base. **El correo de OK al terminar el primero ES el
+> acuse** de que la cadena consiguió ancla — si no llega, eso es el hallazgo. Razón del
+> `breaching`: no mide «cuántos backups hay» sino **hasta dónde se puede recuperar**, y un ancla
+> desconocida es, para un restore, **no tener ancla**. Más una razón de instrumento: **el que
+> publica y el que respalda son el mismo host**, así que si ésta calla, lo más probable es que
+> tampoco esté corriendo el respaldo.
+>
+> El umbral se deriva de `base_backup_interval_days × chain_margin`, **las mismas variables que
+> gobiernan la retención**, y se probó con **dos** juegos de centinelas — con uno solo, una
+> igualdad no distingue una función de una constante (la lección del literal `1077`).
+>
+> **⚠️ HALLAZGO SOBRE LA PROPIA FICHA: este umbral NO es un aviso temprano.** Con los valores por
+> defecto, `intervalo × margen` = 7×2 = **14 días = exactamente `wal_retention_days`**: el correo
+> llega **justo cuando la ventana de recuperación se cierra**. Está implementado como la ficha lo
+> pide y **declarado** en el output, la alarma y el runbook. Cazar el *primer* backup base fallido
+> exige una segunda alarma a `intervalo` días — `T-2.141`.
+
+### [x] T-2.72.c · Alarma de espacio en disco de la instancia DB — `SOFTWARE`
 - **Componente:** infra · **Depende de:** T-2.72
 - El PITR introduce un modo de fallo nuevo: con el archivado atascado Postgres **no recicla** su
   WAL y `pg_wal` crece ~16 MiB/min sobre el mismo volumen de 40 GiB donde viven los datos —
@@ -5290,8 +5311,37 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   alarma de atasco (900 s ≪ 48 h) y su descripción ya nombra el reloj corto, pero **no hay
   vigilancia de disco**: `disk_used_percent` no existe en las métricas nativas de EC2.
 - **Criterios de aceptación:**
-  - [ ] Agente CloudWatch en la instancia, o publicación propia de espacio libre en `/data`.
-  - [ ] Alarma con `treat_missing_data` clasificado y su entrada en `ALARM_CATALOG`.
+  - [x] Agente CloudWatch en la instancia, o publicación propia de espacio libre en `/data`.
+  - [x] Alarma con `treat_missing_data` clasificado y su entrada en `ALARM_CATALOG`.
+
+> **Cerrada (2026-08-13), y su `treat_missing_data` es el OPUESTO al de su hermana — a
+> propósito.** Aquí es **`missing`**, no `breaching`, porque **el correo de esta alarma AFIRMA UNA
+> MEDIDA** («el disco pasó del 80 %») y **sin datapoint esa medida no existe**: afirmarla sería
+> exactamente la falta que `T-2.60.a` rechaza por escrito. La ceguera no queda tapada — si la
+> instancia cae lo dice `ec2_status`, si muere el cron lo dice `wal_archive_stalled`, y las dos
+> son `breaching` sobre el mismo `/etc/cron.d/takab-pitr`.
+>
+> **Y el detalle que evita un falso verde:** el publicador **se niega a publicar si `/data` no
+> está montado**, porque `df` respondería con el volumen raíz — **que se ve sano**. Ahí
+> INSUFFICIENT_DATA significa algo **peor** que el disco lleno.
+>
+> Contra la trampa de que `insufficient_data_actions` **solo dispara al transitar** —una métrica
+> que nunca arranca deja la alarma nacida ahí y **aparcada para siempre, sin avisar a nadie**—, el
+> script **publica una primera medida en el acto**: el correo de `ok_actions` es la señal de que
+> arrancó, y su ausencia es el indicio. Queda como paso escrito en el runbook.
+
+### [ ] T-2.141 · El aviso de backup base llega cuando ya no hay ventana — `SOFTWARE`
+- **Componente:** infra · **Detectada por:** `T-2.72.b` (2026-08-13), **al implementarla**
+- El umbral que pedía `T-2.72.b` es `base_backup_interval_days × chain_margin`. Con los valores
+  por defecto eso da **7×2 = 14 días**, que es **exactamente `wal_retention_days`**: cuando el
+  correo llega, **la ventana de recuperación ya se cerró**. La alarma es correcta como *última
+  línea* —dice «ya no puedes recuperar»— pero **no sirve de aviso**.
+- El fallo que hay que cazar es **el primer backup base que falla**, no el decimocuarto día.
+- **Criterios de aceptación:**
+  - [ ] Una segunda alarma a `base_backup_interval_days` (sin el margen), como **aviso**, con su
+        severidad distinguida de la de `T-2.72.b`.
+  - [ ] Las dos derivan de las mismas variables; ninguna repite un número.
+  - [ ] Su entrada en `ALARM_CATALOG` con la razón de por qué son dos y no una.
 
 ### [ ] T-2.72.d · Derivar la guardia de `treat_missing_data`, no enumerarla — `SOFTWARE`
 - **Componente:** infra + api · **Depende de:** —
@@ -5792,7 +5842,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [ ] **Registrar el opt-in de cada destinatario** antes de encender el canal para un tenant:
         sin `opt_in.at` en `notifications.whatsapp`, el provider se niega y deja `notify_failed`.
 
-### [ ] T-2.77.b · Webhooks de estado de entrega (Meta + Twilio) — `SOFTWARE` + infra
+### [x] T-2.77.b · Webhooks de estado de entrega (Meta + Twilio) — `SOFTWARE` + infra
 - **Componente:** api + infra · **Depende de:** T-2.76, T-2.77
 - **Por qué existe:** `T-2.76` lo pidió con todas las letras ("necesita **su propia ficha, con su
   conteo**") y `T-2.77` se topó con lo mismo. Hoy **tres canales dicen `notify_sent` queriendo
@@ -5804,22 +5854,53 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   escribe un desenlace **tardío** — que es lo verdaderamente nuevo: hoy `notification_jobs` no
   tiene dónde poner "salió a las 12:00:03 y llegó a las 12:00:19".
 - **Criterios de aceptación:**
-  - [ ] Endpoint público por proveedor, con **validación de firma**: `X-Twilio-Signature` en
+  - [x] Endpoint público por proveedor, con **validación de firma**: `X-Twilio-Signature` en
         Twilio; el `hub.verify_token` + firma `X-Hub-Signature-256` de Meta.
-  - [ ] Mapeo **`MessageSid` → job** y **`wamid` → job**: hoy el `wamid` ya se guarda en el
+  - [x] Mapeo **`MessageSid` → job** y **`wamid` → job**: hoy el `wamid` ya se guarda en el
         recibo del provider pero **no se persiste**; sin persistirlo no hay con qué casar nada.
-  - [ ] Columna(s) de desenlace tardío en `notification_jobs` (`delivered_at`, `last_status`) y
+  - [x] Columna(s) de desenlace tardío en `notification_jobs` (`delivered_at`, `last_status`) y
         **evidencia propia**: un `notify_delivered` distinto de `notify_sent`, porque son dos
         hechos distintos y la consola tiene que poder mostrar los dos.
-  - [ ] **Solo `delivered`/`read` cuentan como entrega.** `queued`, `sent`, `accepted` y
+  - [x] **Solo `delivered`/`read` cuentan como entrega.** `queued`, `sent`, `accepted` y
         `held_for_quality_assessment` no. Ya hay `is_delivery_confirmed()` en los dos providers
         con esa regla: este endpoint la reusa, no la reinventa.
-  - [ ] Un webhook **no autenticado o repetido** no altera nada (idempotencia por identificador
+  - [x] Un webhook **no autenticado o repetido** no altera nada (idempotencia por identificador
         de proveedor).
-  - [ ] Test: un job `sent` que recibe `failed`/`undelivered` **acaba en rojo en la consola**, no
+  - [x] Test: un job `sent` que recibe `failed`/`undelivered` **acaba en rojo en la consola**, no
         se queda verde para siempre. Ese es el caso que hoy no se ve y es el que más duele.
 
-### [ ] T-2.77.c · La cuarentena y la guarda de duplicados viven en la memoria de UN worker — `SOFTWARE`
+> **Cerrada (2026-08-13). Es la primera superficie PÚBLICA de la API** —el proveedor la llama, así
+> que sale del sobre de Cognito— y por eso lo que más importa aquí no es el desenlace tardío sino
+> **cómo se defiende**:
+> - **La firma es la única autenticación.** Twilio: base64(HMAC-SHA1(url + params ordenados));
+>   Meta: HMAC-SHA256 del **cuerpo crudo**. Las dos con `compare_digest`, y hay un test que
+>   **prohíbe `==` leyendo la fuente**.
+> - **La URL que se firma sale de la configuración, jamás de `Host`/`X-Forwarded-*`** — si se
+>   reconstruyera de la petición, **quien llama controlaría parte del material firmado**.
+> - **Un cuerpo sin firma válida no abre conexión.** El test **sabotea** la conexión para
+>   probarlo, y se midió en rojo moviendo la apertura antes de la verificación.
+> - **Firma mala e identificador inexistente son indistinguibles** —mismo código y mismo cuerpo,
+>   comparados por el test—, o el endpoint sería un oráculo de qué jobs existen.
+> - El escritor es una función `SECURITY DEFINER` acotada a «mover el desenlace de UN job hacia
+>   adelante»: la API corre como `takab_app`, **sin UPDATE y con RLS default-deny**.
+>
+> **Los estados se ordenan por RANGO, no por «gana el último»**, que es lo que hace correctos los
+> reenvíos y el desorden: un estado **no se pisa a sí mismo** (reenvío inerte), un `sent`
+> retrasado **no borra** un `delivered`, `read` sube pero **no mueve `delivered_at`** —manda la
+> primera confirmación—, y un estado desconocido **no toca nada y grita**.
+>
+> **Hallazgo cazado por correr contra base limpia, y es de los que no se ven venir:** poner
+> `ALTER FUNCTION … OWNER TO takab_ingest` en `db/schema.sql` **mata la 0001**, porque ese cuerpo
+> corre bajo `SET ROLE takab_migrator` y ese rol **no es miembro** de `takab_ingest`. Peor aún era
+> la consecuencia de que la cesión fallara en silencio: la función correría **sin BYPASSRLS**, no
+> vería ni una fila por RLS FORCE, y **el webhook contestaría «no reconozco esto» para siempre**.
+> Ahora revienta el despliegue en su lugar.
+>
+> **Para que funcione en la nube hacen falta tres secretos y abrir el 443 a Twilio/Meta** — ver
+> `PENDIENTES-MAURICIO §2`. **Sin ellos el endpoint responde 503 y lo grita**: no hay degradación
+> silenciosa.
+
+### [x] T-2.77.c · La cuarentena y la guarda de duplicados viven en la memoria de UN worker — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-2.76, T-2.77 · **Detectada por:** auditoría de la
   Fase 2.7 (2026-08-08)
 - **El defecto, medido.** La cuarentena de plantillas de WhatsApp (`whatsapp.py:456-466`) y la
@@ -5835,13 +5916,26 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
      supuesto de "un solo worker" que sostiene esta guarda ya está contradicho por el código de
      al lado.
 - **Criterios de aceptación:**
-  - [ ] La cuarentena sobrevive al reinicio del worker (persistida, no en memoria).
-  - [ ] La guarda de duplicados es **compartida entre instancias**, con la misma idempotencia por
+  - [x] La cuarentena sobrevive al reinicio del worker (persistida, no en memoria).
+  - [x] La guarda de duplicados es **compartida entre instancias**, con la misma idempotencia por
         `event_id`/nonce que ya gobierna el edge→nube (regla de oro 3).
-  - [ ] Test que arranque **dos** orquestadores contra la misma DB y demuestre que el mensaje
+  - [x] Test que arranque **dos** orquestadores contra la misma DB y demuestre que el mensaje
         sale **una vez**. Sin ese test esto vuelve.
-  - [ ] Test que reinicie el provider y demuestre que la plantilla en cuarentena **sigue** en
+  - [x] Test que reinicie el provider y demuestre que la plantilla en cuarentena **sigue** en
         cuarentena.
+
+> **Cerrada (2026-08-13).** La cuarentena vive en `notify_template_quarantine`, **sin
+> `tenant_id`** —la plantilla es de la WABA del despliegue, no de un cliente— con la exención
+> declarada en el censo de multi-tenancy, RLS activa y **nadie con DELETE**: levantarla es un acto
+> humano.
+>
+> **La guarda de duplicados no estrenó tabla, y la razón es buena:** vive en
+> `notification_jobs.inflight_until`, porque la clave `(destino, incidente)` **ya es** una fila de
+> job. Así hereda tenant, RLS y retención de golpe — **y no crea un sitio nuevo con teléfonos que
+> alguien tendría que borrar en un ARCO**.
+>
+> El test de las dos instancias tiene control de no-vacuidad: la B **no envía** el que la A ya
+> intentó, **y sí envía** el incidente que nadie tocó. Medido en rojo desatando el estado: 3 caen.
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
@@ -5898,7 +5992,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [ ] Test: un aviso sin acuse **jamás** aparece como atendido (mismo principio que T-2.75 —
         el canal que no entrega no finge).
 
-### [ ] T-2.78.b · Identidad de DOMINIO de SES en Terraform — `SOFTWARE`
+### [x] T-2.78.b · Identidad de DOMINIO de SES en Terraform — `SOFTWARE`
 - **Componente:** infra · **Depende de:** —
 - **Por qué es tarea propia:** el único recurso SES de toda la infra es
   `aws_sesv2_email_identity` **por dirección** (`modules/identity/main.tf:139-144`); grep de
@@ -5909,18 +6003,18 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   del módulo `push/`: sin credenciales, el apply no crea nada).
 - **Reproducción:** `grep -rn "aws_ses" infra/terraform/` → una sola línea, de dirección.
 - **Criterios de aceptación:**
-  - [ ] Identidad de **dominio** con Easy DKIM, MAIL FROM propio y su registro DMARC,
+  - [x] Identidad de **dominio** con Easy DKIM, MAIL FROM propio y su registro DMARC,
         condicionados a una variable de dominio: vacía ⇒ no se crea nada y el `apply` de hoy no
         cambia.
-  - [ ] **El ARN de la identidad de dominio entra en `notify_ses_identity_arns`.** Hoy esa
+  - [x] **El ARN de la identidad de dominio entra en `notify_ses_identity_arns`.** Hoy esa
         lista se construye iterando `ses_verified_emails` (`envs/dev/main.tf:79-82`): cambiar
         el remitente al dominio sin tocar esto deja al worker con `AccessDenied` mientras los
         correos de CloudWatch siguen llegando — el fallo del 2026-07-14, calcado.
-  - [ ] **Bounces y quejas con destino.** La solicitud de producción exige declarar que existe
+  - [x] **Bounces y quejas con destino.** La solicitud de producción exige declarar que existe
         un proceso para tratarlos
         (`https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html`); hoy no hay
         ni topic de feedback. Declararlo sin tenerlo es firmar algo falso.
-  - [ ] Los valores literales de los registros DNS **no se hornean en el repo**: varían por
+  - [x] Los valores literales de los registros DNS **no se hornean en el repo**: varían por
         región y celda, y la fuente es la respuesta de la API.
 
 ## Fase 2.8 · Compliance como producto

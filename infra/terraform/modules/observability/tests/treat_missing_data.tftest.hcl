@@ -42,6 +42,11 @@ variables {
   # vive todo lo de esa alarma. La linea de abajo lo fija tambien desde aqui para
   # que el archivo que gobierna el significado del SILENCIO no tenga un hueco.
   wal_archive_max_age_s = 600
+
+  # [T-2.72.b] Mismo caso: su dueño es `modules/database`, que lo deriva de
+  # `pitr.base_backup_interval_days * pitr.chain_margin`. Sin valor, el modulo no
+  # planifica y ESTE archivo dejaria de comprobar nada.
+  base_backup_max_age_s = 1209600
 }
 
 run "el_silencio_significa_lo_correcto_en_cada_alarma" {
@@ -378,6 +383,22 @@ run "ghost_gateways_no_miente_cuando_no_sabe" {
 #
 # La asercion de abajo fija lo unico que este archivo puede fijar: que las cuatro
 # silenciables NO tocaron su `treat_missing_data` para "ayudar" al silenciador.
+#
+# [T-2.72.b · T-2.72.c] Las dos alarmas nuevas entran tambien en esa asercion, y
+# van clasificadas AL REVES una de otra a proposito. La razon larga de cada una
+# vive en `tests/backup_base_y_disco.tftest.hcl`; el resumen, porque es aqui donde
+# se decide el significado del silencio:
+#
+#   base_backup_missing -> `breaching`. Lo que mide no es "cuantos backups hay"
+#       sino "hasta que punto se puede recuperar": sin metrica, la edad del ancla
+#       es DESCONOCIDA, y un ancla desconocida es —para un restore— lo mismo que
+#       no tener ancla. Ademas el que publica y el que respalda son el mismo host.
+#
+#   db_disk_space -> `missing` CON `insufficient_data_actions`. Aqui el correo
+#       AFIRMA una medida ("el disco paso del N %"); sin datapoint esa medida no
+#       existe, y afirmarla es la falta que T-2.60.a rechaza por escrito. La
+#       ceguera no queda tapada porque las dos causas del silencio ya paginan
+#       (`ec2_status` y `wal_archive_stalled`, las dos en `breaching`).
 run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
   command = plan
 
@@ -388,6 +409,8 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
       && aws_cloudwatch_metric_alarm.ec2_status.treat_missing_data == "breaching"
       && aws_cloudwatch_metric_alarm.ghost_gateways.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.wal_archive_stalled.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.base_backup_missing.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.db_disk_space.treat_missing_data == "missing"
     )
     error_message = "Alguna alarma cambio su treat_missing_data. Si el motivo fue 'para que no moleste durante un mantenimiento', la respuesta es NO: eso la debilita para siempre. El silencio acotado lo da una alarm mute rule (api/src/takab_api/ops/muting.py), que no puede existir sin Duration y que al BORRARLA desilencia en el acto disparando lo que quedara en ALARM."
   }

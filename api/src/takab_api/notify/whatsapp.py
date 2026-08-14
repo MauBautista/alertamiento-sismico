@@ -235,6 +235,16 @@ PAUSED_STATUS = "paused"  # la plantilla está pausada: NO va a salir
 #: Lo único que significa "llegó al teléfono", y solo llega por webhook.
 DELIVERY_CONFIRMED_STATUSES = frozenset({"delivered", "read"})
 
+#: [T-2.77.b] Y lo único que significa "no va a llegar". Meta declara cuatro
+#: valores para el estado de un mensaje en su webhook —``sent``, ``delivered``,
+#: ``read`` y ``failed``
+#: (https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components)—,
+#: así que el conjunto terminal de fallo tiene UN elemento y no hace falta
+#: inventar más. Vive aquí, junto a su gemelo de arriba, porque el vocabulario de
+#: este canal es de este módulo: ``notify/callbacks.py`` lo REUSA en vez de
+#: copiarlo, que es como se evita la próxima divergencia.
+DELIVERY_FAILED_STATUSES = frozenset({"failed"})
+
 
 def is_delivery_confirmed(status: str) -> bool:
     """¿Ese estado significa que el mensaje llegó al teléfono?
@@ -424,12 +434,35 @@ def _defect_of(spec: TemplateSpec) -> str:
     return ""
 
 
+#: [T-2.77.c] Canal bajo el que se guarda la cuarentena persistida. Es el nombre
+#: del canal en la cascada, no un identificador nuevo: así una consulta a mano
+#: sobre la tabla se lee sin traducir nada.
+QUARANTINE_CHANNEL = "whatsapp"
+
+
 @dataclass
 class TemplateCatalog:
-    """Las plantillas del repo + la cuarentena que Meta impone en caliente."""
+    """Las plantillas del repo + la cuarentena que Meta impone en caliente.
+
+    [T-2.77.c] La cuarentena tiene ahora DOS mitades y la distinción importa:
+
+    * ``quarantined`` — la del proceso. Sigue existiendo porque el efecto tiene
+      que ser inmediato: el job que viene detrás, en la misma pasada, ya no puede
+      usar esa plantilla aunque la escritura en la base todavía no haya
+      commiteado.
+    * ``state`` — la PERSISTIDA, cuando el orquestador ata el estado compartido.
+      Es la que sobrevive al reinicio del worker, que era el defecto medido:
+      hasta hoy un `restart` levantaba la cuarentena y se volvía a martillear una
+      plantilla que Meta había pausado — justo lo que degrada su calificación de
+      calidad y termina costando el canal entero.
+
+    Lo que se consulta es la UNIÓN (``blocked``). Sin estado atado —la API, un
+    test puro— la unión es la memoria de siempre y nada cambia.
+    """
 
     templates: tuple[TemplateSpec, ...] = ()
     quarantined: dict[str, str] = field(default_factory=dict)
+    state: object | None = None
 
     @classmethod
     def load(cls, directory: Path | str) -> TemplateCatalog:
@@ -450,9 +483,23 @@ class TemplateCatalog:
         return cls(templates=tuple(found))
 
     @property
+    def blocked(self) -> dict[str, str]:
+        """[T-2.77.c] Cuarentena EFECTIVA: la persistida ∪ la de este proceso.
+
+        La local va encima porque es la más reciente por construcción (acaba de
+        ocurrir en esta pasada) y porque tiene que valer aunque la escritura no
+        haya commiteado todavía.
+        """
+        persistida: dict[str, str] = {}
+        if self.state is not None:
+            persistida = dict(self.state.quarantined(QUARANTINE_CHANNEL))  # type: ignore[attr-defined]
+        return {**persistida, **self.quarantined}
+
+    @property
     def usable(self) -> tuple[TemplateSpec, ...]:
         """Las que se pueden enviar AHORA (aprobadas y sin cuarentena)."""
-        return tuple(t for t in self.templates if t.usable and t.name not in self.quarantined)
+        bloqueadas = self.blocked
+        return tuple(t for t in self.templates if t.usable and t.name not in bloqueadas)
 
     def get(self, kind: str, language: str) -> TemplateSpec | None:
         return next(
@@ -462,7 +509,17 @@ class TemplateCatalog:
 
     def quarantine(self, template: TemplateSpec, reason: str) -> None:
         """Meta dijo que con esa plantilla no se puede hablar. Fuera del catálogo
-        hasta que un humano la vuelva a someter y el proceso reinicie."""
+        hasta que un humano la vuelva a someter.
+
+        [T-2.77.c] Y **ya no hasta que el proceso reinicie**: si hay estado
+        compartido atado, esto se ESCRIBE. Un reinicio levantaba la cuarentena y
+        volvía a martillear lo que Meta ya había pausado, que es el defecto que
+        cierra la ficha. Se escribe primero fuera y luego dentro para que el
+        efecto local valga aunque la base falle — perder el recuerdo persistido
+        es malo; perder también el de esta pasada sería peor.
+        """
+        if self.state is not None:
+            self.state.quarantine(QUARANTINE_CHANNEL, template.name, reason)  # type: ignore[attr-defined]
         self.quarantined[template.name] = reason
         logger.error(
             "canal whatsapp: plantilla %s EN CUARENTENA (%s). Quedan %d utilizable(s); "
@@ -540,6 +597,17 @@ class WhatsAppReceipt:
     def delivery_confirmed(self) -> bool:
         return is_delivery_confirmed(self.status)
 
+    @property
+    def message_id(self) -> str:
+        """[T-2.77.b] El identificador con el que casa el callback de estado.
+
+        Mismo nombre que en el recibo del SMS: el orquestador lo lee así en
+        TODOS los canales (``providers.provider_message_id``) y no puede saber
+        cómo llama cada proveedor a lo suyo. Ahora sí se PERSISTE en el job —
+        antes moría aquí, en la memoria del worker.
+        """
+        return self.wamid
+
 
 class WhatsAppTemplateProvider:
     """WhatsApp Cloud API detrás del contrato ``NotifyProvider``.
@@ -592,15 +660,25 @@ class WhatsAppTemplateProvider:
     def hint(self) -> str:
         """Qué falta para que este canal entregue algo (sale en el log de arranque)."""
         razones = sorted({t.unusable_reason for t in self.catalog.templates if not t.usable})
-        if self.catalog.quarantined:
-            razones += [f"{n}: {r}" for n, r in sorted(self.catalog.quarantined.items())]
+        bloqueadas = self.catalog.blocked
+        if bloqueadas:
+            razones += [f"{n}: {r}" for n, r in sorted(bloqueadas.items())]
         if not razones:
             return ""
         return "ninguna plantilla utilizable — " + "; ".join(razones)
 
+    def bind_state(self, state) -> None:
+        """[T-2.77.c] Ata las DOS memorias de este canal al estado compartido.
+
+        La guarda de duplicados y la cuarentena vivían las dos en RAM y las dos
+        se perdían igual. Se atan juntas y por el mismo sitio.
+        """
+        self._guard.bind(state)
+        self.catalog.state = state
+
     @property
     def quarantined(self) -> dict[str, str]:
-        return dict(self.catalog.quarantined)
+        return dict(self.catalog.blocked)
 
     @property
     def pending_keys(self) -> int:

@@ -312,6 +312,46 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
             "Fase 2.6 existe para dejar atrás (`RUNBOOK-backup-restore-db.md:3`)."
         ),
     ),
+    AlarmKind(
+        resource="base_backup_missing",
+        scope=NEVER,
+        name_template="takab-dev-backup-base-ausente",
+        why=(
+            "[T-2.72.b] `wal_archive_stalled` vigila la CADENA de WAL; ésta vigila su ANCLA. "
+            "Son cosas distintas y el modo de fallo de aquí es el peor de los dos: un backup "
+            "base que falla cada semana **no se nota** —la cadena sigue archivando tan ricamente— "
+            "hasta el día del restore, que es exactamente el estado que la Fase 2.6 existe para "
+            "eliminar. Sin ancla, toda esa cadena no recupera nada. "
+            "Y hay una razón de instrumento para que sea intocable: el que publica la métrica y "
+            "el que hace el respaldo son EL MISMO host, así que si ésta calla, lo más probable es "
+            "que tampoco esté corriendo `barman-cloud-backup`. Silenciarla es callar a la vez el "
+            "síntoma y el detector. "
+            "NACE EN ALARM a propósito, y no es un defecto: el día del apply todavía no hay "
+            "backup base. El correo de OK al terminar el primero ES el acuse de que la cadena "
+            "consiguió ancla — si no llega, eso es el hallazgo."
+        ),
+    ),
+    AlarmKind(
+        resource="db_disk_space",
+        scope=NEVER,
+        name_template="takab-dev-disco-datos-lleno",
+        why=(
+            "[T-2.72.c] El PITR trajo un modo de fallo que antes no existía: con el archivado "
+            "atascado Postgres NO RECICLA su WAL, y `pg_wal` crece ~16 MiB/min sobre el mismo "
+            "volumen de 40 GiB donde viven los datos — menos de dos días hasta llenar el disco y "
+            "tumbar la base. Hoy eso lo cubre POR ACCIDENTE la alarma de atasco, y un accidente "
+            "no es una vigilancia. "
+            "Intocable porque el disco no distingue mantenimiento de avería: llenarse durante una "
+            "ventana planificada tumba la DB exactamente igual, y encima una ventana es cuando más "
+            "probable es que se llene (un ensayo de restore duplica el volumen). "
+            "A diferencia de `base_backup_missing`, ésta trata la ausencia de dato como `missing` "
+            "y no como `breaching`: su correo AFIRMA UNA MEDIDA («el disco pasó del 80 %»), y sin "
+            "datapoint esa medida no existe — afirmarla sería la falta que T-2.60.a rechaza por "
+            "escrito. La ceguera no queda tapada: si la instancia cae lo dice `ec2_status`, y si "
+            "muere el cron que publica lo dice `wal_archive_stalled`, las dos `breaching` sobre el "
+            "mismo `/etc/cron.d/takab-pitr`."
+        ),
+    ),
 )
 
 

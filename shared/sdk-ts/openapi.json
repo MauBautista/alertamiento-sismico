@@ -6243,6 +6243,20 @@
         "title": "NotifyChannelsOut",
         "type": "object"
       },
+      "NotifyWebhookAck": {
+        "description": "«Recibido y no me debes un reintento». Nada más.\n\nEs la MISMA respuesta para un callback que movió el desenlace de un job y\npara uno que no cambió nada (un reenvío, un estado que no pisa al escrito).\nDistinguirlos le diría a quien llama qué hay al otro lado.",
+        "properties": {
+          "status": {
+            "const": "accepted",
+            "default": "accepted",
+            "description": "Acuse fijo. No dice si el desenlace cambió: eso vive en el log.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "NotifyWebhookAck",
+        "type": "object"
+      },
       "PanicVoteIn": {
         "description": "[T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional\n(geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin\nGPS cuenta (LFPDPPP + RBAC §4.3).",
         "properties": {
@@ -11872,6 +11886,61 @@
           }
         },
         "summary": "List Notify Channels"
+      }
+    },
+    "/notify/webhooks/meta": {
+      "get": {
+        "description": "El apretón de manos con el que Meta da de alta la suscripción.\n\nMeta llama UNA vez con ``hub.verify_token`` y espera de vuelta el\n``hub.challenge`` tal cual, en texto plano. El token se compara en tiempo\nconstante como cualquier otro secreto: es corto y adivinable byte a byte con\nun ``==``.",
+        "operationId": "meta_verify_notify_webhooks_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Meta Verify"
+      },
+      "post": {
+        "description": "Webhook de estado de Meta, firmado con el app secret sobre el cuerpo crudo.",
+        "operationId": "meta_status_callback_notify_webhooks_meta_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyWebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Meta Status Callback"
+      }
+    },
+    "/notify/webhooks/twilio": {
+      "post": {
+        "description": "``StatusCallback`` de Twilio (formulario), firmado con el auth token.",
+        "operationId": "twilio_status_callback_notify_webhooks_twilio_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyWebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Twilio Status Callback"
       }
     },
     "/privacy/consent": {
