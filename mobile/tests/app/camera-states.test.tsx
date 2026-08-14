@@ -271,6 +271,9 @@ describe("2.3 · cámara forense · el sello VIEJO se declara, no se calla ni se
         pgaG: 0.152,
         operatorId: "op-abc12345",
         siteId: SITE,
+        // [T-2.135] En el manifiesto, no en el pixel: este mismo caso lo prueba
+        // más abajo `watermark.test.ts` comparando las líneas con y sin él.
+        incidentId: "inc-1",
         snapshotStaleSinceMs: AHORA - 18 * 60_000,
       }).join("\n"),
     ).toMatch(/PGA 0.152 g \(gabinete\)/);

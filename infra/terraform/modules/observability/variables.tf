@@ -94,3 +94,19 @@ variable "db_disk_used_max_pct" {
     error_message = "db_disk_used_max_pct debe estar en (0, 90]. Por encima del 90 % sobre el volumen de 40 GiB quedan menos de 4 GiB, o sea menos de 4 h a 16 MiB/min: el aviso llegaria demasiado tarde para hacer nada. Un umbral fuera de (0,100] no es alcanzable y produce una alarma que existe y no vigila."
   }
 }
+
+variable "pii_retention_max_age_s" {
+  description = <<-EOT
+    [T-2.81.a] Edad maxima tolerada de la ultima corrida CORRECTA del job de
+    retencion de PII. NO se teclea aqui: baja de `modules/database`, que es donde
+    vive el cron que las produce y donde estan la cadencia y el margen. Un literal
+    aqui haria que la alarma vigilara una periodicidad distinta de la programada.
+  EOT
+  type        = number
+  default     = 172800 # 2 dias = cadencia diaria x margen 2
+
+  validation {
+    condition     = var.pii_retention_max_age_s > 86400
+    error_message = "pii_retention_max_age_s debe superar la cadencia diaria (86400 s): un umbral igual o menor dispara en operacion normal y convierte la alarma en ruido."
+  }
+}

@@ -1,5 +1,4 @@
 import logoTakab from "../assets/LogoTakab2.png";
-import { useSessionStore } from "../auth/session.store";
 
 export function SplashScreen() {
   return (
@@ -12,19 +11,17 @@ export function SplashScreen() {
   );
 }
 
-/** /me falló por algo ≠ 401 (red, 5xx): estado explícito con reintento. */
-export function ErrorScreen() {
-  const error = useSessionStore((s) => s.error);
-  const refreshMe = useSessionStore((s) => s.refreshMe);
-  return (
-    <div className="soc-screen">
-      <div className="soc-screen__panel">
-        <h1 className="soc-screen__title">ERROR DE SESIÓN</h1>
-        <p className="soc-screen__error">{error ?? "No se pudo cargar la identidad (/me)."}</p>
-        <button type="button" className="soc-btn soc-btn--primary" onClick={() => void refreshMe()}>
-          REINTENTAR
-        </button>
-      </div>
-    </div>
-  );
-}
+/*
+ * [T-2.134] AQUÍ VIVÍA `ErrorScreen` («ERROR DE SESIÓN» + REINTENTAR), y se
+ * retiró con el `status: "error"` que la producía.
+ *
+ * `T-2.123` decidió qué debe declarar la consola cuando `/me` no contesta —que
+ * no puede establecer el alcance del operador, que no va a pintar ni un dato de
+ * tenant, y que el alertamiento no depende de esta pantalla— y lo escribió en
+ * `app/DegradedSessionScreen.tsx`. Esta pantalla decía «ERROR DE SESIÓN», que
+ * para el mismo hecho es a la vez más alarmante y menos informativo: sugiere que
+ * la sesión se perdió, cuando el token sigue siendo válido.
+ *
+ * No se conserva «por si acaso»: un modo de fallo, una pantalla. Dos pantallas
+ * para el mismo hecho es cómo se acaba enseñando la que nadie decidió.
+ */

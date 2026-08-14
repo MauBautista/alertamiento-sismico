@@ -35,6 +35,8 @@ import {
   type IncidentActionOut,
 } from "@takab/sdk";
 
+import { productoresDelKind, verbosDeNotificacion } from "../../test-utils/incidentActionKinds";
+
 function accion(
   kind: string,
   ts: string,
@@ -117,6 +119,82 @@ describe("[T-2.119] censo · todo kind que el ingest escribe tiene vista propia"
   it("cada kind del ingest pertenece al canal que lo emitió", () => {
     for (const [canal, , kind] of ACK_KIND) {
       expect(ACTUATOR_CHANNELS[canal].kinds).toHaveProperty(kind);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [T-2.133] CENSO INVERSO: todo kind DADO DE ALTA tiene quien lo escriba
+// ---------------------------------------------------------------------------
+//
+// El bloque de arriba mide una dirección —productor ⇒ rótulo— y `T-2.127` la
+// dejó cerrada. Ésta es la simétrica, y falla distinto: una entrada MUERTA no
+// se ve nunca en pantalla (nadie la escribe), pero queda en el registro del que
+// se DERIVAN los rótulos, y quien lo lea creerá que existe un camino que no
+// existe. `T-2.119` ya pagó el precio de un registro con nombres inventados.
+//
+// LOS `legacyKinds` NO CUENTAN COMO DEFECTO y por eso se excluyen: son los tres
+// nombres que este mapa dio de alta y que ningún productor escribió jamás
+// (`gas_valve_close`, `elevator_recall`, `door_release`). Están declarados como
+// muertos EN EL CÓDIGO, con su razón —`incident_actions` es append-only y exenta
+// de poda, así que una fila antigua no puede volver al fallback crudo—. Una
+// entrada muerta DECLARADA es documentación; una entrada muerta que se hace
+// pasar por viva es el defecto.
+const KINDS_MUERTOS_DECLARADOS = new Set(
+  Object.values(ACTUATOR_CHANNELS).flatMap((spec) => Object.keys(spec.legacyKinds)),
+);
+
+const KINDS_DEL_REGISTRO = Object.keys(ACTION_STATE).filter(
+  (k) => !KINDS_MUERTOS_DECLARADOS.has(k),
+);
+
+describe("[T-2.133] censo inverso · el registro no da de alta nombres que nadie escribe", () => {
+  it("el registro no está vacío (si esto falla, el resto de la suite miente)", () => {
+    expect(KINDS_DEL_REGISTRO.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each(KINDS_DEL_REGISTRO)("`%s` lo escribe algún productor de `incident_actions`", (kind) => {
+    // `siren_test` fue el que motivó esta ficha: vivía aquí con vista («PROBADA»)
+    // y rótulo («PRUEBA DE SIRENA») desde T-1.50, y NADIE lo escribe. En `api/src`
+    // sólo existe como acción de la matriz RBAC (el permiso para mandar comandos
+    // de actuador), y en el edge como la prueba LOCAL del panel LAN, que se queda
+    // en un deque en RAM del gabinete y no sube a la nube. El `command_ack` de esa
+    // prueba tampoco puede llegar aquí: `handle_command_ack` toca `commands` y
+    // `audit_log`, jamás `incident_actions`, y `ACK_KIND` sólo mapea
+    // `activate`/`deactivate` — un `self_test` ni siquiera tiene kind.
+    expect(productoresDelKind(kind)).not.toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [T-2.133 · hallazgo] LOS CUATRO VERBOS DE NOTIFICACIÓN, DERIVADOS
+// ---------------------------------------------------------------------------
+//
+// Medir el censo inverso destapó el defecto gemelo: `T-2.109` añadió un CUARTO
+// verbo de notificación —`notify_no_recipients`, «no había a quién despertar en
+// este inmueble»— y ninguna superficie lo rotula. El fallback lo pinta
+// «NOTIFY NO RECIPIENTS» y, lo grave, con `kind: 'ok'`: VERDE. Es exactamente la
+// mentira que `T-2.75` cerró para los otros tres — un tablero que dice «todo
+// bien» sobre un sitio donde el aviso no llegó a nadie.
+//
+// El censo se DERIVA de las constantes del propio orquestador, no de una lista
+// aquí: el quinto verbo entrará solo o pondrá esto en rojo.
+describe("[T-2.133] los verbos de notificación del orquestador tienen rótulo propio", () => {
+  const VERBOS = verbosDeNotificacion();
+
+  it("son al menos los cuatro que declara `T-2.109`", () => {
+    expect(VERBOS).toContain("notify_no_recipients");
+    expect(VERBOS.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it.each(VERBOS)("`%s` no cae en el fallback crudo ni se pinta en verde", (verbo) => {
+    expect(ACTION_STATE[verbo]).toBeDefined();
+    expect(ACTION_STATE[verbo].state).not.toBe(verbo.toUpperCase());
+    expect(CHANNEL_LABEL[verbo]).toBeDefined();
+    // Un verbo de notificación que NO dice «entregada» no puede ser verde: la
+    // reacción del operador es distinta de «nada que hacer».
+    if (verbo !== "notify_sent") {
+      expect(ACTION_STATE[verbo].kind).not.toBe("ok");
     }
   });
 });

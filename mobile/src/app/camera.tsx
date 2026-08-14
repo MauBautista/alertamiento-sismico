@@ -103,6 +103,11 @@ export default function Camera() {
     pgaG: data?.incident?.max_pga_g ?? null, // null ⇒ "pendiente de sync" honesto
     operatorId: me?.sub ?? "desconocido",
     siteId: siteId ?? "",
+    // [T-2.135] La atribución al incidente entra en el MANIFIESTO, no en el
+    // pixel: sale de este mismo snapshot, así que `snapshotStaleSinceMs` la
+    // califica igual que al PGA. Horneada sería permanente aunque el snapshot
+    // viejo nombrara el incidente anterior. Razón completa en `watermark.ts`.
+    incidentId,
     snapshotStaleSinceMs,
   };
 

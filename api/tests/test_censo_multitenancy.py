@@ -161,6 +161,19 @@ SIN_TENANT_ID: dict[str, str] = {
         "eso su aislamiento NO es 'lo lee cualquier rol autenticado' sino "
         "`app_is_takab_internal()`, que es más estrecho que el de la regla."
     ),
+    "pii_retention_runs": (
+        "La CONSTANCIA de cada corrida del job de retención de PII (T-2.81.a): "
+        "cuándo empezó, en qué modo, si terminó bien y —si no— por qué. Una "
+        "corrida recorre a TODOS los clientes de una pasada, así que es un hecho "
+        "de la plataforma y no de ninguno de ellos: una `tenant_id` aquí "
+        "obligaría a inventarle dueño, o a partir la corrida en tantas filas como "
+        "clientes haya y perder justo lo que la fila dice (que la política se "
+        "ejecutó ENTERA). Los conteos por cliente sí viajan, dentro de `report`, "
+        "donde ningún cliente los alcanza. Su aislamiento no es 'lo lee cualquier "
+        "rol autenticado' sino `app_is_takab_internal()`, más estrecho que el de "
+        "la regla, y `takab_app` no tiene UPDATE ni DELETE: editar esta fila "
+        "sería poder afirmar que se podó lo que no se podó."
+    ),
     "ops_oncall_contacts": (
         "Las credenciales de guardia (T-2.78.a): etiqueta de la persona y el HASH "
         "de su secreto de acuse. No es dato de negocio de ningún cliente — es la "

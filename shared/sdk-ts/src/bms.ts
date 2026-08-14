@@ -185,12 +185,16 @@ export const ACTION_STATE: Record<string, ActionStateView> = {
   // el tablero que decía "notificado" sin haber notificado a nadie.
   notify_simulated: SIMULATED_VIEW,
   notify_failed: { state: 'NO ENTREGADA', kind: 'critical' },
-  // [T-2.119] `siren_test` NO se pliega al canal `siren`, y es deliberado: no
-  // sale de `ACK_KIND` (no es un activate/deactivate) y una prueba no es el
-  // estado operativo de la sirena. El gabinete ya los distingue en el origen
-  // (`SirenReason.TEST` vs `ALERT`); fundirlos aquí haría que una prueba
-  // cancelara —o sostuviera— la fila de una alerta real.
-  siren_test: { state: 'PROBADA', kind: 'ok' },
+  // [T-2.133] EL CUARTO VERBO, que faltaba. `T-2.109` lo añadió al orquestador
+  // —el proveedor existe y entrega, pero en ese inmueble no hay UN SOLO teléfono
+  // registrado al que despertar— y ninguna superficie lo rotulaba: el checklist
+  // lo pintaba «NOTIFY_NO_RECIPIENTS» y, lo grave, con `kind: 'ok'` — VERDE, la
+  // misma mentira que `T-2.75` cerró para los otros tres.
+  //
+  // `warning` y no `critical`, con la misma doctrina que `SIMULATED_VIEW`: no hay
+  // avería que atender ni a quién reintentar, hay teléfonos que registrar con su
+  // inmueble. Lo que NO puede ser es verde.
+  notify_no_recipients: { state: 'SIN DESTINATARIOS', kind: 'warning' },
 };
 
 /**
@@ -222,8 +226,44 @@ export const CHANNEL_LABEL: Record<string, string> = {
   notify_sent: 'NOTIFICACIONES',
   notify_simulated: 'NOTIFICACIONES SIMULADAS',
   notify_failed: 'NOTIFICACIONES NO ENTREGADAS',
-  siren_test: 'PRUEBA DE SIRENA',
+  notify_no_recipients: 'NOTIFICACIONES SIN DESTINATARIOS',
 };
+
+/*
+ * [T-2.133] `siren_test` SE RETIRÓ DE LOS DOS MAPAS DE ARRIBA. La razón, escrita
+ * para que nadie lo devuelva "por si acaso":
+ *
+ * Vivía aquí desde `T-1.50` con vista («PROBADA») y rótulo («PRUEBA DE SIRENA»),
+ * y **ningún productor escribe jamás ese `kind` en `incident_actions`**. Medido
+ * sobre los ocho ficheros de `api/src` que insertan en la tabla —el censo lo
+ * deriva `web/src/test-utils/incidentActionKinds.ts` y lo exige
+ * `bmsChannels.test.ts`—:
+ *
+ *   · en `api/src` `siren_test` sólo existe como **acción de la matriz RBAC**
+ *     (`allowed_actions.siren_test`, el permiso para mandar comandos de
+ *     actuador) y como verbo de `audit_log`, nunca como `kind`;
+ *   · en el edge es la prueba LOCAL del panel LAN
+ *     (`local_api::run_siren_test` → `_record_action("siren_test")`), que se
+ *     queda en un **deque en RAM del gabinete** —lo borra un reinicio— y no sube
+ *     a la nube;
+ *   · el `command_ack` de esa prueba tampoco puede llegar: `handle_command_ack`
+ *     toca `commands` y `audit_log`, **jamás `incident_actions`**; y `ACK_KIND`
+ *     sólo mapea `activate`/`deactivate`, así que un `self_test` ni siquiera
+ *     tiene `kind` (el ingest lo rechaza con «(channel, action) sin mapeo»).
+ *
+ * NO se conserva como `legacyKind`, y la diferencia con `gas_valve_close`,
+ * `elevator_recall` y `door_release` importa: aquéllos son nombres de CANAL, y
+ * el registro tiene que poder rotular una fila antigua de un canal. `siren_test`
+ * no pertenece a ningún canal —`T-2.119` lo dejó fuera del canal `siren` a
+ * propósito, para que una prueba no cancelara ni sostuviera la fila de una
+ * alerta real—, así que conservarlo no protege ninguna fila: protege una
+ * hipótesis. Si algún día se decide subir la prueba de sirena a la nube, el
+ * `kind` se da de alta **junto con su productor**, no antes.
+ *
+ * La guardia que impide que vuelva —y que caza al siguiente— es el censo inverso
+ * de `web/src/features/console/bmsChannels.test.ts`: todo kind de estos dos mapas
+ * tiene que tener quien lo escriba en `api/src`.
+ */
 
 /**
  * [T-2.116] El estado del canal TRAS EL ARBITRAJE, tal y como lo declara el

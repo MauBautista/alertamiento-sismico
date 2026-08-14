@@ -510,3 +510,47 @@ resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   ok_actions                = [aws_sns_topic.ops_alerts.arn]
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
+
+# --- [T-2.81.a] La retencion de PII que dejo de ejecutarse ----------------------
+#
+# El job existia y no lo llamaba nadie. Ahora lo llama un cron, y esta alarma es
+# lo que impide que vuelva a pasar EN SILENCIO: una retencion que se para no
+# rompe nada visible: no hay error 500, no hay cola creciendo, no hay disco
+# lleno. Simplemente los datos personales que tenian que caducar dejan de
+# caducar, y eso solo se descubre el dia que alguien pregunta — que es tarde.
+#
+# QUE MIDE, exactamente: la edad de la ultima corrida que termino BIEN, leida de
+# `pii_retention_runs` por el publicador de la instancia. NO mide el exit code
+# del cron, y la diferencia es el criterio 2 de la ficha: una corrida que aborta
+# escribe su fila con `ok = false`, la edad NO se refresca y la alarma sube sola.
+# Con el exit code, un job que fallara todos los dias no moveria ninguna aguja.
+#
+# `breaching`, como sus vecinas de respaldo y por las mismas dos razones:
+#   (a) lo que se afirma no es una medida instantanea sino "hasta que punto se
+#       esta cumpliendo la politica de retencion". Sin metrica, eso es
+#       DESCONOCIDO — y una retencion desconocida es, ante un cliente que
+#       pregunta, lo mismo que una retencion que no se ejecuta;
+#   (b) el que publica y el que poda son EL MISMO HOST y el MISMO cron. Si esto
+#       calla, la corrida de las 06:00 tampoco se esta ejecutando: el silencio no
+#       es solo ceguera, es tambien la averia.
+#
+# NACE EN ALARM el dia del primer apply, y esta BIEN: todavia no consta ninguna
+# corrida y el publicador lo dice con la verdad (mide desde que se configuro el
+# cron). El correo de OK tras la primera corrida es el ACUSE de que la retencion
+# se ejecuto alguna vez — la unica senal automatica y barata de que existe.
+resource "aws_cloudwatch_metric_alarm" "pii_retention_stalled" {
+  alarm_name          = "takab-dev-retencion-pii-detenida"
+  alarm_description   = "El job de retencion de PII lleva demasiado tiempo sin completar una corrida correcta (o no se sabe cuanto). Mientras dure, los datos personales que tenian que caducar NO estan caducando: telefonos, nombres del roster de quien ya no esta y ubicaciones GPS de check-ins siguen guardados mas alla del plazo declarado al cliente. Mirar /var/log/takab-prune-pii.log en la instancia y `SELECT mode, ok, error, finished_at FROM pii_retention_runs ORDER BY finished_at DESC LIMIT 5` (una corrida abortada deja fila con su razon). Ejecutar a mano: /opt/takab/bin/takab-prune-pii.sh. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no ha corrido ninguna. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es el cumplimiento de la politica de privacidad."
+  namespace           = "Takab/Ops"
+  metric_name         = "PiiRetentionAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.pii_retention_max_age_s
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}

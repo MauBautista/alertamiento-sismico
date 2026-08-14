@@ -175,6 +175,36 @@ WORKER_LOCK_TIMEOUT_MS = 3_000
 #: un ``SET`` no local se deshace con el ``rollback()`` de cada RETRY.
 WORKER_STATEMENT_TIMEOUT_MS = 15_000
 
+#: [T-2.81.a] CUARTO escalón: los **jobs de mantenimiento** que corren una vez al
+#: día (hoy, `ops/prune_pii`). No conectan ni por `db/session.py` ni por
+#: `db/pool.py` —abren su propio `psycopg.connect`—, así que hasta hoy no les
+#: aplicaba ninguno de los tres topes de arriba. Comprobado, no supuesto.
+#:
+#: · **Y sigue SIN aplicarles el de SENTENCIA, a propósito.** Una corrida de
+#:   retención es UNA transacción que toca todo lo caducado de golpe, y eso es
+#:   una propiedad de diseño: el conteo previo autoriza la poda y un `ROW_COUNT`
+#:   que no cuadre revierte la corrida entera. **Medido el 2026-08-14 sobre
+#:   1 000 000 de filas de `push_tokens`: 38.9 s de transacción abierta**
+#:   (~39 µs/fila, lineal). Cualquier `statement_timeout` de los de arriba
+#:   —20 s, 15 s— mataría esa corrida legítima a mitad y dejaría la retención sin
+#:   ejecutarse mientras el informe diría que se intentó. Un tope que convierte
+#:   trabajo correcto en fallo no es una mejora.
+#: · **El de LOCK sí, y es otro modo de fallo.** `lock_timeout` no cuenta lo que
+#:   tarda la sentencia: cuenta lo que pasa ESPERANDO un lock. Sin él, una fila
+#:   bloqueada por otra sesión deja al job esperando para siempre **dentro** de
+#:   una transacción que ya sostiene el horizonte de `xmin` y los locks de todo
+#:   lo que lleva podado — el extremo lejano de un ciclo que PostgreSQL no
+#:   detecta (`T-2.73.c`). Con tope, ese extremo se suelta solo.
+#: · **Por qué 30 s.** Ni el pool (el job tiene su conexión) ni el
+#:   `VisibilityTimeout` (no consume cola) fijan aquí un techo; lo fija el daño
+#:   propio: esperar más de lo que dura el trabajo útil medido significa que la
+#:   transacción está abierta más rato por no trabajar que por trabajar. 30 s
+#:   queda por debajo de esos 38.9 s y muy por encima de cualquier contención
+#:   real sobre estas tablas. Ceder no cuesta: el job vuelve a correr mañana, y
+#:   la corrida fallida queda escrita en `pii_retention_runs` con su razón, que
+#:   es lo que hace sonar la alarma.
+JOB_LOCK_TIMEOUT_MS = 30_000
+
 
 class LockTimeout(HTTPException, SQLAlchemyError):
     """La base no concedió un lock dentro de la política. Error CON NOMBRE.

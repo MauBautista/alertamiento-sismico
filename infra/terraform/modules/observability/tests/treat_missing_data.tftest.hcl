@@ -47,6 +47,11 @@ variables {
   # `pitr.base_backup_interval_days * pitr.chain_margin`. Sin valor, el modulo no
   # planifica y ESTE archivo dejaria de comprobar nada.
   base_backup_max_age_s = 1209600
+
+  # [T-2.81.a] Y el de la retencion de PII, por lo mismo: su dueño es
+  # `modules/database` (cadencia x margen). Sin valor el modulo no planifica y
+  # este archivo dejaria de comprobar nada.
+  pii_retention_max_age_s = 172800
 }
 
 run "el_silencio_significa_lo_correcto_en_cada_alarma" {
@@ -399,6 +404,16 @@ run "ghost_gateways_no_miente_cuando_no_sabe" {
 #       existe, y afirmarla es la falta que T-2.60.a rechaza por escrito. La
 #       ceguera no queda tapada porque las dos causas del silencio ya paginan
 #       (`ec2_status` y `wal_archive_stalled`, las dos en `breaching`).
+#
+# [T-2.81.a] `pii_retention_stalled` -> `breaching`, y se decide con la MISMA
+# pregunta que `base_backup_missing`, no con la de `db_disk_space`. Lo que su
+# correo afirma no es una medida instantanea sino un grado de cumplimiento: "no
+# consta que la retencion de datos personales se haya ejecutado". Sin datapoint
+# eso es DESCONOCIDO — y una retencion desconocida es, ante el cliente que
+# pregunta cuanto guardamos su telefono, exactamente igual de defendible que una
+# retencion que no corre. Ademas el que publica la metrica y el que poda son el
+# mismo host y el mismo `/etc/cron.d/takab-prune-pii`: si esto calla, la corrida
+# de las 06:00 tampoco se esta ejecutando.
 run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
   command = plan
 
@@ -411,6 +426,7 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
       && aws_cloudwatch_metric_alarm.wal_archive_stalled.treat_missing_data == "breaching"
       && aws_cloudwatch_metric_alarm.base_backup_missing.treat_missing_data == "breaching"
       && aws_cloudwatch_metric_alarm.db_disk_space.treat_missing_data == "missing"
+      && aws_cloudwatch_metric_alarm.pii_retention_stalled.treat_missing_data == "breaching"
     )
     error_message = "Alguna alarma cambio su treat_missing_data. Si el motivo fue 'para que no moleste durante un mantenimiento', la respuesta es NO: eso la debilita para siempre. El silencio acotado lo da una alarm mute rule (api/src/takab_api/ops/muting.py), que no puede existir sin Duration y que al BORRARLA desilencia en el acto disparando lo que quedara en ALARM."
   }

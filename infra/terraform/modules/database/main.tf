@@ -46,6 +46,12 @@ locals {
   # la mueve ni un segundo y la cadena esta rota igual.
   base_backup_metric_name = "BaseBackupAgeSeconds"
 
+  # [T-2.81.a] El reloj de la RETENCION DE PII. Mide cuanto hace que termino BIEN
+  # la ultima corrida del job (`pii_retention_runs`), no si el cron salio con 0:
+  # una corrida que aborta deja fila con `ok = false`, la edad sigue creciendo y
+  # la alarma suena. El otro extremo del cable esta en `modules/observability`.
+  pii_retention_metric_name = "PiiRetentionAgeSeconds"
+
   # [T-2.72.c] El disco. `disk_used_percent` NO existe en las metricas nativas de
   # EC2 (AWS/EC2 solo trae CPU, red, EBS y status checks: el hipervisor no ve
   # dentro del filesystem). Se publica desde la instancia por el mismo cron que ya
@@ -84,6 +90,35 @@ locals {
     # propio rol, igual que hace `user_data` desde el primer boot.
     superuser_secret       = aws_secretsmanager_secret.db["superuser"].arn
     coordination_timeout_s = var.dump_coordination_timeout_s
+  })
+
+  # [T-2.81.a] Los plazos de retencion, traducidos a las variables de entorno que
+  # lee cada regla (`privacy/retention.RetentionRule.env_var`:
+  # `push_tokens.token` -> `TAKAB_API_RETENTION_PUSH_TOKENS_TOKEN_DAYS`). La
+  # traduccion se hace AQUI y no en el script para que el mapa de Terraform se
+  # escriba con la clave de la regla —que es la que sale en el informe del
+  # simulacro— y no con un nombre de variable de entorno que nadie reconoce.
+  #
+  # Vacio por defecto, y no es un descuido: sin plazo cada regla queda
+  # DESHABILITADA y la corrida no toca una fila. El default bajo incertidumbre es
+  # no borrar nada — una retencion inventada por quien escribio el terraform no
+  # es una politica de privacidad, es perdida de datos con buena intencion.
+  pii_retention_env = join("\n", [
+    for clave, dias in var.pii_retention_windows_days :
+    "TAKAB_API_RETENTION_${upper(replace(clave, ".", "_"))}_DAYS=${dias}"
+  ])
+
+  prune_pii_setup_script = templatefile("${path.module}/prune_pii_setup.sh.tpl", {
+    region           = data.aws_region.current.region
+    metric_namespace = local.ops_metrics_namespace
+    metric_name      = local.pii_retention_metric_name
+    # El DSN de `takab_app` y no el del superusuario: el job se degrada a ese rol
+    # el solo, asi que darselo desde fuera convierte la degradacion en un no-op
+    # comprobable y ademas ahorra a esta maquina un uso mas de la contraseña del
+    # superusuario. Como en el respaldo, aqui solo viaja el IDENTIFICADOR del
+    # secreto; la instancia lo resuelve con su propio rol en tiempo de ejecucion.
+    app_secret    = aws_secretsmanager_secret.db["app"].arn
+    retention_env = local.pii_retention_env
   })
 
   pitr_setup_script = templatefile("${path.module}/pitr_setup.sh.tpl", {
@@ -657,6 +692,61 @@ resource "aws_ssm_document" "backup" {
 resource "aws_ssm_association" "backup" {
   name                = aws_ssm_document.backup.name
   association_name    = "takab-${var.env}-respaldo-logico"
+  document_version    = "$LATEST"
+  schedule_expression = "rate(1 day)"
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.db.id]
+  }
+}
+
+# --- [T-2.81.a] La retencion de PII, PROGRAMADA ---------------------------------
+#
+# El job existia y era invocable, y no lo llamaba nadie: no habia modulo de cron,
+# Lambda ni EventBridge en `infra/terraform/modules/`. Una retencion que nadie
+# ejecuta es una politica escrita, no una cumplida.
+#
+# MISMO VEHICULO que el PITR y el respaldo logico —documento SSM + asociacion— y
+# por las mismas dos razones, que aqui no se heredan sino que vuelven a valer:
+# `user_data` corre una sola vez y ademas aborta si encuentra el marcador
+# `/var/lib/takab/.provisioned` (o sea: Terraform verde que no toca la maquina
+# que existe hoy), y modificar `user_data` hace que el provider pare y arranque
+# la instancia en el siguiente apply. La asociacion impone el estado deseado cada
+# dia y lo repara si alguien lo deshace.
+#
+# LA MISMA LATENCIA DECLARADA que sus dos vecinas: cambiar
+# `pii_retention_windows_days` crea una VERSION NUEVA del documento pero no
+# modifica ningun atributo de la asociacion, asi que Terraform informa `apply
+# complete` y el cambio aterriza cuando toque la siguiente pasada — hasta 24 h
+# despues. Para que surta efecto YA:
+#
+#   aws ssm start-associations-once --association-ids <id>
+#
+# Con esta ficha eso importa mas que con las otras dos: el dia que se decidan los
+# plazos, el `apply` que los declara NO empieza a podar hasta la siguiente pasada.
+resource "aws_ssm_document" "prune_pii" {
+  name            = "takab-${var.env}-retencion-pii"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Programa la corrida diaria de retencion de PII (takab_api.ops.prune_pii) y el publicador de la edad de la ultima corrida correcta."
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configurar_retencion_pii"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand     = split("\n", local.prune_pii_setup_script)
+      }
+    }]
+  })
+}
+
+resource "aws_ssm_association" "prune_pii" {
+  name                = aws_ssm_document.prune_pii.name
+  association_name    = "takab-${var.env}-retencion-pii"
   document_version    = "$LATEST"
   schedule_expression = "rate(1 day)"
 

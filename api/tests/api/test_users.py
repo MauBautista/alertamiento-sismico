@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from datetime import timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -102,7 +103,15 @@ async def sites(base_data) -> None:
     return None
 
 
-def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV, sub: str = "admin-1"):
+#: [T-2.81.b] El `sub` del administrador es un UUID, como en Cognito. Era
+#: `"admin-1"`, y eso no era inocuo: la sesión lo pone en `app.user_id`, y la
+#: política `user_profiles_self_write` (que es `FOR ALL`, o sea también SELECT)
+#: evalúa `app_user_id()` — un cast a `uuid` que revienta con cualquier consulta
+#: que toque el padrón. Mientras este router no lo tocaba, el filo no se veía.
+ADMIN_SUB = "aaaa1111-1111-1111-1111-111111111111"
+
+
+def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV, sub: str = ADMIN_SUB):
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*", user_id=sub))
 
 
@@ -206,7 +215,7 @@ async def test_tenant_admin_creates_user_in_own_tenant_and_audits(app, sites, di
     rows = await _audit("user_create")
     assert len(rows) == 1
     assert rows[0]["tenant_id"] == au.DB_TENANT_PRIV
-    assert rows[0]["actor"] == "user:admin-1"
+    assert rows[0]["actor"] == f"user:{ADMIN_SUB}"
     assert rows[0]["meta"]["role"] == "soc_operator"
 
 
@@ -441,6 +450,147 @@ async def test_cannot_delete_yourself(app, sites, directory) -> None:
         resp = await c.delete("/users/u-own", headers=_token(sub="u-own"))
     assert resp.status_code == 409
     assert directory.get_user("u-own") is not None
+
+
+# --- [T-2.81.b] el reloj de la retención de PII -------------------------------
+#
+# `user_profiles.display_name`/`phone` caducan cuando la persona deja de estar, y
+# el único sitio del sistema donde ese hecho OCURRE es este router. Lo que se
+# mide aquí no es que exista una columna: es que se rellena, en el acto que ya
+# existía, y que la vuelta la para.
+
+#: Un `username` que es un `sub` de verdad. El de las demás pruebas ("u-own") no
+#: es un UUID a propósito —el directorio simulado admite alias— y por eso el
+#: router compara `user_sub::text`: un `CAST(:u AS uuid)` habría tumbado la baja
+#: entera sobre esas cuentas. Que este arnés necesite un UUID y el otro no es la
+#: prueba de que las dos formas conviven.
+SUB_CON_PERFIL = "77770000-0000-0000-0000-000000000077"
+
+
+@pytest.fixture
+async def con_perfil(app: FastAPI, directory: SimulatedUserDirectory, sites) -> str:
+    """Una cuenta del cliente en sesión que además tiene padrón (`user_profiles`).
+
+    Se inyecta un directorio propio en vez de ensanchar el compartido: las
+    pruebas de lectura de arriba afirman la lista EXACTA de usuarios, y añadir
+    uno más al `seed` común las rompería por un motivo que no tiene nada que ver
+    con lo que miden.
+
+    El arnés CONFIRMA que dejó la fila de padrón: sin perfil la baja no escribe
+    reloj y los tests de abajo pasarían sin medir nada — un escenario que no se
+    monta es un test que se aprueba a sí mismo.
+    """
+    ampliado = SimulatedUserDirectory(
+        [
+            *(directory.get_user(u) for u in ("u-own", "u-other")),
+            _user(SUB_CON_PERFIL, tenant=au.DB_TENANT_PRIV, email="conperfil@takab.test"),
+        ]
+    )
+    app.dependency_overrides[get_user_directory] = lambda: ampliado
+    assert ampliado.get_user(SUB_CON_PERFIL) is not None, "el arnés no montó la cuenta"
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO user_profiles (user_sub, tenant_id, display_name, phone) "
+                "VALUES (CAST(:s AS uuid), CAST(:t AS uuid), 'Ana Ruiz', '+525550001111')"
+            ),
+            {"s": SUB_CON_PERFIL, "t": au.DB_TENANT_PRIV},
+        )
+        n = (
+            await conn.execute(
+                text("SELECT count(*) FROM user_profiles WHERE user_sub = CAST(:s AS uuid)"),
+                {"s": SUB_CON_PERFIL},
+            )
+        ).scalar()
+    assert n == 1, "el arnés no dejó padrón: los tests de reloj no medirían nada"
+    return SUB_CON_PERFIL
+
+
+async def _reloj(sub: str) -> list[dict]:
+    async with get_engine().begin() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT via, deactivated_at, reactivated_at FROM user_deactivations "
+                    "WHERE user_sub = CAST(:s AS uuid)"
+                ),
+                {"s": sub},
+            )
+        ).all()
+    return [dict(r._mapping) for r in rows]
+
+
+async def test_deshabilitar_la_cuenta_ARRANCA_el_reloj(app, con_perfil) -> None:
+    async with au.client_for(app) as c:
+        resp = await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": False})
+    assert resp.status_code == 200, resp.text
+    filas = await _reloj(con_perfil)
+    assert len(filas) == 1 and filas[0]["via"] == "account_disabled"
+    assert filas[0]["deactivated_at"] is not None and filas[0]["reactivated_at"] is None
+
+
+async def test_volver_a_habilitarla_PARA_el_reloj(app, con_perfil) -> None:
+    """Sin esto, una readmisión seguiría contando plazo y esa persona perdería su
+    nombre estando en el edificio."""
+    async with au.client_for(app) as c:
+        await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": False})
+        resp = await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": True})
+    assert resp.status_code == 200, resp.text
+    filas = await _reloj(con_perfil)
+    assert len(filas) == 1, "la vuelta BORRÓ la baja en vez de pararla"
+    assert filas[0]["reactivated_at"] is not None
+
+
+async def test_borrar_la_cuenta_ARRANCA_el_reloj(app, con_perfil) -> None:
+    async with au.client_for(app) as c:
+        resp = await c.delete(f"/users/{con_perfil}", headers=_token())
+    assert resp.status_code == 204
+    filas = await _reloj(con_perfil)
+    assert len(filas) == 1 and filas[0]["via"] == "account_deleted"
+
+
+async def test_editar_el_alcance_NO_toca_el_reloj(app, con_perfil) -> None:
+    """El reloj es de la BAJA, no de la última edición. Reescribirlo en cada
+    `PATCH` de `site_scope` lo volvería tan inservible como `updated_at`."""
+    async with au.client_for(app) as c:
+        resp = await c.patch(f"/users/{con_perfil}", headers=_token(), json={"surface": "web"})
+    assert resp.status_code == 200, resp.text
+    assert await _reloj(con_perfil) == []
+
+
+async def test_repetir_la_baja_NO_reinicia_el_plazo(app, con_perfil) -> None:
+    """La persona se fue el día que se fue. Si cada `PATCH {enabled: false}`
+    reiniciara el reloj, bastaría con repetirlo para que no caducara nunca."""
+    async with au.client_for(app) as c:
+        await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": False})
+    primero = (await _reloj(con_perfil))[0]["deactivated_at"]
+    async with get_engine().begin() as conn:
+        # Se envejece la baja para que la repetición sea distinguible del primer acto.
+        await conn.execute(
+            text(
+                "UPDATE user_deactivations SET deactivated_at = now() - interval '100 days' "
+                "WHERE user_sub = CAST(:s AS uuid)"
+            ),
+            {"s": con_perfil},
+        )
+    async with au.client_for(app) as c:
+        await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": True})
+        await c.patch(f"/users/{con_perfil}", headers=_token(), json={"enabled": False})
+    segundo = (await _reloj(con_perfil))[0]["deactivated_at"]
+    assert segundo > primero - timedelta(days=1), (
+        "tras una VUELTA, la nueva baja tiene que arrancar un reloj nuevo"
+    )
+
+
+async def test_dar_de_baja_a_quien_no_tiene_padron_no_revienta(app, sites, directory) -> None:
+    """`u-own` nunca entró: no hay perfil, así que no hay nombre ni teléfono que
+    caduquen. La baja tiene que funcionar igual y no dejar reloj huérfano."""
+    async with au.client_for(app) as c:
+        resp = await c.delete("/users/u-own", headers=_token())
+    assert resp.status_code == 204
+    async with get_engine().begin() as conn:
+        total = (await conn.execute(text("SELECT count(*) FROM user_deactivations"))).scalar()
+    assert total == 0
 
 
 # --- el proveedor: stand-in explícito que GRITA -------------------------------

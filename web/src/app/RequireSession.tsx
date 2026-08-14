@@ -2,7 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router";
 
 import { useSessionStore } from "../auth/session.store";
 import MobileOnlyScreen from "../pages/MobileOnlyScreen";
-import { ErrorScreen, SplashScreen } from "../pages/StatusScreens";
+import { SplashScreen } from "../pages/StatusScreens";
 import DegradedSessionScreen from "./DegradedSessionScreen";
 
 /** Muro de sesión de todas las rutas protegidas. Estados explícitos siempre
@@ -24,9 +24,10 @@ export default function RequireSession() {
   if (status === "degraded") {
     return <DegradedSessionScreen />;
   }
-  if (status === "error") {
-    return <ErrorScreen />;
-  }
+  // [T-2.134] Aquí había una tercera rama, `status === "error"` ⇒ `ErrorScreen`.
+  // Se retiró con el estado: desde `T-2.123` el único fallo de `/me` que existe
+  // es `degraded`, y tener dos pantallas para un modo de fallo que es uno solo
+  // garantizaba que el fallo siguiente acabara en la que nadie decidió.
   if (status !== "authenticated" || !me) {
     return <Navigate to="/" replace state={{ returnTo: location.pathname + location.search }} />;
   }

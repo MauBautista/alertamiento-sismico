@@ -237,4 +237,10 @@ module "observability" {
   # dias seria exactamente como se rompe una cadena PITR sin que ningun plan se
   # ponga rojo: la alarma vigilaria una cadena y el lifecycle podaria otra.
   base_backup_max_age_s = module.database.base_backup_max_age_s
+
+  # [T-2.81.a] Y el umbral de la retencion de PII, por el mismo camino: la
+  # cadencia del cron y el margen viven en `modules/database`, que es quien
+  # programa la corrida. Un literal aqui haria que la alarma vigilara una
+  # periodicidad distinta de la que de verdad ocurre en la maquina.
+  pii_retention_max_age_s = module.database.pii_retention_max_age_s
 }

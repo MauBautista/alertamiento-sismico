@@ -7,7 +7,7 @@ import logoTakab from "../assets/LogoTakab2.png";
 import { useSessionStore } from "../auth/session.store";
 import { cognitoConfigured } from "../auth/userManager";
 import MobileOnlyScreen from "./MobileOnlyScreen";
-import { ErrorScreen, SplashScreen } from "./StatusScreens";
+import { SplashScreen } from "./StatusScreens";
 
 /** Solo para el panel dev local: la matriz de autorización REAL vive en el
  * backend (/me · matrix.py); esta lista únicamente llena el <select>. */
@@ -96,9 +96,10 @@ export default function LoginPage() {
   if (status === "booting") {
     return <SplashScreen />;
   }
-  if (status === "error") {
-    return <ErrorScreen />;
-  }
+  // [T-2.134] Había aquí una rama `status === "error"` ⇒ `ErrorScreen`, muerta
+  // desde `T-2.123`: con `/me` sin contestar el estado es `degraded`, y en
+  // degradado `App` ni siquiera monta el router, así que esta página no llega a
+  // renderizarse. Se retiró con el estado.
   if (status === "authenticated" && me) {
     const landing = landingPath(me);
     if (!landing) {

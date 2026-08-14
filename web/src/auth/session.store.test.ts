@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -293,5 +296,71 @@ describe("session.store", () => {
       "invalid state",
     );
     expect(useSessionStore.getState().status).toBe("anonymous");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [T-2.134] NINGÚN ESTADO DE SESIÓN SIN PRODUCTOR
+// ---------------------------------------------------------------------------
+//
+// Es la misma doctrina que `T-2.133` aplicó al registro de `incident_actions`,
+// aquí sobre la máquina de estados de la sesión: un miembro del union que nadie
+// escribe nunca es código muerto que se lee como una rama viva. `status: "error"`
+// llevaba así desde que `T-2.123` convirtió el único fallo de `/me` que existía
+// en `degraded` — y arrastraba consigo `ErrorScreen` y una rama de `LoginPage`,
+// dos pantallas que ningún camino podía alcanzar.
+//
+// El censo se DERIVA: los miembros salen del propio `type SessionStatus` y los
+// productores del código de producción (los `*.test.*` no cuentan; un `setState`
+// de test no es un camino que un operador pueda recorrer). El estado siguiente
+// que se añada sin escribirse pondrá esto en rojo.
+describe("[T-2.134] la máquina de estados de la sesión no tiene ramas muertas", () => {
+  const AUTH = resolve(process.cwd(), "src", "auth");
+  const APP = resolve(process.cwd(), "src", "app");
+  const PAGES = resolve(process.cwd(), "src", "pages");
+
+  function fuentesDeProduccion(dir: string, acc: string[] = []): string[] {
+    for (const entrada of readdirSync(dir)) {
+      const ruta = join(dir, entrada);
+      if (statSync(ruta).isDirectory()) {
+        fuentesDeProduccion(ruta, acc);
+      } else if (/\.tsx?$/.test(entrada) && !/\.test\.tsx?$/.test(entrada)) {
+        acc.push(ruta);
+      }
+    }
+    return acc;
+  }
+
+  /**
+   * Miembros del union `SessionStatus`, leídos de su declaración.
+   *
+   * Los comentarios se quitan ANTES de cortar por `;`, y no es celo: la primera
+   * versión de este censo cortaba en crudo y un `;` dentro del docblock de un
+   * miembro dejó fuera del barrido justo al miembro que la ficha venía a cazar.
+   * El test pasaba en verde sin haber mirado `error`.
+   */
+  function estadosDeclarados(): string[] {
+    const fuente = readFileSync(join(AUTH, "session.store.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const bloque = fuente.split("export type SessionStatus =")[1]?.split(";")[0];
+    expect(bloque, "`SessionStatus` cambió de forma: el censo dejó de saber leerlo").toBeDefined();
+    return [...(bloque ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]);
+  }
+
+  const ESTADOS = estadosDeclarados();
+  const FUENTES = [AUTH, APP, PAGES].flatMap((d) => fuentesDeProduccion(d));
+
+  it("el censo no está vacío (si esto falla, el resto de este bloque miente)", () => {
+    expect(ESTADOS.length).toBeGreaterThanOrEqual(5);
+    expect(ESTADOS).toContain("degraded");
+  });
+
+  it.each(ESTADOS)("`%s` lo ESCRIBE alguien en producción", (estado) => {
+    // `status === "x"` es un LECTOR, no un productor: la rama muerta se
+    // reconocía justamente por tener lectores y ningún escritor.
+    const escritura = new RegExp(`status:\\s*"${estado}"`);
+    const productores = FUENTES.filter((f) => escritura.test(readFileSync(f, "utf8")));
+    expect(productores).not.toHaveLength(0);
   });
 });

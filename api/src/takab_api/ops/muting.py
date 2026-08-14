@@ -352,6 +352,27 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
             "mismo `/etc/cron.d/takab-pitr`."
         ),
     ),
+    AlarmKind(
+        resource="pii_retention_stalled",
+        scope=NEVER,
+        name_template="takab-dev-retencion-pii-detenida",
+        why=(
+            "[T-2.81.a] Vigila que la retención de datos personales SE ESTÉ EJECUTANDO. Su "
+            "umbral ya son DOS DÍAS sin una corrida correcta, o sea que no puede molestar "
+            "durante una ventana: cualquier mantenimiento razonable cabe dentro y la corrida "
+            "de la mañana siguiente devuelve la alarma a OK sola. Silenciarla no evitaría "
+            "ruido —no hay ruido que evitar— y en cambio taparía lo único que esta alarma "
+            "dice. "
+            "Y lo que dice no es un síntoma operativo: es que se está incumpliendo la "
+            "política de privacidad que se le prometió a un cliente. Un teléfono guardado de "
+            "más no tumba nada, no llena ningún disco y no genera ni un error 500; por eso "
+            "esta es la clase de fallo que se descubre cuando alguien pregunta, y por eso el "
+            "único instrumento que existe no puede tener modo mudo. "
+            "NACE EN ALARM el día del apply, como `base_backup_missing` y por lo mismo: "
+            "todavía no consta ninguna corrida. El correo de OK tras la primera ES el acuse "
+            "de que la retención se ejecutó alguna vez — si no llega, eso es el hallazgo."
+        ),
+    ),
 )
 
 

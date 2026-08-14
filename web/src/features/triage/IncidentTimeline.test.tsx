@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ACTION_STATE, ACTUATOR_CHANNELS, CHANNEL_LABEL } from "@takab/sdk";
 
+import { verbosDeNotificacion } from "../../test-utils/incidentActionKinds";
 import IncidentTimeline, { kindLabel, type TimelineAction } from "./IncidentTimeline";
 
 function action(kind: string, payload: Record<string, unknown> = {}): TimelineAction {
@@ -55,6 +56,42 @@ describe("kindLabel · enviada ≠ simulada ≠ no entregada", () => {
   it("no contagia a una acción sin bandera", () => {
     expect(kindLabel(action("ack"))).toBe("ACUSE DE OPERADOR");
     expect(kindLabel(action("notify_sent", { simulated: false }))).not.toMatch(/SIMULAD/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [T-2.133] LOS VERBOS DE NOTIFICACIÓN, DERIVADOS DEL ORQUESTADOR
+// ---------------------------------------------------------------------------
+//
+// `T-2.75` dejó tres verbos rotulados aquí a mano y `T-2.109` añadió un CUARTO
+// —`notify_no_recipients`: el proveedor existe y entrega, pero en ese inmueble
+// no hay ningún teléfono registrado al que despertar— sin que ninguna de las dos
+// superficies lo rotulara. En la bitácora que un perito lee salía
+// «NOTIFY_NO_RECIPIENTS»; en el checklist BMS, en VERDE.
+//
+// El censo se lee de las constantes `_KIND_*` del propio orquestador: el quinto
+// verbo entrará solo o pondrá esto en rojo.
+describe("[T-2.133] la bitácora rotula TODOS los verbos de notificación", () => {
+  const VERBOS = verbosDeNotificacion();
+
+  it("el censo trae el cuarto verbo de `T-2.109`", () => {
+    expect(VERBOS).toContain("notify_no_recipients");
+  });
+
+  it.each(VERBOS)("`%s` no sale crudo en la bitácora", (verbo) => {
+    expect(kindLabel(action(verbo))).not.toBe(verbo.toUpperCase());
+  });
+
+  it("y sólo UNO de los cuatro afirma que se envió", () => {
+    const rotulos = VERBOS.map((v) => kindLabel(action(v)));
+    expect(new Set(rotulos).size).toBe(VERBOS.length);
+    expect(rotulos.filter((r) => r.includes("ENVIADA"))).toHaveLength(1);
+  });
+
+  it("«sin destinatarios» se lee como lo que es: nadie lo recibió", () => {
+    const rotulo = kindLabel(action("notify_no_recipients"));
+    expect(rotulo).toMatch(/SIN DESTINATARIOS/);
+    expect(rotulo).not.toContain("ENVIADA");
   });
 });
 
@@ -157,6 +194,15 @@ describe("IncidentTimeline", () => {
     renderTimeline([action("notify_sent", { deadline_met: true })]);
     const row = screen.getByText("NOTIFICACIÓN ENVIADA");
     expect(row.className).not.toContain("timeline__kind--undelivered");
+  });
+
+  it("[T-2.133] «sin destinatarios» lleva la marca: tampoco llegó a nadie", () => {
+    // La marca no es «hubo una avería», es «esto no llegó a nadie». Un sitio sin
+    // teléfonos registrados es exactamente ese caso, y sin la marca la línea se
+    // leía igual que una entrega buena.
+    renderTimeline([action("notify_no_recipients", { tokens_del_sitio: 0 })]);
+    const row = screen.getByText(/SIN DESTINATARIOS/);
+    expect(row.className).toContain("timeline__kind--undelivered");
   });
 });
 

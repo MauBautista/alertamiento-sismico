@@ -12,6 +12,7 @@ const BASE: ForensicMeta = {
   pgaG: 0.152,
   operatorId: "70000000-0000-0000-0000-00000000bb01",
   siteId: "s-1",
+  incidentId: "11111111-2222-3333-4444-555555555555",
   snapshotStaleSinceMs: null,
 };
 
@@ -182,6 +183,47 @@ export function camposDeEvidenceRegisterIn(fuente: string): string[] {
   }
   return [...bloque.matchAll(/^\s{4}(\w+)\??:/gm)].map((m) => m[1]);
 }
+
+// ---------------------------------------------------------------------------
+// [T-2.135] EL INCIDENTE VA EN EL JSON, Y NO EN EL PIXEL
+// ---------------------------------------------------------------------------
+//
+// `ForensicMeta` existe para probar la atribución «quién, dónde, CON QUÉ
+// INCIDENTE», y no llevaba el incidente: esa mitad vivía sólo en el item de la
+// cola (`offline/queue.ts::EvidencePayload`), que es transporte, no manifiesto.
+//
+// La decisión —y su porqué largo— está en `watermark.ts`. Lo que estos tests
+// FIJAN es la mitad que puede romperse sin querer: que meter el incidente en el
+// manifiesto no haya cambiado lo que entra en el SHA-256.
+describe("[T-2.135] el manifiesto nombra el incidente; el pixel no cambia", () => {
+  it("el JSON lleva el incidente: la atribución deja de estar coja", () => {
+    expect(forensicMetadata(BASE).incident_id).toBe("11111111-2222-3333-4444-555555555555");
+  });
+
+  it("sin incidente lo dice con `null`, no con una cadena vacía", () => {
+    // Una cadena vacía en un manifiesto forense es una afirmación falsa con
+    // aspecto de dato; `null` es «no consta», que es la verdad.
+    expect(forensicMetadata({ ...BASE, incidentId: null }).incident_id).toBeNull();
+  });
+
+  it("CRITERIO · el incidente NO se hornea: el pixel no lo nombra", () => {
+    expect(watermarkLines(BASE).join("\n")).not.toContain("11111111");
+  });
+
+  it("CRITERIO · cambiar el incidente NO cambia lo que entra en el SHA-256", () => {
+    // Es la prueba de que la spec §2.3 sigue siendo cierta byte a byte: la
+    // enumeración de lo que va en el pixel no se ha movido, así que el sello
+    // sigue significando exactamente lo que significaba.
+    const otro = { ...BASE, incidentId: "99999999-8888-7777-6666-555555555555" };
+    const sinIncidente = { ...BASE, incidentId: null };
+    expect(watermarkLines(otro)).toEqual(watermarkLines(BASE));
+    expect(watermarkLines(sinIncidente)).toEqual(watermarkLines(BASE));
+  });
+
+  it("y el vínculo pixel↔JSON de T-2.126 sigue en pie con el campo nuevo", () => {
+    expect(forensicMetadata(BASE).watermark_lines).toEqual(watermarkLines(BASE));
+  });
+});
 
 describe("[T-2.126] el contrato de evidencia sigue sin poder llevar el JSON", () => {
   const campos = camposDeEvidenceRegisterIn(readFileSync(TIPOS_SDK, "utf8"));

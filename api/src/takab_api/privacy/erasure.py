@@ -336,6 +336,13 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
         "La FILA se conserva anonimizada, no se borra: es lo que mantiene "
         "el `sub` atado a su tenant y por tanto las tablas de hechos coherentes.",
     ),
+    ("user_deactivations", "user_sub"): PiiColumn(
+        _KEEP,
+        "[T-2.81.b] El RELOJ de la retención: cuándo dejó de estar esta persona. "
+        "Destruirlo con ARCO sería quitarle a la retención la única prueba de que "
+        "el nombre y el teléfono ya caducaron — y anonimizar a alguien no lo "
+        "reincorpora. " + _R_SUB_OPACO,
+    ),
     # --- lo que se conserva por regla de oro 11 -------------------------------
     ("audit_log", "actor"): PiiColumn(_RETAIN, _R_AUDITORIA),
     ("incident_actions", "actor"): PiiColumn(_RETAIN, _R_AUDITORIA),

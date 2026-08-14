@@ -120,7 +120,7 @@ cd api && DATABASE_URL=postgresql+psycopg://<user>:<pass>@<host>:<port>/postgres
     --baseline /tmp/takab-YYYY-MM-DD.fingerprint.json
 ```
 
-22 comprobaciones con veredicto. Códigos de salida: **0 = VERDE · 1 = ROJO · 2 = INDETERMINADO**.
+24 comprobaciones con veredicto. Códigos de salida: **0 = VERDE · 1 = ROJO · 2 = INDETERMINADO**.
 
 **El 2 importa tanto como el 1.** Sin `--baseline`, seis comprobaciones no se pueden ejercer
 (inventario, columnas, constraints, privilegios, propiedad, conteos) y el veredicto es
@@ -140,6 +140,40 @@ verificador. Por eso la huella abre una transacción `REPEATABLE READ`, exporta 
 `pg_export_snapshot()` y `pg_dump --snapshot=<id>` lo consume. Coste extra sobre la base:
 ninguno — `pg_dump` ya sostenía una transacción idéntica durante todo el volcado.
 
+### 3.1 · La rendija de ARCO, y por qué no bastaba `privileges` (T-2.80.c)
+
+T-2.80 abrió en `life_checkins` una excepción de **una sola columna** —anular `geom`, la
+anonimización del titular— y por eso esa tabla dejó de ser append-only puro. El verificador tuvo
+que dejar de tratarla como tal: correcto entonces, **hueco después**. Lo que quedaba sin
+comprobar tras un restore no era que la rendija existiera, sino que siguiera siendo **del tamaño
+que era**.
+
+El escenario concreto, medido: una base restaurada con `GRANT UPDATE ON life_checkins TO
+takab_app` —a nivel de **tabla** en vez de por columna— pasaba TODAS las comprobaciones. Y no por
+descuido de `privileges`: esa comprobación compara contra el origen con `has_table_privilege`,
+que devuelve `false` para un grant de columna, así que el origen registraba «takab_app no tiene
+UPDATE sobre life_checkins», la base rota registraba «sí lo tiene», y esa diferencia solo se
+miraba en la dirección de lo que **falta**, nunca de lo que **sobra**.
+
+Con la tabla entera abierta, `status` y `user_id` de un check-in de vida serían reescribibles
+desde la API: se podría cambiar «necesito ayuda» por «estoy bien» en la evidencia de un rescate.
+Lo pararía el trigger — pero la protección habría pasado de dos capas a una, en silencio, y el
+chequeo de DR habría dicho VERDE.
+
+Las dos comprobaciones nuevas, `column_grants` y `column_grant_enforced`, cierran cada capa:
+
+- **`column_grants`** exige que `has_table_privilege(rol, tabla, 'UPDATE')` sea **falso** y que
+  el conjunto de columnas con `UPDATE` efectivo sea **exactamente** el declarado. Falla en los
+  dos sentidos: una columna de más (la rendija creció) y una de menos (la rendija se cerró y ARCO
+  dejó de poder anonimizar, que también es un restore roto).
+- **`column_grant_enforced`** ejerce el rechazo con el `UPDATE SET c = c` **que no cambia nada**,
+  que es el caso que más fácil se cuela, y con el `DELETE` — la rendija es de UPDATE; para
+  borrar, esa tabla no tiene excepción alguna.
+
+La expectativa se **deriva** del `GRANT UPDATE (col) ON tabla TO rol` de `db/schema.sql` y, además,
+viaja en la huella del origen (`column_grants`): la imagen de la nube co-locada no lleva
+`db/schema.sql` dentro. La segunda rendija que alguien abra entra sola, sin tocar el verificador.
+
 **Si algún día falta la huella de una fecha, el veredicto de ese día es INDETERMINADO y eso es
 la verdad.** El mecanismo es asimétrico a propósito: el `.dump` es *fail-open* (si la
 coordinación se rompe, el volcado sale igual, sin ancla) y la huella es *fail-closed* (si no
@@ -151,6 +185,7 @@ Qué mira, agrupado por lo que se pierde si no se mira:
 | Grupo | Comprobaciones |
 |---|---|
 | Compliance (regla de oro 11) | guardas append-only presentes **y ejercidas** — el UPDATE y el DELETE reales deben fallar, con el SQLSTATE de la guarda y no con otro cualquiera |
+| La rendija de ARCO (T-2.80.c) | que el `UPDATE` de `life_checkins` siga siendo **por columna y solo sobre `geom`** — no que exista — y que el guard siga rechazando el resto, incluido el `UPDATE SET c = c` que no cambia nada |
 | Aislamiento (regla de oro 5) | RLS declarada y forzada, políticas presentes, vistas `security_barrier`, **cruce de tenants ejercido** como `takab_app`, dueños con BYPASSRLS |
 | Integridad estructural | inventario de objetos, columnas, constraints validadas, índices válidos, secuencias por delante del dato, propiedad, privilegios |
 | Timescale | hypertables que siguen siéndolo, políticas de retención/compresión/refresco **y que estén programadas** |
