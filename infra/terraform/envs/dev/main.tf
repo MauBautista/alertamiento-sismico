@@ -238,6 +238,14 @@ module "observability" {
   # ponga rojo: la alarma vigilaria una cadena y el lifecycle podaria otra.
   base_backup_max_age_s = module.database.base_backup_max_age_s
 
+  # [T-2.141] Y el umbral del AVISO de esa misma ancla, por el mismo cable y por
+  # la misma razon. Son DOS porque dicen cosas distintas: `max` es la ultima linea
+  # (`intervalo * margen`, cuando la ventana ya se cerro) y este es el aviso
+  # (`intervalo` a secas, cuando ha fallado el PRIMER backup base y todavia queda
+  # ventana para relanzarlo). Los dos los deriva `modules/database` de las mismas
+  # cifras de `modules/storage`; ninguno repite el numero del otro.
+  base_backup_warn_age_s = module.database.base_backup_warn_age_s
+
   # [T-2.81.a] Y el umbral de la retencion de PII, por el mismo camino: la
   # cadencia del cron y el margen viven en `modules/database`, que es quien
   # programa la corrida. Un literal aqui haria que la alarma vigilara una

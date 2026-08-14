@@ -42,7 +42,10 @@ variables {
   # variable, estas aserciones se pondrian rojas. Con el valor real coincidirian
   # por casualidad y el test seria verde vacio (la leccion de `wal_archive_rpo`).
   base_backup_max_age_s = 1234567
-  db_disk_used_max_pct  = 71
+  # [T-2.141] El aviso, con OTRO centinela: si las dos alarmas leyeran la misma
+  # variable, las aserciones de esta pareja pasarian por coincidencia.
+  base_backup_warn_age_s = 76543
+  db_disk_used_max_pct   = 71
 }
 
 # --- 1. El ANCLA de la cadena -------------------------------------------------

@@ -37,6 +37,7 @@ variables {
   paged_gateways            = ["gw-test-0001"]
   wal_archive_max_age_s     = 600
   base_backup_max_age_s     = 1209600
+  base_backup_warn_age_s    = 604800
 }
 
 run "sin_endpoint_el_apply_de_hoy_no_cambia" {

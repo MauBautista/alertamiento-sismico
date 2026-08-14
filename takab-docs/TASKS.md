@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **282** · `[x]` **226** · `[~]` **9** · `[ ]` **47**
+**Conteo de tareas:** total **283** · `[x]` **231** · `[~]` **9** · `[ ]` **43**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5414,7 +5414,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [ ] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
   - [ ] Test de una cuenta que desaparece del pool sin pasar por la API.
 
-### [ ] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
+### [x] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
 - **Componente:** api (tests) · **Detectada por:** `T-2.78.a` (2026-08-14)
 - `tests/ops/test_restore_check.py` hace `ALTER ROLE takab_app RENAME TO takab_app_probe`. Los
   roles **no son por base: son del clúster**, así que mientras ese test corre **ninguna otra base
@@ -5425,11 +5425,11 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   justo la que todo el aislamiento de la suite da por buena.
 - Hoy no rompe nada porque la suite es secuencial; **el día que alguien la paralelice, sí**.
 - **Criterios de aceptación:**
-  - [ ] El test acredita lo mismo sin renombrar un rol del clúster, o **declara** que exige
+  - [x] El test acredita lo mismo sin renombrar un rol del clúster, o **declara** que exige
         exclusividad y algo lo impone.
-  - [ ] Un test que falle si otro vuelve a renombrar un rol compartido.
+  - [x] Un test que falle si otro vuelve a renombrar un rol compartido.
 
-### [ ] T-2.141 · El aviso de backup base llega cuando ya no hay ventana — `SOFTWARE`
+### [x] T-2.141 · El aviso de backup base llega cuando ya no hay ventana — `SOFTWARE`
 - **Componente:** infra · **Detectada por:** `T-2.72.b` (2026-08-13), **al implementarla**
 - El umbral que pedía `T-2.72.b` es `base_backup_interval_days × chain_margin`. Con los valores
   por defecto eso da **7×2 = 14 días**, que es **exactamente `wal_retention_days`**: cuando el
@@ -5437,12 +5437,12 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   línea* —dice «ya no puedes recuperar»— pero **no sirve de aviso**.
 - El fallo que hay que cazar es **el primer backup base que falla**, no el decimocuarto día.
 - **Criterios de aceptación:**
-  - [ ] Una segunda alarma a `base_backup_interval_days` (sin el margen), como **aviso**, con su
+  - [x] Una segunda alarma a `base_backup_interval_days` (sin el margen), como **aviso**, con su
         severidad distinguida de la de `T-2.72.b`.
-  - [ ] Las dos derivan de las mismas variables; ninguna repite un número.
-  - [ ] Su entrada en `ALARM_CATALOG` con la razón de por qué son dos y no una.
+  - [x] Las dos derivan de las mismas variables; ninguna repite un número.
+  - [x] Su entrada en `ALARM_CATALOG` con la razón de por qué son dos y no una.
 
-### [ ] T-2.72.d · Derivar la guardia de `treat_missing_data`, no enumerarla — `SOFTWARE`
+### [x] T-2.72.d · Derivar la guardia de `treat_missing_data`, no enumerarla — `SOFTWARE`
 - **Componente:** infra + api · **Depende de:** —
 - `modules/observability/tests/treat_missing_data.tftest.hcl` **enumera** las alarmas: una
   alarma nueva no obtiene automáticamente su aserción y puede nacer sin que nada lo diga. El
@@ -5453,9 +5453,9 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   clasificar y nada lo delata. Hoy no hay ninguna — comprobado por grep — y por eso es deuda y
   no defecto.
 - **Criterios de aceptación:**
-  - [ ] La lista de alarmas se deriva del `.tf`; una alarma sin aserción de `treat_missing_data`
+  - [x] La lista de alarmas se deriva del `.tf`; una alarma sin aserción de `treat_missing_data`
         pone el test en rojo.
-  - [ ] El ámbito deja de ser un solo archivo.
+  - [x] El ámbito deja de ser un solo archivo.
 
 ### [x] T-2.73.b · Higiene de RLS: `tenant_retire_codes` sin FORCE y 7 tablas con dueño superusuario — `SOFTWARE`
 - **Componente:** db · **Depende de:** —
@@ -8246,7 +8246,7 @@ sería documentar intenciones.
   - [x] Si el panel no puede consumir el token, la copia queda **vigilada por un test**, como el
         glosario de `T-2.85.b`.
 
-### [ ] T-2.138 · `ingest_reject` duplica renglón en `audit_log` — `SOFTWARE`
+### [x] T-2.138 · `ingest_reject` duplica renglón en `audit_log` — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.136` (2026-08-13), **medida**
 - De los 7 caminos de ingesta, 6 son idempotentes ante una reentrega (PK natural, UPSERT por
   `event_uuid`, guarda de estado). El séptimo **no**: `_audit_reject` inserta **por entrega, no
@@ -8261,10 +8261,29 @@ sería documentar intenciones.
   índice único parcial con clave por **hash del mensaje**.
 - El test de `T-2.136` **fija el 2 medido**: el día que se arregle, se pone rojo y avisa.
 - **Criterios de aceptación:**
-  - [ ] Un rechazo reentregado deja **una** fila, sin colapsar rechazos distintos.
-  - [ ] El escritor único sigue siendo `audit.py` y su contract-test sigue vetando lo demás.
+  - [x] Un rechazo reentregado deja **una** fila, sin colapsar rechazos distintos.
+  - [x] El escritor único sigue siendo `audit.py` y su contract-test sigue vetando lo demás.
 
-### [ ] T-2.139 · `backfill` consume cola y no tiene tope de sentencia — `SOFTWARE`
+> **Cerrada (2026-08-14).** La clave es **huella + CUBETA DE TIEMPO**, y esa segunda mitad es la
+> que evita el daño que `T-2.136` temía: la huella dice «el mismo hecho», y la cubeta lo **acota
+> al horizonte de reentrega de SQS** —`maxReceiveCount × VisibilityTimeout` de la peor cola,
+> **leído del Terraform real**—. Se miran la cubeta actual **y la anterior**, así que no hay
+> agujero de borde.
+>
+> Con eso, **los rechazos genuinamente distintos NO se colapsan** (medido: variando razón,
+> publicador, tenant y objeto ⇒ 5 filas) y **el mismo rechazo fuera de la ventana vuelve a dejar
+> fila** — o sea que el índice **no es un silenciador permanente**.
+>
+> **El escritor único sigue vetando**, y se comprobó de verdad: el escaneo del contract-test sobre
+> un árbol con un impostor que copia el SQL nuevo lo **delata**. Todo el arreglo vive **dentro**
+> de `audit.py`, sin excepciones.
+>
+> **Punto ciego declarado en voz alta** (con test y docstring): la fila **no lleva id del
+> mensaje**, así que dos mensajes distintos con evidencia byte-idéntica dentro de la ventana se
+> cuentan como uno. Si algún día hay que **contar** repeticiones, **lo que debe viajar es el id —
+> no aflojar la clave**.
+
+### [x] T-2.139 · `backfill` consume cola y no tiene tope de sentencia — `SOFTWARE`
 - **Componente:** api (worker) · **Detectada por:** `T-2.136` (2026-08-13)
 - `T-2.136` puso tope de sentencia **solo a `ingest`**, y dejó `backfill` fuera **con razón
   medida**: su `VisibilityTimeout` es 300 s (10× el de eventos), su trabajo es a granel (S3 →
@@ -8272,8 +8291,52 @@ sería documentar intenciones.
   **recepción quemada por una sentencia quizá legítima**.
 - Acotarlo exige **medir antes cuánto tarda un objeto real**, no elegir un número.
 - **Criterios de aceptación:**
-  - [ ] Medido el tiempo de una pasada real de backfill sobre un objeto representativo.
-  - [ ] Política de reintento como la de `T-2.132`, **y solo entonces** el tope.
+  - [x] Medido el tiempo de una pasada real de backfill sobre un objeto representativo.
+  - [x] Política de reintento como la de `T-2.132`, **y solo entonces** el tope.
+        ⚠️ **Llegó el de LOCK; el de SENTENCIA no, y con razón medida** — ver abajo.
+
+> **Cerrada (2026-08-14).** El objeto representativo se **derivó, no se eligió**:
+> `backfill_threshold_s` es el umbral exacto a partir del cual el edge escoge la ruta S3, o sea
+> **el suelo de lo que llega a esta cola**. Medido: **0.88 s para 3600 filas** (223 µs/fila), y
+> **la sentencia más lenta ~1 ms** — el 0.1 % de la pasada.
+>
+> **La distinción que decide, y es la que faltaba en la ficha:** la **pasada** crece con las filas;
+> **la sentencia más lenta, no**. Un `statement_timeout` acota **una sentencia**, y aquí una pasada
+> larga **no es una sentencia lenta**: son **miles de sentencias cortas dentro de UNA
+> transacción**. Para que la pasada llegara a los 300 s de la cola harían falta **~90 h de spool en
+> un solo objeto**, y **ningún tope de sentencia lo evitaría**. A cambio abriría un modo de fallo
+> nuevo: `57014` **no está** entre los transitorios (a propósito), así que cada disparo sería **una
+> recepción quemada y una pasada entera tirada**.
+>
+> **Lo que falta para que ese número exista** —y queda declarado y fijado por test—: **trocear el
+> objeto**, para que la pasada deje de ser una transacción única. Entonces hay presupuesto por
+> trozo y de ahí sí sale un tope.
+>
+> **El tope de LOCK sí llegó**, y con argumento propio: la transacción que backfill sostiene
+> mientras espera es **la más grande del sistema**, o sea **el peor extremo lejano posible** de un
+> ciclo tipo `T-2.73.c`.
+>
+> **El daño de `T-2.132` seguía intacto aquí, y era MÁS caro:** con 5 locks seguidos, **5
+> recepciones y un mensaje válido en la DLQ** — pero lo que se reentrega no es un dato de un
+> segundo, es **el spool entero de una caída**. Ahora: **1 recepción, DLQ vacía**.
+>
+> Y el «hallazgo de paso» de aquella ficha —**tirar una conexión sana** por un lock que ya había
+> cedido— también estaba vivo aquí, **agravado** porque se llevaba por delante el registry
+> caliente.
+
+### [ ] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra — `SOFTWARE`
+- **Componente:** infra · **Detectada por:** `T-2.72.d` (2026-08-14), al derivar el censo
+- El censo repo-wide de `T-2.72.d` encontró **tres alarmas sin aserción de `treat_missing_data`**
+  en Terraform: `dlq_depth`, `iot_rule_errors` —**las dos INTOCABLES**— y `ec2_cpu`. Ninguna tiene
+  su razón escrita, así que quedaron **fijadas desde el API con su valor medido y nombradas**: el
+  agente **no inventó justificaciones**, que es lo correcto.
+- **Y un defecto de diseño de paso:** `ec2_cpu` está en `breaching`, igual que `ec2_status`, así
+  que **cuando la instancia se apaga llegan DOS correos por el mismo corte** — que es exactamente
+  lo que `sensor_mute` evita a propósito en el otro lado.
+- **Criterios de aceptación:**
+  - [ ] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
+  - [ ] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
+        por el mismo corte son deseables.
 
 ### [x] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
 - **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)

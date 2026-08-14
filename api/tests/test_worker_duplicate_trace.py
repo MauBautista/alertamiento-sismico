@@ -348,25 +348,28 @@ def test_beacon_de_retirado_duplicado_no_duplica_la_bitacora(flota, sqs, colas, 
     assert _contar(sql, (obj,)) == 1
 
 
-# ============================================ el rastro que NO es idempotente
+# ================================== el rastro que NO era idempotente (T-2.138)
 
 
-def test_el_rechazo_de_identidad_duplicado_SI_deja_rastro_doble(
+def test_el_rechazo_de_identidad_duplicado_YA_NO_deja_rastro_doble(
     flota, sqs, colas, consumidor
 ) -> None:
-    """**El hallazgo de la ficha.** Todo lo que la ingesta escribe en tablas de
-    negocio tiene PK natural… salvo un camino: el rechazo de identidad.
+    """**El hallazgo de `T-2.136`, ya cerrado por `T-2.138`.**
 
-    `audit_log` es `audit_id GENERATED ALWAYS AS IDENTITY` + `ts DEFAULT now()`
-    y **no tiene clave natural**, así que `_audit_reject` inserta una fila por
-    ENTREGA, no por hecho. Dos entregas del mismo mensaje falsificado ⇒ dos
-    renglones en una bitácora que es append-only por trigger y que **nunca se
-    poda** (regla de oro 11): el rastro doble no se puede deshacer nunca.
+    Todo lo que la ingesta escribe en tablas de negocio tiene PK natural… salvo
+    este camino: `audit_log` es `audit_id GENERATED ALWAYS AS IDENTITY` +
+    `ts DEFAULT now()` y **no tiene clave natural**, así que `_audit_reject`
+    insertaba una fila por ENTREGA y no por hecho — en una bitácora append-only
+    que **nunca se poda** (regla de oro 11), donde el renglón de más es para
+    siempre. Medido aquí: **2**.
 
-    Se pinta el número medido a propósito. El arreglo vive en `audit.py` —
-    escritor ÚNICO de la tabla, vetado por contract-test— y en una migración con
-    índice único parcial; no cabe en la superficie de esta ficha. Cuando llegue,
-    **este test se pone rojo**, y esa es exactamente la señal que se busca.
+    Este test fijaba ese 2 para ponerse rojo el día del arreglo. Ese día llegó:
+    la fila lleva ahora clave de reentrega (huella del contenido + cubeta del
+    horizonte de SQS) y la segunda entrega no escribe. La cubeta es la mitad que
+    hace que esto NO sea el arreglo que `T-2.136` rechazó por escrito: rechazos
+    genuinamente distintos —o el mismo repetido fuera de la ventana— siguen
+    dejando cada uno su renglón. Eso vive en `tests/test_audit_reentrega.py`, y
+    sin esa mitad este verde significaría "se está perdiendo evidencia".
     """
     forjado = f"tenant-evil-{uuid.uuid4().hex[:8]}"
     cuerpo = _cuerpo(
@@ -387,8 +390,9 @@ def test_el_rechazo_de_identidad_duplicado_SI_deja_rastro_doble(
     assert _contar(sql, (patron,)) == 1, "el arnés no produjo el rechazo de identidad"
 
     assert _entregar(consumidor, sqs, colas[0], cuerpo)["n_reject"] == 1
-    assert _contar(sql, (patron,)) == 2, (
-        "si esto vale 1, el rastro doble ya está arreglado: actualiza el test y cierra la ficha"
+    assert _contar(sql, (patron,)) == 1, (
+        "el rechazo reentregado volvió a dejar rastro doble (T-2.138): la clave de reentrega de "
+        "audit.py dejó de aplicarse, o la migración 0044 no está en esta base"
     )
     # La DLQ recibe también las dos copias. Eso NO es el defecto: la DLQ es una
     # cola de mensajes por procesar, no una bitácora de compliance, y se drena.

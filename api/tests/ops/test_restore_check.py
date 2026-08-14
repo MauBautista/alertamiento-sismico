@@ -9,10 +9,9 @@ concreta y demuestra que el verificador la caza.
 
 Cómo se rompen las cosas sin dejar rastro: todas las mutaciones son DDL dentro
 de la transacción del fixture `conn`, que hace ROLLBACK al terminar. En
-PostgreSQL el DDL es transaccional —incluido `DROP TABLE` de una hypertable,
-`ALTER ROLE ... RENAME` y hasta un `UPDATE pg_index`— así que la base queda
-intacta. Verificado a mano antes de escribir esto: `hypertables` vuelve de 2 a
-3 y `takab_app` reaparece tras el ROLLBACK.
+PostgreSQL el DDL es transaccional —incluido `DROP TABLE` de una hypertable y un
+`UPDATE pg_index`—, así que la base queda intacta: `hypertables` vuelve de 2 a 3
+tras el ROLLBACK. La de ROLES es la única que NO muta nada (T-2.142).
 
 Lo que estos tests NO cubren, y por eso existe el ensayo de
 `takab_api.ops.restore_drill`: que un `pg_restore` real produzca una base sana.
@@ -32,6 +31,7 @@ from takab_api.ops.restore_check import (
     ROJO,
     SKIP,
     WARN,
+    Expectations,
     Report,
     capture_baseline,
     declared_expectations,
@@ -270,11 +270,33 @@ def test_rol_de_conexion_ausente(seeded: psycopg.Connection) -> None:
 
     Restaurar en una instancia nueva y limpia (el Procedimiento B del runbook)
     es exactamente donde desaparecen, y con ellos todos los GRANT.
+
+    **Y por eso mismo el escenario no se monta renombrando uno** (T-2.142): la
+    propiedad que hace peligroso perder un rol —que es global al clúster— es la
+    misma que hace que el test dañe a las demás bases mientras corre. Lo que se
+    ejercita es exactamente lo que hace el verificador: contrastar la lista
+    ESPERADA contra `pg_roles`. Así que se le da una expectativa con un rol que no
+    existe, y el catálogo del clúster no se toca.
+
+    Las dos mitades, por separado y ambas necesarias:
+      1. la lista esperada CONTIENE el rol de conexión real (se deriva de los
+         `CREATE ROLE` de la migración 0001);
+      2. un rol esperado que no está en el clúster sale FAIL, con su nombre.
+    Juntas dicen lo que decía el rename: si `takab_app` desapareciera, se vería.
     """
-    seeded.execute("ALTER ROLE takab_app RENAME TO takab_app_probe")
-    report = verify(seeded)
+    exp = declared_expectations()
+    assert "takab_app" in exp.roles, (
+        "la expectativa dejó de incluir el rol de conexión real: el verificador ya no vigila "
+        "la ausencia que importa (y este test se quedaría probando una sonda inventada)"
+    )
+
+    sonda = "takab_app_ausente_sonda"
+    presentes = {fila[0] for fila in seeded.execute("SELECT rolname FROM pg_roles").fetchall()}
+    assert sonda not in presentes, "la sonda tiene que ser un rol INEXISTENTE para medir algo"
+
+    report = verify(seeded, expectations=exp.merged_with(Expectations(roles=frozenset({sonda}))))
     assert _check(report, "roles").status == FAIL
-    assert "takab_app" in _check(report, "roles").detail
+    assert sonda in _check(report, "roles").detail
 
 
 def test_dueño_con_bypassrls_y_sin_force(seeded: psycopg.Connection) -> None:

@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from ops.censo_alarmas import alarmas
 from takab_api.ops.muting import (
     ALARM_CATALOG,
     AWS_CITAS,
@@ -54,11 +55,16 @@ from takab_api.ops.muting import (
 _T0 = datetime(2026, 8, 6, 3, 30, tzinfo=UTC)
 
 _MODULE = Path(__file__).resolve().parents[3] / "infra/terraform/modules/observability/main.tf"
-_RESOURCE_RE = re.compile(r'^resource\s+"aws_cloudwatch_metric_alarm"\s+"([a-z0-9_]+)"', re.M)
 
 
 def _terraform_alarm_resources() -> set[str]:
-    return set(_RESOURCE_RE.findall(_MODULE.read_text(encoding="utf-8")))
+    """[T-2.72.d] El censo ya no se lee de UN fichero: se deriva de todo
+    `infra/terraform` (`ops/censo_alarmas.py`). Este guardia tenía exactamente el
+    mismo punto ciego que el de `treat_missing_data` —una alarma declarada en otro
+    módulo nacía sin clasificar y nada lo delataba— y se cierra con la misma
+    derivación. Hoy todas siguen en `observability/main.tf`; el censo ya no lo da
+    por supuesto."""
+    return set(alarmas())
 
 
 # --- 1. El catálogo se deriva, no se enumera ---------------------------------
@@ -69,11 +75,11 @@ def test_toda_alarma_del_terraform_esta_clasificada() -> None:
     siguiente. Aquí la lista la pone el Terraform, así que una alarma nueva sin
     decidir si es silenciable **no puede pasar en verde**."""
     en_terraform = _terraform_alarm_resources()
-    assert en_terraform, "no se pudo leer el módulo observability: el test estaría vacío"
+    assert en_terraform, "no se encontró ninguna alarma en el Terraform: el test estaría vacío"
     clasificadas = {k.resource for k in ALARM_CATALOG}
     sin_clasificar = en_terraform - clasificadas
     assert not sin_clasificar, (
-        f"alarma(s) nueva(s) en observability/main.tf sin clasificar en ALARM_CATALOG: "
+        f"alarma(s) nueva(s) en el Terraform sin clasificar en ALARM_CATALOG: "
         f"{sorted(sin_clasificar)}. Decide si se puede silenciar durante una ventana de "
         f"mantenimiento — el default seguro es NEVER."
     )
@@ -133,6 +139,10 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # trajo consigo: con el archivado atascado el WAL no se recicla y llena el
         # volumen de los datos en menos de dos días.
         "base_backup_missing",
+        # [T-2.141] Y su AVISO, que mira la MISMA métrica con el umbral sin el
+        # margen. Entra por separado porque callarla no es callar «la misma
+        # alarma otra vez»: es quedarse solo con la que ya no avisa a tiempo.
+        "base_backup_late",
         "db_disk_space",
         # [T-2.81.a] La retención de PII que se para. No entra aquí por inercia:
         # su umbral ya son DOS DÍAS sin una corrida correcta, así que ninguna

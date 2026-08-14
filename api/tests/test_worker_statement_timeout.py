@@ -242,13 +242,22 @@ def test_los_pollers_sin_cola_NO_llevan_tope(monkeypatch, modulo: str, construct
         assert conn.execute("SHOW statement_timeout").fetchone()["statement_timeout"] == "0"
 
 
-def test_backfill_no_lleva_tope_y_su_cola_dice_por_que() -> None:
+def test_backfill_no_lleva_tope_y_su_cola_dice_por_que(monkeypatch) -> None:
     """`backfill` SÍ consume cola, así que el modo de fallo existe — y aun así se
-    queda fuera, con una razón medible: su `VisibilityTimeout` es 10× el de
-    eventos, su trabajo es a granel (objeto de S3 → miniSEED → filas) y **no
-    tiene la política de reintento** de `ingest/consumer.py`. Un `57014` allí
-    sería una recepción quemada por una sentencia que podía ser legítima.
-    Ponerle tope exige medir antes cuánto tarda un objeto real: ficha aparte.
+    queda fuera. **`T-2.139` rehizo la razón, y la mitad vieja ya no vale.**
+
+    Lo que decía esta prueba: «no tiene la política de reintento». Ya la tiene
+    (`BACKFILL_TRANSIENT_POLICY`), así que ese argumento caducó — y aun así el
+    tope sigue sin ponerse, por lo que **midió** `T-2.139`: un
+    `statement_timeout` acota UNA sentencia, y en backfill la sentencia más lenta
+    es el ~0.2 % de la pasada (≈1 ms de 0.88 s sobre el objeto representativo).
+    O sea que el tope **no cierra** el modo de fallo que lo motivaba —la pasada
+    pasándose del `VisibilityTimeout`, que exigiría ~90 h de spool en un solo
+    objeto— y sí abre uno: `57014` no está en el censo de transitorios, así que
+    cada disparo sería una recepción quemada **y una pasada entera tirada**.
+
+    Lo que sigue en pie de la razón vieja: la asimetría de visibilidades (10×).
+    El detalle completo vive en `test_backfill_transient_retry.py`.
     """
     visibilidades = _visibilidades()
     assert max(visibilidades) >= 10 * min(visibilidades), (
@@ -257,8 +266,19 @@ def test_backfill_no_lleva_tope_y_su_cola_dice_por_que() -> None:
     )
     from takab_api.backfill import __main__ as entry
 
-    fuente = Path(entry.__file__).read_text("utf-8")
-    assert "statement_timeout_ms" not in fuente, (
-        "backfill ganó el tope sin que se actualizara la razón escrita en "
-        "WORKER_STATEMENT_TIMEOUT_MS ni esta prueba"
-    )
+    monkeypatch.setenv("TAKAB_API_QUEUE_URL_BACKFILL", "https://sqs.test/q-backfill")
+    monkeypatch.setenv("TAKAB_API_DLQ_URL_BACKFILL", "https://sqs.test/q-backfill-dlq")
+    monkeypatch.setenv("TAKAB_API_DATABASE_URL", _dsn())
+    with mock_aws():
+        consumidor = entry.build_consumer(Settings())
+    # Sobre la conexión REAL y no sobre el texto del fichero: el guardia textual
+    # de antes se ponía rojo con solo nombrar el parámetro en el comentario que
+    # deja escrita la decisión, justo al lado de la decisión.
+    with consumidor._conn_factory() as conn:  # noqa: SLF001 - es el punto del test
+        assert conn.execute("SHOW statement_timeout").fetchone()["statement_timeout"] == "0", (
+            "backfill ganó el tope sin que se actualizara la razón escrita en "
+            "WORKER_STATEMENT_TIMEOUT_MS ni esta prueba"
+        )
+        # [T-2.139] Y el de LOCK sí lo lleva ya: la política de reintento que
+        # `T-2.132` exigía primero llegó, y con ella ceder dejó de costar datos.
+        assert conn.execute("SHOW lock_timeout").fetchone()["lock_timeout"] != "0"

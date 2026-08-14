@@ -332,6 +332,23 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
         ),
     ),
     AlarmKind(
+        resource="base_backup_late",
+        scope=NEVER,
+        name_template="takab-dev-backup-base-atrasado",
+        why=(
+            "[T-2.141] Es el AVISO de la misma métrica que `base_backup_missing`, y son DOS a "
+            "propósito: aquélla dispara a `intervalo × margen` —14 días con los valores de hoy, "
+            "que es EXACTAMENTE `wal_retention_days`— o sea cuando la ventana de recuperación ya "
+            "se cerró. Ésta dispara a `intervalo` a secas: caza el PRIMER `barman-cloud-backup` "
+            "que falla, cuando todavía quedan `intervalo × (margen − 1)` días para relanzarlo a "
+            "mano. Callarla durante una ventana de mantenimiento se come precisamente esos días "
+            "de margen, que son la única razón por la que existe; y la hermana que quedaría "
+            "vigilando ya no avisa a tiempo, avisa cuando ya no hay nada que hacer. "
+            "Su `treat_missing_data` es `missing` y NO es ceguera: el silencio de esta métrica lo "
+            "cubre `base_backup_missing` en `breaching`, mismo publicador y mismo host."
+        ),
+    ),
+    AlarmKind(
         resource="db_disk_space",
         scope=NEVER,
         name_template="takab-dev-disco-datos-lleno",
