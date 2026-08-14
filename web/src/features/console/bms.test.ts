@@ -55,10 +55,14 @@ describe("groupActions", () => {
     expect(groups.map((g) => g.kind)).toEqual(["siren_on", "door_released", "gas_closed"]);
   });
 
-  it("kind desconocido: etiqueta cruda en mayúsculas y estado neutro (nunca revienta)", () => {
+  it("kind desconocido: etiqueta cruda en mayúsculas y SIN CLASIFICAR (nunca revienta)", () => {
+    // [T-2.144] Esto decía `{ state: "NUEVO_KIND_X", kind: "ok" }` — VERDE. Ese
+    // verde es la razón por la que ocho productores reales estuvieron meses
+    // invisibles, uno de ellos «DAMAGE PEOPLE AT RISK». Un kind que el registro
+    // no conoce no es «todo bien»: es «no sé qué es esto», y se pinta ámbar.
     const groups = groupActions([action("nuevo_kind_x", "2026-07-10T03:00:00Z")]);
     expect(groups[0].label).toBe("NUEVO KIND X");
-    expect(groups[0].view).toEqual({ state: "NUEVO_KIND_X", kind: "ok" });
+    expect(groups[0].view).toEqual({ state: "SIN CLASIFICAR", kind: "warning" });
   });
 
   it("acuses y acciones de operador también agrupan", () => {

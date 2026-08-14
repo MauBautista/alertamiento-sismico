@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **282** · `[x]` **225** · `[~]` **9** · `[ ]` **48**
+**Conteo de tareas:** total **282** · `[x]` **226** · `[~]` **9** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5330,7 +5330,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > script **publica una primera medida en el acto**: el correo de `ok_actions` es la señal de que
 > arrancó, y su ausencia es el indicio. Queda como paso escrito en el runbook.
 
-### [ ] T-2.144 · Cinco verbos reales se pintan crudos y EN VERDE, y uno dice «personas en riesgo» — `SOFTWARE`
+### [x] T-2.144 · Cinco verbos reales se pintan crudos y EN VERDE, y uno dice «personas en riesgo» — `SOFTWARE`
 - **Componente:** sdk + web · **Detectada por:** `T-2.133` (2026-08-14), al barrer los productores
 - Hay **siete productores reales** de `incident_actions` sin rótulo en el checklist BMS:
   `fail_open`, `in_review`, `close`, `dictamen_signed`, `damage_people_at_risk`,
@@ -5346,9 +5346,60 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   de un `dict`. Un barrido que los buscara literalmente **daría falsos negativos y nadie lo
   sabría**.
 - **Criterios de aceptación:**
-  - [ ] Los siete tienen rótulo en las dos superficies, derivado del mismo registro.
-  - [ ] Ninguno cae en el fallback `ok`: el que no se sepa clasificar **no se pinta en verde**.
-  - [ ] El fallback deja de ser `ok` **por defecto**, o queda escrito por qué es seguro que lo sea.
+  - [x] Los siete tienen rótulo en las dos superficies, derivado del mismo registro.
+  - [x] Ninguno cae en el fallback `ok`: el que no se sepa clasificar **no se pinta en verde**.
+  - [x] El fallback deja de ser `ok` **por defecto**, o queda escrito por qué es seguro que lo sea.
+
+> **Cerrada (2026-08-14). Eran OCHO, no siete — y el octavo demuestra que esta ficha nació de un
+> barrido con punto ciego.** `notify_delivered` **no lo escribe `api/src`**: lo escribe una función
+> PL/pgSQL que vive en `db/schema.sql` y en la migración `0040`. **Ningún barrido de `api/src`
+> podía verlo**, y la consola lo pintaba «NOTIFY DELIVERED» en verde. El barrido nuevo va sobre
+> **el repo entero**: 13 ficheros productores, **16 sentencias**, **0 sin resolver, 26 kinds**.
+>
+> **⚠️ Y esta ficha describía `fail_open` AL REVÉS.** Decía «el gabinete decidió actuar sin poder
+> confirmar». Es lo contrario: `incident/fail_open.py` abre un incidente sintético para un sitio
+> **SIN ENLACE** alcanzado por un evento de red — **nadie detectó ahí, nadie accionó ahí, nadie
+> sabe cómo quedó**. El rótulo lo dice así, y su severidad (`warning`) **no es opinión**: es la
+> misma que el productor le pone al incidente que abre.
+>
+> **`damage_people_at_risk` pasa de «DAMAGE PEOPLE AT RISK» en verde a `PERSONAS EN RIESGO`,
+> `critical`** — es la única línea de la familia que describe a alguien atrapado, y existe para
+> que el orquestador despierte al SOC de inmediato.
+>
+> **El fallback dejó de ser verde:** `SIN CLASIFICAR`, `warning`. Y **no se volvió no-verde nada
+> que estuviera bien**, medido antes de tocarlo y anclado con un test que recorre todo el
+> registro: los 26 kinds escritos tienen entrada explícita. `warning` y no `critical` a propósito
+> — **un estado desconocido pide que alguien lo mire, no que se evacúe un edificio**; lo que
+> ninguno merecía era verde.
+>
+> Detalle de contención que evita romper otra superficie: **no se amplió la unión a un cuarto
+> valor**, porque `GROUP_COLOR` de la app móvil mapea exactamente el trío y un cuarto la habría
+> dejado **sin color** — otra pantalla sin saber qué pintar, en un fichero que el agente no podía
+> tocar.
+>
+> **La pregunta de fondo —¿qué garantiza que el productor número nueve tenga rótulo?— tiene ahora
+> DOS respuestas, y la segunda es la buena.** `T-2.133` acertó sobre el barrido que intentó y
+> **erró sobre el problema**: el nombre no se busca, **se resuelve**. El censo estático resuelve la
+> expresión de cada `INSERT` por cuatro reglas derivadas de código declarado, y **lo que ninguna
+> regla resuelve deja la lista vacía y el test lo NOMBRA** — el censo no calla lo que no entiende,
+> que es literalmente lo que produjo esta ficha.
+>
+> Y para el hueco que ningún análisis estático cubre (un kind calculado en ejecución, un productor
+> fuera del repo), la garantía sale de **una propiedad del esquema**: `incident_actions` es
+> append-only y **exenta de poda**, así que `SELECT DISTINCT kind` **es la lista completa de todo
+> lo que se ha escrito nunca** (`api/tests/api/test_incident_action_kinds.py`). Se descartó a
+> propósito la opción de «un módulo con todas las constantes»: **su completitud descansaría en una
+> convención, y una convención no es una garantía**.
+>
+> **Ese test declara cuándo no mide.** Con la tabla vacía, `set() - registro` es `set()` y pasaría
+> en verde sin haber mirado nada — **el mismo defecto que la ficha cierra, reintroducido en su
+> propio test**. Así que el mecanismo se acredita con datos fabricados y la corrida contra la base
+> **avisa en voz alta** cuando no tuvo nada que mirar. Su sitio de valor máximo es el simulacro de
+> restauración y la base de producción.
+>
+> **De paso:** `drill_start`/`drill_stop` estaban **muertos en la bitácora** —son valores de
+> `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
+> `T-2.133`.
 
 ### [ ] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**

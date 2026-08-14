@@ -8,7 +8,13 @@
 // Orden cronológico del SERVIDOR: no se reordena en cliente. Una bitácora que el
 // cliente reordena deja de ser una bitácora.
 
-import { ACTION_STATE, ACTUATOR_CHANNELS, CHANNEL_LABEL, isSimulatedAction } from "@takab/sdk";
+import {
+  ACTION_STATE,
+  ACTUATOR_CHANNELS,
+  CHANNEL_LABEL,
+  INCIDENT_ACTION_KINDS,
+  isSimulatedAction,
+} from "@takab/sdk";
 
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
@@ -50,6 +56,27 @@ function actuatorKindLabels(): Record<string, string> {
 }
 
 /**
+ * [T-2.144] Y LOS QUE NO SON DE ACTUADOR, DEL MISMO REGISTRO.
+ *
+ * Aquí vivía la tercera lista escrita a mano (`KIND_LABEL`), con nueve entradas.
+ * Le faltaban cinco verbos que la API escribe de verdad —`fail_open`,
+ * `in_review`, `close`, `dictamen_signed` y `notify_delivered`— y le sobraban
+ * dos que nadie escribe nunca (ver la nota de abajo). Ahora el verbo sale de
+ * `INCIDENT_ACTION_KINDS.logLabel`, el mismo registro del que el checklist saca
+ * la fila: un kind nuevo entra en las dos superficies o en ninguna.
+ *
+ * Sigue siendo un texto DISTINTO del de la fila del checklist, y esa es la razón
+ * de que `logLabel` exista: «PASE DE LISTA · CERRADO» describe un estado;
+ * «PASE DE LISTA CERRADO» describe un hecho fechado. La bitácora es lo segundo.
+ */
+function kindLabels(): Record<string, string> {
+  return {
+    ...actuatorKindLabels(),
+    ...Object.fromEntries(Object.entries(INCIDENT_ACTION_KINDS).map(([k, s]) => [k, s.logLabel])),
+  };
+}
+
+/**
  * La derivación es PEREZOSA, y no es una micro-optimización: hacerla al cargar
  * el módulo tumbaba dos suites enteras.
  *
@@ -62,37 +89,38 @@ function actuatorKindLabels(): Record<string, string> {
  * rótulos. `isSimulatedAction` ya se importaba aquí y nunca dio guerra porque
  * sólo se INVOCA dentro de `kindLabel`; esto se comporta igual.
  */
-let ACTUATOR_LABELS: Record<string, string> | null = null;
+let KIND_LABEL: Record<string, string> | null = null;
 
-function actuatorLabel(kind: string): string | undefined {
-  ACTUATOR_LABELS ??= actuatorKindLabels();
-  return ACTUATOR_LABELS[kind];
+function labelDelRegistro(kind: string): string | undefined {
+  KIND_LABEL ??= kindLabels();
+  return KIND_LABEL[kind];
 }
 
-/** Etiquetas de `incident_actions.kind` (espejo de los verbos que escribe la API).
- *  Los de actuador se DERIVAN (arriba); éstos son los verbos que no pertenecen a
- *  ningún canal y no tienen registro del que salir. */
-const KIND_LABEL: Record<string, string> = {
-  ack: "ACUSE DE OPERADOR",
-  dictamen: "DICTAMEN EMITIDO",
-  dictamen_request: "DICTAMEN SOLICITADO",
-  epicenter_relocate: "EPICENTRO REUBICADO",
-  headcount_closed: "PASE DE LISTA CERRADO",
-  headcount_notify: "AVISO A NO REPORTADOS",
-  notify_sent: "NOTIFICACIÓN ENVIADA",
-  // [T-2.75] Tres verbos, no uno. Un canal sin proveedor real no envió nada, y
-  // un envío agotado tampoco: leerlos como "ENVIADA" en la bitácora que un
-  // perito usa para reconstruir lo ocurrido es falsear la evidencia.
-  notify_simulated: "NOTIFICACIÓN SIMULADA · NADIE LA RECIBIÓ",
-  notify_failed: "NOTIFICACIÓN NO ENTREGADA",
-  // [T-2.133] El CUARTO verbo de `T-2.109`, que llevaba sin rótulo desde que se
-  // añadió: en la bitácora que un perito lee salía «NOTIFY_NO_RECIPIENTS». No es
-  // fallo (el proveedor entrega) ni simulación (el canal es real): es que en ese
-  // inmueble no había un solo teléfono registrado al que despertar.
-  notify_no_recipients: "NOTIFICACIÓN SIN DESTINATARIOS · NADIE REGISTRADO EN EL INMUEBLE",
-  drill_start: "SIMULACRO INICIADO",
-  drill_stop: "SIMULACRO TERMINADO",
-};
+/*
+ * [T-2.144] `drill_start` Y `drill_stop` SE RETIRARON DE ESTE MAPA, y la razón
+ * va escrita para que nadie los devuelva "por si acaso" — es el mismo trato que
+ * `T-2.133` le dio a `siren_test`, y por el mismo motivo.
+ *
+ * Estaban rotulados aquí («SIMULACRO INICIADO» / «SIMULACRO TERMINADO») y
+ * **ningún productor los escribe jamás en `incident_actions`**: son valores de
+ * `commands.action` —comandos FIRMADOS al gabinete por el canal lógico
+ * `system`— y su acuse lo procesa `handle_command_ack`, que toca `commands` y
+ * `audit_log` y jamás esta tabla. El propio `api/src/takab_api/queries/mobile.py`
+ * lo dice al filtrar la alarma del inmueble: «`drill_start`/`drill_stop` con
+ * `channel='system'`, así que ninguno entra».
+ *
+ * No se conservan como legado, y la diferencia con `gas_valve_close`,
+ * `elevator_recall` y `door_release` importa: aquéllos son nombres de CANAL y el
+ * registro tiene que poder rotular una fila antigua de un canal. Éstos no
+ * pertenecen a ninguna fila de `incident_actions` que exista, ni haya existido:
+ * conservarlos no protege evidencia, protege una hipótesis. Lo que un simulacro
+ * SÍ deja en la tabla son los kinds de actuador de los relés que movió, y ésos
+ * ya se rotulan.
+ *
+ * La guardia que impide que vuelvan es el censo inverso de
+ * `web/src/features/console/incidentActionKinds.test.ts`: todo kind del registro
+ * tiene que tener un productor resuelto.
+ */
 
 export interface TimelineAction {
   action_id: string;
@@ -109,7 +137,12 @@ export interface TimelineAction {
  * caería en el fallback crudo sin decir que nadie lo recibió.
  */
 export function kindLabel(action: TimelineAction): string {
-  const base = actuatorLabel(action.kind) ?? KIND_LABEL[action.kind] ?? action.kind.toUpperCase();
+  // [T-2.144] El fallback tampoco calla aquí. La bitácora no tiene color, así
+  // que no podía mentir en verde — pero sí podía hacer pasar por un verbo de
+  // TAKAB el nombre en bruto de una constante. «SIN CLASIFICAR» es lo único
+  // cierto que la consola sabe de una fila que su registro no reconoce, y es lo
+  // que un perito necesita leer antes de darla por interpretada.
+  const base = labelDelRegistro(action.kind) ?? `${action.kind.toUpperCase()} · SIN CLASIFICAR`;
   if (isSimulatedAction({ payload: action.payload ?? {} }) && !base.includes("SIMULAD")) {
     return `${base} · SIMULADA, NADIE LA RECIBIÓ`;
   }
