@@ -21,6 +21,41 @@ export interface ActionStateView {
 export const SIMULATED_VIEW: ActionStateView = { state: 'SIMULADA · SIN ENTREGAR', kind: 'warning' };
 
 /**
+ * [T-2.144] EL FALLBACK DEJA DE SER VERDE, Y ÉSTA ES LA RAZÓN.
+ *
+ * Hasta esta ficha, un `kind` que el registro no conocía se pintaba
+ * `{ state: kind.toUpperCase(), kind: 'ok' }`: el nombre de la constante en
+ * inglés, en VERDE. **Ese verde es la razón por la que ocho productores reales
+ * fueron invisibles durante meses** — `gas_closed` y `door_released` hasta
+ * `T-2.119`, `notify_no_recipients` hasta `T-2.133`, y hasta `T-2.144`
+ * `fail_open`, `in_review`, `close`, `dictamen_signed`, `headcount_closed`,
+ * `headcount_notify`, `notify_delivered` y `damage_people_at_risk`, que decía
+ * «DAMAGE PEOPLE AT RISK» sobre personas atrapadas.
+ *
+ * Un kind sin clasificar NO es «todo bien»: es «no sé qué es esto». Pintarlo
+ * verde convierte cada olvido futuro en una mentira tranquilizadora, que es el
+ * defecto que este repositorio lleva cinco fichas cerrando (`T-2.119` gas y
+ * puertas, `T-2.120` la alarma del inmueble, `T-2.124` la imagen, `T-2.128` el
+ * SOC mudo, `T-2.133` `notify_no_recipients`).
+ *
+ * `warning` y no `critical`, medido y a propósito: el estado desconocido pide
+ * que alguien lo mire, no que se evacúe un edificio. Un tablero que grita por
+ * todo se ignora igual que uno que calla, y ninguno de los ocho que esta ficha
+ * rotuló habría merecido rojo. Lo que ninguno merecía era verde.
+ *
+ * Y el `state` deja de repetir el kind crudo: el nombre en bruto ya sale en la
+ * columna de la izquierda (`labelOf`), así que la píldora dice lo único que la
+ * consola sabe de verdad — que esto no está clasificado. `kind: 'ok'` sigue
+ * habiendo, pero sólo donde alguien lo escribió a mano sabiendo qué escribía.
+ *
+ * `ActionStateView['kind']` NO se amplía con un cuarto valor a propósito: el
+ * panel táctico móvil mapea el trío `{critical, warning, ok}` a colores
+ * (`GROUP_COLOR`, `mobile/src/features/panel/PanelView.tsx`) y un cuarto valor
+ * lo dejaría sin color — o sea, otra vez una superficie que no sabe qué pintar.
+ */
+export const UNCLASSIFIED_VIEW: ActionStateView = { state: 'SIN CLASIFICAR', kind: 'warning' };
+
+/**
  * [T-2.119] LOS CINCO CANALES DE ACTUACIÓN, con su polaridad y su vocabulario.
  *
  * Esto sustituye a cinco entradas sueltas de `ACTION_STATE` que se pintaban
@@ -167,24 +202,163 @@ function actuatorViews(): Record<string, ActionStateView> {
 }
 
 /**
- * Mapeo kind→estado visual (se comparte con la traza expandida).
+ * [T-2.144] LA SEGUNDA FAMILIA DEL REGISTRO: los verbos que NO son de actuador.
  *
- * Es lo que ese VERBO afirma por sí solo. El estado de una FILA del checklist
- * no sale de aquí cuando el gabinete declara el relé: sale de `groupActions`,
- * que prefiere `payload.channel_state`.
+ * `T-2.119` dejó los diez kinds de actuador derivándose de `ACTUATOR_CHANNELS`,
+ * y el resto —ciclo de vida, dictamen, pase de lista, notificación— repartido en
+ * DOS mapas paralelos escritos a mano (`ACTION_STATE` y `CHANNEL_LABEL`) más un
+ * TERCERO en la bitácora (`IncidentTimeline.KIND_LABEL`). Tres listas que había
+ * que acordarse de tocar a la vez, y el resultado medido fue el de siempre:
+ * **ocho productores reales sin una sola entrada en ninguna de las tres**, todos
+ * cayendo en el fallback crudo y VERDE.
+ *
+ * Uno de ellos era `damage_people_at_risk`: la consola pintaba «DAMAGE PEOPLE AT
+ * RISK» con `kind: 'ok'` — personas en riesgo, en verde, con el nombre de la
+ * constante en inglés, en la pantalla de un SOC.
+ *
+ * Por eso ahora es UN registro con las tres cosas juntas: la fila del checklist
+ * (`label` + `view`) y el verbo de la bitácora (`logLabel`). Añadir un kind a
+ * medias deja de ser posible: o tiene las tres o no compila.
+ *
+ * LA SEVERIDAD NO SE INFLA. `T-2.144` avisaba de esto y es real: un tablero que
+ * grita por todo se ignora igual que uno que calla. Un verbo que documenta un
+ * procedimiento cumplido —acusar, revisar, cerrar, firmar un dictamen
+ * habitable— es `ok` y se queda en `ok`. `warning` es «hay algo que atender» y
+ * `critical` es «ahora». El verde de aquí significa «clasificado y sin nada
+ * pendiente en esta línea», nunca «no sé qué es esto» — que es lo que el
+ * fallback decía (ver `UNCLASSIFIED_VIEW`).
  */
-export const ACTION_STATE: Record<string, ActionStateView> = {
-  ...actuatorViews(),
-  ack: { state: 'ACUSADO', kind: 'ok' },
-  dictamen: { state: 'EMITIDO', kind: 'ok' },
-  dictamen_request: { state: 'SOLICITADO', kind: 'ok' },
-  epicenter_relocate: { state: 'REUBICADO', kind: 'ok' },
-  notify_sent: { state: 'ENVIADA', kind: 'ok' },
+export interface IncidentActionSpec {
+  /** Rótulo de la FILA del checklist BMS (columna izquierda). */
+  label: string;
+  /** Estado y severidad de esa fila (píldora derecha + color del check). */
+  view: ActionStateView;
+  /**
+   * Verbo de la BITÁCORA. Es OTRA frase a propósito: una fila del checklist
+   * afirma «cómo está esto», y una línea de la bitácora «a esta hora ocurrió
+   * esto» — append-only, cronológica y leída por un perito.
+   */
+  logLabel: string;
+}
+
+export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
+  // --- ciclo de vida del incidente (`incident/lifecycle.py`) -----------------
+  ack: {
+    label: 'ACUSES',
+    view: { state: 'ACUSADO', kind: 'ok' },
+    logLabel: 'ACUSE DE OPERADOR',
+  },
+  in_review: {
+    label: 'REVISIÓN',
+    view: { state: 'EN REVISIÓN', kind: 'ok' },
+    logLabel: 'INCIDENTE EN REVISIÓN',
+  },
+  close: {
+    // El kind es `close` y el estado es `closed`: lo traduce `_ACTION_KIND` en
+    // `lifecycle.py`. Aquí se rotula el VERBO, que es lo que hay en la tabla.
+    label: 'CIERRE DEL INCIDENTE',
+    view: { state: 'CERRADO', kind: 'ok' },
+    logLabel: 'INCIDENTE CERRADO',
+  },
+  // [T-2.144] `fail_open` NO es «el gabinete actuó sin poder confirmar»: es lo
+  // contrario, y por eso el rótulo lo dice con todas las letras. Lo escribe
+  // `incident/fail_open.py` cuando la red confirma un evento que alcanza a un
+  // sitio **cuyo gabinete está SIN ENLACE**: nadie detectó ahí, nadie accionó
+  // ahí y nadie puede decir cómo quedó el inmueble — la nube abre el incidente
+  // sintético sólo para que la cascada de aviso lo cubra.
+  //
+  // `warning` y no `critical`, y no es una opinión: es la MISMA severidad que el
+  // productor le pone al incidente que abre (`_SYNTHETIC_SEVERITY = 'warning'`,
+  // con su razón escrita al lado — un sitio sin enlace no puede autoprotegerse,
+  // pero la actuación local sigue siendo autoritativa donde sí hay enlace).
+  fail_open: {
+    label: 'APERTURA POR FALTA DE ENLACE',
+    view: { state: 'SIN CONFIRMAR EN SITIO', kind: 'warning' },
+    logLabel: 'INCIDENTE ABIERTO SIN ENLACE CON EL GABINETE · NADA CONFIRMADO EN SITIO',
+  },
+  // --- dictamen -------------------------------------------------------------
+  dictamen: {
+    label: 'DICTAMEN AUTOMÁTICO',
+    view: { state: 'EMITIDO', kind: 'ok' },
+    logLabel: 'DICTAMEN EMITIDO',
+  },
+  dictamen_request: {
+    label: 'DICTAMEN SOLICITADO',
+    view: { state: 'SOLICITADO', kind: 'ok' },
+    logLabel: 'DICTAMEN SOLICITADO',
+  },
+  // Sólo se escribe con un dictamen HABITABLE firmado (`_HABITABLE` en
+  // `routers/dictamens.py`: `normal_operation` / `inhabit_monitor`), que es lo
+  // que libera el reingreso de los ocupantes. El rótulo lo dice porque un
+  // «DICTAMEN FIRMADO» a secas no distingue firmar «habitable» de firmar «no
+  // habitable» — y esa es la diferencia entre volver a entrar o no.
+  dictamen_signed: {
+    label: 'DICTAMEN FIRMADO',
+    view: { state: 'HABITABLE · REINGRESO AUTORIZADO', kind: 'ok' },
+    logLabel: 'DICTAMEN FIRMADO · HABITABLE, REINGRESO AUTORIZADO',
+  },
+  epicenter_relocate: {
+    label: 'EPICENTRO',
+    view: { state: 'REUBICADO', kind: 'ok' },
+    logLabel: 'EPICENTRO REUBICADO',
+  },
+  // --- inspección y pase de lista (`routers/mobile_incident.py`) -------------
+  //
+  // EL CASO QUE ABRIÓ LA FICHA. Lo escribe un reporte de daños con la categoría
+  // `people_trapped` (`submit_damage_report`), y existe exactamente para que el
+  // orquestador OPS despierte al SOC de inmediato. La consola lo pintaba «DAMAGE
+  // PEOPLE AT RISK», en VERDE. Es `critical` y no admite discusión: es la única
+  // línea de esta familia que describe a alguien atrapado.
+  damage_people_at_risk: {
+    label: 'REPORTE DE DAÑOS',
+    view: { state: 'PERSONAS EN RIESGO', kind: 'critical' },
+    logLabel: 'PERSONAS EN RIESGO REPORTADAS EN SITIO',
+  },
+  // El pase de lista CERRADO es un procedimiento cumplido: `ok`. Cuántos siguen
+  // sin reportarse viaja en el payload (`unreported`) y no lo juzga esta fila —
+  // afirmar «TODOS REPORTADOS» sería la mentira; «CERRADO» es lo que ocurrió.
+  headcount_closed: {
+    label: 'PASE DE LISTA',
+    view: { state: 'CERRADO', kind: 'ok' },
+    logLabel: 'PASE DE LISTA CERRADO',
+  },
+  // Éste sí es `warning`: nadie pulsa «notificar a no reportados» si están
+  // todos, y el push es best-effort. Hay gente sin localizar.
+  headcount_notify: {
+    label: 'AVISO A NO REPORTADOS',
+    view: { state: 'ENVIADO', kind: 'warning' },
+    logLabel: 'AVISO A NO REPORTADOS · HAY PERSONAS SIN REPORTARSE',
+  },
+  // --- notificación (`notify/orchestrator.py` + `app_notify_delivery`) -------
+  notify_sent: {
+    label: 'NOTIFICACIONES',
+    view: { state: 'ENVIADA', kind: 'ok' },
+    logLabel: 'NOTIFICACIÓN ENVIADA',
+  },
+  // [T-2.144] EL OCTAVO PRODUCTOR, el que no estaba en la ficha. No lo escribe
+  // `api/src`: lo escribe la función PL/pgSQL `app_notify_delivery`
+  // (`db/schema.sql`, migración `0040`) cuando el webhook del proveedor confirma
+  // la entrega. `notify_sent` dice «lo entregamos al proveedor»; esto dice «el
+  // proveedor lo entregó al teléfono», que es otra afirmación y por eso es otra
+  // fila. Verde legítimo: es el desenlace bueno.
+  notify_delivered: {
+    label: 'NOTIFICACIONES ENTREGADAS',
+    view: { state: 'ENTREGADA', kind: 'ok' },
+    logLabel: 'NOTIFICACIÓN ENTREGADA EN EL DISPOSITIVO',
+  },
   // [T-2.75] Tres desenlaces, tres reacciones del operador: nada / falta
   // contratar el canal / el proveedor está caído AHORA. Pintarlos iguales fue
   // el tablero que decía "notificado" sin haber notificado a nadie.
-  notify_simulated: SIMULATED_VIEW,
-  notify_failed: { state: 'NO ENTREGADA', kind: 'critical' },
+  notify_simulated: {
+    label: 'NOTIFICACIONES SIMULADAS',
+    view: SIMULATED_VIEW,
+    logLabel: 'NOTIFICACIÓN SIMULADA · NADIE LA RECIBIÓ',
+  },
+  notify_failed: {
+    label: 'NOTIFICACIONES NO ENTREGADAS',
+    view: { state: 'NO ENTREGADA', kind: 'critical' },
+    logLabel: 'NOTIFICACIÓN NO ENTREGADA',
+  },
   // [T-2.133] EL CUARTO VERBO, que faltaba. `T-2.109` lo añadió al orquestador
   // —el proveedor existe y entrega, pero en ese inmueble no hay UN SOLO teléfono
   // registrado al que despertar— y ninguna superficie lo rotulaba: el checklist
@@ -194,7 +368,26 @@ export const ACTION_STATE: Record<string, ActionStateView> = {
   // `warning` y no `critical`, con la misma doctrina que `SIMULATED_VIEW`: no hay
   // avería que atender ni a quién reintentar, hay teléfonos que registrar con su
   // inmueble. Lo que NO puede ser es verde.
-  notify_no_recipients: { state: 'SIN DESTINATARIOS', kind: 'warning' },
+  notify_no_recipients: {
+    label: 'NOTIFICACIONES SIN DESTINATARIOS',
+    view: { state: 'SIN DESTINATARIOS', kind: 'warning' },
+    logLabel: 'NOTIFICACIÓN SIN DESTINATARIOS · NADIE REGISTRADO EN EL INMUEBLE',
+  },
+};
+
+/**
+ * Mapeo kind→estado visual (se comparte con la traza expandida).
+ *
+ * Es lo que ese VERBO afirma por sí solo. El estado de una FILA del checklist
+ * no sale de aquí cuando el gabinete declara el relé: sale de `groupActions`,
+ * que prefiere `payload.channel_state`.
+ *
+ * Las dos familias se DERIVAN (`ACTUATOR_CHANNELS` + `INCIDENT_ACTION_KINDS`):
+ * aquí no se escribe ni un kind más.
+ */
+export const ACTION_STATE: Record<string, ActionStateView> = {
+  ...actuatorViews(),
+  ...Object.fromEntries(Object.entries(INCIDENT_ACTION_KINDS).map(([k, s]) => [k, s.view])),
 };
 
 /**
@@ -219,14 +412,7 @@ function actuatorLabels(): Record<string, string> {
 /** Etiqueta humana por canal/acción (fallback: el kind crudo en mayúsculas). */
 export const CHANNEL_LABEL: Record<string, string> = {
   ...actuatorLabels(),
-  ack: 'ACUSES',
-  dictamen: 'DICTAMEN AUTOMÁTICO',
-  dictamen_request: 'DICTAMEN SOLICITADO',
-  epicenter_relocate: 'EPICENTRO',
-  notify_sent: 'NOTIFICACIONES',
-  notify_simulated: 'NOTIFICACIONES SIMULADAS',
-  notify_failed: 'NOTIFICACIONES NO ENTREGADAS',
-  notify_no_recipients: 'NOTIFICACIONES SIN DESTINATARIOS',
+  ...Object.fromEntries(Object.entries(INCIDENT_ACTION_KINDS).map(([k, s]) => [k, s.label])),
 };
 
 /*
@@ -435,7 +621,7 @@ function viewOf(action: IncidentActionOut): ActionStateView {
   if (isSimulatedAction(action)) {
     return SIMULATED_VIEW;
   }
-  return ACTION_STATE[action.kind] ?? { state: action.kind.toUpperCase(), kind: 'ok' };
+  return ACTION_STATE[action.kind] ?? UNCLASSIFIED_VIEW;
 }
 
 function labelOf(kind: string): string {

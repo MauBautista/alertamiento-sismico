@@ -35,7 +35,7 @@ import {
   type IncidentActionOut,
 } from "@takab/sdk";
 
-import { productoresDelKind, verbosDeNotificacion } from "../../test-utils/incidentActionKinds";
+import { kindsDeProductores, verbosDeNotificacion } from "../../test-utils/incidentActionKinds";
 
 function accion(
   kind: string,
@@ -162,7 +162,15 @@ describe("[T-2.133] censo inverso · el registro no da de alta nombres que nadie
     // prueba tampoco puede llegar aquí: `handle_command_ack` toca `commands` y
     // `audit_log`, jamás `incident_actions`, y `ACK_KIND` sólo mapea
     // `activate`/`deactivate` — un `self_test` ni siquiera tiene kind.
-    expect(productoresDelKind(kind)).not.toHaveLength(0);
+    //
+    // [T-2.144] Antes se buscaba el nombre como LITERAL en los ficheros que
+    // insertan. Eso daba dos falsos negativos que nadie habría entendido:
+    // `headcount_closed` y `headcount_notify` los fija `routers/mobile_incident.py`,
+    // que NO inserta en la tabla —la sentencia vive en `queries/mobile.py`—, así
+    // que el literal no está en ningún fichero productor. Ahora el censo resuelve
+    // la expresión de la columna `kind` de cada sentencia y sigue el enlace hasta
+    // quien lo fija, así que la pregunta se contesta de verdad.
+    expect(kindsDeProductores()).toContain(kind);
   });
 });
 
