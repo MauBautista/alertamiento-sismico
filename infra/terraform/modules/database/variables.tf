@@ -69,6 +69,21 @@ variable "notify_ses_identity_arns" {
   default = []
 }
 
+# [T-2.78.b] El remitente de DOMINIO. Se recibe el DOMINIO y no su ARN porque el
+# ARN se compone aqui con la region y la cuenta de este modulo —igual que los
+# topics de IoT—: tomarlo del output de `module.identity` cerraria el ciclo
+# `identity -> serve -> database`.
+#
+# Es la MISMA variable del entorno que crea la identidad. Separarlas seria volver
+# a permitir el estado que rompio el 2026-07-14: identidad verificada y worker sin
+# permiso, con los correos de CloudWatch (SNS, permiso propio) llegando igual y
+# tapando el hueco. Una identidad VERIFICADA no concede envio.
+variable "notify_ses_domain" {
+  description = "Dominio remitente cuyo ARN de identidad SES entra en el permiso de envio del worker notify. Vacio = solo las direcciones de `notify_ses_identity_arns`."
+  type        = string
+  default     = ""
+}
+
 # [T-2.71] Prefijo de entorno de los nombres de alarma de CloudWatch. El modulo
 # `observability` los escribe hardcodeados como `takab-dev-...`; aqui es una
 # variable porque estos ARN son la FRONTERA de qué se puede silenciar, y una

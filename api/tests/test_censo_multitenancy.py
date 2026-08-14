@@ -135,6 +135,21 @@ SIN_TENANT_ID: dict[str, str] = {
         "`grantee_tenant_id` (cada quien ve solo los suyos), así que la columna "
         "no añadiría aislamiento, solo una tercera versión de la verdad."
     ),
+    "notify_template_quarantine": (
+        "Estado del DESPLIEGUE, no de un cliente (T-2.77.c). Es la lista de "
+        "plantillas de WhatsApp con las que Meta no nos deja hablar —pausadas o "
+        "deshabilitadas por calidad—, y la plantilla pertenece a la cuenta de "
+        "negocio de TAKAB: **una sola WABA para toda la flota**. Cuando Meta pausa "
+        "una, el canal cae para TODOS los tenants a la vez, así que una columna "
+        "`tenant_id` aquí tendría que inventarse un dueño y además mentiría sobre "
+        "el alcance real de la caída. Vive en la base y no en la memoria del "
+        "worker porque un reinicio levantaba la cuarentena y se volvía a "
+        "martillear una plantilla pausada, que es lo que degrada su calificación "
+        "de calidad. Su aislamiento es el que corresponde a lo que es: RLS activa "
+        "con lectura para cualquier rol autenticado (como `seismic_events`), "
+        "escritura solo del worker por `takab_ingest`, y NADIE con DELETE — "
+        "levantar una cuarentena es un acto humano deliberado."
+    ),
     "site_ground_refs": (
         "DEUDA DECLARADA, no diseño — es la única de esta lista que no lo es. Son "
         "las referencias de suelo por SITIO (punto cero del calibrador, ATTEN-LAW) "

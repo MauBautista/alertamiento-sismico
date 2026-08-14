@@ -27,6 +27,7 @@ from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
 from takab_api.routers.notify import router as notify_router
+from takab_api.routers.notify_webhooks import router as notify_webhooks_router
 from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
 from takab_api.routers.rule_sets import router as rule_sets_router
@@ -118,6 +119,13 @@ def create_app() -> FastAPI:
     # worker.
     app.state.notify_channels = channel_reality(build_providers(Settings()))
     app.include_router(notify_router)
+
+    # [T-2.77.b] Webhooks de estado de entrega. **La ÚNICA superficie pública de
+    # esta API**: la llaman Twilio y Meta, que no tienen un token nuestro, así
+    # que no lleva `require_roles` — la firma HMAC del proveedor es toda su
+    # autenticación. Va montado aquí como cualquier otro router y su seguridad
+    # entera vive en `routers/notify_webhooks.py`; léelo antes de tocar la ruta.
+    app.include_router(notify_webhooks_router)
 
     # Guard de entorno: auth_jwks_json vacío = producción (JWKS remoto) → sin /dev/token.
     if Settings().auth_jwks_json:

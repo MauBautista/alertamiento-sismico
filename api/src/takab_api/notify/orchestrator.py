@@ -67,8 +67,15 @@ import psycopg
 
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
-from takab_api.notify.providers import NotifyError, NotifyProvider, is_simulated
+from takab_api.notify.providers import (
+    NotifyError,
+    NotifyProvider,
+    bind_state,
+    is_simulated,
+    provider_message_id,
+)
 from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
+from takab_api.notify.state import PgNotifyState
 from takab_api.privacy import store as privacy_store
 from takab_api.settings import Settings
 
@@ -233,8 +240,19 @@ UPDATE notification_jobs SET status = 'skipped'
 WHERE incident_id = %(incident)s AND mode = 'cascade' AND status = 'pending'
 """
 
+# [T-2.77.b] `sent_at` sigue significando lo que siempre significó: **el
+# proveedor lo aceptó**. Lo nuevo es `provider_message_id`, que es con lo que el
+# webhook de estado casará el desenlace TARDÍO —"llegó a las 12:00:19"— contra
+# este job. Hasta hoy ese identificador moría en el recibo en memoria del worker
+# y no había con qué casar nada.
+#
+# El `nullif`+`coalesce` no es adorno: los canales sin recibo (correo, webhook
+# firmado, push) mandan cadena vacía y no deben BORRAR un identificador ya
+# escrito. Un canal sin callback simplemente no tiene desenlace tardío.
 _MARK_SENT_SQL = """
-UPDATE notification_jobs SET status = 'sent', sent_at = %(now)s
+UPDATE notification_jobs
+SET status = 'sent', sent_at = %(now)s,
+    provider_message_id = coalesce(nullif(%(receipt)s, ''), provider_message_id)
 WHERE job_id = %(job)s
 """
 
@@ -395,7 +413,13 @@ def run_notify_pass(
     counts["enqueued"] += _enqueue_push_for_actions(
         conn, _DICTAMEN_SIGNED_SQL, now=now, lookback_s=lookback
     )
-    _dispatch(conn, settings, providers, config_cache, counts, now=now)
+    # [T-2.77.c] Lo que los providers recordaban EN RAM pasa a recordarse aquí,
+    # sobre la conexión de esta pasada: sobrevive al reinicio del worker y lo
+    # comparten las instancias. Se ata por el registro, sin nombrar canales —
+    # quien no tenga nada que recordar ni se entera.
+    state = PgNotifyState(conn, now=now)
+    bind_state(providers, state)
+    _dispatch(conn, settings, providers, config_cache, counts, state, now=now)
 
     if any(counts.values()):
         conn.commit()
@@ -574,6 +598,7 @@ def _dispatch(
     providers: dict[str, NotifyProvider],
     config_cache: dict,
     counts: dict[str, int],
+    state: PgNotifyState,
     *,
     now: datetime,
 ) -> None:
@@ -585,7 +610,7 @@ def _dispatch(
         if not rows:
             return
         for row in rows:
-            _dispatch_one(conn, settings, providers, config_cache, counts, row, now=now)
+            _dispatch_one(conn, settings, providers, config_cache, counts, state, row, now=now)
 
 
 def _dispatch_one(
@@ -594,6 +619,7 @@ def _dispatch_one(
     providers: dict[str, NotifyProvider],
     config_cache: dict,
     counts: dict[str, int],
+    state: PgNotifyState,
     row: dict,
     *,
     now: datetime,
@@ -644,13 +670,24 @@ def _dispatch_one(
         if opt_in is not None:
             target["opt_in"] = {"at": opt_in.isoformat(), "source": "privacy_consents"}
 
+    # [T-2.77.c] Este job es el que tiene guarda mientras dure este envío. La
+    # guarda del provider decide CUÁNDO recordar (ambiguo sí, rechazo explícito
+    # no) exactamente como antes; lo único que cambia es que el recuerdo se
+    # escribe en la fila del job y no en la RAM de esta instancia.
+    state.enter_job(row["job_id"])
     try:
         provider.send(target, _message(row, base_url=base_url))
     except NotifyError as exc:
         _fail(conn, counts, row, str(exc), now=now, max_attempts=max_attempts)
         return
 
-    conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
+    # [T-2.77.b] El identificador del proveedor sale del RECIBO, con el mismo
+    # nombre en todos los canales: aquí no hay —ni puede haber— una rama que
+    # sepa cómo lo llama cada uno.
+    conn.execute(
+        _MARK_SENT_SQL,
+        {"job": row["job_id"], "now": now, "receipt": provider_message_id(provider)},
+    )
     if row["mode"] == "cascade":
         counts["skipped"] += conn.execute(
             _SKIP_PENDING_CASCADE_SQL, {"incident": incident_id}
@@ -751,7 +788,9 @@ def _dispatch_push(
         _fail(conn, counts, row, error[:500], now=now, max_attempts=max_attempts)
         return
 
-    conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now})
+    # El push entrega por dispositivo y no devuelve UN identificador con el que
+    # casar nada: no hay callback de estado que esperar, así que no hay recibo.
+    conn.execute(_MARK_SENT_SQL, {"job": row["job_id"], "now": now, "receipt": ""})
     latency_s = (now - row["opened_at"]).total_seconds()
     # [T-2.11] El actor distingue por action_id cuando lo hay: dos push del
     # MISMO incidente en un pass (CRISIS al abrir + OPS del headcount) escriben

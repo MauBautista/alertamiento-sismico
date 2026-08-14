@@ -354,6 +354,17 @@ class TwilioReceipt:
     def delivery_confirmed(self) -> bool:
         return is_delivery_confirmed(self.status)
 
+    @property
+    def message_id(self) -> str:
+        """[T-2.77.b] El identificador con el que casa el callback de estado.
+
+        Se llama ``message_id`` y no ``sid`` porque el orquestador lo lee por
+        ese nombre en TODOS los canales (``providers.provider_message_id``): que
+        aquí se llame SID y en otro canal de otra forma es asunto del proveedor,
+        no de quien escribe el job.
+        """
+        return self.sid
+
 
 class TwilioSmsProvider:
     """SMS por la REST API de Twilio, detrás del contrato ``NotifyProvider``.
@@ -398,6 +409,16 @@ class TwilioSmsProvider:
         self.last_receipt: TwilioReceipt | None = None
 
     # -- guarda de duplicados --------------------------------------------------
+
+    def bind_state(self, state) -> None:
+        """[T-2.77.c] Ata la guarda al estado COMPARTIDO entre instancias.
+
+        Este canal no tiene nada más que recordar (no hay catálogo que
+        cuarentenar), así que su estado compartido es solo la guarda. La lógica
+        de CUÁNDO recordar —ambiguo sí, rechazo explícito no— no cambia: cambia
+        dónde se apunta.
+        """
+        self._guard.bind(state)
 
     @property
     def pending_keys(self) -> int:

@@ -71,6 +71,65 @@ def channel_reality(providers: Mapping[str, NotifyProvider]) -> dict[str, bool]:
     return {channel: is_simulated(provider) for channel, provider in providers.items()}
 
 
+class DuplicateStore(Protocol):
+    """[T-2.77.c] Dónde vive el recuerdo de "esto pudo salir ya"."""
+
+    def seen(self, key: tuple[str, str]) -> bool: ...
+
+    def remember(self, key: tuple[str, str], ttl_s: float) -> None: ...
+
+
+class SharedNotifyState(Protocol):
+    """[T-2.77.c] El estado del subsistema que sobrevive al proceso.
+
+    Lo implementa ``notify.state.PgNotifyState`` sobre la conexión de la pasada.
+    Es la unión de las DOS memorias que la ficha encontró en RAM: la guarda de
+    duplicados (``DuplicateStore``) y la cuarentena de plantillas.
+    """
+
+    def seen(self, key: tuple[str, str]) -> bool: ...
+
+    def remember(self, key: tuple[str, str], ttl_s: float) -> None: ...
+
+    def quarantined(self, channel: str) -> Mapping[str, str]: ...
+
+    def quarantine(self, channel: str, name: str, reason: str) -> None: ...
+
+
+def bind_state(providers: Mapping[str, object], state: SharedNotifyState | None) -> list[str]:
+    """Entrega el estado COMPARTIDO a los providers que lo acepten.
+
+    **Derivado, no enumerado**, igual que ``warn_simulated_channels``: se le
+    pregunta a cada provider si sabe recibirlo. El canal que alguien enchufe
+    mañana con memoria propia hereda el estado compartido sin tocar esta función,
+    y el que no tenga nada que recordar —el correo, el webhook— no se entera de
+    que existe. Devuelve los canales atados (para poder afirmarlo en un test).
+    """
+    atados: list[str] = []
+    for channel, provider in providers.items():
+        bind = getattr(provider, "bind_state", None)
+        if callable(bind):
+            bind(state)
+            atados.append(channel)
+    return atados
+
+
+def provider_message_id(provider: object) -> str:
+    """[T-2.77.b] Identificador que el PROVEEDOR le dio al último mensaje.
+
+    Es con lo que el webhook de estado casará el desenlace tardío, y hasta hoy
+    moría en el recibo en memoria del worker. Sale del recibo por una propiedad
+    con el MISMO nombre en los dos providers (``TwilioReceipt.message_id``,
+    y su gemela del canal de plantilla), no de una rama por canal: el
+    orquestador no puede saber que uno se llama SID y el otro no.
+
+    Un provider sin recibo —SES, el webhook firmado— devuelve cadena vacía, y el
+    orquestador no escribe nada. No hay nada que casar donde no hay callback.
+    """
+    receipt = getattr(provider, "last_receipt", None)
+    return str(getattr(receipt, "message_id", "") or "")
+
+
 def _canonical_body(message: dict) -> bytes:
     """JSON canónico (claves ordenadas, sin espacios): base estable de la firma."""
     return json.dumps(message, separators=(",", ":"), sort_keys=True).encode()
@@ -99,24 +158,46 @@ class DuplicateGuard:
     Meta): pasado ese instante el proveedor ya descartó lo encolado, luego no
     queda nada vivo que duplicar. Así la memoria tampoco crece sin fin en un
     worker residente.
+
+    [T-2.77.c] **Y esa memoria dejó de ser la de un proceso.** Con más de una
+    instancia del worker la guarda no existía entre instancias, así que el
+    duplicado seguía siendo posible; y el supuesto de "un solo worker" ya estaba
+    contradicho por el orquestador de al lado, que usa ``pg_advisory_xact_lock``
+    justamente porque asume varias. Cuando alguien le ata un ``store``
+    (``notify.state.PgNotifyState``, vía ``bind_state``), recordar y preguntar
+    van a la BASE y el recuerdo es de todos. Sin ``store`` —la API, un test
+    puro— se comporta exactamente como antes: la mecánica de CUÁNDO recordar no
+    cambia una línea, solo DÓNDE.
     """
 
-    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+    def __init__(
+        self, clock: Callable[[], float] | None = None, store: DuplicateStore | None = None
+    ) -> None:
         self._clock = clock or time.monotonic
         self._issued: dict[tuple[str, str], float] = {}
+        self._store = store
+
+    def bind(self, store: DuplicateStore | None) -> None:
+        """Ata (o suelta) el almacén COMPARTIDO de la guarda."""
+        self._store = store
 
     @property
     def pending(self) -> int:
-        """Claves vivas (para comprobar que no se acumulan)."""
+        """Claves vivas EN MEMORIA (para comprobar que no se acumulan)."""
         return len(self._issued)
 
     def seen(self, key: tuple[str, str]) -> bool:
+        if self._store is not None:
+            return self._store.seen(key)
         now = self._clock()
         self._issued = {k: exp for k, exp in self._issued.items() if exp > now}
         return key in self._issued
 
     def remember(self, key: tuple[str, str], ttl_s: float) -> None:
         """Marca que esa clave puede tener un mensaje VIVO durante ``ttl_s``."""
+        if self._store is not None:
+            self._store.remember(key, ttl_s)
+            return
         self._issued[key] = self._clock() + ttl_s
 
 

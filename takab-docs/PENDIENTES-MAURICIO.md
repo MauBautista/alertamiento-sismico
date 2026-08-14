@@ -270,6 +270,25 @@ hasta que fallan:
    **gasta justo la recepción que se estaba ahorrando**, que es el defecto entero de esa ficha.
    Es de la misma familia que la trampa ya pagada de las reglas IoT: **un permiso que falta no da
    error, da una conducta silenciosamente peor**.
+3. **Nuevo (2026-08-13, `T-2.72.b/c`): dos alarmas de la Fase 2.6.** El `apply` las crea y publica
+   la versión nueva del documento SSM. **Trampa ya fichada:** cambiar el documento **no relanza la
+   asociación** —el cambio aterriza hasta 24 h después—; hay que forzarla con
+   `aws ssm start-associations-once`. **Si se da por buenas las alarmas sin relanzarla**, las tres
+   quedan sin publicador y `backup-base-ausente` manda un correo **que parece un fallo de respaldo
+   y es un fallo de despliegue**.
+   > **Y esto conviene saberlo antes de que llegue el correo:** `backup-base-ausente`
+   > **NACE EN ALARM a propósito** — el día del `apply` todavía no hay backup base. **El correo de
+   > OK, cuando `T-2.74` tome el primero, ES el acuse** de que la cadena consiguió ancla. Si ese
+   > OK **no** llega, ahí sí hay un problema.
+4. **Nuevo (2026-08-13, `T-2.77.b`): tres secretos y abrir el 443 para los webhooks de entrega.**
+   El endpoint público ya existe y **sin ellos responde 503 y lo grita** —no hay degradación
+   silenciosa—, pero hasta entonces los tres canales siguen diciendo «el proveedor lo aceptó» y
+   **nunca «llegó a una persona»**. Hacen falta:
+   - `TAKAB_API_NOTIFY_SMS_STATUS_CALLBACK_URL`, `TAKAB_API_NOTIFY_WHATSAPP_APP_SECRET` y
+     `TAKAB_API_NOTIFY_WHATSAPP_VERIFY_TOKEN` en el despliegue (los dos últimos, desde Secrets
+     Manager).
+   - **Abrir el 443 a los rangos de Twilio y Meta** en el security group: hoy está restringido por
+     IP, así que **los callbacks no llegarían**.
 
 > **La trampa del SSO se cobró este despliegue, y conviene saber cómo se reconoce.** Falló con
 > `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no es

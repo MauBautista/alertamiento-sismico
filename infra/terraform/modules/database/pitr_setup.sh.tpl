@@ -146,10 +146,177 @@ docker exec takab-db env AWS_DEFAULT_REGION=$REGION barman-cloud-backup \
 EOS
 chmod 0755 /opt/takab/bin/takab-base-backup.sh
 
+# --- 4b. [T-2.72.b] La EDAD DEL ANCLA, que ninguna metrica de hoy ve ----------
+#
+# `WalArchiveAgeSeconds` mide la CADENA de WAL. No mide su ancla: un
+# `barman-cloud-backup` que falle todas las semanas no mueve esa metrica ni un
+# segundo — el archivado sigue perfecto y la cadena esta rota igual. Eso no se
+# descubre hasta el dia del restore, que es EL modo de fallo que la Fase 2.6
+# existe para eliminar.
+#
+# DOS PIEZAS, y estan separadas a proposito:
+#
+#   · El SCAN (diario, 05:00, una hora despues del backup base): pregunta a
+#     `barman-cloud-backup-list` cual es el backup base mas reciente que de verdad
+#     esta en S3 y guarda su instante. Es la parte cara —lista objetos del
+#     bucket— y por eso va una vez al dia, que es lo que pide la ficha.
+#
+#   · La PUBLICACION (cada minuto): la EDAD es funcion del reloj, no del listado,
+#     asi que se puede derivar del instante guardado sin volver a listar nada.
+#
+#   Y no es una preferencia: es lo que exige el `treat_missing_data = breaching`
+#   de la alarma. Con una metrica publicada UNA vez al dia sobre un periodo de un
+#   dia, basta que el cron se desplace un minuto para dejar una ventana de
+#   CloudWatch sin ningun datapoint — y sobre `breaching` cada ventana vacia es un
+#   correo afirmando que no hay respaldo. Publicar por minuto elimina esa clase
+#   entera de falso positivo y deja la metrica con la misma forma que la del RPO.
+#
+# El parseo va en su propio fichero porque la salida de barman ha cambiado de
+# forma entre versiones: se aceptan `end_time`, `begin_time` y, como ultimo
+# recurso, el propio `backup_id` (que en barman ES un instante, `YYYYMMDDTHHMMSS`
+# en UTC). Si NINGUNO se puede leer, no se publica nada — publicar un 0 a ciegas
+# seria decir "hay ancla reciente" cuando lo unico cierto es que no se pudo
+# preguntar.
+cat >/opt/takab/bin/takab-base-backup-parse.py <<'PY'
+import json
+import re
+import sys
+from datetime import datetime, timezone
+
+
+def a_epoch(v):
+    if not isinstance(v, str):
+        return None
+    s = v.strip()
+    if re.match(r"^\d{8}T\d{6}$", s):
+        return datetime.strptime(s, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc).timestamp()
+    s = s.replace("Z", "+00:00")
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
+
+
+datos = json.load(sys.stdin)
+lista = datos.get("backups_list") or datos.get("backups") or []
+if isinstance(lista, dict):
+    lista = list(lista.values())
+
+mejor = None
+for b in lista:
+    if not isinstance(b, dict):
+        continue
+    # Un backup a medias NO es un ancla. Si barman no dice el estado se acepta:
+    # los que lista son los que termino.
+    if str(b.get("status", "DONE")).upper() not in ("DONE", "OK", ""):
+        continue
+    for campo in ("end_time", "begin_time", "backup_id"):
+        t = a_epoch(b.get(campo))
+        if t is not None:
+            if mejor is None or t > mejor:
+                mejor = t
+            break
+
+if mejor is None:
+    sys.exit(1)
+print(int(mejor))
+PY
+chmod 0644 /opt/takab/bin/takab-base-backup-parse.py
+
+cat >/opt/takab/bin/takab-base-backup-scan.sh <<EOS
+#!/bin/bash
+set -euo pipefail
+SALIDA="\$(docker exec takab-db env AWS_DEFAULT_REGION=$REGION barman-cloud-backup-list \
+  --cloud-provider aws-s3 --format json $PITR_URL $SERVER)"
+EPOCH="\$(printf '%s' "\$SALIDA" | python3 /opt/takab/bin/takab-base-backup-parse.py)"
+[ -n "\$EPOCH" ] || exit 1
+install -d -m 0755 /var/lib/takab
+printf '%s\n' "\$EPOCH" >/var/lib/takab/base-backup-last-epoch
+EOS
+chmod 0755 /opt/takab/bin/takab-base-backup-scan.sh
+
+# EL ANCLA QUE NO EXISTE TODAVIA. Mientras no haya ningun backup base, la
+# respuesta honesta no es "0" (no hay ancha ninguna) sino "cuanto llevamos sin
+# tenerla": se mide desde que se configuro el PITR. Es el mismo truco que el
+# `coalesce(last_archived_time, stats_reset)` del reloj del RPO, y es lo que hace
+# que la alarma NAZCA EN ALARM el dia del primer apply — correctamente, porque
+# entonces la cadena no tiene ancla.
+cat >/opt/takab/bin/takab-base-backup-age.sh <<EOS
+#!/bin/bash
+set -euo pipefail
+ANCLA=/var/lib/takab/base-backup-last-epoch
+ORIGEN=/var/lib/takab/pitr-configured-epoch
+if [ -s "\$ANCLA" ]; then
+  DESDE="\$(cat "\$ANCLA")"
+elif [ -s "\$ORIGEN" ]; then
+  DESDE="\$(cat "\$ORIGEN")"
+else
+  exit 1
+fi
+EDAD=\$(( \$(date +%s) - DESDE ))
+[ "\$EDAD" -ge 0 ] || EDAD=0
+aws cloudwatch put-metric-data \
+  --namespace ${metric_namespace} \
+  --metric-name ${base_backup_metric_name} \
+  --unit Seconds \
+  --value "\$EDAD" \
+  --region ${region}
+EOS
+chmod 0755 /opt/takab/bin/takab-base-backup-age.sh
+
+# --- 4c. [T-2.72.c] El DISCO, que hasta hoy solo se vigilaba por accidente ----
+#
+# Con el archivado atascado Postgres NO recicla su WAL: `pg_wal` crece ~16 MiB/min
+# sobre el MISMO volumen de 40 GiB donde vive el datadir. La alarma de atasco
+# llega mucho antes (900 s ≪ 48 h) y por eso el riesgo estaba cubierto — pero por
+# la via indirecta: mide el archivado, no el disco. Cualquier otra causa de disco
+# lleno (un log desbocado, un restore a base lateral, imagenes de docker
+# acumuladas) seguia siendo invisible.
+#
+# `disk_used_percent` NO existe en las metricas nativas de EC2: el hipervisor no
+# ve dentro del filesystem. O agente de CloudWatch, o publicacion propia. Se
+# publica desde aqui, por el mismo cron que el reloj del RPO: un demonio mas en la
+# maquina que sostiene la DB, la API y los workers es un demonio mas que puede
+# morir en silencio.
+#
+# LA COMPROBACION DE MONTAJE VA PRIMERO Y NO ES DEFENSIVA: si el volumen de datos
+# no esta montado, `df /data` responde igual — con las cifras del volumen RAIZ, y
+# esas se ven sanas. Publicar eso seria pintar un disco holgado mientras el disco
+# de la base no esta. Sin dato, la alarma va a INSUFFICIENT_DATA y avisa.
+cat >/opt/takab/bin/takab-disk-usage.sh <<EOS
+#!/bin/bash
+set -euo pipefail
+mountpoint -q /data || exit 1
+USADO="\$(df -P /data | awk 'NR==2 {gsub(/%/,"",\$5); print \$5}')"
+[ -n "\$USADO" ] || exit 1
+aws cloudwatch put-metric-data \
+  --namespace ${metric_namespace} \
+  --metric-name ${data_disk_metric_name} \
+  --unit Percent \
+  --value "\$USADO" \
+  --region ${region}
+EOS
+chmod 0755 /opt/takab/bin/takab-disk-usage.sh
+
+# El instante de referencia mientras no haya ningun backup base. Se escribe UNA
+# vez: si se reescribiera en cada pasada diaria de la asociacion, la edad se
+# reiniciaria cada 24 h y la alarma no llegaria a disparar NUNCA — un respaldo
+# base roto para siempre y una metrica eternamente joven.
+install -d -m 0755 /var/lib/takab
+[ -s /var/lib/takab/pitr-configured-epoch ] || date +%s >/var/lib/takab/pitr-configured-epoch
+
 # Los snapshots DLM van a las 03:00 UTC y el dump logico a las 08:00: el backup
-# base se pone a las 04:00 para no solaparse con ninguno de los dos.
+# base se pone a las 04:00 para no solaparse con ninguno de los dos, y el scan que
+# lo comprueba a las 05:00 — una hora despues, para que el dia que toca backup la
+# edad se refresque el mismo dia y no al siguiente.
 cat >/etc/cron.d/takab-pitr <<CRON
 * * * * * root /opt/takab/bin/takab-wal-age.sh >/dev/null 2>&1
+* * * * * root /opt/takab/bin/takab-base-backup-age.sh >/dev/null 2>&1
+* * * * * root /opt/takab/bin/takab-disk-usage.sh >/dev/null 2>&1
+0 5 * * * root /opt/takab/bin/takab-base-backup-scan.sh >>/var/log/takab-pitr.log 2>&1
 0 4 ${base_backup_dom} * * root /opt/takab/bin/takab-base-backup.sh >>/var/log/takab-pitr.log 2>&1
 CRON
 chmod 0644 /etc/cron.d/takab-pitr
@@ -159,7 +326,13 @@ chmod 0644 /etc/cron.d/takab-pitr
 # La leccion de `ghost_gateways`: `insufficient_data_actions` solo dispara EN
 # TRANSICION. Una alarma que nace en INSUFFICIENT_DATA porque su metrica no ha
 # existido nunca se queda aparcada ahi, sin correo y con cara de "todavia no hay
-# datos". Publicar una vez aqui obliga a la alarma a pronunciarse.
+# datos". Publicar una vez aqui obliga a las alarmas a pronunciarse.
+#
+# El scan va antes que la edad para que, si YA hay backups base, la primera medida
+# publicada sea la de verdad y no la que se cuenta desde la configuracion.
 /opt/takab/bin/takab-wal-age.sh || log "AVISO: no se pudo publicar la primera medida de edad de archivado"
+/opt/takab/bin/takab-base-backup-scan.sh || log "AVISO: no se pudo listar el backup base (¿todavia no hay ninguno?)"
+/opt/takab/bin/takab-base-backup-age.sh || log "AVISO: no se pudo publicar la primera edad del backup base"
+/opt/takab/bin/takab-disk-usage.sh || log "AVISO: no se pudo publicar la primera medida de ocupacion de /data"
 
 log "archivado continuo configurado: $PITR_URL ($SERVER), archive_timeout=${archive_timeout_s}s"

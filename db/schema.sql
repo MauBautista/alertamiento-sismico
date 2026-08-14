@@ -1102,7 +1102,30 @@ CREATE TABLE notification_jobs (
   -- (failed para siempre, sin reintento y con el 409 bloqueando la re-solicitud):
   -- un AccessDenied de SES dejó un dictamen real sin correo. Reintento con
   -- backoff SOLO para quien no tiene a quién escalar (0016).
-  attempts    integer NOT NULL DEFAULT 0
+  attempts    integer NOT NULL DEFAULT 0,
+  -- [T-2.77.b · 0040] EL DESENLACE TARDÍO. `sent_at` significa "el proveedor lo
+  -- aceptó" (SES aceptó el correo, Twilio encoló el SMS, Meta aceptó el mensaje);
+  -- ninguno de los tres afirma que un humano lo tenga en la mano. Estas cuatro
+  -- columnas son el sitio donde escribir "salió a las 12:00:03 y llegó a las
+  -- 12:00:19", que hasta la 0040 no existía.
+  --   · provider_message_id — con lo que se casa el callback (MessageSid de
+  --     Twilio, id de mensaje de Meta). Sin persistirlo no hay con qué casar nada.
+  --   · delivered_at        — la entrega CONFIRMADA. Solo 'delivered'/'read'.
+  --   · last_status(_at)    — la última palabra del proveedor, que es lo que
+  --     permite ordenar callbacks que llegan desordenados (un 'sent' retrasado
+  --     no puede hacer retroceder un 'delivered').
+  provider_message_id text,
+  delivered_at        timestamptz,
+  last_status         text,
+  last_status_at      timestamptz,
+  -- [T-2.77.c · 0040] La guarda de duplicados, que vivía en la memoria de UN
+  -- worker. Instante hasta el que este job PUEDE tener un mensaje vivo en el
+  -- proveedor (TTL = ValidityPeriod de Twilio / TTL de la plantilla de Meta):
+  -- mientras no venza, un reintento NO sale y se escala en vez de duplicar.
+  -- Vive aquí y no en una tabla propia porque la clave del dominio era
+  -- (destino, incidente) y para los canales guardados eso ES una fila de esta
+  -- tabla — con su tenant_id, su RLS y su retención ya puestos.
+  inflight_until      timestamptz
 );
 -- [T-1.61] Unicidad dividida (0014): la clave original solo para jobs de
 -- incidente; 1 job por acción y canal para los de acción (re-runs no duplican).
@@ -1110,6 +1133,11 @@ CREATE UNIQUE INDEX uq_notification_jobs_incident
   ON notification_jobs (incident_id, channel, mode) WHERE action_id IS NULL;
 CREATE UNIQUE INDEX uq_notification_jobs_action
   ON notification_jobs (action_id, channel) WHERE action_id IS NOT NULL;
+-- [T-2.77.b] Un identificador de proveedor pertenece a UN job. UNIQUE y no
+-- índice a secas: atribuir una entrega al job equivocado es peor que un fallo
+-- ruidoso. Es además la única llave de entrada del webhook público.
+CREATE UNIQUE INDEX uq_notification_jobs_provider_msg
+  ON notification_jobs (channel, provider_message_id) WHERE provider_message_id IS NOT NULL;
 CREATE INDEX idx_notification_jobs_due    ON notification_jobs (due_at) WHERE status = 'pending';
 CREATE INDEX idx_notification_jobs_tenant ON notification_jobs (tenant_id, created_at DESC);
 GRANT SELECT ON notification_jobs TO takab_app;
@@ -1122,6 +1150,131 @@ CREATE POLICY notification_jobs_read ON notification_jobs FOR SELECT
          OR app_gov_can_see(tenant_id));
 CREATE POLICY notification_jobs_admin ON notification_jobs FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- [T-2.77.c · 0040] La cuarentena de plantillas, que vivía en la memoria del
+-- worker: al reiniciar se olvidaba y se volvía a martillear una plantilla que
+-- Meta había pausado — que es exactamente lo que degrada su calificación de
+-- calidad y termina costando el canal entero.
+--
+-- SIN `tenant_id` y con razón declarada (exención en
+-- `api/tests/test_censo_multitenancy.py`): la plantilla pertenece a la cuenta de
+-- negocio del DESPLIEGUE —una WABA para toda la flota—, no a un cliente. Una
+-- columna de tenant aquí tendría que inventarse un dueño.
+--
+-- Y NADIE tiene DELETE a propósito: levantar una cuarentena es un acto humano
+-- deliberado (volver a someter la plantilla y que Meta la apruebe), no el efecto
+-- colateral de un reinicio. Lo hace el dueño del esquema.
+CREATE TABLE notify_template_quarantine (
+  channel        text NOT NULL,
+  template_name  text NOT NULL,
+  reason         text NOT NULL,
+  quarantined_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (channel, template_name)
+);
+GRANT SELECT ON notify_template_quarantine TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON notify_template_quarantine TO takab_ingest;
+
+ALTER TABLE notify_template_quarantine ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notify_template_quarantine FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ntq_read ON notify_template_quarantine FOR SELECT
+  USING (app_role() IS NOT NULL);   -- estado de la PLATAFORMA, como seismic_events
+
+-- [T-2.77.b · 0040] El desenlace tardío, escrito desde una superficie PÚBLICA.
+--
+-- El webhook de entrega no puede ir detrás de Cognito (lo llama Twilio o Meta),
+-- así que no trae `app.tenant_id` ni `app.role`. La API conecta como takab_app,
+-- que sobre notification_jobs solo tiene SELECT y cuya RLS es default-deny con
+-- FORCE: ni con un GRANT UPDATE podría escribir. Y takab_app NO puede volverse
+-- takab_ingest (no es miembro, y el DSN lo dice: "La API NUNCA usa takab_ingest").
+--
+-- Mismo patrón que gov_ack_incident / app_verify_retire_code: SECURITY DEFINER,
+-- dueño takab_ingest (BYPASSRLS), REVOKE FROM PUBLIC + GRANT solo a takab_app, y
+-- la validación DENTRO. Lo que se abre no es "escribir en notification_jobs":
+-- es "mover el desenlace de UN job identificado por un id de proveedor, y solo
+-- hacia adelante".
+--
+-- `p_outranks` = los estados que el nuevo puede pisar; la escala vive en Python
+-- (`notify/callbacks.STATUS_RANK`) y esta función es mecanismo puro. Un estado
+-- que no pise al que ya está escrito —incluido él mismo— no cambia NADA: de ahí
+-- que un reenvío sea inerte y que un 'sent' retrasado no borre un 'delivered'.
+CREATE FUNCTION app_notify_delivery(
+  p_channel text, p_message_id text, p_status text, p_outranks text[],
+  p_delivered boolean, p_undelivered boolean, p_at timestamptz, p_detail text
+) RETURNS TABLE (o_job_id uuid, o_applied boolean, o_job_status text,
+                 o_last_status text, o_delivered_at timestamptz)
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE
+  v_job    notification_jobs%ROWTYPE;
+  v_at     timestamptz := LEAST(coalesce(p_at, now()), now());
+  v_kind   text := NULL;
+  v_opened timestamptz;
+BEGIN
+  SELECT * INTO v_job FROM notification_jobs
+   WHERE channel = p_channel AND provider_message_id = p_message_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;  -- cero filas: indistinguible de una firma mala para quien llama
+  END IF;
+
+  IF v_job.last_status IS NOT NULL AND NOT (v_job.last_status = ANY (p_outranks)) THEN
+    RETURN QUERY SELECT v_job.job_id, false, v_job.status, v_job.last_status,
+                        v_job.delivered_at;
+    RETURN;
+  END IF;
+
+  UPDATE notification_jobs j
+     SET last_status    = p_status,
+         last_status_at = v_at,
+         delivered_at   = CASE WHEN p_delivered AND j.delivered_at IS NULL
+                               THEN v_at ELSE j.delivered_at END,
+         status         = CASE WHEN p_delivered THEN 'sent'
+                               WHEN p_undelivered AND j.delivered_at IS NULL THEN 'failed'
+                               ELSE j.status END,
+         error          = CASE WHEN p_undelivered AND j.delivered_at IS NULL
+                               THEN left(coalesce(p_detail, p_status), 500) ELSE j.error END
+   WHERE j.job_id = v_job.job_id
+  RETURNING j.* INTO v_job;
+
+  -- Evidencia SOLO en los dos hechos terminales (regla de oro 10).
+  IF p_delivered AND v_job.delivered_at = v_at THEN
+    v_kind := 'notify_delivered';
+  ELSIF p_undelivered AND v_job.status = 'failed' THEN
+    v_kind := 'notify_failed';
+  END IF;
+
+  IF v_kind IS NOT NULL THEN
+    SELECT opened_at INTO v_opened FROM incidents WHERE incident_id = v_job.incident_id;
+    INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
+    VALUES (v_job.incident_id, v_job.tenant_id, v_kind,
+            'system:notify:' || p_channel || ':' || 'callback',
+            jsonb_build_object(
+              'job_id', v_job.job_id, 'channel', p_channel, 'mode', v_job.mode,
+              'provider_status', p_status, 'provider_message_id', p_message_id,
+              'detail', left(coalesce(p_detail, ''), 500),
+              'sent_at', v_job.sent_at, 'delivered_at', v_job.delivered_at,
+              'latency_s', CASE WHEN v_opened IS NOT NULL
+                                THEN extract(epoch FROM (v_at - v_opened)) END,
+              'deadline_met', CASE WHEN v_job.deadline_at IS NULL THEN NULL
+                                   ELSE v_at <= v_job.deadline_at END))
+    ON CONFLICT (incident_id, kind, actor, ts) DO NOTHING;
+  END IF;
+
+  RETURN QUERY SELECT v_job.job_id, true, v_job.status, v_job.last_status, v_job.delivered_at;
+END
+$fn$;
+-- LA CESIÓN DE PROPIEDAD **NO VA AQUÍ**, y no es un olvido. Este cuerpo lo
+-- ejecuta la 0001 bajo `SET ROLE takab_migrator`, que NO es miembro de
+-- `takab_ingest`: un `ALTER FUNCTION ... OWNER TO takab_ingest` en este fichero
+-- mata la migración inicial con `must be able to SET ROLE "takab_ingest"` (medido
+-- contra una base vacía, 2026-08-13). El dueño lo pone la 0040 —con el usuario de
+-- conexión y dentro de la ventana de privilegios que abre `deploy/cloud/deploy.sh`—
+-- y ahí mismo se COMPRUEBA: sin dueño `takab_ingest` la función no ve una sola
+-- fila (RLS FORCE) y el webhook contestaría «no reconozco esto» para siempre.
+-- Mismo trato que `relocate_incident_epicenter` (0011).
+REVOKE ALL ON FUNCTION app_notify_delivery(text,text,text,text[],boolean,boolean,
+  timestamptz,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_notify_delivery(text,text,text,text[],boolean,boolean,
+  timestamptz,text) TO takab_app;
 
 -- [T-1.60] Simulacro institucional (0015): registro propio — un drill JAMÁS
 -- toca incidents. El acuse por sitio se DERIVA por JOIN a commands; el estado

@@ -53,6 +53,47 @@ variable "ses_verified_emails" {
   default = ["mauriciobaujim@gmail.com"]
 }
 
+# --- [T-2.78.b] Remitente de DOMINIO ------------------------------------------
+#
+# VACIA por defecto: sin dominio no se crea ni un recurso de SES-dominio y el
+# apply de hoy no cambia (lo mide `modules/identity/tests/ses_domain.tftest.hcl`).
+#
+# ESTA MISMA VARIABLE alimenta DOS modulos y no es duplicacion: `module.identity`
+# CREA la identidad y `module.database` CONCEDE el envio. Una identidad verificada
+# no concede envio —son dos cosas distintas—, y tenerlas gobernadas por una sola
+# variable es lo que impide repetir el 2026-07-14: el worker con AccessDenied
+# mientras los correos de CloudWatch, que van por SNS con permiso propio, siguen
+# llegando y tapan el hueco.
+variable "ses_domain" {
+  description = "Dominio remitente (p. ej. `takab.mx`). Vacio = SES sigue como hoy, solo identidades por direccion."
+  type        = string
+  default     = ""
+}
+
+variable "ses_mail_from_subdomain" {
+  description = "Subdominio del MAIL FROM propio (`<sub>.<ses_domain>`): es lo que alinea SPF con nuestro dominio."
+  type        = string
+  default     = "correo"
+}
+
+variable "ses_dmarc_policy" {
+  description = "Politica DMARC: none (observar, lo correcto el primer dia), quarantine o reject."
+  type        = string
+  default     = "none"
+}
+
+variable "ses_dmarc_rua" {
+  description = "Buzon de informes agregados DMARC. Vacio = DMARC a ciegas: se publica la politica y nadie ve quien suplanta el dominio."
+  type        = string
+  default     = ""
+}
+
+variable "ses_route53_zone_id" {
+  description = "Zona Route 53 del dominio. Vacia = no se toca DNS; los registros a publicar salen por el output `ses_domain_dns_records`."
+  type        = string
+  default     = ""
+}
+
 variable "ops_alert_email" {
   description = <<-EOT
     Correo de on-call operativo (A-4): recibe las alarmas de DLQ, instancia,

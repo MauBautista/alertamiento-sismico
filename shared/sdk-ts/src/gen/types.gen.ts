@@ -1622,6 +1622,20 @@ export type NotifyChannelsOut = {
 };
 
 /**
+ * «Recibido y no me debes un reintento». Nada más.
+ *
+ * Es la MISMA respuesta para un callback que movió el desenlace de un job y
+ * para uno que no cambió nada (un reenvío, un estado que no pisa al escrito).
+ * Distinguirlos le diría a quien llama qué hay al otro lado.
+ */
+export type NotifyWebhookAck = {
+    /**
+     * Acuse fijo. No dice si el desenlace cambió: eso vive en el log.
+     */
+    status?: 'accepted';
+};
+
+/**
  * [T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional
  * (geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin
  * GPS cuenta (LFPDPPP + RBAC §4.3).
@@ -3741,6 +3755,54 @@ export type ListNotifyChannelsNotifyChannelsGetResponses = {
 };
 
 export type ListNotifyChannelsNotifyChannelsGetResponse = ListNotifyChannelsNotifyChannelsGetResponses[keyof ListNotifyChannelsNotifyChannelsGetResponses];
+
+export type MetaVerifyNotifyWebhooksMetaGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notify/webhooks/meta';
+};
+
+export type MetaVerifyNotifyWebhooksMetaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type MetaVerifyNotifyWebhooksMetaGetResponse = MetaVerifyNotifyWebhooksMetaGetResponses[keyof MetaVerifyNotifyWebhooksMetaGetResponses];
+
+export type MetaStatusCallbackNotifyWebhooksMetaPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notify/webhooks/meta';
+};
+
+export type MetaStatusCallbackNotifyWebhooksMetaPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: NotifyWebhookAck;
+};
+
+export type MetaStatusCallbackNotifyWebhooksMetaPostResponse = MetaStatusCallbackNotifyWebhooksMetaPostResponses[keyof MetaStatusCallbackNotifyWebhooksMetaPostResponses];
+
+export type TwilioStatusCallbackNotifyWebhooksTwilioPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notify/webhooks/twilio';
+};
+
+export type TwilioStatusCallbackNotifyWebhooksTwilioPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: NotifyWebhookAck;
+};
+
+export type TwilioStatusCallbackNotifyWebhooksTwilioPostResponse = TwilioStatusCallbackNotifyWebhooksTwilioPostResponses[keyof TwilioStatusCallbackNotifyWebhooksTwilioPostResponses];
 
 export type GetConsentStatusPrivacyConsentGetData = {
     body?: never;

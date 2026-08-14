@@ -144,6 +144,225 @@ resource "aws_sesv2_email_identity" "this" {
 }
 
 # =============================================================================
+# [T-2.78.b] IDENTIDAD DE DOMINIO: DKIM, MAIL FROM propio, DMARC y rebotes
+#
+# El recurso de arriba es una identidad POR DIRECCION. Sirve para la sandbox y no
+# sirve para nada mas: no firma con DKIM, no alinea SPF, no da MAIL FROM propio y
+# no publica un DMARC. Todo eso exige una identidad de DOMINIO, y hasta hoy solo
+# se podia crear a clics — y lo que se hace a clics no se vuelve a hacer igual ni
+# se revisa en un diff.
+#
+# TODO lo de esta seccion esta condicionado a `var.ses_domain`, vacia por defecto
+# (patron del modulo `push/`): sin dominio, el apply de hoy NO cambia nada. Lo
+# comprueba `tests/ses_domain.tftest.hcl`, que ademas lleva un CENSO — un recurso
+# nuevo aqui sin su asercion de "con la variable vacia no se crea" pone el test en
+# rojo, para que nadie pueda anadir infraestructura que se cree sola.
+# =============================================================================
+
+locals {
+  ses_domain_enabled   = var.ses_domain != ""
+  ses_dns_enabled      = var.ses_domain != "" && var.ses_route53_zone_id != ""
+  ses_mail_from_domain = "${var.ses_mail_from_subdomain}.${var.ses_domain}"
+
+  # El `rua` no se pone vacio: un `rua=mailto:` sin buzon es un registro invalido.
+  # Sin rua, DMARC funciona pero a ciegas — se publica la politica y nadie ve
+  # quien esta suplantando el dominio.
+  ses_dmarc_value = var.ses_dmarc_rua == "" ? "v=DMARC1; p=${var.ses_dmarc_policy}" : "v=DMARC1; p=${var.ses_dmarc_policy}; rua=mailto:${var.ses_dmarc_rua}"
+}
+
+# El configuration set es lo que convierte "mandamos correo" en "sabemos que pasa
+# con el correo que mandamos". Se aplica POR DEFECTO a la identidad de dominio
+# (`configuration_set_name` mas abajo): sin esa asociacion, el correo sale igual y
+# los eventos no se publican en ningun sitio — plan verde, topic vacio para
+# siempre.
+resource "aws_sesv2_configuration_set" "ses" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  configuration_set_name = "takab-dev-correo"
+
+  delivery_options {
+    # El correo de esta plataforma lleva solicitudes de dictamen y avisos de
+    # incidente. `REQUIRE` prefiere no entregar a entregar en claro.
+    tls_policy = "REQUIRE"
+  }
+
+  reputation_options {
+    reputation_metrics_enabled = true
+  }
+
+  sending_options {
+    sending_enabled = true
+  }
+
+  # La lista de supresion de la CUENTA, aplicada a este set: una direccion que
+  # rebota duro deja de recibir intentos. No es cosmetica — reintentar contra una
+  # direccion muerta es lo que hunde la reputacion del dominio, y con la
+  # reputacion hundida deja de llegar el correo de TODOS los tenants.
+  suppression_options {
+    suppressed_reasons = ["BOUNCE", "COMPLAINT"]
+  }
+}
+
+resource "aws_sesv2_email_identity" "domain" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  email_identity         = var.ses_domain
+  configuration_set_name = aws_sesv2_configuration_set.ses[0].configuration_set_name
+
+  # EASY DKIM, no BYODKIM. Declarar `domain_signing_private_key` aqui haria que la
+  # llave privada con la que se firma TODO el correo saliente viviera en un
+  # tfvars, y rotarla dejaria de ser cosa de AWS. Se pide 2048 explicitamente
+  # porque el default de la cuenta puede ser 1024, y 1024 ya lo rechazan
+  # validadores estrictos.
+  #
+  # Los TRES tokens que salen de aqui son la unica fuente de los CNAME. No se
+  # hornean: no existen hasta el apply y son distintos por identidad.
+  dkim_signing_attributes {
+    next_signing_key_length = "RSA_2048_BIT"
+  }
+}
+
+# MAIL FROM propio. Es lo que alinea SPF con NUESTRO dominio en vez de con AWS.
+#
+# `behavior_on_mx_failure = REJECT_MESSAGE` es la decision que muerde, y va del
+# lado ruidoso a proposito. Con `USE_DEFAULT_VALUE`, si el MX del subdominio no
+# resuelve, SES SIGUE ENVIANDO con el Return-Path de `amazonses.com`: la
+# alineacion SPF se pierde, el correo se va a spam y nada falla — el inspector no
+# recibe su solicitud de dictamen y el sistema cree que si. Con `REJECT_MESSAGE`
+# esa averia de DNS se convierte en un error que el worker VE y registra. Es el
+# principio de T-2.75 aplicado al correo: el canal que no entrega no finge.
+resource "aws_sesv2_email_identity_mail_from_attributes" "domain" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  email_identity         = aws_sesv2_email_identity.domain[0].email_identity
+  mail_from_domain       = local.ses_mail_from_domain
+  behavior_on_mx_failure = "REJECT_MESSAGE"
+}
+
+# --- Rebotes y quejas CON DESTINO ---------------------------------------------
+#
+# "https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html" exige
+# declarar que existe un proceso para tratar rebotes y quejas. Antes de esta ficha
+# no habia ni topic: el proceso solo se podia declarar mintiendo. La validacion de
+# `ses_feedback_email` hace imposible declarar el dominio sin buzon.
+resource "aws_sns_topic" "ses_feedback" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  name = "takab-dev-ses-feedback"
+}
+
+# SES no puede publicar en el topic solo porque su ARN este escrito en el event
+# destination: hace falta politica de RECURSO. Sin ella el destino se crea sin
+# error y falla al ENTREGAR el primer rebote — un fallo en tiempo de ejecucion
+# sobre un camino que nadie mira hasta que hace falta.
+#
+# `AWS:SourceAccount` acota quien puede usar este topic como destino de eventos:
+# sin la condicion, el permiso es "cualquier cuenta de SES del mundo".
+resource "aws_sns_topic_policy" "ses_feedback" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  arn = aws_sns_topic.ses_feedback[0].arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "SesPublishFeedback"
+      Effect    = "Allow"
+      Principal = { Service = "ses.amazonaws.com" }
+      Action    = "SNS:Publish"
+      Resource  = aws_sns_topic.ses_feedback[0].arn
+      Condition = {
+        StringEquals = { "AWS:SourceAccount" = var.account_id }
+      }
+    }]
+  })
+}
+
+# La suscripcion por email exige CONFIRMACION manual, igual que la de on-call: el
+# apply no termina el trabajo hasta que el humano confirma.
+resource "aws_sns_topic_subscription" "ses_feedback" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  topic_arn = aws_sns_topic.ses_feedback[0].arn
+  protocol  = "email"
+  endpoint  = var.ses_feedback_email
+}
+
+# `REJECT` y `RENDERING_FAILURE` van con los dos obvios porque son las dos formas
+# de NO enviar que no producen rebote: SES rechaza el mensaje (virus, supresion) o
+# la plantilla no renderiza. Sin ellas, un correo que jamas salio es
+# indistinguible de uno entregado. `DELIVERY_DELAY` avisa del caso lento, que en
+# una solicitud de dictamen con reloj cuenta como fallo.
+resource "aws_sesv2_configuration_set_event_destination" "ses_feedback" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  configuration_set_name = aws_sesv2_configuration_set.ses[0].configuration_set_name
+  event_destination_name = "rebotes-y-quejas"
+
+  event_destination {
+    enabled              = true
+    matching_event_types = ["BOUNCE", "COMPLAINT", "REJECT", "RENDERING_FAILURE", "DELIVERY_DELAY"]
+
+    sns_destination {
+      topic_arn = aws_sns_topic.ses_feedback[0].arn
+    }
+  }
+}
+
+# --- DNS, SOLO si la zona vive en esta cuenta ---------------------------------
+#
+# Los VALORES no se hornean nunca (criterio 4 de la ficha): los tres tokens de
+# DKIM salen de la respuesta de la API (`dkim_signing_attributes[0].tokens`) y no
+# existen hasta el apply; el host del MX se compone con la REGION del proveedor.
+# Un literal en el repo apunta al sitio equivocado en cuanto cambia cualquiera de
+# las dos cosas, la verificacion no termina nunca y ningun plan se pone rojo.
+#
+# TTL corto (1800) a proposito: durante la puesta en marcha estos registros se
+# corrigen, y un TTL de un dia convierte cada correccion en una espera de un dia.
+resource "aws_route53_record" "ses_dkim" {
+  count = local.ses_dns_enabled ? 3 : 0
+
+  zone_id = var.ses_route53_zone_id
+  name    = "${aws_sesv2_email_identity.domain[0].dkim_signing_attributes[0].tokens[count.index]}._domainkey.${var.ses_domain}"
+  type    = "CNAME"
+  ttl     = 1800
+  records = ["${aws_sesv2_email_identity.domain[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# El MX del subdominio MAIL FROM es por donde vuelven los rebotes. Con
+# `REJECT_MESSAGE` arriba, si este registro falta NO se envia correo: es el precio
+# consciente de no fingir alineacion.
+resource "aws_route53_record" "ses_mail_from_mx" {
+  count = local.ses_dns_enabled ? 1 : 0
+
+  zone_id = var.ses_route53_zone_id
+  name    = local.ses_mail_from_domain
+  type    = "MX"
+  ttl     = 1800
+  records = ["10 feedback-smtp.${data.aws_region.current.region}.amazonses.com"]
+}
+
+resource "aws_route53_record" "ses_mail_from_spf" {
+  count = local.ses_dns_enabled ? 1 : 0
+
+  zone_id = var.ses_route53_zone_id
+  name    = local.ses_mail_from_domain
+  type    = "TXT"
+  ttl     = 1800
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+resource "aws_route53_record" "ses_dmarc" {
+  count = local.ses_dns_enabled ? 1 : 0
+
+  zone_id = var.ses_route53_zone_id
+  name    = "_dmarc.${var.ses_domain}"
+  type    = "TXT"
+  ttl     = 1800
+  records = [local.ses_dmarc_value]
+}
+
+# =============================================================================
 # POOL DE OCUPANTES (T-2.02 · decisión #7 RATIFICADA 2026-07-15)
 # Cognito no permite MFA por grupo y poner el pool principal en OPTIONAL
 # dejaría a un rol táctico declinar su TOTP (specs/cognito-pool-v1.md §5.2).

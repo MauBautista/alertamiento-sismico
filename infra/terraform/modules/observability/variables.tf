@@ -31,3 +31,41 @@ variable "wal_archive_max_age_s" {
   description = "Edad maxima tolerada del archivado de WAL, en segundos. Es el umbral de la alarma de atasco y el termino dominante del RPO."
   type        = number
 }
+
+# [T-2.72.b] SIN default, por la misma razon que el de arriba y con mas motivo:
+# esta cifra no es una preferencia, es un TERMINO de la desigualdad que mantiene
+# viva la cadena PITR (`wal_retention_days >= base_backup_interval_days *
+# chain_margin`). La calcula `modules/database` a partir de las variables que
+# `modules/storage` decide, y baja hasta aqui por el entorno. Un default aqui
+# permitiria que la alarma vigilara una cadena distinta de la que S3 poda.
+variable "base_backup_max_age_s" {
+  description = "Edad maxima tolerada del ultimo backup base, en segundos (`base_backup_interval_days * chain_margin` dias). Es el umbral de la alarma del ancla de la cadena PITR."
+  type        = number
+}
+
+# [T-2.72.c] Este SI lleva default, y la asimetria es deliberada: el de arriba
+# tiene dueño en otro modulo (se derivaria mal si alguien lo teclea aqui); este es
+# una decision de vigilancia que se toma en este modulo y en ningun otro.
+variable "db_disk_used_max_pct" {
+  description = <<-EOT
+    Ocupacion de `/data` a partir de la cual se avisa, en porcentaje.
+
+    El 80 % no es un numero redondo elegido por costumbre: sobre el volumen de
+    40 GiB de la instancia deja ~8 GiB libres, y con `pg_wal` creciendo ~16 MiB
+    por minuto (que es lo que pasa con el archivado atascado) eso son ~8,5 horas
+    de margen. Cada punto porcentual vale ~25 minutos. El margen es lo unico que
+    convierte un aviso en algo accionable: sin el, la alarma llega a la vez que la
+    caida.
+  EOT
+  type        = number
+  default     = 80
+
+  validation {
+    # Por encima del 90 % quedan menos de 4 GiB (~4 h) y ya no da tiempo a
+    # localizar a nadie ni a liberar espacio con la base en marcha. Por debajo de
+    # cero o por encima de cien, el umbral no es alcanzable y la alarma no puede
+    # disparar nunca — el peor fallo posible en una alarma: existe y no vigila.
+    condition     = var.db_disk_used_max_pct > 0 && var.db_disk_used_max_pct <= 90
+    error_message = "db_disk_used_max_pct debe estar en (0, 90]. Por encima del 90 % sobre el volumen de 40 GiB quedan menos de 4 GiB, o sea menos de 4 h a 16 MiB/min: el aviso llegaria demasiado tarde para hacer nada. Un umbral fuera de (0,100] no es alcanzable y produce una alarma que existe y no vigila."
+  }
+}

@@ -49,6 +49,12 @@ variables {
   # Con el valor real las dos cosas coincidirian por casualidad y el test seria
   # verde vacio.
   wal_archive_max_age_s = 777
+
+  # [T-2.72.b] Sin default (su dueño es `modules/database`): sin este valor el
+  # modulo entero no planifica y este archivo dejaria de comprobar el RPO. No es
+  # centinela porque aqui no se mide nada suyo — lo suyo vive en
+  # `tests/backup_base_y_disco.tftest.hcl`.
+  base_backup_max_age_s = 1209600
 }
 
 run "el_rpo_sale_de_la_alarma_y_no_de_una_promesa" {
