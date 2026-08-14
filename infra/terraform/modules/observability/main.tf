@@ -401,8 +401,9 @@ resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled" {
 # TEMPRANO. Cuando la edad del ancla lo supera ya han fallado `margen` backups
 # base seguidos, y con los valores por defecto ese producto (7 x 2 = 14 dias) es
 # EXACTAMENTE `wal_retention_days`: el correo llega justo cuando la ventana de
-# recuperacion se cierra. Cazar el PRIMER backup base fallido exigiria una segunda
-# alarma a `intervalo` dias. Fichado.
+# recuperacion se cierra. [T-2.141] Eso es lo que resolvio `base_backup_late`,
+# aqui abajo: el aviso a `intervalo` dias. Esta alarma se queda como lo que
+# siempre fue —LA ULTIMA LINEA— y su correo ya no tiene que hacer de las dos.
 #
 # `breaching`, Y NO ES LA RESPUESTA DE `ghost_gateways`. Alli el silencio se
 # clasifico `missing` porque la ausencia de la metrica no decia nada sobre
@@ -432,6 +433,80 @@ resource "aws_cloudwatch_metric_alarm" "base_backup_missing" {
   threshold           = var.base_backup_max_age_s
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
+# --- [T-2.141] El AVISO, que es lo que a la de arriba le faltaba ---------------
+#
+# La alarma de arriba dispara a `intervalo * margen`. Con los valores por defecto
+# eso es 7 x 2 = 14 dias, que es EXACTAMENTE `wal_retention_days`: para cuando
+# llega el correo, la ventana de recuperacion ya se cerro. Como ultima linea es
+# correcta —dice "ya no puedes recuperar"— pero como aviso no sirve, y el fallo
+# que hay que cazar es EL PRIMER backup base que falla, no el decimocuarto dia.
+#
+# EL UMBRAL ES EL MISMO INTERVALO SIN EL MARGEN, y no es una eleccion: es la
+# definicion del hecho. El cron corre en `*/N` del dia del mes, asi que el hueco
+# entre dos backups base nunca pasa de `N` dias. El primer instante en que la edad
+# del ancla SUPERA `N` dias es, exactamente, el primer `barman-cloud-backup` que
+# no se completo. Lo calcula `modules/database` (`base_backup_warn_age_s`), donde
+# viven las cifras y donde se programa ese cron; aqui solo baja resuelto.
+#
+# POR QUE SON DOS Y NO UNA. No dicen lo mismo ni piden lo mismo:
+#   AVISO (esta)  : "fallo UN backup base; quedan `intervalo * (margen - 1)` dias
+#                    de ventana" —7 con los valores por defecto—. Accion: mirar el
+#                    log y relanzar el backup a mano. Barato, reversible.
+#   ULTIMA LINEA  : "fallaron `margen` seguidos; la ventana ya se cerro". Accion:
+#                    asumir que hoy no hay restore y reconstruir la cadena entera.
+# Una sola alarma solo puede decir una de las dos cosas. Fundirlas obligaria a
+# elegir entre avisar tarde (lo de antes) o gritar "no puedes recuperar" cuando
+# todavia se puede — que es peor, porque provoca la reaccion cara.
+#
+# SEVERIDAD DISTINGUIDA, por donde de verdad se lee. Este modulo tiene UN solo
+# topic SNS y ninguna alarma lleva tags. Un segundo topic significaria otra
+# suscripcion de correo que alguien tiene que confirmar a mano, y una alarma que
+# no avisa hasta que se confirme es peor que no tenerla. Asi que la severidad
+# viaja por el NOMBRE —que es el asunto del correo, "atrasado" contra "ausente"—
+# y por la primera palabra de la descripcion. Lo vigila un test, no este parrafo.
+#
+# `missing`, Y ES EL ARGUMENTO DE `db_disk_space`, NO EL DE SU PROPIA HERMANA.
+# Su hermana eligio `breaching` porque mide "hasta donde se puede recuperar" y un
+# ancla desconocida es, para un restore, lo mismo que no tener ancla. Aqui aplica
+# el otro: el correo de ESTA alarma AFIRMA UNA MEDIDA —"se paso el intervalo: un
+# backup base fallo"— y ademas afirma una TRANQUILIDAD —"todavia quedan dias de
+# ventana"—. Sin datapoint ninguna de las dos cosas existe, y la segunda seria
+# ademas FALSA: lo que no se sabe puede ser mucho peor que un backup fallido.
+# Y hay una razon que ninguna hermana tiene, porque solo existe en un PAR: el
+# silencio de esta metrica YA ESTA CUBIERTO, por la misma serie, el mismo
+# publicador y el mismo host — la alarma de arriba, en `breaching`. Poner
+# `breaching` aqui tambien no anadiria ni un gramo de vigilancia; mandaria DOS
+# correos por el mismo silencio y el de este INFRAVALORARIA lo que pasa. Que la
+# hermana siga en `breaching` sobre la misma metrica lo comprueba un test: el dia
+# que alguien la relaje, este `missing` deja de ser una decision y pasa a ser una
+# ceguera.
+#
+# EL DIA QUE SE CREA nace en INSUFFICIENT_DATA y NO manda correo — porque
+# `insufficient_data_actions` solo dispara al TRANSITAR y ese es su estado
+# inicial. Aqui eso es seguro, y solo aqui: durante esa ventana su hermana en
+# `breaching` esta en ALARM diciendo exactamente lo que hay que oir. El
+# publicador emite la primera edad EN EL ACTO al final del `pitr_setup.sh` (la
+# leccion de `T-2.72.c`), asi que en cuanto llega ese datapoint —edad medida desde
+# que se configuro el PITR, o sea casi cero— la alarma TRANSITA a OK y ese correo
+# de OK es el acuse de que nacio viva. Si ese correo no llega nunca, eso es el
+# hallazgo: la metrica no se esta publicando.
+resource "aws_cloudwatch_metric_alarm" "base_backup_late" {
+  alarm_name          = "takab-dev-backup-base-atrasado"
+  alarm_description   = "AVISO: se paso el intervalo del backup base sin que se completara ninguno — ha fallado el PRIMERO, y todavia se puede recuperar. Esto NO es la alarma de cadena rota (`takab-dev-backup-base-ausente`): aqui queda ventana de sobra para arreglarlo, y arreglarlo es barato. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list` que el ancla se movio, y esperar el correo de OK de esta misma alarma. Si se ignora, el siguiente aviso sera el de cadena rota y para entonces la ventana de recuperacion se habra cerrado. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube."
+  namespace           = "Takab/Ops"
+  metric_name         = "BaseBackupAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.base_backup_warn_age_s
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
 
   alarm_actions             = [aws_sns_topic.ops_alerts.arn]
   ok_actions                = [aws_sns_topic.ops_alerts.arn]

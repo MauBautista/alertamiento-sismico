@@ -21,6 +21,7 @@ import psycopg
 
 from takab_api.backfill.consumer import BackfillConsumer
 from takab_api.db import pool
+from takab_api.db.session import WORKER_LOCK_TIMEOUT_MS
 from takab_api.ingest.registry import Registry
 from takab_api.settings import Settings
 
@@ -33,7 +34,25 @@ def build_consumer(settings: Settings) -> BackfillConsumer:
             "faltan URLs de cola/DLQ de backfill (TAKAB_API_QUEUE_URL_BACKFILL / "
             "TAKAB_API_DLQ_URL_BACKFILL)"
         )
-    conn_factory: partial[psycopg.Connection] = partial(pool.connect, settings.database_url)
+    # [T-2.139] El tope de espera por lock, y llega AHORA y no antes porque el
+    # orden es la ficha: `T-2.132` midió que acotar la espera sin la política de
+    # reintento debajo convierte cada bloqueo en una recepción de SQS quemada y,
+    # a la quinta, un mensaje válido en la DLQ. Con `BACKFILL_TRANSIENT_POLICY`
+    # ya puesta, ese 55P03 se reintenta en el sitio y ceder deja de costar datos.
+    #
+    # El número es el MISMO de la ingesta (`WORKER_LOCK_TIMEOUT_MS`) a propósito:
+    # una sola política, no dos que se creen una. Y si algo, aquí cede con más
+    # razón — la transacción que este worker sostiene mientras espera es la más
+    # grande del sistema (el objeto entero, miles de filas), o sea el peor
+    # extremo lejano posible de un ciclo que Postgres no detecta (`T-2.73.c`).
+    #
+    # SIN `statement_timeout_ms`, y eso está medido, no supuesto: ver el veredicto
+    # de `T-2.139` en `db/session.py::WORKER_STATEMENT_TIMEOUT_MS`.
+    conn_factory: partial[psycopg.Connection] = partial(
+        pool.connect,
+        settings.database_url,
+        lock_timeout_ms=WORKER_LOCK_TIMEOUT_MS,
+    )
     registry = Registry(conn_factory, ttl_s=settings.registry_ttl_s)
     return BackfillConsumer(
         settings.queue_url_backfill,

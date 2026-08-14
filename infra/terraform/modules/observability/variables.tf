@@ -68,6 +68,21 @@ variable "base_backup_max_age_s" {
   type        = number
 }
 
+# [T-2.141] El umbral del AVISO, y SIN default por la misma razon que su hermano:
+# tampoco es una preferencia. Es `base_backup_interval_days` — el MISMO intervalo
+# con el que `modules/database` programa el cron `*/N`, sin el margen. Un default
+# aqui permitiria que el aviso vigilara un intervalo distinto del que produce los
+# backups, y entonces avisaria en cualquier momento menos cuando falla el primero.
+#
+# NO se calcula aqui a partir del otro (`max / chain_margin`) a proposito: eso
+# obligaria a bajar tambien `chain_margin` hasta este modulo y a que un modulo de
+# vigilancia rehiciera la aritmetica de la retencion. Los dos umbrales se derivan
+# donde viven las cifras y bajan ya resueltos, cada uno por su cable.
+variable "base_backup_warn_age_s" {
+  description = "Edad del ultimo backup base a partir de la cual se AVISA, en segundos (`base_backup_interval_days` dias). Es el umbral de la alarma temprana: caza el PRIMER backup base fallido, mientras todavia queda ventana de recuperacion."
+  type        = number
+}
+
 # [T-2.72.c] Este SI lleva default, y la asimetria es deliberada: el de arriba
 # tiene dueño en otro modulo (se derivaria mal si alguien lo teclea aqui); este es
 # una decision de vigilancia que se toma en este modulo y en ningun otro.

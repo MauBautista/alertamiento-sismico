@@ -425,6 +425,41 @@ run "el_umbral_del_backup_base_se_deriva_de_las_variables_de_retencion" {
     condition     = output.base_backup_max_age_s == var.pitr.base_backup_interval_days * var.pitr.chain_margin * 86400
     error_message = "El umbral del backup base debe derivarse de las variables de `pitr`, no de un literal."
   }
+
+  # [T-2.141] EL AVISO: el mismo intervalo SIN el margen. Con los centinelas de
+  # este bloque, 5 dias — que no coincide con ningun valor de produccion ni con el
+  # de su hermana (15 dias), asi que ninguna de las dos aserciones puede pasar
+  # confundiendo un output con el otro.
+  assert {
+    condition     = output.base_backup_warn_age_s == 5 * 86400
+    error_message = "El umbral del AVISO debe ser `pitr.base_backup_interval_days` en SEGUNDOS, sin el margen. Es el primer instante en que se puede afirmar que un `barman-cloud-backup` no se completo: el cron corre en `*/N` del dia del mes, asi que el hueco nunca pasa de N dias."
+  }
+
+  assert {
+    condition     = output.base_backup_warn_age_s == var.pitr.base_backup_interval_days * 86400
+    error_message = "El umbral del aviso debe derivarse de la variable de `pitr`, no de un literal."
+  }
+
+  # LAS DOS DERIVAN DE LAS MISMAS VARIABLES Y NINGUNA REPITE UN NUMERO — que es
+  # literalmente el criterio de la ficha. El cociente entre ellas es `chain_margin`
+  # y no otra cosa: es lo que garantiza que el aviso llega con
+  # `intervalo * (margen - 1)` dias de ventana por delante en vez de a la vez.
+  assert {
+    condition = (
+      output.base_backup_warn_age_s != output.base_backup_max_age_s
+      && output.base_backup_max_age_s == output.base_backup_warn_age_s * var.pitr.chain_margin
+    )
+    error_message = "Los dos umbrales del backup base coinciden, o su relacion dejo de ser `chain_margin`. Si coinciden no hay aviso, hay eco: dos correos para el mismo hecho y ninguno antes de que se cierre la ventana."
+  }
+
+  # Y el aviso tiene que caber DENTRO de la ventana de WAL, o avisaria de algo que
+  # ya no se puede arreglar. Con `chain_margin >= 2` (validado en variables.tf) y
+  # la desigualdad de la cadena, esto se cumple siempre — pero se comprueba, que es
+  # como se descubrio que el otro umbral NO cabia (es el hallazgo de T-2.72.b).
+  assert {
+    condition     = output.base_backup_warn_age_s < var.pitr.wal_retention_days * 86400
+    error_message = "El aviso llega cuando la ventana de WAL ya se cerro: entonces no es un aviso, es otra ultima linea. Es exactamente el defecto que T-2.141 vino a arreglar."
+  }
 }
 
 # La otra mitad, sin la cual lo de arriba es vacuo: una igualdad comprobada con UN
@@ -448,6 +483,18 @@ run "el_umbral_del_backup_base_se_mueve_con_la_politica_de_retencion" {
   assert {
     condition     = output.base_backup_max_age_s == 4 * 2 * 86400
     error_message = "El umbral no siguio a las variables de retencion: es una constante disfrazada de derivacion, y el dia que se alargue el intervalo entre backups base la alarma seguira vigilando el intervalo viejo."
+  }
+
+  # [T-2.141] El segundo juego de centinelas del AVISO, por lo mismo: con uno
+  # solo, `5 * 86400` no distinguiria una derivacion de una constante que hoy vale
+  # lo mismo. Aqui son 4 dias, y el margen cambio de 3 a 2, asi que ademas se
+  # comprueba que los dos umbrales se movieron POR SEPARADO.
+  assert {
+    condition = (
+      output.base_backup_warn_age_s == 4 * 86400
+      && output.base_backup_max_age_s == output.base_backup_warn_age_s * 2
+    )
+    error_message = "El umbral del aviso no siguio al intervalo, o dejo de guardar la relacion `chain_margin` con su hermana. Con el margen cambiado de 3 a 2, una constante no puede satisfacer los dos bloques."
   }
 }
 

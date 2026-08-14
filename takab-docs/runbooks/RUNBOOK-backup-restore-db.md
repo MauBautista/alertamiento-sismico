@@ -358,17 +358,63 @@ de eso, pero lo primero que hay que mirar al recibirla es el espacio libre en `/
 
 ## 7. Las alarmas que vigilan todo esto
 
-> **Son TRES, y cada una mira una cosa distinta.** Hasta T-2.72.b/c había una sola
+> **Son CUATRO, y cada una mira una cosa distinta.** Hasta T-2.72.b/c había una sola
 > (`wal-archivado-atascado`) y su propio comentario dejaba fichadas las dos ausencias: mide la
-> **cadena** de WAL, no su **ancla** ni el **disco** sobre el que vive todo.
+> **cadena** de WAL, no su **ancla** ni el **disco** sobre el que vive todo. T-2.141 añadió la
+> cuarta: el **aviso** del ancla, porque la de T-2.72.b llegaba cuando la ventana ya se había
+> cerrado.
 >
-> | Alarma | Qué mide | `treat_missing_data` |
-> |---|---|---|
-> | `takab-dev-wal-archivado-atascado` | la cadena de WAL (RPO) | `breaching` |
-> | `takab-dev-backup-base-ausente` | el ancla de la cadena | `breaching` |
-> | `takab-dev-disco-datos-lleno` | ocupación de `/data` | `missing` |
+> | Alarma | Qué mide | Umbral | `treat_missing_data` |
+> |---|---|---|---|
+> | `takab-dev-wal-archivado-atascado` | la cadena de WAL (RPO) | 600 s | `breaching` |
+> | `takab-dev-backup-base-atrasado` | el ancla — **AVISO** | `intervalo` (7 d) | `missing` |
+> | `takab-dev-backup-base-ausente` | el ancla — **última línea** | `intervalo × margen` (14 d) | `breaching` |
+> | `takab-dev-disco-datos-lleno` | ocupación de `/data` | 80 % | `missing` |
+>
+> **Las dos del ancla miran la MISMA métrica** (`Takab/Ops/BaseBackupAgeSeconds`, mismo
+> publicador, mismo host) y solo se diferencian en el umbral, el nombre y lo que dicen. No son
+> redundantes: la primera dice **«falló UNO, relánzalo»** y la segunda **«fallaron `margen`, la
+> ventana ya se cerró»**. Piden acciones distintas y la barata es la de la primera.
 
-### 7.0 · `takab-dev-backup-base-ausente` (T-2.72.b)
+### 7.0.a · `takab-dev-backup-base-atrasado` — el AVISO (T-2.141)
+
+`Takab/Ops/BaseBackupAgeSeconds`, `Maximum > base_backup_interval_days` (**7 días** con los
+valores de hoy), 2 periodos de 5 min, `treat_missing_data = "missing"`, los TRES estados al topic
+de on-call.
+
+- **Por qué existe:** la alarma de §7.0 dispara a `intervalo × margen`, que con los valores por
+  defecto es `7 × 2 = 14` días — **exactamente `wal_retention_days`**. Cuando llega ese correo la
+  ventana de recuperación ya se cerró. Correcta como última línea, inútil como aviso.
+- **Qué caza:** el **primer** backup base que falla. El cron corre en `*/N` del día del mes, así
+  que el hueco entre dos backups nunca pasa de `N` días: el primer instante en que la edad del
+  ancla supera `N` es, exactamente, el primer `barman-cloud-backup` que no se completó.
+- **Cuánta ventana te deja:** `intervalo × (margen − 1)` días — **7 días** hoy — para relanzarlo a
+  mano antes de que se cierre.
+- **El umbral tampoco es un número tecleado:** sale de la misma variable que programa el cron
+  (`modules/database` deriva `base_backup_warn_age_s`). Las dos alarmas derivan de las mismas
+  cifras y **ninguna repite el número de la otra**: el cociente entre sus umbrales es
+  `chain_margin`, y eso lo fija un test.
+- **`missing`, al revés que su hermana, y con el argumento de `disco-datos-lleno`:** el correo de
+  esta alarma **afirma una medida** («se pasó el intervalo») **y además una tranquilidad**
+  («todavía queda ventana»). Sin datapoint la segunda sería **falsa** — lo que no se sabe puede
+  ser mucho peor. Y hay una razón que solo existe en un par: **el silencio ya lo cubre su
+  hermana**, en `breaching`, sobre la misma métrica y el mismo publicador. Con `breaching` aquí
+  llegarían dos correos por el mismo silencio y el de este **infravaloraría** lo que pasa.
+- **EL DÍA QUE SE CREA nace en INSUFFICIENT_DATA y NO manda correo**, porque
+  `insufficient_data_actions` solo dispara al TRANSITAR y ese es su estado inicial. Aquí eso es
+  seguro **y solo aquí**: durante esa ventana su hermana en `breaching` está en ALARM diciendo lo
+  que hay que oír. En cuanto llega el primer datapoint (el publicador emite en el acto al terminar
+  `pitr_setup.sh`; la edad se mide desde que se configuró el PITR, o sea casi cero) **transita a
+  OK y ese correo de OK es el acuse de que nació viva**. Si ese correo no llega nunca, eso es el
+  hallazgo — ver §7.2.
+- **Qué hacer cuando suena:** `/var/log/takab-pitr.log` → `/opt/takab/bin/takab-base-backup.sh` a
+  mano → confirmar con `barman-cloud-backup-list` que el ancla se movió → **esperar el correo de
+  OK de esta misma alarma**. Si se ignora, el siguiente aviso será el de §7.0 y para entonces ya
+  no hay ventana.
+- **Es INTOCABLE** (no silenciable): callarla durante una ventana de mantenimiento se come
+  precisamente los días de margen que esta alarma existe para dar.
+
+### 7.0 · `takab-dev-backup-base-ausente` — la última línea (T-2.72.b)
 
 `Takab/Ops/BaseBackupAgeSeconds`, `Maximum > base_backup_interval_days × chain_margin` (14 días
 con los valores de hoy), 2 periodos de 5 min, `treat_missing_data = "breaching"`, los TRES estados
@@ -383,7 +429,8 @@ al topic de on-call.
 - **NO es un aviso temprano, y hay que saberlo:** cuando dispara ya han fallado `chain_margin`
   backups base seguidos, y con los valores por defecto `7 × 2 = 14` días es **exactamente**
   `wal_retention_days` — o sea que el correo llega justo cuando la ventana de recuperación se
-  cierra. Cazar el PRIMER backup base fallido exigiría una segunda alarma a `intervalo` días.
+  cierra. **El aviso temprano es `takab-dev-backup-base-atrasado` (§7.0.a, T-2.141)**: si te llega
+  ÉSTE sin haber visto antes aquél, el aviso no funcionó y eso es un segundo hallazgo.
 - **NACE EN ALARM el día del despliegue inicial, y es correcto:** todavía no se ha tomado ningún
   backup base. El publicador mide la edad **desde que se configuró el PITR**, no desde cero.
   **El correo de OK al terminar el primer `barman-cloud-backup` es el acuse de que la cadena
@@ -437,15 +484,20 @@ terminar, precisamente para forzar la transición — pero **eso hay que verific
 ```bash
 aws cloudwatch describe-alarms --profile takab-dev --region us-east-2 \
   --alarm-names takab-dev-wal-archivado-atascado takab-dev-backup-base-ausente \
-                takab-dev-disco-datos-lleno \
+                takab-dev-backup-base-atrasado takab-dev-disco-datos-lleno \
   --query 'MetricAlarms[].[AlarmName,StateValue]' --output table
 ```
 
 Ninguna debe seguir en `INSUFFICIENT_DATA`. Estados esperados el primer día:
 `wal-archivado-atascado` → `OK`; `backup-base-ausente` → **`ALARM`** (aún no hay backup base:
-es correcto, y pasa a OK al terminar el primero); `disco-datos-lleno` → `OK`.
+es correcto, y pasa a OK al terminar el primero); **`backup-base-atrasado` → `OK`** (nace en
+INSUFFICIENT_DATA **sin correo** —es su estado inicial y `insufficient_data_actions` solo dispara
+al transitar— y pasa a OK con el primer datapoint, que es su acuse de nacimiento);
+`disco-datos-lleno` → `OK`.
 Si alguna sigue en `INSUFFICIENT_DATA`, el publicador no está corriendo: mirar
-`/etc/cron.d/takab-pitr` y `/var/log/takab-pitr.log`.
+`/etc/cron.d/takab-pitr` y `/var/log/takab-pitr.log`. **Para `backup-base-atrasado` esta
+comprobación es la única que existe**: es la alarma cuyo nacimiento no manda correo, así que si
+nadie mira esta tabla, su silencio inicial no lo delata nadie más que su hermana.
 
 ### 7.3 · `takab-dev-wal-archivado-atascado`
 
@@ -482,6 +534,7 @@ al topic de on-call.
 | R-6 | RPO verificado (`max(ts)` vs hora del "desastre") | ≤ 900 s con PITR |  |  |  |
 | R-7 | La alarma de archivado sale de INSUFFICIENT_DATA | correo de OK recibido |  |  |  |
 | R-8 | Primer `barman-cloud-backup` ejecutado y listado | aparece en `backup-list` |  |  |  |
+| R-9 | `backup-base-atrasado` sale de INSUFFICIENT_DATA (§7.2) | correo de OK recibido |  |  |  |
 
 ---
 

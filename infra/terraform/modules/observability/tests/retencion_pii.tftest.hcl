@@ -30,7 +30,9 @@ variables {
   paged_gateways            = ["gw-test-0001"]
   wal_archive_max_age_s     = 600
   base_backup_max_age_s     = 1209600
-  pii_retention_max_age_s   = 172800
+  # [T-2.141] La hermana temprana; aqui solo hace falta que exista (sin default).
+  base_backup_warn_age_s  = 604800
+  pii_retention_max_age_s = 172800
 }
 
 run "la_alarma_vigila_la_metrica_que_la_instancia_publica_de_verdad" {

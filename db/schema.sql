@@ -551,7 +551,18 @@ CREATE TABLE audit_log (
   actor     text NOT NULL,
   verb      text NOT NULL,
   object    text NOT NULL,
-  meta      jsonb NOT NULL DEFAULT '{}'
+  meta      jsonb NOT NULL DEFAULT '{}',
+  -- [T-2.138] Clave de REENTREGA (0044), solo para los verbos que se escriben por
+  -- ENTREGA y no por hecho (hoy `ingest_reject`, censo en `takab_api/audit.py`).
+  -- La huella dice "el mismo hecho"; la cubeta lo acota al horizonte de reentrega
+  -- de SQS. La clave NO es (tenant, actor, verb, object, meta): eso colapsaría
+  -- rechazos genuinamente distintos —la razón la compone el cross-check de
+  -- identidad y se repite idéntica— y sería peor que duplicar uno (T-2.136).
+  dedupe_digest text,
+  dedupe_bucket bigint,
+  -- Media clave es peor que ninguna: sin cubeta, el índice parcial no la vigila.
+  CONSTRAINT audit_log_dedupe_completa
+    CHECK ((dedupe_digest IS NULL) = (dedupe_bucket IS NULL))
 );
 REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC;
 -- [ANALISIS-00] El REVOKE solo no basta (el owner y grants explícitos lo saltan):
@@ -562,6 +573,11 @@ CREATE TRIGGER trg_audit_log_append_only
 -- acceso por tenant (la RLS audit_read filtra por tenant_id).
 CREATE INDEX idx_audit_log_ts_id ON audit_log (ts DESC, audit_id DESC);
 CREATE INDEX idx_audit_log_tenant_ts ON audit_log (tenant_id, ts DESC);
+-- [T-2.138] Impone la clave de reentrega Y sirve la comprobación previa (la
+-- huella es la columna de la izquierda). Parcial: la bitácora normal —toda fila
+-- sin huella— no entra en el índice ni paga por él.
+CREATE UNIQUE INDEX idx_audit_log_dedupe ON audit_log (dedupe_digest, dedupe_bucket)
+  WHERE dedupe_digest IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 8. ROW-LEVEL SECURITY ([ANALISIS-00] sección reescrita — v1 solo cubría 3 tablas,

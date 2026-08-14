@@ -47,6 +47,9 @@ variables {
   # `pitr.base_backup_interval_days * pitr.chain_margin`. Sin valor, el modulo no
   # planifica y ESTE archivo dejaria de comprobar nada.
   base_backup_max_age_s = 1209600
+  # [T-2.141] Mismo caso: su dueno es `modules/database`, que la deriva de
+  # `pitr.base_backup_interval_days` sin el margen. Aqui solo tiene que existir.
+  base_backup_warn_age_s = 604800
 
   # [T-2.81.a] Y el de la retencion de PII, por lo mismo: su dueño es
   # `modules/database` (cadencia x margen). Sin valor el modulo no planifica y
@@ -414,6 +417,18 @@ run "ghost_gateways_no_miente_cuando_no_sabe" {
 # retencion que no corre. Ademas el que publica la metrica y el que poda son el
 # mismo host y el mismo `/etc/cron.d/takab-prune-pii`: si esto calla, la corrida
 # de las 06:00 tampoco se esta ejecutando.
+#
+# [T-2.141] `base_backup_late` -> `missing`, y es el UNICO caso del modulo que se
+# decide mirando a OTRA alarma en vez de a la metrica sola. Es el aviso temprano
+# de la MISMA serie que `base_backup_missing`: mismo namespace, misma metrica,
+# mismo publicador, mismo host. Le aplica el argumento de `db_disk_space` —su
+# correo afirma una medida ("se paso el intervalo") y ademas una tranquilidad
+# ("todavia queda ventana"), y sin datapoint la segunda seria FALSA—, mas una
+# razon que solo existe en un par: el silencio ya lo cubre su hermana en
+# `breaching`. Ponerlo tambien en `breaching` no anadiria vigilancia; mandaria dos
+# correos por el mismo silencio y el de este INFRAVALORARIA lo que pasa. Por eso
+# la asercion de abajo fija las dos juntas: si alguien relaja la hermana, este
+# `missing` deja de ser una decision y pasa a ser una ceguera.
 run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
   command = plan
 
@@ -425,6 +440,7 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
       && aws_cloudwatch_metric_alarm.ghost_gateways.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.wal_archive_stalled.treat_missing_data == "breaching"
       && aws_cloudwatch_metric_alarm.base_backup_missing.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.base_backup_late.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.db_disk_space.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.pii_retention_stalled.treat_missing_data == "breaching"
     )

@@ -63,6 +63,30 @@ output "base_backup_max_age_s" {
   value       = var.pitr.base_backup_interval_days * var.pitr.chain_margin * 86400
 }
 
+# [T-2.141] Y EL AVISO, que es lo que el output de arriba dejo fichado.
+#
+# El mismo intervalo SIN el margen. La aritmetica no es una eleccion de estilo:
+# es la definicion del hecho que hay que cazar. El cron corre en `*/N` del dia del
+# mes, asi que el hueco entre dos backups base nunca pasa de `N` dias; el primer
+# instante en que la edad del ancla SUPERA `N` dias es, exactamente, el primer
+# `barman-cloud-backup` que no se completo. Ni antes (seria ruido del propio
+# ciclo) ni despues (ya habria fallado mas de uno).
+#
+# LAS DOS DERIVAN DE LAS MISMAS VARIABLES Y NINGUNA REPITE UN NUMERO: aquella es
+# `intervalo * margen`, esta es `intervalo`. El cociente entre las dos es
+# `chain_margin`, y esa relacion es la que hace que el aviso llegue con
+# `intervalo * (margen - 1)` dias de ventana por delante — con los valores por
+# defecto, 7 dias para relanzar el backup a mano antes de que se cierre.
+#
+# Y por eso son DOS ALARMAS Y NO UNA: no dicen lo mismo ni piden lo mismo. Esta
+# dice "fallo UNO, relanzalo"; la otra dice "fallaron `margen`, la ventana ya se
+# cerro". Una sola alarma solo puede decir una de las dos cosas, y `T-2.72.b`
+# eligio la segunda porque es la unica que se puede derivar del par completo.
+output "base_backup_warn_age_s" {
+  description = "Edad del ultimo backup base a partir de la cual AVISAR, en segundos: `base_backup_interval_days` dias (el mismo intervalo sin el margen). Es el umbral de la alarma temprana; su hermana `base_backup_max_age_s` es la ultima linea."
+  value       = var.pitr.base_backup_interval_days * 86400
+}
+
 # La configuracion PITR tal y como quedo, para que el runbook pueda CITAR lo que
 # produce la maquina en vez de lo que tecleo un humano.
 output "pitr" {

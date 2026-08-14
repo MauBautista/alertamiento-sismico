@@ -161,10 +161,34 @@ WORKER_LOCK_TIMEOUT_MS = 3_000
 #: el tope de lock — pero la razón NO se hereda, se rehace:
 #:
 #: · ``backfill`` también consume SQS, así que el modo de fallo existe; pero su
-#:   cola da **300 s** (10× la de eventos), su trabajo es a granel (objeto de S3
-#:   → miniSEED → filas) y **no tiene política de reintento**. Un ``57014`` allí
-#:   sí sería una recepción quemada por una sentencia que quizá era legítima.
-#:   Ponerle tope exige medir antes cuánto tarda de verdad un objeto real.
+#:   cola da **300 s** (10× la de eventos) y su trabajo es a granel (objeto de S3
+#:   → NDJSON → filas). Cuando se escribió esto le faltaba además la política de
+#:   reintento, y por eso el tope no podía ir primero.
+#:
+#:   **[T-2.139] La política ya la tiene, y el tope SIGUE SIN PONERSE — ahora por
+#:   una razón medida y no por el orden.** Medida la pasada real contra Postgres
+#:   sobre el objeto representativo (900 s de spool = el umbral exacto a partir
+#:   del cual el edge elige la ruta S3: 90 líneas NDJSON, 3600 filas, 10.8 KiB
+#:   comprimidos)::
+#:
+#:       pasada completa .......... 0.88 s   (3600 sentencias, 223 µs/fila, lineal)
+#:       sentencia más lenta ...... ~1 ms    (0.1–0.2 % de la pasada)
+#:       VisibilityTimeout ........ 300 s    (margen ×340)
+#:
+#:   Lo que esas cifras dicen es que **el tope no acota lo que hay que acotar**:
+#:   un ``statement_timeout`` limita UNA sentencia, y aquí una pasada larga no es
+#:   una sentencia lenta sino **miles de sentencias cortas en UNA transacción**.
+#:   Para que la pasada llegara a los 300 s harían falta ~90 h de spool en un
+#:   solo objeto, y ningún tope de sentencia lo evitaría. A cambio sí abriría un
+#:   modo de fallo nuevo: ``57014`` **no** está en ``TRANSIENT_SQLSTATES``, así
+#:   que cada disparo sería una recepción quemada **y una pasada entera tirada**.
+#:   Lo que lo desbloquearía —y es lo que hay que hacer antes— es trocear el
+#:   objeto para que la pasada deje de ser una transacción única; entonces el
+#:   presupuesto por trozo existe y de ahí sí sale un número. Lo fija un test.
+#:
+#:   El tope de **LOCK** sí llegó con `T-2.139`, y ése es el orden de `T-2.132`
+#:   cumpliéndose: primero la red que hace inocuo el ``55P03``, después el tope
+#:   que lo provoca.
 #: · ``incident``, ``notify`` y ``commands`` **no consumen cola**: son pollers de
 #:   la base. Sin ``VisibilityTimeout`` no hay reentrega, no hay duplicado y no
 #:   hay presupuesto del que derivar un número — dárselo sería inventarlo.

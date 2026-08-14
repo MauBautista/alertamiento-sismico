@@ -36,7 +36,6 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,6 +45,14 @@ import psycopg
 from takab_api.contracts.loader import ContractError, discriminate, kind_for_topic, validate
 from takab_api.contracts.meta import Meta, split_meta
 from takab_api.db import pool
+from takab_api.db.transient import (
+    TRANSIENT_SQLSTATES,
+    TransientPolicy,
+    TransitorioAgotado,
+    es_transitorio,
+    reintentar_en_el_sitio,
+    sqlstate_de,
+)
 from takab_api.settings import Settings
 
 log = logging.getLogger("takab_api.ingest")
@@ -56,81 +63,23 @@ RETRY = "retry"
 
 _STATUS_PREFIX = "takab/status/"
 
-#: [T-2.132] SQLSTATE que significan «la base estaba OCUPADA», no «esto está
-#: roto». Los tres comparten lo único que importa para decidir: dejan la conexión
-#: VIVA con la transacción abortada, y **el mismo mensaje volvería a entrar** si
-#: se reintenta. Nada más entra aquí — una conexión caída (57P01) o un dato malo
-#: (23505) no se arreglan reintentando y deben gastar sus recepciones e irse a la
-#: DLQ, que es para lo que existe.
-#:
-#: El 55P03 es el MISMO que dispara el ``lock_timeout`` de ``db/session.py``; lo
-#: ancla un test, no este comentario.
-TRANSIENT_SQLSTATES = frozenset(
-    {
-        "55P03",  # lock_not_available — venció el tope de espera por lock
-        "40P01",  # deadlock_detected — Postgres eligió a esta víctima
-        "40001",  # serialization_failure — dos transacciones se pisaron
-    }
-)
+# [T-2.139] La política de `T-2.132` se MUDÓ a ``db/transient.py`` cuando llegó
+# el segundo worker de cola: dos censos de SQLSTATE que creen ser uno derivan en
+# silencio. Se reexporta con los nombres de siempre — este módulo sigue siendo el
+# sitio natural donde buscarla desde la ingesta, y quien la importe de aquí sigue
+# hablando del MISMO objeto (lo ancla un test).
+__all__ = [
+    "OK",
+    "REJECT",
+    "RETRY",
+    "TRANSIENT_SQLSTATES",
+    "SqsConsumer",
+    "TransientPolicy",
+    "es_transitorio",
+]
 
-
-def _sqlstate(exc: BaseException) -> str | None:
-    """SQLSTATE del error, venga crudo de psycopg o envuelto por SQLAlchemy."""
-    estado = getattr(exc, "sqlstate", None)
-    if estado is None:
-        estado = getattr(getattr(exc, "orig", None), "sqlstate", None)
-    return estado
-
-
-def es_transitorio(exc: BaseException) -> bool:
-    """True si el fallo es «la base está ocupada» y el mensaje sigue siendo bueno.
-
-    Esta función ES la distinción que pedía la ficha. Todo lo que devuelva False
-    conserva el camino de siempre: RETRY, reentrega, y DLQ a la quinta.
-    """
-    return _sqlstate(exc) in TRANSIENT_SQLSTATES
-
-
-@dataclass(frozen=True, slots=True)
-class TransientPolicy:
-    """Presupuesto del reintento EN EL SITIO ante un fallo transitorio.
-
-    ``budget_s`` es el techo de verdad, y no es arbitrario: tiene que caber en el
-    ``VisibilityTimeout`` de la cola (30 s en ``q-events``, 90 en
-    ``q-telemetry``). Si los reintentos duraran más, el mensaje se haría visible
-    a mitad, otro worker lo tomaría y se gastaría **justo la recepción que
-    estábamos ahorrando** — además de duplicar el trabajo. Lo ancla un test que
-    lee el número del Terraform real.
-
-    ``inflight_visibility_s`` es el alargue que se pide antes de cada reintento:
-    cubre el presupuesto entero, así que el mensaje no se escapa aunque los
-    reintentos lleguen al final. ``giveup_visibility_s`` es distinto y sirve a
-    otra cosa: cuando el bloqueo NO cede, el mensaje vuelve a la cola con un
-    respiro para que las cinco recepciones se repartan en minutos en vez de
-    quemarse en cinco segundos contra una tabla que sigue bloqueada.
-    """
-
-    budget_s: float = 20.0
-    base_delay_s: float = 0.1
-    max_delay_s: float = 2.0
-    inflight_visibility_s: int = 60
-    giveup_visibility_s: int = 60
-
-
-class _TransitorioAgotado(Exception):
-    """El bloqueo no cedió dentro del presupuesto: ya no es transitorio.
-
-    Excepción propia y no un ``OperationalError`` más: el desenlace no es el
-    mismo. Aquí se sabe que el mensaje es bueno y que la conexión está sana, así
-    que **no se tira la conexión** (el camino operacional sí lo hace, y con
-    razón) y el batch pendiente se devuelve con respiro en vez de a martillazos.
-    """
-
-    def __init__(self, intentos: int, esperado_s: float, causa: BaseException) -> None:
-        super().__init__(
-            f"la base siguió ocupada tras {intentos} intentos en {esperado_s:.1f} s: {causa}"
-        )
-        self.intentos = intentos
+_sqlstate = sqlstate_de
+_TransitorioAgotado = TransitorioAgotado
 
 
 # Handler: (conn, payload, meta, ctx) → HandlerResult (duck-typed, ver _outcome).
@@ -338,43 +287,30 @@ class SqsConsumer:
         cada reintento. Es seguro y barato por idempotencia de PK (regla de oro
         3), y es lo único que evita que un bloqueo a mitad de batch queme una
         recepción por CADA mensaje del batch.
+
+        [T-2.139] El bucle en sí vive en ``db/transient.py`` desde que hay dos
+        workers de cola; lo que queda aquí son los cuatro ganchos que SÍ son de
+        la ingesta (conexión, rollback, visibilidad, pendientes del batch).
         """
-        limite = time.monotonic() + self._transient.budget_s
-        intentos = 0
-        while True:
+
+        def rehacer_pendientes() -> None:
             conn = self._ensure_conn()
-            try:
-                if intentos:
-                    for previo in rehacer:
-                        self._handle_message(conn, previo["Body"])
-                return accion(conn)
-            except Exception as exc:
-                if not es_transitorio(exc):
-                    raise
-                intentos += 1
-                # La transacción quedó ABORTADA: sin esto, el siguiente intento
-                # fallaría por «current transaction is aborted» y el reintento
-                # no serviría de nada.
-                self._safe_rollback()
-                restante = limite - time.monotonic()
-                if restante <= 0:
-                    raise _TransitorioAgotado(intentos, self._transient.budget_s, exc) from exc
-                stats["n_lock_retries"] += 1
-                self._cambiar_visibilidad(
-                    en_vuelo, self._transient.inflight_visibility_s, "reintento"
-                )
-                espera = min(
-                    self._transient.base_delay_s * 2 ** (intentos - 1),
-                    self._transient.max_delay_s,
-                    restante,
-                )
-                log.warning(
-                    "base ocupada (%s); reintento %d en el sitio en %.2fs (0 recepciones)",
-                    _sqlstate(exc),
-                    intentos,
-                    espera,
-                )
-                time.sleep(espera)
+            for previo in rehacer:
+                self._handle_message(conn, previo["Body"])
+
+        def anotar() -> None:
+            stats["n_lock_retries"] += 1
+
+        return reintentar_en_el_sitio(
+            lambda: accion(self._ensure_conn()),
+            policy=self._transient,
+            # La transacción queda ABORTADA tras un 55P03: sin este rollback, el
+            # siguiente intento fallaría por «current transaction is aborted».
+            rollback=self._safe_rollback,
+            prolongar=lambda s: self._cambiar_visibilidad(en_vuelo, s, "reintento"),
+            rehacer=rehacer_pendientes,
+            anotar=anotar,
+        )
 
     def _handle_con_reintento(
         self, msg: dict, pending: list[dict], stats: dict[str, Any]

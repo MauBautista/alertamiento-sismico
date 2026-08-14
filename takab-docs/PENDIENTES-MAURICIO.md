@@ -81,6 +81,33 @@ negocio.
 
 **Desbloquea:** el traspaso real en el gabinete, y con él `T-2.70` (canary + rollback).
 
+> ### 📋 CÓMO DECIDIRLA — y una medición del 2026-08-12 que la abarata mucho
+>
+> **El gabinete de desarrollo NO tiene `GAS_VALVE` ni `DOOR_RETAINER` instalados** —medido contra
+> su propia API: `relays_status.installed = ["siren","strobe"]`—, y el despliegue al Pi de ese día
+> **no cicló nada**: los dos relés siguieron desenergizados antes y después.
+>
+> **Consecuencia práctica: esta decisión NO te bloquea hoy.** El coste que describe arriba es real
+> **solo en un gabinete que tenga esos dos relés instalados**, o sea **en la primera instalación
+> en un edificio de verdad**. En el de desarrollo, hacer el traspaso es gratis.
+>
+> **Lo que te recomiendo hacer, en este orden:**
+> 1. **Haz el traspaso YA en el gabinete de desarrollo** — cero coste, y así `T-2.70` (canary +
+>    rollback) deja de estar bloqueada. Comando y orden **no intercambiable**:
+>    `TAKAB_EDGE_GPIO_OWNER=gpio` en `edge.env` → `systemctl enable --now takab-gpio` →
+>    `systemctl restart takab-edge`. **Al revés falla contra el cerrojo.**
+> 2. **Deja la opción (A) escrita como política para la primera instalación real**: cuando montes
+>    un gabinete con gas y puertas, el traspaso se hace **en la puesta en marcha**, antes de que el
+>    edificio dependa de él — y entonces el ciclo **no le cuesta nada a nadie**, porque todavía no
+>    hay nada que proteger.
+>
+> **Con eso, (B) —el hardware— deja de tener sentido**: solo compraba evitar un ciclo que, hecho
+> en el momento correcto, es gratis. Y (B) **debilita el fail-safe**: un Pi colgado dejaría de
+> cerrar el gas.
+>
+> **Cómo contestar:** «hago el traspaso en dev y la política para instalaciones nuevas es (A)» —
+> o dime si prefieres otra cosa y por qué.
+
 ### 1.2 · ~~¿Qué gana, `empty` o `stale`?~~ — ✅ **DECIDIDA: gana `stale`** (2026-08-12)
 
 > **Decidida por delegación explícita de Mauricio** («decide por mí»), no por omisión. Queda aquí
@@ -171,6 +198,33 @@ sondeo** — 30 s en reposo, que bajan a 5 s en cuanto entra en `building_alarm`
 Mandar push por una activación manual **no es decisión técnica**: es decidir si dos personas
 pueden despertar a un edificio entero de madrugada. Las tres salidas son legítimas —push a todos,
 push solo a tácticos, o nada y que lo diga la sirena— y ninguna se puede elegir desde el código.
+
+> ### 📋 CÓMO DECIDIRLA — no hace falta que sepas de software
+>
+> **Lo que ya es cierto pase lo que pase:** la sirena **suena** (el quórum ya emite el comando) y
+> la app **explica** por qué. Lo único que se decide aquí es **si además vibra el teléfono de
+> alguien que está dormido**.
+>
+> **La pregunta, en términos de edificio:** dos personas pulsan pánico a las 3 a.m. ¿Quién debe
+> enterarse **en ese segundo**, sin esperar al siguiente sondeo?
+>
+> | Opción | A favor | En contra |
+> |---|---|---|
+> | **A · Push a todos** | Nadie se pierde una emergencia real | **Dos personas pueden despertar a 400.** Un pánico falso a las 3 a.m. cuesta credibilidad, y la credibilidad es lo que hace que la gente obedezca la siguiente alerta |
+> | **B · Push solo a tácticos** (brigada, seguridad) | Quien tiene que actuar se entera al instante; el resto se entera por la sirena, que ya suena | Si la brigada no contesta, nadie más lo sabe hasta el sondeo |
+> | **C · Nada; lo dice la sirena** | Cero riesgo de despertar a nadie por error | En un edificio grande, alguien lejos de la sirena puede no oírla |
+>
+> **Lo que yo elegiría, y por qué:** **B**. La sirena ya cubre a todo el mundo; el push añade
+> valor solo para **quien tiene que hacer algo**. Y es la única de las tres que **no cambia** si
+> mañana resulta que hay pánicos falsos: con A tendrías que dar marcha atrás delante de todo el
+> edificio.
+>
+> **Cómo contestar:** basta con que digas «A», «B» o «C» y **una frase de por qué**. La razón
+> importa más que la letra: se escribe en la ficha para que dentro de un año se pueda revisar la
+> decisión sabiendo qué se tuvo en cuenta.
+>
+> **Si eliges B, hay una pregunta de seguimiento** que puedes dejar para después: ¿qué pasa si
+> ningún táctico acusa en N minutos? (escalar a todos, avisar al SOC, o nada).
 
 ### 1.8 · ~~`lock_timeout` global en la conexión del request~~ — ✅ **DECIDIDA: se pone, ~10 s** (2026-08-12)
 
@@ -407,11 +461,46 @@ takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerroj
 > **La cita vieja «NOM-003-SCT» era una norma de TRANSPORTE y no aplicaba.** Hoy el sistema
 > declara el marco que **el cliente** afirma, con su deslinde: TAKAB no lo respalda. Eso es
 > honesto pero **no es un marco propio**, y un cliente institucional lo va a pedir.
+>
+> ### 📋 QUÉ TIENES QUE HACER, en concreto
+> **No es investigar tú la normativa: es conseguir que alguien con firma la cite.** El primer paso
+> es media hora, y **no depende de nadie más**:
+> 1. **Escribe en una página qué afirma el sistema hoy**, que es lo que un abogado necesita para
+>    poder opinar: alertamiento sísmico por contacto seco de SASMEX, actuación local determinista,
+>    registro de evidencia append-only, y **el deslinde de que TAKAB no respalda el marco que
+>    declara el cliente**. Todo eso ya está escrito en `BLUEPRINT §9` y en la ficha — es copiar y
+>    ordenar.
+> 2. **Llévaselo a un abogado con experiencia en protección civil o en responsabilidad de
+>    producto en México**, y pídele **dos cosas**: qué marco es citable para este sistema, y qué
+>    frases de las que hoy usamos habría que cambiar.
+> 3. **Pregunta también por el §1.3** (el teléfono en claro del registro de consentimientos) en la
+>    misma consulta: es de la misma persona y ahorra una segunda vuelta.
+>
+> **Por qué corre prisa aunque no bloquee código:** es **plazo externo**. El día que un cliente
+> institucional lo pida, el reloj empieza entonces — y ya llevas semanas de margen gastadas.
 
 ### 4.2 · [`T-2.77.a`](TASKS.md) · Alta del WhatsApp Business Account + aprobación de plantilla
 > **Plazo externo: lo aprueba Meta.** El código está completo y probado (53 tests); la plantilla
 > del repo está `PENDING` a propósito y el canal **cae solo** si Meta la pausa. Arrancarlo ya es
 > lo que evita que sea el cuello de botella.
+>
+> ### 📋 QUÉ TIENES QUE HACER, en concreto
+> **Meta tarda días o semanas en aprobar una plantilla, y el reloj no empieza hasta que la
+> mandas.** Todo lo de abajo es tuyo y no depende de nada del repositorio:
+> 1. **Crear el WhatsApp Business Account** en Meta Business Manager, con el número que vayas a
+>    usar. Necesita un número **que no esté ya en WhatsApp normal**.
+> 2. **Verificar el negocio** (documentos de la empresa). **Éste es el paso lento** — empiézalo
+>    primero aunque lo demás no esté.
+> 3. **Mandar la plantilla a aprobación.** La que hay que mandar **ya está escrita en el
+>    repositorio** (`PENDING` a propósito): cópiala tal cual, no la reescribas — su texto se
+>    eligió para que Meta la clasifique como **utilidad/alerta** y no como marketing, que es lo
+>    que la haría rechazable.
+> 4. **Cuando Meta apruebe**, guarda en Secrets Manager `phone_number_id`, `access_token` y
+>    `app_secret`, y avísame: el código ya está, solo hay que cablearlo.
+>
+> **Y una cosa que conviene saber antes de empezar:** si Meta **pausa** la plantilla por calidad,
+> **el canal cae solo y queda en cuarentena persistida** (`T-2.77.c`) — no hay que hacer nada, y
+> no se martillea la plantilla pausada. Eso ya está resuelto.
 
 ### 4.3 · [`T-2.76.a`](TASKS.md) · Cuenta Twilio + número mexicano
 ### 4.4 · [`T-2.97`](TASKS.md) · `GATE-STORE` · APNs/FCM reales + tono SASMEX

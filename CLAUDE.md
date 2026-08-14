@@ -147,6 +147,13 @@ takab/
   `api/tests/test_docs_consistency.py`.
 - **`takab-docs/ANALISIS-ARQUITECTURA-TAKAB.md`** — hallazgos del red-team, changelog de
   correcciones `[ANALISIS-00]` y preguntas abiertas.
+- **`takab-docs/TRASPASO-SESION.md`** — **LÉELO AL EMPEZAR SI VAS A TOCAR CÓDIGO.** Es lo que una
+  sesión nueva necesita para continuar sin reconstruirlo leyendo commits: el método de los
+  subagentes en paralelo que funcionó, **las trampas medidas que cuestan una corrida o un
+  despliegue cada una** (el `make test` que se detiene en el primer fallo, el import del SDK que
+  tumba dos suites a «0 test» en silencio, el `GRANT` de la 0001 que hace que verde en local no
+  sea verde en la nube…), y la doctrina que destiló el ciclo: **un fallback no puede ser `ok`, y
+  un censo que enumera a mano acaba divergiendo**.
 - **`takab-docs/PENDIENTES-MAURICIO.md`** — censo de **todo lo que no puede cerrar el software**:
   decisiones, ventana AWS, sesiones físicas y legal. Sale de `TASKS.md` y no lo sustituye. Si una
   tarea está bloqueada en una persona, se ficha allí **y** aquí; si solo está en `TASKS.md`, nadie
