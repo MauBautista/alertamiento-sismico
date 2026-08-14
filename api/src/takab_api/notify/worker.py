@@ -20,6 +20,7 @@ import psycopg
 from takab_api.db import pool
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.providers import NotifyProvider, build_providers
+from takab_api.ops.alerts import sweep_unacked
 from takab_api.ops.metrics import GhostGauge, count_ghosts, count_retired_alive
 
 if TYPE_CHECKING:
@@ -104,6 +105,7 @@ class NotifyWorker:
                     # sobre publicar una métrica de inventario. `maybe_publish`
                     # se estrangula sola y no lanza (contrato de GhostGauge).
                     self._ghost_gauge.maybe_publish(conn=work_conn)
+                    self._declarar_silencios(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("notify: DB no disponible; reconecta")
                     self._safe_close(work_conn)
@@ -127,6 +129,34 @@ class NotifyWorker:
     def stop(self) -> None:
         """Cierre gracioso (idempotente, seguro desde señales)."""
         self._stop.set()
+
+    def _declarar_silencios(self, conn: psycopg.Connection) -> None:
+        """[T-2.78.a] Estampa la hora del aviso de OPERACIÓN que nadie contestó.
+
+        Va de gorra en este bucle por el MISMO argumento que el medidor de
+        fantasmas de T-2.60.a: `notify` ya despierta cada pocos segundos con una
+        conexión caliente, y montar un proceso entero para un `UPDATE` que casi
+        siempre marca cero filas sería desproporcionado. **No acopla las dos
+        cadenas**: esto solo toca `ops_alert_notices` y no lee ni escribe un solo
+        job de notificación.
+
+        Y va DESPUÉS del pase y sin poder tumbarlo: que no se pueda declarar un
+        silencio de operación no puede costar el aviso de un sismo.
+        """
+        try:
+            declarados = sweep_unacked(conn)
+            conn.commit()
+        except psycopg.OperationalError:
+            raise  # la reconexión la gobierna el bucle de arriba
+        except psycopg.Error:
+            logger.warning("no se pudo declarar el silencio de operación", exc_info=True)
+            conn.rollback()
+            return
+        if declarados:
+            logger.warning(
+                "%d aviso(s) de operación sin acuse dentro de plazo: silencio DECLARADO",
+                declarados,
+            )
 
     def _drain_notifies(self, listen_conn: psycopg.Connection) -> None:
         """Espera hasta ``poll_s`` (o el primer NOTIFY); el pass decide el trabajo

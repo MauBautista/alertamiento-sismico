@@ -211,6 +211,18 @@ module "observability" {
   iot_rule_errors_log_group = module.iot_core.rule_errors_log_group_name
   paged_gateways            = var.paged_gateways
 
+  # [T-2.78.a] La URL se DERIVA de la consola publicada, no se teclea: es la misma
+  # que sirve la API detras de Caddy, y un literal aqui apuntaria a la IP de ayer
+  # el dia que la elastica cambie. Doble guarda a proposito — sin consola no hay
+  # endpoint que suscribir, y la bandera propia obliga a que la API este
+  # desplegada ANTES (ver la variable: la suscripcion se confirma durante el
+  # apply, asi que un endpoint que todavia no existe mata el apply).
+  ops_alert_https_endpoint = (
+    var.serve_enabled && var.ops_alert_https_subscriber_enabled
+    ? "${module.serve.console_url}/api/ops/alerts/sns"
+    : ""
+  )
+
   # [T-2.72] El umbral de la alarma de atasco del archivado SALE de la DB, que es
   # quien valida su `archive_timeout` contra el. Un literal aqui haria que la DB
   # se validara contra un numero y la alarma vigilara otro, y el RPO publicado

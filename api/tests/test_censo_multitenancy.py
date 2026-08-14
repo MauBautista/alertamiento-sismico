@@ -150,6 +150,27 @@ SIN_TENANT_ID: dict[str, str] = {
         "escritura solo del worker por `takab_ingest`, y NADIE con DELETE — "
         "levantar una cuarentena es un acto humano deliberado."
     ),
+    "ops_alert_notices": (
+        "Cadena de OPERACIÓN de la plataforma (T-2.78.a): el aviso que CloudWatch "
+        "publicó en el topic de on-call, quién lo acusó y cuándo, y el silencio "
+        "cuando nadie contestó. La alarma es de la DLQ, del archivado de WAL o del "
+        "disco de la EC2 — de TAKAB, no de un cliente. Una `tenant_id` aquí "
+        "tendría que inventarse un dueño (como `notify_template_quarantine`), y "
+        "además abriría lo contrario de lo que la regla 5 protege: un cliente "
+        "podría VER que el on-call de TAKAB no contestó a las 3 de la mañana. Por "
+        "eso su aislamiento NO es 'lo lee cualquier rol autenticado' sino "
+        "`app_is_takab_internal()`, que es más estrecho que el de la regla."
+    ),
+    "ops_oncall_contacts": (
+        "Las credenciales de guardia (T-2.78.a): etiqueta de la persona y el HASH "
+        "de su secreto de acuse. No es dato de negocio de ningún cliente — es la "
+        "lista de quién puede decir 'lo tengo' sobre una alarma de plataforma. Y "
+        "va más allá de la exención: la tabla tiene RLS con FORCE y **cero "
+        "políticas**, o sea default-deny total, y `takab_app` ni siquiera tiene "
+        "SELECT. La única puerta es `app_ops_alert_ack` (SECURITY DEFINER). Una "
+        "columna de tenant sería una tercera versión de una verdad que aquí no "
+        "existe."
+    ),
     "site_ground_refs": (
         "DEUDA DECLARADA, no diseño — es la única de esta lista que no lo es. Son "
         "las referencias de suelo por SITIO (punto cero del calibrador, ATTEN-LAW) "

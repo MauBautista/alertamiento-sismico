@@ -41,6 +41,12 @@ TAKAB_API_BUILD_SHA=${CLOUD_TAG}
 # PutOpsMetrics del rol de instancia (modules/database): sin el, el worker
 # registra el fallo y sigue notificando, pero la alarma se queda ciega.
 TAKAB_API_OPS_METRICS_ENABLED=true
+# [T-2.78.a] Topic de on-call. NO es un secreto (identificador publico de AWS) y
+# NO es opcional: de este ARN salen la region del unico host al que el suscriptor
+# de SNS tiene permitido salir y la comparacion que descarta un sobre firmado que
+# venga de otro topic. Sin esta linea, POST /api/ops/alerts/sns responde 503 y lo
+# grita en el log — y la suscripcion HTTPS de Terraform no se puede confirmar.
+TAKAB_API_OPS_ALERT_TOPIC_ARN=$(tf ops_topic_arn)
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).

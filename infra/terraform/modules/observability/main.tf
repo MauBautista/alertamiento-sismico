@@ -22,6 +22,18 @@ terraform {
 
 resource "aws_sns_topic" "ops_alerts" {
   name = "takab-dev-ops-alerts"
+
+  # [T-2.78.a] REGISTRO DE ENTREGA. AWS solo lo ofrece para Firehose, SQS,
+  # Lambda, HTTPS y endpoints de aplicacion: `email` y `email-json` NO estan en
+  # esa lista (https://docs.aws.amazon.com/sns/latest/dg/sns-topic-attributes.html),
+  # y por eso hasta hoy no habia forma de saber a que hora salio un aviso sin
+  # mirar el buzon de alguien. Estos tres atributos son la mitad de AWS de esa
+  # evidencia; la otra mitad —la fila con hora— la escribe el suscriptor HTTPS
+  # en `ops_alert_notices`. Con `ops_alert_https_endpoint` vacio quedan en null y
+  # el apply de hoy no cambia.
+  http_success_feedback_role_arn    = local.https_enabled ? aws_iam_role.sns_delivery_logs[0].arn : null
+  http_failure_feedback_role_arn    = local.https_enabled ? aws_iam_role.sns_delivery_logs[0].arn : null
+  http_success_feedback_sample_rate = local.https_enabled ? 100 : null
 }
 
 # La suscripcion por email exige CONFIRMACION manual (AWS manda un correo con
@@ -30,6 +42,78 @@ resource "aws_sns_topic_subscription" "ops_email" {
   topic_arn = aws_sns_topic.ops_alerts.arn
   protocol  = "email"
   endpoint  = var.ops_alert_email
+}
+
+# --- [T-2.78.a] El suscriptor que SI deja rastro ----------------------------------
+#
+# El correo del on-call sigue siendo el canal que despierta a la persona; esto no
+# lo sustituye, lo AUDITA. El mismo mensaje llega a la API, que lo verifica y
+# escribe una fila con hora — y de ahi salen el acuse humano y, sobre todo, la
+# fila del silencio cuando nadie contesta.
+#
+# `endpoint_auto_confirms = true` porque el endpoint confirma solo. Y lo hace SIN
+# visitar el `SubscribeURL` que llega en el cuerpo: reconstruye la llamada con el
+# host de la region de ESTE topic y con este mismo ARN, y del cuerpo toma solo el
+# `Token`. La razon esta en `api/src/takab_api/ops/alerts.py`, y no es teorica:
+# un suscriptor HTTPS que sigue las URLs del cuerpo es un cliente HTTP a las
+# ordenes de cualquiera desde DENTRO de la VPC.
+#
+# Vacio ⇒ no se crea nada y el apply de hoy no cambia (patron de `push/` y de la
+# identidad de dominio de T-2.78.b).
+locals {
+  https_enabled = var.ops_alert_https_endpoint != ""
+}
+
+resource "aws_sns_topic_subscription" "ops_https" {
+  count = local.https_enabled ? 1 : 0
+
+  topic_arn              = aws_sns_topic.ops_alerts.arn
+  protocol               = "https"
+  endpoint               = var.ops_alert_https_endpoint
+  endpoint_auto_confirms = true
+  raw_message_delivery   = false # el sobre firmado ENTERO: sin el no hay firma que verificar
+}
+
+data "aws_iam_policy_document" "sns_delivery_logs_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "sns_delivery_logs" {
+  count = local.https_enabled ? 1 : 0
+
+  name               = "takab-dev-sns-delivery-logs"
+  assume_role_policy = data.aws_iam_policy_document.sns_delivery_logs_assume.json
+}
+
+# Los permisos EXACTOS que la doc de SNS pide para el registro de entrega. No es
+# un `logs:*`: este rol lo asume un servicio de AWS y lo unico que tiene que
+# poder hacer es escribir el registro de sus propias entregas.
+resource "aws_iam_role_policy" "sns_delivery_logs" {
+  count = local.https_enabled ? 1 : 0
+
+  name = "takab-dev-sns-delivery-logs"
+  role = aws_iam_role.sns_delivery_logs[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:PutMetricFilter",
+        "logs:PutRetentionPolicy",
+      ]
+      Resource = "*"
+    }]
+  })
 }
 
 # --- DLQ con mensajes = pipeline envenenado o roto (E3/O1) -----------------------

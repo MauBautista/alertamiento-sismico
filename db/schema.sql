@@ -2265,3 +2265,222 @@ CREATE POLICY lc_arco_on_behalf ON life_checkins FOR UPDATE
   USING      (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_id))
   WITH CHECK (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_id)
               AND geom IS NULL);
+
+-- ---------------------------------------------------------------------------
+-- [T-2.78.a · 0041] LA CADENA DE OPERACIÓN (CloudWatch → SNS → on-call)
+--
+-- Es OTRA cadena. No comparte código, destinatario ni permiso con
+-- `notification_jobs` / `notify/orchestrator.py`, y acreditar una no dice nada
+-- de la otra — el hueco de `ses:SendEmail` de julio-2026 estuvo tapado
+-- exactamente por confundirlas.
+--
+-- El hueco que cierra: la cadena de operación no dejaba UNA sola fila en TAKAB,
+-- y AWS tampoco la da (el registro de estado de entrega de SNS soporta Firehose,
+-- SQS, Lambda, HTTPS y endpoints de aplicación; `email` y `email-json` NO están
+-- en esa lista). "Publicado" era todo lo que se podía afirmar.
+--
+-- TABLA PROPIA y no el camino de `incidents_ack`, por tres razones:
+--   · una alarma de plataforma NO tiene tenant, y `incidents_ack` cuelga de
+--     `incidents`, que sí — habría que inventarle un dueño, y peor: un cliente
+--     podría VER que el on-call de TAKAB no contestó a las 3 de la mañana;
+--   · son dos cadenas y un `kind` más en `incident_actions` las habría vuelto a
+--     mezclar en la misma consulta y en el mismo informe;
+--   · `incident_actions` es evidencia de compliance exenta de poda: engordarla
+--     con ruido de operación degrada lo que existe para sostener.
+--
+-- SIN `tenant_id`, con exención declarada en `api/tests/test_censo_multitenancy.py`.
+-- ---------------------------------------------------------------------------
+
+-- Quién puede acusar. Un acuse que exija consola + MFA a las 3 de la mañana es
+-- un acuse que no se va a dar (y la métrica mediría fricción, no atención); un
+-- enlace que cualquiera pueda pulsar no acredita nada. La credencial es personal:
+-- 256 bits acuñados una vez, de los que aquí vive SOLO el hash, con caducidad y
+-- revocación por fila.
+--
+-- NADIE tiene SELECT, ni `takab_app`: los hashes no son alcanzables desde
+-- ninguna sesión de la API. La única puerta es `app_ops_alert_ack`.
+CREATE TABLE ops_oncall_contacts (
+  contact_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  label      text NOT NULL,
+  token_hash text NOT NULL UNIQUE,       -- sha256 hex del secreto; el secreto NO se guarda
+  issued_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz
+);
+GRANT SELECT, INSERT, UPDATE ON ops_oncall_contacts TO takab_ingest;
+-- OJO: la 0001 ejecuta este cuerpo y DESPUÉS hace `GRANT ... ON ALL TABLES ... TO
+-- takab_app`, así que un REVOKE escrito aquí se desharía solo. El que de verdad
+-- deja a `takab_app` sin SELECT sobre esta tabla vive en la 0041, que corre
+-- después — con su medición al lado. Aquí queda dicho para que nadie lo "arregle"
+-- en este fichero y crea que ha cerrado algo.
+ALTER TABLE ops_oncall_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ops_oncall_contacts FORCE  ROW LEVEL SECURITY;
+-- La negativa va ESCRITA, y no como ausencia de políticas. Las dos cosas son
+-- default-deny, pero "cero políticas" es indistinguible de "el restore se comió
+-- las políticas" — que es lo que `ops/restore_check.py::rls_policies` denuncia
+-- como daño. Declarada, dice que es a propósito y sigue delatando a la que se
+-- cayó sola. `takab_ingest` (BYPASSRLS) es quien la lee por la función.
+CREATE POLICY ops_oncall_contacts_deny ON ops_oncall_contacts FOR ALL
+  USING (false) WITH CHECK (false);
+
+-- El aviso. **La fila NACE SIN ACUSE**, y ése es el diseño: nadie va a llamar a
+-- un endpoint para decir "no contesté", así que el silencio no necesita quien lo
+-- escriba — lo escribe la máquina que recibió el aviso, en el instante del
+-- aviso, con su plazo ya puesto. El acuse solo puede MODIFICAR una fila que ya
+-- existe, y `unacked_at` solo FECHA un silencio que ya estaba ahí.
+CREATE TABLE ops_alert_notices (
+  notice_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Idempotencia frente a los REINTENTOS de SNS: dos entregas del mismo mensaje
+  -- son UN aviso, o la métrica de "cuántas veces nadie contestó" se infla sola.
+  sns_message_id   text NOT NULL UNIQUE,
+  topic_arn        text NOT NULL,
+  alarm_name       text,
+  alarm_state      text,
+  subject          text,
+  state_reason     text,
+  published_at     timestamptz,          -- el `Timestamp` del sobre de SNS
+  received_at      timestamptz NOT NULL DEFAULT now(),  -- t2 de MÁQUINA
+  requires_ack     boolean     NOT NULL DEFAULT false,
+  ack_deadline_at  timestamptz,
+  acked_at         timestamptz,
+  acked_by         text,
+  acked_contact_id uuid REFERENCES ops_oncall_contacts(contact_id),
+  unacked_at       timestamptz,          -- cuándo el silencio pasó a fallo declarado
+  -- EL CANDADO DEL CRITERIO 5, en la base y no en el código: no se puede nombrar
+  -- a quien acusó sin la hora, ni poner la hora sin nombre. Un UPDATE a mano lo
+  -- intenta y la base lo rechaza.
+  CONSTRAINT ops_alert_notices_acuse_completo
+    CHECK ((acked_at IS NULL) = (acked_by IS NULL)),
+  CONSTRAINT ops_alert_notices_plazo_si_pide_acuse
+    CHECK (NOT requires_ack OR ack_deadline_at IS NOT NULL)
+);
+CREATE INDEX idx_ops_alert_notices_abiertos
+  ON ops_alert_notices (ack_deadline_at)
+  WHERE requires_ack AND acked_at IS NULL AND unacked_at IS NULL;
+CREATE INDEX idx_ops_alert_notices_recibidos ON ops_alert_notices (received_at DESC);
+GRANT SELECT ON ops_alert_notices TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON ops_alert_notices TO takab_ingest;
+
+ALTER TABLE ops_alert_notices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ops_alert_notices FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ops_alert_notices_read ON ops_alert_notices FOR SELECT
+  USING (app_is_takab_internal());   -- la cadena de operación es de TAKAB
+
+-- La consulta. `security_invoker` (PG15+) para que la RLS que se aplique sea la
+-- del rol que consulta y no la del dueño de la vista: una vista sobre una tabla
+-- con RLS es, si no, la forma más limpia de saltarse esa RLS sin querer.
+CREATE VIEW v_ops_alert_chain WITH (security_invoker = true) AS
+SELECT
+  n.notice_id, n.sns_message_id, n.topic_arn, n.alarm_name, n.alarm_state,
+  n.subject, n.state_reason, n.published_at, n.received_at, n.requires_ack,
+  n.ack_deadline_at, n.acked_at, n.acked_by, n.unacked_at,
+  -- El desenlace se CALCULA de los instantes; no hay columna de estado que
+  -- alguien pueda poner en verde. 'acusado' es imposible sin `acked_at`.
+  CASE
+    WHEN NOT n.requires_ack                       THEN 'no_requiere_acuse'
+    WHEN n.acked_at IS NOT NULL
+     AND n.ack_deadline_at IS NOT NULL
+     AND n.acked_at > n.ack_deadline_at           THEN 'acusado_tarde'
+    WHEN n.acked_at IS NOT NULL                   THEN 'acusado'
+    WHEN n.ack_deadline_at IS NOT NULL
+     AND now() > n.ack_deadline_at                THEN 'sin_acuse'
+    ELSE                                               'esperando_acuse'
+  END AS outcome,
+  -- El tiempo hasta el acuse, entre dos instantes que escribió la propia base.
+  -- Ya no se reconstruye de las cabeceras de un correo.
+  CASE WHEN n.acked_at IS NOT NULL
+       THEN extract(epoch FROM (n.acked_at - n.received_at)) END AS ack_latency_s,
+  CASE WHEN n.acked_at IS NOT NULL AND n.published_at IS NOT NULL
+       THEN extract(epoch FROM (n.acked_at - n.published_at)) END AS ack_latency_publicado_s
+FROM ops_alert_notices n;
+GRANT SELECT ON v_ops_alert_chain TO takab_app;
+
+-- Las dos escrituras vienen de una superficie PÚBLICA (el suscriptor HTTPS del
+-- topic y el acuse humano): sin sesión no hay `app.tenant_id` ni `app.role`, y
+-- la RLS de arriba es default-deny con FORCE. Mismo patrón que
+-- `app_notify_delivery` / `gov_ack_incident`: SECURITY DEFINER con dueño
+-- `takab_ingest` (BYPASSRLS), REVOKE FROM PUBLIC + GRANT solo a `takab_app`.
+CREATE FUNCTION app_ops_alert_record(
+  p_sns_message_id text, p_topic_arn text, p_alarm_name text, p_alarm_state text,
+  p_subject text, p_state_reason text, p_published_at timestamptz,
+  p_requires_ack boolean, p_ack_deadline_s double precision
+) RETURNS TABLE (
+  o_notice_id uuid, o_created boolean, o_requires_ack boolean, o_ack_deadline_at timestamptz
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE
+  v_now   timestamptz := now();
+  v_pide  boolean     := coalesce(p_requires_ack, false);
+  v_plazo double precision := greatest(coalesce(p_ack_deadline_s, 900), 1);
+  v_row   ops_alert_notices%ROWTYPE;
+BEGIN
+  INSERT INTO ops_alert_notices (
+    sns_message_id, topic_arn, alarm_name, alarm_state, subject, state_reason,
+    published_at, received_at, requires_ack, ack_deadline_at)
+  VALUES (
+    p_sns_message_id, p_topic_arn, nullif(p_alarm_name, ''), nullif(p_alarm_state, ''),
+    nullif(p_subject, ''), nullif(p_state_reason, ''), p_published_at, v_now, v_pide,
+    CASE WHEN v_pide THEN v_now + make_interval(secs => v_plazo) END)
+  ON CONFLICT (sns_message_id) DO NOTHING
+  RETURNING * INTO v_row;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_row.notice_id, true, v_row.requires_ack, v_row.ack_deadline_at;
+    RETURN;
+  END IF;
+  SELECT * INTO v_row FROM ops_alert_notices WHERE sns_message_id = p_sns_message_id;
+  RETURN QUERY SELECT v_row.notice_id, false, v_row.requires_ack, v_row.ack_deadline_at;
+END
+$fn$;
+-- LA CESIÓN DE PROPIEDAD **NO VA AQUÍ**, y no es un olvido — es la misma nota que
+-- lleva `app_notify_delivery` unas líneas más arriba, y se volvió a medir con esta
+-- ficha: este cuerpo lo ejecuta la 0001 bajo `SET ROLE takab_migrator`, que NO es
+-- miembro de `takab_ingest`, así que un `ALTER FUNCTION ... OWNER TO takab_ingest`
+-- en este fichero mata la migración inicial con `must be able to SET ROLE
+-- "takab_ingest"` (medido contra base vacía, 2026-08-14). El dueño lo pone la 0041
+-- —con el usuario de conexión, dentro de la ventana de privilegios que abre
+-- `deploy/cloud/deploy.sh`— y ahí mismo se COMPRUEBA: sin dueño `takab_ingest` la
+-- función no ve una sola fila (RLS FORCE) y el suscriptor no registraría ni un
+-- aviso, en silencio y para siempre.
+REVOKE ALL ON FUNCTION app_ops_alert_record(text,text,text,text,text,text,timestamptz,
+  boolean,double precision) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_ops_alert_record(text,text,text,text,text,text,timestamptz,
+  boolean,double precision) TO takab_app;
+
+CREATE FUNCTION app_ops_alert_ack(p_token_hash text)
+RETURNS TABLE (o_token_ok boolean, o_label text, o_acusados jsonb)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE
+  v_now      timestamptz := now();
+  v_contacto ops_oncall_contacts%ROWTYPE;
+  v_acusados jsonb;
+BEGIN
+  SELECT * INTO v_contacto FROM ops_oncall_contacts
+   WHERE token_hash = p_token_hash AND revoked_at IS NULL AND expires_at > v_now;
+  IF NOT FOUND THEN
+    -- Credencial inventada, revocada o caducada: las tres, lo mismo.
+    RETURN QUERY SELECT false, NULL::text, '[]'::jsonb;
+    RETURN;
+  END IF;
+  -- Se acusan TODOS los avisos abiertos, no uno elegido por quien llama: quien
+  -- dice "lo tengo" a las 3 de la mañana está tomando la situación entera, y
+  -- pedirle que teclee un identificador desde el teléfono es como no tener
+  -- acuse. Cada fila conserva SU `received_at`, así que la latencia por aviso
+  -- sigue siendo la suya.
+  WITH acusados AS (
+    UPDATE ops_alert_notices n
+       SET acked_at = v_now, acked_by = v_contacto.label,
+           acked_contact_id = v_contacto.contact_id
+     WHERE n.requires_ack AND n.acked_at IS NULL
+    RETURNING n.notice_id, n.alarm_name, n.received_at, n.ack_deadline_at
+  )
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+           'notice_id', a.notice_id, 'alarm_name', a.alarm_name, 'acked_at', v_now,
+           'latency_s', extract(epoch FROM (v_now - a.received_at)),
+           'tarde', (a.ack_deadline_at IS NOT NULL AND v_now > a.ack_deadline_at)
+         )), '[]'::jsonb)
+    INTO v_acusados FROM acusados a;
+  RETURN QUERY SELECT true, v_contacto.label, v_acusados;
+END
+$fn$;
+-- El dueño, otra vez, lo pone la 0041 y no este fichero (ver la nota de arriba).
+REVOKE ALL ON FUNCTION app_ops_alert_ack(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_ops_alert_ack(text) TO takab_app;

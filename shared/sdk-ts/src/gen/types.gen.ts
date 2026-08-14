@@ -1636,6 +1636,34 @@ export type NotifyWebhookAck = {
 };
 
 /**
+ * Los avisos más recientes, del más nuevo al más viejo.
+ */
+export type OpsAlertChain = {
+    items?: Array<OpsAlertNoticeOut>;
+};
+
+/**
+ * Un aviso de operación con su desenlace.
+ */
+export type OpsAlertNoticeOut = {
+    ack_deadline_at?: string | null;
+    ack_latency_publicado_s?: number | null;
+    ack_latency_s?: number | null;
+    acked_at?: string | null;
+    acked_by?: string | null;
+    alarm_name?: string | null;
+    alarm_state?: string | null;
+    notice_id: string;
+    outcome: string;
+    published_at?: string | null;
+    received_at: string;
+    requires_ack: boolean;
+    state_reason?: string | null;
+    subject?: string | null;
+    unacked_at?: string | null;
+};
+
+/**
  * [T-2.13] Voto de pánico del occupant (1.9). ``location`` es GPS opcional
  * (geofence best-effort): [lon, lat] WGS84 — fuera de radio se descarta; sin
  * GPS cuenta (LFPDPPP + RBAC §4.3).
@@ -3803,6 +3831,83 @@ export type TwilioStatusCallbackNotifyWebhooksTwilioPostResponses = {
 };
 
 export type TwilioStatusCallbackNotifyWebhooksTwilioPostResponse = TwilioStatusCallbackNotifyWebhooksTwilioPostResponses[keyof TwilioStatusCallbackNotifyWebhooksTwilioPostResponses];
+
+export type AckFormOpsAlertsAckGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ops/alerts/ack';
+};
+
+export type AckFormOpsAlertsAckGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type AckFormOpsAlertsAckGetResponse = AckFormOpsAlertsAckGetResponses[keyof AckFormOpsAlertsAckGetResponses];
+
+export type AckSubmitOpsAlertsAckPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ops/alerts/ack';
+};
+
+export type AckSubmitOpsAlertsAckPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type AckSubmitOpsAlertsAckPostResponse = AckSubmitOpsAlertsAckPostResponses[keyof AckSubmitOpsAlertsAckPostResponses];
+
+export type ReadChainOpsAlertsChainGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+    };
+    url: '/ops/alerts/chain';
+};
+
+export type ReadChainOpsAlertsChainGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChainOpsAlertsChainGetError = ReadChainOpsAlertsChainGetErrors[keyof ReadChainOpsAlertsChainGetErrors];
+
+export type ReadChainOpsAlertsChainGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: OpsAlertChain;
+};
+
+export type ReadChainOpsAlertsChainGetResponse = ReadChainOpsAlertsChainGetResponses[keyof ReadChainOpsAlertsChainGetResponses];
+
+export type SnsEndpointOpsAlertsSnsPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ops/alerts/sns';
+};
+
+export type SnsEndpointOpsAlertsSnsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type SnsEndpointOpsAlertsSnsPostResponse = SnsEndpointOpsAlertsSnsPostResponses[keyof SnsEndpointOpsAlertsSnsPostResponses];
 
 export type GetConsentStatusPrivacyConsentGetData = {
     body?: never;

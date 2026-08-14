@@ -289,6 +289,18 @@ hasta que fallan:
      Manager).
    - **Abrir el 443 a los rangos de Twilio y Meta** en el security group: hoy está restringido por
      IP, así que **los callbacks no llegarían**.
+5. **Nuevo (2026-08-14, `T-2.78.a`): el suscriptor HTTPS de la cadena on-call, y su ORDEN es
+   estricto porque la suscripción SE CONFIRMA DURANTE EL `apply`.**
+   1. Desplegar la API **con `TAKAB_API_OPS_ALERT_TOPIC_ARN`**.
+   2. `curl -X POST …/api/ops/alerts/sns -d '{}'` → debe dar **404**. **Si da 503, falta el ARN:
+      PARA AHÍ** — seguir hace que el `apply` muera a medias.
+   3. Solo entonces `ops_alert_https_subscriber_enabled = true` + `apply`.
+   4. Acuñar tu credencial de guardia: `python -m takab_api.ops.oncall issue`.
+   > **Guárdala en el gestor de contraseñas y pon la página de acuse como marcador en el
+   > teléfono.** La base solo guarda su **hash**, así que si la pierdes no se recupera: se acuña
+   > otra y se revoca la vieja. **Y no viaja en el correo a propósito** — los escáneres de los
+   > buzones pulsan los enlaces, así que un acuse por enlace lo daría una máquina antes de que tú
+   > leyeras nada.
 
 > **La trampa del SSO se cobró este despliegue, y conviene saber cómo se reconoce.** Falló con
 > `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no es

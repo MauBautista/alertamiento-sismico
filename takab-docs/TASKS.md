@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **279** · `[x]` **217** · `[~]` **9** · `[ ]` **53**
+**Conteo de tareas:** total **280** · `[x]` **218** · `[~]` **9** · `[ ]` **53**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5330,6 +5330,21 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > script **publica una primera medida en el acto**: el correo de `ok_actions` es la señal de que
 > arrancó, y su ausencia es el indicio. Queda como paso escrito en el runbook.
 
+### [ ] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
+- **Componente:** api (tests) · **Detectada por:** `T-2.78.a` (2026-08-14)
+- `tests/ops/test_restore_check.py` hace `ALTER ROLE takab_app RENAME TO takab_app_probe`. Los
+  roles **no son por base: son del clúster**, así que mientras ese test corre **ninguna otra base
+  del mismo Postgres tiene un rol `takab_app`**.
+- **Consecuencia medida:** no se puede verificar una migración contra base limpia mientras la
+  suite corre, **aunque sea otra base**. Es de la familia de `T-2.115` y `T-2.122` —el veredicto
+  depende de algo que no está en el test— pero peor: **cruza la frontera de la base**, que es
+  justo la que todo el aislamiento de la suite da por buena.
+- Hoy no rompe nada porque la suite es secuencial; **el día que alguien la paralelice, sí**.
+- **Criterios de aceptación:**
+  - [ ] El test acredita lo mismo sin renombrar un rol del clúster, o **declara** que exige
+        exclusividad y algo lo impone.
+  - [ ] Un test que falle si otro vuelve a renombrar un rol compartido.
+
 ### [ ] T-2.141 · El aviso de backup base llega cuando ya no hay ventana — `SOFTWARE`
 - **Componente:** infra · **Detectada por:** `T-2.72.b` (2026-08-13), **al implementarla**
 - El umbral que pedía `T-2.72.b` es `base_backup_interval_days × chain_margin`. Con los valores
@@ -5962,7 +5977,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
     con `notify/orchestrator.py`. Acreditar una no dice nada de la otra — el hueco de
     `ses:SendEmail` de julio-2026 estuvo tapado exactamente por eso.
 
-### [ ] T-2.78.a · Acuse y evidencia de entrega de la cadena de operación — `SOFTWARE`
+### [x] T-2.78.a · Acuse y evidencia de entrega de la cadena de operación — `SOFTWARE`
 - **Componente:** infra + api · **Depende de:** —
 - **Por qué es tarea propia:** `T-2.78` tiene que cronometrar el instante en que **una persona
   acusa**, y hoy no hay dónde escribirlo. La cadena de operación (CloudWatch → SNS → correo)
@@ -5978,19 +5993,65 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   (`db/schema.sql:1002-1030`: `created_at`, `due_at`, `deadline_at`, `sent_at`, `attempts`,
   `error` — y nada más).
 - **Criterios de aceptación:**
-  - [ ] **Evidencia de máquina de que el aviso salió del topic.** Suscribir al mismo topic un
+  - [x] **Evidencia de máquina de que el aviso salió del topic.** Suscribir al mismo topic un
         endpoint que SÍ admita registro de entrega (HTTPS o Lambda, por la lista de arriba), de
         modo que quede un rastro con hora sin depender del buzón de nadie.
-  - [ ] **Un acuse con hora.** Un humano confirma "lo tengo" y queda registrado. Reutilizar el
+  - [x] **Un acuse con hora.** Un humano confirma "lo tengo" y queda registrado. Reutilizar el
         camino de `incidents_ack` sería mezclar dos cadenas distintas (ver T-2.78): decidir
         explícitamente si es una tabla propia o un objeto de operación aparte, y escribir por
         qué.
-  - [ ] **El tiempo hasta el acuse es consultable**, no reconstruible a mano desde cabeceras de
+  - [x] **El tiempo hasta el acuse es consultable**, no reconstruible a mano desde cabeceras de
         correo.
-  - [ ] **Si nadie acusa, eso también se registra.** Un salto sin acuse que no deja fila es una
+  - [x] **Si nadie acusa, eso también se registra.** Un salto sin acuse que no deja fila es una
         anécdota, no una métrica: a la tercera vez nadie recuerda las dos primeras.
-  - [ ] Test: un aviso sin acuse **jamás** aparece como atendido (mismo principio que T-2.75 —
+  - [x] Test: un aviso sin acuse **jamás** aparece como atendido (mismo principio que T-2.75 —
         el canal que no entrega no finge).
+
+> **Cerrada (2026-08-14).** Suscriptor **HTTPS** —no Lambda— porque lo que hace útil la ficha no
+> es «que quede un log», es que **el tiempo hasta el acuse sea consultable y el silencio deje
+> fila**: eso es una escritura en la base de TAKAB, y una Lambda tendría que llegar a ella o
+> reenviar a la API, con lo que **el endpoint público existe igual y hay un sitio más donde perder
+> el aviso**.
+>
+> **La SSRF se cerró mejor que validando la URL: `SubscribeURL` NO SE VISITA JAMÁS.** La llamada
+> de confirmación se **reconstruye** con la región de *nuestro* ARN, el `TopicArn` de *nuestra*
+> configuración, y del cuerpo solo el `Token` opaco. Ventaja lateral: `ConfirmSubscription` es
+> llamable sin firmar ⇒ **cero IAM nuevo**. Sigue entrando en el texto canónico —AWS lo firma—
+> pero **como dato, no como destino**.
+> `SigningCertURL` sí se valida antes de abrir socket: `https`, host **exactamente**
+> `sns.<región>.amazonaws.com` (por `hostname`, **no `netloc`**), sin userinfo, sin puerto, ruta
+> con patrón estricto, sin query. El test hostil tiene **10 casos** —incluidos `169.254.169.254`
+> (metadatos de instancia), `…amazonaws.com.evil.mx` y `…amazonaws.com@evil.mx`— sobre un arnés
+> que **es la única salida a la red y revienta ante cualquier host ajeno**, y su no-vacuidad la da
+> el caso legítimo.
+>
+> **⚠️ Y el hallazgo que decide el diseño del acuse: los escáneres de los buzones PULSAN los
+> enlaces de los correos.** Un acuse por `GET` lo fabricaría **una máquina antes de que nadie
+> leyera nada**, y el criterio 5 quedaría violado **desde el primer correo**. Por eso `GET` solo
+> pinta el formulario y **el acuse es `POST`**, con una credencial personal de guardia (256 bits,
+> la base guarda **solo el hash**, con caducidad y revocación por fila) que **nunca viaja en el
+> correo**. No es consola+MFA porque un acuse que exija abrir el SOC a las 3 a.m. no se da, y
+> entonces la métrica mediría **fricción, no atención**. Lo que acredita, sin adornos: **lo mismo
+> que poder leer el buzón de guardia** — pero a nombre de una persona, revocable sin tocar el
+> buzón, y caduca sola.
+>
+> **Tabla propia**, no `incidents_ack`, y la segunda razón es la que pesa: una alarma de
+> plataforma **no tiene tenant**, y colgarla de `incidents` haría que **un cliente pudiera ver que
+> el on-call de TAKAB no contestó**.
+>
+> **La fila del silencio la escribe la máquina que recibió el aviso, en el instante del aviso** —
+> nace **sin acuse**, con su plazo puesto; el acuse solo puede *modificar* una fila que ya existe,
+> y el barrido únicamente le **pone hora**. Así **un cambio de configuración no puede mover un
+> silencio ya ocurrido**. Y el criterio 5 queda **estructural en la base**:
+> `CHECK ((acked_at IS NULL) = (acked_by IS NULL))` — «acusado» es **imposible** sin hora.
+>
+> **Hallazgo grave, de los que solo se ven en base nueva:** la `0001` termina con
+> `GRANT … ON ALL TABLES … TO takab_app`, así que **en la nube** (base nueva) `takab_app` salía
+> con SELECT sobre la tabla de **hashes de credencial** y con escritura sobre los avisos; **en
+> base existente, no**. **Verde local, otra cosa en producción.** Cerrado con dos `REVOKE` en la
+> 0041 y anclado con test.
+>
+> **Deja abierta** `T-2.142`.
 
 ### [x] T-2.78.b · Identidad de DOMINIO de SES en Terraform — `SOFTWARE`
 - **Componente:** infra · **Depende de:** —

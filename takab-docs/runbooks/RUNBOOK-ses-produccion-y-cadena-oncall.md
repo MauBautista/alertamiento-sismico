@@ -362,11 +362,102 @@ AWS conserva ese histórico 30 días: *"CloudWatch preserves alarm history for 3
 transition is marked with a unique timestamp."*
 — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html
 
-**Qué NO se puede medir con lo que hay:** no existe ningún mecanismo de acuse en el sistema para
-esta cadena. `POST /incidents/{id}/ack` (`api/src/takab_api/routers/incidents_ack.py:37`) acusa
-un **incidente sísmico**, no una alarma de operación, y ni siquiera existe una fila donde
-apuntar t3. **t3 se anota a mano en la tabla §3.7.** Eso es aceptable para acreditar la tarea
-una vez; no lo es como régimen permanente — ver ficha `T-2.78.a`.
+**~~Qué NO se puede medir con lo que hay~~ · CERRADO POR `T-2.78.a` (software, 2026-08-14).**
+Hasta esa ficha no existía ningún mecanismo de acuse para esta cadena: `POST
+/incidents/{id}/ack` acusa un **incidente sísmico**, no una alarma de operación, y no había
+fila donde apuntar t3. Ahora sí la hay, y **t2 y t3 dejaron de anotarse a mano**. Ver §3.8.
+
+> **Sigue siendo cierto que AWS no puede decirte si el CORREO se entregó** (§3.6). Lo que
+> `T-2.78.a` añade no es eso: es un **segundo suscriptor del mismo topic**, por HTTPS, que sí
+> admite registro de entrega — y que además escribe la fila. El correo sigue siendo el canal
+> que despierta a la persona; el suscriptor es el que deja constancia.
+
+### 3.8 t2 y t3 de MÁQUINA (`T-2.78.a`)
+
+Con `ops_alert_https_subscriber_enabled = true` (ver §3.9, y **léelo antes: el orden importa**)
+cada mensaje del topic llega también a `POST /api/ops/alerts/sns`, que verifica la firma RSA
+del sobre y escribe una fila en `ops_alert_notices`. Esa fila **nace sin acuse**, con su plazo
+puesto — que es la respuesta a "quién escribe la fila del que no contestó": nadie, después.
+La escribe la máquina que recibió el aviso, en el instante del aviso.
+
+| Instante | De dónde sale ahora | Sustituye a |
+|---|---|---|
+| **t2′** | `received_at` de `v_ops_alert_chain` — el reloj de nuestro servidor, sin depender del buzón de nadie | la cabecera `Date:` del correo |
+| **t3** | `acked_at` de la misma fila | la hora de la respuesta, anotada a mano |
+| **t3 − t2′** | `ack_latency_s`, **calculado por la base** | una resta a mano entre dos relojes distintos |
+
+```bash
+# Todo lo del ensayo, en una consulta (desde la instancia):
+docker exec takab-db psql -U postgres -d takab -c \
+  "SELECT alarm_name, alarm_state, received_at, acked_at, acked_by, unacked_at, outcome,
+          round(ack_latency_s) AS s_hasta_acuse
+     FROM v_ops_alert_chain ORDER BY received_at DESC LIMIT 10"
+```
+
+`outcome` sale de la vista y **no es una columna que nadie pueda poner en verde**: `acusado` es
+imposible sin `acked_at`. Los cinco valores: `no_requiere_acuse` (una vuelta a `OK` se registra
+pero no abre plazo), `esperando_acuse`, `sin_acuse`, `acusado`, `acusado_tarde`.
+
+**Cómo acusa la persona** — y por qué así:
+
+1. Se le acuña UNA credencial personal, y se le enseña UNA vez:
+   ```bash
+   # en la instancia, dentro del contenedor de la API
+   python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
+   ```
+   La base guarda **solo el hash**; el secreto no se puede recuperar de ningún sitio. Se pega
+   en el gestor de contraseñas de la persona, con `https://<consola>/api/ops/alerts/ack`
+   guardado como marcador en su teléfono.
+2. A las 3 de la mañana: abrir el marcador, el gestor rellena el campo, un toque.
+3. `python -m takab_api.ops.oncall revoke --contact-id <uuid>` cuando esa persona deja la
+   guardia. `list` dice quién sigue vigente.
+
+**Por qué NO es la consola con MFA:** un acuse que exija abrir el SOC y pasar MFA a las 3 de la
+mañana es un acuse que no se va a dar, y entonces C-5 mediría fricción y no atención. **Por qué
+no es un enlace pelado en el correo:** los escáneres de seguridad de los buzones **pulsan los
+enlaces**; un acuse por `GET` lo fabricaría una máquina antes de que nadie leyera nada. Por eso
+el acuse es un `POST` y la credencial no viaja nunca en el correo. **Qué acredita, dicho sin
+adornos:** lo mismo que poder leer el buzón de guardia — que es el listón que ya tiene
+cualquiera que reciba la alarma. Lo que añade es que el acuse queda **a nombre de una persona**,
+se **revoca sin tocar el buzón** y **caduca solo**.
+
+**Y si nadie acusa:** la fila ya existe desde el aviso, así que el silencio no depende de que
+alguien lo apunte. Pasado `TAKAB_API_OPS_ACK_DEADLINE_S` (default **900 s**, y ese número lo
+tiene que ratificar la pregunta P-3 del §4.3 — hoy es un default, no una política), el worker
+`notify` estampa `unacked_at`: la hora en que el silencio dejó de ser espera y pasó a fallo
+declarado. Es donde engancha el salto 2 del §4.2.
+
+### 3.9 [ORDEN] Encender el suscriptor sin romper el apply
+
+**La suscripción HTTPS se confirma DURANTE el `terraform apply`**
+(`endpoint_auto_confirms = true`). Si el endpoint todavía no existe, o existe pero contesta
+`503` porque le falta el ARN del topic, la confirmación falla y **el apply muere a medias**.
+Orden correcto, y qué se rompe al revés:
+
+1. **Desplegar la API** con `T-2.78.a` dentro y con `TAKAB_API_OPS_ALERT_TOPIC_ARN` puesto en
+   `cloud.env` (el ARN del topic; no es secreto). Sin esa variable el endpoint es fail-closed
+   **ruidoso**: `503` y un `ERROR` en el log que dice exactamente qué falta.
+2. **Comprobar el endpoint desde fuera**, antes de tocar Terraform:
+   ```bash
+   # Un cuerpo sin firma tiene que dar 404 (y NO 503, y NO 200).
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+     https://<consola>/api/ops/alerts/sns -d '{}'
+   ```
+   `404` = configurado y rechazando lo que no viene firmado ⇒ seguir. `503` = falta el ARN,
+   **para aquí**. `404` de nginx/Caddy con cuerpo HTML = la imagen desplegada no trae la ruta.
+3. **Entonces** `ops_alert_https_subscriber_enabled = true` y `terraform apply`.
+4. Comprobar que la suscripción quedó `Confirmed` y que el registro de entrega está puesto:
+   ```bash
+   ! AWS_PROFILE=takab-dev aws sns list-subscriptions-by-topic --region us-east-2 \
+       --topic-arn "$TOPIC" --query 'Subscriptions[?Protocol==`https`]' --output table
+   ! AWS_PROFILE=takab-dev aws sns get-topic-attributes --region us-east-2 \
+       --topic-arn "$TOPIC" --query 'Attributes.HTTPSuccessFeedbackRoleArn'
+   ```
+
+**Al revés** (Terraform primero) el `apply` falla en el recurso de la suscripción, deja el resto
+aplicado y hay que repetirlo — no destruye nada, pero convierte una ventana de diez minutos en
+una tarde. Y **no lo enciendas con `serve_enabled = false`**: sin consola publicada no hay URL
+que suscribir, y el módulo lo trata como apagado a propósito.
 
 ### 3.5 Engancha aquí la verificación de la alarma de fantasmas
 
@@ -437,11 +528,13 @@ por SSM, jamás una alerta.
 | C-2 | **t0** — hora de la condición | — |  |  |  |
 | C-3 | **t1** — transición a `ALARM` en `describe-alarm-history` | t1 − t0 ≤ 1 min |  |  |  |
 | C-4 | **t2** — cabecera `Date:` del correo | t2 − t1 ≤ 2 min |  |  |  |
-| C-5 | **t3 — acuse humano, con rastro** | **[HUECO] objetivo sin fijar — ver §4.3 P-3** |  |  |  |
+| C-4′ | **t2′** — `received_at` en `v_ops_alert_chain` (§3.8) | fila presente, ≤ 2 min tras t1 |  |  |  |
+| C-5 | **t3 — acuse humano, con rastro** — `acked_at`/`ack_latency_s` de la misma fila, ya NO a mano | **objetivo sin fijar — ver §4.3 P-3**; el mecanismo existe desde `T-2.78.a` |  |  |  |
+| C-5′ | Con el acuse dado, `outcome` = `acusado` (o `acusado_tarde`) y `acked_by` trae el nombre | sí |  |  |  |
 | C-6 | ¿El texto de `--state-reason` viaja en el cuerpo del correo? | SÍ/NO |  |  |  |
 | C-7 | Vuelta sola a `OK` + correo de `ok_actions` | ≤ ~5 min tras t1 |  |  |  |
 | C-8 | Repetición **fuera de horario** (02:00–05:00 local) | mismo t3 o mejor |  |  |  |
-| C-9 | Ensayo con el **primer** contacto deliberadamente sin responder | escala al segundo (§4) |  |  |  |
+| C-9 | Ensayo con el **primer** contacto deliberadamente sin responder | escala al segundo (§4) **y la fila queda en `sin_acuse` con `unacked_at` puesto** |  |  |  |
 | C-10 | Fantasmas: sale de `INSUFFICIENT_DATA` tras el apply (§3.5) | correo de `ok_actions` |  |  |  |
 
 **C-8 no es opcional.** Una cadena que solo se ha probado a las 11 de la mañana no está probada:
@@ -519,9 +612,10 @@ Y `T-2.75` hace que esto sea *visible* en vez de mentiroso: un canal simulado ma
   NO está en el camino de actuación… solo sirve para que un humano vaya a ver el gabinete, y
   para eso 10 minutos son lo mismo que uno"*. El acuse humano se mide contra ese mismo rasero,
   no contra el SLA de notificación de un sismo (30 s, `settings.py:233`), que es **otra cadena**.
-- **P-4 · ¿Quién ejecuta el salto 2?** Hoy no hay automatismo. O lo hace una persona (¿cuál?, si
-  el primario es quien no contesta), o hace falta software (`T-2.78.a`). Las dos respuestas son
-  válidas; **"ya veremos" no lo es.**
+- **P-4 · ¿Quién ejecuta el salto 2?** Sigue sin haber automatismo, y `T-2.78.a` **no lo
+  inventa**: lo que aporta es el *disparador* medible — `unacked_at` puesto y `outcome =
+  'sin_acuse'` (§3.8) — y el registro de que ocurrió. Quién marca el teléfono sigue siendo una
+  persona, y hay que escribir cuál. **"Ya veremos" sigue sin ser una respuesta.**
 - **P-5 · ¿Y si el canal del secundario tampoco es el correo?** Ver §4.1: si la respuesta es
   "SMS", el escalamiento depende de `T-2.76.a` y **no está escrito, está prometido**.
 - **P-6 · ¿Cuándo se revisa?** Una rotación sin fecha de revisión caduca en silencio: la persona
@@ -541,6 +635,24 @@ La pregunta que nadie escribe. Respuestas posibles, para elegir una explícitame
    escribe.
 3. **Registro obligatorio:** todo salto sin acuse se anota. Sin eso, "nadie contestó" es una
    anécdota y no una métrica, y a la tercera vez nadie se acuerda de las dos primeras.
+   **Esta tercera ya no es una opción que elegir: es automática desde `T-2.78.a`.** La fila
+   nace con el aviso y nace sin acuse, así que el silencio no depende de que nadie se acuerde
+   de apuntarlo; el worker le pone hora (`unacked_at`) cuando vence el plazo. Contar cuántas
+   veces pasó es una consulta:
+
+   ```sql
+   SELECT date_trunc('week', received_at) AS semana,
+          count(*) FILTER (WHERE outcome = 'sin_acuse')      AS sin_acuse,
+          count(*) FILTER (WHERE outcome = 'acusado_tarde')  AS tarde,
+          count(*) FILTER (WHERE outcome = 'acusado')        AS a_tiempo,
+          round(avg(ack_latency_s) FILTER (WHERE acked_at IS NOT NULL)) AS s_medios
+     FROM v_ops_alert_chain WHERE requires_ack GROUP BY 1 ORDER BY 1 DESC;
+   ```
+
+   Lo que sigue siendo decisión humana son las dos primeras (declarar la degradación y avisar
+   o no al cliente). El punto 1 no cambia y conviene repetirlo: **que nadie conteste un correo
+   no deja un edificio desprotegido** (regla de oro 2), deja un fallo de infraestructura sin
+   atender.
 
 Escribe cuál de las tres se adopta, y las tres si son compatibles. Un escalamiento que termina
 en "…y entonces ya" no termina.
@@ -557,7 +669,15 @@ Honestidad primero, como el resto de la casa:
   `sent`; SNS `publish()` sin error ⇒ push contado. Ninguno significa "está en la pantalla de
   alguien". Para SNS-email, AWS ni siquiera ofrece el dato (§3.6).
 - **No acredita el SMS**: hoy cae a simulado (`T-2.76.a`).
-- **No deja el acuse medido de forma repetible**: t3 se anota a mano (`T-2.78.a`).
+- **~~No deja el acuse medido de forma repetible~~ · resuelto (`T-2.78.a`, 2026-08-14):** t3 y
+  el tiempo hasta el acuse salen ahora de `v_ops_alert_chain` (§3.8) y el silencio deja fila
+  sola. Lo que este runbook **sigue** sin acreditar de eso es lo humano: que la persona de
+  guardia tenga su credencial acuñada, la lleve en el teléfono y la use. Eso se mide en C-5 y
+  no lo cierra ningún commit.
+- **No acredita que el correo llegue a una bandeja**, ni con el suscriptor puesto: el
+  suscriptor HTTPS prueba que **el topic entregó**, no que el buzón lo recibiera (§3.6 sigue
+  vigente: un rebote suprime una dirección 7 días sin avisar a nadie). Son dos hechos y esto
+  solo acredita el primero.
 - **No cubre bounces ni quejas de SES**: no hay feedback topic (`T-2.78.b`). Y el reconocimiento
   de la solicitud de producción afirma que sí hay un proceso (§2.4).
 

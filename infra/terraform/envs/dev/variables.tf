@@ -22,6 +22,24 @@ variable "serve_enabled" {
   default     = false
 }
 
+# [T-2.78.a] Suscribe la API al topic de on-call para que cada aviso deje una fila
+# con hora (y un sitio donde escribir el acuse y el silencio). AWS no da registro
+# de entrega para `email`, asi que sin esto lo unico afirmable de la cadena de
+# operacion es "SNS lo publico".
+#
+# `false` es el default Y ES UNA PUERTA DE ORDEN, no timidez: la suscripcion se
+# CONFIRMA SOLA (`endpoint_auto_confirms`), asi que AWS llama al endpoint DURANTE
+# el apply. Si la API desplegada todavia no sirve `POST /api/ops/alerts/sns` —o
+# no tiene `TAKAB_API_OPS_ALERT_TOPIC_ARN` puesto, y entonces contesta 503— la
+# confirmacion falla y el apply muere a medias. El orden correcto es:
+# desplegar la API primero, comprobar el endpoint, y solo entonces poner esto en
+# `true`. Al reves se rompe.
+variable "ops_alert_https_subscriber_enabled" {
+  description = "Suscribe la API (POST /api/ops/alerts/sns) al topic de on-call. Exige la consola publicada y la API YA desplegada con el endpoint vivo: la suscripcion se confirma durante el apply."
+  type        = bool
+  default     = false
+}
+
 variable "web_allowed_cidrs" {
   description = <<-EOT
     CIDRs con acceso al 443 de la consola. Vacio = inalcanzable (default seguro).
