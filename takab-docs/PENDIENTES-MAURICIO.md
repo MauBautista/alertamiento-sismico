@@ -219,14 +219,33 @@ suite **lo declara en voz alta** en vez de callarlo.
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 
-> **El gabinete YA corre el código nuevo (2026-08-12), así que esto se puede hacer.**
-> `gw-dev-0001` está `online` con `fw_version` = `fw_running` = `2d12c3a` —las dos columnas existen
-> precisamente para cazar «código escrito que nadie corre», y coinciden— y con `SCHEMA_VERSION
-> 1.11.0`. La nube va en el mismo commit.
+> **✅ Hoja de ruta escrita:**
+> [`runbooks/RUNBOOK-gate-hw-movil-y-voceo.md`](runbooks/RUNBOOK-gate-hw-movil-y-voceo.md).
 >
-> **Lo que te toca:** re-correr el flujo **`GATE-HW 02`**, que se acreditó contra la conducta
-> vieja. Lo que verás distinto: silenciar durante una alerta vigente ahora dice **«SU DEMANDA SE
-> RETIRÓ · LA SIRENA SIGUE ACTIVA»** en vez de fingir éxito.
+> ### ⚠️ CORRECCIÓN — lo que esta sección decía hasta el 2026-08-16 era falso
+>
+> Decía: «re-correr el flujo **`GATE-HW 02`**, que se acreditó contra la conducta vieja». **La
+> premisa no se sostiene.** `02-tactico-foto-danos.yaml` es **cámara forense → daños → Triage**: no
+> pulsa el control táctico, no silencia nada y no lee la hoja de acuse. Re-correrlo no mostraría
+> nada nuevo.
+>
+> Y no es solo el 02: **ninguno de los seis flujos de Maestro toca el control táctico.** O sea que
+> la conducta de `T-2.107`→`T-2.116`→`T-2.120` **no tiene cobertura E2E en dispositivo real** —
+> está probada en CI (`ackTracking.test.tsx` conduce la ruta real y asserta el texto), pero no en
+> un teléfono. El runbook trae el escenario manual (Bloque B) que sí la acredita.
+>
+> **Y una trampa que ese escenario tiene dentro:** el **modo prueba del WR-1 NO sirve** para esto.
+> No publica a la nube, así que la app nunca vería una alerta vigente. **Hace falta una alerta
+> real** — con incidente, notificaciones y sirena audible. Va con aviso previo.
+>
+> **Lo que de verdad falta acreditar:** el flujo **`03` (dictamen → liberación)**, que es el único
+> de los seis **nunca acreditado** y necesita la firma de un inspector en la consola web.
+>
+> ### 🎁 Y algo que puedes encender HOY, sin comprar ni grabar nada
+> `TAKAB_EDGE_AUDIO_SIREN_ENABLED=true` da **sirena audible por el jack de 3.5 mm** con el WAV ya
+> empaquetado. No confundir con `TAKAB_EDGE_AUDIO_ENABLED` (voceo hablado), que **exige las dos
+> grabaciones y rompe el arranque si faltan**. Y ahora es barato: desde
+> [`D-04`](DECISIONES-MAURICIO.md), reiniciar `takab-edge` no mueve un relé.
 
 ### 3.5 · ~~El traspaso del dueño de los pines~~ — ✅ **HECHO en dev** (2026-08-16)
 
