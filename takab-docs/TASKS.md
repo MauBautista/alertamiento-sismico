@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **283** · `[x]` **231** · `[~]` **9** · `[ ]` **43**
+**Conteo de tareas:** total **284** · `[x]` **231** · `[~]` **9** · `[ ]` **44**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
