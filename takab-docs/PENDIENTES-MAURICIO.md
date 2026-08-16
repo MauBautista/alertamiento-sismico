@@ -245,22 +245,22 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > declara el marco que **el cliente** afirma, con su deslinde: TAKAB no lo respalda. Eso es
 > honesto pero **no es un marco propio**, y un cliente institucional lo va a pedir.
 >
-> ### 📋 QUÉ TIENES QUE HACER, en concreto
-> **No es investigar tú la normativa: es conseguir que alguien con firma la cite.** El primer paso
-> es media hora, y **no depende de nadie más**:
-> 1. **Escribe en una página qué afirma el sistema hoy**, que es lo que un abogado necesita para
->    poder opinar: alertamiento sísmico por contacto seco de SASMEX, actuación local determinista,
->    registro de evidencia append-only, y **el deslinde de que TAKAB no respalda el marco que
->    declara el cliente**. Todo eso ya está escrito en `BLUEPRINT §9` y en la ficha — es copiar y
->    ordenar.
-> 2. **Llévaselo a un abogado con experiencia en protección civil o en responsabilidad de
->    producto en México**, y pídele **dos cosas**: qué marco es citable para este sistema, y qué
->    frases de las que hoy usamos habría que cambiar.
-> 3. **Lleva en la misma consulta la postura [`D-07`](DECISIONES-MAURICIO.md)** —cripto-borrado del
->    teléfono del consentimiento— y pregúntale las dos cosas que esa decisión deja abiertas a
->    propósito: si un número **cifrado** sigue siendo dato personal mientras exista la clave, y si
->    **destruir la clave** se acepta como cancelación a efectos de la LFPDPPP. Es de la misma
->    persona y ahorra una segunda vuelta.
+> ### 📋 QUÉ TIENES QUE HACER — **el paso 1 ya está hecho**
+>
+> **✅ El documento para el abogado está escrito:**
+> [`CONSULTA-LEGAL-TAKAB.md`](CONSULTA-LEGAL-TAKAB.md). Recoge, separado y sin mezclar, **lo que el
+> sistema afirma hoy** (§2), **lo que niega afirmar** con el deslinde literal (§3) y **las cinco
+> preguntas** (§4). Incluye lo que **NO** está acreditado —el gate de latencia física
+> contacto→relé→sirena— porque un documento legal que mezcle lo medido con lo aspirado convierte
+> una consulta en una declaración.
+>
+> **Lo que queda es tuyo y no depende de nadie más:**
+> 1. **Llévaselo a un abogado con experiencia en protección civil o en responsabilidad de producto
+>    en México.** Pídele las dos cosas del §4.1 y §4.2 del documento: qué marco es citable, y qué
+>    frases habría que cambiar.
+> 2. **En la misma consulta va el §4.4**, que es la postura [`D-07`](DECISIONES-MAURICIO.md)
+>    —cripto-borrado del teléfono del consentimiento— con las dos preguntas que deja abiertas a
+>    propósito. Es de la misma persona y ahorra una segunda vuelta.
 >
 > **Por qué corre prisa aunque no bloquee código:** es **plazo externo**. El día que un cliente
 > institucional lo pida, el reloj empieza entonces — y ya llevas semanas de margen gastadas.
@@ -270,19 +270,16 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > del repo está `PENDING` a propósito y el canal **cae solo** si Meta la pausa. Arrancarlo ya es
 > lo que evita que sea el cuello de botella.
 >
-> ### 📋 QUÉ TIENES QUE HACER, en concreto
-> **Meta tarda días o semanas en aprobar una plantilla, y el reloj no empieza hasta que la
-> mandas.** Todo lo de abajo es tuyo y no depende de nada del repositorio:
-> 1. **Crear el WhatsApp Business Account** en Meta Business Manager, con el número que vayas a
->    usar. Necesita un número **que no esté ya en WhatsApp normal**.
-> 2. **Verificar el negocio** (documentos de la empresa). **Éste es el paso lento** — empiézalo
->    primero aunque lo demás no esté.
-> 3. **Mandar la plantilla a aprobación.** La que hay que mandar **ya está escrita en el
->    repositorio** (`PENDING` a propósito): cópiala tal cual, no la reescribas — su texto se
->    eligió para que Meta la clasifique como **utilidad/alerta** y no como marketing, que es lo
->    que la haría rechazable.
-> 4. **Cuando Meta apruebe**, guarda en Secrets Manager `phone_number_id`, `access_token` y
->    `app_secret`, y avísame: el código ya está, solo hay que cablearlo.
+> ### 📋 QUÉ TIENES QUE HACER, paso a paso
+>
+> **✅ Runbook escrito:**
+> [`runbooks/RUNBOOK-alta-whatsapp-business.md`](runbooks/RUNBOOK-alta-whatsapp-business.md).
+> Trae el **cuerpo literal** que hay que mandarle a Meta, el **digest** de la plantilla, por qué
+> `UTILITY` no es una preferencia de estilo, y el checklist de estado.
+>
+> **Empieza por el paso 2 —verificar el negocio—, no por el 1.** Es el lento, y es independiente
+> de la plantilla. Y ojo: **ese trámite necesita dominio, igual que §2.9** — si compras dominio
+> para Meta, cómpralo pensando también en SES. Es el mismo trámite sirviendo a dos cosas.
 >
 > **Y una cosa que conviene saber antes de empezar:** si Meta **pausa** la plantilla por calidad,
 > **el canal cae solo y queda en cuarentena persistida** (`T-2.77.c`) — no hay que hacer nada, y
