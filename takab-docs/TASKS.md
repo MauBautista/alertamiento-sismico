@@ -7804,8 +7804,12 @@ sería documentar intenciones.
 - **No es el ciclo indetectable de `T-2.73.c`** —no cuelgan de una transacción de request— pero un
   ACCESS EXCLUSIVE ajeno sobre `incidents` o sobre la vista de features **para el hub o el poller
   en silencio**, y un SOC que deja de recibir sin decirlo choca de frente con la regla de oro 7.
-- **Emparentada con la decisión abierta de `PENDIENTES-MAURICIO §1.8`** (el `lock_timeout` global
-  en `get_tenant_conn`): si esa decisión se toma, puede absorber esta ficha entera.
+- **Emparentada con `DECISIONES-MAURICIO.md` `D-02`** (el `lock_timeout` global en
+  `get_tenant_conn`, decidido el 2026-08-12 en ~10 s). **Al escribir esta ficha se creyó que esa
+  decisión la absorbería entera; es falso, y lo demuestra la medición de abajo:** un tope global
+  convierte el silencio del hub en una excepción registrada, nada más — no hace que al operador
+  **se le diga**, ni arregla que el reparto en serie convierta un lock en un apagón del SOC
+  (eso quedó fichado aparte en `T-2.128`).
 - **Criterios de aceptación:**
   - [x] Medido —no supuesto— qué le pasa hoy al hub con la tabla bloqueada.
   - [x] La degradación es **visible** en la consola, no silenciosa.
