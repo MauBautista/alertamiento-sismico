@@ -165,9 +165,19 @@ diseño determinista cuelgue de un solo aparato encendido.
 > la sirena van al **riel respaldado por UPS**, **nunca** al del Pi. Si cuelgan del Pi, la ruta que
 > existe para sobrevivir a la muerte del Pi muere con él.
 
-### C.2 · Lo que hay que escribir (software, es mío)
+### C.2 · ~~Lo que hay que escribir (software)~~ — ✅ **HECHO** (`T-2.146`, 2026-08-16)
 
-El **latido de keep-alive**. Y no es un `while True: toggle`:
+**El latido ya está escrito y probado.** `GpioPins.keepalive` = **BCM 26**, y arranca
+**deshabilitado**: se enciende por gabinete con `TAKAB_EDGE_GPIO_KEEPALIVE_ENABLED=true` **al
+cablear el `K_wd`**, no antes — mientras el hardware no exista, reclamar el pin se lo quita a quien
+lo necesite.
+
+**Cómo probar en el sitio que late** (una vez encendido): el pin BCM 26 debe alternar a ~1 Hz, y
+`keepalive_beating` viaja en la instantánea del gabinete. Si **deja de latir**, el journal lo grita
+en `CRITICAL` nombrando la consecuencia: la ruta de hardware queda habilitada y el operador ya no
+puede silenciar.
+
+El requisito que lo hacía delicado, y por qué no es un `while True: toggle`:
 
 > **El latido debe probar la liveness del CAMINO DE REFLEJO, no del proceso.** Un cuelgue parcial
 > —el hilo del reflejo bloqueado con el lock tomado, los demás vivos— dejaría el reflejo muerto

@@ -33,6 +33,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from pathlib import Path
 from time import perf_counter
 
@@ -236,6 +237,16 @@ class GpioController(EdgeModule):
         #: desregistrar observadores, y un servidor nuevo por arranque los iría
         #: acumulando en `_sasmex_callbacks`.
         self._servidor_de_pines = None
+        # --- [T-2.146] Latido de keep-alive de SPOF-02 (variante B · D-10) ---
+        self._keepalive_device = None  # gpiozero.DigitalOutputDevice | None
+        self._keepalive_thread: threading.Thread | None = None
+        self._keepalive_stop = threading.Event()
+        #: Contador MONÓTONO del camino de reflejo. Avanza cuando se acredita que
+        #: SASMEX→relé **pudo ejecutarse**: en cada reflejo real y en cada sondeo
+        #: del latido. Es lo que separa «el hilo del latido corre» de «el camino
+        #: sigue vivo», y por eso el latido lo lee en vez de fiarse de sí mismo.
+        self._reflex_progress = 0
+        self._keepalive_beating = False
 
     # --- Observadores + silencio ---
     def on_sasmex(self, callback: SasmexCallback) -> None:
@@ -318,6 +329,155 @@ class GpioController(EdgeModule):
     def debounce_s(self) -> float:
         """Debounce del contacto WR-1 en segundos (parte del presupuesto §4.3)."""
         return self.settings.debounce_ms / 1000.0
+
+    # --- [T-2.146] Latido de keep-alive de SPOF-02 (variante B · D-10) ---
+    @property
+    def reflex_progress(self) -> int:
+        """Contador monótono del camino de reflejo (SASMEX→relé) acreditado.
+
+        Avanza en cada reflejo real y en cada sondeo del latido que consiguió
+        recalcular la sirena bajo el `_lock`. **Sólo cuenta ejecutabilidad**, no
+        eventos: sin sismos también avanza, porque lo que el monoestable
+        necesita saber es si el camino PODRÍA ejecutarse, no si se ejecutó.
+        """
+        return self._reflex_progress
+
+    @property
+    def keepalive_beating(self) -> bool:
+        """Si el gabinete está emitiendo el latido ahora mismo.
+
+        Es lo que permite distinguir «Pi vivo, ruta de hardware inhibida» de
+        «ruta de hardware habilitada» sin un multímetro en el `K_wd`. Con el
+        latido deshabilitado es siempre ``False``: no hay latido que emitir.
+        """
+        return self._keepalive_beating
+
+    def _sondear_camino_de_reflejo(self) -> bool:
+        """¿Puede el reflejo ejecutarse AHORA? Sondeo bajo el lock, con plazo.
+
+        Es el único juez del latido, y hace exactamente lo que hace el reflejo
+        salvo escribir: toma **ese mismo** `_lock` y recalcula el estado
+        objetivo de la sirena. Si el lock no se consigue dentro del plazo, el
+        camino está interbloqueado —el reflejo tampoco podría tomarlo— y la
+        respuesta es NO.
+
+        No escribe el relé a propósito: un sondeo que aplicara estado movería
+        hardware una vez por segundo. Lo que se acredita es que el **recálculo
+        bajo el lock** llega a término, que es donde muere un cuelgue parcial.
+
+        Devuelve ``False`` ante cualquier duda. **Callar el latido habilita la
+        ruta de hardware**, así que la duda cae del lado de que la sirena pueda
+        sonar sola — nunca del lado de que nadie pueda sonarla.
+        """
+        plazo = self.settings.gpio_keepalive_lock_timeout_s
+        if not self._lock.acquire(timeout=plazo):
+            return False
+        try:
+            # Sin relé de sirena construido no hay camino que acreditar: un
+            # gabinete que no puede sonar no debe declararse capaz de sonar.
+            if self._relays.get(ActuatorChannel.SIREN) is None:
+                return False
+            self._desired_energized(ActuatorChannel.SIREN)
+            self._reflex_progress += 1
+        except Exception:  # noqa: BLE001 — el latido jamás propaga: calla, que es seguro
+            log.exception("sondeo del camino de reflejo falló; el latido calla (fail-safe)")
+            return False
+        else:
+            return True
+        finally:
+            self._lock.release()
+
+    def _bucle_del_latido(self) -> None:
+        """Emite la onda cuadrada mientras el camino de reflejo se acredite.
+
+        Registro **por transición** (regla de oro 10): a 1 Hz, un log por pulso
+        serían 86 400 líneas al día diciendo que todo va bien. Lo que se
+        registra es el cambio — que es lo que un operador necesita leer.
+        """
+        periodo = self.settings.gpio_keepalive_period_s
+        while not self._keepalive_stop.is_set():
+            vivo = self._sondear_camino_de_reflejo()
+            if vivo:
+                device = self._keepalive_device
+                if device is not None:
+                    device.toggle()
+                if not self._keepalive_beating:
+                    self._keepalive_beating = True
+                    log.warning(
+                        "latido de keep-alive RESTABLECIDO: el camino de reflejo vuelve a "
+                        "acreditarse. K_wd re-energiza y la ruta de hardware de sirena "
+                        "queda INHIBIDA; el Pi vuelve a gobernar (y el operador puede "
+                        "silenciar otra vez)."
+                    )
+            elif self._keepalive_beating:
+                self._keepalive_beating = False
+                # De-energizar la línea es más honesto que dejarla congelada en
+                # el último nivel: el monoestable expira igual (no ve flancos),
+                # pero un multímetro dice la verdad de inmediato.
+                device = self._keepalive_device
+                if device is not None:
+                    device.off()
+                log.critical(
+                    "latido de keep-alive DETENIDO: el camino de reflejo SASMEX→sirena no "
+                    "se pudo acreditar en %.3f s. El monoestable expirará, K_wd liberará y "
+                    "la RUTA DE HARDWARE de la sirena queda HABILITADA: el contacto del "
+                    "WR-1 podrá sonar la sirena sin este proceso, y el operador NO podrá "
+                    "silenciarla. Es la conducta segura, pero significa que este proceso "
+                    "ya no gobierna: revisa `takab-gpio`.",
+                    self.settings.gpio_keepalive_lock_timeout_s,
+                )
+            self._keepalive_stop.wait(periodo)
+
+    def _arrancar_latido(self) -> None:
+        """Construye el pin y lanza el hilo. No-op si está deshabilitado.
+
+        **Deshabilitado NO construye el dispositivo**, y eso no es una
+        optimización: construirlo RECLAMA el BCM y se lo quita a quien lo
+        necesite mientras el `K_wd` no exista.
+        """
+        if not self.settings.gpio_keepalive_enabled:
+            return
+        from gpiozero import DigitalOutputDevice
+
+        self._keepalive_stop.clear()
+        self._keepalive_device = DigitalOutputDevice(
+            self.settings.pins.keepalive, active_high=True, initial_value=False
+        )
+        thread = threading.Thread(target=self._bucle_del_latido, name="takab-latido", daemon=True)
+        self._keepalive_thread = thread
+        thread.start()
+
+    def _detener_latido(self) -> None:
+        """Detiene el hilo y suelta el pin. **Llamar SIEMPRE fuera de `_lock`.**
+
+        Misma regla que la puerta de servicio, y por la misma razón: este hilo
+        pide `_lock` en cada pulso, así que detenerlo desde dentro del lock
+        JOINearía un hilo que espera ese mismo lock. Idempotente: lo llaman
+        tanto la parada limpia como el rescate del arranque a medio montar.
+        """
+        self._keepalive_stop.set()
+        thread = self._keepalive_thread
+        self._keepalive_thread = None
+        if thread is not None and thread.is_alive():
+            # Cota generosa: el hilo puede estar dentro de su espera del lock.
+            thread.join(timeout=self.settings.gpio_keepalive_lock_timeout_s * 4 + 1.0)
+            if thread.is_alive():
+                log.error(
+                    "el hilo del latido no terminó a tiempo; se abandona (daemon). El pin "
+                    "se de-energiza igual, así que el monoestable expira y la ruta de "
+                    "hardware queda habilitada."
+                )
+        self._keepalive_beating = False
+        device = self._keepalive_device
+        self._keepalive_device = None
+        if device is not None:
+            # `off()` antes de `close()`: cerrar devuelve el pin a entrada, que
+            # también deja de latir, pero el estado se ORDENA, no se hereda de
+            # un efecto colateral del backend (misma doctrina que los relés).
+            with suppress(Exception):
+                device.off()
+            with suppress(Exception):
+                device.close()
 
     # --- [D1.1] Propiedad de los pines: un cerrojo del KERNEL, no una promesa ---
     def _acquire_pin_ownership(self) -> None:
@@ -516,6 +676,11 @@ class GpioController(EdgeModule):
         completarse es CRITICAL: significa un relé posiblemente energizado por un
         proceso que se está muriendo.
         """
+        # [T-2.146] FUERA del lock y ANTES, igual que en `_on_stop`: si el hilo
+        # del latido está esperando `_lock`, detenerlo desde dentro cuelga el
+        # rescate — y el rescate es lo único que queda entre un arranque fallido
+        # y unos relés energizados por un proceso que se muere.
+        self._detener_latido()
         try:
             with self._lock:
                 self._apagar_hardware_locked()
@@ -600,6 +765,12 @@ class GpioController(EdgeModule):
         self._silence_button.when_pressed = self._on_silence_button
         self._test_button = Button(pins.test_button, pull_up=True, bounce_time=bounce_s)
         self._test_button.when_pressed = self._on_test_button
+        # [T-2.146] El latido va AL FINAL, y no es indiferente: su primer sondeo
+        # exige el relé de sirena ya construido. Arrancarlo antes le haría
+        # declarar «no hay camino» durante el propio arranque —correcto pero
+        # ruidoso: un CRITICAL en cada despliegue— y nacería con la ruta de
+        # hardware habilitada por un motivo que se cura solo en milisegundos.
+        self._arrancar_latido()
         # [T-2.70.a·D3] La semilla de SPOF-02 ya NO va aquí: la invoca `_on_start`
         # DESPUÉS de abrir la puerta de servicio, para que el episodio nazca con
         # `episode_id` y el traspaso hardware→software cruce hasta la nube con el
@@ -706,6 +877,10 @@ class GpioController(EdgeModule):
         # cerrando. Fuera del lock, porque parar el servidor JOINea hilos que
         # pueden estar dentro de `snapshot()` esperando ese mismo lock.
         self.detener_servidor_de_pines()
+        # [T-2.146] Y el latido con ella, por LA MISMA razón y en el mismo sitio:
+        # su hilo pide `_lock` en cada pulso, así que detenerlo desde dentro del
+        # lock JOINearía un hilo que espera ese mismo lock.
+        self._detener_latido()
         try:
             with self._lock:
                 for attr in ("_test_timer", "_actuation_test_timer"):
@@ -752,6 +927,11 @@ class GpioController(EdgeModule):
                 for channel in REFLEX_CHANNELS:
                     self._apply(channel)
                 self._last_reflex_latency_s = perf_counter() - started
+                # [T-2.146] Un reflejo REAL es la acreditación más fuerte que
+                # existe del camino: no lo sondeó, lo ejecutó. Va aquí para que
+                # el contador no dependa sólo del latido — si algún día el
+                # sondeo se rompiera, un sismo seguiría moviéndolo.
+                self._reflex_progress += 1
                 log.warning(
                     "REFLEJO SASMEX→sirena in-process (%.2f ms)",
                     self._last_reflex_latency_s * 1000.0,
@@ -1086,6 +1266,7 @@ class GpioController(EdgeModule):
                 test_mode_remaining_s=max(0.0, self._test_mode_until - ahora),
                 last_reflex_latency_s=self._last_reflex_latency_s,
                 relays=tuple(self._relay_states_locked()),
+                keepalive_beating=self._keepalive_beating,
             )
 
     def drive_all_safe(self) -> None:
