@@ -155,9 +155,16 @@ takab/
   sea verde en la nube…), y la doctrina que destiló el ciclo: **un fallback no puede ser `ok`, y
   un censo que enumera a mano acaba divergiendo**.
 - **`takab-docs/PENDIENTES-MAURICIO.md`** — censo de **todo lo que no puede cerrar el software**:
-  decisiones, ventana AWS, sesiones físicas y legal. Sale de `TASKS.md` y no lo sustituye. Si una
-  tarea está bloqueada en una persona, se ficha allí **y** aquí; si solo está en `TASKS.md`, nadie
-  la ve hasta que alguien lee 234 fichas.
+  ventana AWS, sesiones físicas y legal. Sale de `TASKS.md` y no lo sustituye. Si una tarea está
+  bloqueada en una persona, se ficha allí **y** aquí; si solo está en `TASKS.md`, nadie la ve hasta
+  que alguien lee 234 fichas. **Desde el 2026-08-15 no contiene decisiones: la §1 se cerró entera**
+  y lo que queda cuesta dinero, un tercero o tocar un edificio.
+- **`takab-docs/DECISIONES-MAURICIO.md`** — **bitácora de lo decidido, con su razón** (`D-01`…
+  `D-09`). Es la contraparte del anterior: aquél es lo que falta, éste es lo que se resolvió y
+  **por qué**, que es lo único que permite revocar con conocimiento en vez de a ciegas. **Cita
+  siempre el `D-nn`** desde el código y desde `TASKS.md`, nunca el `§` de la lista de pendientes:
+  aquellos números se reciclan cuando la lista encoge, éstos no. Una decisión **no se borra**: si
+  se revoca, se le añade el bloque `REVOCADA` dejando el texto original intacto.
 - **`takab-docs/RESIDENCIA-DE-DATOS-TAKAB.md`** — **la respuesta al cliente que pregunta si sus
   datos se quedan en México** (T-2.83). Recomendación: **no migrar a `mx-central-1` hoy**, porque
   **AWS IoT Core no existe en esa región** y es por donde entra cada latido de cada gabinete. §2

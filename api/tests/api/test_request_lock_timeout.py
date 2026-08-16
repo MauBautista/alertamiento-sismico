@@ -3,8 +3,8 @@
 `T-2.121` puso tope a las conexiones de SEGUNDO PLANO (hub, poller y las dos
 laterales de auditoría: 3 s). La conexión del **request** se quedó fuera a
 propósito, porque cambiaba la conducta de toda la API bajo contención y eso era
-una decisión de producto (`PENDIENTES-MAURICIO §1.8`). La decisión ya está
-tomada: **se pone el tope**.
+una decisión de producto. La decisión ya está tomada —**se pone el tope**— y
+vive con su razón en `takab-docs/DECISIONES-MAURICIO.md`, `D-02`.
 
 Lo medido contra el código anterior al arreglo (2026-08-12), con un
 `LOCK TABLE incidents IN ACCESS EXCLUSIVE MODE` de un tercero:

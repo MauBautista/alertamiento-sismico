@@ -4,25 +4,22 @@
 > `TASKS.md` y **no lo sustituye**: cada punto de aquí enlaza a su ficha, que es donde vive el
 > detalle. Esto es la lista de trabajo; aquellas son la especificación.
 >
-> **Última actualización:** 2026-08-12 (lotes `T-2.110…T-2.130`) · **26 pendientes** · Estado del
-> backlog al escribirlo: 273 tareas · 201 `[x]` · 9 `[~]` · 63 `[ ]`, de las cuales la mayoría
-> son `SOFTWARE` y las demás están aquí.
+> **Lo decidido no vive aquí: vive en [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).** Esta
+> lista solo contiene lo que **falta**. Cuando algo se decide, se borra de aquí y se escribe allí
+> **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
+> olvidar.
 >
-> **Bajaste de 29 a 26 sin hacer nada**, porque el 2026-08-12 se cerraron por delegación las tres
-> decisiones que no exigían ni herramientas ni terceros (§1.2, §1.8, §1.9). Las que quedan **no
-> se delegaron a propósito**: cuestan dinero, tiempo de un tercero, o afectan a un edificio con
-> gente dentro.
+> **Última actualización:** 2026-08-16 · **21 puntos** (§2: 9 · §3: 4 · §4: 5 · §5: 3)
 >
-> **Cambios de estas pasadas:** §1.6 (protección de rama) **cerrada — ya estaba hecha**; **§2.1
-> cerrada: la nube desplegada y la base en `0038`**; §3.4 gana el aviso de re-correr
-> `GATE-HW 02`; y **§1.2, §1.8 y §1.9 quedan DECIDIDAS por delegación explícita**, cada una con
-> su razón escrita para poder revocarla. Entre las tres desbloquearon cinco fichas de software,
-> todas ya cerradas el mismo día (`T-2.79.d`, `T-2.82.a`, `T-2.123`, `T-2.130`, `T-2.128`).
+> **Lo que cambió el 2026-08-15: la sección §1 desapareció entera.** Las seis decisiones que solo
+> pedían criterio —§1.1, §1.3, §1.4, §1.5, §1.6 y §1.7— quedaron cerradas por Mauricio en una
+> sesión, y se sumaron a las tres delegadas del 2026-08-12. **Ya no queda ni una decisión de
+> escritorio pendiente.** Las nueve, con su razón, están en
+> [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md) como `D-01`…`D-09`.
 >
-> **Y lo que ahora es lo siguiente, porque el despliegue de la nube lo dejó a un paso:** el
-> gabinete todavía corre el código viejo. Hasta que se despliegue el edge, `T-2.116` no existe
-> para el Pi —el acuse llega sin el estado del relé— y **`GATE-HW 02` acreditaría la conducta
-> vieja**. Ver §3.4.
+> **Consecuencia, y es el titular de esta pasada:** **todo lo que queda en esta lista cuesta
+> dinero, tiempo de un tercero, o tocar un edificio.** Nada de lo que sigue se puede resolver
+> pensando.
 
 ---
 
@@ -38,260 +35,31 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 
 ---
 
-## 1 · DECISIONES — no necesitan herramientas, solo criterio
+## 1 · DECISIONES — ✅ **sección cerrada** (2026-08-15)
 
-Son las más baratas y las que **desbloquean software inmediatamente**. Ninguna requiere AWS, ni
-el gabinete, ni un tercero.
+**No queda ninguna.** Las nueve decisiones que solo pedían criterio están tomadas, cada una con su
+razón escrita y su condición de revocación, en
+[**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 
-> **Estado de esta sección (2026-08-12).** Cuatro puntos ya no piden nada:
->
-> | | Punto | Estado |
-> |---|---|---|
-> | ✅ | §1.2 · ¿gana `empty` o `stale`? | **DECIDIDA** — gana `stale` |
-> | ✅ | §1.6 · protección de rama | **HECHA** por Mauricio |
-> | ✅ | §1.8 · `lock_timeout` del request | **DECIDIDA** — ~10 s, con cifras medidas |
-> | ✅ | §1.9 · ¿arranca la consola sin base? | **DECIDIDA** — en degradado, declarando |
-> | ⏳ | **§1.1 · ventana de mantenimiento vs hardware** | **abierta — cuesta un ciclo real de gas y puertas en un edificio con gente** |
-> | ⏳ | **§1.7 · ¿un pánico despierta al edificio?** | **abierta — no es una decisión técnica** |
-> | ⏳ | §1.3 · el teléfono del consentimiento | abierta (también legal) |
-> | ⏳ | §1.4 · ¿quién actualiza el catálogo SSN? | abierta |
-> | ⏳ | §1.5 · mini-ShakeMap y CCTV | abierta, no bloquea nada hoy |
->
-> **Las tres decididas el 2026-08-12 lo fueron por delegación explícita** («decide por mí»), y
-> cada una lleva su razón escrita **para que se pueda revocar con conocimiento**. Las dos que
-> siguen en negrita **no se delegaron a propósito**: §1.1 cuesta un ciclo eléctrico real de gas y
-> puertas en un edificio ocupado, y §1.7 es decidir si dos personas pueden despertar a un
-> edificio entero de madrugada. Ninguna de las dos la puede tomar quien no responde por ella.
+| ID | Decisión | Fecha |
+|---|---|---|
+| `D-01` | Entre `empty` y `stale`, **gana `stale`** | 2026-08-12 |
+| `D-02` | `lock_timeout` del request: **se pone, ~10 s** | 2026-08-12 |
+| `D-03` | La consola **arranca con la base caída**, en degradado y declarándolo | 2026-08-12 |
+| `D-04` | Dueño de los pines GPIO: **ventana avisada (A)**, nunca hardware | 2026-08-15 |
+| `D-05` | Push de pánico: **solo a tácticos**, y sin acuse **escala al SOC** | 2026-08-15 |
+| `D-06` | Catálogo SSN: **se automatiza** la ingesta | 2026-08-15 |
+| `D-07` | Teléfono del consentimiento: **cripto-borrado** | 2026-08-15 |
+| `D-08` | Bloque IV (mini-ShakeMap y CCTV): **se planifica ya** | 2026-08-15 |
+| `D-09` | `enforce_admins`: **queda en `false`**, con gatillo escrito | 2026-08-15 |
 
-### 1.1 · ¿Ventana de mantenimiento, o hardware? — [`T-2.70.a`](TASKS.md), criterio 4
-**La decisión:** pasar el dueño de los pines a su propio proceso cuesta **un ciclo eléctrico** de
-`GAS_VALVE` y `DOOR_RETAINER`. En el edificio: el gas se cierra y las puertas se sueltan, una vez.
-
-Está medido y **no tiene salida en software**: `LGPIOPin.close()` re-reclama la línea como
-entrada, así que la bobina cae. Las opciones:
-
-- **(A) Ventana de mantenimiento avisada, una sola vez.** Cuesta un ciclo, hoy, con el edificio
-  sobre aviso. **Después de eso, reiniciar `takab-edge` cuesta CERO** — medido.
-- **(B) Hardware**: enclavamiento del relé, o un pull-up que sostenga la bobina con la línea
-  liberada. **Cambia SPOF-07**: un Pi colgado dejaría de fail-safear gas y puertas.
-
-**Recomendación:** (A). El coste es idéntico al de cualquier despliegue de hoy, y **es el
-último**. (B) compra que el traspaso sea gratis a cambio de debilitar el fail-safe, que es peor
-negocio.
-
-**Desbloquea:** el traspaso real en el gabinete, y con él `T-2.70` (canary + rollback).
-
-> ### 📋 CÓMO DECIDIRLA — y una medición del 2026-08-12 que la abarata mucho
+> **Cuatro de ellas generan trabajo de software que hay que fichar en `TASKS.md`** —`D-05` (cablear
+> `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta + fecha
+> declarada + alarma por ausencia), `D-07` (cripto-borrado del `subject_ref`) y `D-08` (diseño de
+> `T-3.09`/`T-3.10`)—. **Ese trabajo NO es tuyo: es de la máquina.** No vuelve a esta lista.
 >
-> **El gabinete de desarrollo NO tiene `GAS_VALVE` ni `DOOR_RETAINER` instalados** —medido contra
-> su propia API: `relays_status.installed = ["siren","strobe"]`—, y el despliegue al Pi de ese día
-> **no cicló nada**: los dos relés siguieron desenergizados antes y después.
->
-> **Consecuencia práctica: esta decisión NO te bloquea hoy.** El coste que describe arriba es real
-> **solo en un gabinete que tenga esos dos relés instalados**, o sea **en la primera instalación
-> en un edificio de verdad**. En el de desarrollo, hacer el traspaso es gratis.
->
-> **Lo que te recomiendo hacer, en este orden:**
-> 1. **Haz el traspaso YA en el gabinete de desarrollo** — cero coste, y así `T-2.70` (canary +
->    rollback) deja de estar bloqueada. Comando y orden **no intercambiable**:
->    `TAKAB_EDGE_GPIO_OWNER=gpio` en `edge.env` → `systemctl enable --now takab-gpio` →
->    `systemctl restart takab-edge`. **Al revés falla contra el cerrojo.**
-> 2. **Deja la opción (A) escrita como política para la primera instalación real**: cuando montes
->    un gabinete con gas y puertas, el traspaso se hace **en la puesta en marcha**, antes de que el
->    edificio dependa de él — y entonces el ciclo **no le cuesta nada a nadie**, porque todavía no
->    hay nada que proteger.
->
-> **Con eso, (B) —el hardware— deja de tener sentido**: solo compraba evitar un ciclo que, hecho
-> en el momento correcto, es gratis. Y (B) **debilita el fail-safe**: un Pi colgado dejaría de
-> cerrar el gas.
->
-> **Cómo contestar:** «hago el traspaso en dev y la política para instalaciones nuevas es (A)» —
-> o dime si prefieres otra cosa y por qué.
-
-### 1.2 · ~~¿Qué gana, `empty` o `stale`?~~ — ✅ **DECIDIDA: gana `stale`** (2026-08-12)
-
-> **Decidida por delegación explícita de Mauricio** («decide por mí»), no por omisión. Queda aquí
-> para que se pueda **revocar con conocimiento**, que es lo contrario de que se pierda.
->
-> **La razón:** `empty` afirma un hecho **sobre el mundo** («no hay»). `stale` afirma un hecho
-> **sobre nuestro conocimiento** («no lo sé desde las hh:mm»). Cuando los dos son ciertos a la
-> vez, **solo el segundo se puede verificar**. Afirmar una ausencia que no puedes comprobar, en la
-> consola de un SOC, es el modo de fallo que produce «no hay heridos» cuando lo que pasa es que
-> el enlace está caído.
->
-> Que sea **menos accionable es la virtud, no el defecto**: manda al operador a revisar el enlace
-> en vez de a concluir. Es la regla de oro 7 —«un dato congelado presentado como vivo es peor que
-> sin datos»— llevada al caso en que ambas cosas ocurren a la vez.
->
-> **Desbloquea** `T-2.79.d` y `T-2.82.a` (`T-2.84.c` ya se había cerrado por otra vía).
-
-> **La pregunta tal como estaba planteada**, para que la decisión se pueda revisar contra ella:
-> cuando **no hay dato** *y* **lo poco que hay está viejo**, ¿la pantalla dice «no hay»
-> —arriesgando afirmar una ausencia que quizá solo es desconexión— o dice «no lo sé desde las
-> hh:mm», que es más honesto y menos accionable? No es un banner: **gobierna toda la consola**.
-> La deriva de que cada componente lo resolviera por su cuenta ya había producido una franja muda
-> y que **ningún panel de la pantalla donde se firma un dictamen** pudiera declarar su dato viejo.
-
-### 1.3 · El teléfono del consentimiento — [`T-2.80.a`](TASKS.md) *(también `LEGAL`)*
-**La decisión:** un sujeto identificado por teléfono tiene su número **en claro** en el registro
-de consentimientos, que es **append-only**. Anonimizarlo exige abrir un hueco en ese registro.
-
-¿Qué prevalece: **el derecho del titular** sobre su número, o **la prueba de la base legal** del
-envío que ese consentimiento autoriza? Conviene consultarlo con quien lleve la parte legal (§4.1).
-
-### 1.4 · ¿Quién actualiza el catálogo SSN? — [`T-2.66.b`](TASKS.md)
-Hay push firmado nube→gabinete y funciona, pero **nadie ingesta el catálogo**. Decidir si se
-automatiza contra el SSN, si se sube a mano con cadencia, o si se declara que no se actualiza.
-
-### 1.5 · Mini-ShakeMap y la arquitectura de CCTV — [`T-3.09`](TASKS.md), [`T-3.10`](TASKS.md)
-Van con el Bloque IV; no bloquean nada hoy. `T-3.09` **exige derogar por su nombre** la viñeta
-diferida del blueprint — y solo esa.
-
-### 1.6 · ~~`main` NO tiene protección de rama~~ — ✅ **HECHO** (verificado 2026-08-10)
-
-**Ya está puesta, y bien.** `gh api` confirma protección viva sobre `main` con los **siete**
-checks exigidos, y **verifiqué que los nombres coinciden literalmente con los `name:` de
-`ci.yml`** — importa, porque un nombre que no case no bloquea: deja los PR *pendientes para
-siempre*, que se siente como un fallo distinto y se diagnostica peor.
-
-Con esto, la matriz de trazabilidad deja de ser más optimista que la realidad: su modelo de
-`CUBIERTO` («lo corre un job que bloquea el merge») por fin describe lo que pasa de verdad.
-
-**Lo único que queda, y es decisión tuya, no trámite:** `enforce_admins` está en **`false`**. Tú
-eres el único admin, así que **puedes mergear con el gate en rojo**. Hoy eso es una válvula de
-escape útil trabajando solo; el día que entre alguien más al repositorio, es un agujero. No hace
-falta cerrarlo ahora — hace falta que sea una elección y no un olvido.
-
-### 1.9 · ~~¿Debe arrancar la consola con la base caída?~~ — ✅ **DECIDIDA: arranca en degradado** (2026-08-12)
-
-**El contexto.** `T-2.114` necesitaba que `/me` devolviera el inmueble del ocupante —el dato no
-viaja en el claim de Cognito—, así que **`/me` dejó de ser claims puros y abre sesión de base**.
-Efecto: con Postgres caído, la consola web ya no arrancaba. En móvil no hay regresión (conserva
-la sesión y resuelve del caché, regla de oro 2).
-
-> **Decidida por delegación explícita de Mauricio** («decide por mí»). Revocable con esto escrito.
->
-> **LA DECISIÓN: la consola ARRANCA, DECLARANDO que no puede establecer el alcance del operador,
-> y sin pintar NI UN dato de tenant.**
->
-> Es la única combinación que respeta las dos reglas que aquí tiran en direcciones opuestas:
-> - **No arrancar es inaceptable** porque una caída de base **coincide a menudo con un incidente**:
->   deja al SOC sin pantalla justo cuando hace falta.
-> - **Arrancar mostrando datos sin alcance resuelto es inaceptable** (regla de oro 5): adivinar el
->   alcance de un `soc_operator` es exactamente la brecha multi-tenant.
-> - Arrancar el armazón y **declarar lo que no se sabe** (regla de oro 7) es verdadero, seguro y
->   accionable: el operador ve que el sistema vive y que **no puede establecer su identidad**.
->
-> **El riesgo que hay que vigilar, y por eso lleva test propio:** que el degradado se convierta en
-> **puerta trasera**. Sin `/me` no hay alcance, así que no puede haber ninguna ruta que pinte
-> datos. Si alguna pantalla resulta accesible en degradado y consulta la API, es un fallo.
->
-> **Lo que la decisión NO cambia:** `/me` sigue abriendo sesión de base, y debe seguir haciéndolo
-> — volver a claims puros reabriría `T-2.114` y dejaría al ocupante móvil sin edificio. Lo que se
-> arregla es **cómo reacciona el cliente cuando `/me` no contesta**.
-
-### 1.7 · ¿Un pánico despierta a todo el edificio? — [`T-2.106`](TASKS.md)
-El quórum de pánico emite el comando de sirena y **no notifica a nadie**: la ruta del voto no
-toca `notify/`. Con `T-2.106` la app ya explica la alarma, pero se entera **en el siguiente
-sondeo** — 30 s en reposo, que bajan a 5 s en cuanto entra en `building_alarm`.
-
-Mandar push por una activación manual **no es decisión técnica**: es decidir si dos personas
-pueden despertar a un edificio entero de madrugada. Las tres salidas son legítimas —push a todos,
-push solo a tácticos, o nada y que lo diga la sirena— y ninguna se puede elegir desde el código.
-
-> ### 📋 CÓMO DECIDIRLA — no hace falta que sepas de software
->
-> **Lo que ya es cierto pase lo que pase:** la sirena **suena** (el quórum ya emite el comando) y
-> la app **explica** por qué. Lo único que se decide aquí es **si además vibra el teléfono de
-> alguien que está dormido**.
->
-> **La pregunta, en términos de edificio:** dos personas pulsan pánico a las 3 a.m. ¿Quién debe
-> enterarse **en ese segundo**, sin esperar al siguiente sondeo?
->
-> | Opción | A favor | En contra |
-> |---|---|---|
-> | **A · Push a todos** | Nadie se pierde una emergencia real | **Dos personas pueden despertar a 400.** Un pánico falso a las 3 a.m. cuesta credibilidad, y la credibilidad es lo que hace que la gente obedezca la siguiente alerta |
-> | **B · Push solo a tácticos** (brigada, seguridad) | Quien tiene que actuar se entera al instante; el resto se entera por la sirena, que ya suena | Si la brigada no contesta, nadie más lo sabe hasta el sondeo |
-> | **C · Nada; lo dice la sirena** | Cero riesgo de despertar a nadie por error | En un edificio grande, alguien lejos de la sirena puede no oírla |
->
-> **Lo que yo elegiría, y por qué:** **B**. La sirena ya cubre a todo el mundo; el push añade
-> valor solo para **quien tiene que hacer algo**. Y es la única de las tres que **no cambia** si
-> mañana resulta que hay pánicos falsos: con A tendrías que dar marcha atrás delante de todo el
-> edificio.
->
-> **Cómo contestar:** basta con que digas «A», «B» o «C» y **una frase de por qué**. La razón
-> importa más que la letra: se escribe en la ficha para que dentro de un año se pueda revisar la
-> decisión sabiendo qué se tuvo en cuenta.
->
-> **Si eliges B, hay una pregunta de seguimiento** que puedes dejar para después: ¿qué pasa si
-> ningún táctico acusa en N minutos? (escalar a todos, avisar al SOC, o nada).
-
-### 1.8 · ~~`lock_timeout` global en la conexión del request~~ — ✅ **DECIDIDA: se pone, ~10 s** (2026-08-12)
-
-> **Decidida por delegación explícita de Mauricio** («decide por mí»), **con las cifras de
-> `T-2.121` sobre la mesa** — que es lo que la convirtió de corazonada en decisión. Se implementa
-> en `T-2.130`. Revocable con todo esto escrito.
->
-> **El criterio duro, y es el que manda sobre el número exacto:** `lock_timeout` **< timeout del
-> pool (30 s)**. Por debajo, un bloqueo degrada *una petición*; por encima —o sin tope, como
-> hasta hoy— degrada *el proceso entero*, porque diez esperas agotan el pool y entonces **falla
-> también lo que ni siquiera tocaba la tabla bloqueada**. Eso está medido, no supuesto.
->
-> **Valor: ~10 s**, y no los 3 s de las conexiones de segundo plano. La diferencia tiene razón:
-> una auditoría lateral es best-effort y se puede tirar; **una petición es una persona
-> esperando**, y hay esperas legítimas por lock de **fila** —serialización de acuses— que cortar
-> a 3 s rompería.
->
-> **Lo que esta decisión NO absorbe**, y conviene no darlo por hecho: `T-2.128` (el fan-out del
-> WebSocket es en serie) sigue abierta. Un tope global habría convertido el silencio del hub en
-> una excepción registrada, nada más.
->
-> **Queda una pregunta dentro de la ficha, no de esta lista:** si el tope aplica también a los
-> **workers**. Un worker de ingesta que aborta por un lock puede perder un lote si no reintenta;
-> lo resuelve `T-2.130` con su razón escrita.
-
-### 1.8.bis · El planteamiento original — [`T-2.73.c`](TASKS.md)
-`T-2.73.c` cerró el interbloqueo por el lado de la conexión **lateral**. La conexión **del
-request** sigue sin tope: si `audit_log` está bloqueada *antes* de que el request empiece, se
-cuelga en el primer `SELECT`.
-
-Poner un `lock_timeout` global en `get_tenant_conn` cambia el comportamiento de **toda** la API
-bajo contención —convierte esperas en errores 5xx— y eso es una decisión de producción, no un
-refactor. Decidir si se pone, con qué valor, y si aplica también a los workers.
-
-> ## ⚠️ Actualización 2026-08-11 — **esto ya no es una decisión a ciegas: está medido**
->
-> `T-2.121` reprodujo el escenario con un `LOCK TABLE incidents IN ACCESS EXCLUSIVE MODE` de un
-> tercero y midió qué pasaba **antes** de arreglarlo:
->
-> | Hecho | Medido |
-> |---|---|
-> | El hub del WebSocket queda **encolado, no lento** | `pg_locks`: `granted=false` |
-> | El reparto no vuelve | **25.16 s** y seguía esperando (techo del test) |
-> | **El SOC entero se queda mudo** | el reparto es en serie: un segundo aviso que ni tocaba la base no llegó en 25 s |
-> | El operador **no se entera** | la consola seguía diciendo «CONECTADO» y «● LIVE» |
-> | **Y arrastra a toda la API** | 10 lectores encolados agotan el pool: cualquier petición, **`TimeoutError` a los 30 s** |
->
-> Eso último es lo que convierte esto de «una molestia del WebSocket» en un problema de la API
-> entera: **falla también lo que ni siquiera tocaba la tabla bloqueada.**
->
-> **La recomendación, con su criterio duro:** ponlo, y con **`lock_timeout` MENOR que el timeout
-> del pool (30 s)**. Por debajo de esa cifra un bloqueo degrada *una petición*; por encima —o sin
-> tope, como hoy— degrada *el proceso*. Valor sugerido: **~10 s** para la conexión de la petición,
-> **no** los 3 s de las conexiones de segundo plano — una auditoría lateral es best-effort y se
-> puede tirar, una petición es **una persona esperando**, y hay esperas legítimas por lock de fila
-> que no conviene cortar tan corto.
->
-> **Y una corrección a lo que decía esta sección ayer:** escribí que la decisión global
-> «absorbería `T-2.121` entera». **Es falso**, y lo demuestra la medición: un tope global habría
-> convertido el silencio del hub en una excepción registrada, nada más. No absorbe que al
-> operador **se le diga** (hoy se le cierra el canal y la consola pinta «● SIN LIVE»), ni el
-> hallazgo de que el reparto es en serie — que es lo que convertía un lock en un **apagón del
-> SOC** en vez de un frame perdido. Eso quedó fichado aparte ([`T-2.128`](TASKS.md)).
->
-> **Lo que sigue sin tope y por eso te toca decidir:** la conexión de la **petición**. Medido: un
-> request REST contra la tabla bloqueada **sigue esperando para siempre** (sin respuesta en 40 s
-> de techo). Ya no es teoría.
+> **`D-04` sí te deja una acción física**, y es la única que salió de aquella sección: hacer el
+> traspaso del dueño de los pines en el gabinete de desarrollo. Está en **§3.5**.
 
 ---
 
@@ -306,36 +74,34 @@ refactor. Decidir si se pone, con qué valor, y si aplica también a los workers
 >   en cada publish.
 > - La IP doméstica rota a diario: si algo da **timeout** (no 403), es el firewall.
 
-### 2.1 · ~~Aplicar las migraciones que estaban escritas y sin desplegar~~ — ✅ **HECHO** (2026-08-11)
+### 2.1 · Los `terraform apply` que faltan — **cinco, y los cinco invisibles hasta que fallan**
 
-**Desplegado y verificado en la nube**, no inferido del código de salida: los **siete**
-contenedores corriendo en `48d530f`, `/api/health` respondiendo `{"status":"ok","build":"48d530f"}`
-y `alembic_version` de la base **en `0038_privacy_erasure_on_behalf`**, que es la cabeza del repo.
-O sea que entraron las 0027…0036 que faltaban **y** las dos nuevas (0037, 0038).
+> **Lo que ya NO está aquí porque se hizo:** las migraciones. Desplegado y verificado en la nube el
+> 2026-08-11, no inferido del código de salida — siete contenedores en `48d530f`, `/api/health`
+> respondiendo `{"status":"ok","build":"48d530f"}` y `alembic_version` en
+> `0038_privacy_erasure_on_behalf`, la cabeza del repo.
 
-**Sigue pendiente de esta sección**, y son **dos** cosas, las dos de IAM y las dos invisibles
-hasta que fallan:
+Lo que sigue pendiente son **applies de IAM y de alarmas**. Ninguno da error al faltar: **dan una
+conducta silenciosamente peor**, que es la familia de trampa más cara de este proyecto.
 
-1. El `terraform apply` de los tres statements IAM de las ventanas de mantenimiento
-   ([`T-2.71`](TASKS.md)) — el despliegue de imágenes **no lo toca**.
-2. **Nuevo (2026-08-13, `T-2.132`): `sqs:ChangeMessageVisibility`** en el rol de los workers. Ya
-   está escrito en el Terraform; **sin el `apply` el arreglo es decorativo**. El worker no se cae
-   —la llamada es best-effort— pero el mensaje se hace visible a mitad del reintento y otro worker
+1. Los **tres statements IAM de las ventanas de mantenimiento** ([`T-2.71`](TASKS.md)) — el
+   despliegue de imágenes **no los toca**.
+2. **`sqs:ChangeMessageVisibility`** en el rol de los workers ([`T-2.132`](TASKS.md)). Ya está
+   escrito en el Terraform; **sin el `apply` el arreglo es decorativo**. El worker no se cae —la
+   llamada es best-effort— pero el mensaje se hace visible a mitad del reintento y otro worker
    **gasta justo la recepción que se estaba ahorrando**, que es el defecto entero de esa ficha.
-   Es de la misma familia que la trampa ya pagada de las reglas IoT: **un permiso que falta no da
-   error, da una conducta silenciosamente peor**.
-3. **Nuevo (2026-08-13, `T-2.72.b/c`): dos alarmas de la Fase 2.6.** El `apply` las crea y publica
-   la versión nueva del documento SSM. **Trampa ya fichada:** cambiar el documento **no relanza la
+3. **Dos alarmas de la Fase 2.6** ([`T-2.72.b/c`](TASKS.md)). El `apply` las crea y publica la
+   versión nueva del documento SSM. **Trampa ya fichada:** cambiar el documento **no relanza la
    asociación** —el cambio aterriza hasta 24 h después—; hay que forzarla con
-   `aws ssm start-associations-once`. **Si se da por buenas las alarmas sin relanzarla**, las tres
+   `aws ssm start-associations-once`. **Si se dan por buenas las alarmas sin relanzarla**, las tres
    quedan sin publicador y `backup-base-ausente` manda un correo **que parece un fallo de respaldo
    y es un fallo de despliegue**.
    > **Y esto conviene saberlo antes de que llegue el correo:** `backup-base-ausente`
    > **NACE EN ALARM a propósito** — el día del `apply` todavía no hay backup base. **El correo de
-   > OK, cuando `T-2.74` tome el primero, ES el acuse** de que la cadena consiguió ancla. Si ese
-   > OK **no** llega, ahí sí hay un problema.
-4. **Nuevo (2026-08-13, `T-2.77.b`): tres secretos y abrir el 443 para los webhooks de entrega.**
-   El endpoint público ya existe y **sin ellos responde 503 y lo grita** —no hay degradación
+   > OK, cuando §2.8 tome el primero, ES el acuse** de que la cadena consiguió ancla. Si ese OK
+   > **no** llega, ahí sí hay un problema.
+4. **Tres secretos y abrir el 443 para los webhooks de entrega** ([`T-2.77.b`](TASKS.md)). El
+   endpoint público ya existe y **sin ellos responde 503 y lo grita** —no hay degradación
    silenciosa—, pero hasta entonces los tres canales siguen diciendo «el proveedor lo aceptó» y
    **nunca «llegó a una persona»**. Hacen falta:
    - `TAKAB_API_NOTIFY_SMS_STATUS_CALLBACK_URL`, `TAKAB_API_NOTIFY_WHATSAPP_APP_SECRET` y
@@ -343,8 +109,8 @@ hasta que fallan:
      Manager).
    - **Abrir el 443 a los rangos de Twilio y Meta** en el security group: hoy está restringido por
      IP, así que **los callbacks no llegarían**.
-5. **Nuevo (2026-08-14, `T-2.78.a`): el suscriptor HTTPS de la cadena on-call, y su ORDEN es
-   estricto porque la suscripción SE CONFIRMA DURANTE EL `apply`.**
+5. **El suscriptor HTTPS de la cadena on-call** ([`T-2.78.a`](TASKS.md)), y **su ORDEN es estricto
+   porque la suscripción SE CONFIRMA DURANTE EL `apply`**:
    1. Desplegar la API **con `TAKAB_API_OPS_ALERT_TOPIC_ARN`**.
    2. `curl -X POST …/api/ops/alerts/sns -d '{}'` → debe dar **404**. **Si da 503, falta el ARN:
       PARA AHÍ** — seguir hace que el `apply` muera a medias.
@@ -356,11 +122,11 @@ hasta que fallan:
    > buzones pulsan los enlaces, así que un acuse por enlace lo daría una máquina antes de que tú
    > leyeras nada.
 
-> **La trampa del SSO se cobró este despliegue, y conviene saber cómo se reconoce.** Falló con
-> `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no es
-> que falten credenciales, es la caché del SSO caducada, y `aws sts` puede seguir contestando
-> mientras terraform ya no. `aws sso login` a secas **no lo arregla** — hace falta
-> `aws sso logout` primero.
+> **La trampa del SSO se cobró el despliegue anterior, y conviene saber cómo se reconoce.** Falló
+> con `InvalidGrantException` **mientras el `docker login` a ECR funcionaba**. Ésa es la firma: no
+> es que falten credenciales, es la caché del SSO caducada, y `aws sts` puede seguir contestando
+> mientras terraform ya no. `aws sso login` a secas **no lo arregla** — hace falta `aws sso logout`
+> primero.
 
 ### 2.2 · Confirmar que la alarma del gabinete fantasma **sale** de `INSUFFICIENT_DATA`
 Está escrito en tres sitios y es contraintuitivo: `insufficient_data_actions` dispara **solo al
@@ -430,28 +196,45 @@ suite **lo declara en voz alta** en vez de callarlo.
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 
-> ## ✅ El bloqueo se levantó: el gabinete YA corre el código nuevo (2026-08-12)
+> **El gabinete YA corre el código nuevo (2026-08-12), así que esto se puede hacer.**
+> `gw-dev-0001` está `online` con `fw_version` = `fw_running` = `2d12c3a` —las dos columnas existen
+> precisamente para cazar «código escrito que nadie corre», y coinciden— y con `SCHEMA_VERSION
+> 1.11.0`. La nube va en el mismo commit.
 >
-> **`gw-dev-0001` está `online` con `fw_version` = `fw_running` = `2d12c3a`** —las dos columnas
-> existen precisamente para cazar «código escrito que nadie corre», y coinciden— y con
-> `SCHEMA_VERSION 1.11.0`. La nube va en el mismo commit. **`T-2.116` y `T-2.120` dejan de ser
-> teoría: el acuse ya trae el estado real del relé tras el arbitraje.**
->
-> **Lo que te toca a ti, y ahora sí se puede:** re-correr el flujo **`GATE-HW 02`**, que se
-> acreditó contra la conducta vieja. Lo que verás distinto: silenciar durante una alerta vigente
-> ahora dice **«SU DEMANDA SE RETIRÓ · LA SIRENA SIGUE ACTIVA»** en vez de fingir éxito. Necesita
-> un dispositivo físico, así que no lo puede correr el software.
->
-> **Del despliegue quedó una medición que vale para §1.1:** este gabinete **no lleva `GAS_VALVE`
-> ni `DOOR_RETAINER`** (`relays_status.installed = ["siren","strobe"]`), así que el reinicio de
-> `takab-edge` **no cicló nada** — sirena y estrobo siguieron desenergizados antes y después. El
-> coste de un ciclo que describe §1.1 es real **solo en un gabinete que los tenga instalados**;
-> en el de desarrollo, desplegar es gratis.
+> **Lo que te toca:** re-correr el flujo **`GATE-HW 02`**, que se acreditó contra la conducta
+> vieja. Lo que verás distinto: silenciar durante una alerta vigente ahora dice **«SU DEMANDA SE
+> RETIRÓ · LA SIRENA SIGUE ACTIVA»** en vez de fingir éxito.
 
-### 3.5 · El traspaso del dueño de los pines
-Depende de la decisión §1.1. Si es (A), va en esta misma visita. **Orden correcto y no
-intercambiable:** `TAKAB_EDGE_GPIO_OWNER=gpio` en `edge.env` → `systemctl enable --now
-takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerrojo.
+### 3.5 · ~~El traspaso del dueño de los pines~~ — ✅ **HECHO en dev** (2026-08-16)
+
+**Ejecutado y medido en `gw-dev-0001`.** Los pines los sostiene **`takab-gpio`**, y `takab-edge`
+dejó de tocarlos:
+
+| | |
+|---|---|
+| `takab-gpio` | `enabled` + `active` desde **02:41:01**, `NRestarts=1` |
+| `takab-edge` | `enabled` + `active` desde **02:44:51**, `NRestarts=0` |
+| Dueño del cerrojo | **`takab-gpio`**, confirmado por el paso 7 del despliegue (pid + unidad) |
+| Coste eléctrico | **CERO** — `installed = ["siren","strobe"]`; no hay gas ni retenedores que ciclar |
+
+> **Ese `NRestarts=1` no es un defecto: es la conducta esperada, y conviene reconocerla.**
+> `takab-gpio` arrancó con `takab-edge` todavía dueño, **chocó una vez contra el cerrojo**, y al
+> reiniciarse `takab-edge` —ya leyendo `owner=gpio`— soltó los pines y el dueño nuevo los tomó.
+> Se cura solo (`Restart=always`, `RestartSec=1`).
+>
+> **Y por eso este traspaso NO se hace a mano**, aunque esta vez saliera bien: en ese hueco parece
+> un fallo, y el movimiento natural del operador —`systemctl stop takab-gpio` para «liberar» los
+> pines— **sí es actuación física sobre gas y puertas**. `deploy/edge/deploy.sh` hace los tres
+> pasos en orden y **verifica el cerrojo**; `systemctl is-active takab-edge` **no vale como
+> comprobación**: sale `active` con los pines sin dueño.
+
+**Desbloquea [`T-2.70`](TASKS.md)** (canary + rollback). Desde ahora, **reiniciar `takab-edge` no
+mueve un solo pin** — que era el objetivo entero de `T-2.70.a`.
+
+**Lo que queda vivo de aquí, y es la mitad que importa dentro de un año:** en una instalación
+**real**, esto se hace en la **puesta en marcha**, antes de que el edificio dependa del sistema.
+Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el cliente. Es la política
+[`D-04`](DECISIONES-MAURICIO.md), y sobrevive a esta ficha.
 
 ---
 
@@ -473,8 +256,11 @@ takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerroj
 > 2. **Llévaselo a un abogado con experiencia en protección civil o en responsabilidad de
 >    producto en México**, y pídele **dos cosas**: qué marco es citable para este sistema, y qué
 >    frases de las que hoy usamos habría que cambiar.
-> 3. **Pregunta también por el §1.3** (el teléfono en claro del registro de consentimientos) en la
->    misma consulta: es de la misma persona y ahorra una segunda vuelta.
+> 3. **Lleva en la misma consulta la postura [`D-07`](DECISIONES-MAURICIO.md)** —cripto-borrado del
+>    teléfono del consentimiento— y pregúntale las dos cosas que esa decisión deja abiertas a
+>    propósito: si un número **cifrado** sigue siendo dato personal mientras exista la clave, y si
+>    **destruir la clave** se acepta como cancelación a efectos de la LFPDPPP. Es de la misma
+>    persona y ahorra una segunda vuelta.
 >
 > **Por qué corre prisa aunque no bloquee código:** es **plazo externo**. El día que un cliente
 > institucional lo pida, el reloj empieza entonces — y ya llevas semanas de margen gastadas.
@@ -522,11 +308,12 @@ takab-gpio` → `systemctl restart takab-edge`. Al revés falla contra el cerroj
 ## Si solo se pueden hacer tres cosas
 
 1. **Arrancar §4.1 y §4.2.** Son las de **plazo externo** —las contesta un tercero—, así que son
-   las únicas que no se pueden acelerar después. Ahora encabezan la lista porque lo que estaba
-   antes en este puesto (proteger `main`, §1.6) **ya está hecho**.
-2. **Las decisiones de §1.1 y §1.2.** Cuestan pensar, no herramientas, y desbloquean cinco fichas
-   de software entre las dos.
-3. **La sesión de vida (§3.1).** Es la que dice si el producto es real, y no espera a nada.
+   las únicas que no se pueden acelerar después. Encabezan la lista porque **ya no hay nada más
+   barato por delante**: las decisiones de escritorio se acabaron el 2026-08-15.
+2. **La sesión de vida (§3.1).** Es la que dice si el producto es real, y no espera a nada.
+3. **`GATE-HW 02` (§3.4).** Necesita un teléfono en la mano y nada más; se acreditó contra la
+   conducta vieja y hoy el gabinete ya corre la nueva.
 
-Y en cuanto haya un hueco con el edificio: **la sesión de vida (§3.1)**, que es la que dice si el
-producto es real y no espera a nada.
+> **Lo que estaba en el puesto 2 hasta el 2026-08-16 —el traspaso de los pines— ya está hecho**
+> (§3.5), así que la lista subió un escalón. Es la segunda vez seguida que esta sección se acorta
+> por arriba: cada vez que pasa, lo que queda es más caro.
