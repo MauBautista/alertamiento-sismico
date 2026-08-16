@@ -12,8 +12,8 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-15 · **9 decisiones** · 6 tomadas por Mauricio en la sesión del
-> 2026-08-15, 3 delegadas el 2026-08-12.
+> **Última actualización:** 2026-08-16 · **10 decisiones** · 7 tomadas por Mauricio (6 el
+> 2026-08-15, `D-10` el 2026-08-16), 3 delegadas el 2026-08-12.
 
 ---
 
@@ -30,6 +30,7 @@
 | [D-07](#d-07) | Teléfono del consentimiento: **cripto-borrado** | 2026-08-15 | Mauricio |
 | [D-08](#d-08) | Bloque IV (mini-ShakeMap y CCTV): **se planifica ya** | 2026-08-15 | Mauricio |
 | [D-09](#d-09) | `enforce_admins`: **queda en `false`, con gatillo escrito** | 2026-08-15 | Mauricio |
+| [D-10](#d-10) | Ruta de hardware de la sirena: **variante B**, fallback con watchdog | 2026-08-16 | Mauricio |
 
 ---
 
@@ -218,6 +219,54 @@ pasa a ser un agujero heredado.
 caído, un flaky— dejaría el repositorio bloqueado **sin un segundo admin que lo desatasque**. Lo
 que hacía falta no era cerrar el agujero hoy: era **que fuera una elección y no un olvido**. Ahora
 lo es.
+
+---
+
+<a id="d-10"></a>
+## D-10 · Ruta de hardware de la sirena — **variante B, fallback con watchdog**
+
+**Fecha:** 2026-08-16 · **Decide:** Mauricio · **Venía de:**
+`RUNBOOK-SPOF-02-ruta-hardware-sirena.md §7`, primera decisión abierta · **Gobierna:** `G-02`, y con
+él la lista de materiales de [`RUNBOOK-sesion-de-vida.md`](runbooks/RUNBOOK-sesion-de-vida.md) §C.1
+
+**El problema.** La sirena tiene dos fuentes en lógica OR: el relé que gobierna el Pi, y una **ruta
+de hardware sin CPU, firmware ni lógica programable** —contacto del WR-1 → relé de potencia →
+sirena, con alimentación propia respaldada por UPS— que sobrevive a cualquier fallo del Pi. Lo que
+había que decidir es **cuándo está activa esa segunda ruta**.
+
+**La decisión: variante B.** La ruta de hardware queda **inhibida mientras el Pi está sano** y se
+habilita sola si el Pi muere o se cuelga. Un relé `K_wd` (DPDT, energizado = Pi vivo) la inhibe;
+cuando el latido cesa, `K_wd` de-energiza, su contacto NC cierra, y la ruta engancha.
+
+**La razón, y es una sola:** preserva **el silencio del operador**. Ante una falsa alarma, con (B)
+el Pi está vivo y gobierna, así que se puede callar. Con (A) la sirena de hardware **no es
+silenciable** y sigue sonando hasta que el WR-1 libere el contacto — en un edificio con gente, una
+sirena que nadie puede callar durante una falsa alarma quema la credibilidad que hace que la gente
+obedezca la **siguiente** alerta. Es el mismo criterio que ya gobernó [`D-05`](#d-05).
+
+**Lo que esta decisión COMPRA, y hay que pagarlo:**
+
+- **Hardware:** un relé `K_wd` DPDT y un **monoestable retriggerable** (`t_wd` ≈ 2–3 s), además del
+  relé de potencia que (A) también necesitaría.
+- **Software, y es la parte delicada:** el **latido de keep-alive**, que no puede ser un
+  `while True: toggle`.
+
+> ### ⚠️ El requisito que hace peligrosa la implementación ingenua
+> **El latido debe probar la liveness del CAMINO DE REFLEJO, no del proceso.** Un cuelgue parcial
+> —el hilo del reflejo bloqueado con el lock tomado, los demás hilos vivos— dejaría el reflejo
+> muerto mientras un latido ingenuo sigue latiendo: `K_wd` energizado, ruta de hardware
+> **inhibida**, y **sirena muda ante una alerta real**. Que es exactamente el fallo que `G-02`
+> existe para impedir — reintroducido por su propia mitigación.
+>
+> Cada pulso debe condicionarse a **adquirir y liberar el lock del reflejo y observar progreso**:
+> un contador monótono que solo avanza si el camino SASMEX→relé pudo ejecutarse. **Un reflejo en
+> deadlock no debe poder emitir el latido.** Pin sugerido **BCM 26**, a declarar en `GpioPins`.
+
+**Cómo se revocaría:** si la medición de la semántica del WR-1 contra CIRES (`G-04`) revelara que
+el contacto es un **pulso corto no enganchado**, el inconveniente de (A) —la no-silenciabilidad—
+casi desaparece, porque la sirena de hardware se callaría sola en segundos. Entonces (A) volvería a
+la mesa por simplicidad. **Mientras esa medición no exista, (B) es la elección segura**, y es la
+que permite comprar hoy.
 
 ---
 

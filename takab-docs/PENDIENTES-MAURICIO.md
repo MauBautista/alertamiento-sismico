@@ -185,6 +185,29 @@ corrido**. El occupant necesita código de enrolamiento.
 ### 3.1 · [`T-2.92`](TASKS.md) · Sesión de vida — `G-01`, `G-02`, `G-04`
 **La sesión que decide si el producto es real.** No espera a nada más.
 
+> **✅ Hoja de ruta escrita:** [`runbooks/RUNBOOK-sesion-de-vida.md`](runbooks/RUNBOOK-sesion-de-vida.md).
+>
+> ### ⚠️ Y trae un veredicto que conviene leer ANTES de agendar: **no es una sesión, son tres cosas**
+>
+> | Gate | Estado real (medido 2026-08-16) | Falta |
+> |---|---|---|
+> | **`G-01`** restart en frío | **se puede hacer HOY** | nada — 20 min |
+> | **`G-04`** WR-1 → sirena <100 ms | **a medias** | una sirena real; y CIRES |
+> | **`G-02`** sirena con el Pi apagado | **NO se puede probar** | **el hardware no existe** |
+>
+> **`G-02` no es una prueba pendiente: es una obra pendiente.** El relé `K_wd`, el monoestable, el
+> relé de potencia y el riel con UPS **no están construidos**, y el **latido de keep-alive no está
+> escrito** — no hay pin de latido en `GpioPins`. Y es, según la propia ficha, «la mitigación más
+> importante del sistema».
+>
+> **Lo que la ficha dice y ya NO es cierto:** «los relés siguen en MOCK». El gabinete corre
+> `LGPIOFactory (lgpio)` real con `DEV_MODE=false`, y la mitad eléctrica de `G-04` **ya pasa** con
+> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms). Lo que le
+> falta a ese gate no es velocidad: es **que haya una sirena al final del cable**.
+>
+> **Variante de la ruta de hardware: DECIDIDA** — (B), fallback con watchdog
+> ([`D-10`](DECISIONES-MAURICIO.md)). **La lista de materiales ya se puede comprar.**
+
 ### 3.2 · [`T-2.93`](TASKS.md) · Sesión instrumental — `G-03`, `G-05`, `G-07`, `G-10`
 Incluye el gate #3 del Shake: hoy sus 5 tests se saltan cuando el sensor no está alcanzable, y la
 suite **lo declara en voz alta** en vez de callarlo.
