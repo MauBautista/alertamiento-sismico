@@ -9111,7 +9111,18 @@ tipos**, no de documentación.
       sección INVARIANTES al final de este archivo. Derogar "la §14" entera tumbaría las
       reglas de oro 1 y 9 para poder pintar un mapa. **El bullet de `CLAUDE.md §8` mezcla
       mini-ShakeMap y streaming crudo en una sola línea: hay que partirlo, no borrarlo.**
-- [ ] Arquitectura escrita **antes** del código.
+- [x] **Arquitectura escrita ANTES del código** — [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md)
+      parte A (`D-08`, 2026-08-16). Lo que fija, y que cambia el alcance de esta ficha:
+  - [ ] **Tres capas que NO se mezclan**: observado (puntos medidos), estimado (superficie de
+        `ATTEN-LAW v1`) y **residuo**. El residuo es el producto — un punto que sacude el triple de
+        lo que la ley predice es lo único que el modelo no sabía, y lo que justifica el mapa.
+  - [ ] Cada valor viaja con su **procedencia** (`measured`/`modeled`) y la consola las pinta
+        **distinto**, con test sobre el DOM y no sobre la lógica (lección de `T-2.104`).
+  - [ ] **`SIN COBERTURA` es un estado propio**, no un color pálido (misma doctrina que `T-3.08`).
+  - [ ] **NO es un microservicio.** Se calcula por evento en el worker que ya existe: lo que se
+        calcula no es continuo, y un servicio más es un despliegue, una alarma y un rol IAM más.
+  - [ ] **Depende de [`T-2.149`]** (catálogo SSN): sin magnitud/epicentro no hay capa estimada. El
+        mapa **existe degradado y lo declara**, en vez de inventar un epicentro.
 - [ ] La regla de oro 9 (sin streaming continuo de waveform crudo) sigue en pie: el mapa se
       construye de features, no de forma de onda en vivo.
 
@@ -9125,9 +9136,23 @@ sirena.
 > proceso que toca la sirena** (regla de oro 4).
 
 ### [ ] T-3.10 · Escribir la arquitectura en el blueprint — `SOFTWARE` + `DECISIÓN`
+- **Diseño escrito (`D-08`, 2026-08-16):**
+  [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B. Lo que queda es
+  llevarlo al blueprint **con el número de la medición dentro**, que es lo único que falta.
 - [ ] Sección nueva del blueprint: topología, dónde vive el proceso, y **presupuesto de CPU**.
 - [ ] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
 - [ ] Decisión escrita: mismo Pi o hardware separado, con la medición que la sostiene.
+  > **La regla de decisión ya está escrita, y a propósito ANTES de ver el número** para que no se
+  > acomode al resultado: lo único que decide es la **latencia del reflejo SASMEX→relé bajo carga
+  > de CCTV** contra su presupuesto de 100 ms. Si se acerca, **hardware separado, sin discusión**.
+  > El sesgo del que hay que protegerse es «va justo pero cabe»: el margen actual es de **dos
+  > órdenes de magnitud** (6.65 ms / 4.16 ms) y gastarlo en vídeo lo cambia por lo único que el
+  > sistema no puede permitirse.
+- [ ] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
+      para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
+- [ ] **Decidir ANTES de `T-3.11`** si el aforo (`T-3.12`) viaja como **número** o como **imagen**.
+      Procesar en el sitio y subir solo el conteo elimina casi toda la superficie de PII de vídeo —
+      es lo que el diseño recomienda.
 
 ### [ ] T-3.11 · Cliente ONVIF — `SOFTWARE`
 - [ ] Proceso **separado**, con límite de CPU explícito, que no puede degradar `takab-gpio`.

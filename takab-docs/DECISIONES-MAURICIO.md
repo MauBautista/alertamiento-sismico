@@ -198,6 +198,28 @@ había que sopesar.
 fichas con criterios de aceptación, **no** implementación. El orden del proyecto (edge → cloud →
 frontend) y la prioridad del primer cliente no se alteran por esto.
 
+> ### ✅ EJECUTADA (2026-08-16) — y con un matiz que evitó una derogación prematura
+>
+> El diseño está escrito: [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md),
+> y las dos fichas ganaron los criterios que salen de él.
+>
+> **La viñeta NO se derogó, y es lo correcto.** `[DIFERIDO · mini-ShakeMap]` prohíbe
+> **implementar**; esta decisión autorizó **planificar**. Derogarla al diseñar habría sido
+> prematuro —y habría puesto en rojo la guarda de `§14` sin necesidad—. Se deroga al ejecutar
+> `T-3.09`, que es lo que `CLAUDE.md §8` dice desde el principio.
+>
+> **Dos hallazgos del diseño que cambian el alcance de las fichas:**
+> - **El mini-ShakeMap NO será un microservicio.** La viñeta diferida hablaba de uno, pero lo que
+>   se calcula **no es continuo**: se calcula por evento en el worker que ya existe. Un servicio
+>   más es un despliegue, una alarma y un rol IAM más, a cambio de nada.
+> - **Depende de `T-2.149`** (el catálogo del SSN, hoy bloqueado): sin magnitud y epicentro no hay
+>   capa estimada. El mapa existirá **degradado y declarándolo**, nunca inventando un epicentro.
+>
+> **Y una recomendación para el CCTV que conviene decidir pronto:** procesar el aforo **en el
+> sitio** y subir solo el número elimina casi toda la superficie de PII de vídeo. Si el vídeo no
+> sale del inmueble salvo por una acción explícita y auditada, media sección de privacidad
+> desaparece.
+
 ---
 
 <a id="d-09"></a>
