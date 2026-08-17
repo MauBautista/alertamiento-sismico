@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **284** · `[x]` **231** · `[~]` **9** · `[ ]` **44**
+**Conteo de tareas:** total **285** · `[x]` **231** · `[~]` **9** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -8399,6 +8399,68 @@ sería documentar intenciones.
 > un elemento del camino de vida sin leer su spec es peor que no pintarlo. **No bloquea el
 > cableado:** el dato ya viaja por las dos costuras, y hoy ningún gabinete tiene `K_wd`, así que no
 > hay nada que mostrar todavía.
+
+### [ ] T-2.147 · El quórum de pánico no notifica a nadie — `SOFTWARE`
+- **Componente:** api · **Sale de:** [`D-05`](DECISIONES-MAURICIO.md) (2026-08-15) ·
+  **Cableado por:** [`D-11`](DECISIONES-MAURICIO.md) · **Ficha de producto:** `T-2.106`
+- **El hueco, medido.** `panic_vote` alcanza quórum, emite el comando firmado de sirena, consume
+  los votos y **ahí acaba**: la ruta del voto **no toca `notify/`**. Los tácticos se enteran en el
+  siguiente sondeo de la app —30 s en reposo, 5 s ya en `building_alarm`—, y nadie más se entera
+  de nada. `D-05` decidió que **el push va SOLO a los tácticos**, y que si ninguno acusa en ~2 min
+  **se avisa al SOC**, no al edificio.
+- **Por qué no se pudo cablear de refilón, y de ahí salió `D-11`:** toda la maquinaria de
+  notificación —reintento con backoff, evidencia en `incident_actions`, cuarentena de canal caído,
+  guarda de duplicados— cuelga de un incidente, y `notification_jobs.incident_id` es `NOT NULL`.
+  El pánico no abría ninguno. `D-11` lo resuelve **sin tocar el esquema**: abre incidente con
+  `trigger = 'manual'`, valor que el `CHECK` ya contemplaba y que **nadie producía todavía**.
+
+#### [ ] T-2.147.a · El quórum abre incidente y despierta a los tácticos — `SOFTWARE`
+- **«Táctico» se DERIVA, no se enumera:** `roles_with_action("manual_activate")` — la matriz ya
+  dice quién puede disparar a mano, y es exactamente el círculo que debe enterarse. Una lista
+  escrita a mano aquí divergiría de la matriz el día que entre un rol nuevo.
+- **El destinatario sale de `user_zone_assignments`** (`user_id`, `site_id`, `role`) cruzado con
+  `push_tokens`. Es la única tabla que persiste el rol por inmueble: los claims de Cognito no
+  existen en un worker de segundo plano.
+- **Y hace falta una CLASE DE PUSH NUEVA, porque ninguna de las dos sirve.** `CRISIS` va por el
+  canal `seismic_alert` con el tono sísmico — vestir de sismo una activación manual es
+  **exactamente el defecto de `T-2.104`**, donde la app tituló «ALERTA SÍSMICA SASMEX» algo que no
+  lo era. Y `OPS` va en prioridad **normal**, que no despierta a nadie a las 3 a.m. Un pánico es
+  **alta prioridad y NO es un sismo**: las dos cosas a la vez, y no hay clase que lo diga.
+- **Criterios de aceptación:**
+  - [x] El quórum abre incidente `trigger='manual'`; **un solo voto NO abre nada**.
+  - [x] El push llega **solo** a los roles de `manual_activate`. Un occupant del mismo sitio con
+        token vivo **no lo recibe** — con test que lo fija, porque es el punto entero de `D-05`.
+  - [x] La clase nueva (`PANIC`) es **alta prioridad** y **no usa el canal ni el tono sísmicos**.
+  - [x] Cero destinatarios tácticos **se declara** (`notify_no_recipients`), no se calla: la rama
+        ya existía por `T-2.109` y el push acotado entra por ella sin tocarla.
+  - [x] El incidente `manual` **no ordena evacuar**: `mobile_state` gobierna eso por el ORIGEN, y
+        `manual` no es ni `sasmex` ni el quórum de ≥3 inmuebles.
+
+> ### ✅ Cerrada (2026-08-16), y con un desvío de diseño que conviene leer
+>
+> **El router NO encola el push, y no es un olvido.** `notification_jobs` tiene RLS que solo admite
+> escrituras de los roles internos —los jobs los crea el worker, que corre como `takab_ingest`— y
+> una petición de occupant no lo es. Se podía haber debilitado esa política; sería **mover la
+> frontera equivocada**: el teléfono de un ocupante pasaría a poder encolar notificaciones.
+>
+> Lo que el router deja es el **hecho** (el incidente `manual`); el worker lo recoge en
+> `_enqueue_panic_push`. **Y sale ganando:** hereda gratis la idempotencia (`NOT EXISTS`, probada
+> con dos pasadas seguidas), el reintento con backoff, la evidencia y la cuarentena de canal caído.
+>
+> **Dos tablas sustituyeron a dos ternarios**, y las dos fallaban en silencio hacia el lado malo:
+> el estilo de entrega (`_DELIVERY_STYLE`) y la fase que abre la app (`_PUSH_PHASE`). Con
+> `else "headcount"` y `else "normal"`, la clase nueva habría heredado **prioridad normal y la
+> pantalla del pase de lista** sin que nada se quejara. Ahora una clase sin estilo o sin fase
+> declarada **revienta**.
+
+#### [ ] T-2.147.b · El táctico no puede acusar recibo — `SOFTWARE`
+- Sin acuse no hay forma de saber si la brigada respondió, y **sin eso `147.c` no se puede medir**.
+
+#### [ ] T-2.147.c · Sin acuse en ~2 min, avisar al SOC — `SOFTWARE`
+- **No escala al edificio**, y esa es la decisión (`D-05`): escalar solo reintroduciría por la
+  puerta de atrás el «dos personas despiertan a 400» que se descartó. Un humano con contexto
+  decide; una máquina no debería hacerlo por un timeout.
+- Va también a la cadena on-call de `PENDIENTES-MAURICIO §2.9` **cuando exista**, no antes.
 
 ### [x] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
 - **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)

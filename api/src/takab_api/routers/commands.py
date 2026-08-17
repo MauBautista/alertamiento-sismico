@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import text as sql_text
@@ -456,6 +456,22 @@ async def panic_vote(
             window_s=settings.panic_quorum_window_s,
         )
 
+    # [T-2.147.a · D-11] EL INCIDENTE, ANTES DEL COMANDO. Un pánico ES un
+    # incidente operativo —algo pasó en el edificio, alguien debe responder, y
+    # tiene que quedar registro—; lo que no es, es un sismo, y de eso responde
+    # `trigger='manual'`. Va primero porque el push cuelga de él: sin incidente,
+    # `notification_jobs` no admite la fila (`incident_id` NOT NULL).
+    await conn.execute(
+        mobile_q.INSERT_PANIC_INCIDENT,
+        {
+            "event_uuid": str(uuid4()),
+            "tenant": tenant_id,
+            "site": str(site_id),
+            "opened_at": now,
+            "summary": json.dumps({"source": "panic_quorum", "voters": distinct}),
+        },
+    )
+
     # Quórum alcanzado: dispara la sirena por el pipeline firmado y consume los
     # votos (un solo disparo). La nube firma el comando; el teléfono jamás.
     await issue_signed_command(
@@ -473,6 +489,17 @@ async def panic_vote(
         audit_meta={"source": "panic_quorum", "voters": distinct},
     )
     await conn.execute(mobile_q.CONSUME_PANIC_VOTES, {"site": str(site_id), "since": window_start})
+    # [T-2.147.a · D-05] EL PUSH A LOS TÁCTICOS NO SE ENCOLA AQUÍ, y no es un
+    # olvido: `notification_jobs` tiene RLS que solo admite escrituras de los
+    # roles internos de TAKAB —los jobs los crea el worker, que corre como
+    # `takab_ingest`—, y una petición de occupant no lo es. Debilitar esa
+    # política para que el teléfono de un ocupante pudiera encolar
+    # notificaciones sería exactamente la frontera que no hay que mover.
+    #
+    # Lo que este router deja es el HECHO: un incidente `manual` recién abierto.
+    # El worker lo recoge en su siguiente pasada (`_enqueue_panic_push`) y de
+    # paso hereda gratis lo que ya sabe hacer: idempotencia, reintento con
+    # backoff, evidencia y cuarentena de canal caído.
     return PanicVoteOut(
         status="activated",
         distinct_voters=distinct,

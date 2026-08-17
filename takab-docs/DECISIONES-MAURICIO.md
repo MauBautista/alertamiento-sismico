@@ -31,6 +31,7 @@
 | [D-08](#d-08) | Bloque IV (mini-ShakeMap y CCTV): **se planifica ya** | 2026-08-15 | Mauricio |
 | [D-09](#d-09) | `enforce_admins`: **queda en `false`, con gatillo escrito** | 2026-08-15 | Mauricio |
 | [D-10](#d-10) | Ruta de hardware de la sirena: **variante B**, fallback con watchdog | 2026-08-16 | Mauricio |
+| [D-11](#d-11) | El quórum de pánico **abre incidente** `trigger='manual'` | 2026-08-16 | Mauricio |
 
 ---
 
@@ -267,6 +268,44 @@ el contacto es un **pulso corto no enganchado**, el inconveniente de (A) —la n
 casi desaparece, porque la sirena de hardware se callaría sola en segundos. Entonces (A) volvería a
 la mesa por simplicidad. **Mientras esa medición no exista, (B) es la elección segura**, y es la
 que permite comprar hoy.
+
+---
+
+<a id="d-11"></a>
+## D-11 · El quórum de pánico **abre incidente** `trigger='manual'`
+
+**Fecha:** 2026-08-16 · **Decide:** Mauricio · **Sale de:** implementar [`D-05`](#d-05) ·
+**Ficha:** `T-2.147`
+
+**El obstáculo, medido.** `D-05` manda push a los tácticos cuando el quórum confirma. Pero toda la
+maquinaria de notificación —reintento con backoff, evidencia en `incident_actions`, cuarentena de
+canal caído, guarda de duplicados— **cuelga de un incidente**: `notification_jobs.incident_id` es
+`NOT NULL` con FK. Y el quórum de pánico **no abre ninguno**: emite el comando firmado, audita, y
+ahí acaba.
+
+**La decisión.** Al alcanzar quórum, el pánico **abre un incidente con `trigger = 'manual'`** —
+valor que el `CHECK` del esquema **ya contempla** y que hasta hoy nadie producía. Con eso, `D-05`
+se cablea **sin tocar el esquema** y sin reinventar el subsistema de notificación en pequeño y
+peor.
+
+**Por qué es lo correcto y no un rodeo:** un pánico **es** operativamente un incidente — algo pasó
+en el edificio, alguien tiene que responder, y tiene que quedar registro. Que no fuera sísmico
+nunca fue razón para no registrarlo; era razón para **no titularlo como sismo**.
+
+> ### ⚠️ El riesgo que hereda, y ya mordió una vez
+> `T-2.104`: la app tituló **«ALERTA SÍSMICA SASMEX»** una alerta que no era de SASMEX, porque el
+> titular estaba escrito a fuego para las cuatro fuentes mientras abajo decía «FUENTE · REGLAS
+> LOCALES». Un incidente `manual` **no puede presentarse como sísmico**, y eso se cierra **por el
+> campo `trigger`**, no negándose a registrarlo.
+>
+> Y con [`D-05`](#d-05) y la regla de quién puede ordenar evacuar: un incidente `manual` **no
+> ordena evacuar a nadie**. Solo SASMEX o ≥3 inmuebles simultáneos lo hacen.
+
+**Por qué no las otras dos.** Relajar `incident_id` a NULL rompe la garantía de que **toda
+notificación pertenece a un incidente**, que es lo que hace auditable la cadena de evidencia — y
+deja el escalado al SOC sin ancla donde vivir. Un camino aparte sin la cola sería rápido de
+escribir y se quedaría **sin reintento, sin evidencia, sin guarda de duplicados y sin cuarentena**,
+justo en el camino de una emergencia.
 
 ---
 

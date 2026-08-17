@@ -65,6 +65,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 
+from takab_api.auth.matrix import roles_with_action
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import (
@@ -74,12 +75,28 @@ from takab_api.notify.providers import (
     is_simulated,
     provider_message_id,
 )
-from takab_api.notify.push import PUSH_CLASS_CRISIS, PushDevice, build_push_payload
+from takab_api.notify.push import (
+    PUSH_CLASS_CRISIS,
+    PUSH_CLASS_OPS,
+    PUSH_CLASS_PANIC,
+    PushDevice,
+    build_push_payload,
+)
 from takab_api.notify.state import PgNotifyState
 from takab_api.privacy import store as privacy_store
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
+
+#: [T-2.147.a] Fase que la app abre al recibir cada clase de push. Tabla y no
+#: ternario: el `else` anterior daba «headcount» a toda clase que no fuera
+#: CRISIS, así que una clase nueva enrutaba al pase de lista sin que nada se
+#: quejara. Una clase sin fase declarada revienta aquí, que es lo correcto.
+_PUSH_PHASE = {
+    PUSH_CLASS_CRISIS: "alert_active",
+    PUSH_CLASS_OPS: "headcount",
+    PUSH_CLASS_PANIC: "building_alarm",
+}
 
 # Advisory lock propio (≠ engine 0x…1119, ≠ dictamen 0x…1120).
 _NOTIFY_LOCK_KEY = 0x7A4B_1121
@@ -343,6 +360,54 @@ WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
 ORDER BY created_at
 """
 
+# [T-2.147.a · D-11] Pánicos recientes sin push encolado todavía.
+#
+# `trigger = 'manual'` es la firma del quórum de pánico: los demás incidentes
+# nacen del edge (`sasmex`, `local_threshold`, `quorum`). El `NOT EXISTS` es la
+# idempotencia — sin él, cada pasada del worker encolaría otro push del mismo
+# pánico mientras el incidente siguiera dentro de la ventana.
+_PANIC_INCIDENT_PUSH_SQL = """
+SELECT i.incident_id, i.tenant_id, i.site_id, i.opened_at
+FROM incidents i
+WHERE i.trigger = 'manual'
+  AND i.opened_at >= %(since)s
+  AND NOT EXISTS (
+        SELECT 1 FROM notification_jobs j
+        WHERE j.incident_id = i.incident_id AND j.channel = 'push'
+      )
+ORDER BY i.opened_at
+"""
+
+_INSERT_PANIC_PUSH_JOB_SQL = """
+INSERT INTO notification_jobs
+  (tenant_id, incident_id, channel, mode, position, target, due_at)
+VALUES (%(tenant)s, %(incident)s, 'push', 'parallel', 0, %(target)s, %(due_at)s)
+"""
+
+# [T-2.147.a] Los MISMOS dispositivos, acotados a un conjunto de roles.
+#
+# `user_zone_assignments` es la ÚNICA tabla que persiste el rol por inmueble: un
+# worker de segundo plano no tiene claims de Cognito, así que sin este JOIN la
+# nube no puede saber quién es táctico. El `IN` es un array parametrizado y la
+# lista la DERIVA quien encola (`roles_with_action`), nunca este SQL.
+#
+# `DISTINCT` porque `user_zone_assignments` tiene PK `(user_id, site_id)` pero el
+# mismo usuario puede tener varios dispositivos; sin él, un táctico con teléfono
+# y tablet contaría dos veces en el censo de entregas.
+_PUSH_DEVICES_BY_ROLE_SQL = """
+SELECT DISTINCT p.push_token_id, p.token, p.platform, p.endpoint_arn, p.created_at
+FROM push_tokens p
+JOIN user_zone_assignments a
+  ON a.user_id = p.user_sub
+ AND a.site_id = p.site_id
+ AND a.tenant_id = p.tenant_id
+WHERE p.site_id = %(site)s
+  AND p.tenant_id = %(tenant)s
+  AND p.revoked_at IS NULL
+  AND a.role = ANY(%(roles)s::text[])
+ORDER BY p.created_at
+"""
+
 # [T-2.109] Censo de tokens del tenant para poder DECIR por qué no hay nadie.
 # `tokens_sin_inmueble` es la firma exacta del defecto que cerró esta ficha: la
 # app registraba con `site_id: null` y los dos filtros de arriba comparan
@@ -413,6 +478,10 @@ def run_notify_pass(
     counts["enqueued"] += _enqueue_push_for_actions(
         conn, _DICTAMEN_SIGNED_SQL, now=now, lookback_s=lookback
     )
+    # [T-2.147.a] El pánico va en su propia función y no por `_enqueue_push_for_actions`:
+    # aquel encola por ACCIÓN de incidente (`action_id`), y un pánico no genera
+    # ninguna — el hecho es el incidente mismo.
+    counts["enqueued"] += _enqueue_panic_push(conn, now=now, lookback_s=lookback)
     # [T-2.77.c] Lo que los providers recordaban EN RAM pasa a recordarse aquí,
     # sobre la conexión de esta pasada: sobrevive al reinicio del worker y lo
     # comparten las instancias. Se ata por el registro, sin nombrar canales —
@@ -563,6 +632,49 @@ def _enqueue_people_at_risk(
                 "target": json.dumps({"to": emails}),
                 "due_at": row["ts"],  # vence YA: prioridad máxima, sin cascada
                 "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _enqueue_panic_push(conn: psycopg.Connection, *, now: datetime, lookback_s: float) -> int:
+    """[T-2.147.a · D-05 · D-11] Un push a los TÁCTICOS por cada pánico reciente.
+
+    El router del voto no puede encolar esto: `notification_jobs` tiene RLS que
+    solo admite escrituras de los roles internos, y una petición de occupant no
+    lo es. Debilitar esa política para que el teléfono de un ocupante encolara
+    notificaciones sería mover la frontera equivocada. Lo que el router deja es
+    el HECHO —un incidente `trigger='manual'`—; el resto es de aquí.
+
+    **El círculo se DERIVA de la matriz**: `manual_activate` es quien ya puede
+    disparar la sirena a mano, o sea quien tiene algo que hacer con el aviso.
+    Escribirlo a mano divergiría el día que entre un rol nuevo.
+
+    **A quién NO va, que es el punto de `D-05`:** al resto del edificio. La
+    sirena ya suena y la app ya explica la alarma; el push solo añade valor para
+    quien tiene que actuar. Dos personas no deben poder despertar a 400.
+
+    Idempotente por el `NOT EXISTS`: la pasada siguiente no duplica el job.
+    """
+    rows = conn.execute(
+        _PANIC_INCIDENT_PUSH_SQL, {"since": now - timedelta(seconds=lookback_s)}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        result = conn.execute(
+            _INSERT_PANIC_PUSH_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps(
+                    {
+                        "site_id": str(row["site_id"]),
+                        "push_class": PUSH_CLASS_PANIC,
+                        "roles": list(roles_with_action("manual_activate")),
+                    }
+                ),
+                "due_at": row["opened_at"],  # vence YA: es una emergencia
             },
         )
         inserted += result.rowcount
@@ -743,7 +855,23 @@ def _dispatch_push(
     muertos. ≥1 entrega = sent (best-effort, R5); 0 entregas con dispositivos
     vivos = fallo → backoff (es un job paralelo: única voz push del incidente).
     """
-    site_id = str((row["target"] or {}).get("site_id") or row["site_id"])
+    target = row["target"] or {}
+    site_id = str(target.get("site_id") or row["site_id"])
+    # [T-2.147.a] `roles` acota el push a un círculo (hoy: los tácticos del
+    # quórum de pánico, D-05). Ausente = TODO el inmueble, que es la conducta de
+    # siempre y la que quiere una crisis sísmica.
+    roles = target.get("roles")
+    if roles:
+        sql, params = (
+            _PUSH_DEVICES_BY_ROLE_SQL,
+            {
+                "site": site_id,
+                "tenant": row["tenant_id"],
+                "roles": list(roles),
+            },
+        )
+    else:
+        sql, params = _PUSH_DEVICES_SQL, {"site": site_id, "tenant": row["tenant_id"]}
     devices = [
         PushDevice(
             push_token_id=str(r["push_token_id"]),
@@ -751,9 +879,7 @@ def _dispatch_push(
             platform=r["platform"],
             endpoint_arn=r["endpoint_arn"],
         )
-        for r in conn.execute(
-            _PUSH_DEVICES_SQL, {"site": site_id, "tenant": row["tenant_id"]}
-        ).fetchall()
+        for r in conn.execute(sql, params).fetchall()
     ]
     if not devices:
         # [T-2.109] Nadie a quien entregar NO es una avería del proveedor. Antes
@@ -768,8 +894,12 @@ def _dispatch_push(
     # [T-2.11] La clase del push la fija el job (CRISIS al abrir incidente;
     # OPS para el "notificar a no reportados" del headcount). Default CRISIS por
     # retrocompatibilidad con los jobs de T-2.04.
-    push_class = str((row["target"] or {}).get("push_class") or PUSH_CLASS_CRISIS)
-    phase = "alert_active" if push_class == PUSH_CLASS_CRISIS else "headcount"
+    push_class = str(target.get("push_class") or PUSH_CLASS_CRISIS)
+    # [T-2.147.a] La fase la declara la clase, en una tabla y no en un ternario:
+    # con `else "headcount"`, una clase nueva heredaba en silencio la fase del
+    # pase de lista — y la app enruta por fase, así que un pánico habría abierto
+    # la pantalla equivocada.
+    phase = _PUSH_PHASE[push_class]
     payload = build_push_payload(
         push_class=push_class,
         site_id=site_id,

@@ -256,6 +256,26 @@ CONSUME_PANIC_VOTES = text(
     "WHERE site_id = CAST(:site AS uuid) AND consumed = false AND created_at >= :since"
 )
 
+# [T-2.147.a · D-11] El incidente del quórum de pánico.
+#
+# `trigger='manual'` es un valor que el CHECK del esquema contemplaba desde el
+# principio y que NADIE producía: los incidentes nacían del edge (sasmex,
+# local_threshold, quorum). Sin él, el push a los tácticos no tenía de dónde
+# colgar — `notification_jobs.incident_id` es NOT NULL — y toda la maquinaria de
+# reintento, evidencia y cuarentena quedaba fuera de alcance.
+#
+# `severity='critical'`: alguien pulsó pánico dos veces en el mismo inmueble.
+# Lo que NO hace este incidente es ordenar evacuar: eso sigue reservado a SASMEX
+# y al quórum de ≥3 inmuebles, y lo gobierna `mobile_state`, no esta fila.
+INSERT_PANIC_INCIDENT = text(
+    "INSERT INTO incidents "
+    "(event_uuid, tenant_id, site_id, opened_at, severity, state, trigger, summary) "
+    "VALUES (CAST(:event_uuid AS uuid), CAST(:tenant AS uuid), CAST(:site AS uuid), "
+    "        :opened_at, 'critical', 'open', 'manual', CAST(:summary AS jsonb)) "
+    "RETURNING incident_id"
+)
+
+
 # --- [T-2.106] alarma del inmueble: la última orden EJECUTADA sobre la sirena ----------
 
 # La señal que sostiene `phase="building_alarm"`. Tres filtros, cada uno cargado:
