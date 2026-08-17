@@ -98,6 +98,7 @@ class _Dueno:
             test_mode_remaining_s=0.0,
             last_reflex_latency_s=None,
             relays=self._relays,
+            keepalive_beating=False,
         )
 
     def apply(self, demands: Any) -> tuple:  # pragma: no cover — la costura lo exige

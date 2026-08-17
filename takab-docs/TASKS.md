@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **283** · `[x]` **231** · `[~]` **9** · `[ ]` **43**
+**Conteo de tareas:** total **284** · `[x]` **231** · `[~]` **9** · `[ ]` **44**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -8341,6 +8341,64 @@ sería documentar intenciones.
   - [ ] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
   - [ ] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
         por el mismo corte son deseables.
+
+### [ ] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · `G-02`
+- **Componente:** edge (`gpio`) · **Depende de:** — · **Sale de:**
+  [`D-10`](DECISIONES-MAURICIO.md) (variante B ratificada el 2026-08-16) ·
+  **Desbloquea la mitad software de `G-02`**
+- **El hueco, medido.** `RUNBOOK-SPOF-02 §3.1` exige que el Pi emita un **latido** (onda cuadrada
+  ~1 Hz) que un **monoestable retriggerable** convierte en «Pi vivo» para gobernar `K_wd`. En el
+  árbol **no hay nada de eso**: `GpioPins` declara `wr1_contact`, los dos botones y los cinco
+  relés, y **ningún pin de latido**; el único `keepalive` del edge es el del socket de `pinlink`,
+  que es otra cosa. Con la variante B decidida, **el hardware no se puede montar contra un latido
+  que no se emite.**
+- **Por qué NO es un `while True: toggle`, y es el fondo entero de la ficha.** El reflejo de
+  `T-1.3` es *event-driven* y **todas las transiciones se serializan en un único `RLock`**. Un
+  **cuelgue parcial** —el hilo del reflejo bloqueado con el lock tomado, los demás hilos vivos—
+  deja el reflejo muerto, pero un latido ingenuo **seguiría latiendo**: `K_wd` energizado ⇒ ruta
+  de hardware **inhibida** ⇒ **sirena muda ante una alerta real**. O sea `G-02` fallando **por
+  culpa de su propia mitigación**. Cada pulso debe condicionarse a **tomar y soltar el lock del
+  reflejo y observar progreso**; un reflejo en interbloqueo **no debe poder latir**.
+- **La dirección del fallo es hacia ALERTAR, y es deliberada.** Cualquier duda —no se pudo tomar
+  el lock, no hay relé de sirena, el sondeo lanzó— **calla el latido**. Callar el latido
+  **habilita** la ruta de hardware: el modo de fallo es «el WR-1 puede sonar la sirena por sí
+  mismo», nunca «nadie puede».
+- **Arranca DESHABILITADO** (`gpio_keepalive_enabled=False`): el hardware de `K_wd` no existe
+  todavía y un pin latiendo contra nada no protege a nadie. Se enciende por gabinete al cablear.
+- **Criterios de aceptación:**
+  - [x] `GpioPins` declara el pin de latido (**BCM 26**, el sugerido por el runbook).
+  - [x] En operación normal el pin **alterna**, y el contador de reflejo **avanza**.
+  - [x] **Con el lock del reflejo tomado por otro hilo, el latido CESA.** Éste es el test que un
+        latido ingenuo no pasaría, y es el criterio que justifica la ficha.
+  - [x] Sin relé de sirena construido, **no late**.
+  - [x] La parada **no se interbloquea**: el hilo se detiene FUERA del `_lock`, igual que la
+        puerta de servicio (`_on_stop` ya documenta por qué el orden es ése).
+  - [x] Deshabilitado por defecto: sin hilo, sin dispositivo y **sin reclamar el pin**.
+  - [x] El estado del latido **viaja**: `GpioSnapshot.keepalive_beating` cruza las dos costuras
+        (el códec del `pinlink` deriva del `__dataclass_fields__`, así que la suite de
+        conformidad **estrenó sus dos casos sola**). Registro **por transición**, no por
+        iteración (regla de oro 10).
+  - [ ] **DIFERIDO — pintarlo en el panel del gabinete.** Ver la nota de abajo.
+
+> ### ✅ Cerrada la parte de software del latido (2026-08-16), con una mitad DECLARADA pendiente
+>
+> **El test que da valor a la ficha se verificó contra sí mismo**, que es lo único que lo hace
+> creíble: se parcheó el sondeo para que devolviera siempre «vivo» —un latido ingenuo— y
+> `test_el_latido_CESA_con_el_lock_del_reflejo_tomado` **falló con el mensaje correcto** («el pin
+> siguió alternando 10 veces con el reflejo INTERBLOQUEADO»). Un test negativo que no se ve fallar
+> es un test que no se sabe si mide.
+>
+> **Diseño, en dos frases.** El sondeo hace lo mismo que el reflejo **salvo escribir**: toma **ese
+> mismo** `_lock` con plazo y recalcula la sirena. No escribe a propósito —un sondeo que aplicara
+> estado movería hardware una vez por segundo—; lo que acredita es que el **recálculo bajo el lock
+> llega a término**, que es exactamente donde muere un cuelgue parcial.
+>
+> **Lo que queda, y por qué NO se hizo de refilón:** el panel del gabinete. Añadir el campo a
+> `status()` obliga a pintarlo —lo caza `test_panel_render_census`, que muta cada hoja del status y
+> compara el DOM—, y **dónde** se pinta lo gobierna `ESPECIFICACION-PANEL-GABINETE.md`. Inventar
+> un elemento del camino de vida sin leer su spec es peor que no pintarlo. **No bloquea el
+> cableado:** el dato ya viaja por las dos costuras, y hoy ningún gabinete tiene `K_wd`, así que no
+> hay nada que mostrar todavía.
 
 ### [x] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
 - **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)

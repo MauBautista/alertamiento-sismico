@@ -83,6 +83,12 @@ class GpioPins(BaseModel):
     relay_gas_valve: int = 22
     relay_elevator: int = 23
     relay_door_retainer: int = 24
+    #: [T-2.146] SALIDA: latido de keep-alive de SPOF-02 (variante B, D-10). Onda
+    #: cuadrada que un monoestable retriggerable convierte en «Pi vivo» para
+    #: gobernar `K_wd`. BCM 26 es el pin que sugiere `RUNBOOK-SPOF-02 §3.1`.
+    #: Sólo se RECLAMA con `gpio_keepalive_enabled=true`: mientras el hardware no
+    #: exista, reclamarlo se lo quitaría a quien lo necesite.
+    keepalive: int = 26
 
 
 class SignalConfig(BaseModel):
@@ -389,6 +395,23 @@ class EdgeSettings(BaseSettings):
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)
     siren_test_duration_s: float = 2.0  # duración del self-test del botón de prueba
+
+    # --- [T-2.146] latido de keep-alive de SPOF-02 (variante B · D-10) ---
+    #: Arranca DESHABILITADO: el `K_wd` y su monoestable **no están montados**, y un
+    #: pin latiendo contra nada no protege a nadie —sólo reclama un BCM que quizá
+    #: haga falta—. Se enciende POR GABINETE al cablear la ruta de hardware.
+    gpio_keepalive_enabled: bool = False
+    #: SEMIperiodo: el pin alterna cada `period_s`, así que el latido es una onda
+    #: cuadrada de `1/(2·period_s)` Hz. 0.5 s ⇒ 1 Hz, el valor del runbook.
+    #: Debe quedar MUY por debajo del `t_wd` del monoestable (2–3 s): el margen es
+    #: lo que evita que una pausa de GC o un pico de carga suelten `K_wd`.
+    gpio_keepalive_period_s: float = 0.5
+    #: Cuánto espera cada pulso a tomar el lock del reflejo antes de declararlo
+    #: inalcanzable y CALLAR. Corto a propósito: el `_lock` sólo se sostiene para
+    #: recalcular y escribir relés, que son microsegundos. Un valor largo
+    #: convertiría un interbloqueo real en un latido que sigue mintiendo.
+    #: **Callar es la conducta segura** — habilita la ruta de hardware.
+    gpio_keepalive_lock_timeout_s: float = 0.25
     #: [T-1.69] Modo prueba del WR-1: ventana (s) en la que un disparo (SASMEX real o
     #: instrumental) protege en LOCAL igual que siempre (reflejo+sirena+actuadores) pero
     #: NO se publica a la nube (sin incidente ni notificación). Auto-expira: corto a

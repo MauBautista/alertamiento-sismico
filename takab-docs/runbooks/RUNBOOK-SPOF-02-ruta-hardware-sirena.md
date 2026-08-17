@@ -202,7 +202,13 @@ Registrar cada prueba en la tabla del §8.
 
 ## 7. Decisiones abiertas (para Mauricio / CIRES)
 
-- **Variante A vs B** (§2.1): recomendada **B**; A si la no-silenciabilidad es aceptable.
+- ✅ **Variante A vs B** (§2.1) — **DECIDIDA el 2026-08-16: variante B**
+  ([`D-10`](../DECISIONES-MAURICIO.md)). La razón es el **silencio del operador**: con (B), ante una
+  falsa alarma el Pi está vivo y gobierna, así que se puede callar; con (A) la sirena de hardware
+  sigue sonando hasta que el WR-1 libere el contacto, y una sirena que nadie puede callar durante
+  una falsa alarma quema la credibilidad que hace que la gente obedezca la **siguiente** alerta.
+  **Revocable** si la medición de CIRES (siguiente viñeta) revela que el contacto es un pulso corto
+  no enganchado: entonces (A) recupera su ventaja de simplicidad sin su inconveniente.
 - **Semántica del contacto WR-1** (gate #3): asignación alerta/prueba, duración, latching, rebote
   → fija `t_wd`, el enclavamiento de la sirena de hardware y el cableado de pares.
 - **Rating de sirena y dimensionado de UPS** (SPOF-04): pico de corriente de la sirena elegida.

@@ -93,6 +93,15 @@ class GpioSnapshot:
     test_mode_remaining_s: float
     last_reflex_latency_s: float | None
     relays: tuple[RelayState, ...]
+    #: [T-2.146] ¿Este proceso está emitiendo el latido de keep-alive de SPOF-02?
+    #:
+    #: Es la ÚNICA forma de saber, sin un multímetro en el `K_wd`, si la ruta de
+    #: hardware de la sirena está inhibida (el Pi gobierna, el operador puede
+    #: silenciar) o habilitada (el WR-1 puede sonar la sirena solo, y nadie la
+    #: calla). Con el latido deshabilitado —el default, mientras el `K_wd` no
+    #: esté montado— es siempre ``False``: no hay latido que emitir, y tampoco
+    #: hay ruta de hardware que gobernar.
+    keepalive_beating: bool
     #: [T-2.70.a·D2/P2] EDAD del estado, en el reloj de QUIEN LO LEE.
     #:
     #: `0.0` cuando el dueño de los pines está en este proceso (`LocalGpioLink`
