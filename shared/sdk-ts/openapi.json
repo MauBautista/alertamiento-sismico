@@ -378,6 +378,11 @@
             "title": "Topic",
             "type": "string"
           },
+          "unchanged": {
+            "default": false,
+            "title": "Unchanged",
+            "type": "boolean"
+          },
           "version": {
             "title": "Version",
             "type": "integer"

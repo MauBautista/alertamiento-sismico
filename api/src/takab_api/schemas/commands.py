@@ -104,3 +104,8 @@ class CatalogPushOut(BaseModel):
     gateway_id: str
     version: int
     topic: str
+    #: [T-2.148] ``True`` = el catálogo era IDÉNTICO al vigente, así que no se
+    #: publicó nada, no se quemó versión y no se auditó. Se declara en vez de
+    #: fingir una publicación: quien automatice esto (`D-06`) necesita distinguir
+    #: «no había novedad» de «se publicó», y un 202 mudo no lo permite.
+    unchanged: bool = False

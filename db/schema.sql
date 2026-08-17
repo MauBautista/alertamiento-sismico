@@ -972,7 +972,14 @@ CREATE TABLE gateway_config_state (
   version      integer NOT NULL,
   payload      jsonb NOT NULL,
   sig          text NOT NULL,
-  published_at timestamptz NOT NULL DEFAULT now()
+  published_at timestamptz NOT NULL DEFAULT now(),
+  -- [T-2.148] «Miré y era el mismo catálogo». NO es `published_at`: aquél dice
+  -- cuándo se publicó por última vez, y su virtud es no moverse cuando no se
+  -- publica. Sin esta columna, con el job de D-06 «corre y no hay novedad» sería
+  -- indistinguible de «el job murió» — el modo de fallo que esa decisión quería
+  -- evitar al automatizar contra una fuente de terceros.
+  -- NULL = no se ha comprobado NUNCA, que es un hecho distinto de «hace mucho».
+  last_checked_at timestamptz
 );
 GRANT SELECT ON gateway_config_state TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON gateway_config_state TO takab_ingest;
