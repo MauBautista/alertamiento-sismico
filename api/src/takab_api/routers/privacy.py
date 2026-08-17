@@ -52,7 +52,7 @@ from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
 from takab_api.db.session import SessionCtx
-from takab_api.privacy import erasure, store
+from takab_api.privacy import crypto, erasure, store
 from takab_api.privacy.store import ResolvedNotice
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.schemas.privacy import (
@@ -71,6 +71,7 @@ from takab_api.schemas.privacy import (
     NoticePublishedOut,
     ThirdPartyConsentIn,
 )
+from takab_api.settings import Settings
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 
@@ -249,6 +250,22 @@ async def record_third_party_consent(
     del sujeto: confundirlos borraría la diferencia entre "la persona autorizó"
     y "un administrador lo dio por hecho".
     """
+    # [T-2.150 · D-07] SIN LOS SECRETOS DEL SUJETO NO SE REGISTRA NADA.
+    #
+    # Se comprueba ANTES de resolver el aviso para no reventar a mitad de una
+    # transacción que ya escribió. 503 y no 400: la configuración que falta es
+    # del despliegue, no del llamador, y culparle a él manda a la persona
+    # equivocada a buscar el problema.
+    #
+    # No hay degradación a texto en claro: escribiría el defecto que esta ficha
+    # cierra en una tabla append-only, en silencio y para siempre.
+    if not crypto.disponible(Settings()):
+        raise http_error(
+            503,
+            "el registro de consentimientos por teléfono no está disponible: faltan "
+            "los secretos del sujeto en el despliegue (fail-closed; el número JAMÁS "
+            "se guarda en claro)",
+        )
     notice = await _vigente(conn, claims, body.purpose, body.locale)
     if body.digest != notice.digest:
         raise http_error(

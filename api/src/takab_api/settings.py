@@ -507,6 +507,22 @@ class Settings(BaseSettings):
     # opción (A) que D-05 descartó, solo que dos minutos después y sin que nadie
     # la hubiera decidido.
     panic_tactical_ack_timeout_s: float = 120.0
+
+    # --- [T-2.150 · D-07] Secretos del sujeto-teléfono del consentimiento ---
+    #
+    # Los DOS viven FUERA de la base (entorno / Secrets Manager), y ahí está el
+    # valor entero: una copia de la base sin ellos no revela un solo teléfono.
+    #
+    # Sin ellos el camino del `msisdn` se NIEGA a funcionar (503). No cae a texto
+    # en claro «por compatibilidad»: eso escribiría el defecto que T-2.150 cierra,
+    # en silencio y para siempre, en una tabla que no se puede reescribir. Mismo
+    # criterio que «sin clave HMAC resoluble ⇒ 503» de los comandos.
+    #
+    # `pepper` deriva el ÍNDICE de búsqueda; `master_key` sella el número. Son dos
+    # a propósito: rotar la clave de sellado no debe invalidar todos los índices
+    # —eso obligaría a reescribir `privacy_consents`, que es append-only—.
+    privacy_subject_pepper: str = ""
+    privacy_subject_master_key: str = ""
     # [T-2.106] Cuánto tiempo sostiene la app la frase «la alarma del inmueble
     # está sonando» a partir de un `siren/activate` que el gabinete confirmó
     # haber ejecutado. Es una CONSTANTE DECLARADA, y aquí está por qué:

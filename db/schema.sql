@@ -1894,9 +1894,21 @@ CREATE TABLE privacy_consents (
   via            text NOT NULL CHECK (via IN ('mobile','web','console_admin','out_of_band')),
   actor_sub      uuid NOT NULL,   -- quién REGISTRÓ (≠ sujeto en el caso delegado)
   decided_at     timestamptz NOT NULL DEFAULT now(),
+  -- [T-2.150 · D-07] El sujeto-teléfono ya NO guarda el número: guarda su ÍNDICE
+  -- (HMAC de tenant+msisdn, con la pimienta FUERA de la base). El número vive
+  -- sellado en `privacy_subject_secrets`, que SÍ se puede borrar — y ahí está la
+  -- decisión entera: ejercer ARCO borra aquella fila y ésta no se toca.
+  --
+  -- El CHECK admite las dos formas de manera PERMANENTE, no transitoria: las
+  -- filas anteriores llevan el número en claro y NO SE PUEDEN migrar (esta tabla
+  -- es append-only por trigger, y desactivarlo para reescribirlas sería abrir el
+  -- hueco que D-07 existe para no abrir).
   CONSTRAINT pc_sujeto_coherente CHECK (
     (subject_kind = 'user'   AND user_sub IS NOT NULL AND subject_ref = user_sub::text) OR
-    (subject_kind = 'msisdn' AND user_sub IS     NULL AND subject_ref ~ '^\+[1-9][0-9]{7,14}$')
+    (subject_kind = 'msisdn' AND user_sub IS     NULL AND (
+        subject_ref ~ '^[0-9a-f]{64}$'
+        OR subject_ref ~ '^\+[1-9][0-9]{7,14}$'
+    ))
   ),
   -- 'repo' = aviso de plataforma (artefacto de git, sin fila); 'tenant' = fila.
   -- Sin este CHECK, un consentimiento podría declarar un origen que no tiene.
@@ -1909,6 +1921,36 @@ CREATE INDEX idx_privacy_consents_sujeto
   ON privacy_consents (tenant_id, purpose, subject_ref, decided_at DESC);
 CREATE INDEX idx_privacy_consents_user
   ON privacy_consents (tenant_id, user_sub, decided_at DESC) WHERE user_sub IS NOT NULL;
+-- [T-2.150 · D-07] EL NÚMERO, SELLADO Y EN UNA TABLA QUE SÍ SE PUEDE BORRAR.
+--
+-- Mutable a propósito, y ésa es la idea entera: ejercer ARCO borra una fila de
+-- AQUÍ y no toca `privacy_consents`. El consentimiento queda byte a byte —su
+-- digest sigue probando— y lo que desaparece es la capacidad de leer a quién.
+--
+-- Sin trigger append-only y sin exención de poda: es lo contrario de la
+-- evidencia, aquí el objetivo es PODER BORRAR.
+--
+-- La clave que abre `sealed` NO está en esta base (entorno / Secrets Manager),
+-- así que una copia de la base sola no revela un solo teléfono.
+CREATE TABLE privacy_subject_secrets (
+  tenant_id     uuid NOT NULL REFERENCES tenants,
+  lookup_ref    text NOT NULL CHECK (lookup_ref ~ '^[0-9a-f]{64}$'),
+  sealed        bytea NOT NULL,        -- nonce(12B) || AES-GCM
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, lookup_ref)
+);
+-- Asimétricos a propósito: `takab_app` crea y DESTRUYE (nunca actualiza — un
+-- sello no se edita); el worker solo LEE (escribir un consentimiento jamás es
+-- cosa suya, mismo criterio que ya rige sobre `privacy_consents`).
+GRANT SELECT, INSERT, DELETE ON privacy_subject_secrets TO takab_app;
+GRANT SELECT                  ON privacy_subject_secrets TO takab_ingest;
+
+ALTER TABLE privacy_subject_secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_subject_secrets FORCE  ROW LEVEL SECURITY;
+CREATE POLICY privacy_subject_secrets_rw ON privacy_subject_secrets FOR ALL
+  USING      (tenant_id = app_tenant_id() OR app_is_takab_internal())
+  WITH CHECK (tenant_id = app_tenant_id() OR app_is_takab_internal());
+
 CREATE TRIGGER trg_privacy_consents_append_only
   BEFORE UPDATE OR DELETE ON privacy_consents
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
