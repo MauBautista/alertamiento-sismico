@@ -11635,6 +11635,49 @@
         "summary": "Incident Roster"
       }
     },
+    "/incidents/{incident_id}/tactical-ack": {
+      "post": {
+        "description": "La brigada acusa recibo de la alarma. **No cambia el estado del incidente.**\n\n404 si el incidente no existe o queda fuera del alcance del portador — el\nmismo 404 en los dos casos, sin filtrar la existencia.\n\nIdempotente por persona: pulsar dos veces devuelve ``already=true`` y no\nescribe una segunda fila. Lo que se mide aguas arriba es «cuántas PERSONAS\nrespondieron», no cuántas pulsaciones hubo.",
+        "operationId": "tactical_ack_incidents__incident_id__tactical_ack_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tactical Ack Incidents  Incident Id  Tactical Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tactical Ack"
+      }
+    },
     "/maintenance-windows": {
       "get": {
         "description": "Ventanas visibles para el llamante (la RLS acota; plataforma solo interno).",

@@ -7,16 +7,24 @@ solo lectura. RLS acota por tenant en cada consulta.
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.deps import get_claims, get_console_scope, require_roles
+from takab_api.auth.deps import (
+    get_claims,
+    get_console_scope,
+    get_session,
+    require_roles,
+)
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
 from takab_api.auth.scope import ConsoleScope
 from takab_api.queries import incidents as q
+from takab_api.queries import mobile as mobile_q
 from takab_api.routers._common import (
     clamp_limit,
     decode_cursor,
@@ -134,3 +142,73 @@ async def list_incident_actions(
     stmt, params = q.select_incident_actions(str(incident_id))
     rows = (await conn.execute(stmt, params)).mappings().all()
     return [IncidentActionOut(**dict(r)) for r in rows]
+
+
+# [T-2.147.b · D-05] EL ACUSE DEL TÁCTICO, que no es el acuse del SOC.
+#
+# `POST /incidents/{id}/ack` (incidents_ack.py) mueve el incidente `open→acked` y
+# lo firman los roles de MONITOREO. Esto es otro acto: quien recibió el push de un
+# pánico dice «lo tengo, voy». Conflarlos costaría en las dos direcciones — un
+# brigadista vaciando la cola del SOC desde el teléfono, y el acuse del SOC
+# contando como respuesta de la brigada y apagando el escalado de `T-2.147.c` sin
+# que nadie hubiera bajado a mirar.
+#
+# El círculo se DERIVA de `manual_activate`: exactamente el mismo que recibe el
+# push en `T-2.147.a`. Que sean la misma lista no es economía, es una invariante —
+# si divergieran, alguien despertado sin poder acusar parecería «sin respuesta»
+# para siempre y dispararía el escalado al SOC por un fallo de permisos.
+TACTICAL_ACK_ROLES: tuple[str, ...] = roles_with_action("manual_activate")
+
+tactical_ack_router = APIRouter(dependencies=[Depends(require_roles(*TACTICAL_ACK_ROLES))])
+
+
+@tactical_ack_router.post("/incidents/{incident_id}/tactical-ack")
+async def tactical_ack(
+    incident_id: UUID,
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> dict[str, object]:
+    """La brigada acusa recibo de la alarma. **No cambia el estado del incidente.**
+
+    404 si el incidente no existe o queda fuera del alcance del portador — el
+    mismo 404 en los dos casos, sin filtrar la existencia.
+
+    Idempotente por persona: pulsar dos veces devuelve ``already=true`` y no
+    escribe una segunda fila. Lo que se mide aguas arriba es «cuántas PERSONAS
+    respondieron», no cuántas pulsaciones hubo.
+    """
+    stmt, params = q.select_incident(str(incident_id))
+    row = (await conn.execute(stmt, params)).mappings().first()
+    if row is None:
+        raise http_error(404, "incidente no encontrado")
+    allowed = scope_filter(claims)
+    if allowed is not None and str(row["site_id"]) not in allowed:
+        raise http_error(404, "incidente no encontrado")
+
+    actor = f"user:{claims.sub}"
+    inserted = (
+        await conn.execute(
+            mobile_q.INSERT_TACTICAL_ACK,
+            {
+                "incident": str(incident_id),
+                "tenant": str(row["tenant_id"]),
+                "actor": actor,
+                "payload": json.dumps({"role": claims.role, "surface": claims.surface}),
+            },
+        )
+    ).first()
+    await audit_async(
+        conn,
+        tenant_id=str(row["tenant_id"]),
+        actor=actor,
+        verb="tactical_ack",
+        obj=f"incident:{incident_id}",
+        meta={"already": inserted is None},
+    )
+    return {
+        "incident_id": str(incident_id),
+        "acked": True,
+        "already": inserted is None,
+        # El estado del incidente NO se toca: lo mueve el SOC, no la brigada.
+        "incident_state": row["state"],
+    }
