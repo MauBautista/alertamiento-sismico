@@ -145,13 +145,27 @@ async def test_push_signs_publishes_persists_and_audits(
 async def test_push_version_is_monotonic_per_gateway(
     client, gateway, publisher: _FakePublisher
 ) -> None:
+    """La versión crece con cada catálogo NUEVO. El edge rechaza toda ya vista.
+
+    [T-2.148] Este test empujaba el MISMO `SNAPSHOT` dos veces y esperaba 1 y 2.
+    Fijaba la conducta anterior —publicar siempre— que `D-06` obligó a cambiar:
+    republicar un catálogo idéntico ya no quema versión, no publica y no audita.
+    Se invierte AQUÍ y no después, porque un test que fija la conducta vieja se
+    convierte, el día que alguien lo lea, en la prueba de que la nueva está mal.
+
+    Lo que el test protege NO cambia: la monotonía sigue siendo la invariante que
+    permite al edge rechazar versiones ya vistas. Lo que cambia es el montaje —
+    dos catálogos DISTINTOS, que es lo que de verdad hace avanzar la versión.
+    """
     tok = au.make_token("takab_superadmin")
-    for expected_version in (1, 2):
+    segundo = {**SNAPSHOT, "capturado": "2026-07-31T12:00:00-06:00"}
+    for expected_version, catalogo in ((1, SNAPSHOT), (2, segundo)):
         r = await client.post(
-            f"/gateways/{GW_CAT}/catalog", json={"catalog": SNAPSHOT}, headers=au.bearer(tok)
+            f"/gateways/{GW_CAT}/catalog", json={"catalog": catalogo}, headers=au.bearer(tok)
         )
         assert r.status_code == 202
         assert r.json()["version"] == expected_version
+        assert r.json()["unchanged"] is False
     assert [e["version"] for _, e in publisher.published] == [1, 2]
 
 

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **285** · `[x]` **231** · `[~]` **9** · `[ ]` **45**
+**Conteo de tareas:** total **287** · `[x]` **232** · `[~]` **9** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4278,11 +4278,50 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   **ingestor del SSN** (egress de red a un tercero, parseo de un feed cuyo formato no
   controlamos, y **aviso legal de uso de datos del SSN**) más una tabla de instantánea vigente.
 - **Criterios de aceptación:**
-  - [ ] **DECIDIR** si TAKAB ingiere el feed del SSN, con qué acuerdo y bajo qué atribución.
-  - [ ] Si sí: ingestor + tabla de instantánea vigente + job, con la huella `catalog_published`
-        distinguiendo **«republiqué lo mismo» de «llegó catálogo nuevo»** (hoy no lo distingue,
-        así que un job periódico llenaría la bitácora de ruido).
-  - [ ] Si no: el docstring deja de prometer una periodicidad que nadie va a construir.
+  - [x] **DECIDIDO** ([`D-06`](DECISIONES-MAURICIO.md), 2026-08-15): **sí se automatiza**. Queda
+        pendiente de la consulta de `§4.1` el **aviso legal de uso de datos del SSN** y la
+        atribución — va en la misma visita al abogado, no en una segunda.
+  - [x] La huella distingue **«republiqué lo mismo» de «llegó catálogo nuevo»** — `T-2.148`.
+  - [ ] Ingestor + tabla de instantánea vigente + job — `T-2.149`, **bloqueada**: ver su ficha.
+
+### [x] T-2.148 · Republicar el MISMO catálogo quema versión y despierta al gabinete — `SOFTWARE` · COMPLETA (2026-08-16)
+- **Componente:** api + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·
+  **Prerrequisito duro de `T-2.149`**
+- **El hecho, medido en el código:** `push_catalog` incrementa la versión, **firma, PUBLICA por
+  IoT**, hace upsert y escribe `catalog_published` **en cada llamada**, aunque el catálogo sea
+  byte a byte el que el gabinete ya tiene. Hoy no duele porque lo llama una persona a mano; con el
+  job de `D-06` cada pasada haría lo mismo.
+- **Por qué es el prerrequisito y no un pulido:** las tres consecuencias son acumulativas y
+  ninguna se nota de una en una — la versión monótona escala sin motivo, `audit_log` es
+  **append-only y exenta de poda** (regla de oro 11: el renglón de ruido es **permanente**), y
+  cada publish **despierta al gabinete** y cuesta su línea en la política de flota. Automatizar
+  encima de esto multiplica el ruido por la cadencia.
+- **Criterios de aceptación:**
+  - [x] Un catálogo **idéntico** al vigente: **no publica, no quema versión y no audita**.
+  - [x] Y sin embargo **deja constancia de que se miró** (`last_checked_at`): el silencio total
+        haría indistinguible «el job corre y no hay novedad» de «el job murió». Es `D-01` aplicada
+        — se declara lo que se sabe y cuándo se supo.
+  - [x] La respuesta lo **dice** (`unchanged`), en vez de fingir una publicación.
+  - [x] Un catálogo **distinto** sigue publicando, quemando versión y auditando, igual que hoy.
+  - [x] La comparación es sobre la forma **canónica** —la misma que se firma—, no sobre el JSON
+        crudo: reordenar claves o reindentar **no** es un catálogo nuevo.
+
+### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
+- **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·
+  **Depende de:** `T-2.148` (hecha)
+- **Bloqueada en dos cosas, y ninguna es código:**
+  1. **El formato del feed no se puede verificar.** `ssn.unam.mx` no es alcanzable desde el
+     entorno de desarrollo (`ECONNREFUSED` a `132.247.71.71`) y su esquema no está documentado
+     públicamente. **Escribir un parser para un formato que no se ha visto es adivinar**, y el
+     fallo sería silencioso: un feed que cambia de forma deja el catálogo congelado sin un error.
+  2. **El aviso legal de uso de datos del SSN y su atribución** — va en la consulta de
+     [`CONSULTA-LEGAL-TAKAB.md`](CONSULTA-LEGAL-TAKAB.md).
+- **Lo que `D-06` exige que traiga cuando se desbloquee**, y no se negocia:
+  - [ ] **Declarar la fecha del último catálogo ingerido con éxito**, visible en la UI. Es `D-01`:
+        un catálogo viejo se declara viejo, no se presenta como vivo (regla de oro 7).
+  - [ ] **Alarma por AUSENCIA, no por error.** La fuente es de un tercero sin contrato: si cambia
+        de formato o cae, el catálogo se congela **en silencio**. Es la misma doctrina que la
+        alarma del gabinete mudo — se vigila que el latido **falte**, no que algo falle.
 
 ### [x] T-2.67.b · La cola «durable» del edge no sobrevive a un reinicio — `SOFTWARE` · COMPLETA (2026-08-09)
 - **Componente:** edge + aprovisionamiento · **Origen:** auditoría del bloqueante de T-2.67

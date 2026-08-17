@@ -109,6 +109,7 @@ export type CatalogPushIn = {
 export type CatalogPushOut = {
     gateway_id: string;
     topic: string;
+    unchanged?: boolean;
     version: number;
 };
 

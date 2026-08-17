@@ -518,14 +518,27 @@ _require_catalog_push = require_roles("takab_superadmin", "takab_support")
 _CATALOG_GATEWAY_SQL = sql_text(
     "SELECT gateway_id, tenant_id, iot_thing FROM gateways WHERE gateway_id = :gw"
 )
-_CATALOG_STATE_SQL = sql_text("SELECT version FROM gateway_catalog_state WHERE gateway_id = :gw")
+# [T-2.148] Trae también el `payload`: es contra él contra lo que se compara
+# para decidir si esto es un catálogo nuevo o el mismo de siempre.
+_CATALOG_STATE_SQL = sql_text(
+    "SELECT version, payload FROM gateway_catalog_state WHERE gateway_id = :gw"
+)
 _CATALOG_UPSERT_SQL = sql_text(
     "INSERT INTO gateway_catalog_state "
     "  (gateway_id, tenant_id, version, payload, sig, published_at) "
     "VALUES (:gw, :tenant, :version, CAST(:payload AS jsonb), :sig, now()) "
     "ON CONFLICT (gateway_id) DO UPDATE "
     "SET version = EXCLUDED.version, payload = EXCLUDED.payload, "
-    "    sig = EXCLUDED.sig, published_at = EXCLUDED.published_at"
+    "    sig = EXCLUDED.sig, published_at = EXCLUDED.published_at, "
+    "    last_checked_at = now()"
+)
+
+# [T-2.148] «Miré y era el mismo». Lo ÚNICO que se mueve: ni versión, ni payload,
+# ni `published_at` —que significa «cuándo se publicó» y su virtud es no moverse
+# cuando no se publica—. Sin esta fila, «el job corre y no hay novedad» sería
+# indistinguible de «el job murió».
+_CATALOG_TOUCH_SQL = sql_text(
+    "UPDATE gateway_catalog_state SET last_checked_at = now() WHERE gateway_id = :gw"
 )
 
 
@@ -559,6 +572,31 @@ async def push_catalog(
         raise http_error(503, "sin clave HMAC resoluble para el gateway (fail-closed)")
 
     state = (await conn.execute(_CATALOG_STATE_SQL, {"gw": gateway_id})).first()
+
+    # [T-2.148 · D-06] REPUBLICAR EL MISMO CATÁLOGO NO ES PUBLICAR.
+    #
+    # Hasta aquí esto publicaba SIEMPRE: versión nueva, firma, publish por IoT,
+    # upsert y renglón de auditoría, aunque el catálogo fuera byte a byte el que
+    # el gabinete ya tiene. Con una persona llamando a mano no dolía; con el job
+    # de `D-06` cada pasada haría lo mismo, y las tres consecuencias son
+    # acumulativas: la versión monótona escala sin motivo, `audit_log` es
+    # append-only y EXENTA DE PODA (regla de oro 11 — el renglón de ruido es
+    # PERMANENTE), y cada publish DESPIERTA AL GABINETE y cuesta su línea en la
+    # política de flota.
+    #
+    # Se compara la forma CANÓNICA, que es la misma que se firma: un feed de
+    # terceros puede reordenar claves entre respuestas sin que cambie un dato, y
+    # comparar el JSON crudo convertiría cada reordenación en una publicación.
+    if state is not None and _canonical_catalog(state.payload) == _canonical_catalog(catalog):
+        await conn.execute(_CATALOG_TOUCH_SQL, {"gw": gateway_id})
+        await conn.commit()
+        return CatalogPushOut(
+            gateway_id=str(gateway_id),
+            version=state.version,
+            topic=f"takab/catalog/{row.iot_thing}",
+            unchanged=True,
+        )
+
     version = (state.version if state else 0) + 1
     signature = sign_catalog(key, _canonical_catalog(catalog), version)
     envelope = {
@@ -592,4 +630,4 @@ async def push_catalog(
         meta={"version": version, "sig": signature[:16], "capturado": catalog.get("capturado")},
     )
     await conn.commit()
-    return CatalogPushOut(gateway_id=str(gateway_id), version=version, topic=topic)
+    return CatalogPushOut(gateway_id=str(gateway_id), version=version, topic=topic, unchanged=False)
