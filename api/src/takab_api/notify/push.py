@@ -29,6 +29,12 @@ logger = logging.getLogger("takab_api.notify")
 
 PUSH_CLASS_CRISIS = "CRISIS"
 PUSH_CLASS_OPS = "OPS"
+#: [T-2.147.a] Activación manual del inmueble (quórum de pánico). Alta prioridad
+#: —tiene que despertar a la brigada— y **NO sísmica**: canal, sonido y texto
+#: propios. Las dos clases anteriores fallaban por extremos opuestos: `CRISIS`
+#: presta el tono del SASMEX a algo que SASMEX no dijo (el defecto de T-2.104), y
+#: `OPS` va en prioridad normal, que de madrugada no despierta a nadie.
+PUSH_CLASS_PANIC = "PANIC"
 
 # Texto visible FIJO y genérico (lockscreen): jamás nombres de sitio ni datos.
 _ALERT_TEXT = {
@@ -39,6 +45,47 @@ _ALERT_TEXT = {
     PUSH_CLASS_OPS: {
         "title": "TAKAB Ailert",
         "body": "Nueva notificación operativa.",
+    },
+    PUSH_CLASS_PANIC: {
+        "title": "ALARMA DEL INMUEBLE",
+        "body": "Activación manual. Abra la app.",
+    },
+}
+
+#: Estilo de entrega POR CLASE, en una tabla y no en ternarios repartidos.
+#:
+#: Hasta T-2.147.a esto eran tres `if push_class == PUSH_CLASS_CRISIS` en sitios
+#: distintos del constructor, y una clase nueva tenía que acertar los tres para
+#: no heredar el estilo de `OPS` por omisión. La forma de fallar era silenciosa y
+#: en la dirección mala: un push de emergencia entregado como una notificación
+#: operativa. Aquí una clase nueva **declara su estilo o no existe**.
+#:
+#: `sound` es el campo que separa el sismo del resto: el `critical` de Apple se
+#: solicitó para alertamiento sísmico (GATE-STORE) y gastarlo en otra cosa es la
+#: clase de uso que hace que Apple lo revoque.
+_DELIVERY_STYLE = {
+    PUSH_CLASS_CRISIS: {
+        # Base honesta pre-entitlement: time-sensitive suena aun en foco/atención;
+        # el dict `critical` queda listo para cuando Apple apruebe (GATE-STORE).
+        "interruption_level": "time-sensitive",
+        "sound": {"critical": 1, "name": "seismic_alert.caf", "volume": 1.0},
+        "android_priority": "high",
+        "channel_id": "seismic_alert",
+    },
+    PUSH_CLASS_OPS: {
+        "interruption_level": "active",
+        "sound": "default",
+        "android_priority": "normal",
+        "channel_id": "ops",
+    },
+    PUSH_CLASS_PANIC: {
+        # Despierta como una crisis…
+        "interruption_level": "time-sensitive",
+        "android_priority": "high",
+        # …y NO suena como una: canal propio y el sonido del sistema, nunca el
+        # tono del SASMEX ni el sonido crítico.
+        "sound": "default",
+        "channel_id": "building_alarm",
     },
 }
 
@@ -65,24 +112,18 @@ def build_push_payload(
         "phase": phase,
     }
     text = _ALERT_TEXT[push_class]
+    style = _DELIVERY_STYLE[push_class]
 
-    aps: dict = {"alert": dict(text)}
-    if push_class == PUSH_CLASS_CRISIS:
-        # Base honesta pre-entitlement: time-sensitive suena aun en foco/atención;
-        # el dict `critical` queda listo para cuando Apple apruebe (GATE-STORE).
-        aps["interruption-level"] = "time-sensitive"
-        aps["sound"] = {"critical": 1, "name": "seismic_alert.caf", "volume": 1.0}
-    else:
-        aps["interruption-level"] = "active"
-        aps["sound"] = "default"
+    aps: dict = {
+        "alert": dict(text),
+        "interruption-level": style["interruption_level"],
+        "sound": style["sound"],
+    }
     apns = json.dumps({"aps": aps, **data})
 
     android: dict = {
-        "priority": "high" if push_class == PUSH_CLASS_CRISIS else "normal",
-        "notification": {
-            "channel_id": "seismic_alert" if push_class == PUSH_CLASS_CRISIS else "ops",
-            **text,
-        },
+        "priority": style["android_priority"],
+        "notification": {"channel_id": style["channel_id"], **text},
     }
     gcm = json.dumps({"notification": dict(text), "android": android, "data": data})
 
