@@ -109,7 +109,21 @@ conducta silenciosamente peor**, que es la familia de trampa más cara de este p
      Manager).
    - **Abrir el 443 a los rangos de Twilio y Meta** en el security group: hoy está restringido por
      IP, así que **los callbacks no llegarían**.
-5. **El suscriptor HTTPS de la cadena on-call** ([`T-2.78.a`](TASKS.md)), y **su ORDEN es estricto
+5. **Nuevo (2026-08-17, `T-2.150`): dos secretos del sujeto-teléfono, y sin ellos el registro de
+   consentimientos por WhatsApp SE CAE EN CERRADO.** `TAKAB_API_PRIVACY_SUBJECT_PEPPER` y
+   `TAKAB_API_PRIVACY_SUBJECT_MASTER_KEY`, desde Secrets Manager. **No hay degradación
+   silenciosa**: sin ellos la ruta devuelve **503 y lo dice**, porque la alternativa —guardar el
+   teléfono en claro— lo dejaría en una tabla append-only **para siempre**.
+   > **Y aquí el reloj corre en contra de verdad:** este mecanismo **no protege hacia atrás**. Cada
+   > teléfono ya escrito en claro se queda así. **La fecha de este despliegue es la línea que
+   > separa los números recuperables de los que no**, así que cuanto antes entre, menos hay.
+   >
+   > **Genera la pimienta y la clave con entropía real** (`openssl rand -base64 32` para cada una)
+   > y **guárdalas donde no se pierdan**: rotar la pimienta invalidaría todos los índices, y
+   > recalcularlos exigiría reescribir `privacy_consents`, que es append-only. Perder la clave
+   > maestra destruye todos los teléfonos a la vez.
+
+6. **El suscriptor HTTPS de la cadena on-call** ([`T-2.78.a`](TASKS.md)), y **su ORDEN es estricto
    porque la suscripción SE CONFIRMA DURANTE EL `apply`**:
    1. Desplegar la API **con `TAKAB_API_OPS_ALERT_TOPIC_ARN`**.
    2. `curl -X POST …/api/ops/alerts/sns -d '{}'` → debe dar **404**. **Si da 503, falta el ARN:

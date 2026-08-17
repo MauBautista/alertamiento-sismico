@@ -56,6 +56,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.privacy import crypto
 from takab_api.privacy.artifacts import NoticeSpec, get_catalog
 
 #: Estados que la UI tiene que saber pintar (regla de oro 7 en la capa de datos:
@@ -78,12 +79,22 @@ _SELECT_NOTICE = text(
 
 # La última decisión del sujeto. `subject_ref` y no `user_sub` para que la misma
 # consulta sirva a una persona y a un número de teléfono (costura T-2.77).
+# [T-2.150 · D-07] LA BÚSQUEDA ACEPTA LAS DOS FORMAS, y no es transitorio.
+#
+# Las filas nuevas llevan el ÍNDICE (HMAC del tenant+teléfono); las viejas
+# llevan el teléfono en claro y NO SE PUEDEN migrar —`privacy_consents` es
+# append-only por trigger, y desactivarlo para reescribirlas sería abrir el
+# hueco que D-07 existe para no abrir—.
+#
+# Buscar solo por el índice REVOCARÍA EN SILENCIO el consentimiento de todo
+# el que ya lo dio: el motor no encontraría su fila y el orquestador se
+# negaría a enviarle, sin que nadie hubiera retirado nada. Por eso `IN`.
 _SELECT_CONSENT = text(
     "SELECT consent_id, decision, notice_source, notice_id, notice_digest, "
     "       notice_version, notice_locale, via, actor_sub, decided_at "
     "FROM privacy_consents "
     "WHERE tenant_id = CAST(:tenant AS uuid) AND purpose = :purpose "
-    "  AND subject_ref = :subject "
+    "  AND subject_ref IN (:subject, :legacy) "
     "ORDER BY decided_at DESC, consent_id DESC LIMIT 1"
 )
 
@@ -92,7 +103,7 @@ _HISTORY = text(
     "       notice_version, notice_locale, via, actor_sub, decided_at "
     "FROM privacy_consents "
     "WHERE tenant_id = CAST(:tenant AS uuid) AND purpose = :purpose "
-    "  AND subject_ref = :subject "
+    "  AND subject_ref IN (:subject, :legacy) "
     "ORDER BY decided_at DESC, consent_id DESC LIMIT :limit"
 )
 
@@ -104,6 +115,15 @@ _INSERT_CONSENT = text(
     " :decision, :source, CAST(:notice AS uuid), :digest, :version, :locale, :via, "
     " CAST(:actor AS uuid)) "
     "RETURNING consent_id, decided_at"
+)
+
+# [T-2.150] El sello del número, en la tabla que SÍ se puede borrar. `ON CONFLICT
+# DO NOTHING` porque el índice es estable: aceptar, retirar y volver a aceptar
+# son tres consentimientos y UN solo sello.
+_INSERT_SUBJECT_SECRET = text(
+    "INSERT INTO privacy_subject_secrets (tenant_id, lookup_ref, sealed) "
+    "VALUES (CAST(:tenant AS uuid), :lookup, :sealed) "
+    "ON CONFLICT (tenant_id, lookup_ref) DO NOTHING"
 )
 
 _INSERT_NOTICE = text(
@@ -199,6 +219,19 @@ async def current_notice(
     return _from_spec(spec) if spec is not None else None
 
 
+def _formas(tenant_id: str, subject_ref: str) -> dict[str, str]:
+    """[T-2.150] Las formas con las que puede estar escrito ESTE sujeto.
+
+    Un sujeto **usuario** es su `sub` de Cognito y solo tiene una forma. Un
+    sujeto **teléfono** puede estar escrito como índice (filas nuevas) o en claro
+    (filas viejas, imposibles de migrar). Se distinguen por la forma del valor
+    que llega, no por un parámetro: quien llama no tiene por qué saber esto.
+    """
+    if subject_ref.startswith("+"):
+        return _params_sujeto(tenant_id, subject_ref)
+    return {"subject": subject_ref, "legacy": subject_ref}
+
+
 async def latest_consent(
     conn: AsyncConnection, *, tenant_id: str, purpose: str, subject_ref: str
 ) -> Any:
@@ -212,7 +245,7 @@ async def latest_consent(
         (
             await conn.execute(
                 _SELECT_CONSENT,
-                {"tenant": tenant_id, "purpose": purpose, "subject": subject_ref},
+                {"tenant": tenant_id, "purpose": purpose, **_formas(tenant_id, subject_ref)},
             )
         )
         .mappings()
@@ -236,7 +269,7 @@ async def consent_history(
                 {
                     "tenant": tenant_id,
                     "purpose": purpose,
-                    "subject": subject_ref,
+                    **_formas(tenant_id, subject_ref),
                     "limit": max(1, min(limit, 200)),
                 },
             )
@@ -290,6 +323,26 @@ async def record_consent(
     cada edición del aviso en una reescritura silenciosa del pasado.
     """
     es_usuario = msisdn is None
+    sujeto = user_sub
+    if not es_usuario:
+        # [T-2.150 · D-07] EL NÚMERO NO ENTRA EN `privacy_consents`.
+        #
+        # Se sella aparte y en el consentimiento va solo su índice. Si los
+        # secretos del despliegue no están, esto LANZA — y es lo correcto:
+        # caer a texto en claro escribiría el defecto que la ficha cierra, en
+        # silencio y PARA SIEMPRE, en una tabla que no se puede reescribir.
+        from takab_api.settings import Settings
+
+        ajustes = Settings()
+        sujeto = crypto.lookup_ref(ajustes, tenant_id=tenant_id, msisdn=msisdn)
+        await conn.execute(
+            _INSERT_SUBJECT_SECRET,
+            {
+                "tenant": tenant_id,
+                "lookup": sujeto,
+                "sealed": crypto.seal(ajustes, msisdn=msisdn),
+            },
+        )
     return (
         (
             await conn.execute(
@@ -299,7 +352,7 @@ async def record_consent(
                     "purpose": purpose,
                     "subject_kind": "user" if es_usuario else "msisdn",
                     "user": user_sub if es_usuario else None,
-                    "subject": user_sub if es_usuario else msisdn,
+                    "subject": sujeto,
                     "decision": decision,
                     "source": notice.source,
                     "notice": notice.notice_id,
@@ -314,6 +367,61 @@ async def record_consent(
         .mappings()
         .one()
     )
+
+
+_DELETE_SUBJECT_SECRET = text(
+    "DELETE FROM privacy_subject_secrets "
+    "WHERE tenant_id = CAST(:tenant AS uuid) AND lookup_ref = :lookup "
+    "RETURNING lookup_ref"
+)
+
+_READ_SUBJECT_SECRET = text(
+    "SELECT sealed FROM privacy_subject_secrets "
+    "WHERE tenant_id = CAST(:tenant AS uuid) AND lookup_ref = :lookup"
+)
+
+
+async def resolve_msisdn(conn: AsyncConnection, *, tenant_id: str, lookup_ref: str) -> str | None:
+    """El número detrás de un índice, o ``None`` si ya se destruyó.
+
+    ``None`` es una respuesta LEGÍTIMA y no un error: significa que alguien
+    ejerció su derecho. Quien llame tiene que poder distinguirla de «no existe»
+    por el contexto —hay consentimiento pero no hay número— y **nunca** tratarla
+    como un fallo que reintentar.
+    """
+    fila = (
+        await conn.execute(_READ_SUBJECT_SECRET, {"tenant": tenant_id, "lookup": lookup_ref})
+    ).first()
+    if fila is None:
+        return None
+    from takab_api.settings import Settings
+
+    return crypto.unseal(Settings(), sealed=fila[0])
+
+
+async def forget_msisdn(conn: AsyncConnection, *, tenant_id: str, msisdn: str) -> bool:
+    """[T-2.150 · D-07] CRIPTO-BORRADO. Destruye el número **sin tocar el consentimiento**.
+
+    Ésta es la operación entera de `D-07`, y lo que la hace valiosa es lo que
+    **no** hace: `privacy_consents` queda byte a byte como estaba. Se conserva la
+    prueba de **que** hubo consentimiento y **cuándo** —y su digest sigue
+    probándolo—; desaparece la capacidad de leer **a quién**.
+
+    Es irreversible por construcción: la clave maestra no está en esta base y el
+    criptograma se va con la fila. No hay copia «para trazabilidad» — guardarla
+    convertiría el borrado en una seudonimización reversible, que es exactamente
+    lo que no puede ser.
+
+    Devuelve si había algo que destruir. ``False`` no es un fallo: es que ese
+    número nunca se selló (una fila anterior a T-2.150) o que ya se ejerció.
+    """
+    from takab_api.settings import Settings
+
+    lookup = crypto.lookup_ref(Settings(), tenant_id=tenant_id, msisdn=msisdn)
+    fila = (
+        await conn.execute(_DELETE_SUBJECT_SECRET, {"tenant": tenant_id, "lookup": lookup})
+    ).first()
+    return fila is not None
 
 
 async def publish_notice(
@@ -363,15 +471,43 @@ async def publish_notice(
 # drivers distintos y no dos reglas distintas: la API vive en SQLAlchemy async y
 # el worker de notify en psycopg síncrono. Duplicar el SELECT sería duplicar el
 # criterio de qué consentimiento manda, y el día que uno cambie el otro no.
+# [T-2.150] Misma razón que en `_SELECT_CONSENT`: índice nuevo o teléfono
+# viejo. Y aquí muerde MÁS — este es el SELECT del que depende que a una
+# persona se le mande o no un aviso de sismo.
 _OPT_IN_TEMPLATE = (
     "SELECT decision, decided_at FROM privacy_consents "
     "WHERE tenant_id = CAST({tenant} AS uuid) AND purpose = 'whatsapp_alerts' "
-    "  AND subject_kind = 'msisdn' AND subject_ref = {msisdn} "
+    "  AND subject_kind = 'msisdn' AND subject_ref IN ({subject}, {legacy}) "
     "ORDER BY decided_at DESC, consent_id DESC LIMIT 1"
 )
 
-_OPT_IN = text(_OPT_IN_TEMPLATE.format(tenant=":tenant", msisdn=":msisdn"))
-_OPT_IN_PG = _OPT_IN_TEMPLATE.format(tenant="%(tenant)s", msisdn="%(msisdn)s")
+_OPT_IN = text(_OPT_IN_TEMPLATE.format(tenant=":tenant", subject=":subject", legacy=":legacy"))
+_OPT_IN_PG = _OPT_IN_TEMPLATE.format(
+    tenant="%(tenant)s", subject="%(subject)s", legacy="%(legacy)s"
+)
+
+
+def _params_sujeto(tenant_id: str, msisdn: str) -> dict[str, str]:
+    """[T-2.150] Los DOS valores con los que se busca un sujeto-teléfono.
+
+    ``subject`` es el índice de hoy; ``legacy`` es el número en claro de las
+    filas que se escribieron antes de T-2.150 y que **no se pueden migrar**
+    (`privacy_consents` es append-only). Buscar solo por el índice revocaría en
+    silencio el consentimiento de todo el que ya lo dio.
+
+    Si los secretos no están configurados, el índice **no se puede derivar**: se
+    busca solo por la forma vieja en vez de reventar. Leer un consentimiento
+    antiguo no exige cripto — lo que la exige es ESCRIBIR uno nuevo, y ahí sí se
+    falla en cerrado.
+    """
+    from takab_api.settings import Settings
+
+    ajustes = Settings()
+    try:
+        indice = crypto.lookup_ref(ajustes, tenant_id=tenant_id, msisdn=msisdn)
+    except crypto.PrivacyCryptoUnavailable:
+        indice = msisdn
+    return {"subject": indice, "legacy": msisdn}
 
 
 def _opt_in_de(decision: str | None, decided_at: datetime | None) -> datetime | None:
@@ -402,7 +538,7 @@ async def whatsapp_opt_in_at(
     del envío es el worker de notify, por el gemelo síncrono de abajo.
     """
     fila = (
-        (await conn.execute(_OPT_IN, {"tenant": tenant_id, "msisdn": msisdn}))
+        (await conn.execute(_OPT_IN, {"tenant": tenant_id, **_params_sujeto(tenant_id, msisdn)}))
         .mappings()
         .one_or_none()
     )
@@ -426,7 +562,9 @@ def whatsapp_opt_in_at_sync(conn: Any, *, tenant_id: str, msisdn: str) -> dateti
     y convertiría un problema de base en una mentira en un registro de
     cumplimiento.
     """
-    fila = conn.execute(_OPT_IN_PG, {"tenant": tenant_id, "msisdn": msisdn}).fetchone()
+    fila = conn.execute(
+        _OPT_IN_PG, {"tenant": tenant_id, **_params_sujeto(tenant_id, msisdn)}
+    ).fetchone()
     if fila is None:
         return None
     # El `row_factory` lo elige quien abre la conexión: el worker usa `dict_row`,

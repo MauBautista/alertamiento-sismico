@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **287** · `[x]` **232** · `[~]` **9** · `[ ]` **46**
+**Conteo de tareas:** total **289** · `[x]` **233** · `[~]` **9** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4305,6 +4305,59 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [x] Un catálogo **distinto** sigue publicando, quemando versión y auditando, igual que hoy.
   - [x] La comparación es sobre la forma **canónica** —la misma que se firma—, no sobre el JSON
         crudo: reordenar claves o reindentar **no** es un catálogo nuevo.
+
+### [x] T-2.150 · Cripto-borrado del teléfono del consentimiento — `SOFTWARE` · COMPLETA (2026-08-17)
+- **Componente:** api + db · **Sale de:** [`D-07`](DECISIONES-MAURICIO.md) · **Cierra el hueco de
+  `T-2.80.a`** · **Postura sujeta a la revisión legal de `T-2.96` (`§4.1`)**
+- **El hueco, cerrado.** El `msisdn` estaba **en claro** en `privacy_consents.subject_ref`, tabla
+  **append-only por trigger**: ARCO no lo alcanzaba, y anonimizarlo exigía abrir un hueco en el
+  guard cuyo valor entero es no tenerlos.
+- **La forma de la solución, en una frase:** el número **no entra** en el consentimiento —va su
+  ÍNDICE (HMAC de tenant+teléfono, con la pimienta FUERA de la base)— y el número vive **sellado
+  con AES-GCM en `privacy_subject_secrets`**, una tabla **mutable**. Ejercer ARCO **borra una fila
+  de aquélla y no toca ésta**.
+- **Criterios de aceptación:**
+  - [x] Las tres propiedades de `D-07`, medidas **a la vez** en un solo test: `privacy_consents`
+        **byte a byte** intacta, se conserva la prueba de **que** y **cuándo**, y el número deja de
+        ser recuperable. Separadas no dicen nada — conservar la fila es fácil si no se borra nada.
+  - [x] El índice lleva el `tenant_id` dentro (regla de oro 5): el mismo número en dos clientes da
+        **índices distintos**, así que cruzar las tablas no revela que es la misma persona.
+  - [x] El sellado **no es determinista** (nonce por sellado): con GCM, reutilizar (clave, nonce)
+        no filtra «un poco» — rompe los dos mensajes. Y un sello determinista delataría que dos
+        filas son el mismo número.
+  - [x] **Fail-closed**: sin los secretos, el registro por teléfono devuelve **503**. No cae a
+        texto en claro «por compatibilidad» — lo escribiría en una tabla que no se puede
+        reescribir, en silencio y para siempre.
+  - [x] Un volcado de la base **sin los secretos** no contiene el número ni un trozo de él.
+  - [x] Las lecturas aceptan **las dos formas**. Buscar solo por el índice habría **revocado en
+        silencio** el consentimiento de todo el que ya lo dio: el motor no encontraría su fila y el
+        orquestador se negaría a enviarle sin que nadie hubiera retirado nada.
+
+> ### ⚠️ Lo que este mecanismo NO hace, y hay que mirarlo de frente
+>
+> **No protege hacia atrás.** Cada teléfono ya escrito en claro **se queda en claro para siempre**:
+> la tabla es append-only y reescribirlo sería abrir el guard. La única variable que queda es
+> **cuántos más se escriben antes de desplegar esto** — la fecha de despliegue es, literalmente, la
+> línea que separa los números recuperables de los que no.
+>
+> **Y el índice no es anónimo mientras exista la pimienta.** El espacio de teléfonos es de ~10^10:
+> con la pimienta en la mano, un HMAC se invierte por fuerza bruta en nada. Lo que protege es el
+> escenario **real** —una copia de la base sin los secretos del despliegue—, y eso sí lleva test.
+> **Es exactamente la pregunta que `D-07` mandó al abogado**, y el código está escrito para que la
+> respuesta se pueda cambiar sin rehacerlo.
+
+### [ ] T-2.151 · ARCO por teléfono: cablear el borrado al flujo de solicitudes — `SOFTWARE`
+- **Componente:** api · **Depende de:** `T-2.150` (hecha)
+- `store.forget_msisdn()` existe y está probada, pero **el flujo ARCO está tecleado por `user_sub`**
+  y un sujeto-teléfono **no tiene ninguno**: no hay `user_profiles`, así que tampoco el FK compuesto
+  que hoy impide nombrar a un titular de otro cliente.
+- **Por eso no se cerró de refilón:** hace falta decidir **cómo se acredita** que quien pide el
+  borrado es el dueño de ese número —y esa es una pregunta de identidad, no de código—.
+- **Criterios de aceptación:**
+  - [ ] Decidido y escrito cómo se acredita la titularidad de un número.
+  - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
+  - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
+        en una seudonimización reversible, que es justo lo que no puede ser.
 
 ### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
 - **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·

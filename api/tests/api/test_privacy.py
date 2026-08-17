@@ -72,6 +72,19 @@ def _catalogo_limpio():
     get_catalog.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _secretos_del_sujeto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[T-2.150] Los secretos que el camino del `msisdn` exige.
+
+    Van en un fixture autouse y no en cada test porque desde T-2.150 el registro
+    de un consentimiento por TELÉFONO falla en cerrado sin ellos (503): el número
+    jamás se guarda en claro. Un despliegue real los lleva en Secrets Manager;
+    aquí, valores de prueba.
+    """
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_PEPPER", "pimienta-de-prueba-no-produccion")
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_MASTER_KEY", "clave-maestra-de-prueba")
+
+
 @pytest.fixture
 async def limpia_privacidad(base_data):
     """Las dos tablas son append-only: DELETE lo veta el trigger, TRUNCATE no."""
