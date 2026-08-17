@@ -346,6 +346,18 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'BRIGADA EN CAMINO', kind: 'ok' },
     logLabel: 'ACUSE DE LA BRIGADA',
   },
+  // [T-2.147.c · D-05] El plazo se agotó y NADIE de la brigada acusó. Lo escribe
+  // el worker (`actor: 'system'`), no una persona.
+  //
+  // `kind: 'warning'` y no 'ok': es lo ÚNICO de este grupo que pide una decisión
+  // humana — el operador tiene que resolver si esto merece despertar al
+  // edificio, que es precisamente la decisión que D-05 se negó a automatizar.
+  // Pintarlo verde junto a los acuses lo escondería entre buenas noticias.
+  tactical_ack_timeout: {
+    label: 'BRIGADA SIN RESPONDER',
+    view: { state: 'SIN RESPUESTA DE LA BRIGADA', kind: 'warning' },
+    logLabel: 'LA BRIGADA NO ACUSÓ EN EL PLAZO',
+  },
   // [T-2.144] EL OCTAVO PRODUCTOR, el que no estaba en la ficha. No lo escribe
   // `api/src`: lo escribe la función PL/pgSQL `app_notify_delivery`
   // (`db/schema.sql`, migración `0040`) cuando el webhook del proveedor confirma

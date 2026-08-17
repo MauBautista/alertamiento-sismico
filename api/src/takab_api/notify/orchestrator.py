@@ -106,6 +106,13 @@ _NOTIFY_LOCK_KEY = 0x7A4B_1121
 # después (un proveedor caído no se martillea).
 _BACKOFF_S = (30.0, 120.0, 600.0)
 
+#: [T-2.147.c] Holgura del borde viejo de la ventana del aviso al SOC, POR
+#: ENCIMA de plazo+lookback. Cubre una pasada que se retrase (worker
+#: reiniciando, lock ocupado) sin que el incidente se caiga de la ventana
+#: justo cuando acababa de volverse elegible. No es infinita a propósito:
+#: ver la cota superior en `_PANIC_ACK_TIMEOUT_SQL`.
+_MARGEN_VENTANA_S = 600.0
+
 _NEW_INCIDENTS_SQL = """
 SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_at
 FROM incidents i
@@ -360,6 +367,54 @@ WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
 ORDER BY created_at
 """
 
+# [T-2.147.c · D-05] Pánicos que la BRIGADA no acusó dentro del plazo.
+#
+# Tres filtros y una ventana, y cada uno tiene su porqué:
+#
+#   · `trigger='manual'` — el plazo es del pánico. Un sismo ya tiene su cascada;
+#     añadirle esto duplicaría la página del SOC por el mismo hecho.
+#   · `state = 'open'` — si el SOC YA acusó, lo tiene delante. Avisarle de que
+#     nadie lo tiene delante es ruido, y el ruido en un SOC es lo que enseña a
+#     ignorar la bandeja. (Funciona porque T-2.147.b NO mueve el estado: el
+#     acuse de la brigada y el del SOC siguen siendo señales independientes.)
+#   · sin `tactical_ack` — alguien respondió, y el aviso diría una mentira.
+#
+# LA VENTANA, que es donde este escaneo podía fallar EN SILENCIO. El aviso solo
+# es elegible PASADO el plazo, así que el borde viejo tiene que ser más ancho
+# que el plazo: con una ventana más estrecha, el incidente saldría de ella ANTES
+# de volverse elegible y el aviso no saltaría JAMÁS — en verde, sin un error, y
+# sin descubrirse hasta que una brigada de verdad no contestara. Por eso el
+# borde viejo es `plazo + lookback` y no `lookback` a secas.
+#
+# Y tiene cota superior a propósito: sin ella, restaurar una base vieja
+# estrenaría el SOC con una bandeja llena de emergencias de otro año.
+_PANIC_ACK_TIMEOUT_SQL = """
+SELECT i.incident_id, i.tenant_id, i.site_id, i.opened_at
+FROM incidents i
+WHERE i.trigger = 'manual'
+  AND i.state = 'open'
+  AND i.opened_at <= %(elegible_desde)s
+  AND i.opened_at >= %(no_mas_viejo_que)s
+  AND NOT EXISTS (
+        SELECT 1 FROM incident_actions a
+        WHERE a.incident_id = i.incident_id AND a.kind = 'tactical_ack'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM incident_actions a
+        WHERE a.incident_id = i.incident_id AND a.kind = 'tactical_ack_timeout'
+      )
+ORDER BY i.opened_at
+"""
+
+# El aviso EN EL TIMELINE. Va primero, y por dos motivos: es la evidencia que el
+# SOC ve en la traza del incidente, y su `action_id` es el ancla que hace
+# idempotente el correo (mismo patrón que el dictamen y el «personas en riesgo»).
+_INSERT_ACK_TIMEOUT_ACTION_SQL = """
+INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
+VALUES (%(incident)s, %(tenant)s, 'tactical_ack_timeout', 'system', %(payload)s)
+RETURNING action_id
+"""
+
 # [T-2.147.a · D-11] Pánicos recientes sin push encolado todavía.
 #
 # `trigger = 'manual'` es la firma del quórum de pánico: los demás incidentes
@@ -482,6 +537,13 @@ def run_notify_pass(
     # aquel encola por ACCIÓN de incidente (`action_id`), y un pánico no genera
     # ninguna — el hecho es el incidente mismo.
     counts["enqueued"] += _enqueue_panic_push(conn, now=now, lookback_s=lookback)
+    # [T-2.147.c] Va DESPUÉS del push: el aviso al SOC solo tiene sentido
+    # sobre pánicos que ya recibieron su push — si el push ni se encoló, lo
+    # que falla es otra cosa y el aviso mandaría al operador a mirar a la
+    # brigada en vez de al canal.
+    counts["enqueued"] += _enqueue_panic_ack_timeout(
+        conn, settings, config_cache, now=now, lookback_s=lookback
+    )
     # [T-2.77.c] Lo que los providers recordaban EN RAM pasa a recordarse aquí,
     # sobre la conexión de esta pasada: sobrevive al reinicio del worker y lo
     # comparten las instancias. Se ata por el registro, sin nombrar canales —
@@ -632,6 +694,83 @@ def _enqueue_people_at_risk(
                 "target": json.dumps({"to": emails}),
                 "due_at": row["ts"],  # vence YA: prioridad máxima, sin cascada
                 "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _enqueue_panic_ack_timeout(
+    conn: psycopg.Connection,
+    settings: Settings,
+    config_cache: dict,
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-2.147.c · D-05] La brigada no acusó: se avisa al SOC. **No al edificio.**
+
+    `D-05` eligió despertar solo a los tácticos. El agujero conocido de esa
+    opción es que la brigada no conteste, y la salida elegida fue avisar al SOC
+    en vez de escalar a todo el mundo: escalar por un temporizador reintroduce
+    «despertar a 400» con dos minutos de retraso, y encima **la decisión la
+    habría tomado un reloj**. Un humano con contexto decide si esto merece
+    despertar al edificio.
+
+    Deja DOS rastros, y el orden importa: primero la fila del timeline —que es
+    lo que el SOC ve en la traza— y con su ``action_id`` se ancla el correo, que
+    así hereda la idempotencia por acción del resto del módulo.
+    """
+    plazo = settings.panic_tactical_ack_timeout_s
+    rows = conn.execute(
+        _PANIC_ACK_TIMEOUT_SQL,
+        {
+            "elegible_desde": now - timedelta(seconds=plazo),
+            # Ancho DELIBERADO: ver la nota larga sobre la ventana en el SQL.
+            # Con `lookback` a secas, un plazo mayor que la ventana haría que el
+            # aviso no saltara nunca.
+            "no_mas_viejo_que": now - timedelta(seconds=plazo + lookback_s + _MARGEN_VENTANA_S),
+        },
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        emails = resolve_inspector_emails(_config_for(conn, config_cache, row))
+        if not emails:
+            # Mismo criterio que «personas en riesgo»: sin destino configurado no
+            # se inventa uno. Pero se DICE — un SOC sin correo operativo es una
+            # brigada sin red de seguridad, y callarlo lo vuelve invisible.
+            logger.warning(
+                "pánico %s sin acuse de la brigada y SIN notifications.inspector_emails: "
+                "nadie va a enterarse de que la brigada no contestó",
+                row["incident_id"],
+            )
+            continue
+        action_id = conn.execute(
+            _INSERT_ACK_TIMEOUT_ACTION_SQL,
+            {
+                "incident": row["incident_id"],
+                "tenant": row["tenant_id"],
+                "payload": json.dumps(
+                    {
+                        # Lo que el operador necesita para decidir SIN abrir otra
+                        # pantalla: cuánto plazo se dio, cuántos respondieron
+                        # (cero, por construcción) y a qué edificio mirar.
+                        "timeout_s": plazo,
+                        "tactical_acks": 0,
+                        "site_id": str(row["site_id"]),
+                        "source": "panic_quorum",
+                    }
+                ),
+            },
+        ).fetchone()["action_id"]
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": emails}),
+                "due_at": now,  # vence YA: el plazo ya se agotó
+                "action": action_id,
             },
         )
         inserted += result.rowcount
