@@ -8489,11 +8489,44 @@ sería documentar intenciones.
 > ese escalado consulta `COUNT_TACTICAL_ACKS`, que ya funciona — lo que medirá mientras no haya
 > botón es «cero acuses», que es **la verdad**, no un fallo del contador.
 
-#### [ ] T-2.147.c · Sin acuse en ~2 min, avisar al SOC — `SOFTWARE`
+#### [x] T-2.147.c · Sin acuse en ~2 min, avisar al SOC — `SOFTWARE` · COMPLETA (2026-08-16)
 - **No escala al edificio**, y esa es la decisión (`D-05`): escalar solo reintroduciría por la
-  puerta de atrás el «dos personas despiertan a 400» que se descartó. Un humano con contexto
-  decide; una máquina no debería hacerlo por un timeout.
+  puerta de atrás el «dos personas despiertan a 400» que se descartó — y encima **la decisión la
+  habría tomado un reloj**. Un humano con contexto decide.
 - Va también a la cadena on-call de `PENDIENTES-MAURICIO §2.9` **cuando exista**, no antes.
+- **Criterios de aceptación:**
+  - [x] Pasado el plazo sin `tactical_ack`, se escribe `incident_actions kind='tactical_ack_timeout'`
+        (`actor='system'`) **y** se encola el correo al SOC, anclado a esa acción.
+  - [x] **El aviso NO amplía el círculo del push** — con test que lo fija, porque es la decisión y
+        no solo el código.
+  - [x] **Dos cosas lo apagan**, y las dos significan que alguien ya está mirando: un acuse de la
+        brigada, o que **el SOC ya haya acusado el incidente** (`state <> 'open'`). Avisar a quien
+        ya lo tiene delante es ruido, y el ruido en un SOC enseña a ignorar la bandeja.
+  - [x] Solo `trigger='manual'`: un sismo ya tiene su cascada y esto duplicaría su página.
+  - [x] Idempotente: una segunda pasada no vuelve a avisar.
+  - [x] El aviso trae lo que el operador necesita para decidir **sin abrir otra pantalla**: plazo
+        concedido, acuses (cero) e inmueble.
+
+> ### ⚠️ La trampa que este escaneo podía tener, y el test que la caza
+>
+> El aviso solo es elegible **pasado el plazo**, y el worker escanea con una ventana (`lookback`).
+> **Si la ventana fuera más estrecha que el plazo, el incidente saldría de ella ANTES de volverse
+> elegible y el aviso no saltaría jamás** — en verde, sin un solo error, y sin descubrirse hasta
+> que una brigada de verdad no contestara. Por eso el borde viejo es `plazo + lookback + margen`, y
+> `test_la_ventana_del_escaneo_es_mas_ancha_que_el_plazo` corre con el `lookback` a **la mitad** del
+> plazo, que es el caso patológico.
+>
+> Y la ventana tiene **cota superior** a propósito: sin ella, restaurar una base vieja estrenaría
+> el SOC con una bandeja llena de emergencias de otro año.
+
+> ### Consecuencia de `D-11` que conviene tener presente
+>
+> Al abrir incidente, un pánico **también dispara la cascada normal del tenant**
+> (webhook/whatsapp/sms/email a los destinos **operativos** configurados). No alcanza a los
+> ocupantes —esos destinos son contactos de operación, no el edificio— y es coherente con que un
+> pánico sea un incidente. Pero es **más de lo que `D-05` pedía literalmente**, así que queda
+> escrito: si algún día se quiere un pánico silencioso para todo salvo la brigada, el sitio donde
+> se corta es `plan_jobs`, no este aviso.
 
 ### [x] T-2.140 · El comp de diseño del panel conserva el violeta viejo — `SOFTWARE`
 - **Componente:** takab-docs/design · **Detectada por:** `T-2.137` (2026-08-13)

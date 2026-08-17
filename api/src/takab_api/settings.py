@@ -497,6 +497,16 @@ class Settings(BaseSettings):
     panic_quorum_window_s: float = 30.0
     panic_geofence_radius_m: float = 500.0
     panic_vote_rate_per_min: int = 4
+    # [T-2.147.c · D-05] Cuánto se le da a la BRIGADA para acusar antes de avisar
+    # al SOC. `D-05` dijo «~2 min», y aquí está por qué ese orden de magnitud:
+    # es el tiempo de mirar el teléfono y responder, no el de bajar al sitio —
+    # el aviso pregunta «¿alguien lo vio?», no «¿ya está resuelto?».
+    #
+    # Y lo que NO pasa al vencer: no se escala al edificio. Se avisa al SOC, que
+    # es un humano con contexto; escalar por un temporizador reintroduciría la
+    # opción (A) que D-05 descartó, solo que dos minutos después y sin que nadie
+    # la hubiera decidido.
+    panic_tactical_ack_timeout_s: float = 120.0
     # [T-2.106] Cuánto tiempo sostiene la app la frase «la alarma del inmueble
     # está sonando» a partir de un `siren/activate` que el gabinete confirmó
     # haber ejecutado. Es una CONSTANTE DECLARADA, y aquí está por qué:
