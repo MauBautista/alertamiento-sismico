@@ -8453,8 +8453,41 @@ sería documentar intenciones.
 > pantalla del pase de lista** sin que nada se quejara. Ahora una clase sin estilo o sin fase
 > declarada **revienta**.
 
-#### [ ] T-2.147.b · El táctico no puede acusar recibo — `SOFTWARE`
+#### [x] T-2.147.b · El táctico no puede acusar recibo — `SOFTWARE` · COMPLETA (2026-08-16)
 - Sin acuse no hay forma de saber si la brigada respondió, y **sin eso `147.c` no se puede medir**.
+- **NO se reusó `POST /incidents/{id}/ack`**, y ésa es la decisión de la ficha. Aquel mueve el
+  incidente `open→acked` y lo firman los roles de MONITOREO (`ack_incident`). Conflarlos costaría
+  en las **dos** direcciones: un brigadista vaciaría la cola del SOC desde el teléfono, **y** el
+  acuse del SOC contaría como respuesta de la brigada, apagando el escalado de `147.c` **sin que
+  nadie hubiera bajado a mirar** — que es justo el fallo que ese escalado existe para impedir.
+  Dos hechos ⇒ dos filas ⇒ dos rótulos en la consola.
+- **Criterios de aceptación:**
+  - [x] `POST /incidents/{id}/tactical-ack` escribe `incident_actions kind='tactical_ack'` y
+        **NO toca `incidents.state`**.
+  - [x] **Idempotente por PERSONA**, no por incidente: pulsar dos veces devuelve `already=true` y
+        no escribe otra fila; **dos tácticos distintos sí cuentan dos** (la no-vacuidad que impide
+        que un `NOT EXISTS` demasiado amplio pase el primer test).
+  - [x] El `occupant` **no puede acusar** (403): vota el pánico, no lo atiende. Dejarle acusar
+        apagaría el escalado con la respuesta de quien pulsó la alarma.
+  - [x] Fuera de alcance ⇒ **404**, el mismo que «no existe» (sin filtrar la existencia).
+  - [x] **La invariante de los dos círculos**, con test: quien recibe el push y quien puede
+        acusarlo salen de la MISMA acción (`manual_activate`). Si divergieran, alguien despertado
+        sin permiso para acusar parecería «sin respuesta» y escalaría al SOC **por un fallo de
+        permisos**, no por una brigada ausente.
+  - [x] Guarda sobre la matriz: **ningún rol de monitoreo entra por esta puerta**. El día que uno
+        ganara `manual_activate`, su acuse contaría como respuesta de la brigada y `147.c` quedaría
+        derogada por un cambio de permisos.
+  - [x] El `kind` nuevo lleva su rótulo en `bms.ts` — lo exigen los dos censos (el estático de
+        `web` y el que lee `SELECT DISTINCT kind` de la tabla).
+  - [ ] **DIFERIDO — el botón en la app.** Ver la nota.
+
+> **Lo que queda declarado, y por qué no se hizo de refilón:** el endpoint existe y está probado,
+> pero **nadie lo pulsa todavía**. La superficie móvil la gobierna
+> `takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md`, y **dónde** vive ese botón —y qué dice
+> mientras la alarma sigue viva— es una decisión de esa spec, no de esta ficha. Inventar un
+> control del camino de emergencia sin leerla es peor que no ponerlo. **No bloquea a `147.c`:**
+> ese escalado consulta `COUNT_TACTICAL_ACKS`, que ya funciona — lo que medirá mientras no haya
+> botón es «cero acuses», que es **la verdad**, no un fallo del contador.
 
 #### [ ] T-2.147.c · Sin acuse en ~2 min, avisar al SOC — `SOFTWARE`
 - **No escala al edificio**, y esa es la decisión (`D-05`): escalar solo reintroduciría por la

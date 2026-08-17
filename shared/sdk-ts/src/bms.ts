@@ -335,6 +335,17 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'ENVIADA', kind: 'ok' },
     logLabel: 'NOTIFICACIÓN ENVIADA',
   },
+  // [T-2.147.b · D-05] EL ACUSE DE LA BRIGADA, que NO es el `ack` de arriba.
+  // `ack` mueve el incidente `open→acked` y lo firma MONITOREO; esto lo escribe
+  // quien recibió el push de un pánico para decir «lo tengo, voy», y deja el
+  // estado del incidente intacto. Se rotulan distinto a propósito: si el SOC
+  // leyera los dos como «ACUSADO», el escalado de T-2.147.c parecería atendido
+  // por su propio acuse, sin que nadie hubiera bajado a mirar.
+  tactical_ack: {
+    label: 'ACUSES DE LA BRIGADA',
+    view: { state: 'BRIGADA EN CAMINO', kind: 'ok' },
+    logLabel: 'ACUSE DE LA BRIGADA',
+  },
   // [T-2.144] EL OCTAVO PRODUCTOR, el que no estaba en la ficha. No lo escribe
   // `api/src`: lo escribe la función PL/pgSQL `app_notify_delivery`
   // (`db/schema.sql`, migración `0040`) cuando el webhook del proveedor confirma

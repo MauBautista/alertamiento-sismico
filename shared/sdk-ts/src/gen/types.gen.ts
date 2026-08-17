@@ -3497,6 +3497,35 @@ export type IncidentRosterIncidentsIncidentIdRosterGetResponses = {
 
 export type IncidentRosterIncidentsIncidentIdRosterGetResponse = IncidentRosterIncidentsIncidentIdRosterGetResponses[keyof IncidentRosterIncidentsIncidentIdRosterGetResponses];
 
+export type TacticalAckIncidentsIncidentIdTacticalAckPostData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/tactical-ack';
+};
+
+export type TacticalAckIncidentsIncidentIdTacticalAckPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TacticalAckIncidentsIncidentIdTacticalAckPostError = TacticalAckIncidentsIncidentIdTacticalAckPostErrors[keyof TacticalAckIncidentsIncidentIdTacticalAckPostErrors];
+
+export type TacticalAckIncidentsIncidentIdTacticalAckPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type TacticalAckIncidentsIncidentIdTacticalAckPostResponse = TacticalAckIncidentsIncidentIdTacticalAckPostResponses[keyof TacticalAckIncidentsIncidentIdTacticalAckPostResponses];
+
 export type ListWindowsMaintenanceWindowsGetData = {
     body?: never;
     path?: never;

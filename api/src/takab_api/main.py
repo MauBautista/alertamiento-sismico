@@ -19,6 +19,7 @@ from takab_api.routers.fleet import router as fleet_router
 from takab_api.routers.forensics import router as forensics_router
 from takab_api.routers.incidents import actions_router as incident_actions_router
 from takab_api.routers.incidents import router as incidents_router
+from takab_api.routers.incidents import tactical_ack_router
 from takab_api.routers.incidents_ack import router as incidents_ack_router
 from takab_api.routers.incidents_ops import router as incidents_ops_router
 from takab_api.routers.maintenance import router as maintenance_router
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(incidents_router)
     # Timeline del incidente: consola ∪ dashboard táctico móvil (T-2.08).
     app.include_router(incident_actions_router)
+    app.include_router(tactical_ack_router)
     app.include_router(events_router)
     app.include_router(dictamens_router)
     app.include_router(rule_sets_router)

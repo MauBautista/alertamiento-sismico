@@ -526,3 +526,37 @@ DELETE_ASSET = text(
     "DELETE FROM site_assets WHERE asset_id = CAST(:id AS uuid) "
     "AND site_id = CAST(:site AS uuid) RETURNING asset_id"
 )
+
+
+# --- [T-2.147.b] acuse del TÁCTICO -----------------------------------------------------
+
+# El acuse de la brigada, y NO es el acuse del SOC.
+#
+# `POST /incidents/{id}/ack` mueve el incidente `open→acked` y lo firman los roles
+# de MONITOREO (`ack_incident`). Esto es otra cosa: quien recibió el push de un
+# pánico dice «lo tengo». Si se conflaran, un brigadista vaciaría la cola del SOC
+# desde el teléfono — y al revés, el acuse del SOC contaría como respuesta de la
+# brigada y apagaría el escalado de T-2.147.c sin que nadie hubiera bajado.
+#
+# Por eso NO toca `incidents.state`: solo deja la fila en el timeline append-only.
+#
+# Idempotente por (incidente, usuario): el `NOT EXISTS` evita que un reintento de
+# la app —o un dedo nervioso— convierta un acuse en cinco. Sin él, «cuántos
+# tácticos respondieron» contaría pulsaciones en vez de personas.
+INSERT_TACTICAL_ACK = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "SELECT CAST(:incident AS uuid), CAST(:tenant AS uuid), 'tactical_ack', "
+    "       :actor, CAST(:payload AS jsonb) "
+    "WHERE NOT EXISTS ("
+    "  SELECT 1 FROM incident_actions "
+    "  WHERE incident_id = CAST(:incident AS uuid) "
+    "    AND kind = 'tactical_ack' AND actor = :actor"
+    ") "
+    "RETURNING action_id, ts"
+)
+
+# Cuántas PERSONAS distintas de la brigada han acusado (lo que mide T-2.147.c).
+COUNT_TACTICAL_ACKS = text(
+    "SELECT count(DISTINCT actor) FROM incident_actions "
+    "WHERE incident_id = CAST(:incident AS uuid) AND kind = 'tactical_ack'"
+)
