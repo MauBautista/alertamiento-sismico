@@ -130,11 +130,26 @@ en la misma transacción que ya deja la fila de `audit_log`. Volver a habilitarl
 Usar `updated_at` como reloj habría borrado antes los nombres de quien más tiempo lleva en el
 edificio — exactamente al revés de lo que la retención pretende.
 
-**HUECO DECLARADO, no escondido:** una cuenta retirada **directamente en el pool de Cognito**
-(consola de AWS, CLI) no pasa por la API y **no deja reloj**. Esa persona conserva nombre y
-teléfono indefinidamente, que es el estado de hoy para todo el mundo: se conserva de más, nunca se
-borra de menos. Consecuencia operativa: **las bajas se hacen desde la consola de TAKAB**, no desde
-Cognito. Para auditar el desfase:
+**HUECO CERRADO el 2026-08-22 (`T-2.143`).** Una cuenta retirada **directamente en el pool de
+Cognito** (consola de AWS, CLI) no pasa por la API, así que no deja reloj por sí sola. Ahora el
+propio job lo reconcilia **antes de podar**: `privacy/reconcile.py` compara el padrón con el
+directorio y arranca el reloj (`via = 'account_deleted'`) de quien ya no está. Corre por defecto;
+`--sin-reconciliar` lo apaga —el flag **apaga, no enciende**, porque un paso de cumplimiento que
+hay que acordarse de pedir es exactamente el defecto que la ficha cerraba—.
+
+> **Lo que NO sabe, y conviene tenerlo presente:** *cuándo* se borró la cuenta. El pool no guarda
+> fecha de lo que ya no está, así que el reloj arranca el día en que la reconciliación se entera y
+> no el del hecho. Alarga el plazo real, que es el lado seguro del error. Por eso esto sigue siendo
+> una red de seguridad: **las bajas se hacen desde la consola de TAKAB**.
+
+> **Y se niega a actuar con una lectura a medias.** Si el directorio no responde, si la paginación
+> no termina o si el pool devuelve **cero** cuentas, la corrida **aborta entera** y lo dice en el
+> log (`RECONCILIACIÓN OMITIDA · …`). Los tres casos son indistinguibles de «los han borrado a
+> todos», y actuar sobre ellos pondría en marcha el borrado del nombre de cada persona de cada
+> edificio. Un fallo aquí **no aborta la poda**: se avisa y se sigue, porque el peor caso es que
+> unos relojes arranquen una corrida más tarde.
+
+Para auditar el desfase a mano (misma consulta que usa el job):
 
 ```sql
 -- Perfiles del padrón sin baja registrada, ordenados por antigüedad.
@@ -144,8 +159,9 @@ SELECT p.tenant_id, p.user_sub, p.updated_at
  WHERE d.user_sub IS NULL ORDER BY p.updated_at;
 ```
 
-y contrastar con `aws cognito-idp list-users`. La reconciliación automática contra el pool queda
-**fichada**, no supuesta.
+y contrastar con `aws cognito-idp list-users`. Si esa consulta devuelve a alguien que **tampoco
+está en el pool**, es que la reconciliación no ha corrido todavía o abortó: mira el log del cron
+por `RECONCILIACIÓN`.
 
 ---
 

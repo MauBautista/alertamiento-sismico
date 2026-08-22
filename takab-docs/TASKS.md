@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **300** · `[x]` **244** · `[~]` **9** · `[ ]` **47**
+**Conteo de tareas:** total **300** · `[x]` **246** · `[~]` **9** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4346,7 +4346,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 > **Es exactamente la pregunta que `D-07` mandó al abogado**, y el código está escrito para que la
 > respuesta se pueda cambiar sin rehacerlo.
 
-### [ ] T-2.151 · ARCO por teléfono: cablear el borrado al flujo de solicitudes — `SOFTWARE`
+### [x] T-2.151 · ARCO por teléfono: cablear el borrado al flujo de solicitudes — `SOFTWARE`
 - **Componente:** api · **Depende de:** `T-2.150` (hecha)
 - `store.forget_msisdn()` existe y está probada, pero **el flujo ARCO está tecleado por `user_sub`**
   y un sujeto-teléfono **no tiene ninguno**: no hay `user_profiles`, así que tampoco el FK compuesto
@@ -4357,16 +4357,60 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [x] **Decidido y escrito** cómo se acredita la titularidad: **la acredita el cliente
         institucional** que recogió el consentimiento — [`D-23`](DECISIONES-MAURICIO.md#d-23).
         TAKAB ejecuta y audita; no verifica identidades por su cuenta ni custodia documentos.
-  - [ ] **La respuesta NO puede ser un oráculo de existencia.** A quien no acredita se le contesta
+  - [x] **La respuesta NO puede ser un oráculo de existencia.** A quien no acredita se le contesta
         **lo mismo siempre**: un «no encontrado» frente a un «borrado» convierte el endpoint en un
         buscador de personas — permitiría comprobar si un teléfono consta y, con él, en qué
         edificio. Test que lo fije comparando las dos respuestas byte a byte.
-  - [ ] **Nadie puede borrar el consentimiento de otro.** Sin acreditación no se ejecuta: destruir
+  - [x] **Nadie puede borrar el consentimiento de otro.** Sin acreditación no se ejecuta: destruir
         la prueba de la base legal de un tercero es justo lo que [`D-07`](DECISIONES-MAURICIO.md#d-07)
         construyó el cripto-borrado para impedir.
-  - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
-  - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
+  - [x] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
+  - [x] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+> ### ✅ CERRADA el 2026-08-22 · `POST /privacy/phone-erasures` (migración `0047`)
+>
+> **La decisión de diseño que la ficha no anticipaba: es UN endpoint, no dos.** El ARCO por escrito
+> de `T-2.80.b` separa *registrar* de *ejecutar* a propósito —dos actos, dos fechas, y de la primera
+> corre el plazo legal—. Aquí van fundidos en una transacción, y la razón es material:
+>
+> > **Para ejecutar hay que tener el número delante.** Registrar hoy y ejecutar la semana que viene
+> > obligaría a que la constancia guardase su índice — el mismo `HMAC(pimienta, tenant‖msisdn)` que
+> > localiza el sello. Y `privacy_erasure_requests` es **append-only por trigger**: ese índice no se
+> > podría borrar jamás, así que **sobreviviría al borrado que lo motivó**. Es determinista, o sea
+> > que con la pimienta en la mano se comprueba cualquier número candidato: exactamente la
+> > seudonimización reversible que el criterio 5 prohíbe, solo que un paso más allá.
+>
+> Las dos fechas **no se pierden**: `received_at` sale del escrito (lo pone el cliente) y `erased_at`
+> lo pone la base. Lo que se pierde es poder diferir la ejecución.
+>
+> **`affected` es constante (`{}`), y ahí está el criterio 2.** En el ARCO del padrón son conteos
+> útiles; aquí un `{"privacy_subject_secrets": 1}` frente a un `0` sería el oráculo. `forget_msisdn()`
+> devuelve si había algo que destruir y **ese booleano se descarta en el router a propósito**.
+>
+> **La acreditación vive en la base, no en el router** — y esto se midió, no se afirmó:
+> `pe_phone_on_behalf` no puede reutilizar `app_can_erase_subject`, que busca la constancia POR
+> `user_sub` y con un sujeto nulo no encuentra nada; la exige por `request_id` **y** que se haya
+> registrado como constancia de teléfono. `test_una_lapida_de_telefono_sin_su_constancia_no_se_puede_insertar`
+> prueba las dos evasiones, incluida la interesante: una constancia REAL pero del padrón, donde el FK
+> está satisfecho y la política se niega igual. Sin ese caso, el responsable reutilizaría cualquier
+> expediente suyo para justificar cualquier borrado.
+>
+> El cruce de clientes sale gratis y sin una sola comparación de tenants: el índice se deriva con el
+> `tenant_id` de la sesión, así que **el mismo teléfono es dos sujetos distintos e inalcanzables en
+> dos clientes**. Medido con el número sembrado en los dos.
+>
+> **Cuatro sabotajes, y dos enseñaron algo:**
+>
+> - Devolver el conteo real ⇒ 2 rojos. Quitar la guarda de rol ⇒ 1 rojo.
+> - Colar el número en claro por `proof_ref`, y colar su índice ⇒ 1 rojo cada uno… **pero los dos
+>   primeros intentos pasaron en verde**, y no porque el test fallara: el parche pegaba en la
+>   primera de las dos apariciones de `proof_ref=body.proof_ref`, que es el endpoint de `T-2.80.b`.
+>   El sabotaje nunca tocó el código bajo prueba. *Un sabotaje que no se comprueba que muerde vale
+>   lo mismo que no haberlo hecho* — segunda vez hoy (la primera, un `grep` que no casaba por los
+>   códigos de color).
+> - Y se predijo mal cuál de las dos guardas cazaría al `request_id` inventado: se esperaba el FK y
+>   **caza antes la RLS**. Las dos están; el orden es el contrario del que uno supone.
 
 ### [x] T-2.162 · El correo de guardia no dice qué hacer ni dónde — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-22, en el ensayo
@@ -6045,7 +6089,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
-### [ ] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
+### [x] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**
 - El reloj de retención de nombre y teléfono lo escriben `PATCH {"enabled": false}` y `DELETE`
   de la API. **Una cuenta retirada directamente en el pool de Cognito no pasa por ahí**, así que
@@ -6055,8 +6099,54 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   reconciliación que hay que acordarse de correr no es retención cumplida**, que es exactamente
   el argumento de `T-2.81.a`.
 - **Criterios de aceptación:**
-  - [ ] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
-  - [ ] Test de una cuenta que desaparece del pool sin pasar por la API.
+  - [x] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
+  - [x] Test de una cuenta que desaparece del pool sin pasar por la API.
+
+> ### ✅ CERRADA el 2026-08-22 · `privacy/reconcile.py`, dentro del job que ya corre solo
+>
+> El paso va **antes de la poda y en su propia transacción**: antes, para que un reloj recién
+> arrancado cuente ya en esta misma corrida; aparte, para que una reconciliación que falle no se
+> lleve por delante la poda. Un fallo aquí **no aborta el job** — el peor caso es que unos relojes
+> arranquen una corrida más tarde, mientras que abortar dejaría sin podar lo ya vencido.
+>
+> **El flag `--sin-reconciliar` APAGA, no enciende.** Un paso de cumplimiento que hay que acordarse
+> de pedir es el defecto que esta ficha cerraba; ponerlo detrás de un `--reconciliar` habría sido
+> escribirlo otra vez con otra forma.
+>
+> **Lo difícil no era dar de baja: era negarse a hacerlo con una lectura a medias.** El acto es
+> media línea de SQL. El riesgo está en la premisa, porque **una lectura incompleta del pool es
+> indistinguible de un montón de bajas**: directorio caído, paginación que no termina, respuesta
+> vacía. En los tres la lista de «usuarios que existen» encoge, y actuar sobre ella arrancaría el
+> reloj del borrado del nombre de gente que está en el edificio ahora mismo. Los tres abortan
+> enteros; ninguno actúa «con lo que se pudo leer».
+>
+> **Lo que NO sabe, escrito y no escondido:** *cuándo* se borró la cuenta. El pool no guarda fecha
+> de lo que ya no está, así que el reloj arranca el día en que la reconciliación se entera. Alarga
+> el plazo real —el lado seguro— y por eso esto es una red de seguridad: las bajas se hacen desde
+> la consola de TAKAB. El runbook `§6` pasa de declarar el hueco a describir el mecanismo.
+>
+> **Cinco sabotajes, y los dos que NO mordieron enseñaron más que los tres que sí:**
+>
+> 1. **Tragarse la caída del directorio** dejaba la suite en verde. La red de seguridad aguantaba
+>    —caía en la rama del pool vacío y nadie se dio de baja— pero **el motivo era el equivocado**, y
+>    el motivo es lo que alguien lee a las 3 a.m. La aserción buscaba la palabra «directorio», que
+>    sale en los DOS mensajes. Es literalmente `"5 min"` ⊂ `"15 min"` de `T-2.162`, tercera vez en
+>    esta sesión. Ahora se exige el texto que los distingue **y** que los dos motivos difieran.
+> 2. **Cambiar el `ON CONFLICT DO NOTHING` a `DO UPDATE SET deactivated_at = now()`** tampoco movía
+>    nada: la consulta de candidatos ya excluye a quien tiene reloj, así que **el conflicto no
+>    ocurre por el camino normal**. Era un cinturón que nunca se abrocha. Se prueba ahora ejecutando
+>    la sentencia a mano contra alguien que ya tiene reloj, que es lo que pasaría con dos corridas
+>    solapadas.
+>
+> **Y dos hechos del esquema que corrigieron el test, no el código:**
+>
+> - `user_profiles.user_sub` es **PRIMARY KEY global**: un sub pertenece a un cliente y a uno solo.
+>   El primer test sembraba el mismo sub en dos tenants con `ON CONFLICT DO NOTHING` — no insertaba
+>   nada y pasaba por vacuidad disfrazada de aserción.
+> - Toda fila de `user_profiles` nace de un token verificado (`PUT /me/profile`), o sea de alguien
+>   que **tuvo** cuenta. No existe el perfil de quien nunca la tuvo, así que «ausente del pool» no
+>   puede significar otra cosa que «se la borraron» — y por eso `via = 'account_deleted'` es exacto
+>   y no una aproximación cómoda.
 
 ### [x] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
 - **Componente:** api (tests) · **Detectada por:** `T-2.78.a` (2026-08-14)
