@@ -47,6 +47,11 @@ TAKAB_API_OPS_METRICS_ENABLED=true
 # venga de otro topic. Sin esta linea, POST /api/ops/alerts/sns responde 503 y lo
 # grita en el log — y la suscripcion HTTPS de Terraform no se puede confirmar.
 TAKAB_API_OPS_ALERT_TOPIC_ARN=$(tf ops_topic_arn)
+# [T-2.162] El MISMO plazo que anuncia el correo de la alarma. Se DERIVA del
+# terraform, no se teclea: si divergieran, el aviso prometeria un plazo que la API
+# no respeta y nadie lo notaria hasta que alguien acusara "a tiempo" y el sistema
+# le dijera que llego tarde.
+TAKAB_API_OPS_ACK_DEADLINE_S=$(tf ops_ack_deadline_s)
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).

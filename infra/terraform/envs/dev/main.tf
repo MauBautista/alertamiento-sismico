@@ -232,6 +232,8 @@ module "observability" {
   # endpoint que suscribir, y la bandera propia obliga a que la API este
   # desplegada ANTES (ver la variable: la suscripcion se confirma durante el
   # apply, asi que un endpoint que todavia no existe mata el apply).
+  ops_ack_deadline_s = var.ops_ack_deadline_s
+
   ops_alert_https_endpoint = (
     var.serve_enabled && var.ops_alert_https_subscriber_enabled
     ? "${module.serve.console_url}/api/ops/alerts/sns"

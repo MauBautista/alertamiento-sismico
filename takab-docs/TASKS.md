@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **300** · `[x]` **242** · `[~]` **9** · `[ ]` **49**
+**Conteo de tareas:** total **300** · `[x]` **243** · `[~]` **9** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4368,7 +4368,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
 
-### [ ] T-2.162 · El correo de guardia no dice qué hacer ni dónde — `SOFTWARE`
+### [x] T-2.162 · El correo de guardia no dice qué hacer ni dónde — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-22, en el ensayo
   cronometrado de `T-2.78`
 - **El hecho:** el aviso de on-call es la **plantilla cruda de CloudWatch**. Nombra la alarma, su
@@ -4385,15 +4385,31 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   comunicaba**. Allí era un volcado JSON a un inspector; aquí es una plantilla de AWS a un guardia.
   En los dos casos ninguna prueba de la lógica podía cazarlo, porque la lógica no falla.
 - **Criterios de aceptación:**
-  - [ ] El aviso lleva **qué hacer y dónde**: una línea con la URL del acuse y el plazo. Hoy
-        `T-2.78.a` construyó esa página y **nada la enseña**.
-  - [ ] **Sin inventar un canal nuevo.** El texto lo compone SNS desde la alarma, así que la vía
-        natural es `alarm_description` —que ya viaja en el cuerpo— o un formato propio si se decide
-        pasar por la API. Lo segundo es más caro y no está justificado todavía.
-  - [ ] **Ojo con el falso arreglo:** poner la URL en el runbook **no lo cierra**. El runbook no
-        está abierto a las 3 a.m.; el correo sí.
-  - [ ] El plazo (`ack_deadline_at`) va en el texto. Saber que hay quince minutos cambia lo que
-        hace una persona medio dormida.
+  - [x] El aviso lleva **qué hacer y dónde**: `alarm_description` de **las doce alarmas** acaba en
+        `ACUSA RECIBO en <url> (tu credencial de guardia; tienes N min)`.
+  - [x] **Sin canal nuevo:** va en `alarm_description`, el **único texto nuestro** que viaja en el
+        correo que compone SNS. Todo lo demás —nombre, umbral, dimensiones— lo pone AWS.
+  - [x] El plazo va en el texto **y en minutos**: `900 s` obliga a dividir a quien acaba de
+        despertarse.
+  - [x] **El plazo se DERIVA, no se teclea dos veces.** `ops_ack_deadline_s` es la fuente única:
+        alimenta el texto del correo **y** `TAKAB_API_OPS_ACK_DEADLINE_S` por el output del mismo
+        nombre. Si divergieran, el aviso prometería un plazo que la API no respeta — y nadie lo
+        notaría hasta que alguien acusara «a tiempo» y el sistema le dijera que llegó tarde.
+  - [x] **Sin suscriptor HTTPS no se anuncia el acuse.** Sin él ningún aviso llega a la base: la
+        página existiría y no habría nada suyo que atender. Mandar allí a alguien de guardia a las
+        3 a.m. es peor que no decir nada.
+  - [x] Tres tests, **verificados rompiendo el código**: quitar el sufijo de una alarma deja dos en
+        rojo; hornear el plazo deja rojo el suyo.
+
+> ### ⚠️ Y el primer intento del test negativo pasó cuando debía fallar
+>
+> La aserción del plazo derivado buscaba `"5 min"` con `ops_ack_deadline_s = 300`. **`"5 min"` es
+> subcadena de `"15 min"`**, así que con el plazo horneado a 15 pasaba igual. Lo destapó el propio
+> ejercicio de romper el código a propósito — que es exactamente para lo que existe.
+>
+> Corregida a texto exacto (`"tienes 5 min"`) **más la ausencia del valor viejo**. Segunda vez en
+> esta sesión que un test pasa por la razón equivocada; la primera buscaba la palabra «consola»,
+> que ya salía en el pie del correo.
 
 ### [x] T-2.161 · El acuse de guardia no se podía enviar desde la consola — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** api (`routers/ops_alerts.py`) · **Hallado:** 2026-08-22, ejecutando el ensayo

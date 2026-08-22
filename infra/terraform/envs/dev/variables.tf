@@ -190,3 +190,12 @@ variable "site_enabled" {
   type        = bool
   default     = false
 }
+
+# [T-2.162] Fuente unica del plazo de acuse: lo consume el texto del correo
+# (`module.observability`) y el despliegue de la API, por el output del mismo
+# nombre.
+variable "ops_ack_deadline_s" {
+  description = "Plazo para acusar un aviso de on-call, en segundos."
+  type        = number
+  default     = 900
+}

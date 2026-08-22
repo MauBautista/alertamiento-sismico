@@ -174,3 +174,12 @@ output "console_is_public" {
   description = "true si la consola esta publicada Y su 443 admite a cualquiera. Alimenta TAKAB_API_NOTIFY_WEB_PUBLIC."
   value       = var.serve_enabled && contains(var.web_allowed_cidrs, "0.0.0.0/0")
 }
+
+# [T-2.162] El plazo de acuse, para que `deploy.sh` lo DERIVE en vez de teclearlo.
+# El correo lo anuncia y la API lo aplica: si cada uno lo declarara por su cuenta,
+# el aviso prometeria un plazo que el servidor no respeta, y nadie lo notaria
+# hasta que alguien acusara "a tiempo" y el sistema dijera que llego tarde.
+output "ops_ack_deadline_s" {
+  description = "Plazo de acuse en segundos. Alimenta TAKAB_API_OPS_ACK_DEADLINE_S."
+  value       = var.ops_ack_deadline_s
+}

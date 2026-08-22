@@ -20,6 +20,33 @@ terraform {
   }
 }
 
+# [T-2.162] LO QUE HAY QUE HACER, pegado a cada aviso.
+#
+# `alarm_description` es el UNICO texto nuestro que viaja en el correo que compone
+# SNS. Todo lo demas —nombre, umbral, dimensiones— lo pone AWS. Asi que si el
+# "acusa aqui" no esta aqui, no esta en ningun sitio que el destinatario vea.
+#
+# Medido el 2026-08-22 en el ensayo cronometrado de T-2.78: quien recibio el aviso
+# acababa de acunar la credencial, abrir la pagina y acusar otro aviso veinte
+# minutos antes, y aun asi pregunto cual era "el codigo". El runbook resolvia esto
+# suponiendo que la persona tiene el marcador y sabe usarlo; el ensayo refuto esa
+# suposicion con el caso mas favorable posible.
+#
+# VACIO SI NO HAY SUSCRIPTOR HTTPS, y no es un detalle: sin el, ningun aviso llega
+# a la base. La pagina existiria y no habria nada suyo que atender. Mandar alli a
+# alguien de guardia a las 3 a.m. es peor que no decir nada.
+#
+# El plazo va en MINUTOS: "900 s" obliga a dividir a quien acaba de despertarse.
+locals {
+  ack_url = var.ops_alert_https_endpoint == "" ? "" : replace(var.ops_alert_https_endpoint, "/sns", "/ack")
+
+  ack_sufijo = var.ops_alert_https_endpoint == "" ? "" : format(
+    " --- ACUSA RECIBO en %s (tu credencial de guardia; tienes %d min). Sin acuse queda constancia de que nadie lo atendio.",
+    local.ack_url,
+    floor(var.ops_ack_deadline_s / 60),
+  )
+}
+
 resource "aws_sns_topic" "ops_alerts" {
   name = "takab-dev-ops-alerts"
 
@@ -123,7 +150,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
   for_each = var.dlq_names
 
   alarm_name          = "takab-dev-dlq-${each.key}"
-  alarm_description   = "DLQ '${each.value}' con mensajes: la ingesta esta rechazando payloads (ver MessageAttributes.reason) o un consumer agoto reintentos."
+  alarm_description   = "DLQ '${each.value}' con mensajes: la ingesta esta rechazando payloads (ver MessageAttributes.reason) o un consumer agoto reintentos.${local.ack_sufijo}"
   namespace           = "AWS/SQS"
   metric_name         = "ApproximateNumberOfMessagesVisible"
   dimensions          = { QueueName = each.value }
@@ -143,7 +170,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
 # evento operativo; SNS notifica solo la transicion, un correo por parada).
 resource "aws_cloudwatch_metric_alarm" "ec2_status" {
   alarm_name          = "takab-dev-ec2-status-check"
-  alarm_description   = "La instancia de la nube co-locada falla sus status checks o dejo de reportar (¿parada?): API, workers y DB viven ahi."
+  alarm_description   = "La instancia de la nube co-locada falla sus status checks o dejo de reportar (¿parada?): API, workers y DB viven ahi.${local.ack_sufijo}"
   namespace           = "AWS/EC2"
   metric_name         = "StatusCheckFailed"
   dimensions          = { InstanceId = var.instance_id }
@@ -159,7 +186,7 @@ resource "aws_cloudwatch_metric_alarm" "ec2_status" {
 
 resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
   alarm_name          = "takab-dev-ec2-cpu-sostenida"
-  alarm_description   = "CPU > 90% sostenida 15 min en la instancia co-locada: riesgo de lag de ingesta y OOM (leccion t4g.small)."
+  alarm_description   = "CPU > 90% sostenida 15 min en la instancia co-locada: riesgo de lag de ingesta y OOM (leccion t4g.small).${local.ack_sufijo}"
   namespace           = "AWS/EC2"
   metric_name         = "CPUUtilization"
   dimensions          = { InstanceId = var.instance_id }
@@ -190,7 +217,7 @@ resource "aws_cloudwatch_log_metric_filter" "iot_rule_errors" {
 
 resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   alarm_name          = "takab-dev-iot-rule-errors"
-  alarm_description   = "Las reglas IoT estan tirando errores al enrutar hacia SQS: mensajes del edge se estan perdiendo antes de la ingesta."
+  alarm_description   = "Las reglas IoT estan tirando errores al enrutar hacia SQS: mensajes del edge se estan perdiendo antes de la ingesta.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "IoTRuleErrors"
   statistic           = "Sum"
@@ -220,7 +247,7 @@ resource "aws_cloudwatch_metric_alarm" "sensor_mute" {
   for_each = toset(var.paged_gateways)
 
   alarm_name          = "takab-dev-sensor-mudo-${each.value}"
-  alarm_description   = "El gabinete ${each.value} TIENE ENLACE pero su sismografo lleva >120 s sin entregar muestras: SIN DETECCION LOCAL, el sitio esta ciego. Revisar el Raspberry Shake (alimentacion, cable de red, puerto del switch): el Pi 5 reconecta solo en cuanto vuelva a la LAN."
+  alarm_description   = "El gabinete ${each.value} TIENE ENLACE pero su sismografo lleva >120 s sin entregar muestras: SIN DETECCION LOCAL, el sitio esta ciego. Revisar el Raspberry Shake (alimentacion, cable de red, puerto del switch): el Pi 5 reconecta solo en cuanto vuelva a la LAN.${local.ack_sufijo}"
   namespace           = "Takab/Sensor"
   metric_name         = each.value
   statistic           = "Maximum"
@@ -267,7 +294,7 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
   for_each = toset(var.paged_gateways)
 
   alarm_name          = "takab-dev-gateway-offline-${each.value}"
-  alarm_description   = "El gabinete ${each.value} lleva >10 min sin enviar un solo heartbeat (llegan 1/min): perdio el enlace con IoT Core, se quedo sin energia o se colgo. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo. Vuelve a OK sola en cuanto reaparezcan los heartbeats."
+  alarm_description   = "El gabinete ${each.value} lleva >10 min sin enviar un solo heartbeat (llegan 1/min): perdio el enlace con IoT Core, se quedo sin energia o se colgo. La proteccion local sigue (regla de oro 2), pero hay que ir a verlo. Vuelve a OK sola en cuanto reaparezcan los heartbeats.${local.ack_sufijo}"
   namespace           = "Takab/Sensor"
   metric_name         = each.value
   statistic           = "SampleCount"
@@ -360,7 +387,7 @@ resource "aws_cloudwatch_metric_alarm" "gateway_offline" {
 # `base_backup_interval_days * chain_margin`.
 resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled" {
   alarm_name          = "takab-dev-wal-archivado-atascado"
-  alarm_description   = "El archivado continuo de WAL lleva demasiado tiempo sin avanzar (o no se sabe cuanto): a partir de aqui, un desastre pierde todo lo escrito desde el ultimo segmento que llego a S3. Y HAY UN RELOJ MAS CORTO QUE EL DEL RPO: con el archivado atascado, Postgres NO recicla su WAL y `pg_wal` crece ~16 MiB por minuto (archive_timeout fuerza segmentos de tamaño completo) sobre el mismo volumen de 40 GiB donde viven los datos — menos de dos dias hasta llenar el disco y tumbar la DB. Lo primero es mirar el espacio libre en /data; despues `pg_stat_archiver` (last_failed_time/failed_count dicen si el archive_command falla en bucle) y /var/log/takab-pitr.log. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es la memoria de la nube y, en 48 h, la nube entera."
+  alarm_description   = "El archivado continuo de WAL lleva demasiado tiempo sin avanzar (o no se sabe cuanto): a partir de aqui, un desastre pierde todo lo escrito desde el ultimo segmento que llego a S3. Y HAY UN RELOJ MAS CORTO QUE EL DEL RPO: con el archivado atascado, Postgres NO recicla su WAL y `pg_wal` crece ~16 MiB por minuto (archive_timeout fuerza segmentos de tamaño completo) sobre el mismo volumen de 40 GiB donde viven los datos — menos de dos dias hasta llenar el disco y tumbar la DB. Lo primero es mirar el espacio libre en /data; despues `pg_stat_archiver` (last_failed_time/failed_count dicen si el archive_command falla en bucle) y /var/log/takab-pitr.log. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es la memoria de la nube y, en 48 h, la nube entera.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "WalArchiveAgeSeconds"
   statistic           = "Maximum"
@@ -424,7 +451,7 @@ resource "aws_cloudwatch_metric_alarm" "wal_archive_stalled" {
 # de que el respaldo base funciono alguna vez.
 resource "aws_cloudwatch_metric_alarm" "base_backup_missing" {
   alarm_name          = "takab-dev-backup-base-ausente"
-  alarm_description   = "El ultimo backup base de la cadena PITR es demasiado viejo (o no se sabe cuanto): a partir de aqui los WAL archivados NO se pueden aplicar sobre nada y el respaldo continuo no sirve para restaurar. Han fallado varios `barman-cloud-backup` seguidos sin que nada mas lo notara — el archivado de WAL sigue impecable, por eso su alarma esta en verde. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list`. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no se ha tomado el primer backup base (T-2.74). La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube."
+  alarm_description   = "El ultimo backup base de la cadena PITR es demasiado viejo (o no se sabe cuanto): a partir de aqui los WAL archivados NO se pueden aplicar sobre nada y el respaldo continuo no sirve para restaurar. Han fallado varios `barman-cloud-backup` seguidos sin que nada mas lo notara — el archivado de WAL sigue impecable, por eso su alarma esta en verde. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list`. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no se ha tomado el primer backup base (T-2.74). La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "BaseBackupAgeSeconds"
   statistic           = "Maximum"
@@ -498,7 +525,7 @@ resource "aws_cloudwatch_metric_alarm" "base_backup_missing" {
 # hallazgo: la metrica no se esta publicando.
 resource "aws_cloudwatch_metric_alarm" "base_backup_late" {
   alarm_name          = "takab-dev-backup-base-atrasado"
-  alarm_description   = "AVISO: se paso el intervalo del backup base sin que se completara ninguno — ha fallado el PRIMERO, y todavia se puede recuperar. Esto NO es la alarma de cadena rota (`takab-dev-backup-base-ausente`): aqui queda ventana de sobra para arreglarlo, y arreglarlo es barato. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list` que el ancla se movio, y esperar el correo de OK de esta misma alarma. Si se ignora, el siguiente aviso sera el de cadena rota y para entonces la ventana de recuperacion se habra cerrado. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube."
+  alarm_description   = "AVISO: se paso el intervalo del backup base sin que se completara ninguno — ha fallado el PRIMERO, y todavia se puede recuperar. Esto NO es la alarma de cadena rota (`takab-dev-backup-base-ausente`): aqui queda ventana de sobra para arreglarlo, y arreglarlo es barato. Mirar /var/log/takab-pitr.log en la instancia y ejecutar `/opt/takab/bin/takab-base-backup.sh` a mano; despues comprobar con `barman-cloud-backup-list` que el ancla se movio, y esperar el correo de OK de esta misma alarma. Si se ignora, el siguiente aviso sera el de cadena rota y para entonces la ventana de recuperacion se habra cerrado. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es poder recuperar la nube.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "BaseBackupAgeSeconds"
   statistic           = "Maximum"
@@ -554,7 +581,7 @@ resource "aws_cloudwatch_metric_alarm" "base_backup_late" {
 # escrito de la ventana de T-2.74.
 resource "aws_cloudwatch_metric_alarm" "db_disk_space" {
   alarm_name          = "takab-dev-disco-datos-lleno"
-  alarm_description   = "El volumen /data de la instancia (40 GiB: datadir de Postgres + pg_wal) supero el umbral de ocupacion. A 16 MiB/min —el ritmo al que crece pg_wal cuando el archivado se atasca— cada punto porcentual son ~25 min, asi que al 80 % quedan ~8,5 h antes de que Postgres se quede sin sitio y la base caiga. Primero `df -h /data` y `du -sh /data/pgdata/pg_wal`; si pg_wal es lo que crece, la causa esta en el archivado (ver la alarma de atasco y /var/log/takab-pitr.log), no en el disco. Si esta alarma queda en INSUFFICIENT_DATA, el publicador esta callado o /data NO ESTA MONTADO — que es peor que el disco lleno."
+  alarm_description   = "El volumen /data de la instancia (40 GiB: datadir de Postgres + pg_wal) supero el umbral de ocupacion. A 16 MiB/min —el ritmo al que crece pg_wal cuando el archivado se atasca— cada punto porcentual son ~25 min, asi que al 80 % quedan ~8,5 h antes de que Postgres se quede sin sitio y la base caiga. Primero `df -h /data` y `du -sh /data/pgdata/pg_wal`; si pg_wal es lo que crece, la causa esta en el archivado (ver la alarma de atasco y /var/log/takab-pitr.log), no en el disco. Si esta alarma queda en INSUFFICIENT_DATA, el publicador esta callado o /data NO ESTA MONTADO — que es peor que el disco lleno.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "DataDiskUsedPercent"
   statistic           = "Maximum"
@@ -571,7 +598,7 @@ resource "aws_cloudwatch_metric_alarm" "db_disk_space" {
 
 resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
-  alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie."
+  alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "GhostGatewaysAlive"
   statistic           = "Maximum"
@@ -615,7 +642,7 @@ resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
 # se ejecuto alguna vez — la unica senal automatica y barata de que existe.
 resource "aws_cloudwatch_metric_alarm" "pii_retention_stalled" {
   alarm_name          = "takab-dev-retencion-pii-detenida"
-  alarm_description   = "El job de retencion de PII lleva demasiado tiempo sin completar una corrida correcta (o no se sabe cuanto). Mientras dure, los datos personales que tenian que caducar NO estan caducando: telefonos, nombres del roster de quien ya no esta y ubicaciones GPS de check-ins siguen guardados mas alla del plazo declarado al cliente. Mirar /var/log/takab-prune-pii.log en la instancia y `SELECT mode, ok, error, finished_at FROM pii_retention_runs ORDER BY finished_at DESC LIMIT 5` (una corrida abortada deja fila con su razon). Ejecutar a mano: /opt/takab/bin/takab-prune-pii.sh. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no ha corrido ninguna. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es el cumplimiento de la politica de privacidad."
+  alarm_description   = "El job de retencion de PII lleva demasiado tiempo sin completar una corrida correcta (o no se sabe cuanto). Mientras dure, los datos personales que tenian que caducar NO estan caducando: telefonos, nombres del roster de quien ya no esta y ubicaciones GPS de check-ins siguen guardados mas alla del plazo declarado al cliente. Mirar /var/log/takab-prune-pii.log en la instancia y `SELECT mode, ok, error, finished_at FROM pii_retention_runs ORDER BY finished_at DESC LIMIT 5` (una corrida abortada deja fila con su razon). Ejecutar a mano: /opt/takab/bin/takab-prune-pii.sh. Si esta alarma aparece el dia del despliegue inicial es CORRECTO: todavia no ha corrido ninguna. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es el cumplimiento de la politica de privacidad.${local.ack_sufijo}"
   namespace           = "Takab/Ops"
   metric_name         = "PiiRetentionAgeSeconds"
   statistic           = "Maximum"
