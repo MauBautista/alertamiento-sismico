@@ -47,6 +47,11 @@ TAKAB_API_OPS_METRICS_ENABLED=true
 # venga de otro topic. Sin esta linea, POST /api/ops/alerts/sns responde 503 y lo
 # grita en el log — y la suscripcion HTTPS de Terraform no se puede confirmar.
 TAKAB_API_OPS_ALERT_TOPIC_ARN=$(tf ops_topic_arn)
+# [T-2.162] El MISMO plazo que anuncia el correo de la alarma. Se DERIVA del
+# terraform, no se teclea: si divergieran, el aviso prometeria un plazo que la API
+# no respeta y nadie lo notaria hasta que alguien acusara "a tiempo" y el sistema
+# le dijera que llego tarde.
+TAKAB_API_OPS_ACK_DEADLINE_S=$(tf ops_ack_deadline_s)
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).
@@ -97,6 +102,14 @@ TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar.
 TAKAB_API_NOTIFY_EMAIL_FROM=alertas@takabailert.com
 TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
+# [T-2.158, D-22] Y que el DESTINATARIO la alcanza, que no es lo mismo. Tener URL
+# no basta: hasta D-22 ese 443 admitia UNA sola IP, asi que el enlace de "Atender
+# en la consola" solo lo abria el operador de esa direccion. El proceso no puede
+# deducirlo —lo sabe la red—, por eso se declara. Sin esta linea el correo NO
+# promete enlace: dice que hacer y se calla la URL, que es el default seguro.
+#
+# Si algun dia se vuelve a cerrar el 443, ESTA LINEA se apaga con el.
+TAKAB_API_NOTIFY_WEB_PUBLIC=$(tf console_is_public)
 EOF
 )
 

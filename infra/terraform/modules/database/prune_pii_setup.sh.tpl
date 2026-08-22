@@ -100,15 +100,43 @@ chmod 0755 /opt/takab/bin/takab-prune-pii.sh
 #
 # Si psql falla NO se publica nada: publicar un 0 a ciegas seria decir "la
 # retencion va bien" cuando lo unico cierto es que no se pudo preguntar.
+#
+# [T-2.152] Y hay TRES estados, no dos. Confundirlos fue el defecto:
+#
+#   1. la consulta responde un numero  -> esa es la edad
+#   2. responde VACIO (ninguna corrida correcta todavia) -> fallback al origen,
+#      para que la alarma nazca diciendo la verdad en vez de quedarse aparcada
+#   3. la consulta FALLA (no se puede preguntar) -> no se publica nada
+#
+# El fallback existia para el caso 2 y era INALCANZABLE cuando ocurria el 3.
+# Medido el 2026-08-21 con `bash -x`: con `set -euo pipefail`, un psql que sale
+# con error hace que la ASIGNACION devuelva distinto de cero, y `set -e` mata el
+# script ANTES del `if`. La tabla no existia —la nube iba 8 migraciones por
+# detras— asi que el caso 2 y el 3 coincidian, y la mitigacion no podia correr
+# justo en el escenario para el que se escribio.
+#
+# `|| true` separa las dos cosas: el estado del comando se guarda aparte, y el
+# vacio deja de ser indistinguible del error.
 # ---------------------------------------------------------------------------
 cat >/opt/takab/bin/takab-prune-pii-age.sh <<EOS
 #!/bin/bash
 set -euo pipefail
 ORIGEN=/var/lib/takab/pii-retention-configured-epoch
+ESTADO=0
 EDAD="\$(docker exec takab-db psql -U postgres -d takab -tAc \
   "SELECT ceil(extract(epoch from now() - max(finished_at)))::bigint \
-     FROM pii_retention_runs WHERE ok" 2>/dev/null | tr -d '[:space:]')"
+     FROM pii_retention_runs WHERE ok" 2>/dev/null | tr -d '[:space:]')" || ESTADO=\$?
+if [ "\$ESTADO" -ne 0 ]; then
+  echo "takab-prune-pii-age: NO SE PUDO PREGUNTAR a la base (psql salio \$ESTADO)." >&2
+  echo "  No se publica metrica: la alarma esta en 'breaching' y debe sonar." >&2
+  echo "  Causa tipica: la tabla pii_retention_runs no existe todavia (esquema" >&2
+  echo "  desplegado por detras del repo). Comprobar alembic_version." >&2
+  exit 2
+fi
 if [ -z "\$EDAD" ]; then
+  # Caso 2: la tabla existe y no hay ninguna corrida correcta. Se mide desde que
+  # se configuro esto, para que la alarma diga "no consta ninguna retencion
+  # ejecutada" en vez de no decir nada.
   [ -s "\$ORIGEN" ] || exit 1
   EDAD=\$(( \$(date +%s) - \$(cat "\$ORIGEN") ))
 fi
@@ -168,7 +196,19 @@ fi
 # Una primera medida YA: la leccion de `ghost_gateways`. Una alarma que nace en
 # INSUFFICIENT_DATA porque su metrica no ha existido nunca se queda ahi, sin
 # transicion y sin correo.
-/opt/takab/bin/takab-prune-pii-age.sh ||
-  log "AVISO: no se pudo publicar la primera edad de la retencion de PII"
+# [T-2.152] Y esto NO se traga el fallo. Antes era `|| log AVISO`, asi que la
+# asociacion salia `Success` con la primera medida sin publicar: un fallback
+# presentandose como `ok`, que es la doctrina que este repo lleva persiguiendo.
+#
+# Falla a proposito: en el momento de instalar esto la base tiene que estar
+# alcanzable y el esquema al dia. Si no lo esta, es deriva de despliegue y hay que
+# verla AHORA —en rojo, en la salida del comando SSM— y no dentro de un mes por
+# una alarma que nadie relaciono.
+if ! /opt/takab/bin/takab-prune-pii-age.sh; then
+  log "ERROR: la primera medida de la edad de retencion NO se pudo publicar."
+  log "       La causa esta arriba. Un Success aqui seria mentira: el cron queda"
+  log "       instalado pero la metrica que vigila la retencion no existe."
+  exit 1
+fi
 
 log "retencion de PII programada: 06:00 UTC diario + publicacion por minuto de ${metric_name}"

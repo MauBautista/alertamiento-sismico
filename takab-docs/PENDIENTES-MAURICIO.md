@@ -197,7 +197,14 @@ conducta silenciosamente peor**, que es la familia de trampa más cara de este p
    2. `curl -X POST …/api/ops/alerts/sns -d '{}'` → debe dar **404**. **Si da 503, falta el ARN:
       PARA AHÍ** — seguir hace que el `apply` muera a medias.
    3. Solo entonces `ops_alert_https_subscriber_enabled = true` + `apply`.
-   4. Acuñar tu credencial de guardia: `python -m takab_api.ops.oncall issue`.
+   4. Acuñar tu credencial de guardia — **en `takab-cloud-notify-1`, NO en el de la API**:
+>      ```bash
+>      sudo docker exec -it takab-cloud-notify-1 \
+>        python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
+>      ```
+>      El de la API conecta como `takab_app` y la tabla lo **niega por diseño**; hace falta un rol
+>      con `BYPASSRLS`. Y va por `ssm start-session`, no por `send-command`: la salida de éste se
+>      guarda 30 días en AWS, y esto es un secreto que se enseña una vez.
    > **Guárdala en el gestor de contraseñas y pon la página de acuse como marcador en el
    > teléfono.** La base solo guarda su **hash**, así que si la pierdes no se recupera: se acuña
    > otra y se revoca la vieja. **Y no viaja en el correo a propósito** — los escáneres de los
