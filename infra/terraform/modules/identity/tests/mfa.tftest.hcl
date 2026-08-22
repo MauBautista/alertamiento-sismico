@@ -39,7 +39,10 @@ provider "aws" {
 
 variables {
   account_id          = "000000000000"
-  ses_verified_emails = []
+  ses_verified_emails = [] # [T-2.155] Sin default a proposito en el modulo: el nombre es UNO y vive en
+  # `envs/dev`, porque `modules/database` compone con el el ARN del grant de envio.
+  # Un default aqui reabriria la divergencia que esa ficha cerro.
+  ses_configuration_set_name = "takab-test-correo"
 }
 
 run "el_segundo_factor_del_pool_no_puede_derivar_en_silencio" {

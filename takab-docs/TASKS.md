@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **289** · `[x]` **233** · `[~]` **9** · `[ ]` **47**
+**Conteo de tareas:** total **293** · `[x]` **233** · `[~]` **10** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4358,6 +4358,155 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+### [~] T-2.155 · El permiso de envío omite el ARN del configuration set — `SOFTWARE`
+- **Componente:** infra (`modules/database`, `modules/identity`, `envs/dev`) ·
+  **Hallado:** 2026-08-21, ejecutando el paso 4 de `RUNBOOK-ses §2.5` · **Sale de:** `T-2.78.b`
+- **El hecho, medido desde el rol de la instancia** (no desde la CLI de un portátil, que habría
+  salido verde sin tocar el rol):
+
+  ```
+  AccessDeniedException: User '.../assumed-role/takab-dev-db/i-06fa9b287707c7046'
+  is not authorized to perform 'ses:SendEmail'
+  on resource '.../configuration-set/takab-dev-correo'
+  ```
+
+- **La causa:** la identidad de dominio lleva `takab-dev-correo` como configuration set **por
+  defecto**, así que SES lo aplica en **cada** envío sin que el emisor lo nombre — y entonces exige
+  permiso sobre **los dos** recursos, identidad **y** set. `local.notify_ses_arns` solo componía
+  identidades.
+- **Por qué se coló, y es lo que hay que aprender:** el `[PARA]` de `RUNBOOK-ses §2.5` **sí**
+  predijo este fallo, con su fecha y todo (2026-07-14) — pero lo predijo **para el ARN de la
+  identidad**, que el Terraform ya resolvía solo. **El configuration set no existía cuando se
+  escribió ese aviso.** Un aviso correcto envejeció hasta cubrir solo la mitad del caso, y la mitad
+  que dejó fuera se comporta idéntica: `AccessDenied` en cada envío mientras **los correos de
+  CloudWatch siguen llegando**, porque son SNS con permiso propio.
+- **Impacto mientras no se aplique:** con el remitente ya movido a `alertas@takabailert.com`, el
+  worker `notify` **no puede enviar ni un correo**. Afecta a notificación de incidente y a solicitud
+  de dictamen. La cadena de operación (SNS) **no lo tapa pero tampoco lo denuncia**.
+- **El arreglo, ya escrito** (falta el `apply`):
+  - [x] `notify_ses_arns` compone también `configuration-set/<nombre>` cuando hay dominio.
+  - [x] El nombre del set deja de estar a fuego en `modules/identity` y vive **una sola vez** en
+        `envs/dev`, pasado a los dos módulos. Database no puede leerlo de un output de identity
+        —cerraría el ciclo `identity -> serve -> database`—, así que una sola definición era la
+        única forma de que no diverjan.
+  - [x] **`terraform apply`** — hecho el 2026-08-21. `WorkerSesSend` ya lista los tres ARN
+        (las dos identidades y el configuration set), verificado leyendo el rol.
+  - [x] **Envío desde la instancia sin `AccessDenied`** — mismo comando que fallaba, ahora
+        devuelve `MessageId`. El rol usado es
+        `assumed-role/takab-dev-db/i-06fa9b287707c7046`, no una credencial de consola.
+  - [ ] **Cabeceras del correo recibido**: `dkim=pass`, `spf=pass` y `Return-Path` terminando en
+        `bounce.takabailert.com` (**no** `amazonses.com`). Esto **no se puede acreditar desde
+        AWS**: que SES acepte el mensaje y devuelva `MessageId` prueba que salió, no que llegara
+        alineado. Hay que abrir el correo.
+  - [ ] Test de Terraform que ponga en rojo un `WorkerSesSend` sin el ARN del set cuando hay
+        dominio. **Sin él esto vuelve:** el módulo ya tiene `tests/pitr.tftest.hcl` cubriendo el
+        borde de la lista vacía, y aun así este caso pasó.
+
+### [ ] T-2.154 · La alarma temprana del backup base grita en CADA ciclo — `SOFTWARE`
+- **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-21, verificando el
+  redespliegue · **Alarma:** `takab-dev-backup-base-atrasado`
+- **El hecho, medido** (`BaseBackupAgeSeconds`, periodo 300 s):
+
+  ```
+  22:03  605219 s  (7,00 d)
+  22:18  606059 s  (7,01 d)   <- la alarma entra en ALARM
+  22:23    1619 s  (0,02 d)   <- el backup programado aterriza
+  ```
+
+- **La aritmética que lo hace inevitable, y no es mala suerte:**
+  - umbral = **604800 s = exactamente `base_backup_interval_days` (7 d)**;
+  - la cadencia es `base_backup_dom = */7` — días 1, 8, 15, 22 y 29, o sea **el mismo intervalo**;
+  - `EvaluationPeriods=2 × Period=300` ⇒ hacen falta **10 min** de incumplimiento;
+  - el backup tardó **~20 min** en completarse **y ser escaneado**.
+
+  La edad cruza el umbral **en el instante en que arranca el backup nuevo**, y sigue cruzada hasta
+  que ese backup termina y el escáner lo publica. Con cualquier duración por encima de 10 minutos,
+  **la alarma dispara en todos los ciclos**.
+- **Por qué es un defecto y no una molestia:** vigila el **ancla de la cadena PITR** — lo que
+  decide si un restore es posible. Una alarma que grita cada 7 días sin motivo enseña a ignorarla,
+  y se ignorará **la semana en que el backup sí falle**. Es el criterio que ya gobernó
+  [`D-05`](DECISIONES-MAURICIO.md#d-05) y [`D-10`](DECISIONES-MAURICIO.md#d-10): la credibilidad
+  es lo que hace que alguien obedezca **la próxima vez**.
+- **Lo que NO hay que hacer al arreglarlo:** subir el umbral hasta que deje de sonar. Su propia
+  descripción dice que existe para *«cazar el PRIMER backup base fallido, mientras todavía queda
+  ventana de recuperación»* — y su hermana `base_backup_max_age_s`
+  (`interval × chain_margin`) ya es la última línea. Si esta se relaja hasta parecerse a aquélla,
+  el proyecto se queda con dos alarmas para el mismo caso tardío y **ninguna para el temprano**.
+- **Criterios de aceptación:**
+  - [ ] El umbral temprano **contempla la duración del backup y el retraso del escáner**, en vez
+        de igualar la cadencia. La cifra sale de medir, no de redondear.
+  - [ ] Un ciclo de respaldo completo **sin transición a `ALARM`**, comprobado sobre la métrica
+        real y no sobre el plan de Terraform.
+  - [ ] La relación entre las dos alarmas queda escrita: cuál avisa temprano y cuál es la última
+        línea. Hoy solo vive en la descripción de sus variables.
+  - [ ] **Ojo con el falso arreglo:** que la alarma no suene porque su métrica dejó de publicarse
+        es indistinguible de que todo va bien. `treat_missing_data` de ésta es `missing` — no
+        `breaching` como el de su hermana—, así que un publicador muerto la deja callada.
+
+### [ ] T-2.152 · El fallback del publicador de retención de PII es código muerto — `SOFTWARE`
+- **Componente:** infra (`modules/database/prune_pii_setup.sh.tpl`) · **Hallado:** 2026-08-21, al
+  verificar el apply de `T-2.78.b` · **Alarma afectada:** `takab-dev-retencion-pii-detenida`
+- **El hecho, medido en la máquina** (`bash -x` sobre `/opt/takab/bin/takab-prune-pii-age.sh`):
+
+  ```
+  ++ docker exec takab-db psql ... | tr -d '[:space:]'
+  + EDAD=
+          ← el script muere AQUÍ
+  ```
+
+  El script abre con `set -euo pipefail`. Cuando psql **falla**, `pipefail` propaga el error, la
+  asignación devuelve distinto de cero y `set -e` mata el script **antes** del
+  `if [ -z "$EDAD" ]`. **El fallback a `pii-retention-configured-epoch` es inalcanzable.**
+- **Por qué importa más que un `|| true` olvidado, y es lo que lo hace fichable:** el comentario
+  del propio documento declara que ese fallback existe *«para que la alarma NAZCA diciendo la
+  verdad ("no consta ninguna retención ejecutada") en vez de quedarse aparcada»*. **La mitigación
+  no puede correr justo en el escenario para el que se escribió.** Es la misma forma que
+  [`D-10`](DECISIONES-MAURICIO.md#d-10) describió para el `G-02`: *el fallo que la mitigación
+  existe para impedir, reintroducido por la propia mitigación*.
+- **El matiz que acota el alcance, y hay que respetarlo al arreglar:** el fallback cubre
+  **«todavía no ha corrido ninguna»** (psql devuelve vacío con éxito ⇒ sí se alcanza) pero **no
+  «no se puede preguntar»** (psql devuelve error ⇒ muere). En un entorno recién desplegado los dos
+  estados coinciden, así que falla exactamente cuando más falta hace.
+- **`takab-wal-age.sh` NO tiene este defecto y no se toca.** Comparte la forma pero **no la
+  intención**: su comentario dice que si psql falla no se publica nada a propósito, y su
+  `[ -n "$EDAD" ] || exit 1` es deliberado — *«publicar un 0 a ciegas sería decir que el respaldo
+  va bien cuando lo único cierto es que no se pudo preguntar»*. Morir ahí **es** su conducta
+  correcta. Cambiarlo por simetría sería introducir un defecto.
+- **Criterios de aceptación:**
+  - [ ] La asignación no puede matar el script (`|| true` en la sustitución, o sacarla del
+        alcance de `set -e`), y **se distingue «no ha corrido nunca» de «no se pudo preguntar»**:
+        no valen el mismo número.
+  - [ ] Test que ejerza el camino **con la consulta fallando**, no solo con la consulta vacía. El
+        defecto sobrevivió porque el único caso probado era el que sí funciona.
+  - [ ] La asociación **deja de reportar `Success` cuando su publicador no publicó**. Hoy sale
+        verde con `AVISO: no se pudo publicar la primera edad` en la salida, y eso es un
+        fallback presentándose como `ok`.
+
+### [ ] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE`
+- **Componente:** api + observabilidad · **Hallado:** 2026-08-21, persiguiendo `T-2.152`
+- **El hecho, medido:** `alembic_version` en la nube = **`0038_privacy_erasure_on_behalf`**; la
+  cabeza del repo = **`0046_privacy_subject_sealing`**. **Ocho migraciones de diferencia**, y
+  ninguna alarma, ningún health-check y ningún test lo dijo.
+- **La consecuencia concreta que lo destapó:** `0043` crea `pii_retention_runs`. Sin ella,
+  `takab-prune-pii-age.sh` no puede publicar su métrica y la alarma de retención se queda en
+  `ALARM` sin poder salir — **un defecto de datos disfrazado de defecto de código**. Se perdió
+  media hora de diagnóstico persiguiendo el script antes de mirar la versión del esquema.
+- **Por qué NO se cierra con el redespliegue:** el redespliegue arregla *esta* deriva. Lo que hay
+  que arreglar es que **la deriva sea invisible** — mañana vuelve, y volverá a descubrirse por un
+  síntoma lateral. Es la doctrina de la alarma del gabinete mudo aplicada al esquema: **se vigila
+  la ausencia, no el error.**
+- **El agravante de contexto:** `/api/health` **ya declara el commit desplegado**, así que la
+  mitad del trabajo existe. Lo que no declara es la **cabeza de migración esperada** frente a la
+  aplicada, que es la que rompe cosas en silencio.
+- **Criterios de aceptación:**
+  - [ ] `/api/health` (o su hermano de ops) expone **la revisión de alembic aplicada** y **la que
+        la imagen trae**, y **las compara**. Declararlas sin compararlas es dar el dato al humano
+        que ya no está mirando.
+  - [ ] Alarma —o gate de despliegue— cuando difieren. **Por ausencia de igualdad**, no por
+        excepción: una imagen que no arranca ya se nota; una que arranca contra un esquema viejo
+        es la que muerde.
+  - [ ] Test que ponga la comprobación en rojo con un esquema deliberadamente atrasado.
 
 ### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
 - **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·
