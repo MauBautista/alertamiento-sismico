@@ -38,6 +38,27 @@ variable "ops_alert_https_subscriber_enabled" {
   description = "Suscribe la API (POST /api/ops/alerts/sns) al topic de on-call. Exige la consola publicada y la API YA desplegada con el endpoint vivo: la suscripcion se confirma durante el apply."
   type        = bool
   default     = false
+
+  # [T-2.159] AWS tiene que poder LLAMAR a ese endpoint, y eso depende del
+  # cortafuegos, no de la API.
+  #
+  # El aviso en prosa de arriba ya fallo una vez: predijo el caso "la API no esta
+  # desplegada, contesta 503" —que se cumplia— y no el del security group, porque
+  # nadie penso en el. Un aviso correcto que cubre media casuistica se lee como
+  # cobertura completa. De ahi que esto sea una validacion y no un parrafo.
+  #
+  # FALLA EN EL PLAN a proposito. Al principio el defecto era ruidoso: encender
+  # esto con la red cerrada mataba el apply a medias. Ahora que la suscripcion
+  # existe, ESTRECHAR la lista no rompe ningun apply — rompe la ENTREGA, en
+  # silencio, con todo el terraform en verde. Un aviso que llega cuando la guardia
+  # ya no recibe alarmas llega tarde por definicion.
+  #
+  # `0.0.0.0/0` y no una lista de rangos de AWS porque esa lista no existe: AWS no
+  # publica prefijos por servicio para SNS, solo el bloque AMAZON de la region.
+  validation {
+    condition     = !var.ops_alert_https_subscriber_enabled || contains(var.web_allowed_cidrs, "0.0.0.0/0")
+    error_message = "`ops_alert_https_subscriber_enabled = true` exige `web_allowed_cidrs` con \"0.0.0.0/0\": AWS SNS llama al endpoint desde sus rangos y con la lista estrechada la cadena on-call deja de entregar EN SILENCIO (ver D-22 y T-2.159)."
+  }
 }
 
 variable "web_allowed_cidrs" {

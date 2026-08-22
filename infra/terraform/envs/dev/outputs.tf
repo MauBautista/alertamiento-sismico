@@ -162,3 +162,15 @@ output "push_fcm_application_arn" {
   value     = module.push.fcm_application_arn
   sensitive = true
 }
+
+# [T-2.159] ¿Alcanza el DESTINATARIO la consola? Lo sabe el cortafuegos, y hasta
+# hoy `deploy.sh` lo TECLEABA aparte (`TAKAB_API_NOTIFY_WEB_PUBLIC=true`). Dos
+# declaraciones de un mismo hecho divergen: cerrar `web_allowed_cidrs` habria
+# dejado los correos prometiendo enlaces muertos, sin un error en ninguna parte.
+#
+# Mismo criterio que `ops_alert_https_endpoint`, que ya DERIVA su URL en vez de
+# teclearla: un literal apunta a la realidad de ayer.
+output "console_is_public" {
+  description = "true si la consola esta publicada Y su 443 admite a cualquiera. Alimenta TAKAB_API_NOTIFY_WEB_PUBLIC."
+  value       = var.serve_enabled && contains(var.web_allowed_cidrs, "0.0.0.0/0")
+}

@@ -104,7 +104,7 @@ TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
 # promete enlace: dice que hacer y se calla la URL, que es el default seguro.
 #
 # Si algun dia se vuelve a cerrar el 443, ESTA LINEA se apaga con el.
-TAKAB_API_NOTIFY_WEB_PUBLIC=true
+TAKAB_API_NOTIFY_WEB_PUBLIC=$(tf console_is_public)
 EOF
 )
 

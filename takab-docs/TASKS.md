@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **298** · `[x]` **237** · `[~]` **9** · `[ ]` **52**
+**Conteo de tareas:** total **298** · `[x]` **238** · `[~]` **9** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4395,7 +4395,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   > siendo un correo que alguien tiene que guardar. Lo que falta no es *más aviso*: es un **registro
   > que se pueda consultar después**.
 
-### [ ] T-2.159 · La suscripción HTTPS del on-call no puede confirmarse: AWS no alcanza el endpoint — `SOFTWARE`
+### [x] T-2.159 · Nada impide apagar el acceso del que dependen la cadena on-call y los enlaces — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra · **Hallado:** 2026-08-22, antes de encender el flag ·
   **Bloquea:** `T-2.78.a` y con ello el criterio 2 de `T-2.78` (`PENDIENTES §2.9`)
 - **El hecho, medido antes de gastar un apply:**
@@ -4421,13 +4421,54 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   rangos de AWS» no es una salida realista**. AWS no publica prefijos por servicio para SNS; lo que
   hay es el bloque `AMAZON` de la región entera, que equivale a abrir al mundo con pasos de más. En
   la práctica el endpoint tiene que ser público.
+> ### ✅ El bloqueo descrito arriba YA NO EXISTE (2026-08-22) — y el defecto cambió de forma
+>
+> [`D-22`](DECISIONES-MAURICIO.md#d-22) abrió la consola, así que AWS alcanza el endpoint. Medido,
+> no supuesto:
+>
+> | | |
+> |---|---|
+> | Suscripción HTTPS | **confirmada** — ARN real, no `PendingConfirmation` |
+> | La confirmación de AWS | `52.95.25.67 POST /ops/alerts/sns 202` |
+> | Un aviso real publicado | `52.95.25.209 POST /ops/alerts/sns 202` |
+> | La pata de correo | llegó a `ops@takabailert.com` |
+>
+> **Pero cerrar la ficha aquí sería cerrarla en falso.** El fallo no desapareció: **se dio la
+> vuelta**. Antes, encender el flag con la red cerrada **mataba el apply** — ruidoso, inmediato,
+> imposible de ignorar. Ahora la suscripción está viva, y **estrechar `web_allowed_cidrs` no rompe
+> ningún apply**: rompe la entrega, en silencio, mientras todo el Terraform sigue verde.
+>
+> **Y ya no cuelga una sola cosa de esa apertura, sino dos:**
+>
+> - `ops_alert_https_subscriber_enabled = true` — la cadena on-call.
+> - `TAKAB_API_NOTIFY_WEB_PUBLIC=true` — el enlace de cada correo ([`T-2.158`](TASKS.md)).
+>
+> Cerrar el 443 deja la guardia sin avisos **y** los correos prometiendo enlaces muertos. Ninguna
+> de las dos cosas produce un error en ninguna parte.
+
 - **Criterios de aceptación:**
-  - [ ] Decidido **con `T-2.158` a la vez**, no por separado: cómo queda expuesta la consola y qué
-        la defiende entonces (hoy son dos capas, IP + Cognito con MFA; quitar la primera deja una).
-  - [ ] La suscripción confirmada de verdad, comprobada **desde fuera de la lista blanca** — no
-        por el estado que devuelva el apply.
-  - [ ] Una guarda que impida encender el flag mientras el endpoint no sea alcanzable. El aviso en
-        prosa ya falló una vez: **describía el fallo que sí se previó**.
+  - [x] Decidido **con `T-2.158` a la vez**, no por separado — [`D-22`](DECISIONES-MAURICIO.md#d-22),
+        con su coste escrito (de dos capas a una) y su gatillo de revocación.
+  - [x] La suscripción confirmada de verdad, comprobada **desde fuera de la lista blanca**: dos
+        `202` desde IP de AWS en el log de la API, no el estado que devolvió el apply.
+  - [x] **Guarda que ata las piezas**, y por dos vías distintas porque el riesgo era doble:
+        - **Validación** en `ops_alert_https_subscriber_enabled`: encenderlo exige
+          `web_allowed_cidrs` con `0.0.0.0/0`. `0.0.0.0/0` y no una lista de rangos de AWS porque
+          **esa lista no existe** — AWS no publica prefijos por servicio para SNS.
+        - **El enlace del correo deja de declararse dos veces.** `deploy.sh` tecleaba
+          `TAKAB_API_NOTIFY_WEB_PUBLIC=true`; ahora lo **deriva** del output `console_is_public`.
+          Dos declaraciones del mismo hecho divergen, y al divergir habrían dejado los correos
+          prometiendo enlaces muertos sin un error en ninguna parte. Mismo criterio que
+          `ops_alert_https_endpoint`, que ya derivaba su URL: **un literal apunta a la realidad de
+          ayer**.
+  - [x] **Falla en el `plan`**, verificado rompiéndolo a propósito: con la lista estrechada,
+        `Error: Invalid value for variable` **antes** de tocar nada; restaurada, el plan vuelve a
+        salir limpio. Un aviso que llegara en tiempo de ejecución llegaría cuando la guardia ya no
+        recibe alarmas.
+- **Por qué una validación y no otro párrafo:** el aviso en prosa de esta misma variable ya falló
+  una vez — describía puntualmente el fallo que sí se había previsto (API sin desplegar → 503) y no
+  el del cortafuegos. **Un aviso correcto que cubre media casuística se lee como cobertura
+  completa.** Ésa es la lección que esta ficha deja, y se repitió tres veces en la misma sesión.
 
 ### [x] T-2.158 · El enlace de los correos apunta a una consola que el destinatario no puede abrir — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra + despliegue · **Hallado:** 2026-08-22, cuando Mauricio pulsó un enlace de
