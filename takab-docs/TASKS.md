@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **293** · `[x]` **233** · `[~]` **10** · `[ ]` **50**
+**Conteo de tareas:** total **296** · `[x]` **235** · `[~]` **10** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4358,6 +4358,94 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+### [ ] T-2.158 · El enlace de los correos apunta a una consola que el destinatario no puede abrir — `SOFTWARE`
+- **Componente:** infra + despliegue · **Hallado:** 2026-08-22, cuando Mauricio pulsó un enlace de
+  ejemplo y salió un 403 · **Muerde en:** `T-2.94` (simulacro con cascada real)
+- **El hecho, medido:** `TAKAB_API_NOTIFY_WEB_BASE_URL = https://16-58-11-196.sslip.io`, y el 443
+  de esa consola admite **una sola IP** (`web_allowed_cidrs`). Cada correo de solicitud de dictamen
+  dice «Atender en la consola» con un enlace que **solo puede abrir el operador de esa IP**.
+- **Por qué no es «solo configuración de dev»:** el código está bien —compone el enlace desde el
+  `console_url` que le den— y la restricción por IP en dev es deliberada. Lo que está mal es que
+  **nada lo declara**: el correo invita a pulsar y no hay ni un aviso de que el destinatario no
+  llegará. Es la regla de oro 7 fuera de la UI — mostrar algo como accionable cuando no lo es.
+- **Y tiene fecha:** `T-2.94` es un **simulacro con cascada de notificación real**, y depende de
+  `T-2.78` a propósito. El día que se ejecute, un inspector real recibirá ese enlace. Si esto no
+  está resuelto antes, el simulacro acreditará que el correo **sale**, no que la persona **pueda
+  actuar** — que es justo la distinción que `RUNBOOK-ses §1` lleva advirtiendo desde que se
+  escribió.
+- **Lo que hay que decidir al abordarlo** (no se cierra sin esto): si la consola pasa a un nombre
+  propio con acceso público tras Cognito, o si el enlace apunta a otra cosa alcanzable. **Es
+  decisión de producto y de seguridad, no de código:** quitar la lista blanca expone el SOC, y
+  dejarla convierte el enlace en decoración.
+- **Criterios de aceptación:**
+  - [ ] Decidido y escrito **quién puede alcanzar la consola** desde fuera, y por qué.
+  - [ ] O el enlace lleva a algo que el destinatario abre, **o el correo no promete un enlace**.
+        Las dos son aceptables; la mezcla actual no.
+  - [ ] Test que falle si se envía un enlace cuyo host no es alcanzable según la configuración
+        declarada. **Sin él vuelve**, porque el defecto no está en la lógica: está en la brecha
+        entre lo que el correo promete y lo que la red permite.
+
+### [x] T-2.156 · Sitio público del dominio — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/site`) · **Sale de:** la denegación del caso `178737638500467`
+- **La hipótesis que lo motivó, y que resultó FALSA:** al no poder leer el caso (la API de Support
+  exige plan de pago) se dedujo la causa de la infraestructura: la `Website URL` declarada era la
+  consola del SOC, cuyo 443 admite **una sola IP**, así que desde AWS daba timeout. **La respuesta
+  de AWS no menciona el sitio**: pedía más información sobre el uso. La deducción era razonable y
+  no era el motivo.
+- **Por qué se hizo igual, y sigue valiendo:** `takabailert.com` **no resolvía en absoluto**, y es
+  el dominio que firma los correos. Además `§4.2` lo necesita — Meta mira el dominio al verificar
+  el negocio. Se habría hecho de todos modos; solo se hizo antes.
+- **Lo implementado:** S3 privado + CloudFront + ACM en `us-east-1`, alias de `takabailert.com` y
+  `www`, HTTP redirigido a HTTPS.
+  - [x] **La consola conserva su lista blanca.** Arreglar esto no podía costar exponer el SOC: son
+        dos sistemas separados y se sirven por separado.
+  - [x] Bucket **privado** con Origin Access Control y política acotada por `SourceArn` a esa
+        distribución. Un bucket público es una fuga esperando a que alguien suba algo por error.
+  - [x] Certificado en `us-east-1` con provider aliasado: CloudFront no lee de otra región, y
+        olvidarlo da un error que **no menciona la región** y se diagnostica en el sitio
+        equivocado.
+  - [x] **Rutas inexistentes devuelven la página con código 404**, no el XML de S3. Con OAC y sin
+        `s3:ListBucket` una clave ausente da **403 y no 404** —S3 no distingue «no existe» de «no
+        puedes verlo»—, así que hay que mapear los dos. El código es 404 y no 200 a propósito: un
+        200 sobre cualquier ruta convierte el sitio en un espejo que afirma tener lo que le pidan.
+  - [x] La página vive en `envs/dev/site/index.html`, **no dentro de una cadena de Terraform**: se
+        puede abrir en un navegador y revisar en el diff. No afirma nada que el sistema no haga, y
+        lleva el deslinde de que la alerta oficial la emite el SASMEX.
+- **Verificado desde la instancia de AWS**, fuera de la lista blanca: el sitio da 200 con TLS
+  válido y la consola da timeout. **Es la comprobación que faltó la primera vez** — entonces se
+  verificó desde la máquina de Mauricio, que es el único punto privilegiado que existe.
+
+### [x] T-2.157 · El cuerpo del correo era un volcado JSON — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** api (`notify/providers.py`) · **Sale de:** la respuesta de AWS al caso
+  `178737638500467`, que pidió «ejemplos del correo… para asegurarnos de que es contenido de
+  calidad que los destinatarios quieran recibir»
+- **El hecho:** `SesEmailProvider.send()` componía el cuerpo con
+  `json.dumps(message, indent=2, sort_keys=True)`. El inspector de un hospital recibía, de
+  madrugada y después de un sismo, **catorce claves en orden alfabético** — y la nota que
+  escribió una persona («grietas visibles en muro de escalera norte») quedaba entre dos UUID,
+  en la novena posición por alfabeto.
+- **Por qué es la misma familia que `T-2.104`:** allí la app tituló «ALERTA SÍSMICA SASMEX» algo
+  que no lo era. Aquí el mensaje era técnicamente exacto y **no comunicaba nada**. En los dos
+  casos la lógica estaba bien y lo que llegaba a la persona estaba mal — y **ninguna prueba de la
+  lógica podía cazarlo**, porque la lógica no fallaba.
+- **Cómo se descubrió, y merece anotarse:** no lo encontró un test ni una revisión. Lo encontró
+  **tener que enseñárselo a un tercero**. Generar el ejemplo para AWS fue la primera vez que
+  alguien miró el correo como lo mira quien lo recibe.
+- **Lo implementado** (`cuerpo_email()`, con ocho tests propios):
+  - [x] **El orden es operativo, no estético:** qué pasa, dónde, de qué origen, la nota, el
+        enlace. Los identificadores **al pie**, porque no son información para decidir: son para
+        quien atienda el reporte después.
+  - [x] **El origen se nombra por lo que ES.** Tabla explícita `_ORIGENES`, y un `trigger`
+        desconocido **cae a su propio texto en vez de a SASMEX**. Test que exige que un incidente
+        de reglas locales no mencione SASMEX **y** que uno de SASMEX sí.
+  - [x] **Sin enlace no se inventa uno** (regla de oro 7): test que falla si aparece un `http`
+        que el mensaje no traía.
+  - [x] **Guarda de raíz:** un test se pone rojo si el cuerpo vuelve a ser JSON parseable, y otro
+        exige que la nota esté en la **primera mitad** del texto — que aparezca no basta, porque
+        también aparecía en el volcado.
+  - [x] Línea de baja: cómo deja de recibir el destinatario. Lo pide AWS y no existía.
+- **Verificado:** 8 tests nuevos, `api/tests/notify/` completa en verde (265), ruff limpio.
 
 ### [~] T-2.155 · El permiso de envío omite el ARN del configuration set — `SOFTWARE`
 - **Componente:** infra (`modules/database`, `modules/identity`, `envs/dev`) ·
