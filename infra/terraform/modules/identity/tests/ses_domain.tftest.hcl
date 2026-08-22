@@ -43,7 +43,10 @@ provider "aws" {
 
 variables {
   account_id          = "000000000000"
-  ses_verified_emails = ["soc@example.test"]
+  ses_verified_emails = ["soc@example.test"] # [T-2.155] Sin default a proposito en el modulo: el nombre es UNO y vive en
+  # `envs/dev`, porque `modules/database` compone con el el ARN del grant de envio.
+  # Un default aqui reabriria la divergencia que esa ficha cerro.
+  ses_configuration_set_name = "takab-test-correo"
 }
 
 # --- 1. Sin dominio, el apply de hoy no cambia ni un recurso -------------------

@@ -79,9 +79,18 @@ TAKAB_API_COMMAND_HMAC_SECRET_PREFIX=$(tf command_hmac_secret_prefix)
 TAKAB_API_EVIDENCE_BUCKET=$(tf evidence_bucket)
 TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # T-1.61: sin email_from el provider de email es SIMULADO (no envía). Remitente =
-# identidad SES verificada (sandbox: variables.tf ses_verified_emails); el link
-# del correo al inspector apunta a la consola publicada.
-TAKAB_API_NOTIFY_EMAIL_FROM=mauriciobaujim@gmail.com
+# identidad SES verificada; el link del correo al inspector apunta a la consola
+# publicada.
+#
+# [T-2.78.b · D-12] Remitente de DOMINIO desde 2026-08-21. El orden importa y ya
+# está cumplido, pero conviene saberlo si alguien lo vuelve a tocar: el statement
+# `WorkerSesSend` del rol de la instancia acota `Resource` a los ARN de identidad
+# concretos, así que cambiar ESTA línea sin que el ARN del dominio esté en el rol
+# da `AccessDenied` en cada envío — y los correos de CloudWatch seguirían llegando
+# tan campantes, porque esos son SNS y llevan permiso propio. Es el fallo del
+# 2026-07-14 otra vez. Orden: identidad verificada -> ARN en el rol (`ses_domain`
+# en tfvars lo mete solo) -> esta línea -> envío real comprobado.
+TAKAB_API_NOTIFY_EMAIL_FROM=alertas@takabailert.com
 TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
 EOF
 )
