@@ -234,3 +234,49 @@ run "una_clave_que_no_existe_en_el_plan_no_se_puede_aplicar" {
   # declarado el plazo y esa regla seguiria deshabilitada para siempre.
   expect_failures = [var.pii_retention_windows_days]
 }
+
+# [T-2.152] El publicador distingue TRES estados, no dos.
+#
+# El defecto: `EDAD="$(psql ...)"` bajo `set -euo pipefail`. Cuando psql FALLA, la
+# asignacion devuelve distinto de cero y `set -e` mata el script ANTES del `if`
+# que implementa el fallback. O sea que el fallback —escrito para que la alarma
+# "nazca diciendo la verdad"— era inalcanzable justo cuando hacia falta: en un
+# entorno recien desplegado, "no ha corrido nunca" y "no se puede preguntar" son
+# el mismo instante.
+#
+# Se comprueba la SEPARACION (`|| ESTADO=`), no la ausencia de `set -e`: quitar el
+# `set -e` seria peor arreglo, porque entonces cualquier fallo posterior pasaria
+# desapercibido.
+run "el_publicador_separa_no_se_pudo_preguntar_de_no_ha_corrido_nunca" {
+  command = plan
+
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.prune_pii.content, "ESTADO=0") &&
+      strcontains(aws_ssm_document.prune_pii.content, "|| ESTADO=")
+    )
+    error_message = "El publicador debe capturar el ESTADO de la consulta aparte de su salida. Sin eso, con `set -euo pipefail` un psql que falla mata el script antes del fallback, y este no puede correr precisamente en el escenario para el que existe (tabla ausente = no se puede preguntar Y no ha corrido nunca, a la vez)."
+  }
+
+  assert {
+    condition     = strcontains(aws_ssm_document.prune_pii.content, "NO SE PUDO PREGUNTAR")
+    error_message = "Cuando la consulta falla, el script tiene que DECIR que no se pudo preguntar y no publicar nada. Publicar el fallback ahi seria afirmar una edad que nadie midio."
+  }
+}
+
+# La otra mitad: la asociacion no puede salir verde si su publicador no publico.
+#
+# Antes la primera medida iba con `|| log AVISO`, asi que el comando SSM terminaba
+# en `Success` con la metrica sin existir. Un `Success` que convive con "no se
+# pudo publicar" en su propia salida es un fallback presentandose como `ok`.
+run "la_asociacion_no_reporta_exito_si_la_primera_medida_no_se_publico" {
+  command = plan
+
+  assert {
+    condition = (
+      !strcontains(aws_ssm_document.prune_pii.content, "takab-prune-pii-age.sh ||") &&
+      strcontains(aws_ssm_document.prune_pii.content, "if ! /opt/takab/bin/takab-prune-pii-age.sh; then")
+    )
+    error_message = "La primera medida NO puede tragarse su fallo con `|| log`. Si no se publica, la asociacion debe salir en ROJO: en el momento de instalar esto la base tiene que estar alcanzable y el esquema al dia, y si no lo esta es deriva de despliegue que hay que ver ahora y no dentro de un mes."
+  }
+}

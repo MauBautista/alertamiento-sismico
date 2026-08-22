@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **298** · `[x]` **238** · `[~]` **9** · `[ ]` **51**
+**Conteo de tareas:** total **298** · `[x]` **239** · `[~]` **9** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4676,7 +4676,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         es indistinguible de que todo va bien. `treat_missing_data` de ésta es `missing` — no
         `breaching` como el de su hermana—, así que un publicador muerto la deja callada.
 
-### [ ] T-2.152 · El fallback del publicador de retención de PII es código muerto — `SOFTWARE`
+### [x] T-2.152 · El fallback del publicador de retención de PII es código muerto — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/database/prune_pii_setup.sh.tpl`) · **Hallado:** 2026-08-21, al
   verificar el apply de `T-2.78.b` · **Alarma afectada:** `takab-dev-retencion-pii-detenida`
 - **El hecho, medido en la máquina** (`bash -x` sobre `/opt/takab/bin/takab-prune-pii-age.sh`):
@@ -4706,14 +4706,23 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   va bien cuando lo único cierto es que no se pudo preguntar»*. Morir ahí **es** su conducta
   correcta. Cambiarlo por simetría sería introducir un defecto.
 - **Criterios de aceptación:**
-  - [ ] La asignación no puede matar el script (`|| true` en la sustitución, o sacarla del
-        alcance de `set -e`), y **se distingue «no ha corrido nunca» de «no se pudo preguntar»**:
-        no valen el mismo número.
-  - [ ] Test que ejerza el camino **con la consulta fallando**, no solo con la consulta vacía. El
-        defecto sobrevivió porque el único caso probado era el que sí funciona.
-  - [ ] La asociación **deja de reportar `Success` cuando su publicador no publicó**. Hoy sale
-        verde con `AVISO: no se pudo publicar la primera edad` en la salida, y eso es un
-        fallback presentándose como `ok`.
+  - [x] **Tres estados, no dos.** El estado de la consulta se captura aparte (`|| ESTADO=$?`), así
+        que el vacío deja de ser indistinguible del error:
+        1. responde un número → esa es la edad;
+        2. responde **vacío** (ninguna corrida correcta) → fallback al origen, para que la alarma
+           nazca diciendo la verdad;
+        3. **falla** (no se puede preguntar) → **no se publica nada**, y el script lo dice en
+           `stderr` nombrando la causa típica (esquema por detrás del repo).
+  - [x] **No se quita el `set -e`**, que habría sido el arreglo fácil y peor: cualquier fallo
+        posterior pasaría desapercibido. Se separa el estado, que es lo que estaba mal.
+  - [x] **La asociación deja de reportar `Success` cuando su publicador no publicó.** Era
+        `|| log AVISO`; ahora falla. En el momento de instalar esto la base tiene que estar
+        alcanzable y el esquema al día: si no lo está es deriva de despliegue, y hay que verla
+        **en rojo, ahora**, no dentro de un mes por una alarma que nadie relacionó.
+  - [x] **Dos tests, verificados rompiendo el código a propósito**: quitar la separación del estado
+        deja rojo el primero; devolver el `|| log` deja rojo el segundo; restaurado, 29 en verde.
+        Se asserta la **separación**, no la ausencia de `set -e` — un test escrito al revés habría
+        bendecido el arreglo malo.
 
 ### [ ] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE`
 - **Componente:** api + observabilidad · **Hallado:** 2026-08-21, persiguiendo `T-2.152`
