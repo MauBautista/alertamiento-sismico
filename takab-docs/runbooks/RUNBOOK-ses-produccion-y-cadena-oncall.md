@@ -536,9 +536,30 @@ pero no abre plazo), `esperando_acuse`, `sin_acuse`, `acusado`, `acusado_tarde`.
 
 1. Se le acuña UNA credencial personal, y se le enseña UNA vez:
    ```bash
-   # en la instancia, dentro del contenedor de la API
-   python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
+   # NO en el contenedor de la API: ese conecta como `takab_app` y la tabla lo
+   # NIEGA por diseño (RLS con FORCE y política de denegación explícita).
+   # `takab-cloud-notify-1` conecta como `takab_ingest`, que tiene BYPASSRLS.
+   sudo docker exec -it takab-cloud-notify-1 \
+     python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
    ```
+
+   > **⚠️ Corregido el 2026-08-22 — este paso decía «dentro del contenedor de la API» y falla.**
+   > Da `psycopg.errors.InsufficientPrivilege: permission denied for table
+   > ops_oncall_contacts`, que es la RLS **haciendo su trabajo**: la propia docstring del módulo
+   > dice que espera un DSN con `BYPASSRLS`, y el de la API no lo es.
+   >
+   > **Y el error se lee mal:** parece un fallo de permisos que arreglar, cuando es la protección
+   > funcionando. Lo que hay que cambiar es el contenedor, no la política. Los roles con
+   > `BYPASSRLS` son `postgres` y `takab_ingest`.
+   >
+   > **Cómo saber si el intento anterior sirvió**, porque el traceback puede quedar fuera de
+   > pantalla y parecer que salió: `SELECT count(*) FROM ops_oncall_contacts` como `postgres`.
+   > Si da 0, no se acuñó nada.
+
+   > **⚠️ Y una razón para NO usar `ssm send-command` aquí:** su salida se guarda en AWS 30 días
+   > y se lee desde la consola. Un secreto que se enseña una vez no puede pasar por ahí — es el
+   > mismo motivo por el que esto no es un endpoint HTTP. Va por `ssm start-session`, cuya salida
+   > solo existe en la terminal de quien la abre.
    La base guarda **solo el hash**; el secreto no se puede recuperar de ningún sitio. Se pega
    en el gestor de contraseñas de la persona, con `https://<consola>/api/ops/alerts/ack`
    guardado como marcador en su teléfono.
