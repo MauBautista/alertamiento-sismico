@@ -4354,7 +4354,16 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 - **Por eso no se cerró de refilón:** hace falta decidir **cómo se acredita** que quien pide el
   borrado es el dueño de ese número —y esa es una pregunta de identidad, no de código—.
 - **Criterios de aceptación:**
-  - [ ] Decidido y escrito cómo se acredita la titularidad de un número.
+  - [x] **Decidido y escrito** cómo se acredita la titularidad: **la acredita el cliente
+        institucional** que recogió el consentimiento — [`D-23`](DECISIONES-MAURICIO.md#d-23).
+        TAKAB ejecuta y audita; no verifica identidades por su cuenta ni custodia documentos.
+  - [ ] **La respuesta NO puede ser un oráculo de existencia.** A quien no acredita se le contesta
+        **lo mismo siempre**: un «no encontrado» frente a un «borrado» convierte el endpoint en un
+        buscador de personas — permitiría comprobar si un teléfono consta y, con él, en qué
+        edificio. Test que lo fije comparando las dos respuestas byte a byte.
+  - [ ] **Nadie puede borrar el consentimiento de otro.** Sin acreditación no se ejecuta: destruir
+        la prueba de la base legal de un tercero es justo lo que [`D-07`](DECISIONES-MAURICIO.md#d-07)
+        construyó el cripto-borrado para impedir.
   - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.

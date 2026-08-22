@@ -12,7 +12,7 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-22 · **22 decisiones** · 18 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-08-22 · **23 decisiones** · 18 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
@@ -56,6 +56,7 @@
 | [D-20](#d-20) | Consulta legal: **espera a que un cliente la pida** | 2026-08-17 | Mauricio |
 | [D-21](#d-21) | Sesión de vida: **se parte** — `G-01` esta semana, solo | 2026-08-17 | Mauricio |
 | [D-22](#d-22) | La consola **se abre al público**; Cognito con MFA queda como única capa | 2026-08-22 | Mauricio |
+| [D-23](#d-23) | ARCO por teléfono: **lo acredita el cliente institucional** | 2026-08-22 | Mauricio |
 
 ---
 
@@ -788,6 +789,55 @@ nombra el origen.
 confirmara que usarla no debilita el deslinde, se puede añadir como tono **alternativo por sitio**.
 Nunca como sustituto silencioso: cambiar el sonido de una alarma que la gente ya aprendió es un
 cambio de producto, no de configuración.
+
+---
+
+<a id="d-23"></a>
+## D-23 · ARCO por teléfono — **la titularidad la acredita el cliente institucional**
+
+**Fecha:** 2026-08-22 · **Decide:** Mauricio · **Ficha:** [`T-2.151`](TASKS.md) ·
+**Postura sujeta a la revisión legal de `§4.1`**, como [`D-07`](#d-07)
+
+**El hueco.** `store.forget_msisdn()` existe y está probada, pero el flujo ARCO **está tecleado por
+`user_sub`** y un sujeto identificado por teléfono no tiene ninguno. Antes de cablearlo hay que
+saber **quién dice que ese número es de quien lo pide** — y eso no lo resuelve el código.
+
+**La decisión.** La solicitud entra **por el cliente institucional que recogió el consentimiento**.
+Él conoce a la persona, tiene su enrolamiento y la relación laboral o contractual. TAKAB **ejecuta
+y audita**, no verifica identidades por su cuenta.
+
+**Las tres razones, y la primera es la que de verdad manda:**
+
+1. **Encaja con el reparto de papeles.** El consentimiento lo recogió el cliente, para su inmueble y
+   su gente. Si TAKAB es **encargado** y no **responsable**, las solicitudes ARCO se dirigen al
+   cliente **de todas formas** y TAKAB solo las ejecuta. La decisión no fuerza nada: sigue la forma
+   que ya tiene la relación.
+2. **No depende de Twilio ni de Meta**, que hoy no existen. Un reto por SMS sería prueba más fuerte
+   y ataría este derecho a un alta comercial que aún no ha empezado.
+3. **Evita que TAKAB custodie documentos de identidad.** La alternativa fuera de banda obligaría a
+   recibir y guardar identificaciones oficiales — **más PII que proteger, justo lo contrario del
+   ejercicio**.
+
+> ### ⚠️ Lo que esta decisión NO permite, y hay que escribirlo en la ficha
+>
+> **La respuesta no puede ser un oráculo de existencia.** Quien pregunte por un número sin
+> acreditar nada no puede aprender si ese número consta. Un «no encontrado» frente a un «borrado»
+> convierte el endpoint en un buscador de personas: cualquiera podría comprobar si un teléfono está
+> en el sistema, y con él en qué edificio. La respuesta al no acreditado es **la misma siempre**.
+>
+> **Y nadie puede borrar el consentimiento de otro.** Ésa fue la razón de descartar «no verificar»:
+> destruiría la prueba de la base legal de un tercero, que es exactamente lo que [`D-07`](#d-07)
+> construyó el cripto-borrado para preservar.
+
+**Lo que hereda el cliente, y hay que declararlo en el contrato:** la diligencia de comprobar que
+quien pide es quien dice ser. TAKAB no puede verificarlo y **no debe fingir que lo hace**. Si el
+contrato no lo dice, esta decisión no está completa.
+
+**Cómo se revocaría:** el día que exista el canal SMS (`§4.3`), el reto por el propio número pasa a
+ser posible y es **prueba más fuerte** — controlar el número **ahora** vale más que la palabra de un
+tercero. Entonces se ofrece como vía **adicional, no sustituta**: quien perdió la SIM sigue
+necesitando la del cliente. Y si la consulta de `§4.1` determina que TAKAB es **responsable** y no
+encargado, esta decisión **se revisa entera**, porque su primera razón deja de sostenerse.
 
 ---
 

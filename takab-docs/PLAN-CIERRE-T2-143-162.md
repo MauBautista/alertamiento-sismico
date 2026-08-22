@@ -7,12 +7,13 @@
 
 ## OBJETIVO (medible, y es la condición de parada del loop)
 
-**Las TRES fichas en `[x]`, cada una con su criterio verificado contra el sistema real y no
+**Las CUATRO fichas en `[x]`, cada una con su criterio verificado contra el sistema real y no
 contra el plan, y todo comiteado en la rama con los siete checks de CI en verde.**
 
 ```
-T-2.145   alarmas sin treat_missing_data + la contradicción de dlq_depth
 T-2.162   el correo de guardia dice qué hacer y dónde
+T-2.145   alarmas sin treat_missing_data + la contradicción de dlq_depth
+T-2.151   ARCO por teléfono, ya con D-23 decidida
 T-2.143   una baja en Cognito arranca el reloj de la PII
 ```
 
@@ -29,7 +30,7 @@ con el conteo cuadrado.
 | | Motivo |
 |---|---|
 | `T-2.149` · ingestor SSN | Bloqueo **legal** vivo (atribución del SSN, aparcado por [`D-20`](DECISIONES-MAURICIO.md#d-20)). El técnico caducó: el feed responde por HTTP |
-| `T-2.151` · ARCO por teléfono | Exige decidir **cómo se acredita la titularidad de un número**. Es una pregunta de identidad, no de código, y es de Mauricio |
+| ~~`T-2.151` · ARCO por teléfono~~ | **ENTRA EN ALCANCE (2026-08-22)**: la decisión que faltaba está tomada — [`D-23`](DECISIONES-MAURICIO.md#d-23), la titularidad la acredita el cliente institucional |
 | `T-2.153` · deriva de migraciones | **Ya resuelta** por la sesión paralela en `feat/cierre-decisiones-d04-d19` (`860650f`) |
 | Meta (`§4.2`) y Twilio (`§4.3`) | Excluidos por indicación de Mauricio: **no hay número que vincular todavía** |
 
@@ -107,7 +108,20 @@ tiene `breaching` mientras su comentario, dos líneas arriba, razona `notBreachi
 Va segunda porque toca `modules/observability`, que esta sesión acaba de cambiar dos veces —umbral
 del backup base e historial de SES—: conviene hacerlo con el módulo fresco en la cabeza.
 
-### 3 · `T-2.143` — una baja en Cognito no arranca el reloj de la PII
+### 3 · `T-2.151` — ARCO por teléfono, con `D-23` ya decidida
+
+La decisión que la bloqueaba está tomada: **la titularidad la acredita el cliente institucional**.
+Queda cablear `forget_msisdn()` al flujo, con dos guardas que la decisión impone y que valen más
+que el cableado:
+
+> **La respuesta no puede ser un oráculo de existencia.** A quien no acredita se le contesta lo
+> mismo **siempre** — un «no encontrado» frente a un «borrado» convertiría el endpoint en un
+> buscador de personas. Test que compare las dos respuestas byte a byte.
+>
+> **Y sin acreditación no se ejecuta:** borrar el consentimiento de un tercero destruiría la prueba
+> de su base legal, que es lo que `D-07` construyó el cripto-borrado para preservar.
+
+### 4 · `T-2.143` — una baja en Cognito no arranca el reloj de la PII
 
 La que menos superficie toca y la única que no es de avisos, así que va al final: si el loop se
 queda sin tiempo, es la que menos duele dejar a medias.
