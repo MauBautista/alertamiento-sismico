@@ -143,6 +143,22 @@ docker exec takab-db env AWS_DEFAULT_REGION=$REGION barman-cloud-backup \
   --cloud-provider aws-s3 --gzip --immediate-checkpoint \
   -U postgres -d takab \
   $PITR_URL $SERVER
+
+# [T-2.154] Y AL TERMINAR, refrescar la edad. No es cosmetica: sin esto el scan
+# de las 05:00 es el unico que descubre el backup nuevo, asi que la metrica sigue
+# contando la edad del ANTERIOR durante una hora entera. Como la edad cruza el
+# umbral exactamente cuando arranca este backup, esa hora es una ventana de
+# incumplimiento GARANTIZADA en cada ciclo — medido: la alarma temprana disparaba
+# todas las semanas sin que pasara nada.
+#
+# El scan de las 05:00 se queda: cubre los backups hechos por otra via y repara el
+# fichero si alguien lo borra. Lo que cambia es que ya no es el UNICO.
+#
+# `|| true` a proposito: el backup ya termino bien y su exito no puede depender de
+# que la metrica se refresque. Si esto falla, el scan de las 05:00 lo arregla y la
+# alarma —que vigila la ausencia— es quien tiene que hablar.
+/opt/takab/bin/takab-base-backup-scan.sh || true
+/opt/takab/bin/takab-base-backup-age.sh || true
 EOS
 chmod 0755 /opt/takab/bin/takab-base-backup.sh
 

@@ -426,30 +426,59 @@ run "el_umbral_del_backup_base_se_deriva_de_las_variables_de_retencion" {
     error_message = "El umbral del backup base debe derivarse de las variables de `pitr`, no de un literal."
   }
 
-  # [T-2.141] EL AVISO: el mismo intervalo SIN el margen. Con los centinelas de
-  # este bloque, 5 dias — que no coincide con ningun valor de produccion ni con el
-  # de su hermana (15 dias), asi que ninguna de las dos aserciones puede pasar
-  # confundiendo un output con el otro.
+  # [T-2.141 · corregido en T-2.154] EL AVISO: el intervalo MAS la gracia.
+  #
+  # ⚠️ Esta asercion pedia `== 5 * 86400` EXACTO, y con eso protegia el defecto.
+  # Su razonamiento era correcto en teoria —"el primer instante en que se puede
+  # afirmar que un backup no se completo"— y ciego a como se produce el dato: la
+  # metrica sigue contando la edad del backup ANTERIOR hasta que alguien descubre
+  # el nuevo. La edad cruza el umbral cuando el backup ARRANCA, no cuando falla.
+  #
+  # Consecuencia medida: la alarma temprana disparaba en TODOS los ciclos. Y quien
+  # fuera a arreglar el umbral se habria encontrado este test en rojo y habria
+  # podido concluir que el arreglo estaba mal. Un test puede fijar un defecto tan
+  # bien como fija un acierto.
+  #
+  # Con los centinelas (5 dias + 3600 s = 435600) sigue sin coincidir con ningun
+  # valor de produccion ni con el de su hermana (15 dias), que era el motivo
+  # original de elegirlos.
   assert {
-    condition     = output.base_backup_warn_age_s == 5 * 86400
-    error_message = "El umbral del AVISO debe ser `pitr.base_backup_interval_days` en SEGUNDOS, sin el margen. Es el primer instante en que se puede afirmar que un `barman-cloud-backup` no se completo: el cron corre en `*/N` del dia del mes, asi que el hueco nunca pasa de N dias."
+    condition     = output.base_backup_warn_age_s == 5 * 86400 + 3600
+    error_message = "El umbral del AVISO debe ser `pitr.base_backup_interval_days` MAS `base_backup_grace_s`. Sin la gracia iguala la cadencia, y entonces la edad lo cruza en el instante en que arranca el backup nuevo: dispara en todos los ciclos y se ignora la semana que si falla."
   }
 
   assert {
-    condition     = output.base_backup_warn_age_s == var.pitr.base_backup_interval_days * 86400
-    error_message = "El umbral del aviso debe derivarse de la variable de `pitr`, no de un literal."
+    condition     = output.base_backup_warn_age_s == var.pitr.base_backup_interval_days * 86400 + var.pitr.base_backup_grace_s
+    error_message = "El umbral del aviso debe derivarse de las variables de `pitr`, no de un literal."
   }
 
-  # LAS DOS DERIVAN DE LAS MISMAS VARIABLES Y NINGUNA REPITE UN NUMERO — que es
-  # literalmente el criterio de la ficha. El cociente entre ellas es `chain_margin`
-  # y no otra cosa: es lo que garantiza que el aviso llega con
-  # `intervalo * (margen - 1)` dias de ventana por delante en vez de a la vez.
+  # LAS DOS DERIVAN DE LAS MISMAS VARIABLES Y NINGUNA REPITE UN NUMERO.
+  #
+  # ⚠️ [T-2.154] Esto pedia `max == warn * chain_margin`, un COCIENTE EXACTO. Y esa
+  # razon solo se sostenia porque el aviso ERA el intervalo pelado — o sea, se
+  # habia elevado a invariante lo que era una coincidencia de la formula. Al darle
+  # al aviso la gracia que necesitaba para no gritar en cada ciclo, la razon dejo
+  # de ser entera y este test se puso rojo por el ARREGLO, no por un defecto.
+  #
+  # Lo que de verdad importa se conserva y se dice mejor: el aviso llega ANTES, y
+  # la ultima linea sigue derivandose del margen. La distancia entre los dos es lo
+  # que da ventana de reaccion; que ademas sea un multiplo exacto no le importa a
+  # nadie.
   assert {
     condition = (
-      output.base_backup_warn_age_s != output.base_backup_max_age_s
-      && output.base_backup_max_age_s == output.base_backup_warn_age_s * var.pitr.chain_margin
+      output.base_backup_warn_age_s < output.base_backup_max_age_s
+      && output.base_backup_max_age_s == var.pitr.base_backup_interval_days * var.pitr.chain_margin * 86400
     )
-    error_message = "Los dos umbrales del backup base coinciden, o su relacion dejo de ser `chain_margin`. Si coinciden no hay aviso, hay eco: dos correos para el mismo hecho y ninguno antes de que se cierre la ventana."
+    error_message = "O el aviso no llega antes que la ultima linea —y entonces no hay aviso, hay eco: dos correos para el mismo hecho—, o `base_backup_max_age_s` dejo de derivarse de `intervalo x margen`."
+  }
+
+  # Y la gracia no puede comerse la ventana de reaccion. Con la desigualdad de
+  # arriba bastaria para que fueran distintos, pero "distinto" admite un segundo
+  # de diferencia: lo que hace util al aviso es que quede al menos un ciclo entero
+  # por delante para relanzar el backup.
+  assert {
+    condition     = output.base_backup_max_age_s - output.base_backup_warn_age_s >= var.pitr.base_backup_interval_days * 86400
+    error_message = "La gracia del aviso se comio la ventana de reaccion: entre el aviso y la ultima linea tiene que quedar al menos un intervalo completo, que es el tiempo de relanzar un backup base antes de que la cadena se rompa."
   }
 
   # Y el aviso tiene que caber DENTRO de la ventana de WAL, o avisaria de algo que
@@ -489,12 +518,16 @@ run "el_umbral_del_backup_base_se_mueve_con_la_politica_de_retencion" {
   # solo, `5 * 86400` no distinguiria una derivacion de una constante que hoy vale
   # lo mismo. Aqui son 4 dias, y el margen cambio de 3 a 2, asi que ademas se
   # comprueba que los dos umbrales se movieron POR SEPARADO.
+  # [T-2.154] Segundo juego: intervalo 4 y margen 2, con la gracia por DEFECTO
+  # (este bloque no la declara), asi que ademas se comprueba que el `optional()`
+  # aplica su valor y no deja el umbral sin gracia.
   assert {
     condition = (
-      output.base_backup_warn_age_s == 4 * 86400
-      && output.base_backup_max_age_s == output.base_backup_warn_age_s * 2
+      output.base_backup_warn_age_s == 4 * 86400 + 3600
+      && output.base_backup_max_age_s == 4 * 2 * 86400
+      && output.base_backup_warn_age_s < output.base_backup_max_age_s
     )
-    error_message = "El umbral del aviso no siguio al intervalo, o dejo de guardar la relacion `chain_margin` con su hermana. Con el margen cambiado de 3 a 2, una constante no puede satisfacer los dos bloques."
+    error_message = "El umbral del aviso no siguio al intervalo, o perdio la gracia por defecto, o dejo de llegar antes que su hermana. Con el margen cambiado de 3 a 2, una constante no puede satisfacer los dos bloques."
   }
 }
 
@@ -697,5 +730,46 @@ run "sin_configuration_set_no_se_cuela_un_arn_vacio" {
       && length([for r in tolist(s.Resource) : r if strcontains(r, "configuration-set/")]) > 0
     ]) == 0
     error_message = "Sin configuration set declarado no puede aparecer ningun ARN de `configuration-set/` en la politica: seria un permiso sobre un recurso inexistente, y esos se leen como cobertura."
+  }
+}
+
+# [T-2.154] El umbral temprano NO puede ser el intervalo exacto.
+#
+# Serlo garantizaba un falso positivo por ciclo: la edad cruza el umbral en el
+# instante en que ARRANCA el backup nuevo, y no baja hasta que la metrica lo
+# refleja. Medido sobre los objetos de S3 el 2026-08-22: el backup tarda ~6 min y
+# crecio 19% en una semana; con el scan una hora despues, la ventana era de 60.
+#
+# Una alarma que grita cada 7 dias sin motivo se ignora la semana que si falla, y
+# esta vigila el ANCLA de la cadena PITR.
+run "el_umbral_temprano_no_es_el_intervalo_exacto" {
+  command = plan
+
+  assert {
+    condition     = output.base_backup_warn_age_s > var.pitr.base_backup_interval_days * 86400
+    error_message = "El umbral de la alarma temprana no puede igualar la cadencia: la edad la cruza cuando arranca el backup nuevo y no baja hasta que la metrica lo refleja, asi que dispara en TODOS los ciclos. Necesita cubrir la duracion del backup."
+  }
+
+  # Y la otra mitad: la gracia no puede crecer hasta comerse a su hermana.
+  assert {
+    condition     = output.base_backup_warn_age_s < output.base_backup_max_age_s
+    error_message = "La gracia se comio la distancia con `base_backup_max_age_s`. Si el aviso temprano se parece a la ultima linea quedan DOS alarmas para el caso tardio y NINGUNA para el temprano — que es justo lo que T-2.72.b separo."
+  }
+}
+
+# La causa, no solo el sintoma: el backup refresca la metrica al terminar.
+#
+# Subir el umbral sin esto seria tapar una ventana de 60 minutos con margen. El
+# scan de las 05:00 se queda —cubre backups hechos por otra via y repara el
+# fichero—, pero deja de ser el unico que descubre el backup del dia.
+run "el_backup_base_refresca_su_metrica_al_terminar" {
+  command = plan
+
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-base-backup-scan.sh || true") &&
+      strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-base-backup-age.sh || true")
+    )
+    error_message = "`takab-base-backup.sh` debe refrescar la edad al terminar. Sin eso el unico que descubre el backup nuevo es el scan de las 05:00, y la metrica cuenta la edad del ANTERIOR durante una hora — una ventana de incumplimiento garantizada en cada ciclo."
   }
 }

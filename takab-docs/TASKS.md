@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **298** · `[x]` **239** · `[~]` **9** · `[ ]` **50**
+**Conteo de tareas:** total **298** · `[x]` **240** · `[~]` **9** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4635,7 +4635,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   la presencia de X no dice nada sobre la ausencia de Y**, y aquí Y era el recurso que la propia
   identidad aplica sola.
 
-### [ ] T-2.154 · La alarma temprana del backup base grita en CADA ciclo — `SOFTWARE`
+### [x] T-2.154 · La alarma temprana del backup base grita en CADA ciclo — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-21, verificando el
   redespliegue · **Alarma:** `takab-dev-backup-base-atrasado`
 - **El hecho, medido** (`BaseBackupAgeSeconds`, periodo 300 s):
@@ -4665,16 +4665,45 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   ventana de recuperación»* — y su hermana `base_backup_max_age_s`
   (`interval × chain_margin`) ya es la última línea. Si esta se relaja hasta parecerse a aquélla,
   el proyecto se queda con dos alarmas para el mismo caso tardío y **ninguna para el temprano**.
+- **La causa real, medida y distinta de la que se supuso.** No era la duración del backup: era el
+  **calendario**. `04:00` backup (días 1, 8, 15, 22, 29) · `05:00` scan —lo único que descubre el
+  backup nuevo— · publicador cada minuto. La edad cruza el umbral **a las 04:00** y no baja hasta
+  las **05:00**: **60 minutos de incumplimiento garantizados por ciclo**, contra 10 de margen.
+  Medido sobre los objetos de S3:
+
+  | Backup | Inicio | Último objeto | Duración | Tamaño |
+  |---|---|---|---|---|
+  | `20260815T040002` | 04:00:02 | 04:04:44 | **4m 42s** | 276 MB |
+  | `20260822T040002` | 04:00:02 | 04:05:41 | **5m 39s** | 329 MB (**+19 % en una semana**) |
+
 - **Criterios de aceptación:**
-  - [ ] El umbral temprano **contempla la duración del backup y el retraso del escáner**, en vez
-        de igualar la cadencia. La cifra sale de medir, no de redondear.
-  - [ ] Un ciclo de respaldo completo **sin transición a `ALARM`**, comprobado sobre la métrica
-        real y no sobre el plan de Terraform.
-  - [ ] La relación entre las dos alarmas queda escrita: cuál avisa temprano y cuál es la última
-        línea. Hoy solo vive en la descripción de sus variables.
-  - [ ] **Ojo con el falso arreglo:** que la alarma no suene porque su métrica dejó de publicarse
-        es indistinguible de que todo va bien. `treat_missing_data` de ésta es `missing` — no
-        `breaching` como el de su hermana—, así que un publicador muerto la deja callada.
+  - [x] **Atacada la causa, no solo el síntoma:** `takab-base-backup.sh` refresca la métrica al
+        terminar. La ventana pasa de **60 min a ~6**. El scan de las 05:00 se queda —cubre backups
+        hechos por otra vía y repara el fichero—, pero deja de ser el único.
+  - [x] **La gracia sale de medir:** 3600 s cubre los ~6 min con 10× de holgura y deja sitio al
+        crecimiento, y aun así es el **0,6 % del intervalo**. Declarada en `base_backup_grace_s`,
+        no horneada.
+  - [x] **No es «subirlo hasta que calle»:** test que exige que entre el aviso y la última línea
+        quede **al menos un intervalo completo** — el tiempo de relanzar un backup antes de que la
+        cadena se rompa.
+  - [x] Dos tests nuevos, **verificados rompiendo el código**: volver al umbral exacto deja 3 en
+        rojo; quitar el refresco deja rojo el suyo.
+
+> ### ⚠️ El hallazgo que no estaba en la ficha: **el defecto estaba protegido por un test**
+>
+> `el_umbral_del_backup_base_se_deriva_de_las_variables_de_retencion` exigía
+> `base_backup_warn_age_s == interval * 86400` **exacto**. Su razonamiento era correcto en teoría
+> —«el primer instante en que se puede afirmar que un backup no se completó»— y **ciego a cómo se
+> produce el dato**: la métrica sigue contando la edad del backup anterior hasta que alguien
+> descubre el nuevo.
+>
+> **Quien fuera a arreglar el umbral se habría encontrado ese test en rojo y habría podido concluir
+> que su arreglo estaba mal.** Un test fija un defecto tan bien como fija un acierto.
+>
+> Y había una segunda: `max == warn × chain_margin`, un cociente exacto **que solo se sostenía
+> porque el aviso era el intervalo pelado**. Se había elevado a invariante una coincidencia de la
+> fórmula. Re-expresada por lo que de verdad importa —el aviso llega antes, y con un intervalo
+> entero de ventana— en vez de por un múltiplo que no le importa a nadie.
 
 ### [x] T-2.152 · El fallback del publicador de retención de PII es código muerto — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/database/prune_pii_setup.sh.tpl`) · **Hallado:** 2026-08-21, al

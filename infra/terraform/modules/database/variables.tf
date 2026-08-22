@@ -134,6 +134,7 @@ variable "pitr" {
     server_name               = string
     wal_retention_days        = number
     base_backup_interval_days = number
+    base_backup_grace_s       = optional(number, 3600)
     chain_margin              = number
   })
   default = {
