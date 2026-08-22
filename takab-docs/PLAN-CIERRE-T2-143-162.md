@@ -161,6 +161,41 @@ queda sin tiempo, es la que menos duele dejar a medias.
 
 ---
 
+## ✅ RESULTADO (2026-08-22) — las cuatro cerradas
+
+| Ficha | Lo que resultó ser, cuando se abrió |
+|---|---|
+| `T-2.162` | Cerrada antes del loop |
+| `T-2.145` | **No era ruido: era MUDEZ.** `iot_rule_errors` llevaba **14 días clavada en ALARMA** (una sola transición en toda su vida, el 2026-08-08 09:39 CST) porque su metric filter no publica nada sin errores. Como SNS solo notifica transiciones, un error real de enrutado IoT **no habría mandado un correo**. Las tres pasan a `notBreaching`. Colateral: la descripción de `ec2_cpu` prometía 15 min y la config exigía 25; y el censo contaba las aserciones **comentadas** como cobertura |
+| `T-2.151` | **Un endpoint y no dos.** Diferir la ejecución obligaría a guardar el índice del número en una tabla append-only, donde sobreviviría al borrado que lo motivó. `affected` constante = no hay oráculo de existencia. La acreditación vive en la RLS, medida con una constancia real pero de otra clase |
+| `T-2.143` | Reconciliación dentro del job que ya corre solo; `--sin-reconciliar` **apaga**, no enciende. Lo difícil no era dar de baja: era **negarse con una lectura a medias** — directorio caído, paginación sin fin, pool vacío |
+
+### Lo que enseñó romper el código a propósito
+
+Doce sabotajes. **Cuatro no mordieron**, y esos fueron los que valieron:
+
+1. Dos parches pegaron en la ocurrencia equivocada del texto buscado y **nunca tocaron el código
+   bajo prueba** (`proof_ref=body.proof_ref` sale dos veces; el segundo era el mío). Un sabotaje
+   que no se comprueba que muerde vale lo mismo que no haberlo hecho.
+2. Un `grep` de veredicto no casaba **por los códigos de color** de pytest: tres sabotajes
+   parecieron no producir evidencia cuando lo que fallaba era el lector.
+3. Una aserción buscaba la palabra «directorio», que sale en **los dos** motivos de aborto.
+   Tercera vez en la sesión del defecto `"5 min"` ⊂ `"15 min"`.
+4. Un `ON CONFLICT DO NOTHING` era **inalcanzable** desde el flujo: un cinturón que nunca se
+   abrocha. Se prueba ahora ejecutando la sentencia a mano.
+
+Y **dos correcciones vinieron del esquema, no del código**: `user_profiles.user_sub` es PK global
+(un sub pertenece a un solo cliente, así que el test que sembraba el mismo en dos tenants pasaba
+por vacuidad), y toda fila del padrón nace de un token verificado — o sea de alguien que **tuvo**
+cuenta, que es lo que hace exacto el `via = 'account_deleted'`.
+
+### Pendiente de una mano humana
+
+`terraform apply` del módulo `observability`: **hasta que se aplique, `iot_rule_errors` sigue muda
+en la nube.** Plan medido: 5 cambios en sitio, 0 destroy.
+
+---
+
 ## CONDICIÓN DE PARADA
 
 El loop termina cuando las cinco están en `[x]` **y** `gh pr checks` da los siete en verde.
