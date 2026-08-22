@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **299** · `[x]` **242** · `[~]` **9** · `[ ]` **48**
+**Conteo de tareas:** total **300** · `[x]` **242** · `[~]` **9** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4358,6 +4358,33 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+### [ ] T-2.162 · El correo de guardia no dice qué hacer ni dónde — `SOFTWARE`
+- **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-22, en el ensayo
+  cronometrado de `T-2.78`
+- **El hecho:** el aviso de on-call es la **plantilla cruda de CloudWatch**. Nombra la alarma, su
+  causa y sus umbrales, y **no menciona que haya que acusar, ni dónde**. La palabra «acuse» no
+  aparece; la URL de la página tampoco.
+- **La evidencia, y es incómoda:** quien lo recibió **acababa de ejecutar el ensayo entero** —había
+  acuñado la credencial, abierto la página y acusado un aviso veinte minutos antes— y aun así tuvo
+  que preguntar **cuál era «el código» que había que pegar**. Buscó en el correo algo que el correo
+  no tiene.
+- **Por qué importa más de lo que parece:** el destinatario real está dormido a las 3 a.m. El
+  runbook resuelve esto **suponiendo** que la persona tiene el marcador en el teléfono y sabe
+  usarlo — y este ensayo **refutó esa suposición con el caso más favorable posible**.
+- **Es la misma familia que [`T-2.157`](TASKS.md):** el mensaje era técnicamente correcto y **no
+  comunicaba**. Allí era un volcado JSON a un inspector; aquí es una plantilla de AWS a un guardia.
+  En los dos casos ninguna prueba de la lógica podía cazarlo, porque la lógica no falla.
+- **Criterios de aceptación:**
+  - [ ] El aviso lleva **qué hacer y dónde**: una línea con la URL del acuse y el plazo. Hoy
+        `T-2.78.a` construyó esa página y **nada la enseña**.
+  - [ ] **Sin inventar un canal nuevo.** El texto lo compone SNS desde la alarma, así que la vía
+        natural es `alarm_description` —que ya viaja en el cuerpo— o un formato propio si se decide
+        pasar por la API. Lo segundo es más caro y no está justificado todavía.
+  - [ ] **Ojo con el falso arreglo:** poner la URL en el runbook **no lo cierra**. El runbook no
+        está abierto a las 3 a.m.; el correo sí.
+  - [ ] El plazo (`ack_deadline_at`) va en el texto. Saber que hay quince minutos cambia lo que
+        hace una persona medio dormida.
 
 ### [x] T-2.161 · El acuse de guardia no se podía enviar desde la consola — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** api (`routers/ops_alerts.py`) · **Hallado:** 2026-08-22, ejecutando el ensayo

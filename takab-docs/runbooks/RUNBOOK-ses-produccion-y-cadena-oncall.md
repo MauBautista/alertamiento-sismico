@@ -679,15 +679,50 @@ por SSM, jamás una alerta.
 
 | # | Prueba | Esperado | Medido | OK/NO | Fecha/inicial |
 |---|---|---|---|---|---|
-| C-1 | Suscripción SNS `Confirmed` (no `PendingConfirmation`) | confirmada |  |  |  |
-| C-2 | **t0** — hora de la condición | — |  |  |  |
-| C-3 | **t1** — transición a `ALARM` en `describe-alarm-history` | t1 − t0 ≤ 1 min |  |  |  |
-| C-4 | **t2** — cabecera `Date:` del correo | t2 − t1 ≤ 2 min |  |  |  |
-| C-4′ | **t2′** — `received_at` en `v_ops_alert_chain` (§3.8) | fila presente, ≤ 2 min tras t1 |  |  |  |
-| C-5 | **t3 — acuse humano, con rastro** — `acked_at`/`ack_latency_s` de la misma fila, ya NO a mano | **objetivo sin fijar — ver §4.3 P-3**; el mecanismo existe desde `T-2.78.a` |  |  |  |
-| C-5′ | Con el acuse dado, `outcome` = `acusado` (o `acusado_tarde`) y `acked_by` trae el nombre | sí |  |  |  |
-| C-6 | ¿El texto de `--state-reason` viaja en el cuerpo del correo? | SÍ/NO |  |  |  |
-| C-7 | Vuelta sola a `OK` + correo de `ok_actions` | ≤ ~5 min tras t1 |  |  |  |
+| C-1 | Suscripción SNS `Confirmed` (no `PendingConfirmation`) | confirmada | **confirmada** — ARN real; dos `202` desde IP de AWS en el log de la API | ✅ | 2026-08-22 MB |
+| C-2 | **t0** — hora de la condición | — | **20:55:30** (2.ª corrida) · 19:55:39 (1.ª) | ✅ | 2026-08-22 MB |
+| C-3 | **t1** — transición a `ALARM` en `describe-alarm-history` | t1 − t0 ≤ 1 min | **20:58:24 · t1−t0 = 2m 54s** (1.ª: 2m 45s) — **NO cumple el objetivo, ver abajo** | ⚠️ | 2026-08-22 MB |
+| C-4 | **t2** — cabecera `Date:` del correo | t2 − t1 ≤ 2 min | **no medido**: se pegó el cuerpo, no la cabecera. `C-4′` lo cubre con más precisión | ⏳ | — |
+| C-4′ | **t2′** — `received_at` en `v_ops_alert_chain` (§3.8) | fila presente, ≤ 2 min tras t1 | **20:58:24.989 · t2′−t1 = 0,25 s** (1.ª: 0,26 s) | ✅ | 2026-08-22 MB |
+| C-5 | **t3 — acuse humano, con rastro** — `acked_at`/`ack_latency_s` de la misma fila, ya NO a mano | **objetivo sin fijar — ver §4.3 P-3**; el mecanismo existe desde `T-2.78.a` | **146,51 s** (`acked_at` 21:00:51). En la 1.ª corrida: 3278 s ⇒ `acusado_tarde` | ✅ | 2026-08-22 MB |
+| C-5′ | Con el acuse dado, `outcome` = `acusado` (o `acusado_tarde`) y `acked_by` trae el nombre | sí | **`acusado`** · `acked_by = "Mauricio (primaria)"`. Y en la 1.ª, **`acusado_tarde`**: el plazo no es decorativo | ✅ | 2026-08-22 MB |
+| C-6 | ¿El texto de `--state-reason` viaja en el cuerpo del correo? | SÍ/NO | **SÍ**, literal: `Threshold Crossed: 1 datapoint [1.0 …]` | ✅ | 2026-08-22 MB |
+| C-7 | Vuelta sola a `OK` + correo de `ok_actions` | ≤ ~5 min tras t1 | **20:21:24**, 23 min tras t1 — al drenar la cola. **NO cumple el objetivo, ver abajo** | ⚠️ | 2026-08-22 MB |
+
+> ### Los dos `⚠️`, y por qué no se marcan en verde
+>
+> **`C-3` (t1−t0 ≤ 1 min) no se cumple, y el objetivo era inalcanzable.** La alarma elegida tiene
+> `period = 300`: CloudWatch no puede evaluar antes de cerrar su ventana de cinco minutos. Los
+> 2m 45s y 2m 54s medidos son **el comportamiento correcto**, no un retraso. El objetivo de un
+> minuto se escribió sin mirar el periodo de la alarma que el propio runbook elige en §3.1.
+>
+> **`C-7` (≤ ~5 min) tampoco, por lo mismo:** la vuelta a `OK` depende de que la cola se vacíe **y**
+> de la siguiente ventana de 300 s. Los 23 minutos incluyen el tiempo que la DLQ estuvo con el
+> mensaje del ensayo, que es tiempo del operador, no de la cadena.
+>
+> **Lo que sí queda acreditado y es lo que importa:** desde que CloudWatch decide que hay alarma
+> hasta que la cadena lo tiene registrado pasan **0,25 s**. Y una persona con la credencial en el
+> gestor acusa en **147 s**, con su nombre y su hora en la base.
+
+> ### ⚠️ El ensayo encontró DOS defectos, que era su función
+>
+> **1 · El acuse no se podía enviar** ([`T-2.161`](../TASKS.md), arreglado y desplegado). El
+> formulario tenía `action="/ops/alerts/ack"` absoluto; servido bajo `/api`, el navegador enviaba
+> fuera de la API y el `POST` moría en el SPA con 405. **La página funcionaba, el endpoint
+> funcionaba, la credencial era válida — y el enlace entre ellos no existía.** En la primera corrida
+> el aviso pasó a `sin_acuse` sin que nadie pudiera evitarlo.
+>
+> **2 · El correo no dice qué hacer.** Es la plantilla cruda de CloudWatch: nombra la alarma y su
+> causa, y **no menciona que haya que acusar, ni dónde**. Quien lo recibió acababa de ejecutar el
+> ensayo entero y aun así tuvo que preguntar cuál era «el código». A las tres de la mañana, con este
+> correo delante, no hay forma de saber que existe una página de acuse. El runbook supone que la
+> persona tiene el marcador y sabe usarlo — **suposición que este ensayo refutó**.
+>
+> ### Y un hallazgo del mecanismo: `sin_acuse` NO es un estado final
+> El aviso de la primera corrida, ya vencido y marcado `sin_acuse`, **siguió aceptando acuse** y
+> pasó a `acusado_tarde` con su latencia real (3278 s). No es un defecto —registrar que alguien lo
+> atendió tarde vale más que perder el dato— pero conviene saberlo: un `sin_acuse` en pantalla
+> puede dejar de serlo después.
 | C-8 | Repetición **fuera de horario** (02:00–05:00 local) | mismo t3 o mejor |  |  |  |
 | C-9 | Ensayo con el **primer** contacto deliberadamente sin responder | escala al segundo (§4) **y la fila queda en `sin_acuse` con `unacked_at` puesto** |  |  |  |
 | C-10 | Fantasmas: sale de `INSUFFICIENT_DATA` tras el apply (§3.5) | correo de `ok_actions` |  |  |  |
