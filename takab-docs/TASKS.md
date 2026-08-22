@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **298** · `[x]` **240** · `[~]` **9** · `[ ]` **49**
+**Conteo de tareas:** total **298** · `[x]` **241** · `[~]` **9** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4359,7 +4359,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
 
-### [ ] T-2.160 · «¿Llegó ESTE correo?» no tiene respuesta: no hay historial de entrega — `SOFTWARE`
+### [x] T-2.160 · «¿Llegó ESTE correo?» no tiene respuesta: no hay historial de entrega — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/identity`) · **Hallado:** 2026-08-22, intentando diagnosticar dos
   correos que no aparecieron
 - **El hecho:** el configuration set publica **solo lo que va mal** —`BOUNCE`, `COMPLAINT`,
@@ -4382,18 +4382,43 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   `RUNBOOK-ses §1` ya advierte que eso acredita que **el mensaje sale**, no que **la persona
   llega**.
 - **Criterios de aceptación:**
-  - [ ] Destino de eventos **durable y consultable** (CloudWatch Logs o S3 vía Firehose) que
-        incluya **`SEND` y `DELIVERY`** además de los fallos.
-  - [ ] Se puede responder «qué pasó con este `MessageId`» **sin abrir un buzón** y sin depender de
-        que alguien conservara un correo.
-  - [ ] El `MessageId` que devuelve SES **se guarda junto al `notification_job`**. Hoy el job dice
-        `sent` y no guarda con qué identificador, así que la evidencia de la base y la de SES **no
-        se pueden cruzar**.
-  - [ ] La retención va declarada. Un historial que se poda en silencio reproduce este mismo
-        agujero más tarde y con menos ruido.
-  > **Ojo con el falso arreglo:** añadir `DELIVERY` al topic de SNS actual **no lo cierra**. Seguiría
-  > siendo un correo que alguien tiene que guardar. Lo que falta no es *más aviso*: es un **registro
-  > que se pueda consultar después**.
+  - [x] Destino de eventos **durable y consultable**: los siete tipos —**`SEND` y `DELIVERY`
+        incluidos**— van por EventBridge a un grupo de CloudWatch Logs. **No Firehose**: para
+        responder «qué pasó con este `MessageId`» hace falta **buscar**, no almacenar; Logs
+        Insights busca, un objeto en S3 hay que ir a leerlo.
+  - [x] **Retención declarada** (90 días), con test que impide dejarla implícita.
+  - [x] **La política de RECURSO del grupo de logs**, que es la que se olvida: EventBridge no
+        escribe por tener el ARN en el target. Sin ella el destino se crea limpio y **muere en el
+        primer evento**, sobre un camino que nadie mira hasta que hace falta. Mismo modo de fallo
+        que ya obligó a poner `aws_sns_topic_policy` para los rebotes.
+  - [x] **El `MessageId` se guarda junto al `notification_job`.**
+
+> ### ⚠️ Corrección: la mitad de la base **ya estaba hecha**
+>
+> Esta ficha decía que «el job dice `sent` y no guarda con qué identificador». **Falso.**
+> `notification_jobs.provider_message_id` existe y el orquestador ya lo escribe con
+> `provider_message_id(provider)`, que es **genérico por diseño**: lee `.last_receipt.message_id`
+> sin saber de canales.
+>
+> Lo que faltaba era que SES lo alimentara — y su propio comentario decía por qué:
+> *«Un provider sin recibo —SES, el webhook firmado— devuelve cadena vacía [...] No hay nada que
+> casar donde no hay callback.»* **Era cierto, y dejó de serlo** al publicar los eventos a un
+> destino consultable. La costura estaba puesta desde `T-2.77.b` esperando a que existiera el otro
+> extremo.
+>
+> **Y una trampa que se atajó con test:** el recibo del envío anterior **no puede sobrevivir a uno
+> fallido**. Dejarlo ataría el job al identificador de **otro** mensaje —la base afirmaría que un
+> correo que nunca salió tiene id—. Misma familia que el `alert_latched` de `T-2.28`: un estado que
+> no se limpia contamina la lectura siguiente.
+
+> ### El censo del módulo tuvo que crecer con la familia
+> `ses_domain.tftest.hcl` enumera por regex los recursos SES/DNS/SNS y exige que cada uno tenga su
+> aserción de «con la variable vacía no se crea nada». **El historial entró por `aws_cloudwatch_*`,
+> que su patrón no miraba**: los cuatro recursos habrían pasado sin que nadie comprobara nada.
+> Patrón ampliado y verificado colando un recurso a propósito — lo caza.
+>
+> **Un censo automático deja de serlo en cuanto la familia crece por un lado que su patrón no
+> mira.** Es la misma lección que `§1` de `PENDIENTES`, esta vez en código.
 
 ### [x] T-2.159 · Nada impide apagar el acceso del que dependen la cadena on-call y los enlaces — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra · **Hallado:** 2026-08-22, antes de encender el flag ·

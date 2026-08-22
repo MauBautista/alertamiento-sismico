@@ -17,6 +17,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 import boto3
@@ -312,6 +313,18 @@ def cuerpo_email(message: dict) -> str:
     return "\n".join(lineas)
 
 
+@dataclass(frozen=True)
+class SesReceipt:
+    """[T-2.160] Lo que SES contestó. Observabilidad, **no** prueba de entrega.
+
+    Se llama ``message_id`` como su gemela de Twilio a propósito:
+    ``provider_message_id()`` lo lee sin saber de canales, y una rama por
+    proveedor en el orquestador es justo lo que aquella función evitó.
+    """
+
+    message_id: str
+
+
 class SesEmailProvider:
     """Correo vía AWS SES (sandbox en dev: remitente y destinos verificados)."""
 
@@ -320,8 +333,17 @@ class SesEmailProvider:
     def __init__(self, sender: str, region: str) -> None:
         self._sender = sender
         self._region = region
+        #: [T-2.160] El recibo del ÚLTIMO envío, que es lo que
+        #: `provider_message_id()` busca. Empieza vacío: sin envío no hay id.
+        self.last_receipt: SesReceipt | None = None
 
     def send(self, target: dict, message: dict) -> None:
+        # [T-2.160] El recibo viejo NO puede sobrevivir a un envío nuevo. Si este
+        # falla, dejar el anterior ataría el job al identificador de OTRO mensaje
+        # —la base afirmaría que un correo que nunca salió tiene id—. Misma familia
+        # que el `alert_latched` de T-2.28: un estado que no se limpia contamina
+        # la lectura siguiente.
+        self.last_receipt = None
         recipients = list(target.get("to") or [])
         if not recipients:
             raise NotifyError("email sin destinatarios")
@@ -329,7 +351,7 @@ class SesEmailProvider:
         body_text = cuerpo_email(message)
         client = boto3.client("ses", region_name=self._region)
         try:
-            client.send_email(
+            respuesta = client.send_email(
                 Source=self._sender,
                 Destination={"ToAddresses": recipients},
                 Message={
@@ -339,6 +361,13 @@ class SesEmailProvider:
             )
         except (BotoCoreError, ClientError) as exc:
             raise NotifyError(f"ses: {exc}") from exc
+
+        # [T-2.160] El `MessageId` es la ÚNICA llave que une lo que dice la base
+        # con lo que dice SES. Hasta esta ficha se tiraba, y el comentario de
+        # `provider_message_id()` explicaba por qué: «no hay nada que casar donde
+        # no hay callback». Era cierto — y dejó de serlo al publicar los eventos
+        # del configuration set a un destino consultable.
+        self.last_receipt = SesReceipt(message_id=str(respuesta.get("MessageId") or ""))
 
 
 class SimulatedProvider:
