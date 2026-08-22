@@ -12,7 +12,7 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-17 · **21 decisiones** · 18 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-08-22 · **22 decisiones** · 18 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
@@ -55,6 +55,7 @@
 | [D-19](#d-19) | Tono de alerta de la app: **propio**, no el oficial de CIRES | 2026-08-17 | Mauricio |
 | [D-20](#d-20) | Consulta legal: **espera a que un cliente la pida** | 2026-08-17 | Mauricio |
 | [D-21](#d-21) | Sesión de vida: **se parte** — `G-01` esta semana, solo | 2026-08-17 | Mauricio |
+| [D-22](#d-22) | La consola **se abre al público**; Cognito con MFA queda como única capa | 2026-08-22 | Mauricio |
 
 ---
 
@@ -787,6 +788,60 @@ nombra el origen.
 confirmara que usarla no debilita el deslinde, se puede añadir como tono **alternativo por sitio**.
 Nunca como sustituto silencioso: cambiar el sonido de una alarma que la gente ya aprendió es un
 cambio de producto, no de configuración.
+
+---
+
+<a id="d-22"></a>
+## D-22 · La consola **se abre al público**, con Cognito como única capa
+
+**Fecha:** 2026-08-22 · **Decide:** Mauricio · **Venía de:** [`T-2.158`](TASKS.md) y
+[`T-2.159`](TASKS.md) · **Desbloquea:** la cadena on-call de `PENDIENTES §2.9` y el enlace de los
+correos
+
+**El problema, y lo que costó descubrir que era UNO y no dos.** La consola servía su 443 a **una
+sola IP**. Eso rompía dos cosas que parecían independientes:
+
+1. **El enlace de los correos.** Cada solicitud de dictamen decía «Atender en la consola» con una
+   URL que el inspector **no podía abrir**.
+2. **La cadena on-call.** La suscripción HTTPS de SNS **se confirma durante el `apply`**: AWS llama
+   al endpoint desde sus rangos, y el paquete moría en el security group. El `apply` habría muerto
+   a medias.
+
+**Y no había una salida intermedia.** Abrir «solo a los rangos de AWS» no es viable: AWS **no
+publica prefijos por servicio para SNS**; lo que existe es el bloque `AMAZON` de la región entera,
+que equivale a abrir al mundo con pasos de más. Y los inspectores se conectan desde el sitio del
+cliente, o sea desde cualquier parte.
+
+**La decisión.** `web_allowed_cidrs = ["0.0.0.0/0"]`. La consola queda pública y **Cognito con MFA
+pasa a ser la única capa de autenticación**.
+
+**Lo que se pierde, dicho sin suavizar:** hoy son **dos** capas y quedará **una**. El filtro por IP
+no protegía de credenciales robadas, pero sí de todo lo que ocurre **antes** de la autenticación:
+escaneo, fuerza bruta contra el login, y cualquier vulnerabilidad futura en la superficie
+pre-autenticación. Eso deja de estar cubierto.
+
+**Lo que sostiene la decisión:**
+
+- **El pool exige MFA a todos** — no es opcional (`mfa_configuration = "ON"`, y por eso el pool de
+  ocupantes tuvo que separarse en `T-2.02`).
+- **El endpoint público más sensible ya se defiende solo.** `POST /api/ops/alerts/sns` **verifica
+  la firma RSA** contra el `SigningCertURL`, reconstruye la confirmación con **nuestro** host y
+  **nuestro** `TopicArn`, y acota la descarga del certificado para no convertirse en proxy. Un
+  sobre firmado por otro topic se descarta.
+- **La alternativa tenía un coste peor:** sin esto, la cadena on-call **no se puede acreditar** y
+  `T-2.94` —el simulacro con cascada real— acreditaría que el correo sale, no que la persona pueda
+  actuar. Un SOC que no puede recibir su propia guardia es peor que un SOC expuesto tras MFA.
+
+> ### ⚠️ Lo que esta decisión NO autoriza
+> **No es permiso para bajar la guardia en lo demás.** Con la capa de red fuera, todo lo que
+> quedaba «protegido por estar en la lista blanca» pasa a estar realmente expuesto. En particular,
+> cualquier ruta que hoy responda sin autenticación **es pública desde ya** — `/api/health` incluido,
+> que declara el commit desplegado.
+
+**Cómo se revocaría, y el gatillo no es «si pasa algo»:** vuelve a la mesa el día que la consola
+tenga **un nombre propio y un WAF delante**, o el día que entre un cliente cuyo contrato exija
+restricción de red. Entonces la lista blanca puede volver **para ese sitio** sin romper la cadena
+on-call, porque para entonces el endpoint de SNS puede vivir en otro host.
 
 ---
 

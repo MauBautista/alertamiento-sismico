@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **296** · `[x]` **235** · `[~]` **10** · `[ ]` **51**
+**Conteo de tareas:** total **298** · `[x]` **237** · `[~]` **9** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4359,7 +4359,77 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
 
-### [ ] T-2.158 · El enlace de los correos apunta a una consola que el destinatario no puede abrir — `SOFTWARE`
+### [ ] T-2.160 · «¿Llegó ESTE correo?» no tiene respuesta: no hay historial de entrega — `SOFTWARE`
+- **Componente:** infra (`modules/identity`) · **Hallado:** 2026-08-22, intentando diagnosticar dos
+  correos que no aparecieron
+- **El hecho:** el configuration set publica **solo lo que va mal** —`BOUNCE`, `COMPLAINT`,
+  `REJECT`, `RENDERING_FAILURE`, `DELIVERY_DELAY`— y a **un correo**. No incluye `SEND` ni
+  `DELIVERY`, y no hay ningún destino durable (ni CloudWatch Logs, ni Firehose, ni S3).
+- **Lo que costó, medido en esta sesión.** Dos correos con `MessageId` devuelto no aparecieron en el
+  buzón. Al preguntar «¿qué pasó con `010f01a0280d7325`?» **no había dónde mirar**:
+  - la lista de supresión no lo tenía (correcto, pero no dice nada del mensaje);
+  - las métricas de CloudWatch estaban **en cero, incluida `Send`**, mientras el contador de cuota
+    decía 2 — o sea, **ausencia de datos indistinguible de ausencia de eventos**;
+  - los avisos de rebote van por correo: si nadie los guarda, no existen.
+
+  Con eso se construyó una hipótesis —que Private Email descartaba el correo de su propio
+  dominio— que encajaba con **todos** los datos disponibles y **era falsa**: un envío de control al
+  mismo buzón llegó sin problema. **La hipótesis no falló por descuido: falló porque los datos que
+  la habrían refutado no se guardaban en ninguna parte.**
+- **Por qué importa más aquí que en otro producto:** esto es alertamiento sísmico. «¿La solicitud de
+  dictamen le llegó al inspector?» no es una curiosidad de operación — es la pregunta que decide si
+  hay que llamar por teléfono. Hoy solo se puede responder con *«SES no se quejó»*, y el propio
+  `RUNBOOK-ses §1` ya advierte que eso acredita que **el mensaje sale**, no que **la persona
+  llega**.
+- **Criterios de aceptación:**
+  - [ ] Destino de eventos **durable y consultable** (CloudWatch Logs o S3 vía Firehose) que
+        incluya **`SEND` y `DELIVERY`** además de los fallos.
+  - [ ] Se puede responder «qué pasó con este `MessageId`» **sin abrir un buzón** y sin depender de
+        que alguien conservara un correo.
+  - [ ] El `MessageId` que devuelve SES **se guarda junto al `notification_job`**. Hoy el job dice
+        `sent` y no guarda con qué identificador, así que la evidencia de la base y la de SES **no
+        se pueden cruzar**.
+  - [ ] La retención va declarada. Un historial que se poda en silencio reproduce este mismo
+        agujero más tarde y con menos ruido.
+  > **Ojo con el falso arreglo:** añadir `DELIVERY` al topic de SNS actual **no lo cierra**. Seguiría
+  > siendo un correo que alguien tiene que guardar. Lo que falta no es *más aviso*: es un **registro
+  > que se pueda consultar después**.
+
+### [ ] T-2.159 · La suscripción HTTPS del on-call no puede confirmarse: AWS no alcanza el endpoint — `SOFTWARE`
+- **Componente:** infra · **Hallado:** 2026-08-22, antes de encender el flag ·
+  **Bloquea:** `T-2.78.a` y con ello el criterio 2 de `T-2.78` (`PENDIENTES §2.9`)
+- **El hecho, medido antes de gastar un apply:**
+
+  | Comprobación | Resultado |
+  |---|---|
+  | La API conoce `TAKAB_API_OPS_ALERT_TOPIC_ARN` | ✅ sí |
+  | `POST /api/ops/alerts/sns` responde **404**, no 503 | ✅ el semáforo del runbook está en verde |
+  | **Quién puede alcanzar ese 443** | ❌ **una sola IP** (`187.192.70.90/32`) |
+
+  La suscripción **se confirma DURANTE el `apply`**: AWS SNS llama al endpoint desde sus propios
+  rangos y ese paquete se descarta en el security group. El apply moriría a medias.
+- **Por qué el aviso existente no lo cubre, y es la lección repetida:** el comentario de
+  `ops_alert_https_subscriber_enabled` advierte de que la API debe estar desplegada y no contestar
+  503. **Las dos cosas estaban bien.** Nadie pensó en el cortafuegos. Es la misma forma que el
+  `[PARA]` de `RUNBOOK-ses §2.5`, que predijo el `AccessDenied` del ARN de la identidad y no el del
+  configuration set: **un aviso correcto que envejece cubriendo media casuística se lee como
+  cobertura completa.**
+- **Y es el MISMO bloqueo que la segunda mitad de [`T-2.158`](TASKS.md).** Parecían dos temas —el
+  enlace del correo y la cadena on-call— y son uno: **la consola no es alcanzable desde fuera**.
+  Resolverlos por separado es resolver dos veces.
+- **El matiz que estrecha las opciones:** para confirmar una suscripción HTTPS, **abrir «a los
+  rangos de AWS» no es una salida realista**. AWS no publica prefijos por servicio para SNS; lo que
+  hay es el bloque `AMAZON` de la región entera, que equivale a abrir al mundo con pasos de más. En
+  la práctica el endpoint tiene que ser público.
+- **Criterios de aceptación:**
+  - [ ] Decidido **con `T-2.158` a la vez**, no por separado: cómo queda expuesta la consola y qué
+        la defiende entonces (hoy son dos capas, IP + Cognito con MFA; quitar la primera deja una).
+  - [ ] La suscripción confirmada de verdad, comprobada **desde fuera de la lista blanca** — no
+        por el estado que devuelva el apply.
+  - [ ] Una guarda que impida encender el flag mientras el endpoint no sea alcanzable. El aviso en
+        prosa ya falló una vez: **describía el fallo que sí se previó**.
+
+### [x] T-2.158 · El enlace de los correos apunta a una consola que el destinatario no puede abrir — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra + despliegue · **Hallado:** 2026-08-22, cuando Mauricio pulsó un enlace de
   ejemplo y salió un 403 · **Muerde en:** `T-2.94` (simulacro con cascada real)
 - **El hecho, medido:** `TAKAB_API_NOTIFY_WEB_BASE_URL = https://16-58-11-196.sslip.io`, y el 443
@@ -4378,13 +4448,36 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   propio con acceso público tras Cognito, o si el enlace apunta a otra cosa alcanzable. **Es
   decisión de producto y de seguridad, no de código:** quitar la lista blanca expone el SOC, y
   dejarla convierte el enlace en decoración.
+- **Decidido el 2026-08-22: las dos, en ese orden.** Primero el correo deja de prometer enlaces
+  muertos —hecho, abajo—; la consola pública se planifica aparte con su propia decisión de
+  seguridad. Así `T-2.94` no acredita un flujo roto sin forzar hoy la exposición del SOC.
 - **Criterios de aceptación:**
-  - [ ] Decidido y escrito **quién puede alcanzar la consola** desde fuera, y por qué.
-  - [ ] O el enlace lleva a algo que el destinatario abre, **o el correo no promete un enlace**.
-        Las dos son aceptables; la mezcla actual no.
-  - [ ] Test que falle si se envía un enlace cuyo host no es alcanzable según la configuración
-        declarada. **Sin él vuelve**, porque el defecto no está en la lógica: está en la brecha
-        entre lo que el correo promete y lo que la red permite.
+  - [x] **El correo no promete lo que no puede cumplir.** `TAKAB_API_NOTIFY_WEB_PUBLIC` declara si
+        el DESTINATARIO alcanza la base. Tener URL no es ser alcanzable, y el código no puede
+        deducirlo: **lo sabe la red, no el proceso**.
+  - [x] **Nace en `False`.** Al revés, cada despliegue nuevo reintroduce el defecto y no se nota
+        hasta que alguien intenta pulsar, que es tarde. Y por eso **no entra en
+        `REQUERIDOS_EN_PRODUCCION`**: su ausencia no es fallo silencioso — el correo omite el
+        enlace **y lo dice**.
+  - [x] **Sin enlace se dice qué hacer**, no se calla: quitarlo y no decir nada deja al inspector
+        sabiendo que pasó algo y no que le toca actuar.
+  - [x] **El corte vive en el ORQUESTADOR, no en el proveedor de correo.** El problema es idéntico
+        en SMS y WhatsApp; componer el enlace para tirarlo después invita a que alguien lo reutilice
+        sin saber que está muerto.
+  - [x] Guarda en el orquestador: con la misma base y el flag apagado, el mensaje **no lleva
+        `link`**. Más cuatro tests del cuerpo.
+  - [x] **La segunda mitad, hecha el 2026-08-22:** la consola es pública y
+        `TAKAB_API_NOTIFY_WEB_PUBLIC=true` se declara en el despliegue, así que el correo vuelve a
+        llevar enlace — ahora uno que el destinatario abre. La decisión de seguridad está escrita
+        con su coste y su gatillo de revocación en [`D-22`](DECISIONES-MAURICIO.md#d-22).
+  - [x] **El acoplamiento queda escrito donde se va a leer:** el comentario junto a la línea dice
+        que si algún día se vuelve a cerrar el 443, **esta línea se apaga con él**. Sin eso, cerrar
+        la red dejaría el correo prometiendo enlaces muertos otra vez, y nadie lo notaría.
+- **Verificado:** `api/tests/notify/` 270 en verde sobre base aislada, ruff limpio.
+  > **Y una trampa que costó un diagnóstico:** la primera corrida dio **8 rojos**, de los que solo
+  > 2 eran míos. Había **otro `pytest` sobre `takab_test`** (`pgrep -c pytest` lo delató, y un
+  > `DeadlockDetected` lo confirmó). Base propia ⇒ el ruido desapareció. **Los 6 falsos se leían
+  > igual que los 2 reales.**
 
 ### [x] T-2.156 · Sitio público del dominio — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/site`) · **Sale de:** la denegación del caso `178737638500467`
@@ -4447,7 +4540,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [x] Línea de baja: cómo deja de recibir el destinatario. Lo pide AWS y no existía.
 - **Verificado:** 8 tests nuevos, `api/tests/notify/` completa en verde (265), ruff limpio.
 
-### [~] T-2.155 · El permiso de envío omite el ARN del configuration set — `SOFTWARE`
+### [x] T-2.155 · El permiso de envío omite el ARN del configuration set — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/database`, `modules/identity`, `envs/dev`) ·
   **Hallado:** 2026-08-21, ejecutando el paso 4 de `RUNBOOK-ses §2.5` · **Sale de:** `T-2.78.b`
 - **El hecho, medido desde el rol de la instancia** (no desde la CLI de un portátil, que habría
@@ -4483,13 +4576,23 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [x] **Envío desde la instancia sin `AccessDenied`** — mismo comando que fallaba, ahora
         devuelve `MessageId`. El rol usado es
         `assumed-role/takab-dev-db/i-06fa9b287707c7046`, no una credencial de consola.
-  - [ ] **Cabeceras del correo recibido**: `dkim=pass`, `spf=pass` y `Return-Path` terminando en
-        `bounce.takabailert.com` (**no** `amazonses.com`). Esto **no se puede acreditar desde
-        AWS**: que SES acepte el mensaje y devuelva `MessageId` prueba que salió, no que llegara
-        alineado. Hay que abrir el correo.
-  - [ ] Test de Terraform que ponga en rojo un `WorkerSesSend` sin el ARN del set cuando hay
-        dominio. **Sin él esto vuelve:** el módulo ya tiene `tests/pitr.tftest.hcl` cubriendo el
-        borde de la lista vacía, y aun así este caso pasó.
+  - [x] **Cabeceras del correo recibido** (2026-08-22): `dkim=pass` con **selector propio**
+        (`3r2ck3b5...`, uno de los tres de Route 53), `spf=pass` sobre `bounce.takabailert.com`,
+        `dmarc=pass` y `Return-Path` en el subdominio propio. **Alineación por los DOS caminos**:
+        el correo lleva también la firma de `amazonses.com`, y de haber estado sola, DKIM habría
+        pasado igual **sin alinear**.
+  - [x] Test de Terraform que ponga en rojo un `WorkerSesSend` sin el ARN del set cuando hay
+        dominio. **Verificado rompiendo el código a propósito**: quitar el ARN del `concat` deja el
+        test en rojo; restaurarlo lo devuelve a verde. Un test que solo pasa no prueba que cace
+        nada.
+  - [x] **Y su mitad complementaria:** sin configuration set declarado **no puede colarse** un
+        `configuration-set/` vacío en la política. Un ARN sobre un recurso inexistente no da error
+        de Terraform y se lee como cobertura.
+- **Por qué el test anterior no bastaba, que es la lección:** ya existía uno que comprobaba el ARN
+  de la identidad de dominio, y pasaba — mientras el envío real moría. Comprobaba que estuviera **lo
+  que alguien pensó en su momento**, no que estuviera todo lo que SES exige. **Un test que asegura
+  la presencia de X no dice nada sobre la ausencia de Y**, y aquí Y era el recurso que la propia
+  identidad aplica sola.
 
 ### [ ] T-2.154 · La alarma temprana del backup base grita en CADA ciclo — `SOFTWARE`
 - **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-21, verificando el
