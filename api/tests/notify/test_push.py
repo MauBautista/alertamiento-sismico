@@ -3,7 +3,7 @@ rama del orquestador (enqueue por dispositivos + sellado de ARN + revocación).
 
 Invariantes:
 - Las clases JAMÁS se mezclan: CRISIS lleva sonido crítico/time-sensitive y el
-  canal Android ``seismic_alert``; OPS va normal.
+  canal Android ``seismic_alert_v2``; OPS va normal.
 - El payload visible es GENÉRICO (lockscreen): sin nombre de sitio, sin
   severidad, sin PII — solo ids y fase (la app consulta la verdad por API).
 - Sin dispositivos registrados NO se encola job push (nada de 'sent' vacíos).
@@ -61,9 +61,16 @@ def test_payload_crisis_es_minimo_y_critico() -> None:
     aps = json.loads(payload["APNS"])["aps"]
     assert aps["interruption-level"] == "time-sensitive"  # base pre-entitlement
     assert aps["sound"]["critical"] == 1  # listo para GATE-STORE
+    # [D-19] Tono PROPIO de TAKAB, y —lo que aquí se fija— un fichero que el bundle
+    # trae de verdad: el `seismic_alert.caf` de antes no existía en el repo e iOS
+    # caía al sonido por defecto EN SILENCIO. Que el fichero exista y viaje lo
+    # comprueba `test_censo_canales_y_sonidos.py`; esto fija que se PIDA.
+    assert aps["sound"]["name"] == "alerta_sismica.wav"
 
     gcm = json.loads(payload["GCM"])
-    assert gcm["android"]["notification"]["channel_id"] == "seismic_alert"
+    # `_v2` porque el sonido de un canal Android es inmutable tras crearlo: estrenar
+    # tono obliga a estrenar id, o el teléfono que ya tenía el canal sigue con el viejo.
+    assert gcm["android"]["notification"]["channel_id"] == "seismic_alert_v2"
     assert gcm["android"]["priority"] == "high"
     assert gcm["data"]["incident_id"] == "I1"
     # texto visible genérico: sin sitio ni severidad
