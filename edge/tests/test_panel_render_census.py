@@ -503,6 +503,17 @@ def _existe(obj: Any, ruta: str) -> bool:
 #: su línea; añadir un campo mudo obliga a escribir por qué. Una excepción que
 #: puede crecer sola no es una excepción, es un agujero.
 SIN_CAMINO_DE_RENDER: dict[str, str] = {
+    "keepalive.beating": (
+        "[T-2.146] Es un INGREDIENTE de `keepalive.estado`, que sí se pinta. La regla "
+        "de los tres estados —sin ruta / inhibida / habilitada— vive en el servidor "
+        "(`_keepalive_view`) a propósito: rotular aquí el booleano crudo obligaría al "
+        "panel a recomponerla, y entonces existiría en dos sitios que pueden discrepar."
+    ),
+    "keepalive.enabled": (
+        "[T-2.146] El otro ingrediente de `keepalive.estado`. Viaja porque es lo que "
+        "distingue «no hay ruta de hardware» de «la hay y no late», pero lo que el "
+        "operador lee es el estado ya resuelto, no la configuración cruda."
+    ),
     "audio.profile.applied.siren": (
         "El panel rotula lo que pide acción —tonos RECHAZADOS y la ausencia de "
         "tono de prueba—, no el mapa completo slot→id de catálogo, que es "

@@ -1802,6 +1802,29 @@ body {
    `derived_state`: el gabinete en mantenimiento sigue diciendo SIN ENLACE y
    ADEMÁS lleva esto. Sustituirlo reproduciría el cero tranquilizador que cerró
    T-2.59 — un estado neutro que nadie comprobó. */
+/* [T-2.71] Abrir ventana. Deliberadamente DISCRETO y en el mismo color que la
+   insignia de mantenimiento: es la misma cosa vista desde los dos lados —el botón
+   la abre, la insignia la anuncia—, y pintarlo como una acción destacada invitaría
+   a silenciar avisos por comodidad. Solo aparece cuando NO hay ventana viva. */
+.fleet-card__maint-open {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px dashed var(--tk-status-maintenance);
+  color: var(--tk-status-maintenance);
+  font-size: var(--tk-text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fleet-card__maint-open:hover {
+  background: rgba(167, 139, 250, 0.14);
+}
+
 .fleet-card__maint {
   display: inline-flex;
   align-items: center;

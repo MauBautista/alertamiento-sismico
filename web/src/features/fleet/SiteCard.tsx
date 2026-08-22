@@ -33,6 +33,13 @@ export interface SiteCardProps {
   maintenance?: MaintenanceWindowOut;
   /** [T-2.37] Acciones de administración; ausentes para quien no tiene manage_fleet. */
   onEdit?: () => void;
+  /**
+   * [T-2.71] Abrir una ventana de mantenimiento sobre ESTE gabinete. Ausente para
+   * quien no tiene `maintenance_window`, y ausente también cuando ya hay una
+   * ventana viva: dos ventanas sobre el mismo gabinete no suman silencio, suman
+   * confusión sobre cuál venció.
+   */
+  onOpenWindow?: () => void;
   onRetire?: () => void;
   onRestore?: () => void;
   restoring?: boolean;
@@ -45,6 +52,7 @@ export default function SiteCard({
   health,
   maintenance,
   onEdit,
+  onOpenWindow,
   onRetire,
   onRestore,
   restoring = false,
@@ -121,6 +129,17 @@ export default function SiteCard({
             >
               {maintenanceLabel(maintenance)}
             </span>
+          )}
+          {maintenance === undefined && onOpenWindow !== undefined && (
+            <button
+              className="fleet-card__maint-open"
+              data-testid="open-window"
+              onClick={onOpenWindow}
+              title="Silenciar los avisos de operación de este gabinete durante un rato"
+              type="button"
+            >
+              VENTANA
+            </button>
           )}
           <span className="fleet-card__sid">{gw.serial}</span>
         </div>

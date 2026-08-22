@@ -352,7 +352,7 @@ mudo), no para notificar usuarios. La push móvil es infraestructura NUEVA (T-2.
 **Emisor DECIDIDO (T-2.00, 2026-07-15): SNS platform endpoints.** Una platform application por
 OS (credenciales APNs/FCM en Secrets Manager vía Terraform), un endpoint por dispositivo mapeado
 desde `push_tokens` (token ↔ endpoint ARN), **payload crudo passthrough** (estructura `json`)
-para controlar `sound.critical`/`interruption-level` (iOS) y el canal `seismic_alert` (Android),
+para controlar `sound.critical`/`interruption-level` (iOS) y el canal sísmico (Android),
 y feedback de tokens muertos gestionado por SNS (endpoint deshabilitado ⇒ revocación en
 `push_tokens`). Racional: AWS-nativo (IAM/Terraform/worker notify ya existen) y menos código
 propio de entrega. **Cláusula de reversión:** el primer spike de T-2.04 valida que los campos
@@ -363,13 +363,33 @@ Diseño (se conserva del PROMPT):
 - **iOS:** APNs con **Critical Alerts** (`sound.critical`) para alertas sísmicas — se salta No
   Molestar y silencio. Requiere entitlement aprobado por Apple: **`GATE-STORE`** (se solicita
   en T-2.00 por su lead-time). Fallback sin entitlement: `interruption-level: time-sensitive`.
-- **Android:** canal dedicado `seismic_alert` con `IMPORTANCE_HIGH`, sonido oficial de alerta
-  empaquetado, `setBypassDnd(true)` (requiere acceso a política de notificaciones concedido en
-  onboarding — flujo guiado obligatorio, pantalla 0.2).
-- Dos clases de push, jamás mezcladas:
-  1. `CRISIS` (alerta activa, cambio de fase): máxima prioridad, sonido crítico.
-  2. `OPS` (dictamen recibido, sync completada, recordatorio de simulacro, aviso a no
+- **Android:** canal dedicado `seismic_alert_v2` con `IMPORTANCE_MAX`, **tono propio de TAKAB**
+  empaquetado (`alerta_sismica.wav`), `setBypassDnd(true)` (requiere acceso a política de
+  notificaciones concedido en onboarding — flujo guiado obligatorio, pantalla 0.2).
+  > **Corrección [`D-19`, 2026-08-17].** Esto decía «sonido **oficial** de alerta empaquetado»,
+  > que era el tono del SASMEX pendiente de licenciar. **Se descartó pedir esa licencia:** el
+  > tono es propio, y es el mismo que sale por el altavoz del gabinete. Reproducir el oficial
+  > diría por el altavoz que esto es SASMEX, justo lo contrario del deslinde que el sistema
+  > declara por escrito (precedente medido: `T-2.104`).
+  >
+  > **Y el `_v2` no es cosmético.** El sonido de un canal Android es **inmutable tras crearlo**,
+  > así que estrenar tono obliga a estrenar id: sin eso, el teléfono que ya tenía el canal
+  > seguiría sonando con el del sistema y nada lo diría.
+- **TRES** clases de push, jamás mezcladas:
+  1. `CRISIS` (alerta activa, cambio de fase): máxima prioridad, sonido crítico, canal sísmico.
+  2. `PANIC` (activación manual del inmueble por quórum de pánico — `T-2.147.a`, `D-05`/`D-11`):
+     canal propio `building_alarm`, `IMPORTANCE_MAX` + bypass de DND —**despierta como una
+     crisis**— y **sonido del sistema**, nunca el sísmico: no es un sismo y vestirlo de sismo
+     sería `T-2.104` otra vez.
+  3. `OPS` (dictamen recibido, sync completada, recordatorio de simulacro, aviso a no
      reportados del headcount): prioridad normal.
+
+> **El canal que se nombra tiene que existir, y eso ahora lo vigila un test.** FCM, ante un
+> `channel_id` que la app no ha creado, cae al canal por defecto —importancia `DEFAULT`, sin
+> bypass de DND—: el push llega y **no despierta a nadie**, sin un solo error. Le pasó a
+> `building_alarm`, declarado en la nube el 2026-08-16 y no construido en la app hasta el
+> 2026-08-22. Lo fija `api/tests/notify/test_censo_canales_y_sonidos.py`, junto con que todo
+> sonido propio que la nube nombre viaje de verdad en el bundle.
 - Payload mínimo `{type, site_id, incident_id, phase}` — **sin datos sensibles** (aparece en
   lockscreen). El contenido real se obtiene por API al abrir.
 - **La push es best-effort y la cascada es FAIL-OPEN: la protección de vida es la sirena del
@@ -501,6 +521,41 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 - Rate-limit por usuario; todo voto audita.
 - **Aceptación:** un solo voto JAMÁS activa (test); dos votos del MISMO usuario JAMÁS activan;
   dos usuarios en ventana → comando emitido + entrada de auditoría.
+
+#### 1.9.b Acuse de la brigada ante una alarma del inmueble (T-2.147.b · D-05 — SE AGREGA)
+
+- **Dónde vive:** en la pantalla de **ALARMA DEL INMUEBLE** (`alarma-inmueble.tsx`), al pie del
+  bloque que explica la alarma. No es pantalla propia: quien tiene que acusar ya está mirando
+  ésa, y mandarlo a otra sería un salto de más en el peor momento.
+- **Quién lo ve:** **solo** quien trae `allowed_actions.manual_activate` — server-driven, jamás
+  una lista de roles en el cliente. Es **la misma acción** con la que la nube elige a quién
+  despierta el push (`T-2.147.a`), y que sean la misma no es economía: si divergieran, alguien
+  despertado sin poder acusar parecería «sin respuesta» para siempre y dispararía el escalado al
+  SOC **por un fallo de permisos**, no por una brigada ausente. Un `occupant` no ve nada.
+- **Qué dice mientras la alarma sigue viva** —que es lo que esta sección existe para fijar—:
+  - Botón: **«ESTOY ATENDIENDO»**. Al pie, en pequeño: *«Avisa al centro de monitoreo de que la
+    brigada respondió. **No silencia la sirena.**»*
+  - Ya acusado: **«ACUSE REGISTRADO»** + la hora + *«La sirena sigue sonando: acusar no la
+    apaga.»* Estado terminal para ese teléfono.
+  - Fallo: se **declara** y deja reintentar. Un acuse perdido en silencio es la peor
+    combinación posible — quien lo pulsó cree que ya avisó, y el SOC escala igual a los ~2 min.
+
+> ### ⚠️ Los dos deberes NEGATIVOS, que son la mitad del diseño
+> **Acusar NO silencia la sirena** (eso es `siren_silence`: otra acción, otro permiso, y va por
+> el camino de emergencia) **y NO cambia el estado del incidente** (eso es `ack_incident`, y es
+> del SOC). Conflarlos costaría en las **dos** direcciones: un brigadista vaciaría la cola del
+> SOC desde el teléfono, **y** el acuse del SOC contaría como respuesta de la brigada, apagando
+> el escalado sin que nadie hubiera bajado a mirar — que es justo el fallo que ese escalado
+> existe para impedir.
+>
+> Y el texto no puede prometer ninguna de las dos cosas. Es `T-2.104` aplicado a un control en
+> vez de a un titular: **lo que dice el botón es lo que la persona cree que hizo.**
+
+> **Por qué esto no existía hasta el 2026-08-22.** El endpoint
+> `POST /incidents/{id}/tactical-ack` está construido y probado desde el 2026-08-16, y **nadie
+> podía pulsarlo**. Así que `T-2.147.c` medía «cero acuses», que era literalmente siempre cierto,
+> y **el escalado al SOC saltaba en todos los pánicos**: los dos apagadores que `D-05` diseñó
+> —acuse de la brigada, o que el SOC ya haya acusado— eran uno solo.
 
 ### PERFIL 2 · TÁCTICO (`brigadista`, `security_guard`; + `inspector`/`building_admin` D4d)
 

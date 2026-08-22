@@ -121,8 +121,11 @@ function maintData(over: Partial<MaintenanceData> = {}): MaintenanceData {
     updatedAt: Date.now(),
     refetch: vi.fn(),
     close: vi.fn(),
+    open: vi.fn(),
     pending: false,
+    openPending: false,
     error: null,
+    openError: null,
     ...over,
   };
 }
@@ -383,6 +386,60 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
     render(<FleetPage />);
     expect(screen.getByRole("button", { name: "EDITAR GABINETE" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "RETIRAR" })).toBeInTheDocument();
+  });
+
+  // [T-2.71] Abrir ventana cuelga de su PROPIA acción, no de `manage_fleet`:
+  // silenciar avisos y administrar inventario son permisos distintos.
+  it("sin maintenance_window no se ofrece abrir ventana", () => {
+    seedAuthenticated(ME_FIXTURES.soc_operator);
+    render(<FleetPage />);
+    expect(screen.queryByTestId("open-window")).not.toBeInTheDocument();
+  });
+
+  it("con maintenance_window se ofrece, y el motivo llega al servidor", () => {
+    const maint = maintData();
+    mocks.useMaintenanceWindows.mockReturnValue(maint);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByTestId("open-window"));
+    fireEvent.change(screen.getByTestId("open-window-reason"), {
+      target: { value: "cambio de UPS" },
+    });
+    fireEvent.click(screen.getByTestId("open-window-confirm"));
+    expect(maint.open).toHaveBeenCalledWith({
+      gateway_id: "1",
+      reason: "cambio de UPS",
+      duration_s: 1800,
+    });
+  });
+
+  // Dos ventanas sobre el mismo gabinete no suman silencio: suman confusión sobre
+  // cuál venció. Con una viva, lo que se ofrece es CERRARLA, no abrir otra.
+  it("con una ventana YA viva no se ofrece abrir otra", () => {
+    mocks.useMaintenanceWindows.mockReturnValue(
+      maintData({
+        items: [
+          {
+            window_id: "w-1",
+            gateway_id: "1",
+            scope: "gateway",
+            reason: "cambio de UPS",
+            opened_at: new Date().toISOString(),
+            ends_at: new Date(Date.now() + 3_600_000).toISOString(),
+            // `windowCovering` descarta toda ventana con `closed_at` no nulo: sin
+            // este campo el objeto no es una ventana viva y la tarjeta no la pinta.
+            closed_at: null,
+            muted_alarms: 0,
+            total_alarms: 0,
+            mute_verified: false,
+          } as never,
+        ],
+      }),
+    );
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
+    render(<FleetPage />);
+    expect(screen.getByTestId("maintenance-badge")).toBeInTheDocument();
+    expect(screen.queryByTestId("open-window")).not.toBeInTheDocument();
   });
 
   it("EDITAR abre el formulario con el gabinete precargado", () => {

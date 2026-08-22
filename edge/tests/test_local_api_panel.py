@@ -118,6 +118,10 @@ def _base() -> dict:
             "installed": ["gas_valve", "siren"],
             "missing": [],
         },
+        # [T-2.146 · SPOF-02] Nominal HOY = sin ruta de hardware: el `K_wd` no está
+        # montado (`D-16` aplazó la BOM), así que el latido nace deshabilitado. No es
+        # una avería, y por eso tiene rótulo propio y no el de «no late».
+        "keepalive": {"estado": "sin_ruta", "enabled": False, "beating": False},
         "captured_at": _NOW,
         "site_lat": 19.0414,
         "site_lon": -98.2063,
@@ -235,6 +239,8 @@ def _cold() -> dict:
             # canales antes de que el panel escuche. Una lista vacía aquí no
             # tiene explicación conocida, y eso es la PEOR causa, no la benigna.
             "relays_status": {"reason": "unknown", "installed": None, "missing": []},
+            # En frío no se pudo leer el gpio: no se afirma ninguno de los tres.
+            "keepalive": {"estado": "sd", "enabled": False, "beating": None},
             "lora": None,
             "site_lat": None,
             "site_lon": None,

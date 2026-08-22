@@ -23,6 +23,8 @@ import { Redirect } from "expo-router";
 
 import { useSessionStore } from "@/auth/session.store";
 import { BuildingAlarmView, horaDeReloj } from "@/features/alarm/BuildingAlarmView";
+import { TacticalAckButton } from "@/features/alarm/TacticalAckButton";
+import { useTacticalAck } from "@/features/alarm/useTacticalAck";
 import { useAlertState } from "@/features/alert/useAlertState";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
@@ -42,6 +44,18 @@ export default function AlarmaInmueble() {
   const status = useSessionStore((s) => s.status);
   const siteId = useWatchedSiteId();
   const { state, data, loading, error, stale, dataUpdatedAt, refetch } = useAlertState(siteId);
+
+  // [T-2.147.b] Quién puede acusar lo dice el SERVIDOR, con la MISMA acción que usa
+  // para elegir a quién despierta el push (`roles_with_action("manual_activate")`).
+  // Una lista de roles escrita aquí divergiría de aquélla el día que entrara un rol
+  // nuevo, y entonces alguien despertado sin poder acusar parecería «sin respuesta»
+  // para siempre: el escalado al SOC saltaría por un fallo de permisos.
+  const puedeAcusar = useSessionStore((s) => s.me?.allowed_actions?.manual_activate === true);
+  // El incidente `trigger='manual'` que `D-11` abre. `mobile_state` lo sirve sin
+  // filtrar por trigger, así que su id ya viajaba: no hizo falta tocar el contrato.
+  const incidenteManual =
+    data?.incident?.trigger === "manual" ? (data.incident.incident_id ?? null) : null;
+  const acuse = useTacticalAck(incidenteManual);
 
   if (status !== "authenticated") {
     return <Redirect href="/" />;
@@ -73,6 +87,14 @@ export default function AlarmaInmueble() {
       {alarma !== null && data !== null ? (
         <BuildingAlarmView
           sinceLabel={horaDeReloj(alarma.since)}
+          slotAcuse={
+            <TacticalAckButton
+              acusadoALas={acuse.acusadoEn ? horaDeReloj(acuse.acusadoEn) : null}
+              estado={acuse.estado}
+              onPress={() => void acuse.acusar()}
+              visible={puedeAcusar && incidenteManual !== null}
+            />
+          }
           zoneName={data.my_zone?.name ?? null}
         />
       ) : null}

@@ -100,6 +100,8 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     manage_retire_code: true,
     manage_users: true,
     enrollment_manage: true,
+    maintenance_window: true,
+    platform_maintenance_window: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
   takab_support: me("takab_support", ALL_ROUTES, { read_audit: true }),
@@ -115,6 +117,12 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     drill_start: true,
     manage_users: true,
     enrollment_manage: true,
+    // [T-2.71] La matriz real da `maintenance_window` a superadmin y tenant_admin
+    // (`roles_with_action("maintenance_window")`). Este espejo lo tenía en `false`
+    // para los dos, así que una superficie que dependiera del permiso salía
+    // «no visible» en los tests aunque el rol sí lo tuviera — un verde que mide
+    // el fixture y no la matriz.
+    maintenance_window: true,
   }),
   soc_operator: me("soc_operator", ["/console", "/fleet", "/triage", "/building"], {
     ack_incident: true,
