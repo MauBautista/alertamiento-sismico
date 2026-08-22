@@ -4411,6 +4411,31 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 > correo que nunca salió tiene id—. Misma familia que el `alert_latched` de `T-2.28`: un estado que
 > no se limpia contamina la lectura siguiente.
 
+> ### ⚠️ Y el primer intento no funcionó: la lista de eventos se declaró DOS VECES
+>
+> La regla de EventBridge filtraba por `source` **y por `detail-type`**, duplicando la lista que el
+> configuration set ya declara. Se escribieron `"Email Send"` y `"Email Delivery"`; **SES envía
+> `Email Sent` y `Email Delivered`**.
+>
+> **Medido: `Invocations = 0`, `FailedInvocations = 0`, el grupo de logs vacío — y ni un error.**
+> El fallo no fue un rechazo: fue una **ausencia**. Exactamente el modo de fallo que esta ficha
+> existe para eliminar, reintroducido por su propia implementación.
+>
+> **El arreglo no fue corregir los nombres: fue quitar la duplicación.** El configuration set ya
+> elige qué eventos salen; la regla solo tiene que recogerlos. Así, además, un tipo nuevo entra solo
+> el día que se añada arriba. Con test que lo impide volver.
+>
+> Es la tercera vez en la misma sesión que dos declaraciones del mismo hecho divergen —después del
+> enlace del correo (`T-2.158`) y del nombre del configuration set (`T-2.155`)—. Y las tres veces
+> el síntoma fue el mismo: **nada falla, simplemente no ocurre.**
+>
+> **Verificado de extremo a extremo**, que es lo único que cierra esta ficha:
+> ```
+> ¿qué pasó con 010f01a02af55808-…-0466bf26efe7-000000?
+>   · Email Sent      | 19:31:57Z | ['ops@takabailert.com']
+>   · Email Delivered | 19:31:58Z | ['ops@takabailert.com']
+> ```
+
 > ### El censo del módulo tuvo que crecer con la familia
 > `ses_domain.tftest.hcl` enumera por regex los recursos SES/DNS/SNS y exige que cada uno tenga su
 > aserción de «con la variable vacía no se crea nada». **El historial entró por `aws_cloudwatch_*`,

@@ -345,9 +345,17 @@ resource "aws_cloudwatch_event_rule" "ses_eventos" {
   name        = "takab-dev-ses-eventos"
   description = "Eventos de SES del configuration set, a un registro consultable (T-2.160)"
 
+  # SOLO `source`. Filtrar tambien por `detail-type` seria declarar DOS VECES la
+  # misma lista: el configuration set de abajo ya elige que eventos envia SES, y
+  # esta regla solo tiene que recogerlos.
+  #
+  # Medido el 2026-08-22: con la lista duplicada, `Invocations = 0` — ni un evento
+  # casó. Los `detail-type` que envia SES no son los que yo supuse, y como el error
+  # no produce fallo sino AUSENCIA, el grupo de logs se quedo vacio sin que nada
+  # se quejara. Dos declaraciones del mismo hecho divergen; esta divergio en el
+  # primer intento.
   event_pattern = jsonencode({
-    source        = ["aws.ses"]
-    "detail-type" = ["Email Send", "Email Delivery", "Email Bounce", "Email Complaint", "Email Rejected", "Email DeliveryDelay", "Email Rendering Failure"]
+    source = ["aws.ses"]
   })
 }
 

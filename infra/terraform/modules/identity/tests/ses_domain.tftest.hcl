@@ -359,6 +359,19 @@ run "los_eventos_de_correo_van_a_un_registro_consultable" {
     error_message = "El historial debe incluir SEND y DELIVERY, no solo los fallos: «SES no se quejo» no es lo mismo que «llego», y esa distincion es la que abre el §1 de este runbook."
   }
 
+  # [T-2.160] La regla filtra SOLO por `source`. Filtrar tambien por `detail-type`
+  # duplica la lista que ya declara el configuration set, y una lista duplicada
+  # diverge: al escribirla se puso "Email Send"/"Email Delivery" y SES envia
+  # "Email Sent"/"Email Delivered". Resultado medido: `Invocations = 0`, el grupo
+  # de logs vacio, y NINGUN error — el fallo no fue un rechazo, fue una AUSENCIA.
+  #
+  # Ademas, sin duplicar, un tipo de evento nuevo entra solo el dia que se anada
+  # arriba.
+  assert {
+    condition     = !strcontains(aws_cloudwatch_event_rule.ses_eventos[0].event_pattern, "detail-type")
+    error_message = "La regla no puede filtrar por `detail-type`: eso duplica la lista del configuration set y las dos divergen. Ya paso — con los nombres supuestos la regla no caso ni un evento y el historial quedo vacio en silencio. El destino ya elige que se envia; la regla solo recoge."
+  }
+
   # La retencion se declara. Un historial que se poda en silencio reproduce el
   # mismo agujero mas tarde y con menos ruido.
   assert {
