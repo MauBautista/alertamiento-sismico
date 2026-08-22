@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **298** · `[x]` **241** · `[~]` **9** · `[ ]` **48**
+**Conteo de tareas:** total **299** · `[x]` **242** · `[~]` **9** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4358,6 +4358,37 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
   - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+### [x] T-2.161 · El acuse de guardia no se podía enviar desde la consola — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** api (`routers/ops_alerts.py`) · **Hallado:** 2026-08-22, ejecutando el ensayo
+  cronometrado de `T-2.78` · **Bloqueaba:** el criterio 2 de `T-2.78` (`C-5`)
+- **El hecho:** el formulario declaraba `action="/ops/alerts/ack"`, una ruta **absoluta**. La
+  consola publica la API bajo `/api`, así que la página se pinta en
+  `https://<consola>/api/ops/alerts/ack` —Caddy quita el prefijo al pasar— pero **al enviar** el
+  navegador resuelve la ruta absoluta contra el host y va a `/ops/alerts/ack`, que ya no es la API:
+  es el SPA, y contesta **405**.
+- **Cómo se manifestó, y es lo que lo hacía difícil de ver:** la página **funcionaba**, el endpoint
+  **funcionaba**, la credencial **era válida** — y el enlace entre los dos no existía. En el log de
+  la API no aparecía ni un `POST`: solo el `GET` que sirvió el formulario.
+- **El arreglo:** `action=""`, que envía a la URL que sirvió la página, con prefijo o sin él. **El
+  endpoint no puede arreglarlo sabiendo su prefijo** — lo decide un proxy que vive en otro sitio;
+  lo único que no depende de esa suposición es no hacerla.
+- **Criterios de aceptación:**
+  - [x] `action` relativo, con test que impide volver a fijar una ruta absoluta.
+  - [x] El test cubre también que **siga siendo** un `post` con el campo `token` de tipo
+        `password` — la guarda no puede pasar rompiendo el formulario.
+  - [x] Desplegado y comprobado con un `POST` real que llega a la API.
+
+> ### ⚠️ Y el diagnóstico costó dos correcciones, las dos mías
+>
+> **Primero acusé al `action`** —correctamente—, **y luego me desdije** al ver en el log un
+> `POST /ops/alerts/ack` desde la IP de Mauricio. **Ese POST era mío**: un `curl` de prueba lanzado
+> desde su propia máquina, que sale por la misma IP pública que su navegador. Atribuí mi petición a
+> su formulario y «corregí» un diagnóstico que estaba bien.
+>
+> **La lección:** en un log, la IP no identifica al actor cuando el agente y la persona comparten
+> salida a internet. Lo que distinguía a los dos era la **hora** y el hecho de que el mío llevaba
+> `token=x`; nada de eso se miró antes de concluir.
 
 ### [x] T-2.160 · «¿Llegó ESTE correo?» no tiene respuesta: no hay historial de entrega — `SOFTWARE` · COMPLETA (2026-08-22)
 - **Componente:** infra (`modules/identity`) · **Hallado:** 2026-08-22, intentando diagnosticar dos
@@ -8889,7 +8920,31 @@ sería documentar intenciones.
 > cedido— también estaba vivo aquí, **agravado** porque se llevaba por delante el registry
 > caliente.
 
-### [ ] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra — `SOFTWARE`
+### [ ] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra
+
+> ### ⚠️ Añadido el 2026-08-22: `dlq_depth` tiene el valor CONTRARIO al que razona su comentario
+>
+> En `modules/observability/main.tf`, dos líneas seguidas:
+>
+> ```hcl
+> # missing=notBreaching: sin trafico no hay datapoint y no es alarma.
+> ...
+> treat_missing_data  = "breaching"
+> ```
+>
+> Con `breaching`, una DLQ **sana y sin tráfico** —que es su estado normal— dispara en cuanto SQS
+> deja de publicar datapoints. Hoy no ocurre porque la métrica fluye, así que **el defecto está
+> dormido**: no se ve hasta que la cola lleve suficiente tiempo inactiva.
+>
+> **Cuál de los dos es el correcto no es obvio y hay que decidirlo, no elegir el que calle.** El
+> comentario razona `notBreaching` («sin tráfico no es alarma»), y para una DLQ eso encaja: vacía e
+> inactiva es lo que se quiere. Pero `notBreaching` también silencia el caso en que SQS deja de
+> publicar **porque algo se rompió**. Es la misma disyuntiva que ya resolvió la alarma del gabinete
+> mudo, y allí se eligió vigilar la **ausencia**.
+>
+> Descubierto al preparar el ensayo cronometrado de `T-2.78`, que eligió esta alarma **citando el
+> comentario** — o sea que el runbook heredó la contradicción sin notarlo.
+ — `SOFTWARE`
 - **Componente:** infra · **Detectada por:** `T-2.72.d` (2026-08-14), al derivar el censo
 - El censo repo-wide de `T-2.72.d` encontró **tres alarmas sin aserción de `treat_missing_data`**
   en Terraform: `dlq_depth`, `iot_rule_errors` —**las dos INTOCABLES**— y `ec2_cpu`. Ninguna tiene
