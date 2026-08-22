@@ -542,6 +542,63 @@ _CATALOG_TOUCH_SQL = sql_text(
 )
 
 
+#: Claves que el GABINETE exige y sin las cuales rechaza el catálogo ENTERO.
+#:
+#: `edge/takab_edge/catalog.py::normalize_catalog` las subscribe directamente
+#: (`e["m"]`, `e["lat"]`, `e["lon"]`, `r["n"]`…), así que una que falte levanta
+#: `KeyError` → `CatalogError` → **no se escribe un byte** en el gabinete.
+#: `api/tests/api/test_catalogo_espejo_del_edge.py` fija que estas listas sigan
+#: siendo las suyas.
+_EVENTO_OBLIGATORIO = ("m", "lat", "lon")
+_REFERENCIA_OBLIGATORIA = ("n", "lat", "lon")
+
+
+def _validar_catalogo(catalog: dict) -> None:
+    """Rechaza aquí lo que el gabinete rechazaría allá.
+
+    **Por qué no basta con `eventos` lista y `capturado` truthy**, que es lo único
+    que se comprobaba hasta el 2026-08-22: un catálogo con las claves del entregable
+    de diseño (`mag`, `prof_km`) pasaba esta puerta, se FIRMABA, se PUBLICABA por
+    IoT —quemando versión, despertando al gabinete y dejando su renglón permanente
+    en `audit_log`, que no se poda— y el gabinete lo tiraba entero. El fallo
+    aterrizaba a un salto de distancia de su causa y en la máquina equivocada.
+
+    Es la misma doctrina que el resto del proyecto: **el sitio donde debe fallar es
+    donde se puede corregir**, y con un mensaje que diga qué falta.
+    """
+    if not catalog.get("capturado"):
+        raise http_error(400, "catálogo inválido: falta 'capturado'")
+    eventos = catalog.get("eventos")
+    if not isinstance(eventos, list):
+        raise http_error(400, "catálogo inválido: 'eventos' tiene que ser una lista")
+    for i, evento in enumerate(eventos):
+        if not isinstance(evento, dict):
+            raise http_error(400, f"catálogo inválido: evento {i} no es un objeto")
+        faltan = [k for k in _EVENTO_OBLIGATORIO if evento.get(k) is None]
+        if faltan:
+            raise http_error(
+                400,
+                f"catálogo inválido: al evento {i} le faltan {faltan} — el gabinete "
+                "rechazaría el catálogo entero",
+            )
+        for clave in _EVENTO_OBLIGATORIO:
+            try:
+                float(evento[clave])
+            except (TypeError, ValueError):
+                raise http_error(
+                    400, f"catálogo inválido: evento {i}, '{clave}' no es un número"
+                ) from None
+    referencias = catalog.get("referencias", [])
+    if not isinstance(referencias, list):
+        raise http_error(400, "catálogo inválido: 'referencias' tiene que ser una lista")
+    for i, ref in enumerate(referencias):
+        if not isinstance(ref, dict) or [k for k in _REFERENCIA_OBLIGATORIA if ref.get(k) is None]:
+            raise http_error(
+                400,
+                f"catálogo inválido: la referencia {i} exige {list(_REFERENCIA_OBLIGATORIA)}",
+            )
+
+
 @router.post("/gateways/{gateway_id}/catalog", response_model=CatalogPushOut, status_code=202)
 async def push_catalog(
     gateway_id: UUID,
@@ -555,13 +612,16 @@ async def push_catalog(
 
     Versión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza
     toda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503
-    (fail-closed, jamás se firma con una compartida). La periodicidad es una
-    llamada programada a este endpoint; el contrato de ``GET /api/catalog`` en
-    el panel no cambia.
+    (fail-closed, jamás se firma con una compartida). El contrato de
+    ``GET /api/catalog`` en el panel no cambia.
+
+    **Hoy lo llama una persona a mano.** Este docstring prometía que «la periodicidad
+    es una llamada programada a este endpoint» desde antes de que existiera tal
+    llamada — es lo que `T-2.66.b` denunció. El job de `D-06` es `T-2.149`, y sigue
+    sin escribirse: prometerlo aquí hacía creer que ya estaba.
     """
     catalog = body.catalog
-    if not isinstance(catalog.get("eventos"), list) or not catalog.get("capturado"):
-        raise http_error(400, "catálogo inválido: exige 'eventos' (lista) y 'capturado'")
+    _validar_catalogo(catalog)
     row = (await conn.execute(_CATALOG_GATEWAY_SQL, {"gw": gateway_id})).first()
     if row is None:
         raise http_error(404, "gateway inexistente")

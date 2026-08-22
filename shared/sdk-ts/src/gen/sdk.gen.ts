@@ -362,9 +362,13 @@ export const publishReleaseFleetReleasesPost = <ThrowOnError extends boolean = f
  *
  * Versión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza
  * toda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503
- * (fail-closed, jamás se firma con una compartida). La periodicidad es una
- * llamada programada a este endpoint; el contrato de ``GET /api/catalog`` en
- * el panel no cambia.
+ * (fail-closed, jamás se firma con una compartida). El contrato de
+ * ``GET /api/catalog`` en el panel no cambia.
+ *
+ * **Hoy lo llama una persona a mano.** Este docstring prometía que «la periodicidad
+ * es una llamada programada a este endpoint» desde antes de que existiera tal
+ * llamada — es lo que `T-2.66.b` denunció. El job de `D-06` es `T-2.149`, y sigue
+ * sin escribirse: prometerlo aquí hacía creer que ya estaba.
  */
 export const pushCatalogGatewaysGatewayIdCatalogPost = <ThrowOnError extends boolean = false>(options: Options<PushCatalogGatewaysGatewayIdCatalogPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<PushCatalogGatewaysGatewayIdCatalogPostResponse, PushCatalogGatewaysGatewayIdCatalogPostError, ThrowOnError>({
@@ -379,7 +383,7 @@ export const pushCatalogGatewaysGatewayIdCatalogPost = <ThrowOnError extends boo
 
 /**
  * Health
- * Salud del servicio y commit desplegado.
+ * Salud del servicio, commit desplegado y deriva de esquema.
  */
 export const healthHealthGet = <ThrowOnError extends boolean = false>(options?: Options<HealthHealthGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<HealthHealthGetResponse, unknown, ThrowOnError>({

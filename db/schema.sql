@@ -972,14 +972,7 @@ CREATE TABLE gateway_config_state (
   version      integer NOT NULL,
   payload      jsonb NOT NULL,
   sig          text NOT NULL,
-  published_at timestamptz NOT NULL DEFAULT now(),
-  -- [T-2.148] «Miré y era el mismo catálogo». NO es `published_at`: aquél dice
-  -- cuándo se publicó por última vez, y su virtud es no moverse cuando no se
-  -- publica. Sin esta columna, con el job de D-06 «corre y no hay novedad» sería
-  -- indistinguible de «el job murió» — el modo de fallo que esa decisión quería
-  -- evitar al automatizar contra una fuente de terceros.
-  -- NULL = no se ha comprobado NUNCA, que es un hecho distinto de «hace mucho».
-  last_checked_at timestamptz
+  published_at timestamptz NOT NULL DEFAULT now()
 );
 GRANT SELECT ON gateway_config_state TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON gateway_config_state TO takab_ingest;
@@ -1000,7 +993,21 @@ CREATE TABLE gateway_catalog_state (
   version      integer NOT NULL,
   payload      jsonb NOT NULL,
   sig          text NOT NULL,
-  published_at timestamptz NOT NULL DEFAULT now()
+  published_at timestamptz NOT NULL DEFAULT now(),
+  -- [T-2.148] «Miré y era el mismo catálogo». NO es `published_at`: aquél dice
+  -- cuándo se publicó por última vez, y su virtud es no moverse cuando no se
+  -- publica. Sin esta columna, con el job de D-06 «corre y no hay novedad» sería
+  -- indistinguible de «el job murió» — el modo de fallo que esa decisión quería
+  -- evitar al automatizar contra una fuente de terceros.
+  -- NULL = no se ha comprobado NUNCA, que es un hecho distinto de «hace mucho».
+  --
+  -- ⚠️ Hasta el 2026-08-22 esta columna estaba en `gateway_config_state`, la tabla
+  -- de al lado. La migración 0045 SÍ la puso aquí, así que las dos fuentes de
+  -- verdad del DDL divergían: la de config era huérfana (cero lectores) y una base
+  -- creada desde este fichero reventaba en `_CATALOG_TOUCH_SQL`. No se veía porque
+  -- los tests arrancan por `alembic upgrade head` y nada comparaba las dos fuentes;
+  -- ahora lo hace `api/tests/test_schema_espejo_de_migraciones.py`.
+  last_checked_at timestamptz
 );
 GRANT SELECT, INSERT, UPDATE ON gateway_catalog_state TO takab_app;
 

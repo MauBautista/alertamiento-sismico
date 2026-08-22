@@ -10529,7 +10529,7 @@
     },
     "/gateways/{gateway_id}/catalog": {
       "post": {
-        "description": "Firma y publica la instantánea SSN a ``takab/catalog/<thing>`` (T-2.24).\n\nVersión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza\ntoda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503\n(fail-closed, jamás se firma con una compartida). La periodicidad es una\nllamada programada a este endpoint; el contrato de ``GET /api/catalog`` en\nel panel no cambia.",
+        "description": "Firma y publica la instantánea SSN a ``takab/catalog/<thing>`` (T-2.24).\n\nVersión MONÓTONA por gateway (``gateway_catalog_state``); el edge rechaza\ntoda versión ya vista y persiste ATÓMICO. Sin clave HMAC resoluble ⇒ 503\n(fail-closed, jamás se firma con una compartida). El contrato de\n``GET /api/catalog`` en el panel no cambia.\n\n**Hoy lo llama una persona a mano.** Este docstring prometía que «la periodicidad\nes una llamada programada a este endpoint» desde antes de que existiera tal\nllamada — es lo que `T-2.66.b` denunció. El job de `D-06` es `T-2.149`, y sigue\nsin escribirse: prometerlo aquí hacía creer que ya estaba.",
         "operationId": "push_catalog_gateways__gateway_id__catalog_post",
         "parameters": [
           {
@@ -10580,16 +10580,14 @@
     },
     "/health": {
       "get": {
-        "description": "Salud del servicio y commit desplegado.",
+        "description": "Salud del servicio, commit desplegado y deriva de esquema.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
+                  "additionalProperties": true,
                   "title": "Response Health Health Get",
                   "type": "object"
                 }

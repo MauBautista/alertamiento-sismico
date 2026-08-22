@@ -2936,7 +2936,7 @@ export type HealthHealthGetResponses = {
      * Successful Response
      */
     200: {
-        [key: string]: string;
+        [key: string]: unknown;
     };
 };
 
