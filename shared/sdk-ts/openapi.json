@@ -6488,6 +6488,126 @@
         "title": "PanicVoteOut",
         "type": "object"
       },
+      "PhoneErasureIn": {
+        "additionalProperties": false,
+        "description": "[T-2.151 · D-23] ARCO de un titular que solo dio su teléfono.\n\nLleva el número **y** la acreditación en el mismo cuerpo, y las dos cosas son\ninseparables a propósito: `D-23` puso la titularidad en manos del cliente\ninstitucional que recogió el consentimiento, así que ejercer este derecho es\nexhibir el escrito que lo pide. Sin `proof_digest` no hay documento concreto\nque no se pueda sustituir después — solo la palabra de quien ejecuta.\n\n**Por qué el número viaja aquí y no en una constancia previa** (que es como\nfunciona el ARCO por escrito de `T-2.80.b`): registrar hoy y ejecutar más\ntarde obligaría a guardar su índice, y `privacy_erasure_requests` es\nappend-only, así que ese índice sobreviviría al borrado que lo motivó. Ver la\ncabecera de la migración `0047`.",
+        "properties": {
+          "channel": {
+            "default": "written",
+            "enum": [
+              "written",
+              "email",
+              "in_person",
+              "legal_representative"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "msisdn": {
+            "pattern": "^\\+[1-9][0-9]{7,14}$",
+            "title": "Msisdn",
+            "type": "string"
+          },
+          "proof_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proof Digest",
+            "type": "string"
+          },
+          "proof_ref": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Proof Ref",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "right": {
+            "default": "cancelacion",
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right",
+            "type": "string"
+          }
+        },
+        "required": [
+          "msisdn",
+          "received_at",
+          "proof_ref",
+          "proof_digest"
+        ],
+        "title": "PhoneErasureIn",
+        "type": "object"
+      },
+      "PhoneErasureOut": {
+        "description": "La lápida del sujeto-teléfono. **Idéntica exista o no el número.**\n\nNo trae `user_sub` —ese titular no tiene ninguno— y `affected` es siempre\n`{}`: un conteo de filas destruidas sería un oráculo de existencia, y con una\ncredencial de responsable se barrería un rango de números para saber cuáles\nconstan y, con ellos, en qué edificio está quien los lleva.\n\nLo que sí trae es lo que hace el acto verificable: la constancia que lo\nautoriza y el par marca-de-agua/digest con el que cualquiera puede recalcular\nla bitácora años después.",
+        "properties": {
+          "affected": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Affected",
+            "type": "object"
+          },
+          "audit_digest": {
+            "title": "Audit Digest",
+            "type": "string"
+          },
+          "audit_watermark": {
+            "title": "Audit Watermark",
+            "type": "integer"
+          },
+          "erased_at": {
+            "format": "date-time",
+            "title": "Erased At",
+            "type": "string"
+          },
+          "erasure_id": {
+            "format": "uuid",
+            "title": "Erasure Id",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "right_exercised": {
+            "enum": [
+              "cancelacion",
+              "oposicion"
+            ],
+            "title": "Right Exercised",
+            "type": "string"
+          },
+          "via": {
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "erasure_id",
+          "right_exercised",
+          "requested_by",
+          "request_id",
+          "via",
+          "affected",
+          "audit_watermark",
+          "audit_digest",
+          "erased_at"
+        ],
+        "title": "PhoneErasureOut",
+        "type": "object"
+      },
       "PresignedDownload": {
         "description": "URL GET presignada de vida corta para descargar un objeto de evidencia.",
         "properties": {
@@ -12699,6 +12819,48 @@
           }
         },
         "summary": "Publish Notice",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/privacy/phone-erasures": {
+      "post": {
+        "description": "Olvida un número, y deja constancia de con qué escrito se pidió.\n\n**La respuesta es la misma exista el número o no**, y ese es el criterio\nentero: `forget_msisdn()` devuelve si había algo que destruir y ese booleano\n**se descarta aquí a propósito**. Distinguir «borrado» de «no encontrado»\nconvertiría el endpoint en un buscador de personas — con una credencial de\nresponsable se barre un rango de números y se averigua cuáles constan y, con\nellos, en qué edificio está quien los lleva.\n\nEl sujeto de otro cliente no se rechaza por una comprobación: **no se puede\nformular**. El índice del sello se deriva con el `tenant_id` de la sesión, así\nque el mismo teléfono es dos sujetos distintos en dos clientes (regla de oro 5).\n\nRegistrar y ejecutar van en una transacción, al contrario que el ARCO por\nescrito de `T-2.80.b`, que los separa. La razón es material y está en la\ncabecera de la migración `0047`: para ejecutar hay que tener el número\ndelante, y guardarlo para después significaría guardar su índice en una tabla\nappend-only, donde sobreviviría al borrado que lo motivó.",
+        "operationId": "erase_phone_subject_privacy_phone_erasures_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneErasureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneErasureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Erase Phone Subject",
         "tags": [
           "privacy"
         ]

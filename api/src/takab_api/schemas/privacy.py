@@ -206,6 +206,62 @@ class ErasureRequestIn(BaseModel):
     proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class PhoneErasureIn(BaseModel):
+    """[T-2.151 · D-23] ARCO de un titular que solo dio su teléfono.
+
+    Lleva el número **y** la acreditación en el mismo cuerpo, y las dos cosas son
+    inseparables a propósito: `D-23` puso la titularidad en manos del cliente
+    institucional que recogió el consentimiento, así que ejercer este derecho es
+    exhibir el escrito que lo pide. Sin `proof_digest` no hay documento concreto
+    que no se pueda sustituir después — solo la palabra de quien ejecuta.
+
+    **Por qué el número viaja aquí y no en una constancia previa** (que es como
+    funciona el ARCO por escrito de `T-2.80.b`): registrar hoy y ejecutar más
+    tarde obligaría a guardar su índice, y `privacy_erasure_requests` es
+    append-only, así que ese índice sobreviviría al borrado que lo motivó. Ver la
+    cabecera de la migración `0047`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: El número a olvidar. No se persiste en ninguna parte: se usa para derivar
+    #: el índice del sello, se destruye la fila y se descarta.
+    msisdn: str = Field(pattern=r"^\+[1-9][0-9]{7,14}$")
+    right: Right = "cancelacion"
+    channel: RequestChannel = "written"
+    #: Cuándo LLEGÓ la solicitud al cliente. De ahí corre el plazo legal, así que
+    #: lo pone quien la recibió y no el reloj del servidor.
+    received_at: datetime
+    proof_ref: str = Field(min_length=3, max_length=200)
+    proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class PhoneErasureOut(BaseModel):
+    """La lápida del sujeto-teléfono. **Idéntica exista o no el número.**
+
+    No trae `user_sub` —ese titular no tiene ninguno— y `affected` es siempre
+    `{}`: un conteo de filas destruidas sería un oráculo de existencia, y con una
+    credencial de responsable se barrería un rango de números para saber cuáles
+    constan y, con ellos, en qué edificio está quien los lleva.
+
+    Lo que sí trae es lo que hace el acto verificable: la constancia que lo
+    autoriza y el par marca-de-agua/digest con el que cualquiera puede recalcular
+    la bitácora años después.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    erasure_id: UUID
+    right_exercised: Right
+    requested_by: UUID
+    request_id: UUID
+    via: str
+    affected: dict[str, int]
+    audit_watermark: int
+    audit_digest: str
+    erased_at: datetime
+
+
 class ErasureRequestOut(BaseModel):
     """La constancia registrada. Sin PII del titular más allá de su `sub` opaco."""
 

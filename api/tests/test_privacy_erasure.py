@@ -651,6 +651,78 @@ def _arco_por_cuenta_de(conn: psycopg.Connection, request_id: str, *, via: str =
     return fila[0] if isinstance(fila[0], dict) else json.loads(fila[0])
 
 
+def test_una_lapida_de_telefono_sin_su_constancia_no_se_puede_insertar(
+    seeded: psycopg.Connection,
+) -> None:
+    """[T-2.151] La acreditación de `D-23`, medida donde se decide.
+
+    `pe_phone_on_behalf` no puede apoyarse en `app_can_erase_subject`, que busca
+    la constancia POR `user_sub`: un sujeto-teléfono no tiene ninguno, así que esa
+    comparación no encontraría nada. La exige por `request_id`, y este test
+    comprueba que la exigencia es REAL y no una frase del comentario.
+
+    Se prueban las dos formas de saltársela, y las dos caen **por la RLS**:
+
+    1. **Sin constancia ninguna** — un `request_id` inventado.
+    2. **Con una constancia REAL pero de otra clase** — la de un titular del
+       padrón. Ésta es la que importa: apunta a una fila que existe, así que el FK
+       está satisfecho y aun así la política se niega, porque la constancia que
+       autoriza olvidar un teléfono tiene que haberse registrado COMO tal. Sin
+       este segundo caso, el responsable podría reutilizar cualquier expediente
+       suyo para justificar cualquier borrado.
+
+    **Y el primer caso enseña algo que se predijo mal:** se esperaba que cayera
+    por integridad referencial, porque el `request_id` no apunta a nada. Cae antes
+    — el `EXISTS` de la política no encuentra la constancia y Postgres rechaza la
+    fila sin llegar a comprobar el FK. Las dos guardas están, pero el orden es el
+    contrario del que uno supone.
+    """
+    reset(seeded)
+    _persona(seeded, tenant=TENANT_A, user=USER_A)
+    _cierra_incidentes(seeded)
+    _responsable(seeded)
+
+    def _lapida(request_id: str) -> None:
+        seeded.execute(
+            "INSERT INTO privacy_erasures "
+            "  (tenant_id, user_sub, subject_kind, right_exercised, requested_by, "
+            "   request_id, via, affected, audit_watermark, audit_digest) "
+            "VALUES (%s, NULL, 'msisdn', 'cancelacion', %s, %s, 'console_admin', "
+            "        '{}'::jsonb, 0, %s)",
+            (TENANT_A, ADMIN_A, request_id, "0" * 64),
+        )
+
+    seeded.execute("SAVEPOINT antes")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        _lapida("00000000-0000-0000-0000-0000000000ff")
+    seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+    # Una constancia de verdad, pero registrada para un sujeto del padrón.
+    del_padron = _constancia(seeded, user=USER_A)
+    seeded.execute("SAVEPOINT antes")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        _lapida(del_padron)
+    seeded.execute("ROLLBACK TO SAVEPOINT antes")
+
+    # No-vacuidad: con SU constancia sí entra. Sin esto, lo de arriba podría
+    # significar "esta inserción nunca funciona", que no prueba nada.
+    propia = seeded.execute(
+        "INSERT INTO privacy_erasure_requests "
+        "  (user_sub, subject_kind, right_requested, channel, received_at, proof_ref, "
+        "   proof_digest, created_by) "
+        "VALUES (NULL, 'msisdn', 'cancelacion', 'written', now(), %s, %s, %s) "
+        "RETURNING request_id",
+        ("oficio 2026/114", "a" * 64, ADMIN_A),
+    ).fetchone()[0]
+    _lapida(propia)
+    assert (
+        seeded.execute(
+            "SELECT count(*) FROM privacy_erasures WHERE subject_kind = 'msisdn'"
+        ).fetchone()[0]
+        == 1
+    )
+
+
 def test_una_constancia_no_puede_nombrar_a_un_titular_de_otro_tenant(
     seeded: psycopg.Connection,
 ) -> None:

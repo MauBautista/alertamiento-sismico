@@ -458,6 +458,46 @@ _REQUEST = text(
 )
 
 
+_ERASE_PHONE = text(
+    "SELECT privacy_erase_phone_subject("
+    "  :right, :channel, :received_at, :proof_ref, :proof_digest, :via) AS lapida"
+)
+
+
+async def erase_phone_subject(
+    conn: AsyncConnection,
+    *,
+    right: str,
+    channel: str,
+    received_at: Any,
+    proof_ref: str,
+    proof_digest: str,
+    via: str,
+) -> dict[str, Any]:
+    """[T-2.151 · D-23] Registra la constancia y sella la lápida, en un acto.
+
+    **No recibe el número ni su índice**, y no es un descuido: destruir el sello
+    exige la pimienta del despliegue, que no está en la base, así que lo hace el
+    llamador antes de esto. Aquí solo se registra que el acto ocurrió.
+
+    El orden importa y es *destruir, luego registrar*: si esta inserción falla,
+    la transacción entera se deshace y el sello vuelve. Al revés quedaría una
+    lápida de un borrado que no llegó a pasar.
+    """
+    crudo = await conn.scalar(
+        _ERASE_PHONE,
+        {
+            "right": right,
+            "channel": channel,
+            "received_at": received_at,
+            "proof_ref": proof_ref,
+            "proof_digest": proof_digest,
+            "via": via,
+        },
+    )
+    return crudo if isinstance(crudo, dict) else json.loads(crudo)
+
+
 async def erase_self(conn: AsyncConnection, *, right: str, via: str) -> dict[str, Any]:
     """Ejerce ARCO sobre el titular de la SESIÓN. No hay otro sujeto posible.
 
