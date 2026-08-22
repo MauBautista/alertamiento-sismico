@@ -82,14 +82,19 @@ TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # identidad SES verificada; el link del correo al inspector apunta a la consola
 # publicada.
 #
-# [T-2.78.b · D-12] Remitente de DOMINIO desde 2026-08-21. El orden importa y ya
-# está cumplido, pero conviene saberlo si alguien lo vuelve a tocar: el statement
-# `WorkerSesSend` del rol de la instancia acota `Resource` a los ARN de identidad
-# concretos, así que cambiar ESTA línea sin que el ARN del dominio esté en el rol
-# da `AccessDenied` en cada envío — y los correos de CloudWatch seguirían llegando
+# [T-2.78.b, D-12] Remitente de DOMINIO desde 2026-08-21. El orden importa y ya
+# esta cumplido, pero conviene saberlo si alguien lo vuelve a tocar: el statement
+# WorkerSesSend del rol de la instancia acota Resource a los ARN de identidad
+# concretos, asi que cambiar ESTA linea sin que el ARN del dominio este en el rol
+# da AccessDenied en cada envio — y los correos de CloudWatch seguirian llegando
 # tan campantes, porque esos son SNS y llevan permiso propio. Es el fallo del
-# 2026-07-14 otra vez. Orden: identidad verificada -> ARN en el rol (`ses_domain`
-# en tfvars lo mete solo) -> esta línea -> envío real comprobado.
+# 2026-07-14 otra vez. Orden: identidad verificada -> ARN en el rol (ses_domain en
+# tfvars lo mete solo) -> esta linea -> envio real comprobado.
+#
+# SIN BACKTICKS Y A PROPOSITO: esto vive dentro del heredoc SIN comillas que abre
+# la linea 33, asi que un backtick aqui no es tipografia — el despliegue EJECUTA
+# en la maquina lo que haya entre ellos. Lo caza
+# test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar.
 TAKAB_API_NOTIFY_EMAIL_FROM=alertas@takabailert.com
 TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
 EOF
