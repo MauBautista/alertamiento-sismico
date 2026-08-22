@@ -50,7 +50,31 @@ def create_app() -> FastAPI:
     El ``lifespan`` arranca/detiene el hub del WebSocket (LISTEN/NOTIFY); solo
     corre cuando la app se sirve de verdad (uvicorn), no bajo ASGITransport.
     """
-    app = FastAPI(title="TAKAB API", version="0.1.0", lifespan=lifespan)
+    # [D-22] La documentación interactiva NO se publica en la nube.
+    #
+    # `web_allowed_cidrs` protegía por red todo lo que no exige autenticación.
+    # Al abrir la consola —para que AWS pueda confirmar la suscripción de SNS y
+    # para que el enlace de los correos sirva— eso deja de ser cierto.
+    #
+    # Medido antes de abrir: los datos daban 401, pero `/docs` y `/openapi.json`
+    # daban 200 sin credenciales. No es una vulnerabilidad —la oscuridad no
+    # protege y los 401 siguen— pero publicar el esquema completo de una
+    # plataforma de alertamiento le regala la enumeración a quien busque un borde.
+    #
+    # `redoc_url` va con ellas: sirve el MISMO esquema por otra puerta, y apagar
+    # dos de tres es no apagar ninguna.
+    #
+    # No rompe el SDK: `openapi.json` se exporta con `scripts/export_openapi.py`
+    # importando la app, no pidiéndoselo a un servidor vivo.
+    publico = Settings().es_produccion
+    app = FastAPI(
+        title="TAKAB API",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=None if publico else "/docs",
+        redoc_url=None if publico else "/redoc",
+        openapi_url=None if publico else "/openapi.json",
+    )
 
     # Fundación T-1.18.
     app.include_router(health_router)
