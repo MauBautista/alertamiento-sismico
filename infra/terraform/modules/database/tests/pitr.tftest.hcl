@@ -642,3 +642,60 @@ run "sin_ninguna_identidad_no_se_emite_el_statement_de_envio" {
     error_message = "Sin identidades ni dominio no debe emitirse `WorkerSesSend`: un statement con `Resource` vacia es IAM invalido y revienta el apply."
   }
 }
+
+# [T-2.155] EL CONFIGURATION SET TAMBIEN ES UN RECURSO, y sin el no se envia nada.
+#
+# El test de arriba —el del ARN de la identidad— existia y pasaba, y aun asi el
+# envio real murio:
+#
+#   AccessDeniedException ... 'ses:SendEmail'
+#   on resource '.../configuration-set/takab-dev-correo'
+#
+# La identidad de dominio lleva el configuration set POR DEFECTO, asi que SES lo
+# aplica en CADA envio sin que el emisor lo nombre — y entonces exige permiso
+# sobre los DOS recursos. Conceder solo la identidad deja un permiso que parece
+# completo y falla en el primer correo.
+#
+# Por que el test anterior no bastaba, que es la leccion: comprobaba que estuviera
+# lo que alguien penso en su momento, no que estuviera TODO lo que SES exige. Un
+# test que asegura la presencia de X no dice nada sobre la ausencia de Y.
+run "el_configuration_set_entra_en_el_permiso_de_envio" {
+  command = plan
+
+  variables {
+    notify_ses_identity_arns     = ["arn:aws:ses:us-east-2:000000000000:identity/soc@example.test"]
+    notify_ses_domain            = "DOMSENT.test"
+    notify_ses_configuration_set = "SETDEPRUEBA"
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.db.policy).Statement : s
+      if try(s.Sid, "") == "WorkerSesSend"
+      && try(contains(tolist(s.Resource), "arn:aws:ses:us-east-2:000000000000:configuration-set/SETDEPRUEBA"), false)
+    ]) == 1
+    error_message = "Falta el ARN del configuration set en `WorkerSesSend`. La identidad de dominio lo lleva por defecto, asi que SES lo aplica en cada envio y exige permiso sobre EL: con solo la identidad concedida, el primer correo muere con AccessDenied mientras los de CloudWatch siguen llegando (SNS, permiso propio). Medido el 2026-08-21 desde el rol de la instancia."
+  }
+}
+
+# La otra mitad de la guarda: sin configuration set NO se inventa un ARN. Un
+# `configuration-set/` vacio en la politica no da error de terraform y concede
+# permiso sobre un recurso que no existe — ruido que se lee como cobertura.
+run "sin_configuration_set_no_se_cuela_un_arn_vacio" {
+  command = plan
+
+  variables {
+    notify_ses_identity_arns     = ["arn:aws:ses:us-east-2:000000000000:identity/soc@example.test"]
+    notify_ses_domain            = "DOMSENT.test"
+    notify_ses_configuration_set = ""
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.db.policy).Statement : s
+      if try(s.Sid, "") == "WorkerSesSend"
+      && length([for r in tolist(s.Resource) : r if strcontains(r, "configuration-set/")]) > 0
+    ]) == 0
+    error_message = "Sin configuration set declarado no puede aparecer ningun ARN de `configuration-set/` en la politica: seria un permiso sobre un recurso inexistente, y esos se leen como cobertura."
+  }
+}
