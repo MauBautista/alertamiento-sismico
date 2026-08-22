@@ -56,10 +56,22 @@ def create_app() -> FastAPI:
     # Al abrir la consola —para que AWS pueda confirmar la suscripción de SNS y
     # para que el enlace de los correos sirva— eso deja de ser cierto.
     #
-    # Medido antes de abrir: los datos daban 401, pero `/docs` y `/openapi.json`
-    # daban 200 sin credenciales. No es una vulnerabilidad —la oscuridad no
-    # protege y los 401 siguen— pero publicar el esquema completo de una
-    # plataforma de alertamiento le regala la enumeración a quien busque un borde.
+    # ⚠️ CORRECCIÓN (2026-08-22), y hay que leerla antes que el resto: esto se
+    # escribió creyendo que `/docs` estaba EXPUESTO. No lo estaba.
+    #
+    # Se midió `GET /docs -> 200` desde fuera y se leyó como Swagger. Era el
+    # `index.html` de la consola: Caddy manda todo lo que no es `/api/*` al SPA, y
+    # un SPA contesta 200 a CUALQUIER ruta para que funcione su enrutado de
+    # cliente. Se comprobó el código y no el cuerpo. Contra la API directamente,
+    # `/docs`, `/openapi.json` y `/redoc` dan 404 con esto puesto.
+    #
+    # Se conserva igualmente, y no por orgullo: hoy nada los publica, pero eso
+    # depende de una regla de Caddy que vive en otro repositorio mental. El día que
+    # alguien enrute `/docs` o monte la API en su propio host, el esquema completo
+    # —cada ruta, cada parámetro, cada modelo— saldría publicado sin que nadie lo
+    # decidiera. Esto lo impide desde el único sitio que sabe si es producción.
+    #
+    # No es una vulnerabilidad: la oscuridad no protege y los 401 siguen.
     #
     # `redoc_url` va con ellas: sirve el MISMO esquema por otra puerta, y apagar
     # dos de tres es no apagar ninguna.

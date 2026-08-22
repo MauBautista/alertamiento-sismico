@@ -837,6 +837,16 @@ pre-autenticación. Eso deja de estar cubierto.
 > quedaba «protegido por estar en la lista blanca» pasa a estar realmente expuesto. En particular,
 > cualquier ruta que hoy responda sin autenticación **es pública desde ya** — `/api/health` incluido,
 > que declara el commit desplegado.
+>
+> ### ⚠️ Y una corrección sobre cómo se midió eso
+> Al inventariar la superficie pre-autenticación se midió `GET /docs -> 200` desde fuera y se
+> concluyó que **Swagger estaba publicado**. **Era falso:** ese 200 lo devolvía el `index.html` de
+> la consola, porque Caddy manda al SPA todo lo que no es `/api/*` y un SPA contesta 200 a
+> **cualquier** ruta. Se comprobó el **código de estado y no el cuerpo**.
+>
+> Los datos sí estaban —y siguen— en 401, que era lo que de verdad había que verificar. Pero la
+> lección es la misma que ya cobró esta sesión con las alarmas y con los rebotes: **un indicador
+> leído sin abrir su contenido acredita lo que uno esperaba, no lo que hay.**
 
 **Cómo se revocaría, y el gatillo no es «si pasa algo»:** vuelve a la mesa el día que la consola
 tenga **un nombre propio y un WAF delante**, o el día que entre un cliente cuyo contrato exija
