@@ -68,6 +68,41 @@ class Alarma:
         return "insufficient_data_actions" in self.cuerpo
 
 
+def sin_comentarios(texto: str) -> str:
+    """El mismo HCL con los comentarios (`#`, `//`) en blanco, respetando cadenas.
+
+    Hace falta porque este módulo lee el HCL con expresiones regulares sobre el
+    texto crudo, y una regex no sabe qué está comentado. Medido el 2026-08-22 en
+    T-2.145: al comentar una aserción de `treat_missing_data` la guardia SEGUÍA
+    verde —la contaba como cobertura— mientras que borrarla sí la delataba. Y
+    comentar es justo lo que hace quien se topa con un test que estorba, así que
+    era el más probable de los dos caminos.
+
+    Se sustituye por espacios en vez de recortar para no mover los desplazamientos:
+    `_bloque` cuenta llaves por índice y un recorte los desalinearía.
+    """
+    salida = list(texto)
+    dentro_de_cadena = False
+    i = 0
+    while i < len(texto):
+        c = texto[i]
+        if dentro_de_cadena:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                dentro_de_cadena = False
+        elif c == '"':
+            dentro_de_cadena = True
+        elif c == "#" or texto[i : i + 2] == "//":
+            while i < len(texto) and texto[i] != "\n":
+                salida[i] = " "
+                i += 1
+            continue
+        i += 1
+    return "".join(salida)
+
+
 def _bloque(texto: str, inicio: int) -> str:
     """Cuerpo del bloque HCL que abre en ``inicio`` (la llave), contando llaves y
     saltándose las cadenas — un `"${each.value}"` trae llaves balanceadas, pero
@@ -107,7 +142,7 @@ def alarmas(raiz: Path = RAIZ_TERRAFORM) -> dict[str, Alarma]:
     """Toda alarma declarada bajo ``raiz``, venga del módulo que venga."""
     censo: dict[str, Alarma] = {}
     for ruta in ficheros_tf(raiz):
-        texto = ruta.read_text(encoding="utf-8")
+        texto = sin_comentarios(ruta.read_text(encoding="utf-8"))
         for m in _RECURSO.finditer(texto):
             cuerpo = _bloque(texto, texto.index("{", m.end() - 1))
             censo[m.group(1)] = Alarma(
@@ -132,10 +167,29 @@ def alarmas_sin_asercion(
     return sorted(set(censo) - set(fijadas) - set(declaradas))
 
 
+def huecos_que_divergen(
+    censo: dict[str, Alarma],
+    huecos: dict[str, tuple[str, str]],
+) -> list[str]:
+    """Los huecos declarados cuyo valor ya no coincide con el del Terraform.
+
+    Extraída por la misma razón que `alarmas_sin_asercion`: mientras `huecos` esté
+    vacío —su estado deseado desde T-2.145— un bucle inline aprobaría sin mirar
+    nada, y un guardia que solo puede pasar por vacuidad ha dejado de existir. Así
+    el veredicto se prueba contra una muestra sintética.
+    """
+    return sorted(
+        recurso
+        for recurso, (valor, _razon) in huecos.items()
+        if recurso not in censo or censo[recurso].treat_missing_data != valor
+    )
+
+
 def aserciones_de_treat_missing_data(raiz: Path = RAIZ_TERRAFORM) -> dict[str, set[str]]:
     """``{recurso: {valores fijados}}`` según los `*.tftest.hcl`, todos ellos."""
     fijado: dict[str, set[str]] = {}
     for ruta in ficheros_tftest(raiz):
-        for recurso, valor in _ASERCION.findall(ruta.read_text(encoding="utf-8")):
+        hcl = sin_comentarios(ruta.read_text(encoding="utf-8"))
+        for recurso, valor in _ASERCION.findall(hcl):
             fijado.setdefault(recurso, set()).add(valor)
     return fijado

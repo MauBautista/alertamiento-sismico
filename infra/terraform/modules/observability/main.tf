@@ -45,6 +45,13 @@ locals {
     local.ack_url,
     floor(var.ops_ack_deadline_s / 60),
   )
+
+  # [T-2.145] La ventana de `ec2_cpu` se declara UNA vez y el texto de la alarma la
+  # deriva. Estaba tecleada en los dos sitios y ya habia divergido: el correo prometia
+  # "15 min" y la configuracion exigia 25.
+  ec2_cpu_periodo_s   = 300
+  ec2_cpu_periodos    = 5
+  ec2_cpu_ventana_min = local.ec2_cpu_periodo_s * local.ec2_cpu_periodos / 60
 }
 
 resource "aws_sns_topic" "ops_alerts" {
@@ -145,7 +152,17 @@ resource "aws_iam_role_policy" "sns_delivery_logs" {
 
 # --- DLQ con mensajes = pipeline envenenado o roto (E3/O1) -----------------------
 # La ingesta rechaza a DLQ con razon tipificada; que la DLQ tenga UN mensaje ya
-# es accionable. missing=notBreaching: sin trafico no hay datapoint y no es alarma.
+# es accionable.
+#
+# [T-2.145] `notBreaching`, y esta vez el codigo lo obedece: hasta el 2026-08-22 este
+# comentario razonaba `notBreaching` mientras la linea de abajo decia `breaching`. Se
+# resolvio HACIA EL COMENTARIO, que es el que traia el argumento:
+#
+#   Lo vigilado es la PRESENCIA de mensajes, y la ausencia de datapoints no puede
+#   esconderla. SQS solo publica metricas de colas con actividad reciente, asi que una
+#   DLQ sana —vacia e inactiva, su estado normal— deja de emitir; con `breaching` eso
+#   alarmaba sobre el estado BUENO. Al reves no hay hueco: un mensaje que entra ES
+#   actividad y fuerza el datapoint. No se puede tener mensajes sin metrica.
 resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
   for_each = var.dlq_names
 
@@ -159,7 +176,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "breaching"
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
@@ -184,18 +201,27 @@ resource "aws_cloudwatch_metric_alarm" "ec2_status" {
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
 
+# [T-2.145] `notBreaching`: MISMA instancia y MISMA ausencia que `ec2_status`, que ya
+# pagina por ella. Con `breaching` un apagon mandaba DOS correos por el mismo corte, y el
+# segundo nombraba la causa EQUIVOCADA — "CPU sostenida" cuando lo que pasa es que la
+# maquina no esta. Es el mismo reparto que `sensor_mute` hace del lado del gabinete: cada
+# alarma dice UNA cosa. Dos correos por un corte ensenan a leer por encima, y el dia que
+# lleguen dos por causas DISTINTAS nadie los distinguira.
+#
+# La ventana se DERIVA de los periodos: el texto decia "15 min" y la configuracion daba
+# 25 (5 x 300 s). Tecleado dos veces, divergido una.
 resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
   alarm_name          = "takab-dev-ec2-cpu-sostenida"
-  alarm_description   = "CPU > 90% sostenida 15 min en la instancia co-locada: riesgo de lag de ingesta y OOM (leccion t4g.small).${local.ack_sufijo}"
+  alarm_description   = "CPU > 90% sostenida ${local.ec2_cpu_ventana_min} min en la instancia co-locada: riesgo de lag de ingesta y OOM (leccion t4g.small).${local.ack_sufijo}"
   namespace           = "AWS/EC2"
   metric_name         = "CPUUtilization"
   dimensions          = { InstanceId = var.instance_id }
   statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 5
+  period              = local.ec2_cpu_periodo_s
+  evaluation_periods  = local.ec2_cpu_periodos
   threshold           = 90
   comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "breaching"
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 }
@@ -215,6 +241,18 @@ resource "aws_cloudwatch_log_metric_filter" "iot_rule_errors" {
   }
 }
 
+# [T-2.145] `notBreaching`. El metric filter de arriba no declara `default_value`, asi que
+# SIN eventos que casen no publica NADA — que es exactamente el sistema funcionando. Con
+# `breaching`, una nube sana quedaba en ALARMA permanente, y eso no es ruido: es MUDEZ.
+# SNS solo notifica TRANSICIONES, y esta alarma transiciono UNA sola vez en toda su vida
+# (OK->ALARM el 2026-08-08 09:39 CST) y ahi seguia clavada 14 dias despues, medido el
+# 2026-08-22. Es decir: la alarma que vigila que no se pierdan mensajes del edge antes de
+# la ingesta llevaba dos semanas incapaz de avisar de un error real, porque ya estaba
+# gritando por no tener ninguno.
+#
+# Lo que `notBreaching` silencia —que las reglas dejen de correr DEL TODO— tiene su propio
+# vigilante: si nada llega de los gabinetes, `gateway_offline` pagina por la ausencia del
+# latido. Mismo reparto que `sensor_mute`.
 resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   alarm_name          = "takab-dev-iot-rule-errors"
   alarm_description   = "Las reglas IoT estan tirando errores al enrutar hacia SQS: mensajes del edge se estan perdiendo antes de la ingesta.${local.ack_sufijo}"
@@ -225,7 +263,7 @@ resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   evaluation_periods  = 1
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "breaching"
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops_alerts.arn]
   ok_actions          = [aws_sns_topic.ops_alerts.arn]
 

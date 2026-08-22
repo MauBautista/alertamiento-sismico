@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **300** · `[x]` **243** · `[~]` **9** · `[ ]` **48**
+**Conteo de tareas:** total **300** · `[x]` **244** · `[~]` **9** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -8972,7 +8972,7 @@ sería documentar intenciones.
 > cedido— también estaba vivo aquí, **agravado** porque se llevaba por delante el registry
 > caliente.
 
-### [ ] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra
+### [x] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra
 
 > ### ⚠️ Añadido el 2026-08-22: `dlq_depth` tiene el valor CONTRARIO al que razona su comentario
 >
@@ -9006,9 +9006,52 @@ sería documentar intenciones.
   que **cuando la instancia se apaga llegan DOS correos por el mismo corte** — que es exactamente
   lo que `sensor_mute` evita a propósito en el otro lado.
 - **Criterios de aceptación:**
-  - [ ] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
-  - [ ] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
+  - [x] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
+  - [x] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
         por el mismo corte son deseables.
+
+> ### ✅ CERRADA el 2026-08-22 — y el hallazgo grande no era ninguno de los dos criterios
+>
+> **Las tres pasan a `notBreaching`**, cada una con su párrafo junto al recurso en
+> `modules/observability/main.tf` y su aserción en `tests/treat_missing_data.tftest.hcl`.
+> `SIN_ASERCION_EN_TERRAFORM` (en `api/tests/ops/test_treat_missing_data.py`) **queda vacío**: era
+> la lista de puntos ciegos que abrió `T-2.72.d`, y la propia guardia obligó a vaciarla — su
+> aserción `ya_asertadas` se puso roja sola en cuanto las tres tuvieron bloque real.
+>
+> **`iot_rule_errors` no era ruidosa: estaba MUDA, y llevaba 14 días.** Medido en la nube antes de
+> tocar nada:
+>
+> ```
+> takab-dev-iot-rule-errors   ALARM
+>   "no datapoints were received for 1 period and 1 missing datapoint was treated as [Breaching]"
+>   una sola transición en toda su vida: OK -> ALARM el 2026-08-08 09:39 CST
+> ```
+>
+> Su métrica sale de un metric filter sin `default_value`: sin errores no publica nada, así que
+> `breaching` convertía el estado SANO en alarma permanente. Y **SNS solo notifica transiciones**
+> — con la alarma ya en ALARM, un error real de enrutado IoT no habría mandado un solo correo.
+> La alarma que vigila que no se pierdan mensajes del edge antes de la ingesta llevaba dos semanas
+> incapaz de avisar de nada, precisamente por no tener nada de qué avisar.
+>
+> `dlq_depth` se resolvió **hacia su comentario**: lo vigilado es la PRESENCIA de mensajes y la
+> ausencia de datapoints no puede esconderla —un mensaje que entra ES actividad y fuerza el
+> datapoint—, mientras que una DLQ sana, vacía e inactiva, deja de emitir. `ec2_cpu` toma el mismo
+> reparto que `sensor_mute` ya hacía del lado del gabinete: quien pagina un apagón es `ec2_status`,
+> que nombra la causa real; el segundo correo decía «CPU sostenida» sobre una máquina que no está.
+>
+> **Dos hallazgos colaterales, arreglados aquí mismo:**
+>
+> 1. **La descripción de `ec2_cpu` mentía:** prometía «CPU > 90% sostenida **15 min**» y la
+>    configuración exigía **25** (5 × 300 s). Tecleada dos veces, divergida una. Ahora la ventana
+>    se declara en `locals` y el texto la deriva.
+> 2. **El censo contaba las aserciones COMENTADAS como cobertura.** Salió del sabotaje obligatorio:
+>    al *borrar* una aserción la guardia caía, pero al *comentarla* seguía verde — y comentar es lo
+>    que hace quien se topa con un test que estorba. `censo_alarmas.sin_comentarios()` lo cierra
+>    para los `.tf` y los `.tftest.hcl`, con su test en los dos sentidos (que no se coma un `#`
+>    dentro de una cadena rompería el censo entero en silencio).
+>
+> **Pendiente de `terraform apply`:** hasta que se aplique, `iot_rule_errors` sigue clavada en
+> ALARM en la nube. El código está en verde; la alarma no se arregla sola.
 
 ### [ ] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · `G-02`
 - **Componente:** edge (`gpio`) · **Depende de:** — · **Sale de:**
