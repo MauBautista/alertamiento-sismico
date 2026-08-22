@@ -155,3 +155,17 @@ variable "push_fcm_service_account_json" {
   default   = ""
   sensitive = true
 }
+
+# --- [T-2.156] Sitio publico del dominio --------------------------------------
+#
+# Nace de una denegacion medida: la solicitud de salida del sandbox de SES
+# (caso 178737638500467) fue rechazada porque la `Website URL` declarada apuntaba
+# a la consola del SOC, cuyo 443 admite UNA sola IP. AWS vio un timeout.
+#
+# La consola NO se abre para arreglarlo: esto es un sitio aparte, publico y sin
+# nada detras, y aquella conserva su lista blanca.
+variable "site_enabled" {
+  description = "Publica el sitio estatico del dominio en CloudFront. Falso = no se crea ni un recurso."
+  type        = bool
+  default     = false
+}
