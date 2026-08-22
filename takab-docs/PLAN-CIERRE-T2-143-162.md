@@ -1,4 +1,4 @@
-# Plan · Cerrar las cinco fichas implementables de `T-2.143`…`T-2.162`
+# Plan · Cerrar las fichas implementables de `T-2.143`…`T-2.162`
 
 > **Creado:** 2026-08-22 · **Rama:** `feat/t2-156-sitio-publico-y-correo-legible`
 > **Precede a:** el merge de #80 y #81.
@@ -7,16 +7,16 @@
 
 ## OBJETIVO (medible, y es la condición de parada del loop)
 
-**Las cinco fichas en `[x]`, cada una con su criterio verificado contra el sistema real y no
+**Las TRES fichas en `[x]`, cada una con su criterio verificado contra el sistema real y no
 contra el plan, y todo comiteado en la rama con los siete checks de CI en verde.**
 
 ```
-T-2.146   latido de keep-alive de SPOF-02
-T-2.147   el quórum de pánico notifica
 T-2.145   alarmas sin treat_missing_data + la contradicción de dlq_depth
 T-2.162   el correo de guardia dice qué hacer y dónde
 T-2.143   una baja en Cognito arranca el reloj de la PII
 ```
+
+*(`T-2.146` y `T-2.147` salieron del objetivo en la primera iteración: ver la corrección de abajo.)*
 
 **No se marca `[x]` ninguna sin:** test que falle antes y pase después, verificado **rompiendo el
 código a propósito**; `ruff` y `terraform fmt/validate` limpios; y `test_docs_consistency` en verde
@@ -35,66 +35,81 @@ con el conteo cuadrado.
 
 ---
 
-## ORDEN, y no es arbitrario
+## ⚠️ CORRECCIÓN (2026-08-22, primera iteración del loop) — el plan se escribió sobre un resumen viejo
 
-Se ataca **de mayor a menor riesgo no mitigado**, no de menor a mayor esfuerzo.
+**`T-2.146` y `T-2.147` NO están abiertas.** Sus cabeceras dicen `[ ]` y sus criterios dicen otra
+cosa:
 
-### 1 · `T-2.146` — el latido de keep-alive · **primero porque es riesgo de vida**
+| Ficha | Criterios | Lo único abierto |
+|---|---|---|
+| `T-2.146` | **7 hechos, 1 abierto** | `DIFERIDO` — pintar el latido en el panel |
+| `T-2.147` | **18 hechos, 1 abierto** | `DIFERIDO` — el botón en la app |
 
-Es la mitad de software de `G-02`, «la mitigación más importante del sistema». Hoy **no existe**:
-sin él, un Pi colgado deja el edificio sin sirena y nada lo suple.
+El latido de `SPOF-02` **está escrito desde el 2026-08-16**, con su test negativo verificado contra
+sí mismo (se parcheó el sondeo para simular un latido ingenuo y el test falló con el mensaje
+correcto). Y el quórum de pánico **sí notifica**.
 
-> ### ⚠️ La trampa que [`D-10`](DECISIONES-MAURICIO.md#d-10) dejó escrita, y que hace peligrosa la
-> ### implementación ingenua
-> **El latido debe probar la liveness del CAMINO DE REFLEJO, no del proceso.** Un cuelgue parcial
-> —el hilo del reflejo bloqueado con el lock tomado, los demás hilos vivos— dejaría el reflejo
-> muerto mientras un `while True: toggle` sigue latiendo: `K_wd` energizado, ruta de hardware
-> **inhibida**, y **sirena muda ante una alerta real**. Es el fallo que `G-02` existe para impedir,
-> reintroducido por su propia mitigación.
->
-> Cada pulso debe condicionarse a **adquirir y liberar el lock del reflejo y observar progreso**:
-> un contador monótono que solo avanza si el camino SASMEX→relé pudo ejecutarse. Pin sugerido
-> **BCM 26**, a declarar en `GpioPins`.
+**De dónde salió el error:** el plan puso `T-2.146` primero *«porque es riesgo de vida, y hoy no
+existe»*, citando `PENDIENTES §3.1`, que dice «el latido de keep-alive no está escrito». **Esa
+línea está caducada.** Se planificó sobre el resumen y no sobre la ficha — el mismo defecto que
+esta sesión ya cazó tres veces en otras formas.
 
-**Se puede escribir y probar sin el hardware** (`D-16` aplazó la BOM): el latido es software y su
-test vive en la simulación de GPIO que el edge ya usa.
+**Y el orden se cae con la premisa.** Lo que queda de `T-2.146` no es riesgo de vida: es pintar en
+un panel el estado de un hardware **que no existe en ningún gabinete**. Es el punto de MENOR valor
+del lote, no el mayor.
 
-**Test que decide la ficha:** con el hilo del reflejo bloqueado, el latido **debe cesar**. Si sigue
-latiendo, la ficha no está hecha aunque todo lo demás pase.
+### Alcance real: TRES fichas abiertas, más dos diferidos con razón escrita
 
-### 2 · `T-2.147` — el quórum de pánico notifica
+**Se cierran:** `T-2.145`, `T-2.162`, `T-2.143`.
 
-`D-05` decidió push solo a tácticos y escalado al SOC sin acuse; `D-11` autorizó abrir incidente
-`trigger='manual'` para colgar de él la maquinaria de notificación. Hoy **el voto de pánico no toca
-`notify/`**: emite el comando firmado, audita, y ahí acaba.
+**Los dos `DIFERIDO` NO se fuerzan**, y no por pereza:
 
-**Cuidado con dos cosas ya decididas:** un incidente `manual` **no puede presentarse como sísmico**
-(el titular sale del `trigger`, lección de `T-2.104`), y **no ordena evacuar a nadie** — solo SASMEX
-o ≥3 inmuebles simultáneos.
+- `T-2.146` · el panel. Su nota dice que añadir el campo a `status()` **obliga a pintarlo** —lo caza
+  `test_panel_render_census`— y que **dónde** lo gobierna `ESPECIFICACION-PANEL-GABINETE.md`.
+  *«Inventar un elemento del camino de vida sin leer su spec es peor que no pintarlo.»* Y no bloquea
+  el cableado: el dato ya viaja por las dos costuras.
+- `T-2.147` · el botón en la app. Mismo razonamiento, en `ESPECIFICACION-APP-MOVIL.md`.
 
-### 3 · `T-2.145` — las alarmas que no declaran qué hacer sin datos
+**Ninguna de las dos se marca `[x]`**: tienen trabajo real pendiente, declarado y con su razón. Lo
+que se corrige es **el orden del plan y la expectativa**, no el estado de las fichas.
 
-Incluye la contradicción anotada hoy: `dlq_depth` tiene `treat_missing_data = "breaching"` mientras
-su comentario, dos líneas arriba, razona `notBreaching`.
+---
 
-> **Cuál es el correcto hay que DECIDIRLO, no elegir el que calle.** `notBreaching` encaja con el
-> comentario (una DLQ vacía e inactiva es lo que se quiere) pero también silencia el caso en que
-> SQS deja de publicar **porque algo se rompió**. La disyuntiva ya se resolvió una vez en la alarma
-> del gabinete mudo, y allí se eligió **vigilar la ausencia**. La decisión que se tome se escribe
-> con su razón en el propio recurso.
+## ORDEN de las tres que quedan
 
-### 4 · `T-2.162` — el correo de guardia no dice qué hacer
+Se ataca **de mayor a menor riesgo no mitigado**. Tras la corrección de arriba, el lote ya no
+contiene nada de riesgo de vida: lo que queda son tres formas distintas de que un aviso no llegue
+o no se entienda.
 
-Recién fichada, y **medida en persona**: quien recibió el aviso acababa de ejecutar el ensayo
-entero y aun así preguntó cuál era «el código». El aviso debe llevar **la URL del acuse y el
-plazo**.
+### 1 · `T-2.162` — el correo de guardia no dice qué hacer
+
+**Primero, porque es el único defecto del lote que se midió sobre una persona.** Quien recibió el
+aviso acababa de ejecutar el ensayo entero —acuñó la credencial, abrió la página, acusó un aviso
+veinte minutos antes— y aun así preguntó cuál era «el código». El correo no menciona el acuse ni su
+URL.
+
+El aviso debe llevar **qué hacer, dónde y con cuánto plazo**.
 
 > **El falso arreglo:** poner la URL en el runbook no lo cierra. El runbook no está abierto a las
 > 3 a.m.; el correo sí.
 
-### 5 · `T-2.143` — una baja en Cognito no arranca el reloj de la PII
+### 2 · `T-2.145` — las alarmas que no declaran qué hacer sin datos
 
-La menos urgente de las cinco y la que menos superficie toca, así que va al final: si el loop se
+Tres alarmas sin `treat_missing_data` declarado, más la contradicción anotada hoy: `dlq_depth`
+tiene `breaching` mientras su comentario, dos líneas arriba, razona `notBreaching`.
+
+> **Cuál es el correcto hay que DECIDIRLO, no elegir el que calle.** `notBreaching` encaja con el
+> comentario (una DLQ vacía e inactiva es lo que se quiere) pero también silencia el caso en que
+> SQS deja de publicar **porque algo se rompió**. La disyuntiva ya se resolvió una vez en la alarma
+> del gabinete mudo, y allí se eligió **vigilar la ausencia**. La decisión se escribe con su razón
+> en el propio recurso.
+
+Va segunda porque toca `modules/observability`, que esta sesión acaba de cambiar dos veces —umbral
+del backup base e historial de SES—: conviene hacerlo con el módulo fresco en la cabeza.
+
+### 3 · `T-2.143` — una baja en Cognito no arranca el reloj de la PII
+
+La que menos superficie toca y la única que no es de avisos, así que va al final: si el loop se
 queda sin tiempo, es la que menos duele dejar a medias.
 
 ---
