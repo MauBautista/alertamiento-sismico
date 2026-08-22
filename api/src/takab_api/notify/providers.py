@@ -283,9 +283,14 @@ def cuerpo_email(message: dict) -> str:
         lineas.append(f"{verbo}: {quien}")
 
     # 4. El enlace. Si no viene, NO se inventa (regla de oro 7).
+    # [T-2.158] Con enlace se da; sin él se dice QUÉ HACER, que no es lo mismo que
+    # callar. Quitar el enlace y no decir nada deja al inspector sabiendo que pasó
+    # algo y no que le toca actuar.
     enlace = message.get("link")
     if enlace:
         lineas += ["", f"Atender en la consola: {enlace}"]
+    else:
+        lineas += ["", "Atienda este aviso desde la consola de TAKAB Ailert."]
 
     # 5. Al pie, lo que sirve para soporte y no para decidir.
     pie = [

@@ -97,6 +97,14 @@ TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar.
 TAKAB_API_NOTIFY_EMAIL_FROM=alertas@takabailert.com
 TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
+# [T-2.158, D-22] Y que el DESTINATARIO la alcanza, que no es lo mismo. Tener URL
+# no basta: hasta D-22 ese 443 admitia UNA sola IP, asi que el enlace de "Atender
+# en la consola" solo lo abria el operador de esa direccion. El proceso no puede
+# deducirlo —lo sabe la red—, por eso se declara. Sin esta linea el correo NO
+# promete enlace: dice que hacer y se calla la URL, que es el default seguro.
+#
+# Si algun dia se vuelve a cerrar el 443, ESTA LINEA se apaga con el.
+TAKAB_API_NOTIFY_WEB_PUBLIC=true
 EOF
 )
 
