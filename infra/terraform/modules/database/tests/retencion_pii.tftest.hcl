@@ -17,6 +17,13 @@ provider "aws" {
 }
 
 variables {
+  # [T-2.163] El pool contra el que se reconcilian las bajas. Los tests de abajo
+  # comprueban que llega hasta el env del contenedor Y que el permiso lo sigue.
+  cognito_pool = {
+    id  = "us-east-2_TESTPOOL"
+    arn = "arn:aws:cognito-idp:us-east-2:000000000000:userpool/us-east-2_TESTPOOL"
+  }
+
   subnet_id   = "subnet-0000000000test000"
   sg_db_id    = "sg-0000000000test000"
   kms_key_arn = "arn:aws:kms:us-east-2:000000000000:key/00000000-0000-0000-0000-000000000000"
@@ -278,5 +285,83 @@ run "la_asociacion_no_reporta_exito_si_la_primera_medida_no_se_publico" {
       strcontains(aws_ssm_document.prune_pii.content, "if ! /opt/takab/bin/takab-prune-pii-age.sh; then")
     )
     error_message = "La primera medida NO puede tragarse su fallo con `|| log`. Si no se publica, la asociacion debe salir en ROJO: en el momento de instalar esto la base tiene que estar alcanzable y el esquema al dia, y si no lo esta es deriva de despliegue que hay que ver ahora y no dentro de un mes."
+  }
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [T-2.163] La reconciliacion de bajas, desplegada y no inerte
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# T-2.143 se cerro con el codigo escrito y probado, y en produccion NO HACIA
+# NADA: el job recibia un env con una sola clave (`DATABASE_URL`), asi que el
+# contenedor caia al directorio SIMULADO y abortaba cada noche. El rol de
+# instancia tampoco tenia un solo permiso `cognito-idp:*`.
+#
+# Se verifico el codigo DENTRO del contenedor y no el entorno desde el que se
+# invoca. Estas aserciones son ese entorno.
+
+run "el_job_recibe_el_pool_y_no_cae_al_directorio_simulado" {
+  command = plan
+
+  assert {
+    condition     = strcontains(local.prune_pii_setup_script, "TAKAB_API_COGNITO_USER_POOL_ID=us-east-2_TESTPOOL")
+    error_message = "el script del job no escribe TAKAB_API_COGNITO_USER_POOL_ID en el env del contenedor: `build_user_directory()` caeria al directorio SIMULADO y la reconciliacion de bajas quedaria desplegada e INERTE (paso en produccion el 2026-08-23)."
+  }
+
+  # La region va aparte porque el cliente de Cognito la necesita y NO viene del
+  # DSN. Sin ella el fallo seria distinto —y peor de leer— que el del pool.
+  assert {
+    condition     = strcontains(local.prune_pii_setup_script, "AWS_REGION=us-east-2")
+    error_message = "el env del job no lleva la region: el cliente de Cognito no sabria a que endpoint preguntar."
+  }
+}
+
+run "el_permiso_de_cognito_existe_y_esta_acotado" {
+  command = plan
+
+  # Las DOS cosas, y en el mismo statement. Comprobar solo que el ARN aparece no
+  # basta: se midio rompiendolo, y cambiar la accion a `sts:GetCallerIdentity`
+  # dejaba el ARN en su sitio y el test en verde. Un permiso es un verbo SOBRE un
+  # recurso; verificar la mitad no verifica nada.
+  assert {
+    condition = anytrue([
+      for st in jsondecode(aws_iam_role_policy.db.policy).Statement :
+      try(st.Sid, "") == "ReconciliarBajasListarPool"
+      && try(st.Action, "") == "cognito-idp:ListUsers"
+      && try(st.Resource, "") == "arn:aws:cognito-idp:us-east-2:000000000000:userpool/us-east-2_TESTPOOL"
+    ])
+    error_message = "el rol no concede `cognito-idp:ListUsers` SOBRE el pool declarado: el job preguntaria y AWS le diria que no. Tener la variable SIN el permiso es el tercer modo de fallo que la validacion de `cognito_pool` existe para impedir."
+  }
+
+  # SOLO listar. La reconciliacion lee quien existe y escribe en su PROPIA base;
+  # un job de limpieza nocturna con `AdminDisableUser` podria dejar a alguien
+  # fuera de su edificio.
+  assert {
+    condition = !anytrue([
+      for verbo in ["AdminDisableUser", "AdminDeleteUser", "AdminUpdateUserAttributes", "cognito-idp:*"] :
+      strcontains(aws_iam_role_policy.db.policy, verbo)
+    ])
+    error_message = "el rol ganó permisos de ESCRITURA sobre Cognito. La reconciliacion solo lee: dar de baja cuentas jamas es cosa de un job nocturno."
+  }
+}
+
+run "sin_pool_declarado_no_se_concede_permiso_ninguno" {
+  command = plan
+
+  variables {
+    cognito_pool = { id = "", arn = "" }
+  }
+
+  # El caso "sin reconciliacion" tiene que ser coherente consigo mismo: ni
+  # variable ni permiso. Sin esto, el objeto vacio podria dejar un statement con
+  # `Resource = ""` — que no es "nada", es un ARN invalido.
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.db.policy, "cognito-idp")
+    error_message = "sin pool declarado no debe quedar NINGUN statement de Cognito en la politica."
+  }
+  assert {
+    condition     = strcontains(local.prune_pii_setup_script, "TAKAB_API_COGNITO_USER_POOL_ID=\n")
+    error_message = "sin pool, la clave debe quedar VACIA y presente: asi el contenedor dice `es el simulado` en vez de heredar un valor viejo del entorno de la maquina."
   }
 }

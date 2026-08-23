@@ -64,10 +64,28 @@ def _registro(username: str) -> UserRecord:
 
 class _DirectorioCaido(SimulatedUserDirectory):
     """Un pool que no responde. No es lo mismo que un pool vacío, y el punto de
-    esta clase es que el código no pueda confundirlos."""
+    esta clase es que el código no pueda confundirlos.
+
+    `backend = "cognito"` porque simula el directorio REAL fallando: heredar la
+    etiqueta `simulated` lo haría rechazar por la guarda de T-2.163 antes de
+    llegar a fallar, y el test pasaría sin ejercer nada.
+    """
+
+    backend = "cognito"
 
     def list_users(self, *, limit: int, cursor: str | None):
         raise DirectoryUnavailable("cognito-idp ListUsers: se acabó el tiempo")
+
+
+class _DirectorioVacioPeroReal(SimulatedUserDirectory):
+    """Un directorio que NO es el fallback y aun así devuelve cero cuentas.
+
+    Hace falta desde T-2.163: el simulado se rechaza antes por su etiqueta, así
+    que sin esta clase la rama del «pool vacío» quedaría inalcanzable y su test
+    pasaría probando otra cosa.
+    """
+
+    backend = "cognito"
 
 
 class _DirectorioQueSeCortaAMedias(SimulatedUserDirectory):
@@ -76,6 +94,8 @@ class _DirectorioQueSeCortaAMedias(SimulatedUserDirectory):
     Es el fallo silencioso de verdad: cada respuesta es válida, ninguna lanza, y
     quien pare de paginar se queda con una lista corta que parece completa.
     """
+
+    backend = "cognito"  # el real cortándose, no el fallback (ver `_DirectorioCaido`)
 
     def list_users(self, *, limit: int, cursor: str | None):
         pagina, _ = super().list_users(limit=1, cursor=cursor)
@@ -119,7 +139,7 @@ def _relojes(conn: psycopg.Connection) -> dict[str, str]:
 def test_quien_desaparecio_del_pool_obtiene_su_reloj(poblado: psycopg.Connection) -> None:
     """El criterio 1 y el 2 de la ficha a la vez: una cuenta que se fue del pool
     **sin pasar por la API** deja de ser invisible para la retención."""
-    directorio = SimulatedUserDirectory(seed=[_registro(SE_QUEDA)])
+    directorio = _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA)])
 
     parte = reconcile.reconciliar(poblado, directorio, apply=True)
 
@@ -133,7 +153,7 @@ def test_quien_desaparecio_del_pool_obtiene_su_reloj(poblado: psycopg.Connection
 def test_quien_sigue_en_el_pool_no_recibe_reloj(poblado: psycopg.Connection) -> None:
     """No-vacuidad del anterior: si arrancara el reloj de todo el mundo, el test
     de arriba pasaría igual y estaríamos borrando nombres de gente presente."""
-    directorio = SimulatedUserDirectory(seed=[_registro(SE_QUEDA), _registro(SE_FUE)])
+    directorio = _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA), _registro(SE_FUE)])
 
     parte = reconcile.reconciliar(poblado, directorio, apply=True)
 
@@ -145,7 +165,7 @@ def test_quien_sigue_en_el_pool_no_recibe_reloj(poblado: psycopg.Connection) -> 
 def test_en_simulacro_no_escribe_pero_dice_lo_que_haria(poblado: psycopg.Connection) -> None:
     """Mismo reparto que el resto del job de retención: se puede ver el veredicto
     antes de que toque nada."""
-    directorio = SimulatedUserDirectory(seed=[_registro(SE_QUEDA)])
+    directorio = _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA)])
 
     parte = reconcile.reconciliar(poblado, directorio, apply=False)
 
@@ -166,7 +186,7 @@ def test_no_reinicia_el_reloj_de_quien_ya_estaba_de_baja(poblado: psycopg.Connec
     ).fetchone()[0]
 
     parte = reconcile.reconciliar(
-        poblado, SimulatedUserDirectory(seed=[_registro(SE_QUEDA)]), apply=True
+        poblado, _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA)]), apply=True
     )
 
     assert parte.relojes_arrancados == ()
@@ -222,7 +242,7 @@ def test_a_quien_volvio_no_se_le_arranca_el_reloj_otra_vez(poblado: psycopg.Conn
     )
 
     parte = reconcile.reconciliar(
-        poblado, SimulatedUserDirectory(seed=[_registro(SE_QUEDA), _registro(SE_FUE)]), apply=True
+        poblado, _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA), _registro(SE_FUE)]), apply=True
     )
 
     assert parte.relojes_arrancados == ()
@@ -257,18 +277,53 @@ def test_con_el_directorio_caido_no_se_arranca_ni_un_reloj(poblado: psycopg.Conn
         f"el motivo no dice que el directorio falló, dice: {parte.abortada!r}. Confundir "
         "«no pude preguntar» con «no hay nadie» es lo que se lee a las 3 a.m."
     )
-    vacio = reconcile.reconciliar(poblado, SimulatedUserDirectory(seed=[]), apply=True)
+    vacio = reconcile.reconciliar(poblado, _DirectorioVacioPeroReal(seed=[]), apply=True)
     assert vacio.abortada != parte.abortada, (
         "el pool caído y el pool vacío dan el MISMO motivo: son dos fallos distintos "
         "y piden dos arreglos distintos"
     )
 
 
+def test_el_directorio_SIMULADO_se_rechaza_por_su_nombre(poblado: psycopg.Connection) -> None:
+    """[T-2.163] **Un fallback no puede pasar por una lectura buena NI por una vacía.**
+
+    Medido en producción el 2026-08-23: el job de retención recibe un env con una
+    sola clave (`DATABASE_URL`), así que `build_user_directory()` cae al directorio
+    simulado. Éste devuelve cero cuentas, la corrida abortaba con «el directorio
+    devolvió CERO cuentas» — un mensaje **correcto y engañoso**: manda a mirar el
+    pool cuando el problema es que nunca se preguntó al pool.
+
+    Son dos fallos con dos arreglos distintos: uno se arregla en AWS y el otro en
+    el despliegue. Es el mismo defecto que este módulo ya corrigió una vez entre
+    «el directorio no respondió» y «el pool vino vacío», y por tercera vez en el
+    proyecto la lección es la misma: **el mensaje tiene que nombrar la causa.**
+    """
+    simulado = SimulatedUserDirectory(seed=[_registro(SE_QUEDA)])
+    assert simulado.backend == "simulated", "cambió la etiqueta del backend"
+
+    parte = reconcile.reconciliar(poblado, simulado, apply=True)
+
+    assert parte.relojes_arrancados == (), "actuó con un directorio de mentira"
+    assert _relojes(poblado) == {}
+    assert parte.abortada, "no dejó constancia"
+    assert "simulado" in parte.abortada.lower(), (
+        f"el motivo no nombra el fallback, dice: {parte.abortada!r}. Quien lea el log a las "
+        "3 a.m. tiene que saber si mirar el pool o el despliegue."
+    )
+
+    # Y los tres motivos son DISTINTOS entre sí. Sin esto, «nombra la causa» se
+    # cumple con una palabra suelta mientras los mensajes siguen confundiéndose.
+    caido = reconcile.reconciliar(poblado, _DirectorioCaido(), apply=True).abortada
+    vacio_real = reconcile.reconciliar(poblado, _DirectorioVacioPeroReal(), apply=True).abortada
+    motivos = [parte.abortada, caido, vacio_real]
+    assert len(set(motivos)) == 3, f"dos causas distintas dan el mismo motivo: {motivos}"
+
+
 def test_un_pool_vacio_aborta_en_vez_de_dar_de_baja_a_todos(poblado: psycopg.Connection) -> None:
     """Un pool sin un solo usuario es indistinguible de una lectura fallida que no
     lanzó. Como estado real es absurdo —alguien tuvo que listarlo con una
     credencial— así que se trata como lo que casi seguro es: un fallo."""
-    parte = reconcile.reconciliar(poblado, SimulatedUserDirectory(seed=[]), apply=True)
+    parte = reconcile.reconciliar(poblado, _DirectorioVacioPeroReal(seed=[]), apply=True)
 
     assert parte.relojes_arrancados == ()
     assert parte.abortada and "cero cuentas" in parte.abortada.lower()
@@ -310,7 +365,7 @@ def test_la_baja_se_escribe_en_el_tenant_QUE_DICE_EL_PADRON(poblado: psycopg.Con
     )
 
     parte = reconcile.reconciliar(
-        poblado, SimulatedUserDirectory(seed=[_registro(SE_QUEDA)]), apply=True
+        poblado, _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA)]), apply=True
     )
 
     assert set(parte.relojes_arrancados) == {SE_FUE, de_otro}
@@ -330,7 +385,7 @@ def test_el_parte_no_miente_sobre_lo_que_leyo(poblado: psycopg.Connection) -> No
     """Lo que va al log del cron. Sin estos números, "0 relojes arrancados" se lee
     igual cuando todo está bien que cuando no se leyó nada — y son la diferencia
     entre una corrida sana y una que abortó."""
-    directorio = SimulatedUserDirectory(seed=[_registro(SE_QUEDA)])
+    directorio = _DirectorioVacioPeroReal(seed=[_registro(SE_QUEDA)])
     parte = reconcile.reconciliar(poblado, directorio, apply=True)
 
     assert parte.en_el_pool == 1

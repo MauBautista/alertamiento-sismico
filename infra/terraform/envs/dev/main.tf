@@ -70,6 +70,15 @@ module "database" {
     [for q in module.messaging.queues : q.arn],
     values(module.messaging.dlq_arns),
   )
+  # [T-2.163] El pool contra el que el job de retencion reconcilia las bajas.
+  # Sale del modulo identity, no de una variable: dos declaraciones del mismo
+  # pool divergen, y aqui divergir significa pedir permiso sobre uno y preguntar
+  # a otro.
+  cognito_pool = {
+    id  = module.identity.user_pool_id
+    arn = module.identity.user_pool_arn
+  }
+
   worker_ecr_repo_arns = values(module.registry.repository_arns)
   worker_s3_read_arns = [
     "${module.storage.transfer_bucket.arn}/*",

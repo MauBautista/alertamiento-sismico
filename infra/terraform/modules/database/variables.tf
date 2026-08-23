@@ -312,3 +312,33 @@ variable "notify_ses_configuration_set" {
   type        = string
   default     = ""
 }
+
+# [T-2.163] EL POOL DE COGNITO PARA EL JOB DE RETENCION.
+#
+# El job de retencion reconcilia el padron contra el directorio antes de podar
+# (T-2.143). Sin estos dos valores, `build_user_directory()` cae al directorio
+# SIMULADO y la corrida aborta sin dar de baja a nadie: la funcion queda
+# desplegada e INERTE. Medido en produccion el 2026-08-23 — el env del job
+# llevaba una sola clave, `DATABASE_URL`.
+#
+# Objeto y no dos variables sueltas: el id y el ARN describen el MISMO pool, y
+# separarlos permite que apunten a pools distintos sin que nada lo delate.
+variable "cognito_pool" {
+  description = <<-DESC
+    Pool contra el que el job de retencion reconcilia las bajas. `id` viaja al
+    env del contenedor; `arn` acota el permiso `cognito-idp:ListUsers`.
+    Objeto vacio = sin reconciliacion (el job lo dira en su log, no lo callara).
+  DESC
+  type = object({
+    id  = string
+    arn = string
+  })
+
+  validation {
+    # Los dos o ninguno. Un `id` sin `arn` daria la variable pero no el permiso:
+    # el job preguntaria al pool y AWS le diria que no, que es un tercer modo de
+    # fallo que no hace falta inventar.
+    condition     = (var.cognito_pool.id == "") == (var.cognito_pool.arn == "")
+    error_message = "cognito_pool: o se declaran `id` y `arn`, o ninguno de los dos. Con solo uno, el job tendria la variable y no el permiso (o al reves) y fallaria por una razon distinta de la que se lee."
+  }
+}

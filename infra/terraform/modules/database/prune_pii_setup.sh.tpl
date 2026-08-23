@@ -70,6 +70,20 @@ ENVF="$TMP/db.env"
     python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])')"
   [ -n "$PASS" ] || exit 1
   printf 'DATABASE_URL=postgresql://takab_app:%s@127.0.0.1:5432/takab\n' "$PASS" >"$ENVF"
+  # [T-2.163] El pool contra el que se reconcilian las bajas (T-2.143). Sin esta
+  # linea el contenedor cae al directorio SIMULADO y la corrida aborta sin dar de
+  # baja a nadie. La region hace falta para el cliente de Cognito; las
+  # credenciales salen del rol de instancia por IMDS, no de aqui.
+  #
+  # Heredoc CITADO y no `printf`: asi el valor queda LITERAL en el script, y la
+  # asercion de terraform puede leerlo. Con `printf '%s' '$${x}'` el valor viaja
+  # en un argumento aparte, el literal no aparece en ningun sitio y el test
+  # buscaba una cadena que jamas existio — paso al escribir esto.
+  cat >>"$ENVF" <<'COGNITO'
+TAKAB_API_COGNITO_USER_POOL_ID=${cognito_pool_id}
+TAKAB_API_AWS_REGION=${region}
+AWS_REGION=${region}
+COGNITO
   cat >>"$ENVF" <<'PLAZOS'
 ${retention_env}
 PLAZOS

@@ -137,6 +137,9 @@ locals {
     # secreto; la instancia lo resuelve con su propio rol en tiempo de ejecucion.
     app_secret    = aws_secretsmanager_secret.db["app"].arn
     retention_env = local.pii_retention_env
+    # [T-2.163] Sin esto el contenedor cae al directorio SIMULADO y la
+    # reconciliacion de bajas queda desplegada e INERTE.
+    cognito_pool_id = var.cognito_pool.id
   })
 
   pitr_setup_script = templatefile("${path.module}/pitr_setup.sh.tpl", {
@@ -481,6 +484,26 @@ resource "aws_iam_role_policy" "db" {
           Effect   = "Allow"
           Action   = ["ses:SendEmail", "ses:SendRawEmail"]
           Resource = local.notify_ses_arns
+        },
+      ] : [],
+      # [T-2.163] LISTAR EL POOL, y nada mas que eso.
+      #
+      # El job de retencion reconcilia el padron contra el directorio antes de
+      # podar (T-2.143): quien ya no esta en el pool arranca su reloj de PII. Sin
+      # este permiso el job no puede preguntar, cae al directorio SIMULADO y la
+      # funcion queda desplegada e INERTE — medido en produccion el 2026-08-23,
+      # con el rol `takab-dev-db` sin un solo `cognito-idp:*`.
+      #
+      # SOLO `ListUsers`, y acotado a ESE pool. La reconciliacion no crea, no
+      # deshabilita y no borra cuentas: lee quien existe y escribe en SU PROPIA
+      # base. Dar `AdminDisableUser` "por si acaso" pondria en manos de un job de
+      # limpieza nocturna la capacidad de dejar a alguien fuera de su edificio.
+      var.cognito_pool.arn != "" ? [
+        {
+          Sid      = "ReconciliarBajasListarPool"
+          Effect   = "Allow"
+          Action   = "cognito-idp:ListUsers"
+          Resource = var.cognito_pool.arn
         },
     ] : [])
   })

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **301** · `[x]` **245** · `[~]` **10** · `[ ]` **46**
+**Conteo de tareas:** total **301** · `[x]` **247** · `[~]` **9** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6095,7 +6095,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
-### [ ] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
+### [x] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
 - **Componente:** infra (`modules/database`) + api · **Detectada por:** `T-2.143`, **verificando el
   despliegue** el 2026-08-23 · **Bloquea:** el criterio 1 de `T-2.143`
 - **El hecho, medido en la instancia:**
@@ -6110,18 +6110,44 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   no **el entorno desde el que se invoca**. Es la misma familia que «un indicador leído sin abrir
   su contenido acredita lo que uno esperaba».
 - **Criterios de aceptación:**
-  - [ ] El job recibe `TAKAB_API_COGNITO_USER_POOL_ID` y la región, desde el mismo output de
+  - [x] El job recibe `TAKAB_API_COGNITO_USER_POOL_ID` y la región, desde el mismo output de
         terraform que los usa la API — **derivado, no tecleado**.
-  - [ ] El rol de instancia gana `cognito-idp:ListUsers` **acotado al pool**, y nada más.
-  - [ ] **El directorio SIMULADO se rechaza por su nombre.** Hoy produce el mismo mensaje que un
+  - [x] El rol de instancia gana `cognito-idp:ListUsers` **acotado al pool**, y nada más.
+  - [x] **El directorio SIMULADO se rechaza por su nombre.** Hoy produce el mismo mensaje que un
         pool vacío de verdad, y son dos fallos distintos con dos arreglos distintos — el mismo
         defecto que `T-2.143` ya corrigió una vez entre «caído» y «vacío». Un fallback no puede
         pasar por una lectura buena ni por una lectura vacía: tiene que decir que es un fallback.
-  - [ ] Test que falle si el job se invoca sin la variable del pool.
-  - [ ] Verificado **en la instancia**, no en el contenedor: una corrida real que arranque un reloj
+  - [x] Test que falle si el job se invoca sin la variable del pool.
+  - [x] Verificado **en la instancia**, no en el contenedor: una corrida real que arranque un reloj
         o que diga por qué no.
 
-### [~] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
+> ### ✅ CERRADA y APLICADA el 2026-08-23 — verificada donde falló, en la máquina
+>
+> ```
+> Reconciliación · 8 cuentas en el directorio, 1 perfiles sin baja, 0 reloj(es) arrancado(s)
+> ```
+>
+> Ocho cuentas **reales** leídas del pool: eso prueba a la vez la variable y el permiso, y no es
+> una comprobación que pueda pasar por vacuidad (con cualquiera de los dos ausentes el número sería
+> cero y el mensaje diría «SIMULADO» o «CERO cuentas»). Cero relojes arrancados es lo correcto: el
+> único perfil sin baja sigue en el pool.
+>
+> **Cuatro sabotajes, y el que no mordió enseñó lo de siempre.** Quitar la línea del env deja dos
+> aserciones en rojo; ampliar el permiso a `AdminDisableUser`, una. Pero **cambiar la acción a
+> `sts:GetCallerIdentity` dejaba el test en verde**: la aserción comprobaba que el ARN del pool
+> *aparecía* en la política, no que se concediera `ListUsers` **sobre** él. *Un permiso es un verbo
+> SOBRE un recurso; verificar la mitad no verifica nada.* Ahora se decodifica la política y se
+> exige el statement entero.
+>
+> **Y un defecto de la plantilla que el propio test destapó:** `printf '%s' '${pool}'` deja el
+> valor en un argumento aparte, así que el literal **no aparece en el script** y la aserción
+> buscaba una cadena que nunca existió. Se cambió a heredoc citado, que además es más simple.
+>
+> El `cognito_pool` es un objeto y no dos variables sueltas, con una validación que exige los dos
+> campos o ninguno: con solo el `id` el job tendría la variable y no el permiso, y fallaría por una
+> razón distinta de la que se lee en el log.
+
+### [x] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**
 - El reloj de retención de nombre y teléfono lo escriben `PATCH {"enabled": false}` y `DELETE`
   de la API. **Una cuenta retirada directamente en el pool de Cognito no pasa por ahí**, así que
@@ -6134,7 +6160,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [x] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
   - [x] Test de una cuenta que desaparece del pool sin pasar por la API.
 
-> ### ⚠️ REABIERTA A `[~]` el 2026-08-23 — el software está, pero **en producción no hace nada**
+> ### ⚠️ ESTUVO EN `[~]` unas horas el 2026-08-23 — desplegada y **sin hacer nada en producción**
 >
 > Se desplegó (`eaeb82a`) y se verificó el código dentro del contenedor. Lo que NO se verificó al
 > cerrarla es **el entorno en el que corre**, y ahí está el defecto: el job recibe un `db.env`
@@ -6147,8 +6173,9 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > mano ni solo. Y el rol de instancia `takab-dev-db` **no tiene un solo permiso `cognito-idp:*`**,
 > así que ni siquiera podría listar el pool si tuviera la variable.
 >
-> Lo que falta está en [`T-2.163`](#). Se queda en `[~]` y no en `[x]`: el software está escrito y
-> probado, el despliegue no.
+> **Cerrado por [`T-2.163`](#) el mismo día**, y verificado en la instancia: la corrida lee ahora 8
+> cuentas reales del pool. Se dejó en `[~]` mientras tanto, no en `[x]`: el software estaba escrito
+> y probado, el despliegue no.
 >
 > ### Lo que sí quedó hecho, y sigue siendo válido
 >

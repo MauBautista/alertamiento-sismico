@@ -103,6 +103,12 @@ ON CONFLICT (tenant_id, user_sub) DO NOTHING
 """
 
 
+#: Etiqueta del directorio de mentira. `build_user_directory()` cae a él cuando no
+#: hay pool configurado, y devuelve CERO cuentas — indistinguible de un pool vacío
+#: de verdad si solo se mira el resultado.
+BACKEND_SIMULADO = "simulated"
+
+
 def _leer_el_pool(directory: UserDirectory) -> tuple[set[str], str | None]:
     """Todos los `username` del directorio, o el motivo por el que no se pudo.
 
@@ -143,8 +149,33 @@ def reconciliar(
     parámetro: el mismo `user_sub` presente en dos padrones son dos personas para
     la base, y cada cliente conserva o poda lo suyo (regla de oro 5).
     """
-    del_pool, motivo = _leer_el_pool(directory)
     candidatos = conn.execute(_SIN_RELOJ).fetchall()
+
+    # [T-2.163] EL FALLBACK SE RECHAZA ANTES DE LEERLO, y por su nombre.
+    #
+    # Sin esto, el directorio simulado entraba por la rama del «pool vacío» y la
+    # corrida abortaba con un mensaje CORRECTO Y ENGAÑOSO: mandaba a mirar el pool
+    # cuando lo que pasa es que nunca se preguntó al pool. Son dos fallos con dos
+    # arreglos distintos —uno se arregla en AWS, el otro en el despliegue— y
+    # medirlo costó un despliegue: T-2.143 se cerró creyendo que funcionaba y en
+    # producción llevaba una noche abortando por esta rama.
+    #
+    # Tercera vez en el proyecto que la lección es la misma: un fallback no puede
+    # pasar por una lectura buena NI por una lectura vacía; tiene que decir que es
+    # un fallback.
+    if getattr(directory, "backend", "") == BACKEND_SIMULADO:
+        return Reconciliacion(
+            revisados=len(candidatos),
+            en_el_pool=0,
+            relojes_arrancados=(),
+            abortada=(
+                "el directorio de usuarios es el SIMULADO, no Cognito: falta "
+                "TAKAB_API_COGNITO_USER_POOL_ID en el entorno del job. No se preguntó al pool, "
+                "así que no se dio de baja a nadie"
+            ),
+        )
+
+    del_pool, motivo = _leer_el_pool(directory)
 
     if motivo is not None:
         return Reconciliacion(
