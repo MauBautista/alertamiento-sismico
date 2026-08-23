@@ -4965,6 +4965,12 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
      fallo sería silencioso: un feed que cambia de forma deja el catálogo congelado sin un error.
   2. **El aviso legal de uso de datos del SSN y su atribución** — va en la consulta de
      [`CONSULTA-LEGAL-TAKAB.md`](CONSULTA-LEGAL-TAKAB.md).
+- **⚡ 2026-08-23 · el primer bloqueo está CADUCADO y el segundo está en vías.** El feed responde
+  (200, RSS 2.0 con `geo:lat`/`geo:long` y `ETag`), aunque **solo por HTTP: el 443 está cerrado**.
+  Y hay conversaciones abiertas con el SSN con apoyo aparentemente concedido. Lo que hace falta
+  traerse de esa reunión —endpoint programático, esquema, atribución literal, cadencia— está en
+  [`REUNION-SSN-QUE-PEDIR.md`](REUNION-SSN-QUE-PEDIR.md), con las siete peticiones y qué destraba
+  cada respuesta. **La ficha sigue `[ ]`: una reunión agendada no es un endpoint.**
 - **Lo que `D-06` exige que traiga cuando se desbloquee**, y no se negocia:
   - [ ] **Declarar la fecha del último catálogo ingerido con éxito**, visible en la UI. Es `D-01`:
         un catálogo viejo se declara viejo, no se presenta como vivo (regla de oro 7).
