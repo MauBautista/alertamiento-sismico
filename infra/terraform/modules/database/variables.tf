@@ -333,6 +333,12 @@ variable "cognito_pool" {
     id  = string
     arn = string
   })
+  # Vacio por defecto, y es seguro PORQUE el job lo grita: sin pool, la corrida
+  # dice "el directorio de usuarios es el SIMULADO, falta
+  # TAKAB_API_COGNITO_USER_POOL_ID" y no da de baja a nadie. Un default silencioso
+  # seria inaceptable; con ese aviso, obligar a declararlo solo añade ruido a los
+  # tres ficheros de test del modulo que no tienen nada que ver con Cognito.
+  default = { id = "", arn = "" }
 
   validation {
     # Los dos o ninguno. Un `id` sin `arn` daria la variable pero no el permiso:
