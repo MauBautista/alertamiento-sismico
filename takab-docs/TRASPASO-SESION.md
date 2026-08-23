@@ -8,6 +8,32 @@
 
 ---
 
+## 0 · ⚠️ LO PRIMERO: la nube va por detrás del repo (2026-08-23)
+
+```
+main:  fc06bd5
+nube:  eaeb82a          ← tres commits por detrás
+```
+
+**No es un olvido, es una decisión tomada:** el rebuild cuesta ~40 min y lo que falta desplegar no
+cambia el comportamiento de hoy. Lo que queda fuera del contenedor es el **guard de `T-2.163`** —el
+rechazo del directorio SIMULADO por su nombre—. La reconciliación de bajas **sí funciona y está
+verificada en la instancia** (`8 cuentas en el directorio`), porque lo que le faltaba era el entorno
+y eso lo arregló terraform, no la imagen.
+
+> **Al siguiente cambio de código: reconstruir y desplegar, y el guard va dentro.** `CLOUD_TAG` sale
+> de `git rev-parse --short HEAD`, así que **cualquier commit —hasta uno de solo docs— mueve el tag
+> y obliga a reconstruir**. No existe «desplegar solo esto».
+
+**Y la lección que costó ese despliegue:** `T-2.143` se cerró con tests en verde, se desplegó y en
+producción **no hacía nada**. Se comprobó `docker run … -c "import reconcile"` → OK, y eso acreditó
+lo que no era: el job recibe un `db.env` construido al vuelo con **una sola clave**, así que el
+código caía al directorio simulado y abortaba cada noche. **Verificar el código DENTRO del
+contenedor no es verificar el ENTORNO desde el que se invoca** — hay que mirar
+`/opt/takab/bin/takab-*.sh` y el rol de instancia.
+
+---
+
 ## 1 · Estado, en tres cifras
 
 | | |
