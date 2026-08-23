@@ -9,6 +9,26 @@
 # El unico texto nuestro que viaja en ese correo es `alarm_description`. Por eso el
 # arreglo va ahi y no en un canal nuevo.
 
+# [T-2.145] El provider FALSO, que los otros seis ficheros de este directorio ya
+# traían y este no. Sin él la prueba usa el perfil AWS del entorno
+# (`AWS_PROFILE=takab-dev`), así que en CI pasa —allí no hay perfil— y en local
+# depende de si el token SSO sigue vivo: el mismo commit da verde por la mañana y
+# rojo por la tarde. Medido el 2026-08-22, con este error exacto:
+#
+#   Error: No valid credential sources found
+#   failed to refresh cached credentials, refresh cached SSO token failed
+#
+# Es la familia de T-2.115 y T-2.142: el veredicto no puede depender de algo que
+# no está en el test.
+provider "aws" {
+  region                      = "us-east-2"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+  skip_metadata_api_check     = true
+}
+
 variables {
   ops_alert_email           = "ops@example.test"
   dlq_names                 = { backfill = "q-backfill-dlq" }
