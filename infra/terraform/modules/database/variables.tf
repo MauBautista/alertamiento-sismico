@@ -134,6 +134,7 @@ variable "pitr" {
     server_name               = string
     wal_retention_days        = number
     base_backup_interval_days = number
+    base_backup_grace_s       = optional(number, 3600)
     chain_margin              = number
   })
   default = {
@@ -301,5 +302,49 @@ variable "pii_retention_chain_margin" {
   validation {
     condition     = var.pii_retention_chain_margin >= 2
     error_message = "pii_retention_chain_margin debe ser >= 2: con 1, una sola corrida perdida (un reinicio a las 06:00) manda un correo y las alarmas se dejan de leer."
+  }
+}
+
+# [T-2.155] Ver `notify_ses_arns` en main.tf: sin el ARN del configuration set el
+# envio muere con AccessDenied aunque la identidad este concedida.
+variable "notify_ses_configuration_set" {
+  description = "Nombre del configuration set por defecto de la identidad de dominio. Vacio = no se concede (no hay dominio)."
+  type        = string
+  default     = ""
+}
+
+# [T-2.163] EL POOL DE COGNITO PARA EL JOB DE RETENCION.
+#
+# El job de retencion reconcilia el padron contra el directorio antes de podar
+# (T-2.143). Sin estos dos valores, `build_user_directory()` cae al directorio
+# SIMULADO y la corrida aborta sin dar de baja a nadie: la funcion queda
+# desplegada e INERTE. Medido en produccion el 2026-08-23 — el env del job
+# llevaba una sola clave, `DATABASE_URL`.
+#
+# Objeto y no dos variables sueltas: el id y el ARN describen el MISMO pool, y
+# separarlos permite que apunten a pools distintos sin que nada lo delate.
+variable "cognito_pool" {
+  description = <<-DESC
+    Pool contra el que el job de retencion reconcilia las bajas. `id` viaja al
+    env del contenedor; `arn` acota el permiso `cognito-idp:ListUsers`.
+    Objeto vacio = sin reconciliacion (el job lo dira en su log, no lo callara).
+  DESC
+  type = object({
+    id  = string
+    arn = string
+  })
+  # Vacio por defecto, y es seguro PORQUE el job lo grita: sin pool, la corrida
+  # dice "el directorio de usuarios es el SIMULADO, falta
+  # TAKAB_API_COGNITO_USER_POOL_ID" y no da de baja a nadie. Un default silencioso
+  # seria inaceptable; con ese aviso, obligar a declararlo solo añade ruido a los
+  # tres ficheros de test del modulo que no tienen nada que ver con Cognito.
+  default = { id = "", arn = "" }
+
+  validation {
+    # Los dos o ninguno. Un `id` sin `arn` daria la variable pero no el permiso:
+    # el job preguntaria al pool y AWS le diria que no, que es un tercer modo de
+    # fallo que no hace falta inventar.
+    condition     = (var.cognito_pool.id == "") == (var.cognito_pool.arn == "")
+    error_message = "cognito_pool: o se declaran `id` y `arn`, o ninguno de los dos. Con solo uno, el job tendria la variable y no el permiso (o al reves) y fallaria por una razon distinta de la que se lee."
   }
 }

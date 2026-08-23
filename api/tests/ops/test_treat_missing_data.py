@@ -37,30 +37,23 @@ from ops.censo_alarmas import (
     alarmas_sin_asercion,
     aserciones_de_treat_missing_data,
     ficheros_tf,
+    huecos_que_divergen,
+    sin_comentarios,
 )
 
 #: Alarmas cuyo `treat_missing_data` NO lo fija ninguna aserción de Terraform.
-#: Se declaran aquí con el valor VIGENTE (medido del `.tf`, no elegido) para que
-#: cambiarlo ponga esto en rojo: mientras `infra/` no se toque, esta es su única
-#: aserción. **Ninguna trae una razón escrita en ningún sitio del repo**, y eso es
-#: parte del hallazgo: no se inventa una a posteriori — se nombra el hueco.
-SIN_ASERCION_EN_TERRAFORM: dict[str, tuple[str, str]] = {
-    "dlq_depth": (
-        "breaching",
-        "INTOCABLE en ALARM_CATALOG (instrumento del canary de T-2.70) y aun así su silencio "
-        "no lo fija ninguna aserción. Sin razón escrita en el repo.",
-    ),
-    "iot_rule_errors": (
-        "breaching",
-        "INTOCABLE en ALARM_CATALOG. Métrica de filtro de log (Takab/Ops/IoTRuleErrors): su "
-        "ausencia y su cero se parecen mucho, y la decisión no está razonada en ningún sitio.",
-    ),
-    "ec2_cpu": (
-        "breaching",
-        "Silenciable, y la única de las tres que además duplicaría el aviso de `ec2_status` "
-        "(también `breaching`) cuando la instancia se apaga. Sin razón escrita en el repo.",
-    ),
-}
+#:
+#: **Vacío desde T-2.145 (2026-08-22), y ese es el estado que se quiere.** Traía las
+#: tres que nombró T-2.72.d —`dlq_depth`, `iot_rule_errors`, `ec2_cpu`— cada una con
+#: la coletilla "sin razón escrita en el repo". Hoy las tres tienen su bloque en
+#: `modules/observability/tests/treat_missing_data.tftest.hcl` y su razón junto al
+#: recurso, así que salen de aquí: un punto ciego que se arregló y sigue declarado
+#: hace que se lea la lista con desconfianza (lo dice la aserción `ya_asertadas`, que
+#: es justo la que cazó este cambio).
+#:
+#: Volver a añadir una entrada es legítimo — nombrar un hueco es mejor que callarlo—
+#: pero es una CONCESIÓN, no el sitio por defecto: lo normal es escribirle su bloque.
+SIN_ASERCION_EN_TERRAFORM: dict[str, tuple[str, str]] = {}
 
 
 def _censo() -> dict:
@@ -97,6 +90,53 @@ def test_el_censo_recorre_el_terraform_entero_y_sabe_leer_una_alarma(tmp_path: P
     reales = ficheros_tf()
     assert len(reales) >= 20, (
         f"solo se recorrieron {len(reales)} ficheros .tf: el ámbito volvió a encogerse"
+    )
+
+
+def test_una_asercion_comentada_no_cuenta_como_cobertura(tmp_path: Path) -> None:
+    """**El agujero que se midió el 2026-08-22 (T-2.145).** Este módulo lee HCL con
+    expresiones regulares, y una regex no distingue el código del comentario: al
+    comentar la aserción de `dlq_depth` la guardia seguía en verde —la contaba— y
+    solo se ponía roja si se BORRABA. Comentar es exactamente lo que hace quien se
+    topa con un test que estorba, así que era el camino más probable de los dos.
+
+    Se prueba en los dos sentidos, porque un stripper demasiado entusiasta que se
+    comiera un `#` dentro de una cadena rompería el censo entero en silencio.
+    """
+    assert sin_comentarios('a = "b"  # nota\nc = "d"\n').split("\n")[0].rstrip() == 'a = "b"'
+    assert "#" in sin_comentarios('x = "vale # dentro de la cadena"')
+    assert "//" in sin_comentarios('x = "http://ejemplo"')
+    assert "oculto" not in sin_comentarios("// oculto\nvisible = 1")
+
+    tf = tmp_path / "modules" / "m"
+    tf.mkdir(parents=True)
+    (tf / "a.tf").write_text(
+        'resource "aws_cloudwatch_metric_alarm" "viva" {\n'
+        '  treat_missing_data = "breaching"\n'
+        "}\n"
+        '# resource "aws_cloudwatch_metric_alarm" "comentada" {\n'
+        '#   treat_missing_data = "ignore"\n'
+        "# }\n",
+        encoding="utf-8",
+    )
+    censo = alarmas(tmp_path)
+    assert set(censo) == {"viva"}, (
+        f"una alarma COMENTADA entró en el censo: {sorted(censo)}. Exigiría aserciones para un "
+        "recurso que no existe, y ensuciaría el veredicto de todas las demás."
+    )
+
+    (tf / "a.tftest.hcl").write_text(
+        'run "x" {\n'
+        "  assert {\n"
+        '    # condition = aws_cloudwatch_metric_alarm.viva.treat_missing_data == "breaching"\n'
+        "    condition = true\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert aserciones_de_treat_missing_data(tmp_path) == {}, (
+        "una aserción COMENTADA sigue contando como cobertura: se puede dejar la guardia en "
+        "verde comentando lo que estorbe, que es justo lo que esta ficha midió"
     )
 
 
@@ -234,13 +274,33 @@ def test_lo_que_declara_el_tf_y_lo_que_asierta_el_test_son_el_mismo_valor() -> N
 
 
 def test_los_huecos_declarados_fijan_el_valor_vigente() -> None:
-    """Mientras `infra/` no se toque, ESTA es la única aserción que tienen las
-    tres alarmas sin bloque en Terraform. No se conforma con nombrarlas: fija su
-    valor medido, así que cambiarlo obliga a pasar por aquí."""
+    """Mientras `infra/` no se toque, esta sería la única aserción que tendría una
+    alarma sin bloque en Terraform. No se conforma con nombrarla: fija su valor
+    medido, así que cambiarlo obliga a pasar por aquí.
+
+    **Hoy la lista está vacía, y por eso el bucle no basta**: un `for` sobre `{}`
+    aprueba sin mirar nada, que es la forma más silenciosa de que un guardia deje
+    de existir. Se comprueba primero que el mecanismo sabe ponerse rojo contra una
+    muestra sintética, y solo después se aplica a lo que haya.
+    """
+
+    # Control positivo PRIMERO: el veredicto contra una muestra en la que el
+    # Terraform y el hueco declarado discrepan. Sin esto, con la lista vacía, lo de
+    # abajo no distingue "todo cuadra" de "no se comprobó nada".
+    class _Falsa:
+        treat_missing_data = "breaching"
+
+    muestra = {"al_dia": _Falsa(), "divergida": _Falsa()}
+    assert huecos_que_divergen(muestra, {"al_dia": ("breaching", "x" * 41)}) == []
+    assert huecos_que_divergen(muestra, {"divergida": ("notBreaching", "x" * 41)}) == ["divergida"]
+    assert huecos_que_divergen(muestra, {"borrada": ("breaching", "x" * 41)}) == ["borrada"]
+
     censo = _censo()
-    for recurso, (valor, razon) in SIN_ASERCION_EN_TERRAFORM.items():
-        assert censo[recurso].treat_missing_data == valor, (
-            f"{recurso} cambió su `treat_missing_data` a "
-            f"{censo[recurso].treat_missing_data!r}: era {valor!r} y nadie más lo vigila"
-        )
+    divergen = huecos_que_divergen(censo, SIN_ASERCION_EN_TERRAFORM)
+    assert not divergen, (
+        f"hueco(s) declarados con un valor que ya no es el del Terraform: {divergen}. Mientras "
+        "`infra/` no se toque, esta era su única aserción."
+    )
+
+    for recurso, (_valor, razon) in SIN_ASERCION_EN_TERRAFORM.items():
         assert len(razon) > 40, f"{recurso} está declarado sin razón legible"

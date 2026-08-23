@@ -2064,7 +2064,15 @@ CREATE TABLE privacy_erasure_requests (
   -- Sin parámetro: el tenant de una constancia es SIEMPRE el de la sesión.
   tenant_id       uuid NOT NULL DEFAULT app_tenant_id() REFERENCES tenants,
   -- El titular que PIDIÓ. Atado al padrón del tenant por el FK compuesto de abajo.
-  user_sub        uuid NOT NULL,
+  -- [T-2.151] NULL cuando el sujeto es un TELÉFONO: quien solo dio su número no
+  -- está en el padrón, así que no tiene `sub` que poner aquí. El FK compuesto es
+  -- MATCH SIMPLE, o sea que con la columna nula no se comprueba — y no hace falta:
+  -- el confinamiento de ese sujeto lo da el índice del sello, derivado con el
+  -- `tenant_id` de la sesión.
+  user_sub        uuid,
+  -- [T-2.151 · D-23] Qué clase de titular nombra esta constancia.
+  subject_kind    text NOT NULL DEFAULT 'user_sub'
+    CHECK (subject_kind IN ('user_sub','msisdn')),
   right_requested text NOT NULL CHECK (right_requested IN ('cancelacion','oposicion')),
   -- Cómo LLEGÓ la solicitud. No confundir con `privacy_erasures.via`, que es cómo
   -- se EJERCIÓ: son dos actos distintos y separarlos es la mitad del registro.
@@ -2082,7 +2090,11 @@ CREATE TABLE privacy_erasure_requests (
   -- Una constancia es la solicitud de OTRO. El titular que quiere ejercer su
   -- propio ARCO tiene el autoservicio; dejarle fabricarse una constancia
   -- convertiría el registro del responsable en un trámite que se firma solo.
-  CONSTRAINT per_no_es_autoservicio CHECK (created_by <> user_sub)
+  CONSTRAINT per_no_es_autoservicio CHECK (created_by <> user_sub),
+  -- [T-2.151] El sujeto y su clase cuentan la misma historia. Sin esto una
+  -- constancia podría declararse 'msisdn' y llevar un `user_sub` —o al revés— y
+  -- la fila mentiría sobre a quién nombra.
+  CONSTRAINT per_sujeto_coherente CHECK ((subject_kind = 'user_sub') = (user_sub IS NOT NULL))
 );
 CREATE INDEX idx_privacy_erasure_requests_sujeto
   ON privacy_erasure_requests (tenant_id, user_sub);
@@ -2133,7 +2145,13 @@ CREATE TABLE privacy_erasures (
   -- se RESUELVE dentro de `privacy_erase_subject` contra el padrón del tenant de
   -- la sesión (constancia, T-2.80.b). El `sub` se conserva porque es la clave de
   -- idempotencia y, destruido el mapeo, no remonta a nadie.
-  user_sub        uuid NOT NULL,
+  -- [T-2.151] NULL para un sujeto-TELÉFONO, que no tiene `sub` ninguno. Ahí la
+  -- idempotencia no puede apoyarse en el sujeto —es justo lo que nos negamos a
+  -- registrar—: la da `uq_privacy_erasures_constancia`, una constancia una lápida.
+  user_sub        uuid,
+  -- [T-2.151 · D-23] Qué clase de titular se olvidó.
+  subject_kind    text NOT NULL DEFAULT 'user_sub'
+    CHECK (subject_kind IN ('user_sub','msisdn')),
   right_exercised text NOT NULL CHECK (right_exercised IN ('cancelacion','oposicion')),
   -- Quién EJERCIÓ el acto ante el sistema: el titular (autoservicio) o el
   -- responsable que ejecuta una constancia. Quién lo PIDIÓ materialmente está en
@@ -2166,8 +2184,21 @@ CREATE TABLE privacy_erasures (
   ),
   -- Idempotencia (regla de oro 3): un titular se anonimiza UNA vez. Ejercer ARCO
   -- dos veces devuelve la MISMA lápida, testigo sellado del primer acto.
-  CONSTRAINT uq_privacy_erasures_sujeto UNIQUE (tenant_id, user_sub)
+  CONSTRAINT uq_privacy_erasures_sujeto UNIQUE (tenant_id, user_sub),
+  CONSTRAINT pe_sujeto_coherente CHECK ((subject_kind = 'user_sub') = (user_sub IS NOT NULL)),
+  -- [T-2.151] No hay autoservicio para un sujeto-teléfono, y no es una omisión: el
+  -- autoservicio se apoya en `app_user_id()`, y quien solo dio su número no tiene
+  -- sesión con la que probar que es suyo. Su única vía es la constancia del
+  -- responsable (D-23), así que una lápida de teléfono SIN constancia sería una
+  -- que nadie autorizó.
+  CONSTRAINT pe_telefono_exige_constancia CHECK (
+    subject_kind <> 'msisdn' OR request_id IS NOT NULL)
 );
+-- [T-2.151] Una constancia, una lápida. Es la unidad de idempotencia del sujeto
+-- que no se puede nombrar: dos escritos sobre el mismo número son dos actos, que
+-- es lo que de verdad ocurrió.
+CREATE UNIQUE INDEX uq_privacy_erasures_constancia
+  ON privacy_erasures (tenant_id, request_id) WHERE subject_kind = 'msisdn';
 CREATE INDEX idx_privacy_erasures_tenant ON privacy_erasures (tenant_id, erased_at DESC);
 CREATE TRIGGER trg_privacy_erasures_append_only
   BEFORE UPDATE OR DELETE ON privacy_erasures
@@ -2199,6 +2230,23 @@ CREATE POLICY pe_on_behalf ON privacy_erasures FOR INSERT
   WITH CHECK (tenant_id = app_tenant_id()
               AND request_id IS NOT NULL
               AND app_can_erase_subject(tenant_id, user_sub));
+-- [T-2.151 · D-23] El gemelo para el sujeto que no está en el padrón. No puede
+-- reutilizar `app_can_erase_subject`, que busca la constancia POR `user_sub`: con
+-- un sujeto nulo esa comparación no encuentra nada. La exige por `request_id`, y
+-- exige además que se haya registrado COMO constancia de teléfono — si no, el
+-- responsable reutilizaría cualquier expediente suyo para justificar cualquier
+-- borrado.
+CREATE POLICY pe_phone_on_behalf ON privacy_erasures FOR INSERT
+  WITH CHECK (tenant_id = app_tenant_id()
+              AND subject_kind = 'msisdn'
+              AND user_sub IS NULL
+              AND request_id IS NOT NULL
+              AND app_role() IN ('tenant_admin','takab_superadmin')
+              AND EXISTS (
+                    SELECT 1 FROM privacy_erasure_requests r
+                     WHERE r.request_id = privacy_erasures.request_id
+                       AND r.tenant_id  = privacy_erasures.tenant_id
+                       AND r.subject_kind = 'msisdn'));
 
 -- EL ACTO. **Sigue sin recibir un sujeto.** En autoservicio opera sobre
 -- `app_user_id()` (T-2.80, intacto); por cuenta de otro recibe el `request_id` de
@@ -2327,6 +2375,61 @@ BEGIN
 
   RETURN to_jsonb(v_row) || jsonb_build_object('created', v_created);
 END $$;
+
+-- [T-2.151 · D-23] EL ACTO DEL SUJETO-TELÉFONO. Registrar y ejecutar, en UNA
+-- sentencia: un borrado a medias —constancia sin lápida, o lápida sin el sello
+-- destruido— no es un estado alcanzable.
+--
+-- **No recibe el número ni su índice.** El sello lo destruye el llamador antes,
+-- porque hace falta la pimienta del despliegue y ésa no está en esta base; aquí
+-- solo se registra el acto. Si esta inserción falla, la transacción entera se
+-- deshace y el sello vuelve: por eso el orden es destruir-y-luego-registrar.
+--
+-- `affected` es CONSTANTE a propósito. En el ARCO del padrón son conteos útiles;
+-- aquí un {"privacy_subject_secrets": 1} frente a un 0 sería un ORÁCULO DE
+-- EXISTENCIA: con una credencial de responsable se barre un rango de números y se
+-- descubre cuáles constan y, con ellos, en qué edificio está quien los lleva.
+CREATE FUNCTION privacy_erase_phone_subject(
+  p_right text, p_channel text, p_received_at timestamptz,
+  p_proof_ref text, p_proof_digest text, p_via text)
+  RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+  v_tenant  uuid := app_tenant_id();
+  v_actor   uuid := app_user_id();
+  v_request uuid;
+  v_wm      bigint;
+  v_row     privacy_erasures%ROWTYPE;
+BEGIN
+  IF v_tenant IS NULL OR v_actor IS NULL THEN
+    RAISE EXCEPTION
+      'ARCO exige una sesion con portador identificado: quien ejecuta el borrado '
+      'de un sujeto-telefono es el responsable del tratamiento, nunca un anonimo'
+      USING ERRCODE = 'TK403';
+  END IF;
+
+  INSERT INTO privacy_erasure_requests
+    (user_sub, subject_kind, right_requested, channel, received_at,
+     proof_ref, proof_digest, created_by)
+  VALUES
+    (NULL, 'msisdn', p_right, p_channel, p_received_at,
+     p_proof_ref, p_proof_digest, v_actor)
+  RETURNING request_id INTO v_request;
+
+  SELECT coalesce(max(audit_id), 0) INTO v_wm FROM audit_log WHERE tenant_id = v_tenant;
+
+  INSERT INTO privacy_erasures
+    (tenant_id, user_sub, subject_kind, right_exercised, requested_by, request_id,
+     via, affected, audit_watermark, audit_digest)
+  VALUES
+    (v_tenant, NULL, 'msisdn', p_right, v_actor, v_request,
+     p_via, '{}'::jsonb, v_wm, privacy_audit_digest(v_tenant, v_wm))
+  RETURNING * INTO v_row;
+
+  RETURN to_jsonb(v_row);
+END $$;
+
+GRANT EXECUTE ON FUNCTION privacy_erase_phone_subject(
+  text, text, timestamptz, text, text, text) TO takab_app;
 
 REVOKE ALL ON FUNCTION privacy_erase_subject(text,text,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION privacy_audit_digest(uuid,bigint) FROM PUBLIC;

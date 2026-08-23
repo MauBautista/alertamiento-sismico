@@ -82,16 +82,37 @@ systemctl show -p NRestarts --value takab-gpio takab-edge
 sudo journalctl -u takab-gpio -b --no-pager | grep -i "pin factory"
 
 # 4 · alguien sostiene los pines, y es el proceso correcto
-sudo journalctl -u takab-gpio -b --no-pager | grep -iE "cerrojo|dueño" | head -5
+sudo cat /var/lib/takab/gpio.lock                     # -> pid=NNN  /  unit=takab-gpio
+sudo flock -n -E 9 /var/lib/takab/gpio.lock true; echo "flock=$?"   # -> 9 (tomado)
 ```
+
+> ### ⚠️ Corregido el 2026-08-17 — el comando anterior no podía funcionar
+> Este paso decía `journalctl -u takab-gpio | grep -iE "cerrojo|dueño"`. **Ese grep no encuentra
+> nada nunca:** la palabra «cerrojo» solo existe en `deploy/edge/deploy.sh`, no en los logs del
+> servicio. Quien siguiera el runbook al pie de la letra vería salida vacía y tendría que decidir,
+> en mitad de la sesión, si eso es un fallo o un runbook malo. **Salida vacía y fallo real se veían
+> igual**, que es la peor propiedad que puede tener una comprobación.
+>
+> Lo que sí es medible es el `flock` sobre `/var/lib/takab/gpio.lock`, que es exactamente como lo
+> interroga el paso 7 del despliegue: el dueño sostiene un **flock exclusivo** y deja dentro su
+> `pid=` y su `unit=`.
+>
+> **Y ojo con el código de salida, que está invertido respecto a la intuición:** `flock` devuelve
+> **9 = el cerrojo está TOMADO**, que es el resultado **bueno**. Un `0` significa «lo tomé yo»,
+> es decir **nadie sostenía los pines** — y eso es un fallo, aunque `systemctl is-active` diga
+> `active`.
 
 | # | Criterio de aprobado |
 |---|---|
 | 1 | `takab-gpio` **y** `takab-edge` en `active` |
 | 2 | `NRestarts` bajo. **Un número alto = pelea por el cerrojo, no éxito** |
 | 3 | dice **`LGPIOFactory (lgpio)`**. Si dijera `native`, `sysfs` o `Mock`, **`G-01` NO pasa** |
-| 4 | el cerrojo lo sostiene `takab-gpio` |
+| 4 | el cerrojo dice `unit=takab-gpio` **y** `flock` sale **9**. Un `0` = pines sin dueño |
 | 5 | los relés responden — abajo |
+
+> **Línea base medida antes del reinicio (2026-08-17, ~10 h de uptime), para comparar contra ella:**
+> ambos `active` · `NRestarts` **0 y 0** · `LGPIOFactory (lgpio)` · cerrojo `pid=742`,
+> `unit=takab-gpio`, `flock=9`. **Eso es el aprobado que hay que reproducir tras el `reboot`.**
 
 ### A.3 · Quinta comprobación: que los relés de verdad se muevan
 

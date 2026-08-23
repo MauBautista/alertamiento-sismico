@@ -33,6 +33,15 @@ module "storage" {
   backfill_queue_arn = module.messaging.queues["backfill"].arn
 }
 
+locals {
+  # [T-2.155] Nombre del configuration set de SES. Vive AQUI y no dentro de
+  # `modules/identity` porque lo necesitan DOS modulos: identity lo crea y
+  # database compone con el el ARN del permiso de envio. Database no puede leerlo
+  # de un output de identity (cerraria el ciclo identity -> serve -> database), asi
+  # que la unica forma de tener una sola definicion es esta.
+  ses_configuration_set_name = "takab-dev-correo"
+}
+
 module "database" {
   source = "../../modules/database"
 
@@ -61,6 +70,15 @@ module "database" {
     [for q in module.messaging.queues : q.arn],
     values(module.messaging.dlq_arns),
   )
+  # [T-2.163] El pool contra el que el job de retencion reconcilia las bajas.
+  # Sale del modulo identity, no de una variable: dos declaraciones del mismo
+  # pool divergen, y aqui divergir significa pedir permiso sobre uno y preguntar
+  # a otro.
+  cognito_pool = {
+    id  = module.identity.user_pool_id
+    arn = module.identity.user_pool_arn
+  }
+
   worker_ecr_repo_arns = values(module.registry.repository_arns)
   worker_s3_read_arns = [
     "${module.storage.transfer_bucket.arn}/*",
@@ -113,6 +131,11 @@ module "database" {
   # `ses_verified_emails` es lo natural — y con la condicion escrita sobre la
   # lista, eso borraria el permiso entero.
   notify_ses_domain = var.ses_domain
+
+  # [T-2.155] El MISMO nombre que recibe `module.identity`, definido una sola vez
+  # en `locals`. Si divergieran, el permiso apuntaria a un set que no existe y el
+  # envio moriria con AccessDenied — que es justo como se descubrio este agujero.
+  notify_ses_configuration_set = var.ses_domain != "" ? local.ses_configuration_set_name : ""
 }
 
 module "identity" {
@@ -129,12 +152,13 @@ module "identity" {
   # El buzon de rebotes es el de on-call y no una variable propia: quien recibe
   # las alarmas operativas es quien tiene que enterarse de que el correo del
   # sistema esta rebotando. Un buzon distinto seria un segundo sitio que mirar.
-  ses_domain              = var.ses_domain
-  ses_mail_from_subdomain = var.ses_mail_from_subdomain
-  ses_feedback_email      = var.ops_alert_email
-  ses_dmarc_policy        = var.ses_dmarc_policy
-  ses_dmarc_rua           = var.ses_dmarc_rua
-  ses_route53_zone_id     = var.ses_route53_zone_id
+  ses_domain                 = var.ses_domain
+  ses_mail_from_subdomain    = var.ses_mail_from_subdomain
+  ses_feedback_email         = var.ops_alert_email
+  ses_dmarc_policy           = var.ses_dmarc_policy
+  ses_dmarc_rua              = var.ses_dmarc_rua
+  ses_route53_zone_id        = var.ses_route53_zone_id
+  ses_configuration_set_name = local.ses_configuration_set_name
 
   # El callback de localhost se conserva SIEMPRE (modules/identity): el `make dev`
   # local debe seguir funcionando aunque la consola este publicada.
@@ -217,6 +241,8 @@ module "observability" {
   # endpoint que suscribir, y la bandera propia obliga a que la API este
   # desplegada ANTES (ver la variable: la suscripcion se confirma durante el
   # apply, asi que un endpoint que todavia no existe mata el apply).
+  ops_ack_deadline_s = var.ops_ack_deadline_s
+
   ops_alert_https_endpoint = (
     var.serve_enabled && var.ops_alert_https_subscriber_enabled
     ? "${module.serve.console_url}/api/ops/alerts/sns"
@@ -251,4 +277,24 @@ module "observability" {
   # programa la corrida. Un literal aqui haria que la alarma vigilara una
   # periodicidad distinta de la que de verdad ocurre en la maquina.
   pii_retention_max_age_s = module.database.pii_retention_max_age_s
+}
+
+# [T-2.156] El sitio publico. Comparte `ses_route53_zone_id` con SES a proposito:
+# es la MISMA zona, y tener dos variables para una zona es como acaban divergiendo.
+module "site" {
+  source = "../../modules/site"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  enabled         = var.site_enabled
+  domain          = var.ses_domain
+  route53_zone_id = var.ses_route53_zone_id
+
+  # La pagina vive en el repo, no dentro de una cadena de Terraform: asi se puede
+  # abrir en un navegador, revisar en el diff y comprobar que no afirma nada que
+  # el sistema no haga.
+  index_html = file("${path.module}/site/index.html")
 }

@@ -104,6 +104,48 @@ run "el_silencio_significa_lo_correcto_en_cada_alarma" {
     error_message = "ec2_status debe seguir en 'breaching': la ausencia de metricas ES la caida de la instancia."
   }
 
+  # [T-2.145] `ec2_cpu`: MISMA instancia, MISMA ausencia, y la de arriba ya la
+  # pagina. Estaba en `breaching`, asi que un apagon mandaba DOS correos por el
+  # mismo corte — y el segundo nombraba la causa equivocada: "CPU sostenida"
+  # cuando lo que pasa es que la maquina no esta.
+  #
+  # Es literalmente el caso que `sensor_mute` resuelve tres aserciones mas arriba,
+  # con la misma frase: cada alarma dice UNA cosa. Dos correos por un corte
+  # ensenan a leer por encima, y el dia que lleguen dos por causas DISTINTAS nadie
+  # los distinguira.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.ec2_cpu.treat_missing_data == "notBreaching"
+    error_message = "ec2_cpu debe usar 'notBreaching': cuando la instancia se apaga quien pagina es `ec2_status`, que nombra la causa real. Con 'breaching' llegan dos correos por el mismo corte y el segundo miente sobre el motivo."
+  }
+
+  # [T-2.145] `dlq_depth`: lo vigilado es la PRESENCIA de mensajes, y la ausencia
+  # de datapoints no puede esconderla.
+  #
+  # SQS solo publica metricas de una cola con actividad reciente. Una DLQ sana esta
+  # VACIA E INACTIVA —su estado normal— y deja de emitir; con `breaching` eso
+  # alarmaba. Y al reves no hay hueco: un mensaje que entra ES actividad, asi que
+  # fuerza el datapoint. No se puede tener mensajes sin metrica.
+  #
+  # Ademas su comentario en `main.tf` ya razonaba `notBreaching` mientras el codigo
+  # hacia lo contrario, dos lineas mas abajo. Se resuelve la contradiccion HACIA EL
+  # COMENTARIO, que es el que traia el argumento.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.dlq_depth["telemetry"].treat_missing_data == "notBreaching"
+    error_message = "dlq_depth debe usar 'notBreaching': una DLQ sana esta vacia e inactiva y SQS deja de publicar, asi que 'breaching' alarma sobre el estado bueno. La presencia de mensajes no puede pasar desapercibida: un mensaje que entra genera actividad y fuerza el datapoint."
+  }
+
+  # [T-2.145] `iot_rule_errors`: metrica de METRIC FILTER sobre logs. Sin eventos
+  # que casen no se publica NADA — que es exactamente el sistema funcionando.
+  # Con `breaching`, una nube sana alarmaba por no tener errores.
+  #
+  # Y el caso que `notBreaching` silencia —que las reglas dejen de correr del
+  # todo— tiene su propio vigilante: si nada llega de los gabinetes, `gateway_offline`
+  # pagina por la ausencia del latido. Mismo reparto que `sensor_mute`.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.iot_rule_errors.treat_missing_data == "notBreaching"
+    error_message = "iot_rule_errors debe usar 'notBreaching': su metrica sale de un metric filter y sin errores no hay datapoint, o sea que 'breaching' convierte el estado SANO en alarma. Que las reglas dejen de correr lo cubre `gateway_offline` por la ausencia del latido."
+  }
+
   # La ventana es parte del contrato: `SampleCount < 1` durante 2 periodos de 5 min = 10 min
   # sin UN solo heartbeat, cuando llegan 1/min. Diez ausencias seguidas no son un hipo de red.
   # Se sacrifica deteccion rapida (el LWT avisaba en ~1 min) a cambio de que la alarma NO

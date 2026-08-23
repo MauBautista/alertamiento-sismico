@@ -9,17 +9,29 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-08-16 · **21 puntos** (§2: 9 · §3: 4 · §4: 5 · §5: 3)
+> **Última actualización:** 2026-08-17 · **21 puntos** (§2: 9 · §3: 4 · §4: 5 · §5: 3)
 >
-> **Lo que cambió el 2026-08-15: la sección §1 desapareció entera.** Las seis decisiones que solo
-> pedían criterio —§1.1, §1.3, §1.4, §1.5, §1.6 y §1.7— quedaron cerradas por Mauricio en una
-> sesión, y se sumaron a las tres delegadas del 2026-08-12. **Ya no queda ni una decisión de
-> escritorio pendiente.** Las nueve, con su razón, están en
-> [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md) como `D-01`…`D-09`.
+> ## ⚠️ Lo que cambió el 2026-08-17, y corrige lo que esta cabecera decía
 >
-> **Consecuencia, y es el titular de esta pasada:** **todo lo que queda en esta lista cuesta
-> dinero, tiempo de un tercero, o tocar un edificio.** Nada de lo que sigue se puede resolver
-> pensando.
+> El 2026-08-15 esta lista declaró que **«ya no queda ni una decisión de escritorio pendiente»**.
+> **Era falso, y el modo en que era falso es lo interesante:** quedaban **diez**, pero ninguna
+> estaba en la §1. Vivían **enterradas dentro de puntos de acción** —seis en una tabla en blanco
+> del runbook de SES, una en una fila vacía del manual de operación, una en una nota al pie de
+> `D-08`, y dos en el modo de agendar `§2` y `§3.1`—.
+>
+> **Una decisión escondida dentro de una tarea no se lee como decisión: se lee como trabajo
+> bloqueado sin culpable.** Por eso el dominio —que bloqueaba **los dos únicos puntos de plazo
+> externo del proyecto**— llevaba semanas parado sin que nadie lo señalara: parecía trámite.
+>
+> Las diez quedaron cerradas el 2026-08-17 como
+> [`D-12`…`D-21`](DECISIONES-MAURICIO.md). **La §1 sigue vacía, y ahora es verdad** — pero la
+> lección es de método: `§1` enumeraba a mano lo que contaba como decisión, y **un censo que
+> enumera a mano acaba divergiendo**.
+>
+> **Lo que sigue siendo cierto, y ahora más:** todo lo que queda en esta lista cuesta **dinero,
+> tiempo de un tercero, o tocar un edificio**. Lo que cambió es que ya se sabe **qué** se compra y
+> **en qué orden** — ver [`D-16`](DECISIONES-MAURICIO.md#d-16) y
+> [`D-17`](DECISIONES-MAURICIO.md#d-17).
 
 ---
 
@@ -35,11 +47,11 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 
 ---
 
-## 1 · DECISIONES — ✅ **sección cerrada** (2026-08-15)
+## 1 · DECISIONES — ✅ **sección cerrada** (re-verificada el 2026-08-17)
 
-**No queda ninguna.** Las nueve decisiones que solo pedían criterio están tomadas, cada una con su
-razón escrita y su condición de revocación, en
-[**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
+**No queda ninguna** — pero esta frase ya fue falsa una vez, así que ahora viene con la lista
+completa. Las **veintiuna** decisiones tomadas, cada una con su razón escrita y su condición de
+revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 
 | ID | Decisión | Fecha |
 |---|---|---|
@@ -52,18 +64,56 @@ razón escrita y su condición de revocación, en
 | `D-07` | Teléfono del consentimiento: **cripto-borrado** | 2026-08-15 |
 | `D-08` | Bloque IV (mini-ShakeMap y CCTV): **se planifica ya** | 2026-08-15 |
 | `D-09` | `enforce_admins`: **queda en `false`**, con gatillo escrito | 2026-08-15 |
+| `D-10` | Ruta de hardware de la sirena: **variante B**, fallback con watchdog | 2026-08-16 |
+| `D-11` | El quórum de pánico **abre incidente** `trigger='manual'` | 2026-08-16 |
+| **`D-12`** | **Dominio raíz `takabailert.com`**, DNS en Route 53 *(enmendada 21-ago)* | **2026-08-17** |
+| **`D-13`** | Teléfono de soporte: **número Twilio mexicano** | **2026-08-17** |
+| **`D-14`** | CCTV: **híbrido** — aforo en sitio + clips de evento confirmado | **2026-08-17** |
+| **`D-15`** | Sirena por jack: **encendida** en el gabinete de desarrollo | **2026-08-17** |
+| **`D-16`** | Compras: **sí** dominio y Twilio · **no todavía** BOM de `G-02` ni Apple | **2026-08-17** |
+| **`D-17`** | La ventana AWS se parte en **dos**: applies (A) y restore (B) | **2026-08-17** |
+| **`D-18`** | `console_scope_enforced`: **se enciende ya**, tests en el mismo commit | **2026-08-17** |
+| **`D-19`** | Tono de la app: **propio**, no el oficial de CIRES | **2026-08-17** |
+| **`D-20`** | Consulta legal: **espera a que un cliente la pida** | **2026-08-17** |
+| **`D-21`** | Sesión de vida: **se parte** — `G-01` esta semana, solo | **2026-08-17** |
 
-> **Cuatro de ellas generan trabajo de software que hay que fichar en `TASKS.md`** —`D-05` (cablear
-> `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta + fecha
-> declarada + alarma por ausencia), `D-07` (cripto-borrado del `subject_ref`) y `D-08` (diseño de
-> `T-3.09`/`T-3.10`)—. **Ese trabajo NO es tuyo: es de la máquina.** No vuelve a esta lista.
+> **Las que generan trabajo de software se fichan en `TASKS.md` y NO vuelven a esta lista** —`D-05`
+> (cablear `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta
+> + fecha declarada + alarma por ausencia), `D-07` (**hecho**: `T-2.150`, mergeado el 2026-08-17),
+> `D-08` (diseño de `T-3.09`/`T-3.10`), `D-14` (aforo local + clips, con caída a *solo aforo* **por
+> configuración de sitio**), `D-18` (invertir dos tests HTTP) y `D-19` (grabar el tono propio).
+> **Ese trabajo es de la máquina.**
 >
-> **`D-04` sí te deja una acción física**, y es la única que salió de aquella sección: hacer el
-> traspaso del dueño de los pines en el gabinete de desarrollo. Está en **§3.5**.
+> ### ⚠️ Las que sí te dejan una acción tuya — y son las únicas que importan de esta sección
+>
+> | Decisión | Tu acción | Dónde vive |
+> |---|---|---|
+> | `D-12` + `D-16` | **Delegar los NS** de `takabailert.com` en Namecheap + **comprar el buzón** (~$15/año) · *(dominio comprado y zona `Z01047862QJFIRSOR5IC5` creada)* | §2.9 y §4.2 |
+> | `D-13` + `D-16` | **Abrir cuenta Twilio** y comprar el número mexicano | §4.3 |
+> | `D-15` | **Encender la sirena por jack** (un comando) | §3.4 |
+> | `D-21` | **Acreditar `G-01`** esta semana, 20 min | §3.1 |
+>
+> `D-04` dejaba una cuarta —el traspaso del dueño de los pines— y **ya está hecha** (§3.5).
 
 ---
 
-## 2 · VENTANA AWS — una sesión con credenciales, en este orden
+## 2 · VENTANA AWS — **DOS** sesiones con credenciales, en este orden
+
+> ### 📅 El reparto, decidido en [`D-17`](DECISIONES-MAURICIO.md#d-17) — ya no es una sola sesión
+>
+> | | Qué entra | Duración | Por qué va aparte |
+> |---|---|---|---|
+> | **Ventana A** | §2.1 (los 5 applies) · §2.2 · §2.3 · §2.4 · §2.5 · §2.6 · §2.7 | ~1 h | Sin build. Todo son applies y verificaciones |
+> | **Ventana B** | §2.8 (`T-2.74`, restore con RTO medido) | ~3 h | Empieza con `make cloud-images`, que tarda **~40 min** |
+>
+> **La razón de partirlas está medida, no supuesta:** el token SSO **expira a mitad del build**, y
+> la firma del fallo engaña — terraform muere con `InvalidGrantException` **mientras el `docker
+> login` a ECR sigue funcionando**. Meter ese build al final de una sesión que ya lleva una hora
+> **garantiza** que el token no llegue vivo. Partirlo permite `aws sso logout` + `login` justo
+> antes de la B, que es la única mitigación que funciona.
+>
+> **§2.9 (SES) no está en ninguna de las dos:** hasta que el dominio de
+> [`D-12`](DECISIONES-MAURICIO.md#d-12) exista, no hay nada que aplicar.
 
 > **Trampas ya pagadas, léelas antes de empezar:**
 > - **SSO rancio:** `aws sso login` a secas **no basta**; hace falta `aws sso logout` primero, o
@@ -74,32 +124,50 @@ razón escrita y su condición de revocación, en
 >   en cada publish.
 > - La IP doméstica rota a diario: si algo da **timeout** (no 403), es el firewall.
 
-### 2.1 · Los `terraform apply` que faltan — **cinco, y los cinco invisibles hasta que fallan**
+### 2.1 · Los `terraform apply` que faltan — **quedan TRES** (2 y 3 se hicieron el 2026-08-21)
 
-> **Lo que ya NO está aquí porque se hizo:** las migraciones. Desplegado y verificado en la nube el
-> 2026-08-11, no inferido del código de salida — siete contenedores en `48d530f`, `/api/health`
-> respondiendo `{"status":"ok","build":"48d530f"}` y `alembic_version` en
-> `0038_privacy_erasure_on_behalf`, la cabeza del repo.
+> **Lo que ya NO está aquí porque se hizo:** las migraciones, **redesplegadas el 2026-08-21**.
+> Verificado en la nube, no inferido del código de salida: siete contenedores en `5399a57`,
+> `/api/health` respondiendo `{"status":"ok","build":"5399a57"}` y `alembic_version` en
+> **`0046_privacy_subject_sealing`**, la cabeza del repo.
+>
+> ### ⚠️ Y la razón por la que hubo que redesplegar merece quedar escrita
+> El despliegue del 2026-08-11 dejó la nube en `0038`, que **era** la cabeza entonces. Diez días
+> después el repo iba por `0046` y **nada lo dijo**: ni un test, ni una alarma, ni el health. Se
+> descubrió por un síntoma lateral —una alarma de retención de PII que no podía apagarse porque
+> `0043` no había creado su tabla— tras media hora persiguiendo el script equivocado. **Está
+> fichado como [`T-2.153`](TASKS.md), y no lo cierra este redespliegue:** lo que hay que arreglar
+> no es la deriva, es que la deriva sea **invisible**.
 
 Lo que sigue pendiente son **applies de IAM y de alarmas**. Ninguno da error al faltar: **dan una
 conducta silenciosamente peor**, que es la familia de trampa más cara de este proyecto.
 
 1. Los **tres statements IAM de las ventanas de mantenimiento** ([`T-2.71`](TASKS.md)) — el
    despliegue de imágenes **no los toca**.
-2. **`sqs:ChangeMessageVisibility`** en el rol de los workers ([`T-2.132`](TASKS.md)). Ya está
-   escrito en el Terraform; **sin el `apply` el arreglo es decorativo**. El worker no se cae —la
-   llamada es best-effort— pero el mensaje se hace visible a mitad del reintento y otro worker
-   **gasta justo la recepción que se estaba ahorrando**, que es el defecto entero de esa ficha.
-3. **Dos alarmas de la Fase 2.6** ([`T-2.72.b/c`](TASKS.md)). El `apply` las crea y publica la
-   versión nueva del documento SSM. **Trampa ya fichada:** cambiar el documento **no relanza la
-   asociación** —el cambio aterriza hasta 24 h después—; hay que forzarla con
-   `aws ssm start-associations-once`. **Si se dan por buenas las alarmas sin relanzarla**, las tres
-   quedan sin publicador y `backup-base-ausente` manda un correo **que parece un fallo de respaldo
-   y es un fallo de despliegue**.
-   > **Y esto conviene saberlo antes de que llegue el correo:** `backup-base-ausente`
-   > **NACE EN ALARM a propósito** — el día del `apply` todavía no hay backup base. **El correo de
-   > OK, cuando §2.8 tome el primero, ES el acuse** de que la cadena consiguió ancla. Si ese OK
-   > **no** llega, ahí sí hay un problema.
+2. ~~**`sqs:ChangeMessageVisibility`** en el rol de los workers ([`T-2.132`](TASKS.md))~~ —
+   ✅ **APLICADO el 2026-08-21**, verificado en el rol `takab-dev-db`. Entró de propina con el
+   apply del dominio de SES.
+3. ~~**Dos alarmas de la Fase 2.6** ([`T-2.72.b/c`](TASKS.md))~~ — ✅ **APLICADAS el
+   2026-08-21.** Cuatro alarmas y tres documentos SSM creados; las tres asociaciones corrieron
+   solas al crearse y se relanzó a mano la del PITR (documento actualizado). **Las cuatro en `OK`**
+   tras el redespliegue.
+   > ### ⚠️ CORRECCIÓN — lo que esta viñeta decía sobre `backup-base-ausente` era falso
+   >
+   > Decía que **«nace en ALARM a propósito, porque el día del `apply` todavía no hay backup
+   > base»**, y que el correo de OK sería el acuse. **Nació en `OK`**, porque la premisa no se
+   > sostenía: **ya había backup base** y su métrica ya fluía. Nunca hubo tal acuse que esperar.
+   >
+   > **Y quien sí dio guerra fue su hermana.** `backup-base-atrasado` entró en `ALARM` con una
+   > edad de 7,006 días y salió sola veinte minutos después, al aterrizar el backup del día. **No
+   > era la cadena rota: era el diente de sierra**, porque el umbral iguala exactamente la
+   > cadencia. Se repetirá **cada 7 días**. Fichado como [`T-2.154`](TASKS.md).
+   >
+   > **La lección, que es la que sobrevive a las dos:** esta lista predijo por escrito el estado
+   > de nacimiento de dos alarmas y **acertó en ninguna**. Un estado de alarma **se mide cuando
+   > existe**; escribirlo por adelantado es adivinar, y luego se lee como si fuera un hecho.
+   >
+   > **Lo que sigue siendo verdad y no hay que perder:** cambiar un documento SSM **no relanza su
+   > asociación** —el cambio puede tardar 24 h—; `aws ssm start-associations-once` la fuerza.
 4. **Tres secretos y abrir el 443 para los webhooks de entrega** ([`T-2.77.b`](TASKS.md)). El
    endpoint público ya existe y **sin ellos responde 503 y lo grita** —no hay degradación
    silenciosa—, pero hasta entonces los tres canales siguen diciendo «el proveedor lo aceptó» y
@@ -129,7 +197,14 @@ conducta silenciosamente peor**, que es la familia de trampa más cara de este p
    2. `curl -X POST …/api/ops/alerts/sns -d '{}'` → debe dar **404**. **Si da 503, falta el ARN:
       PARA AHÍ** — seguir hace que el `apply` muera a medias.
    3. Solo entonces `ops_alert_https_subscriber_enabled = true` + `apply`.
-   4. Acuñar tu credencial de guardia: `python -m takab_api.ops.oncall issue`.
+   4. Acuñar tu credencial de guardia — **en `takab-cloud-notify-1`, NO en el de la API**:
+>      ```bash
+>      sudo docker exec -it takab-cloud-notify-1 \
+>        python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
+>      ```
+>      El de la API conecta como `takab_app` y la tabla lo **niega por diseño**; hace falta un rol
+>      con `BYPASSRLS`. Y va por `ssm start-session`, no por `send-command`: la salida de éste se
+>      guarda 30 días en AWS, y esto es un secreto que se enseña una vez.
    > **Guárdala en el gestor de contraseñas y pon la página de acuse como marcador en el
    > teléfono.** La base solo guarda su **hash**, así que si la pierdes no se recupera: se acuña
    > otra y se revoca la vieja. **Y no viaja en el correo a propósito** — los escáneres de los
@@ -149,13 +224,18 @@ aparcada. **Si no llega el correo de `ok_actions` en ~15 min, la métrica nunca 
 
 ### 2.3 · [`T-2.87`](TASKS.md) · Apply de Cognito
 ### 2.4 · [`T-2.88`](TASKS.md) · Rol CI OIDC endurecido *(cierra también `T-1.44`)*
-### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced`
+### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **va en la ventana A**
 > **La única brecha multi-tenant viva en producción.** Tiene **secuencia obligada** —invertirla
 > deja a cada `soc_operator` con cero estaciones—: primero recorrer los `scope_gap` del
 > `audit_log`, luego asignar alcance, y **encenderlo al final**.
 >
 > **⚠️ Y pondrá la suite en rojo:** dos tests HTTP fijan hoy la conducta *no* impuesta. Hay que
 > invertirlos **en el mismo cambio**, no después. Que no se descubra en mitad de la ventana.
+>
+> **✅ Momento decidido — [`D-18`](DECISIONES-MAURICIO.md#d-18): se enciende YA**, no se espera al
+> primer cliente. Hoy hay un solo tenant de desarrollo, sin datos de nadie dentro: cerrar la brecha
+> cuesta lo mínimo que va a costar nunca. El día que entre un cliente, este mismo cambio se hace
+> con datos reales dentro y con él delante.
 
 ### 2.6 · [`T-2.91`](TASKS.md) · Sembrar un occupant real
 Hoy **no existen** usuarios móviles de prueba. Los scripts están escritos y **nunca se han
@@ -182,12 +262,49 @@ corrido**. El occupant necesita código de enrolamiento.
 > Y recuerda: **un SKIP no es un PASS** — el checklist de restore salía verde perdiendo datos.
 
 ### 2.9 · [`T-2.78`](TASKS.md) · SES fuera de sandbox + cadena on-call
-> **Bloqueado por algo que no es un trámite: no hay dominio.** Sin dominio no hay DKIM/SPF.
-> El runbook está escrito con los comandos y los registros DNS; los tres registros de
-> verificación (S-1…S-12, C-1…C-10, escalamiento) están **en blanco**.
+> **Ya no está bloqueado por criterio: está bloqueado por una tarjeta.** Y la diferencia importa,
+> porque lo primero no lo desatascaba nadie leyendo el runbook.
 >
-> **Y de aquí sale un dato que hoy no existe y que ya se está usando:** el manual de operación
-> dice «avisa a soporte» unas 25 veces, **y ese teléfono no está en ninguna parte**.
+> **✅ Decidido en [`D-12`](DECISIONES-MAURICIO.md#d-12)** — la tabla `D-1`…`D-6` del
+> [runbook de SES](runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md) está **rellenada**:
+>
+> | | |
+> |---|---|
+> | Dominio raíz | **`takabailert.com`** — comprado en **Namecheap** |
+> | DNS | **Route 53**, cuenta `634882473845` |
+> | Remitente | **`alertas@takabailert.com`** |
+> | MAIL FROM | **`bounce.takabailert.com`** — *`mail.` colisiona con el webmail del buzón* |
+> | DMARC `rua=` | **`dmarc@takabailert.com`** |
+> | On-call | **`ops@takabailert.com`** (migra del gmail personal) |
+>
+> ### ➡️ TU ACCIÓN — **estado al 2026-08-21: la zona SÍ, el dominio NO**
+>
+> | | Estado al 2026-08-21 |
+> |---|---|
+> | Dominio | ✅ **`takabailert.com` comprado** en Namecheap |
+> | Zona alojada en Route 53 | ✅ **`Z01047862QJFIRSOR5IC5`** (las 3 zonas `.mx` duplicadas, borradas) |
+> | **Buzón** (Namecheap Private Email, ~$15/año) | ❌ **PENDIENTE** — sin él, `ops@` y `dmarc@` no reciben |
+> | **Delegar los NS** en Namecheap | ❌ pendiente — **y va DESPUÉS del buzón**, ver el orden |
+>
+> **⚠️ Crear la zona NO es tener el dominio, y el comando no lo dice.**
+> `route53 create-hosted-zone` **acepta cualquier nombre sin comprobar que sea tuyo**: devuelve
+> cuatro NS con aire de éxito y cobra su cuota **delegando nada**. Parece progreso y no lo es.
+> Detalle en [`D-12`](DECISIONES-MAURICIO.md#d-12).
+>
+> **Y salieron TRES zonas** (una del 17-ago, dos del 21-ago), porque el comando **no es
+> idempotente** y `--caller-reference` lleva timestamp. **Hay que borrar dos:** solo un juego de NS
+> puede delegarse, y mezclarlos da correo que no se entrega **sin un solo error a la vista**.
+>
+> Hasta que el dominio exista, los CNAME de DKIM no se pueden publicar y **§4.2 (WhatsApp) sigue
+> igual de parado** — es el mismo dominio sirviendo a dos trámites.
+>
+> Los tres registros de verificación del runbook (S-1…S-12, C-1…C-10, escalamiento) siguen **en
+> blanco**: se rellenan durante la sesión, no antes.
+>
+> **El teléfono de soporte ya tiene dueño:** el manual dice «avisa a soporte» ~25 veces y ese número
+> no existía. Por [`D-13`](DECISIONES-MAURICIO.md#d-13) será el **número Twilio mexicano** de §4.3
+> — un alta, dos necesidades. Se rellena `MANUAL-OPERACION-TAKAB.md §1` **cuando el número exista**,
+> nunca antes: un número falso en un manual de emergencia es peor que una casilla vacía.
 
 ---
 
@@ -221,6 +338,21 @@ corrido**. El occupant necesita código de enrolamiento.
 >
 > **Variante de la ruta de hardware: DECIDIDA** — (B), fallback con watchdog
 > ([`D-10`](DECISIONES-MAURICIO.md)). **La lista de materiales ya se puede comprar.**
+>
+> ### 📅 Lo decidido el 2026-08-17, y parte esta ficha en dos
+>
+> **[`D-21`](DECISIONES-MAURICIO.md#d-21): `G-01` se acredita esta semana, SOLO.** Deja de esperar a
+> los otros dos. Son ~20 min y no depende de comprar nada — atarlo a `G-02` lo dejaba rehén de una
+> obra sin fecha.
+>
+> **[`D-16`](DECISIONES-MAURICIO.md#d-16): la BOM del `G-02` NO se compra todavía.** Y esto hay que
+> leerlo por lo que es: **`G-02` es aplazamiento de RIESGO, no de trámite.** Cada día sin esa ruta
+> es un día en que **un Pi colgado deja el edificio sin sirena** — y es, según la propia ficha, «la
+> mitigación más importante del sistema». La lista está lista para comprar desde `D-10`; lo que
+> falta es la compra.
+>
+> **Ojo con contar mal el progreso:** acreditar `G-01` **no cierra `T-2.92`**. Es uno de tres, y es
+> el barato.
 
 ### 3.2 · [`T-2.93`](TASKS.md) · Sesión instrumental — `G-03`, `G-05`, `G-07`, `G-10`
 Incluye el gate #3 del Shake: hoy sus 5 tests se saltan cuando el sensor no está alcanzable, y la
@@ -255,11 +387,19 @@ Entorno preparado y verde; **falta un dispositivo físico**.
 > **Lo que de verdad falta acreditar:** el flujo **`03` (dictamen → liberación)**, que es el único
 > de los seis **nunca acreditado** y necesita la firma de un inspector en la consola web.
 >
-> ### 🎁 Y algo que puedes encender HOY, sin comprar ni grabar nada
-> `TAKAB_EDGE_AUDIO_SIREN_ENABLED=true` da **sirena audible por el jack de 3.5 mm** con el WAV ya
-> empaquetado. No confundir con `TAKAB_EDGE_AUDIO_ENABLED` (voceo hablado), que **exige las dos
-> grabaciones y rompe el arranque si faltan**. Y ahora es barato: desde
-> [`D-04`](DECISIONES-MAURICIO.md), reiniciar `takab-edge` no mueve un relé.
+> ### ✅ La sirena por jack ya está encendida — **verificado el 2026-08-17**
+> Esta sección ofrecía `TAKAB_EDGE_AUDIO_SIREN_ENABLED=true` como «algo que puedes encender HOY».
+> **Ya lo estaba** desde el 2026-08-16 19:49:30 (se encendió sola en el despliegue del traspaso de
+> pines), y no se comprobó leyendo `edge.env` sino **el journal del proceso vivo**, que declara el
+> `sha256` del WAV que puede sonar por el altavoz de un inmueble. Detalle en
+> [`D-15`](DECISIONES-MAURICIO.md#d-15).
+>
+> **Lo único que falta es oírla**, y eso no se dispara sin avisar a quien esté en el sitio:
+> ```bash
+> ssh takab-pi5 'curl -s -X POST http://127.0.0.1:8080/api/siren-test'
+> ```
+> **El voceo hablado sigue apagado y debe seguirlo:** `TAKAB_EDGE_AUDIO_ENABLED` es **otra cosa**,
+> exige las dos grabaciones y **rompe el arranque si faltan**.
 
 ### 3.5 · ~~El traspaso del dueño de los pines~~ — ✅ **HECHO en dev** (2026-08-16)
 
@@ -320,6 +460,25 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 >
 > **Por qué corre prisa aunque no bloquee código:** es **plazo externo**. El día que un cliente
 > institucional lo pida, el reloj empieza entonces — y ya llevas semanas de margen gastadas.
+>
+> ### ⏸️ EN ESPERA por decisión — [`D-20`](DECISIONES-MAURICIO.md#d-20) (2026-08-17)
+>
+> **No se contrata abogado hoy.** El documento queda **escrito y listo para enviar**; se activa el
+> día que un cliente institucional pregunte. La razón: el gasto no desbloquea una sola línea de
+> código, y con [`D-16`](DECISIONES-MAURICIO.md#d-16) comprometiendo dominio y Twilio, el dinero va
+> donde hay un tercero **ya esperando**.
+>
+> **El riesgo aceptado, dicho sin adornos:** el reloj arranca el día de la pregunta, y una opinión
+> escrita en responsabilidad de producto no se entrega en 48 h. **El ahorro de hoy se paga en
+> calendario del cliente**, en mitad de una venta.
+>
+> **Lo que queda colgando:** [`D-07`](DECISIONES-MAURICIO.md#d-07) (cripto-borrado) es *postura por
+> defecto sujeta a esta revisión*. Se implementó igual —`T-2.150`, mergeada— pero **no está
+> validada**: sigue abierto si un número cifrado es dato personal mientras exista la clave.
+>
+> **El gatillo que la revive** (los tres, escritos para no depender de acordarse): un cliente
+> pregunta por el marco o la privacidad · aparece un ARCO real sobre un `subject_ref` por teléfono ·
+> el sistema empieza a **afirmar** un marco propio en vez de citar el del cliente.
 
 ### 4.2 · [`T-2.77.a`](TASKS.md) · Alta del WhatsApp Business Account + aprobación de plantilla
 > **Plazo externo: lo aprueba Meta.** El código está completo y probado (53 tests); la plantilla
@@ -337,14 +496,59 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > de la plantilla. Y ojo: **ese trámite necesita dominio, igual que §2.9** — si compras dominio
 > para Meta, cómpralo pensando también en SES. Es el mismo trámite sirviendo a dos cosas.
 >
+> **✅ El dominio ya está COMPRADO: `takabailert.com`**
+> ([`D-12`](DECISIONES-MAURICIO.md#d-12), enmendada el 2026-08-21). Ya no es el paso 0 de nada:
+> existe.
+>
+> **Y conviene saber qué cambió respecto a lo que decía esta viñeta.** `D-12` había elegido un
+> `.mx` precisamente por este trámite —Meta mira el dominio al verificar el negocio—. Con el `.com`
+> **no se pierde capacidad: se pierde señal.** Meta acepta `.com` sin problema, porque la
+> verificación la hace con **documentos legales**, no con el TLD. Lo que Meta sí va a pedir es un
+> **correo del dominio**, y eso llega con el buzón de §2.9.
+>
 > **Y una cosa que conviene saber antes de empezar:** si Meta **pausa** la plantilla por calidad,
 > **el canal cae solo y queda en cuarentena persistida** (`T-2.77.c`) — no hay que hacer nada, y
 > no se martillea la plantilla pausada. Eso ya está resuelto.
 
-### 4.3 · [`T-2.76.a`](TASKS.md) · Cuenta Twilio + número mexicano
-### 4.4 · [`T-2.97`](TASKS.md) · `GATE-STORE` · APNs/FCM reales + tono SASMEX
+### 4.3 · [`T-2.76.a`](TASKS.md) · Cuenta Twilio + número mexicano — **✅ autorizado, un alta y dos usos**
+> **✅ Comprometido en [`D-16`](DECISIONES-MAURICIO.md#d-16)** (~$3 USD/mes). Y este trámite
+> **vale por dos**: además del canal SMS, ese número es el **teléfono de soporte** del manual de
+> operación ([`D-13`](DECISIONES-MAURICIO.md#d-13)), que lleva ~25 menciones apuntando a una casilla
+> vacía.
+>
+> **Por qué Twilio y no tu móvil:** un número de Twilio **se redirige**. El día que rote la guardia
+> o cambies de teléfono, el número impreso en el manual del edificio 3 **sigue siendo el correcto**.
+> Un móvil personal obliga a reeditar y redistribuir el manual en cada sitio instalado — que en la
+> práctica significa que nunca se hace.
+>
+> **⚠️ La trampa de calendario:** un número mexicano exige **regulatory bundle** en Twilio
+> (identificación y comprobante de domicilio), y eso **tarda días**. No es «comprar un número».
+>
+> **➡️ Al terminar:** rellenar la fila «Soporte TAKAB — teléfono» de
+> [`MANUAL-OPERACION-TAKAB.md §1`](MANUAL-OPERACION-TAKAB.md) y la de
+> [`ENTREGA-Y-ACEPTACION-TAKAB.md`](ENTREGA-Y-ACEPTACION-TAKAB.md). **No antes**: un número falso
+> en un manual de emergencia es peor que una casilla vacía.
+
+### 4.4 · [`T-2.97`](TASKS.md) · `GATE-STORE` · APNs/FCM reales + tono de alerta
+> **✅ El tono está decidido: PROPIO, no el oficial de CIRES** —
+> [`D-19`](DECISIONES-MAURICIO.md#d-19). Reproducir el tono del SASMEX diría **por el altavoz** lo
+> contrario del deslinde que el sistema afirma por escrito, y ya hay precedente medido de esa clase
+> de error (`T-2.104`: la app tituló «ALERTA SÍSMICA SASMEX» algo que no lo era). Además elimina un
+> plazo externo entero y **no se puede perder después**: un permiso se revoca, un tono propio no.
+>
+> **Lo que se paga y hay que compensar con diseño:** el tono oficial es el que la gente ya reconoce
+> y obedece. El propio tiene que ser **inconfundible**, no una notificación más.
+>
+> **⏸️ Bloqueado por [`D-16`](DECISIONES-MAURICIO.md#d-16):** sin cuenta Apple Developer
+> ($99/año, **no autorizada todavía**) esto no se puede ni empezar.
+
 ### 4.5 · [`T-2.98`](TASKS.md) · Entitlement Critical Alerts de Apple
 > Apple lo concede caso por caso. **Plazo externo.**
+>
+> **⏸️ EN ESPERA por [`D-16`](DECISIONES-MAURICIO.md#d-16):** la cuenta Apple Developer no está
+> autorizada todavía, y **el reloj del entitlement no arranca hasta que haya cuenta**. Es
+> aplazamiento de **calendario** —se suma al final, cuando toque publicar—, no de riesgo. No
+> confundirlo con el `G-02` de §3.1, que sí es riesgo.
 
 ---
 
@@ -358,15 +562,37 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 
 ---
 
-## Si solo se pueden hacer tres cosas
+## Si solo se pueden hacer tres cosas — **reescrito el 2026-08-17**
 
-1. **Arrancar §4.1 y §4.2.** Son las de **plazo externo** —las contesta un tercero—, así que son
-   las únicas que no se pueden acelerar después. Encabezan la lista porque **ya no hay nada más
-   barato por delante**: las decisiones de escritorio se acabaron el 2026-08-15.
-2. **La sesión de vida (§3.1).** Es la que dice si el producto es real, y no espera a nada.
-3. **`GATE-HW 02` (§3.4).** Necesita un teléfono en la mano y nada más; se acreditó contra la
-   conducta vieja y hoy el gabinete ya corre la nueva.
+1. **Comprar el buzón y delegar los NS de `takabailert.com`.** El dominio **ya está comprado** y
+   su zona de Route 53 creada (2026-08-21); lo que falta son ~$15/año de buzón y pegar cuatro
+   *name servers* en el panel de Namecheap. Sigue siendo **la acción que desatasca dos puntos de
+   plazo externo a la vez** —§2.9 (SES) y §4.2 (WhatsApp)— y ahora cuesta la mitad que ayer.
+   **Nada más de esta lista tiene esta relación entre esfuerzo y desbloqueo.**
+2. **Abrir Twilio y comprar el número mexicano (§4.3).** También vale por dos: canal SMS **y** el
+   teléfono de soporte que el manual cita ~25 veces apuntando a una casilla vacía
+   ([`D-13`](DECISIONES-MAURICIO.md#d-13)). Y el *regulatory bundle* mexicano **tarda días**, así
+   que arrancarlo tarde cuesta calendario, no dinero.
+3. **Acreditar `G-01` esta semana (§3.1).** Veinte minutos, no depende de comprar nada, y
+   [`D-21`](DECISIONES-MAURICIO.md#d-21) acaba de soltarlo de la sesión de vida precisamente para
+   que dejara de esperar a una obra sin fecha.
 
-> **Lo que estaba en el puesto 2 hasta el 2026-08-16 —el traspaso de los pines— ya está hecho**
-> (§3.5), así que la lista subió un escalón. Es la segunda vez seguida que esta sección se acorta
-> por arriba: cada vez que pasa, lo que queda es más caro.
+> **Lo que salió del podio y por qué, que es la parte que conviene releer:**
+>
+> - **§4.1 (consulta legal)** encabezaba esta lista y hoy está **en espera por decisión**
+>   ([`D-20`](DECISIONES-MAURICIO.md#d-20)). No porque haya dejado de importar: porque el gasto no
+>   desbloquea código y el dinero fue a los terceros que ya están esperando. **El riesgo sigue
+>   sobre la mesa** — el reloj arranca el día que un cliente pregunte.
+> - **La sesión de vida (§3.1)** ya no es *una* cosa: son tres con calendarios distintos, y solo
+>   `G-01` está listo. `G-02` es **obra, no prueba**, y su hardware quedó aplazado
+>   ([`D-16`](DECISIONES-MAURICIO.md#d-16)) — **eso es deuda de riesgo, no de trámite**: hasta que
+>   se construya, un Pi colgado deja el edificio sin sirena.
+> - **`GATE-HW 02` (§3.4)** era el puesto 3 y **la premisa estaba corregida desde el 2026-08-16**:
+>   re-correrlo no mostraría nada nuevo. Lo que falta ahí es el flujo **03**, que necesita firma de
+>   inspector en la consola web.
+>
+> **Y el patrón de esta pasada, distinto al de las anteriores:** las dos veces anteriores la lista
+> se acortó por arriba y lo que quedaba era más caro. Esta vez **no se acortó: se reordenó**. Diez
+> decisiones que estaban escondidas dentro de tareas salieron a la luz, y al salir cambiaron cuál
+> era la tarea más barata. **Lo que bloqueaba no era el dinero: era que nadie sabía que había que
+> elegir.**

@@ -47,6 +47,11 @@ TAKAB_API_OPS_METRICS_ENABLED=true
 # venga de otro topic. Sin esta linea, POST /api/ops/alerts/sns responde 503 y lo
 # grita en el log — y la suscripcion HTTPS de Terraform no se puede confirmar.
 TAKAB_API_OPS_ALERT_TOPIC_ARN=$(tf ops_topic_arn)
+# [T-2.162] El MISMO plazo que anuncia el correo de la alarma. Se DERIVA del
+# terraform, no se teclea: si divergieran, el aviso prometeria un plazo que la API
+# no respeta y nadie lo notaria hasta que alguien acusara "a tiempo" y el sistema
+# le dijera que llego tarde.
+TAKAB_API_OPS_ACK_DEADLINE_S=$(tf ops_ack_deadline_s)
 TAKAB_API_AUTH_ISSUER=$(tf issuer)
 # Audience = pool principal compartido por el cliente WEB y el MOVIL tactico:
 # coma-separado, la API acepta el aud de cualquiera (tokens.py _parse_aud).
@@ -79,10 +84,32 @@ TAKAB_API_COMMAND_HMAC_SECRET_PREFIX=$(tf command_hmac_secret_prefix)
 TAKAB_API_EVIDENCE_BUCKET=$(tf evidence_bucket)
 TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # T-1.61: sin email_from el provider de email es SIMULADO (no envía). Remitente =
-# identidad SES verificada (sandbox: variables.tf ses_verified_emails); el link
-# del correo al inspector apunta a la consola publicada.
-TAKAB_API_NOTIFY_EMAIL_FROM=mauriciobaujim@gmail.com
+# identidad SES verificada; el link del correo al inspector apunta a la consola
+# publicada.
+#
+# [T-2.78.b, D-12] Remitente de DOMINIO desde 2026-08-21. El orden importa y ya
+# esta cumplido, pero conviene saberlo si alguien lo vuelve a tocar: el statement
+# WorkerSesSend del rol de la instancia acota Resource a los ARN de identidad
+# concretos, asi que cambiar ESTA linea sin que el ARN del dominio este en el rol
+# da AccessDenied en cada envio — y los correos de CloudWatch seguirian llegando
+# tan campantes, porque esos son SNS y llevan permiso propio. Es el fallo del
+# 2026-07-14 otra vez. Orden: identidad verificada -> ARN en el rol (ses_domain en
+# tfvars lo mete solo) -> esta linea -> envio real comprobado.
+#
+# SIN BACKTICKS Y A PROPOSITO: esto vive dentro del heredoc SIN comillas que abre
+# la linea 33, asi que un backtick aqui no es tipografia — el despliegue EJECUTA
+# en la maquina lo que haya entre ellos. Lo caza
+# test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar.
+TAKAB_API_NOTIFY_EMAIL_FROM=alertas@takabailert.com
 TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
+# [T-2.158, D-22] Y que el DESTINATARIO la alcanza, que no es lo mismo. Tener URL
+# no basta: hasta D-22 ese 443 admitia UNA sola IP, asi que el enlace de "Atender
+# en la consola" solo lo abria el operador de esa direccion. El proceso no puede
+# deducirlo —lo sabe la red—, por eso se declara. Sin esta linea el correo NO
+# promete enlace: dice que hacer y se calla la URL, que es el default seguro.
+#
+# Si algun dia se vuelve a cerrar el 443, ESTA LINEA se apaga con el.
+TAKAB_API_NOTIFY_WEB_PUBLIC=$(tf console_is_public)
 EOF
 )
 

@@ -92,20 +92,58 @@ Consecuencias, las tres duras:
 3. **El remitente actual es un gmail personal.** Un correo de alerta sísmica firmado por un
    gmail no es un canal de producto.
 
-**Decisiones que hay que tomar ANTES de tocar la consola de SES** (esto es el `[HUECO]`; no lo
-resuelve un runbook):
+**Decisiones que hay que tomar ANTES de tocar la consola de SES** (esto era el `[HUECO]`; no lo
+resolvía un runbook). ✅ **RESUELTAS el 2026-08-17** — ver
+[`D-12`](../DECISIONES-MAURICIO.md#d-12), que es donde vive el **porqué** de cada una:
 
 | # | Decisión | Valor elegido | Fecha / quién |
 |---|---|---|---|
-| D-1 | Dominio raíz de TAKAB (registrar o confirmar el que ya se tenga) |  |  |
-| D-2 | ¿Route 53 como DNS, o el DNS del registrador? (Route 53 permite que SES publique los registros solo) |  |  |
-| D-3 | Remitente de notificaciones (p. ej. `alertas@<dominio>`) |  |  |
-| D-4 | Subdominio MAIL FROM (§2.3.b) — **no puede usarse para enviar ni recibir correo** |  |  |
-| D-5 | Buzón para los informes agregados de DMARC (`rua=`) |  |  |
-| D-6 | ¿Se migra también `ops_alert_email` al dominio, o el on-call sigue en gmail? (§4) |  |  |
+| D-1 | Dominio raíz de TAKAB (registrar o confirmar el que ya se tenga) | **`takabailert.com`** — comprado en Namecheap *(enmienda 21-ago: no el `.mx`)* | 2026-08-21 · Mauricio |
+| D-2 | ¿Route 53 como DNS, o el DNS del registrador? (Route 53 permite que SES publique los registros solo) | **Route 53** — zona `Z01047862QJFIRSOR5IC5` | 2026-08-21 · Mauricio |
+| D-3 | Remitente de notificaciones (p. ej. `alertas@<dominio>`) | **`alertas@takabailert.com`** | 2026-08-21 · Mauricio |
+| D-4 | Subdominio MAIL FROM (§2.3.b) — **no puede usarse para enviar ni recibir correo** | **`bounce.takabailert.com`** — ⚠️ **no `mail.`**: colisiona con el CNAME del webmail | 2026-08-21 · Mauricio |
+| D-5 | Buzón para los informes agregados de DMARC (`rua=`) | **`dmarc@takabailert.com`** | 2026-08-21 · Mauricio |
+| D-6 | ¿Se migra también `ops_alert_email` al dominio, o el on-call sigue en gmail? (§4) | **Migra: `ops@takabailert.com`** (Namecheap Private Email) | 2026-08-21 · Mauricio |
 
-Con D-1 en blanco, el resto de este §2 no se puede ejecutar. **[PARA] si alguien propone
-"lo hacemos con la dirección verificada de siempre":** eso es lo que ya hay, y es sandbox.
+> ### Estado al 2026-08-21 — y el ORDEN, que no es intercambiable
+>
+> Dominio **comprado** (`takabailert.com`, Namecheap) y zona de Route 53 **creada**
+> (`Z01047862QJFIRSOR5IC5`). Falta el buzón y la delegación, **en este orden**:
+>
+> 1. **Comprar Namecheap Private Email** para el dominio (~$15/año).
+> 2. **Crear en Route 53** los registros de correo **antes** de delegar: `MX 10 mx1.privateemail.com`,
+>    `MX 10 mx2.privateemail.com`, y `TXT "v=spf1 include:spf.privateemail.com ~all"`.
+> 3. **Cambiar los NS en Namecheap** a los cuatro de la zona.
+> 4. Crear el buzón y **comprobar que recibe** antes de seguir — enviando un correo real, no
+>    mirando el panel.
+>
+>    > **Con el plan de 1 buzón (Starter/Launch) no son dos buzones: es uno y un alias.** El buzón
+>    > real es **`ops@`** —es quien recibe IMAP y push, y es la cadena on-call—; **`dmarc@` va como
+>    > alias** sobre él (el tier de entrada trae 10 alias).
+>    >
+>    > **Y el `rua=` NO puede ser un gmail.** Si el destino de los informes está fuera del dominio,
+>    > el dominio de destino debe autorizarlo publicando
+>    > `takabailert.com._report._dmarc.<destino>` — imposible en `gmail.com`. Por eso la dirección
+>    > de informes **tiene que ser `@takabailert.com`**, y con un buzón eso es exactamente un alias.
+>    >
+>    > **⚠️ Poner el filtro ANTES de activar el DMARC.** Los informes son XML diarios de Google,
+>    > Microsoft y Yahoo, y caen en la misma bandeja que las alarmas de guardia. **Una bandeja de
+>    > on-call llena de ruido se deja de mirar** — que es justo el fallo que esta cadena existe para
+>    > evitar. Regla que mande lo dirigido a `dmarc@` a una carpeta.
+> 5. Solo entonces, SES: verificación del dominio, DKIM, MAIL FROM y DMARC.
+>
+> **⚠️ Por qué el paso 2 va ANTES del 3.** El dominio venía con el **reenvío gratuito de Namecheap**
+> (`MX → eforward1-5`), que **solo funciona con los nameservers de Namecheap**. Al delegar en
+> Route 53 ese reenvío **deja de recibir sin dar un solo error**. Si los MX del buzón nuevo no
+> están puestos antes, se abre una ventana de correo perdido que nada declara.
+>
+> **⚠️ Y el DMARC arranca en `p=none`, no en `p=reject`.** La plantilla de Namecheap propone
+> `p=reject` de entrada: aquí eso significa que **los correos de alerta se rechacen** si la
+> alineación no está perfecta todavía. Se empieza en `none`, se leen los informes de `dmarc@`, y se
+> endurece cuando DKIM y SPF estén confirmados.
+
+**[PARA] si alguien propone "lo hacemos con la dirección verificada de siempre":** eso es lo que ya
+hay, y es sandbox.
 
 ### 2.3 Los registros DNS que hacen falta
 
@@ -209,6 +247,30 @@ Qué contestar y por qué:
 - **Una vez enviada no se puede editar**: *"Once you submit a review of your account details, you
   can't edit your details until the review is complete."* Escríbela bien a la primera.
 
+> ### ✅ ENVIADA el 2026-08-21 — `Status: PENDING`
+>
+> | Campo | Valor enviado |
+> |---|---|
+> | `mail-type` | `TRANSACTIONAL` |
+> | `website-url` | `https://16-58-11-196.sslip.io` *(ver la nota de abajo)* |
+> | `contact-language` | `EN` |
+> | `additional-contact` | `ops@takabailert.com` |
+> | Texto | `scratchpad/solicitud-ses-en.txt` |
+>
+> **Cada afirmación del texto se verificó contra la cuenta antes de mandarlo**, y esa era la
+> condición para poder escribirlo: supresión activa para `BOUNCE`/`COMPLAINT`, métricas de
+> reputación, destino de eventos con los cinco tipos, y la suscripción de guardia **confirmada**.
+> Antes de `T-2.78.b` el proceso de rebotes solo se podía declarar mintiendo.
+>
+> **⚠️ `contact-language` solo acepta `EN` o `JA`.** No hay `ES`. La API responde
+> `BadRequestException ... Member must satisfy enum value set: [EN, JA]`. El comando de arriba ya
+> traía `EN`; se perdió un intento por proponer español sin leerlo.
+>
+> **La `website-url` es el punto débil, y se mandó a sabiendas.** `takabailert.com` **no resuelve**
+> —la página de aparcado se fue con el DNS de Namecheap—, así que se dio la consola sobre
+> `sslip.io`, que sí funciona y tiene TLS real. Decisión: mandar ya para arrancar el reloj de AWS y
+> montar la página en paralelo. **Si AWS pide más información, es por aquí por donde va a pedirla.**
+
 ### 2.5 [PARA] · Después de salir del sandbox, el permiso IAM se rompe solo
 
 Este paso es el que muerde. `notify_ses_identity_arns` se construye **a mano**, iterando
@@ -227,6 +289,23 @@ Si el remitente pasa de `<gmail>` a `alertas@<dominio>` y **solo** se cambia
 Orden correcto: **(1)** identidad de dominio verificada → **(2)** el ARN de la identidad de
 dominio dentro de `notify_ses_identity_arns` + `terraform apply` → **(3)** cambiar
 `TAKAB_API_NOTIFY_EMAIL_FROM` → **(4)** provocar un envío real y verlo llegar.
+
+> ### ✅ Los pasos 1 a 3, hechos el 2026-08-21 — y el 2 salió gratis
+>
+> **(1)** `takabailert.com` verificado, DKIM `SUCCESS`. **(2)** el `apply` metió
+> `arn:aws:ses:us-east-2:634882473845:identity/takabailert.com` en `WorkerSesSend` **solo**, por
+> declarar `ses_domain` en el tfvars: el paso que este `[PARA]` avisa que muerde **no hubo que
+> recordarlo**. **(3)** `deploy/cloud/deploy.sh` manda ahora desde `alertas@takabailert.com`.
+>
+> **Y el paso (4) se puede hacer SIN esperar a producción**, que es lo que conviene: en sandbox se
+> envía desde cualquier identidad verificada **hacia** cualquier identidad verificada, y el dominio
+> ya lo es. Un envío a una dirección `@takabailert.com` acredita el camino entero —rol, identidad,
+> DKIM— **antes** de que llegue el permiso, en vez de descubrir el `AccessDenied` el día que hay un
+> sismo.
+>
+> **La verificación tiene que salir DE LA INSTANCIA**, no de la CLI de un portátil: lo que se está
+> probando es el **rol de la instancia**, y un `send-email` con credenciales de consola no lo toca
+> y saldría verde igual.
 El comentario que ya avisa de esto está en `envs/dev/main.tf:75-78`: **léelo antes de tocar
 nada.**
 
@@ -234,18 +313,73 @@ nada.**
 
 | # | Paso | Esperado | Medido | OK/NO | Fecha/inicial |
 |---|---|---|---|---|---|
-| S-1 | Dominio decidido (D-1) y DNS bajo control (D-2) | — |  |  |  |
-| S-2 | Identidad de dominio creada en `us-east-2` | `Identity status: Verified` |  |  |  |
-| S-3 | 3 CNAME de DKIM publicados | `DKIM configuration: Successful` |  |  |  |
-| S-4 | Tiempo real hasta verificación DKIM | ≤ 72 h |  |  |  |
-| S-5 | MAIL FROM propio: MX (pref. 10) + TXT SPF | estado `Success` |  |  |  |
-| S-6 | DMARC `_dmarc.<dominio>` con `p=none` | `dig TXT` lo devuelve |  |  |  |
-| S-7 | Solicitud de producción enviada | fecha/hora de envío |  |  |  |
-| S-8 | Respuesta de AWS | ≤ 24 h (declarado) |  |  |  |
-| S-9 | ARN de la identidad de dominio en `notify_ses_identity_arns` + apply (§2.5) | apply limpio |  |  |  |
-| S-10 | `TAKAB_API_NOTIFY_EMAIL_FROM` = remitente del dominio | arranque **sin** «email simulado» |  |  |  |
-| S-11 | Envío real a una dirección **no verificada** | llega a la bandeja |  |  |  |
-| S-12 | Cabeceras del correo recibido | `dkim=pass`, `spf=pass`, `dmarc=pass` |  |  |  |
+| S-1 | Dominio decidido (D-1) y DNS bajo control (D-2) | — | `takabailert.com` (Namecheap), zona `Z01047862QJFIRSOR5IC5` en Route 53 | ✅ | 2026-08-21 MB |
+| S-2 | Identidad de dominio creada en `us-east-2` | `Identity status: Verified` | `VerifiedForSendingStatus: true` | ✅ | 2026-08-21 MB |
+| S-3 | 3 CNAME de DKIM publicados | `DKIM configuration: Successful` | `DkimAttributes.Status: SUCCESS`, RSA-2048 | ✅ | 2026-08-21 MB |
+| S-4 | Tiempo real hasta verificación DKIM | ≤ 72 h | **minutos**, no horas (Route 53 publica los CNAME en el mismo apply) | ✅ | 2026-08-21 MB |
+| S-5 | MAIL FROM propio: MX (pref. 10) + TXT SPF | estado `Success` | `bounce.takabailert.com` `SUCCESS`, `BehaviorOnMxFailure: REJECT_MESSAGE` | ✅ | 2026-08-21 MB |
+| S-6 | DMARC `_dmarc.<dominio>` con `p=none` | `dig TXT` lo devuelve | `v=DMARC1; p=none; rua=mailto:dmarc@takabailert.com; fo=1` | ✅ | 2026-08-21 MB |
+| S-7 | Solicitud de producción enviada | fecha/hora de envío | 2026-08-21, caso `178737638500467` | ✅ | 2026-08-21 MB |
+| S-8 | Respuesta de AWS | ≤ 24 h (declarado) | **`DENIED`** en < 2 h, pidiendo más información. Respondida el 2026-08-22 con los tres ejemplos reales | ⏳ | 2026-08-22 MB |
+| S-9 | ARN de la identidad de dominio en `notify_ses_identity_arns` + apply (§2.5) | apply limpio | los **TRES** ARN: dos identidades **y el configuration set** — ver `T-2.155` | ✅ | 2026-08-21 MB |
+| S-10 | `TAKAB_API_NOTIFY_EMAIL_FROM` = remitente del dominio | arranque **sin** «email simulado» | `alertas@takabailert.com`, comprobado con `printenv` **dentro de los contenedores** | ✅ | 2026-08-21 MB |
+| S-11 | Envío real a una dirección **no verificada** | llega a la bandeja | **No verificable en sandbox** (los destinos deben ser identidades verificadas). Sí acreditada la ENTREGA a dos buzones reales —gmail y `ops@takabailert.com`— con `Send 3 · Delivery 3 · Bounce 0`, enviado desde el **rol de la instancia** | ⏳ | 2026-08-22 MB |
+| S-12 | Cabeceras del correo recibido | `dkim=pass`, `spf=pass`, `dmarc=pass` | **Los tres, con alineación por AMBOS caminos** — ver abajo | ✅ | 2026-08-22 MB |
+
+> ### S-12 · Las cabeceras, literales (correo recibido en gmail el 2026-08-22)
+>
+> ```
+> dkim=pass   header.i=@takabailert.com  s=3r2ck3b5qokftymicvvrz3awugmzzggc
+> spf=pass    smtp.mailfrom=...@bounce.takabailert.com  (23.251.226.1)
+> dmarc=pass  (p=NONE sp=NONE dis=NONE) header.from=takabailert.com
+> Return-Path: <...@bounce.takabailert.com>
+> ```
+>
+> **Lo que cada línea acredita, porque no es lo mismo «pasa» que «alinea»:**
+>
+> - El **DKIM es NUESTRO**: el selector `3r2ck3b5...` es uno de los tres tokens publicados en
+>   Route 53. El correo lleva **dos** firmas —la del dominio y la de `amazonses.com`— y la que
+>   alinea con el `From` es la primera. Si solo estuviera la de Amazon, DKIM pasaría igual y
+>   **DMARC no alinearía**.
+> - El **SPF pasa sobre `bounce.takabailert.com`**, no sobre `amazonses.com`. Eso es exactamente lo
+>   que compró la decisión `D-4` del §2.2: sin MAIL FROM propio, esta línea nombraría a Amazon y la
+>   alineación dependería **solo** del DKIM.
+> - El **`Return-Path`** termina en el subdominio propio. Si dijera `amazonses.com`, el MAIL FROM
+>   no estaría en uso aunque su estado dijera `Success`.
+>
+> **Y esto habilita el endurecimiento de DMARC con datos.** `p=none` se eligió para observar antes
+> de apretar (§2.2, D-4). Con `dkim=pass` y `spf=pass` alineados y medidos, la subida a
+> `quarantine` deja de ser una apuesta — pero se hace **leyendo los informes de `dmarc@`**, no por
+> tenerlo comprobado una vez.
+
+> ### ⚠️ Lo que costó llegar a ese `Delivery 3`, y no debe repetirse
+>
+> Dos envíos anteriores devolvieron `MessageId` y **no aparecieron en el buzón** — ni en spam ni en
+> ninguna carpeta. Al intentar diagnosticarlo:
+>
+> - la lista de supresión no los tenía;
+> - las métricas de CloudWatch estaban **en cero, incluida `Send`**, mientras el contador de cuota
+>   decía 2 — **ausencia de datos indistinguible de ausencia de eventos**;
+> - y los avisos de rebote van por correo, así que si nadie los guarda no existen.
+>
+> Con eso se construyó una hipótesis —que el proveedor descartaba el correo de su propio dominio—
+> que encajaba con **todos** los datos disponibles y **era falsa**: un envío de control al mismo
+> buzón llegó sin problema.
+>
+> **La hipótesis no falló por descuido. Falló porque los datos que la habrían refutado no se
+> guardaban en ninguna parte.** Fichado como [`T-2.160`](../TASKS.md): el configuration set publica
+> solo lo que va mal, y a un correo. Sin `SEND` ni `DELIVERY`, y sin destino durable, la pregunta
+> «¿llegó ESTE mensaje?» no tiene dónde contestarse — y en alertamiento sísmico esa pregunta decide
+> si hay que coger el teléfono.
+>
+> **Cómo leer los `⏳`:** ninguno es un paso olvidado. **S-8** espera a AWS; **S-11** no se puede
+> hacer mientras el sandbox limite los destinos a identidades verificadas; **S-12** exige abrir un
+> correo recibido, y eso no lo acredita ninguna llamada a la API.
+>
+> **Y el que más se parece a un `OK` sin serlo es S-11.** Está medido que el envío **sale** con el
+> rol correcto: el mismo comando que devolvía `AccessDenied` ahora devuelve `MessageId`. Eso
+> acredita el **permiso**, no la **entrega**. La distinción es la misma que abre este runbook en su
+> §1, y es la que convierte «el mensaje sale» en «la persona llega».
 
 **S-11 es el que prueba el criterio**, no S-8: mientras el destino esté verificado, un envío
 que llega no distingue sandbox de producción.
@@ -402,9 +536,30 @@ pero no abre plazo), `esperando_acuse`, `sin_acuse`, `acusado`, `acusado_tarde`.
 
 1. Se le acuña UNA credencial personal, y se le enseña UNA vez:
    ```bash
-   # en la instancia, dentro del contenedor de la API
-   python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
+   # NO en el contenedor de la API: ese conecta como `takab_app` y la tabla lo
+   # NIEGA por diseño (RLS con FORCE y política de denegación explícita).
+   # `takab-cloud-notify-1` conecta como `takab_ingest`, que tiene BYPASSRLS.
+   sudo docker exec -it takab-cloud-notify-1 \
+     python -m takab_api.ops.oncall issue --label "Mauricio (primaria)" --days 90
    ```
+
+   > **⚠️ Corregido el 2026-08-22 — este paso decía «dentro del contenedor de la API» y falla.**
+   > Da `psycopg.errors.InsufficientPrivilege: permission denied for table
+   > ops_oncall_contacts`, que es la RLS **haciendo su trabajo**: la propia docstring del módulo
+   > dice que espera un DSN con `BYPASSRLS`, y el de la API no lo es.
+   >
+   > **Y el error se lee mal:** parece un fallo de permisos que arreglar, cuando es la protección
+   > funcionando. Lo que hay que cambiar es el contenedor, no la política. Los roles con
+   > `BYPASSRLS` son `postgres` y `takab_ingest`.
+   >
+   > **Cómo saber si el intento anterior sirvió**, porque el traceback puede quedar fuera de
+   > pantalla y parecer que salió: `SELECT count(*) FROM ops_oncall_contacts` como `postgres`.
+   > Si da 0, no se acuñó nada.
+
+   > **⚠️ Y una razón para NO usar `ssm send-command` aquí:** su salida se guarda en AWS 30 días
+   > y se lee desde la consola. Un secreto que se enseña una vez no puede pasar por ahí — es el
+   > mismo motivo por el que esto no es un endpoint HTTP. Va por `ssm start-session`, cuya salida
+   > solo existe en la terminal de quien la abre.
    La base guarda **solo el hash**; el secreto no se puede recuperar de ningún sitio. Se pega
    en el gestor de contraseñas de la persona, con `https://<consola>/api/ops/alerts/ack`
    guardado como marcador en su teléfono.
@@ -524,15 +679,50 @@ por SSM, jamás una alerta.
 
 | # | Prueba | Esperado | Medido | OK/NO | Fecha/inicial |
 |---|---|---|---|---|---|
-| C-1 | Suscripción SNS `Confirmed` (no `PendingConfirmation`) | confirmada |  |  |  |
-| C-2 | **t0** — hora de la condición | — |  |  |  |
-| C-3 | **t1** — transición a `ALARM` en `describe-alarm-history` | t1 − t0 ≤ 1 min |  |  |  |
-| C-4 | **t2** — cabecera `Date:` del correo | t2 − t1 ≤ 2 min |  |  |  |
-| C-4′ | **t2′** — `received_at` en `v_ops_alert_chain` (§3.8) | fila presente, ≤ 2 min tras t1 |  |  |  |
-| C-5 | **t3 — acuse humano, con rastro** — `acked_at`/`ack_latency_s` de la misma fila, ya NO a mano | **objetivo sin fijar — ver §4.3 P-3**; el mecanismo existe desde `T-2.78.a` |  |  |  |
-| C-5′ | Con el acuse dado, `outcome` = `acusado` (o `acusado_tarde`) y `acked_by` trae el nombre | sí |  |  |  |
-| C-6 | ¿El texto de `--state-reason` viaja en el cuerpo del correo? | SÍ/NO |  |  |  |
-| C-7 | Vuelta sola a `OK` + correo de `ok_actions` | ≤ ~5 min tras t1 |  |  |  |
+| C-1 | Suscripción SNS `Confirmed` (no `PendingConfirmation`) | confirmada | **confirmada** — ARN real; dos `202` desde IP de AWS en el log de la API | ✅ | 2026-08-22 MB |
+| C-2 | **t0** — hora de la condición | — | **20:55:30** (2.ª corrida) · 19:55:39 (1.ª) | ✅ | 2026-08-22 MB |
+| C-3 | **t1** — transición a `ALARM` en `describe-alarm-history` | t1 − t0 ≤ 1 min | **20:58:24 · t1−t0 = 2m 54s** (1.ª: 2m 45s) — **NO cumple el objetivo, ver abajo** | ⚠️ | 2026-08-22 MB |
+| C-4 | **t2** — cabecera `Date:` del correo | t2 − t1 ≤ 2 min | **no medido**: se pegó el cuerpo, no la cabecera. `C-4′` lo cubre con más precisión | ⏳ | — |
+| C-4′ | **t2′** — `received_at` en `v_ops_alert_chain` (§3.8) | fila presente, ≤ 2 min tras t1 | **20:58:24.989 · t2′−t1 = 0,25 s** (1.ª: 0,26 s) | ✅ | 2026-08-22 MB |
+| C-5 | **t3 — acuse humano, con rastro** — `acked_at`/`ack_latency_s` de la misma fila, ya NO a mano | **objetivo sin fijar — ver §4.3 P-3**; el mecanismo existe desde `T-2.78.a` | **146,51 s** (`acked_at` 21:00:51). En la 1.ª corrida: 3278 s ⇒ `acusado_tarde` | ✅ | 2026-08-22 MB |
+| C-5′ | Con el acuse dado, `outcome` = `acusado` (o `acusado_tarde`) y `acked_by` trae el nombre | sí | **`acusado`** · `acked_by = "Mauricio (primaria)"`. Y en la 1.ª, **`acusado_tarde`**: el plazo no es decorativo | ✅ | 2026-08-22 MB |
+| C-6 | ¿El texto de `--state-reason` viaja en el cuerpo del correo? | SÍ/NO | **SÍ**, literal: `Threshold Crossed: 1 datapoint [1.0 …]` | ✅ | 2026-08-22 MB |
+| C-7 | Vuelta sola a `OK` + correo de `ok_actions` | ≤ ~5 min tras t1 | **20:21:24**, 23 min tras t1 — al drenar la cola. **NO cumple el objetivo, ver abajo** | ⚠️ | 2026-08-22 MB |
+
+> ### Los dos `⚠️`, y por qué no se marcan en verde
+>
+> **`C-3` (t1−t0 ≤ 1 min) no se cumple, y el objetivo era inalcanzable.** La alarma elegida tiene
+> `period = 300`: CloudWatch no puede evaluar antes de cerrar su ventana de cinco minutos. Los
+> 2m 45s y 2m 54s medidos son **el comportamiento correcto**, no un retraso. El objetivo de un
+> minuto se escribió sin mirar el periodo de la alarma que el propio runbook elige en §3.1.
+>
+> **`C-7` (≤ ~5 min) tampoco, por lo mismo:** la vuelta a `OK` depende de que la cola se vacíe **y**
+> de la siguiente ventana de 300 s. Los 23 minutos incluyen el tiempo que la DLQ estuvo con el
+> mensaje del ensayo, que es tiempo del operador, no de la cadena.
+>
+> **Lo que sí queda acreditado y es lo que importa:** desde que CloudWatch decide que hay alarma
+> hasta que la cadena lo tiene registrado pasan **0,25 s**. Y una persona con la credencial en el
+> gestor acusa en **147 s**, con su nombre y su hora en la base.
+
+> ### ⚠️ El ensayo encontró DOS defectos, que era su función
+>
+> **1 · El acuse no se podía enviar** ([`T-2.161`](../TASKS.md), arreglado y desplegado). El
+> formulario tenía `action="/ops/alerts/ack"` absoluto; servido bajo `/api`, el navegador enviaba
+> fuera de la API y el `POST` moría en el SPA con 405. **La página funcionaba, el endpoint
+> funcionaba, la credencial era válida — y el enlace entre ellos no existía.** En la primera corrida
+> el aviso pasó a `sin_acuse` sin que nadie pudiera evitarlo.
+>
+> **2 · El correo no dice qué hacer.** Es la plantilla cruda de CloudWatch: nombra la alarma y su
+> causa, y **no menciona que haya que acusar, ni dónde**. Quien lo recibió acababa de ejecutar el
+> ensayo entero y aun así tuvo que preguntar cuál era «el código». A las tres de la mañana, con este
+> correo delante, no hay forma de saber que existe una página de acuse. El runbook supone que la
+> persona tiene el marcador y sabe usarlo — **suposición que este ensayo refutó**.
+>
+> ### Y un hallazgo del mecanismo: `sin_acuse` NO es un estado final
+> El aviso de la primera corrida, ya vencido y marcado `sin_acuse`, **siguió aceptando acuse** y
+> pasó a `acusado_tarde` con su latencia real (3278 s). No es un defecto —registrar que alguien lo
+> atendió tarde vale más que perder el dato— pero conviene saberlo: un `sin_acuse` en pantalla
+> puede dejar de serlo después.
 | C-8 | Repetición **fuera de horario** (02:00–05:00 local) | mismo t3 o mejor |  |  |  |
 | C-9 | Ensayo con el **primer** contacto deliberadamente sin responder | escala al segundo (§4) **y la fila queda en `sin_acuse` con `unacked_at` puesto** |  |  |  |
 | C-10 | Fantasmas: sale de `INSUFFICIENT_DATA` tras el apply (§3.5) | correo de `ok_actions` |  |  |  |
@@ -700,3 +890,56 @@ Honestidad primero, como el resto de la casa:
 `infra/terraform/modules/observability/main.tf` · `infra/terraform/modules/identity/main.tf:139` ·
 `infra/terraform/envs/dev/main.tf:75-82,157-165` · `api/src/takab_api/ops/muting.py:219-286` ·
 `api/src/takab_api/settings.py:226-261` · `CLAUDE.md` §2 (reglas de oro 2, 6, 7, 10).*
+
+---
+
+## Los informes agregados de DMARC — qué son y qué se hace con ellos
+
+Llegan a `dmarc@takabailert.com` **un `.zip` al día por cada proveedor** que recibe correo nuestro
+(Google, Microsoft, Yahoo…). Dentro hay un XML: la lista de **quién dijo ser takabailert.com**, desde
+qué IP, y si su firma cuadró. Es la única forma de enterarse de que alguien suplanta el dominio.
+
+**No se abren a mano.** Se guardan en `evidencia/dmarc/` (el XML, no el zip: es diffable) y se leen
+con el comando de abajo, que resume el veredicto sin tener que interpretar el esquema.
+
+```bash
+unzip -qo ~/Descargas/'google.com!takabailert.com!*.zip' -d /tmp/dmarc
+python3 - <<'EOF'
+import glob, xml.etree.ElementTree as ET, datetime
+r = ET.parse(sorted(glob.glob("/tmp/dmarc/*.xml"))[-1]).getroot()
+pp = r.find("policy_published")
+print("politica:", pp.findtext("domain"), "p=" + pp.findtext("p"))
+for rec in r.findall("record"):
+    row, pol = rec.find("row"), rec.find("row/policy_evaluated")
+    print(f"  {row.findtext('source_ip')}  x{row.findtext('count')}  "
+          f"dkim={pol.findtext('dkim')} spf={pol.findtext('spf')} -> {pol.findtext('disposition')}")
+EOF
+```
+
+### Primera lectura — 2026-08-22 (Google)
+
+```
+politica: takabailert.com p=none  ·  adkim=r aspf=r  ·  pct=100
+  23.251.226.1  x1  dkim=pass spf=pass -> none
+    DKIM  takabailert.com (Easy DKIM)  -> pass
+    DKIM  amazonses.com                -> pass
+    SPF   bounce.takabailert.com       -> pass
+```
+
+**Qué prueba, y es más de lo que parece:** un tercero independiente confirma que la cadena entera
+—DKIM del dominio, DKIM de SES y SPF sobre el MAIL FROM personalizado— cuadra en el receptor. Eso
+no se puede verificar desde nuestro lado: `aws ses` dice que firmamos, no que a Google le cuadre.
+
+**Qué NO prueba:** que nadie nos suplante. **Es UN mensaje en UN día.** Cero remitentes no
+autorizados en una muestra de uno no es una medición, es la ausencia de una.
+
+### Cuándo apretar la política a `p=quarantine`
+
+> **Todavía no, y el motivo es el tamaño de la muestra, no la prudencia.** La regla: **dos o tres
+> semanas seguidas con `dkim=pass`/`spf=pass` en el 100 % del volumen y ningún origen desconocido.**
+> Apretar antes convierte cualquier remitente legítimo que aún no conocemos —un proveedor de
+> facturación, un formulario— en correo que desaparece **sin rebote visible**, y eso se descubre
+> semanas después por un cliente que dice que nunca le llegó nada.
+>
+> El orden es `none` → `quarantine` con `pct` bajo → `quarantine` al 100 % → `reject`. Cada escalón
+> se sostiene sobre informes, no sobre confianza.

@@ -123,6 +123,7 @@ import psycopg
 from psycopg import sql
 
 from ..db.session import JOB_LOCK_TIMEOUT_MS
+from ..privacy import reconcile
 from ..privacy.retention import (
     COMPLIANCE_ANCHOR,
     DELETE_ROWS,
@@ -137,6 +138,8 @@ from ..privacy.retention import (
     protection_report,
     validar_proteccion,
 )
+from ..settings import Settings
+from ..users.directory import build_user_directory
 
 SIMULACRO = "simulacro"
 APLICADO = "aplicado"
@@ -593,6 +596,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="tenants",
         help="acota a un tenant (repetible). Por defecto, todos.",
     )
+    p.add_argument(
+        # El flag APAGA, no enciende. Un paso de cumplimiento que hay que acordarse
+        # de pedir es el defecto que T-2.143 cierra: por defecto se reconcilia.
+        "--sin-reconciliar",
+        action="store_true",
+        help="NO reconcilia el padrón contra el directorio antes de podar. Una cuenta "
+        "retirada directamente en Cognito volvería a no arrancar su reloj (T-2.143).",
+    )
     p.add_argument("--json", default=None, help="además, escribe el informe como JSON aquí.")
     p.add_argument(
         "--sin-constancia",
@@ -610,6 +621,40 @@ def _dsn(valor: str | None) -> str:
     return crudo.replace("postgresql+psycopg://", "postgresql://")
 
 
+def _reconciliar(conn: psycopg.Connection, *, apply: bool, role: str) -> None:
+    """[T-2.143] Arranca el reloj de quien se fue del pool sin pasar por la API.
+
+    **Va antes de la poda y en su propia transacción**, y las dos cosas importan:
+    antes, para que un reloj recién arrancado cuente ya en esta misma corrida; y
+    aparte, porque una reconciliación que falle no puede llevarse por delante la
+    poda —que es el trabajo principal— ni al revés.
+
+    Un fallo aquí **no aborta el job**: se dice y se sigue. El peor caso es que
+    unos relojes arranquen una corrida más tarde, mientras que abortar dejaría sin
+    podar lo que ya estaba vencido. De los dos, el segundo incumple más.
+    """
+    try:
+        harden_session(conn, role=role)
+        parte = reconcile.reconciliar(conn, build_user_directory(Settings()), apply=apply)
+        conn.commit()
+    except (RetentionUnsafe, psycopg.Error) as exc:
+        conn.rollback()
+        print(f"AVISO · no se pudo reconciliar el padrón con el directorio: {exc}", file=sys.stderr)
+        return
+
+    if parte.abortada:
+        # No es ruido: es la diferencia entre "no faltaba nadie" y "no se pudo
+        # mirar". Sin esta línea, el log de las dos corridas es idéntico.
+        print(f"RECONCILIACIÓN OMITIDA · {parte.abortada}", file=sys.stderr)
+        return
+    print(
+        f"Reconciliación · {parte.en_el_pool} cuentas en el directorio, "
+        f"{parte.revisados} perfiles sin baja, "
+        f"{len(parte.relojes_arrancados)} reloj(es) arrancado(s)"
+        + ("" if apply else " [SIMULACRO, no se escribió]")
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     plazos = {r.key: args.days for r in RETENTION_PLAN} if args.days is not None else None
@@ -619,6 +664,8 @@ def main(argv: list[str] | None = None) -> int:
     fallo: str | None = None
 
     with psycopg.connect(_dsn(args.dsn), autocommit=False) as conn:
+        if not args.sin_reconciliar:
+            _reconciliar(conn, apply=args.apply, role=args.role)
         try:
             informe = run(
                 conn,

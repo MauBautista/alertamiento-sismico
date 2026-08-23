@@ -125,3 +125,16 @@ variable "pii_retention_max_age_s" {
     error_message = "pii_retention_max_age_s debe superar la cadencia diaria (86400 s): un umbral igual o menor dispara en operacion normal y convierte la alarma en ruido."
   }
 }
+
+# [T-2.162] El plazo de acuse, EN SEGUNDOS y desde una sola fuente.
+#
+# El correo de on-call tiene que decir cuanto tiempo hay, y la API tiene que
+# aplicar ese mismo numero (`TAKAB_API_OPS_ACK_DEADLINE_S`). Si cada uno lo
+# declarara por su cuenta, divergirian — y el correo prometeria un plazo que el
+# servidor no respeta. Esta variable es la fuente; el entorno la exporta para que
+# el despliegue la derive en vez de teclearla.
+variable "ops_ack_deadline_s" {
+  description = "Plazo para acusar un aviso de on-call, en segundos. Alimenta el texto del correo Y `TAKAB_API_OPS_ACK_DEADLINE_S`: una sola fuente para los dos."
+  type        = number
+  default     = 900
+}

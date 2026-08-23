@@ -12,8 +12,21 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-16 · **10 decisiones** · 7 tomadas por Mauricio (6 el
-> 2026-08-15, `D-10` el 2026-08-16), 3 delegadas el 2026-08-12.
+> **Última actualización:** 2026-08-22 · **23 decisiones** · 18 tomadas por Mauricio (6 el
+> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
+>
+> **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
+> cerrada, pero **quedaban diez decisiones enterradas dentro de puntos de acción** —el runbook de
+> SES tenía seis en una tabla en blanco (`D-1`…`D-6` de su §2.2), el manual de operación citaba un
+> teléfono que no existía, y `D-08` había dejado el CCTV a medias—. Una decisión escondida dentro
+> de una tarea **no se ve como decisión**: se ve como trabajo bloqueado sin culpable. De ahí
+> `D-12`…`D-21`.
+>
+> **La lección de método, que vale más que las diez decisiones:** `§1` se pudo declarar cerrada
+> porque **enumeraba a mano** lo que contaba como decisión. Todo lo que vivía dentro de la tabla de
+> un runbook, de una fila en blanco de un manual o de una nota al pie de otra decisión **no estaba
+> en el censo** — y por tanto no existía. Es la misma doctrina que ya dejó escrita
+> `TRASPASO-SESION`: **un censo que enumera a mano acaba divergiendo.**
 
 ---
 
@@ -32,6 +45,18 @@
 | [D-09](#d-09) | `enforce_admins`: **queda en `false`, con gatillo escrito** | 2026-08-15 | Mauricio |
 | [D-10](#d-10) | Ruta de hardware de la sirena: **variante B**, fallback con watchdog | 2026-08-16 | Mauricio |
 | [D-11](#d-11) | El quórum de pánico **abre incidente** `trigger='manual'` | 2026-08-16 | Mauricio |
+| [D-12](#d-12) | Dominio raíz **`takabailert.com`**, DNS en Route 53 *(enmendada 21-ago)* | 2026-08-17 | Mauricio |
+| [D-13](#d-13) | Teléfono de soporte: **número Twilio mexicano**, no un móvil personal | 2026-08-17 | Mauricio |
+| [D-14](#d-14) | CCTV: **híbrido** — aforo en sitio + clips de evento confirmado | 2026-08-17 | Mauricio |
+| [D-15](#d-15) | Sirena por jack: **encendida** en el gabinete de desarrollo | 2026-08-17 | Mauricio |
+| [D-16](#d-16) | Compras: **sí** dominio y Twilio · **no todavía** BOM de `G-02` ni Apple | 2026-08-17 | Mauricio |
+| [D-17](#d-17) | La ventana AWS se parte en **dos**: applies (A) y restore (B) | 2026-08-17 | Mauricio |
+| [D-18](#d-18) | `console_scope_enforced`: **se enciende ya**, con los tests en el mismo commit | 2026-08-17 | Mauricio |
+| [D-19](#d-19) | Tono de alerta de la app: **propio**, no el oficial de CIRES | 2026-08-17 | Mauricio |
+| [D-20](#d-20) | Consulta legal: **espera a que un cliente la pida** | 2026-08-17 | Mauricio |
+| [D-21](#d-21) | Sesión de vida: **se parte** — `G-01` esta semana, solo | 2026-08-17 | Mauricio |
+| [D-22](#d-22) | La consola **se abre al público**; Cognito con MFA queda como única capa | 2026-08-22 | Mauricio |
+| [D-23](#d-23) | ARCO por teléfono: **lo acredita el cliente institucional** | 2026-08-22 | Mauricio |
 
 ---
 
@@ -328,6 +353,631 @@ notificación pertenece a un incidente**, que es lo que hace auditable la cadena
 deja el escalado al SOC sin ancla donde vivir. Un camino aparte sin la cola sería rápido de
 escribir y se quedaría **sin reintento, sin evidencia, sin guarda de duplicados y sin cuarentena**,
 justo en el camino de una emergencia.
+
+---
+
+<a id="d-12"></a>
+## D-12 · Dominio raíz — **`takabailert.mx`**, con DNS en Route 53
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** la tabla `D-1`…`D-6` de
+[`runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md §2.2`](runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md),
+en blanco desde que se escribió · **Desbloquea:** `PENDIENTES §2.9` (`T-2.78`, SES) y
+`PENDIENTES §4.2` (`T-2.77.a`, WhatsApp) — **los dos únicos puntos de plazo externo del proyecto**
+
+**Por qué esta decisión valía por dos.** El dominio no aparecía en la lista de decisiones porque
+estaba enterrado en la tabla de un runbook. Y mientras tanto bloqueaba **las dos cosas que no se
+pueden acelerar después**, porque las contesta un tercero: AWS (salida del sandbox de SES) y Meta
+(verificación de negocio). Nada de lo que hay debajo se podía empezar sin él.
+
+**Los seis valores, que son la tabla del runbook rellenada:**
+
+| # | Decisión | Valor |
+|---|---|---|
+| D-1 | Dominio raíz | **`takabailert.mx`** |
+| D-2 | DNS | **Route 53** (zona alojada en la cuenta `634882473845`) |
+| D-3 | Remitente de notificaciones | **`alertas@takabailert.mx`** |
+| D-4 | Subdominio MAIL FROM | **`mail.takabailert.mx`** — no envía ni recibe correo |
+| D-5 | Buzón de informes DMARC (`rua=`) | **`dmarc@takabailert.mx`** |
+| D-6 | `ops_alert_email` | **`ops@takabailert.mx`** — migra del gmail personal |
+
+**Las razones, una por elección que tenía alternativa real:**
+
+- **`.mx` sobre `.com`.** El dominio lo va a mirar un tercero antes que un cliente: Meta lo pide
+  para verificar el negocio y AWS lo pide como `Website URL`. Un `.mx` responde a la pregunta
+  «¿esto es una empresa mexicana?» sin que nadie tenga que preguntarla. Cuesta ~4× más al año, y
+  esa diferencia es irrelevante frente a una solicitud devuelta.
+- **Route 53 sobre el DNS del registrador.** SES y ACM pueden publicar **ellos mismos** sus
+  registros de verificación. Eso importa más de lo que parece: el propio runbook documenta que el
+  modo de fallo típico de DKIM es un CNAME copiado a mano con un `_` de más
+  (`_abc123._domainkey…` en vez de `abc123._domainkey…`), y un DKIM mal copiado **no da error: da
+  correo que no se entrega**. Además deja el DNS bajo Terraform en vez de en un panel ajeno.
+- **`alertas@` sobre `no-reply@`.** Un correo de alerta sísmica que dice «no contestes» le está
+  dando una instrucción equivocada a la persona exacta que quizá deba contestar. El coste de
+  atender respuestas es real, pero es el coste correcto.
+- **On-call al dominio en vez de seguir en gmail.** Hoy hay un solo guardia y el gmail funcionaría.
+  El día que entre el segundo, migrar significa tocar el ARN de SNS, el Terraform y la
+  documentación — y ese día es, por definición, un día ocupado. Es la misma lógica del gatillo de
+  [`D-09`](#d-09), solo que resuelta antes en vez de dejada escrita.
+
+**Lo que esta decisión NO resuelve:** el dominio hay que **registrarlo**, y eso es una acción con
+tarjeta de por medio. Hasta que exista, `§2.9` y `§4.2` siguen parados — pero ya **no por falta de
+criterio**, que era el estado anterior y el peor de los dos.
+
+> ### ⚠️ EJECUCIÓN PARCIAL (2026-08-21) — y con la trampa que este proyecto ya conoce
+>
+> Se creó la **zona alojada** en Route 53. **El dominio NO está registrado**: NIC México sigue
+> contestando `Disponible/Available` al 2026-08-21.
+>
+> **Y ésa es exactamente la trampa:** `route53 create-hosted-zone` **no comprueba que el dominio sea
+> tuyo**. Acepta cualquier nombre, devuelve cuatro *name servers* con aire de éxito y cobra su
+> cuota — **delegando nada**. El comando sale `PENDING` → `INSYNC` y parece progreso; lo único que
+> existe es un contenedor de DNS vacío esperando a un dominio que no se ha comprado. **Es un
+> fallback que se presenta como `ok`**, que es la doctrina que `TRASPASO-SESION` ya dejó escrita.
+>
+> **Zona buena:** `Z010061324UQDJRQEXIVW`. Sus NS son los que van a NIC México:
+> `ns-599.awsdns-10.net` · `ns-1485.awsdns-57.org` · `ns-68.awsdns-08.com` ·
+> `ns-1597.awsdns-07.co.uk`.
+>
+> ### Y una segunda trampa, más barata pero más fácil de repetir: **salieron TRES zonas**
+>
+> `create-hosted-zone` **no es idempotente**: cada ejecución crea una zona nueva, con **NS
+> distintos**, sin avisar de que ya había una. Salieron tres —una del 2026-08-17 y dos del
+> 2026-08-21 separadas por cinco minutos— porque `--caller-reference` lleva un *timestamp*, así que
+> nunca colisiona. Las tres vacías (`NS`+`SOA`), a $0.50/mes cada una.
+>
+> **El daño real no es el $1.00/mes de sobra: es que solo un juego de NS puede delegarse.** Pegar
+> en NIC México los de una zona y publicar los registros de DKIM en otra da **correo que no se
+> entrega sin un solo error a la vista** — que es el mismo modo de fallo por el que `D-12` eligió
+> Route 53 (para que SES publicara sus registros él mismo en vez de copiarlos a mano).
+>
+> **Antes de dar el dominio por hecho, comprobar las dos cosas por separado:**
+> ```bash
+> whois "=takabailert.mx" | head -3      # -> tiene que DEJAR de decir "Disponible"
+> aws --profile takab-dev route53 list-hosted-zones-by-name \
+>   --dns-name takabailert.mx --query "HostedZones[].Id" --output text   # -> UNA sola
+> ```
+
+> ### ✏️ ENMENDADA el 2026-08-21 — el dominio comprado fue **`takabailert.com`**
+>
+> El texto de arriba queda intacto (regla de la bitácora). Lo que cambia es **`D-1`**: Mauricio ya
+> tenía contratado **`takabailert.com`** en **Namecheap**, así que no se registra el `.mx` y su zona
+> de Route 53 se borró.
+>
+> **La tabla vigente:**
+>
+> | # | Decisión | Valor vigente |
+> |---|---|---|
+> | D-1 | Dominio raíz | **`takabailert.com`** (Namecheap) |
+> | D-2 | DNS | **Route 53** — zona **`Z01047862QJFIRSOR5IC5`** *(confirmada, ver abajo)* |
+> | D-3 | Remitente | **`alertas@takabailert.com`** |
+> | D-4 | Subdominio MAIL FROM | **`bounce.takabailert.com`** ← **cambiado, ver la colisión** |
+> | D-5 | Buzón DMARC | **`dmarc@takabailert.com`** |
+> | D-6 | On-call | **`ops@takabailert.com`** |
+>
+> **Lo que se pierde al pasar de `.mx` a `.com`, dicho sin adornos:** la razón principal del `.mx`
+> era **señal** ante Meta y ante el cliente institucional. Meta acepta `.com` sin problema —la
+> verificación de negocio se hace con **documentos legales**, no con el TLD—, así que **se pierde
+> señal de marca, no capacidad**. Ninguna capacidad técnica depende del TLD.
+>
+> ### ⚠️ La colisión que obligó a cambiar `D-4`, y no daba error
+>
+> `D-4` decía `mail.<dominio>`. **Namecheap Private Email usa `mail.<dominio>` como CNAME** de su
+> webmail, y **SES exige en el subdominio MAIL FROM un `MX` y un `TXT` propios**. Un CNAME **no
+> puede convivir con otros registros en el mismo nombre**: es ilegal en DNS. Se resuelve moviendo
+> el MAIL FROM a **`bounce.takabailert.com`**, que además cumple mejor el requisito de SES de que
+> ese subdominio **no se use para enviar ni recibir correo**.
+>
+> ### ⚠️ Y el hallazgo que cambió el plan de correo — `D-2` se confirmó, pero cuesta
+>
+> El dominio venía con el **reenvío gratuito de Namecheap** activo (`MX → eforward1-5`). Y ese
+> servicio **solo funciona con los nameservers de Namecheap**: al delegar en Route 53 **deja de
+> recibir**, sin error y sin aviso.
+>
+> **Se confirma Route 53** —SES y ACM publican sus propios registros, y el DNS queda bajo Terraform
+> para cuando la consola deje `sslip.io` por `console.takabailert.com` con certificado real— y se
+> **compra un buzón** (Namecheap Private Email, ~$15/año), que sí funciona con DNS de terceros.
+> Enmienda de [`D-16`](#d-16).
+>
+> **Por qué buzón de pago y no el plan gratuito de Zoho:** el gratuito de Zoho es **solo
+> webmail/app, sin IMAP/POP**. `ops@` es la **cadena on-call**: tiene que sonar en un teléfono a
+> las 3 a.m., y eso pide IMAP y push nativo. Para `dmarc@` habría bastado; para `ops@` era el
+> eslabón débil.
+>
+> **La distinción que evitó comprar de más:** **enviar no necesita buzón** —SES manda desde
+> `alertas@` con solo registros DNS—. Solo **recibir** lo necesita, y solo dos direcciones reciben.
+
+> ### ⚠️ Y la corrección que más vale de esta sesión: **`T-2.78.b` ya estaba escrito en Terraform**
+>
+> El alta de SES se hizo primero **por CLI** —identidad de dominio, DKIM, MAIL FROM y DMARC—, y
+> funcionó: verificó en minutos. **Y estaba mal hecho**, porque
+> `infra/terraform/modules/identity/main.tf` ya tenía todo eso codificado y gateado por
+> `var.ses_domain`. Se revirtió entero y se dejó que lo cree Terraform.
+>
+> **No era un empate de estilo. El repo era mejor en dos puntos concretos:**
+>
+> | | CLI (revertido) | Terraform (vigente) |
+> |---|---|---|
+> | `behavior_on_mx_failure` | `USE_DEFAULT_VALUE` | **`REJECT_MESSAGE`** |
+> | Rebotes y quejas | **nada** | configuration set + lista de supresión + topic SNS + destino de eventos |
+>
+> **El primero invierte la doctrina del proyecto.** Con `USE_DEFAULT_VALUE`, si el MX del MAIL FROM
+> deja de resolver, **SES sigue enviando** con el Return-Path de `amazonses.com`: se pierde la
+> alineación SPF, el correo se va a spam **y nada falla** — el inspector no recibe su solicitud de
+> dictamen y el sistema cree que sí. El comentario del propio Terraform lo dice mejor: *«el canal
+> que no entrega no finge»*. El razonamiento del CLI («no cortes el correo de un sistema de
+> alertas») suena prudente y produce **exactamente el fallo silencioso** que este proyecto lleva un
+> año cazando.
+>
+> **El segundo habría hecho mentir a la solicitud de AWS.** La salida del sandbox exige declarar
+> que existe un proceso para rebotes y quejas. La identidad creada por CLI **no tenía configuration
+> set**, así que no había ni supresión ni topic: el proceso solo se podía declarar mintiendo. El
+> Terraform crea el topic, su política de recurso y la suscripción **precisamente para que esa
+> casilla se pueda marcar siendo verdad**.
+>
+> **La lección, y es de método:** antes de resolver algo por CLI en un repo con IaC, **mirar si el
+> repo ya lo resuelve**. Aquí no solo lo resolvía: lo resolvía con dos decisiones razonadas por
+> escrito que el atajo pisó sin verlas. Es la misma familia que *«un censo que enumera a mano acaba
+> divergiendo»* — el atajo no sabía lo que el repo ya sabía.
+>
+> **Lo que sí quedó bien del CLI y se conserva:** la zona (`Z01047862QJFIRSOR5IC5`, que el módulo
+> espera recibir por ID y no gestiona), los `MX`/`TXT` de Private Email en la raíz, y el TTL de
+> caché negativa del `SOA` bajado de 86400 a 300.
+
+**Cómo se revocaría:** si NIC México pusiera un requisito que Mauricio no puede cumplir, o si el
+registro se demorara más que el plazo de Meta, se registra un `.com` gemelo como puente y el `.mx`
+se conserva para la cara pública. La estructura de subdominios (`mail.`, `alertas@`, `ops@`) no
+cambia: es independiente del TLD.
+
+---
+
+<a id="d-13"></a>
+## D-13 · El teléfono de soporte — **un número Twilio mexicano**
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `MANUAL-OPERACION-TAKAB.md §1`, fila
+«Soporte TAKAB — teléfono», **en blanco** · **Ficha:** `T-2.76.a` (`PENDIENTES §4.3`)
+
+**El hueco, y por qué era grave sin parecerlo.** El manual de operación —el documento que se le
+entrega al guardia de un edificio— dice **«avisa a soporte»** unas 25 veces, y en las filas rojas
+dice literalmente **«llama a soporte AHORA»**. Ese teléfono **no existía en ninguna parte del
+repositorio**. Un manual que manda llamar a un número en blanco no es un manual incompleto: es un
+procedimiento de emergencia que falla en el momento en que se usa.
+
+**La decisión.** El teléfono de soporte es un **número mexicano de Twilio**, el mismo trámite que
+`§4.3` ya exigía para el canal SMS. Un alta, dos necesidades cubiertas.
+
+**La razón, y es de las que solo se ven a un año vista.** Un número de Twilio se **redirige**: el
+día que la guardia la lleve otra persona, o haya rotación, o Mauricio cambie de móvil, el número
+impreso **sigue siendo el correcto**. Un móvil personal impreso en un manual ya distribuido obliga
+a reeditar y redistribuir el documento **en cada sitio instalado** — y en la práctica eso significa
+que el manual del edificio 3 sigue teniendo el número viejo para siempre.
+
+**Y hay una segunda razón, menos obvia:** un número de empresa separa el rol de la persona. El día
+que un cliente institucional pregunte «¿a quién llamo a las 3 a.m.?», la respuesta no debería ser
+el móvil de alguien.
+
+**Lo que implica para el software y los documentos** (deuda declarada, no cerrada):
+- Rellenar `MANUAL-OPERACION-TAKAB.md §1` con el número **en cuanto exista** — hoy sigue en blanco
+  a propósito, porque poner un número falso es peor que no poner ninguno.
+- Lo mismo en `ENTREGA-Y-ACEPTACION-TAKAB.md`.
+- El número debe apuntar a la **cadena on-call** de `§2.9`, no a un buzón de voz sin dueño.
+
+---
+
+<a id="d-14"></a>
+## D-14 · CCTV — **híbrido**: aforo en el sitio, clips solo de evento confirmado
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** la recomendación abierta al final de
+[`D-08`](#d-08) («conviene decidir pronto») · **Ficha:** `T-3.10` (arquitectura CCTV) ·
+**Diseño:** [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md)
+
+**La decisión.** El **aforo se calcula en el inmueble** y a la nube sube **solo el número**. Además,
+ante un **evento confirmado**, suben **clips cortos** de ese evento — no vídeo continuo.
+
+**La razón de la mitad local.** Procesar en sitio elimina casi toda la superficie de PII de vídeo:
+si las imágenes no salen del edificio en operación normal, la mayor parte de la conversación de
+privacidad con un cliente institucional **deja de existir** en vez de tener que ganarse.
+
+**La razón de admitir los clips, que es la que hace esto híbrido y no puro.** Un número de aforo
+dice «hay 40 personas» y **no dice si están saliendo o atrapadas**. En un post-sismo, la diferencia
+entre esas dos cosas es la decisión operativa entera. Un clip corto de un evento **ya confirmado**
+es evidencia, y la evidencia post-sismo es producto, no adorno.
+
+> ### ⚠️ La condición que hace aceptable la mitad que sube, y no es opcional
+> Los clips son **por evento confirmado**, nunca continuos ni «por si acaso». Eso es la **regla de
+> oro 9** aplicada al vídeo: el mismo criterio que prohíbe subir forma de onda cruda en continuo y
+> la sube **solo en eventos confirmados**. Si el CCTV subiera en continuo estaría violando en
+> vídeo la regla que el sismómetro respeta en señal.
+>
+> Y hereda las obligaciones de `T-3.10`: retención acotada y declarada, consentimiento, y que la
+> salida de vídeo quede **auditada** igual que un comando de actuador.
+
+**Por qué no las otras dos.** «Todo a la nube» compraba modelos más pesados pagando con una
+conversación legal entera **por cada cliente**, ancho de banda continuo y PII de un edificio ajeno
+almacenada fuera de él. «Solo el número» era más limpio de defender, pero deja al SOC ciego justo
+en el escenario para el que existe el módulo.
+
+**Cómo se revocaría:** si la revisión legal de [`§4.1`](PENDIENTES-MAURICIO.md) concluye que el
+clip de evento exige un consentimiento que un edificio con público no puede recabar, se cae a
+**solo aforo** — y el diseño debe permitir esa caída **por configuración de sitio**, no por
+reescritura. Fichar así en `T-3.10`.
+
+---
+
+<a id="d-15"></a>
+## D-15 · Sirena por jack — **encendida** en el gabinete de desarrollo
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §3.4`, la viñeta
+«algo que puedes encender HOY» · **Ficha:** `T-1.68`
+
+**La decisión.** `TAKAB_EDGE_AUDIO_SIREN_ENABLED=true` en `gw-dev-0001`. El gabinete emite sirena
+audible por el jack de 3.5 mm con el WAV ya empaquetado
+(`edge/takab_edge/audio/assets/siren.wav`).
+
+**La razón.** El escenario manual del `GATE-HW` (`§3.4`) necesita una alerta **con sirena audible**,
+y hasta hoy la única forma de tenerla era comprar hardware que aún no existe
+([`D-16`](#d-16) lo aplazó). Esto da sonido real **hoy, gratis y sin comprar nada**.
+
+**Lo que lo hizo barato, y es consecuencia de otra decisión:** encenderlo exige reiniciar
+`takab-edge`, y desde [`D-04`](#d-04) —ejecutada el 2026-08-16— **ese reinicio ya no mueve un solo
+relé**. Antes habría costado un ciclo de gas y puertas; hoy cuesta cero. Es un ejemplo limpio de
+decisión que abarata a la siguiente.
+
+> **Lo que NO es, y conviene no confundirlo nunca:** `TAKAB_EDGE_AUDIO_SIREN_ENABLED` (sirena) es
+> **independiente** de `TAKAB_EDGE_AUDIO_ENABLED` (voceo hablado). El segundo **exige las dos
+> grabaciones** y **rompe el arranque si faltan**. Sigue apagado.
+>
+> **Y esto no sustituye a `G-02`.** La sirena por jack depende del Pi: si el Pi muere, calla. La
+> ruta de hardware de [`D-10`](#d-10) existe precisamente para el caso en que el Pi no está.
+
+> ### ✅ VERIFICADA — y resultó que **ya estaba encendida** (2026-08-17)
+>
+> Al ir a ejecutarla, el gabinete `gw-dev-0001` **ya la tenía activa**. No inferido del fichero de
+> configuración, sino **del proceso vivo**:
+>
+> | | |
+> |---|---|
+> | `TAKAB_EDGE_AUDIO_SIREN_ENABLED` | `true` en `/etc/takab/edge.env` |
+> | Asset cargado | `/opt/takab/edge/takab_edge/audio/assets/siren.wav` · `sha256=5a6b73d1…5932b` |
+> | Desde | **2026-08-16 19:49:30 CST**, `NRestarts=0` |
+> | Voceo hablado | **`DESHABILITADO`** (`audio_enabled=false`) — correcto, sigue tras el gate A-6 |
+>
+> Se encendió sola en el despliegue del traspaso de pines ([`D-04`](#d-04)) del 2026-08-16.
+>
+> ### ⚠️ Y el hallazgo que vale más que la decisión
+> `PENDIENTES §3.4` ofrecía esto como **«algo que puedes encender HOY»** sobre algo que llevaba
+> **un día entero funcionando**. Nadie mintió: el documento se escribió antes del despliegue y
+> **nada lo volvió a mirar**. Es la misma familia de defecto que este proyecto ya tiene fichada —
+> un documento que describe un estado del mundo y **no se verifica contra el mundo** — y aquí salió
+> barato porque el error era a favor. **La comprobación buena no es leer `edge.env`: es leer el
+> journal del proceso**, que declara el `sha256` del WAV que puede sonar por el altavoz de un
+> inmueble.
+
+**Lo que queda por hacer, y es una sola línea:** oírla. `POST /api/siren-test` en el panel del
+gabinete hace sonar el tono **de verdad** — no se dispara sin avisar a quien esté en el sitio.
+
+---
+
+<a id="d-16"></a>
+## D-16 · Compras — **sí** dominio y Twilio · **no todavía** el hardware de `G-02` ni Apple
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §3.1`, `§4.3`, `§4.4`,
+`§4.5`
+
+**Lo autorizado en esta pasada:**
+
+| Compra | Coste | Qué desbloquea |
+|---|---|---|
+| Dominio `takabailert.mx` + zona Route 53 | ~$55 USD/año | `§2.9` (SES) **y** `§4.2` (WhatsApp) |
+| Twilio: cuenta + número mexicano | ~$3 USD/mes | `§4.3` (SMS) **y** el teléfono de [`D-13`](#d-13) |
+
+**Lo aplazado, y con ello lo que queda parado — que es la mitad que hay que no olvidar:**
+
+| Aplazado | Consecuencia declarada |
+|---|---|
+| **BOM del `G-02`** (`K_wd` DPDT, monoestable, relé de potencia, riel, UPS) | **`G-02` sigue siendo obra, no prueba.** Es, según su propia ficha, «la mitigación más importante del sistema». Mientras no se compre, **si el Pi muere la sirena calla** y no hay segunda ruta. [`D-10`](#d-10) dejó la lista lista para comprar; comprarla es lo que falta |
+| **Apple Developer** ($99/año) | `§4.4` (`GATE-STORE`) y `§4.5` (entitlement de Critical Alerts) **no se pueden ni empezar**. El entitlement lo concede Apple **caso por caso y es plazo externo**: el reloj no arranca hasta que hay cuenta |
+
+**El criterio que ordena las dos columnas.** Se compró **lo que desbloquea plazo externo hoy** —
+dominio y Twilio abren AWS, Meta y el canal SMS a la vez. Se aplazó lo que, aun siendo importante,
+**no tiene un tercero esperando** (el hardware del `G-02`) o cuyo plazo externo se acepta arrancar
+más tarde (Apple).
+
+> ### ⚠️ La asimetría que hay que vigilar, porque es la que muerde
+> El `G-02` es aplazamiento de **riesgo**, no de trámite: cada día sin esa ruta es un día en que un
+> Pi colgado deja el edificio sin sirena. Apple es aplazamiento de **calendario**: cada día sin
+> cuenta es un día que se suma al final, cuando toque publicar. **No son la misma clase de deuda**,
+> y conviene no meterlas en el mismo cajón mental solo porque las dos digan «no todavía».
+
+> ### ✏️ ENMENDADA el 2026-08-21 — se añade un buzón de pago
+>
+> **`ops@takabailert.com` y `dmarc@takabailert.com` necesitan recibir**, y delegar el DNS en
+> Route 53 **mata el reenvío gratuito de Namecheap** (solo funciona con sus nameservers). Se
+> autoriza **Namecheap Private Email, ~$15/año**, que sí funciona con DNS de terceros y da IMAP.
+>
+> **No es un gasto que se pueda saltar:** `ops@` es la cadena on-call de `§2.9`. Un buzón que no
+> hace push a un teléfono es una guardia que no despierta a nadie.
+>
+> **Lo que NO cambia:** el dominio ya estaba comprado (`takabailert.com`), así que del presupuesto
+> de `D-12` solo queda vivo el coste de la zona de Route 53 (~$0.50/mes). El BOM del `G-02` y la
+> cuenta de Apple **siguen aplazados** — y el `G-02` sigue siendo deuda de **riesgo**, no de
+> trámite.
+
+**Cómo se revocaría:** el `G-02` vuelve a la mesa **en cuanto haya fecha para la sesión de vida**
+(`§3.1`), porque la obra tiene que estar hecha antes. Apple, en cuanto la app tenga fecha de
+publicación — y con margen, porque el entitlement no se concede al instante.
+
+---
+
+<a id="d-17"></a>
+## D-17 · La ventana AWS se parte en **dos**
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §2`
+
+**La decisión.**
+
+- **Ventana A** (~1 h, sin build): los cinco `terraform apply` de `§2.1`, más `§2.2` (confirmar que
+  la alarma del fantasma sale de `INSUFFICIENT_DATA`), `§2.3` (Cognito), `§2.4` (CI OIDC), `§2.5`
+  ([`D-18`](#d-18)), `§2.6` (occupant real) y `§2.7` (e2e).
+- **Ventana B** (~3 h, con build): `§2.8` / `T-2.74` — el restore real con RTO medido (`G-09`).
+
+**La razón, y está medida, no supuesta.** La ventana B empieza por `make cloud-images`, que **tarda
+~40 min**, y la trampa ya cobrada es que **el token SSO expira a mitad**: terraform muere con
+`InvalidGrantException` **mientras `docker login` a ECR sigue funcionando**, que es la firma que
+hace perder media hora diagnosticando credenciales que sí están. Meter ese build dentro de una
+sesión que ya lleva una hora de applies **garantiza** que el token no llegue vivo al final.
+
+Partirlo permite además **renovar el SSO justo antes** de la B (`aws sso logout` **y luego**
+`login` — a secas no basta), que es la única mitigación que funciona.
+
+**Lo que la decisión NO cambia:** el **orden interno** de cada ventana sigue siendo obligatorio. En
+particular el de `§2.1.5` (suscriptor HTTPS de la cadena on-call), donde **la suscripción se
+confirma durante el `apply`**: si el `curl` de prueba da 503 en vez de 404, **hay que parar ahí** —
+seguir mata el `apply` a medias.
+
+---
+
+<a id="d-18"></a>
+## D-18 · `console_scope_enforced` — **se enciende ya**, con los tests en el mismo commit
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §2.5` ·
+**Ficha:** `T-2.89` · **Va dentro de:** la ventana A de [`D-17`](#d-17)
+
+**La decisión.** Se enciende en la ventana A, siguiendo la secuencia obligada —**recorrer** los
+`scope_gap` del `audit_log`, **asignar** alcance, **encender** al final— y **los dos tests HTTP que
+hoy fijan la conducta *no* impuesta se invierten en el MISMO commit**.
+
+**La razón de no esperar.** Es **la única brecha multi-tenant viva en producción**, y la regla de
+oro 5 no admite grados. Hoy el coste de cerrarla es bajo: un solo tenant de desarrollo, sin datos
+de nadie dentro y sin nadie mirando. El día que entre el primer cliente, ese mismo cambio se hace
+**con datos reales dentro, bajo presión y con el cliente delante** — y la secuencia, invertida,
+deja a cada `soc_operator` con **cero estaciones**, que es un incidente visible.
+
+**La razón de meter los tests en el mismo commit, que es la mitad operativa.** Se sabe de antemano
+que encenderlo **pone la suite en rojo** — dos tests aseveran hoy la conducta permisiva. Si esa
+inversión se deja «para después», el rojo aparece **en mitad de la ventana**, donde se parece a un
+fallo del despliegue y no a lo que es. Un rojo esperado que llega por sorpresa se diagnostica como
+un rojo inesperado, y ahí es donde se pierde la ventana.
+
+---
+
+<a id="d-19"></a>
+## D-19 · El tono de alerta de la app — **propio**, no el oficial de CIRES
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §4.4` (`GATE-STORE`,
+«APNs/FCM reales + tono SASMEX») · **Ficha:** `T-2.97`
+
+**La decisión.** La app suena con un **tono propio de TAKAB**, agudo y reconocible. No se usa el
+tono oficial del SASMEX ni se pide licencia a CIRES.
+
+**Las tres razones, en orden de peso:**
+
+1. **Es el deslinde, hecho sonido.** El sistema ya declara por escrito que **no** es SASMEX y que
+   no lo respalda —es lo que `§4.1` va a llevar al abogado—. Reproducir el tono oficial diría lo
+   contrario **por el altavoz**, que es el canal que la gente cree antes que el texto. Y ya hay
+   precedente medido: `T-2.104`, cuando la app tituló «ALERTA SÍSMICA SASMEX» algo que no lo era.
+2. **Elimina un plazo externo entero.** Pedir el tono es depender de que un tercero conteste, y
+   `GATE-STORE` quedaría esperando a alguien que puede no contestar nunca.
+3. **No se puede perder después.** Un permiso concedido puede revocarse; un tono propio, no. Lo
+   contrario obligaría a publicar una versión de emergencia para cambiar un sonido.
+
+**Lo que se paga, y hay que decirlo:** el tono oficial es el que la población **ya reconoce y
+obedece**, y esa ventaja en una evacuación es real. Se compensa con diseño —que el tono propio sea
+inconfundible y no se parezca a una notificación cualquiera— y con el texto en pantalla, que sí
+nombra el origen.
+
+**Cómo se revocaría:** si CIRES ofreciera licencia explícita **por escrito** y el abogado de `§4.1`
+confirmara que usarla no debilita el deslinde, se puede añadir como tono **alternativo por sitio**.
+Nunca como sustituto silencioso: cambiar el sonido de una alarma que la gente ya aprendió es un
+cambio de producto, no de configuración.
+
+---
+
+<a id="d-23"></a>
+## D-23 · ARCO por teléfono — **la titularidad la acredita el cliente institucional**
+
+**Fecha:** 2026-08-22 · **Decide:** Mauricio · **Ficha:** [`T-2.151`](TASKS.md) ·
+**Postura sujeta a la revisión legal de `§4.1`**, como [`D-07`](#d-07)
+
+**El hueco.** `store.forget_msisdn()` existe y está probada, pero el flujo ARCO **está tecleado por
+`user_sub`** y un sujeto identificado por teléfono no tiene ninguno. Antes de cablearlo hay que
+saber **quién dice que ese número es de quien lo pide** — y eso no lo resuelve el código.
+
+**La decisión.** La solicitud entra **por el cliente institucional que recogió el consentimiento**.
+Él conoce a la persona, tiene su enrolamiento y la relación laboral o contractual. TAKAB **ejecuta
+y audita**, no verifica identidades por su cuenta.
+
+**Las tres razones, y la primera es la que de verdad manda:**
+
+1. **Encaja con el reparto de papeles.** El consentimiento lo recogió el cliente, para su inmueble y
+   su gente. Si TAKAB es **encargado** y no **responsable**, las solicitudes ARCO se dirigen al
+   cliente **de todas formas** y TAKAB solo las ejecuta. La decisión no fuerza nada: sigue la forma
+   que ya tiene la relación.
+2. **No depende de Twilio ni de Meta**, que hoy no existen. Un reto por SMS sería prueba más fuerte
+   y ataría este derecho a un alta comercial que aún no ha empezado.
+3. **Evita que TAKAB custodie documentos de identidad.** La alternativa fuera de banda obligaría a
+   recibir y guardar identificaciones oficiales — **más PII que proteger, justo lo contrario del
+   ejercicio**.
+
+> ### ⚠️ Lo que esta decisión NO permite, y hay que escribirlo en la ficha
+>
+> **La respuesta no puede ser un oráculo de existencia.** Quien pregunte por un número sin
+> acreditar nada no puede aprender si ese número consta. Un «no encontrado» frente a un «borrado»
+> convierte el endpoint en un buscador de personas: cualquiera podría comprobar si un teléfono está
+> en el sistema, y con él en qué edificio. La respuesta al no acreditado es **la misma siempre**.
+>
+> **Y nadie puede borrar el consentimiento de otro.** Ésa fue la razón de descartar «no verificar»:
+> destruiría la prueba de la base legal de un tercero, que es exactamente lo que [`D-07`](#d-07)
+> construyó el cripto-borrado para preservar.
+
+**Lo que hereda el cliente, y hay que declararlo en el contrato:** la diligencia de comprobar que
+quien pide es quien dice ser. TAKAB no puede verificarlo y **no debe fingir que lo hace**. Si el
+contrato no lo dice, esta decisión no está completa.
+
+**Cómo se revocaría:** el día que exista el canal SMS (`§4.3`), el reto por el propio número pasa a
+ser posible y es **prueba más fuerte** — controlar el número **ahora** vale más que la palabra de un
+tercero. Entonces se ofrece como vía **adicional, no sustituta**: quien perdió la SIM sigue
+necesitando la del cliente. Y si la consulta de `§4.1` determina que TAKAB es **responsable** y no
+encargado, esta decisión **se revisa entera**, porque su primera razón deja de sostenerse.
+
+---
+
+<a id="d-22"></a>
+## D-22 · La consola **se abre al público**, con Cognito como única capa
+
+**Fecha:** 2026-08-22 · **Decide:** Mauricio · **Venía de:** [`T-2.158`](TASKS.md) y
+[`T-2.159`](TASKS.md) · **Desbloquea:** la cadena on-call de `PENDIENTES §2.9` y el enlace de los
+correos
+
+**El problema, y lo que costó descubrir que era UNO y no dos.** La consola servía su 443 a **una
+sola IP**. Eso rompía dos cosas que parecían independientes:
+
+1. **El enlace de los correos.** Cada solicitud de dictamen decía «Atender en la consola» con una
+   URL que el inspector **no podía abrir**.
+2. **La cadena on-call.** La suscripción HTTPS de SNS **se confirma durante el `apply`**: AWS llama
+   al endpoint desde sus rangos, y el paquete moría en el security group. El `apply` habría muerto
+   a medias.
+
+**Y no había una salida intermedia.** Abrir «solo a los rangos de AWS» no es viable: AWS **no
+publica prefijos por servicio para SNS**; lo que existe es el bloque `AMAZON` de la región entera,
+que equivale a abrir al mundo con pasos de más. Y los inspectores se conectan desde el sitio del
+cliente, o sea desde cualquier parte.
+
+**La decisión.** `web_allowed_cidrs = ["0.0.0.0/0"]`. La consola queda pública y **Cognito con MFA
+pasa a ser la única capa de autenticación**.
+
+**Lo que se pierde, dicho sin suavizar:** hoy son **dos** capas y quedará **una**. El filtro por IP
+no protegía de credenciales robadas, pero sí de todo lo que ocurre **antes** de la autenticación:
+escaneo, fuerza bruta contra el login, y cualquier vulnerabilidad futura en la superficie
+pre-autenticación. Eso deja de estar cubierto.
+
+**Lo que sostiene la decisión:**
+
+- **El pool exige MFA a todos** — no es opcional (`mfa_configuration = "ON"`, y por eso el pool de
+  ocupantes tuvo que separarse en `T-2.02`).
+- **El endpoint público más sensible ya se defiende solo.** `POST /api/ops/alerts/sns` **verifica
+  la firma RSA** contra el `SigningCertURL`, reconstruye la confirmación con **nuestro** host y
+  **nuestro** `TopicArn`, y acota la descarga del certificado para no convertirse en proxy. Un
+  sobre firmado por otro topic se descarta.
+- **La alternativa tenía un coste peor:** sin esto, la cadena on-call **no se puede acreditar** y
+  `T-2.94` —el simulacro con cascada real— acreditaría que el correo sale, no que la persona pueda
+  actuar. Un SOC que no puede recibir su propia guardia es peor que un SOC expuesto tras MFA.
+
+> ### ⚠️ Lo que esta decisión NO autoriza
+> **No es permiso para bajar la guardia en lo demás.** Con la capa de red fuera, todo lo que
+> quedaba «protegido por estar en la lista blanca» pasa a estar realmente expuesto. En particular,
+> cualquier ruta que hoy responda sin autenticación **es pública desde ya** — `/api/health` incluido,
+> que declara el commit desplegado.
+>
+> ### ⚠️ Y una corrección sobre cómo se midió eso
+> Al inventariar la superficie pre-autenticación se midió `GET /docs -> 200` desde fuera y se
+> concluyó que **Swagger estaba publicado**. **Era falso:** ese 200 lo devolvía el `index.html` de
+> la consola, porque Caddy manda al SPA todo lo que no es `/api/*` y un SPA contesta 200 a
+> **cualquier** ruta. Se comprobó el **código de estado y no el cuerpo**.
+>
+> Los datos sí estaban —y siguen— en 401, que era lo que de verdad había que verificar. Pero la
+> lección es la misma que ya cobró esta sesión con las alarmas y con los rebotes: **un indicador
+> leído sin abrir su contenido acredita lo que uno esperaba, no lo que hay.**
+
+**Cómo se revocaría, y el gatillo no es «si pasa algo»:** vuelve a la mesa el día que la consola
+tenga **un nombre propio y un WAF delante**, o el día que entre un cliente cuyo contrato exija
+restricción de red. Entonces la lista blanca puede volver **para ese sitio** sin romper la cadena
+on-call, porque para entonces el endpoint de SNS puede vivir en otro host.
+
+---
+
+<a id="d-20"></a>
+## D-20 · La consulta legal — **espera a que un cliente la pida**
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §4.1` (`T-2.96`,
+`GATE-LEGAL`) · **Documento ya escrito:** [`CONSULTA-LEGAL-TAKAB.md`](CONSULTA-LEGAL-TAKAB.md)
+
+**La decisión.** No se contrata abogado hoy. El documento de consulta queda **escrito y listo para
+enviar**, y se activa el día que un cliente institucional pregunte por el marco normativo.
+
+**La razón.** El gasto es real y **no desbloquea una sola línea de código**: `GATE-LEGAL` no es
+dependencia de ninguna ficha de software. Con `D-16` acabando de comprometer dominio y Twilio, el
+dinero disponible se pone donde hay un tercero **ya esperando** (AWS, Meta) y no donde el tercero
+solo aparece cuando lo llamas.
+
+**El riesgo que se acepta, y está medido en la propia lista de pendientes:** esto es **plazo
+externo**. El día que llegue la pregunta, el reloj empieza **ese día** — y una opinión escrita en
+responsabilidad de producto no se entrega en 48 horas. Es decir: el ahorro de hoy se paga en
+**calendario del cliente**, en el peor momento posible de una venta.
+
+> **Lo que hace que este aplazamiento sea barato y no temerario, y conviene tenerlo presente:** el
+> sistema **hoy no afirma un marco propio**. Declara el que **el cliente** afirma, con su deslinde
+> explícito de que TAKAB no lo respalda. Eso es honesto y es defendible mientras nadie pida más. La
+> deuda aparece cuando alguien pida más — no antes.
+>
+> **Y hay una pieza que queda colgando:** [`D-07`](#d-07) (cripto-borrado del teléfono del
+> consentimiento) es **postura por defecto sujeta a esta revisión legal**. Aplazarla deja `D-07`
+> sin confirmar: en concreto, si un número cifrado sigue siendo dato personal mientras exista la
+> clave, y si destruir la clave cuenta como cancelación ante la LFPDPPP. Se implementa igual —es la
+> mejor postura disponible—, pero **no está validada**.
+
+**Cómo se revoca — el gatillo, escrito para que no dependa de acordarse:**
+
+1. **Un cliente institucional pregunta por el marco normativo o por la política de privacidad.** Es
+   el disparo principal. Ese día se manda `CONSULTA-LEGAL-TAKAB.md` **completo** (las 5 preguntas
+   del §4 **más** el §4.4 de `D-07`), no la mitad.
+2. **O antes, si aparece un ejercicio ARCO real** sobre un `subject_ref` identificado por teléfono
+   — ahí `D-07` deja de ser hipótesis.
+3. **O antes, si el sistema empieza a afirmar un marco propio** en vez de citar el del cliente. Ese
+   cambio **no debe hacerse sin la consulta**: es exactamente lo que convierte una postura en una
+   declaración.
+
+---
+
+<a id="d-21"></a>
+## D-21 · La sesión de vida se **parte**: `G-01` esta semana, solo
+
+**Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** `PENDIENTES §3.1` (`T-2.92`) ·
+**Runbook:** [`runbooks/RUNBOOK-sesion-de-vida.md`](runbooks/RUNBOOK-sesion-de-vida.md)
+
+**La decisión.** `T-2.92` deja de tratarse como una sesión y pasa a ser **tres cosas con calendarios
+distintos**. `G-01` (restart en frío) se acredita **esta semana**, en ~20 min, por su cuenta.
+
+**La razón.** El propio veredicto medido del 2026-08-16 ya decía que no eran una sesión:
+
+| Gate | Estado | Depende de |
+|---|---|---|
+| `G-01` | **se puede hacer hoy** | nada |
+| `G-04` | a medias (la mitad eléctrica ya pasa con 2 órdenes de magnitud de margen) | una sirena real + medición contra CIRES |
+| `G-02` | **no se puede probar** | hardware que [`D-16`](#d-16) aplazó |
+
+Atarlos en un solo evento hacía que **el que está listo esperase al que ni siquiera está
+construido**. Y con `D-16` dejando la BOM del `G-02` sin fecha, esa espera pasaba a ser indefinida:
+un gate acreditable habría quedado abierto meses por vecindad de agenda, no por dificultad.
+
+**Lo que NO cambia, y hay que decirlo para que el gate parcial no se lea como gate cerrado:**
+acreditar `G-01` **no cierra `T-2.92`**. `G-02` sigue siendo **obra pendiente** —el relé `K_wd`, el
+monoestable, el relé de potencia, el riel con UPS **y el latido de keep-alive, que ni siquiera está
+escrito**— y `G-04` sigue sin sirena al final del cable. Hasta entonces, **todo lo que el software
+mide sobre actuación se mide contra una carga que no existe**.
+
+**Cómo se revocaría:** no hay nada que revocar — partir la sesión no cierra ninguna puerta. Lo que
+sí hay que vigilar es lo contrario: que acreditar `G-01` **no se cuente como progreso de la sesión
+de vida**. Es un gate de tres, y es el barato.
 
 ---
 

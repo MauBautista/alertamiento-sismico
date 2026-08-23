@@ -124,3 +124,14 @@ variable "mobile_logout_urls" {
   type    = list(string)
   default = ["takab://auth/logout"]
 }
+
+# [T-2.155] El nombre del configuration set llega de FUERA en vez de estar a fuego
+# aqui. No es cosmetica: `modules/database` necesita el MISMO nombre para componer
+# el ARN del permiso de envio, y no puede leerlo de un output de este modulo
+# —cerraria el ciclo `identity -> serve -> database`—. Definido en un solo sitio
+# (`envs/dev`) y pasado a los dos, un cambio de nombre no puede dejar el permiso
+# apuntando al set anterior.
+variable "ses_configuration_set_name" {
+  description = "Nombre del configuration set de SES. Lo comparten `modules/identity` (lo crea) y `modules/database` (compone el ARN del grant)."
+  type        = string
+}

@@ -69,6 +69,8 @@ from takab_api.schemas.privacy import (
     NoticeIn,
     NoticeOut,
     NoticePublishedOut,
+    PhoneErasureIn,
+    PhoneErasureOut,
     ThirdPartyConsentIn,
 )
 from takab_api.settings import Settings
@@ -678,6 +680,74 @@ async def exercise_erasure_on_behalf(
             },
         )
     return ErasureOut(**fila)
+
+
+# ---------------------------------------------------------------------------
+# T-2.151 · D-23 · ARCO de un sujeto que solo dio su teléfono
+# ---------------------------------------------------------------------------
+
+
+@router.post("/phone-erasures", response_model=PhoneErasureOut, status_code=201)
+async def erase_phone_subject(
+    body: PhoneErasureIn,
+    claims: Claims = Depends(_require_erasure_admin),
+    conn: AsyncConnection = Depends(get_session),
+) -> PhoneErasureOut:
+    """Olvida un número, y deja constancia de con qué escrito se pidió.
+
+    **La respuesta es la misma exista el número o no**, y ese es el criterio
+    entero: `forget_msisdn()` devuelve si había algo que destruir y ese booleano
+    **se descarta aquí a propósito**. Distinguir «borrado» de «no encontrado»
+    convertiría el endpoint en un buscador de personas — con una credencial de
+    responsable se barre un rango de números y se averigua cuáles constan y, con
+    ellos, en qué edificio está quien los lleva.
+
+    El sujeto de otro cliente no se rechaza por una comprobación: **no se puede
+    formular**. El índice del sello se deriva con el `tenant_id` de la sesión, así
+    que el mismo teléfono es dos sujetos distintos en dos clientes (regla de oro 5).
+
+    Registrar y ejecutar van en una transacción, al contrario que el ARCO por
+    escrito de `T-2.80.b`, que los separa. La razón es material y está en la
+    cabecera de la migración `0047`: para ejecutar hay que tener el número
+    delante, y guardarlo para después significaría guardar su índice en una tabla
+    append-only, donde sobreviviría al borrado que lo motivó.
+    """
+    # Primero destruir, luego registrar: si la lápida fallara, la transacción
+    # entera se deshace y el sello vuelve. Al revés quedaría constancia de un
+    # borrado que no llegó a ocurrir.
+    await store.forget_msisdn(conn, tenant_id=claims.tenant_id, msisdn=body.msisdn)
+
+    fila = await erasure.erase_phone_subject(
+        conn,
+        right=body.right,
+        channel=body.channel,
+        received_at=body.received_at,
+        proof_ref=body.proof_ref,
+        proof_digest=body.proof_digest,
+        via="console_admin",
+    )
+
+    await audit_async(
+        conn,
+        tenant_id=claims.tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="privacy_erasure_phone",
+        obj=f"privacy_erasure:{fila['erasure_id']}",
+        # Ni el número ni su índice: el `audit_log` no se poda jamás (regla de
+        # oro 11), así que lo que entre aquí es tan permanente como la lápida.
+        # `proof_ref` tampoco — es texto libre donde un operador puede escribir un
+        # nombre; el digest identifica el documento sin copiarlo.
+        meta={
+            "subject_kind": "msisdn",
+            "right": fila["right_exercised"],
+            "request_id": str(fila["request_id"]),
+            "request_channel": body.channel,
+            "request_received_at": body.received_at.isoformat(),
+            "proof_digest": body.proof_digest,
+            "executed_by": claims.sub,
+        },
+    )
+    return PhoneErasureOut(**fila)
 
 
 async def _leer_consentimiento(

@@ -875,7 +875,12 @@ def _dispatch_one(
     *,
     now: datetime,
 ) -> None:
-    base_url = settings.notify_web_base_url
+    # [T-2.158] Sin `notify_web_public` no se pasa base, así que `_message()` no
+    # compone enlace. El corte va AQUÍ y no en el proveedor de correo porque el
+    # problema es el mismo en SMS y WhatsApp: un enlace que no se abre es inútil
+    # en cualquier canal, y componerlo para tirarlo después invita a que alguien
+    # lo reutilice sin saber que está muerto.
+    base_url = settings.notify_web_base_url if settings.notify_web_public else ""
     max_attempts = settings.notify_max_attempts
     incident_id = row["incident_id"]
     if row["mode"] == "cascade":

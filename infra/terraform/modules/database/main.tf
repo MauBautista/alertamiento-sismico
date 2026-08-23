@@ -69,6 +69,24 @@ locals {
     var.notify_ses_domain != "" ? [
       "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${var.notify_ses_domain}"
     ] : [],
+
+    # [T-2.155] EL ARN DEL CONFIGURATION SET, y sin el no se envia nada.
+    #
+    # Medido el 2026-08-21 desde el rol de la instancia, no inferido:
+    #   AccessDeniedException ... not authorized to perform 'ses:SendEmail'
+    #   on resource '.../configuration-set/takab-dev-correo'
+    #
+    # La identidad de dominio lo lleva como configuration set POR DEFECTO, asi que
+    # SES lo aplica en cada envio SIN que el emisor lo nombre — y entonces exige
+    # permiso sobre los DOS recursos, identidad Y set. Conceder solo la identidad
+    # deja un permiso que parece completo y falla en el primer correo.
+    #
+    # Es la tercera cara del mismo fallo de 2026-07-14, y la que ningun comentario
+    # habia previsto: el `[PARA]` del runbook avisaba del ARN de la identidad
+    # —resuelto— pero nadie penso en el set, porque no existia cuando se escribio.
+    var.notify_ses_configuration_set != "" ? [
+      "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:configuration-set/${var.notify_ses_configuration_set}"
+    ] : [],
   )
 
   # Raiz de la cadena PITR tal y como la espera barman-cloud: SIN barra final —
@@ -119,6 +137,9 @@ locals {
     # secreto; la instancia lo resuelve con su propio rol en tiempo de ejecucion.
     app_secret    = aws_secretsmanager_secret.db["app"].arn
     retention_env = local.pii_retention_env
+    # [T-2.163] Sin esto el contenedor cae al directorio SIMULADO y la
+    # reconciliacion de bajas queda desplegada e INERTE.
+    cognito_pool_id = var.cognito_pool.id
   })
 
   pitr_setup_script = templatefile("${path.module}/pitr_setup.sh.tpl", {
@@ -463,6 +484,26 @@ resource "aws_iam_role_policy" "db" {
           Effect   = "Allow"
           Action   = ["ses:SendEmail", "ses:SendRawEmail"]
           Resource = local.notify_ses_arns
+        },
+      ] : [],
+      # [T-2.163] LISTAR EL POOL, y nada mas que eso.
+      #
+      # El job de retencion reconcilia el padron contra el directorio antes de
+      # podar (T-2.143): quien ya no esta en el pool arranca su reloj de PII. Sin
+      # este permiso el job no puede preguntar, cae al directorio SIMULADO y la
+      # funcion queda desplegada e INERTE — medido en produccion el 2026-08-23,
+      # con el rol `takab-dev-db` sin un solo `cognito-idp:*`.
+      #
+      # SOLO `ListUsers`, y acotado a ESE pool. La reconciliacion no crea, no
+      # deshabilita y no borra cuentas: lee quien existe y escribe en SU PROPIA
+      # base. Dar `AdminDisableUser` "por si acaso" pondria en manos de un job de
+      # limpieza nocturna la capacidad de dejar a alguien fuera de su edificio.
+      var.cognito_pool.arn != "" ? [
+        {
+          Sid      = "ReconciliarBajasListarPool"
+          Effect   = "Allow"
+          Action   = "cognito-idp:ListUsers"
+          Resource = var.cognito_pool.arn
         },
     ] : [])
   })

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **289** · `[x]` **233** · `[~]` **9** · `[ ]` **47**
+**Conteo de tareas:** total **301** · `[x]` **247** · `[~]` **9** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4346,7 +4346,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 > **Es exactamente la pregunta que `D-07` mandó al abogado**, y el código está escrito para que la
 > respuesta se pueda cambiar sin rehacerlo.
 
-### [ ] T-2.151 · ARCO por teléfono: cablear el borrado al flujo de solicitudes — `SOFTWARE`
+### [x] T-2.151 · ARCO por teléfono: cablear el borrado al flujo de solicitudes — `SOFTWARE`
 - **Componente:** api · **Depende de:** `T-2.150` (hecha)
 - `store.forget_msisdn()` existe y está probada, pero **el flujo ARCO está tecleado por `user_sub`**
   y un sujeto-teléfono **no tiene ninguno**: no hay `user_profiles`, así que tampoco el FK compuesto
@@ -4354,10 +4354,606 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 - **Por eso no se cerró de refilón:** hace falta decidir **cómo se acredita** que quien pide el
   borrado es el dueño de ese número —y esa es una pregunta de identidad, no de código—.
 - **Criterios de aceptación:**
-  - [ ] Decidido y escrito cómo se acredita la titularidad de un número.
-  - [ ] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
-  - [ ] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
+  - [x] **Decidido y escrito** cómo se acredita la titularidad: **la acredita el cliente
+        institucional** que recogió el consentimiento — [`D-23`](DECISIONES-MAURICIO.md#d-23).
+        TAKAB ejecuta y audita; no verifica identidades por su cuenta ni custodia documentos.
+  - [x] **La respuesta NO puede ser un oráculo de existencia.** A quien no acredita se le contesta
+        **lo mismo siempre**: un «no encontrado» frente a un «borrado» convierte el endpoint en un
+        buscador de personas — permitiría comprobar si un teléfono consta y, con él, en qué
+        edificio. Test que lo fije comparando las dos respuestas byte a byte.
+  - [x] **Nadie puede borrar el consentimiento de otro.** Sin acreditación no se ejecuta: destruir
+        la prueba de la base legal de un tercero es justo lo que [`D-07`](DECISIONES-MAURICIO.md#d-07)
+        construyó el cripto-borrado para impedir.
+  - [x] La lápida (`privacy_erasures`) cubre al sujeto `msisdn` igual que al `sub`.
+  - [x] Ni una copia del número en la lápida: guardarla «para trazabilidad» convertiría el borrado
         en una seudonimización reversible, que es justo lo que no puede ser.
+
+> ### ✅ CERRADA el 2026-08-22 · `POST /privacy/phone-erasures` (migración `0047`)
+>
+> **La decisión de diseño que la ficha no anticipaba: es UN endpoint, no dos.** El ARCO por escrito
+> de `T-2.80.b` separa *registrar* de *ejecutar* a propósito —dos actos, dos fechas, y de la primera
+> corre el plazo legal—. Aquí van fundidos en una transacción, y la razón es material:
+>
+> > **Para ejecutar hay que tener el número delante.** Registrar hoy y ejecutar la semana que viene
+> > obligaría a que la constancia guardase su índice — el mismo `HMAC(pimienta, tenant‖msisdn)` que
+> > localiza el sello. Y `privacy_erasure_requests` es **append-only por trigger**: ese índice no se
+> > podría borrar jamás, así que **sobreviviría al borrado que lo motivó**. Es determinista, o sea
+> > que con la pimienta en la mano se comprueba cualquier número candidato: exactamente la
+> > seudonimización reversible que el criterio 5 prohíbe, solo que un paso más allá.
+>
+> Las dos fechas **no se pierden**: `received_at` sale del escrito (lo pone el cliente) y `erased_at`
+> lo pone la base. Lo que se pierde es poder diferir la ejecución.
+>
+> **`affected` es constante (`{}`), y ahí está el criterio 2.** En el ARCO del padrón son conteos
+> útiles; aquí un `{"privacy_subject_secrets": 1}` frente a un `0` sería el oráculo. `forget_msisdn()`
+> devuelve si había algo que destruir y **ese booleano se descarta en el router a propósito**.
+>
+> **La acreditación vive en la base, no en el router** — y esto se midió, no se afirmó:
+> `pe_phone_on_behalf` no puede reutilizar `app_can_erase_subject`, que busca la constancia POR
+> `user_sub` y con un sujeto nulo no encuentra nada; la exige por `request_id` **y** que se haya
+> registrado como constancia de teléfono. `test_una_lapida_de_telefono_sin_su_constancia_no_se_puede_insertar`
+> prueba las dos evasiones, incluida la interesante: una constancia REAL pero del padrón, donde el FK
+> está satisfecho y la política se niega igual. Sin ese caso, el responsable reutilizaría cualquier
+> expediente suyo para justificar cualquier borrado.
+>
+> El cruce de clientes sale gratis y sin una sola comparación de tenants: el índice se deriva con el
+> `tenant_id` de la sesión, así que **el mismo teléfono es dos sujetos distintos e inalcanzables en
+> dos clientes**. Medido con el número sembrado en los dos.
+>
+> **Cuatro sabotajes, y dos enseñaron algo:**
+>
+> - Devolver el conteo real ⇒ 2 rojos. Quitar la guarda de rol ⇒ 1 rojo.
+> - Colar el número en claro por `proof_ref`, y colar su índice ⇒ 1 rojo cada uno… **pero los dos
+>   primeros intentos pasaron en verde**, y no porque el test fallara: el parche pegaba en la
+>   primera de las dos apariciones de `proof_ref=body.proof_ref`, que es el endpoint de `T-2.80.b`.
+>   El sabotaje nunca tocó el código bajo prueba. *Un sabotaje que no se comprueba que muerde vale
+>   lo mismo que no haberlo hecho* — segunda vez hoy (la primera, un `grep` que no casaba por los
+>   códigos de color).
+> - Y se predijo mal cuál de las dos guardas cazaría al `request_id` inventado: se esperaba el FK y
+>   **caza antes la RLS**. Las dos están; el orden es el contrario del que uno supone.
+
+### [x] T-2.162 · El correo de guardia no dice qué hacer ni dónde — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-22, en el ensayo
+  cronometrado de `T-2.78`
+- **El hecho:** el aviso de on-call es la **plantilla cruda de CloudWatch**. Nombra la alarma, su
+  causa y sus umbrales, y **no menciona que haya que acusar, ni dónde**. La palabra «acuse» no
+  aparece; la URL de la página tampoco.
+- **La evidencia, y es incómoda:** quien lo recibió **acababa de ejecutar el ensayo entero** —había
+  acuñado la credencial, abierto la página y acusado un aviso veinte minutos antes— y aun así tuvo
+  que preguntar **cuál era «el código» que había que pegar**. Buscó en el correo algo que el correo
+  no tiene.
+- **Por qué importa más de lo que parece:** el destinatario real está dormido a las 3 a.m. El
+  runbook resuelve esto **suponiendo** que la persona tiene el marcador en el teléfono y sabe
+  usarlo — y este ensayo **refutó esa suposición con el caso más favorable posible**.
+- **Es la misma familia que [`T-2.157`](TASKS.md):** el mensaje era técnicamente correcto y **no
+  comunicaba**. Allí era un volcado JSON a un inspector; aquí es una plantilla de AWS a un guardia.
+  En los dos casos ninguna prueba de la lógica podía cazarlo, porque la lógica no falla.
+- **Criterios de aceptación:**
+  - [x] El aviso lleva **qué hacer y dónde**: `alarm_description` de **las doce alarmas** acaba en
+        `ACUSA RECIBO en <url> (tu credencial de guardia; tienes N min)`.
+  - [x] **Sin canal nuevo:** va en `alarm_description`, el **único texto nuestro** que viaja en el
+        correo que compone SNS. Todo lo demás —nombre, umbral, dimensiones— lo pone AWS.
+  - [x] El plazo va en el texto **y en minutos**: `900 s` obliga a dividir a quien acaba de
+        despertarse.
+  - [x] **El plazo se DERIVA, no se teclea dos veces.** `ops_ack_deadline_s` es la fuente única:
+        alimenta el texto del correo **y** `TAKAB_API_OPS_ACK_DEADLINE_S` por el output del mismo
+        nombre. Si divergieran, el aviso prometería un plazo que la API no respeta — y nadie lo
+        notaría hasta que alguien acusara «a tiempo» y el sistema le dijera que llegó tarde.
+  - [x] **Sin suscriptor HTTPS no se anuncia el acuse.** Sin él ningún aviso llega a la base: la
+        página existiría y no habría nada suyo que atender. Mandar allí a alguien de guardia a las
+        3 a.m. es peor que no decir nada.
+  - [x] Tres tests, **verificados rompiendo el código**: quitar el sufijo de una alarma deja dos en
+        rojo; hornear el plazo deja rojo el suyo.
+
+> ### ⚠️ Y el primer intento del test negativo pasó cuando debía fallar
+>
+> La aserción del plazo derivado buscaba `"5 min"` con `ops_ack_deadline_s = 300`. **`"5 min"` es
+> subcadena de `"15 min"`**, así que con el plazo horneado a 15 pasaba igual. Lo destapó el propio
+> ejercicio de romper el código a propósito — que es exactamente para lo que existe.
+>
+> Corregida a texto exacto (`"tienes 5 min"`) **más la ausencia del valor viejo**. Segunda vez en
+> esta sesión que un test pasa por la razón equivocada; la primera buscaba la palabra «consola»,
+> que ya salía en el pie del correo.
+
+### [x] T-2.161 · El acuse de guardia no se podía enviar desde la consola — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** api (`routers/ops_alerts.py`) · **Hallado:** 2026-08-22, ejecutando el ensayo
+  cronometrado de `T-2.78` · **Bloqueaba:** el criterio 2 de `T-2.78` (`C-5`)
+- **El hecho:** el formulario declaraba `action="/ops/alerts/ack"`, una ruta **absoluta**. La
+  consola publica la API bajo `/api`, así que la página se pinta en
+  `https://<consola>/api/ops/alerts/ack` —Caddy quita el prefijo al pasar— pero **al enviar** el
+  navegador resuelve la ruta absoluta contra el host y va a `/ops/alerts/ack`, que ya no es la API:
+  es el SPA, y contesta **405**.
+- **Cómo se manifestó, y es lo que lo hacía difícil de ver:** la página **funcionaba**, el endpoint
+  **funcionaba**, la credencial **era válida** — y el enlace entre los dos no existía. En el log de
+  la API no aparecía ni un `POST`: solo el `GET` que sirvió el formulario.
+- **El arreglo:** `action=""`, que envía a la URL que sirvió la página, con prefijo o sin él. **El
+  endpoint no puede arreglarlo sabiendo su prefijo** — lo decide un proxy que vive en otro sitio;
+  lo único que no depende de esa suposición es no hacerla.
+- **Criterios de aceptación:**
+  - [x] `action` relativo, con test que impide volver a fijar una ruta absoluta.
+  - [x] El test cubre también que **siga siendo** un `post` con el campo `token` de tipo
+        `password` — la guarda no puede pasar rompiendo el formulario.
+  - [x] Desplegado y comprobado con un `POST` real que llega a la API.
+
+> ### ⚠️ Y el diagnóstico costó dos correcciones, las dos mías
+>
+> **Primero acusé al `action`** —correctamente—, **y luego me desdije** al ver en el log un
+> `POST /ops/alerts/ack` desde la IP de Mauricio. **Ese POST era mío**: un `curl` de prueba lanzado
+> desde su propia máquina, que sale por la misma IP pública que su navegador. Atribuí mi petición a
+> su formulario y «corregí» un diagnóstico que estaba bien.
+>
+> **La lección:** en un log, la IP no identifica al actor cuando el agente y la persona comparten
+> salida a internet. Lo que distinguía a los dos era la **hora** y el hecho de que el mío llevaba
+> `token=x`; nada de eso se miró antes de concluir.
+
+### [x] T-2.160 · «¿Llegó ESTE correo?» no tiene respuesta: no hay historial de entrega — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/identity`) · **Hallado:** 2026-08-22, intentando diagnosticar dos
+  correos que no aparecieron
+- **El hecho:** el configuration set publica **solo lo que va mal** —`BOUNCE`, `COMPLAINT`,
+  `REJECT`, `RENDERING_FAILURE`, `DELIVERY_DELAY`— y a **un correo**. No incluye `SEND` ni
+  `DELIVERY`, y no hay ningún destino durable (ni CloudWatch Logs, ni Firehose, ni S3).
+- **Lo que costó, medido en esta sesión.** Dos correos con `MessageId` devuelto no aparecieron en el
+  buzón. Al preguntar «¿qué pasó con `010f01a0280d7325`?» **no había dónde mirar**:
+  - la lista de supresión no lo tenía (correcto, pero no dice nada del mensaje);
+  - las métricas de CloudWatch estaban **en cero, incluida `Send`**, mientras el contador de cuota
+    decía 2 — o sea, **ausencia de datos indistinguible de ausencia de eventos**;
+  - los avisos de rebote van por correo: si nadie los guarda, no existen.
+
+  Con eso se construyó una hipótesis —que Private Email descartaba el correo de su propio
+  dominio— que encajaba con **todos** los datos disponibles y **era falsa**: un envío de control al
+  mismo buzón llegó sin problema. **La hipótesis no falló por descuido: falló porque los datos que
+  la habrían refutado no se guardaban en ninguna parte.**
+- **Por qué importa más aquí que en otro producto:** esto es alertamiento sísmico. «¿La solicitud de
+  dictamen le llegó al inspector?» no es una curiosidad de operación — es la pregunta que decide si
+  hay que llamar por teléfono. Hoy solo se puede responder con *«SES no se quejó»*, y el propio
+  `RUNBOOK-ses §1` ya advierte que eso acredita que **el mensaje sale**, no que **la persona
+  llega**.
+- **Criterios de aceptación:**
+  - [x] Destino de eventos **durable y consultable**: los siete tipos —**`SEND` y `DELIVERY`
+        incluidos**— van por EventBridge a un grupo de CloudWatch Logs. **No Firehose**: para
+        responder «qué pasó con este `MessageId`» hace falta **buscar**, no almacenar; Logs
+        Insights busca, un objeto en S3 hay que ir a leerlo.
+  - [x] **Retención declarada** (90 días), con test que impide dejarla implícita.
+  - [x] **La política de RECURSO del grupo de logs**, que es la que se olvida: EventBridge no
+        escribe por tener el ARN en el target. Sin ella el destino se crea limpio y **muere en el
+        primer evento**, sobre un camino que nadie mira hasta que hace falta. Mismo modo de fallo
+        que ya obligó a poner `aws_sns_topic_policy` para los rebotes.
+  - [x] **El `MessageId` se guarda junto al `notification_job`.**
+
+> ### ⚠️ Corrección: la mitad de la base **ya estaba hecha**
+>
+> Esta ficha decía que «el job dice `sent` y no guarda con qué identificador». **Falso.**
+> `notification_jobs.provider_message_id` existe y el orquestador ya lo escribe con
+> `provider_message_id(provider)`, que es **genérico por diseño**: lee `.last_receipt.message_id`
+> sin saber de canales.
+>
+> Lo que faltaba era que SES lo alimentara — y su propio comentario decía por qué:
+> *«Un provider sin recibo —SES, el webhook firmado— devuelve cadena vacía [...] No hay nada que
+> casar donde no hay callback.»* **Era cierto, y dejó de serlo** al publicar los eventos a un
+> destino consultable. La costura estaba puesta desde `T-2.77.b` esperando a que existiera el otro
+> extremo.
+>
+> **Y una trampa que se atajó con test:** el recibo del envío anterior **no puede sobrevivir a uno
+> fallido**. Dejarlo ataría el job al identificador de **otro** mensaje —la base afirmaría que un
+> correo que nunca salió tiene id—. Misma familia que el `alert_latched` de `T-2.28`: un estado que
+> no se limpia contamina la lectura siguiente.
+
+> ### ⚠️ Y el primer intento no funcionó: la lista de eventos se declaró DOS VECES
+>
+> La regla de EventBridge filtraba por `source` **y por `detail-type`**, duplicando la lista que el
+> configuration set ya declara. Se escribieron `"Email Send"` y `"Email Delivery"`; **SES envía
+> `Email Sent` y `Email Delivered`**.
+>
+> **Medido: `Invocations = 0`, `FailedInvocations = 0`, el grupo de logs vacío — y ni un error.**
+> El fallo no fue un rechazo: fue una **ausencia**. Exactamente el modo de fallo que esta ficha
+> existe para eliminar, reintroducido por su propia implementación.
+>
+> **El arreglo no fue corregir los nombres: fue quitar la duplicación.** El configuration set ya
+> elige qué eventos salen; la regla solo tiene que recogerlos. Así, además, un tipo nuevo entra solo
+> el día que se añada arriba. Con test que lo impide volver.
+>
+> Es la tercera vez en la misma sesión que dos declaraciones del mismo hecho divergen —después del
+> enlace del correo (`T-2.158`) y del nombre del configuration set (`T-2.155`)—. Y las tres veces
+> el síntoma fue el mismo: **nada falla, simplemente no ocurre.**
+>
+> **Verificado de extremo a extremo**, que es lo único que cierra esta ficha:
+> ```
+> ¿qué pasó con 010f01a02af55808-…-0466bf26efe7-000000?
+>   · Email Sent      | 19:31:57Z | ['ops@takabailert.com']
+>   · Email Delivered | 19:31:58Z | ['ops@takabailert.com']
+> ```
+
+> ### El censo del módulo tuvo que crecer con la familia
+> `ses_domain.tftest.hcl` enumera por regex los recursos SES/DNS/SNS y exige que cada uno tenga su
+> aserción de «con la variable vacía no se crea nada». **El historial entró por `aws_cloudwatch_*`,
+> que su patrón no miraba**: los cuatro recursos habrían pasado sin que nadie comprobara nada.
+> Patrón ampliado y verificado colando un recurso a propósito — lo caza.
+>
+> **Un censo automático deja de serlo en cuanto la familia crece por un lado que su patrón no
+> mira.** Es la misma lección que `§1` de `PENDIENTES`, esta vez en código.
+
+### [x] T-2.159 · Nada impide apagar el acceso del que dependen la cadena on-call y los enlaces — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra · **Hallado:** 2026-08-22, antes de encender el flag ·
+  **Bloquea:** `T-2.78.a` y con ello el criterio 2 de `T-2.78` (`PENDIENTES §2.9`)
+- **El hecho, medido antes de gastar un apply:**
+
+  | Comprobación | Resultado |
+  |---|---|
+  | La API conoce `TAKAB_API_OPS_ALERT_TOPIC_ARN` | ✅ sí |
+  | `POST /api/ops/alerts/sns` responde **404**, no 503 | ✅ el semáforo del runbook está en verde |
+  | **Quién puede alcanzar ese 443** | ❌ **una sola IP** (`187.192.70.90/32`) |
+
+  La suscripción **se confirma DURANTE el `apply`**: AWS SNS llama al endpoint desde sus propios
+  rangos y ese paquete se descarta en el security group. El apply moriría a medias.
+- **Por qué el aviso existente no lo cubre, y es la lección repetida:** el comentario de
+  `ops_alert_https_subscriber_enabled` advierte de que la API debe estar desplegada y no contestar
+  503. **Las dos cosas estaban bien.** Nadie pensó en el cortafuegos. Es la misma forma que el
+  `[PARA]` de `RUNBOOK-ses §2.5`, que predijo el `AccessDenied` del ARN de la identidad y no el del
+  configuration set: **un aviso correcto que envejece cubriendo media casuística se lee como
+  cobertura completa.**
+- **Y es el MISMO bloqueo que la segunda mitad de [`T-2.158`](TASKS.md).** Parecían dos temas —el
+  enlace del correo y la cadena on-call— y son uno: **la consola no es alcanzable desde fuera**.
+  Resolverlos por separado es resolver dos veces.
+- **El matiz que estrecha las opciones:** para confirmar una suscripción HTTPS, **abrir «a los
+  rangos de AWS» no es una salida realista**. AWS no publica prefijos por servicio para SNS; lo que
+  hay es el bloque `AMAZON` de la región entera, que equivale a abrir al mundo con pasos de más. En
+  la práctica el endpoint tiene que ser público.
+> ### ✅ El bloqueo descrito arriba YA NO EXISTE (2026-08-22) — y el defecto cambió de forma
+>
+> [`D-22`](DECISIONES-MAURICIO.md#d-22) abrió la consola, así que AWS alcanza el endpoint. Medido,
+> no supuesto:
+>
+> | | |
+> |---|---|
+> | Suscripción HTTPS | **confirmada** — ARN real, no `PendingConfirmation` |
+> | La confirmación de AWS | `52.95.25.67 POST /ops/alerts/sns 202` |
+> | Un aviso real publicado | `52.95.25.209 POST /ops/alerts/sns 202` |
+> | La pata de correo | llegó a `ops@takabailert.com` |
+>
+> **Pero cerrar la ficha aquí sería cerrarla en falso.** El fallo no desapareció: **se dio la
+> vuelta**. Antes, encender el flag con la red cerrada **mataba el apply** — ruidoso, inmediato,
+> imposible de ignorar. Ahora la suscripción está viva, y **estrechar `web_allowed_cidrs` no rompe
+> ningún apply**: rompe la entrega, en silencio, mientras todo el Terraform sigue verde.
+>
+> **Y ya no cuelga una sola cosa de esa apertura, sino dos:**
+>
+> - `ops_alert_https_subscriber_enabled = true` — la cadena on-call.
+> - `TAKAB_API_NOTIFY_WEB_PUBLIC=true` — el enlace de cada correo ([`T-2.158`](TASKS.md)).
+>
+> Cerrar el 443 deja la guardia sin avisos **y** los correos prometiendo enlaces muertos. Ninguna
+> de las dos cosas produce un error en ninguna parte.
+
+- **Criterios de aceptación:**
+  - [x] Decidido **con `T-2.158` a la vez**, no por separado — [`D-22`](DECISIONES-MAURICIO.md#d-22),
+        con su coste escrito (de dos capas a una) y su gatillo de revocación.
+  - [x] La suscripción confirmada de verdad, comprobada **desde fuera de la lista blanca**: dos
+        `202` desde IP de AWS en el log de la API, no el estado que devolvió el apply.
+  - [x] **Guarda que ata las piezas**, y por dos vías distintas porque el riesgo era doble:
+        - **Validación** en `ops_alert_https_subscriber_enabled`: encenderlo exige
+          `web_allowed_cidrs` con `0.0.0.0/0`. `0.0.0.0/0` y no una lista de rangos de AWS porque
+          **esa lista no existe** — AWS no publica prefijos por servicio para SNS.
+        - **El enlace del correo deja de declararse dos veces.** `deploy.sh` tecleaba
+          `TAKAB_API_NOTIFY_WEB_PUBLIC=true`; ahora lo **deriva** del output `console_is_public`.
+          Dos declaraciones del mismo hecho divergen, y al divergir habrían dejado los correos
+          prometiendo enlaces muertos sin un error en ninguna parte. Mismo criterio que
+          `ops_alert_https_endpoint`, que ya derivaba su URL: **un literal apunta a la realidad de
+          ayer**.
+  - [x] **Falla en el `plan`**, verificado rompiéndolo a propósito: con la lista estrechada,
+        `Error: Invalid value for variable` **antes** de tocar nada; restaurada, el plan vuelve a
+        salir limpio. Un aviso que llegara en tiempo de ejecución llegaría cuando la guardia ya no
+        recibe alarmas.
+- **Por qué una validación y no otro párrafo:** el aviso en prosa de esta misma variable ya falló
+  una vez — describía puntualmente el fallo que sí se había previsto (API sin desplegar → 503) y no
+  el del cortafuegos. **Un aviso correcto que cubre media casuística se lee como cobertura
+  completa.** Ésa es la lección que esta ficha deja, y se repitió tres veces en la misma sesión.
+
+### [x] T-2.158 · El enlace de los correos apunta a una consola que el destinatario no puede abrir — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra + despliegue · **Hallado:** 2026-08-22, cuando Mauricio pulsó un enlace de
+  ejemplo y salió un 403 · **Muerde en:** `T-2.94` (simulacro con cascada real)
+- **El hecho, medido:** `TAKAB_API_NOTIFY_WEB_BASE_URL = https://16-58-11-196.sslip.io`, y el 443
+  de esa consola admite **una sola IP** (`web_allowed_cidrs`). Cada correo de solicitud de dictamen
+  dice «Atender en la consola» con un enlace que **solo puede abrir el operador de esa IP**.
+- **Por qué no es «solo configuración de dev»:** el código está bien —compone el enlace desde el
+  `console_url` que le den— y la restricción por IP en dev es deliberada. Lo que está mal es que
+  **nada lo declara**: el correo invita a pulsar y no hay ni un aviso de que el destinatario no
+  llegará. Es la regla de oro 7 fuera de la UI — mostrar algo como accionable cuando no lo es.
+- **Y tiene fecha:** `T-2.94` es un **simulacro con cascada de notificación real**, y depende de
+  `T-2.78` a propósito. El día que se ejecute, un inspector real recibirá ese enlace. Si esto no
+  está resuelto antes, el simulacro acreditará que el correo **sale**, no que la persona **pueda
+  actuar** — que es justo la distinción que `RUNBOOK-ses §1` lleva advirtiendo desde que se
+  escribió.
+- **Lo que hay que decidir al abordarlo** (no se cierra sin esto): si la consola pasa a un nombre
+  propio con acceso público tras Cognito, o si el enlace apunta a otra cosa alcanzable. **Es
+  decisión de producto y de seguridad, no de código:** quitar la lista blanca expone el SOC, y
+  dejarla convierte el enlace en decoración.
+- **Decidido el 2026-08-22: las dos, en ese orden.** Primero el correo deja de prometer enlaces
+  muertos —hecho, abajo—; la consola pública se planifica aparte con su propia decisión de
+  seguridad. Así `T-2.94` no acredita un flujo roto sin forzar hoy la exposición del SOC.
+- **Criterios de aceptación:**
+  - [x] **El correo no promete lo que no puede cumplir.** `TAKAB_API_NOTIFY_WEB_PUBLIC` declara si
+        el DESTINATARIO alcanza la base. Tener URL no es ser alcanzable, y el código no puede
+        deducirlo: **lo sabe la red, no el proceso**.
+  - [x] **Nace en `False`.** Al revés, cada despliegue nuevo reintroduce el defecto y no se nota
+        hasta que alguien intenta pulsar, que es tarde. Y por eso **no entra en
+        `REQUERIDOS_EN_PRODUCCION`**: su ausencia no es fallo silencioso — el correo omite el
+        enlace **y lo dice**.
+  - [x] **Sin enlace se dice qué hacer**, no se calla: quitarlo y no decir nada deja al inspector
+        sabiendo que pasó algo y no que le toca actuar.
+  - [x] **El corte vive en el ORQUESTADOR, no en el proveedor de correo.** El problema es idéntico
+        en SMS y WhatsApp; componer el enlace para tirarlo después invita a que alguien lo reutilice
+        sin saber que está muerto.
+  - [x] Guarda en el orquestador: con la misma base y el flag apagado, el mensaje **no lleva
+        `link`**. Más cuatro tests del cuerpo.
+  - [x] **La segunda mitad, hecha el 2026-08-22:** la consola es pública y
+        `TAKAB_API_NOTIFY_WEB_PUBLIC=true` se declara en el despliegue, así que el correo vuelve a
+        llevar enlace — ahora uno que el destinatario abre. La decisión de seguridad está escrita
+        con su coste y su gatillo de revocación en [`D-22`](DECISIONES-MAURICIO.md#d-22).
+  - [x] **El acoplamiento queda escrito donde se va a leer:** el comentario junto a la línea dice
+        que si algún día se vuelve a cerrar el 443, **esta línea se apaga con él**. Sin eso, cerrar
+        la red dejaría el correo prometiendo enlaces muertos otra vez, y nadie lo notaría.
+- **Verificado:** `api/tests/notify/` 270 en verde sobre base aislada, ruff limpio.
+  > **Y una trampa que costó un diagnóstico:** la primera corrida dio **8 rojos**, de los que solo
+  > 2 eran míos. Había **otro `pytest` sobre `takab_test`** (`pgrep -c pytest` lo delató, y un
+  > `DeadlockDetected` lo confirmó). Base propia ⇒ el ruido desapareció. **Los 6 falsos se leían
+  > igual que los 2 reales.**
+
+### [x] T-2.156 · Sitio público del dominio — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/site`) · **Sale de:** la denegación del caso `178737638500467`
+- **La hipótesis que lo motivó, y que resultó FALSA:** al no poder leer el caso (la API de Support
+  exige plan de pago) se dedujo la causa de la infraestructura: la `Website URL` declarada era la
+  consola del SOC, cuyo 443 admite **una sola IP**, así que desde AWS daba timeout. **La respuesta
+  de AWS no menciona el sitio**: pedía más información sobre el uso. La deducción era razonable y
+  no era el motivo.
+- **Por qué se hizo igual, y sigue valiendo:** `takabailert.com` **no resolvía en absoluto**, y es
+  el dominio que firma los correos. Además `§4.2` lo necesita — Meta mira el dominio al verificar
+  el negocio. Se habría hecho de todos modos; solo se hizo antes.
+- **Lo implementado:** S3 privado + CloudFront + ACM en `us-east-1`, alias de `takabailert.com` y
+  `www`, HTTP redirigido a HTTPS.
+  - [x] **La consola conserva su lista blanca.** Arreglar esto no podía costar exponer el SOC: son
+        dos sistemas separados y se sirven por separado.
+  - [x] Bucket **privado** con Origin Access Control y política acotada por `SourceArn` a esa
+        distribución. Un bucket público es una fuga esperando a que alguien suba algo por error.
+  - [x] Certificado en `us-east-1` con provider aliasado: CloudFront no lee de otra región, y
+        olvidarlo da un error que **no menciona la región** y se diagnostica en el sitio
+        equivocado.
+  - [x] **Rutas inexistentes devuelven la página con código 404**, no el XML de S3. Con OAC y sin
+        `s3:ListBucket` una clave ausente da **403 y no 404** —S3 no distingue «no existe» de «no
+        puedes verlo»—, así que hay que mapear los dos. El código es 404 y no 200 a propósito: un
+        200 sobre cualquier ruta convierte el sitio en un espejo que afirma tener lo que le pidan.
+  - [x] La página vive en `envs/dev/site/index.html`, **no dentro de una cadena de Terraform**: se
+        puede abrir en un navegador y revisar en el diff. No afirma nada que el sistema no haga, y
+        lleva el deslinde de que la alerta oficial la emite el SASMEX.
+- **Verificado desde la instancia de AWS**, fuera de la lista blanca: el sitio da 200 con TLS
+  válido y la consola da timeout. **Es la comprobación que faltó la primera vez** — entonces se
+  verificó desde la máquina de Mauricio, que es el único punto privilegiado que existe.
+
+### [x] T-2.157 · El cuerpo del correo era un volcado JSON — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** api (`notify/providers.py`) · **Sale de:** la respuesta de AWS al caso
+  `178737638500467`, que pidió «ejemplos del correo… para asegurarnos de que es contenido de
+  calidad que los destinatarios quieran recibir»
+- **El hecho:** `SesEmailProvider.send()` componía el cuerpo con
+  `json.dumps(message, indent=2, sort_keys=True)`. El inspector de un hospital recibía, de
+  madrugada y después de un sismo, **catorce claves en orden alfabético** — y la nota que
+  escribió una persona («grietas visibles en muro de escalera norte») quedaba entre dos UUID,
+  en la novena posición por alfabeto.
+- **Por qué es la misma familia que `T-2.104`:** allí la app tituló «ALERTA SÍSMICA SASMEX» algo
+  que no lo era. Aquí el mensaje era técnicamente exacto y **no comunicaba nada**. En los dos
+  casos la lógica estaba bien y lo que llegaba a la persona estaba mal — y **ninguna prueba de la
+  lógica podía cazarlo**, porque la lógica no fallaba.
+- **Cómo se descubrió, y merece anotarse:** no lo encontró un test ni una revisión. Lo encontró
+  **tener que enseñárselo a un tercero**. Generar el ejemplo para AWS fue la primera vez que
+  alguien miró el correo como lo mira quien lo recibe.
+- **Lo implementado** (`cuerpo_email()`, con ocho tests propios):
+  - [x] **El orden es operativo, no estético:** qué pasa, dónde, de qué origen, la nota, el
+        enlace. Los identificadores **al pie**, porque no son información para decidir: son para
+        quien atienda el reporte después.
+  - [x] **El origen se nombra por lo que ES.** Tabla explícita `_ORIGENES`, y un `trigger`
+        desconocido **cae a su propio texto en vez de a SASMEX**. Test que exige que un incidente
+        de reglas locales no mencione SASMEX **y** que uno de SASMEX sí.
+  - [x] **Sin enlace no se inventa uno** (regla de oro 7): test que falla si aparece un `http`
+        que el mensaje no traía.
+  - [x] **Guarda de raíz:** un test se pone rojo si el cuerpo vuelve a ser JSON parseable, y otro
+        exige que la nota esté en la **primera mitad** del texto — que aparezca no basta, porque
+        también aparecía en el volcado.
+  - [x] Línea de baja: cómo deja de recibir el destinatario. Lo pide AWS y no existía.
+- **Verificado:** 8 tests nuevos, `api/tests/notify/` completa en verde (265), ruff limpio.
+
+### [x] T-2.155 · El permiso de envío omite el ARN del configuration set — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/database`, `modules/identity`, `envs/dev`) ·
+  **Hallado:** 2026-08-21, ejecutando el paso 4 de `RUNBOOK-ses §2.5` · **Sale de:** `T-2.78.b`
+- **El hecho, medido desde el rol de la instancia** (no desde la CLI de un portátil, que habría
+  salido verde sin tocar el rol):
+
+  ```
+  AccessDeniedException: User '.../assumed-role/takab-dev-db/i-06fa9b287707c7046'
+  is not authorized to perform 'ses:SendEmail'
+  on resource '.../configuration-set/takab-dev-correo'
+  ```
+
+- **La causa:** la identidad de dominio lleva `takab-dev-correo` como configuration set **por
+  defecto**, así que SES lo aplica en **cada** envío sin que el emisor lo nombre — y entonces exige
+  permiso sobre **los dos** recursos, identidad **y** set. `local.notify_ses_arns` solo componía
+  identidades.
+- **Por qué se coló, y es lo que hay que aprender:** el `[PARA]` de `RUNBOOK-ses §2.5` **sí**
+  predijo este fallo, con su fecha y todo (2026-07-14) — pero lo predijo **para el ARN de la
+  identidad**, que el Terraform ya resolvía solo. **El configuration set no existía cuando se
+  escribió ese aviso.** Un aviso correcto envejeció hasta cubrir solo la mitad del caso, y la mitad
+  que dejó fuera se comporta idéntica: `AccessDenied` en cada envío mientras **los correos de
+  CloudWatch siguen llegando**, porque son SNS con permiso propio.
+- **Impacto mientras no se aplique:** con el remitente ya movido a `alertas@takabailert.com`, el
+  worker `notify` **no puede enviar ni un correo**. Afecta a notificación de incidente y a solicitud
+  de dictamen. La cadena de operación (SNS) **no lo tapa pero tampoco lo denuncia**.
+- **El arreglo, ya escrito** (falta el `apply`):
+  - [x] `notify_ses_arns` compone también `configuration-set/<nombre>` cuando hay dominio.
+  - [x] El nombre del set deja de estar a fuego en `modules/identity` y vive **una sola vez** en
+        `envs/dev`, pasado a los dos módulos. Database no puede leerlo de un output de identity
+        —cerraría el ciclo `identity -> serve -> database`—, así que una sola definición era la
+        única forma de que no diverjan.
+  - [x] **`terraform apply`** — hecho el 2026-08-21. `WorkerSesSend` ya lista los tres ARN
+        (las dos identidades y el configuration set), verificado leyendo el rol.
+  - [x] **Envío desde la instancia sin `AccessDenied`** — mismo comando que fallaba, ahora
+        devuelve `MessageId`. El rol usado es
+        `assumed-role/takab-dev-db/i-06fa9b287707c7046`, no una credencial de consola.
+  - [x] **Cabeceras del correo recibido** (2026-08-22): `dkim=pass` con **selector propio**
+        (`3r2ck3b5...`, uno de los tres de Route 53), `spf=pass` sobre `bounce.takabailert.com`,
+        `dmarc=pass` y `Return-Path` en el subdominio propio. **Alineación por los DOS caminos**:
+        el correo lleva también la firma de `amazonses.com`, y de haber estado sola, DKIM habría
+        pasado igual **sin alinear**.
+  - [x] Test de Terraform que ponga en rojo un `WorkerSesSend` sin el ARN del set cuando hay
+        dominio. **Verificado rompiendo el código a propósito**: quitar el ARN del `concat` deja el
+        test en rojo; restaurarlo lo devuelve a verde. Un test que solo pasa no prueba que cace
+        nada.
+  - [x] **Y su mitad complementaria:** sin configuration set declarado **no puede colarse** un
+        `configuration-set/` vacío en la política. Un ARN sobre un recurso inexistente no da error
+        de Terraform y se lee como cobertura.
+- **Por qué el test anterior no bastaba, que es la lección:** ya existía uno que comprobaba el ARN
+  de la identidad de dominio, y pasaba — mientras el envío real moría. Comprobaba que estuviera **lo
+  que alguien pensó en su momento**, no que estuviera todo lo que SES exige. **Un test que asegura
+  la presencia de X no dice nada sobre la ausencia de Y**, y aquí Y era el recurso que la propia
+  identidad aplica sola.
+
+### [x] T-2.154 · La alarma temprana del backup base grita en CADA ciclo — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/observability`) · **Hallado:** 2026-08-21, verificando el
+  redespliegue · **Alarma:** `takab-dev-backup-base-atrasado`
+- **El hecho, medido** (`BaseBackupAgeSeconds`, periodo 300 s):
+
+  ```
+  22:03  605219 s  (7,00 d)
+  22:18  606059 s  (7,01 d)   <- la alarma entra en ALARM
+  22:23    1619 s  (0,02 d)   <- el backup programado aterriza
+  ```
+
+- **La aritmética que lo hace inevitable, y no es mala suerte:**
+  - umbral = **604800 s = exactamente `base_backup_interval_days` (7 d)**;
+  - la cadencia es `base_backup_dom = */7` — días 1, 8, 15, 22 y 29, o sea **el mismo intervalo**;
+  - `EvaluationPeriods=2 × Period=300` ⇒ hacen falta **10 min** de incumplimiento;
+  - el backup tardó **~20 min** en completarse **y ser escaneado**.
+
+  La edad cruza el umbral **en el instante en que arranca el backup nuevo**, y sigue cruzada hasta
+  que ese backup termina y el escáner lo publica. Con cualquier duración por encima de 10 minutos,
+  **la alarma dispara en todos los ciclos**.
+- **Por qué es un defecto y no una molestia:** vigila el **ancla de la cadena PITR** — lo que
+  decide si un restore es posible. Una alarma que grita cada 7 días sin motivo enseña a ignorarla,
+  y se ignorará **la semana en que el backup sí falle**. Es el criterio que ya gobernó
+  [`D-05`](DECISIONES-MAURICIO.md#d-05) y [`D-10`](DECISIONES-MAURICIO.md#d-10): la credibilidad
+  es lo que hace que alguien obedezca **la próxima vez**.
+- **Lo que NO hay que hacer al arreglarlo:** subir el umbral hasta que deje de sonar. Su propia
+  descripción dice que existe para *«cazar el PRIMER backup base fallido, mientras todavía queda
+  ventana de recuperación»* — y su hermana `base_backup_max_age_s`
+  (`interval × chain_margin`) ya es la última línea. Si esta se relaja hasta parecerse a aquélla,
+  el proyecto se queda con dos alarmas para el mismo caso tardío y **ninguna para el temprano**.
+- **La causa real, medida y distinta de la que se supuso.** No era la duración del backup: era el
+  **calendario**. `04:00` backup (días 1, 8, 15, 22, 29) · `05:00` scan —lo único que descubre el
+  backup nuevo— · publicador cada minuto. La edad cruza el umbral **a las 04:00** y no baja hasta
+  las **05:00**: **60 minutos de incumplimiento garantizados por ciclo**, contra 10 de margen.
+  Medido sobre los objetos de S3:
+
+  | Backup | Inicio | Último objeto | Duración | Tamaño |
+  |---|---|---|---|---|
+  | `20260815T040002` | 04:00:02 | 04:04:44 | **4m 42s** | 276 MB |
+  | `20260822T040002` | 04:00:02 | 04:05:41 | **5m 39s** | 329 MB (**+19 % en una semana**) |
+
+- **Criterios de aceptación:**
+  - [x] **Atacada la causa, no solo el síntoma:** `takab-base-backup.sh` refresca la métrica al
+        terminar. La ventana pasa de **60 min a ~6**. El scan de las 05:00 se queda —cubre backups
+        hechos por otra vía y repara el fichero—, pero deja de ser el único.
+  - [x] **La gracia sale de medir:** 3600 s cubre los ~6 min con 10× de holgura y deja sitio al
+        crecimiento, y aun así es el **0,6 % del intervalo**. Declarada en `base_backup_grace_s`,
+        no horneada.
+  - [x] **No es «subirlo hasta que calle»:** test que exige que entre el aviso y la última línea
+        quede **al menos un intervalo completo** — el tiempo de relanzar un backup antes de que la
+        cadena se rompa.
+  - [x] Dos tests nuevos, **verificados rompiendo el código**: volver al umbral exacto deja 3 en
+        rojo; quitar el refresco deja rojo el suyo.
+
+> ### ⚠️ El hallazgo que no estaba en la ficha: **el defecto estaba protegido por un test**
+>
+> `el_umbral_del_backup_base_se_deriva_de_las_variables_de_retencion` exigía
+> `base_backup_warn_age_s == interval * 86400` **exacto**. Su razonamiento era correcto en teoría
+> —«el primer instante en que se puede afirmar que un backup no se completó»— y **ciego a cómo se
+> produce el dato**: la métrica sigue contando la edad del backup anterior hasta que alguien
+> descubre el nuevo.
+>
+> **Quien fuera a arreglar el umbral se habría encontrado ese test en rojo y habría podido concluir
+> que su arreglo estaba mal.** Un test fija un defecto tan bien como fija un acierto.
+>
+> Y había una segunda: `max == warn × chain_margin`, un cociente exacto **que solo se sostenía
+> porque el aviso era el intervalo pelado**. Se había elevado a invariante una coincidencia de la
+> fórmula. Re-expresada por lo que de verdad importa —el aviso llega antes, y con un intervalo
+> entero de ventana— en vez de por un múltiplo que no le importa a nadie.
+
+### [x] T-2.152 · El fallback del publicador de retención de PII es código muerto — `SOFTWARE` · COMPLETA (2026-08-22)
+- **Componente:** infra (`modules/database/prune_pii_setup.sh.tpl`) · **Hallado:** 2026-08-21, al
+  verificar el apply de `T-2.78.b` · **Alarma afectada:** `takab-dev-retencion-pii-detenida`
+- **El hecho, medido en la máquina** (`bash -x` sobre `/opt/takab/bin/takab-prune-pii-age.sh`):
+
+  ```
+  ++ docker exec takab-db psql ... | tr -d '[:space:]'
+  + EDAD=
+          ← el script muere AQUÍ
+  ```
+
+  El script abre con `set -euo pipefail`. Cuando psql **falla**, `pipefail` propaga el error, la
+  asignación devuelve distinto de cero y `set -e` mata el script **antes** del
+  `if [ -z "$EDAD" ]`. **El fallback a `pii-retention-configured-epoch` es inalcanzable.**
+- **Por qué importa más que un `|| true` olvidado, y es lo que lo hace fichable:** el comentario
+  del propio documento declara que ese fallback existe *«para que la alarma NAZCA diciendo la
+  verdad ("no consta ninguna retención ejecutada") en vez de quedarse aparcada»*. **La mitigación
+  no puede correr justo en el escenario para el que se escribió.** Es la misma forma que
+  [`D-10`](DECISIONES-MAURICIO.md#d-10) describió para el `G-02`: *el fallo que la mitigación
+  existe para impedir, reintroducido por la propia mitigación*.
+- **El matiz que acota el alcance, y hay que respetarlo al arreglar:** el fallback cubre
+  **«todavía no ha corrido ninguna»** (psql devuelve vacío con éxito ⇒ sí se alcanza) pero **no
+  «no se puede preguntar»** (psql devuelve error ⇒ muere). En un entorno recién desplegado los dos
+  estados coinciden, así que falla exactamente cuando más falta hace.
+- **`takab-wal-age.sh` NO tiene este defecto y no se toca.** Comparte la forma pero **no la
+  intención**: su comentario dice que si psql falla no se publica nada a propósito, y su
+  `[ -n "$EDAD" ] || exit 1` es deliberado — *«publicar un 0 a ciegas sería decir que el respaldo
+  va bien cuando lo único cierto es que no se pudo preguntar»*. Morir ahí **es** su conducta
+  correcta. Cambiarlo por simetría sería introducir un defecto.
+- **Criterios de aceptación:**
+  - [x] **Tres estados, no dos.** El estado de la consulta se captura aparte (`|| ESTADO=$?`), así
+        que el vacío deja de ser indistinguible del error:
+        1. responde un número → esa es la edad;
+        2. responde **vacío** (ninguna corrida correcta) → fallback al origen, para que la alarma
+           nazca diciendo la verdad;
+        3. **falla** (no se puede preguntar) → **no se publica nada**, y el script lo dice en
+           `stderr` nombrando la causa típica (esquema por detrás del repo).
+  - [x] **No se quita el `set -e`**, que habría sido el arreglo fácil y peor: cualquier fallo
+        posterior pasaría desapercibido. Se separa el estado, que es lo que estaba mal.
+  - [x] **La asociación deja de reportar `Success` cuando su publicador no publicó.** Era
+        `|| log AVISO`; ahora falla. En el momento de instalar esto la base tiene que estar
+        alcanzable y el esquema al día: si no lo está es deriva de despliegue, y hay que verla
+        **en rojo, ahora**, no dentro de un mes por una alarma que nadie relacionó.
+  - [x] **Dos tests, verificados rompiendo el código a propósito**: quitar la separación del estado
+        deja rojo el primero; devolver el `|| log` deja rojo el segundo; restaurado, 29 en verde.
+        Se asserta la **separación**, no la ausencia de `set -e` — un test escrito al revés habría
+        bendecido el arreglo malo.
+
+### [ ] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE`
+- **Componente:** api + observabilidad · **Hallado:** 2026-08-21, persiguiendo `T-2.152`
+- **El hecho, medido:** `alembic_version` en la nube = **`0038_privacy_erasure_on_behalf`**; la
+  cabeza del repo = **`0046_privacy_subject_sealing`**. **Ocho migraciones de diferencia**, y
+  ninguna alarma, ningún health-check y ningún test lo dijo.
+- **La consecuencia concreta que lo destapó:** `0043` crea `pii_retention_runs`. Sin ella,
+  `takab-prune-pii-age.sh` no puede publicar su métrica y la alarma de retención se queda en
+  `ALARM` sin poder salir — **un defecto de datos disfrazado de defecto de código**. Se perdió
+  media hora de diagnóstico persiguiendo el script antes de mirar la versión del esquema.
+- **Por qué NO se cierra con el redespliegue:** el redespliegue arregla *esta* deriva. Lo que hay
+  que arreglar es que **la deriva sea invisible** — mañana vuelve, y volverá a descubrirse por un
+  síntoma lateral. Es la doctrina de la alarma del gabinete mudo aplicada al esquema: **se vigila
+  la ausencia, no el error.**
+- **El agravante de contexto:** `/api/health` **ya declara el commit desplegado**, así que la
+  mitad del trabajo existe. Lo que no declara es la **cabeza de migración esperada** frente a la
+  aplicada, que es la que rompe cosas en silencio.
+- **Criterios de aceptación:**
+  - [ ] `/api/health` (o su hermano de ops) expone **la revisión de alembic aplicada** y **la que
+        la imagen trae**, y **las compara**. Declararlas sin compararlas es dar el dato al humano
+        que ya no está mirando.
+  - [ ] Alarma —o gate de despliegue— cuando difieren. **Por ausencia de igualdad**, no por
+        excepción: una imagen que no arranca ya se nota; una que arranca contra un esquema viejo
+        es la que muerde.
+  - [ ] Test que ponga la comprobación en rojo con un esquema deliberadamente atrasado.
 
 ### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
 - **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·
@@ -4369,6 +4965,12 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
      fallo sería silencioso: un feed que cambia de forma deja el catálogo congelado sin un error.
   2. **El aviso legal de uso de datos del SSN y su atribución** — va en la consulta de
      [`CONSULTA-LEGAL-TAKAB.md`](CONSULTA-LEGAL-TAKAB.md).
+- **⚡ 2026-08-23 · el primer bloqueo está CADUCADO y el segundo está en vías.** El feed responde
+  (200, RSS 2.0 con `geo:lat`/`geo:long` y `ETag`), aunque **solo por HTTP: el 443 está cerrado**.
+  Y hay conversaciones abiertas con el SSN con apoyo aparentemente concedido. Lo que hace falta
+  traerse de esa reunión —endpoint programático, esquema, atribución literal, cadencia— está en
+  [`REUNION-SSN-QUE-PEDIR.md`](REUNION-SSN-QUE-PEDIR.md), con las siete peticiones y qué destraba
+  cada respuesta. **La ficha sigue `[ ]`: una reunión agendada no es un endpoint.**
 - **Lo que `D-06` exige que traiga cuando se desbloquee**, y no se negocia:
   - [ ] **Declarar la fecha del último catálogo ingerido con éxito**, visible en la UI. Es `D-01`:
         un catálogo viejo se declara viejo, no se presenta como vivo (regla de oro 7).
@@ -5493,7 +6095,59 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
-### [ ] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
+### [x] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
+- **Componente:** infra (`modules/database`) + api · **Detectada por:** `T-2.143`, **verificando el
+  despliegue** el 2026-08-23 · **Bloquea:** el criterio 1 de `T-2.143`
+- **El hecho, medido en la instancia:**
+  - `/opt/takab/bin/takab-prune-pii.sh` construye un env temporal con **una sola clave útil**,
+    `DATABASE_URL`. No pasa `TAKAB_API_COGNITO_USER_POOL_ID` ni la región.
+  - El rol `takab-dev-db` **no declara ningún permiso `cognito-idp:*`**.
+- **Consecuencia:** `build_user_directory()` cae al directorio **simulado**, la corrida aborta con
+  «el directorio devolvió CERO cuentas» y **ninguna baja hecha en el pool arranca su reloj**. La
+  guarda hace lo correcto —negarse a actuar con una lectura vacía— pero el resultado es una
+  función desplegada que no hace nada.
+- **Por qué se coló:** se verificó **el código dentro del contenedor** (`import reconcile` → OK) y
+  no **el entorno desde el que se invoca**. Es la misma familia que «un indicador leído sin abrir
+  su contenido acredita lo que uno esperaba».
+- **Criterios de aceptación:**
+  - [x] El job recibe `TAKAB_API_COGNITO_USER_POOL_ID` y la región, desde el mismo output de
+        terraform que los usa la API — **derivado, no tecleado**.
+  - [x] El rol de instancia gana `cognito-idp:ListUsers` **acotado al pool**, y nada más.
+  - [x] **El directorio SIMULADO se rechaza por su nombre.** Hoy produce el mismo mensaje que un
+        pool vacío de verdad, y son dos fallos distintos con dos arreglos distintos — el mismo
+        defecto que `T-2.143` ya corrigió una vez entre «caído» y «vacío». Un fallback no puede
+        pasar por una lectura buena ni por una lectura vacía: tiene que decir que es un fallback.
+  - [x] Test que falle si el job se invoca sin la variable del pool.
+  - [x] Verificado **en la instancia**, no en el contenedor: una corrida real que arranque un reloj
+        o que diga por qué no.
+
+> ### ✅ CERRADA y APLICADA el 2026-08-23 — verificada donde falló, en la máquina
+>
+> ```
+> Reconciliación · 8 cuentas en el directorio, 1 perfiles sin baja, 0 reloj(es) arrancado(s)
+> ```
+>
+> Ocho cuentas **reales** leídas del pool: eso prueba a la vez la variable y el permiso, y no es
+> una comprobación que pueda pasar por vacuidad (con cualquiera de los dos ausentes el número sería
+> cero y el mensaje diría «SIMULADO» o «CERO cuentas»). Cero relojes arrancados es lo correcto: el
+> único perfil sin baja sigue en el pool.
+>
+> **Cuatro sabotajes, y el que no mordió enseñó lo de siempre.** Quitar la línea del env deja dos
+> aserciones en rojo; ampliar el permiso a `AdminDisableUser`, una. Pero **cambiar la acción a
+> `sts:GetCallerIdentity` dejaba el test en verde**: la aserción comprobaba que el ARN del pool
+> *aparecía* en la política, no que se concediera `ListUsers` **sobre** él. *Un permiso es un verbo
+> SOBRE un recurso; verificar la mitad no verifica nada.* Ahora se decodifica la política y se
+> exige el statement entero.
+>
+> **Y un defecto de la plantilla que el propio test destapó:** `printf '%s' '${pool}'` deja el
+> valor en un argumento aparte, así que el literal **no aparece en el script** y la aserción
+> buscaba una cadena que nunca existió. Se cambió a heredoc citado, que además es más simple.
+>
+> El `cognito_pool` es un objeto y no dos variables sueltas, con una validación que exige los dos
+> campos o ninguno: con solo el `id` el job tendría la variable y no el permiso, y fallaría por una
+> razón distinta de la que se lee en el log.
+
+### [x] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**
 - El reloj de retención de nombre y teléfono lo escriben `PATCH {"enabled": false}` y `DELETE`
   de la API. **Una cuenta retirada directamente en el pool de Cognito no pasa por ahí**, así que
@@ -5503,8 +6157,71 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   reconciliación que hay que acordarse de correr no es retención cumplida**, que es exactamente
   el argumento de `T-2.81.a`.
 - **Criterios de aceptación:**
-  - [ ] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
-  - [ ] Test de una cuenta que desaparece del pool sin pasar por la API.
+  - [x] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
+  - [x] Test de una cuenta que desaparece del pool sin pasar por la API.
+
+> ### ⚠️ ESTUVO EN `[~]` unas horas el 2026-08-23 — desplegada y **sin hacer nada en producción**
+>
+> Se desplegó (`eaeb82a`) y se verificó el código dentro del contenedor. Lo que NO se verificó al
+> cerrarla es **el entorno en el que corre**, y ahí está el defecto: el job recibe un `db.env`
+> temporal con **una sola clave, `DATABASE_URL`**. Sin `TAKAB_API_COGNITO_USER_POOL_ID`,
+> `build_user_directory()` cae al **directorio SIMULADO**, que devuelve cero cuentas — y la guarda
+> aborta, correctamente, con «el directorio devolvió CERO cuentas».
+>
+> O sea: **la red de seguridad se niega a actuar a ciegas, que es lo que debe hacer, pero nunca
+> llega a actuar.** El criterio 1 dice «sin que nadie corra nada a mano»; hoy no corre nada, ni a
+> mano ni solo. Y el rol de instancia `takab-dev-db` **no tiene un solo permiso `cognito-idp:*`**,
+> así que ni siquiera podría listar el pool si tuviera la variable.
+>
+> **Cerrado por [`T-2.163`](#) el mismo día**, y verificado en la instancia: la corrida lee ahora 8
+> cuentas reales del pool. Se dejó en `[~]` mientras tanto, no en `[x]`: el software estaba escrito
+> y probado, el despliegue no.
+>
+> ### Lo que sí quedó hecho, y sigue siendo válido
+>
+> El paso va **antes de la poda y en su propia transacción**: antes, para que un reloj recién
+> arrancado cuente ya en esta misma corrida; aparte, para que una reconciliación que falle no se
+> lleve por delante la poda. Un fallo aquí **no aborta el job** — el peor caso es que unos relojes
+> arranquen una corrida más tarde, mientras que abortar dejaría sin podar lo ya vencido.
+>
+> **El flag `--sin-reconciliar` APAGA, no enciende.** Un paso de cumplimiento que hay que acordarse
+> de pedir es el defecto que esta ficha cerraba; ponerlo detrás de un `--reconciliar` habría sido
+> escribirlo otra vez con otra forma.
+>
+> **Lo difícil no era dar de baja: era negarse a hacerlo con una lectura a medias.** El acto es
+> media línea de SQL. El riesgo está en la premisa, porque **una lectura incompleta del pool es
+> indistinguible de un montón de bajas**: directorio caído, paginación que no termina, respuesta
+> vacía. En los tres la lista de «usuarios que existen» encoge, y actuar sobre ella arrancaría el
+> reloj del borrado del nombre de gente que está en el edificio ahora mismo. Los tres abortan
+> enteros; ninguno actúa «con lo que se pudo leer».
+>
+> **Lo que NO sabe, escrito y no escondido:** *cuándo* se borró la cuenta. El pool no guarda fecha
+> de lo que ya no está, así que el reloj arranca el día en que la reconciliación se entera. Alarga
+> el plazo real —el lado seguro— y por eso esto es una red de seguridad: las bajas se hacen desde
+> la consola de TAKAB. El runbook `§6` pasa de declarar el hueco a describir el mecanismo.
+>
+> **Cinco sabotajes, y los dos que NO mordieron enseñaron más que los tres que sí:**
+>
+> 1. **Tragarse la caída del directorio** dejaba la suite en verde. La red de seguridad aguantaba
+>    —caía en la rama del pool vacío y nadie se dio de baja— pero **el motivo era el equivocado**, y
+>    el motivo es lo que alguien lee a las 3 a.m. La aserción buscaba la palabra «directorio», que
+>    sale en los DOS mensajes. Es literalmente `"5 min"` ⊂ `"15 min"` de `T-2.162`, tercera vez en
+>    esta sesión. Ahora se exige el texto que los distingue **y** que los dos motivos difieran.
+> 2. **Cambiar el `ON CONFLICT DO NOTHING` a `DO UPDATE SET deactivated_at = now()`** tampoco movía
+>    nada: la consulta de candidatos ya excluye a quien tiene reloj, así que **el conflicto no
+>    ocurre por el camino normal**. Era un cinturón que nunca se abrocha. Se prueba ahora ejecutando
+>    la sentencia a mano contra alguien que ya tiene reloj, que es lo que pasaría con dos corridas
+>    solapadas.
+>
+> **Y dos hechos del esquema que corrigieron el test, no el código:**
+>
+> - `user_profiles.user_sub` es **PRIMARY KEY global**: un sub pertenece a un cliente y a uno solo.
+>   El primer test sembraba el mismo sub en dos tenants con `ON CONFLICT DO NOTHING` — no insertaba
+>   nada y pasaba por vacuidad disfrazada de aserción.
+> - Toda fila de `user_profiles` nace de un token verificado (`PUT /me/profile`), o sea de alguien
+>   que **tuvo** cuenta. No existe el perfil de quien nunca la tuvo, así que «ausente del pool» no
+>   puede significar otra cosa que «se la borraron» — y por eso `via = 'account_deleted'` es exacto
+>   y no una aproximación cómoda.
 
 ### [x] T-2.142 · Un test renombra roles a nivel de CLÚSTER — `SOFTWARE`
 - **Componente:** api (tests) · **Detectada por:** `T-2.78.a` (2026-08-14)
@@ -8420,7 +9137,31 @@ sería documentar intenciones.
 > cedido— también estaba vivo aquí, **agravado** porque se llevaba por delante el registry
 > caliente.
 
-### [ ] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra — `SOFTWARE`
+### [x] T-2.145 · Tres alarmas sin `treat_missing_data` declarado, y una duplica el correo de otra
+
+> ### ⚠️ Añadido el 2026-08-22: `dlq_depth` tiene el valor CONTRARIO al que razona su comentario
+>
+> En `modules/observability/main.tf`, dos líneas seguidas:
+>
+> ```hcl
+> # missing=notBreaching: sin trafico no hay datapoint y no es alarma.
+> ...
+> treat_missing_data  = "breaching"
+> ```
+>
+> Con `breaching`, una DLQ **sana y sin tráfico** —que es su estado normal— dispara en cuanto SQS
+> deja de publicar datapoints. Hoy no ocurre porque la métrica fluye, así que **el defecto está
+> dormido**: no se ve hasta que la cola lleve suficiente tiempo inactiva.
+>
+> **Cuál de los dos es el correcto no es obvio y hay que decidirlo, no elegir el que calle.** El
+> comentario razona `notBreaching` («sin tráfico no es alarma»), y para una DLQ eso encaja: vacía e
+> inactiva es lo que se quiere. Pero `notBreaching` también silencia el caso en que SQS deja de
+> publicar **porque algo se rompió**. Es la misma disyuntiva que ya resolvió la alarma del gabinete
+> mudo, y allí se eligió vigilar la **ausencia**.
+>
+> Descubierto al preparar el ensayo cronometrado de `T-2.78`, que eligió esta alarma **citando el
+> comentario** — o sea que el runbook heredó la contradicción sin notarlo.
+ — `SOFTWARE`
 - **Componente:** infra · **Detectada por:** `T-2.72.d` (2026-08-14), al derivar el censo
 - El censo repo-wide de `T-2.72.d` encontró **tres alarmas sin aserción de `treat_missing_data`**
   en Terraform: `dlq_depth`, `iot_rule_errors` —**las dos INTOCABLES**— y `ec2_cpu`. Ninguna tiene
@@ -8430,9 +9171,71 @@ sería documentar intenciones.
   que **cuando la instancia se apaga llegan DOS correos por el mismo corte** — que es exactamente
   lo que `sensor_mute` evita a propósito en el otro lado.
 - **Criterios de aceptación:**
-  - [ ] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
-  - [ ] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
+  - [x] Las tres declaran su `treat_missing_data` en Terraform, **con su razón escrita**.
+  - [x] `ec2_cpu` deja de duplicar la página de `ec2_status`, o queda escrito por qué dos correos
         por el mismo corte son deseables.
+
+> ### ✅ CERRADA el 2026-08-22 — y el hallazgo grande no era ninguno de los dos criterios
+>
+> **Las tres pasan a `notBreaching`**, cada una con su párrafo junto al recurso en
+> `modules/observability/main.tf` y su aserción en `tests/treat_missing_data.tftest.hcl`.
+> `SIN_ASERCION_EN_TERRAFORM` (en `api/tests/ops/test_treat_missing_data.py`) **queda vacío**: era
+> la lista de puntos ciegos que abrió `T-2.72.d`, y la propia guardia obligó a vaciarla — su
+> aserción `ya_asertadas` se puso roja sola en cuanto las tres tuvieron bloque real.
+>
+> **`iot_rule_errors` no era ruidosa: estaba MUDA, y llevaba 14 días.** Medido en la nube antes de
+> tocar nada:
+>
+> ```
+> takab-dev-iot-rule-errors   ALARM
+>   "no datapoints were received for 1 period and 1 missing datapoint was treated as [Breaching]"
+>   una sola transición en toda su vida: OK -> ALARM el 2026-08-08 09:39 CST
+> ```
+>
+> Su métrica sale de un metric filter sin `default_value`: sin errores no publica nada, así que
+> `breaching` convertía el estado SANO en alarma permanente. Y **SNS solo notifica transiciones**
+> — con la alarma ya en ALARM, un error real de enrutado IoT no habría mandado un solo correo.
+> La alarma que vigila que no se pierdan mensajes del edge antes de la ingesta llevaba dos semanas
+> incapaz de avisar de nada, precisamente por no tener nada de qué avisar.
+>
+> `dlq_depth` se resolvió **hacia su comentario**: lo vigilado es la PRESENCIA de mensajes y la
+> ausencia de datapoints no puede esconderla —un mensaje que entra ES actividad y fuerza el
+> datapoint—, mientras que una DLQ sana, vacía e inactiva, deja de emitir. `ec2_cpu` toma el mismo
+> reparto que `sensor_mute` ya hacía del lado del gabinete: quien pagina un apagón es `ec2_status`,
+> que nombra la causa real; el segundo correo decía «CPU sostenida» sobre una máquina que no está.
+>
+> **Dos hallazgos colaterales, arreglados aquí mismo:**
+>
+> 1. **La descripción de `ec2_cpu` mentía:** prometía «CPU > 90% sostenida **15 min**» y la
+>    configuración exigía **25** (5 × 300 s). Tecleada dos veces, divergida una. Ahora la ventana
+>    se declara en `locals` y el texto la deriva.
+> 2. **El censo contaba las aserciones COMENTADAS como cobertura.** Salió del sabotaje obligatorio:
+>    al *borrar* una aserción la guardia caía, pero al *comentarla* seguía verde — y comentar es lo
+>    que hace quien se topa con un test que estorba. `censo_alarmas.sin_comentarios()` lo cierra
+>    para los `.tf` y los `.tftest.hcl`, con su test en los dos sentidos (que no se coma un `#`
+>    dentro de una cadena rompería el censo entero en silencio).
+>
+> ### 🚀 APLICADO el 2026-08-23 08:35 UTC — y el defecto dormido despertó justo antes
+>
+> `terraform apply -target=module.observability`: 5 cambios en sitio, 0 destroy. Medido después:
+> **`takab-dev-iot-rule-errors` pasó a `OK`** tras 15 días clavada. Vuelve a poder transicionar, o
+> sea vuelve a poder avisar.
+>
+> **Y entre escribir el arreglo y aplicarlo, el defecto de `dlq_depth` dejó de estar dormido.** La
+> ficha decía que no se veía «hasta que la cola lleve suficiente tiempo inactiva». Pasó esa misma
+> noche: `takab-dev-dlq-telemetry` saltó `OK → ALARM` a las **2026-08-22 23:32 CST**, con este
+> motivo textual —
+>
+> ```
+> Threshold Crossed: no datapoints were received for 1 period
+>                    and 1 missing datapoint was treated as [Breaching].
+> ```
+>
+> — y las tres DLQ **vacías**, comprobado una por una contra SQS (`0` mensajes). Tres alarmas
+> falsas y sus correos de guardia, por colas sanas que dejaron de tener tráfico de madrugada. Es
+> la demostración de que `notBreaching` era el valor correcto, y no llegó de un razonamiento: la
+> puso la propia cola. `dlq-events` y `dlq-backfill` volvieron a `OK` a las 02:36 CST, minutos
+> después del apply.
 
 ### [ ] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · `G-02`
 - **Componente:** edge (`gpio`) · **Depende de:** — · **Sale de:**

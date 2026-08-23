@@ -43,7 +43,10 @@ provider "aws" {
 
 variables {
   account_id          = "000000000000"
-  ses_verified_emails = ["soc@example.test"]
+  ses_verified_emails = ["soc@example.test"] # [T-2.155] Sin default a proposito en el modulo: el nombre es UNO y vive en
+  # `envs/dev`, porque `modules/database` compone con el el ARN del grant de envio.
+  # Un default aqui reabriria la divergencia que esa ficha cerro.
+  ses_configuration_set_name = "takab-test-correo"
 }
 
 # --- 1. Sin dominio, el apply de hoy no cambia ni un recurso -------------------
@@ -92,13 +95,19 @@ run "sin_dominio_no_se_crea_ni_un_solo_recurso_de_ses_de_dominio" {
   # nombran los recursos uno a uno. Esto es lo que impide que un recurso NUEVO de
   # la familia SES/DNS entre sin ninguna de ellas — o sea, sin que nadie compruebe
   # que respeta la variable vacia.
+  # [T-2.160] El censo cubre tambien `aws_cloudwatch_*`. El historial de eventos
+  # entro por ahi, y con el patron anterior —solo sesv2/route53/sns— sus cuatro
+  # recursos habrian pasado SIN que nadie comprobara que respetan `ses_domain`
+  # vacia. Un censo automatico deja de serlo en cuanto la familia crece por un
+  # lado que su patron no mira.
   assert {
     condition = toset(flatten(regexall(
-      "(?m)^resource \"(?:aws_sesv2_[a-z_]+|aws_route53_record|aws_sns_topic[a-z_]*)\" \"([a-z0-9_]+)\"",
+      "(?m)^resource \"(?:aws_sesv2_[a-z_]+|aws_route53_record|aws_sns_topic[a-z_]*|aws_cloudwatch_[a-z_]+)\" \"([a-z0-9_]+)\"",
       file("${path.module}/main.tf")
       ))) == toset([
       "this", "domain", "ses", "ses_feedback",
       "ses_dkim", "ses_mail_from_mx", "ses_mail_from_spf", "ses_dmarc",
+      "ses_historial", "ses_eventos",
     ])
     error_message = "Cambio el censo de recursos SES/DNS/SNS del modulo. Las aserciones de 'con la variable vacia no se crea nada' los nombran uno a uno: un recurso nuevo entraria SIN comprobar que respeta `ses_domain` vacia, y el primer apply de la cuenta real crearia infraestructura que nadie pidio. Declaralo aqui y dale su asercion."
   }
@@ -320,4 +329,82 @@ run "una_politica_dmarc_inventada_no_se_puede_aplicar" {
   }
 
   expect_failures = [var.ses_dmarc_policy]
+}
+
+# [T-2.160] El historial CONSULTABLE, que es distinto de un aviso.
+#
+# El topic de rebotes avisa de lo que va mal, y a un correo. Eso deja sin respuesta
+# «¿que paso con ESTE mensaje?», que es la pregunta de operacion. El 2026-08-22
+# costo media sesion: dos correos con MessageId no aparecieron y no habia donde
+# mirar, asi que se construyo una hipotesis que encajaba con todos los datos
+# disponibles y era falsa.
+run "los_eventos_de_correo_van_a_un_registro_consultable" {
+  command = plan
+
+  variables {
+    account_id                 = "000000000000"
+    ses_verified_emails        = ["soc@example.test"]
+    ses_configuration_set_name = "takab-test-correo"
+    ses_domain                 = "domsent.test"
+    ses_feedback_email         = "rebotes@example.test"
+  }
+
+  # SEND y DELIVERY son la mitad que faltaba: sin ellos solo consta lo que salio
+  # mal, y la pregunta suele ser sobre un mensaje que quiza salio bien.
+  assert {
+    condition = (
+      contains(aws_sesv2_configuration_set_event_destination.ses_historial[0].event_destination[0].matching_event_types, "SEND")
+      && contains(aws_sesv2_configuration_set_event_destination.ses_historial[0].event_destination[0].matching_event_types, "DELIVERY")
+    )
+    error_message = "El historial debe incluir SEND y DELIVERY, no solo los fallos: «SES no se quejo» no es lo mismo que «llego», y esa distincion es la que abre el §1 de este runbook."
+  }
+
+  # [T-2.160] La regla filtra SOLO por `source`. Filtrar tambien por `detail-type`
+  # duplica la lista que ya declara el configuration set, y una lista duplicada
+  # diverge: al escribirla se puso "Email Send"/"Email Delivery" y SES envia
+  # "Email Sent"/"Email Delivered". Resultado medido: `Invocations = 0`, el grupo
+  # de logs vacio, y NINGUN error — el fallo no fue un rechazo, fue una AUSENCIA.
+  #
+  # Ademas, sin duplicar, un tipo de evento nuevo entra solo el dia que se anada
+  # arriba.
+  assert {
+    condition     = !strcontains(aws_cloudwatch_event_rule.ses_eventos[0].event_pattern, "detail-type")
+    error_message = "La regla no puede filtrar por `detail-type`: eso duplica la lista del configuration set y las dos divergen. Ya paso — con los nombres supuestos la regla no caso ni un evento y el historial quedo vacio en silencio. El destino ya elige que se envia; la regla solo recoge."
+  }
+
+  # La retencion se declara. Un historial que se poda en silencio reproduce el
+  # mismo agujero mas tarde y con menos ruido.
+  assert {
+    condition     = aws_cloudwatch_log_group.ses_eventos[0].retention_in_days > 0
+    error_message = "El grupo de logs no puede quedarse con retencion INFINITA implicita ni sin declarar: el dia que alguien pregunte por un mensaje viejo, la respuesta seria otra vez «no consta»."
+  }
+
+  # Y el permiso de recurso, que es el que se olvida: sin el, el target se crea
+  # sin error y falla al ENTREGAR el primer evento. Mismo modo de fallo que ya
+  # obligo a poner `aws_sns_topic_policy` para los rebotes.
+  assert {
+    condition     = length(aws_cloudwatch_log_resource_policy.ses_eventos) == 1
+    error_message = "Falta la politica de RECURSO del grupo de logs. EventBridge no escribe por tener el ARN en el target: el destino se crea limpio y muere en el primer evento, sobre un camino que nadie mira hasta que hace falta."
+  }
+}
+
+# Sin dominio no se crea ni un recurso del historial: el apply de quien no tiene
+# dominio no puede cambiar por esta ficha.
+run "sin_dominio_no_hay_historial_ni_grupo_de_logs" {
+  command = plan
+
+  variables {
+    account_id                 = "000000000000"
+    ses_verified_emails        = ["soc@example.test"]
+    ses_configuration_set_name = "takab-test-correo"
+    ses_domain                 = ""
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_group.ses_eventos) == 0
+      && length(aws_sesv2_configuration_set_event_destination.ses_historial) == 0
+    )
+    error_message = "Sin `ses_domain` no puede crearse ningun recurso del historial."
+  }
 }
