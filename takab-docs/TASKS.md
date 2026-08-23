@@ -9140,8 +9140,27 @@ sería documentar intenciones.
 >    para los `.tf` y los `.tftest.hcl`, con su test en los dos sentidos (que no se coma un `#`
 >    dentro de una cadena rompería el censo entero en silencio).
 >
-> **Pendiente de `terraform apply`:** hasta que se aplique, `iot_rule_errors` sigue clavada en
-> ALARM en la nube. El código está en verde; la alarma no se arregla sola.
+> ### 🚀 APLICADO el 2026-08-23 08:35 UTC — y el defecto dormido despertó justo antes
+>
+> `terraform apply -target=module.observability`: 5 cambios en sitio, 0 destroy. Medido después:
+> **`takab-dev-iot-rule-errors` pasó a `OK`** tras 15 días clavada. Vuelve a poder transicionar, o
+> sea vuelve a poder avisar.
+>
+> **Y entre escribir el arreglo y aplicarlo, el defecto de `dlq_depth` dejó de estar dormido.** La
+> ficha decía que no se veía «hasta que la cola lleve suficiente tiempo inactiva». Pasó esa misma
+> noche: `takab-dev-dlq-telemetry` saltó `OK → ALARM` a las **2026-08-22 23:32 CST**, con este
+> motivo textual —
+>
+> ```
+> Threshold Crossed: no datapoints were received for 1 period
+>                    and 1 missing datapoint was treated as [Breaching].
+> ```
+>
+> — y las tres DLQ **vacías**, comprobado una por una contra SQS (`0` mensajes). Tres alarmas
+> falsas y sus correos de guardia, por colas sanas que dejaron de tener tráfico de madrugada. Es
+> la demostración de que `notBreaching` era el valor correcto, y no llegó de un razonamiento: la
+> puso la propia cola. `dlq-events` y `dlq-backfill` volvieron a `OK` a las 02:36 CST, minutos
+> después del apply.
 
 ### [ ] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · `G-02`
 - **Componente:** edge (`gpio`) · **Depende de:** — · **Sale de:**
