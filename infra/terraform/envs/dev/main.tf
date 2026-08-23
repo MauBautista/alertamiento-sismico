@@ -232,6 +232,8 @@ module "observability" {
   # endpoint que suscribir, y la bandera propia obliga a que la API este
   # desplegada ANTES (ver la variable: la suscripcion se confirma durante el
   # apply, asi que un endpoint que todavia no existe mata el apply).
+  ops_ack_deadline_s = var.ops_ack_deadline_s
+
   ops_alert_https_endpoint = (
     var.serve_enabled && var.ops_alert_https_subscriber_enabled
     ? "${module.serve.console_url}/api/ops/alerts/sns"
@@ -266,4 +268,24 @@ module "observability" {
   # programa la corrida. Un literal aqui haria que la alarma vigilara una
   # periodicidad distinta de la que de verdad ocurre en la maquina.
   pii_retention_max_age_s = module.database.pii_retention_max_age_s
+}
+
+# [T-2.156] El sitio publico. Comparte `ses_route53_zone_id` con SES a proposito:
+# es la MISMA zona, y tener dos variables para una zona es como acaban divergiendo.
+module "site" {
+  source = "../../modules/site"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  enabled         = var.site_enabled
+  domain          = var.ses_domain
+  route53_zone_id = var.ses_route53_zone_id
+
+  # La pagina vive en el repo, no dentro de una cadena de Terraform: asi se puede
+  # abrir en un navegador, revisar en el diff y comprobar que no afirma nada que
+  # el sistema no haga.
+  index_html = file("${path.module}/site/index.html")
 }

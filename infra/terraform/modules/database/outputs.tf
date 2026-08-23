@@ -82,9 +82,28 @@ output "base_backup_max_age_s" {
 # dice "fallo UNO, relanzalo"; la otra dice "fallaron `margen`, la ventana ya se
 # cerro". Una sola alarma solo puede decir una de las dos cosas, y `T-2.72.b`
 # eligio la segunda porque es la unica que se puede derivar del par completo.
+# [T-2.154] El intervalo MAS UNA GRACIA, y la gracia no es para que deje de sonar.
+#
+# El umbral era el intervalo EXACTO, y eso garantizaba un falso positivo por
+# ciclo: la edad cruza el umbral en el instante en que arranca el backup nuevo, y
+# no baja hasta que la metrica lo refleja. Medido el 2026-08-22 sobre los objetos
+# de S3:
+#
+#   backup 20260815: 04:00:02 -> 04:04:44  (4m42s, 276 MB)
+#   backup 20260822: 04:00:02 -> 04:05:41  (5m39s, 329 MB)  <- +19% en una semana
+#
+# Con el scan corriendo YA al terminar el backup, la ventana real es esa duracion:
+# ~6 min hoy. La gracia de 3600 s la cubre con 10x de holgura y deja sitio al
+# crecimiento, y aun asi es el 0,6% del intervalo: la alarma sigue avisando el
+# mismo dia que falle un backup.
+#
+# NO es "subirlo hasta que calle". Su hermana `base_backup_max_age_s` esta en
+# `intervalo x margen` (14 dias) y sigue siendo la ultima linea; si esta se
+# relajara hasta parecerse a aquella, quedarian dos alarmas para el caso tardio y
+# NINGUNA para el temprano.
 output "base_backup_warn_age_s" {
-  description = "Edad del ultimo backup base a partir de la cual AVISAR, en segundos: `base_backup_interval_days` dias (el mismo intervalo sin el margen). Es el umbral de la alarma temprana; su hermana `base_backup_max_age_s` es la ultima linea."
-  value       = var.pitr.base_backup_interval_days * 86400
+  description = "Edad del ultimo backup base a partir de la cual AVISAR, en segundos: `base_backup_interval_days` dias MAS `base_backup_grace_s`. La gracia cubre la duracion del backup, no relaja la vigilancia. Su hermana `base_backup_max_age_s` es la ultima linea."
+  value       = var.pitr.base_backup_interval_days * 86400 + var.pitr.base_backup_grace_s
 }
 
 # La configuracion PITR tal y como quedo, para que el runbook pueda CITAR lo que

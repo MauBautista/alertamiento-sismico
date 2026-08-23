@@ -532,7 +532,7 @@ def test_dictamen_request_envia_email_al_inspector_con_link(scenario: _Scenario)
     providers = _providers()
     run_notify_pass(
         scenario.conn,
-        Settings(notify_web_base_url="https://soc.example.mx/"),
+        Settings(notify_web_base_url="https://soc.example.mx/", notify_web_public=True),
         providers,
         now=BASE,
     )
@@ -635,7 +635,7 @@ def test_personas_en_riesgo_notifica_al_soc_de_inmediato(scenario: _Scenario) ->
     providers = _providers()
     run_notify_pass(
         scenario.conn,
-        Settings(notify_web_base_url="https://soc.example.mx/"),
+        Settings(notify_web_base_url="https://soc.example.mx/", notify_web_public=True),
         providers,
         now=BASE,
     )
@@ -646,6 +646,34 @@ def test_personas_en_riesgo_notifica_al_soc_de_inmediato(scenario: _Scenario) ->
     assert message["kind"] == "damage_people_at_risk"
     assert "PERSONAS EN RIESGO" in message["headline"]
     assert message["link"] == f"https://soc.example.mx/triage?incident={incident}"
+
+
+def test_con_la_consola_NO_publica_el_mensaje_va_SIN_enlace(scenario: _Scenario) -> None:
+    """[T-2.158] Tener URL base no basta: hay que declarar que el destinatario la alcanza.
+
+    En dev el 443 de la consola admite UNA sola IP, así que el enlace de «Atender
+    en la consola» solo lo abría el operador de esa dirección. El corte vive en el
+    ORQUESTADOR y no en el proveedor de correo porque el problema es idéntico en
+    SMS y en WhatsApp: un enlace que no se abre es inútil en cualquier canal, y
+    componerlo para tirarlo después invita a que alguien lo reutilice sin saber
+    que está muerto.
+    """
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_people_at_risk(scenario, incident, ts=BASE - timedelta(seconds=5))
+    providers = _providers()
+    run_notify_pass(
+        scenario.conn,
+        # La MISMA base del test de arriba, y esta vez sin declararla alcanzable.
+        Settings(notify_web_base_url="https://soc.example.mx/", notify_web_public=False),
+        providers,
+        now=BASE,
+    )
+    assert len(_action_jobs(scenario, action)) == 1
+    _target, message = providers["email"].sent[0]
+    assert "link" not in message, (
+        "se compuso un enlace a una consola que el destinatario no puede abrir"
+    )
 
 
 def test_personas_en_riesgo_no_duplica_el_correo(scenario: _Scenario) -> None:

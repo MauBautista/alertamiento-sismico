@@ -303,7 +303,21 @@ _PAGINA = """<!doctype html>
 </main></body></html>
 """
 
-_FORMULARIO = """<form method="post" action="/ops/alerts/ack">
+#: [T-2.161] `action` VACÍO, no la ruta absoluta. El formulario se envía a la URL
+#: que lo sirvió, con prefijo o sin él.
+#:
+#: Con `action="/ops/alerts/ack"` la página se pinta bien en
+#: `https://<consola>/api/ops/alerts/ack` —Caddy quita el `/api` al pasar a la
+#: API— pero al ENVIAR el navegador resuelve la ruta absoluta contra el host y va
+#: a `/ops/alerts/ack`, que ya no es la API: es el SPA, y contesta 405.
+#:
+#: Medido el 2026-08-22 en el ensayo cronometrado de `T-2.78`: el acuse no llegó
+#: nunca al servidor y el aviso pasó a `sin_acuse`. La página funcionaba, el
+#: endpoint funcionaba, y el enlace entre los dos no existía.
+#:
+#: Y el endpoint NO puede arreglarlo sabiendo su prefijo: lo decide un proxy que
+#: vive en otro sitio. Lo único que no depende de esa suposición es no hacerla.
+_FORMULARIO = """<form method="post" action="">
  <input type="password" name="token" autocomplete="current-password"
         placeholder="credencial de guardia" required autofocus>
  <button type="submit">Confirmo que lo estoy atendiendo</button>

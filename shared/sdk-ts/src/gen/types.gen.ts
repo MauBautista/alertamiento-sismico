@@ -1687,6 +1687,56 @@ export type PanicVoteOut = {
 };
 
 /**
+ * [T-2.151 · D-23] ARCO de un titular que solo dio su teléfono.
+ *
+ * Lleva el número **y** la acreditación en el mismo cuerpo, y las dos cosas son
+ * inseparables a propósito: `D-23` puso la titularidad en manos del cliente
+ * institucional que recogió el consentimiento, así que ejercer este derecho es
+ * exhibir el escrito que lo pide. Sin `proof_digest` no hay documento concreto
+ * que no se pueda sustituir después — solo la palabra de quien ejecuta.
+ *
+ * **Por qué el número viaja aquí y no en una constancia previa** (que es como
+ * funciona el ARCO por escrito de `T-2.80.b`): registrar hoy y ejecutar más
+ * tarde obligaría a guardar su índice, y `privacy_erasure_requests` es
+ * append-only, así que ese índice sobreviviría al borrado que lo motivó. Ver la
+ * cabecera de la migración `0047`.
+ */
+export type PhoneErasureIn = {
+    channel?: 'written' | 'email' | 'in_person' | 'legal_representative';
+    msisdn: string;
+    proof_digest: string;
+    proof_ref: string;
+    received_at: string;
+    right?: 'cancelacion' | 'oposicion';
+};
+
+/**
+ * La lápida del sujeto-teléfono. **Idéntica exista o no el número.**
+ *
+ * No trae `user_sub` —ese titular no tiene ninguno— y `affected` es siempre
+ * `{}`: un conteo de filas destruidas sería un oráculo de existencia, y con una
+ * credencial de responsable se barrería un rango de números para saber cuáles
+ * constan y, con ellos, en qué edificio está quien los lleva.
+ *
+ * Lo que sí trae es lo que hace el acto verificable: la constancia que lo
+ * autoriza y el par marca-de-agua/digest con el que cualquiera puede recalcular
+ * la bitácora años después.
+ */
+export type PhoneErasureOut = {
+    affected: {
+        [key: string]: number;
+    };
+    audit_digest: string;
+    audit_watermark: number;
+    erased_at: string;
+    erasure_id: string;
+    request_id: string;
+    requested_by: string;
+    right_exercised: 'cancelacion' | 'oposicion';
+    via: string;
+};
+
+/**
  * URL GET presignada de vida corta para descargar un objeto de evidencia.
  */
 export type PresignedDownload = {
@@ -4190,6 +4240,31 @@ export type PublishNoticePrivacyNoticesPostResponses = {
 };
 
 export type PublishNoticePrivacyNoticesPostResponse = PublishNoticePrivacyNoticesPostResponses[keyof PublishNoticePrivacyNoticesPostResponses];
+
+export type ErasePhoneSubjectPrivacyPhoneErasuresPostData = {
+    body: PhoneErasureIn;
+    path?: never;
+    query?: never;
+    url: '/privacy/phone-erasures';
+};
+
+export type ErasePhoneSubjectPrivacyPhoneErasuresPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ErasePhoneSubjectPrivacyPhoneErasuresPostError = ErasePhoneSubjectPrivacyPhoneErasuresPostErrors[keyof ErasePhoneSubjectPrivacyPhoneErasuresPostErrors];
+
+export type ErasePhoneSubjectPrivacyPhoneErasuresPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: PhoneErasureOut;
+};
+
+export type ErasePhoneSubjectPrivacyPhoneErasuresPostResponse = ErasePhoneSubjectPrivacyPhoneErasuresPostResponses[keyof ErasePhoneSubjectPrivacyPhoneErasuresPostResponses];
 
 export type ListRuleSetsRuleSetsGetData = {
     body?: never;

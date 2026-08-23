@@ -17,6 +17,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 import boto3
@@ -228,6 +229,102 @@ class WebhookProvider:
             raise NotifyError(f"webhook: HTTP {response.status_code}")
 
 
+#: [T-2.104 · T-2.157] Cómo se NOMBRA cada origen. No se compone con el valor
+#: crudo del `trigger` ni se rotula todo igual: un incidente que no viene de la
+#: alerta oficial NO puede presentarse como suyo, y ése es exactamente el defecto
+#: que llegó a un teléfono en T-2.104 —titular a fuego para las cuatro fuentes—.
+#: Un `trigger` desconocido cae a su propio texto en vez de a SASMEX: si algún día
+#: aparece una fuente nueva, el correo dirá que no la reconoce, no la atribuirá.
+_ORIGENES = {
+    "sasmex": "Alerta oficial SASMEX recibida en el inmueble",
+    "rules": "Detección instrumental del sensor del inmueble",
+    "quorum": "Confirmación por varios inmuebles de la red",
+    "manual": "Activación manual desde el inmueble",
+}
+
+
+def cuerpo_email(message: dict) -> str:
+    """[T-2.157] El cuerpo que lee una PERSONA.
+
+    Antes era ``json.dumps(message, indent=2, sort_keys=True)``: catorce claves
+    en orden alfabético, con la nota del solicitante entre dos UUID. Funcionaba y
+    no comunicaba, que es la misma familia de defecto que `T-2.104`.
+
+    El orden no es estético, es operativo: **qué pasa, dónde, qué se te pide y la
+    nota** arriba; los identificadores al pie, porque no son información para el
+    destinatario sino para quien atienda el reporte después.
+    """
+    lineas: list[str] = []
+    sitio = message.get("site_name") or message.get("site_code") or "inmueble sin nombre"
+    kind = message.get("kind")
+
+    # 1. QUÉ pasa. Primero y en una línea: es lo que se lee de pie y con prisa.
+    if kind == "damage_people_at_risk":
+        lineas += ["PERSONAS EN RIESGO", ""]
+        lineas.append(f"Se reportaron personas en riesgo en {sitio}.")
+    elif kind == "dictamen_request":
+        lineas.append(f"Se solicita un dictamen de habitabilidad para {sitio}.")
+    else:
+        severidad = message.get("severity") or "sin clasificar"
+        lineas.append(f"Incidente {severidad} en {sitio}.")
+
+    # 2. DE DÓNDE viene la alerta, nombrada por lo que es.
+    origen = _ORIGENES.get(str(message.get("trigger") or ""))
+    if origen:
+        lineas += ["", f"Origen: {origen}."]
+
+    # 3. La NOTA, si la hay: es lo único que escribió una persona, y va arriba.
+    nota = (message.get("note") or "").strip()
+    if nota:
+        lineas += ["", "Nota de quien lo solicita:", f"  {nota}"]
+
+    quien = message.get("requested_by") or message.get("reported_by")
+    if quien:
+        verbo = "Reportado por" if kind == "damage_people_at_risk" else "Solicitado por"
+        lineas.append(f"{verbo}: {quien}")
+
+    # 4. El enlace. Si no viene, NO se inventa (regla de oro 7).
+    # [T-2.158] Con enlace se da; sin él se dice QUÉ HACER, que no es lo mismo que
+    # callar. Quitar el enlace y no decir nada deja al inspector sabiendo que pasó
+    # algo y no que le toca actuar.
+    enlace = message.get("link")
+    if enlace:
+        lineas += ["", f"Atender en la consola: {enlace}"]
+    else:
+        lineas += ["", "Atienda este aviso desde la consola de TAKAB Ailert."]
+
+    # 5. Al pie, lo que sirve para soporte y no para decidir.
+    pie = [
+        ("Inmueble", message.get("site_code")),
+        ("Apertura", message.get("opened_at")),
+        ("Incidente", message.get("incident_id")),
+        ("Evento", message.get("event_id")),
+    ]
+    detalle = [f"{k}: {v}" for k, v in pie if v]
+    if detalle:
+        lineas += ["", "-- ", "Datos para soporte:"] + [f"  {d}" for d in detalle]
+
+    lineas += [
+        "",
+        "Este aviso lo genera TAKAB Ailert para el personal que su organización",
+        "registró en la consola. Para dejar de recibirlo, solicite su baja al",
+        "administrador de su organización.",
+    ]
+    return "\n".join(lineas)
+
+
+@dataclass(frozen=True)
+class SesReceipt:
+    """[T-2.160] Lo que SES contestó. Observabilidad, **no** prueba de entrega.
+
+    Se llama ``message_id`` como su gemela de Twilio a propósito:
+    ``provider_message_id()`` lo lee sin saber de canales, y una rama por
+    proveedor en el orquestador es justo lo que aquella función evitó.
+    """
+
+    message_id: str
+
+
 class SesEmailProvider:
     """Correo vía AWS SES (sandbox en dev: remitente y destinos verificados)."""
 
@@ -236,16 +333,25 @@ class SesEmailProvider:
     def __init__(self, sender: str, region: str) -> None:
         self._sender = sender
         self._region = region
+        #: [T-2.160] El recibo del ÚLTIMO envío, que es lo que
+        #: `provider_message_id()` busca. Empieza vacío: sin envío no hay id.
+        self.last_receipt: SesReceipt | None = None
 
     def send(self, target: dict, message: dict) -> None:
+        # [T-2.160] El recibo viejo NO puede sobrevivir a un envío nuevo. Si este
+        # falla, dejar el anterior ataría el job al identificador de OTRO mensaje
+        # —la base afirmaría que un correo que nunca salió tiene id—. Misma familia
+        # que el `alert_latched` de T-2.28: un estado que no se limpia contamina
+        # la lectura siguiente.
+        self.last_receipt = None
         recipients = list(target.get("to") or [])
         if not recipients:
             raise NotifyError("email sin destinatarios")
         subject = message.get("headline", "TAKAB Ailert · Notificación de incidente")
-        body_text = json.dumps(message, indent=2, ensure_ascii=False, sort_keys=True)
+        body_text = cuerpo_email(message)
         client = boto3.client("ses", region_name=self._region)
         try:
-            client.send_email(
+            respuesta = client.send_email(
                 Source=self._sender,
                 Destination={"ToAddresses": recipients},
                 Message={
@@ -255,6 +361,13 @@ class SesEmailProvider:
             )
         except (BotoCoreError, ClientError) as exc:
             raise NotifyError(f"ses: {exc}") from exc
+
+        # [T-2.160] El `MessageId` es la ÚNICA llave que une lo que dice la base
+        # con lo que dice SES. Hasta esta ficha se tiraba, y el comentario de
+        # `provider_message_id()` explicaba por qué: «no hay nada que casar donde
+        # no hay callback». Era cierto — y dejó de serlo al publicar los eventos
+        # del configuration set a un destino consultable.
+        self.last_receipt = SesReceipt(message_id=str(respuesta.get("MessageId") or ""))
 
 
 class SimulatedProvider:

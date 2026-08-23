@@ -1,0 +1,53 @@
+RESUBMISSION. A previous request (case 178737638500467) was denied. We believe the
+reviewer could not reach the Website URL we gave: it pointed at our operations
+console, whose HTTPS port is restricted to a single office IP address, so from
+outside our network it simply timed out.
+
+That is now fixed. https://takabailert.com serves a public page over HTTPS
+(CloudFront + ACM), reachable from anywhere, and we have verified it from a network
+outside our own. The operations console keeps its IP restriction, as it should: the
+public site and the console are deliberately separate.
+
+TAKAB Ailert is a multi-tenant SaaS platform for earthquake early warning, structural
+monitoring and post-earthquake operational continuity, serving civil protection agencies,
+hospitals, universities, industrial sites and corporate campuses in Mexico. Each
+institutional customer installs an on-premise gateway in their building and manages their
+own recipients from their own console.
+
+MAIL TYPE: transactional only. We send no marketing, newsletters or promotional mail.
+
+WHAT WE SEND. Three kinds, each triggered by a system event:
+1. Seismic incident notifications to the responders the customer designated for that
+   building.
+2. Post-earthquake habitability assessment requests and results, sent to the assigned
+   inspector and to the person responsible for the building.
+3. Operational alarms (gateway offline, missing backup, stalled queue) to our own on-call
+   team.
+
+HOW WE COLLECT ADDRESSES: the institutional customer enters them in their own console, for
+their own staff and inspectors. We do not buy, rent or import lists. There are no bulk
+imports and no public subscription forms.
+
+HOW RECIPIENTS STOP RECEIVING MAIL: the customer removes or deactivates the recipient in
+their console, effective immediately. In addition, any address that bounces or complains is
+added to the account-level suppression list and receives no further attempts.
+
+BOUNCE AND COMPLAINT HANDLING. The sending domain uses the `takab-dev-correo` configuration
+set, with:
+- the account-level suppression list enabled for BOUNCE and COMPLAINT;
+- reputation metrics enabled;
+- an event destination publishing BOUNCE, COMPLAINT, REJECT, RENDERING_FAILURE and
+  DELIVERY_DELAY to an SNS topic subscribed by our on-call address
+  (ops@takabailert.com, subscription confirmed).
+Every send is recorded in our database with its recipient, its outcome and the incident it
+belongs to.
+
+AUTHENTICATION: the domain takabailert.com is verified with Easy DKIM (RSA 2048); we use a
+custom MAIL FROM domain at bounce.takabailert.com with its own MX and SPF records; DMARC is
+published at p=none while we collect aggregate reports (rua=dmarc@takabailert.com), so we
+can tighten the policy based on data rather than assumption.
+
+VOLUME: this is currently a development and pilot deployment, on the order of tens of
+messages per month. It grows with each building we onboard. We do not expect bulk sends,
+but short bursts during an earthquake, addressed only to the responders for the affected
+buildings.

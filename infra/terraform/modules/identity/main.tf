@@ -309,6 +309,119 @@ resource "aws_sesv2_configuration_set_event_destination" "ses_feedback" {
   }
 }
 
+# --- [T-2.160] EL HISTORIAL, que es distinto de un aviso ----------------------
+#
+# El topic de arriba avisa de lo que va MAL, y a un correo. Eso deja sin respuesta
+# la pregunta que de verdad se hace en operacion: «¿que paso con ESTE mensaje?».
+#
+# Medido el 2026-08-22, y costo media sesion: dos correos con `MessageId` no
+# aparecieron. La lista de supresion no sabia nada de ellos; las metricas de
+# CloudWatch estaban en cero INCLUIDA `Send` mientras el contador de cuota decia
+# 2 —ausencia de datos indistinguible de ausencia de eventos—; y los rebotes van
+# por correo, asi que si nadie los guarda no existen. Con eso se construyo una
+# hipotesis que encajaba con todos los datos disponibles y era FALSA. No fallo por
+# descuido: fallo porque lo que la habria refutado no se guardaba en ningun sitio.
+#
+# POR QUE EVENTBRIDGE Y NO OTRO TOPIC DE SNS: anadir `DELIVERY` al topic actual
+# NO cierra esto. Seguiria siendo un correo que alguien tiene que conservar. Lo
+# que falta no es mas aviso — es un registro que se pueda CONSULTAR despues.
+#
+# Y no Firehose: para responder «que paso con este MessageId» hace falta buscar,
+# no almacenar. Logs Insights busca; un objeto en S3 hay que ir a leerlo.
+resource "aws_cloudwatch_log_group" "ses_eventos" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  name = "/takab/dev/ses-eventos"
+
+  # La retencion se DECLARA. Un historial que se poda en silencio reproduce este
+  # mismo agujero mas tarde y con menos ruido: el dia que alguien pregunte por un
+  # mensaje de hace cuatro meses, la respuesta seria otra vez "no consta".
+  retention_in_days = 90
+}
+
+resource "aws_cloudwatch_event_rule" "ses_eventos" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  name        = "takab-dev-ses-eventos"
+  description = "Eventos de SES del configuration set, a un registro consultable (T-2.160)"
+
+  # SOLO `source`. Filtrar tambien por `detail-type` seria declarar DOS VECES la
+  # misma lista: el configuration set de abajo ya elige que eventos envia SES, y
+  # esta regla solo tiene que recogerlos.
+  #
+  # Medido el 2026-08-22: con la lista duplicada, `Invocations = 0` — ni un evento
+  # casó. Los `detail-type` que envia SES no son los que yo supuse, y como el error
+  # no produce fallo sino AUSENCIA, el grupo de logs se quedo vacio sin que nada
+  # se quejara. Dos declaraciones del mismo hecho divergen; esta divergio en el
+  # primer intento.
+  event_pattern = jsonencode({
+    source = ["aws.ses"]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "ses_eventos" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  rule = aws_cloudwatch_event_rule.ses_eventos[0].name
+  arn  = aws_cloudwatch_log_group.ses_eventos[0].arn
+}
+
+# EventBridge no escribe en un grupo de logs por tener su ARN en el target: hace
+# falta politica de RECURSO en el grupo. Sin ella el target se crea sin error y
+# falla al ENTREGAR el primer evento — el mismo modo de fallo que ya obligo a
+# poner `aws_sns_topic_policy` para los rebotes, y por eso se escribe igual.
+data "aws_iam_policy_document" "ses_eventos_logs" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  statement {
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.ses_eventos[0].arn}:*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com", "delivery.logs.amazonaws.com"]
+    }
+
+    # Acota quien puede usar este grupo como destino: sin la condicion, el permiso
+    # es "cualquier regla de EventBridge de esta cuenta".
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.ses_eventos[0].arn]
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_resource_policy" "ses_eventos" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  policy_name     = "takab-dev-ses-eventos"
+  policy_document = data.aws_iam_policy_document.ses_eventos_logs[0].json
+}
+
+# El destino que ENVIA los eventos a EventBridge. `SEND` y `DELIVERY` van con los
+# fallos a proposito: sin ellos solo se sabe de los mensajes que salieron mal, y
+# la pregunta de operacion es sobre uno concreto que quiza salio bien.
+resource "aws_sesv2_configuration_set_event_destination" "ses_historial" {
+  count = local.ses_domain_enabled ? 1 : 0
+
+  configuration_set_name = aws_sesv2_configuration_set.ses[0].configuration_set_name
+  event_destination_name = "historial"
+
+  event_destination {
+    enabled = true
+    matching_event_types = [
+      "SEND", "DELIVERY", "BOUNCE", "COMPLAINT",
+      "REJECT", "RENDERING_FAILURE", "DELIVERY_DELAY",
+    ]
+
+    event_bridge_destination {
+      event_bus_arn = "arn:aws:events:${data.aws_region.current.region}:${var.account_id}:event-bus/default"
+    }
+  }
+}
+
 # --- DNS, SOLO si la zona vive en esta cuenta ---------------------------------
 #
 # Los VALORES no se hornean nunca (criterio 4 de la ficha): los tres tokens de

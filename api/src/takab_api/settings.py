@@ -412,6 +412,17 @@ class Settings(BaseSettings):
     #: [T-1.61] Base pública de la consola para links en notificaciones
     #: (p.ej. https://16-58-11-196.sslip.io). Vacío ⇒ el mensaje va sin link.
     notify_web_base_url: str = ""
+    #: [T-2.158] ¿Esa base la alcanza el DESTINATARIO, o solo nosotros?
+    #:
+    #: Tener URL no es lo mismo que ser alcanzable: en dev el 443 de la consola
+    #: admite UNA sola IP, así que el enlace de «Atender en la consola» solo lo
+    #: abría el operador de esa dirección. El código no puede deducirlo —lo sabe
+    #: la red, no el proceso—, así que se DECLARA.
+    #:
+    #: Nace en `False` a propósito: si nadie lo declara, el correo no promete. Al
+    #: revés, cada despliegue nuevo reintroduce el defecto y no se nota hasta que
+    #: alguien intenta pulsar, que es tarde.
+    notify_web_public: bool = False
     #: [T-1.62] Envíos totales por job antes de darlo por perdido (backoff
     #: 30 s / 2 min entre ellos). Solo aplica a quien no tiene a quién escalar:
     #: un salto de cascada con siguiente canal falla en el acto, como siempre.
