@@ -890,3 +890,56 @@ Honestidad primero, como el resto de la casa:
 `infra/terraform/modules/observability/main.tf` · `infra/terraform/modules/identity/main.tf:139` ·
 `infra/terraform/envs/dev/main.tf:75-82,157-165` · `api/src/takab_api/ops/muting.py:219-286` ·
 `api/src/takab_api/settings.py:226-261` · `CLAUDE.md` §2 (reglas de oro 2, 6, 7, 10).*
+
+---
+
+## Los informes agregados de DMARC — qué son y qué se hace con ellos
+
+Llegan a `dmarc@takabailert.com` **un `.zip` al día por cada proveedor** que recibe correo nuestro
+(Google, Microsoft, Yahoo…). Dentro hay un XML: la lista de **quién dijo ser takabailert.com**, desde
+qué IP, y si su firma cuadró. Es la única forma de enterarse de que alguien suplanta el dominio.
+
+**No se abren a mano.** Se guardan en `evidencia/dmarc/` (el XML, no el zip: es diffable) y se leen
+con el comando de abajo, que resume el veredicto sin tener que interpretar el esquema.
+
+```bash
+unzip -qo ~/Descargas/'google.com!takabailert.com!*.zip' -d /tmp/dmarc
+python3 - <<'EOF'
+import glob, xml.etree.ElementTree as ET, datetime
+r = ET.parse(sorted(glob.glob("/tmp/dmarc/*.xml"))[-1]).getroot()
+pp = r.find("policy_published")
+print("politica:", pp.findtext("domain"), "p=" + pp.findtext("p"))
+for rec in r.findall("record"):
+    row, pol = rec.find("row"), rec.find("row/policy_evaluated")
+    print(f"  {row.findtext('source_ip')}  x{row.findtext('count')}  "
+          f"dkim={pol.findtext('dkim')} spf={pol.findtext('spf')} -> {pol.findtext('disposition')}")
+EOF
+```
+
+### Primera lectura — 2026-08-22 (Google)
+
+```
+politica: takabailert.com p=none  ·  adkim=r aspf=r  ·  pct=100
+  23.251.226.1  x1  dkim=pass spf=pass -> none
+    DKIM  takabailert.com (Easy DKIM)  -> pass
+    DKIM  amazonses.com                -> pass
+    SPF   bounce.takabailert.com       -> pass
+```
+
+**Qué prueba, y es más de lo que parece:** un tercero independiente confirma que la cadena entera
+—DKIM del dominio, DKIM de SES y SPF sobre el MAIL FROM personalizado— cuadra en el receptor. Eso
+no se puede verificar desde nuestro lado: `aws ses` dice que firmamos, no que a Google le cuadre.
+
+**Qué NO prueba:** que nadie nos suplante. **Es UN mensaje en UN día.** Cero remitentes no
+autorizados en una muestra de uno no es una medición, es la ausencia de una.
+
+### Cuándo apretar la política a `p=quarantine`
+
+> **Todavía no, y el motivo es el tamaño de la muestra, no la prudencia.** La regla: **dos o tres
+> semanas seguidas con `dkim=pass`/`spf=pass` en el 100 % del volumen y ningún origen desconocido.**
+> Apretar antes convierte cualquier remitente legítimo que aún no conocemos —un proveedor de
+> facturación, un formulario— en correo que desaparece **sin rebote visible**, y eso se descubre
+> semanas después por un cliente que dice que nunca le llegó nada.
+>
+> El orden es `none` → `quarantine` con `pct` bajo → `quarantine` al 100 % → `reject`. Cada escalón
+> se sostiene sobre informes, no sobre confianza.
