@@ -189,10 +189,21 @@ Y **dos correcciones vinieron del esquema, no del código**: `user_profiles.user
 por vacuidad), y toda fila del padrón nace de un token verificado — o sea de alguien que **tuvo**
 cuenta, que es lo que hace exacto el `via = 'account_deleted'`.
 
-### Pendiente de una mano humana
+### ✅ Aplicado en la nube el 2026-08-23 08:35 UTC
 
-`terraform apply` del módulo `observability`: **hasta que se aplique, `iot_rule_errors` sigue muda
-en la nube.** Plan medido: 5 cambios en sitio, 0 destroy.
+`terraform apply -target=module.observability`: 5 cambios en sitio, 0 destroy. **`iot_rule_errors`
+volvió a `OK`** tras 15 días clavada; las cinco quedaron en `OK` con `notBreaching`.
+
+**Y el defecto «dormido» de `dlq_depth` despertó entre escribir el arreglo y aplicarlo.** Esa misma
+noche `dlq-telemetry` saltó a ALARMA a las 23:32 CST por ausencia de datapoints, con las tres DLQ
+**vacías** (comprobado contra SQS). Tres alarmas falsas por colas sanas sin tráfico de madrugada:
+la demostración de que `notBreaching` era el valor correcto no vino del razonamiento, la puso la
+propia cola.
+
+### Siete de siete en CI
+
+`gh pr checks 81` — api 8m36s · edge 4m37s · infra 1m11s · mobile 1m39s · sdk-ts 18s · secretos 16s
+· web 1m43s. Todos `pass`.
 
 ---
 
