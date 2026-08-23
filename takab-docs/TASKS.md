@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **300** · `[x]` **246** · `[~]` **9** · `[ ]` **45**
+**Conteo de tareas:** total **301** · `[x]` **245** · `[~]` **10** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6095,7 +6095,33 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
-### [x] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
+### [ ] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
+- **Componente:** infra (`modules/database`) + api · **Detectada por:** `T-2.143`, **verificando el
+  despliegue** el 2026-08-23 · **Bloquea:** el criterio 1 de `T-2.143`
+- **El hecho, medido en la instancia:**
+  - `/opt/takab/bin/takab-prune-pii.sh` construye un env temporal con **una sola clave útil**,
+    `DATABASE_URL`. No pasa `TAKAB_API_COGNITO_USER_POOL_ID` ni la región.
+  - El rol `takab-dev-db` **no declara ningún permiso `cognito-idp:*`**.
+- **Consecuencia:** `build_user_directory()` cae al directorio **simulado**, la corrida aborta con
+  «el directorio devolvió CERO cuentas» y **ninguna baja hecha en el pool arranca su reloj**. La
+  guarda hace lo correcto —negarse a actuar con una lectura vacía— pero el resultado es una
+  función desplegada que no hace nada.
+- **Por qué se coló:** se verificó **el código dentro del contenedor** (`import reconcile` → OK) y
+  no **el entorno desde el que se invoca**. Es la misma familia que «un indicador leído sin abrir
+  su contenido acredita lo que uno esperaba».
+- **Criterios de aceptación:**
+  - [ ] El job recibe `TAKAB_API_COGNITO_USER_POOL_ID` y la región, desde el mismo output de
+        terraform que los usa la API — **derivado, no tecleado**.
+  - [ ] El rol de instancia gana `cognito-idp:ListUsers` **acotado al pool**, y nada más.
+  - [ ] **El directorio SIMULADO se rechaza por su nombre.** Hoy produce el mismo mensaje que un
+        pool vacío de verdad, y son dos fallos distintos con dos arreglos distintos — el mismo
+        defecto que `T-2.143` ya corrigió una vez entre «caído» y «vacío». Un fallback no puede
+        pasar por una lectura buena ni por una lectura vacía: tiene que decir que es un fallback.
+  - [ ] Test que falle si el job se invoca sin la variable del pool.
+  - [ ] Verificado **en la instancia**, no en el contenedor: una corrida real que arranque un reloj
+        o que diga por qué no.
+
+### [~] T-2.143 · Una baja hecha en Cognito no arranca el reloj de la PII — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.81.b` (2026-08-14), **declarada al cerrarla**
 - El reloj de retención de nombre y teléfono lo escriben `PATCH {"enabled": false}` y `DELETE`
   de la API. **Una cuenta retirada directamente en el pool de Cognito no pasa por ahí**, así que
@@ -6108,7 +6134,23 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   - [x] La baja hecha en Cognito arranca el reloj sin que nadie corra nada a mano.
   - [x] Test de una cuenta que desaparece del pool sin pasar por la API.
 
-> ### ✅ CERRADA el 2026-08-22 · `privacy/reconcile.py`, dentro del job que ya corre solo
+> ### ⚠️ REABIERTA A `[~]` el 2026-08-23 — el software está, pero **en producción no hace nada**
+>
+> Se desplegó (`eaeb82a`) y se verificó el código dentro del contenedor. Lo que NO se verificó al
+> cerrarla es **el entorno en el que corre**, y ahí está el defecto: el job recibe un `db.env`
+> temporal con **una sola clave, `DATABASE_URL`**. Sin `TAKAB_API_COGNITO_USER_POOL_ID`,
+> `build_user_directory()` cae al **directorio SIMULADO**, que devuelve cero cuentas — y la guarda
+> aborta, correctamente, con «el directorio devolvió CERO cuentas».
+>
+> O sea: **la red de seguridad se niega a actuar a ciegas, que es lo que debe hacer, pero nunca
+> llega a actuar.** El criterio 1 dice «sin que nadie corra nada a mano»; hoy no corre nada, ni a
+> mano ni solo. Y el rol de instancia `takab-dev-db` **no tiene un solo permiso `cognito-idp:*`**,
+> así que ni siquiera podría listar el pool si tuviera la variable.
+>
+> Lo que falta está en [`T-2.163`](#). Se queda en `[~]` y no en `[x]`: el software está escrito y
+> probado, el despliegue no.
+>
+> ### Lo que sí quedó hecho, y sigue siendo válido
 >
 > El paso va **antes de la poda y en su propia transacción**: antes, para que un reloj recién
 > arrancado cuente ya en esta misma corrida; aparte, para que una reconciliación que falle no se
