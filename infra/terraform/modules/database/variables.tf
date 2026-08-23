@@ -303,3 +303,11 @@ variable "pii_retention_chain_margin" {
     error_message = "pii_retention_chain_margin debe ser >= 2: con 1, una sola corrida perdida (un reinicio a las 06:00) manda un correo y las alarmas se dejan de leer."
   }
 }
+
+# [T-2.155] Ver `notify_ses_arns` en main.tf: sin el ARN del configuration set el
+# envio muere con AccessDenied aunque la identidad este concedida.
+variable "notify_ses_configuration_set" {
+  description = "Nombre del configuration set por defecto de la identidad de dominio. Vacio = no se concede (no hay dominio)."
+  type        = string
+  default     = ""
+}

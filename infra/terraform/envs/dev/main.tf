@@ -33,6 +33,15 @@ module "storage" {
   backfill_queue_arn = module.messaging.queues["backfill"].arn
 }
 
+locals {
+  # [T-2.155] Nombre del configuration set de SES. Vive AQUI y no dentro de
+  # `modules/identity` porque lo necesitan DOS modulos: identity lo crea y
+  # database compone con el el ARN del permiso de envio. Database no puede leerlo
+  # de un output de identity (cerraria el ciclo identity -> serve -> database), asi
+  # que la unica forma de tener una sola definicion es esta.
+  ses_configuration_set_name = "takab-dev-correo"
+}
+
 module "database" {
   source = "../../modules/database"
 
@@ -113,6 +122,11 @@ module "database" {
   # `ses_verified_emails` es lo natural — y con la condicion escrita sobre la
   # lista, eso borraria el permiso entero.
   notify_ses_domain = var.ses_domain
+
+  # [T-2.155] El MISMO nombre que recibe `module.identity`, definido una sola vez
+  # en `locals`. Si divergieran, el permiso apuntaria a un set que no existe y el
+  # envio moriria con AccessDenied — que es justo como se descubrio este agujero.
+  notify_ses_configuration_set = var.ses_domain != "" ? local.ses_configuration_set_name : ""
 }
 
 module "identity" {
@@ -129,12 +143,13 @@ module "identity" {
   # El buzon de rebotes es el de on-call y no una variable propia: quien recibe
   # las alarmas operativas es quien tiene que enterarse de que el correo del
   # sistema esta rebotando. Un buzon distinto seria un segundo sitio que mirar.
-  ses_domain              = var.ses_domain
-  ses_mail_from_subdomain = var.ses_mail_from_subdomain
-  ses_feedback_email      = var.ops_alert_email
-  ses_dmarc_policy        = var.ses_dmarc_policy
-  ses_dmarc_rua           = var.ses_dmarc_rua
-  ses_route53_zone_id     = var.ses_route53_zone_id
+  ses_domain                 = var.ses_domain
+  ses_mail_from_subdomain    = var.ses_mail_from_subdomain
+  ses_feedback_email         = var.ops_alert_email
+  ses_dmarc_policy           = var.ses_dmarc_policy
+  ses_dmarc_rua              = var.ses_dmarc_rua
+  ses_route53_zone_id        = var.ses_route53_zone_id
+  ses_configuration_set_name = local.ses_configuration_set_name
 
   # El callback de localhost se conserva SIEMPRE (modules/identity): el `make dev`
   # local debe seguir funcionando aunque la consola este publicada.

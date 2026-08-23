@@ -69,6 +69,24 @@ locals {
     var.notify_ses_domain != "" ? [
       "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${var.notify_ses_domain}"
     ] : [],
+
+    # [T-2.155] EL ARN DEL CONFIGURATION SET, y sin el no se envia nada.
+    #
+    # Medido el 2026-08-21 desde el rol de la instancia, no inferido:
+    #   AccessDeniedException ... not authorized to perform 'ses:SendEmail'
+    #   on resource '.../configuration-set/takab-dev-correo'
+    #
+    # La identidad de dominio lo lleva como configuration set POR DEFECTO, asi que
+    # SES lo aplica en cada envio SIN que el emisor lo nombre — y entonces exige
+    # permiso sobre los DOS recursos, identidad Y set. Conceder solo la identidad
+    # deja un permiso que parece completo y falla en el primer correo.
+    #
+    # Es la tercera cara del mismo fallo de 2026-07-14, y la que ningun comentario
+    # habia previsto: el `[PARA]` del runbook avisaba del ARN de la identidad
+    # —resuelto— pero nadie penso en el set, porque no existia cuando se escribio.
+    var.notify_ses_configuration_set != "" ? [
+      "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:configuration-set/${var.notify_ses_configuration_set}"
+    ] : [],
   )
 
   # Raiz de la cadena PITR tal y como la espera barman-cloud: SIN barra final —

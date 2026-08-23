@@ -92,20 +92,58 @@ Consecuencias, las tres duras:
 3. **El remitente actual es un gmail personal.** Un correo de alerta sísmica firmado por un
    gmail no es un canal de producto.
 
-**Decisiones que hay que tomar ANTES de tocar la consola de SES** (esto es el `[HUECO]`; no lo
-resuelve un runbook):
+**Decisiones que hay que tomar ANTES de tocar la consola de SES** (esto era el `[HUECO]`; no lo
+resolvía un runbook). ✅ **RESUELTAS el 2026-08-17** — ver
+[`D-12`](../DECISIONES-MAURICIO.md#d-12), que es donde vive el **porqué** de cada una:
 
 | # | Decisión | Valor elegido | Fecha / quién |
 |---|---|---|---|
-| D-1 | Dominio raíz de TAKAB (registrar o confirmar el que ya se tenga) |  |  |
-| D-2 | ¿Route 53 como DNS, o el DNS del registrador? (Route 53 permite que SES publique los registros solo) |  |  |
-| D-3 | Remitente de notificaciones (p. ej. `alertas@<dominio>`) |  |  |
-| D-4 | Subdominio MAIL FROM (§2.3.b) — **no puede usarse para enviar ni recibir correo** |  |  |
-| D-5 | Buzón para los informes agregados de DMARC (`rua=`) |  |  |
-| D-6 | ¿Se migra también `ops_alert_email` al dominio, o el on-call sigue en gmail? (§4) |  |  |
+| D-1 | Dominio raíz de TAKAB (registrar o confirmar el que ya se tenga) | **`takabailert.com`** — comprado en Namecheap *(enmienda 21-ago: no el `.mx`)* | 2026-08-21 · Mauricio |
+| D-2 | ¿Route 53 como DNS, o el DNS del registrador? (Route 53 permite que SES publique los registros solo) | **Route 53** — zona `Z01047862QJFIRSOR5IC5` | 2026-08-21 · Mauricio |
+| D-3 | Remitente de notificaciones (p. ej. `alertas@<dominio>`) | **`alertas@takabailert.com`** | 2026-08-21 · Mauricio |
+| D-4 | Subdominio MAIL FROM (§2.3.b) — **no puede usarse para enviar ni recibir correo** | **`bounce.takabailert.com`** — ⚠️ **no `mail.`**: colisiona con el CNAME del webmail | 2026-08-21 · Mauricio |
+| D-5 | Buzón para los informes agregados de DMARC (`rua=`) | **`dmarc@takabailert.com`** | 2026-08-21 · Mauricio |
+| D-6 | ¿Se migra también `ops_alert_email` al dominio, o el on-call sigue en gmail? (§4) | **Migra: `ops@takabailert.com`** (Namecheap Private Email) | 2026-08-21 · Mauricio |
 
-Con D-1 en blanco, el resto de este §2 no se puede ejecutar. **[PARA] si alguien propone
-"lo hacemos con la dirección verificada de siempre":** eso es lo que ya hay, y es sandbox.
+> ### Estado al 2026-08-21 — y el ORDEN, que no es intercambiable
+>
+> Dominio **comprado** (`takabailert.com`, Namecheap) y zona de Route 53 **creada**
+> (`Z01047862QJFIRSOR5IC5`). Falta el buzón y la delegación, **en este orden**:
+>
+> 1. **Comprar Namecheap Private Email** para el dominio (~$15/año).
+> 2. **Crear en Route 53** los registros de correo **antes** de delegar: `MX 10 mx1.privateemail.com`,
+>    `MX 10 mx2.privateemail.com`, y `TXT "v=spf1 include:spf.privateemail.com ~all"`.
+> 3. **Cambiar los NS en Namecheap** a los cuatro de la zona.
+> 4. Crear el buzón y **comprobar que recibe** antes de seguir — enviando un correo real, no
+>    mirando el panel.
+>
+>    > **Con el plan de 1 buzón (Starter/Launch) no son dos buzones: es uno y un alias.** El buzón
+>    > real es **`ops@`** —es quien recibe IMAP y push, y es la cadena on-call—; **`dmarc@` va como
+>    > alias** sobre él (el tier de entrada trae 10 alias).
+>    >
+>    > **Y el `rua=` NO puede ser un gmail.** Si el destino de los informes está fuera del dominio,
+>    > el dominio de destino debe autorizarlo publicando
+>    > `takabailert.com._report._dmarc.<destino>` — imposible en `gmail.com`. Por eso la dirección
+>    > de informes **tiene que ser `@takabailert.com`**, y con un buzón eso es exactamente un alias.
+>    >
+>    > **⚠️ Poner el filtro ANTES de activar el DMARC.** Los informes son XML diarios de Google,
+>    > Microsoft y Yahoo, y caen en la misma bandeja que las alarmas de guardia. **Una bandeja de
+>    > on-call llena de ruido se deja de mirar** — que es justo el fallo que esta cadena existe para
+>    > evitar. Regla que mande lo dirigido a `dmarc@` a una carpeta.
+> 5. Solo entonces, SES: verificación del dominio, DKIM, MAIL FROM y DMARC.
+>
+> **⚠️ Por qué el paso 2 va ANTES del 3.** El dominio venía con el **reenvío gratuito de Namecheap**
+> (`MX → eforward1-5`), que **solo funciona con los nameservers de Namecheap**. Al delegar en
+> Route 53 ese reenvío **deja de recibir sin dar un solo error**. Si los MX del buzón nuevo no
+> están puestos antes, se abre una ventana de correo perdido que nada declara.
+>
+> **⚠️ Y el DMARC arranca en `p=none`, no en `p=reject`.** La plantilla de Namecheap propone
+> `p=reject` de entrada: aquí eso significa que **los correos de alerta se rechacen** si la
+> alineación no está perfecta todavía. Se empieza en `none`, se leen los informes de `dmarc@`, y se
+> endurece cuando DKIM y SPF estén confirmados.
+
+**[PARA] si alguien propone "lo hacemos con la dirección verificada de siempre":** eso es lo que ya
+hay, y es sandbox.
 
 ### 2.3 Los registros DNS que hacen falta
 
@@ -209,6 +247,30 @@ Qué contestar y por qué:
 - **Una vez enviada no se puede editar**: *"Once you submit a review of your account details, you
   can't edit your details until the review is complete."* Escríbela bien a la primera.
 
+> ### ✅ ENVIADA el 2026-08-21 — `Status: PENDING`
+>
+> | Campo | Valor enviado |
+> |---|---|
+> | `mail-type` | `TRANSACTIONAL` |
+> | `website-url` | `https://16-58-11-196.sslip.io` *(ver la nota de abajo)* |
+> | `contact-language` | `EN` |
+> | `additional-contact` | `ops@takabailert.com` |
+> | Texto | `scratchpad/solicitud-ses-en.txt` |
+>
+> **Cada afirmación del texto se verificó contra la cuenta antes de mandarlo**, y esa era la
+> condición para poder escribirlo: supresión activa para `BOUNCE`/`COMPLAINT`, métricas de
+> reputación, destino de eventos con los cinco tipos, y la suscripción de guardia **confirmada**.
+> Antes de `T-2.78.b` el proceso de rebotes solo se podía declarar mintiendo.
+>
+> **⚠️ `contact-language` solo acepta `EN` o `JA`.** No hay `ES`. La API responde
+> `BadRequestException ... Member must satisfy enum value set: [EN, JA]`. El comando de arriba ya
+> traía `EN`; se perdió un intento por proponer español sin leerlo.
+>
+> **La `website-url` es el punto débil, y se mandó a sabiendas.** `takabailert.com` **no resuelve**
+> —la página de aparcado se fue con el DNS de Namecheap—, así que se dio la consola sobre
+> `sslip.io`, que sí funciona y tiene TLS real. Decisión: mandar ya para arrancar el reloj de AWS y
+> montar la página en paralelo. **Si AWS pide más información, es por aquí por donde va a pedirla.**
+
 ### 2.5 [PARA] · Después de salir del sandbox, el permiso IAM se rompe solo
 
 Este paso es el que muerde. `notify_ses_identity_arns` se construye **a mano**, iterando
@@ -227,6 +289,23 @@ Si el remitente pasa de `<gmail>` a `alertas@<dominio>` y **solo** se cambia
 Orden correcto: **(1)** identidad de dominio verificada → **(2)** el ARN de la identidad de
 dominio dentro de `notify_ses_identity_arns` + `terraform apply` → **(3)** cambiar
 `TAKAB_API_NOTIFY_EMAIL_FROM` → **(4)** provocar un envío real y verlo llegar.
+
+> ### ✅ Los pasos 1 a 3, hechos el 2026-08-21 — y el 2 salió gratis
+>
+> **(1)** `takabailert.com` verificado, DKIM `SUCCESS`. **(2)** el `apply` metió
+> `arn:aws:ses:us-east-2:634882473845:identity/takabailert.com` en `WorkerSesSend` **solo**, por
+> declarar `ses_domain` en el tfvars: el paso que este `[PARA]` avisa que muerde **no hubo que
+> recordarlo**. **(3)** `deploy/cloud/deploy.sh` manda ahora desde `alertas@takabailert.com`.
+>
+> **Y el paso (4) se puede hacer SIN esperar a producción**, que es lo que conviene: en sandbox se
+> envía desde cualquier identidad verificada **hacia** cualquier identidad verificada, y el dominio
+> ya lo es. Un envío a una dirección `@takabailert.com` acredita el camino entero —rol, identidad,
+> DKIM— **antes** de que llegue el permiso, en vez de descubrir el `AccessDenied` el día que hay un
+> sismo.
+>
+> **La verificación tiene que salir DE LA INSTANCIA**, no de la CLI de un portátil: lo que se está
+> probando es el **rol de la instancia**, y un `send-email` con credenciales de consola no lo toca
+> y saldría verde igual.
 El comentario que ya avisa de esto está en `envs/dev/main.tf:75-78`: **léelo antes de tocar
 nada.**
 

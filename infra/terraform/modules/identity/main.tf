@@ -178,7 +178,7 @@ locals {
 resource "aws_sesv2_configuration_set" "ses" {
   count = local.ses_domain_enabled ? 1 : 0
 
-  configuration_set_name = "takab-dev-correo"
+  configuration_set_name = var.ses_configuration_set_name
 
   delivery_options {
     # El correo de esta plataforma lleva solicitudes de dictamen y avisos de
