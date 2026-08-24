@@ -5078,6 +5078,38 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 ### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` COMPLETO · falta `G-01`
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
 
+> ### ✅ SEGUNDO INTENTO (2026-08-23, 22:31): EL GABINETE REAL CORRE EL LAYOUT A/B
+>
+> Con los tres arreglos puestos, el despliegue completó **con ✓ de punta a punta**: gate del
+> intérprete en verde, canary con remojo de 120 s sin una lectura enferma, ventana declarada,
+> dueño de los pines reiniciado, y propiedad re-verificada. Y después el **reinicio en frío**,
+> que es la prueba que anoche no llegó a hacerse:
+>
+> | Comprobación (`A.2`) | Medido |
+> |---|---|
+> | 1-2 · procesos vivos, sin pelear | `active`/`active`, `NRestarts` **0 y 0** |
+> | 3 · backend GPIO real | `LGPIOFactory (lgpio)` — sin caída a sysfs/native |
+> | 4 · quién sostiene los pines | `pid=740`, `unit=takab-gpio`, `flock=9` |
+> | — · desde dónde arrancó | **desde el symlink**: `releases/20260824T034254Z-67de47c/edge` |
+> | — · lo demás | nube `online` (RTT 75 ms, spool 0), SeedLink reconectado, **cero errores** |
+>
+> Reproduce exactamente la línea base del 2026-08-17 (`NRestarts` 0 y 0, `flock=9`), y esta vez
+> **arrancando desde el symlink**. `G-01` queda en **4/5**: falta que los relés se muevan, que es
+> la prueba AUDIBLE del panel y exige a alguien delante del gabinete.
+>
+> **Y un segundo hallazgo del campo, ya corregido:** la poda se llevó la release **heredada** — el
+> árbol de julio, con meses de operación real detrás y la única versión de la que se sabía que ese
+> edificio sobrevive a un apagón. Toda release nueva es más reciente que ella, así que una poda por
+> fecha se la lleva siempre. Ancla: `test_la_poda_JAMAS_se_lleva_la_release_heredada`.
+>
+> **Lo que queda fichado y NO se arregló:** el layout A/B crea por diseño una ventana de versiones
+> mezcladas (cliente nuevo, dueño viejo hasta la ventana declarada), y el códec de pinlink es
+> estricto — un dueño más antiguo se rechaza igual que un contrato roto
+> (`ProtocolError: … llegó sin ['keepalive_beating']`). Medido: durante esa ventana **el panel no
+> ve los relés** (`gpio_unreachable`). La protección no se toca —el reflejo vive entero dentro de
+> `takab-gpio`—, pero la observabilidad sí. El códec necesita distinguir *dueño más viejo* de
+> *contrato roto*.
+
 > ### 🔴 PRIMER INTENTO EN EL GABINETE REAL (2026-08-23): FALLÓ, y por qué eso valió la pena
 >
 > **El gabinete se quedó sin dueño de pines** —sin sirena, sin cierre de gas, sin retenedores—
