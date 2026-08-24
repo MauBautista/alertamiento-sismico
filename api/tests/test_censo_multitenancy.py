@@ -184,16 +184,6 @@ SIN_TENANT_ID: dict[str, str] = {
         "columna de tenant sería una tercera versión de una verdad que aquí no "
         "existe."
     ),
-    "site_ground_refs": (
-        "DEUDA DECLARADA, no diseño — es la única de esta lista que no lo es. Son "
-        "las referencias de suelo por SITIO (punto cero del calibrador, ATTEN-LAW) "
-        "y sí son dato de un cliente. La tenencia se deriva del `site_id` y la RLS "
-        "la impone con un `EXISTS` contra `sites`, que sí tiene `tenant_id` y "
-        "RLS+FORCE, así que el aislamiento es real y verificable. Lo que falta es "
-        "la lectura LITERAL de la regla de oro 5: la columna. Añadirla es una "
-        "migración con backfill desde `sites` y tocar dos políticas; mientras no "
-        "se haga, esta línea es lo que impide que la ausencia pase por descuido."
-    ),
 }
 
 #: Tablas de negocio a las que se les perdona no tener NINGÚN mecanismo de

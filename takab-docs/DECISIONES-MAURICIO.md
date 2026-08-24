@@ -359,6 +359,28 @@ justo en el camino de una emergencia.
 <a id="d-12"></a>
 ## D-12 · Dominio raíz — **`takabailert.mx`**, con DNS en Route 53
 
+> ### ⚠️ DIVERGENCIA MEDIDA (2026-08-23): lo construido es `.com`, no `.mx`
+>
+> Esta decisión fija el dominio raíz en **`takabailert.mx`** y de ahí deriva seis valores
+> (`alertas@`, `mail.`, `dmarc@`, `ops@`…). **Lo que existe y funciona es `takabailert.com`**:
+> cinco referencias en `infra/terraform/`, el dominio verificado en SES con Easy DKIM RSA-2048, el
+> MAIL FROM en `bounce.takabailert.com` con su MX y su SPF, el DMARC publicado, y **la solicitud de
+> producción de SES ya radicada ante AWS con ese dominio**
+> (`runbooks/evidencia/SES-caso-178737638500467-*.txt`).
+>
+> **Nadie declaró el cambio**, y por eso esto no se corrige en silencio: la bitácora de decisiones
+> es lo único que permite revocar con conocimiento en vez de a ciegas, y aquí dice una cosa
+> mientras la infraestructura hace otra sobre **el dominio de la propia empresa**.
+>
+> **Lo que hace falta, y es de Mauricio:** o se enmienda esta decisión al TLD real —con su razón,
+> que probablemente sea que `.mx` exige presencia fiscal o que `.com` estaba libre— o se declara
+> que `.com` fue un desvío y se migra. Migrar no es gratuito a estas alturas: el caso de SES está
+> abierto con `.com` y volver a empezar cuesta otra ronda con AWS.
+>
+> **Mientras no se resuelva, todo lo que cite `takabailert.mx` en este documento describe algo que
+> no está desplegado.**
+
+
 **Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** la tabla `D-1`…`D-6` de
 [`runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md §2.2`](runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md),
 en blanco desde que se escribió · **Desbloquea:** `PENDIENTES §2.9` (`T-2.78`, SES) y
@@ -537,7 +559,7 @@ cambia: es independiente del TLD.
 «Soporte TAKAB — teléfono», **en blanco** · **Ficha:** `T-2.76.a` (`PENDIENTES §4.3`)
 
 **El hueco, y por qué era grave sin parecerlo.** El manual de operación —el documento que se le
-entrega al guardia de un edificio— dice **«avisa a soporte»** unas 25 veces, y en las filas rojas
+entrega al guardia de un edificio— el manual dice **«avisa a soporte» 36 veces** (y menciona «soporte» 52 en total; medido el 2026-08-23, no estimado), y en las filas rojas
 dice literalmente **«llama a soporte AHORA»**. Ese teléfono **no existía en ninguna parte del
 repositorio**. Un manual que manda llamar a un número en blanco no es un manual incompleto: es un
 procedimiento de emergencia que falla en el momento en que se usa.

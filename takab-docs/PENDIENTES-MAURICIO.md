@@ -301,7 +301,7 @@ corrido**. El occupant necesita código de enrolamiento.
 > Los tres registros de verificación del runbook (S-1…S-12, C-1…C-10, escalamiento) siguen **en
 > blanco**: se rellenan durante la sesión, no antes.
 >
-> **El teléfono de soporte ya tiene dueño:** el manual dice «avisa a soporte» ~25 veces y ese número
+> **El teléfono de soporte ya tiene dueño:** el manual dice **«avisa a soporte» 36 veces** (y menciona «soporte» 52 en total; medido el 2026-08-23, no estimado) y ese número
 > no existía. Por [`D-13`](DECISIONES-MAURICIO.md#d-13) será el **número Twilio mexicano** de §4.3
 > — un alta, dos necesidades. Se rellena `MANUAL-OPERACION-TAKAB.md §1` **cuando el número exista**,
 > nunca antes: un número falso en un manual de emergencia es peor que una casilla vacía.

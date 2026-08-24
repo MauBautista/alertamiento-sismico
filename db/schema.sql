@@ -215,9 +215,15 @@ CREATE INDEX idx_sensors_site ON sensors (site_id);
 CREATE TABLE site_ground_refs (
   site_id          uuid NOT NULL REFERENCES sites ON DELETE CASCADE,
   ground_sensor_id uuid NOT NULL REFERENCES sensors,
+  -- [T-2.84.e] La lectura LITERAL de la regla de oro 5. El aislamiento ya era
+  -- real antes (un `EXISTS` contra `sites`, con el cruce de tenants verificado);
+  -- lo que faltaba era la columna, y con ella una exención menos en el censo.
+  tenant_id        uuid NOT NULL REFERENCES tenants(tenant_id),
   distance_m       numeric,
   PRIMARY KEY (site_id, ground_sensor_id)
 );
+
+CREATE INDEX idx_site_ground_refs_tenant ON site_ground_refs (tenant_id);
 
 -- ---------------------------------------------------------------------------
 -- 3. REGLAS Y UMBRALES (versionadas)
@@ -748,14 +754,22 @@ CREATE POLICY sensors_admin ON sensors FOR ALL
 
 ALTER TABLE site_ground_refs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE site_ground_refs FORCE  ROW LEVEL SECURITY;
+-- [T-2.84.e] Por COLUMNA, y con los CUATRO caminos ENUMERADOS. El `EXISTS`
+-- anterior no llevaba condición de tenant: bajo RLS, ese SELECT anidado veía
+-- exactamente lo que `sites_read` permite —propio tenant, TAKAB interno,
+-- `gov_operator` sobre tenants `gov_shared`, y los grants de metadatos de
+-- T-1.73—. Escribir `tenant_id = app_tenant_id()` a secas habría QUITADO las
+-- tres últimas sin que nada se quejara: una regresión de visibilidad camuflada
+-- en una migración de «sólo añadir una columna».
 CREATE POLICY sgr_read ON site_ground_refs FOR SELECT
-  USING (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id) OR app_can_view_meta(tenant_id));
+-- NO hay `sgr_admin`, y la ausencia se conserva a propósito: antes tampoco
+-- existía, así que TAKAB interno LEE esta tabla pero no la ESCRIBE. Ampliar eso
+-- es una decisión de permisos, no un efecto colateral de añadir una columna.
 CREATE POLICY sgr_write ON site_ground_refs FOR ALL
-  USING (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id
-                   AND s.tenant_id = app_tenant_id()) AND app_role() <> 'gov_operator')
-  WITH CHECK (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id
-                        AND s.tenant_id = app_tenant_id()) AND app_role() <> 'gov_operator');
--- (la visibilidad de sgr_read hereda el RLS de `sites` vía el EXISTS)
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 
 ALTER TABLE rule_sets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rule_sets FORCE  ROW LEVEL SECURITY;
