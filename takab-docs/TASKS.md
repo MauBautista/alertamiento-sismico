@@ -6318,6 +6318,34 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
         despliegue al revés.
   - [ ] Test que reproduce la ventana: cliente `N`, dueño `N-1`, y el panel pinta los relés.
 
+> ### La bifurcación, con el dato que la decide (medido 2026-08-24)
+>
+> La salida barata sería «un campo que falte y sea opcional se lee como `None`». **No sirve**:
+> de los 13 campos de `GpioSnapshot` **sólo 2 admiten `None`** (`siren_reason`,
+> `last_reflex_latency_s`), y el que rompió el gabinete —`keepalive_beating`— **no es uno de
+> ellos**. Así que hay que elegir, y las dos vías cuestan cosas distintas:
+>
+> **(A) Convención: todo campo NUEVO del snapshot nace opcional.** Barato de implementar y
+> derivable —el códec ya saca la lista del `__dataclass_fields__`—. El precio: `None` pasa a
+> significar **dos cosas** en el mismo campo («el dueño es más viejo y no lo manda» y «se
+> preguntó y no se pudo medir»), que es exactamente la fusión que `relays: null` costó cerrar en
+> el contrato 1.10.0. Y obliga a que cada consumidor trate el `None` de campos que hoy son
+> booleanos francos.
+>
+> **(B) El protocolo lleva versión y declara qué NO manda.** El cliente sabe *por qué* falta un
+> campo, y el panel puede decir «el dueño de los pines es más antiguo: no sabe decir X» — que es
+> un rótulo distinto de `S/D` y de `NO CONTESTA`, las tres distinciones que `MANUAL §6.0` lleva
+> tres tareas separando. Más trabajo, y es la que respeta la doctrina de la casa.
+>
+> **Recomendación: (B).** El defecto que esta ficha cierra no es «falta un campo» sino «no se
+> distingue un dueño VIEJO de un contrato ROTO», y (A) no distingue: sólo hace que el fallo sea
+> silencioso en vez de ruidoso. Pero es una decisión de contrato del camino de vida y merece
+> tomarse con la cabeza fresca, no al final de una sesión.
+>
+> **Mientras tanto el riesgo está acotado y conocido:** la ventana sólo existe entre la
+> activación y el reinicio del dueño, la protección no se toca, y `deploy.sh` ya avisa de que el
+> dueño quedó con código anterior.
+
 ### [x] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
 - **Componente:** infra (`modules/database`) + api · **Detectada por:** `T-2.143`, **verificando el
   despliegue** el 2026-08-23 · **Bloquea:** el criterio 1 de `T-2.143`
