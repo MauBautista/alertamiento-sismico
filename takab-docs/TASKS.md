@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **251** · `[~]` **9** · `[ ]` **43**
+**Conteo de tareas:** total **303** · `[x]` **252** · `[~]` **9** · `[ ]` **42**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6240,7 +6240,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
-### [ ] T-2.164 · Los teléfonos ya escritos en claro siguen en claro para siempre — `SOFTWARE` + `LEGAL`
+### [x] T-2.164 · Los teléfonos ya escritos en claro siguen en claro para siempre — `SOFTWARE` · COMPLETA (2026-08-24)
 - **Componente:** api + db · **Depende de:** T-2.150 · **Declarada por la migración `0046`**
 - **El hueco, y lo escribe la propia migración.** `T-2.150` sellò el sujeto: las filas NUEVAS de
   `privacy_consents` guardan un índice de 64 hex y no el número. Las viejas **no se tocaron**, y el
@@ -6253,12 +6253,41 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 - **Cuántas son, hoy: no se sabe, y eso es parte de la ficha.** Hay que contarlas antes de decidir
   nada — si son cero, esto se cierra midiendo; si no, hay PII en claro con nombre y apellido.
 - **Criterios de aceptación:**
-  - [ ] **Contar** las filas con `subject_ref` en forma `+E164` en cada entorno, y escribir el
-        número. Cero es un resultado válido y cierra la ficha.
-  - [ ] Si hay filas: decidir **con su razón** si se sellan retroactivamente (y a costa de qué
-        propiedad de la tabla) o si se declaran intocables con su justificación legal.
-  - [ ] Lo que se decida, **el `CHECK` deja de aceptar las dos formas**: mientras acepte ambas, la
-        ausencia de las viejas no se puede distinguir de que nadie las haya mirado.
+  - [x] **Contadas** (2026-08-24). **Cero en los tres entornos que existen**, y no había otra
+        forma de saberlo que preguntándoselo a cada base:
+
+        | Entorno | consentimientos | `msisdn` en claro | `msisdn` sellados |
+        |---|---|---|---|
+        | local `takab` | 0 | **0** | 0 |
+        | local `takab_test` | 0 | **0** | 0 |
+        | nube dev (`takab-dev-db`, por SSM) | 2 | **0** | 0 |
+
+        Los dos de la nube son de sujeto `user`. El componente `LEGAL` de la ficha **se cae con
+        el conteo**: sin filas afectadas no hay derecho de titular que ponderar contra ninguna
+        prueba de base legal.
+  - [x] **Sin filas, no hay nada que decidir** — y esa es la respuesta, no una evasión: la
+        decisión que este criterio pedía (sellar retroactivamente a costa del append-only, o
+        declararlas intocables) sólo tiene sentido con datos que ponderar.
+  - [x] **El `CHECK` deja de aceptar las dos formas** (migración `0051`). Mientras aceptaba
+        ambas, «no hay filas viejas» y «nadie las ha mirado» eran indistinguibles; ahora el
+        invariante lo garantiza la base. Y se puede apretar sin miedo porque **ningún camino de
+        código puede crear una**: `privacy/store.py` sella el sujeto antes de insertar y **LANZA**
+        si faltan los secretos, en vez de caer a texto en claro.
+
+> ### La lectura sigue tolerando la forma vieja, y eso es deliberado
+>
+> `store._formas()` busca por el índice **y** por el número en claro. Si algún día apareciera una
+> fila así en un entorno que nadie censó, se encontraría igual: lo que ya no se puede es
+> **escribir** una nueva. Apretar la escritura y relajar la lectura es la dirección correcta —al
+> revés se perdería el acceso a un dato que sí existe.
+>
+> El pre-check de la migración no es decoración: `ADD CONSTRAINT` ya valida las filas existentes,
+> pero el error de PostgreSQL nombra UNA fila y no dice cuántas hay ni que lo que falta es una
+> decisión. El `DO` cuenta y lo dice.
+>
+> Anclado en `test_la_BASE_ya_no_acepta_un_consentimiento_con_el_numero_en_claro` y su contraparte
+> `test_la_forma_SELLADA_sigue_entrando` — sin la segunda, la primera podría estar pasando porque
+> el `CHECK` rechaza todo. Verificado por mutación: relajar el `CHECK` pone el primero en rojo.
 
 ### [ ] T-2.165 · El layout A/B abre una ventana en la que el cliente no ve al dueño de los pines — `SOFTWARE`
 - **Componente:** edge (`pinlink`) · **Depende de:** T-2.70 · **Hallazgo del gabinete real (2026-08-23)**

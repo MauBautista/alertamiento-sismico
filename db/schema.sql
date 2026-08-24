@@ -1985,16 +1985,20 @@ CREATE TABLE privacy_consents (
   -- sellado en `privacy_subject_secrets`, que SÍ se puede borrar — y ahí está la
   -- decisión entera: ejercer ARCO borra aquella fila y ésta no se toca.
   --
-  -- El CHECK admite las dos formas de manera PERMANENTE, no transitoria: las
-  -- filas anteriores llevan el número en claro y NO SE PUEDEN migrar (esta tabla
-  -- es append-only por trigger, y desactivarlo para reescribirlas sería abrir el
-  -- hueco que D-07 existe para no abrir).
+  -- [T-2.164] UNA SOLA FORMA: el índice. El CHECK admitía TAMBIÉN el número en
+  -- claro «de manera PERMANENTE, no transitoria», por las filas anteriores a
+  -- T-2.150 — y mientras lo admitía, **la ausencia de esas filas no se podía
+  -- distinguir de que nadie las hubiera mirado**. Se contaron (2026-08-24): CERO
+  -- en local, cero en `takab_test` y cero en la nube dev. Y ningún camino de
+  -- código puede crearlas: `privacy/store.py` sella el sujeto antes de insertar
+  -- y LANZA si faltan los secretos, en vez de caer a texto en claro.
+  --
+  -- La LECTURA sigue tolerando la forma vieja (`store._formas()` busca por las
+  -- dos): si apareciera una fila así en un entorno que nadie censó, se
+  -- encontraría igual. Lo que ya no se puede es ESCRIBIR una nueva.
   CONSTRAINT pc_sujeto_coherente CHECK (
     (subject_kind = 'user'   AND user_sub IS NOT NULL AND subject_ref = user_sub::text) OR
-    (subject_kind = 'msisdn' AND user_sub IS     NULL AND (
-        subject_ref ~ '^[0-9a-f]{64}$'
-        OR subject_ref ~ '^\+[1-9][0-9]{7,14}$'
-    ))
+    (subject_kind = 'msisdn' AND user_sub IS     NULL AND subject_ref ~ '^[0-9a-f]{64}$')
   ),
   -- 'repo' = aviso de plataforma (artefacto de git, sin fila); 'tenant' = fila.
   -- Sin este CHECK, un consentimiento podría declarar un origen que no tiene.

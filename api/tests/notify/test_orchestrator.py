@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.plan import CASCADE_ORDER
 from takab_api.notify.providers import NotifyError
+from takab_api.privacy import crypto
 from takab_api.settings import Settings
 
 BASE = datetime(2033, 4, 20, 12, 0, 0, tzinfo=UTC)
@@ -40,6 +41,24 @@ NOTIF_CONFIG = {
 def _dsn() -> str:
     url = os.environ.get("DATABASE_URL", DEFAULT_URL)
     return url.replace("postgresql+psycopg://", "postgresql://")
+
+
+@pytest.fixture(autouse=True)
+def _secretos_del_sujeto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[T-2.164] Los secretos con los que se DERIVA el índice del sujeto-teléfono.
+
+    Hacen falta en los dos lados y por la misma razón: la fixture de más abajo
+    escribe el consentimiento **sellado** —como lo escribe producción desde
+    T-2.150— y `privacy.store._params_sujeto` deriva el mismo índice para
+    buscarlo. Sin la pimienta, el lector cae a la forma vieja (buscar por el
+    número en claro) y no encontraría la fila: el test pasaría a medir el camino
+    LEGADO en vez del vigente.
+
+    Hasta T-2.164 esta fixture escribía el número en claro y por eso no hacían
+    falta: los tests validaban la forma que producción ya no produce.
+    """
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_PEPPER", "pimienta-de-prueba-no-produccion")
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_MASTER_KEY", "clave-maestra-de-prueba")
 
 
 class _FakeProvider:
@@ -107,7 +126,9 @@ class _Scenario:
             "'1.0.0','es-MX','out_of_band',%s,%s)",
             (
                 tenant or self.tenant,
-                msisdn,
+                # [T-2.164] EL ÍNDICE, no el número: es lo que escribe producción
+                # desde T-2.150 y lo único que la base admite ya.
+                crypto.lookup_ref(Settings(), tenant_id=str(tenant or self.tenant), msisdn=msisdn),
                 decision,
                 "0" * 64,
                 str(uuid.uuid4()),
