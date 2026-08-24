@@ -7190,6 +7190,179 @@
         "title": "RollbackUpdateIn",
         "type": "object"
       },
+      "RolloutAbortIn": {
+        "additionalProperties": false,
+        "properties": {
+          "motivo": {
+            "maxLength": 280,
+            "minLength": 3,
+            "title": "Motivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "motivo"
+        ],
+        "title": "RolloutAbortIn",
+        "type": "object"
+      },
+      "RolloutCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "canary_site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canary Site Id"
+          },
+          "release_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Release Id",
+            "type": "string"
+          },
+          "site_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Site Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "release_id"
+        ],
+        "title": "RolloutCreateIn",
+        "type": "object"
+      },
+      "RolloutOut": {
+        "properties": {
+          "abort_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abort Reason"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "rollout_id": {
+            "format": "uuid",
+            "title": "Rollout Id",
+            "type": "string"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/RolloutSiteOut"
+            },
+            "title": "Sites",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "target_fw": {
+            "title": "Target Fw",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rollout_id",
+          "release_id",
+          "target_fw",
+          "state",
+          "created_at"
+        ],
+        "title": "RolloutOut",
+        "type": "object"
+      },
+      "RolloutSiteOut": {
+        "properties": {
+          "activated": {
+            "title": "Activated",
+            "type": "boolean"
+          },
+          "command_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Status"
+          },
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "fw_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Running"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_name",
+          "phase",
+          "activated"
+        ],
+        "title": "RolloutSiteOut",
+        "type": "object"
+      },
       "RosterCheckin": {
         "properties": {
           "created_at": {
@@ -10726,6 +10899,190 @@
           }
         },
         "summary": "Publish Release"
+      }
+    },
+    "/fleet/rollouts": {
+      "post": {
+        "description": "Abre el rollout y activa **UN SOLO** gabinete: el canary.\n\nNo hay un parámetro para «actívalos todos». Esa ausencia es la ficha entera:\nun despliegue a toda la flota a la vez es un incidente a toda la flota a la\nvez, y la forma de impedirlo no es un aviso en un runbook.",
+        "operationId": "create_rollout_fleet_rollouts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolloutCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rollout",
+        "tags": [
+          "rollouts"
+        ]
+      }
+    },
+    "/fleet/rollouts/{rollout_id}": {
+      "get": {
+        "description": "Qué SHA declara cada gabinete. Sin MFA: mirar no mueve nada.",
+        "operationId": "read_rollout_fleet_rollouts__rollout_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rollout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rollout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Rollout",
+        "tags": [
+          "rollouts"
+        ]
+      }
+    },
+    "/fleet/rollouts/{rollout_id}/abort": {
+      "post": {
+        "description": "Manda revertir a TODO lo que ya se activó, y cierra el rollout.\n\nSe ordena a los sitios ACTIVADOS y no a todos: pedirle volver atrás a un\ngabinete que nunca estrenó nada le costaría un reinicio —y, si su dueño de\npines sigue dentro de `takab-edge`, un ciclo de gas y retenedores— por una\nversión que jamás corrió.",
+        "operationId": "abort_rollout_fleet_rollouts__rollout_id__abort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rollout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rollout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolloutAbortIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abort Rollout",
+        "tags": [
+          "rollouts"
+        ]
+      }
+    },
+    "/fleet/rollouts/{rollout_id}/advance": {
+      "post": {
+        "description": "Suelta el resto de la cohorte — y sólo si el canary lo ganó.\n\n**El 409 es el corazón de la ficha.** Se niega mientras el canary no declare\nel SHA esperado, y «declare» significa `fw_running`, no un ack: el ack dice\nque la orden llegó, y entre «llegó» y «el gabinete arrancó ese código» caben\ntodos los fallos que importan.",
+        "operationId": "advance_rollout_fleet_rollouts__rollout_id__advance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rollout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rollout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance Rollout",
+        "tags": [
+          "rollouts"
+        ]
       }
     },
     "/gateways/{gateway_id}/catalog": {

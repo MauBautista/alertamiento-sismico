@@ -1917,6 +1917,37 @@ export type RollbackUpdateIn = {
     motivo: string;
 };
 
+export type RolloutAbortIn = {
+    motivo: string;
+};
+
+export type RolloutCreateIn = {
+    canary_site_id?: string | null;
+    release_id: string;
+    site_ids?: Array<string>;
+};
+
+export type RolloutOut = {
+    abort_reason?: string | null;
+    created_at: string;
+    finished_at?: string | null;
+    release_id: string;
+    rollout_id: string;
+    sites?: Array<RolloutSiteOut>;
+    state: string;
+    target_fw: string;
+};
+
+export type RolloutSiteOut = {
+    activated: boolean;
+    command_status?: string | null;
+    confirmed?: boolean;
+    fw_running?: string | null;
+    phase: string;
+    site_id: string;
+    site_name: string;
+};
+
 export type RosterCheckin = {
     created_at: string;
     status: string;
@@ -2981,6 +3012,112 @@ export type PublishReleaseFleetReleasesPostResponses = {
 };
 
 export type PublishReleaseFleetReleasesPostResponse = PublishReleaseFleetReleasesPostResponses[keyof PublishReleaseFleetReleasesPostResponses];
+
+export type CreateRolloutFleetRolloutsPostData = {
+    body: RolloutCreateIn;
+    path?: never;
+    query?: never;
+    url: '/fleet/rollouts';
+};
+
+export type CreateRolloutFleetRolloutsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRolloutFleetRolloutsPostError = CreateRolloutFleetRolloutsPostErrors[keyof CreateRolloutFleetRolloutsPostErrors];
+
+export type CreateRolloutFleetRolloutsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RolloutOut;
+};
+
+export type CreateRolloutFleetRolloutsPostResponse = CreateRolloutFleetRolloutsPostResponses[keyof CreateRolloutFleetRolloutsPostResponses];
+
+export type ReadRolloutFleetRolloutsRolloutIdGetData = {
+    body?: never;
+    path: {
+        rollout_id: string;
+    };
+    query?: never;
+    url: '/fleet/rollouts/{rollout_id}';
+};
+
+export type ReadRolloutFleetRolloutsRolloutIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRolloutFleetRolloutsRolloutIdGetError = ReadRolloutFleetRolloutsRolloutIdGetErrors[keyof ReadRolloutFleetRolloutsRolloutIdGetErrors];
+
+export type ReadRolloutFleetRolloutsRolloutIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RolloutOut;
+};
+
+export type ReadRolloutFleetRolloutsRolloutIdGetResponse = ReadRolloutFleetRolloutsRolloutIdGetResponses[keyof ReadRolloutFleetRolloutsRolloutIdGetResponses];
+
+export type AbortRolloutFleetRolloutsRolloutIdAbortPostData = {
+    body: RolloutAbortIn;
+    path: {
+        rollout_id: string;
+    };
+    query?: never;
+    url: '/fleet/rollouts/{rollout_id}/abort';
+};
+
+export type AbortRolloutFleetRolloutsRolloutIdAbortPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AbortRolloutFleetRolloutsRolloutIdAbortPostError = AbortRolloutFleetRolloutsRolloutIdAbortPostErrors[keyof AbortRolloutFleetRolloutsRolloutIdAbortPostErrors];
+
+export type AbortRolloutFleetRolloutsRolloutIdAbortPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RolloutOut;
+};
+
+export type AbortRolloutFleetRolloutsRolloutIdAbortPostResponse = AbortRolloutFleetRolloutsRolloutIdAbortPostResponses[keyof AbortRolloutFleetRolloutsRolloutIdAbortPostResponses];
+
+export type AdvanceRolloutFleetRolloutsRolloutIdAdvancePostData = {
+    body?: never;
+    path: {
+        rollout_id: string;
+    };
+    query?: never;
+    url: '/fleet/rollouts/{rollout_id}/advance';
+};
+
+export type AdvanceRolloutFleetRolloutsRolloutIdAdvancePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AdvanceRolloutFleetRolloutsRolloutIdAdvancePostError = AdvanceRolloutFleetRolloutsRolloutIdAdvancePostErrors[keyof AdvanceRolloutFleetRolloutsRolloutIdAdvancePostErrors];
+
+export type AdvanceRolloutFleetRolloutsRolloutIdAdvancePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RolloutOut;
+};
+
+export type AdvanceRolloutFleetRolloutsRolloutIdAdvancePostResponse = AdvanceRolloutFleetRolloutsRolloutIdAdvancePostResponses[keyof AdvanceRolloutFleetRolloutsRolloutIdAdvancePostResponses];
 
 export type PushCatalogGatewaysGatewayIdCatalogPostData = {
     body: CatalogPushIn;

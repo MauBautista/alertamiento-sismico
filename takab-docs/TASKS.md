@@ -5075,10 +5075,16 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
   - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
-### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · DESBLOQUEADA (`D-04`, 2026-08-16)
+### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` COMPLETO · falta `G-01`
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
 
-> ### EDGE CERRADO EN SOFTWARE (2026-08-23) — falta la mitad de NUBE y el gate físico
+> ### CERRADA EN SOFTWARE (2026-08-23) — lo que queda es FÍSICO
+>
+> **Los cinco criterios están construidos y medidos; el único que no se cierra desde aquí es
+> el gate `G-01`.** El primer despliegue A/B de un gabinete real convierte `/opt/takab/edge`
+> de directorio a symlink, o sea que cambia la RUTA DESDE LA QUE ARRANCA EL CAMINO DE VIDA, y
+> eso no se declara bueno con tests en verde: exige un restart en frío del Pi con las dos
+> unidades volviendo solas. Hasta entonces `deploy.sh` se niega a migrar sin ventana declarada.
 >
 > **Lo que existe y está medido.** El despliegue dejó de ser in-place: cada versión aterriza
 > entera en `/opt/takab/releases/<ts>-<sha>/` **con su propio venv y sus propios contratos**, y
@@ -5133,10 +5139,18 @@ veinte es imposible; con veinte y una regresión, es peligroso.
         de esa señal habría dado VERDE a una actualización no aplicada. Ahora el gabinete
         congela el SHA **al importar** (`running_version()`), publica los dos, la ingesta
         persiste `gateways.fw_running` y la nube deriva el estado `SIN REINICIAR`.
-  - [ ] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
-        vez es un incidente a toda la flota a la vez. **A MEDIAS:** el remojo POR GABINETE está
-        hecho y medido; lo que falta es la COHORTE — que la nube ordene el primero, espere su
-        señal de éxito (`fw_running`, T-2.69) y sólo entonces suelte el resto.
+  - [x] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
+        vez es un incidente a toda la flota a la vez. `POST /fleet/rollouts` activa **UNO** y se
+        para —no hay parámetro para «actívalos todos», y esa ausencia es la ficha—;
+        `/advance` se NIEGA con 409 mientras el canary no declare `fw_running` = el SHA
+        esperado. **Un ack no basta y por eso no se acepta:** dice que la orden llegó, no que
+        el gabinete arrancara ese código, y entre las dos cosas caben todos los fallos que
+        importan. `fw_running` en `null` tampoco confirma: «no lo ha dicho» no es «está bien».
+        **Lo avanza una PERSONA, no un reloj**, por el mismo criterio que los simulacros —un
+        reloj sólo lee lo que se le enseñó, y el fallo que el remojo no ve (latencias raras, un
+        sensor mudo, un cliente que llama) se descubre mirando—. Y **un rollout es de UN
+        tenant**: actualizar varios clientes a la vez es justo lo que esto existe para impedir,
+        así que la política se escribe en el modelo y no en un runbook.
   - [x] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal"). El
         criterio son las cuatro señales del remojo, y la vuelta atrás es COMPLETA —código y
         dependencias— porque cada release lleva su venv.

@@ -35,6 +35,12 @@ pytestmark = pytest.mark.asyncio
 KEY = "clave-updates-test"
 GW = "7c700000-0000-0000-0000-0000000000d1"
 THING = "gw-upd-test-a"
+# SITIO PROPIO, y no `DB_SITE_PRIV`. Ese sitio lo comparten varios ficheros y
+# `test_commands_router.py` ya le cuelga un gateway (`gw-cmd-test-a`): como
+# `SELECT_GATEWAY` elige UNO por sitio, esto acababa firmando contra un
+# `iot_thing` ajeno cuya clave no está en el mapa de este fichero — 503 en la
+# suite completa y verde en aislado, que es la peor forma de rojo.
+SITE = "7a000000-0000-0000-0000-0000000000d1"
 RELEASE = "20260823T120000Z-abc1234"
 
 
@@ -73,10 +79,19 @@ async def gateway(base_data) -> str:
     async with engine.begin() as conn:
         await conn.execute(
             text(
+                "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES "
+                "(:s, :t, 'S-UPD-A', 'Sitio update A', "
+                "ST_SetSRID(ST_MakePoint(-99.08, 19.43), 4326)::geography) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"s": SITE, "t": au.DB_TENANT_PRIV},
+        )
+        await conn.execute(
+            text(
                 "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, iot_thing) "
                 "VALUES (:g, :t, :s, 'SER-UPD-A', :thing) ON CONFLICT DO NOTHING"
             ),
-            {"g": GW, "t": au.DB_TENANT_PRIV, "s": au.DB_SITE_PRIV, "thing": THING},
+            {"g": GW, "t": au.DB_TENANT_PRIV, "s": SITE, "thing": THING},
         )
     return GW
 
@@ -86,7 +101,7 @@ async def test_activar_firma_publica_y_acepta_sin_prometer_exito(
 ) -> None:
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update",
+        f"/sites/{SITE}/update",
         json={"release_id": RELEASE},
         headers=au.bearer(tok),
     )
@@ -120,14 +135,14 @@ async def test_revertir_no_deja_elegir_a_que_version_se_vuelve(
     ninguna parte es peor que ninguna reversión."""
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update/rollback",
+        f"/sites/{SITE}/update/rollback",
         json={"motivo": "el SOC vio latencias raras", "release_id": RELEASE},
         headers=au.bearer(tok),
     )
     assert r.status_code == 422, "el body prohíbe claves extra (extra='forbid')"
 
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update/rollback",
+        f"/sites/{SITE}/update/rollback",
         json={"motivo": "el SOC vio latencias raras"},
         headers=au.bearer(tok),
     )
@@ -142,9 +157,7 @@ async def test_una_reversion_sin_motivo_no_sale(client, gateway) -> None:
     """Mismo criterio que el motivo de una ventana de mantenimiento: una
     decisión sin razón registrada es una decisión que nadie puede revisar."""
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
-    r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update/rollback", json={}, headers=au.bearer(tok)
-    )
+    r = await client.post(f"/sites/{SITE}/update/rollback", json={}, headers=au.bearer(tok))
     assert r.status_code == 422
 
 
@@ -155,7 +168,7 @@ async def test_el_dueno_del_cliente_NO_puede_empujar_una_version(client, gateway
     sirena, sin cierre de gas y sin retenedores."""
     tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update",
+        f"/sites/{SITE}/update",
         json={"release_id": RELEASE},
         headers=au.bearer(tok),
     )
@@ -170,7 +183,7 @@ async def test_un_release_id_que_no_es_un_id_se_rechaza_en_la_nube(
     quien firma haya validado."""
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update",
+        f"/sites/{SITE}/update",
         json={"release_id": "../../etc; rm -rf /"},
         headers=au.bearer(tok),
     )
@@ -200,7 +213,7 @@ async def test_la_ventana_declarada_viaja_firmada(
     transporte."""
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update",
+        f"/sites/{SITE}/update",
         json={"release_id": RELEASE, "ventana_de_mantenimiento": True},
         headers=au.bearer(tok),
     )
@@ -219,7 +232,7 @@ async def test_la_orden_queda_registrada_como_comando_pendiente(client, gateway)
     ordenó estrenar esa versión»."""
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
-        f"/sites/{au.DB_SITE_PRIV}/update",
+        f"/sites/{SITE}/update",
         json={"release_id": RELEASE},
         headers=au.bearer(tok),
     )

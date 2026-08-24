@@ -1359,6 +1359,70 @@ CREATE POLICY drill_sites_write ON drill_sites FOR INSERT
 CREATE POLICY drill_sites_admin ON drill_sites FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
 
+-- [T-2.70] CANARY POR COHORTES. «Un despliegue a toda la flota a la vez es un
+-- incidente a toda la flota a la vez»: el gabinete ya sabe activar con remojo y
+-- volver atrás solo, pero sin disciplina de ORDEN entre gabinetes el canary es
+-- una buena intención que se salta quien tiene prisa.
+--
+-- POR TENANT a propósito. Actualizar toda la flota de golpe es justo lo que esta
+-- ficha existe para impedir, así que forzar un rollout por cliente no es una
+-- limitación del modelo: es la política, escrita donde no se puede saltar.
+--
+-- `target_fw` se GUARDA y no se deriva al leer: es el SHA que
+-- `gateways.fw_running` tiene que declarar para que el canary cuente como
+-- confirmado, y congelarlo evita que dos consultas discrepen sobre qué se
+-- estaba esperando.
+CREATE TABLE fleet_rollouts (
+  rollout_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  release_id   text NOT NULL,
+  target_fw    text NOT NULL,
+  created_by   uuid NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  state        text NOT NULL DEFAULT 'canary'
+               CHECK (state IN ('canary','desplegado','abortado')),
+  finished_at  timestamptz,
+  abort_reason text
+);
+
+CREATE TABLE fleet_rollout_sites (
+  rollout_id   uuid NOT NULL REFERENCES fleet_rollouts(rollout_id) ON DELETE CASCADE,
+  site_id      uuid NOT NULL REFERENCES sites(site_id),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  phase        text NOT NULL CHECK (phase IN ('canary','resto')),
+  command_id   uuid REFERENCES commands(command_id),  -- NULL = todavía sin activar
+  activated_at timestamptz,
+  PRIMARY KEY (rollout_id, site_id)
+);
+
+CREATE INDEX idx_fleet_rollouts_tenant_created
+  ON fleet_rollouts (tenant_id, created_at DESC);
+
+GRANT SELECT, INSERT, UPDATE ON fleet_rollouts TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON fleet_rollout_sites TO takab_app;
+
+-- NO hay política de ESCRITURA por tenant, y la ausencia es la decisión: quien
+-- escribe aquí porta `deploy_firmware`, que sólo tiene `takab_superadmin` — o
+-- sea `app_is_takab_internal()`. Una política por `tenant_id` abriría la tabla a
+-- un `tenant_admin` cuya sesión coincidiera en tenant, que es justo el rol al
+-- que la matriz le niega empujar código. La LECTURA sí es por tenant: un cliente
+-- puede ver que a sus gabinetes se les está actualizando, y ocultárselo sería la
+-- clase de opacidad que la regla de oro 7 persigue.
+ALTER TABLE fleet_rollouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fleet_rollouts FORCE  ROW LEVEL SECURITY;
+CREATE POLICY fleet_rollouts_read ON fleet_rollouts FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY fleet_rollouts_admin ON fleet_rollouts FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+ALTER TABLE fleet_rollout_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fleet_rollout_sites FORCE  ROW LEVEL SECURITY;
+CREATE POLICY fleet_rollout_sites_read ON fleet_rollout_sites FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY fleet_rollout_sites_admin ON fleet_rollout_sites FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+
 -- Metering diario para billing (T-1.24): agregado por tenant/día; gb_approx
 -- es row-count×avg (APROXIMACIÓN documentada; calibrar con pg_column_size).
 CREATE TABLE billing_meters_daily (

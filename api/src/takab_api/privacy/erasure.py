@@ -414,6 +414,10 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     ("compliance_labels", "updated_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("site_assets", "updated_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("fw_releases", "published_by"): PiiColumn(_RETAIN, _R_OPERADOR),
+    # [T-2.70] Quién ordenó estrenar una versión en los gabinetes de un cliente.
+    # Es el acto de operación más consecuente que registra esta base —una release
+    # mala deja un edificio sin sirena— y por eso no se poda jamás.
+    ("fleet_rollouts", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("fw_releases", "notes"): PiiColumn(
         _RETAIN, "Notas de una versión de firmware. No es dato de un ocupante."
     ),

@@ -353,6 +353,22 @@ corrido**. El occupant necesita código de enrolamiento.
 >
 > **Ojo con contar mal el progreso:** acreditar `G-01` **no cierra `T-2.92`**. Es uno de tres, y es
 > el barato.
+>
+> ### 🔴 Y desde el 2026-08-23 `G-01` dejó de ser sólo el gate más barato: es el que gatea `T-2.70`
+>
+> `T-2.70` (actualización remota con canary y rollback) **está cerrada en software**: el gabinete
+> despliega A/B —cada versión con su propio venv, `/opt/takab/edge` como symlink—, activa con
+> remojo, vuelve atrás sola si falla, y la nube ordena todo eso con comando firmado y por
+> cohortes. Lo que NO se puede cerrar desde el código es el primer despliegue A/B de un gabinete
+> real: **convierte `/opt/takab/edge` de directorio a symlink, o sea que cambia la ruta desde la
+> que arrancan las dos unidades del camino de vida.**
+>
+> Eso no se declara bueno con tests en verde. Se declara bueno con un **restart en frío del Pi
+> con el layout nuevo**, que es literalmente `G-01`. El procedimiento está escrito y son ~10
+> minutos más sobre los 20 que ya costaba: [`RUNBOOK-sesion-de-vida.md` §A.5](runbooks/RUNBOOK-sesion-de-vida.md).
+>
+> Mientras tanto `deploy.sh` **se niega** a migrar sin `--ventana-de-mantenimiento`, así que no
+> hay riesgo de que ocurra por accidente — pero tampoco hay actualización remota hasta entonces.
 
 ### 3.2 · [`T-2.93`](TASKS.md) · Sesión instrumental — `G-03`, `G-05`, `G-07`, `G-10`
 Incluye el gate #3 del Shake: hoy sus 5 tests se saltan cuando el sensor no está alcanzable, y la

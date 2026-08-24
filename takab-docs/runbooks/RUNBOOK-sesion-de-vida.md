@@ -131,6 +131,38 @@ sigue diciendo `reason: ok`.
 Marca `G-01` en la tabla de `RUNBOOK-auditoria-cierre.md` con la fecha y la evidencia (pega la
 salida del punto 3 — es la que prueba que no hubo degradación silenciosa del backend).
 
+### A.5 · Lo que `G-01` desbloquea desde el 2026-08-23, y que antes no
+
+**`G-01` dejó de ser sólo la prueba del apagón: ahora es el gate del despliegue A/B**
+(`T-2.70`). Desde esta fecha `deploy.sh` no despliega in-place: cada versión aterriza entera
+en `/opt/takab/releases/<id>/` con su propio venv y `/opt/takab/edge` pasa a ser un **symlink**.
+Eso es lo que hace que una vuelta atrás sea completa —código *y* dependencias— en vez de media.
+
+**El primer despliegue A/B de un gabinete es una MIGRACIÓN**, y por eso cae aquí: convierte
+`/opt/takab/edge` de directorio a symlink, o sea que cambia **la ruta desde la que arrancan las
+dos unidades**. `deploy.sh` se niega a hacerlo sin `--ventana-de-mantenimiento`; y que el
+gabinete vuelva solo de un corte de luz **con el layout nuevo** es exactamente lo que las cinco
+comprobaciones de A.2 miden.
+
+Así que el orden es: **primero `G-01` como está escrito arriba** (con el layout de hoy), y
+después, en la misma visita:
+
+```bash
+# 1. Migrar y desplegar, con el edificio avisado
+deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
+
+# 2. Comprobar el layout nuevo
+ssh takab-pi5 'ls -l /opt/takab/edge && ls -1 /opt/takab/releases/'
+ssh takab-pi5 'sudo /opt/takab/bin/canary.sh estado'
+
+# 3. Y REPETIR el reinicio en frío: es lo único que prueba que el gabinete
+#    arranca desde el symlink sin que nadie lo toque.
+ssh takab-pi5 'sudo reboot'
+```
+
+Si el punto 3 no vuelve solo, la vuelta atrás está a un `mv -T` del symlink — pero eso hay que
+hacerlo **desde el sitio**, y por eso esta migración no se hace en remoto ni sin ventana.
+
 ---
 
 # BLOQUE B · `G-04` — lo que se puede medir hoy y lo que no
