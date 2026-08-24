@@ -2,7 +2,7 @@
 
 Las dos clases que había no sirven, y por razones opuestas:
 
-  · ``CRISIS`` va por el canal ``seismic_alert``, con el tono sísmico y el sonido
+  · ``CRISIS`` va por el canal ``seismic_alert_v2``, con el tono sísmico y el sonido
     crítico. Vestir de sismo una activación manual es **exactamente el defecto de
     T-2.104**, donde la app tituló «ALERTA SÍSMICA SASMEX» algo que SASMEX no
     había dicho. El tono del SASMEX es el sonido que la población ya asocia a

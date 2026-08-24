@@ -19,6 +19,7 @@
 //
 // Ámbar y no el rojo de crisis: el color es parte del mensaje, y esta pantalla
 // no puede leerse de reojo como la toma sísmica.
+import { type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { fontSize, palette, radius, space } from "@/ui/theme";
@@ -48,9 +49,14 @@ export type BuildingAlarmViewProps = {
   /** Hora de reloj ya formateada (`horaDeReloj`): la vista es pura y no toca el reloj. */
   sinceLabel: string;
   zoneName: string | null;
+  /** [T-2.147.b] Hueco para el acuse de la brigada. Un NODO, no una bandera de rol:
+   *  esta vista no puede decidir quién es táctico —eso lo dice el servidor por
+   *  `allowed_actions`— y meterle esa lógica la dejaría de ser presentacional pura,
+   *  que es lo que hace que se pueda probar sin sesión ni red. */
+  slotAcuse?: ReactNode;
 };
 
-export function BuildingAlarmView({ sinceLabel, zoneName }: BuildingAlarmViewProps) {
+export function BuildingAlarmView({ sinceLabel, zoneName, slotAcuse }: BuildingAlarmViewProps) {
   return (
     <View style={styles.wrap}>
       <View style={styles.strip}>
@@ -86,13 +92,19 @@ export function BuildingAlarmView({ sinceLabel, zoneName }: BuildingAlarmViewPro
             TAKAB no conoce el motivo de la activación.
           </Text>
         </View>
+
+        {slotAcuse ? <View style={styles.acuse}>{slotAcuse}</View> : null}
       </View>
     </View>
   );
 }
 
 const AMBAR = "#E8A700";
-const AMBAR_CLARO = "#FFCE3A";
+/** Exportado para que el acuse (`TacticalAckButton`) no copie el hex.
+ *  No sale de `@takab/design-tokens` porque el ámbar de esta pantalla no está en la
+ *  paleta: es una excepción local declarada, y **una sola definición** es lo que evita
+ *  que las dos mitades de la misma pantalla acaben con ámbares distintos. */
+export const AMBAR_CLARO = "#FFCE3A";
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: "#1C1404" },
@@ -107,6 +119,7 @@ const styles = StyleSheet.create({
   stripTitle: { color: "#2A1A00", fontSize: 24, fontWeight: "700", letterSpacing: 1, marginTop: space[1] },
   body: { flex: 1, paddingHorizontal: space[5], paddingBottom: 40, paddingTop: space[4] },
   hero: { alignItems: "center", marginTop: space[3] },
+  acuse: { marginTop: space[4] },
   actionEyebrow: {
     color: "rgba(255,240,210,0.65)",
     fontSize: 10,

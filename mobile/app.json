@@ -35,7 +35,10 @@
       [
         "expo-notifications",
         {
-          "color": "#0E2336"
+          "color": "#0E2336",
+          "sounds": [
+            "./assets/sounds/alerta_sismica.wav"
+          ]
         }
       ],
       "expo-router",

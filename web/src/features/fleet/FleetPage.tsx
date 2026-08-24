@@ -6,6 +6,7 @@ import { useNow } from "../../lib/useNow";
 import FleetAdmin from "./FleetAdmin";
 import FleetToolbar from "./FleetToolbar";
 import GatewayForm from "./GatewayForm";
+import OpenWindowDialog from "./OpenWindowDialog";
 import RetireDialog from "./RetireDialog";
 import SiteCard from "./SiteCard";
 import { windowCovering } from "../console/maintenance";
@@ -127,7 +128,8 @@ function countVersions(cabinets: FleetCabinet[]) {
 type GatewayAction =
   | { kind: "none" }
   | { kind: "edit"; cabinet: FleetCabinet }
-  | { kind: "retire"; cabinet: FleetCabinet };
+  | { kind: "retire"; cabinet: FleetCabinet }
+  | { kind: "open-window"; cabinet: FleetCabinet };
 
 export default function FleetPage() {
   // [T-2.37] Los retirados solo aparecen si se piden: es la única forma de
@@ -137,6 +139,10 @@ export default function FleetPage() {
   const now = useNow(5000);
 
   const canManage = useSessionStore((s) => s.me?.allowed_actions.manage_fleet === true);
+  // [T-2.71] Abrir ventana es su PROPIA acción de la matriz, no `manage_fleet`:
+  // silenciar avisos y administrar inventario son permisos distintos, y colgarla
+  // de `manage_fleet` se los daría juntos a quien solo debe tener uno.
+  const canWindow = useSessionStore((s) => s.me?.allowed_actions.maintenance_window === true);
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
   const codeConfigured = useRetireCodeConfigured(canManage ? tenantId : null);
   const syncStates = useFleetSyncStates(fleet.cabinets.length > 0);
@@ -299,6 +305,9 @@ export default function FleetPage() {
                 windowCovering(maintenance.items, c.gateway.gateway_id, now) ?? undefined
               }
               onEdit={canManage ? () => setAction({ kind: "edit", cabinet: c }) : undefined}
+              onOpenWindow={
+                canWindow ? () => setAction({ kind: "open-window", cabinet: c }) : undefined
+              }
               onRetire={canManage ? () => setAction({ kind: "retire", cabinet: c }) : undefined}
               onRestore={canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined}
               restoring={restoreGateway.isPending}
@@ -367,6 +376,20 @@ export default function FleetPage() {
               { onSuccess: () => setAction({ kind: "none" }) },
             )
           }
+        />
+      )}
+
+      {action.kind === "open-window" && (
+        <OpenWindowDialog
+          error={maintenance.openError}
+          gatewayId={action.cabinet.gateway.gateway_id}
+          label={action.cabinet.siteName}
+          onCancel={() => setAction({ kind: "none" })}
+          onConfirm={(input) => {
+            maintenance.open(input);
+            setAction({ kind: "none" });
+          }}
+          pending={maintenance.openPending}
         />
       )}
     </section>

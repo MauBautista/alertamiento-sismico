@@ -379,6 +379,10 @@ class EdgeSupervisor:
             # T-2.67: evidencia pendiente y desenlace del respaldo (instantánea
             # EN MEMORIA del manager; el panel jamás recorre el directorio).
             backfill=self.backfill,
+            # T-2.146: si el `K_wd` está montado. Sin esto el panel no puede
+            # distinguir «no hay ruta de hardware» de «la hay y no late», que
+            # significan cosas opuestas.
+            keepalive_enabled=s.gpio_keepalive_enabled,
             # T-2.86.a: las acciones del panel mueven relés de un edificio y hasta
             # hoy sólo quedaban en una `deque` en RAM que un reinicio borra.
             ledger=self.ledger,

@@ -81,7 +81,14 @@ from takab_edge.contracts import (
 #: preguntar al dueño de los pines» (BACnet, costura caída, ack de rechazo sin
 #: ejecución) — nunca «el relé está en reposo». Un gabinete ≤1.10.0 no lo emite,
 #: así que la nube nunca le atribuye un estado que no declaró.
-SCHEMA_VERSION = "1.11.0"
+#: 1.12.0 (T-2.70): ActuatorAction + `update_activate`/`update_rollback` (canal
+#: `system`). Ninguna de las dos lleva código: el artefacto viaja por `deploy.sh`
+#: y queda INERTE en `releases/<id>/`; lo que la nube ordena es ESTRENARLO, que
+#: es lo único que un canary por cohortes necesita gobernar. ADITIVO: enum
+#: ampliado, un payload 1.11.0 sigue validando, y un gabinete viejo que reciba
+#: uno de los dos lo rechaza con ack —`ActuatorAction(payload["action"])` truena
+#: y el dispatcher descarta— en vez de hacer algo a medias.
+SCHEMA_VERSION = "1.12.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {

@@ -575,7 +575,7 @@ exacto por paquete (`api/.venv/bin/ruff`, `npm run lint && format:check`, `uv ru
 
 | # | Gate | Prueba | Criterio de aceptación | Medido | OK/NO | Fecha/inicial |
 |---|---|---|---|---|---|---|
-| G-01 | Restart en frío del Pi (L1) | `sudo reboot` en cada Pi con gabinete armado | `takab-edge` y `takab-gpio` activos; backend gpiozero = lgpio verificado en el arranque (journal); relés responden; sin caída a sysfs |  |  |  |
+| G-01 | Restart en frío del Pi (L1) | `sudo reboot` en cada Pi con gabinete armado | `takab-edge` y `takab-gpio` activos; backend gpiozero = lgpio verificado en el arranque (journal); relés responden; sin caída a sysfs | **4/5 · gw-dev-0001, 2026-08-23 22:31, CON LAYOUT A/B**: `active`/`active` · `NRestarts` **0 y 0** · `LGPIOFactory (lgpio)` · cerrojo `pid=740`, `unit=takab-gpio`, `flock=9` · arrancó desde el **symlink** (`releases/20260824T034254Z-67de47c/edge`) · nube `online`, RTT 75 ms, spool 0 · SeedLink reconectado · **cero errores** (`-p err` vacío). **Falta la 5ª**: que los relés se muevan — es la prueba AUDIBLE del panel y exige a alguien delante. | PARCIAL | 2026-08-23 |
 | G-02 | SPOF-02 ruta hardware (L2) | §6 del RUNBOOK-SPOF-02 (Pi apagado, WR-1 activo) | Sirena suena por la ruta eléctrica; llenar §8 de ese runbook |  |  |  |
 | G-03 | Soak 24 h + restart físico del Shake (L3/T-1.5) | 24 h de SeedLink continuo + power-cycle del Shake | Cero huecos no recuperados (resume por seqnum); reconexión limpia |  |  |  |
 | G-04 | Radio WR-1 real (L3/T-1.42) | Recepción SASMEX real o prueba CIRES | Semántica pulso/sostenido documentada; latching correcto; latencia contacto→relé→sirena < 100 ms |  |  |  |

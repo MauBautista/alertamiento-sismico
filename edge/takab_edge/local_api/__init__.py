@@ -369,8 +369,14 @@ class LocalDashboard(EdgeModule):
         lora: object | None = None,
         backfill: object | None = None,
         ledger: object | None = None,
+        keepalive_enabled: bool = False,
     ) -> None:
         super().__init__()
+        # [T-2.146] ¿Está montada la ruta de hardware de SPOF-02? Es CONFIGURACIÓN,
+        # no estado: por eso entra por el constructor y no por la instantánea del
+        # gpio. Meterla en el snapshot sugeriría que puede cambiar entre dos
+        # lecturas, y no puede: cambia cuando alguien monta el `K_wd` y redespliega.
+        self._keepalive_enabled = keepalive_enabled
         self._link = as_link(gpio)
         # [T-2.86.a · RO-4.e] Bitácora local de actuación: las acciones del panel
         # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
@@ -575,6 +581,35 @@ class LocalDashboard(EdgeModule):
         except Exception:  # noqa: BLE001 — sección no-crítica: jamás un 500 al kiosco
             log.warning("panel LAN: estado del gabinete no disponible", exc_info=True)
             return None, "gpio_error"
+
+    def _keepalive_view(self, snap: GpioSnapshot | None) -> dict:
+        """[T-2.146 · SPOF-02] Estado de la ruta de hardware de la sirena.
+
+        **Son TRES estados y no dos, y confundirlos cuesta un edificio.** El latido
+        del `K_wd` es la única forma de saber, sin un multímetro, quién gobierna la
+        sirena:
+
+        - ``sin_ruta`` — el latido está **deshabilitado**, que es el default mientras
+          el `K_wd` no esté montado (`D-16` aplazó la compra). No hay ruta de hardware
+          que gobernar, así que tampoco hay nada que reprochar: **no es una avería**.
+        - ``inhibida`` — hay ruta **y late**: el Pi gobierna, y el operador puede
+          silenciar desde el panel.
+        - ``habilitada`` — hay ruta y **NO late**: el WR-1 puede sonar la sirena por su
+          cuenta **y nadie la calla**. Es el estado que hay que ver de lejos.
+        - ``sd`` — no se pudo leer el gpio. No se pinta ninguno de los tres.
+
+        Pintar ``sin_ruta`` y ``habilitada`` con el mismo rótulo sería la regla de oro
+        7 en su forma más cara: los dos son «no late», y significan cosas opuestas.
+        """
+        if snap is None:
+            return {"estado": "sd", "enabled": self._keepalive_enabled, "beating": None}
+        if not self._keepalive_enabled:
+            return {"estado": "sin_ruta", "enabled": False, "beating": snap.keepalive_beating}
+        return {
+            "estado": "inhibida" if snap.keepalive_beating else "habilitada",
+            "enabled": True,
+            "beating": snap.keepalive_beating,
+        }
 
     def _relays_view(
         self,
@@ -1026,6 +1061,9 @@ class LocalDashboard(EdgeModule):
             # [T-2.68] POR QUÉ la lista es esa. `relays` es un hecho eléctrico y
             # no explica nada: vacía significaba cuatro cosas y corta, ninguna.
             "relays_status": relays_status,
+            # [T-2.146] SPOF-02: quién gobierna la sirena. Sale de la MISMA
+            # instantánea que los relés y los cuatro booleanos de arriba.
+            "keepalive": self._keepalive_view(snap if isinstance(snap, GpioSnapshot) else None),
             # Compat con el panel previo: hora del último dato de salud (o ahora).
             "captured_at": (health or {}).get("captured_at", now.isoformat()),
             # Fase 2.1 (contrato §5.1 de la spec del panel): memoria viva expuesta.

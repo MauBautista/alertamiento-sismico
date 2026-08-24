@@ -187,6 +187,19 @@ ACTIONS: tuple[str, ...] = (
     # de cliente: vigilan la infraestructura común de TODOS los tenants, así que
     # ningún tenant puede callarlas — ni siquiera "solo un rato".
     "platform_maintenance_window",
+    # [T-2.70] ``deploy_firmware`` — ordenar a un gabinete que ACTIVE una release
+    # ya verificada, o que VUELVA a la anterior. SOLO ``takab_superadmin``, y el
+    # criterio no es el de ``maintenance_window`` sino el de
+    # ``platform_maintenance_window``: el código que se activa es de TAKAB, el
+    # artefacto lo puso el operador de TAKAB y una release mala deja un edificio
+    # sin alertamiento. Un ``tenant_admin`` no tiene el artefacto ni puede juzgar
+    # una versión, así que concedérsela sería darle un botón cuya consecuencia no
+    # puede evaluar.
+    #
+    # ACTIVAR y REVERTIR van bajo la MISMA acción a propósito: la vuelta atrás es
+    # la válvula de seguridad de la ida, y un permiso que dejara empujar sin
+    # dejar volver sería peor que ninguno.
+    "deploy_firmware",
     # [T-2.79.e] Publicar el AVISO DE PRIVACIDAD del tenant (POST /privacy/notices) y
     # dejar constancia del consentimiento de un TERCERO sin sesión (un teléfono: el
     # opt-in de WhatsApp de T-2.77). Van juntas porque son el mismo círculo de
@@ -258,6 +271,7 @@ def _actions(
     panel_read: bool = False,
     maintenance_window: bool = False,
     platform_maintenance_window: bool = False,
+    deploy_firmware: bool = False,
     manage_privacy_notice: bool = False,
     manage_privacy_erasure: bool = False,
 ) -> dict[str, bool]:
@@ -290,6 +304,7 @@ def _actions(
         "panel_read": panel_read,
         "maintenance_window": maintenance_window,
         "platform_maintenance_window": platform_maintenance_window,
+        "deploy_firmware": deploy_firmware,
         "manage_privacy_notice": manage_privacy_notice,
         "manage_privacy_erasure": manage_privacy_erasure,
     }
@@ -320,6 +335,10 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # La segunda solo aquí — apaga la vigilancia de la infra común.
         maintenance_window=True,
         platform_maintenance_window=True,
+        # [T-2.70] Ordena activar una release ya verificada, o volver a la
+        # anterior. Sólo aquí: el código es de TAKAB y una release mala deja un
+        # edificio sin alertamiento — ver la nota de la acción en ACTIONS.
+        deploy_firmware=True,
         # [T-2.79.e] Publica el aviso de privacidad del cliente. La RLS ``pn_publish``
         # lo acota además a filas del PROPIO tenant del token.
         manage_privacy_notice=True,

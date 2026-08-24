@@ -103,6 +103,10 @@ DENY_ALL = {
     # [T-2.80.b] Registrar una solicitud ARCO recibida por escrito y ejecutarla por
     # cuenta del titular (mismo círculo, acción aparte: esta no se deshace).
     "manage_privacy_erasure": False,
+    # [T-2.70] Activar una release en un gabinete, o devolverlo a la anterior. Un
+    # rol desconocido no puede tocar el código desde el que arranca el camino de
+    # vida de un edificio.
+    "deploy_firmware": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -549,3 +553,20 @@ def test_ninguna_superficie_de_privacidad_enumera_roles_a_mano() -> None:
         f"{sorted(encontrados - LITERALES_DE_ROL_PERMITIDOS)}. "
         "Deriva de `auth/matrix.roles_with_action(...)`."
     )
+
+
+def test_deploy_firmware_is_platform_not_tenant() -> None:
+    """[T-2.70] Activar una release es una acción de PLATAFORMA, no de cliente.
+
+    El código que se activa es de TAKAB, el artefacto lo puso su operador y una
+    versión mala deja un edificio sin sirena, sin cierre de gas y sin
+    retenedores. `tenant_admin` tiene `maintenance_window` —puede callar las
+    alarmas de SU gabinete— y aun así NO puede empujarle una versión: no tiene
+    el artefacto ni con qué juzgarlo.
+    """
+    assert set(roles_with_action("deploy_firmware")) == {"takab_superadmin"}
+    # Y el contraste que da sentido a la frontera: la ventana de gabinete sí es
+    # del círculo del cliente. Si algún día coincidieran, alguien movió una de
+    # las dos sin decidirlo.
+    assert "tenant_admin" in roles_with_action("maintenance_window")
+    assert "tenant_admin" not in roles_with_action("deploy_firmware")

@@ -45,12 +45,34 @@ THING = "gw-catalogo-test"
 GW = "7c500000-0000-0000-0000-0000000000d3"
 SITE = "7c500000-0000-0000-0000-000000000160"
 
+# El formato REAL del entregable, el que `edge/takab_edge/catalog.py::normalize_catalog`
+# sabe leer. Hasta el 2026-08-22 este fixture usaba `{id, mag, prof_km}`, que **no es
+# ninguno de los dos formatos**: pasaba la API y el gabinete lo habría rechazado entero.
+# Un fixture que no puede existir en producción prueba una conducta que no existe.
 CATALOGO = {
+    "fuente": "SSN",
     "capturado": "2026-08-16T00:00:00Z",
     "eventos": [
-        {"id": "ssn-1", "mag": 5.2, "lat": 16.1, "lon": -98.2, "prof_km": 12},
-        {"id": "ssn-2", "mag": 4.1, "lat": 17.0, "lon": -99.5, "prof_km": 30},
+        {
+            "m": 5.2,
+            "fecha": "2026-08-15",
+            "hora": "23:10:00",
+            "lat": 16.1,
+            "lon": -98.2,
+            "prof": 12,
+            "loc": "15 km al SUR de PINOTEPA, OAX",
+        },
+        {
+            "m": 4.1,
+            "fecha": "2026-08-16",
+            "hora": "01:02:03",
+            "lat": 17.0,
+            "lon": -99.5,
+            "prof": 30,
+            "loc": "20 km al ESTE de ACAPULCO, GRO",
+        },
     ],
+    "referencias": [{"n": "CDMX", "lat": 19.43, "lon": -99.13}],
 }
 
 
@@ -233,13 +255,19 @@ async def test_reordenar_las_claves_no_es_un_catalogo_nuevo(client, gabinete, pu
     await _push(client, CATALOGO)
     publicados = len(publisher.published)
 
+    # Se DERIVA del fixture invirtiendo el orden de las claves, en vez de copiarlo a
+    # mano. La copia a mano ya se pagó una vez: cuando el fixture se corrigió al
+    # formato real, esta literal se quedó con el viejo y el test empezó a probar otra
+    # cosa. Derivándolo, «mismos datos, otro orden» es cierto por construcción.
     reordenado = {
-        "eventos": [
-            {"prof_km": 12, "lon": -98.2, "lat": 16.1, "mag": 5.2, "id": "ssn-1"},
-            {"prof_km": 30, "lon": -99.5, "lat": 17.0, "mag": 4.1, "id": "ssn-2"},
-        ],
-        "capturado": "2026-08-16T00:00:00Z",
+        "eventos": [dict(reversed(list(e.items()))) for e in CATALOGO["eventos"]],
+        "referencias": [dict(reversed(list(r.items()))) for r in CATALOGO["referencias"]],
+        "capturado": CATALOGO["capturado"],
+        "fuente": CATALOGO["fuente"],
     }
+    assert list(reordenado["eventos"][0]) != list(CATALOGO["eventos"][0]), (
+        "el reordenado salió con el MISMO orden de claves: el test no probaría nada"
+    )
     resp = await _push(client, reordenado)
 
     assert resp.json()["unchanged"] is True, (
@@ -258,7 +286,18 @@ async def test_un_catalogo_DISTINTO_si_se_publica(client, gabinete, publisher) -
 
     nuevo = {
         "capturado": "2026-08-16T06:00:00Z",
-        "eventos": [*CATALOGO["eventos"], {"id": "ssn-3", "mag": 6.0, "lat": 15.5, "lon": -96.1}],
+        "eventos": [
+            *CATALOGO["eventos"],
+            {
+                "m": 6.0,
+                "fecha": "2026-08-16",
+                "hora": "04:00:00",
+                "lat": 15.5,
+                "lon": -96.1,
+                "prof": 8,
+                "loc": "40 km al SUR de HUATULCO, OAX",
+            },
+        ],
     }
     resp = await _push(client, nuevo)
 

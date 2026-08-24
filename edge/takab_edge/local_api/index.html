@@ -1036,6 +1036,32 @@ function render(){
     const c2 = document.createElement('span'); c2.className = 're'; c2.textContent = meta;
     div.append(a, b, c2); relays.appendChild(div);
   }
+  /* [T-2.146 · SPOF-02] Quién gobierna la sirena. Son TRES estados y no dos:
+     «no hay ruta montada» y «la hay y no late» son los dos «no late», y
+     significan cosas opuestas — el segundo es sirena que puede sonar sola y que
+     NADIE calla desde aquí. Pintarlos igual sería la regla de oro 7 en su forma
+     más cara. El servidor ya resolvió cuál es (`keepalive.estado`); aquí solo se
+     rotula, para que la regla no viva en dos sitios. */
+  const ka = st.keepalive || null;
+  if (ka && ka.estado){
+    const KA = {
+      sin_ruta:   {st:'SIN RUTA', crit:false,
+                   meta:'el relé K_wd no está montado · la sirena depende del Pi'},
+      inhibida:   {st:'INHIBIDA', crit:false,
+                   meta:'el Pi gobierna la sirena · se puede silenciar desde este panel'},
+      habilitada: {st:'HABILITADA', crit:true,
+                   meta:'el WR-1 puede sonar la sirena SOLO · nadie la calla desde aquí'},
+      sd:         {st:'S/D', crit:false,
+                   meta:'no se pudo leer el gpio · no se afirma nada'},
+    };
+    const m = KA[ka.estado] || KA.sd;
+    const div = document.createElement('div'); div.className = 'relay';
+    const a = document.createElement('span'); a.className = 'rl'; a.textContent = 'RUTA SPOF-02';
+    const b = document.createElement('span'); b.className = 'rs';
+    b.style.color = m.crit ? C.warn : C.fg2; b.textContent = m.st;
+    const c2 = document.createElement('span'); c2.className = 're'; c2.textContent = m.meta;
+    div.append(a, b, c2); relays.appendChild(div);
+  }
 
   /* ondas: cabecera + carriles */
   $('nocal-pill').classList.toggle('hide', cal);

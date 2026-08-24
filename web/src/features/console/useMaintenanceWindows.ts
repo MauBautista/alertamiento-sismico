@@ -15,8 +15,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   closeWindowMaintenanceWindowsWindowIdClosePost,
   listWindowsMaintenanceWindowsGet,
+  openWindowMaintenanceWindowsPost,
 } from "@takab/sdk";
-import type { MaintenanceWindowOut } from "@takab/sdk";
+import type { MaintenanceWindowIn, MaintenanceWindowOut } from "@takab/sdk";
 
 export const MAINTENANCE_POLL_MS = 30_000;
 export const MAINTENANCE_KEY = ["maintenance-windows", "active"] as const;
@@ -30,9 +31,20 @@ export interface MaintenanceData {
   updatedAt: number;
   refetch: () => void;
   close: (windowId: string) => void;
+  /**
+   * [T-2.71] ABRIR una ventana. Hasta el 2026-08-22 la web solo LEÍA y CERRABA: la
+   * API existía y estaba probada, y abrir había que hacerlo por `curl`. Un silencio
+   * que se pide desde fuera de la consola no deja al operador la pantalla donde
+   * después tiene que verlo, ni le pone delante el motivo obligatorio.
+   */
+  open: (input: MaintenanceWindowIn) => void;
+  /** `true` mientras cualquiera de las dos mutaciones está en vuelo. */
   pending: boolean;
+  openPending: boolean;
   /** Error de la última MUTACIÓN (cerrar). */
   error: string | null;
+  /** Error de la última APERTURA, separado: son dos acciones y dos mensajes. */
+  openError: string | null;
 }
 
 export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData {
@@ -69,6 +81,19 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
     },
   });
 
+  const open = useMutation({
+    mutationFn: async (input: MaintenanceWindowIn) => {
+      const { data, response } = await openWindowMaintenanceWindowsPost({ body: input });
+      if (data === undefined) {
+        throw new Error(`la ventana no se abrió (HTTP ${response.status})`);
+      }
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: MAINTENANCE_KEY });
+    },
+  });
+
   return {
     items: active.data?.items ?? [],
     loading: enabled && active.isPending,
@@ -78,7 +103,10 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
     updatedAt: active.dataUpdatedAt,
     refetch: () => void active.refetch(),
     close: (windowId) => close.mutate(windowId),
+    open: (input) => open.mutate(input),
     pending: close.isPending,
+    openPending: open.isPending,
     error: close.error?.message ?? null,
+    openError: open.error?.message ?? null,
   };
 }

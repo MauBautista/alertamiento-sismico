@@ -50,6 +50,12 @@ EnvironmentFile=/etc/takab/edge.env
 # Desde A-2: el proceso fija LGPIOFactory EXPLÍCITA y truena si no puede
 # (ensure_prod_pin_factory) — sin fallback silencioso a native/sysfs.
 WorkingDirectory=/var/lib/takab
+# [T-2.70] `/opt/takab/edge` ES UN SYMLINK a `releases/<id>/edge`, y por eso
+# este `ExecStart` no cambia nunca: lo que decide qué versión corre es a dónde
+# apunta el enlace, y sólo lo repunta `/opt/takab/bin/canary.sh` tras verificar
+# la release nueva. systemd resuelve la ruta AL EJECUTAR, así que un repunte no
+# afecta al proceso vivo hasta su próximo arranque — que es justo lo que hace
+# reversible una actualización.
 ExecStart=/opt/takab/edge/.venv/bin/takab-gpio
 
 # El camino de vida se reinicia SIEMPRE y rápido ante cualquier caída (SPOF-02).

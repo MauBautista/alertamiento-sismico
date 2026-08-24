@@ -131,6 +131,76 @@ sigue diciendo `reason: ok`.
 Marca `G-01` en la tabla de `RUNBOOK-auditoria-cierre.md` con la fecha y la evidencia (pega la
 salida del punto 3 — es la que prueba que no hubo degradación silenciosa del backend).
 
+### A.5 · Lo que `G-01` desbloquea desde el 2026-08-23, y que antes no
+
+**`G-01` dejó de ser sólo la prueba del apagón: ahora es el gate del despliegue A/B**
+(`T-2.70`). Desde esta fecha `deploy.sh` no despliega in-place: cada versión aterriza entera
+en `/opt/takab/releases/<id>/` con su propio venv y `/opt/takab/edge` pasa a ser un **symlink**.
+Eso es lo que hace que una vuelta atrás sea completa —código *y* dependencias— en vez de media.
+
+**El primer despliegue A/B de un gabinete es una MIGRACIÓN**, y por eso cae aquí: convierte
+`/opt/takab/edge` de directorio a symlink, o sea que cambia **la ruta desde la que arrancan las
+dos unidades**. `deploy.sh` se niega a hacerlo sin `--ventana-de-mantenimiento`; y que el
+gabinete vuelva solo de un corte de luz **con el layout nuevo** es exactamente lo que las cinco
+comprobaciones de A.2 miden.
+
+> ### ⚠️ NO ENCADENES ESTOS COMANDOS. Lo que costó el intento del 2026-08-23
+>
+> El primer intento se hizo pegando el bloque entero de una vez: `sudo reboot` y, acto seguido,
+> `deploy.sh`. **El reinicio en frío nunca llegó a verificarse** —las cinco comprobaciones de
+> A.2 se saltaron— y el despliegue entró sobre un gabinete que aún estaba levantando.
+> Cada paso de aquí abajo espera al anterior **y a que alguien lo mire**.
+
+El orden es: **primero `G-01` como está escrito arriba**, con sus cinco comprobaciones en verde,
+y sólo después, en la misma visita:
+
+```bash
+# 1. Migrar y desplegar, con el edificio avisado
+deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
+
+# 2. NO SIGAS SI EL PASO 1 NO DIJO ✓. Si dice «REVERTIDO» el gabinete ya volvió
+#    solo; si dice «NO VERIFICADA», la release quedó puesta SIN comprobar y hay
+#    que mirar el journal antes de tocar nada más.
+ssh takab-pi5 'systemctl is-active takab-gpio takab-edge'
+ssh takab-pi5 'sudo /opt/takab/bin/canary.sh estado'
+ssh takab-pi5 'ls -l /opt/takab/edge && ls -1 /opt/takab/releases/'
+
+# 3. Y sólo con el 2 en verde, REPETIR el reinicio en frío: es lo único que
+#    prueba que el gabinete arranca desde el symlink sin que nadie lo toque.
+ssh takab-pi5 'sudo reboot'
+# …espera ~2 min y vuelve a hacer las cinco comprobaciones de A.2.
+```
+
+Si el punto 3 no vuelve solo, la vuelta atrás es
+`sudo /opt/takab/bin/canary.sh revertir --motivo "..."` — pero **si el que no arranca es
+`takab-gpio`, revertir no basta**: está en su escalera de reintento (1 s · 3 s · 10 s · 31 s ·
+96 s · 300 s) y hay que darle un `sudo systemctl start takab-gpio` para que estrene el symlink
+bueno sin esperar. Eso NO es un ciclo eléctrico: el proceso ya está muerto y no sostiene ningún
+pin, así que arrancarlo es devolver la protección, no moverla.
+
+### 🔴 Incidente del 2026-08-23 — lo que enseñó, y que ningún test podía dar
+
+**El gabinete se quedó sin dueño de pines**: sin sirena, sin cierre de gas y sin retenedores,
+con las dos unidades ciclando en `203/EXEC`, hasta que se miró. La causa no estaba en el código
+que se desplegaba:
+
+- Las dos unidades declaran `ProtectHome=true`, o sea que para ellas `/home` **no existe**.
+- El venv del Pi era UNO y se reusaba **desde julio**, con su intérprete en `/opt/takab/.python`
+  porque alguien exportó `UV_PYTHON_INSTALL_DIR` **a mano** aquella vez. Ese hecho vivía en un
+  directorio y **en ningún archivo**.
+- El layout A/B estrena venv por release. `uv` eligió intérprete por primera vez en meses y se
+  lo instaló en `~/.local/share/uv/python/…`. El ejecutable existía; el que no existía **para
+  systemd** era su intérprete.
+- **Los tres gates del despliegue corren como el usuario de ssh, con `/home` entero visible**, así
+  que por construcción no podían verlo. Y el canary leyó `MainPID=0` como «no pude medir» en vez
+  de como lo que es —una unidad que systemd da por activa y sin proceso principal, o sea un
+  `ExecStart` que no llegó a ejecutarse— así que **dejó la release puesta en lugar de revertir**.
+
+Las tres cosas están corregidas y ancladas (`test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa`,
+`test_el_interprete_de_uv_se_instala_FUERA_de_lo_que_ProtectHome_oculta`,
+`test_una_unidad_ACTIVA_sin_proceso_principal_es_una_medicion_MALA`). El gabinete quedó revertido
+a la release heredada y protegiendo.
+
 ---
 
 # BLOQUE B · `G-04` — lo que se puede medir hoy y lo que no

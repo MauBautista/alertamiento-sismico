@@ -357,7 +357,13 @@ justo en el camino de una emergencia.
 ---
 
 <a id="d-12"></a>
-## D-12 · Dominio raíz — **`takabailert.mx`**, con DNS en Route 53
+## D-12 · Dominio raíz — **`takabailert.com`**, con DNS en Route 53
+
+> **⚠️ Se decidió como `takabailert.mx` y está ENMENDADA** (2026-08-21, ratificada por
+> Mauricio el 2026-08-24): el dominio raíz es **`takabailert.com`**. El texto original queda
+> intacto —regla de la bitácora—, así que **todo lo que digan las tablas y los comandos de
+> aquí abajo sobre `.mx` describe la decisión ORIGINAL, no lo desplegado.** La tabla vigente y
+> el porqué del cambio están en la enmienda, al final de esta sección.
 
 **Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** la tabla `D-1`…`D-6` de
 [`runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md §2.2`](runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md),
@@ -373,6 +379,8 @@ pueden acelerar después**, porque las contesta un tercero: AWS (salida del sand
 
 | # | Decisión | Valor |
 |---|---|---|
+> ⚠️ **TABLA ORIGINAL (`.mx`), SUPERADA.** La vigente está en la enmienda del 2026-08-21.
+
 | D-1 | Dominio raíz | **`takabailert.mx`** |
 | D-2 | DNS | **Route 53** (zona alojada en la cuenta `634882473845`) |
 | D-3 | Remitente de notificaciones | **`alertas@takabailert.mx`** |
@@ -436,6 +444,9 @@ criterio**, que era el estado anterior y el peor de los dos.
 > aws --profile takab-dev route53 list-hosted-zones-by-name \
 >   --dns-name takabailert.mx --query "HostedZones[].Id" --output text   # -> UNA sola
 > ```
+> ⚠️ **ESTOS DOS COMANDOS YA NO SIRVEN.** Consultan `takabailert.mx`, que **no se registró**:
+> el `whois` seguirá diciendo «Disponible» y la zona de Route 53 del `.mx` se borró. Copiarlos
+> hoy da un rojo que no significa nada. Los vigentes están en la enmienda, con el `.com`.
 
 > ### ✏️ ENMENDADA el 2026-08-21 — el dominio comprado fue **`takabailert.com`**
 >
@@ -537,7 +548,7 @@ cambia: es independiente del TLD.
 «Soporte TAKAB — teléfono», **en blanco** · **Ficha:** `T-2.76.a` (`PENDIENTES §4.3`)
 
 **El hueco, y por qué era grave sin parecerlo.** El manual de operación —el documento que se le
-entrega al guardia de un edificio— dice **«avisa a soporte»** unas 25 veces, y en las filas rojas
+entrega al guardia de un edificio— el manual dice **«avisa a soporte» 36 veces** (y menciona «soporte» 52 en total; medido el 2026-08-23, no estimado), y en las filas rojas
 dice literalmente **«llama a soporte AHORA»**. Ese teléfono **no existía en ninguna parte del
 repositorio**. Un manual que manda llamar a un número en blanco no es un manual incompleto: es un
 procedimiento de emergencia que falla en el momento en que se usa.
@@ -667,7 +678,7 @@ gabinete hace sonar el tono **de verdad** — no se dispara sin avisar a quien e
 
 | Compra | Coste | Qué desbloquea |
 |---|---|---|
-| Dominio `takabailert.mx` + zona Route 53 | ~$55 USD/año | `§2.9` (SES) **y** `§4.2` (WhatsApp) |
+| ~~Dominio `takabailert.mx`~~ + zona Route 53 | ~~~$55 USD/año~~ **a revisar** | `§2.9` (SES) **y** `§4.2` (WhatsApp) |
 | Twilio: cuenta + número mexicano | ~$3 USD/mes | `§4.3` (SMS) **y** el teléfono de [`D-13`](#d-13) |
 
 **Lo aplazado, y con ello lo que queda parado — que es la mitad que hay que no olvidar:**

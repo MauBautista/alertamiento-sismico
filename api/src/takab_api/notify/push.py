@@ -1,12 +1,17 @@
 """Push móvil vía SNS platform endpoints (T-2.04 · decisión T-2.00).
 
-Dos clases JAMÁS mezcladas (spec móvil §6):
+TRES clases JAMÁS mezcladas (spec móvil §6). Eran dos hasta que `T-2.147.a` añadió
+``PANIC``; esta línea seguía diciendo "dos", que es la clase de desfase que hace que
+alguien crea que ya las ha revisado todas:
 
 - ``CRISIS`` — alerta activa / cambio de fase. iOS: sonido *critical* con
   ``interruption-level: time-sensitive`` como base — cuando Apple apruebe el
   entitlement (GATE-STORE) se sube a ``critical``; sin él, iOS degrada el flag
-  en silencio y el sonido llega normal. Android: canal ``seismic_alert``
-  (IMPORTANCE_HIGH + bypass DND, lo crea la app en onboarding).
+  en silencio y el sonido llega normal. Android: canal ``seismic_alert_v2``
+  (IMPORTANCE_MAX + bypass DND, lo crea la app en onboarding).
+- ``PANIC`` — activación manual del inmueble por quórum de pánico (`D-05`/`D-11`).
+  Canal propio ``building_alarm`` (IMPORTANCE_MAX + bypass DND: despierta como una
+  crisis) con el sonido del SISTEMA, nunca el sísmico: no es un sismo.
 - ``OPS`` — dictamen recibido, sync, recordatorios. Prioridad normal.
 
 El payload es MÍNIMO y sin datos sensibles (aparece en lockscreen): tipo,
@@ -68,9 +73,19 @@ _DELIVERY_STYLE = {
         # Base honesta pre-entitlement: time-sensitive suena aun en foco/atención;
         # el dict `critical` queda listo para cuando Apple apruebe (GATE-STORE).
         "interruption_level": "time-sensitive",
-        "sound": {"critical": 1, "name": "seismic_alert.caf", "volume": 1.0},
+        # [D-19] El tono es PROPIO de TAKAB, no el oficial del SASMEX, y es el mismo
+        # que sale por el altavoz del gabinete. Hasta el 2026-08-22 esto nombraba un
+        # `seismic_alert.caf` que NO ESTABA EN EL REPO: iOS caía al sonido por
+        # defecto en silencio, o sea que el sistema afirmaba un sonido crítico que
+        # no podía sonar. El fichero viaja en el bundle por el `sounds` de
+        # `mobile/app.json`, y `tests/notify/test_censo_canales_y_sonidos.py` es lo
+        # que impide que vuelvan a separarse.
+        "sound": {"critical": 1, "name": "alerta_sismica.wav", "volume": 1.0},
         "android_priority": "high",
-        "channel_id": "seismic_alert",
+        # El `_v2` viaja con el de la app y NO es cosmético: el sonido de un canal
+        # Android es inmutable tras crearlo, así que estrenar tono exige id nuevo.
+        # Ver el comentario largo en `mobile/src/services/push.ts`.
+        "channel_id": "seismic_alert_v2",
     },
     PUSH_CLASS_OPS: {
         "interruption_level": "active",

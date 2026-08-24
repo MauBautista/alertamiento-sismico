@@ -180,26 +180,47 @@ def test_el_uv_sync_usa_la_lista_y_no_una_enumeracion_a_mano() -> None:
 # ---------------------------------------------------------------- orden
 
 
-def test_la_marca_de_version_se_escribe_despues_del_swap() -> None:
-    """`FW_VERSION` no está en el fuente, así que el `--delete` del swap lo
+def test_la_marca_de_version_se_escribe_dentro_de_la_release_y_tras_el_rsync() -> None:
+    """`FW_VERSION` no está en el fuente, así que el `--delete` del rsync la
     BORRA. Escribirla antes la perdería y el gabinete reportaría «no sé» para
-    siempre."""
-    swap = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{ENSAYO\}/\"")
+    siempre.
+
+    [T-2.70] Y va DENTRO de la release (`${NUEVA}/FW_VERSION`), no en una ruta
+    compartida: `version.py` la resuelve como «el directorio que contiene al
+    paquete», así que cada release declara SU versión y una vuelta atrás
+    devuelve también lo que el gabinete reporta a la nube. Escribirla fuera haría
+    que un rollback dejara al gabinete corriendo una versión y anunciando otra.
+    """
+    guion = _deploy()
+    rsync = _pos_comando(r'"\$ROOT/edge/" "\$HOST:\$\{DESTINO_RELEASE\}/edge/"')
     marca = _pos_comando(r"printf '%s\\n' \"\$FW_VERSION\" >")
-    assert swap < marca, "FW_VERSION debe escribirse DESPUÉS del swap (--delete la borraría)"
+    assert rsync < marca, "FW_VERSION debe escribirse DESPUÉS del rsync (--delete la borraría)"
+    assert '> "${NUEVA}/FW_VERSION"' in guion, (
+        "FW_VERSION tiene que vivir DENTRO de la release, o un rollback deja al "
+        "gabinete corriendo una versión y anunciando otra"
+    )
 
 
-def test_el_gate_se_ejecuta_antes_de_reiniciar_el_camino_de_vida() -> None:
+def test_el_gate_se_ejecuta_antes_de_activar_el_camino_de_vida() -> None:
     """El orden que convierte un despliegue roto en un no-evento.
 
     `gpio` es `critical=True` y el supervisor hace fail-fast: si el arranque
     truena, el proceso crashea, cicla gas y puertas (ver la sección del backoff)
-    y el gabinete queda sin alertamiento. Comprobarlo ANTES del restart hace que
-    ese deploy ABORTE con el gabinete todavía CORRIENDO el código viejo.
+    y el gabinete queda sin alertamiento. Comprobarlo ANTES de la activación hace
+    que ese deploy ABORTE con el gabinete todavía CORRIENDO el código viejo.
+
+    [T-2.70] El reinicio ya no lo hace este script: lo hace `canary.sh` al
+    activar. El orden que importa es el mismo, así que el ancla es la llamada.
     """
     gate = _deploy().index("GATE DEL CÓDIGO DESPLEGADO")
-    restart = _pos_comando("systemctl restart takab-edge")
-    assert gate < restart, "el gate corre ANTES de tocar el proceso que actúa"
+    activacion = _pos_comando(r'"\$\{RAIZ\}/bin/canary\.sh"')
+    assert gate < activacion, "el gate corre ANTES de activar nada"
+    codigo = [linea for linea in _deploy().splitlines() if not linea.lstrip().startswith("#")]
+    culpables = [linea for linea in codigo if "systemctl restart takab-edge" in linea]
+    assert not culpables, (
+        "este script no puede reiniciar al cliente por su cuenta: sin el remojo del "
+        f"canary, un proceso que arranca y crashea al segundo 4 sale bueno: {culpables}"
+    )
 
 
 @pytest.mark.parametrize("modulo", ["lgpio", "awsiot"])
@@ -276,23 +297,29 @@ def test_los_entry_points_del_gate_son_los_de_las_unidades_systemd() -> None:
         assert nombre in scripts, f"{nombre}.service lanza un console script que ya no existe"
 
 
-def test_hay_un_prevuelo_antes_del_rsync_destructivo() -> None:
-    """B3. El gate corría DESPUÉS del `rsync --delete` y DESPUÉS de escribir
-    FW_VERSION: al abortar, el disco YA tenía el código nuevo sin verificar.
+def test_ningun_rsync_escribe_sobre_el_arbol_desde_el_que_arranca_el_gabinete() -> None:
+    """[T-2.70] LA PROPIEDAD QUE EL LAYOUT A/B COMPRA, escrita como invariante.
 
-    Ahora el código nuevo aterriza primero en un árbol de ENSAYO y se compila
-    ahí. Ese pre-vuelo es lo único que corre con el árbol vivo todavía intacto,
-    así que tiene que ir ANTES del swap.
+    El defecto que este test vigilaba era temporal —«el pre-vuelo tiene que ir
+    ANTES del rsync destructivo»— y dependía de que hubiera un rsync destructivo.
+    Con A/B no lo hay: el código nuevo aterriza en una release que nadie apunta,
+    y la ruta desde la que arrancan las unidades sólo cambia por un `mv -T` del
+    symlink, dentro de `canary.sh` y después de todos los gates.
+
+    Así que lo que se ancla ahora es más fuerte que un orden: que NINGÚN rsync de
+    este script escriba sobre `${VIVO}`. Mientras eso sea cierto, un aborto en
+    cualquier punto deja el gabinete exactamente como estaba.
     """
     guion = _deploy()
+    destinos = re.findall(r"^\s*rsync[^\n]*(?:\\\n[^\n]*)*", guion, re.MULTILINE)
+    assert destinos, "no hay ningún rsync: ¿sigue este script copiando algo?"
+    # El DESTINO es el último argumento; el origen no importa (la migración A/B
+    # LEE del árbol vivo para conservarlo, que es lo contrario de pisarlo).
+    culpables = [c for c in destinos if c.split()[-1].strip("\"'") in ("${VIVO}/", "${VIVO}")]
+    assert not culpables, f"un rsync escribe sobre el árbol vivo: {culpables}"
     prevuelo = guion.index("compileall")
-    swap = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{ENSAYO\}/\"")
-    assert prevuelo < swap, "el pre-vuelo debe correr ANTES del swap destructivo"
-
-    instantanea = _pos_comando(r"rsync -a --delete --exclude '\.venv' \"\$\{VIVO\}/\"")
-    assert prevuelo < instantanea < swap, (
-        "la instantánea de reversión (edge.prev) se toma entre el pre-vuelo y el swap"
-    )
+    activacion = _pos_comando(r'"\$\{RAIZ\}/bin/canary\.sh"')
+    assert prevuelo < activacion, "el pre-vuelo debe correr ANTES de activar nada"
 
 
 def test_el_prevuelo_compila_el_codigo_desplegado_y_no_otra_cosa() -> None:
@@ -306,8 +333,8 @@ def test_el_prevuelo_compila_el_codigo_desplegado_y_no_otra_cosa() -> None:
     m = re.search(r"^\s*if ! \S+ -m compileall[^\n]*", _deploy(), re.MULTILINE)
     assert m is not None, "el pre-vuelo debe compilar el árbol de ensayo"
     linea = m.group(0)
-    assert '"${ENSAYO}/takab_edge"' in linea, (
-        "compileall debe apuntar al árbol de ENSAYO; sobre el vivo no verifica lo que llega"
+    assert '"${NUEVA}/takab_edge"' in linea, (
+        "compileall debe apuntar a la RELEASE NUEVA; sobre el vivo no verifica lo que llega"
     )
     # Y con el intérprete DEL VENV, no con el del sistema: en el Pi son 3.12 y
     # 3.13, y compilar con el que no ejecuta es un gate que aprueba lo que no
@@ -317,44 +344,45 @@ def test_el_prevuelo_compila_el_codigo_desplegado_y_no_otra_cosa() -> None:
 
 
 def test_el_mensaje_de_aborto_del_prevuelo_puede_prometer_estado_seguro() -> None:
-    """Antes del swap NADA se destruyó, así que aquí el mensaje SÍ puede decir
-    que el gabinete sigue con el código anterior — y debe decirlo."""
+    """Antes de activar NADA se tocó, así que aquí el mensaje SÍ puede decir que
+    el gabinete sigue con el código anterior — y debe decirlo."""
     guion = _deploy()
-    bloque = guion[guion.index("ABORTADO EN PRE-VUELO") : guion.index("INSTANTÁNEA + SWAP")]
-    assert "NADA se ha destruido" in bloque
-    assert "sigue corriendo el código anterior" in bloque
+    bloque = guion[
+        guion.index("el código nuevo no compila") : guion.index("MIGRACIÓN AL LAYOUT A/B")
+    ]
+    assert "NO se ha tocado" in bloque
+    assert "Estado seguro" in bloque
+    assert "sigue apuntando a la release" in bloque
 
 
-def test_el_aborto_posterior_al_swap_ya_no_miente_sobre_el_disco() -> None:
-    """B3, el corazón. El mensaje decía literalmente «El gabinete NO se ha
-    reiniciado y sigue con el código anterior» — y era FALSO: el proceso en
-    memoria sí, pero EL DISCO YA TENÍA EL CÓDIGO NUEVO sin verificar, y el
-    próximo arranque (corte de luz, `Restart=always`, un `systemctl`) lo
-    ejecutaría solo. La falsedad es peligrosa porque invita a irse del sitio.
+def test_el_aborto_del_gate_ya_no_puede_afirmar_un_peligro_que_dejo_de_existir() -> None:
+    """B3, el corazón — y cómo envejece un test cuando el defecto se extingue.
+
+    El mensaje decía literalmente «El gabinete NO se ha reiniciado y sigue con el
+    código anterior», y era FALSO: el proceso en memoria sí, pero EL DISCO YA
+    TENÍA EL CÓDIGO NUEVO sin verificar, y el próximo arranque (corte de luz,
+    `Restart=always`, un `systemctl`) lo ejecutaría solo. La falsedad era
+    peligrosa porque invitaba a irse del sitio.
+
+    [T-2.70] Con el layout A/B esa afirmación se volvió falsa AL REVÉS: la
+    release que falla el gate es inerte y ningún arranque la ejecuta. Repetir el
+    aviso ahora asustaría al operador con un peligro inexistente y —peor— lo
+    entrenaría a no creerse los avisos de este script. Así que se prohíbe por su
+    literal, igual que en su día se prohibió la frase anterior.
     """
     guion = _deploy()
-    bloque = guion[guion.index("ESTADO REAL DEL GABINETE") : _pos_comando("sudo install")]
+    bloque = guion[guion.index("ESTADO DEL GABINETE") : _pos_comando("sudo install")]
 
-    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" in bloque, (
-        "el aborto posterior al swap debe declarar que el disco ya cambió"
+    assert "intacto" in bloque, "el aborto del gate debe declarar que el gabinete no cambió"
+    assert "ningún arranque la ejecutará" in bloque, (
+        "debe decir POR QUÉ ya no hay peligro: la release no está en la ruta de arranque"
     )
-    assert "próximo" in bloque and "arranque" in bloque, (
-        "debe advertir que el PRÓXIMO arranque ejecutará el código sin verificar"
+    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" not in bloque, (
+        "esa advertencia describía el layout in-place; con A/B es una mentira al revés"
     )
-    assert "NO queda en un" in bloque and "estado seguro" in bloque, (
-        "debe decir que el gabinete no queda en estado seguro"
-    )
-    assert "${PREVIO}/" in bloque, "debe dar el comando de restauración desde la instantánea"
-
-    # LA MENTIRA CONCRETA, prohibida por su literal: la frase antigua prometía a
-    # la vez que no se reinició Y que sigue con el código anterior, sin matizar
-    # que eso sólo vale para el proceso en memoria.
     assert "sigue con el código anterior" not in bloque, (
-        "esa frase es la que mentía: tras el swap el disco NO sigue con el código anterior"
+        "y la frase original sigue prohibida por su literal"
     )
-
-
-# ---------------------------------------------------------------- unidades
 
 
 def _unidad(nombre: str) -> str:
@@ -946,7 +974,10 @@ def test_la_identidad_del_gabinete_se_lee_SIEMPRE_con_sudo() -> None:
     Se comprueba sobre el TEXTO del script y no ejecutándolo, porque en el arnés
     ambas formas funcionan: el sandbox no puede reproducir un root:root.
     """
-    texto = _deploy()
+    # Las continuaciones de línea se PEGAN antes de mirar: `sudo -n env \\` y su
+    # `TAKAB_EDGE_ENV_FILE="$ENTORNO"` son UN comando, y separarlos hacía que
+    # este test acusara de leer sin sudo a una invocación que corre como root.
+    texto = re.sub(r"\\\n\s*", " ", _deploy())
     lecturas = [
         linea.strip()
         for linea in texto.splitlines()
@@ -1131,3 +1162,96 @@ def test_la_ventana_de_ARRANQUE_esta_declarada(unidad: str) -> None:
         "systemd mataría a un dueño de pines sano"
     )
     assert "EnvironmentFile=/etc/takab/edge.env" in _unidad("takab-edge")
+
+
+# ---------------------------------------------------------------------------
+# [T-2.70] El agente de canary/reversión, como ARTEFACTO
+# ---------------------------------------------------------------------------
+
+_CANARY = _RAIZ / "deploy" / "edge" / "canary.sh"
+
+
+def test_el_reversor_no_importa_una_sola_linea_del_codigo_que_sustituye() -> None:
+    """LA RAZÓN DE SER DE ESTE ARCHIVO, escrita como test.
+
+    El caso que un rollback existe para cubrir es «la versión nueva NO ARRANCA».
+    Si el reversor viviera dentro de esa versión —o dependiera de su venv, o
+    importara `takab_edge`— sería justo el caso en que no puede correr. Por eso
+    es bash, no toca el paquete y `deploy.sh` lo instala en `${RAIZ}/bin`, fuera
+    de toda release.
+    """
+    # Sólo CÓDIGO: los comentarios sí nombran el paquete, y deben — es donde se
+    # explica por qué el symlink apunta a `<release>/edge` y no a la release.
+    codigo = [
+        linea for linea in _CANARY.read_text().splitlines() if not linea.lstrip().startswith("#")
+    ]
+    assert not [linea for linea in codigo if "takab_edge" in linea], (
+        "el reversor EJECUTA algo del paquete que sustituye: si esa versión no "
+        "importa, no queda nadie que revierta"
+    )
+    assert not [linea for linea in codigo if "/.venv/bin/python" in linea], (
+        "depende del intérprete de una release; un venv a medio sincronizar lo deja mudo"
+    )
+    deploy = _deploy()
+    assert "canary.sh" in deploy and "/bin/canary.sh" in deploy, (
+        "deploy.sh tiene que INSTALAR el reversor fuera de las releases"
+    )
+
+
+def test_el_reversor_no_reinicia_jamas_al_dueno_de_los_pines() -> None:
+    """Regla de oro 4, sobre el TEXTO y no sólo sobre el comportamiento: una
+    rama nueva que nombrara `takab-gpio` en un `systemctl restart` costaría un
+    ciclo de `GAS_VALVE` y `DOOR_RETAINER` y una ventana sin sirena, y podría
+    colarse por un camino que los tests de comportamiento no recorran.
+    """
+    lineas = [
+        linea
+        for linea in _CANARY.read_text().splitlines()
+        if not linea.lstrip().startswith("#") and "systemctl" in linea
+    ]
+    culpables = [linea for linea in lineas if "takab-gpio" in linea]
+    assert not culpables, f"el reversor toca al dueño de los pines: {culpables}"
+
+
+def test_el_gate_del_interprete_vigila_lo_que_ProtectHome_oculta() -> None:
+    """[T-2.70 · CAMPO 2026-08-23] El DEFAULT de la costura, anclado por texto.
+
+    `TAKAB_DEPLOY_RUTAS_OCULTAS` existe para que el sandbox pueda demostrar que
+    el gate muerde. Una costura así puede perder los dientes de dos formas —que
+    el default encoja, o que alguien la deje vacía— y las dos serían silenciosas:
+    el despliegue seguiría saliendo verde y el gabinete moriría con 203/EXEC al
+    reiniciar. Los tres prefijos son exactamente los que `ProtectHome=true`
+    esconde (systemd.exec(5)).
+    """
+    guion = _deploy()
+    m = re.search(r'^RUTAS_OCULTAS="\$\{TAKAB_DEPLOY_RUTAS_OCULTAS:-\}"', guion, re.MULTILINE)
+    assert m is not None, "la costura del gate del intérprete desapareció"
+    respaldo = re.search(r'RUTAS_OCULTAS="([^"]*)"\s*$', guion, re.MULTILINE)
+    defaults = [linea for linea in guion.splitlines() if 'RUTAS_OCULTAS="/home' in linea]
+    assert defaults, f"el default dejó de nombrar /home: {respaldo}"
+    for prefijo in ("/home", "/root", "/run/user"):
+        assert prefijo in defaults[0], (
+            f"`{prefijo}` salió del default y ProtectHome=true lo sigue ocultando"
+        )
+
+
+def test_el_interprete_de_uv_se_instala_FUERA_de_lo_que_ProtectHome_oculta() -> None:
+    """La otra mitad del mismo defecto: no basta con RECHAZAR un venv malo, hay
+    que crear uno bueno.
+
+    `ssh host "bash -s"` es un shell NO interactivo y NO de login: no lee
+    `.profile` ni `.bashrc`, así que ninguna variable del usuario llega al bloque
+    remoto. Hasta esta ficha, que el intérprete del Pi viviera en
+    `/opt/takab/.python` dependía de que alguien hubiera exportado
+    `UV_PYTHON_INSTALL_DIR` a mano en julio — un hecho guardado en un directorio
+    y en ningún archivo, que sobrevivió sólo porque el venv nunca se reconstruyó.
+    """
+    guion = _deploy()
+    assert "export UV_PYTHON_INSTALL_DIR=" in guion, (
+        "el despliegue no declara dónde instala uv su intérprete: vuelve a depender "
+        "de que alguien lo exportara a mano una vez"
+    )
+    idx_export = guion.index("export UV_PYTHON_INSTALL_DIR")
+    idx_sync = _pos_comando(r"uv sync \$\{EDGE_EXTRA_FLAGS\}")
+    assert idx_export < idx_sync, "se declara DESPUÉS del `uv sync`: llega tarde"
+    assert "/opt/takab/.python" in guion, "el default tiene que estar fuera de /home"

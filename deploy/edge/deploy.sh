@@ -3,21 +3,24 @@
 #
 # Hasta ahora el código llegaba a /opt/takab por un rsync manual sin versionar
 # (el gap lo documentó la auditoría de Fase 1.6). Este script ES el mecanismo:
-#   1. rsync de edge/ y shared/schemas/ a un árbol de ENSAYO (`edge.incoming`),
-#      SIN tocar el árbol vivo;
-#   2. PRE-VUELO sobre el árbol de ensayo: `compileall` del código recién
-#      copiado. Abortar aquí no destruye NADA — el disco sigue con lo viejo;
-#   3. INSTANTÁNEA del árbol vivo (`edge.prev`) —si HAY árbol vivo: en el primer
-#      despliegue de un gabinete no lo hay, y entonces NO hay vuelta atrás que
-#      ofrecer— y sólo entonces el swap destructivo + marca de FW_VERSION;
-#   4. `uv sync` con los extras de EDGE_EXTRAS dentro del Pi;
-#   5. GATE: importa el CÓDIGO DESPLEGADO (`takab_edge.supervisor` y
+#   1. rsync de edge/ y shared/schemas/ a una RELEASE NUEVA
+#      (`releases/<ts>-<sha>/`), que nadie apunta todavía;
+#   2. PRE-VUELO sobre esa release: `compileall` del código recién copiado.
+#      Abortar aquí no toca el gabinete — la release queda inerte;
+#   3. MIGRACIÓN al layout A/B si el gabinete todavía tiene `edge` como
+#      directorio (una vez por gabinete, y sólo en ventana declarada), y marca
+#      de FW_VERSION dentro de la release;
+#   4. `uv sync` con los extras de EDGE_EXTRAS DENTRO de la release: cada
+#      versión lleva su propio venv, que es lo que hace COMPLETA la vuelta atrás;
+#   5. GATE: importa el CÓDIGO DE LA RELEASE (`takab_edge.supervisor` y
 #      `takab_edge.gpio.__main__` — los dos entry points de las unidades) y sus
-#      dependencias críticas (lgpio, awsiot). Aborta SIN reiniciar si falla;
+#      dependencias críticas (lgpio, awsiot). Aborta SIN activar nada si falla;
 #   6. instala/refresca las unidades systemd versionadas, HABILITA (o
 #      deshabilita) la unidad del dueño de los pines según lo que el `edge.env`
 #      de ESTE gabinete declare en `TAKAB_EDGE_GPIO_OWNER`, la levanta con
-#      `start` (no-op si ya corre) y reinicia takab-edge;
+#      `start` (no-op si ya corre) y ACTIVA la release por `bin/canary.sh`, que
+#      repunta el symlink, reinicia al cliente, mide salud SOSTENIDA y vuelve
+#      atrás solo si falla; después, la poda de releases antiguas;
 #   7. verificación: PROPIEDAD DE LOS PINES — quién sostiene el cerrojo del GPIO
 #      Y si ese dueño corre el código que acabamos de desplegar (ESTO sí puede
 #      tumbar el despliegue) + últimas líneas del journal (INFORMATIVO: su fallo
@@ -41,18 +44,36 @@
 # positivos, y atrapa el error de sintaxis — que es destructivo y frecuente —
 # cuando todavía no se ha destruido nada.
 #
-# [T-2.70] LO QUE ESTE SCRIPT TODAVÍA NO ES. El despliegue sigue siendo IN-PLACE
-# sobre una instalación EDITABLE del venv (`_editable_impl_takab_edge.pth` apunta
-# al árbol fuente), así que el swap del paso 3 reescribe el código BAJO LOS PIES
-# del proceso vivo. En consecuencia:
-#   · La reversibilidad es PARCIAL y sólo de código fuente: `edge.prev` permite
-#     restaurar el árbol anterior (el paso 3 lo deja escrito), pero NO revierte
-#     lo que el `uv sync` haya hecho en el `.venv`. Un rollback completo exige
-#     volver a correr este script desde el commit anterior.
-#   · Reiniciar al DUEÑO DE LOS PINES es una ACTUACIÓN FÍSICA sobre el
+# [T-2.70] DESPLIEGUE A/B: EL CÓDIGO NUEVO NO PISA AL VIEJO. Hasta esta ficha el
+# despliegue era IN-PLACE sobre una instalación EDITABLE del venv, así que el
+# swap reescribía el código BAJO LOS PIES del proceso vivo y la reversibilidad
+# era PARCIAL: `edge.prev` devolvía el fuente, pero NO lo que `uv sync` hubiera
+# hecho en el `.venv`. Un rollback completo exigía volver a correr este script
+# desde el commit anterior — o sea, con un enlace a internet y una persona.
+#
+# Ahora cada despliegue aterriza ENTERO en `${RAIZ}/releases/<id>/`, con SU
+# PROPIO `.venv`, y `${RAIZ}/edge` es un SYMLINK que decide cuál corre. El
+# `ExecStart` de las dos unidades no cambia —sigue siendo
+# `/opt/takab/edge/.venv/bin/…`—: lo que cambia es a dónde resuelve ese `edge`.
+# En consecuencia:
+#   · La vuelta atrás es COMPLETA (fuente + dependencias) y cuesta un `mv -T`
+#     del symlink más un `restart` del cliente. La decide y la ejecuta
+#     `${RAIZ}/bin/canary.sh` EN EL GABINETE, no la nube: regla de oro 2.
+#   · El código nuevo se verifica ANTES de existir para systemd. Un pre-vuelo
+#     que aborta ya no deja «el disco con código nuevo sin verificar que el
+#     próximo arranque ejecutaría»: deja una release inerte que nadie apunta.
+#   · Reiniciar al DUEÑO DE LOS PINES sigue siendo una ACTUACIÓN FÍSICA sobre el
 #     edificio: `GpioController._on_stop()` llama `drive_all_safe()`, que
 #     de-energiza los relés — con el fail-safe por defecto eso CIERRA EL GAS y
-#     SUELTA LOS RETENEDORES DE PUERTA, y el arranque los repone.
+#     SUELTA LOS RETENEDORES DE PUERTA, y el arranque los repone. Por eso la
+#     activación sólo reinicia al CLIENTE, y el dueño sigue exigiendo
+#     `--ventana-de-mantenimiento` declarada.
+#
+# LO QUE SIGUE SIN SER: una actualización que el gabinete SE BAJA solo. El
+# artefacto sigue viajando por `rsync` desde la máquina del operador; lo que la
+# nube gobierna es la ACTIVACIÓN (comando firmado) y el orden del canary, no la
+# distribución. Un OTA de verdad —artefacto firmado en S3 que el gabinete tira—
+# es otra ficha.
 #
 # [T-2.70.a·D3] QUIÉN ES EL DUEÑO DE LOS PINES YA NO ES UNA CONSTANTE. Aquí se
 # afirmaba COMO HECHO que `takab-edge` es el proceso que sostiene el reflejo
@@ -70,14 +91,18 @@
 #     reinicia** salvo que se declare `--ventana-de-mantenimiento`, y si se queda
 #     con código anterior el despliegue NO se declara bueno (paso 7).
 # Este script no adivina cuál de los dos es: lo LEE del gabinete.
-# Lo que quitaría las tres cosas es un despliegue A/B: sincronizar a
-# /opt/takab/releases/<sha>/ con su propio venv, verificarlo, y solo entonces
-# repuntar el symlink /opt/takab/edge (el ExecStart de las unidades NO cambia) y
-# reiniciar; el rollback pasa a ser `ln -sfn` + restart. NO se implementó en
-# T-2.70 a propósito: cambia el arranque del camino de vida y el agente que
-# revierte tendría que vivir FUERA de takab-edge (si takab-edge no arranca, no
-# queda nadie que revierta). Eso exige acreditación en el Pi real —el gate G-01—
-# y esta tarea no podía tocarlo.
+# El despliegue A/B es lo que quita las tres cosas, y ES lo que hace este script
+# desde T-2.70: sincroniza a /opt/takab/releases/<id>/ con su propio venv, lo
+# verifica y sólo entonces repunta el symlink /opt/takab/edge (el ExecStart de
+# las unidades NO cambia). El agente que revierte vive FUERA de cualquier
+# release —`${RAIZ}/bin/canary.sh`, sin una línea de `takab_edge`— porque si
+# takab-edge no arranca no puede quedar en él el único que sabe volver atrás.
+#
+# ⚠ ACREDITACIÓN PENDIENTE: esto cambia el ARRANQUE del camino de vida. El
+# primer despliegue A/B sobre un gabinete real migra `${RAIZ}/edge` de
+# directorio a symlink, y eso no se declara bueno con tests en verde: exige el
+# gate G-01 (restart en frío del Pi con las dos unidades volviendo solas). Ver
+# `takab-docs/runbooks/RUNBOOK-sesion-de-vida.md`.
 #
 # Credenciales/identidad NO viajan por aquí: /etc/takab/{certs,edge.env} las
 # instala infra/scripts/provision_gateway.sh (regla de oro 6).
@@ -90,9 +115,10 @@
 #     `DOOR_RETAINER` (2 transiciones por pin, medidas en
 #     edge/tests/test_deploy_artifacts.py) y abre una ventana sin sirena. Sólo
 #     con el edificio avisado. Sin esta bandera, el dueño NUNCA se reinicia.
-#     Sólo tiene efecto con `TAKAB_EDGE_GPIO_OWNER=gpio`: con el dueño todavía
-#     dentro de `takab-edge` (el defecto), el `restart takab-edge` de todo
-#     despliegue YA es el reinicio del dueño y la bandera no añade nada.
+#     Con `TAKAB_EDGE_GPIO_OWNER=gpio` reinicia ADEMÁS a `takab-gpio` para que
+#     el dueño estrene el código nuevo; con el dueño todavía dentro de
+#     `takab-edge` (el defecto), la activación YA reinicia al dueño y entonces
+#     la bandera pasa a ser OBLIGATORIA — sin ella `canary.sh` se niega.
 set -euo pipefail
 
 # [T-2.70.a·D3·B2] La bandera va por delante del posicional (mismo patrón que
@@ -125,7 +151,6 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 RAIZ_REMOTA="${TAKAB_REMOTE_ROOT:-/opt/takab}"
 # Las rutas del árbol vivo y de la instantánea las deriva el bloque remoto de
 # esta misma raíz; aquí sólo hace falta el destino del rsync de ensayo.
-ARBOL_ENSAYO="${RAIZ_REMOTA}/edge.incoming"
 
 # [T-2.70.a·D1.5] Cerrojo de PROPIEDAD DE LOS PINES del gabinete: el archivo
 # sobre el que el dueño del GPIO sostiene un flock exclusivo (ver el paso 7 y
@@ -189,25 +214,58 @@ case "$FW_VERSION" in
 *-dirty) echo "  OJO: árbol sucio; el gabinete reportará '${FW_VERSION}' (no es un commit reproducible)" ;;
 esac
 
-# --- 1. ENSAYO: el código nuevo aterriza SIN tocar el árbol vivo -------------
-# `--delete` aquí es sobre `edge.incoming`, no sobre lo que el gabinete ejecuta:
-# limpia restos de un deploy anterior abortado. El árbol vivo no se toca hasta
-# que el pre-vuelo del paso 2 pase.
+# [T-2.70] EL ID DE LA RELEASE. Lleva la marca de tiempo POR DELANTE del sha, y
+# las dos partes hacen falta:
+#   · el sha solo NO es único. `git describe --always --dirty` devuelve la MISMA
+#     cadena para cualquier árbol sucio, así que dos despliegues seguidos de una
+#     sesión de trabajo caerían en el mismo directorio — y si ese directorio es
+#     el que está corriendo, el rsync reescribe el código bajo los pies del
+#     proceso vivo, que es exactamente el defecto que el layout A/B elimina.
+#     Ni siquiera con un árbol limpio: re-desplegar el mismo commit pisaría la
+#     release activa.
+#   · la marca delante hace que el orden alfabético sea el CRONOLÓGICO, que es
+#     lo que la poda y cualquier `ls` necesitan para no mentir.
+# UTC y no hora local: un gabinete cuyo huso cambie de estación reordenaría sus
+# propias releases.
+RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)-${FW_VERSION}"
+DESTINO_RELEASE="${RAIZ_REMOTA}/releases/${RELEASE_ID}"
+
+# --- 1. LA RELEASE NUEVA: aterriza donde nadie la ejecuta --------------------
+# `--delete` aquí es sobre un directorio RECIÉN CREADO, no sobre lo que el
+# gabinete ejecuta: el `RELEASE_ID` lleva marca de tiempo, así que ninguna
+# release se escribe dos veces y ningún rsync puede tocar la que está corriendo.
+# El árbol vivo no se toca hasta el paso 6, y sólo si los gates pasan.
 # `rsync` crea el ÚLTIMO componente del destino, no los intermedios: sin esto,
 # un gabinete recién aprovisionado (sin ${RAIZ_REMOTA}/shared) muere con
 # «mkdir … failed: No such file or directory». Lo destapó el sandbox de
 # edge/tests/test_deploy_sh.py, que parte de una raíz vacía; contra el Pi actual
 # no se veía porque los directorios ya existían de despliegues anteriores.
-ssh "$HOST" "mkdir -p '${RAIZ_REMOTA}/shared'"
+ssh "$HOST" "mkdir -p '${DESTINO_RELEASE}/edge' '${DESTINO_RELEASE}/shared' '${RAIZ_REMOTA}/bin'"
 
-echo "→ sincronizando edge/ y shared/schemas/ a ${HOST}:${ARBOL_ENSAYO} (ensayo)"
+# [T-2.70] LA RELEASE ES AUTOCONTENIDA: `edge/` y `shared/schemas/` viajan
+# DENTRO de ella, no a un `${RAIZ}/shared` compartido entre versiones. Si los
+# contratos vivieran fuera, una vuelta atrás devolvería el código y NO los
+# schemas contra los que ese código valida — media reversión, que es la peor.
+#
+# Y por eso el symlink apunta a `<release>/edge` y no a `<release>`:
+# `takab_edge/schemas.py` resuelve los contratos como
+# `Path(__file__).resolve().parents[2] / "shared" / "schemas"`, así que el
+# paquete tiene que colgar de un directorio que TENGA un `shared` hermano.
+echo "→ sincronizando edge/ y shared/schemas/ a ${HOST}:${DESTINO_RELEASE}"
 rsync -az --delete \
   --exclude '.venv' \
   --exclude '__pycache__' \
   --exclude '.pytest_cache' \
   --exclude '.ruff_cache' \
-  "$ROOT/edge/" "$HOST:${ARBOL_ENSAYO}/"
-rsync -az --delete "$ROOT/shared/schemas/" "$HOST:${RAIZ_REMOTA}/shared/schemas.incoming/"
+  "$ROOT/edge/" "$HOST:${DESTINO_RELEASE}/edge/"
+rsync -az --delete "$ROOT/shared/schemas/" "$HOST:${DESTINO_RELEASE}/shared/schemas/"
+
+# El agente de canary/reversión va a `${RAIZ}/bin`, FUERA de toda release: es lo
+# único que puede revertir a una versión que no arranca, así que no puede vivir
+# dentro de la versión que se está sustituyendo. Se refresca en cada despliegue
+# —es un archivo, no un servicio— y no depende de `takab_edge` ni del venv.
+rsync -az "$ROOT/deploy/edge/canary.sh" "$HOST:${RAIZ_REMOTA}/bin/canary.sh"
+ssh "$HOST" "chmod 0755 '${RAIZ_REMOTA}/bin/canary.sh'"
 
 echo "→ pre-vuelo, swap, dependencias, gate, unidades y reinicio en ${HOST}"
 # El bloque remoto va en un heredoc CITADO ('REMOTO'): nada se expande aquí.
@@ -215,15 +273,18 @@ echo "→ pre-vuelo, swap, dependencias, gate, unidades y reinicio en ${HOST}"
 # remota, como variables de entorno del `bash -s` remoto, para que cada valor
 # viva en UN solo sitio.
 ssh "$HOST" \
-  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' TAKAB_DEPLOY_PLAZO_PROPIEDAD='${PLAZO_PROPIEDAD}' TAKAB_EDGE_ENV_FILE='${ARCHIVO_ENTORNO}' TAKAB_DEPLOY_VENTANA='${VENTANA_MANTENIMIENTO}' bash -s" <<'REMOTO'
+  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' RELEASE_ID='${RELEASE_ID}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' TAKAB_DEPLOY_PLAZO_PROPIEDAD='${PLAZO_PROPIEDAD}' TAKAB_EDGE_ENV_FILE='${ARCHIVO_ENTORNO}' TAKAB_DEPLOY_VENTANA='${VENTANA_MANTENIMIENTO}' TAKAB_DEPLOY_RUTAS_OCULTAS='${TAKAB_DEPLOY_RUTAS_OCULTAS:-}' TAKAB_UV_PYTHON_DIR='${TAKAB_UV_PYTHON_DIR:-}' bash -s" <<'REMOTO'
 set -euo pipefail
 # SSH no interactivo no carga el PATH de login: uv vive en ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 
 RAIZ="${TAKAB_REMOTE_ROOT:-/opt/takab}"
+# `VIVO` es la ruta que los `ExecStart` de las dos unidades nombran, y desde
+# T-2.70 es un SYMLINK a `<release>/edge`. Nada de lo que sigue lo escribe: lo
+# repunta `canary.sh`, y sólo tras verificar la release nueva.
 VIVO="${RAIZ}/edge"
-ENSAYO="${RAIZ}/edge.incoming"
-PREVIO="${RAIZ}/edge.prev"
+RELEASES="${RAIZ}/releases"
+NUEVA="${RELEASES}/${RELEASE_ID}/edge"
 ENTORNO="${TAKAB_EDGE_ENV_FILE:-/etc/takab/edge.env}"
 VENTANA="${TAKAB_DEPLOY_VENTANA:-0}"
 
@@ -301,61 +362,115 @@ DUENO_CONFIGURADO="$(sudo -n sed -n 's/^[[:space:]]*TAKAB_EDGE_GPIO_OWNER=//p' "
 [ -n "$DUENO_CONFIGURADO" ] || DUENO_CONFIGURADO=edge
 echo "→ dueño de los pines declarado por ${ENTORNO}: ${DUENO_CONFIGURADO}"
 
-echo "→ pre-vuelo: compilando el código recién copiado (nada destruido todavía)"
-if ! "$PY_PREVUELO" -m compileall -q "${ENSAYO}/takab_edge" "${ENSAYO}/simulators" >/dev/null; then
+echo "→ pre-vuelo: compilando el código recién copiado (nada activado todavía)"
+if ! "$PY_PREVUELO" -m compileall -q "${NUEVA}/takab_edge" "${NUEVA}/simulators" >/dev/null; then
   echo "✗ ABORTADO EN PRE-VUELO: el código nuevo no compila." >&2
-  echo "  NADA se ha destruido: el árbol vivo (${VIVO}) sigue intacto en disco," >&2
-  echo "  el gabinete sigue corriendo el código anterior y el próximo arranque" >&2
-  echo "  también ejecutará el código anterior. Estado seguro." >&2
-  echo "  El árbol rechazado quedó en ${ENSAYO} para inspección." >&2
+  # [T-2.70] ESTE MENSAJE YA NO TIENE LETRA PEQUEÑA. Con el despliegue in-place
+  # había que distinguir «no se reinició» de «el disco ya tiene el código nuevo
+  # sin verificar», porque el próximo arranque lo habría ejecutado. Con A/B la
+  # release rechazada es INERTE: nadie la apunta, ni ahora ni tras un corte de
+  # luz.
+  echo "  El gabinete NO se ha tocado: ${VIVO} sigue apuntando a la release" >&2
+  echo "  anterior y ningún arranque ejecutará ésta. Estado seguro." >&2
+  echo "  La release rechazada quedó en ${NUEVA} para inspección." >&2
   exit 1
 fi
 
-# --- 3. INSTANTÁNEA + SWAP: a partir de aquí el disco YA cambió --------------
-# `edge.prev` es la única reversibilidad de código que existe hoy (el despliegue
-# es in-place sobre un venv editable). No revierte el `.venv`, pero convierte
-# "no hay vuelta atrás" en "hay vuelta atrás del fuente".
-echo "→ instantánea del árbol vivo en ${PREVIO}"
-if [ -d "$VIVO" ]; then
-  mkdir -p "$PREVIO"
-  rsync -a --delete --exclude '.venv' "${VIVO}/" "${PREVIO}/"
+# --- 3. MIGRACIÓN AL LAYOUT A/B (una sola vez por gabinete) ------------------
+# Todo gabinete desplegado hasta T-2.70 tiene `${RAIZ}/edge` como DIRECTORIO de
+# verdad. El layout A/B lo necesita como SYMLINK, y ese cambio no es un detalle
+# de disco: cambia el ARRANQUE DEL CAMINO DE VIDA, porque es la ruta que los
+# `ExecStart` de las dos unidades nombran.
+#
+# Por eso la migración EXIGE ventana declarada, y por dos razones distintas:
+#   · entre el `mv` del directorio y el `mv -T` del symlink hay un hueco de
+#     milisegundos en que `${RAIZ}/edge` NO EXISTE. Un import perezoso del
+#     proceso vivo justo ahí lo tumba (y `Restart=always` lo repone, con lo que
+#     eso cuesta en un gabinete cuyo dueño de pines sea `takab-edge`);
+#   · el árbol heredado se conserva como release para poder VOLVER a él, y
+#     estrenarlo exige un reinicio que resuelva la ruta nueva.
+#
+# El árbol heredado se copia ENTERO —incluido su `.venv`— y no se poda: es la
+# única vuelta atrás que este gabinete tiene el día de su primera activación
+# A/B, y ofrecer una que no existe es el defecto que este script ya corrigió una
+# vez para `edge.prev`.
+if [ -e "$VIVO" ] && [ ! -L "$VIVO" ]; then
+  if [ "$VENTANA" != 1 ]; then
+    echo "✗ ABORTADO: este gabinete todavía tiene ${VIVO} como DIRECTORIO." >&2
+    echo "  Migrarlo al layout A/B cambia la ruta desde la que arrancan las dos" >&2
+    echo "  unidades, así que no se hace sin ventana: vuelve a lanzar con" >&2
+    echo "  --ventana-de-mantenimiento, con el edificio avisado." >&2
+    echo "  La release nueva ya está en ${NUEVA} y es inerte: no se pierde nada." >&2
+    exit 1
+  fi
+  HEREDADA="${RELEASES}/heredada-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "→ MIGRACIÓN A/B: conservando el árbol vivo como ${HEREDADA}"
+  mkdir -p "${HEREDADA}/edge" "${HEREDADA}/shared/schemas"
+  rsync -a "${VIVO}/" "${HEREDADA}/edge/"
+  [ -d "${RAIZ}/shared/schemas" ] &&
+    rsync -a "${RAIZ}/shared/schemas/" "${HEREDADA}/shared/schemas/"
+  mv -T "$VIVO" "${RAIZ}/edge.premigracion"
+  ln -sfn "${HEREDADA}/edge" "${VIVO}.nuevo"
+  mv -T "${VIVO}.nuevo" "$VIVO"
+  # El original ya está copiado y el symlink resuelve a la copia, así que los
+  # `sys.path` del proceso vivo —que nombran `${RAIZ}/edge` literalmente—
+  # vuelven a resolver. Se borra para no dejar dos copias en una microSD.
+  rm -rf "${RAIZ}/edge.premigracion"
+fi
+
+# ¿HAY VUELTA ATRÁS? Con A/B la pregunta ya no es «¿se tomó instantánea?» sino
+# «¿a qué release apunta el symlink AHORA y sigue entera?». Se responde antes de
+# tocar nada, porque de ella depende el mensaje que el operador se lleva.
+RELEASE_ANTERIOR="$(readlink "$VIVO" 2>/dev/null || true)"
+if [ -n "$RELEASE_ANTERIOR" ] && [ -x "${RELEASE_ANTERIOR}/.venv/bin/takab-edge" ]; then
   HAY_INSTANTANEA=1
 else
-  # PRIMER despliegue de este gabinete (o alguien borró ${VIVO}): no hay árbol
-  # anterior del que tomar instantánea, así que `${PREVIO}` NO EXISTE. Se anota
-  # aquí porque el mensaje de aborto de más abajo ofrecía el comando de
-  # restauración PASE LO QUE PASE — y prometer una vuelta atrás inexistente es
-  # la misma familia de fallo que el «sigue con el código anterior» que este
-  # script ya tuvo que corregir: un mensaje que afirma un estado seguro que
-  # nadie comprobó, e invita al operador a irse del sitio.
-  echo "  (primer despliegue: no hay árbol vivo del que tomar instantánea)"
+  echo "  (primer despliegue A/B de este gabinete: no hay release anterior completa)"
   HAY_INSTANTANEA=0
 fi
 
-echo "→ swap: ${ENSAYO} → ${VIVO}"
-mkdir -p "$VIVO"
-# `--exclude .venv` protege el venv del Pi TAMBIÉN del `--delete` (rsync no borra
-# en destino lo que está excluido).
-rsync -a --delete --exclude '.venv' "${ENSAYO}/" "${VIVO}/"
-# [T-2.70.a·D3·B2] EL INSTANTE EN QUE EL CÓDIGO CAMBIÓ BAJO LOS PIES DE QUIEN
-# CORRE. El despliegue es in-place sobre un venv EDITABLE, así que a partir de
-# esta línea todo proceso vivo tiene en memoria código que ya no está en disco.
-# El paso 7 compara este epoch con el arranque del dueño de los pines: quien
-# arrancó ANTES es, por construcción, quien corre el código anterior.
-MARCA_SWAP="$(date +%s)"
-mkdir -p "${RAIZ}/shared"
-rsync -a --delete "${RAIZ}/shared/schemas.incoming/" "${RAIZ}/shared/schemas/"
-
-# DESPUES del swap: `--delete` sobre edge/ lo borraria si se escribiera antes. El edge
-# lo lee en cada heartbeat y lo publica; la nube lo persiste en `gateways.fw_version`.
-# Sin esto la version se anota A MANO y se queda obsoleta en silencio en el siguiente
-# despliegue — que es exactamente lo que paso hasta el 2026-07-30.
 echo "→ marcando la versión desplegada (FW_VERSION=${FW_VERSION})"
-printf '%s\n' "$FW_VERSION" > "${VIVO}/FW_VERSION"
+printf '%s\n' "$FW_VERSION" > "${NUEVA}/FW_VERSION"
 
-cd "$VIVO"
+# [T-2.70·CAMPO 2026-08-23] DÓNDE INSTALA `uv` SU INTÉRPRETE, Y POR QUÉ ES UN
+# ASUNTO DEL CAMINO DE VIDA.
+#
+# Las dos unidades declaran `ProtectHome=true`, o sea que para ellas `/home`,
+# `/root` y `/run/user` NO EXISTEN. Un venv cuyo `bin/python` sea un symlink a
+# `~/.local/share/uv/python/...` arranca perfectamente desde una sesión ssh y
+# muere con **203/EXEC — No such file or directory** cuando lo lanza systemd: el
+# ejecutable existe, el que no existe (en ese namespace) es su intérprete.
+#
+# ESTO PASÓ DE VERDAD, la primera noche del layout A/B. Hasta entonces el venv
+# del Pi era UNO y se reusaba desde julio, con su intérprete en
+# `/opt/takab/.python` porque alguien exportó esta variable A MANO aquella vez.
+# El hecho sobrevivía en un directorio y en ningún archivo. Con A/B cada release
+# estrena venv, así que `uv` tuvo que elegir intérprete por primera vez en meses
+# — y se lo instaló en `$HOME`. El gabinete quedó SIN DUEÑO DE PINES: sin
+# sirena, sin cierre de gas y sin retenedores, con las dos unidades ciclando.
+#
+# `ssh host "bash -s"` es un shell NO interactivo y NO de login: no lee
+# `.profile` ni `.bashrc`, así que ninguna variable del usuario llega aquí. Por
+# eso se declara AQUÍ, en el único sitio que gobierna todos los despliegues.
+export UV_PYTHON_INSTALL_DIR="${TAKAB_UV_PYTHON_DIR:-}"
+[ -n "$UV_PYTHON_INSTALL_DIR" ] || export UV_PYTHON_INSTALL_DIR=/opt/takab/.python
+
+# Lo que `ProtectHome=true` le quita a las dos unidades. Es una VARIABLE por la
+# misma razón que `TAKAB_REMOTE_ROOT`: el sandbox de edge/tests/test_deploy_sh.py
+# no puede montar un `/home` de mentira, y sin poder apuntar el gate a un prefijo
+# suyo no habría forma de demostrar que muerde. En producción nadie la exporta y
+# valen los tres prefijos reales, anclados por texto en
+# test_deploy_artifacts.py::test_el_gate_del_interprete_vigila_lo_que_ProtectHome_oculta
+# — para que la costura no pueda perder los dientes en silencio.
+RUTAS_OCULTAS="${TAKAB_DEPLOY_RUTAS_OCULTAS:-}"
+[ -n "$RUTAS_OCULTAS" ] || RUTAS_OCULTAS="/home /root /run/user"
+
+cd "$NUEVA"
 # takab-edge corre como root y deja __pycache__ de root DENTRO del venv; sin
-# esto, el uv sync del usuario falla con Permission denied en cada deploy.
+# esto, el uv sync del usuario falla con Permission denied en cada deploy. En
+# una release RECIÉN creada no hay venv todavía y esto es un no-op; sigue
+# haciendo falta para el caso en que un despliegue anterior abortara a mitad y
+# dejara la release a medio construir.
 [ -d .venv ] && sudo chown -R "$USER":"$USER" .venv
 # --- 4. Extras del Pi real (ver EDGE_EXTRAS arriba). `uv sync` PODA lo que no
 # esté en el set: sincronizar de menos desinstala, no es un no-op.
@@ -393,41 +508,48 @@ elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main
 elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ] || [ ! -x .venv/bin/takab-gpioctl ]; then
   echo "✗ ABORTADO: faltan los ejecutables que lanzan las unidades systemd." >&2
   FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio,gpioctl}"
+elif [ -n "$(
+  INTERPRETE="$(readlink -f .venv/bin/python 2>/dev/null || true)"
+  if [ -z "$INTERPRETE" ]; then echo oculto; fi
+  for _pref in $RUTAS_OCULTAS; do
+    case "$INTERPRETE" in "${_pref}"/*) echo oculto ;; esac
+  done
+)" ]; then
+  # [T-2.70·CAMPO] EL GATE QUE FALTABA, y que ningún test en verde podía dar.
+  # Los tres gates anteriores corren como el usuario del despliegue, con /home
+  # ENTERO visible: por construcción no pueden ver el único fallo que mató al
+  # gabinete la primera noche del layout A/B. Un venv es "importable" aquí y
+  # 203/EXEC allí, porque `ProtectHome=true` le quita a las unidades justo el
+  # directorio donde `uv` había puesto el intérprete.
+  #
+  # Se comprueba la RUTA RESUELTA y no el symlink: lo que systemd tiene que
+  # poder abrir es el binario final.
+  echo "✗ ABORTADO: el intérprete del venv vive donde las unidades NO pueden verlo." >&2
+  FALLO_GATE="$(readlink -f .venv/bin/python 2>/dev/null || echo '(ilegible)') — ProtectHome=true oculta /home, /root y /run/user"
 else
   FALLO_GATE=""
 fi
 
 if [ -n "$FALLO_GATE" ]; then
-  # LA VERDAD, que el mensaje anterior no decía. El script decía «el gabinete NO
-  # se ha reiniciado y sigue con el código anterior» — falso y peligroso: el
-  # proceso EN MEMORIA sigue siendo el viejo, pero EL DISCO YA TIENE EL NUEVO.
+  # [T-2.70] EL ESTADO QUE ESTE MENSAJE DESCRIBE CAMBIÓ, Y A MEJOR. Con el
+  # despliegue in-place había que avisar de que «el disco ya tiene el código
+  # nuevo sin verificar» y de que el próximo corte de luz lo ejecutaría. Con
+  # A/B la release que acaba de fallar el gate es INERTE: nadie la apunta.
   echo "  Causa: ${FALLO_GATE}" >&2
   echo "" >&2
-  echo "  ESTADO REAL DEL GABINETE — léelo antes de irte:" >&2
-  echo "  · NO se reinició: el proceso EN MEMORIA sigue siendo el código anterior." >&2
-  echo "  · Pero EL DISCO YA TIENE EL CÓDIGO NUEVO, sin verificar. El próximo" >&2
-  echo "    arranque —un corte de luz, un crash con Restart=always, un" >&2
-  echo "    systemctl— ejecutará ESTE código. El gabinete NO queda en un" >&2
-  echo "    estado seguro si te vas ahora." >&2
+  echo "  ESTADO DEL GABINETE: intacto." >&2
+  echo "  · ${VIVO} sigue apuntando a ${RELEASE_ANTERIOR:-(nada)}." >&2
+  echo "  · La release ${RELEASE_ID} NO se activó y ningún arranque la ejecutará." >&2
+  echo "  · No hay nada que revertir: el gabinete nunca llegó a estrenarla." >&2
   echo "" >&2
-  # La vuelta atrás SÓLO se ofrece si de verdad se tomó la instantánea. La
-  # versión anterior imprimía el comando siempre, incluido el primer despliegue
-  # de un gabinete —donde `${PREVIO}` no existe— y el operador se llevaba una
-  # promesa falsa: el `rsync` fallaría con "No such file or directory" cuando ya
-  # se hubiera ido del sitio.
-  if [ "$HAY_INSTANTANEA" = 1 ]; then
-    echo "  Para devolverlo al código anterior (fuente; el .venv NO se revierte):" >&2
-    echo "    sudo rsync -a --delete --exclude .venv ${PREVIO}/ ${VIVO}/" >&2
-    echo "    cd ${VIVO} && uv sync ${EDGE_EXTRA_FLAGS} && sudo systemctl restart takab-edge" >&2
-    echo "  Un rollback COMPLETO (fuente + venv) es volver a correr deploy.sh desde" >&2
-    echo "  el commit anterior." >&2
-  else
-    echo "  NO HAY VUELTA ATRÁS de código: era el PRIMER despliegue de este gabinete" >&2
-    echo "  (no existía ${VIVO}), así que no se tomó instantánea y ${PREVIO} no existe." >&2
-    echo "  No hay código anterior al que volver. Las salidas son: desplegar un" >&2
-    echo "  commit sano, o borrar ${VIVO} para dejar el gabinete SIN código en vez de" >&2
-    echo "  con código sin verificar que el próximo arranque ejecutaría." >&2
+  if [ "$HAY_INSTANTANEA" != 1 ]; then
+    # El caso que sí sigue siendo malo: un gabinete que TODAVÍA no tiene una
+    # release completa a la que apuntar. No es que el despliegue haya dejado
+    # algo peor — es que no había nada antes.
+    echo "  OJO: este gabinete no tiene ninguna release anterior completa, así" >&2
+    echo "  que sigue SIN código bueno. Despliega un commit sano antes de irte." >&2
   fi
+  echo "  La release rechazada queda en ${NUEVA} para inspección." >&2
   exit 1
 fi
 
@@ -494,6 +616,56 @@ fi
 # dueño con el código anterior indefinidamente. La salida no es elegir a ciegas
 # por el operador: es que lo declare, y que el paso 7 se niegue a decir ✓ si no
 # lo hizo y hacía falta.
+# [T-2.70] 6.c — LA ACTIVACIÓN LA HACE EL CANARY, NO ESTE SCRIPT.
+#
+# Aquí había un `systemctl restart takab-edge` a secas, y con él el despliegue
+# terminaba en el instante en que systemd forkeaba el proceso. Un proceso que
+# arranca y crashea al segundo 4 se declaraba bueno y el operador se iba del
+# sitio con el gabinete ciclando. `${RAIZ}/bin/canary.sh` repunta el symlink,
+# reinicia al CLIENTE, mide salud sostenida —unidad activa, MainPID sin
+# relevo, pines con dueño, panel contestando— y vuelve atrás solo si falla.
+#
+# Vive fuera de toda release a propósito: si la versión nueva no arranca, el
+# reversor no puede ser parte de ella.
+MARCA_ACTIVACION="$(date +%s)"
+# `--atendido` porque esto lo lanzó una persona por ssh y está leyendo esta
+# salida: en un gabinete cuyo dueño de pines siga siendo `takab-edge`, el canary
+# AVISA del ciclo de gas y retenedores y sigue, que es lo que este script ya
+# hacía antes de la ficha. Un comando firmado de la nube NO pasa esta bandera, y
+# allí el mismo gabinete exige ventana declarada.
+ARGS_CANARY=(activar "$RELEASE_ID" --atendido)
+[ "$VENTANA" = 1 ] && ARGS_CANARY+=(--ventana-de-mantenimiento)
+ESTADO_CANARY=0
+sudo -n env \
+  TAKAB_REMOTE_ROOT="$RAIZ" \
+  TAKAB_CANARY_ESTADO="${TAKAB_CANARY_ESTADO:-/var/lib/takab/canary}" \
+  TAKAB_EDGE_GPIO_LOCK_PATH="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}" \
+  TAKAB_EDGE_ENV_FILE="$ENTORNO" \
+  "${RAIZ}/bin/canary.sh" "${ARGS_CANARY[@]}" || ESTADO_CANARY=$?
+
+case "$ESTADO_CANARY" in
+0) : ;; # activada y sana
+2)
+  echo "✗ DESPLIEGUE NO VERIFICADO: el canary no pudo MEDIR la salud." >&2
+  echo "  La release ${RELEASE_ID} quedó puesta y NO se declara buena." >&2
+  exit 1
+  ;;
+*)
+  echo "✗ DESPLIEGUE REVERTIDO: la release ${RELEASE_ID} no pasó el canary." >&2
+  echo "  Veredicto: $(sudo -n cat "${TAKAB_CANARY_ESTADO:-/var/lib/takab/canary}/veredicto.json" 2>/dev/null || echo '(ilegible)')" >&2
+  echo "  Diagnóstico: journalctl -u takab-edge -n 80 --no-pager" >&2
+  exit 1
+  ;;
+esac
+
+# 6.d — EL DUEÑO DE LOS PINES, SÓLO EN VENTANA Y SÓLO DESPUÉS.
+#
+# Va DESPUÉS de la activación y no antes, al revés que en el layout in-place:
+# el `ExecStart` del dueño resuelve por el mismo symlink, así que reiniciarlo
+# antes del repunte lo dejaría estrenando la versión VIEJA — un ciclo de gas y
+# retenedores a cambio de nada. Y va después del canary y no en paralelo porque
+# si la release nueva no pasa el remojo no hay ninguna razón para tocar los
+# pines: la vuelta atrás ya ocurrió y el dueño sigue con el código bueno.
 if [ "$DUENO_CONFIGURADO" = gpio ] && [ "$VENTANA" = 1 ]; then
   echo "→ VENTANA DE MANTENIMIENTO declarada: reiniciando al DUEÑO DE LOS PINES"
   echo "  (esto CICLA GAS_VALVE y DOOR_RETAINER y abre una ventana sin sirena;"
@@ -501,7 +673,30 @@ if [ "$DUENO_CONFIGURADO" = gpio ] && [ "$VENTANA" = 1 ]; then
   sudo systemctl restart takab-gpio
 fi
 
-sudo systemctl restart takab-edge
+# 6.e — PODA. Un gabinete con microSD no puede acumular releases con su venv.
+# Se conservan las `TAKAB_DEPLOY_RELEASES_VIVAS` más recientes, y ADEMÁS —pase
+# lo que pase— la activa y la anterior: son las dos que una vuelta atrás
+# necesita, y podarlas convertiría la poda en el defecto que el canary existe
+# para evitar. La release que acaba de fallar un canary tampoco se borra aquí:
+# es la evidencia.
+RETENCION="${TAKAB_DEPLOY_RELEASES_VIVAS:-3}"
+ACTIVA_AHORA="$(readlink "$VIVO" 2>/dev/null || true)"
+ls -1dt "${RELEASES}"/*/ 2>/dev/null | tail -n +$((RETENCION + 1)) | while read -r vieja; do
+  vieja="${vieja%/}"
+  case "$ACTIVA_AHORA" in "${vieja}/edge") continue ;; esac
+  case "$RELEASE_ANTERIOR" in "${vieja}/edge") continue ;; esac
+  # [T-2.70·CAMPO 2026-08-23] LA HEREDADA NO SE PODA NUNCA, y la razón es que la
+  # RECENCIA es el criterio equivocado para ella. Es el árbol que este gabinete
+  # llevaba corriendo ANTES de que existiera el layout A/B: meses de operación
+  # real detrás, y la única versión de la que se sabe que este edificio sobrevive
+  # a un corte de luz. Todas las releases nuevas son, por definición, más
+  # recientes que ella, así que una poda por fecha se la lleva la primera — y
+  # eso pasó la misma noche del estreno: tres releases en disco, todas del mismo
+  # día, y ninguna con historia. Ocupa un venv; la red de seguridad vale más.
+  case "${vieja##*/}" in heredada-*) continue ;; esac
+  echo "  podando release antigua: ${vieja}"
+  rm -rf "$vieja"
+done
 
 # --- 7. VERIFICACIÓN: ¿QUIÉN ES DUEÑO DE LOS PINES? --------------------------
 # [T-2.70.a·D1.5] Aquí decía `systemctl is-active takab-edge`, y eso mide EL
@@ -754,11 +949,11 @@ if [ "$PROPIEDAD" = con_dueno ]; then
   if [ "$ARRANQUE_MEDIDO" != 1 ]; then
     DUENO_RANCIO=1
     CAMBIOS_DEL_DUENO="(no se pudo LEER el arranque del dueño en /proc/${DUENO_PID}/stat)"
-  elif [ "$INICIO_DUENO" -ge "$MARCA_SWAP" ]; then
-    : # arrancó DESPUÉS del swap: corre lo que acabamos de poner
+  elif [ "$INICIO_DUENO" -ge "$MARCA_ACTIVACION" ]; then
+    : # arrancó DESPUÉS del repunte: corre lo que acabamos de activar
   elif [ "$HAY_INSTANTANEA" != 1 ]; then
     DUENO_RANCIO=1
-    CAMBIOS_DEL_DUENO="(no hay instantánea del árbol anterior con la que comparar)"
+    CAMBIOS_DEL_DUENO="(no hay release anterior con la que comparar)"
   else
     # `-c` con un guion suelto: sin escribir archivos en el gabinete y con el
     # intérprete DEL VENV, que es el que ejecuta el ExecStart de la unidad.
@@ -766,6 +961,8 @@ if [ "$PROPIEDAD" = con_dueno ]; then
 # HUELLA-DEL-DUENO-DE-LOS-PINES
 import importlib, pathlib, sys
 
+# `.resolve()` atraviesa el symlink: `vivo` acaba siendo la release ACTIVA
+# y `previo` la anterior, que es justo la comparación que interesa.
 vivo = pathlib.Path(sys.argv[1]).resolve()
 previo = pathlib.Path(sys.argv[2]).resolve()
 importlib.import_module("takab_edge.gpio.__main__")
@@ -784,7 +981,7 @@ for modulo in list(sys.modules.values()):
     if nuevo != viejo:
         cambiados.append(str(relativa))
 print("DUENO-CAMBIO " + " ".join(sorted(cambiados)) if cambiados else "DUENO-IGUAL")
-' "$VIVO" "$PREVIO" 2>/dev/null || true)"
+' "$VIVO" "$RELEASE_ANTERIOR" 2>/dev/null || true)"
     case "$HUELLA" in
     DUENO-IGUAL) : ;; # mismo código: no hay nada que reiniciar
     DUENO-CAMBIO*)

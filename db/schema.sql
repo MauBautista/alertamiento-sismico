@@ -215,9 +215,15 @@ CREATE INDEX idx_sensors_site ON sensors (site_id);
 CREATE TABLE site_ground_refs (
   site_id          uuid NOT NULL REFERENCES sites ON DELETE CASCADE,
   ground_sensor_id uuid NOT NULL REFERENCES sensors,
+  -- [T-2.84.e] La lectura LITERAL de la regla de oro 5. El aislamiento ya era
+  -- real antes (un `EXISTS` contra `sites`, con el cruce de tenants verificado);
+  -- lo que faltaba era la columna, y con ella una exención menos en el censo.
+  tenant_id        uuid NOT NULL REFERENCES tenants(tenant_id),
   distance_m       numeric,
   PRIMARY KEY (site_id, ground_sensor_id)
 );
+
+CREATE INDEX idx_site_ground_refs_tenant ON site_ground_refs (tenant_id);
 
 -- ---------------------------------------------------------------------------
 -- 3. REGLAS Y UMBRALES (versionadas)
@@ -748,14 +754,22 @@ CREATE POLICY sensors_admin ON sensors FOR ALL
 
 ALTER TABLE site_ground_refs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE site_ground_refs FORCE  ROW LEVEL SECURITY;
+-- [T-2.84.e] Por COLUMNA, y con los CUATRO caminos ENUMERADOS. El `EXISTS`
+-- anterior no llevaba condición de tenant: bajo RLS, ese SELECT anidado veía
+-- exactamente lo que `sites_read` permite —propio tenant, TAKAB interno,
+-- `gov_operator` sobre tenants `gov_shared`, y los grants de metadatos de
+-- T-1.73—. Escribir `tenant_id = app_tenant_id()` a secas habría QUITADO las
+-- tres últimas sin que nada se quejara: una regresión de visibilidad camuflada
+-- en una migración de «sólo añadir una columna».
 CREATE POLICY sgr_read ON site_ground_refs FOR SELECT
-  USING (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id));
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal()
+         OR app_gov_can_see(tenant_id) OR app_can_view_meta(tenant_id));
+-- NO hay `sgr_admin`, y la ausencia se conserva a propósito: antes tampoco
+-- existía, así que TAKAB interno LEE esta tabla pero no la ESCRIBE. Ampliar eso
+-- es una decisión de permisos, no un efecto colateral de añadir una columna.
 CREATE POLICY sgr_write ON site_ground_refs FOR ALL
-  USING (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id
-                   AND s.tenant_id = app_tenant_id()) AND app_role() <> 'gov_operator')
-  WITH CHECK (EXISTS (SELECT 1 FROM sites s WHERE s.site_id = site_ground_refs.site_id
-                        AND s.tenant_id = app_tenant_id()) AND app_role() <> 'gov_operator');
--- (la visibilidad de sgr_read hereda el RLS de `sites` vía el EXISTS)
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 
 ALTER TABLE rule_sets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rule_sets FORCE  ROW LEVEL SECURITY;
@@ -933,7 +947,8 @@ CREATE TABLE commands (
   -- [T-1.60] 'drill_start'/'drill_stop' (0015): simulacro institucional — SOLO
   -- se emiten vía /drills (el endpoint público de comandos no los acepta).
   channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer','system')),
-  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test','drill_start','drill_stop')),
+  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test',
+              'drill_start','drill_stop','update_activate','update_rollback')),
   event_id    text,
   nonce       text NOT NULL UNIQUE,
   issued_at   timestamptz NOT NULL DEFAULT now(),
@@ -972,14 +987,7 @@ CREATE TABLE gateway_config_state (
   version      integer NOT NULL,
   payload      jsonb NOT NULL,
   sig          text NOT NULL,
-  published_at timestamptz NOT NULL DEFAULT now(),
-  -- [T-2.148] «Miré y era el mismo catálogo». NO es `published_at`: aquél dice
-  -- cuándo se publicó por última vez, y su virtud es no moverse cuando no se
-  -- publica. Sin esta columna, con el job de D-06 «corre y no hay novedad» sería
-  -- indistinguible de «el job murió» — el modo de fallo que esa decisión quería
-  -- evitar al automatizar contra una fuente de terceros.
-  -- NULL = no se ha comprobado NUNCA, que es un hecho distinto de «hace mucho».
-  last_checked_at timestamptz
+  published_at timestamptz NOT NULL DEFAULT now()
 );
 GRANT SELECT ON gateway_config_state TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON gateway_config_state TO takab_ingest;
@@ -1000,7 +1008,21 @@ CREATE TABLE gateway_catalog_state (
   version      integer NOT NULL,
   payload      jsonb NOT NULL,
   sig          text NOT NULL,
-  published_at timestamptz NOT NULL DEFAULT now()
+  published_at timestamptz NOT NULL DEFAULT now(),
+  -- [T-2.148] «Miré y era el mismo catálogo». NO es `published_at`: aquél dice
+  -- cuándo se publicó por última vez, y su virtud es no moverse cuando no se
+  -- publica. Sin esta columna, con el job de D-06 «corre y no hay novedad» sería
+  -- indistinguible de «el job murió» — el modo de fallo que esa decisión quería
+  -- evitar al automatizar contra una fuente de terceros.
+  -- NULL = no se ha comprobado NUNCA, que es un hecho distinto de «hace mucho».
+  --
+  -- ⚠️ Hasta el 2026-08-22 esta columna estaba en `gateway_config_state`, la tabla
+  -- de al lado. La migración 0045 SÍ la puso aquí, así que las dos fuentes de
+  -- verdad del DDL divergían: la de config era huérfana (cero lectores) y una base
+  -- creada desde este fichero reventaba en `_CATALOG_TOUCH_SQL`. No se veía porque
+  -- los tests arrancan por `alembic upgrade head` y nada comparaba las dos fuentes;
+  -- ahora lo hace `api/tests/test_schema_espejo_de_migraciones.py`.
+  last_checked_at timestamptz
 );
 GRANT SELECT, INSERT, UPDATE ON gateway_catalog_state TO takab_app;
 
@@ -1350,6 +1372,70 @@ CREATE POLICY drill_sites_write ON drill_sites FOR INSERT
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 CREATE POLICY drill_sites_admin ON drill_sites FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- [T-2.70] CANARY POR COHORTES. «Un despliegue a toda la flota a la vez es un
+-- incidente a toda la flota a la vez»: el gabinete ya sabe activar con remojo y
+-- volver atrás solo, pero sin disciplina de ORDEN entre gabinetes el canary es
+-- una buena intención que se salta quien tiene prisa.
+--
+-- POR TENANT a propósito. Actualizar toda la flota de golpe es justo lo que esta
+-- ficha existe para impedir, así que forzar un rollout por cliente no es una
+-- limitación del modelo: es la política, escrita donde no se puede saltar.
+--
+-- `target_fw` se GUARDA y no se deriva al leer: es el SHA que
+-- `gateways.fw_running` tiene que declarar para que el canary cuente como
+-- confirmado, y congelarlo evita que dos consultas discrepen sobre qué se
+-- estaba esperando.
+CREATE TABLE fleet_rollouts (
+  rollout_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  release_id   text NOT NULL,
+  target_fw    text NOT NULL,
+  created_by   uuid NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  state        text NOT NULL DEFAULT 'canary'
+               CHECK (state IN ('canary','desplegado','abortado')),
+  finished_at  timestamptz,
+  abort_reason text
+);
+
+CREATE TABLE fleet_rollout_sites (
+  rollout_id   uuid NOT NULL REFERENCES fleet_rollouts(rollout_id) ON DELETE CASCADE,
+  site_id      uuid NOT NULL REFERENCES sites(site_id),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  phase        text NOT NULL CHECK (phase IN ('canary','resto')),
+  command_id   uuid REFERENCES commands(command_id),  -- NULL = todavía sin activar
+  activated_at timestamptz,
+  PRIMARY KEY (rollout_id, site_id)
+);
+
+CREATE INDEX idx_fleet_rollouts_tenant_created
+  ON fleet_rollouts (tenant_id, created_at DESC);
+
+GRANT SELECT, INSERT, UPDATE ON fleet_rollouts TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON fleet_rollout_sites TO takab_app;
+
+-- NO hay política de ESCRITURA por tenant, y la ausencia es la decisión: quien
+-- escribe aquí porta `deploy_firmware`, que sólo tiene `takab_superadmin` — o
+-- sea `app_is_takab_internal()`. Una política por `tenant_id` abriría la tabla a
+-- un `tenant_admin` cuya sesión coincidiera en tenant, que es justo el rol al
+-- que la matriz le niega empujar código. La LECTURA sí es por tenant: un cliente
+-- puede ver que a sus gabinetes se les está actualizando, y ocultárselo sería la
+-- clase de opacidad que la regla de oro 7 persigue.
+ALTER TABLE fleet_rollouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fleet_rollouts FORCE  ROW LEVEL SECURITY;
+CREATE POLICY fleet_rollouts_read ON fleet_rollouts FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY fleet_rollouts_admin ON fleet_rollouts FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+ALTER TABLE fleet_rollout_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fleet_rollout_sites FORCE  ROW LEVEL SECURITY;
+CREATE POLICY fleet_rollout_sites_read ON fleet_rollout_sites FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY fleet_rollout_sites_admin ON fleet_rollout_sites FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
 
 -- Metering diario para billing (T-1.24): agregado por tenant/día; gb_approx
 -- es row-count×avg (APROXIMACIÓN documentada; calibrar con pg_column_size).
@@ -1899,16 +1985,20 @@ CREATE TABLE privacy_consents (
   -- sellado en `privacy_subject_secrets`, que SÍ se puede borrar — y ahí está la
   -- decisión entera: ejercer ARCO borra aquella fila y ésta no se toca.
   --
-  -- El CHECK admite las dos formas de manera PERMANENTE, no transitoria: las
-  -- filas anteriores llevan el número en claro y NO SE PUEDEN migrar (esta tabla
-  -- es append-only por trigger, y desactivarlo para reescribirlas sería abrir el
-  -- hueco que D-07 existe para no abrir).
+  -- [T-2.164] UNA SOLA FORMA: el índice. El CHECK admitía TAMBIÉN el número en
+  -- claro «de manera PERMANENTE, no transitoria», por las filas anteriores a
+  -- T-2.150 — y mientras lo admitía, **la ausencia de esas filas no se podía
+  -- distinguir de que nadie las hubiera mirado**. Se contaron (2026-08-24): CERO
+  -- en local, cero en `takab_test` y cero en la nube dev. Y ningún camino de
+  -- código puede crearlas: `privacy/store.py` sella el sujeto antes de insertar
+  -- y LANZA si faltan los secretos, en vez de caer a texto en claro.
+  --
+  -- La LECTURA sigue tolerando la forma vieja (`store._formas()` busca por las
+  -- dos): si apareciera una fila así en un entorno que nadie censó, se
+  -- encontraría igual. Lo que ya no se puede es ESCRIBIR una nueva.
   CONSTRAINT pc_sujeto_coherente CHECK (
     (subject_kind = 'user'   AND user_sub IS NOT NULL AND subject_ref = user_sub::text) OR
-    (subject_kind = 'msisdn' AND user_sub IS     NULL AND (
-        subject_ref ~ '^[0-9a-f]{64}$'
-        OR subject_ref ~ '^\+[1-9][0-9]{7,14}$'
-    ))
+    (subject_kind = 'msisdn' AND user_sub IS     NULL AND subject_ref ~ '^[0-9a-f]{64}$')
   ),
   -- 'repo' = aviso de plataforma (artefacto de git, sin fila); 'tenant' = fila.
   -- Sin este CHECK, un consentimiento podría declarar un origen que no tiene.

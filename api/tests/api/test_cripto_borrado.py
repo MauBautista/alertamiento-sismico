@@ -334,3 +334,63 @@ def test_sin_secretos_NO_se_degrada_a_texto_en_claro(monkeypatch: pytest.MonkeyP
         crypto.lookup_ref(ajustes, tenant_id=au.DB_TENANT_PRIV, msisdn=MSISDN)
     with pytest.raises(crypto.PrivacyCryptoUnavailable):
         crypto.seal(ajustes, msisdn=MSISDN)
+
+
+async def test_la_BASE_ya_no_acepta_un_consentimiento_con_el_numero_en_claro(limpio) -> None:
+    """[T-2.164] El invariante deja de depender de que nadie se equivoque.
+
+    `T-2.150` selló el sujeto, pero el `CHECK` siguió admitiendo **las dos
+    formas** por las filas anteriores — y mientras las admitía, **la ausencia de
+    filas viejas no se podía distinguir de que nadie las hubiera mirado**. Se
+    contaron (cero en local, cero en `takab_test`, cero en la nube dev) y se
+    apretó: escribir el número en claro ahora lo rechaza la BASE, no una
+    convención del código.
+
+    Se prueba por la puerta de atrás —`INSERT` directo— a propósito: por la
+    puerta de delante `store.record_decision()` sella antes de insertar, así que
+    nunca podría producir esta fila. Lo que se está anclando es que el defecto
+    sea **inexpresable**, no que el camino feliz lo evite.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        with pytest.raises(Exception) as exc:
+            await conn.execute(
+                text(
+                    "INSERT INTO privacy_consents "
+                    "(tenant_id, purpose, subject_kind, subject_ref, decision, "
+                    " notice_source, notice_digest, notice_version, notice_locale, via, actor_sub) "
+                    "VALUES (CAST(:t AS uuid), 'whatsapp_alerts', 'msisdn', '+525512345678', "
+                    "        'accept', 'repo', :d, 1, 'es-MX', 'out_of_band', :a)"
+                ),
+                {
+                    "t": au.DB_TENANT_PRIV,
+                    "d": "a" * 64,
+                    "a": "d712fb34-446b-4545-a45c-c50f177a612d",
+                },
+            )
+    assert "pc_sujeto_coherente" in str(exc.value), (
+        f"lo rechazó, pero no el CHECK del sujeto: {exc.value}"
+    )
+
+
+async def test_la_forma_SELLADA_sigue_entrando(limpio) -> None:
+    """La contraparte que hace no-vacuo al test de arriba: si el `CHECK` apretado
+    rechazara también el índice, el rechazo del número en claro no probaría
+    nada — estaría rechazando todo."""
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO privacy_consents "
+                "(tenant_id, purpose, subject_kind, subject_ref, decision, "
+                " notice_source, notice_digest, notice_version, notice_locale, via, actor_sub) "
+                "VALUES (CAST(:t AS uuid), 'whatsapp_alerts', 'msisdn', :ref, "
+                "        'accept', 'repo', :d, 1, 'es-MX', 'out_of_band', :a)"
+            ),
+            {
+                "t": au.DB_TENANT_PRIV,
+                "ref": "b" * 64,
+                "d": "a" * 64,
+                "a": "d712fb34-446b-4545-a45c-c50f177a612d",
+            },
+        )
