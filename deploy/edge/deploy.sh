@@ -685,6 +685,15 @@ ls -1dt "${RELEASES}"/*/ 2>/dev/null | tail -n +$((RETENCION + 1)) | while read 
   vieja="${vieja%/}"
   case "$ACTIVA_AHORA" in "${vieja}/edge") continue ;; esac
   case "$RELEASE_ANTERIOR" in "${vieja}/edge") continue ;; esac
+  # [T-2.70·CAMPO 2026-08-23] LA HEREDADA NO SE PODA NUNCA, y la razón es que la
+  # RECENCIA es el criterio equivocado para ella. Es el árbol que este gabinete
+  # llevaba corriendo ANTES de que existiera el layout A/B: meses de operación
+  # real detrás, y la única versión de la que se sabe que este edificio sobrevive
+  # a un corte de luz. Todas las releases nuevas son, por definición, más
+  # recientes que ella, así que una poda por fecha se la lleva la primera — y
+  # eso pasó la misma noche del estreno: tres releases en disco, todas del mismo
+  # día, y ninguna con historia. Ocupa un venv; la red de seguridad vale más.
+  case "${vieja##*/}" in heredada-*) continue ;; esac
   echo "  podando release antigua: ${vieja}"
   rm -rf "$vieja"
 done

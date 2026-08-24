@@ -1633,3 +1633,32 @@ def test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa(gabinete, tmp_
     assert "ProtectHome" in r.stderr
     assert gabinete.centinela_intacto(), "el gabinete debe seguir en la release anterior"
     assert "systemctl restart" not in gabinete.registro(), "reinició pese a fallar el gate"
+
+
+def test_la_poda_JAMAS_se_lleva_la_release_heredada(gabinete) -> None:
+    """[T-2.70 · CAMPO 2026-08-23] La recencia es el criterio equivocado para
+    la heredada, y costó la red de seguridad la misma noche del estreno.
+
+    Es el árbol que el gabinete llevaba corriendo ANTES del layout A/B: meses de
+    operación real detrás y la única versión de la que se sabe que ese edificio
+    sobrevive a un corte de luz. Todas las releases nuevas son, por definición,
+    más recientes, así que una poda por fecha se la lleva la primera — y así el
+    gabinete se quedó con tres releases del mismo día y ninguna con historia.
+    """
+    import os
+
+    heredada = gabinete.releases / "heredada-20250101T000000Z" / "edge"
+    heredada.mkdir(parents=True)
+    os.utime(heredada.parent, (1_600_000_000, 1_600_000_000))  # la MÁS antigua
+    for i in range(3):
+        otra = gabinete.releases / f"20250601T00000{i}Z-vieja" / "edge"
+        otra.mkdir(parents=True)
+        os.utime(otra.parent, (1_700_000_000 + i, 1_700_000_000 + i))
+
+    r = gabinete.desplegar(TAKAB_DEPLOY_RELEASES_VIVAS="1")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert heredada.exists(), "la poda se llevó la única release con historia real"
+    assert sorted(gabinete.releases.glob("*vieja")) == [], (
+        "premisa: la poda SÍ tenía que llevarse las otras antiguas"
+    )
