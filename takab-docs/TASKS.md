@@ -5075,13 +5075,57 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
   - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
-### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · BLOQUEADA por T-2.70.a
+### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · DESBLOQUEADA (`D-04`, 2026-08-16)
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
+
+> ### EDGE CERRADO EN SOFTWARE (2026-08-23) — falta la mitad de NUBE y el gate físico
+>
+> **Lo que existe y está medido.** El despliegue dejó de ser in-place: cada versión aterriza
+> entera en `/opt/takab/releases/<ts>-<sha>/` **con su propio venv y sus propios contratos**, y
+> `/opt/takab/edge` pasó a ser un **symlink** — el `ExecStart` de las dos unidades no cambia,
+> cambia a dónde resuelve. La activación la hace `/opt/takab/bin/canary.sh`, que vive **FUERA de
+> toda release**: el caso que un rollback existe para cubrir es «la versión nueva no arranca», y
+> un reversor dentro de esa versión es justo el que no puede correr.
+>
+> **El criterio de salud, que es lo que separa esto de un `restart`.** `systemctl is-active` a
+> los 3 s daba por bueno un proceso que arranca y crashea al segundo 4 (refinamiento 3 de
+> `T-2.70.a`). El remojo sostiene CUATRO señales a la vez: unidad activa, **MainPID sin relevo**
+> —un crash-loop se delata ahí y en ningún otro sitio—, **pines con dueño** (el mismo `flock` del
+> paso 7) y **panel contestando**, que es «llegó a servir» y no sólo «arrancó».
+>
+> **«Medido mal» ≠ «no medido», y de eso depende que el reversor no haga daño.** Revertir es
+> reiniciar y reiniciar cuesta una ventana sin sirena, así que un `flock` ilegible o un `curl`
+> ausente dejan la versión puesta, salen con código propio y lo GRITAN — jamás un ✓, jamás un
+> ciclo de gas por un dato que nadie leyó.
+>
+> **Lo que decide si se puede activar NO es el gabinete: es quién lo ordenó.** En un gabinete
+> cuyo dueño de pines siga dentro de `takab-edge`, activar cicla `GAS_VALVE` y `DOOR_RETAINER`.
+> Atendido (`deploy.sh`, con una persona leyendo la salida) avisa y sigue —es lo que ya hacía—;
+> **remoto exige ventana declarada**, que es como llegará el comando firmado. Revertir no exige
+> nada: ahí el reinicio no es el daño, es la cura.
+>
+> **⚠️ LA MIGRACIÓN AL LAYOUT A/B ES FÍSICA Y NO SE CIERRA CON TESTS EN VERDE.** El primer
+> despliegue A/B de un gabinete convierte `/opt/takab/edge` de directorio a symlink: cambia la
+> **ruta desde la que arranca el camino de vida**. `deploy.sh` se niega a hacerlo sin
+> `--ventana-de-mantenimiento`, conserva el árbol heredado ENTERO como release —con su venv—
+> para que exista vuelta atrás, y **exige `G-01`** (restart en frío del Pi con las dos unidades
+> volviendo solas). `G-01` está SIN ACREDITAR: es la mitad de esta ficha que no se puede cerrar
+> desde aquí.
+>
+> Anclado en `edge/tests/test_canary_sh.py` (16, el script corrido de verdad contra un gabinete
+> de mentira) + `test_deploy_sh.py` (35) + `test_deploy_artifacts.py` (66). Tres mutaciones
+> verificadas: quitar la comparación de MainPID, quitar la `-T` del `mv` y quitar la guarda de
+> ventana ponen en rojo los tests que las vigilan.
+
 - **Criterios de aceptación:**
-  - [ ] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
+  - [x] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
         sirena (regla de oro 4); una ventana de actualización no puede ser una ventana de
-        desprotección. **BLOQUEADO: hoy este criterio es VACÍO** — ver la nota de abajo y
-        `T-2.70.a`, que es quien lo desbloquea.
+        desprotección. **Cerrado en software:** la activación reinicia sólo al CLIENTE, y que
+        ninguna rama del reversor nombre al dueño está anclado por comportamiento y por texto
+        (`test_jamas_se_reinicia_al_dueno_de_los_pines`,
+        `test_el_reversor_no_reinicia_jamas_al_dueno_de_los_pines`). El reinicio del dueño sigue
+        exigiendo ventana declarada y ahora va DESPUÉS del repunte — antes estrenaría la versión
+        vieja y ciclaría gas y retenedores a cambio de nada. **Falta el gate físico.**
   - [x] **El criterio de éxito que un canary necesita, y que no existía.** El latido MENTÍA
         sobre qué código corre: `fw_version()` relee el archivo `FW_VERSION` en cada snapshot
         y `deploy.sh` lo escribe ANTES de reiniciar, así que el proceso **VIEJO** publicaba la
@@ -5090,10 +5134,19 @@ veinte es imposible; con veinte y una regresión, es peligroso.
         congela el SHA **al importar** (`running_version()`), publica los dos, la ingesta
         persiste `gateways.fw_running` y la nube deriva el estado `SIN REINICIAR`.
   - [ ] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
-        vez es un incidente a toda la flota a la vez.
-  - [ ] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal").
-  - [ ] Comando firmado + nonce + ack (regla de oro 8).
-  - [ ] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior.
+        vez es un incidente a toda la flota a la vez. **A MEDIAS:** el remojo POR GABINETE está
+        hecho y medido; lo que falta es la COHORTE — que la nube ordene el primero, espere su
+        señal de éxito (`fw_running`, T-2.69) y sólo entonces suelte el resto.
+  - [x] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal"). El
+        criterio son las cuatro señales del remojo, y la vuelta atrás es COMPLETA —código y
+        dependencias— porque cada release lleva su venv.
+  - [ ] Comando firmado + nonce + ack (regla de oro 8). **Falta la mitad de nube:** el gabinete
+        ya sabe activar y revertir por orden (`canary.sh activar|revertir`), y la guarda remota
+        —ventana obligatoria sin operador delante— ya está puesta esperándolo.
+  - [x] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior. Cubierto
+        en sus cuatro formas: no arranca, arranca y CICLA, arranca y el panel no contesta, y
+        arranca sin dueño de pines. Más el caso honesto: revertido y **sigue** enfermo ⇒ eso ya
+        no es la actualización, es el gabinete, y sale con código propio.
 
 > **DECISIÓN RATIFICADA (2026-08-07) — separar los procesos.** El criterio 1 no se podía
 > cumplir ni incumplir: `takab-edge.service` declara `Conflicts=takab-gpio.service` porque
