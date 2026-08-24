@@ -198,6 +198,13 @@ def _esperar(condicion, timeout: float = 3.0) -> bool:  # noqa: ANN001
 #: exigir igualdad ahí sería exigir que el transporte no tarde nada.
 _CAMPOS_NO_COMPARABLES: dict[str, str] = {
     "age_s": "es la EDAD medida por el lector; en la costura local siempre es 0.0",
+    # [T-2.165] Lo rellena QUIEN LEE comparando lo que el dueño dijo saber con lo
+    # que este cliente espera, así que en la costura LOCAL es siempre vacío (no
+    # hay dos versiones) y en la del socket depende del otro lado. Compararlo
+    # contra el dueño sería preguntarle algo que él no puede responder.
+    "campos_desconocidos": (
+        "lo deriva el lector de la declaración del dueño; el dueño no lo conoce"
+    ),
 }
 
 #: Campos que SÍ se comparan, pero con tolerancia, porque CORREN SOLOS entre las

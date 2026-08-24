@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **252** · `[~]` **9** · `[ ]` **42**
+**Conteo de tareas:** total **303** · `[x]` **253** · `[~]` **9** · `[ ]` **41**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -6289,7 +6289,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `test_la_forma_SELLADA_sigue_entrando` — sin la segunda, la primera podría estar pasando porque
 > el `CHECK` rechaza todo. Verificado por mutación: relajar el `CHECK` pone el primero en rojo.
 
-### [ ] T-2.165 · El layout A/B abre una ventana en la que el cliente no ve al dueño de los pines — `SOFTWARE`
+### [x] T-2.165 · El layout A/B abre una ventana en la que el cliente no ve al dueño de los pines — `SOFTWARE` · COMPLETA (2026-08-24)
 - **Componente:** edge (`pinlink`) · **Depende de:** T-2.70 · **Hallazgo del gabinete real (2026-08-23)**
 - **El hueco, medido en `gw-dev-0001`.** El despliegue A/B actualiza al **cliente**
   (`takab-edge`) y deja al **dueño de los pines** (`takab-gpio`) con el código anterior hasta una
@@ -6310,13 +6310,44 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   `False` sería exactamente la mentira que evita. El defecto no es la estrictez: es que **un dueño
   MÁS VIEJO se trata igual que un contrato ROTO**, y son dos cosas distintas.
 - **Criterios de aceptación:**
-  - [ ] La instantánea del `pinlink` **lleva versión**, y el cliente sabe distinguir «campo que
-        esta versión no manda» de «campo que falta».
-  - [ ] Un dueño de versión ANTERIOR se lee en modo degradado **declarado**: el panel dice qué
-        campos no puede saber, no los inventa ni tira la instantánea completa.
-  - [ ] Un dueño de versión **posterior** al cliente sigue siendo un error duro: eso sí es un
-        despliegue al revés.
-  - [ ] Test que reproduce la ventana: cliente `N`, dueño `N-1`, y el panel pinta los relés.
+  - [x] **El dueño DECLARA qué campos conoce** (`_campos` en la instantánea), y el cliente
+        distingue «no lo mandó porque no lo conoce» de «dijo que lo mandaría y no está».
+        **No es un número de versión, y se eligió así a propósito:** una versión obliga a
+        mantener a mano un registro de «qué campos existían en la N» —un censo enumerado, que en
+        esta casa acaba divergiendo—. La lista la deriva el dueño de su propio
+        `__dataclass_fields__`: siempre dice la verdad sobre sí mismo y no hay tabla que
+        actualizar.
+  - [x] Un dueño ANTERIOR se lee en modo degradado **declarado**: lo que sí midió llega, y lo que
+        no supo decir queda NOMBRADO en `GpioSnapshot.campos_desconocidos`. El panel gana un
+        cuarto estado, `dueno_antiguo`, distinto de los tres de T-2.146 — porque el valor que
+        trae un campo desconocido **no lo midió nadie**: lo puso el códec para poder construir el
+        objeto, y `keepalive_beating=False` significa «hay ruta y NADIE la gobierna», que es el
+        estado que hay que ver de lejos. Pintarlo así sería inventarse una avería; callarlo,
+        esconder una ventana.
+  - [x] Un dueño **posterior** al cliente sigue siendo error duro, y la asimetría es deliberada:
+        de un dueño viejo se sabe exactamente qué falta; de uno nuevo **no se sabe qué significa
+        lo que sí mandó**. Leer a medias una instantánea que no se entiende del todo es peor que
+        no leerla.
+  - [x] Test que reproduce la ventana del gabinete, y con su contraparte: un dueño que PROMETE un
+        campo y no lo manda **sigue siendo contrato roto**. Sin ese, «tolerar al viejo» se
+        convertiría en «tolerar cualquier cosa», que es como se pierden los contratos.
+
+> ### La estrictez no se relajó: se hizo PRECISA
+>
+> El códec seguía teniendo razón —*«no se inventa un gabinete en reposo: un estado sin medir no
+> existe»*—; lo que le faltaba era distinguir **por qué** falta un campo. Ahora hay tres
+> desenlaces donde había dos, y el que se añadió es el único que ocurría de verdad.
+>
+> **Un dueño anterior a esta ficha no manda `_campos`**, y entonces no se le puede exigir nada:
+> lo que falte se cuenta como desconocido. Es la lectura correcta —no pudo prometer campos que no
+> sabía que existían— y es exactamente el caso que dejó un gabinete ciego el 2026-08-23. Cuando
+> toda la flota corra esta versión, la estrictez vuelve entera sola.
+>
+> **Dos censos escritos a mano que este cambio destapó**, y los dos se derivaron: la lista de
+> campos que el test de conformidad excluía (`{"age_s", "relays"}`) y la del oráculo del GPIO.
+> `age_s` estaba a mano y `campos_desconocidos` —recalculado por la misma razón— tuvo que
+> descubrirse con un rojo. Ahora salen de `CAMPOS_RECALCULADOS_AL_LLEGAR`, que ya existía y ya
+> llevaba la razón escrita de cada excepción.
 
 > ### La bifurcación, con el dato que la decide (medido 2026-08-24)
 >

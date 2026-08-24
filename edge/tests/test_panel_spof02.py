@@ -21,11 +21,21 @@ from types import SimpleNamespace
 from takab_edge.local_api import LocalDashboard
 
 
-def _vista(*, enabled: bool, beating: bool | None):
-    """`_keepalive_view` solo lee `keepalive_beating`: se le pasa un doble mínimo."""
+def _vista(*, enabled: bool, beating: bool | None, desconocidos: frozenset[str] = frozenset()):
+    """El doble mínimo que `_keepalive_view` mira.
+
+    [T-2.165] Desde que el códec puede declarar campos que el DUEÑO no supo
+    decir, la vista mira dos cosas y no una: el valor y si ese valor lo midió
+    alguien. Un doble que no lleve `campos_desconocidos` deja de parecerse a una
+    instantánea de verdad.
+    """
     panel = LocalDashboard.__new__(LocalDashboard)
     panel._keepalive_enabled = enabled
-    snap = None if beating is None else SimpleNamespace(keepalive_beating=beating)
+    snap = (
+        None
+        if beating is None
+        else SimpleNamespace(keepalive_beating=beating, campos_desconocidos=desconocidos)
+    )
     return panel._keepalive_view(snap)
 
 
@@ -64,3 +74,20 @@ def test_los_tres_estados_son_DISTINTOS_entre_si() -> None:
         _vista(enabled=True, beating=False)["estado"],
     }
     assert len(estados) == 3, f"dos estados colapsaron al mismo rótulo: {estados}"
+
+
+def test_un_dueno_ANTIGUO_no_se_pinta_como_una_averia_de_la_ruta() -> None:
+    """[T-2.165] El cuarto estado, y por qué no puede ser ninguno de los tres.
+
+    `keepalive_beating=False` significa «hay ruta y NADIE la gobierna» — el
+    estado que hay que ver de lejos. Pero cuando el dueño de los pines corre una
+    versión anterior, ese `False` no lo midió nadie: lo puso el códec para poder
+    construir el objeto. Pintarlo como `habilitada` sería inventarse una avería;
+    pintarlo como `sin_ruta`, esconder una ventana.
+    """
+    v = _vista(enabled=True, beating=False, desconocidos=frozenset({"keepalive_beating"}))
+    assert v["estado"] == "dueno_antiguo"
+    assert v["beating"] is None, "un valor que nadie midió no puede viajar como booleano"
+
+    # Y la no-vacuidad: con el MISMO valor y el dueño al día, sí es la avería.
+    assert _vista(enabled=True, beating=False)["estado"] == "habilitada"

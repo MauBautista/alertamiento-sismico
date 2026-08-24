@@ -597,12 +597,22 @@ class LocalDashboard(EdgeModule):
         - ``habilitada`` — hay ruta y **NO late**: el WR-1 puede sonar la sirena por su
           cuenta **y nadie la calla**. Es el estado que hay que ver de lejos.
         - ``sd`` — no se pudo leer el gpio. No se pinta ninguno de los tres.
+        - ``dueno_antiguo`` — [T-2.165] se leyó el gabinete, pero **el dueño de los
+          pines corre una versión anterior** a la que introdujo este campo: no es que
+          no late, es que **no sabe decirlo**. Es el estado normal de la ventana que
+          el layout A/B abre entre activar al cliente y reiniciar al dueño, y se
+          resuelve solo en cuanto el dueño estrena la versión nueva.
 
         Pintar ``sin_ruta`` y ``habilitada`` con el mismo rótulo sería la regla de oro
-        7 en su forma más cara: los dos son «no late», y significan cosas opuestas.
+        7 en su forma más cara: los dos son «no late», y significan cosas opuestas. Y
+        pintar ``dueno_antiguo`` como cualquiera de los otros sería peor todavía: ahí
+        el valor que trae la instantánea **no lo midió nadie** — lo puso el códec para
+        poder construir el objeto.
         """
         if snap is None:
             return {"estado": "sd", "enabled": self._keepalive_enabled, "beating": None}
+        if "keepalive_beating" in snap.campos_desconocidos:
+            return {"estado": "dueno_antiguo", "enabled": self._keepalive_enabled, "beating": None}
         if not self._keepalive_enabled:
             return {"estado": "sin_ruta", "enabled": False, "beating": snap.keepalive_beating}
         return {
