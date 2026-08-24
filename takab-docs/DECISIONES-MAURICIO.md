@@ -357,29 +357,13 @@ justo en el camino de una emergencia.
 ---
 
 <a id="d-12"></a>
-## D-12 · Dominio raíz — **`takabailert.mx`**, con DNS en Route 53
+## D-12 · Dominio raíz — **`takabailert.com`**, con DNS en Route 53
 
-> ### ⚠️ DIVERGENCIA MEDIDA (2026-08-23): lo construido es `.com`, no `.mx`
->
-> Esta decisión fija el dominio raíz en **`takabailert.mx`** y de ahí deriva seis valores
-> (`alertas@`, `mail.`, `dmarc@`, `ops@`…). **Lo que existe y funciona es `takabailert.com`**:
-> cinco referencias en `infra/terraform/`, el dominio verificado en SES con Easy DKIM RSA-2048, el
-> MAIL FROM en `bounce.takabailert.com` con su MX y su SPF, el DMARC publicado, y **la solicitud de
-> producción de SES ya radicada ante AWS con ese dominio**
-> (`runbooks/evidencia/SES-caso-178737638500467-*.txt`).
->
-> **Nadie declaró el cambio**, y por eso esto no se corrige en silencio: la bitácora de decisiones
-> es lo único que permite revocar con conocimiento en vez de a ciegas, y aquí dice una cosa
-> mientras la infraestructura hace otra sobre **el dominio de la propia empresa**.
->
-> **Lo que hace falta, y es de Mauricio:** o se enmienda esta decisión al TLD real —con su razón,
-> que probablemente sea que `.mx` exige presencia fiscal o que `.com` estaba libre— o se declara
-> que `.com` fue un desvío y se migra. Migrar no es gratuito a estas alturas: el caso de SES está
-> abierto con `.com` y volver a empezar cuesta otra ronda con AWS.
->
-> **Mientras no se resuelva, todo lo que cite `takabailert.mx` en este documento describe algo que
-> no está desplegado.**
-
+> **⚠️ Se decidió como `takabailert.mx` y está ENMENDADA** (2026-08-21, ratificada por
+> Mauricio el 2026-08-24): el dominio raíz es **`takabailert.com`**. El texto original queda
+> intacto —regla de la bitácora—, así que **todo lo que digan las tablas y los comandos de
+> aquí abajo sobre `.mx` describe la decisión ORIGINAL, no lo desplegado.** La tabla vigente y
+> el porqué del cambio están en la enmienda, al final de esta sección.
 
 **Fecha:** 2026-08-17 · **Decide:** Mauricio · **Venía de:** la tabla `D-1`…`D-6` de
 [`runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md §2.2`](runbooks/RUNBOOK-ses-produccion-y-cadena-oncall.md),
@@ -395,6 +379,8 @@ pueden acelerar después**, porque las contesta un tercero: AWS (salida del sand
 
 | # | Decisión | Valor |
 |---|---|---|
+> ⚠️ **TABLA ORIGINAL (`.mx`), SUPERADA.** La vigente está en la enmienda del 2026-08-21.
+
 | D-1 | Dominio raíz | **`takabailert.mx`** |
 | D-2 | DNS | **Route 53** (zona alojada en la cuenta `634882473845`) |
 | D-3 | Remitente de notificaciones | **`alertas@takabailert.mx`** |
@@ -458,6 +444,9 @@ criterio**, que era el estado anterior y el peor de los dos.
 > aws --profile takab-dev route53 list-hosted-zones-by-name \
 >   --dns-name takabailert.mx --query "HostedZones[].Id" --output text   # -> UNA sola
 > ```
+> ⚠️ **ESTOS DOS COMANDOS YA NO SIRVEN.** Consultan `takabailert.mx`, que **no se registró**:
+> el `whois` seguirá diciendo «Disponible» y la zona de Route 53 del `.mx` se borró. Copiarlos
+> hoy da un rojo que no significa nada. Los vigentes están en la enmienda, con el `.com`.
 
 > ### ✏️ ENMENDADA el 2026-08-21 — el dominio comprado fue **`takabailert.com`**
 >
@@ -689,7 +678,7 @@ gabinete hace sonar el tono **de verdad** — no se dispara sin avisar a quien e
 
 | Compra | Coste | Qué desbloquea |
 |---|---|---|
-| Dominio `takabailert.mx` + zona Route 53 | ~$55 USD/año | `§2.9` (SES) **y** `§4.2` (WhatsApp) |
+| ~~Dominio `takabailert.mx`~~ + zona Route 53 | ~~~$55 USD/año~~ **a revisar** | `§2.9` (SES) **y** `§4.2` (WhatsApp) |
 | Twilio: cuenta + número mexicano | ~$3 USD/mes | `§4.3` (SMS) **y** el teléfono de [`D-13`](#d-13) |
 
 **Lo aplazado, y con ello lo que queda parado — que es la mitad que hay que no olvidar:**

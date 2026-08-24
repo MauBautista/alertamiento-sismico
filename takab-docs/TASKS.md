@@ -7043,7 +7043,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
-- **Decisión:** [`D-12`](DECISIONES-MAURICIO.md#d-12) — dominio raíz con DNS en Route 53 — **ojo a la divergencia `.mx`/`.com` anotada en la decisión**.
+- **Decisión:** [`D-12`](DECISIONES-MAURICIO.md#d-12) — dominio raíz **`takabailert.com`** (decidido como `.mx` y enmendado el 2026-08-21) con DNS en Route 53. Es el que la solicitud de producción de SES pide como `Website URL`.
 - **Criterios de aceptación:**
   - [ ] SES fuera de sandbox con DKIM/SPF de dominio real.
   - [ ] **Acreditar la cadena on-call de punta a punta**: provocar una alarma real y que
