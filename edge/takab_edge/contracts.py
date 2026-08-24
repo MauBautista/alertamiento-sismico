@@ -79,6 +79,16 @@ class ActuatorAction(StrEnum):
     #: de simulacro si hay audio. CERO relés; una alerta real lo ABORTA.
     DRILL_START = "drill_start"
     DRILL_STOP = "drill_stop"
+    #: [T-2.70] Activar una release ya desplegada y verificada (canal `system`).
+    #: NO trae código: el artefacto llegó por `deploy.sh` y quedó inerte en
+    #: `releases/<id>/`. Esto es la ORDEN de estrenarla, que es lo que la nube
+    #: necesita gobernar para hacer un canary por cohortes.
+    UPDATE_ACTIVATE = "update_activate"
+    #: [T-2.70] Volver a la release anterior. Existe aunque el gabinete revierta
+    #: SOLO ante un remojo fallido: el fallo que el remojo no puede ver es el que
+    #: se descubre media hora después desde el SOC (latencias raras, un sensor
+    #: que dejó de reportar), y ahí la orden tiene que poder venir de fuera.
+    UPDATE_ROLLBACK = "update_rollback"
 
 
 class ActuationCause(StrEnum):

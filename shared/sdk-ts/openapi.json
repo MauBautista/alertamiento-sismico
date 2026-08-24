@@ -1,6 +1,28 @@
 {
   "components": {
     "schemas": {
+      "ActivateUpdateIn": {
+        "additionalProperties": false,
+        "description": "Orden de estrenar una release YA desplegada en ese gabinete.",
+        "properties": {
+          "release_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Release Id",
+            "type": "string"
+          },
+          "ventana_de_mantenimiento": {
+            "default": false,
+            "title": "Ventana De Mantenimiento",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "release_id"
+        ],
+        "title": "ActivateUpdateIn",
+        "type": "object"
+      },
       "ActiveDrillOut": {
         "description": "El drill vivo del tenant (o null): la consola pinta el banner NO-real.",
         "properties": {
@@ -5137,6 +5159,10 @@
             "title": "Damage Report Submit",
             "type": "boolean"
           },
+          "deploy_firmware": {
+            "title": "Deploy Firmware",
+            "type": "boolean"
+          },
           "dictamen_read": {
             "title": "Dictamen Read",
             "type": "boolean"
@@ -5276,7 +5302,8 @@
           "maintenance_window",
           "platform_maintenance_window",
           "manage_privacy_notice",
-          "manage_privacy_erasure"
+          "manage_privacy_erasure",
+          "deploy_firmware"
         ],
         "title": "MeActions",
         "type": "object"
@@ -7144,6 +7171,23 @@
           "configured"
         ],
         "title": "RetireCodeState",
+        "type": "object"
+      },
+      "RollbackUpdateIn": {
+        "additionalProperties": false,
+        "description": "Orden de volver a la release anterior.\n\nExiste aunque el gabinete revierta SOLO ante un remojo fallido: el fallo que\nel remojo no puede ver es el que se descubre media hora después desde el SOC\n—latencias raras, un sensor que dejó de reportar—, y ahí la orden tiene que\npoder venir de fuera.",
+        "properties": {
+          "motivo": {
+            "maxLength": 280,
+            "minLength": 3,
+            "title": "Motivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "motivo"
+        ],
+        "title": "RollbackUpdateIn",
         "type": "object"
       },
       "RosterCheckin": {
@@ -9194,6 +9238,43 @@
           "msisdn"
         ],
         "title": "ThirdPartyConsentIn",
+        "type": "object"
+      },
+      "UpdateCommandOut": {
+        "description": "Lo que se pudo prometer: la orden salió firmada y el gabinete la acusará.\n\nNO lleva un `success` de la actualización, y esa ausencia es el punto: aquí\nnadie sabe todavía si la release nueva levanta. Eso se mira en la flota\n(`fw_running` vs `fw_version`, T-2.69).",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "release_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Id"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "site_id",
+          "action"
+        ],
+        "title": "UpdateCommandOut",
         "type": "object"
       },
       "UserActionOut": {
@@ -13936,6 +14017,114 @@
           }
         },
         "summary": "Retire Site"
+      }
+    },
+    "/sites/{site_id}/update": {
+      "post": {
+        "description": "Ordena a UN gabinete estrenar una release ya desplegada y verificada.\n\n**202 y no 201**: lo aceptado es la orden, no el resultado. El gabinete\nrepunta su symlink, reinicia al cliente y mide salud sostenida durante el\nremojo; si falla, vuelve solo. Nada de eso cabe en la respuesta de esta\nllamada, y fingir que sí sería el defecto que `fw_running` existe para\ncerrar: un despliegue que se declara bueno porque alguien lo ordenó.",
+        "operationId": "activate_release_sites__site_id__update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Release",
+        "tags": [
+          "updates"
+        ]
+      }
+    },
+    "/sites/{site_id}/update/rollback": {
+      "post": {
+        "description": "Ordena a UN gabinete volver a su release anterior.\n\nNo se pasa a qué versión volver: la sabe el gabinete, y sólo él. La nube\npodría equivocarse de id —o nombrar una release ya podada— y una reversión a\nninguna parte es peor que ninguna reversión.",
+        "operationId": "rollback_release_sites__site_id__update_rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Release",
+        "tags": [
+          "updates"
+        ]
       }
     },
     "/telemetry/map/state": {

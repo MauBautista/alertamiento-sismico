@@ -6,7 +6,9 @@
         "deactivate",
         "self_test",
         "drill_start",
-        "drill_stop"
+        "drill_stop",
+        "update_activate",
+        "update_rollback"
       ],
       "title": "ActuatorAction",
       "type": "string"
@@ -139,6 +141,6 @@
   "title": "ActuatorAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/actuator_ack/v1.11.0",
-  "version": "1.11.0"
+  "$id": "https://takab.mx/schemas/actuator_ack/v1.12.0",
+  "version": "1.12.0"
 }

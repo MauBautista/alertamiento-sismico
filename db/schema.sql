@@ -933,7 +933,8 @@ CREATE TABLE commands (
   -- [T-1.60] 'drill_start'/'drill_stop' (0015): simulacro institucional — SOLO
   -- se emiten vía /drills (el endpoint público de comandos no los acepta).
   channel     text NOT NULL CHECK (channel IN ('siren','strobe','gas_valve','elevator','door_retainer','system')),
-  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test','drill_start','drill_stop')),
+  action      text NOT NULL CHECK (action IN ('activate','deactivate','self_test',
+              'drill_start','drill_stop','update_activate','update_rollback')),
   event_id    text,
   nonce       text NOT NULL UNIQUE,
   issued_at   timestamptz NOT NULL DEFAULT now(),

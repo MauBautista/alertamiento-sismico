@@ -5140,9 +5140,20 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   - [x] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal"). El
         criterio son las cuatro señales del remojo, y la vuelta atrás es COMPLETA —código y
         dependencias— porque cada release lleva su venv.
-  - [ ] Comando firmado + nonce + ack (regla de oro 8). **Falta la mitad de nube:** el gabinete
-        ya sabe activar y revertir por orden (`canary.sh activar|revertir`), y la guarda remota
-        —ventana obligatoria sin operador delante— ya está puesta esperándolo.
+  - [x] Comando firmado + nonce + ack (regla de oro 8). `POST /sites/{id}/update` y
+        `.../update/rollback` emiten por `issue_signed_command` (HMAC por gateway, nonce
+        UNIQUE, TTL, rate-limit, auditoría) **con MFA**, bajo la acción nueva
+        `deploy_firmware` — SOLO `takab_superadmin`, con el criterio de
+        `platform_maintenance_window` y no el de `maintenance_window`: el código es de TAKAB
+        y un `tenant_admin` no tiene el artefacto ni con qué juzgarlo.
+        **El ack dice «orden aceptada», no «funcionó», y el orden de dos líneas es el diseño:**
+        activar reinicia `takab-edge` —el proceso que recibió el comando—, así que un ack
+        posterior al lanzamiento no se publicaría jamás y la nube esperaría el TTL sin poder
+        distinguir «rechazado» de «no contestó». El gabinete acusa ANTES y lanza el agente
+        desligado de su sesión (`start_new_session`), o el `systemctl restart` se llevaría por
+        delante al propio reversor. El resultado viaja por el latido (`fw_running`).
+        Revertir NO acepta a qué versión volver: la sabe el gabinete, y una reversión a
+        ninguna parte es peor que ninguna reversión.
   - [x] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior. Cubierto
         en sus cuatro formas: no arranca, arranca y CICLA, arranca y el panel no contesta, y
         arranca sin dueño de pines. Más el caso honesto: revertido y **sigue** enfermo ⇒ eso ya

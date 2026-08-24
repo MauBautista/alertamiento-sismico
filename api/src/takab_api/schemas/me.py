@@ -62,6 +62,11 @@ class MeActions(BaseModel):
     #: `true` NO significa que se pueda anonimizar a cualquiera: hace falta una
     #: CONSTANCIA registrada, y eso lo exige la base (RLS), no esta bandera.
     manage_privacy_erasure: bool
+    #: [T-2.70] Ordenar a un gabinete que ACTIVE una release ya verificada, o que
+    #: vuelva a la anterior. SOLO takab_superadmin: el código es de TAKAB, el
+    #: artefacto lo puso su operador y una release mala deja un edificio sin
+    #: alertamiento — un tenant_admin no tiene con qué juzgarla.
+    deploy_firmware: bool
 
 
 class MeEnrolledSite(BaseModel):

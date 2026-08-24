@@ -22,6 +22,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import pathlib
+import re
+import subprocess
 import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -44,6 +48,14 @@ if TYPE_CHECKING:
     from takab_edge.security import SecurityManager
 
 log = logging.getLogger("takab_edge.dispatch")
+
+
+#: [T-2.70] Forma de un id de release: `<ts>-<sha>` o `heredada-<ts>`, que es lo
+#: que `deploy.sh` sabe crear. Se valida ANTES de invocar nada aunque el comando
+#: venga firmado y aunque los argumentos vayan por `execve` sin shell: esta es la
+#: única superficie que ejecuta un proceso en el gabinete por orden de la nube, y
+#: una ruta con `..` sería un directorio fuera de `releases/`.
+_RELEASE_VALIDA = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 def canonical_payload(payload: dict) -> bytes:
@@ -190,6 +202,69 @@ class CommandDispatcher(EdgeModule):
                 detail = "simulacro terminado" if ended else "sin simulacro activo (no-op)"
                 self._ack(command_id, nonce, channel, action, True, detail)
             return
+        # [T-2.70] Actualización remota: ACTIVAR una release ya desplegada y
+        # verificada, o VOLVER a la anterior.
+        #
+        # EL ORDEN DE ESTAS DOS LÍNEAS ES EL DISEÑO, no una preferencia. Activar
+        # reinicia `takab-edge`, o sea EL PROCESO QUE ESTÁ EJECUTANDO ESTO: un
+        # ack posterior al lanzamiento no se publicaría jamás y la nube se
+        # quedaría esperando el TTL, sin poder distinguir «rechazado» de «el
+        # gabinete no contestó». Así que se ACUSA PRIMERO y se lanza después.
+        #
+        # Y por eso el ack dice lo que de verdad sabe: «orden aceptada y en
+        # marcha». NO dice que la actualización funcionara — eso no se puede
+        # saber desde aquí ni en un segundo ni en dos. El resultado viaja por el
+        # LATIDO (`fw_running`, T-2.69), que es la única señal que no miente
+        # sobre qué código cargó el proceso, y es la que el canary de la nube
+        # espera antes de soltar la siguiente cohorte.
+        if action in (ActuatorAction.UPDATE_ACTIVATE, ActuatorAction.UPDATE_ROLLBACK):
+            if channel is not ActuatorChannel.SYSTEM:
+                self._ack(command_id, nonce, channel, action, False, "update exige canal system")
+                return
+            guion = pathlib.Path(self._settings.canary_script)
+            if not os.access(guion, os.X_OK):
+                # Un gabinete todavía sin layout A/B (o con el agente sin
+                # instalar) no puede activar nada, y decirlo AQUÍ es barato: lo
+                # contrario sería lanzar al vacío y dejar que el operador lo
+                # dedujera del latido media hora después.
+                self._ack(
+                    command_id,
+                    nonce,
+                    channel,
+                    action,
+                    False,
+                    f"sin agente de activación en {guion}",
+                )
+                return
+            argumentos = [str(guion)]
+            if action is ActuatorAction.UPDATE_ACTIVATE:
+                release = str(payload.get("release_id") or "")
+                if not _RELEASE_VALIDA.fullmatch(release):
+                    self._ack(
+                        command_id,
+                        nonce,
+                        channel,
+                        action,
+                        False,
+                        f"release_id inválido: {release!r}",
+                    )
+                    return
+                argumentos += ["activar", release]
+                if payload.get("ventana_de_mantenimiento"):
+                    argumentos.append("--ventana-de-mantenimiento")
+            else:
+                motivo = str(payload.get("motivo") or "orden de la nube")
+                argumentos += ["revertir", "--motivo", motivo]
+            self._ack(
+                command_id,
+                nonce,
+                channel,
+                action,
+                True,
+                "orden aceptada; el resultado viaja en el latido (fw_running)",
+            )
+            self._lanzar_canary(argumentos, command_id)
+            return
         if channel is ActuatorChannel.SYSTEM:
             self._ack(
                 command_id, nonce, channel, action, False, "canal system solo admite self_test"
@@ -278,6 +353,36 @@ class CommandDispatcher(EdgeModule):
             latency_s=max(result.latency_s, latency),
             channel_state=result.channel_state,
         )
+
+    def _lanzar_canary(self, argumentos: list[str], command_id: str) -> None:
+        """Lanza el agente DESLIGADO de este proceso, y no espera nada.
+
+        `start_new_session=True` lo saca del grupo de procesos de `takab-edge`:
+        sin eso, el `systemctl restart` que el propio agente ejecuta se llevaría
+        por delante a su lanzador —el agente moriría a mitad del remojo y el
+        gabinete se quedaría con la release nueva SIN NADIE que pudiera
+        revertirla—. Es la misma razón por la que el agente vive fuera de las
+        releases: el reversor no puede depender de lo que se está sustituyendo.
+
+        La lista de argumentos va tal cual a `execve` (sin `shell=True`), así que
+        el `release_id` no puede convertirse en comando por mucho que venga de
+        fuera — y aun así se valida antes contra `_RELEASE_VALIDA`. Defensa en
+        profundidad: esto lo dispara un comando FIRMADO, pero es la superficie
+        que ejecuta algo en el gabinete.
+        """
+        try:
+            subprocess.Popen(  # noqa: S603 — lista de argv, sin shell
+                argumentos,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            # El ack ya salió (tenía que salir antes: ver la nota de arriba), así
+            # que aquí sólo queda el journal. La nube lo verá igual: `fw_running`
+            # no cambiará, y para el canary de cohortes eso ES el fallo.
+            log.exception("comando %s: no se pudo lanzar el agente de activación", command_id)
 
     def _run_self_test(self, command_id: str, nonce: str) -> None:
         """Corre el autodiagnóstico y ACKea con resultados. JAMÁS lanza (hilo propio)."""
