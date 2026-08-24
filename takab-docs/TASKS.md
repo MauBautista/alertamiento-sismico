@@ -5078,6 +5078,32 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 ### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` COMPLETO · falta `G-01`
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
 
+> ### 🔴 PRIMER INTENTO EN EL GABINETE REAL (2026-08-23): FALLÓ, y por qué eso valió la pena
+>
+> **El gabinete se quedó sin dueño de pines** —sin sirena, sin cierre de gas, sin retenedores—
+> con las dos unidades ciclando en `203/EXEC`, hasta que se miró. Y la causa **no estaba en el
+> código que se desplegaba**, que es justo por lo que `G-01` no es una formalidad:
+>
+> Las dos unidades declaran `ProtectHome=true`: para ellas `/home` NO EXISTE. El venv del Pi era
+> UNO y se reusaba **desde julio**, con su intérprete en `/opt/takab/.python` porque alguien
+> exportó `UV_PYTHON_INSTALL_DIR` **a mano** aquella vez — un hecho que vivía en un directorio y
+> **en ningún archivo**. El layout A/B estrena venv por release; `uv` eligió intérprete por
+> primera vez en meses y se lo puso en `$HOME`. El ejecutable existía; el que no existía **para
+> systemd** era su intérprete.
+>
+> **Los tres gates del despliegue corren como el usuario de ssh, con `/home` entero visible**, así
+> que por construcción no podían verlo: un venv «importable» aquí es `203/EXEC` allí. Y el canary
+> leyó `MainPID=0` como «no pude medir» en vez de como lo que es —una unidad que systemd da por
+> ACTIVA y sin proceso principal, o sea un `ExecStart` que no llegó a ejecutarse— así que **dejó
+> la release puesta en lugar de revertir**, que era exactamente su trabajo.
+>
+> Las tres corregidas y ancladas: el gate del intérprete
+> (`test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa`), la declaración de dónde
+> instala `uv` (`test_el_interprete_de_uv_se_instala_FUERA_de_lo_que_ProtectHome_oculta`) y la
+> clasificación de `MainPID=0` (`test_una_unidad_ACTIVA_sin_proceso_principal_es_una_medicion_MALA`).
+> Gabinete revertido a la release heredada y protegiendo. Bitácora en
+> `runbooks/RUNBOOK-sesion-de-vida.md §A.5`.
+
 > ### CERRADA EN SOFTWARE (2026-08-23) — lo que queda es FÍSICO
 >
 > **Los cinco criterios están construidos y medidos; el único que no se cierra desde aquí es

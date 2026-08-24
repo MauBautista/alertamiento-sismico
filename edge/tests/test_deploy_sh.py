@@ -179,6 +179,9 @@ def gabinete(tmp_path: pathlib.Path):
     plantilla_py = binarios / "python-de-venv.plantilla"
     _escribir_ejecutable(plantilla_py, py_venv)
 
+    # [T-2.70·CAMPO] `VENV_PYTHON_EN=<ruta>` hace que el `bin/python` del venv sea
+    # un SYMLINK a esa ruta, que es exactamente lo que `uv` hace con su intérprete
+    # gestionado. Sin poder modelarlo, el gate del intérprete no se podría probar.
     # uv falso: materializa los console scripts que el gate exige. NO reescribe
     # .venv/bin/python cuando ya viene del gabinete simulado.
     # [T-2.70.a·D2/P2] Los console scripts salen de `pyproject.toml`, no de una
@@ -194,7 +197,12 @@ def gabinete(tmp_path: pathlib.Path):
         f"""
         echo "uv $*" >> "{bitacora}"
         mkdir -p .venv/bin
-        [ -x .venv/bin/python ] || cp "{plantilla_py}" .venv/bin/python
+        if [ -n "${{VENV_PYTHON_EN:-}}" ]; then
+          cp "{plantilla_py}" "${{VENV_PYTHON_EN}}"
+          ln -sf "${{VENV_PYTHON_EN}}" .venv/bin/python
+        else
+          [ -x .venv/bin/python ] || cp "{plantilla_py}" .venv/bin/python
+        fi
         {materializar}
         """,
     )
@@ -1590,3 +1598,38 @@ def test_la_poda_jamas_borra_la_release_activa_ni_la_anterior(gabinete) -> None:
         "la poda se llevó la release ANTERIOR: el gabinete se quedó sin vuelta atrás"
     )
     assert sorted(gabinete.releases.glob("*vieja")) == [], "la poda no llegó a las antiguas"
+
+
+def test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa(gabinete, tmp_path) -> None:
+    """[T-2.70 · CAMPO 2026-08-23] EL GATE QUE FALTABA, y que costó un edificio
+    sin sirena.
+
+    Las dos unidades declaran `ProtectHome=true`: para ellas `/home`, `/root` y
+    `/run/user` NO EXISTEN. Un venv cuyo `bin/python` resuelve ahí arranca
+    perfectamente desde una sesión ssh —que es donde corren los otros tres
+    gates— y muere con **203/EXEC** cuando lo lanza systemd: el ejecutable
+    existe, el que no existe en ese namespace es su intérprete.
+
+    Pasó de verdad la primera noche del layout A/B: hasta entonces el venv del Pi
+    era UNO y se reusaba desde julio, con su intérprete fuera de `/home` porque
+    alguien exportó `UV_PYTHON_INSTALL_DIR` a mano aquella vez — un hecho que
+    vivía en un directorio y en ningún archivo. Con A/B cada release estrena
+    venv, `uv` eligió intérprete por primera vez en meses y se lo puso en `$HOME`.
+
+    El sandbox no puede montar un `/home` de mentira, así que se le apunta el
+    gate a un prefijo suyo. Que el DEFAULT siga siendo los tres reales lo ancla
+    `test_deploy_artifacts.py`.
+    """
+    escondido = tmp_path / "escondido"
+    escondido.mkdir(exist_ok=True)
+
+    r = gabinete.desplegar(
+        TAKAB_DEPLOY_RUTAS_OCULTAS=str(escondido),
+        VENV_PYTHON_EN=str(escondido / "python3.12"),
+    )
+
+    assert r.returncode != 0, "activó un venv que systemd no puede ejecutar"
+    assert "NO pueden verlo" in r.stderr
+    assert "ProtectHome" in r.stderr
+    assert gabinete.centinela_intacto(), "el gabinete debe seguir en la release anterior"
+    assert "systemctl restart" not in gabinete.registro(), "reinició pese a fallar el gate"

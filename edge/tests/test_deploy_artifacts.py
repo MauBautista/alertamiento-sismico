@@ -1211,3 +1211,47 @@ def test_el_reversor_no_reinicia_jamas_al_dueno_de_los_pines() -> None:
     ]
     culpables = [linea for linea in lineas if "takab-gpio" in linea]
     assert not culpables, f"el reversor toca al dueño de los pines: {culpables}"
+
+
+def test_el_gate_del_interprete_vigila_lo_que_ProtectHome_oculta() -> None:
+    """[T-2.70 · CAMPO 2026-08-23] El DEFAULT de la costura, anclado por texto.
+
+    `TAKAB_DEPLOY_RUTAS_OCULTAS` existe para que el sandbox pueda demostrar que
+    el gate muerde. Una costura así puede perder los dientes de dos formas —que
+    el default encoja, o que alguien la deje vacía— y las dos serían silenciosas:
+    el despliegue seguiría saliendo verde y el gabinete moriría con 203/EXEC al
+    reiniciar. Los tres prefijos son exactamente los que `ProtectHome=true`
+    esconde (systemd.exec(5)).
+    """
+    guion = _deploy()
+    m = re.search(r'^RUTAS_OCULTAS="\$\{TAKAB_DEPLOY_RUTAS_OCULTAS:-\}"', guion, re.MULTILINE)
+    assert m is not None, "la costura del gate del intérprete desapareció"
+    respaldo = re.search(r'RUTAS_OCULTAS="([^"]*)"\s*$', guion, re.MULTILINE)
+    defaults = [linea for linea in guion.splitlines() if 'RUTAS_OCULTAS="/home' in linea]
+    assert defaults, f"el default dejó de nombrar /home: {respaldo}"
+    for prefijo in ("/home", "/root", "/run/user"):
+        assert prefijo in defaults[0], (
+            f"`{prefijo}` salió del default y ProtectHome=true lo sigue ocultando"
+        )
+
+
+def test_el_interprete_de_uv_se_instala_FUERA_de_lo_que_ProtectHome_oculta() -> None:
+    """La otra mitad del mismo defecto: no basta con RECHAZAR un venv malo, hay
+    que crear uno bueno.
+
+    `ssh host "bash -s"` es un shell NO interactivo y NO de login: no lee
+    `.profile` ni `.bashrc`, así que ninguna variable del usuario llega al bloque
+    remoto. Hasta esta ficha, que el intérprete del Pi viviera en
+    `/opt/takab/.python` dependía de que alguien hubiera exportado
+    `UV_PYTHON_INSTALL_DIR` a mano en julio — un hecho guardado en un directorio
+    y en ningún archivo, que sobrevivió sólo porque el venv nunca se reconstruyó.
+    """
+    guion = _deploy()
+    assert "export UV_PYTHON_INSTALL_DIR=" in guion, (
+        "el despliegue no declara dónde instala uv su intérprete: vuelve a depender "
+        "de que alguien lo exportara a mano una vez"
+    )
+    idx_export = guion.index("export UV_PYTHON_INSTALL_DIR")
+    idx_sync = _pos_comando(r"uv sync \$\{EDGE_EXTRA_FLAGS\}")
+    assert idx_export < idx_sync, "se declara DESPUÉS del `uv sync`: llega tarde"
+    assert "/opt/takab/.python" in guion, "el default tiene que estar fuera de /home"

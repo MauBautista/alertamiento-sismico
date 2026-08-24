@@ -160,7 +160,6 @@ puerto_panel() {
 # El PID principal de `takab-edge` según systemd. Es lo que convierte «está
 # active» en «está active Y ES EL MISMO PROCESO»: un crash-loop mantiene la
 # unidad `active` casi todo el tiempo y sólo se delata por el relevo de PID.
-# Vacío o "0" = systemd no tiene proceso para esa unidad.
 pid_principal() {
   systemctl show -p MainPID --value takab-edge 2>/dev/null || true
 }
@@ -183,12 +182,36 @@ medir_salud() {
     return 1
   fi
 
-  local pid
-  pid="$(pid_principal)"
-  case "$pid" in "" | 0 | *[!0-9]*) pid="" ;; esac
-  if [ -z "$pid" ]; then
-    RAZON_SALUD="systemd no reporta MainPID de takab-edge"
+  # [T-2.70·CAMPO 2026-08-23] `MainPID=0` NO ES «NO PUDE MEDIR»: ES UNA MEDICIÓN,
+  # Y ES MALA. Aquí los tres valores se fundían en uno y el resultado fue que el
+  # canary dejó puesta una release que no arrancaba.
+  #
+  # Lo que pasó, medido en el gabinete: el `ExecStart` de las dos unidades
+  # apuntaba a un venv cuyo intérprete `ProtectHome=true` esconde, así que el
+  # exec moría con 203. Con `Type=simple` systemd da la unidad por arrancada en
+  # el fork —`is-active` dice `active`— y el fallo llega en el hijo, dejando
+  # `MainPID=0`. Ese par «activa y sin proceso principal» es exactamente el
+  # retrato de un `ExecStart` que no llegó a ejecutarse, y tratarlo como «no
+  # pude preguntar» convirtió una vuelta atrás automática en un edificio sin
+  # sirena, sin cierre de gas y sin retenedores hasta que alguien lo miró.
+  #
+  # «No pude medir» queda para lo que de verdad no se pudo preguntar: que
+  # `systemctl show` falle, o que conteste algo que no es un número.
+  local pid estado_show=0
+  pid="$(pid_principal)" || estado_show=$?
+  if [ "$estado_show" != 0 ]; then
+    RAZON_SALUD="no se pudo preguntar el MainPID de takab-edge (systemctl salió ${estado_show})"
     return 2
+  fi
+  case "$pid" in
+  "" | *[!0-9]*)
+    RAZON_SALUD="systemd contestó un MainPID que no es un número: ${pid:-(vacío)}"
+    return 2
+    ;;
+  esac
+  if [ "$pid" = 0 ]; then
+    RAZON_SALUD="systemd da takab-edge por ACTIVA y no tiene proceso principal (MainPID=0): su ExecStart no llegó a ejecutarse"
+    return 1
   fi
   if [ -n "$pid_esperado" ] && [ "$pid" != "$pid_esperado" ]; then
     # EL HALLAZGO QUE `is-active` NO PUEDE VER. La unidad sigue `active` y el

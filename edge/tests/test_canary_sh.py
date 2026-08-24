@@ -90,6 +90,14 @@ def gabinete(tmp_path: pathlib.Path):
         ACTIVA="${{ACTIVA##*/}}"
 
         if [ "$1" = show ]; then
+          # RELEASE_SIN_INTERPRETE: la unidad arranca (`Type=simple` da por buena
+          # la unidad en el fork) y el exec muere en el hijo — 203/EXEC. systemd
+          # la reporta `active` y con MainPID=0. Es lo que pasó en el gabinete la
+          # primera noche del layout A/B.
+          if [ -n "${{RELEASE_SIN_INTERPRETE:-}}" ] \
+             && [ "$ACTIVA" = "${{RELEASE_SIN_INTERPRETE}}" ]; then
+            echo 0; exit 0
+          fi
           cat "{mainpid}" 2>/dev/null || echo 0
           exit 0
         fi
@@ -550,3 +558,42 @@ def test_activar_lo_ya_activo_es_un_no_op_que_no_reinicia_nada(gabinete) -> None
     assert r.returncode == 0
     assert "restart" not in gabinete.systemctl_log()
     assert gabinete.veredicto()["resultado"] == "ya_activa"
+
+
+# ---------------------------------------------------------------------------
+# [T-2.70 · CAMPO 2026-08-23] Lo que pasó en el gabinete de verdad
+# ---------------------------------------------------------------------------
+
+
+def test_una_unidad_ACTIVA_sin_proceso_principal_es_una_medicion_MALA(gabinete) -> None:
+    """EL DEFECTO QUE COSTÓ UN EDIFICIO SIN SIRENA, reproducido.
+
+    La primera noche del layout A/B, el `ExecStart` de las dos unidades apuntaba
+    a un venv cuyo intérprete `ProtectHome=true` esconde: el exec moría con
+    **203/EXEC**. Con `Type=simple` systemd da la unidad por arrancada en el fork
+    —`is-active` dice `active`— y el fallo llega en el hijo, dejando `MainPID=0`.
+
+    El canary leía ese `0` como «no pude preguntar», dejaba la release puesta y
+    salía con «ACTIVACIÓN NO VERIFICADA». Resultado medido: el gabinete se quedó
+    sin dueño de pines —sin sirena, sin cierre de gas, sin retenedores— con las
+    dos unidades ciclando, hasta que alguien lo miró.
+
+    «Activa y sin proceso principal» no es la ausencia de un dato: es el retrato
+    de un `ExecStart` que no llegó a ejecutarse. Se mide, y se revierte.
+    """
+    gabinete.crear_release("v1")
+    gabinete.crear_release("v2")
+    gabinete.apuntar("v1")
+    gabinete.dueno_gpio_vivo()
+
+    r = gabinete.correr("activar", "v2", RELEASE_SIN_INTERPRETE="v2")
+
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "MainPID=0" in r.stderr
+    assert "ExecStart" in r.stderr
+    assert gabinete.apuntando_a().endswith("/v1/edge"), "no volvió a la release anterior"
+    v = gabinete.veredicto()
+    assert v["resultado"] == "revertido"
+    assert "NO VERIFICADA" not in r.stderr, (
+        "lo trató como «no pude medir»: eso es lo que dejó el gabinete roto"
+    )

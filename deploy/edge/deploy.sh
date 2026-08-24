@@ -273,7 +273,7 @@ echo "→ pre-vuelo, swap, dependencias, gate, unidades y reinicio en ${HOST}"
 # remota, como variables de entorno del `bash -s` remoto, para que cada valor
 # viva en UN solo sitio.
 ssh "$HOST" \
-  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' RELEASE_ID='${RELEASE_ID}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' TAKAB_DEPLOY_PLAZO_PROPIEDAD='${PLAZO_PROPIEDAD}' TAKAB_EDGE_ENV_FILE='${ARCHIVO_ENTORNO}' TAKAB_DEPLOY_VENTANA='${VENTANA_MANTENIMIENTO}' bash -s" <<'REMOTO'
+  "EDGE_EXTRA_FLAGS='${EDGE_EXTRA_FLAGS}' FW_VERSION='${FW_VERSION}' RELEASE_ID='${RELEASE_ID}' TAKAB_REMOTE_ROOT='${RAIZ_REMOTA}' TAKAB_EDGE_GPIO_LOCK_PATH='${CERROJO_GPIO}' TAKAB_DEPLOY_PLAZO_PROPIEDAD='${PLAZO_PROPIEDAD}' TAKAB_EDGE_ENV_FILE='${ARCHIVO_ENTORNO}' TAKAB_DEPLOY_VENTANA='${VENTANA_MANTENIMIENTO}' TAKAB_DEPLOY_RUTAS_OCULTAS='${TAKAB_DEPLOY_RUTAS_OCULTAS:-}' TAKAB_UV_PYTHON_DIR='${TAKAB_UV_PYTHON_DIR:-}' bash -s" <<'REMOTO'
 set -euo pipefail
 # SSH no interactivo no carga el PATH de login: uv vive en ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
@@ -432,6 +432,39 @@ fi
 echo "→ marcando la versión desplegada (FW_VERSION=${FW_VERSION})"
 printf '%s\n' "$FW_VERSION" > "${NUEVA}/FW_VERSION"
 
+# [T-2.70·CAMPO 2026-08-23] DÓNDE INSTALA `uv` SU INTÉRPRETE, Y POR QUÉ ES UN
+# ASUNTO DEL CAMINO DE VIDA.
+#
+# Las dos unidades declaran `ProtectHome=true`, o sea que para ellas `/home`,
+# `/root` y `/run/user` NO EXISTEN. Un venv cuyo `bin/python` sea un symlink a
+# `~/.local/share/uv/python/...` arranca perfectamente desde una sesión ssh y
+# muere con **203/EXEC — No such file or directory** cuando lo lanza systemd: el
+# ejecutable existe, el que no existe (en ese namespace) es su intérprete.
+#
+# ESTO PASÓ DE VERDAD, la primera noche del layout A/B. Hasta entonces el venv
+# del Pi era UNO y se reusaba desde julio, con su intérprete en
+# `/opt/takab/.python` porque alguien exportó esta variable A MANO aquella vez.
+# El hecho sobrevivía en un directorio y en ningún archivo. Con A/B cada release
+# estrena venv, así que `uv` tuvo que elegir intérprete por primera vez en meses
+# — y se lo instaló en `$HOME`. El gabinete quedó SIN DUEÑO DE PINES: sin
+# sirena, sin cierre de gas y sin retenedores, con las dos unidades ciclando.
+#
+# `ssh host "bash -s"` es un shell NO interactivo y NO de login: no lee
+# `.profile` ni `.bashrc`, así que ninguna variable del usuario llega aquí. Por
+# eso se declara AQUÍ, en el único sitio que gobierna todos los despliegues.
+export UV_PYTHON_INSTALL_DIR="${TAKAB_UV_PYTHON_DIR:-}"
+[ -n "$UV_PYTHON_INSTALL_DIR" ] || export UV_PYTHON_INSTALL_DIR=/opt/takab/.python
+
+# Lo que `ProtectHome=true` le quita a las dos unidades. Es una VARIABLE por la
+# misma razón que `TAKAB_REMOTE_ROOT`: el sandbox de edge/tests/test_deploy_sh.py
+# no puede montar un `/home` de mentira, y sin poder apuntar el gate a un prefijo
+# suyo no habría forma de demostrar que muerde. En producción nadie la exporta y
+# valen los tres prefijos reales, anclados por texto en
+# test_deploy_artifacts.py::test_el_gate_del_interprete_vigila_lo_que_ProtectHome_oculta
+# — para que la costura no pueda perder los dientes en silencio.
+RUTAS_OCULTAS="${TAKAB_DEPLOY_RUTAS_OCULTAS:-}"
+[ -n "$RUTAS_OCULTAS" ] || RUTAS_OCULTAS="/home /root /run/user"
+
 cd "$NUEVA"
 # takab-edge corre como root y deja __pycache__ de root DENTRO del venv; sin
 # esto, el uv sync del usuario falla con Permission denied en cada deploy. En
@@ -475,6 +508,24 @@ elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main
 elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ] || [ ! -x .venv/bin/takab-gpioctl ]; then
   echo "✗ ABORTADO: faltan los ejecutables que lanzan las unidades systemd." >&2
   FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio,gpioctl}"
+elif [ -n "$(
+  INTERPRETE="$(readlink -f .venv/bin/python 2>/dev/null || true)"
+  if [ -z "$INTERPRETE" ]; then echo oculto; fi
+  for _pref in $RUTAS_OCULTAS; do
+    case "$INTERPRETE" in "${_pref}"/*) echo oculto ;; esac
+  done
+)" ]; then
+  # [T-2.70·CAMPO] EL GATE QUE FALTABA, y que ningún test en verde podía dar.
+  # Los tres gates anteriores corren como el usuario del despliegue, con /home
+  # ENTERO visible: por construcción no pueden ver el único fallo que mató al
+  # gabinete la primera noche del layout A/B. Un venv es "importable" aquí y
+  # 203/EXEC allí, porque `ProtectHome=true` le quita a las unidades justo el
+  # directorio donde `uv` había puesto el intérprete.
+  #
+  # Se comprueba la RUTA RESUELTA y no el symlink: lo que systemd tiene que
+  # poder abrir es el binario final.
+  echo "✗ ABORTADO: el intérprete del venv vive donde las unidades NO pueden verlo." >&2
+  FALLO_GATE="$(readlink -f .venv/bin/python 2>/dev/null || echo '(ilegible)') — ProtectHome=true oculta /home, /root y /run/user"
 else
   FALLO_GATE=""
 fi
