@@ -52,6 +52,12 @@ CABECERA = 4
 #: campo nuevo se transporta por defecto y, si alguien decide que no debe, tiene
 #: que escribir aquí por qué (mismo patrón que la allowlist de D1.3).
 CAMPOS_RECALCULADOS_AL_LLEGAR: dict[str, str] = {
+    "campos_desconocidos": (
+        "[T-2.165] lo rellena QUIEN LEE, comparando lo que el dueño dijo saber "
+        "con lo que este cliente espera. El dueño no puede declararlo porque no "
+        "sabe qué campos conoce el otro lado — de hecho, si lo supiera no habría "
+        "problema que resolver."
+    ),
     "age_s": (
         "la edad se mide en el reloj de QUIEN LEE, contando desde que la "
         "instantánea llegó. Transportar la edad medida en el reloj del otro "
@@ -189,30 +195,116 @@ def _campos_transportados(clase: type, excepciones: dict[str, str]) -> dict[str,
     }
 
 
+#: [T-2.165] Clave con la que el dueño DECLARA qué campos conoce.
+#:
+#: No es un número de versión, y la diferencia es el fondo de la ficha. Una
+#: versión obliga a mantener a mano un registro de «qué campos existían en la N»
+#: — un censo enumerado, que en esta casa acaba divergiendo—. La lista de campos
+#: la deriva el propio dueño de su `__dataclass_fields__`: siempre dice la
+#: verdad sobre sí mismo y no hay tabla que actualizar.
+CLAVE_CAMPOS_DEL_DUENO = "_campos"
+
+
+def _neutro(tipo: object) -> object:
+    """Qué valor lleva un campo que el dueño no supo decir.
+
+    **Su valor no significa nada, y por eso puede ser cualquiera**: el nombre del
+    campo queda en `GpioSnapshot.campos_desconocidos`, que es lo que lo separa de
+    un dato medido. Existe sólo porque el dataclass es `frozen` y hay que
+    construirlo con algo — no porque este número o este booleano describan al
+    gabinete.
+
+    Se deriva de la anotación en vez de leerse de una tabla: un campo nuevo entra
+    solo, y si su tipo no está contemplado se LANZA en vez de inventar. Un tipo
+    que nadie mapeó es una decisión pendiente, no un `None`.
+    """
+    texto = str(tipo)
+    if "None" in texto:
+        return None
+    if texto.startswith("bool") or texto == "<class 'bool'>":
+        return False
+    if texto.startswith("float") or texto == "<class 'float'>":
+        return 0.0
+    if texto.startswith("int") or texto == "<class 'int'>":
+        return 0
+    if "tuple" in texto:
+        return ()
+    if "str" in texto:
+        return ""
+    raise ProtocolError(
+        f"un campo del snapshot es de un tipo que el códec no sabe neutralizar "
+        f"({tipo!r}): decide qué significa 'el dueño no lo sabe' antes de añadirlo"
+    )
+
+
 def instantanea_a_json(snap: GpioSnapshot) -> dict:
-    """`GpioSnapshot` → dict JSON-able (todo campo salvo los declarados)."""
-    return {
-        nombre: _a_json(getattr(snap, nombre))
-        for nombre in _campos_transportados(GpioSnapshot, CAMPOS_RECALCULADOS_AL_LLEGAR)
-    }
+    """`GpioSnapshot` → dict JSON-able (todo campo salvo los declarados).
+
+    [T-2.165] Viaja además la lista de campos que ESTE dueño conoce, para que el
+    otro lado pueda distinguir «no lo mandó porque no lo conoce» de «dijo que lo
+    mandaría y no está».
+    """
+    campos = _campos_transportados(GpioSnapshot, CAMPOS_RECALCULADOS_AL_LLEGAR)
+    datos = {nombre: _a_json(getattr(snap, nombre)) for nombre in campos}
+    datos[CLAVE_CAMPOS_DEL_DUENO] = sorted(campos)
+    return datos
 
 
 def instantanea_desde_json(datos: dict, *, edad_s: float) -> GpioSnapshot:
     """dict → `GpioSnapshot`, con la EDAD medida por quien lee.
 
-    Un campo que falte es un contrato roto y se dice: rellenarlo con el default
-    del dataclass devolvería un gabinete inventado (sirena en reposo, relés
-    vacíos) con la firma de un dato medido.
+    [T-2.165] TRES desenlaces, no dos, porque un campo ausente tiene dos causas
+    que piden respuestas opuestas:
+
+    * **El dueño no conoce el campo** (corre una versión anterior a la que lo
+      introdujo). No es un contrato roto: es el estado NORMAL de la ventana que
+      el layout A/B abre entre activar al cliente y reiniciar al dueño. Se lee lo
+      que sí vino y el nombre del que no, en `campos_desconocidos`.
+    * **El dueño dijo que lo mandaría y no está.** Eso sí es un contrato roto y
+      sigue lanzando: rellenarlo con el default devolvería un gabinete inventado
+      —sirena en reposo, relés vacíos— con la firma de un dato medido.
+    * **El dueño conoce campos que este cliente no.** El despliegue va al revés
+      (dueño más nuevo que su cliente) y también lanza: leer una instantánea que
+      no se entiende del todo es peor que no leerla.
+
+    Un dueño ANTERIOR a esta ficha no manda la lista de campos. Entonces no se le
+    puede exigir nada: lo que falte se cuenta como desconocido. Es la lectura
+    correcta —no puede haber prometido campos que no sabía que existían— y es
+    justo el caso que dejó un gabinete ciego el 2026-08-23.
     """
     campos = _campos_transportados(GpioSnapshot, CAMPOS_RECALCULADOS_AL_LLEGAR)
-    faltan = [nombre for nombre in campos if nombre not in datos]
-    if faltan:
-        raise ProtocolError(
-            f"la instantánea del dueño de los pines llegó sin {faltan}: es un "
-            "contrato roto, no un gabinete en reposo"
-        )
-    valores = {nombre: _desde_json(tipo, datos[nombre]) for nombre, tipo in campos.items()}
-    return GpioSnapshot(**valores, age_s=edad_s)
+    declarados = datos.get(CLAVE_CAMPOS_DEL_DUENO)
+
+    if declarados is not None:
+        if not isinstance(declarados, list) or not all(isinstance(x, str) for x in declarados):
+            raise ProtocolError(
+                f"la instantánea declaró `{CLAVE_CAMPOS_DEL_DUENO}` y no es una lista "
+                f"de nombres: {declarados!r}"
+            )
+        del_dueno = set(declarados)
+        de_mas = sorted(del_dueno - set(campos))
+        if de_mas:
+            raise ProtocolError(
+                f"el dueño de los pines conoce campos que este cliente no ({de_mas}): "
+                "corre una versión POSTERIOR. El despliegue va al revés — se activó "
+                "al dueño antes que al cliente"
+            )
+        rotos = sorted(n for n in del_dueno if n not in datos)
+        if rotos:
+            raise ProtocolError(
+                f"el dueño dijo que mandaría {rotos} y no llegaron: es un contrato "
+                "roto, no un gabinete en reposo"
+            )
+        desconocidos = frozenset(n for n in campos if n not in del_dueno)
+    else:
+        # Dueño anterior a T-2.165: no declara nada, así que no se le exige nada.
+        desconocidos = frozenset(n for n in campos if n not in datos)
+
+    valores = {
+        nombre: (_neutro(tipo) if nombre in desconocidos else _desde_json(tipo, datos[nombre]))
+        for nombre, tipo in campos.items()
+    }
+    return GpioSnapshot(**valores, age_s=edad_s, campos_desconocidos=desconocidos)
 
 
 def resultado_a_json(resultado: ChannelOutcome) -> dict:

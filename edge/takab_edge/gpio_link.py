@@ -114,6 +114,23 @@ class GpioSnapshot:
     #: Va con default porque el DUEÑO no tiene nada que declarar aquí: lo pone
     #: quien lo lee a través del transporte.
     age_s: float = 0.0
+    #: [T-2.165] Campos que el DUEÑO de los pines no supo decir, porque corre una
+    #: versión anterior a la que los introdujo.
+    #:
+    #: **Existe porque «no lo mandó» y «vale False» no son lo mismo**, y fundirlos
+    #: costó un gabinete ciego. La primera noche del layout A/B el cliente nuevo
+    #: exigió `keepalive_beating` a un dueño de julio que no lo conocía, y el
+    #: códec —que hace bien en no inventarse un gabinete en reposo— tiró la
+    #: instantánea ENTERA: el panel se quedó sin relés y sin nada, con el edificio
+    #: perfectamente protegido.
+    #:
+    #: Ahora esos campos llegan con su default para que el objeto se construya, y
+    #: **su nombre queda aquí**: quien los lea sin mirar este conjunto está
+    #: leyendo un valor que nadie midió, y el panel tiene con qué decirlo. Vacío
+    #: es el caso normal —dueño y cliente de la misma versión—.
+    #:
+    #: Como `age_s`, lo rellena QUIEN LEE: el dueño no tiene nada que declarar.
+    campos_desconocidos: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

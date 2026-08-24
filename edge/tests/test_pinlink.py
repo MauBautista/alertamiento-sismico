@@ -158,9 +158,11 @@ def _espiar_la_secuencia(sup) -> list:  # noqa: ANN001
 def test_el_codec_lleva_TODOS_los_campos_de_la_instantanea(gpio: GpioController) -> None:
     """Derivado de `__dataclass_fields__`: un campo nuevo no puede quedarse fuera.
 
-    La única excepción admitida es la DECLARADA (`age_s`), que se recalcula en el
-    reloj de quien lee — transportar la edad medida en el reloj del otro proceso
-    sería exactamente la mentira que esta pieza existe para impedir.
+    Las únicas excepciones admitidas son las DECLARADAS en
+    `CAMPOS_RECALCULADOS_AL_LLEGAR`, cada una con su razón escrita: `age_s`
+    porque transportar la edad medida en el reloj del otro proceso sería justo la
+    mentira que esta pieza impide, y `campos_desconocidos` porque sólo QUIEN LEE
+    puede saber qué le falta al otro lado.
     """
     gpio.simulate_sasmex(active=True)
     original = gpio.snapshot()
@@ -178,8 +180,16 @@ def test_el_codec_lleva_TODOS_los_campos_de_la_instantanea(gpio: GpioController)
     assert vuelta.siren_reason is SirenReason.ALERT
 
 
+# [T-2.165] La exclusión se DERIVA de lo declarado en el códec, no de una lista
+# escrita aquí: `age_s` estaba a mano y `campos_desconocidos` —recalculado por la
+# misma razón— tuvo que descubrirse con un rojo. `relays` sigue aparte porque no
+# es una excepción de transporte sino de este test: variar una tupla de estados
+# de relé pide un caso propio, y lo tiene más abajo.
 @pytest.mark.parametrize(
-    "campo", sorted(set(GpioSnapshot.__dataclass_fields__) - {"age_s", "relays"})
+    "campo",
+    sorted(
+        set(GpioSnapshot.__dataclass_fields__) - set(cd.CAMPOS_RECALCULADOS_AL_LLEGAR) - {"relays"}
+    ),
 )
 def test_dos_instantaneas_que_difieren_en_UN_campo_siguen_difiriendo_al_otro_lado(
     gpio: GpioController, campo: str
@@ -1426,3 +1436,113 @@ def test_la_ruta_del_socket_sale_de_la_config_y_es_atable(settings) -> None:  # 
     with pytest.raises(OSError) as exc:
         PinLinkServer(None, largo).start()
     assert "108" in str(exc.value) or exc.value.errno in (errno.ENAMETOOLONG, errno.EINVAL)
+
+
+# ---------------------------------------------------------------------------
+# [T-2.165] La ventana de versiones mezcladas que abre el layout A/B
+# ---------------------------------------------------------------------------
+
+
+def _instantanea_de_un_dueno_de_JULIO(gpio: GpioController) -> dict:
+    """Lo que mandaba un dueño anterior a T-2.146: sin `keepalive_beating` y —por
+    ser anterior a T-2.165— **sin declarar qué campos conoce**."""
+    datos = cd.instantanea_a_json(gpio.snapshot())
+    datos.pop("keepalive_beating")
+    datos.pop(cd.CLAVE_CAMPOS_DEL_DUENO)
+    return datos
+
+
+def test_un_dueno_MAS_ANTIGUO_no_tira_la_instantanea_entera(gpio: GpioController) -> None:
+    """EL INCIDENTE DEL GABINETE, reproducido (2026-08-23).
+
+    El layout A/B actualiza al CLIENTE y deja al DUEÑO de los pines con el código
+    anterior hasta una ventana declarada — eso es el diseño de T-2.70.a y es
+    correcto. Pero el códec exigía todos los campos, así que el cliente nuevo
+    rechazó la instantánea ENTERA de un dueño de julio y **el panel se quedó sin
+    relés y sin nada** (`gpio_unreachable`), con el edificio perfectamente
+    protegido: el reflejo SASMEX→sirena vive dentro del dueño y no cruza esta
+    costura.
+
+    Lo que se exige ahora: que lo MEDIDO llegue, y que lo que no supo decir quede
+    NOMBRADO en vez de fundido con un `False`.
+    """
+    original = gpio.snapshot()
+    vuelta = cd.instantanea_desde_json(_instantanea_de_un_dueno_de_JULIO(gpio), edad_s=0.1)
+
+    assert vuelta.campos_desconocidos == frozenset({"keepalive_beating"})
+    # …y todo lo demás sobrevivió: es la mitad que el gabinete perdió aquella noche.
+    assert vuelta.running == original.running
+    assert vuelta.relays == original.relays
+    assert vuelta.siren_sounding == original.siren_sounding
+
+
+def test_un_dueno_que_PROMETE_un_campo_y_no_lo_manda_sigue_siendo_contrato_roto(
+    gpio: GpioController,
+) -> None:
+    """La estrictez no se relaja: se hace PRECISA.
+
+    Un dueño que declara conocer `keepalive_beating` y no lo manda no es un dueño
+    antiguo — es uno roto, y rellenarlo devolvería un gabinete inventado con la
+    firma de un dato medido. Sin este test, «tolerar al viejo» se convertiría en
+    «tolerar cualquier cosa», que es como se pierden los contratos.
+    """
+    datos = cd.instantanea_a_json(gpio.snapshot())
+    datos.pop("keepalive_beating")  # …pero `_campos` SIGUE prometiéndolo
+
+    with pytest.raises(cd.ProtocolError) as exc:
+        cd.instantanea_desde_json(datos, edad_s=0.1)
+    assert "contrato" in str(exc.value)
+    assert "keepalive_beating" in str(exc.value)
+
+
+def test_un_dueno_MAS_NUEVO_que_su_cliente_es_un_error_duro(gpio: GpioController) -> None:
+    """El despliegue al revés: se activó al dueño antes que al cliente.
+
+    Aquí NO se degrada, y la asimetría es deliberada: de un dueño viejo se sabe
+    exactamente qué falta; de uno nuevo no se sabe qué significa lo que sí mandó.
+    Leer a medias una instantánea que no se entiende del todo es peor que no
+    leerla.
+    """
+    datos = cd.instantanea_a_json(gpio.snapshot())
+    datos[cd.CLAVE_CAMPOS_DEL_DUENO] = [*datos[cd.CLAVE_CAMPOS_DEL_DUENO], "algo_del_futuro"]
+    datos["algo_del_futuro"] = 42
+
+    with pytest.raises(cd.ProtocolError) as exc:
+        cd.instantanea_desde_json(datos, edad_s=0.1)
+    assert "POSTERIOR" in str(exc.value)
+    assert "al revés" in str(exc.value)
+
+
+def test_dos_procesos_de_la_MISMA_version_no_declaran_nada_desconocido(
+    gpio: GpioController,
+) -> None:
+    """La no-vacuidad de los tres de arriba: en el caso normal —dueño y cliente de
+    la misma versión— el conjunto está VACÍO. Si no lo estuviera, `campos_desconocidos`
+    sería ruido permanente y el panel aprendería a ignorarlo."""
+    vuelta = cd.instantanea_desde_json(cd.instantanea_a_json(gpio.snapshot()), edad_s=0.0)
+    assert vuelta.campos_desconocidos == frozenset()
+
+
+def test_el_valor_de_un_campo_desconocido_NO_se_pinta_como_medido(gpio: GpioController) -> None:
+    """[T-2.146 · T-2.165] El panel tiene que decir «el dueño no sabe», no «no late».
+
+    El valor que trae un campo desconocido lo puso el códec para poder construir
+    el objeto —`False`, en este caso—, y `False` en `keepalive_beating` significa
+    «hay ruta y NADIE la gobierna», que es el estado que hay que ver de lejos.
+    Pintarlo así sería inventarse una avería; callarlo, esconder una ventana.
+    """
+    from takab_edge.local_api import LocalDashboard
+
+    vuelta = cd.instantanea_desde_json(_instantanea_de_un_dueno_de_JULIO(gpio), edad_s=0.1)
+    vista = LocalDashboard._keepalive_view(  # type: ignore[attr-defined]
+        _PanelConLatido(habilitado=True), vuelta
+    )
+    assert vista["estado"] == "dueno_antiguo"
+    assert vista["beating"] is None, "un valor que nadie midió no puede viajar como booleano"
+
+
+class _PanelConLatido:
+    """Lo mínimo que `_keepalive_view` mira del panel: si hay ruta declarada."""
+
+    def __init__(self, *, habilitado: bool) -> None:
+        self._keepalive_enabled = habilitado
