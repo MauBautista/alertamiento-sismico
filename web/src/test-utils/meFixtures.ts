@@ -103,7 +103,7 @@ export const ME_FIXTURES: Record<RoleName, MeResponse> = {
     enrollment_manage: true,
     maintenance_window: true,
     platform_maintenance_window: true,
-  deploy_firmware: true,
+    deploy_firmware: true,
   }),
   // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
   takab_support: me("takab_support", ALL_ROUTES, { read_audit: true }),
