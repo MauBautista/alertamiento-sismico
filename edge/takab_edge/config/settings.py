@@ -365,6 +365,17 @@ class EdgeSettings(BaseSettings):
     #: `provision_gateway.sh --catalog FILE`. El feed nube→edge firmado = T-2.24.
     catalog_path: str = "/var/lib/takab/ssn-catalog.json"
 
+    #: [T-2.70] Agente de activación y vuelta atrás del gabinete. Vive FUERA de
+    #: toda release (`deploy.sh` lo instala en `${RAIZ}/bin`) y no importa una
+    #: línea de `takab_edge`: el caso que un rollback existe para cubrir es «la
+    #: versión nueva no arranca», y un reversor dentro de esa versión es justo el
+    #: que no puede correr.
+    #:
+    #: Es una RUTA y no un import por la misma razón: el despachador lo INVOCA
+    #: como proceso separado y desligado de su sesión, porque activar reinicia a
+    #: `takab-edge` —o sea, al proceso que acaba de lanzarlo—.
+    canary_script: str = "/opt/takab/bin/canary.sh"
+
     #: [T-2.29] PUNTO 0 de la brújula del panel: media EN* capturada con el
     #: gabinete instalado y nivelado (presentación pura; jamás toca umbrales ni
     #: actuación). Se fija/restablece desde el panel con PIN y sobrevive reinicios.

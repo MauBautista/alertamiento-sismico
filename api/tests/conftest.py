@@ -207,6 +207,15 @@ def seeded(conn: psycopg.Connection) -> psycopg.Connection:
             "VALUES (%s,%s,%s,'ground','RS4D')",
             (sid, tenant, site),
         )
+    # [T-2.84.e] Referencias de suelo por sitio, una por tenant: es lo que permite
+    # medir el cruce 0/1 POR LA COLUMNA `tenant_id` y no por el `EXISTS` contra
+    # `sites` que la RLS usaba antes.
+    for tenant, site, sensor in ((TENANT_A, SITE_A, SENSOR_A), (TENANT_B, SITE_B, SENSOR_B)):
+        conn.execute(
+            "INSERT INTO site_ground_refs (site_id, ground_sensor_id, tenant_id, distance_m) "
+            "VALUES (%s,%s,%s,12.5)",
+            (site, sensor, tenant),
+        )
     # incidentes abiertos: uno en tenant A (private), uno en tenant G (gov_shared)
     for inc, evt, tenant, site in (
         (INC_A, EVT_A, TENANT_A, SITE_A),

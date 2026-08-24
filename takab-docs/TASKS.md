@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **301** · `[x]` **247** · `[~]` **9** · `[ ]` **45**
+**Conteo de tareas:** total **303** · `[x]` **252** · `[~]` **9** · `[ ]` **42**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -1739,6 +1739,7 @@ enclave hasta silencio, <100 ms) es correcto para ese contacto tal cual.
 
 ### [x] T-1.68 · Sirena por AUDIO (jack 3.5 mm del cerebro) — **COMPLETA (2026-07-14)**
 - **Componente:** edge · **Depende de:** T-1.67 (la prueba de actuación es una de las vías que la hace sonar)
+- **Decisión:** [`D-15`](DECISIONES-MAURICIO.md#d-15) — sirena por jack ENCENDIDA en el gabinete de desarrollo.
 - **CORRECCIÓN DE HARDWARE:** el "cerebro" NO es un Pi 5 — es un **Raspberry Pi 4 Model B Rev 1.5**
   (verificado contra `/proc/device-tree/model`; todo el proyecto lo documentaba mal). El Pi 4 **SÍ
   trae jack 3.5 mm y funciona** (`speaker-test` reprodujo tono; jack al 96%). La petición de sacar
@@ -5053,11 +5054,17 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
 > que sí hay que tener escritas, porque no se deducen de ninguna ficha de tarea:
 >
 > 1. **`T-2.84` (matriz requisito→test) depende de las Fases 2.3–2.8**, y las Fases 2.3 y 2.4
->    son del **Bloque I**. Es el único cruce Bloque II → Bloque I y es intencional: una matriz
+>    son del **Bloque I**. Es un cruce Bloque II → Bloque I y es intencional: una matriz
 >    escrita antes de que existan los tests que cita documenta intenciones, no cobertura. Se
 >    declaró por rango de fases y no por lista de tareas, así que **no aparece en ninguna
 >    línea `Depende de: T-…`**: hasta el 2026-08-05 el cruce era invisible para el test que
 >    los vigila.
+> 1.b **`T-2.164` depende de `T-2.150`**, que es del **Bloque I**. Segundo cruce
+>    Bloque II → Bloque I, y también intencional: `T-2.150` selló el sujeto de los
+>    consentimientos NUEVOS, y `T-2.164` es exactamente la mitad que ese sellado **no** puede
+>    alcanzar —los teléfonos ya escritos en claro en una tabla append-only—. No se puede fichar
+>    antes de que el sellado exista, porque hasta entonces no hay «filas viejas» que distinguir
+>    de las nuevas.
 > 2. **Este bloque está en la ruta crítica**, aunque el carril de gates sea el que se agenda
 >    primero: `T-2.74` y la cascada `T-2.75`→`T-2.78` son suyos, y `T-2.94` (Bloque III)
 >    espera a `T-2.78`. Ver "RUTA CRÍTICA" al final del archivo. Nada de esto significa que
@@ -5075,13 +5082,123 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
   - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
-### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` · BLOQUEADA por T-2.70.a
+### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` COMPLETO · falta `G-01`
+- **Desbloqueada por** [`D-04`](DECISIONES-MAURICIO.md#d-04) (2026-08-16): la ventana de
+  mantenimiento avisada para mover al dueño de los pines.
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
+
+> ### ✅ SEGUNDO INTENTO (2026-08-23, 22:31): EL GABINETE REAL CORRE EL LAYOUT A/B
+>
+> Con los tres arreglos puestos, el despliegue completó **con ✓ de punta a punta**: gate del
+> intérprete en verde, canary con remojo de 120 s sin una lectura enferma, ventana declarada,
+> dueño de los pines reiniciado, y propiedad re-verificada. Y después el **reinicio en frío**,
+> que es la prueba que anoche no llegó a hacerse:
+>
+> | Comprobación (`A.2`) | Medido |
+> |---|---|
+> | 1-2 · procesos vivos, sin pelear | `active`/`active`, `NRestarts` **0 y 0** |
+> | 3 · backend GPIO real | `LGPIOFactory (lgpio)` — sin caída a sysfs/native |
+> | 4 · quién sostiene los pines | `pid=740`, `unit=takab-gpio`, `flock=9` |
+> | — · desde dónde arrancó | **desde el symlink**: `releases/20260824T034254Z-67de47c/edge` |
+> | — · lo demás | nube `online` (RTT 75 ms, spool 0), SeedLink reconectado, **cero errores** |
+>
+> Reproduce exactamente la línea base del 2026-08-17 (`NRestarts` 0 y 0, `flock=9`), y esta vez
+> **arrancando desde el symlink**. `G-01` queda en **4/5**: falta que los relés se muevan, que es
+> la prueba AUDIBLE del panel y exige a alguien delante del gabinete.
+>
+> **Y un segundo hallazgo del campo, ya corregido:** la poda se llevó la release **heredada** — el
+> árbol de julio, con meses de operación real detrás y la única versión de la que se sabía que ese
+> edificio sobrevive a un apagón. Toda release nueva es más reciente que ella, así que una poda por
+> fecha se la lleva siempre. Ancla: `test_la_poda_JAMAS_se_lleva_la_release_heredada`.
+>
+> **Lo que queda fichado y NO se arregló:** el layout A/B crea por diseño una ventana de versiones
+> mezcladas (cliente nuevo, dueño viejo hasta la ventana declarada), y el códec de pinlink es
+> estricto — un dueño más antiguo se rechaza igual que un contrato roto
+> (`ProtocolError: … llegó sin ['keepalive_beating']`). Medido: durante esa ventana **el panel no
+> ve los relés** (`gpio_unreachable`). La protección no se toca —el reflejo vive entero dentro de
+> `takab-gpio`—, pero la observabilidad sí. El códec necesita distinguir *dueño más viejo* de
+> *contrato roto*.
+
+> ### 🔴 PRIMER INTENTO EN EL GABINETE REAL (2026-08-23): FALLÓ, y por qué eso valió la pena
+>
+> **El gabinete se quedó sin dueño de pines** —sin sirena, sin cierre de gas, sin retenedores—
+> con las dos unidades ciclando en `203/EXEC`, hasta que se miró. Y la causa **no estaba en el
+> código que se desplegaba**, que es justo por lo que `G-01` no es una formalidad:
+>
+> Las dos unidades declaran `ProtectHome=true`: para ellas `/home` NO EXISTE. El venv del Pi era
+> UNO y se reusaba **desde julio**, con su intérprete en `/opt/takab/.python` porque alguien
+> exportó `UV_PYTHON_INSTALL_DIR` **a mano** aquella vez — un hecho que vivía en un directorio y
+> **en ningún archivo**. El layout A/B estrena venv por release; `uv` eligió intérprete por
+> primera vez en meses y se lo puso en `$HOME`. El ejecutable existía; el que no existía **para
+> systemd** era su intérprete.
+>
+> **Los tres gates del despliegue corren como el usuario de ssh, con `/home` entero visible**, así
+> que por construcción no podían verlo: un venv «importable» aquí es `203/EXEC` allí. Y el canary
+> leyó `MainPID=0` como «no pude medir» en vez de como lo que es —una unidad que systemd da por
+> ACTIVA y sin proceso principal, o sea un `ExecStart` que no llegó a ejecutarse— así que **dejó
+> la release puesta en lugar de revertir**, que era exactamente su trabajo.
+>
+> Las tres corregidas y ancladas: el gate del intérprete
+> (`test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa`), la declaración de dónde
+> instala `uv` (`test_el_interprete_de_uv_se_instala_FUERA_de_lo_que_ProtectHome_oculta`) y la
+> clasificación de `MainPID=0` (`test_una_unidad_ACTIVA_sin_proceso_principal_es_una_medicion_MALA`).
+> Gabinete revertido a la release heredada y protegiendo. Bitácora en
+> `runbooks/RUNBOOK-sesion-de-vida.md §A.5`.
+
+> ### CERRADA EN SOFTWARE (2026-08-23) — lo que queda es FÍSICO
+>
+> **Los cinco criterios están construidos y medidos; el único que no se cierra desde aquí es
+> el gate `G-01`.** El primer despliegue A/B de un gabinete real convierte `/opt/takab/edge`
+> de directorio a symlink, o sea que cambia la RUTA DESDE LA QUE ARRANCA EL CAMINO DE VIDA, y
+> eso no se declara bueno con tests en verde: exige un restart en frío del Pi con las dos
+> unidades volviendo solas. Hasta entonces `deploy.sh` se niega a migrar sin ventana declarada.
+>
+> **Lo que existe y está medido.** El despliegue dejó de ser in-place: cada versión aterriza
+> entera en `/opt/takab/releases/<ts>-<sha>/` **con su propio venv y sus propios contratos**, y
+> `/opt/takab/edge` pasó a ser un **symlink** — el `ExecStart` de las dos unidades no cambia,
+> cambia a dónde resuelve. La activación la hace `/opt/takab/bin/canary.sh`, que vive **FUERA de
+> toda release**: el caso que un rollback existe para cubrir es «la versión nueva no arranca», y
+> un reversor dentro de esa versión es justo el que no puede correr.
+>
+> **El criterio de salud, que es lo que separa esto de un `restart`.** `systemctl is-active` a
+> los 3 s daba por bueno un proceso que arranca y crashea al segundo 4 (refinamiento 3 de
+> `T-2.70.a`). El remojo sostiene CUATRO señales a la vez: unidad activa, **MainPID sin relevo**
+> —un crash-loop se delata ahí y en ningún otro sitio—, **pines con dueño** (el mismo `flock` del
+> paso 7) y **panel contestando**, que es «llegó a servir» y no sólo «arrancó».
+>
+> **«Medido mal» ≠ «no medido», y de eso depende que el reversor no haga daño.** Revertir es
+> reiniciar y reiniciar cuesta una ventana sin sirena, así que un `flock` ilegible o un `curl`
+> ausente dejan la versión puesta, salen con código propio y lo GRITAN — jamás un ✓, jamás un
+> ciclo de gas por un dato que nadie leyó.
+>
+> **Lo que decide si se puede activar NO es el gabinete: es quién lo ordenó.** En un gabinete
+> cuyo dueño de pines siga dentro de `takab-edge`, activar cicla `GAS_VALVE` y `DOOR_RETAINER`.
+> Atendido (`deploy.sh`, con una persona leyendo la salida) avisa y sigue —es lo que ya hacía—;
+> **remoto exige ventana declarada**, que es como llegará el comando firmado. Revertir no exige
+> nada: ahí el reinicio no es el daño, es la cura.
+>
+> **⚠️ LA MIGRACIÓN AL LAYOUT A/B ES FÍSICA Y NO SE CIERRA CON TESTS EN VERDE.** El primer
+> despliegue A/B de un gabinete convierte `/opt/takab/edge` de directorio a symlink: cambia la
+> **ruta desde la que arranca el camino de vida**. `deploy.sh` se niega a hacerlo sin
+> `--ventana-de-mantenimiento`, conserva el árbol heredado ENTERO como release —con su venv—
+> para que exista vuelta atrás, y **exige `G-01`** (restart en frío del Pi con las dos unidades
+> volviendo solas). `G-01` está SIN ACREDITAR: es la mitad de esta ficha que no se puede cerrar
+> desde aquí.
+>
+> Anclado en `edge/tests/test_canary_sh.py` (16, el script corrido de verdad contra un gabinete
+> de mentira) + `test_deploy_sh.py` (35) + `test_deploy_artifacts.py` (66). Tres mutaciones
+> verificadas: quitar la comparación de MainPID, quitar la `-T` del `mv` y quitar la guarda de
+> ventana ponen en rojo los tests que las vigilan.
+
 - **Criterios de aceptación:**
-  - [ ] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
+  - [x] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
         sirena (regla de oro 4); una ventana de actualización no puede ser una ventana de
-        desprotección. **BLOQUEADO: hoy este criterio es VACÍO** — ver la nota de abajo y
-        `T-2.70.a`, que es quien lo desbloquea.
+        desprotección. **Cerrado en software:** la activación reinicia sólo al CLIENTE, y que
+        ninguna rama del reversor nombre al dueño está anclado por comportamiento y por texto
+        (`test_jamas_se_reinicia_al_dueno_de_los_pines`,
+        `test_el_reversor_no_reinicia_jamas_al_dueno_de_los_pines`). El reinicio del dueño sigue
+        exigiendo ventana declarada y ahora va DESPUÉS del repunte — antes estrenaría la versión
+        vieja y ciclaría gas y retenedores a cambio de nada. **Falta el gate físico.**
   - [x] **El criterio de éxito que un canary necesita, y que no existía.** El latido MENTÍA
         sobre qué código corre: `fw_version()` relee el archivo `FW_VERSION` en cada snapshot
         y `deploy.sh` lo escribe ANTES de reiniciar, así que el proceso **VIEJO** publicaba la
@@ -5089,11 +5206,39 @@ veinte es imposible; con veinte y una regresión, es peligroso.
         de esa señal habría dado VERDE a una actualización no aplicada. Ahora el gabinete
         congela el SHA **al importar** (`running_version()`), publica los dos, la ingesta
         persiste `gateways.fw_running` y la nube deriva el estado `SIN REINICIAR`.
-  - [ ] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
-        vez es un incidente a toda la flota a la vez.
-  - [ ] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal").
-  - [ ] Comando firmado + nonce + ack (regla de oro 8).
-  - [ ] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior.
+  - [x] Canary: primero uno, se observa, luego el resto. Un despliegue a toda la flota a la
+        vez es un incidente a toda la flota a la vez. `POST /fleet/rollouts` activa **UNO** y se
+        para —no hay parámetro para «actívalos todos», y esa ausencia es la ficha—;
+        `/advance` se NIEGA con 409 mientras el canary no declare `fw_running` = el SHA
+        esperado. **Un ack no basta y por eso no se acepta:** dice que la orden llegó, no que
+        el gabinete arrancara ese código, y entre las dos cosas caben todos los fallos que
+        importan. `fw_running` en `null` tampoco confirma: «no lo ha dicho» no es «está bien».
+        **Lo avanza una PERSONA, no un reloj**, por el mismo criterio que los simulacros —un
+        reloj sólo lee lo que se le enseñó, y el fallo que el remojo no ve (latencias raras, un
+        sensor mudo, un cliente que llama) se descubre mirando—. Y **un rollout es de UN
+        tenant**: actualizar varios clientes a la vez es justo lo que esto existe para impedir,
+        así que la política se escribe en el modelo y no en un runbook.
+  - [x] **Rollback automático** ante fallo, con criterio medible de fallo (no "parece mal"). El
+        criterio son las cuatro señales del remojo, y la vuelta atrás es COMPLETA —código y
+        dependencias— porque cada release lleva su venv.
+  - [x] Comando firmado + nonce + ack (regla de oro 8). `POST /sites/{id}/update` y
+        `.../update/rollback` emiten por `issue_signed_command` (HMAC por gateway, nonce
+        UNIQUE, TTL, rate-limit, auditoría) **con MFA**, bajo la acción nueva
+        `deploy_firmware` — SOLO `takab_superadmin`, con el criterio de
+        `platform_maintenance_window` y no el de `maintenance_window`: el código es de TAKAB
+        y un `tenant_admin` no tiene el artefacto ni con qué juzgarlo.
+        **El ack dice «orden aceptada», no «funcionó», y el orden de dos líneas es el diseño:**
+        activar reinicia `takab-edge` —el proceso que recibió el comando—, así que un ack
+        posterior al lanzamiento no se publicaría jamás y la nube esperaría el TTL sin poder
+        distinguir «rechazado» de «no contestó». El gabinete acusa ANTES y lanza el agente
+        desligado de su sesión (`start_new_session`), o el `systemctl restart` se llevaría por
+        delante al propio reversor. El resultado viaja por el latido (`fw_running`).
+        Revertir NO acepta a qué versión volver: la sabe el gabinete, y una reversión a
+        ninguna parte es peor que ninguna reversión.
+  - [x] Test: actualización que falla ⇒ el gabinete vuelve solo a la versión anterior. Cubierto
+        en sus cuatro formas: no arranca, arranca y CICLA, arranca y el panel no contesta, y
+        arranca sin dueño de pines. Más el caso honesto: revertido y **sigue** enfermo ⇒ eso ya
+        no es la actualización, es el gabinete, y sale con código propio.
 
 > **DECISIÓN RATIFICADA (2026-08-07) — separar los procesos.** El criterio 1 no se podía
 > cumplir ni incumplir: `takab-edge.service` declara `Conflicts=takab-gpio.service` porque
@@ -6095,6 +6240,112 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 > `commands.action`, no kinds de acción— y se retiran con su razón, igual que `siren_test` en
 > `T-2.133`.
 
+### [x] T-2.164 · Los teléfonos ya escritos en claro siguen en claro para siempre — `SOFTWARE` · COMPLETA (2026-08-24)
+- **Componente:** api + db · **Depende de:** T-2.150 · **Declarada por la migración `0046`**
+- **El hueco, y lo escribe la propia migración.** `T-2.150` sellò el sujeto: las filas NUEVAS de
+  `privacy_consents` guardan un índice de 64 hex y no el número. Las viejas **no se tocaron**, y el
+  `CHECK` las sigue aceptando con este comentario literal: *«Forma VIEJA: el número en claro.
+  **Permanente, no transitoria**: la tabla es append-only y estas filas NO SE PUEDEN reescribir.»*
+- **Por qué no es un descuido sino una deuda:** la tabla es append-only **a propósito** —es la
+  prueba de la base legal de cada envío—, así que reescribir esas filas exige exactamente la
+  decisión que `T-2.80.a` planteó y que `D-23` resolvió sólo para el flujo ARCO nuevo. Un
+  `UPDATE` a mano destruiría la propiedad que hace útil a la tabla.
+- **Cuántas son, hoy: no se sabe, y eso es parte de la ficha.** Hay que contarlas antes de decidir
+  nada — si son cero, esto se cierra midiendo; si no, hay PII en claro con nombre y apellido.
+- **Criterios de aceptación:**
+  - [x] **Contadas** (2026-08-24). **Cero en los tres entornos que existen**, y no había otra
+        forma de saberlo que preguntándoselo a cada base:
+
+        | Entorno | consentimientos | `msisdn` en claro | `msisdn` sellados |
+        |---|---|---|---|
+        | local `takab` | 0 | **0** | 0 |
+        | local `takab_test` | 0 | **0** | 0 |
+        | nube dev (`takab-dev-db`, por SSM) | 2 | **0** | 0 |
+
+        Los dos de la nube son de sujeto `user`. El componente `LEGAL` de la ficha **se cae con
+        el conteo**: sin filas afectadas no hay derecho de titular que ponderar contra ninguna
+        prueba de base legal.
+  - [x] **Sin filas, no hay nada que decidir** — y esa es la respuesta, no una evasión: la
+        decisión que este criterio pedía (sellar retroactivamente a costa del append-only, o
+        declararlas intocables) sólo tiene sentido con datos que ponderar.
+  - [x] **El `CHECK` deja de aceptar las dos formas** (migración `0051`). Mientras aceptaba
+        ambas, «no hay filas viejas» y «nadie las ha mirado» eran indistinguibles; ahora el
+        invariante lo garantiza la base. Y se puede apretar sin miedo porque **ningún camino de
+        código puede crear una**: `privacy/store.py` sella el sujeto antes de insertar y **LANZA**
+        si faltan los secretos, en vez de caer a texto en claro.
+
+> ### La lectura sigue tolerando la forma vieja, y eso es deliberado
+>
+> `store._formas()` busca por el índice **y** por el número en claro. Si algún día apareciera una
+> fila así en un entorno que nadie censó, se encontraría igual: lo que ya no se puede es
+> **escribir** una nueva. Apretar la escritura y relajar la lectura es la dirección correcta —al
+> revés se perdería el acceso a un dato que sí existe.
+>
+> El pre-check de la migración no es decoración: `ADD CONSTRAINT` ya valida las filas existentes,
+> pero el error de PostgreSQL nombra UNA fila y no dice cuántas hay ni que lo que falta es una
+> decisión. El `DO` cuenta y lo dice.
+>
+> Anclado en `test_la_BASE_ya_no_acepta_un_consentimiento_con_el_numero_en_claro` y su contraparte
+> `test_la_forma_SELLADA_sigue_entrando` — sin la segunda, la primera podría estar pasando porque
+> el `CHECK` rechaza todo. Verificado por mutación: relajar el `CHECK` pone el primero en rojo.
+
+### [ ] T-2.165 · El layout A/B abre una ventana en la que el cliente no ve al dueño de los pines — `SOFTWARE`
+- **Componente:** edge (`pinlink`) · **Depende de:** T-2.70 · **Hallazgo del gabinete real (2026-08-23)**
+- **El hueco, medido en `gw-dev-0001`.** El despliegue A/B actualiza al **cliente**
+  (`takab-edge`) y deja al **dueño de los pines** (`takab-gpio`) con el código anterior hasta una
+  ventana declarada — eso es el diseño de `T-2.70.a` y es correcto. Lo que nadie previó es que el
+  códec de `pinlink` es **estricto**: el cliente nuevo exigió `keepalive_beating` y el dueño de
+  julio no lo mandaba, así que rechazó la instantánea entera:
+  ```
+  ProtocolError: la instantánea del dueño de los pines llegó sin ['keepalive_beating']:
+  es un contrato roto, no un gabinete en reposo
+  ```
+  Resultado medido: **el panel dijo `gpio_unreachable` y `relays: []`** durante toda la ventana.
+- **La protección NO se toca, y esa distinción es el corazón de la ficha.** El reflejo
+  SASMEX→sirena vive **entero dentro de `takab-gpio`** y no cruza la costura (gate #6): el
+  edificio siguió protegido en todo momento. Lo que se pierde es **observabilidad** — el panel del
+  guardia y la consola SOC dejan de ver los relés de un gabinete que sí está protegiendo.
+- **El códec hace bien en fallar cerrado, y por eso NO se relaja.** *«No se inventa un gabinete en
+  reposo: un estado sin medir no existe»* es la doctrina correcta, y rellenar el campo ausente con
+  `False` sería exactamente la mentira que evita. El defecto no es la estrictez: es que **un dueño
+  MÁS VIEJO se trata igual que un contrato ROTO**, y son dos cosas distintas.
+- **Criterios de aceptación:**
+  - [ ] La instantánea del `pinlink` **lleva versión**, y el cliente sabe distinguir «campo que
+        esta versión no manda» de «campo que falta».
+  - [ ] Un dueño de versión ANTERIOR se lee en modo degradado **declarado**: el panel dice qué
+        campos no puede saber, no los inventa ni tira la instantánea completa.
+  - [ ] Un dueño de versión **posterior** al cliente sigue siendo un error duro: eso sí es un
+        despliegue al revés.
+  - [ ] Test que reproduce la ventana: cliente `N`, dueño `N-1`, y el panel pinta los relés.
+
+> ### La bifurcación, con el dato que la decide (medido 2026-08-24)
+>
+> La salida barata sería «un campo que falte y sea opcional se lee como `None`». **No sirve**:
+> de los 13 campos de `GpioSnapshot` **sólo 2 admiten `None`** (`siren_reason`,
+> `last_reflex_latency_s`), y el que rompió el gabinete —`keepalive_beating`— **no es uno de
+> ellos**. Así que hay que elegir, y las dos vías cuestan cosas distintas:
+>
+> **(A) Convención: todo campo NUEVO del snapshot nace opcional.** Barato de implementar y
+> derivable —el códec ya saca la lista del `__dataclass_fields__`—. El precio: `None` pasa a
+> significar **dos cosas** en el mismo campo («el dueño es más viejo y no lo manda» y «se
+> preguntó y no se pudo medir»), que es exactamente la fusión que `relays: null` costó cerrar en
+> el contrato 1.10.0. Y obliga a que cada consumidor trate el `None` de campos que hoy son
+> booleanos francos.
+>
+> **(B) El protocolo lleva versión y declara qué NO manda.** El cliente sabe *por qué* falta un
+> campo, y el panel puede decir «el dueño de los pines es más antiguo: no sabe decir X» — que es
+> un rótulo distinto de `S/D` y de `NO CONTESTA`, las tres distinciones que `MANUAL §6.0` lleva
+> tres tareas separando. Más trabajo, y es la que respeta la doctrina de la casa.
+>
+> **Recomendación: (B).** El defecto que esta ficha cierra no es «falta un campo» sino «no se
+> distingue un dueño VIEJO de un contrato ROTO», y (A) no distingue: sólo hace que el fallo sea
+> silencioso en vez de ruidoso. Pero es una decisión de contrato del camino de vida y merece
+> tomarse con la cabeza fresca, no al final de una sesión.
+>
+> **Mientras tanto el riesgo está acotado y conocido:** la ventana sólo existe entre la
+> activación y el reinicio del dueño, la protección no se toca, y `deploy.sh` ya avisa de que el
+> dueño quedó con código anterior.
+
 ### [x] T-2.163 · La reconciliación contra Cognito está desplegada y es INERTE — `SOFTWARE` + `HUMANO-AWS`
 - **Componente:** infra (`modules/database`) + api · **Detectada por:** `T-2.143`, **verificando el
   despliegue** el 2026-08-23 · **Bloquea:** el criterio 1 de `T-2.143`
@@ -6352,6 +6603,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 
 ### [ ] T-2.74 · `G-09` · restore real, RTO medido y publicado — `HUMANO-AWS`
 - **Componente:** operación · **Depende de:** T-2.73, **T-2.73.a** · **Cubre `G-09`.**
+- **Decisión:** [`D-17`](DECISIONES-MAURICIO.md#d-17) — la ventana AWS se parte en **dos**, y esta ficha es la segunda (~3 h).
 - **Vive fuera del carril de gates a propósito:** es el único de los diez que **no exige manos
   en el gabinete** — se acredita con una ventana AWS sobre software que sí controlamos
   (`T-2.72`/`T-2.73`). Está anotado en la nota de la Fase 2.11 para que quien busque los diez
@@ -6533,6 +6785,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 
 ### [ ] T-2.76.a · Alta de la cuenta Twilio y del número mexicano — `HUMANO-AWS` + `LEGAL`
 - **Componente:** cuenta de terceros + Secrets Manager · **Depende de:** T-2.76 (código listo)
+- **Decisión:** [`D-13`](DECISIONES-MAURICIO.md#d-13) — el teléfono de soporte es un número Twilio mexicano.
 - **Por qué es tarea propia y no una nota:** el código de T-2.76 está completo y probado, pero
   **sin credenciales el canal SMS cae a `simulated`** — escala al correo y deja huella honesta,
   que es lo correcto, pero significa que **hoy nadie recibe un SMS**. Mientras esto no se cierre,
@@ -6847,6 +7100,7 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
 
 ### [ ] T-2.78 · SES fuera de sandbox + cadena on-call acreditada — `HUMANO-AWS`
 - **Componente:** infra + operación · **Depende de:** T-2.76, T-2.77
+- **Decisión:** [`D-12`](DECISIONES-MAURICIO.md#d-12) — dominio raíz **`takabailert.com`** (decidido como `.mx` y enmendado el 2026-08-21) con DNS en Route 53. Es el que la solicitud de producción de SES pide como `Website URL`.
 - **Criterios de aceptación:**
   - [ ] SES fuera de sandbox con DKIM/SPF de dominio real.
   - [ ] **Acreditar la cadena on-call de punta a punta**: provocar una alarma real y que
@@ -6861,9 +7115,13 @@ el RTO no estaba medido. Mientras eso siguiera así, **el respaldo era una hipó
   escalamiento con sus huecos. Engancha además la verificación pendiente de T-2.60.a: es el
   mismo procedimiento.
 - **Tres cosas que el runbook dejó por escrito y conviene saber antes de empezar:**
-  - **No hay dominio.** La consola vive en `sslip.io` *"sin Route53 ni dominio propio"*
-    (`modules/serve/outputs.tf:9`), y la solicitud de producción de SES pide un `Website URL`.
-    El dominio es una decisión de producto pendiente, no un trámite del runbook.
+  - ~~**No hay dominio.**~~ **CADUCADO (2026-08-21).** Lo era cuando se escribió: la consola
+    vivía en `sslip.io` *"sin Route53 ni dominio propio"* (`modules/serve/outputs.tf:9`) y la
+    solicitud de producción de SES pide un `Website URL`. Hoy **`takabailert.com` está verificado
+    con Easy DKIM RSA-2048**, con MAIL FROM propio en `bounce.takabailert.com` (su MX y su SPF) y
+    DMARC publicado. Lo que sigue abierto es la salida del sandbox, que la decide AWS — no el
+    dominio. Se deja escrito en vez de borrado: el bloqueo existió y explica por qué esta ficha
+    estuvo parada.
   - **No hay acuse.** `POST /incidents/{id}/ack` acusa un INCIDENTE, no una alarma de
     operación; el cuarto instante se anota a mano. Ficha propia: `T-2.78.a`.
   - **Son dos cadenas.** CloudWatch→SNS→on-call no comparte código, destinatario ni permiso
@@ -7270,7 +7528,7 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
 > función usada 300 líneas antes de definirse, y el `GRANT ... ON ALL TABLES` de la 0001
 > **re-concediendo `DELETE`** después de `schema.sql`. Por eso los `REVOKE` viven en la migración.
 
-### [ ] T-2.80.a · El teléfono en claro del consentimiento no lo alcanza ARCO — `SOFTWARE` + `LEGAL`
+### [x] T-2.80.a · El teléfono en claro del consentimiento no lo alcanza ARCO — `SOFTWARE` + `LEGAL` · COMPLETA (2026-08-22)
 - **Componente:** api + db · **Depende de:** T-2.80 · **Declarada por el propio T-2.80 como hueco**
 - **El hueco, medido.** ARCO alcanza al titular identificado por `sub` de Cognito. Un sujeto
   identificado por **teléfono** (`msisdn`) tiene su número **en claro** en
@@ -7281,11 +7539,25 @@ el motor con un texto provisional versionado y se sustituye el texto cuando lleg
   decidirlo habría cambiado el significado del registro de consentimientos por un efecto
   colateral.
 - **Criterios de aceptación:**
-  - [ ] Queda **decidido y escrito** qué prevalece: el derecho del titular sobre su número, o la
-        prueba de la base legal. Con su razón, no con una preferencia.
-  - [ ] Si se anonimiza, el guard de `privacy_consents` admite **exactamente** esa transición y
-        ninguna otra — la misma disciplina de columna que usa `life_checkins`.
-  - [ ] La lápida cubre al sujeto `msisdn` igual que al `sub`, y el digest lo sigue probando.
+  - [x] Queda **decidido y escrito** qué prevalece — [`D-23`](DECISIONES-MAURICIO.md#d-23): la
+        titularidad del número **la acredita el cliente institucional** que recogió el
+        consentimiento. TAKAB ejecuta y audita, no verifica identidades por su cuenta.
+  - [x] **Resuelto por diseño, no por excepción** (migración `0046`): en vez de abrir un hueco en
+        el guard append-only para poder anonimizar, las filas nuevas guardan un **índice sellado**
+        (64 hex) y no el número. *«Sin UPDATE: un sello no se edita, se crea o se destruye.»* El
+        `CHECK` se ensanchó para aceptar la forma sellada, no para permitir reescrituras.
+  - [x] La lápida cubre al sujeto `msisdn` igual que al `sub` (`T-2.151`, criterio 4).
+
+> ### ✅ Cerrada por `T-2.150` + `T-2.151` + [`D-23`](DECISIONES-MAURICIO.md#d-23) — y con una deuda que se lleva ficha propia
+>
+> Esta ficha se quedó abierta mientras otras tres la cerraban por partes, que es exactamente el
+> desfase que la auditoría de decisiones existe para cazar. El criterio 2 no se cumplió como estaba
+> escrito: se volvió **innecesario**, porque sellar el sujeto quita la necesidad de anonimizarlo.
+>
+> **Lo que NO cerró, y ahora tiene ficha: `T-2.164`.** El sellado vale para las filas NUEVAS. Los
+> teléfonos ya escritos en claro **siguen en claro para siempre** — la propia migración `0046` lo
+> declara: *«Forma VIEJA: el número en claro. Permanente, no transitoria: la tabla es append-only y
+> estas filas NO SE PUEDEN reescribir.»*
 
 ### [x] T-2.80.b · El responsable no puede ejercer un ARCO recibido por escrito — `SOFTWARE` · COMPLETA (2026-08-10)
 - **Componente:** api + auth · **Depende de:** T-2.80 · **Bloqueada de hecho por la deuda de
@@ -7780,7 +8052,7 @@ sería documentar intenciones.
 > tienen **dos** tenants y una columna tendría que elegir uno y mentir sobre el otro) y **una es
 > deuda** — ver `T-2.84.e`.
 
-### [ ] T-2.84.e · `site_ground_refs` aísla de verdad, pero no como la regla lo pide — `SOFTWARE`
+### [x] T-2.84.e · `site_ground_refs` aísla de verdad, pero no como la regla lo pide — `SOFTWARE` · COMPLETA (2026-08-23)
 - **Componente:** db · **Depende de:** T-2.84.d · **Hallazgo del censo** (2026-08-09)
 - Es dato de un cliente —el punto cero del calibrador, `ATTEN-LAW`— y **le falta la columna
   `tenant_id`** que la regla de oro 5 pide literalmente.
@@ -7790,9 +8062,39 @@ sería documentar intenciones.
 - **Por qué merece cerrarse igual:** el censo la lleva hoy en la lista de exenciones declaradas, y
   cada exención es una línea que alguien tiene que volver a justificar. Una menos es una menos.
 - **Criterios de aceptación:**
-  - [ ] Migración con **backfill desde `sites`** y las dos políticas correspondientes.
-  - [ ] La entrada desaparece de `SIN_TENANT_ID`, y el test lo **exige** (se compara por igualdad).
-  - [ ] El cruce de tenants sigue dando 0/1, ahora por la columna y no por el `EXISTS`.
+  - [x] Migración con **backfill desde `sites`** y las dos políticas correspondientes (`0050`).
+  - [x] La entrada desaparece de `SIN_TENANT_ID`, y el test lo **exige** (se compara por igualdad).
+  - [x] El cruce de tenants sigue dando 0/1, ahora por la columna y no por el `EXISTS`.
+
+> ### EL BACKFILL QUE ESTA FICHA DESCRIBÍA ACTUALIZABA CERO FILAS, y está MEDIDO
+>
+> `site_ground_refs`, `sites` y `sensors` las **posee `takab_migrator`** y las tres llevan
+> `FORCE ROW LEVEL SECURITY`, que aplica RLS **también al dueño** — y Alembic conecta como ese
+> dueño. Así que el `UPDATE … FROM sites` obvio se filtra a sí mismo: `sgr_write` exigía
+> `s.tenant_id = app_tenant_id()`, y en una migración `app_tenant_id()` es NULL. Medido sobre una
+> fila real: **variante obvia → 0 filas; con `FORCE` levantado → 1**.
+>
+> En una base CON datos el `SET NOT NULL` habría abortado la migración (ruidoso, y por suerte);
+> en una base sin filas de suelo habría pasado **en verde dejando el invariante sin demostrar**.
+> Es la misma familia que «local migra como superusuario, la nube como `takab_migrator`».
+>
+> **Se levanta `FORCE` sólo en `site_ground_refs`**, la tabla que la migración está alterando, y
+> se restaura dos sentencias después. Las otras dos vías se descartaron con medición: tocar
+> `FORCE` en `sites` funciona pero mueve la isolación de la tabla más central del esquema;
+> declarar `app.role` a secas **no basta** (abre `sites_read`, pero el que bloquea es `sgr_write`
+> sobre la tabla destino) — 0 filas. Y un `DO $$` fail-closed para la migración si algo quedara
+> huérfano, porque poner `NOT NULL` encima de un backfill incompleto lo esconde.
+>
+> **Y la regresión de visibilidad que casi entra de tapadillo:** `sgr_read` era un `EXISTS` SIN
+> condición de tenant, así que bajo RLS heredaba los CUATRO caminos de `sites_read` —propio
+> tenant, TAKAB interno, `gov_operator` sobre `gov_shared`, y los grants de metadatos de T-1.73—.
+> Escribir `tenant_id = app_tenant_id()` a secas habría quitado los tres últimos sin que nada se
+> quejara. La política nueva los enumera. Y NO se añadió `sgr_admin`: antes no existía, así que
+> TAKAB interno sigue leyendo y no escribiendo — ampliar permisos no es efecto colateral de
+> añadir una columna.
+>
+> Anclado en `test_rls_isolation.py` (cruce 0/1 por columna, el owner bajo FORCE, y el
+> `WITH CHECK` que impide etiquetar una fila con el tenant del vecino).
 
 ### [x] T-2.85 · Manual de operación de cliente — `SOFTWARE` · COMPLETA (2026-08-08)
 - **Componente:** docs · **Depende de:** T-2.84
@@ -7946,10 +8248,17 @@ sería documentar intenciones.
   documento de entrega ha tenido que declararlo como hueco.
 - Es la **mitad no construida de la regla de oro 4**: «el proceso GPIO es mínimo **y auditable**».
 - **Criterios de aceptación:**
-  - [ ] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
-  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3).
-  - [ ] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**.
-  - [ ] La matriz pasa `RO-4.e` a `CUBIERTO` sola.
+  - [x] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
+        El embudo es `ActuatorManager._record` —por donde pasan `execute` y `execute_sequence`—,
+        así que es estructural y no disciplinario.
+  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3). **Lo
+        único que sigue abierto**, y no por el edge: la subida está construida y probada, pero su
+        `sink` va a `None` a propósito — publicar en un topic no autorizado **desconecta al
+        gabinete en cada publish** (visto en producción el 2026-07-12). Espera las cuatro piezas
+        de nube (topic + regla IoT en Terraform).
+  - [x] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**
+        (`edge/tests/test_actuation_ledger.py`, tres tests).
+  - [x] La matriz pasa `RO-4.e` a `CUBIERTO` sola — y lo hizo, con su reserva declarada.
 
 ### [x] T-2.86.b · La bitácora de los actuadores registra lo que salió bien y calla lo que se intentó — `SOFTWARE`
 - **Componente:** api + edge · **Depende de:** — · **Huecos `RO-8.g` y `RO-8.k` de la matriz**
@@ -8769,6 +9078,7 @@ sería documentar intenciones.
 
 ### [x] T-2.128 · `run_listener` despacha los NOTIFY en serie — `SOFTWARE`
 - **Componente:** api · **Detectada por:** `T-2.121` (2026-08-11), **medido**
+- **Decisión:** [`D-03`](DECISIONES-MAURICIO.md#d-03) — la consola arranca con la base caída, en degradado declarado.
 - Un solo `dispatch` colgado **no pierde un frame: para el fan-out del proceso entero, para todos
   los tenants**. Medido: con el hub esperando un lock, un segundo notify (`checkin`, que ni toca
   la base) **no se entregó en 25 s**.
@@ -9237,7 +9547,7 @@ sería documentar intenciones.
 > puso la propia cola. `dlq-events` y `dlq-backfill` volvieron a `OK` a las 02:36 CST, minutos
 > después del apply.
 
-### [ ] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · `G-02`
+### [x] T-2.146 · El latido de keep-alive de SPOF-02 no existe — `SOFTWARE` · COMPLETA (2026-08-23) · `G-02`
 - **Componente:** edge (`gpio`) · **Depende de:** — · **Sale de:**
   [`D-10`](DECISIONES-MAURICIO.md) (variante B ratificada el 2026-08-16) ·
   **Desbloquea la mitad software de `G-02`**
@@ -9273,7 +9583,12 @@ sería documentar intenciones.
         (el códec del `pinlink` deriva del `__dataclass_fields__`, así que la suite de
         conformidad **estrenó sus dos casos sola**). Registro **por transición**, no por
         iteración (regla de oro 10).
-  - [ ] **DIFERIDO — pintarlo en el panel del gabinete.** Ver la nota de abajo.
+  - [x] **Pintarlo en el panel del gabinete** (2026-08-23). Con **TRES** estados y no dos, que
+        es el fondo: `sin_ruta` (deshabilitado, el default mientras el hardware no exista) ·
+        `inhibida` (hay ruta y LATE: el Pi gobierna) · `habilitada` (hay ruta y NO late: el WR-1
+        puede sonar la sirena por su cuenta). Pintar `sin_ruta` y `habilitada` con el mismo
+        rótulo sería la regla de oro 7 al revés — los dos son «no late» y significan lo
+        contrario. Verificado EN EL GABINETE el 2026-08-23: `keepalive: sin_ruta`.
 
 > ### ✅ Cerrada la parte de software del latido (2026-08-16), con una mitad DECLARADA pendiente
 >
@@ -9295,7 +9610,7 @@ sería documentar intenciones.
 > cableado:** el dato ya viaja por las dos costuras, y hoy ningún gabinete tiene `K_wd`, así que no
 > hay nada que mostrar todavía.
 
-### [ ] T-2.147 · El quórum de pánico no notifica a nadie — `SOFTWARE`
+### [x] T-2.147 · El quórum de pánico no notifica a nadie — `SOFTWARE` · COMPLETA (2026-08-23)
 - **Componente:** api · **Sale de:** [`D-05`](DECISIONES-MAURICIO.md) (2026-08-15) ·
   **Cableado por:** [`D-11`](DECISIONES-MAURICIO.md) · **Ficha de producto:** `T-2.106`
 - **El hueco, medido.** `panic_vote` alcanza quórum, emite el comando firmado de sirena, consume
@@ -9309,7 +9624,7 @@ sería documentar intenciones.
   El pánico no abría ninguno. `D-11` lo resuelve **sin tocar el esquema**: abre incidente con
   `trigger = 'manual'`, valor que el `CHECK` ya contemplaba y que **nadie producía todavía**.
 
-#### [ ] T-2.147.a · El quórum abre incidente y despierta a los tácticos — `SOFTWARE`
+#### [x] T-2.147.a · El quórum abre incidente y despierta a los tácticos — `SOFTWARE` · COMPLETA (2026-08-16)
 - **«Táctico» se DERIVA, no se enumera:** `roles_with_action("manual_activate")` — la matriz ya
   dice quién puede disparar a mano, y es exactamente el círculo que debe enterarse. Una lista
   escrita a mano aquí divergiría de la matriz el día que entre un rol nuevo.
@@ -9374,7 +9689,11 @@ sería documentar intenciones.
         derogada por un cambio de permisos.
   - [x] El `kind` nuevo lleva su rótulo en `bms.ts` — lo exigen los dos censos (el estático de
         `web` y el que lee `SELECT DISTINCT kind` de la tabla).
-  - [ ] **DIFERIDO — el botón en la app.** Ver la nota.
+  - [x] **El botón en la app** (2026-08-23). `mobile/src/features/alarm/TacticalAckButton.tsx`
+        en la pantalla de `building_alarm`, visible SOLO con `manual_activate` y sólo sobre un
+        incidente `trigger='manual'`. Sin cambio de contrato: `OPEN_INCIDENT` no filtra por
+        trigger, así que el id del incidente manual ya viajaba. **El acuse NO silencia la sirena
+        ni cambia la fase** — es un acuse, no un control del camino de emergencia.
 
 > **Lo que queda declarado, y por qué no se hizo de refilón:** el endpoint existe y está probado,
 > pero **nadie lo pulsa todavía**. La superficie móvil la gobierna
@@ -9470,6 +9789,7 @@ sería documentar intenciones.
 
 ### [x] T-2.123 · `GET /me` ató el arranque de la consola a Postgres — `SOFTWARE`
 - **Componente:** api + web · **Declarada por el propio `T-2.114`**
+- **Decisión:** [`D-03`](DECISIONES-MAURICIO.md#d-03) — la consola arranca con la base caída, en degradado declarado.
 - `GET /me` **dejó de ser claims puros**: ahora abre sesión de DB para devolver `enrolled_sites`.
   Es deliberado y necesario —es de donde sale el inmueble del ocupante— pero **cambió el modo de
   fallo**: con Postgres caído, `/me` responde 5xx y **la consola web no arranca**, donde antes
@@ -9772,6 +10092,7 @@ sería documentar intenciones.
 
 ### [ ] T-2.89 · Encender `console_scope_enforced` — `HUMANO-AWS`
 - **Componente:** api + operación · **Depende de:** T-2.54
+- **Decisión:** [`D-18`](DECISIONES-MAURICIO.md#d-18) — `console_scope_enforced` se enciende ya.
 - **Es la única brecha multi-tenant viva en producción.**
   `api/src/takab_api/settings.py · console_scope_enforced` lo tiene en `False`. (Citado por
   símbolo y no por línea a propósito: la cita `:212` llevaba meses apuntando a otra cosa.)
@@ -9817,7 +10138,9 @@ sería documentar intenciones.
 
 ### [ ] T-2.92 · Sesión de vida — `FÍSICO`
 - **Componente:** edge (hardware) · **Depende de:** — · **Cubre `G-01`, `G-02`, `G-04`.**
+- **Decisión:** [`D-21`](DECISIONES-MAURICIO.md#d-21) — la sesión de vida se parte: `G-01` primero y solo.
 - **Es la tarea que decide si el producto es real.**
+- **Decisión:** [`D-16`](DECISIONES-MAURICIO.md#d-16) — la **BOM del `G-02` NO se compra todavía**. Es aplazamiento de **riesgo**, no de trámite: cada día sin esa ruta es un día en que un Pi colgado deja el edificio sin sirena.
   - **`G-01` · restart en frío:** `sudo reboot` con el gabinete armado; `takab-edge` y
     `takab-gpio` activos, backend `lgpio` verificado en el journal, relés respondiendo, sin
     caída a sysfs.
@@ -9863,6 +10186,7 @@ sería documentar intenciones.
 
 ### [ ] T-2.96 · `GATE-LEGAL` · marco normativo citable — `LEGAL`
 - **Componente:** docs · **Depende de:** —
+- **Decisión:** [`D-20`](DECISIONES-MAURICIO.md#d-20) — la consulta legal espera a que un cliente la pida.
 - **Bloquea material comercial.** La cita antigua "NOM-003-SCT" era una norma de **transporte**
   (etiquetado de materiales peligrosos) y **no aplicaba**; FASE-0 ya la había descartado y la
   edición anterior de RBAC la daba por confirmada de forma circular. La regla operativa
@@ -9872,12 +10196,24 @@ sería documentar intenciones.
   - [ ] Marco normativo citable definido con abogado/cliente y escrito en blueprint §9.
   - [ ] `RBAC-TAKAB.md §8` punto 3 y `ANALISIS` pregunta abierta #1 actualizados a la vez.
 
-### [ ] T-2.97 · `GATE-STORE` · APNs/FCM reales + tono SASMEX — `LEGAL` + `HUMANO-AWS`
+### [ ] T-2.97 · `GATE-STORE` · APNs/FCM reales + tono PROPIO — `HUMANO-AWS`
 - **Componente:** mobile + infra · **Depende de:** —
+
+> ### El componente `LEGAL` de esta ficha lo retiró [`D-19`](DECISIONES-MAURICIO.md#d-19) (2026-08-17)
+>
+> La ficha exigía **licenciar el tono del SASMEX con CIRES**, y eso ya no aplica: la app suena con
+> un **tono propio de TAKAB**. Lo que queda es puro `HUMANO-AWS` —credenciales de tienda— y la
+> comprobación en un teléfono real.
+>
+> **El tono propio YA está cableado** (2026-08-23): `alerta_sismica.wav` en el canal
+> `seismic_alert_v2` de Android y como `sound` crítico en iOS, con un censo cruzado que exige que
+> todo sonido declarado por el servidor exista en el plugin **y en el disco**. Lo que falta es que
+> el push salga de credenciales de verdad.
+
 - **Criterios de aceptación:**
   - [ ] Credenciales APNs/FCM reales; `TAKAB_API_PUSH_*_APPLICATION_ARN` aplicado.
-  - [ ] **Tono SASMEX licenciado con CIRES.** Usar el tono sin licencia no es un detalle
-        estético: es el sonido que la población ya asocia a evacuar.
+  - [x] ~~Tono SASMEX licenciado con CIRES~~ — **REVOCADO por `D-19`**: el tono es propio.
+        Cableado y anclado en `api/tests/notify/test_censo_canales_y_sonidos.py`.
   - [ ] Push real recibido en device real, con el tono correcto.
 
 ### [ ] T-2.98 · Entitlement Critical Alerts de Apple — `LEGAL`
@@ -9992,6 +10328,8 @@ sirena.
 > proceso que toca la sirena** (regla de oro 4).
 
 ### [ ] T-3.10 · Escribir la arquitectura en el blueprint — `SOFTWARE` + `DECISIÓN`
+- **Decisión:** [`D-14`](DECISIONES-MAURICIO.md#d-14) — CCTV **híbrido**: aforo en el sitio,
+  clips solo de evento. Es la que fija qué arquitectura hay que escribir.
 - **Diseño escrito (`D-08`, 2026-08-16):**
   [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B. Lo que queda es
   llevarlo al blueprint **con el número de la medición dentro**, que es lo único que falta.

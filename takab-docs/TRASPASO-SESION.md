@@ -155,3 +155,10 @@ proyecto y **ningún lote lo compensa**.
 **Y la frase que sigue siendo cierta desde la Fase 1:** *«meter más tareas de software en la ruta
 crítica no la acorta ni un día. Lo que la acorta es una tarde con el radio, el relé y un
 cronómetro»* (`TASKS.md § RUTA CRÍTICA`). `G-04` sigue abierto.
+
+> **⚠️ `npm run lint` NO incluye prettier.** El job `web` de CI corre además
+> `npm run format:check`, así que una PR puede salir verde en local con `lint` +
+> `typecheck` + `vitest` + `build` y **roja en CI por formato**. Medido el
+> 2026-08-24 con una sola línea mal indentada en `meFixtures.ts`. La verificación
+> local de web son CINCO comandos, no cuatro.
+

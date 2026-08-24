@@ -193,6 +193,23 @@
   - Anclas: `tests/auth/test_matrix.py::test_maintenance_window_is_tenant_admin_action_not_a_field_role`,
     `::test_platform_maintenance_window_is_superadmin_only`,
     `::test_toda_ventana_de_mantenimiento_se_abre_desde_una_ruta_que_el_rol_tiene`.
+- **[DECISION 2026-08-23 · T-2.70] `deploy_firmware` (activar una release en un gabinete o
+  devolverlo a la anterior, extensión de §2):** **SOLO** `takab_superadmin`, y el criterio es
+  el de `platform_maintenance_window` y **no** el de `maintenance_window`. Lo que se activa es
+  el código desde el que arranca el camino de vida de un edificio: el artefacto lo puso el
+  operador de TAKAB, la release la verificó su despliegue, y una versión mala deja un inmueble
+  sin sirena, sin cierre de gas y sin retenedores. Un `tenant_admin` no tiene el artefacto ni
+  con qué juzgar una versión, así que concederle el botón sería darle una consecuencia que no
+  puede evaluar.
+  - **ACTIVAR y REVERTIR van bajo la MISMA acción a propósito.** La vuelta atrás es la válvula
+    de seguridad de la ida; un permiso que dejara empujar sin dejar volver sería peor que
+    ninguno.
+  - **El permiso NO es lo único que gobierna la actuación física.** En un gabinete cuyo dueño
+    de pines siga dentro de `takab-edge`, activar cicla `GAS_VALVE` y `DOOR_RETAINER`: ahí el
+    comando remoto exige además **ventana de mantenimiento declarada**, y sin ella el propio
+    gabinete se niega (`bin/canary.sh`). El rol abre la puerta; el edificio sigue teniendo la
+    última palabra.
+  - Ancla: `tests/auth/test_matrix.py::test_deploy_firmware_is_platform_not_tenant`.
 - **[DECISION 2026-08-10 · T-2.79.e] `manage_privacy_notice` (aviso de privacidad del
   cliente, extensión de §2):** publicar el aviso del tenant (`POST /privacy/notices`) y
   dejar constancia del consentimiento de un **tercero sin sesión** (un teléfono: el

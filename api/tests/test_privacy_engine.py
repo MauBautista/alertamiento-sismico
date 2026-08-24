@@ -387,27 +387,39 @@ def test_optin_de_whatsapp_se_registra_contra_un_numero(seeded: psycopg.Connecti
     """
     reset(seeded)
     _, dig = _publica(seeded, purpose="whatsapp_alerts", version="1.0.0", title="Aviso de contacto")
+    # [T-2.164] El sujeto viaja como ÍNDICE de 64 hex, no como el número: es lo
+    # que `privacy/store.py` escribe desde T-2.150 y lo único que la base admite.
+    # Lo que este test mide no cambia —que el motor acepte un sujeto TELEFONO sin
+    # migración—; cambia el valor de ejemplo, que hasta hoy era el número en claro.
     fila = seeded.execute(
         "INSERT INTO privacy_consents "
         "(tenant_id, purpose, subject_kind, subject_ref, decision, notice_source, "
         " notice_digest, notice_version, notice_locale, via, actor_sub) "
-        "VALUES (%s,'whatsapp_alerts','msisdn','+525512345678','accept','repo',"
+        "VALUES (%s,'whatsapp_alerts','msisdn',%s,'accept','repo',"
         " %s,'1.0.0','es-MX','out_of_band',%s) RETURNING decided_at",
-        (TENANT_A, dig, USER_A),
+        (TENANT_A, "c" * 64, dig, USER_A),
     ).fetchone()
     assert fila[0] is not None
 
 
 def test_un_sujeto_msisdn_no_puede_llevar_user_sub(seeded: psycopg.Connection) -> None:
+    """[T-2.164] El `subject_ref` va SELLADO a propósito, y no es cosmético.
+
+    Con el número en claro este test seguiría pasando **por la razón
+    equivocada**: desde que el `CHECK` sólo admite el índice, la forma del
+    `subject_ref` bastaría para tumbar el INSERT, así que el test daría verde
+    aunque alguien borrara la regla de `user_sub` que existe para vigilar. Con un
+    sujeto bien formado, la ÚNICA violación posible es la que se está midiendo.
+    """
     reset(seeded)
     with pytest.raises(psycopg.errors.CheckViolation):
         seeded.execute(
             "INSERT INTO privacy_consents "
             "(tenant_id, purpose, subject_kind, user_sub, subject_ref, decision, "
             " notice_source, notice_digest, notice_version, notice_locale, via, actor_sub) "
-            "VALUES (%s,'whatsapp_alerts','msisdn',%s,'+525512345678','accept','repo',"
+            "VALUES (%s,'whatsapp_alerts','msisdn',%s,%s,'accept','repo',"
             " %s,'1.0.0','es-MX','out_of_band',%s)",
-            (TENANT_A, USER_A, "a" * 64, USER_A),
+            (TENANT_A, USER_A, "c" * 64, "a" * 64, USER_A),
         )
 
 

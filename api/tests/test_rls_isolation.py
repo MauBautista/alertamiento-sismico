@@ -13,6 +13,8 @@ import pytest
 
 from conftest import (
     INC_A,
+    SENSOR_B,
+    SITE_B,
     TENANT_A,
     TENANT_B,
     use,
@@ -133,3 +135,56 @@ def test_fw_releases_es_append_only_por_privilegio(seeded: psycopg.Connection, d
     use(seeded, "takab_app", tenant=TENANT_A, app_role="takab_superadmin")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute(dml)
+
+
+# ---------------------------------------------------------------------------
+# [T-2.84.e] `site_ground_refs`: el aislamiento, ahora POR LA COLUMNA
+# ---------------------------------------------------------------------------
+
+
+def test_site_ground_refs_aisla_por_la_columna_y_no_por_el_EXISTS(
+    seeded: psycopg.Connection,
+) -> None:
+    """El cruce 0/1 que la ficha exige, medido sobre la columna nueva.
+
+    Antes de T-2.84.e el aislamiento era real pero INDIRECTO: la RLS lo imponía
+    con un `EXISTS` contra `sites`, y la tabla figuraba en la lista de exenciones
+    del censo. Ahora la tenencia está en la fila, así que se puede exigir lo
+    literal — que es lo que dice la regla de oro 5.
+    """
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    filas = seeded.execute("SELECT tenant_id FROM site_ground_refs").fetchall()
+    assert filas, "el tenant A debe ver SU referencia de suelo (si no, el test es vacío)"
+    assert {str(f[0]) for f in filas} == {TENANT_A}
+
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    ajenas = seeded.execute(
+        "SELECT count(*) FROM site_ground_refs WHERE tenant_id = %s", (TENANT_A,)
+    ).fetchone()
+    assert ajenas[0] == 0, "el tenant B no puede ver la referencia de suelo del tenant A"
+
+
+def test_site_ground_refs_aisla_TAMBIEN_al_dueno_de_la_tabla(
+    seeded: psycopg.Connection,
+) -> None:
+    """`FORCE ROW LEVEL SECURITY` sujeta al OWNER, y eso importa aquí más que en
+    otras tablas: es exactamente lo que hizo que el backfill de la migración
+    0050 no viera nada y hubiera que levantarlo a propósito para una sentencia.
+    Si alguien lo dejara levantado, este test es el que lo caza."""
+    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="soc_operator")
+    filas = seeded.execute("SELECT tenant_id FROM site_ground_refs").fetchall()
+    assert {str(f[0]) for f in filas} == {TENANT_A}, "FORCE RLS debe aislar al owner"
+
+
+def test_site_ground_refs_no_deja_escribir_a_nombre_de_otro_tenant(
+    seeded: psycopg.Connection,
+) -> None:
+    """El `WITH CHECK` de la política nueva. Sin él, la columna sería decoración:
+    cualquiera podría etiquetar su fila con el tenant del vecino."""
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(
+            "INSERT INTO site_ground_refs (site_id, ground_sensor_id, tenant_id, distance_m) "
+            "VALUES (%s,%s,%s,1)",
+            (SITE_B, SENSOR_B, TENANT_B),
+        )

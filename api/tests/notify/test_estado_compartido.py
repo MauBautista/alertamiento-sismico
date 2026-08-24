@@ -48,6 +48,7 @@ from takab_api.notify.whatsapp import (
     build_whatsapp_provider,
     template_digest,
 )
+from takab_api.privacy import crypto
 from takab_api.settings import Settings
 
 BASE = datetime(2034, 5, 11, 9, 0, 0, tzinfo=UTC)
@@ -169,7 +170,14 @@ class _Escenario:
             "decision, notice_source, notice_digest, notice_version, notice_locale, via, "
             "actor_sub, decided_at) VALUES (%s,'whatsapp_alerts','msisdn',%s,'accept','repo',%s,"
             "'1.0.0','es-MX','out_of_band',%s,%s)",
-            (self.tenant, msisdn, "0" * 64, str(uuid.uuid4()), BASE - timedelta(days=1)),
+            (
+                self.tenant,
+                # [T-2.164] El ÍNDICE, no el número. Ver `_secretos_del_sujeto`.
+                crypto.lookup_ref(Settings(), tenant_id=str(self.tenant), msisdn=msisdn),
+                "0" * 64,
+                str(uuid.uuid4()),
+                BASE - timedelta(days=1),
+            ),
         )
         self.conn.commit()
         self.conn.execute("SET ROLE takab_ingest")
@@ -205,6 +213,21 @@ class _Escenario:
             "SELECT channel, template_name, reason FROM notify_template_quarantine "
             "ORDER BY template_name"
         ).fetchall()
+
+
+@pytest.fixture(autouse=True)
+def _secretos_del_sujeto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[T-2.164] Los secretos con los que se DERIVA el índice del sujeto-teléfono.
+
+    Hacen falta en los dos lados y por la misma razón: `seed_consent` escribe el
+    consentimiento **sellado** —como lo escribe producción desde T-2.150— y
+    `privacy.store._params_sujeto` deriva el mismo índice para buscarlo. Sin la
+    pimienta, el lector cae a la forma vieja (buscar por el número en claro) y no
+    encontraría la fila: el test pasaría a medir el camino LEGADO en vez del
+    vigente.
+    """
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_PEPPER", "pimienta-de-prueba-no-produccion")
+    monkeypatch.setenv("TAKAB_API_PRIVACY_SUBJECT_MASTER_KEY", "clave-maestra-de-prueba")
 
 
 @pytest.fixture

@@ -36,7 +36,6 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
-import re
 import shutil
 import signal
 import subprocess
@@ -129,13 +128,24 @@ def gabinete(tmp_path: pathlib.Path):
         exit 0
     """
 
-    # Árbol vivo PREEXISTENTE con su centinela y su venv: simula el gabinete ya
-    # desplegado, que es el caso real. Que el venv exista importa: el pre-vuelo
-    # compila con SU intérprete (3.12 en el Pi) y no con el del sistema (3.13).
+    # [T-2.70] GABINETE YA MIGRADO AL LAYOUT A/B, que es el caso normal a partir
+    # de esta ficha: una release completa en `releases/<id>/edge` y `edge` como
+    # SYMLINK a ella. `vivo` sigue siendo la ruta que los `ExecStart` nombran, y
+    # todo lo que se lee «del árbol vivo» se lee a través del enlace — que es
+    # exactamente lo que hace el gabinete.
+    #
+    # Que el venv exista importa: el pre-vuelo compila con SU intérprete (3.12 en
+    # el Pi) y no con el del sistema (3.13). Y que el ejecutable `takab-edge`
+    # exista también: es lo que `canary.sh` exige para aceptar una release como
+    # vuelta atrás válida.
+    release_previa = raiz / "releases" / "20260101T000000Z-anterior" / "edge"
+    (release_previa / ".venv" / "bin").mkdir(parents=True)
+    (release_previa.parent / "shared" / "schemas").mkdir(parents=True)
+    (release_previa / _CENTINELA).write_text("soy el despliegue anterior\n")
+    _escribir_ejecutable(release_previa / ".venv" / "bin" / "python", py_venv)
+    _escribir_ejecutable(release_previa / ".venv" / "bin" / "takab-edge", "exec sleep 600")
     vivo = raiz / "edge"
-    (vivo / ".venv" / "bin").mkdir(parents=True)
-    (vivo / _CENTINELA).write_text("soy el despliegue anterior\n")
-    _escribir_ejecutable(vivo / ".venv" / "bin" / "python", py_venv)
+    vivo.symlink_to(release_previa)
 
     # ssh falso: ejecuta aquí el comando remoto, con el heredoc por stdin.
     _escribir_ejecutable(
@@ -169,6 +179,9 @@ def gabinete(tmp_path: pathlib.Path):
     plantilla_py = binarios / "python-de-venv.plantilla"
     _escribir_ejecutable(plantilla_py, py_venv)
 
+    # [T-2.70·CAMPO] `VENV_PYTHON_EN=<ruta>` hace que el `bin/python` del venv sea
+    # un SYMLINK a esa ruta, que es exactamente lo que `uv` hace con su intérprete
+    # gestionado. Sin poder modelarlo, el gate del intérprete no se podría probar.
     # uv falso: materializa los console scripts que el gate exige. NO reescribe
     # .venv/bin/python cuando ya viene del gabinete simulado.
     # [T-2.70.a·D2/P2] Los console scripts salen de `pyproject.toml`, no de una
@@ -184,7 +197,12 @@ def gabinete(tmp_path: pathlib.Path):
         f"""
         echo "uv $*" >> "{bitacora}"
         mkdir -p .venv/bin
-        [ -x .venv/bin/python ] || cp "{plantilla_py}" .venv/bin/python
+        if [ -n "${{VENV_PYTHON_EN:-}}" ]; then
+          cp "{plantilla_py}" "${{VENV_PYTHON_EN}}"
+          ln -sf "${{VENV_PYTHON_EN}}" .venv/bin/python
+        else
+          [ -x .venv/bin/python ] || cp "{plantilla_py}" .venv/bin/python
+        fi
         {materializar}
         """,
     )
@@ -335,6 +353,13 @@ def gabinete(tmp_path: pathlib.Path):
           ) </dev/null >/dev/null 2>&1 &
           sleep 0.3
         fi
+        if [ "$1" = show ]; then
+          # [T-2.70] El MainPID que el canary vigila durante el remojo. Sale del
+          # dueño de los pines cuando `takab-edge` lo es, y de un valor estable
+          # cuando no: lo que el canary mide es que NO CAMBIE.
+          if [ -s "{pid_dueno}" ]; then cat "{pid_dueno}"; else echo 4242; fi
+          exit 0
+        fi
         if [ "$1" = is-active ]; then
           case " ${{UNIDADES_VIVAS:-takab-edge takab-gpio}} " in
             *" $2 "*) echo active; exit 0 ;;
@@ -352,6 +377,17 @@ def gabinete(tmp_path: pathlib.Path):
         exit 0
         """,
     )
+    # [T-2.70] `curl` falso: el panel local del gabinete, que es una de las
+    # cuatro señales de salud que el canary sostiene durante el remojo.
+    # `PANEL_MUERTO=1` lo calla — un supervisor que arranca y no llega a servir.
+    _escribir_ejecutable(
+        binarios / "curl",
+        """
+        if [ -n "${PANEL_MUERTO:-}" ]; then exit 22; fi
+        echo '{"ok":true}'
+        """,
+    )
+
     # flock falso: delega SIEMPRE en el real salvo para simular la tercera rama
     # del veredicto — «no se pudo interrogar el cerrojo», que no es ni 0 (libre)
     # ni 9 (tomado). El discriminante es `-E`, que sólo usa la INTERROGACIÓN de
@@ -398,7 +434,8 @@ def gabinete(tmp_path: pathlib.Path):
         def __init__(self) -> None:
             self.raiz = raiz
             self.vivo = vivo
-            self.previo = raiz / "edge.prev"
+            self.releases = raiz / "releases"
+            self.release_previa = release_previa
             self.bitacora = bitacora
             self.cerrojo = cerrojo
             self.pid_dueno = pid_dueno
@@ -464,6 +501,14 @@ def gabinete(tmp_path: pathlib.Path):
             # /etc/takab/edge.env, que es el `EnvironmentFile=` de LAS DOS
             # unidades. El sandbox no puede escribir ahí.
             env["TAKAB_EDGE_ENV_FILE"] = str(entorno)
+            # [T-2.70] El despliegue ACTIVA por `bin/canary.sh`, que aquí corre
+            # DE VERDAD: sus plazos se acortan (en el Pi son 90 s + 120 s) y su
+            # estado se escribe dentro del tmp, no en /var/lib/takab.
+            env["TAKAB_CANARY_ESTADO"] = str(tmp_path / "canary")
+            env["TAKAB_CANARY_PLAZO_ARRANQUE"] = "12"
+            env["TAKAB_CANARY_REMOJO"] = "2"
+            env["TAKAB_CANARY_INTERVALO"] = "1"
+            env["TAKAB_CANARY_PANEL"] = "http://127.0.0.1:8080/api/status"
             env.update(entorno_extra)
             return subprocess.run(
                 ["bash", str(_DEPLOY), "gabinete-falso", *args],
@@ -504,8 +549,21 @@ def gabinete(tmp_path: pathlib.Path):
             todavía en pie— tiene ahora su propio test, y ahí el rojo es lo
             correcto.
             """
-            shutil.rmtree(self.vivo)
+            # Con el layout A/B «borrar el árbol vivo» es dejar el gabinete sin
+            # symlink Y sin la release a la que apuntaba: es el estado de un
+            # gabinete recién aprovisionado, o de uno al que alguien le borró
+            # /opt/takab/edge a mano.
+            self.vivo.unlink()
+            shutil.rmtree(self.release_previa.parent)
             self.soltar_los_pines()
+
+        def sin_migrar(self) -> None:
+            """Devuelve el gabinete al layout de antes de T-2.70: `edge` como
+            DIRECTORIO de verdad. Es el estado de todo gabinete desplegado hasta
+            esta ficha, y el que la migración A/B tiene que reconocer."""
+            self.vivo.unlink()
+            shutil.copytree(self.release_previa, self.vivo, symlinks=True)
+            shutil.rmtree(self.release_previa.parent)
 
         def registro(self) -> str:
             return bitacora.read_text()
@@ -564,17 +622,25 @@ def test_un_despliegue_sano_llega_hasta_el_reinicio(gabinete) -> None:
     assert "systemctl restart takab-edge" in gabinete.registro()
 
 
-def test_el_swap_deja_una_instantanea_para_volver_atras(gabinete) -> None:
-    """La reversibilidad que hoy existe: `edge.prev` guarda el fuente anterior.
+def test_tras_activar_la_release_anterior_sigue_ENTERA(gabinete) -> None:
+    """[T-2.70] La reversibilidad que el layout A/B trae, y que `edge.prev` no
+    podía dar: la release anterior sigue en disco CON SU VENV, así que volver a
+    ella devuelve código Y dependencias.
 
-    No revierte el `.venv` (eso exigiría el despliegue A/B), pero convierte «no
-    hay vuelta atrás» en «hay vuelta atrás del fuente» — y es lo que el mensaje
-    de aborto ofrece como comando.
+    Antes esto era una instantánea del fuente con `--exclude .venv`: revertía la
+    mitad, y la otra mitad exigía volver a correr el despliegue entero desde el
+    commit anterior — con enlace a internet y una persona en el sitio.
     """
     assert gabinete.desplegar().returncode == 0
-    assert (gabinete.previo / _CENTINELA).exists(), (
-        "la instantánea debe contener el árbol ANTERIOR, no el nuevo"
+    anterior = gabinete.release_previa
+    assert (anterior / _CENTINELA).exists(), (
+        "la release anterior debe seguir siendo la ANTERIOR, no la nueva"
     )
+    assert (anterior / ".venv" / "bin" / "takab-edge").exists(), (
+        "sin su venv la release anterior no es una vuelta atrás: es media"
+    )
+    assert gabinete.vivo.is_symlink(), "el árbol vivo debe ser el symlink que decide la versión"
+    assert not gabinete.vivo.resolve().samefile(anterior), "el symlink no se repuntó"
 
 
 # ------------------------------------------- B3: abortar sin haber destruido
@@ -588,9 +654,10 @@ def test_el_prevuelo_aborta_sin_tocar_el_arbol_vivo(gabinete) -> None:
     «sigue con el código anterior» era falso y el próximo arranque —un corte de
     luz, un `Restart=always`— habría ejecutado ese código solo.
 
-    Ahora el pre-vuelo corre sobre el árbol de ENSAYO. Al abortar, el árbol vivo
-    tiene que seguir EXACTAMENTE como estaba: el centinela del despliegue
-    anterior sigue ahí y el código nuevo NO llegó.
+    Con el layout A/B el pre-vuelo corre sobre una RELEASE que nadie apunta. Al
+    abortar, el árbol vivo tiene que seguir EXACTAMENTE como estaba: el
+    centinela del despliegue anterior sigue ahí y el código nuevo NO llegó a la
+    ruta desde la que arrancan las unidades.
     """
     r = gabinete.desplegar(FALLA_COMPILEALL="1")
     assert r.returncode != 0, "un pre-vuelo que no compila debe abortar"
@@ -603,7 +670,7 @@ def test_el_prevuelo_aborta_sin_tocar_el_arbol_vivo(gabinete) -> None:
     )
     assert "systemctl restart" not in gabinete.registro(), "no se puede reiniciar tras abortar"
     assert "uv sync" not in gabinete.registro(), "ni siquiera se llega a tocar el venv"
-    assert "NADA se ha destruido" in r.stderr
+    assert "Estado seguro" in r.stderr
 
 
 # ---------------------------------------- B2: el gate ve el código desplegado
@@ -641,27 +708,35 @@ def test_el_gate_sigue_viendo_el_venv_podado(gabinete) -> None:
 # ------------------------------------------------- B3: el mensaje no miente
 
 
-def test_tras_el_swap_el_mensaje_de_aborto_dice_la_verdad(gabinete) -> None:
-    """Cuando el gate aborta DESPUÉS del swap, el disco ya cambió y el mensaje
-    lo tiene que decir. El texto viejo —«El gabinete NO se ha reiniciado y sigue
-    con el código anterior»— era falso justo en el escenario más peligroso.
+def test_un_gate_que_falla_YA_NO_deja_codigo_sin_verificar_en_la_ruta_de_arranque(
+    gabinete,
+) -> None:
+    """[T-2.70] EL PELIGRO QUE ESTE TEST VIGILABA DEJÓ DE EXISTIR, y por eso el
+    test cambia de forma en vez de borrarse.
+
+    Con el despliegue in-place, un gate que fallaba dejaba el disco con código
+    nuevo SIN VERIFICAR en `/opt/takab/edge`, y el próximo arranque —un corte de
+    luz, un `Restart=always`— lo ejecutaba solo. El script tuvo que aprender a
+    DECIRLO, porque el texto anterior («sigue con el código anterior») era falso
+    justo en el escenario más peligroso.
+
+    Con A/B la release que falla el gate es INERTE: nadie la apunta. Así que
+    ahora lo que se exige es lo contrario — que el árbol vivo siga siendo el
+    anterior, y que el mensaje no invente ni un peligro ni una vuelta atrás.
     """
     r = gabinete.desplegar(FALLA_CODIGO="1")
 
-    # La premisa del mensaje, verificada EN EL DISCO y no en el texto:
-    assert gabinete.codigo_nuevo_en_el_arbol_vivo(), (
-        "premisa: tras el swap el árbol vivo YA tiene el código nuevo sin verificar"
+    assert r.returncode != 0
+    assert gabinete.centinela_intacto(), "el gabinete debe seguir apuntando a la release anterior"
+    assert not gabinete.codigo_nuevo_en_el_arbol_vivo(), (
+        "la release que falló el gate NO puede estar en la ruta desde la que arranca"
     )
-
-    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" in r.stderr
-    assert "estado seguro" in r.stderr
-    assert "sigue con el código anterior" not in r.stderr, (
-        "esa era la frase que mentía: tras el swap el disco NO sigue con el código anterior"
+    assert "systemctl restart takab-edge" not in gabinete.registro(), (
+        "un gate que falla no puede haber reiniciado nada"
     )
-    # Y ofrece la vuelta atrás que sí existe, apuntando a una instantánea REAL.
-    assert str(gabinete.previo) in r.stderr
-    assert (gabinete.previo / _CENTINELA).exists(), (
-        "el comando de restauración que imprime debe apuntar a una instantánea que existe"
+    assert "intacto" in r.stderr
+    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" not in r.stderr, (
+        "ese aviso describía el layout in-place; repetirlo ahora sería mentir al revés"
     )
 
 
@@ -672,19 +747,21 @@ def test_el_primer_despliegue_de_un_gabinete_virgen_completa(gabinete) -> None:
     """Premisa del test de abajo, y camino real de todo gabinete nuevo: sin
     `/opt/takab/edge` previo el despliegue tiene que terminar igual de bien.
 
-    Aquí NO se toma instantánea (no hay de qué), y eso es correcto; lo que no era
-    correcto es lo que el mensaje de aborto decía en ese caso.
+    Aquí no hay release anterior, y eso es correcto; lo que no era correcto es lo
+    que el mensaje de aborto decía en ese caso.
     """
     gabinete.gabinete_virgen()
     r = gabinete.desplegar()
 
     assert gabinete.codigo_nuevo_en_el_arbol_vivo()
-    assert not gabinete.previo.exists(), "sin árbol vivo previo no hay instantánea que tomar"
+    assert "no hay release anterior completa" in r.stdout, (
+        "un gabinete virgen tiene que ENTERARSE de que no tiene vuelta atrás"
+    )
 
     # El VEREDICTO no se puede exigir verde aquí, y exigirlo era codificar un
-    # accidente de esta máquina. Sin instantánea no hay con qué comparar el
+    # accidente de esta máquina. Sin release anterior no hay con qué comparar el
     # código del dueño, así que el script sólo puede certificar el despliegue si
-    # LEE que el dueño arrancó después del swap — y esa lectura es de
+    # LEE que el dueño arrancó después de la activación — y esa lectura es de
     # `/proc/<pid>/stat`, que en un contenedor endurecido (el runner de CI) puede
     # no estar disponible. Cuando no lo está, el rojo es CORRECTO: fail-closed.
     #
@@ -692,45 +769,38 @@ def test_el_primer_despliegue_de_un_gabinete_virgen_completa(gabinete) -> None:
     # a certificar, tiene que decir la razón que MIDIÓ. El script llegó a afirmar
     # "arrancó ANTES del swap" con INICIO_DUENO=0 por no haber podido leer nada.
     if r.returncode != 0:
-        assert "no se pudo LEER el arranque" in r.stderr or "no hay instantánea" in r.stderr, (
+        assert "no se pudo LEER el arranque" in r.stderr or "no hay release anterior" in r.stderr, (
             "se negó a certificar el despliegue sin decir cuál de las dos cosas "
             f"le faltó.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
         )
-        assert "ANTES del swap" not in r.stderr or "no se pudo LEER" not in r.stderr, (
-            "afirma a la vez que midió el arranque y que no pudo leerlo"
-        )
 
 
-def test_sin_instantanea_el_aborto_no_ofrece_una_vuelta_atras_inexistente(gabinete) -> None:
+def test_sin_release_anterior_el_aborto_no_ofrece_una_vuelta_atras_inexistente(gabinete) -> None:
     """A3. El mensaje de aborto ofrecía SIEMPRE el comando de restauración desde
-    `edge.prev` — pero `edge.prev` sólo se crea `if [ -d "$VIVO" ]`.
+    `edge.prev` — pero `edge.prev` sólo se creaba `if [ -d "$VIVO" ]`.
 
-    En el primer despliegue de un gabinete (o tras borrar `/opt/takab/edge`) esa
-    instantánea NO EXISTE, así que el script mandaba a un operador con el
-    gabinete abortado a correr un `rsync` desde un directorio que no está. Es la
-    misma familia que la frase «sigue con el código anterior»: el mensaje afirma
-    un estado seguro que no se ha comprobado. Un operador que se fía se va del
-    sitio creyendo que puede volver atrás.
+    En el primer despliegue de un gabinete esa instantánea NO EXISTÍA, así que el
+    script mandaba a un operador con el gabinete abortado a correr un `rsync`
+    desde un directorio que no está. Es la misma familia que la frase «sigue con
+    el código anterior»: el mensaje afirma un estado seguro que no se ha
+    comprobado, y un operador que se fía se va del sitio creyendo que puede
+    volver atrás.
+
+    Con A/B el comando desapareció —la vuelta atrás es del canary y no del
+    operador—, pero la obligación es la misma: si este gabinete no tiene NINGUNA
+    release buena, el mensaje tiene que decirlo.
     """
     gabinete.gabinete_virgen()
     r = gabinete.desplegar(FALLA_CODIGO="1")
 
     assert r.returncode != 0
-    assert not gabinete.previo.exists(), "premisa: en el primer despliegue no hay instantánea"
-
-    # La verdad sobre el disco se sigue diciendo (eso no cambia)...
-    assert "EL DISCO YA TIENE EL CÓDIGO NUEVO" in r.stderr
-    # ...pero la vuelta atrás que no existe NO se ofrece.
     assert "rsync -a --delete --exclude .venv" not in r.stderr, (
         "ofrece restaurar desde una instantánea que NO se tomó: el comando fallaría "
         "y el operador ya se habría ido creyendo que tiene vuelta atrás"
     )
-    assert "NO HAY VUELTA ATRÁS" in r.stderr, (
-        "en el primer despliegue el mensaje debe DECIR que no hay código anterior al que volver"
+    assert "sigue SIN código bueno" in r.stderr, (
+        "en el primer despliegue el mensaje debe DECIR que no hay release a la que volver"
     )
-
-
-# ---------------- A4: un paso informativo no puede tumbar un despliegue sano
 
 
 def test_un_journal_ilegible_no_convierte_un_despliegue_bueno_en_fallido(gabinete) -> None:
@@ -819,6 +889,11 @@ def test_un_servicio_vivo_que_NO_tiene_los_pines_tumba_el_despliegue(gabinete) -
     0, `systemctl is-active` dice `active`… y NADIE sostiene el cerrojo. Con la
     verificación anterior este despliegue salía en VERDE y el operador se iba del
     sitio con un edificio sin alertamiento.
+
+    [T-2.70] Desde el canary este caso ya no sólo se DELATA: se REVIERTE. La
+    propiedad de los pines es una de las cuatro señales del remojo, así que la
+    activación no llega ni a declararse buena — vuelve sola a la release
+    anterior y el despliegue sale rojo.
     """
     r = gabinete.desplegar(NO_RECLAMA_PINES="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
 
@@ -830,10 +905,10 @@ def test_un_servicio_vivo_que_NO_tiene_los_pines_tumba_el_despliegue(gabinete) -
         "el despliegue no puede reportarlo como bueno.\n"
         f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     )
-    assert "NADIE reclamó los pines" in r.stderr
-    assert "ni siquiera existe" in r.stderr, (
-        "el diagnóstico tiene que distinguir «nunca se reclamó» de «se soltó»: "
-        "son dos averías distintas y el operador actúa distinto"
+    assert "REVERTIDO" in r.stderr or "NADIE reclamó los pines" in r.stderr
+    assert "cerrojo" in r.stderr or "pines" in r.stderr, (
+        "el diagnóstico tiene que nombrar la PROPIEDAD DE LOS PINES: es lo que "
+        "distingue «el gabinete no protege» de «la unidad no arrancó»"
     )
 
 
@@ -985,20 +1060,18 @@ def test_un_arranque_LENTO_pero_sano_no_se_reporta_como_gabinete_sin_dueno(gabin
 def test_el_sondeo_no_declara_bueno_un_gabinete_que_nunca_toma_los_pines(gabinete) -> None:
     """La no-vacuidad del sondeo: esperar no puede convertirse en perdonar.
 
-    Con `NO_RECLAMA_PINES` el cerrojo no se toma nunca; el sondeo tiene que
-    agotar el plazo y ABORTAR con el mismo veredicto de antes, no rendirse en
-    verde por cansancio.
+    Con `NO_RECLAMA_PINES` el cerrojo no se toma nunca; ni el canary ni el paso 7
+    pueden rendirse en verde por cansancio. El veredicto tiene que nombrar el
+    cerrojo, que es lo que distingue este fallo de «la unidad no arrancó».
     """
     r = gabinete.desplegar(NO_RECLAMA_PINES="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
 
     assert r.returncode != 0
-    assert "NADIE reclamó los pines" in r.stderr
-    espera = re.search(r"tras esperar (\d+) s", r.stderr)
-    assert espera, (
-        "el mensaje debe decir CUÁNTO se esperó antes de rendirse: sin eso el "
-        f"operador no sabe si el gabinete es lento o está muerto.\nstderr:\n{r.stderr}"
+    veredicto = (gabinete.raiz.parent / "canary" / "veredicto.json").read_text()
+    assert "cerrojo" in veredicto, f"el veredicto del canary no nombra el cerrojo: {veredicto}"
+    assert '"resultado":"revertido' in veredicto, (
+        f"un gabinete que nunca toma los pines tiene que provocar la vuelta atrás: {veredicto}"
     )
-    assert int(espera.group(1)) >= 1, "y el número tiene que ser el plazo REAL, no un literal"
 
 
 # ---- D1·MENOR-2: el registro es INFORMATIVO; un disco lleno no es un intruso
@@ -1340,16 +1413,21 @@ def test_un_dueno_de_pines_VIEJO_con_el_MISMO_codigo_no_obliga_a_ciclar_gas(gabi
     )
 
 
-def test_la_ventana_de_mantenimiento_reinicia_al_dueno_ANTES_que_al_cliente(gabinete) -> None:
-    """El camino sancionado, con el edificio avisado.
+def test_la_ventana_de_mantenimiento_reinicia_al_dueno_DESPUES_de_activar(gabinete) -> None:
+    """El camino sancionado, con el edificio avisado — y el orden INVERTIDO por
+    el layout A/B, que es un cambio de fondo y no de estilo.
 
-    Cuando el operador declara la ventana, el dueño SÍ se reinicia — y va
-    PRIMERO: `takab-edge` declara `After=takab-gpio.service`, así que el orden
-    correcto es dueño y luego cliente; al revés, el cliente pasaría sus primeros
-    segundos hablándole a un socket que nadie ató (panel en `S/D`, latido sin
-    relés) y encima el reinicio del dueño lo dejaría sin suscripción.
+    Antes el dueño iba PRIMERO, por el `After=takab-gpio.service` de
+    `takab-edge`. Con A/B eso deja de ser correcto: el `ExecStart` del dueño
+    resuelve por el MISMO symlink que el del cliente, así que reiniciarlo antes
+    del repunte lo dejaría estrenando la versión VIEJA — un ciclo eléctrico de
+    `GAS_VALVE` y `DOOR_RETAINER` a cambio de nada.
 
-    Y el reinicio va por AQUÍ y no a mano por SSH a propósito: así queda bajo la
+    Y va después del CANARY, no sólo del repunte: si la release nueva no
+    sobrevive al remojo, la vuelta atrás ya ocurrió y no hay ninguna razón para
+    tocar los pines. El coste físico sólo se paga cuando hay algo que estrenar.
+
+    El reinicio va por AQUÍ y no a mano por SSH a propósito: así queda bajo la
     MISMA verificación de propiedad del paso 7, que es lo que dice si el dueño
     volvió a tomar los pines.
     """
@@ -1363,14 +1441,10 @@ def test_la_ventana_de_mantenimiento_reinicia_al_dueno_ANTES_que_al_cliente(gabi
         "se declaró la ventana de mantenimiento y el dueño de los pines siguió "
         "con el código anterior"
     )
-    assert registro.index("restart takab-gpio") < registro.index("restart takab-edge"), (
-        "reinició al CLIENTE antes que al DUEÑO: `takab-edge` arranca contra un "
-        "socket que su dueño está a punto de cerrar"
+    assert registro.index("restart takab-gpio") > registro.index("restart takab-edge"), (
+        "reinició al DUEÑO antes del repunte del symlink: habría estrenado la "
+        "versión VIEJA y ciclado gas y retenedores a cambio de nada"
     )
-    # …y la propiedad se vuelve a verificar sobre el dueño NUEVO, no sobre el
-    # que había: el pid del registro es el del proceso que arrancó ahora.
-    assert "✓ pines del gabinete en poder de takab-gpio" in r.stdout
-    assert "el edificio está avisado" in r.stdout.lower() or "VENTANA DE MANTENIMIENTO" in r.stdout
 
 
 def test_del_edge_env_gana_la_ULTIMA_asignacion_del_dueno(gabinete) -> None:
@@ -1403,23 +1477,24 @@ def test_si_el_dueno_no_arranca_el_veredicto_lo_da_la_MEDICION_y_no_systemctl(
     corre bajo `set -euo pipefail`: dejar que abortara ahí cambiaría una
     comprobación MEDIDA —«¿quién sostiene el cerrojo?»— por el código de salida
     de un comando que sólo sabe decir «no arrancó», y encima dejaría al cliente
-    sin reiniciar con el disco ya cambiado.
+    sin activar.
 
-    Así que se avisa y se sigue: el paso 7 es el que dicta, y lo hace con el
-    diagnóstico bueno. Con `Restart=always` + `StartLimitIntervalSec=0`, además,
-    un fallo transitorio se cura solo mientras el sondeo espera.
+    Así que se avisa y se sigue: quien dicta es la MEDICIÓN. [T-2.70] Ahora esa
+    medición llega antes —es una de las cuatro señales del remojo del canary— y
+    su desenlace es más fuerte: además de delatar, revierte.
     """
     gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
     r = gabinete.desplegar(FALLA_START_GPIO="1", TAKAB_DEPLOY_PLAZO_PROPIEDAD="2")
 
     assert "systemctl restart takab-edge" in gabinete.registro(), (
         "abortó en el paso 6 por el código de salida de systemctl: el cliente se "
-        "quedó sin reiniciar con el disco ya cambiado"
+        "quedó sin activar la release nueva"
     )
     assert r.returncode != 0, "nadie tiene los pines y el despliegue salió en verde"
-    assert "NADIE reclamó los pines" in r.stderr, (
+    veredicto = (gabinete.raiz.parent / "canary" / "veredicto.json").read_text()
+    assert "cerrojo" in veredicto, (
         "el veredicto tiene que venir de MEDIR la propiedad, no del error de "
-        f"systemctl.\nstderr:\n{r.stderr}"
+        f"systemctl.\nveredicto: {veredicto}\nstderr:\n{r.stderr}"
     )
 
 
@@ -1454,3 +1529,136 @@ def test_un_gabinete_SIN_identidad_no_llega_a_tocar_el_arbol_vivo(gabinete) -> N
     assert "systemctl restart" not in gabinete.registro()
     assert str(gabinete.entorno) in r.stderr, "el mensaje debe nombrar el archivo que falta"
     assert "provision_gateway.sh" in r.stderr, "y el script que lo instala"
+
+
+# ---------------------------------------------------------------------------
+# [T-2.70] La migración al layout A/B y la poda de releases
+# ---------------------------------------------------------------------------
+
+
+def test_migrar_un_gabinete_de_hoy_al_layout_AB_exige_ventana(gabinete) -> None:
+    """Todo gabinete desplegado hasta esta ficha tiene `edge` como DIRECTORIO.
+    Convertirlo en symlink cambia la ruta desde la que arrancan LAS DOS unidades
+    —el camino de vida—, y entre el `mv` del directorio y el del symlink hay un
+    hueco en que esa ruta no existe. Eso no se hace sin avisar al edificio.
+    """
+    gabinete.sin_migrar()
+    r = gabinete.desplegar()
+
+    assert r.returncode != 0
+    assert "DIRECTORIO" in r.stderr and "ventana" in r.stderr
+    assert not gabinete.vivo.is_symlink(), "migró pese a negarse"
+    assert gabinete.centinela_intacto(), "el árbol vivo se tocó pese a abortar"
+    assert "systemctl restart" not in gabinete.registro()
+
+
+def test_la_migracion_conserva_el_arbol_heredado_como_release(gabinete) -> None:
+    """La primera activación A/B de un gabinete necesita una vuelta atrás, y la
+    única que puede tener es lo que ya estaba corriendo. Se conserva ENTERO —con
+    su venv—, porque una release sin venv no es una vuelta atrás: es media.
+
+    Es la misma lección que este script aprendió con `edge.prev`: no ofrecer una
+    reversión que no existe.
+    """
+    gabinete.sin_migrar()
+    r = gabinete.desplegar("--ventana-de-mantenimiento")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert gabinete.vivo.is_symlink(), "tras migrar, la ruta de arranque debe ser el symlink"
+    heredadas = sorted(gabinete.releases.glob("heredada-*"))
+    assert len(heredadas) == 1, f"se esperaba UNA release heredada: {heredadas}"
+    heredada = heredadas[0] / "edge"
+    assert (heredada / _CENTINELA).exists(), "la heredada debe ser el árbol ANTERIOR"
+    assert (heredada / ".venv" / "bin" / "python").exists(), (
+        "sin su venv la release heredada no sirve como vuelta atrás"
+    )
+    assert not (gabinete.raiz / "edge.premigracion").exists(), (
+        "el original duplicado tiene que desaparecer: una microSD no aguanta dos copias"
+    )
+
+
+def test_la_poda_jamas_borra_la_release_activa_ni_la_anterior(gabinete) -> None:
+    """Un gabinete con microSD no puede acumular releases con su venv, pero una
+    poda que se llevara la activa o la anterior convertiría la limpieza en el
+    defecto que el canary existe para evitar: una actualización sin vuelta atrás.
+    """
+    # Con mtimes ANTIGUOS de verdad: la poda ordena por fecha de modificación,
+    # así que cuatro directorios creados en el mismo instante que la release
+    # anterior dejaban el orden al azar y el test parpadeaba.
+    for i in range(4):
+        vieja = gabinete.releases / f"20250101T00000{i}Z-vieja" / "edge"
+        vieja.mkdir(parents=True)
+        os.utime(vieja.parent, (1_700_000_000 + i, 1_700_000_000 + i))
+
+    r = gabinete.desplegar(TAKAB_DEPLOY_RELEASES_VIVAS="2")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert gabinete.vivo.resolve().exists(), "la poda se llevó la release ACTIVA"
+    assert (gabinete.release_previa / _CENTINELA).exists(), (
+        "la poda se llevó la release ANTERIOR: el gabinete se quedó sin vuelta atrás"
+    )
+    assert sorted(gabinete.releases.glob("*vieja")) == [], "la poda no llegó a las antiguas"
+
+
+def test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa(gabinete, tmp_path) -> None:
+    """[T-2.70 · CAMPO 2026-08-23] EL GATE QUE FALTABA, y que costó un edificio
+    sin sirena.
+
+    Las dos unidades declaran `ProtectHome=true`: para ellas `/home`, `/root` y
+    `/run/user` NO EXISTEN. Un venv cuyo `bin/python` resuelve ahí arranca
+    perfectamente desde una sesión ssh —que es donde corren los otros tres
+    gates— y muere con **203/EXEC** cuando lo lanza systemd: el ejecutable
+    existe, el que no existe en ese namespace es su intérprete.
+
+    Pasó de verdad la primera noche del layout A/B: hasta entonces el venv del Pi
+    era UNO y se reusaba desde julio, con su intérprete fuera de `/home` porque
+    alguien exportó `UV_PYTHON_INSTALL_DIR` a mano aquella vez — un hecho que
+    vivía en un directorio y en ningún archivo. Con A/B cada release estrena
+    venv, `uv` eligió intérprete por primera vez en meses y se lo puso en `$HOME`.
+
+    El sandbox no puede montar un `/home` de mentira, así que se le apunta el
+    gate a un prefijo suyo. Que el DEFAULT siga siendo los tres reales lo ancla
+    `test_deploy_artifacts.py`.
+    """
+    escondido = tmp_path / "escondido"
+    escondido.mkdir(exist_ok=True)
+
+    r = gabinete.desplegar(
+        TAKAB_DEPLOY_RUTAS_OCULTAS=str(escondido),
+        VENV_PYTHON_EN=str(escondido / "python3.12"),
+    )
+
+    assert r.returncode != 0, "activó un venv que systemd no puede ejecutar"
+    assert "NO pueden verlo" in r.stderr
+    assert "ProtectHome" in r.stderr
+    assert gabinete.centinela_intacto(), "el gabinete debe seguir en la release anterior"
+    assert "systemctl restart" not in gabinete.registro(), "reinició pese a fallar el gate"
+
+
+def test_la_poda_JAMAS_se_lleva_la_release_heredada(gabinete) -> None:
+    """[T-2.70 · CAMPO 2026-08-23] La recencia es el criterio equivocado para
+    la heredada, y costó la red de seguridad la misma noche del estreno.
+
+    Es el árbol que el gabinete llevaba corriendo ANTES del layout A/B: meses de
+    operación real detrás y la única versión de la que se sabe que ese edificio
+    sobrevive a un corte de luz. Todas las releases nuevas son, por definición,
+    más recientes, así que una poda por fecha se la lleva la primera — y así el
+    gabinete se quedó con tres releases del mismo día y ninguna con historia.
+    """
+    import os
+
+    heredada = gabinete.releases / "heredada-20250101T000000Z" / "edge"
+    heredada.mkdir(parents=True)
+    os.utime(heredada.parent, (1_600_000_000, 1_600_000_000))  # la MÁS antigua
+    for i in range(3):
+        otra = gabinete.releases / f"20250601T00000{i}Z-vieja" / "edge"
+        otra.mkdir(parents=True)
+        os.utime(otra.parent, (1_700_000_000 + i, 1_700_000_000 + i))
+
+    r = gabinete.desplegar(TAKAB_DEPLOY_RELEASES_VIVAS="1")
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert heredada.exists(), "la poda se llevó la única release con historia real"
+    assert sorted(gabinete.releases.glob("*vieja")) == [], (
+        "premisa: la poda SÍ tenía que llevarse las otras antiguas"
+    )

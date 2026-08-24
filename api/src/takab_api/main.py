@@ -32,11 +32,13 @@ from takab_api.routers.notify_webhooks import router as notify_webhooks_router
 from takab_api.routers.ops_alerts import router as ops_alerts_router
 from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
+from takab_api.routers.rollouts import router as rollouts_router
 from takab_api.routers.rule_sets import router as rule_sets_router
 from takab_api.routers.sensors import router as sensors_router
 from takab_api.routers.sites import router as sites_router
 from takab_api.routers.telemetry import router as telemetry_router
 from takab_api.routers.tenants import router as tenants_router
+from takab_api.routers.updates import router as updates_router
 from takab_api.routers.users import router as users_router
 from takab_api.routers.visibility import router as visibility_router
 from takab_api.routers.ws import router as ws_router
@@ -141,6 +143,8 @@ def create_app() -> FastAPI:
 
     # Comandos remotos de actuador firmados (B9, regla de oro 8).
     app.include_router(commands_router)
+    app.include_router(updates_router)
+    app.include_router(rollouts_router)
 
     # Superficie MÓVIL (Fase 2 · T-2.03): portador, sitio e incidente.
     app.include_router(mobile_me_router)

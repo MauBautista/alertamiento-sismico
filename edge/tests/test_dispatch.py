@@ -452,3 +452,159 @@ def test_self_test_rejected_when_command_disabled() -> None:
     acks = _acks(cloud)
     assert len(acks) == 1 and acks[0]["success"] is False
     assert "command_enabled" in acks[0]["detail"] and actuators.self_tests == 0
+
+
+# ------------------------------------------- [T-2.70] actualización remota
+
+
+def _actualizacion(tmp_path, monkeypatch, *, ejecutable: bool = True):
+    """Dispatcher con un agente de activación FALSO que sólo deja rastro.
+
+    El agente de verdad reinicia `takab-edge`; aquí lo que se mide es qué se le
+    ordena y —sobre todo— que el ack salga ANTES, porque en el gabinete real ese
+    reinicio mata al proceso que lo lanzó.
+    """
+    rastro = tmp_path / "invocado.txt"
+    guion = tmp_path / "canary.sh"
+    guion.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{rastro}"\n')
+    if ejecutable:
+        guion.chmod(0o755)
+    else:
+        guion.chmod(0o644)
+    dispatcher, signer, cloud, store, actuators = _dispatcher(command_enabled=True)
+    monkeypatch.setattr(dispatcher._settings, "canary_script", str(guion), raising=False)
+    return dispatcher, signer, cloud, rastro
+
+
+def _esperar_rastro(rastro, intentos: int = 100) -> str:
+    import time
+
+    for _ in range(intentos):
+        if rastro.exists() and rastro.read_text().strip():
+            return rastro.read_text()
+        time.sleep(0.05)
+    return rastro.read_text() if rastro.exists() else ""
+
+
+def test_una_orden_de_activacion_se_acusa_ANTES_de_lanzar_nada(tmp_path, monkeypatch) -> None:
+    """EL ORDEN ES EL DISEÑO, y sin él la nube se queda ciega.
+
+    Activar reinicia `takab-edge` — el proceso que ejecuta el despachador. Un
+    ack posterior al lanzamiento no se publicaría jamás y la nube esperaría el
+    TTL sin poder distinguir «rechazado» de «no contestó».
+    """
+    dispatcher, signer, cloud, rastro = _actualizacion(tmp_path, monkeypatch)
+    payload = {
+        "channel": "system",
+        "action": "update_activate",
+        "event_id": None,
+        "release_id": "20260823T120000Z-abc1234",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-1", NOW))
+
+    acks = _acks(cloud)
+    assert len(acks) == 1, "sin ack, la nube no sabe si la orden llegó"
+    assert acks[0]["success"] is True
+    assert acks[0]["action"] == "update_activate"
+    # …y el ack dice lo que SABE, no lo que espera que pase.
+    assert "latido" in acks[0]["detail"]
+    assert "20260823T120000Z-abc1234" in _esperar_rastro(rastro)
+
+
+def test_la_orden_de_revertir_llega_al_agente_con_su_motivo(tmp_path, monkeypatch) -> None:
+    """El fallo que el remojo NO puede ver es el que se descubre media hora
+    después desde el SOC. Por eso revertir tiene que poder venir de fuera, y por
+    eso el motivo viaja: es lo que queda escrito en el veredicto del gabinete."""
+    dispatcher, signer, cloud, rastro = _actualizacion(tmp_path, monkeypatch)
+    payload = {
+        "channel": "system",
+        "action": "update_rollback",
+        "event_id": None,
+        "motivo": "el SOC vio latencias raras",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-2", NOW))
+
+    assert _acks(cloud)[0]["success"] is True
+    rastro_txt = _esperar_rastro(rastro)
+    assert "revertir" in rastro_txt
+    assert "el SOC vio latencias raras" in rastro_txt
+
+
+def test_un_release_id_que_no_es_un_id_no_llega_a_ejecutarse(tmp_path, monkeypatch) -> None:
+    """Esta es la única superficie que ejecuta un proceso en el gabinete por
+    orden de la nube. Los argumentos van por `execve` sin shell, así que una
+    inyección no prospera igualmente — pero se valida antes, y el rechazo se
+    ACUSA en vez de quedar en el journal."""
+    dispatcher, signer, cloud, rastro = _actualizacion(tmp_path, monkeypatch)
+    payload = {
+        "channel": "system",
+        "action": "update_activate",
+        "event_id": None,
+        "release_id": "../../etc; rm -rf /",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-3", NOW))
+
+    acks = _acks(cloud)
+    assert acks[0]["success"] is False
+    assert "release_id inválido" in acks[0]["detail"]
+    assert not rastro.exists(), "se invocó el agente con un id que no es un id"
+
+
+def test_sin_agente_de_activacion_se_dice_AHORA_y_no_media_hora_despues(
+    tmp_path, monkeypatch
+) -> None:
+    """Un gabinete todavía sin layout A/B no puede activar nada. Decirlo aquí es
+    barato; lo contrario sería lanzar al vacío y dejar que el operador lo
+    dedujera de un `fw_running` que no cambia."""
+    dispatcher, signer, cloud, rastro = _actualizacion(tmp_path, monkeypatch, ejecutable=False)
+    payload = {
+        "channel": "system",
+        "action": "update_activate",
+        "event_id": None,
+        "release_id": "20260823T120000Z-abc1234",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-4", NOW))
+
+    acks = _acks(cloud)
+    assert acks[0]["success"] is False
+    assert "sin agente de activación" in acks[0]["detail"]
+
+
+def test_una_actualizacion_por_un_canal_de_rele_se_rechaza(tmp_path, monkeypatch) -> None:
+    """`update_*` es del canal lógico `system`. Aceptarla sobre `siren` sería
+    aceptar una orden cuyo enrutado nadie decidió."""
+    dispatcher, signer, cloud, rastro = _actualizacion(tmp_path, monkeypatch)
+    payload = {
+        "channel": "siren",
+        "action": "update_activate",
+        "event_id": None,
+        "release_id": "20260823T120000Z-abc1234",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-5", NOW))
+
+    acks = _acks(cloud)
+    assert acks[0]["success"] is False
+    assert "canal system" in acks[0]["detail"]
+    assert not rastro.exists()
+
+
+def test_una_actualizacion_sin_command_enabled_no_se_ejecuta(tmp_path, monkeypatch) -> None:
+    """El default de fábrica (regla de oro 8) gobierna también a esta acción: un
+    gabinete verificado pero NO habilitado no estrena código por orden remota."""
+    rastro = tmp_path / "invocado.txt"
+    guion = tmp_path / "canary.sh"
+    guion.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{rastro}"\n')
+    guion.chmod(0o755)
+    dispatcher, signer, cloud, _store, _act = _dispatcher(command_enabled=False)
+    monkeypatch.setattr(dispatcher._settings, "canary_script", str(guion), raising=False)
+    payload = {
+        "channel": "system",
+        "action": "update_activate",
+        "event_id": None,
+        "release_id": "20260823T120000Z-abc1234",
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-up-6", NOW))
+
+    assert _acks(cloud)[0]["success"] is False
+    assert "command_enabled" in _acks(cloud)[0]["detail"]
+    assert not rastro.exists()
