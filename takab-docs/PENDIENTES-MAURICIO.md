@@ -308,6 +308,23 @@ corrido**. El occupant necesita código de enrolamiento.
 
 ---
 
+### 2.10 · [`T-2.167`](TASKS.md)/[`T-2.168`](TASKS.md) · Landing pública: un plan+apply corto y el primer deploy
+
+> **Qué es:** la landing real de `landing/` reemplaza al sitio mínimo de `T-2.156`. El código y
+> el terraform están listos y en verde; falta la mitad que solo tú puedes correr. **~20 min,
+> cabe al principio de cualquier ventana** (sin build de imágenes, sin ECR).
+>
+> ### 📋 QUÉ TIENES QUE HACER — el orden importa (anti-ventana, runbook en `deploy/landing/README.md`)
+> 1. `bash deploy/landing/deploy.sh --pre` — sube los assets con su metadata SIN tocar `index.html`.
+> 2. `terraform -chdir=infra/terraform/envs/dev plan` — **gate duro: `0 to destroy`** y
+>    `aws_s3_object.index` saliendo del estado como «no longer managed». Si dice
+>    «will be destroyed», PARA: la portada se caería hasta el primer sync.
+> 3. `terraform apply`.
+> 4. `make landing-deploy` — guardas incluidas; termina con smoke (el `/no-existe` debe dar **404**).
+>
+> **Trampa ya pagada que aplica aquí:** jamás subas `index.html` a mano antes del apply — el
+> etag del objeto histórico haría que un apply posterior lo REVIRTIERA al bootstrap.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.
@@ -452,6 +469,14 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 
 ---
 
+### 3.6 · Capturas reales para la landing v1.1 — **OPCIONAL, no bloquea el corte**
+
+> La landing v1 salió sin fotografía ni capturas (decisión 2026-08-25). Cuando quieras subirle
+> materialidad: (a) conecta el **Pixel real por USB** para capturar la app (regla: nunca
+> emuladores), (b) capturas de la consola con `make soc-local` sembrado, (c) si algún día hay
+> sesión de fotos del gabinete instalado, entran por `astro:assets` (AVIF/WebP automático).
+> Nada de esto usa los mockups de `takab-docs/design/` como si fueran el producto.
+
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 
 ### 4.1 · [`T-2.96`](TASKS.md) · `GATE-LEGAL` · marco normativo citable
@@ -569,6 +594,20 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > confundirlo con el `G-02` de §3.1, que sí es riesgo.
 
 ---
+
+### 4.6 · Buzón `contacto@takabailert.com` + número de WhatsApp de la landing
+
+> **Decidido el 2026-08-25:** el contacto de la landing es correo nuevo + WhatsApp, sin
+> formulario. La landing YA enlaza `contacto@takabailert.com`; hasta que el buzón exista, un
+> prospecto que escriba recibe un rebote.
+>
+> ### 📋 QUÉ TIENES QUE HACER — 10 min en Namecheap + una línea de código
+> 1. Crea el buzón/alias `contacto@takabailert.com` en Namecheap Private Email (el MX del apex
+>    ya apunta ahí; es donde viven `ops@` y `dmarc@`).
+> 2. Mándate un correo de prueba desde fuera y contesta desde el buzón.
+> 3. Decide el número de WhatsApp para `wa.me` (¿asumes tú el ruido de prospectos ahí?) y ponlo
+>    en `landing/src/config.ts` (`WHATSAPP_URL`); con la cadena vacía el botón NO se renderiza
+>    a propósito — un canal que no existe no se muestra.
 
 ## 5 · CIERRE DEL PROYECTO
 
