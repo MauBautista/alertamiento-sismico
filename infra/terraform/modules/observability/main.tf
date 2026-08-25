@@ -650,6 +650,66 @@ resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   ok_actions                = [aws_sns_topic.ops_alerts.arn]
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
+# ---------------------------------------------------------------------------
+# [T-2.153] LA NUBE CORRIENDO UN ESQUEMA MAS VIEJO QUE SU CODIGO.
+#
+# El 2026-08-21 `alembic_version` en la nube era `0038` y la cabeza del repo
+# `0046`: OCHO migraciones, y no lo dijo ni una alarma, ni un health-check ni un
+# test. Se descubrio por un sintoma lateral —la alarma de retencion de PII
+# atascada, porque `0043` crea la tabla de la que sale su metrica— tras media
+# hora persiguiendo el script equivocado. Un defecto de DATOS disfrazado de
+# defecto de codigo.
+#
+# POR QUE NO BASTA EL GATE DEL DESPLIEGUE. `deploy/cloud/deploy.sh` ya se niega a
+# declarar exito si la API no contesta, corre otra imagen o ve un esquema
+# atrasado. Pero aquello no se rompio por un despliegue malo: se rompio porque
+# NADIE DESPLEGO durante dias. Un gate solo mira cuando alguien lo invoca; esto
+# mira sin que nadie lo pida, que es la unica forma de ver una deriva que crece
+# sola.
+#
+# QUE MIDE: `esquema.pendientes` de /health, o sea cuantas revisiones de alembic
+# trae la imagen que la base todavia no tiene. Sale del MISMO calculo que el gate
+# (`ops/schema_version.py`), no de una consulta paralela que pudiera discrepar.
+#
+# EL CERO SE PUBLICA, y esa linea es la diferencia entre una alarma y un adorno.
+# `takab-dev-iot-rule-errors` estuvo CATORCE DIAS en ALARM por estar sana y
+# ademas MUDA: su filtro no publicaba el cero, asi que tuvo UNA transicion en
+# toda su vida y SNS —que solo notifica transiciones— no volvio a decir nada. El
+# publicador de la instancia manda el valor cada minuto pase lo que pase, asi que
+# la vuelta a verde tambien avisa: el correo de OK es el acuse de que la nube
+# volvio a estar al dia.
+#
+# `breaching`, y aqui cubre TRES ausencias distintas que significan lo mismo:
+#   (a) la API no contesta — el publicador calla a proposito;
+#   (b) el estado no es un numero: `desconocida` (no se pudo preguntar a la base)
+#       o `adelantada` (la base va POR DELANTE de la imagen, o sea un despliegue
+#       al reves). Ninguna es "al dia", y ninguna se convierte en un numero
+#       inventado para que encaje en el umbral;
+#   (c) el publicador no existe todavia en la instancia, porque no se ha
+#       desplegado desde que se anadio. Que eso encienda la alarma es CORRECTO y
+#       es la ficha entera: "hace mucho que nadie despliega" es justo lo que hay
+#       que ver.
+#
+# NACE EN ALARM el dia del primer apply, como sus vecinas, y esta bien: hasta el
+# siguiente `make cloud-deploy` no hay quien publique. El primer correo de OK es
+# la senal de que la cadena entera —publicador, cron, permiso y metrica— funciona.
+resource "aws_cloudwatch_metric_alarm" "schema_drift" {
+  alarm_name          = "takab-dev-esquema-atrasado"
+  alarm_description   = "La base de la nube corre un esquema MAS VIEJO que el codigo desplegado: hay migraciones de alembic que la imagen trae y la base no tiene. Mientras dure, cualquier funcion que dependa de una tabla o columna nueva falla de formas que NO parecen un problema de esquema — el 2026-08-21 se manifesto como la alarma de retencion de PII atascada, y costo media hora de diagnostico en el script equivocado. Comprobar con `curl -s http://127.0.0.1:8000/health` en la instancia (trae `esquema.aplicada`, `esperada` y `pendientes`) y resolver con `make cloud-deploy`, que migra ANTES de levantar la API. Si esta alarma aparece sin que nadie haya tocado nada, lo que dice es que hace mucho que nadie despliega. La proteccion local del gabinete no depende de esto (reglas de oro 1 y 2); lo que esta en riesgo es la nube.${local.ack_sufijo}"
+  namespace           = "Takab/Ops"
+  metric_name         = "SchemaPendingMigrations"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = var.schema_drift_periodos
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 
 # --- [T-2.81.a] La retencion de PII que dejo de ejecutarse ----------------------
 #
