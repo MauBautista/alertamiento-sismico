@@ -13,7 +13,7 @@ contra el equipo real el **2026-08-16**:
 
 | Gate | Estado real | Qué falta |
 |---|---|---|
-| **`G-01`** · restart en frío | **SE PUEDE HACER HOY** | nada — 20 minutos |
+| **`G-01`** · restart en frío | ✅ **ACREDITADO 2026-08-24** | — (ver A.4) |
 | **`G-04`** · WR-1 real, <100 ms a sirena | **a medias** | una sirena de verdad; y una transmisión real de CIRES |
 | **`G-02`** · sirena con el Pi APAGADO | **NO se puede probar** | **el hardware no existe** — y falta software |
 
@@ -144,6 +144,18 @@ sigue diciendo `reason: ok`.
 
 Marca `G-01` en la tabla de `RUNBOOK-auditoria-cierre.md` con la fecha y la evidencia (pega la
 salida del punto 3 — es la que prueba que no hubo degradación silenciosa del backend).
+
+> ### ✅ HECHO el 2026-08-24 en `gw-dev-0001`, y **con el layout A/B**
+>
+> `active`/`active` · `NRestarts` **0 y 0** · `LGPIOFactory (lgpio)` · cerrojo `pid=740`,
+> `unit=takab-gpio`, `flock=9` · arrancó **desde el symlink** · nube `online` (RTT 75 ms),
+> SeedLink reconectado, `journalctl -p err` **vacío** · prueba de actuadores `ok: true` con los
+> **5 canales** en `readback_ok`, sirena y estrobo vistos y oídos, y vuelta a reposo sola.
+>
+> **Costó dos intentos, y el primero es la lección**: el layout A/B tumbó el gabinete —
+> `203/EXEC` en las dos unidades— porque `uv` había puesto el intérprete del venv dentro de
+> `/home`, que `ProtectHome=true` esconde. Ningún test podía darlo: los gates del despliegue
+> corren como el usuario de ssh, con `/home` entero visible.
 
 ### A.5 · Lo que `G-01` desbloquea desde el 2026-08-23, y que antes no
 

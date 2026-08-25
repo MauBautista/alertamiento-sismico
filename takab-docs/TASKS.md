@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **253** · `[~]` **9** · `[ ]` **41**
+**Conteo de tareas:** total **303** · `[x]` **254** · `[~]` **8** · `[ ]` **41**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5082,7 +5082,7 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   - [x] Se ve la deriva: cuántos gabinetes están atrás y cuánto.
   - [x] `S/D` cuando no se sabe — nunca la última versión conocida pintada como actual.
 
-### [~] T-2.70 · Actualización remota con canary y rollback — `SOFTWARE` COMPLETO · falta `G-01`
+### [x] T-2.70 · Actualización remota con canary y rollback — COMPLETA (2026-08-24)
 - **Desbloqueada por** [`D-04`](DECISIONES-MAURICIO.md#d-04) (2026-08-16): la ventana de
   mantenimiento avisada para mover al dueño de los pines.
 - **Componente:** api + edge + deploy · **Depende de:** T-2.69
@@ -5193,12 +5193,12 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 - **Criterios de aceptación:**
   - [x] **`takab-gpio` NO se detiene durante la actualización.** Es el proceso que toca la
         sirena (regla de oro 4); una ventana de actualización no puede ser una ventana de
-        desprotección. **Cerrado en software:** la activación reinicia sólo al CLIENTE, y que
+        desprotección. **Cerrado en software Y acreditado en el gabinete real (2026-08-24):** la activación reinicia sólo al CLIENTE, y que
         ninguna rama del reversor nombre al dueño está anclado por comportamiento y por texto
         (`test_jamas_se_reinicia_al_dueno_de_los_pines`,
         `test_el_reversor_no_reinicia_jamas_al_dueno_de_los_pines`). El reinicio del dueño sigue
         exigiendo ventana declarada y ahora va DESPUÉS del repunte — antes estrenaría la versión
-        vieja y ciclaría gas y retenedores a cambio de nada. **Falta el gate físico.**
+        vieja y ciclaría gas y retenedores a cambio de nada.
   - [x] **El criterio de éxito que un canary necesita, y que no existía.** El latido MENTÍA
         sobre qué código corre: `fw_version()` relee el archivo `FW_VERSION` en cada snapshot
         y `deploy.sh` lo escribe ANTES de reiniciar, así que el proceso **VIEJO** publicaba la
@@ -5265,7 +5265,7 @@ veinte es imposible; con veinte y una regresión, es peligroso.
 > Ninguno está en el camino crítico. Por tamaño y por tocar el camino de vida, va como fase
 > propia: **`T-2.70.a`**.
 
-### [~] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` + `FÍSICO`
+### [~] T-2.70.a · El proceso que toca la sirena deja de ser el que hace todo lo demás — `SOFTWARE` CERRADO + `FÍSICO` ACREDITADO · abierta SOLO por el criterio 4 (`GATE-HW`)
 - **Componente:** edge (arquitectura de procesos) · **Depende de:** — · **Desbloquea:** T-2.70
 
 > ### D3 CERRADO EN SOFTWARE (2026-08-08) — seis criterios cumplidos, y el cuarto es de HARDWARE
@@ -5330,22 +5330,40 @@ veinte es imposible; con veinte y una regresión, es peligroso.
   dentro de `gpio`**. Cruzarían actuación posterior (gas, ascensor, puertas), lectura de estado
   para el panel, simulacro y modo prueba. **Ninguno está en el camino crítico de <100 ms.**
 - **Criterios de aceptación:**
-  - [ ] `takab-gpio` es el **dueño de los pines** y corre como servicio propio; `takab-edge`
-        deja de instanciar su `GpioController` y le habla por IPC.
-  - [ ] **`takab-gpio.service` gana su `EnvironmentFile`.** Hoy NO lo tiene, así que arrancaría
-        con los **defaults de código, incluido el mapa de pines de `GpioPins`** — energizar el
-        pin equivocado en un gabinete cableado es el peor fallo imaginable de esta tarea.
-  - [ ] Se retira `Conflicts=takab-gpio.service` y **un test demuestra que ya no son
-        excluyentes** (hoy hay uno que exige lo contrario y habrá que invertirlo).
-  - [ ] **La transición no desenergiza los relés.** `GAS_VALVE` (FAIL_CLOSE) y `DOOR_RETAINER`
-        (NORMALLY_CLOSED) **reposan energizados**: si el dueño de los pines cambia de proceso,
-        hay que demostrar por test que no existe una ventana en que se suelten.
-  - [ ] **SPOF-02 intacto**: el traspaso hardware→software tras un reinicio con el contacto
-        SOSTENIDO (`_seed_from_held_contact`) sigue funcionando con los procesos separados.
-  - [ ] El reflejo sigue midiendo **<100 ms**, y el test lo MIDE con relés, no lo afirma.
-  - [ ] Reiniciar `takab-edge` **NO detiene la protección** — que es lo que desbloquea T-2.70.
-  - [ ] **`FÍSICO`**: acreditación en el Pi real. Toca el camino de vida; no se cierra con
-        tests en verde.
+  - [x] `takab-gpio` es el **dueño de los pines** y corre como servicio propio; `takab-edge`
+        deja de instanciar su `GpioController` y le habla por IPC. **Verificado en vivo el
+        2026-08-24**: el cerrojo dice `unit=takab-gpio` y el panel lee los relés a través de la
+        costura.
+  - [x] **`takab-gpio.service` gana su `EnvironmentFile`.** Sin él arrancaría con los defaults
+        de código —incluido el mapa de pines de `GpioPins`—, que es el peor fallo imaginable de
+        esta tarea: energizar el pin equivocado de un gabinete cableado.
+  - [x] Se retira `Conflicts=takab-gpio.service` y un test demuestra que **ya no son
+        excluyentes** (`test_las_dos_unidades_YA_NO_son_mutuamente_excluyentes`). Lo que impide
+        dos dueños ya no es una promesa de systemd sino un **cerrojo del kernel**, que además
+        atrapa lo que `Conflicts=` nunca vio: un `python -m takab_edge.gpio` suelto por SSH.
+  - [ ] ~~**La transición no desenergiza los relés.**~~ **DECLARADO IMPOSIBLE EN SOFTWARE, y la
+        ficha lo dice en vez de fingirlo.** Mover al dueño cuesta **exactamente 2 transiciones
+        por pin** —un ciclo eléctrico de `GAS_VALVE` y `DOOR_RETAINER`— porque
+        `LGPIOPin.close()` **re-reclama la línea como ENTRADA** con el bias deshabilitado: es
+        gpiozero quien desenergiza, no el kernel. Las dos salidas son una ventana declarada (la
+        que se usó el 2026-08-24) o **hardware** —enclavamiento del relé, o un pull-up que
+        sostenga la bobina— que **cambiaría SPOF-07**. Eso no se decide desde el software:
+        `GATE-HW` / `G-05`.
+  - [x] **SPOF-02 intacto**: el traspaso hardware→software tras un reinicio con el contacto
+        SOSTENIDO (`_seed_from_held_contact`) funciona con los procesos separados. **Estaba
+        ROTO** —el sembrado corría antes de que existiera el servidor, así que el episodio nacía
+        sin `episode_id` y el cliente lo descartaba: sirena sonando y cero incidente— y ese
+        hallazgo es lo que justificó el paso entero.
+  - [x] El reflejo sigue midiendo **<100 ms**, y el test lo MIDE con relés en vez de afirmarlo.
+        En el gabinete real: **6.65 ms y 4.16 ms** con el WR-1 de verdad, dos órdenes de
+        magnitud de margen sobre el presupuesto.
+  - [x] Reiniciar `takab-edge` **NO detiene la protección** — que es lo que desbloquea T-2.70.
+        **Medido el 2026-08-24 y no una vez**: el canary reinició al cliente en cada activación
+        y en cada remojo, y el dueño de los pines conservó el cerrojo sin un solo relevo de PID.
+  - [x] **`FÍSICO`**: acreditación en el Pi real (2026-08-24). `takab-gpio` es el dueño de
+        los pines en `gw-dev-0001`, sobrevive a un reinicio en frío **desde el symlink del
+        layout A/B** con `NRestarts=0`, y la prueba local de actuación mueve los **5 canales**
+        con `readback_ok`. No se cerró con tests en verde: se cerró con el gabinete delante.
 - **Nota de secuencia:** el plan maestro tasó este cambio como «driver/rename» porque `gpio` es
   autocontenido y la interfaz `Actuator` es estable. El acoplamiento medido dice que es más:
   va como fase, con reconocimiento, diseño del IPC y gate físico.
