@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **255** · `[~]` **8** · `[ ]` **40**
+**Conteo de tareas:** total **306** · `[x]` **256** · `[~]` **9** · `[ ]` **41**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -10313,6 +10313,42 @@ sería documentar intenciones.
         teléfono en silencio y qué no. Un "no" sin plan es un ocupante que no se entera.
 
 ---
+
+## Fase 2.13 · Landing pública del dominio — el reemplazo del sitio de `T-2.156`
+
+> La página mínima de `T-2.156` cumplió su papel (evidencia del caso SES). Esta fase la
+> reemplaza por la landing real en `landing/` (Astro estático, workspace autocontenido), con el
+> perímetro de claims de `CONSULTA-LEGAL-TAKAB.md` convertido en test bloqueante. Decisiones de
+> Mauricio (2026-08-25): contacto por correo nuevo + WhatsApp, v1 sin fotografía, **sin cifras
+> medidas publicadas** (solo cualitativo, hasta la consulta de `T-2.96`), hosting en el
+> S3+CloudFront existentes. Runbooks: `landing/README.md` y `deploy/landing/README.md`.
+
+### [x] T-2.166 · La landing real: workspace `landing/` con el perímetro de claims hecho test — `SOFTWARE` · COMPLETA (2026-08-25)
+- **Componente:** landing (nuevo) · **Sale de:** reemplazar el sitio mínimo de `T-2.156` por una cara pública real
+- **Dirección visual fijada por brief:** industrial-brutalist «Swiss Industrial Print» — papel/tinta/rojo del dictamen, Saira Condensed + Archivo + JetBrains Mono, retícula visible. Contraste deliberado con la consola (oscura). Contrato de dirección en `landing/src/layouts/Base.astro` (sobrevive al build); verdad de producto en `landing/PRODUCT.md`.
+- [x] Workspace Astro con `lint` / `format:check` / `typecheck` / `test` / `build` espejados en `make` y en el job `landing` de CI — `test_ci_parity.sh` en verde en el mismo PR que crea el workspace (la lección de mobile: nunca existe un workspace sin cobertura).
+- [x] Suite de contenido bloqueante sobre `dist/` (`landing/tests/contenido.test.mjs`): deslinde SASMEX y declaración del dominio remitente OBLIGATORIOS (el sitio sigue siendo evidencia SES); cifras medidas, normas y badges de tiendas PROHIBIDOS; cero orígenes externos (fallaría hasta un Google Fonts); toda `<img>` con dimensiones; presupuestos JS < 20 KB gz y HTML < 40 KB gz.
+- [x] Pieza central: esquema SVG inline + CSS puro del camino SASMEX→gabinete→actuadores con botón `[ EJECUTAR SIMULACRO ]` accesible por teclado, `aria-live`, y dos layouts (vertical/horizontal). SOLO `transform`/`opacity` (el «dibujado» es `scaleX/scaleY`, sin `stroke-dashoffset`); `prefers-reduced-motion` = esquema estático completo.
+- [x] Fuentes woff2 auto-hosteadas y commiteadas (~32 KB los 4 subsets) con fallbacks de métricas (`size-adjust`/`ascent-override`); cero peticiones a terceros en runtime.
+- [x] Evidencia E2E commiteada (`landing/tests/e2e/evidencia/`): capturas 360/768/1280/1920 sin scroll horizontal, axe 0 critical/serious (medido en estado final con `reducedMotion`), teclado (primer Tab = salto de contenido), variante reduced-motion.
+- [x] Detector de impeccable corrido en modo completo; hallazgos reales corregidos (leyenda del banner sin uppercase corrido, anotaciones del SVG ≥9 px) y falsos del análisis estático anotados (pares de colores que no coexisten; `clamp()` sin parsear).
+- **Trampa que costó dos rondas de inspección:** Astro NO añade su atributo de scope al `<svg>` raíz, así que una regla scoped sobre la clase del svg no matchea — y una scoped de más especificidad (`.esquema[cid] svg`) pisa el `display:none` del swap responsive. Las reglas del svg raíz viven en `global.css` con especificidad decisiva.
+
+### [~] T-2.167 · El módulo `site` suelta el contenido: Terraform posee el continente, git el contenido — `SOFTWARE` listo · falta el `apply` (ventana `PENDIENTES §2.10`)
+- **Componente:** infra (`modules/site`) + `deploy/landing/` · **Depende de:** `T-2.166`
+- [x] `aws_s3_object.index` retirado del módulo y del estado vía `removed { destroy = false }` en `envs/dev` (Terraform ≥1.7; validate en verde) — el objeto histórico sigue sirviendo hasta que el primer sync lo pise.
+- [x] `custom_error_response` 403/404 → `/404.html` **manteniendo `response_code = 404`** (la decisión anti-espejo de `T-2.156` no cambia).
+- [x] Versionado del bucket + lifecycle (poda de versiones no-actuales a 90 días): rollback sin rebuild y `rm` reversibles.
+- [x] Outputs `site_bucket` / `site_distribution_id` re-exportados; `deploy/landing/deploy.sh` los lee con `terraform output -raw` (no teclea nombres de recursos).
+- [x] `deploy.sh` con guardas (main limpio y pusheado, CI verde, SSO vivo), sync en 4 clases de caché (woff2 con `--content-type font/woff2` + immutable; `_astro/*` immutable; HTML 300 s AL FINAL; raíz no hasheada 3600 s y jamás immutable), `deploy-info.json` con la rev, poda de huérfanos explícita y modo `--pre` para la transición.
+- [ ] **Gate externo (Mauricio):** `terraform plan` debe decir `0 to destroy` con `aws_s3_object.index` saliendo del estado como no gestionado; luego `apply`. El clasificador niega `terraform apply` a agentes.
+
+### [ ] T-2.168 · Corte a producción de la landing y verificación desde fuera
+- **Componente:** deploy · **Depende de:** `T-2.167`
+- [ ] Orden anti-ventana del runbook (`deploy/landing/README.md`): `deploy.sh --pre` → plan con gate `0 to destroy` → `apply` → `make landing-deploy`.
+- [ ] Smoke con códigos, no con ojos: `/` 200 con `max-age=300` · `/aviso-de-privacidad.html` 200 · `/no-existe` **404** · un `_astro/*` `immutable` · `deploy-info.json` con la rev desplegada.
+- [ ] Verificación desde un punto NO privilegiado (la lección de `T-2.156`: la primera vez solo se miró desde la máquina de Mauricio).
+- [ ] Lighthouse contra producción dentro de presupuesto (LCP < 2.0 s en 4G emulado, CLS < 0.1) y capturas archivadas.
 
 ## BLOQUE IV · Funciones futuras
 

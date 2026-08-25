@@ -208,6 +208,39 @@ jobs:
       - name: Bundle (expo export)
         run: npx expo export --platform android --output-dir /tmp/expo-export
 
+  landing:
+    name: landing · eslint + prettier + astro check + test + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Lint (eslint)
+        run: npm run lint
+      - name: Formato (prettier)
+        run: npm run format:check
+      - name: Typecheck (astro check)
+        run: npm run typecheck
+      # La suite construye dist/ y afirma sobre el ARTEFACTO: cadenas
+      # obligatorias (deslinde SASMEX + dominio remitente — el sitio es
+      # evidencia del caso SES), cadenas prohibidas (cifras/normas, decisión
+      # 2026-08-25), cero orígenes externos, y presupuestos de tamaño
+      # deterministas (JS<20KB gz). Lighthouse NO corre aquí: LCP en runners
+      # compartidos es la clase de flake que e2e.yml prohíbe convertir en gate;
+      # vive en `make landing-audit` (local) y landing-audit.yml (manual).
+      - name: Tests (contenido + presupuestos sobre dist)
+        run: npm run test
+      - name: Build (astro)
+        run: npm run build
+
   # [T-2.86.c · hueco RO-6.a] La regla de oro 6 ("nada de secretos hardcodeados")
   # era la ÚNICA de las once sin un solo test, paso de CI ni pre-commit: se
   # sostenía en que nadie se olvidara. Va en su PROPIO job, no como un paso más

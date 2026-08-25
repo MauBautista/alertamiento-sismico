@@ -1,12 +1,14 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
-        cloud-images cloud-deploy cloud-allow-my-ip restore-drill
+        cloud-images cloud-deploy cloud-allow-my-ip restore-drill \
+        landing-preview landing-e2e landing-audit landing-deploy
 
 API_DIR := api
 WEB_DIR := web
 EDGE_DIR := edge
 MOBILE_DIR := mobile
+LANDING_DIR := landing
 SDK_DIR := shared/sdk-ts
 TOKENS_DIR := shared/design-tokens
 # Los tests de este módulo son plan-only (credenciales falsas, sin red): corren en
@@ -30,6 +32,7 @@ install:
 	cd $(WEB_DIR) && npm install
 	cd $(EDGE_DIR) && uv sync
 	cd $(MOBILE_DIR) && npm install
+	cd $(LANDING_DIR) && npm install
 
 db:
 	docker compose up -d db
@@ -163,6 +166,7 @@ lint:
 	cd $(WEB_DIR) && npm run lint && npm run format:check && npm run typecheck
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(MOBILE_DIR) && npm run lint && npm run typecheck
+	cd $(LANDING_DIR) && npm run lint && npm run format:check && npm run typecheck
 	terraform fmt -check -recursive infra/terraform
 
 # Paridad con ci.yml: perf se excluye (B-1) y demo/tests corre con el venv de
@@ -176,6 +180,7 @@ test: test-db
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q -rs
 	cd $(MOBILE_DIR) && npm test
+	cd $(LANDING_DIR) && npm run test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_DATABASE) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_STORAGE) && terraform init -backend=false -input=false >/dev/null && terraform test
@@ -208,6 +213,7 @@ drift:
 build:
 	cd $(WEB_DIR) && npm run build
 	cd $(MOBILE_DIR) && npx expo export --platform android --output-dir /tmp/expo-export
+	cd $(LANDING_DIR) && npm run build
 
 # Lo que corre CI, de una sola vez: el desarrollador no debería tener que saberse
 # qué target cubre qué job. Precio explícito y aceptado: `tsc` corre dos veces
@@ -288,6 +294,25 @@ cloud-images:
 cloud-deploy:
 	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh
+
+# --- Landing pública (takabailert.com) -----------------------------------------
+# El sitio se sirve desde S3+CloudFront (modules/site). El contenido lo posee
+# `aws s3 sync` (deploy/landing/deploy.sh), NO terraform: el módulo dejó de subir
+# el index.html inline. Runbook completo en deploy/landing/README.md.
+# `landing-preview` es el staging (local); `landing-e2e` captura los 4
+# breakpoints + axe; `landing-audit` corre Lighthouse con budgets (LCP<2s 4G).
+landing-preview:
+	cd $(LANDING_DIR) && npm run build && npm run preview
+
+landing-e2e:
+	cd $(LANDING_DIR) && npm run e2e
+
+landing-audit:
+	cd $(LANDING_DIR) && npm run build && npm run audit
+
+landing-deploy:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) TF_DEV=$(TF_DEV) \
+		bash deploy/landing/deploy.sh
 
 # Usuarios de consola en Cognito (T-1.62): un perfil por rol web, con su grupo
 # (sin grupo el login da 401) y su contraseña en Secrets Manager. Idempotente.

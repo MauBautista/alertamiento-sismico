@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://takabailert.com/sitemap.xml

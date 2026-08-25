@@ -25,8 +25,6 @@ variable "route53_zone_id" {
   default     = ""
 }
 
-variable "index_html" {
-  description = "Contenido de la pagina. Se pasa desde el entorno para que el repo tenga UNA sola copia."
-  type        = string
-  default     = ""
-}
+# [landing] `index_html` se retiro: el contenido lo publica deploy/landing/deploy.sh
+# con `aws s3 sync` desde landing/dist (fuente de verdad: git). Terraform ya no
+# posee ningun objeto del bucket.

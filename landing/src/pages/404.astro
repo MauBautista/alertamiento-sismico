@@ -1,0 +1,46 @@
+---
+// Página 404 propia. CloudFront la sirve con CÓDIGO 404 (custom_error_response):
+// principio anti-espejo de T-2.156 — un 200 sobre cualquier ruta convertiría el
+// sitio en un espejo que afirma tener lo que le pidan.
+import Base from "../layouts/Base.astro";
+---
+
+<Base
+  title="404 · TAKAB Ailert"
+  description="Esta ruta no existe en takabailert.com."
+  path="/404.html"
+  noindex
+>
+  <section class="seccion">
+    <div class="marco">
+      <header>
+        <p class="cajetin__meta mono">
+          <span>Código 404</span>
+          <span>ruta inexistente</span>
+        </p>
+        <h1 class="cuatrocientos" aria-label="Error 404">404</h1>
+      </header>
+      <div class="seccion__cuerpo prosa">
+        <p>
+          <strong>Esta ruta no existe.</strong> Este sitio no afirma tener lo que
+          no tiene — ni en sus páginas ni en su producto.
+        </p>
+        <p><a class="btn" href="/">Volver al inicio</a></p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .cuatrocientos {
+    font-family: var(--fuente-display);
+    font-weight: 700;
+    font-size: clamp(6rem, 30vw, 24rem);
+    line-height: 0.85;
+    letter-spacing: -0.02em;
+    padding-block: var(--e-6) var(--e-5);
+  }
+  .prosa p + p {
+    margin-top: var(--e-5);
+  }
+</style>

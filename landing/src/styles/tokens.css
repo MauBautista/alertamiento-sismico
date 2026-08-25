@@ -1,0 +1,110 @@
+/* ============================================================
+   TAKAB AILERT · landing pública — tokens del sistema visual
+   Dirección: industrial-brutalist · Swiss Industrial Print.
+   Cada color viene de un artefacto real de TAKAB: tinta y rojo
+   del PDF de dictamen (api/src/takab_api/dictamen/layout.py),
+   navy de la consola (shared/design-tokens). Contrastes
+   calculados (WCAG 2.1): tinta/papel 16.15:1 · alerta/papel
+   5.01:1 · humo/papel 5.78:1 · blanco/alerta 5.52:1 ·
+   sobre-marca/marca 14.51:1 · sobre-marca-2/marca 8.87:1.
+   ============================================================ */
+
+/* --- Fuentes reales (subsets woff2 auto-hosteados; ver scripts/build-fonts.sh) --- */
+@font-face {
+  font-family: "Saira Condensed";
+  src: url("../assets/fonts/saira-condensed-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("../assets/fonts/archivo-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("../assets/fonts/archivo-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* --- Fallbacks con las métricas del web font (CLS ≈ 0 durante el swap).
+       ascent/descent medidos de los woff2 (hhea): Saira 1.135/0.439,
+       Archivo 0.878/0.210. --- */
+@font-face {
+  font-family: "Saira Condensed Fallback";
+  src: local("Arial Narrow"), local("Liberation Sans Narrow"), local("Arial");
+  ascent-override: 113.5%;
+  descent-override: 43.9%;
+  line-gap-override: 0%;
+  size-adjust: 98%;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial"), local("Liberation Sans"), local("Helvetica Neue");
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+  size-adjust: 99%;
+}
+
+:root {
+  /* Paleta */
+  --papel: #f4f4f0;
+  --banda: #eae8e3;
+  --tinta: #14181e;
+  --humo: #556070;
+  --regla: #c8ced6;
+  --alerta: #c4302b;
+  --marca: #0e2336;
+  --sobre-marca: #f4f4f0;
+  --sobre-marca-2: #b8c2ce;
+  --blanco: #ffffff;
+
+  /* Tipografía */
+  --fuente-display:
+    "Saira Condensed", "Saira Condensed Fallback", "Franklin Gothic Medium",
+    Impact, sans-serif;
+  --fuente-cuerpo:
+    "Archivo", "Archivo Fallback", Arial, "Helvetica Neue", sans-serif;
+  --fuente-mono:
+    "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas,
+    "Liberation Mono", monospace;
+
+  --t-display: clamp(3rem, 1.1rem + 9vw, 10.5rem);
+  --t-h2: clamp(2rem, 1.3rem + 3.5vw, 4.25rem);
+  --t-h3: clamp(1.25rem, 1.1rem + 0.8vw, 1.625rem);
+  --t-body: 1.0625rem;
+  --t-mono: 0.875rem;
+  --t-label: 0.75rem;
+
+  /* Espaciado (base 4 px) */
+  --e-1: 4px;
+  --e-2: 8px;
+  --e-3: 12px;
+  --e-4: 16px;
+  --e-5: 24px;
+  --e-6: 32px;
+  --e-7: 48px;
+  --e-8: 64px;
+  --e-9: 96px;
+  --e-10: 128px;
+  --e-11: 192px;
+
+  /* Retícula */
+  --ancho-max: 1440px;
+  --margen: clamp(16px, 4vw, 64px);
+  --borde: 2px;
+  --hilo: 1px;
+}

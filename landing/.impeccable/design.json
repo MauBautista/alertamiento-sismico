@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-25T17:00:00-06:00",
+  "title": "Design System: TAKAB Ailert — Landing pública",
+  "extensions": {
+    "colorMeta": {
+      "papel": {
+        "role": "neutral",
+        "displayName": "Papel",
+        "canonical": "#F4F4F0",
+        "tonalRamp": [
+          "oklch(15% 0.004 105)",
+          "oklch(27% 0.004 105)",
+          "oklch(38% 0.004 105)",
+          "oklch(49% 0.004 105)",
+          "oklch(61% 0.004 105)",
+          "oklch(72% 0.004 105)",
+          "oklch(84% 0.004 105)",
+          "oklch(95% 0.004 105)"
+        ]
+      },
+      "banda": {
+        "role": "neutral",
+        "displayName": "Banda",
+        "canonical": "#EAE8E3",
+        "tonalRamp": [
+          "oklch(15% 0.006 90)",
+          "oklch(27% 0.006 90)",
+          "oklch(38% 0.006 90)",
+          "oklch(49% 0.006 90)",
+          "oklch(61% 0.006 90)",
+          "oklch(72% 0.006 90)",
+          "oklch(84% 0.006 90)",
+          "oklch(95% 0.006 90)"
+        ]
+      },
+      "tinta": {
+        "role": "neutral",
+        "displayName": "Tinta de dictamen",
+        "canonical": "#14181E",
+        "tonalRamp": [
+          "oklch(15% 0.015 255)",
+          "oklch(27% 0.015 255)",
+          "oklch(38% 0.015 255)",
+          "oklch(49% 0.015 255)",
+          "oklch(61% 0.015 255)",
+          "oklch(72% 0.015 255)",
+          "oklch(84% 0.015 255)",
+          "oklch(95% 0.015 255)"
+        ]
+      },
+      "humo": {
+        "role": "neutral",
+        "displayName": "Humo",
+        "canonical": "#556070",
+        "tonalRamp": [
+          "oklch(15% 0.03 255)",
+          "oklch(27% 0.03 255)",
+          "oklch(38% 0.03 255)",
+          "oklch(49% 0.03 255)",
+          "oklch(61% 0.03 255)",
+          "oklch(72% 0.03 255)",
+          "oklch(84% 0.03 255)",
+          "oklch(95% 0.03 255)"
+        ]
+      },
+      "regla": {
+        "role": "neutral",
+        "displayName": "Regla",
+        "canonical": "#C8CED6",
+        "tonalRamp": [
+          "oklch(15% 0.01 250)",
+          "oklch(27% 0.01 250)",
+          "oklch(38% 0.01 250)",
+          "oklch(49% 0.01 250)",
+          "oklch(61% 0.01 250)",
+          "oklch(72% 0.01 250)",
+          "oklch(84% 0.01 250)",
+          "oklch(95% 0.01 250)"
+        ]
+      },
+      "alerta": {
+        "role": "primary",
+        "displayName": "Rojo de dictamen",
+        "canonical": "#C4302B",
+        "tonalRamp": [
+          "oklch(15% 0.165 28)",
+          "oklch(27% 0.165 28)",
+          "oklch(38% 0.165 28)",
+          "oklch(49% 0.165 28)",
+          "oklch(61% 0.165 28)",
+          "oklch(72% 0.165 28)",
+          "oklch(84% 0.165 28)",
+          "oklch(95% 0.165 28)"
+        ]
+      },
+      "marca": {
+        "role": "secondary",
+        "displayName": "Navy de marca",
+        "canonical": "#0E2336",
+        "tonalRamp": [
+          "oklch(15% 0.05 240)",
+          "oklch(27% 0.05 240)",
+          "oklch(38% 0.05 240)",
+          "oklch(49% 0.05 240)",
+          "oklch(61% 0.05 240)",
+          "oklch(72% 0.05 240)",
+          "oklch(84% 0.05 240)",
+          "oklch(95% 0.05 240)"
+        ]
+      },
+      "sobre-marca": {
+        "role": "neutral",
+        "displayName": "Sobre marca",
+        "canonical": "#F4F4F0",
+        "tonalRamp": [
+          "oklch(15% 0.004 105)",
+          "oklch(27% 0.004 105)",
+          "oklch(38% 0.004 105)",
+          "oklch(49% 0.004 105)",
+          "oklch(61% 0.004 105)",
+          "oklch(72% 0.004 105)",
+          "oklch(84% 0.004 105)",
+          "oklch(95% 0.004 105)"
+        ]
+      },
+      "sobre-marca-2": {
+        "role": "neutral",
+        "displayName": "Sobre marca 2",
+        "canonical": "#B8C2CE",
+        "tonalRamp": [
+          "oklch(15% 0.015 245)",
+          "oklch(27% 0.015 245)",
+          "oklch(38% 0.015 245)",
+          "oklch(49% 0.015 245)",
+          "oklch(61% 0.015 245)",
+          "oklch(72% 0.015 245)",
+          "oklch(84% 0.015 245)",
+          "oklch(95% 0.015 245)"
+        ]
+      },
+      "blanco": {
+        "role": "neutral",
+        "displayName": "Blanco",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(27% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Titular del hero, compuesto en líneas explícitas. Solo la portada."
+      },
+      "h2": {
+        "displayName": "Título de sección",
+        "purpose": "Títulos H2 bajo cajetín, mayúsculas, máx. 24ch."
+      },
+      "h3": {
+        "displayName": "Subtítulo",
+        "purpose": "Subtítulos de compartimento; la variante «NO HACE» va en rojo."
+      },
+      "body": {
+        "displayName": "Cuerpo",
+        "purpose": "Prosa a 52–72ch (62ch por defecto); énfasis con strong 600, nunca con color."
+      },
+      "mono": {
+        "displayName": "Mono interfaz",
+        "purpose": "Botones y telemetría a tamaño de interfaz (0.875rem)."
+      },
+      "label": {
+        "displayName": "Etiqueta mono",
+        "purpose": "Folios, metadatos, navegación y th (0.75rem, tabular-nums) — la utilidad .mono."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease-unica",
+        "value": "ease-out",
+        "purpose": "Única curva del sistema; linear existe solo para el viaje de los pulsos del esquema. Todo movimiento es transform/opacity."
+      },
+      {
+        "name": "hover-boton",
+        "value": "transform 160ms ease-out",
+        "purpose": "Relleno del botón que sube desde la base (::before scaleY 0→1)."
+      },
+      {
+        "name": "active-boton",
+        "value": "transform 120ms ease-out · scale(0.97)",
+        "purpose": "Presión del botón."
+      },
+      {
+        "name": "revelado-scroll",
+        "value": "opacity+transform 450ms ease-out · translateY(16px)→0",
+        "purpose": "Encabezados de sección [data-rv], una sola vez (threshold 0.2); los estados ocultos solo existen bajo .js sin reduced-motion."
+      },
+      {
+        "name": "portada-titular",
+        "value": "transform 420ms ease-out · escalón 70ms por línea",
+        "purpose": "Solo transform, opacity fija en 1: el LCP pinta en el primer frame."
+      },
+      {
+        "name": "portada-resto",
+        "value": "opacity+transform 450ms ease-out · delays 0.4–0.6s",
+        "purpose": "Metadatos, marcador, argumento y CTA del hero."
+      },
+      {
+        "name": "esquema-coreografia",
+        "value": "marco 300ms → nodos 400ms escalonados → hilos 300ms (scaleX/scaleY) → pulsos 500ms linear → estados 250ms @2.4s",
+        "purpose": "Secuencia del esquema al entrar al viewport; reejecutable por el botón de simulacro; sin stroke-dashoffset."
+      },
+      {
+        "name": "esquema-latido",
+        "value": "scale 1→1.045→1 · ciclo 4s desde 3.2s",
+        "purpose": "Latido de reposo del gabinete tras la secuencia."
+      }
+    ],
+    "breakpoints": [
+      { "name": "tableta", "value": "768px" },
+      { "name": "escritorio", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "CTA principal: placa de tinta que se rellena de rojo desde la base al hover.",
+      "html": "<a class=\"ds-btn-primario\" href=\"#\">Solicitar cotización</a>",
+      "css": ".ds-btn-primario{position:relative;z-index:0;display:inline-block;font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.875rem;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;border:2px solid var(--tinta,#14181E);padding:14px 22px;background:var(--tinta,#14181E);color:var(--papel,#F4F4F0);cursor:pointer;overflow:hidden}.ds-btn-primario::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--alerta,#C4302B);transform:scaleY(0);transform-origin:bottom;transition:transform 160ms ease-out}.ds-btn-primario:hover,.ds-btn-primario:focus-visible{color:#FFFFFF}.ds-btn-primario:hover::before,.ds-btn-primario:focus-visible::before{transform:scaleY(1)}.ds-btn-primario:focus-visible{outline:3px solid var(--alerta,#C4302B);outline-offset:2px}.ds-btn-primario:active{transform:scale(0.97);transition:transform 120ms ease-out}"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acción secundaria: marco de 2px sobre papel que se rellena de tinta al hover.",
+      "html": "<a class=\"ds-btn-secundario\" href=\"#\">Ver cómo funciona</a>",
+      "css": ".ds-btn-secundario{position:relative;z-index:0;display:inline-block;font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.875rem;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;border:2px solid var(--tinta,#14181E);padding:14px 22px;background:transparent;color:var(--tinta,#14181E);cursor:pointer;overflow:hidden}.ds-btn-secundario::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--tinta,#14181E);transform:scaleY(0);transform-origin:bottom;transition:transform 160ms ease-out}.ds-btn-secundario:hover,.ds-btn-secundario:focus-visible{color:var(--papel,#F4F4F0)}.ds-btn-secundario:hover::before,.ds-btn-secundario:focus-visible::before{transform:scaleY(1)}.ds-btn-secundario:focus-visible{outline:3px solid var(--alerta,#C4302B);outline-offset:2px}.ds-btn-secundario:active{transform:scale(0.97);transition:transform 120ms ease-out}"
+    },
+    {
+      "name": "Cajetín de sección",
+      "kind": "custom",
+      "refersTo": "h2",
+      "description": "Cabecera de sección como cajetín de documento: regla dura, fila de metadatos con folio, hilo, título. Nada de eyebrow.",
+      "html": "<header class=\"ds-cajetin\"><p class=\"ds-cajetin__meta\"><span>SEC 01 / 07</span><span>TAKAB Ailert · documento público</span></p><h2 class=\"ds-cajetin__titulo\">Cuando suena la alerta</h2></header>",
+      "css": ".ds-cajetin{border-top:2px solid var(--tinta,#14181E)}.ds-cajetin__meta{display:flex;justify-content:space-between;gap:16px;margin:0;padding-block:8px;border-bottom:1px solid var(--regla,#C8CED6);color:var(--humo,#556070);font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase;font-variant-numeric:tabular-nums}.ds-cajetin__meta span:first-child{white-space:nowrap}.ds-cajetin__titulo{margin:0;font-family:var(--fuente-display,'Saira Condensed','Arial Narrow',Impact,sans-serif);font-size:clamp(2rem,1.3rem + 3.5vw,4.25rem);font-weight:700;text-transform:uppercase;line-height:0.95;letter-spacing:-0.01em;padding-block:32px 24px;max-width:24ch;color:var(--tinta,#14181E)}"
+    },
+    {
+      "name": "Nota límite",
+      "kind": "custom",
+      "refersTo": "body",
+      "description": "Deslinde legal con rango de figura: caja de 2px con etiqueta mono en rojo. Perímetro, no letra pequeña.",
+      "html": "<p class=\"ds-nota-limite\"><span class=\"ds-nota-limite__etiqueta\">Límite declarado</span>El dictamen es operativo y preliminar. No sustituye la evaluación estructural formal ni autoriza el reingreso al inmueble: el reingreso lo autoriza una firma de ingeniería.</p>",
+      "css": ".ds-nota-limite{border:2px solid var(--tinta,#14181E);padding:16px 24px;max-width:72ch;margin:0;font-family:var(--fuente-cuerpo,Archivo,Arial,sans-serif);font-size:1.0625rem;line-height:1.6;color:var(--tinta,#14181E)}.ds-nota-limite__etiqueta{display:block;color:var(--alerta,#C4302B);margin-bottom:8px;font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase}"
+    },
+    {
+      "name": "Lista reglada",
+      "kind": "custom",
+      "refersTo": "body",
+      "description": "Lista sin viñetas compartimentada por hilos de 1px; el primer ítem no lleva hilo.",
+      "html": "<ul class=\"ds-lista-regla\"><li>Recibe la alerta oficial <strong>SASMEX</strong> por contacto seco y acciona sirena, gas, ascensores y puertas.</li><li>Opera <strong>sin internet</strong>: detecta, acciona y guarda con el enlace caído.</li><li>Conserva la evidencia en un registro <strong>que no se puede reescribir</strong>.</li></ul>",
+      "css": ".ds-lista-regla{list-style:none;padding:0;margin:0;font-family:var(--fuente-cuerpo,Archivo,Arial,sans-serif);font-size:1.0625rem;line-height:1.6;color:var(--tinta,#14181E);max-width:62ch}.ds-lista-regla>li{padding-block:16px;border-top:1px solid var(--regla,#C8CED6)}.ds-lista-regla>li:first-child{border-top:none}.ds-lista-regla strong{font-weight:600}"
+    },
+    {
+      "name": "Tabla",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "Tabla de rejilla completa: borde exterior 2px, hilos interiores, th mono sobre banda.",
+      "html": "<table class=\"ds-tabla\"><thead><tr><th>Inmueble</th><th>Lo que resuelve</th></tr></thead><tbody><tr><td><strong>Hospitales</strong></td><td>Cierre de gas y retorno de ascensores sin depender de una pantalla.</td></tr><tr><td><strong>Universidades</strong></td><td>Red de estaciones, quórum y pase de lista por zona.</td></tr></tbody></table>",
+      "css": ".ds-tabla{width:100%;border-collapse:collapse;border:2px solid var(--tinta,#14181E);font-family:var(--fuente-cuerpo,Archivo,Arial,sans-serif);font-size:1.0625rem;line-height:1.6;color:var(--tinta,#14181E)}.ds-tabla th,.ds-tabla td{border:1px solid var(--tinta,#14181E);padding:12px 16px;text-align:left;vertical-align:top}.ds-tabla th{font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase;background:var(--banda,#EAE8E3);font-weight:400}.ds-tabla strong{font-weight:600}"
+    },
+    {
+      "name": "Hoja de especificación",
+      "kind": "custom",
+      "refersTo": "h3",
+      "description": "Dos columnas HACE / NO HACE con rejilla dibujada por gap de 1px sobre fondo tinta; el título negativo va en rojo.",
+      "html": "<div class=\"ds-spec\"><div><h3 class=\"ds-spec__titulo\">Hace</h3><p>Acciona sirena, estrobo, gas, ascensores y puertas del inmueble.</p></div><div><h3 class=\"ds-spec__titulo ds-spec__titulo--no\">No hace</h3><p>No muestra cuenta regresiva ni magnitud: el receptor oficial entrega un sí o un no.</p></div></div>",
+      "css": ".ds-spec{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--tinta,#14181E);border:2px solid var(--tinta,#14181E)}.ds-spec>div{background:var(--papel,#F4F4F0);padding:24px}.ds-spec p{margin:0;font-family:var(--fuente-cuerpo,Archivo,Arial,sans-serif);font-size:1.0625rem;line-height:1.6;color:var(--tinta,#14181E)}.ds-spec__titulo{margin:0 0 16px;font-family:var(--fuente-display,'Saira Condensed','Arial Narrow',Impact,sans-serif);font-size:clamp(1.25rem,1.1rem + 0.8vw,1.625rem);font-weight:700;text-transform:uppercase;line-height:1.05;color:var(--tinta,#14181E)}.ds-spec__titulo--no{color:var(--alerta,#C4302B)}"
+    },
+    {
+      "name": "Banda de alerta",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Cita literal del mensaje al ocupante: banda roja a sangre con bordes de tinta. Estática a propósito — no es teatro.",
+      "html": "<div class=\"ds-banner\" role=\"img\" aria-label=\"Mensaje literal del sistema al ocupante: Alerta sísmica, protéjase\"><strong>Alerta sísmica · Protéjase</strong><p>El mensaje íntegro al ocupante. Sin cuenta regresiva y sin magnitud.</p></div>",
+      "css": ".ds-banner{background:var(--alerta,#C4302B);color:#FFFFFF;border-block:2px solid var(--tinta,#14181E);padding:48px 24px}.ds-banner strong{display:block;font-family:var(--fuente-display,'Saira Condensed','Arial Narrow',Impact,sans-serif);font-weight:700;font-size:clamp(1.75rem,1rem + 4.5vw,4.5rem);line-height:0.95;text-transform:uppercase;letter-spacing:-0.01em}.ds-banner p{margin:16px 0 0;max-width:60ch;font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.75rem;letter-spacing:0.04em}"
+    },
+    {
+      "name": "Barra de navegación",
+      "kind": "nav",
+      "refersTo": "label",
+      "description": "Barra de papel con regla inferior de 2px: wordmark display, enlaces mono, contacto en rojo como único CTA de color.",
+      "html": "<header class=\"ds-barra\"><span class=\"ds-barra__nombre\">TAKAB AILERT</span><nav><ul class=\"ds-barra__nav\"><li><a href=\"#\">Cómo funciona</a></li><li><a href=\"#\">Qué hace</a></li><li><a class=\"ds-barra__cta\" href=\"#\">Contacto</a></li></ul></nav></header>",
+      "css": ".ds-barra{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 24px;padding:16px 24px;background:var(--papel,#F4F4F0);border-bottom:2px solid var(--tinta,#14181E)}.ds-barra__nombre{font-family:var(--fuente-display,'Saira Condensed','Arial Narrow',Impact,sans-serif);font-weight:700;font-size:1.375rem;letter-spacing:0.02em;color:var(--tinta,#14181E)}.ds-barra__nav{display:flex;flex-wrap:wrap;gap:16px 24px;list-style:none;margin:0;padding:0;font-family:var(--fuente-mono,'JetBrains Mono',ui-monospace,Consolas,monospace);font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase}.ds-barra__nav a{color:var(--tinta,#14181E);text-decoration:none}.ds-barra__nav a:hover,.ds-barra__nav a:focus-visible{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}.ds-barra__nav a:focus-visible{outline:3px solid var(--alerta,#C4302B);outline-offset:2px}.ds-barra__cta{color:var(--alerta,#C4302B)!important}"
+    }
+  ],
+  "narrative": {
+    "northStar": "El documento técnico",
+    "overview": "La landing no se diseña como folleto SaaS sino como el artefacto más serio que produce el propio sistema: el dictamen. Papel, tinta y un solo rojo; retícula visible; compartimentos separados por reglas y por hilos; cero ornamento. Cada color de la paleta proviene de un artefacto real de TAKAB (la tinta y el rojo del PDF de dictamen, el navy de la consola): nada se inventó para marketing, y esa procedencia es parte de la identidad.\n\nEl documento es la metáfora estructural, no solo el tono: las secciones se abren con una regla dura de 2 px a sangre completa y un cajetín de metadatos con folio («SEC 01 / 07»), como hojas de un documento paginado. La página es deliberadamente papel — color-scheme: light fijo — en cualquier tema del sistema operativo. La honestidad del producto se traduce en honestidad visual: sin capturas simuladas, sin contadores decorativos, sin teatro.",
+    "keyCharacteristics": [
+      "Paleta plana extraída de artefactos reales; el rojo de dictamen (#C4302B) como único acento.",
+      "Display condensado en mayúsculas (Saira Condensed 700) contra cuerpo neutro (Archivo) y telemetría mono (JetBrains Mono).",
+      "Retícula visible: bordes de 2 px, hilos de 1 px, rejillas por gap de 1 px con el fondo sangrando como línea.",
+      "Cero sombras, cero degradados, cero radios — verificado en el build (0 ocurrencias).",
+      "Movimiento solo transform/opacity; con prefers-reduced-motion o sin JS, la página está completa y estática.",
+      "Contrastes WCAG 2.1 calculados y declarados como número junto a los tokens."
+    ],
+    "rules": [
+      {
+        "name": "La Regla del Acento Único",
+        "body": "El rojo de dictamen es el único acento; el navy es marca de pie, no un segundo acento. Un elemento nuevo que necesite énfasis lo resuelve con peso tipográfico, mayúsculas mono o borde — jamás con un color nuevo.",
+        "section": "colors"
+      },
+      {
+        "name": "La Regla del Contraste Declarado",
+        "body": "Todo par nuevo color-texto/fondo se calcula (WCAG 2.1) y se declara como número en un comentario junto al token, como hace la cabecera de tokens.css. Un contraste sin declarar es un contraste sin verificar.",
+        "section": "colors"
+      },
+      {
+        "name": "La Regla del Papel",
+        "body": "color-scheme: light fijo: la landing es papel a propósito en cualquier tema del SO. No hay modo oscuro y no se hereda el del sistema.",
+        "section": "colors"
+      },
+      {
+        "name": "La Regla del Cajetín",
+        "body": "Los metadatos de una sección (folio «SEC nn / nn» + identidad del documento) van en una fila mono separada del título por un hilo de 1 px, ANTES del título — como cajetín de plano, no como eyebrow. El título carga su propio peso; nada se le pega encima.",
+        "section": "typography"
+      },
+      {
+        "name": "La Regla de las Mayúsculas Cortas",
+        "body": "Mayúsculas mono solo para etiquetas (≤ 40 caracteres). Una frase completa compuesta en mono va en caja normal con tracking reducido (0.04em): más de 40 caracteres en uppercase no se leen.",
+        "section": "typography"
+      },
+      {
+        "name": "La Regla del Folio Indivisible",
+        "body": "El folio «SEC 01 / 07» es un token indivisible: white-space: nowrap — pero SOLO en la celda izquierda del cajetín; la celda derecha (hasta 38ch) debe poder envolver o desborda a 360 px.",
+        "section": "layout"
+      },
+      {
+        "name": "La Regla de la Tinta Plana",
+        "body": "Nada proyecta sombra, nada se degrada, nada «flota». Si un compartimento necesita separarse, se le dibuja una regla o se le cambia la superficie — con tinta, como en un impreso.",
+        "section": "elevation"
+      },
+      {
+        "name": "La Regla del Radio Cero",
+        "body": "Ningún border-radius, en ningún componente, a ninguna escala. Suavizar una esquina rompe el mundo.",
+        "section": "shapes"
+      },
+      {
+        "name": "La Regla del Trazo Discontinuo",
+        "body": "En los esquemas, línea discontinua (stroke-dasharray: 4 4, --humo) = coordinación fuera de la ruta crítica; trazo sólido = camino de vida. La distinción es semántica, no decorativa.",
+        "section": "shapes"
+      },
+      {
+        "name": "La Regla del Estado Final",
+        "body": "Sin JS, o con prefers-reduced-motion, la página entera se entrega completa y estática: los estados ocultos de la animación solo existen bajo .js y sin reduced-motion. El movimiento presenta contenido que ya existe; jamás es la única forma de verlo.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do abrir toda sección nueva con el cajetín: regla de 2 px a sangre, fila de metadatos mono con folio (nowrap solo en la celda izquierda), hilo, título en mayúsculas.",
+      "Do declarar el contraste calculado (WCAG 2.1, como número) de cualquier par de colores nuevo en un comentario junto al token.",
+      "Do dibujar la retícula: separar compartimentos con hilos de 1 px o con el dispositivo de gap: 1px sobre fondo --tinta/--regla; estructura con borde de 2 px.",
+      "Do contener la prosa entre 52 y 72ch (62ch por defecto) y enfatizar con <strong> (600), no con color.",
+      "Do limitar el movimiento a transform/opacity con ease-out entre 120 y 500 ms, y entregar el estado final completo bajo reduced-motion y sin JS.",
+      "Do usar --humo como único gris de texto sobre papel, y --sobre-marca-2 como único secundario sobre navy."
+    ],
+    "donts": [
+      "Don't sombras, degradados, radios ni transparencias decorativas: 0 ocurrencias en el build es el estándar, no una casualidad.",
+      "Don't introducir un segundo acento: el navy no sale del pie y ningún color nuevo entra a la paleta sin procedencia en un artefacto real de TAKAB.",
+      "Don't eyebrows ni kickers pegados a un título: los metadatos van en el cajetín, separados por hilo, antes del título.",
+      "Don't mayúsculas en frases mono de más de 40 caracteres; una frase completa va en caja normal con tracking 0.04em.",
+      "Don't modo oscuro ni obedecer el tema del SO: la landing es papel (color-scheme: light) por decisión.",
+      "Don't capturas simuladas, contadores decorativos ni datos congelados pintados como vivos: la honestidad del producto también es regla visual de esta página."
+    ]
+  }
+}

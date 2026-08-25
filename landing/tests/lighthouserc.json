@@ -1,0 +1,25 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "npm run preview -- --host 127.0.0.1 --port 4321",
+      "startServerReadyPattern": "4321",
+      "url": ["http://127.0.0.1:4321/"],
+      "numberOfRuns": 3,
+      "settings": {
+        "chromeFlags": "--headless=new --no-sandbox"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2000 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "total-blocking-time": ["error", { "maxNumericValue": 200 }],
+        "resource-summary:script:size": [
+          "error",
+          { "maxNumericValue": 102400 }
+        ],
+        "categories:accessibility": ["error", { "minScore": 0.95 }]
+      }
+    }
+  }
+}

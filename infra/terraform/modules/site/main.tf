@@ -43,15 +43,44 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "site" {
   }
 }
 
-resource "aws_s3_object" "index" {
-  count        = local.on ? 1 : 0
-  bucket       = aws_s3_bucket.site[0].id
-  key          = "index.html"
-  content      = var.index_html
-  content_type = "text/html; charset=utf-8"
-  # El etag mueve el objeto cuando cambia el contenido; sin el, editar la pagina
-  # no produce plan y el sitio se queda con la version anterior para siempre.
-  etag = md5(var.index_html)
+# [landing] El contenido ya NO lo posee Terraform: lo publica `make landing-deploy`
+# (deploy/landing/deploy.sh) con `aws s3 sync` desde landing/dist, fijando
+# Cache-Control por clase de fichero. Terraform posee el CONTINENTE (bucket,
+# distribucion, certificado, DNS); el contenido tiene un solo dueno y es git.
+# El antiguo `aws_s3_object.index` salio del estado con un `removed` block en el
+# entorno, sin destruirse (transicion sin ventana rota).
+
+# Versionado: la red de emergencia del rollback sin rebuild, y lo que hace
+# reversible el `--delete` del sync. El lifecycle poda versiones viejas a 90
+# dias para que la red no se convierta en una factura.
+resource "aws_s3_bucket_versioning" "site" {
+  count  = local.on ? 1 : 0
+  bucket = aws_s3_bucket.site[0].id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "site" {
+  count  = local.on ? 1 : 0
+  bucket = aws_s3_bucket.site[0].id
+  # El versioning debe existir antes de podar versiones no-actuales.
+  depends_on = [aws_s3_bucket_versioning.site]
+
+  rule {
+    id     = "podar-versiones-no-actuales"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+    expiration {
+      expired_object_delete_marker = true
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
 }
 
 # --- Certificado: OBLIGATORIAMENTE en us-east-1 --------------------------------
@@ -140,17 +169,20 @@ resource "aws_cloudfront_distribution" "site" {
   # El codigo que se devuelve es 404 y no 200: la pagina se sirve, pero la ruta
   # de verdad no existe y decirlo importa. Un 200 sobre cualquier ruta convierte
   # el sitio en un espejo que afirma tener todo lo que le pidan.
+  # [landing] La pagina de error ahora es /404.html (multi-pagina real, generada
+  # por el build de landing/). El CODIGO sigue siendo 404: la decision anti-espejo
+  # de T-2.156 no cambia con la landing nueva.
   custom_error_response {
     error_code            = 403
     response_code         = 404
-    response_page_path    = "/index.html"
+    response_page_path    = "/404.html"
     error_caching_min_ttl = 300
   }
 
   custom_error_response {
     error_code            = 404
     response_code         = 404
-    response_page_path    = "/index.html"
+    response_page_path    = "/404.html"
     error_caching_min_ttl = 300
   }
 

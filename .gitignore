@@ -67,6 +67,18 @@ graphify-out/
 web/test-results/
 web/playwright-report/
 
+# Landing pública: caché de Astro y artefactos de Playwright (la evidencia
+# de tests/e2e/evidencia/ SÍ se commitea: es criterio de aceptación de fase)
+landing/.astro/
+landing/test-results/
+landing/playwright-report/
+landing/.lighthouseci/
+
+# impeccable (tooling de diseño): capturas de revisión y artefactos de sesión;
+# el config con projectRoots SÍ se versiona
+.impeccable/*
+!.impeccable/config.json
+
 # Cotización / BOM del gabinete: material comercial y de compras, no del producto
 cotizacion/
 
