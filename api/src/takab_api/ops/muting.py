@@ -349,6 +349,29 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
         ),
     ),
     AlarmKind(
+        resource="schema_drift",
+        scope=NEVER,
+        name_template="takab-dev-esquema-atrasado",
+        why=(
+            "[T-2.153] Vigila que la base de la nube no corra un esquema MÁS VIEJO que el código "
+            "desplegado. Es intocable por tres razones, y la primera basta: **una ventana de "
+            "mantenimiento es justo cuando alguien está desplegando**, o sea el momento en que la "
+            "deriva se crea. Silenciarla ahí es apagar el detector durante el único rato en que "
+            "el defecto puede aparecer. "
+            "La segunda es que no hace falta: el transitorio del propio despliegue —los segundos "
+            "entre `alembic upgrade head` y la API nueva contestando— ya lo absorben los dos "
+            "periodos de evaluación, así que un despliegue normal NO la enciende y no hay ruido "
+            "que callar. "
+            "Y la tercera es de instrumento, la misma que la del backup base: el que publica la "
+            "métrica y el que aplica las migraciones son EL MISMO despliegue sobre el MISMO host. "
+            "Si ésta calla, lo más probable no es que haya paz — es que hace mucho que nadie "
+            "despliega, que es literalmente lo que existe para decir. "
+            "NACE EN ALARM el día del apply y es CORRECTO: hasta el siguiente `make cloud-deploy` "
+            "no hay publicador en la instancia. El primer correo de OK es el acuse de que la "
+            "cadena entera —publicador, cron, permiso y métrica— funciona."
+        ),
+    ),
+    AlarmKind(
         resource="db_disk_space",
         scope=NEVER,
         name_template="takab-dev-disco-datos-lleno",

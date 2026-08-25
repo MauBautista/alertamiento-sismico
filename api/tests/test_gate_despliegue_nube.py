@@ -54,9 +54,19 @@ def _bloque_remoto() -> str:
     return "".join(out)
 
 
+#: El bloque remoto tiene MÁS de un `python3 -c` desde que existe el publicador
+#: de la métrica de deriva (T-2.153). Anclar al primero cogía el equivocado y
+#: ponía en rojo tests que no tenían nada que ver — así que el veredicto se busca
+#: DESPUÉS de su propio rótulo, que es lo único que lo identifica sin ambigüedad.
+_MARCA_DEL_GATE = "verificando la API recién desplegada"
+
+
 def _veredicto() -> str:
-    m = re.search(r"python3 -c '(.*?)' \"", _bloque_remoto(), re.S)
-    assert m is not None, "el gate del despliegue desapareció de deploy/cloud/deploy.sh"
+    remoto = _bloque_remoto()
+    i = remoto.find(_MARCA_DEL_GATE)
+    assert i != -1, "el gate del despliegue desapareció de deploy/cloud/deploy.sh"
+    m = re.search(r"python3 -c '(.*?)' \"", remoto[i:], re.S)
+    assert m is not None, "el gate ya no lleva su veredicto en Python"
     return m.group(1)
 
 
@@ -178,7 +188,9 @@ def test_el_gate_pregunta_por_una_ruta_que_la_app_SIRVE_de_verdad() -> None:
     """
     from takab_api.main import create_app
 
-    m = re.search(r"curl -fsS[^\n]*http://127\.0\.0\.1:8000(/\S*?)\s", _bloque_remoto())
+    remoto = _bloque_remoto()
+    remoto = remoto[remoto.find(_MARCA_DEL_GATE) :]
+    m = re.search(r"curl -fsS[^\n]*http://127\.0\.0\.1:8000(/\S*?)\s", remoto)
     assert m is not None, "el gate ya no consulta la API por HTTP"
     ruta = m.group(1)
 

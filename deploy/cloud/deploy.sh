@@ -242,6 +242,76 @@ docker exec -i takab-db psql -U postgres -d takab -v ON_ERROR_STOP=1 \\
 # colas — descubierto en D0 de T-1.39 (las colas "vacías" eran ellos drenando).
 docker rm -f takab-worker-events takab-worker-telemetry takab-worker-backfill 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# [T-2.153] EL PUBLICADOR DE LA DERIVA DE ESQUEMA.
+#
+# El gate de mas abajo hace visible la deriva EN EL DESPLIEGUE. Esto la hace
+# visible SIEMPRE, que es lo que de verdad hacia falta: el 2026-08-21 la nube se
+# quedo ocho migraciones por detras y NO fue por un despliegue malo — fue porque
+# nadie desplego durante dias. Un gate no puede ver eso; una metrica por minuto,
+# si.
+#
+# EL CERO SE PUBLICA, y no es un detalle. La alarma iot-rule-errors estuvo
+# CATORCE DIAS en ALARM por estar sana y ademas MUDA, porque su filtro no
+# publicaba el cero: sin datapoints en verde la alarma tiene UNA transicion en
+# toda su vida, y SNS solo notifica transiciones. Aqui el cron publica cada
+# minuto pase lo que pase, asi que la vuelta a verde tambien avisa.
+#
+# SI NO SE PUEDE MEDIR, NO SE PUBLICA — y la alarma entra por la puerta de la
+# ausencia (breaching). Vale para los dos casos: la API que no contesta y el
+# estado que no es un numero (desconocida = no se pudo preguntar a la base;
+# adelantada = la base va POR DELANTE de la imagen, que es un despliegue al
+# reves). Inventar un valor para que "encaje" en el umbral seria justo la
+# mentira que esta ficha existe para cerrar.
+#
+# Se escribe desde AQUI y no desde Terraform porque la ruta y el puerto de la
+# API los sabe el despliegue: /health y 8000, sin el prefijo /api que monta
+# Caddy. Tenerlo en dos sitios es como se desincronizan.
+install -d -m 0755 /opt/takab/bin
+cat >/opt/takab/bin/takab-schema-drift.sh <<'EOS'
+#!/bin/bash
+set -euo pipefail
+SALUD="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || true)"
+if [ -z "$SALUD" ]; then
+  echo "takab-schema-drift: la API no contesta; no se publica metrica." >&2
+  exit 1
+fi
+PEND="$(printf '%s' "$SALUD" | python3 -c '
+import json, sys
+try:
+    esquema = json.load(sys.stdin).get("esquema") or {}
+except ValueError:
+    raise SystemExit(1)
+estado = esquema.get("estado")
+pendientes = esquema.get("pendientes")
+# Solo estos dos estados producen una cuenta con sentido. El resto es "no se
+# pudo medir", y eso NO se convierte en un numero: se calla y habla la ausencia.
+if estado in ("al_dia", "atrasada") and isinstance(pendientes, int):
+    print(pendientes)
+else:
+    raise SystemExit(1)
+' 2>/dev/null)" || {
+  echo "takab-schema-drift: el estado del esquema no es medible; no se publica." >&2
+  exit 2
+}
+aws cloudwatch put-metric-data \
+  --namespace Takab/Ops \
+  --metric-name SchemaPendingMigrations \
+  --unit Count \
+  --value "$PEND" \
+  --region ${AWS_REGION}
+EOS
+chmod 0755 /opt/takab/bin/takab-schema-drift.sh
+
+# Fichero de cron PROPIO: mezclarlo con el del PITR o el de la PII haria que
+# tocar una cadena reescribiera la otra. Cada minuto, por la misma razon que sus
+# vecinas: con la alarma en breaching, una metrica espaciada deja ventanas de
+# CloudWatch sin datapoint — o sea correos afirmando una deriva que no existe.
+cat >/etc/cron.d/takab-schema-drift <<CRON
+* * * * * root /opt/takab/bin/takab-schema-drift.sh >/dev/null 2>&1
+CRON
+chmod 0644 /etc/cron.d/takab-schema-drift
+
 systemctl enable takab-cloud.service
 systemctl restart takab-cloud.service
 sleep 5

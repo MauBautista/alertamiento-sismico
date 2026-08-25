@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **254** · `[~]` **9** · `[ ]` **40**
+**Conteo de tareas:** total **303** · `[x]` **255** · `[~]` **8** · `[ ]` **40**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4931,7 +4931,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         Se asserta la **separación**, no la ausencia de `set -e` — un test escrito al revés habría
         bendecido el arreglo malo.
 
-### [~] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE` · el software HECHO, la alarma es `HUMANO-AWS`
+### [x] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE` · COMPLETA (2026-08-25)
 - **Componente:** api + observabilidad · **Hallado:** 2026-08-21, persiguiendo `T-2.152`
 - **El hecho, medido:** `alembic_version` en la nube = **`0038_privacy_erasure_on_behalf`**; la
   cabeza del repo = **`0046_privacy_subject_sealing`**. **Ocho migraciones de diferencia**, y
@@ -4964,19 +4964,37 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         `tests/test_gate_despliegue_nube.py` (8, aislando el veredicto del script sin desplegar
         nada). Verificado por mutación.
 
-> ### El software está hecho; el riesgo que queda NO lo cierra el software
+  - [x] **Alarma que mira SOLA** (2026-08-25) — `takab-dev-esquema-atrasado`. El gate hace
+        visible la deriva **en el despliegue**; ésta la hace visible **siempre**, que es lo que de
+        verdad hacía falta: la nube no se quedó atrás por un despliegue malo, sino porque **nadie
+        desplegó durante días**, y un gate sólo mira cuando alguien lo invoca.
+
+> ### Las tres decisiones que no rompen el plan si se eligen mal, y producen una alarma que MIENTE
 >
-> **El gate hace visible la deriva EN EL DESPLIEGUE. La alarma la haría visible SIEMPRE**, y el
-> fallo que originó esta ficha es justo el segundo: la nube no se quedó atrás por un despliegue
-> malo, sino porque **nadie desplegó durante días**. Un gate no puede ver eso.
+> **El cero se publica.** Es la diferencia entre una alarma y un adorno:
+> `takab-dev-iot-rule-errors` estuvo **catorce días en `ALARM` por estar sana y además MUDA**,
+> porque su filtro no publicaba el cero — una sola transición en toda su vida, y SNS sólo
+> notifica transiciones. El publicador manda el valor **cada minuto pase lo que pase**, así que
+> el correo de OK es el acuse de que la nube volvió a estar al día.
 >
-> Lo que falta es una alarma que compare periódicamente sin que nadie la provoque, y eso son dos
-> piezas de infra: una métrica publicada desde la instancia (el `pendientes` que
-> `/api/health` ya calcula) y su alarma en Terraform, **por ausencia de igualdad** — con
-> `default_value`, o repetirá el defecto de `iot-rule-errors`: catorce días en `ALARM` por estar
-> sana, y MUDA, porque SNS sólo notifica transiciones.
+> **`breaching`, y aquí cubre TRES ausencias que significan lo mismo**: la API que no contesta;
+> un estado que no es un número (`desconocida` = no se pudo preguntar a la base, `adelantada` =
+> la base va POR DELANTE de la imagen, o sea un despliegue al revés); y que **nadie haya
+> desplegado desde que existe el publicador** — que es la ficha entera. Ninguno de esos casos se
+> convierte en un número inventado para que encaje en el umbral.
 >
-> Se deja `[~]` en vez de `[x]` a propósito: marcarla cerrada dejaría el riesgo real sin dueño.
+> **Umbral CERO, y la tolerancia va en los periodos.** Una sola migración pendiente ya es el
+> defecto; lo que hay que tolerar es la ventana del propio despliegue —entre `alembic upgrade
+> head` y la API nueva contestando hay segundos de tránsito—, y avisar de eso sería un correo en
+> cada despliegue: así se enseña a mandar una alarma a la papelera.
+>
+> El namespace de la métrica es el mismo que la condición IAM del rol de la instancia. Si
+> divergieran, el publicador recibiría `AccessDenied` y **la alarma se quedaría ciega sin que
+> nada pareciera roto** — hay un aserto sólo para eso.
+>
+> Anclado en `tests/deriva_de_esquema.tftest.hcl` (2 runs, 9 asertos), verificado por mutación.
+> **Nace en `ALARM` el día del apply y está bien**: hasta el siguiente `make cloud-deploy` no hay
+> quien publique.
 
 ### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
 - **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·

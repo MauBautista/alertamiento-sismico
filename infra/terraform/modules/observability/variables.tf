@@ -110,6 +110,24 @@ variable "db_disk_used_max_pct" {
   }
 }
 
+variable "schema_drift_periodos" {
+  description = <<-EOT
+    [T-2.153] Cuantos periodos de 5 min seguidos tiene que verse la deriva antes
+    de avisar. NO es tolerancia a la deriva —una sola migracion pendiente ya es
+    el defecto—: es tolerancia a la VENTANA DEL DESPLIEGUE. Entre que `alembic
+    upgrade head` corre y que la API nueva empieza a contestar hay unos segundos
+    en los que la metrica puede leer un valor de transito, y avisar de eso seria
+    un correo en cada despliegue — que es como se ensena a ignorar una alarma.
+  EOT
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.schema_drift_periodos >= 2
+    error_message = "schema_drift_periodos debe ser al menos 2: con 1 periodo, un despliegue normal dispara la alarma y el aviso se vuelve ruido."
+  }
+}
+
 variable "pii_retention_max_age_s" {
   description = <<-EOT
     [T-2.81.a] Edad maxima tolerada de la ultima corrida CORRECTA del job de

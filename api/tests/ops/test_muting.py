@@ -152,6 +152,14 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # privacidad que se le prometió a un cliente, un fallo que no tumba nada
         # y que por eso solo se descubre cuando alguien pregunta.
         "pii_retention_stalled",
+        # [T-2.153] La deriva de esquema, y entra aquí por la razón más directa
+        # de todas: **una ventana de mantenimiento es justo cuando alguien está
+        # desplegando**, o sea el momento en que la deriva se CREA. Callarla ahí
+        # es apagar el detector durante el único rato en que el defecto aparece.
+        # Tampoco hay ruido que evitar: los dos periodos de evaluación ya se
+        # comen el transitorio del propio despliegue, así que un `make
+        # cloud-deploy` normal no la enciende.
+        "schema_drift",
     }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:
