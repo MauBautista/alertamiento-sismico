@@ -183,3 +183,21 @@ output "ops_ack_deadline_s" {
   description = "Plazo de acuse en segundos. Alimenta TAKAB_API_OPS_ACK_DEADLINE_S."
   value       = var.ops_ack_deadline_s
 }
+
+# [landing] Los lee `make landing-deploy` (deploy/landing/deploy.sh) con
+# `terraform output -raw`, mismo patron que db-tunnel/cloud-images: el script
+# de deploy no teclea nombres de recursos que terraform ya sabe.
+output "site_url" {
+  description = "URL publica del sitio (takabailert.com)."
+  value       = module.site.url
+}
+
+output "site_bucket" {
+  description = "Bucket S3 del sitio publico; destino del sync del deploy de la landing."
+  value       = module.site.bucket
+}
+
+output "site_distribution_id" {
+  description = "Distribucion CloudFront del sitio; destino de la invalidacion del deploy."
+  value       = module.site.distribution_id
+}

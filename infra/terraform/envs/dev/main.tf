@@ -293,8 +293,21 @@ module "site" {
   domain          = var.ses_domain
   route53_zone_id = var.ses_route53_zone_id
 
-  # La pagina vive en el repo, no dentro de una cadena de Terraform: asi se puede
-  # abrir en un navegador, revisar en el diff y comprobar que no afirma nada que
-  # el sistema no haga.
-  index_html = file("${path.module}/site/index.html")
+  # [landing] El contenido dejo de ser un argumento: vive en landing/ (git) y lo
+  # publica `make landing-deploy`. El principio de T-2.156 —revisable en el diff,
+  # no afirma nada que el sistema no haga— se conserva: ahora lo revisable es
+  # landing/src y lo vigila la suite de contenido (landing/tests).
+}
+
+# [landing] Saca el index.html historico del ESTADO sin destruirlo: el objeto
+# sigue sirviendo hasta que el primer `landing-deploy` lo pise. Gate del plan:
+# debe decir "0 to destroy" y el objeto "will no longer be managed" — si dice
+# "will be destroyed", PARAR (portada caida hasta el primer sync).
+# Este bloque se puede borrar en un PR posterior, ya aplicado.
+removed {
+  from = module.site.aws_s3_object.index
+
+  lifecycle {
+    destroy = false
+  }
 }
