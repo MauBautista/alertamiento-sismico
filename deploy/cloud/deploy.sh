@@ -263,7 +263,7 @@ docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/depl
 # un health-check ni un test: se descubrió por un síntoma lateral (una alarma de
 # retención atascada) tras media hora persiguiendo el script equivocado.
 # La API se consulta DIRECTA en el 8000, saltándose a Caddy — que es quien monta
-# el prefijo `/api` con `handle_path` y lo QUITA antes de reenviar. Por eso aquí
+# el prefijo /api con handle_path y lo QUITA antes de reenviar. Por eso aquí
 # la ruta es /health y no /api/health: FastAPI sirve sus rutas tal cual. Pedir
 # /api/health al 8000 devuelve 404, y este gate habría puesto en rojo TODOS los
 # despliegues esperando 60 s a una ruta que no existe. Lo ancla
