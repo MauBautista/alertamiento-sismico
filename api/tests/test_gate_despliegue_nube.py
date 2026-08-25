@@ -32,7 +32,7 @@ _DEPLOY = Path(__file__).resolve().parents[2] / "deploy" / "cloud" / "deploy.sh"
 def _bloque_remoto() -> str:
     """El script que de verdad corre en el EC2, tras expandir el heredoc."""
     lineas = _DEPLOY.read_text().splitlines()
-    ini = next(i for i, l in enumerate(lineas) if l.startswith("REMOTE_SCRIPT="))
+    ini = next(i for i, linea in enumerate(lineas) if linea.startswith("REMOTE_SCRIPT="))
     ini = next(i for i in range(ini, len(lineas)) if "<<" in lineas[i]) + 1
     fin = next(i for i in range(ini, len(lineas)) if lineas[i] == "EOF")
     crudo = "\n".join(lineas[ini:fin])

@@ -156,6 +156,13 @@ proyecto y **ningún lote lo compensa**.
 crítica no la acorta ni un día. Lo que la acorta es una tarde con el radio, el relé y un
 cronómetro»* (`TASKS.md § RUTA CRÍTICA`). `G-04` sigue abierto.
 
+> **⚠️ Un lint lanzado en segundo plano no es un lint que hayas visto.** El
+> 2026-08-25 metí `ruff check .` en un comando con `run_in_background` cuyo
+> redirect sólo capturaba el `pytest`: la salida del lint no fue a ninguna parte y
+> **di por hecho un verde que nunca leí**. CI lo cazó con un `E741` de una línea.
+> Es la misma familia que «`make verify` miente por el código de salida en segundo
+> plano»: **los gates se miran en primer plano, o no se han mirado.**
+
 > **⚠️ `npm run lint` NO incluye prettier.** El job `web` de CI corre además
 > `npm run format:check`, así que una PR puede salir verde en local con `lint` +
 > `typecheck` + `vitest` + `build` y **roja en CI por formato**. Medido el
