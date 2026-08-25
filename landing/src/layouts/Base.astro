@@ -1,0 +1,193 @@
+---
+// Layout raíz de la landing pública. El contrato de dirección (impeccable)
+// vive como primer hijo del <body> y sobrevive al build de producción.
+import "../styles/tokens.css";
+import "../styles/global.css";
+import { Image } from "astro:assets";
+import logoTakab from "../assets/img/logo-takab-technology.png";
+import sairaUrl from "../assets/fonts/saira-condensed-700.woff2?url";
+import archivoUrl from "../assets/fonts/archivo-400.woff2?url";
+import { CONTACTO_EMAIL } from "../config";
+
+interface Props {
+  title: string;
+  description: string;
+  /** Ruta servida (con .html en subpáginas): canónica = apex + path */
+  path: string;
+  noindex?: boolean;
+}
+
+const { title, description, path, noindex = false } = Astro.props;
+const canonical = `https://takabailert.com${path === "/" ? "/" : path}`;
+const rev = import.meta.env.PUBLIC_REV ?? "dev";
+const anio = 2026;
+---
+
+<!doctype html>
+<html lang="es-MX">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#F4F4F0" />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href={sairaUrl}
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href={archivoUrl}
+      crossorigin
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TAKAB Ailert" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content="https://takabailert.com/og-v1.png" />
+    <meta property="og:locale" content="es_MX" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <!--
+    THESIS: La landing es el documento tecnico del sistema, no un folleto SaaS: rechaza el hero-de-cards y vende con honestidad declarada (que hace / que NO hace).
+    OWN-WORLD: Swiss Industrial Print — papel #F4F4F0, tinta #14181E y rojo de dictamen #C4302B como unico acento; Saira Condensed display en mayusculas, Archivo cuerpo, JetBrains Mono telemetria; reticula de hilos de 1px, bordes 2px, radio 0, cero sombras, cero degradados; banda navy #0E2336 solo en el pie.
+    STORY: El comprador entiende "el edificio se protege solo", comprueba como (esquema del camino SASMEX-gabinete-actuadores con simulacro), confia por lo que el sistema declara NO hacer, y escribe a contacto.
+    FIRST VIEWPORT: titular display a 3 lineas (elemento LCP), metadatos mono en la regla superior, CTA "Solicitar cotizacion", marcador rojo unico; sin imagen.
+    FORM: fijada por brief — industrial-brutalist / Swiss Industrial Print (sin sorteo de conceptos).
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
+    -->
+    <a class="salto" href="#contenido">Saltar al contenido</a>
+
+    <header class="barra">
+      <div class="marco barra__fila">
+        <a class="barra__marca" href="/" aria-label="TAKAB Ailert — inicio">
+          <span class="barra__nombre">TAKAB AILERT</span>
+        </a>
+        <nav aria-label="Navegación principal">
+          <ul class="barra__nav mono">
+            <li><a href="/#como-funciona">Cómo funciona</a></li>
+            <li><a href="/#que-hace">Qué hace</a></li>
+            <li><a class="barra__cta" href="/#contacto">Contacto</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="contenido">
+      <slot />
+    </main>
+
+    <footer class="pie">
+      <div class="marco pie__grid">
+        <div>
+          <p class="placa">
+            <Image
+              src={logoTakab}
+              alt="TAKAB TECHNOLOGY"
+              width={220}
+              densities={[1, 2]}
+            />
+          </p>
+          <p class="pie__linea">
+            TAKAB Ailert es un producto de TAKAB TECHNOLOGY.
+          </p>
+          <p class="humo pie__linea">© {anio} TAKAB TECHNOLOGY · México</p>
+        </div>
+        <div>
+          <h2 class="mono pie__titulo">Correo de la plataforma</h2>
+          <!-- fuente: envs/dev/site/index.html (T-2.156) — declaración del dominio
+               remitente; este sitio es evidencia del caso SES y la conserva. -->
+          <p class="pie__linea">
+            Los avisos automáticos de la plataforma se envían desde
+            <strong>alertas@takabailert.com</strong>, únicamente a las personas
+            que el cliente institucional registra en su consola. No enviamos
+            correo promocional.
+          </p>
+          <p class="humo pie__linea">
+            Este sitio corresponde al dominio remitente de los correos de la
+            plataforma.
+          </p>
+        </div>
+        <div>
+          <h2 class="mono pie__titulo">Contacto y legal</h2>
+          <ul class="pie__lista">
+            <li><a href={`mailto:${CONTACTO_EMAIL}`}>{CONTACTO_EMAIL}</a></li>
+            <li><a href="/aviso-de-privacidad.html">Aviso de privacidad</a></li>
+          </ul>
+          <p class="mono humo pie__rev">takabailert.com · rev {rev}</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  .barra {
+    border-bottom: var(--borde) solid var(--tinta);
+    background: var(--papel);
+  }
+  .barra__fila {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-5);
+    padding-block: var(--e-4);
+  }
+  .barra__marca {
+    text-decoration: none;
+  }
+  .barra__nombre {
+    font-family: var(--fuente-display);
+    font-weight: 700;
+    font-size: 1.375rem;
+    letter-spacing: 0.02em;
+  }
+  .barra__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--e-4) var(--e-5);
+    list-style: none;
+    padding: 0;
+  }
+  .barra__nav a {
+    text-decoration: none;
+  }
+  .barra__nav a:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+  .barra__cta {
+    color: var(--alerta);
+  }
+  .pie__titulo {
+    color: var(--sobre-marca-2);
+    margin-bottom: var(--e-3);
+  }
+  .pie__linea {
+    margin-top: var(--e-3);
+    max-width: 52ch;
+  }
+  .pie__lista {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: var(--e-2);
+  }
+  .pie__rev {
+    margin-top: var(--e-5);
+  }
+</style>
+
+<script src="../scripts/landing.ts"></script>

@@ -1,0 +1,86 @@
+---
+// Aviso de privacidad del SITIO (no de la plataforma). Redactado para lo que
+// este sitio realmente hace: nada — sin cookies, sin analítica, sin formularios.
+// Referencia legal genérica a propósito: la ley de datos personales vigente es
+// la LFPDPPP publicada en 2025; NO citar la ley de 2010 ni al INAI
+// (RESIDENCIA-DE-DATOS §6.2: eso está desactualizado y hay que corregirlo).
+// La razón social está pendiente (pregunta abierta #1 del plan).
+import Base from "../layouts/Base.astro";
+import { CONTACTO_EMAIL } from "../config";
+---
+
+<Base
+  title="Aviso de privacidad · TAKAB Ailert"
+  description="Aviso de privacidad del sitio takabailert.com: este sitio no usa cookies, no tiene analítica y no recopila datos personales de forma automática."
+  path="/aviso-de-privacidad.html"
+>
+  <section class="seccion">
+    <div class="marco">
+      <header>
+        <p class="cajetin__meta mono">
+          <span>Documento legal</span>
+          <span>actualizado · agosto 2026</span>
+        </p>
+        <h1 class="titulo">Aviso de privacidad</h1>
+      </header>
+      <div class="seccion__cuerpo prosa">
+        <p>
+          Este aviso corresponde al sitio <strong>takabailert.com</strong>,
+          operado por
+          <strong>TAKAB TECHNOLOGY</strong> (México), responsable del tratamiento
+          de los datos personales que aquí se describen, conforme a la legislación
+          mexicana vigente en materia de protección de datos personales en posesión
+          de los particulares.
+        </p>
+
+        <h2 class="subtitulo">Lo que este sitio no hace</h2>
+        <p>
+          Este sitio <strong>no usa cookies</strong>, no incorpora herramientas
+          de analítica ni rastreadores de terceros, no contiene formularios y
+          <strong>no recopila datos personales de forma automática</strong>.
+        </p>
+
+        <h2 class="subtitulo">Si usted nos escribe</h2>
+        <p>
+          Si nos contacta por correo a <strong>{CONTACTO_EMAIL}</strong>,
+          trataremos los datos que usted decida compartir (nombre, datos de
+          contacto y el contenido de su mensaje) con una única finalidad: <strong
+            >atender y responder su solicitud</strong
+          >. No los usamos para fines publicitarios, no los vendemos y no los
+          compartimos con terceros, salvo obligación legal.
+        </p>
+
+        <h2 class="subtitulo">Derechos ARCO</h2>
+        <p>
+          Puede ejercer sus derechos de acceso, rectificación, cancelación y
+          oposición escribiendo a <a href={`mailto:${CONTACTO_EMAIL}`}
+            >{CONTACTO_EMAIL}</a
+          >. Le responderemos por el mismo medio.
+        </p>
+
+        <h2 class="subtitulo">La plataforma es aparte</h2>
+        <p>
+          La plataforma TAKAB Ailert (consola, panel del gabinete y aplicación
+          móvil) trata datos personales bajo su propio aviso de privacidad, que
+          se presenta dentro del producto a cada cliente institucional y a sus
+          usuarios. Este sitio público no accede a ninguno de esos datos.
+        </p>
+
+        <h2 class="subtitulo">Cambios a este aviso</h2>
+        <p>
+          Cualquier cambio se publicará en esta misma página, con su fecha de
+          actualización en el encabezado.
+        </p>
+
+        <p><a href="/">← Volver al inicio</a></p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .subtitulo {
+    margin-top: var(--e-6);
+    margin-bottom: var(--e-3);
+  }
+</style>

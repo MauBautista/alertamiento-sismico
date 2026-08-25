@@ -1,0 +1,8 @@
+dist/
+.astro/
+node_modules/
+test-results/
+playwright-report/
+src/assets/fonts/
+*.png
+*.woff2
