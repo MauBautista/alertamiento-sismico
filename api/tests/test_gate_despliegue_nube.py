@@ -203,3 +203,60 @@ def test_el_gate_pregunta_por_una_ruta_que_la_app_SIRVE_de_verdad() -> None:
         f"{sorted(p for p in servidas if 'health' in p)}. "
         "Ojo: el prefijo `/api` lo pone Caddy y el gate NO pasa por Caddy."
     )
+
+
+# --- El namespace del publicador, que es una frontera de DOS lados ------------
+#
+# `cloudwatch:PutMetricData` no admite ARN de recurso: la única llave de
+# condición que ofrece AWS es `cloudwatch:namespace`. O sea que el permiso del
+# rol de instancia es, literalmente, una cadena que tiene que coincidir con la
+# que el script pasa en `--namespace`. Si divergen, la métrica se rechaza con
+# `AccessDenied`, el cron se lo traga (`>/dev/null 2>&1`) y la alarma se queda
+# ciega **sin que nada parezca roto** — el modo de fallo exacto que T-2.153
+# existe para cerrar, reaparecido un nivel más abajo.
+#
+# Los otros cuatro publicadores (PITR, backup base, retención de PII) no
+# necesitan esta prueba: viven en ficheros `.tpl` y es **Terraform** quien les
+# interpola `${metric_namespace}` desde el mismo `local`, así que no pueden
+# divergir. El de T-2.153 vive en `deploy/cloud/deploy.sh` —fuera de la
+# plantilla, porque la ruta y el puerto de la API los sabe el despliegue— y lo
+# lleva escrito a mano. Es el único expuesto, y por eso el único atado aquí.
+
+_TERRAFORM_DB = (
+    Path(__file__).resolve().parents[2] / "infra" / "terraform" / "modules" / "database" / "main.tf"
+)
+
+
+def _namespace_del_terraform() -> str:
+    texto = _TERRAFORM_DB.read_text(encoding="utf-8")
+    m = re.search(r'ops_metrics_namespace\s*=\s*"([^"]+)"', texto)
+    assert m is not None, (
+        "desapareció el local `ops_metrics_namespace` de infra/terraform/modules/database: "
+        "es de donde sale la condición IAM que autoriza a publicar la métrica"
+    )
+    return m.group(1)
+
+
+def test_el_publicador_usa_EL_MISMO_namespace_que_le_autoriza_el_rol() -> None:
+    esperado = _namespace_del_terraform()
+    hallados = set(re.findall(r"--namespace\s+(\S+)", _bloque_remoto()))
+    assert hallados, "el despliegue ya no publica ninguna métrica: ¿se cayó el publicador?"
+    assert hallados == {esperado}, (
+        f"el script publica en {sorted(hallados)} y el rol de instancia solo autoriza "
+        f"{esperado!r}. AWS rechazaría con AccessDenied, el cron se lo tragaría y la alarma "
+        "takab-dev-esquema-atrasado se quedaría muda en ALARM para siempre."
+    )
+
+
+def test_la_condicion_IAM_sale_del_local_y_no_de_una_cadena_repetida() -> None:
+    """El otro lado de la misma frontera. Atar el script al `local` no sirve de
+    nada si el `Condition` del permiso lleva su propia copia literal: entonces
+    habría dos cadenas que mantener y la prueba de arriba vigilaría la mitad."""
+    texto = _TERRAFORM_DB.read_text(encoding="utf-8")
+    m = re.search(r'"cloudwatch:namespace"\s*=\s*([^\n]+)', texto)
+    assert m is not None, "el permiso PutMetricData perdió su condición de namespace"
+    valor = m.group(1).strip()
+    assert valor == "local.ops_metrics_namespace", (
+        f"la condición IAM usa {valor!r} en vez del local. Con una cadena literal ahí, "
+        "el permiso y el publicador pueden divergir sin que nadie lo note."
+    )
