@@ -116,6 +116,20 @@ sudo flock -n -E 9 /var/lib/takab/gpio.lock true; echo "flock=$?"   # -> 9 (toma
 
 ### A.3 · Quinta comprobación: que los relés de verdad se muevan
 
+> **⚠️ SON DOS BOTONES, y sólo uno cierra este gate** (medido el 2026-08-23: se pulsó el que no
+> era). **«Prueba de SIRENA»** (`/api/siren-test`) ejercita **sólo la sirena** y no deja registro
+> por relé. **«Prueba de ACTUADORES»** (`/api/actuator-test`, T-1.67) ejercita **todo el
+> gabinete** —sirena *y* estrobo, y el pulso de verificación de gas/ascensor/puertas donde estén
+> cableados— y **deja el resultado relé a relé** en la tarjeta «Última prueba de actuadores», que
+> es la evidencia que esta comprobación pide.
+>
+> Cómo saber cuál se pulsó, sin depender de la memoria:
+> ```bash
+> ssh takab-pi5 'curl -fsS http://127.0.0.1:8080/api/status | python3 -c "
+> import json,sys; print((json.load(sys.stdin).get(\"actuation_test\") or {}))"'
+> ```
+> `finished_at: None` = la prueba de ACTUADORES no ha corrido, diga lo que diga el recuerdo.
+
 Abre el panel en un navegador de la LAN: **`http://192.168.3.91:8080`** y pulsa la prueba de
 actuadores. El resultado por relé aparece en la tarjeta «Última prueba de actuadores».
 
