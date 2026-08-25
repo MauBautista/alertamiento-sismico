@@ -34,6 +34,11 @@ CLOUD_ENV=$(
 TAKAB_API_AWS_REGION=${AWS_REGION}
 # Commit desplegado: CLOUD_TAG ya es \`git rev-parse --short HEAD\`. Se expone en
 # GET /health para poder responder "que esta vivo" sin abrir una sesion SSM.
+#
+# [T-2.153] Y al final el script se lo pregunta a la API: que conteste, que corra
+# EL COMMIT recien desplegado y que su esquema este AL DIA. Sin eso, un
+# 'docker compose ps' en verde con la imagen anterior tiene el mismo aspecto
+# que un despliegue bueno.
 TAKAB_API_BUILD_SHA=${CLOUD_TAG}
 # [T-2.60.a] El worker \`notify\` publica GhostGatewaysAlive a CloudWatch cada
 # 60 s (gabinetes retirados que siguen reportando). APAGADO por defecto en el
@@ -241,6 +246,68 @@ systemctl enable takab-cloud.service
 systemctl restart takab-cloud.service
 sleep 5
 docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/deploy.env ps
+
+# [T-2.153] EL GATE QUE FALTABA: hasta aquí este script levantaba contenedores y
+# declaraba ✓ sin preguntarle NADA a la API. Es la misma familia de defecto que
+# 'systemctl is-active' haciéndose pasar por canary — «arrancó» no es «sirve», y
+# «migró» no es «la API ve el esquema que su imagen espera».
+#
+# Se comprueban TRES hechos, y el tercero es el que muerde en silencio:
+#   1. la API contesta (si no, todo lo demás es adivinar);
+#   2. corre EL COMMIT QUE ACABAMOS DE DESPLEGAR — un 'docker compose ps' en
+#      verde con la imagen anterior tiene exactamente el mismo aspecto;
+#   3. el esquema está AL DÍA respecto de las migraciones que esa imagen trae.
+#
+# El 3 es la razón de existir de esta ficha. El 2026-08-21 la nube corría
+# 0038 con el repo en 0046 —OCHO migraciones— y no lo dijo ni una alarma, ni
+# un health-check ni un test: se descubrió por un síntoma lateral (una alarma de
+# retención atascada) tras media hora persiguiendo el script equivocado.
+echo "→ verificando la API recién desplegada"
+SALUD=""
+for _ in \$(seq 1 30); do
+  SALUD="\$(curl -fsS --max-time 5 http://127.0.0.1:8000/api/health 2>/dev/null || true)"
+  [ -n "\$SALUD" ] && break
+  sleep 2
+done
+if [ -z "\$SALUD" ]; then
+  echo "✗ la API no contesta en /api/health tras 60 s — el despliegue NO se declara bueno" >&2
+  docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/deploy.env \
+    logs --tail 40 api >&2 || true
+  exit 1
+fi
+echo "\$SALUD" | python3 -c '
+import json, sys
+
+salud = json.load(sys.stdin)
+esperado = sys.argv[1]
+esquema = salud.get("esquema") or {}
+build = salud.get("build")
+estado = esquema.get("estado")
+aplicada = esquema.get("aplicada")
+esperada_rev = esquema.get("esperada")
+pendientes = esquema.get("pendientes")
+
+problemas = []
+if build != esperado:
+    problemas.append(
+        "la API corre el build " + repr(build) + " y se desplegó " + repr(esperado)
+        + ": los contenedores arrancaron con la imagen ANTERIOR"
+    )
+if estado != "al_dia":
+    problemas.append(
+        "el esquema NO está al día: " + repr(estado)
+        + " (aplicada=" + repr(aplicada) + ", esperada=" + repr(esperada_rev)
+        + ", pendientes=" + repr(pendientes) + ")"
+    )
+
+if problemas:
+    print("✗ DESPLIEGUE NO VERIFICADO:", file=sys.stderr)
+    for p in problemas:
+        print("  · " + p, file=sys.stderr)
+    raise SystemExit(1)
+
+print("✓ API viva en " + repr(build) + ", esquema al día (" + repr(aplicada) + ")")
+' "${CLOUD_TAG}"
 EOF
 )
 

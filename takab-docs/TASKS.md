@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **303** · `[x]` **254** · `[~]` **8** · `[ ]` **41**
+**Conteo de tareas:** total **303** · `[x]` **254** · `[~]` **9** · `[ ]` **40**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -4931,7 +4931,7 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
         Se asserta la **separación**, no la ausencia de `set -e` — un test escrito al revés habría
         bendecido el arreglo malo.
 
-### [ ] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE`
+### [~] T-2.153 · Nada detecta que la nube va por detrás del repo en migraciones — `SOFTWARE` · el software HECHO, la alarma es `HUMANO-AWS`
 - **Componente:** api + observabilidad · **Hallado:** 2026-08-21, persiguiendo `T-2.152`
 - **El hecho, medido:** `alembic_version` en la nube = **`0038_privacy_erasure_on_behalf`**; la
   cabeza del repo = **`0046_privacy_subject_sealing`**. **Ocho migraciones de diferencia**, y
@@ -4948,13 +4948,35 @@ SASMEX→relé. Suites: edge **598 → 749**, api **1208 → 1345**, web **1130 
   mitad del trabajo existe. Lo que no declara es la **cabeza de migración esperada** frente a la
   aplicada, que es la que rompe cosas en silencio.
 - **Criterios de aceptación:**
-  - [ ] `/api/health` (o su hermano de ops) expone **la revisión de alembic aplicada** y **la que
-        la imagen trae**, y **las compara**. Declararlas sin compararlas es dar el dato al humano
-        que ya no está mirando.
-  - [ ] Alarma —o gate de despliegue— cuando difieren. **Por ausencia de igualdad**, no por
-        excepción: una imagen que no arranca ya se nota; una que arranca contra un esquema viejo
-        es la que muerde.
-  - [ ] Test que ponga la comprobación en rojo con un esquema deliberadamente atrasado.
+  - [x] `/api/health` expone **la revisión de alembic aplicada** y **la que la imagen trae**, y
+        **las compara** (`ops/schema_version.py`). `status` sigue siendo `ok` pase lo que pase:
+        un esquema viejo es un problema de datos, no un proceso muerto, y matar la liveness por
+        él tumbaría el contenedor.
+  - [x] **Gate de despliegue** cuando difieren (2026-08-24). `deploy/cloud/deploy.sh` levantaba
+        contenedores y declaraba ✓ **sin preguntarle nada a la API** — la misma familia que
+        `systemctl is-active` haciéndose pasar por canary. Ahora pregunta tres cosas y las dice
+        JUNTAS si fallan las dos: que la API conteste, que corra **el commit recién desplegado**
+        (un `docker compose ps` en verde con la imagen de ayer tiene el mismo aspecto) y que el
+        esquema esté **al día**. Reintenta 60 s, porque un gate que preguntara una sola vez sería
+        un falso rojo en cada despliegue.
+  - [x] Test con un esquema deliberadamente atrasado — **el caso real `0038` vs `0046`, con sus
+        ocho migraciones**, en los dos lados: `tests/test_health.py` (7) y
+        `tests/test_gate_despliegue_nube.py` (8, aislando el veredicto del script sin desplegar
+        nada). Verificado por mutación.
+
+> ### El software está hecho; el riesgo que queda NO lo cierra el software
+>
+> **El gate hace visible la deriva EN EL DESPLIEGUE. La alarma la haría visible SIEMPRE**, y el
+> fallo que originó esta ficha es justo el segundo: la nube no se quedó atrás por un despliegue
+> malo, sino porque **nadie desplegó durante días**. Un gate no puede ver eso.
+>
+> Lo que falta es una alarma que compare periódicamente sin que nadie la provoque, y eso son dos
+> piezas de infra: una métrica publicada desde la instancia (el `pendientes` que
+> `/api/health` ya calcula) y su alarma en Terraform, **por ausencia de igualdad** — con
+> `default_value`, o repetirá el defecto de `iot-rule-errors`: catorce días en `ALARM` por estar
+> sana, y MUDA, porque SNS sólo notifica transiciones.
+>
+> Se deja `[~]` en vez de `[x]` a propósito: marcarla cerrada dejaría el riesgo real sin dueño.
 
 ### [ ] T-2.149 · Ingestor del catálogo SSN — `SOFTWARE` · **BLOQUEADA**
 - **Componente:** api (worker) + db · **Sale de:** [`D-06`](DECISIONES-MAURICIO.md) ·
