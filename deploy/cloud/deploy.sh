@@ -262,10 +262,16 @@ docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/depl
 # 0038 con el repo en 0046 —OCHO migraciones— y no lo dijo ni una alarma, ni
 # un health-check ni un test: se descubrió por un síntoma lateral (una alarma de
 # retención atascada) tras media hora persiguiendo el script equivocado.
+# La API se consulta DIRECTA en el 8000, saltándose a Caddy — que es quien monta
+# el prefijo `/api` con `handle_path` y lo QUITA antes de reenviar. Por eso aquí
+# la ruta es /health y no /api/health: FastAPI sirve sus rutas tal cual. Pedir
+# /api/health al 8000 devuelve 404, y este gate habría puesto en rojo TODOS los
+# despliegues esperando 60 s a una ruta que no existe. Lo ancla
+# test_el_gate_pregunta_por_una_ruta_que_la_app_SIRVE_de_verdad.
 echo "→ verificando la API recién desplegada"
 SALUD=""
 for _ in \$(seq 1 30); do
-  SALUD="\$(curl -fsS --max-time 5 http://127.0.0.1:8000/api/health 2>/dev/null || true)"
+  SALUD="\$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || true)"
   [ -n "\$SALUD" ] && break
   sleep 2
 done

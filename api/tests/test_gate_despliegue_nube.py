@@ -157,3 +157,37 @@ def test_el_gate_ESPERA_a_que_la_api_conteste_antes_de_rendirse() -> None:
     assert "for _ in $(seq 1 30)" in remoto, "el gate no reintenta: sería un falso rojo"
     assert "/api/health" in remoto
     assert "logs --tail" in remoto, "si no contesta, hay que dejar el journal a mano"
+
+
+def test_el_gate_pregunta_por_una_ruta_que_la_app_SIRVE_de_verdad() -> None:
+    """[T-2.153] La ruta del gate, atada a la app en vez de escrita de memoria.
+
+    **Medido contra la nube el 2026-08-25: `/api/health` en el puerto 8000
+    devuelve 404.** El prefijo `/api` lo monta **Caddy** con `handle_path`, que lo
+    QUITA antes de reenviar; FastAPI sirve sus rutas tal cual. El gate consulta la
+    API DIRECTA en el 8000 —sin pasar por Caddy—, así que tiene que pedir
+    `/health`.
+
+    Con la ruta equivocada este gate no habría fallado a veces: habría esperado
+    sus 60 s y puesto en rojo **todos** los despliegues, que es la peor forma de
+    romperlo — un gate que siempre grita se acaba ignorando, y entonces ya no
+    protege de nada.
+
+    Se deriva de las rutas de la app y no de una constante: el día que alguien
+    mueva `/health`, esto cae aquí y no en un despliegue a las tres de la mañana.
+    """
+    from takab_api.main import create_app
+
+    m = re.search(r"curl -fsS[^\n]*http://127\.0\.0\.1:8000(/\S*?)\s", _bloque_remoto())
+    assert m is not None, "el gate ya no consulta la API por HTTP"
+    ruta = m.group(1)
+
+    # Del OpenAPI y no de `app.routes`: este `create_app()` monta los routers de
+    # forma que `routes` sólo enseña los cuatro de la propia FastAPI (`/docs`,
+    # `/openapi.json`…). El esquema sí lista lo que la app SIRVE.
+    servidas = set(create_app().openapi()["paths"])
+    assert ruta in servidas, (
+        f"el gate pide {ruta!r} y la app no la sirve. Rutas de salud disponibles: "
+        f"{sorted(p for p in servidas if 'health' in p)}. "
+        "Ojo: el prefijo `/api` lo pone Caddy y el gate NO pasa por Caddy."
+    )
