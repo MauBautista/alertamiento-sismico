@@ -322,7 +322,7 @@ corrido**. El occupant necesita código de enrolamiento.
 >
 > | Gate | Estado real (medido 2026-08-16) | Falta |
 > |---|---|---|
-> | **`G-01`** restart en frío | **se puede hacer HOY** | nada — 20 min |
+> | **`G-01`** restart en frío | ✅ **ACREDITADO 2026-08-24** | — |
 > | **`G-04`** WR-1 → sirena <100 ms | **a medias** | una sirena real; y CIRES |
 > | **`G-02`** sirena con el Pi apagado | **NO se puede probar** | **el hardware no existe** |
 >
@@ -367,8 +367,10 @@ corrido**. El occupant necesita código de enrolamiento.
 > con el layout nuevo**, que es literalmente `G-01`. El procedimiento está escrito y son ~10
 > minutos más sobre los 20 que ya costaba: [`RUNBOOK-sesion-de-vida.md` §A.5](runbooks/RUNBOOK-sesion-de-vida.md).
 >
-> Mientras tanto `deploy.sh` **se niega** a migrar sin `--ventana-de-mantenimiento`, así que no
-> hay riesgo de que ocurra por accidente — pero tampoco hay actualización remota hasta entonces.
+> ✅ **HECHO el 2026-08-24.** El gabinete corre el layout A/B, arrancó en frío desde el symlink
+> (`NRestarts` 0 y 0, `LGPIOFactory (lgpio)`, `flock=9`) y la prueba de actuadores movió los
+> **5 canales** con `readback_ok` — sirena y estrobo vistos y oídos, y el gabinete de vuelta a
+> reposo solo. **`T-2.70` queda CERRADA del todo.**
 
 ### 3.2 · [`T-2.93`](TASKS.md) · Sesión instrumental — `G-03`, `G-05`, `G-07`, `G-10`
 Incluye el gate #3 del Shake: hoy sus 5 tests se saltan cuando el sensor no está alcanzable, y la
