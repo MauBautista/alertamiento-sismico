@@ -45,13 +45,27 @@ aws sts get-caller-identity >/dev/null 2>&1 \
   || fallo "sesion SSO caida: corre 'aws sso logout && aws sso login --profile $AWS_PROFILE' (el login a secas no basta con cache rancia)"
 
 # --- Destinos desde terraform (el script no teclea nombres de recursos) -------
-BUCKET=$(terraform -chdir="$TF_DEV" output -raw site_bucket)
-DIST=$(terraform -chdir="$TF_DEV" output -raw site_distribution_id)
+# EXCEPCION medida: los outputs site_bucket/site_distribution_id ENTRAN AL
+# ESTADO con el apply que en la transicion viene DESPUES del --pre. En modo
+# --pre, si el output aun no existe, el bucket se resuelve por su nombre real
+# en la cuenta (takab-dev-site-*, unico); la distribucion no hace falta en
+# --pre (no se invalida nada).
+BUCKET=$(terraform -chdir="$TF_DEV" output -raw site_bucket 2>/dev/null || true)
+if [ -z "$BUCKET" ] && [ "$MODO_PRE" = "1" ]; then
+  BUCKET=$(aws s3api list-buckets \
+    --query "Buckets[?starts_with(Name, 'takab-dev-site-')].Name | [0]" --output text)
+  [ "$BUCKET" = "None" ] && BUCKET=""
+fi
 [ -n "$BUCKET" ] || fallo "site_bucket vacio: site_enabled apagado o terraform sin apply"
-[ -n "$DIST" ] || fallo "site_distribution_id vacio"
+
+DIST=""
+if [ "$MODO_PRE" != "1" ]; then
+  DIST=$(terraform -chdir="$TF_DEV" output -raw site_distribution_id 2>/dev/null || true)
+  [ -n "$DIST" ] || fallo "site_distribution_id vacio: falta el apply de la transicion (PENDIENTES 2.10)"
+fi
 
 REV=$(git rev-parse --short HEAD)
-echo "== landing -> s3://$BUCKET (distribucion $DIST) rev $REV =="
+echo "== landing -> s3://$BUCKET (distribucion ${DIST:-pendiente-de-apply}) rev $REV =="
 
 # --- Build fresco con la REV horneada (el folio del pie la muestra) -----------
 ( cd landing && PUBLIC_REV="$REV" npm run build )
