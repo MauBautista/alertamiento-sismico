@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **306** · `[x]` **256** · `[~]` **9** · `[ ]` **41**
+**Conteo de tareas:** total **307** · `[x]` **257** · `[~]` **9** · `[ ]` **41**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5778,6 +5778,20 @@ colisionando», que es **falso** — `takab-edge` lleva `PrivateTmp` y `takab-gp
 
 *Corrección factual al informe de implementación, sin consecuencia:* `_unidad_de_este_proceso()`
 no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_proceso_vivo()`.
+
+### [x] T-2.170 · El guardián del presupuesto del camino de vida es intermitente en CI — `SOFTWARE` · COMPLETA (2026-08-26)
+- **Componente:** edge (`tests/test_e2e.py`) + CI · **Sale de:** `main` en rojo el 2026-08-26 (run `32937425976`) por un commit que solo tocaba documentación.
+- **Lo medido, no lo supuesto:** `test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto` declaró **165.8 ms** contra un presupuesto de <100 ms. **El mismo commit, relanzado sin tocar una línea, pasa.** Uno de cada ocho runs recientes. Y el propio mensaje del test dice dónde estuvo el tiempo: **«0.0 ms ocurrieron DESPUÉS de que `drive_low()` retornara»** — o sea que el retraso no está en la cadena, está en el planificador del runner compartido.
+- **Por qué no es un test flaky más.** Éste guarda la **regla de oro 1**: el camino SASMEX→actuador. Un guardián intermitente sobre el camino de la sirena no solo falla: **enseña a re-lanzar el CI rojo del camino de vida**, que es exactamente el reflejo que no puede existir en este proyecto. El día que la latencia se rompa de verdad, el rojo va a parecer «el de siempre».
+- **⚠️ LA CORRECCIÓN PROHIBIDA:** subir el presupuesto de 100 ms. El número no sale de lo que el CI consigue, sale de `blueprint §4.3`. Un presupuesto que se ajusta al instrumento deja de ser un presupuesto. Tampoco vale saltar el test en CI: entonces nadie vigila la latencia hasta la siguiente visita al gabinete.
+- **El diagnóstico del instrumento:** el reloj de pared sobre un runner compartido mide *código + planificación*, y el ruido de planificación **solo suma**. Por eso una sola medición alta no distingue «el código se degradó» de «el runner estaba ocupado», mientras que la **mejor de N** sí: si el código se degradó, ni la mejor llega.
+- [x] La medición se repite hasta **`INTENTOS_DE_MEDICION = 5`** y el veredicto se da sobre el **mejor**, con `PRESUPUESTO_S = 0.100` **INTACTO**. El rearme entre intentos usa el camino que `test_manual_reset_closes_alert_end_to_end` ya acredita, y **la premisa se re-comprueba en cada intento**: si el rearme no devolvió los cinco relés a reposo, el test falla ahí en vez de medir un gabinete ya protegido y cantar 0 ms.
+- [x] **La serie se imprime siempre**, también en verde, por el `pytest_terminal_summary` que ya rotula el gate #3: `CAMINO DE VIDA (§4.3, <100 ms): mejor 1.7 ms de 1 intento(s)`. El umbral **viaja con la serie** en vez de teclearse en el conftest — dos copias del 100 divergirían y el resumen acabaría declarando un umbral que no se aplicó.
+- [x] Con más de un intento el test **avisa aunque pase** (`UserWarning`, visible en el resumen de CI). Un instrumento que pide reintentos es un dato sobre el instrumento.
+- [x] **Test del test, por mutación en las DOS direcciones** —que es lo único que separa esto de aflojar el umbral:
+  - *Degradación real* (30 ms por canal inyectados en `GpioController._apply`): los 5 intentos salen **226.9 / 219.3 / 219.0 / 219.1 / 219.0 ms** y el test **enrojece**. La serie plana es la firma de una regresión; el ruido no se repite igual.
+  - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
+- **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
 
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
