@@ -1711,3 +1711,58 @@ def test_el_rpo_declarado_se_apoya_en_una_alarma_que_no_puede_callarse() -> None
 # F7. **Y ata el número, no la realidad.** Que el runbook, las variables y la alarma digan 900
 #     no prueba que se esté archivando un solo WAL. Eso lo dice la alarma en AWS, y hasta el
 #     `apply` de `T-2.74` no lo dice nadie.
+
+
+# ---------------------------------------------------------------------------
+# 6 · El hueco H-2 se declara con el número que se puede contar
+# ---------------------------------------------------------------------------
+#
+# `H-2` es un bloqueo de ENTREGA: el manual manda avisar a un teléfono de soporte
+# que no existe. Dos documentos lo declaraban «unas 25 veces» / «~25 veces» y la
+# cuenta real era **52 menciones, 36 de ellas la orden literal**. No es un desliz
+# de redacción: es la exposición del hueco contada a menos de la mitad, y decide
+# cuánto corre quien lo lee.
+#
+# Se torció por el motivo de siempre —un número tecleado a mano el día que se
+# escribió, junto a un manual que siguió creciendo—, así que la corrección no es
+# poner 52: es DERIVARLO. Misma doctrina que
+# `test_la_cabecera_de_tasks_declara_el_conteo_real`.
+
+MANUAL = REPO / "takab-docs" / "MANUAL-OPERACION-TAKAB.md"
+PENDIENTES = REPO / "takab-docs" / "PENDIENTES-MAURICIO.md"
+
+#: Cómo cita cada documento la cuenta. El grupo `n` es lo que se contrasta.
+_CITAS_DE_SOPORTE = (
+    (TASKS, r"«avisa a soporte» \*\*(?P<n>\d+) veces\*\*", "ordenes"),
+    (TASKS, r"menciona a soporte \*\*(?P<n>\d+)\*\* en\s*\n?>?\s*total", "menciones"),
+    (PENDIENTES, r"el manual cita \*\*(?P<n>\d+) veces\*\*", "menciones"),
+    (PENDIENTES, r"(?P<n>\d+) de ellas como la orden literal", "ordenes"),
+)
+
+
+def _cuentas_del_manual() -> dict[str, int]:
+    texto = MANUAL.read_text(encoding="utf-8")
+    return {
+        "menciones": len(re.findall(r"soporte", texto, re.I)),
+        "ordenes": len(re.findall(r"avisa a soporte", texto, re.I)),
+    }
+
+
+def test_los_documentos_declaran_las_menciones_de_soporte_que_el_manual_tiene() -> None:
+    real = _cuentas_del_manual()
+    assert real["ordenes"] > 0, (
+        "el manual ya no manda «avisa a soporte» ni una vez: si el hueco H-2 se cerró de "
+        "verdad, retira también estas declaraciones y este test."
+    )
+    for doc, patron, clave in _CITAS_DE_SOPORTE:
+        m = re.search(patron, doc.read_text(encoding="utf-8"))
+        assert m is not None, (
+            f"{doc.name} ya no declara las {clave} de soporte con la forma esperada "
+            f"({patron!r}). El hueco H-2 se cita con un número contable, no con un «unas N»."
+        )
+        dicho = int(m.group("n"))
+        assert dicho == real[clave], (
+            f"{doc.name} dice {dicho} {clave} de soporte y el manual tiene {real[clave]}. "
+            "H-2 es un bloqueo de entrega: contarlo por lo bajo hace que quien lo lea corra "
+            "menos de lo que debería. Actualiza el número en el mismo commit que toque el manual."
+        )
