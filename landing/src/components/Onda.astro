@@ -1,0 +1,201 @@
+---
+// Sismograma cinemático del hero. Motivo visual de marca, NO un evento real:
+// la traza es sintética y determinista (misma semilla en build y en cliente).
+// Sin JS o con prefers-reduced-motion: se muestra el SVG estático (mismo
+// generador, mismo aspecto). Con JS y movimiento permitido: canvas rAF que
+// se pausa fuera del viewport. Presupuesto: ~2 KB de JS.
+
+// Generador determinista compartido (mulberry32 + envolvente de sismo).
+function trazo(n: number, semilla: number): number[] {
+  let s = semilla >>> 0;
+  const rnd = () => {
+    s |= 0;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const y: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const fase = i / n;
+    // ruido de fondo + llegada P (pequeña) + llegada S (grande) + coda
+    let amp = 0.05;
+    if (fase > 0.28) amp = 0.14; // P
+    if (fase > 0.42) amp = 1.0 * Math.exp(-(fase - 0.42) * 4.2); // S + coda
+    const v =
+      (rnd() * 2 - 1) * amp +
+      Math.sin(i * 0.9) * amp * 0.35 +
+      Math.sin(i * 0.23) * amp * 0.2;
+    y.push(v);
+  }
+  return y;
+}
+
+const N = 560;
+const ALTO = 200;
+const MEDIO = ALTO / 2;
+const puntos = trazo(N, 20260825)
+  .map(
+    (v, i) =>
+      `${((i / (N - 1)) * 1120).toFixed(1)},${(MEDIO + v * 78).toFixed(1)}`,
+  )
+  .join(" ");
+---
+
+<div class="onda" data-onda aria-hidden="true">
+  <svg
+    class="onda__svg"
+    viewBox={`0 0 1120 ${ALTO}`}
+    preserveAspectRatio="none"
+  >
+    <line class="onda__base" x1="0" y1={MEDIO} x2="1120" y2={MEDIO}></line>
+    <polyline class="onda__traza" points={puntos}></polyline>
+  </svg>
+  <canvas class="onda__canvas" height={ALTO}></canvas>
+  <p class="onda__sello mono">Traza ilustrativa · no es un evento real</p>
+</div>
+
+<style>
+  .onda {
+    position: relative;
+    border-block: 1px solid var(--linea);
+    background:
+      repeating-linear-gradient(
+        90deg,
+        var(--linea) 0,
+        var(--linea) 1px,
+        transparent 1px,
+        transparent 96px
+      ),
+      var(--fondo-1);
+    overflow: hidden;
+  }
+  .onda svg,
+  .onda canvas {
+    display: block;
+    width: 100%;
+    height: 200px;
+  }
+  .onda canvas {
+    display: none;
+  }
+  .onda.viva svg {
+    display: none;
+  }
+  .onda.viva canvas {
+    display: block;
+  }
+  .onda__base {
+    stroke: var(--linea-fuerte);
+    stroke-width: 1;
+  }
+  .onda__traza {
+    fill: none;
+    stroke: var(--cian);
+    stroke-width: 1.6;
+    filter: drop-shadow(0 0 6px rgba(0, 191, 255, 0.55));
+  }
+  .onda__sello {
+    text-transform: none;
+    letter-spacing: 0.05em;
+    position: absolute;
+    right: var(--e-4);
+    bottom: var(--e-2);
+    color: var(--texto-3);
+    letter-spacing: 0.06em;
+  }
+</style>
+
+<script>
+  // Igual que el frontmatter: determinista. Corre solo con movimiento permitido.
+  function trazo(n: number, semilla: number): number[] {
+    let s = semilla >>> 0;
+    const rnd = () => {
+      s |= 0;
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const y: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const fase = i / n;
+      let amp = 0.05;
+      if (fase > 0.28) amp = 0.14;
+      if (fase > 0.42) amp = Math.exp(-(fase - 0.42) * 4.2);
+      y.push(
+        (rnd() * 2 - 1) * amp +
+          Math.sin(i * 0.9) * amp * 0.35 +
+          Math.sin(i * 0.23) * amp * 0.2,
+      );
+    }
+    return y;
+  }
+
+  const raiz = document.querySelector<HTMLElement>("[data-onda]");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (raiz && !reduce) {
+    const canvas = raiz.querySelector("canvas")!;
+    // La aserción no-nula es segura: el guard de abajo no corre sin contexto,
+    // y TS no propaga el narrowing a los closures de rAF.
+    const ctx = canvas.getContext("2d")!;
+    if (ctx) {
+      raiz.classList.add("viva");
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const ALTO = 200;
+      const MUESTRAS = 1400; // buffer circular: ~2.5 pantallas de traza
+      const datos = trazo(MUESTRAS, 20260825);
+      let ancho = 0;
+      const medir = () => {
+        ancho = raiz.clientWidth;
+        canvas.width = Math.floor(ancho * dpr);
+        canvas.height = ALTO * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      };
+      medir();
+      window.addEventListener("resize", medir, { passive: true });
+
+      const estilo = getComputedStyle(document.documentElement);
+      const cian = estilo.getPropertyValue("--cian").trim() || "#00bfff";
+      const linea = "rgba(240,242,245,0.2)";
+
+      let visible = true;
+      new IntersectionObserver((es) => {
+        visible = es[0]?.isIntersecting ?? true;
+      }).observe(raiz);
+
+      let off = 0;
+      const paso = 2.2; // px por muestra
+      function frame() {
+        if (visible) {
+          off = (off + 0.55) % MUESTRAS;
+          ctx.clearRect(0, 0, ancho, ALTO);
+          ctx.strokeStyle = linea;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(0, ALTO / 2);
+          ctx.lineTo(ancho, ALTO / 2);
+          ctx.stroke();
+
+          ctx.strokeStyle = cian;
+          ctx.lineWidth = 1.6;
+          ctx.shadowColor = "rgba(0,191,255,0.55)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          const visibles = Math.ceil(ancho / paso) + 2;
+          for (let i = 0; i < visibles; i++) {
+            const idx = (Math.floor(off) + i) % MUESTRAS;
+            const y = ALTO / 2 + datos[idx]! * 78;
+            const x = i * paso - (off % 1) * paso;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+  }
+</script>

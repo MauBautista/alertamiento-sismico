@@ -31,8 +31,8 @@ import "../styles/tokens.css";
 <style>
   body {
     margin: 0;
-    background: var(--papel);
-    color: var(--tinta);
+    background: #071322;
+    color: #f0f2f5;
   }
   .tarjeta {
     box-sizing: border-box;
@@ -41,7 +41,14 @@ import "../styles/tokens.css";
     padding: 56px 64px;
     display: flex;
     flex-direction: column;
-    border: 6px solid var(--tinta);
+    border: 6px solid #00bfff;
+    background:
+      radial-gradient(
+        60rem 30rem at 90% -10%,
+        rgba(0, 105, 137, 0.35),
+        transparent 60%
+      ),
+      #071322;
   }
   .mono {
     font-family: var(--fuente-mono);
@@ -54,16 +61,17 @@ import "../styles/tokens.css";
     display: flex;
     align-items: center;
     gap: 24px;
-    color: var(--humo);
+    color: #8a9cb1;
   }
   .sep {
     flex: 1;
-    border-top: 2px solid var(--regla);
+    border-top: 2px solid rgba(240, 242, 245, 0.2);
   }
   .marcador {
     width: 96px;
     height: 22px;
-    background: var(--alerta);
+    background: #00bfff;
+    box-shadow: 0 0 24px rgba(0, 191, 255, 0.6);
     margin-top: 48px;
   }
   .titulo {
@@ -77,6 +85,6 @@ import "../styles/tokens.css";
   }
   .pie {
     margin-top: auto;
-    color: var(--tinta);
+    color: #f0f2f5;
   }
 </style>

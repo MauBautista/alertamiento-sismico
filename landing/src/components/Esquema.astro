@@ -450,70 +450,81 @@
   /* --- Piezas --- */
   .q-marco {
     fill: none;
-    stroke: var(--regla);
+    stroke: var(--linea);
     stroke-width: 1;
   }
   .q-caja {
-    fill: var(--papel);
-    stroke: var(--tinta);
-    stroke-width: 1.5;
+    fill: var(--fondo-2);
+    stroke: var(--linea-fuerte);
+    stroke-width: 1.25;
   }
   .q-caja--vital {
-    stroke-width: 2.5;
+    stroke: var(--cian);
+    stroke-width: 2;
   }
   .q-caja--cerebro {
-    stroke-width: 2.5;
+    stroke: var(--cian);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 14px rgba(0, 191, 255, 0.25));
   }
   .q-caja--coord {
+    stroke: var(--linea);
     stroke-width: 1;
-    stroke: var(--humo);
+    stroke-dasharray: 5 4;
   }
   .q-hilo {
-    fill: var(--tinta);
+    fill: var(--cian);
+    filter: drop-shadow(0 0 5px rgba(0, 191, 255, 0.45));
   }
   .q-hilo--fino {
-    fill: var(--humo);
+    fill: var(--texto-3);
+    filter: none;
   }
   .q-dash {
-    stroke: var(--humo);
+    stroke: var(--texto-3);
     stroke-width: 1.5;
     stroke-dasharray: 4 4;
+    opacity: 0.65;
   }
   .q-pulso {
-    fill: var(--alerta);
+    fill: var(--cian);
     opacity: 0;
+    filter: drop-shadow(0 0 8px rgba(0, 191, 255, 0.8));
   }
   text {
     font-family: var(--fuente-mono);
-    fill: var(--tinta);
+    fill: var(--texto-2);
     letter-spacing: 0.06em;
   }
   .q-t0 {
     font-size: 14px;
     font-weight: 700;
+    fill: var(--texto-1);
   }
   .q-t1 {
     font-size: 11px;
+    fill: var(--texto-1);
   }
   .q-t2 {
     font-size: 9.5px;
-    fill: var(--humo);
+    fill: var(--texto-3);
   }
   .q-t3 {
     font-size: 9.5px;
-    fill: var(--humo);
+    fill: var(--texto-3);
   }
   .q-t4 {
     font-size: 10px;
+    fill: var(--texto-1);
   }
   .q-est {
     font-size: 9px;
   }
   .q-est-off {
-    fill: var(--humo);
+    fill: var(--texto-3);
   }
   .q-est-on {
-    fill: var(--alerta);
+    fill: var(--verde);
     font-weight: 700;
     opacity: 0;
   }

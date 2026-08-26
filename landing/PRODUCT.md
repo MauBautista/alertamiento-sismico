@@ -83,9 +83,15 @@ cero orígenes externos en runtime, español (es-MX) único idioma v1.
   propietaria Aero Sans-Serif — `takab-docs/design/app/fonts/README.md`).
 - Colores de marca utilizables: navy de la consola (`#0E2336`) y la paleta clara del PDF de
   dictamen (tinta `#14181E`, rojo `#C4302B` — `api/src/takab_api/dictamen/layout.py`).
-- Dirección visual de la landing FIJADA por brief (2026-08-25): industrial-brutalist, archetype
-  Swiss Industrial Print — contraste deliberado con la consola (oscura, densa). No reutilizar la
-  estética de la consola; sí su marca.
+- Dirección visual VIGENTE (v2, pedida por Mauricio el 2026-08-25 y confirmada con 4 respuestas
+  estructuradas): mundo oscuro «Telemetría» — la identidad REAL del producto (navy
+  #071322/#0E2336 + cian #00BFFF de la consola, semáforo solo semántico, crisis #160808 de la
+  app), tecnológico, cinemático y llamativo, con glow de señal como material. REVOCA el
+  compromiso v1 de «contraste deliberado con la consola» (Swiss Print claro): la landing ahora
+  se hermana con la consola a propósito. Piezas confirmadas: mapa de la física de la alerta
+  (sin sitios ni cobertura), capturas REALES de consola con datos de demostración etiquetados,
+  sismograma ilustrativo rotulado. Sigue vigente del brief v1: sin Inter/Roboto, sin degradados
+  morado-azul, sin glassmorphism, sin screenshots falsos.
 - Tagline de producto disponible: «ALERTAMIENTO SÍSMICO · CONTINUIDAD OPERATIVA» (la de la app).
   [inferido: la de la empresa «LO MEJOR LO ESTAMOS CREANDO» se omite en la landing — propuesto a
   Mauricio, pendiente de confirmación en pregunta abierta #4]
