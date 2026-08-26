@@ -8211,8 +8211,9 @@ sería documentar intenciones.
 > distintos del código y de Terraform.
 >
 > **Ocho huecos declarados en vez de rellenados con prosa tranquilizadora**, y el más incómodo es
-> H-2: el manual dice «avisa a soporte» unas 25 veces y **ese teléfono no existe en el repo** —
-> el runbook de on-call declara que hoy solo se entrega un correo y que el salto 2 es un hueco.
+> H-2: el manual da la orden «avisa a soporte» **36 veces** —y menciona a soporte **52** en
+> total— y **ese teléfono no existe en el repo**: el runbook de on-call declara que hoy solo se
+> entrega un correo y que el salto 2 es un hueco.
 > Lo cierra el criterio de escalamiento de `T-2.78`. Los otros siete son de hardware sin
 > acreditar (gate #3), de ajustes de instalación no fijados, o de superficie que no existe.
 

@@ -627,7 +627,8 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
    plazo externo a la vez** —§2.9 (SES) y §4.2 (WhatsApp)— y ahora cuesta la mitad que ayer.
    **Nada más de esta lista tiene esta relación entre esfuerzo y desbloqueo.**
 2. **Abrir Twilio y comprar el número mexicano (§4.3).** También vale por dos: canal SMS **y** el
-   teléfono de soporte que el manual cita ~25 veces apuntando a una casilla vacía
+   teléfono de soporte que el manual cita **52 veces** —36 de ellas como la orden literal
+   «avisa a soporte»— apuntando a una casilla vacía
    ([`D-13`](DECISIONES-MAURICIO.md#d-13)). Y el *regulatory bundle* mexicano **tarda días**, así
    que arrancarlo tarde cuesta calendario, no dinero.
 3. **Acreditar `G-01` esta semana (§3.1).** Veinte minutos, no depende de comprar nada, y
