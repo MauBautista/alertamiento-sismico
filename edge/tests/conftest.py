@@ -940,6 +940,26 @@ def pytest_terminal_summary(terminalreporter) -> None:
             acreditado = "EJECUTADOS" in linea
             terminalreporter.write_line(linea, bold=True, green=acreditado, yellow=not acreditado)
 
+        # [T-2.170] La serie de latencias del camino de vida, SIEMPRE — también en
+        # verde. Un solo número en el mensaje de un fallo llega tarde: sin la serie
+        # visible corrida tras corrida, una degradación gradual —de 5 ms a 80 ms— no
+        # se ve hasta que cruza el umbral, y entonces parece repentina.
+        medida = getattr(terminalreporter.config, "_latencias_camino_de_vida", None)
+        if medida:
+            serie = medida["serie"]
+            # El umbral viaja CON la serie y no se teclea aquí: dos copias del 100
+            # divergirian y el resumen acabaria declarando un umbral que no es el
+            # que se aplico.
+            tope = medida["presupuesto_s"] * 1000
+            mejor = min(serie)
+            terminalreporter.write_line(
+                f"CAMINO DE VIDA (§4.3, <{tope:.0f} ms): mejor {mejor * 1000:.1f} ms de "
+                f"{len(serie)} intento(s) — {[f'{t * 1000:.1f}' for t in serie]} ms.",
+                bold=True,
+                green=len(serie) == 1,
+                yellow=len(serie) > 1,
+            )
+
         huerfanos = skips_no_declarados(terminalreporter.stats)
         if not huerfanos:
             return
