@@ -29,13 +29,18 @@ import pytest
 _DEPLOY = Path(__file__).resolve().parents[2] / "deploy" / "cloud" / "deploy.sh"
 
 
-def _bloque_remoto() -> str:
-    """El script que de verdad corre en el EC2, tras expandir el heredoc."""
+def _bloque_remoto_crudo() -> str:
+    """El texto TAL COMO ESTÁ ESCRITO, antes de que el shell local toque nada."""
     lineas = _DEPLOY.read_text().splitlines()
     ini = next(i for i, linea in enumerate(lineas) if linea.startswith("REMOTE_SCRIPT="))
     ini = next(i for i in range(ini, len(lineas)) if "<<" in lineas[i]) + 1
     fin = next(i for i in range(ini, len(lineas)) if lineas[i] == "EOF")
-    crudo = "\n".join(lineas[ini:fin])
+    return "\n".join(lineas[ini:fin])
+
+
+def _bloque_remoto() -> str:
+    """El script que de verdad corre en el EC2, tras expandir el heredoc."""
+    crudo = _bloque_remoto_crudo()
     out: list[str] = []
     i = 0
     while i < len(crudo):
@@ -259,4 +264,100 @@ def test_la_condicion_IAM_sale_del_local_y_no_de_una_cadena_repetida() -> None:
     assert valor == "local.ops_metrics_namespace", (
         f"la condición IAM usa {valor!r} en vez del local. Con una cadena literal ahí, "
         "el permiso y el publicador pueden divergir sin que nadie lo note."
+    )
+
+
+# --- Quién expande qué, y dónde ------------------------------------------------
+#
+# El bloque remoto vive dentro de un `cat <<EOF` **sin comillas**, así que el
+# shell LOCAL expande todo `$` que no lleve barra delante — y lo hace aunque ese
+# `$` esté dentro de un heredoc anidado con comillas (`<<'EOS'`), porque el de
+# fuera se procesa primero. Es contraintuitivo justo en el sitio donde más caro
+# sale.
+#
+# Ya mordió DOS veces por la puerta de las comillas invertidas, y a la tercera
+# entró por la del dólar: el publicador de T-2.153 se escribió con `$SALUD` y
+# `$(curl ...)` a pelo. `set -u` lo cazó —«SALUD: variable sin asignar»— y ese
+# fue el desenlace AFORTUNADO. Sin `set -u` no habría fallado nada: `$(curl ...)`
+# se habría ejecutado **en el portátil**, contra un `127.0.0.1` que no es el EC2,
+# y su salida habría quedado horneada como una constante en el script del
+# servidor. Un publicador que siempre informa de lo mismo, y ninguna señal.
+#
+# De ahí que la lista se DECLARE. Que expandir en local sea a veces lo correcto
+# —el `b64` que empaqueta ficheros, los valores que solo el despliegue conoce— es
+# justo lo que impide prohibirlo a secas; lo que se puede exigir es que cada caso
+# esté aquí escrito con su razón, y que uno nuevo tenga que pasar por este test.
+
+_EXPANSIONES_LOCALES_DECLARADAS = {
+    "$(": (
+        "El helper `b64`, que codifica ficheros del repo para que VIAJEN dentro del script. "
+        "Tiene que correr en local por definición: en el EC2 esos ficheros todavía no existen."
+    ),
+    "${REGISTRY}": "El registro ECR: lo resuelve el Makefile, el EC2 no lo sabe.",
+    "${CLOUD_TAG}": "El commit que se está desplegando. Sale de HEAD, o sea de aquí.",
+    "${CLOUD_ENV}": "El entorno destino (dev/prod), decidido por quien lanza el despliegue.",
+    "${DEPLOY_ENV}": "La ruta del fichero de entorno remoto, parametrizada desde el Makefile.",
+    "${COMPOSE_VERSION}": "La versión de docker compose que se instala, fijada en el repo.",
+    "${AWS_REGION}": (
+        "La región. Va horneada A PROPÓSITO y no leída del entorno remoto: el publicador de la "
+        "métrica corre desde cron, con un entorno pelado donde `AWS_REGION` no existe."
+    ),
+}
+
+
+def _expansiones_locales() -> set[str]:
+    """Lo que el shell local expandirá: todo `$` con un número PAR de barras
+    delante (cero incluido). Con impar, la última escapa al dólar."""
+    hallados = set()
+    patron = r"(\\*)\$(\{[A-Za-z_][A-Za-z0-9_]*\}|\(|[A-Za-z_][A-Za-z0-9_]*)"
+    for m in re.finditer(patron, _bloque_remoto_crudo()):
+        if len(m.group(1)) % 2 == 0:
+            hallados.add("$(" if m.group(2) == "(" else f"${m.group(2)}")
+    return hallados
+
+
+def test_el_heredoc_no_expande_en_local_nada_que_no_este_declarado() -> None:
+    sin_declarar = _expansiones_locales() - set(_EXPANSIONES_LOCALES_DECLARADAS)
+    assert not sin_declarar, (
+        f"el heredoc de deploy/cloud/deploy.sh expande {sorted(sin_declarar)} EN LA MÁQUINA QUE "
+        "DESPLIEGA, no en el EC2. Si eso no es deliberado, escápalo con `\\$` — y si lo es, "
+        "decláralo en _EXPANSIONES_LOCALES_DECLARADAS con su razón. Recuerda que un `<<'EOS'` "
+        "anidado NO protege: el heredoc de fuera se expande primero."
+    )
+
+
+def test_ninguna_expansion_declarada_se_quedo_sin_uso() -> None:
+    """La otra dirección, que es la que pudre las listas escritas a mano: una
+    entrada que ya no corresponde a nada sigue autorizando en silencio el día que
+    alguien reintroduce ese nombre por accidente."""
+    huerfanas = set(_EXPANSIONES_LOCALES_DECLARADAS) - _expansiones_locales()
+    assert not huerfanas, (
+        f"_EXPANSIONES_LOCALES_DECLARADAS declara {sorted(huerfanas)} y el script ya no las usa: "
+        "retíralas para que la lista siga siendo la decisión y no un residuo."
+    )
+
+
+def test_el_publicador_llega_al_EC2_con_sus_variables_INTACTAS() -> None:
+    """El caso concreto que se rompió, atado por su nombre.
+
+    Se mira sobre el texto CRUDO y no sobre el expandido, y la diferencia no es
+    un detalle: el emulador de `_bloque_remoto()` quita barras, no sustituye
+    variables, así que sobre él `$SALUD` sobrevive escapado o no. Un test escrito
+    contra esa versión pasaría con el defecto puesto — que es exactamente lo que
+    me pasó al escribirlo, y por eso se dice aquí.
+    """
+    crudo = _bloque_remoto_crudo()
+    i = crudo.find("takab-schema-drift.sh <<")
+    assert i != -1, "el publicador de la métrica de deriva desapareció del despliegue"
+    publicador = crudo[i : crudo.find("\nEOS", i)]
+
+    for var in ("SALUD", "PEND"):
+        assert f"\\${var}" in publicador, (
+            f"`${var}` del publicador no está escapado como `\\${var}`: el shell local se lo "
+            "come y el EC2 recibe una constante en su lugar. El publicador informaría siempre "
+            "de lo mismo, y ninguna señal."
+        )
+    assert "\\$(curl" in publicador, (
+        "el `curl` del publicador no está escapado: se ejecutaría EN LA MÁQUINA QUE DESPLIEGA, "
+        "contra un 127.0.0.1 que no es el EC2, y su respuesta quedaría horneada en el script."
     )
