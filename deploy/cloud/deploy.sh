@@ -271,12 +271,12 @@ install -d -m 0755 /opt/takab/bin
 cat >/opt/takab/bin/takab-schema-drift.sh <<'EOS'
 #!/bin/bash
 set -euo pipefail
-SALUD="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || true)"
-if [ -z "$SALUD" ]; then
+SALUD="\$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || true)"
+if [ -z "\$SALUD" ]; then
   echo "takab-schema-drift: la API no contesta; no se publica metrica." >&2
   exit 1
 fi
-PEND="$(printf '%s' "$SALUD" | python3 -c '
+PEND="\$(printf '%s' "\$SALUD" | python3 -c '
 import json, sys
 try:
     esquema = json.load(sys.stdin).get("esquema") or {}
@@ -298,7 +298,7 @@ aws cloudwatch put-metric-data \
   --namespace Takab/Ops \
   --metric-name SchemaPendingMigrations \
   --unit Count \
-  --value "$PEND" \
+  --value "\$PEND" \
   --region ${AWS_REGION}
 EOS
 chmod 0755 /opt/takab/bin/takab-schema-drift.sh
