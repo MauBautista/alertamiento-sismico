@@ -1,7 +1,7 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
-        cloud-images cloud-deploy cloud-allow-my-ip restore-drill \
+        cloud-images cloud-deploy cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
 API_DIR := api
@@ -294,6 +294,31 @@ cloud-images:
 cloud-deploy:
 	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh
+
+# [T-2.171] `terraform apply` con las mismas guardas que un despliegue, porque es
+# un despliegue: cambia infraestructura viva. Es el que menos se deja guardar
+# —se teclea a mano, sin script de por medio— y por eso existe este target.
+#
+# Las DOS guardas salen de fallos medidos el 2026-08-27:
+#
+#   · A-1 (rama): un apply desde una rama de trabajo NO aplico el topic ni la
+#     regla IoT que venia a aplicar, y no fallo — «sin cambios» es la respuesta
+#     correcta cuando el codigo no trae el cambio.
+#
+#   · `local.auto.tfvars`: esta en .gitignore, asi que un arbol donde no exista
+#     —un worktree recien creado, por ejemplo— hace que TODO lo que va con
+#     `count` evalue a cero. Aquel dia el plan proponia DESTRUIR los tres
+#     registros DKIM, DMARC, MAIL FROM y la consola. Lo caza un `plan` que
+#     alguien mire, y eso no es una guardia: es suerte. Aqui se niega antes.
+cloud-apply:
+	@test -f $(TF_DEV)/local.auto.tfvars || { \
+		echo "ERROR: falta $(TF_DEV)/local.auto.tfvars (esta en .gitignore)."; \
+		echo "  Sin el, todo lo que lleva 'count' evalua a CERO y el plan propone DESTRUIR"; \
+		echo "  SES, los tres DKIM, DMARC, MAIL FROM y la consola. Aplica desde tu arbol"; \
+		echo "  de siempre, o copia ese fichero antes de planificar."; exit 1; }
+	@bash -c '. deploy/lib/guardas.sh && guarda_de_rama "terraform"'
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
+		terraform -chdir=$(TF_DEV) apply
 
 # --- Landing pública (takabailert.com) -----------------------------------------
 # El sitio se sirve desde S3+CloudFront (modules/site). El contenido lo posee

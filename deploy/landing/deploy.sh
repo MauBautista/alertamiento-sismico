@@ -32,15 +32,14 @@ export AWS_PROFILE AWS_REGION
 
 fallo() { echo "ERROR: $*" >&2; exit 1; }
 
-# --- Guardas (espejo de la regla A-1 de deploy/cloud/README.md) ---------------
-[ "$(git branch --show-current)" = "main" ] || fallo "desplegar solo desde main (rama actual: $(git branch --show-current))"
-[ -z "$(git status --porcelain)" ] || fallo "el arbol no esta limpio; commitea o descarta antes de desplegar"
-git fetch -q origin main
-[ -z "$(git log origin/main..main --oneline)" ] || fallo "main tiene commits sin push; el deploy debe salir de lo publicado"
-if command -v gh >/dev/null; then
-  ESTADO=$(gh run list --branch main -L 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")
-  [ "$ESTADO" = "success" ] || fallo "el ultimo CI de main no esta en verde (estado: ${ESTADO:-desconocido})"
-fi
+# --- Guardas: la regla A-1, ahora COMPARTIDA -----------------------------------
+# [T-2.171] Esta era la unica implementacion de A-1 en todo el repo — la landing,
+# que sirve HTML, la tenia; la nube y el gabinete, que tocan la sirena, no. Se
+# extrajo tal cual a `deploy/lib/guardas.sh`: tres copias de la misma regla
+# acaban divergiendo, y la que divergiria sin ruido es la que nadie mira.
+# shellcheck source=../lib/guardas.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/guardas.sh"
+guarda_de_rama "landing"
 aws sts get-caller-identity >/dev/null 2>&1 \
   || fallo "sesion SSO caida: corre 'aws sso logout && aws sso login --profile $AWS_PROFILE' (el login a secas no basta con cache rancia)"
 
