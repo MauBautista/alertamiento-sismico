@@ -27,6 +27,7 @@ KINDS = (
     "backfill_request",
     "waveform_packet",
     "evidence_object",
+    "actuation_record",  # T-2.86.a: bitácora de actuación del gabinete
 )
 
 # Topic MQTT → clase de contrato. `takab/status/+` (LWT) no tiene schema en
@@ -40,6 +41,13 @@ _TOPIC_KIND = {
     "takab/features/batch": "feature_batch",
     "takab/health": "health_snapshot",
     "takab/acks": "actuator_ack",
+    # [T-2.86.a] La bitácora que escribe el gabinete. Topic propio y no un
+    # sub-topic de `takab/acks`: un ack dice «la orden se ejecutó», esto dice
+    # «quién la ordenó y por qué», y mezclarlos obligaría a discriminar por
+    # forma —que es justo lo que ya duele en `takab/acks`, donde conviven dos
+    # contratos sin `kind` (T-1.23)—. Además el filtro SQL de IoT no lleva
+    # comodines, así que un sub-topic necesitaría regla propia de todos modos.
+    "takab/audit": "actuation_record",
 }
 
 _STATUS_VALUES = frozenset({"online", "offline"})

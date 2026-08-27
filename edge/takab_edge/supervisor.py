@@ -28,6 +28,7 @@ from takab_edge.catalog import CatalogStore
 from takab_edge.cloud import AwsIotMqttTransport, CloudConnector, MqttTransport
 from takab_edge.config import ConfigStore, EdgeSettings, SiteLocationCache, load_settings
 from takab_edge.contracts import (
+    ActuationRecord,
     AlertSource,
     Feature1s,
     HealthSnapshot,
@@ -56,6 +57,11 @@ log = logging.getLogger("takab_edge.supervisor")
 EVENTS_TOPIC = "takab/events"
 HEALTH_TOPIC = "takab/health"
 ACKS_TOPIC = "takab/acks"
+#: [T-2.86.a] Bitácora de actuación del gabinete. Topic PROPIO y no un
+#: sub-topic de `takab/acks`: un ack dice «la orden se ejecutó», esto dice
+#: «quién la ordenó y por qué». Y el filtro SQL de IoT no lleva comodines, así
+#: que un sub-topic habría necesitado regla propia igualmente.
+AUDIT_TOPIC = "takab/audit"
 FEATURES_TOPIC = "takab/features"
 
 
@@ -266,12 +272,16 @@ class EdgeSupervisor:
         # de auditar sin que se note, y aquí la escritura tiene que estar disponible
         # desde antes de que arranque nada.
         #
-        # `sink=None`: la subida está DESCONECTADA hasta que exista la mitad de nube.
-        # La política IoT lista los topics uno a uno sin comodines y publicar en uno
-        # no autorizado DESCONECTA al gabinete en cada publish (visto en producción
-        # el 2026-07-12). Ver `takab_edge/audit/__init__.py` para el detalle y para
-        # lo que falta exactamente.
-        self.ledger = ActuationLedger(s, online=lambda: self.cloud.online)
+        # [T-2.86.a · criterio 2] La subida YA está conectada: `takab/audit` está en
+        # la política del fleet y tiene su regla IoT, tabla e ingesta. Hasta que
+        # existieron, el `sink` iba a `None` a propósito — la política lista los
+        # topics uno a uno sin comodines y publicar en uno no autorizado
+        # DESCONECTA al gabinete en cada publish (visto en producción el
+        # 2026-07-12, flapping cada 10 s): habría sido cambiar un hueco de
+        # auditoría por un gabinete mudo.
+        self.ledger = ActuationLedger(
+            s, online=lambda: self.cloud.online, sink=self._subir_fila_de_bitacora
+        )
         self.actuators = ActuatorManager(
             RelayActuator(self.gpio_link),
             BacnetActuator(self.bacnet),
@@ -389,8 +399,7 @@ class EdgeSupervisor:
         )
         # [T-2.86.a] Al VOLVER el enlace, la constancia acumulada sube — y sólo lo
         # que la nube no confirmó todavía (marca de agua durable ⇒ sin duplicar,
-        # regla de oro 3). Mismo enganche que usa la evidencia offline. Con
-        # `sink=None` es un no-op: el mecanismo está, falta el permiso de publicar.
+        # regla de oro 3). Mismo enganche que usa la evidencia offline.
         self.cloud.on_online(lambda: self.ledger.drain())
 
         # [T-2.70.a·D2/P2] Si la costura es la del socket, es un módulo NO
@@ -432,6 +441,37 @@ class EdgeSupervisor:
         return self
 
     # --- Cableado del pipeline ---
+    def _subir_fila_de_bitacora(self, fila: dict) -> bool:
+        """Sink de la bitácora: UNA fila a `takab/audit`, directo y sin spool.
+
+        **Directo y no por el spool**, que es la decisión que hace honesta la marca
+        de agua: `drain()` solo la avanza si esto devuelve `True`, o sea sobre
+        ENTREGA CONFIRMADA. Con el spool devolvería `True` al encolar y la marca
+        avanzaría sobre un «ya lo mandaré», que es exactamente la mentira que
+        `ActuationLedger` existe para no contar. Además la bitácora ya es su propio
+        almacén durable: meterla en un segundo búfer sería guardarla dos veces.
+
+        **Una fila que no valida se SALTA, no bloquea.** `drain()` corta la cola al
+        primer fallo —correcto para un enlace caído, porque el orden importa—, pero
+        una fila malformada nunca va a validar: bloquear sacrificaría la subida de
+        TODO lo que venga detrás por una sola fila. Y saltarla no pierde la
+        evidencia: lo local no se borra jamás, así que la fila sigue en el gabinete
+        para el perito. Se grita en CRITICAL con su `record_id` porque no es una
+        condición de campo que se resuelva sola — es un defecto de forma, casi
+        seguro una fila escrita por un firmware con otro contrato.
+        """
+        try:
+            registro = ActuationRecord(**fila)
+        except Exception:  # noqa: BLE001 — una fila rota no puede cegar a las demás
+            log.critical(
+                "bitácora: la fila %r no encaja en el contrato y NO subirá; se salta para "
+                "no bloquear a las siguientes. Sigue íntegra en el gabinete.",
+                fila.get("record_id"),
+                exc_info=True,
+            )
+            return True
+        return self.cloud.publish_direct(AUDIT_TOPIC, registro)
+
     def _wire(self) -> None:
         self.seedlink.on_packet(self._on_packet)
         # [T-2.70.a·D2/P1] Los DOS observadores se registran por la costura. El

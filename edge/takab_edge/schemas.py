@@ -17,6 +17,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from takab_edge.contracts import (
+    ActuationRecord,
     ActuatorAck,
     BackfillRequest,
     CommandAck,
@@ -88,7 +89,12 @@ from takab_edge.contracts import (
 #: ampliado, un payload 1.11.0 sigue validando, y un gabinete viejo que reciba
 #: uno de los dos lo rechaza con ack —`ActuatorAction(payload["action"])` truena
 #: y el dispatcher descarta— en vez de hacer algo a medias.
-SCHEMA_VERSION = "1.12.0"
+#: 1.13.0 (T-2.86.a): + actuation_record (bitácora de actuación del gabinete,
+#: topic takab/audit). ADITIVO: familia NUEVA, ningún contrato existente cambia y
+#: todo payload 1.12.0 sigue validando. Un gabinete ≤1.12.0 simplemente no publica
+#: en ese topic — su bitácora se queda en disco, que es donde estaba antes de esta
+#: ficha, y la nube no le atribuye un vacío que no declaró.
+SCHEMA_VERSION = "1.13.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -102,6 +108,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "backfill_request": BackfillRequest,  # T-1.25: solicitud de URL pre-firmada
     "evidence_object": EvidenceObject,
     "lora_secondary_state": SecondaryCabinetState,  # T-2.33: gabinete secundario LoRa
+    "actuation_record": ActuationRecord,  # T-2.86.a: bitácora del gabinete (takab/audit)
 }
 
 
