@@ -11,9 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **307** · `[x]` **258** · `[~]` **8** · `[ ]` **41**
-
-> ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
+****Conteo de tareas:** total **308** · `[x]` **258** · `[~]` **8** · `[ ]` **42**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -5792,6 +5790,27 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
   - *Degradación real* (30 ms por canal inyectados en `GpioController._apply`): los 5 intentos salen **226.9 / 219.3 / 219.0 / 219.1 / 219.0 ms** y el test **enrojece**. La serie plana es la firma de una regresión; el ruido no se repite igual.
   - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
 - **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
+
+### [ ] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE`
+- **Componente:** deploy (`cloud` + `edge`) + Makefile · **Sale de:** dos despliegues del 2026-08-27, medidos, no supuestos.
+- **Lo que pasó, dos veces el mismo día y por la misma causa.** El árbol estaba en `feat/landing-v2-telemetria` y de ahí salieron:
+  1. un `terraform apply` que **no aplicó** el topic `takab/audit` ni su regla IoT — la rama no los tenía;
+  2. un `make cloud-deploy` que puso en la nube el build `abf4490` con esquema `0051`, cuando `main` estaba en `a60bc10` con la migración `0052`. La tabla no se creó y el handler no llegó.
+- **Lo peor no es que pasara: es que TODO salió en verde.** Cada guardia hizo bien su trabajo y ninguna podía verlo:
+  - El **gate de despliegue** (`T-2.153`) comprueba que la API conteste, que corra **el commit que se desplegó** y que su esquema esté al día. Las tres eran ciertas — del commit equivocado.
+  - La **alarma de deriva de esquema** compara lo que la imagen espera contra lo que la base tiene. También coincidían: `0051` y `0051`.
+  - El **plan de Terraform** compara el código contra el estado. Sin el cambio en el código, «sin cambios» es la respuesta correcta.
+  - Un gate puede verificar que desplegaste **lo que pediste**; ninguno de estos puede saber que **querías otra cosa**.
+- **El precedente ya está en el repo, sin aplicar donde más cuesta.** `deploy/landing/deploy.sh:37,39` ya se niega con árbol sucio y con `main` sin pushear. La landing —que sirve HTML— tiene la guardia; la nube y **el gabinete** no.
+- **Criterios de aceptación:**
+  - [ ] **`HEAD` tiene que estar contenido en `origin/main`** (`git merge-base --is-ancestor HEAD origin/main`). **No** «ser igual a»: desplegar un commit ANTERIOR de `main` es un rollback legítimo y no se puede prohibir.
+  - [ ] **Se hace `fetch` antes de juzgar**, o se está midiendo contra una `origin/main` rancia — que es exactamente la clase de dato viejo disfrazado de dato que persigue la regla de oro 7. Si el `fetch` falla, la guardia **no pasa en silencio**: lo dice y se niega.
+  - [ ] **Escotilla explícita** (`--desde-esta-rama`) porque desplegar una rama a `dev` para probarla es legítimo y frecuente. Lo que no puede ser es el DEFAULT, ni pasar desapercibido: el arranque lo declara en voz alta y el commit desplegado queda marcado como no-`main`.
+  - [ ] **El mensaje de rechazo nombra la divergencia concreta** —qué commit es `HEAD`, cuál es `main`, y qué hay en medio—, no un «no estás en main». El 27-ago la pregunta útil no era *dónde estoy*, era *qué me falta*.
+  - [ ] **También `deploy/edge/deploy.sh`**, donde el riesgo es mayor: ahí lo que se despliega toca la sirena. **Sin tocar la tolerancia al árbol sucio**, que en el edge está DECLARADA a propósito (`--dirty`, `:208-214`) para depurar en sitio: rama y limpieza son dos preguntas distintas y solo una se está añadiendo.
+  - [ ] **Terraform también, y es el que menos se deja guardar** porque se corre a mano. Un `make cloud-apply` que envuelva `terraform -chdir=$(TF_DEV) apply` con la misma guardia — y que **se niegue si falta `local.auto.tfvars`**, porque ese fichero está en `.gitignore` y sin él todo lo que lleva `count` evalúa a cero: el 27-ago un plan desde un worktree limpio proponía **destruir los tres DKIM, DMARC, MAIL FROM y la consola**. Lo cazó un `plan` que alguien miró; eso no es una guardia, es suerte.
+  - [ ] **Test que lo demuestre por mutación**: un `HEAD` fuera de `main` enrojece, un commit anterior de `main` pasa (rollback), y la escotilla deja pasar dejando rastro.
+- **Lo que esta ficha NO arregla, y conviene decirlo:** que el operador se equivoque de rama seguirá siendo posible con la escotilla puesta. Lo que cambia es que hoy no hay ningún momento en que alguien tenga que pararse a decirlo — y mañana sí.
 
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
