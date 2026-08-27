@@ -346,6 +346,14 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     # --- lo que se conserva por regla de oro 11 -------------------------------
     ("audit_log", "actor"): PiiColumn(_RETAIN, _R_AUDITORIA),
     ("incident_actions", "actor"): PiiColumn(_RETAIN, _R_AUDITORIA),
+    # [T-2.86.a] El actor de la bitácora del GABINETE. Casi siempre es una máquina
+    # (`wr-1`, `edge:rules`, `cloud:<command_id>`, `lan`), pero puede nombrar a una
+    # persona cuando la orden vino de la consola — y por eso entra aquí y no en las
+    # exenciones. Se RETIENE por la regla de oro 11, con el mismo argumento que sus
+    # dos vecinas y uno propio: es la respuesta a «¿quién ordenó cerrar el gas?»
+    # durante un corte de internet. Anonimizarla no protege a nadie; deja sin
+    # responder la pregunta que un perito o un seguro hacen primero.
+    ("actuation_records", "actor"): PiiColumn(_RETAIN, _R_AUDITORIA),
     ("dictamens", "signed_by"): PiiColumn(
         _RETAIN,
         "FIRMA de un dictamen estructural. Borrarla no anonimiza: "

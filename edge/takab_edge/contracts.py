@@ -332,6 +332,50 @@ class ActuatorAck(BaseModel):
         return f"T+{self.latency_s:.2f}s"
 
 
+class ActuationRecord(BaseModel):
+    """[T-2.86.a] UNA fila de la bitácora local de actuación, subiendo a la nube.
+
+    Es el otro extremo del cable de `RO-4.e`. El gabinete ya anotaba en disco
+    quién movió cada relé y por qué —también sin enlace, que es el caso entero—;
+    esto es lo que sube cuando el enlace vuelve.
+
+    **`record_id` lo pone el gabinete y es la clave de idempotencia** (regla de
+    oro 3). Lo local NO se borra al subir —el perito lo lee meses después—, así
+    que en vez de vaciar un directorio se avanza una marca de agua; si esa marca
+    se pierde, el gabinete re-sube filas que la nube ya tiene y el `ON CONFLICT
+    DO NOTHING` de la ingesta las absorbe.
+
+    **`channel` y `action` son `str`, no enums, y es deliberado.** El panel del
+    gabinete registra su propio vocabulario (`silence`, `siren_test`,
+    `arm_test_mode`… de `GPIO_ACTIONS`) además de los canales de relé, y los dos
+    conjuntos crecen por su cuenta. En un canal de EVIDENCIA, un enum estrecho no
+    protege: convierte una fila que no supimos anticipar en un descarte a DLQ —
+    o sea, en la pérdida del registro justo del incidente raro, que es el que
+    alguien va a peritar. La causa sí es un enum cerrado porque es la
+    clasificación, y esa la controla el edge entero.
+
+    **`online` es tri-estado.** `true` había enlace, `false` no lo había —la fila
+    que responde a la pregunta de la ficha—, y `None` «no se pudo saber».
+    Colapsar el `None` a `false` sería inventar el dato en el contrato que existe
+    para no inventarlo.
+    """
+
+    seq: int
+    record_id: str
+    at: datetime
+    gateway_id: str
+    tenant_id: str
+    site_id: str
+    cause: ActuationCause
+    actor: str
+    channel: str
+    action: str
+    success: bool
+    detail: str = ""
+    event_id: str = ""
+    online: bool | None = None
+
+
 class BackfillRequest(BaseModel):
     """Solicitud de URL pre-firmada para backfill/evidencia (T-1.25).
 

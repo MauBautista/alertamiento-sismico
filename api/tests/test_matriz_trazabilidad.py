@@ -755,13 +755,21 @@ _RO = (
                         "test_sin_cloud_spool_dir_el_directorio_sigue_siendo_EL_MISMO",
                         "No cae en la trampa de T-2.67.b: el directorio se deriva, nunca es "
                         "un `mkdtemp` — que es por lo que la evidencia se evapora en cada "
-                        "arranque del Pi real. **Reserva declarada:** la SUBIDA a la nube "
-                        "está construida y probada pero su `sink` va a `None` a "
-                        "propósito: publicar en un topic no autorizado desconecta al "
-                        "gabinete en cada publish (visto en producción el 2026-07-12), "
-                        "así que la copia permanente sigue pendiente de las cuatro piezas "
-                        "de nube que ficha `T-2.86.a`. Y el reflejo SASMEX→sirena no pasa "
-                        "por aquí: vive dentro de `gpio` y no cruza la costura (gate #6).",
+                        "arranque del Pi real. El reflejo SASMEX→sirena no pasa por "
+                        "aquí: vive dentro de `gpio` y no cruza la costura (gate #6).",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_supervisor_cloud_wiring.py",
+                        "test_sin_enlace_la_bitacora_espera_y_sube_cuando_vuelve",
+                        "**Sin reserva desde el 2026-08-26.** Aquí se declaraba que la "
+                        "SUBIDA estaba construida pero desconectada (`sink=None`), "
+                        "pendiente de cuatro piezas de nube — publicar en un topic no "
+                        "autorizado DESCONECTA al gabinete en cada publish (producción, "
+                        "2026-07-12). Ya existen las cuatro: topic en la política del "
+                        "fleet, regla IoT, tabla `actuation_records` e ingesta. Se actúa a "
+                        "oscuras, la constancia espera, y al volver el enlace sube sola "
+                        "por `cloud.on_online` — sin duplicar, porque la marca de agua "
+                        "solo avanza sobre entrega CONFIRMADA (regla de oro 3).",
                     ),
                 ),
             ),

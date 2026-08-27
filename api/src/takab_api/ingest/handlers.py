@@ -623,6 +623,75 @@ def handle_actuator_ack(
 
 
 # --------------------------------------------------------------------------
+# actuation_record → actuation_records (T-2.86.a: el hueco `RO-4.e`)
+# --------------------------------------------------------------------------
+
+# `ON CONFLICT DO NOTHING` sobre la PK que pone EL GABINETE. No es defensa contra
+# la re-entrega de SQS (que también): el edge NO borra su copia local al subir
+# —el perito la lee meses después—, avanza una marca de agua, y si esa marca se
+# pierde re-sube filas ya ingeridas. Regla de oro 3, y aquí la duplicación no
+# sería un renglón de más: sería una bitácora que un perito lee como dos
+# actuaciones donde hubo una.
+_ACTUATION_RECORD_SQL = """
+INSERT INTO actuation_records (
+  record_id, tenant_id, site_id, gateway_id, seq, occurred_at,
+  cause, actor, channel, action, success, detail, event_id, online
+) VALUES (
+  %(record_id)s, %(tenant_id)s, %(site_id)s, %(gateway_id)s, %(seq)s, %(occurred_at)s,
+  %(cause)s, %(actor)s, %(channel)s, %(action)s, %(success)s, %(detail)s,
+  %(event_id)s, %(online)s
+)
+ON CONFLICT (record_id) DO NOTHING
+"""
+
+
+def handle_actuation_record(
+    conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
+) -> HandlerResult:
+    """ActuationRecord → actuation_records. La constancia del gabinete, en la nube.
+
+    Las tres identidades se toman del REGISTRO (`ctx`) y no del payload, aunque el
+    payload las traiga: lo que trae sirve para `check_identity` —que rechaza y
+    audita el cruce de tenant— y ahí se queda. Escribir la identidad que declara
+    el mensaje sería dejar que un gabinete comprometido plantara evidencia en el
+    tenant de otro cliente, en la tabla que menos se puede permitir.
+    """
+    if (rej := _identity_reject(conn, payload, meta, ctx, "actuation_record")) is not None:
+        return rej
+    try:
+        record_id = uuid.UUID(payload["record_id"])
+    except (KeyError, ValueError, TypeError):
+        return reject(f"actuation_record: record_id inválido: {payload.get('record_id')!r}")
+    try:
+        occurred_at = _dt(payload["at"])
+    except (KeyError, ValueError, TypeError) as exc:
+        return reject(f"actuation_record: 'at' inválido ({exc})")
+    conn.execute(
+        _ACTUATION_RECORD_SQL,
+        {
+            "record_id": record_id,
+            "tenant_id": ctx.tenant_id,
+            "site_id": ctx.site_id,
+            "gateway_id": ctx.gateway_id,
+            "seq": payload["seq"],
+            "occurred_at": occurred_at,
+            "cause": payload["cause"],
+            "actor": payload["actor"],
+            "channel": payload["channel"],
+            "action": payload["action"],
+            "success": payload["success"],
+            "detail": payload.get("detail", ""),
+            "event_id": payload.get("event_id", ""),
+            # `online` NO lleva default: `None` significa «el gabinete no pudo
+            # saber si tenía enlace», y colapsarlo a `False` inventaría justo el
+            # dato que esta tabla existe para no inventar.
+            "online": payload.get("online"),
+        },
+    )
+    return OK
+
+
+# --------------------------------------------------------------------------
 # command_ack → commands.status (T-1.23: ACK de ejecución obligatorio)
 # --------------------------------------------------------------------------
 
@@ -813,6 +882,7 @@ HANDLERS: dict[str, Handler] = {
     "local_event": handle_local_event,
     "health_snapshot": handle_health_snapshot,
     "actuator_ack": handle_actuator_ack,
+    "actuation_record": handle_actuation_record,  # T-2.86.a: hueco RO-4.e
     "command_ack": handle_command_ack,
     "status": handle_status,
 }

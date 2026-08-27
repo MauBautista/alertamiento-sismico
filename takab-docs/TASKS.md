@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-**Conteo de tareas:** total **307** · `[x]` **257** · `[~]` **9** · `[ ]` **41**
+**Conteo de tareas:** total **307** · `[x]` **258** · `[~]` **8** · `[ ]` **41**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -8339,7 +8339,7 @@ sería documentar intenciones.
 > Y **«el gabinete corre el proceso mínimo y auditable» quedó como HUECO, no como capacidad**:
 > el valor de fábrica es el contrario.
 
-### [~] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
+### [x] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE` · COMPLETA (2026-08-26)
 - **Componente:** edge + api · **Depende de:** — · **Hueco `RO-4.e` de la matriz** · **El de más
   peso contractual de los 18, y no tenía ficha** (2026-08-08)
 - **Verificado de primera mano:** `ActuatorAck` (`edge/takab_edge/contracts.py:196`) lleva canal,
@@ -8355,11 +8355,35 @@ sería documentar intenciones.
   - [x] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
         El embudo es `ActuatorManager._record` —por donde pasan `execute` y `execute_sequence`—,
         así que es estructural y no disciplinario.
-  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3). **Lo
-        único que sigue abierto**, y no por el edge: la subida está construida y probada, pero su
-        `sink` va a `None` a propósito — publicar en un topic no autorizado **desconecta al
-        gabinete en cada publish** (visto en producción el 2026-07-12). Espera las cuatro piezas
-        de nube (topic + regla IoT en Terraform).
+  - [x] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3).
+        **Cerrado el 2026-08-26 con las cuatro piezas de nube que faltaban**, por `takab/audit`:
+        - **Topic autorizado** en la política del fleet. Era la pieza que bloqueaba a las otras
+          tres: la política lista los topics uno a uno **sin comodines**, y publicar en uno no
+          autorizado no degrada nada — el broker **corta la sesión MQTT en cada publish** y deja
+          al gabinete mudo, camino de vida incluido (producción, 2026-07-12, flapping cada 10 s).
+        - **Regla IoT** `takab_dev_audit` → la cola de eventos (el SQL de IoT no admite varios
+          topics en `FROM`: una regla por topic).
+        - **Tabla** `actuation_records` (migración `0052`), con `record_id` **del gabinete** como
+          PK. Es lo que hace idempotente la re-subida: lo local **no se borra al subir** —el
+          perito lo lee meses después—, se avanza una marca de agua, y si esa marca se pierde el
+          `ON CONFLICT DO NOTHING` absorbe lo repetido. **Append-only por trigger**, como
+          `audit_log`: es prueba, no un registro editable. Y `takab_app` **no tiene INSERT** — una
+          bitácora que la API pudiera escribir dejaría de probar lo que hizo el gabinete.
+        - **Ingesta** `handle_actuation_record`, que toma las tres identidades del **registro** y
+          no del payload: escribir la identidad que declara el mensaje dejaría a un gabinete
+          comprometido plantar evidencia en el tenant de otro cliente.
+        - El `sink` publica **directo, sin spool**, y eso hace honesta la marca de agua: `drain()`
+          solo la avanza sobre entrega CONFIRMADA. Por el spool avanzaría al encolar, o sea sobre
+          un «ya lo mandaré» — justo la mentira que esta bitácora existe para no contar.
+        - Una fila **malformada se salta en vez de bloquear**: `drain()` corta al primer fallo
+          (correcto con el enlace caído, donde el orden importa), pero una fila que nunca va a
+          validar sacrificaría la subida de todo lo que venga detrás. Saltarla no pierde nada —
+          lo local no se borra jamás.
+  - [x] **El acoplamiento que costó un despliegue ya es un test**: `takab/audit` cierra el círculo
+        entre el censo de topics del edge y la política del Terraform
+        (`test_todo_topic_que_el_gabinete_publica_esta_en_la_politica_del_fleet`). Vivía en un
+        comentario y en la cabeza de quien lo había sufrido. Verificado por mutación: quitar la
+        línea de la política enrojece.
   - [x] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**
         (`edge/tests/test_actuation_ledger.py`, tres tests).
   - [x] La matriz pasa `RO-4.e` a `CUBIERTO` sola — y lo hizo, con su reserva declarada.

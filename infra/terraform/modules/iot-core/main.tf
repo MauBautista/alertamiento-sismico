@@ -55,6 +55,13 @@ resource "aws_iot_policy" "fleet" {
           "${local.iot_arn}:topic/takab/features/batch",
           "${local.iot_arn}:topic/takab/health",
           "${local.iot_arn}:topic/takab/acks",
+          # [T-2.86.a] La bitácora de actuación del gabinete. ESTA LÍNEA es la
+          # pieza que faltaba: el mecanismo de subida lleva construido y probado
+          # desde el criterio 1, pero su `sink` iba a `None` a propósito porque
+          # publicar en un topic no autorizado hace que el broker DESCONECTE al
+          # gabinete en cada publish — y cambiar un hueco de auditoría por un
+          # gabinete mudo habría sido peor que el hueco.
+          "${local.iot_arn}:topic/takab/audit",
           "${local.iot_arn}:topic/takab/status/${local.thing_name}",
           "${local.iot_arn}:topic/takab/backfill/request/${local.thing_name}",
         ]
@@ -153,8 +160,12 @@ resource "aws_iam_role_policy" "rules" {
 locals {
   # El SQL de IoT no admite multiples topics en FROM: una regla por topic.
   rules = {
-    takab_dev_events    = { topic = "takab/events", queue_url = var.events_queue.url }
-    takab_dev_acks      = { topic = "takab/acks", queue_url = var.events_queue.url }
+    takab_dev_events = { topic = "takab/events", queue_url = var.events_queue.url }
+    takab_dev_acks   = { topic = "takab/acks", queue_url = var.events_queue.url }
+    # [T-2.86.a] Bitácora de actuación → MISMA cola que los eventos: la ingesta
+    # ya resuelve la identidad del gabinete ahí y el volumen es por EVENTO
+    # (regla de oro 10), no por intervalo.
+    takab_dev_audit     = { topic = "takab/audit", queue_url = var.events_queue.url }
     takab_dev_status    = { topic = "takab/status/+", queue_url = var.events_queue.url }
     takab_dev_telemetry = { topic = "takab/features", queue_url = var.telemetry_queue.url }
     # T-1.56: lote de features de tier normal. El filtro exacto de takab/features

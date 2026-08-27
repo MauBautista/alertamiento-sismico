@@ -585,6 +585,62 @@ CREATE INDEX idx_audit_log_tenant_ts ON audit_log (tenant_id, ts DESC);
 CREATE UNIQUE INDEX idx_audit_log_dedupe ON audit_log (dedupe_digest, dedupe_bucket)
   WHERE dedupe_digest IS NOT NULL;
 
+-- [T-2.86.a] BITÁCORA DE ACTUACIÓN DEL GABINETE — el hueco `RO-4.e`.
+--
+-- `audit_log` de arriba es la bitácora de la NUBE: solo sabe lo que pasó por la
+-- API. El caso exacto para el que existe el gabinete —regla de oro 2, el edge
+-- opera sin nube— era justo el que no dejaba rastro aquí: si el gas se cierra
+-- durante un corte de internet, nadie podía decir después quién lo ordenó ni con
+-- qué causa. Es lo primero que pide un perito o un seguro.
+--
+-- `record_id` lo pone EL GABINETE y es la PK: la subida es idempotente por él
+-- (regla de oro 3). El edge no borra su copia local al subir —el perito la lee
+-- meses después—, avanza una marca de agua; si esa marca se pierde, re-subir es
+-- gratis gracias a `ON CONFLICT DO NOTHING`.
+--
+-- `online` es TRI-ESTADO: true/false/NULL = «no se pudo saber». Colapsar el NULL
+-- a false sería inventar un dato en la tabla que existe para no inventarlo.
+--
+-- No se poda nunca (regla de oro 11). Tabla normal, no hypertable: el registro es
+-- POR EVENTO (regla de oro 10), no por intervalo.
+CREATE TABLE actuation_records (
+  record_id   uuid PRIMARY KEY,
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  site_id     uuid NOT NULL REFERENCES sites(site_id),
+  gateway_id  uuid NOT NULL REFERENCES gateways(gateway_id),
+  seq         bigint NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  cause       text NOT NULL,
+  actor       text NOT NULL,
+  channel     text NOT NULL,
+  action      text NOT NULL,
+  success     boolean NOT NULL,
+  detail      text NOT NULL DEFAULT '',
+  event_id    text NOT NULL DEFAULT '',
+  online      boolean,
+  ingested_at timestamptz NOT NULL DEFAULT now()
+);
+-- Append-only por la misma razón que `audit_log`: es evidencia. La ingesta solo
+-- hace INSERT ... ON CONFLICT DO NOTHING, así que no pierde nada.
+REVOKE UPDATE, DELETE ON actuation_records FROM PUBLIC;
+-- Y del rol de la API POR SU NOMBRE. `FROM PUBLIC` solo quita lo que se concede a
+-- todos; un grant explícito —o uno futuro, hecho sin pensar en esto— sobrevive. Con
+-- las dos líneas la protección tiene DOS capas: el privilegio y el trigger. Con una
+-- sola, quitar el trigger «para una migración» dejaría la bitácora borrable sin que
+-- nada más lo impidiera.
+REVOKE UPDATE, DELETE ON actuation_records FROM takab_app;
+CREATE TRIGGER trg_actuation_records_append_only
+  BEFORE UPDATE OR DELETE ON actuation_records
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+-- La consulta del perito: «qué hizo ESTE gabinete, en orden».
+CREATE INDEX idx_actuation_records_gateway_at
+  ON actuation_records (gateway_id, occurred_at DESC);
+-- La otra pregunta real: «¿qué se actuó a oscuras?». Parcial porque las filas con
+-- enlace son la inmensa mayoría y no interesan aquí.
+CREATE INDEX idx_actuation_records_offline
+  ON actuation_records (tenant_id, occurred_at DESC)
+  WHERE online IS NOT TRUE;
+
 -- ---------------------------------------------------------------------------
 -- 8. ROW-LEVEL SECURITY ([ANALISIS-00] sección reescrita — v1 solo cubría 3 tablas,
 --    invocaba un helper inexistente y su política única FOR ALL dejaba escribir a
@@ -913,6 +969,20 @@ CREATE POLICY audit_read ON audit_log FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 CREATE POLICY audit_insert ON audit_log FOR INSERT
   WITH CHECK (true);   -- cualquier request autenticado registra; lectura sí restringida
+
+-- [T-2.86.a] actuation_records: la bitácora que ESCRIBE EL GABINETE. Lectura por
+-- tenant; escritura de NADIE por política — la ingesta va con BYPASSRLS y por eso
+-- no aparece aquí. Que `takab_app` no tenga INSERT es la decisión: una bitácora
+-- que la API pudiera escribir dejaría de ser prueba de lo que hizo el gabinete.
+GRANT SELECT ON actuation_records TO takab_app;
+-- La ingesta INSERTA y nada más: sin UPDATE ni DELETE, que es lo que hace de esto
+-- una prueba y no un registro editable. El `ON CONFLICT DO NOTHING` de la re-subida
+-- no necesita UPDATE — justamente por eso «no hacer nada» es la resolución correcta.
+GRANT SELECT, INSERT ON actuation_records TO takab_ingest;
+ALTER TABLE actuation_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE actuation_records FORCE  ROW LEVEL SECURITY;
+CREATE POLICY actuation_records_read ON actuation_records FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 
 -- tenants: catálogo. Cada quien ve su propia fila; internos ven todo; gov ve las
 -- filas gov_shared (necesario para resolver nombres en su consola).
