@@ -623,6 +623,12 @@ CREATE TABLE actuation_records (
 -- Append-only por la misma razón que `audit_log`: es evidencia. La ingesta solo
 -- hace INSERT ... ON CONFLICT DO NOTHING, así que no pierde nada.
 REVOKE UPDATE, DELETE ON actuation_records FROM PUBLIC;
+-- Y del rol de la API POR SU NOMBRE. `FROM PUBLIC` solo quita lo que se concede a
+-- todos; un grant explícito —o uno futuro, hecho sin pensar en esto— sobrevive. Con
+-- las dos líneas la protección tiene DOS capas: el privilegio y el trigger. Con una
+-- sola, quitar el trigger «para una migración» dejaría la bitácora borrable sin que
+-- nada más lo impidiera.
+REVOKE UPDATE, DELETE ON actuation_records FROM takab_app;
 CREATE TRIGGER trg_actuation_records_append_only
   BEFORE UPDATE OR DELETE ON actuation_records
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();

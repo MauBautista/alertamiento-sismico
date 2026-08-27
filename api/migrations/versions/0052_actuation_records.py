@@ -91,6 +91,12 @@ RESET ROLE;
 -- `DROP` antes de `CREATE` porque los triggers no admiten `IF NOT EXISTS` y esta
 -- migración tiene que ser idempotente (invariante de T-1.45).
 REVOKE UPDATE, DELETE ON actuation_records FROM PUBLIC;
+-- Y del rol de la API POR SU NOMBRE. `FROM PUBLIC` solo quita lo que se concede a
+-- todos; un grant explícito —o uno futuro, hecho sin pensar en esto— sobrevive. Con
+-- las dos líneas la protección tiene DOS capas: el privilegio y el trigger. Con una
+-- sola, quitar el trigger «para una migración» dejaría la bitácora borrable sin que
+-- nada más lo impidiera.
+REVOKE UPDATE, DELETE ON actuation_records FROM takab_app;
 DROP TRIGGER IF EXISTS trg_actuation_records_append_only ON actuation_records;
 CREATE TRIGGER trg_actuation_records_append_only
   BEFORE UPDATE OR DELETE ON actuation_records
