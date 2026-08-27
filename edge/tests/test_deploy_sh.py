@@ -509,6 +509,18 @@ def gabinete(tmp_path: pathlib.Path):
             env["TAKAB_CANARY_REMOJO"] = "2"
             env["TAKAB_CANARY_INTERVALO"] = "1"
             env["TAKAB_CANARY_PANEL"] = "http://127.0.0.1:8080/api/status"
+            # [T-2.171] La regla A-1 se declara SALTADA aquí, y a propósito: esta
+            # suite no despliega nada — corre `deploy.sh` contra un gabinete de
+            # mentira, desde una rama de trabajo o desde la rama de una PR, que
+            # nunca son `main`. Sin esto los 38 tests morirían en la guardia sin
+            # llegar a probar lo que vienen a probar.
+            #
+            # Que la guardia FUNCIONE no se comprueba aquí sino en
+            # `api/tests/test_guarda_de_rama.py`, que la corre contra repos de
+            # mentira con su `origin` y juzga su código de salida. Saltarla en un
+            # sitio donde no aplica no es debilitarla; confundir los dos sitios,
+            # sí lo sería.
+            env["TAKAB_DEPLOY_RAMA_LIBRE"] = "1"
             env.update(entorno_extra)
             return subprocess.run(
                 ["bash", str(_DEPLOY), "gabinete-falso", *args],

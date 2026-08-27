@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **308** · `[x]` **258** · `[~]` **8** · `[ ]` **42**
+****Conteo de tareas:** total **308** · `[x]` **259** · `[~]` **8** · `[ ]` **41**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -5791,7 +5791,7 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
   - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
 - **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
 
-### [ ] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE`
+### [x] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE` · COMPLETA (2026-08-27)
 - **Componente:** deploy (`cloud` + `edge`) + Makefile · **Sale de:** dos despliegues del 2026-08-27, medidos, no supuestos.
 - **Lo que pasó, dos veces el mismo día y por la misma causa.** El árbol estaba en `feat/landing-v2-telemetria` y de ahí salieron:
   1. un `terraform apply` que **no aplicó** el topic `takab/audit` ni su regla IoT — la rama no los tenía;
@@ -5803,14 +5803,43 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
   - Un gate puede verificar que desplegaste **lo que pediste**; ninguno de estos puede saber que **querías otra cosa**.
 - **El precedente ya está en el repo, sin aplicar donde más cuesta.** `deploy/landing/deploy.sh:37,39` ya se niega con árbol sucio y con `main` sin pushear. La landing —que sirve HTML— tiene la guardia; la nube y **el gabinete** no.
 - **Criterios de aceptación:**
-  - [ ] **`HEAD` tiene que estar contenido en `origin/main`** (`git merge-base --is-ancestor HEAD origin/main`). **No** «ser igual a»: desplegar un commit ANTERIOR de `main` es un rollback legítimo y no se puede prohibir.
-  - [ ] **Se hace `fetch` antes de juzgar**, o se está midiendo contra una `origin/main` rancia — que es exactamente la clase de dato viejo disfrazado de dato que persigue la regla de oro 7. Si el `fetch` falla, la guardia **no pasa en silencio**: lo dice y se niega.
-  - [ ] **Escotilla explícita** (`--desde-esta-rama`) porque desplegar una rama a `dev` para probarla es legítimo y frecuente. Lo que no puede ser es el DEFAULT, ni pasar desapercibido: el arranque lo declara en voz alta y el commit desplegado queda marcado como no-`main`.
-  - [ ] **El mensaje de rechazo nombra la divergencia concreta** —qué commit es `HEAD`, cuál es `main`, y qué hay en medio—, no un «no estás en main». El 27-ago la pregunta útil no era *dónde estoy*, era *qué me falta*.
-  - [ ] **También `deploy/edge/deploy.sh`**, donde el riesgo es mayor: ahí lo que se despliega toca la sirena. **Sin tocar la tolerancia al árbol sucio**, que en el edge está DECLARADA a propósito (`--dirty`, `:208-214`) para depurar en sitio: rama y limpieza son dos preguntas distintas y solo una se está añadiendo.
-  - [ ] **Terraform también, y es el que menos se deja guardar** porque se corre a mano. Un `make cloud-apply` que envuelva `terraform -chdir=$(TF_DEV) apply` con la misma guardia — y que **se niegue si falta `local.auto.tfvars`**, porque ese fichero está en `.gitignore` y sin él todo lo que lleva `count` evalúa a cero: el 27-ago un plan desde un worktree limpio proponía **destruir los tres DKIM, DMARC, MAIL FROM y la consola**. Lo cazó un `plan` que alguien miró; eso no es una guardia, es suerte.
-  - [ ] **Test que lo demuestre por mutación**: un `HEAD` fuera de `main` enrojece, un commit anterior de `main` pasa (rollback), y la escotilla deja pasar dejando rastro.
-- **Lo que esta ficha NO arregla, y conviene decirlo:** que el operador se equivoque de rama seguirá siendo posible con la escotilla puesta. Lo que cambia es que hoy no hay ningún momento en que alguien tenga que pararse a decirlo — y mañana sí.
+  - [x] **`HEAD` tiene que estar EN `main`.** ⚠️ **Corregido respecto de lo que pedía esta
+        ficha**, que decía «contenido en `origin/main`, no igual» para no prohibir el rollback.
+        Al implementarlo resultó que **el rollback no necesita mover `HEAD`**: se hace con
+        `CLOUD_TAG=<sha-anterior>` desde `main`, porque la etiqueta es sobreescribible (`?=`) y el
+        gate del despliegue compara contra ella. Así que la contención sobraba, y con ella la
+        superficie de «estoy en un commit suelto que casualmente es de main». Se implementa la
+        letra de A-1 —`rama == main`— que además es lo que ya hacía la landing: una regla, una
+        forma.
+  - [x] **`fetch` antes de juzgar**, y si falla la guardia **se niega** en vez de dar por bueno lo
+        que no pudo comprobar. Y lo mismo con la mitad del CI: sin `gh` no se puede mirar, así que
+        se sigue —negarse dejaría sin desplegar a una máquina sin `gh`, decisión más grande que
+        esta ficha— pero **se declara en voz alta que A-1 se aplicó A MEDIAS**. Un fallback que se
+        hace pasar por un OK es el defecto, no la falta de red.
+  - [x] **Escotilla explícita** `--desde-esta-rama` (o `TAKAB_DEPLOY_RAMA_LIBRE=1`), que imprime
+        la rama y el sha y dice que **no es un despliegue reproducible**.
+  - [x] **El rechazo enumera lo que el despliegue se dejaría fuera** (`git log HEAD..origin/main`),
+        no un «no estás en main». Probado contra el escenario real: la rama del 27-ago produce una
+        lista que empieza por `T-2.86.a` — exactamente lo que se quedó fuera aquel día.
+  - [x] **También el gabinete**, con `guarda_de_rama "edge" si`: el `si` conserva su tolerancia
+        DECLARADA al árbol sucio (`--dirty`, para depurar en sitio). Rama y limpieza son dos
+        preguntas distintas y solo se añadió la primera.
+  - [x] **`make cloud-apply`**, con la misma guardia **y** el rechazo si falta
+        `local.auto.tfvars` — el fichero gitignored sin el cual todo lo que lleva `count` evalúa a
+        cero y el plan propone destruir los tres DKIM, DMARC, MAIL FROM y la consola.
+  - [x] **12 tests de CONDUCTA**, no de lectura: la guardia se corre contra repos de mentira con
+        su `origin`, y lo único que se juzga es su código de salida. Cubren main limpia, rama de
+        trabajo, `main` sin pushear, CI en rojo, árbol sucio con y sin tolerancia, la escotilla y
+        el aviso de «A MEDIAS» sin `gh`. Más un **censo**: todo `deploy/*/deploy.sh` del árbol
+        tiene que pasar por la guardia — enumerar los tres a mano dejaría fuera al cuarto.
+        Verificado por mutación: quitar la guardia del gabinete enrojece el censo, y aceptar
+        cualquier rama enrojece dos tests de conducta.
+        **Trampa medida al escribirlos:** el arnés filtraba `gh` del `PATH` quitando su
+        directorio… que en esta máquina es el mismo de `bash`. Los tests morían con
+        `FileNotFoundError: 'bash'`. Se construye un **PATH mínimo** con enlaces a lo que la
+        guardia usa, y un `gh` de mentira cuyo veredicto decide el test.
+- **Lo que NO arregla, y sigue siendo verdad:** con la escotilla puesta, equivocarse de rama sigue siendo posible. Lo que cambia es que ya no se puede hacer **sin decirlo**.
+- **Y lo que se llevó por delante de paso:** la regla A-1 tenía UNA implementación en todo el repo —la de la landing, que sirve HTML— y ahora es un helper compartido (`deploy/lib/guardas.sh`) que usan los tres despliegues y el `apply`. Tres copias de la misma regla acaban divergiendo, y la que divergiría sin ruido es la que nadie mira.
 
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70

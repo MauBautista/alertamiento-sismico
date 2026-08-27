@@ -132,6 +132,13 @@ while [ $# -gt 0 ]; do
     VENTANA_MANTENIMIENTO=1
     shift
     ;;
+  --desde-esta-rama)
+    # [T-2.171] La escotilla de A-1. Aqui pesa mas que en la nube: lo que se
+    # despliega toca la sirena, asi que desplegar una rama tiene que ser una
+    # frase que alguien escribe, no el estado en que quedo el arbol.
+    export TAKAB_DEPLOY_RAMA_LIBRE=1
+    shift
+    ;;
   *)
     POSICIONALES+=("$1")
     shift
@@ -142,6 +149,15 @@ set -- ${POSICIONALES+"${POSICIONALES[@]}"}
 
 HOST="${1:-takab-pi5}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# [T-2.171] Regla A-1, en codigo. Se pasa `si` a la tolerancia de arbol sucio
+# porque este script la DECLARA a proposito unas lineas mas abajo (`--dirty`, y
+# el aviso de que la version no es reproducible): depurar en sitio con el
+# gabinete delante es un caso real. Rama y limpieza son dos preguntas distintas
+# y aqui solo se anade la primera — la segunda ya tenia su respuesta escrita.
+# shellcheck source=../lib/guardas.sh
+. "${ROOT}/deploy/lib/guardas.sh"
+guarda_de_rama "edge" si
 
 # Raíz del gabinete. Es una VARIABLE y no un literal para que
 # edge/tests/test_deploy_sh.py pueda correr este script de verdad contra un

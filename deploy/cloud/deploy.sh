@@ -12,6 +12,22 @@
 #    a tmpfs, en el arranque. Aquí no viaja ni una contraseña (regla de oro 6).
 set -euo pipefail
 
+# [T-2.171] La regla A-1 (README §0), en codigo y no en una checklist. El 27-ago
+# esa checklist fallo y el despliegue salio de una rama de trabajo: la nube corrio
+# un build sin la migracion que lo acompanaba, y todos los gates dieron verde
+# porque cada uno comprobaba el commit EQUIVOCADO contra si mismo.
+# Escotilla: `--desde-esta-rama` (o `TAKAB_DEPLOY_RAMA_LIBRE=1 make cloud-deploy`).
+_AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/guardas.sh
+. "${_AQUI}/../lib/guardas.sh"
+for _arg in "$@"; do
+  case "$_arg" in
+  --desde-esta-rama) export TAKAB_DEPLOY_RAMA_LIBRE=1 ;;
+  *) echo "ERROR: argumento desconocido: $_arg" >&2; exit 1 ;;
+  esac
+done
+guarda_de_rama "cloud"
+
 : "${AWS_PROFILE:?}" "${AWS_REGION:?}" "${TF_DEV:?}" "${CLOUD_TAG:?}"
 
 tf() { terraform -chdir="$TF_DEV" output -raw "$1"; }
