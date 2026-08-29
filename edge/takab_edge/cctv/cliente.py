@@ -7,10 +7,14 @@ disciplinado.
 
 QUÉ HACE Y DÓNDE SE DETIENE
 ───────────────────────────
-Graba el anillo, recorta el clip del evento y gotea capturas. **No sube nada**: deja los
-ficheros en `pendientes/` con su metadato al lado. La subida es su propia ficha
-(`T-3.11.b`) porque cruza a la nube, pide un grant firmado y tiene que auditarse; mezclarla
-aquí haría que un fallo de red pareciera un fallo de grabación.
+Graba el anillo, recorta el clip del evento, gotea capturas y **las sube** pidiéndole al
+gabinete una URL pre-firmada. Los bytes van directos a S3: lo único que cruza `takab-edge`
+es un JSON de cinco campos. Si transportara el clip, un fichero de cientos de MB pasaría
+por el proceso que sostiene la telemetría del gabinete.
+
+Grabar y subir están **separados a propósito**: lo grabado se queda en `pendientes/` hasta
+que la subida confirma. Un corte de red —que es justo lo que pasa durante un sismo— deja
+la evidencia en disco, no la pierde, y el reintento es el siguiente tick.
 
 **Tampoco cuenta personas.** El conteo autoritativo vive en la nube (`D-24`), y el
 preliminar local está **aplazado hasta que exista el equipo de campo** —Pi 5 de 8 GB o
@@ -31,6 +35,7 @@ hay una réplica, la evidencia que importa es la de la réplica.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -93,6 +98,11 @@ class ClienteCctv:
     leer_status: Callable[[], dict]
     correr: Callable[[list[str]], int]
     reloj: Callable[[], datetime] = lambda: datetime.now(UTC)
+    #: Pide el grant al panel LAN del gabinete. `None` ⇒ no se sube nada y todo queda en
+    #: `pendientes/` — que es el modo con el que se graba sin nube y sin perder nada.
+    pedir_grant: Callable[..., dict | None] | None = None
+    #: PUT del objeto a la URL pre-firmada. Devuelve si el objeto quedó arriba.
+    subir: Callable[[str, bytes, str], bool] | None = None
 
     fase: Fase = Fase.OCIOSO
     sesion: Sesion | None = None
@@ -123,6 +133,11 @@ class ClienteCctv:
             self._avanzar(estado, ahora)
         except Exception:  # noqa: BLE001
             log.exception("cctv: el tick falló; el anillo sigue y se reintenta al siguiente")
+
+        try:
+            self._subir_pendientes()
+        except Exception:  # noqa: BLE001
+            log.exception("cctv: la subida falló; lo pendiente sigue en disco")
         return self.fase
 
     def _avanzar(self, estado: dict, ahora: datetime) -> None:
@@ -284,3 +299,79 @@ class ClienteCctv:
         for clip in clips_a_soltar(pendientes, maximo=self.config.max_clips_pendientes):
             clip.unlink(missing_ok=True)
             clip.with_suffix(".json").unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------ subida
+
+    def _subir_pendientes(self) -> None:
+        """Sube lo que haya en `pendientes/` y borra SOLO lo que confirmó.
+
+        El orden es el de siempre en este árbol: pedir grant → PUT → borrar. Borrar antes
+        de que el PUT confirme perdería la única copia; no borrar después llenaría la
+        tarjeta. Y a la primera negativa se **para**: si la nube no da grant es que no hay
+        enlace, e insistir con los nueve ficheros restantes solo gasta el tick.
+        """
+        if self.pedir_grant is None or self.subir is None:
+            return
+        destino = self._pendientes()
+        for ruta in sorted(destino.glob("clip-*.mp4")) + sorted(destino.glob("still-*.jpg")):
+            if not self._subir_uno(ruta):
+                return
+
+    def _subir_uno(self, ruta: Path) -> bool:
+        es_clip = ruta.suffix == ".mp4"
+        datos = ruta.read_bytes()
+        sha = hashlib.sha256(datos).hexdigest()
+        info = self._metadato_de(ruta, es_clip)
+        if info is None:
+            log.error("cctv: %s no tiene metadato utilizable; no se puede subir", ruta.name)
+            return False
+
+        event_id, desde, hasta = info
+        grant = self.pedir_grant(  # type: ignore[misc]
+            mode="cctv_clip" if es_clip else "cctv_still",
+            event_id=event_id,
+            sha256=sha,
+            ts_from=desde,
+            ts_to=hasta,
+        )
+        if grant is None or not grant.get("url"):
+            log.info("cctv: sin grant para %s; sigue pendiente", ruta.name)
+            return False
+
+        tipo = "video/mp4" if es_clip else "image/jpeg"
+        if not self.subir(grant["url"], datos, tipo):  # type: ignore[misc]
+            log.warning("cctv: el PUT de %s falló; sigue pendiente", ruta.name)
+            return False
+
+        ruta.unlink(missing_ok=True)
+        ruta.with_suffix(".json").unlink(missing_ok=True)
+        log.info("cctv: %s subido (%s)", ruta.name, grant.get("key", "sin key"))
+        return True
+
+    def _metadato_de(self, ruta: Path, es_clip: bool) -> tuple[str, datetime, datetime] | None:
+        """`(event_id, desde, hasta)` del objeto. Del JSON si es clip, del nombre si no.
+
+        Las capturas no llevan JSON al lado a propósito: son cientos por incidente y un
+        sidecar por cada una multiplicaría los inodos sin añadir un dato que el nombre no
+        tenga ya.
+        """
+        if es_clip:
+            lado = ruta.with_suffix(".json")
+            try:
+                meta = json.loads(lado.read_text(encoding="utf-8"))
+                return (
+                    str(meta["event_id"]),
+                    datetime.fromisoformat(meta["desde"]),
+                    datetime.fromisoformat(meta["hasta"]),
+                )
+            except (OSError, ValueError, KeyError):
+                return None
+        # still-{AAAAMMDDTHHMMSSZ}-{event_id}.jpg
+        partes = ruta.stem.split("-", 2)
+        if len(partes) != 3:
+            return None
+        try:
+            cuando = datetime.strptime(partes[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            return None
+        return (partes[2], cuando, cuando)

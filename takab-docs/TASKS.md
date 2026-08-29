@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **10** · `[ ]` **44**
+****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **11** · `[ ]` **43**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10633,30 +10633,37 @@ sirena.
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
 - [ ] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
 
-### [ ] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE`
-- [ ] Tablas `cameras`, `cctv_clips`, `cctv_stills`, `cctv_occupancy`,
+### [~] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE`
+> **Construido el 2026-08-29** (migración `0053_cctv`, espejo en `db/schema.sql` generado
+> desde ella, grant por el contrato existente y subida directa a S3). El guard de poda se
+> verificó **contra Postgres**, no se razonó: el no-op se rechaza, la poda pasa, y volver a
+> poner un `s3_key` después de podar se rechaza. Abierta por el único criterio que falta:
+> la fila de `audit_log` **en la subida**.
+- [x] Tablas `cameras`, `cctv_clips`, `cctv_stills`, `cctv_occupancy`,
       `cctv_evacuation_metrics` con `tenant_id` y RLS. **Sin rama `app_gov_can_see`**: ver vídeo no
       es ver telemetría (`B.4`); precedente de omitirla, `privacy_notices`.
-- [ ] Los clips **no van en `evidence_objects`**: su `CHECK` de `kind` no los admite, y esa tabla
+- [x] Los clips **no van en `evidence_objects`**: su `CHECK` de `kind` no los admite, y esa tabla
       es `COMPLIANCE_ANCHOR` — heredarían la exención de poda que `B.4` prohíbe.
-- [ ] `cctv_clips` con el patrón de **dos triggers** de `life_checkins`: `forbid_update_delete()`
+- [x] `cctv_clips` con el patrón de **dos triggers** de `life_checkins`: `forbid_update_delete()`
       solo en `DELETE`, y un `cctv_clip_purge_guard()` solo en `UPDATE` que abre una rendija
       (`s3_key → NULL` + `purged_at`).
       > **La rendija exige la TRANSICIÓN REAL**, no solo que el resto de la fila no cambie:
       > `restore_check._updatable_column` ejerce un `UPDATE ... SET c = c` y espera que el guard lo
       > **rechace**. Comparar `to_jsonb` menos dos columnas acepta ese no-op y el verificador lee
       > «ACEPTADO (la guarda no existe o está desactivada)».
-- [ ] `REVOKE DELETE ON cctv_clips FROM takab_app` — `test_append_only_dos_capas.py` lo exige por
+- [x] `REVOKE DELETE ON cctv_clips FROM takab_app` — `test_append_only_dos_capas.py` lo exige por
       derivación, no por gusto.
-- [ ] **Las credenciales de la cámara NO viven en la tabla.** La URL RTSP/ONVIF lleva usuario y
+- [x] **Las credenciales de la cámara NO viven en la tabla.** La URL RTSP/ONVIF lleva usuario y
       contraseña embebidos y el detector de PII **no la reconoce**: es una fuga que ningún censo
       puede ver. `cameras` guarda host, puerto y perfil; la credencial va por entorno.
-- [ ] La key es `evidence/{tenant_id}/{incident_id}/cctv-{clip_id}.mp4` y **eso es una restricción,
+- [x] La key es `evidence/{tenant_id}/{event_uuid}/cctv-{desde}_{hasta}-{sha256}.mp4` —con la
+      **ventana dentro**, porque quien registra el objeto es la notificación de S3 y solo ve la
+      key— y el prefijo `evidence/` **es una restricción,
       no estética**: el bucket solo notifica el prefijo `evidence/`; una key bajo `cctv/…` aterriza
       y no la ingesta nadie.
-- [ ] Subida por el grant que ya existe (`mode` nuevo en `BackfillRequest`), **sin topic MQTT
+- [x] Subida por el grant que ya existe (`mode` nuevo en `BackfillRequest`), **sin topic MQTT
       nuevo**: un topic no autorizado en la política fleet desconecta al gabinete en cada publish.
-- [ ] El vídeo **nunca por MQTT** (el clasificador de la regla de oro 9 rechaza binario sin tope) y
+- [x] El vídeo **nunca por MQTT** (el clasificador de la regla de oro 9 rechaza binario sin tope) y
       **nunca a través de `takab-edge`**: PUT presignado directo desde `takab-cctv`.
 - [ ] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).

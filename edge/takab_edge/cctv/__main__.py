@@ -114,12 +114,26 @@ def run_cctv_process(settings: EdgeSettings | None = None, *, block: bool = True
     )
     directorio.mkdir(parents=True, exist_ok=True)
 
+    clave_grant = os.environ.get("TAKAB_EDGE_CCTV_KEY", "").encode()
+    if not clave_grant:
+        # Se AVISA y se sigue: sin clave no se sube, pero grabar sigue teniendo sentido —
+        # la evidencia se acumula en `pendientes/` y sube el día que alguien provisione la
+        # clave. Negarse a arrancar aquí convertiría un problema de aprovisionamiento en
+        # un incidente sin vídeo.
+        log.warning(
+            "cctv: sin TAKAB_EDGE_CCTV_KEY no se puede pedir grant; se graba y se acumula "
+            "en %s hasta que se provisione",
+            directorio / "pendientes",
+        )
+
     cliente = ClienteCctv(
         config=cfg,
         fuentes=fuentes,
         directorio=directorio,
         leer_status=_lector_de_status(cfg.edge_api_base),
         correr=_correr,
+        pedir_grant=_pedidor_de_grant(cfg.edge_api_base, clave_grant) if clave_grant else None,
+        subir=_subir_presignado if clave_grant else None,
     )
     if not block:
         return cliente
@@ -196,6 +210,64 @@ def _lector_de_status(base: str):
             return json.loads(r.read().decode("utf-8"))
 
     return leer
+
+
+def _pedidor_de_grant(base: str, clave: bytes):
+    """Cliente del `POST /api/cctv/grant` del panel LAN, firmado con el dominio `cctv`.
+
+    El gabinete es el único con identidad X.509 y enlace MQTT, así que es él quien le pide
+    la URL a la nube. Nosotros le mandamos cinco campos y nos llevamos una URL: **el vídeo
+    no pasa por él**.
+    """
+    import json  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    from takab_edge.security import SecurityManager  # noqa: PLC0415
+
+    firmante = SecurityManager(hmac_key=clave)
+    url = base.rstrip("/") + "/api/cctv/grant"
+
+    def pedir(*, mode: str, event_id: str, sha256: str, ts_from, ts_to) -> dict | None:
+        cuerpo = json.dumps(
+            {
+                "mode": mode,
+                "event_id": event_id,
+                "sha256": sha256,
+                "ts_from": ts_from.isoformat(),
+                "ts_to": ts_to.isoformat(),
+            }
+        ).encode()
+        peticion = urllib.request.Request(  # noqa: S310 — http local, base de config
+            url,
+            data=cuerpo,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-Takab-Cctv-Sig": firmante.sign_cctv(cuerpo),
+            },
+        )
+        try:
+            with urllib.request.urlopen(peticion, timeout=45.0) as r:  # noqa: S310
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # 409 es «no hay enlace todavía», y es el caso NORMAL durante un corte: se
+            # registra en info para no llenar el journal de errores que no lo son.
+            nivel = log.info if exc.code == 409 else log.warning
+            nivel("cctv: el gabinete no otorgó grant (%s)", exc.code)
+            return None
+        except (OSError, ValueError) as exc:
+            log.warning("cctv: no se pudo pedir grant: %s", exc)
+            return None
+
+    return pedir
+
+
+def _subir_presignado(url: str, datos: bytes, content_type: str) -> bool:
+    """PUT directo a S3. Reutiliza el helper del backfill: mismo camino, mismo tope."""
+    from takab_edge.backfill import default_http_put  # noqa: PLC0415
+
+    return default_http_put(url, datos, content_type, timeout_s=300.0)
 
 
 def _correr(cmd: list[str]) -> int:

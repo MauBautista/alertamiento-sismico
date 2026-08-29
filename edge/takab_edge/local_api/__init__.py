@@ -220,6 +220,11 @@ def _load_static_fonts() -> dict[str, tuple[str, bytes]]:
 # nube→edge. El panel solo LEE la instantánea viva del store.
 
 
+#: [T-3.11.b] Tope del cuerpo del grant de CCTV. Es un JSON de cinco campos; 4 KiB es
+#: holgura de sobra y evita que un cliente de la LAN haga reservar memoria al gabinete.
+_CCTV_GRANT_MAX_BYTES = 4096
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
     # keep-alive: un hilo por kiosco en vez de hilo por request (menos churn).
     protocol_version = "HTTP/1.1"
@@ -271,6 +276,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
+        # [T-3.11.b] El grant de CCTV va APARTE del diccionario de acciones, y no por
+        # orden: aquellas son acciones de una PERSONA de pie en el sitio —autorizadas por
+        # PIN, sin cuerpo y sin respuesta— y ésta es máquina a máquina: lleva cuerpo, la
+        # autoriza un HMAC y devuelve datos. Meterla en la misma tabla habría obligado a
+        # que el PIN del guardia valiera para pedir grants, o al revés.
+        if self.path == "/api/cctv/grant":
+            self._cctv_grant(dashboard)
+            return
         actions = {
             "/api/silence": dashboard.silence,
             "/api/siren-test": dashboard.run_siren_test,
@@ -323,6 +336,43 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send(200, json.dumps({"ok": True}))
 
+    def _cctv_grant(self, dashboard) -> None:
+        """`POST /api/cctv/grant` — firma HMAC sobre el cuerpo, devuelve la URL."""
+        try:
+            largo = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._send(400, json.dumps({"error": "content-length"}))
+            return
+        # Tope duro: esto recibe un JSON de cinco campos. Sin él, un cliente de la LAN
+        # podría hacer que el gabinete reserve memoria arbitraria — y este proceso corre
+        # en la misma máquina que el resto del edge.
+        if largo <= 0 or largo > _CCTV_GRANT_MAX_BYTES:
+            self._send(413, json.dumps({"error": "cuerpo fuera de rango"}))
+            return
+        cuerpo = self.rfile.read(largo)
+        if not dashboard.verify_cctv_signature(cuerpo, self.headers.get("X-Takab-Cctv-Sig")):
+            self._send(401, json.dumps({"error": "firma"}))
+            return
+        try:
+            payload = json.loads(cuerpo)
+        except ValueError:
+            self._send(400, json.dumps({"error": "json"}))
+            return
+        if not isinstance(payload, dict):
+            self._send(400, json.dumps({"error": "json"}))
+            return
+        try:
+            grant = dashboard.request_cctv_grant(payload)
+        except ActionUnavailable as exc:
+            # 409: la peticion es valida, lo que falta es enlace. El CCTV reintenta.
+            self._send(409, json.dumps({"error": str(exc)}))
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("grant de cctv no se pudo tramitar")
+            self._send(503, json.dumps({"error": "el gabinete no pudo pedir el grant"}))
+            return
+        self._send(200, json.dumps(grant))
+
     def log_message(self, *args: object) -> None:  # no spamear stdout del edge
         pass
 
@@ -369,6 +419,9 @@ class LocalDashboard(EdgeModule):
         lora: object | None = None,
         backfill: object | None = None,
         ledger: object | None = None,
+        #: [T-3.11.b] Solo para verificar el HMAC del grant de CCTV. El panel NO
+        #: firma nada: verifica.
+        security: object | None = None,
         keepalive_enabled: bool = False,
     ) -> None:
         super().__init__()
@@ -382,6 +435,7 @@ class LocalDashboard(EdgeModule):
         # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
         # RAM (`_actions`), que un reinicio borra. Ver `_accion`.
         self._ledger = ledger
+        self._security = security
         self._rules = rules
         self._health = health
         self._signal = signal
@@ -990,6 +1044,53 @@ class LocalDashboard(EdgeModule):
         merged = transitions + actions
         merged.sort(key=lambda item: item.get("at", ""), reverse=True)
         return merged[:_EVENTS_MAX]
+
+    # ------------------------------------------------------------- CCTV (T-3.11.b)
+
+    def request_cctv_grant(self, payload: dict) -> dict:
+        """Pide a la nube la URL pre-firmada de un clip o una captura, y la devuelve.
+
+        Es la ÚNICA puerta del CCTV hacia el gabinete, y es deliberadamente estrecha: entra
+        un JSON de cinco campos y sale una URL. **El vídeo no pasa por aquí** — `takab-cctv`
+        sube los bytes él mismo a S3 con esa URL. Si esto transportara el clip, un fichero
+        de 300 MB cruzaría el proceso que sostiene la telemetría del gabinete.
+
+        Lanza `ActionUnavailable` cuando la nube no contesta a tiempo, que es un 409 y no un
+        500: la petición es válida, lo que falta es enlace. El CCTV reintenta con su propio
+        ritmo y el clip sigue en `pendientes/` mientras tanto.
+        """
+        if self._backfill is None:
+            raise ActionUnavailable("este gabinete no tiene backfill: no puede pedir grants")
+        try:
+            mode = str(payload["mode"])
+            event_id = str(payload["event_id"])
+            sha256 = str(payload["sha256"])
+            ts_from = datetime.fromisoformat(str(payload["ts_from"]))
+            ts_to = datetime.fromisoformat(str(payload["ts_to"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ActionUnavailable(f"petición de grant malformada: {exc}") from exc
+
+        try:
+            grant = self._backfill.request_cctv_grant(
+                mode=mode, event_id=event_id, sha256=sha256, ts_from=ts_from, ts_to=ts_to
+            )
+        except ValueError as exc:  # modo desconocido
+            raise ActionUnavailable(str(exc)) from exc
+        if grant is None:
+            raise ActionUnavailable("la nube no otorgó grant a tiempo (¿sin enlace?)")
+        return grant
+
+    def verify_cctv_signature(self, cuerpo: bytes, firma: str | None) -> bool:
+        """¿Viene esta petición del CCTV de este sitio? **Fail-closed sin clave.**
+
+        Sin `SecurityManager` provisionado no se verifica nada y por tanto no se concede
+        nada: un gabinete sin clave de CCTV no es un gabinete que confía en cualquiera, es
+        un gabinete que todavía no tiene CCTV.
+        """
+        if self._security is None:
+            log.warning("grant de cctv rechazado: este gabinete no tiene clave de CCTV")
+            return False
+        return bool(self._security.verify_cctv(cuerpo, firma or ""))
 
     def _record_action(self, action: str) -> None:
         with self._actions_lock:
