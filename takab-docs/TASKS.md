@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **308** · `[x]` **259** · `[~]` **8** · `[ ]` **41**
+****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **9** · `[ ]` **45**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10539,35 +10539,173 @@ sirena.
 > **Si no cabe en el Pi 4, la respuesta correcta es hardware separado — nunca optimizar el
 > proceso que toca la sirena** (regla de oro 4).
 
-### [ ] T-3.10 · Escribir la arquitectura en el blueprint — `SOFTWARE` + `DECISIÓN`
-- **Decisión:** [`D-14`](DECISIONES-MAURICIO.md#d-14) — CCTV **híbrido**: aforo en el sitio,
-  clips solo de evento. Es la que fija qué arquitectura hay que escribir.
+> ### 📌 Estado de las decisiones (2026-08-29) — léelo antes de abrir cualquiera de estas fichas
+>
+> - [`D-24`](DECISIONES-MAURICIO.md#d-24) **enmienda** a [`D-14`](DECISIONES-MAURICIO.md#d-14): el
+>   conteo autoritativo lo hace **la nube**. Sube **un clip** (`T−60 s`→`T+600 s`) y un **goteo de
+>   capturas** hasta el reingreso; el operador ve y descarga. Sigue en pie de `D-14`: clips **solo
+>   de evento confirmado**, retención acotada, salida de vídeo **auditada**, y la caída a **solo
+>   aforo por configuración de sitio** (`cameras.count_mode`).
+> - [`D-25`](DECISIONES-MAURICIO.md#d-25): el software se construye **ya**; **encenderlo en el
+>   gabinete espera a `G-04` acreditado + la medición de `B.2`**. Las fichas se cierran con el
+>   módulo apagado; el gatillo de encendido vive en `D-25`.
+> - **Medido el 2026-08-29:** el gabinete es un Pi 4 de **1 GB** (905 MB totales, 654 disponibles)
+>   y **no tiene ffmpeg**. Ése es el número que `B.2` pedía y que `D-14` no tenía.
+
+### [~] T-3.10 · Arquitectura al blueprint y política de retención de vídeo — `SOFTWARE` + `DECISIÓN`
+> **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por lo que **no
+> puede cerrar el software**: la medición de `B.2` necesita el Pi con carga real, y el job de
+> poda se implementa con el esquema (`T-3.11.b`).
 - **Diseño escrito (`D-08`, 2026-08-16):**
   [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B. Lo que queda es
-  llevarlo al blueprint **con el número de la medición dentro**, que es lo único que falta.
-- [ ] Sección nueva del blueprint: topología, dónde vive el proceso, y **presupuesto de CPU**.
-- [ ] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
-- [ ] Decisión escrita: mismo Pi o hardware separado, con la medición que la sostiene.
+  llevarlo al blueprint **con la enmienda de `D-24` dentro**.
+- [x] Sección nueva del blueprint: topología, dónde vive el proceso, y **presupuesto de CPU**.
+      **`§14` NO se toca**: el CCTV no es invariante ni diferido, es hardware opcional de la
+      topología (`§3`, `§4.1`). Tocarlo obliga a mover el número clavado en
+      `api/tests/test_matriz_trazabilidad.py:2042-2059` y a citar un test real por nombre.
+- [x] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
+- [x] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
+      para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
+- [ ] La poda del vídeo va en **job propio** (`api/src/takab_api/ops/prune_cctv.py`), **no** como
+      `RetentionRule`.
+      > **Por qué, y es la trampa cara de esta ficha:** `retention._validar_plan()` corre en el
+      > import y exige que toda columna de una regla esté en `PII_INVENTORY` con `action=="erase"`;
+      > eso arrastra `test_privacy_erasure.py:171-181`, que compara **por igualdad** contra
+      > `ERASED_TABLES` — o sea que ARCO pasaría a tener que tocar `cctv_clips` y cambiarían las
+      > claves `affected` de la constancia. Radio de explosión enorme y en la dirección equivocada.
+- [ ] **Las dos mitades de la poda, y las dos se reportan:** un `s3_key` en `NULL` **no borra los
+      bytes**. Hace falta el `UPDATE` en Postgres **y** el borrado del objeto. Un plan que anula la
+      referencia y deja la imagen es peor que ninguno, porque **se declara cumplido**.
+- [ ] La medición de `B.2` sigue pendiente y su regla de decisión **no se reabre**:
   > **La regla de decisión ya está escrita, y a propósito ANTES de ver el número** para que no se
   > acomode al resultado: lo único que decide es la **latencia del reflejo SASMEX→relé bajo carga
   > de CCTV** contra su presupuesto de 100 ms. Si se acerca, **hardware separado, sin discusión**.
   > El sesgo del que hay que protegerse es «va justo pero cabe»: el margen actual es de **dos
   > órdenes de magnitud** (6.65 ms / 4.16 ms) y gastarlo en vídeo lo cambia por lo único que el
   > sistema no puede permitirse.
-- [ ] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
-      para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
-- [ ] **Decidir ANTES de `T-3.11`** si el aforo (`T-3.12`) viaja como **número** o como **imagen**.
-      Procesar en el sitio y subir solo el conteo elimina casi toda la superficie de PII de vídeo —
-      es lo que el diseño recomienda.
+- [x] La pregunta «¿el aforo viaja como número o como imagen?» **queda respondida por `D-24`**:
+      como imagen, con todo lo que eso obliga a acotar. Escrito, no implícito.
 
-### [ ] T-3.11 · Cliente ONVIF — `SOFTWARE`
-- [ ] Proceso **separado**, con límite de CPU explícito, que no puede degradar `takab-gpio`.
+### [ ] T-3.10.b · Guarda de licencias — cero AGPL/GPL en el árbol — `SOFTWARE`
+- [ ] `ci/check-licenses.sh` falla el build si aparece cualquier **prohibido**: `ultralytics`
+      (AGPL-3.0 — incluye YOLOv8, YOLO11 y su RT-DETR), `deep-sort-realtime` / DeepSORT de nwojke
+      (GPL-3.0), YOLOv6, YOLOv7 (GPL-3.0), YOLO-NAS (pesos no comerciales).
+- [ ] `pip-licenses --fail-on` sobre GPL/AGPL en el árbol **transitivo** de `api/`, `edge/` y
+      `analyzer/`. No basta la lista de nombres: la deuda llega por dependencia indirecta.
+- [ ] Los `.onnx` se validan: fallar si `metadata_props` menciona AGPL/GPL. Un peso no lleva
+      `setup.py`, así que ningún escáner de paquetes lo ve.
+- [ ] `THIRD_PARTY_NOTICES.txt` **generado** en el build, no escrito a mano.
+- [ ] Job `licenses` en `.github/workflows/ci.yml`, y **prueba negativa**: la guarda tiene que
+      poder fallar (instalar un prohibido a propósito la pone roja).
+- [ ] **Un job nuevo no bloquea el merge solo.** La protección de `main` exige siete checks por
+      nombre literal (`D-09`); que `licenses` bloquee es un clic de Mauricio, y va fichado en
+      `PENDIENTES-MAURICIO`. Una guarda que no guarda es peor que ninguna: da confianza falsa.
+
+### [ ] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE`
+- [ ] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
+      `takab-gpio`.
 - [ ] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
+      > **La dirección es lo que da la garantía, no la disciplina.** `takab-cctv` es **cliente**:
+      > sondea `GET /api/status` a 1 Hz. El edge es servidor y **estructuralmente no puede**
+      > depender de él. El anillo de pre-grabación hace irrelevante el ~1 s de latencia del sondeo.
+- [ ] **No graba si el WR-1 está en modo prueba.**
+      > La trampa que esto evita, y no es teórica: el embudo del edge suprime lo que va a la nube
+      > en `_modo_prueba_activo` (`edge/takab_edge/supervisor.py:630-635`). Un CCTV que no mire ese
+      > flag sube a S3 **vídeo real de un edificio real** durante una prueba de banco — sin
+      > incidente al que atarlo, sin base legal y con factura.
+- [ ] No graba en `Tier.NORMAL`; **sí graba** aunque la alerta sea `visual_only` (T-2.32), igual
+      que `queue_evidence`, que está deliberadamente fuera de esa puerta.
+- [ ] Anillo `ffmpeg -c copy` autopurgado; **cuota de disco dura** por bytes y por clips
+      pendientes. La microSD es de la que arranca el camino de vida: un clip atascado no puede
+      llenarla.
+- [ ] **ffmpeg LGPL, como subproceso, verificado al arrancar.** El de Debian trae `--enable-gpl`;
+      el guard lo rechaza **fail-closed** y dice de dónde sacar uno válido.
+- [ ] Unidad `takab-cctv.service` con los límites de `B.3` —`CPUQuota=`, `MemoryMax=`, `Nice=`,
+      `Restart=` propio— y su test de artefacto, como `takab-gpio`.
+- [ ] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
+      (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
+- [ ] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
 
-### [ ] T-3.12 · Aforo + cruce con el check-in móvil — `SOFTWARE`
+### [ ] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE`
+- [ ] Tablas `cameras`, `cctv_clips`, `cctv_stills`, `cctv_occupancy`,
+      `cctv_evacuation_metrics` con `tenant_id` y RLS. **Sin rama `app_gov_can_see`**: ver vídeo no
+      es ver telemetría (`B.4`); precedente de omitirla, `privacy_notices`.
+- [ ] Los clips **no van en `evidence_objects`**: su `CHECK` de `kind` no los admite, y esa tabla
+      es `COMPLIANCE_ANCHOR` — heredarían la exención de poda que `B.4` prohíbe.
+- [ ] `cctv_clips` con el patrón de **dos triggers** de `life_checkins`: `forbid_update_delete()`
+      solo en `DELETE`, y un `cctv_clip_purge_guard()` solo en `UPDATE` que abre una rendija
+      (`s3_key → NULL` + `purged_at`).
+      > **La rendija exige la TRANSICIÓN REAL**, no solo que el resto de la fila no cambie:
+      > `restore_check._updatable_column` ejerce un `UPDATE ... SET c = c` y espera que el guard lo
+      > **rechace**. Comparar `to_jsonb` menos dos columnas acepta ese no-op y el verificador lee
+      > «ACEPTADO (la guarda no existe o está desactivada)».
+- [ ] `REVOKE DELETE ON cctv_clips FROM takab_app` — `test_append_only_dos_capas.py` lo exige por
+      derivación, no por gusto.
+- [ ] **Las credenciales de la cámara NO viven en la tabla.** La URL RTSP/ONVIF lleva usuario y
+      contraseña embebidos y el detector de PII **no la reconoce**: es una fuga que ningún censo
+      puede ver. `cameras` guarda host, puerto y perfil; la credencial va por entorno.
+- [ ] La key es `evidence/{tenant_id}/{incident_id}/cctv-{clip_id}.mp4` y **eso es una restricción,
+      no estética**: el bucket solo notifica el prefijo `evidence/`; una key bajo `cctv/…` aterriza
+      y no la ingesta nadie.
+- [ ] Subida por el grant que ya existe (`mode` nuevo en `BackfillRequest`), **sin topic MQTT
+      nuevo**: un topic no autorizado en la política fleet desconecta al gabinete en cada publish.
+- [ ] El vídeo **nunca por MQTT** (el clasificador de la regla de oro 9 rechaza binario sin tope) y
+      **nunca a través de `takab-edge`**: PUT presignado directo desde `takab-cctv`.
+- [ ] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
+      (`D-14`: auditada igual que un comando de actuador).
+
+### [ ] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`
 - [ ] El aforo por cámara y el check-in de vida se **cruzan**, no se suman: son dos
       estimaciones distintas de la misma cosa y la diferencia es la información útil.
 - [ ] La discrepancia se muestra como discrepancia, nunca promediada en un número único.
+- [ ] Métricas: `t50`/`t90` desde la señal (**`t90` es «cuánto tardó en salir la mayor parte»**),
+      aforo pico, inicio del reingreso con histéresis, latencia hasta el dictamen firmado y
+      latencia del reingreso.
+- [ ] **Una `latencia_reingreso` negativa significa que la gente reentró ANTES del dictamen.** Eso
+      no es un número: es un hallazgo de seguridad, y el reporte lo dice con palabras.
+- [ ] «Cuánto se movió el inmueble» sale del **sismómetro** (`incidents.max_pga_g`/`max_pgv_cms`),
+      no de la cámara, y se presenta al lado de `t90`.
+- [ ] Detector tras un adaptador `DetectorBackend`; **solo licencias permisivas** (YOLOX / D-FINE
+      Apache-2.0, ByteTrack de Megvii MIT, `onnxruntime` MIT). Mismo pre/post-proceso en borde y
+      nube para que los números sean comparables.
+- [ ] **El motor vive fuera de `api/src/takab_api/`** (paquete `analyzer/`): `test_runtime_deps.py`
+      obliga a que todo import de terceros bajo ese árbol entre en `[project] dependencies`, y un
+      `import onnxruntime` ahí metería el runtime ONNX en la imagen de la API.
+- [ ] Corre en local contra MinIO con un backend falso. **Cero descargas de pesos en CI.**
+
+### [ ] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS`
+- [ ] Imagen ECR, rol IAM y acceso a la base. **Ventana AWS de Mauricio.**
+- [ ] El bloqueo es **solo el ejecutor**: la notificación S3 ya existe y ya enruta, así que el
+      camino hasta «clip subido y registrado con `analysis_state='pending'`» funciona sin tocar
+      AWS. Un gabinete con cámara deja evidencia descargable antes de que exista el Lambda.
+- [ ] Con el análisis pendiente el reporte dice **«CLIP DISPONIBLE · ANÁLISIS PENDIENTE»**.
+      **Un fallback no puede ser `ok`**, y un cero inventado es peor que un hueco declarado.
+
+### [ ] T-3.12.c · API, sección del reporte y panel de la consola — `SOFTWARE` + `FRONTEND`
+- [ ] Dos acciones RBAC: `cctv_read` (métricas y capturas) y `cctv_video` (**ver y descargar el
+      clip**, más estrecha y auditada en cada acceso). El CRUD de cámaras reutiliza `manage_fleet`.
+      Espejar en `RBAC-TAKAB.md`: el test de paridad compara **celda a celda**, y `DENY_ALL` se
+      compara por igualdad.
+- [ ] Endpoint de lectura que sirve **el mismo objeto** a la pantalla y al PDF (disciplina de
+      `routers/forensics.py`); 404 y nunca 403 fuera de alcance.
+- [ ] Sección nueva del reporte técnico con las **cuatro capturas** —antes de la señal, saliendo,
+      aforo máximo, reingresando— y las métricas. Literal de ausencia propio: sin cámara declarada
+      el reporte lo dice, no pinta un cero.
+- [ ] Las capturas se proyectan en la cadena de custodia conservando `sha256` y fecha **después**
+      de que el objeto se pode: la fila dice `PURGADO (retención de vídeo)`. El hecho sobrevive, la
+      imagen no.
+- [ ] **Una sola superficie de CCTV, y es la de triage.** El card de la consola
+      (`DetailPanel.tsx`) es *verificación visual en vivo* y **no se toca** en esta ficha: su línea
+      de deuda en `serverDataCensus` sigue siendo verdad mientras no exista vista en vivo.
+- [ ] El panel nuevo cablea las cuatro entradas de `StateFrame` **incluida `staleSince` de verdad**
+      (`FRESCURA_CLAVADA` está vacía por igualdad) y entra en la lista de marcos de la página de
+      triage, que está escrita a mano y comparada por igualdad.
+
+### [ ] T-3.12.d · Comparativa de detectores contra la cámara real — `SOFTWARE` + `GATE-HW`
+- [ ] Candidatos **solo permisivos**: YOLOX-nano, YOLOX-tiny, RF-DETR nano, EfficientDet-Lite0.
+      **Sin línea base de Ultralytics** en ningún entorno — tampoco «solo para comparar».
+- [ ] **La medición fija el default, no la opinión.** Precisión de conteo y coste, contra la cámara
+      real y su escena real; una comparativa contra vídeo de internet no dice nada de este edificio.
 
 ## Fase 3.3 · Feeds y superficie de datos
 
