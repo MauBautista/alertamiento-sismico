@@ -301,14 +301,22 @@ Dónde se despliegue lo decide la medición de abajo, no el código.
 
 ### Presupuesto de CPU y la regla que lo decide
 
-**Medido el 2026-08-29:** el gabinete es un `Raspberry Pi 4 Model B Rev 1.5` de **1 GB** —905 MB
-totales, 654 MB disponibles, 4 núcleos— con **17 GB libres** de microSD y **sin ffmpeg**. Ese
-número es el que faltaba y es el que gobierna el reparto:
+**Dos máquinas distintas, y confundirlas es el error que hay que evitar:**
+
+| | Qué es | Estado |
+|---|---|---|
+| **Banco de desarrollo** | `Raspberry Pi 4 Model B Rev 1.5` de **1 GB** (905 MB totales, 654 disponibles, 4 núcleos, 17 GB libres de microSD, **sin ffmpeg**) — medido el 2026-08-29 | es el que hay hoy |
+| **Equipo de campo** | **Raspberry Pi 5 de 8 GB** o **Pi 4 de 8 GB** | **sin comprar** |
+
+Con 8 GB el detector cabe de sobra, así que la RAM **no** es lo que decide. Lo que decide es que
+`B.2` **no se puede medir en una máquina que no es la que va a ejecutar**: medir en el banco de
+1 GB y extrapolar a 8 GB sería inventar el número, que es exactamente lo que `B.2` prohíbe. Hasta
+que exista el equipo real, el reparto es éste:
 
 | Trabajo | Dónde | Por qué |
 |---|---|---|
 | Grabar (remux `-c copy`, **sin decodificar**) | el Pi 4 puede | no descomprime nada: cuesta centésimas de núcleo y decenas de MB |
-| **Contar** (detector + tracking) | **la nube** | descomprimir vídeo y correr un detector en 654 MB compite con el proceso que toca la sirena |
+| **Contar** (detector + tracking) | **la nube** | el equipo de campo aún no existe y `B.2` no se puede medir sin él. El conteo preliminar local está **aplazado, no descartado**: el adaptador `DetectorBackend` sirve a las dos orillas y encenderlo será configuración |
 
 La regla de decisión de `B.2` **no se reabre y no se acomoda al resultado**: lo único que decide es
 la **latencia del reflejo SASMEX→relé bajo carga de CCTV** contra su presupuesto de **100 ms**

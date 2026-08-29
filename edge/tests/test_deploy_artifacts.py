@@ -83,9 +83,13 @@ _DEPLOY = _RAIZ / "deploy" / "edge" / "deploy.sh"
 #: pisarlo — lección del PR #13). `deploy.sh` sólo LEE ese archivo.
 _PROVISION = _RAIZ / "infra" / "scripts" / "provision_gateway.sh"
 _PYPROJECT = _RAIZ / "edge" / "pyproject.toml"
+#: [T-3.11] DERIVADO del directorio, no enumerado. Era un dict escrito a mano y la
+#: doctrina de este árbol es explícita al respecto: «todo censo que enumera a mano acaba
+#: divergiendo; hay que derivarlo del productor». Con la lista a mano, añadir
+#: `takab-cctv.service` daba un `KeyError` en un test que no hablaba de él, en vez de
+#: incorporarlo a las comprobaciones que sí le tocan.
 _UNIDADES = {
-    "takab-edge": _RAIZ / "edge" / "systemd" / "takab-edge.service",
-    "takab-gpio": _RAIZ / "edge" / "systemd" / "takab-gpio.service",
+    ruta.stem: ruta for ruta in sorted((_RAIZ / "edge" / "systemd").glob("takab-*.service"))
 }
 
 

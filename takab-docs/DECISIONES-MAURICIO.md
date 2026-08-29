@@ -1152,6 +1152,29 @@ en el borde y no sube nada.
 **Lo que NO cambia de `D-14`:** clips solo de evento confirmado, jamás continuos ni «por si
 acaso». Es la **regla de oro 9 aplicada al vídeo**, y sigue siendo la condición.
 
+> ### 🔧 CORRECCIÓN DE PREMISA, el mismo día (2026-08-29) — el 1 GB es el banco, no el destino
+>
+> El texto de arriba se queda como está, pero **una de sus dos razones estaba mal encuadrada** y
+> conviene arreglarlo antes de que alguien la cite: los 905 MB son del **gabinete de desarrollo**.
+> Mauricio confirma que el equipo real de campo será un **Raspberry Pi 5 de 8 GB o un Pi 4 de
+> 8 GB**, todavía **sin comprar**.
+>
+> **Con 8 GB, «no cabe un detector en el gabinete» deja de ser cierto.** Esa razón se cae.
+>
+> **La decisión NO se cae, pero su razón ahora es otra y es más simple:** el equipo que va a
+> correr esto **no existe todavía**, y `B.2` no se puede medir en una máquina que no es la que va
+> a ejecutar. Medir en el banco de 1 GB y extrapolar a 8 GB sería inventar el número, que es
+> justo lo que `B.2` prohíbe. Así que hasta que haya hardware real: **cuenta la nube, y el conteo
+> preliminar local se queda apagado.**
+>
+> **Lo que esto cambia en la práctica:** el conteo local pasa de «descartado por RAM» a
+> **«aplazado hasta que haya con qué medirlo»**. El adaptador `DetectorBackend` ya está pensado
+> para las dos orillas, así que encenderlo el día que llegue la caja es configuración, no
+> reescritura — que es la misma propiedad que `D-14` exigió para la caída a solo aforo.
+>
+> **Y la segunda razón de `D-24` sigue intacta**, que es la que de verdad sostiene la decisión: un
+> número de aforo sin imagen **no se puede auditar después**. Esa no dependía de la RAM.
+
 ---
 
 <a id="d-25"></a>

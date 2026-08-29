@@ -227,6 +227,17 @@ class CctvConfig(BaseModel):
     #: su línea de registro — igual que las cotas por topic del spool de la nube.
     max_clips_pendientes: int = Field(default=6, gt=0)
 
+    #: URL RTSP declarada a mano, **sin credencial**. Gana sobre el descubrimiento ONVIF.
+    #: Existe porque el ONVIF de las cámaras baratas es la parte que peor funciona, y
+    #: porque una URL sin secreto **sí puede** persistirse y viajar en el config sync: el
+    #: usuario y la clave se le inyectan en memoria justo antes de dársela a ffmpeg.
+    rtsp_url: str = ""
+
+    #: Dónde vive el anillo y la cola de pendientes. Ruta explícita, como
+    #: `site_location_cache` y `catalog_path`: es lo que la unidad systemd declara
+    #: escribible bajo `ProtectSystem=strict`.
+    work_dir: str = "/var/lib/takab/cctv"
+
     #: Binario de ffmpeg. El de Debian trae `--enable-gpl` y la guarda lo RECHAZA (D-24).
     ffmpeg_path: str = "/opt/takab/bin/ffmpeg"
     #: Base del panel LAN del gabinete al que este proceso sondea COMO CLIENTE. La
@@ -234,6 +245,21 @@ class CctvConfig(BaseModel):
     #: servidor y no puede depender de que esto viva.
     edge_api_base: str = "http://127.0.0.1:8080"
     poll_s: float = Field(default=1.0, gt=0)
+
+    #: Conteo preliminar de personas **en el gabinete**. Hoy `takab-cctv` se NIEGA a
+    #: arrancar con esto en `true`, y la negativa es la mitad que importa: una perilla que
+    #: no hace nada es peor que ninguna, porque alguien la enciende y cree que cuenta.
+    #:
+    #: **Está aplazado, no descartado** ([`D-24` · corrección de premisa]). No es que no
+    #: quepa: el equipo de campo será un Pi 5 de 8 GB o un Pi 4 de 8 GB y ahí cabe de
+    #: sobra. Es que ese equipo **todavía no se ha comprado**, y `B.2` —la latencia del
+    #: reflejo SASMEX→relé bajo carga de CCTV— no se puede medir en una máquina que no es
+    #: la que va a ejecutar. Medir en el banco de 1 GB y extrapolar sería inventar el
+    #: número, que es justo lo que la regla de decisión de `B.2` prohíbe.
+    #:
+    #: El día que llegue la caja: medir `B.2` en ELLA, escribir la conclusión con su
+    #: número, y encender esto. El adaptador `DetectorBackend` ya sirve a las dos orillas.
+    conteo_local: bool = False
 
     @property
     def perfil_efectivo(self) -> str:

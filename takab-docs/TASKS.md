@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **9** · `[ ]` **45**
+****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **10** · `[ ]` **44**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10549,8 +10549,12 @@ sirena.
 > - [`D-25`](DECISIONES-MAURICIO.md#d-25): el software se construye **ya**; **encenderlo en el
 >   gabinete espera a `G-04` acreditado + la medición de `B.2`**. Las fichas se cierran con el
 >   módulo apagado; el gatillo de encendido vive en `D-25`.
-> - **Medido el 2026-08-29:** el gabinete es un Pi 4 de **1 GB** (905 MB totales, 654 disponibles)
->   y **no tiene ffmpeg**. Ése es el número que `B.2` pedía y que `D-14` no tenía.
+> - **Dos máquinas, y no hay que confundirlas.** El **banco** es un Pi 4 de **1 GB** (905 MB
+>   totales, 654 disponibles, sin ffmpeg — medido el 2026-08-29); el **equipo de campo** será un
+>   **Pi 5 de 8 GB o un Pi 4 de 8 GB**, y **está sin comprar**. Con 8 GB el detector cabe: lo que
+>   mantiene el conteo en la nube no es la RAM, es que `B.2` **no se puede medir en una máquina
+>   que no es la que va a ejecutar**. El conteo preliminar local está **aplazado, no descartado**
+>   ([`D-24` · corrección de premisa](DECISIONES-MAURICIO.md#d-24)).
 
 ### [~] T-3.10 · Arquitectura al blueprint y política de retención de vídeo — `SOFTWARE` + `DECISIÓN`
 > **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por lo que **no
@@ -10601,28 +10605,31 @@ sirena.
       nombre literal (`D-09`); que `licenses` bloquee es un clic de Mauricio, y va fichado en
       `PENDIENTES-MAURICIO`. Una guarda que no guarda es peor que ninguna: da confianza falsa.
 
-### [ ] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE`
-- [ ] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
+### [~] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE`
+> **Construido el 2026-08-29** (`takab_edge/cctv/`, unidad `takab-cctv.service`, 71 tests).
+> Abierta por lo que falta: el **simulador de cámara** y la **subida** (`T-3.11.b`). El
+> proceso graba y deja el clip en `pendientes/`; subirlo cruza a la nube y es otra ficha.
+- [x] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
       `takab-gpio`.
-- [ ] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
+- [x] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
       > **La dirección es lo que da la garantía, no la disciplina.** `takab-cctv` es **cliente**:
       > sondea `GET /api/status` a 1 Hz. El edge es servidor y **estructuralmente no puede**
       > depender de él. El anillo de pre-grabación hace irrelevante el ~1 s de latencia del sondeo.
-- [ ] **No graba si el WR-1 está en modo prueba.**
+- [x] **No graba si el WR-1 está en modo prueba.**
       > La trampa que esto evita, y no es teórica: el embudo del edge suprime lo que va a la nube
       > en `_modo_prueba_activo` (`edge/takab_edge/supervisor.py:630-635`). Un CCTV que no mire ese
       > flag sube a S3 **vídeo real de un edificio real** durante una prueba de banco — sin
       > incidente al que atarlo, sin base legal y con factura.
-- [ ] No graba en `Tier.NORMAL`; **sí graba** aunque la alerta sea `visual_only` (T-2.32), igual
+- [x] No graba en `Tier.NORMAL`; **sí graba** aunque la alerta sea `visual_only` (T-2.32), igual
       que `queue_evidence`, que está deliberadamente fuera de esa puerta.
-- [ ] Anillo `ffmpeg -c copy` autopurgado; **cuota de disco dura** por bytes y por clips
+- [x] Anillo `ffmpeg -c copy` autopurgado; **cuota de disco dura** por bytes y por clips
       pendientes. La microSD es de la que arranca el camino de vida: un clip atascado no puede
       llenarla.
-- [ ] **ffmpeg LGPL, como subproceso, verificado al arrancar.** El de Debian trae `--enable-gpl`;
+- [x] **ffmpeg LGPL, como subproceso, verificado al arrancar.** El de Debian trae `--enable-gpl`;
       el guard lo rechaza **fail-closed** y dice de dónde sacar uno válido.
-- [ ] Unidad `takab-cctv.service` con los límites de `B.3` —`CPUQuota=`, `MemoryMax=`, `Nice=`,
+- [x] Unidad `takab-cctv.service` con los límites de `B.3` —`CPUQuota=`, `MemoryMax=`, `Nice=`,
       `Restart=` propio— y su test de artefacto, como `takab-gpio`.
-- [ ] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
+- [x] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
 - [ ] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
 
