@@ -177,6 +177,76 @@ class LoraConfig(BaseModel):
     secondaries: list[SecondaryCabinet] = Field(default_factory=list)
 
 
+class CctvConfig(BaseModel):
+    """[T-3.11] Cámara ONVIF del punto de reunión — aforo y evidencia de evacuación.
+
+    ``enabled=False`` de fábrica y **no se enciende hasta `G-04` + la medición de `B.2`**
+    ([`D-25`]). La credencial de la cámara viaja SOLO por env (``TAKAB_EDGE_CCTV_USER`` /
+    ``TAKAB_EDGE_CCTV_PASS``) y la clave del grant por ``TAKAB_EDGE_CCTV_KEY``: **jamás en
+    este modelo**, que se serializa y se sincroniza desde la nube.
+
+    Ojo con la asimetría de las dos ventanas, que no es un descuido:
+
+    * ``clip_pre_s``/``clip_post_s`` acotan **lo que se sube** — 1 min antes y 10 después.
+    * ``still_interval_s``/``max_stills`` cubren **lo que viene después**, que puede durar
+      horas: un dictamen no llega en once minutos, y la foto del reingreso casi nunca cae
+      dentro del clip. El goteo es lo que da la curva de reingreso sin subir vídeo continuo.
+    """
+
+    enabled: bool = False
+    #: Host/puerto del servicio ONVIF (Profile S). Sin credenciales: van por env.
+    host: str = ""
+    onvif_port: int = Field(default=80, gt=0, le=65535)
+    #: Perfil a grabar: ``substream`` (defecto) o ``main``. El substream es el default a
+    #: propósito: el anillo no decodifica nada, así que lo único que cuesta es disco, y el
+    #: conteo lo hace la nube sobre el clip. Grabar el stream principal multiplica por ocho
+    #: el disco sin mejorar un conteo que ni siquiera ocurre aquí.
+    #:
+    #: `str` pelado y no `Literal`, por la misma razón que `gpio_link` y `gpio_owner`: esto
+    #: llega dentro del documento FIRMADO del config sync, y un valor inesperado en un campo
+    #: de cámara no puede tirar el documento entero —dejando al gabinete con umbrales
+    #: rancios por culpa del CCTV, que es exactamente lo que B.1 prohíbe—. Degrada a
+    #: `substream`; ver :attr:`perfil_efectivo`.
+    perfil: str = "substream"
+
+    #: Anillo de pre-grabación, en segundos. Tiene que cubrir `clip_pre_s` con holgura:
+    #: el disparo llega por sondeo (~1 s) y los segmentos se cierran en bloques.
+    ring_s: float = Field(default=180.0, gt=0)
+    #: Ventana del clip que se sube, relativa a la señal.
+    clip_pre_s: float = Field(default=60.0, gt=0)
+    clip_post_s: float = Field(default=600.0, gt=0)
+
+    #: Goteo de capturas después del clip, hasta detectar reingreso o agotar el tope.
+    still_interval_s: float = Field(default=30.0, gt=0)
+    max_stills: int = Field(default=600, gt=0)
+
+    #: Cuota dura del directorio de trabajo. NO es higiene: la microSD es de la que
+    #: arranca el camino de vida, y un clip que no consigue subir no puede llenarla.
+    disk_quota_mb: int = Field(default=2048, gt=0)
+    #: Clips pendientes de subir que se conservan. Al superarlo muere el más viejo, con
+    #: su línea de registro — igual que las cotas por topic del spool de la nube.
+    max_clips_pendientes: int = Field(default=6, gt=0)
+
+    #: Binario de ffmpeg. El de Debian trae `--enable-gpl` y la guarda lo RECHAZA (D-24).
+    ffmpeg_path: str = "/opt/takab/bin/ffmpeg"
+    #: Base del panel LAN del gabinete al que este proceso sondea COMO CLIENTE. La
+    #: dirección de la dependencia es lo que garantiza el invariante B.1: el edge es
+    #: servidor y no puede depender de que esto viva.
+    edge_api_base: str = "http://127.0.0.1:8080"
+    poll_s: float = Field(default=1.0, gt=0)
+
+    @property
+    def perfil_efectivo(self) -> str:
+        """El perfil que de verdad se graba. **Derivado**, y degrada a lo barato.
+
+        Un `perfil` desconocido no es un error fatal: es una cámara mal declarada. La
+        respuesta segura es grabar el substream —menos disco, menos PII por fotograma— en vez
+        de negarse a grabar el evento. Este módulo no registra nada a propósito (es config
+        pura, como `edge_owns_pins`): quien lo consume anuncia la degradación al arrancar.
+        """
+        return self.perfil if self.perfil in ("substream", "main") else "substream"
+
+
 class EquipmentProfile(BaseModel):
     """[T-2.31] Actuadores INSTALADOS físicamente en el sitio.
 
@@ -723,6 +793,7 @@ class EdgeSettings(BaseSettings):
     config_cache_path: str = "/var/lib/takab/config-cache.json"
     #: [T-2.33] Gabinetes secundarios LoRa (espejos de sirena/estrobo a distancia).
     lora: LoraConfig = Field(default_factory=LoraConfig)
+    cctv: CctvConfig = Field(default_factory=CctvConfig)
     #: Periodo del heartbeat de salud (beacon de vida); las transiciones se loguean aparte.
     health_heartbeat_s: float = Field(default=60.0, gt=0)
     #: Punto de montaje que reporta la sonda de disco del panel (T-1.53).
