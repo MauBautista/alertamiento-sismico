@@ -122,8 +122,19 @@ MODES = (REDACT, DELETE_ROWS)
 #: Funciones-guard que vetan el ``DELETE`` en este esquema. ``forbid_update_delete``
 #: es el canónico (auditoría, evidencia, dictámenes); ``life_checkin_arco_guard``
 #: es su variante de la T-2.80, que sigue vetando el DELETE y solo abre
-#: ``geom → NULL``. Cualquiera de las dos marca la tabla como protegida.
-DELETE_GUARDS: tuple[str, ...] = ("forbid_update_delete", "life_checkin_arco_guard")
+#: ``geom → NULL``; ``cctv_purge_guard`` es la de la T-3.11.b, que abre
+#: ``s3_key → NULL`` para que el objeto de vídeo se pode y la fila lo declare.
+#: Cualquiera de las tres marca la tabla como protegida.
+#:
+#: **Protegida no quiere decir exenta de poda**, y aquí es donde más se confunde:
+#: lo que una tabla protegida rechaza es el modo ``DELETE_ROWS``. ``REDACT`` sigue
+#: permitido —es lo que hace hoy ``life_checkins.geom``— y es exactamente el
+#: mecanismo con el que el vídeo se poda sin perder la constancia de que existió.
+DELETE_GUARDS: tuple[str, ...] = (
+    "forbid_update_delete",
+    "life_checkin_arco_guard",
+    "cctv_purge_guard",
+)
 
 #: El rol con el que corre el job. NO es el rol del DSN: el job se degrada a este
 #: al abrir la transacción. Es el mismo rol de la API, y por tanto el que la

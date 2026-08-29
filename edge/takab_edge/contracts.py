@@ -387,15 +387,22 @@ class BackfillRequest(BaseModel):
 
     kind: Literal["backfill_request"] = "backfill_request"
     request_id: str = Field(default_factory=new_event_id)
-    mode: Literal["backfill", "evidence"]
-    #: Ventana temporal de los datos (backfill) o del evento (evidence).
+    #: [T-3.11.b] `cctv_clip`/`cctv_still` reutilizan ESTE contrato y ESTE topic a
+    #: propósito. Un topic MQTT nuevo obliga a tocar la política fleet de AWS IoT, y un
+    #: topic no autorizado **desconecta al gabinete en cada publish** (medido el
+    #: 2026-07-12). Ampliar un enum no toca terraform.
+    mode: Literal["backfill", "evidence", "cctv_clip", "cctv_still"]
+    #: Ventana temporal de los datos (backfill), del evento (evidence) o del clip
+    #: (cctv_clip). Para `cctv_still` los dos extremos son el instante de la captura.
     ts_from: datetime
     ts_to: datetime
     #: Nº de líneas NDJSON (backfill; dimensiona y audita el objeto esperado).
     lines: int = 0
-    #: Solo mode='evidence': evento local (== incidents.event_uuid en la nube).
+    #: Evento local (== incidents.event_uuid en la nube). Obligatorio en 'evidence' y en
+    #: los dos modos de CCTV: es lo que ata el objeto a su incidente.
     event_id: str = ""
-    #: Solo mode='evidence': sha256 del miniSEED a subir (la key lo incluye).
+    #: sha256 del objeto a subir; la key lo incluye, así que re-subir el MISMO contenido
+    #: es idempotente por construcción — igual para el miniSEED que para el clip.
     sha256: str = ""
 
 

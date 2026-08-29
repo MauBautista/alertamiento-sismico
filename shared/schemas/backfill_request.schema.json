@@ -14,7 +14,9 @@
     "mode": {
       "enum": [
         "backfill",
-        "evidence"
+        "evidence",
+        "cctv_clip",
+        "cctv_still"
       ],
       "title": "Mode",
       "type": "string"
@@ -53,6 +55,6 @@
   "title": "BackfillRequest",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/backfill_request/v1.13.0",
-  "version": "1.13.0"
+  "$id": "https://takab.mx/schemas/backfill_request/v1.14.0",
+  "version": "1.14.0"
 }
