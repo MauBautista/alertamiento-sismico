@@ -88,9 +88,11 @@ class CamaraSimulada:
         Es un caso que conviene poder probar, no una rareza.
         """
         return Fuentes(
-            rtsp_principal="rtsp://takab:simulada@camara.sim/main",
-            rtsp_substream="rtsp://takab:simulada@camara.sim/sub",
-            snapshot="http://takab:simulada@camara.sim/snap.jpg" if con_instantanea else None,
+            rtsp_principal="rtsp://takab:no-es-un-secreto@camara.sim/main",
+            rtsp_substream="rtsp://takab:no-es-un-secreto@camara.sim/sub",
+            snapshot="http://takab:no-es-un-secreto@camara.sim/snap.jpg"
+            if con_instantanea
+            else None,
         )
 
     # ------------------------------------------------------------------ ffmpeg

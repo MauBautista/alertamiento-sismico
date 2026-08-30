@@ -17,9 +17,9 @@ from takab_edge.config.settings import CctvConfig
 
 T0 = datetime(2026, 8, 29, 12, 0, 0, tzinfo=UTC)
 FUENTES = Fuentes(
-    rtsp_principal="rtsp://takab:secreta@192.168.3.50/main",
-    rtsp_substream="rtsp://takab:secreta@192.168.3.50/sub",
-    snapshot="http://takab:secreta@192.168.3.50/snap.jpg",
+    rtsp_principal="rtsp://takab:no-es-un-secreto@192.168.3.50/main",
+    rtsp_substream="rtsp://takab:no-es-un-secreto@192.168.3.50/sub",
+    snapshot="http://takab:no-es-un-secreto@192.168.3.50/snap.jpg",
 )
 
 
@@ -138,7 +138,7 @@ def test_el_metadato_NO_lleva_la_contrasena_de_la_camara(tmp_path: Path) -> None
     c.paso()
     meta = next((tmp_path / "pendientes").glob("clip-*.json"))
     crudo = meta.read_text(encoding="utf-8")
-    assert "secreta" not in crudo
+    assert "no-es-un-secreto" not in crudo
     assert "takab:" not in crudo
     assert json.loads(crudo)["event_id"] == "ev-1"
 

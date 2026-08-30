@@ -428,7 +428,7 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     # reunión es parte de por qué el reporte dice lo que dice.
     #
     # Y lo que NO está en esta tabla, a propósito: la credencial de la cámara.
-    # Una URL RTSP completa es `rtsp://usuario:clave@host/stream`, y ningún
+    # Una URL RTSP completa es `rtsp://usuario:tu-clave@host/stream`, y ningún
     # detector de este módulo la reconoce como PII. Por eso `cameras.rtsp_url`
     # se declara SIN secreto y la credencial vive en el entorno del proceso que
     # graba: es una fuga que ningún censo podría ver.

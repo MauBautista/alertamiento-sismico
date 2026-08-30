@@ -41,7 +41,7 @@ LA CREDENCIAL DE LA CÁMARA NO ESTÁ AQUÍ
 ───────────────────────────────────────
 `cameras` guarda host, puerto y una `rtsp_url` **sin secreto**. El usuario y la clave viven
 en el entorno del proceso que graba. La razón es que una URL RTSP completa es del tipo
-`rtsp://usuario:clave@host/stream`, y **ningún detector de PII del proyecto la reconoce**:
+`rtsp://usuario:tu-clave@host/stream`, y **ningún detector de PII del proyecto la reconoce**:
 sería una fuga que ningún censo puede ver.
 
 `count_mode` ES LA REVOCACIÓN DE `D-14`, ESCRITA COMO COLUMNA

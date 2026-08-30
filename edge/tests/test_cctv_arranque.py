@@ -48,8 +48,8 @@ def test_la_url_declarada_gana_sobre_onvif_y_recibe_la_credencial_en_memoria() -
     """Si alguien la escribió es porque el descubrimiento no le sirvió; reintentarlo solo
     añade una espera y un fallo."""
     cfg = CctvConfig(enabled=True, host="192.168.3.50", rtsp_url="rtsp://192.168.3.50/sub")
-    f = _fuentes_de(cfg, "takab", "secreta")  # no toca la red: no llama a descubrir()
-    assert f.rtsp_substream == "rtsp://takab:secreta@192.168.3.50/sub"
+    f = _fuentes_de(cfg, "takab", "no-es-un-secreto")  # no toca la red: no llama a descubrir()
+    assert f.rtsp_substream == "rtsp://takab:no-es-un-secreto@192.168.3.50/sub"
     assert f.snapshot is None  # sin ONVIF no hay forma de saber si la ofrece
 
 
@@ -57,13 +57,13 @@ def test_la_url_declarada_en_config_puede_persistirse_porque_no_lleva_secreto() 
     """Es lo que la hace apta para el config sync firmado."""
     cfg = CctvConfig(rtsp_url="rtsp://192.168.3.50/sub")
     assert "@" not in cfg.rtsp_url
-    assert "secreta" not in cfg.model_dump_json()
+    assert "no-es-un-secreto" not in cfg.model_dump_json()
 
 
 @pytest.mark.parametrize(
     ("url", "esperado"),
     [
-        ("rtsp://takab:secreta@192.168.3.50/sub", "rtsp://***@192.168.3.50/sub"),
+        ("rtsp://takab:no-es-un-secreto@192.168.3.50/sub", "rtsp://***@192.168.3.50/sub"),
         ("rtsp://192.168.3.50:554/sub", "rtsp://192.168.3.50:554/sub"),
         ("rtsp://u:p@cam.local:8554/x?y=1", "rtsp://***@cam.local:8554/x?y=1"),
         ("no-es-una-url", "<url ilegible>"),
@@ -75,7 +75,7 @@ def test_ninguna_url_llega_a_un_log_con_la_contrasena_dentro(url: str, esperado:
     Ningún detector de PII del proyecto reconoce esa cadena."""
     limpia = sin_credenciales(url)
     assert limpia == esperado
-    assert "secreta" not in limpia and ":p@" not in limpia
+    assert "no-es-un-secreto" not in limpia and ":p@" not in limpia
 
 
 def test_un_perfil_desconocido_no_impide_arrancar() -> None:

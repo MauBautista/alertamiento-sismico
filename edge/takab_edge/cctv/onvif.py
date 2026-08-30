@@ -13,7 +13,7 @@ hay que sacar un fotograma del RTSP, que sí decodifica. Misma foto, coste muy d
 
 LA CREDENCIAL NO SE GUARDA Y NO SE REGISTRA
 ───────────────────────────────────────────
-La URL que devuelve una cámara ONVIF es del tipo ``rtsp://usuario:clave@host/stream``. Eso
+La URL que devuelve una cámara ONVIF es del tipo ``rtsp://usuario:tu-clave@host/stream``. Eso
 significa que:
 
 * **no puede persistirse** —ni en la tabla `cameras`, ni en el config sync, ni en un
