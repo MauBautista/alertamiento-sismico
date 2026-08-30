@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 import psycopg
 from psycopg.rows import tuple_row
 
+from takab_api.audit import audit
 from takab_api.contracts.loader import ContractError, discriminate, kind_for_topic, validate
 from takab_api.contracts.meta import Meta
 from takab_api.ingest.handlers import HANDLERS, Outcome
@@ -220,21 +221,23 @@ def _process_evidence(
 
 #: [T-3.11.b] `ON CONFLICT DO NOTHING` sobre la restricción natural: la key lleva el
 #: sha256 dentro, así que re-entregar el mismo objeto —que SQS hace, por diseño at-least-
-#: once— no duplica la fila. `analysis_state` nace en 'pending': el clip queda registrado y
-#: descargable **antes** de que exista quien lo analice, y el reporte lo declara en vez de
-#: fingir un cero.
+#: once— no duplica la fila. El clip queda registrado y descargable **antes** de que exista
+#: quien lo analice; que el análisis esté hecho se DERIVA de si hay métricas para su
+#: incidente, no de una columna de estado que esta tabla append-only no podría mover.
 _INSERT_CLIP_SQL = """
 INSERT INTO cctv_clips
-  (tenant_id, incident_id, s3_key, sha256, size_bytes, started_at, ended_at, analysis_state)
-VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
-ON CONFLICT (incident_id, started_at, camera_id) DO NOTHING
+  (tenant_id, incident_id, s3_key, sha256, size_bytes, started_at, ended_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (incident_id, sha256) WHERE sha256 IS NOT NULL DO NOTHING
+RETURNING clip_id
 """
 
 _INSERT_STILL_SQL = """
 INSERT INTO cctv_stills
   (tenant_id, incident_id, s3_key, sha256, captured_at, role)
 VALUES (%s, %s, %s, %s, %s, 'drip')
-ON CONFLICT (incident_id, captured_at, camera_id) DO NOTHING
+ON CONFLICT (incident_id, sha256) WHERE sha256 IS NOT NULL DO NOTHING
+RETURNING still_id
 """
 
 
@@ -282,12 +285,43 @@ def _process_cctv(conn: psycopg.Connection, bucket: str, key: str, *, s3_client)
         return ObjectResult(Outcome.REJECT, "tenant de la key ≠ tenant del incidente")
 
     if es_clip:
-        conn.execute(
+        cur = conn.execute(
             _INSERT_CLIP_SQL,
             (incident_tenant, incident_id, key, digest, len(body), inicio, fin),
         )
     else:
-        conn.execute(_INSERT_STILL_SQL, (incident_tenant, incident_id, key, digest, inicio))
+        cur = conn.execute(_INSERT_STILL_SQL, (incident_tenant, incident_id, key, digest, inicio))
+    creada = cur.fetchone() is not None
+
+    if creada:
+        # [T-3.11.b · D-14] «La salida de vídeo queda AUDITADA igual que un comando de
+        # actuador». Es una excepción DELIBERADA a la costumbre de esta ingesta, que no
+        # audita los OK (ver `_audit_reject`, regla de oro 10): un objeto de CCTV no es un
+        # latido periódico, es una imagen de personas identificables saliendo del inmueble
+        # del cliente. Cada una de esas salidas es un hecho que alguien puede tener que
+        # justificar, y sin esta fila la única constancia sería el propio objeto — que la
+        # política de retención está obligada a borrar.
+        #
+        # Va atado a `creada`, y por eso el INSERT lleva `RETURNING`: SQS entrega
+        # at-least-once y sin esto una reentrega escribiría una segunda fila diciendo que
+        # el vídeo salió dos veces. `DEDUPE_VERBS` resuelve ese mismo problema con una
+        # cubeta temporal de 450 s; aquí no hace falta porque `RETURNING` es EXACTO —
+        # dedupea también la reentrega que llega horas después, que la cubeta no vería.
+        audit(
+            conn,
+            tenant_id=str(incident_tenant),
+            actor="system:backfill",
+            verb="cctv_egress",
+            obj=key,
+            meta={
+                "incident_id": str(incident_id),
+                "kind": "clip" if es_clip else "still",
+                "sha256": digest,
+                "size_bytes": len(body),
+                "desde": inicio.isoformat(),
+                "hasta": fin.isoformat(),
+            },
+        )
     conn.commit()
     logger.info("cctv: %s registrado (incidente %s)", key, incident_id)
     return ObjectResult(Outcome.OK, ok=1)

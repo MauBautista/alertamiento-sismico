@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **259** · `[~]` **11** · `[ ]` **43**
+****Conteo de tareas:** total **313** · `[x]` **260** · `[~]` **10** · `[ ]` **43**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10633,12 +10633,18 @@ sirena.
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
 - [ ] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
 
-### [~] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE`
-> **Construido el 2026-08-29** (migración `0053_cctv`, espejo en `db/schema.sql` generado
-> desde ella, grant por el contrato existente y subida directa a S3). El guard de poda se
-> verificó **contra Postgres**, no se razonó: el no-op se rechaza, la poda pasa, y volver a
-> poner un `s3_key` después de podar se rechaza. Abierta por el único criterio que falta:
-> la fila de `audit_log` **en la subida**.
+### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
+> base fresca sin un error, grant por el contrato existente, subida directa a S3 y egreso
+> auditado. El guard de poda se verificó **contra Postgres**, no se razonó.
+>
+> Tres fallos los encontraron los tests, no la revisión, y los tres eran de producción:
+> el worker corre como `takab_ingest` y la migración solo concedía a `takab_app`;
+> `analysis_state` era una columna **mutable sobre una tabla append-only** —el analizador
+> jamás habría podido moverla— y ahora el estado se **deriva**; y la unicidad iba por
+> `(incident_id, started_at, camera_id)` con `camera_id` nullable, así que **los NULL no
+> colisionan** y el `ON CONFLICT` no hacía nada: una reentrega de SQS escribía dos filas y
+> dos egresos. Va por contenido, con el precedente de `uq_evidence_incident_sha256`.
 - [x] Tablas `cameras`, `cctv_clips`, `cctv_stills`, `cctv_occupancy`,
       `cctv_evacuation_metrics` con `tenant_id` y RLS. **Sin rama `app_gov_can_see`**: ver vídeo no
       es ver telemetría (`B.4`); precedente de omitirla, `privacy_notices`.
@@ -10665,7 +10671,7 @@ sirena.
       nuevo**: un topic no autorizado en la política fleet desconecta al gabinete en cada publish.
 - [x] El vídeo **nunca por MQTT** (el clasificador de la regla de oro 9 rechaza binario sin tope) y
       **nunca a través de `takab-edge`**: PUT presignado directo desde `takab-cctv`.
-- [ ] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
+- [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).
 
 ### [ ] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`

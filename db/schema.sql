@@ -2964,6 +2964,7 @@ CREATE POLICY pii_retention_runs_internal ON pii_retention_runs FOR ALL
 -- `forbid_update_delete`— pasara a ser la guarda canónica de TODO el esquema
 -- para `ops/restore_check.py`, cambiando en silencio qué se verifica.
 
+
 -- La rendija de poda del vídeo. Genérica a propósito: sirve a cualquier tabla con
 -- `s3_key` + `purged_at`, y plpgsql resuelve los campos del registro en tiempo de
 -- ejecución. El mensaje CONSERVA el literal 'tabla append-only' porque el verificador de
@@ -3031,16 +3032,28 @@ CREATE TABLE cctv_clips (
   -- Fraccion [0..1] de la ventana pedida que el anillo pudo cubrir de verdad. Un clip que
   -- dice cubrir T-60s sin cubrirlo es una mentira en un reporte.
   coverage       numeric,
-  analysis_state text NOT NULL DEFAULT 'pending'
-                 CHECK (analysis_state IN ('pending','running','done','failed','skipped')),
+  -- NO hay columna `analysis_state`, y su ausencia es la decision. Una columna de
+  -- estado MUTABLE sobre una tabla append-only es una contradiccion: el guard de poda
+  -- solo admite `s3_key -> NULL`, asi que el analizador jamas podria moverla de
+  -- 'pending'. El estado se DERIVA de si existen filas en `cctv_evacuation_metrics`
+  -- para ese incidente — misma doctrina que `calibrated` (derivado de la procedencia)
+  -- y que `is_ghost` (derivado de `derived_state`): lo que se puede derivar no se
+  -- guarda, porque guardado se desincroniza y derivado no puede.
   purged_at      timestamptz,
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (incident_id, started_at, camera_id)
+  created_at     timestamptz NOT NULL DEFAULT now()
 );
+-- Idempotencia POR CONTENIDO, con el precedente exacto de `uq_evidence_incident_sha256`
+-- (0002). Un `UNIQUE (incident_id, started_at, camera_id)` NO servia: `camera_id` es
+-- nullable y en Postgres los NULL son DISTINTOS en un indice unico, asi que dos entregas
+-- del mismo objeto no colisionaban y el `ON CONFLICT DO NOTHING` no hacia nada. Lo caza
+-- `test_una_REENTREGA_no_dice_que_el_video_salio_dos_veces`, y lo cazo de verdad.
+-- Por contenido ademas es lo correcto: la key lleva el sha256 dentro, asi que el MISMO
+-- objeto produce la misma fila por construccion. El indice es PARCIAL porque el sha solo
+-- falta en filas que aun no tienen objeto.
+CREATE UNIQUE INDEX uq_cctv_clips_incident_sha256
+  ON cctv_clips (incident_id, sha256) WHERE sha256 IS NOT NULL;
 CREATE INDEX idx_cctv_clips_tenant   ON cctv_clips (tenant_id);
 CREATE INDEX idx_cctv_clips_incident ON cctv_clips (incident_id, started_at DESC);
-CREATE INDEX idx_cctv_clips_pendientes
-  ON cctv_clips (created_at) WHERE analysis_state = 'pending';
 
 CREATE TABLE cctv_stills (
   still_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3056,9 +3069,11 @@ CREATE TABLE cctv_stills (
   sha256      text,
   captured_at timestamptz NOT NULL,
   purged_at   timestamptz,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (incident_id, captured_at, camera_id)
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
+-- Misma razon que en `cctv_clips`: por contenido, y parcial.
+CREATE UNIQUE INDEX uq_cctv_stills_incident_sha256
+  ON cctv_stills (incident_id, sha256) WHERE sha256 IS NOT NULL;
 CREATE INDEX idx_cctv_stills_tenant   ON cctv_stills (tenant_id);
 CREATE INDEX idx_cctv_stills_incident ON cctv_stills (incident_id, captured_at);
 CREATE INDEX idx_cctv_stills_reporte
@@ -3124,6 +3139,17 @@ GRANT SELECT, INSERT, UPDATE ON cctv_evacuation_metrics TO takab_app;
 -- exige exactamente esto.
 REVOKE DELETE ON cctv_clips  FROM takab_app;
 REVOKE DELETE ON cctv_stills FROM takab_app;
+
+-- El worker de backfill corre como `takab_ingest` (BYPASSRLS), NO como `takab_app`: es
+-- quien registra el objeto cuando S3 avisa. Sin estas lineas el clip sube, la
+-- notificacion llega y el INSERT muere con «permission denied» — verde en local y rojo
+-- en la nube, que es el modo de fallo que este proyecto ya conoce. Y sin DELETE tampoco
+-- para el, que el append-only no depende del rol que lo intente.
+GRANT SELECT, INSERT ON cctv_clips              TO takab_ingest;
+GRANT SELECT, INSERT ON cctv_stills             TO takab_ingest;
+GRANT SELECT, INSERT ON cctv_occupancy          TO takab_ingest;
+GRANT SELECT, INSERT, UPDATE ON cctv_evacuation_metrics TO takab_ingest;
+GRANT SELECT ON cameras TO takab_ingest;
 
 ALTER TABLE cameras                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cameras                 FORCE  ROW LEVEL SECURITY;
