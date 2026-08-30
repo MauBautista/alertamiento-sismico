@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from takab_cctv.detector import Caja, DetectorBackend, filtrar
+from takab_cctv.detector import Caja, DetectorBackend, Montaje, filtrar
 from takab_cctv.metricas import Muestra
 
 #: Polígono en coordenadas NORMALIZADAS [0..1]. Normalizadas y no en píxeles porque la misma
@@ -59,13 +59,23 @@ def contar(
     ancho: int,
     alto: int,
     zona: Poligono | None = None,
+    montaje: Montaje = Montaje.PICADO,
 ) -> int:
-    """Cuántas de estas detecciones están en la zona. Sin zona, todas."""
+    """Cuántas de estas detecciones están en la zona. Sin zona, todas.
+
+    `montaje` decide **qué punto de la caja** se compara contra el polígono, y no es un
+    detalle: con la cámara a plomo el borde inferior deja de ser los pies y el conteo se
+    corre siempre hacia el mismo lado del encuadre. Ver :meth:`Caja.ancla`.
+
+    El defecto es `PICADO` porque es como se monta un punto de reunión, y porque es el que
+    conserva la conducta anterior a `T-3.12.d` — un defecto que cambiara los números de los
+    sitios ya medidos sería peor que pedir la declaración.
+    """
     if not zona:
         return len(cajas)
     total = 0
     for caja in cajas:
-        px, py = caja.pies
+        px, py = caja.ancla(montaje)
         if dentro((px / ancho, py / alto), zona):
             total += 1
     return total
@@ -78,6 +88,7 @@ def serie_de(
     ancho: int,
     alto: int,
     zona: Poligono | None = None,
+    montaje: Montaje = Montaje.PICADO,
 ) -> list[Conteo]:
     """Recorre los fotogramas y devuelve la curva. **Un fotograma que falla no la corta.**
 
@@ -94,7 +105,7 @@ def serie_de(
         curva.append(
             Conteo(
                 ts=ts,
-                n=contar(cajas, ancho=ancho, alto=alto, zona=zona),
+                n=contar(cajas, ancho=ancho, alto=alto, zona=zona, montaje=montaje),
                 con_zona=bool(zona),
                 detector=detector.nombre,
             )

@@ -220,10 +220,12 @@ wheels = [
 name = "takab-cctv-analyzer"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "numpy" },
+]
 
 [package.optional-dependencies]
 onnx = [
-    { name = "numpy" },
     { name = "onnxruntime" },
 ]
 
@@ -235,7 +237,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", marker = "extra == 'onnx'", specifier = ">=1.26" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
 ]
 provides-extras = ["onnx"]

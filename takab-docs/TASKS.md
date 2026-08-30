@@ -10966,8 +10966,52 @@ sirena.
 >
 > Consecuencia práctica: la comparativa necesita **dos** columnas de resolución, 640×480 y
 > 2560×1440, o su conclusión no se puede aplicar al goteo.
+> ### El pipeline ya está construido y ejercido contra la cámara real (2026-08-30)
+>
+> Lo que estaba en `NotImplementedError` esperando a esta ficha —`_preparar` y `_a_cajas`— ya
+> existe, con `imagen.py` para decodificar el JPEG **con ffmpeg por subproceso** en vez de
+> añadir Pillow u OpenCV (que además empaqueta su propio FFmpeg, sin auditar por `D-24`).
+>
+> **La trampa que costó la tarde, y que ninguna prueba habría cazado:** el export oficial de
+> YOLOX **no decodifica dentro del grafo**. Sus `xywh` salen como offsets crudos —medido, en
+> rango `-2…3`— y hay que aplicar `xy=(crudo+centro)·paso`, `wh=exp(crudo)·paso`.
+> Interpretarlos directamente da **cero detecciones sin un solo error**, y un cero se lee como
+> un punto de reunión vacío. Por eso `numpy` se movió al **núcleo** del paquete: estas cuentas
+> tienen que probarse en CI, y detrás del extra no se probaban. La frontera del job sigue
+> diciendo lo mismo —sin runtime de inferencia y sin un solo peso.
+>
+> **Verificado de extremo a extremo** contra 12 fotogramas reales con una persona caminando:
+> 11 de 12 dan exactamente 1, el `nms()` del árbol colapsa ~1100–1600 cajas crudas a una, y
+> el CLI completo produce el JSON del reporte degradando con honestidad.
+>
+> **Y el ángulo resultó ser código, no solo instalación.** `Caja.pies` —el borde inferior—
+> supone cámara frontal. Con cámara **cenital** ese borde es el hombro más lejano del centro
+> óptico, no los pies, y usarlo empuja a todo el mundo hacia un lado del encuadre: un error
+> **sistemático**, que es el que parece una medición. De ahí `Montaje` y `Caja.ancla()`.
 - [ ] Candidatos **solo permisivos**: YOLOX-nano, YOLOX-tiny, RF-DETR nano, EfficientDet-Lite0.
       **Sin línea base de Ultralytics** en ningún entorno — tampoco «solo para comparar».
+      > **Bajados y ejercidos: YOLOX-nano y YOLOX-tiny** (Apache-2.0). Los dos comen `416×416`
+      > y emiten `[1,3549,85]`, así que **comparten decodificador**. Faltan RF-DETR nano y
+      > EfficientDet-Lite0, que sí traen post-proceso propio.
+- [x] **El coste medido, y desmiente el enunciado anterior de esta ficha.** En x86-64:
+      `yolox_nano` **8–13 ms/fotograma**, `yolox_tiny` **24–38 ms**. La resolución de la
+      cámara **casi no mueve el coste** porque los dos modelos comen `416×416` pase lo que
+      pase. O sea que la columna de coste es **plana**: lo que cambia con la resolución no es
+      el precio, es **cuántos píxeles le tocan a una persona lejana**. Las dos columnas de
+      resolución siguen haciendo falta, pero para medir **precisión**.
+- [x] **El primer dato de precisión, y es un falso positivo.** Con una persona caminando,
+      **2 de 12 fotogramas** trajeron un fantasma: una **sudadera colgada de una silla**, con
+      `0.36` contra un `CONFIANZA_MINIMA` de `0.35`. En un punto de reunión hay mochilas,
+      chamarras y sillas — **ese es el modo de fallo**, no una rareza. Queda como la medición
+      que tiene que repetirse en la escena real.
+- [ ] **Lo que NO se puede cerrar sin el sitio**, y por eso va al runbook de alta y no aquí:
+      la precisión contra el punto de reunión, con gente y con el montaje definitivo. Ver
+      [`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md),
+      que es **por gabinete** y no una sola vez.
+      > **Y una advertencia que sale de la decisión de producto de no entrenar por sitio:** los
+      > modelos COCO aprendieron «persona» de fotos a la altura de los ojos. **El cenital es el
+      > peor caso** para ellos y no se arregla con configuración. La mitigación es el montaje
+      > —picado de 20°–40°—, y está escrita en el paso 1 del runbook.
 - [ ] **La medición fija el default, no la opinión.** Precisión de conteo y coste, contra la cámara
       real y su escena real; una comparativa contra vídeo de internet no dice nada de este edificio.
 - [ ] Medir a **640×480** (el substream y el goteo) **y** a **2560×1440** (el principal). Si el
