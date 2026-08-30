@@ -33,7 +33,9 @@ log, y hay un test que lo fija.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
 
 log = logging.getLogger("takab_edge.cctv")
@@ -172,3 +174,132 @@ def _snapshot_opcional(media, token: str) -> str | None:
     except Exception:  # noqa: BLE001
         log.info("cctv: la cámara no ofrece GetSnapshotUri; el goteo saldrá del RTSP")
         return None
+
+
+# --------------------------------------------------------------------------------------
+# EL RELOJ DE LA CÁMARA (T-3.11 · hallazgo de la cámara real, 2026-08-30)
+# --------------------------------------------------------------------------------------
+#
+# La cámara **quema la hora en los píxeles**. Ese rótulo va dentro del clip y dentro de
+# cada captura, y las capturas son cuatro de las pruebas del dictamen: viajan al reporte
+# con su `sha256` y su cadena de custodia. Si el rótulo contradice a la fecha del
+# incidente, el paquete de evidencia se contradice a sí mismo, y quien lo lea no tiene
+# forma de saber cuál de las dos horas es la buena.
+#
+# Y no es hipotético. La cámara del sitio llegó con el huso de fábrica —`GMT+08:00`, la
+# zona del fabricante— mientras su UTC era correcto. Resultado medido el 2026-08-30: el
+# gabinete fechaba las once y media de la mañana del día 30 y la foto decía **01:57 del
+# día 31**. Catorce horas y un día de diferencia, en una imagen destinada a un dictamen.
+#
+# Por eso esto **avisa y deja grabar** en vez de negarse. La distinción importa: el vídeo
+# no está mal, lo está su rótulo, y nuestras horas —nombre de fichero, `captured_at`,
+# métricas— salen del gabinete y son correctas. Negarse a grabar convertiría un rótulo
+# torcido en un incidente sin vídeo, que es peor. Lo que no puede pasar es que nadie se
+# entere: un desajuste callado es el que acaba delante de un juez.
+
+
+@dataclass(frozen=True)
+class RelojCamara:
+    """Lo que la cámara dice de su propia hora. Sin credenciales: no las lleva."""
+
+    #: UTC que declara la cámara, en segundos desde época. `None` si no lo dice.
+    utc_epoch: float | None
+    #: Huso con el que **rotula** la imagen (`GMT+08:00`, `CST6CDT`…).
+    tz: str
+    #: `True` si se sincroniza por NTP. `Manual` significa que va a derivar sin remedio.
+    ntp: bool
+
+
+def revisar_reloj(reloj: RelojCamara, ahora: datetime, offset_local_s: float) -> list[str]:
+    """Compara el reloj de la cámara con el del gabinete. Devuelve hallazgos en claro.
+
+    Función **pura** —recibe el ahora y el huso del gabinete— para que se pueda probar sin
+    reloj de pared y sin cámara. Lista vacía significa que no hay nada que decir.
+
+    `offset_local_s` es el desplazamiento del gabinete respecto a UTC. Sale del sistema y no
+    de la config a propósito: el Pi está *dentro* del edificio, así que su huso ya es el del
+    sitio, y una clave más en el config sync es una clave más que puede quedarse rancia.
+    """
+    hallazgos: list[str] = []
+
+    if reloj.utc_epoch is None:
+        hallazgos.append("la cámara no declara su hora UTC: no se puede comprobar su rótulo")
+    else:
+        deriva = abs(reloj.utc_epoch - ahora.timestamp())
+        if deriva > _DERIVA_UTC_MAX_S:
+            hallazgos.append(
+                f"el UTC de la cámara va {deriva:.0f} s desviado del gabinete "
+                f"(tolerancia {_DERIVA_UTC_MAX_S:.0f} s): su rótulo fecha mal el incidente"
+            )
+
+    offset_camara = _offset_de_tz(reloj.tz)
+    if offset_camara is None:
+        hallazgos.append(f"huso de la cámara ilegible ({reloj.tz!r}): no se puede comparar")
+    elif abs(offset_camara - offset_local_s) > 60:
+        horas = (offset_camara - offset_local_s) / 3600
+        hallazgos.append(
+            f"la cámara rotula la imagen en {reloj.tz} y el gabinete vive en UTC"
+            f"{offset_local_s / 3600:+g}: el sello quemado en el vídeo va {horas:+g} h "
+            "respecto a la hora del incidente — y con eso puede cambiar hasta el día"
+        )
+
+    if not reloj.ntp:
+        hallazgos.append(
+            "la cámara tiene la hora en modo Manual (sin NTP): va a derivar sin que "
+            "nada la corrija, y el rótulo se aleja más cada semana"
+        )
+    return hallazgos
+
+
+#: Tolerancia del UTC de la cámara. Generosa a propósito: lo que se persigue es un huso
+#: mal puesto o un reloj a la deriva, no medio minuto de desajuste que no cambia el sello.
+_DERIVA_UTC_MAX_S = 120.0
+
+
+def _offset_de_tz(tz: str) -> float | None:
+    """Segundos respecto a UTC de un `TZ` de ONVIF. Solo entiende la forma `GMT±HH:MM`.
+
+    ONVIF admite también husos POSIX con reglas de horario de verano (`CST6CDT,M4.1.0…`),
+    que no se resuelven sin una base de datos de zonas y **no hacen falta**: lo que caza
+    este control es el huso de fábrica, que siempre viene en la forma simple. Un `TZ` que
+    no se sepa leer se declara ilegible en vez de darse por bueno.
+    """
+    m = _RE_TZ.match(tz.strip())
+    if not m:
+        return None
+    signo = -1 if m.group("signo") == "-" else 1
+    # OJO con la inversión: el `GMT+08:00` de ONVIF es la etiqueta POSIX, donde el signo va
+    # al revés que el desplazamiento… salvo que las cámaras lo usan como lo usa la gente.
+    # Medido en la del sitio: dice `GMT+08:00` y rotula UTC+8, no UTC−8.
+    return signo * (int(m.group("h")) * 3600 + int(m.group("m") or 0) * 60)
+
+
+_RE_TZ = re.compile(r"^GMT(?P<signo>[+-])(?P<h>\d{1,2})(?::(?P<m>\d{2}))?$", re.IGNORECASE)
+
+
+def reloj_de(host: str, puerto: int, usuario: str, clave: str) -> RelojCamara:
+    """Le pregunta la hora a la cámara por ONVIF. Import perezoso, como `descubrir`."""
+    try:
+        from onvif import ONVIFCamera  # noqa: PLC0415 — perezoso a propósito (extra `cctv`)
+    except ImportError as exc:  # pragma: no cover — depende del extra
+        raise OnvifNoDisponible("falta el extra `cctv` (onvif-zeep)") from exc
+
+    try:
+        dev = ONVIFCamera(host, puerto, usuario, clave).create_devicemgmt_service()
+        d = dev.GetSystemDateAndTime()
+        utc = getattr(d, "UTCDateTime", None)
+        epoch = None
+        if utc is not None:
+            epoch = datetime(
+                utc.Date.Year,
+                utc.Date.Month,
+                utc.Date.Day,
+                utc.Time.Hour,
+                utc.Time.Minute,
+                utc.Time.Second,
+                tzinfo=UTC,
+            ).timestamp()
+        tz = getattr(getattr(d, "TimeZone", None), "TZ", "") or ""
+        return RelojCamara(utc_epoch=epoch, tz=tz, ntp=str(d.DateTimeType) == "NTP")
+    except Exception as exc:  # noqa: BLE001 — la librería ONVIF lanza de todo
+        raise OnvifNoDisponible(f"no se pudo leer el reloj de {host}:{puerto}: {exc}") from exc
