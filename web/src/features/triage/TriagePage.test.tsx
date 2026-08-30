@@ -38,6 +38,18 @@ vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDeta
 vi.mock("./useForensics", () => ({
   useForensics: () => ({ data: undefined, loading: false, error: null, refetch: vi.fn() }),
 }));
+// [T-3.12.c] `useCctv` monta react-query por el mismo motivo que `useForensics`, y esta
+// suite no lleva provider a propósito. Su semántica se prueba en `CctvPanel.test.tsx`.
+vi.mock("./useCctv", () => ({
+  useCctv: () => ({
+    data: undefined,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    staleSince: null,
+  }),
+}));
 // CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
 vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 // [T-2.10] El Triage Estructural tiene su propio suite (StructuralTriage.test);

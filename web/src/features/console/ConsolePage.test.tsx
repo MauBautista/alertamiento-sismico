@@ -209,6 +209,8 @@ describe("ConsolePage", () => {
           deploy_firmware: false,
           manage_privacy_notice: false,
           manage_privacy_erasure: false,
+          cctv_read: false,
+          cctv_video: false,
         },
       },
     });
@@ -464,6 +466,8 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           deploy_firmware: false,
           manage_privacy_notice: false,
           manage_privacy_erasure: false,
+          cctv_read: false,
+          cctv_video: false,
         },
       },
     });

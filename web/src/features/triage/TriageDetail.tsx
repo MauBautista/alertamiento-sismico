@@ -14,6 +14,7 @@ import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
+import CctvPanel from "./CctvPanel";
 import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
@@ -33,6 +34,7 @@ import {
   verdictOf,
 } from "./model";
 import type { TriageRow } from "./model";
+import type { CctvState } from "./useCctv";
 import type { ForensicsState } from "./useForensics";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 
@@ -88,6 +90,7 @@ export interface TriageDetailProps {
   detail: IncidentDetailData;
   /** [T-2.40] Hechos medidos; el MISMO objeto que consume el dictamen PDF. */
   forensics: ForensicsState;
+  cctv: CctvState;
   minNodes: number | null;
   /**
    * [T-2.82.a] Edad de la FILA del incidente (la lista de `/incidents` que
@@ -101,6 +104,9 @@ export interface TriageDetailProps {
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
   canExport: boolean;
+  /** `cctv_video` del token: sin ella no se pinta el botón de descargar el clip. */
+  canDownloadClip: boolean;
+  onDownloadClip?: (clipId: string) => void;
   canGenerateReport: boolean;
 }
 
@@ -127,10 +133,13 @@ export default function TriageDetail({
   row,
   detail,
   forensics,
+  cctv,
   minNodes,
   incidentStaleSince,
   canSign,
   canExport,
+  canDownloadClip,
+  onDownloadClip,
   canGenerateReport,
 }: TriageDetailProps) {
   const [status, setStatus] = useState<string>("no_inhabit_inspect");
@@ -220,6 +229,10 @@ export default function TriageDetail({
           contraste con el catálogo. Convierte "el sistema funcionó" en algo
           verificable. */}
       <PostEventSummary forensics={forensics} />
+      {/* [T-3.12.c] La ÚNICA superficie de CCTV de la consola. Va junto al resumen
+          post-evento porque responde a la misma pregunta —cómo se comportó el
+          inmueble— con la otra mitad del dato: la gente. */}
+      <CctvPanel cctv={cctv} canDownloadClip={canDownloadClip} onDownloadClip={onDownloadClip} />
 
       <QuorumNodes
         view={quorum}

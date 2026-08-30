@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **261** · `[~]` **11** · `[ ]` **41**
+****Conteo de tareas:** total **313** · `[x]` **262** · `[~]` **11** · `[ ]` **40**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10735,23 +10735,30 @@ sirena.
 - [ ] Con el análisis pendiente el reporte dice **«CLIP DISPONIBLE · ANÁLISIS PENDIENTE»**.
       **Un fallback no puede ser `ok`**, y un cero inventado es peor que un hueco declarado.
 
-### [ ] T-3.12.c · API, sección del reporte y panel de la consola — `SOFTWARE` + `FRONTEND`
-- [ ] Dos acciones RBAC: `cctv_read` (métricas y capturas) y `cctv_video` (**ver y descargar el
+### [x] T-3.12.c · API, sección del reporte y panel de la consola — `SOFTWARE` + `FRONTEND` · **COMPLETA (2026-08-30)**
+> Endpoint, dos permisos de vídeo, sección 11 del dictamen y panel en EVALUACIÓN. Hasta hoy
+> las métricas se calculaban y no las veía nadie.
+>
+> El `410` de un clip podado es el detalle que más se pensó: un `404` diría «nunca hubo
+> nada», que es falso y **borra la cadena de custodia**. Y la guarda del bucket va DESPUÉS
+> de esa comprobación, o «la retención se lo llevó» se leería como «el servicio no está
+> disponible» — que manda a mirar la infraestructura en vez de la política.
+- [x] Dos acciones RBAC: `cctv_read` (métricas y capturas) y `cctv_video` (**ver y descargar el
       clip**, más estrecha y auditada en cada acceso). El CRUD de cámaras reutiliza `manage_fleet`.
       Espejar en `RBAC-TAKAB.md`: el test de paridad compara **celda a celda**, y `DENY_ALL` se
       compara por igualdad.
-- [ ] Endpoint de lectura que sirve **el mismo objeto** a la pantalla y al PDF (disciplina de
+- [x] Endpoint de lectura que sirve **el mismo objeto** a la pantalla y al PDF (disciplina de
       `routers/forensics.py`); 404 y nunca 403 fuera de alcance.
-- [ ] Sección nueva del reporte técnico con las **cuatro capturas** —antes de la señal, saliendo,
+- [x] Sección nueva del reporte técnico con las **cuatro capturas** —antes de la señal, saliendo,
       aforo máximo, reingresando— y las métricas. Literal de ausencia propio: sin cámara declarada
       el reporte lo dice, no pinta un cero.
-- [ ] Las capturas se proyectan en la cadena de custodia conservando `sha256` y fecha **después**
+- [x] Las capturas se proyectan en la cadena de custodia conservando `sha256` y fecha **después**
       de que el objeto se pode: la fila dice `PURGADO (retención de vídeo)`. El hecho sobrevive, la
       imagen no.
-- [ ] **Una sola superficie de CCTV, y es la de triage.** El card de la consola
+- [x] **Una sola superficie de CCTV, y es la de triage.** El card de la consola
       (`DetailPanel.tsx`) es *verificación visual en vivo* y **no se toca** en esta ficha: su línea
       de deuda en `serverDataCensus` sigue siendo verdad mientras no exista vista en vivo.
-- [ ] El panel nuevo cablea las cuatro entradas de `StateFrame` **incluida `staleSince` de verdad**
+- [x] El panel nuevo cablea las cuatro entradas de `StateFrame` **incluida `staleSince` de verdad**
       (`FRESCURA_CLAVADA` está vacía por igualdad) y entra en la lista de marcos de la página de
       triage, que está escrita a mano y comparada por igualdad.
 

@@ -2497,3 +2497,107 @@
   font-size: 12px;
   color: var(--tk-fg-1);
 }
+
+.cctv {
+  /* La caja hereda de `.soc-card`; esta regla existe para que el contrato
+     clase↔regla la vea declarada y no como un className huérfano. */
+  min-width: 0;
+}
+
+/* [T-3.12.c] Evacuación observada por CCTV — la ÚNICA superficie de vídeo de la consola.
+   Sigue las cajas del resto de EVALUACIÓN: sin sombras, sin color propio, y el único
+   acento reservado al hallazgo de seguridad. */
+.cctv__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cctv__estado {
+  color: var(--tk-fg-3);
+  font-size: 12px;
+  margin: 0;
+}
+.cctv__cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.cctv__cifras div {
+  border: 1px solid var(--tk-border);
+  padding: 8px 10px;
+}
+.cctv__cifras dt {
+  color: var(--tk-fg-3);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.cctv__cifras dd {
+  margin: 3px 0 0;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.cctv__correlacion {
+  margin: 0;
+  font-size: 12px;
+}
+.cctv__veredicto {
+  margin: 0;
+  font-size: 12px;
+  color: var(--tk-fg-3);
+}
+/* Que la gente reentrara ANTES del dictamen no es una línea más: el inmueble se reocupó
+   sin certificación de habitabilidad, y tiene que verse antes de leerse. */
+.cctv__veredicto--hallazgo {
+  color: var(--tk-status-critical);
+  border-left: 3px solid var(--tk-status-critical);
+  padding-left: 8px;
+  font-weight: 600;
+}
+.cctv__discrepancia {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--tk-fg-3);
+}
+.cctv__capturas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px;
+}
+.cctv__capturas li {
+  border: 1px solid var(--tk-border);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cctv__papel {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+.cctv__estado-captura {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cctv__clip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--tk-border);
+  padding-top: 8px;
+  font-size: 12px;
+}
+/* El objeto ya no está y la fila lo declara: el hecho sobrevive, la imagen no. */
+.cctv__purgado {
+  color: var(--tk-fg-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}

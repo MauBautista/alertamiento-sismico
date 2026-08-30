@@ -250,6 +250,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
   ],
   "features/tenants/UsersCard.tsx::UsersCard": ["data"],
   "features/triage/TriagePage.tsx::TriagePage": [
+    "cctv",
     "current",
     "deepLinkMiss",
     "detail",
@@ -339,7 +340,11 @@ const RAZONES: Record<string, string> = {
     "para que el panel del quórum pueda fechar lo que afirma cuando el incidente no " +
     "referencia evento — el dato de esa rama es la fila del incidente, que sale de esta " +
     "consulta. Contarla aquí es correcto (viaja fuera del marco) y es justo lo que hay que " +
-    "vigilar: el día que alguien la PINTE en vez de pasarla, sigue censada.",
+    "vigilar: el día que alguien la PINTE en vez de pasarla, sigue censada. " +
+    "[T-3.12.c] `cctv` está aquí por la MISMA razón que `forensics`: no se pinta, baja " +
+    "entero a `CctvPanel`, que sí tiene su marco con las cuatro entradas y su `staleSince` " +
+    "de verdad. Se cuenta igual, y eso es lo correcto: el día que alguien saque una cifra " +
+    "de evacuación a esta página sin marco, este censo lo dice.",
   "shell/OperatorMenu.tsx::OperatorMenu":
     '(c) DEUDA menor pero real. `label = profile.data?.display_name ?? me?.role ?? ""` se ' +
     "pinta en la topbar de TODAS las pantallas sin marco ni prueba de cuatro estados. El " +
