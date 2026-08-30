@@ -35,6 +35,7 @@ from pathlib import Path
 
 from takab_edge.cctv.cliente import ClienteCctv
 from takab_edge.cctv.ffmpeg import FfmpegNoApto, verificar
+from takab_edge.cctv.instantanea import bajar as bajar_instantanea
 from takab_edge.cctv.onvif import (
     Fuentes,
     OnvifNoDisponible,
@@ -178,6 +179,7 @@ def run_cctv_process(settings: EdgeSettings | None = None, *, block: bool = True
         correr=_correr,
         pedir_grant=_pedidor_de_grant(cfg.edge_api_base, clave_grant) if clave_grant else None,
         subir=_subir_presignado if clave_grant else None,
+        bajar_instantanea=bajar_instantanea,
     )
     if not block:
         return cliente
