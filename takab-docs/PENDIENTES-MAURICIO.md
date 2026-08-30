@@ -436,9 +436,22 @@ ssh takab-pi5 'set -e
 > `ffprobe` va de propina: no lo usa el gabinete, pero es lo que permite mirar en sitio qué
 > pistas trae un clip — que es exactamente como se descubrió que el anillo grababa audio.
 
-Con esto se cierra lo último que le falta a `T-3.11` para no depender de `GATE-HW`: el recorte
-y el `concat` sobre once minutos de anillo, ejercidos **en la máquina que va a ejecutarlos**.
-En x86-64 ya están medidos y salen bien.
+> ### ✅ HECHO el 2026-08-30 — y una corrección de lo que esta ficha decía
+>
+> El binario está puesto (`N-126335-gb32f8d1c23-20260830`, ELF ARM aarch64) y **el guard lo
+> acepta desde el propio gabinete**: `verificar()` devuelve `licencia=lgpl`. Eso es lo que no
+> se podía afirmar hasta hoy.
+>
+> **Lo que esta ficha decía de más:** que con el ffmpeg puesto se cerraba «lo último» que le
+> falta a `T-3.11`. No era cierto, y se vio al intentarlo: el release que corría el Pi era del
+> 28-ago y **no traía el módulo `cctv`** (`ModuleNotFoundError`), así que el binario solo era un
+> prerrequisito por adelantado. Hizo falta **redesplegar el edge** —hecho el mismo día, release
+> `20260830T205027Z-e461dd0`— para poder siquiera correr el guard.
+>
+> **Y sigue faltando lo de verdad:** el recorte del clip y el `concat` sobre once minutos de
+> anillo **no se han ejercido en el Pi**. Medidos están, pero en x86-64. Para ejercerlos ahí
+> hace falta encender el CCTV, que espera a `G-04` por `D-25` — y el extra `cctv` ni siquiera
+> se instala (`EDGE_EXTRAS_OMITIDOS`).
 
 ### 3.3.b · ~~Poner en hora la cámara del CCTV~~ — ✅ **HECHA el 2026-08-30**, menos el NTP
 
@@ -475,6 +488,40 @@ comprobación de `takab-cctv` ya no lo reporta.
 >
 > Mientras tanto el desfase es **de segundos, no de horas**, y la quinta comprobación lo canta
 > en cada arranque.
+
+### 3.3.c · El dueño de los pines corre código anterior — **reinicio en ventana**
+
+El redespliegue del 2026-08-30 (`e461dd0`) activó la release nueva y el canary la sostuvo 120 s,
+pero **`takab-gpio` no se reinició** — sin `--ventana-de-mantenimiento` no se reinicia nunca, y
+eso es deliberado. El propio despliegue lo declaró y se negó a darse por verificado:
+
+```
+✗ DESPLIEGUE NO VERIFICADO: el DUEÑO DE LOS PINES corre CÓDIGO ANTERIOR.
+  Los pines los tiene 'takab-gpio' (pid 739) … cuyo código SÍ cambió:
+    takab_edge/config/settings.py takab_edge/contracts.py
+```
+
+**Lo que cambió en esos dos ficheros es inerte para el reflejo** —`CctvConfig` en `settings.py`
+y dos valores nuevos del enum `mode` en `contracts.py`, ninguno en el camino SASMEX→relé— pero
+el despliegue no puede saber semántica: sabe que el dueño arrancó antes del swap y su código
+cambió, y eso es lo honesto que puede decir.
+
+> **Y NO se revierte.** Revertir también es reiniciar, cuesta el mismo ciclo de `GAS_VALVE` y
+> `DOOR_RETAINER`, y deja el gabinete más atrás. Lo dice el propio script.
+
+Estado verificado tras el despliegue: `relays_status.reason = ok`, sirena y estrobo instalados y
+**en reposo**, `alert_latched=false`, cero avisos en el journal. **El gabinete protege ahora
+mismo**; simplemente lo hace con el dueño de ayer.
+
+Se resuelve solo con:
+
+```bash
+deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
+```
+
+**Es una ACTUACIÓN FÍSICA** —2 transiciones por pin en gas y retenedores, más una ventana sin
+sirena—, así que va **con el edificio avisado**. Encaja de forma natural en la sesión de `G-04`
+(§3.1), que ya exige tener el edificio sobre aviso.
 
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
