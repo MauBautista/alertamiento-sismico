@@ -200,12 +200,18 @@ jobs:
       # Los DOS entornos, porque cada uno tiene su lock y un prohibido puede entrar en
       # uno sin tocar el otro. Vigilar solo `api/` dejaría sin cubrir al gabinete, que es
       # justamente donde vive el CCTV.
+      # `working-directory` + `uv sync` a secas, y no `--directory`: es la forma que el
+      # gate de paridad (`test_ci_parity.sh`) ya reconoce como instalación de
+      # dependencias, y por tanto exime de tener espejo en el Makefile.
       - name: Sincronizar api
-        run: uv sync --directory api
+        working-directory: api
+        run: uv sync
       - name: Sincronizar edge
-        run: uv sync --directory edge
+        working-directory: edge
+        run: uv sync
       - name: Sincronizar analyzer
-        run: uv sync --directory analyzer
+        working-directory: analyzer
+        run: uv sync
       - name: Guarda de licencias (D-24)
         run: ./ci/check-licenses.sh
       - name: Archivar los avisos de terceros
