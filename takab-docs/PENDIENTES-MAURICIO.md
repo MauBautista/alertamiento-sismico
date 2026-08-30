@@ -405,6 +405,36 @@ suite **lo declara en voz alta** en vez de callarlo.
 > **Única dependencia declarada del Bloque III sobre el II:** necesita `T-2.78`, porque un
 > simulacro con **cascada de notificación real** no se acredita con canales simulados.
 
+### 3.3.b · Poner en hora la cámara del CCTV — **5 minutos, y bloquea la evidencia**
+
+La cámara del sitio (`192.168.3.132`, Imou/Dahua `IPC-S41FE`) llegó con el **huso de fábrica
+del fabricante**, `GMT+08:00`, y nadie lo tocó. Su UTC es correcto; lo que está mal es lo que
+**quema en los píxeles**. Medido el 2026-08-30:
+
+| | |
+|---|---|
+| hora del sitio | `2026-08-30 11:57` |
+| lo que decía la foto | **`2026-08-31 01:57`** |
+
+Catorce horas y **un día distinto**, en una imagen que va al dictamen con su `sha256`. El
+software ya lo avisa al arrancar (quinta comprobación de `takab-cctv`), pero **avisar no lo
+arregla**: mientras la cámara siga así, toda captura que salga de ella lleva el sello corrido.
+
+Y hay una segunda mitad que se olvida: `DateTimeType` está en **`Manual`**, o sea **sin NTP**.
+Aunque hoy se ponga la hora a mano, sin servidor de tiempo vuelve a derivar sola.
+
+**Las dos cosas se hacen en la misma pantalla** de la interfaz web de la cámara
+(`http://192.168.3.132`, usuario `admin`) → *Configuración · Sistema · General · Fecha y hora*:
+
+1. **Huso horario** → el del sitio (`GMT-06:00`, Ciudad de México).
+2. **Sincronizar con NTP** → encendido. Cualquier `pool.ntp.org` sirve; mejor aún, el propio
+   gabinete, que ya tiene hora buena y no depende de que la cámara salga a internet.
+3. Comprobar que el **sello de la imagen** cambió — no basta con que la pantalla de
+   configuración diga la hora buena: lo que importa es el rótulo quemado en el fotograma.
+
+> **Por qué está aquí y no en `TASKS.md`:** el software ya hace todo lo que puede hacer
+> —detectarlo y decirlo—. Poner en hora una cámara es tocar la cámara.
+
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 

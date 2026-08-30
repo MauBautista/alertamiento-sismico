@@ -10694,6 +10694,28 @@ sirena.
 > escrita dos veces, comprobándose a sí misma. Arreglado en `fix/cctv-camara-real`, con las
 > URIs medidas fijadas en `edge/tests/test_cctv_onvif_credencial.py`.
 >
+> **El segundo hallazgo, y éste no lo veía ninguna prueba porque no está en el código:
+> la cámara MIENTE en los píxeles.** Llegó con el huso de fábrica del fabricante
+> —`GMT+08:00`— y el UTC correcto, así que rotula la imagen catorce horas por delante de la
+> hora del sitio. Medido: el gabinete fechaba las **11:57 del 30 de agosto** y el fotograma
+> decía **01:57 del 31**. Ese sello va quemado dentro del clip y dentro de cada captura, y
+> **cuatro de esas capturas son pruebas del dictamen** (§11 del reporte, con su `sha256` y su
+> cadena de custodia). Un paquete de evidencia que se contradice a sí mismo en la fecha no
+> hay que impugnarlo: se impugna solo. Y `DateTimeType` viene en `Manual` —sin NTP—, así que
+> el desfase solo puede crecer.
+>
+> De ahí la **quinta comprobación** de `takab-cctv`, que **avisa y deja grabar**: el vídeo
+> está bien y nuestras horas también —salen del gabinete—; lo torcido es el rótulo, y
+> negarse a grabar por eso cambiaría un rótulo torcido por un incidente sin vídeo.
+- [ ] **El hallazgo del reloj todavía muere en el journal.** Hoy sale por `log.warning` al
+      arrancar, y eso lo lee quien va a buscarlo. Lo que corresponde es que viaje con la
+      evidencia: si el sello de una captura contradice la fecha del incidente, **el reporte
+      tiene que decirlo al lado de la imagen**, que es donde alguien lo va a leer. Mismo
+      argumento que el `410` del clip podado — el hecho sobrevive a la imagen.
+- [ ] **Poner en hora la cámara del sitio** (huso del sitio + NTP). Es config de la cámara,
+      no del software; hasta que se haga, toda captura que salga de ella lleva el sello
+      corrido. Ver `PENDIENTES-MAURICIO.md §3`.
+
 > **Lo que sigue sin acreditar, y no es por falta de ganas:** no hay ffmpeg LGPL **ni en
 > esta máquina ni en el Pi** (`/opt/takab/bin/ffmpeg` no existe todavía), así que el anillo,
 > el recorte y el `concat` contra vídeo H264 de verdad siguen siendo `GATE-HW`. Lo medido
