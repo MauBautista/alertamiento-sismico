@@ -99,7 +99,7 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 > | `D-21` | **Acreditar `G-01`** esta semana, 20 min | §3.1 |
 > | `D-25` | **Acreditar `G-04`** y medir `B.2` — es lo que destraba **encender** el CCTV en el gabinete; hasta entonces el software se entrega apagado | §3.1 |
 > | `D-24` | **Ventana AWS** para el Lambda de conteo (ECR + IAM) | §2 |
-> | `D-24` | **Un clic en GitHub**: añadir el check **`licenses`** a la protección de `main`. El job existe y está en verde, pero un job nuevo **no bloquea el merge solo** — la rama exige checks por nombre literal (`D-09`), y hoy son siete. Hasta ese clic, la guarda de AGPL/GPL avisa pero **no impide** el merge | §2 |
+> | ~~`D-24`~~ | ~~**Un clic en GitHub**: añadir el check **`licenses`** a la protección de `main`~~ · ✅ **HECHO el 2026-08-30**, y con él se cazó el mismo defecto en **`analyzer`**: los dos jobs nuevos del bloque de CCTV estaban verdes y **ninguno bloqueaba**. La rama exige checks por nombre literal (`D-09`) y ahora son **nueve**. Queda **uno** sin exigir a propósito: `landing`, que se añade cuando aterrice la PR #93 | §2 |
 >
 > `D-04` dejaba una cuarta —el traspaso del dueño de los pines— y **ya está hecha** (§3.5).
 

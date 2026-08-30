@@ -10654,6 +10654,7 @@ sirena.
       `Restart=` propio— y su test de artefacto, como `takab-gpio`.
 - [x] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
+- [x] **Acreditada contra la cámara real** (2026-08-30, `192.168.3.132`) — ver el bloque de abajo.
 - [x] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
       Modela la cámara **y la frontera de ffmpeg**, porque por separado no sirven: reconoce
       los tres comandos por su forma y escribe los ficheros que habrían salido.
@@ -10663,6 +10664,40 @@ sirena.
       > lista—. Eso es `GATE-HW`. Las capturas **sí** son JPEG válidos, pero no son fotos de
       > personas: por eso la «historia» de cuánta gente hay va en un guion explícito y no
       > escondida en los píxeles.
+
+> #### La cámara real, medida (2026-08-30) — y el fallo que solo ella podía enseñar
+>
+> Cámara del sitio: **LC / Dahua `IPC-S41FE`**, firmware `2.800.0000000.15.R`, ONVIF en el
+> puerto **80** (`/onvif/device_service`), RTSP en el 554. Dos perfiles Profile S:
+>
+> | perfil | codec | resolución | fps | bitrate |
+> |---|---|---|---|---|
+> | `Profile000` (main, `subtype=0`) | H264 | **2560×1440** | 25 | 1536 kbps |
+> | `Profile001` (sub, `subtype=1`) | H264 | **640×480** | 15 | 512 kbps |
+>
+> **Ofrece `GetSnapshotUri`**, que es la rama barata: el goteo es un `GET` de un JPEG ya
+> codificado y no decodifica un solo fotograma.
+>
+> **El fallo: `descubrir()` entregaba URLs que la cámara no servía.** El módulo daba por
+> hecho que una cámara ONVIF devuelve la URL con la credencial dentro. Ésta devuelve las
+> tres URIs **peladas** y luego exige **Digest** en las tres (con Basic contesta `401`
+> igual). Medido a mano, que es como se cerró:
+>
+> ```
+> DESCRIBE con la URL que devolvía descubrir()  ->  RTSP/1.0 401 Unauthorized
+> DESCRIBE con la credencial inyectada          ->  RTSP/1.0 200 OK  (+ pista H264)
+> ```
+>
+> Por el camino de descubrimiento —el que se usa cuando no hay `rtsp_url` declarada— el
+> gabinete no habría grabado **ni un clip ni una captura**. Y las ocho pruebas del módulo
+> pasaban porque **el simulador devolvía la URL con credencial**: la misma suposición
+> escrita dos veces, comprobándose a sí misma. Arreglado en `fix/cctv-camara-real`, con las
+> URIs medidas fijadas en `edge/tests/test_cctv_onvif_credencial.py`.
+>
+> **Lo que sigue sin acreditar, y no es por falta de ganas:** no hay ffmpeg LGPL **ni en
+> esta máquina ni en el Pi** (`/opt/takab/bin/ffmpeg` no existe todavía), así que el anillo,
+> el recorte y el `concat` contra vídeo H264 de verdad siguen siendo `GATE-HW`. Lo medido
+> aquí es la capa ONVIF/RTSP entera hasta el `200 OK`; el decodificador, no.
 
 ### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
@@ -10784,10 +10819,35 @@ sirena.
       triage, que está escrita a mano y comparada por igualdad.
 
 ### [ ] T-3.12.d · Comparativa de detectores contra la cámara real — `SOFTWARE` + `GATE-HW`
+> **La cámara ya está en la red** (`192.168.3.132`, LC/Dahua `IPC-S41FE`) y su interrogatorio
+> ONVIF dejó dos cifras que cambian **qué** hay que medir aquí, no solo cuándo:
+>
+> 1. **El conteo va a ocurrir sobre 640×480, no sobre 4 MP.** `CctvConfig.perfil` es
+>    `substream` de fábrica, y el substream de esta cámara es **640×480 @ 15 fps**. El
+>    razonamiento escrito en el campo —«grabar el principal multiplica por ocho el disco sin
+>    mejorar un conteo que ni siquiera ocurre aquí»— da por supuesto que a 640×480 se cuenta
+>    igual de bien. **Eso es precisamente lo que esta ficha tiene que medir**, y hasta que lo
+>    mida es una opinión. (De paso: el múltiplo medido en esta cámara es **3×** por bitrate
+>    —1536 contra 512 kbps—, no ocho.)
+> 2. **El goteo está clavado a 640×480 pase lo que pase.** El endpoint de instantánea
+>    devuelve 640×480 **también con `subtype=0`**: pedirle el perfil principal no sube la
+>    resolución. Y el goteo no es un extra — es lo único que fecha el **reingreso**, que
+>    ocurre horas después del clip. Así que la resolución del goteo **no es negociable
+>    subiendo `perfil`**: si a 640×480 no se cuenta, hace falta otra vía (sacar el fotograma
+>    del RTSP principal y decodificar) y eso tiene un coste que hay que medir aquí.
+>
+> Consecuencia práctica: la comparativa necesita **dos** columnas de resolución, 640×480 y
+> 2560×1440, o su conclusión no se puede aplicar al goteo.
 - [ ] Candidatos **solo permisivos**: YOLOX-nano, YOLOX-tiny, RF-DETR nano, EfficientDet-Lite0.
       **Sin línea base de Ultralytics** en ningún entorno — tampoco «solo para comparar».
 - [ ] **La medición fija el default, no la opinión.** Precisión de conteo y coste, contra la cámara
       real y su escena real; una comparativa contra vídeo de internet no dice nada de este edificio.
+- [ ] Medir a **640×480** (el substream y el goteo) **y** a **2560×1440** (el principal). Si el
+      default `perfil=substream` no sostiene el conteo, esta ficha es la que lo deroga con la
+      cifra delante — y arrastra la resolución del goteo, que no se arregla cambiando `perfil`.
+- [ ] **La escena tiene que ser la del punto de reunión.** Hoy la cámara está en el banco, no
+      apuntando al punto: una comparativa hecha desde donde está ahora mide el detector, no el
+      edificio, y esta ficha existe para medir el edificio.
 
 ## Fase 3.3 · Feeds y superficie de datos
 
