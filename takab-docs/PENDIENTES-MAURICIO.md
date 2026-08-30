@@ -406,7 +406,7 @@ suite **lo declara en voz alta** en vez de callarlo.
 > **Única dependencia declarada del Bloque III sobre el II:** necesita `T-2.78`, porque un
 > simulacro con **cascada de notificación real** no se acredita con canales simulados.
 
-### 3.3.a · Desplegar el ffmpeg **LGPL arm64** en el Pi — un solo bloque, sin `sudo`
+### 3.3.a · ~~Desplegar el ffmpeg **LGPL arm64** en el Pi~~ — ✅ **HECHO el 2026-08-30**
 
 `/opt/takab/bin/ffmpeg` **no existe** y `takab-cctv` no arranca sin él: la guarda de licencia
 es *fail-closed* por `D-24`. Comprobado en el Pi el 2026-08-30 (`aarch64`, Pi 4 Model B Rev
@@ -490,7 +490,7 @@ comprobación de `takab-cctv` ya no lo reporta.
 > Mientras tanto el desfase es **de segundos, no de horas**, y la quinta comprobación lo canta
 > en cada arranque.
 
-### 3.3.c · El dueño de los pines corre código anterior — **reinicio en ventana**
+### 3.3.c · ~~El dueño de los pines corre código anterior~~ — ✅ **CERRADO el 2026-08-30**
 
 El redespliegue del 2026-08-30 (`e461dd0`) activó la release nueva y el canary la sostuvo 120 s,
 pero **`takab-gpio` no se reinició** — sin `--ventana-de-mantenimiento` no se reinicia nunca, y
@@ -514,7 +514,19 @@ Estado verificado tras el despliegue: `relays_status.reason = ok`, sirena y estr
 **en reposo**, `alert_latched=false`, cero avisos en el journal. **El gabinete protege ahora
 mismo**; simplemente lo hace con el dueño de ayer.
 
-Se resuelve solo con:
+> ### ✅ Hecho el mismo día, y verificado en los cuatro puntos
+>
+> Se corrió la ventana de mantenimiento (release `20260830T222850Z-71ac7df`). El dueño se
+> reinició, reclamó los pines, y el estado de versión quedó **`AL DÍA`** —`fw_version` =
+> `fw_running` = `71ac7df`— que es lo único que demuestra que el gabinete corre lo desplegado.
+> Panel en reposo y `relays_status: ok`.
+>
+> **El traceback de la ventana no era un fallo.** Durante los ~3 s del reinicio, `takab-edge`
+> no podía leerle el estado al dueño y el fail-open del modo prueba se registró 24 veces
+> avisando de que «se PUBLICA a la nube». **Comprobado en la nube: cero incidentes.** El ruido
+> quedó fichado como [`T-2.172`](TASKS.md); el comportamiento era correcto.
+
+Se resolvió con:
 
 ```bash
 deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
