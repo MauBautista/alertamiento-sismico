@@ -5777,8 +5777,57 @@ colisionando», que es **falso** — `takab-edge` lleva `PrivateTmp` y `takab-gp
 *Corrección factual al informe de implementación, sin consecuencia:* `_unidad_de_este_proceso()`
 no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_proceso_vivo()`.
 
-### [x] T-2.170 · El guardián del presupuesto del camino de vida es intermitente en CI — `SOFTWARE` · COMPLETA (2026-08-26)
-- **Componente:** edge (`tests/test_e2e.py`) + CI · **Sale de:** `main` en rojo el 2026-08-26 (run `32937425976`) por un commit que solo tocaba documentación.
+### [x] T-2.170 · El guardián del presupuesto del camino de vida es intermitente en CI — `SOFTWARE` · COMPLETA (2026-08-26) · **REABIERTA Y CERRADA DEL TODO (2026-08-30)**
+
+> ### ⚠️ Estuvo marcada COMPLETA cuatro días y le faltaba la mitad
+>
+> El 2026-08-30 enrojeció **`test_gpio_link.py::test_el_reflejo_sasmex_no_cruza_la_costura`**
+> con **161.0 ms** — contra los 165.8 ms que habían motivado esta ficha. El gemelo del gate
+> #6 tenía **exactamente el mismo defecto** que se arregló aquí: una sola muestra de reloj de
+> pared asertada dura contra los 100 ms. Se arregló `test_e2e.py`, se dio la ficha por
+> cerrada, y nadie buscó el segundo sitio donde vivía el mismo patrón.
+>
+> **Y el coste ya se pagó**: el rojo se diagnosticó y se **relanzó el CI**, que es palabra por
+> palabra el reflejo que esta ficha declara inaceptable («enseña a re-lanzar el CI rojo del
+> camino de vida»). El diagnóstico era correcto —el mismo commit había pasado en la corrida
+> anterior y el commit acusado solo añadía una bandera a una lista de argumentos, lejos del
+> GPIO— pero eso es justo lo que se va a poder decir siempre.
+>
+> **La lección, que es más general que este test:** una ficha que arregla un patrón tiene que
+> declarar **dónde más vive ese patrón**, o se cierra sobre la primera instancia. Aquí bastaba
+> con buscar el otro `< 0.100`.
+>
+> **Lo corregido (misma receta, sin tocar el presupuesto):** mejor de `INTENTOS_DE_MEDICION`,
+> premisa re-comprobada en cada intento, aviso cuando hiciera falta reintentar. Con dos
+> diferencias que impone la premisa de ESE test y quedan escritas en él:
+>
+> * **el rearme no puede ser `local_api.reset_alert()`**, porque `_accion` es la única puerta
+>   del panel hacia los pines y **cruza la costura**, que ahí está muerta a propósito. Se va al
+>   mismo destino sin el tramo roto: `gpio.reset()`;
+> * **las afirmaciones estructurales se mudan DENTRO del bucle.** Detrás no habría nada que
+>   mirar: el rearme devuelve los cinco relés a reposo, así que un `assert ... is
+>   active_energized(...)` puesto después interrogaría a un gabinete desarmado.
+>
+> **El presupuesto y el número de intentos se IMPORTAN de `tests/test_e2e.py`**, no se
+> teclean: dos copias del 100 divergirían, que es el defecto que esta misma ficha ya dejó
+> escrito para el conftest.
+>
+> **Test del test, otra vez por mutación en las dos direcciones:**
+>
+> | mutación | serie medida | veredicto |
+> |---|---|---|
+> | *degradación real* (60 ms por canal en `_apply`) | `143.2 / 128.3 / 127.8 / 128.5 / 128.5 ms` | **enrojece** |
+> | *pico único* (150 ms una sola vez en `_dispatch_sasmex`) | `163.9 / 4.2 ms` | pasa **con aviso** |
+>
+> La **serie plana** es la firma de la regresión; el pico aislado, la del ruido. Y los 163.9 ms
+> del pico simulado caen casi exactos sobre los **161.0 ms** que enrojecieron CI de verdad.
+>
+> **La segunda mutación pagó por sí sola:** la de degradación destapó un fallo *en el propio
+> arreglo* — al rearmar también tras el último intento, el test enrojecía por el aserto
+> equivocado (`siren NO quedó en su nivel de protección`) en vez de por la latencia. Un
+> arreglo del instrumento que no se mutara habría entrado con ese defecto dentro.
+
+- **Componente:** edge (`tests/test_e2e.py` **y `tests/test_gpio_link.py`**) + CI · **Sale de:** `main` en rojo el 2026-08-26 (run `32937425976`) por un commit que solo tocaba documentación.
 - **Lo medido, no lo supuesto:** `test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto` declaró **165.8 ms** contra un presupuesto de <100 ms. **El mismo commit, relanzado sin tocar una línea, pasa.** Uno de cada ocho runs recientes. Y el propio mensaje del test dice dónde estuvo el tiempo: **«0.0 ms ocurrieron DESPUÉS de que `drive_low()` retornara»** — o sea que el retraso no está en la cadena, está en el planificador del runner compartido.
 - **Por qué no es un test flaky más.** Éste guarda la **regla de oro 1**: el camino SASMEX→actuador. Un guardián intermitente sobre el camino de la sirena no solo falla: **enseña a re-lanzar el CI rojo del camino de vida**, que es exactamente el reflejo que no puede existir en este proyecto. El día que la latencia se rompa de verdad, el rojo va a parecer «el de siempre».
 - **⚠️ LA CORRECCIÓN PROHIBIDA:** subir el presupuesto de 100 ms. El número no sale de lo que el CI consigue, sale de `blueprint §4.3`. Un presupuesto que se ajusta al instrumento deja de ser un presupuesto. Tampoco vale saltar el test en CI: entonces nadie vigila la latencia hasta la siguiente visita al gabinete.
