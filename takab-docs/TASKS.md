@@ -10747,6 +10747,25 @@ sirena.
 > (`takab_edge/cctv/instantanea.py`), con caída al RTSP **anunciada**; verificado contra la
 > cámara real, 5/5 capturas a ~350 ms.
 >
+> #### Y al cortar el clip apareció el tercero: **el anillo estaba grabando AUDIO**
+>
+> El clip salió `h264 + **aac**`. `cmd_anillo` usa `-c copy`, que copia lo que la cámara
+> mande, y esta manda una pista de sonido junto al vídeo. **Nadie lo decidió**: no hay una
+> línea del diseño que pida audio, el conteo no lo usa y el reporte no lo enseña. Entró
+> porque nadie miró los streams que traía el `-c copy`.
+>
+> Y no es «un poco más» de lo mismo. Grabar las conversaciones de la gente en el punto de
+> reunión es **distinto en especie** de grabar su imagen: cambia el marco legal aplicable
+> —comunicaciones privadas, no solo datos personales— dentro de un objeto que va firmado a
+> S3 y de ahí a un peritaje. Con la regla de oro 11 delante, el default solo puede ser el
+> conservador. `-an` en el anillo, con la razón escrita en el propio comando y su test.
+> Verificado contra la cámara real: los tres segmentos salen `h264,video` y nada más (y de
+> paso pesan ~15 % menos).
+- [ ] **Ratificar el silencio como decisión (`D-nn`), o derogarlo con su base legal.** Hoy
+      es un default conservador elegido por la máquina ante un hallazgo, no una decisión
+      tomada. Si un dictamen quisiera sonido, se deroga la bandera **con la base legal
+      delante** — lo que no puede volver a pasar es que el audio entre solo.
+
 > **Lo que sigue sin acreditar:** el Pi **no tiene** `/opt/takab/bin/ffmpeg` —hace falta la
 > variante `linuxarm64-lgpl`—, así que el recorte del clip y el `concat` sobre once minutos
 > de anillo siguen sin ejercerse **en la máquina que va a ejecutarlos**. Lo de arriba se
