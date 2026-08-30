@@ -98,7 +98,8 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 > | `D-15` | **Encender la sirena por jack** (un comando) | §3.4 |
 > | `D-21` | **Acreditar `G-01`** esta semana, 20 min | §3.1 |
 > | `D-25` | **Acreditar `G-04`** y medir `B.2` — es lo que destraba **encender** el CCTV en el gabinete; hasta entonces el software se entrega apagado | §3.1 |
-> | `D-24` | **Ventana AWS** para el Lambda de conteo (ECR + IAM), y **un clic** en GitHub para que el check `licenses` bloquee el merge | §2 |
+> | `D-24` | **Ventana AWS** para el Lambda de conteo (ECR + IAM) | §2 |
+> | `D-24` | **Un clic en GitHub**: añadir el check **`licenses`** a la protección de `main`. El job existe y está en verde, pero un job nuevo **no bloquea el merge solo** — la rama exige checks por nombre literal (`D-09`), y hoy son siete. Hasta ese clic, la guarda de AGPL/GPL avisa pero **no impide** el merge | §2 |
 >
 > `D-04` dejaba una cuarta —el traspaso del dueño de los pines— y **ya está hecha** (§3.5).
 

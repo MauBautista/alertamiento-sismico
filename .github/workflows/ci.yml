@@ -161,6 +161,34 @@ jobs:
         # auditable la cobertura real del job.
         run: uv run pytest -q -rs
 
+  licenses:
+    name: licenses · cero AGPL/GPL en el árbol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "*/uv.lock"
+      # Los DOS entornos, porque cada uno tiene su lock y un prohibido puede entrar en
+      # uno sin tocar el otro. Vigilar solo `api/` dejaría sin cubrir al gabinete, que es
+      # justamente donde vive el CCTV.
+      - name: Sincronizar api
+        run: uv sync --directory api
+      - name: Sincronizar edge
+        run: uv sync --directory edge
+      - name: Guarda de licencias (D-24)
+        run: ./ci/check-licenses.sh
+      - name: Archivar los avisos de terceros
+        # Se GENERA en cada build y no se commitea: un inventario de licencias escrito a
+        # mano envejece en silencio. Se archiva como artefacto para poder acompañar una
+        # entrega sin tener que reconstruirlo a posteriori.
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-notices
+          path: THIRD_PARTY_NOTICES.txt
+
   mobile:
     name: mobile · eslint + tsc + jest + bundle
     runs-on: ubuntu-latest

@@ -87,3 +87,7 @@ cotizacion/
 # y el gabinete reportaría una versión que no corre — justo lo que este mecanismo
 # existe para impedir.
 edge/FW_VERSION
+
+# [T-3.10.b] Se GENERA en cada build (ci/check-licenses.sh). Commitearlo lo dejaría
+# envejecer en silencio, que es como envejecen todos los inventarios escritos a mano.
+THIRD_PARTY_NOTICES.txt

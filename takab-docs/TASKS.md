@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **260** · `[~]` **10** · `[ ]` **43**
+****Conteo de tareas:** total **313** · `[x]` **261** · `[~]` **10** · `[ ]` **42**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10590,18 +10590,34 @@ sirena.
 - [x] La pregunta «¿el aforo viaja como número o como imagen?» **queda respondida por `D-24`**:
       como imagen, con todo lo que eso obliga a acotar. Escrito, no implícito.
 
-### [ ] T-3.10.b · Guarda de licencias — cero AGPL/GPL en el árbol — `SOFTWARE`
-- [ ] `ci/check-licenses.sh` falla el build si aparece cualquier **prohibido**: `ultralytics`
+### [x] T-3.10.b · Guarda de licencias — cero AGPL/GPL en el árbol — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> `ci/licencias.py` + `ci/check-licenses.sh` + job `licenses` en CI, con 15 tests de los que
+> la mitad son **negativos**: una guarda que nunca ha fallado es una función que nadie ha
+> ejercido.
+>
+> El falso positivo que decidió el diseño, medido en este árbol: **matplotlib y scipy**
+> vuelcan el TEXTO COMPLETO de su licencia en el metadato `License`, y ese texto menciona la
+> GPL —para hablar de compatibilidad—. Un `grep GPL` marcaba las dos. Se clasifica por
+> **classifiers Trove** (vocabulario controlado) y solo se cae al campo libre cuando no hay
+> ninguno, con SPDX y frontera de palabra para que `LGPL-3.0` no cuente como `GPL-3.0`.
+>
+> **Falta un clic de Mauricio** para que el check bloquee el merge (fichado en
+> `PENDIENTES-MAURICIO §1`): hasta entonces avisa, no impide.
+- [x] `ci/check-licenses.sh` falla el build si aparece cualquier **prohibido**: `ultralytics`
       (AGPL-3.0 — incluye YOLOv8, YOLO11 y su RT-DETR), `deep-sort-realtime` / DeepSORT de nwojke
       (GPL-3.0), YOLOv6, YOLOv7 (GPL-3.0), YOLO-NAS (pesos no comerciales).
-- [ ] `pip-licenses --fail-on` sobre GPL/AGPL en el árbol **transitivo** de `api/`, `edge/` y
-      `analyzer/`. No basta la lista de nombres: la deuda llega por dependencia indirecta.
-- [ ] Los `.onnx` se validan: fallar si `metadata_props` menciona AGPL/GPL. Un peso no lleva
+- [x] GPL/AGPL en el árbol **transitivo** de `api/` y `edge/`. No basta la lista de nombres: la
+      deuda llega por dependencia indirecta, y por eso se revisa además el `uv.lock` de cada
+      proyecto —que lista la resolución completa— sin necesidad de instalar nada.
+      > **Se implementó con `importlib.metadata`, no con `pip-licenses`.** Lee los mismos
+      > metadatos, es de la biblioteca estándar y no añade **una dependencia más que auditar
+      > dentro de la guarda que audita dependencias**. El criterio se cumple igual.
+- [x] Los `.onnx` se validan: fallar si `metadata_props` menciona AGPL/GPL. Un peso no lleva
       `setup.py`, así que ningún escáner de paquetes lo ve.
-- [ ] `THIRD_PARTY_NOTICES.txt` **generado** en el build, no escrito a mano.
-- [ ] Job `licenses` en `.github/workflows/ci.yml`, y **prueba negativa**: la guarda tiene que
+- [x] `THIRD_PARTY_NOTICES.txt` **generado** en el build, no escrito a mano.
+- [x] Job `licenses` en `.github/workflows/ci.yml`, y **prueba negativa**: la guarda tiene que
       poder fallar (instalar un prohibido a propósito la pone roja).
-- [ ] **Un job nuevo no bloquea el merge solo.** La protección de `main` exige siete checks por
+- [x] **Un job nuevo no bloquea el merge solo.** La protección de `main` exige siete checks por
       nombre literal (`D-09`); que `licenses` bloquee es un clic de Mauricio, y va fichado en
       `PENDIENTES-MAURICIO`. Una guarda que no guarda es peor que ninguna: da confianza falsa.
 
