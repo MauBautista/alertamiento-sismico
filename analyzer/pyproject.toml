@@ -6,10 +6,25 @@ requires-python = ">=3.12"
 # NÚCLEO SIN MODELO. El motor de métricas es aritmética sobre una serie: no necesita
 # NumPy, ni ONNX, ni vídeo. Esa frontera es lo que permite probarlo entero en CI sin
 # descargar un solo peso, y lo que deja el Lambda por debajo del límite de imagen.
-dependencies = []
+# [T-3.12.d] `numpy` está en el NÚCLEO y no en el extra, y la frontera se movió a
+# propósito: lo que el extra tiene que aislar es el **runtime de inferencia y los pesos**,
+# no la aritmética.
+#
+# El letterbox y el decodificado de la rejilla son cuentas —multiplicar por un `stride`,
+# sumar el centro del ancla, un `exp`— exactamente igual que el motor de métricas que este
+# paquete ya prueba entero sin descargar nada. Dejarlos detrás del extra los sacaba del CI,
+# y son justo el código que este proyecto no puede permitirse tener sin probar: un
+# decodificador mal aplicado no lanza, devuelve **cero personas**, y un cero se lee como un
+# punto de reunión vacío. Pasó — medido el 2026-08-30, contra la cámara real.
+#
+# La frontera del job `analyzer` sigue diciendo lo mismo que decía: sin runtime de
+# inferencia y sin un solo peso descargado.
+dependencies = [
+    "numpy>=1.26",
+]
 
 [project.optional-dependencies]
-# El detector real. Va en un extra porque SOLO lo necesita quien procesa vídeo — el
+# El runtime de inferencia. Va en un extra porque SOLO lo necesita quien procesa vídeo — el
 # reporte y los tests leen métricas ya calculadas.
 #
 # LICENCIAS (D-24): onnxruntime es MIT y los pesos YOLOX son Apache-2.0. `ci/licencias.py`
@@ -17,7 +32,6 @@ dependencies = []
 # no depende de que nadie se acuerde.
 onnx = [
     "onnxruntime>=1.20",
-    "numpy>=1.26",
 ]
 
 [dependency-groups]

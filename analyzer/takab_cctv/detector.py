@@ -26,6 +26,7 @@ compartido, y no dentro de cada backend.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 #: Índice de la clase «persona» en COCO, que es con lo que se entrenan YOLOX, RF-DETR y
@@ -37,6 +38,27 @@ CLASE_PERSONA = 0
 #: interesa MÁS no inventar gente que no perderse a alguien — un aforo inflado exagera la
 #: evacuación y un reporte que exagera es un reporte que nadie vuelve a creer.
 CONFIANZA_MINIMA = 0.35
+
+
+class Montaje(StrEnum):
+    """Cómo está montada la cámara. **Es un dato del sitio, no una preferencia.**
+
+    Existe porque el punto de la caja que toca el suelo depende del ángulo, y equivocarse
+    desplaza el conteo siempre hacia el mismo lado. Lo declara quien instala, y el runbook de
+    alta de cámara lo pide antes de dar el sitio por configurado.
+
+    No se infiere de la imagen a propósito: adivinarlo exigiría un modelo más —uno que
+    también puede equivocarse— para decidir cómo se interpreta la salida del primero.
+    """
+
+    #: Cámara a la altura de la vista. Se ve el cuerpo entero de lado.
+    FRONTAL = "frontal"
+    #: Montada en alto y girada hacia abajo, pero todavía se ve el cuerpo. **El caso normal
+    #: de un punto de reunión**, y el que mejor tolera un detector entrenado con COCO.
+    PICADO = "picado"
+    #: Mirando casi a plomo. Se ven cabeza y hombros y poco más. Cambia el ancla **y**
+    #: degrada la detección: ver la advertencia del runbook de alta.
+    CENITAL = "cenital"
 
 
 @dataclass(frozen=True)
@@ -55,14 +77,38 @@ class Caja:
 
     @property
     def pies(self) -> tuple[float, float]:
-        """El punto que decide si alguien está DENTRO de la zona.
+        """Borde inferior. El ancla correcta **solo con la cámara mirando de frente**.
 
-        Se usa el borde inferior y no el centro: una persona de pie ocupa una caja alta, y
-        su centro cae por encima del suelo. Con el centro, alguien parado justo fuera del
-        polígono se contaría dentro —y al revés—, y el error crece con la altura de la caja,
-        o sea con lo cerca que esté de la cámara.
+        Con una cámara frontal o en picado suave, una persona de pie ocupa una caja alta y su
+        centro cae por encima del suelo: usar el centro contaría dentro a quien está parado
+        justo fuera del polígono —y al revés—, con un error que crece con la altura de la
+        caja, o sea con lo cerca que esté de la cámara.
+
+        **Deja de ser cierto en cenital**, y por eso ya no se usa directamente: ver
+        :meth:`ancla`.
         """
         return ((self.x1 + self.x2) / 2, self.y2)
+
+    def ancla(self, montaje: Montaje) -> tuple[float, float]:
+        """El punto que decide si alguien está DENTRO de la zona, **según cómo se montó**.
+
+        Esto no es configurabilidad por gusto: es que el borde inferior de la caja significa
+        cosas distintas según desde dónde mire la cámara, y elegir mal desplaza el conteo de
+        forma sistemática —siempre en la misma dirección— que es la peor clase de error,
+        porque parece una medición.
+
+        * **`FRONTAL` y `PICADO`** — la caja envuelve un cuerpo de pie visto de lado; su
+          borde inferior son los pies, que es donde la persona toca el suelo.
+        * **`CENITAL`** — la cámara mira hacia abajo y la caja envuelve **cabeza y hombros**
+          vistos desde arriba. Ahí no hay «pies»: el borde inferior es el hombro que quedó
+          más lejos del centro óptico, y usarlo empuja a todo el mundo hacia un lado del
+          encuadre. El centroide es el punto que corresponde.
+
+        El caso intermedio —picado pronunciado— se declara `PICADO` a propósito: mientras se
+        vea el cuerpo, los pies siguen siendo el contacto con el suelo. `CENITAL` se reserva
+        para cuando ya no se ven.
+        """
+        return self.centro if montaje is Montaje.CENITAL else self.pies
 
     def iou(self, otra: Caja) -> float:
         ix1, iy1 = max(self.x1, otra.x1), max(self.y1, otra.y1)
@@ -131,7 +177,9 @@ def filtrar(cajas: list[Caja], *, confianza_minima: float = CONFIANZA_MINIMA) ->
     return nms([c for c in cajas if c.confianza >= confianza_minima])
 
 
-def cargar_onnx(ruta: str, *, entrada: tuple[int, int] = (640, 384)) -> DetectorBackend:
+def cargar_onnx(
+    ruta: str, *, ffmpeg: str, entrada: tuple[int, int] = (416, 416)
+) -> DetectorBackend:
     """Backend ONNX real (YOLOX / D-FINE, ambos Apache-2.0) sobre `onnxruntime` (MIT).
 
     Import PEREZOSO y dentro de la función: `onnxruntime` y `numpy` viven en el extra `onnx`,
@@ -139,6 +187,8 @@ def cargar_onnx(ruta: str, *, entrada: tuple[int, int] = (640, 384)) -> Detector
     seguir importándose sin ellos — es lo que permite que el motor de métricas se pruebe sin
     tocar un modelo.
     """
+    from takab_cctv.imagen import a_rgb  # noqa: PLC0415 — junto al resto del extra
+
     try:
         import numpy as np  # noqa: PLC0415
         import onnxruntime as ort  # noqa: PLC0415
@@ -155,25 +205,128 @@ def cargar_onnx(ruta: str, *, entrada: tuple[int, int] = (640, 384)) -> Detector
         nombre = f"onnx:{ruta.rsplit('/', 1)[-1]}"
 
         def detectar(self, imagen: bytes) -> list[Caja]:
-            tensor, escala, (dx, dy) = _preparar(imagen, entrada, np)
+            pixeles, _ = a_rgb(imagen, ffmpeg=ffmpeg)
+            tensor, escala, (dx, dy) = _preparar(pixeles, entrada, np)
             salida = sesion.run(None, {nombre_entrada: tensor})[0]
-            return filtrar(_a_cajas(salida, escala, dx, dy))
+            return filtrar(_a_cajas(salida, escala, dx, dy, entrada, np))
 
     return _Onnx()
 
 
-def _preparar(imagen: bytes, entrada: tuple[int, int], np):  # pragma: no cover — necesita el extra
+#: Valor del relleno del letterbox. Es el que usa YOLOX al entrenar y al evaluar; cambiarlo
+#: mueve las detecciones de los bordes, que son justo las que deciden si alguien entró o
+#: salió de la zona.
+RELLENO = 114
+
+#: Pasos de la pirámide de YOLOX. Con entrada 416 dan 52²+26²+13² = 3549 anclas, que es
+#: exactamente la primera dimensión de la salida — y por eso esto se puede COMPROBAR en vez
+#: de creerse: si el modelo devuelve otra cantidad, la rejilla no le corresponde.
+STRIDES = (8, 16, 32)
+
+
+def rejilla(entrada: tuple[int, int], np):
+    """Centro y paso de cada ancla, en el orden en que el modelo las emite.
+
+    El orden importa y no es negociable: la salida es una lista plana de anclas y la única
+    forma de saber a qué punto de la imagen corresponde cada fila es reconstruir la misma
+    pirámide, del paso más fino al más grueso, recorriendo filas antes que columnas.
+    """
+    ancho, alto = entrada
+    centros, pasos = [], []
+    for paso in STRIDES:
+        h, w = alto // paso, ancho // paso
+        yv, xv = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        centros.append(np.stack((xv, yv), 2).reshape(-1, 2))
+        pasos.append(np.full((h * w, 1), paso))
+    return np.concatenate(centros).astype(np.float32), np.concatenate(pasos).astype(np.float32)
+
+
+def _preparar(imagen, entrada: tuple[int, int], np):
     """Letterbox: redimensiona SIN deformar y rellena. Compartido por las dos orillas.
 
     Estirar la imagen a la entrada del modelo cambia la relación de aspecto de las personas,
     y un detector entrenado con personas de pie pierde recall con personas achatadas. El
     relleno se descuenta después, al devolver las coordenadas.
+
+    Recibe **píxeles ya decodificados** —`(alto, ancho, 3)` en RGB— y no bytes: quien los
+    obtiene es `imagen.a_rgb`, que necesita ffmpeg y por tanto una decisión de despliegue.
+    Separarlo deja esta función pura y comprobable sin un binario delante.
+
+    El relleno va **abajo y a la derecha**, nunca centrado. Con relleno centrado hay que
+    restar un desplazamiento en las dos direcciones al volver a coordenadas de la imagen, y
+    un signo equivocado ahí produce detecciones plausibles pero corridas — el error que
+    ninguna prueba de humo detecta. Con el origen intacto, deshacer la escala es dividir.
     """
-    raise NotImplementedError(
-        "el pre-proceso real llega con T-3.12.d, que es quien mide qué modelo y qué entrada "
-        "acierta contra la cámara de verdad. Fijarlo antes sería elegir por opinión."
-    )
+    alto, ancho = imagen.shape[:2]
+    ancho_d, alto_d = entrada
+    escala = min(ancho_d / ancho, alto_d / alto)
+    nw, nh = max(1, int(ancho * escala)), max(1, int(alto * escala))
+
+    # Vecino más cercano con indexado de numpy: sin dependencia de remuestreo y determinista.
+    # Un remuestreo mejor (bilineal) cambiaría poco el recall y sí el resultado entre
+    # versiones de la librería que lo implemente — y estos números acaban en un dictamen.
+    yi = np.minimum((np.arange(nh) / escala).astype(np.int32), alto - 1)
+    xi = np.minimum((np.arange(nw) / escala).astype(np.int32), ancho - 1)
+    lienzo = np.full((alto_d, ancho_d, 3), RELLENO, np.uint8)
+    lienzo[:nh, :nw] = imagen[yi][:, xi]
+
+    tensor = lienzo.transpose(2, 0, 1)[None].astype(np.float32)
+    return tensor, escala, (0.0, 0.0)
 
 
-def _a_cajas(salida, escala: float, dx: float, dy: float) -> list[Caja]:  # pragma: no cover
-    raise NotImplementedError("ídem: el post-proceso se fija con el modelo que gane T-3.12.d")
+def _a_cajas(
+    salida, escala: float, dx: float, dy: float, entrada: tuple[int, int], np
+) -> list[Caja]:
+    """Decodifica la salida cruda de YOLOX a cajas en píxeles de la imagen original.
+
+    **El export oficial de YOLOX NO decodifica dentro del grafo**, y esto costó una tarde
+    entera: sus `xywh` salen como offsets crudos —medido, en rango `-2…3`— y no como píxeles.
+    Interpretarlos directamente da cero detecciones **sin error ninguno**, que es la forma más
+    cara de equivocarse: un conteo de cero personas parece un punto de reunión vacío.
+
+    La transformación es la de la publicación:
+
+        xy = (crudo + centro_del_ancla) · paso
+        wh = exp(crudo) · paso
+
+    y el `exp` es la señal de que estaba sin decodificar: unas anchuras que caben en `-2…3`
+    no son píxeles de nada.
+
+    La confianza es `objectness × probabilidad_de_clase`, no una de las dos: la primera dice
+    «aquí hay algo» y la segunda «es una persona», y contar con una sola de ellas mete
+    muebles en el aforo.
+    """
+    p = salida[0].astype(np.float32, copy=True)
+    centros, pasos = rejilla(entrada, np)
+    if len(centros) != len(p):
+        # Se comprueba en vez de suponerse: es lo que distingue «este modelo no es el que
+        # dices» de un conteo silenciosamente corrido. 416 da 3549 anclas; 640 da 8400.
+        raise ValueError(
+            f"el modelo devolvió {len(p)} anclas y la rejilla de {entrada[0]}×{entrada[1]} "
+            f"produce {len(centros)}: la entrada declarada no le corresponde a este modelo"
+        )
+    p[:, :2] = (p[:, :2] + centros) * pasos
+    p[:, 2:4] = np.exp(p[:, 2:4]) * pasos
+
+    objeto = p[:, 4]
+    clases = p[:, 5:]
+    mejor = clases.argmax(1)
+    confianza = objeto * clases[np.arange(len(clases)), mejor]
+
+    # `> 0` además de la clase, y no es una micro-optimización: con todas las
+    # puntuaciones a cero `argmax` devuelve 0, que **es** `CLASE_PERSONA`. Sin este filtro,
+    # un tensor degenerado —un modelo mal cargado, una salida que no es la que se cree—
+    # produce 3549 «personas» de confianza cero en vez de ninguna. `filtrar()` las tiraría
+    # después, pero esta función estaría mintiendo sobre lo que devuelve, y el error solo se
+    # vería al contar. Lo cazó su propio test.
+    #
+    # El UMBRAL de producto sigue viviendo en `filtrar()`: aquí solo se descarta lo que no
+    # es una detección en absoluto.
+    es_persona = (mejor == CLASE_PERSONA) & (confianza > 0)
+    xy, wh = p[es_persona][:, :2], p[es_persona][:, 2:4]
+    x1y1 = (xy - wh / 2 - np.array([dx, dy], np.float32)) / escala
+    x2y2 = (xy + wh / 2 - np.array([dx, dy], np.float32)) / escala
+    return [
+        Caja(float(a), float(b), float(c), float(d), float(s))
+        for (a, b), (c, d), s in zip(x1y1, x2y2, confianza[es_persona], strict=True)
+    ]

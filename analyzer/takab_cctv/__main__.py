@@ -53,7 +53,7 @@ from pathlib import Path
 
 from takab_cctv.aforo import a_muestras, serie_de
 from takab_cctv.capturas import elegir
-from takab_cctv.detector import DetectorBackend, DetectorFalso, cargar_onnx
+from takab_cctv.detector import DetectorBackend, DetectorFalso, Montaje, cargar_onnx
 from takab_cctv.metricas import Sacudida, calcular
 
 _RE_CONFIG = re.compile(r"^\s*configuration:(.*)$", re.MULTILINE)
@@ -137,11 +137,17 @@ def fotogramas_del_goteo(carpeta: Path) -> list[tuple[datetime, bytes]]:
     return sorted(salida, key=lambda par: par[0])
 
 
-def _detector(spec: str) -> DetectorBackend:
+def _detector(spec: str, ffmpeg: str) -> DetectorBackend:
+    """`falso` u `onnx:<ruta>`. El ONNX necesita ffmpeg: es quien decodifica el JPEG.
+
+    Los pesos se dan **por ruta** y nunca se descargan: `ci/licencias.py` vigila el árbol y
+    el job `analyzer` corre sin un solo peso. Bajar un modelo desde el código sería meter una
+    dependencia de red —y una licencia sin auditar— en el camino del dictamen.
+    """
     if spec == "falso":
         return DetectorFalso()
     if spec.startswith("onnx:"):
-        return cargar_onnx(spec.removeprefix("onnx:"))
+        return cargar_onnx(spec.removeprefix("onnx:"), ffmpeg=ffmpeg)
     raise SystemExit(f"detector desconocido: {spec!r} (usa `falso` u `onnx:<ruta>`)")
 
 
@@ -168,6 +174,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ancho", type=int, default=1920)
     ap.add_argument("--alto", type=int, default=1080)
     ap.add_argument("--zona", type=str, default=None, help="polígono JSON normalizado [[x,y],…]")
+    ap.add_argument(
+        "--montaje",
+        type=Montaje,
+        choices=list(Montaje),
+        default=Montaje.PICADO,
+        help=(
+            "cómo está montada la cámara: decide QUÉ punto de la caja se compara con la "
+            "zona. `picado` (defecto) y `frontal` usan los pies; `cenital` usa el centro, "
+            "porque a plomo no hay pies que ver. Es un dato del sitio: lo declara quien "
+            "instala, no se adivina"
+        ),
+    )
     ap.add_argument("--dictamen", type=_instante, default=None)
     ap.add_argument("--checkins", type=int, default=None)
     ap.add_argument("--pga", type=float, default=None)
@@ -179,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     zona = json.loads(args.zona) if args.zona else None
-    detector = _detector(args.detector)
+    detector = _detector(args.detector, args.ffmpeg)
     fotogramas: list[tuple[datetime, bytes]] = []
 
     if args.stills:
@@ -215,7 +233,9 @@ def main(argv: list[str] | None = None) -> int:
     # necesita las dos mitades en una sola curva.
     fotogramas.sort(key=lambda par: par[0])
 
-    curva = serie_de(fotogramas, detector, ancho=args.ancho, alto=args.alto, zona=zona)
+    curva = serie_de(
+        fotogramas, detector, ancho=args.ancho, alto=args.alto, zona=zona, montaje=args.montaje
+    )
 
     muestras = a_muestras(curva)
     evac = calcular(
