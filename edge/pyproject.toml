@@ -36,6 +36,15 @@ aws = [
 lora = [
     "pyserial>=3.5",
 ]
+# [T-3.11] Cliente ONVIF del CCTV. Va SOLO en la máquina que corre `takab-cctv`, que
+# no tiene por qué ser el gabinete: el proceso está escrito para correr igual en el Pi
+# que en una caja aparte del sitio (blueprint §4.8). ffmpeg NO es una dependencia de
+# Python — es un binario LGPL invocado por subproceso, y por exigencia de D-24 nunca
+# enlazado. El import de `onvif` es perezoso: el núcleo tiene que seguir instalándose
+# y pasando CI en x86-64 sin cámara.
+cctv = [
+    "onvif-zeep>=0.2.12",
+]
 
 # Grupo de desarrollo — uv lo instala por defecto en `uv sync`/`uv run` (a diferencia
 # de los extras), evitando que `uv run` desinstale herramientas al re-sincronizar.
@@ -53,6 +62,10 @@ takab-gpio = "takab_edge.gpio.__main__:main"  # proceso mínimo del camino de vi
 # [T-2.70.a·D2/P2] Interroga al dueño de los pines desde el shell (solo lectura):
 # es lo que `deploy.sh` y el traspaso de propiedad necesitan para decidir.
 takab-gpioctl = "takab_edge.pinlink.cli:main"
+# [T-3.11] Proceso APARTE del CCTV, con su propia unidad systemd y sus propios límites
+# de CPU y memoria (blueprint §4.8/B.3). Esa separación es lo que hace que un OOM del
+# decodificador de vídeo mate a este proceso y a nadie más.
+takab-cctv = "takab_edge.cctv.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

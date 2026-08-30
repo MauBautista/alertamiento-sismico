@@ -553,6 +553,27 @@ class BackfillManager(EdgeModule):
                 return self._grants.pop(request.request_id)
         return None
 
+    def request_cctv_grant(
+        self, *, mode: str, event_id: str, sha256: str, ts_from: datetime, ts_to: datetime
+    ) -> dict | None:
+        """Pide a la nube la URL pre-firmada de un clip o una captura. `None` si no llega.
+
+        Existe para que el vídeo **NO pase por este proceso**. `takab-cctv` pregunta por
+        aquí —el gabinete es el único que tiene la identidad X.509 y el enlace MQTT—, se
+        lleva la URL, y sube los bytes él mismo directo a S3. Lo único que cruza
+        `takab-edge` es este JSON pequeño.
+
+        Reutiliza el topic y el contrato del backfill a propósito: un topic MQTT nuevo
+        obliga a tocar la política fleet de AWS IoT, y un topic no autorizado desconecta al
+        gabinete en cada publish.
+        """
+        if mode not in ("cctv_clip", "cctv_still"):
+            raise ValueError(f"modo de grant de CCTV desconocido: {mode!r}")
+        peticion = BackfillRequest(
+            mode=mode, ts_from=ts_from, ts_to=ts_to, event_id=event_id, sha256=sha256
+        )
+        return self._request_grant(peticion)
+
     def _sleep(self, seconds: float) -> None:
         if seconds > 0:
             threading.Event().wait(seconds)

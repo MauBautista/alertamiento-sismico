@@ -292,6 +292,27 @@
 
 ---
 
+- **[DECISION 2026-08-30 · T-3.12.c] Ver VÍDEO no es ver telemetría, y son DOS acciones.**
+  El CCTV añade `cctv_read` (métricas de evacuación y las cuatro capturas del reporte) y
+  `cctv_video` (**el clip entero, verlo y descargarlo**). No aparecen como columna de esta
+  tabla porque **no abren pestaña**: el panel vive dentro de EVALUACIÓN. Los círculos:
+
+  | Acción | Quién | Por qué |
+  |---|---|---|
+  | `cctv_read` | `takab_superadmin`, `tenant_admin`, `soc_operator`, `inspector`, `building_admin` | es lo que sostiene un dictamen: cuánto tardó la gente en salir, y las cuatro fotos |
+  | `cctv_video` | los mismos **menos `inspector`** | once minutos de caras. Un perito estructural no los necesita para decir si el edificio es habitable |
+
+  **`gov_operator` y `takab_support` NO tienen ninguna de las dos**, y la ausencia es la
+  decisión: la RLS de las tablas de CCTV tampoco lleva rama `app_gov_can_see` —precedente
+  exacto de `privacy_notices`—, y el soporte de TAKAB no mira el edificio de un cliente por
+  defecto. Es el blueprint `§4.8/B.4` («acceso por rol, y **más estrecho que el resto**»)
+  escrito como celdas.
+
+  Todo acceso al clip deja fila en `audit_log`, igual que un comando de actuador (`D-14`).
+  La verdad ejecutable vive en `api/src/takab_api/auth/matrix.py`; lo anclan
+  `tests/auth/test_matrix.py::test_ver_video_es_MAS_ESTRECHO_que_ver_las_metricas` y
+  `::test_ningun_rol_de_gobierno_ni_de_soporte_mira_el_video_de_un_cliente`.
+
 ## 3. Matriz de acceso · App Móvil
 
 | Función móvil | `occupant` | `brigadista` | `security_guard` | `inspector` | `building_admin` |

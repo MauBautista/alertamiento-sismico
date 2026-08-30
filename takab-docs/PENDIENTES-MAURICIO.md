@@ -50,7 +50,7 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 ## 1 · DECISIONES — ✅ **sección cerrada** (re-verificada el 2026-08-17)
 
 **No queda ninguna** — pero esta frase ya fue falsa una vez, así que ahora viene con la lista
-completa. Las **veintiuna** decisiones tomadas, cada una con su razón escrita y su condición de
+completa. Las **veinticinco** decisiones tomadas, cada una con su razón escrita y su condición de
 revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 
 | ID | Decisión | Fecha |
@@ -76,12 +76,17 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 | **`D-19`** | Tono de la app: **propio**, no el oficial de CIRES | **2026-08-17** |
 | **`D-20`** | Consulta legal: **espera a que un cliente la pida** | **2026-08-17** |
 | **`D-21`** | Sesión de vida: **se parte** — `G-01` esta semana, solo | **2026-08-17** |
+| **`D-22`** | La consola **se abre al público**; Cognito con MFA, única capa | **2026-08-22** |
+| **`D-23`** | ARCO por teléfono: **lo acredita el cliente institucional** | **2026-08-22** |
+| **`D-24`** | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | **2026-08-29** |
+| **`D-25`** | Bloque IV **arranca ya en software**; encenderlo espera a `G-04` | **2026-08-29** |
 
 > **Las que generan trabajo de software se fichan en `TASKS.md` y NO vuelven a esta lista** —`D-05`
 > (cablear `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta
 > + fecha declarada + alarma por ausencia), `D-07` (**hecho**: `T-2.150`, mergeado el 2026-08-17),
 > `D-08` (diseño de `T-3.09`/`T-3.10`), `D-14` (aforo local + clips, con caída a *solo aforo* **por
-> configuración de sitio**), `D-18` (invertir dos tests HTTP) y `D-19` (grabar el tono propio).
+> configuración de sitio**), `D-18` (invertir dos tests HTTP), `D-19` (grabar el tono propio) y `D-24`/`D-25`
+> (el módulo CCTV entero: `T-3.10`…`T-3.12`).
 > **Ese trabajo es de la máquina.**
 >
 > ### ⚠️ Las que sí te dejan una acción tuya — y son las únicas que importan de esta sección
@@ -92,6 +97,9 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 > | `D-13` + `D-16` | **Abrir cuenta Twilio** y comprar el número mexicano | §4.3 |
 > | `D-15` | **Encender la sirena por jack** (un comando) | §3.4 |
 > | `D-21` | **Acreditar `G-01`** esta semana, 20 min | §3.1 |
+> | `D-25` | **Acreditar `G-04`** y medir `B.2` — es lo que destraba **encender** el CCTV en el gabinete; hasta entonces el software se entrega apagado | §3.1 |
+> | `D-24` | **Ventana AWS** para el Lambda de conteo (ECR + IAM) | §2 |
+> | `D-24` | **Un clic en GitHub**: añadir el check **`licenses`** a la protección de `main`. El job existe y está en verde, pero un job nuevo **no bloquea el merge solo** — la rama exige checks por nombre literal (`D-09`), y hoy son siete. Hasta ese clic, la guarda de AGPL/GPL avisa pero **no impide** el merge | §2 |
 >
 > `D-04` dejaba una cuarta —el traspaso del dueño de los pines— y **ya está hecha** (§3.5).
 

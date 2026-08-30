@@ -396,6 +396,9 @@ class EdgeSupervisor:
             # T-2.86.a: las acciones del panel mueven relés de un edificio y hasta
             # hoy sólo quedaban en una `deque` en RAM que un reinicio borra.
             ledger=self.ledger,
+            # [T-3.11.b] Para verificar el HMAC del grant de CCTV. El panel no firma:
+            # verifica, y sin clave provisionada NO concede — fail-closed.
+            security=self.security,
         )
         # [T-2.86.a] Al VOLVER el enlace, la constancia acumulada sube — y sólo lo
         # que la nube no confirmó todavía (marca de agua durable ⇒ sin duplicar,

@@ -47,6 +47,19 @@ export type AuthFrame = {
 };
 
 /**
+ * Una de las cuatro capturas del reporte, o su ausencia con razón.
+ */
+export type CapturaOut = {
+    captured_at?: string | null;
+    disponible?: boolean;
+    papel: string;
+    purged_at?: string | null;
+    razon?: string | null;
+    sha256?: string | null;
+    still_id?: string | null;
+};
+
+/**
  * Diferencia entre lo que estimó la red y lo que dice el catálogo.
  */
 export type CatalogDelta = {
@@ -122,6 +135,22 @@ export type CatalogPushOut = {
 };
 
 /**
+ * Todo el CCTV de un incidente. **El mismo objeto va a la pantalla y al PDF.**
+ *
+ * Dos rutas distintas para los mismos hechos acabarían discrepando, y un dictamen que no
+ * coincide con lo que el operador vio en pantalla es peor que ninguno.
+ */
+export type CctvOut = {
+    capturas?: Array<CapturaOut>;
+    clips?: Array<ClipOut>;
+    con_camara?: boolean;
+    discrepancia?: DiscrepanciaOut | null;
+    estado?: string;
+    evacuacion?: EvacuacionOut | null;
+    incident_id: string;
+};
+
+/**
  * Pico de un canal SEED en la ventana del incidente.
  */
 export type ChannelPeak = {
@@ -174,6 +203,20 @@ export type CheckinOut = {
     user_id: string;
     verified_by: string | null;
     via: string;
+};
+
+/**
+ * Un clip del incidente. `disponible=False` cuando la retención ya podó el objeto.
+ */
+export type ClipOut = {
+    clip_id: string;
+    coverage?: number | null;
+    disponible?: boolean;
+    ended_at: string;
+    purged_at?: string | null;
+    sha256?: string | null;
+    size_bytes?: number | null;
+    started_at: string;
 };
 
 /**
@@ -470,6 +513,16 @@ export type DirectoryEntryOut = {
 };
 
 /**
+ * Aforo por cámara frente al pase de lista. **Nunca se promedian.**
+ */
+export type DiscrepanciaOut = {
+    aforo_camara?: number | null;
+    checkins?: number | null;
+    diferencia?: number | null;
+    lectura: string;
+};
+
+/**
  * Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con
  * gateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).
  *
@@ -713,6 +766,25 @@ export type ErasureRequestOut = {
 export type ErrorFrame = {
     detail: string;
     type?: 'error';
+};
+
+/**
+ * Las métricas. `None` es «no medido»; la razón está en `notas`.
+ */
+export type EvacuacionOut = {
+    baseline_n?: number | null;
+    correlacion: string;
+    dictamen_lag_s?: number | null;
+    notas?: Array<string>;
+    peak_at?: string | null;
+    peak_n?: number | null;
+    provenance?: string | null;
+    reentry_lag_s?: number | null;
+    reentry_start_at?: string | null;
+    reingreso_antes_del_dictamen?: boolean;
+    t50_s?: number | null;
+    t90_s?: number | null;
+    veredicto_reingreso: string;
 };
 
 /**
@@ -1309,6 +1381,8 @@ export type MapState = {
  */
 export type MeActions = {
     ack_incident: boolean;
+    cctv_read: boolean;
+    cctv_video: boolean;
     checkin_submit: boolean;
     damage_report_submit: boolean;
     deploy_firmware: boolean;
@@ -2530,6 +2604,33 @@ export type ListReferenceEarthquakesCatalogEarthquakesGetResponses = {
 
 export type ListReferenceEarthquakesCatalogEarthquakesGetResponse = ListReferenceEarthquakesCatalogEarthquakesGetResponses[keyof ListReferenceEarthquakesCatalogEarthquakesGetResponses];
 
+export type DownloadClipCctvClipsClipIdDownloadPostData = {
+    body?: never;
+    path: {
+        clip_id: string;
+    };
+    query?: never;
+    url: '/cctv/clips/{clip_id}/download';
+};
+
+export type DownloadClipCctvClipsClipIdDownloadPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadClipCctvClipsClipIdDownloadPostError = DownloadClipCctvClipsClipIdDownloadPostErrors[keyof DownloadClipCctvClipsClipIdDownloadPostErrors];
+
+export type DownloadClipCctvClipsClipIdDownloadPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PresignedDownload;
+};
+
+export type DownloadClipCctvClipsClipIdDownloadPostResponse = DownloadClipCctvClipsClipIdDownloadPostResponses[keyof DownloadClipCctvClipsClipIdDownloadPostResponses];
+
 export type ListDrillsDrillsGetData = {
     body?: never;
     path?: never;
@@ -3280,6 +3381,33 @@ export type ListIncidentActionsIncidentsIncidentIdActionsGetResponses = {
 };
 
 export type ListIncidentActionsIncidentsIncidentIdActionsGetResponse = ListIncidentActionsIncidentsIncidentIdActionsGetResponses[keyof ListIncidentActionsIncidentsIncidentIdActionsGetResponses];
+
+export type IncidentCctvIncidentsIncidentIdCctvGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/cctv';
+};
+
+export type IncidentCctvIncidentsIncidentIdCctvGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentCctvIncidentsIncidentIdCctvGetError = IncidentCctvIncidentsIncidentIdCctvGetErrors[keyof IncidentCctvIncidentsIncidentIdCctvGetErrors];
+
+export type IncidentCctvIncidentsIncidentIdCctvGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CctvOut;
+};
+
+export type IncidentCctvIncidentsIncidentIdCctvGetResponse = IncidentCctvIncidentsIncidentIdCctvGetResponses[keyof IncidentCctvIncidentsIncidentIdCctvGetResponses];
 
 export type ListMyCheckinsIncidentsIncidentIdCheckinsGetData = {
     body?: never;

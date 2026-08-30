@@ -421,6 +421,19 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     ("visibility_grants", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("compliance_labels", "updated_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("site_assets", "updated_by"): PiiColumn(_RETAIN, _R_OPERADOR),
+    # [T-3.11.b] Quién dio de alta y quién tocó por última vez una cámara. El
+    # detector los caza solos por el nombre, así que declararlos no es opcional:
+    # lo que no está aquí pone rojo `test_privacy_erasure`. Se RETIENEN, como
+    # todos los `*_by` de operación — quién apuntó una cámara a un punto de
+    # reunión es parte de por qué el reporte dice lo que dice.
+    #
+    # Y lo que NO está en esta tabla, a propósito: la credencial de la cámara.
+    # Una URL RTSP completa es `rtsp://usuario:tu-clave@host/stream`, y ningún
+    # detector de este módulo la reconoce como PII. Por eso `cameras.rtsp_url`
+    # se declara SIN secreto y la credencial vive en el entorno del proceso que
+    # graba: es una fuga que ningún censo podría ver.
+    ("cameras", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
+    ("cameras", "updated_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("fw_releases", "published_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     # [T-2.70] Quién ordenó estrenar una versión en los gabinetes de un cliente.
     # Es el acto de operación más consecuente que registra esta base —una release

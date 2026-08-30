@@ -2943,3 +2943,261 @@ ALTER TABLE pii_retention_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pii_retention_runs FORCE  ROW LEVEL SECURITY;
 CREATE POLICY pii_retention_runs_internal ON pii_retention_runs FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+
+-- ---------------------------------------------------------------------------
+-- 15. CCTV — AFORO Y EVIDENCIA DE EVACUACIÓN (T-3.11.b · blueprint §4.8)
+-- ---------------------------------------------------------------------------
+-- ESPEJO EXACTO de `api/migrations/versions/0053_cctv.py`, GENERADO desde ella.
+-- Las dos tienen que coincidir: 0001 aplica ESTE archivo sobre base fresca y la
+-- migración lo replica sobre base existente. Si divergen, «verde en local» y
+-- «verde en la nube» dejan de significar lo mismo — ya pasó dos veces.
+--
+-- Los clips NO van en `evidence_objects`: esa tabla es COMPLIANCE_ANCHOR y queda
+-- exenta de la poda, y el vídeo NO puede heredar esa exención (la regla de oro 11
+-- protege auditoría y dictámenes, no imágenes de personas — blueprint §4.8/B.4).
+--
+-- Por eso `cctv_clips`/`cctv_stills` llevan el patrón de DOS TRIGGERS de
+-- `life_checkins`, con los eventos SEPARADOS: DELETE por el guard canónico, y
+-- UPDATE por una rendija que solo admite `s3_key → NULL`. Juntarlos en un
+-- `BEFORE UPDATE OR DELETE` haría que `cctv_purge_guard` —que ordena ANTES que
+-- `forbid_update_delete`— pasara a ser la guarda canónica de TODO el esquema
+-- para `ops/restore_check.py`, cambiando en silencio qué se verifica.
+
+
+-- La rendija de poda del vídeo. Genérica a propósito: sirve a cualquier tabla con
+-- `s3_key` + `purged_at`, y plpgsql resuelve los campos del registro en tiempo de
+-- ejecución. El mensaje CONSERVA el literal 'tabla append-only' porque el verificador de
+-- restore reconoce la guarda por ese texto y por su SQLSTATE (P0001).
+CREATE FUNCTION cctv_purge_guard() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  -- Red de seguridad: si alguien colgara esta función del evento DELETE en vez de
+  -- `forbid_update_delete()`, el borrado seguiria sin pasar.
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'tabla append-only: % no permite %', TG_TABLE_NAME, TG_OP;
+  END IF;
+  -- La UNICA mutacion admitida: `s3_key` pasa de TENER VALOR a NULL, con el resto de la
+  -- fila identica salvo `purged_at`. Exigir la transicion real (y no solo que NEW.s3_key
+  -- sea NULL) deja fuera el `UPDATE ... SET c = c`, que es justo lo que ejerce el
+  -- verificador de restore para comprobar que la guarda esta viva.
+  IF NOT (OLD.s3_key IS NOT NULL AND NEW.s3_key IS NULL)
+     OR (to_jsonb(NEW) - 's3_key' - 'purged_at')
+        IS DISTINCT FROM (to_jsonb(OLD) - 's3_key' - 'purged_at') THEN
+    RAISE EXCEPTION
+      'tabla append-only: % no permite % (unica excepcion: anular s3_key, '
+      'poda de retencion de video)', TG_TABLE_NAME, TG_OP;
+  END IF;
+  RETURN NEW;
+END $$;
+
+CREATE TABLE cameras (
+  camera_id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id         uuid NOT NULL REFERENCES tenants(tenant_id),
+  site_id           uuid NOT NULL REFERENCES sites(site_id),
+  -- El punto de reunion al que apunta. `site_assets` YA tiene kind='assembly_point'.
+  assembly_asset_id uuid REFERENCES site_assets(asset_id),
+  name              text NOT NULL,
+  host              text NOT NULL DEFAULT '',
+  onvif_port        integer NOT NULL DEFAULT 80 CHECK (onvif_port BETWEEN 1 AND 65535),
+  -- SIN credencial. Ver la nota de la cabecera: una URL con usuario y clave seria una
+  -- fuga que ningun detector de PII del proyecto reconoce.
+  rtsp_url          text NOT NULL DEFAULT '',
+  profile           text NOT NULL DEFAULT 'substream'
+                    CHECK (profile IN ('substream','main')),
+  enabled           boolean NOT NULL DEFAULT false,
+  count_mode        text NOT NULL DEFAULT 'cloud'
+                    CHECK (count_mode IN ('cloud','local','off')),
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  created_by        uuid,
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  updated_by        uuid,
+  UNIQUE (site_id, name)
+);
+CREATE INDEX idx_cameras_tenant ON cameras (tenant_id);
+CREATE INDEX idx_cameras_site   ON cameras (site_id) WHERE enabled;
+
+CREATE TABLE cctv_clips (
+  clip_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants(tenant_id),
+  incident_id    uuid NOT NULL REFERENCES incidents(incident_id),
+  camera_id      uuid REFERENCES cameras(camera_id),
+  -- NULLABLE, y la nulabilidad ES la funcion: al podar, el objeto muere y la fila lo
+  -- declara. El sha256 y las horas sobreviven para la cadena de custodia.
+  s3_key         text,
+  sha256         text,
+  size_bytes     bigint,
+  started_at     timestamptz NOT NULL,
+  ended_at       timestamptz NOT NULL,
+  -- Fraccion [0..1] de la ventana pedida que el anillo pudo cubrir de verdad. Un clip que
+  -- dice cubrir T-60s sin cubrirlo es una mentira en un reporte.
+  coverage       numeric,
+  -- NO hay columna `analysis_state`, y su ausencia es la decision. Una columna de
+  -- estado MUTABLE sobre una tabla append-only es una contradiccion: el guard de poda
+  -- solo admite `s3_key -> NULL`, asi que el analizador jamas podria moverla de
+  -- 'pending'. El estado se DERIVA de si existen filas en `cctv_evacuation_metrics`
+  -- para ese incidente — misma doctrina que `calibrated` (derivado de la procedencia)
+  -- y que `is_ghost` (derivado de `derived_state`): lo que se puede derivar no se
+  -- guarda, porque guardado se desincroniza y derivado no puede.
+  purged_at      timestamptz,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+-- Idempotencia POR CONTENIDO, con el precedente exacto de `uq_evidence_incident_sha256`
+-- (0002). Un `UNIQUE (incident_id, started_at, camera_id)` NO servia: `camera_id` es
+-- nullable y en Postgres los NULL son DISTINTOS en un indice unico, asi que dos entregas
+-- del mismo objeto no colisionaban y el `ON CONFLICT DO NOTHING` no hacia nada. Lo caza
+-- `test_una_REENTREGA_no_dice_que_el_video_salio_dos_veces`, y lo cazo de verdad.
+-- Por contenido ademas es lo correcto: la key lleva el sha256 dentro, asi que el MISMO
+-- objeto produce la misma fila por construccion. El indice es PARCIAL porque el sha solo
+-- falta en filas que aun no tienen objeto.
+CREATE UNIQUE INDEX uq_cctv_clips_incident_sha256
+  ON cctv_clips (incident_id, sha256) WHERE sha256 IS NOT NULL;
+CREATE INDEX idx_cctv_clips_tenant   ON cctv_clips (tenant_id);
+CREATE INDEX idx_cctv_clips_incident ON cctv_clips (incident_id, started_at DESC);
+
+CREATE TABLE cctv_stills (
+  still_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  incident_id uuid NOT NULL REFERENCES incidents(incident_id),
+  clip_id     uuid REFERENCES cctv_clips(clip_id),
+  camera_id   uuid REFERENCES cameras(camera_id),
+  -- `drip` es la captura periodica cruda; las otras cuatro son las que ELIGE la nube para
+  -- el reporte, ya con la curva de aforo en la mano.
+  role        text NOT NULL DEFAULT 'drip'
+              CHECK (role IN ('pre','egress','peak','reentry','drip')),
+  s3_key      text,
+  sha256      text,
+  captured_at timestamptz NOT NULL,
+  purged_at   timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- Misma razon que en `cctv_clips`: por contenido, y parcial.
+CREATE UNIQUE INDEX uq_cctv_stills_incident_sha256
+  ON cctv_stills (incident_id, sha256) WHERE sha256 IS NOT NULL;
+CREATE INDEX idx_cctv_stills_tenant   ON cctv_stills (tenant_id);
+CREATE INDEX idx_cctv_stills_incident ON cctv_stills (incident_id, captured_at);
+CREATE INDEX idx_cctv_stills_reporte
+  ON cctv_stills (incident_id, role) WHERE role <> 'drip';
+
+-- La curva de aforo. NO es hypertable: es una serie ACOTADA por incidente (minutos u
+-- horas, no continua), y una hypertable traeria chunks, retencion y RLS con columnstore
+-- —el conflicto que ya documenta el esquema— a cambio de nada.
+CREATE TABLE cctv_occupancy (
+  incident_id uuid NOT NULL REFERENCES incidents(incident_id),
+  camera_id   uuid NOT NULL REFERENCES cameras(camera_id),
+  ts          timestamptz NOT NULL,
+  -- `provenance` no es adorno: el conteo FINAL de la nube sobrescribe al preliminar del
+  -- borde, y mezclarlos sin distinguirlos daria una curva con dos modelos dentro.
+  provenance  text NOT NULL CHECK (provenance IN ('preliminary','final')),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  n_people    integer NOT NULL CHECK (n_people >= 0),
+  PRIMARY KEY (incident_id, camera_id, ts, provenance)
+);
+CREATE INDEX idx_cctv_occupancy_tenant ON cctv_occupancy (tenant_id);
+
+CREATE TABLE cctv_evacuation_metrics (
+  incident_id       uuid NOT NULL REFERENCES incidents(incident_id),
+  provenance        text NOT NULL CHECK (provenance IN ('preliminary','final')),
+  tenant_id         uuid NOT NULL REFERENCES tenants(tenant_id),
+  -- Segundos DESDE la señal. `t90_s` es «cuanto tardo en salir la mayor parte».
+  t50_s             numeric,
+  t90_s             numeric,
+  peak_n            integer,
+  peak_at           timestamptz,
+  reentry_start_at  timestamptz,
+  dictamen_lag_s    numeric,
+  -- NEGATIVO significa que la gente reentro ANTES del dictamen firmado. Eso no es un
+  -- numero: es un hallazgo de seguridad, y el reporte lo dice con palabras.
+  reentry_lag_s     numeric,
+  -- El otro lado del cruce de T-3.12: se muestra como DISCREPANCIA frente a `peak_n`,
+  -- jamas promediado en un numero unico.
+  checkin_count     integer,
+  computed_at       timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (incident_id, provenance)
+);
+CREATE INDEX idx_cctv_metrics_tenant ON cctv_evacuation_metrics (tenant_id);
+
+-- Los dos triggers, con los eventos SEPARADOS (ver la nota de la cabecera).
+CREATE TRIGGER trg_cctv_clips_append_only
+  BEFORE DELETE ON cctv_clips FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+CREATE TRIGGER trg_cctv_clips_purge_guard
+  BEFORE UPDATE ON cctv_clips FOR EACH ROW EXECUTE FUNCTION cctv_purge_guard();
+
+CREATE TRIGGER trg_cctv_stills_append_only
+  BEFORE DELETE ON cctv_stills FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+CREATE TRIGGER trg_cctv_stills_purge_guard
+  BEFORE UPDATE ON cctv_stills FOR EACH ROW EXECUTE FUNCTION cctv_purge_guard();
+
+GRANT SELECT, INSERT, UPDATE ON cameras                 TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON cctv_clips              TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON cctv_stills             TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON cctv_occupancy          TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON cctv_evacuation_metrics TO takab_app;
+
+-- La otra capa del append-only: sin el privilegio, el guard no es la unica defensa.
+-- `test_append_only_dos_capas.py` DERIVA estas dos tablas por su trigger de DELETE y
+-- exige exactamente esto.
+REVOKE DELETE ON cctv_clips  FROM takab_app;
+REVOKE DELETE ON cctv_stills FROM takab_app;
+
+-- El worker de backfill corre como `takab_ingest` (BYPASSRLS), NO como `takab_app`: es
+-- quien registra el objeto cuando S3 avisa. Sin estas lineas el clip sube, la
+-- notificacion llega y el INSERT muere con «permission denied» — verde en local y rojo
+-- en la nube, que es el modo de fallo que este proyecto ya conoce. Y sin DELETE tampoco
+-- para el, que el append-only no depende del rol que lo intente.
+GRANT SELECT, INSERT ON cctv_clips              TO takab_ingest;
+GRANT SELECT, INSERT ON cctv_stills             TO takab_ingest;
+GRANT SELECT, INSERT ON cctv_occupancy          TO takab_ingest;
+GRANT SELECT, INSERT, UPDATE ON cctv_evacuation_metrics TO takab_ingest;
+GRANT SELECT ON cameras TO takab_ingest;
+
+ALTER TABLE cameras                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cameras                 FORCE  ROW LEVEL SECURITY;
+ALTER TABLE cctv_clips              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cctv_clips              FORCE  ROW LEVEL SECURITY;
+ALTER TABLE cctv_stills             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cctv_stills             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE cctv_occupancy          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cctv_occupancy          FORCE  ROW LEVEL SECURITY;
+ALTER TABLE cctv_evacuation_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cctv_evacuation_metrics FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY cameras_read ON cameras FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY cameras_write ON cameras FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY cameras_admin ON cameras FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE POLICY cctv_clips_read ON cctv_clips FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY cctv_clips_write ON cctv_clips FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY cctv_clips_admin ON cctv_clips FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE POLICY cctv_stills_read ON cctv_stills FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY cctv_stills_write ON cctv_stills FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY cctv_stills_admin ON cctv_stills FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE POLICY cctv_occupancy_read ON cctv_occupancy FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY cctv_occupancy_write ON cctv_occupancy FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY cctv_occupancy_admin ON cctv_occupancy FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+CREATE POLICY cctv_evacuation_metrics_read ON cctv_evacuation_metrics FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+CREATE POLICY cctv_evacuation_metrics_write ON cctv_evacuation_metrics FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY cctv_evacuation_metrics_admin ON cctv_evacuation_metrics FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());

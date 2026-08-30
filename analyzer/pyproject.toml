@@ -1,0 +1,37 @@
+[project]
+name = "takab-cctv-analyzer"
+version = "0.1.0"
+description = "TAKAB Ailert — motor de conteo de aforo y analítica de evacuación (T-3.12)"
+requires-python = ">=3.12"
+# NÚCLEO SIN MODELO. El motor de métricas es aritmética sobre una serie: no necesita
+# NumPy, ni ONNX, ni vídeo. Esa frontera es lo que permite probarlo entero en CI sin
+# descargar un solo peso, y lo que deja el Lambda por debajo del límite de imagen.
+dependencies = []
+
+[project.optional-dependencies]
+# El detector real. Va en un extra porque SOLO lo necesita quien procesa vídeo — el
+# reporte y los tests leen métricas ya calculadas.
+#
+# LICENCIAS (D-24): onnxruntime es MIT y los pesos YOLOX son Apache-2.0. `ci/licencias.py`
+# vigila este árbol igual que los otros dos; `ultralytics` está PROHIBIDO y su ausencia
+# no depende de que nadie se acuerde.
+onnx = [
+    "onnxruntime>=1.20",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["takab_cctv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

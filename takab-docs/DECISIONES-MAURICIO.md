@@ -57,6 +57,8 @@
 | [D-21](#d-21) | Sesión de vida: **se parte** — `G-01` esta semana, solo | 2026-08-17 | Mauricio |
 | [D-22](#d-22) | La consola **se abre al público**; Cognito con MFA queda como única capa | 2026-08-22 | Mauricio |
 | [D-23](#d-23) | ARCO por teléfono: **lo acredita el cliente institucional** | 2026-08-22 | Mauricio |
+| [D-24](#d-24) | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | 2026-08-29 | Mauricio |
+| [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
 
 ---
 
@@ -612,6 +614,18 @@ clip de evento exige un consentimiento que un edificio con público no puede rec
 **solo aforo** — y el diseño debe permitir esa caída **por configuración de sitio**, no por
 reescritura. Fichar así en `T-3.10`.
 
+> ### ✏️ ENMENDADA el 2026-08-29 por [`D-24`](#d-24) — la mitad local se cae, el resto sigue en pie
+>
+> **El texto de arriba no se toca**, y conviene leerlo entero antes que la enmienda: era correcto
+> con lo que se sabía el 17 de agosto. Lo que cambió es un **número que entonces no existía**.
+>
+> - **Se cae:** «el aforo se calcula en el inmueble y a la nube sube **solo el número**». El
+>   conteo autoritativo pasa a la nube.
+> - **Sigue en pie, y es la mitad que gobierna:** clips **solo de evento confirmado**, nunca
+>   continuos; retención acotada y declarada; salida de vídeo **auditada** igual que un comando de
+>   actuador; y la caída a **solo aforo por configuración de sitio**, que ahora es exactamente el
+>   mecanismo con el que se vuelve atrás (`cameras.count_mode`).
+
 ---
 
 <a id="d-15"></a>
@@ -1083,3 +1097,114 @@ Si alguna pantalla resulta accesible en degradado y consulta la API, es un fallo
 **Lo que la decisión NO cambia:** `/me` sigue abriendo sesión de base, y debe seguir haciéndolo —
 volver a claims puros reabriría `T-2.114` y dejaría al ocupante móvil sin edificio. Lo que se
 arregla es **cómo reacciona el cliente cuando `/me` no contesta**.
+
+---
+
+<a id="d-24"></a>
+## D-24 · CCTV — el **conteo pasa a la nube**, y el clip se ve y se descarga
+
+**Fecha:** 2026-08-29 · **Decide:** Mauricio · **Enmienda:** [`D-14`](#d-14) ·
+**Fichas:** `T-3.10`, `T-3.11`, `T-3.12` · **Diseño:** [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B
+
+**La decisión.** El aforo lo calcula la **nube**, no el inmueble. El gabinete graba y sube; la nube
+cuenta. Concretamente:
+
+- **Un clip por evento confirmado**, de `T−60 s` a `T+600 s`.
+- **Un goteo de capturas JPEG** después del clip, hasta detectar reingreso o agotar un tope.
+- El **operador puede ver el vídeo y descargarlo** desde la consola.
+- Del clip y del goteo salen **cuatro capturas** para el reporte: antes de la señal, la gente
+  saliendo, el aforo máximo, y el reingreso.
+
+**Por qué cambia, y no es una preferencia: es un número que el 17 de agosto no existía.** El
+gabinete se midió el 2026-08-29 y es un **Pi 4 de 1 GB** — 905 MB totales, 654 MB disponibles, y
+sin ffmpeg. `D-14` se escribió suponiendo que «el inmueble» tenía holgura para un detector. No la
+tiene. Y la regla de decisión de `B.2` ya estaba escrita **antes** de ver el número precisamente
+para esto: *si se acerca al presupuesto, hardware separado, sin discusión*. Las opciones reales
+eran comprar una segunda caja por edificio o gastar nube. **Se gasta nube**, que es dinero, en vez
+de gastar el margen del camino de vida, que no se repone.
+
+**Y una segunda razón, que habría bastado sola.** Un número de aforo **no se puede auditar después**.
+«Había 40 personas» sin una imagen es infalsificable, y el reporte de un sismo es evidencia: si un
+perito o un seguro no puede revisarla, no es evidencia, es una afirmación.
+
+> ### ⚠️ Lo que esto cuesta, dicho sin adornos — y el goteo, que hay que declarar y no colar
+>
+> **La materia prima del conteo ahora sale del edificio.** Eso es exactamente lo que `D-14` había
+> comprado procesando en sitio, y se está gastando. La conversación de privacidad con un cliente
+> institucional **no desaparece: hay que ganarla.**
+>
+> Y dentro de esto va una pieza que es fácil no ver: el **goteo de capturas**. El clip dura 11
+> minutos y un dictamen tarda horas, así que la foto del reingreso —y la curva que dice cuándo
+> empezó— salen de un JPEG cada 30 s durante horas. Es poco peso y no es vídeo continuo, pero
+> **son imágenes de personas saliendo del inmueble**, y quedan escritas aquí para que nadie lea
+> «un clip» y crea que eso es todo lo que viaja.
+>
+> **Lo que acota el daño, y es la mitad que hace aceptable la decisión:** apagado por defecto por
+> sitio · retención acotada **con job propio de poda** (el vídeo no hereda la exención de la
+> evidencia) · RBAC más estrecho que el resto —ver vídeo no es ver telemetría— · y una fila en
+> `audit_log` **en la subida**, no solo en la descarga.
+
+**Cómo se revoca:** `cameras.count_mode = 'local'` por sitio. Es literalmente la caída «a solo
+aforo, **por configuración y no por reescritura**» que `D-14` exigió — sigue existiendo, y ahora es
+el interruptor de vuelta. Si el cliente que llegue no acepta que el vídeo salga, ese sitio cuenta
+en el borde y no sube nada.
+
+**Lo que NO cambia de `D-14`:** clips solo de evento confirmado, jamás continuos ni «por si
+acaso». Es la **regla de oro 9 aplicada al vídeo**, y sigue siendo la condición.
+
+> ### 🔧 CORRECCIÓN DE PREMISA, el mismo día (2026-08-29) — el 1 GB es el banco, no el destino
+>
+> El texto de arriba se queda como está, pero **una de sus dos razones estaba mal encuadrada** y
+> conviene arreglarlo antes de que alguien la cite: los 905 MB son del **gabinete de desarrollo**.
+> Mauricio confirma que el equipo real de campo será un **Raspberry Pi 5 de 8 GB o un Pi 4 de
+> 8 GB**, todavía **sin comprar**.
+>
+> **Con 8 GB, «no cabe un detector en el gabinete» deja de ser cierto.** Esa razón se cae.
+>
+> **La decisión NO se cae, pero su razón ahora es otra y es más simple:** el equipo que va a
+> correr esto **no existe todavía**, y `B.2` no se puede medir en una máquina que no es la que va
+> a ejecutar. Medir en el banco de 1 GB y extrapolar a 8 GB sería inventar el número, que es
+> justo lo que `B.2` prohíbe. Así que hasta que haya hardware real: **cuenta la nube, y el conteo
+> preliminar local se queda apagado.**
+>
+> **Lo que esto cambia en la práctica:** el conteo local pasa de «descartado por RAM» a
+> **«aplazado hasta que haya con qué medirlo»**. El adaptador `DetectorBackend` ya está pensado
+> para las dos orillas, así que encenderlo el día que llegue la caja es configuración, no
+> reescritura — que es la misma propiedad que `D-14` exigió para la caída a solo aforo.
+>
+> **Y la segunda razón de `D-24` sigue intacta**, que es la que de verdad sostiene la decisión: un
+> número de aforo sin imagen **no se puede auditar después**. Esa no dependía de la RAM.
+
+---
+
+<a id="d-25"></a>
+## D-25 · Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04`
+
+**Fecha:** 2026-08-29 · **Decide:** Mauricio · **Venía de:** el preámbulo del `BLOQUE IV` en
+`TASKS.md` · **Extiende:** [`D-08`](#d-08)
+
+**El texto que esta decisión toca.** El preámbulo del `BLOQUE IV` dice: *«No empieza antes de que
+el Bloque II esté cerrado y `G-04` acreditado. La razón no es de agenda: no se le añaden funciones
+a un sistema cuya cadena de vida todavía no se midió en hardware real.»* Es la **excepción 1** de
+la regla de ordenación. `G-04` sigue abierto.
+
+**La decisión, en dos mitades — y la segunda es la que importa.**
+
+1. **El software del CCTV se escribe ya.** `D-08` autorizó planificar; esto autoriza construir.
+2. **No se instala ni se enciende nada en el gabinete** hasta que `G-04` esté acreditado **y** la
+   medición de `B.2` esté hecha, con su número escrito.
+
+**Por qué el límite y no una anulación limpia.** La razón del preámbulo es literal y hay que leerla
+como está escrita: no se le añaden funciones **a un sistema**. Código que se entrega **apagado**, en
+un proceso que no existe en el Pi, con la unidad systemd sin instalar, **no le añade nada al sistema
+que protege el edificio**. Lo que el preámbulo prohíbe es exactamente lo que la mitad 2 sigue
+prohibiendo. Anular la regla entera habría sido más cómodo y habría borrado la garantía; partirla
+la conserva.
+
+**El coste aceptado, que es el mismo de `D-08`:** desvía esfuerzo de la ruta crítica hacia el primer
+cliente. Se asume otra vez, y a sabiendas.
+
+> **El gatillo que levanta la mitad 2** —escrito para no depender de acordarse—: `G-04` acreditado
+> **y** la latencia del reflejo SASMEX→relé medida bajo carga de CCTV contra su presupuesto de
+> 100 ms, con la conclusión escrita **con su número**, aplicando la regla de `B.2` **después** de
+> verlo. El sesgo del que hay que protegerse sigue siendo «va justo pero cabe».

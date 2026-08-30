@@ -7,6 +7,7 @@
 API_DIR := api
 WEB_DIR := web
 EDGE_DIR := edge
+ANALYZER_DIR := analyzer
 MOBILE_DIR := mobile
 LANDING_DIR := landing
 SDK_DIR := shared/sdk-ts
@@ -165,6 +166,7 @@ lint:
 	cd $(API_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(WEB_DIR) && npm run lint && npm run format:check && npm run typecheck
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
+	cd $(ANALYZER_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(MOBILE_DIR) && npm run lint && npm run typecheck
 	cd $(LANDING_DIR) && npm run lint && npm run format:check && npm run typecheck
 	terraform fmt -check -recursive infra/terraform
@@ -179,6 +181,7 @@ test: test-db
 	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q -rs
+	cd $(ANALYZER_DIR) && uv run pytest -q -rs
 	cd $(MOBILE_DIR) && npm test
 	cd $(LANDING_DIR) && npm run test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
@@ -188,6 +191,7 @@ test: test-db
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh
+	./ci/check-licenses.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
 # commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo

@@ -120,7 +120,7 @@ Sitios de referencia (del deck, para fixtures/seed): Planta Cholula (Edif. A/B),
 | Relé de potencia en paralelo WR-1→sirena | **Respaldo último de vida** | El dry-contact del WR-1 dispara la sirena por hardware **aunque el Pi esté muerto** (§4.7 / FASE-0 SPOF-02, tarea T-1.4). |
 | RTC DS3231 + `chrony` | Reloj sin internet | Deriva ±2 ppm ≈ 0.17 s/día: sellos de tiempo y correlación siguen siendo válidos horas sin NTP (§4.7 / FASE-0 SPOF-06). |
 | Interfaz BACnet/IP | Control de actuadores | Sirena, válvulas de gas, ascensores/montacargas, retenedores de puerta. |
-| CCTV ONVIF (opcional) | Verificación visual | RTSP/H.264; bookmark por incidente. |
+| CCTV ONVIF (opcional) | Verificación visual **y aforo de evacuación** | RTSP/H.264 (Profile S). Un clip por evento confirmado + capturas; el conteo lo hace la nube. Ver **§4.8**. |
 | Red | Ethernet **obligatorio** | No usar Wi-Fi integrado (latencia/pérdida). |
 
 ## 4.2 Servicios/módulos del Pi 4
@@ -138,6 +138,7 @@ Cada módulo es un servicio supervisado (systemd o contenedor) con responsabilid
 | `cloud` | Conector MQTT (QoS 1, mTLS) hacia AWS IoT Core. **Cola durable offline** con backfill al reconectar. Recibe comandos remotos firmados. | Publicación de features/eventos/health/ACKs. |
 | `health` | Autodiagnóstico silencioso: NTP offset, lag SeedLink, packet loss, estado UPS, temperatura, estado de actuadores, `cert_days_remaining`. Logging por transición + heartbeat. | Snapshots de salud por evento. |
 | `config` | Store local de umbrales/reglas/tenant. Sincronización desde la nube (JWT firmado, ≤60 s). | Config activa versionada. |
+| `cctv` *(opcional, proceso APARTE)* | **No es un módulo del supervisor**: es `takab-cctv`, un proceso propio con sus propios límites de CPU/RAM que habla con el edge **como cliente** (§4.8). Graba el anillo, extrae el clip del evento y sube por PUT presignado. | Clip + capturas en S3; el conteo lo hace la nube. |
 | `security` | mTLS/X.509 por gateway, verificación de comandos firmados, store de nonces, rotación de credenciales. | — |
 | `local_api` | API/dashboard local del edificio, accesible **solo en LAN** sin internet: estado, último evento, prueba de sirena, **silencio por LAN** (fallback de `RBAC-TAKAB.md §4.2` cuando la WAN está caída). Mínima, autenticada. | Endpoint LAN de diagnóstico y control local. |
 | `supervisor` | Arranque, watchdog, aislamiento de fallos, orden de dependencias entre módulos. | — |
@@ -258,6 +259,116 @@ Umbrales de referencia por tipo de instalación (del deck; calibrar por tipolog�
 | NTP sin internet (SPOF-06) | RTC DS3231 + `chrony` con RTC como fallback (deriva 0.17 s/día es aceptable para la asociación de quórum). |
 | Relés en estado incorrecto al fallar (SPOF-07) | **Fail-safe/fail-secure por canal, configurado en el perfil del sitio**: sirena **NO** (una falla del Pi no la deja sonando), retenedores de puertas de emergencia **NC** (una falla LIBERA las puertas), válvula de gas **fail-close**. En `rule_sets.config.relays`. |
 | Quórum depende de la nube (SPOF-01) | Ya cubierto por diseño: SASMEX (radio) es el canal primario independiente de internet; el umbral local dispara protocolo sin quórum; el quórum es complementario y **jamás** prerequisito de actuación. Documentar contractualmente "la detección colaborativa requiere conectividad". |
+
+## 4.8 CCTV — aforo y evidencia de evacuación (Bloque IV)
+
+> Origen: requisito de Mauricio (2026-07-10), diseño en
+> [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B, decisiones
+> [`D-14`](DECISIONES-MAURICIO.md#d-14) y su enmienda [`D-24`](DECISIONES-MAURICIO.md#d-24).
+> Fichas `T-3.10`…`T-3.12.d`. **Se entrega apagado**: encenderlo en el gabinete espera a `G-04`
+> y a la medición de este mismo apartado ([`D-25`](DECISIONES-MAURICIO.md#d-25)).
+
+**Qué resuelve.** Una cámara ONVIF por sitio, apuntando al punto de reunión, que responde tres
+preguntas que hoy nadie puede contestar después de un sismo: **cuánta gente salió**, **cuánto
+tardó la mayor parte en salir**, y **cuánto se tardó entre el dictamen y el reingreso**. Eso se
+anexa al reporte del incidente junto a la sacudida medida por el sismómetro.
+
+### El invariante, antes que nada
+
+> **El CCTV NUNCA entra en el camino de vida.** No dispara, no inhibe, no retrasa. Si el cliente
+> ONVIF muere, se cuelga o satura la red, **el gabinete no se entera.**
+
+Eso no se sostiene con disciplina, se sostiene con la **dirección de la dependencia**: `takab-cctv`
+es un proceso propio y **cliente** que sondea `GET /api/status` del edge a 1 Hz. El edge es
+servidor y **estructuralmente no puede** depender de él. El anillo de pre-grabación —que ya está
+grabando cuando llega la alerta— hace irrelevante el ~1 s de latencia del sondeo.
+
+### Topología
+
+```
+[cámara ONVIF] ──RTSP/H.264──► takab-cctv.service     (proceso propio · CPUQuota · MemoryMax · Nice)
+                                  │   sondeo 1 Hz  ──► takab-edge   (servidor; no depende de nadie)
+                                  │   grant HMAC   ──► takab-edge ──MQTT──► nube
+                                  └── PUT presignado ─────────────────────► S3   (el vídeo NO pasa
+   takab-gpio (camino de vida) — ajeno a todo esto                                 por takab-edge)
+                                                             S3 → cola → conteo (YOLOX + ByteTrack)
+                                                             └──► Postgres ──► reporte PDF · SOC
+```
+
+**Dónde vive el proceso.** `takab-cctv` está escrito para correr **igual en el Pi 4 del gabinete
+que en una caja aparte del sitio**: habla con el edge por HTTP de LAN, no por memoria compartida.
+Dónde se despliegue lo decide la medición de abajo, no el código.
+
+### Presupuesto de CPU y la regla que lo decide
+
+**Dos máquinas distintas, y confundirlas es el error que hay que evitar:**
+
+| | Qué es | Estado |
+|---|---|---|
+| **Banco de desarrollo** | `Raspberry Pi 4 Model B Rev 1.5` de **1 GB** (905 MB totales, 654 disponibles, 4 núcleos, 17 GB libres de microSD, **sin ffmpeg**) — medido el 2026-08-29 | es el que hay hoy |
+| **Equipo de campo** | **Raspberry Pi 5 de 8 GB** o **Pi 4 de 8 GB** | **sin comprar** |
+
+Con 8 GB el detector cabe de sobra, así que la RAM **no** es lo que decide. Lo que decide es que
+`B.2` **no se puede medir en una máquina que no es la que va a ejecutar**: medir en el banco de
+1 GB y extrapolar a 8 GB sería inventar el número, que es exactamente lo que `B.2` prohíbe. Hasta
+que exista el equipo real, el reparto es éste:
+
+| Trabajo | Dónde | Por qué |
+|---|---|---|
+| Grabar (remux `-c copy`, **sin decodificar**) | el Pi 4 puede | no descomprime nada: cuesta centésimas de núcleo y decenas de MB |
+| **Contar** (detector + tracking) | **la nube** | el equipo de campo aún no existe y `B.2` no se puede medir sin él. El conteo preliminar local está **aplazado, no descartado**: el adaptador `DetectorBackend` sirve a las dos orillas y encenderlo será configuración |
+
+La regla de decisión de `B.2` **no se reabre y no se acomoda al resultado**: lo único que decide es
+la **latencia del reflejo SASMEX→relé bajo carga de CCTV** contra su presupuesto de **100 ms**
+(`reflex_budget_s`, visible en `/api/status`). Si se acerca, o si crece la varianza, **hardware
+separado, sin discusión**. La referencia actual sin CCTV es de 6.65 ms y 4.16 ms: **dos órdenes de
+magnitud de margen**, y el sesgo del que hay que protegerse es «va justo pero cabe».
+
+**Los límites no son recomendaciones, son la condición** (`B.3`): `CPUQuota=`, `MemoryMax=`,
+`Nice=` y `Restart=` propios en la unidad systemd, de modo que un OOM mate **al cliente CCTV y a
+nadie más**, y una cuota de disco dura sobre el anillo — la microSD es de la que arranca el camino
+de vida y un clip atascado sin subir no puede llenarla.
+
+### Qué se graba y qué sale del inmueble
+
+- **Anillo local continuo**, ~180 s, **autopurgado**. Nunca sale del gabinete.
+- **Un clip por evento confirmado**, de `T−60 s` a `T+600 s`.
+- **Un goteo de capturas JPEG** tras el clip, hasta detectar reingreso o agotar un tope — es lo que
+  da la curva de reingreso y la foto del reingreso, que casi nunca cabe en los 11 minutos del clip
+  porque **un dictamen tarda horas**.
+- **Nada más.** Clips **solo de evento confirmado**, jamás continuos: es la **regla de oro 9
+  aplicada al vídeo**, el mismo criterio que prohíbe subir forma de onda cruda en continuo.
+- **No se graba en modo prueba del WR-1.** Sin esa puerta, una prueba de banco sube vídeo real de
+  un edificio real, sin incidente al que atarlo y sin base legal.
+
+### PII de vídeo — lo más sensible que toca este sistema
+
+- **Retención acotada y declarada por sitio.** El vídeo **NO** hereda la exención de poda de la
+  evidencia (regla de oro 11): esa exención es para auditoría y dictámenes, **no para imágenes de
+  personas**. Poda en **job propio**, y con **las dos mitades** —la referencia en la base y el
+  objeto en S3—: anular la referencia y dejar la imagen es peor que no podar, porque se declara
+  cumplido.
+- **El hecho sobrevive, la imagen no.** La fila del clip es append-only y conserva `sha256` y
+  fecha; lo que se poda es el objeto. La cadena de custodia del reporte lo dice: `PURGADO`.
+- **Acceso por rol, más estrecho que el resto:** *ver vídeo no es ver telemetría*. `cctv_read` para
+  métricas y capturas; `cctv_video` para el clip.
+- **Toda salida de vídeo deja rastro en `audit_log`** —quién, qué cámara, cuándo— **en la subida y
+  en la descarga**, igual que un comando de actuador (`D-14`).
+- **Las credenciales de la cámara no viven en la base.** La URL RTSP lleva usuario y contraseña
+  embebidos y ningún detector de PII la reconoce: es la fuga que ningún censo puede ver.
+- **Caída a solo aforo por configuración de sitio** (`cameras.count_mode`), no por reescritura: es
+  la vuelta atrás que `D-14` exigió y que `D-24` conserva intacta.
+- Aviso de privacidad y base legal van a la consulta de `GATE-LEGAL` (`T-2.96`), hoy en espera por
+  [`D-20`](DECISIONES-MAURICIO.md#d-20).
+
+### Licencias — restricción dura del subsistema
+
+Cero AGPL/GPL en el árbol, en **ningún** entorno. Detector tras un adaptador `DetectorBackend`;
+YOLOX / D-FINE (Apache-2.0) sobre `onnxruntime` (MIT); ByteTrack del repo de Megvii (MIT); FFmpeg
+**LGPL** invocado como **subproceso**, nunca enlazado, y verificado al arrancar. Prohibidos y
+verificados en CI: `ultralytics` (AGPL-3.0), DeepSORT (GPL-3.0), YOLOv6/v7 (GPL-3.0), YOLO-NAS.
+
+---
 
 ---
 

@@ -19,11 +19,12 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 import psycopg
 from psycopg.rows import tuple_row
 
+from takab_api.audit import audit
 from takab_api.contracts.loader import ContractError, discriminate, kind_for_topic, validate
 from takab_api.contracts.meta import Meta
 from takab_api.ingest.handlers import HANDLERS, Outcome
@@ -61,6 +62,11 @@ def process_s3_object(
     if key.startswith("backfill/"):
         return _process_ndjson(conn, bucket, key, registry, s3_client=s3_client)
     if key.startswith("evidence/"):
+        # [T-3.11.b] El CCTV comparte prefijo con el miniSEED —el bucket solo notifica
+        # `evidence/`— así que aquí es donde se separan, por el nombre del objeto.
+        nombre = key.rsplit("/", 1)[-1]
+        if nombre.startswith(("cctv-", "still-")):
+            return _process_cctv(conn, bucket, key, s3_client=s3_client)
         return _process_evidence(conn, bucket, key, s3_client=s3_client)
     return ObjectResult(Outcome.REJECT, f"key sin ruta conocida: {key!r}")
 
@@ -209,3 +215,151 @@ def _process_evidence(
     conn.commit()
     logger.info("evidencia %s registrada (incidente %s)", key, incident_id)
     return ObjectResult(Outcome.OK, ok=1)
+
+
+# --------------------------------------------------------------------- CCTV
+
+#: [T-3.11.b] `ON CONFLICT DO NOTHING` sobre la restricción natural: la key lleva el
+#: sha256 dentro, así que re-entregar el mismo objeto —que SQS hace, por diseño at-least-
+#: once— no duplica la fila. El clip queda registrado y descargable **antes** de que exista
+#: quien lo analice; que el análisis esté hecho se DERIVA de si hay métricas para su
+#: incidente, no de una columna de estado que esta tabla append-only no podría mover.
+_INSERT_CLIP_SQL = """
+INSERT INTO cctv_clips
+  (tenant_id, incident_id, s3_key, sha256, size_bytes, started_at, ended_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (incident_id, sha256) WHERE sha256 IS NOT NULL DO NOTHING
+RETURNING clip_id
+"""
+
+_INSERT_STILL_SQL = """
+INSERT INTO cctv_stills
+  (tenant_id, incident_id, s3_key, sha256, captured_at, role)
+VALUES (%s, %s, %s, %s, %s, 'drip')
+ON CONFLICT (incident_id, sha256) WHERE sha256 IS NOT NULL DO NOTHING
+RETURNING still_id
+"""
+
+
+def _process_cctv(conn: psycopg.Connection, bucket: str, key: str, *, s3_client) -> ObjectResult:
+    """Registra un clip o una captura de CCTV recién subidos por el gabinete.
+
+    Mismo esqueleto que `_process_evidence` y a propósito: se verifica el sha256 contra la
+    key (el objeto es lo que dice ser), se resuelve el incidente por `event_uuid`, y se
+    comprueba que el tenant de la key coincida con el del incidente — porque las FK de
+    Postgres no comparan tenant y sin esto una key ajena alcanzaría el espacio de otro
+    cliente.
+
+    **El `RETRY` cuando el incidente aún no existe no es un detalle.** El clip tarda diez
+    minutos en cortarse y puede subir ANTES de que el evento se haya ingerido si el
+    gabinete estuvo sin red; devolver `REJECT` mandaría a la DLQ una evidencia buena.
+    """
+    parts = key.split("/")
+    if len(parts) != 4:
+        return ObjectResult(Outcome.REJECT, f"key de CCTV malformada: {key!r}")
+    _prefix, tenant_id, event_uuid, filename = parts
+
+    partido = _partir_nombre_cctv(filename)
+    if partido is None:
+        return ObjectResult(Outcome.REJECT, f"key de CCTV malformada: {key!r}")
+    es_clip, inicio, fin, expected_sha = partido
+
+    body = s3_client.get_object(Bucket=bucket, Key=key)["Body"].read()
+    digest = hashlib.sha256(body).hexdigest()
+    if digest != expected_sha:
+        return ObjectResult(
+            Outcome.REJECT, f"sha256 no coincide con la key ({digest[:12]}…≠{expected_sha[:12]}…)"
+        )
+
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(
+            "SELECT incident_id, tenant_id FROM incidents WHERE event_uuid = %s",
+            (event_uuid,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        conn.rollback()
+        return ObjectResult(Outcome.RETRY, f"incidente {event_uuid} aún no ingerido")
+    incident_id, incident_tenant = row
+    if str(incident_tenant) != tenant_id:
+        return ObjectResult(Outcome.REJECT, "tenant de la key ≠ tenant del incidente")
+
+    if es_clip:
+        cur = conn.execute(
+            _INSERT_CLIP_SQL,
+            (incident_tenant, incident_id, key, digest, len(body), inicio, fin),
+        )
+    else:
+        cur = conn.execute(_INSERT_STILL_SQL, (incident_tenant, incident_id, key, digest, inicio))
+    creada = cur.fetchone() is not None
+
+    if creada:
+        # [T-3.11.b · D-14] «La salida de vídeo queda AUDITADA igual que un comando de
+        # actuador». Es una excepción DELIBERADA a la costumbre de esta ingesta, que no
+        # audita los OK (ver `_audit_reject`, regla de oro 10): un objeto de CCTV no es un
+        # latido periódico, es una imagen de personas identificables saliendo del inmueble
+        # del cliente. Cada una de esas salidas es un hecho que alguien puede tener que
+        # justificar, y sin esta fila la única constancia sería el propio objeto — que la
+        # política de retención está obligada a borrar.
+        #
+        # Va atado a `creada`, y por eso el INSERT lleva `RETURNING`: SQS entrega
+        # at-least-once y sin esto una reentrega escribiría una segunda fila diciendo que
+        # el vídeo salió dos veces. `DEDUPE_VERBS` resuelve ese mismo problema con una
+        # cubeta temporal de 450 s; aquí no hace falta porque `RETURNING` es EXACTO —
+        # dedupea también la reentrega que llega horas después, que la cubeta no vería.
+        audit(
+            conn,
+            tenant_id=str(incident_tenant),
+            actor="system:backfill",
+            verb="cctv_egress",
+            obj=key,
+            meta={
+                "incident_id": str(incident_id),
+                "kind": "clip" if es_clip else "still",
+                "sha256": digest,
+                "size_bytes": len(body),
+                "desde": inicio.isoformat(),
+                "hasta": fin.isoformat(),
+            },
+        )
+    conn.commit()
+    logger.info("cctv: %s registrado (incidente %s)", key, incident_id)
+    return ObjectResult(Outcome.OK, ok=1)
+
+
+_TS_KEY = "%Y%m%dT%H%M%SZ"
+
+
+def _partir_nombre_cctv(filename: str) -> tuple[bool, datetime, datetime, str] | None:
+    """`(es_clip, inicio, fin, sha256)` del nombre del objeto, o `None` si no cuadra.
+
+    Formatos, fijados por `backfill.grants.canonical_key`:
+
+    * ``cctv-{desde}_{hasta}-{sha256}.mp4``
+    * ``still-{cuando}-{sha256}.jpg``
+
+    Se analiza aqui y no se adivina en la base porque la notificacion de S3 **solo ve la
+    key**: en este camino es la unica fuente de la ventana del clip.
+    """
+    if filename.startswith("cctv-") and filename.endswith(".mp4"):
+        ventana, _, sha = filename[len("cctv-") : -len(".mp4")].rpartition("-")
+        desde, _, hasta = ventana.partition("_")
+        if not hasta:
+            return None
+        try:
+            return (
+                True,
+                datetime.strptime(desde, _TS_KEY).replace(tzinfo=UTC),
+                datetime.strptime(hasta, _TS_KEY).replace(tzinfo=UTC),
+                sha,
+            )
+        except ValueError:
+            return None
+    if filename.startswith("still-") and filename.endswith(".jpg"):
+        cuando, _, sha = filename[len("still-") : -len(".jpg")].rpartition("-")
+        try:
+            ts = datetime.strptime(cuando, _TS_KEY).replace(tzinfo=UTC)
+        except ValueError:
+            return None
+        return (False, ts, ts, sha)
+    return None

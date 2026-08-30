@@ -34,6 +34,14 @@ logger = logging.getLogger("takab_api.backfill")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TS_FMT = "%Y%m%dT%H%M%SZ"
 
+#: [T-3.11.b] Los dos objetos de CCTV, con su prefijo de nombre y su tipo. El `sha256` va
+#: DENTRO de la key igual que en el miniSEED: re-subir el mismo contenido produce la misma
+#: key, así que la idempotencia no depende de que nadie reintente.
+_CCTV: dict[str, tuple[str, str, str]] = {
+    "cctv_clip": ("cctv", ".mp4", "video/mp4"),
+    "cctv_still": ("still", ".jpg", "image/jpeg"),
+}
+
 
 def _presign_put(settings: Settings, bucket: str, key: str, content_type: str) -> str:
     client = boto3.client("s3", region_name=settings.aws_region)
@@ -65,6 +73,34 @@ def canonical_key(payload: dict, ctx: GatewayCtx, thing: str) -> tuple[str, str,
             return None
         key = f"evidence/{ctx.tenant_id}/{event_id}/{sha256}.mseed"
         return ("evidence_bucket", key, "application/vnd.fdsn.mseed")
+    if mode in _CCTV:
+        # [T-3.11.b] Mismo prefijo `evidence/` que el miniSEED, y NO es estética: el
+        # bucket solo notifica `ObjectCreated` sobre ese prefijo
+        # (`infra/terraform/modules/storage`). Una key bajo `cctv/…` aterrizaría y no la
+        # ingestaría nadie — el objeto existiría y el incidente no se enteraría.
+        event_id = payload.get("event_id") or ""
+        sha256 = payload.get("sha256") or ""
+        if not event_id or not _SHA256_RE.fullmatch(sha256):
+            return None
+        try:
+            ts_from = datetime.fromisoformat(payload["ts_from"]).astimezone(UTC)
+            ts_to = datetime.fromisoformat(payload["ts_to"]).astimezone(UTC)
+        except (KeyError, TypeError, ValueError):
+            return None
+        # La VENTANA va dentro de la key, con el mismo precedente que el NDJSON del
+        # backfill (`{from}_{to}.ndjson.gz`). No es adorno: quien registra el objeto es la
+        # notificacion de S3, que solo ve la key — sin la ventana ahi, la fila del clip
+        # tendria que inventarse un inicio y un fin, y un dato inventado en una tabla de
+        # evidencia es peor que un hueco. La idempotencia se conserva: mismo contenido y
+        # misma ventana => misma key.
+        prefijo, sufijo, tipo = _CCTV[mode]
+        cuando = (
+            f"{ts_from:{_TS_FMT}}"
+            if mode == "cctv_still"
+            else f"{ts_from:{_TS_FMT}}_{ts_to:{_TS_FMT}}"
+        )
+        key = f"evidence/{ctx.tenant_id}/{event_id}/{prefijo}-{cuando}-{sha256}{sufijo}"
+        return ("evidence_bucket", key, tipo)
     return None
 
 

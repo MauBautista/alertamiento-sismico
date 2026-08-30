@@ -89,6 +89,16 @@ function resource<T>(
   };
 }
 
+/** [T-3.12.c] CCTV sin datos: el panel existe en todos los escenarios de este arnés. */
+const CCTV = {
+  data: undefined,
+  loading: false,
+  error: null,
+  refetch: () => {},
+  dataUpdatedAt: 0,
+  staleSince: null,
+};
+
 function arrange(
   over: Partial<TriageDetailProps["detail"]> = {},
   props: Partial<TriageDetailProps> = {},
@@ -115,6 +125,8 @@ function arrange(
       row={ROW}
       detail={detail}
       forensics={FORENSICS}
+      cctv={CCTV}
+      canDownloadClip={false}
       minNodes={3}
       incidentStaleSince={null}
       canSign={false}
@@ -181,6 +193,8 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
           } as unknown as TriageDetailProps["detail"]
         }
         forensics={FORENSICS}
+        cctv={CCTV}
+        canDownloadClip={false}
         minNodes={3}
         incidentStaleSince={null}
         canSign={false}

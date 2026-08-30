@@ -48,6 +48,8 @@ export const ACTIONS_NONE: MeActions = {
   deploy_firmware: false,
   manage_privacy_notice: false,
   manage_privacy_erasure: false,
+  cctv_read: false,
+  cctv_video: false,
 };
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";

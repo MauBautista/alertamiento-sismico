@@ -121,5 +121,32 @@ class SecurityManager(EdgeModule):
             return False
         return self._safe_equal(self.sign_catalog(payload, version), signature)
 
+    # --- Grant de CCTV (T-3.11.b) ---
+    def sign_cctv(self, payload: bytes) -> str:
+        """Firma la petición de grant que `takab-cctv` hace al panel LAN.
+
+        Dominio propio, como `config` y `catalog`: una firma de comando no puede valer
+        como petición de grant ni al revés. `takab-cctv` es un proceso APARTE —puede
+        incluso vivir en otra caja del sitio— así que le habla al gabinete por HTTP de LAN
+        y esto es lo que impide que cualquiera en esa red pida grants.
+
+        **Sin nonce ni ventana temporal, y es una decisión con razón, no un descuido.** La
+        key del objeto la deriva la NUBE del `sha256` del contenido, así que reemitir una
+        petición capturada produce **la misma key**: un replay no obtiene un destino nuevo
+        donde escribir, obtiene otra vez el mismo. Y si alguien subiera contenido distinto
+        a esa key, la nube lo rechaza al comparar el hash. Lo que esta firma protege es que
+        un vecino de LAN no consuma grants ajenos; añadir nonce aquí compraría muy poco y
+        obligaría al gabinete a guardar estado por un proceso que tiene prohibido
+        afectarle.
+        """
+        return self._hmac(b"cctv", payload)
+
+    def verify_cctv(self, payload: bytes, signature: str) -> bool:
+        """True solo si la firma cubre EXACTAMENTE este cuerpo."""
+        if not signature:
+            log.warning("grant de cctv rechazado: sin firma")
+            return False
+        return self._safe_equal(self.sign_cctv(payload), signature)
+
     def _on_start(self) -> None:
         log.info("gestor de seguridad activo (ventana de comando %.0fs)", self._command_ttl_s)

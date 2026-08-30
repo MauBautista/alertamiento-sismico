@@ -161,6 +161,68 @@ jobs:
         # auditable la cobertura real del job.
         run: uv run pytest -q -rs
 
+  analyzer:
+    name: analyzer · ruff + pytest (sin pesos)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: analyzer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: analyzer/uv.lock
+      # SIN `--extra onnx`, y es la mitad del punto: el motor de métricas es aritmética
+      # pura y tiene que poder probarse entero sin runtime de inferencia y sin descargar
+      # un solo peso. Si algún día este job necesitara el extra, sería la señal de que la
+      # frontera se rompió.
+      - name: Sincronizar entorno (núcleo, sin runtime de inferencia)
+        run: uv sync
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Formato (ruff)
+        run: uv run ruff format --check .
+      - name: Tests (pytest)
+        run: uv run pytest -q -rs
+
+  licenses:
+    name: licenses · cero AGPL/GPL en el árbol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "*/uv.lock"
+      # Los DOS entornos, porque cada uno tiene su lock y un prohibido puede entrar en
+      # uno sin tocar el otro. Vigilar solo `api/` dejaría sin cubrir al gabinete, que es
+      # justamente donde vive el CCTV.
+      # `working-directory` + `uv sync` a secas, y no `--directory`: es la forma que el
+      # gate de paridad (`test_ci_parity.sh`) ya reconoce como instalación de
+      # dependencias, y por tanto exime de tener espejo en el Makefile.
+      - name: Sincronizar api
+        working-directory: api
+        run: uv sync
+      - name: Sincronizar edge
+        working-directory: edge
+        run: uv sync
+      - name: Sincronizar analyzer
+        working-directory: analyzer
+        run: uv sync
+      - name: Guarda de licencias (D-24)
+        run: ./ci/check-licenses.sh
+      - name: Archivar los avisos de terceros
+        # Se GENERA en cada build y no se commitea: un inventario de licencias escrito a
+        # mano envejece en silencio. Se archiva como artefacto para poder acompañar una
+        # entrega sin tener que reconstruirlo a posteriori.
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-notices
+          path: THIRD_PARTY_NOTICES.txt
+
   mobile:
     name: mobile · eslint + tsc + jest + bundle
     runs-on: ubuntu-latest

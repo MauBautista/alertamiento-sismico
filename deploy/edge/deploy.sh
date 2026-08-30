@@ -214,7 +214,12 @@ EDGE_EXTRAS=(hardware aws)
 # Declarados en pyproject pero NO instalados, cada uno con su razón:
 #   bacnet — driver BACnet/IP real (T-1.9); hoy se usa el simulador.
 #   lora   — módem ESP32 por USB-serial (T-2.33); hardware aún no instalado.
-EDGE_EXTRAS_OMITIDOS=(bacnet lora)
+#   cctv   — cliente ONVIF (T-3.11). NO va al gabinete y la razón es doble: el CCTV
+#            está apagado hasta G-04 + la medición de B.2 (D-25), y `takab-cctv` está
+#            escrito para poder correr en una caja APARTE del sitio, que es donde
+#            probablemente acabe. Instalarlo aquí sería meter una dependencia en el
+#            camino de vida para un proceso que quizá ni corra en esta máquina.
+EDGE_EXTRAS_OMITIDOS=(bacnet lora cctv)
 
 EDGE_EXTRA_FLAGS=""
 for _extra in "${EDGE_EXTRAS[@]}"; do
@@ -518,9 +523,13 @@ echo "→ GATE DEL CÓDIGO DESPLEGADO (antes de reiniciar)"
 if ! .venv/bin/python -c 'import lgpio, awsiot' 2>&1; then
   echo "✗ ABORTADO: el venv no puede importar lgpio y/o awsiot." >&2
   FALLO_GATE="dependencias del venv (revisa el 'uv sync': ¿red? ¿extras?)"
-elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__, takab_edge.pinlink.cli' 2>&1; then
+elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__, takab_edge.pinlink.cli, takab_edge.cctv.__main__' 2>&1; then
   echo "✗ ABORTADO: el CÓDIGO DESPLEGADO no importa." >&2
   FALLO_GATE="el árbol recién copiado (los ExecStart de las unidades no arrancarían)"
+# [T-3.11] `takab-cctv` SÍ entra en el gate de importación de arriba —el import de
+# `onvif` es perezoso a propósito, así que el módulo importa sin el extra `cctv`— pero
+# NO se exige su ejecutable aquí, y la ausencia es decisión: su unidad no se habilita
+# hasta G-04 + la medición de B.2 (D-25), y el extra está en EDGE_EXTRAS_OMITIDOS.
 elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ] || [ ! -x .venv/bin/takab-gpioctl ]; then
   echo "✗ ABORTADO: faltan los ejecutables que lanzan las unidades systemd." >&2
   FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio,gpioctl}"
