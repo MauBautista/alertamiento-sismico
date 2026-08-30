@@ -405,60 +405,76 @@ suite **lo declara en voz alta** en vez de callarlo.
 > **Única dependencia declarada del Bloque III sobre el II:** necesita `T-2.78`, porque un
 > simulacro con **cascada de notificación real** no se acredita con canales simulados.
 
-### 3.3.a · Desplegar el ffmpeg **LGPL arm64** en el Pi — un `curl` y un `tar`
+### 3.3.a · Desplegar el ffmpeg **LGPL arm64** en el Pi — un solo bloque, sin `sudo`
 
-`/opt/takab/bin/ffmpeg` **no existe** en el gabinete, y `takab-cctv` no arranca sin él: la
-guarda de licencia es *fail-closed* por `D-24` (el `ffmpeg` de Debian trae `--enable-gpl` y
-por eso no sirve). El binario correcto está identificado y el guard lo dice en su propio
-mensaje de error:
+`/opt/takab/bin/ffmpeg` **no existe** y `takab-cctv` no arranca sin él: la guarda de licencia
+es *fail-closed* por `D-24`. Comprobado en el Pi el 2026-08-30 (`aarch64`, Pi 4 Model B Rev
+1.5, 17 GB libres) y **`/opt/takab/bin` es de `ailert`**, así que no hace falta `sudo`.
 
 ```bash
-# EN EL PI (arm64, no la variante linux64 que corre en el portátil)
-curl -sSL -o /tmp/ff.tar.xz \
-  https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-lgpl.tar.xz
-tar xf /tmp/ff.tar.xz -C /tmp
-sudo install -m 0755 /tmp/ffmpeg-master-latest-linuxarm64-lgpl/bin/ffmpeg /opt/takab/bin/ffmpeg
-/opt/takab/bin/ffmpeg -version | head -2   # debe decir --enable-version3 y NO --enable-gpl
+ssh takab-pi5 'set -e
+  cd /tmp
+  curl -fsSL -o ff.tar.xz \
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-lgpl.tar.xz
+  tar xf ff.tar.xz
+  install -m 0755 ffmpeg-master-latest-linuxarm64-lgpl/bin/ffmpeg  /opt/takab/bin/ffmpeg
+  install -m 0755 ffmpeg-master-latest-linuxarm64-lgpl/bin/ffprobe /opt/takab/bin/ffprobe
+  rm -rf ff.tar.xz ffmpeg-master-latest-linuxarm64-lgpl
+  /opt/takab/bin/ffmpeg -version | head -1
+  cfg=$(/opt/takab/bin/ffmpeg -version | grep -m1 "^ *configuration:")
+  if   echo "$cfg" | grep -q -- --enable-gpl;      then echo "RECHAZADO: trae --enable-gpl"; exit 1
+  elif echo "$cfg" | grep -q -- --enable-version3; then echo "OK: LGPL (version3, sin gpl)"
+  else echo "DUDOSO: no declara version3"; exit 1; fi'
 ```
 
-> **La variante importa más que la versión.** `linux64` es x86-64 y en el Pi no ejecuta;
-> `lgpl` frente a `gpl` es la diferencia entre que el CCTV arranque o se niegue. El guard ya
-> distingue las dos y **acepta la LGPL** — comprobado el 2026-08-30 contra un binario real,
-> que hasta entonces solo se había probado con dobles.
+> **La variante importa más que la versión, y son dos trampas distintas:** `linux64` es x86-64 y
+> **no ejecuta** en el Pi; `gpl` **lo rechaza el guard**. El bloque termina imprimiendo el
+> veredicto con la misma regla que aplica `takab_edge.cctv.ffmpeg.clasificar()`, así que si
+> sale `OK` es que el CCTV va a arrancar. Probado contra el `linux64-lgpl` equivalente:
+> `OK: LGPL (version3, sin gpl)`.
+>
+> `ffprobe` va de propina: no lo usa el gabinete, pero es lo que permite mirar en sitio qué
+> pistas trae un clip — que es exactamente como se descubrió que el anillo grababa audio.
 
-Con esto desplegado se cierra lo último que le falta a `T-3.11` para no depender de
-`GATE-HW`: el recorte del clip y el `concat` sobre once minutos de anillo, ejercidos **en la
-máquina que va a ejecutarlos** y no en el portátil.
+Con esto se cierra lo último que le falta a `T-3.11` para no depender de `GATE-HW`: el recorte
+y el `concat` sobre once minutos de anillo, ejercidos **en la máquina que va a ejecutarlos**.
+En x86-64 ya están medidos y salen bien.
 
-### 3.3.b · Poner en hora la cámara del CCTV — **5 minutos, y bloquea la evidencia**
+### 3.3.b · ~~Poner en hora la cámara del CCTV~~ — ✅ **HECHA el 2026-08-30**, menos el NTP
 
-La cámara del sitio (`192.168.3.132`, Imou/Dahua `IPC-S41FE`) llegó con el **huso de fábrica
-del fabricante**, `GMT+08:00`, y nadie lo tocó. Su UTC es correcto; lo que está mal es lo que
-**quema en los píxeles**. Medido el 2026-08-30:
+Se le escribió el huso del sitio por ONVIF. **Verificado contra el sello, no contra la
+pantalla de configuración** — que es la única comprobación que vale:
 
-| | |
-|---|---|
-| hora del sitio | `2026-08-30 11:57` |
-| lo que decía la foto | **`2026-08-31 01:57`** |
+| | antes | después |
+|---|---|---|
+| huso | `GMT+08:00` (de fábrica) | `GMT-06:00` |
+| lo que decía la foto | `2026-08-31 01:57` | **`2026-08-30 14:03:53`** |
+| hora real del sitio | `2026-08-30 11:57` | `2026-08-30 14:03:53` |
 
-Catorce horas y **un día distinto**, en una imagen que va al dictamen con su `sha256`. El
-software ya lo avisa al arrancar (quinta comprobación de `takab-cctv`), pero **avisar no lo
-arregla**: mientras la cámara siga así, toda captura que salga de ella lleva el sello corrido.
+Exacto al segundo. El error de catorce horas **y un día** está cerrado, y la quinta
+comprobación de `takab-cctv` ya no lo reporta.
 
-Y hay una segunda mitad que se olvida: `DateTimeType` está en **`Manual`**, o sea **sin NTP**.
-Aunque hoy se ponga la hora a mano, sin servidor de tiempo vuelve a derivar sola.
-
-**Las dos cosas se hacen en la misma pantalla** de la interfaz web de la cámara
-(`http://192.168.3.132`, usuario `admin`) → *Configuración · Sistema · General · Fecha y hora*:
-
-1. **Huso horario** → el del sitio (`GMT-06:00`, Ciudad de México).
-2. **Sincronizar con NTP** → encendido. Cualquier `pool.ntp.org` sirve; mejor aún, el propio
-   gabinete, que ya tiene hora buena y no depende de que la cámara salga a internet.
-3. Comprobar que el **sello de la imagen** cambió — no basta con que la pantalla de
-   configuración diga la hora buena: lo que importa es el rótulo quemado en el fotograma.
-
-> **Por qué está aquí y no en `TASKS.md`:** el software ya hace todo lo que puede hacer
-> —detectarlo y decirlo—. Poner en hora una cámara es tocar la cámara.
+> #### Lo que queda, y no se puede hacer ni por ONVIF ni por web
+>
+> `DateTimeType` sigue en **`Manual`**: sin NTP el reloj deriva y el sello se vuelve a alejar.
+> Y no hay por dónde arreglarlo desde aquí:
+>
+> * **`SetNTP`/`GetNTP` no están implementados** — la cámara contesta literalmente *«This
+>   optional method is not implemented»*;
+> * **no tiene interfaz web**: `/`, `/index.html`, `/doc/page/login.asp`, `/web/` y `/cgi-bin/`
+>   devuelven todos `000`. El servidor del 80 solo sirve ONVIF y la instantánea. Es una Imou de
+>   consumo: se administra **desde su app**.
+>
+> Quedan dos caminos, y los dos son decisión tuya:
+>
+> 1. **La app de Imou**, si expone el ajuste de NTP.
+> 2. **Que el gabinete le ponga la hora.** `takab-cctv` ya le lee el reloj al arrancar y tiene
+>    credencial de escritura ONVIF; corregirlo en vez de solo avisar es poco código. **No se ha
+>    hecho a propósito**: escribirle a la cámara es una capacidad nueva del gabinete, no un
+>    arreglo, y merece decidirse en vez de aparecer.
+>
+> Mientras tanto el desfase es **de segundos, no de horas**, y la quinta comprobación lo canta
+> en cada arranque.
 
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.

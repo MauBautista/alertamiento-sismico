@@ -10712,9 +10712,15 @@ sirena.
       evidencia: si el sello de una captura contradice la fecha del incidente, **el reporte
       tiene que decirlo al lado de la imagen**, que es donde alguien lo va a leer. Mismo
       argumento que el `410` del clip podado — el hecho sobrevive a la imagen.
-- [ ] **Poner en hora la cámara del sitio** (huso del sitio + NTP). Es config de la cámara,
-      no del software; hasta que se haga, toda captura que salga de ella lleva el sello
-      corrido. Ver `PENDIENTES-MAURICIO.md §3`.
+- [x] **Poner en hora la cámara del sitio.** HECHO el 2026-08-30: huso escrito por ONVIF y
+      verificado **contra el sello**, no contra la pantalla de configuración — la foto pasó de
+      decir `2026-08-31 01:57` a `2026-08-30 14:03:53`, exacta al segundo.
+- [ ] **El NTP de la cámara sigue abierto, y no se puede cerrar desde aquí.** `SetNTP` no
+      está implementado en ella y **no tiene interfaz web** (todo el árbol HTTP devuelve
+      `000`; el puerto 80 solo sirve ONVIF y la instantánea). O se hace desde su app, o **lo
+      hace el gabinete** —que ya le lee el reloj y tiene credencial de escritura—, y eso
+      último es una **capacidad nueva**, no un arreglo: se decide, no aparece. Mientras tanto
+      el desfase es de segundos y la quinta comprobación lo canta en cada arranque.
 
 > #### El camino de vídeo, ejercido con ffmpeg LGPL de verdad
 >
