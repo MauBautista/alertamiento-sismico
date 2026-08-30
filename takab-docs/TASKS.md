@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **262** · `[~]` **11** · `[ ]` **40**
+****Conteo de tareas:** total **313** · `[x]` **263** · `[~]` **10** · `[ ]` **40**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10621,10 +10621,17 @@ sirena.
       nombre literal (`D-09`); que `licenses` bloquee es un clic de Mauricio, y va fichado en
       `PENDIENTES-MAURICIO`. Una guarda que no guarda es peor que ninguna: da confianza falsa.
 
-### [~] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE`
-> **Construido el 2026-08-29** (`takab_edge/cctv/`, unidad `takab-cctv.service`, 71 tests).
-> Abierta por lo que falta: el **simulador de cámara** y la **subida** (`T-3.11.b`). El
-> proceso graba y deja el clip en `pendientes/`; subirlo cruza a la nube y es otra ficha.
+### [x] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> `takab_edge/cctv/`, unidad `takab-cctv.service`, simulador de cámara y **93 tests**.
+>
+> **El E2E encontró un fallo que los ocho tests unitarios no podían ver:** la poda del
+> anillo se comía el material del propio clip antes de cortarlo. El clip abarca 660 s y el
+> anillo dura 180, así que al llegar el momento de recortar ya faltaban los primeros ocho
+> minutos — el clip salía con un **27 % de cobertura**, lo declaraba honestamente, y era un
+> 27 % que nadie había pedido. Cada test unitario cortaba en un tick que aún no había
+> podado tan atrás, así que los ocho pasaban. Ahora la ventana de la sesión abierta es
+> intocable; subir el suelo de `ring_s` habría obligado a mantener once minutos de anillo
+> las veinticuatro horas para un caso que ocurre unas veces al año.
 - [x] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
       `takab-gpio`.
 - [x] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
@@ -10647,7 +10654,15 @@ sirena.
       `Restart=` propio— y su test de artefacto, como `takab-gpio`.
 - [x] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
-- [ ] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
+- [x] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
+      Modela la cámara **y la frontera de ffmpeg**, porque por separado no sirven: reconoce
+      los tres comandos por su forma y escribe los ficheros que habrían salido.
+      > **Lo que NO acredita, y va escrito en el propio módulo:** los segmentos no son vídeo
+      > decodificable, así que nada de lo que solo un ffmpeg real puede fallar se prueba
+      > aquí —keyframes del substream, recorte que empieza en gris, `concat` que rechaza la
+      > lista—. Eso es `GATE-HW`. Las capturas **sí** son JPEG válidos, pero no son fotos de
+      > personas: por eso la «historia» de cuánta gente hay va en un guion explícito y no
+      > escondida en los píxeles.
 
 ### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
@@ -10691,8 +10706,14 @@ sirena.
       (`D-14`: auditada igual que un comando de actuador).
 
 ### [~] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`
-> **Construido el 2026-08-30** (`analyzer/`, 47 tests, cero pesos descargados). El motor de
+> **Construido el 2026-08-30** (`analyzer/`, 48 tests, cero pesos descargados). El motor de
 > métricas es aritmética pura sobre la serie de aforo y está entero.
+>
+> **El E2E del simulador corrigió una premisa del CLI:** `--clip` y `--stills` no son
+> alternativas, **se suman**. El clip cubre la salida (`t50`/`t90`) y el goteo el reingreso,
+> y cada uno por su cuenta daba cifras que *parecían* correctas — medido: con solo el goteo
+> `t90` salía **600 s**, y fusionando las dos series, **180 s**. Un número que describía una
+> evacuación de diez minutos cuando fue de tres.
 >
 > Abierta por dos cosas, y las dos a propósito: el **pre/post-proceso del backend ONNX**
 > (letterbox y decodificado de salida) se fija con el modelo que gane `T-3.12.d` —fijarlo

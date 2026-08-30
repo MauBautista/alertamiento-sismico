@@ -304,3 +304,44 @@ def test_en_modo_prueba_no_se_abre_sesion_pase_lo_que_pase(tmp_path: Path, modo)
     c = _cliente(tmp_path, [T0], estado, _Ffmpeg())
     assert c.paso() is Fase.OCIOSO
     assert c.sesion is None
+
+
+def test_la_poda_NO_se_come_el_material_del_clip_que_falta_por_cortar(tmp_path: Path) -> None:
+    """El fallo que encontró el E2E, fijado aquí para que no vuelva.
+
+    El clip abarca `clip_pre_s + clip_post_s` —660 s de fábrica— y el anillo dura `ring_s`
+    —180—. Sin proteger la ventana de la sesión abierta, cuando llega el momento de
+    recortar la poda ya se ha llevado los primeros ocho minutos: el clip sale con un 27 %
+    de cobertura y lo declara honestamente, pero es un 27 % que nadie pidió.
+
+    Los ocho tests unitarios de arriba pasaban igual porque todos cortaban el clip en un
+    tick que aún no había podado tan atrás. Sólo recorrer la cadena entera lo enseñó.
+    """
+    _anillo(tmp_path, T0 - timedelta(seconds=180), 18 + 60)  # T0−180 .. T0+600
+    reloj = [T0]
+    c = _cliente(
+        tmp_path, reloj, _status(), _Ffmpeg(), ring_s=180.0, clip_pre_s=60.0, clip_post_s=600.0
+    )
+    c.paso()  # abre sesión
+
+    reloj[0] = T0 + timedelta(seconds=600)
+    c.paso()  # poda + corte, en este orden
+
+    meta = json.loads(next((tmp_path / "pendientes").glob("clip-*.json")).read_text("utf-8"))
+    assert meta["cobertura"] == 1.0, "la poda se llevó parte de la ventana del clip"
+
+
+def test_fuera_de_la_ventana_protegida_la_poda_SIGUE_podando(tmp_path: Path) -> None:
+    """La protección es de la ventana, no de la sesión: lo viejo se sigue tirando o el
+    anillo crecería sin techo durante las horas que dura un goteo."""
+    _anillo(tmp_path, T0 - timedelta(seconds=900), 150)  # T0−900 .. T0+600
+    reloj = [T0]
+    c = _cliente(
+        tmp_path, reloj, _status(), _Ffmpeg(), ring_s=180.0, clip_pre_s=60.0, clip_post_s=600.0
+    )
+    c.paso()
+    quedan = sorted(p.name for p in tmp_path.glob("seg-*.mp4"))
+    # Lo anterior a T0−180 no está protegido ni por edad: se fue.
+    assert nombre_de(T0 - timedelta(seconds=900)) not in quedan
+    # Y el pre-roll del clip sigue ahí.
+    assert nombre_de(T0 - timedelta(seconds=60)) in quedan

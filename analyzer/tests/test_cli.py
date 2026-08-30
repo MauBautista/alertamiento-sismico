@@ -112,11 +112,18 @@ def test_el_CLI_corre_de_punta_a_punta_y_escupe_JSON(tmp_path: Path, capsys) -> 
     assert [c["papel"] for c in salida["capturas"]] == ["pre", "egress", "peak", "reentry"]
 
 
-def test_el_CLI_exige_una_fuente_y_solo_una(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit):
-        main(["--t0", "2026-08-29T12:00:00Z"])
-    with pytest.raises(SystemExit):
-        main(["--clip", "x.mp4", "--stills", str(tmp_path), "--t0", "2026-08-29T12:00:00Z"])
+def test_el_CLI_exige_AL_MENOS_una_fuente(tmp_path: Path) -> None:
+    assert main(["--t0", "2026-08-29T12:00:00Z"]) == 2
+
+
+def test_las_dos_fuentes_SE_SUMAN_y_no_se_excluyen(tmp_path: Path) -> None:
+    """En un incidente real hacen falta las dos: el clip trae la salida y el goteo el
+    reingreso. Con solo el goteo, `t90` sale medido desde el primer JPEG y no desde la
+    señal — un número que parece una evacuación de doce minutos cuando fue de uno."""
+    _goteo(tmp_path, 3)
+    # Con las dos declaradas no se rechaza por incompatibles; el clip falla aparte porque
+    # no hay ffmpeg, y eso es otro camino.
+    assert main(["--stills", str(tmp_path), "--t0", "2026-08-29T12:00:00Z"]) == 0
 
 
 def test_un_detector_desconocido_no_se_adivina() -> None:

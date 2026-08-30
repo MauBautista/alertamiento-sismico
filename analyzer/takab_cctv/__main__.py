@@ -9,16 +9,25 @@ y el primer contacto con un vídeo real sería en producción.
     python -m takab_cctv --clip s3://takab-dev-evidence/evidence/... --endpoint-url http://localhost:9000
     python -m takab_cctv --stills ./pendientes --t0 2026-08-29T12:00:00Z
 
-DOS ENTRADAS, Y LA SEGUNDA NO ES UNA COMODIDAD DE PRUEBA
-────────────────────────────────────────────────────────
+DOS ENTRADAS QUE SE SUMAN, NO QUE SE ELIGEN
+───────────────────────────────────────────
 `--clip` procesa vídeo; `--stills` procesa un directorio de JPEG con el nombre que pone el
-gabinete (`still-{AAAAMMDDTHHMMSSZ}-{event_id}.jpg`). Hacen falta las dos porque la
-evacuación y el reingreso viven en sitios distintos: el clip cubre once minutos y el
-**reingreso ocurre horas después**, en el goteo. Un analizador que solo leyera vídeo no
-podría fechar nunca el reingreso — que es la mitad de lo que esta ficha existe para medir.
+gabinete (`still-{AAAAMMDDTHHMMSSZ}-{event_id}.jpg`). **Se pueden dar las dos a la vez, y
+en un incidente real hay que darlas**, porque la evacuación y el reingreso viven en sitios
+distintos:
 
-Y trae un efecto secundario útil: `--stills` no necesita ffmpeg, así que el motor entero se
-puede ejercer de punta a punta en una máquina que no lo tenga.
+* el **clip** cubre `T−60 s … T+600 s` — ahí está la salida, o sea `t50` y `t90`;
+* el **goteo** empieza donde el clip acaba y dura horas — ahí está el reingreso.
+
+Con solo el goteo, `t90` sale medido desde el primer JPEG y no desde la señal: un número
+que parece una evacuación de doce minutos cuando fue de uno. Con solo el clip, el reingreso
+no se fecha nunca. Las series se **fusionan por instante** antes de calcular.
+
+(Esto lo enseñó el E2E del simulador, no la revisión: cada camino por separado daba cifras
+que parecían correctas.)
+
+Y un efecto secundario útil: `--stills` no necesita ffmpeg, así que el motor se puede
+ejercer en una máquina que no lo tenga.
 
 FFMPEG, OTRA VEZ LGPL
 ─────────────────────
@@ -142,12 +151,18 @@ def _instante(texto: str) -> datetime:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="takab-cctv-analyze", description=__doc__)
-    fuente = ap.add_mutually_exclusive_group(required=True)
-    fuente.add_argument("--clip", help="vídeo: ruta local o s3://bucket/key")
-    fuente.add_argument("--stills", help="directorio de JPEG del goteo del gabinete")
+    # NO son mutuamente excluyentes: en un incidente real se dan las dos. Ver la cabecera.
+    ap.add_argument("--clip", help="vídeo: ruta local o s3://bucket/key")
+    ap.add_argument("--stills", help="directorio de JPEG del goteo del gabinete")
     ap.add_argument("--t0", required=True, type=_instante, help="la señal (incidents.opened_at)")
     ap.add_argument("--detector", default="falso", help="`falso` u `onnx:<ruta>`")
     ap.add_argument("--fps", type=float, default=0.5, help="fotogramas por segundo a muestrear")
+    ap.add_argument(
+        "--clip-pre",
+        type=float,
+        default=60.0,
+        help="segundos de pre-roll del clip (debe coincidir con `cctv.clip_pre_s` del gabinete)",
+    )
     ap.add_argument("--ffmpeg", default="ffmpeg", help="binario LGPL de ffmpeg")
     ap.add_argument("--endpoint-url", default=None, help="MinIO local, p.ej. http://localhost:9000")
     ap.add_argument("--ancho", type=int, default=1920)
@@ -159,12 +174,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pgv", type=float, default=None)
     args = ap.parse_args(argv)
 
+    if not args.clip and not args.stills:
+        print("✗ hace falta --clip, --stills, o las dos", file=sys.stderr)
+        return 2
+
     zona = json.loads(args.zona) if args.zona else None
     detector = _detector(args.detector)
+    fotogramas: list[tuple[datetime, bytes]] = []
 
     if args.stills:
-        fotogramas = fotogramas_del_goteo(Path(args.stills))
-    else:
+        fotogramas += fotogramas_del_goteo(Path(args.stills))
+    if args.clip:
         # Solo el camino de vídeo necesita ffmpeg, y por tanto solo él lo exige.
         try:
             verificar_ffmpeg(args.ffmpeg)
@@ -182,11 +202,18 @@ def main(argv: list[str] | None = None) -> int:
             # El instante de cada fotograma se DERIVA del muestreo: ffmpeg los numera 1..N y
             # el primero cae en el inicio del clip. Del nombre no se puede sacar.
             paso = 1.0 / args.fps
-            base = args.t0.timestamp()
-            fotogramas = [
+            # El clip EMPIEZA en `t0 − clip_pre_s`, no en `t0`: sus primeros fotogramas son
+            # el pre-roll. Fecharlos desde la señal correría la curva entera hacia delante
+            # y `t50`/`t90` saldrían un minuto tarde.
+            base = args.t0.timestamp() - args.clip_pre
+            fotogramas += [
                 (datetime.fromtimestamp(base + i * paso, UTC), j.read_bytes())
                 for i, j in enumerate(jpgs)
             ]
+
+    # Fusionadas por instante: el clip trae la salida y el goteo el reingreso, y el motor
+    # necesita las dos mitades en una sola curva.
+    fotogramas.sort(key=lambda par: par[0])
 
     curva = serie_de(fotogramas, detector, ancho=args.ancho, alto=args.alto, zona=zona)
 

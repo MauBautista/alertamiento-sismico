@@ -285,10 +285,39 @@ class ClienteCctv:
             return
         sesion.capturas += 1
 
+    def _ventana_protegida(self) -> tuple[datetime, datetime] | None:
+        """La ventana del clip que todavía no se ha cortado. `None` si no hay ninguna."""
+        if self.sesion is None or self.sesion.clip_cortado:
+            return None
+        return (
+            self.sesion.disparo.t0 - timedelta(seconds=self.config.clip_pre_s),
+            self.sesion.fin_clip,
+        )
+
     def _podar(self, ahora: datetime) -> None:
-        """Anillo por edad y cuota, y clips pendientes por número. En cada tick."""
+        """Anillo por edad y cuota, y clips pendientes por número. En cada tick.
+
+        **Con una sesión abierta, la ventana de su clip es intocable**, y esto no es una
+        cautela: sin ello el anillo se come el material del propio clip antes de cortarlo.
+        El clip abarca `clip_pre_s + clip_post_s` —660 s de fábrica— y el anillo dura
+        `ring_s` —180—, así que cuando llega el momento de recortar, la poda ya se ha
+        llevado los primeros ocho minutos. El clip sale igual, con un 27 % de cobertura, y
+        lo declara honestamente… pero es un 27 % que nadie pidió.
+        (Lo encontró el E2E: cada test unitario cortaba el clip antes de que la poda
+        alcanzara su ventana, así que los ocho pasaban.)
+
+        La alternativa era subir el suelo de `ring_s` hasta cubrir el clip entero, y es
+        peor: obligaría a mantener once minutos de anillo las veinticuatro horas para el
+        caso que ocurre unas cuantas veces al año.
+        """
+        protegida = self._ventana_protegida()
+        candidatos = leer_anillo(self.directorio)
+        if protegida is not None:
+            desde, hasta = protegida
+            candidatos = [s for s in candidatos if not s.solapa(desde, hasta)]
+
         for seg in podar_anillo(
-            leer_anillo(self.directorio),
+            candidatos,
             ahora=ahora,
             ring_s=max(self.config.ring_s, self.config.clip_pre_s + 2 * SEGMENTO_S),
             cuota_bytes=self.config.disk_quota_mb * 1024 * 1024,
