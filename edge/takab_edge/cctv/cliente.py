@@ -103,6 +103,10 @@ class ClienteCctv:
     pedir_grant: Callable[..., dict | None] | None = None
     #: PUT del objeto a la URL pre-firmada. Devuelve si el objeto quedó arriba.
     subir: Callable[[str, bytes, str], bool] | None = None
+    #: Baja la instantánea HTTP de la cámara. **No pasa por ffmpeg**, y el motivo está en
+    #: `instantanea.py`: el Digest de esta familia de cámaras rechaza el orden de parámetros
+    #: que manda ffmpeg. `None` ⇒ el goteo sale del RTSP, decodificando.
+    bajar_instantanea: Callable[[str, Path], bool] | None = None
 
     fase: Fase = Fase.OCIOSO
     sesion: Sesion | None = None
@@ -274,16 +278,37 @@ class ClienteCctv:
         if ahora < sesion.proxima_captura:
             return
         sesion.proxima_captura = ahora + timedelta(seconds=self.config.still_interval_s)
-        origen = self.fuentes.snapshot or self.fuentes.rtsp(self.config.perfil_efectivo)
         salida = (
             self._pendientes()
             / f"still-{ahora.strftime('%Y%m%dT%H%M%SZ')}-{sesion.disparo.event_id}.jpg"
         )
-        if self.correr(cmd_captura(self.config.ffmpeg_path, origen, salida)) != 0:
+        if not self._capturar(salida):
             log.warning("cctv: no se pudo tomar la captura %s", salida.name)
             salida.unlink(missing_ok=True)
             return
         sesion.capturas += 1
+
+    def _capturar(self, salida: Path) -> bool:
+        """La instantánea primero; el RTSP como respaldo, **diciendo que degrada**.
+
+        El orden no es preferencia estética: la instantánea es un `GET` de un JPEG hecho y
+        el RTSP hay que **decodificarlo**. Es la diferencia entre no gastar CPU y gastarla
+        cada treinta segundos durante horas, en el proceso que comparte una Pi con el camino
+        de vida.
+
+        Por eso el respaldo se anuncia. Caer al RTSP y callarlo dejaría al gabinete gastando
+        CPU sin que nadie supiera por qué — y la causa (una cámara cuyo Digest rechaza a
+        ffmpeg, o una instantánea que dejó de contestar) no se adivina desde el consumo.
+        """
+        if self.fuentes.snapshot and self.bajar_instantanea is not None:
+            if self.bajar_instantanea(self.fuentes.snapshot, salida):
+                return True
+            log.warning(
+                "cctv: la instantánea HTTP no sirvió; el goteo cae al RTSP y DECODIFICA "
+                "(más CPU). Ver instantanea.py"
+            )
+        origen = self.fuentes.rtsp(self.config.perfil_efectivo)
+        return self.correr(cmd_captura(self.config.ffmpeg_path, origen, salida)) == 0
 
     def _ventana_protegida(self) -> tuple[datetime, datetime] | None:
         """La ventana del clip que todavía no se ha cortado. `None` si no hay ninguna."""

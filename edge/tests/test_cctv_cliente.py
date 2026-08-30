@@ -212,17 +212,97 @@ def test_el_goteo_produce_capturas_al_ritmo_configurado(tmp_path: Path) -> None:
     assert len(list((tmp_path / "pendientes").glob("still-*.jpg"))) == 2
 
 
-def test_el_goteo_usa_la_instantanea_si_la_camara_la_ofrece(tmp_path: Path) -> None:
-    """Con `GetSnapshotUri` el goteo es un GET de un JPEG: cero decodificación de vídeo."""
+class _Bajada:
+    """Doble del bajador HTTP de instantáneas. Registra a qué URL se le llamó."""
+
+    def __init__(self, *, sirve: bool = True) -> None:
+        self.sirve = sirve
+        self.urls: list[str] = []
+
+    def __call__(self, url: str, destino: Path) -> bool:
+        self.urls.append(url)
+        if self.sirve:
+            destino.write_bytes(b"\xff\xd8" + b"\0" * 512)
+        return self.sirve
+
+
+def _hasta_el_goteo(tmp_path: Path, ff: _Ffmpeg, bajar=None) -> tuple[ClienteCctv, list]:
     _anillo(tmp_path, T0 - timedelta(seconds=120), 90)
     reloj = [T0]
-    ff = _Ffmpeg()
-    c = _cliente(tmp_path, reloj, _status(), ff, clip_pre_s=60.0, clip_post_s=600.0)
+    c = ClienteCctv(
+        config=CctvConfig(clip_pre_s=60.0, clip_post_s=600.0),
+        fuentes=FUENTES,
+        directorio=tmp_path,
+        leer_status=lambda: _status(),
+        correr=ff,
+        reloj=lambda: reloj[0],
+        bajar_instantanea=bajar,
+    )
     c.paso()
     reloj[0] = T0 + timedelta(seconds=600)
     c.paso()
+    return c, reloj
+
+
+def test_el_goteo_baja_la_instantanea_por_HTTP_y_NO_la_pasa_por_ffmpeg(tmp_path: Path) -> None:
+    """Con `GetSnapshotUri` el goteo es un GET de un JPEG: cero decodificación de vídeo.
+
+    **Y no puede pasar por ffmpeg**, aunque parezca lo mismo. Medido contra la cámara real:
+    ffmpeg manda el Digest con `cnonce` antes que `nc` y esta familia de cámaras lo rechaza
+    con 401. Habrían fallado TODAS las capturas del goteo — y el goteo es lo único que fecha
+    el reingreso. Ver `takab_edge/cctv/instantanea.py`.
+    """
+    ff, bajada = _Ffmpeg(), _Bajada()
+    _hasta_el_goteo(tmp_path, ff, bajada)
+
+    assert bajada.urls == [FUENTES.snapshot]
+    assert not [x for x in ff.comandos if "-frames:v" in x]  # ffmpeg no tocó la captura
+    assert len(list((tmp_path / "pendientes").glob("still-*.jpg"))) == 1
+
+
+def test_si_la_instantanea_falla_el_goteo_cae_al_RTSP_y_lo_dice(tmp_path: Path, caplog) -> None:
+    """Caer y callarlo dejaría al gabinete decodificando sin que nadie supiera por qué."""
+    ff, bajada = _Ffmpeg(), _Bajada(sirve=False)
+    with caplog.at_level("WARNING", logger="takab_edge.cctv"):
+        _hasta_el_goteo(tmp_path, ff, bajada)
+
     captura = next(x for x in ff.comandos if "-frames:v" in x)
-    assert captura[captura.index("-i") + 1] == FUENTES.snapshot
+    assert captura[captura.index("-i") + 1] == FUENTES.rtsp_substream
+    assert "DECODIFICA" in caplog.text
+    assert len(list((tmp_path / "pendientes").glob("still-*.jpg"))) == 1  # la evidencia sale
+
+
+def test_la_camara_sin_instantanea_va_directa_al_RTSP(tmp_path: Path) -> None:
+    """`GetSnapshotUri` es opcional en Profile S. Sin ella, el goteo decodifica y ya está."""
+    _anillo(tmp_path, T0 - timedelta(seconds=120), 90)
+    reloj = [T0]
+    ff, bajada = _Ffmpeg(), _Bajada()
+    c = ClienteCctv(
+        config=CctvConfig(clip_pre_s=60.0, clip_post_s=600.0),
+        fuentes=Fuentes(FUENTES.rtsp_principal, FUENTES.rtsp_substream, snapshot=None),
+        directorio=tmp_path,
+        leer_status=lambda: _status(),
+        correr=ff,
+        reloj=lambda: reloj[0],
+        bajar_instantanea=bajada,
+    )
+    c.paso()
+    reloj[0] = T0 + timedelta(seconds=600)
+    c.paso()
+
+    assert bajada.urls == []  # no hay a qué llamar
+    captura = next(x for x in ff.comandos if "-frames:v" in x)
+    assert captura[captura.index("-i") + 1] == FUENTES.rtsp_substream
+
+
+def test_el_respaldo_graba_el_SUBSTREAM_y_no_el_principal(tmp_path: Path) -> None:
+    """Decodificar ya cuesta; hacerlo sobre 4 MP cuando el perfil es `substream` costaría
+    mucho más, y por nada: la foto del goteo es la misma escena."""
+    ff = _Ffmpeg()
+    _hasta_el_goteo(tmp_path, ff, _Bajada(sirve=False))
+
+    captura = next(x for x in ff.comandos if "-frames:v" in x)
+    assert captura[captura.index("-i") + 1] != FUENTES.rtsp_principal
 
 
 def test_el_goteo_se_para_en_el_tope_y_cierra_la_sesion(tmp_path: Path) -> None:

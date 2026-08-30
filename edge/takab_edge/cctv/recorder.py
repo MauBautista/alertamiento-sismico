@@ -207,6 +207,24 @@ def cmd_anillo(
         "tcp",
         "-i",
         rtsp_url,
+        # SIN AUDIO, y esto no es una optimización de disco.
+        #
+        # `-c copy` copia lo que la cámara mande, y la del sitio manda una pista **AAC**
+        # junto al H264 (medido: el clip salía `h264 + aac`). Nadie lo decidió — el CCTV se
+        # diseñó para contar personas y para enseñar cuatro fotogramas en un dictamen, y no
+        # hay una sola línea del diseño que pida sonido. El conteo no lo usa; el reporte no
+        # lo enseña.
+        #
+        # Grabar conversaciones de la gente en el punto de reunión es una cosa
+        # **distinta en especie** de grabar su imagen, no «un poco más» de lo mismo: cambia
+        # el marco legal aplicable (comunicaciones privadas, no solo datos personales) y
+        # entra en un objeto que va firmado a S3 y de ahí a un peritaje. Como el resto del
+        # módulo, esto falla hacia capturar de menos.
+        #
+        # Si algún día se quiere sonido, **se deroga esta bandera con su razón escrita** y
+        # con la base legal delante. Lo que no puede pasar es que entre porque nadie miró
+        # los streams que traía el `-c copy`.
+        "-an",
         "-c",
         "copy",
         "-f",

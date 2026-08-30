@@ -187,3 +187,37 @@ def test_segmento_desconocido_no_rompe_la_lectura(tmp_path: Path) -> None:
     (tmp_path / "seg-20261399T999999Z.mp4").write_bytes(b"fecha imposible")
     _sembrar(tmp_path, 1)
     assert len(leer_anillo(tmp_path)) == 1
+
+
+def test_el_anillo_NO_graba_audio() -> None:
+    """La cámara del sitio manda AAC junto al H264 y `-c copy` se lo llevaba entero.
+
+    Nadie pidió sonido: el conteo no lo usa y el reporte no lo enseña. Y grabar
+    conversaciones en el punto de reunión no es «un poco más» que grabar la imagen — es otra
+    cosa, con otro marco legal, dentro de un objeto que va firmado a S3 y de ahí a un
+    peritaje. Si algún día se quiere, se deroga la bandera con su razón; lo que no puede
+    pasar es que entre porque nadie miró los streams.
+    """
+    cmd = cmd_anillo("/opt/takab/bin/ffmpeg", "rtsp://camara/sub", Path("/tmp/anillo"))
+
+    assert "-an" in cmd
+    # Y antes de `-c copy`, o no aplica a la salida.
+    assert cmd.index("-an") < cmd.index("-c")
+
+
+def test_el_recorte_del_clip_hereda_el_silencio_del_anillo() -> None:
+    """`cmd_clip` cose segmentos que ya vienen sin audio, así que no repite la bandera.
+
+    Se fija para que quede claro que la ausencia es deliberada y no un olvido: si alguien
+    quitase el `-an` del anillo, este test seguiría pasando y el de arriba fallaría, que es
+    el orden correcto de las alarmas.
+    """
+    cmd = cmd_clip(
+        "/opt/takab/bin/ffmpeg",
+        Path("/tmp/lista.txt"),
+        Path("/tmp/clip.mp4"),
+        recorte_s=2.0,
+        duracion_s=15.0,
+    )
+
+    assert "-c" in cmd and cmd[cmd.index("-c") + 1] == "copy"

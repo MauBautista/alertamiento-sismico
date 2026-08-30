@@ -15,6 +15,13 @@ LO QUE COMPRUEBA ANTES DE GRABAR UN SOLO FOTOGRAMA
 
 Las cuatro fallan *hacia no arrancar*. Un CCTV que no arranca deja un reporte sin vídeo;
 uno que arranca mal deja imágenes de personas donde no debían estar.
+
+Y una **quinta que avisa en vez de impedir**: que el reloj de la cámara —el que quema el
+sello en los píxeles— concuerde con el del gabinete. Va aparte de las cuatro a propósito.
+Cuando ese sello miente, el vídeo sigue siendo bueno y nuestras horas siguen siendo
+correctas; lo que se rompe es la evidencia, porque el fotograma que va al dictamen se
+contradice con la fecha del incidente. Negarse a grabar por eso cambiaría un rótulo
+torcido por un incidente sin vídeo. Ver :func:`_revisar_reloj_de_la_camara`.
 """
 
 from __future__ import annotations
@@ -28,11 +35,14 @@ from pathlib import Path
 
 from takab_edge.cctv.cliente import ClienteCctv
 from takab_edge.cctv.ffmpeg import FfmpegNoApto, verificar
+from takab_edge.cctv.instantanea import bajar as bajar_instantanea
 from takab_edge.cctv.onvif import (
     Fuentes,
     OnvifNoDisponible,
     con_credenciales,
     descubrir,
+    reloj_de,
+    revisar_reloj,
     sin_credenciales,
 )
 from takab_edge.cctv.recorder import cmd_anillo
@@ -92,6 +102,40 @@ def _comprobar(settings: EdgeSettings) -> None:
         log.warning("cctv: perfil %r desconocido; se graba %r", cfg.perfil, cfg.perfil_efectivo)
 
 
+def _revisar_reloj_de_la_camara(cfg, usuario: str, clave: str) -> list[str]:
+    """La QUINTA comprobación: que el sello que la cámara quema en la imagen no mienta.
+
+    **Avisa, no impide arrancar**, y la diferencia es deliberada. Las otras cuatro fallan
+    hacia no grabar porque lo que está mal es el vídeo o el permiso para tenerlo. Aquí el
+    vídeo está bien: lo que va torcido es el rótulo. Nuestras horas —el nombre del fichero,
+    `captured_at`, las métricas— salen del gabinete y son correctas, así que negarse a
+    grabar cambiaría un rótulo torcido por un incidente sin vídeo, que es peor.
+
+    Lo que no puede pasar es que nadie se entere. Ver el bloque de `onvif.py`: la cámara del
+    sitio llegó rotulando catorce horas y un día por delante del incidente.
+
+    Sin `host` no hay a quién preguntarle —la URL declarada a mano no lleva servicio ONVIF—
+    y eso **no es un hallazgo**: es una cámara declarada de la otra forma.
+    """
+    if not cfg.host:
+        log.info("cctv: sin host ONVIF no se puede revisar el reloj de la cámara")
+        return []
+    try:
+        reloj = reloj_de(cfg.host, cfg.onvif_port, usuario, clave)
+    except OnvifNoDisponible as exc:
+        # No se le niega el arranque por esto: la cámara ya contestó a `descubrir()`.
+        log.warning("cctv: no se pudo leer el reloj de la cámara (%s); se graba igual", exc)
+        return []
+
+    offset = datetime.now().astimezone().utcoffset() or timedelta(0)
+    hallazgos = revisar_reloj(reloj, datetime.now(UTC), offset.total_seconds())
+    for h in hallazgos:
+        log.warning("cctv: RELOJ DE LA CÁMARA — %s", h)
+    if not hallazgos:
+        log.info("cctv: el reloj de la cámara concuerda con el del gabinete (%s)", reloj.tz)
+    return hallazgos
+
+
 def run_cctv_process(settings: EdgeSettings | None = None, *, block: bool = True) -> ClienteCctv:
     """Arranca el CCTV. Si ``block``, sondea hasta SIGINT/SIGTERM."""
     cfg_all = settings or load_settings()
@@ -106,6 +150,7 @@ def run_cctv_process(settings: EdgeSettings | None = None, *, block: bool = True
     usuario = os.environ.get("TAKAB_EDGE_CCTV_USER", "")
     clave = os.environ.get("TAKAB_EDGE_CCTV_PASS", "")
     fuentes = _fuentes_de(cfg, usuario, clave)
+    _revisar_reloj_de_la_camara(cfg, usuario, clave)
 
     directorio = (
         Path(cfg_all.state_dir) / "cctv"
@@ -134,6 +179,7 @@ def run_cctv_process(settings: EdgeSettings | None = None, *, block: bool = True
         correr=_correr,
         pedir_grant=_pedidor_de_grant(cfg.edge_api_base, clave_grant) if clave_grant else None,
         subir=_subir_presignado if clave_grant else None,
+        bajar_instantanea=bajar_instantanea,
     )
     if not block:
         return cliente

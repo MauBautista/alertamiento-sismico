@@ -10703,6 +10703,7 @@ sirena.
       `Restart=` propio— y su test de artefacto, como `takab-gpio`.
 - [x] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
       (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
+- [x] **Acreditada contra la cámara real** (2026-08-30, `192.168.3.132`) — ver el bloque de abajo.
 - [x] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
       Modela la cámara **y la frontera de ffmpeg**, porque por separado no sirven: reconoce
       los tres comandos por su forma y escribe los ficheros que habrían salido.
@@ -10712,6 +10713,119 @@ sirena.
       > lista—. Eso es `GATE-HW`. Las capturas **sí** son JPEG válidos, pero no son fotos de
       > personas: por eso la «historia» de cuánta gente hay va en un guion explícito y no
       > escondida en los píxeles.
+
+> #### La cámara real, medida (2026-08-30) — y el fallo que solo ella podía enseñar
+>
+> Cámara del sitio: **LC / Dahua `IPC-S41FE`**, firmware `2.800.0000000.15.R`, ONVIF en el
+> puerto **80** (`/onvif/device_service`), RTSP en el 554. Dos perfiles Profile S:
+>
+> | perfil | codec | resolución | fps | bitrate |
+> |---|---|---|---|---|
+> | `Profile000` (main, `subtype=0`) | H264 | **2560×1440** | 25 | 1536 kbps |
+> | `Profile001` (sub, `subtype=1`) | H264 | **640×480** | 15 | 512 kbps |
+>
+> **Ofrece `GetSnapshotUri`**, que es la rama barata: el goteo es un `GET` de un JPEG ya
+> codificado y no decodifica un solo fotograma.
+>
+> **El fallo: `descubrir()` entregaba URLs que la cámara no servía.** El módulo daba por
+> hecho que una cámara ONVIF devuelve la URL con la credencial dentro. Ésta devuelve las
+> tres URIs **peladas** y luego exige **Digest** en las tres (con Basic contesta `401`
+> igual). Medido a mano, que es como se cerró:
+>
+> ```
+> DESCRIBE con la URL que devolvía descubrir()  ->  RTSP/1.0 401 Unauthorized
+> DESCRIBE con la credencial inyectada          ->  RTSP/1.0 200 OK  (+ pista H264)
+> ```
+>
+> Por el camino de descubrimiento —el que se usa cuando no hay `rtsp_url` declarada— el
+> gabinete no habría grabado **ni un clip ni una captura**. Y las ocho pruebas del módulo
+> pasaban porque **el simulador devolvía la URL con credencial**: la misma suposición
+> escrita dos veces, comprobándose a sí misma. Arreglado en `fix/cctv-camara-real`, con las
+> URIs medidas fijadas en `edge/tests/test_cctv_onvif_credencial.py`.
+>
+> **El segundo hallazgo, y éste no lo veía ninguna prueba porque no está en el código:
+> la cámara MIENTE en los píxeles.** Llegó con el huso de fábrica del fabricante
+> —`GMT+08:00`— y el UTC correcto, así que rotula la imagen catorce horas por delante de la
+> hora del sitio. Medido: el gabinete fechaba las **11:57 del 30 de agosto** y el fotograma
+> decía **01:57 del 31**. Ese sello va quemado dentro del clip y dentro de cada captura, y
+> **cuatro de esas capturas son pruebas del dictamen** (§11 del reporte, con su `sha256` y su
+> cadena de custodia). Un paquete de evidencia que se contradice a sí mismo en la fecha no
+> hay que impugnarlo: se impugna solo. Y `DateTimeType` viene en `Manual` —sin NTP—, así que
+> el desfase solo puede crecer.
+>
+> De ahí la **quinta comprobación** de `takab-cctv`, que **avisa y deja grabar**: el vídeo
+> está bien y nuestras horas también —salen del gabinete—; lo torcido es el rótulo, y
+> negarse a grabar por eso cambiaría un rótulo torcido por un incidente sin vídeo.
+- [ ] **El hallazgo del reloj todavía muere en el journal.** Hoy sale por `log.warning` al
+      arrancar, y eso lo lee quien va a buscarlo. Lo que corresponde es que viaje con la
+      evidencia: si el sello de una captura contradice la fecha del incidente, **el reporte
+      tiene que decirlo al lado de la imagen**, que es donde alguien lo va a leer. Mismo
+      argumento que el `410` del clip podado — el hecho sobrevive a la imagen.
+- [x] **Poner en hora la cámara del sitio.** HECHO el 2026-08-30: huso escrito por ONVIF y
+      verificado **contra el sello**, no contra la pantalla de configuración — la foto pasó de
+      decir `2026-08-31 01:57` a `2026-08-30 14:03:53`, exacta al segundo.
+- [ ] **El NTP de la cámara sigue abierto, y no se puede cerrar desde aquí.** `SetNTP` no
+      está implementado en ella y **no tiene interfaz web** (todo el árbol HTTP devuelve
+      `000`; el puerto 80 solo sirve ONVIF y la instantánea). O se hace desde su app, o **lo
+      hace el gabinete** —que ya le lee el reloj y tiene credencial de escritura—, y eso
+      último es una **capacidad nueva**, no un arreglo: se decide, no aparece. Mientras tanto
+      el desfase es de segundos y la quinta comprobación lo canta en cada arranque.
+
+> #### El camino de vídeo, ejercido con ffmpeg LGPL de verdad
+>
+> Se bajó el build que el propio guard recomienda (`BtbN/FFmpeg-Builds`, variante `lgpl`) y
+> con él se cerraron tres cosas que hasta hoy solo se probaban con dobles inyectados:
+>
+> 1. **`verificar()` acepta un binario LGPL real.** Nunca se había ejecutado contra uno: los
+>    ocho tests del guard inyectan la salida de `-version`.
+> 2. **El anillo graba.** `cmd_anillo` contra el substream escribió 3 segmentos MP4 en 25 s
+>    (~580 kB cada uno), con `-c copy` y sin decodificar.
+> 3. **`cmd_captura` funciona contra RTSP** —substream y principal, `rc=0`—, **y falla contra
+>    la instantánea HTTP con `401`**. Ese es el segundo hallazgo, y estaba escondido detrás
+>    del primero.
+>
+> **La instantánea por ffmpeg da 401, y la causa no es la que parece.** ffmpeg sí hace
+> Digest y manda una cabecera bien formada; lo que ocurre es que el analizador de la cámara
+> **depende del orden de los parámetros**. Aislado en cruz sobre `opaque`, `algorithm` y el
+> entrecomillado de `qop`, el orden resultó ser el único factor que decide:
+>
+> | orden | resultado |
+> |---|---|
+> | `nc=…` antes de `cnonce=…` (lo que manda urllib) | **200** |
+> | `cnonce=…` antes de `nc=…` (lo que manda ffmpeg) | **401** |
+>
+> La RFC 7616 dice que esa lista **no** tiene orden, así que quien está mal es la cámara. Da
+> igual: es la que hay. Y lo que significaba en producción es lo que lo hace grave —
+> `_gotear` **prefiere** la instantánea, así que habrían fallado **todas** las capturas del
+> goteo: el clip perfecto y el **reingreso sin fechar jamás**, que es lo único que solo el
+> goteo puede fechar. Arreglado bajando la instantánea con `urllib`
+> (`takab_edge/cctv/instantanea.py`), con caída al RTSP **anunciada**; verificado contra la
+> cámara real, 5/5 capturas a ~350 ms.
+>
+> #### Y al cortar el clip apareció el tercero: **el anillo estaba grabando AUDIO**
+>
+> El clip salió `h264 + **aac**`. `cmd_anillo` usa `-c copy`, que copia lo que la cámara
+> mande, y esta manda una pista de sonido junto al vídeo. **Nadie lo decidió**: no hay una
+> línea del diseño que pida audio, el conteo no lo usa y el reporte no lo enseña. Entró
+> porque nadie miró los streams que traía el `-c copy`.
+>
+> Y no es «un poco más» de lo mismo. Grabar las conversaciones de la gente en el punto de
+> reunión es **distinto en especie** de grabar su imagen: cambia el marco legal aplicable
+> —comunicaciones privadas, no solo datos personales— dentro de un objeto que va firmado a
+> S3 y de ahí a un peritaje. Con la regla de oro 11 delante, el default solo puede ser el
+> conservador. `-an` en el anillo, con la razón escrita en el propio comando y su test.
+> Verificado contra la cámara real: los tres segmentos salen `h264,video` y nada más (y de
+> paso pesan ~15 % menos).
+- [ ] **Ratificar el silencio como decisión (`D-nn`), o derogarlo con su base legal.** Hoy
+      es un default conservador elegido por la máquina ante un hallazgo, no una decisión
+      tomada. Si un dictamen quisiera sonido, se deroga la bandera **con la base legal
+      delante** — lo que no puede volver a pasar es que el audio entre solo.
+
+> **Lo que sigue sin acreditar:** el Pi **no tiene** `/opt/takab/bin/ffmpeg` —hace falta la
+> variante `linuxarm64-lgpl`—, así que el recorte del clip y el `concat` sobre once minutos
+> de anillo siguen sin ejercerse **en la máquina que va a ejecutarlos**. Lo de arriba se
+> midió en x86-64. Sigue siendo `GATE-HW`, pero por bastante menos de lo que era esta
+> mañana.
 
 ### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
@@ -10833,10 +10947,35 @@ sirena.
       triage, que está escrita a mano y comparada por igualdad.
 
 ### [ ] T-3.12.d · Comparativa de detectores contra la cámara real — `SOFTWARE` + `GATE-HW`
+> **La cámara ya está en la red** (`192.168.3.132`, LC/Dahua `IPC-S41FE`) y su interrogatorio
+> ONVIF dejó dos cifras que cambian **qué** hay que medir aquí, no solo cuándo:
+>
+> 1. **El conteo va a ocurrir sobre 640×480, no sobre 4 MP.** `CctvConfig.perfil` es
+>    `substream` de fábrica, y el substream de esta cámara es **640×480 @ 15 fps**. El
+>    razonamiento escrito en el campo —«grabar el principal multiplica por ocho el disco sin
+>    mejorar un conteo que ni siquiera ocurre aquí»— da por supuesto que a 640×480 se cuenta
+>    igual de bien. **Eso es precisamente lo que esta ficha tiene que medir**, y hasta que lo
+>    mida es una opinión. (De paso: el múltiplo medido en esta cámara es **3×** por bitrate
+>    —1536 contra 512 kbps—, no ocho.)
+> 2. **El goteo está clavado a 640×480 pase lo que pase.** El endpoint de instantánea
+>    devuelve 640×480 **también con `subtype=0`**: pedirle el perfil principal no sube la
+>    resolución. Y el goteo no es un extra — es lo único que fecha el **reingreso**, que
+>    ocurre horas después del clip. Así que la resolución del goteo **no es negociable
+>    subiendo `perfil`**: si a 640×480 no se cuenta, hace falta otra vía (sacar el fotograma
+>    del RTSP principal y decodificar) y eso tiene un coste que hay que medir aquí.
+>
+> Consecuencia práctica: la comparativa necesita **dos** columnas de resolución, 640×480 y
+> 2560×1440, o su conclusión no se puede aplicar al goteo.
 - [ ] Candidatos **solo permisivos**: YOLOX-nano, YOLOX-tiny, RF-DETR nano, EfficientDet-Lite0.
       **Sin línea base de Ultralytics** en ningún entorno — tampoco «solo para comparar».
 - [ ] **La medición fija el default, no la opinión.** Precisión de conteo y coste, contra la cámara
       real y su escena real; una comparativa contra vídeo de internet no dice nada de este edificio.
+- [ ] Medir a **640×480** (el substream y el goteo) **y** a **2560×1440** (el principal). Si el
+      default `perfil=substream` no sostiene el conteo, esta ficha es la que lo deroga con la
+      cifra delante — y arrastra la resolución del goteo, que no se arregla cambiando `perfil`.
+- [ ] **La escena tiene que ser la del punto de reunión.** Hoy la cámara está en el banco, no
+      apuntando al punto: una comparativa hecha desde donde está ahora mide el detector, no el
+      edificio, y esta ficha existe para medir el edificio.
 
 ## Fase 3.3 · Feeds y superficie de datos
 
