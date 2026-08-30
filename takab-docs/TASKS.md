@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **263** · `[~]` **10** · `[ ]` **40**
+****Conteo de tareas:** total **314** · `[x]` **263** · `[~]` **10** · `[ ]` **41**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -5839,6 +5839,37 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
   - *Degradación real* (30 ms por canal inyectados en `GpioController._apply`): los 5 intentos salen **226.9 / 219.3 / 219.0 / 219.1 / 219.0 ms** y el test **enrojece**. La serie plana es la firma de una regresión; el ruido no se repite igual.
   - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
 - **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
+
+### [ ] T-2.172 · El fail-open del modo prueba **grita 24 veces** en cada ventana de mantenimiento — `SOFTWARE`
+- **Componente:** edge (`supervisor.py:_modo_prueba_activo`) · **Sale de:** el despliegue con
+  `--ventana-de-mantenimiento` del 2026-08-30 (release `20260830T222850Z-71ac7df`), medido en el
+  gabinete real.
+- **Lo medido.** Mientras `takab-gpio` se reinicia —unos 3 s— `gpio_link.snapshot()` lanza
+  `GpioLinkUnavailable` y `_modo_prueba_activo` toma su camino *fail-open*. Se registró **24
+  veces**, cada una con este texto y un `event_id` distinto:
+  > `no se pudo leer el modo prueba del WR-1; se PUBLICA a la nube. Fail-open DELIBERADO: esto
+  > puede abrir incidente y disparar la push CRISIS a los teléfonos del sitio…`
+- **Y no publicó nada.** Verificado en la nube, no inferido: **`0` incidentes** abiertos en la
+  ventana. La razón está tres líneas más abajo en el mismo método —`if decision.tier is
+  Tier.NORMAL: return`— y el gabinete estaba en reposo, así que todas las decisiones eran
+  `NORMAL` y ninguna llegó a `EVENTS_TOPIC`.
+- **Por qué esto importa y no es cosmética.** El mensaje describe **el peor caso** como si
+  fuera lo ocurrido, en `ERROR`, veinticuatro veces seguidas, **en cada ventana de
+  mantenimiento** —que es justo cuando alguien está mirando el journal—. Es la misma patología
+  que [`T-2.170`](TASKS.md) señaló para el CI: **una señal que da el grito máximo en la
+  situación más rutinaria enseña a ignorarla**, y el día que el fail-open sí publique un
+  evento real, esas líneas van a parecer «las de siempre».
+- **⚠️ La corrección prohibida:** bajar el nivel del log o quitar el aviso. El fail-open es
+  correcto —callar un sismo real es peor que un incidente de más— y **tiene que verse**.
+- **Criterios de aceptación:**
+  - [ ] El mensaje distingue **lo que va a pasar de verdad** de lo que podría pasar: con
+        `Tier.NORMAL` no se publica nada y el texto no puede decir que sí.
+  - [ ] El reinicio del dueño **no produce 24 líneas**: o se agrupan mientras dura la
+        indisponibilidad, o se registra una al entrar y una al salir con el conteo.
+  - [ ] **No se resuelve esperando al dueño**: `_modo_prueba_activo` no puede bloquear la
+        actuación, y esa es la razón de que falle abierto en primer lugar.
+  - [ ] Un test que ejerza la ventana: costura caída durante N ticks con tier `NORMAL` ⇒
+        **cero publicaciones** y **una sola** línea de aviso.
 
 ### [x] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE` · COMPLETA (2026-08-27)
 - **Componente:** deploy (`cloud` + `edge`) + Makefile · **Sale de:** dos despliegues del 2026-08-27, medidos, no supuestos.
