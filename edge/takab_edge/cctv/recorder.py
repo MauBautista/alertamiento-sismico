@@ -207,7 +207,7 @@ def cmd_anillo(
         "tcp",
         "-i",
         rtsp_url,
-        # SIN AUDIO, y esto no es una optimización de disco.
+        # SIN AUDIO [D-26], y esto no es una optimización de disco.
         #
         # `-c copy` copia lo que la cámara mande, y la del sitio manda una pista **AAC**
         # junto al H264 (medido: el clip salía `h264 + aac`). Nadie lo decidió — el CCTV se
@@ -221,9 +221,10 @@ def cmd_anillo(
         # entra en un objeto que va firmado a S3 y de ahí a un peritaje. Como el resto del
         # módulo, esto falla hacia capturar de menos.
         #
-        # Si algún día se quiere sonido, **se deroga esta bandera con su razón escrita** y
-        # con la base legal delante. Lo que no puede pasar es que entre porque nadie miró
-        # los streams que traía el `-c copy`.
+        # Ratificado como `D-26` el 2026-08-30. Derogarlo exige quitar esta bandera, derogar
+        # `D-26` POR SU NOMBRE y escribir la base legal y el aviso a los ocupantes. Sin esas
+        # dos cosas escritas, no se quita — y lo que no puede volver a pasar es que el audio
+        # entre porque nadie miró los streams que traía el `-c copy`.
         "-an",
         "-c",
         "copy",

@@ -10816,10 +10816,10 @@ sirena.
 > conservador. `-an` en el anillo, con la razón escrita en el propio comando y su test.
 > Verificado contra la cámara real: los tres segmentos salen `h264,video` y nada más (y de
 > paso pesan ~15 % menos).
-- [ ] **Ratificar el silencio como decisión (`D-nn`), o derogarlo con su base legal.** Hoy
-      es un default conservador elegido por la máquina ante un hallazgo, no una decisión
-      tomada. Si un dictamen quisiera sonido, se deroga la bandera **con la base legal
-      delante** — lo que no puede volver a pasar es que el audio entre solo.
+- [x] **Ratificado como [`D-26`](DECISIONES-MAURICIO.md#d-26)** el 2026-08-30: el CCTV graba
+      imagen y nada más. Ya no es un default elegido por la máquina ante un hallazgo, es una
+      decisión con su razón escrita — y con su camino de derogación, que exige **base legal y
+      aviso a los ocupantes**, no solo quitar la bandera.
 
 > **Lo que sigue sin acreditar:** el Pi **no tiene** `/opt/takab/bin/ffmpeg` —hace falta la
 > variante `linuxarm64-lgpl`—, así que el recorte del clip y el `concat` sobre once minutos
