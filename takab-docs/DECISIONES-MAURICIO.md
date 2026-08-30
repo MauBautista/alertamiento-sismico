@@ -59,6 +59,7 @@
 | [D-23](#d-23) | ARCO por teléfono: **lo acredita el cliente institucional** | 2026-08-22 | Mauricio |
 | [D-24](#d-24) | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | 2026-08-29 | Mauricio |
 | [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
+| [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
 
 ---
 
@@ -1208,3 +1209,45 @@ cliente. Se asume otra vez, y a sabiendas.
 > **y** la latencia del reflejo SASMEX→relé medida bajo carga de CCTV contra su presupuesto de
 > 100 ms, con la conclusión escrita **con su número**, aplicando la regla de `B.2` **después** de
 > verlo. El sesgo del que hay que protegerse sigue siendo «va justo pero cabe».
+
+---
+
+## D-26 · El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal
+
+**Fecha:** 2026-08-30 · **Decide:** Mauricio · **Venía de:** un hallazgo del primer clip real ·
+**Extiende:** [`D-24`](#d-24) y [`D-25`](#d-25)
+
+**Lo que se encontró, y cómo.** Al cortar el primer clip de verdad —cámara real, ffmpeg LGPL
+real— el fichero salió **`h264 + aac`**. `cmd_anillo` usa `-c copy`, que **no copia el vídeo:
+copia lo que la cámara mande**, y la del sitio manda una pista de sonido. Nadie lo había
+decidido: ni `TASKS.md` ni el módulo mencionaban audio una sola vez —todas las apariciones de
+«audio» en el árbol son la sirena y el voceo, otro subsistema— y ninguna prueba podía verlo,
+porque el simulador escribe bytes, no vídeo.
+
+**La decisión.** El anillo lleva **`-an`**, antes del `-c copy` (después no aplica a la salida).
+El CCTV del gabinete **graba imagen y nada más**.
+
+**Por qué el default solo podía ser éste.**
+
+1. **Nadie lo pidió.** El conteo de aforo no usa sonido y el reporte no lo enseña. Un dato que
+   no alimenta ninguna decisión pero sí aumenta el daño de una fuga no se guarda.
+2. **No es «un poco más» de vigilancia: es otra cosa.** La imagen de una persona en un punto de
+   reunión y su conversación no están en el mismo plano — cambia el marco legal aplicable, de
+   datos personales a **comunicaciones privadas**, dentro de un objeto que va **firmado a S3 y de
+   ahí a un peritaje**. La regla de oro 11 obliga a tratar el compliance como restricción dura,
+   no como algo que se ajusta después.
+3. **La asimetría del error.** Grabar de menos se corrige mañana cambiando una bandera. Grabar
+   de más **no se corrige**: las conversaciones ya están en un bucket versionado, en una tabla
+   append-only, y el borrado no deshace el haberlas capturado.
+
+**Lo que esta decisión NO dice.** No dice que el audio sea inútil como evidencia; puede no
+serlo. Dice que **entrar por descuido no es una forma aceptable de tenerlo**.
+
+**Cómo se deroga** —y que exista el camino es la mitad de la decisión—: se quita el `-an`, se
+deroga esta ficha **por su nombre**, y se escribe **la base legal y el aviso a los ocupantes**
+del sitio donde se grabe. Sin esas dos cosas escritas, no se quita.
+
+> **La lección que sobrevive a esta decisión concreta:** `-c copy` sobre una fuente que no
+> controlas es una **declaración de intenciones, no una especificación**. Copia lo que venga. Lo
+> que se graba se comprueba con `ffprobe`, no se deduce del comando — y por eso el `ffprobe`
+> viaja al gabinete junto al `ffmpeg` aunque el gabinete no lo use.

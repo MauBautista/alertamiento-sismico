@@ -80,6 +80,7 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 | **`D-23`** | ARCO por teléfono: **lo acredita el cliente institucional** | **2026-08-22** |
 | **`D-24`** | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | **2026-08-29** |
 | **`D-25`** | Bloque IV **arranca ya en software**; encenderlo espera a `G-04` | **2026-08-29** |
+| **`D-26`** | El CCTV **no graba audio** — vídeo mudo; derogarlo exige base legal | **2026-08-30** |
 
 > **Las que generan trabajo de software se fichan en `TASKS.md` y NO vuelven a esta lista** —`D-05`
 > (cablear `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta
