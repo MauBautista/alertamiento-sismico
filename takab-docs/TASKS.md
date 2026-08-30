@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **313** · `[x]` **261** · `[~]` **10** · `[ ]` **42**
+****Conteo de tareas:** total **313** · `[x]` **261** · `[~]` **11** · `[ ]` **41**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10690,24 +10690,42 @@ sirena.
 - [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).
 
-### [ ] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`
-- [ ] El aforo por cámara y el check-in de vida se **cruzan**, no se suman: son dos
+### [~] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`
+> **Construido el 2026-08-30** (`analyzer/`, 47 tests, cero pesos descargados). El motor de
+> métricas es aritmética pura sobre la serie de aforo y está entero.
+>
+> Abierta por dos cosas, y las dos a propósito: el **pre/post-proceso del backend ONNX**
+> (letterbox y decodificado de salida) se fija con el modelo que gane `T-3.12.d` —fijarlo
+> antes sería elegir por opinión, que es lo que la ficha prohíbe— y la **descarga desde
+> MinIO** está cableada pero no ejercida: hace falta un clip y un ffmpeg LGPL, que esta
+> máquina no tiene.
+>
+> **La curva es la medida; el cruce de línea no.** Todo lo que el reporte necesita sale del
+> conteo por fotograma en la zona, que no exige seguir a nadie entre fotogramas. El conteo
+> direccional daría entradas y salidas por separado y es mucho más frágil: exige un tracker
+> calibrado contra ESA escena, que es exactamente lo que mide `T-3.12.d`.
+- [x] El aforo por cámara y el check-in de vida se **cruzan**, no se suman: son dos
       estimaciones distintas de la misma cosa y la diferencia es la información útil.
-- [ ] La discrepancia se muestra como discrepancia, nunca promediada en un número único.
-- [ ] Métricas: `t50`/`t90` desde la señal (**`t90` es «cuánto tardó en salir la mayor parte»**),
+- [x] La discrepancia se muestra como discrepancia, nunca promediada en un número único.
+- [x] Métricas: `t50`/`t90` desde la señal (**`t90` es «cuánto tardó en salir la mayor parte»**),
       aforo pico, inicio del reingreso con histéresis, latencia hasta el dictamen firmado y
       latencia del reingreso.
-- [ ] **Una `latencia_reingreso` negativa significa que la gente reentró ANTES del dictamen.** Eso
+- [x] **Una `latencia_reingreso` negativa significa que la gente reentró ANTES del dictamen.** Eso
       no es un número: es un hallazgo de seguridad, y el reporte lo dice con palabras.
-- [ ] «Cuánto se movió el inmueble» sale del **sismómetro** (`incidents.max_pga_g`/`max_pgv_cms`),
+- [x] «Cuánto se movió el inmueble» sale del **sismómetro** (`incidents.max_pga_g`/`max_pgv_cms`),
       no de la cámara, y se presenta al lado de `t90`.
 - [ ] Detector tras un adaptador `DetectorBackend`; **solo licencias permisivas** (YOLOX / D-FINE
       Apache-2.0, ByteTrack de Megvii MIT, `onnxruntime` MIT). Mismo pre/post-proceso en borde y
       nube para que los números sean comparables.
-- [ ] **El motor vive fuera de `api/src/takab_api/`** (paquete `analyzer/`): `test_runtime_deps.py`
+- [x] **El motor vive fuera de `api/src/takab_api/`** (paquete `analyzer/`): `test_runtime_deps.py`
       obliga a que todo import de terceros bajo ese árbol entre en `[project] dependencies`, y un
       `import onnxruntime` ahí metería el runtime ONNX en la imagen de la API.
-- [ ] Corre en local contra MinIO con un backend falso. **Cero descargas de pesos en CI.**
+- [~] Corre en local con un backend falso y **cero descargas de pesos en CI** — por
+      `--stills`, que lee el goteo del gabinete y **no necesita ffmpeg**. Ese modo no es una
+      comodidad de prueba: el clip cubre once minutos y **el reingreso ocurre horas después**,
+      en el goteo, así que un analizador que solo leyera vídeo no podría fecharlo nunca. La
+      descarga desde MinIO (`--clip s3://…`) está cableada y **sin ejercer**: falta un clip y
+      un ffmpeg LGPL.
 
 ### [ ] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS`
 - [ ] Imagen ECR, rol IAM y acceso a la base. **Ventana AWS de Mauricio.**

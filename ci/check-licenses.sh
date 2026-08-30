@@ -8,8 +8,9 @@
 #
 # POR QUÉ SE CORRE UNA VEZ POR PROYECTO Y NO UNA SOLA VEZ
 # Cada uno tiene su propio venv y su propio `uv.lock`, y un prohibido puede entrar en uno
-# sin tocar el otro. Correrlo solo en `api/` dejaría al gabinete sin vigilar, que es
-# justamente donde vive el CCTV.
+# sin tocar el otro. Correrlo solo en `api/` dejaría sin vigilar al gabinete y al
+# analizador — que son, justamente, los dos sitios donde vive el CCTV y donde la tentación
+# de `pip install ultralytics` es más fuerte.
 #
 # NO se para al primer fallo: interesa el informe COMPLETO. Enterarse de un problema por
 # proyecto y por corrida convierte una revisión en tres.
@@ -22,7 +23,7 @@ FALLO=0
 
 echo "→ guarda de licencias (D-24: cero AGPL/GPL en el árbol)"
 
-for PROYECTO in api edge; do
+for PROYECTO in api edge analyzer; do
   DIR="${RAIZ}/${PROYECTO}"
   [ -d "$DIR" ] || continue
   echo "── ${PROYECTO}"
@@ -43,7 +44,7 @@ echo "── pesos .onnx"
   echo "TAKAB Ailert — software de terceros"
   echo "GENERADO por ci/check-licenses.sh. No editar a mano."
   echo
-  for PROYECTO in api edge; do
+  for PROYECTO in api edge analyzer; do
     PARTE="${RAIZ}/${PROYECTO}/.notices.part"
     [ -f "$PARTE" ] || continue
     echo "### ${PROYECTO}"
