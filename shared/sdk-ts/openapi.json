@@ -145,6 +145,83 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "CapturaOut": {
+        "description": "Una de las cuatro capturas del reporte, o su ausencia con razón.",
+        "properties": {
+          "captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "disponible": {
+            "default": false,
+            "title": "Disponible",
+            "type": "boolean"
+          },
+          "papel": {
+            "title": "Papel",
+            "type": "string"
+          },
+          "purged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purged At"
+          },
+          "razon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razon"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "still_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Still Id"
+          }
+        },
+        "required": [
+          "papel"
+        ],
+        "title": "CapturaOut",
+        "type": "object"
+      },
       "CatalogDelta": {
         "description": "Diferencia entre lo que estimó la red y lo que dice el catálogo.",
         "properties": {
@@ -416,6 +493,67 @@
           "topic"
         ],
         "title": "CatalogPushOut",
+        "type": "object"
+      },
+      "CctvOut": {
+        "description": "Todo el CCTV de un incidente. **El mismo objeto va a la pantalla y al PDF.**\n\nDos rutas distintas para los mismos hechos acabarían discrepando, y un dictamen que no\ncoincide con lo que el operador vio en pantalla es peor que ninguno.",
+        "properties": {
+          "capturas": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapturaOut"
+            },
+            "title": "Capturas",
+            "type": "array"
+          },
+          "clips": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ClipOut"
+            },
+            "title": "Clips",
+            "type": "array"
+          },
+          "con_camara": {
+            "default": false,
+            "title": "Con Camara",
+            "type": "boolean"
+          },
+          "discrepancia": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscrepanciaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estado": {
+            "default": "SIN COBERTURA CCTV DECLARADA · este sitio no tiene cámara configurada",
+            "title": "Estado",
+            "type": "string"
+          },
+          "evacuacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvacuacionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id"
+        ],
+        "title": "CctvOut",
         "type": "object"
       },
       "ChannelPeak": {
@@ -744,6 +882,83 @@
           "created_at"
         ],
         "title": "CheckinOut",
+        "type": "object"
+      },
+      "ClipOut": {
+        "description": "Un clip del incidente. `disponible=False` cuando la retención ya podó el objeto.",
+        "properties": {
+          "clip_id": {
+            "format": "uuid",
+            "title": "Clip Id",
+            "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "disponible": {
+            "default": false,
+            "title": "Disponible",
+            "type": "boolean"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "purged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purged At"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip_id",
+          "started_at",
+          "ended_at"
+        ],
+        "title": "ClipOut",
         "type": "object"
       },
       "CommandIn": {
@@ -1854,6 +2069,53 @@
         "title": "DirectoryEntryOut",
         "type": "object"
       },
+      "DiscrepanciaOut": {
+        "description": "Aforo por cámara frente al pase de lista. **Nunca se promedian.**",
+        "properties": {
+          "aforo_camara": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aforo Camara"
+          },
+          "checkins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkins"
+          },
+          "diferencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diferencia"
+          },
+          "lectura": {
+            "title": "Lectura",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lectura"
+        ],
+        "title": "DiscrepanciaOut",
+        "type": "object"
+      },
       "DrillCreateIn": {
         "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).\n\n[T-2.03·D4c] Con ``scheduled_at`` (futuro) la fila es AGENDA informativa\n(\"próximo simulacro\" de la app): sin comandos y jamás ``active`` — ejecutar\na esa hora sigue siendo un acto del operador.",
         "properties": {
@@ -2738,6 +3000,139 @@
           "detail"
         ],
         "title": "ErrorFrame",
+        "type": "object"
+      },
+      "EvacuacionOut": {
+        "description": "Las métricas. `None` es «no medido»; la razón está en `notas`.",
+        "properties": {
+          "baseline_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline N"
+          },
+          "correlacion": {
+            "title": "Correlacion",
+            "type": "string"
+          },
+          "dictamen_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dictamen Lag S"
+          },
+          "notas": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notas",
+            "type": "array"
+          },
+          "peak_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak At"
+          },
+          "peak_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak N"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "reentry_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reentry Lag S"
+          },
+          "reentry_start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reentry Start At"
+          },
+          "reingreso_antes_del_dictamen": {
+            "default": false,
+            "title": "Reingreso Antes Del Dictamen",
+            "type": "boolean"
+          },
+          "t50_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T50 S"
+          },
+          "t90_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T90 S"
+          },
+          "veredicto_reingreso": {
+            "title": "Veredicto Reingreso",
+            "type": "string"
+          }
+        },
+        "required": [
+          "veredicto_reingreso",
+          "correlacion"
+        ],
+        "title": "EvacuacionOut",
         "type": "object"
       },
       "EventDetailOut": {
@@ -5151,6 +5546,14 @@
             "title": "Ack Incident",
             "type": "boolean"
           },
+          "cctv_read": {
+            "title": "Cctv Read",
+            "type": "boolean"
+          },
+          "cctv_video": {
+            "title": "Cctv Video",
+            "type": "boolean"
+          },
           "checkin_submit": {
             "title": "Checkin Submit",
             "type": "boolean"
@@ -5303,6 +5706,8 @@
           "platform_maintenance_window",
           "manage_privacy_notice",
           "manage_privacy_erasure",
+          "cctv_read",
+          "cctv_video",
           "deploy_firmware"
         ],
         "title": "MeActions",
@@ -10062,6 +10467,47 @@
         "summary": "List Reference Earthquakes"
       }
     },
+    "/cctv/clips/{clip_id}/download": {
+      "post": {
+        "description": "URL pre-firmada del clip, 300 s, **con su huella en `audit_log`**.",
+        "operationId": "download_clip_cctv_clips__clip_id__download_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clip_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Clip Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedDownload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Clip"
+      }
+    },
     "/drills": {
       "get": {
         "description": "Registro de simulacros con acuse por sitio (evidencia de cumplimiento).\n\n[T-2.48] Paginación keyset y filtro por tipo: ``executed`` es lo que sonó en\nlos edificios, ``scheduled`` la agenda (de ahí sale el banner armado).",
@@ -11445,6 +11891,47 @@
           }
         },
         "summary": "List Incident Actions"
+      }
+    },
+    "/incidents/{incident_id}/cctv": {
+      "get": {
+        "description": "Métricas de evacuación, las cuatro capturas y el inventario de clips.\n\nSirve el MISMO objeto que consume el PDF: dos rutas distintas para los mismos hechos\nacabarían discrepando, y un reporte que no coincide con lo que el operador vio en\npantalla es peor que ninguno.\n\n404 y no 403 cuando el incidente no es visible: un 403 confirmaría que existe.",
+        "operationId": "incident_cctv_incidents__incident_id__cctv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CctvOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Cctv"
       }
     },
     "/incidents/{incident_id}/checkins": {

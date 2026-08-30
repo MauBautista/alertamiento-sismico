@@ -68,6 +68,21 @@ NO_SPECTRUM = (
     "confirmados). Este incidente no tiene miniSEED archivado."
 )
 NO_GEOMETRY = "SIN GEOMETRÍA REGISTRADA · no se puede dibujar el croquis del evento."
+#: [T-3.12.c] Los tres estados del CCTV. Se distinguen porque significan cosas OPUESTAS y
+#: se leerían igual si el reporte solo dijera «sin datos».
+NO_CCTV = (
+    "SIN COBERTURA CCTV DECLARADA · este sitio no tiene cámara configurada. La ausencia "
+    "de análisis de evacuación en este documento no indica que nadie evacuara."
+)
+CCTV_SIN_CLIP = (
+    "CÁMARA DECLARADA · sin clip para este incidente. Grabó o no grabó, pero el vídeo no "
+    "llegó a la nube: revísese el gabinete antes de leer esto como «no hubo evacuación»."
+)
+CCTV_PENDIENTE = (
+    "CLIP DISPONIBLE · ANÁLISIS PENDIENTE. El vídeo está archivado y todavía no se ha "
+    "contado: las cifras de evacuación llegarán en una versión posterior del documento."
+)
+CCTV_PURGADO = "PURGADO (retención de vídeo)"
 CENTROID_NOTE = (
     "EPICENTRO = CENTROIDE DE LAS ESTACIONES QUE DETECTARON EL SISMO. No es una "
     "localización sísmica: está entre las estaciones, no en la falla."
@@ -137,6 +152,39 @@ class EvidenceRow:
 
 
 @dataclass
+class CctvObjectRow:
+    """Un clip o una captura, para la cadena de custodia.
+
+    Conserva `sha256` y fecha **aunque el objeto ya no exista**: es lo que permite que el
+    documento siga siendo verificable después de que la retención de vídeo haga su trabajo.
+    Por eso `estado` es un campo y no se deriva de la presencia de la fila.
+    """
+
+    tipo: str  # clip | captura
+    papel: str | None  # pre/egress/peak/reentry para capturas; None para clips
+    sha256: str | None
+    momento: datetime | None
+    estado: str  # "disponible" | CCTV_PURGADO
+
+
+@dataclass
+class CctvBlock:
+    """Lo que la sección de CCTV del reporte afirma. Sin métricas sigue siendo útil: la
+    cadena de custodia y el estado son parte del documento aunque nadie haya contado."""
+
+    estado: str = NO_CCTV
+    objetos: list[CctvObjectRow] = field(default_factory=list)
+    t50_s: float | None = None
+    t90_s: float | None = None
+    peak_n: int | None = None
+    correlacion: str | None = None
+    veredicto_reingreso: str | None = None
+    #: `True` ⇒ la sección lo dice en un recuadro, no en una celda de tabla.
+    reingreso_antes_del_dictamen: bool = False
+    discrepancia: str | None = None
+
+
+@dataclass
 class ReportModel:
     """Todo lo que el dictamen puede afirmar. Nada se calcula durante el render."""
 
@@ -203,6 +251,10 @@ class ReportModel:
     #: Entra en ``content_sha256``: cambiar lo que el dictamen afirma tiene que mover
     #: la huella, o la huella no sirve para comparar dos exportaciones.
     compliance: ComplianceDocument = field(default_factory=ComplianceDocument)
+    #: [T-3.12.c] CCTV: analítica de evacuación y cadena de custodia del vídeo. Entra en
+    #: ``content_sha256`` como todo lo demás — cambiar lo que el documento afirma sobre
+    #: cuánto tardó la gente en salir tiene que mover la huella.
+    cctv: CctvBlock = field(default_factory=CctvBlock)
 
     def content_sha256(self) -> str:
         """Huella del CONTENIDO (no del archivo): identifica qué se afirmó.

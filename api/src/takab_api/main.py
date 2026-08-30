@@ -9,6 +9,7 @@ from takab_api.health import router as health_router
 from takab_api.notify.providers import build_providers, channel_reality
 from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
+from takab_api.routers.cctv import router as cctv_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
 from takab_api.routers.dictamens import router as dictamens_router
@@ -140,6 +141,8 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     # [T-2.40] Hechos medidos del incidente: una fuente para pantalla y dictamen.
     app.include_router(forensics_router)
+    # [T-3.12.c] CCTV: métricas de evacuación y descarga del clip.
+    app.include_router(cctv_router)
 
     # Comandos remotos de actuador firmados (B9, regla de oro 8).
     app.include_router(commands_router)

@@ -103,6 +103,8 @@ DENY_ALL = {
     # [T-2.80.b] Registrar una solicitud ARCO recibida por escrito y ejecutarla por
     # cuenta del titular (mismo círculo, acción aparte: esta no se deshace).
     "manage_privacy_erasure": False,
+    "cctv_read": False,
+    "cctv_video": False,
     # [T-2.70] Activar una release en un gabinete, o devolverlo a la anterior. Un
     # rol desconocido no puede tocar el código desde el que arranca el camino de
     # vida de un edificio.
@@ -570,3 +572,36 @@ def test_deploy_firmware_is_platform_not_tenant() -> None:
     # las dos sin decidirlo.
     assert "tenant_admin" in roles_with_action("maintenance_window")
     assert "tenant_admin" not in roles_with_action("deploy_firmware")
+
+
+def test_ver_video_es_MAS_ESTRECHO_que_ver_las_metricas() -> None:
+    """[T-3.12.c · blueprint B.4] «Acceso por rol, y más estrecho que el resto: ver vídeo
+    NO es ver telemetría.»
+
+    El inspector es el caso que fija la diferencia: firma dictámenes y necesita las cuatro
+    capturas, pero no once minutos de caras. Si algún día las dos acciones acabaran con el
+    mismo círculo, este test cae — y esa caída es la pregunta correcta, no una molestia.
+    """
+    lee = {r for r in RBAC_SECTION_2 if allowed_actions(r)["cctv_read"]}
+    ve = {r for r in RBAC_SECTION_2 if allowed_actions(r)["cctv_video"]}
+    assert ve < lee, "el círculo del clip tiene que ser un subconjunto ESTRICTO del de métricas"
+    assert "inspector" in lee - ve
+
+
+def test_ningun_rol_de_gobierno_ni_de_soporte_mira_el_video_de_un_cliente() -> None:
+    """La RLS de las tablas de CCTV tampoco lleva rama `app_gov_can_see`, con el precedente
+    de `privacy_notices`. Conceder la acción y negar la fila —o al revés— sería una
+    incoherencia que solo se descubre en producción."""
+    for rol in ("gov_operator", "takab_support"):
+        assert allowed_actions(rol)["cctv_read"] is False, rol
+        assert allowed_actions(rol)["cctv_video"] is False, rol
+
+
+def test_el_clip_lo_ve_quien_responde_por_el_inmueble_o_por_el_incidente() -> None:
+    lee = {r for r in RBAC_SECTION_2 if allowed_actions(r)["cctv_video"]}
+    assert lee == {"takab_superadmin", "tenant_admin", "soc_operator", "building_admin"}
+
+
+def test_las_dos_acciones_de_video_estan_declaradas() -> None:
+    assert "cctv_read" in ACTIONS
+    assert "cctv_video" in ACTIONS

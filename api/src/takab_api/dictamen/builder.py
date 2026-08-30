@@ -18,9 +18,16 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.cctv import build_cctv
 from takab_api.dictamen.model import (
+    CCTV_PENDIENTE,
+    CCTV_PURGADO,
+    CCTV_SIN_CLIP,
+    NO_CCTV,
     STATUS_LABELS,
     ActionRow,
+    CctvBlock,
+    CctvObjectRow,
     ChannelRow,
     DictamenRow,
     EvidenceRow,
@@ -78,6 +85,59 @@ def folio_of(site_code: str, opened_at: datetime, incident_id: str, variant: str
     suffix = "E" if variant == "executive" else "T"
     short = incident_id.replace("-", "")[:8].upper()
     return f"TKB-{site_code}-{opened_at:%Y%m%d}-{short}-{suffix}"
+
+
+async def _cctv_block(conn: AsyncConnection, incident_id: str) -> CctvBlock:
+    """Traduce el objeto de la API al bloque del documento. **Best-effort a propósito.**
+
+    Un fallo leyendo el CCTV no puede impedir que se genere el dictamen: el vídeo es un
+    anexo y el dictamen es lo que autoriza reocupar un edificio. Se degrada a la razón
+    escrita —misma disciplina que `_raw_waveform`— en vez de tumbar el documento.
+    """
+    try:
+        datos = await build_cctv(conn, incident_id)
+    except Exception:  # noqa: BLE001 — el anexo no puede costar el dictamen
+        return CctvBlock(estado="CCTV NO DISPONIBLE al generar este documento")
+    if datos is None:
+        return CctvBlock()
+
+    objetos = [
+        CctvObjectRow(
+            tipo="clip",
+            papel=None,
+            sha256=c.sha256,
+            momento=c.started_at,
+            estado=CCTV_PURGADO if c.purged_at else "disponible",
+        )
+        for c in datos.clips
+    ] + [
+        CctvObjectRow(
+            tipo="captura",
+            papel=cap.papel,
+            sha256=cap.sha256,
+            momento=cap.captured_at,
+            estado=CCTV_PURGADO if cap.purged_at else "disponible",
+        )
+        for cap in datos.capturas
+        if cap.still_id is not None
+    ]
+
+    if datos.evacuacion is None:
+        estado = CCTV_PENDIENTE if datos.clips else (CCTV_SIN_CLIP if datos.con_camara else NO_CCTV)
+        return CctvBlock(estado=estado, objetos=objetos)
+
+    e = datos.evacuacion
+    return CctvBlock(
+        estado="análisis disponible",
+        objetos=objetos,
+        t50_s=e.t50_s,
+        t90_s=e.t90_s,
+        peak_n=e.peak_n,
+        correlacion=e.correlacion,
+        veredicto_reingreso=e.veredicto_reingreso,
+        reingreso_antes_del_dictamen=e.reingreso_antes_del_dictamen,
+        discrepancia=datos.discrepancia.lectura if datos.discrepancia else None,
+    )
 
 
 async def build_model(
@@ -207,6 +267,11 @@ async def build_model(
         # si el papel y la pantalla lo leyeran cada uno a su manera, acabarían
         # discrepando — y aquí el que discrepa lleva una firma debajo.
         compliance=await qc.document_for_incident(conn, incident_id),
+        # [T-3.12.c] CCTV. Sale del MISMO ensamblador que lo sirve a la pantalla
+        # (`takab_api.cctv.build_cctv`), por la misma razón que el marco normativo de
+        # arriba: si el papel y la pantalla lo leyeran cada uno a su manera acabarían
+        # discrepando, y aquí el que discrepa lleva una firma debajo.
+        cctv=await _cctv_block(conn, incident_id),
     )
 
 

@@ -62,6 +62,11 @@ class MeActions(BaseModel):
     #: `true` NO significa que se pueda anonimizar a cualquiera: hace falta una
     #: CONSTANCIA registrada, y eso lo exige la base (RLS), no esta bandera.
     manage_privacy_erasure: bool
+    # [T-3.12.c] Las dos acciones de vídeo. Tipadas aquí y no un `dict` libre porque la
+    # consola decide con ellas si pinta el botón de descargar el clip, y un campo que el
+    # contrato no publica es un botón que el front adivina.
+    cctv_read: bool
+    cctv_video: bool
     #: [T-2.70] Ordenar a un gabinete que ACTIVE una release ya verificada, o que
     #: vuelva a la anterior. SOLO takab_superadmin: el código es de TAKAB, el
     #: artefacto lo puso su operador y una release mala deja un edificio sin

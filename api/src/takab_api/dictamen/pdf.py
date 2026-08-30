@@ -22,6 +22,7 @@ from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
 from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
+    ABSENT,
     CENTROID_NOTE,
     DISCLAIMER,
     ENVELOPE_NOTE,
@@ -69,6 +70,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _sensors_section(pdf, m)
     _chain_section(pdf, m)
     _custody_section(pdf, m)
+    _cctv_section(pdf, m)  # 11
     _narrative_section(pdf, m)
     _compliance_section(pdf, m)
     _closing(pdf, m)
@@ -385,11 +387,58 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.para("Sin objetos de evidencia archivados.", size=7.5, muted=True)
 
 
+def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-3.12.c] Analítica de evacuación y custodia del vídeo.
+
+    Va DESPUÉS de la cadena de custodia y no antes: sus objetos son custodia también, y
+    leerlos seguidos deja claro que el clip y el miniSEED son el mismo tipo de evidencia
+    con distinta política de retención.
+
+    **Sin cámara la sección existe igual.** Omitirla dejaría al lector sin saber si este
+    inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
+    que `NO_CCTV` está escrito para cerrar.
+    """
+    pdf.section("11", "EVACUACIÓN OBSERVADA (CCTV)")
+    bloque = m.cctv
+
+    if bloque.t90_s is None:
+        pdf.callout(bloque.estado)
+    else:
+        pdf.field("Aforo máximo observado", num(bloque.peak_n))
+        pdf.field(
+            "Mitad del aforo alcanzada",
+            f"{bloque.t50_s:.0f} s tras la señal" if bloque.t50_s is not None else ABSENT,
+        )
+        pdf.field("La mayor parte fuera", f"{bloque.t90_s:.0f} s tras la señal")
+        if bloque.correlacion:
+            pdf.para(bloque.correlacion)
+        if bloque.discrepancia:
+            # El cruce con el pase de lista se muestra como DISCREPANCIA, jamás promediado
+            # en un número único: la diferencia ES la información (T-3.12).
+            pdf.field("Cruce con el pase de lista", bloque.discrepancia)
+        if bloque.veredicto_reingreso:
+            if bloque.reingreso_antes_del_dictamen:
+                # Recuadro y no celda: que la gente reentrara antes del dictamen no es un
+                # número negativo en una tabla, es un hallazgo que alguien tiene que leer.
+                pdf.callout(bloque.veredicto_reingreso)
+            else:
+                pdf.field("Reingreso", bloque.veredicto_reingreso)
+
+    if not bloque.objetos:
+        return
+    pdf.para("Custodia del material de vídeo:", size=9, muted=True)
+    for obj in bloque.objetos:
+        etiqueta = obj.papel or obj.tipo
+        cuando = obj.momento.strftime(TS_FMT) if obj.momento else ABSENT
+        huella = (obj.sha256 or ABSENT)[:16]
+        pdf.field(f"{etiqueta} · {cuando}", f"{obj.estado} · sha256 {huella}…")
+
+
 def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("11", "ANÁLISIS")
+    pdf.section("12", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -412,7 +461,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("12", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("13", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -423,7 +472,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("13", "FIRMA Y DESLINDE")
+    pdf.section("14", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)
