@@ -405,6 +405,31 @@ suite **lo declara en voz alta** en vez de callarlo.
 > **Única dependencia declarada del Bloque III sobre el II:** necesita `T-2.78`, porque un
 > simulacro con **cascada de notificación real** no se acredita con canales simulados.
 
+### 3.3.a · Desplegar el ffmpeg **LGPL arm64** en el Pi — un `curl` y un `tar`
+
+`/opt/takab/bin/ffmpeg` **no existe** en el gabinete, y `takab-cctv` no arranca sin él: la
+guarda de licencia es *fail-closed* por `D-24` (el `ffmpeg` de Debian trae `--enable-gpl` y
+por eso no sirve). El binario correcto está identificado y el guard lo dice en su propio
+mensaje de error:
+
+```bash
+# EN EL PI (arm64, no la variante linux64 que corre en el portátil)
+curl -sSL -o /tmp/ff.tar.xz \
+  https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-lgpl.tar.xz
+tar xf /tmp/ff.tar.xz -C /tmp
+sudo install -m 0755 /tmp/ffmpeg-master-latest-linuxarm64-lgpl/bin/ffmpeg /opt/takab/bin/ffmpeg
+/opt/takab/bin/ffmpeg -version | head -2   # debe decir --enable-version3 y NO --enable-gpl
+```
+
+> **La variante importa más que la versión.** `linux64` es x86-64 y en el Pi no ejecuta;
+> `lgpl` frente a `gpl` es la diferencia entre que el CCTV arranque o se niegue. El guard ya
+> distingue las dos y **acepta la LGPL** — comprobado el 2026-08-30 contra un binario real,
+> que hasta entonces solo se había probado con dobles.
+
+Con esto desplegado se cierra lo último que le falta a `T-3.11` para no depender de
+`GATE-HW`: el recorte del clip y el `concat` sobre once minutos de anillo, ejercidos **en la
+máquina que va a ejecutarlos** y no en el portátil.
+
 ### 3.3.b · Poner en hora la cámara del CCTV — **5 minutos, y bloquea la evidencia**
 
 La cámara del sitio (`192.168.3.132`, Imou/Dahua `IPC-S41FE`) llegó con el **huso de fábrica

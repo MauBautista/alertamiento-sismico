@@ -10716,10 +10716,42 @@ sirena.
       no del software; hasta que se haga, toda captura que salga de ella lleva el sello
       corrido. Ver `PENDIENTES-MAURICIO.md §3`.
 
-> **Lo que sigue sin acreditar, y no es por falta de ganas:** no hay ffmpeg LGPL **ni en
-> esta máquina ni en el Pi** (`/opt/takab/bin/ffmpeg` no existe todavía), así que el anillo,
-> el recorte y el `concat` contra vídeo H264 de verdad siguen siendo `GATE-HW`. Lo medido
-> aquí es la capa ONVIF/RTSP entera hasta el `200 OK`; el decodificador, no.
+> #### El camino de vídeo, ejercido con ffmpeg LGPL de verdad
+>
+> Se bajó el build que el propio guard recomienda (`BtbN/FFmpeg-Builds`, variante `lgpl`) y
+> con él se cerraron tres cosas que hasta hoy solo se probaban con dobles inyectados:
+>
+> 1. **`verificar()` acepta un binario LGPL real.** Nunca se había ejecutado contra uno: los
+>    ocho tests del guard inyectan la salida de `-version`.
+> 2. **El anillo graba.** `cmd_anillo` contra el substream escribió 3 segmentos MP4 en 25 s
+>    (~580 kB cada uno), con `-c copy` y sin decodificar.
+> 3. **`cmd_captura` funciona contra RTSP** —substream y principal, `rc=0`—, **y falla contra
+>    la instantánea HTTP con `401`**. Ese es el segundo hallazgo, y estaba escondido detrás
+>    del primero.
+>
+> **La instantánea por ffmpeg da 401, y la causa no es la que parece.** ffmpeg sí hace
+> Digest y manda una cabecera bien formada; lo que ocurre es que el analizador de la cámara
+> **depende del orden de los parámetros**. Aislado en cruz sobre `opaque`, `algorithm` y el
+> entrecomillado de `qop`, el orden resultó ser el único factor que decide:
+>
+> | orden | resultado |
+> |---|---|
+> | `nc=…` antes de `cnonce=…` (lo que manda urllib) | **200** |
+> | `cnonce=…` antes de `nc=…` (lo que manda ffmpeg) | **401** |
+>
+> La RFC 7616 dice que esa lista **no** tiene orden, así que quien está mal es la cámara. Da
+> igual: es la que hay. Y lo que significaba en producción es lo que lo hace grave —
+> `_gotear` **prefiere** la instantánea, así que habrían fallado **todas** las capturas del
+> goteo: el clip perfecto y el **reingreso sin fechar jamás**, que es lo único que solo el
+> goteo puede fechar. Arreglado bajando la instantánea con `urllib`
+> (`takab_edge/cctv/instantanea.py`), con caída al RTSP **anunciada**; verificado contra la
+> cámara real, 5/5 capturas a ~350 ms.
+>
+> **Lo que sigue sin acreditar:** el Pi **no tiene** `/opt/takab/bin/ffmpeg` —hace falta la
+> variante `linuxarm64-lgpl`—, así que el recorte del clip y el `concat` sobre once minutos
+> de anillo siguen sin ejercerse **en la máquina que va a ejecutarlos**. Lo de arriba se
+> midió en x86-64. Sigue siendo `GATE-HW`, pero por bastante menos de lo que era esta
+> mañana.
 
 ### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
