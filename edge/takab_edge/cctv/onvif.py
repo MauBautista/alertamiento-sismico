@@ -13,8 +13,11 @@ hay que sacar un fotograma del RTSP, que sí decodifica. Misma foto, coste muy d
 
 LA CREDENCIAL NO SE GUARDA Y NO SE REGISTRA
 ───────────────────────────────────────────
-La URL que devuelve una cámara ONVIF es del tipo ``rtsp://usuario:tu-clave@host/stream``. Eso
-significa que:
+Unas cámaras devuelven la URL ya con la credencial dentro —``rtsp://usuario:tu-clave@host/
+stream``— y otras la devuelven pelada y **luego exigen Digest**. La Dahua del sitio es de
+las segundas: sus tres URIs vienen sin credencial y las tres contestan `401` sin ella, así
+que :func:`descubrir` la inyecta antes de devolverlas. Sea cual sea el camino, lo que sale
+de aquí **lleva el secreto dentro**, y eso significa que:
 
 * **no puede persistirse** —ni en la tabla `cameras`, ni en el config sync, ni en un
   fichero de estado—, y por eso las credenciales viven solo en el entorno del proceso; y
@@ -138,7 +141,16 @@ def descubrir(
     except Exception as exc:  # noqa: BLE001 — la librería ONVIF lanza de todo
         raise OnvifNoDisponible(f"no se pudo interrogar la cámara {host}:{puerto}: {exc}") from exc
 
-    fuentes = Fuentes(rtsp_principal=urls[0], rtsp_substream=urls[1], snapshot=instantanea)
+    # La credencial se inyecta AQUÍ porque no todas las cámaras la traen. La Dahua del
+    # sitio devuelve las tres URIs peladas y luego exige Digest en las tres: sin esto,
+    # ffmpeg recibe una URL que la cámara contesta con 401 y el gabinete no graba nada.
+    # `con_credenciales` no pisa a la que sí la trae embebida, que era el caso que este
+    # módulo suponía único. Ver `tests/test_cctv_onvif_credencial.py`.
+    fuentes = Fuentes(
+        rtsp_principal=con_credenciales(urls[0], usuario, clave),
+        rtsp_substream=con_credenciales(urls[1], usuario, clave),
+        snapshot=con_credenciales(instantanea, usuario, clave) if instantanea else None,
+    )
     log.info(
         "cctv: cámara %s:%d lista (substream=%s, instantánea=%s)",
         host,

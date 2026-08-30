@@ -81,7 +81,15 @@ class CamaraSimulada:
     # ------------------------------------------------------------------ cámara
 
     def fuentes(self, *, con_instantanea: bool = True) -> Fuentes:
-        """Lo que devolvería `descubrir()`. Con credencial, como la cámara real.
+        """Lo que devuelve `descubrir()`: con la credencial ya dentro.
+
+        Ojo con lo que este método **no** modela, porque costó un fallo de campo: esto es
+        la salida de `descubrir()`, no lo que contesta la cámara. La Dahua del sitio
+        devuelve sus URIs *peladas* y exige Digest, y quien pone la credencial es
+        `descubrir()`. Decir aquí «con credencial, como la cámara real» era escribir la
+        suposición del módulo por segunda vez, y por eso las ocho pruebas pasaban con un
+        `descubrir()` que no inyectaba nada. Lo que contesta la cámara se modela donde
+        toca —`tests/test_cctv_onvif_credencial.py`, con las URIs medidas—, no aquí.
 
         `con_instantanea=False` modela la cámara barata que no ofrece `GetSnapshotUri`:
         el goteo tiene que salir del RTSP y **decodificar**, que es un coste muy distinto.
