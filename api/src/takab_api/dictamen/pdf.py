@@ -228,9 +228,51 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
         thinned: list[float | None] = [float(v) for v in samples[::step]]
         _trace(pdf, channel, thinned, [False] * len(thinned), unit="cuentas")
 
+    _duracion(pdf, m)
+
     if m.spectrum:
         freqs, amps = m.spectrum
         _spectrum(pdf, freqs, amps, m.spectrum_peak_hz)
+
+
+def _duracion(pdf: TakabPDF, m) -> None:
+    """[T-3.14] La duración instrumental, con su definición pegada al número.
+
+    **Nunca dice «duración» a secas.** Existen varias definiciones —la bracketed es la que
+    la gente espera— y dan números distintos para el mismo sismo; un número sin su
+    definición invita a compararlo con otro que se midió de otra forma.
+
+    Y cuando no se pudo medir, lo dice. Un `0.0 s` aquí se leería como «no tembló», que es
+    lo contrario de lo que pasó: lo que faltó fue la onda, no la sacudida.
+    """
+    if pdf.get_y() > 240:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_font(pdf.body_font, "B", 8)
+    pdf.cell(0, 4, "DURACIÓN INSTRUMENTAL DE LA SACUDIDA", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font(pdf.body_font, "", 7)
+    d = m.shaking_duration
+    if d is None:
+        pdf.multi_cell(
+            0,
+            3.4,
+            "SIN DATO · no se pudo medir sobre la onda archivada. No es cero: es que no "
+            "hubo traza suficiente de la que medirla.",
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
+        return
+    pdf.multi_cell(
+        0,
+        3.4,
+        f"{d.etiqueta} — intervalo en el que se acumula del 5 % al 95 % de la Intensidad "
+        f"de Arias, medido sobre el canal {d.canal} del miniSEED archivado "
+        f"({d.muestras} muestras, de t+{d.desde_s:.1f} s a t+{d.hasta_s:.1f} s desde el "
+        "inicio de la traza). Definición de Trifunac & Brady (1975); NO es comparable con "
+        "una duración «bracketed», que se mide entre cruces de un umbral de aceleración.",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
 
 
 def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: float | None) -> None:

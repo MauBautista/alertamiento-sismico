@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **314** · `[x]` **263** · `[~]` **11** · `[ ]` **40**
+****Conteo de tareas:** total **314** · `[x]` **265** · `[~]` **10** · `[ ]` **39**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10942,9 +10942,14 @@ sirena.
       descarga desde MinIO (`--clip s3://…`) está cableada y **sin ejercer**: falta un clip y
       un ffmpeg LGPL.
 
-### [~] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS`
-> **Construido el 2026-08-30; falta el `apply`.** Handler, Dockerfile, terraform y el
-> enganche del worker están escritos y probados. Lo único pendiente es la ventana AWS.
+### [x] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS` · **COMPLETA (2026-08-30)**
+> **DESPLEGADA Y VERIFICADA EN LA NUBE el 2026-08-30.** La API corre `1e7bf0f` con esquema
+> `0053_cctv`, el Lambda arranca en **477 ms** y el worker tiene la URL de `takab-dev-q-cctv`.
+>
+> **Verificado invocándolo, no mirando que exista:** con un `clip_id` inventado devuelve
+> `AnalisisImposible: no hay clip … en la base`. Ese error —y no `UndefinedTable`, ni un
+> timeout— es la prueba de que la imagen arranca, los imports cargan, la VPC y el SG dejan
+> hablar con Postgres, y la consulta encuentra la tabla. Solo le falta un clip de verdad.
 >
 > **El default es YOLOX-nano, y es PROVISIONAL con esa palabra escrita.** No sale de una
 > opinión: sale de lo medido contra la cámara real —**8–13 ms** por fotograma contra 24–38
@@ -11100,8 +11105,43 @@ sirena.
       bloquea").
 - [ ] Caída del feed ⇒ degradación visible, no silenciosa.
 
-### [ ] T-3.14 · Duración instrumental de la sacudida — `SOFTWARE`
-- [ ] Medida, no estimada; con su definición escrita.
+### [x] T-3.14 · Duración instrumental de la sacudida — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> **La definición no se eligió por gusto: la eligieron los datos.** Hay dos familias y una
+> queda descartada de raíz:
+>
+> * La **«bracketed»** —tiempo entre el primer y el último cruce de un umbral, típicamente
+>   0.05 g— es la que la gente espera, y **no se puede calcular aquí**: exige unidades
+>   absolutas, y lo que archivamos son **cuentas del ADC sin calibrar**. Convertirlas a `g`
+>   necesita la respuesta instrumental, que este servicio no tiene — lo dice el propio
+>   lector de miniSEED. Calcularla igualmente sería inventarse el umbral.
+> * La **significativa D5-95** (Trifunac & Brady, 1975) es el intervalo en el que se acumula
+>   del 5 % al 95 % de la **Intensidad de Arias** (`∫a²dt`). Y aquí está lo que decide:
+>   **es una FRACCIÓN, y una fracción es invariante de escala** — el factor de calibración
+>   se cancela al normalizar. O sea que D5-95 se mide **exacta sobre cuentas crudas**.
+>
+> No es el premio de consolación: es la definición estándar en ingeniería sísmica para
+> «cuánto duró la parte que importa», y además la única honesta con los datos que hay.
+>
+> **Y la trampa que la habría hecho inútil, medida:** el waveform del RS4D trae ~3.8 millones
+> de cuentas de continua. Con ese offset dentro, `∫a²dt` lo domina una constante y D5-95
+> devuelve **el 90 % de la ventana sea cual sea el sismo**. Verificado sobre una traza de
+> 95 s con 15 s de sacudida: **85.5 s sin quitar la media contra 13.5 s con ella**. El
+> número saldría, parecería razonable, y describiría la longitud del registro.
+- [x] Medida, no estimada: sale de la onda archivada del propio evento, no de una correlación
+      con la magnitud ni de una tabla.
+- [x] **Con su definición escrita, y pegada al número.** El reporte nunca dice «duración» a
+      secas: dice `D5-95` y declara que **no es comparable con una bracketed**. Un número sin
+      su definición invita a compararlo con otro medido de otra forma.
+- [x] Se mide sobre el **mismo canal que el espectro** — el dominante—, no sobre el que más
+      sacudió: dos figuras del mismo dictamen que describieran trazas distintas serían una
+      trampa para quien las compare.
+- [x] **Cuando no se puede medir devuelve ausencia, no cero.** Un `0.0 s` en un dictamen se
+      lee como «no tembló», y lo que pasó fue que no hubo traza. El PDF lo dice con palabras:
+      «SIN DATO · no se pudo medir sobre la onda archivada. No es cero».
+- [x] Vive en la nube y no en el gabinete: la nube **ya** se baja el miniSEED del evento y
+      **ya** tiene lector propio para el dictamen (`dictamen/mseed.py`, escrito para no
+      arrastrar ObsPy). Cero dependencias nuevas, cero carga añadida al edge, y resolución
+      completa de 100 sps en vez de la de 1 Hz de las features.
 
 ### [ ] T-3.15 · GraphQL subscriptions — `SOFTWARE` · **solo si un cliente lo pide**
 - [ ] El gate #5 se ratificó el 2026-07-06 a favor de REST + WS nativo (`T-1.22`). Esta tarea
