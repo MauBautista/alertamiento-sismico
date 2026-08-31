@@ -10929,18 +10929,33 @@ sirena.
       no es un número: es un hallazgo de seguridad, y el reporte lo dice con palabras.
 - [x] «Cuánto se movió el inmueble» sale del **sismómetro** (`incidents.max_pga_g`/`max_pgv_cms`),
       no de la cámara, y se presenta al lado de `t90`.
-- [ ] Detector tras un adaptador `DetectorBackend`; **solo licencias permisivas** (YOLOX / D-FINE
+- [x] Detector tras un adaptador `DetectorBackend`; **solo licencias permisivas** (YOLOX / D-FINE
       Apache-2.0, ByteTrack de Megvii MIT, `onnxruntime` MIT). Mismo pre/post-proceso en borde y
       nube para que los números sean comparables.
+      > **Cerrado con `T-3.12.d`** (2026-08-30): el letterbox y el decodificado de la rejilla
+      > viven en el adaptador COMPARTIDO, no dentro de cada backend, que es lo que hace que los
+      > números del borde y de la nube sean comparables el día que el borde cuente.
 - [x] **El motor vive fuera de `api/src/takab_api/`** (paquete `analyzer/`): `test_runtime_deps.py`
       obliga a que todo import de terceros bajo ese árbol entre en `[project] dependencies`, y un
       `import onnxruntime` ahí metería el runtime ONNX en la imagen de la API.
-- [~] Corre en local con un backend falso y **cero descargas de pesos en CI** — por
+- [x] Corre en local con un backend falso y **cero descargas de pesos en CI** — por
       `--stills`, que lee el goteo del gabinete y **no necesita ffmpeg**. Ese modo no es una
       comodidad de prueba: el clip cubre once minutos y **el reingreso ocurre horas después**,
-      en el goteo, así que un analizador que solo leyera vídeo no podría fecharlo nunca. La
-      descarga desde MinIO (`--clip s3://…`) está cableada y **sin ejercer**: falta un clip y
-      un ffmpeg LGPL.
+      en el goteo, así que un analizador que solo leyera vídeo no podría fecharlo nunca.
+      > ### La descarga desde MinIO, EJERCIDA por primera vez el 2026-08-30 — y estaba rota
+      >
+      > Esta viñeta llevaba meses diciendo «cableada y **sin ejercer**: falta un clip y un
+      > ffmpeg LGPL». Con las dos cosas ya en la mano —un clip real cosido de tres segmentos
+      > de la cámara del sitio y el ffmpeg LGPL— se ejerció, y no estaba solo sin ejercer:
+      > **estaba rota**. `boto3` **no estaba declarado en ninguna dependencia del analizador**.
+      >
+      > No se veía porque `capturas.descargar` lo importa de forma perezosa, así que el fallo
+      > solo aparece en el único camino que nadie había recorrido. Y el Lambda no lo notaba
+      > porque su Dockerfile instalaba `boto3` a mano — o sea que la imagen tapaba un hueco del
+      > paquete. Ahora es el extra `s3` y el Dockerfile pide los extras **por nombre**.
+      >
+      > Verificado de punta a punta: `--clip s3://…` contra MinIO, 11 fotogramas decodificados,
+      > YOLOX-nano real, y las métricas saliendo con sus literales de ausencia.
 
 ### [x] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS` · **COMPLETA (2026-08-30)**
 > **DESPLEGADA Y VERIFICADA EN LA NUBE el 2026-08-30.** La API corre `1e7bf0f` con esquema
