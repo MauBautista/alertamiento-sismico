@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **314** · `[x]` **263** · `[~]` **10** · `[ ]` **41**
+****Conteo de tareas:** total **314** · `[x]` **263** · `[~]` **11** · `[ ]` **40**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10942,13 +10942,47 @@ sirena.
       descarga desde MinIO (`--clip s3://…`) está cableada y **sin ejercer**: falta un clip y
       un ffmpeg LGPL.
 
-### [ ] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS`
-- [ ] Imagen ECR, rol IAM y acceso a la base. **Ventana AWS de Mauricio.**
-- [ ] El bloqueo es **solo el ejecutor**: la notificación S3 ya existe y ya enruta, así que el
-      camino hasta «clip subido y registrado con `analysis_state='pending'`» funciona sin tocar
-      AWS. Un gabinete con cámara deja evidencia descargable antes de que exista el Lambda.
-- [ ] Con el análisis pendiente el reporte dice **«CLIP DISPONIBLE · ANÁLISIS PENDIENTE»**.
-      **Un fallback no puede ser `ok`**, y un cero inventado es peor que un hueco declarado.
+### [~] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS`
+> **Construido el 2026-08-30; falta el `apply`.** Handler, Dockerfile, terraform y el
+> enganche del worker están escritos y probados. Lo único pendiente es la ventana AWS.
+>
+> **El default es YOLOX-nano, y es PROVISIONAL con esa palabra escrita.** No sale de una
+> opinión: sale de lo medido contra la cámara real —**8–13 ms** por fotograma contra 24–38
+> del `tiny`, y **11 de 12** fotogramas correctos— pero **no contra la escena definitiva**.
+> `T-3.12.d` lo confirma o lo sustituye, y sustituirlo es cambiar una variable de entorno
+> más la imagen; la arquitectura no depende de cuál gane.
+>
+> **Tres decisiones que quedan escritas porque costaron pensarlas:**
+>
+> 1. **El disparo NO es una notificación de S3.** El prefijo `evidence/` ya tiene una hacia
+>    la cola de backfill, y S3 **rechaza filtros solapados**: colgar el Lambda de
+>    `evidence/*.mp4` habría roto la ingesta del miniSEED. Dispara el worker, en el mismo
+>    punto donde audita el egreso —cuando su `INSERT … RETURNING` dice que la fila es
+>    NUEVA—, y así hereda gratis la idempotencia frente a las reentregas de SQS.
+> 2. **El modelo y el ffmpeg van HORNEADOS en la imagen.** Un número que acaba en un
+>    dictamen tiene que poder atribuirse a una versión exacta del modelo, y un peso que se
+>    baja al vuelo no permite decir cuál era. El coste aceptado: imagen más pesada y
+>    redesplegar para cambiar de modelo — que es justo lo que debe ser un acto deliberado.
+> 3. **El Lambda va DENTRO de la VPC**, porque Postgres solo acepta al SG de workers. Al
+>    entrar pierde la salida a internet, y no la necesita: S3 entra por el VPC endpoint que
+>    ya existe y el modelo viaja horneado.
+- [x] Imagen ECR, rol IAM y acceso a la base. **El `terraform validate` pasa**; el `apply` es
+      la ventana AWS de Mauricio. El módulo va detrás de `cctv_analyzer_enabled` (default
+      `false`) porque la imagen tiene que existir antes: primer apply crea el repo, se
+      empuja la imagen, segundo apply enciende el Lambda con un tag **inmutable**.
+- [x] El bloqueo es **solo el ejecutor**: la notificación S3 ya existe y ya enruta, así que el
+      camino hasta «clip subido y registrado» funciona sin tocar AWS. Un gabinete con cámara
+      deja evidencia descargable antes de que exista el Lambda.
+- [x] Con el análisis pendiente el reporte dice **«CLIP DISPONIBLE · ANÁLISIS PENDIENTE»**
+      (ya lo traía `T-3.12.c`). **Un fallback no puede ser `ok`**, y un cero inventado es peor
+      que un hueco declarado. El handler es coherente con eso: **si falta algo, LANZA** y el
+      mensaje acaba en la DLQ, en vez de escribir métricas a medias que nadie podría
+      distinguir de las buenas.
+- [x] El peso se descarga con **`sha256` verificado** (`make cctv-modelo`) antes de entrar al
+      contexto de build. Probado en las dos direcciones: acepta el peso real y **rechaza uno
+      alterado en un byte**.
+- [ ] **El `apply` y la primera ejecución real.** Sin ellas no hay medición de arranque en
+      frío ni de coste — y esas dos cifras no se estiman aquí, se miden cuando exista.
 
 ### [x] T-3.12.c · API, sección del reporte y panel de la consola — `SOFTWARE` + `FRONTEND` · **COMPLETA (2026-08-30)**
 > Endpoint, dos permisos de vídeo, sección 11 del dictamen y panel en EVALUACIÓN. Hasta hoy
@@ -11035,6 +11069,13 @@ sirena.
       `0.36` contra un `CONFIANZA_MINIMA` de `0.35`. En un punto de reunión hay mochilas,
       chamarras y sillas — **ese es el modo de fallo**, no una rareza. Queda como la medición
       que tiene que repetirse en la escena real.
+- [ ] **PENDIENTE MEDIR: el recall y la tasa de falsos positivos con varias personas.**
+      Hoy solo hay una medición con **una** persona: 11 de 12 fotogramas correctos y **2 de 12
+      con un fantasma** (una sudadera colgada de una silla, `0.36` contra un umbral de `0.35`).
+      Falta lo que solo sale con gente: **cuánto baja el conteo cuando unas personas tapan a
+      otras**, y si el umbral de `0.35` aguanta en una escena con mochilas y chamarras. **No
+      hay forma de conseguir más personas para la prueba ahora mismo** — por eso queda
+      fichado y no simulado: inventar la cifra sería peor que no tenerla.
 - [ ] **Lo que NO se puede cerrar sin el sitio**, y por eso va al runbook de alta y no aquí:
       la precisión contra el punto de reunión, con gente y con el montaje definitivo. Ver
       [`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md),

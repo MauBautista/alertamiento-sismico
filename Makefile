@@ -366,3 +366,24 @@ cloud-mobile-users:
 # (default crisis). Siembra por SQL vía túnel SSM; no hay POST /incidents.
 cloud-staging-incident:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_staging_incident.sh $(PHASE)
+
+# --- [T-3.12.b] Imagen del Lambda de conteo de CCTV --------------------------
+#
+# El modelo se descarga AQUI y se comprueba su sha256 antes de entrar en el contexto de
+# build. Bajarlo dentro del Dockerfile dejaria la imagen dependiendo de que una release de
+# GitHub no cambie bajo sus pies — y el peso es lo que produce un numero que va a un
+# dictamen, asi que su identidad no puede ser «lo que hubiera ese dia».
+CCTV_MODELO_URL := https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx
+CCTV_MODELO_SHA := c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d
+
+.PHONY: cctv-modelo
+cctv-modelo: ## Descarga y VERIFICA el peso YOLOX-nano (Apache-2.0) del Lambda
+	@mkdir -p $(ANALYZER_DIR)/modelos
+	@test -f $(ANALYZER_DIR)/modelos/yolox_nano.onnx || \
+		curl -fsSL -o $(ANALYZER_DIR)/modelos/yolox_nano.onnx "$(CCTV_MODELO_URL)"
+	@echo "$(CCTV_MODELO_SHA)  $(ANALYZER_DIR)/modelos/yolox_nano.onnx" | sha256sum -c - \
+		|| (echo "✗ el peso NO coincide con el declarado: no se construye"; exit 1)
+
+.PHONY: cctv-lambda-image
+cctv-lambda-image: cctv-modelo ## Construye la imagen del Lambda (necesita el peso verificado)
+	docker build -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
