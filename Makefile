@@ -400,7 +400,7 @@ cctv-lambda-image: cctv-modelo ## Construye la imagen del Lambda (necesita el pe
 		--load -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
 
 .PHONY: cctv-lambda-push
-cctv-lambda-push: cctv-lambda-image ## Construye y EMPUJA la imagen a ECR, en un solo manifiesto
+cctv-lambda-push: cctv-modelo ## Construye y EMPUJA la imagen a ECR, en un solo manifiesto
 	@TAG=$$(git rev-parse --short HEAD); \
 	URI=$(CCTV_ECR)/takab/cctv-analyzer:$$TAG; \
 	aws ecr get-login-password --profile $(AWS_PROFILE) --region $(AWS_REGION) \
