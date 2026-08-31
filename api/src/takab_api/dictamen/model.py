@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
 from takab_api.compliance import ComplianceDocument
+from takab_api.dictamen.duracion import Duracion
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -236,6 +237,10 @@ class ReportModel:
     #: Espectro de amplitud del canal dominante: `(frecuencias_hz, amplitudes)`.
     spectrum: tuple[list[float], list[float]] | None = None
     spectrum_peak_hz: float | None = None
+    #: [T-3.14] Duración instrumental **medida** de la sacudida: D5-95 sobre la Intensidad
+    #: de Arias del canal dominante. `None` cuando no se pudo medir — que NO es lo mismo
+    #: que cero, y el reporte lo dice con palabras.
+    shaking_duration: Duracion | None = None
     #: Por qué no hay onda cruda ni espectro, si es el caso.
     raw_unavailable_reason: str | None = None
     #: `basis` del dictamen vigente (T-2.42): qué umbral, con qué valor, de qué versión
