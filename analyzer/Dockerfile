@@ -47,7 +47,9 @@ COPY modelos/yolox_nano.onnx /opt/modelos/yolox_nano.onnx
 COPY pyproject.toml uv.lock ./
 COPY takab_cctv/ ./takab_cctv/
 
-RUN pip install --no-cache-dir . onnxruntime psycopg[binary] boto3
+# Los extras se piden POR NOMBRE, no se listan a mano: si se listan, el dia que el
+# paquete declare uno nuevo la imagen se queda sin el y el fallo aparece en runtime.
+RUN pip install --no-cache-dir '.[onnx,s3]' psycopg[binary]
 
 ENV TAKAB_CCTV_MODELO=/opt/modelos/yolox_nano.onnx \
     TAKAB_CCTV_FFMPEG=/opt/bin/ffmpeg
