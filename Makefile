@@ -384,6 +384,31 @@ cctv-modelo: ## Descarga y VERIFICA el peso YOLOX-nano (Apache-2.0) del Lambda
 	@echo "$(CCTV_MODELO_SHA)  $(ANALYZER_DIR)/modelos/yolox_nano.onnx" | sha256sum -c - \
 		|| (echo "✗ el peso NO coincide con el declarado: no se construye"; exit 1)
 
+# Las TRES banderas de abajo no son gusto: sin ellas Lambda RECHAZA la imagen.
+#
+#   --platform linux/amd64  el Lambda corre en x86-64 salvo que se pida arm64, y buildx
+#                           construye para la arquitectura de quien compila.
+#   --provenance=false      buildx añade por defecto una attestation `unknown/unknown`, y
+#   --sbom=false            eso convierte el manifiesto en un OCI *image index*.
+#
+# Lambda solo acepta un manifiesto de UNA arquitectura, no un índice. Con el índice falla
+# con `InvalidParameterValueException: The image manifest ... is not supported`, que no
+# menciona ni buildx ni las attestations — medido el 2026-08-30, con la imagen ya subida.
 .PHONY: cctv-lambda-image
 cctv-lambda-image: cctv-modelo ## Construye la imagen del Lambda (necesita el peso verificado)
-	docker build -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--load -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
+
+.PHONY: cctv-lambda-push
+cctv-lambda-push: cctv-lambda-image ## Construye y EMPUJA la imagen a ECR, en un solo manifiesto
+	@TAG=$$(git rev-parse --short HEAD); \
+	URI=$(CCTV_ECR)/takab/cctv-analyzer:$$TAG; \
+	aws ecr get-login-password --profile $(AWS_PROFILE) --region $(AWS_REGION) \
+		| docker login --username AWS --password-stdin $(CCTV_ECR); \
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--push -t $$URI $(ANALYZER_DIR); \
+	echo "cctv_analyzer_image_uri = \"$$URI\""
+
+AWS_PROFILE ?= takab-dev
+AWS_REGION  ?= us-east-2
+CCTV_ECR    ?= 634882473845.dkr.ecr.us-east-2.amazonaws.com
