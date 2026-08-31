@@ -142,10 +142,6 @@ TAKAB_API_NOTIFY_WEB_BASE_URL=$(tf console_url)
 #
 # Si algun dia se vuelve a cerrar el 443, ESTA LINEA se apaga con el.
 TAKAB_API_NOTIFY_WEB_PUBLIC=$(tf console_is_public)
-# [T-3.12.b] Sin esta linea el worker registra el clip y NO pide su analisis: el incidente
-# se queda en «CLIP DISPONIBLE · ANALISIS PENDIENTE» para siempre. Vacia es un estado
-# legitimo —el Lambda puede no existir en este entorno— y el worker lo declara en su log.
-TAKAB_API_CCTV_QUEUE_URL=${TAKAB_API_CCTV_QUEUE_URL}
 EOF
 )
 
