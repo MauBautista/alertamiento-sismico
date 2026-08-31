@@ -34,6 +34,13 @@ coverage/
 *.tfstate
 *.tfstate.*
 *.tfvars
+# Y cualquier DERIVADO suyo. `*.tfvars` exige que el nombre TERMINE en `.tfvars`, asi que
+# un `cp local.auto.tfvars local.auto.tfvars.bak` —el reflejo correcto antes de tocarlo—
+# dejaba el respaldo fuera del ignore, a un `git add -A` del repositorio. Y ese fichero
+# lleva el DSN de la base con su contrasena. Encontrado el 2026-08-30 haciendo justo ese
+# respaldo. La negacion del `.example` va DESPUES a proposito: en git gana la ultima regla
+# que casa, asi que invertir el orden volveria a ignorar el ejemplo.
+*.tfvars.*
 !*.tfvars.example
 .terraform.lock.hcl
 
