@@ -197,8 +197,8 @@ module "cctv_analyzer" {
 
   image_uri           = var.cctv_analyzer_image_uri
   queue_arn           = module.messaging.queues["cctv"].arn
-  evidence_bucket     = module.storage.evidence_bucket
-  evidence_bucket_arn = "arn:aws:s3:::${module.storage.evidence_bucket}"
+  evidence_bucket     = module.storage.evidence_bucket.name
+  evidence_bucket_arn = module.storage.evidence_bucket.arn
   db_secret_arn       = module.database.secret_arns["app"]
   database_url        = var.cctv_analyzer_database_url
   subnet_ids          = module.network.subnet_ids
