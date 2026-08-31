@@ -323,8 +323,49 @@ def _process_cctv(conn: psycopg.Connection, bucket: str, key: str, *, s3_client)
             },
         )
     conn.commit()
+    if creada and es_clip:
+        # [T-3.12.b] El disparo del analisis va AQUI y no en una notificacion de S3, y no
+        # es una preferencia: el prefijo `evidence/` YA tiene una notificacion hacia esta
+        # misma cola de backfill, y S3 rechaza configuraciones con filtros solapados.
+        # Colgar el Lambda de `evidence/*.mp4` romperia la ingesta del miniSEED.
+        #
+        # Colgado de `creada` hereda gratis la idempotencia del `RETURNING`: SQS entrega
+        # at-least-once y una reentrega no vuelve a encolar porque no vuelve a crear. Sin
+        # eso, cada reentrega pagaria otra inferencia completa sobre el mismo clip.
+        #
+        # Y va DESPUES del commit a proposito: si el encolado falla, la fila del clip ya
+        # esta puesta y el reporte dice `ANALISIS PENDIENTE`, que es verdad. Al reves
+        # —encolar y luego fallar el commit— el Lambda buscaria un clip que no existe.
+        _encolar_analisis(str(incident_id), key)
     logger.info("cctv: %s registrado (incidente %s)", key, incident_id)
     return ObjectResult(Outcome.OK, ok=1)
+
+
+def _encolar_analisis(incident_id: str, key: str) -> None:
+    """Pide el analisis del clip. **Best-effort declarado, nunca silencioso.**
+
+    Un fallo aqui no puede tumbar la ingesta —el objeto ya esta registrado y es evidencia
+    valida— pero tampoco puede pasar desapercibido: sin este mensaje el incidente se queda
+    en `ANALISIS PENDIENTE` para siempre y nadie sabria por que. Por eso se registra a
+    `error` y con la key, que es lo que permite re-encolarlo a mano.
+    """
+    import os
+
+    url = os.environ.get("TAKAB_API_CCTV_QUEUE_URL")
+    if not url:
+        # Sin cola configurada no hay Lambda desplegado todavia (T-3.12.b espera ventana
+        # AWS). Se dice UNA vez por objeto y en `info`: es el estado esperado, no un fallo.
+        logger.info("cctv: sin TAKAB_API_CCTV_QUEUE_URL; %s queda con analisis pendiente", key)
+        return
+    try:
+        import boto3
+
+        boto3.client("sqs").send_message(
+            QueueUrl=url,
+            MessageBody=json.dumps({"incident_id": incident_id, "s3_key": key}),
+        )
+    except Exception:  # noqa: BLE001 — la ingesta jamas cae por el analisis
+        logger.exception("cctv: no se pudo encolar el analisis de %s; queda PENDIENTE", key)
 
 
 _TS_KEY = "%Y%m%dT%H%M%SZ"

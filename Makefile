@@ -366,3 +366,49 @@ cloud-mobile-users:
 # (default crisis). Siembra por SQL vía túnel SSM; no hay POST /incidents.
 cloud-staging-incident:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_staging_incident.sh $(PHASE)
+
+# --- [T-3.12.b] Imagen del Lambda de conteo de CCTV --------------------------
+#
+# El modelo se descarga AQUI y se comprueba su sha256 antes de entrar en el contexto de
+# build. Bajarlo dentro del Dockerfile dejaria la imagen dependiendo de que una release de
+# GitHub no cambie bajo sus pies — y el peso es lo que produce un numero que va a un
+# dictamen, asi que su identidad no puede ser «lo que hubiera ese dia».
+CCTV_MODELO_URL := https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx
+CCTV_MODELO_SHA := c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d
+
+.PHONY: cctv-modelo
+cctv-modelo: ## Descarga y VERIFICA el peso YOLOX-nano (Apache-2.0) del Lambda
+	@mkdir -p $(ANALYZER_DIR)/modelos
+	@test -f $(ANALYZER_DIR)/modelos/yolox_nano.onnx || \
+		curl -fsSL -o $(ANALYZER_DIR)/modelos/yolox_nano.onnx "$(CCTV_MODELO_URL)"
+	@echo "$(CCTV_MODELO_SHA)  $(ANALYZER_DIR)/modelos/yolox_nano.onnx" | sha256sum -c - \
+		|| (echo "✗ el peso NO coincide con el declarado: no se construye"; exit 1)
+
+# Las TRES banderas de abajo no son gusto: sin ellas Lambda RECHAZA la imagen.
+#
+#   --platform linux/amd64  el Lambda corre en x86-64 salvo que se pida arm64, y buildx
+#                           construye para la arquitectura de quien compila.
+#   --provenance=false      buildx añade por defecto una attestation `unknown/unknown`, y
+#   --sbom=false            eso convierte el manifiesto en un OCI *image index*.
+#
+# Lambda solo acepta un manifiesto de UNA arquitectura, no un índice. Con el índice falla
+# con `InvalidParameterValueException: The image manifest ... is not supported`, que no
+# menciona ni buildx ni las attestations — medido el 2026-08-30, con la imagen ya subida.
+.PHONY: cctv-lambda-image
+cctv-lambda-image: cctv-modelo ## Construye la imagen del Lambda (necesita el peso verificado)
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--load -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
+
+.PHONY: cctv-lambda-push
+cctv-lambda-push: cctv-modelo ## Construye y EMPUJA la imagen a ECR, en un solo manifiesto
+	@TAG=$$(git rev-parse --short HEAD); \
+	URI=$(CCTV_ECR)/takab/cctv-analyzer:$$TAG; \
+	aws ecr get-login-password --profile $(AWS_PROFILE) --region $(AWS_REGION) \
+		| docker login --username AWS --password-stdin $(CCTV_ECR); \
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--push -t $$URI $(ANALYZER_DIR); \
+	echo "cctv_analyzer_image_uri = \"$$URI\""
+
+AWS_PROFILE ?= takab-dev
+AWS_REGION  ?= us-east-2
+CCTV_ECR    ?= 634882473845.dkr.ecr.us-east-2.amazonaws.com

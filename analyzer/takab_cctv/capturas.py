@@ -20,8 +20,10 @@ entre la señal y el pico caería a menudo en un momento sin nadie moviéndose.
 
 from __future__ import annotations
 
+import subprocess  # noqa: S404 — ffmpeg por subproceso: es el requisito de licencia de D-24
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from takab_cctv.metricas import Evacuacion, Muestra
 
@@ -91,3 +93,69 @@ def elegir(serie: list[Muestra], evac: Evacuacion, *, t0: datetime) -> list[Elec
         else Eleccion("reentry", None, "no se observó el inicio del reingreso dentro de la serie")
     )
     return [pre, egress, peak, reentry]
+
+
+# --------------------------------------------------------------------------------------
+# FUENTES DE FOTOGRAMAS [T-3.12.b]
+# --------------------------------------------------------------------------------------
+#
+# Vivían en `__main__.py` cuando el CLI era la única entrada. Con el Lambda son DOS, y un
+# módulo que se llama `__main__` no se importa desde otro sitio sin efectos raros: `python
+# -m takab_cctv` lo ejecuta como script, así que importarlo desde el handler crearía una
+# segunda copia del módulo con su propio estado. Se mudan aquí, que es donde ya vive
+# `elegir` y donde su nombre —capturas— dice lo que hacen.
+
+
+def extraer(clip: Path, destino: Path, *, ffmpeg: str, fps: float) -> list[Path]:
+    """Muestrea el clip a `fps` fotogramas por segundo. Devuelve los JPEG, en orden.
+
+    Se muestrea bajo a propósito: la evacuación dura minutos y el aforo se mide por
+    fotograma, no por trayectoria. Procesar 30 fps multiplicaría por sesenta el coste de
+    inferencia para mover `t90` en menos de un segundo.
+    """
+    subprocess.run(  # noqa: S603 — comando construido aquí
+        [
+            ffmpeg,
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-i",
+            str(clip),
+            "-vf",
+            f"fps={fps}",
+            "-q:v",
+            "4",
+            str(destino / "f-%06d.jpg"),
+        ],
+        check=True,
+    )
+    return sorted(destino.glob("f-*.jpg"))
+
+
+def descargar(uri: str, destino: Path, *, endpoint_url: str | None) -> Path:
+    """Trae el clip de S3/MinIO. `boto3` se importa perezoso: un clip local no lo necesita."""
+    import boto3  # noqa: PLC0415
+
+    bucket, _, key = uri.removeprefix("s3://").partition("/")
+    local = destino / Path(key).name
+    boto3.client("s3", endpoint_url=endpoint_url).download_file(bucket, key, str(local))
+    return local
+
+
+def fotogramas_del_goteo(carpeta: Path) -> list[tuple[datetime, bytes]]:
+    """Lee `still-{AAAAMMDDTHHMMSSZ}-{event_id}.jpg` y saca de cada nombre su instante.
+
+    El instante viene del NOMBRE y no del mtime: el mtime cambia al copiar y miente después
+    de un `aws s3 sync`, y aquí lo que se está fechando es el reingreso de un edificio.
+    """
+    salida: list[tuple[datetime, bytes]] = []
+    for jpg in sorted(carpeta.glob("still-*.jpg")):
+        partes = jpg.stem.split("-", 2)
+        if len(partes) != 3:
+            continue
+        try:
+            ts = datetime.strptime(partes[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        salida.append((ts, jpg.read_bytes()))
+    return sorted(salida, key=lambda par: par[0])

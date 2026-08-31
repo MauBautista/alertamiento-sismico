@@ -14,7 +14,9 @@ resource "aws_ecr_repository" "this" {
   # cloud-images la empuja desde T-1.37, pero el repo nunca se creó — el primer
   # push real lo destapó. Creado por CLI + terraform import (el apply lo corre
   # el humano en este entorno).
-  for_each = toset(["takab/cloud", "takab/console", "takab/fleet-sim"])
+  # takab/cctv-analyzer (T-3.12.b): el Lambda del conteo. Lleva el modelo y el
+  # ffmpeg HORNEADOS, asi que su imagen es la mas pesada del arbol.
+  for_each = toset(["takab/cloud", "takab/console", "takab/fleet-sim", "takab/cctv-analyzer"])
 
   name                 = each.value
   image_tag_mutability = "MUTABLE"

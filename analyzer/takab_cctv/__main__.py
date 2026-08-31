@@ -46,15 +46,14 @@ import json
 import re
 import subprocess  # noqa: S404 — ffmpeg por subproceso: es el requisito de licencia
 import sys
-import tempfile
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from takab_cctv.aforo import a_muestras, serie_de
-from takab_cctv.capturas import elegir
+from takab_cctv.capturas import fotogramas_del_goteo
 from takab_cctv.detector import DetectorBackend, DetectorFalso, Montaje, cargar_onnx
-from takab_cctv.metricas import Sacudida, calcular
+from takab_cctv.metricas import Sacudida
+from takab_cctv.pipeline import analizar, fotogramas_del_clip
 
 _RE_CONFIG = re.compile(r"^\s*configuration:(.*)$", re.MULTILINE)
 
@@ -80,61 +79,6 @@ def verificar_ffmpeg(ruta: str) -> None:
                 f"{ruta!r} trae {bandera} y D-24 exige un build LGPL. "
                 "Usa ffmpeg-master-latest-linux64-lgpl de github.com/BtbN/FFmpeg-Builds"
             )
-
-
-def extraer(clip: Path, destino: Path, *, ffmpeg: str, fps: float) -> list[Path]:
-    """Muestrea el clip a `fps` fotogramas por segundo. Devuelve los JPEG, en orden.
-
-    Se muestrea bajo a propósito: la evacuación dura minutos y el aforo se mide por
-    fotograma, no por trayectoria. Procesar 30 fps multiplicaría por sesenta el coste de
-    inferencia para mover `t90` en menos de un segundo.
-    """
-    subprocess.run(  # noqa: S603 — comando construido aquí
-        [
-            ffmpeg,
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-i",
-            str(clip),
-            "-vf",
-            f"fps={fps}",
-            "-q:v",
-            "4",
-            str(destino / "f-%06d.jpg"),
-        ],
-        check=True,
-    )
-    return sorted(destino.glob("f-*.jpg"))
-
-
-def descargar(uri: str, destino: Path, *, endpoint_url: str | None) -> Path:
-    """Trae el clip de S3/MinIO. `boto3` se importa perezoso: un clip local no lo necesita."""
-    import boto3  # noqa: PLC0415
-
-    bucket, _, key = uri.removeprefix("s3://").partition("/")
-    local = destino / Path(key).name
-    boto3.client("s3", endpoint_url=endpoint_url).download_file(bucket, key, str(local))
-    return local
-
-
-def fotogramas_del_goteo(carpeta: Path) -> list[tuple[datetime, bytes]]:
-    """Lee `still-{AAAAMMDDTHHMMSSZ}-{event_id}.jpg` y saca de cada nombre su instante.
-
-    El instante viene del NOMBRE y no del mtime: el mtime cambia al copiar y miente después
-    de un `aws s3 sync`, y aquí lo que se está fechando es el reingreso de un edificio.
-    """
-    salida: list[tuple[datetime, bytes]] = []
-    for jpg in sorted(carpeta.glob("still-*.jpg")):
-        partes = jpg.stem.split("-", 2)
-        if len(partes) != 3:
-            continue
-        try:
-            ts = datetime.strptime(partes[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
-        except ValueError:
-            continue
-        salida.append((ts, jpg.read_bytes()))
-    return sorted(salida, key=lambda par: par[0])
 
 
 def _detector(spec: str, ffmpeg: str) -> DetectorBackend:
@@ -209,64 +153,32 @@ def main(argv: list[str] | None = None) -> int:
         except FfmpegNoApto as exc:
             print(f"✗ {exc}", file=sys.stderr)
             return 1
-        with tempfile.TemporaryDirectory(prefix="takab-cctv-") as tmp:
-            carpeta = Path(tmp)
-            clip = (
-                descargar(args.clip, carpeta, endpoint_url=args.endpoint_url)
-                if args.clip.startswith("s3://")
-                else Path(args.clip)
-            )
-            jpgs = extraer(clip, carpeta, ffmpeg=args.ffmpeg, fps=args.fps)
-            # El instante de cada fotograma se DERIVA del muestreo: ffmpeg los numera 1..N y
-            # el primero cae en el inicio del clip. Del nombre no se puede sacar.
-            paso = 1.0 / args.fps
-            # El clip EMPIEZA en `t0 − clip_pre_s`, no en `t0`: sus primeros fotogramas son
-            # el pre-roll. Fecharlos desde la señal correría la curva entera hacia delante
-            # y `t50`/`t90` saldrían un minuto tarde.
-            base = args.t0.timestamp() - args.clip_pre
-            fotogramas += [
-                (datetime.fromtimestamp(base + i * paso, UTC), j.read_bytes())
-                for i, j in enumerate(jpgs)
-            ]
+        fotogramas += fotogramas_del_clip(
+            args.clip,
+            t0=args.t0,
+            clip_pre_s=args.clip_pre,
+            fps=args.fps,
+            ffmpeg=args.ffmpeg,
+            endpoint_url=args.endpoint_url,
+        )
 
-    # Fusionadas por instante: el clip trae la salida y el goteo el reingreso, y el motor
-    # necesita las dos mitades en una sola curva.
-    fotogramas.sort(key=lambda par: par[0])
-
-    curva = serie_de(
-        fotogramas, detector, ancho=args.ancho, alto=args.alto, zona=zona, montaje=args.montaje
-    )
-
-    muestras = a_muestras(curva)
-    evac = calcular(
-        muestras,
+    # El núcleo es COMPARTIDO con el Lambda (`pipeline.analizar`): el fechado del clip y la
+    # fusión de las dos series viven ahí, no aquí, porque dos copias de esa aritmética
+    # divergen sin que nadie vea un error — solo un dictamen que dice otra cosa.
+    a = analizar(
+        fotogramas,
+        detector,
         t0=args.t0,
+        ancho=args.ancho,
+        alto=args.alto,
+        zona=zona,
+        montaje=args.montaje,
         t_dictamen=args.dictamen,
         checkins=args.checkins,
         sacudida=Sacudida(args.pga, args.pgv),
     )
-    print(
-        json.dumps(
-            {
-                "muestras": len(muestras),
-                "detector": curva[0].detector if curva else None,
-                "evacuacion": {
-                    k: (v.isoformat() if isinstance(v, datetime) else v)
-                    for k, v in asdict(evac).items()
-                    if k not in ("discrepancia", "sacudida")
-                },
-                "correlacion": evac.correlacion(),
-                "reingreso": evac.veredicto_reingreso(),
-                "discrepancia": evac.discrepancia.lectura if evac.discrepancia else None,
-                "capturas": [
-                    {"papel": e.papel, "ts": e.ts.isoformat() if e.ts else None, "razon": e.razon}
-                    for e in elegir(muestras, evac, t0=args.t0)
-                ],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    salida = {k: v for k, v in asdict(a).items() if k != "curva"}
+    print(json.dumps(salida, ensure_ascii=False, indent=2))
     return 0
 
 

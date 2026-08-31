@@ -191,6 +191,20 @@ module "serve" {
   allowed_cidrs        = var.web_allowed_cidrs
 }
 
+module "cctv_analyzer" {
+  source = "../../modules/cctv-analyzer"
+  count  = var.cctv_analyzer_enabled ? 1 : 0
+
+  image_uri           = var.cctv_analyzer_image_uri
+  queue_arn           = module.messaging.queues["cctv"].arn
+  evidence_bucket     = module.storage.evidence_bucket.name
+  evidence_bucket_arn = module.storage.evidence_bucket.arn
+  db_secret_arn       = module.database.secret_arns["app"]
+  database_url        = var.cctv_analyzer_database_url
+  subnet_ids          = module.network.subnet_ids
+  security_group_id   = module.network.sg_workers_id
+}
+
 module "registry" {
   source = "../../modules/registry"
 }
