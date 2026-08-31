@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **314** · `[x]` **265** · `[~]` **10** · `[ ]` **39**
+****Conteo de tareas:** total **314** · `[x]` **266** · `[~]` **9** · `[ ]` **39**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10899,7 +10899,7 @@ sirena.
 - [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).
 
-### [~] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE`
+### [x] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > **Construido el 2026-08-30** (`analyzer/`, 48 tests, cero pesos descargados). El motor de
 > métricas es aritmética pura sobre la serie de aforo y está entero.
 >
