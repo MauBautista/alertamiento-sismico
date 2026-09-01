@@ -88,3 +88,46 @@ def get_object(settings: Settings, s3_key: str) -> bytes:
     """
     resp = s3_client(settings).get_object(Bucket=settings.evidence_bucket, Key=s3_key)
     return resp["Body"].read()
+
+
+def delete_all_versions(settings: Settings, s3_key: str) -> int:
+    """Destruye **todas** las versiones de una key. Devuelve cuántas murieron.
+
+    [T-3.10] **El bucket de evidencia está VERSIONADO** (`infra/terraform/modules/storage`),
+    y ahí un ``delete_object`` sin ``VersionId`` NO BORRA UN BYTE: escribe un delete
+    marker, deja la versión anterior como *noncurrent* y la sigue facturando. El objeto
+    desaparece de un ``GET`` y sigue existiendo — que es **exactamente** la forma de fallo
+    que la poda de vídeo no puede permitirse, porque **se declara cumplida**.
+
+    No es una hipótesis: ya mordió en este árbol con las reglas ``Expiration`` de los
+    buckets de respaldo y de transferencia, que parecían retención y eran un cambio de
+    etiqueta (la nota larga vive en `modules/storage/main.tf`).
+
+    Así que se listan las versiones de ESA key y se borra cada una por ``VersionId``,
+    delete markers incluidos. Con un bucket sin versionar la lista trae una sola entrada
+    con ``VersionId == "null"`` y el camino es el mismo, así que no hay dos ramas que
+    puedan divergir.
+
+    Levanta si S3 se niega. Quien llama **no puede** tratar el fallo como éxito: dejar la
+    referencia en la base es lo correcto cuando los bytes siguen ahí.
+    """
+    client = s3_client(settings)
+    bucket = settings.evidence_bucket
+    victimas: list[dict[str, str]] = []
+    for page in client.get_paginator("list_object_versions").paginate(Bucket=bucket, Prefix=s3_key):
+        for entrada in (*page.get("Versions", ()), *page.get("DeleteMarkers", ())):
+            # `Prefix` NO es igualdad: `…/clip.mp4` casa también con `…/clip.mp4.bak`.
+            # Sin este filtro la poda de un clip se llevaría por delante objetos que
+            # nadie mandó borrar, y encima lo contaría como trabajo bien hecho.
+            if entrada["Key"] == s3_key:
+                victimas.append({"Key": s3_key, "VersionId": entrada["VersionId"]})
+
+    # `delete_objects` admite 1000 por llamada. Una key no va a tener mil versiones,
+    # pero el lote es gratis y la alternativa es un límite que nadie recuerda.
+    for i in range(0, len(victimas), 1000):
+        resp = client.delete_objects(
+            Bucket=bucket, Delete={"Objects": victimas[i : i + 1000], "Quiet": True}
+        )
+        if errores := resp.get("Errors"):
+            raise RuntimeError(f"S3 no borró {len(errores)} versión(es) de {s3_key}: {errores}")
+    return len(victimas)

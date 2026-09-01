@@ -10640,10 +10640,8 @@ sirena.
 > **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por **dos mitades
 > muy distintas**, y confundirlas es lo que la deja parada:
 >
-> * **El job de poda ya no espera a nadie.** Esperaba al esquema, y `T-3.11.b` cerró el
->   2026-08-30. `api/src/takab_api/ops/prune_cctv.py` **no existe** —comprobado, no supuesto— y
->   es software puro que se puede escribir hoy: **lo único de todo el bloque de CCTV que no
->   depende de un edificio, ni de credenciales, ni de gente**.
+> * **El job de poda está CONSTRUIDO** (2026-09-01): `api/src/takab_api/ops/prune_cctv.py`,
+>   con 26 tests y las dos mitades separadas por nombre en el informe. Ver más abajo.
 > * **La medición de `B.2` sí espera**, y a algo concreto: el Pi con carga real de CCTV, que
 >   llega con `G-04` por `D-25`. Fichada en
 >   [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md).
@@ -10657,16 +10655,58 @@ sirena.
 - [x] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
 - [x] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
       para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
-- [ ] La poda del vídeo va en **job propio** (`api/src/takab_api/ops/prune_cctv.py`), **no** como
+- [x] La poda del vídeo va en **job propio** (`api/src/takab_api/ops/prune_cctv.py`), **no** como
       `RetentionRule`.
       > **Por qué, y es la trampa cara de esta ficha:** `retention._validar_plan()` corre en el
       > import y exige que toda columna de una regla esté en `PII_INVENTORY` con `action=="erase"`;
       > eso arrastra `test_privacy_erasure.py:171-181`, que compara **por igualdad** contra
       > `ERASED_TABLES` — o sea que ARCO pasaría a tener que tocar `cctv_clips` y cambiarían las
       > claves `affected` de la constancia. Radio de explosión enorme y en la dirección equivocada.
-- [ ] **Las dos mitades de la poda, y las dos se reportan:** un `s3_key` en `NULL` **no borra los
+- [x] **Las dos mitades de la poda, y las dos se reportan:** un `s3_key` en `NULL` **no borra los
       bytes**. Hace falta el `UPDATE` en Postgres **y** el borrado del objeto. Un plan que anula la
       referencia y deja la imagen es peor que ninguno, porque **se declara cumplido**.
+      > ### El ORDEN resultó ser la ficha entera
+      > Se borra en S3 **primero** y se anula la fila **después**. Al revés, un fallo de S3 deja la
+      > base diciendo `PURGADO` con la imagen viva — el fallo literal de esta viñeta. En este
+      > orden, un fallo deja **bytes muertos sin referencia**: molesto, visible, y no miente.
+      > El informe separa los tres desenlaces por nombre —`completo`, `huérfano`, `fallido`—
+      > porque un total único confundiría «la imagen ya no existe» con «la imagen sigue ahí».
+      >
+      > Y por eso la transacción es **por objeto** y no una por corrida, al revés que
+      > `prune_pii`: con una sola, un fallo en el objeto 40 revertiría las 39 filas ya anuladas
+      > cuyos bytes están destruidos de verdad — convertiría 39 podas correctas en 39 huérfanos.
+      > Ninguna transacción de Postgres deshace un `DeleteObject`.
+- [x] **La trampa que ninguna prueba habría cazado sin ejercerla: el bucket de evidencia está
+      VERSIONADO.** Un `delete_object` sin `VersionId` **no borra un byte** — pone un delete
+      marker y deja el cuerpo como *noncurrent*, facturándose. El objeto desaparece de un `GET`,
+      así que un test de «ya no se puede leer» **pasa**, y la imagen de las personas sigue ahí.
+      Es el fallo de la viñeta anterior disfrazado de éxito.
+      > No es una hipótesis: ya mordió en este árbol con las reglas `Expiration` de los buckets de
+      > respaldo y de transferencia, que parecían retención y eran un cambio de etiqueta
+      > (`modules/storage/main.tf`). Se resuelve en `routers/_s3.delete_all_versions`, que lista
+      > las versiones de ESA key —filtrando por igualdad, porque `Prefix` casaría también con
+      > `clip.mp4.bak`— y borra cada una por `VersionId`, delete markers incluidos. **El control
+      > negativo está en la suite**: un test comprueba que el borrado ingenuo deja el cuerpo vivo,
+      > y si algún día dejara de dejarlo, `delete_all_versions` sería complejidad sin motivo.
+- [x] **La precondición específica del vídeo, y es la que convierte la promesa en hecho.** El job
+      comprueba en CADA corrida que `cctv_purge_guard` sigue activo en `UPDATE` (`tgenabled <>
+      'D'`, porque un trigger apagado sigue en el catálogo y no para nada). Mientras lo esté, este
+      job **no puede** hacerle a `cctv_clips` nada que no sea podar, aunque el código se lo
+      proponga. Sin él, aborta. Es el análogo exacto del suelo de `COMPLIANCE_ANCHOR`, y se apoya
+      en el mismo `harden_session` de `prune_pii` —importado, no copiado: dos comprobaciones de
+      compliance que se creen la una a la otra acaban divergiendo.
+- [x] **El reloj cuenta desde la GRABACIÓN, no desde el registro** (`ended_at` / `captured_at`,
+      nunca `created_at`). La fila nace cuando S3 avisa, que puede ser días después: un gabinete
+      sin enlace sube su clip al reconectar, y contar desde el registro le regalaría a esa imagen
+      un plazo que nadie autorizó. Consecuencia incómoda, dicha en voz alta: **un clip puede
+      llegar ya vencido y podarse sin que nadie lo haya visto**. Es la política funcionando.
+- [ ] **La retención es GLOBAL y el blueprint la pide POR SITIO.** Hoy no hay dónde escribirla —ni
+      `sites` ni `cameras` tienen columna de plazo—, así que se implementó lo expresable: una
+      ventana por tabla (`TAKAB_API_RETENTION_CCTV_CLIPS_DAYS` / `..._STILLS_DAYS`), deshabilitada
+      por defecto. **El hueco se declara en vez de fingir que la variable global es «por sitio».**
+- [ ] **El cron y su constancia**, con el patrón de `T-2.81.a`: documento SSM diario y una fila por
+      corrida de la que salga una métrica. Hoy el job existe y **hay que invocarlo a mano**; una
+      poda que depende de que alguien se acuerde no es una política de retención.
 - [ ] La medición de `B.2` sigue pendiente y su regla de decisión **no se reabre**:
   > **La regla de decisión ya está escrita, y a propósito ANTES de ver el número** para que no se
   > acomode al resultado: lo único que decide es la **latencia del reflejo SASMEX→relé bajo carga
