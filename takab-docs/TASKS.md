@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-08-12)
 
-****Conteo de tareas:** total **314** · `[x]` **266** · `[~]` **9** · `[ ]` **39**
+****Conteo de tareas:** total **315** · `[x]` **266** · `[~]` **9** · `[ ]` **40**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10637,9 +10637,16 @@ sirena.
 >   ([`D-24` · corrección de premisa](DECISIONES-MAURICIO.md#d-24)).
 
 ### [~] T-3.10 · Arquitectura al blueprint y política de retención de vídeo — `SOFTWARE` + `DECISIÓN`
-> **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por lo que **no
-> puede cerrar el software**: la medición de `B.2` necesita el Pi con carga real, y el job de
-> poda se implementa con el esquema (`T-3.11.b`).
+> **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por **dos mitades
+> muy distintas**, y confundirlas es lo que la deja parada:
+>
+> * **El job de poda ya no espera a nadie.** Esperaba al esquema, y `T-3.11.b` cerró el
+>   2026-08-30. `api/src/takab_api/ops/prune_cctv.py` **no existe** —comprobado, no supuesto— y
+>   es software puro que se puede escribir hoy: **lo único de todo el bloque de CCTV que no
+>   depende de un edificio, ni de credenciales, ni de gente**.
+> * **La medición de `B.2` sí espera**, y a algo concreto: el Pi con carga real de CCTV, que
+>   llega con `G-04` por `D-25`. Fichada en
+>   [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md).
 - **Diseño escrito (`D-08`, 2026-08-16):**
   [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B. Lo que queda es
   llevarlo al blueprint **con la enmienda de `D-24` dentro**.
@@ -10712,6 +10719,13 @@ sirena.
 > podado tan atrás, así que los ocho pasaban. Ahora la ventana de la sesión abierta es
 > intocable; subir el suelo de `ring_s` habría obligado a mantener once minutos de anillo
 > las veinticuatro horas para un caso que ocurre unas veces al año.
+>
+> ### ⚠️ COMPLETA en software, y **no ha grabado un solo clip en el Pi**
+> El extra `cctv` está en `EDGE_EXTRAS_OMITIDOS` de `deploy/edge/deploy.sh`: el gabinete real
+> ni siquiera lo instala, porque encenderlo espera a `G-04` y a la medición de `B.2` (`D-25`).
+> El recorte del clip y el `concat` sobre once minutos de anillo están medidos **en x86-64**,
+> que es otra máquina y otro decodificador. Lo que falta para ejercerlo donde importa va en
+> [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md).
 - [x] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
       `takab-gpio`.
 - [x] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
@@ -10899,6 +10913,50 @@ sirena.
 - [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).
 
+### [ ] T-3.11.c · El worker de backfill **no está en la nube desplegada** — `SOFTWARE` + `GATE-AWS`
+> **Descubierto el 2026-09-01**, revisando qué le falta al CCTV para existir fuera de los tests.
+> `deploy/cloud/docker-compose.yml` levanta siete servicios —`api`, `ingest-events`,
+> `ingest-telemetry`, `incident-engine`, `notify`, `commands`, `console`— y **ninguno corre
+> `python -m takab_api.backfill`**. `git log -S backfill` sobre ese fichero no devuelve nada:
+> no es que se quitara, es que **nunca estuvo**. El propio módulo dice de sí mismo que «corre
+> CO-LOCADO con los demás workers desde la MISMA imagen», y `deploy.sh` le exporta sus dos
+> variables (`TAKAB_API_QUEUE_URL_BACKFILL`, `TAKAB_API_DLQ_URL_BACKFILL`) — o sea que hay
+> **entorno preparado para un proceso que nadie arranca**, que es justo lo que hace creíble
+> lo contrario.
+>
+> ### Lo que rompe, y es más que el CCTV
+> La cola `takab-dev-q-backfill` recibe **dos** cosas distintas, y ninguna tiene consumidor:
+>
+> 1. **Las peticiones de grant del gabinete** (`takab/backfill/request/+` → regla IoT → cola),
+>    o sea el permiso de subida. Sin él el clip no llega ni a empezar.
+> 2. **La notificación de S3** del prefijo `evidence/`, que es la única que ve la key y por
+>    tanto la única fuente de la ventana del clip (`T-3.11.b`).
+>
+> ### Y no falla: se queda quieto
+> Los mensajes **no acaban en la DLQ** —nadie los recibe, así que no hay `maxReceiveCount` que
+> agotar—: envejecen y expiran. La alarma `dlq_depth` vigila la DLQ, y la DLQ está vacía
+> porque el camino se corta antes de llegar a ella. Es la misma familia de la alarma
+> `iot-rule-errors` y del gabinete fantasma: **la ausencia no dispara nada**.
+>
+> ### Lo que este hallazgo NO afirma
+> No dice que el backfill de evidencia nunca haya funcionado en la nube: eso no se puede saber
+> sin credenciales y sin mirar la cola, y el token SSO estaba caducado al escribirlo. Dice lo
+> que sí se lee en el repo — **no hay quién lo corra**, y el `docker compose up
+> --remove-orphans` de `takab-cloud.service` mataría cualquier contenedor lanzado a mano.
+- [ ] Servicio `backfill` en `deploy/cloud/docker-compose.yml` con
+      `entrypoint: ["python", "-m", "takab_api.backfill"]` y **`db-ingest.env`, no `db-app.env`**:
+      escribe filas de todos los tenants y con el DSN de `takab_app` la RLS forzada se lo negaría
+      (el invariante de tenancy que el propio compose declara en su cabecera).
+- [ ] **Un test que cuente consumidores, no que lea este YAML.** La regla a defender es *toda
+      cola que `deploy.sh` exporta como `TAKAB_API_QUEUE_URL_*` tiene un servicio que la
+      consume*. Escrita así caza también la próxima cola que se añada — que es exactamente cómo
+      llegó ésta, y cómo estuvo a punto de llegar la del CCTV.
+- [ ] Verificar **en la nube, no en el YAML**: `ApproximateNumberOfMessages` bajando y una fila
+      nueva en `evidence_objects`. Un `docker compose ps` con el servicio arriba demuestra que
+      arrancó, no que consuma.
+- [ ] El redespliegue va con la ventana AWS — fichado en
+      [`PENDIENTES-MAURICIO §2.11`](PENDIENTES-MAURICIO.md).
+
 ### [x] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE` · **COMPLETA (2026-08-30)**
 > **Construido el 2026-08-30** (`analyzer/`, 48 tests, cero pesos descargados). El motor de
 > métricas es aritmética pura sobre la serie de aforo y está entero.
@@ -10986,6 +11044,17 @@ sirena.
 > 3. **El Lambda va DENTRO de la VPC**, porque Postgres solo acepta al SG de workers. Al
 >    entrar pierde la salida a internet, y no la necesita: S3 entra por el VPC endpoint que
 >    ya existe y el modelo viaja horneado.
+>
+> ### ⚠️ CORRECCIÓN (2026-09-01) — «el worker tiene la URL» era verdad, y no bastaba
+>
+> `TAKAB_API_CCTV_QUEUE_URL` sí está en `cloud.env`, y lo lee todo servicio que lo cargue. Lo
+> que no se comprobó es **quién ejecuta el código que la usa**: `_encolar_analisis` vive en
+> `backfill/objects.py`, y **el worker de backfill no existe en el compose de la nube**
+> (`T-3.11.c`). El Lambda está desplegado, arranca y contesta — y **nadie va a invocarlo**
+> hasta que ese servicio exista.
+>
+> **Comprobé la variable, no el proceso.** Una variable presente en un contenedor que nunca
+> entra en esa rama es exactamente tan útil como no tenerla, y se lee igual de verde.
 - [x] Imagen ECR, rol IAM y acceso a la base. **El `terraform validate` pasa**; el `apply` es
       la ventana AWS de Mauricio. El módulo va detrás de `cctv_analyzer_enabled` (default
       `false`) porque la imagen tiene que existir antes: primer apply crea el repo, se
@@ -11095,7 +11164,10 @@ sirena.
       Falta lo que solo sale con gente: **cuánto baja el conteo cuando unas personas tapan a
       otras**, y si el umbral de `0.35` aguanta en una escena con mochilas y chamarras. **No
       hay forma de conseguir más personas para la prueba ahora mismo** — por eso queda
-      fichado y no simulado: inventar la cifra sería peor que no tenerla.
+      fichado y no simulado: inventar la cifra sería peor que no tenerla. Va también a
+      [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md): lo que falta es **gente**, no
+      código, y un pendiente que solo vive en el backlog de software no lo lee quien puede
+      resolverlo.
 - [ ] **Lo que NO se puede cerrar sin el sitio**, y por eso va al runbook de alta y no aquí:
       la precisión contra el punto de reunión, con gente y con el montaje definitivo. Ver
       [`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md),

@@ -9,7 +9,22 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-08-17 · **21 puntos** (§2: 9 · §3: 4 · §4: 5 · §5: 3)
+> **Última actualización:** 2026-09-01 · **25 puntos abiertos** (§2: 11 · §3: 5 · §4: 6 · §5: 3),
+> más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
+> lo demás.
+>
+> **El conteo se puede rehacer, y por eso se dice cómo:** cuenta un `###` salvo que su título
+> esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
+> *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
+>
+> ## Lo que cambió el 2026-09-01
+>
+> Entraron **dos**, las dos del bloque de CCTV, y son de familias distintas: el
+> [**§2.11**](#211--redesplegar-la-nube-con-el-worker-de-backfill--hoy-esa-cola-no-la-consume-nadie)
+> es un servicio que **nunca estuvo** en el compose de la nube y que rompe la cadena del vídeo
+> antes de que empiece; el [**§3.3.d**](#33d--encender-el-cctv--el-bloque-está-entero-y-no-ha-visto-un-solo-clip-real)
+> junta en un sitio todo lo que le falta al CCTV para existir fuera de los tests. Y salieron
+> tres —**§3.3.a**, **§3.3.b** y **§3.3.c**—, hechas el 2026-08-30.
 >
 > ## ⚠️ Lo que cambió el 2026-08-17, y corrige lo que esta cabecera decía
 >
@@ -334,6 +349,38 @@ corrido**. El occupant necesita código de enrolamiento.
 > **Trampa ya pagada que aplica aquí:** jamás subas `index.html` a mano antes del apply — el
 > etag del objeto histórico haría que un apply posterior lo REVIRTIERA al bootstrap.
 
+### 2.11 · Redesplegar la nube con el **worker de backfill** — hoy esa cola no la consume nadie
+
+> **Hallazgo del 2026-09-01, y es el que rompe el CCTV de punta a punta.** El
+> `docker-compose.yml` de la nube levanta siete servicios y **ninguno corre
+> `python -m takab_api.backfill`**. Nunca lo tuvo — `git log -S backfill` sobre ese fichero
+> sale vacío. Ficha: [`T-3.11.c`](TASKS.md).
+
+**Va después del código, no antes.** Esta línea existe para que el redespliegue no se pierda
+cuando el servicio esté escrito; el trabajo previo es software y no te bloquea a ti.
+
+Lo que la cola `takab-dev-q-backfill` deja de recibir **dos veces**, y por eso duele el doble:
+
+1. **El grant de subida** que pide el gabinete por MQTT. Sin consumidor, el clip **no llega ni
+   a empezar a subir**.
+2. **La notificación de S3** del prefijo `evidence/` — la única que ve la key, y por tanto la
+   única fuente de la ventana del clip.
+
+> ### Y esto no va a avisarte por su cuenta
+> Los mensajes **no caen a la DLQ**: nadie los recibe, así que no hay `maxReceiveCount` que
+> agotar. Envejecen y expiran en la cola principal. La alarma `dlq_depth` mira la DLQ, y la
+> DLQ está vacía **porque el camino se corta antes de llegar a ella**. Es el mismo patrón que
+> el gabinete fantasma y que `iot-rule-errors`: lo que no ocurre no dispara nada.
+
+**Lo que hay que mirar para darlo por bueno** —y no es que el `apply` salga en verde—:
+`ApproximateNumberOfMessages` de `takab-dev-q-backfill` **bajando**, y una fila nueva en
+`evidence_objects`. Que el contenedor aparezca en `docker compose ps` demuestra que arrancó,
+no que consuma.
+
+> **Lo que NO se está afirmando aquí:** que el backfill de evidencia no haya funcionado nunca
+> en la nube. Eso no se puede saber sin credenciales, y el token SSO estaba caducado al
+> escribir esto. Lo que sí se lee en el repo es que **no hay quién lo corra**.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.
@@ -535,6 +582,66 @@ deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
 **Es una ACTUACIÓN FÍSICA** —2 transiciones por pin en gas y retenedores, más una ventana sin
 sirena—, así que va **con el edificio avisado**. Encaja de forma natural en la sesión de `G-04`
 (§3.1), que ya exige tener el edificio sobre aviso.
+
+### 3.3.d · Encender el CCTV — el bloque está entero y **no ha visto un solo clip real**
+
+El 2026-08-30 cerraron seis fichas seguidas: la guarda de licencias, el cliente ONVIF y el
+grabador del gabinete, el esquema y la costura de subida, el motor de conteo, el Lambda
+—desplegado y verificado arrancando— y la sección del reporte con su panel. De la cámara al
+dictamen **el camino existe entero**.
+
+**Lo que no ha ocurrido nunca es que pase un vídeo por él.** Y lo que falta para eso no es
+código: es un edificio, una carga medida y gente.
+
+| Qué falta | Bloqueado en | Ficha |
+|---|---|---|
+| El extra `cctv` **ni se instala** en el Pi (`EDGE_EXTRAS_OMITIDOS`) | `G-04` + la medición de `B.2` (`D-25`) | [`T-3.11`](TASKS.md) |
+| El recorte del clip y el `concat` sobre once minutos de anillo, **en el Pi** | lo anterior | [`T-3.11`](TASKS.md) |
+| La medición de `B.2` — reflejo SASMEX→relé **bajo carga de CCTV** | el Pi con la carga puesta | [`T-3.10`](TASKS.md) |
+| La cámara apunta a un escritorio, **no al punto de reunión** | el edificio | [`T-3.12.d`](TASKS.md) |
+| Recall y falsos positivos **con varias personas** | gente | [`T-3.12.d`](TASKS.md) |
+| El NTP de la cámara | una decisión tuya (ver §3.3.b) | — |
+
+#### `B.2` va primero, y decide si el CCTV puede siquiera compartir el Pi
+
+Es lo único de esta lista que puede **cancelar** el resto. Su regla de decisión ya está escrita
+—a propósito **antes** de ver el número, para que no se acomode al resultado— y no se reabre:
+lo único que decide es la latencia del reflejo SASMEX→relé bajo carga de vídeo contra su
+presupuesto. Si se acerca, **hardware separado, sin discusión**. El sesgo del que hay que
+protegerse es «va justo pero cabe»: hoy el margen es de dos órdenes de magnitud, y gastarlo en
+vídeo lo cambia por lo único que este sistema no puede permitirse.
+
+#### Lo medido hasta hoy, y contra qué se midió
+
+Conviene que quede escrito, porque las cifras del detector se leen mucho mejor de lo que valen:
+se midieron **en x86-64**, contra una cámara que apunta a un escritorio, con **una** persona
+caminando. Once de doce fotogramas correctos; y **dos de doce con un fantasma** —una sudadera
+colgada de una silla, `0.36` contra un umbral de `0.35`—. Nada de eso es el edificio, y el modo
+de fallo que enseña —tela con forma de persona— es exactamente lo que sobra en un punto de
+reunión: mochilas, chamarras, sillas.
+
+#### El runbook es **por gabinete**, no una vez
+
+[`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md) se corre
+**cada vez que se habilita una cámara**, en el primer gabinete y en todos los siguientes. Su
+regla de oro es la que hace que sirva: *ninguna casilla se marca por haber hecho el ajuste; se
+marca por haber visto el efecto.*
+
+Dos pasos suyos valen por el resto:
+
+* **Paso 1 — el ángulo, que es la única mitigación que tenemos.** Va en **picado de 20° a 40°**,
+  no cenital. No es estética: los modelos COCO aprendieron «persona» de fotos a la altura de los
+  ojos, y como **no vamos a entrenar por sitio**, el cenital es su peor caso y no se arregla con
+  configuración.
+* **Paso 7.b — el control negativo.** Encuadre sin nadie, y el conteo tiene que dar cero. Es el
+  paso que habría cazado la sudadera, y el que ningún instalador hace si no se lo piden por
+  escrito.
+
+#### Lo único que no se puede pedir prestado: gente
+
+El recall con varias personas —cuánto baja el conteo cuando unas tapan a otras— **no tiene
+sustituto simulado**. Inventar la cifra sería peor que no tenerla, así que queda aquí, sin
+número, hasta que haya a quién contar.
 
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.

@@ -353,8 +353,15 @@ def _encolar_analisis(incident_id: str, key: str) -> None:
 
     url = os.environ.get("TAKAB_API_CCTV_QUEUE_URL")
     if not url:
-        # Sin cola configurada no hay Lambda desplegado todavia (T-3.12.b espera ventana
-        # AWS). Se dice UNA vez por objeto y en `info`: es el estado esperado, no un fallo.
+        # Sin cola configurada no hay a quien pedirle el analisis. En local es el estado
+        # normal y por eso va en `info`, una vez por objeto.
+        #
+        # [2026-09-01] Este comentario decia "no hay Lambda desplegado todavia (T-3.12.b
+        # espera ventana AWS)" y ya es FALSO: el Lambda se desplego el 2026-08-30 y
+        # `deploy/cloud/deploy.sh` exporta la variable. En la nube su ausencia ya no es el
+        # estado esperado — es un despliegue que perdio la variable. No se sube a `warning`
+        # porque aqui no se puede distinguir un entorno local de uno desplegado, y quien si
+        # lo declara es el reporte: "CLIP DISPONIBLE · ANALISIS PENDIENTE".
         logger.info("cctv: sin TAKAB_API_CCTV_QUEUE_URL; %s queda con analisis pendiente", key)
         return
     try:
