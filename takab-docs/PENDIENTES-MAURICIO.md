@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-01 · **25 puntos abiertos** (§2: 11 · §3: 5 · §4: 6 · §5: 3),
+> **Última actualización:** 2026-09-01 · **26 puntos abiertos** (§2: 12 · §3: 5 · §4: 6 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -25,6 +25,9 @@
 > antes de que empiece; el [**§3.3.d**](#33d--encender-el-cctv--el-bloque-está-entero-y-no-ha-visto-un-solo-clip-real)
 > junta en un sitio todo lo que le falta al CCTV para existir fuera de los tests. Y salieron
 > tres —**§3.3.a**, **§3.3.b** y **§3.3.c**—, hechas el 2026-08-30.
+>
+> Más tarde ese mismo día entró el **§2.12**, que lo trajo construir la poda de vídeo: el rol de
+> la instancia **no puede borrar en S3**, y sin eso el job corre y no destruye nada.
 >
 > ## ⚠️ Lo que cambió el 2026-08-17, y corrige lo que esta cabecera decía
 >
@@ -380,6 +383,43 @@ no que consuma.
 > **Lo que NO se está afirmando aquí:** que el backfill de evidencia no haya funcionado nunca
 > en la nube. Eso no se puede saber sin credenciales, y el token SSO estaba caducado al
 > escribir esto. Lo que sí se lee en el repo es que **no hay quién lo corra**.
+
+### 2.12 · El rol de la instancia **no puede borrar en S3**, y la poda de vídeo lo necesita
+
+> El job existe desde el 2026-09-01 ([`T-3.10`](TASKS.md), `ops/prune_cctv.py`). Corre, censa y
+> en la nube **fallaría en todos los objetos** — a propósito: sin permiso no destruye bytes, y
+> sin bytes destruidos **no anula ni una referencia**. Nada queda declarado cumplido en falso.
+
+**Lo que hay que conceder, y hasta dónde exactamente:** `s3:DeleteObject` **y**
+`s3:DeleteObjectVersion` al rol de la instancia, **sobre el bucket de evidencia y bajo el
+prefijo `evidence/` únicamente**.
+
+Las dos acciones, no una: el bucket está **versionado**, y sin `DeleteObjectVersion` el borrado
+solo puede poner un delete marker — que es justo el fallo que la poda existe para no cometer.
+
+> ### ⚠️ Y hay una decisión vigente que esto NO deroga
+> `modules/database` dice, con todas sus letras: *«NO HAY `s3:DeleteObject` EN NINGUNA PARTE, y
+> es una decisión de diseño»*. Su razón es la **cadena PITR**: un solo podador, el lifecycle de
+> S3, porque dos podadores a ciegas sobre los mismos objetos son una carrera cuyo perdedor es el
+> restore.
+>
+> **Esa razón es sobre el bucket de RESPALDOS y sigue intacta.** Lo que se abre aquí es el de
+> **evidencia**, donde el lifecycle **no puede** hacer el trabajo: podar un vídeo son dos mitades
+> y una de ellas está en Postgres (`s3_key → NULL` + `purged_at`), que ninguna regla de S3
+> alcanza. Una poda solo por lifecycle dejaría filas apuntando a objetos muertos — el fallo
+> espejo del que la ficha prohíbe.
+>
+> Si el `Resource` se escribe sobre el bucket entero en vez de sobre `evidence/*`, la decisión
+> del PITR **sí** quedaría derogada sin que nadie lo dijera. El prefijo es la mitad que importa.
+
+**Y el orden es el de siempre en esta lista:** primero un simulacro (`python -m
+takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo después el
+`--apply`. La poda **destruye todas las versiones del objeto y es irreversible**.
+
+> **Antes hay que decidir los plazos, que son de negocio y no de programador.**
+> `TAKAB_API_RETENTION_CCTV_CLIPS_DAYS` y `TAKAB_API_RETENTION_CCTV_STILLS_DAYS`. Sin ellos cada
+> tabla queda **deshabilitada** y el job no toca un byte, así que se puede desplegar antes de
+> decidir — igual que el de PII.
 
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
