@@ -1202,8 +1202,13 @@ CREATE TABLE notification_jobs (
   -- 'sent' (sería mentir) ni 'failed' (no hay proveedor que arreglar ni al que
   -- reintentar). Es TERMINAL y deja `sent_at` en NULL, de modo que cualquier
   -- consulta de entregados lo excluya sin tener que conocerlo.
+  -- `blocked_demo` (T-5.02) es un estado PROPIO y no `simulated` ni `skipped`,
+  -- aunque los tres acaben en «nadie recibió nada»: `simulated` significa «sin
+  -- proveedor real configurado» y `skipped` «la cascada ya estaba satisfecha».
+  -- Colapsarlos haría imposible responder a la pregunta del día siguiente: ¿por
+  -- qué no llegó este aviso? `sent_at` se queda NULL en los tres.
   status      text NOT NULL DEFAULT 'pending'
-              CHECK (status IN ('pending','sent','failed','skipped','simulated')),
+              CHECK (status IN ('pending','sent','failed','skipped','simulated','blocked_demo')),
   target      jsonb NOT NULL DEFAULT '{}',
   due_at      timestamptz NOT NULL,
   deadline_at timestamptz,
@@ -1856,6 +1861,48 @@ GRANT SELECT, UPDATE ON incidents TO takab_ingest;
 -- de cliente y solo la ve/abre `takab_superadmin` (la rama `tenant_id =
 -- app_tenant_id()` da NULL para esas filas, así que la RLS ya las esconde —
 -- mismo mecanismo que las filas sin tenant de `audit_log`).
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MODO DEMOSTRACIÓN (T-5.02 · D-27)
+--
+-- El interruptor que impide que una exposición despierte teléfonos reales o
+-- cierre un relé. Es un SUPRESOR DE SALIDA DE LA NUBE —notificaciones y comandos
+-- firmados— y nada más: no viaja al gabinete, no toca el reflejo SASMEX→sirena y
+-- no puede desarmar un relé (regla de oro 1). El día que alguien demuestre y
+-- tiemble de verdad, el edificio lo protege un gabinete que nunca oyó hablar de
+-- esto.
+--
+-- Activo = existe la fila Y `expires_at > now()`. Apagar = borrar la fila; por
+-- eso NO es append-only. El hecho que hay que conservar —quién lo encendió,
+-- quién lo apagó y cuándo— vive en `audit_log`, que sí lo es.
+CREATE TABLE demo_mode (
+  -- Uno por cliente como MUCHO: la PK es el alcance. Encender dos veces el mismo
+  -- cliente es la misma ventana, no dos.
+  tenant_id  uuid PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  enabled_by uuid NOT NULL,
+  enabled_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  note       text NOT NULL DEFAULT '',
+  -- El techo vive en la BASE y no en la aplicación: un tope de código se salta
+  -- con un INSERT a mano, y este modo silencia los avisos de un edificio entero.
+  -- Ocho horas — más que eso ya no es una demostración, es un cliente sin avisos.
+  CONSTRAINT demo_mode_ventana_acotada
+    CHECK (expires_at > enabled_at AND expires_at <= enabled_at + interval '8 hours')
+);
+
+ALTER TABLE demo_mode ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_mode FORCE ROW LEVEL SECURITY;
+CREATE POLICY demo_mode_tenant ON demo_mode
+  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+
+GRANT SELECT, INSERT, DELETE ON demo_mode TO takab_app;
+-- El worker de notificación NECESITA borrar: «lo real gana» lo ejecuta él, antes
+-- de planificar el primer aviso de un incidente. Sin el DELETE, un sismo no
+-- podría apagar el modo y la promesa de D-27 sería falsa — que es exactamente el
+-- fallo que este modo no puede permitirse. No se le da INSERT: encender es acto
+-- de la consola, con su sesión y su rol; el worker solo puede apagar.
+GRANT SELECT, DELETE ON demo_mode TO takab_ingest;
+
 CREATE TABLE maintenance_windows (
   window_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id    uuid REFERENCES tenants(tenant_id),

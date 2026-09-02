@@ -96,6 +96,13 @@ ACTIONS: tuple[str, ...] = (
     "edit_thresholds",
     "siren_test",
     "manage_fleet",
+    # [T-5.02 · D-27] Asimétrico A PROPÓSITO: difícil de volver inseguro, fácil de
+    # volver seguro. Encenderlo es acto de PLATAFORMA —la demostración la hace
+    # TAKAB, no el cliente—; apagarlo lo puede hacer también el administrador del
+    # cliente, porque si TAKAB se lo deja puesto no puede quedarse esperando a que
+    # alguien conteste el teléfono para recuperar sus avisos.
+    "demo_mode_on",
+    "demo_mode_off",
     "relocate_epicenter",
     "request_dictamen",
     "read_audit",
@@ -266,6 +273,8 @@ def _actions(
     export: bool = False,
     generate_report: bool = False,
     edit_thresholds: bool = False,
+    demo_mode_on: bool = False,
+    demo_mode_off: bool = False,
     siren_test: bool = False,
     manage_fleet: bool = False,
     relocate_epicenter: bool = False,
@@ -301,6 +310,8 @@ def _actions(
         "export": export,
         "generate_report": generate_report,
         "edit_thresholds": edit_thresholds,
+        "demo_mode_on": demo_mode_on,
+        "demo_mode_off": demo_mode_off,
         "siren_test": siren_test,
         "manage_fleet": manage_fleet,
         "relocate_epicenter": relocate_epicenter,
@@ -334,6 +345,8 @@ def _actions(
 
 ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     "takab_superadmin": _actions(
+        demo_mode_on=True,
+        demo_mode_off=True,
         ack_incident=True,
         export=True,
         generate_report=True,
@@ -376,6 +389,8 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
+        # Apagar SÍ, encender NO: ver la razón en el censo de acciones.
+        demo_mode_off=True,
         ack_incident=True,
         edit_thresholds=True,
         siren_test=True,

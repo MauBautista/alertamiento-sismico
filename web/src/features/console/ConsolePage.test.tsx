@@ -180,6 +180,8 @@ describe("ConsolePage", () => {
         allowed_actions: {
           ack_incident: true,
           edit_thresholds: true,
+          demo_mode_on: false,
+          demo_mode_off: false,
           export: true,
           generate_report: false,
           sign_dictamen: false,
@@ -443,6 +445,8 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
         allowed_actions: {
           ack_incident: true,
           edit_thresholds: false,
+          demo_mode_on: false,
+          demo_mode_off: false,
           export: false,
           generate_report: false,
           sign_dictamen: false,

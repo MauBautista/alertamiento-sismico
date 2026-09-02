@@ -285,6 +285,30 @@
    significado lo vacía de los tres. El discontinuo es el mismo lenguaje que
    usan los botones inertes del panel del gabinete (T-5.01): «esto no es real».
    No reserva espacio: en producción no hay sitios sim y la tarjeta es idéntica. */
+/* [T-5.02] Banner del modo demostración. Cian y discontinuo, NO ámbar: el ámbar
+   de esta consola ya significa «simulacro» y «dato retenido». El discontinuo es
+   el idioma compartido de las tres fichas de demostración (T-5.01, T-5.02,
+   T-5.05): «esto no es real». */
+/* El marco del StateFrame: sin regla propia la clase existiría solo en el JSX, y
+   el contrato clase↔regla lo caza. Aquí solo separa del bloque siguiente. */
+.soc-demo-mode__frame { margin-bottom: 8px; }
+
+.soc-demo-mode {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; border: 1px dashed var(--tk-cyan); border-radius: 4px;
+  background: var(--tk-cyan-08); color: var(--tk-cyan);
+}
+.soc-demo-mode__txt { font: 700 12px/1 var(--f-ui); letter-spacing: 0.10em; }
+.soc-demo-mode__meta { font: 700 11px/1 var(--f-ui); letter-spacing: 0.06em; }
+.soc-demo-mode__nota {
+  font: 400 11px/1 var(--f-ui); color: var(--tk-fg-2); letter-spacing: 0.02em;
+}
+.soc-demo-mode__off {
+  margin-left: auto; padding: 5px 10px; border-radius: 3px;
+  border: 1px solid var(--tk-cyan); background: transparent; color: var(--tk-cyan);
+  font: 700 10px/1 var(--f-ui); letter-spacing: 0.10em; cursor: pointer;
+}
+
 .fleet-card__demo {
   padding: 2px 6px;
   border: 1px dashed var(--tk-fg-3);

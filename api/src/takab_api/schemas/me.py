@@ -22,6 +22,10 @@ class MeActions(BaseModel):
     export: bool
     generate_report: bool
     edit_thresholds: bool
+    #: [T-5.02 · D-27] Asimétrico: encender es acto de plataforma, apagar lo
+    #: puede hacer también el cliente. La consola pinta los botones con esto.
+    demo_mode_on: bool
+    demo_mode_off: bool
     siren_test: bool
     manage_fleet: bool
     relocate_epicenter: bool

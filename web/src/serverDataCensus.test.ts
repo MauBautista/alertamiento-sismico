@@ -491,7 +491,7 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       conDato: CENSO.componentes.length,
       conPrueba: CENSO.componentes.filter((c) => CON_PRUEBA.has(c.fichero)).length,
       sinMarcoPropio: CENSO.componentes.filter((c) => !c.tieneMarco).length,
-    }).toEqual({ conDato: 21, conPrueba: 12, sinMarcoPropio: 2 });
+    }).toEqual({ conDato: 22, conPrueba: 13, sinMarcoPropio: 2 });
   });
 });
 

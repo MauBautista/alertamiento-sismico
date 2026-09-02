@@ -209,7 +209,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   y hay un test que lo exige por conteo: un segundo `POST` en otro sitio la esquivaría y sale
   rojo con su número de línea.
 
-### [ ] T-5.02 · **Modo demostración de sistema** — `SOFTWARE` + `DECISIÓN`
+### [x] T-5.02 · **Modo demostración de sistema** — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-02**
 > Hoy no existe. Nada bloquea push, SMS, WhatsApp, correo, comandos firmados ni apertura de
 > incidentes, y ninguna pantalla del SOC ni de la app lo declararía si existiera. Lo que hay son
 > tres cosas parciales que no lo son: el `?demo=` del panel (que es un reproductor de escenas —
@@ -231,18 +231,49 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** un estado explícito, visible y auditado, en el que el sistema no despierta a
   nadie, no cierra un relé y lo anuncia en las tres superficies.
 - **Criterios de aceptación:**
-  - [ ] Decisión escrita en `DECISIONES-MAURICIO.md` **con su razón** antes de la primera línea de
+  - [x] Decisión escrita en `DECISIONES-MAURICIO.md` **con su razón** antes de la primera línea de
         código, cubriendo los tres puntos de arriba.
-  - [ ] Con el modo activo: cero entregas por cualquier canal, cero comandos firmados emitidos,
+  - [x] Con el modo activo: cero entregas por cualquier canal, cero comandos firmados emitidos,
         cero relés movidos. Cada intento **deja fila en `audit_log`** con el motivo — un modo que
         bloquea en silencio es otra superficie muda.
-  - [ ] Las tres superficies lo declaran de forma inconfundible y **distinta del simulacro**: el
+  - [x] Las tres superficies lo declaran de forma inconfundible y **distinta del simulacro**: el
         ámbar ya significa "simulacro sonando" y los dos no pueden confundirse.
-  - [ ] Encender y apagar el modo queda auditado con actor y hora.
-  - [ ] El bloqueo se **deriva** del registro de proveedores y de la superficie única de comandos,
+  - [x] Encender y apagar el modo queda auditado con actor y hora.
+  - [x] El bloqueo se **deriva** del registro de proveedores y de la superficie única de comandos,
         no de una lista de canales escrita a mano — un canal nuevo tiene que quedar bloqueado
         solo.
-  - [ ] Test de no-vacuidad: con el modo apagado, los mismos escenarios sí entregan y sí comandan.
+  - [x] Test de no-vacuidad: con el modo apagado, los mismos escenarios sí entregan y sí comandan.
+- **Cómo se cerró (2026-09-02), y DOS criterios cambiaron al construirlos.** Las tres decisiones
+  están en [`D-27`](DECISIONES-MAURICIO.md#d-27), escritas antes de la primera línea de código:
+  **por cliente y con vencimiento** (máx. 8 h, el techo en el CHECK de la tabla y no en el
+  código); **lo enciende el dueño de la plataforma, lo apaga él o el administrador del cliente**
+  —asimétrico: difícil de volver inseguro, fácil de volver seguro—; y **lo real lo apaga**, con la
+  lectura contraria rechazada sin discusión: un modo capaz de suprimir una alerta real no es un
+  dispositivo de seguridad.
+- **Lo que cambió (1): «cero entregas por cualquier canal» era más ancho de lo que puede ser.**
+  Lo destapó un test. Como *cualquier* incidente apaga el modo antes de planificar sus avisos, el
+  modo **no puede suprimir la cascada de un incidente nuevo** — y eso es correcto, no una
+  limitación: si pudiera, un quórum de pánico de ocupantes reales quedaría callado. Lo que el modo
+  sí suprime, y era lo importante, son los **comandos firmados** (simulacros, prueba de actuadores,
+  actuación por quórum): los actos del que demuestra. La puerta de notificación se queda como
+  **respaldo que no debería dispararse nunca**, y se refuerza con la otra mitad que ese mismo test
+  obligó a escribir: **con un incidente abierto no se entra en el modo**. Con las dos reglas
+  juntas, el modo y un evento vivo **no pueden coexistir**.
+- **Lo que cambió (2): son DOS superficies, no tres, y el panel queda fuera a propósito.** La
+  consola y la app lo declaran. El panel del gabinete **no**, y la razón está en `D-27`: meterlo
+  exigiría que el modo viajara al gabinete, y cada dato nuevo que viaja hacia allí es superficie
+  nueva hacia el camino de vida — que es justo lo que este modo no puede tocar. Además está
+  medido: el seed de producción deja el conjunto de reglas sin clave `edge`, así que hoy el config
+  sync no empuja nada al gabinete real; construirlo sería entorno preparado para un mensaje que
+  nadie recibe. El panel no promete entrega de notificaciones: su silencio no es una mentira.
+- **El bloqueo es derivado de verdad:** la puerta de notificación va **antes** de preguntar por el
+  proveedor, así que ni siquiera consulta el registro — cubre hasta un canal sin proveedor
+  cableado, y un canal sexto queda bloqueado el día que nazca. La de comandos vive en el embudo
+  único que firma, así que simulacros y quórum la heredan sin duplicar la superficie sensible.
+- **Y el color no es un detalle:** cian con borde discontinuo, **no ámbar**. En esa consola el
+  ámbar ya significa «simulacro en curso» y «dato retenido», y un tercer significado en el mismo
+  color vacía los tres. El discontinuo es el idioma compartido de las tres fichas de demostración
+  —`T-5.01` (botones inertes), `T-5.02` y `T-5.05` (datos de demo)—: «esto no es real».
 
 ### [x] T-5.03 · El banner del SOC llama **alerta sísmica** a un botón de pánico — `SOFTWARE` · **CERRADA 2026-09-02**
 > `web/src/features/console/ConsolePage.tsx:129` elige el incidente a destacar **solo por

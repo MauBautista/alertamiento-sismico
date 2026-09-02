@@ -1808,6 +1808,91 @@
         "title": "DamageReportOut",
         "type": "object"
       },
+      "DemoModeIn": {
+        "additionalProperties": false,
+        "description": "Encender. La ventana se pide en segundos y se acota al techo.",
+        "properties": {
+          "duration_s": {
+            "default": 7200,
+            "maximum": 28800.0,
+            "minimum": 60.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "title": "DemoModeIn",
+        "type": "object"
+      },
+      "DemoModeOut": {
+        "description": "Estado del modo para un cliente. ``active=False`` es la respuesta normal.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "enabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled At"
+          },
+          "enabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled By"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "remaining_s": {
+            "default": 0.0,
+            "title": "Remaining S",
+            "type": "number"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "tenant_id"
+        ],
+        "title": "DemoModeOut",
+        "type": "object"
+      },
       "DeviceKeyIn": {
         "description": "Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación\ncriptográfica de intenciones llega en T-2.09; aquí solo se registra.",
         "properties": {
@@ -5567,6 +5652,14 @@
             "title": "Damage Report Submit",
             "type": "boolean"
           },
+          "demo_mode_off": {
+            "title": "Demo Mode Off",
+            "type": "boolean"
+          },
+          "demo_mode_on": {
+            "title": "Demo Mode On",
+            "type": "boolean"
+          },
           "deploy_firmware": {
             "title": "Deploy Firmware",
             "type": "boolean"
@@ -5686,6 +5779,8 @@
           "export",
           "generate_report",
           "edit_thresholds",
+          "demo_mode_on",
+          "demo_mode_off",
           "siren_test",
           "manage_fleet",
           "relocate_epicenter",
@@ -6311,6 +6406,11 @@
             },
             "title": "Compliance Labels",
             "type": "object"
+          },
+          "demo_mode": {
+            "default": false,
+            "title": "Demo Mode",
+            "type": "boolean"
           },
           "drill": {
             "$ref": "#/components/schemas/MobileDrillOut"
@@ -10511,6 +10611,79 @@
           }
         },
         "summary": "Download Clip"
+      }
+    },
+    "/demo-mode": {
+      "delete": {
+        "description": "Apaga la ventana. Idempotente: apagar lo ya apagado devuelve 200.\n\nDevolver 404 aquí sería castigar al que hace lo seguro. El estado final es el\nmismo y es el que interesa: este cliente vuelve a recibir sus avisos.",
+        "operationId": "apagar_demo_mode_demo_mode_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Apagar Demo Mode"
+      },
+      "get": {
+        "description": "El estado del cliente de quien pregunta. Sin acción: no hay secreto.\n\nLo consultan las superficies para poder declararlo, y quien no puede\nencenderlo tiene el mismo derecho a saber que está encendido — más, de hecho:\nes quien se va a preguntar por qué no le llegó un aviso.",
+        "operationId": "get_demo_mode_demo_mode_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Demo Mode"
+      },
+      "post": {
+        "description": "Enciende la ventana. Re-encender la PISA en vez de sumarse.\n\nDos ventanas del mismo cliente serían dos verdades sobre cuándo se apaga.",
+        "operationId": "encender_demo_mode_demo_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoModeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Encender Demo Mode"
       }
     },
     "/drills": {

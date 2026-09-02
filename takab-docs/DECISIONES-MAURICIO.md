@@ -12,8 +12,16 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-22 · **23 decisiones** · 18 tomadas por Mauricio (6 el
-> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
+> **Última actualización:** 2026-09-02 · **27 decisiones** · 22 tomadas por Mauricio (6 el
+> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
+> 2026-08-30), 5 delegadas (3 el 2026-08-12, 2 el 2026-09-02).
+>
+> **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
+> 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
+> leyera solo el encabezado, en el documento cuya razón de existir es poder revocar con
+> conocimiento. Lo encontró la auditoría V1-COMERCIAL (`H-39`), y es exactamente lo que este
+> repositorio ya sabe de memoria: **un censo que enumera a mano acaba divergiendo.** `TASKS.md` no
+> diverge porque un test lo cuenta; esta cabecera no tenía ninguno. Ponérselo es `T-5.09`.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
 > cerrada, pero **quedaban diez decisiones enterradas dentro de puntos de acción** —el runbook de
@@ -60,6 +68,7 @@
 | [D-24](#d-24) | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | 2026-08-29 | Mauricio |
 | [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
 | [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
+| [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
 
 ---
 
@@ -1251,3 +1260,84 @@ del sitio donde se grabe. Sin esas dos cosas escritas, no se quita.
 > controlas es una **declaración de intenciones, no una especificación**. Copia lo que venga. Lo
 > que se graba se comprueba con `ffprobe`, no se deduce del comando — y por eso el `ffprobe`
 > viaja al gabinete junto al `ffmpeg` aunque el gabinete no lo use.
+
+---
+
+<a id="d-27"></a>
+## D-27 · Modo demostración — **por cliente, con vencimiento, y lo real lo apaga**
+
+**Fecha:** 2026-09-02 · **Decide:** delegada (Mauricio: «decídelo tú, haz lo más recomendable») ·
+**Venía de:** `T-5.02`, la ficha más grande de la primera tanda de
+[`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) · **Gobierna:** el interruptor que impide que una
+exposición despierte teléfonos reales o cierre un relé.
+
+**El problema.** No existía ningún estado en el que el sistema no molestara a nadie. Lo único que
+se llamaba «demo» era el reproductor de escenas del panel del gabinete (`?demo=`, cuyos botones
+mandaban órdenes de verdad hasta `T-5.01`), y el `simulated` de las notificaciones, que **no es un
+modo**: es un estado derivado de la ausencia de credenciales, y por tanto **desaparece justo en el
+entorno donde se haría la demostración**. Con las altas de Twilio, Meta y APNs hechas —que es
+adónde va el proyecto— cada exposición pasa a ser un riesgo de despertar a gente real.
+
+**Las tres decisiones, y la tercera es la que importa.**
+
+### 1 · Alcance: **por cliente (tenant), y con vencimiento obligatorio**
+
+Las otras dos opciones se descartan por lo que hacen, no por gusto:
+
+- **Por despliegue** cegaría a **todos los clientes a la vez** para hacerle una demostración a
+  uno. Es la peor de las tres y no admite matices.
+- **Por sesión** no puede funcionar: quien bloquea no es la consola, son los **trabajadores de
+  fondo** (`notify`, `commands`), que no tienen sesión ninguna. Una perilla de sesión sería una
+  perilla que no llega a donde hay que apagar.
+
+**Y vence solo.** Máximo 8 h, por defecto 2 h. El fallo realista no es la malicia sino el olvido
+—el manual de operación ya avisa de no dejar un monitor de pared en modo demo—, y un interruptor
+de seguridad que depende de que alguien se acuerde de apagarlo no es un interruptor de seguridad.
+Vencer no necesita ningún proceso que lo vigile: el estado se lee siempre con su hora.
+
+### 2 · Quién: lo **enciende** `takab_superadmin`; lo **apaga** él o el `tenant_admin`
+
+**Asimétrico a propósito: difícil de volver inseguro, fácil de volver seguro.** La demostración
+la hace TAKAB, no el cliente, así que encenderlo es acto de plataforma. Pero si TAKAB se lo deja
+puesto, el cliente **no puede quedarse esperando a que alguien conteste el teléfono** para
+recuperar sus avisos: apagarlo lo puede hacer su propio administrador.
+
+### 3 · Un evento REAL lo apaga solo — **antes** de procesarlo
+
+La lectura contraria —«el modo bloquea el evento real y grita»— **se rechaza sin discusión**.
+Sería un interruptor capaz de silenciar un sismo, y un modo de demostración que puede suprimir
+una alerta real no es un dispositivo de seguridad: es el peor defecto que este sistema puede
+tener. No se construye, ni con confirmación, ni con aviso, ni con nada.
+
+**Gana «lo real gana»**, que es la misma doctrina que ya gobierna los simulacros (`T-2.94`, y el
+`on_sasmex` del `DrillController`). Y el ORDEN es la parte que hace la promesa verdadera: el modo
+se apaga **antes** de que el evento entre a la cascada, no después. Así la ventana en la que algo
+real podría quedar suprimido **no existe por construcción**, en vez de ser una ventana estrecha
+que alguien tiene que medir. Queda auditado con el evento como causa, y las dos superficies que
+lo declaran lo gritan: quien esté haciendo la demostración tiene que enterarse de que ya no está
+demostrando.
+
+### El límite duro, que es lo que hace aceptable todo lo anterior
+
+**El modo no existe en el gabinete.** No viaja por la config firmada, no toca el reflejo
+SASMEX→sirena, no puede desarmar un relé ni retrasar un cierre de gas. Es un **supresor de salida
+de la nube** y nada más: notificaciones y comandos firmados. El día que alguien haga una
+demostración y tiemble de verdad, el edificio lo protege un gabinete que **nunca oyó hablar del
+modo demostración** — y eso es exactamente la regla de oro 1, que dice que el camino crítico no
+depende de la nube.
+
+Corolario incómodo pero honesto: **el panel del gabinete no lo declara.** Se evaluó meterlo en el
+documento firmado del config sync —que ya transporta `cloud_admin_state` y que el edge **solo
+pinta, nunca obedece**— y se descartó por dos razones. La primera es de riesgo: cada dato nuevo
+que viaja hacia el gabinete es superficie nueva hacia el camino de vida, y éste no le hace falta
+para nada. La segunda es medida: el seed de producción deja el conjunto de reglas
+**deliberadamente sin clave `edge`**, así que hoy el config sync no empuja nada a `gw-dev-0001` —
+construirlo sería entorno preparado para un mensaje que nadie recibe, que es el defecto de
+`T-3.11.c` repetido a propósito. El panel no promete entrega de notificaciones, así que su
+silencio no es una mentira.
+
+**Cómo se revocaría.** Si algún día la demostración necesita mostrar el gabinete actuando en
+falso —relés que se mueven sin que sea real—, esta decisión no sirve y hay que rehacerla entera:
+eso ya no es un supresor de salida, es un simulador dentro del camino de vida, y necesita su
+propia conversación y su propio gate físico. Lo que **no** cambia en ninguna revocación es el
+punto 3: nada que pueda suprimir una alerta real entra en este sistema.

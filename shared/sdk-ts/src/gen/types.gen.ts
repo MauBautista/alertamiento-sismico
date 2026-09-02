@@ -443,6 +443,27 @@ export type DamageReportOut = {
 };
 
 /**
+ * Encender. La ventana se pide en segundos y se acota al techo.
+ */
+export type DemoModeIn = {
+    duration_s?: number;
+    note?: string;
+};
+
+/**
+ * Estado del modo para un cliente. ``active=False`` es la respuesta normal.
+ */
+export type DemoModeOut = {
+    active: boolean;
+    enabled_at?: string | null;
+    enabled_by?: string | null;
+    expires_at?: string | null;
+    note?: string;
+    remaining_s?: number;
+    tenant_id: string;
+};
+
+/**
  * Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación
  * criptográfica de intenciones llega en T-2.09; aquí solo se registra.
  */
@@ -1386,6 +1407,8 @@ export type MeActions = {
     cctv_video: boolean;
     checkin_submit: boolean;
     damage_report_submit: boolean;
+    demo_mode_off: boolean;
+    demo_mode_on: boolean;
     deploy_firmware: boolean;
     dictamen_read: boolean;
     drill_start: boolean;
@@ -1616,6 +1639,7 @@ export type MobileStateOut = {
     compliance_labels: {
         [key: string]: string;
     };
+    demo_mode?: boolean;
     drill: MobileDrillOut;
     incident: MobileIncidentOut | null;
     latest_tier: string | null;
@@ -2631,6 +2655,63 @@ export type DownloadClipCctvClipsClipIdDownloadPostResponses = {
 };
 
 export type DownloadClipCctvClipsClipIdDownloadPostResponse = DownloadClipCctvClipsClipIdDownloadPostResponses[keyof DownloadClipCctvClipsClipIdDownloadPostResponses];
+
+export type ApagarDemoModeDemoModeDeleteData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type ApagarDemoModeDemoModeDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: DemoModeOut;
+};
+
+export type ApagarDemoModeDemoModeDeleteResponse = ApagarDemoModeDemoModeDeleteResponses[keyof ApagarDemoModeDemoModeDeleteResponses];
+
+export type GetDemoModeDemoModeGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type GetDemoModeDemoModeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DemoModeOut;
+};
+
+export type GetDemoModeDemoModeGetResponse = GetDemoModeDemoModeGetResponses[keyof GetDemoModeDemoModeGetResponses];
+
+export type EncenderDemoModeDemoModePostData = {
+    body: DemoModeIn;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type EncenderDemoModeDemoModePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type EncenderDemoModeDemoModePostError = EncenderDemoModeDemoModePostErrors[keyof EncenderDemoModeDemoModePostErrors];
+
+export type EncenderDemoModeDemoModePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DemoModeOut;
+};
+
+export type EncenderDemoModeDemoModePostResponse = EncenderDemoModeDemoModePostResponses[keyof EncenderDemoModeDemoModePostResponses];
 
 export type ListDrillsDrillsGetData = {
     body?: never;

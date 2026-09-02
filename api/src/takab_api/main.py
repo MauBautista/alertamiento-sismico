@@ -12,6 +12,7 @@ from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.cctv import router as cctv_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
+from takab_api.routers.demo_mode import router as demo_mode_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
 
     # Simulacro institucional (Fase 1.8 · T-1.60).
+    app.include_router(demo_mode_router)
     app.include_router(drills_router)
 
     # Ventanas de mantenimiento: silencian alarmas de OPERACIÓN, jamás la
