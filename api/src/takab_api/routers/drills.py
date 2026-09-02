@@ -11,6 +11,7 @@ registra el fin (`stop`) o se deja vencer la ventana (estado derivado).
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -26,12 +27,15 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher
 from takab_api.commands.service import issue_signed_command
+from takab_api.drill_report import ReporteSimulacro, SitioReporte
+from takab_api.drill_report import render as render_drill_report
 from takab_api.routers._common import (
     clamp_limit,
     decode_cursor,
     encode_cursor,
     http_error,
 )
+from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get, put_object
 from takab_api.routers.commands import get_key_provider, get_publisher
 from takab_api.routers.incidents import CONSOLE_ROLES
 from takab_api.schemas.drills import (
@@ -39,6 +43,7 @@ from takab_api.schemas.drills import (
     DrillCreateIn,
     DrillList,
     DrillOut,
+    DrillReportOut,
     DrillSiteOut,
 )
 from takab_api.settings import Settings
@@ -128,12 +133,27 @@ _SELECT_DRILL = text(f"SELECT {_DRILL_COLS} FROM drills d WHERE d.drill_id = CAS
 # pantalla NO puede colapsar (regla de oro 7).
 _SELECT_DRILL_SITES = text(
     "SELECT ds.drill_id, ds.site_id, s.name AS site_name, ds.command_id, "
-    "c.status AS command_status, c.ack, " + (_COMMANDABLE % {"alias": "ds"}) + " AS commandable "
+    "c.status AS command_status, c.ack, c.acked_at, c.issued_at, "
+    + (_COMMANDABLE % {"alias": "ds"})
+    + " AS commandable "
     "FROM drill_sites ds "
     "LEFT JOIN sites s ON s.site_id = ds.site_id "
     "LEFT JOIN commands c ON c.command_id = ds.command_id "
     "WHERE ds.drill_id = ANY(:drills) ORDER BY s.name NULLS LAST, ds.site_id"
 )
+
+
+def _latencia(issued_at, acked_at) -> float | None:
+    """Segundos entre la emisión y el acuse, o ``None`` si no acusó.
+
+    `None` y NO cero, que es la diferencia que hace útil el número: un cero se
+    leería como «acusó al instante», que es exactamente lo contrario de lo que
+    pasó. Misma disciplina que `commandable` (T-2.48): no colapsar dos hechos.
+    """
+    if issued_at is None or acked_at is None:
+        return None
+    return (acked_at - issued_at).total_seconds()
+
 
 _STOP_DRILL = text(
     "UPDATE drills SET stopped_at = :now, stop_reason = :reason "
@@ -201,6 +221,8 @@ async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSi
                 command_status=r["command_status"],
                 ack=r["ack"],
                 commandable=bool(r["commandable"]),
+                acked_at=r["acked_at"],
+                ack_latency_s=_latencia(r["issued_at"], r["acked_at"]),
             )
         )
     return out
@@ -614,3 +636,96 @@ async def cancel_drill(
         row = (await conn.execute(_SELECT_DRILL, {"drill": str(drill_id)})).mappings().one()
     sites_map = await _sites_of([row], conn)
     return _drill_out(row, sites_map.get(row["drill_id"], []))
+
+
+# ─────────────────────────────────────────────────── [T-5.14] el reporte
+
+_INSERT_EVIDENCIA_DRILL = text(
+    "INSERT INTO evidence_objects (tenant_id, drill_id, kind, s3_key, sha256) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:drill AS uuid), 'report_pdf', :key, :sha) "
+    "RETURNING evidence_id"
+)
+
+
+@router.post("/drills/{drill_id}/report", response_model=DrillReportOut, status_code=201)
+async def drill_report(
+    drill_id: UUID,
+    claims: Claims = Depends(_require_drill),
+    conn: AsyncConnection = Depends(get_session),
+) -> DrillReportOut:
+    """El documento que el cliente le enseña a Protección Civil.
+
+    Mismas propiedades que el dictamen —determinista, hasheado, registrado como
+    evidencia inmutable y auditado—, y por la misma razón: es evidencia de
+    cumplimiento, no una captura de pantalla.
+
+    Solo de un simulacro EJECUTADO: una agenda no tiene acuses que reportar, y
+    exportarla produciría un documento que afirma cero de cero.
+    """
+    row = (await conn.execute(_SELECT_DRILL, {"drill": str(drill_id)})).mappings().first()
+    if row is None:
+        raise http_error(404, "simulacro no encontrado")
+    # Una AGENDA se reconoce por `scheduled_at`, no por `started_at`: la fila de
+    # agenda lleva los dos, y `active` se deriva igual (`scheduled_at IS NULL`).
+    # Exportarla produciría un documento que afirma cero de cero.
+    if row["scheduled_at"] is not None:
+        raise http_error(409, "es una agenda, no un simulacro ejecutado: no hay acuses")
+
+    settings = Settings()
+
+    sitios = (await _sites_of([{"drill_id": drill_id}], conn)).get(drill_id, [])
+    rep = ReporteSimulacro(
+        folio=f"TKB-DRILL-{str(drill_id)[:8].upper()}",
+        tenant_name=str(row["tenant_id"]),
+        drill_id=str(drill_id),
+        started_at=row["started_at"],
+        stopped_at=row["stopped_at"],
+        duration_s=row["duration_s"],
+        note=row["note"] or "",
+        sitios=[
+            SitioReporte(
+                site_name=s.site_name or str(s.site_id)[:8],
+                commandable=s.commandable,
+                acked=s.command_status == "acked",
+                latency_s=s.ack_latency_s,
+            )
+            for s in sitios
+        ],
+    )
+
+    pdf = render_drill_report(rep)
+    sha256 = hashlib.sha256(pdf).hexdigest()
+    key = f"evidence/{row['tenant_id']}/drills/{drill_id}/reporte.pdf"
+    put_object(settings, key, pdf, content_type="application/pdf")
+
+    evidence_id = (
+        await conn.execute(
+            _INSERT_EVIDENCIA_DRILL,
+            {"tenant": str(row["tenant_id"]), "drill": str(drill_id), "key": key, "sha": sha256},
+        )
+    ).scalar_one()
+    await audit_async(
+        conn,
+        tenant_id=str(row["tenant_id"]),
+        actor=f"user:{claims.sub}",
+        verb="export_drill_report",
+        obj=f"evidence:{evidence_id}",
+        meta={
+            "drill_id": str(drill_id),
+            "sha256": sha256,
+            "acusaron": len(rep.acusaron),
+            "no_acusaron": len(rep.no_acusaron),
+            "sin_gabinete": len(rep.sin_gabinete),
+        },
+    )
+    return DrillReportOut(
+        evidence_id=evidence_id,
+        sha256=sha256,
+        url=presign_get(settings, key),
+        expires_in=PRESIGN_TTL_S,
+        acked=len(rep.acusaron),
+        not_acked=len(rep.no_acusaron),
+        no_gateway=len(rep.sin_gabinete),
+        median_latency_s=rep.latencia_mediana_s,
+        max_latency_s=rep.latencia_maxima_s,
+    )

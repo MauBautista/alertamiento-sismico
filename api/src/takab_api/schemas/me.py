@@ -26,6 +26,8 @@ class MeActions(BaseModel):
     #: puede hacer también el cliente. La consola pinta los botones con esto.
     demo_mode_on: bool
     demo_mode_off: bool
+    #: [T-5.12] Clasificar un incidente al cerrarlo. Va con quien ya lo opera.
+    classify_incident: bool
     siren_test: bool
     manage_fleet: bool
     relocate_epicenter: bool

@@ -42,6 +42,14 @@ class DrillSiteOut(BaseModel):
     #: única forma sin DDL nuevo. Existe para no colapsar dos hechos distintos —
     #: "no había a quién mandarle el simulacro" NO es "el sitio no acusó".
     commandable: bool = True
+    #: [T-5.14] Cuándo se supo del acuse, con el reloj del SERVIDOR — el mismo que
+    #: `issued_at`, y por eso su diferencia significa algo. El `executed_at` que
+    #: viaja dentro de `ack` lo pone el gabinete y su reloj es justo lo que el
+    #: sistema vigila: mezclarlos daría un «tardó 4 min» que no querría decir nada.
+    acked_at: datetime | None = None
+    #: Segundos entre la emisión y el acuse. `None` cuando no acusó — y NO cero:
+    #: un cero se leería como «acusó al instante», que es lo contrario.
+    ack_latency_s: float | None = None
 
 
 class DrillOut(BaseModel):
@@ -70,3 +78,23 @@ class ActiveDrillOut(BaseModel):
     """El drill vivo del tenant (o null): la consola pinta el banner NO-real."""
 
     drill: DrillOut | None
+
+
+class DrillReportOut(BaseModel):
+    """[T-5.14] El documento generado, con lo que hace falta para citarlo.
+
+    Los tres conteos van SEPARADOS y no colapsados: «no tenía gabinete» es un
+    problema de inventario y «no acusó» uno de operación, y quien lee el número
+    reacciona distinto a cada uno.
+    """
+
+    evidence_id: UUID
+    sha256: str
+    url: str
+    expires_in: int
+    acked: int
+    not_acked: int
+    no_gateway: int
+    #: `null` si nadie acusó. Los que no acusaron NO entran como cero.
+    median_latency_s: float | None
+    max_latency_s: float | None

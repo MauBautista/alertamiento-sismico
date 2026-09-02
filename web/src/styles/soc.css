@@ -1523,6 +1523,15 @@ body {
   background: var(--tk-navy-700);
   color: var(--tk-fg-3);
 }
+/* [T-5.14] El instante del acuse. `margin-left: auto` ya se lo lleva la píldora,
+   así que esto va DESPUÉS de ella y sin empujar: el que no acusó simplemente no
+   tiene este span, y su fila queda más corta — la ausencia se ve. */
+.soc-drillhist__lat {
+  margin-left: 10px;
+  color: var(--tk-fg-3);
+  font-size: var(--tk-text-xs);
+  white-space: nowrap;
+}
 
 /* =====================================================================
    [T-2.55] DEGRADACIÓN RESPONSIVE — no es un rediseño

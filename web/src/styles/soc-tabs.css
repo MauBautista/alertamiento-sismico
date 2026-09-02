@@ -291,6 +291,26 @@
    T-5.05): «esto no es real». */
 /* El marco del StateFrame: sin regla propia la clase existiría solo en el JSX, y
    el contrato clase↔regla lo caza. Aquí solo separa del bloque siguiente. */
+/* [T-5.12] Clasificación de un incidente y su tasa. */
+.triage-clasif { display: flex; flex-direction: column; gap: 6px; }
+.triage-clasif__actual {
+  font: 700 12px/1 var(--f-ui); letter-spacing: 0.10em; color: var(--tk-fg-1);
+}
+.triage-clasif__btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.triage-clasif__btn {
+  padding: 5px 9px; border-radius: 3px; border: 1px solid var(--tk-border-strong);
+  background: transparent; color: var(--tk-fg-2);
+  font: 700 10px/1 var(--f-ui); letter-spacing: 0.08em; cursor: pointer;
+}
+.triage-clasif__hist {
+  margin: 0; padding-left: 14px; color: var(--tk-fg-3);
+  font: 400 10px/1.5 var(--f-ui);
+}
+.triage-tasa { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.triage-tasa__v { font: 700 20px/1 var(--tk-font-mono); color: var(--tk-fg-1); }
+.triage-tasa__sin { font: 700 10px/1 var(--f-ui); letter-spacing: 0.08em; color: var(--tk-status-warning); }
+.triage-tasa__nota { font: 400 10px/1.4 var(--f-ui); color: var(--tk-fg-3); }
+
 .soc-demo-mode__frame { margin-bottom: 8px; }
 
 .soc-demo-mode {

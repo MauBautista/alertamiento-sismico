@@ -884,6 +884,173 @@
         "title": "CheckinOut",
         "type": "object"
       },
+      "ClassificationChainOut": {
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClassificationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_id",
+          "items"
+        ],
+        "title": "ClassificationChainOut",
+        "type": "object"
+      },
+      "ClassificationIn": {
+        "additionalProperties": false,
+        "description": "Clasificar. **Sin valor por defecto: se elige.**",
+        "properties": {
+          "classification": {
+            "pattern": "^(real|falso_positivo|prueba|indeterminado)$",
+            "title": "Classification",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Note",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          }
+        },
+        "required": [
+          "classification"
+        ],
+        "title": "ClassificationIn",
+        "type": "object"
+      },
+      "ClassificationOut": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "classification_id": {
+            "format": "uuid",
+            "title": "Classification Id",
+            "type": "string"
+          },
+          "classified_at": {
+            "format": "date-time",
+            "title": "Classified At",
+            "type": "string"
+          },
+          "classified_by": {
+            "format": "uuid",
+            "title": "Classified By",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          }
+        },
+        "required": [
+          "classification_id",
+          "incident_id",
+          "classification",
+          "note",
+          "classified_by",
+          "classified_at",
+          "supersedes_id",
+          "current"
+        ],
+        "title": "ClassificationOut",
+        "type": "object"
+      },
+      "ClassificationStatsOut": {
+        "description": "Desglose de una ventana, con los sin clasificar SIEMPRE a la vista.",
+        "properties": {
+          "by_classification": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Classification",
+            "type": "object"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unclassified": {
+            "title": "Unclassified",
+            "type": "integer"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "total",
+          "unclassified",
+          "by_classification",
+          "false_positive_rate"
+        ],
+        "title": "ClassificationStatsOut",
+        "type": "object"
+      },
       "ClipOut": {
         "description": "Un clip del incidente. `disponible=False` cuando la retención ya podó el objeto.",
         "properties": {
@@ -2393,6 +2560,75 @@
         "title": "DrillOut",
         "type": "object"
       },
+      "DrillReportOut": {
+        "description": "[T-5.14] El documento generado, con lo que hace falta para citarlo.\n\nLos tres conteos van SEPARADOS y no colapsados: «no tenía gabinete» es un\nproblema de inventario y «no acusó» uno de operación, y quien lee el número\nreacciona distinto a cada uno.",
+        "properties": {
+          "acked": {
+            "title": "Acked",
+            "type": "integer"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "max_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Latency S"
+          },
+          "median_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Latency S"
+          },
+          "no_gateway": {
+            "title": "No Gateway",
+            "type": "integer"
+          },
+          "not_acked": {
+            "title": "Not Acked",
+            "type": "integer"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "sha256",
+          "url",
+          "expires_in",
+          "acked",
+          "not_acked",
+          "no_gateway",
+          "median_latency_s",
+          "max_latency_s"
+        ],
+        "title": "DrillReportOut",
+        "type": "object"
+      },
       "DrillSiteOut": {
         "description": "Participación de UN sitio: el acuse se DERIVA del comando firmado.",
         "properties": {
@@ -2407,6 +2643,29 @@
               }
             ],
             "title": "Ack"
+          },
+          "ack_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Latency S"
+          },
+          "acked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acked At"
           },
           "command_id": {
             "anyOf": [
@@ -5648,6 +5907,10 @@
             "title": "Checkin Submit",
             "type": "boolean"
           },
+          "classify_incident": {
+            "title": "Classify Incident",
+            "type": "boolean"
+          },
           "damage_report_submit": {
             "title": "Damage Report Submit",
             "type": "boolean"
@@ -5781,6 +6044,7 @@
           "edit_thresholds",
           "demo_mode_on",
           "demo_mode_off",
+          "classify_incident",
           "siren_test",
           "manage_fleet",
           "relocate_epicenter",
@@ -10613,6 +10877,71 @@
         "summary": "Download Clip"
       }
     },
+    "/classification-stats": {
+      "get": {
+        "description": "La tasa de falsos positivos del cliente de quien pregunta.\n\nEl aislamiento lo impone la RLS sobre ``incidents``: aquí no hay filtro por\ntenant y no debe haberlo — un filtro de aplicación encima de la RLS invita a\ncreer que la RLS es opcional.\n\n**Los sin clasificar salen aparte y no del denominador.** Un porcentaje\ncalculado sobre lo clasificado, con lo no clasificado escondido, es peor que\nno tener el número: se lee como una medición y es una muestra sesgada por\nquién tuvo tiempo de revisar.",
+        "operationId": "classification_stats_classification_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classification Stats"
+      }
+    },
     "/demo-mode": {
       "delete": {
         "description": "Apaga la ventana. Idempotente: apagar lo ya apagado devuelve 200.\n\nDevolver 404 aquí sería castigar al que hace lo seguro. El estado final es el\nmismo y es el que interesa: este cliente vuelve a recibir sus avisos.",
@@ -10859,6 +11188,47 @@
           }
         },
         "summary": "Cancel Drill"
+      }
+    },
+    "/drills/{drill_id}/report": {
+      "post": {
+        "description": "El documento que el cliente le enseña a Protección Civil.\n\nMismas propiedades que el dictamen —determinista, hasheado, registrado como\nevidencia inmutable y auditado—, y por la misma razón: es evidencia de\ncumplimiento, no una captura de pantalla.\n\nSolo de un simulacro EJECUTADO: una agenda no tiene acuses que reportar, y\nexportarla produciría un documento que afirma cero de cero.",
+        "operationId": "drill_report_drills__drill_id__report_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drill Report"
       }
     },
     "/drills/{drill_id}/stop": {
@@ -12215,6 +12585,98 @@
           }
         },
         "summary": "Submit Checkin"
+      }
+    },
+    "/incidents/{incident_id}/classification": {
+      "post": {
+        "description": "Clasifica. Corregir es clasificar otra vez declarando a cuál sustituye.\n\nNo hay `PUT` ni `DELETE`, y la base tampoco los permitiría: la tabla es\nappend-only con sus dos capas. Quien clasificó mal a las 3 de la mañana no\npuede hacer desaparecer su clasificación — la corrige, y las dos quedan.",
+        "operationId": "classify_incident_incidents__incident_id__classification_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classify Incident"
+      }
+    },
+    "/incidents/{incident_id}/classifications": {
+      "get": {
+        "description": "La cadena entera, más reciente primero. Vacía = **sin clasificar**.",
+        "operationId": "get_classifications_incidents__incident_id__classifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationChainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Classifications"
       }
     },
     "/incidents/{incident_id}/damage-reports": {

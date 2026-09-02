@@ -700,9 +700,14 @@ SELECT command_id, tenant_id, gateway_id, status FROM commands WHERE nonce = %s
 """
 
 # Transición SOLO desde pending (re-entrega SQS = no-op idempotente).
+# [T-5.14] `acked_at` lo pone la BASE, con el mismo reloj que `issued_at`. El
+# `executed_at` que viaja dentro del `ack` lo manda el gabinete y su reloj es
+# justo lo que el sistema vigila (`ntp_offset_s`): restarle `issued_at` mezclaría
+# dos relojes y el «tardó 4 min 12 s» de un post-simulacro no significaría nada.
+# Los dos se conservan — el del gabinete dice cuándo ACTUÓ, éste cuándo se supo.
 _COMMAND_ACK_SQL = """
 UPDATE commands
-   SET status = %(status)s, ack = %(ack)s
+   SET status = %(status)s, ack = %(ack)s, acked_at = now()
  WHERE command_id = %(command_id)s AND status = 'pending'
 """
 

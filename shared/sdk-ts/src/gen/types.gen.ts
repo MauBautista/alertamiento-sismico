@@ -205,6 +205,45 @@ export type CheckinOut = {
     via: string;
 };
 
+export type ClassificationChainOut = {
+    incident_id: string;
+    items: Array<ClassificationOut>;
+};
+
+/**
+ * Clasificar. **Sin valor por defecto: se elige.**
+ */
+export type ClassificationIn = {
+    classification: string;
+    note?: string;
+    supersedes_id?: string | null;
+};
+
+export type ClassificationOut = {
+    classification: string;
+    classification_id: string;
+    classified_at: string;
+    classified_by: string;
+    current: boolean;
+    incident_id: string;
+    note: string;
+    supersedes_id: string | null;
+};
+
+/**
+ * Desglose de una ventana, con los sin clasificar SIEMPRE a la vista.
+ */
+export type ClassificationStatsOut = {
+    by_classification: {
+        [key: string]: number;
+    };
+    false_positive_rate: number | null;
+    since: string;
+    total: number;
+    unclassified: number;
+    until: string;
+};
+
 /**
  * Un clip del incidente. `disponible=False` cuando la retención ya podó el objeto.
  */
@@ -579,12 +618,33 @@ export type DrillOut = {
 };
 
 /**
+ * [T-5.14] El documento generado, con lo que hace falta para citarlo.
+ *
+ * Los tres conteos van SEPARADOS y no colapsados: «no tenía gabinete» es un
+ * problema de inventario y «no acusó» uno de operación, y quien lee el número
+ * reacciona distinto a cada uno.
+ */
+export type DrillReportOut = {
+    acked: number;
+    evidence_id: string;
+    expires_in: number;
+    max_latency_s: number | null;
+    median_latency_s: number | null;
+    no_gateway: number;
+    not_acked: number;
+    sha256: string;
+    url: string;
+};
+
+/**
  * Participación de UN sitio: el acuse se DERIVA del comando firmado.
  */
 export type DrillSiteOut = {
     ack: {
         [key: string]: unknown;
     } | null;
+    ack_latency_s?: number | null;
+    acked_at?: string | null;
     command_id: string | null;
     command_status: string | null;
     commandable?: boolean;
@@ -1406,6 +1466,7 @@ export type MeActions = {
     cctv_read: boolean;
     cctv_video: boolean;
     checkin_submit: boolean;
+    classify_incident: boolean;
     damage_report_submit: boolean;
     demo_mode_off: boolean;
     demo_mode_on: boolean;
@@ -2656,6 +2717,34 @@ export type DownloadClipCctvClipsClipIdDownloadPostResponses = {
 
 export type DownloadClipCctvClipsClipIdDownloadPostResponse = DownloadClipCctvClipsClipIdDownloadPostResponses[keyof DownloadClipCctvClipsClipIdDownloadPostResponses];
 
+export type ClassificationStatsClassificationStatsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        since?: string | null;
+        until?: string | null;
+    };
+    url: '/classification-stats';
+};
+
+export type ClassificationStatsClassificationStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassificationStatsClassificationStatsGetError = ClassificationStatsClassificationStatsGetErrors[keyof ClassificationStatsClassificationStatsGetErrors];
+
+export type ClassificationStatsClassificationStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassificationStatsOut;
+};
+
+export type ClassificationStatsClassificationStatsGetResponse = ClassificationStatsClassificationStatsGetResponses[keyof ClassificationStatsClassificationStatsGetResponses];
+
 export type ApagarDemoModeDemoModeDeleteData = {
     body?: never;
     path?: never;
@@ -2809,6 +2898,33 @@ export type CancelDrillDrillsDrillIdCancelPostResponses = {
 };
 
 export type CancelDrillDrillsDrillIdCancelPostResponse = CancelDrillDrillsDrillIdCancelPostResponses[keyof CancelDrillDrillsDrillIdCancelPostResponses];
+
+export type DrillReportDrillsDrillIdReportPostData = {
+    body?: never;
+    path: {
+        drill_id: string;
+    };
+    query?: never;
+    url: '/drills/{drill_id}/report';
+};
+
+export type DrillReportDrillsDrillIdReportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DrillReportDrillsDrillIdReportPostError = DrillReportDrillsDrillIdReportPostErrors[keyof DrillReportDrillsDrillIdReportPostErrors];
+
+export type DrillReportDrillsDrillIdReportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DrillReportOut;
+};
+
+export type DrillReportDrillsDrillIdReportPostResponse = DrillReportDrillsDrillIdReportPostResponses[keyof DrillReportDrillsDrillIdReportPostResponses];
 
 export type StopDrillDrillsDrillIdStopPostData = {
     body?: never;
@@ -3546,6 +3662,60 @@ export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponses = {
 };
 
 export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponse = SubmitCheckinIncidentsIncidentIdCheckinsPostResponses[keyof SubmitCheckinIncidentsIncidentIdCheckinsPostResponses];
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostData = {
+    body: ClassificationIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/classification';
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostError = ClassifyIncidentIncidentsIncidentIdClassificationPostErrors[keyof ClassifyIncidentIncidentsIncidentIdClassificationPostErrors];
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ClassificationOut;
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostResponse = ClassifyIncidentIncidentsIncidentIdClassificationPostResponses[keyof ClassifyIncidentIncidentsIncidentIdClassificationPostResponses];
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/classifications';
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetError = GetClassificationsIncidentsIncidentIdClassificationsGetErrors[keyof GetClassificationsIncidentsIncidentIdClassificationsGetErrors];
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassificationChainOut;
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetResponse = GetClassificationsIncidentsIncidentIdClassificationsGetResponses[keyof GetClassificationsIncidentsIncidentIdClassificationsGetResponses];
 
 export type ListDamageReportsIncidentsIncidentIdDamageReportsGetData = {
     body?: never;

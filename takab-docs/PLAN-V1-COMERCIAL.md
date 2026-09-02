@@ -598,7 +598,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   - [ ] Test con un caso realista de sismo lejano dentro de la ventana temporal: hoy casaría; con
         la ficha, no.
 
-### [ ] T-5.12 · **Contar falsos positivos** — `SOFTWARE`
+### [x] T-5.12 · **Contar falsos positivos** — `SOFTWARE` · **CERRADA 2026-09-02**
 > Hoy no hay forma de contarlos, ni siquiera a mano sobre la base. `incidents.state` admite
 > `open|acked|in_review|closed` y **nada más**: no hay columna de clasificación, ni de descarte,
 > ni de motivo de cierre. Cerrar un incidente **no pide ni admite una razón**, y el estado
@@ -615,17 +615,40 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que cerrar un incidente registre **qué fue**, y que la tasa se pueda leer sin
   abrir la base.
 - **Criterios de aceptación:**
-  - [ ] Clasificación al cierre con un catálogo cerrado y corto, decidido en la ficha: real,
+  - [x] Clasificación al cierre con un catálogo cerrado y corto, decidido en la ficha: real,
         falso positivo, prueba/mantenimiento, indeterminado. **Indeterminado no es el default
         silencioso**: se elige y se declara.
-  - [ ] La clasificación queda auditada con actor y hora, y **no se puede reescribir**: una
+  - [x] La clasificación queda auditada con actor y hora, y **no se puede reescribir**: una
         corrección inserta, no sustituye, como ya hace la cadena de dictámenes.
-  - [ ] Endpoint de agregados por tenant y ventana, con la tasa y el desglose, respetando el
+  - [x] Endpoint de agregados por tenant y ventana, con la tasa y el desglose, respetando el
         aislamiento entre clientes.
-  - [ ] La consola lo muestra, y **declara cuántos incidentes están sin clasificar** en vez de
+  - [x] La consola lo muestra, y **declara cuántos incidentes están sin clasificar** en vez de
         excluirlos del denominador — un porcentaje calculado sobre lo clasificado, con lo no
         clasificado escondido, es peor que no tener el número.
-  - [ ] Los simulacros siguen fuera del conteo, con test.
+  - [x] Los simulacros siguen fuera del conteo, con test.
+- **Cómo se cerró (2026-09-02).** Tabla propia `incident_classifications` (migración `0055`),
+  **append-only con las dos capas** que ya usa la cadena de dictámenes: `REVOKE UPDATE, DELETE`
+  **y** el trigger `forbid_update_delete()`. Corregir **INSERTA** una fila que apunta a la
+  anterior por `supersedes_id`; la vigente es la que nadie sustituye. `GET /classification-stats`
+  da la tasa por ventana, y `api/src/takab_api/incident/classification.py` fija el conjunto
+  `EN_LA_TASA` **excluyendo `prueba`** — los simulacros ya vivían en tabla aparte, pero un
+  incidente marcado a mano como prueba también tenía que salir del denominador.
+  **Dos decisiones que no estaban en la ficha y sí en el código.**
+  (1) **La tasa devuelve `null`, no `0`, cuando nadie ha clasificado nada.** Un cero afirmaría
+  que no hubo falsos positivos; lo que pasa es que nadie miró. La consola lo pinta `S/D` y dice
+  por qué, y hay test de que jamás sale `0.0 %` desde el vacío.
+  (2) **Los sin clasificar viajan junto al porcentaje, siempre** (`4 DE 10 SIN CLASIFICAR`): la
+  agregación los conserva en el total en vez de filtrarlos, porque un porcentaje sobre lo
+  clasificado, con lo no clasificado escondido, es una muestra sesgada por quién tuvo tiempo.
+  **Y una divergencia que apareció al hacerlo, ajena a esta ficha:** el espejo de la matriz RBAC
+  en `web/src/test-utils/meFixtures.ts` **lleva 16 celdas divergentes** de
+  `api/src/takab_api/auth/matrix.py` (cctv ×9, privacidad ×4, `read_audit`, `checkin_submit`,
+  `panic_vote`). Aquí se corrigieron **solo las dos de `classify_incident`**; las otras dieciséis
+  siguen abiertas y **nada las vigila** — el fichero pide a mano que se le actualice. Es el patrón
+  que `TRASPASO-SESION.md §4` ya nombró: *un censo que enumera a mano acaba divergiendo*. Se
+  deriva en tres líneas comparando los dos por igualdad; no se hizo aquí porque volver verde esas
+  dieciséis celdas cambia qué botones ven seis roles en las suites existentes, y eso es un lote
+  propio, no un apéndice de esta ficha.
 
 ### [ ] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE`
 > No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un
@@ -645,7 +668,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
         de lanzar contra un conjunto silenciosamente más pequeño.
   - [ ] Aislamiento entre clientes: una plantilla es de su tenant, con test de cruce.
 
-### [ ] T-5.14 · El **post-simulacro** no tiene tiempos ni sale del navegador — `SOFTWARE`
+### [x] T-5.14 · El **post-simulacro** no tiene tiempos ni sale del navegador — `SOFTWARE` · **CERRADA 2026-09-02**
 > Lo que hay está bien hecho: el acuse por sitio se deriva por unión con la tabla de comandos, y
 > distingue honestamente *sin gabinete comandable* de *sin acuse* — dos cosas que colapsar sería
 > mentir. Faltan las dos que el cliente pide:
@@ -656,17 +679,42 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 > - **La salida.** No hay PDF ni CSV: cero referencias a simulacros en los routers de exportación
 >   y de reportes. El propio código llama a esto *"la evidencia de cumplimiento que se le entrega
 >   a Protección Civil"*, y hoy se entrega **mirando una pantalla**.
-- **Componente:** api + web · **Depende de:** T-5.13 · **Prioridad: MEDIA**
+- **Componente:** api + web · **Depende de:** ~~T-5.13~~ **nada** · **Prioridad: MEDIA**
+  > **Corregido al ejecutarla.** La dependencia declarada era **editorial, no técnica**: se
+  > escribió porque las dos fichas hablan de simulacros y quedaban juntas en el plan. Nada del
+  > reporte toca las plantillas — el reporte lee `drills` + `commands`, que existen desde
+  > T-2.48, y T-5.13 crea una tabla nueva que el reporte no consulta. Se cerró **sin** T-5.13.
 - **Objetivo:** un documento que el cliente pueda enseñarle a Protección Civil.
 - **Criterios de aceptación:**
-  - [ ] Instante del acuse por sitio persistido y expuesto, con su diferencia contra el arranque
+  - [x] Instante del acuse por sitio persistido y expuesto, con su diferencia contra el arranque
         del simulacro.
-  - [ ] El tiempo se declara **por sitio y agregado**, y los sitios sin acuse no se cuentan como
+  - [x] El tiempo se declara **por sitio y agregado**, y los sitios sin acuse no se cuentan como
         cero: salen aparte.
-  - [ ] Exportación del reporte con las mismas propiedades que el dictamen: determinista,
+  - [x] Exportación del reporte con las mismas propiedades que el dictamen: determinista,
         hasheada, registrada como evidencia y auditada.
-  - [ ] El documento distingue las tres categorías (acusó / no acusó / no tenía gabinete) y dice
+  - [x] El documento distingue las tres categorías (acusó / no acusó / no tenía gabinete) y dice
         cuántos sitios hay en cada una.
+- **Cómo se cerró (2026-09-02).** `commands` gana `acked_at` (migración `0055`) y `DrillSiteOut`
+  lo expone junto a `ack_latency_s`; `POST /drills/{id}/report` renderiza el PDF con el mismo
+  camino que el dictamen —determinista, hasheado, inscrito en `evidence_objects` (que gana
+  `drill_id`) y auditado—. La consola pinta `+M:SS · sello UTC` por sitio y la `MEDIANA` en el
+  resumen.
+  **La decisión que gobierna la ficha entera: quien no acusó NO entra como cero.** `null` viaja
+  intacto del SQL al píxel, en las cuatro capas, y cada una tiene su test: la latencia del que no
+  acusó es `None`, la mediana de un simulacro sin acuses es `None`, el resumen dice `MEDIANA S/D`
+  y **la fila del que no acusó no pinta nada** —ni `+0:00` ni un guion—, porque los dos se leen
+  como *respondió al instante*, que es lo contrario del hecho. Un cero además arrastraría la
+  mediana hacia abajo justo en el simulacro que peor salió.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **El discriminador de agenda es `scheduled_at`, no `started_at`.** El guard que impide
+  exportar una agenda —un documento que afirmaría cero de cero— se escribió primero sobre
+  `started_at`, que la fila de agenda **también** lleva. Se caza con test.
+  (2) **`evidence_objects` se declara ANTES que `drills` en `db/schema.sql`**, así que la FK
+  inline reventaba una carga limpia; va como `ALTER TABLE` después del bloque de `drills`.
+  (3) **Generar va con `drill_start`, no con `export`**, copiando la separación que ya existe
+  entre `generate_report` y `export` en el dictamen: **generar inscribe una evidencia inmutable**
+  del tenant, y `gov_operator` —que existe para recogerla— la descarga después por la ruta de
+  evidencia de siempre. El reporte se registra con `drill_id`, así que le llega.
 
 ### [ ] T-5.15 · **Cadena de acuse**: cuánto tardó y quién recibió — `SOFTWARE`
 > Tres de las cuatro preguntas se contestan hoy: quién acusó (con fila en el timeline y verbo en

@@ -13,6 +13,27 @@ import TriageDetail from "./TriageDetail";
 import type { TriageDetailProps } from "./TriageDetail";
 import type { TriageRow } from "./model";
 
+// [T-5.12] `ClassificationPanel` consulta al servidor y este arnés no monta
+// QueryClient: se mockea el hook, como hace `DrillBanner.test`. Este fichero
+// prueba que los hechos no dependen del dictamen, no la clasificación —que tiene
+// su propio test con sus cuatro estados.
+vi.mock("./useClassification", async () => {
+  const real = await vi.importActual<typeof import("./useClassification")>("./useClassification");
+  return {
+    ...real,
+    useClassification: () => ({
+      items: [],
+      current: null,
+      loading: false,
+      readError: false,
+      updatedAt: 0,
+      refetch: vi.fn(),
+      clasificar: vi.fn(),
+      pending: false,
+    }),
+  };
+});
+
 // StructuralTriage pide sus propios datos; aquí lo que se prueba es DÓNDE se monta.
 vi.mock("./StructuralTriage", () => ({
   default: ({ incidentId }: { incidentId: string }) => (

@@ -15,6 +15,7 @@ import { utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
 import CctvPanel from "./CctvPanel";
+import { ClassificationPanel } from "./ClassificationPanel";
 import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
@@ -228,6 +229,10 @@ export default function TriageDetail({
           tras cada sismo relevante: tiempo de aviso, estaciones que contribuyeron y
           contraste con el catálogo. Convierte "el sistema funcionó" en algo
           verificable. */}
+      {/* [T-5.12] Qué FUE este incidente. Va junto al resumen post-evento porque
+          contesta la última pregunta del mismo bloque: el resumen dice cómo se
+          comportó el sistema, y esto dice si hacía falta que se comportara. */}
+      <ClassificationPanel incidentId={row.incident.incident_id} />
       <PostEventSummary forensics={forensics} />
       {/* [T-3.12.c] La ÚNICA superficie de CCTV de la consola. Va junto al resumen
           post-evento porque responde a la misma pregunta —cómo se comportó el

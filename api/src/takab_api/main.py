@@ -10,6 +10,7 @@ from takab_api.notify.providers import build_providers, channel_reality
 from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.cctv import router as cctv_router
+from takab_api.routers.classification import router as classification_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
 from takab_api.routers.demo_mode import router as demo_mode_router
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
 
     # Simulacro institucional (Fase 1.8 · T-1.60).
+    app.include_router(classification_router)
     app.include_router(demo_mode_router)
     app.include_router(drills_router)
 

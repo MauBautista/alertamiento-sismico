@@ -150,3 +150,37 @@ export function nextArmedDrill(items: readonly DrillOut[], nowMs: number): Drill
     Date.parse(d.scheduled_at as string) < Date.parse(best.scheduled_at as string) ? d : best,
   );
 }
+
+// ── [T-5.14] Cuánto tardó cada sitio en acusar ──────────────────────────────
+//
+// Estas dos funciones existen para NO escribir un cero donde lo que hay es un
+// hueco. `ack_latency_s` viene `null` del servidor cuando el sitio no acusó, y
+// ese `null` tiene que llegar entero hasta el píxel: colapsarlo en `0` diría
+// «respondió al instante» del edificio que no respondió, y además tiraría la
+// mediana hacia abajo en el simulacro que peor salió. Es la misma familia de
+// defecto que un fallback pintado de `ok`.
+
+/** `+M:SS` (o `+H:MM:SS`), o `null` cuando no hay latencia que enseñar. */
+export function latenciaLegible(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return null;
+  // Negativo = el reloj del servidor se movió entre emisión y acuse. No es una
+  // respuesta anticipada: es un dato roto, y se calla en vez de pintarse.
+  if (seconds < 0) return null;
+  const total = Math.round(seconds);
+  const s = String(total % 60).padStart(2, "0");
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  return h > 0 ? `+${h}:${String(m).padStart(2, "0")}:${s}` : `+${m}:${s}`;
+}
+
+/** Mediana de los que SÍ acusaron, o `null` si no acusó nadie. */
+export function medianaLatencia(drill: DrillOut): number | null {
+  const lats = drill.sites
+    .filter((s) => drillSiteAck(s, drill) === "acked")
+    .map((s) => s.ack_latency_s)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0)
+    .sort((a, b) => a - b);
+  if (lats.length === 0) return null;
+  const mid = Math.floor(lats.length / 2);
+  return lats.length % 2 === 1 ? lats[mid] : (lats[mid - 1] + lats[mid]) / 2;
+}

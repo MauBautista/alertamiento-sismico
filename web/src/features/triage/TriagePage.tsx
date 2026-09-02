@@ -6,6 +6,7 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import CatalogPanel from "./CatalogPanel";
+import { FalsePositiveRate } from "./ClassificationPanel";
 import InspectionMatrix from "./InspectionMatrix";
 import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
@@ -206,6 +207,9 @@ export default function TriagePage() {
               if (row) setSelected(row);
             }}
           />
+          {/* [T-5.12] La métrica que decide si el cliente renueva, y que hasta
+              hoy no era calculable ni a mano sobre la base. */}
+          <FalsePositiveRate />
           <CatalogPanel />
         </div>
 

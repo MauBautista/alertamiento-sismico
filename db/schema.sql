@@ -313,6 +313,40 @@ CREATE TRIGGER trg_incident_actions_append_only
 
 -- [ANALISIS-00] Dictámenes INMUTABLES e versionados: firmar o corregir = INSERTAR una
 -- fila nueva que apunta a la anterior vía supersedes_dictamen_id. Nunca UPDATE/DELETE.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CLASIFICACIÓN DE INCIDENTES (T-5.12)
+--
+-- Cerrar un incidente no pedía ni admitía una razón, así que la tasa de FALSOS
+-- POSITIVOS —la métrica que decide si un cliente renueva— no era calculable ni a
+-- mano sobre la base. Y el documento de entrega se deslinda de una tasa que el
+-- sistema no medía.
+--
+-- Tabla propia y ENCADENADA, no una columna de `incidents`, por la misma razón
+-- que los dictámenes: corregir INSERTA y declara a cuál sustituye, nunca
+-- reescribe. La vigente es la que nadie sustituye.
+--
+-- SIN valor por defecto: `indeterminado` se ELIGE. Un default silencioso
+-- convertiría «nadie lo revisó» en «se revisó y no se supo», que son cosas
+-- distintas y solo la primera pide trabajo. Los no clasificados NO tienen fila.
+CREATE TABLE incident_classifications (
+  classification_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants,
+  incident_id    uuid NOT NULL REFERENCES incidents,
+  classification text NOT NULL CHECK (classification IN
+                 ('real','falso_positivo','prueba','indeterminado')),
+  note           text NOT NULL DEFAULT '',
+  classified_by  uuid NOT NULL,
+  classified_at  timestamptz NOT NULL DEFAULT now(),
+  supersedes_id  uuid REFERENCES incident_classifications(classification_id)
+);
+CREATE INDEX idx_incident_classifications_incident
+  ON incident_classifications (incident_id, classified_at DESC);
+CREATE INDEX idx_incident_classifications_tenant_at
+  ON incident_classifications (tenant_id, classified_at DESC);
+CREATE TRIGGER trg_incident_classifications_append_only
+  BEFORE UPDATE OR DELETE ON incident_classifications
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
 CREATE TABLE dictamens (
   dictamen_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants,      -- [ANALISIS-00] regla de oro 5
@@ -540,6 +574,12 @@ CREATE TABLE evidence_objects (
   tenant_id   uuid NOT NULL REFERENCES tenants,
   incident_id uuid REFERENCES incidents,
   sensor_id   uuid REFERENCES sensors,
+  -- [T-5.14] El cuarto dueño posible. NO se reutiliza `incident_id`: un simulacro
+  -- JAMÁS crea incidente, y colgarlo de uno sería inventar el vínculo que
+  -- `test_un_drill_jamas_crea_incidentes` existe para negar. La FK va MÁS ABAJO,
+  -- junto a `drills`: esta tabla se crea antes que aquélla y una referencia
+  -- adelantada no carga en una base nueva.
+  drill_id    uuid,
   kind        text NOT NULL CHECK (kind IN ('miniseed','photo','report_pdf','log')),
   s3_key      text NOT NULL,
   ts_from     timestamptz, ts_to timestamptz,
@@ -1026,6 +1066,11 @@ CREATE TABLE commands (
   status      text NOT NULL DEFAULT 'pending'
               CHECK (status IN ('pending','acked','rejected','expired')),
   ack         jsonb,
+  -- [T-5.14] El instante del acuse, puesto por el SERVIDOR. El `executed_at` del
+  -- `ack` lo manda el gabinete, y su reloj es justo lo que el sistema vigila
+  -- (`ntp_offset_s`): restarle `issued_at` mezclaría dos relojes. Éste comparte
+  -- reloj con `issued_at`, y por eso su diferencia significa algo.
+  acked_at    timestamptz,
   error       text
 );
 CREATE INDEX idx_commands_site    ON commands (site_id, issued_at DESC);
@@ -1422,6 +1467,13 @@ CREATE TABLE drill_sites (
   command_id uuid REFERENCES commands(command_id),  -- NULL = sitio sin gateway comandable
   PRIMARY KEY (drill_id, site_id)
 );
+
+-- [T-5.14] La FK de `evidence_objects.drill_id`, aquí porque `drills` no existía
+-- cuando se declaró la columna. El reporte de un simulacro es evidencia como el
+-- dictamen de un incidente, y cuelga de su simulacro.
+ALTER TABLE evidence_objects
+  ADD CONSTRAINT evidence_objects_drill_id_fkey
+  FOREIGN KEY (drill_id) REFERENCES drills(drill_id);
 
 GRANT SELECT, INSERT, UPDATE ON drills TO takab_app;
 GRANT SELECT, INSERT ON drill_sites TO takab_app;
