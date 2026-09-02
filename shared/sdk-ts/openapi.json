@@ -5351,6 +5351,10 @@
             "title": "Calibrated",
             "type": "boolean"
           },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "criticality": {
             "title": "Criticality",
             "type": "string"
@@ -5499,6 +5503,7 @@
           "site_id",
           "tenant_id",
           "name",
+          "code",
           "criticality",
           "lon",
           "lat",

@@ -113,6 +113,11 @@ class MapSiteState(BaseModel):
     site_id: UUID
     tenant_id: UUID
     name: str
+    #: [T-5.05] El código del sitio, que es un HECHO del dato y no una política.
+    #: La consola lo necesita para distinguir un sitio de demostración de uno real
+    #: —hoy se ven idénticos en el mapa— y decidir cómo se rotula es cosa de la
+    #: presentación, no del contrato: aquí sale el código y allí se interpreta.
+    code: str
     criticality: str
     lon: float
     lat: float

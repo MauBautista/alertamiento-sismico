@@ -279,6 +279,21 @@
   align-items: flex-end;
   gap: 4px;
 }
+/* [T-5.05] Rótulo de dato de DEMOSTRACIÓN.
+   Gris neutro y borde discontinuo, NO ámbar: en esta consola el ámbar ya
+   significa «simulacro en curso» y «dato retenido», y darle un tercer
+   significado lo vacía de los tres. El discontinuo es el mismo lenguaje que
+   usan los botones inertes del panel del gabinete (T-5.01): «esto no es real».
+   No reserva espacio: en producción no hay sitios sim y la tarjeta es idéntica. */
+.fleet-card__demo {
+  padding: 2px 6px;
+  border: 1px dashed var(--tk-fg-3);
+  border-radius: 3px;
+  color: var(--tk-fg-3);
+  font: 700 9px/1 var(--f-ui);
+  letter-spacing: 0.14em;
+}
+
 .fleet-card__sid {
   font-family: var(--tk-font-mono);
   font-size: 10px;

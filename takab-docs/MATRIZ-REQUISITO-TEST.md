@@ -237,7 +237,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| DIF-shakemap.a | La consola no promete una escala de intensidad que no existe. | `CUBIERTO` | `web/src/features/console/MapPanel.test.tsx:358`<br>`NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente` | Ninguna capa de MapLibre empieza por `mmi` ni hay leyenda «INTENSIDAD MMI». |
+| DIF-shakemap.a | La consola no promete una escala de intensidad que no existe. | `CUBIERTO` | `web/src/features/console/MapPanel.test.tsx:360`<br>`NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente` | Ninguna capa de MapLibre empieza por `mmi` ni hay leyenda «INTENSIDAD MMI». |
 
 ### INV-Shake OS · **Modificar el Shake OS** — el RS4D es solo sensor (P3).
 

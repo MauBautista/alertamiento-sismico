@@ -401,3 +401,33 @@ describe("ventana de mantenimiento en la tarjeta", () => {
     );
   });
 });
+
+// [T-5.05] UN GABINETE SIMULADO SE VEÍA IGUAL QUE UNO REAL.
+//
+// La separación entre lo simulado y lo real vivía en el seed y en el despliegue,
+// no en la pantalla — que es justo donde se hace la demo. En `make soc-local` un
+// prospecto veía 21 sitios y 5 gabinetes con idéntico aspecto en el mapa y en la
+// flota, de los cuales 20 y 4 no existen.
+describe("SiteCard · lo de demostración se ve de demostración", () => {
+  it("un gabinete simulado sale marcado", () => {
+    render(<SiteCard cabinet={cabinet({ siteCode: "site-sim-003" }, { serial: "gw-sim-0002" })} />);
+    expect(screen.getByTestId("demo-badge")).toHaveTextContent("DEMO");
+  });
+
+  it("basta con que lo sea el SITIO, aunque el serial no lo delate", () => {
+    render(<SiteCard cabinet={cabinet({ siteCode: "site-sim-007" }, { serial: "gw-loquesea" })} />);
+    expect(screen.getByTestId("demo-badge")).toBeInTheDocument();
+  });
+
+  it("un gabinete REAL no se marca — y esta es la mitad que importa", () => {
+    // Rotular de demostración un edificio con gente dentro es peor que no
+    // rotular nada: el operador dejaría de creerse lo que ve en esa tarjeta.
+    render(<SiteCard cabinet={cabinet()} />);
+    expect(screen.queryByTestId("demo-badge")).toBeNull();
+  });
+
+  it("con cero sitios simulados la tarjeta es idéntica: el rótulo no reserva sitio", () => {
+    const { container } = render(<SiteCard cabinet={cabinet()} />);
+    expect(container.querySelectorAll(".fleet-card__demo")).toHaveLength(0);
+  });
+});

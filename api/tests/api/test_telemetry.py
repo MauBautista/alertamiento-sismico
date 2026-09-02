@@ -131,6 +131,25 @@ async def test_map_state_has_site_with_open_incident(telemetry_client, seed) -> 
     assert S_B not in sites
 
 
+async def test_map_state_publica_el_codigo_del_sitio(telemetry_client, seed) -> None:
+    """[T-5.05] El mapa necesita el CÓDIGO para poder distinguir demo de real.
+
+    Hasta esta ficha el payload traía el `name` y nada más, así que la consola no
+    tenía con qué separar los sitios simulados de los reales: en el mapa se veían
+    idénticos, y en una demostración eso son veinte edificios que no existen
+    pintados como si existieran.
+
+    Sale el código —un HECHO— y no un `demo: bool`: decidir qué se rotula es de la
+    presentación, y meter la política del seed en el contrato la duplicaría.
+    """
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    assert r.status_code == 200, r.text
+    sites = {s["site_id"]: s for s in r.json()["sites"]}
+    assert sites, "el mapa salió vacío: el test no comprueba nada"
+    for site in sites.values():
+        assert site["code"], f"sitio sin código en el mapa: {site['site_id']}"
+
+
 async def test_map_state_reports_shaking_MEASURED_not_alert_severity(
     telemetry_client, seed
 ) -> None:

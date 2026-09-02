@@ -162,6 +162,7 @@ def _map_site(r: Any, s: Settings) -> MapSiteState:
         site_id=r.site_id,
         tenant_id=r.tenant_id,
         name=r.name,
+        code=r.code,
         criticality=r.criticality,
         lon=r.lon,
         lat=r.lat,

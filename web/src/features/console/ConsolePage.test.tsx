@@ -79,6 +79,7 @@ const SITE: MapSiteState = {
   site_id: "s-1",
   tenant_id: "t-1",
   name: "Planta Cholula",
+  code: "site-cholula-a",
   criticality: "high",
   lon: -98.3014,
   lat: 19.0633,

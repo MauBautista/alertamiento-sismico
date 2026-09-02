@@ -112,7 +112,7 @@ def select_metrics(
 # por sitio, en UNA sola query. El LATERAL lee la vista ``*_secure`` (el filtro de
 # tenant por sites vive dentro de la vista); el cagg base no se nombra.
 _MAP_STATE_SQL = """
-SELECT s.site_id, s.tenant_id, s.name, s.criticality,
+SELECT s.site_id, s.tenant_id, s.name, s.code, s.criticality,
        ST_X(s.geom::geometry) AS lon, ST_Y(s.geom::geometry) AS lat,
        lm.bucket      AS last_bucket,
        lm.max_pga_g   AS max_pga_g,

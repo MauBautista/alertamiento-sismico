@@ -15,6 +15,7 @@ import { maintenanceLabel, muteAckLine, muteHeadline, muteOutcome } from "../con
 import { useSelfTest } from "./useSelfTest";
 import type { FleetCabinet } from "./useFleet";
 import { DEGRADADO, RETIRADO, SD, SIN_ENLACE } from "./estadoGlosario";
+import { esDeDemostracion, ROTULO_DEMO } from "./datosDeDemostracion";
 
 export interface SiteCardProps {
   cabinet: FleetCabinet;
@@ -140,6 +141,19 @@ export default function SiteCard({
             >
               VENTANA
             </button>
+          )}
+          {/* [T-5.05] Un gabinete de DEMOSTRACIÓN se veía idéntico a uno real.
+              Gris y con borde discontinuo a propósito: el ámbar de esta consola
+              ya significa simulacro y dato retenido, y un tercer significado en
+              el mismo color deja de significar nada. */}
+          {(esDeDemostracion(gw.serial) || esDeDemostracion(cabinet.siteCode)) && (
+            <span
+              className="fleet-card__demo"
+              data-testid="demo-badge"
+              title="Dato de demostración: este gabinete no existe"
+            >
+              {ROTULO_DEMO}
+            </span>
           )}
           <span className="fleet-card__sid">{gw.serial}</span>
         </div>

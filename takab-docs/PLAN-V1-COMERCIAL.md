@@ -294,7 +294,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   siendo un lote propio, y ahora se sabe que es más grande. Su `arreglo` ya no lista los ficheros:
   manda re-derivarlos, porque la lista anterior nació desactualizada.
 
-### [ ] T-5.04 · El perímetro de claims de la landing cubre **cifras**, no **capacidades** — `SOFTWARE`
+### [x] T-5.04 · El perímetro de claims de la landing cubre **cifras**, no **capacidades** — `SOFTWARE` · **CERRADA 2026-09-02**
 > `landing/tests/contenido.test.mjs:58` defiende un perímetro real y bien pensado: prohíbe cifras
 > medidas y prohíbe citar normas. **No prohíbe afirmar una capacidad que nadie acreditó**, y por
 > eso pasó en verde lo siguiente, hoy publicado:
@@ -315,20 +315,32 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que el sitio público no afirme en presente una capacidad cuyo gate está abierto,
   y que un test lo impida en adelante.
 - **Criterios de aceptación:**
-  - [ ] Las dos afirmaciones se reformulan sin perder la venta: el alcance de diseño se dice como
+  - [x] Las dos afirmaciones se reformulan sin perder la venta: el alcance de diseño se dice como
         alcance de diseño y la acreditación por inmueble se dice como tal. La columna "No hace"
         **no se toca**: ya es correcta.
-  - [ ] El perímetro del test gana una regla de **capacidades**: una lista de afirmaciones que
+  - [x] El perímetro del test gana una regla de **capacidades**: una lista de afirmaciones que
         exigen un gate cerrado, **derivada** del censo de gates de
         `MATRIZ-REQUISITO-TEST.md`, no tecleada. Con el gate abierto, la afirmación en presente
         pone el test en rojo.
-  - [ ] La regla nombra el gate concreto en el mensaje de fallo, para que quien la dispare sepa
+  - [x] La regla nombra el gate concreto en el mensaje de fallo, para que quien la dispare sepa
         qué haría falta para poder decirlo.
-  - [ ] Guarda anti-prohibir-de-más: las afirmaciones que **sí** están acreditadas (operar sin
+  - [x] Guarda anti-prohibir-de-más: las afirmaciones que **sí** están acreditadas (operar sin
         internet, evidencia inmutable, aislamiento entre clientes, sin cuenta atrás) siguen
         pasando.
+- **Cómo se cerró (2026-09-02).** El perímetro gana **una regla de capacidades derivada del
+  registro §10 del runbook de auditoría** — que es donde los gates se marcan presencialmente— y
+  no de una lista de gates tecleada: `Object.keys(CAPACIDADES_GATEADAS)` se compara **por
+  igualdad** contra los diez del registro, así que un gate nuevo obliga a decidir qué
+  afirmaciones dependen de él antes de poder seguir. Lo editorial —qué frase cuelga de qué
+  gate— va escrito con su nombre; lo que no puede quedar a juicio es **olvidarse** de un gate.
+  **Detalle que costó una corrida:** el registro tiene una fila (`G-01`) con **una columna
+  menos** que las otras nueve, así que el parseo va por CONTENIDO y no por posición — un índice
+  fijo daría «abierto» a un gate acreditado, y equivocarse en esa dirección es lo caro.
+  **Y una corrección al propio informe:** «respaldo de energía» **se queda**. Está en la lista de
+  materiales y es lo que se instala; lo que faltaba no era quitarlo sino decir que también se
+  acredita en el inmueble, y ahora lo dice.
 
-### [ ] T-5.05 · Un gabinete **simulado** se ve igual que uno real — `SOFTWARE`
+### [x] T-5.05 · Un gabinete **simulado** se ve igual que uno real — `SOFTWARE` · **CERRADA 2026-09-02**
 > La separación entre lo simulado y lo real vive en el seed (`db/seeds/sim_fleet.sql`, con su
 > aviso en mayúsculas de que jamás se aplica al entorno desplegado) y en el despliegue
 > (`deploy/cloud/deploy.sh` solo siembra el de producción). **No vive en la pantalla**, que es
@@ -346,15 +358,30 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que un sitio o gabinete de demostración sea inconfundible en el mapa y en la
   flota, sin ensuciar la consola de producción.
 - **Criterios de aceptación:**
-  - [ ] La marca se **deriva** de un hecho del dato (prefijo del código/serial, o columna
+  - [x] La marca se **deriva** de un hecho del dato (prefijo del código/serial, o columna
         explícita), decidido y escrito en la ficha con su razón. Si es columna, migración
         idempotente y con dueño correcto.
-  - [ ] El mapa y la ficha de flota rotulan lo simulado de forma legible a distancia, y el rótulo
+  - [x] El mapa y la ficha de flota rotulan lo simulado de forma legible a distancia, y el rótulo
         **no se confunde** con el ámbar de simulacro ni con el de dato viejo.
-  - [ ] Test: con la flota mixta, todo lo sim sale marcado y **nada real sale marcado** — las dos
+  - [x] Test: con la flota mixta, todo lo sim sale marcado y **nada real sale marcado** — las dos
         mitades, comparadas por igualdad.
-  - [ ] Con cero sitios sim (el caso de producción) la interfaz es idéntica a hoy: la marca no
+  - [x] Con cero sitios sim (el caso de producción) la interfaz es idéntica a hoy: la marca no
         reserva espacio ni cambia el diseño.
+- **Cómo se cerró (2026-09-02).** **Decisión: la marca se deriva del PREFIJO del código/serial,
+  no de una columna nueva.** La razón: la convención ya existe, está documentada en la cabecera
+  del propio seed y ya la defiende un test; una columna sería una **segunda verdad** sobre el
+  mismo hecho, y las dos podrían divergir. Los patrones van **anclados** (`^site-sim-\d+$`) a
+  propósito: un `includes("sim")` marcaría de demostración un edificio real llamado
+  `site-simon-01`, y equivocarse en esa dirección —rotular de demo un inmueble con gente
+  dentro— es peor que no rotular nada. Hay un test para ese caso exacto.
+  **Lo que hizo falta en el servidor:** el contrato del mapa no publicaba el código, solo el
+  nombre, así que la consola no tenía con qué distinguir. Ahora publica `code` —un **hecho**—
+  y no un `demo: bool`: decidir qué se rotula es de la presentación, y meter la política del
+  seed en el contrato la duplicaría.
+  **El color, que no es un detalle:** el rótulo va **gris con borde discontinuo, no ámbar**. En
+  esta consola el ámbar ya significa «simulacro en curso» y «dato retenido»; un tercer
+  significado en el mismo color vacía los tres. El discontinuo es el mismo lenguaje que
+  `T-5.01` le dio a los botones inertes del panel: «esto no es real».
 
 ### [ ] T-5.06 · El runbook de alta de estación **rompe la ingesta** — `SOFTWARE`
 > `RUNBOOK-ALTA-DE-ESTACION.md:122-124` manda escribir en el archivo de entorno del gabinete:

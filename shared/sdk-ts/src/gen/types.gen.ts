@@ -1345,6 +1345,7 @@ export type MapIncident = {
  */
 export type MapSiteState = {
     calibrated: boolean;
+    code: string;
     criticality: string;
     felt: string;
     felt_pga_g: number | null;
