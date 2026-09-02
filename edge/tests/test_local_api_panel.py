@@ -1779,6 +1779,174 @@ def test_cerrar_alerta_aparece_con_el_enclave_y_exige_dos_clics(tmp_path):
     assert _posts(dos, "api/reset")
 
 
+# --------------------------------------------------- [T-5.01] modo demo INERTE
+#
+# El defecto que estos tests vienen a cerrar, medido en la auditoría V1-COMERCIAL
+# (2026-09-02): con `?demo=` puesto, `doAction()` hacía el POST igual —el único
+# `if (!DEMO)` del flujo solo se saltaba el refetch de estado— y `PROBAR
+# ACTUADORES` («sostiene sirena+estrobo · pulso en gas, ascensores, puertas») se
+# pintaba incondicionalmente. O sea: abrir el panel en modo demo en el monitor de
+# una exposición y pulsar un botón **accionaba el edificio de verdad**, mientras
+# la cinta de arriba afirmaba `DEMO · NO ES ESTADO REAL`.
+#
+# Es la familia de defecto que este repositorio ya persigue —una superficie que
+# dice «bien» cuando quiere decir «no sé»— con un agravante: aquí la superficie
+# dice «nada de lo que ves es real» al lado de un botón que sí lo es.
+#
+# LOS TESTS CUENTAN PETICIONES, NO LEEN PROSA. Un test que comprobara el rótulo
+# `INERTE` habría pasado en verde con el POST intacto, que es exactamente cómo
+# `test_el_modo_demo_se_declara_siempre` —que sigue siendo correcto— convivió con
+# el defecto durante meses: verifica que la cinta se VEA, no que los botones
+# estén inertes.
+
+
+def _escenas_demo() -> list[str]:
+    """Los nombres de escena, DERIVADOS del propio `index.html`.
+
+    Escritos a mano, una escena nueva entraría sin prueba — y las escenas son
+    justo lo que puebla la pantalla de falsedades creíbles. El delimitador es el
+    literal del objeto, y que se haya delimitado de verdad lo comprueba el
+    `assert` de no-vacuidad de aquí abajo.
+    """
+    html = _INDEX.read_text("utf-8")
+    i = html.index("const SCENES = {")
+    bloque = html[i : html.index("\n};", i)]
+    escenas = re.findall(r"^  ([a-z_]+):", bloque, re.M)
+    assert len(escenas) >= 10, f"el barrido de escenas se quedó corto: {escenas}"
+    return escenas
+
+
+def _etiquetas_de_accion(out: dict) -> list[str]:
+    """Las etiquetas de los botones, DERIVADAS del DOM que pintó `renderActions`.
+
+    Enumerarlas a mano dejaría fuera al botón siguiente, que es el que va a tener
+    el defecto. Cada botón es `<button><span>ETIQUETA</span><span class=sub>…`,
+    así que la etiqueta es el texto del PRIMER hijo.
+    """
+    caja = _node(out["tree"], "action-btns")
+    return [
+        (b["kids"][0].get("txt") or "").strip()
+        for b in caja.get("kids", ())
+        if b.get("tag") == "BUTTON" and b.get("kids")
+    ]
+
+
+@pytest.mark.parametrize("escena", _escenas_demo())
+def test_en_modo_demo_ningun_boton_manda_una_orden_al_gabinete(tmp_path, escena):
+    """CERO peticiones al gabinete desde cualquier escena de demostración.
+
+    Se pulsan TODOS los botones que la escena ofrezca, derivados del DOM. El
+    conteo esperado es cero y se dice en voz alta: un test de conjunto vacío que
+    no declara su tamaño pasa por vacuidad, y aquí la vacuidad sería el propio
+    defecto (una escena que no pinta botones también da cero POST).
+    """
+    primera = _render(tmp_path, search=f"?demo={escena}", clicks=["frame"])
+    etiquetas = _etiquetas_de_accion(primera)
+
+    out = _render(
+        tmp_path,
+        search=f"?demo={escena}",
+        clicks=["frame"] + [f"action:{e}" for e in etiquetas] + ["frame"],
+    )
+    ordenes = [f for f in out["fetches"] if f["method"] == "POST"]
+    assert ordenes == [], (
+        f"la escena {escena!r} mandó {len(ordenes)} orden(es) al gabinete: "
+        f"{[o['url'] for o in ordenes]}\n"
+        "  La pantalla dice DEMO · NO ES ESTADO REAL mientras el botón acciona el edificio."
+    )
+
+
+def test_la_demo_pulsa_botones_de_verdad_y_no_una_lista_vacia(tmp_path):
+    """Guarda de no-vacuidad del test de arriba, con su cifra a la vista.
+
+    Sin esto, borrar `renderActions` entero dejaría el test anterior en verde:
+    cero botones también producen cero peticiones.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame"])
+    etiquetas = _etiquetas_de_accion(out)
+    assert len(etiquetas) >= 5, f"la escena de alerta pinta {len(etiquetas)} botones: {etiquetas}"
+    assert "PROBAR ACTUADORES" in etiquetas, etiquetas
+    assert "CERRAR ALERTA" in etiquetas, etiquetas
+
+
+def test_en_modo_demo_los_botones_se_declaran_inertes(tmp_path):
+    """Se PINTAN, y se pintan inertes.
+
+    Esconderlos sería mentir en la otra dirección: `?demo=` existe para enseñar
+    cómo se ve el panel en estados que no se pueden reproducir a voluntad, y un
+    panel sin sus botones no se parece al real. La honestidad es que sigan ahí y
+    que digan que no hacen nada.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame"])
+    caja = _node(out["tree"], "action-btns")
+    botones = [b for b in caja.get("kids", ()) if b.get("tag") == "BUTTON"]
+    assert botones, "sin botones no hay nada que declarar inerte"
+    for b in botones:
+        assert "inert" in b.get("cls", "").split(), f"botón sin marca de inerte: {_text(b)!r}"
+    assert "INERTE EN DEMO" in _txt(out, "action-btns")
+
+
+def test_en_modo_demo_el_clic_lo_dice_en_vez_de_callarse(tmp_path):
+    """Un botón que no hace nada y no explica por qué es una avería aparente.
+
+    El panel ya grita sus rechazos con el NOMBRE de la orden (UX post-incidente
+    del 2026-07-31); este camino usa el mismo canal.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame", "action:PROBAR SIRENA"])
+    assert "MODO DEMO" in _txt(out, "pin-msg")
+    assert "PROBAR SIRENA" in _txt(out, "action-toast")
+
+
+def test_el_panel_manda_sus_ordenes_por_UN_SOLO_embudo_y_la_guarda_esta_en_el():
+    """Lo que hace estructural a la guarda de demo, en vez de disciplinaria.
+
+    Los tests de arriba pulsan los botones que `renderActions` pinta. Si mañana
+    alguien añade un `fetch(..., POST)` en otro sitio —un atajo de teclado, un
+    gesto, una acción desde una tarjeta— quedaría fuera de ese barrido y el
+    defecto volvería por la puerta de al lado.
+
+    Medido hoy: en las ~2 400 líneas del panel hay **un** POST, y su función
+    tiene la guarda la primera. Este test lo exige por conteo, no por revisión.
+    """
+    html = _INDEX.read_text("utf-8")
+    posts = [
+        n for n, ln in enumerate(html.splitlines(), 1) if re.search(r"method:\s*['\"]POST['\"]", ln)
+    ]
+    assert len(posts) == 1, (
+        f"el panel tiene {len(posts)} caminos que mandan órdenes (líneas {posts}).\n"
+        "  La guarda de `?demo=` vive en `doAction`; un POST fuera de ahí la esquiva.\n"
+        "  O se enruta por `doAction`, o este test crece con su razón escrita."
+    )
+    cuerpo = html[html.index("async function doAction(") : html.index("function renderActions(")]
+    assert cuerpo.index("if (DEMO){") < cuerpo.index("if (twoStep"), (
+        "la guarda de demo tiene que ir ANTES del armado de dos clics: si no, el "
+        "botón se queda armado y el operador cree que la orden salió."
+    )
+
+
+def test_sin_modo_demo_los_mismos_botones_siguen_mandando_su_orden(tmp_path):
+    """Guarda anti-prohibir-de-más: la mitad que hace inútil una prohibición.
+
+    Sin esto, `doAction(){ return; }` dejaría verdes todos los tests de arriba y
+    el panel del gabinete real se quedaría sin botones que funcionen.
+    """
+    st = _base()
+    st["siren_sounding"] = True
+    st["alert_latched"] = True
+    con_demo = _etiquetas_de_accion(
+        _render(tmp_path, status=st, search="?demo=alerta", clicks=["frame"])
+    )
+    sin_demo = _etiquetas_de_accion(_render(tmp_path, status=st, clicks=["frame"]))
+    assert sin_demo == con_demo, (
+        "la demo cambió QUÉ botones se ofrecen; solo puede cambiar si accionan.\n"
+        f"  con demo: {con_demo}\n  sin demo: {sin_demo}"
+    )
+
+    out = _render(tmp_path, status=st, clicks=["action:PROBAR SIRENA"])
+    assert _posts(out, "api/siren-test"), "sin demo, el botón tiene que seguir mandando su orden"
+    assert "INERTE EN DEMO" not in _txt(out, "action-btns")
+
+
 def test_sin_audio_no_se_ofrece_el_voceo_de_simulacro(tmp_path):
     st = _base()
     st["audio"] = None

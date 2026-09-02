@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **342** · `[x]` **266** · `[~]` **9** · `[ ]` **67**
+****Conteo de tareas:** total **342** · `[x]` **268** · `[~]` **9** · `[ ]` **65**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11370,7 +11370,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 > demo no necesita que la sirena suene con el gabinete apagado, necesita **no afirmar que lo
 > hace**.
 
-### [ ] T-5.01 · En modo demo los botones **mandan órdenes de verdad** — `SOFTWARE`
+### [x] T-5.01 · En modo demo los botones **mandan órdenes de verdad** — `SOFTWARE` · **CERRADA 2026-09-02**
 > **Verificado abriendo el archivo, no leyendo una ficha.** `edge/takab_edge/local_api/index.html`
 > — `doAction()` ejecuta `fetch(endpoint, {method:'POST', headers})` **sin comprobar `DEMO`**. El
 > único `if (!DEMO)` del flujo se salta el refetch de estado, nada más. Y `renderActions()` pinta
@@ -11392,17 +11392,29 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que con `?demo=` puesto ninguna acción alcance al gabinete, y que la pantalla lo
   diga en el propio botón en vez de solo en la cinta.
 - **Criterios de aceptación:**
-  - [ ] `doAction()` se niega con `DEMO` puesto: no emite `fetch`, y el mensaje de la caja del PIN
+  - [x] `doAction()` se niega con `DEMO` puesto: no emite `fetch`, y el mensaje de la caja del PIN
         dice por qué (algo como `MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS`).
-  - [ ] `renderActions()` **no pinta** botones de actuación en demo, o los pinta visiblemente
+  - [x] `renderActions()` **no pinta** botones de actuación en demo, o los pinta visiblemente
         inertes. La decisión de cuál de las dos se toma en la ficha, se escribe con su razón.
-  - [ ] Un test que **cuente peticiones**, no que lea prosa: con cada escena de demo, pulsar cada
+  - [x] Un test que **cuente peticiones**, no que lea prosa: con cada escena de demo, pulsar cada
         botón produce **cero** `fetch` a `api/*`. Que el conteo esperado sea cero se declara en
         voz alta para que el test no pueda pasar por vacuidad.
-  - [ ] El test cubre las cinco acciones alcanzables desde una escena de demo, enumeradas
+  - [x] El test cubre las cinco acciones alcanzables desde una escena de demo, enumeradas
         **derivándolas de `renderActions`**, no a mano.
-  - [ ] Sin `?demo=` nada cambia: los mismos botones siguen mandando sus mismas órdenes (guarda
+  - [x] Sin `?demo=` nada cambia: los mismos botones siguen mandando sus mismas órdenes (guarda
         anti-prohibir-de-más).
+- **Cómo se cerró (2026-09-02).** **Decisión: se PINTAN, inertes** — no se esconden. La razón:
+  `?demo=` existe para enseñar cómo se ve el panel en estados que no se pueden reproducir a
+  voluntad, y un panel sin sus botones no se parece al real; esconderlos sería mentir en la otra
+  dirección. La honestidad es que sigan ahí, con borde discontinuo y el subtítulo
+  `INERTE EN DEMO`, y que la orden no salga.
+  **Lo que midieron los tests al escribirlos primero, y agranda el hallazgo de la auditoría:**
+  el defecto no era un camino teórico — **las doce escenas de demo mandaban entre 2 y 4 órdenes
+  reales cada una** al gabinete que las pintaba.
+  **Y lo que apareció al arreglarlo:** `doAction` es el **único** camino del panel que hace
+  `POST`, en unas 2 400 líneas. Eso convierte la guarda en estructural en vez de disciplinaria,
+  y hay un test que lo exige por conteo: un segundo `POST` en otro sitio la esquivaría y sale
+  rojo con su número de línea.
 
 ### [ ] T-5.02 · **Modo demostración de sistema** — `SOFTWARE` + `DECISIÓN`
 > Hoy no existe. Nada bloquea push, SMS, WhatsApp, correo, comandos firmados ni apertura de
@@ -11439,7 +11451,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
         solo.
   - [ ] Test de no-vacuidad: con el modo apagado, los mismos escenarios sí entregan y sí comandan.
 
-### [ ] T-5.03 · El banner del SOC llama **alerta sísmica** a un botón de pánico — `SOFTWARE`
+### [x] T-5.03 · El banner del SOC llama **alerta sísmica** a un botón de pánico — `SOFTWARE` · **CERRADA 2026-09-02**
 > `web/src/features/console/ConsolePage.tsx:129` elige el incidente a destacar **solo por
 > `severity === "critical"`**, y `AlertBanner.tsx` lleva **dos** textos escritos a fuego:
 > `ALERTA SÍSMICA · PROTÉJASE` (`:23`) y `EDGE · RS4D · REGLAS LOCALES EJECUTADAS · ● AUTO`
@@ -11461,17 +11473,33 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que el titular y la atribución del banner salgan del `trigger`, y que ninguna
   superficie pueda volver a divergir sin que un test lo diga.
 - **Criterios de aceptación:**
-  - [ ] El titular y la línea de atribución se derivan del `trigger` del incidente, con las cuatro
+  - [x] El titular y la línea de atribución se derivan del `trigger` del incidente, con las cuatro
         fuentes cubiertas por igualdad (no un `default` que absorba lo desconocido).
-  - [ ] Un `trigger` nuevo que nadie mapeó **no cae a "alerta sísmica"**: sale rotulado como
+  - [x] Un `trigger` nuevo que nadie mapeó **no cae a "alerta sísmica"**: sale rotulado como
         desconocido y el build lo nombra.
-  - [ ] **Un test cross-superficie**: para cada `trigger`, el titular del SOC, el de la app y el
+  - [x] **Un test cross-superficie**: para cada `trigger`, el titular del SOC, el de la app y el
         del panel del gabinete son coherentes entre sí. Es el test que hoy no existe y que habría
         cazado esto.
-  - [ ] El glosario compartido de estados **incorpora el móvil** —hoy solo cubre panel y consola—
+  - [x] El glosario compartido de estados **incorpora el móvil** —hoy solo cubre panel y consola—
         y el eje de titulares de alerta, no solo el vocabulario de estado.
-  - [ ] La divergencia ya declarada en el glosario (`DATO RETENIDO` / `DATOS RETENIDOS`) se cierra
+  - [x] La divergencia ya declarada en el glosario (`DATO RETENIDO` / `DATOS RETENIDOS`) se cierra
         o se re-declara con su razón.
+- **Cómo se cerró (2026-09-02).** El titular y la atribución salen de
+  `web/src/features/console/alertHeadline.ts`, espejo consciente del módulo del móvil, y los
+  literales viven en `shared/glossary/estados.json` → `titulares_de_alerta`, con las tres
+  superficies. El censo cruzado de `edge/tests/test_glosario_de_estados.py` ata ese eje al
+  **CHECK de `incidents.trigger` por IGUALDAD**: el quinto trigger que alguien añada sale rojo
+  con su nombre hasta que se decida cómo se llama en las tres pantallas. Se saboteó a propósito
+  para comprobar que no pasa por vacuidad.
+  **Tres cosas aparecieron al hacerlo.** (1) La prueba del invariante estaba escrita ALREDEDOR
+  del defecto: su fixture traía `trigger: "local_threshold"` y aun así esperaba «PROTÉJASE»; se
+  le puso el trigger que le corresponde y se conservó el nombre del test, que es el ancla de
+  `INV-magnitud.a` en la matriz. (2) **El móvil tenía la misma grieta en su caso por defecto** —
+  un trigger no mapeado titulaba «ALERTA SÍSMICA»—, corregida en las dos superficies.
+  (3) **La divergencia se RE-DECLARA, no se cierra, y se encareció mientras estaba declarada:**
+  donde T-2.137 midió diez aserciones en ocho ficheros, hoy son **veinticuatro en doce**. Sigue
+  siendo un lote propio, y ahora se sabe que es más grande. Su `arreglo` ya no lista los ficheros:
+  manda re-derivarlos, porque la lista anterior nació desactualizada.
 
 ### [ ] T-5.04 · El perímetro de claims de la landing cubre **cifras**, no **capacidades** — `SOFTWARE`
 > `landing/tests/contenido.test.mjs:58` defiende un perímetro real y bien pensado: prohíbe cifras

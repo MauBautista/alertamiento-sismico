@@ -206,7 +206,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| INV-magnitud.a | Ninguna superficie muestra una magnitud preliminar; el banner MVP dice PROTÉJASE y nada más. | `CUBIERTO` | `web/src/features/console/AlertBanner.test.tsx:27`<br>`banner MVP: PROTÉJASE + sitio + EVENT_ID + PGA MAX; sin magnitud ni T-MINUS`<br>`mobile/src/features/alert/CrisisView.test.tsx:16`<br>`sasmex: SIN magnitud, SIN ETA, SIN cuenta regresiva (test que FALLA si aparecen)` | El banner dice exactamente «ALERTA SÍSMICA · PROTÉJASE» y no case `/M\s*\d\.\d/` ni `T-MINUS`.<br>Mismo escaneo de árbol completo contra `/magnitud/i`. |
+| INV-magnitud.a | Ninguna superficie muestra una magnitud preliminar; el banner MVP dice PROTÉJASE y nada más. | `CUBIERTO` | `web/src/features/console/AlertBanner.test.tsx:29`<br>`banner MVP: PROTÉJASE + sitio + EVENT_ID + PGA MAX; sin magnitud ni T-MINUS`<br>`mobile/src/features/alert/CrisisView.test.tsx:16`<br>`sasmex: SIN magnitud, SIN ETA, SIN cuenta regresiva (test que FALLA si aparecen)` | El banner dice exactamente «ALERTA SÍSMICA · PROTÉJASE» y no case `/M\s*\d\.\d/` ni `T-MINUS`.<br>Mismo escaneo de árbol completo contra `/magnitud/i`. |
 
 ### INV-streaming crudo continuo · **Streaming continuo de forma de onda cruda** a la nube (P6) — regla de oro 9.
 

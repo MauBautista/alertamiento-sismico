@@ -77,6 +77,11 @@ canvas{display:block}
 .btn.primary:hover{background:var(--tk-cyan-hover)}
 .btn.primary:active{background:var(--tk-cyan-press)}
 .btn.danger{background:var(--tk-crit);border-color:var(--tk-crit);color:var(--tk-surface-0)}
+/* [T-5.01] Botón INERTE: solo en ?demo=. Se pinta —esconderlo haría que la demo
+   no se pareciera al panel real— pero se ve que no acciona: borde discontinuo,
+   sin realce al pasar por encima y con su razón en el subtítulo. */
+.btn.inert{opacity:0.5;border-style:dashed;cursor:not-allowed}
+.btn.inert:hover,.btn.inert:active{background:transparent}
 .chip{padding:6px 9px;border-radius:4px;border:1px solid var(--tk-border-strong);background:transparent;color:var(--tk-fg-2);font:700 10px/1 var(--f-ui);letter-spacing:0.08em}
 .chip.on{background:var(--tk-cyan);border-color:var(--tk-cyan);color:var(--tk-surface-0)}
 .kv{display:flex;align-items:baseline;gap:7px}
@@ -592,6 +597,7 @@ const SIREN_REASON = { alert:'ALERTA', safe_state:'ESTADO SEGURO', test:'PRUEBA'
 /* ============================== estado ============================== */
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo');
+const DEMO_INHIBE = 'MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS · quita ?demo= de la URL para operar';
 const S = {
   status: null,          // último /api/status recibido (crudo, §5.1)
   lastGoodAt: null,      // reloj local de la última respuesta buena
@@ -1816,6 +1822,19 @@ function shoutRejection(text){
 }
 function clearRejection(){ S.toast = null; $('action-toast').classList.add('hide'); }
 async function doAction(label, endpoint, twoStep){
+  /* [T-5.01] En ?demo= ninguna orden sale de aquí, y se dice.
+     Hasta la auditoría del 2026-09-02 este camino no miraba `DEMO`: el único
+     `if (!DEMO)` del flujo estaba abajo y solo se saltaba el refetch, así que
+     un clic en el panel abierto en modo demo —en el monitor de una exposición,
+     por ejemplo— sostenía la sirena y pulsaba gas, ascensores y retenedores del
+     edificio de verdad, mientras la cinta de arriba decía DEMO · NO ES ESTADO
+     REAL. La guarda va la PRIMERA: antes del armado de dos clics, para que el
+     botón tampoco se quede a medio armar. */
+  if (DEMO){
+    setPinMsg(DEMO_INHIBE, 'warn');
+    shoutRejection('MODO DEMO · ' + label + ' NO SE ENVIÓ');
+    return;
+  }
   if (twoStep && S.armed !== endpoint){
     S.armed = endpoint; S.armedAt = performance.now();
     setPinMsg('CLIC NUEVAMENTE PARA CONFIRMAR · Orden bajo verificación humana · 5 s para cancelar', 'warn');
@@ -1884,10 +1903,15 @@ function renderActions(st){
   defs.forEach(([label, sub, endpoint, twoStep, kind]) => {
     const armed = S.armed === endpoint;
     const b = document.createElement('button');
-    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : ''));
+    /* [T-5.01] En demo el botón se PINTA y se declara inerte. La otra opción
+       —no pintarlo— haría que el panel de la demo no se pareciera al real, que
+       es justo lo que ?demo= existe para enseñar. Esto es la mitad visible; la
+       que impone es la guarda de `doAction`. */
+    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : '')) + (DEMO ? ' inert' : '');
     const t = document.createElement('span'); t.textContent = armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR' : label;
     const s = document.createElement('span'); s.className = 'sub';
-    s.textContent = armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub;
+    s.textContent = DEMO ? 'INERTE EN DEMO · no se manda ninguna orden al gabinete'
+      : (armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub);
     b.append(t, s);
     b.addEventListener('click', () => doAction(label, endpoint, twoStep));
     box.appendChild(b);

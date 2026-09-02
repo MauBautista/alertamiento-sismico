@@ -199,7 +199,14 @@ Esta parte tiene el mismo peso contractual que la anterior. Se divide en cuatro 
 
 **Consecuencia práctica y honesta de I-1 e I-2:** durante una alerta, la pantalla dice
 `ALERTA SÍSMICA · PROTÉJASE`, el sitio, el identificador del evento y el PGA máximo medido.
-Nada más. Si su plan de emergencia, su capacitación o su material interno prometen una cuenta
+Nada más.
+
+> **Matiz añadido el 2026-09-02 (`T-5.03`), y es una precisión, no un cambio de alcance.** Ese
+> titular es el de la **alerta oficial** —el contacto del receptor SASMEX—, que es la única fuente
+> que puede llevarse ese nombre. Las otras tres se titulan según lo que son: el umbral de una sola
+> estación dice `AVISO SÍSMICO`, porque la política ratificada le prohíbe actuar; el quórum de red
+> dice que lo confirmó la red; y una activación manual dice que fue manual. Lo que **no** cambia es
+> lo que este apartado promete: en ninguna de las cuatro hay cuenta atrás ni magnitud. Si su plan de emergencia, su capacitación o su material interno prometen una cuenta
 atrás, **hay que corregirlos antes de la puesta en servicio**.
 
 ## 5 · Lo que no hace hoy y sí podría construirse

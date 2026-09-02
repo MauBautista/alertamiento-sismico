@@ -2,7 +2,11 @@ import { formatPga, sourceLabel } from "./source";
 
 describe("sourceLabel — solo datos reales (§2.1-A)", () => {
   it("sasmex: booleano del WR-1 — SIN magnitud, SIN ETA, SIN números", () => {
-    const s = sourceLabel({ trigger: "sasmex", max_pga_g: 0.15, node_count: 4 });
+    const s = sourceLabel({
+      trigger: "sasmex",
+      max_pga_g: 0.15,
+      node_count: 4,
+    });
     expect(s.label).toBe("FUENTE · SASMEX WR-1");
     // aunque existan otros datos en el payload, la fuente SASMEX no los porta;
     // el único dígito permitido es el del nombre del receptor ("WR-1")
@@ -12,26 +16,40 @@ describe("sourceLabel — solo datos reales (§2.1-A)", () => {
 
   it("detección local: PGA instrumental medido (o nada, jamás inventado)", () => {
     expect(
-      sourceLabel({ trigger: "local_threshold", max_pga_g: 0.15, node_count: null }).detail,
+      sourceLabel({
+        trigger: "local_threshold",
+        max_pga_g: 0.15,
+        node_count: null,
+      }).detail,
     ).toBe("PGA 0.15g MEDIDO");
     expect(
-      sourceLabel({ trigger: "local_threshold", max_pga_g: null, node_count: null }).detail,
+      sourceLabel({
+        trigger: "local_threshold",
+        max_pga_g: null,
+        node_count: null,
+      }).detail,
     ).toBeNull();
   });
 
   it("quórum: estaciones corroborantes (mismo dato que el Triage)", () => {
-    expect(sourceLabel({ trigger: "quorum", max_pga_g: null, node_count: 3 }).detail).toBe(
-      "CONFIRMADO · 3 ESTACIONES",
-    );
     expect(
-      sourceLabel({ trigger: "quorum", max_pga_g: null, node_count: null }).detail,
+      sourceLabel({ trigger: "quorum", max_pga_g: null, node_count: 3 }).detail,
+    ).toBe("CONFIRMADO · 3 ESTACIONES");
+    expect(
+      sourceLabel({ trigger: "quorum", max_pga_g: null, node_count: null })
+        .detail,
     ).toBeNull();
   });
 
-  it("trigger desconocido ⇒ crudo en mayúsculas, sin adornos", () => {
-    expect(sourceLabel({ trigger: "misterio", max_pga_g: null, node_count: null })).toEqual({
-      title: "ALERTA SÍSMICA",
-      eyebrow: "● ALERTA SÍSMICA ACTIVA",
+  it("trigger desconocido ⇒ crudo en mayúsculas, y NO se titula como sismo", () => {
+    // [T-5.03] Un trigger que nadie mapeó no puede afirmar que hubo un sismo:
+    // el quinto valor que alguien añada al CHECK de `incidents.trigger` saldría
+    // aquí, y salía como «ALERTA SÍSMICA» en el texto más grande de la pantalla.
+    expect(
+      sourceLabel({ trigger: "misterio", max_pga_g: null, node_count: null }),
+    ).toEqual({
+      title: "ALERTA ACTIVA · ORIGEN NO RECONOCIDO",
+      eyebrow: "● ALERTA ACTIVA",
       label: "FUENTE · MISTERIO",
       detail: null,
     });
@@ -65,7 +83,9 @@ describe("sourceLabel · el titular no le atribuye a SASMEX lo que no dijo", () 
   });
 
   it("la detección propia dice que es propia, y el cuórum que es de la red", () => {
-    expect(de("local_threshold").title).toBe("SISMO DETECTADO EN ESTE EDIFICIO");
+    expect(de("local_threshold").title).toBe(
+      "SISMO DETECTADO EN ESTE EDIFICIO",
+    );
     expect(de("quorum").title).toBe("SISMO CONFIRMADO POR LA RED");
   });
 

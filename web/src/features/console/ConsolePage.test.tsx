@@ -223,7 +223,13 @@ describe("ConsolePage", () => {
   it("monta el wall: mapa, banner crítico e incidentes con identidad real", () => {
     render(page());
     expect(screen.getByTestId("map-mock")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("ALERTA SÍSMICA · PROTÉJASE");
+    // [T-5.03] El banner dice lo que dice el `trigger` del fixture (`local_threshold`),
+    // no un titular fijo. Hasta hoy este test —como el de `AlertBanner`— afirmaba
+    // «ALERTA SÍSMICA · PROTÉJASE» para un umbral instrumental: la misma mentira,
+    // encodada por segunda vez en una prueba distinta. El `data-trigger` ata la
+    // aserción al fixture para que no puedan volver a separarse en silencio.
+    expect(screen.getByRole("alert")).toHaveAttribute("data-trigger", "local_threshold");
+    expect(screen.getByRole("alert")).toHaveTextContent("AVISO SÍSMICO · UMBRAL INSTRUMENTAL");
     expect(screen.getByRole("alert")).toHaveTextContent("Planta Cholula");
     expect(screen.getByText("1 ACTIVOS")).toBeInTheDocument();
     expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · abcdef12");
