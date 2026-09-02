@@ -648,7 +648,9 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   que `TRASPASO-SESION.md §4` ya nombró: *un censo que enumera a mano acaba divergiendo*. Se
   deriva en tres líneas comparando los dos por igualdad; no se hizo aquí porque volver verde esas
   dieciséis celdas cambia qué botones ven seis roles en las suites existentes, y eso es un lote
-  propio, no un apéndice de esta ficha.
+  propio, no un apéndice de esta ficha. **Fichado como `T-5.28`**, con la tabla de las dieciséis
+  y con lo que de verdad hay que mirar al cerrarla: nueve de ellas apagan los paneles de CCTV en
+  toda la suite de web, así que la divergencia no relaja una aserción — **borra la población**.
 
 ### [ ] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE`
 > No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un

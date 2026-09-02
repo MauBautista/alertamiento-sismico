@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **342** · `[x]` **273** · `[~]` **9** · `[ ]` **60**
+****Conteo de tareas:** total **343** · `[x]` **273** · `[~]` **9** · `[ ]` **61**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11855,7 +11855,9 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   que `TRASPASO-SESION.md §4` ya nombró: *un censo que enumera a mano acaba divergiendo*. Se
   deriva en tres líneas comparando los dos por igualdad; no se hizo aquí porque volver verde esas
   dieciséis celdas cambia qué botones ven seis roles en las suites existentes, y eso es un lote
-  propio, no un apéndice de esta ficha.
+  propio, no un apéndice de esta ficha. **Fichado como `T-5.28`**, con la tabla de las dieciséis
+  y con lo que de verdad hay que mirar al cerrarla: nueve de ellas apagan los paneles de CCTV en
+  toda la suite de web, así que la divergencia no relaja una aserción — **borra la población**.
 
 ### [ ] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE`
 > No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un
@@ -12245,6 +12247,42 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
         esquiva el caso.**
   - [ ] El test del identificador deja de borrar el folio antes de afirmar.
   - [ ] Guarda de no-vacuidad en ambos: cada uno declara cuántos elementos espera.
+
+### [ ] T-5.28 · El **espejo de la matriz RBAC** en web lleva 16 celdas divergentes — `SOFTWARE`
+> **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.12`, el 2026-09-02).
+>
+> `web/src/test-utils/meFixtures.ts` se declara a sí mismo *"espejo SOLO PARA TESTS de
+> `api/src/takab_api/auth/matrix.py`"* y añade: *"Si la matriz cambia en el backend, este archivo
+> debe cambiar con ella"*. **Nada lo comprueba.** Es exactamente el patrón que
+> `TRASPASO-SESION.md §4` ya nombró — *un censo que enumera a mano acaba divergiendo* — y ya
+> divergió **dieciséis veces**:
+>
+> | Acción | Roles a los que la matriz REAL se la da y el espejo no |
+> |---|---|
+> | `cctv_read` | superadmin, tenant_admin, soc_operator, inspector, building_admin |
+> | `cctv_video` | superadmin, tenant_admin, soc_operator, building_admin |
+> | `manage_privacy_notice` / `manage_privacy_erasure` | superadmin, tenant_admin |
+> | `read_audit` | takab_support |
+> | `checkin_submit` / `panic_vote` | occupant |
+>
+> **Por qué importa, y no es cosmético:** un permiso que en el espejo está en `false` hace que el
+> componente que lo gatea **no se monte** en los tests. Nueve de esas celdas apagan los paneles de
+> CCTV en toda la suite de web: pasan en verde porque **nadie los renderiza**. La divergencia no
+> relaja una aserción, **borra la población**. Se descubrió porque `soc_operator` —el rol
+> principal de la consola— no tenía el permiso que `T-5.12` necesitaba, y el panel salía vacío.
+- **Componente:** web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el espejo no pueda divergir en silencio, y que las dieciséis celdas se
+  reconcilien de una vez.
+- **Criterios de aceptación:**
+  - [ ] Guarda que compare el espejo contra `ROLE_ACTION_MATRIX` y `ROLE_ROUTE_MATRIX` **por
+        igualdad**, no por contención — como ya hacen `serverDataCensus` y `designTokens`. Vale
+        derivar el fichero en vez de vigilarlo; lo que no vale es un espejo escrito a mano sin
+        gate, que es lo que hay.
+  - [ ] Las 16 celdas se ponen al día, **y se mira qué tests cambian de veredicto al hacerlo**:
+        montar nueve paneles de CCTV que hoy nadie renderiza puede destapar aserciones que nunca
+        se han ejecutado. Ese es el valor de la ficha, no la sincronización en sí.
+  - [ ] Guarda de no-vacuidad: declara en voz alta cuántos roles y cuántas acciones compara, o un
+        analizador que se quede ciego pasará en verde comparando cero contra cero.
 
 ---
 
