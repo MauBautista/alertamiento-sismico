@@ -157,6 +157,28 @@ class MapSiteState(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
 
+    # --- [T-5.26] Identidad del hardware de la estación -----------------------
+    # El mapa decía qué sintió el edificio y cómo estaba su enlace, y NADA sobre
+    # qué aparato lo dice. Para saber el serial, el firmware o el modelo del
+    # sismógrafo había que abandonar la consola e irse a Flota — un salto de
+    # pantalla que en una demostración cae en el peor momento, y que en un
+    # incidente real obliga a cambiar de contexto justo cuando no se debe.
+    #
+    # Todos opcionales y con `None` = **no se sabe**, jamás un valor de relleno:
+    # una estación puede no tener gabinete (`SIN GABINETE`), o tenerlo sin
+    # sensores dados de alta. La UI lo declara igual que el resto de sus huecos.
+    #: Serial del gabinete que responde por la estación (el del latido más fresco).
+    serial: str | None = None
+    #: Versión de firmware que ese gabinete DECLARA (`gateways.fw_version`).
+    fw_version: str | None = None
+    #: Modelo(s) de los sismógrafos activos del sitio. Con varios distintos van
+    #: los dos separados por «·»: inventar uno solo sería peor que enseñarlos.
+    sensor_models: str | None = None
+    #: Respaldo eléctrico: `line` · `battery` · `unknown` (o `None` si no hay dato).
+    #: Ya viajaba en la consulta del mapa y se tiraba al construir la respuesta.
+    power_status: str | None = None
+    battery_pct: float | None = None
+
 
 class MapState(BaseModel):
     """Snapshot de todos los sitios visibles (RLS) que alimenta el mapa del SOC."""

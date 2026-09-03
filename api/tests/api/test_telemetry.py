@@ -150,6 +150,93 @@ async def test_map_state_publica_el_codigo_del_sitio(telemetry_client, seed) -> 
         assert site["code"], f"sitio sin código en el mapa: {site['site_id']}"
 
 
+# ── [T-5.26] La identidad del hardware, sin salir de la consola ──────────────
+#
+# El mapa decía qué sintió el edificio y cómo estaba su enlace, y NADA sobre qué
+# aparato lo dice: para el serial, el firmware o el modelo del sismógrafo había
+# que abandonar la consola e irse a Flota. En una demostración eso es un salto de
+# pantalla en el peor momento; en un incidente real, un cambio de contexto justo
+# cuando no se debe.
+
+_GW_T526 = "8e000000-0000-0000-0000-0000000005a6"
+
+
+@pytest.fixture
+def gabinete_del_sitio_a():
+    """Un gabinete real para `S_A`, con su latido. Se retira SIEMPRE al terminar.
+
+    No se añade al fixture compartido a propósito: hoy los sitios del mapa salen
+    `SIN GABINETE` y varios tests miden justo eso. Darles hardware a todos
+    cambiaría el estado del enlace bajo los pies de esos tests.
+
+    El `finally` no es ceremonia: `gateways` referencia `sites`, así que un
+    gabinete huérfano rompería el `DELETE FROM sites` del cleanup y envenenaría
+    el archivo entero con un fallo de clave foránea que no menciona esta línea.
+    """
+    import psycopg
+
+    from conftest import _dsn
+
+    with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial, fw_version) "
+            "VALUES (%s, %s, %s, 'SER-T526', '62f3f1e')",
+            (_GW_T526, T_PRIV_A, S_A),
+        )
+        cur.execute(
+            "INSERT INTO device_health (ts, tenant_id, gateway_id, reason, power_status,"
+            " battery_pct) VALUES (now(), %s, %s, 'heartbeat', 'battery', 61.5)",
+            (T_PRIV_A, _GW_T526),
+        )
+    try:
+        yield _GW_T526
+    finally:
+        with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM device_health WHERE gateway_id = %s", (_GW_T526,))
+            cur.execute("DELETE FROM gateways WHERE gateway_id = %s", (_GW_T526,))
+
+
+async def test_map_state_trae_la_IDENTIDAD_del_hardware(
+    telemetry_client, seed, gabinete_del_sitio_a
+) -> None:
+    """Serial, firmware, modelo del sismógrafo y respaldo eléctrico, en el mapa."""
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    assert r.status_code == 200, r.text
+    sitio = next(s for s in r.json()["sites"] if s["site_id"] == S_A)
+
+    assert sitio["serial"] == "SER-T526", (
+        f"el serial del gabinete no llega al mapa ({sitio['serial']!r}): el dato "
+        "sigue viviendo solo en Flota"
+    )
+    assert sitio["fw_version"] == "62f3f1e"
+    assert sitio["sensor_models"] == "RS4D", (
+        f"el modelo del sismógrafo no llega al mapa: {sitio['sensor_models']!r}"
+    )
+    # El respaldo eléctrico YA viajaba en la consulta —lo usa `derive_fleet_state`—
+    # y se tiraba al construir la respuesta: el dato estaba y no se veía.
+    assert sitio["power_status"] == "battery"
+    assert sitio["battery_pct"] == pytest.approx(61.5)
+
+
+async def test_el_mapa_dice_SIN_DATO_en_vez_de_inventar_identidad(telemetry_client, seed) -> None:
+    """El criterio honesto que ya usa el medidor de respaldo: sin dato, lo dice.
+
+    Sin este test, un `""` o un `0` de relleno pasarían: son valores que la UI
+    pinta como una versión de firmware y una batería que nadie ha medido. Aquí los
+    sitios NO tienen gabinete, así que la respuesta correcta es `None` en los
+    cuatro campos de hardware — y el modelo del sensor sí, porque ése sí consta.
+    """
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    sitio = next(s for s in r.json()["sites"] if s["site_id"] == S_A)
+
+    for campo in ("serial", "fw_version", "power_status", "battery_pct"):
+        assert sitio[campo] is None, (
+            f"{campo} = {sitio[campo]!r} para una estación SIN GABINETE: eso es "
+            "afirmar un hardware que no existe"
+        )
+    assert sitio["sensor_models"] == "RS4D", "el sensor sí está dado de alta y no aparece"
+
+
 async def test_map_state_reports_shaking_MEASURED_not_alert_severity(
     telemetry_client, seed
 ) -> None:

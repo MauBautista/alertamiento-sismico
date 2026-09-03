@@ -5794,6 +5794,17 @@
       "MapSiteState": {
         "description": "Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.",
         "properties": {
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Pct"
+          },
           "calibrated": {
             "title": "Calibrated",
             "type": "boolean"
@@ -5831,6 +5842,17 @@
               }
             ],
             "title": "Felt Pgv Cms"
+          },
+          "fw_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
           },
           "last_bucket": {
             "anyOf": [
@@ -5924,6 +5946,17 @@
               }
             ]
           },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Status"
+          },
           "seedlink_lag_s": {
             "anyOf": [
               {
@@ -5934,6 +5967,28 @@
               }
             ],
             "title": "Seedlink Lag S"
+          },
+          "sensor_models": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Models"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
           },
           "site_id": {
             "format": "uuid",

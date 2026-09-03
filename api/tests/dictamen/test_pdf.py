@@ -219,3 +219,100 @@ def test_con_narrativa_el_veredicto_no_cambia() -> None:
     sin = model()
     assert con.verdict_status == sin.verdict_status
     assert render(con).startswith(b"%PDF")
+
+
+# ── [T-5.26] Las huellas que se imprimían a medias ───────────────────────────
+#
+# El sha256 de cada objeto de evidencia salía a **32 de 64** caracteres (y a 16
+# en la custodia del vídeo) mientras la portada del mismo documento instruye
+# verificarlo con `sha256sum`. Con medio hash no se puede.
+#
+# CÓMO SE PRUEBA, Y POR QUÉ NO DE LA FORMA OBVIA. El flujo del PDF va comprimido
+# Y con fuentes embebidas, así que el texto viaja como índices de glifo: buscar
+# el hash en los bytes no encuentra nada, ni entero ni cortado (comprobado).
+#
+# Y el atajo de «cambio la cola del hash y exijo que el PDF cambie» PASA EN VERDE
+# SOBRE EL DEFECTO: cualquier cambio del modelo mueve el `content_sha256` que la
+# PORTADA sí imprime, así que los dos documentos salen distintos aunque la
+# custodia siga cortada. Se escribió así primero y la mutación lo delató.
+#
+# Lo que sí cierra el hueco: la regla vive en una función pura
+# (`huella_de_custodia`) y un barrido del render comprueba que NADIE vuelve a
+# recortar un hash en el sitio donde se imprime.
+
+
+def test_la_huella_de_custodia_va_ENTERA() -> None:
+    from takab_api.dictamen.model import SIN_HASH, huella_de_custodia
+
+    sha = "a" * 64
+    assert huella_de_custodia(sha) == sha, "la huella de custodia sale recortada"
+    assert len(huella_de_custodia(sha)) == 64
+    assert huella_de_custodia(None) == SIN_HASH, "un objeto sin hash tiene que decirlo"
+
+
+def test_el_render_no_RECORTA_ninguna_huella() -> None:
+    """El barrido que ata la función a sus dos sitios de uso.
+
+    Sin esto, alguien puede volver a poner `[:32]` en la línea del render y la
+    función seguiría pasando sus tests sola. Se busca la forma exacta del defecto
+    —un corte aplicado a algo que se llama `sha256` o `huella`— en el módulo que
+    dibuja el documento.
+    """
+    import re
+    from pathlib import Path
+
+    fuente = (Path(__file__).resolve().parents[2] / "src/takab_api/dictamen/pdf.py").read_text(
+        encoding="utf-8"
+    )
+    cortes = re.findall(r"^\s*[^#\n]*(?:sha256|huella)[^\n]*\[\s*:\s*\d+\s*\]", fuente, re.M)
+
+    assert not cortes, (
+        "el dictamen vuelve a imprimir un hash recortado mientras su portada "
+        f"instruye verificarlo con sha256sum: {cortes}"
+    )
+
+
+def test_las_dos_secciones_de_custodia_usan_la_MISMA_funcion() -> None:
+    """Guarda anti-vacuidad del barrido de arriba: si el render dejara de llamar
+    a `huella_de_custodia`, aquél seguiría en verde sobre un módulo que ya no
+    imprime hashes por ahí. Son DOS: el miniSEED y el vídeo."""
+    from pathlib import Path
+
+    fuente = (Path(__file__).resolve().parents[2] / "src/takab_api/dictamen/pdf.py").read_text(
+        encoding="utf-8"
+    )
+    assert fuente.count("huella_de_custodia(") == 2, (
+        "la cadena de custodia y la del vídeo tienen que imprimir la huella por "
+        "el mismo camino; si aparece una tercera, decide si también es custodia"
+    )
+
+
+def test_el_ejecutivo_lleva_su_huella_de_contenido() -> None:
+    """Es el documento que lee QUIEN DECIDE, y era el único sin con qué verificarse.
+
+    La prueba se apoya en un campo que el ejecutivo NO imprime —la custodia— pero
+    que SÍ entra en `content_sha256()`: si el resumen no llevara la huella, los
+    dos documentos saldrían byte a byte idénticos.
+    """
+    a = render(model(), "executive")
+    b = render(model(evidence=[EvidenceRow("miniseed", "e" * 64, _OPENED)]), "executive")
+
+    assert a != b, (
+        "cambiar el contenido del incidente no cambia el documento ejecutivo: no "
+        "lleva su huella, así que quien decide no tiene con qué verificar lo que lee"
+    )
+
+
+def test_los_dos_documentos_declaran_LA_MISMA_huella() -> None:
+    """Es lo que permite comprobar que el resumen y el pericial hablan del mismo
+    incidente sin abrirlos a la vez. Sale del CONTENIDO, no del archivo — los dos
+    archivos son distintos y sus sha256 de fichero también."""
+    m = model()
+    assert m.content_sha256() == model().content_sha256()
+    assert render(m, "executive") != render(m), "los dos documentos son el mismo archivo"
+
+
+def test_las_dos_variantes_siguen_siendo_deterministas() -> None:
+    m = model(evidence=[EvidenceRow("miniseed", "f" * 64, _OPENED)])
+    assert render(m) == render(m)
+    assert render(m, "executive") == render(m, "executive")

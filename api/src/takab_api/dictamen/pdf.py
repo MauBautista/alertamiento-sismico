@@ -37,6 +37,7 @@ from takab_api.dictamen.model import (
     STATUS_LABELS,
     TS_FMT,
     ReportModel,
+    huella_de_custodia,
     lead_time_text,
     num,
 )
@@ -502,7 +503,13 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
     if m.evidence:
         pdf.set_font(pdf.body_font, "", 7.5)
         for e in m.evidence:
-            pdf.field(e.kind.upper(), (e.sha256 or "sin hash")[:32])
+            # [T-5.26] El sha256 ENTERO. Se imprimía a 32 de 64 caracteres
+            # mientras la portada de este mismo documento instruye verificarlo
+            # con `sha256sum`: con medio hash no se puede, y un dato inverificable
+            # presentado como verificable es peor que no imprimirlo.
+            # No había razón de espacio — 64 hex miden 108.7 mm de los 128 que
+            # deja la columna, así que entran en una sola línea.
+            pdf.field(e.kind.upper(), huella_de_custodia(e.sha256))
     else:
         pdf.para("Sin objetos de evidencia archivados.", size=7.5, muted=True)
 
@@ -550,8 +557,12 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     for obj in bloque.objetos:
         etiqueta = obj.papel or obj.tipo
         cuando = obj.momento.strftime(TS_FMT) if obj.momento else ABSENT
-        huella = (obj.sha256 or ABSENT)[:16]
-        pdf.field(f"{etiqueta} · {cuando}", f"{obj.estado} · sha256 {huella}…")
+        pdf.field(f"{etiqueta} · {cuando}", obj.estado)
+        # [T-5.26] Entero y en su propia línea. Iba a 16 de 64 con puntos
+        # suspensivos: honesto sobre estar cortado, e igual de inútil para
+        # verificar. Y son custodia igual que el miniSEED —lo dice esta misma
+        # sección cuatro líneas más arriba—, así que se imprimen igual.
+        pdf.field("", huella_de_custodia(obj.sha256))
 
 
 def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -644,6 +655,18 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.field("ESTACIONES QUE CORROBORARON", str(m.station_count))
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("FOLIO", m.folio)
+    # [T-5.26] La huella también aquí. Este es el documento que lee QUIEN DECIDE,
+    # y era el único de los dos que no traía con qué verificarse: el técnico la
+    # imprime en portada desde siempre. Es la MISMA huella en los dos —sale del
+    # contenido, no del archivo—, que es justo lo que permite comprobar que el
+    # resumen y el pericial hablan del mismo incidente sin abrirlos a la vez.
+    pdf.field("HASH DE CONTENIDO", m.content_sha256())
+    pdf.para(
+        "Esta huella identifica el CONTENIDO del dictamen, no este archivo. Es la "
+        "misma que imprime la variante técnica del mismo incidente.",
+        size=7,
+        muted=True,
+    )
 
     # [T-2.82] También en el ejecutivo: es el documento que lee quien DECIDE, y quien
     # decide es justo el que más fácilmente confundiría una declaración del cliente

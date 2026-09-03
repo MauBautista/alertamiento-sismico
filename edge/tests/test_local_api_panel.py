@@ -70,6 +70,9 @@ def _base() -> dict:
     return {
         "gateway_id": "gw-test-0001",
         "site_name": "Hospital de Prueba",
+        # [T-5.26] Identidad correlacionable con la consola.
+        "iot_thing": "gw-test-0001",
+        "station_code": "AM.R4F74",
         "now": _NOW,
         "uptime_s": 14520.0,
         "refresh_ms": 1000,
@@ -2326,3 +2329,39 @@ def test_un_silencio_CONFIRMADO_se_declara_silenciado(tmp_path: Path) -> None:
 
     assert "SILENCIADO" in texto, f"el nodo que sí confirmó el silencio no lo dice: {texto!r}"
     assert "SIGUE SONANDO" not in texto
+
+
+# ── [T-5.26] La identidad que permite casar el panel con la consola ──────────
+#
+# Quien está de pie delante del Pi veía su `gateway_id` y el nombre del sitio, y
+# nada más: para saber con qué nombre lo conoce la nube —lo que la consola
+# muestra— o qué código de estación firma las trazas del sismógrafo había que
+# abrir el archivo de entorno del gabinete.
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_el_panel_declara_su_identidad_correlacionable(tmp_path: Path) -> None:
+    salida = _render(tmp_path, status=_base())
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "gw-test-0001" in textos, "el panel no dice con qué nombre lo conoce la nube"
+    assert "AM.R4F74" in textos, (
+        "el panel no dice el código de estación del sismógrafo: sin él, quien está "
+        "delante del gabinete no puede correlacionar una traza con la consola"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_sin_identidad_configurada_el_panel_lo_DECLARA(tmp_path: Path) -> None:
+    """Cadena vacía = no configurado, y eso se dice. Un hueco se lee como un dato
+    bueno, que es justo lo que prohíbe la regla de oro 7."""
+    st = _base()
+    st["iot_thing"] = ""
+    st["station_code"] = ""
+    salida = _render(tmp_path, status=st)
+
+    textos = [h.get("txt") or "" for h in _leaves(salida["tree"])]
+    ident = next((x for x in textos if x == "S/D · S/D"), None)
+    assert ident is not None, (
+        f"sin identidad configurada el panel deja el hueco en vez de declararlo: {textos[:40]}"
+    )

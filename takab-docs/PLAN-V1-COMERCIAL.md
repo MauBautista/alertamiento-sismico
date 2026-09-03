@@ -1385,7 +1385,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   `LORA-SECUNDARIOS.md §3` (lo que lee quien escriba el firmware) y en el test (lo que corre CI),
   y un test nuevo comprueba que son los mismos — un vector correcto en un solo sitio es peor que
   no tenerlo.
-### [ ] T-5.26 · La huella del PDF se imprime **a la mitad**, y la ficha de estación está partida — `SOFTWARE`
+### [x] T-5.26 · La huella del PDF se imprime **a la mitad**, y la ficha de estación está partida — `SOFTWARE` · **CERRADA 2026-09-03**
 > Dos defectos de superficie que se arreglan juntos porque los dos son "el dato está y no se ve":
 >
 > - **La huella.** La cadena de custodia imprime el sha256 truncado a **32 de 64** caracteres,
@@ -1401,14 +1401,51 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** api + web + edge · **Depende de:** nada · **Prioridad: BAJA**
 - **Objetivo:** que un dato que el sistema ya tiene no se pierda en el último centímetro.
 - **Criterios de aceptación:**
-  - [ ] La cadena de custodia imprime el hash completo, o la portada deja de instruir verificarlo
+  - [x] La cadena de custodia imprime el hash completo, o la portada deja de instruir verificarlo
         — no las dos cosas.
-  - [ ] El documento ejecutivo lleva su huella de contenido.
-  - [ ] La ficha del mapa gana los campos de identidad de hardware, con el mismo criterio honesto
+  - [x] El documento ejecutivo lleva su huella de contenido.
+  - [x] La ficha del mapa gana los campos de identidad de hardware, con el mismo criterio honesto
         que ya usa el medidor de respaldo: sin dato, lo dice.
-  - [ ] El panel del gabinete declara su serial y el código de estación del sensor.
-  - [ ] Los PDF siguen siendo deterministas.
-
+  - [x] El panel del gabinete declara su serial y el código de estación del sensor.
+  - [x] Los PDF siguen siendo deterministas.
+- **Cómo se cerró (2026-09-03).**
+  **La huella, y una tercera que el informe no había visto.** El sha256 de cada objeto de
+  evidencia salía a **32 de 64** caracteres, y la custodia del **vídeo** a **16 de 64** con puntos
+  suspensivos — honesta sobre estar cortada e igual de inútil para verificar, y son custodia
+  igual que el miniSEED: lo dice esa misma sección del documento cuatro líneas más arriba. Las
+  dos van enteras. No había razón de espacio: 64 hex miden **108.7 mm de los 128** que deja la
+  columna, así que caben en una línea.
+  **La forma obvia de probarlo PASA EN VERDE SOBRE EL DEFECTO, y se descubrió por mutación.** El
+  atajo era «cambio la cola del hash y exijo que el PDF cambie»; pero cualquier cambio del modelo
+  mueve el `content_sha256` que la **portada sí imprime**, así que los dos documentos salen
+  distintos aunque la custodia siga cortada. Y la vía directa tampoco existe: el flujo del PDF va
+  comprimido **y** con fuentes embebidas, o sea que el texto viaja como índices de glifo y el hash
+  no aparece en los bytes ni entero ni cortado (comprobado). Se cierra donde se decide: la regla
+  vive en una función pura (`huella_de_custodia`) y un **barrido del render** prohíbe volver a
+  recortar un hash en el sitio donde se imprime, con su guarda anti-vacuidad —son DOS llamadas—
+  para que el barrido no siga en verde sobre un módulo que dejó de usarla. Las dos mutaciones
+  comprobadas.
+  **El ejecutivo ya lleva su huella.** Es el documento que lee **quien decide** y era el único de
+  los dos sin con qué verificarse. Es la MISMA huella en ambos —sale del contenido, no del
+  archivo—, y eso es justo lo que permite comprobar que el resumen y el pericial hablan del mismo
+  incidente sin abrirlos a la vez; el texto lo dice para que nadie la confunda con el hash del
+  fichero.
+  **La ficha del mapa gana la identidad del hardware:** serial, versión de firmware, modelo del
+  sismógrafo y respaldo eléctrico. Dos de esos campos **ya viajaban** en la consulta del mapa
+  —`power_status` y `battery_pct`, que usa `derive_fleet_state`— y se tiraban al construir la
+  respuesta: el dato estaba y no se veía. El modelo sale del mismo lateral que ya barría los
+  sensores activos, con `string_agg DISTINCT`: con uno sale su modelo y con dos distintos salen
+  los dos, porque inventar «el» modelo de un sitio mixto sería peor que enseñar ambos. Sin dato,
+  `null` ⇒ **S/D** en el panel, y `respaldoLegible(null, …)` devuelve `S/D` en vez de «LÍNEA»: un
+  gabinete que no ha reportado no está enchufado a la red, es que no ha dicho nada.
+  **El panel del gabinete declara su identidad correlacionable:** el nombre con el que la **nube**
+  lo conoce y el **código de estación** del sismógrafo. Salen de `thing_name` y de
+  `seedlink_station_code` —que ya resuelven sus propios fallbacks— y no de dos cadenas escritas
+  aquí, que acabarían divergiendo. Sin configurar dice `S/D`, no un hueco.
+  **Y el censo del panel cazó al autor otra vez:** añadir dos campos a `status()` sin tocar el
+  fixture del render puso en rojo `test_el_fixture_del_censo_es_el_status_real_hasta_el_ultimo_
+  anidado`, que compara los dos **recursivamente**. Es la guarda que impide que el panel se pruebe
+  contra un contrato que ya no existe.
 ### [ ] T-5.27 · Las **dos guardas que faltan** — `SOFTWARE`
 > Dos propiedades que hoy se cumplen **por construcción** y que nada impediría romper mañana:
 >

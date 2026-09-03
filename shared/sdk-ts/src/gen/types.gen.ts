@@ -1455,12 +1455,14 @@ export type MapIncident = {
  * Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.
  */
 export type MapSiteState = {
+    battery_pct?: number | null;
     calibrated: boolean;
     code: string;
     criticality: string;
     felt: string;
     felt_pga_g: number | null;
     felt_pgv_cms: number | null;
+    fw_version?: string | null;
     last_bucket: string | null;
     last_heartbeat_ts?: string | null;
     lat: number;
@@ -1472,7 +1474,10 @@ export type MapSiteState = {
     mqtt_rtt_ms?: number | null;
     name: string;
     open_incident: MapIncident | null;
+    power_status?: string | null;
     seedlink_lag_s?: number | null;
+    sensor_models?: string | null;
+    serial?: string | null;
     site_id: string;
     tenant_id: string;
 };

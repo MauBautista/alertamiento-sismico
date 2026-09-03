@@ -305,6 +305,14 @@ function ConsoleWall() {
             site_id: focusSiteId,
             name: focusSite?.name ?? `SITIO ${focusSiteId.slice(0, 8)}`,
             coords: focusSite ? coordsLabel(focusSite.lat, focusSite.lon) : null,
+            // [T-5.26] Identidad del hardware. `?? null` y no `?? ""`: sin sitio
+            // enfocado en el snapshot no se sabe nada de su aparato, y una cadena
+            // vacía se pinta como un serial en blanco en vez de como S/D.
+            serial: focusSite?.serial ?? null,
+            fwVersion: focusSite?.fw_version ?? null,
+            sensorModels: focusSite?.sensor_models ?? null,
+            powerStatus: focusSite?.power_status ?? null,
+            batteryPct: focusSite?.battery_pct ?? null,
           }}
           features={features}
           soh={soh}

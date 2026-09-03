@@ -192,6 +192,14 @@ def _map_site(r: Any, s: Settings) -> MapSiteState:
         last_heartbeat_ts=r.link_health_ts,
         mqtt_rtt_ms=r.link_mqtt_rtt_ms,
         seedlink_lag_s=r.link_seedlink_lag_s,
+        # [T-5.26] Identidad del hardware. `power_status`/`battery_pct` YA
+        # viajaban en la consulta —los usa `derive_fleet_state`— y se tiraban
+        # aquí: el dato estaba y no se veía.
+        serial=r.link_serial,
+        fw_version=r.link_fw_version,
+        sensor_models=r.sensor_models,
+        power_status=r.link_power_status,
+        battery_pct=r.link_battery_pct,
     )
 
 

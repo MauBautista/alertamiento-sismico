@@ -412,6 +412,12 @@ class LocalDashboard(EdgeModule):
         rose_zero_path: str = "",
         gateway_id: str = "",
         site_name: str = "",
+        # [T-5.26] La identidad que permite CORRELACIONAR este gabinete con lo
+        # que ve la consola, sin abrir el archivo de entorno de pie delante del
+        # Pi: el nombre con el que la nube lo conoce y el código de estación con
+        # el que firma cada traza el sismógrafo.
+        iot_thing: str = "",
+        station_code: str = "",
         refresh_ms: int = 1000,
         audio: object | None = None,
         drill: object | None = None,
@@ -455,6 +461,8 @@ class LocalDashboard(EdgeModule):
         self._backfill = backfill
         self._gateway_id = gateway_id
         self._site_name = site_name
+        self._iot_thing = iot_thing
+        self._station_code = station_code
         self._refresh_ms = refresh_ms
         self._host = host
         self._port = port
@@ -1167,6 +1175,10 @@ class LocalDashboard(EdgeModule):
             "gateway_id": self._gateway_id
             or (self._health.last_snapshot.gateway_id if self._health.last_snapshot else ""),
             "site_name": self._site_name,
+            # [T-5.26] Identidad correlacionable. Cadena vacía ⇒ no configurado;
+            # el panel lo declara S/D en vez de dejar el hueco (regla de oro 7).
+            "iot_thing": self._iot_thing,
+            "station_code": self._station_code,
             "now": now.isoformat(),
             "uptime_s": uptime,
             "refresh_ms": self._refresh_ms,

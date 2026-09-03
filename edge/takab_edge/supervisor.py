@@ -388,6 +388,13 @@ class EdgeSupervisor:
             rose_zero_path=s.rose_zero_path,  # T-2.29: punto 0 de la brújula
             gateway_id=s.gateway_id,
             site_name=s.site_name,
+            # [T-5.26] Quién es este gabinete para la nube y para el sismógrafo.
+            # `thing_name` cae al `gateway_id` cuando no hay IoT configurado —es
+            # la MISMA identidad que usa el transporte—, y el código de estación
+            # sale de `seedlink_station_code`, que ya resuelve el fallback a
+            # `station`: dos formas de escribirlo aquí acabarían divergiendo.
+            iot_thing=s.thing_name,
+            station_code=f"{s.seedlink_network}.{s.seedlink_station_code}",
             refresh_ms=s.local_api_refresh_ms,
             audio=self.audio,
             drill=self.drill,

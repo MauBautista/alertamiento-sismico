@@ -649,6 +649,29 @@ body {
   margin-top: 2px;
   letter-spacing: 0.04em;
 }
+/* [T-5.26] Identidad del hardware de la estación, bajo el nombre del sitio.
+   Rejilla etiqueta/valor para que se lea de un vistazo sin competir con el
+   nombre ni con el enlace a la ficha del edificio. */
+.soc-detail__hw {
+  display: grid;
+  /* `minmax(0, 1fr)` y no `1fr`: una pista con `1fr` desnudo tiene
+     `min-width: auto`, así que un serial largo o dos modelos de sismógrafo
+     separados por «·» desbordan la columna en vez de encoger. */
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 10px;
+  margin: 8px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.soc-detail__hw dt {
+  color: var(--tk-fg-3);
+}
+.soc-detail__hw dd {
+  margin: 0;
+  font-family: var(--tk-font-mono);
+  color: var(--tk-fg-2);
+  overflow-wrap: anywhere;
+}
 .soc-icon-btn {
   background: none; border: none; cursor: pointer;
   color: var(--tk-fg-2);

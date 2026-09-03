@@ -276,6 +276,25 @@ class ReportModel:
         return hashlib.sha256(payload.encode()).hexdigest()
 
 
+#: [T-5.26] Lo que se imprime donde va la huella de un objeto de evidencia.
+#:
+#: Existe como función —y no como un `or` en el sitio del render— porque la
+#: regla que encierra es la que estuvo rota: el sha256 se imprimía a **32 de 64**
+#: caracteres (y a 16 en la custodia del vídeo) mientras la portada del mismo
+#: documento instruye verificarlo con `sha256sum`. Con medio hash no se puede, y
+#: un dato inverificable presentado como verificable es peor que no imprimirlo:
+#: quien lo intente concluirá que la evidencia está corrupta.
+#:
+#: No había razón de espacio: 64 hex miden 108.7 mm de los 128 que deja la
+#: columna del PDF, así que caben en una sola línea.
+SIN_HASH = "sin hash"
+
+
+def huella_de_custodia(sha: str | None) -> str:
+    """El sha256 ENTERO, o la ausencia declarada. Nunca un trozo."""
+    return sha or SIN_HASH
+
+
 FELT_LABELS: dict[str, str] = {
     "trip": "SACUDIDA FUERTE (supera el umbral de actuación del inmueble)",
     "watch": "SACUDIDA MODERADA (supera el umbral de vigilancia)",

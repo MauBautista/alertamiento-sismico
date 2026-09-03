@@ -242,6 +242,14 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
     <span style="font:600 10px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3)">Sitio</span>
     <span id="hdr-site" style="font:500 14px/1 var(--f-ui)">—</span>
   </div>
+  <div style="width:1px;height:28px;background:var(--tk-border)"></div>
+  <!-- [T-5.26] Identidad CORRELACIONABLE con la consola. Quien está de pie
+       delante del Pi no podía saber ni con qué nombre lo conoce la nube ni qué
+       código de estación firma sus trazas sin abrir el archivo de entorno. -->
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font:600 10px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3)">Identidad</span>
+    <span id="hdr-ident" class="mono" style="font-size:11px">—</span>
+  </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span class="pill" id="pill-live" aria-live="polite"><span class="dot" id="pill-live-dot"><span class="halo"></span></span><span id="pill-live-txt">CONECTANDO…</span></span>
     <span class="pill" id="pill-cloud"><span class="dot" id="pill-cloud-dot"></span><span id="pill-cloud-txt">ENLACE NUBE · S/D</span></span>
@@ -661,7 +669,8 @@ function pushSamples(c, mins, maxs, gapBefore){
 function baseStatus(){
   const now = new Date().toISOString();
   return {
-    gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
+    gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', iot_thing:'gw-demo-0000',
+    station_code:'AM.R4F74', now, uptime_s: 14520, refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
     lora:{enabled:true, heartbeat_s:90, secondaries:[
       {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null, pending:null},
@@ -770,6 +779,7 @@ const SCENES = {
       missing:['door_retainer','elevator','gas_valve','siren','strobe']};
     return s; },
   arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
+    iot_thing:'gw-demo-0000', station_code:'AM.R4F74',
     now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
     audible_silenced:false, last_tier:null, relays:[],
     /* [T-2.68] Esta escena se llama "arranque en frío" y ese estado NO existe en
@@ -946,6 +956,12 @@ function render(){
   /* cabecera e identidad */
   $('hdr-id').textContent = (st.gateway_id||'—') + ' · LAN del inmueble';
   $('hdr-site').textContent = st.site_name || st.gateway_id || '—';
+  /* [T-5.26] El nombre con el que la NUBE conoce a este gabinete y el código de
+     estación con el que el sismógrafo firma cada traza. Son los dos identificadores
+     que permiten casar lo que se ve aquí con lo que se ve en la consola; sin ellos
+     había que abrir `edge.env` de pie delante del gabinete. `S/D` explícito cuando
+     no están configurados: un hueco se lee como si el dato fuera bueno. */
+  $('hdr-ident').textContent = (st.iot_thing || 'S/D') + ' · ' + (st.station_code || 'S/D');
   $('hdr-meta').textContent = 'CADENCIA ' + (st.refresh_ms||1000) + ' ms · config ' +
     (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version));
   const cloud = st.cloud || {online:false, queued:null};
