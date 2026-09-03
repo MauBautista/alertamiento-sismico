@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **273** · `[~]` **9** · `[ ]` **61**
+****Conteo de tareas:** total **343** · `[x]` **274** · `[~]` **9** · `[ ]` **60**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11925,7 +11925,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   del tenant, y `gov_operator` —que existe para recogerla— la descarga después por la ruta de
   evidencia de siempre. El reporte se registra con `drill_id`, así que le llega.
 
-### [ ] T-5.15 · **Cadena de acuse**: cuánto tardó y quién recibió — `SOFTWARE`
+### [x] T-5.15 · **Cadena de acuse**: cuánto tardó y quién recibió — `SOFTWARE` · **CERRADA 2026-09-02**
 > Tres de las cuatro preguntas se contestan hoy: quién acusó (con fila en el timeline y verbo en
 > la bitácora), quién no respondió (el pase de lista distingue *sin reporte* y ofrece notificar a
 > los que faltan), y en qué zona. Faltan dos, y las dos son de perito:
@@ -11940,13 +11940,49 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
 - **Objetivo:** que una revisión post-incidente se pueda hacer sin abrir la base.
 - **Criterios de aceptación:**
-  - [ ] Latencia de acuse calculada y expuesta, con la misma honestidad que la de despacho: quien
+  - [x] Latencia de acuse calculada y expuesta, con la misma honestidad que la de despacho: quien
         no acusó no tiene latencia, y eso **no es un cero**.
-  - [ ] Endpoint de lectura de los envíos de un incidente: canal, destinatario (con el mismo
+  - [x] Endpoint de lectura de los envíos de un incidente: canal, destinatario (con el mismo
         criterio de mínimo dato que el resto), estado y confirmación de entrega.
-  - [ ] La bitácora del incidente muestra el transcurrido junto al sello absoluto.
-  - [ ] Aislamiento entre clientes con test de cruce, y el envío simulado se distingue del
+  - [x] La bitácora del incidente muestra el transcurrido junto al sello absoluto.
+  - [x] Aislamiento entre clientes con test de cruce, y el envío simulado se distingue del
         entregado, como ya hace la tabla.
+- **Cómo se cerró (2026-09-02).**
+  **La latencia del acuse** la escribe ahora la propia fila (`incidents_ack.py`), calculada **en
+  SQL y en el mismo statement que la inserta**: así el `now()` del que sale la cifra es
+  exactamente el `now()` del `ts` de la fila. Restarlo en Python daba un número plausible y falso
+  en cuanto los relojes difieren un segundo. Va con la misma clave (`latency_s`) y el mismo `t0`
+  (`incidents.opened_at`) que la de despacho de `notify_sent`, así que las dos se comparan sin
+  traducir nada.
+  **`GET /incidents/{id}/notifications`** lee lo que `notification_jobs` guardaba desde la `0040`
+  y no leía nadie. Devuelve **dos latencias separadas y NO sumadas**: `dispatch_latency_s` (de la
+  apertura a que el proveedor aceptó) y `delivery_latency_s` (de ahí a la confirmación). El
+  segundo tramo **no depende de TAKAB** —son los tres minutos del operador móvil—, y presentarlos
+  sumados se los cargaría a la plataforma. `delivered` sale de `delivered_at IS NOT NULL` **y de
+  nada más**: `sent` es «el proveedor lo aceptó» y `simulated` «no había proveedor», y ninguno de
+  los dos afirma que un humano lo tenga en la mano.
+  **El destinatario se reduce en `notify/destino.py`, con allowlist por FORMA** — la misma
+  doctrina de `narrative/redact.py`, y por el mismo motivo: con una denylist, el canal que se
+  añada mañana trae un `target` que nadie previó y sale entero, con el teléfono dentro. Lo que no
+  encaja **no sale y se declara** (`unrecognised`), porque un hueco se leería como «no había
+  destinatario».
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **La URL de un webhook ES la credencial.** Un `https://…/services/T0/B0/xoxb…` autoriza a
+  publicar a cualquiera que lo lea; devolver `target` en crudo habría sido una fuga de secreto por
+  una pantalla de consola. Sale **el host y nada más**, con test de que la ruta no aparece.
+  (2) **El prefijo de país no se deduce del largo.** La primera versión del enmascarado lo dedujo,
+  acertaba con México y mentía con `+1` y con `+351`. Un prefijo inventado en una pantalla de
+  evidencia es peor que un dígito menos: **se enmascara todo menos la cola**.
+  (3) **`gov_ack_incident` no dejaba fila en la bitácora** (migración `0056`). Escribía solo
+  `audit_log`, así que un incidente acusado por Protección Civil salía `acked` en la consola **con
+  la bitácora sin un solo acuse**: la pantalla que existe para reconstruir lo ocurrido contradecía
+  al estado que tenía al lado. No es un hueco, es una contradicción — y ninguna de las dos vías
+  del acuse tenía test de que su fila existiera.
+  (4) **El SLA no se cumple por no intentarlo.** El veredicto de plazo comparaba `sent_at <=
+  deadline_at`, así que el job encolado hace media hora con plazo de 60 s **y sin enviar** salía
+  sin veredicto y sin aviso: el incumplimiento más grave era el único silencioso. Se compara
+  contra `sent_at` si salió y contra **ahora** si no, y el `null` queda para lo único que lo
+  merece — el canal que no tenía plazo.
 
 ### [ ] T-5.16 · **Umbrales por tipo de inmueble**, con rollback — `SOFTWARE` + `DECISIÓN`
 > `BLUEPRINT §4.5` declara tres bandas de referencia: hospitales 0.040–0.060 g, industriales

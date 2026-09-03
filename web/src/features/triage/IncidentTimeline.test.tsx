@@ -25,6 +25,9 @@ function renderTimeline(data: TimelineAction[], staleSince: number | null = null
   render(
     <IncidentTimeline
       actions={{ data, loading: false, error: null, staleSince }}
+      // [T-5.15] `null` = sin instante de apertura: estos casos prueban el
+      // rótulo y el marco, no el transcurrido, que tiene su propio bloque.
+      openedAt={null}
       onRetry={vi.fn()}
     />,
   );
@@ -234,5 +237,69 @@ describe("IncidentTimeline · una bitácora vieja no es la bitácora [T-2.82.a]"
     const panel = screen.getByTestId("incident-timeline");
     expect(panel).toHaveTextContent("SIN ACCIONES REGISTRADAS PARA ESTE INCIDENTE");
     expect(panel).not.toHaveTextContent("DATOS RETENIDOS");
+  });
+});
+
+// ── [T-5.15] El transcurrido, junto al sello absoluto ───────────────────────
+//
+// La bitácora imprimía sellos absolutos sin columna de transcurrido, así que
+// «¿en cuánto tiempo acusaron?» era una resta a mano que nadie hacía. Lo que
+// fijan estos cuatro: el transcurrido se cuenta desde que se ABRIÓ el incidente
+// —el mismo `t0` que usa el orquestador para su SLA—, y **no se inventa** cuando
+// no se puede calcular.
+
+describe("IncidentTimeline · el transcurrido (T-5.15)", () => {
+  const ABIERTO = "2026-09-02T18:00:00Z";
+
+  function conApertura(acciones: TimelineAction[]) {
+    return render(
+      <IncidentTimeline
+        actions={{ data: acciones, loading: false, error: null, staleSince: null }}
+        openedAt={ABIERTO}
+        onRetry={vi.fn()}
+      />,
+    );
+  }
+
+  it("cada línea dice cuánto después de abrirse ocurrió", () => {
+    conApertura([
+      { ...action("ack"), action_id: "a-1", ts: "2026-09-02T18:00:00Z" },
+      { ...action("siren_on"), action_id: "a-2", ts: "2026-09-02T18:01:12Z" },
+      { ...action("dictamen_request"), action_id: "a-3", ts: "2026-09-02T19:30:00Z" },
+    ]);
+    expect(screen.getByTestId("timeline-elapsed-a-1")).toHaveTextContent("+0:00");
+    expect(screen.getByTestId("timeline-elapsed-a-2")).toHaveTextContent("+1:12");
+    expect(screen.getByTestId("timeline-elapsed-a-3")).toHaveTextContent("+1:30:00");
+  });
+
+  it("el sello absoluto NO desaparece: el transcurrido lo acompaña", () => {
+    conApertura([{ ...action("ack"), action_id: "a-1", ts: "2026-09-02T18:01:12Z" }]);
+    const fila = screen.getByTestId("timeline-elapsed-a-1").closest("li");
+    expect(fila).toHaveTextContent("2026-09-02 · 18:01");
+  });
+
+  it("una acción ANTERIOR a la apertura no pinta un transcurrido negativo", () => {
+    // Pasa con relojes desfasados. Un «-0:30» en una bitácora de evidencia
+    // afirma que la orden precedió al sismo; se calla, que es lo único cierto.
+    conApertura([{ ...action("ack"), action_id: "a-1", ts: "2026-09-02T17:59:30Z" }]);
+    expect(screen.queryByTestId("timeline-elapsed-a-1")).toBeNull();
+  });
+
+  it("sin instante de apertura no se inventa ninguna columna", () => {
+    render(
+      <IncidentTimeline
+        actions={{
+          data: [{ ...action("ack"), action_id: "a-1", ts: "2026-09-02T18:01:12Z" }],
+          loading: false,
+          error: null,
+          staleSince: null,
+        }}
+        openedAt={null}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("timeline-elapsed-a-1")).toBeNull();
+    // Y el sello absoluto sigue estando: se pierde el transcurrido, no la línea.
+    expect(screen.getByText(/2026-09-02/)).toBeInTheDocument();
   });
 });

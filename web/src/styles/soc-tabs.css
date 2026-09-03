@@ -291,6 +291,27 @@
    T-5.05): «esto no es real». */
 /* El marco del StateFrame: sin regla propia la clase existiría solo en el JSX, y
    el contrato clase↔regla lo caza. Aquí solo separa del bloque siguiente. */
+/* [T-5.15] Cadena de aviso: qué proveedor recibió qué y cuándo. Los tonos NO
+   son decorativos — `wait` (ámbar) es «el proveedor lo aceptó y no confirmó»,
+   que no puede compartir color con `ok` («alguien lo tiene en la mano»). */
+.notifychain__count { margin: 0 0 6px; }
+.notifychain__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.notifychain__item {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid var(--tk-border);
+  font: 400 11px/1.4 var(--f-ui);
+}
+.notifychain__ch { color: var(--tk-fg-2); letter-spacing: 0.06em; }
+.notifychain__to { color: var(--tk-fg-1); }
+.notifychain__st { font-weight: 700; letter-spacing: 0.06em; font-size: 10px; }
+.notifychain__st.is-ok { color: var(--tk-status-normal); }
+.notifychain__st.is-wait { color: var(--tk-status-warning); }
+.notifychain__st.is-bad { color: var(--tk-status-critical); }
+.notifychain__st.is-muted { color: var(--tk-fg-3); }
+.notifychain__lat, .notifychain__ts { margin-left: auto; color: var(--tk-fg-3); font-size: 10px; }
+.notifychain__sla { color: var(--tk-status-critical); font: 700 10px/1 var(--f-ui); letter-spacing: 0.06em; }
+.notifychain__err { flex-basis: 100%; color: var(--tk-status-critical); font-size: 10px; }
+
 /* [T-5.12] Clasificación de un incidente y su tasa. */
 .triage-clasif { display: flex; flex-direction: column; gap: 6px; }
 .triage-clasif__actual {
@@ -1753,6 +1774,9 @@
   border-bottom: 1px solid var(--tk-border);
 }
 .timeline__ts { color: var(--tk-fg-3); font-size: 9px; }
+/* [T-5.15] El transcurrido, pegado al sello absoluto y en segundo plano: el
+   absoluto es lo citable en un peritaje y el relativo lo legible de un vistazo. */
+.timeline__elapsed { color: var(--tk-fg-3); font-size: 9px; opacity: 0.85; }
 .timeline__kind { color: var(--tk-fg-1); letter-spacing: 0.04em; }
 /* [T-2.75] Una notificación que nadie recibió no puede leerse igual que una
    entregada en la bitácora que un perito usa para reconstruir lo ocurrido.

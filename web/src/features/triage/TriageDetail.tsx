@@ -14,6 +14,7 @@ import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
+import NotifyChain from "./NotifyChain";
 import CctvPanel from "./CctvPanel";
 import { ClassificationPanel } from "./ClassificationPanel";
 import PostEventSummary from "./PostEventSummary";
@@ -302,7 +303,10 @@ export default function TriageDetail({
 
       {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
           número desperdiciaba precisamente eso. */}
-      <IncidentTimeline actions={actions} onRetry={detail.refetch} />
+      <IncidentTimeline actions={actions} openedAt={inc.opened_at} onRetry={detail.refetch} />
+      {/* [T-5.15] Va DESPUÉS de la bitácora y no dentro: la bitácora es lo que
+          hizo TAKAB y esto es lo que hicieron los proveedores con ello. */}
+      <NotifyChain incidentId={inc.incident_id} />
 
       {detail.exportError && (
         <p className="soc-meta" role="alert">

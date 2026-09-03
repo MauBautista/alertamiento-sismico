@@ -15,13 +15,12 @@ import { useSessionStore } from "../../auth/session.store";
 import Modal from "../../components/Modal";
 import StateFrame from "../../components/StateFrame";
 import { openPendingDownload } from "../../lib/download";
-import { utcStamp } from "../../lib/time";
+import { latenciaLegible, utcStamp } from "../../lib/time";
 import {
   ackLabel,
   drillAckReport,
   drillSiteAck,
   isPendingSchedule,
-  latenciaLegible,
   medianaLatencia,
 } from "./drill";
 import { useDrillReport, useDrills, type DrillKind } from "./useDrills";

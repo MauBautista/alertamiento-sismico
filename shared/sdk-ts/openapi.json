@@ -7011,6 +7011,226 @@
         "title": "NoticePublishedOut",
         "type": "object"
       },
+      "NotificationJobOut": {
+        "description": "Un envío de la cadena, con su desenlace y su destinatario enmascarado.",
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "deadline_met": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline Met"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "boolean"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "delivery_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Latency S"
+          },
+          "dispatch_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Latency S"
+          },
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "last_status_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status At"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/RecipientOut"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "channel",
+          "mode",
+          "position",
+          "status",
+          "delivered",
+          "created_at",
+          "due_at",
+          "deadline_at",
+          "sent_at",
+          "delivered_at",
+          "last_status",
+          "last_status_at",
+          "attempts",
+          "error",
+          "dispatch_latency_s",
+          "delivery_latency_s",
+          "deadline_met",
+          "recipient",
+          "action_id"
+        ],
+        "title": "NotificationJobOut",
+        "type": "object"
+      },
+      "NotifyChainOut": {
+        "description": "Los envíos de un incidente, en el orden en que se planificaron.",
+        "properties": {
+          "delivered_count": {
+            "title": "Delivered Count",
+            "type": "integer"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationJobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "opened_at",
+          "items",
+          "delivered_count"
+        ],
+        "title": "NotifyChainOut",
+        "type": "object"
+      },
       "NotifyChannelOut": {
         "description": "Un canal del registro de providers y su realidad, tal como arrancó.",
         "properties": {
@@ -7760,6 +7980,42 @@
           }
         },
         "title": "ReadyFrame",
+        "type": "object"
+      },
+      "RecipientOut": {
+        "description": "Destinatario reducido al mínimo dato (ver ``notify/destino.py``).",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "unrecognised": {
+            "title": "Unrecognised",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "count",
+          "hint",
+          "unrecognised"
+        ],
+        "title": "RecipientOut",
         "type": "object"
       },
       "ReleaseCreate": {
@@ -13227,6 +13483,47 @@
           }
         },
         "summary": "Notify Unreported"
+      }
+    },
+    "/incidents/{incident_id}/notifications": {
+      "get": {
+        "description": "Los envíos de un incidente. 404 si el incidente no es visible.",
+        "operationId": "incident_notifications_incidents__incident_id__notifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Notifications"
       }
     },
     "/incidents/{incident_id}/report": {

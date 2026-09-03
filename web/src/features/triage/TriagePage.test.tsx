@@ -53,6 +53,20 @@ vi.mock("./useCctv", () => ({
 // [T-5.12] `useClassification` monta react-query por el mismo motivo que `useCctv`, y
 // esta suite no lleva provider a propósito. Su semántica se prueba en
 // `ClassificationPanel.test.tsx`.
+// [T-5.15] `useNotifyChain` monta react-query por el mismo motivo que `useCctv`,
+// y esta suite no lleva provider a propósito. Su semántica se prueba en
+// `NotifyChain.test.tsx`.
+vi.mock("./useNotifyChain", async () => ({
+  ...(await vi.importActual<typeof import("./useNotifyChain")>("./useNotifyChain")),
+  useNotifyChain: () => ({
+    items: [],
+    deliveredCount: 0,
+    loading: false,
+    readError: false,
+    staleSince: null,
+    refetch: vi.fn(),
+  }),
+}));
 vi.mock("./useClassification", async () => ({
   ...(await vi.importActual<typeof import("./useClassification")>("./useClassification")),
   useClassification: () => ({

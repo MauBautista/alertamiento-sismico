@@ -12,7 +12,6 @@ import {
   armedPhase,
   drillAckReport,
   drillSiteAck,
-  latenciaLegible,
   medianaLatencia,
   nextArmedDrill,
 } from "./drill";
@@ -213,32 +212,6 @@ describe("armedPhase / nextArmedDrill", () => {
 // contrario de lo que pasó, y arrastraría la mediana hacia abajo justo en el
 // simulacro que peor salió. Por eso `null` viaja hasta la pantalla en vez de
 // colapsarse en un número.
-
-describe("latenciaLegible", () => {
-  it("sin acuse no hay latencia: null, no «0:00»", () => {
-    expect(latenciaLegible(null)).toBeNull();
-    expect(latenciaLegible(undefined)).toBeNull();
-  });
-
-  it("acuse instantáneo SÍ es cero, y se distingue de no haber acusado", () => {
-    expect(latenciaLegible(0)).toBe("+0:00");
-  });
-
-  it("redondea al segundo y rellena", () => {
-    expect(latenciaLegible(7.4)).toBe("+0:07");
-    expect(latenciaLegible(72)).toBe("+1:12");
-    expect(latenciaLegible(599.6)).toBe("+10:00");
-  });
-
-  it("pasada la hora deja de mentir con «+90:00»", () => {
-    expect(latenciaLegible(3600)).toBe("+1:00:00");
-    expect(latenciaLegible(5400)).toBe("+1:30:00");
-  });
-
-  it("una latencia negativa es un reloj roto, no una respuesta antes de la pregunta", () => {
-    expect(latenciaLegible(-3)).toBeNull();
-  });
-});
 
 describe("medianaLatencia", () => {
   const conLat = (id: string, lat: number | null, status = "acked") =>

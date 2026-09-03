@@ -1770,6 +1770,42 @@ export type NoticePublishedOut = {
 };
 
 /**
+ * Un envío de la cadena, con su desenlace y su destinatario enmascarado.
+ */
+export type NotificationJobOut = {
+    action_id: string | null;
+    attempts: number;
+    channel: string;
+    created_at: string;
+    deadline_at: string | null;
+    deadline_met: boolean | null;
+    delivered: boolean;
+    delivered_at: string | null;
+    delivery_latency_s: number | null;
+    dispatch_latency_s: number | null;
+    due_at: string;
+    error: string | null;
+    job_id: string;
+    last_status: string | null;
+    last_status_at: string | null;
+    mode: string;
+    position: number;
+    recipient: RecipientOut;
+    sent_at: string | null;
+    status: string;
+};
+
+/**
+ * Los envíos de un incidente, en el orden en que se planificaron.
+ */
+export type NotifyChainOut = {
+    delivered_count: number;
+    incident_id: string;
+    items: Array<NotificationJobOut>;
+    opened_at: string;
+};
+
+/**
  * Un canal del registro de providers y su realidad, tal como arrancó.
  */
 export type NotifyChannelOut = {
@@ -1994,6 +2030,16 @@ export type QuorumVoteOut = {
  */
 export type ReadyFrame = {
     type?: 'ready';
+};
+
+/**
+ * Destinatario reducido al mínimo dato (ver ``notify/destino.py``).
+ */
+export type RecipientOut = {
+    count: number | null;
+    hint: string;
+    kind: string;
+    unrecognised: boolean;
 };
 
 /**
@@ -4040,6 +4086,33 @@ export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResp
 };
 
 export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponse = NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses[keyof NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses];
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/notifications';
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetError = IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors[keyof IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors];
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotifyChainOut;
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponse = IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses[keyof IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses];
 
 export type GenerateReportIncidentsIncidentIdReportPostData = {
     body?: never;

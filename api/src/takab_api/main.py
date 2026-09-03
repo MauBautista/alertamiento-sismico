@@ -31,6 +31,7 @@ from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
 from takab_api.routers.notify import router as notify_router
+from takab_api.routers.notify_chain import router as notify_chain_router
 from takab_api.routers.notify_webhooks import router as notify_webhooks_router
 from takab_api.routers.ops_alerts import router as ops_alerts_router
 from takab_api.routers.privacy import router as privacy_router
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
 
     # Simulacro institucional (Fase 1.8 · T-1.60).
     app.include_router(classification_router)
+    app.include_router(notify_chain_router)
     app.include_router(demo_mode_router)
     app.include_router(drills_router)
 

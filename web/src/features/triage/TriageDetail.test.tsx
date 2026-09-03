@@ -17,6 +17,20 @@ import type { TriageRow } from "./model";
 // QueryClient: se mockea el hook, como hace `DrillBanner.test`. Este fichero
 // prueba que los hechos no dependen del dictamen, no la clasificación —que tiene
 // su propio test con sus cuatro estados.
+// [T-5.15] `useNotifyChain` monta react-query por el mismo motivo que `useCctv`,
+// y esta suite no lleva provider a propósito. Su semántica se prueba en
+// `NotifyChain.test.tsx`.
+vi.mock("./useNotifyChain", async () => ({
+  ...(await vi.importActual<typeof import("./useNotifyChain")>("./useNotifyChain")),
+  useNotifyChain: () => ({
+    items: [],
+    deliveredCount: 0,
+    loading: false,
+    readError: false,
+    staleSince: null,
+    refetch: vi.fn(),
+  }),
+}));
 vi.mock("./useClassification", async () => {
   const real = await vi.importActual<typeof import("./useClassification")>("./useClassification");
   return {

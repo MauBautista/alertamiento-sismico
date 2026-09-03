@@ -44,3 +44,26 @@ export function ageLabel(seconds: number | null | undefined): string {
   const unit = AGE_UNITS.find((u) => s >= u.secs) ?? AGE_UNITS[AGE_UNITS.length - 1];
   return `${Math.floor(s / unit.secs)} ${unit.suffix}`;
 }
+
+/**
+ * `+M:SS` (o `+H:MM:SS`), o `null` cuando no hay latencia que enseñar.
+ *
+ * [T-5.14 → T-5.15] Nació en `features/console/drill.ts` para el acuse de un
+ * simulacro y la usa también la bitácora del incidente: el transcurrido de un
+ * simulacro y el de un incidente son la MISMA magnitud, y dos formatos para
+ * ella acabarían divergiendo en la pantalla donde se comparan.
+ *
+ * `null` para lo que no se puede contar, y NUNCA `"+0:00"`: un cero afirma
+ * «ocurrió al instante», que es lo contrario de «no ocurrió».
+ */
+export function latenciaLegible(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return null;
+  // Negativo = el reloj del servidor se movió entre emisión y acuse. No es una
+  // respuesta anticipada: es un dato roto, y se calla en vez de pintarse.
+  if (seconds < 0) return null;
+  const total = Math.round(seconds);
+  const s = String(total % 60).padStart(2, "0");
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  return h > 0 ? `+${h}:${String(m).padStart(2, "0")}:${s}` : `+${m}:${s}`;
+}
