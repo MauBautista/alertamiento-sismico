@@ -23,7 +23,12 @@ import { expectFourStates } from "@/test-utils/expectFourStates";
 import Lista from "@/app/(brigadista)/lista";
 
 const SITE = "11111111-1111-1111-1111-111111111111";
-const AHORA = 1_800_000_000_000;
+// [T-5.21] El «ahora» del fixture es RELATIVO al reloj de verdad. Era un epoch
+// clavado en 2027, y desde que la frescura sale del reloj —y no de que la
+// consulta falle— un `dataUpdatedAt` en el futuro sale «fresco» y el estado
+// `stale` no se materializaba. Contar hacia atrás desde `Date.now()` hace que
+// «hace tres minutos» signifique de verdad hace tres minutos.
+const AHORA = Date.now();
 
 // ------------------------------------------------------------------ mocks
 
@@ -72,7 +77,8 @@ function instantanea(over: Record<string, unknown> = {}) {
     dataUpdatedAt: AHORA,
     loading: false,
     error: null as string | null,
-    stale: false,
+    // [T-5.21] `stale: boolean` → `staleSinceMs`: la frescura es un INSTANTE.
+    staleSinceMs: null,
     ...over,
   };
 }

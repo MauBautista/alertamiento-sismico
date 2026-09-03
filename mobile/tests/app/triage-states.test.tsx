@@ -17,7 +17,12 @@ import { expectFourStates } from "@/test-utils/expectFourStates";
 import Triage from "@/app/(brigadista)/triage";
 
 const SITE = "11111111-1111-1111-1111-111111111111";
-const AHORA = 1_800_000_000_000;
+// [T-5.21] El «ahora» del fixture es RELATIVO al reloj de verdad. Era un epoch
+// clavado en 2027, y desde que la frescura sale del reloj —y no de que la
+// consulta falle— un `dataUpdatedAt` en el futuro sale «fresco» y el estado
+// `stale` no se materializaba. Contar hacia atrás desde `Date.now()` hace que
+// «hace tres minutos» signifique de verdad hace tres minutos.
+const AHORA = Date.now();
 
 // ------------------------------------------------------------------ mocks
 
@@ -78,7 +83,8 @@ function instantanea(over: Record<string, unknown> = {}) {
     dataUpdatedAt: 0,
     loading: false,
     error: null as string | null,
-    stale: false,
+    // [T-5.21] `stale: boolean` → `staleSinceMs`: la frescura es un INSTANTE.
+    staleSinceMs: null,
     ...over,
   };
 }
@@ -127,7 +133,8 @@ describe("2.4 · triage · el vacío honesto no tapa el fallo", () => {
     // puede bloquear al táctico que ya está frente al muro agrietado.
     mockSnapshot = instantanea({
       data: estado(),
-      stale: true,
+      // [T-5.21] Viejo de verdad: el instante ES la frescura.
+      staleSinceMs: AHORA - 4 * 60_000,
       dataUpdatedAt: AHORA - 4 * 60_000,
     });
 
@@ -149,7 +156,9 @@ describe("2.4 · triage · contrato de 4 estados (regla de oro 7)", () => {
           loading: e === "loading",
           error: e === "error" ? "No se pudo consultar el estado del sitio." : null,
           data: e === "stale" ? estado() : null,
-          stale: e === "stale",
+          // [T-5.21] La frescura es un INSTANTE, y sale del mismo `dataUpdatedAt`
+          // que el fixture declara: así no puede decir «viejo» y «fresco» a la vez.
+          staleSinceMs: e === "stale" ? AHORA - 60_000 : null,
           dataUpdatedAt: e === "stale" ? AHORA - 60_000 : 0,
         });
         return <Triage />;

@@ -152,7 +152,8 @@ jest.mock("@/features/alert/useAlertState", () => ({
     data: { incident: { incident_id: "inc-1", max_pga_g: 0.12 }, my_zone: { zone_id: "z-1" } },
     loading: false,
     error: null,
-    stale: false,
+    // [T-5.21] `stale: boolean` → `staleSinceMs`: la frescura es un INSTANTE.
+    staleSinceMs: null,
     dataUpdatedAt: 0,
   }),
 }));

@@ -1074,7 +1074,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   censo se prueba **contra el defecto que ya sabes que existe**; si no lo encuentra, el censo está
   roto, no el código.
 
-### [ ] T-5.21 · No hay **censo de dato viejo** en la app móvil — `SOFTWARE`
+### [x] T-5.21 · No hay **censo de dato viejo** en la app móvil — `SOFTWARE` · **CERRADA 2026-09-03**
 > La consola está resuelta y bien: un censo derivado del árbol obliga al componente siguiente a
 > tener su prueba de los cuatro estados o a aparecer en una lista de deuda comparada **por
 > igualdad**. Fuera de la consola es muestreo.
@@ -1089,13 +1089,52 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** mobile · **Depende de:** nada · **Prioridad: MEDIA**
 - **Objetivo:** que en el teléfono ningún número se pinte como vivo sin poder demostrarlo.
 - **Criterios de aceptación:**
-  - [ ] Censo derivado equivalente al de la consola: quién posee dato de servidor se deriva de los
+  - [x] Censo derivado equivalente al de la consola: quién posee dato de servidor se deriva de los
         transportes, y se cruza contra quién tiene la prueba de los cuatro estados.
-  - [ ] Comparación **por igualdad** contra la deuda declarada: la pantalla siguiente escribe su
+        **Ya existía** (`T-2.111`); lo que faltaba, y es lo que se hizo, es el censo sobre la
+        SEMÁNTICA de la frescura.
+  - [x] Comparación **por igualdad** contra la deuda declarada: la pantalla siguiente escribe su
         prueba o entra en una lista a la vista.
-  - [ ] El caso del pase de vida corregido: la edad se declara siempre, no solo cuando falla el
+  - [x] El caso del pase de vida corregido: la edad se declara siempre, no solo cuando falla el
         refetch.
-  - [ ] Guarda anti-vacuidad: el censo declara cuántas pantallas espera y cero no vale.
+  - [x] Guarda anti-vacuidad: el censo declara cuántas pantallas espera y cero no vale.
+- **PRIMERO, LA CORRECCIÓN DE LA FICHA.** Su premisa era **falsa**: «en móvil no hay censo» — y
+  sí lo había, `mobile/src/screenStateCensus.test.ts`, de `T-2.111`, derivado del sistema de
+  ficheros de `expo-router` y con sus cuatro listas de deuda vacías. Existía en el commit sobre el
+  que se hizo la auditoría (`df13599`), así que el hallazgo estaba mal. Lo mismo el conteo «tres
+  usan el envoltorio y seis consultan sin él»: los seis que consultan y **renderizan** usan el
+  marco; los otros son hooks y observadores, que no pintan nada.
+- **Y AHORA LO QUE SÍ ERA CIERTO, que resultó ser mucho peor.** La tercera viñeta —«el pase de
+  vida solo declara el dato viejo si el refetch está fallando»— era exacta, y no era un caso: era
+  **el significado de `stale` en toda la app**. `useAlertState` lo calculaba como
+  `isError && data !== undefined` y **siete pantallas lo heredaban**; `lista.tsx` y `dictamen.tsx`
+  hacían lo propio con `failureCount > 0`; `AccountScreen` y `camera.tsx`, con `isError`. **Nueve
+  superficies**: con red sana y un `mobile_state` de hace diez minutos, todas esas señales valen
+  `false` y la pantalla afirma frescura.
+  La peor de las nueve no es el pase de lista: es `camera.tsx`. Su frescura acaba **horneada en el
+  píxel** de una fotografía forense y entra en el sha256, así que un «METADATOS RETENIDOS» que
+  solo aparecía al fallar la consulta dejaba fotos con metadatos de hace diez minutos **sin marca
+  ninguna** — y esa foto va a un dictamen.
+- **Cómo se cerró (2026-09-03).**
+  `src/ui/useStaleSince.ts`: la edad sale del **reloj**, y el umbral **del intervalo de poll de
+  cada pantalla** — «viejo» no es una cantidad de segundos, es «ya deberíamos haber refrescado y
+  no lo hicimos». Tres pollos perdidos: uno es jitter, tres son un patrón. Una pantalla que
+  consulta cada 5 s y otra cada 30 envejecen a ritmos distintos, y un umbral fijo mentiría en una
+  de las dos. El hook trae reloj propio: sin el tic, un dato fresco al montar seguiría pintándose
+  fresco para siempre.
+  **El censo gana TRES reglas nuevas**, y las tres salieron de encontrarse el defecto en tres
+  formas distintas: la expresión del marco, la propiedad que un hook DEVUELVE, y una **constante
+  local** con nombre de frescura (`camera.tsx` pasaba el nombre de la constante al marco y la
+  señal de fallo quedaba un salto más atrás). Las dos primeras nacieron ciegas y hubo que
+  corregirlas: la del productor iba dentro del bucle de rutas y el defecto vivía en `features/`;
+  la del marco, lo mismo, y por eso `AccountScreen` lo encontré leyendo y no el censo.
+  **Y once fixtures pasaron de un epoch clavado en 2027 a contar desde `Date.now()`.** Desde que
+  la frescura sale del reloj, un `dataUpdatedAt` en el futuro sale «fresco» y el estado `stale`
+  dejaba de materializarse. La razón por la que un instante futuro **sí** debe salir fresco está
+  escrita en el módulo: `dataUpdatedAt` lo pone react-query con el reloj del propio dispositivo,
+  el mismo que da el «ahora», así que en campo no puede haber desfase — un valor futuro solo
+  aparece en un test que clava un epoch. Con él, ocho tests que simulaban «viejo» **haciendo
+  fallar la consulta** estaban probando el defecto; ahora prueban el tiempo.
 
 ### [ ] T-5.22 · La latencia del reflejo **solo existe como prosa** — `SOFTWARE` + `GATE-HW`
 > Es la cifra de venta más citada del producto, medida dos veces con hardware real: **6.65 ms el

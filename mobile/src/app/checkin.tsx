@@ -44,7 +44,7 @@ const NO_SE_GUARDO =
 export default function Checkin() {
   const status = useSessionStore((s) => s.status);
   const siteId = useWatchedSiteId();
-  const { state, data, hasOwnCheckin, loading, error, stale, dataUpdatedAt, refetch } =
+  const { state, data, hasOwnCheckin, loading, error, staleSinceMs, refetch } =
     useAlertState(siteId);
   const queueItems = useQueueStore((s) => s.items);
   const [busy, setBusy] = useState<"safe" | "need_help" | null>(null);
@@ -122,7 +122,7 @@ export default function Checkin() {
       error={data === null ? error : null}
       loading={loading}
       onRetry={refetch}
-      staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
+      staleSinceMs={staleSinceMs}
     >
       {incident !== null && hasOwnCheckin ? (
         // 1.5 · Bloqueo de reingreso: timeline derivada de los datos del

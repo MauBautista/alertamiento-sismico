@@ -64,6 +64,32 @@ const PAQUETE_SDK = "@takab/sdk";
 /** Las cuatro entradas del `StateFrame` móvil (`@/ui/StateFrame`). */
 export const CUATRO_ENTRADAS = ["loading", "error", "empty", "staleSinceMs"] as const;
 
+/**
+ * [T-5.21] Señales de FALLO. Un `staleSinceMs` que dependa de una de ellas está
+ * contestando la pregunta equivocada: la edad de un dato no depende de si el
+ * refetch falló. Con red sana y datos de hace diez minutos, todas valen `false`
+ * y la pantalla afirma frescura.
+ *
+ * `error` entra con su forma exacta y no por subcadena: `hydrationError` es otra
+ * cosa —el fallo de abrir la cola local— y `retenidoDesde` no menciona ningún
+ * fallo. Un censo que buscara «error» dentro de cualquier identificador
+ * marcaría a los dos.
+ */
+export const SENALES_DE_FALLO = ["isError", "failureCount", "error", "isRefetchError"] as const;
+
+/** Campos que significan «de cuándo es este dato». Los tres nombres que usa el repo. */
+export const CAMPOS_DE_FRESCURA = ["stale", "staleSince", "staleSinceMs"] as const;
+
+export interface FrescuraPorError {
+  clave: string;
+  fichero: string;
+  linea: number;
+  /** Las señales de fallo que aparecen en la expresión. */
+  senales: string[];
+  /** La expresión tal cual, para que el fallo diga qué hay que cambiar. */
+  expresion: string;
+}
+
 export interface MarcoDeEstado {
   /** `app/crisis.tsx#0` — fichero + ordinal del marco dentro del fichero. */
   clave: string;
@@ -91,6 +117,21 @@ export interface Censo {
   rutasConDatoSinMarco: string[];
   /** Todo `<StateFrame>` de una ruta al que le falta alguna entrada. */
   marcos: MarcoDeEstado[];
+  /**
+   * [T-5.21] Marcos cuyo `staleSinceMs` depende de que la CONSULTA FALLE, no de
+   * que el dato sea viejo. Es la mentira que el cableado no ve: `staleSinceMs`
+   * está puesto —así que C-1 pasa— y sin embargo un dato de hace diez minutos
+   * con red sana se pinta como fresco, porque nada ha fallado.
+   */
+  frescuraPorError: FrescuraPorError[];
+  /**
+   * [T-5.21] …y lo mismo UN SALTO MÁS ARRIBA: un hook que DEVUELVE la frescura
+   * calculada con una señal de fallo. Es donde estaba el defecto de verdad —
+   * `useAlertState.stale = isError && data !== undefined`— y siete pantallas lo
+   * heredaban sin mencionar ningún error en su propio marcado. Sin esta regla,
+   * el censo del marco pasaba en verde sobre las siete.
+   */
+  frescuraProducidaPorError: FrescuraPorError[];
   /** Llamadas al SDK en una ruta que pueden rechazar sin que nadie lo recoja. */
   sinDesenlace: PromesaSinDesenlace[];
 }
@@ -352,7 +393,103 @@ export function censar(fuentes: FuenteEntrada[], src: string): Censo {
   const rutasConDato: string[] = [];
   const rutasConDatoSinMarco: string[] = [];
   const marcos: MarcoDeEstado[] = [];
+  const frescuraPorError: FrescuraPorError[] = [];
+  const frescuraProducidaPorError: FrescuraPorError[] = [];
   const sinDesenlace: PromesaSinDesenlace[] = [];
+
+  // [T-5.21] Quién PRODUCE una frescura decidida por un fallo. Bucle PROPIO y
+  // sobre TODOS los módulos: el de abajo salta lo que no está en `src/app`, y
+  // el defecto de verdad vivía en `features/alert/useAlertState.ts`. La primera
+  // versión de esta regla iba dentro de aquel bucle y no encontraba nada — ni en
+  // el código real ni en la fuente sintética de su propia guarda.
+  for (const m of mods.values()) {
+    const rel = relative(src, m.file);
+    const linea = (n: ts.Node) => m.sf.getLineAndCharacterOfPosition(n.getStart(m.sf)).line + 1;
+    const inspeccionarProduccion = (n: ts.Node): void => {
+      // TRES formas, y las tres aparecieron en el código real: la propiedad de
+      // un objeto devuelto por un hook (`return { stale: … }`), la propiedad de
+      // un objeto cualquiera, y una CONSTANTE LOCAL con nombre de frescura
+      // (`const snapshotStaleSinceMs = stale && data ? …`). La tercera se
+      // escapaba de las dos reglas anteriores: `camera.tsx` pasaba el nombre de
+      // la constante al marco, y la señal de fallo quedaba un salto más atrás.
+      const declarado =
+        ts.isPropertyAssignment(n) && (CAMPOS_DE_FRESCURA as readonly string[]).includes(n.name.getText(m.sf));
+      const localDeFrescura =
+        ts.isVariableDeclaration(n) &&
+        ts.isIdentifier(n.name) &&
+        /stale/i.test(n.name.text) &&
+        n.initializer !== undefined;
+      if (ts.isPropertyAssignment(n) || localDeFrescura) {
+        const nombre = ts.isPropertyAssignment(n) ? n.name.getText(m.sf) : (n as ts.VariableDeclaration).name.getText(m.sf);
+        if (declarado || localDeFrescura) {
+          const ids: string[] = [];
+          const recoger = (x: ts.Node): void => {
+            if (ts.isIdentifier(x)) {
+              ids.push(x.text);
+            }
+            ts.forEachChild(x, recoger);
+          };
+          recoger((n as ts.PropertyAssignment | ts.VariableDeclaration).initializer!);
+          const senales = [...new Set(ids)]
+            .filter((id) => (SENALES_DE_FALLO as readonly string[]).includes(id))
+            .sort();
+          if (senales.length > 0) {
+            frescuraProducidaPorError.push({
+              clave: `${rel}::${nombre}`,
+              fichero: rel,
+              linea: linea(n),
+              senales,
+              expresion: (n as ts.PropertyAssignment | ts.VariableDeclaration).initializer!.getText(m.sf),
+            });
+          }
+        }
+      }
+      ts.forEachChild(n, inspeccionarProduccion);
+    };
+    inspeccionarProduccion(m.sf);
+
+    // …y la EXPRESIÓN de `staleSinceMs` en cualquier `<StateFrame>`, también
+    // fuera de `src/app`: `features/account/AccountScreen.tsx` renderiza uno y
+    // no es una ruta, así que la primera versión de esta regla —dentro del
+    // bucle de rutas— no lo miraba nunca. El cableado (C-1) sigue siendo cosa
+    // de rutas; la expresión no tiene por qué serlo.
+    let ordinalMarco = 0;
+    const inspeccionarExpresion = (n: ts.Node): void => {
+      if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n)) {
+        const abre = ts.isJsxElement(n) ? n.openingElement : n;
+        if (abre.tagName.getText(m.sf) === "StateFrame") {
+          const attrStale = abre.attributes.properties
+            .filter(ts.isJsxAttribute)
+            .find((a) => a.name.getText(m.sf) === "staleSinceMs");
+          if (attrStale?.initializer !== undefined) {
+            const ids: string[] = [];
+            const recoger = (x: ts.Node): void => {
+              if (ts.isIdentifier(x)) {
+                ids.push(x.text);
+              }
+              ts.forEachChild(x, recoger);
+            };
+            recoger(attrStale.initializer);
+            const senales = [...new Set(ids)]
+              .filter((id) => (SENALES_DE_FALLO as readonly string[]).includes(id))
+              .sort();
+            if (senales.length > 0) {
+              frescuraPorError.push({
+                clave: `${rel}#${ordinalMarco}`,
+                fichero: rel,
+                linea: linea(abre),
+                senales,
+                expresion: attrStale.initializer.getText(m.sf),
+              });
+            }
+          }
+          ordinalMarco += 1;
+        }
+      }
+      ts.forEachChild(n, inspeccionarExpresion);
+    };
+    inspeccionarExpresion(m.sf);
+  }
 
   for (const m of mods.values()) {
     if (!enApp(m.file)) {
@@ -454,6 +591,10 @@ export function censar(fuentes: FuenteEntrada[], src: string): Censo {
     rutasConDato: rutasConDato.sort(),
     rutasConDatoSinMarco: rutasConDatoSinMarco.sort(),
     marcos: marcos.sort((a, b) => a.clave.localeCompare(b.clave)),
+    frescuraPorError: frescuraPorError.sort((a, b) => a.clave.localeCompare(b.clave)),
+    frescuraProducidaPorError: frescuraProducidaPorError.sort((a, b) =>
+      a.clave.localeCompare(b.clave),
+    ),
     sinDesenlace: sinDesenlace.sort((a, b) => a.clave.localeCompare(b.clave)),
   };
 }

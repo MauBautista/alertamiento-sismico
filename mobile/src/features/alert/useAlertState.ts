@@ -9,6 +9,8 @@ import {
 } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import { useStaleSince } from "@/ui/useStaleSince";
+
 import { hasLocalCheckin } from "@/offline/queue";
 import { useQueueStore } from "@/offline/queue.store";
 
@@ -30,8 +32,16 @@ export type AlertSnapshot = {
   loading: boolean;
   /** Error SIN datos que mostrar (con datos viejos habla `stale`). */
   error: string | null;
-  /** Hay datos pero la última consulta FALLÓ: lo mostrado es viejo. */
-  stale: boolean;
+  /**
+   * [T-5.21] Epoch ms del dato cuando YA ES VIEJO, o `null` si es fresco — la
+   * entrada que `StateFrame` espera.
+   *
+   * Sustituye a un `stale: boolean` que valía `isError && data !== undefined`:
+   * eso contestaba «¿está fallando el refetch?» y no «¿de cuándo es esto?». Con
+   * red sana y un estado de hace diez minutos, valía `false` y **siete
+   * pantallas afirmaban frescura**. Sale del reloj contra el intervalo de poll.
+   */
+  staleSinceMs: number | null;
 };
 
 export function useAlertState(siteId: string | null): AlertSnapshot {
@@ -78,6 +88,12 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
   const state = mobileState.data
     ? deriveAlertState(mobileState.data.phase, hasOwnCheckin)
     : null;
+  // El poll es variable (`CRISIS_POLL_MS` en crisis, `IDLE_POLL_MS` en reposo):
+  // se mide contra el que de verdad está corriendo, o en reposo el dato saldría
+  // viejo cada quince segundos y el aviso se volvería ruido que nadie mira.
+  const pollVigente =
+    mobileState.data && mobileState.data.phase !== "idle" ? CRISIS_POLL_MS : IDLE_POLL_MS;
+  const staleSinceMs = useStaleSince(mobileState.dataUpdatedAt, pollVigente);
 
   return {
     state,
@@ -92,6 +108,6 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
       mobileState.isError && mobileState.data === undefined
         ? "No se pudo consultar el estado del sitio."
         : null,
-    stale: mobileState.isError && mobileState.data !== undefined,
+    staleSinceMs,
   };
 }

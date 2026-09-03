@@ -27,7 +27,11 @@ import { HeadcountView } from "@/features/headcount/HeadcountView";
 import { getLiveSocket } from "@/live/socket";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+import { useStaleSince } from "@/ui/useStaleSince";
 import { fontSize, palette, radius, space } from "@/ui/theme";
+
+/** Piso de frescura del pase de lista (vida): también es su umbral de vejez. */
+const ROSTER_POLL_MS = 15_000;
 
 /** Desenlace de una acción del táctico. `ok=false` tiene que decir SIEMPRE qué
  *  NO pasó (nadie avisado, nadie contabilizado): el silencio de esta pantalla
@@ -58,7 +62,7 @@ export default function Lista() {
     enabled: incidentId != null,
     // Piso de frescura (vida): aunque el WS calle o caiga, el pase de lista se
     // re-consulta solo; el WS sigue siendo el camino primario (<2 s).
-    refetchInterval: 15_000,
+    refetchInterval: ROSTER_POLL_MS,
     queryFn: async () => {
       const res = await incidentRosterIncidentsIncidentIdRosterGet({
         path: { incident_id: incidentId as string },
@@ -69,6 +73,11 @@ export default function Lista() {
       return res.data;
     },
   });
+  // [T-5.21] La edad del pase de lista sale del RELOJ. Antes era
+  // `failureCount > 0`: con red sana, un pase de lista de hace diez minutos
+  // se pintaba como fresco — y esta es la pantalla que dice quién está dentro
+  // del edificio y en qué estado.
+  const rosterStaleSinceMs = useStaleSince(roster.dataUpdatedAt, ROSTER_POLL_MS);
 
   // Live: la señal `roster` (o cualquier frame de incidente del sitio) refresca
   // el roster en <2 s. El pill del estado viene por continuación (lint v6).
@@ -202,7 +211,7 @@ export default function Lista() {
         refetchState();
         void roster.refetch();
       }}
-      staleSinceMs={roster.data != null && roster.failureCount > 0 ? roster.dataUpdatedAt : null}
+      staleSinceMs={rosterStaleSinceMs}
     >
       {roster.data ? (
         <View style={styles.pila}>

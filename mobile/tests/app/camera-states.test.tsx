@@ -33,7 +33,12 @@ import { watermarkLines } from "@/features/forensic/watermark";
 import Camera from "@/app/camera";
 
 const SITE = "11111111-1111-1111-1111-111111111111";
-const AHORA = 1_800_000_000_000;
+// [T-5.21] El «ahora» del fixture es RELATIVO al reloj de verdad. Era un epoch
+// clavado en 2027, y desde que la frescura sale del reloj —y no de que la
+// consulta falle— un `dataUpdatedAt` en el futuro sale «fresco» y el estado
+// `stale` no se materializaba. Contar hacia atrás desde `Date.now()` hace que
+// «hace tres minutos» signifique de verdad hace tres minutos.
+const AHORA = Date.now();
 
 // ------------------------------------------------------------------ mocks
 
@@ -131,7 +136,8 @@ function instantanea(over: Record<string, unknown> = {}) {
     dataUpdatedAt: AHORA,
     loading: false,
     error: null as string | null,
-    stale: false,
+    // [T-5.21] `stale: boolean` → `staleSinceMs`: la frescura es un INSTANTE.
+    staleSinceMs: null,
     ...over,
   };
 }
@@ -202,7 +208,8 @@ describe("2.3 · cámara forense · el sello VIEJO se declara, no se calla ni se
   it("con snapshot retenido SE PUEDE SEGUIR CAPTURANDO (la evidencia es perecedera)", async () => {
     mockSnapshot = instantanea({
       data: estado(),
-      stale: true,
+      // [T-5.21] Viejo de verdad: el instante ES la frescura.
+      staleSinceMs: AHORA - 18 * 60_000,
       dataUpdatedAt: AHORA - 18 * 60_000,
     });
 
@@ -217,7 +224,8 @@ describe("2.3 · cámara forense · el sello VIEJO se declara, no se calla ni se
   it("y se AVISA antes de disparar, no después", async () => {
     mockSnapshot = instantanea({
       data: estado(),
-      stale: true,
+      // [T-5.21] Viejo de verdad: el instante ES la frescura.
+      staleSinceMs: AHORA - 18 * 60_000,
       dataUpdatedAt: AHORA - 18 * 60_000,
     });
 
@@ -234,7 +242,8 @@ describe("2.3 · cámara forense · el sello VIEJO se declara, no se calla ni se
     // sobre un rótulo de pantalla que no viajaría con el archivo.
     mockSnapshot = instantanea({
       data: estado(),
-      stale: true,
+      // [T-5.21] Viejo de verdad: el instante ES la frescura.
+      staleSinceMs: AHORA - 18 * 60_000,
       dataUpdatedAt: AHORA - 18 * 60_000,
     });
 
@@ -243,8 +252,20 @@ describe("2.3 · cámara forense · el sello VIEJO se declara, no se calla ni se
     await capturar(v);
 
     expect(v.getByTestId("watermark")).toHaveTextContent(/METADATOS RETENIDOS/);
-    // `AHORA - 18 min` en absoluto: el exhibit se lee meses después.
-    expect(v.getByTestId("watermark")).toHaveTextContent(/SNAPSHOT 2027-01-15 07:42:00Z/);
+    // `AHORA - 18 min` en ABSOLUTO: el exhibit se lee meses después, así que la
+    // marca no puede llevar «hace 18 min». El literal se DERIVA del mismo
+    // instante que el fixture: escrito a mano era `2027-01-15 07:42:00Z`, del
+    // epoch clavado que esta ficha retiró, y habría vuelto a caducar solo.
+    const selloEsperado = new Date(AHORA - 18 * 60_000)
+      .toISOString()
+      .replace("T", " ")
+      .replace(/\.\d+Z$/, "Z");
+    // Regex y no cadena: el matcher de RN compone el texto de varios `Text` y
+    // con una cadena no encuentra la subcadena aunque esté (la versión anterior
+    // de este test ya usaba regex por lo mismo).
+    expect(v.getByTestId("watermark")).toHaveTextContent(
+      new RegExp(`SNAPSHOT ${selloEsperado.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
     // Y el sello completo sigue ahí: la advertencia AÑADE, no sustituye.
     expect(v.getByTestId("watermark")).toHaveTextContent(/PGA 0.152 g \(gabinete\)/);
   });
@@ -290,7 +311,9 @@ describe("2.3 · cámara forense · contrato de 4 estados (regla de oro 7)", () 
           loading: e === "loading",
           error: e === "error" ? "No se pudo consultar el estado del sitio." : null,
           data: e === "stale" ? estado() : null,
-          stale: e === "stale",
+          // [T-5.21] La frescura es un INSTANTE, del mismo `dataUpdatedAt`
+          // que el fixture declara: no puede decir «viejo» y «fresco» a la vez.
+          staleSinceMs: e === "stale" ? AHORA - 60_000 : null,
           dataUpdatedAt: e === "stale" ? AHORA - 60_000 : AHORA,
         });
         return <Camera />;
