@@ -1341,3 +1341,61 @@ falso —relés que se mueven sin que sea real—, esta decisión no sirve y hay
 eso ya no es un supresor de salida, es un simulador dentro del camino de vida, y necesita su
 propia conversación y su propio gate físico. Lo que **no** cambia en ninguna revocación es el
 punto 3: nada que pueda suprimir una alerta real entra en este sistema.
+
+---
+
+## D-28 · La tipología del inmueble **sugiere** un umbral, no lo resuelve
+
+**Fecha:** 2026-09-02 · **Ficha:** `T-5.16` · **Estado:** vigente
+
+### El problema
+
+`BLUEPRINT §4.5` declara tres bandas por tipo de instalación —hospitales 0.040–0.060 g,
+industriales 0.080–0.120 g, corporativos 0.100–0.150 g— y **ninguna estaba implementada**.
+`sites.building_type` era texto libre, sin catálogo y sin restricción, y **nadie lo consultaba**:
+los alcances de umbral son tenant, sitio y sensor, y el tipo de edificio no entra en ninguno.
+
+La consecuencia es física y está en el código: el default del gabinete está documentado como
+*«Default = hospital»*, así que **toda la flota corre la banda de hospital**. Un industrial dado
+de alta hoy avisa dos veces por debajo de su banda, y no hay pantalla que lo diga.
+
+La pregunta abierta era si la tipología debía **resolver** el umbral (elegir «industrial» pone
+0.080–0.120 g) o solo **sugerirlo**.
+
+### La decisión
+
+**Sugiere.** El catálogo es cerrado, cada tipo lleva su banda de referencia, y la consola la
+**enseña**; aplicarla exige escribir una versión nueva del conjunto de reglas y publicarla, como
+cualquier otro cambio de umbral.
+
+### Por qué, y es la parte que no conviene perder
+
+1. **El tipo se edita desde una pantalla de captura.** Quien abre el formulario de una estación
+   suele ir a corregir una dirección o un dato de alta. Si el tipo resolviera el umbral, ese
+   guardado —administrativo, sin firma, sin publicación— **re-armaría el edificio a otra
+   sensibilidad**. Eso es un cambio de actuación por un acto de captura, y choca de frente con la
+   regla de oro 1 (camino de activación determinista y auditable) y con la 8.
+2. **El propio blueprint las llama «de referencia» y manda calibrar.** Son un punto de partida,
+   no una respuesta: un hospital en suelo blando y otro en roca no comparten disparo. Un sistema
+   que las aplicara solo estaría afirmando una calibración que nadie hizo.
+3. **Lo barato es lo reversible.** Sugerir y que alguien publique cuesta un clic más; resolver y
+   equivocarse cuesta un edificio avisando tarde, y nadie se entera hasta el sismo.
+
+### Lo que se construyó encima
+
+- Catálogo **cerrado** en `shared/schemas/tipologia_umbral.json`, del que derivan por igualdad la
+  validación de la API, el `CHECK` de `sites.building_type` y el desplegable de la consola.
+- Los tipos que el producto atiende y para los que **nadie publicó banda** —universidad, gobierno,
+  otro— la llevan en `null` **con su razón escrita**, en vez de prestarles la de hospital. Prestar
+  una banda es exactamente el defecto que abre esta ficha.
+- El gabinete **declara** la procedencia de su banda: `BANDA DE FÁBRICA · NADIE LA ELIGIÓ` cuando
+  corre el default. No la apaga —el edificio opera sin nube, regla de oro 2—, deja de hacerla
+  pasar por una decisión.
+
+### Cómo se revocaría
+
+Si algún día se quiere que el tipo resuelva, hace falta que **cambiar el tipo sea un acto
+publicado y firmado**, no una edición de formulario: es decir, sacar `building_type` de la
+pantalla de alta y meterlo en el mismo camino que los umbrales. Mientras se edite donde se edita
+hoy, esta decisión se mantiene. Lo que **no** cambia en ninguna revocación: una banda que nadie
+eligió no puede pintarse como una banda elegida.

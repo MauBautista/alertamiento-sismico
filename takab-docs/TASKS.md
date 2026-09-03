@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **274** · `[~]` **9** · `[ ]` **60**
+****Conteo de tareas:** total **343** · `[x]` **275** · `[~]` **9** · `[ ]` **59**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11984,7 +11984,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   contra `sent_at` si salió y contra **ahora** si no, y el `null` queda para lo único que lo
   merece — el canal que no tenía plazo.
 
-### [ ] T-5.16 · **Umbrales por tipo de inmueble**, con rollback — `SOFTWARE` + `DECISIÓN`
+### [x] T-5.16 · **Umbrales por tipo de inmueble**, con rollback — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-02**
 > `BLUEPRINT §4.5` declara tres bandas de referencia: hospitales 0.040–0.060 g, industriales
 > 0.080–0.120 g, corporativos 0.100–0.150 g. **Ninguna está implementada.** `building_type` es
 > texto libre sin catálogo ni restricción, y **nadie lo consulta** para resolver umbrales: los
@@ -12006,17 +12006,55 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que el umbral de un edificio corresponda a lo que ese edificio es, y que volver
   atrás sea un clic, no un dictado.
 - **Criterios de aceptación:**
-  - [ ] Decisión escrita **con su razón** sobre si la tipología resuelve umbrales o solo los
+  - [x] Decisión escrita **con su razón** sobre si la tipología resuelve umbrales o solo los
         sugiere.
-  - [ ] Catálogo cerrado de tipos, con las tres bandas del blueprint como valores de referencia
+  - [x] Catálogo cerrado de tipos, con las tres bandas del blueprint como valores de referencia
         **derivados de un solo sitio**, no copiados en tres archivos.
-  - [ ] Cambiar el tipo de un sitio **nunca** cambia por sí solo lo que corre en el gabinete: hace
+  - [x] Cambiar el tipo de un sitio **nunca** cambia por sí solo lo que corre en el gabinete: hace
         falta publicar, y la publicación va firmada como hoy.
-  - [ ] Rollback a una versión anterior del conjunto de reglas, como operación explícita que
+  - [x] Rollback a una versión anterior del conjunto de reglas, como operación explícita que
         **crea una versión nueva** declarando a cuál vuelve — nunca reescribiendo el histórico.
-  - [ ] El rollback queda auditado y respeta el conflicto por versión base.
-  - [ ] Test de que el default del edge deja de ser silenciosamente el de hospital: sin banda
+  - [x] El rollback queda auditado y respeta el conflicto por versión base.
+  - [x] Test de que el default del edge deja de ser silenciosamente el de hospital: sin banda
         resuelta, el gabinete **lo declara** en vez de suponerla.
+- **Cómo se cerró (2026-09-02).**
+  **La decisión es `D-28`: la tipología SUGIERE, no resuelve.** La razón que la sostiene, y que
+  conviene no perder: *el tipo se edita desde una pantalla de captura*. Quien abre el formulario
+  de una estación va normalmente a corregir una dirección; si el tipo resolviera el umbral, ese
+  guardado —administrativo, sin firma y sin publicación— **re-armaría el edificio a otra
+  sensibilidad**. Es un cambio de actuación por un acto de captura, y choca con las reglas de oro
+  1 y 8. Se prueba **midiendo**: `test_cambiar_el_TIPO_no_toca_el_rule_set_activo` compara el
+  rule_set activo antes y después de cambiar el tipo, en vez de fiarse de un comentario.
+  **El catálogo vive en `shared/schemas/tipologia_umbral.json`** y de ahí derivan, por igualdad y
+  en los dos sentidos, la validación de la API, el `CHECK` de `sites.building_type` y el
+  desplegable de la consola — y las tres bandas se leen **del propio blueprint** con una expresión
+  regular, así que retocar una cifra en un sitio y no en el otro sale rojo con el número que
+  cambió.
+  **El rollback** (`POST /rule-sets/{id}/rollback`) crea una versión **más**, nunca una menos:
+  `rolled_back_to` declara a cuál vuelve, queda auditado con las dos versiones y respeta el
+  conflicto por versión base igual que el PUT.
+  **Cinco cosas que aparecieron al hacerlo.**
+  (1) **Los tipos que el producto atiende y para los que NADIE publicó banda** —universidad,
+  gobierno, otro— la llevan en `null` **con su razón escrita**. Prestarles la de hospital habría
+  sido repetir el defecto que abre la ficha en vez de cerrarlo.
+  (2) **El rollback NO resucita un secreto rotado.** El `config` guarda el `secret` del webhook, y
+  una versión vieja lo trae; puede haberse rotado justamente porque se filtró. Se restauran los
+  valores de entonces con las credenciales de AHORA, reutilizando `redact_config` + `merge_secrets`
+  en vez de escribir una tercera regla de secretos.
+  (3) **El panel trataba «cualquier cosa que no sea `sin_resolver`» como banda publicada**, así
+  que un origen desconocido se leía como decidido — un fallback pintado de `ok`. Son **tres**
+  estados, y el tercero se declara. Lo cazó el censo de render del panel: mutar el campo no
+  cambiaba un pixel porque todas las mutaciones caían en la misma rama.
+  (4) **El origen se pinta SIEMPRE**, no solo cuando es malo: que la advertencia falte no puede
+  ser la única señal de que la banda sí se eligió.
+  (5) **`serverDataCensus` obligó a sacar el campo de tipología a componente propio.** Dentro del
+  formulario era dato de servidor sin los cuatro estados: con la consulta caída, un desplegable
+  con solo «SIN CLASIFICAR» se lee como «no hay tipos», que es lo contrario de «no se pudieron
+  leer».
+  **Lo que la migración `0057` hace con lo escrito antes:** `building_type` era texto libre. Se
+  normaliza lo reconocible y lo que no encaja pasa a `otro` **dejando el texto original en
+  `audit_log`** — perder la captura de alguien en silencio para que cuadre un `CHECK` es lo que
+  prohíbe la regla de oro 11.
 
 ### [ ] T-5.17 · El **sonido del simulacro** no se elige ni queda auditado — `SOFTWARE`
 > El selector de audio que la nube empuja cubre **dos ranuras** —sirena y tono de prueba— y el

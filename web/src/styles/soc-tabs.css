@@ -295,6 +295,23 @@
    son decorativos — `wait` (ámbar) es «el proveedor lo aceptó y no confirmó»,
    que no puede compartir color con `ok` («alguien lo tiene en la mano»). */
 .notifychain__count { margin: 0 0 6px; }
+/* [T-5.16] Historial de umbrales con vuelta atrás. */
+/* El marco del histórico: separa de la tarjeta de sliders de arriba. La clase
+   existe en el JSX, así que su regla también — lo exige el contrato clase↔CSS. */
+.rs-hist { margin-top: 10px; }
+.rs-hist__list { list-style: none; margin: 0; padding: 0; }
+.rs-hist__row {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 0;
+  border-bottom: 1px solid var(--tk-border); font: 400 11px/1.4 var(--f-ui);
+}
+.rs-hist__ts { color: var(--tk-fg-3); }
+.rs-hist__pill {
+  padding: 1px 7px; border-radius: var(--tk-radius-pill);
+  background: var(--tk-status-normal-15); color: var(--tk-status-normal);
+  font: 700 9px/1.6 var(--f-ui); letter-spacing: 0.08em;
+}
+.rs-hist__from { color: var(--tk-fg-3); font-size: 10px; letter-spacing: 0.06em; }
+.rs-hist__row > button { margin-left: auto; }
 .notifychain__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .notifychain__item {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;

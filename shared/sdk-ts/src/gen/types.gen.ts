@@ -47,6 +47,32 @@ export type AuthFrame = {
 };
 
 /**
+ * El catálogo entero, y la declaración de que solo SUGIERE.
+ *
+ * `resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la
+ * consola tiene que poder escribirlo en pantalla: un catálogo que llegara
+ * pelado invitaría a que la siguiente pantalla lo aplicara sola.
+ */
+export type BuildingTypeCatalog = {
+    items: Array<BuildingTypeOut>;
+    por_que_no_resuelve: Array<string>;
+    resuelve_umbrales: boolean;
+    sin_referencia_de_pgv: string;
+};
+
+/**
+ * Un tipo del catálogo, con su banda de REFERENCIA o la razón de no tenerla.
+ */
+export type BuildingTypeOut = {
+    banda: {
+        [key: string]: number;
+    } | null;
+    label: string;
+    sin_banda_por_que?: string | null;
+    value: string;
+};
+
+/**
  * Una de las cuatro capturas del reporte, o su ausencia con razón.
  */
 export type CapturaOut = {
@@ -2209,6 +2235,7 @@ export type RuleSetOut = {
     created_at: string;
     created_by: string | null;
     is_active: boolean;
+    rolled_back_to?: string | null;
     rule_set_id: string;
     scope_id: string;
     scope_type: string;
@@ -2241,6 +2268,18 @@ export type RuleSetPutIn = {
     };
     scope_id: string;
     scope_type: string;
+};
+
+/**
+ * Cuerpo de POST /rule-sets/{id}/rollback (T-5.16).
+ *
+ * ``base_version`` es la versión ACTIVA que el operador tenía delante cuando
+ * pulsó. Es el mismo control de concurrencia optimista que el PUT y por la
+ * misma razón: dos operadores mirando la misma pantalla, y el segundo no puede
+ * revertir a ciegas lo que el primero acaba de guardar.
+ */
+export type RuleSetRollbackIn = {
+    base_version: number;
 };
 
 /**
@@ -2719,6 +2758,22 @@ export type ListAuditAuditGetResponses = {
 };
 
 export type ListAuditAuditGetResponse = ListAuditAuditGetResponses[keyof ListAuditAuditGetResponses];
+
+export type ListBuildingTypesBuildingTypesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/building-types';
+};
+
+export type ListBuildingTypesBuildingTypesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BuildingTypeCatalog;
+};
+
+export type ListBuildingTypesBuildingTypesGetResponse = ListBuildingTypesBuildingTypesGetResponses[keyof ListBuildingTypesBuildingTypesGetResponses];
 
 export type ListReferenceEarthquakesCatalogEarthquakesGetData = {
     body?: never;
@@ -4958,6 +5013,33 @@ export type PublishRuleSetRuleSetsRuleSetIdPublishPostResponses = {
 };
 
 export type PublishRuleSetRuleSetsRuleSetIdPublishPostResponse = PublishRuleSetRuleSetsRuleSetIdPublishPostResponses[keyof PublishRuleSetRuleSetsRuleSetIdPublishPostResponses];
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostData = {
+    body: RuleSetRollbackIn;
+    path: {
+        rule_set_id: string;
+    };
+    query?: never;
+    url: '/rule-sets/{rule_set_id}/rollback';
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostError = RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors[keyof RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors];
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: RuleSetOut;
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponse = RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses[keyof RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses];
 
 export type ListSensorsSensorsGetData = {
     body?: never;

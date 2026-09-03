@@ -389,6 +389,9 @@ def test_status_exposes_live_thresholds_and_config_version(supervisor):
         "pga_trip_g": band.pga_trip_g,
         "pgv_watch_cms": band.pgv_watch_cms,
         "pgv_trip_cms": band.pgv_trip_cms,
+        # [T-5.16] La banda dice de dónde salió. Sin esto, la de fábrica —que es
+        # la de hospital— se pintaba igual que una elegida y publicada.
+        "origen": "sin_resolver",
     }
     assert status["config_version"] == 0  # jamás sincronizada: corre sus defaults
 
@@ -1499,3 +1502,32 @@ def test_index_evidence_hooks(supervisor):
         "evidence:",  # escena demo (baseStatus) — si no, el panel pinta undefined
     ):
         assert hook in html, hook
+
+
+# ── [T-5.16 · D-28] La banda que nadie eligió, declarada ────────────────────
+#
+# El default de `ThresholdBand` es 0.040–0.060 g, que es la banda de HOSPITAL, y
+# el panel la pintaba idéntica a una banda sincronizada desde la nube. Un
+# industrial dado de alta hoy avisa dos veces por debajo de su banda y **nada en
+# la pantalla lo dice**. La correlación estaba disponible —`config_version: 0`—
+# pero en otra sección y para que la hiciera un humano.
+
+
+def test_sin_config_sincronizada_la_banda_se_declara_SIN_RESOLVER(supervisor):
+    status = supervisor.local_api.status()
+    assert status["config_version"] == 0, "el arnés dejó de probar lo que dice probar"
+    assert status["thresholds"]["origen"] == "sin_resolver"
+    # Y los números SIGUEN AHÍ: el gabinete opera sin nube (regla de oro 2).
+    # Declarar que nadie la eligió no es apagarla.
+    assert status["thresholds"]["pga_trip_g"] == 0.060
+
+
+def test_tras_la_sincronizacion_la_banda_deja_de_estar_sin_resolver(supervisor):
+    updated = supervisor.settings.model_copy(deep=True)
+    updated.thresholds.pga_trip_g = 0.123
+    raw = updated.model_dump_json().encode()
+    supervisor.config.apply_signed_update(raw, supervisor.security.sign_config(raw, 7), 7)
+
+    status = supervisor.local_api.status()
+    assert status["thresholds"]["origen"] == "sincronizado"
+    assert status["thresholds"]["pga_trip_g"] == 0.123

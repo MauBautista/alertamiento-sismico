@@ -217,6 +217,10 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   #map-wrap{min-height:180px}
   #cmp-drawer{height:clamp(140px,30vh,216px)}
 }
+/* [T-5.16] La banda que nadie eligió, en ámbar: no es una avería —el gabinete
+   opera igual (regla de oro 2)— pero tampoco es una decisión, y pintarla como
+   las demás era hacerla pasar por una. */
+.sin-resolver{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -681,7 +685,7 @@ function baseStatus(){
       {code:'AM.R9F02', lat:19.21, lon:-97.98, distance_km:29.5},
     ],
     config_version: 4,
-    thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0},
+    thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0, origen:'sincronizado'},
     latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200},
     seedlink: {packets_seen:1284902, reconnects:2, duplicates:0, gaps:0},
     calibration: {calibrated:true, source:'StationXML FDSN AM.R4F74 2026-07-09',
@@ -1129,7 +1133,32 @@ function renderLanes(st, cal){
 function renderProximity(st, cal){
   const box = $('prox-bars'); box.textContent = '';
   const th = st.thresholds;
-  $('prox-profile').textContent = th ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g') : 'umbrales S/D (motor caído)';
+  // [T-5.16 · D-28] El origen va PEGADO a los números, no en otra sección: la
+  // banda de fábrica es la de HOSPITAL (0.040–0.060 g) y se pintaba idéntica a
+  // una elegida y publicada. Un industrial dado de alta hoy avisa dos veces por
+  // debajo de su banda, y hasta aquí la pantalla no lo decía.
+  // El origen se pinta SIEMPRE, no solo cuando es malo. Que la advertencia
+  // falte no puede ser la única señal de que la banda sí se eligió: quien mira
+  // esta pantalla a las 3 de la mañana no está comparando contra lo que
+  // recuerda de ayer. Además, un campo que solo pinta en una de sus ramas no
+  // tiene camino de render medible — lo cazó `test_panel_render_census`.
+  // TRES estados, no dos. La primera versión trataba «cualquier cosa que no sea
+  // sin_resolver» como banda publicada, así que un origen desconocido —un campo
+  // que llega vacío, un nombre nuevo del productor— se leía como decidido. Es la
+  // misma familia que un fallback pintado de `ok`, y aquí lo cazó el censo de
+  // render: mutar el campo no cambiaba un pixel porque todas las mutaciones
+  // caían en la misma rama.
+  const bandaSinResolver = th && th.origen === 'sin_resolver';
+  const procedencia = !th ? ''
+    : bandaSinResolver ? ' · BANDA DE FÁBRICA · NADIE LA ELIGIÓ'
+    : th.origen === 'sincronizado' ? ' · banda publicada'
+    : ' · ORIGEN DE LA BANDA SIN CLASIFICAR';
+  $('prox-profile').textContent = th
+    ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g'
+       + procedencia)
+    : 'umbrales S/D (motor caído)';
+  $('prox-profile').className =
+    (th && th.origen !== 'sincronizado') ? 'sin-resolver' : '';
   const enz = liveChannels(st).ENZ;
   [['PGA ENZ', enz ? enz.pga_g : null, th ? th.pga_watch_g : null, th ? th.pga_trip_g : null, (v)=>fmtG(v,cal)],
    ['PGV ENZ', enz ? enz.pgv_cms : null, th ? th.pgv_watch_cms : null, th ? th.pgv_trip_cms : null, (v)=>fmtV(v,cal)]]

@@ -131,7 +131,13 @@ CREATE TABLE sites (
   criticality   text NOT NULL DEFAULT 'medium' CHECK (criticality IN ('low','medium','high','critical')),
   geom          geography(Point,4326) NOT NULL,
   address       text,
-  building_type text,
+  -- [T-5.16 · D-28] Catálogo CERRADO, derivado de `shared/schemas/tipologia_umbral.json`
+  -- (`api/tests/test_tipologia_umbral.py` compara las dos listas por igualdad). El tipo
+  -- SUGIERE una banda de umbral, no la resuelve: cambiarlo no cambia por sí solo lo que
+  -- corre en el gabinete. NULL sigue permitido — un sitio puede no estar clasificado
+  -- todavía, y meterlo en `otro` afirmaría que alguien lo miró.
+  building_type text CHECK (building_type IN
+                ('hospital','industrial','corporativo','universidad','gobierno','otro')),
   -- [T-1.32] Retiro lógico: un sitio nunca se borra (evidencia y auditoría de sus
   -- incidentes lo referencian; regla de oro 11).
   status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active','retired')),
@@ -244,6 +250,11 @@ CREATE TABLE rule_sets (
   config      jsonb NOT NULL,
   created_by  uuid,
   created_at  timestamptz NOT NULL DEFAULT now(),
+  -- [T-5.16] Volver atrás CREA una versión nueva que declara a cuál vuelve; el
+  -- histórico no se reescribe jamás. Va en columna y no dentro de `config` a
+  -- propósito: `config` es el blob que viaja al gabinete, y un metadato de
+  -- gestión ahí llegaría hasta el Pi.
+  rolled_back_to uuid REFERENCES rule_sets(rule_set_id),
   UNIQUE (scope_type, scope_id, version)
 );
 

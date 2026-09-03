@@ -792,14 +792,27 @@ class LocalDashboard(EdgeModule):
 
         No son los de `EdgeSettings` estáticos: tras un `apply_signed_update` el
         panel debe pintar la línea de umbral que de verdad dispara.
+
+        [T-5.16 · D-28] Y ADEMÁS DE DÓNDE SALIERON. El default de fábrica es
+        0.040–0.060 g, que es la banda de HOSPITAL, y hasta aquí se pintaba
+        idéntica a una banda elegida y publicada: un industrial dado de alta hoy
+        avisa dos veces por debajo de su banda y la pantalla no lo decía. El
+        dato estaba —`config_version: 0`— pero en otra sección y para que la
+        correlación la hiciera un humano.
+
+        `sin_resolver` NO apaga nada: los números siguen ahí y el motor sigue
+        decidiendo con ellos, porque el gabinete opera sin nube (regla de oro 2).
+        Lo que cambia es que deja de hacerse pasar por una decisión.
         """
         try:
             band = self._rules.thresholds
+            version = self._config_version()
             return {
                 "pga_watch_g": band.pga_watch_g,
                 "pga_trip_g": band.pga_trip_g,
                 "pgv_watch_cms": band.pgv_watch_cms,
                 "pgv_trip_cms": band.pgv_trip_cms,
+                "origen": "sincronizado" if version else "sin_resolver",
             }
         except Exception:  # noqa: BLE001 — sección no-crítica
             log.warning("panel LAN: umbrales no disponibles", exc_info=True)

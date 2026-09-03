@@ -132,6 +132,9 @@ def _base() -> dict:
             "pga_trip_g": 0.060,
             "pgv_watch_cms": 2.0,
             "pgv_trip_cms": 4.0,
+            # [T-5.16] `config_version: 4` arriba ⇒ esta banda vino de la nube.
+            # `sin_resolver` es la otra mitad y la prueba `test_local_api.py`.
+            "origen": "sincronizado",
         },
         "latencies": {
             "reflex_s": 0.00665,

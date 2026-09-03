@@ -13,7 +13,10 @@ from sqlalchemy import TextClause, text
 
 _COLS = (
     "rule_set_id, tenant_id, scope_type, scope_id, version, is_active, config, "
-    "created_by, created_at"
+    # [T-5.16] A qué versión vuelve esta. NULL en todas menos en las que nacen de
+    # un rollback: la procedencia va aquí y no dentro de `config`, que es el blob
+    # que viaja al gabinete.
+    "created_by, created_at, rolled_back_to"
 )
 
 
@@ -90,15 +93,23 @@ def insert_new_version(
     scope_id: str,
     config: str,
     created_by: str,
+    rolled_back_to: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
-    """Inserta la nueva versión activa (``MAX(version)+1`` del alcance) y la devuelve."""
+    """Inserta la nueva versión activa (``MAX(version)+1`` del alcance) y la devuelve.
+
+    ``rolled_back_to`` = la versión a la que esta vuelve. **Un rollback es una
+    versión MÁS, nunca una menos**: el histórico es evidencia y no se reescribe,
+    así que volver atrás avanza el contador declarando de dónde salió.
+    """
     sql = (
         "INSERT INTO rule_sets "
-        "(tenant_id, scope_type, scope_id, version, is_active, config, created_by) "
+        "(tenant_id, scope_type, scope_id, version, is_active, config, created_by, "
+        " rolled_back_to) "
         "SELECT CAST(:tenant AS uuid), :st, CAST(:sid AS uuid), "
         "COALESCE((SELECT MAX(version) FROM rule_sets r "
         "          WHERE r.scope_type = :st AND r.scope_id = CAST(:sid AS uuid)), 0) + 1, "
-        "true, CAST(:config AS jsonb), CAST(:created_by AS uuid) "
+        "true, CAST(:config AS jsonb), CAST(:created_by AS uuid), "
+        "CAST(:rolled_back_to AS uuid) "
         f"RETURNING {_COLS}"
     )
     return text(sql), {
@@ -107,4 +118,5 @@ def insert_new_version(
         "sid": scope_id,
         "config": config,
         "created_by": created_by,
+        "rolled_back_to": rolled_back_to,
     }

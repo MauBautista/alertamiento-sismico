@@ -145,6 +145,86 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "BuildingTypeCatalog": {
+        "description": "El catálogo entero, y la declaración de que solo SUGIERE.\n\n`resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la\nconsola tiene que poder escribirlo en pantalla: un catálogo que llegara\npelado invitaría a que la siguiente pantalla lo aplicara sola.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BuildingTypeOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "por_que_no_resuelve": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Por Que No Resuelve",
+            "type": "array"
+          },
+          "resuelve_umbrales": {
+            "title": "Resuelve Umbrales",
+            "type": "boolean"
+          },
+          "sin_referencia_de_pgv": {
+            "title": "Sin Referencia De Pgv",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resuelve_umbrales",
+          "por_que_no_resuelve",
+          "sin_referencia_de_pgv",
+          "items"
+        ],
+        "title": "BuildingTypeCatalog",
+        "type": "object"
+      },
+      "BuildingTypeOut": {
+        "description": "Un tipo del catálogo, con su banda de REFERENCIA o la razón de no tenerla.",
+        "properties": {
+          "banda": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banda"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "sin_banda_por_que": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sin Banda Por Que"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "banda"
+        ],
+        "title": "BuildingTypeOut",
+        "type": "object"
+      },
       "CapturaOut": {
         "description": "Una de las cuatro capturas del reporte, o su ausencia con razón.",
         "properties": {
@@ -8631,6 +8711,18 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "rolled_back_to": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolled Back To"
+          },
           "rule_set_id": {
             "format": "uuid",
             "title": "Rule Set Id",
@@ -8729,6 +8821,20 @@
           "config"
         ],
         "title": "RuleSetPutIn",
+        "type": "object"
+      },
+      "RuleSetRollbackIn": {
+        "description": "Cuerpo de POST /rule-sets/{id}/rollback (T-5.16).\n\n``base_version`` es la versión ACTIVA que el operador tenía delante cuando\npulsó. Es el mismo control de concurrencia optimista que el PUT y por la\nmisma razón: dos operadores mirando la misma pantalla, y el segundo no puede\nrevertir a ciegas lo que el primero acaba de guardar.",
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_version"
+        ],
+        "title": "RuleSetRollbackIn",
         "type": "object"
       },
       "SeismicEventOut": {
@@ -9509,7 +9615,6 @@
           "building_type": {
             "anyOf": [
               {
-                "maxLength": 100,
                 "type": "string"
               },
               {
@@ -10093,7 +10198,6 @@
           "building_type": {
             "anyOf": [
               {
-                "maxLength": 100,
                 "type": "string"
               },
               {
@@ -11071,6 +11175,25 @@
           }
         },
         "summary": "List Audit"
+      }
+    },
+    "/building-types": {
+      "get": {
+        "description": "Catálogo cerrado de tipología, con su banda de umbral **de referencia**.\n\nSale con `resuelve_umbrales: false` en el cuerpo, y no como comentario: la\nconsola tiene que poder decir en pantalla que esto SUGIERE. Un catálogo que\nllegara pelado invitaría a que la siguiente pantalla lo aplicara sola, que es\njusto lo que `D-28` prohíbe.",
+        "operationId": "list_building_types_building_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildingTypeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Building Types"
       }
     },
     "/catalog/earthquakes": {
@@ -14821,6 +14944,57 @@
           }
         },
         "summary": "Publish Rule Set"
+      }
+    },
+    "/rule-sets/{rule_set_id}/rollback": {
+      "post": {
+        "description": "Vuelve a una versión anterior CREANDO una nueva que declara a cuál vuelve.\n\nEl histórico es evidencia (regla de oro 11) y no se reescribe: volver atrás\n**avanza** el contador. Hasta hoy la única forma de volver era teclear los\nvalores viejos, que además perdía la constancia de que aquello fue una\nreversión y no una edición cualquiera.\n\nLos secretos NO se restauran. Un `secret` de webhook puede haberse rotado\njustamente porque se filtró, y resucitarlo al revertir un umbral sería\ndevolver al aire una credencial retirada: se conservan los VIGENTES, que es\nla misma regla que ya aplica el PUT desde el otro lado.",
+        "operationId": "rollback_rule_set_rule_sets__rule_set_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_set_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetRollbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Rule Set"
       }
     },
     "/sensors": {
