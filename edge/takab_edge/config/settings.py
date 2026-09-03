@@ -57,6 +57,11 @@ class AudioProfile(BaseModel):
 
     siren: str = ""
     test: str = ""
+    #: [T-5.17] Voceo de SIMULACRO. Antes salía solo de un ajuste local con valor
+    #: por defecto vacío, configurable tocando el `edge.env` de cada gabinete uno
+    #: por uno: elegir el sonido de un macrosimulacro de treinta edificios era
+    #: treinta sesiones de SSH. Mismas reglas que las otras dos ranuras.
+    simulacro: str = ""
 
 
 class ThresholdBand(BaseModel):

@@ -206,6 +206,23 @@ def _select_drills_page(
     )
 
 
+def _audio_del_acuse(ack: Any) -> dict[str, Any] | None:
+    """[T-5.17] Lo que sonó, sacado del acuse del gabinete.
+
+    `None` cuando el acuse no lo trae — un gabinete con firmware anterior — y eso
+    NO es lo mismo que `sha256: null`, que significa «el gabinete lo resolvió y no
+    había asset». Colapsarlos haría imposible saber si falta el dato o faltó el
+    sonido.
+    """
+    if not isinstance(ack, dict):
+        return None
+    resultados = ack.get("results")
+    if not isinstance(resultados, dict):
+        return None
+    audio = resultados.get("audio")
+    return audio if isinstance(audio, dict) else None
+
+
 async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSiteOut]]:
     ids = [r["drill_id"] for r in rows]
     if not ids:
@@ -223,6 +240,7 @@ async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSi
                 commandable=bool(r["commandable"]),
                 acked_at=r["acked_at"],
                 ack_latency_s=_latencia(r["issued_at"], r["acked_at"]),
+                audio=_audio_del_acuse(r["ack"]),
             )
         )
     return out
@@ -688,6 +706,8 @@ async def drill_report(
                 commandable=s.commandable,
                 acked=s.command_status == "acked",
                 latency_s=s.ack_latency_s,
+                # [T-5.17] Lo que sonó, del acuse del propio gabinete.
+                audio=s.audio,
             )
             for s in sitios
         ],

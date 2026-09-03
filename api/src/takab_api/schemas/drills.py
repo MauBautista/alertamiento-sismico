@@ -50,6 +50,12 @@ class DrillSiteOut(BaseModel):
     #: Segundos entre la emisión y el acuse. `None` cuando no acusó — y NO cero:
     #: un cero se leería como «acusó al instante», que es lo contrario.
     ack_latency_s: float | None = None
+    #: [T-5.17] QUÉ sonó en este sitio: `asset_id`, `sha256`, `will_sound` y, si
+    #: no sonó nada, la razón. Sale del acuse del gabinete (`ack.results.audio`),
+    #: que es donde el edge lo resuelve. `None` = el acuse no lo trae — un
+    #: gabinete con firmware anterior a `T-5.17`, y se distingue de `sha256: null`
+    #: (sí lo trae y declara que no había asset).
+    audio: dict[str, Any] | None = None
 
 
 class DrillOut(BaseModel):

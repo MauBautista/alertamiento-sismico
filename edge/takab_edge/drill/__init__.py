@@ -30,6 +30,35 @@ log = logging.getLogger("takab_edge.drill")
 _ABORT_TIERS = (Tier.RESTRICTED, Tier.EVACUATE_OR_HOLD, Tier.MANUAL_ONLY)
 
 
+def _evidencia_de_audio(audio) -> dict:  # noqa: ANN001 — módulo advisory opcional
+    """Qué sonará en el simulacro, o por qué no sonará nada.
+
+    **Nunca devuelve `None`.** Un `audio: null` y un «no había módulo de audio»
+    son indistinguibles para quien lee el reporte al día siguiente, y el segundo
+    es un hecho declarable: el voceo es advisory y el simulacro vive igual —
+    banner y registro—, así que su ausencia no es un fallo que esconder.
+    """
+    if audio is None:
+        return {
+            "asset_id": None,
+            "path": None,
+            "sha256": None,
+            "will_sound": False,
+            "reason": "el gabinete no tiene módulo de audio: el simulacro corre sin voceo",
+        }
+    try:
+        return dict(audio.simulacro_evidence())
+    except Exception as exc:  # noqa: BLE001 — advisory: jamás al camino de vida
+        log.exception("no se pudo resolver la evidencia de audio del simulacro (aislado)")
+        return {
+            "asset_id": None,
+            "path": None,
+            "sha256": None,
+            "will_sound": False,
+            "reason": f"no se pudo resolver el asset de voceo: {exc}",
+        }
+
+
 class DrillController(EdgeModule):
     """Estado del simulacro para el panel LAN + voceo advisory. Cero relés."""
 
@@ -92,6 +121,11 @@ class DrillController(EdgeModule):
                 "duration_s": duration,
                 "aborted": False,
                 "abort_reason": None,
+                # [T-5.17] QUÉ va a sonar, resuelto UNA vez y aquí: de este mismo
+                # sitio leen el panel y el acuse a la nube. Con dos resoluciones,
+                # el documento de cumplimiento podría citar un asset y el altavoz
+                # sacar otro.
+                "audio": _evidencia_de_audio(self._audio),
             }
             timer = threading.Timer(duration, self._on_window_end)
             timer.daemon = True

@@ -29,7 +29,7 @@ from sqlalchemy import text
 
 import auth_utils as au
 from takab_api.db.engine import get_engine
-from takab_api.drill_report import ReporteSimulacro, SitioReporte, render
+from takab_api.drill_report import ReporteSimulacro, SitioReporte, linea_de_audio, render
 from takab_api.main import create_app
 from takab_api.routers.commands import get_publisher
 from takab_api.routers.drills import router as drills_router
@@ -220,3 +220,64 @@ async def test_roles_sin_drill_start_no_exportan(client, gateway, publisher, rol
         did = await _simulacro(client, publisher)
         r = await client.post(f"/drills/{did}/report", headers=_token(role))
         assert r.status_code == 403
+
+
+# ── [T-5.17] Qué sonó, en el documento ─────────────────────────────────────
+#
+# El hueco que cierra: el sha256 del asset se registraba AL ARRANCAR el gabinete,
+# no al sonar, y la única constancia de la reproducción era una línea del journal
+# de ese Pi. Un reporte de cumplimiento que dice «se voceó» sin decir QUÉ no
+# responde a la pregunta que le van a hacer.
+#
+# Se prueba la LÍNEA, no los bytes del PDF: el texto es lo que hay que fijar y
+# rasparlo del binario probaría el renderizador, no el enunciado.
+
+AUDIO_OK = {
+    "asset_id": "takab-simulacro-v1",
+    "sha256": "b" * 64,
+    "will_sound": True,
+    "reason": "",
+}
+
+
+def test_la_linea_cita_el_asset_y_su_HUELLA() -> None:
+    linea = linea_de_audio(SitioReporte("A", True, True, 12.0, audio=AUDIO_OK))
+    assert "takab-simulacro-v1" in linea
+    # La huella recortada: un PDF no es sitio para 64 caracteres por sitio, y los
+    # 16 primeros ya identifican el binario contra el catálogo.
+    assert "b" * 16 in linea
+    assert "b" * 64 not in linea
+
+
+def test_un_sitio_que_NO_voceo_lo_dice_con_su_razon() -> None:
+    """«No sonó» y «no sabemos qué sonó» son dos respuestas distintas."""
+    sin_voceo = {
+        "asset_id": None,
+        "sha256": None,
+        "will_sound": False,
+        "reason": "voceo por audio deshabilitado (audio_enabled=false)",
+    }
+    linea = linea_de_audio(SitioReporte("A", True, True, 12.0, audio=sin_voceo))
+    assert "SIN VOCEO" in linea.upper()
+    assert "audio_enabled" in linea, "la razón se pierde y el lector no puede actuar"
+
+
+def test_un_gabinete_que_NO_REPORTA_audio_no_se_confunde_con_uno_que_no_voceo() -> None:
+    """Firmware anterior a `T-5.17`: no lo trae. Eso NO es «no sonó»."""
+    linea = linea_de_audio(SitioReporte("A", True, True, 12.0, audio=None)).upper()
+    assert "NO REPORTADO" in linea
+    assert "SIN VOCEO" not in linea
+
+
+def test_un_asset_LOCAL_sin_id_de_catalogo_se_cita_por_su_huella() -> None:
+    """La grabación del sitio no tiene id de catálogo, y su hash sigue valiendo."""
+    local = {"asset_id": None, "sha256": "c" * 64, "will_sound": True, "reason": ""}
+    linea = linea_de_audio(SitioReporte("A", True, True, 12.0, audio=local))
+    assert "c" * 16 in linea
+    assert "local" in linea.lower()
+
+
+def test_el_PDF_sigue_siendo_DETERMINISTA_con_el_audio_dentro() -> None:
+    """La huella del reporte solo prueba algo si dos renders coinciden."""
+    r = _rep(SitioReporte("A", True, True, 12.0, audio=AUDIO_OK))
+    assert render(r) == render(_rep(SitioReporte("A", True, True, 12.0, audio=AUDIO_OK)))

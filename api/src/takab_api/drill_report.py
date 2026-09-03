@@ -44,6 +44,38 @@ class SitioReporte:
     commandable: bool
     acked: bool
     latency_s: float | None
+    #: [T-5.17] Lo que sonó en este sitio, tal como lo acusó el gabinete.
+    #: `None` = el acuse no lo trae (firmware anterior). NO es «no sonó».
+    audio: dict | None = None
+
+
+#: Cuántos caracteres del sha256 caben —y bastan— en una línea del reporte. Los
+#: 16 primeros identifican el binario contra el catálogo; los 64 no caben por
+#: sitio y nadie los teclea para comparar.
+_HUELLA = 16
+
+
+def linea_de_audio(sitio: SitioReporte) -> str:
+    """Qué sonó en este sitio, en una línea del documento.
+
+    TRES desenlaces, y ninguno se puede confundir con otro:
+
+    * el gabinete voceó ⇒ el asset y su huella;
+    * el gabinete resolvió y NO había voceo ⇒ «SIN VOCEO» **y la razón**, porque
+      un lector que no sabe por qué no puede arreglarlo;
+    * el gabinete no reportó nada ⇒ «NO REPORTADO». Es firmware anterior a
+      `T-5.17`, y colapsarlo con el anterior afirmaría un silencio que nadie
+      midió.
+    """
+    audio = sitio.audio
+    if not isinstance(audio, dict):
+        return "AUDIO NO REPORTADO POR EL GABINETE"
+    sha = audio.get("sha256")
+    if not sha or not audio.get("will_sound"):
+        razon = str(audio.get("reason") or "el gabinete no declaró la razón")
+        return f"SIN VOCEO — {razon}"
+    origen = audio.get("asset_id") or "asset local del sitio"
+    return f"{origen} · sha256 {str(sha)[:_HUELLA]}…"
 
 
 @dataclass
@@ -128,6 +160,15 @@ def render(rep: ReporteSimulacro) -> bytes:
             0,
             3.8,
             pdf.text_of(f"ACUSÓ           {s.site_name:<34} {_t(s.latency_s)}"),
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+        # [T-5.17] Qué sonó, debajo del acuse y no en una sección aparte: quien
+        # lee esta línea está preguntando por ESE edificio.
+        pdf.cell(
+            0,
+            3.4,
+            pdf.text_of(f"                  ↳ {linea_de_audio(s)}"),
             new_x=XPos.LMARGIN,
             new_y=YPos.NEXT,
         )

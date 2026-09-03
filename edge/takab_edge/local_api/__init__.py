@@ -1440,13 +1440,57 @@ class LocalDashboard(EdgeModule):
         )
 
     def drill_audio(self) -> None:
-        """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés."""
+        """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés.
+
+        [T-5.17] Y deja fila en la BITÁCORA LOCAL, no solo en la `deque` de
+        `_actions`, que vive en RAM y la borra un reinicio. Esto sale por el
+        altavoz de un edificio con gente dentro; que la única constancia fuera un
+        anillo en memoria y una línea del journal significaba que «¿qué sonó el 19
+        de septiembre en la torre B?» solo se podía contestar con SSH y suerte.
+
+        La fila lleva el ASSET Y SU HASH, no solo el verbo: «se voceó» sin decir
+        qué se voceó no responde a un perito.
+        """
         if self._audio is None:
             log.warning("drill de voceo solicitado sin módulo de audio")
             return
+        evidencia = {}
+        try:
+            evidencia = dict(self._audio.simulacro_evidence())
+        except Exception:  # noqa: BLE001 — advisory: la evidencia no puede tumbar el voceo
+            log.exception("no se pudo resolver la evidencia de audio del voceo LAN (aislado)")
         self._audio.play_simulacro()
         self._record_action("drill_audio")
-        log.warning("voceo de SIMULACRO solicitado por LAN")
+        self._registrar_voceo(evidencia)
+        log.warning("voceo de SIMULACRO solicitado por LAN (%s)", evidencia.get("path"))
+
+    def _registrar_voceo(self, evidencia: dict) -> None:
+        """[T-5.17] La fila persistida del voceo. Aislada: jamás tumba el botón."""
+        if self._ledger is None:
+            return
+        from takab_edge.audit import ACTOR_LAN
+        from takab_edge.contracts import ActuationCause
+
+        sha = evidencia.get("sha256")
+        detalle = (
+            f"asset={evidencia.get('asset_id') or 'local'} "
+            f"sha256={sha[:16] if sha else 'S/D'} "
+            f"path={evidencia.get('path') or 'S/D'}"
+        )
+        try:
+            self._ledger.record(
+                cause=ActuationCause.LAN_DRILL_VOICE,
+                actor=ACTOR_LAN,
+                channel=ActuatorChannel.SYSTEM,
+                action="drill_audio",
+                # `will_sound=False` NO es un fallo: el voceo puede estar apagado
+                # por su gate de hardware y el simulacro corre igual. Se registra
+                # como intento no ejecutado para que la fila no afirme un sonido.
+                success=bool(evidencia.get("will_sound")),
+                detail=detalle,
+            )
+        except Exception:  # noqa: BLE001 — la bitácora jamás propaga
+            log.exception("no se pudo registrar el voceo de simulacro (aislado)")
 
     @property
     def address(self) -> tuple[str, int] | None:

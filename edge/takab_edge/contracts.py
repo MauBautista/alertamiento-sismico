@@ -126,6 +126,12 @@ class ActuationCause(StrEnum):
     LAN_ACTUATION_TEST = "lan_actuation_test"
     LAN_TEST_MODE = "lan_test_mode"
     LAN_RESET = "lan_reset"
+    #: [T-5.17] Voceo de SIMULACRO pedido desde el panel. CERO relés —por eso va
+    #: al canal lógico `system`—, pero sale por el altavoz de un edificio con
+    #: gente dentro, y hasta hoy solo quedaba en una `deque` en RAM que un
+    #: reinicio borra. La pregunta que responde: qué sonó, cuándo y por orden de
+    #: quién, el día del macrosimulacro.
+    LAN_DRILL_VOICE = "lan_drill_voice"
     #: Nadie declaró la causa. Se ESCRIBE así y se grita: un hueco visible es una
     #: pregunta para quien revisa; un hueco silencioso es el defecto `RO-4.e`.
     UNDECLARED = "undeclared"

@@ -849,7 +849,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   `audit_log`** — perder la captura de alguien en silencio para que cuadre un `CHECK` es lo que
   prohíbe la regla de oro 11.
 
-### [ ] T-5.17 · El **sonido del simulacro** no se elige ni queda auditado — `SOFTWARE`
+### [x] T-5.17 · El **sonido del simulacro** no se elige ni queda auditado — `SOFTWARE` · **CERRADA 2026-09-02**
 > El selector de audio que la nube empuja cubre **dos ranuras** —sirena y tono de prueba— y el
 > voceo de simulacro **no está entre ellas**: sale de un ajuste local cuyo valor por defecto es
 > vacío, configurable solo tocando el archivo de entorno de cada gabinete.
@@ -868,14 +868,47 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que se pueda elegir el sonido del simulacro desde la nube y que quede constancia
   de qué sonó exactamente.
 - **Criterios de aceptación:**
-  - [ ] El perfil de audio gana la ranura del voceo de simulacro, con las mismas reglas que las
+  - [x] El perfil de audio gana la ranura del voceo de simulacro, con las mismas reglas que las
         dos existentes.
-  - [ ] El sha256 del asset **viaja en el acuse** del arranque del simulacro y queda persistido
+  - [x] El sha256 del asset **viaja en el acuse** del arranque del simulacro y queda persistido
         junto al acuse por sitio, no solo en el journal.
-  - [ ] El botón del panel deja constancia persistida, no en un anillo en memoria.
-  - [ ] Un identificador desconocido conserva el tono anterior y **lo declara**; el tono oficial
+  - [x] El botón del panel deja constancia persistida, no en un anillo en memoria.
+  - [x] Un identificador desconocido conserva el tono anterior y **lo declara**; el tono oficial
         sigue ausente del catálogo.
-  - [ ] Test que recorra los tres caminos: identificador válido, desconocido y reservado.
+  - [x] Test que recorra los tres caminos: identificador válido, desconocido y reservado.
+- **Cómo se cerró (2026-09-02).**
+  **La ranura** `audio.simulacro` sigue las tres reglas de las otras dos, y no por copia: el bucle
+  de `apply_audio_profile` recorre las tres con el mismo código, así que la cuarta que alguien
+  añada hereda las reglas o no entra. El voceo de simulacro deja además de leerse de `settings` en
+  cada reproducción y pasa a ser **estado del módulo**, que es lo que permite que la nube lo
+  elija; el valor inicial sigue siendo el asset local del sitio.
+  **El sha256 se calcula de lo que va a sonar, en el instante de sonar**, y no del asset que se
+  enumeró al arrancar. La diferencia no es teórica: entre el arranque y el simulacro puede haber
+  entrado una config firmada que cambió el tono, y el hash que se registraba hasta hoy podía no
+  ser el del sonido que salió por la bocina. Viaja en `results.audio` del acuse —campo que ya
+  existía en el contrato, así que **no se abre superficie nueva hacia el gabinete**—, se persiste
+  con el acuse por sitio, se expone en `DrillSiteOut.audio` y se cita en el PDF del reporte.
+  **El botón del panel** escribe en la bitácora local (`ActuationLedger`), con causa propia
+  `lan_drill_voice` y con el asset y su huella en el detalle: «se voceó» sin decir qué se voceó no
+  responde a un perito. Antes solo quedaba en la `deque` de `_actions`, que un reinicio borra.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **Un id RESERVADO y uno inventado acababan indistinguibles.** Los dos conservan el tono
+  anterior —eso está bien—, pero un tecleo y una infracción de licencia no son el mismo hecho. El
+  reporte de flota gana `reserved` con la razón, para poder decir «el tono oficial de SASMEX es de
+  CIRES» en vez de un «desconocido» opaco.
+  (2) **`audio: null` y «no había módulo de audio» eran lo mismo para quien lee el reporte al día
+  siguiente.** Ahora la evidencia **nunca es `None`**: declara la razón, porque el voceo es
+  advisory y un simulacro sin él es legítimo —el banner y el registro viven igual—.
+  (3) **Y un tercer estado en el documento: «NO REPORTADO».** Un gabinete con firmware anterior no
+  trae el campo, y colapsarlo con «SIN VOCEO» afirmaría un silencio que nadie midió.
+  **Lo que NO se cierra aquí, y conviene no leer de más:** el catálogo gana un **tono**
+  (`takab-simulacro-v1`), no el mensaje hablado. El voceo grabado sigue siendo un asset local y su
+  gate de hardware sigue abierto — `RUNBOOK-gate-hw-movil-y-voceo.md §C.2` pide dos grabaciones
+  **distinguibles a oído** y nadie las ha hecho. El tono está construido para no confundirse con
+  la sirena (carillón de tres pulsos con dos segundos de silencio: el patrón de la megafonía, no
+  el de una alarma), es reproducible con `edge/scripts/gen_simulacro.py` como los otros dos, y hay
+  test de que los tres binarios del catálogo son **distintos entre sí** — dos ids apuntando al
+  mismo WAV sonarían igual aunque el catálogo dijera lo contrario.
 
 ### [ ] T-5.18 · La IA **no tiene tope de gasto** — `SOFTWARE`
 > Hay contabilidad por llamada (el coste se lee de la respuesta del proveedor y se escribe en la

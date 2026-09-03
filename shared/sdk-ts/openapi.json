@@ -2747,6 +2747,18 @@
             ],
             "title": "Acked At"
           },
+          "audio": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
           "command_id": {
             "anyOf": [
               {

@@ -671,6 +671,9 @@ export type DrillSiteOut = {
     } | null;
     ack_latency_s?: number | null;
     acked_at?: string | null;
+    audio?: {
+        [key: string]: unknown;
+    } | null;
     command_id: string | null;
     command_status: string | null;
     commandable?: boolean;
