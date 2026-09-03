@@ -1244,6 +1244,37 @@ REVOKE ALL ON FUNCTION app_retire_code_state(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_verify_retire_code(uuid, text) TO takab_app;
 GRANT EXECUTE ON FUNCTION app_retire_code_state(uuid) TO takab_app;
 
+-- [T-5.18] Cuota de gasto de IA por tenant y mes. Había contabilidad POR LLAMADA
+-- y techo de tokens por llamada; no había cuota, contador acumulado ni corte.
+--
+-- ES UN CONTADOR, NO EVIDENCIA: por eso se actualiza en sitio y `takab_app` tiene
+-- UPDATE, al revés que casi todo lo demás. Lo que sí es evidencia —cuánto costó
+-- cada llamada, cuándo se avisó y cuándo se cortó— vive en `audit_log`, que es
+-- append-only y exento de poda (regla de oro 11).
+--
+-- `warned_at`/`blocked_at` son instantes de TRANSICIÓN y no banderas: son lo que
+-- hace que el aviso y el corte dejen UNA fila de auditoría por periodo en vez de
+-- una por petición (regla de oro 10).
+CREATE TABLE ai_spend (
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  -- Mes UTC 'YYYY-MM'. Texto y no `date`: la clave es un MES, y guardarlo como el
+  -- día 1 invita a comparar rangos y contar dos veces el borde.
+  period      text NOT NULL CHECK (period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  spent_usd   numeric(12,6) NOT NULL DEFAULT 0,
+  calls       integer NOT NULL DEFAULT 0,
+  warned_at   timestamptz,
+  blocked_at  timestamptz,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, period)
+);
+GRANT SELECT, INSERT, UPDATE ON ai_spend TO takab_app;
+
+ALTER TABLE ai_spend ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_spend FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ai_spend_rw ON ai_spend FOR ALL
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal())
+  WITH CHECK (tenant_id = app_tenant_id() OR app_is_takab_internal());
+
 -- Cascada de notificación (T-1.21 · blueprint §5.6): un job por (incidente,
 -- canal, modo) — UNIQUE = idempotencia del orquestador ante re-entregas.
 CREATE TABLE notification_jobs (

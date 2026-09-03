@@ -910,7 +910,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   test de que los tres binarios del catálogo son **distintos entre sí** — dos ids apuntando al
   mismo WAV sonarían igual aunque el catálogo dijera lo contrario.
 
-### [ ] T-5.18 · La IA **no tiene tope de gasto** — `SOFTWARE`
+### [x] T-5.18 · La IA **no tiene tope de gasto** — `SOFTWARE` · **CERRADA 2026-09-03**
 > Hay contabilidad por llamada (el coste se lee de la respuesta del proveedor y se escribe en la
 > bitácora) y techo de tokens por llamada. **No hay cuota, ni contador acumulado, ni corte, ni por
 > tenant ni por mes.** Y el endpoint que la invocaría **no tiene límite de frecuencia**: la única
@@ -922,13 +922,45 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** api · **Depende de:** nada · **Prioridad: ALTA (precede a `T-3.01`)**
 - **Objetivo:** que encender la IA no pueda costar más de lo que alguien decidió.
 - **Criterios de aceptación:**
-  - [ ] Tope por tenant y por mes, configurable, con valor por defecto conservador.
-  - [ ] Contador acumulado persistido; alcanzado el tope, **el proveedor cae al determinista** y
+  - [x] Tope por tenant y por mes, configurable, con valor por defecto conservador.
+  - [x] Contador acumulado persistido; alcanzado el tope, **el proveedor cae al determinista** y
         lo declara — nunca falla la exportación, que es una superficie de vida.
-  - [ ] El corte queda auditado, y el acercarse al tope también (una fila, no una por petición).
-  - [ ] Límite de frecuencia en la exportación de reportes, por usuario y por sitio, con el mismo
+  - [x] El corte queda auditado, y el acercarse al tope también (una fila, no una por petición).
+  - [x] Límite de frecuencia en la exportación de reportes, por usuario y por sitio, con el mismo
         patrón de dos techos que ya usan los comandos.
-  - [ ] Test de que con la perilla apagada nada de esto cambia el comportamiento actual.
+  - [x] Test de que con la perilla apagada nada de esto cambia el comportamiento actual.
+- **Cómo se cerró (2026-09-03).**
+  **Tabla `ai_spend`** (migración `0058`), una fila por `(tenant, mes UTC)`. Es un **contador, no
+  evidencia**: por eso se actualiza en sitio y `takab_app` tiene UPDATE, al revés que casi todo lo
+  demás del esquema. Lo que sí es evidencia —cuánto costó cada llamada, cuándo se avisó y cuándo se
+  cortó— sigue en `audit_log`, que es append-only y exento de poda. El tope por defecto son **5 USD
+  al mes**, deliberadamente conservador: el defecto de una cuota no puede ser «el que no molesta».
+  **Agotada la cuota, la exportación SALE IGUAL** con texto determinista y lo declara en el PDF. Es
+  la decisión que gobierna la ficha: el dictamen es una superficie de vida —alguien lo usa para
+  decidir si un edificio se ocupa— y un 429 ahí convertiría un tope de gasto en una **negación de
+  evidencia**. La prosa de IA rodea al veredicto y el veredicto no la necesita.
+  **El freno de la exportación** son los dos techos de los comandos: el del usuario y el del
+  **edificio** (`RO-8.e`: dos operadores coordinados agotan el segundo sin que ninguno rebase el
+  suyo). Se cuenta desde `audit_log`, que ya registra cada exportación y no se poda nunca — sin
+  tabla nueva ni contador que se pueda perder —, y el rechazo llega **antes de renderizar**:
+  rechazar después de haber gastado el PDF y la llamada de IA no protegería de nada.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **La auditoría del corte no escribía nunca.** La primera versión auditaba desde el router
+  releyendo el estado, y `leer_estado` **consume** la transición al sellar `blocked_at`: la
+  segunda lectura ya la veía consumida. Quien sella el hecho tiene que escribirlo, así que la fila
+  se mudó al módulo de cuota. Lo cazó escribir el test, no leer el código.
+  (2) **`cap = 0` significa SIN TOPE, no «tope cero»**, y está declarado: es la lectura
+  conservadora del ajuste ausente. Quien quiera cortar del todo apaga `openrouter_enabled`, que es
+  el interruptor que ya existía.
+  (3) **El tope se puede rebasar por UNA llamada, y se declara en vez de disimularse.** El coste
+  solo se conoce al volver del proveedor, así que la secuencia honesta es leer → decidir → llamar →
+  sumar. Reservar un estimado antes habría sido cobrar por lo que no se sabe; el desbordamiento
+  máximo es una llamada, acotado a su vez por el techo de tokens que ya existía. Hay test de que
+  el gasto real queda escrito **sin recortarlo al tope**.
+  **Y el criterio que protege el estado de hoy:** con la perilla apagada no se cobra ni una
+  llamada. `build_narrative` no toca la cuota cuando el proveedor no sale a la red — cobrarle al
+  determinista llenaría el contador de ceros y el `calls` de mentiras sobre cuántas veces se salió
+  a la red. Apagar la perilla **no es una degradación** y sigue sin marcar el PDF.
 
 ### [ ] T-5.19 · El aviso de la plataforma no nombra a **un solo encargado** — `GATE-LEGAL` + `SOFTWARE`
 > Siete terceros tocan o tocarán datos personales: AWS, Twilio, Meta, el servicio de
