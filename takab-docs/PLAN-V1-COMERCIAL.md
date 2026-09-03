@@ -1246,7 +1246,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   sin figura — «el ejecutivo pesa menos que el técnico» habría pasado en verde aunque no se
   dibujara nada.
 
-### [ ] T-5.24 · El reloj y la pérdida de paquetes **callan cuando deberían gritar** — `SOFTWARE`
+### [x] T-5.24 · El reloj y la pérdida de paquetes **callan cuando deberían gritar** — `SOFTWARE` · **CERRADA 2026-09-03**
 > Dos huecos de la misma familia, los dos en el eje de "salud del sistema":
 >
 > - **El reloj.** El desfase se mide de verdad con el demonio de reloj, viaja, se persiste y
@@ -1263,13 +1263,71 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que las dos señales que dicen si la evidencia vale se puedan ver y despierten a
   alguien.
 - **Criterios de aceptación:**
-  - [ ] El panel usa el mismo ayudante de umbrales que sus filas vecinas para el desfase de reloj.
-  - [ ] Alarma de desfase en la nube, con el mismo criterio que las demás: vigila la **ausencia**
+  - [x] El panel usa el mismo ayudante de umbrales que sus filas vecinas para el desfase de reloj.
+  - [x] Alarma de desfase en la nube, con el mismo criterio que las demás: vigila la **ausencia**
         además del valor, y publica su cero para no quedarse muda.
-  - [ ] La pérdida de paquetes gana columna y llega al centro de operaciones, o se declara por
+  - [x] La pérdida de paquetes gana columna y llega al centro de operaciones, o se declara por
         escrito **por qué** sigue siendo local — pero no las dos cosas a la vez.
-  - [ ] Test de que el gabinete sin dato de reloj **lo declara** en vez de pintarse en verde.
-
+  - [x] Test de que el gabinete sin dato de reloj **lo declara** en vez de pintarse en verde.
+- **Cómo se cerró (2026-09-03).**
+  **El reloj, en las cuatro superficies que hablan de él.** La fila del panel del gabinete usaba
+  el único ternario propio de la tabla (`null ? ámbar : verde`), así que un desfase de **cinco
+  segundos** se pintaba tan verde como uno de tres milisegundos; ahora usa el mismo `col()` que
+  sus vecinas, sobre el **valor absoluto** —un reloj adelantado miente igual que uno atrasado, y
+  el ternario viejo ni miraba el signo—, con ámbar en 100 ms y rojo en 1 s, que es donde el sello
+  deja de poder ordenar dos hechos del mismo segundo.
+  **Y apareció un cuarto espejo que nadie había contado:** el badge `NTP OFFSET` del SOC estaba en
+  **50 ms**, o sea que se ponía rojo mientras la misma consola declaraba el sitio OPERATIVO y el
+  panel del Pi lo pintaba en ámbar. Los cuatro (`Settings.fleet_ntp_offset_max_ms`, el panel, el
+  badge y la alarma) los compara ahora por igualdad `api/tests/contracts/test_umbral_de_reloj.py`,
+  derivándolos de sus tres lenguajes en vez de confiar en que alguien recuerde moverlos juntos.
+  El censo se comprobó **contra el defecto que ya existía**: devolviendo el badge a 50 se pone
+  rojo y nombra los cuatro valores.
+  **La alarma de la nube: `missing`, no `breaching`, y la razón es un hecho del código.**
+  `MaxClockDriftMs` sale de la **misma llamada** que `GhostGatewaysAlive` —`GhostGauge` arma las
+  tres cifras bajo un solo `try` y las manda en un único `put_metric_data`—, así que las dos
+  alarmas se quedan sin datos a la vez y por la misma causa. Con `breaching`, el correo afirmaría
+  que un reloj se salió de rango sin que nadie haya leído un solo latido, que es exactamente la
+  mentira que este módulo ya rechazó para su gemela. Va con `insufficient_data_actions`, y eso sí
+  manda dos correos por una causa: es deliberado y no es el defecto de `ec2_cpu` —allí el segundo
+  correo nombraba la causa **equivocada**—, sino dos que dicen la misma verdad, «no sé nada»,
+  sobre dos cosas distintas. El reparto de `sensor_mute` (delegar la ausencia en otra alarma) no
+  sirve aquí: el correo de fantasmas no menciona el reloj.
+  **Y el repo cazó al autor:** una alarma nueva no basta con escribirla. El censo
+  `test_muting.py` deriva las alarmas del Terraform y exige que cada una esté clasificada como
+  silenciable o no en `ops/muting.ALARM_CATALOG` — `clock_drift` entró como **intocable**, y no
+  por el default: comparte publicador con `ghost_gateways`, así que una ventana de plataforma
+  mandará **dos correos de INSUFFICIENT_DATA por una sola causa**, que es un argumento real para
+  callarla. No basta, porque en esa misma ventana la alarma también puede sonar **por su valor**,
+  y un reloj que se sale de rango mientras se mantiene la nube es un hallazgo ajeno que la
+  ventana taparía. La lista de intocables se enumera a mano **a propósito** —esa fricción es la
+  decisión—, así que la razón queda escrita en los dos sitios.
+  **El cero se publica**, que es lo que hace que el silencio signifique una sola cosa. La consulta
+  toma el **último** latido de cada gabinete —un desfase ya corregido no puede seguir alarmando—,
+  excluye al retirado (de ése habla la otra métrica) y al que lleva más que `SIN ENLACE` sin latir
+  (de ése habla `gateway_offline`), y **excluye el `NULL`**: no saber la hora no es tenerla bien,
+  y contarlo como cero fabricaría la buena noticia.
+  **La pérdida de paquetes: se eligió el camino de exponerla, no el de justificar el hueco.** La
+  ingesta la tiraba con la razón escrita —no había columna—, así que ahora la hay (`0059`), el
+  handler la persiste y llega a `/fleet` y a la tarjeta de la consola, pegada al lag porque es el
+  **mismo enlace** y se diagnostican juntos: un lag que sube con pérdida al 0 % es otro problema
+  que uno que sube perdiendo el 12 %.
+  **Y al exponerla apareció una mentira que hasta hoy moría en el gabinete:** el edge devolvía
+  `0.0` tanto cuando no tenía cliente SeedLink como cuando aún no había visto un solo paquete —y
+  un cero en un porcentaje de pérdida se lee «enlace perfecto», dicho por quien no ha mirado.
+  Mientras la cifra se quedaba en el Pi era casi inocuo; desde que **viaja y pinta una tarjeta**,
+  no. Ahora los dos casos son `None` ⇒ `s/d`, con su prueba, su esquema publicado relajado a
+  `null` y el `%.1f%%` del log de transición convertido en `%s` — que es literalmente el tropiezo
+  que ya dio `relays` al ganar su «no pude preguntar», y por el mismo camino. Un firmware viejo
+  que siga mandando su número entra igual.
+  **Lo que deliberadamente NO hace es degradar el estado del sitio.** Y la razón hay que decirla
+  con precisión, porque un umbral SÍ existe: el panel del gabinete pinta ámbar al 1 % y rojo al
+  10 %. Pero ése es consejo para quien está de pie delante del Pi. Degradar `derived_state`
+  arrastra la pill del SOC, la app móvil y el reparto de alarmas — ese umbral de **servidor** no
+  lo ha elegido nadie. Por lo mismo la pill de la consola no se tiñe: `LinkPill` ya llevaba
+  escrita la regla («el semáforo fino por métrica NO existe aquí, los umbrales viven solo en el
+  servidor») y es buena. El día que se decida, entra en `fleet_degrade_reasons` con su ajuste,
+  como las demás.
 ### [ ] T-5.25 · El silencio **no alcanza a los gabinetes secundarios** — `SOFTWARE`
 > El silencio del operador está bien resuelto en el gabinete que lo recibe: corta la sirena, corta
 > el voceo, deja el estrobo, no toca gas ni puertas, y una alarma nueva vuelve a sonar. Doce tests

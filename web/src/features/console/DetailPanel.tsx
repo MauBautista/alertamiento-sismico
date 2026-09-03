@@ -293,7 +293,14 @@ export default function DetailPanel({
               value={
                 soh?.ntp_offset_ms != null ? `±${Math.abs(soh.ntp_offset_ms).toFixed(0)} ms` : "S/D"
               }
-              ok={soh?.ntp_offset_ms != null && Math.abs(soh.ntp_offset_ms) < 50}
+              // [T-5.24] Espeja el umbral del servidor (`fleet_ntp_offset_max_ms`
+              // = 100 ms), igual que hace el badge de LAG SEEDLINK dos filas más
+              // abajo y por el mismo motivo: con 50 ms este badge se ponía rojo
+              // mientras la consola declaraba el sitio OPERATIVO y el panel del
+              // gabinete lo pintaba en ámbar. Cuatro superficies discrepando
+              // sobre si un reloj está sano es peor que tener una sola.
+              // Lo vigila `api/tests/contracts/test_umbral_de_reloj.py`.
+              ok={soh?.ntp_offset_ms != null && Math.abs(soh.ntp_offset_ms) < 100}
             />
             <SohBadge
               label="CLIPPING"

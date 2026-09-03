@@ -75,11 +75,21 @@ export default function SiteCard({
     : gw.mqtt_rtt_ms != null
       ? `↔ ${gw.mqtt_rtt_ms.toFixed(1)} ms`
       : "s/d";
+  // [T-5.24] La pérdida de paquetes viaja pegada al lag porque es el MISMO
+  // enlace (sensor→Pi) y se diagnostican juntos: un lag que sube con pérdida al
+  // 0 % es otro problema que un lag que sube perdiendo el 12 %. Hasta esta ficha
+  // la ingesta tiraba el dato, así que para verlo había que ir al inmueble.
+  //
+  // `s/d` explícito cuando no hay medición: un hueco se lee como 0 % (regla de
+  // oro 7). Y NO tiñe la pill, porque esa regla ya estaba escrita en `LinkPill`
+  // y es buena: «el semáforo fino por métrica NO existe aquí, los umbrales viven
+  // solo en el servidor». El servidor no tiene umbral de pérdida —el 1 %/10 % es
+  // consejo local del panel del gabinete—, así que teñir aquí sería que la
+  // consola se inventara una salud que la API no afirma.
+  const perdida = gw.packet_loss_pct != null ? `${gw.packet_loss_pct.toFixed(1)} %` : "s/d";
   const seedlinkValue = offline
     ? "— sin enlace —"
-    : gw.seedlink_lag_s != null
-      ? `lag ${gw.seedlink_lag_s.toFixed(2)} s`
-      : "s/d";
+    : `${gw.seedlink_lag_s != null ? `lag ${gw.seedlink_lag_s.toFixed(2)} s` : "lag s/d"} · pérdida ${perdida}`;
 
   return (
     <article

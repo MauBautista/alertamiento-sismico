@@ -1144,6 +1144,7 @@ export type GatewayOut = {
     last_heartbeat_ts?: string | null;
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
+    packet_loss_pct?: number | null;
     power_status?: string | null;
     relays_state?: string | null;
     release_age_s?: number | null;

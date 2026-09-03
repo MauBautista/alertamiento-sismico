@@ -457,7 +457,15 @@ class HealthSnapshot(BaseModel):
     captured_at: datetime = Field(default_factory=utcnow)
     ntp_offset_s: float | None = None
     seedlink_lag_s: float = 0.0
-    packet_loss_pct: float = 0.0
+    # [T-5.24] `None` = **no pude medir** (sin cliente SeedLink, o ni un paquete
+    # visto todavía). Era `0.0`, y mientras el dato se quedaba en el gabinete daba
+    # casi igual; desde que VIAJA al centro de operaciones ese cero se lee como
+    # «enlace perfecto», que es la lectura contraria a la verdad.
+    #
+    # Es el mismo camino que ya recorrió `relays` (T-2.70.a·B1): un fallback no
+    # puede ser `ok`. Compatible hacia atrás: un firmware viejo sigue mandando su
+    # número y entra igual.
+    packet_loss_pct: float | None = None
     mqtt_rtt_ms: float | None = None
     ups_status: UpsStatus = UpsStatus.UNKNOWN
     battery_pct: float | None = None

@@ -484,6 +484,13 @@ CREATE TABLE device_health (
   gateway_id uuid NOT NULL,
   reason     text NOT NULL CHECK (reason IN ('transition','heartbeat')),
   mqtt_rtt_ms real, seedlink_lag_s real, ntp_offset_ms real,
+  -- [T-5.24] Pérdida de paquetes del enlace sensor→Pi. El gabinete la publicaba
+  -- desde siempre y la ingesta la tiraba: el SOC no podía verla de ningún sitio y
+  -- había que ir al inmueble. Es la señal que se degrada ANTES de que falten
+  -- datos — cuando el hueco aparece en `seedlink_lag_s`, la ventana de evidencia
+  -- ya se perdió. NULL = el gabinete no opina ⇒ S/D, jamás un cero (que aquí
+  -- diría «enlace perfecto», la mentira cara).
+  packet_loss_pct real,
   cpu_temp_c real, power_status text, battery_pct real, battery_min_left int,
   cert_days_remaining int,
   -- [T-2.70.a·B1 · migración 0036] ¿Pudo el gabinete leer el censo de sus relés?

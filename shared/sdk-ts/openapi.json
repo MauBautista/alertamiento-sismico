@@ -4578,6 +4578,17 @@
             ],
             "title": "Ntp Offset Ms"
           },
+          "packet_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packet Loss Pct"
+          },
           "power_status": {
             "anyOf": [
               {

@@ -270,6 +270,39 @@ resource "aws_cloudwatch_metric_alarm" "iot_rule_errors" {
   depends_on = [aws_cloudwatch_log_metric_filter.iot_rule_errors]
 }
 
+# --- Reloj a la deriva (T-5.24) ---------------------------------------------------
+# Sin hora confiable NINGUNA evidencia sirve: el sello de un check-in, de un dictamen y de
+# un acuse salen todos de ese reloj. El desfase se medía de verdad, viajaba, se persistía y
+# degradaba el estado del sitio en la consola — y aun asi solo se veia si alguien estaba
+# MIRANDO la pantalla: ninguna de las 13 alarmas de este modulo era de reloj. Es un fallo
+# silencioso por construccion: el gabinete sigue latiendo, la consola sigue verde, y lo
+# unico que cambia es que las horas mienten.
+#
+# `missing` + `insufficient_data_actions`, EXACTAMENTE como `ghost_gateways`, y por la misma
+# razon: las dos metricas salen de la MISMA llamada del mismo worker (`ops/metrics.py`, una
+# sola `put_metric_data`), asi que su silencio significa lo mismo —el que mide esta callado—
+# y ninguna de las dos puede afirmar lo que no sabe. Con `breaching` este correo diria que
+# hay un reloj fuera de rango sin que nadie haya leido un solo latido.
+#
+# El razonamiento largo de esa eleccion vive en `tests/treat_missing_data.tftest.hcl`, que es
+# donde este modulo guarda lo que significa el silencio de cada alarma.
+resource "aws_cloudwatch_metric_alarm" "clock_drift" {
+  alarm_name          = "takab-dev-reloj-a-la-deriva"
+  alarm_description   = "El reloj de algun gabinete VIVO se salio de rango (>${var.clock_drift_max_ms} ms). Sin hora confiable, el sello de los check-ins, dictamenes y acuses de ese sitio deja de poder ordenar los hechos: revisar el NTP del Pi.${local.ack_sufijo}"
+  namespace           = "Takab/Ops"
+  metric_name         = "MaxClockDriftMs"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.clock_drift_max_ms
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 # --- Sensor MUDO: gabinete VIVO pero sin datos del sismografo (T-1.66) ------------
 # El agujero que costo 15 h de ceguera el 14/07/2026: el Shake fuera de la red, el Pi
 # latiendo cada minuto y la flota "OPERATIVA". `gateway_offline` no lo ve (hay enlace)

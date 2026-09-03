@@ -1349,7 +1349,19 @@ function renderSalud(st){
     rows.push(['Contadores SeedLink', 'S/D · sin cliente', C.warn]);
   }
   if (h){
-    rows.push(['Desfase de reloj NTP', h.ntp_offset_s == null ? 'S/D' : (h.ntp_offset_s*1000).toFixed(1)+' ms', h.ntp_offset_s == null ? C.warn : C.ok]);
+    /* [T-5.24] El MISMO ayudante de umbrales que sus filas vecinas. Era el único
+       de la tabla con un ternario propio —`null ? warn : ok`—, así que un desfase
+       de CINCO SEGUNDOS se pintaba igual de verde que uno de tres milisegundos.
+       Y sin hora confiable ninguna evidencia sirve: el sello de un check-in, de un
+       dictamen y de un acuse salen todos de este reloj.
+
+       Los umbrales: ámbar en 100 ms, que es el mismo con el que la NUBE degrada al
+       sitio (`fleet_ntp_offset_max_ms`) — dos superficies que discreparan sobre si
+       un gabinete está sano serían peor que ninguna—; rojo en 1 s, que es donde el
+       sello deja de poder ordenar dos hechos del mismo segundo.
+       Se compara el VALOR ABSOLUTO: un reloj adelantado miente igual que uno
+       atrasado, y el ternario viejo ni siquiera miraba el signo. */
+    rows.push(['Desfase de reloj NTP', h.ntp_offset_s == null ? 'S/D' : (h.ntp_offset_s*1000).toFixed(1)+' ms', col(h.ntp_offset_s == null ? null : Math.abs(h.ntp_offset_s)*1000, 100, 1000)]);
     rows.push(['Temperatura del SoC', h.temperature_c == null ? 'S/D' : h.temperature_c.toFixed(1)+' °C', col(h.temperature_c, 70, 80)]);
     const ups = (h.ups_status || 'unknown') + (h.battery_pct != null ? ' · '+Math.round(h.battery_pct)+' %' : '') +
       (h.ups_runtime_s != null ? ' · ' + Math.round(h.ups_runtime_s/60) + ' min' : ' · autonomía S/D');

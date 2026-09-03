@@ -449,6 +449,23 @@ class GatewayOut(BaseModel):
     mqtt_rtt_ms: float | None = None
     seedlink_lag_s: float | None = None
     ntp_offset_ms: float | None = None
+    # [T-5.24] Pérdida de paquetes del enlace sensor→Pi. El gabinete la publicaba
+    # desde siempre y la ingesta la tiraba, así que para diagnosticar un enlace
+    # degradado había que ir al inmueble o abrir el panel por red local.
+    #
+    # **Viaja pero NO degrada el estado**, y es deliberado. El gabinete SÍ tiene
+    # un umbral local —su panel pinta ámbar al 1 % y rojo al 10 %—, pero ése es
+    # consejo para quien está de pie delante del Pi; degradar `derived_state` es
+    # otra cosa: arrastra la pill del SOC, la app móvil y el reparto de alarmas.
+    # Ese umbral de SERVIDOR no lo ha elegido nadie, y ponerlo aquí sería tomar
+    # la decisión en el sitio donde no se ve. Lo que esta tarea pedía es que se
+    # pueda VER; el día que se decida, entra en `fleet_degrade_reasons` con su
+    # ajuste, como las demás.
+    #
+    # `None` significa **el gabinete no pudo medir** (sin cliente SeedLink, o ni
+    # un paquete visto). Hasta T-5.24 el edge mandaba `0.0` en esos dos casos, y
+    # un cero en un porcentaje de pérdida se lee «enlace perfecto».
+    packet_loss_pct: float | None = None
     # [T-2.70.a·B1] Si el gabinete pudo leer el censo de sus relés en el ÚLTIMO
     # latido: `reported` · `stopped` · `unreadable` · `None` (no opina). Viaja
     # crudo además de la pill `RELÉS · NO CONTESTA` porque la consola necesita los

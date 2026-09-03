@@ -284,6 +284,24 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
         ),
     ),
     AlarmKind(
+        resource="clock_drift",
+        scope=NEVER,
+        name_template="takab-dev-reloj-a-la-deriva",
+        why=(
+            "[T-5.24] Sin hora confiable ninguna evidencia sirve: el sello de un check-in, "
+            "de un dictamen y de un acuse salen todos de ese reloj, y un documento pericial "
+            "con la hora mal no ordena los hechos, los desordena. "
+            "EL CONTRAARGUMENTO, tomado en serio: comparte publicador con `ghost_gateways` "
+            "—la misma `put_metric_data`—, así que una ventana de PLATAFORMA que pare el "
+            "worker de notificación va a mandar DOS correos de INSUFFICIENT_DATA por una "
+            "sola causa. Aun así es intocable, y no por el default: durante esa ventana la "
+            "alarma también puede sonar por su VALOR, y el reloj de un gabinete que se sale "
+            "de rango mientras se mantiene la nube no tiene nada que ver con el "
+            "mantenimiento — es un hallazgo ajeno que la ventana taparía. Se paga un correo "
+            "duplicado a cambio de no cegar la única vigilancia de la hora."
+        ),
+    ),
+    AlarmKind(
         resource="wal_archive_stalled",
         scope=NEVER,
         name_template="takab-dev-wal-archivado-atascado",

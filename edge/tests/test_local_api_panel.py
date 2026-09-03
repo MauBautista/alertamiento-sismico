@@ -2196,3 +2196,85 @@ def test_sin_enlace_el_aviso_de_baja_no_se_afirma_en_presente(tmp_path):
     meta = _txt(out, "baja-meta")
     assert "v41" in meta
     assert "SIN ENLACE" in meta
+
+
+# ── [T-5.24] El reloj deja de pintarse siempre en verde ────────────────────
+#
+# El desfase se mide de verdad, viaja, se persiste y DEGRADA el estado del sitio
+# en la consola. Pero esta fila era la única de la tabla con un ternario propio
+# —`null ? warn : ok`— en vez del ayudante de umbrales que usan sus vecinas, así
+# que un desfase de CINCO SEGUNDOS se veía igual de verde que uno de tres
+# milisegundos. Y sin hora confiable ninguna evidencia sirve: el sello de un
+# check-in, de un dictamen y de un acuse salen todos de este reloj.
+
+
+def _celda_de_la_fila(salida: dict, etiqueta: str) -> dict | None:
+    """La hoja del VALOR de esa fila de salud (texto y color).
+
+    Las filas se emiten como pares etiqueta/valor: se busca la hoja cuyo texto es
+    la etiqueta y se devuelve la siguiente que tenga color propio. Se resuelve la
+    fila ENTERA y no solo su color porque el `S/D` hay que leerlo en ESTA celda:
+    media tabla dice `S/D` en cuanto falta un sensor, así que buscarlo suelto por
+    todo el árbol pasaría en verde aunque el reloj se pintara con un número.
+    """
+    hojas = _leaves(salida["tree"])
+    for k, hoja in enumerate(hojas):
+        if etiqueta in (hoja.get("txt") or ""):
+            for siguiente in hojas[k + 1 : k + 3]:
+                if siguiente.get("color"):
+                    return siguiente
+    return None
+
+
+def _color_de_la_fila(salida: dict, etiqueta: str) -> str | None:
+    celda = _celda_de_la_fila(salida, etiqueta)
+    return celda.get("color") if celda else None
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_reloj_A_LA_DERIVA_ya_no_se_pinta_igual_que_uno_sano(tmp_path: Path) -> None:
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031  # 3.1 ms
+    a_la_deriva = _base()
+    a_la_deriva["health"]["ntp_offset_s"] = 5.0  # CINCO SEGUNDOS
+
+    c_sano = _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    c_deriva = _color_de_la_fila(_render(tmp_path, status=a_la_deriva), "Desfase de reloj NTP")
+
+    assert c_sano is not None and c_deriva is not None
+    assert c_sano != c_deriva, (
+        "cinco segundos de desfase se pintan igual que tres milisegundos: "
+        "la fila sigue sin usar el ayudante de umbrales"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_reloj_ADELANTADO_miente_igual_que_uno_atrasado(tmp_path: Path) -> None:
+    """El ternario viejo ni siquiera miraba el signo."""
+    adelantado = _base()
+    adelantado["health"]["ntp_offset_s"] = -5.0
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031
+
+    assert _color_de_la_fila(_render(tmp_path, status=adelantado), "Desfase de reloj NTP") != (
+        _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_SIN_dato_de_reloj_el_gabinete_lo_declara(tmp_path: Path) -> None:
+    """Criterio 4: `S/D`, y jamás verde. No saber la hora no es tenerla bien."""
+    sin_dato = _base()
+    sin_dato["health"]["ntp_offset_s"] = None
+    salida = _render(tmp_path, status=sin_dato)
+
+    celda = _celda_de_la_fila(salida, "Desfase de reloj NTP")
+    assert celda is not None, "desapareció la fila del reloj del panel"
+    assert "S/D" in (celda.get("txt") or ""), (
+        f"sin dato de reloj el panel no lo declara EN SU CELDA; puso: {celda.get('txt')!r}"
+    )
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031
+    assert _color_de_la_fila(salida, "Desfase de reloj NTP") != (
+        _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    )

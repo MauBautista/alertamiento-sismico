@@ -21,7 +21,12 @@ from takab_api.db import pool
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.providers import NotifyProvider, build_providers
 from takab_api.ops.alerts import sweep_unacked
-from takab_api.ops.metrics import GhostGauge, count_ghosts, count_retired_alive
+from takab_api.ops.metrics import (
+    GhostGauge,
+    count_ghosts,
+    count_retired_alive,
+    max_clock_drift_ms,
+)
 
 if TYPE_CHECKING:
     from takab_api.settings import Settings
@@ -58,6 +63,10 @@ def build_ghost_gauge(settings: Settings) -> GhostGauge:
         client=client,
         counter=partial(count_ghosts, alive_s=alive_s),
         total_counter=partial(count_retired_alive, alive_s=alive_s),
+        # [T-5.24] Y el desfase de reloj del peor gabinete vivo. Viaja en la
+        # misma publicación porque comparte fotografía y periodo: una tercera
+        # llamada a CloudWatch por lo mismo sería coste sin dato nuevo.
+        drift_gauge=partial(max_clock_drift_ms, alive_s=alive_s),
     )
 
 
