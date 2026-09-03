@@ -1191,7 +1191,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   solo suma—, publica la serie completa también en verde y avisa cuando hizo falta reintentar.
   Además mide **pines simulados**: no acredita nada del hardware y ahora el documento lo dice.
 
-### [ ] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE`
+### [x] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE` · **CERRADA 2026-09-03**
 > Confirmado abriendo el código: lo que hay es **un solo espectro de amplitud** de la ventana
 > entera, con resta de continua y ventana de Hann. Cero coincidencias de transformada por ventanas
 > en todo el árbol.
@@ -1203,15 +1203,48 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 >
 > Por eso va en la tanda tres, y **detrás** de que la onda cruda llegue a existir en la nube
 > (`T-3.11.c`): sin registro archivado no hay nada que transformar.
-- **Componente:** api · **Depende de:** T-3.11.c · **Prioridad: BAJA**
+- **Componente:** api · **Depende de:** T-3.11.c *(para el DATO, no para el código — ver abajo)* ·
+  **Prioridad: BAJA**
 - **Objetivo:** una figura tiempo-frecuencia en el documento pericial, con la misma honestidad que
   el resto.
 - **Criterios de aceptación:**
-  - [ ] Espectrograma del canal dominante, con sus ejes rotulados y su ventana declarada.
-  - [ ] Sin registro archivado, **el mismo texto de ausencia** que ya usa la sección de onda cruda:
+  - [x] Espectrograma del canal dominante, con sus ejes rotulados y su ventana declarada.
+  - [x] Sin registro archivado, **el mismo texto de ausencia** que ya usa la sección de onda cruda:
         no un hueco.
-  - [ ] El PDF sigue siendo determinista: mismo modelo, mismos bytes.
-  - [ ] La figura **no promete** una escala que no existe, como ya vigila la guarda del mapa.
+  - [x] El PDF sigue siendo determinista: mismo modelo, mismos bytes.
+  - [x] La figura **no promete** una escala que no existe, como ya vigila la guarda del mapa.
+- **La dependencia SE VERIFICÓ, y es real — pero no bloquea el código.** `T-3.11.c` se lee como
+  «el worker de CCTV», y suena a que no tiene nada que ver. Sí lo tiene:
+  `api/src/takab_api/backfill/objects.py` es **el único productor** de la fila de evidencia
+  `kind='miniseed'`, y ése es el worker que no está en el compose de la nube. O sea que en
+  producción **hoy no hay miniSEED archivado que transformar**, y la figura tomará siempre el
+  camino de la ausencia hasta que `T-3.11.c` se despliegue. La ficha ya lo anticipaba en su
+  criterio 2, y por eso el código se puede cerrar: está construido para declarar el hueco.
+- **Cómo se cerró (2026-09-03).**
+  `dictamen/espectrograma.py`: transformada por ventanas de Hann con solape del 50 % sobre el
+  **mismo canal dominante** que el espectro y la duración — dos figuras del mismo dictamen que
+  describieran trazas distintas serían una trampa para quien las compare, que es la razón que ya
+  dejó escrita `T-3.14`.
+  **La prueba que justifica la figura entera** es `test_SEPARA_en_el_tiempo_dos_frecuencias_que_el
+  _espectro_global_promedia`: media traza a 5 Hz y media a 20 Hz. El espectro global las vería a
+  las dos y no diría cuándo; el espectrograma tiene que enseñar 5 Hz al principio y 20 al final.
+  Si eso falla, la figura no aporta nada y sobra.
+  **Cuatro decisiones que llevan su razón escrita.**
+  (1) **La escala es RELATIVA y la leyenda lo dice.** El crudo llega en cuentas del ADC y la
+  calibración instrumental sigue pendiente: una barra con unidades prometería una calibración que
+  nadie hizo. Es la misma guarda que vigila el mapa de sacudida.
+  (2) **La continua se resta POR VENTANA.** El crudo del RS4D trae millones de cuentas de DC —el
+  hallazgo de `T-2.25`—, y sin restarla cada ventana sale aplanada. Hay test con 3.77 M de cuentas
+  encima.
+  (3) **Una traza muerta devuelve ceros, no una figura encendida.** Normalizar dividiendo por cero
+  pintaría ruido como si fuera señal: de las dos mentiras posibles, es la cara.
+  (4) **Un registro largo se diezma tomando columnas equiespaciadas, no truncando.** Truncar
+  dejaría fuera la coda, que es media pregunta de un peritaje.
+  **Y la leyenda se extrajo a función pura** para poder probarla: el flujo de contenido de un PDF
+  va comprimido, así que un test que buscara el rótulo en los bytes acabaría probando `fpdf2` en
+  vez del enunciado. Junto a ella, una guarda anti-vacuidad que compara el MISMO documento con y
+  sin figura — «el ejecutivo pesa menos que el técnico» habría pasado en verde aunque no se
+  dibujara nada.
 
 ### [ ] T-5.24 · El reloj y la pérdida de paquetes **callan cuando deberían gritar** — `SOFTWARE`
 > Dos huecos de la misma familia, los dos en el eje de "salud del sistema":

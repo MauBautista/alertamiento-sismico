@@ -20,6 +20,7 @@ from fpdf.enums import XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
+from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
 from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
     ABSENT,
@@ -233,6 +234,8 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
     if m.spectrum:
         freqs, amps = m.spectrum
         _spectrum(pdf, freqs, amps, m.spectrum_peak_hz)
+    if m.spectrogram is not None:
+        _spectrogram(pdf, m.spectrogram)
 
 
 def _duracion(pdf: TakabPDF, m) -> None:
@@ -298,6 +301,81 @@ def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: flo
         0,
         4,
         pdf.text_of(f"0 – {top_hz:.1f} Hz · {peak}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+    pdf.set_text_color(20, 24, 30)
+
+
+#: [T-5.23] Rampa de la figura, de frío a caliente. Se declara aquí y no se
+#: interpola en el trazado: una rampa continua sugiere una resolución que estas
+#: celdas no tienen, y un espectrograma de papel se lee por bandas.
+_RAMPA: tuple[tuple[int, int, int], ...] = (
+    (14, 20, 28),  # fondo: casi el negro del documento
+    (23, 55, 92),
+    (30, 110, 140),
+    (70, 165, 130),
+    (190, 180, 70),
+    (220, 120, 45),
+    (200, 55, 45),  # máximo de la ventana
+)
+
+
+def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
+    """[T-5.23] Tiempo × frecuencia del canal dominante.
+
+    LO QUE ESTA FIGURA NO PROMETE, y por eso se dibuja así: **la escala es
+    RELATIVA**. El crudo del RS4D llega en cuentas del ADC y la calibración
+    instrumental sigue pendiente (`blueprint §4.4`), así que no hay dB
+    referenciados a nada físico. Pintar una barra con unidades sería prometer una
+    calibración que no existe — la misma guarda que ya vigila el mapa de sacudida.
+
+    Por eso la leyenda dice «relativo al máximo de esta ventana» y no lleva
+    números: el color contesta *dónde y cuándo hubo más energía*, que es lo que
+    un perito busca, y no *cuánta* — que nadie ha medido.
+    """
+    filas, columnas = len(esp.frecuencias_hz), len(esp.celdas)
+    if filas == 0 or columnas == 0:
+        return
+    if pdf.get_y() > 200:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_font(pdf.body_font, "B", 8)
+    pdf.cell(
+        0,
+        5,
+        pdf.text_of(f"ESPECTROGRAMA · CANAL {esp.canal}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+
+    top = pdf.get_y()
+    alto = 32.0
+    box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, alto)
+    dx, dy = box.w / columnas, box.h / filas
+
+    # Se dibuja celda a celda con el relleno apagado: `fpdf2` no tiene mapa de
+    # bits sin traer una dependencia de imagen, y 120 × 48 rectángulos son
+    # deterministas y pesan poco. La frecuencia CRECE hacia arriba, como se lee.
+    for i, columna in enumerate(esp.celdas):
+        for j, valor in enumerate(columna):
+            pdf.set_fill_color(*_RAMPA[min(len(_RAMPA) - 1, int(valor * len(_RAMPA)))])
+            pdf.rect(box.x + i * dx, box.y + box.h - (j + 1) * dy, dx + 0.05, dy + 0.05, style="F")
+
+    pdf.set_draw_color(*RULE)
+    pdf.rect(box.x, box.y, box.w, box.h)
+    pdf.set_draw_color(20, 24, 30)
+
+    # Los ejes, con su magnitud: sin ellas la figura es una mancha bonita.
+    pdf.set_font(pdf.body_font, "", 6.0)
+    pdf.set_text_color(*MUTED)
+    pdf.text(MARGIN, box.y + 2.5, pdf.text_of(f"{esp.frecuencias_hz[-1]:.0f} Hz"))
+    pdf.text(MARGIN, box.y + box.h, pdf.text_of(f"{esp.frecuencias_hz[0]:.1f} Hz"))
+    pdf.set_y(top + alto + 1)
+    pdf.cell(
+        0,
+        4,
+        pdf.text_of(leyenda_espectrograma(esp)),
         new_x=XPos.LMARGIN,
         new_y=YPos.NEXT,
     )

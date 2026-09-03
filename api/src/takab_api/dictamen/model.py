@@ -16,6 +16,7 @@ from datetime import datetime
 
 from takab_api.compliance import ComplianceDocument
 from takab_api.dictamen.duracion import Duracion
+from takab_api.dictamen.espectrograma import Espectrograma
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -237,6 +238,10 @@ class ReportModel:
     #: Espectro de amplitud del canal dominante: `(frecuencias_hz, amplitudes)`.
     spectrum: tuple[list[float], list[float]] | None = None
     spectrum_peak_hz: float | None = None
+    #: [T-5.23] Espectrograma del MISMO canal dominante: tiempo × frecuencia, con
+    #: escala RELATIVA. `None` cuando no hubo traza de la que calcularlo — y eso
+    #: se declara con el mismo texto de ausencia que la onda cruda, no con un hueco.
+    spectrogram: Espectrograma | None = None
     #: [T-3.14] Duración instrumental **medida** de la sacudida: D5-95 sobre la Intensidad
     #: de Arias del canal dominante. `None` cuando no se pudo medir — que NO es lo mismo
     #: que cero, y el reporte lo dice con palabras.
