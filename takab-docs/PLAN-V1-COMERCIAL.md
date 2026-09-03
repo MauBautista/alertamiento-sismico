@@ -1028,7 +1028,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   afirmada en un texto que se declara sin revisar. Si no se sostiene, las dos decisiones cambian
   de dueño y no de detalle.
 
-### [ ] T-5.20 · Firmar un dictamen **no entra en la bitácora de auditoría** — `SOFTWARE`
+### [x] T-5.20 · Firmar un dictamen **no entra en la bitácora de auditoría** — `SOFTWARE` · **CERRADA 2026-09-03**
 > Firmar escribe la fila del dictamen —con quién firmó, en una tabla que no admite reescritura— y,
 > **solo si el veredicto es habitable**, una acción en el timeline del incidente. **No escribe en
 > `audit_log`.** El censo tiene 72 verbos, incluidos leer un dictamen y solicitarlo; no el de
@@ -1040,13 +1040,39 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** api · **Depende de:** nada · **Prioridad: MEDIA**
 - **Objetivo:** que el acto más importante del sistema aparezca donde se busca.
 - **Criterios de aceptación:**
-  - [ ] Verbo propio en la bitácora al firmar, con el incidente como objeto y el veredicto en el
+  - [x] Verbo propio en la bitácora al firmar, con el incidente como objeto y el veredicto en el
         detalle.
-  - [ ] La fila se escribe **también** cuando el veredicto no es habitable.
-  - [ ] Un test de censo que exija que **toda transición de estado con peso legal** deje verbo:
+  - [x] La fila se escribe **también** cuando el veredicto no es habitable.
+  - [x] Un test de censo que exija que **toda transición de estado con peso legal** deje verbo:
         derivado, no una lista a mano, para que el siguiente entre solo.
-  - [ ] La bitácora sigue siendo escritor único: la fila entra por el módulo de auditoría, como el
+  - [x] La bitácora sigue siendo escritor único: la fila entra por el módulo de auditoría, como el
         contract-test existente exige.
+- **Cómo se cerró (2026-09-03).**
+  `dictamen_signed`, con el incidente como objeto y en el `meta` el veredicto, si es habitable, el
+  identificador del dictamen y **a quién sustituye** — la cadena se reconstruye desde la bitácora
+  sin tener que leer la tabla de dictámenes. La llamada va **antes** del `if` de habitabilidad y no
+  dentro, que es lo que dejaba al peor caso sin rastro en ninguno de los dos sitios: ni bitácora
+  (no escribía nunca) ni timeline (solo si era habitable). Y es justo el veredicto que más pesa:
+  `no_inhabit_inspect` deja a gente fuera de su casa hasta que alguien inspeccione.
+  **El censo es el entregable, no el arreglo.** Arreglar la firma habría tardado diez minutos y
+  habría dejado el hueco abierto para el siguiente acto, así que
+  `tests/contracts/test_evidencia_deja_verbo.py` deriva **las dos poblaciones**: las tablas
+  append-only salen de `db/schema.sql` contando los triggers cuya función es
+  `forbid_update_delete()` —es el propio esquema el que declara qué es evidencia— y los
+  manejadores salen del árbol de sintaxis de `routers/`. La exigencia se comprueba **dentro de la
+  función**: un `audit_async` en el manejador de al lado no audita este acto.
+  **Y la lista de excepciones quedó VACÍA**, que era el mejor resultado posible: de los doce
+  manejadores que escriben evidencia, once ya dejaban verbo y el que no se arregló en vez de
+  declararse excepción. El vacío tiene su propio test — una lista de excepciones que puede crecer
+  sola no es una excepción.
+  **Lo que costó y conviene no repetir: este censo se quedó CIEGO DOS VECES mientras se
+  escribía**, y las dos veces pasó en verde justo sobre el defecto que venía a cazar. La primera,
+  por leer solo las asignaciones `NOMBRE = "INSERT INTO …"` y no el SQL que los módulos de
+  `queries` construyen **dentro de funciones**: veía cuatro manejadores de los doce. La segunda,
+  por buscar `alias.nombre` cuando los módulos de `queries` se importan con alias
+  (`from … import dictamens as q`): con la primera corregida seguía sin ver `sign_dictamen`. Un
+  censo se prueba **contra el defecto que ya sabes que existe**; si no lo encuentra, el censo está
+  roto, no el código.
 
 ### [ ] T-5.21 · No hay **censo de dato viejo** en la app móvil — `SOFTWARE`
 > La consola está resuelta y bien: un censo derivado del árbol obliga al componente siguiente a
