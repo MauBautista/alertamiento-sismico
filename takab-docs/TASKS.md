@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **280** · `[~]` **9** · `[ ]` **54**
+****Conteo de tareas:** total **343** · `[x]` **280** · `[~]` **10** · `[ ]` **53**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -12343,7 +12343,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   aparece en un test que clava un epoch. Con él, ocho tests que simulaban «viejo» **haciendo
   fallar la consulta** estaban probando el defecto; ahora prueban el tiempo.
 
-### [ ] T-5.22 · La latencia del reflejo **solo existe como prosa** — `SOFTWARE` + `GATE-HW`
+### [~] T-5.22 · La latencia del reflejo **solo existe como prosa** — `SOFTWARE` + `GATE-HW` · **SOFTWARE CERRADO 2026-09-03 · espera `GATE-HW`**
 > Es la cifra de venta más citada del producto, medida dos veces con hardware real: **6.65 ms el
 > 2026-07-14** y **4.16 ms en frío el 2026-07-31**. Y su evidencia primaria son **ocho documentos
 > con el número escrito a mano**. No hay journal, ni acta, ni captura del estado del gabinete, ni
@@ -12360,12 +12360,43 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Componente:** edge + takab-docs · **Depende de:** nada · **Prioridad: MEDIA**
 - **Objetivo:** que la cifra que se vende tenga detrás un artefacto y no una frase.
 - **Criterios de aceptación:**
-  - [ ] La medición del reflejo se persiste como artefacto reproducible en el gabinete (captura
+  - [x] La medición del reflejo se persiste como artefacto reproducible en el gabinete (captura
         fechada del estado, o registro dedicado), no solo como línea de journal.
-  - [ ] Los ocho documentos citan **una fuente**, no ocho copias del número.
-  - [ ] Donde se declara un percentil, o se mide o se dice que es una observación única. La cita
+  - [x] Los ~~ocho~~ **nueve** documentos citan **una fuente**, no nueve copias del número.
+  - [x] Donde se declara un percentil, o se mide o se dice que es una observación única. La cita
         rota del tablero se corrige o se retira.
   - [ ] `GATE-HW`: la siguiente sesión presencial captura la evidencia con el procedimiento nuevo.
+        **Es lo único que queda, y no lo cierra el software** — ver
+        [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md) §2 y el runbook §B.1.bis.
+- **Cómo se cerró la mitad de software (2026-09-03).**
+  **El acta** (`edge/takab_edge/audit/reflejo.py`): cada flanco del WR-1 deja una línea fechada
+  con la latencia que midió el dueño de los pines **y el estado de los cinco canales en ese
+  instante**. Eso es lo que convierte el número en evidencia: no «tardó 4 ms», sino «tardó 4 ms
+  **y estos relés quedaron así**», que es algo que alguien puede discutir.
+  **La escribe el SUPERVISOR, no el dueño de los pines**, y no es un detalle: el reflejo vive
+  entero dentro de un proceso que es mínimo y auditable a propósito (regla de oro 4), y meterle
+  un fichero dentro sería pagar el acta con el camino de vida. El módulo de auditoría ya dejaba
+  escrito que registrar el reflejo «es tarea aparte»; **esta era esa tarea**. El acta es advisory
+  de punta a punta: si el disco falla se cuenta y se sigue.
+  **`MEDICIONES-TAKAB.md` es la fuente única**, y `api/tests/test_mediciones.py` la sostiene con
+  una regla que no es «prohibido repetir la cifra» —hay documentos que **deben** citarla— sino
+  **«quien la cite tiene que enlazar aquí»**. El día que el número cambie, un `git grep` del
+  enlace da la lista exacta de quién hay que revisar; hoy esa lista no existía.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **No eran ocho documentos: eran NUEVE.** El barrido encontró uno más que el informe
+  (`PLAN-MAESTRO-TAKAB.md`, con el `214 ms`). Es la diferencia entre contar a mano y derivar.
+  (2) **El `214 ms` se vendía como medición y se citaba como si fuera el percentil.** No lo es:
+  es **una observación**, y el `p95 < 2 s` que el blueprint declara **nunca se ha medido**. Las
+  tres cifras quedan rotuladas como observaciones únicas allí donde se citan.
+  (3) **Y las dos cifras del reflejo se tomaron ANTES de que el acta existiera**, así que **no
+  tienen artefacto** — y la tabla lo dice con todas las letras en su columna «Artefacto:
+  ninguno». Cerrar la ficha entera habría exigido borrar esa fila; dejarla es lo que hace que
+  `GATE-HW` siga significando algo.
+  **Lo que NO se tocó, y por qué:** el guardián de CI (`test_e2e.py`) sigue reportando el mejor de
+  cinco intentos. El informe lo listaba como defecto y **no lo es**: `T-2.170` lo razona como
+  tolerancia **al instrumento** —un runner compartido mide código + planificación, y el ruido
+  solo suma—, publica la serie completa también en verde y avisa cuando hizo falta reintentar.
+  Además mide **pines simulados**: no acredita nada del hardware y ahora el documento lo dice.
 
 ### [ ] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE`
 > Confirmado abriendo el código: lo que hay es **un solo espectro de amplitud** de la ventana

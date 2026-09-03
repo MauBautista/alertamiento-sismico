@@ -39,7 +39,7 @@ Medido contra el gabinete `gw-dev-0001` el 2026-08-16:
 | Dueño de los pines | `takab-gpio`, proceso dedicado (traspaso hecho, `D-04`) |
 | Relés declarados | `siren`, `strobe` — `reason: ok`, `missing: []` |
 | Presupuesto de reflejo | `reflex_budget_s = 0.100` — el umbral de `G-04`, ya cableado en el código |
-| Reflejo contacto → relé | **6.65 ms** y **4.16 ms**, medidos con el WR-1 real |
+| Reflejo contacto → relé | **6.65 ms** y **4.16 ms**, medidos con el WR-1 real — dos observaciones únicas; fuente: [`MEDICIONES-TAKAB.md`](../MEDICIONES-TAKAB.md) |
 
 **O sea: la mitad eléctrica de `G-04` ya está medida y pasa con dos órdenes de magnitud de margen.**
 Lo que falta de ese gate no es velocidad — es **que haya una sirena al final del cable** y que la
@@ -245,6 +245,39 @@ curl -s http://127.0.0.1:8080/api/status | python3 -c "import sys,json;print(jso
 
 > **Sale `null` si no ha habido disparo desde el último arranque del proceso.** No es un fallo: es
 > que no hay nada que medir todavía.
+
+#### B.1.bis · **Llévate el acta, no el número** *(nuevo en `T-5.22`)*
+
+`reflex_s` es un campo **vivo**: sale `null` en cuanto el proceso reinicia, así que copiarlo a
+mano a un documento es exactamente cómo esa cifra acabó replicada en nueve sitios sin ni una
+evidencia detrás.
+
+Desde `T-5.22` **cada flanco del WR-1 deja un acta fechada** con la latencia y **el estado de los
+cinco canales en ese instante**. Sobrevive al reinicio y distingue el pulso de prueba de CIRES
+del flanco real. Al terminar la sesión:
+
+```bash
+# 1 · dónde está (hermano del spool de la nube, ruta derivada y estable)
+ssh takab-pi5 'ls -l $(dirname $(systemctl show -p Environment takab-edge |
+  tr " " "\n" | grep CLOUD_SPOOL_DIR | cut -d= -f2))/actuation-ledger/reflejo.jsonl'
+
+# 2 · qué dice — mejor y PEOR caso, no solo el mejor
+ssh takab-pi5 'python3 -c "
+import json,sys
+a=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+r=[x for x in a if not x[\"es_prueba\"]]
+print(len(r),\"actas reales\"); print(\"mejor\",min(x[\"latencia_ms\"] for x in r),\"ms\")
+print(\"peor \",max(x[\"latencia_ms\"] for x in r),\"ms\")
+" ~/reflejo.jsonl'
+
+# 3 · TRAÉTELO. Es el artefacto; el número suelto no lo es.
+scp takab-pi5:.../reflejo.jsonl ./evidencia-G04-$(date +%Y%m%d).jsonl
+```
+
+**Y actualiza [`MEDICIONES-TAKAB.md`](../MEDICIONES-TAKAB.md) §2** con las mediciones nuevas y la
+ruta del acta. Las dos cifras que hay hoy se tomaron **antes** de que el acta existiera, así que
+no tienen artefacto: **esta sesión es la que lo produce**, y hasta que lo haga la columna
+«Artefacto» de esa tabla sigue diciendo *ninguno* — que es la verdad.
 
 ### B.2 · **No** medible hoy — y son las dos mitades que faltan
 

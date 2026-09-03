@@ -78,7 +78,7 @@ consecuencia.
 | Lo hace **con la nube caída**, y hay pruebas que lo miden con la nube explícitamente apagada — no ausente por casualidad | `RO-1.a` |
 | **Ningún estado de la nube desarma ni calla el reflejo**: ni la configuración publicada, ni una ventana de mantenimiento remota | `RO-1.b` |
 | El tiempo entre el cierre del contacto y el movimiento de los relés se **mide** y cabe en el presupuesto de **menos de 100 ms** | `RO-1.e` |
-| Medición con el **WR-1 real cableado**: **6.65 ms** del contacto al reflejo | `design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md:85`; hito de `T-1.69` |
+| Medición con el **WR-1 real cableado**: **6.65 ms** del contacto al reflejo — **una observación**, alcance y artefacto en [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md) | `design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md:85`; hito de `T-1.69` |
 | Del receptor WR-1 **solo se cablea el Relevador 2** («Alerta Sísmica Oficial»). Las pruebas periódicas y los avisos multi-riesgo viven en el Relevador 1 y no entran al gabinete | `TASKS.md:1684-1690` |
 | Cada relé tiene un **estado seguro declarado por canal**: sirena y estrobo `NO` (una falla no los deja sonando), gas `fail_close` (una falla **cierra** el gas), retenedores `NC` (una falla **libera** las puertas) | `ESPECIFICACION-PANEL-GABINETE.md:71-77` |
 | Un arranque fallido del gabinete deja los relés **en seguro antes** de soltar el control de los pines | `RO-4.d` |
@@ -145,7 +145,7 @@ consecuencia.
 | Qué hace | Acreditación |
 |---|---|
 | Consola web con **monitoreo en vivo** (mapa, incidentes, detalle de sitio), **flota de gabinetes**, **triage/historial**, **auditoría** y **administración multi-tenant** | `T-2.35…T-2.57` |
-| El dato viaja en vivo por WebSocket nativo: medido **214 ms** desde que el incidente se escribe hasta que la pantalla lo pinta | `BLUEPRINT §5.5` |
+| El dato viaja en vivo por WebSocket nativo: **una observación** de **214 ms** desde que el incidente se escribe hasta que la pantalla lo pinta (**no es un percentil**: ver [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md)) | `BLUEPRINT §5.5` |
 | **La consola rotula el dato viejo en vez de pintarlo como fresco**, y los indicadores dicen `S/D` cuando no hay dato, nunca cero | `RO-7.b`, `RO-7.e` |
 | App móvil para ocupantes y brigadistas: alerta, check-in de vida, inspección de campo con fotos y firma, **cola offline cifrada**, y reenvío idempotente al recuperar señal | `RO-3.c`, `RO-7.d`; `T-2.00…T-2.14` |
 | Activación manual: el rol `occupant` necesita **quórum de dos ocupantes en 30 s**; los roles operativos activan individualmente | `BLUEPRINT §8`; `RBAC-TAKAB.md §4.1` |

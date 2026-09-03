@@ -21,7 +21,8 @@ from pathlib import Path
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.audio import AudioNotifier
-from takab_edge.audit import ActuationLedger
+from takab_edge.audit import ActuationLedger, ledger_dir_for
+from takab_edge.audit.reflejo import ActaDeReflejo, ActaDeReflejoStore
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.catalog import CatalogStore
@@ -41,7 +42,7 @@ from takab_edge.contracts import (
 )
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
-from takab_edge.gpio import GpioController, _proceso_vivo
+from takab_edge.gpio import LOCAL_RELAY_CHANNELS, GpioController, _proceso_vivo
 from takab_edge.gpio_link import build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
@@ -51,6 +52,7 @@ from takab_edge.security import SecurityManager
 from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 from takab_edge.signal import FeatureExtractor
 from takab_edge.telemetry import FEATURES_BATCH_TOPIC, FeatureBatcher
+from takab_edge.version import fw_version
 
 log = logging.getLogger("takab_edge.supervisor")
 
@@ -282,6 +284,11 @@ class EdgeSupervisor:
         self.ledger = ActuationLedger(
             s, online=lambda: self.cloud.online, sink=self._subir_fila_de_bitacora
         )
+        # [T-5.22] Acta del REFLEJO. Vive junto a la bitácora (mismo directorio
+        # derivado y estable) y la escribe el SUPERVISOR, no el dueño de los
+        # pines: el reflejo es mínimo y auditable a propósito (regla de oro 4) y
+        # meterle un fichero dentro sería pagar el acta con el camino de vida.
+        self.acta_reflejo = ActaDeReflejoStore(ledger_dir_for(s) / "reflejo.jsonl")
         self.actuators = ActuatorManager(
             RelayActuator(self.gpio_link),
             BacnetActuator(self.bacnet),
@@ -517,6 +524,7 @@ class EdgeSupervisor:
         self.cloud.publish(HEALTH_TOPIC, snapshot)
 
     def _on_sasmex(self, signal: SasmexSignal) -> None:
+        self._levantar_acta_del_reflejo(signal)
         decision = self.rules.evaluate_sasmex(signal)
         if decision is not None:
             self._act_and_publish(decision, None)
@@ -524,6 +532,42 @@ class EdgeSupervisor:
             # acumulado YA para que el contexto pre-evento llegue antes que el 1 Hz.
             self.telemetry.notify_tier(decision.tier)
             self._observe_shake(decision)
+
+    def _levantar_acta_del_reflejo(self, signal: SasmexSignal) -> None:
+        """[T-5.22] La cifra más citada del producto, con fecha y con estado.
+
+        Se levanta ANTES de decidir y actuar porque el reflejo YA OCURRIÓ: el
+        dueño de los pines energizó sirena y estrobo y midió su propia latencia
+        antes de que este observador exista. Esperar a después mediría otra cosa.
+
+        Aislado de punta a punta: un acta que pudiera tumbar `_act_and_publish`
+        sería peor que no tener acta. El flanco solo se registra al ACTIVARSE —
+        la apertura del contacto no es un reflejo y su latencia no significa nada.
+        """
+        if not signal.active:
+            return
+        try:
+            snap = self.gpio_link.snapshot()
+            latencia = snap.last_reflex_latency_s
+            if latencia is None:
+                return
+            self.acta_reflejo.registrar(
+                ActaDeReflejo(
+                    medido_en=utcnow().isoformat(),
+                    latencia_s=float(latencia),
+                    gateway_id=self.settings.gateway_id,
+                    fw_version=fw_version(),
+                    es_prueba=bool(signal.is_test),
+                    # El estado de los canales EN ESE INSTANTE: es lo que
+                    # convierte el número en algo que alguien puede discutir.
+                    canales={
+                        canal.value: bool(self.gpio.relay_state(canal).energized)
+                        for canal in LOCAL_RELAY_CHANNELS
+                    },
+                )
+            )
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+            log.exception("no se pudo levantar el acta del reflejo (aislado)")
 
     def _observe_shake(self, decision: TierDecision) -> None:
         """[T-2.19] Observador del agregado del panel: best-effort, DESPUÉS de actuar.

@@ -446,7 +446,8 @@ takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo
 >
 > **Lo que la ficha dice y ya NO es cierto:** «los relés siguen en MOCK». El gabinete corre
 > `LGPIOFactory (lgpio)` real con `DEV_MODE=false`, y la mitad eléctrica de `G-04` **ya pasa** con
-> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms). Lo que le
+> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms; las dos
+> son observaciones únicas — [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md)). Lo que le
 > falta a ese gate no es velocidad: es **que haya una sirena al final del cable**.
 >
 > **Variante de la ruta de hardware: DECIDIDA** — (B), fallback con watchdog

@@ -321,7 +321,8 @@ que exista el equipo real, el reparto es éste:
 La regla de decisión de `B.2` **no se reabre y no se acomoda al resultado**: lo único que decide es
 la **latencia del reflejo SASMEX→relé bajo carga de CCTV** contra su presupuesto de **100 ms**
 (`reflex_budget_s`, visible en `/api/status`). Si se acerca, o si crece la varianza, **hardware
-separado, sin discusión**. La referencia actual sin CCTV es de 6.65 ms y 4.16 ms: **dos órdenes de
+separado, sin discusión**. La referencia actual sin CCTV es de 6.65 ms y 4.16 ms — dos
+observaciones ÚNICAS, no un percentil; la fuente y su alcance están en [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md) —: **dos órdenes de
 magnitud de margen**, y el sesgo del que hay que protegerse es «va justo pero cabe».
 
 **Los límites no son recomendaciones, son la condición** (`B.3`): `CPUQuota=`, `MemoryMax=`,
@@ -446,7 +447,8 @@ Claves: `tenant_id` en toda tabla multi-tenant (excepción documentada: `seismic
 > fan-out y la etiqueta del deck no es spec. Implementado en **T-1.22** (`TASKS.md`): el
 > fan-out es LISTEN/NOTIFY fetch-on-notify (migración `0004_live_notify`) y el hub re-consulta
 > la fila con los GUCs del SUSCRIPTOR, así que **RLS es la autoridad de tenancy**. Verificado
-> E2E vivo: incidente commit→frame **214 ms**. GraphQL subscriptions queda pos-MVP en la ruta
+> E2E vivo: incidente commit→frame **214 ms** — **una observación**, no el p95 declarado,
+> que nunca se ha medido; ver [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md). GraphQL subscriptions queda pos-MVP en la ruta
 > como **T-3.15**, y solo si un cliente lo pide.
 >
 > **Alcance de esta nota (corregido el 2026-08-05).** Durante un mes esta nota desactivó

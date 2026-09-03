@@ -257,6 +257,7 @@ publica por MQTT desde México, es un proxy razonable de lo que vería el edge.
 
 - **El camino crítico de alertamiento no toca la nube.** SASMEX → WR-1 → GPIO → relé ocurre
   íntegramente dentro del gabinete. El reflejo físico está medido en campo en **6.65 ms**
+  (observaciones únicas; fuente y alcance en [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md))
   (Fase 1.9) y el WR-1 en **4.16 ms** (Fase 2.1). Frente a eso, 48 ms de nube **no aparecen en
   la ecuación**: no están en el camino.
 - **El edge opera sin nube.** Si el enlace cae, el gabinete sigue detectando, accionando y
