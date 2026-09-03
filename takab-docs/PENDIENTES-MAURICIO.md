@@ -808,6 +808,24 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > **El gatillo que la revive** (los tres, escritos para no depender de acordarse): un cliente
 > pregunta por el marco o la privacidad · aparece un ARCO real sobre un `subject_ref` por teléfono ·
 > el sistema empieza a **afirmar** un marco propio en vez de citar el del cliente.
+>
+> ### ➕ HECHO NUEVO PARA LA MISMA CONSULTA — `T-5.19` (2026-09-03)
+>
+> **`D-23` y `D-07` descansan LAS DOS sobre la misma calificación**: que TAKAB es **encargado** y
+> no **responsable** del tratamiento. Y esa calificación **solo está afirmada en el aviso
+> provisional**, que se declara a sí mismo sin revisar. No es una decisión nueva ni reabre esta
+> espera — es una pregunta que **ya tiene que ir en la lista** el día que la consulta se active,
+> porque si la calificación no se sostiene, las dos decisiones cambian de dueño y no de detalle.
+>
+> **Lo que sí se hizo mientras tanto, y no cuesta dinero:** el inventario de encargados existe y
+> está **derivado del código**, no tecleado ([`ENCARGADOS-TAKAB.md`](ENCARGADOS-TAKAB.md)). Un
+> proveedor nuevo o un servicio de AWS sin clasificar ponen el build en rojo nombrándolo. Y el
+> aviso provisional ganó los dos párrafos que le faltaban —quién más trata los datos, y que se
+> tratan **fuera de México**— como **marcadores de posición declarados**, dentro del texto y por
+> tanto dentro de la huella que sella el consentimiento.
+>
+> **Lo que eso cambia para el abogado:** ya no llega a una hoja en blanco. Llega a una lista de
+> siete terceros con qué dato alcanza cada uno, y a un aviso que dice dónde están sus huecos.
 
 ### 4.2 · [`T-2.77.a`](TASKS.md) · Alta del WhatsApp Business Account + aprobación de plantilla
 > **Plazo externo: lo aprueba Meta.** El código está completo y probado (53 tests); la plantilla

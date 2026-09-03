@@ -962,7 +962,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   determinista llenaría el contador de ceros y el `calls` de mentiras sobre cuántas veces se salió
   a la red. Apagar la perilla **no es una degradación** y sigue sin marcar el PDF.
 
-### [ ] T-5.19 · El aviso de la plataforma no nombra a **un solo encargado** — `GATE-LEGAL` + `SOFTWARE`
+### [x] T-5.19 · El aviso de la plataforma no nombra a **un solo encargado** — `GATE-LEGAL` + `SOFTWARE` · **CERRADA 2026-09-03** *(la mitad de software; el texto revisado sigue esperando a `D-20`)*
 > Siete terceros tocan o tocarán datos personales: AWS, Twilio, Meta, el servicio de
 > notificaciones de Apple, el de Google, la cadena de compilación del móvil, y el webhook del
 > propio cliente. **Ninguno está declarado.** Y el aviso **no menciona la transferencia
@@ -984,16 +984,49 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que el día que llegue el texto revisado no falte nada de software, y que mientras
   tanto el inventario de encargados exista y esté al día.
 - **Criterios de aceptación:**
-  - [ ] Inventario de encargados en un documento propio, **derivado** de los proveedores que el
+  - [x] Inventario de encargados en un documento propio, **derivado** de los proveedores que el
         código construye y de los recursos de infraestructura que tocan datos personales, no
         tecleado. Un proveedor nuevo entra solo.
-  - [ ] Test que compare el inventario contra los proveedores registrados: uno que no esté
+  - [x] Test que compare el inventario contra los proveedores registrados: uno que no esté
         declarado pone el build en rojo nombrándolo.
-  - [ ] El aviso gana los dos huecos que hoy no tiene —encargados y transferencia— como
+  - [x] El aviso gana los dos huecos que hoy no tiene —encargados y transferencia— como
         **marcadores de posición explícitos**, dentro del texto provisional y por tanto dentro de
         la huella.
-  - [ ] Anotado en `PENDIENTES-MAURICIO §4.1` que la calificación de encargado sostiene `D-23` y
+  - [x] Anotado en `PENDIENTES-MAURICIO §4.1` que la calificación de encargado sostiene `D-23` y
         `D-07`, para que la consulta legal la traiga en su lista.
+- **Cómo se cerró (2026-09-03).**
+  **Esta ficha NO reabre `D-20`**, y conviene leerlo así: la consulta jurídica sigue esperando a
+  que un cliente la pida. Lo que se cerró es el trabajo de costura, para que el día que llegue el
+  texto revisado no falte nada de software.
+  **`takab-docs/ENCARGADOS-TAKAB.md` se GENERA** de `privacy/encargados.py` — un documento
+  tecleado a mano dura hasta el primer proveedor nuevo, y el día que se queda corto **nadie se
+  entera**: no hay pantalla que falle. Dos censos lo comparan por igualdad contra el código:
+  (a) las **clases proveedoras** del paquete `notify` que salen a un tercero, derivadas del árbol
+  de sintaxis y no importando los módulos —`twilio`, `whatsapp` y `push` se importan tarde a
+  propósito, y un censo que exigiera importarlos sería un censo de lo que se pudo importar hoy—;
+  (b) los **servicios de AWS** que aparecen en `infra/terraform`, cada uno clasificado como
+  «guarda datos personales» o no, **con su razón en los dos casos**.
+  **El aviso gana los dos párrafos** que le faltaban, dentro del texto provisional y por tanto
+  dentro de la huella: eso significa que quien ya consintió **vuelve a ver el aviso**, porque el
+  motor re-pide consentimiento al cambiar el texto. Los dos se declaran como **MARCADOR DE
+  POSICIÓN**: afirmar una lista completa de encargados sobre un texto sin revisión jurídica sería
+  peor que el hueco que había.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **El censo encontró dos clases que yo no había declarado** —`WhatsAppTemplateProvider` y
+  `SimulatedPushProvider`—, y una de las dos era el proveedor REAL de WhatsApp: yo había declarado
+  un `WhatsAppProvider` que no existe. Es exactamente el defecto que el censo existe para cazar, y
+  lo cazó en su primera ejecución sobre su propio autor.
+  (2) **El párrafo «SUS DATOS NO CRUZAN A OTRA ORGANIZACIÓN» se retituló.** Hablaba del
+  aislamiento entre clientes, y junto a un aviso que callaba a siete encargados se leía como que
+  nadie más los toca. Ahora dice de qué habla y remite al párrafo siguiente. Hay test de que la
+  frase vieja no vuelve.
+  (3) **El webhook del cliente se declara igual, con su matiz escrito**: ahí el destino lo elige el
+  RESPONSABLE y no TAKAB, y su país es «desconocido: lo determina el cliente». Omitirlo por ese
+  matiz habría sido exactamente el hueco que abre la ficha.
+  **Y el hecho nuevo que se anotó para la consulta:** `D-23` y `D-07` descansan **las dos** sobre
+  la calificación de que TAKAB es *encargado* y no *responsable*, y esa calificación solo está
+  afirmada en un texto que se declara sin revisar. Si no se sostiene, las dos decisiones cambian
+  de dueño y no de detalle.
 
 ### [ ] T-5.20 · Firmar un dictamen **no entra en la bitácora de auditoría** — `SOFTWARE`
 > Firmar escribe la fila del dictamen —con quién firmó, en una tabla que no admite reescritura— y,
