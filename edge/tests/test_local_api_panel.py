@@ -2278,3 +2278,51 @@ def test_SIN_dato_de_reloj_el_gabinete_lo_declara(tmp_path: Path) -> None:
     assert _color_de_la_fila(salida, "Desfase de reloj NTP") != (
         _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
     )
+
+
+# ── [T-5.25] El nodo que no confirma el silencio se DECLARA ──────────────────
+#
+# Silenciar cuatro de cinco no es silenciar. El rótulo viejo era `SIN ACK` a
+# secas, y ese texto no distingue un test perdido —da igual— de un SILENCIO
+# perdido, que significa que ESE nodo sigue sonando mientras el operador cree que
+# ya calló el edificio y se va a atender la falsa alarma.
+
+
+def _secundarios(salida: dict) -> str:
+    return _txt(salida, "lora-rows")
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_SILENCIO_sin_confirmar_no_se_lee_igual_que_un_SIN_ACK(tmp_path: Path) -> None:
+    st = _base()
+    nodo = st["lora"]["secondaries"][0]
+    nodo["acked"] = False
+    nodo["pending"] = "silence"
+    texto = _secundarios(_render(tmp_path, status=st))
+
+    assert "SIGUE SONANDO" in texto, (
+        "un silencio que NO llegó se pinta como un fallo de acuse cualquiera; "
+        f"quien mira el panel no puede saber que ese nodo sigue sonando: {texto!r}"
+    )
+
+    otro = _base()
+    otro["lora"]["secondaries"][0]["acked"] = False
+    otro["lora"]["secondaries"][0]["pending"] = "test"
+    assert "SIGUE SONANDO" not in _secundarios(_render(tmp_path, status=otro)), (
+        "un TEST perdido se anuncia como si el edificio siguiera sonando: gritar "
+        "por lo que da igual es cómo se deja de leer un panel"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_silencio_CONFIRMADO_se_declara_silenciado(tmp_path: Path) -> None:
+    """La otra mitad: el operador tiene que poder ver QUÉ nodos calló de verdad."""
+    st = _base()
+    nodo = st["lora"]["secondaries"][0]
+    nodo["acked"] = True
+    nodo["pending"] = "silence"
+    nodo["alarm_active"] = True
+    texto = _secundarios(_render(tmp_path, status=st))
+
+    assert "SILENCIADO" in texto, f"el nodo que sí confirmó el silencio no lo dice: {texto!r}"
+    assert "SIGUE SONANDO" not in texto

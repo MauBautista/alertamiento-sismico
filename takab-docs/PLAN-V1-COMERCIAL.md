@@ -1328,7 +1328,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   escrita la regla («el semáforo fino por métrica NO existe aquí, los umbrales viven solo en el
   servidor») y es buena. El día que se decida, entra en `fleet_degrade_reasons` con su ajuste,
   como las demás.
-### [ ] T-5.25 · El silencio **no alcanza a los gabinetes secundarios** — `SOFTWARE`
+### [x] T-5.25 · El silencio **no alcanza a los gabinetes secundarios** — `SOFTWARE` · **CERRADA 2026-09-03**
 > El silencio del operador está bien resuelto en el gabinete que lo recibe: corta la sirena, corta
 > el voceo, deja el estrobo, no toca gas ni puertas, y una alarma nueva vuelve a sonar. Doce tests
 > lo defienden.
@@ -1342,13 +1342,49 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** edge · **Depende de:** nada · **Prioridad: BAJA**
 - **Objetivo:** que silenciar signifique lo mismo en todo el inmueble.
 - **Criterios de aceptación:**
-  - [ ] El silencio se propaga a los nodos secundarios, y **solo** el silencio: la protección no
+  - [x] El silencio se propaga a los nodos secundarios, y **solo** el silencio: la protección no
         audible de cada nodo no se toca.
-  - [ ] Un nodo que no confirma **se declara** en el panel: silenciar cuatro de cinco no es
+  - [x] Un nodo que no confirma **se declara** en el panel: silenciar cuatro de cinco no es
         silenciar.
-  - [ ] Una alarma nueva vuelve a sonar en todos, como ya ocurre en el principal.
-  - [ ] Test con dos nodos que mida el estado eléctrico de ambos, no la orden enviada.
-
+  - [x] Una alarma nueva vuelve a sonar en todos, como ya ocurre en el principal.
+  - [x] Test con dos nodos que mida el estado eléctrico de ambos, no la orden enviada.
+- **Cómo se cerró (2026-09-03).**
+  **La premisa se verificó y era exacta:** `reset_alert()` propagaba `clear` y la prueba local
+  propagaba `test`; `silence()` no propagaba nada.
+  **Pero el enganche correcto no era el botón del panel.** `silence_audibles()` la disparan DOS
+  orígenes —el panel LAN y el **pulsador físico** del gabinete— y el pulsador es el que aprieta de
+  verdad quien está delante de una falsa alarma. Colgarlo del panel habría dejado el edificio
+  sonando **por el camino más probable**, con un test en verde. Va por la costura de eventos
+  (`gpio_link.subscribe("silence", …)`), que cubre los dos y cualquier origen futuro.
+  **`SILENCE` es un tipo de mensaje propio, no un `ALARM_ACT` sin el bit de sirena**, y las dos
+  razones apuntaban al mismo sitio —el peor—: (1) el contrato publicado dice que `ALARM_ACT`
+  **enciende**, así que un firmware escrito contra esa frase engancha la sirena y no la suelta con
+  otro `ALARM_ACT`; (2) en el emisor, dos `ALARM_ACT` seguidos **SUMAN** flags a propósito (los
+  comandos de red llegan por canal separado), de modo que un silencio disfrazado de activación se
+  lo tragaría el `merged |= pending["flags"]`. La ambigüedad caía del lado de «la sirena sigue
+  sonando». Es **aditivo sobre v1** —el layout no cambia, `ver` sigue en `0x01`— y un firmware que
+  no conozca el tipo 6 lo rechaza y **no ackea**, que es la verdad y no un silencio fingido.
+  **Solo el silencio:** la orden lleva `alarm_active` y el estrobo puestos, así que la alerta sigue
+  viva en cada nodo y su protección no audible no se toca. Apagar el estrobo convertiría «callar la
+  sirena» en **borrar la alerta** para quien está dentro, que es peor que no poder callarla.
+  **El re-armado también viaja, y solo si hay algo que re-armar.** El observador recibe un simple
+  booleano; propagar una activación sin consultar el enclave encendería sirenas en otra nave a
+  partir de un botón que solo dice «ya no silencio». Tiene su propio test.
+  **El panel dejó de decir `SIN ACK` a secas.** Ese rótulo no distingue un test perdido —da igual—
+  de un **silencio** perdido, que significa que ese nodo sigue sonando mientras el operador cree
+  que calló el edificio: ahora dice `SIGUE SONANDO · SILENCIO SIN CONFIRMAR`, y `SILENCIADO` en el
+  que sí confirmó. Silenciar cuatro de cinco no es silenciar.
+  **El criterio 4 obligó a construir lo que faltaba.** El ESP32 simulado guardaba `flags_seen` —la
+  última **orden**—, que no es el estado eléctrico: un test posterior la pisa, y una orden que
+  llegó no dice qué quedó encendido. Ahora modela sus dos relés con las cuatro reglas del firmware
+  (`ALARM_ACT` suma · `SILENCE` apaga lo audible · `CLEAR` apaga todo · `TEST` no toca nada), así
+  que es a la vez el banco de pruebas de esta ficha y la **especificación ejecutable** del firmware
+  en C. El test de dos nodos mide `siren_on` de ambos; con el enganche desactivado falla diciendo
+  `SIGUE SONANDO (sirenas: True, True)`, que es el defecto textual de la ficha.
+  **Y el vector dorado del silencio quedó atado al documento:** los bytes viven en
+  `LORA-SECUNDARIOS.md §3` (lo que lee quien escriba el firmware) y en el test (lo que corre CI),
+  y un test nuevo comprueba que son los mismos — un vector correcto en un solo sitio es peor que
+  no tenerlo.
 ### [ ] T-5.26 · La huella del PDF se imprime **a la mitad**, y la ficha de estación está partida — `SOFTWARE`
 > Dos defectos de superficie que se arreglan juntos porque los dos son "el dato está y no se ve":
 >

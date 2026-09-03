@@ -415,6 +415,128 @@ def test_sasmex_propagates_to_lora_secondaries_and_reset_clears(settings):
         sup.stop()
 
 
+def test_el_silencio_del_operador_calla_el_INMUEBLE_entero(settings):
+    """[T-5.25] El defecto de la ficha, de punta a punta y con DOS nodos.
+
+    El silencio estaba bien resuelto en el gabinete que lo recibe —doce tests lo
+    defienden— y **no salía de ahí**: el principal propagaba la activación por
+    radio y solo el CIERRE de alerta propagaba la orden inversa. El operador
+    callaba el suyo y el edificio seguía sonando. Una sirena que nadie puede
+    callar durante una falsa alarma quema la obediencia a la siguiente alerta.
+
+    Se mide el ESTADO ELÉCTRICO de los dos secundarios, no la orden que salió por
+    la antena: una orden enviada que el nodo rechaza deja el relé cerrado, y es
+    así como «se silenció el edificio» puede ser mentira.
+
+    Y se silencia por el CAMINO REAL: `silence_audibles()`, que es lo que llaman
+    tanto el botón del panel como el PULSADOR FÍSICO del gabinete.
+    """
+    import time as _time
+
+    from simulators.lora import FakeSecondaryCabinet, SimulatedLoraTransport
+    from takab_edge.config import LoraConfig, SecondaryCabinet
+    from takab_edge.supervisor import EdgeSupervisor
+
+    site_key = b"clave-lora-de-sitio-0123456789ab"
+    transport = SimulatedLoraTransport()
+    norte = transport.attach(FakeSecondaryCabinet(site_key, 258))
+    patio = transport.attach(FakeSecondaryCabinet(site_key, 259))
+    lora_settings = settings.model_copy(
+        update={
+            "lora": LoraConfig(
+                enabled=True,
+                alarm_retry_s=0.05,
+                secondaries=[
+                    SecondaryCabinet(id=258, name="AZOTEA"),
+                    SecondaryCabinet(id=259, name="PATIO"),
+                ],
+            )
+        }
+    )
+    sup = EdgeSupervisor(
+        lora_settings, seedlink_source=None, lora_transport=transport, lora_site_key=site_key
+    )
+    sup.start()
+
+    def _hasta(cond, t=3.0):
+        limite = _time.monotonic() + t
+        while _time.monotonic() < limite and not cond():
+            _time.sleep(0.01)
+        return cond()
+
+    try:
+        WR1Simulator(sup.gpio).alert()
+        assert _hasta(lambda: norte.siren_on and patio.siren_on), (
+            "la alarma no llegó a sonar en los dos secundarios"
+        )
+
+        sup.gpio.silence_audibles(True)
+
+        assert _hasta(lambda: not norte.siren_on and not patio.siren_on), (
+            "el operador silenció el gabinete principal y el resto del inmueble "
+            f"SIGUE SONANDO (sirenas: {norte.siren_on}, {patio.siren_on})"
+        )
+        # Y SOLO el silencio: la alerta sigue viva y el estrobo sigue encendido.
+        for nodo in (norte, patio):
+            assert nodo.strobe_on, "silenciar apagó el estrobo: eso es borrar la alerta"
+            assert nodo.alarm_active, "silenciar bajó la alerta del nodo"
+        assert sup.gpio.snapshot().alert_latched, "el principal perdió el enclave al silenciar"
+
+        # El RE-ARMADO también viaja: con la alerta aún enclavada, vuelve a sonar.
+        sup.gpio.silence_audibles(False)
+        assert _hasta(lambda: norte.siren_on and patio.siren_on), (
+            "el re-armado no llegó a los secundarios: el operador vuelve a oír su "
+            "sirena y cree que el edificio entero volvió a sonar"
+        )
+    finally:
+        sup.stop()
+
+
+def test_re_armar_SIN_alerta_no_inventa_una_alarma_a_distancia(settings):
+    """La otra mitad de la misma decisión, y la que puede hacer daño.
+
+    El observador solo recibe un booleano —«ya no silencio»—, no si hay algo que
+    sonar. Propagar una activación ahí encendería sirenas en otra nave del
+    inmueble a partir de un botón que no anuncia ninguna alerta. Por eso el
+    re-armado consulta el enclave del principal antes de viajar.
+    """
+    import time as _time
+
+    from simulators.lora import FakeSecondaryCabinet, SimulatedLoraTransport
+    from takab_edge.config import LoraConfig, SecondaryCabinet
+    from takab_edge.supervisor import EdgeSupervisor
+
+    site_key = b"clave-lora-de-sitio-0123456789ab"
+    transport = SimulatedLoraTransport()
+    nodo = transport.attach(FakeSecondaryCabinet(site_key, 258))
+    lora_settings = settings.model_copy(
+        update={
+            "lora": LoraConfig(
+                enabled=True,
+                alarm_retry_s=0.05,
+                secondaries=[SecondaryCabinet(id=258, name="AZOTEA")],
+            )
+        }
+    )
+    sup = EdgeSupervisor(
+        lora_settings, seedlink_source=None, lora_transport=transport, lora_site_key=site_key
+    )
+    sup.start()
+    try:
+        assert sup.gpio.snapshot().alert_latched is False
+        sup.gpio.silence_audibles(True)
+        sup.gpio.silence_audibles(False)  # re-armado en calma
+        _time.sleep(0.3)
+
+        assert not nodo.siren_on, (
+            "re-armar sin alerta encendió la sirena de un secundario: eso es "
+            "inventar una alarma en otra nave del inmueble"
+        )
+        assert not nodo.alarm_active, "re-armar en calma marcó al nodo en alarma"
+    finally:
+        sup.stop()
+
+
 def test_load_many_noise_packets_no_spurious_alert(supervisor):
     sim = RS4DSimulator(station=supervisor.settings.station)
     stream = sim.stream(channel="EHZ")

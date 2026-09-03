@@ -553,7 +553,9 @@ class SecondaryCabinetState(BaseModel):
     ``/api/status``); el JSON Schema espejo ancla el contrato para el firmware
     ESP32 futuro. ``link``: ``never`` (jamás visto) · ``online`` · ``offline``
     (heartbeat ausente > factor×periodo). ``acked``: estado del último comando
-    propagado (``None`` = sin comando pendiente).
+    propagado (``None`` = sin comando pendiente) y ``pending``: CUÁL es ese
+    comando — los dos juntos, porque «sin acuse» sin decir de qué no es un dato
+    accionable (T-5.25).
     """
 
     id: int
@@ -566,3 +568,11 @@ class SecondaryCabinetState(BaseModel):
     alarm_active: bool = False
     link: Literal["never", "online", "offline"] = "never"
     acked: bool | None = None
+    #: [T-5.25] QUÉ orden es la que está esperando (o ya tiene) su ACK:
+    #: ``activate`` · ``clear`` · ``test`` · ``silence`` (``None`` = ninguna).
+    #:
+    #: Sin esto el panel solo podía decir «SIN ACK», y ese rótulo no distingue
+    #: un test que se perdió —da igual— de un SILENCIO que no llegó, que
+    #: significa que ese nodo **sigue sonando** mientras el operador cree que
+    #: calló el edificio. Silenciar cuatro de cinco no es silenciar.
+    pending: Literal["activate", "clear", "test", "silence"] | None = None

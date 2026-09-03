@@ -664,8 +664,8 @@ function baseStatus(){
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
     lora:{enabled:true, heartbeat_s:90, secondaries:[
-      {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null},
-      {id:259, name:'PATIO-SUR', zone:'Patio', age_s:412, battery_mv:3610, rssi_dbm:-104, snr_db:2.1, alarm_active:false, link:'offline', acked:null}]},
+      {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null, pending:null},
+      {id:259, name:'PATIO-SUR', zone:'Patio', age_s:412, battery_mv:3610, rssi_dbm:-104, snr_db:2.1, alarm_active:false, link:'offline', acked:null, pending:null}]},
     rose_zero: null,
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
@@ -724,7 +724,8 @@ const SCENES = {
     s.signal.channels = sceneChannels(0.31);
     s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
     s.lora.secondaries[0].alarm_active = true; s.lora.secondaries[0].acked = true;
-    s.lora.secondaries[1].acked = false; /* enlace perdido ⇒ SIN ACK visible */
+    s.lora.secondaries[0].pending = 'activate';
+    s.lora.secondaries[1].acked = false; s.lora.secondaries[1].pending = 'activate'; /* enlace perdido ⇒ SIN ACK visible */
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
   /* [T-2.32] AVISO instrumental: tier elevado SIN actuación (política ratificada) —
      escena NUEVA (las 10 originales quedan intactas). */
@@ -1318,7 +1319,14 @@ function renderLora(st){
         + (sec.battery_mv != null ? ' · ' + (sec.battery_mv/1000).toFixed(2) + ' V' : '');
     const state = document.createElement('span');
     state.className = 'mono'; state.style.cssText = 'margin-left:auto;font-weight:700;font-size:10px';
-    if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
+    /* [T-5.25] El rótulo dice QUÉ orden no se confirmó. «SIN ACK» a secas no
+       distingue un test perdido —da igual— de un SILENCIO perdido, que significa
+       que ESE nodo sigue sonando mientras el operador cree que calló el edificio.
+       Silenciar cuatro de cinco no es silenciar. */
+    if (sec.acked === false && sec.pending === 'silence'){
+      state.textContent = 'SIGUE SONANDO · SILENCIO SIN CONFIRMAR'; state.style.color = C.crit; }
+    else if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
+    else if (sec.pending === 'silence' && sec.acked){ state.textContent = 'SILENCIADO'; state.style.color = C.warn; }
     else if (sec.alarm_active){ state.textContent = 'ALARMA PROPAGADA'; state.style.color = C.warn; }
     else { state.textContent = '—'; state.style.color = C.fg3; }
     row.append(dot, name, link, state);
