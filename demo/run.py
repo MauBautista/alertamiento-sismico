@@ -36,6 +36,7 @@ import psycopg
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
+from demo.aislamiento import entregas_reales, imponer  # noqa: E402
 from demo.bridge import Bridge, ingest_conn_factory  # noqa: E402
 
 from takab_api.incident.engine import IncidentEngine  # noqa: E402
@@ -440,8 +441,36 @@ def criterio_3_corte(conn: psycopg.Connection, bridge: Bridge, dlq0: int) -> Non
     check("el enlace con la nube está caído", st["cloud"]["online"] is False)
 
     enviados_antes = st["cloud"]["sent"]
-    st = _post(g3, "/quake", timeout=60.0)  # sismo CON la WAN caída
 
+    # [T-5.08] DOS estímulos, en este orden, y el orden es la mitad del asunto.
+    #
+    # Este criterio estaba en ROJO desde el 2026-08-03 y nadie lo vio porque
+    # `demo/run.py` no entra en `make test`. Lo que pasó: hasta `T-2.32` una
+    # detección instrumental de UNA estación accionaba los relés, y el guion lo
+    # daba por hecho. La política RATIFICADA invirtió eso —una estación sola
+    # AVISA, no actúa (`supervisor.py`: `visual_only = source is THRESHOLD and not
+    # instrumental_actuation`, `False` por defecto)—, así que el guion llevaba un
+    # mes exigiendo una conducta que el producto abandonó a propósito.
+    #
+    # 1) INSTRUMENTAL PRIMERO, con los relés en reposo. Si fuera al revés, el
+    #    enclave de SASMEX los tendría encendidos y la comprobación no podría
+    #    distinguir «actuó el umbral» de «sigue sonando lo anterior» (pasó al
+    #    escribirlo: los cinco salían activos).
+    st_inst = _post(g3, "/quake", timeout=60.0)
+    activos_inst = [c for c in CHANNELS if st_inst["relays"][c]]
+    check(
+        "una detección instrumental SOLA no acciona (política ratificada T-2.32)",
+        not activos_inst,
+        str(activos_inst),
+    )
+    check(
+        f"…pero SÍ encola su evento para la nube: {st_inst['cloud']['queued']} mensajes",
+        st_inst["cloud"]["queued"] > 0,
+    )
+
+    # 2) SASMEX DESPUÉS: la protección local determinista, que es lo que este
+    #    criterio promete. No depende de la nube ni de que la haya (reglas 1 y 2).
+    st = _post(g3, "/sasmex", timeout=60.0)
     activos = [c for c in CHANNELS if st["relays"][c]]
     check(
         f"la actuación local ocurre igual: {len(activos)}/5 relés", len(activos) == 5, str(activos)
@@ -531,6 +560,21 @@ def main() -> int:
     _assert_exclusive_db(conn)  # antes de abrir bridge/soc/fleet: todo otro cliente es ajeno
     reset_state(conn)
 
+    # [T-5.08] El aislamiento deja de ser implícito. Antes descansaba en que este
+    # guion no lanza el worker de notificación — una coincidencia de arranque, no
+    # un aislamiento: con un `make soc-local` a medio apagar (que sí lo levanta) la
+    # cascada saldría por los canales configurados hacia teléfonos reales.
+    #
+    # Ahora se ENCIENDE el modo demostración del cliente y se comprueba que quedó
+    # vivo. Suprime las salidas de la nube y NO puede tocar el gabinete, así que la
+    # protección local que esta demo acredita se sigue demostrando de verdad.
+    tenant_demo = imponer(conn, tenant_code=TENANT_CODE)
+    conn.commit()
+    print(
+        f"  \033[36mMODO DEMOSTRACIÓN ENCENDIDO\033[0m para {TENANT_CODE} "
+        "— entregas y comandos de actuador suprimidos; el gabinete NO se entera.\n"
+    )
+
     fleet = Fleet(_WORK)
     bridge = Bridge([_WORK / "cola" / g.thing for g in GABINETES], _WORK / "dlq", DSN)
     bridge.start()
@@ -547,6 +591,17 @@ def main() -> int:
         conn.close()
         if not args.keep:
             subprocess.run(["rm", "-rf", str(_WORK)], check=False)  # noqa: S603, S607
+
+    # [T-5.08] La prueba del aislamiento, al final y sobre HECHOS: si algo salió de
+    # verdad por un canal, se dice. `simulated` no cuenta —es lo que produce un
+    # canal sin credenciales, y desaparece justo en el entorno de la demostración—.
+    with psycopg.connect(DSN, autocommit=True) as c2:
+        salidas = entregas_reales(c2)
+    check(
+        f"NADA salió por un canal real durante la demo (modo demostración de {tenant_demo[:8]}…)",
+        not salidas,
+        str(salidas),
+    )
 
     print(f"\n{'=' * 66}")
     estado = "\033[32mHITO ACREDITADO\033[0m" if _fail == 0 else "\033[31mHITO NO ACREDITADO\033[0m"

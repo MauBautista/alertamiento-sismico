@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **288** · `[~]` **10** · `[ ]` **45**
+****Conteo de tareas:** total **344** · `[x]` **288** · `[~]` **11** · `[ ]` **45**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11752,7 +11752,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   y afirmaba cubrir las dos variantes; ahora se llama por lo único que sí comprobaba —qué DICE la
   constante— y apunta a dónde vive la comprobación de verdad. Dejarlo con el nombre viejo habría
   sido dejar puesta la señal que hizo creer durante meses que esto estaba cubierto.
-### [ ] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE`
+### [~] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **PARCIAL 2026-09-04**
 > `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
 > supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
 > producción** con tres guardias que se defienden solos (host real de la conexión, exclusividad de
@@ -11769,15 +11769,80 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** un guion recorrible de principio a fin delante de un cliente, con los datos
   etiquetados y sin posibilidad de tocar nada real.
 - **Criterios de aceptación:**
-  - [ ] Escena de **simulacro** completa: agenda, armado, disparo humano, acuse por sitio y
+  - [ ] Escena de **simulacro** completa *(BLOQUEADA: la demo no tiene bajada nube→gabinete — `T-5.29`)*: agenda, armado, disparo humano, acuse por sitio y
         reporte, en las tres superficies.
-  - [ ] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
+  - [x] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
         lo está.
-  - [ ] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
-  - [ ] Un documento corto de recorrido —qué se enseña, en qué orden, qué NO se toca— que cite
+  - [x] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
+  - [x] Un documento corto de recorrido —qué se enseña, en qué orden, qué NO se toca— que cite
         las frases de `INFORME-V1-COMERCIAL.md §3`.
-  - [ ] El aislamiento de notificaciones deja de ser implícito: se **impone**, y hay un test que
+  - [x] El aislamiento de notificaciones deja de ser implícito: se **impone**, y hay un test que
         lo comprueba.
+- **Cómo quedó (2026-09-04). PARCIAL: cuatro de cinco criterios, y el que falta está fichado.**
+  **Lo primero que apareció no estaba en la ficha: `make demo-fase1` llevaba UN MES EN ROJO.**
+  33 OK · 2 FALLOS, y nadie lo había visto porque `demo/run.py` **no entra en `make test`**. La
+  causa: hasta `T-2.32` una detección instrumental de UNA estación accionaba los relés, y el
+  criterio C3 lo daba por hecho; la política ratificada invirtió eso —una estación sola AVISA— así
+  que el guion llevaba desde el **2026-08-03** exigiendo una conducta que el producto abandonó a
+  propósito. Un guion que falla dos comprobaciones no es «no recorrible»: es que **falla delante
+  del cliente**.
+  **C3 ahora usa DOS estímulos, y el orden es la mitad del arreglo.** Primero el instrumental con
+  los relés en reposo —comprueba que **no acciona**, que es la política vigente— y después SASMEX,
+  que es la protección local determinista que el criterio promete de verdad (reglas de oro 1 y 2).
+  Al revés no funciona y se descubrió ejecutándolo: el enclave de SASMEX deja los cinco relés
+  encendidos y la comprobación no puede distinguir «actuó el umbral» de «sigue sonando lo
+  anterior». **38 OK · 0 FALLOS.**
+  **El aislamiento de notificaciones dejó de ser implícito** (`demo/aislamiento.py`). Descansaba en
+  que el guion no lanza el worker —una coincidencia de arranque, no un aislamiento: con un
+  `make soc-local` a medio apagar la cascada saldría hacia teléfonos reales—. Ahora la demo
+  **enciende el modo demostración** de `T-5.02`, **verifica** que la ventana quedó viva con la
+  misma función que consulta el worker, y **al final cuenta lo entregado**: `sent` y solo `sent`,
+  porque `simulated` es lo que produce un canal sin credenciales y desaparece justo en el entorno
+  donde se haría la demostración. Cinco tests, y uno fija que `enabled_by` es **uuid** — un
+  `"demo:run.py"` reventaba el INSERT en mitad del guion.
+  **El recorrido interactivo usa la identidad SIMULADA.** `soc_local.py` levantaba
+  `gw-dev-0001 / site-dev / R4F74` a propósito «para que la consola local se vea igual que la
+  desplegada», que delante de un cliente es exactamente lo que no se quiere. Con
+  `gw-sim-0001 / site-sim-001 / SIM001`, `T-5.05` lo rotula **DEMO** en el mapa y en la Flota.
+  **`demo/GUION.md`**: qué se enseña, en qué orden y qué no se toca, con las frases de
+  `INFORME-V1-COMERCIAL.md §3` **citadas literalmente** —las prohibidas tachadas y su sustituta al
+  lado—, incluida la que más sorprende (una estación sola no acciona) y la advertencia de que el
+  espectrograma se ve en local pero **en la nube sale vacío siempre** hasta que `T-3.11.c` se
+  despliegue.
+- **LO QUE FALTA, y por qué no se hizo:** la **escena de simulacro** (criterio 1). No es una
+  decisión de alcance: **el sustituto de IoT Core de la demo es solo edge→nube**. Un simulacro son
+  comandos firmados nube→gabinete, uno por sitio, y ese camino **no existe en el arnés**. Se
+  intentó, se midió y se fichó como **`T-5.29`**, con la mitad que sí se puede recorrer hoy
+  (`make soc-local`) escrita en el guion. Forzarlo habría exigido inventar un transporte de bajada
+  sin verificación de firma — que probaría lo contrario de lo que hay que probar.
+### [ ] T-5.29 · La demo no tiene camino de BAJADA nube→gabinete — `SOFTWARE`
+> **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.08`, el 2026-09-04).
+>
+> El sustituto de IoT Core de la demo (`demo/spool.py`) es **solo edge→nube**. No hay ningún
+> transporte de bajada, y por eso `demo/run.py` no puede guionizar nada que se comande desde la
+> nube: **un simulacro son comandos firmados nube→gabinete, uno por sitio**, y también lo son la
+> actuación por quórum y la sincronización de config firmada.
+>
+> Consecuencia concreta, medida al intentarlo: la escena de simulacro de `T-5.08` se quedó a
+> medias. La mitad de nube (agenda, armado, disparo, acuse por sitio, reporte) se puede recorrer
+> a mano en `make soc-local`, donde la API y la consola están vivas; la mitad del **gabinete**
+> —que es donde se ve que el simulacro suena— no tiene por dónde llegar.
+>
+> **Lo que NO es esto:** un problema del producto. En producción el camino existe (AWS IoT Core,
+> `commands/`, el dispatcher del edge verifica firma antes de tocar nada). Es el arnés de la demo
+> el que solo tiene la mitad.
+- **Componente:** demo · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que la demo pueda guionizar lo que se comanda desde la nube, con la MISMA
+  verificación de firma que en producción.
+- **Criterios de aceptación:**
+  - [ ] Camino de bajada en `demo/spool.py` (o su hermano) que entregue al gabinete el documento
+        **firmado**, y que el edge lo verifique con el dispatcher REAL — un transporte que se
+        salte la firma probaría lo contrario de lo que hay que probar.
+  - [ ] Escena de simulacro completa en `demo/run.py`: agenda, armado, disparo humano, acuse por
+        sitio y reporte, con el gabinete acusando recibo.
+  - [ ] Un comando con firma inválida se RECHAZA y queda en la bitácora, y el guion lo comprueba:
+        es la mitad que hace creíble la otra.
+  - [ ] Guarda de no-vacuidad: el guion declara cuántos comandos espera entregar.
 
 ### [ ] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE`
 > `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
