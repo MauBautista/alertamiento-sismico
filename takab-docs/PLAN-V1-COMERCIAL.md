@@ -1446,7 +1446,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   fixture del render puso en rojo `test_el_fixture_del_censo_es_el_status_real_hasta_el_ultimo_
   anidado`, que compara los dos **recursivamente**. Es la guarda que impide que el panel se pruebe
   contra un contrato que ya no existe.
-### [ ] T-5.27 · Las **dos guardas que faltan** — `SOFTWARE`
+### [x] T-5.27 · Las **dos guardas que faltan** — `SOFTWARE` · **CERRADA 2026-09-03**
 > Dos propiedades que hoy se cumplen **por construcción** y que nada impediría romper mañana:
 >
 > - **La cifra externa fuera del veredicto.** El desacoplamiento es genuino y estructural: el tipo
@@ -1464,11 +1464,48 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** api (tests) · **Depende de:** nada · **Prioridad: BAJA**
 - **Objetivo:** que las dos propiedades dejen de depender de que nadie las rompa.
 - **Criterios de aceptación:**
-  - [ ] Contract-test que fije por **igualdad** los campos de la entrada del veredicto, y que
+  - [x] Contract-test que fije por **igualdad** los campos de la entrada del veredicto, y que
         prohíba por barrido del árbol de sintaxis que el motor de reglas o el del dictamen importen
         el módulo forense o el esquema del catálogo.
-  - [ ] Se decide y se escribe qué hacer con el folio: o el prompt recibe un folio recortado, o el
+  - [x] Se decide y se escribe qué hacer con el folio: o el prompt recibe un folio recortado, o el
         docstring deja de afirmar lo que no cumple. **Lo que no puede quedarse es el test que
         esquiva el caso.**
-  - [ ] El test del identificador deja de borrar el folio antes de afirmar.
-  - [ ] Guarda de no-vacuidad en ambos: cada uno declara cuántos elementos espera.
+  - [x] El test del identificador deja de borrar el folio antes de afirmar.
+  - [x] Guarda de no-vacuidad en ambos: cada uno declara cuántos elementos espera.
+- **Cómo se cerró (2026-09-03).**
+  **La cifra externa: por igualdad Y por barrido, porque cada mitad tapa un agujero distinto.**
+  `set(campos de EvalInput) == LOS_SIETE` se pone rojo al **añadir** un campo — un
+  `assert "magnitude" not in campos` solo cazaría ese nombre exacto y dejaría pasar
+  `catalog_magnitude` o `mag_ssn`. Y un campo no es la única puerta: el motor podría importarse
+  la cifra y consultarla por su cuenta, así que el barrido del AST prohíbe los cinco módulos de
+  fuente externa en los **dos** ficheros que producen el veredicto.
+  **Los dos son `dictamen/rules.py` y `dictamen/service.py`, y `builder.py` NO está** — no es un
+  olvido y hay que decirlo, porque el enunciado se lee como si fueran otros. `builder.py` arma el
+  **documento** y sí importa forense **a propósito**: el informe enseña los hechos medidos junto
+  al dictamen. Lo que no puede pasar es que esos hechos entren en la **decisión**, y la decisión se
+  toma en esos dos ficheros — `service.py` es además el **único** sitio del repo que construye un
+  `EvalInput`. Ese import real de `builder.py` se usa como **contraprueba del barrido**: si el
+  lector de imports no lo viera, tampoco vería uno nuevo en el motor.
+  **El folio: se decidió DEJARLO entero y arreglar la afirmación, no recortarlo.** Un folio es
+  `TKB-<código>-<fecha>-<8 hex del incident_id>-<E|T>`, y es el **nombre público del documento**
+  —`folio_of` lo dice: «se imprime y se cita por teléfono»—. Recortarlo haría que la prosa nombrara
+  un documento que no existe, y quien lo teclee no encontraría nada. Lo que viaja no es un dato
+  personal: es un identificador de documento, estable y correlacionable entre dictámenes del mismo
+  incidente, que es justo para lo que se diseñó. Lo que sigue sin salir por ninguna vía es el
+  `incident_id` **completo** ni el `event_id`. El docstring de la allowlist ya lo dice así, con las
+  dos razones.
+  **Y el test dejó de esquivar el caso.** Borraba el folio antes de mirar (`.replace(folio, "")`),
+  o sea que quitaba de en medio **la única vía** por la que el identificador salía; encima el
+  fixture traía un folio literal cuyos hex no tenían nada que ver con su `incident_id`, así que el
+  caso peligroso ni siquiera estaba representado. Ahora el folio se **deriva con `folio_of`**, como
+  en producción, y se afirma en positivo: el UUID entero no viaja, los 8 hex sí, y **solo dentro
+  del folio** — si aparecieran por otra vía, el test lo dice.
+  **No-vacuidad en los dos, con su número escrito.** El del veredicto declara 7 campos, 2
+  productores y 5 fuentes prohibidas, y comprueba que el lector de imports no devuelve vacío. El
+  del folio declara los 29 campos de `NarrativeFacts` —lo que cierra el hueco que el docstring no
+  cubría: un campo nuevo del `ReportModel` queda fuera por omisión, pero uno **cableado en
+  `facts_from`** saldría a la red en silencio— y exige que el payload serializado no esté vacío,
+  porque sobre un payload vacío todos los `not in` pasan en verde.
+  **Las cuatro mutaciones comprobadas:** añadir `magnitude` a `EvalInput` y colar el import del
+  catálogo en `rules.py` (2 rojos); filtrar el `incident_id` completo (3 rojos) y recortar el folio
+  en silencio (2 rojos).
