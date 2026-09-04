@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **344** · `[x]` **289** · `[~]` **11** · `[ ]` **44**
+****Conteo de tareas:** total **344** · `[x]` **290** · `[~]` **11** · `[ ]` **43**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11902,7 +11902,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   en orden numérico. El archivo **no lo está** (…`D-19`, `D-23`, `D-22`, `D-20`, `D-21`, `D-01`…) y
   no es un defecto: están agrupadas como se escribieron. Exigirlo obligaría a reordenar 1 400
   líneas de bitácora para satisfacer a un test.
-### [ ] T-5.10 · **Procedencia del evento externo**: cinco estados, tres superficies — `SOFTWARE`
+### [x] T-5.10 · **Procedencia del evento externo**: cinco estados, tres superficies — `SOFTWARE` · **CERRADA 2026-09-04**
 > Hoy no existe ninguna máquina de estados de procedencia. Lo que hay son dos enumeraciones de
 > presentación (`EpicenterKind`, la banda de magnitud) y un campo `source` con tres valores
 > efectivos. Y `reference_earthquakes` no lleva **ni hora de consulta, ni bandera de
@@ -11925,19 +11925,69 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que toda cifra sísmica que no midió nuestro instrumento se pinte con su fuente, su
   hora de consulta y su estado de confirmación — o no se pinte.
 - **Criterios de aceptación:**
-  - [ ] Cinco estados en el contrato compartido, **con el mismo nombre en las tres superficies**:
+  - [x] Cinco estados en el contrato compartido, **con el mismo nombre en las tres superficies**:
         sin dato externo, consultando, preliminar, confirmado, sin correlación.
-  - [ ] El texto de la consulta dice **"consultando"**, nunca *"estimando"*: nosotros no
+  - [x] El texto de la consulta dice **"consultando"**, nunca *"estimando"*: nosotros no
         estimamos, preguntamos. Anclado por test.
-  - [ ] `reference_earthquakes` gana hora de consulta, estado de revisión e identificador del
+  - [x] `reference_earthquakes` gana hora de consulta, estado de revisión e identificador del
         proveedor; migración idempotente, con el dueño correcto.
-  - [ ] Ninguna superficie pinta magnitud, epicentro, profundidad u hora de origen **sin** su
+  - [x] Ninguna superficie pinta magnitud, epicentro, profundidad u hora de origen **sin** su
         fuente y su hora de consulta al lado. Test por superficie que lo verifique sobre el árbol
         renderizado.
-  - [ ] El estado de sin correlación **se pinta**: hay un texto para él y un test que lo exige.
-  - [ ] Se declara qué pasa hoy con la magnitud que nunca se escribe: o se escribe con su
+  - [x] El estado de sin correlación **se pinta**: hay un texto para él y un test que lo exige.
+  - [x] Se declara qué pasa hoy con la magnitud que nunca se escribe: o se escribe con su
         procedencia, o el campo se retira y la interfaz deja de tener una rama inalcanzable.
-
+- **Cómo se cerró (2026-09-04).**
+  **La regla, en una línea: CON PROCEDENCIA, O NO SE PINTA.** Vive en
+  `shared/glossary/procedencia.json` —JSON, como `estados.json`, porque el panel del gabinete se
+  sirve como un archivo estático desde el Pi y **no puede importar nada**— y las tres superficies
+  la leen de ahí en vez de escribir cada una su vocabulario.
+  **Los cinco estados, con su razón:** `sin_dato_externo` (nadie preguntó), `consultando`,
+  `preliminar`, `confirmado` y `sin_correlacion` — el que más falta hacía, porque sin él un «no sé»
+  se convierte en una pantalla vacía que el operador lee como «no pasó nada».
+  **«Consultando», jamás «estimando»**, y no es estilo: «estimando» sugiere que el sistema CALCULA
+  una magnitud, que es justo lo que el blueprint §14 prohíbe. Nosotros preguntamos. Lo ancla un
+  test que barre el glosario entero y descuenta el bloque que las nombra para prohibirlas.
+  **La rama del catálogo dejó de ser inalcanzable-por-NULL para ser alcanzable-solo-con-
+  procedencia.** Era el punto delicado: `magnitudeOf` mostraba la cifra en cuanto hubiera número,
+  así que el día que alguien escribiera uno habría aparecido en la consola **sin fuente ni hora**,
+  indistinguible de una medición nuestra. Ahora exige estado que pinte, fuente y hora de consulta;
+  sin las tres, degrada al texto del glosario.
+  **Las tres superficies, cada una con su test sobre el árbol renderizado:**
+  · **Consola** — `magnitudeOf` obedece la regla y la cita viaja con la cifra. Cinco tests nuevos,
+    incluido el caso peligroso (hay número y no consta de dónde salió).
+  · **Panel del gabinete** — pintaba `M x.x` en DOS tarjetas. La lista traía hora de captura y
+    origen del feed (`T-2.66`) pero **no la fuente**; la **comparativa no decía nada**, y es la
+    tarjeta que pone la cifra ajena **al lado de la que midió el sensor del inmueble**. Las dos
+    citan ahora por la misma función, y sin fuente lo **declaran** en vez de callar.
+  · **Móvil** — no pinta ninguna cifra externa, y es una **decisión escrita** (`CrisisView`:
+    «PROHIBIDO … magnitud preliminar»; el WR-1 entrega un booleano). Lo que faltaba era la guarda:
+    un barrido que busca la FORMA de pintarla —no la palabra, que aparece en los comentarios que
+    la prohíben— para que nadie la añada sin decidirlo.
+  **`reference_earthquakes` gana las tres columnas que hacen citable una cifra ajena** (`0060`):
+  `consulted_at` —`created_at` es cuándo se insertó la FILA, no cuándo se preguntó—, `review_status`
+  con su CHECK, y `provider_event_id`, porque `catalog_key` es una clave **que nos inventamos
+  nosotros** y no sirve para volver a preguntarle a la fuente por ese evento. Nacen NULL y así
+  siguen: un default inventado sería la mentira que la ficha existe para impedir. Aplicada y
+  **re-aplicada dos veces** contra la DB real.
+- **Criterio 6, respondido: la magnitud SE CONSERVA.** `seismic_events.magnitude` se inserta
+  siempre en NULL —el único INSERT del sistema pone el literal— y hoy el estado de todo evento es
+  `sin_dato_externo`. Retirar el campo habría borrado el sitio donde va a aterrizar el dato cuando
+  `T-5.11` fije el criterio de correlación; lo que se retira es la posibilidad de pintarlo sin
+  procedencia. Está escrito en `procedencia.py`, en el glosario y con un test que exige que la
+  razón cite el hecho que la sostiene.
+- **Cinco mutaciones comprobadas:** la regla vieja en la consola (2 rojos), la cita de la
+  comparativa, la fuente de la lista, y las dos guardas del móvil.
+- **Y un gate del repo se ganó el sueldo:** `consoleImageCensus` vio que `console.Dockerfile` no
+  copiaba `shared/glossary/`, así que `make cloud-images` habría muerto con **TS2307 tras varios
+  minutos** de build. Mismo caso que `shared/fixtures` en su día: el `build` de esa imagen corre
+  `tsc --noEmit` y **solo ve lo que se copia**, mientras `make lint` y el job `web` typechequean el
+  checkout completo, donde el fichero existe.
+- **Y una que sobrevivió al primer intento, que es la que enseña:** los tests del panel pasaban
+  con la cita de la comparativa **borrada**, porque solo miraban la tarjeta de la lista. La
+  comparativa exige un clic para existir, y hasta que el test no la alcanzó por el camino real
+  —`#open-map` + `row:ssn-rows-big`— el barrido daba verde sobre la tarjeta que **no declaraba
+  nada**. Un test por superficie no basta si no llega a la tarjeta que tiene el defecto.
 ### [ ] T-5.11 · La correlación con el catálogo es **solo temporal** — `SOFTWARE`
 > `api/src/takab_api/forensics/__init__.py:52` fija `CATALOG_WINDOW_S = 120.0` y la consulta toma
 > el evento más cercano en el tiempo dentro de esa ventana. **No hay distancia máxima. No hay

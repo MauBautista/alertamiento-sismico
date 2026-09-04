@@ -243,7 +243,9 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
   it("la magnitud baja a métrica rotulada como del catálogo", () => {
     arrange();
     expect(screen.getByText("MAGNITUD (CATÁLOGO)")).toBeInTheDocument();
-    expect(screen.getByText("S/CATÁLOGO")).toBeInTheDocument();
+    // [T-5.10] Sin fuente ni hora de consulta el estado es `sin_dato_externo`,
+    // y se pinta con su texto — no con un hueco ni con un número sin origen.
+    expect(screen.getByText("SIN DATO EXTERNO")).toBeInTheDocument();
   });
 
   it("el epicentro por quórum declara que es un centroide, no una localización", () => {

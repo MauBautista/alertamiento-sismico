@@ -1741,6 +1741,12 @@ function renderCmp(){
   head.style.cssText = 'font-weight:700;font-size:13px;color:' + magColor(m.ev.m);
   head.textContent = 'M ' + m.ev.m.toFixed(1) + ' · ' + (m.ev.place || 'S/D');
   box.appendChild(head);
+  /* [T-5.10] CON PROCEDENCIA, O NO SE PINTA. Esta cifra NO la mide TAKAB: la
+     publica una fuente oficial, y aquí aparecía junto a la sacudida MEDIDA por
+     el sensor del inmueble sin nada que las separara — una cifra sin procedencia
+     se lee como propia. La fuente y la hora de captura salen del mismo catálogo
+     firmado (`/api/catalog`), no de un rótulo escrito a mano. */
+  meta(citaCatalogo(S.catalog), C.fg3);
   const kv = (lbl, val) => { const r = document.createElement('span'); r.className = 'cmp-kv';
     const a = document.createElement('span'); a.textContent = lbl;
     const v = document.createElement('span'); v.className = 'v mono'; v.textContent = val;
@@ -1772,6 +1778,17 @@ function catProv(cat){
   return { age, limit, label, unknown: age == null,
            stale: age == null || (limit != null && age > limit) };
 }
+/* [T-5.10] La cita de procedencia de una cifra del catálogo: fuente + captura.
+   Una sola función para las dos tarjetas que pintan `M x.x` (la comparativa y la
+   lista del SSN), porque dos rótulos escritos por separado acaban diciendo cosas
+   distintas del mismo dato. Sin fuente NO se calla: lo declara — que no conste de
+   dónde salió una cifra es justo lo que hay que enseñar. */
+function citaCatalogo(cat){
+  const fuente = (cat && cat.source) ? String(cat.source) : null;
+  const capt = String((cat && cat.captured_at) || '').slice(0,16).replace('T',' ');
+  if (!fuente) return 'CIFRA EXTERNA · FUENTE NO DECLARADA';
+  return 'FUENTE ' + fuente + (capt ? ' · CAPTURADO ' + capt : ' · SIN HORA DE CAPTURA');
+}
 function renderSsn(){
   const cat = S.catalog;
   const prov = catProv(cat);
@@ -1786,14 +1803,17 @@ function renderSsn(){
   if (!cat || !cat.available){
     metaTxt = 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ'; metaColor = C.warn;
   } else if (prov.unknown){
-    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · EDAD DESCONOCIDA' + (capt ? ' · ' + capt : '') + org;
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · EDAD DESCONOCIDA' + (capt ? ' · ' + capt : '') + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.warn;
   } else if (prov.stale){
     metaTxt = 'CATÁLOGO VIEJO · INSTANTÁNEA DE HACE ' + fmtAge(prov.age) +
-              ' · UMBRAL ' + fmtAge(prov.limit) + (capt ? ' · ' + capt : '') + org;
+              ' · UMBRAL ' + fmtAge(prov.limit) + (capt ? ' · ' + capt : '') + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.warn;
   } else {
-    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · ' + capt + ' · HACE ' + fmtAge(prov.age) + org;
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · ' + capt + ' · HACE ' + fmtAge(prov.age) + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.fg3;
   }
   ['ssn-meta','ssn-meta-big'].forEach(id => { $(id).textContent = metaTxt; $(id).style.color = metaColor; });

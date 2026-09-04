@@ -1912,7 +1912,15 @@ CREATE TABLE reference_earthquakes (
   source      text NOT NULL CHECK (source IN ('SSN','USGS')),
   source_ref  text NOT NULL,                         -- cita textual (reporte/consulta FDSN)
   notes       text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  -- [T-5.10] Lo que hace CITABLE a una cifra ajena. Los tres nacen NULL y así
+  -- siguen hasta que haya ingesta de catálogo: NULL = «no consta», y entonces la
+  -- UI pinta `sin_dato_externo` y NO pinta la cifra. Un default inventado aquí
+  -- —`now()`, `'confirmado'`— sería la mentira que esta ficha existe para impedir.
+  consulted_at      timestamptz,                    -- cuándo se preguntó A LA FUENTE
+  review_status     text CHECK (review_status IS NULL
+                                OR review_status IN ('preliminar','confirmado')),
+  provider_event_id text                            -- id del evento EN la fuente
 );
 CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
 GRANT SELECT ON reference_earthquakes TO takab_app;

@@ -82,11 +82,13 @@ describe("TriageTable [T-2.39]", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  // Los tres estados de la magnitud: es SIEMPRE null hoy, y un guion se leía como
-  // "el dato falló".
-  it("sin catálogo dice S/CATÁLOGO, no un guion", () => {
+  // Los estados de la magnitud: es SIEMPRE null hoy, y un guion se leía como
+  // "el dato falló". [T-5.10] El rótulo sale del glosario compartido de
+  // procedencia: sin haber consultado a ninguna fuente, el estado es
+  // `sin_dato_externo` — que NO es lo mismo que «se consultó y no correlaciona».
+  it("sin dato externo lo dice, no un guion", () => {
     arrange();
-    expect(screen.getByText("S/CATÁLOGO")).toBeInTheDocument();
+    expect(screen.getByText("SIN DATO EXTERNO")).toBeInTheDocument();
   });
 
   it("sin evento asociado dice SIN EVENTO", () => {
@@ -94,9 +96,27 @@ describe("TriageTable [T-2.39]", () => {
     expect(screen.getByText("SIN EVENTO")).toBeInTheDocument();
   });
 
-  it("con magnitud de catálogo la muestra", () => {
-    arrange([row({ event: event({ magnitude: 7.1 }) })]);
+  // [T-5.10] La cifra externa se pinta SOLO con procedencia completa: fuente y
+  // hora de consulta. Sin ellas no es que falte el número — es que no consta de
+  // dónde salió, y en la pantalla se leería como una medición NUESTRA.
+  it("con magnitud CONFIRMADA por la fuente la muestra", () => {
+    arrange([
+      row({
+        event: event({
+          magnitude: 7.1,
+          procedencia: "confirmado",
+          procedencia_fuente: "SSN",
+          procedencia_consultada_en: "2026-09-04T12:00:00Z",
+        }),
+      }),
+    ]);
     expect(screen.getByText("M 7.1")).toBeInTheDocument();
+  });
+
+  it("con magnitud pero SIN procedencia NO la muestra", () => {
+    arrange([row({ event: event({ magnitude: 7.1 }) })]);
+    expect(screen.queryByText("M 7.1")).toBeNull();
+    expect(screen.getByText("SIN DATO EXTERNO")).toBeInTheDocument();
   });
 
   // Un centroide entre estaciones NO es una localización sísmica: presentarlo sin

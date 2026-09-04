@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "tarea": "T-5.10",
+  "que_es": [
+    "PROCEDENCIA DE LA CIFRA SÍSMICA EXTERNA. TAKAB mide lo que pasó en un edificio;",
+    "la magnitud, el epicentro, la profundidad y la hora de origen de un sismo los",
+    "publica una fuente oficial. Esas dos cosas se leen en la misma pantalla y se",
+    "confunden con facilidad, porque una cifra sin procedencia se lee como propia.",
+    "",
+    "LA REGLA, y es lo único que hay que recordar: CON PROCEDENCIA, O NO SE PINTA.",
+    "Ninguna superficie muestra magnitud, epicentro, profundidad u hora de origen sin",
+    "decir de qué fuente salió y a qué hora se le preguntó.",
+    "",
+    "Esto NO roza el invariante de la cuenta atrás (blueprint §14). Aquél prohíbe una",
+    "cifra DERIVADA POR NOSOTROS del contacto seco del receptor —una magnitud o un",
+    "tiempo de llegada que nos inventemos—. Una cifra de fuente externa CITADA, con su",
+    "hora de consulta y su estado, es literalmente lo que ese invariante contempla",
+    "como «fuente nueva y citable».",
+    "",
+    "Es JSON y no un módulo porque el panel del gabinete NO PUEDE IMPORTAR NADA: se",
+    "sirve como un único archivo estático desde un Pi sin build. Las tres superficies",
+    "—panel, consola y app— tienen que llamar a lo mismo por el mismo nombre.",
+    "Mismo patrón que `shared/glossary/estados.json`."
+  ],
+  "estados": {
+    "sin_dato_externo": {
+      "significa": "No se ha consultado ninguna fuente externa para este evento.",
+      "es_hoy_el_normal": true,
+      "por_que": [
+        "No hay ingesta de catálogo escribiendo magnitudes: `seismic_events.magnitude`",
+        "se inserta SIEMPRE en NULL (`incident/engine.py`). Mientras eso siga así, éste",
+        "es el estado de todo evento y las demás ramas no se alcanzan en producción."
+      ],
+      "panel": "SIN DATO EXTERNO",
+      "consola": "SIN DATO EXTERNO",
+      "movil": "Sin dato externo",
+      "pinta_cifra": false
+    },
+    "consultando": {
+      "significa": "Se le preguntó a la fuente y todavía no contestó.",
+      "por_que": [
+        "El texto dice CONSULTANDO y jamás «estimando»: nosotros no estimamos una",
+        "magnitud, se la preguntamos a quien la publica. «Estimando» sugeriría que el",
+        "sistema la está calculando, que es exactamente lo que el blueprint prohíbe."
+      ],
+      "panel": "CONSULTANDO A LA FUENTE",
+      "consola": "CONSULTANDO A LA FUENTE",
+      "movil": "Consultando a la fuente",
+      "pinta_cifra": false
+    },
+    "preliminar": {
+      "significa": "La fuente publicó la cifra y la declara PRELIMINAR: puede cambiar.",
+      "por_que": [
+        "Los servicios sismológicos publican una solución automática en minutos y la",
+        "revisan después. Pintar una preliminar como definitiva es prometer una",
+        "precisión que la propia fuente no da."
+      ],
+      "panel": "PRELIMINAR",
+      "consola": "PRELIMINAR · PUEDE CAMBIAR",
+      "movil": "Preliminar",
+      "pinta_cifra": true
+    },
+    "confirmado": {
+      "significa": "La fuente revisó la solución y ésta es la que sostiene.",
+      "panel": "CONFIRMADO",
+      "consola": "CONFIRMADO POR LA FUENTE",
+      "movil": "Confirmado",
+      "pinta_cifra": true
+    },
+    "sin_correlacion": {
+      "significa": "Se consultó la fuente y NINGÚN evento suyo corresponde a éste.",
+      "por_que": [
+        "Es el estado que más falta hacía, y no es un adorno: sin él, un «no sé» se",
+        "convierte en una pantalla vacía que el operador lee como «no pasó nada».",
+        "Que el catálogo no tenga un sismo compatible es un HECHO sobre el evento",
+        "—probablemente local y pequeño—, no una ausencia de datos.",
+        "El criterio que decide si un evento del catálogo es el nuestro lo fija T-5.11."
+      ],
+      "panel": "SIN CORRELACIÓN EN EL CATÁLOGO",
+      "consola": "SIN CORRELACIÓN EN EL CATÁLOGO",
+      "movil": "Sin correlación en el catálogo",
+      "pinta_cifra": false
+    }
+  },
+  "prohibido": {
+    "estimando": [
+      "Ninguna superficie puede decir «estimando», «estimada» ni «estimación» de una",
+      "cifra externa. Lo vigila `api/tests/test_procedencia.py`."
+    ]
+  }
+}

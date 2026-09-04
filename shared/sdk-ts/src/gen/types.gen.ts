@@ -910,6 +910,9 @@ export type EventDetailOut = {
     meta: {
         [key: string]: unknown;
     };
+    procedencia?: string;
+    procedencia_consultada_en?: string | null;
+    procedencia_fuente?: string | null;
     quorum_votes: Array<QuorumVoteOut>;
     source: string;
 };
@@ -2304,6 +2307,9 @@ export type SeismicEventOut = {
     meta: {
         [key: string]: unknown;
     };
+    procedencia?: string;
+    procedencia_consultada_en?: string | null;
+    procedencia_fuente?: string | null;
     source: string;
 };
 

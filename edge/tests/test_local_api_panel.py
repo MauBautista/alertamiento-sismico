@@ -2365,3 +2365,69 @@ def test_sin_identidad_configurada_el_panel_lo_DECLARA(tmp_path: Path) -> None:
     assert ident is not None, (
         f"sin identidad configurada el panel deja el hueco en vez de declararlo: {textos[:40]}"
     )
+
+
+# ── [T-5.10] Con procedencia, o no se pinta ──────────────────────────────────
+#
+# El panel pinta `M x.x` del catálogo del SSN en dos tarjetas —la lista de sismos
+# y la comparativa sismo↔estación— **al lado de la sacudida que midió el sensor de
+# este edificio**. Son dos cosas distintas: una la medimos nosotros, la otra la
+# publica una fuente oficial. Sin decir cuál es cuál, la cifra externa se lee como
+# propia, y de ahí a «TAKAB me dice la magnitud» hay un paso.
+#
+# La comparativa no decía NADA de su procedencia. La lista traía la hora de captura
+# y el origen del feed (T-2.66) pero **no la fuente**.
+#
+# Se reutiliza `_CATALOG` —el fixture que ya existe— en vez de fabricar otro: dos
+# catálogos de prueba acabarían describiendo sismos distintos.
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_la_lista_del_catalogo_declara_su_FUENTE(tmp_path: Path) -> None:
+    salida = _render(tmp_path, status=_base(), catalog=_CATALOG)
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "FUENTE SSN · UNAM" in textos, (
+        "el panel pinta magnitudes del catálogo sin decir de qué fuente salen. "
+        "Traía la hora de captura y el origen del feed, pero no la fuente."
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_sin_fuente_declarada_el_panel_LO_DICE(tmp_path: Path) -> None:
+    """No se calla: que no conste de dónde salió una cifra es lo que hay que enseñar.
+
+    Un catálogo sin `source` es un documento incompleto o un consumidor viejo. La
+    respuesta honesta no es ocultar la cifra —el operador la necesita— sino
+    declarar que su origen no consta.
+    """
+    sin_fuente = dict(_CATALOG, source=None)
+    salida = _render(tmp_path, status=_base(), catalog=sin_fuente)
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "FUENTE NO DECLARADA" in textos, (
+        "con un catálogo sin fuente el panel no dice nada: la cifra queda "
+        f"indistinguible de una medición propia. Textos: {textos[:300]!r}"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_la_COMPARATIVA_declara_la_procedencia_de_su_cifra(tmp_path: Path) -> None:
+    """La tarjeta que NO decía nada, y la que más lo necesita.
+
+    La comparativa pone la magnitud del catálogo **al lado de lo que midió el
+    sensor de este edificio**, para contrastarlas. Es exactamente el sitio donde
+    una cifra ajena sin procedencia se lee como propia — y era el único que no la
+    declaraba en absoluto.
+
+    Se llega por el mismo camino que los otros tests de esta tarjeta: abrir el
+    mapa y elegir un sismo de la lista.
+    """
+    salida = _render(tmp_path, catalog=_CATALOG, clicks=["#open-map", "row:ssn-rows-big", "frame"])
+    hechos = _txt(salida, "cmp-facts")
+
+    assert "M 5.4" in hechos, f"el guion no reproduce el caso: {hechos[:200]!r}"
+    assert "FUENTE SSN · UNAM" in hechos, (
+        "la comparativa pone la magnitud del catálogo junto a la sacudida MEDIDA "
+        f"por el sensor del inmueble y no dice de dónde sale: {hechos[:300]!r}"
+    )

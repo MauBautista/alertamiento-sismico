@@ -3632,6 +3632,34 @@
             "title": "Meta",
             "type": "object"
           },
+          "procedencia": {
+            "default": "sin_dato_externo",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "procedencia_consultada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Consultada En"
+          },
+          "procedencia_fuente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Fuente"
+          },
           "quorum_votes": {
             "items": {
               "$ref": "#/components/schemas/QuorumVoteOut"
@@ -8975,6 +9003,34 @@
             "additionalProperties": true,
             "title": "Meta",
             "type": "object"
+          },
+          "procedencia": {
+            "default": "sin_dato_externo",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "procedencia_consultada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Consultada En"
+          },
+          "procedencia_fuente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Fuente"
           },
           "source": {
             "title": "Source",
