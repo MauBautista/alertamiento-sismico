@@ -203,6 +203,13 @@ drift:
 	git diff --exit-code $(SDK_DIR)/src/gen
 	cd $(SDK_DIR) && npm run check
 	cd $(TOKENS_DIR) && npm run check
+	# [T-5.28] La matriz RBAC que consumen los tests de web. Era una tabla escrita
+	# a mano que se declaraba espejo de `auth/matrix.py` y divergió en 13 celdas;
+	# ahora se genera, y aquí es donde se caza que alguien mueva la matriz sin
+	# regenerarla. `api/tests/auth/test_rbac_fixture_es_la_matriz.py` lo ata además
+	# por igualdad, celda a celda.
+	cd $(API_DIR) && uv run python scripts/export_rbac_matrix.py
+	git diff --exit-code shared/fixtures/rbac-matrix.json
 
 # El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
 # suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que

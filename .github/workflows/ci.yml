@@ -61,6 +61,14 @@ jobs:
         run: |
           python scripts/export_openapi.py
           git -C .. diff --exit-code shared/sdk-ts/openapi.json
+      - name: Drift gate · matriz RBAC (fixtures de web)
+        # [T-5.28] Los tests de web derivan sus fixtures de `/me` de este fichero.
+        # Era una tabla escrita a mano que se declaraba espejo de `auth/matrix.py`
+        # y divergió en 13 celdas: un permiso de menos no relaja una aserción,
+        # apaga el componente que lo gatea y el test pasaría en verde sobre nada.
+        run: |
+          python scripts/export_rbac_matrix.py
+          git -C .. diff --exit-code shared/fixtures/rbac-matrix.json
 
   sdk:
     name: sdk-ts · generate + tsc

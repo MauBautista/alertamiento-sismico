@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **285** · `[~]` **10** · `[ ]` **48**
+****Conteo de tareas:** total **343** · `[x]` **286** · `[~]` **10** · `[ ]` **47**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -12716,7 +12716,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   **Las cuatro mutaciones comprobadas:** añadir `magnitude` a `EvalInput` y colar el import del
   catálogo en `rules.py` (2 rojos); filtrar el `incident_id` completo (3 rojos) y recortar el folio
   en silencio (2 rojos).
-### [ ] T-5.28 · El **espejo de la matriz RBAC** en web lleva 16 celdas divergentes — `SOFTWARE`
+### [x] T-5.28 · El **espejo de la matriz RBAC** en web lleva 16 celdas divergentes — `SOFTWARE` · **CERRADA 2026-09-03**
 > **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.12`, el 2026-09-02).
 >
 > `web/src/test-utils/meFixtures.ts` se declara a sí mismo *"espejo SOLO PARA TESTS de
@@ -12730,8 +12730,12 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 > | `cctv_read` | superadmin, tenant_admin, soc_operator, inspector, building_admin |
 > | `cctv_video` | superadmin, tenant_admin, soc_operator, building_admin |
 > | `manage_privacy_notice` / `manage_privacy_erasure` | superadmin, tenant_admin |
-> | `read_audit` | takab_support |
-> | `checkin_submit` / `panic_vote` | occupant |
+> | ~~`read_audit`~~ | ~~takab_support~~ · **FALSA, ver el cierre** |
+> | ~~`checkin_submit` / `panic_vote`~~ | ~~occupant~~ · **FALSA, ver el cierre** |
+>
+> **⚠️ La tabla de arriba se midió mal al ficharla: eran TRECE celdas, no dieciséis.** Se deja
+> intacta —con las tres filas falsas tachadas— porque es el registro de lo que se creyó; el
+> recuento correcto y cómo se obtuvo están en el cierre.
 >
 > **Por qué importa, y no es cosmético:** un permiso que en el espejo está en `false` hace que el
 > componente que lo gatea **no se monte** en los tests. Nueve de esas celdas apagan los paneles de
@@ -12742,16 +12746,43 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que el espejo no pueda divergir en silencio, y que las dieciséis celdas se
   reconcilien de una vez.
 - **Criterios de aceptación:**
-  - [ ] Guarda que compare el espejo contra `ROLE_ACTION_MATRIX` y `ROLE_ROUTE_MATRIX` **por
+  - [x] Guarda que compare el espejo contra `ROLE_ACTION_MATRIX` y `ROLE_ROUTE_MATRIX` **por
         igualdad**, no por contención — como ya hacen `serverDataCensus` y `designTokens`. Vale
         derivar el fichero en vez de vigilarlo; lo que no vale es un espejo escrito a mano sin
         gate, que es lo que hay.
-  - [ ] Las 16 celdas se ponen al día, **y se mira qué tests cambian de veredicto al hacerlo**:
+  - [x] Las 16 celdas se ponen al día, **y se mira qué tests cambian de veredicto al hacerlo**:
         montar nueve paneles de CCTV que hoy nadie renderiza puede destapar aserciones que nunca
         se han ejecutado. Ese es el valor de la ficha, no la sincronización en sí.
-  - [ ] Guarda de no-vacuidad: declara en voz alta cuántos roles y cuántas acciones compara, o un
+  - [x] Guarda de no-vacuidad: declara en voz alta cuántos roles y cuántas acciones compara, o un
         analizador que se quede ciego pasará en verde comparando cero contra cero.
-
+- **Cómo se cerró (2026-09-03).**
+  **Se derivó el fichero en vez de vigilarlo**, que es la opción que la propia ficha permitía y la
+  única que hace la deriva *imposible* en vez de *detectable*: la tabla escrita a mano **ya no
+  existe**. `api/scripts/export_rbac_matrix.py` vuelca la matriz a
+  `shared/fixtures/rbac-matrix.json` —mismo patrón que `notify-channels.json`, que ya cruzaba un
+  hecho de Python a los tests de la web—, `meFixtures.ts` lo consume y no enumera nada, y el
+  fichero queda atado a su fuente por **dos** vías: un test que compara **celda a celda por
+  igualdad** (360 celdas) y un paso de `make drift` + CI que regenera y exige `git diff --exit-code`.
+  También se derivan el reparto web/móvil y la superficie, que eran otras dos listas a mano.
+  **⚠️ Y hay que corregir esta ficha: eran TRECE celdas, no dieciséis.** Se midieron parseando el
+  fichero viejo de git contra la matriz real, y la tabla de arriba tenía **tres filas falsas**: el
+  espejo **sí** le daba `read_audit` a `takab_support` y `checkin_submit`/`panic_vote` a
+  `occupant`. Las trece reales van todas en la misma dirección —la matriz concede, el espejo no— y
+  son: **9 de CCTV** (`cctv_read` en superadmin, tenant_admin, soc_operator, inspector y
+  building_admin; `cctv_video` en los cuatro primeros menos inspector) y **4 de privacidad**
+  (`manage_privacy_notice` y `manage_privacy_erasure` en superadmin y tenant_admin).
+  **El criterio 2 pedía mirar qué tests cambian de veredicto. Ninguno: los 1985 de web siguen en
+  verde — y la razón importa más que el hecho.** Doce de las trece acciones **no tienen ningún
+  consumidor en la web**: gatean endpoints de la API, y la consola nunca les pregunta. La
+  decimotercera, `cctv_video`, gatea **un botón** dentro de `CctvPanel` — y a nivel de página
+  `useCctv` está mockeado a `data: undefined` **a propósito y con la razón escrita**, así que ese
+  botón no se renderizaba de todos modos; sus dos ramas ya las cubre `CctvPanel.test.tsx`
+  directamente por props.
+  **O sea que la alarma de esta ficha estaba mal fundada.** Decía que nueve celdas «apagan los
+  paneles de CCTV en toda la suite… porque nadie los renderiza»: el panel **sí se monta siempre**
+  (`TriageDetail` lo pinta sin gate), lo que estaba apagado era el botón de descarga. La
+  divergencia era real y el arreglo vale —el próximo permiso que se desincronice puede gatear algo
+  que sí se pinte, y ya no podrá—, pero el daño concreto que se le atribuyó **no existía**.
 ---
 
 ## RUTA CRÍTICA
