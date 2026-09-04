@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from takab_api.geo import pga_law_g
 from takab_api.incident.quorum import (
     Detection,
     QuorumParams,
@@ -63,10 +64,13 @@ def _plausible_pga_g(magnitude: float, hypo_km: float) -> float:
     asociacion (quorum.py no usa pga); solo puebla Detection.pga_g de forma
     plausible.
 
-    ATTEN-LAW v1: log10(PGA_g) = 0.5*M - 2.8 - log10(max(R_hipo_km, 1)) —
-    fuente de la ley; espejos en edge (panel LAN, T-2.27) y web (T-2.28).
-    Cualquier cambio aqui debe propagarse a los espejos (grep ATTEN-LAW)."""
-    return round(10 ** (0.5 * magnitude - 2.8) / max(hypo_km, 1.0), 5)
+    ATTEN-LAW v1: log10(PGA_g) = 0.5*M - 2.8 - log10(max(R_hipo_km, 1)).
+    [T-5.11] Esta funcion ya NO es la fuente: la ley vive en
+    ``takab_api.geo.pga_law_g`` porque el paquete tambien la necesita (criterio
+    de correlacion con el catalogo) y una herramienta no se puede importar.
+    Aqui queda el redondeo y el nombre, que es el ancla que citan los espejos de
+    edge (panel LAN, T-2.27) y web (T-2.28) — grep ATTEN-LAW."""
+    return round(pga_law_g(magnitude, hypo_km), 5)
 
 
 @dataclass(frozen=True)

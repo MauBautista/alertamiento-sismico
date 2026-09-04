@@ -86,6 +86,29 @@ export type CapturaOut = {
 };
 
 /**
+ * [T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.
+ */
+export type CatalogCorrelation = {
+    criterio: CatalogCriterion;
+    descartes?: Array<CatalogDiscard>;
+    estado: string;
+    verificacion?: string | null;
+};
+
+/**
+ * [T-5.11] Los tres umbrales que se aplicaron, para poder leer el veredicto.
+ *
+ * Viajan con la respuesta y se imprimen: un criterio que no se puede citar no
+ * es defendible ante quien firma el dictamen.
+ */
+export type CatalogCriterion = {
+    margen_s: number;
+    pga_minima_g: number;
+    radio_km: number;
+    v_s_km_s: number;
+};
+
+/**
  * Diferencia entre lo que estimó la red y lo que dice el catálogo.
  */
 export type CatalogDelta = {
@@ -93,6 +116,23 @@ export type CatalogDelta = {
     dt_s: number;
     km?: number | null;
     magnitude?: number | null;
+};
+
+/**
+ * [T-5.11] Un sismo que estaba en la ventana y NO es el nuestro.
+ *
+ * Existe para que el sistema pueda decir «hay un evento en el catálogo pero no
+ * es el nuestro», que es justo lo que no sabía decir: sin esto un descarte se
+ * convierte en una pantalla vacía que el operador lee como «no pasó nada».
+ */
+export type CatalogDiscard = {
+    catalog_key: string;
+    detalle: string;
+    km_al_sitio?: number | null;
+    motivo: string;
+    pga_esperada_g?: number | null;
+    retraso_admisible_s?: number | null;
+    retraso_s?: number | null;
 };
 
 /**
@@ -120,20 +160,28 @@ export type CatalogEarthquakeOut = {
 };
 
 /**
- * Sismo del catálogo de referencia más cercano en tiempo.
+ * Sismo del catálogo de referencia que el criterio de `T-5.11` declara NUESTRO.
  *
  * Es el único contraste externo disponible. Sirve para declarar "la red estimó
  * esto, el catálogo dice aquello", no para corregir el dato propio.
+ *
+ * **No es ya "el más cercano en el tiempo".** Hasta `T-5.11` lo era, y por eso
+ * un sismo de otro continente ocurrido dentro de ±120 s se imprimía como el
+ * nuestro en un dictamen firmado. Ahora es el que pasó los tres criterios de
+ * identidad, y los campos de abajo son las medidas que lo sostienen.
  */
 export type CatalogMatch = {
     catalog_key: string;
     depth_km?: number | null;
     dt_s: number;
+    km_al_sitio?: number | null;
     lat?: number | null;
     lon?: number | null;
     magnitude?: number | null;
     origin_time: string;
+    pga_esperada_g?: number | null;
     place?: string | null;
+    rumbo_al_sitio?: string | null;
     source: string;
 };
 
@@ -1034,6 +1082,7 @@ export type FeaturesFrame = {
 export type ForensicsOut = {
     calibrated: boolean;
     catalog: CatalogMatch | null;
+    catalog_correlation: CatalogCorrelation | null;
     catalog_delta: CatalogDelta | null;
     channels: Array<ChannelPeak>;
     compliance: ComplianceDocOut;

@@ -59,21 +59,43 @@ _SENSORS = text(
     """
 )
 
-# Coincidencia con el catálogo SSN de referencia dentro de ±ventana. Es el ÚNICO
-# contraste externo disponible: sirve para decir "la red estimó X, el catálogo dice Y",
-# no para corregir nada.
-_CATALOG_MATCH = text(
+# CANDIDATOS del catálogo SSN de referencia. Es el ÚNICO contraste externo
+# disponible: sirve para decir "la red estimó X, el catálogo dice Y", no para
+# corregir nada.
+#
+# [T-5.11] Esta consulta ya NO elige. Antes traía UNA fila —la más cercana en el
+# tiempo— y esa fila SE IMPRIMÍA: el criterio de identidad era «estar dentro de
+# ±120 s», y con eso un sismo de otro continente se firmaba como nuestro. Ahora
+# devuelve TODO lo que cae en la ventana y quien decide es
+# `forensics/correlacion.py`, en Python, porque el criterio necesita la ley de
+# atenuación (ATTEN-LAW v1) y meterla en SQL habría creado un tercer espejo de
+# una física que ya vive en `geo.py`.
+#
+# **Las cotas son un SUPERCONJUNTO del criterio, nunca al revés.** Es deliberado
+# y no una holgura: si la consulta recortara algo que el criterio habría
+# rechazado, ese rechazo perdería su motivo y volvería a ser el hueco que esta
+# ficha existe para eliminar. Aquí solo se acota lo que NINGÚN criterio podría
+# aceptar (más lejos en el tiempo que el evento más lejano admisible), y de
+# rechazar se encarga `correlacion.py`, que además deja dicho por qué.
+# `LIMIT` acota el peor caso —una ventana ancha sobre un feed vivo—; el orden
+# por cercanía temporal garantiza que lo que se recorta es lo más improbable.
+_CATALOG_CANDIDATES = text(
     """
-    SELECT catalog_key, origin_time, magnitude, place, depth_km, source, source_ref,
+    SELECT catalog_key, origin_time, place, source, source_ref,
+           -- numeric ⇒ Decimal en Python, y la ley de atenuación es float:
+           -- sin el cast explota al multiplicar, y solo contra la base de verdad.
+           magnitude::float8 AS magnitude,
+           depth_km::float8  AS depth_km,
+           consulted_at, review_status, provider_event_id,
            ST_Y(epicenter::geometry)::float8 AS lat,
            ST_X(epicenter::geometry)::float8 AS lon,
            abs(EXTRACT(EPOCH FROM (origin_time - CAST(:detected_at AS timestamptz))))::float8
                AS dt_s
     FROM reference_earthquakes
-    WHERE origin_time BETWEEN CAST(:detected_at AS timestamptz) - make_interval(secs => :window_s)
-                          AND CAST(:detected_at AS timestamptz) + make_interval(secs => :window_s)
+    WHERE origin_time >= CAST(:desde AS timestamptz)
+      AND origin_time <= CAST(:hasta AS timestamptz)
     ORDER BY dt_s ASC
-    LIMIT 1
+    LIMIT :limite
     """
 )
 
@@ -144,13 +166,27 @@ async def sensors_of_site(conn: AsyncConnection, site_id: str) -> Sequence[Row]:
     return (await conn.execute(_SENSORS, {"site_id": site_id})).all()
 
 
-async def catalog_match(
-    conn: AsyncConnection, *, detected_at: datetime, window_s: float
-) -> Row | None:
-    """Sismo del catálogo de referencia más cercano en tiempo, o ``None``."""
+async def catalog_candidates(
+    conn: AsyncConnection,
+    *,
+    detected_at: datetime,
+    desde: datetime,
+    hasta: datetime,
+    limite: int = 50,
+) -> Sequence[Row]:
+    """Sismos del catálogo cuyo origen cae en ``[desde, hasta]``, por cercanía temporal.
+
+    **Candidatos, no aciertos.** Quién de ellos ES el nuestro lo decide el
+    criterio de `forensics.correlacion`; esta función no filtra por distancia ni
+    por magnitud a propósito, para que el descarte quede registrado con su motivo
+    en vez de desaparecer dentro de un `WHERE`.
+    """
     return (
-        await conn.execute(_CATALOG_MATCH, {"detected_at": detected_at, "window_s": window_s})
-    ).first()
+        await conn.execute(
+            _CATALOG_CANDIDATES,
+            {"detected_at": detected_at, "desde": desde, "hasta": hasta, "limite": limite},
+        )
+    ).all()
 
 
 async def site_geo(conn: AsyncConnection, site_id: str) -> Row | None:

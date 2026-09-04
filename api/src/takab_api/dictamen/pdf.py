@@ -33,6 +33,7 @@ from takab_api.dictamen.model import (
     NO_GEOMETRY,
     NO_MMI,
     NO_SPECTRUM,
+    SIN_CORRELACION_EN_CATALOGO,
     SKETCH_NOTE,
     STATUS_ACTIONS,
     STATUS_LABELS,
@@ -443,7 +444,10 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("7", "DESEMPEÑO DE LA RED")
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("ESTACIONES QUE CONTRIBUYERON", str(m.station_count))
-    pdf.field("CONTRASTE CON CATÁLOGO", m.catalog_line or "SIN COINCIDENCIA EN CATÁLOGO")
+    # [T-5.11] El rótulo dice CORRELACIÓN y no «contraste»: contrastar exige un
+    # epicentro propio, y en la ruta del receptor —la normal— no lo hay. Es la
+    # línea la que declara si hubo contraste de verdad o no fue verificable.
+    pdf.field("CORRELACIÓN CON CATÁLOGO", m.catalog_line or SIN_CORRELACION_EN_CATALOGO)
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:

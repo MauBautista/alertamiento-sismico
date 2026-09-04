@@ -110,6 +110,17 @@ NO_MMI = (
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."
 )
 
+#: [T-5.11] Lo que se imprime cuando NINGÚN sismo del catálogo es éste y no había
+#: siquiera candidatos en la ventana. Decía «SIN COINCIDENCIA EN CATÁLOGO», que
+#: sonaba a fallo de búsqueda; lo que afirma es un HECHO sobre el evento —el
+#: catálogo no tiene un sismo compatible, probablemente porque fue local y
+#: pequeño—, y es el mismo vocabulario que el estado `sin_correlacion` del
+#: glosario compartido (`shared/glossary/procedencia.json`, T-5.10).
+SIN_CORRELACION_EN_CATALOGO = (
+    "SIN CORRELACIÓN EN EL CATÁLOGO DE REFERENCIA: ningún sismo publicado "
+    "satisface el criterio de identidad con este incidente."
+)
+
 
 def num(value: object, digits: int = 3, unit: str = "") -> str:
     """Número con unidad, o el literal de ausencia. Nunca 0 por defecto."""

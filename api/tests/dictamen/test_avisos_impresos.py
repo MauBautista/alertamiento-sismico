@@ -124,6 +124,13 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         lambda: model(cctv=CctvBlock(estado=CCTV_PENDIENTE)),
         frozenset({"technical"}),
     ),
+    # [T-5.11] Que el catálogo no tenga un sismo compatible es un HECHO sobre el
+    # evento, no un fallo de búsqueda; y sin este aviso el papel deja un hueco
+    # que se lee como «no pasó nada».
+    "SIN_CORRELACION_EN_CATALOGO": (
+        lambda: model(catalog_line=None),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -227,9 +234,9 @@ def test_el_espia_NO_esta_ciego() -> None:
     fallara en silencio— el espía devolvería poco o nada y **todos** los
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
-    assert len(ESCENARIOS) == 12, "cambió el número de avisos declarados"
+    assert len(ESCENARIOS) == 13, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 11, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 12, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

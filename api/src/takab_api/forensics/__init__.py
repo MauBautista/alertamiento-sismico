@@ -16,13 +16,18 @@ from datetime import timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api import procedencia as pr
 from takab_api.felt import felt_band
+from takab_api.forensics import correlacion as corr
 from takab_api.geo import bearing16, haversine_km
 from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as q
 from takab_api.schemas.compliance import doc_out
 from takab_api.schemas.forensics import (
+    CatalogCorrelation,
+    CatalogCriterion,
     CatalogDelta,
+    CatalogDiscard,
     CatalogMatch,
     ChannelPeak,
     ForensicsOut,
@@ -49,10 +54,13 @@ _INCIDENT = text(
 
 _COUNTED_VOTES = text("SELECT count(*) FROM quorum_votes WHERE event_id = :event_id AND counted")
 
-# Ventana de coincidencia con el catálogo. 120 s es holgado para el desfase entre el
-# origen del sismo y la detección local a cientos de km, y estrecho para no casar dos
-# sismos distintos del mismo día.
-CATALOG_WINDOW_S = 120.0
+# [T-5.11] Aquí vivía `CATALOG_WINDOW_S = 120.0`, y era TODO el criterio de
+# correlación con el catálogo: el sismo más cercano en el tiempo dentro de esa
+# ventana se imprimía como el nuestro en un dictamen firmado. La ventana fija era
+# además físicamente incorrecta —el M8.2 de Chiapas llegó a 205 s de su origen—.
+# El criterio completo (ventana consciente de la distancia + radio al sitio +
+# coherencia magnitud/distancia) vive en `forensics/correlacion.py` con la razón
+# escrita de cada número, y sus umbrales en `Settings.correlation_*`.
 
 
 async def build_forensics(
@@ -98,7 +106,7 @@ async def build_forensics(
         peers = [QuorumPeer(**dict(r._mapping)) for r in await q.event_peers(conn, inc["event_id"])]
         station_count = (await conn.scalar(_COUNTED_VOTES, {"event_id": inc["event_id"]})) or 0
 
-    catalog, delta = await _catalog(conn, inc)
+    catalog, delta, correlation = await _catalog(conn, inc, site, s)
 
     return ForensicsOut(
         incident_id=inc["incident_id"],
@@ -121,6 +129,7 @@ async def build_forensics(
         peers=peers,
         catalog=catalog,
         catalog_delta=delta,
+        catalog_correlation=correlation,
         sensors=sensors,
         calibrated=calibrated,
         # [T-2.82] Lo declarado por el cliente viaja PEGADO a lo medido por TAKAB, pero
@@ -148,28 +157,107 @@ def _lead_time(trigger: str, opened, peak_ts) -> tuple[float | None, str | None]
 
 
 async def _catalog(
-    conn: AsyncConnection, inc: dict
-) -> tuple[CatalogMatch | None, CatalogDelta | None]:
-    """Contraste con el catálogo de referencia. Ambos ``None`` si no hay coincidencia."""
+    conn: AsyncConnection, inc: dict, site: SiteGeo | None, s: Settings
+) -> tuple[CatalogMatch | None, CatalogDelta | None, CatalogCorrelation]:
+    """Correlación con el catálogo de referencia — con criterio de IDENTIDAD (T-5.11).
+
+    Devuelve el acierto (si lo hay), su contraste contra el epicentro propio (si
+    lo hay) y **siempre** la correlación: qué criterio se aplicó y qué descartó.
+    Ese tercer valor es el que permite distinguir «el catálogo no tiene nada» de
+    «lo que tiene no es esto», que hasta esta ficha eran el mismo hueco.
+    """
     detected = inc["event_detected_at"] or inc["opened_at"]
-    row = await q.catalog_match(conn, detected_at=detected, window_s=CATALOG_WINDOW_S)
-    if row is None:
-        return None, None
-    match = CatalogMatch(**dict(row._mapping))
+    criterio = corr.Criterio(
+        v_s_km_s=s.correlation_v_s_km_s,
+        margen_s=s.correlation_margin_s,
+        radio_km=s.correlation_max_km,
+        pga_minima_g=s.correlation_min_pga_g,
+    )
+    # La consulta se acota con un SUPERCONJUNTO de lo que el criterio admite: a
+    # ambos lados el retraso máximo, aunque hacia delante el criterio solo tolere
+    # el margen de reloj. Recortar en el `WHERE` lo que el criterio habría
+    # rechazado le quitaría el motivo al rechazo, y un rechazo sin motivo vuelve
+    # a ser el hueco que esta ficha elimina: un evento del catálogo originado
+    # DESPUÉS de nuestra detección tiene que poder decirse, no desaparecer.
+    tope = timedelta(seconds=criterio.retraso_maximo_s)
+    rows = await q.catalog_candidates(
+        conn, detected_at=detected, desde=detected - tope, hasta=detected + tope
+    )
+    filas = [dict(r._mapping) for r in rows]
+    resultado = corr.correlaciona(
+        [
+            corr.Candidato(
+                catalog_key=f["catalog_key"],
+                origin_time=f["origin_time"],
+                magnitude=f["magnitude"],
+                lat=f["lat"],
+                lon=f["lon"],
+                depth_km=f["depth_km"],
+            )
+            for f in filas
+        ],
+        detectado_en=detected,
+        sitio_lat=site.lat if site else None,
+        sitio_lon=site.lon if site else None,
+        criterio=criterio,
+    )
+
+    correlation = CatalogCorrelation(
+        # Consultamos el catálogo y no encontramos nada compatible: eso es un
+        # HECHO sobre el evento (probablemente local y pequeño), no una ausencia
+        # de datos. `sin_dato_externo` sería mentir sobre no haber preguntado.
+        estado=pr.SIN_CORRELACION,
+        criterio=CatalogCriterion(
+            v_s_km_s=criterio.v_s_km_s,
+            margen_s=criterio.margen_s,
+            radio_km=criterio.radio_km,
+            pga_minima_g=criterio.pga_minima_g,
+        ),
+        descartes=[
+            CatalogDiscard(
+                catalog_key=v.catalog_key,
+                motivo=v.motivo or "",
+                detalle=v.detalle,
+                km_al_sitio=v.km_al_sitio,
+                retraso_s=v.retraso_s,
+                retraso_admisible_s=v.retraso_admisible_s,
+                pga_esperada_g=v.pga_esperada_g,
+            )
+            for v in resultado.descartes
+        ],
+    )
+    if resultado.acierto is None:
+        return None, None, correlation
+
+    fila = next(f for f in filas if f["catalog_key"] == resultado.acierto.catalog_key)
+    match = CatalogMatch(
+        **{k: v for k, v in fila.items() if k in CatalogMatch.model_fields},
+        km_al_sitio=resultado.acierto.km_al_sitio,
+        rumbo_al_sitio=resultado.acierto.rumbo_al_sitio,
+        pga_esperada_g=resultado.acierto.pga_esperada_g,
+    )
+    # [T-5.10] La cifra externa solo se pinta con procedencia. Casar no la
+    # concede: una fila sin hora de consulta ni estado de revisión es un dato que
+    # existe y no es citable, y degrada a `sin_dato_externo`.
+    correlation.estado = pr.de_fila(fila).estado
 
     km = bearing = None
-    if (
-        inc["epi_lat"] is not None
-        and inc["epi_lon"] is not None
-        and match.lat is not None
-        and match.lon is not None
-    ):
+    tiene_epicentro_propio = inc["epi_lat"] is not None and inc["epi_lon"] is not None
+    if tiene_epicentro_propio and match.lat is not None and match.lon is not None:
         km = haversine_km(inc["epi_lat"], inc["epi_lon"], match.lat, match.lon)
         bearing = bearing16(inc["epi_lat"], inc["epi_lon"], match.lat, match.lon)
+    # Sin epicentro propio NO hay contraste, y decir que lo hay prometería una
+    # verificación que no ocurrió. La identidad se estableció por ventana, radio
+    # y coherencia — que es una afirmación distinta y más modesta.
+    correlation.verificacion = corr.CONTRASTADO if km is not None else corr.NO_VERIFICABLE
 
-    return match, CatalogDelta(
-        km=km,
-        bearing=bearing,
-        dt_s=match.dt_s,
-        magnitude=match.magnitude if inc["event_magnitude"] is None else None,
+    return (
+        match,
+        CatalogDelta(
+            km=km,
+            bearing=bearing,
+            dt_s=match.dt_s,
+            magnitude=match.magnitude if inc["event_magnitude"] is None else None,
+        ),
+        correlation,
     )

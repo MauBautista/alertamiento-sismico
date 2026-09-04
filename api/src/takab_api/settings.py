@@ -350,6 +350,32 @@ class Settings(BaseSettings):
     quorum_margin_s: float = 3.0
     quorum_max_window_s: float = 30.0
 
+    # --- Correlación con el catálogo externo (T-5.11) ---
+    # Criterio de IDENTIDAD entre un sismo del catálogo y el que abrió el
+    # incidente. Hasta T-5.11 era SOLO temporal (±120 s fijos) y por eso casaba
+    # cualquier cosa: sin radio, sin magnitud mínima, sin filtro geográfico.
+    # La razón de cada número está escrita en `forensics/correlacion.py`; aquí
+    # va el resumen de una línea, que es lo que se lee al cambiarlos.
+    #
+    # v_S y no v_P: el disparo local lo produce la sacudida fuerte (onda S y
+    # superficiales), no el primer arribo. Con v_P la cota se queda corta justo
+    # en los sismos lejanos y grandes — el M8.2 de Chiapas llegó a 205 s.
+    correlation_v_s_km_s: float = 3.6
+    # Tolerancia de reloj y de revisión de la hora de origen. Es TAMBIÉN el
+    # único margen hacia atrás: un origen posterior a la detección no es
+    # tolerancia, es imposible.
+    correlation_margin_s: float = 30.0
+    # Radio máximo epicentro↔SITIO. Cubre la zona que de verdad sacude a un
+    # inmueble mexicano (Chiapas 2017 a 737 km del centro del país) y excluye
+    # de forma terminante Sudamérica y el Pacífico occidental (Chile, 6 389 km).
+    correlation_max_km: float = 1200.0
+    # Piso de PGA estimada por ATTEN-LAW v1 en el sitio. Un orden de magnitud
+    # POR DEBAJO del umbral de cautela del gabinete (0.040 g) a propósito: la
+    # pregunta no es «¿habría disparado?» sino «¿pudo notarse siquiera aquí?».
+    # Con el umbral de disparo se rechazarían las correlaciones de SASMEX, donde
+    # el edificio puede no haber sentido casi nada.
+    correlation_min_pga_g: float = 0.001
+
     # --- Dictamen automático preliminar (T-1.20 · B5) ---
     # Umbrales de PGA del dictamen (placeholders CALIBRABLES por ingeniería;
     # override por rule_sets.config.dictamen). settle_s retrasa la emisión para

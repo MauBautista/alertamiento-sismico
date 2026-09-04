@@ -302,6 +302,72 @@
         "title": "CapturaOut",
         "type": "object"
       },
+      "CatalogCorrelation": {
+        "description": "[T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.",
+        "properties": {
+          "criterio": {
+            "$ref": "#/components/schemas/CatalogCriterion"
+          },
+          "descartes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogDiscard"
+            },
+            "title": "Descartes",
+            "type": "array"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "verificacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verificacion"
+          }
+        },
+        "required": [
+          "estado",
+          "criterio"
+        ],
+        "title": "CatalogCorrelation",
+        "type": "object"
+      },
+      "CatalogCriterion": {
+        "description": "[T-5.11] Los tres umbrales que se aplicaron, para poder leer el veredicto.\n\nViajan con la respuesta y se imprimen: un criterio que no se puede citar no\nes defendible ante quien firma el dictamen.",
+        "properties": {
+          "margen_s": {
+            "title": "Margen S",
+            "type": "number"
+          },
+          "pga_minima_g": {
+            "title": "Pga Minima G",
+            "type": "number"
+          },
+          "radio_km": {
+            "title": "Radio Km",
+            "type": "number"
+          },
+          "v_s_km_s": {
+            "title": "V S Km S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "v_s_km_s",
+          "margen_s",
+          "radio_km",
+          "pga_minima_g"
+        ],
+        "title": "CatalogCriterion",
+        "type": "object"
+      },
       "CatalogDelta": {
         "description": "Diferencia entre lo que estimó la red y lo que dice el catálogo.",
         "properties": {
@@ -347,6 +413,74 @@
           "dt_s"
         ],
         "title": "CatalogDelta",
+        "type": "object"
+      },
+      "CatalogDiscard": {
+        "description": "[T-5.11] Un sismo que estaba en la ventana y NO es el nuestro.\n\nExiste para que el sistema pueda decir «hay un evento en el catálogo pero no\nes el nuestro», que es justo lo que no sabía decir: sin esto un descarte se\nconvierte en una pantalla vacía que el operador lee como «no pasó nada».",
+        "properties": {
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "detalle": {
+            "title": "Detalle",
+            "type": "string"
+          },
+          "km_al_sitio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km Al Sitio"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pga_esperada_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Esperada G"
+          },
+          "retraso_admisible_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retraso Admisible S"
+          },
+          "retraso_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retraso S"
+          }
+        },
+        "required": [
+          "catalog_key",
+          "motivo",
+          "detalle"
+        ],
+        "title": "CatalogDiscard",
         "type": "object"
       },
       "CatalogEarthquakeList": {
@@ -447,7 +581,7 @@
         "type": "object"
       },
       "CatalogMatch": {
-        "description": "Sismo del catálogo de referencia más cercano en tiempo.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.",
+        "description": "Sismo del catálogo de referencia que el criterio de `T-5.11` declara NUESTRO.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.\n\n**No es ya \"el más cercano en el tiempo\".** Hasta `T-5.11` lo era, y por eso\nun sismo de otro continente ocurrido dentro de ±120 s se imprimía como el\nnuestro en un dictamen firmado. Ahora es el que pasó los tres criterios de\nidentidad, y los campos de abajo son las medidas que lo sostienen.",
         "properties": {
           "catalog_key": {
             "title": "Catalog Key",
@@ -467,6 +601,17 @@
           "dt_s": {
             "title": "Dt S",
             "type": "number"
+          },
+          "km_al_sitio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km Al Sitio"
           },
           "lat": {
             "anyOf": [
@@ -506,6 +651,17 @@
             "title": "Origin Time",
             "type": "string"
           },
+          "pga_esperada_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Esperada G"
+          },
           "place": {
             "anyOf": [
               {
@@ -516,6 +672,17 @@
               }
             ],
             "title": "Place"
+          },
+          "rumbo_al_sitio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumbo Al Sitio"
           },
           "source": {
             "title": "Source",
@@ -4146,6 +4313,16 @@
               }
             ]
           },
+          "catalog_correlation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogCorrelation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "catalog_delta": {
             "anyOf": [
               {
@@ -4291,6 +4468,7 @@
           "peers",
           "catalog",
           "catalog_delta",
+          "catalog_correlation",
           "sensors",
           "calibrated",
           "compliance"

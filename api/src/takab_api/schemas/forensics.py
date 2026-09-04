@@ -49,10 +49,15 @@ class SensorInfo(BaseModel):
 
 
 class CatalogMatch(BaseModel):
-    """Sismo del catálogo de referencia más cercano en tiempo.
+    """Sismo del catálogo de referencia que el criterio de `T-5.11` declara NUESTRO.
 
     Es el único contraste externo disponible. Sirve para declarar "la red estimó
     esto, el catálogo dice aquello", no para corregir el dato propio.
+
+    **No es ya "el más cercano en el tiempo".** Hasta `T-5.11` lo era, y por eso
+    un sismo de otro continente ocurrido dentro de ±120 s se imprimía como el
+    nuestro en un dictamen firmado. Ahora es el que pasó los tres criterios de
+    identidad, y los campos de abajo son las medidas que lo sostienen.
     """
 
     catalog_key: str
@@ -65,6 +70,15 @@ class CatalogMatch(BaseModel):
     lon: float | None = None
     dt_s: float
 
+    #: [T-5.11] Distancia epicentro↔SITIO (km): la que decide la identidad, y la
+    #: única disponible en la ruta del receptor, que no tiene epicentro propio.
+    km_al_sitio: float | None = None
+    #: Rumbo del sitio hacia el epicentro, en la rosa de 16.
+    rumbo_al_sitio: str | None = None
+    #: PGA que ATTEN-LAW v1 predice en el sitio. ``None`` si el catálogo no
+    #: publicó magnitud — y entonces la coherencia no se pudo verificar.
+    pga_esperada_g: float | None = None
+
 
 class CatalogDelta(BaseModel):
     """Diferencia entre lo que estimó la red y lo que dice el catálogo."""
@@ -73,6 +87,58 @@ class CatalogDelta(BaseModel):
     bearing: str | None = None
     dt_s: float
     magnitude: float | None = None
+
+
+class CatalogCriterion(BaseModel):
+    """[T-5.11] Los tres umbrales que se aplicaron, para poder leer el veredicto.
+
+    Viajan con la respuesta y se imprimen: un criterio que no se puede citar no
+    es defendible ante quien firma el dictamen.
+    """
+
+    #: Velocidad de la onda que produce la sacudida (km/s).
+    v_s_km_s: float
+    #: Tolerancia de reloj, y único margen hacia atrás.
+    margen_s: float
+    #: Radio máximo epicentro↔sitio (km).
+    radio_km: float
+    #: Piso de PGA estimada en el sitio (g).
+    pga_minima_g: float
+
+
+class CatalogDiscard(BaseModel):
+    """[T-5.11] Un sismo que estaba en la ventana y NO es el nuestro.
+
+    Existe para que el sistema pueda decir «hay un evento en el catálogo pero no
+    es el nuestro», que es justo lo que no sabía decir: sin esto un descarte se
+    convierte en una pantalla vacía que el operador lee como «no pasó nada».
+    """
+
+    catalog_key: str
+    #: Vocabulario cerrado de `forensics.correlacion` (`fuera_de_radio`, …).
+    motivo: str
+    #: La misma razón en una línea legible, con el número que la motivó.
+    detalle: str
+    km_al_sitio: float | None = None
+    retraso_s: float | None = None
+    retraso_admisible_s: float | None = None
+    pga_esperada_g: float | None = None
+
+
+class CatalogCorrelation(BaseModel):
+    """[T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado."""
+
+    #: Uno de los cinco estados de `shared/glossary/procedencia.json` (T-5.10).
+    #: `sin_correlacion` cuando se consultó el catálogo y nada suyo es éste.
+    estado: str
+    #: `contrastado` si hay epicentro propio con el que contrastar;
+    #: `no_verificable` si la identidad se estableció pero no hay nada nuestro
+    #: que comparar — y llamarlo «contraste» prometería una verificación que no
+    #: ocurrió. ``None`` cuando no hubo acierto.
+    verificacion: str | None = None
+    criterio: CatalogCriterion
+    #: Los que estaban en la ventana y no casaron, con su motivo.
+    descartes: list[CatalogDiscard] = []
 
 
 class QuorumPeer(BaseModel):
@@ -138,6 +204,10 @@ class ForensicsOut(BaseModel):
 
     catalog: CatalogMatch | None = None
     catalog_delta: CatalogDelta | None = None
+    #: [T-5.11] El criterio que se aplicó y lo que descartó. Va SIEMPRE, también
+    #: —y sobre todo— cuando no hubo acierto: es donde vive la diferencia entre
+    #: «el catálogo no tiene nada» y «lo que tiene no es esto».
+    catalog_correlation: CatalogCorrelation | None = None
 
     sensors: list[SensorInfo] = []
     #: ``False`` si ALGÚN sensor activo carece de procedencia de calibración.

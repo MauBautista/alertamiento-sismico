@@ -752,7 +752,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   comparativa exige un clic para existir, y hasta que el test no la alcanzó por el camino real
   —`#open-map` + `row:ssn-rows-big`— el barrido daba verde sobre la tarjeta que **no declaraba
   nada**. Un test por superficie no basta si no llega a la tarjeta que tiene el defecto.
-### [ ] T-5.11 · La correlación con el catálogo es **solo temporal** — `SOFTWARE`
+### [x] T-5.11 · La correlación con el catálogo es **solo temporal** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `api/src/takab_api/forensics/__init__.py:52` fija `CATALOG_WINDOW_S = 120.0` y la consulta toma
 > el evento más cercano en el tiempo dentro de esa ventana. **No hay distancia máxima. No hay
 > magnitud mínima. No hay filtro geográfico.** La distancia se calcula **después** del acierto,
@@ -768,14 +768,71 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que el criterio de identidad entre el evento del catálogo y el que disparó el
   gabinete sea explícito, defendible y capaz de decir que no encontró nada compatible.
 - **Criterios de aceptación:**
-  - [ ] Criterio explícito y configurable: ventana temporal, radio máximo epicentro↔sitio y
+  - [x] Criterio explícito y configurable: ventana temporal, radio máximo epicentro↔sitio y
         magnitud mínima coherente con la distancia, cada uno con su razón escrita.
-  - [ ] En la ruta sin epicentro propio, el acierto **no se presenta como contraste**: se declara
+  - [x] En la ruta sin epicentro propio, el acierto **no se presenta como contraste**: se declara
         no verificable, con su texto propio.
-  - [ ] Un evento fuera de radio, o de magnitud incoherente con la distancia, **no casa** — y el
+  - [x] Un evento fuera de radio, o de magnitud incoherente con la distancia, **no casa** — y el
         resultado es el estado de sin correlación de `T-5.10`, no un hueco.
-  - [ ] Test con un caso realista de sismo lejano dentro de la ventana temporal: hoy casaría; con
+  - [x] Test con un caso realista de sismo lejano dentro de la ventana temporal: hoy casaría; con
         la ficha, no.
+- **Cómo se cerró (2026-09-04).**
+  **El criterio de identidad vive en `api/src/takab_api/forensics/correlacion.py`**, módulo puro
+  —sin base ni red— con la razón de cada umbral escrita entera, y sus tres números en
+  `Settings.correlation_*`, junto a la familia del quórum de la que hereda la forma.
+  **1 · La ventana temporal ya no es fija, y escribir su razón fue lo que descubrió que estaba
+  mal en los DOS sentidos.** Un ±120 s se pasa de largo cerca —a 30 km caben dos sismos— y **se
+  queda corto lejos**: el M8.2 de Chiapas (2017) está a **737 km** del centro del país y su onda S
+  llegó unos **205 s** después del origen, así que **el sismo que vació la ciudad no habría casado
+  con su propia entrada del catálogo**. Es el mismo hallazgo que el blueprint §4.5 hizo para la
+  asociación del quórum, y se resuelve igual: `Δ ≤ dist/v + margen`. Con dos diferencias propias:
+  es **asimétrica** —un edificio no detecta un sismo antes de que ocurra, y hasta hoy casaba
+  porque el criterio comparaba valores ABSOLUTOS— y usa **v_S y no v_P**, porque el disparo local
+  lo produce la sacudida fuerte, no el primer arribo.
+  **2 · Radio máximo epicentro↔SITIO, 1 200 km.** Al edificio, no al epicentro propio: en la ruta
+  del receptor —la normal, y la única que existe hoy— **no hay epicentro propio**, así que un
+  criterio epicentro↔epicentro no se podría aplicar donde más falta hace. `sites.geom` es
+  `NOT NULL`, de modo que este criterio se puede exigir SIEMPRE. Medido desde la Ciudad de México
+  cubre lo que de verdad la sacude (Michoacán 1985 a 428 km, Puebla-Morelos 2017 a 122 km,
+  Chiapas 2017 a 737 km) y excluye lo que la ficha existe para excluir: Chile a 6 389 km, Japón a
+  10 945 km.
+  **3 · Magnitud coherente con la distancia, vía ATTEN-LAW v1** — no una magnitud mínima plana,
+  que no sería defendible: un M4.0 a 30 km abre un incidente (0.0044 g estimados) y el mismo M4.0
+  a 300 km predice 0.0005 g y no movió nada. **El piso es 0.001 g, un orden de magnitud POR DEBAJO
+  del umbral de cautela del gabinete**, y eso es deliberado: la pregunta no es «¿habría
+  disparado?» sino «¿pudo notarse siquiera aquí?». Con el umbral de disparo se rechazarían
+  justamente las correlaciones de SASMEX, donde el edificio puede no haber sentido casi nada.
+  Sin magnitud publicada **no se rechaza**: «desconocida» no es «incoherente».
+- **La ley de atenuación se mudó al paquete.** Vivía en `api/tools/quorum_ssn_validation.py` —una
+  herramienta—, así que `takab_api` no podía importarla y un tercer consumidor habría escrito un
+  tercer espejo. Ahora es `geo.pga_law_g` y la herramienta la importa; `_plausible_pga_g` queda
+  como envoltura porque es el **ancla que citan los espejos** de edge y web (grep `ATTEN-LAW`).
+- **La consulta dejó de elegir.** Traía UNA fila —la de menor Δt— y esa fila se imprimía. Ahora
+  trae candidatos y decide el criterio, en Python, porque necesita la ley de atenuación: meterla
+  en SQL habría creado ese tercer espejo. Y **las cotas del `WHERE` son un SUPERCONJUNTO de lo que
+  el criterio admite, nunca al revés** — si el SQL recortara un candidato que el criterio habría
+  rechazado, ese rechazo perdería su motivo y volvería a ser el hueco. Dos tests lo sostienen.
+- **«Hay un evento en el catálogo pero no es el nuestro»** ya se puede decir: cada descarte sale
+  con su motivo del vocabulario cerrado y su línea legible, y llega al PDF y a la consola. Sin eso
+  un descarte es indistinguible de un catálogo vacío, y una pantalla vacía se lee «no pasó nada».
+- **El acierto sin epicentro propio deja de presentarse como contraste.** El rótulo del PDF y el
+  de la consola dicen ahora **CORRELACIÓN**, y la línea declara `NO VERIFICABLE · sin epicentro
+  propio que contrastar` junto a la distancia al sitio que sí se midió. Contrastar exige tener
+  algo propio; anunciarlo sin tenerlo prometía una verificación que no ocurría.
+- **Y la magnitud del catálogo pasa por la regla de `T-5.10`**, también en el papel: casar no
+  concede procedencia. Hoy ninguna fila del seed tiene hora de consulta, así que el dictamen dice
+  que la cifra existe y **no es citable**, en vez de imprimirla bajo una firma.
+- **Siete mutaciones comprobadas**, y **tres sobrevivieron al primer intento** — las tres del
+  papel. La línea del dictamen **no tenía ninguna prueba**: se podía volver a presentar un acierto
+  como contraste, imprimir la magnitud sin procedencia o borrar los descartes, y las 155 pruebas
+  del dictamen seguían verdes. Es el hallazgo de `T-5.07` un nivel más abajo: allí faltaba probar
+  que el aviso **llega** al papel; aquí faltaba probar **qué dice**. Lo cierra
+  `api/tests/dictamen/test_catalog_line.py`.
+- **Y dos defectos que solo aparecieron contra la base:** `magnitude` es `numeric`, o sea `Decimal`
+  en Python, y la ley es `float` —explotaba al multiplicar, y solo con Postgres delante—; y el
+  test que esta suite ya tenía sembraba el sismo del catálogo con su origen **90 s DESPUÉS** de
+  nuestra detección, algo físicamente imposible que pasaba en verde porque el criterio usaba
+  `abs()`. El caso sigue en la suite, ahora exigiendo que **no** case.
 
 ### [x] T-5.12 · **Contar falsos positivos** — `SOFTWARE` · **CERRADA 2026-09-02**
 > Hoy no hay forma de contarlos, ni siquiera a mano sobre la base. `incidents.state` admite
