@@ -12,16 +12,23 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-02 · **27 decisiones** · 22 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-02 · **28 decisiones** · 22 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30), 5 delegadas (3 el 2026-08-12, 2 el 2026-09-02).
+> 2026-08-30), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
 >
 > **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
 > 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
 > leyera solo el encabezado, en el documento cuya razón de existir es poder revocar con
 > conocimiento. Lo encontró la auditoría V1-COMERCIAL (`H-39`), y es exactamente lo que este
 > repositorio ya sabe de memoria: **un censo que enumera a mano acaba divergiendo.** `TASKS.md` no
-> diverge porque un test lo cuenta; esta cabecera no tenía ninguno. Ponérselo es `T-5.09`.
+> diverge porque un test lo cuenta; esta cabecera no tenía ninguno.
+>
+> **Y volvió a diverger TRES DÍAS DESPUÉS**, que es la prueba que faltaba: `D-28` (`T-5.16`,
+> 2026-09-02) entró con su sección y **sin fila en el índice**, y la cabecera se quedó en 27. Se
+> corrigió a mano una vez y bastaron tres días para que pasara otra vez — porque corregir a mano
+> no es un mecanismo. Desde `T-5.09` lo cuenta
+> `api/tests/test_docs_consistency.py`: **cabecera, filas del índice y anclas de sección tienen
+> que cuadrar las tres**, y la fecha declarada no puede ser anterior a la última decisión.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
 > cerrada, pero **quedaban diez decisiones enterradas dentro de puntos de acción** —el runbook de
@@ -69,6 +76,7 @@
 | [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
 | [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
 | [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
+| [D-28](#d-28) | La **tipología del inmueble sugiere** un umbral; no lo resuelve | 2026-09-02 | delegada |
 
 ---
 

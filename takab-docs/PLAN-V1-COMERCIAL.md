@@ -608,7 +608,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   intentó, se midió y se fichó como **`T-5.29`**, con la mitad que sí se puede recorrer hoy
   (`make soc-local`) escrita en el guion. Forzarlo habría exigido inventar un transporte de bajada
   sin verificación de firma — que probaría lo contrario de lo que hay que probar.
-### [ ] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE`
+### [x] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
 > proyecto no lo tienen, y **los dos ya divergieron**:
 >
@@ -626,16 +626,46 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** que ninguna cabecera de un documento de gobierno pueda declarar un número que el
   archivo desmiente.
 - **Criterios de aceptación:**
-  - [ ] Test que cuenta las decisiones de la bitácora (filas del índice y anclas de sección, que
+  - [x] Test que cuenta las decisiones de la bitácora (filas del índice y anclas de sección, que
         además tienen que coincidir entre sí) y exige que cuadren con su cabecera.
-  - [ ] Test que comprueba que la fecha de última actualización declarada **no es anterior** a la
+  - [x] Test que comprueba que la fecha de última actualización declarada **no es anterior** a la
         fecha de la última decisión del archivo.
-  - [ ] El bloque de deriva de despliegue del traspaso deja de fijar un número: **se le pregunta
+  - [x] El bloque de deriva de despliegue del traspaso deja de fijar un número: **se le pregunta
         al sistema** (o se declara con la fecha de la medición y un test que exija que el commit
         citado exista y esté a la distancia declarada).
-  - [ ] Las dos cabeceras corregidas en el mismo commit que sus tests.
-  - [ ] El mensaje de fallo dice **cómo** rehacer el conteo, como ya hace el de `TASKS.md`.
-
+  - [x] Las dos cabeceras corregidas en el mismo commit que sus tests.
+  - [x] El mensaje de fallo dice **cómo** rehacer el conteo, como ya hace el de `TASKS.md`.
+- **Cómo se cerró (2026-09-04).**
+  **La bitácora ya había sido corregida a mano… y volvió a diverger en TRES DÍAS.** Ésa es la
+  prueba que le faltaba a la ficha: al abrirla, la cabecera decía **27** con **28** secciones
+  dentro, y `D-28` —que entró con `T-5.16` el 2026-09-02— **tenía sección y no tenía fila en el
+  índice**. Corregir a mano no es un mecanismo: se corrige una vez y basta un par de días.
+  **El test cuenta por TRES caminos y los cruza:** cabecera, filas del índice y anclas de sección.
+  Comparar solo dos habría dejado pasar el caso real —`D-28` tenía sección y la cabecera estaba
+  desfasada, y cualquier par «cuadraba»—. Y se comparan además **por identificador**, no solo por
+  total: dos errores que se compensen dan la misma cuenta.
+  **La fecha lleva su propio test**, porque engaña más callada: un conteo correcto con una fecha
+  vieja hace creer que no hay nada nuevo desde entonces (pasó: «última 2026-08-22» con una decisión
+  del 2026-08-30). Se exige que la declarada **no sea anterior** a la última `**Fecha:**` del
+  archivo.
+  **El §0 del traspaso deja de fijar un número.** Decía «tres commits por detrás» sobre un commit
+  que ya estaba **103 por detrás** de `main` — en el archivo que se manda leer al EMPEZAR una
+  sesión, donde un número fijo no envejece: **miente**. Ahora abre con el comando para
+  **preguntárselo al sistema** (`/api/health` declara el commit desplegado; `git rev-list --count`
+  da la distancia), y conserva la medición de aquel día **como hecho histórico fechado**.
+  **Y esa medición SÍ se comprueba**, que es lo que la hace distinta de una cifra suelta: el test
+  exige que los dos commits citados **existan** y que la distancia entre **ellos dos** —no contra
+  `main`, que se mueve— sea la declarada. Es estable por construcción: un hash mal tecleado o una
+  deriva inventada se ponen rojos, y el número no caduca nunca.
+  **Los mensajes de fallo dicen CÓMO rehacer el conteo**, con los dos `grep` exactos, igual que el
+  de `TASKS.md`.
+  **Cinco mutaciones comprobadas**, una por guarda: cabecera desfasada, fila ausente del índice,
+  fecha anterior a la última decisión, traspaso sin el comando y medición histórica falsa. Las
+  cinco rojas; verde al restaurar.
+- **Lo que este test NO exige, y se dice para que nadie lo añada:** que las secciones `D-nn` vayan
+  en orden numérico. El archivo **no lo está** (…`D-19`, `D-23`, `D-22`, `D-20`, `D-21`, `D-01`…) y
+  no es un defecto: están agrupadas como se escribieron. Exigirlo obligaría a reordenar 1 400
+  líneas de bitácora para satisfacer a un test.
 ### [ ] T-5.10 · **Procedencia del evento externo**: cinco estados, tres superficies — `SOFTWARE`
 > Hoy no existe ninguna máquina de estados de procedencia. Lo que hay son dos enumeraciones de
 > presentación (`EpicenterKind`, la banda de magnitud) y un campo `source` con tres valores

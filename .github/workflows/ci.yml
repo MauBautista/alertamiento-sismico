@@ -40,6 +40,14 @@ jobs:
       DATABASE_URL: postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab
     steps:
       - uses: actions/checkout@v4
+        with:
+          # [T-5.09] Historia COMPLETA. `actions/checkout` clona con profundidad 1
+          # por defecto, y `test_docs_consistency` comprueba que los commits que
+          # `TRASPASO-SESION.md §0` cita como medición histórica EXISTEN y están a
+          # la distancia declarada — sin historia, `git cat-file` no los encuentra
+          # y el test falla en CI estando verde en local (pasó al abrir la ficha).
+          # Cuesta segundos: 639 commits, 80 MB, en el job que ya tarda ~10 min.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
