@@ -94,6 +94,17 @@ ENVELOPE_NOTE = (
     "ENVOLVENTE DE PICO POR SEGUNDO (1 Hz). NO es la forma de onda cruda: el sistema "
     "muestrea a 100 sps y no transmite el crudo en continuo."
 )
+#: [T-5.07] Aviso de asistencia automatizada. Vivía como literal dentro de
+#: `pdf.py`, así que el censo de avisos impresos —que se DERIVA de este módulo— no
+#: podía verlo, y era justo el aviso con la regla más fácil de romper: **solo debe
+#: salir cuando la prosa NO la escribió el proveedor determinista**. El render le
+#: añade la versión del rule_set; lo que se fija aquí es la frase que un lector
+#: reconoce.
+NARRATIVE_AI_NOTE = (
+    "Las secciones en prosa se redactaron con asistencia automatizada. El "
+    "VEREDICTO y todos los valores medidos de este documento son deterministas"
+)
+
 NO_MMI = (
     "No se reporta intensidad macrosísmica (MMI) ni isosistas: TAKAB no las calcula. "
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."

@@ -187,11 +187,22 @@ def test_el_ejecutivo_es_mucho_mas_corto_que_el_tecnico() -> None:
     assert len(render(model(), "executive")) < len(render(model(), "technical"))
 
 
-def test_ambos_llevan_el_deslinde() -> None:
-    """El límite de responsabilidad es principio de diseño, no adorno del técnico."""
+def test_el_deslinde_dice_lo_que_tiene_que_decir() -> None:
+    """El TEXTO del deslinde; que llegue al papel lo prueba otro archivo.
+
+    [T-5.07] Esto se llamaba `test_ambos_llevan_el_deslinde` y afirmaba cubrir las
+    dos variantes con dos comprobaciones que no lo hacían: que la constante empiece
+    por una cadena, y que el archivo empiece por `%PDF`. **Borrar el `callout` del
+    deslinde lo dejaba en verde** — comprobado con la mutación antes de reescribirlo.
+    Lo que queda aquí es lo único que sí comprobaba: qué DICE la constante.
+
+    Que el deslinde —y los otros once avisos— se impriman de verdad, y en la
+    variante donde toca, vive en `test_avisos_impresos.py`, que espía el punto por
+    el que pasa todo el texto dibujado.
+    """
     assert DISCLAIMER.startswith("Dictamen operativo PRELIMINAR")
-    for variant in ("technical", "executive"):
-        assert render(model(), variant).startswith(b"%PDF")
+    assert "No sustituye la evaluación estructural formal" in DISCLAIMER
+    assert "sin firma de ingeniería" in DISCLAIMER
 
 
 def test_una_variante_desconocida_cae_al_tecnico() -> None:

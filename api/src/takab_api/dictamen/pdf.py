@@ -28,6 +28,7 @@ from takab_api.dictamen.model import (
     DISCLAIMER,
     ENVELOPE_NOTE,
     FELT_LABELS,
+    NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
     NO_MMI,
@@ -576,9 +577,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.para(body)
     if m.narrative_provider and m.narrative_provider != "deterministic":
         pdf.callout(
-            "Las secciones en prosa se redactaron con asistencia automatizada. El "
-            "VEREDICTO y todos los valores medidos de este documento son deterministas "
-            f"({m.rule_set_version or 'sin versión'}) y no dependen de ella."
+            f"{NARRATIVE_AI_NOTE} ({m.rule_set_version or 'sin versión'}) y no dependen de ella."
         )
     if m.narrative_degraded:
         pdf.para(f"NARRATIVA DEGRADADA · {m.narrative_degraded}", size=7, muted=True)

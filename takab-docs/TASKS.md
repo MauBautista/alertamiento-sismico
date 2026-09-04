@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **287** · `[~]` **10** · `[ ]` **46**
+****Conteo de tareas:** total **343** · `[x]` **288** · `[~]` **10** · `[ ]` **45**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11690,7 +11690,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   —la redirección va en la línea siguiente— y devolvía `{TAKAB_EDGE_GPIO_OWNER}`: un conjunto **no
   vacío**, así que el `assert gestionadas` pasaba en verde sobre un censo que ya no vigilaba la
   variable que importa. Se caza exigiendo el nombre concreto, no la no-vacuidad.
-### [ ] T-5.07 · El test del **deslinde impreso** no comprueba nada — `SOFTWARE`
+### [x] T-5.07 · El test del **deslinde impreso** no comprueba nada — `SOFTWARE` · **CERRADA 2026-09-04**
 > `api/tests/dictamen/test_pdf.py:190-195`, entero:
 >
 >     assert DISCLAIMER.startswith("Dictamen operativo PRELIMINAR")
@@ -11712,14 +11712,46 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Componente:** api (tests) · **Depende de:** nada · **Prioridad: ALTA**
 - **Objetivo:** que quitar un deslinde del documento ponga la suite en rojo nombrándolo.
 - **Criterios de aceptación:**
-  - [ ] Los seis avisos se verifican **sobre el documento generado**, no sobre la constante.
-  - [ ] La lista de avisos a verificar se **deriva** del módulo que los declara, no se teclea: uno
+  - [x] Los seis avisos se verifican **sobre el documento generado**, no sobre la constante.
+  - [x] La lista de avisos a verificar se **deriva** del módulo que los declara, no se teclea: uno
         nuevo entra solo al censo.
-  - [ ] Guarda de no-vacuidad: el test declara en voz alta cuántos avisos espera, y cero no es un
+  - [x] Guarda de no-vacuidad: el test declara en voz alta cuántos avisos espera, y cero no es un
         número aceptable.
-  - [ ] Cada aviso se comprueba en la variante o variantes donde debe salir, y se comprueba que
+  - [x] Cada aviso se comprueba en la variante o variantes donde debe salir, y se comprueba que
         **no** sale donde no debe (el aviso de asistencia automatizada, sin prosa generada).
-
+- **Cómo se cerró (2026-09-04).**
+  **No eran seis avisos: son ONCE**, y salieron de derivarlos en vez de enumerarlos. La regla del
+  censo —constante de módulo, en mayúsculas, que es una **frase** (≥40 caracteres con espacios)—
+  separa los avisos de los rótulos cortos (`ABSENT`, `TS_FMT`, `CCTV_PURGADO`, `SIN_HASH`), que
+  son celdas de tabla. Los cinco que la ficha no había contado son los tres estados del CCTV
+  —significan cosas **opuestas** y se leerían igual si el documento dijera solo «sin datos»—, el
+  de croquis sin geometría y el de espectro no disponible.
+  **Y un duodécimo que el censo no podía ver:** el aviso de **asistencia automatizada** vivía como
+  literal dentro de `pdf.py`. Se extrajo a `NARRATIVE_AI_NOTE` para que entre al censo — era
+  justo el aviso con la regla más fácil de romper.
+  **Las dos formas obvias de probarlo no sirven, y una de ellas PASA EN VERDE SOBRE EL DEFECTO.**
+  Buscar el texto en los bytes no funciona (flujo comprimido **y** fuentes embebidas: el texto
+  viaja como índices de glifo). Y el patrón que la ficha señalaba como bueno —el de
+  `test_compliance_section.py`, cambiar el modelo y exigir que los bytes cambien— **no distingue
+  el aviso impreso del aviso ausente**, porque la portada imprime `content_sha256()` y ese hash se
+  mueve con cualquier cambio del modelo; además aquí no aplica siquiera, porque estos avisos son
+  constantes y no hay campo que los encienda. *(Ese test no se toca: es de otra ficha y lo suyo sí
+  depende del modelo. Pero conviene saber que mide menos de lo que parece.)*
+  **Lo que sí demuestra que el aviso llegó al papel** es espiar `TakabPDF.text_of`, el punto por el
+  que pasa todo el texto que se dibuja. Si el `callout` no se llama, la cadena no pasa y el test se
+  pone rojo **nombrando el aviso y la variante**.
+  **Cada aviso se comprueba donde debe salir y donde NO** —los cinco del pericial no pueden
+  aparecer en el resumen ejecutivo, y los tres del CCTV se excluyen entre sí—, y las variantes de
+  la tabla **se midieron ejecutando el render**, no se supusieron. El de asistencia automatizada
+  lleva sus tres lados: sale con proveedor externo, **no** sale con el determinista, **no** sale
+  sin prosa.
+  **La mutación que justifica la ficha entera:** borrando el `callout` del deslinde en el
+  documento ejecutivo, **el test viejo pasa en verde** y el nuevo falla nombrándolo. Segunda
+  mutación comprobada con `NO_MMI`.
+  **Y el test viejo se reescribió en vez de borrarse.** Se llamaba `test_ambos_llevan_el_deslinde`
+  y afirmaba cubrir las dos variantes; ahora se llama por lo único que sí comprobaba —qué DICE la
+  constante— y apunta a dónde vive la comprobación de verdad. Dejarlo con el nombre viejo habría
+  sido dejar puesta la señal que hizo creer durante meses que esto estaba cubierto.
 ### [ ] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE`
 > `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
 > supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
