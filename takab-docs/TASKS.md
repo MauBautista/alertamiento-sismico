@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **343** · `[x]` **286** · `[~]` **10** · `[ ]` **47**
+****Conteo de tareas:** total **343** · `[x]` **287** · `[~]` **10** · `[ ]` **46**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11621,7 +11621,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   significado en el mismo color vacía los tres. El discontinuo es el mismo lenguaje que
   `T-5.01` le dio a los botones inertes del panel: «esto no es real».
 
-### [ ] T-5.06 · El runbook de alta de estación **rompe la ingesta** — `SOFTWARE`
+### [x] T-5.06 · El runbook de alta de estación **rompe la ingesta** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `RUNBOOK-ALTA-DE-ESTACION.md:122-124` manda escribir en el archivo de entorno del gabinete:
 > `TAKAB_EDGE_TENANT_ID=<uuid del tenant>`, `TAKAB_EDGE_SITE_ID=<uuid del sitio>`,
 > `TAKAB_EDGE_GATEWAY_ID=<uuid del gateway>`.
@@ -11647,18 +11647,49 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que el runbook vuelva a describir lo que hace el código, y que dejar de hacerlo
   ponga el build en rojo.
 - **Criterios de aceptación:**
-  - [ ] Las siete divergencias corregidas, cada una citando el archivo y la línea del código que
+  - [x] Las siete divergencias corregidas, cada una citando el archivo y la línea del código que
         manda.
-  - [ ] Añadidos los pasos que faltan: instalación del software del edge, publicación de la
+  - [x] Añadidos los pasos que faltan: instalación del software del edge, publicación de la
         versión, equipamiento explícito del sitio y conjunto de reglas con la clave del edge.
-  - [ ] **Un test que ancle el runbook al código**, no a otra prosa: las variables de identidad
+  - [x] **Un test que ancle el runbook al código**, no a otra prosa: las variables de identidad
         que el runbook manda escribir se comparan contra las que el aprovisionador escribe y
         contra las que la ingesta acepta. Si las tres dejan de coincidir, rojo con las tres
         citadas.
-  - [ ] El test cubre también el cuerpo del alta de gabinete: un campo que el esquema prohíbe y el
+  - [x] El test cubre también el cuerpo del alta de gabinete: un campo que el esquema prohíbe y el
         runbook manda, sale nombrado.
-  - [ ] Nota en el runbook sobre por qué el aprovisionador ya lo deja bien y no hay que tocarlo.
-
+  - [x] Nota en el runbook sobre por qué el aprovisionador ya lo deja bien y no hay que tocarlo.
+- **Cómo se cerró (2026-09-04).**
+  **Las siete divergencias se verificaron una a una contra el código antes de tocar nada**, y las
+  siete eran ciertas. La que costaba una estación muda: `handlers.py` compara `payload.tenant_id`
+  contra `tenants.code`, `payload.site_id` contra `sites.code` y `payload.gateway_id` contra
+  `gateways.serial`; el runbook mandaba escribir UUIDs, y encima **pisar** el
+  `TAKAB_EDGE_GATEWAY_ID` que `provision_gateway.sh:163` ya había dejado con el *thing name*
+  correcto. Ahora el bloque lleva códigos, la línea del gateway va **comentada** con un «no lo
+  toques», y encima una tabla de las tres correspondencias con la cita del rechazo
+  (`_identity_reject`, `handlers.py:118-131`) y de la cola de descarte.
+  **Las otras seis:** `fw_version` fuera del alta de gabinete (da **422**, `extra="forbid"`, y la
+  versión la DECLARA el aparato — `T-1.74`); `equipment` **dentro**, con sus cinco canales, porque
+  su default es todo-`true` y omitirlo pinta cinco actuadores en un gabinete que tiene dos;
+  `POST /tenants` y `POST /visibility-grants` documentados como lo que son desde el **2026-07-15**
+  (`T-1.72`/`T-1.73`) en vez de anunciados como futuro — con la nota de que el alta por SQL a mano
+  además **se salta la fila de `audit_log`**; y **tres pasos nuevos** que sencillamente no
+  estaban: instalar el software (`deploy/edge/deploy.sh` — el aprovisionador deja identidad y
+  certificados, **no copia el código**), publicar la versión (`POST /fleet/releases`, o la flota
+  entera sale `SIN REFERENCIA`) y crear el `rule_set` con su clave `edge` (sin uno aplicable la
+  estación **nunca entra al sincronizado firmado**). El checklist del apéndice pasó de 8 pasos a 11.
+  **El ancla es contra CÓDIGO, no contra prosa** (`api/tests/test_runbook_alta_de_estacion.py`,
+  13 tests): las variables de identidad del runbook se cruzan con las que el aprovisionador
+  escribe y con la regla de identidad de la ingesta —las tres citadas si divergen—, y los campos
+  de los tres `POST` se comparan **por igualdad** contra `SiteCreate`/`GatewayCreate`/
+  `SensorCreate`. Las tres mutaciones comprobadas: el UUID, el pisado del gateway y el
+  `fw_version`.
+  **Dos afinados que el propio test destapó, y el segundo es el patrón de siempre.** (1) Leer la
+  viñeta entera contaba como órdenes los campos que el runbook nombra **para advertir de ellos**
+  («`fw_version` da 422»), así que el parser se ancló a la frase `Campos:` y el aviso se movió a
+  su propio sub-guion. (2) El barrido del aprovisionador **casaba con el `printf` equivocado**
+  —la redirección va en la línea siguiente— y devolvía `{TAKAB_EDGE_GPIO_OWNER}`: un conjunto **no
+  vacío**, así que el `assert gestionadas` pasaba en verde sobre un censo que ya no vigilaba la
+  variable que importa. Se caza exigiendo el nombre concreto, no la no-vacuidad.
 ### [ ] T-5.07 · El test del **deslinde impreso** no comprueba nada — `SOFTWARE`
 > `api/tests/dictamen/test_pdf.py:190-195`, entero:
 >
