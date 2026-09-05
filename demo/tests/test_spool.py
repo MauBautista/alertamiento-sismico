@@ -17,7 +17,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from demo.spool import SpoolMqttTransport, SpoolSqsClient  # noqa: E402
+from demo.spool import (  # noqa: E402
+    SpoolCommandPublisher,
+    SpoolMqttTransport,
+    SpoolSqsClient,
+)
 
 QUEUE = "demo://events"
 
@@ -196,3 +200,164 @@ def test_sin_archive_no_escribe_copias(tmp_path: Path) -> None:
     t.connect()
     t.publish("takab/events", b'{"event_id": "e1"}')
     assert not (tmp_path / "sent_events").exists()
+
+
+# ── [T-5.29] la BAJADA nube→gabinete ────────────────────────────────────────
+#
+# Hasta esta ficha el arnés era solo edge→nube: `subscribe()` guardaba el
+# callback y **nadie lo invocaba nunca**. Por eso la demo no podía guionizar
+# nada comandado desde la nube —un simulacro son comandos firmados, uno por
+# sitio— y la escena de `T-5.08` se quedó a medias.
+#
+# Lo que estos contratos protegen es que el transporte **no toque el envelope**:
+# el día que entregue el payload pelado, o verifique él, la demo pasaría en verde
+# demostrando lo contrario de lo que dice demostrar.
+
+
+def _con_bajada(tmp_path: Path, thing: str = "gw-sim-0001") -> SpoolMqttTransport:
+    t = SpoolMqttTransport(
+        tmp_path / "cola" / thing,
+        thing=thing,
+        downlink_root=tmp_path / "bajada",
+        poll_s=0.01,
+    )
+    t.connect()
+    return t
+
+
+def test_la_bajada_entrega_el_ENVELOPE_INTACTO(tmp_path: Path) -> None:
+    """El transporte es un cable, no un verificador.
+
+    Si entregara `sobre["payload"]["payload"]` —el payload pelado— el dispatcher
+    del edge no encontraría firma que verificar y rechazaría todo; si verificara
+    él, la demo probaría este archivo en vez del gabinete.
+    """
+    t = _con_bajada(tmp_path)
+    recibido: list[bytes] = []
+    t.subscribe("takab/cmd/gw-sim-0001", lambda _topic, raw: recibido.append(raw))
+
+    pub = SpoolCommandPublisher(tmp_path / "bajada")
+    sobre = {
+        "command_id": "c1",
+        "nonce": "n1",
+        "ts": "2026-09-04T18:00:00+00:00",
+        "sig": "ab" * 32,
+        "payload": {"channel": "system", "action": "drill_start"},
+    }
+    pub.publish("takab/cmd/gw-sim-0001", json.dumps(sobre).encode())
+
+    assert t.entregar_pendientes() == 1
+    assert json.loads(recibido[0]) == sobre, "el transporte tocó el envelope firmado"
+
+
+def test_cada_thing_recibe_SOLO_lo_suyo(tmp_path: Path) -> None:
+    """El topic ES la dirección, igual que en IoT Core."""
+    uno = _con_bajada(tmp_path, "gw-sim-0001")
+    otro = _con_bajada(tmp_path, "gw-sim-0002")
+    for t, thing in ((uno, "gw-sim-0001"), (otro, "gw-sim-0002")):
+        t.subscribe(f"takab/cmd/{thing}", lambda *_: None)
+
+    pub = SpoolCommandPublisher(tmp_path / "bajada")
+    pub.publish("takab/cmd/gw-sim-0002", json.dumps({"payload": {}}).encode())
+
+    assert uno.entregar_pendientes() == 0
+    assert otro.entregar_pendientes() == 1
+
+
+def test_sin_suscripcion_el_comando_SE_QUEDA(tmp_path: Path) -> None:
+    """Un gabinete que aún no llegó a suscribirse no pierde su comando.
+
+    Tirarlo convertiría una carrera de arranque en un simulacro que no suena en
+    un edificio, y el operador no tendría cómo saberlo.
+    """
+    t = _con_bajada(tmp_path)
+    pub = SpoolCommandPublisher(tmp_path / "bajada")
+    pub.publish("takab/cmd/gw-sim-0001", json.dumps({"payload": {}}).encode())
+
+    assert t.entregar_pendientes() == 0
+    assert t.pendientes_de_bajada == 1
+
+    t.subscribe("takab/cmd/gw-sim-0001", lambda *_: None)
+    assert t.entregar_pendientes() == 1
+    assert t.pendientes_de_bajada == 0
+
+
+def test_entregar_es_CONSUMIR_no_hay_segunda_entrega(tmp_path: Path) -> None:
+    t = _con_bajada(tmp_path)
+    vistos: list[bytes] = []
+    t.subscribe("takab/cmd/gw-sim-0001", lambda _t, raw: vistos.append(raw))
+    SpoolCommandPublisher(tmp_path / "bajada").publish(
+        "takab/cmd/gw-sim-0001", json.dumps({"payload": {}}).encode()
+    )
+
+    assert t.entregar_pendientes() == 1
+    assert t.entregar_pendientes() == 0
+    assert len(vistos) == 1
+
+
+def test_con_la_WAN_CAIDA_el_comando_espera_y_baja_al_reconectar(tmp_path: Path) -> None:
+    """La bajada cae con el mismo enlace, y la sesión persistente la recupera."""
+    t = _con_bajada(tmp_path)
+    entregados: list[bytes] = []
+    t.subscribe("takab/cmd/gw-sim-0001", lambda _t, raw: entregados.append(raw))
+
+    t.go_offline()
+    SpoolCommandPublisher(tmp_path / "bajada").publish(
+        "takab/cmd/gw-sim-0001", json.dumps({"payload": {}}).encode()
+    )
+    time.sleep(0.05)
+    assert entregados == [] and t.pendientes_de_bajada == 1
+
+    t.go_online()
+    t.connect()
+    assert _espera(lambda: len(entregados) == 1), "el comando no bajó al reconectar"
+
+
+def test_un_callback_que_LANZA_no_mata_la_bajada(tmp_path: Path) -> None:
+    """El hilo de bajada es el único enlace: si muere, el gabinete queda sordo
+    y en silencio. El del edge no lanza (lo garantiza `on_command`), pero eso
+    no puede ser lo único que lo impida."""
+    t = _con_bajada(tmp_path)
+    llamadas: list[int] = []
+
+    def explota(_topic: str, _raw: bytes) -> None:
+        llamadas.append(1)
+        raise RuntimeError("mensaje hostil")
+
+    t.subscribe("takab/cmd/gw-sim-0001", explota)
+    pub = SpoolCommandPublisher(tmp_path / "bajada")
+    for _ in range(2):
+        pub.publish("takab/cmd/gw-sim-0001", json.dumps({"payload": {}}).encode())
+
+    assert t.entregar_pendientes() == 2
+    assert len(llamadas) == 2, "la excepción del primero se llevó al segundo"
+
+
+def test_el_contador_de_entregados_es_la_guarda_de_no_vacuidad(tmp_path: Path) -> None:
+    """Sin este número, una escena en la que no bajara NADA pasaría en verde."""
+    t = _con_bajada(tmp_path)
+    assert t.delivered == 0
+    t.subscribe("takab/cmd/gw-sim-0001", lambda *_: None)
+    SpoolCommandPublisher(tmp_path / "bajada").publish(
+        "takab/cmd/gw-sim-0001", json.dumps({"payload": {}}).encode()
+    )
+    t.entregar_pendientes()
+    assert t.delivered == 1
+
+
+def test_sin_buzon_el_arnes_sigue_funcionando_igual(tmp_path: Path) -> None:
+    """La demo de Fase 1 no necesitaba bajada y no puede romperse por añadirla."""
+    t = SpoolMqttTransport(tmp_path / "cola", thing="gw-sim-0001")
+    t.connect()
+    assert t.downlink is None
+    assert t.entregar_pendientes() == 0 and t.pendientes_de_bajada == 0
+    assert t.publish("takab/events", json.dumps({"event_id": "e1"}).encode()) is True
+
+
+def _espera(pred, timeout_s: float = 3.0) -> bool:  # noqa: ANN001
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if pred():
+            return True
+        time.sleep(0.01)
+    return False

@@ -1,6 +1,7 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
+        objetos \
         cloud-images cloud-deploy cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
@@ -37,6 +38,12 @@ install:
 
 db:
 	docker compose up -d db
+
+# [T-5.29] Almacén de objetos local. La escena C4 de la demo genera el reporte
+# del simulacro —evidencia con sha256— y `put_object` necesita un bucket; el
+# servicio `minio-init` lo crea y termina.
+objetos:
+	docker compose up -d minio minio-init
 
 api:
 	cd $(API_DIR) && uvicorn takab_api.main:app --reload --host 0.0.0.0 --port 8000
@@ -80,7 +87,7 @@ test-db: db
 	  "select 1 from pg_database where datname='takab_test'" | grep -q 1 \
 	  || docker compose exec -T db createdb -U takab takab_test
 
-demo-db: db
+demo-db: db objetos
 	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
 	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
 	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/prod_fleet.sql

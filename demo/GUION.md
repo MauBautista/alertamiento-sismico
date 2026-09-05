@@ -115,8 +115,29 @@ solo.»*
 **Qué NO se dice:** ~~*«Le programo el simulacro y suena solo a las 11:00.»*~~ **No existe
 disparo por hora, y es correcto que no exista** (regla de oro 8).
 
-> ⚠️ **Esta escena todavía no está guionizada en `demo/run.py`.** Ver «Lo que este guion
-> no cubre», abajo.
+**Qué se enseña, y ya está guionizado** (`demo/run.py`, escena **C4**, desde `T-5.29`):
+la agenda, el armado, el disparo humano, la bajada del **comando firmado** a cada
+gabinete, el acuse por sitio y el reporte con su `sha256`. Los tres gabinetes son
+`EdgeSupervisor` reales y quien decide si el comando se ejecuta es su
+`CommandDispatcher` —el mismo código que corre en el Pi—, que verifica HMAC, nonce y
+ventana **antes de tocar nada**.
+
+**La mitad que hace creíble la otra:** la escena mete además un comando con la firma
+cambiada, y el gabinete **lo rechaza sin acusar** — a un emisor no autenticado no se le
+responde (regla de oro 8). Queda en la bitácora del propio gabinete.
+
+> ⚠️ **Con el modo demostración puesto NO se puede enseñar un simulacro, y es correcto.**
+> `D-27` dice que el modo es «un supresor de salida de la nube: notificaciones y comandos
+> firmados», y un simulacro **es** un comando firmado. La consecuencia operativa, que no
+> estaba escrita en ninguna parte hasta `T-5.29`: para enseñar esta escena delante de un
+> cliente hay que **apagar la ventana** primero, y volver a ponerla al terminar. El guion
+> lo hace explícito y ruidoso, y enseña antes la supresión con su fila de auditoría.
+>
+> Y un detalle que conviene conocer antes de que lo vea el cliente: con el modo puesto el
+> simulacro **se registra igual** —201, sus tres sitios, cero comandos—, porque el alta es
+> best-effort por sitio (un gabinete sin clave no puede dejar sin simulacro a los demás).
+> Que no sonó en ninguna parte se ve **después**, en el reporte (`no acusaron`), no en el
+> momento de dispararlo.
 
 ---
 
@@ -126,7 +147,7 @@ disparo por hora, y es correcto que no exista** (regla de oro 8).
 |---|---|
 | Los botones del panel del gabinete | Hasta `T-5.01` **mandaban órdenes de verdad**. Ya no, pero el recorrido es en **solo lectura**: un actuador no es una diapositiva. |
 | El entorno desplegado | La demo es local. `db/seeds/sim_fleet.sql` declara en su cabecera que **jamás** se aplica a la nube. |
-| Apagar el modo demostración | Mientras esté puesto, nada sale por ningún canal. Se apaga solo al vencer — o lo apaga un evento **real**, que es lo correcto. |
+| Apagar el modo demostración | Mientras esté puesto, nada sale por ningún canal. Se apaga solo al vencer — o lo apaga un evento **real**, que es lo correcto. **La única excepción es la escena 5**: para enseñar un simulacro hay que levantar la ventana, y se vuelve a poner al terminar. |
 
 **Y las dos frases que nunca, en ninguna escena:**
 
@@ -140,14 +161,17 @@ disparo por hora, y es correcto que no exista** (regla de oro 8).
 
 ## 3. Lo que este guion NO cubre (y por qué)
 
-**La escena de simulacro no está scripted en `demo/run.py`.** El motivo es del arnés, no
-del producto: el sustituto de IoT Core de la demo (`demo/spool.py`) es **solo
-edge→nube**. Un simulacro son *comandos firmados de nube a gabinete*, uno por sitio, y
-ese camino de bajada **no existe en la demo**. Lo que sí se puede recorrer a mano es la
-mitad de nube (agenda, armado, disparo, acuse por sitio y reporte) en `make soc-local`,
-donde la API y la consola están vivas.
+~~**La escena de simulacro no está scripted en `demo/run.py`.**~~ **Cerrado por `T-5.29`.**
+El sustituto de IoT Core de la demo era **solo edge→nube** y por eso no había por dónde
+bajar un comando firmado. Ahora `demo/spool.py` tiene las dos direcciones y la escena C4
+recorre el simulacro entero. Lo que la bajada **no** hace, y es lo que la hace válida:
+no firma, no verifica y no interpreta — entrega el envelope intacto y decide el
+dispatcher del gabinete.
 
-Construir el enlace de bajada de la demo es trabajo aparte y está fichado.
+**Lo que sigue sin cubrir la demo del edge:** la autenticación. En C4 el operador es un
+`Claims` construido a mano, igual que las otras escenas construyen su `IncidentEngine`:
+la demo no levanta Cognito en ninguna. Lo que C4 acredita es el camino del **comando**,
+no el del token. Para recorrer la consola con sesión real está `make soc-local`.
 
 **Y lo que la demo no acredita, dicho antes de que lo pregunten:** relés MOCK, sin WR-1
 físico ni sirena cableada. La latencia que mide es la de la ruta **software**. El

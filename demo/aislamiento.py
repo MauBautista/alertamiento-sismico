@@ -24,6 +24,16 @@ Aquí el aislamiento pasa a ser un ESTADO del sistema, no una omisión del guion
 Lo que este módulo NO hace, a propósito: apagar el modo al final. Lo apaga un
 evento real del cliente (`apagar_por_evento_real`), y dejarlo puesto tras la demo
 es el estado seguro — la ventana vence sola.
+
+[T-5.29] **La excepción, y por qué existe.** `levantar()` apaga el modo para una
+escena concreta y `imponer()` lo vuelve a poner. La necesita la escena del
+simulacro: `D-27` declara que el modo suprime **notificaciones y comandos
+firmados**, y un simulacro ES un comando firmado, así que con el modo puesto no
+baja nada. La escena aprovecha eso —enseña primero la supresión, con su fila de
+auditoría— y solo entonces levanta la ventana para poder recorrer el simulacro
+entero. Lo que NO se hace es tocar la regla: `issue_signed_command` sigue
+suprimiendo igual, y el recuento final de entregas reales cubre también esa
+ventana, así que la prueba del aislamiento sale REFORZADA y no debilitada.
 """
 
 from __future__ import annotations
@@ -34,7 +44,7 @@ from datetime import UTC, datetime
 import psycopg
 
 from takab_api.db.engine import get_engine
-from takab_api.demo_mode import encender, ventana_viva_sync
+from takab_api.demo_mode import apagar, encender, ventana_viva_sync
 
 #: Duración de la ventana. Una demo larga cabe de sobra y el tope lo impone
 #: `ventana_maxima`; pedir más sería pedir que el sistema esté mudo más rato del
@@ -53,9 +63,7 @@ _NOTA = "guion de demostracion (demo/run.py)"
 def _tenant_uuid(conn: psycopg.Connection, code: str) -> str:
     fila = conn.execute("SELECT tenant_id FROM tenants WHERE code = %s", (code,)).fetchone()
     if fila is None:
-        raise RuntimeError(
-            f"demo: el cliente {code!r} no existe en la DB. ¿Falta `make demo-db`?"
-        )
+        raise RuntimeError(f"demo: el cliente {code!r} no existe en la DB. ¿Falta `make demo-db`?")
     return str(fila[0])
 
 
@@ -70,9 +78,7 @@ def imponer(conn: psycopg.Connection, *, tenant_code: str) -> str:
     async def _encender() -> None:
         engine = get_engine()
         async with engine.begin() as ac:
-            await encender(
-                ac, tenant_id=tenant_id, actor=_ACTOR, segundos=VENTANA_S, note=_NOTA
-            )
+            await encender(ac, tenant_id=tenant_id, actor=_ACTOR, segundos=VENTANA_S, note=_NOTA)
 
     asyncio.run(_encender())
 
@@ -82,6 +88,31 @@ def imponer(conn: psycopg.Connection, *, tenant_code: str) -> str:
             "demo: se encendió el MODO DEMOSTRACIÓN y la ventana no quedó viva. "
             "Sin él, la cascada de notificación saldría por los canales "
             "configurados: la demo NO arranca así."
+        )
+    return tenant_id
+
+
+def levantar(conn: psycopg.Connection, *, tenant_code: str) -> str:
+    """[T-5.29] Apaga la ventana y COMPRUEBA que se apagó. Devuelve el uuid.
+
+    Es la mitad simétrica de :func:`imponer` y se usa para una sola escena. Falla
+    ruidosamente por la misma razón que su gemela: correr la escena del simulacro
+    creyendo que el modo está apagado, cuando sigue puesto, produce cero comandos
+    y un diagnóstico que apunta al transporte.
+    """
+    tenant_id = _tenant_uuid(conn, tenant_code)
+
+    async def _apagar() -> None:
+        engine = get_engine()
+        async with engine.begin() as ac:
+            await apagar(ac, tenant_id=tenant_id, actor=_ACTOR, motivo="escena de simulacro")
+
+    asyncio.run(_apagar())
+
+    if ventana_viva_sync(conn, tenant_id=tenant_id, now=datetime.now(tz=UTC)) is not None:
+        raise RuntimeError(
+            "demo: se apagó el MODO DEMOSTRACIÓN y la ventana sigue viva. La escena "
+            "del simulacro no puede correr: todo comando firmado se suprimiría."
         )
     return tenant_id
 

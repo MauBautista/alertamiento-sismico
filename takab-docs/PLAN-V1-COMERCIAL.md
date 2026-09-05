@@ -545,7 +545,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   y afirmaba cubrir las dos variantes; ahora se llama por lo único que sí comprobaba —qué DICE la
   constante— y apunta a dónde vive la comprobación de verdad. Dejarlo con el nombre viejo habría
   sido dejar puesta la señal que hizo creer durante meses que esto estaba cubierto.
-### [~] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **PARCIAL 2026-09-04**
+### [x] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
 > supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
 > producción** con tres guardias que se defienden solos (host real de la conexión, exclusividad de
@@ -562,8 +562,11 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Objetivo:** un guion recorrible de principio a fin delante de un cliente, con los datos
   etiquetados y sin posibilidad de tocar nada real.
 - **Criterios de aceptación:**
-  - [ ] Escena de **simulacro** completa *(BLOQUEADA: la demo no tiene bajada nube→gabinete — `T-5.29`)*: agenda, armado, disparo humano, acuse por sitio y
-        reporte, en las tres superficies.
+  - [x] Escena de **simulacro** completa *(desbloqueada por `T-5.29`)*: agenda, armado, disparo
+        humano, acuse por sitio y reporte. **Guionizada** de punta a punta en `demo/run.py` (C4,
+        con los tres gabinetes reales acusando el comando firmado); el recorrido por las **tres
+        superficies** es el de `demo/GUION.md` §Escena 5 sobre `make soc-local`, porque un guion
+        de terminal no puede pulsar una consola.
   - [x] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
         lo está.
   - [x] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
@@ -608,6 +611,13 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   intentó, se midió y se fichó como **`T-5.29`**, con la mitad que sí se puede recorrer hoy
   (`make soc-local`) escrita en el guion. Forzarlo habría exigido inventar un transporte de bajada
   sin verificación de firma — que probaría lo contrario de lo que hay que probar.
+- **[T-5.29 · 2026-09-04] El quinto criterio, cerrado.** La escena de simulacro estaba bloqueada
+  porque el arnés de la demo era **solo edge→nube**: un simulacro son comandos firmados
+  nube→gabinete, uno por sitio, y no había por dónde bajar. `T-5.29` construyó la bajada y la
+  escena **C4** recorre el simulacro entero contra los tres `EdgeSupervisor` reales, con el comando
+  firmado verificado por el `CommandDispatcher` del gabinete y un comando **forjado** que se
+  rechaza. **55 OK · 0 FALLOS.** T-5.08 queda CERRADA.
+
 ### [x] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
 > proyecto no lo tienen, y **los dos ya divergieron**:

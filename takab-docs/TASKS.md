@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **344** · `[x]` **292** · `[~]` **11** · `[ ]` **41**
+****Conteo de tareas:** total **344** · `[x]` **294** · `[~]` **10** · `[ ]` **40**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -11752,7 +11752,7 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   y afirmaba cubrir las dos variantes; ahora se llama por lo único que sí comprobaba —qué DICE la
   constante— y apunta a dónde vive la comprobación de verdad. Dejarlo con el nombre viejo habría
   sido dejar puesta la señal que hizo creer durante meses que esto estaba cubierto.
-### [~] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **PARCIAL 2026-09-04**
+### [x] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
 > supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
 > producción** con tres guardias que se defienden solos (host real de la conexión, exclusividad de
@@ -11769,8 +11769,11 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** un guion recorrible de principio a fin delante de un cliente, con los datos
   etiquetados y sin posibilidad de tocar nada real.
 - **Criterios de aceptación:**
-  - [ ] Escena de **simulacro** completa *(BLOQUEADA: la demo no tiene bajada nube→gabinete — `T-5.29`)*: agenda, armado, disparo humano, acuse por sitio y
-        reporte, en las tres superficies.
+  - [x] Escena de **simulacro** completa *(desbloqueada por `T-5.29`)*: agenda, armado, disparo
+        humano, acuse por sitio y reporte. **Guionizada** de punta a punta en `demo/run.py` (C4,
+        con los tres gabinetes reales acusando el comando firmado); el recorrido por las **tres
+        superficies** es el de `demo/GUION.md` §Escena 5 sobre `make soc-local`, porque un guion
+        de terminal no puede pulsar una consola.
   - [x] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
         lo está.
   - [x] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
@@ -11815,7 +11818,14 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   intentó, se midió y se fichó como **`T-5.29`**, con la mitad que sí se puede recorrer hoy
   (`make soc-local`) escrita en el guion. Forzarlo habría exigido inventar un transporte de bajada
   sin verificación de firma — que probaría lo contrario de lo que hay que probar.
-### [ ] T-5.29 · La demo no tiene camino de BAJADA nube→gabinete — `SOFTWARE`
+- **[T-5.29 · 2026-09-04] El quinto criterio, cerrado.** La escena de simulacro estaba bloqueada
+  porque el arnés de la demo era **solo edge→nube**: un simulacro son comandos firmados
+  nube→gabinete, uno por sitio, y no había por dónde bajar. `T-5.29` construyó la bajada y la
+  escena **C4** recorre el simulacro entero contra los tres `EdgeSupervisor` reales, con el comando
+  firmado verificado por el `CommandDispatcher` del gabinete y un comando **forjado** que se
+  rechaza. **55 OK · 0 FALLOS.** T-5.08 queda CERRADA.
+
+### [x] T-5.29 · La demo no tiene camino de BAJADA nube→gabinete — `SOFTWARE` · **CERRADA 2026-09-04**
 > **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.08`, el 2026-09-04).
 >
 > El sustituto de IoT Core de la demo (`demo/spool.py`) es **solo edge→nube**. No hay ningún
@@ -11835,14 +11845,65 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
 - **Objetivo:** que la demo pueda guionizar lo que se comanda desde la nube, con la MISMA
   verificación de firma que en producción.
 - **Criterios de aceptación:**
-  - [ ] Camino de bajada en `demo/spool.py` (o su hermano) que entregue al gabinete el documento
+  - [x] Camino de bajada en `demo/spool.py` (o su hermano) que entregue al gabinete el documento
         **firmado**, y que el edge lo verifique con el dispatcher REAL — un transporte que se
         salte la firma probaría lo contrario de lo que hay que probar.
-  - [ ] Escena de simulacro completa en `demo/run.py`: agenda, armado, disparo humano, acuse por
+  - [x] Escena de simulacro completa en `demo/run.py`: agenda, armado, disparo humano, acuse por
         sitio y reporte, con el gabinete acusando recibo.
-  - [ ] Un comando con firma inválida se RECHAZA y queda en la bitácora, y el guion lo comprueba:
+  - [x] Un comando con firma inválida se RECHAZA y queda en la bitácora, y el guion lo comprueba:
         es la mitad que hace creíble la otra.
-  - [ ] Guarda de no-vacuidad: el guion declara cuántos comandos espera entregar.
+  - [x] Guarda de no-vacuidad: el guion declara cuántos comandos espera entregar.
+- **Cómo se cerró (2026-09-04).**
+  **`demo/spool.py` tiene ya las dos direcciones.** `SpoolCommandPublisher` implementa el
+  `CommandPublisher` de la nube y deja el envelope en el buzón del thing; el transporte del edge
+  lo entrega a la suscripción real. **La pieza que hace válida la prueba es lo que la bajada NO
+  hace:** no firma, no verifica y no interpreta — entrega el envelope **intacto** y decide el
+  `CommandDispatcher` del gabinete, que es el mismo código que corre en el Pi (HMAC + nonce +
+  ventana). Un transporte que entregara el payload pelado probaría lo contrario de lo que hay que
+  probar, y hay un test que lo caza.
+- **Escena C4 completa**, con los tres `EdgeSupervisor` reales: agenda → armado → disparo humano →
+  tres comandos firmados bajando → verificación en el gabinete → acuse por sitio subiendo por el
+  consumer real → reporte con su `sha256` inscrito como evidencia. **55 comprobaciones en verde.**
+- **La clave HMAC la genera el guion, una por gabinete, y solo vive en memoria.** Es lo que
+  permite que la nube firme algo que el edge acepte. No va a git ni a disco (regla de oro 6):
+  nace con la demo, viaja al hijo por entorno y muere con el proceso. Y el gabinete **declara en
+  su línea de arranque** si la clave es fija o efímera: con la efímera todo comando se rechazaría
+  por firma inválida y el síntoma —«no llegó nada»— apunta al transporte, que es el diagnóstico
+  equivocado. Se comprueba al arrancar, no al fallar.
+- **El comando FORJADO, que es la mitad que hace creíble la otra.** La escena deja en el buzón un
+  envelope con la firma cambiada: el gabinete lo rechaza, **no acusa** —a un emisor no autenticado
+  no se le responde— y lo deja en su bitácora. Para poder comprobarlo hubo que dejar de tirar el
+  `stderr` de los gabinetes a `/dev/null`: es la ÚNICA evidencia de un rechazo, porque sin ack
+  «rechazado» y «no llegó» son indistinguibles desde la nube.
+- **Guarda de no-vacuidad:** el transporte cuenta los comandos que ENTREGA y el guion exige
+  `≥ 4` (los tres del simulacro más el forjado). Sin ese número, una escena en la que no bajara
+  nada pasaría en verde: todos los `wait_for` comparan contra cero cuando no hay nada que contar.
+- **Y el hallazgo que salió al ejecutarla, que no estaba en la ficha.** `D-27` dice que el modo
+  demostración es «un supresor de salida de la nube: notificaciones y **comandos firmados**», y un
+  simulacro **es** un comando firmado. Consecuencia operativa que no estaba escrita en ninguna
+  parte: **con el modo puesto no se puede enseñar un simulacro delante de un cliente.** No se
+  cambió la regla —eso sería revocar `D-27` de refilón—; la escena la ENSEÑA: primero comprueba la
+  supresión con su fila de auditoría, después levanta la ventana explícitamente y al terminar la
+  vuelve a poner. El recuento final de entregas reales cubre también ese tramo, así que la prueba
+  del aislamiento de `T-5.08` sale **reforzada**, no debilitada.
+- **Un segundo hallazgo, más incómodo:** con el modo puesto el simulacro **se registra igual**
+  —201, sus tres sitios, cero comandos—, porque `start_drill` es best-effort por sitio (un
+  gabinete sin clave no puede dejar sin simulacro a los demás). Que no sonó en ninguna parte se ve
+  **después**, en el reporte (`no acusaron`), no al dispararlo. Queda escrito en `demo/GUION.md`
+  y comprobado por la escena; corregirlo cambiaría la semántica best-effort, que existe por una
+  razón buena, así que es una decisión de producto y no un apéndice de esta ficha.
+- **La ejecución de comandos remotos viene APAGADA de fábrica por gateway** (regla de oro 8) y la
+  demo la enciende **explícitamente**, declarándolo. Se descubrió al ejecutar: con el default los
+  tres gabinetes verificaban la firma y acusaban `rejected` — correcto, y no lo que la escena
+  tiene que enseñar. El guion comprueba además que ese default sigue siendo `False`, y se lo
+  pregunta al gabinete porque la clase vive en el venv del edge.
+- **`make demo-fase1` levanta ahora también MinIO** (`make objetos`): el reporte del simulacro es
+  evidencia con `sha256` y `put_object` necesita un bucket. El compose ya traía el servicio y su
+  `minio-init`.
+- **Siete mutaciones comprobadas:** tres contra la demo entera (bajada que pela el envelope, clave
+  del gabinete distinta de la de la nube, gabinete sin buzón) y cuatro contra los contratos del
+  transporte (pelar el envelope, tirar lo que no tiene suscripción, dejar que una excepción del
+  callback se lleve al resto, y dejar de consumir lo entregado).
 
 ### [x] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE` · **CERRADA 2026-09-04**
 > `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
