@@ -1,8 +1,10 @@
 ---
 // Plantilla de la tarjeta OG (1200×630). No es una página de navegación:
 // noindex, fuera del sitemap. scripts/make-og.mjs la captura con Playwright
-// y el PNG resultante se commitea como public/og-v1.png.
+// y el PNG resultante se commitea como public/og-v3.png.
+import { Image } from "astro:assets";
 import "../styles/tokens.css";
+import logoAilert from "../assets/img/imagotipo-takab-ailert-negativo.png";
 ---
 
 <!doctype html>
@@ -14,15 +16,34 @@ import "../styles/tokens.css";
   </head>
   <body>
     <div class="tarjeta">
-      <p class="mono meta">
-        <span>takabailert.com</span>
-        <span class="sep"></span>
-        <span>México</span>
-      </p>
-      <div class="marcador"></div>
-      <p class="titulo">El edificio<br />se protege solo.</p>
+      <header>
+        <Image
+          src={logoAilert}
+          alt="TAKAB Ailert"
+          width={300}
+          format="webp"
+          loading="eager"
+        />
+        <p class="mono">takabailert.com · México</p>
+      </header>
+      <div class="cuerpo">
+        <div>
+          <p class="mono senal">Protección local activa</p>
+          <p class="titulo">
+            Una señal.<br />Todo el inmueble<br /><em>en acción.</em>
+          </p>
+        </div>
+        <div class="instrumento" aria-hidden="true">
+          <span class="edificio"></span>
+          <span class="linea linea--1"></span>
+          <span class="linea linea--2"></span>
+          <span class="linea linea--3"></span>
+          <span class="pulso"></span>
+          <span class="telefono"></span>
+        </div>
+      </div>
       <p class="mono pie">
-        TAKAB AILERT · Alertamiento sísmico · Continuidad operativa
+        Señal SASMEX → cobertura local → app móvil → continuidad
       </p>
     </div>
   </body>
@@ -31,24 +52,36 @@ import "../styles/tokens.css";
 <style>
   body {
     margin: 0;
-    background: #071322;
-    color: #f0f2f5;
+    background: #050b14;
+    color: #f6f8fb;
   }
   .tarjeta {
     box-sizing: border-box;
     width: 1200px;
     height: 630px;
-    padding: 56px 64px;
+    position: relative;
+    padding: 50px 58px;
     display: flex;
     flex-direction: column;
-    border: 6px solid #00bfff;
+    overflow: hidden;
+    border: 1px solid rgba(202, 218, 239, 0.24);
     background:
       radial-gradient(
-        60rem 30rem at 90% -10%,
-        rgba(0, 105, 137, 0.35),
-        transparent 60%
+        42rem 35rem at 84% 45%,
+        rgba(18, 58, 122, 0.58),
+        transparent 68%
       ),
-      #071322;
+      #050b14;
+  }
+  .tarjeta::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.22;
+    background-image:
+      linear-gradient(rgba(202, 218, 239, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(202, 218, 239, 0.12) 1px, transparent 1px);
+    background-size: 70px 70px;
   }
   .mono {
     font-family: var(--fuente-mono);
@@ -57,34 +90,123 @@ import "../styles/tokens.css";
     text-transform: uppercase;
     margin: 0;
   }
-  .meta {
+  header {
     display: flex;
     align-items: center;
-    gap: 24px;
-    color: #8a9cb1;
+    justify-content: space-between;
+    position: relative;
+    z-index: 2;
   }
-  .sep {
+  header .mono {
+    color: #9baabd;
+  }
+  .cuerpo {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1.35fr 0.65fr;
+    align-items: center;
     flex: 1;
-    border-top: 2px solid rgba(240, 242, 245, 0.2);
   }
-  .marcador {
-    width: 96px;
-    height: 22px;
-    background: #00bfff;
-    box-shadow: 0 0 24px rgba(0, 191, 255, 0.6);
-    margin-top: 48px;
+  .senal {
+    color: #6aa8ff;
+  }
+  .senal::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 12px;
+    border-radius: 50%;
+    background: #00e676;
+    box-shadow: 0 0 18px rgba(0, 230, 118, 0.6);
   }
   .titulo {
     font-family: var(--fuente-display);
     font-weight: 700;
-    font-size: 150px;
-    line-height: 0.92;
+    font-size: 96px;
+    line-height: 0.9;
     text-transform: uppercase;
     letter-spacing: -0.01em;
-    margin: 24px 0 0;
+    margin: 22px 0 0;
+  }
+  .titulo em {
+    color: #6aa8ff;
+    font-style: normal;
+  }
+  .instrumento {
+    position: relative;
+    height: 320px;
+  }
+  .edificio {
+    position: absolute;
+    right: 34px;
+    bottom: 22px;
+    width: 210px;
+    height: 260px;
+    border: 2px solid #6aa8ff;
+    background: linear-gradient(
+      145deg,
+      rgba(106, 168, 255, 0.28),
+      rgba(11, 29, 58, 0.88)
+    );
+    clip-path: polygon(50% 0, 100% 18%, 100% 100%, 0 100%, 0 18%);
+  }
+  .linea {
+    position: absolute;
+    right: 58px;
+    width: 162px;
+    height: 1px;
+    background: rgba(202, 218, 239, 0.34);
+  }
+  .linea--1 {
+    top: 120px;
+  }
+  .linea--2 {
+    top: 185px;
+  }
+  .linea--3 {
+    top: 250px;
+  }
+  .pulso {
+    position: absolute;
+    right: 124px;
+    top: 43px;
+    width: 28px;
+    height: 28px;
+    border: 4px solid #ff2d1a;
+    border-radius: 50%;
+    box-shadow: 0 0 28px rgba(255, 45, 26, 0.55);
+  }
+  .telefono {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 66px;
+    height: 126px;
+    border: 3px solid #6aa8ff;
+    border-radius: 15px;
+    background: #190908;
+    box-shadow: 0 0 28px rgba(106, 168, 255, 0.26);
+  }
+  .telefono::after {
+    content: "APP";
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    color: #f6f8fb;
+    font-family: var(--fuente-mono);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    text-align: center;
   }
   .pie {
+    position: relative;
+    z-index: 2;
     margin-top: auto;
-    color: #f0f2f5;
+    padding-top: 24px;
+    border-top: 1px solid rgba(202, 218, 239, 0.2);
+    color: #c0cad8;
   }
 </style>

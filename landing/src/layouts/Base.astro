@@ -5,6 +5,7 @@ import "../styles/tokens.css";
 import "../styles/global.css";
 import { Image } from "astro:assets";
 import logoTakab from "../assets/img/logo-takab-technology.png";
+import logoAilert from "../assets/img/imagotipo-takab-ailert-negativo.png";
 import sairaUrl from "../assets/fonts/saira-condensed-700.woff2?url";
 import archivoUrl from "../assets/fonts/archivo-400.woff2?url";
 import { CONTACTO_EMAIL } from "../config";
@@ -21,6 +22,15 @@ const { title, description, path, noindex = false } = Astro.props;
 const canonical = `https://takabailert.com${path === "/" ? "/" : path}`;
 const rev = import.meta.env.PUBLIC_REV ?? "dev";
 const anio = 2026;
+const organization = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://takabailert.com/#organization",
+  name: "TAKAB TECHNOLOGY",
+  url: "https://takabailert.com/",
+  logo: "https://takabailert.com/apple-touch-icon.png",
+  email: CONTACTO_EMAIL,
+};
 ---
 
 <!doctype html>
@@ -32,8 +42,9 @@ const anio = 2026;
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     {noindex && <meta name="robots" content="noindex" />}
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta name="theme-color" content="#071322" />
+    <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#050B14" />
     <link
       rel="preload"
       as="font"
@@ -53,17 +64,35 @@ const anio = 2026;
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:image" content="https://takabailert.com/og-v2.png" />
+    <meta property="og:image" content="https://takabailert.com/og-v3.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="TAKAB Ailert: una señal, todo el inmueble en acción"
+    />
     <meta property="og:locale" content="es_MX" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://takabailert.com/og-v3.png" />
+    <meta
+      name="twitter:image:alt"
+      content="TAKAB Ailert: una señal, todo el inmueble en acción"
+    />
+    <script
+      type="application/ld+json"
+      is:inline
+      set:html={JSON.stringify(organization)}
+    />
   </head>
   <body>
     <!--
-    THESIS: La landing es la sala de operaciones del producto vuelta cinematica: la identidad REAL (navy+cian de la consola) contando la fisica de la alerta, con la honestidad declarada (que hace / que NO hace) intacta como argumento.
-    OWN-WORLD: Telemetria v2 — fondo navy #071322/#0E2336, cian #00BFFF como unico acento electrico con glow de senal, semaforo verde/ambar/rojo SOLO semantico, crisis #160808 de la app; Saira Condensed display, Archivo cuerpo, JetBrains Mono telemetria; paneles de consola radio 8px, hilos de luz 1px; cero glassmorphism, cero degradados morado-azul.
-    STORY: El comprador siente la senal (onda del hero), entiende por que la alerta le gana a las ondas (mapa de la fisica), ve al gabinete actuar (esquema + simulacro), comprueba la consola REAL (capturas con datos de demostracion) y confia por lo que el sistema declara NO hacer.
-    FIRST VIEWPORT: titular display a 3 lineas con "SOLO." en cian (elemento LCP) y el lede+CTA a su derecha en escritorio; riel de chips de estado pegado al sismograma vivo (canvas), que entra al primer viewport anclando el hero a la altura de pantalla en >=1280.
-    FORM: rediseno pedido por el usuario 2026-08-25 (tecnologico/moderno/llamativo, colores de la identidad) — reemplaza al mundo Swiss Print v1; sin sorteo: direccion confirmada por 4 respuestas estructuradas.
+    THESIS: La landing recorre el sistema completo: señal SASMEX, actuación física por zonas, app móvil, coordinación operativa, evidencia y reingreso.
+    OWN-WORLD: Comando cinematografico v3 — negro azulado #050B14, navy y azul de la identidad TAKAB, rojo #FF2D1A solo para alerta; Saira Condensed display, Archivo cuerpo, JetBrains Mono telemetria; instrumentos tecnicos, reticula y luz de señal sin glassmorphism ni imagenes ficticias.
+    STORY: El comprador entiende cómo una misma alerta avanza desde la recepción del inmueble hasta las personas y el centro de operaciones, y cómo continúa después del movimiento.
+    FIRST VIEWPORT: titular a tres lineas, CTA y corte arquitectonico animado con gabinetes de apoyo, estrobos y vista móvil; el sismograma cierra el primer acto sin ocultar el LCP.
+    FORM: tercera version elegida por el usuario — comando cinematografico, tecnica y escaneable, con la identidad de los logos entregados.
     FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
     -->
     <a class="salto" href="#contenido">Saltar al contenido</a>
@@ -71,14 +100,40 @@ const anio = 2026;
     <header class="barra">
       <div class="marco barra__fila">
         <a class="barra__marca" href="/" aria-label="TAKAB Ailert — inicio">
-          <span class="barra__nombre">TAKAB AILERT</span>
+          <Image
+            src={logoAilert}
+            alt="TAKAB Ailert"
+            width={188}
+            format="webp"
+            loading="eager"
+          />
         </a>
-        <nav aria-label="Navegación principal">
+        <nav class="barra__nav-escritorio" aria-label="Navegación principal">
           <ul class="barra__nav mono">
-            <li><a href="/#alerta-temprana">Cómo funciona</a></li>
-            <li><a href="/#que-hace">Qué hace</a></li>
+            <li><a href="/#flujo">El flujo</a></li>
+            <li><a href="/#alerta-temprana">La ventaja</a></li>
+            <li><a href="/#gabinete">El inmueble</a></li>
+            <li><a href="/#app-movil">La app</a></li>
+            <li><a href="/#post-sismo">Post-sismo</a></li>
+            <li><a href="/#consola">Operaciones</a></li>
+            <li><a href="/#instalacion">Configuración</a></li>
             <li><a class="barra__cta" href="/#contacto">Contacto</a></li>
           </ul>
+        </nav>
+        <nav class="barra__nav-movil" aria-label="Navegación móvil">
+          <details class="menu-movil">
+            <summary class="mono">Menú <i aria-hidden="true"></i></summary>
+            <ul class="menu-movil__lista mono">
+              <li><a href="/#flujo">01 · El flujo</a></li>
+              <li><a href="/#alerta-temprana">02 · La ventaja física</a></li>
+              <li><a href="/#gabinete">03 · El inmueble</a></li>
+              <li><a href="/#app-movil">04 · La app</a></li>
+              <li><a href="/#post-sismo">05 · Post-sismo</a></li>
+              <li><a href="/#consola">06 · Sala de operaciones</a></li>
+              <li><a href="/#instalacion">07 · Configuración</a></li>
+              <li><a href="/#contacto">08 · Contacto</a></li>
+            </ul>
+          </details>
         </nav>
       </div>
     </header>
@@ -133,42 +188,29 @@ const anio = 2026;
 
 <style>
   .barra {
+    position: sticky;
+    top: 0;
+    z-index: 70;
     border-bottom: 1px solid var(--linea);
-    background: var(--fondo-0);
+    background: rgba(5, 11, 20, 0.98);
   }
   .barra__fila {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--e-2) var(--e-5);
     padding-block: var(--e-4);
   }
   .barra__marca {
+    display: block;
+    width: clamp(150px, 18vw, 188px);
     text-decoration: none;
-  }
-  .barra__nombre {
-    font-family: var(--fuente-display);
-    font-weight: 700;
-    font-size: 1.375rem;
-    letter-spacing: 0.02em;
-    color: var(--texto-1);
-  }
-  .barra__nombre::after {
-    content: "";
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-left: 8px;
-    border-radius: 50%;
-    background: var(--cian);
-    box-shadow: var(--glow-cian);
-    vertical-align: 0.35em;
   }
   .barra__nav {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--e-4) var(--e-5);
+    gap: var(--e-3) 18px;
     list-style: none;
     padding: 0;
   }
@@ -176,11 +218,70 @@ const anio = 2026;
     text-decoration: none;
     color: var(--texto-2);
   }
-  .barra__nav a:hover {
-    color: var(--cian-hover);
-  }
   .barra__cta {
     color: var(--cian);
+  }
+  .barra__nav-movil {
+    display: none;
+  }
+  .menu-movil {
+    position: relative;
+  }
+  .menu-movil summary {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border: 1px solid var(--linea-fuerte);
+    color: var(--texto-1);
+    cursor: pointer;
+    list-style: none;
+  }
+  .menu-movil summary::-webkit-details-marker {
+    display: none;
+  }
+  .menu-movil summary i,
+  .menu-movil summary i::before {
+    display: block;
+    width: 16px;
+    height: 1px;
+    background: var(--cian);
+  }
+  .menu-movil summary i {
+    position: relative;
+  }
+  .menu-movil summary i::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 0;
+  }
+  .menu-movil[open] summary {
+    border-color: var(--cian);
+    color: var(--cian);
+  }
+  .menu-movil__lista {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    display: grid;
+    width: min(86vw, 340px);
+    max-height: calc(100svh - 110px);
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid var(--linea-fuerte);
+    background: rgba(5, 11, 20, 0.99);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+    list-style: none;
+  }
+  .menu-movil__lista a {
+    display: block;
+    min-height: 44px;
+    padding: 12px;
+    border-bottom: 1px solid var(--linea);
+    color: var(--texto-2);
+    text-decoration: none;
   }
   .pie__titulo {
     color: var(--texto-3);
@@ -198,6 +299,24 @@ const anio = 2026;
   }
   .pie__rev {
     margin-top: var(--e-5);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .barra__nav a:hover {
+      color: var(--cian-hover);
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .barra__fila {
+      flex-wrap: nowrap;
+    }
+    .barra__nav-escritorio {
+      display: none;
+    }
+    .barra__nav-movil {
+      display: block;
+    }
   }
 </style>
 

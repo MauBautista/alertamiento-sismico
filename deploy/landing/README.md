@@ -68,8 +68,8 @@ verificó solo desde la máquina de Mauricio y el timeout de AWS no se vio).
 
 - **Nunca** `aws s3 cp/sync` manual al bucket sin `--cache-control`: un objeto sin
   metadata se cachea 86400 s en CloudFront.
-- `robots.txt` / `favicon.svg` / `og-v1.png` / `sitemap.xml` **jamás** `immutable`
-  (no cambian de nombre). El OG lleva la versión en el nombre (`og-v1.png`).
+- `robots.txt` / `favicon.svg` / `og-v3.png` / `sitemap.xml` **jamás** `immutable`
+  (no cambian de nombre). El OG lleva la versión en el nombre (`og-v3.png`).
 - El código de las rutas inexistentes es **404** (anti-espejo T-2.156); el smoke lo
   verifica con código, no mirando la página.
 - La consola SOC no se toca desde aquí: son dos sistemas separados.

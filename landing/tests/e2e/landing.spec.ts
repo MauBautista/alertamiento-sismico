@@ -106,10 +106,18 @@ test("prefers-reduced-motion: todo visible y estático", async ({ browser }) => 
   });
   const page = await context.newPage();
   await page.goto("/");
+  await page.waitForTimeout(200);
+  const animacionesActivas = await page.evaluate(
+    () =>
+      document
+        .getAnimations()
+        .filter((animacion) => animacion.playState === "running").length,
+  );
+  expect(animacionesActivas).toBe(0);
   await asentar(page); // también aquí: carga las imágenes lazy del pie
   // El titular y el esquema deben estar visibles sin animación alguna.
   await expect(page.locator("h1")).toBeVisible();
-  const esquema = page.locator("[data-esquema] svg").first();
+  const esquema = page.locator('[data-esquema] [role="img"]').first();
   await esquema.scrollIntoViewIfNeeded();
   await expect(esquema).toBeVisible();
   await page.screenshot({
@@ -117,6 +125,95 @@ test("prefers-reduced-motion: todo visible y estático", async ({ browser }) => 
     fullPage: true,
   });
   await context.close();
+});
+
+test("los instrumentos decorativos se pausan fuera del viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const comando = page.locator("[data-instrumento]").first();
+  await expect(comando).not.toHaveClass(/pausado/);
+  await page.locator("#contacto").scrollIntoViewIfNeeded();
+  await expect(comando).toHaveClass(/pausado/);
+});
+
+for (const viewport of [
+  { width: 1366, height: 768 },
+  { width: 1440, height: 900 },
+]) {
+  test(`el CTA principal entra en ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    const caja = await page
+      .getByRole("link", { name: "Solicitar evaluación" })
+      .boundingBox();
+    expect(caja, "el CTA no tiene caja visible").not.toBeNull();
+    expect(caja!.y + caja!.height).toBeLessThanOrEqual(viewport.height);
+  });
+}
+
+test("los ocho destinos del menú móvil son accesibles", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".barra__nav-escritorio")).toBeHidden();
+  const menu = page.locator(".menu-movil");
+  await menu.locator("summary").click();
+  await expect(menu).toHaveAttribute("open", "");
+  await expect(menu.locator("a")).toHaveCount(8);
+  await expect(menu.getByRole("link", { name: /08 · Contacto/ })).toBeVisible();
+
+  await menu.getByRole("link", { name: /05 · Post-sismo/ }).click();
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(page).toHaveURL(/#post-sismo$/);
+});
+
+test("las anclas reservan el alto de la barra fija", async ({ page }) => {
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+    });
+    for (const id of ["flujo", "post-sismo", "consola", "contacto"]) {
+      const posiciones = await page.locator(`#${id}`).evaluate((element) => {
+        element.scrollIntoView();
+        const target = element.getBoundingClientRect();
+        const header = document
+          .querySelector("header.barra")!
+          .getBoundingClientRect();
+        return { targetTop: target.top, headerBottom: header.bottom };
+      });
+      expect(
+        posiciones.targetTop,
+        `#${id} queda debajo de la barra a ${width}px`,
+      ).toBeGreaterThanOrEqual(posiciones.headerBottom - 1);
+    }
+  }
+});
+
+test("el control de movimiento pausa y reanuda los instrumentos", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const control = page.locator("[data-motion-toggle]");
+  await expect(control).toHaveAccessibleName("Pausar movimiento");
+  await control.click();
+  await expect(control).toHaveAttribute("aria-pressed", "true");
+  await expect(control).toHaveText(/Reanudar movimiento/);
+  await expect(page.locator("html")).toHaveClass(/motion-paused/);
+  const estado = await page
+    .locator("[data-instrumento] .c-source__ring--1")
+    .evaluate((element) => getComputedStyle(element).animationPlayState);
+  expect(estado).toBe("paused");
+
+  await control.click();
+  await expect(control).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("html")).not.toHaveClass(/motion-paused/);
 });
 
 test("teclado: el primer Tab llega al salto de contenido; el simulacro responde", async ({

@@ -1,0 +1,619 @@
+<figure
+  class="comando"
+  data-instrumento
+  aria-label="Diagrama de un edificio que recibe la señal del SASMEX, activa su gabinete principal y distribuye la alerta por zonas"
+>
+  <div class="comando__estado mono">
+    <span><i></i> Sistema preparado</span>
+    <span class="humo">Protección física + coordinación móvil</span>
+  </div>
+
+  <svg
+    viewBox="0 0 760 640"
+    role="img"
+    aria-labelledby="hero-svg-title hero-svg-desc"
+  >
+    <title id="hero-svg-title">La alerta recorre todo el inmueble</title>
+    <desc id="hero-svg-desc">
+      La señal del SASMEX llega al edificio, baja al gabinete principal y se
+      distribuye a gabinetes de apoyo, sirenas y estrobos de cuatro zonas. Una
+      vía separada lleva el estado a la aplicación móvil.
+    </desc>
+    <defs>
+      <linearGradient id="hero-face" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#153b70" stop-opacity=".74"></stop>
+        <stop offset="1" stop-color="#071329" stop-opacity=".96"></stop>
+      </linearGradient>
+      <linearGradient id="hero-zone" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6aa8ff" stop-opacity=".14"></stop>
+        <stop offset="1" stop-color="#6aa8ff" stop-opacity=".02"></stop>
+      </linearGradient>
+      <pattern
+        id="hero-grid"
+        width="40"
+        height="40"
+        patternUnits="userSpaceOnUse"
+      >
+        <path d="M40 0H0V40" fill="none" stroke="#cadbef" stroke-opacity=".075"
+        ></path>
+      </pattern>
+      <filter id="hero-glow" x="-100%" y="-100%" width="300%" height="300%">
+        <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
+        <feMerge
+          ><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"
+          ></feMergeNode></feMerge
+        >
+      </filter>
+      <clipPath id="hero-building-clip">
+        <rect x="176" y="142" width="408" height="344" rx="5"></rect>
+      </clipPath>
+    </defs>
+
+    <rect class="c-grid" x="1" y="1" width="758" height="638" rx="18"></rect>
+    <path class="c-ground" d="M74 532H680M128 566H626"></path>
+
+    <g class="c-source">
+      <circle cx="74" cy="100" r="5"></circle>
+      <circle class="c-source__ring c-source__ring--1" cx="74" cy="100" r="18"
+      ></circle>
+      <circle class="c-source__ring c-source__ring--2" cx="74" cy="100" r="34"
+      ></circle>
+      <text x="42" y="154">SEÑAL SASMEX</text>
+    </g>
+    <path class="c-incoming" d="M78 100H362"></path>
+    <circle class="c-incoming__dot" cx="78" cy="100" r="5"></circle>
+    <text class="c-signal-label" x="223" y="88" text-anchor="middle"
+      >SEÑAL AL GABINETE</text
+    >
+
+    <g class="c-building">
+      <rect
+        class="c-building__face"
+        x="176"
+        y="142"
+        width="408"
+        height="344"
+        rx="5"></rect>
+      <path class="c-building__roof" d="m160 142 205-78 235 78Z"></path>
+      <path class="c-building__edge" d="M176 228H584M176 314H584M176 400H584"
+      ></path>
+      <path class="c-building__riser" d="M362 102V456"></path>
+      <path class="c-building__riser c-building__riser--echo" d="M370 142V456"
+      ></path>
+      <g clip-path="url(#hero-building-clip)">
+        <rect class="c-scan" x="176" y="142" width="408" height="62"></rect>
+      </g>
+      <text class="c-building__label" x="196" y="172">INMUEBLE PROTEGIDO</text>
+    </g>
+
+    <g class="c-zone c-zone--1" style="--delay:1.25s">
+      <rect class="c-zone__wash" x="186" y="183" width="388" height="35"></rect>
+      <path class="c-branch" d="M362 200H505"></path>
+      <rect class="c-support" x="392" y="188" width="38" height="24" rx="2"
+      ></rect>
+      <circle class="c-support__led" cx="420" cy="194" r="2.5"></circle>
+      <text x="202" y="207">ZONA 04</text><text class="c-mini" x="438" y="205"
+        >APOYO</text
+      >
+      <g class="c-strobe" transform="translate(530 199)"
+        ><circle r="8"></circle><path
+          d="M0-18V-12M0 12V18M-18 0H-12M12 0H18M-13-13-9-9M9 9 13 13M13-13 9-9M-9 9-13 13"
+        ></path></g
+      >
+    </g>
+    <g class="c-zone c-zone--2" style="--delay:1.48s">
+      <rect class="c-zone__wash" x="186" y="269" width="388" height="35"></rect>
+      <path class="c-branch" d="M362 286H505"></path>
+      <rect class="c-support" x="392" y="274" width="38" height="24" rx="2"
+      ></rect>
+      <circle class="c-support__led" cx="420" cy="280" r="2.5"></circle>
+      <text x="202" y="293">ZONA 03</text><text class="c-mini" x="438" y="291"
+        >APOYO</text
+      >
+      <g class="c-strobe" transform="translate(530 285)"
+        ><circle r="8"></circle><path
+          d="M0-18V-12M0 12V18M-18 0H-12M12 0H18M-13-13-9-9M9 9 13 13M13-13 9-9M-9 9-13 13"
+        ></path></g
+      >
+    </g>
+    <g class="c-zone c-zone--3" style="--delay:1.71s">
+      <rect class="c-zone__wash" x="186" y="355" width="388" height="35"></rect>
+      <path class="c-branch" d="M362 372H505"></path>
+      <rect class="c-support" x="392" y="360" width="38" height="24" rx="2"
+      ></rect>
+      <circle class="c-support__led" cx="420" cy="366" r="2.5"></circle>
+      <text x="202" y="379">ZONA 02</text><text class="c-mini" x="438" y="377"
+        >APOYO</text
+      >
+      <g class="c-strobe" transform="translate(530 371)"
+        ><circle r="8"></circle><path
+          d="M0-18V-12M0 12V18M-18 0H-12M12 0H18M-13-13-9-9M9 9 13 13M13-13 9-9M-9 9-13 13"
+        ></path></g
+      >
+    </g>
+    <g class="c-zone c-zone--4" style="--delay:1.94s">
+      <rect class="c-zone__wash" x="186" y="424" width="388" height="50"></rect>
+      <path class="c-branch" d="M362 450H505"></path>
+      <text x="202" y="455">ZONA 01</text>
+      <g class="c-strobe" transform="translate(530 449)"
+        ><circle r="8"></circle><path
+          d="M0-18V-12M0 12V18M-18 0H-12M12 0H18M-13-13-9-9M9 9 13 13M13-13 9-9M-9 9-13 13"
+        ></path></g
+      >
+    </g>
+
+    <g class="c-main">
+      <rect
+        class="c-main__activo c-main__glow"
+        x="268"
+        y="404"
+        width="92"
+        height="79"
+        rx="8"></rect>
+      <rect
+        class="c-main__cabinet"
+        x="276"
+        y="412"
+        width="76"
+        height="63"
+        rx="3"></rect>
+      <path d="M287 430H341M287 440H326M287 458H341"></path>
+      <circle class="c-main__led" cx="337" cy="440" r="3"></circle>
+      <circle class="c-main__activo c-main__led-activo" cx="337" cy="440" r="5"
+      ></circle>
+      <text x="314" y="507" text-anchor="middle">GABINETE PRINCIPAL</text>
+    </g>
+
+    <g class="c-mobile-link">
+      <path d="M352 464C448 526 607 497 651 409"></path>
+      <text x="489" y="526" text-anchor="middle">ESTADO + COORDINACIÓN</text>
+      <g class="c-phone">
+        <rect x="622" y="248" width="94" height="166" rx="16"></rect>
+        <rect x="631" y="266" width="76" height="132" rx="9"></rect>
+        <path d="M653 257H685"></path>
+        <text class="c-phone__tag" x="669" y="288" text-anchor="middle"
+          >APP</text
+        >
+        <text class="c-phone__alert" x="669" y="325" text-anchor="middle"
+          >EVACÚE</text
+        >
+        <text class="c-phone__alert" x="669" y="342" text-anchor="middle"
+          >AHORA</text
+        >
+        <text class="c-phone__meta" x="669" y="371" text-anchor="middle"
+          >ZONA ASIGNADA</text
+        >
+      </g>
+    </g>
+  </svg>
+
+  <figcaption class="comando__pie mono">
+    <span>Señal recibida</span><span>Gabinete principal</span><span
+      >Cobertura por zonas</span
+    ><span>App informada</span>
+  </figcaption>
+</figure>
+
+<style>
+  .comando {
+    position: relative;
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid var(--linea-fuerte);
+    border-radius: var(--radio-lg);
+    background:
+      radial-gradient(
+        34rem 30rem at 50% 45%,
+        rgba(18, 58, 122, 0.34),
+        transparent 70%
+      ),
+      rgba(5, 11, 20, 0.9);
+    box-shadow: var(--glow-cian-suave);
+  }
+  .comando::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      115deg,
+      transparent 22%,
+      rgba(106, 168, 255, 0.065),
+      transparent 70%
+    );
+  }
+  .comando__estado,
+  .comando__pie {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-4);
+    padding: var(--e-3) var(--e-4);
+  }
+  .comando__estado {
+    border-bottom: 1px solid var(--linea);
+  }
+  .comando__estado span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--e-2);
+    color: var(--texto-1);
+  }
+  .comando__estado i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 14px rgba(0, 230, 118, 0.65);
+  }
+  .comando__pie {
+    border-top: 1px solid var(--linea);
+    color: var(--texto-3);
+  }
+  .comando__pie span + span::before {
+    content: "→";
+    margin-right: var(--e-4);
+    color: var(--cian);
+  }
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  text {
+    fill: var(--texto-3);
+    font-family: var(--fuente-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .c-mini {
+    font-size: 8px;
+  }
+  .c-grid {
+    fill: url(#hero-grid);
+  }
+  .c-ground {
+    fill: none;
+    stroke: var(--linea);
+    stroke-dasharray: 4 8;
+  }
+  .c-source > circle:first-child {
+    fill: var(--rojo);
+    filter: url(#hero-glow);
+  }
+  .c-source__ring {
+    fill: none;
+    stroke: var(--rojo);
+    opacity: 0.45;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .c-incoming {
+    fill: none;
+    stroke: var(--cian);
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: left;
+    filter: url(#hero-glow);
+  }
+  .c-incoming__dot {
+    fill: var(--cian);
+    filter: url(#hero-glow);
+  }
+  .c-building__face {
+    fill: url(#hero-face);
+    stroke: rgba(106, 168, 255, 0.5);
+    stroke-width: 1.5;
+  }
+  .c-building__roof {
+    fill: rgba(106, 168, 255, 0.12);
+    stroke: rgba(106, 168, 255, 0.58);
+  }
+  .c-building__edge {
+    fill: none;
+    stroke: var(--linea-fuerte);
+  }
+  .c-building__riser {
+    fill: none;
+    stroke: var(--cian);
+    stroke-width: 2;
+    filter: url(#hero-glow);
+  }
+  .c-building__riser--echo {
+    stroke-width: 1;
+    opacity: 0.2;
+  }
+  .c-building__label {
+    fill: var(--texto-1);
+    font-size: 11px;
+  }
+  .c-scan {
+    fill: url(#hero-zone);
+    opacity: 0;
+  }
+  .c-signal-label {
+    fill: var(--cian);
+    font-size: 8px;
+  }
+  .c-branch {
+    fill: none;
+    stroke: var(--cian);
+    stroke-width: 1.5;
+    transform-box: fill-box;
+    transform-origin: left;
+  }
+  .c-zone__wash {
+    fill: url(#hero-zone);
+    opacity: 0.2;
+  }
+  .c-support {
+    fill: var(--fondo-0);
+    stroke: var(--cian);
+  }
+  .c-support__led {
+    fill: var(--verde);
+  }
+  .c-strobe circle {
+    fill: rgba(255, 45, 26, 0.1);
+    stroke: var(--rojo);
+    stroke-width: 1.5;
+  }
+  .c-strobe path {
+    fill: none;
+    stroke: var(--rojo);
+    stroke-width: 1.5;
+    opacity: 0.45;
+  }
+  .c-main__cabinet {
+    fill: #071329;
+    stroke: var(--cian);
+    stroke-width: 2;
+    filter: url(#hero-glow);
+  }
+  .c-main__glow {
+    fill: rgba(0, 230, 118, 0.1);
+    stroke: var(--verde);
+    stroke-width: 1.5;
+    opacity: 0;
+    filter: url(#hero-glow);
+  }
+  .c-main path {
+    fill: none;
+    stroke: var(--linea-fuerte);
+  }
+  .c-main__led,
+  .c-main__led-activo {
+    fill: var(--verde);
+  }
+  .c-main__led {
+    opacity: 0.35;
+  }
+  .c-main__led-activo {
+    opacity: 0;
+    filter: url(#hero-glow);
+  }
+  .c-main text {
+    fill: var(--texto-1);
+  }
+  .c-mobile-link > path {
+    fill: none;
+    stroke: var(--texto-3);
+    stroke-dasharray: 5 7;
+    opacity: 0.65;
+  }
+  .c-phone > rect:first-child {
+    fill: var(--fondo-0);
+    stroke: var(--cian);
+    stroke-width: 1.5;
+  }
+  .c-phone > rect:nth-child(2) {
+    fill: var(--crisis);
+    stroke: rgba(255, 45, 26, 0.5);
+  }
+  .c-phone > path {
+    stroke: var(--texto-3);
+  }
+  .c-phone__tag {
+    fill: var(--cian);
+    font-size: 8px;
+  }
+  .c-phone__alert {
+    fill: var(--blanco);
+    font-family: var(--fuente-display);
+    font-size: 17px;
+  }
+  .c-phone__meta {
+    fill: #d8c2c0;
+    font-size: 7px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .c-source__ring {
+      animation: c-ring 3.8s var(--ease-out) infinite;
+    }
+    .c-source__ring--2 {
+      animation-delay: 0.22s;
+    }
+    .c-incoming {
+      animation: c-line 3.8s var(--ease-out) infinite;
+    }
+    .c-incoming__dot {
+      animation: c-dot 3.8s var(--ease-in-out) infinite;
+    }
+    .c-scan {
+      animation: c-scan 3.8s linear infinite;
+    }
+    .c-main__activo {
+      animation: c-main-activo 3.8s linear infinite 0.55s;
+    }
+    .c-zone__wash,
+    .c-support,
+    .c-support__led,
+    .c-strobe {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: c-zone 3.8s var(--ease-out) infinite;
+      animation-delay: var(--delay);
+    }
+    .c-branch {
+      animation: c-branch 3.8s var(--ease-out) infinite;
+      animation-delay: var(--delay);
+    }
+    .c-phone {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: c-phone 3.8s var(--ease-out) infinite 1.55s;
+    }
+    .comando.pausado * {
+      animation-play-state: paused !important;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .c-main__activo {
+      opacity: 1;
+    }
+  }
+  @keyframes c-ring {
+    0%,
+    65%,
+    100% {
+      opacity: 0;
+      transform: scale(0.55);
+    }
+    5% {
+      opacity: 0.75;
+    }
+    24% {
+      opacity: 0;
+      transform: scale(1.3);
+    }
+  }
+  @keyframes c-line {
+    0% {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+    5% {
+      opacity: 1;
+    }
+    18%,
+    84% {
+      opacity: 0.9;
+      transform: scaleX(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scaleX(1);
+    }
+  }
+  @keyframes c-dot {
+    0%,
+    4% {
+      opacity: 0;
+      transform: translateX(0);
+    }
+    6% {
+      opacity: 1;
+    }
+    17% {
+      opacity: 1;
+      transform: translateX(284px);
+    }
+    20%,
+    100% {
+      opacity: 0;
+      transform: translateX(284px);
+    }
+  }
+  @keyframes c-main-activo {
+    0%,
+    14% {
+      opacity: 0;
+    }
+    19%,
+    78% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes c-scan {
+    0%,
+    18% {
+      opacity: 0;
+      transform: translateY(-60px);
+    }
+    28% {
+      opacity: 0.7;
+    }
+    63% {
+      opacity: 0.12;
+      transform: translateY(330px);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: translateY(330px);
+    }
+  }
+  @keyframes c-zone {
+    0%,
+    20% {
+      opacity: 0.25;
+      transform: scale(0.98);
+    }
+    27%,
+    78% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0.25;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes c-branch {
+    0%,
+    20% {
+      opacity: 0.15;
+      transform: scaleX(0);
+    }
+    29%,
+    82% {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+    100% {
+      opacity: 0.15;
+      transform: scaleX(1);
+    }
+  }
+  @keyframes c-phone {
+    0%,
+    26% {
+      opacity: 0.5;
+      transform: translateY(4px);
+    }
+    35%,
+    78% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0.5;
+    }
+  }
+  @media (max-width: 600px) {
+    .comando__pie span + span::before {
+      display: none;
+    }
+    .comando__pie {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      font-size: 0.62rem;
+    }
+  }
+</style>

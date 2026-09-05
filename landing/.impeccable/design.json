@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-26T00:55:00-06:00",
-  "title": "Design System: TAKAB Ailert — Landing pública v2 «Telemetría»",
+  "generatedAt": "2026-09-05T09:00:00-06:00",
+  "title": "Design System: TAKAB Ailert — Landing pública v3 «Comando cinematográfico»",
   "extensions": {
     "colorMeta": {
       "fondo-0": {
         "role": "neutral",
         "displayName": "Navy Suelo",
-        "canonical": "#071322",
+        "canonical": "#050B14",
         "tonalRamp": [
           "oklch(15% 0.035 254.3)",
           "oklch(26.4% 0.034 254.3)",
@@ -22,7 +22,7 @@
       "fondo-1": {
         "role": "neutral",
         "displayName": "Navy Superficie",
-        "canonical": "#0E2336",
+        "canonical": "#0B1D3A",
         "tonalRamp": [
           "oklch(15% 0.043 247.9)",
           "oklch(26.4% 0.045 247.9)",
@@ -37,7 +37,7 @@
       "fondo-2": {
         "role": "neutral",
         "displayName": "Navy Panel",
-        "canonical": "#122B44",
+        "canonical": "#102846",
         "tonalRamp": [
           "oklch(15% 0.052 250.4)",
           "oklch(26.4% 0.055 250.4)",
@@ -52,7 +52,7 @@
       "fondo-3": {
         "role": "neutral",
         "displayName": "Navy Marca",
-        "canonical": "#1A3E62",
+        "canonical": "#123A7A",
         "tonalRamp": [
           "oklch(15% 0.067 250.8)",
           "oklch(26.4% 0.071 250.8)",
@@ -67,7 +67,7 @@
       "texto-1": {
         "role": "neutral",
         "displayName": "Texto Vivo",
-        "canonical": "#F0F2F5",
+        "canonical": "#F6F8FB",
         "tonalRamp": [
           "oklch(15% 0.005 258.3)",
           "oklch(26.4% 0.005 258.3)",
@@ -82,7 +82,7 @@
       "texto-2": {
         "role": "neutral",
         "displayName": "Texto Operativo",
-        "canonical": "#B8C2CE",
+        "canonical": "#C0CAD8",
         "tonalRamp": [
           "oklch(15% 0.013 252.9)",
           "oklch(26.4% 0.014 252.9)",
@@ -97,7 +97,7 @@
       "texto-3": {
         "role": "neutral",
         "displayName": "Texto Humo",
-        "canonical": "#8A9CB1",
+        "canonical": "#91A1B5",
         "tonalRamp": [
           "oklch(15% 0.026 252.4)",
           "oklch(26.4% 0.029 252.4)",
@@ -111,8 +111,8 @@
       },
       "cian": {
         "role": "primary",
-        "displayName": "Cian Señal",
-        "canonical": "#00BFFF",
+        "displayName": "Azul Señal",
+        "canonical": "#6AA8FF",
         "tonalRamp": [
           "oklch(15% 0.102 231.6)",
           "oklch(26.4% 0.112 231.6)",
@@ -126,8 +126,8 @@
       },
       "cian-hover": {
         "role": "primary",
-        "displayName": "Cian Encendido",
-        "canonical": "#33CCFF",
+        "displayName": "Azul Señal Encendido",
+        "canonical": "#91C0FF",
         "tonalRamp": [
           "oklch(15% 0.091 226.2)",
           "oklch(26.4% 0.100 226.2)",
@@ -172,7 +172,7 @@
       "rojo": {
         "role": "semantic",
         "displayName": "Rojo Crisis",
-        "canonical": "#FF5252",
+        "canonical": "#FF2D1A",
         "tonalRamp": [
           "oklch(15% 0.149 24.7)",
           "oklch(26.4% 0.162 24.7)",
@@ -187,7 +187,7 @@
       "crisis": {
         "role": "semantic",
         "displayName": "Fondo Crisis",
-        "canonical": "#160808",
+        "canonical": "#190908",
         "tonalRamp": [
           "oklch(15% 0.025 20.4)",
           "oklch(26.4% 0.024 20.4)",
@@ -202,7 +202,7 @@
       "logo-a": {
         "role": "brand",
         "displayName": "Radial Petróleo",
-        "canonical": "#006989",
+        "canonical": "#123A7A",
         "tonalRamp": [
           "oklch(15% 0.077 227.7)",
           "oklch(26.4% 0.083 227.7)",
@@ -217,7 +217,7 @@
       "logo-b": {
         "role": "brand",
         "displayName": "Radial Ultramar",
-        "canonical": "#00215A",
+        "canonical": "#0B1D3A",
         "tonalRamp": [
           "oklch(15% 0.102 260.0)",
           "oklch(26.4% 0.109 260.0)",
@@ -391,11 +391,11 @@
     }
   ],
   "narrative": {
-    "northStar": "La sala de operaciones, cinemática",
-    "overview": "La landing es la identidad REAL del producto vuelta pieza de marketing: el navy profundo y el cian eléctrico de la consola SOC contando la física de la alerta. No es un tema oscuro decorativo — es la superficie del producto (paneles de consola, rótulos de telemetría en monospace, semáforo de estados) puesta en escena. La jerarquía se construye con luz y profundidad de navy, no con sombras grises: el cian es señal, y todo lo que brilla, brilla porque significa algo. Este mundo se hermana a propósito con la consola (revoca el «contraste deliberado» del v1).\n\nEl tono visual sirve al argumento comercial: honestidad declarada. Toda pieza sintética se rotula como ilustrativa, la captura de consola es el producto real con datos de demostración y lo dice, y la banda de crisis reproduce la paleta literal de la pantalla de crisis de la app. Rechazos confirmados (vigentes del brief v1): sin Inter/Roboto, sin degradados morado-azul, sin glassmorphism, sin screenshots falsos.",
+    "northStar": "El inmueble como sistema de comando",
+    "overview": "La landing vuelve visible la cadena señal oficial → decisión local → actuación acreditada → evidencia posterior. El negro azulado y el navy vienen de la identidad entregada; el azul ilumina únicamente la ruta activa y el rojo se reserva para alerta. Toda pieza sintética se rotula como ilustrativa y la captura de consola real declara sus datos de demostración.",
     "keyCharacteristics": [
-      "Suelo navy #071322 con capas de profundidad (#0E2336 → #122B44 → #1A3E62); nunca negro puro ni gris.",
-      "Un solo acento eléctrico: cian #00BFFF con glow de señal; el resto de la paleta calla.",
+      "Suelo negro azulado #050B14 con capas de navy tomadas de la identidad TAKAB.",
+      "Un solo acento interactivo: Azul Señal #6AA8FF; el rojo queda reservado para alerta.",
       "Semáforo verde/ámbar/rojo exclusivamente semántico (estados, nunca decoración).",
       "Display condensado en mayúsculas a escala enorme + rótulos monospace de telemetría.",
       "Instrumentos vivos (sismograma, mapa, esquema) que degradan a escena estática completa.",

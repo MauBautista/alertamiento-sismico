@@ -1,0 +1,645 @@
+---
+// Representación editorial de las vistas implementadas en la app móvil.
+// No son capturas ficticias: texto y estados salen de CrisisView, CheckinView,
+// HeadcountView y ReentryBlockedView del producto actual.
+---
+
+<figure class="movil" data-instrumento>
+  <figcaption class="movil__aviso mono">
+    <span>Flujo editorial de la aplicación</span>
+    <span>Campos reales · datos ilustrativos</span>
+  </figcaption>
+  <p class="oculto" id="movil-desc">
+    Flujo móvil en cuatro momentos: el ocupante recibe una instrucción según su
+    zona, reporta si está a salvo o necesita ayuda, la brigada consolida el pase
+    de lista y el inmueble conserva el control de reingreso durante la
+    evaluación.
+  </p>
+
+  <div class="movil__rail mono" aria-hidden="true">
+    <span class="movil__fase">Alerta</span><i></i><span class="movil__fase"
+      >Reporte</span
+    ><i></i><span class="movil__fase">Coordinación</span><i></i><span
+      class="movil__fase">Recuperación</span
+    >
+  </div>
+
+  <div class="movil__telefonos" role="img" aria-labelledby="movil-desc">
+    <article class="telefono telefono--crisis" style="--d:0s">
+      <div class="telefono__marco">
+        <div class="telefono__sensor"></div>
+        <div class="pantalla crisis">
+          <p class="pantalla__top mono">Alerta sísmica · protéjase</p>
+          <div class="crisis__marca">
+            <i></i><span>Protéjase · instrucción de su zona</span>
+          </div>
+          <strong>Evacúe<br />ahora</strong>
+          <p class="crisis__ruta">Diríjase a la escalera norte</p>
+          <span class="crisis__time mono">Evento activo</span>
+        </div>
+      </div>
+      <footer class="telefono__pie">
+        <span class="mono">01 / Ocupante</span><strong
+          >Instrucción clara por zona</strong
+        >
+      </footer>
+    </article>
+
+    <article class="telefono telefono--checkin" style="--d:.18s">
+      <div class="telefono__marco">
+        <div class="telefono__sensor"></div>
+        <div class="pantalla checkin">
+          <p class="pantalla__top mono">Check-in de vida</p>
+          <strong>¿Cómo está?</strong>
+          <p>Su respuesta llega al pase de lista del inmueble.</p>
+          <div class="checkin__safe">
+            <i></i><b>Estoy a salvo</b><small>Reportar estado</small>
+          </div>
+          <div class="checkin__help">
+            <i></i><b>Necesito ayuda</b><small>Enviar zona asignada</small>
+          </div>
+          <span class="checkin__sync mono"
+            >Guardado · sincronización activa</span
+          >
+        </div>
+      </div>
+      <footer class="telefono__pie">
+        <span class="mono">02 / Ocupante</span><strong
+          >Un toque para responder</strong
+        >
+      </footer>
+    </article>
+
+    <article class="telefono telefono--headcount" style="--d:.36s">
+      <div class="telefono__marco">
+        <div class="telefono__sensor"></div>
+        <div class="pantalla headcount">
+          <div class="headcount__head">
+            <p class="pantalla__top mono">Pase de lista</p><span class="mono"
+              >Vista táctica</span
+            >
+          </div>
+          <div class="headcount__counts">
+            <div><b>✓</b><small>A salvo</small></div><div>
+              <b>!</b><small>Ayuda</small>
+            </div><div><b>…</b><small>Sin reporte</small></div>
+          </div>
+          <ul>
+            <li>
+              <i class="ok"></i><span>Ocupante A<small>Zona norte</small></span
+              ><b>A salvo</b>
+            </li>
+            <li>
+              <i class="help"></i><span
+                >Ocupante B<small>Zona central</small></span
+              ><b>Ayuda</b>
+            </li>
+            <li>
+              <i class="wait"></i><span
+                >Ocupante C<small>Zona exterior</small></span
+              ><b>Localizar</b>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="telefono__pie">
+        <span class="mono">03 / Brigada</span><strong
+          >Prioridades visibles para brigada</strong
+        >
+      </footer>
+    </article>
+
+    <article class="telefono telefono--reentry" style="--d:.54s">
+      <div class="telefono__marco">
+        <div class="telefono__sensor"></div>
+        <div class="pantalla reentry">
+          <div class="reentry__sign">
+            <strong>Reingreso<br />controlado</strong><small
+              >Evaluación estructural en curso</small
+            >
+          </div>
+          <p class="pantalla__top mono">Línea de recuperación</p>
+          <ol>
+            <li class="done">
+              <i></i><span
+                >Evento registrado<small>Hora y origen vinculados</small></span
+              >
+            </li>
+            <li class="done">
+              <i></i><span
+                >Check-in recibido<small>Pase de lista actualizado</small></span
+              >
+            </li>
+            <li class="current">
+              <i></i><span
+                >Inspección y evidencia<small
+                  >Fotografías + reporte de daños</small
+                ></span
+              >
+            </li>
+            <li>
+              <i></i><span
+                >Dictamen técnico<small>Decisión de reingreso</small></span
+              >
+            </li>
+          </ol>
+        </div>
+      </div>
+      <footer class="telefono__pie">
+        <span class="mono">04 / Operación</span><strong
+          >Reingreso documentado</strong
+        >
+      </footer>
+    </article>
+  </div>
+</figure>
+
+<style>
+  .movil {
+    margin: 0;
+  }
+  .movil__aviso {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-5);
+    margin-bottom: var(--e-5);
+    padding: 10px 12px;
+    border-block: 1px solid var(--linea);
+    color: var(--texto-3);
+  }
+  .movil__aviso span:first-child {
+    color: var(--cian);
+  }
+  .movil__rail {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: clamp(32px, 5vw, 64px);
+    color: var(--texto-3);
+  }
+  .movil__rail i {
+    height: 1px;
+    overflow: hidden;
+    background: linear-gradient(90deg, var(--cian), var(--linea-fuerte));
+    transform-origin: left;
+  }
+  .movil__fase:first-child {
+    color: var(--cian);
+  }
+  .movil__telefonos {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(24px, 4vw, 52px) clamp(14px, 3vw, 34px);
+    align-items: start;
+  }
+  .telefono {
+    min-width: 0;
+  }
+  .telefono__marco {
+    position: relative;
+    width: min(100%, 250px);
+    aspect-ratio: 10/19.2;
+    margin-inline: auto;
+    padding: 10px;
+    border: 1px solid rgba(202, 218, 239, 0.36);
+    border-radius: 31px;
+    background: #020711;
+    box-shadow:
+      0 22px 60px rgba(0, 0, 0, 0.38),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+  .telefono__sensor {
+    position: absolute;
+    top: 15px;
+    left: 50%;
+    z-index: 3;
+    width: 42%;
+    height: 18px;
+    border-radius: 999px;
+    background: #020711;
+    transform: translateX(-50%);
+  }
+  .pantalla {
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--linea);
+    border-radius: 22px;
+    padding: 36px 15px 16px;
+    background: var(--fondo-1);
+    color: var(--texto-1);
+  }
+  .pantalla__top {
+    color: var(--texto-3);
+    font-size: 0.58rem;
+  }
+  .telefono__pie {
+    display: grid;
+    gap: 5px;
+    width: min(100%, 250px);
+    margin: 18px auto 0;
+  }
+  .telefono__pie span {
+    color: var(--cian);
+  }
+  .telefono__pie strong {
+    font-family: var(--fuente-display);
+    font-size: 1.15rem;
+    text-transform: uppercase;
+  }
+  .crisis {
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(
+        circle at 50% 30%,
+        rgba(255, 45, 26, 0.3),
+        transparent 48%
+      ),
+      var(--crisis);
+    border-color: rgba(255, 45, 26, 0.45);
+    text-align: center;
+  }
+  .crisis .pantalla__top {
+    color: #f2b7b1;
+  }
+  .crisis__marca {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin-top: 32px;
+    color: #f2b7b1;
+    font-size: 0.68rem;
+  }
+  .crisis__marca i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--rojo);
+    box-shadow: var(--glow-rojo);
+  }
+  .crisis > strong {
+    margin-top: 24px;
+    color: #fff;
+    font-family: var(--fuente-display);
+    font-size: clamp(2.4rem, 6vw, 3.7rem);
+    letter-spacing: -0.03em;
+    line-height: 0.8;
+    text-transform: uppercase;
+    text-shadow: 0 0 34px rgba(255, 45, 26, 0.4);
+  }
+  .crisis__ruta {
+    margin: auto 0 20px;
+    padding: 12px;
+    border-block: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 0.78rem;
+  }
+  .crisis__time {
+    color: #f2b7b1;
+  }
+  .checkin {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .checkin > strong {
+    margin-top: 18px;
+    font-family: var(--fuente-display);
+    font-size: 2rem;
+    text-transform: uppercase;
+  }
+  .checkin > p {
+    color: var(--texto-3);
+    font-size: 0.72rem;
+    line-height: 1.4;
+  }
+  .checkin__safe,
+  .checkin__help {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    align-items: center;
+    gap: 1px 9px;
+    padding: 13px;
+    border-radius: 10px;
+  }
+  .checkin__safe {
+    margin-top: 6px;
+    background: var(--verde);
+    color: var(--fondo-0);
+  }
+  .checkin__help {
+    background: #9f1d13;
+    color: #fff;
+  }
+  .checkin__safe i,
+  .checkin__help i {
+    grid-row: 1/3;
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+  }
+  .checkin b {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+  }
+  .checkin small {
+    font-size: 0.58rem;
+    opacity: 0.75;
+  }
+  .checkin__help small {
+    opacity: 1;
+  }
+  .checkin__sync {
+    margin-top: auto;
+    color: var(--texto-3);
+    font-size: 0.5rem;
+    text-align: center;
+  }
+  .headcount__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .headcount__head > span {
+    padding: 3px 6px;
+    border: 1px solid var(--verde);
+    border-radius: 999px;
+    color: var(--verde);
+    font-size: 0.5rem;
+  }
+  .headcount__counts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-top: 20px;
+  }
+  .headcount__counts div {
+    padding: 9px 2px;
+    border: 1px solid var(--linea);
+    background: rgba(255, 255, 255, 0.025);
+    text-align: center;
+  }
+  .headcount__counts b {
+    display: block;
+    font-size: 1.1rem;
+  }
+  .headcount__counts div:nth-child(1) b {
+    color: var(--verde);
+  }
+  .headcount__counts div:nth-child(2) b {
+    color: #ff8a80;
+  }
+  .headcount__counts div:nth-child(3) b {
+    color: var(--ambar);
+  }
+  .headcount__counts small {
+    display: block;
+    color: var(--texto-3);
+    font-size: 0.45rem;
+    text-transform: uppercase;
+  }
+  .headcount ul {
+    display: grid;
+    gap: 6px;
+    margin-top: 16px;
+    padding: 0;
+    list-style: none;
+  }
+  .headcount li {
+    display: grid;
+    grid-template-columns: 7px 1fr auto;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 7px;
+    border-bottom: 1px solid var(--linea);
+    font-size: 0.58rem;
+  }
+  .headcount li i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--verde);
+  }
+  .headcount li i.help {
+    background: var(--rojo);
+  }
+  .headcount li i.wait {
+    background: var(--ambar);
+  }
+  .headcount li span small {
+    display: block;
+    color: var(--texto-3);
+  }
+  .headcount li > b {
+    font-size: 0.5rem;
+    text-transform: uppercase;
+  }
+  .headcount li:nth-child(2) > b {
+    color: var(--rojo-texto);
+  }
+  .headcount li:nth-child(3) > b {
+    color: var(--ambar);
+  }
+  .reentry {
+    padding-inline: 12px;
+  }
+  .reentry__sign {
+    margin: -36px -12px 20px;
+    padding: 48px 14px 14px;
+    background: #9f1d13;
+  }
+  .reentry__sign strong {
+    color: #fff;
+    font-family: var(--fuente-display);
+    font-size: 1.6rem;
+    line-height: 0.85;
+    text-transform: uppercase;
+  }
+  .reentry__sign small {
+    display: block;
+    margin-top: 7px;
+    color: #fff;
+    font-size: 0.55rem;
+    opacity: 1;
+  }
+  .reentry ol {
+    display: grid;
+    gap: 0;
+    margin-top: 16px;
+    padding: 0;
+    list-style: none;
+  }
+  .reentry li {
+    position: relative;
+    display: grid;
+    grid-template-columns: 12px 1fr;
+    gap: 8px;
+    padding: 0 0 18px;
+    font-size: 0.62rem;
+  }
+  .reentry li::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 0;
+    left: 4px;
+    width: 1px;
+    background: var(--linea-fuerte);
+  }
+  .reentry li:last-child::before {
+    display: none;
+  }
+  .reentry li i {
+    position: relative;
+    z-index: 2;
+    width: 9px;
+    height: 9px;
+    border: 2px solid var(--texto-3);
+    border-radius: 50%;
+    background: var(--fondo-1);
+  }
+  .reentry li.done i {
+    border-color: var(--verde);
+    background: var(--verde);
+  }
+  .reentry li.current i {
+    border-color: var(--ambar);
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.6);
+  }
+  .reentry li span small {
+    display: block;
+    margin-top: 2px;
+    color: var(--texto-3);
+    font-size: 0.5rem;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .movil__rail i {
+      animation: m-rail 7s var(--ease-out) infinite;
+    }
+    .telefono {
+      animation: m-phone 7s var(--ease-out) infinite;
+      animation-delay: var(--d);
+    }
+    .crisis__marca i {
+      animation: m-alert 1.2s var(--ease-in-out) infinite;
+    }
+    .checkin__safe {
+      animation: m-check 7s var(--ease-out) infinite 1.9s;
+    }
+    .headcount li:nth-child(2) {
+      animation: m-help 7s var(--ease-out) infinite 3.1s;
+    }
+    .reentry li.current i {
+      animation: m-current 1.6s var(--ease-in-out) infinite;
+    }
+    .movil.pausado * {
+      animation-play-state: paused !important;
+    }
+  }
+  @keyframes m-rail {
+    0% {
+      transform: scaleX(0);
+      opacity: 0.2;
+    }
+    28%,
+    82% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.2;
+    }
+  }
+  @keyframes m-phone {
+    0%,
+    8% {
+      transform: translateY(8px);
+      opacity: 0.72;
+    }
+    16%,
+    76% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.72;
+    }
+  }
+  @keyframes m-alert {
+    50% {
+      transform: scale(1.45);
+      box-shadow: 0 0 22px rgba(255, 45, 26, 0.8);
+    }
+  }
+  @keyframes m-check {
+    0%,
+    18% {
+      transform: scale(1);
+    }
+    24% {
+      transform: scale(1.025);
+      box-shadow: 0 0 22px rgba(0, 230, 118, 0.22);
+    }
+    30%,
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes m-help {
+    0%,
+    24% {
+      background: transparent;
+    }
+    30%,
+    36% {
+      background: rgba(255, 45, 26, 0.1);
+    }
+    42%,
+    100% {
+      background: transparent;
+    }
+  }
+  @keyframes m-current {
+    50% {
+      transform: scale(1.3);
+      box-shadow: 0 0 16px rgba(255, 193, 7, 0.75);
+    }
+  }
+  @media (min-width: 760px) {
+    .movil__telefonos {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .movil__rail {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .movil__rail i {
+      display: none;
+    }
+    .movil__fase {
+      padding-block: 5px;
+      border-bottom: 1px solid var(--linea);
+    }
+    .telefono__marco {
+      width: min(100%, 220px);
+    }
+    .telefono__pie {
+      width: min(100%, 220px);
+    }
+  }
+  @media (max-width: 430px) {
+    .movil__telefonos {
+      grid-template-columns: 1fr;
+    }
+    .telefono__marco,
+    .telefono__pie {
+      width: min(86%, 260px);
+    }
+  }
+</style>

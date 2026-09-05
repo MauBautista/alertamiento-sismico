@@ -1,0 +1,740 @@
+---
+// Representación editorial de campos reales del flujo post-evento. No muestra
+// resultados de un incidente ni cifras medidas. La forma sigue dictamen/model.py,
+// dictamen/espectrograma.py y cctv.py: señal, evidencia, evacuación y narrativa.
+const celdas = Array.from({ length: 60 }, (_, i) => {
+  const columna = i % 12;
+  const fila = Math.floor(i / 12);
+  const pulso = Math.max(0, 1 - Math.abs(columna - 5.5) / 5.5);
+  const banda = Math.max(0, 1 - Math.abs(fila - 2) / 2.5);
+  const nivel = Math.min(0.92, 0.1 + pulso * banda * 0.82);
+  return { nivel: nivel.toFixed(2), caliente: nivel > 0.58 };
+});
+---
+
+<figure
+  class="post"
+  data-instrumento
+  aria-label="Vista ilustrativa del análisis posterior a un sismo: sismograma, espectrograma, evidencia, conteo de personas, tiempos de evacuación y síntesis asistida por inteligencia artificial"
+>
+  <header class="post__barra mono">
+    <span><i></i> Incidente · análisis post-evento</span>
+    <span class="humo">Campos reales · datos ilustrativos</span>
+  </header>
+
+  <div class="post__lienzo">
+    <section class="post__senal" aria-labelledby="senal-titulo">
+      <div class="post__rotulo">
+        <div>
+          <p class="mono">01 / Señal registrada</p>
+          <h3 id="senal-titulo">Del movimiento a la evidencia técnica</h3>
+        </div>
+        <span class="post__estado mono">Traza preservada</span>
+      </div>
+
+      <div
+        class="sismograma"
+        aria-label="Sismograma ilustrativo de tres canales"
+      >
+        <div class="sismograma__eje mono" aria-hidden="true">
+          <span>Canal X</span><span>Canal Y</span><span>Canal Z</span>
+        </div>
+        <div class="sismograma__grafica">
+          <svg
+            viewBox="0 0 720 210"
+            role="img"
+            aria-label="Tres trazas sísmicas ilustrativas"
+          >
+            <g class="sismograma__rejilla">
+              <path d="M0 35H720M0 105H720M0 175H720"></path>
+              <path
+                d="M72 0V210M144 0V210M216 0V210M288 0V210M360 0V210M432 0V210M504 0V210M576 0V210M648 0V210"
+              ></path>
+            </g>
+            <path
+              class="sismograma__traza sismograma__traza--1"
+              d="M0 35h72l10-2 8 4 10-7 9 10 8-20 7 30 8-39 7 45 7-32 8 23 9-17 9 11 12-8 14 5 18-3 28 2h397"
+            ></path>
+            <path
+              class="sismograma__traza sismograma__traza--2"
+              d="M0 105h89l9-3 7 7 8-16 7 27 8-36 8 50 8-42 9 31 9-22 10 16 11-10 13 7 17-4 24 2h392"
+            ></path>
+            <path
+              class="sismograma__traza sismograma__traza--3"
+              d="M0 175h62l12-2 9 5 8-12 8 20 7-29 8 41 8-53 8 64 8-48 8 35 9-26 10 18 11-12 14 8 18-5 28 3h391"
+            ></path>
+          </svg>
+          <i class="sismograma__barrido" aria-hidden="true"></i>
+        </div>
+      </div>
+
+      <div class="espectro-grid">
+        <div
+          class="espectrograma"
+          aria-label="Espectrograma ilustrativo: tiempo por frecuencia"
+        >
+          <div class="espectrograma__cabecera mono">
+            <span>Espectrograma</span><span>Frecuencia × tiempo</span>
+          </div>
+          <div class="espectrograma__mapa" aria-hidden="true">
+            {
+              celdas.map((c) => (
+                <i
+                  class:list={{ caliente: c.caliente }}
+                  style={`--nivel:${c.nivel};`}
+                />
+              ))
+            }
+            <span class="espectrograma__scanner"></span>
+          </div>
+        </div>
+        <dl class="senal-metricas">
+          <div><dt class="mono">PGA / PGV</dt><dd>Picos de movimiento</dd></div>
+          <div><dt class="mono">FFT</dt><dd>Espectro de frecuencias</dd></div>
+          <div><dt class="mono">Duración</dt><dd>Ventana analizada</dd></div>
+        </dl>
+      </div>
+
+      <section class="reporte" aria-labelledby="reporte-titulo">
+        <div class="reporte__copy">
+          <p class="mono">Salida documental</p>
+          <h3 id="reporte-titulo">Reporte técnico consolidado</h3>
+          <p>
+            El expediente integra señal, espectrograma, evidencia de campo,
+            analítica de evacuación, limitaciones y revisión profesional.
+          </p>
+          <ul class="reporte__indice mono">
+            <li>Señal y espectro</li>
+            <li>Fotos y daños</li>
+            <li>Personas y evacuación</li>
+            <li>Conclusiones y firma</li>
+          </ul>
+        </div>
+        <div class="reporte__hoja" aria-hidden="true">
+          <div class="reporte__marca"><i></i><span>TAKAB AILERT</span></div>
+          <span class="reporte__folio mono">DICTAMEN · PDF</span>
+          <i></i><i></i><i></i>
+          <div class="reporte__mini-onda"></div>
+          <i></i><i></i>
+          <span class="reporte__firma mono">VERSIÓN · TRAZABILIDAD · FIRMA</span
+          >
+        </div>
+      </section>
+    </section>
+
+    <aside class="post__operacion" aria-label="Evidencia y analítica operativa">
+      <section class="modulo modulo--personas">
+        <div class="modulo__cabecera">
+          <span class="mono">02 / Personas</span><i class="estado-ok"></i>
+        </div>
+        <h3>Conteo y conciliación</h3>
+        <dl class="personas__datos">
+          <div><dt>Conteo observado</dt><dd>Por cámara</dd></div>
+          <div><dt>Check-ins</dt><dd>A salvo / ayuda</dd></div>
+          <div><dt>Discrepancias</dt><dd>Para verificar</dd></div>
+        </dl>
+      </section>
+
+      <section class="modulo modulo--evacuacion">
+        <span class="mono">03 / Evacuación</span>
+        <h3>Analítica de tiempos</h3>
+        <div
+          class="evacuacion__linea"
+          aria-label="Métricas T50, T90 y reingreso"
+        >
+          <div style="--avance:48%">
+            <span>T50</span><i></i><small>Mitad fuera</small>
+          </div>
+          <div style="--avance:78%">
+            <span>T90</span><i></i><small>Mayor parte fuera</small>
+          </div>
+          <div style="--avance:92%">
+            <span>Δ</span><i></i><small>Reingreso observado</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="modulo modulo--evidencia">
+        <span class="mono">04 / Evidencia de campo</span>
+        <h3>Fotos y reportes vinculados</h3>
+        <div class="evidencia__fotos" aria-hidden="true">
+          <div><i></i><span>Fachada</span></div>
+          <div><i></i><span>Ruta</span></div>
+          <div><i></i><span>Punto de reunión</span></div>
+        </div>
+        <p><i class="estado-ok"></i> Evidencia asociada al incidente</p>
+      </section>
+
+      <section class="modulo modulo--ia">
+        <div class="modulo__cabecera">
+          <span class="mono">05 / Síntesis asistida por IA</span><b class="mono"
+            >IA</b
+          >
+        </div>
+        <h3>Hechos explicados, trazabilidad intacta</h3>
+        <p>
+          La capa narrativa organiza los hechos verificados, explica hallazgos y
+          prepara un resumen para revisión profesional.
+        </p>
+        <div class="ia__ruta mono" aria-hidden="true">
+          <span>Datos</span><i></i><span>Reglas</span><i></i><span>Resumen</span
+          >
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <figcaption class="post__pie mono">
+    <span>Sismograma</span><span>Espectrograma</span><span>Personas</span><span
+      >Evacuación</span
+    ><span>Dictamen PDF</span>
+  </figcaption>
+</figure>
+
+<style>
+  .post {
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid var(--linea-fuerte);
+    border-radius: var(--radio-lg);
+    background: #071326;
+    box-shadow: var(--glow-cian-suave);
+  }
+  .post__barra,
+  .post__pie {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-5);
+    padding: var(--e-3) var(--e-5);
+    background: rgba(5, 11, 20, 0.86);
+  }
+  .post__barra {
+    border-bottom: 1px solid var(--linea);
+  }
+  .post__barra span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--e-2);
+    color: var(--texto-1);
+  }
+  .post__barra i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 12px rgba(0, 230, 118, 0.6);
+  }
+  .post__pie {
+    justify-content: flex-start;
+    border-top: 1px solid var(--linea);
+    color: var(--texto-3);
+  }
+  .post__pie span + span::before {
+    content: "/";
+    margin-inline: var(--e-3);
+    color: var(--cian);
+  }
+  .post__lienzo {
+    display: grid;
+  }
+  .post__senal {
+    min-width: 0;
+    padding: clamp(22px, 4vw, 48px);
+  }
+  .post__operacion {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-content: start;
+    border-top: 1px solid var(--linea);
+  }
+  .post__rotulo,
+  .modulo__cabecera {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--e-4);
+  }
+  .post__rotulo .mono,
+  .modulo > .mono,
+  .modulo__cabecera > .mono {
+    color: var(--cian);
+  }
+  .post h3 {
+    margin-top: var(--e-2);
+    font-family: var(--fuente-display);
+    font-size: clamp(1.35rem, 1.1rem + 1vw, 2rem);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .post__estado {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    border: 1px solid rgba(0, 230, 118, 0.32);
+    color: var(--verde);
+  }
+
+  .sismograma {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--e-3);
+    margin-top: var(--e-6);
+  }
+  .sismograma__eje {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    color: var(--texto-3);
+    font-size: 0.58rem;
+  }
+  .sismograma__grafica {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--linea);
+    background: rgba(5, 11, 20, 0.7);
+  }
+  .sismograma svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .sismograma__rejilla path {
+    fill: none;
+    stroke: rgba(202, 218, 239, 0.08);
+    stroke-width: 1;
+  }
+  .sismograma__traza {
+    fill: none;
+    stroke: var(--cian);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .sismograma__traza--2 {
+    stroke: var(--texto-2);
+    opacity: 0.7;
+  }
+  .sismograma__traza--3 {
+    stroke: var(--ambar);
+    opacity: 0.78;
+  }
+  .sismograma__barrido {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 12%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(106, 168, 255, 0.18),
+      transparent
+    );
+    opacity: 0.8;
+    transform: translateX(735%);
+  }
+
+  .espectro-grid {
+    display: grid;
+    gap: var(--e-4);
+    margin-top: var(--e-5);
+  }
+  .espectrograma {
+    min-width: 0;
+    border: 1px solid var(--linea);
+    background: rgba(5, 11, 20, 0.68);
+  }
+  .espectrograma__cabecera {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--e-3);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--linea);
+    color: var(--texto-3);
+    font-size: 0.58rem;
+  }
+  .espectrograma__mapa {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 2px;
+    min-height: 130px;
+    padding: 7px;
+    overflow: hidden;
+  }
+  .espectrograma__mapa i {
+    background: rgba(106, 168, 255, var(--nivel));
+  }
+  .espectrograma__mapa i.caliente {
+    background: rgba(255, 122, 61, var(--nivel));
+  }
+  .espectrograma__scanner {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 10%;
+    border-right: 1px solid var(--blanco);
+    background: rgba(255, 255, 255, 0.035);
+    opacity: 0.7;
+    transform: translateX(900%);
+  }
+  .senal-metricas {
+    display: grid;
+    gap: 1px;
+    margin: 0;
+    background: var(--linea);
+  }
+  .senal-metricas div {
+    padding: 12px 14px;
+    background: var(--fondo-1);
+  }
+  .senal-metricas dt {
+    color: var(--cian);
+  }
+  .senal-metricas dd {
+    margin-top: 5px;
+    color: var(--texto-2);
+    font-size: 0.82rem;
+  }
+
+  .reporte {
+    display: grid;
+    gap: var(--e-5);
+    align-items: center;
+    margin-top: var(--e-6);
+    padding: clamp(20px, 3vw, 32px);
+    border: 1px solid var(--linea);
+    background:
+      linear-gradient(135deg, rgba(106, 168, 255, 0.08), transparent 58%),
+      rgba(5, 11, 20, 0.62);
+  }
+  .reporte__copy > .mono {
+    color: var(--cian);
+  }
+  .reporte__copy > p:not(.mono) {
+    max-width: 48ch;
+    margin-top: var(--e-3);
+    color: var(--texto-2);
+    font-size: 0.86rem;
+  }
+  .reporte__indice {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 14px;
+    margin-top: var(--e-5);
+    padding: 0;
+    color: var(--texto-3);
+    font-size: 0.58rem;
+    list-style: none;
+  }
+  .reporte__indice li::before {
+    content: "+";
+    margin-right: 6px;
+    color: var(--cian);
+  }
+  .reporte__hoja {
+    position: relative;
+    min-height: 250px;
+    padding: 20px;
+    border: 1px solid rgba(106, 168, 255, 0.36);
+    background: #e9eef5;
+    box-shadow: 12px 12px 0 rgba(18, 58, 122, 0.35);
+  }
+  .reporte__marca {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #102846;
+    font-family: var(--fuente-display);
+    font-size: 0.9rem;
+  }
+  .reporte__marca i {
+    width: 18px;
+    height: 18px;
+    border: 4px solid #123a7a;
+    transform: rotate(45deg);
+  }
+  .reporte__folio,
+  .reporte__firma {
+    display: block;
+    color: #42526a;
+    font-size: 0.5rem;
+  }
+  .reporte__folio {
+    margin-top: 7px;
+  }
+  .reporte__hoja > i {
+    display: block;
+    width: 100%;
+    height: 4px;
+    margin-top: 11px;
+    background: #b8c3d1;
+  }
+  .reporte__hoja > i:nth-of-type(2) {
+    width: 74%;
+  }
+  .reporte__hoja > i:nth-of-type(3) {
+    width: 88%;
+  }
+  .reporte__mini-onda {
+    height: 52px;
+    margin-block: 17px 7px;
+    border-block: 1px solid #c5cfdb;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 260 52' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 26h68l8-3 7 7 8-15 7 25 8-33 8 41 8-31 9 22 9-15 10 10 12-7 14 4 20-3h44' fill='none' stroke='%23123a7a' stroke-width='2'/%3E%3C/svg%3E")
+      center / cover no-repeat;
+  }
+  .reporte__firma {
+    position: absolute;
+    right: 20px;
+    bottom: 16px;
+    left: 20px;
+    padding-top: 7px;
+    border-top: 1px solid #aab6c5;
+  }
+
+  .modulo {
+    padding: clamp(20px, 3vw, 32px);
+    border-bottom: 1px solid var(--linea);
+    background: rgba(11, 29, 58, 0.5);
+  }
+  .modulo:nth-child(even) {
+    background: rgba(16, 40, 70, 0.54);
+  }
+  .estado-ok {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 12px rgba(0, 230, 118, 0.6);
+  }
+  .personas__datos {
+    display: grid;
+    gap: 9px;
+    margin-top: var(--e-5);
+  }
+  .personas__datos div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--e-3);
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--linea);
+  }
+  .personas__datos dt {
+    color: var(--texto-2);
+    font-size: 0.82rem;
+  }
+  .personas__datos dd {
+    color: var(--texto-1);
+    font-family: var(--fuente-mono);
+    font-size: 0.66rem;
+    text-align: right;
+    text-transform: uppercase;
+  }
+  .evacuacion__linea {
+    display: grid;
+    gap: 11px;
+    margin-top: var(--e-5);
+  }
+  .evacuacion__linea div {
+    display: grid;
+    grid-template-columns: 34px 1fr minmax(92px, auto);
+    gap: 9px;
+    align-items: center;
+  }
+  .evacuacion__linea span {
+    color: var(--cian);
+    font-family: var(--fuente-mono);
+    font-size: 0.68rem;
+  }
+  .evacuacion__linea i {
+    position: relative;
+    height: 3px;
+    background: var(--linea-fuerte);
+  }
+  .evacuacion__linea i::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--avance);
+    background: var(--cian);
+    box-shadow: var(--glow-cian);
+  }
+  .evacuacion__linea small {
+    color: var(--texto-3);
+    font-size: 0.7rem;
+  }
+  .evidencia__fotos {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: var(--e-5);
+  }
+  .evidencia__fotos div {
+    position: relative;
+    min-height: 76px;
+    overflow: hidden;
+    border: 1px solid var(--linea);
+    background: linear-gradient(
+      145deg,
+      rgba(106, 168, 255, 0.2),
+      rgba(5, 11, 20, 0.9)
+    );
+  }
+  .evidencia__fotos i {
+    position: absolute;
+    right: -10px;
+    bottom: -22px;
+    width: 78px;
+    height: 62px;
+    border: 1px solid rgba(106, 168, 255, 0.35);
+    transform: rotate(35deg);
+  }
+  .evidencia__fotos span {
+    position: absolute;
+    inset: auto 6px 5px;
+    color: var(--texto-2);
+    font-family: var(--fuente-mono);
+    font-size: 0.52rem;
+    text-transform: uppercase;
+  }
+  .modulo--evidencia > p {
+    display: flex;
+    align-items: center;
+    gap: var(--e-2);
+    margin-top: var(--e-3);
+    color: var(--texto-3);
+    font-size: 0.74rem;
+  }
+  .modulo--ia {
+    border-left: 2px solid var(--cian);
+  }
+  .modulo--ia b {
+    padding: 4px 7px;
+    border: 1px solid var(--cian);
+    color: var(--cian);
+  }
+  .modulo--ia > p {
+    margin-top: var(--e-3);
+    color: var(--texto-2);
+    font-size: 0.86rem;
+  }
+  .ia__ruta {
+    display: flex;
+    align-items: center;
+    gap: var(--e-2);
+    margin-top: var(--e-5);
+    color: var(--texto-3);
+    font-size: 0.56rem;
+  }
+  .ia__ruta i {
+    flex: 1;
+    height: 1px;
+    background: var(--cian);
+    transform-origin: left;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .sismograma__barrido {
+      animation: post-barrido 5.6s var(--ease-in-out) infinite;
+    }
+    .espectrograma__scanner {
+      animation: post-espectro 5.6s var(--ease-in-out) infinite;
+    }
+    .ia__ruta i {
+      animation: post-flujo 3.6s var(--ease-out) infinite;
+    }
+    .post.pausado * {
+      animation-play-state: paused !important;
+    }
+  }
+  @keyframes post-barrido {
+    0%,
+    10% {
+      opacity: 0;
+      transform: translateX(-100%);
+    }
+    18% {
+      opacity: 0.8;
+    }
+    78% {
+      opacity: 0.58;
+      transform: translateX(735%);
+    }
+    86%,
+    100% {
+      opacity: 0;
+      transform: translateX(735%);
+    }
+  }
+  @keyframes post-espectro {
+    0%,
+    18% {
+      opacity: 0;
+      transform: translateX(-100%);
+    }
+    25% {
+      opacity: 0.7;
+    }
+    82% {
+      opacity: 0.55;
+      transform: translateX(900%);
+    }
+    90%,
+    100% {
+      opacity: 0;
+      transform: translateX(900%);
+    }
+  }
+  @keyframes post-flujo {
+    0%,
+    12% {
+      opacity: 0.2;
+      transform: scaleX(0);
+    }
+    36%,
+    72% {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+    100% {
+      opacity: 0.2;
+      transform: scaleX(1);
+    }
+  }
+
+  @media (min-width: 680px) {
+    .espectro-grid {
+      grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.5fr);
+    }
+    .post__operacion {
+      grid-template-columns: 1fr 1fr;
+    }
+    .reporte {
+      grid-template-columns: minmax(0, 1fr) 220px;
+    }
+  }
+  @media (min-width: 1080px) {
+    .post__lienzo {
+      grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.55fr);
+    }
+    .post__operacion {
+      grid-template-columns: 1fr;
+      border-top: 0;
+      border-left: 1px solid var(--linea);
+    }
+  }
+  @media (max-width: 520px) {
+    .post__estado {
+      display: none;
+    }
+    .post__pie span + span::before {
+      margin-inline: var(--e-2);
+    }
+    .sismograma {
+      grid-template-columns: 1fr;
+    }
+    .sismograma__eje {
+      display: none;
+    }
+  }
+</style>

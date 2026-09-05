@@ -1,427 +1,135 @@
 ---
-// «El edificio se protege solo» — esquema de cableado del camino de activación.
-// SVG inline + CSS puro (solo transform/opacity; el «dibujado» de líneas es
-// scaleX/scaleY sobre rects, sin stroke-dashoffset). Dos layouts: vertical
-// (<1280) y horizontal (≥1280), mismas clases y misma coreografía.
-// Con prefers-reduced-motion: el esquema se muestra completo y estático, y el
-// botón de simulacro conmuta estados sin transición (src/scripts/landing.ts).
-// fuente del contenido: ENTREGA-Y-ACEPTACION §2.1-§2.4, §3.2 · blueprint §4.2, §4.5
+// Diagrama operativo del inmueble. La simulación visual recorre recepción,
+// gabinete principal, distribución a gabinetes de apoyo y actuación por zona.
+// Los sistemas opcionales se describen como canales definidos en cada puesta
+// en marcha: la pieza no presupone equipamiento físico no acreditado.
 ---
 
 <figure class="esquema" data-esquema>
   <p class="oculto" id="esquema-desc">
-    Diagrama del sistema: la alerta oficial de SASMEX llega por el receptor WR-1
-    al gabinete TAKAB instalado en el edificio, que actúa en local — sin
-    internet, sin nube y sin inteligencia artificial — sobre los canales que
-    estén conectados y acreditados en ese edificio, de los cinco que gobierna:
-    sirena, estrobo, válvula de gas, ascensores y puertas. La instrumentación
-    propia del edificio produce únicamente un aviso. La nube y la red de quórum
-    de tres o más inmuebles coordinan por una vía aparte, con comando firmado, y
-    nunca están en la ruta crítica.
+    La señal del SASMEX llega al gabinete principal. Desde ahí, la instalación
+    distribuye la alerta hacia gabinetes secundarios que amplían la cobertura
+    del inmueble, activan sirenas y estrobos por zona y gobiernan los sistemas
+    conectados que fueron definidos durante la puesta en marcha.
   </p>
 
-  <!-- ═══════════ Layout VERTICAL (móvil / tablet) ═══════════ -->
-  <svg
-    class="esquema__v"
-    viewBox="0 0 360 640"
-    role="img"
-    aria-labelledby="esquema-desc"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <rect class="q-marco" x="1" y="1" width="358" height="638"></rect>
+  <div class="esquema__cabecera mono">
+    <span><i></i> Escenario de prueba</span>
+    <span class="humo">Ruta física del alertamiento</span>
+  </div>
 
-    <!-- entradas -->
-    <g class="q-nodo" style="--d:.15s">
-      <rect class="q-caja q-caja--vital" x="16" y="16" width="160" height="64"
-      ></rect>
-      <text class="q-t1" x="96" y="42" text-anchor="middle">SASMEX · WR-1</text>
-      <text class="q-t2" x="96" y="60" text-anchor="middle">ALERTA OFICIAL</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.21s">
-      <rect class="q-caja" x="184" y="16" width="160" height="64"></rect>
-      <text class="q-t1" x="264" y="42" text-anchor="middle">SENSOR PROPIO</text
-      >
-      <text class="q-t2" x="264" y="60" text-anchor="middle"
-        >EN EL EDIFICIO</text
-      >
-    </g>
+  <div class="esquema__lienzo" role="img" aria-labelledby="esquema-desc">
+    <div class="esquema__flujo">
+      <article class="nodo nodo--fuente">
+        <span class="nodo__indice mono">01 / Entrada</span>
+        <div class="senal-icon" aria-hidden="true"><i></i><i></i><b></b></div>
+        <h3>Señal del SASMEX</h3>
+        <p>Recepción dedicada en el inmueble</p>
+      </article>
 
-    <!-- hilos de entrada -->
-    <rect
-      class="q-hilo q-hilo--v"
-      style="--d:.5s"
-      x="94"
-      y="80"
-      width="4"
-      height="60"></rect>
-    <rect
-      class="q-hilo q-hilo--v q-hilo--fino"
-      style="--d:.56s"
-      x="263"
-      y="80"
-      width="2"
-      height="60"></rect>
-    <text class="q-t3" x="272" y="114" text-anchor="start">SOLO AVISO</text>
+      <div class="conector" aria-hidden="true"><i></i></div>
 
-    <!-- cerebro -->
-    <g class="q-nodo q-late" style="--d:.27s">
-      <rect
-        class="q-caja q-caja--cerebro"
-        x="16"
-        y="140"
-        width="328"
-        height="88"></rect>
-      <text class="q-t0" x="180" y="178" text-anchor="middle"
-        >GABINETE TAKAB</text
-      >
-      <text class="q-t2" x="180" y="198" text-anchor="middle">
-        ACTÚA EN LOCAL · SIN INTERNET · SIN NUBE · SIN IA
-      </text>
-    </g>
+      <article class="nodo nodo--principal">
+        <span class="nodo__indice mono">02 / Decisión</span>
+        <div class="gabinete-icon" aria-hidden="true">
+          <i></i><i></i><i></i><b></b>
+        </div>
+        <h3>Gabinete principal</h3>
+        <p>Ejecuta la lógica local y abre la distribución del inmueble</p>
+        <span class="estado estado--idle mono">Preparado</span>
+        <span class="estado estado--active mono">Señal validada</span>
+      </article>
 
-    <!-- hilos a actuadores -->
-    <rect
-      class="q-hilo q-hilo--v"
-      style="--d:.62s"
-      x="52"
-      y="228"
-      width="4"
-      height="60"></rect>
-    <rect
-      class="q-hilo q-hilo--v"
-      style="--d:.68s"
-      x="136"
-      y="228"
-      width="4"
-      height="60"></rect>
-    <rect
-      class="q-hilo q-hilo--v"
-      style="--d:.74s"
-      x="220"
-      y="228"
-      width="4"
-      height="60"></rect>
-    <rect
-      class="q-hilo q-hilo--v"
-      style="--d:.8s"
-      x="304"
-      y="228"
-      width="4"
-      height="60"></rect>
+      <div class="conector" aria-hidden="true"><i></i></div>
 
-    <!-- actuadores -->
-    <g class="q-nodo" style="--d:.33s">
-      <rect class="q-caja" x="16" y="288" width="76" height="84"></rect>
-      <text class="q-t4" x="54" y="320" text-anchor="middle">SIRENA</text>
-      <text class="q-est q-est-off" x="54" y="354" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="54" y="354" text-anchor="middle"
-        >ACTIVADO</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.39s">
-      <rect class="q-caja" x="100" y="288" width="76" height="84"></rect>
-      <text class="q-t4" x="138" y="313" text-anchor="middle">VÁLVULA</text>
-      <text class="q-t4" x="138" y="327" text-anchor="middle">DE GAS</text>
-      <text class="q-est q-est-off" x="138" y="354" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="138" y="354" text-anchor="middle"
-        >CERRADA</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.45s">
-      <rect class="q-caja" x="184" y="288" width="76" height="84"></rect>
-      <text class="q-t4" x="222" y="320" text-anchor="middle">ASCENSORES</text>
-      <text class="q-est q-est-off" x="222" y="354" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="222" y="354" text-anchor="middle"
-        >A PLANTA</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.51s">
-      <rect class="q-caja" x="268" y="288" width="76" height="84"></rect>
-      <text class="q-t4" x="306" y="320" text-anchor="middle">PUERTAS</text>
-      <text class="q-est q-est-off" x="306" y="354" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="306" y="354" text-anchor="middle"
-        >LIBERADAS</text
-      >
-    </g>
+      <article class="nodo nodo--distribucion">
+        <span class="nodo__indice mono">03 / Cobertura</span>
+        <div class="bus-icon" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h3>Distribución por zonas</h3>
+        <p>La señal se extiende hacia más áreas del inmueble</p>
+        <span class="estado estado--idle mono">En espera</span>
+        <span class="estado estado--active mono">Bus activo</span>
+      </article>
+    </div>
 
-    <!-- pulsos (la señal) -->
-    <rect
-      class="q-pulso q-pulso--v"
-      style="--d:1.2s"
-      x="92"
-      y="76"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--v"
-      style="--d:1.9s"
-      x="48"
-      y="224"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--v"
-      style="--d:1.9s"
-      x="132"
-      y="224"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--v"
-      style="--d:1.9s"
-      x="216"
-      y="224"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--v"
-      style="--d:1.9s"
-      x="300"
-      y="224"
-      width="8"
-      height="8"></rect>
+    <div class="ramal" aria-hidden="true"><i></i><i></i><i></i></div>
 
-    <!-- coordinación (fuera de la ruta crítica): trazo discontinuo -->
-    <g class="q-coord">
-      <line class="q-dash" x1="344" y1="184" x2="352" y2="184"></line>
-      <line class="q-dash" x1="352" y1="184" x2="352" y2="502"></line>
-      <line class="q-dash" x1="352" y1="502" x2="344" y2="502"></line>
-      <line class="q-dash" x1="180" y1="534" x2="180" y2="560"></line>
-    </g>
-    <g class="q-nodo" style="--d:.57s">
-      <rect class="q-caja q-caja--coord" x="16" y="470" width="328" height="64"
-      ></rect>
-      <text class="q-t1" x="180" y="496" text-anchor="middle"
-        >NUBE · CONSOLA SOC</text
-      >
-      <text class="q-t2" x="180" y="516" text-anchor="middle">
-        COORDINA — NUNCA EN LA RUTA CRÍTICA
-      </text>
-    </g>
-    <g class="q-nodo" style="--d:.63s">
-      <rect class="q-caja q-caja--coord" x="16" y="560" width="328" height="64"
-      ></rect>
-      <text class="q-t1" x="180" y="586" text-anchor="middle"
-        >RED · QUÓRUM DE ≥3 INMUEBLES</text
-      >
-      <text class="q-t2" x="180" y="606" text-anchor="middle"
-        >COMANDO DE ACTUACIÓN FIRMADO</text
-      >
-    </g>
-  </svg>
+    <div class="zonas" aria-label="Cobertura distribuida por zonas">
+      <article class="zona" style="--d:1.55s">
+        <div class="zona__top">
+          <span class="mono">Zona norte</span>
+          <span class="gabinete-mini" aria-hidden="true"><i></i></span>
+        </div>
+        <div class="zona__alerta">
+          <span class="sirena" aria-hidden="true"><i></i></span>
+          <span class="estrobo" aria-hidden="true"><i></i></span>
+          <div>
+            <strong>Alerta audiovisual</strong><small>Sirena + estrobo</small>
+          </div>
+        </div>
+        <span class="estado estado--idle mono">Preparado</span>
+        <span class="estado estado--active mono">Alertando</span>
+      </article>
 
-  <!-- ═══════════ Layout HORIZONTAL (≥1280) ═══════════ -->
-  <svg
-    class="esquema__h"
-    viewBox="0 0 1120 480"
-    role="img"
-    aria-labelledby="esquema-desc"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <rect class="q-marco" x="1" y="1" width="1118" height="478"></rect>
+      <article class="zona" style="--d:1.75s">
+        <div class="zona__top">
+          <span class="mono">Zona central</span>
+          <span class="gabinete-mini" aria-hidden="true"><i></i></span>
+        </div>
+        <div class="zona__alerta">
+          <span class="sirena" aria-hidden="true"><i></i></span>
+          <span class="estrobo" aria-hidden="true"><i></i></span>
+          <div>
+            <strong>Alerta audiovisual</strong><small>Sirena + estrobo</small>
+          </div>
+        </div>
+        <span class="estado estado--idle mono">Preparado</span>
+        <span class="estado estado--active mono">Alertando</span>
+      </article>
 
-    <g class="q-nodo" style="--d:.15s">
-      <rect class="q-caja q-caja--vital" x="60" y="60" width="200" height="72"
-      ></rect>
-      <text class="q-t1" x="160" y="92" text-anchor="middle">SASMEX · WR-1</text
-      >
-      <text class="q-t2" x="160" y="112" text-anchor="middle"
-        >ALERTA OFICIAL · CONTACTO SECO</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.21s">
-      <rect class="q-caja" x="60" y="180" width="200" height="72"></rect>
-      <text class="q-t1" x="160" y="212" text-anchor="middle"
-        >SENSOR PROPIO</text
-      >
-      <text class="q-t2" x="160" y="232" text-anchor="middle"
-        >INSTRUMENTACIÓN DEL EDIFICIO</text
-      >
-    </g>
+      <article class="zona" style="--d:1.95s">
+        <div class="zona__top">
+          <span class="mono">Zona exterior</span>
+          <span class="gabinete-mini" aria-hidden="true"><i></i></span>
+        </div>
+        <div class="zona__alerta">
+          <span class="sirena" aria-hidden="true"><i></i></span>
+          <span class="estrobo" aria-hidden="true"><i></i></span>
+          <div>
+            <strong>Alerta audiovisual</strong><small>Sirena + estrobo</small>
+          </div>
+        </div>
+        <span class="estado estado--idle mono">Preparado</span>
+        <span class="estado estado--active mono">Alertando</span>
+      </article>
+    </div>
 
-    <rect
-      class="q-hilo q-hilo--h"
-      style="--d:.5s"
-      x="260"
-      y="94"
-      width="160"
-      height="4"></rect>
-    <rect
-      class="q-hilo q-hilo--h q-hilo--fino"
-      style="--d:.56s"
-      x="260"
-      y="215"
-      width="160"
-      height="2"></rect>
-    <text class="q-t3" x="340" y="207" text-anchor="middle">SOLO AVISO</text>
-
-    <g class="q-nodo q-late" style="--d:.27s">
-      <rect
-        class="q-caja q-caja--cerebro"
-        x="420"
-        y="24"
-        width="280"
-        height="328"></rect>
-      <text class="q-t0" x="560" y="178" text-anchor="middle"
-        >GABINETE TAKAB</text
-      >
-      <text class="q-t2" x="560" y="200" text-anchor="middle"
-        >ACTÚA EN LOCAL</text
-      >
-      <text class="q-t2" x="560" y="216" text-anchor="middle"
-        >SIN INTERNET · SIN NUBE · SIN IA</text
-      >
-    </g>
-
-    <rect
-      class="q-hilo q-hilo--h"
-      style="--d:.62s"
-      x="700"
-      y="54"
-      width="160"
-      height="4"></rect>
-    <rect
-      class="q-hilo q-hilo--h"
-      style="--d:.68s"
-      x="700"
-      y="142"
-      width="160"
-      height="4"></rect>
-    <rect
-      class="q-hilo q-hilo--h"
-      style="--d:.74s"
-      x="700"
-      y="230"
-      width="160"
-      height="4"></rect>
-    <rect
-      class="q-hilo q-hilo--h"
-      style="--d:.8s"
-      x="700"
-      y="318"
-      width="160"
-      height="4"></rect>
-
-    <g class="q-nodo" style="--d:.33s">
-      <rect class="q-caja" x="860" y="24" width="200" height="64"></rect>
-      <text class="q-t4" x="960" y="52" text-anchor="middle">SIRENA</text>
-      <text class="q-est q-est-off" x="960" y="72" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="960" y="72" text-anchor="middle"
-        >ACTIVADO</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.39s">
-      <rect class="q-caja" x="860" y="112" width="200" height="64"></rect>
-      <text class="q-t4" x="960" y="140" text-anchor="middle"
-        >VÁLVULA DE GAS</text
-      >
-      <text class="q-est q-est-off" x="960" y="160" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="960" y="160" text-anchor="middle"
-        >CERRADA</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.45s">
-      <rect class="q-caja" x="860" y="200" width="200" height="64"></rect>
-      <text class="q-t4" x="960" y="228" text-anchor="middle">ASCENSORES</text>
-      <text class="q-est q-est-off" x="960" y="248" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="960" y="248" text-anchor="middle"
-        >A PLANTA BAJA</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.51s">
-      <rect class="q-caja" x="860" y="288" width="200" height="64"></rect>
-      <text class="q-t4" x="960" y="316" text-anchor="middle">PUERTAS</text>
-      <text class="q-est q-est-off" x="960" y="336" text-anchor="middle"
-        >EN ESPERA</text
-      >
-      <text class="q-est q-est-on" x="960" y="336" text-anchor="middle"
-        >LIBERADAS</text
-      >
-    </g>
-
-    <rect
-      class="q-pulso q-pulso--h"
-      style="--d:1.2s"
-      x="256"
-      y="92"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--h"
-      style="--d:1.9s"
-      x="696"
-      y="52"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--h"
-      style="--d:1.9s"
-      x="696"
-      y="140"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--h"
-      style="--d:1.9s"
-      x="696"
-      y="228"
-      width="8"
-      height="8"></rect>
-    <rect
-      class="q-pulso q-pulso--h"
-      style="--d:1.9s"
-      x="696"
-      y="316"
-      width="8"
-      height="8"></rect>
-
-    <g class="q-coord">
-      <line class="q-dash" x1="560" y1="352" x2="560" y2="396"></line>
-      <line class="q-dash" x1="700" y1="426" x2="740" y2="426"></line>
-    </g>
-    <g class="q-nodo" style="--d:.57s">
-      <rect class="q-caja q-caja--coord" x="420" y="396" width="280" height="60"
-      ></rect>
-      <text class="q-t1" x="560" y="422" text-anchor="middle"
-        >NUBE · CONSOLA SOC</text
-      >
-      <text class="q-t2" x="560" y="442" text-anchor="middle"
-        >COORDINA — NUNCA EN LA RUTA CRÍTICA</text
-      >
-    </g>
-    <g class="q-nodo" style="--d:.63s">
-      <rect class="q-caja q-caja--coord" x="740" y="396" width="280" height="60"
-      ></rect>
-      <text class="q-t1" x="880" y="422" text-anchor="middle"
-        >RED · QUÓRUM DE ≥3 INMUEBLES</text
-      >
-      <text class="q-t2" x="880" y="442" text-anchor="middle"
-        >COMANDO DE ACTUACIÓN FIRMADO</text
-      >
-    </g>
-  </svg>
+    <div class="canales">
+      <div class="canales__copy">
+        <span class="mono">04 / Integraciones por inmueble</span>
+        <p>
+          Solo se habilitan canales definidos, instalados y acreditados
+          físicamente durante la puesta en marcha de cada sitio.
+        </p>
+      </div>
+      <ul class="canales__lista" aria-label="Condiciones de una integración">
+        <li><i></i><span>Definición</span><small>Alcance por sitio</small></li>
+        <li>
+          <i></i><span>Prueba física</span><small>Puesta en marcha</small>
+        </li>
+        <li>
+          <i></i><span>Registro</span><small>Trazabilidad operativa</small>
+        </li>
+      </ul>
+    </div>
+  </div>
 
   <figcaption class="esquema__pie">
     <button class="btn" type="button" data-simulacro
       >[ Ejecutar simulacro ]</button
     >
     <p class="mono humo" aria-live="polite" data-simulacro-aviso>
-      La señal recorre el camino real: SASMEX → gabinete → actuadores.
+      Observe la señal avanzar hasta los gabinetes de apoyo, sirenas y estrobos.
     </p>
   </figcaption>
 </figure>
@@ -429,264 +137,584 @@
 <style>
   .esquema {
     margin: 0;
-    padding-block: var(--e-6);
   }
-  /* Las reglas del <svg> raíz (display/width y el swap responsive) viven en
-     global.css: el svg no recibe el atributo de scope de Astro, y una regla
-     scoped de mayor especificidad aquí pisaría el display:none del swap
-     (defecto cazado dos veces en la inspección visual). */
+  .esquema__cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-4);
+    padding-bottom: var(--e-4);
+    border-bottom: 1px solid var(--linea);
+  }
+  .esquema__cabecera span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--e-2);
+    color: var(--texto-1);
+  }
+  .esquema__cabecera i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ambar);
+    box-shadow: 0 0 12px rgba(255, 193, 7, 0.5);
+  }
+  .esquema__lienzo {
+    padding-block: clamp(28px, 4vw, 54px);
+  }
+  .esquema__flujo {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .nodo {
+    position: relative;
+    min-height: 214px;
+    padding: 22px;
+    overflow: hidden;
+    border: 1px solid var(--linea-fuerte);
+    background: rgba(7, 19, 41, 0.72);
+  }
+  .nodo::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3px;
+    background: var(--cian);
+    opacity: 0.18;
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  .nodo__indice {
+    display: block;
+    margin-bottom: 24px;
+    color: var(--cian);
+  }
+  .nodo h3,
+  .zona strong {
+    color: var(--texto-1);
+    font-family: var(--fuente-display);
+    font-size: 1.4rem;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .nodo p {
+    max-width: 32ch;
+    margin-top: 8px;
+    color: var(--texto-3);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .nodo--principal {
+    border-color: rgba(106, 168, 255, 0.58);
+    background:
+      linear-gradient(145deg, rgba(18, 58, 122, 0.35), transparent),
+      rgba(7, 19, 41, 0.9);
+  }
+  .conector {
+    display: grid;
+    place-items: center;
+    min-height: 28px;
+  }
+  .conector::before {
+    content: "";
+    width: 2px;
+    height: 28px;
+    background: var(--linea-fuerte);
+  }
+  .conector i {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cian);
+    opacity: 0;
+    box-shadow: var(--glow-cian);
+  }
+  .senal-icon,
+  .gabinete-icon,
+  .bus-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 58px;
+    height: 58px;
+  }
+  .senal-icon b {
+    position: absolute;
+    right: 4px;
+    bottom: 5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--cian);
+  }
+  .senal-icon i {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    border: 1px solid var(--cian);
+    border-width: 1px 1px 0 0;
+    border-radius: 0 100% 0 0;
+    transform: rotate(-45deg);
+    transform-origin: bottom right;
+  }
+  .senal-icon i:first-child {
+    width: 30px;
+    height: 30px;
+  }
+  .senal-icon i:nth-child(2) {
+    width: 48px;
+    height: 48px;
+    opacity: 0.45;
+  }
+  .gabinete-icon {
+    width: 54px;
+    height: 66px;
+    border: 2px solid var(--cian);
+    border-radius: 3px;
+    box-shadow: var(--glow-cian-suave);
+  }
+  .gabinete-icon i {
+    display: block;
+    width: 32px;
+    height: 1px;
+    margin: 12px auto 0;
+    background: var(--linea-fuerte);
+  }
+  .gabinete-icon b {
+    position: absolute;
+    right: 9px;
+    top: 29px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--verde);
+  }
+  .bus-icon i {
+    position: absolute;
+    left: 8px;
+    width: 42px;
+    height: 2px;
+    background: var(--cian);
+  }
+  .bus-icon i:nth-child(1) {
+    top: 12px;
+  }
+  .bus-icon i:nth-child(2) {
+    top: 28px;
+  }
+  .bus-icon i:nth-child(3) {
+    top: 44px;
+  }
+  .estado {
+    position: absolute;
+    right: 20px;
+    bottom: 18px;
+    padding: 5px 8px;
+    border: 1px solid var(--linea-fuerte);
+    color: var(--texto-3);
+  }
+  .estado--active {
+    border-color: rgba(0, 230, 118, 0.5);
+    color: var(--verde);
+    opacity: 0;
+  }
+  .ramal {
+    position: relative;
+    display: none;
+    height: 54px;
+    margin-inline: 9%;
+    border-top: 1px solid var(--linea-fuerte);
+  }
+  .ramal i {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 54px;
+    background: var(--linea-fuerte);
+  }
+  .ramal i:nth-child(1) {
+    left: 0;
+  }
+  .ramal i:nth-child(2) {
+    left: 50%;
+  }
+  .ramal i:nth-child(3) {
+    right: 0;
+  }
+  .zonas {
+    display: grid;
+    gap: 14px;
+    margin-top: 22px;
+  }
+  .zona {
+    position: relative;
+    min-width: 0;
+    min-height: 180px;
+    padding: 20px;
+    border: 1px solid var(--linea-fuerte);
+    background: rgba(11, 29, 58, 0.5);
+  }
+  .zona__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--cian);
+  }
+  .gabinete-mini {
+    position: relative;
+    width: 28px;
+    height: 34px;
+    border: 1px solid var(--cian);
+  }
+  .gabinete-mini::before,
+  .gabinete-mini::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    width: 14px;
+    height: 1px;
+    background: var(--linea-fuerte);
+  }
+  .gabinete-mini::before {
+    top: 9px;
+  }
+  .gabinete-mini::after {
+    top: 16px;
+  }
+  .gabinete-mini i {
+    position: absolute;
+    right: 4px;
+    bottom: 5px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--verde);
+  }
+  .zona__alerta {
+    display: grid;
+    grid-template-columns: 34px 34px 1fr;
+    align-items: center;
+    gap: 10px;
+    margin-top: 24px;
+  }
+  .zona__alerta small {
+    display: block;
+    margin-top: 5px;
+    color: var(--texto-3);
+  }
+  .sirena {
+    position: relative;
+    width: 30px;
+    height: 25px;
+    border: 1px solid var(--cian);
+    border-radius: 14px 14px 4px 4px;
+  }
+  .sirena::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: -6px;
+    height: 3px;
+    background: var(--cian);
+  }
+  .sirena i {
+    position: absolute;
+    left: 50%;
+    bottom: 3px;
+    width: 1px;
+    height: 14px;
+    background: var(--cian);
+  }
+  .estrobo {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--rojo);
+    border-radius: 50%;
+    background: rgba(255, 45, 26, 0.08);
+  }
+  .estrobo::before,
+  .estrobo::after {
+    content: "";
+    position: absolute;
+    inset: 50% -7px auto;
+    height: 1px;
+    background: var(--rojo);
+    opacity: 0.4;
+  }
+  .estrobo::after {
+    transform: rotate(90deg);
+  }
+  .estrobo i {
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: var(--rojo);
+    opacity: 0.38;
+  }
+  .zona .estado {
+    position: static;
+    display: inline-flex;
+    margin-top: 22px;
+  }
+  .zona .estado--active {
+    position: absolute;
+    left: 20px;
+    bottom: 16px;
+  }
+  .canales {
+    display: grid;
+    gap: 28px;
+    margin-top: clamp(36px, 5vw, 64px);
+    padding-top: 28px;
+    border-top: 1px solid var(--linea-fuerte);
+  }
+  .canales__copy .mono {
+    color: var(--cian);
+  }
+  .canales__copy p {
+    max-width: 46ch;
+    margin-top: 8px;
+    color: var(--texto-2);
+  }
+  .canales__lista {
+    display: grid;
+    gap: 1px;
+    padding: 0;
+    background: var(--linea);
+    list-style: none;
+  }
+  .canales__lista li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 12px;
+    padding: 16px;
+    background: var(--fondo-1);
+  }
+  .canales__lista i {
+    grid-row: 1/3;
+    align-self: center;
+    width: 8px;
+    height: 8px;
+    border: 1px solid var(--cian);
+    transform: rotate(45deg);
+  }
+  .canales__lista span {
+    color: var(--texto-1);
+    font-weight: 600;
+  }
+  .canales__lista small {
+    color: var(--texto-3);
+  }
   .esquema__pie {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--e-4) var(--e-5);
     padding-top: var(--e-5);
+    border-top: 1px solid var(--linea);
   }
   .esquema__pie p {
-    max-width: 44ch;
+    max-width: 56ch;
     text-transform: none;
     letter-spacing: 0.04em;
   }
 
-  /* --- Piezas --- */
-  .q-marco {
-    fill: none;
-    stroke: var(--linea);
-    stroke-width: 1;
-  }
-  .q-caja {
-    fill: var(--fondo-2);
-    stroke: var(--linea-fuerte);
-    stroke-width: 1.25;
-  }
-  .q-caja--vital {
-    stroke: var(--cian);
-    stroke-width: 2;
-  }
-  .q-caja--cerebro {
-    stroke: var(--cian);
-    stroke-width: 2;
-    filter: drop-shadow(0 0 14px rgba(0, 191, 255, 0.25));
-  }
-  .q-caja--coord {
-    stroke: var(--linea);
-    stroke-width: 1;
-    stroke-dasharray: 5 4;
-  }
-  .q-hilo {
-    fill: var(--cian);
-    filter: drop-shadow(0 0 5px rgba(0, 191, 255, 0.45));
-  }
-  .q-hilo--fino {
-    fill: var(--texto-3);
-    filter: none;
-  }
-  .q-dash {
-    stroke: var(--texto-3);
-    stroke-width: 1.5;
-    stroke-dasharray: 4 4;
-    opacity: 0.65;
-  }
-  .q-pulso {
-    fill: var(--cian);
-    opacity: 0;
-    filter: drop-shadow(0 0 8px rgba(0, 191, 255, 0.8));
-  }
-  text {
-    font-family: var(--fuente-mono);
-    fill: var(--texto-2);
-    letter-spacing: 0.06em;
-  }
-  .q-t0 {
-    font-size: 14px;
-    font-weight: 700;
-    fill: var(--texto-1);
-  }
-  .q-t1 {
-    font-size: 11px;
-    fill: var(--texto-1);
-  }
-  .q-t2 {
-    font-size: 9.5px;
-    fill: var(--texto-3);
-  }
-  .q-t3 {
-    font-size: 9.5px;
-    fill: var(--texto-3);
-  }
-  .q-t4 {
-    font-size: 10px;
-    fill: var(--texto-1);
-  }
-  .q-est {
-    font-size: 9px;
-  }
-  .q-est-off {
-    fill: var(--texto-3);
-  }
-  .q-est-on {
-    fill: var(--verde);
-    font-weight: 700;
+  .esquema.estatico-activado .estado--idle {
     opacity: 0;
   }
-
-  /* Estado estático activado (modo reduced-motion, conmutado por el botón) */
-  .esquema.estatico-activado .q-est-off {
-    opacity: 0;
-  }
-  .esquema.estatico-activado .q-est-on {
+  .esquema.estatico-activado .estado--active {
     opacity: 1;
   }
-
-  /* --- Coreografía (solo transform/opacity; base = todo visible) --- */
+  .esquema.estatico-activado .estrobo {
+    box-shadow: var(--glow-rojo);
+    background: rgba(255, 45, 26, 0.35);
+  }
   @media (prefers-reduced-motion: no-preference) {
-    .esquema.play .q-marco {
-      animation: q-aparece 300ms ease-out both;
+    .esquema.play .nodo::after {
+      animation: q-line 360ms var(--ease-out) both;
     }
-    .esquema.play .q-coord {
-      animation: q-aparece 400ms ease-out 0.9s both;
+    .esquema.play .nodo--principal::after {
+      animation-delay: 0.55s;
     }
-    .esquema.play .q-nodo {
-      transform-box: fill-box;
-      transform-origin: center;
-      animation: q-nodo 400ms ease-out both;
-      animation-delay: var(--d, 0s);
+    .esquema.play .nodo--distribucion::after {
+      animation-delay: 1.05s;
     }
-    .esquema.play .q-hilo--v {
-      transform-box: fill-box;
-      transform-origin: top;
-      animation: q-traza-v 300ms ease-out both;
-      animation-delay: var(--d, 0s);
+    .esquema.play .conector i {
+      animation: q-signal 420ms linear both;
     }
-    .esquema.play .q-hilo--h {
-      transform-box: fill-box;
-      transform-origin: left;
-      animation: q-traza-h 300ms ease-out both;
-      animation-delay: var(--d, 0s);
+    .esquema.play .conector:nth-of-type(2) i {
+      animation-delay: 0.85s;
     }
-    .esquema.play .q-pulso--v {
-      animation: q-pulso-v 500ms linear both;
-      animation-delay: var(--d, 0s);
+    .esquema.play .conector:nth-of-type(4) i {
+      animation-delay: 1.25s;
     }
-    .esquema.play .q-pulso--h {
-      animation: q-pulso-h 500ms linear both;
-      animation-delay: var(--d, 0s);
+    .esquema.play .nodo--principal,
+    .esquema.play .nodo--distribucion {
+      animation: q-glow 650ms var(--ease-out) both;
     }
-    .esquema.play .q-est-off {
-      animation: q-apaga 250ms ease-out 2.4s both;
+    .esquema.play .nodo--principal {
+      animation-delay: 0.55s;
     }
-    .esquema.play .q-est-on {
-      animation: q-enciende 250ms ease-out 2.4s both;
+    .esquema.play .nodo--distribucion {
+      animation-delay: 1.05s;
     }
-    /* Reposo: el latido del cerebro, cada 4 s, tras la secuencia */
-    .esquema.play .q-late {
-      animation-name: q-nodo, q-latido;
-      animation-duration: 400ms, 4s;
-      animation-timing-function: ease-out, ease-in-out;
-      animation-delay: var(--d, 0s), 3.2s;
-      animation-iteration-count: 1, infinite;
-      animation-fill-mode: both, none;
-      transform-box: fill-box;
-      transform-origin: center;
+    .esquema.play .estado--idle {
+      animation: q-off 180ms var(--ease-out) 1.4s both;
+    }
+    .esquema.play .estado--active {
+      animation: q-on 180ms var(--ease-out) 1.4s both;
+    }
+    .esquema.play .zona {
+      animation: q-zone 420ms var(--ease-out) both;
+      animation-delay: var(--d);
+    }
+    .esquema.play .zona .estado--idle {
+      animation-delay: var(--d);
+    }
+    .esquema.play .zona .estado--active {
+      animation-delay: var(--d);
+    }
+    .esquema.play .zona .gabinete-mini {
+      animation: q-cab 500ms var(--ease-out) both;
+      animation-delay: var(--d);
+    }
+    .esquema.play .zona .estrobo {
+      animation: q-strobe 220ms steps(2, end) 6 alternate;
+      animation-delay: var(--d);
+    }
+    .esquema.play .zona .sirena {
+      animation: q-siren 300ms var(--ease-in-out) 5 alternate;
+      animation-delay: var(--d);
     }
   }
-
-  @keyframes q-aparece {
+  @keyframes q-line {
     from {
       opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  @keyframes q-nodo {
-    from {
-      opacity: 0;
-      transform: scale(0.94);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @keyframes q-traza-v {
-    from {
-      transform: scaleY(0);
-    }
-    to {
-      transform: none;
-    }
-  }
-  @keyframes q-traza-h {
-    from {
       transform: scaleX(0);
     }
     to {
-      transform: none;
+      opacity: 1;
+      transform: scaleX(1);
     }
   }
-  @keyframes q-pulso-v {
+  @keyframes q-signal {
     0% {
       opacity: 0;
+      transform: translateY(-14px);
+    }
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+      transform: translateY(14px);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+  @keyframes q-glow {
+    0% {
+      box-shadow: none;
+    }
+    45% {
+      box-shadow: 0 0 34px rgba(106, 168, 255, 0.35);
+    }
+    100% {
+      box-shadow: none;
+    }
+  }
+  @keyframes q-off {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes q-on {
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes q-zone {
+    from {
+      opacity: 0.45;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
       transform: translateY(0);
-    }
-    8% {
-      opacity: 1;
-    }
-    92% {
-      opacity: 1;
-      transform: translateY(60px);
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(60px);
+      border-color: rgba(106, 168, 255, 0.55);
     }
   }
-  @keyframes q-pulso-h {
-    0% {
-      opacity: 0;
-      transform: translateX(0);
-    }
-    8% {
-      opacity: 1;
-    }
-    92% {
-      opacity: 1;
-      transform: translateX(160px);
-    }
-    100% {
-      opacity: 0;
-      transform: translateX(160px);
+  @keyframes q-cab {
+    50% {
+      box-shadow: 0 0 20px rgba(106, 168, 255, 0.55);
+      transform: scale(1.08);
     }
   }
-  @keyframes q-apaga {
-    from {
-      opacity: 1;
-    }
+  @keyframes q-strobe {
     to {
-      opacity: 0;
+      background: rgba(255, 45, 26, 0.55);
+      box-shadow: 0 0 26px rgba(255, 45, 26, 0.8);
+      transform: scale(1.12);
     }
   }
-  @keyframes q-enciende {
-    from {
-      opacity: 0;
-    }
+  @keyframes q-siren {
     to {
-      opacity: 1;
+      box-shadow: 0 0 18px rgba(106, 168, 255, 0.6);
+      transform: rotate(3deg);
     }
   }
-  @keyframes q-latido {
-    0% {
-      transform: scale(1);
+  @media (min-width: 760px) {
+    .esquema__flujo {
+      grid-template-columns: 1fr 36px 1.2fr 36px 1fr;
+      align-items: stretch;
     }
-    4% {
-      transform: scale(1.045);
+    .conector {
+      position: relative;
+      min-height: 0;
     }
-    9% {
-      transform: scale(1);
+    .conector::before {
+      width: 36px;
+      height: 2px;
     }
-    100% {
-      transform: scale(1);
+    .esquema.play .conector i {
+      animation-name: q-signal-h;
+    }
+    .zonas {
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 0;
+    }
+    .ramal {
+      display: block;
+    }
+    .canales {
+      grid-template-columns: 0.8fr 1.2fr;
+    }
+    .canales__lista {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    @keyframes q-signal-h {
+      0% {
+        opacity: 0;
+        transform: translateX(-14px);
+      }
+      15% {
+        opacity: 1;
+      }
+      85% {
+        opacity: 1;
+        transform: translateX(14px);
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(14px);
+      }
     }
   }
 </style>

@@ -1,695 +1,1120 @@
 ---
-// Página principal v2 «Telemetría». Cada afirmación conserva su fuente
-// (CONSULTA-LEGAL-TAKAB.md §2-§3 · ENTREGA-Y-ACEPTACION-TAKAB.md) y los
-// invariantes del copy siguen bloqueados por tests: CERO cifras medidas
-// (decisión 2026-08-25, re-confirmada en el rediseño), cero normas, cero
-// clientes, deslinde SASMEX y dominio remitente obligatorios.
+// Landing pública v3 · narrativa end-to-end del sistema TAKAB Ailert.
+// La estructura sigue la secuencia real: señal, actuación física, app móvil,
+// coordinación operativa, evidencia y reingreso.
+import { Image } from "astro:assets";
 import Base from "../layouts/Base.astro";
-import Esquema from "../components/Esquema.astro";
-import Onda from "../components/Onda.astro";
-import MapaAlerta from "../components/MapaAlerta.astro";
+import ComandoHero from "../components/ComandoHero.astro";
 import Consola from "../components/Consola.astro";
+import Esquema from "../components/Esquema.astro";
+import FlujoMovil from "../components/FlujoMovil.astro";
+import MapaAlerta from "../components/MapaAlerta.astro";
+import Onda from "../components/Onda.astro";
+import PostEvento from "../components/PostEvento.astro";
+import isotipoTakab from "../assets/img/isotipo-takab-ailert-negativo.png";
 import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
 ---
 
 <Base
-  title="TAKAB Ailert · Alertamiento sísmico que actúa en su edificio"
-  description="El gabinete TAKAB recibe la alerta sísmica oficial (SASMEX) y acciona el equipamiento de su inmueble sin depender de internet. Para Protección Civil, hospitales, universidades, industria y corporativos en México."
+  title="TAKAB Ailert · Alertamiento y continuidad para todo el inmueble"
+  description="TAKAB Ailert conecta la señal del SASMEX con protección física local, alertamiento móvil, coordinación de brigadas y continuidad operativa para inmuebles en México."
   path="/"
 >
-  <!-- ═══ PORTADA ═══ -->
+  <!-- ═══ 00 · PORTADA ═══ -->
   <section class="hero" aria-label="Portada">
-    <div class="marco hero__cuerpo">
-      <!-- fuente: ESPECIFICACION-PANEL-GABINETE §0 «El gabinete se protege solo» /
-           ENTREGA §1 «el edificio sigue protegido» -->
-      <h1 class="hero__titulo">
-        <span class="hero__linea al-t" style="--d:0s">El edificio</span>
-        <span class="hero__linea al-t" style="--d:.07s">se protege</span>
-        <span class="hero__linea al-t" style="--d:.14s"><em>solo.</em></span>
-      </h1>
-      <div class="hero__lateral">
-        <!-- fuente: CONSULTA-LEGAL §1 (definición y segmentos) + §2.2 (sin internet/nube/IA) -->
-        <p class="hero__sub al" style="--d:.5s">
-          TAKAB Ailert recibe la alerta sísmica oficial y acciona el
-          equipamiento de su inmueble en el acto —
-          <strong
-            >sin depender de internet, de la nube ni de inteligencia artificial</strong
-          >. Alertamiento, monitoreo estructural y continuidad operativa
-          post-sismo para Protección Civil, hospitales, universidades, industria
-          y corporativos en México.
+    <div class="marco hero__grid">
+      <div class="hero__copy">
+        <p class="eyebrow hero-enter">
+          Alertamiento sísmico · Continuidad operativa
         </p>
-        <p class="hero__cta al" style="--d:.6s">
-          <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
-            >Solicitar cotización</a
+        <h1 class="hero__titulo">
+          <span class="hero__linea">Una señal.</span>
+          <span class="hero__linea">Todo el inmueble</span>
+          <span class="hero__linea"><em>en acción.</em></span>
+        </h1>
+        <p class="hero__sub hero-enter">
+          TAKAB Ailert une <strong
+            >protección física local, app móvil y centro de operaciones</strong
           >
-          <a class="btn" href="#alerta-temprana">Ver cómo funciona</a>
+          en un mismo flujo: recibe la señal del SASMEX, alerta cada zona y acompaña
+          a las personas hasta la recuperación documentada del inmueble.
         </p>
+        <div class="hero__acciones hero-enter">
+          <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
+            >Solicitar evaluación</a
+          >
+          <a class="hero__enlace mono" href="#flujo"
+            >Recorrer el sistema <span aria-hidden="true">↓</span></a
+          >
+        </div>
+        <ul
+          class="hero__telemetria mono hero-enter"
+          aria-label="Capas del sistema"
+        >
+          <li><span>01</span> Señal SASMEX</li>
+          <li><span>02</span> Cobertura local</li>
+          <li><span>03</span> App por perfiles</li>
+          <li><span>04</span> Continuidad</li>
+        </ul>
       </div>
+      <div class="hero__visual hero-enter"><ComandoHero /></div>
     </div>
-    <div class="hero__instrumento al" style="--d:.35s">
+    <div class="hero__onda hero-enter">
       <div class="marco hero__rail">
-        <span class="chip">Alertamiento sísmico</span>
-        <span class="chip chip--quieto">Edge + nube</span>
-        <span class="chip chip--quieto">México</span>
+        <span class="chip">Protección local activa</span>
+        <span class="chip chip--quieto">Gabinetes de apoyo por zona</span>
+        <span class="chip chip--quieto">Coordinación móvil y SOC</span>
+        <button
+          class="motion-toggle mono"
+          type="button"
+          data-motion-toggle
+          aria-pressed="false"
+        >
+          <span class="motion-toggle__icono" aria-hidden="true"></span>
+          <span data-motion-label>Pausar movimiento</span>
+        </button>
       </div>
       <Onda />
     </div>
   </section>
 
-  <!-- ═══ 01 · LA FÍSICA DE LA ALERTA ═══ -->
-  <section class="seccion" id="alerta-temprana">
+  <!-- ═══ 01 · FLUJO COMPLETO ═══ -->
+  <section class="seccion flujo" id="flujo">
     <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">La señal le gana <em>a las ondas</em></h2>
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">01 / Flujo completo</p>
+        <h2 class="titulo">De la señal al <em>reingreso</em></h2>
       </header>
       <div class="seccion__cuerpo">
-        <div class="prosa">
-          <p>
-            Un sismo fuerte en la costa tarda decenas de segundos en sacudir a
-            las ciudades del centro: sus ondas viajan por la roca a kilómetros
-            por segundo. La señal de alerta viaja por telecomunicaciones —
-            <strong>llega antes</strong>. Ese margen es la única ventaja física
-            que existe contra un sismo, y el gabinete la usa completa: acciona
-            los canales conectados en su edificio
-            <strong>antes de la sacudida</strong>.
-          </p>
-        </div>
-        <div class="bloque-figura">
-          <MapaAlerta />
-        </div>
+        <p class="prosa flujo__intro" data-rv>
+          La protección comienza dentro del edificio y continúa en el teléfono y
+          la consola. Cada etapa entrega información útil a la siguiente para
+          que personas, brigadas y responsables del inmueble compartan el mismo
+          estado operativo.
+        </p>
+        <ol class="flujo__pasos" data-rv>
+          <li>
+            <span class="mono">01 · Recibir</span><strong
+              >Señal del SASMEX</strong
+            ><p>La señal del SASMEX entra al flujo local del inmueble.</p>
+          </li>
+          <li>
+            <span class="mono">02 · Ejecutar</span><strong
+              >Gabinete principal</strong
+            ><p>La lógica local inicia la respuesta física configurada.</p>
+          </li>
+          <li>
+            <span class="mono">03 · Cubrir</span><strong>Zonas y apoyos</strong
+            ><p>
+              Gabinetes secundarios amplían el alcance de sirenas y estrobos.
+            </p>
+          </li>
+          <li>
+            <span class="mono">04 · Instruir</span><strong
+              >App del ocupante</strong
+            ><p>Cada persona ve la indicación asignada a su zona.</p>
+          </li>
+          <li>
+            <span class="mono">05 · Coordinar</span><strong
+              >Brigada y SOC</strong
+            ><p>Check-ins, pase de lista, daños y prioridades se integran.</p>
+          </li>
+          <li>
+            <span class="mono">06 · Recuperar</span><strong
+              >Evaluación y reingreso</strong
+            ><p>La evidencia y el dictamen sostienen la decisión operativa.</p>
+          </li>
+        </ol>
       </div>
     </div>
   </section>
 
-  <!-- ═══ 02 · EL GABINETE ACTÚA ═══ -->
-  <section class="seccion" id="gabinete">
+  <!-- ═══ 02 · VENTAJA FÍSICA ═══ -->
+  <section class="seccion seccion--profunda fisica" id="alerta-temprana">
     <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Cuando suena la alerta, <em>actúa</em></h2>
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">02 / La ventaja física</p>
+        <h2 class="titulo">
+          La señal viaja primero. <em>El inmueble responde.</em>
+        </h2>
+      </header>
+      <div class="seccion__cuerpo fisica__grid">
+        <div class="fisica__copy">
+          <p class="prosa" data-rv>
+            Las ondas sísmicas avanzan por la roca; la señal de alerta lo hace
+            por telecomunicaciones. Esa diferencia crea el margen para activar
+            la respuesta del inmueble antes de que el movimiento alcance las
+            zonas protegidas.
+          </p>
+          <ol class="secuencia" data-rv>
+            <li>
+              <span class="secuencia__numero mono">01</span><div>
+                <strong>El evento comienza</strong><p>
+                  Las estaciones instrumentales perciben el movimiento conforme
+                  se propaga.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="secuencia__numero mono">02</span><div>
+                <strong>La señal del SASMEX llega</strong><p>
+                  La recepción del inmueble entrega una orden clara al gabinete.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="secuencia__numero mono">03</span><div>
+                <strong>La protección se despliega</strong><p>
+                  Las zonas configuradas alertan y los canales adoptan su estado
+                  operativo.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <div class="fisica__mapa" data-rv><MapaAlerta /></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 03 · RESPUESTA DEL INMUEBLE ═══ -->
+  <section class="seccion gabinete" id="gabinete">
+    <div class="marco">
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">03 / Respuesta física</p>
+        <h2 class="titulo">
+          Un gabinete dirige. <em>Todo el espacio escucha.</em>
+        </h2>
       </header>
       <div class="seccion__cuerpo">
-        <div class="prosa">
-          <!-- fuente: ENTREGA §2.1 (recepción WR-1 y actuación; lista de canales) -->
+        <div class="ruta__intro">
+          <p class="prosa" data-rv>
+            El gabinete principal recibe la señal del SASMEX y ejecuta la lógica
+            local. Desde ahí, gabinetes de apoyo o secundarios llevan el
+            alertamiento a áreas más amplias:
+            <strong>sirenas y estrobos se activan por zona</strong>, y los
+            sistemas conectados adoptan el estado definido para la instalación.
+          </p>
+          <p class="ruta__declaracion" data-rv>
+            <span class="mono">Diseño por inmueble</span>
+            La cantidad de gabinetes, zonas, estrobos y salidas se define con el levantamiento
+            del sitio y se acredita durante la puesta en marcha.
+          </p>
+        </div>
+        <div class="ruta__esquema panel panel--hondo" data-rv><Esquema /></div>
+
+        <div class="resiliencia" data-rv>
+          <article>
+            <p class="eyebrow">Autonomía local</p><h3 class="subtitulo">
+              La ruta crítica permanece en el edificio
+            </h3><p>
+              Recepción, decisión y actuación física continúan disponibles en el
+              propio inmueble. Los eventos se conservan y se sincronizan con la
+              plataforma.
+            </p>
+          </article>
+          <article>
+            <p class="eyebrow">Cobertura ampliable</p><h3 class="subtitulo">
+              Cada área recibe una alerta visible y audible
+            </h3><p>
+              Los gabinetes secundarios extienden sirenas y estrobos a pisos,
+              naves, patios o edificios vinculados al mismo plan operativo.
+            </p>
+          </article>
+        </div>
+
+        <aside class="nota-limite" data-rv>
+          <span class="mono">Origen de la señal</span>
           <p>
-            La alerta sísmica oficial en México la emite el <strong
-              >SASMEX</strong
-            >. El gabinete TAKAB instalado en su edificio la recibe por un
-            receptor dedicado
-            <strong>WR-1</strong> — un contacto eléctrico, no una conexión a internet
-            — y acciona el equipamiento del inmueble en el acto. El gabinete gobierna
-            cinco canales: sirena y estrobo, válvula de gas, ascensores y retenedores
-            de puerta. <strong
-              >Cuáles quedan conectados y acreditados lo fija la puesta en
-              marcha de cada edificio, canal por canal</strong
+            La alerta sísmica oficial en México es emitida por el SASMEX. TAKAB
+            Ailert la recibe y actúa sobre el inmueble; <strong
+              >no la genera ni la sustituye</strong
             >.
           </p>
-          <!-- fuente: CONSULTA-LEGAL §2.2 (cualitativo por decisión 2026-08-25: sin cifras) -->
-          <p>
-            Del contacto de SASMEX al relé del edificio no hay internet, no hay
-            nube y no hay inteligencia artificial: es una cadena eléctrica y de
-            software dentro del propio gabinete, medida en milisegundos.
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 04 · APP MÓVIL ═══ -->
+  <section class="seccion seccion--profunda app" id="app-movil">
+    <div class="marco">
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">04 / App móvil</p>
+        <h2 class="titulo">La alerta llega con una <em>instrucción</em></h2>
+      </header>
+      <div class="seccion__cuerpo">
+        <div class="app__intro">
+          <p class="prosa" data-rv>
+            Cada ocupante se vincula a un inmueble y una zona. Durante una
+            alerta, la app abre una vista de crisis con la instrucción
+            correspondiente —evacuación o repliegue— y muestra la ruta asignada.
+            Después permite reportar el estado de vida en un toque.
+          </p>
+          <div class="app__profiles" data-rv>
+            <article>
+              <span class="mono">Perfil ocupante</span><strong
+                >Orientación personal</strong
+              ><p>
+                Estado del edificio, rutas, directorio, instrucción por zona,
+                check-in y punto de reunión.
+              </p>
+            </article>
+            <article>
+              <span class="mono">Perfil táctico</span><strong
+                >Conciencia situacional</strong
+              ><p>
+                Panel del sitio, pase de lista, verificación en persona,
+                fotografías, daños y sincronización.
+              </p>
+            </article>
+          </div>
+        </div>
+
+        <div class="app__visual" data-rv><FlujoMovil /></div>
+
+        <ol class="app__detalle" data-rv>
+          <li>
+            <span class="mono">Antes</span><strong
+              >Preparación por sitio y zona</strong
+            ><p>
+              El enrolamiento asigna inmueble, zona, política de protección,
+              rutas y contactos de brigada.
+            </p>
+          </li>
+          <li>
+            <span class="mono">Durante</span><strong
+              >Alerta de alta prioridad</strong
+            ><p>
+              La app consulta el estado vigente y presenta una sola instrucción
+              dominante con señal audiovisual.
+            </p>
+          </li>
+          <li>
+            <span class="mono">Después</span><strong
+              >Check-in aun con conectividad intermitente</strong
+            ><p>
+              “Estoy a salvo” y “Necesito ayuda” se guardan en el dispositivo y
+              se sincronizan al recuperar enlace.
+            </p>
+          </li>
+          <li>
+            <span class="mono">Brigada</span><strong
+              >Personas y daños en una vista</strong
+            ><p>
+              El pase de lista prioriza ayuda; la cámara y el formulario
+              vinculan evidencia al incidente.
+            </p>
+          </li>
+          <li>
+            <span class="mono">Reingreso</span><strong
+              >Una decisión compartida</strong
+            ><p>
+              El estado de evaluación, el punto de reunión y el dictamen técnico
+              mantienen alineados a ocupantes y responsables.
+            </p>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 05 · INTELIGENCIA POST-SISMO ═══ -->
+  <section class="seccion continuidad" id="post-sismo">
+    <div class="marco">
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">05 / Inteligencia post-sismo</p>
+        <h2 class="titulo">
+          Cuando termina el movimiento, <em>empiezan los datos</em>
+        </h2>
+      </header>
+      <div class="seccion__cuerpo">
+        <!-- fuente: api/src/takab_api/dictamen/{builder,espectrograma,pdf}.py,
+             api/src/takab_api/cctv.py y api/src/takab_api/narrative/ -->
+        <div class="continuidad__apertura">
+          <p class="prosa" data-rv>
+            La plataforma transforma lo ocurrido en una investigación operativa:
+            consolida la señal registrada, genera <strong
+              >sismograma, espectro y espectrograma</strong
+            >, reúne fotografías y reportes, y vincula cada elemento con el
+            incidente.
+          </p>
+          <p class="prosa" data-rv>
+            Con las fuentes autorizadas, calcula conteos y métricas de
+            evacuación —incluidos <strong
+              >T50, T90 y tiempos de reingreso</strong
+            >—, concilia la observación con los check-ins y deja visibles las
+            discrepancias que requieren revisión.
           </p>
         </div>
 
-        <div class="bloque-figura panel panel--hondo">
-          <Esquema />
-        </div>
+        <div class="continuidad__instrumento" data-rv><PostEvento /></div>
 
-        <!-- fuente: envs/dev/site/index.html (T-2.156) — deslinde SASMEX, fórmula
-             conservada del sitio desplegado; es perímetro legal, no adorno. -->
-        <p class="nota-limite" data-rv>
-          <span class="mono">Sobre el origen de las alertas</span>
-          La alerta sísmica oficial en México es emitida por el SASMEX. TAKAB Ailert
-          la recibe y actúa sobre el inmueble;
-          <strong>no la genera ni la sustituye</strong>, y no representa a la
-          autoridad que la emite.
-        </p>
-
-        <div class="dato-grid">
-          <div class="panel">
-            <!-- fuente: ENTREGA §2.4 (etiqueta literal del panel; ámbar a propósito) -->
-            <h3 class="subtitulo">¿Y si se corta internet?</h3>
-            <p>
-              El gabinete sigue detectando, accionando y guardando. El panel del
-              edificio lo dice tal cual:
-              <strong>«SIN ENLACE — PROTECCIÓN LOCAL ACTIVA»</strong> — y lo dice
-              en ámbar, no en rojo, porque es el sistema funcionando como fue diseñado.
-              La nube coordina; nunca es requisito de la protección local.
-            </p>
-          </div>
-          <div class="panel">
-            <!-- fuente: ENTREGA §2.1 / blueprint §4.7 (estado seguro por canal) -->
-            <h3 class="subtitulo">¿Y si algo falla?</h3>
-            <p>
-              Cada canal tiene un estado seguro de fábrica: una falla no deja la
-              sirena sonando, y lleva cada canal conectado a su estado seguro —
-              <strong>cierra</strong> el gas, <strong>libera</strong> las puertas.
-              El modo de falla se elige para proteger, no para aparentar.
-            </p>
-          </div>
+        <div class="continuidad__grid">
+          <p class="prosa" data-rv>
+            La analítica produce métricas reproducibles y la capa narrativa
+            asistida por IA convierte los hechos verificados en un resumen
+            explicativo para revisión. El resultado conserva procedencia,
+            limitaciones y trazabilidad hasta el dictamen versionado y firmado.
+          </p>
+          <ol class="linea-tiempo" data-rv>
+            <li>
+              <span class="mono">01 / Integrar</span><h3 class="subtitulo">
+                Señal, fotografías y reportes
+              </h3><p>El sistema abre una traza vinculada al inmueble.</p>
+            </li>
+            <li>
+              <span class="mono">02 / Medir</span><h3 class="subtitulo">
+                Personas y tiempos de evacuación
+              </h3><p>
+                Conteos, check-ins y video autorizado se concilian en una vista.
+              </p>
+            </li>
+            <li>
+              <span class="mono">03 / Explicar</span><h3 class="subtitulo">
+                Análisis avanzado asistido por IA
+              </h3><p>
+                La narrativa organiza hallazgos y declara los datos ausentes.
+              </p>
+            </li>
+            <li>
+              <span class="mono">04 / Decidir</span><h3 class="subtitulo">
+                Dictamen y reingreso controlado
+              </h3><p>
+                Cada actualización conserva el historial del incidente.
+              </p>
+            </li>
+          </ol>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ═══ 03 · QUÉ HACE / QUÉ NO HACE ═══ -->
-  <section class="seccion" id="que-hace">
+  <!-- ═══ 06 · SALA DE OPERACIONES ═══ -->
+  <section class="seccion seccion--profunda operaciones" id="consola">
     <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Qué hace <em>y qué no</em></h2>
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">06 / Sala de operaciones</p>
+        <h2 class="titulo">
+          El inmueble actúa. <em>La operación entiende.</em>
+        </h2>
       </header>
       <div class="seccion__cuerpo">
-        <p class="prosa">
-          Un sistema que gobierna el gas y las puertas de un edificio ocupado no
-          puede venderse con promesas elásticas. Esto es lo que el sistema hace
-          — y lo que declara, por escrito, que no hace.
-          <!-- fuente: ENTREGA Parte II §4 («lo que declara que no hace es alcance») -->
+        <p class="prosa operaciones__intro" data-rv>
+          El SOC reúne incidentes, estado de sitios, evidencia y prioridades con
+          separación de datos por cliente. Esta representación editorial
+          reproduce los campos de trabajo de la consola con datos ilustrativos,
+          sin publicar métricas de una flota fuera de contexto.
         </p>
-
-        <div class="spec" data-rv>
-          <div>
-            <h3 class="subtitulo">Hace</h3>
-            <ul class="lista-regla">
-              <!-- fuente: ENTREGA §2.1 -->
-              <li>
-                Recibe la alerta oficial <strong>SASMEX</strong> por contacto seco
-                y acciona los canales conectados en su edificio: sirena y estrobo,
-                y —donde se acrediten— válvula de gas, ascensores y retenedores de
-                puerta.
-              </li>
-              <!-- fuente: ENTREGA §2.2 (instrumental propia; T-2.32 solo aviso) -->
-              <li>
-                Mide el movimiento con instrumentación propia en el edificio y
-                eleva un <strong>aviso</strong> al panel y al centro de operaciones.
-              </li>
-              <!-- fuente: ENTREGA §2.4 (opera sin enlace) -->
-              <li>
-                Opera <strong>sin internet</strong>: detecta, acciona y guarda
-                con el enlace caído, y sincroniza al volver — sin duplicar nada.
-              </li>
-              <!-- fuente: CONSULTA-LEGAL §2.5 (append-only, exento de retención) -->
-              <li>
-                Conserva la evidencia de cada evento en un registro
-                <strong>que no se puede reescribir</strong>, garantizado por la
-                base de datos.
-              </li>
-              <!-- fuente: ENTREGA §3.2 (quórum ≥3, comando firmado) -->
-              <li>
-                En red, corrobora con un <strong>quórum de ≥3 inmuebles</strong>
-                y actúa por comando firmado, verificado por cada gabinete.
-              </li>
-              <!-- fuente: ENTREGA §3.4 (RLS default-deny) -->
-              <li>
-                Aísla los datos de cada cliente
-                <strong>en la base de datos</strong>: una lectura cruzada
-                devuelve cero filas.
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h3 class="subtitulo subtitulo--no">No hace</h3>
-            <ul class="lista-regla">
-              <!-- fuente: ENTREGA §4 I-1/I-2 · RBAC §8 · CONSULTA-LEGAL §2.1 -->
-              <li>
-                No muestra <strong>cuenta regresiva ni magnitud</strong>: el
-                receptor oficial entrega un sí o un no, y el sistema no muestra
-                lo que no tiene.
-              </li>
-              <!-- fuente: CONSULTA-LEGAL §2.3 (IA sin campo para veredicto) -->
-              <li>
-                No deja que la <strong>inteligencia artificial</strong> dispare ni
-                vete una alerta: la estructura de datos no tiene campo donde poner
-                ese veredicto.
-              </li>
-              <!-- fuente: CONSULTA-LEGAL §2.4 (una estación sola no evacúa) -->
-              <li>
-                No evacúa a nadie por la lectura de
-                <strong>una sola estación</strong>: eso produce un aviso. La
-                actuación autónoma es una decisión del cliente, registrada.
-              </li>
-              <!-- fuente: ENTREGA §6.1 («TAKAB no genera la alerta oficial») -->
-              <li>
-                No predice sismos ni genera la alerta oficial: la
-                <strong>recibe</strong>.
-              </li>
-              <!-- fuente: ENTREGA §6.1 (límite de responsabilidad del dictamen) -->
-              <li>
-                No sustituye la <strong>evaluación estructural formal</strong>
-                ni autoriza el reingreso al inmueble: eso lo firma ingeniería.
-              </li>
-              <!-- fuente: ENTREGA §6.1 (plan de emergencia y brigada del cliente) -->
-              <li>
-                No reemplaza el <strong>plan de emergencia</strong> ni a la brigada:
-                sin personas entrenadas, una sirena suena en un edificio que no sabe
-                qué hacer.
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- fuente: CONSULTA-LEGAL §2.1 / ENTREGA §4 — mensaje literal e íntegro al
-         ocupante. Paleta REAL de la pantalla de crisis de la app. ESTÁTICA. -->
-    <div
-      class="banner-alerta"
-      role="img"
-      aria-label="Mensaje literal del sistema al ocupante: Alerta sísmica, protéjase"
-    >
-      <div class="marco">
-        <strong aria-hidden="true">Alerta sísmica · Protéjase</strong>
-        <p class="mono">
-          El mensaje íntegro al ocupante. Sin cuenta regresiva y sin magnitud:
-          quien promete ese número con un receptor de contacto seco, promete lo
-          que no tiene.
-        </p>
+        <div class="operaciones__visual" data-rv><Consola /></div>
       </div>
     </div>
   </section>
 
-  <!-- ═══ 04 · DESPUÉS DEL SISMO ═══ -->
-  <section class="seccion" id="despues">
+  <!-- ═══ 07 · CONFIGURACIÓN ═══ -->
+  <section class="seccion instalacion" id="instalacion">
     <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Después <em>del sismo</em></h2>
+      <header class="seccion__cabecera" data-rv>
+        <p class="eyebrow">07 / Configuración</p>
+        <h2 class="titulo">Una arquitectura para <em>cada inmueble</em></h2>
       </header>
-      <div class="seccion__cuerpo">
-        <p class="prosa">
-          El sismo termina y empieza la pregunta que de verdad cuesta dinero y
-          riesgo: <strong>¿se puede volver a entrar?</strong> El sistema sostiene
-          ese proceso con registro, no con memoria.
-        </p>
-        <div class="tres-paneles">
-          <!-- fuente: CONSULTA-LEGAL §2.5 -->
-          <div class="panel" data-rv>
-            <h3 class="subtitulo">Evidencia inalterable</h3>
-            <p>
-              El registro sísmico del evento, las fotos y las notas quedan en un
-              expediente <strong>que solo crece</strong>: la propia base de
-              datos rechaza borrados y reescrituras, y esa evidencia está exenta
-              de las políticas de retención.
+      <div class="seccion__cuerpo configuracion">
+        <div class="configuracion__capas" data-rv>
+          <article>
+            <span class="mono">Capa 01</span><h3>
+              Recepción y gabinete principal
+            </h3><p>
+              La señal del SASMEX entra a la lógica local con respaldo de
+              energía y registro de eventos.
             </p>
-          </div>
-          <!-- fuente: CONSULTA-LEGAL §2.5 / ENTREGA §3.1 -->
-          <div class="panel" data-rv>
-            <h3 class="subtitulo">Dictamen con firma</h3>
-            <p>
-              El dictamen operativo queda con su base y su firma. Una corrección
-              <strong>nunca reescribe</strong>: inserta una versión nueva que
-              declara a cuál sustituye. Todo exportable por incidente.
+          </article>
+          <article>
+            <span class="mono">Capa 02</span><h3>Cobertura y actuación</h3><p>
+              Gabinetes secundarios, sirenas, estrobos y canales se distribuyen
+              según áreas y riesgos.
             </p>
-          </div>
-          <!-- fuente: USER-STORIES US-10 / CONSULTA-LEGAL §2.7 -->
-          <div class="panel" data-rv>
-            <h3 class="subtitulo">Pase de lista</h3>
-            <p>
-              Quién está a salvo y quién necesita ayuda, por zona del inmueble —
-              el dato que orienta a la brigada cuando más ruido hay.
+          </article>
+          <article>
+            <span class="mono">Capa 03</span><h3>Personas y operación</h3><p>
+              La app y la consola conectan instrucciones, brigadas, evidencia y
+              continuidad.
             </p>
-          </div>
+          </article>
         </div>
-        <!-- fuente: ENTREGA §6.1 — «límite de responsabilidad, no letra pequeña» -->
-        <p class="nota-limite" data-rv>
-          <span class="mono">Límite declarado</span>
-          El dictamen es operativo y preliminar. No sustituye la evaluación estructural
-          formal ni autoriza el reingreso al inmueble: el reingreso lo autoriza una
-          firma de ingeniería.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ 05 · LA SALA DE OPERACIONES ═══ -->
-  <section class="seccion" id="consola">
-    <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Un edificio protege. <em>Una red corrobora.</em></h2>
-      </header>
-      <div class="seccion__cuerpo">
-        <div class="dato-grid dato-grid--arriba">
-          <div>
-            <!-- fuente: ENTREGA §3.2 / blueprint §4.5 (quórum ≥3; comando firmado) -->
-            <h3 class="subtitulo">Quórum de la red</h3>
-            <p class="prosa">
-              Un edificio que vibra puede ser un camión.
-              <strong>Tres o más inmuebles</strong> sacudiéndose a la vez, no. Cuando
-              el quórum de la red lo confirma, la nube emite un
-              <strong>comando de actuación firmado</strong> que cada gabinete verifica
-              antes de mover un relé. La corroboración viaja por la red; la protección
-              de cada edificio nunca depende de ella.
-            </p>
-          </div>
-          <div>
-            <!-- fuente: ENTREGA §3.3-§3.4 (consola SOC; RLS) -->
-            <h3 class="subtitulo">Consola de operaciones</h3>
-            <p class="prosa">
-              El centro de operaciones ve el mapa, la flota de gabinetes, los
-              incidentes y el historial de triage — con los datos de cada
-              cliente <strong>aislados en la base de datos</strong>, no por
-              cortesía del software. La app móvil acompaña a ocupantes y
-              brigadistas durante y después del evento.
-            </p>
-          </div>
-        </div>
-
-        <div class="bloque-figura">
-          <Consola />
-        </div>
-
-        <!-- fuente: ENTREGA §2.3/§3.3 (honestidad del dato). La captura de arriba
-             es el producto REAL con datos de demostración, y así se rotula. -->
-        <p class="nota-limite" data-rv>
-          <span class="mono">Regla de la casa</span>
-          El sistema no pinta un dato viejo como si fuera de ahora: una medición vencida
-          se retira en vez de congelarse en verde. Esta página sigue la misma regla
-          — la captura de arriba es la consola real con un incidente de <strong
-            >demostración</strong
-          >, y lo dice; no verá aquí cifras de marketing.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ 06 · PARA QUIÉN ═══ -->
-  <section class="seccion" id="para-quien">
-    <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Para <em>quién es</em></h2>
-      </header>
-      <div class="seccion__cuerpo">
-        <!-- fuente: CONSULTA-LEGAL §1 (segmentos literales); necesidades derivadas
-             de USER-STORIES (épicas 1-4) y ENTREGA §2-§3 -->
-        <table class="tabla">
-          <thead>
-            <tr>
-              <th scope="col">Inmueble</th>
-              <th scope="col">Lo que resuelve</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>Protección Civil y gobierno</strong></td>
-              <td>
-                Cobertura de inmuebles públicos con evidencia auditable de cada
-                evento y de cada actuación.
-              </td>
-            </tr>
-            <tr>
-              <td><strong>Hospitales</strong></td>
-              <td>
-                Cierre de gas y retorno de ascensores —donde se acrediten— sin
-                depender de que alguien esté frente a una pantalla; continuidad
-                de la operación clínica después del sismo.
-              </td>
-            </tr>
-            <tr>
-              <td><strong>Universidades</strong></td>
-              <td>
-                Campus de muchos edificios: red de estaciones, corroboración por
-                quórum y pase de lista por zona.
-              </td>
-            </tr>
-            <tr>
-              <td><strong>Industria</strong></td>
-              <td>
-                Paro seguro: válvulas y accesos con estado seguro por canal ante
-                cualquier falla, y registro para el análisis posterior.
-              </td>
-            </tr>
-            <tr>
-              <td><strong>Corporativos</strong></td>
-              <td>
-                La decisión de reocupación documentada: evidencia inalterable y
-                dictamen versionado para el responsable del inmueble.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ 07 · QUÉ SE INSTALA ═══ -->
-  <section class="seccion" id="instalacion">
-    <div class="marco">
-      <header data-rv>
-        <h2 class="titulo">Qué <em>se instala</em></h2>
-      </header>
-      <div class="seccion__cuerpo">
-        <div class="dato-grid">
-          <div class="panel">
-            <!-- fuente: ENTREGA §2 / blueprint §4.1; «homologado»: CONSULTA-LEGAL §2.1 -->
-            <p>
-              Un <strong>gabinete por edificio</strong>: receptor SASMEX WR-1
-              homologado, sensor sísmico propio, cerebro local, relés con estado
-              seguro por canal, respaldo de energía y almacenamiento local. Se
-              conecta al equipamiento existente del inmueble — sirena, válvula
-              de gas, ascensores, retenedores de puerta.
-            </p>
-          </div>
-          <div class="panel">
-            <!-- fuente: RUNBOOK-ALTA-DE-ESTACION; ENTREGA §6.2 (acreditación en sitio) -->
-            <p>
-              Cada canal —y el respaldo de energía— se acredita en el inmueble
-              antes de entrar en servicio: lo que no se haya probado en su
-              edificio, no se da por hecho.
-            </p>
-            <p>
-              La instalación se da de alta con un procedimiento guiado y
-              <strong
-                >la puesta en marcha se acredita en sitio, canal por canal</strong
-              >, con su registro. Sin precios de lista: cada inmueble se cotiza
-              por su equipamiento y su cobertura.
-            </p>
-          </div>
+        <div class="configuracion__usos" data-rv>
+          <p class="mono">Aplicación</p>
+          <ul>
+            <li>Gobierno y protección civil</li><li>
+              Hospitales y clínicas
+            </li><li>Universidades y campus</li><li>
+              Industria y logística
+            </li><li>Corporativos y usos mixtos</li>
+          </ul>
+          <p class="humo">
+            La evaluación del sitio define alcance, zonas, integraciones y plan
+            de puesta en marcha.
+          </p>
         </div>
       </div>
     </div>
   </section>
 
   <!-- ═══ 08 · CONTACTO ═══ -->
-  <section class="seccion" id="contacto">
+  <section class="seccion contacto" id="contacto">
     <div class="marco">
-      <div class="cierre panel panel--hondo" data-rv>
-        <h2 class="titulo cierre__titulo">Hablemos <em>de su inmueble</em></h2>
-        <p class="prosa">
-          Escríbanos con el tipo de inmueble, la ciudad y qué necesita proteger.
-          Respondemos con los siguientes pasos y una cotización a la medida.
-        </p>
-        <p class="hero__cta">
-          <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
-            >{CONTACTO_EMAIL}</a
-          >
-          {
-            WHATSAPP_URL && (
-              <a class="btn" href={WHATSAPP_URL} rel="noopener">
-                WhatsApp
-              </a>
-            )
-          }
-        </p>
+      <div class="contacto__panel" data-rv>
+        <div class="contacto__marca" aria-hidden="true">
+          <Image src={isotipoTakab} alt="" width={520} format="webp" />
+        </div>
+        <div class="contacto__copy">
+          <p class="eyebrow">08 / Siguiente paso</p>
+          <h2 class="titulo">Diseñemos el flujo <em>de su inmueble</em></h2>
+          <p class="prosa">
+            Compártanos el tipo de inmueble, ciudad, áreas a cubrir y sistemas
+            que necesita integrar. Preparamos una evaluación y una propuesta a
+            la medida.
+          </p>
+          <div class="contacto__acciones">
+            <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
+              >{CONTACTO_EMAIL}</a
+            >
+            {
+              WHATSAPP_URL && (
+                <a class="btn" href={WHATSAPP_URL} rel="noopener">
+                  WhatsApp
+                </a>
+              )
+            }
+          </div>
+        </div>
       </div>
     </div>
   </section>
 </Base>
 
 <style>
-  /* --- Portada: un instrumento, no texto-más-vacío. El sismograma entra al
-     primer viewport (>=1280 el hero se ancla a la altura de la pantalla) y el
-     riel de chips vive pegado al instrumento, no encima del titular. --- */
   .hero {
-    display: flex;
-    flex-direction: column;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     background:
+      linear-gradient(90deg, rgba(5, 11, 20, 0.97), rgba(5, 11, 20, 0.52)),
       radial-gradient(
-        90rem 40rem at 85% -20%,
-        rgba(0, 105, 137, 0.28),
-        transparent 60%
-      ),
-      radial-gradient(
-        60rem 30rem at -10% 10%,
-        rgba(0, 191, 255, 0.08),
-        transparent 55%
-      ),
-      var(--fondo-0);
+        60rem 44rem at 75% 28%,
+        rgba(18, 58, 122, 0.4),
+        transparent 68%
+      );
   }
-  .hero__cuerpo {
-    width: 100%;
-    padding-block: var(--e-6) var(--e-6);
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.34;
+    background-image:
+      linear-gradient(var(--linea) 1px, transparent 1px),
+      linear-gradient(90deg, var(--linea) 1px, transparent 1px);
+    background-size: 80px 80px;
+    mask-image: linear-gradient(90deg, transparent, #000 42%, #000);
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    top: 8%;
+    right: -14%;
+    z-index: -1;
+    width: min(62vw, 870px);
+    aspect-ratio: 1;
+    border: 1px solid rgba(106, 168, 255, 0.17);
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 90px rgba(106, 168, 255, 0.022),
+      0 0 0 180px rgba(106, 168, 255, 0.015);
+  }
+  .hero__grid {
+    display: grid;
+    align-items: center;
+    gap: clamp(28px, 4vw, 56px);
+    padding-block: clamp(32px, 4vw, 56px) 36px;
+  }
+  .hero__copy {
+    position: relative;
+    z-index: 2;
   }
   .hero__titulo {
+    margin-top: var(--e-4);
     font-family: var(--fuente-display);
+    font-size: clamp(3.75rem, 1.8rem + 6vw, 6.8rem);
     font-weight: 700;
-    font-size: var(--t-display);
+    letter-spacing: -0.035em;
     line-height: 0.92;
-    letter-spacing: -0.01em;
     text-transform: uppercase;
-  }
-  .hero__titulo em {
-    font-style: normal;
-    color: var(--cian);
-    text-shadow: 0 0 40px rgba(0, 191, 255, 0.45);
   }
   .hero__linea {
     display: block;
   }
-  .hero__lateral {
-    margin-top: var(--e-6);
+  .hero__linea + .hero__linea {
+    margin-top: 0.06em;
+  }
+  .hero__titulo em {
+    color: var(--cian);
+    font-style: normal;
+    text-shadow: 0 0 48px rgba(106, 168, 255, 0.42);
   }
   .hero__sub {
-    max-width: 58ch;
+    max-width: 60ch;
+    margin-top: var(--e-5);
     color: var(--texto-2);
+    font-size: clamp(1rem, 0.92rem + 0.35vw, 1.25rem);
   }
-  .hero__cta {
+  .hero__acciones,
+  .contacto__acciones {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: var(--e-4);
     margin-top: var(--e-5);
   }
-  .hero__instrumento {
+  .hero__enlace {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--e-2);
+    color: var(--texto-2);
+    text-decoration: none;
+  }
+  .hero__enlace span {
+    color: var(--cian);
+  }
+  .hero__telemetria {
+    display: grid;
+    gap: var(--e-2);
+    margin-top: var(--e-6);
+    padding: var(--e-4) 0 0;
+    border-top: 1px solid var(--linea);
+    color: var(--texto-3);
+    list-style: none;
+  }
+  .hero__telemetria li {
+    display: flex;
+    gap: var(--e-3);
+  }
+  .hero__telemetria span {
+    color: var(--cian);
+  }
+  .hero__visual {
+    min-width: 0;
+  }
+  .hero__onda {
     margin-top: auto;
   }
   .hero__rail {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--e-3);
+    align-items: center;
+    gap: var(--e-2);
     padding-block: var(--e-3);
   }
-  @media (min-width: 1280px) {
-    .hero {
-      min-height: calc(100svh - 73px);
-    }
-    .hero__cuerpo {
-      flex: 1;
-      display: grid;
-      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-      gap: var(--e-8);
-      align-items: center;
-      padding-block: var(--e-7);
-    }
-    .hero__lateral {
-      margin-top: 0;
-      border-left: 1px solid var(--linea);
-      padding-left: var(--e-6);
-    }
+  .motion-toggle {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: var(--e-2);
+    margin-left: auto;
+    padding: 0 var(--e-3);
+    border: 1px solid var(--linea-fuerte);
+    border-radius: 999px;
+    background: rgba(5, 11, 20, 0.62);
+    color: var(--texto-2);
+    cursor: pointer;
+  }
+  .motion-toggle:hover {
+    border-color: var(--cian);
+    color: var(--texto-1);
+  }
+  .motion-toggle:focus-visible {
+    outline: 2px solid var(--cian);
+    outline-offset: 3px;
+  }
+  .motion-toggle__icono {
+    width: 10px;
+    height: 12px;
+    border-inline: 3px solid currentColor;
+  }
+  .motion-toggle[aria-pressed="true"] .motion-toggle__icono {
+    width: 0;
+    height: 0;
+    border: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 9px solid currentColor;
   }
 
-  /* Momento de carga: el titular anima SOLO transform (LCP pinta al primer frame) */
+  .flujo__intro {
+    font-size: clamp(1.1rem, 1rem + 0.4vw, 1.36rem);
+  }
+  .flujo__pasos {
+    counter-reset: flow;
+    display: grid;
+    margin-top: clamp(44px, 7vw, 90px);
+    padding: 0;
+    border-top: 1px solid var(--linea-fuerte);
+    list-style: none;
+  }
+  .flujo__pasos li {
+    position: relative;
+    min-height: 210px;
+    padding: 28px 22px 30px;
+    border-bottom: 1px solid var(--linea);
+  }
+  .flujo__pasos li::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 22px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--cian);
+    box-shadow: var(--glow-cian);
+  }
+  .flujo__pasos span {
+    color: var(--cian);
+  }
+  .flujo__pasos strong {
+    display: block;
+    margin-top: 26px;
+    font-family: var(--fuente-display);
+    font-size: 1.55rem;
+    text-transform: uppercase;
+  }
+  .flujo__pasos p {
+    margin-top: 8px;
+    color: var(--texto-3);
+    font-size: 0.94rem;
+  }
+  .fisica__grid,
+  .ruta__intro,
+  .app__intro,
+  .continuidad__apertura,
+  .continuidad__grid,
+  .configuracion {
+    display: grid;
+    gap: clamp(32px, 6vw, 88px);
+  }
+  .fisica__copy {
+    align-self: center;
+  }
+  .fisica__mapa {
+    min-width: 0;
+    padding: clamp(8px, 2vw, 24px);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-lg);
+    background: rgba(11, 29, 58, 0.4);
+  }
+  .secuencia {
+    margin-top: var(--e-7);
+    padding: 0;
+    border-top: 1px solid var(--linea);
+    list-style: none;
+  }
+  .secuencia li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--e-4);
+    padding-block: var(--e-5);
+    border-bottom: 1px solid var(--linea);
+  }
+  .secuencia__numero {
+    color: var(--cian);
+  }
+  .secuencia p {
+    margin-top: var(--e-1);
+    color: var(--texto-3);
+  }
+  .ruta__declaracion {
+    max-width: 44ch;
+    align-self: end;
+    padding: var(--e-5) 0 var(--e-5) var(--e-5);
+    border-left: 1px solid var(--cian);
+    color: var(--texto-2);
+  }
+  .ruta__declaracion .mono {
+    display: block;
+    margin-bottom: var(--e-3);
+    color: var(--cian);
+  }
+  .ruta__esquema {
+    margin-top: clamp(40px, 6vw, 88px);
+  }
+  .resiliencia {
+    display: grid;
+    margin-top: clamp(48px, 7vw, 96px);
+    border-block: 1px solid var(--linea);
+  }
+  .resiliencia article {
+    padding-block: var(--e-7);
+  }
+  .resiliencia article + article {
+    border-top: 1px solid var(--linea);
+  }
+  .resiliencia .subtitulo {
+    margin-block: var(--e-4) var(--e-3);
+  }
+  .resiliencia article > p:last-child {
+    max-width: 54ch;
+    color: var(--texto-2);
+  }
+  .nota-limite {
+    max-width: 76ch;
+    margin-top: var(--e-6);
+    padding: var(--e-5);
+    border: 1px solid var(--linea-fuerte);
+    border-left: 3px solid var(--cian);
+    border-radius: var(--radio-sm);
+    background: rgba(11, 29, 58, 0.72);
+    color: var(--texto-2);
+  }
+  .nota-limite > .mono {
+    display: block;
+    margin-bottom: var(--e-2);
+    color: var(--cian);
+  }
+  .app__profiles {
+    display: grid;
+    gap: 1px;
+    align-self: start;
+    background: var(--linea);
+  }
+  .app__profiles article {
+    padding: 22px;
+    background: var(--fondo-1);
+  }
+  .app__profiles span {
+    color: var(--cian);
+  }
+  .app__profiles strong {
+    display: block;
+    margin-top: 14px;
+    font-family: var(--fuente-display);
+    font-size: 1.35rem;
+    text-transform: uppercase;
+  }
+  .app__profiles p {
+    margin-top: 8px;
+    color: var(--texto-3);
+    font-size: 0.92rem;
+  }
+  .app__visual {
+    margin-top: clamp(56px, 8vw, 112px);
+  }
+  .app__detalle {
+    display: grid;
+    margin-top: clamp(64px, 9vw, 124px);
+    padding: 0;
+    border-top: 1px solid var(--linea-fuerte);
+    list-style: none;
+  }
+  .app__detalle li {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--linea);
+  }
+  .app__detalle span {
+    color: var(--cian);
+  }
+  .app__detalle strong {
+    display: block;
+    margin-top: 12px;
+    font-family: var(--fuente-display);
+    font-size: 1.35rem;
+    text-transform: uppercase;
+  }
+  .app__detalle p {
+    margin-top: 7px;
+    color: var(--texto-3);
+  }
+  .continuidad__apertura {
+    align-items: start;
+  }
+  .continuidad__instrumento {
+    margin-top: clamp(48px, 7vw, 96px);
+  }
+  .continuidad__grid {
+    margin-top: clamp(72px, 10vw, 132px);
+  }
+  .linea-tiempo {
+    display: grid;
+    padding: 0;
+    border-top: 1px solid var(--linea-fuerte);
+    list-style: none;
+  }
+  .linea-tiempo li {
+    position: relative;
+    padding: var(--e-6) 0 var(--e-6) var(--e-6);
+    border-bottom: 1px solid var(--linea);
+  }
+  .linea-tiempo li::before {
+    content: "";
+    position: absolute;
+    top: 38px;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border: 1px solid var(--cian);
+    transform: rotate(45deg);
+  }
+  .linea-tiempo .mono {
+    color: var(--cian);
+  }
+  .linea-tiempo .subtitulo {
+    margin-block: var(--e-3) var(--e-2);
+  }
+  .linea-tiempo p {
+    max-width: 54ch;
+    color: var(--texto-3);
+  }
+  .operaciones__intro {
+    max-width: 68ch;
+  }
+  .operaciones__visual {
+    margin-top: clamp(44px, 7vw, 88px);
+  }
+  .configuracion__capas {
+    display: grid;
+    gap: 1px;
+    background: var(--linea);
+  }
+  .configuracion__capas article {
+    padding: clamp(22px, 4vw, 38px);
+    background: var(--fondo-1);
+  }
+  .configuracion__capas span,
+  .configuracion__usos > .mono {
+    color: var(--cian);
+  }
+  .configuracion__capas h3 {
+    margin-top: 18px;
+    font-family: var(--fuente-display);
+    font-size: 1.65rem;
+    text-transform: uppercase;
+  }
+  .configuracion__capas p {
+    margin-top: 8px;
+    color: var(--texto-3);
+  }
+  .configuracion__usos {
+    padding: clamp(26px, 4vw, 46px);
+    border: 1px solid var(--linea-fuerte);
+    background: rgba(16, 40, 70, 0.5);
+  }
+  .configuracion__usos ul {
+    display: grid;
+    gap: 0;
+    margin-block: 24px;
+    padding: 0;
+    list-style: none;
+  }
+  .configuracion__usos li {
+    padding-block: 13px;
+    border-bottom: 1px solid var(--linea);
+    color: var(--texto-1);
+    font-family: var(--fuente-display);
+    font-size: 1.4rem;
+    text-transform: uppercase;
+  }
+  .contacto {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .contacto::before {
+    display: none;
+  }
+  .contacto__panel {
+    position: relative;
+    min-height: 520px;
+    overflow: hidden;
+    border: 1px solid var(--linea-fuerte);
+    border-radius: var(--radio-lg);
+    background:
+      radial-gradient(
+        40rem 34rem at 88% 50%,
+        rgba(18, 58, 122, 0.48),
+        transparent 68%
+      ),
+      var(--fondo-1);
+  }
+  .contacto__panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.25;
+    background-image:
+      linear-gradient(var(--linea) 1px, transparent 1px),
+      linear-gradient(90deg, var(--linea) 1px, transparent 1px);
+    background-size: 64px 64px;
+    pointer-events: none;
+  }
+  .contacto__marca {
+    position: absolute;
+    top: 50%;
+    right: clamp(-160px, -7vw, -40px);
+    width: min(58vw, 620px);
+    opacity: 0.2;
+    transform: translateY(-50%);
+  }
+  .contacto__copy {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    min-height: 520px;
+    max-width: 790px;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(32px, 7vw, 96px);
+  }
+  .contacto__copy .titulo {
+    margin-block: var(--e-6) var(--e-5);
+  }
   @media (prefers-reduced-motion: no-preference) {
-    .al-t {
-      animation: al-sube 420ms ease-out both;
-      animation-delay: var(--d, 0s);
+    .hero__linea {
+      animation: hero-sube 420ms var(--ease-out) both;
     }
-    .al {
-      animation: al-entra 450ms ease-out both;
-      animation-delay: var(--d, 0s);
+    .hero__linea:nth-child(2) {
+      animation-delay: 70ms;
+    }
+    .hero__linea:nth-child(3) {
+      animation-delay: 140ms;
+    }
+    .hero-enter {
+      animation: hero-entra 450ms var(--ease-out) both;
+    }
+    .hero__sub {
+      animation-delay: 240ms;
+    }
+    .hero__acciones {
+      animation-delay: 300ms;
+    }
+    .hero__telemetria,
+    .hero__visual {
+      animation-delay: 360ms;
+    }
+    .hero__onda {
+      animation-delay: 420ms;
     }
   }
-  @keyframes al-sube {
+  @media (prefers-reduced-motion: reduce) {
+    .motion-toggle {
+      display: none;
+    }
+  }
+  @keyframes hero-sube {
     from {
       transform: translateY(14px);
     }
     to {
-      transform: none;
+      transform: translateY(0);
     }
   }
-  @keyframes al-entra {
+  @keyframes hero-entra {
     from {
       opacity: 0;
       transform: translateY(12px);
     }
     to {
       opacity: 1;
-      transform: none;
+      transform: translateY(0);
     }
   }
-
-  /* --- Composición interna --- */
-  .bloque-figura {
-    margin-top: var(--e-6);
-  }
-  .panel.bloque-figura,
-  .bloque-figura.panel {
-    padding: var(--e-4);
-  }
-  .dato-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--e-5);
-    margin-top: var(--e-6);
-  }
-  .dato-grid--arriba {
-    margin-top: 0;
-  }
-  .dato-grid h3 {
-    margin-bottom: var(--e-3);
-  }
-  .dato-grid .panel p {
-    color: var(--texto-2);
-    max-width: 52ch;
-  }
-  @media (min-width: 768px) {
-    .dato-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: var(--e-5);
+  @media (min-width: 700px) {
+    .hero__telemetria {
+      grid-template-columns: repeat(4, 1fr);
     }
-  }
-
-  .tres-paneles {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--e-5);
-    margin-top: var(--e-6);
-  }
-  .tres-paneles .panel p {
-    color: var(--texto-2);
-  }
-  .tres-paneles h3 {
-    margin-bottom: var(--e-3);
-  }
-  @media (min-width: 1280px) {
-    .tres-paneles {
+    .flujo__pasos {
       grid-template-columns: repeat(3, 1fr);
     }
+    .flujo__pasos li {
+      border-right: 1px solid var(--linea);
+    }
+    .resiliencia {
+      grid-template-columns: 1fr 1fr;
+    }
+    .resiliencia article {
+      padding-inline: var(--e-6);
+    }
+    .resiliencia article:first-child {
+      padding-left: 0;
+    }
+    .resiliencia article + article {
+      border-top: 0;
+      border-left: 1px solid var(--linea);
+    }
+    .app__profiles {
+      grid-template-columns: 1fr 1fr;
+    }
+    .app__detalle {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .app__detalle li {
+      padding-inline: 24px;
+      border-right: 1px solid var(--linea);
+    }
   }
-
-  .nota-limite {
-    margin-top: var(--e-6);
-    border: 1px solid var(--linea-fuerte);
-    border-radius: var(--radio-sm);
-    background: var(--fondo-1);
-    padding: var(--e-4) var(--e-5);
-    max-width: 72ch;
-    color: var(--texto-2);
+  @media (min-width: 960px) {
+    .fisica__grid {
+      grid-template-columns: minmax(280px, 0.68fr) minmax(0, 1.32fr);
+    }
+    .ruta__intro,
+    .app__intro,
+    .continuidad__apertura,
+    .continuidad__grid {
+      grid-template-columns: 1fr 0.82fr;
+    }
+    .app__intro {
+      align-items: end;
+    }
+    .continuidad__grid {
+      align-items: start;
+    }
+    .configuracion {
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+      align-items: start;
+    }
+    .configuracion__usos {
+      position: sticky;
+      top: 110px;
+    }
+    .app__detalle {
+      grid-template-columns: repeat(5, 1fr);
+    }
   }
-  .nota-limite .mono {
-    display: block;
-    color: var(--cian);
-    margin-bottom: var(--e-2);
+  @media (min-width: 1180px) {
+    .hero__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(500px, 1.08fr);
+      gap: clamp(28px, 3vw, 52px);
+    }
+    .hero__titulo {
+      font-size: clamp(4.6rem, 3rem + 2vw, 5.75rem);
+    }
   }
-
-  .spec {
-    margin-top: var(--e-5);
-  }
-  .tabla td {
-    max-width: 60ch;
-  }
-
-  .cierre {
-    padding: var(--e-7) var(--e-6);
-    text-align: left;
-    background:
-      radial-gradient(
-        50rem 24rem at 100% 0%,
-        rgba(0, 191, 255, 0.1),
-        transparent 60%
-      ),
-      var(--fondo-1);
-  }
-  .cierre__titulo {
-    margin-bottom: var(--e-4);
-  }
-  .cierre .hero__cta {
-    margin-top: var(--e-5);
+  @media (max-width: 520px) {
+    .hero__titulo {
+      font-size: clamp(3.25rem, 16.2vw, 4.55rem);
+    }
+    .hero__acciones .btn,
+    .contacto__acciones .btn {
+      width: 100%;
+    }
+    .hero__telemetria {
+      grid-template-columns: 1fr 1fr;
+      font-size: 0.64rem;
+    }
+    .motion-toggle {
+      width: 100%;
+      justify-content: center;
+      margin-left: 0;
+    }
+    .contacto__marca {
+      right: -32%;
+      width: 110%;
+    }
   }
 </style>

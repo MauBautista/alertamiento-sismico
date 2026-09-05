@@ -22,27 +22,27 @@ sin dependencia de `shared/design-tokens`. Deploy: S3+CloudFront existentes (mó
 
 Compradores institucionales de protección sísmica en México: responsables de Protección Civil,
 administradores de hospitales, universidades, industria y corporativos — la persona que decide
-si un inmueble ocupado instala un sistema que acciona sirena, gas, ascensores y puertas.
+si un inmueble ocupado instala un sistema de alertamiento audiovisual y continuidad operativa.
 Llegan desde una recomendación o búsqueda, la mayoría desde el teléfono, con escepticismo
 profesional: han visto marketing de seguridad que promete de más. Trabajo a realizar: entender
-qué hace el sistema, qué NO hace, y decidir si contactar para una cotización.
+el flujo completo —edificio, personas y operación— y decidir si contactar para una evaluación.
 
 ## Product Purpose
 
 TAKAB Ailert es una plataforma de alertamiento sísmico, monitoreo estructural y continuidad
-operativa post-sismo para inmuebles con gente dentro (CONSULTA-LEGAL §1). Un gabinete por
-edificio recibe la alerta oficial (SASMEX, receptor WR-1 por contacto seco) y acciona
-equipamiento físico del inmueble; después del sismo sostiene el proceso de revisión y dictamen.
+operativa post-sismo para inmuebles con gente dentro (CONSULTA-LEGAL §1). Un gabinete principal
+recibe la señal del SASMEX, distribuye el alertamiento mediante gabinetes de apoyo, sirenas y
+estrobos, y gobierna los canales definidos para el inmueble. La app guía a ocupantes y brigadas;
+después del sismo, la plataforma sostiene el proceso de revisión y dictamen.
 La landing existe para explicar esto a un comprador y producir un contacto — y para sostener la
 evidencia del dominio remitente ante AWS SES (T-2.156).
 
 ## Positioning
 
-«El edificio se protege solo»: del contacto de SASMEX al relé no hay internet, no hay nube y no
-hay inteligencia artificial (CONSULTA-LEGAL §2.2). La nube coordina, nunca está en la ruta
-crítica. Ningún competidor que dependa de conectividad puede afirmar esto. Segunda posición
-verificable: la honestidad como argumento — el sistema declara en negativo lo que no hace
-(ENTREGA Parte II) y la landing lo publica.
+«Una señal. Todo el inmueble en acción»: la ruta crítica física permanece dentro del inmueble;
+la app y la consola amplían la respuesta hacia instrucciones por zona, check-ins, pase de lista,
+evidencia y recuperación. El argumento comercial es la continuidad de todo el flujo y la
+claridad con la que cada capa asume una función verificable.
 
 ## Operating Context
 
@@ -57,20 +57,19 @@ verificable: la honestidad como argumento — el sistema declara en negativo lo 
 
 ## Capabilities and Constraints
 
-Afirmable (con fuente en el repo): actuación local determinista sin nube probada con la nube
-apagada; estados seguros por canal (gas `fail_close`, puertas `NC`); IA sin campo donde poner un
-veredicto; evidencia append-only por triggers de base de datos, exenta de retención; dictámenes
-versionados y firmados; aislamiento multi-tenant por RLS default-deny; quórum de ≥3 inmuebles
-con comando firmado; panel LAN sin un solo recurso externo; 2 h sin enlace sin perder ni
-duplicar eventos.
+Afirmable (con fuente en el repo): actuación local determinista; distribución a alertamiento
+audiovisual por zona conforme al diseño de la instalación; sincronización posterior de eventos;
+app móvil con instrucción por zona, check-in offline-first y perfil táctico; evidencia append-only
+por triggers de base de datos; sismograma, FFT y espectrograma; analítica de evacuación con
+conteos, T50/T90, tiempos de reingreso y conciliación contra check-ins; dictámenes versionados y
+firmados; narrativa explicativa asistida por IA sobre hechos permitidos, con procedencia y
+degradación determinista; aislamiento multi-tenant por RLS default-deny.
 
-Prohibido afirmar: cifras medidas (decisión Mauricio 2026-08-25 — ni 6.65 ms, ni 214 ms, ni
-13/13; solo cualitativo); cuenta regresiva o magnitud (el WR-1 entrega un booleano; invariantes
-I-1/I-2); normas o certificaciones (deslinde CONSULTA-LEGAL §3; citarlas activa el gatillo #3 de
-D-20); canales de aviso específicos como promesa (SMS/WhatsApp/push no entregan hoy — ENTREGA
-§6.3); «la sirena suena en X ms» (G-04 abierto); badges de App Store/Play (GATE-STORE abierto);
-clientes, testimonios, precios, SLA (no existen); audio de alerta (el tono SASMEX exige licencia
-CIRES; D-19: tono propio); predicción de sismos (el sistema recibe y detecta, no predice).
+Prohibido afirmar: cifras medidas (decisión Mauricio 2026-08-25); magnitud o tiempo estimado en
+la alerta; normas o certificaciones; «la sirena suena en X ms» (G-04 abierto); badges de App
+Store/Play (GATE-STORE abierto); clientes, testimonios, precios o SLA. La landing pública nombra
+la entrada únicamente como «señal del SASMEX»: omite modelos y componentes internos. El mapa de
+estaciones es una escena ilustrativa y debe declararlo explícitamente.
 
 Presupuesto técnico: LCP < 2.0 s en 4G, JS inicial < 100 KB gz (objetivo < 20 KB), CLS < 0.1,
 cero orígenes externos en runtime, español (es-MX) único idioma v1.
@@ -78,20 +77,21 @@ cero orígenes externos en runtime, español (es-MX) único idioma v1.
 ## Brand Commitments
 
 - Nombre del producto: **TAKAB Ailert** (en superficies: TAKAB AILERT). Empresa: TAKAB
-  TECHNOLOGY (wordmark PNG `web/src/assets/LogoTakab2.png`; no existe logo del producto).
+  TECHNOLOGY. La identidad entregada en `img/Logos Finales/` incluye imagotipo e isotipo
+  negativos; la landing conserva copias fuente en `src/assets/img/` y deriva de ahí el favicon.
 - Display de marca para superficies de marketing: **Saira Condensed** (sustituta oficial de la
   propietaria Aero Sans-Serif — `takab-docs/design/app/fonts/README.md`).
 - Colores de marca utilizables: navy de la consola (`#0E2336`) y la paleta clara del PDF de
   dictamen (tinta `#14181E`, rojo `#C4302B` — `api/src/takab_api/dictamen/layout.py`).
-- Dirección visual VIGENTE (v2, pedida por Mauricio el 2026-08-25 y confirmada con 4 respuestas
-  estructuradas): mundo oscuro «Telemetría» — la identidad REAL del producto (navy
-  #071322/#0E2336 + cian #00BFFF de la consola, semáforo solo semántico, crisis #160808 de la
-  app), tecnológico, cinemático y llamativo, con glow de señal como material. REVOCA el
-  compromiso v1 de «contraste deliberado con la consola» (Swiss Print claro): la landing ahora
-  se hermana con la consola a propósito. Piezas confirmadas: mapa de la física de la alerta
-  (sin sitios ni cobertura), capturas REALES de consola con datos de demostración etiquetados,
-  sismograma ilustrativo rotulado. Sigue vigente del brief v1: sin Inter/Roboto, sin degradados
-  morado-azul, sin glassmorphism, sin screenshots falsos.
+- Dirección visual VIGENTE (v3, elegida por Mauricio el 2026-09-05): mundo oscuro «Comando
+  cinematográfico». La identidad entregada (#0B1D3A/#123A7A/#FF2D1A) ordena el sitio; el azul
+  de señal ilumina acciones y ruta crítica, y el rojo se reserva para alerta. La narrativa hace
+  visible el inmueble como sistema: señal SASMEX → gabinete principal → gabinetes de apoyo y
+  alertamiento por zonas → app móvil → brigada/SOC → evidencia → analítica post-sismo → dictamen
+  y reingreso. Conserva el mapa físico con estaciones fijas e ilustrativas —incluidas Puebla y
+  Tlaxcala—, una representación editorial responsive de la consola con datos ilustrativos y un instrumento de
+  sismograma, espectrograma, personas, evacuación y salida documental. Siguen vigentes los rechazos:
+  sin Inter/Roboto, sin degradados morado-azul, sin glassmorphism y sin screenshots falsos.
 - Tagline de producto disponible: «ALERTAMIENTO SÍSMICO · CONTINUIDAD OPERATIVA» (la de la app).
   [inferido: la de la empresa «LO MEJOR LO ESTAMOS CREANDO» se omite en la landing — propuesto a
   Mauricio, pendiente de confirmación en pregunta abierta #4]
@@ -104,18 +104,18 @@ cero orígenes externos en runtime, español (es-MX) único idioma v1.
   definición, «Qué hace», deslinde SASMEX, declaración de correo.
 - Fuentes de verdad del contenido: `takab-docs/CONSULTA-LEGAL-TAKAB.md` (§2 afirmable, §3
   deslinde), `takab-docs/ENTREGA-Y-ACEPTACION-TAKAB.md` (Parte I qué hace / Parte II qué no).
-- Capturas reales de consola: producibles vía `make soc-local` + Playwright. Capturas reales de
+- Capturas reales de consola: producibles vía `make soc-local` + Playwright, pero no se publican
+  hasta contar con una flota sana, un sitio neutro y un recorte sin cifras medidas. Capturas reales de
   app: requieren el Pixel de Mauricio (pendiente). NO usar los mockups de `takab-docs/design/`
   como producto.
 - Ausencias que el trabajo futuro no debe fabricar: clientes, testimonios, precios,
-  certificaciones, cifras de latencia publicables, logo del producto, favicon heredado.
+  certificaciones y cifras de latencia publicables.
 
 ## Product Principles
 
-1. La honestidad es el argumento de venta: lo que el sistema no hace se publica, no se esconde.
+1. El flujo completo es el argumento de venta: cada etapa explica su función con lenguaje directo.
 2. Cada afirmación de la landing lleva su fuente anotada en el código (`<!-- fuente: … -->`).
-3. El sitio es un documento técnico, no un folleto: se diseña como el artefacto más serio que
-   produce el sistema (el dictamen).
+3. El sitio es un documento técnico: la arquitectura visual sigue el recorrido real del sistema.
 4. El sitio nunca miente ni por rendimiento: sin countdown simulado, sin screenshot falso, sin
    dato congelado pintado como vivo.
 5. Presupuesto de rendimiento y accesibilidad son restricciones duras, no aspiraciones.
