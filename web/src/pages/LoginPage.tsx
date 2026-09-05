@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router";
 
 import { getEnv } from "../app/env";
 import { landingPath } from "../app/landing";
-import logoTakab from "../assets/LogoTakab2.png";
+import logoTakab from "../assets/logotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import { cognitoConfigured } from "../auth/userManager";
 import MobileOnlyScreen from "./MobileOnlyScreen";
@@ -111,7 +111,7 @@ export default function LoginPage() {
   return (
     <div className="soc-screen">
       <div className="soc-screen__panel">
-        <img src={logoTakab} alt="TAKAB TECHNOLOGY" className="soc-screen__logo" />
+        <img src={logoTakab} alt="TAKAB Ailert" className="soc-screen__logo" />
         <h1 className="soc-screen__title">CONSOLA SOC</h1>
         {cognitoConfigured() ? (
           <button

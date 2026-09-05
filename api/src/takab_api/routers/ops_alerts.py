@@ -280,10 +280,27 @@ async def _registrar(sobre: dict, *, topic_arn: str, settings: Settings) -> dict
 # EL ACUSE HUMANO
 # =============================================================================
 
+# Icono de marca EMBEBIDO (16 px). Derivado de `shared/brand` con
+# `shared/brand/generar.py`; lo valida `test_ops_alerts_favicon.py`. Va en
+# `data:` y no en una ruta porque la API no sirve estáticos: un `href` a
+# `/favicon.png` caería en el SPA, que responde 200 con su propio HTML.
+_ICONO_MARCA = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAABIUlEQVR42mPklrViIAUwMZAIqKQh"
+    "MdxdU1mKWA12ZlqTu+vY2FiZmRi0VKUtjNRYmRlxalBXlNi2Zrayocf1248vHFxxau8qQX7e33//"
+    "wxWwIKvmYGNePrdHWsuJhZn53b3DDAwM6ibeT199wO4kJkaGhrJUS/c4Fmbm3etmnj57SULdAU01"
+    "ig2BHtY1bTP4+bjmT25cuW7bsxevv3z/jelDRkjESYjwvnjzWVpcwNbC4OyF6ylxQWysLAwMDEV1"
+    "k/9jhhITI8OLN59FOZkvlyVY66pzcLC3T5j/6/cfRzvLfeumMzFiaPj3n4GFmfFuVfLfrVs4P36I"
+    "CfcR4ONu7J599fotE2Pd/RtnMjNhOImBgYGBAWI5I/6YRg5WxsGR+ABySVkO3D0oMgAAAABJRU5E"
+    "rkJggg=="
+)
+
+
 _PAGINA = """<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TAKAB · acuse de guardia</title>
+<title>TAKAB Ailert · acuse de guardia</title>
+<link rel="icon" href="__ICONO_MARCA__">
 <style>
  body{{font:16px/1.5 system-ui,sans-serif;margin:0;padding:2rem 1.25rem;
       background:#10151c;color:#e7edf5}}
@@ -301,7 +318,7 @@ _PAGINA = """<!doctype html>
 <p>{intro}</p>
 {cuerpo}
 </main></body></html>
-"""
+""".replace("__ICONO_MARCA__", _ICONO_MARCA)
 
 #: [T-2.161] `action` VACÍO, no la ruta absoluta. El formulario se envía a la URL
 #: que lo sirvió, con prefijo o sin él.

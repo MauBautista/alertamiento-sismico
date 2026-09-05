@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import logoTakab from "../assets/LogoTakab2.png";
+import logoTakab from "../assets/logotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import { retryDelayMs } from "./degradedRetry";
 
@@ -105,7 +105,7 @@ export default function DegradedSessionScreen() {
   return (
     <div className="soc-screen">
       <div className="soc-screen__panel" role="alert" aria-live="assertive">
-        <img src={logoTakab} alt="TAKAB TECHNOLOGY" className="soc-screen__logo" />
+        <img src={logoTakab} alt="TAKAB Ailert" className="soc-screen__logo" />
         <h1 className="soc-screen__title">CONSOLA EN MODO DEGRADADO</h1>
 
         <p className="soc-screen__sub">

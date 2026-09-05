@@ -198,20 +198,30 @@ def _load_index_html() -> str:
         return _FALLBACK_HTML
 
 
-def _load_static_fonts() -> dict[str, tuple[str, bytes]]:
+def _load_static() -> dict[str, tuple[str, bytes]]:
     """[T-2.23] Whitelist de estáticos, cargada UNA vez al construir el panel.
 
     Dict por ruta EXACTA ⇒ inmune a path traversal por construcción: cualquier
-    otra ruta (incluido `/fonts/../`) es 404. Una fuente ausente simplemente no
-    entra a la whitelist y la pila CSS cae a la del sistema.
+    otra ruta (incluido `/fonts/../`) es 404. Un recurso ausente simplemente no
+    entra a la whitelist: sin fuente, la pila CSS cae a la del sistema; sin
+    favicon, la pestaña sale con el icono genérico. Nada revienta.
+
+    El favicon viaja EMPAQUETADO junto al módulo, igual que las fuentes: el
+    panel se sirve sin build y sin red, así que un icono que hubiera que
+    descargar no se vería jamás en el gabinete.
     """
     served: dict[str, tuple[str, bytes]] = {}
-    for name, mime in (("geist.ttf", "font/ttf"), ("jbmono.woff2", "font/woff2")):
+    recursos = (
+        ("fonts/geist.ttf", "/fonts/geist.ttf", "font/ttf"),
+        ("fonts/jbmono.woff2", "/fonts/jbmono.woff2", "font/woff2"),
+        ("favicon.png", "/favicon.png", "image/png"),
+    )
+    for nombre, ruta, mime in recursos:
         try:
-            data = resources.files("takab_edge.local_api").joinpath(f"fonts/{name}").read_bytes()
-            served[f"/fonts/{name}"] = (mime, data)
+            data = resources.files("takab_edge.local_api").joinpath(nombre).read_bytes()
+            served[ruta] = (mime, data)
         except OSError:
-            log.warning("fuente %s no empaquetada; la pila CSS cae al sistema", name)
+            log.warning("estático %s no empaquetado; el panel sigue sin él", nombre)
     return served
 
 
@@ -492,7 +502,7 @@ class LocalDashboard(EdgeModule):
         # T-2.23: estáticos y catálogo se cargan UNA vez — servir jamás toca disco.
         # T-2.24: el store compartido del supervisor trae el feed firmado; un
         # panel suelto (tests/parcial) construye uno de solo-lectura por path.
-        self.static_files = _load_static_fonts()
+        self.static_files = _load_static()
         self._catalog_store = catalog if catalog is not None else CatalogStore(catalog_path)
         self._rose_zero = RoseZeroStore(rose_zero_path)  # T-2.29
 

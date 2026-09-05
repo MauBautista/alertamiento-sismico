@@ -1026,6 +1026,28 @@ def test_static_fonts_served_with_mime_and_cache(supervisor):
             assert len(response.read()) > 1000  # la fuente de verdad viaja, no un stub
 
 
+def test_favicon_de_marca_viaja_empaquetado(supervisor):
+    """El icono del panel se SIRVE, y es el de marca — no el genérico del navegador.
+
+    Se comprueba la cadena entera porque cada mitad falla en silencio por su
+    cuenta: un `<link>` sin fichero deja la pestaña con el icono por defecto, y
+    un fichero sin `<link>` no lo pide nadie. Y viaja empaquetado con el módulo
+    (como las fuentes) porque el gabinete sirve el panel SIN RED: un icono que
+    hubiera que descargar no se vería nunca ahí.
+    """
+    with urllib.request.urlopen(_url(supervisor.local_api, "/favicon.png"), timeout=5) as response:
+        assert response.status == 200
+        assert response.headers["Content-Type"] == "image/png"
+        crudo = response.read()
+    assert crudo[:8] == b"\x89PNG\r\n\x1a\n", "no es un PNG"
+    ancho = int.from_bytes(crudo[16:20], "big")
+    alto = int.from_bytes(crudo[20:24], "big")
+    assert (ancho, alto) == (32, 32), f"el favicon mide {ancho}x{alto}"
+
+    _, body = _get(supervisor.local_api, "/")
+    assert 'href="/favicon.png"' in body.decode(), "el panel no enlaza su propio icono"
+
+
 def test_static_unknown_path_is_404(supervisor):
     for path in ("/fonts/otra.ttf", "/fonts/../__init__.py", "/fonts/", "/assets/x.svg"):
         with pytest.raises(urllib.error.HTTPError) as exc:
