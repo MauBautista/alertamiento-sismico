@@ -40,9 +40,9 @@ la consola y el panel van con Geist/JetBrains Mono, y eso es deliberado.
 | `isotipo-positivo.png` | la misma K en navy/azul | para fondos claros; hoy no lo usa ningún producto |
 | `logotipo-negativo.png` | «TAKAB AILERT» en blanco+rojo | topbar y pantallas de estado de la consola |
 | `logotipo-positivo.png` | «TAKAB AILERT» en navy+rojo | fondos claros |
-| `imagotipo-negativo.png` | isotipo + logotipo + traza de sismograma | piezas grandes; **no** para tamaños pequeños (ver abajo) |
-| `imagotipo-positivo-sobre-blanco.jpg` | el imagotipo positivo, **JPEG sin transparencia** | referencia; no sirve para componer |
-| `imagotipo-positivo-con-traza-sobre-blanco.jpg` | la variante con traza de sismograma, ídem | referencia |
+| `imagotipo-negativo.png` | isotipo + logotipo + traza de sismograma, en blanco | piezas grandes; **no** para tamaños pequeños (ver abajo) |
+| `imagotipo-positivo.png` | el mismo, en navy+rojo, con transparencia | fondos claros; hoy no lo usa ningún producto |
+| `imagotipo-positivo-sin-traza-sobre-blanco.jpg` | la variante **sin** la traza, JPEG sobre blanco | referencia: es la única copia de esa variante |
 | `isotipo.svg` | trazado monocromo del isotipo | referencia vectorial |
 | `isotipo-negativo-monocromatico.png` | el monocromo tal como lo entregó diseño | referencia |
 | `sistema-de-identidad.png` | la hoja de marca completa, a resolución íntegra | documentación: aquí se leen los hex |
@@ -51,12 +51,12 @@ la consola y el panel van con Geist/JetBrains Mono, y eso es deliberado.
 Los originales llegaron en `/img` (con un `.rar` de 7,8 MB y duplicados en
 `.jfif`). Todo lo que traía de único está aquí; `/img` queda fuera de git.
 
-### Lo que falta, y no lo arregla el software
+### Los límites del juego de maestros
 
-- **No hay imagotipo POSITIVO con transparencia.** El entregado es un JPEG sobre
-  blanco (`Imagotipo_positivo.jfif`), así que no sirve para componer sobre nada.
-  Si hace falta, hay que pedírselo al diseño; recortarle el blanco a un JPEG deja
-  halos y no se va a hacer aquí.
+- **El imagotipo positivo con transparencia llegó el 2026-09-05** y sustituyó al
+  JPEG sobre blanco con el que se abrió esta carpeta. Sigue faltando la variante
+  **sin traza** con transparencia; de esa solo hay JPEG sobre blanco, y
+  recortarle el fondo deja halos, así que no se hace aquí: se pide a diseño.
 - **El SVG es una silueta monocroma**: pierde el epicentro rojo y la separación
   de color. Por eso los iconos salen de los PNG y no del SVG.
 
