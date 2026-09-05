@@ -1,0 +1,68 @@
+---
+// La consola SOC REAL, capturada del producto corriendo (scripts/
+// capturas-consola.mjs sobre `make soc-local`). Datos de DEMOSTRACIÓN y se
+// dice en el rótulo: la honestidad de la casa aplica también al marketing.
+import { Image } from "astro:assets";
+import livewall from "../assets/img/consola-livewall.png";
+---
+
+<figure class="consola" data-rv>
+  <div class="consola__marco">
+    <div class="consola__barra" aria-hidden="true">
+      <span></span><span></span><span></span>
+      <span class="consola__url mono">soc.takab · monitoreo</span>
+    </div>
+    <Image
+      src={livewall}
+      alt="Consola SOC de TAKAB Ailert durante un incidente de demostración: banner ALERTA SÍSMICA · PROTÉJASE del Sitio Dev Puebla, mapa con las estaciones de la zona, tira de indicadores de flota y tabla de incidentes abiertos con severidad crítica."
+      widths={[720, 1200, 1600]}
+      sizes="(min-width: 1280px) 1120px, 100vw"
+    />
+  </div>
+  <figcaption class="mono humo consola__pie">
+    Consola SOC real · incidente de <strong>demostración</strong> (sitio y datos de
+    prueba)
+  </figcaption>
+</figure>
+
+<style>
+  .consola {
+    margin: 0;
+  }
+  .consola__marco {
+    border: 1px solid var(--linea-fuerte);
+    border-radius: var(--radio);
+    overflow: hidden;
+    background: var(--fondo-1);
+    box-shadow:
+      var(--glow-cian-suave),
+      0 24px 64px -32px rgba(0, 0, 0, 0.8);
+  }
+  .consola__barra {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--linea);
+    background: var(--fondo-2);
+  }
+  .consola__barra > span:not(.consola__url) {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--linea-fuerte);
+  }
+  .consola__url {
+    margin-left: var(--e-3);
+    color: var(--texto-3);
+    letter-spacing: 0.06em;
+  }
+  .consola__pie {
+    padding-top: var(--e-3);
+    letter-spacing: 0.05em;
+    text-transform: none;
+  }
+  .consola__pie strong {
+    color: var(--texto-2);
+  }
+</style>

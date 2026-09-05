@@ -1,6 +1,8 @@
 /* ============================================================
-   Base + primitivas de composición. El documento es la metáfora:
-   reglas visibles, compartimentos, cero sombras, cero radios.
+   Mundo v2 «Telemetría»: la sala de operaciones, cinemática.
+   Paneles de consola, hilos de luz, glow de señal. La jerarquía
+   se construye con luz (cian) y profundidad de navy, no con
+   sombras grises. Estados verde/ámbar/rojo SOLO con significado.
    ============================================================ */
 
 *,
@@ -11,33 +13,33 @@
 }
 
 html {
-  color-scheme: light; /* la landing es papel a propósito, en cualquier tema del SO */
-  scrollbar-color: var(--tinta) var(--banda);
+  color-scheme: dark; /* la landing es la identidad viva del producto: oscura */
+  scrollbar-color: var(--fondo-3) var(--fondo-0);
   scroll-behavior: smooth;
 }
 
 body {
-  background: var(--papel);
-  color: var(--tinta);
+  background: var(--fondo-0);
+  color: var(--texto-1);
   font-family: var(--fuente-cuerpo);
   font-size: var(--t-body);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
-/* --- Superficies del navegador: también llevan el diseño --- */
+/* --- Superficies del navegador --- */
 ::selection {
-  background: var(--tinta);
-  color: var(--papel);
+  background: var(--cian);
+  color: var(--fondo-1);
 }
 :focus-visible {
-  outline: 3px solid var(--alerta);
+  outline: 3px solid var(--cian);
   outline-offset: 2px;
 }
 input,
 textarea {
-  caret-color: var(--alerta);
-  accent-color: var(--alerta);
+  caret-color: var(--cian);
+  accent-color: var(--cian);
 }
 
 img {
@@ -47,17 +49,18 @@ img {
 }
 
 a {
-  color: inherit;
+  color: var(--cian);
   text-decoration-line: underline;
   text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
 }
 a:hover {
-  color: var(--alerta);
+  color: var(--cian-hover);
 }
 
 strong {
   font-weight: 600;
+  color: var(--texto-1);
 }
 
 /* --- Accesibilidad --- */
@@ -74,18 +77,18 @@ strong {
   left: var(--e-4);
   top: -100px;
   z-index: 100;
-  background: var(--tinta);
-  color: var(--papel);
+  background: var(--cian);
+  color: var(--fondo-1);
   padding: var(--e-3) var(--e-4);
   font-family: var(--fuente-mono);
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-decoration: none;
+  border-radius: var(--radio-sm);
 }
 .salto:focus-visible {
   top: var(--e-4);
-  color: var(--papel);
 }
 
 /* --- Primitivas --- */
@@ -104,28 +107,69 @@ strong {
 }
 
 .humo {
-  color: var(--humo);
+  color: var(--texto-3);
 }
 
-/* Cajetín de sección: regla dura full-bleed + fila de metadatos referenciales
-   (folio de hoja, identidad del documento) separada del título por un hilo.
-   El título carga su propio peso: nada de "eyebrow" pegada encima. */
-.seccion {
-  border-top: var(--borde) solid var(--tinta);
-}
-.cajetin__meta {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--e-4);
-  padding-block: var(--e-2);
-  border-bottom: var(--hilo) solid var(--regla);
-  color: var(--humo);
-}
-/* El folio es un token indivisible: «SEC 01 / 07» jamás se parte (finish
-   review a 360: el «07» quedaba huérfano). Solo la celda izquierda — la
-   derecha llega a 38ch y con nowrap desbordaría el viewport. */
-.cajetin__meta span:first-child {
+/* Chips de estado (rotulación de telemetría) */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  font-family: var(--fuente-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--texto-2);
+  border: 1px solid var(--linea-fuerte);
+  border-radius: 999px;
+  padding: 6px 14px;
   white-space: nowrap;
+}
+.chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cian);
+  box-shadow: var(--glow-cian);
+}
+/* Chip sin señal viva: punto apagado, sin glow (Glow Solo Señal). La regla se
+   perdió al reemplazar el CSS del hero y el documenter la cazó como no-op. */
+.chip--quieto::before {
+  background: var(--texto-3);
+  box-shadow: none;
+}
+
+/* Panel de consola */
+.panel {
+  background: var(--fondo-2);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: var(--e-5);
+}
+.panel--hondo {
+  background: var(--fondo-1);
+}
+
+/* Encabezado de sección v2: título solo, con hilo superior de luz */
+.seccion {
+  position: relative;
+  padding-block: var(--e-9) 0;
+}
+.seccion::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--cian),
+    var(--linea) 40%,
+    transparent
+  );
+  opacity: 0.55;
 }
 .titulo {
   font-family: var(--fuente-display);
@@ -134,8 +178,11 @@ strong {
   text-transform: uppercase;
   line-height: 0.95;
   letter-spacing: -0.01em;
-  padding-block: var(--e-6) var(--e-5);
-  max-width: 24ch;
+  max-width: 26ch;
+}
+.titulo em {
+  font-style: normal;
+  color: var(--cian);
 }
 .subtitulo {
   font-family: var(--fuente-display);
@@ -143,99 +190,69 @@ strong {
   font-weight: 700;
   text-transform: uppercase;
   line-height: 1.05;
-  letter-spacing: 0;
 }
 .seccion__cuerpo {
-  padding-bottom: var(--e-9);
+  padding-block: var(--e-6) var(--e-9);
 }
 .prosa {
   max-width: 62ch;
+  color: var(--texto-2);
 }
 .prosa p + p {
   margin-top: var(--e-4);
 }
 
-/* Cruces de registro en esquinas de composiciones clave */
-.cruz {
-  position: relative;
-}
-.cruz::before,
-.cruz::after {
-  content: "+";
-  position: absolute;
-  color: var(--humo);
-  font-family: var(--fuente-mono);
-  font-size: 14px;
-  line-height: 1;
-}
-.cruz::before {
-  top: 6px;
-  left: 6px;
-}
-.cruz::after {
-  bottom: 6px;
-  right: 6px;
-}
-
 /* --- Botones --- */
 .btn {
-  position: relative;
-  z-index: 0;
   display: inline-block;
   font-family: var(--fuente-mono);
   font-size: var(--t-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-decoration: none;
-  border: var(--borde) solid var(--tinta);
+  border: 1.5px solid var(--linea-fuerte);
+  border-radius: var(--radio-sm);
   padding: 14px 22px;
-  color: var(--tinta);
+  color: var(--texto-1);
   background: transparent;
   cursor: pointer;
-  overflow: hidden;
-}
-.btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--tinta);
-  transform: scaleY(0);
-  transform-origin: bottom;
-  transition: transform 160ms ease-out;
+  transition:
+    border-color 160ms ease-out,
+    color 160ms ease-out,
+    box-shadow 160ms ease-out,
+    transform 120ms ease-out;
 }
 .btn:hover,
 .btn:focus-visible {
-  color: var(--papel);
-}
-.btn:hover::before,
-.btn:focus-visible::before {
-  transform: scaleY(1);
+  color: var(--cian-hover);
+  border-color: var(--cian);
+  box-shadow: var(--glow-cian-suave);
 }
 .btn:active {
   transform: scale(0.97);
-  transition: transform 120ms ease-out;
 }
 .btn--primario {
-  background: var(--tinta);
-  color: var(--papel);
-}
-.btn--primario::before {
-  background: var(--alerta);
+  background: var(--cian);
+  border-color: var(--cian);
+  color: var(--fondo-1);
+  box-shadow: var(--glow-cian-suave);
 }
 .btn--primario:hover,
 .btn--primario:focus-visible {
-  color: var(--blanco);
+  background: var(--cian-hover);
+  border-color: var(--cian-hover);
+  color: var(--fondo-1);
+  box-shadow: var(--glow-cian);
 }
 
-/* --- Listas regladas y tablas --- */
+/* --- Listas y tablas --- */
 .lista-regla {
   list-style: none;
   padding: 0;
 }
 .lista-regla > li {
   padding-block: var(--e-4);
-  border-top: var(--hilo) solid var(--regla);
+  border-top: 1px solid var(--linea);
 }
 .lista-regla > li:first-child {
   border-top: none;
@@ -244,54 +261,112 @@ strong {
 .tabla {
   width: 100%;
   border-collapse: collapse;
-  border: var(--borde) solid var(--tinta);
+  background: var(--fondo-2);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  overflow: hidden;
 }
 .tabla th,
 .tabla td {
-  border: var(--hilo) solid var(--tinta);
-  padding: var(--e-3) var(--e-4);
+  border-bottom: 1px solid var(--linea);
+  padding: var(--e-4) var(--e-5);
   text-align: left;
   vertical-align: top;
+}
+.tabla tr:last-child td {
+  border-bottom: none;
 }
 .tabla th {
   font-family: var(--fuente-mono);
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: var(--banda);
+  color: var(--texto-3);
+  background: var(--fondo-1);
   font-weight: 400;
 }
+.tabla td {
+  color: var(--texto-2);
+}
+/* <640px: la tabla de dos columnas se apila (la celda derecha quedaba en ~15ch
+   con celdas de 8-10 líneas — hallazgo del finish review). El markup sigue
+   siendo tabla; el primer td hace de rótulo de fila. */
+@media (max-width: 639px) {
+  .tabla thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .tabla,
+  .tabla tbody,
+  .tabla tr,
+  .tabla td {
+    display: block;
+  }
+  .tabla tr {
+    border-bottom: 1px solid var(--linea);
+    padding-block: var(--e-3);
+  }
+  .tabla tr:last-child {
+    border-bottom: none;
+  }
+  .tabla td {
+    border-bottom: none;
+    padding: var(--e-1) var(--e-4);
+    max-width: none;
+  }
+}
 
-/* Hoja de especificación a dos columnas (QUÉ HACE / QUÉ NO HACE) */
+/* Hoja HACE / NO HACE: dos paneles de consola */
 .spec {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--hilo);
-  background: var(--tinta);
-  border: var(--borde) solid var(--tinta);
+  gap: var(--e-4);
 }
 .spec > div {
-  background: var(--papel);
+  background: var(--fondo-2);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
   padding: var(--e-5);
+}
+.spec h3::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: var(--e-3);
+  background: var(--verde);
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.6);
+  vertical-align: 0.05em;
+}
+.spec > div + div h3::before {
+  background: var(--rojo);
+  box-shadow: var(--glow-rojo);
 }
 .spec h3 {
   margin-bottom: var(--e-4);
 }
 .spec .subtitulo--no {
-  color: var(--alerta);
+  color: var(--rojo);
+}
+.spec .lista-regla > li {
+  color: var(--texto-2);
 }
 @media (min-width: 768px) {
   .spec {
     grid-template-columns: 1fr 1fr;
+    gap: var(--e-5);
   }
 }
 
-/* --- Banda de alerta (cita literal del mensaje al ocupante; ESTÁTICA) --- */
+/* --- Banda de crisis (paleta REAL de la pantalla de crisis de la app) --- */
 .banner-alerta {
-  background: var(--alerta);
-  color: var(--blanco);
-  border-block: var(--borde) solid var(--tinta);
-  padding-block: var(--e-7);
+  background: var(--crisis);
+  border-block: 3px solid var(--rojo);
+  padding-block: var(--e-8);
 }
 .banner-alerta strong {
   display: block;
@@ -301,38 +376,38 @@ strong {
   line-height: 0.95;
   text-transform: uppercase;
   letter-spacing: -0.01em;
+  color: var(--blanco);
+  text-shadow: 0 0 32px rgba(255, 82, 82, 0.35);
 }
 .banner-alerta .mono {
-  color: var(--blanco);
+  color: var(--texto-2);
   margin-top: var(--e-4);
   max-width: 60ch;
-  /* Es una frase completa, no una etiqueta: mono sí, mayúsculas no
-     (hallazgo del detector: >40 caracteres en uppercase no se leen). */
   text-transform: none;
   letter-spacing: 0.04em;
 }
 
-/* --- Pie (banda navy de marca) --- */
+/* --- Pie --- */
 .pie {
-  background: var(--marca);
-  color: var(--sobre-marca);
-  border-top: var(--borde) solid var(--tinta);
+  background: var(--fondo-1);
+  border-top: 1px solid var(--linea);
   padding-block: var(--e-8);
+  color: var(--texto-2);
 }
 .pie a {
-  color: var(--sobre-marca);
+  color: var(--texto-1);
 }
 .pie a:hover {
-  color: var(--blanco);
-  text-decoration-color: var(--blanco);
+  color: var(--cian-hover);
 }
 .pie .humo {
-  color: var(--sobre-marca-2);
+  color: var(--texto-3);
 }
 .placa {
   display: inline-block;
-  background: var(--papel);
+  background: #f4f4f0; /* el wordmark es tinta azul: necesita placa clara */
   padding: var(--e-3) var(--e-4);
+  border-radius: var(--radio-sm);
 }
 .pie__grid {
   display: grid;
@@ -350,12 +425,7 @@ strong {
   }
 }
 
-/* --- Esquema: reglas del <svg> raíz y swap responsive. VIVEN AQUÍ (sin
-       scope) a propósito: Astro no añade el atributo de scope al <svg> raíz,
-       así que una regla scoped no lo matchea — y una scoped de más
-       especificidad (`.esquema[cid] svg`) pisaría el display:none del swap.
-       Defecto cazado dos veces en la inspección visual. Especificidad del
-       swap (0,2,1) > base (0,1,1): determinista. --- */
+/* --- Esquema: reglas del <svg> raíz (sin scope de Astro; ver v1) --- */
 .esquema svg {
   display: block;
   width: 100%;

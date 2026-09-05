@@ -11,7 +11,9 @@
 
 ## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **344** · `[x]` **294** · `[~]` **10** · `[ ]` **40**
+**Conteo de tareas:** total **345** · `[x]` **295** · `[~]` **10** · `[ ]` **40**
+
+> ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -10513,6 +10515,22 @@ sería documentar intenciones.
 - [x] Evidencia E2E commiteada (`landing/tests/e2e/evidencia/`): capturas 360/768/1280/1920 sin scroll horizontal, axe 0 critical/serious (medido en estado final con `reducedMotion`), teclado (primer Tab = salto de contenido), variante reduced-motion.
 - [x] Detector de impeccable corrido en modo completo; hallazgos reales corregidos (leyenda del banner sin uppercase corrido, anotaciones del SVG ≥9 px) y falsos del análisis estático anotados (pares de colores que no coexisten; `clamp()` sin parsear).
 - **Trampa que costó dos rondas de inspección:** Astro NO añade su atributo de scope al `<svg>` raíz, así que una regla scoped sobre la clase del svg no matchea — y una scoped de más especificidad (`.esquema[cid] svg`) pisa el `display:none` del swap responsive. Las reglas del svg raíz viven en `global.css` con especificidad decisiva.
+
+### [x] T-2.169 · Rediseño v2 «Telemetría»: la landing en la identidad real, cinemática — `SOFTWARE` · COMPLETA (2026-08-26)
+- **Componente:** landing · **Sale de:** petición de Mauricio (2026-08-25): «más tecnológico, moderno, con animaciones, llamativo; fuera la formalidad; gráficas, imágenes, mapas; colores apegados a la identidad» — 4 decisiones confirmadas por preguntas estructuradas (mundo navy+cian de la consola; SIN cifras — sigue; capturas reales de consola con datos demo; mapa de la física de la alerta).
+- **Reemplaza al mundo Swiss Print de `T-2.166`** (que queda como anti-referencia de registro, no de calidad). El perímetro de claims NO cambió: la suite bloqueante sigue idéntica.
+- **Al integrarse (2026-09-05) el perímetro SÍ había cambiado:** `T-5.04` cerró después de
+  escribirse esta ficha y prohíbe afirmar en presente lo que depende de un gate abierto. El
+  rediseño salía de una base anterior y devolvía las cuatro frases vetadas por `G-04`, así que
+  se reformuló su copy en cinco sitios con la fórmula ya ratificada —el gabinete **gobierna**
+  los canales; cuáles quedan conectados y acreditados lo fija la puesta en marcha—. Los diez
+  tests de `landing` en verde, incluido el que vigila **no prohibir de más**.
+- [x] Mundo «Telemetría»: navy #071322/#0E2336 + cian #00BFFF de la consola (glow de señal como material), semáforo solo semántico, crisis #160808 de la app; Saira/Archivo/JetBrains se conservan. Contrastes recalculados y declarados (texto-1 16.64:1 · cian 8.79:1 · botón navy-sobre-cian 7.54:1).
+- [x] Sismograma del hero: canvas rAF determinista (misma semilla que su fallback SVG estático; se pausa fuera de viewport; reduced-motion = SVG), rotulado «traza ilustrativa · no es un evento real».
+- [x] Mapa «la señal le gana a las ondas»: México en matriz de puntos generada EN BUILD por point-in-polygon sobre contorno simplificado; epicentro ilustrativo, haz de alerta instantáneo vs anillos de ondas (transform puro, `vector-effect: non-scaling-stroke`); rotulado sin sitios ni cobertura.
+- [x] Captura REAL de la consola (soc-local + `scripts/capturas-consola.mjs`: dev-token, acepta el aviso de consentimiento, dispara `/quake` demo) rotulada «datos de demostración». La vista de flota local no se usa (4 simuladores SIN ENLACE no representan el producto).
+- [x] Lighthouse (3 corridas): LCP 1.20 s · CLS 0 · TBT 0 · Perf 100 · A11y 100. Suite 7/7, e2e 8/8, typecheck 0.
+- **Trampas nuevas medidas:** la retícula del point-in-polygon NO puede caer exacto sobre lats/lons de vértices (paridad degenerada come bandas enteras ⇒ origen +0.05°); `vector-effect` o los anillos engordan al escalar; un redirect a ruta nueva de `/tmp` crea un DIRECTORIO (sandbox) y mata al proceso — logs SIEMPRE al scratchpad; el preview de Astro solo vive dentro de la misma llamada del arnés (verificar `curl` el conteo servido antes de capturar: una captura contra un server rancio persigue fantasmas — la Bahía de Campeche NO es un hueco del polígono).
 
 ### [~] T-2.167 · El módulo `site` suelta el contenido: Terraform posee el continente, git el contenido — `SOFTWARE` listo · falta el `apply` (ventana `PENDIENTES §2.10`)
 - **Componente:** infra (`modules/site`) + `deploy/landing/` · **Depende de:** `T-2.166`

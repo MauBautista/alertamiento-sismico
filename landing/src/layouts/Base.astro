@@ -33,7 +33,7 @@ const anio = 2026;
     <link rel="canonical" href={canonical} />
     {noindex && <meta name="robots" content="noindex" />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta name="theme-color" content="#F4F4F0" />
+    <meta name="theme-color" content="#071322" />
     <link
       rel="preload"
       as="font"
@@ -53,17 +53,17 @@ const anio = 2026;
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:image" content="https://takabailert.com/og-v1.png" />
+    <meta property="og:image" content="https://takabailert.com/og-v2.png" />
     <meta property="og:locale" content="es_MX" />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <!--
-    THESIS: La landing es el documento tecnico del sistema, no un folleto SaaS: rechaza el hero-de-cards y vende con honestidad declarada (que hace / que NO hace).
-    OWN-WORLD: Swiss Industrial Print — papel #F4F4F0, tinta #14181E y rojo de dictamen #C4302B como unico acento; Saira Condensed display en mayusculas, Archivo cuerpo, JetBrains Mono telemetria; reticula de hilos de 1px, bordes 2px, radio 0, cero sombras, cero degradados; banda navy #0E2336 solo en el pie.
-    STORY: El comprador entiende "el edificio se protege solo", comprueba como (esquema del camino SASMEX-gabinete-actuadores con simulacro), confia por lo que el sistema declara NO hacer, y escribe a contacto.
-    FIRST VIEWPORT: titular display a 3 lineas (elemento LCP), metadatos mono en la regla superior, CTA "Solicitar cotizacion", marcador rojo unico; sin imagen.
-    FORM: fijada por brief — industrial-brutalist / Swiss Industrial Print (sin sorteo de conceptos).
+    THESIS: La landing es la sala de operaciones del producto vuelta cinematica: la identidad REAL (navy+cian de la consola) contando la fisica de la alerta, con la honestidad declarada (que hace / que NO hace) intacta como argumento.
+    OWN-WORLD: Telemetria v2 — fondo navy #071322/#0E2336, cian #00BFFF como unico acento electrico con glow de senal, semaforo verde/ambar/rojo SOLO semantico, crisis #160808 de la app; Saira Condensed display, Archivo cuerpo, JetBrains Mono telemetria; paneles de consola radio 8px, hilos de luz 1px; cero glassmorphism, cero degradados morado-azul.
+    STORY: El comprador siente la senal (onda del hero), entiende por que la alerta le gana a las ondas (mapa de la fisica), ve al gabinete actuar (esquema + simulacro), comprueba la consola REAL (capturas con datos de demostracion) y confia por lo que el sistema declara NO hacer.
+    FIRST VIEWPORT: titular display a 3 lineas con "SOLO." en cian (elemento LCP) y el lede+CTA a su derecha en escritorio; riel de chips de estado pegado al sismograma vivo (canvas), que entra al primer viewport anclando el hero a la altura de pantalla en >=1280.
+    FORM: rediseno pedido por el usuario 2026-08-25 (tecnologico/moderno/llamativo, colores de la identidad) — reemplaza al mundo Swiss Print v1; sin sorteo: direccion confirmada por 4 respuestas estructuradas.
     FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
     -->
     <a class="salto" href="#contenido">Saltar al contenido</a>
@@ -75,7 +75,7 @@ const anio = 2026;
         </a>
         <nav aria-label="Navegación principal">
           <ul class="barra__nav mono">
-            <li><a href="/#como-funciona">Cómo funciona</a></li>
+            <li><a href="/#alerta-temprana">Cómo funciona</a></li>
             <li><a href="/#que-hace">Qué hace</a></li>
             <li><a class="barra__cta" href="/#contacto">Contacto</a></li>
           </ul>
@@ -133,8 +133,8 @@ const anio = 2026;
 
 <style>
   .barra {
-    border-bottom: var(--borde) solid var(--tinta);
-    background: var(--papel);
+    border-bottom: 1px solid var(--linea);
+    background: var(--fondo-0);
   }
   .barra__fila {
     display: flex;
@@ -152,6 +152,18 @@ const anio = 2026;
     font-weight: 700;
     font-size: 1.375rem;
     letter-spacing: 0.02em;
+    color: var(--texto-1);
+  }
+  .barra__nombre::after {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 8px;
+    border-radius: 50%;
+    background: var(--cian);
+    box-shadow: var(--glow-cian);
+    vertical-align: 0.35em;
   }
   .barra__nav {
     display: flex;
@@ -162,17 +174,16 @@ const anio = 2026;
   }
   .barra__nav a {
     text-decoration: none;
+    color: var(--texto-2);
   }
   .barra__nav a:hover {
-    text-decoration: underline;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
+    color: var(--cian-hover);
   }
   .barra__cta {
-    color: var(--alerta);
+    color: var(--cian);
   }
   .pie__titulo {
-    color: var(--sobre-marca-2);
+    color: var(--texto-3);
     margin-bottom: var(--e-3);
   }
   .pie__linea {

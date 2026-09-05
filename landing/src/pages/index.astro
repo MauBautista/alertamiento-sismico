@@ -1,10 +1,14 @@
 ---
-// Página principal. Cada afirmación lleva su fuente anotada en un comentario
-// (perímetro: CONSULTA-LEGAL-TAKAB.md §2-§3 · ENTREGA-Y-ACEPTACION-TAKAB.md).
-// Invariantes del copy: CERO cifras (decisión 2026-08-25), cero normas, cero
-// clientes, cero badges de tiendas, cero canales de aviso prometidos.
+// Página principal v2 «Telemetría». Cada afirmación conserva su fuente
+// (CONSULTA-LEGAL-TAKAB.md §2-§3 · ENTREGA-Y-ACEPTACION-TAKAB.md) y los
+// invariantes del copy siguen bloqueados por tests: CERO cifras medidas
+// (decisión 2026-08-25, re-confirmada en el rediseño), cero normas, cero
+// clientes, deslinde SASMEX y dominio remitente obligatorios.
 import Base from "../layouts/Base.astro";
 import Esquema from "../components/Esquema.astro";
+import Onda from "../components/Onda.astro";
+import MapaAlerta from "../components/MapaAlerta.astro";
+import Consola from "../components/Consola.astro";
 import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
 ---
 
@@ -14,54 +18,74 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
   path="/"
 >
   <!-- ═══ PORTADA ═══ -->
-  <section class="hero cruz" aria-label="Portada">
+  <section class="hero" aria-label="Portada">
+    <div class="marco hero__cuerpo">
+      <!-- fuente: ESPECIFICACION-PANEL-GABINETE §0 «El gabinete se protege solo» /
+           ENTREGA §1 «el edificio sigue protegido» -->
+      <h1 class="hero__titulo">
+        <span class="hero__linea al-t" style="--d:0s">El edificio</span>
+        <span class="hero__linea al-t" style="--d:.07s">se protege</span>
+        <span class="hero__linea al-t" style="--d:.14s"><em>solo.</em></span>
+      </h1>
+      <div class="hero__lateral">
+        <!-- fuente: CONSULTA-LEGAL §1 (definición y segmentos) + §2.2 (sin internet/nube/IA) -->
+        <p class="hero__sub al" style="--d:.5s">
+          TAKAB Ailert recibe la alerta sísmica oficial y acciona el
+          equipamiento de su inmueble en el acto —
+          <strong
+            >sin depender de internet, de la nube ni de inteligencia artificial</strong
+          >. Alertamiento, monitoreo estructural y continuidad operativa
+          post-sismo para Protección Civil, hospitales, universidades, industria
+          y corporativos en México.
+        </p>
+        <p class="hero__cta al" style="--d:.6s">
+          <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
+            >Solicitar cotización</a
+          >
+          <a class="btn" href="#alerta-temprana">Ver cómo funciona</a>
+        </p>
+      </div>
+    </div>
+    <div class="hero__instrumento al" style="--d:.35s">
+      <div class="marco hero__rail">
+        <span class="chip">Alertamiento sísmico</span>
+        <span class="chip chip--quieto">Edge + nube</span>
+        <span class="chip chip--quieto">México</span>
+      </div>
+      <Onda />
+    </div>
+  </section>
+
+  <!-- ═══ 01 · LA FÍSICA DE LA ALERTA ═══ -->
+  <section class="seccion" id="alerta-temprana">
     <div class="marco">
-      <p class="mono humo hero__meta al" style="--d:.45s">
-        <span>takabailert.com · México</span>
-        <span class="hero__meta-sep" aria-hidden="true"></span>
-        <span>Alertamiento sísmico · Continuidad operativa</span>
-      </p>
-      <div class="hero__marcador al" style="--d:.4s" aria-hidden="true"></div>
-      <div class="hero__cuerpo">
-        <!-- fuente: ESPECIFICACION-PANEL-GABINETE §0 «El gabinete se protege solo» /
-             ENTREGA §1 «el edificio sigue protegido» -->
-        <h1 class="hero__titulo">
-          <span class="hero__linea al-t" style="--d:0s">El edificio</span>
-          <span class="hero__linea al-t" style="--d:.07s">se protege</span>
-          <span class="hero__linea al-t" style="--d:.14s">solo.</span>
-        </h1>
-        <div class="hero__lateral">
-          <!-- fuente: CONSULTA-LEGAL §1 (definición y segmentos) + §2.2 (sin internet/nube/IA) -->
-          <p class="hero__sub al" style="--d:.5s">
-            TAKAB Ailert recibe la alerta sísmica oficial y acciona el
-            equipamiento de su inmueble en el acto —
-            <strong
-              >sin depender de internet, de la nube ni de inteligencia
-              artificial</strong
-            >. Alertamiento, monitoreo estructural y continuidad operativa
-            post-sismo para Protección Civil, hospitales, universidades,
-            industria y corporativos en México.
+      <header data-rv>
+        <h2 class="titulo">La señal le gana <em>a las ondas</em></h2>
+      </header>
+      <div class="seccion__cuerpo">
+        <div class="prosa">
+          <p>
+            Un sismo fuerte en la costa tarda decenas de segundos en sacudir a
+            las ciudades del centro: sus ondas viajan por la roca a kilómetros
+            por segundo. La señal de alerta viaja por telecomunicaciones —
+            <strong>llega antes</strong>. Ese margen es la única ventaja física
+            que existe contra un sismo, y el gabinete la usa completa: acciona
+            los canales conectados en su edificio
+            <strong>antes de la sacudida</strong>.
           </p>
-          <p class="hero__cta al" style="--d:.6s">
-            <a class="btn btn--primario" href={`mailto:${CONTACTO_EMAIL}`}
-              >Solicitar cotización</a
-            >
-            <a class="btn" href="#como-funciona">Ver cómo funciona</a>
-          </p>
+        </div>
+        <div class="bloque-figura">
+          <MapaAlerta />
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ═══ SEC 01 · CÓMO FUNCIONA ═══ -->
-  <section class="seccion" id="como-funciona">
+  <!-- ═══ 02 · EL GABINETE ACTÚA ═══ -->
+  <section class="seccion" id="gabinete">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 01 / 07</span>
-          <span>TAKAB Ailert · documento público</span>
-        </p>
-        <h2 class="titulo">Cuando suena la alerta</h2>
+        <h2 class="titulo">Cuando suena la alerta, <em>actúa</em></h2>
       </header>
       <div class="seccion__cuerpo">
         <div class="prosa">
@@ -79,8 +103,7 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
               marcha de cada edificio, canal por canal</strong
             >.
           </p>
-          <!-- fuente: CONSULTA-LEGAL §2.2 («no hay internet, no hay nube y no hay IA»;
-               cualitativo por decisión 2026-08-25: sin cifras) -->
+          <!-- fuente: CONSULTA-LEGAL §2.2 (cualitativo por decisión 2026-08-25: sin cifras) -->
           <p>
             Del contacto de SASMEX al relé del edificio no hay internet, no hay
             nube y no hay inteligencia artificial: es una cadena eléctrica y de
@@ -88,39 +111,40 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
           </p>
         </div>
 
-        <Esquema />
+        <div class="bloque-figura panel panel--hondo">
+          <Esquema />
+        </div>
 
         <!-- fuente: envs/dev/site/index.html (T-2.156) — deslinde SASMEX, fórmula
              conservada del sitio desplegado; es perímetro legal, no adorno. -->
         <p class="nota-limite" data-rv>
           <span class="mono">Sobre el origen de las alertas</span>
           La alerta sísmica oficial en México es emitida por el SASMEX. TAKAB Ailert
-          la recibe y actúa sobre el inmueble; <strong
-            >no la genera ni la sustituye</strong
-          >, y no representa a la autoridad que la emite.
+          la recibe y actúa sobre el inmueble;
+          <strong>no la genera ni la sustituye</strong>, y no representa a la
+          autoridad que la emite.
         </p>
 
         <div class="dato-grid">
-          <div>
+          <div class="panel">
             <!-- fuente: ENTREGA §2.4 (etiqueta literal del panel; ámbar a propósito) -->
             <h3 class="subtitulo">¿Y si se corta internet?</h3>
             <p>
               El gabinete sigue detectando, accionando y guardando. El panel del
-              edificio lo dice tal cual: <strong
-                >«SIN ENLACE — PROTECCIÓN LOCAL ACTIVA»</strong
-              > — y lo dice en ámbar, no en rojo, porque es el sistema funcionando
-              como fue diseñado. La nube coordina; nunca es requisito de la protección
-              local.
+              edificio lo dice tal cual:
+              <strong>«SIN ENLACE — PROTECCIÓN LOCAL ACTIVA»</strong> — y lo dice
+              en ámbar, no en rojo, porque es el sistema funcionando como fue diseñado.
+              La nube coordina; nunca es requisito de la protección local.
             </p>
           </div>
-          <div>
+          <div class="panel">
             <!-- fuente: ENTREGA §2.1 / blueprint §4.7 (estado seguro por canal) -->
             <h3 class="subtitulo">¿Y si algo falla?</h3>
             <p>
               Cada canal tiene un estado seguro de fábrica: una falla no deja la
-              sirena sonando, <strong>cierra</strong> el gas y <strong
-                >libera</strong
-              > las puertas. El modo de falla se elige para proteger, no para aparentar.
+              sirena sonando, y lleva cada canal conectado a su estado seguro —
+              <strong>cierra</strong> el gas, <strong>libera</strong> las puertas.
+              El modo de falla se elige para proteger, no para aparentar.
             </p>
           </div>
         </div>
@@ -128,23 +152,18 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     </div>
   </section>
 
-  <!-- ═══ SEC 02 · QUÉ HACE / QUÉ NO HACE ═══ -->
+  <!-- ═══ 03 · QUÉ HACE / QUÉ NO HACE ═══ -->
   <section class="seccion" id="que-hace">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 02 / 07</span>
-          <span>alcance declarado, también en negativo</span>
-        </p>
-        <h2 class="titulo">Qué hace y qué no hace</h2>
+        <h2 class="titulo">Qué hace <em>y qué no</em></h2>
       </header>
       <div class="seccion__cuerpo">
         <p class="prosa">
-          Un sistema que acciona el gas y las puertas de un edificio ocupado no
+          Un sistema que gobierna el gas y las puertas de un edificio ocupado no
           puede venderse con promesas elásticas. Esto es lo que el sistema hace
           — y lo que declara, por escrito, que no hace.
-          <!-- fuente: ENTREGA Parte II §4 («lo que este documento declara que el sistema no
-               hace no es un defecto: es alcance») -->
+          <!-- fuente: ENTREGA Parte II §4 («lo que declara que no hace es alcance») -->
         </p>
 
         <div class="spec" data-rv>
@@ -158,11 +177,10 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
                 y —donde se acrediten— válvula de gas, ascensores y retenedores de
                 puerta.
               </li>
-              <!-- fuente: ENTREGA §2.2 (detección instrumental propia; T-2.32 solo aviso) -->
+              <!-- fuente: ENTREGA §2.2 (instrumental propia; T-2.32 solo aviso) -->
               <li>
                 Mide el movimiento con instrumentación propia en el edificio y
-                eleva un
-                <strong>aviso</strong> al panel y al centro de operaciones.
+                eleva un <strong>aviso</strong> al panel y al centro de operaciones.
               </li>
               <!-- fuente: ENTREGA §2.4 (opera sin enlace) -->
               <li>
@@ -177,14 +195,14 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
               </li>
               <!-- fuente: ENTREGA §3.2 (quórum ≥3, comando firmado) -->
               <li>
-                En red, corrobora con un <strong>quórum de ≥3 inmuebles</strong> y
-                actúa por comando firmado, verificado por cada gabinete.
+                En red, corrobora con un <strong>quórum de ≥3 inmuebles</strong>
+                y actúa por comando firmado, verificado por cada gabinete.
               </li>
               <!-- fuente: ENTREGA §3.4 (RLS default-deny) -->
               <li>
-                Aísla los datos de cada cliente <strong
-                  >en la base de datos</strong
-                >: una lectura cruzada devuelve cero filas.
+                Aísla los datos de cada cliente
+                <strong>en la base de datos</strong>: una lectura cruzada
+                devuelve cero filas.
               </li>
             </ul>
           </div>
@@ -205,23 +223,21 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
               </li>
               <!-- fuente: CONSULTA-LEGAL §2.4 (una estación sola no evacúa) -->
               <li>
-                No evacúa a nadie por la lectura de <strong
-                  >una sola estación</strong
-                >: eso produce un aviso. La actuación autónoma es una decisión
-                del cliente, registrada.
+                No evacúa a nadie por la lectura de
+                <strong>una sola estación</strong>: eso produce un aviso. La
+                actuación autónoma es una decisión del cliente, registrada.
               </li>
-              <!-- fuente: ENTREGA §6.1 («TAKAB no genera la alerta sísmica oficial») -->
+              <!-- fuente: ENTREGA §6.1 («TAKAB no genera la alerta oficial») -->
               <li>
-                No predice sismos ni genera la alerta oficial: la <strong
-                  >recibe</strong
-                >.
+                No predice sismos ni genera la alerta oficial: la
+                <strong>recibe</strong>.
               </li>
               <!-- fuente: ENTREGA §6.1 (límite de responsabilidad del dictamen) -->
               <li>
-                No sustituye la <strong>evaluación estructural formal</strong> ni
-                autoriza el reingreso al inmueble: eso lo firma ingeniería.
+                No sustituye la <strong>evaluación estructural formal</strong>
+                ni autoriza el reingreso al inmueble: eso lo firma ingeniería.
               </li>
-              <!-- fuente: ENTREGA §6.1 (plan de emergencia y brigada son del cliente) -->
+              <!-- fuente: ENTREGA §6.1 (plan de emergencia y brigada del cliente) -->
               <li>
                 No reemplaza el <strong>plan de emergencia</strong> ni a la brigada:
                 sin personas entrenadas, una sirena suena en un edificio que no sabe
@@ -233,8 +249,8 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
       </div>
     </div>
 
-    <!-- fuente: CONSULTA-LEGAL §2.1 / ENTREGA §4 — mensaje literal e íntegro al ocupante.
-         Banda ESTÁTICA a propósito: es una cita del producto, no teatro. -->
+    <!-- fuente: CONSULTA-LEGAL §2.1 / ENTREGA §4 — mensaje literal e íntegro al
+         ocupante. Paleta REAL de la pantalla de crisis de la app. ESTÁTICA. -->
     <div
       class="banner-alerta"
       role="img"
@@ -251,53 +267,47 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     </div>
   </section>
 
-  <!-- ═══ SEC 03 · DESPUÉS DEL SISMO ═══ -->
+  <!-- ═══ 04 · DESPUÉS DEL SISMO ═══ -->
   <section class="seccion" id="despues">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 03 / 07</span>
-          <span>continuidad operativa</span>
-        </p>
-        <h2 class="titulo">Después del sismo</h2>
+        <h2 class="titulo">Después <em>del sismo</em></h2>
       </header>
       <div class="seccion__cuerpo">
         <p class="prosa">
           El sismo termina y empieza la pregunta que de verdad cuesta dinero y
-          riesgo:
-          <strong>¿se puede volver a entrar?</strong> El sistema sostiene ese proceso
-          con registro, no con memoria.
+          riesgo: <strong>¿se puede volver a entrar?</strong> El sistema sostiene
+          ese proceso con registro, no con memoria.
         </p>
-        <ul class="lista-regla lista-regla--tres">
+        <div class="tres-paneles">
           <!-- fuente: CONSULTA-LEGAL §2.5 -->
-          <li>
+          <div class="panel" data-rv>
             <h3 class="subtitulo">Evidencia inalterable</h3>
             <p>
               El registro sísmico del evento, las fotos y las notas quedan en un
-              expediente
-              <strong>que solo crece</strong>: la propia base de datos rechaza
-              borrados y reescrituras, y esa evidencia está exenta de las
-              políticas de retención.
+              expediente <strong>que solo crece</strong>: la propia base de
+              datos rechaza borrados y reescrituras, y esa evidencia está exenta
+              de las políticas de retención.
             </p>
-          </li>
-          <!-- fuente: CONSULTA-LEGAL §2.5 / ENTREGA §3.1 (dictamen con base y firma) -->
-          <li>
+          </div>
+          <!-- fuente: CONSULTA-LEGAL §2.5 / ENTREGA §3.1 -->
+          <div class="panel" data-rv>
             <h3 class="subtitulo">Dictamen con firma</h3>
             <p>
               El dictamen operativo queda con su base y su firma. Una corrección
               <strong>nunca reescribe</strong>: inserta una versión nueva que
               declara a cuál sustituye. Todo exportable por incidente.
             </p>
-          </li>
-          <!-- fuente: USER-STORIES US-10 (check-in de vida) / CONSULTA-LEGAL §2.7 -->
-          <li>
+          </div>
+          <!-- fuente: USER-STORIES US-10 / CONSULTA-LEGAL §2.7 -->
+          <div class="panel" data-rv>
             <h3 class="subtitulo">Pase de lista</h3>
             <p>
               Quién está a salvo y quién necesita ayuda, por zona del inmueble —
               el dato que orienta a la brigada cuando más ruido hay.
             </p>
-          </li>
-        </ul>
+          </div>
+        </div>
         <!-- fuente: ENTREGA §6.1 — «límite de responsabilidad, no letra pequeña» -->
         <p class="nota-limite" data-rv>
           <span class="mono">Límite declarado</span>
@@ -309,70 +319,66 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     </div>
   </section>
 
-  <!-- ═══ SEC 04 · LA RED ═══ -->
-  <section class="seccion" id="red">
+  <!-- ═══ 05 · LA SALA DE OPERACIONES ═══ -->
+  <section class="seccion" id="consola">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 04 / 07</span>
-          <span>quórum · consola · aislamiento</span>
-        </p>
-        <h2 class="titulo">Un edificio protege. Una red corrobora.</h2>
+        <h2 class="titulo">Un edificio protege. <em>Una red corrobora.</em></h2>
       </header>
       <div class="seccion__cuerpo">
-        <div class="dato-grid">
+        <div class="dato-grid dato-grid--arriba">
           <div>
             <!-- fuente: ENTREGA §3.2 / blueprint §4.5 (quórum ≥3; comando firmado) -->
             <h3 class="subtitulo">Quórum de la red</h3>
-            <p>
-              Un edificio que vibra puede ser un camión. <strong
-                >Tres o más inmuebles</strong
-              >
-              sacudiéndose a la vez, no. Cuando el quórum de la red lo confirma, la
-              nube emite un <strong>comando de actuación firmado</strong> que cada
-              gabinete verifica antes de mover un relé. La corroboración viaja por
-              la red; la protección de cada edificio nunca depende de ella.
+            <p class="prosa">
+              Un edificio que vibra puede ser un camión.
+              <strong>Tres o más inmuebles</strong> sacudiéndose a la vez, no. Cuando
+              el quórum de la red lo confirma, la nube emite un
+              <strong>comando de actuación firmado</strong> que cada gabinete verifica
+              antes de mover un relé. La corroboración viaja por la red; la protección
+              de cada edificio nunca depende de ella.
             </p>
           </div>
           <div>
             <!-- fuente: ENTREGA §3.3-§3.4 (consola SOC; RLS) -->
             <h3 class="subtitulo">Consola de operaciones</h3>
-            <p>
+            <p class="prosa">
               El centro de operaciones ve el mapa, la flota de gabinetes, los
               incidentes y el historial de triage — con los datos de cada
-              cliente
-              <strong>aislados en la base de datos</strong>, no por cortesía del
-              software. La app móvil acompaña a ocupantes y brigadistas durante
-              y después del evento.
+              cliente <strong>aislados en la base de datos</strong>, no por
+              cortesía del software. La app móvil acompaña a ocupantes y
+              brigadistas durante y después del evento.
             </p>
           </div>
         </div>
-        <!-- fuente: ENTREGA §2.3 / §3.3 (honestidad del dato: S/D, nunca un dato viejo
-             pintado como vivo). Autoexigencia que también aplica a esta página: por eso
-             aquí no hay capturas simuladas ni contadores decorativos. -->
+
+        <div class="bloque-figura">
+          <Consola />
+        </div>
+
+        <!-- fuente: ENTREGA §2.3/§3.3 (honestidad del dato). La captura de arriba
+             es el producto REAL con datos de demostración, y así se rotula. -->
         <p class="nota-limite" data-rv>
           <span class="mono">Regla de la casa</span>
           El sistema no pinta un dato viejo como si fuera de ahora: una medición vencida
           se retira en vez de congelarse en verde. Esta página sigue la misma regla
-          — no verá aquí capturas simuladas ni números de marketing.
+          — la captura de arriba es la consola real con un incidente de <strong
+            >demostración</strong
+          >, y lo dice; no verá aquí cifras de marketing.
         </p>
       </div>
     </div>
   </section>
 
-  <!-- ═══ SEC 05 · PARA QUIÉN ═══ -->
+  <!-- ═══ 06 · PARA QUIÉN ═══ -->
   <section class="seccion" id="para-quien">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 05 / 07</span>
-          <span>segmentos</span>
-        </p>
-        <h2 class="titulo">Para quién es</h2>
+        <h2 class="titulo">Para <em>quién es</em></h2>
       </header>
       <div class="seccion__cuerpo">
-        <!-- fuente: CONSULTA-LEGAL §1 (segmentos literales); necesidades derivadas de
-             USER-STORIES (épicas 1-4) y ENTREGA §2-§3 -->
+        <!-- fuente: CONSULTA-LEGAL §1 (segmentos literales); necesidades derivadas
+             de USER-STORIES (épicas 1-4) y ENTREGA §2-§3 -->
         <table class="tabla">
           <thead>
             <tr>
@@ -391,9 +397,9 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
             <tr>
               <td><strong>Hospitales</strong></td>
               <td>
-                Cierre de gas y retorno de ascensores sin depender de que
-                alguien esté frente a una pantalla; continuidad de la operación
-                clínica después del sismo.
+                Cierre de gas y retorno de ascensores —donde se acrediten— sin
+                depender de que alguien esté frente a una pantalla; continuidad
+                de la operación clínica después del sismo.
               </td>
             </tr>
             <tr>
@@ -423,21 +429,16 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     </div>
   </section>
 
-  <!-- ═══ SEC 06 · QUÉ SE INSTALA ═══ -->
+  <!-- ═══ 07 · QUÉ SE INSTALA ═══ -->
   <section class="seccion" id="instalacion">
     <div class="marco">
       <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 06 / 07</span>
-          <span>un gabinete por edificio</span>
-        </p>
-        <h2 class="titulo">Qué se instala</h2>
+        <h2 class="titulo">Qué <em>se instala</em></h2>
       </header>
       <div class="seccion__cuerpo">
         <div class="dato-grid">
-          <div>
-            <!-- fuente: ENTREGA §2 / blueprint §4.1 (composición del gabinete);
-                 «homologado» aplicado al WR-1: CONSULTA-LEGAL §2.1 -->
+          <div class="panel">
+            <!-- fuente: ENTREGA §2 / blueprint §4.1; «homologado»: CONSULTA-LEGAL §2.1 -->
             <p>
               Un <strong>gabinete por edificio</strong>: receptor SASMEX WR-1
               homologado, sensor sísmico propio, cerebro local, relés con estado
@@ -446,9 +447,8 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
               de gas, ascensores, retenedores de puerta.
             </p>
           </div>
-          <div>
-            <!-- fuente: RUNBOOK-ALTA-DE-ESTACION (alta guiada); ENTREGA §6.2 (gates por
-                 sitio: la acreditación es en el inmueble, canal por canal) -->
+          <div class="panel">
+            <!-- fuente: RUNBOOK-ALTA-DE-ESTACION; ENTREGA §6.2 (acreditación en sitio) -->
             <p>
               Cada canal —y el respaldo de energía— se acredita en el inmueble
               antes de entrar en servicio: lo que no se haya probado en su
@@ -467,17 +467,11 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     </div>
   </section>
 
-  <!-- ═══ SEC 07 · CONTACTO ═══ -->
+  <!-- ═══ 08 · CONTACTO ═══ -->
   <section class="seccion" id="contacto">
     <div class="marco">
-      <header data-rv>
-        <p class="cajetin__meta mono">
-          <span>SEC 07 / 07</span>
-          <span>siguiente paso</span>
-        </p>
-        <h2 class="titulo">Hablemos de su inmueble</h2>
-      </header>
-      <div class="seccion__cuerpo">
+      <div class="cierre panel panel--hondo" data-rv>
+        <h2 class="titulo cierre__titulo">Hablemos <em>de su inmueble</em></h2>
         <p class="prosa">
           Escríbanos con el tipo de inmueble, la ciudad y qué necesita proteger.
           Respondemos con los siguientes pasos y una cotización a la medida.
@@ -500,31 +494,28 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
 </Base>
 
 <style>
-  /* --- Portada --- */
+  /* --- Portada: un instrumento, no texto-más-vacío. El sismograma entra al
+     primer viewport (>=1280 el hero se ancla a la altura de la pantalla) y el
+     riel de chips vive pegado al instrumento, no encima del titular. --- */
   .hero {
-    border-bottom: var(--borde) solid var(--tinta);
-    padding-block: var(--e-7) var(--e-8);
-  }
-  .hero__meta {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--e-3) var(--e-4);
-    padding-bottom: var(--e-6);
+    flex-direction: column;
+    background:
+      radial-gradient(
+        90rem 40rem at 85% -20%,
+        rgba(0, 105, 137, 0.28),
+        transparent 60%
+      ),
+      radial-gradient(
+        60rem 30rem at -10% 10%,
+        rgba(0, 191, 255, 0.08),
+        transparent 55%
+      ),
+      var(--fondo-0);
   }
-  .hero__meta-sep {
-    flex: 1;
-    min-width: 40px;
-    border-top: var(--hilo) solid var(--regla);
-  }
-  /* (El nowrap va SOLO en el folio del cajetín — global.css. Aplicarlo a los
-     chips del hero desborda 360: el tracking de .08em suma ~1px por carácter
-     y el chip de 44ch pasa de 360. Lo cazó el assert de overflow del E2E.) */
-  .hero__marcador {
-    width: 56px;
-    height: 14px;
-    background: var(--alerta);
-    margin-bottom: var(--e-5);
+  .hero__cuerpo {
+    width: 100%;
+    padding-block: var(--e-6) var(--e-6);
   }
   .hero__titulo {
     font-family: var(--fuente-display);
@@ -534,39 +525,56 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     letter-spacing: -0.01em;
     text-transform: uppercase;
   }
+  .hero__titulo em {
+    font-style: normal;
+    color: var(--cian);
+    text-shadow: 0 0 40px rgba(0, 191, 255, 0.45);
+  }
   .hero__linea {
     display: block;
   }
+  .hero__lateral {
+    margin-top: var(--e-6);
+  }
   .hero__sub {
     max-width: 58ch;
-    margin-top: var(--e-6);
+    color: var(--texto-2);
   }
   .hero__cta {
     display: flex;
     flex-wrap: wrap;
     gap: var(--e-4);
-    margin-top: var(--e-6);
+    margin-top: var(--e-5);
   }
-  /* ≥1280: composición suiza asimétrica — el titular ocupa la columna
-     izquierda y el argumento+CTA bajan a la derecha, alineados a la base. */
+  .hero__instrumento {
+    margin-top: auto;
+  }
+  .hero__rail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--e-3);
+    padding-block: var(--e-3);
+  }
   @media (min-width: 1280px) {
+    .hero {
+      min-height: calc(100svh - 73px);
+    }
     .hero__cuerpo {
+      flex: 1;
       display: grid;
       grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
       gap: var(--e-8);
-      align-items: end;
+      align-items: center;
+      padding-block: var(--e-7);
     }
     .hero__lateral {
-      border-left: var(--hilo) solid var(--regla);
-      padding-left: var(--e-6);
-    }
-    .hero__sub {
       margin-top: 0;
+      border-left: 1px solid var(--linea);
+      padding-left: var(--e-6);
     }
   }
 
-  /* Momento coreografiado de carga (una vez). El titular anima SOLO transform
-     (opacity fija en 1): así el LCP pinta en el primer frame y no espera al fade. */
+  /* Momento de carga: el titular anima SOLO transform (LCP pinta al primer frame) */
   @media (prefers-reduced-motion: no-preference) {
     .al-t {
       animation: al-sube 420ms ease-out both;
@@ -596,68 +604,92 @@ import { CONTACTO_EMAIL, WHATSAPP_URL } from "../config";
     }
   }
 
-  /* --- Composición interna de secciones --- */
+  /* --- Composición interna --- */
+  .bloque-figura {
+    margin-top: var(--e-6);
+  }
+  .panel.bloque-figura,
+  .bloque-figura.panel {
+    padding: var(--e-4);
+  }
   .dato-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: var(--e-6);
-    padding-top: var(--e-5);
+    gap: var(--e-5);
+    margin-top: var(--e-6);
+  }
+  .dato-grid--arriba {
+    margin-top: 0;
   }
   .dato-grid h3 {
     margin-bottom: var(--e-3);
   }
-  .dato-grid p {
+  .dato-grid .panel p {
+    color: var(--texto-2);
     max-width: 52ch;
   }
   @media (min-width: 768px) {
     .dato-grid {
       grid-template-columns: 1fr 1fr;
-      gap: var(--e-7);
+      gap: var(--e-5);
     }
   }
 
-  .lista-regla--tres {
-    margin-top: var(--e-5);
+  .tres-paneles {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--e-5);
+    margin-top: var(--e-6);
   }
-  .lista-regla--tres h3 {
-    margin-bottom: var(--e-2);
+  .tres-paneles .panel p {
+    color: var(--texto-2);
   }
-  .lista-regla--tres p {
-    max-width: 62ch;
+  .tres-paneles h3 {
+    margin-bottom: var(--e-3);
   }
   @media (min-width: 1280px) {
-    .lista-regla--tres {
-      display: grid;
+    .tres-paneles {
       grid-template-columns: repeat(3, 1fr);
-      gap: var(--hilo);
-      background: var(--regla);
-      border-block: var(--hilo) solid var(--regla);
-    }
-    .lista-regla--tres > li {
-      background: var(--papel);
-      border-top: none;
-      padding: var(--e-5) var(--e-5) var(--e-6);
     }
   }
 
   .nota-limite {
     margin-top: var(--e-6);
-    border: var(--borde) solid var(--tinta);
-    border-left-width: var(--borde);
+    border: 1px solid var(--linea-fuerte);
+    border-radius: var(--radio-sm);
+    background: var(--fondo-1);
     padding: var(--e-4) var(--e-5);
     max-width: 72ch;
+    color: var(--texto-2);
   }
   .nota-limite .mono {
     display: block;
-    color: var(--alerta);
+    color: var(--cian);
     margin-bottom: var(--e-2);
   }
 
   .spec {
     margin-top: var(--e-5);
   }
-
   .tabla td {
     max-width: 60ch;
+  }
+
+  .cierre {
+    padding: var(--e-7) var(--e-6);
+    text-align: left;
+    background:
+      radial-gradient(
+        50rem 24rem at 100% 0%,
+        rgba(0, 191, 255, 0.1),
+        transparent 60%
+      ),
+      var(--fondo-1);
+  }
+  .cierre__titulo {
+    margin-bottom: var(--e-4);
+  }
+  .cierre .hero__cta {
+    margin-top: var(--e-5);
   }
 </style>

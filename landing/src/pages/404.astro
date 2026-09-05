@@ -14,11 +14,8 @@ import Base from "../layouts/Base.astro";
   <section class="seccion">
     <div class="marco">
       <header>
-        <p class="cajetin__meta mono">
-          <span>Código 404</span>
-          <span>ruta inexistente</span>
-        </p>
         <h1 class="cuatrocientos" aria-label="Error 404">404</h1>
+        <p class="mono humo">Ruta inexistente</p>
       </header>
       <div class="seccion__cuerpo prosa">
         <p>
@@ -38,7 +35,9 @@ import Base from "../layouts/Base.astro";
     font-size: clamp(6rem, 30vw, 24rem);
     line-height: 0.85;
     letter-spacing: -0.02em;
-    padding-block: var(--e-6) var(--e-5);
+    padding-block: var(--e-6) var(--e-3);
+    color: var(--cian);
+    text-shadow: 0 0 60px rgba(0, 191, 255, 0.35);
   }
   .prosa p + p {
     margin-top: var(--e-5);

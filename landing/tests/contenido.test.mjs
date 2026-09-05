@@ -34,7 +34,7 @@ test("existen las páginas y los ficheros públicos", () => {
     "robots.txt",
     "sitemap.xml",
     "favicon.svg",
-    "og-v1.png",
+    "og-v2.png",
   ]) {
     assert.ok(existsSync(join(dist, f)), `falta dist/${f}`);
   }

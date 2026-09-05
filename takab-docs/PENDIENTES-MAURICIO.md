@@ -788,11 +788,12 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 
 ### 3.6 · Capturas reales para la landing v1.1 — **OPCIONAL, no bloquea el corte**
 
-> La landing v1 salió sin fotografía ni capturas (decisión 2026-08-25). Cuando quieras subirle
-> materialidad: (a) conecta el **Pixel real por USB** para capturar la app (regla: nunca
-> emuladores), (b) capturas de la consola con `make soc-local` sembrado, (c) si algún día hay
-> sesión de fotos del gabinete instalado, entran por `astro:assets` (AVIF/WebP automático).
-> Nada de esto usa los mockups de `takab-docs/design/` como si fueran el producto.
+> **La (b) ya está hecha (2026-08-26, rediseño v2):** la landing embebe una captura REAL de la
+> consola (`landing/scripts/capturas-consola.mjs` sobre `make soc-local`; acepta el aviso de
+> consentimiento y dispara un `/quake` demo), rotulada «datos de demostración». Quedan:
+> (a) conectar el **Pixel real por USB** para capturas de la app (regla: nunca emuladores), y
+> (c) fotos del gabinete instalado si algún día hay sesión — entran por `astro:assets`.
+> Nada usa los mockups de `takab-docs/design/` como si fueran el producto.
 
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 
